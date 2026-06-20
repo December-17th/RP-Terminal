@@ -109,10 +109,13 @@ const api = {
   getLogs: () => ipcRenderer.invoke('get-logs'),
   clearLogs: () => ipcRenderer.invoke('clear-logs'),
   // Regex
-  getRenderRegex: (profileId: string) => ipcRenderer.invoke('get-render-regex', profileId),
+  getRenderRegex: (profileId: string, ctx?: { cardId?: string | null; chatId?: string | null }) =>
+    ipcRenderer.invoke('get-render-regex', profileId, ctx),
   listRegex: (profileId: string) => ipcRenderer.invoke('list-regex', profileId),
   deleteRegex: (profileId: string, file: string) =>
     ipcRenderer.invoke('delete-regex', profileId, file),
+  setRegexScope: (profileId: string, file: string, scope: string, owner?: string) =>
+    ipcRenderer.invoke('regex-set-scope', profileId, file, scope, owner),
   getRegexRules: (profileId: string, file: string) =>
     ipcRenderer.invoke('regex-script-rules', profileId, file),
   updateRegexRule: (profileId: string, file: string, index: number, patch: any) =>

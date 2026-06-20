@@ -138,7 +138,7 @@ export const generate = async (
     scanDepth,
     maxRecursion,
     matchedEntries,
-    promptRegex: getPromptRules(profileId),
+    promptRegex: getPromptRules(profileId, { cardId: chat.character_id, chatId }),
     modeAddendum: fsmEnabled ? modeConfig.addendum : '',
     template: {
       vars: workingVars,

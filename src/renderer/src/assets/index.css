@@ -932,6 +932,12 @@ select {
   padding: 6px;
 }
 
+/* Compact scope picker used inline in artifact-manager rows (regex, etc.). */
+.scope-select {
+  padding: 2px 4px;
+  font-size: 0.78em;
+}
+
 /* ---------- Modal ---------- */
 .modal-overlay {
   position: fixed;

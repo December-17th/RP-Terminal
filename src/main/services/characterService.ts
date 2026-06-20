@@ -189,10 +189,11 @@ export const importCharacterFromFile = (
 
     if (lorebook) saveCharacterLorebook(profileId, newId, lorebook)
 
-    // Route each bundled ST regex script into the profile regex store (one file each).
+    // Route each bundled ST regex script into the profile regex store (one file each),
+    // scoped to this world so it only fires when this card is loaded (Track S §6).
     let regexScripts = 0
     for (const script of collectBundledRegex(card)) {
-      if (regexService.saveRegexScript(profileId, script)) regexScripts++
+      if (regexService.saveRegexScript(profileId, script, 'world', newId)) regexScripts++
     }
 
     if (path.extname(filePath).toLowerCase() === '.png') {

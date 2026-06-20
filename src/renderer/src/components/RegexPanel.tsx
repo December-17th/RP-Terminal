@@ -1,13 +1,21 @@
 import React, { useEffect, useState } from 'react'
 import { Modal } from './Modal'
-import { useRegexStore, RegexRuleDetail, RegexRulePatch } from '../stores/regexStore'
+import {
+  useRegexStore,
+  RegexRuleDetail,
+  RegexRulePatch,
+  ArtifactScope
+} from '../stores/regexStore'
 
 interface Props {
   profileId: string
+  /** Active world (card) + chat — the owners a script binds to for world/session scope. */
+  activeCardId: string | null
+  activeChatId: string | null
 }
 
-export const RegexPanel: React.FC<Props> = ({ profileId }) => {
-  const { scripts, loadScripts, importScripts, remove, updateRule } = useRegexStore()
+export const RegexPanel: React.FC<Props> = ({ profileId, activeCardId, activeChatId }) => {
+  const { scripts, loadScripts, importScripts, remove, updateRule, setScope } = useRegexStore()
   const [expanded, setExpanded] = useState<string | null>(null)
   const [rules, setRules] = useState<Record<string, RegexRuleDetail[]>>({})
   const [editing, setEditing] = useState<RegexRuleDetail | null>(null)
@@ -33,6 +41,13 @@ export const RegexPanel: React.FC<Props> = ({ profileId }) => {
   const patchRule = async (rule: RegexRuleDetail, patch: RegexRulePatch): Promise<void> => {
     await updateRule(profileId, rule.file, rule.index, patch)
     await fetchRules(rule.file)
+  }
+
+  // world binds the script to the active card; session to the active chat; global to none.
+  const changeScope = (file: string, scope: ArtifactScope): void => {
+    const owner =
+      scope === 'world' ? activeCardId : scope === 'session' ? activeChatId : undefined
+    setScope(profileId, file, scope, owner ?? undefined)
   }
 
   return (
@@ -63,6 +78,30 @@ export const RegexPanel: React.FC<Props> = ({ profileId }) => {
                     {s.ruleCount} rule{s.ruleCount === 1 ? '' : 's'}
                   </span>
                 </div>
+                <select
+                  className="scope-select"
+                  value={s.scope}
+                  title="Scope — which sessions this script applies to. World binds it to the active card; Session to the active chat."
+                  onClick={(e) => e.stopPropagation()}
+                  onChange={(e) => changeScope(s.file, e.target.value as ArtifactScope)}
+                >
+                  <option value="global">Global</option>
+                  <option value="world" disabled={!activeCardId}>
+                    World
+                  </option>
+                  <option value="session" disabled={!activeChatId}>
+                    Session
+                  </option>
+                </select>
+                {(s.scope === 'world' || s.scope === 'session') &&
+                  s.owner !== (s.scope === 'world' ? activeCardId : activeChatId) && (
+                    <span
+                      className="entry-keys-preview"
+                      title="Bound to a different world/session than the one active now"
+                    >
+                      other {s.scope}
+                    </span>
+                  )}
                 <button className="btn-ghost" onClick={() => toggleExpand(s.file)}>
                   {expanded === s.file ? '▾' : '▸'}
                 </button>

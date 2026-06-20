@@ -162,9 +162,14 @@ app.whenReady().then(() => {
   ipcMain.handle('clear-logs', () => logService.clearLogs())
 
   // Regex (display beautification scripts)
-  ipcMain.handle('get-render-regex', (_, profileId) => regexService.getRenderRules(profileId))
+  ipcMain.handle('get-render-regex', (_, profileId, ctx) =>
+    regexService.getRenderRules(profileId, ctx)
+  )
   ipcMain.handle('list-regex', (_, profileId) => regexService.listScripts(profileId))
   ipcMain.handle('delete-regex', (_, profileId, file) => regexService.deleteScript(profileId, file))
+  ipcMain.handle('regex-set-scope', (_, profileId, file, scope, owner) =>
+    regexService.setScriptScope(profileId, file, scope, owner)
+  )
   ipcMain.handle('regex-script-rules', (_, profileId, file) =>
     regexService.getScriptRules(profileId, file)
   )

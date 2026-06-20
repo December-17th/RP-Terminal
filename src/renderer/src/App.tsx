@@ -297,10 +297,20 @@ export default function App() {
       loadCharacters(activeProfile.id)
       loadChats(activeProfile.id)
       usePresetStore.getState().load(activeProfile.id)
-      useRegexStore.getState().load(activeProfile.id)
       usePluginsStore.getState().load(activeProfile.id)
     }
   }, [activeProfile])
+
+  // Resolve display regex for the active world/session scope (global ⊕ world(card) ⊕
+  // session(chat)) so a card's bundled regex only fires when that world is loaded.
+  useEffect(() => {
+    if (activeProfile) {
+      useRegexStore.getState().load(activeProfile.id, {
+        cardId: activeCharacter?.id ?? null,
+        chatId: activeChatId ?? null
+      })
+    }
+  }, [activeProfile, activeCharacter?.id, activeChatId])
 
   // Paginated floor view: jump to the newest floor when the floor set changes
   // (new turn, chat switch), and to the in-flight (streaming) page while generating.
@@ -542,7 +552,13 @@ export default function App() {
         )
 
       case 'regex':
-        return <RegexPanel profileId={activeProfile.id} />
+        return (
+          <RegexPanel
+            profileId={activeProfile.id}
+            activeCardId={activeCharacter?.id ?? null}
+            activeChatId={activeChatId ?? null}
+          />
+        )
 
       case 'settings':
         return <SettingsPanel profileId={activeProfile.id} />

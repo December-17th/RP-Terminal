@@ -16,10 +16,19 @@ export interface RenderRegexRule {
   trimStrings: string[]
 }
 
+export type ArtifactScope = 'global' | 'world' | 'session'
+
+export interface ScopeContext {
+  cardId?: string | null
+  chatId?: string | null
+}
+
 export interface RegexScriptInfo {
   file: string
   scriptName: string
   ruleCount: number
+  scope: ArtifactScope
+  owner?: string
 }
 
 export interface RegexRuleDetail extends RenderRegexRule {
@@ -40,10 +49,17 @@ export interface RegexRulePatch {
 interface RegexState {
   rules: RenderRegexRule[]
   scripts: RegexScriptInfo[]
-  load: (profileId: string) => Promise<void>
+  /** Display rules resolved for the active world/session (global ⊕ world ⊕ session). */
+  load: (profileId: string, ctx?: ScopeContext) => Promise<void>
   loadScripts: (profileId: string) => Promise<void>
   importScripts: (profileId: string) => Promise<number>
   remove: (profileId: string, file: string) => Promise<void>
+  setScope: (
+    profileId: string,
+    file: string,
+    scope: ArtifactScope,
+    owner?: string
+  ) => Promise<void>
   updateRule: (
     profileId: string,
     file: string,
@@ -66,12 +82,17 @@ const getRe = (rule: RenderRegexRule): RegExp => {
   return re
 }
 
+// Remember the active world/session context so internal reloads (after edit/delete/
+// scope change) keep resolving the same active set the chat is currently showing.
+let lastCtx: ScopeContext | undefined
+
 export const useRegexStore = create<RegexState>((set, get) => ({
   rules: [],
   scripts: [],
 
-  load: async (profileId) => {
-    const rules = await window.api.getRenderRegex(profileId)
+  load: async (profileId, ctx) => {
+    if (ctx !== undefined) lastCtx = ctx
+    const rules = await window.api.getRenderRegex(profileId, lastCtx)
     set({ rules: rules || [] })
   },
 
@@ -91,6 +112,12 @@ export const useRegexStore = create<RegexState>((set, get) => ({
 
   remove: async (profileId, file) => {
     await window.api.deleteRegex(profileId, file)
+    await get().load(profileId)
+    await get().loadScripts(profileId)
+  },
+
+  setScope: async (profileId, file, scope, owner) => {
+    await window.api.setRegexScope(profileId, file, scope, owner)
     await get().load(profileId)
     await get().loadScripts(profileId)
   },
