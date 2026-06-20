@@ -6,6 +6,12 @@ export default defineConfig({
   main: {
     build: {
       rollupOptions: {
+        // Two entries: the app entry (index) + the sandbox worker thread (T3.2),
+        // each emitted to out/main/. sandboxService spawns out/main/sandboxWorker.js.
+        input: {
+          index: resolve('src/main/index.ts'),
+          sandboxWorker: resolve('src/main/workers/sandboxWorker.ts')
+        },
         // Native/WASM modules: resolve at runtime, don't bundle their binaries.
         external: [
           'better-sqlite3',
