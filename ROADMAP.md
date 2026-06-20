@@ -94,11 +94,14 @@ card schema, rpt-event, logs) — additive, not a rewrite.
 - **Keyword-triggered lorebook stays the primary mechanism.** Vector RAG is an
   optional, additive layer — never a prerequisite.
 
-### Phase F — Relational storage (SQLite)  ⬜  *(foundation — do first)*
-- Migrate JSON-per-record to **`better-sqlite3`**: tables `sessions`,
-  `rpg_entities`, `lorebook_entries`, `episodic_memory`, `floors`.
-- One DB with `session_id` FKs (simpler backup/queries) rather than per-session
-  files, unless hard isolation is required.
+### Phase F — Relational storage (SQLite)  ✅
+- Migrated JSON-per-record to **`better-sqlite3`** (externalized + rebuilt for
+  Electron): tables profiles, settings, presets, characters, lorebooks,
+  lorebook_entries, chats, floors (+ forward-facing rpg_entities,
+  episodic_memory). WAL + FKs; one DB with FKs (not per-session files).
+- One-time, atomic, idempotent JSON→SQLite migration on first run.
+- *Packaging note:* native `.node` must be asar-unpacked when building installers
+  (verify `electron-builder` auto-unpack at Milestone packaging).
 
 ### Phase G — Four-layer prompt-cache assembly  ⬜
 - Rebuild prompt assembly into immutable layers for provider prompt caching:
