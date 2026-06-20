@@ -11,7 +11,6 @@ export interface LogEntry {
 }
 
 const MAX_ENTRIES = 500
-const MAX_DETAIL = 20000
 const buffer: LogEntry[] = []
 
 /**
@@ -22,8 +21,9 @@ const buffer: LogEntry[] = []
 export const log = (level: LogLevel, label: string, detail?: unknown): void => {
   let detailStr: string | undefined
   if (detail !== undefined) {
+    // Never truncate — full request prompts and AI responses are needed for
+    // debugging/troubleshooting.
     detailStr = typeof detail === 'string' ? detail : safeStringify(detail)
-    if (detailStr.length > MAX_DETAIL) detailStr = detailStr.slice(0, MAX_DETAIL) + '\n…(truncated)'
   }
 
   const entry: LogEntry = {
