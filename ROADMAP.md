@@ -75,8 +75,79 @@ Remaining in Phase A: **A3 (token budget)**, swipe/edit messages.
 
 ---
 
+## vNext — CRPG / Visual-Novel engine (Phase F+)
+
+A larger evolution toward a "game cartridge + console" client. Builds on the
+existing foundation (Electron shell, provider/streaming layer, prompt builder,
+card schema, rpt-event, logs) — additive, not a rewrite.
+
+### Locked stack decisions
+- **Node-only, single runtime.** No Python sidecar, no local ML models.
+- **Main process = the engine.** No separate REST/WebSocket app; keep Electron
+  IPC as the frontend↔backend bridge.
+- **Heavy/blocking work → `worker_threads` / `utilityProcess`** (sandbox eval,
+  later vector math) so the UI never janks. Decoupling without a second app.
+- **All model calls go through user-configured APIs** — including the optional
+  intent router and optional embeddings. Nothing runs a local model.
+- **Keep React + Zustand**; solve big-history perf with virtualization
+  (`react-virtuoso`) + a VN text buffer/pagination, not a framework swap.
+- **Keyword-triggered lorebook stays the primary mechanism.** Vector RAG is an
+  optional, additive layer — never a prerequisite.
+
+### Phase F — Relational storage (SQLite)  ⬜  *(foundation — do first)*
+- Migrate JSON-per-record to **`better-sqlite3`**: tables `sessions`,
+  `rpg_entities`, `lorebook_entries`, `episodic_memory`, `floors`.
+- One DB with `session_id` FKs (simpler backup/queries) rather than per-session
+  files, unless hard isolation is required.
+
+### Phase G — Four-layer prompt-cache assembly  ⬜
+- Rebuild prompt assembly into immutable layers for provider prompt caching:
+  L1 static core (byte-identical every turn), L2 semi-static lore/memory,
+  L3 rolling history, L4 volatile state appended at the very bottom.
+- Map L1–L2 onto Anthropic `cache_control` breakpoints / OpenAI prefix caching.
+  *(Verify exact breakpoint count + TTL against current provider docs.)*
+
+### Phase H — Manual FSM modes + persona expansion  ⬜
+- **Manual mode switch** (Explore / Dialogue / Combat) in the UI; each mode tunes
+  output-token ceiling, retrieval breadth, and granularity.
+- **Optional** auto-routing: a user-configured cheap API classifies intent. Off
+  by default; manual is the baseline.
+- Expand the decoupled global persona with concrete sensory-grounded attributes.
+
+### Phase I — Combat math engine + append-only injection  ⬜
+- Sandboxed scripting (`isolated-vm` or `quickjs-emscripten`, **not** node `vm`)
+  in a worker; scripts read/write entity state and do RNG/math.
+- LLM becomes flavor-only; results injected as a compact event block at the
+  bottom of the prompt (L4) to preserve the cache.
+
+### Phase J — Multi-lorebook + protection/mutation (keyword-based)  ⬜
+- Load multiple books per session; per-entry/-book toggles; live mid-session
+  edit. Keyword matching (no embeddings required).
+- Protected/unprotected entries; model tool-requests mutate unprotected lore via
+  a backend gatekeeper; deferred injection at the next mode transition.
+
+### Phase K — Optional embeddings + RAG + auto-routing  ⬜  *(opt-in)*
+- User-configured embedding API; vector store via `sqlite-vec`. Episodic memory
+  summarization + retrieval. Strictly additive to keyword lorebooks; off unless
+  the user enables and configures it.
+
+### Phase L — PNG cartridge + recommended settings  ⬜
+- Extend the importer to unpack a ZIP appended after the PNG `IEND` (manifest,
+  `ui_schema`, `memory_schema`, bundled lorebooks, scripts). Add export/packing.
+- Card-provided **recommended settings** that optionally auto-tune client
+  thresholds/limits on load (always user-overridable).
+
+### Phase M — The Forge (authoring tool)  ⬜  *(last)*
+- In-app workspace using user-configured text/vision APIs to generate schemas,
+  UI layouts, and sandboxed scripts from natural language; preview canvas; pack
+  to a cartridge PNG.
+
+---
+
 ## Known issues / security
 
 - `sandbox: false` + rendering untrusted card HTML is an XSS surface — must land
   DOMPurify + a sandbox model *with* B1, not after.
 - ST-Prompt-Template `<% %>` blocks are currently stripped, not evaluated (C1).
+- Combat/Forge scripts run untrusted author code — require a real JS sandbox
+  (`isolated-vm`/`quickjs`), never node `vm` (Phase I).
