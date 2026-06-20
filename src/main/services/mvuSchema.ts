@@ -55,6 +55,13 @@ export const parseInitVars = (lorebooks: Lorebook[]): Record<string, any> => {
   return acc
 }
 
+/** Deep-merge default layers left→right (later layers override earlier). */
+export const mergeDefaults = (...layers: unknown[]): Record<string, any> => {
+  const acc: Record<string, any> = {}
+  for (const l of layers) if (isObj(l)) deepMerge(acc, l)
+  return acc
+}
+
 /** The starting `stat_data` for a new session: native defaults ⊕ init-var entries. */
 export const buildInitialStatData = (
   defaults: unknown,

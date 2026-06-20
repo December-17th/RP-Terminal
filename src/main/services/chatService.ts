@@ -4,7 +4,8 @@ import { ChatSession, FloorFile, ChatMode, CHAT_MODES } from '../types/chat'
 import { LorebookEntry } from '../types/character'
 import { getCharacter } from './characterService'
 import { getLorebookById } from './lorebookService'
-import { buildInitialStatData } from './mvuSchema'
+import { buildInitialStatData, mergeDefaults } from './mvuSchema'
+import { extractMvuSchema, schemaDefaults } from './mvuZod'
 import { saveFloor, deleteFloorAndSubsequent, updateFloorFields } from './floorService'
 
 interface ChatRow {
@@ -182,7 +183,7 @@ export const removeLorebookIdFromChats = (profileId: string, lorebookId: string)
   }
 }
 
-export const createChat = (profileId: string, characterId: string): ChatSession => {
+export const createChat = async (profileId: string, characterId: string): Promise<ChatSession> => {
   const now = new Date().toISOString()
   const id = uuidv4()
   getDb()
@@ -194,9 +195,14 @@ export const createChat = (profileId: string, characterId: string): ChatSession 
   // Seed the opening greeting (first_mes) as floor 0, with no user message.
   const card = getCharacter(profileId, characterId)
   if (card?.data.first_mes) {
-    // Seed initial MVU/RPG state (R2): native defaults ⊕ [initvar] entries from the
-    // character's own lorebook, so the status panel starts populated before turn 1.
-    const defaults = card.data.extensions?.rp_terminal?.state_schema?.defaults
+    // Seed initial MVU/RPG state: native state_schema.defaults, plus (R4) a card-shipped
+    // Zod data_schema's defaults extracted in the sandbox, then [initvar] entries on top.
+    const ext = card.data.extensions?.rp_terminal
+    let defaults: unknown = ext?.state_schema?.defaults
+    if (typeof ext?.data_schema === 'string' && ext.data_schema.trim()) {
+      const node = await extractMvuSchema(ext.data_schema)
+      defaults = mergeDefaults(schemaDefaults(node ?? undefined), ext?.state_schema?.defaults)
+    }
     const charBook = getLorebookById(profileId, characterId)
     const statData = buildInitialStatData(defaults, charBook ? [charBook] : [])
 

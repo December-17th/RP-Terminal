@@ -50,6 +50,10 @@ export const RPTerminalExtSchema = z.object({
   css: z.string().default(''),
   theme: z.record(z.string(), z.any()).default({}),
   state_schema: z.record(z.string(), z.any()).default({}),
+  /** MVU Zod `data_schema` source (JS). Run sandboxed (R4) to derive stat_data
+   * defaults + validation. Native cards can instead put plain defaults in
+   * `state_schema.defaults`. */
+  data_schema: z.string().default(''),
   scripts: z.array(z.object({ name: z.string(), code: z.string() })).default([]),
   game_rules: z.record(z.string(), z.any()).default({}),
   assets: z.record(z.string(), z.string()).default({})

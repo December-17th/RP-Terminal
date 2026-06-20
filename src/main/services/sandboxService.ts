@@ -1,4 +1,5 @@
 import { Worker } from 'worker_threads'
+import fs from 'fs'
 import path from 'path'
 import { getSandbox, runScript, SandboxJob, SandboxResult } from './sandboxRunner'
 import { log } from './logService'
@@ -44,6 +45,12 @@ const recycleWorker = (reason: string): void => {
 const ensureWorker = (): Worker | null => {
   if (worker) return worker
   if (workerBroken) return null
+  // The Worker constructor reports a missing file via an async 'error' (not a throw),
+  // so check up front: no bundle (e.g. under Vitest) → use the in-process path.
+  if (!fs.existsSync(workerPath())) {
+    workerBroken = true
+    return null
+  }
   try {
     const w = new Worker(workerPath())
     w.on('message', (m: { id: number; res: SandboxResult }) => {

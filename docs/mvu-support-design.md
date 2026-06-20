@@ -139,15 +139,16 @@ A new pure parser `parseMvuCommands(text)` (sibling to `parseContent`):
 
 ## 6. Schema layer + `mvu_zod` (R2 / R4)
 
-- **Clean-room `mvu_zod`** module exposing `registerMvuSchema(schemaOrFactory)` and re-exporting the
-  project's **Zod 4** as `z` — API-compatible with what card `data_schema` scripts import, so they
-  run unmodified (after we rewrite the remote import specifier to our local module).
-- **Running the card's `data_schema` (untrusted JS that builds a Zod schema):** execute it in the
-  **T3.2 quickjs worker sandbox** with our `mvu_zod`/`z` injected and the remote `import` rewritten.
-  Capture two things across the boundary: (1) the **default `stat_data`** (parse `{}` → defaults,
-  JSON-serializable), and (2) keep the live schema **in-sandbox** for per-turn `safeParse`
-  validation/coercion (pass `stat_data` in, get the validated object + issues out). Deterministic,
-  isolated, testable — and the reason MVU support **reuses the T3.2 worker harness**.
+- **Clean-room `mvu_zod` (recording shim)** — rather than bundle real Zod into the sandbox, inject a
+  Zod-shaped *recording* builder (`MVU_ZOD_SHIM`): `z.object/string/number/array/record/enum/...` with
+  chainable `.prefault()/.default()/.describe()/.optional()/...` that capture the schema's *structure*
+  as a plain tree, and `registerMvuSchema(schema)` stores it. Card ES-module imports are rewritten to
+  the injected globals (`__mvuImports`); `$` (jQuery-ready), `_` (lodash), `YAML`, `toastr` are stubbed.
+- **Running the card's `data_schema`:** execute it in the **T3.2 sandbox**; the recorded tree
+  serializes out (functions drop on JSON round-trip). A Node-side interpreter (`schemaDefaults`,
+  `validateStatData`) derives the default `stat_data` (seeded in `createChat`) and does light
+  coercion. This avoids running real Zod or remote CDN imports inside the VM. Full Zod fidelity
+  (transforms/refinements, per-turn reconcile wiring, schema-derived UI order) is a later hardening.
 - Before R4 lands, R2 can drive the same plumbing from a **native JSON-described schema** authored
   in RP Terminal, so init/validation/auto-UI work without executing card JS.
 
@@ -238,7 +239,7 @@ MVU's schema + front-end ship **in a lorebook**, not a card. Add a lorebook-scri
 | **R1 — Command protocol** | `parseMvuCommands` + applier (`<UpdateVariable>` + `_.set/add/delta/assign/insert/remove`, JSON5 args, `delta_data`), folded in `generate()` beside `<rpt-event>`. Pure + tested. **Live MVU state tracking.** | `applyEvent`, `setPath`/`getPath`, `contentParser` |
 | **R2 — Schema + init** | ✅ init/defaults seeding — native `state_schema.defaults` ⊕ `[initvar]` JSON code blocks (deep-merged) → floor-0 `stat_data`, so the panel is populated before turn 1 (`mvuSchema`, wired in `createChat`). ⬜ deferred: YAML init blocks, the `chat` var scope (→ R5), and reconcile/validation (→ R4 Zod). | Zod 4, `chats` migration pattern |
 | **R3 — RPG UI upgrade** | ✅ recursive `StatView` auto-renders `stat_data` (collapsible object groups, arrays, value/description tuples, value/max bars) with tokenized styles; shown in the right panel for cards without a `ui_layout`; live via the latest-floor variables. ⬜ deferred: schema-derived ordering/labels (pairs with R4), `mag_*` event push (R5), two-sided layout (separate todo). | `LayoutRenderer`, latest-floor variables |
-| **R4 — Card Zod schema in the worker** | Clean-room `mvu_zod` (Zod 4 + `registerMvuSchema`) + import rewriting; run a card's `data_schema` in the **T3.2 quickjs worker** → defaults + per-turn validation. **Full compat with existing MVU cards.** | **T3.2 worker harness**, Zod |
+| **R4 — Card Zod schema in the sandbox** | ✅ clean-room recording `mvu_zod` shim + import rewriting runs a card's `data_schema` in the **T3.2 sandbox** and captures a serializable schema tree → `schemaDefaults` seeds `stat_data` in `createChat` (card field `extensions.rp_terminal.data_schema`); light `validateStatData`. ⬜ deferred: transforms/refinements, per-turn reconcile wiring, schema-derived UI order. | **T3.2 worker harness** |
 | **R5 — Events + front-end + lorebook scripts** | Emit `mag_*` events to iframes; extend `TAVERN_SHIM` (`{type}` scopes, `updateVariablesWith`, message reads) + provide `_`/`YAML`; load schema + UI scripts shipped in lorebooks. | `bridgeShim`/`CardScriptHost`, lorebook schema |
 
 **Dependency notes:** R1 is standalone and the highest-value first slice (MVU cards start tracking
