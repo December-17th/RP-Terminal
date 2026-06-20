@@ -81,7 +81,7 @@ Remaining in Phase A: message swipes (edit is done). Phase A is otherwise comple
   sub-generation; explicit stop conditions.
 - ⬜ **D2. State-schema + widget editor UI**; richer status widgets.
 
-## Phase P — Plugin / extension system  🚧 (design)
+## Phase P — Plugin / extension system  🚧 (P1 built)
 
 Third-party plugins (js-slash-runner class). **Design doc:**
 [docs/plugin-system-design.md](docs/plugin-system-design.md). Changes the threat
@@ -94,8 +94,15 @@ compatibility shim.
 - ✅ **D0. Design doc** — taxonomy (card scripts vs app extensions), manifest,
   `sandbox="allow-scripts"` iframe + postMessage RPC, permission model, `rpt.v1` API,
   slash/STScript-subset, compat-shim strategy, phased plan, open questions.
-- ⬜ **P1. Card-script runtime** — sandboxed iframe + bridge + core API
-  (vars/chat-read/generate/ui); runs `card.extensions.rp_terminal.scripts`.
+- ✅ **P1. Card-script runtime** — `sandbox="allow-scripts"` opaque-origin iframe
+  (network-blocking CSP) + `rpt.v1` postMessage bridge: `vars`/`global` get/set/inc/dec/del,
+  `chat.getMessages`/`getLastMessage`, `generate` (permission-prompted, per-card grant),
+  `ui.toast`, and `on('ready'|'generation:start'|'generation:end'|'chat:changed')`. Runs
+  `card.extensions.rp_terminal.scripts` in the right sidebar; local-var writes land on the
+  latest floor and sync the status widgets live. Per-card enable toggle. `rpt.log` surfaces
+  in the Logs panel. Mock card ships a demo script. (`pluginService` + `bridgeShim` +
+  `CardScriptHost`.) In-app **Scripts** tab (`ScriptManager`) to add/edit/delete a card's
+  scripts with live reload. Developer API reference: [docs/plugin-api.md](docs/plugin-api.md).
 - ⬜ **P2. Plugin host/loader** — manifest, install/enable/disable, permission
   prompts, Plugins tab.
 - ⬜ **P3. App-extension contributions** — register panels/buttons/commands + hooks.

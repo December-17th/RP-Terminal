@@ -139,6 +139,10 @@ for host→plugin events.
 
 ## 6. The Plugin API (`rpt.v1`) — versioned
 
+> **Developer reference:** the shipped P1 surface is documented in detail in
+> [plugin-api.md](plugin-api.md) (card-script authoring guide + full `rpt.v1`
+> method/event reference). The sketch below is the broader design target.
+
 Every method is gated by a manifest permission. Sketch (promise-based):
 
 - **vars** (`vars:read`/`vars:write`) — `getvar/setvar/incvar/decvar` (same engine as
@@ -216,8 +220,8 @@ for v1 and degrade gracefully (unknown calls no-op + warn in the Logs panel).
 
 | Phase | Deliverable | Reuses |
 |---|---|---|
-| **D0** | This design doc + decisions on the open questions (§12). | — |
-| **D1** | **Card-script runtime**: sandboxed `allow-scripts` iframe + postMessage RPC bridge + core API (vars, chat:read, generate, ui:toast/in-message panel). Runs `card.extensions.rp_terminal.scripts`. *This alone delivers js-slash-runner-style interactivity, safely.* | B1 iframe, vars engine, IPC |
+| **D0** ✅ | This design doc + decisions on the open questions (§12). | — |
+| **D1/P1** ✅ | **Card-script runtime**: sandboxed `allow-scripts` opaque-origin iframe (network-blocking CSP) + postMessage RPC bridge (`rpt.v1`) + core API (vars/global, chat:read, generate [permission-prompted], ui:toast, lifecycle events). Runs `card.extensions.rp_terminal.scripts` as a right-sidebar panel; local-var writes land on the latest floor and sync the status widgets. Per-card enable + `generate` grant persisted in `plugin-grants.json`. Implemented in `pluginService` (main) + `bridgeShim` + `CardScriptHost` (renderer). *This alone delivers js-slash-runner-style interactivity, safely.* | B1 iframe, vars engine, IPC |
 | **D2** | **Plugin host/loader**: manifest, `plugins/` dir, install/enable/disable, permission prompts, Plugins tab. | file storage, SQLite |
 | **D3** | **App-extension contributions**: `registerPanel/registerButton/registerCommand`, event hooks, shell UI injection points. | tabbed shell |
 | **D4** | **Slash-command runtime (subset)** + **Tavern Helper shim**. | D1 bridge |

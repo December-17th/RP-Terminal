@@ -15,6 +15,7 @@ import * as logService from './services/logService'
 import * as migrationService from './services/migrationService'
 import * as regexService from './services/regexService'
 import * as templateService from './services/templateService'
+import * as pluginService from './services/pluginService'
 
 function createWindow(): void {
   // Create the browser window.
@@ -77,24 +78,26 @@ app.whenReady().then(() => {
   ipcMain.handle('get-profiles', () => profileService.getProfiles())
   ipcMain.handle('create-profile', (_, name) => profileService.createProfile(name))
   ipcMain.handle('get-settings', (_, profileId) => settingsService.getSettings(profileId))
-  ipcMain.handle('save-settings', (_, profileId, settings) => settingsService.saveSettings(profileId, settings))
+  ipcMain.handle('save-settings', (_, profileId, settings) =>
+    settingsService.saveSettings(profileId, settings)
+  )
   ipcMain.handle('get-characters', (_, profileId) => characterService.getCharacters(profileId))
-  ipcMain.handle('save-character', (_, profileId, charId, card) => characterService.saveCharacter(profileId, charId, card))
-  
+  ipcMain.handle('save-character', (_, profileId, charId, card) =>
+    characterService.saveCharacter(profileId, charId, card)
+  )
+
   ipcMain.handle('import-character-dialog', async (event, profileId) => {
-    const { dialog } = require('electron');
+    const { dialog } = require('electron')
     const result = await dialog.showOpenDialog(BrowserWindow.fromWebContents(event.sender)!, {
       properties: ['openFile'],
-      filters: [
-        { name: 'Character Cards', extensions: ['png', 'json'] }
-      ]
-    });
-    
+      filters: [{ name: 'Character Cards', extensions: ['png', 'json'] }]
+    })
+
     if (!result.canceled && result.filePaths.length > 0) {
-      return characterService.importCharacterFromFile(profileId, result.filePaths[0]);
+      return characterService.importCharacterFromFile(profileId, result.filePaths[0])
     }
-    return null;
-  });
+    return null
+  })
 
   ipcMain.handle('get-chats', (_, profileId) => chatService.getChats(profileId))
   ipcMain.handle('create-chat', (_, profileId, charId) => chatService.createChat(profileId, charId))
@@ -144,9 +147,7 @@ app.whenReady().then(() => {
       .filter(Boolean)
     return names.length
   })
-  ipcMain.handle('delete-chat', (_, profileId, chatId) =>
-    chatService.deleteChat(profileId, chatId)
-  )
+  ipcMain.handle('delete-chat', (_, profileId, chatId) => chatService.deleteChat(profileId, chatId))
   ipcMain.handle('edit-floor', (_, profileId, chatId, floorIndex, userContent, responseContent) =>
     chatService.editFloorContent(profileId, chatId, floorIndex, userContent, responseContent)
   )
@@ -156,7 +157,9 @@ app.whenReady().then(() => {
 
   // Presets (file-based, multiple per profile)
   ipcMain.handle('list-presets', (_, profileId) => presetService.listPresets(profileId))
-  ipcMain.handle('get-active-preset-id', (_, profileId) => presetService.getActivePresetId(profileId))
+  ipcMain.handle('get-active-preset-id', (_, profileId) =>
+    presetService.getActivePresetId(profileId)
+  )
   ipcMain.handle('get-active-preset', (_, profileId) => presetService.getActivePreset(profileId))
   ipcMain.handle('get-preset', (_, profileId, presetId) =>
     presetService.getPresetById(profileId, presetId)
@@ -191,6 +194,27 @@ app.whenReady().then(() => {
   )
   ipcMain.handle('save-lorebook', (_, profileId, charId, lorebook) =>
     lorebookService.saveCharacterLorebook(profileId, charId, lorebook)
+  )
+
+  // Card-script runtime (P1) — permission-checked engine bridge for sandboxed scripts.
+  ipcMain.handle('plugin-vars', (_, profileId, chatId, action) =>
+    pluginService.pluginVars(profileId, chatId, action)
+  )
+  ipcMain.handle('plugin-get-vars', (_, profileId, chatId) =>
+    pluginService.getVars(profileId, chatId)
+  )
+  ipcMain.handle('plugin-get-messages', (_, profileId, chatId) =>
+    pluginService.getMessages(profileId, chatId)
+  )
+  ipcMain.handle('plugin-get-grants', (_, profileId, cardId) =>
+    pluginService.getGrants(profileId, cardId)
+  )
+  ipcMain.handle('plugin-set-grants', (_, profileId, cardId, patch) =>
+    pluginService.setGrants(profileId, cardId, patch)
+  )
+  // Surface a card script's rpt.log(...) output in the in-app Logs panel.
+  ipcMain.handle('plugin-log', (_, label, message) =>
+    logService.log('info', `⚙ script · ${label}`, message)
   )
 
   createWindow()
