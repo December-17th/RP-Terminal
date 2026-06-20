@@ -171,6 +171,12 @@ export const CardScriptHost: React.FC<Props> = ({
       isGenerating: () => useChatStore.getState().isGenerating
     })
 
+  // Keep the postMessage handler pointed at the LATEST dispatcher so a prop change or a
+  // hot reload never leaves it calling a stale closure (which silently drops newly-wired
+  // RPCs like ui.registerButton).
+  const handleRpcRef = useRef(handleRpc)
+  handleRpcRef.current = handleRpc
+
   // Unregister this frame's slash commands + toolbar buttons when it unmounts.
   useEffect(() => {
     const cleanups = cmdCleanups.current
@@ -197,7 +203,8 @@ export const CardScriptHost: React.FC<Props> = ({
       } else if (d.__rptready) {
         emit('ready', {})
       } else if (d.__rpt) {
-        handleRpc(String(d.method), Array.isArray(d.args) ? d.args : [])
+        handleRpcRef
+          .current(String(d.method), Array.isArray(d.args) ? d.args : [])
           .then((result) => post({ __rptres: 1, id: d.id, ok: true, result }))
           .catch((err) =>
             post({ __rptres: 1, id: d.id, ok: false, error: err?.message || String(err) })
@@ -206,7 +213,7 @@ export const CardScriptHost: React.FC<Props> = ({
     }
     window.addEventListener('message', onMessage)
     return () => window.removeEventListener('message', onMessage)
-    // handleRpc closes over current props; the effect re-binds when they change.
+    // Uses handleRpcRef so it always dispatches through the latest closure.
   }, [profileId, chatId, cardId, cardName])
 
   // Forward generation/chat lifecycle to scripts so reactive UIs can refresh.
