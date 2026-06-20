@@ -4,6 +4,7 @@ import { useSettingsStore, ApiPreset, Settings } from '../stores/settingsStore'
 const PROVIDERS = [
   { value: 'openai', label: 'OpenAI' },
   { value: 'anthropic', label: 'Anthropic' },
+  { value: 'google', label: 'Google Gemini' },
   { value: 'openrouter', label: 'OpenRouter' },
   { value: 'custom', label: 'Custom (OpenAI Compatible)' }
 ]

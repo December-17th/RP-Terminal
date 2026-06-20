@@ -20,6 +20,9 @@ export const streamProvider = async (
   if (settings.api.provider === 'anthropic') {
     return streamAnthropic(settings, messages, params, onDelta, signal)
   }
+  if (settings.api.provider === 'google' || settings.api.provider === 'gemini') {
+    return streamGemini(settings, messages, params, onDelta, signal)
+  }
   return streamOpenAICompatible(settings, messages, params, onDelta, signal)
 }
 
@@ -254,6 +257,123 @@ const streamAnthropic = async (
       'info',
       `cache — read ${usage.cache_read_input_tokens ?? 0} · write ${usage.cache_creation_input_tokens ?? 0} · fresh ${usage.input_tokens ?? 0} tok`
     )
+  }
+  return full
+}
+
+/**
+ * Build a Gemini request body from our provider-neutral messages + params. Gemini
+ * differs from OpenAI/Anthropic: the system prompt is a top-level `systemInstruction`,
+ * the assistant role is `model`, turns carry `parts: [{ text }]`, and sampler knobs
+ * live under camelCase `generationConfig`. The LEADING system run is hoisted into
+ * `systemInstruction`; a system message that appears AFTER the conversation begins is
+ * a positional injection (depth-placed lore/persona) — Gemini has no inline system
+ * role, so it is demoted to a user turn. Consecutive same-role turns are merged
+ * (Gemini requires alternation). Exported pure for unit testing.
+ */
+export const buildGeminiBody = (
+  messages: ChatMessage[],
+  params: PresetParameters
+): Record<string, unknown> => {
+  let systemText = ''
+  let convoStarted = false
+  const convo: Array<{ role: 'user' | 'model'; text: string }> = []
+  for (const m of messages) {
+    if (m.role === 'system' && !convoStarted) {
+      systemText += m.content + '\n'
+      continue
+    }
+    convoStarted = true
+    convo.push({ role: m.role === 'assistant' ? 'model' : 'user', text: m.content })
+  }
+
+  const merged: Array<{ role: 'user' | 'model'; text: string }> = []
+  for (const c of convo) {
+    const last = merged[merged.length - 1]
+    if (last && last.role === c.role) last.text += '\n\n' + c.text
+    else merged.push({ ...c })
+  }
+  const contents = merged.map((c) => ({ role: c.role, parts: [{ text: c.text }] }))
+
+  // Map our sampler params onto Gemini's camelCase generationConfig (it ignores the rest).
+  const generationConfig: Record<string, unknown> = {}
+  if (params.temperature !== undefined) generationConfig.temperature = params.temperature
+  if (params.max_tokens !== undefined) generationConfig.maxOutputTokens = params.max_tokens
+  if (params.top_p !== undefined) generationConfig.topP = params.top_p
+  if (params.top_k !== undefined) generationConfig.topK = params.top_k
+  if (params.frequency_penalty !== undefined)
+    generationConfig.frequencyPenalty = params.frequency_penalty
+  if (params.presence_penalty !== undefined)
+    generationConfig.presencePenalty = params.presence_penalty
+
+  const body: Record<string, unknown> = { contents, generationConfig }
+  if (systemText.trim()) body.systemInstruction = { parts: [{ text: systemText.trim() }] }
+  return body
+}
+
+/**
+ * Stream from Google's Gemini (Generative Language) API. The model name goes in the
+ * URL path; `?alt=sse` yields a `data:`-framed event stream that `readSse` can read.
+ */
+const streamGemini = async (
+  settings: Settings,
+  messages: ChatMessage[],
+  params: PresetParameters,
+  onDelta: DeltaCallback,
+  signal?: AbortSignal
+): Promise<string> => {
+  const { endpoint, api_key, model } = settings.api
+  const base = (endpoint || 'https://generativelanguage.googleapis.com/v1beta').replace(/\/$/, '')
+  const modelName = model || 'gemini-2.5-flash'
+  const url = `${base}/models/${encodeURIComponent(modelName)}:streamGenerateContent?alt=sse`
+
+  const body = buildGeminiBody(messages, params)
+
+  const response = await fetch(url, {
+    method: 'POST',
+    // Key via header (not the ?key= query param) so it never lands in a logged URL.
+    headers: { 'Content-Type': 'application/json', 'x-goog-api-key': api_key },
+    body: JSON.stringify(body),
+    signal
+  })
+
+  if (!response.ok) {
+    const errorText = await response.text()
+    throw new Error(`Gemini API Error: ${response.status} ${response.statusText} - ${errorText}`)
+  }
+
+  let full = ''
+  let usage: any = null
+  try {
+    await readSse(response, (data) => {
+      try {
+        const json = JSON.parse(data)
+        const parts = json.candidates?.[0]?.content?.parts
+        if (Array.isArray(parts)) {
+          for (const p of parts) {
+            if (typeof p?.text === 'string' && p.text) {
+              full += p.text
+              onDelta(p.text)
+            }
+          }
+        }
+        if (json.usageMetadata) usage = json.usageMetadata
+      } catch {
+        // ignore keep-alive / non-JSON lines
+      }
+    })
+  } catch (e) {
+    if (signal?.aborted) return full // user stopped — keep whatever streamed
+    throw e
+  }
+  if (usage) {
+    log(
+      'info',
+      `gemini — prompt ${usage.promptTokenCount ?? 0} · output ${usage.candidatesTokenCount ?? 0} · cached ${usage.cachedContentTokenCount ?? 0} tok`
+    )
+  }
+  if (!full && !signal?.aborted) {
+    throw new Error('Gemini stream produced no text')
   }
   return full
 }
