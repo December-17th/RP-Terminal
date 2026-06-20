@@ -146,9 +146,15 @@ const buildHistory = (
  * conversation region (never into the cached system prefix), and applied bottom-up
  * so earlier inserts don't shift the targets of later ones.
  */
+interface DepthItem {
+  depth: number
+  content: string
+  role?: ChatMessage['role']
+}
+
 const applyDepthInjections = (
   messages: ChatMessage[],
-  items: Array<{ depth: number; content: string }>,
+  items: DepthItem[],
   convoStart: number,
   hasTrailingUser: boolean
 ): void => {
@@ -158,10 +164,11 @@ const applyDepthInjections = (
   const planned = items
     .map((it) => ({
       idx: Math.max(start, Math.min(base - it.depth, maxIdx)),
-      content: it.content
+      content: it.content,
+      role: it.role ?? 'system'
     }))
     .sort((a, b) => b.idx - a.idx)
-  for (const p of planned) messages.splice(p.idx, 0, { role: 'system', content: p.content })
+  for (const p of planned) messages.splice(p.idx, 0, { role: p.role, content: p.content })
 }
 
 /**
@@ -216,6 +223,7 @@ export const buildPrompt = (args: BuildPromptArgs): ChatMessage[] => {
     .join('\n\n')
 
   const messages: ChatMessage[] = []
+  const presetDepthItems: DepthItem[] = []
   let historyEmitted = false
   let worldInfoEmitted = false
 
@@ -249,7 +257,14 @@ export const buildPrompt = (args: BuildPromptArgs): ChatMessage[] => {
       }
       default: {
         const content = render(block.content)
-        if (content) messages.push({ role: block.role, content })
+        if (!content) break
+        // A literal block with a numeric depth is injected into the history (like a
+        // lorebook/persona entry) rather than emitted here in preset order.
+        if (block.injection_depth != null) {
+          presetDepthItems.push({ depth: block.injection_depth, content, role: block.role })
+        } else {
+          messages.push({ role: block.role, content })
+        }
       }
     }
   }
@@ -289,7 +304,7 @@ export const buildPrompt = (args: BuildPromptArgs): ChatMessage[] => {
     if (!byDepth.has(d)) byDepth.set(d, [])
     byDepth.get(d)!.push(c)
   }
-  const depthItems = [...byDepth.entries()].map(([depth, contents]) => ({
+  const depthItems: DepthItem[] = [...byDepth.entries()].map(([depth, contents]) => ({
     depth,
     content: `World Info:\n${contents.join('\n\n')}`
   }))
@@ -299,6 +314,8 @@ export const buildPrompt = (args: BuildPromptArgs): ChatMessage[] => {
       content: `[${userName}'s Persona]\n${personaContent}`
     })
   }
+  // Depth-tagged preset prompt blocks (keep their authored role).
+  depthItems.push(...presetDepthItems)
   if (depthItems.length) {
     const convoStart = messages.findIndex((m) => m.role !== 'system')
     applyDepthInjections(messages, depthItems, convoStart, userAction !== '')

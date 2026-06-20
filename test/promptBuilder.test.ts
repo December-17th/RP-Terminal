@@ -159,6 +159,24 @@ describe('buildPrompt', () => {
     expect(wi?.content).toContain('BBB')
   })
 
+  it('injects a depth-tagged literal preset block into history, keeping its role', () => {
+    const messages = buildPrompt({
+      card: card(),
+      preset: preset([
+        blk('char_description'),
+        { ...blk('none', 'AUTHOR NOTE', 'assistant'), injection_depth: 1 },
+        blk('chat_history')
+      ]),
+      lorebooks: [],
+      floors: [floor(0, 'u0', 'a0')],
+      userAction: 'go'
+    })
+    expect(last(messages).content).toBe('go')
+    const penultimate = messages[messages.length - 2]
+    expect(penultimate.content).toBe('AUTHOR NOTE')
+    expect(penultimate.role).toBe('assistant')
+  })
+
   it('safety nets: an empty preset still injects world info and history', () => {
     const messages = buildPrompt({
       card: card(),

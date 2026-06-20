@@ -72,6 +72,23 @@ describe('parseStPreset', () => {
     expect(preset.parameters.top_p).toBe(0.95)
   })
 
+  it('maps ST per-prompt injection_position/depth onto injection_depth', () => {
+    const preset = parseStPreset(
+      {
+        prompts: [
+          { identifier: 'atDepth', content: 'x', injection_position: 1, injection_depth: 3 },
+          { identifier: 'atDepthDefault', content: 'y', injection_position: 1 },
+          { identifier: 'inline', content: 'z', injection_position: 0 }
+        ]
+      },
+      'f'
+    )
+    const by = (id: string): any => preset.prompts.find((p: any) => p.identifier === id)
+    expect(by('atDepth').injection_depth).toBe(3)
+    expect(by('atDepthDefault').injection_depth).toBe(4) // ST default depth
+    expect(by('inline').injection_depth).toBeNull()
+  })
+
   it('falls back to defaults and the fallback name', () => {
     const preset = parseStPreset({ prompts: [] }, 'My Fallback')
     expect(preset.name).toBe('My Fallback')

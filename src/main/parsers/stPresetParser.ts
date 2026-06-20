@@ -71,13 +71,16 @@ export const parseStPreset = (raw: any, fallbackName: string): any | null => {
 
     // Literal block — keep only if it actually carries content.
     if (!src || !src.content) continue
+    // ST injection_position: 1 = absolute (in-chat at depth), else relative (inline).
+    const atDepth = src.injection_position === 1
     prompts.push({
       identifier: id,
       name: src.name || id,
       role: src.role || 'system',
       content: src.content,
       enabled: item.enabled !== false && src.enabled !== false,
-      marker: 'none'
+      marker: 'none',
+      injection_depth: atDepth ? (num(src.injection_depth) ?? 4) : null
     })
   }
 

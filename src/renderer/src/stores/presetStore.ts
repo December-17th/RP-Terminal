@@ -15,6 +15,8 @@ export interface PromptBlock {
   content: string
   enabled: boolean
   marker: PromptMarker
+  /** Inject a literal block at this depth (msgs from the bottom); null = inline. */
+  injection_depth: number | null
 }
 
 export interface PresetParameters {
@@ -145,7 +147,8 @@ export const usePresetStore = create<PresetState>((set, get) => ({
           role: 'system',
           content: '',
           enabled: true,
-          marker: 'none'
+          marker: 'none',
+          injection_depth: null
         }
       ]
     })),

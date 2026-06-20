@@ -166,6 +166,11 @@ export const PresetManager: React.FC<Props> = ({ profileId }) => {
                     ) : (
                       <span className="role-badge">{block.role}</span>
                     )}
+                    {block.injection_depth != null && (
+                      <span className="marker-badge" title="Injected into chat history at this depth">
+                        @{block.injection_depth}
+                      </span>
+                    )}
                     <div className="prompt-actions">
                       <button className="btn-ghost" disabled={i === 0} onClick={() => moveBlock(i, -1)}>
                         ▲
@@ -234,6 +239,23 @@ export const PresetManager: React.FC<Props> = ({ profileId }) => {
                 onChange={(e) => updateBlock(editing, { content: e.target.value })}
                 placeholder="Prompt text. Supports {{char}} and {{user}}."
               />
+
+              <label className="field-label">Injection Depth</label>
+              <input
+                type="number"
+                min={0}
+                placeholder="inline"
+                value={editingBlock.injection_depth ?? ''}
+                onChange={(e) =>
+                  updateBlock(editing, {
+                    injection_depth: e.target.value === '' ? null : Number(e.target.value)
+                  })
+                }
+              />
+              <div className="dynamic-note">
+                Blank = inline, in preset order. A number injects this block into the chat
+                history that many messages up from the bottom (like a depth lorebook entry).
+              </div>
             </>
           )}
         </Modal>

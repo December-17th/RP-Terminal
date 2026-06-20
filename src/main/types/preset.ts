@@ -37,7 +37,11 @@ export const PromptBlockSchema = z.object({
   role: z.enum(['system', 'user', 'assistant']).default('system'),
   content: z.string().default(''),
   enabled: z.boolean().default(true),
-  marker: PromptMarker.default('none')
+  marker: PromptMarker.default('none'),
+  /** Inject a literal block into the chat history this many messages up from the
+   * bottom instead of inline. null = inline, in preset order (the default).
+   * Ignored for marker blocks (char_description, chat_history, …). */
+  injection_depth: z.number().nullable().default(null)
 })
 export type PromptBlock = z.infer<typeof PromptBlockSchema>
 
@@ -66,7 +70,8 @@ export const getDefaultPreset = (): Preset => ({
       content:
         'You are an expert roleplay partner and game master. Stay in character as {{char}}. Write vivid, immersive prose in response to {{user}}. Never break character or mention you are an AI.',
       enabled: true,
-      marker: 'none'
+      marker: 'none',
+      injection_depth: null
     },
     {
       identifier: 'char_description',
@@ -74,7 +79,8 @@ export const getDefaultPreset = (): Preset => ({
       role: 'system',
       content: '',
       enabled: true,
-      marker: 'char_description'
+      marker: 'char_description',
+      injection_depth: null
     },
     {
       identifier: 'mes_example',
@@ -82,7 +88,8 @@ export const getDefaultPreset = (): Preset => ({
       role: 'system',
       content: '',
       enabled: true,
-      marker: 'mes_example'
+      marker: 'mes_example',
+      injection_depth: null
     },
     {
       identifier: 'world_info',
@@ -90,7 +97,8 @@ export const getDefaultPreset = (): Preset => ({
       role: 'system',
       content: '',
       enabled: true,
-      marker: 'world_info'
+      marker: 'world_info',
+      injection_depth: null
     },
     {
       identifier: 'chat_history',
@@ -98,7 +106,8 @@ export const getDefaultPreset = (): Preset => ({
       role: 'system',
       content: '',
       enabled: true,
-      marker: 'chat_history'
+      marker: 'chat_history',
+      injection_depth: null
     },
     {
       identifier: 'post_history',
@@ -106,7 +115,8 @@ export const getDefaultPreset = (): Preset => ({
       role: 'system',
       content: '',
       enabled: true,
-      marker: 'post_history'
+      marker: 'post_history',
+      injection_depth: null
     }
   ]
 })
