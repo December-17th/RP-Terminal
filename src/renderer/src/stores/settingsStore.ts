@@ -15,7 +15,6 @@ export interface Settings {
     endpoint: string;
     api_key: string;
     model: string;
-    default_params: Record<string, any>;
   };
   api_presets: ApiPreset[];
   active_api_preset_id: string;

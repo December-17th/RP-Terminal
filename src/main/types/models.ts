@@ -24,7 +24,6 @@ export interface Settings {
     endpoint: string
     api_key: string
     model: string
-    default_params: Record<string, any>
   }
   // Saved connection presets the user can switch between.
   api_presets: ApiPreset[]

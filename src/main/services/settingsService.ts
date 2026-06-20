@@ -6,11 +6,7 @@ export const getDefaultSettings = (): Settings => ({
     provider: 'openai',
     endpoint: 'https://api.openai.com/v1',
     api_key: '',
-    model: 'gpt-3.5-turbo',
-    default_params: {
-      temperature: 0.9,
-      max_tokens: 4000
-    }
+    model: 'gpt-3.5-turbo'
   },
   api_presets: [],
   active_api_preset_id: '',

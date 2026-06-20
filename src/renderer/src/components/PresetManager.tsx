@@ -70,6 +70,10 @@ export const PresetManager: React.FC<Props> = ({ profileId }) => {
 
   const editingBlock = editing !== null ? preset?.prompts[editing] : undefined
 
+  // Switching/creating/importing a preset replaces the editor — confirm first if
+  // there are unsaved edits so a stray change can't silently discard them.
+  const guardDirty = (): boolean => !dirty || confirm('Discard unsaved changes to this preset?')
+
   return (
     <div className="panel">
       <div className="panel-header">
@@ -88,7 +92,7 @@ export const PresetManager: React.FC<Props> = ({ profileId }) => {
         <div className="preset-select-row">
           <select
             value={activeId ?? ''}
-            onChange={(e) => select(profileId, e.target.value)}
+            onChange={(e) => guardDirty() && select(profileId, e.target.value)}
             disabled={presets.length === 0}
           >
             {presets.length === 0 && <option value="">(no presets)</option>}
@@ -100,8 +104,8 @@ export const PresetManager: React.FC<Props> = ({ profileId }) => {
           </select>
         </div>
         <div className="preset-actions">
-          <button onClick={() => createNew(profileId)}>+ New</button>
-          <button className="btn-ghost" onClick={() => importPreset(profileId)}>
+          <button onClick={() => guardDirty() && createNew(profileId)}>+ New</button>
+          <button className="btn-ghost" onClick={() => guardDirty() && importPreset(profileId)}>
             Import ST
           </button>
           <button

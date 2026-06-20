@@ -107,6 +107,23 @@ export const setChatLorebookIds = (
     .run(ids === null ? null : JSON.stringify(ids), chatId, profileId)
 }
 
+/** Strip a lorebook id out of every session's active set (called when it's deleted). */
+export const removeLorebookIdFromChats = (profileId: string, lorebookId: string): void => {
+  const rows = getDb()
+    .prepare('SELECT id, lorebook_ids FROM chats WHERE profile_id = ? AND lorebook_ids IS NOT NULL')
+    .all(profileId) as Array<{ id: string; lorebook_ids: string | null }>
+  for (const row of rows) {
+    const ids = parseLorebookIds(row.lorebook_ids)
+    if (ids && ids.includes(lorebookId)) {
+      setChatLorebookIds(
+        profileId,
+        row.id,
+        ids.filter((x) => x !== lorebookId)
+      )
+    }
+  }
+}
+
 export const createChat = (profileId: string, characterId: string): ChatSession => {
   const now = new Date().toISOString()
   const id = uuidv4()

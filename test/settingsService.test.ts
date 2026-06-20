@@ -8,8 +8,7 @@ describe('settings normalize', () => {
         provider: 'anthropic',
         endpoint: 'https://x',
         api_key: 'k',
-        model: 'm',
-        default_params: {}
+        model: 'm'
       }
     })
     expect(s.api_presets).toHaveLength(1)

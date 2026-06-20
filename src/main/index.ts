@@ -207,9 +207,11 @@ app.whenReady().then(() => {
   ipcMain.handle('create-lorebook', (_, profileId, name) =>
     lorebookService.createLorebook(profileId, name)
   )
-  ipcMain.handle('delete-lorebook', (_, profileId, id) =>
+  ipcMain.handle('delete-lorebook', (_, profileId, id) => {
     lorebookService.deleteLorebookById(profileId, id)
-  )
+    // Drop the deleted book from any session that still references it.
+    chatService.removeLorebookIdFromChats(profileId, id)
+  })
   // Per-session active lorebook selection
   ipcMain.handle('get-chat-lorebooks', (_, profileId, chatId) =>
     chatService.getChatLorebookIds(profileId, chatId)
