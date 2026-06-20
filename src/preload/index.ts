@@ -67,6 +67,10 @@ const api = {
     ipcRenderer.invoke('get-chat-lorebooks', profileId, chatId),
   setChatLorebooks: (profileId: string, chatId: string, ids: string[] | null) =>
     ipcRenderer.invoke('set-chat-lorebooks', profileId, chatId, ids),
+  getChatMode: (profileId: string, chatId: string) =>
+    ipcRenderer.invoke('get-chat-mode', profileId, chatId),
+  setChatMode: (profileId: string, chatId: string, mode: string) =>
+    ipcRenderer.invoke('set-chat-mode', profileId, chatId, mode),
   // Card-script runtime (P1)
   pluginVars: (profileId: string, chatId: string, action: any) =>
     ipcRenderer.invoke('plugin-vars', profileId, chatId, action),

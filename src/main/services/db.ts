@@ -41,7 +41,9 @@ CREATE TABLE IF NOT EXISTS chats (
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL,
   -- JSON array of active lorebook ids; NULL means "default to the character's own lorebook".
-  lorebook_ids TEXT
+  lorebook_ids TEXT,
+  -- Active FSM mode (Explore/Dialogue/Combat); NULL is treated as 'explore'.
+  mode TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_chats_profile ON chats(profile_id);
 
@@ -110,5 +112,6 @@ export const getDb = (): Database.Database => {
   db.exec(DROP_LEGACY)
   // Lightweight forward migrations for DBs created before a column existed.
   addColumnIfMissing(db, 'chats', 'lorebook_ids', 'lorebook_ids TEXT')
+  addColumnIfMissing(db, 'chats', 'mode', 'mode TEXT')
   return db
 }

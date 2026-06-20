@@ -75,6 +75,36 @@ describe('buildPrompt', () => {
     expect(last(messages)).toEqual({ role: 'user', content: 'I wave back' })
   })
 
+  it('injects a per-mode addendum as a system block before the conversation, action still last', () => {
+    const messages = buildPrompt({
+      card: card({ description: 'A knight.' }),
+      preset: preset([blk('char_description'), blk('chat_history')]),
+      lorebooks: [],
+      floors: [floor(0, '', 'Hello traveler')],
+      userAction: 'I draw my sword',
+      modeAddendum: 'Combat mode: be terse.'
+    })
+    const addendumIdx = messages.findIndex((m) => m.content === 'Combat mode: be terse.')
+    expect(addendumIdx).toBeGreaterThanOrEqual(0)
+    expect(messages[addendumIdx].role).toBe('system')
+    // It sits within the system prefix, before the first non-system (conversation) message.
+    const convoStart = messages.findIndex((m) => m.role !== 'system')
+    expect(addendumIdx).toBeLessThan(convoStart)
+    expect(last(messages)).toEqual({ role: 'user', content: 'I draw my sword' })
+  })
+
+  it('omits the mode addendum block when it is empty/whitespace', () => {
+    const messages = buildPrompt({
+      card: card(),
+      preset: preset([blk('char_description'), blk('chat_history')]),
+      lorebooks: [],
+      floors: [],
+      userAction: 'hi',
+      modeAddendum: '   '
+    })
+    expect(messages.every((m) => m.content.trim() !== '')).toBe(true)
+  })
+
   it('injects top (depth-null) lorebook entries into a World Info block', () => {
     const messages = buildPrompt({
       card: card(),

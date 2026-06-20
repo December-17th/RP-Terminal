@@ -1,6 +1,6 @@
 import { v4 as uuidv4 } from 'uuid'
 import { getDb } from './db'
-import { ChatSession, FloorFile } from '../types/chat'
+import { ChatSession, FloorFile, ChatMode, CHAT_MODES } from '../types/chat'
 import { getCharacter } from './characterService'
 import { saveFloor, deleteFloorAndSubsequent, updateFloorFields } from './floorService'
 
@@ -105,6 +105,20 @@ export const setChatLorebookIds = (
   getDb()
     .prepare('UPDATE chats SET lorebook_ids = ? WHERE id = ? AND profile_id = ?')
     .run(ids === null ? null : JSON.stringify(ids), chatId, profileId)
+}
+
+/** The active FSM mode for a session (Phase H); a missing/invalid value defaults to 'explore'. */
+export const getChatMode = (profileId: string, chatId: string): ChatMode => {
+  const row = getDb()
+    .prepare('SELECT mode FROM chats WHERE id = ? AND profile_id = ?')
+    .get(chatId, profileId) as { mode: string | null } | undefined
+  return CHAT_MODES.includes(row?.mode as ChatMode) ? (row!.mode as ChatMode) : 'explore'
+}
+
+/** Switch a session's FSM mode. Unknown values are coerced to 'explore'. */
+export const setChatMode = (profileId: string, chatId: string, mode: ChatMode): void => {
+  const m: ChatMode = CHAT_MODES.includes(mode) ? mode : 'explore'
+  getDb().prepare('UPDATE chats SET mode = ? WHERE id = ? AND profile_id = ?').run(m, chatId, profileId)
 }
 
 /** Strip a lorebook id out of every session's active set (called when it's deleted). */

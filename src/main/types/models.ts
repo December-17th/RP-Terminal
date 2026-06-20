@@ -17,6 +17,16 @@ export interface ApiPreset {
   model: string
 }
 
+/** Per-mode generation tuning for the manual FSM (Phase H). Keyed by ChatMode. */
+export interface ModeConfig {
+  /** Output-token ceiling for this mode (caps the active preset's max_tokens). */
+  max_output_tokens: number
+  /** How many recent turns to scan for lorebook keywords while in this mode. */
+  scan_depth: number
+  /** Optional system instruction injected while the session is in this mode. */
+  addendum: string
+}
+
 export interface Settings {
   // The live/active connection used by generation. Mirrors the selected api_preset.
   api: {
@@ -47,6 +57,8 @@ export interface Settings {
     /** Max recursive match passes fed by matched entries' content (0 = off). */
     max_recursion: number
   }
+  /** Per-mode generation tuning for the manual FSM (Explore/Dialogue/Combat). */
+  modes: Record<string, ModeConfig>
   ui: {
     theme: string
     font_size: number

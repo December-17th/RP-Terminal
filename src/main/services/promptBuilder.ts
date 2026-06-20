@@ -82,6 +82,8 @@ export interface BuildPromptArgs {
   maxRecursion?: number
   /** Regex rules applied to outgoing prompt text (placement 1 = user, 2 = AI). */
   promptRegex?: RenderRegexRule[]
+  /** Per-mode system instruction (Phase H); a stable block just before the conversation. */
+  modeAddendum?: string
   /** ST-Prompt-Template context; when present, authored content is run through the engine. */
   template?: TemplateContext
 }
@@ -319,6 +321,17 @@ export const buildPrompt = (args: BuildPromptArgs): ChatMessage[] => {
         applyAssistant
       )
     )
+  }
+
+  // Per-mode system addendum (Phase H): a stable, cache-friendly system block for
+  // the active FSM mode, placed just before the conversation begins. Constant within
+  // a mode, so it never invalidates the cached prefix between turns.
+  const modeAddendum = args.modeAddendum?.trim()
+  if (modeAddendum) {
+    const convoStart = messages.findIndex((m) => m.role !== 'system')
+    const mm: ChatMessage = { role: 'system', content: modeAddendum }
+    if (convoStart === -1) messages.push(mm)
+    else messages.splice(convoStart, 0, mm)
   }
 
   // Persona description at the top: a stable, cache-friendly system block placed

@@ -239,9 +239,38 @@ body {
 /* ---------- Chat toolbar ---------- */
 .chat-toolbar {
   display: flex;
-  justify-content: flex-end;
+  align-items: center;
+  justify-content: space-between;
   gap: 8px;
   padding: 6px 0 0;
+}
+
+/* FSM mode switch (Phase H) — Explore / Dialogue / Combat */
+.mode-switch {
+  display: flex;
+  gap: 4px;
+}
+.mode-btn {
+  padding: 3px 12px;
+  font-size: 12px;
+  border: 1px solid var(--rpt-border);
+  background: transparent;
+  color: var(--rpt-text-secondary);
+  border-radius: 4px;
+  cursor: pointer;
+}
+.mode-btn:hover:not(:disabled):not(.active) {
+  color: var(--rpt-text-primary);
+  border-color: var(--rpt-text-secondary);
+}
+.mode-btn.active {
+  background: var(--rpt-accent);
+  border-color: var(--rpt-accent);
+  color: #fff;
+}
+.mode-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
 }
 
 /* Inline message editor (right-click a message) */

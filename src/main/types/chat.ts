@@ -1,3 +1,7 @@
+/** Manual FSM mode for a session (Phase H). Each mode tunes generation + retrieval. */
+export type ChatMode = 'explore' | 'dialogue' | 'combat'
+export const CHAT_MODES: ChatMode[] = ['explore', 'dialogue', 'combat']
+
 export interface FloorIndexEntry {
   floor: number
   timestamp: string

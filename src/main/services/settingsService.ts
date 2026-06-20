@@ -1,6 +1,6 @@
 import { safeStorage } from 'electron'
 import { getDb } from './db'
-import { Settings, ApiPreset } from '../types/models'
+import { Settings, ApiPreset, ModeConfig } from '../types/models'
 
 // API keys are encrypted at rest via the OS keyring (Electron safeStorage). A
 // stored value is prefixed so encrypted keys are distinguishable from legacy
@@ -59,6 +59,18 @@ export const getDefaultSettings = (): Settings => ({
     scan_depth: 3,
     max_recursion: 0
   },
+  // FSM modes (Phase H). Explore = wide retrieval + descriptive; Dialogue = tighter;
+  // Combat = terse (mechanics are resolved by the engine, not narrated numbers).
+  modes: {
+    explore: { max_output_tokens: 1200, scan_depth: 4, addendum: '' },
+    dialogue: { max_output_tokens: 700, scan_depth: 3, addendum: '' },
+    combat: {
+      max_output_tokens: 450,
+      scan_depth: 2,
+      addendum:
+        'Combat mode: keep narration terse and reactive. Do not invent dice rolls or numeric outcomes — mechanics are resolved by the system.'
+    }
+  },
   ui: {
     theme: 'dark',
     font_size: 16,
@@ -80,6 +92,13 @@ export const normalize = (stored: Partial<Settings>): Settings => {
   const generation = { ...d.generation, ...(stored.generation || {}) }
   const lorebook = { ...d.lorebook, ...(stored.lorebook || {}) }
   const ui = { ...d.ui, ...(stored.ui || {}) }
+
+  // Merge each known mode over its default so adding a tuning field never wipes a mode.
+  const storedModes = (stored.modes || {}) as Record<string, Partial<ModeConfig>>
+  const modes: Record<string, ModeConfig> = {}
+  for (const key of Object.keys(d.modes)) {
+    modes[key] = { ...d.modes[key], ...(storedModes[key] || {}) }
+  }
 
   let api_presets: ApiPreset[] = Array.isArray(stored.api_presets) ? stored.api_presets : []
   let active_api_preset_id = stored.active_api_preset_id || ''
@@ -103,8 +122,12 @@ export const normalize = (stored: Partial<Settings>): Settings => {
     active_api_preset_id = api_presets[0].id
   }
 
-  return { api, api_presets, active_api_preset_id, persona, generation, lorebook, ui }
+  return { api, api_presets, active_api_preset_id, persona, generation, lorebook, modes, ui }
 }
+
+/** The tuning config for a mode, falling back to Explore (then defaults) for unknown modes. */
+export const resolveModeConfig = (settings: Settings, mode: string): ModeConfig =>
+  settings.modes?.[mode] || settings.modes?.explore || getDefaultSettings().modes.explore
 
 export const getSettings = (profileId: string): Settings => {
   const row = getDb().prepare('SELECT data FROM settings WHERE profile_id = ?').get(profileId) as

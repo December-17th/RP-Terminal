@@ -199,12 +199,14 @@ export default function App() {
   const {
     chats,
     activeChatId,
+    activeChatMode,
     floors,
     isGenerating,
     error,
     loadChats,
     createChat,
     setActiveChat,
+    setMode,
     sendAction,
     regenerate,
     stopGeneration,
@@ -214,12 +216,14 @@ export default function App() {
     useShallow((s) => ({
       chats: s.chats,
       activeChatId: s.activeChatId,
+      activeChatMode: s.activeChatMode,
       floors: s.floors,
       isGenerating: s.isGenerating,
       error: s.error,
       loadChats: s.loadChats,
       createChat: s.createChat,
       setActiveChat: s.setActiveChat,
+      setMode: s.setMode,
       sendAction: s.sendAction,
       regenerate: s.regenerate,
       stopGeneration: s.stopGeneration,
@@ -719,8 +723,23 @@ export default function App() {
                 )}
               </div>
 
-              {floors.some((f) => f.user_message.content) && (
-                <div className="chat-toolbar">
+              <div className="chat-toolbar">
+                <div className="mode-switch" role="tablist" aria-label="Session mode">
+                  {(['explore', 'dialogue', 'combat'] as const).map((m) => (
+                    <button
+                      key={m}
+                      role="tab"
+                      aria-selected={activeChatMode === m}
+                      className={`mode-btn ${activeChatMode === m ? 'active' : ''}`}
+                      disabled={isGenerating}
+                      title={`Switch to ${m} mode`}
+                      onClick={() => setMode(activeProfile.id, m)}
+                    >
+                      {m[0].toUpperCase() + m.slice(1)}
+                    </button>
+                  ))}
+                </div>
+                {floors.some((f) => f.user_message.content) && (
                   <button
                     className="btn-ghost"
                     disabled={isGenerating}
@@ -733,8 +752,8 @@ export default function App() {
                   >
                     ↻ Regenerate
                   </button>
-                </div>
-              )}
+                )}
+              </div>
 
               <div className="action-input-container">
                 {slashOpen && (

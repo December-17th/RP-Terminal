@@ -26,6 +26,8 @@ export interface Floor {
 interface ChatState {
   chats: ChatSession[]
   activeChatId: string | null
+  /** Active FSM mode for the open session (Phase H). */
+  activeChatMode: string
   floors: Floor[]
   isGenerating: boolean
   /** Live partial text for the in-flight response (pre-regex), shown while streaming. */
@@ -34,6 +36,8 @@ interface ChatState {
   loadChats: (profileId: string) => Promise<void>
   createChat: (profileId: string, characterId: string) => Promise<void>
   setActiveChat: (profileId: string, chatId: string) => Promise<void>
+  /** Switch the open session's FSM mode (Explore/Dialogue/Combat). */
+  setMode: (profileId: string, mode: string) => Promise<void>
   sendAction: (profileId: string, actionText: string) => Promise<void>
   regenerate: (profileId: string) => Promise<void>
   stopGeneration: () => Promise<void>
@@ -74,6 +78,7 @@ export const useChatStore = create<ChatState>((set, get) => {
   return {
     chats: [],
     activeChatId: null,
+    activeChatMode: 'explore',
     floors: [],
     isGenerating: false,
     streamingText: '',
@@ -100,7 +105,12 @@ export const useChatStore = create<ChatState>((set, get) => {
 
     createChat: async (profileId, characterId) => {
       const newChat = await window.api.createChat(profileId, characterId)
-      set((state) => ({ chats: [newChat, ...state.chats], activeChatId: newChat.id, error: null }))
+      set((state) => ({
+        chats: [newChat, ...state.chats],
+        activeChatId: newChat.id,
+        activeChatMode: 'explore',
+        error: null
+      }))
       // A freshly created chat may already contain a seeded greeting floor.
       const floors = await window.api.getFloors(profileId, newChat.id)
       set({ floors })
@@ -108,8 +118,18 @@ export const useChatStore = create<ChatState>((set, get) => {
 
     setActiveChat: async (profileId, chatId) => {
       set({ activeChatId: chatId, floors: [], error: null })
-      const floors = await window.api.getFloors(profileId, chatId)
-      set({ floors })
+      const [floors, mode] = await Promise.all([
+        window.api.getFloors(profileId, chatId),
+        window.api.getChatMode(profileId, chatId)
+      ])
+      set({ floors, activeChatMode: mode || 'explore' })
+    },
+
+    setMode: async (profileId, mode) => {
+      const { activeChatId } = get()
+      if (!activeChatId) return
+      set({ activeChatMode: mode }) // optimistic; the write is a simple column update
+      await window.api.setChatMode(profileId, activeChatId, mode)
     },
 
     sendAction: async (profileId, actionText) => {

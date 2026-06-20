@@ -244,6 +244,13 @@ app.whenReady().then(() => {
   ipcMain.handle('set-chat-lorebooks', (_, profileId, chatId, ids) =>
     chatService.setChatLorebookIds(profileId, chatId, ids)
   )
+  // Per-session FSM mode (Phase H)
+  ipcMain.handle('get-chat-mode', (_, profileId, chatId) =>
+    chatService.getChatMode(profileId, chatId)
+  )
+  ipcMain.handle('set-chat-mode', (_, profileId, chatId, mode) =>
+    chatService.setChatMode(profileId, chatId, mode)
+  )
 
   // Card-script runtime (P1) — permission-checked engine bridge for sandboxed scripts.
   ipcMain.handle('plugin-vars', (_, profileId, chatId, action) =>

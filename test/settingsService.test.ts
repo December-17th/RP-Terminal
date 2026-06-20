@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest'
 import {
   normalize,
   getDefaultSettings,
+  resolveModeConfig,
   encryptSecret,
   decryptSecret
 } from '../src/main/services/settingsService'
@@ -87,5 +88,32 @@ describe('settings normalize', () => {
 
   it('getDefaultSettings has no presets (they are seeded by normalize)', () => {
     expect(getDefaultSettings().api_presets).toEqual([])
+  })
+
+  it('seeds the three FSM modes with their defaults', () => {
+    const s = normalize({})
+    expect(Object.keys(s.modes).sort()).toEqual(['combat', 'dialogue', 'explore'])
+    expect(s.modes.combat.max_output_tokens).toBe(450)
+    expect(s.modes.explore.scan_depth).toBe(4)
+  })
+
+  it('merges a partial mode override while keeping the other tuning fields', () => {
+    const s = normalize({ modes: { combat: { max_output_tokens: 800 } } as any })
+    expect(s.modes.combat.max_output_tokens).toBe(800) // overridden
+    expect(s.modes.combat.scan_depth).toBe(2) // default preserved
+    expect(s.modes.combat.addendum).toContain('Combat mode') // default preserved
+    expect(s.modes.explore.max_output_tokens).toBe(1200) // untouched mode intact
+  })
+})
+
+describe('resolveModeConfig', () => {
+  it('returns the requested mode config', () => {
+    const s = normalize({})
+    expect(resolveModeConfig(s, 'combat')).toBe(s.modes.combat)
+  })
+
+  it('falls back to explore for an unknown mode', () => {
+    const s = normalize({})
+    expect(resolveModeConfig(s, 'nonsense')).toBe(s.modes.explore)
   })
 })

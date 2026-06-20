@@ -1,8 +1,8 @@
-import { getSettings } from './settingsService'
+import { getSettings, resolveModeConfig } from './settingsService'
 import { getActivePreset } from './presetService'
 import { getCharacter } from './characterService'
 import { getLorebookById } from './lorebookService'
-import { getChat, getChatLorebookIds, appendFloor, truncateFloors } from './chatService'
+import { getChat, getChatLorebookIds, getChatMode, appendFloor, truncateFloors } from './chatService'
 import { getAllFloors, getFloor } from './floorService'
 import { buildPrompt, fitToBudget } from './promptBuilder'
 import { getPromptRules } from './regexService'
@@ -60,6 +60,10 @@ export const generate = async (
 
   const settings = getSettings(profileId)
   const preset = getActivePreset(profileId)
+  // Phase H — the session's manual FSM mode tunes retrieval breadth, the output
+  // ceiling, and an optional per-mode system instruction.
+  const mode = getChatMode(profileId, chatId)
+  const modeConfig = resolveModeConfig(settings, mode)
   // A session injects all its selected lorebooks; with none chosen it defaults to
   // the character's own lorebook (id == characterId), preserving prior behavior.
   const lorebookIds = getChatLorebookIds(profileId, chatId) ?? [chat.character_id]
@@ -87,9 +91,10 @@ export const generate = async (
       inject: settings.persona?.inject !== false,
       depth: settings.persona?.depth ?? null
     },
-    scanDepth: settings.lorebook?.scan_depth ?? 3,
+    scanDepth: modeConfig.scan_depth ?? settings.lorebook?.scan_depth ?? 3,
     maxRecursion: settings.lorebook?.max_recursion ?? 0,
     promptRegex: getPromptRules(profileId),
+    modeAddendum: modeConfig.addendum,
     template: {
       vars: workingVars,
       globals,
@@ -109,9 +114,19 @@ export const generate = async (
     log('info', `context budget ${budget} tok — trimmed ${dropped} oldest message(s)`)
   }
 
+  // Mode caps the output ceiling: don't exceed the preset's max_tokens, but lower it
+  // to the mode's limit (e.g. Combat is terse). Falls back to the mode limit if the
+  // preset doesn't specify one.
+  const presetMax = preset.parameters.max_tokens
+  const params = {
+    ...preset.parameters,
+    max_tokens:
+      presetMax != null ? Math.min(presetMax, modeConfig.max_output_tokens) : modeConfig.max_output_tokens
+  }
+
   log(
     'request',
-    `→ ${settings.api.provider} · ${settings.api.model || '(no model)'} · ${messages.length} msgs · ${settings.api.endpoint || '(default endpoint)'}`,
+    `→ ${settings.api.provider} · ${settings.api.model || '(no model)'} · ${mode} mode · ${messages.length} msgs · ${settings.api.endpoint || '(default endpoint)'}`,
     messages
   )
 
@@ -120,7 +135,7 @@ export const generate = async (
 
   let raw: string
   try {
-    raw = await streamProvider(settings, messages, preset.parameters, onDelta, controller.signal)
+    raw = await streamProvider(settings, messages, params, onDelta, controller.signal)
   } catch (err: any) {
     if (controller.signal.aborted) {
       log('info', '⏹ generation stopped by user')
