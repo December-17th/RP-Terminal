@@ -58,6 +58,10 @@ export const RPTerminalExtSchema = z.object({
   game_rules: z.record(z.string(), z.any()).default({}),
   assets: z.record(z.string(), z.string()).default({})
 })
+  // Preserve unknown/future bundle slots (world_card, meta, regex, presets,
+  // lorebooks, plugins, agent, combat, recommended_settings) instead of stripping
+  // them — the World Card manifest (Track S) is additive and must round-trip.
+  .catchall(z.any())
 export type RPTerminalExt = z.infer<typeof RPTerminalExtSchema>
 
 export const CardDataSchema = z.object({

@@ -124,16 +124,26 @@ export const listScripts = (profileId: string): RegexScriptInfo[] => {
 export const importRegexFromFile = (profileId: string, filePath: string): string | null => {
   try {
     const data = JSON.parse(fs.readFileSync(filePath, 'utf-8'))
-    const rules = Array.isArray(data) ? data : [data]
-    if (rules.length === 0) return null
-    ensureDir(regexDir(profileId))
-    const dest = path.join(regexDir(profileId), `${randomUUID()}.json`)
-    fs.writeFileSync(dest, JSON.stringify(data, null, 2), 'utf-8')
-    return rules[0]?.scriptName || rules[0]?.name || path.basename(filePath)
+    return saveRegexScript(profileId, data)
   } catch (error) {
     console.error('Failed to import regex:', error)
     return null
   }
+}
+
+/**
+ * Persist in-memory ST regex rule object(s) as a new script file in the profile's
+ * regex dir — used by the World Card one-click importer to route bundled
+ * `extensions.regex_scripts` / `rp_terminal.regex` into the regex store. Accepts
+ * a single rule object or an array; returns the script name (or null on empty).
+ */
+export const saveRegexScript = (profileId: string, data: any): string | null => {
+  const rules = Array.isArray(data) ? data : [data]
+  if (rules.length === 0 || !rules.some((r) => r && typeof r === 'object')) return null
+  ensureDir(regexDir(profileId))
+  const dest = path.join(regexDir(profileId), `${randomUUID()}.json`)
+  fs.writeFileSync(dest, JSON.stringify(rules, null, 2), 'utf-8')
+  return rules[0]?.scriptName || rules[0]?.name || 'Imported regex'
 }
 
 export const deleteScript = (profileId: string, file: string): void => {

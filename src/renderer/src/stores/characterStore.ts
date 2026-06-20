@@ -1,4 +1,6 @@
 import { create } from 'zustand'
+import { useToastStore } from './toastStore'
+import { useRegexStore } from './regexStore'
 
 export interface CharacterCard {
   id: string
@@ -37,10 +39,32 @@ export const useCharacterStore = create<CharacterState>((set) => ({
     }))
   },
   importCharacter: async (profileId: string) => {
-    const newId = await window.api.importCharacterDialog(profileId)
-    if (newId) {
-      const characters = await window.api.getCharacters(profileId)
-      set({ characters, activeCharacter: characters.find((c: any) => c.id === newId) || null })
+    const res = await window.api.importCharacterDialog(profileId)
+    if (!res?.id) return
+    const characters = await window.api.getCharacters(profileId)
+    set({ characters, activeCharacter: characters.find((c: any) => c.id === res.id) || null })
+
+    // Surface what the one-click import installed (regex/lore/scripts) as a toast.
+    const s = res.summary
+    if (s) {
+      const parts = [
+        s.regexScripts && `${s.regexScripts} regex`,
+        s.loreEntries && `${s.loreEntries} lore`,
+        s.scripts && `${s.scripts} scripts`
+      ].filter(Boolean)
+      useToastStore
+        .getState()
+        .push(
+          parts.length
+            ? `Imported “${s.name}” — installed ${parts.join(', ')}`
+            : `Imported “${s.name}”`
+        )
+      // Bundled regex landed in the profile store — refresh the regex views so the
+      // new scripts appear and the active chat picks up any display rules.
+      if (s.regexScripts) {
+        await useRegexStore.getState().load(profileId)
+        await useRegexStore.getState().loadScripts(profileId)
+      }
     }
   },
   saveCard: async (profileId: string, characterId: string, card: any) => {

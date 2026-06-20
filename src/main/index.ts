@@ -96,15 +96,37 @@ app.whenReady().then(() => {
 
   ipcMain.handle('import-character-dialog', async (event, profileId) => {
     const { dialog } = require('electron')
-    const result = await dialog.showOpenDialog(BrowserWindow.fromWebContents(event.sender)!, {
+    const win = BrowserWindow.fromWebContents(event.sender)!
+    const result = await dialog.showOpenDialog(win, {
       properties: ['openFile'],
-      filters: [{ name: 'Character Cards', extensions: ['png', 'json'] }]
+      filters: [{ name: 'World Cards', extensions: ['png', 'json'] }]
     })
+    if (result.canceled || result.filePaths.length === 0) return null
+    const filePath = result.filePaths[0]
 
-    if (!result.canceled && result.filePaths.length > 0) {
-      return characterService.importCharacterFromFile(profileId, result.filePaths[0])
+    // One-click install: if the card bundles artifacts (regex/scripts/UI), show a
+    // transparent confirm listing exactly what installs before committing anything.
+    const summary = characterService.inspectCardFile(filePath)
+    if (summary && characterService.hasBundle(summary)) {
+      const items = [
+        summary.loreEntries && `${summary.loreEntries} lore entries`,
+        summary.regexScripts && `${summary.regexScripts} regex scripts`,
+        summary.scripts && `${summary.scripts} card scripts`,
+        summary.uiWidgets && `${summary.uiWidgets} UI widgets`
+      ].filter(Boolean)
+      const { response } = await dialog.showMessageBox(win, {
+        type: 'question',
+        buttons: ['Install', 'Cancel'],
+        defaultId: 0,
+        cancelId: 1,
+        message: `Import "${summary.name}"`,
+        detail:
+          (summary.isWorldCard ? 'This World Card bundles:\n' : 'This card bundles:\n') +
+          items.map((i) => `  • ${i}`).join('\n')
+      })
+      if (response !== 0) return null
     }
-    return null
+    return characterService.importCharacterFromFile(profileId, filePath)
   })
 
   ipcMain.handle('get-chats', (_, profileId) => chatService.getChats(profileId))
