@@ -7,7 +7,8 @@ import {
   saveCharacterLorebook,
   deleteCharacterLorebook,
   normalizeLorebookData,
-  saveLorebookById
+  saveLorebookById,
+  getCharacterLorebook
 } from './lorebookService'
 import * as regexService from './regexService'
 import { installBundledPreset } from './presetService'
@@ -254,6 +255,45 @@ export const importCharacterFromFile = (
     console.error('Failed to import character:', error)
     return null
   }
+}
+
+/**
+ * Build a World Card export object (chara_card_v3) — the inverse of import (§7). Folds
+ * the card's own lorebook back into `character_book`, this world's regex back into the
+ * canonical `extensions.regex_scripts`, and stamps the `world_card` marker. The card's
+ * existing `rp_terminal` payload (scripts/ui/data_schema/state_schema/agent/css/…) rides
+ * along untouched. Pure + deep-cloned so export never mutates the live card. Re-importing
+ * the result reproduces the same world (round-trip invariant).
+ *
+ * NOTE: presets/extra-lorebooks/plugins aren't exported yet — they have no world-scope
+ * binding (S2 scoped regex only), so we can't reliably attribute them to this card.
+ */
+export const buildWorldCardExport = (
+  card: RPTerminalCard,
+  characterBook: Lorebook | null,
+  worldRegex: any[]
+): any => {
+  const data: any = JSON.parse(JSON.stringify(card.data))
+  data.extensions = data.extensions || {}
+  data.extensions.rp_terminal = {
+    ...(data.extensions.rp_terminal || {}),
+    world_card: data.extensions.rp_terminal?.world_card || '1.0'
+  }
+  if (worldRegex.length > 0) data.extensions.regex_scripts = worldRegex
+  if (characterBook && characterBook.entries.length > 0) data.character_book = characterBook
+  return { spec: 'chara_card_v3', spec_version: '3.0', data }
+}
+
+/** Gather a character + its world-scoped artifacts into a World Card JSON for export. */
+export const exportWorldCard = (
+  profileId: string,
+  characterId: string
+): { name: string; json: any } | null => {
+  const card = getCharacter(profileId, characterId)
+  if (!card) return null
+  const book = getCharacterLorebook(profileId, characterId)
+  const worldRegex = regexService.getRawScriptsForExport(profileId, characterId)
+  return { name: card.data.name, json: buildWorldCardExport(card, book, worldRegex) }
 }
 
 const safeJson = (s: string): unknown => {

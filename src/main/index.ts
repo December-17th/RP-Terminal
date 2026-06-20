@@ -132,6 +132,20 @@ app.whenReady().then(() => {
     return characterService.importCharacterFromFile(profileId, filePath)
   })
 
+  ipcMain.handle('export-character-dialog', async (event, profileId, characterId) => {
+    const exported = characterService.exportWorldCard(profileId, characterId)
+    if (!exported) return null
+    const { dialog } = require('electron')
+    const safeName = exported.name.replace(/[^a-z0-9_-]+/gi, '_') || 'world-card'
+    const result = await dialog.showSaveDialog(BrowserWindow.fromWebContents(event.sender)!, {
+      defaultPath: `${safeName}.json`,
+      filters: [{ name: 'World Card', extensions: ['json'] }]
+    })
+    if (result.canceled || !result.filePath) return null
+    require('fs').writeFileSync(result.filePath, JSON.stringify(exported.json, null, 2), 'utf-8')
+    return exported.name
+  })
+
   ipcMain.handle('get-chats', (_, profileId) => chatService.getChats(profileId))
   ipcMain.handle('create-chat', (_, profileId, charId) => chatService.createChat(profileId, charId))
   ipcMain.handle('get-floors', (_, profileId, chatId) => {

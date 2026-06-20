@@ -417,6 +417,15 @@ export default function App() {
                     {c.card.data.name}
                   </button>
                   <button
+                    className="btn-ghost row-del"
+                    title="Export as World Card (card + lorebook + this world's regex)"
+                    onClick={() =>
+                      useCharacterStore.getState().exportCharacter(activeProfile.id, c.id)
+                    }
+                  >
+                    ⬇
+                  </button>
+                  <button
                     className="btn-ghost danger row-del"
                     title="Delete character"
                     onClick={() => {

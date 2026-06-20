@@ -14,6 +14,7 @@ interface CharacterState {
   loadCharacters: (profileId: string) => Promise<void>
   setActiveCharacter: (char: CharacterCard) => void
   importCharacter: (profileId: string) => Promise<void>
+  exportCharacter: (profileId: string, characterId: string) => Promise<void>
   importMockCharacter: (profileId: string) => Promise<void>
   deleteCharacter: (profileId: string, characterId: string) => Promise<void>
   /** Persist a full card (e.g. after editing its scripts) and refresh the list/active. */
@@ -70,6 +71,10 @@ export const useCharacterStore = create<CharacterState>((set) => ({
       }
       if (s.presets) await usePresetStore.getState().load(profileId)
     }
+  },
+  exportCharacter: async (profileId: string, characterId: string) => {
+    const name = await window.api.exportCharacterDialog(profileId, characterId)
+    if (name) useToastStore.getState().push(`Exported World Card “${name}”`)
   },
   saveCard: async (profileId: string, characterId: string, card: any) => {
     await window.api.saveCharacter(profileId, characterId, card)

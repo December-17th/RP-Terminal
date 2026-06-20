@@ -8,9 +8,10 @@ import {
   collectBundledLorebooks,
   summarizeCardBundle,
   hasBundle,
-  parseCardFile
+  parseCardFile,
+  buildWorldCardExport
 } from '../src/main/services/characterService'
-import { RPTerminalCardSchema } from '../src/main/types/character'
+import { RPTerminalCardSchema, LorebookSchema } from '../src/main/types/character'
 
 const tmpFiles: string[] = []
 const writeJson = (obj: unknown): string => {
@@ -152,5 +153,44 @@ describe('parseCardFile (lossless)', () => {
 
   it('returns null for unreadable input', () => {
     expect(parseCardFile(path.join(os.tmpdir(), 'nope.json'))).toBeNull()
+  })
+})
+
+describe('buildWorldCardExport (S4) — round-trips with import', () => {
+  it('folds book + world regex back onto the card and re-imports identically', () => {
+    const src = card({
+      depth_prompt: { prompt: 'keep', depth: 4 }, // unknown ST key must survive export+import
+      rp_terminal: {
+        scripts: [{ name: 'ui', code: 'x' }],
+        ui_layout: [{ type: 'StatBar', path: 'hp' }],
+        agent: { prompts: { system: 'be terse' } }
+      }
+    })
+    const book = LorebookSchema.parse({ name: 'Book', entries: [{ keys: ['town'], content: 'A town.' }] })
+    const worldRegex = [regexRule('beautify')]
+
+    const exported = buildWorldCardExport(src, book, worldRegex)
+    expect(exported.spec).toBe('chara_card_v3')
+    expect(exported.data.extensions.rp_terminal.world_card).toBe('1.0') // stamped
+
+    // Re-import the exported JSON and assert the world reproduces.
+    const file = writeJson(exported)
+    const reimported = parseCardFile(file)!
+    const ext = reimported.card.data.extensions as any
+    expect(ext.rp_terminal.scripts).toEqual([{ name: 'ui', code: 'x' }])
+    expect(ext.rp_terminal.agent.prompts.system).toBe('be terse')
+    expect(ext.depth_prompt).toEqual({ prompt: 'keep', depth: 4 })
+    expect(collectBundledRegex(reimported.card)).toHaveLength(1)
+    expect(reimported.lorebook?.entries[0].keys).toEqual(['town'])
+  })
+
+  it('does not mutate the source card and omits empty book/regex', () => {
+    const src = card({ rp_terminal: { world_card: '2.0' } })
+    const before = JSON.stringify(src)
+    const exported = buildWorldCardExport(src, null, [])
+    expect(JSON.stringify(src)).toBe(before) // deep-cloned, source untouched
+    expect(exported.data.extensions.rp_terminal.world_card).toBe('2.0') // preserves existing marker
+    expect(exported.data.character_book).toBeUndefined()
+    expect(exported.data.extensions.regex_scripts).toBeUndefined()
   })
 })

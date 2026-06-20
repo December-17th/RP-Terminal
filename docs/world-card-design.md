@@ -183,7 +183,7 @@ Until then, the inline JSON manifest covers scripts/regex/lorebook/preset/agent 
 | **S1 — Lossless import + regex** | Stop dropping extensions; extract bundled `regex_scripts`/`regex` into the regex store on import; the install-summary confirm. **Bundled regex from `4.2.1.png` finally works.** | importer, regex service |
 | **S2 — Scope model** | `scope` (global/world/session) + `owner` on regex/preset/plugin (lorebook has the seam); generation resolves the active set; scope selector per manager. | `chats.lorebook_ids` pattern |
 | **S3 — Bundle slots** | ✅ `presets[]` → preset store (dedup, never auto-active), `lorebooks[]` → lore library, `agent.prompts` (system + per-mode) applied at generation (`composeAddendum`). ⏳ deferred: `plugins[]` (package format + grant/disable flow), `combat`, `recommended_settings`. | preset/plugin/lorebook services, Phase H/I |
-| **S4 — Export / packing** | "Export World" → JSON manifest of the card + its world-scoped artifacts; round-trip. | S1–S3 |
+| **S4 — Export / packing** | ✅ "Export World" → chara_card_v3 JSON: own lorebook → `character_book`, world regex → `extensions.regex_scripts`, `world_card` stamped (`buildWorldCardExport`, pure + round-trips). ⏳ presets/extra-lorebooks/plugins export awaits their scope bindings. | S1–S3 |
 | **S5 — PNG cartridge** | Compressed-`iTXt` read + appended-ZIP cartridge import/export (Phase L). | `adm-zip`, `stPngParser` |
 
 **S1 is the recommended first slice** — small, immediately fixes the data loss, and makes

@@ -13,6 +13,8 @@ const api = {
     ipcRenderer.invoke('save-character', profileId, charId, card),
   importCharacterDialog: (profileId: string) =>
     ipcRenderer.invoke('import-character-dialog', profileId),
+  exportCharacterDialog: (profileId: string, characterId: string) =>
+    ipcRenderer.invoke('export-character-dialog', profileId, characterId),
   getChats: (profileId: string) => ipcRenderer.invoke('get-chats', profileId),
   createChat: (profileId: string, charId: string) =>
     ipcRenderer.invoke('create-chat', profileId, charId),

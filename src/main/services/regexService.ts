@@ -153,6 +153,26 @@ export const getPromptRules = (profileId: string, ctx?: ScopeContext): RenderReg
   getAllRules(profileId, ctx).filter((r) => !r.disabled && !r.markdownOnly)
 
 /**
+ * Raw ST regex-script objects belonging to one world (scope=world, owner=cardId), in
+ * their original on-disk shape — used by World Card export to repopulate the canonical
+ * `extensions.regex_scripts`. Round-trips with the importer (which reads that key).
+ */
+export const getRawScriptsForExport = (profileId: string, cardId: string): any[] => {
+  const dir = regexDir(profileId)
+  if (!fs.existsSync(dir)) return []
+  const meta = readMeta(profileId)
+  const out: any[] = []
+  for (const file of listFilesSync(dir)) {
+    if (!file.endsWith('.json') || file.startsWith('_')) continue
+    const m = meta[file]
+    if (m?.scope === 'world' && m.owner === cardId) {
+      for (const raw of rulesInFile(path.join(dir, file))) out.push(raw)
+    }
+  }
+  return out
+}
+
+/**
  * Apply regex rules to a single string for a given placement (1 = user input,
  * 2 = AI output). Rules with an empty placement list apply everywhere. The
  * replacement transform (trimStrings + macros + capture groups) is shared with the
