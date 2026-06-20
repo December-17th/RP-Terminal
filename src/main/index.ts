@@ -16,6 +16,7 @@ import * as migrationService from './services/migrationService'
 import * as regexService from './services/regexService'
 import * as templateService from './services/templateService'
 import * as pluginService from './services/pluginService'
+import * as pluginHostService from './services/pluginHostService'
 
 function createWindow(): void {
   // Create the browser window.
@@ -216,6 +217,28 @@ app.whenReady().then(() => {
   ipcMain.handle('plugin-log', (_, label, message) =>
     logService.log('info', `⚙ script · ${label}`, message)
   )
+
+  // Plugin host/loader (P2) — standalone installable plugins.
+  ipcMain.handle('plugins-list', (_, profileId) => pluginHostService.listPlugins(profileId))
+  ipcMain.handle('plugins-install-dialog', async (event) => {
+    const { dialog } = require('electron')
+    const result = await dialog.showOpenDialog(BrowserWindow.fromWebContents(event.sender)!, {
+      title: 'Select a plugin folder (containing manifest.json)',
+      properties: ['openDirectory']
+    })
+    if (result.canceled || result.filePaths.length === 0) return null
+    return pluginHostService.installFromFolder(result.filePaths[0])
+  })
+  ipcMain.handle('plugins-uninstall', (_, profileId, id) =>
+    pluginHostService.uninstall(profileId, id)
+  )
+  ipcMain.handle('plugins-set-enabled', (_, profileId, id, enabled, grants) =>
+    pluginHostService.setEnabled(profileId, id, enabled, grants)
+  )
+  ipcMain.handle('plugins-set-grants', (_, profileId, id, grants) =>
+    pluginHostService.setGrants(profileId, id, grants)
+  )
+  ipcMain.handle('plugins-scaffold-example', () => pluginHostService.scaffoldExample())
 
   createWindow()
   logService.log('info', 'RP Terminal started')

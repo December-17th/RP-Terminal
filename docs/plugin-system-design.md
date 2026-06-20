@@ -12,13 +12,14 @@ permission model are hard to change once plugins depend on them.
 
 Let third-party authors extend RP Terminal without forking it:
 
-- **Card scripts** — interactive JavaScript shipped *with a character card* (or
+- **Card scripts** — interactive JavaScript shipped _with a character card_ (or
   lorebook) that reads/writes state, drives generation, and renders its own UI in
   the chat. This is js-slash-runner's niche.
-- **App extensions** — plugins that extend the *app shell*: add a left-panel tab,
+- **App extensions** — plugins that extend the _app shell_: add a left-panel tab,
   a top-nav button, a slash command, or react to lifecycle/chat events.
 
 ### Goals
+
 - Run **untrusted** third-party code safely (the whole point — and the hard part).
 - A **stable, versioned API** (`rpt.v1`) so plugins keep working across app updates.
 - **Per-plugin permissions**, declared in a manifest and enforced by the host.
@@ -27,9 +28,10 @@ Let third-party authors extend RP Terminal without forking it:
   scripts run with little or no change — without reimplementing all of SillyTavern.
 
 ### Non-goals (v1)
+
 - 100% SillyTavern-extension compatibility (ST extensions assume ST's full runtime —
-  `getContext`, jQuery, the ST DOM, full STScript). We target *script-level* compat,
-  not *extension-package* compat.
+  `getContext`, jQuery, the ST DOM, full STScript). We target _script-level_ compat,
+  not _extension-package_ compat.
 - A hosted plugin marketplace / auto-update (later).
 - Plugins written in anything but JS/HTML/CSS.
 
@@ -42,11 +44,12 @@ arbitrary third-party code." This is precisely what the product spec (§3.3) war
 against, so isolation is non-negotiable and drives the whole design.
 
 Principles:
+
 1. **Plugin code is untrusted.** Assume any installed plugin may be malicious or
    buggy. It must be unable to touch the filesystem, the OS, other plugins' data,
    the app's internals, or the network — except through the permissioned API.
 2. **Sandbox by construction, not by review.** Don't rely on auditing plugin source.
-   Use OS/browser isolation primitives so a plugin *physically cannot* exceed its
+   Use OS/browser isolation primitives so a plugin _physically cannot_ exceed its
    grant.
 3. **Capability + permission.** A plugin can only call API methods (a) that exist in
    the API and (b) it was granted in its manifest, approved by the user at install.
@@ -54,10 +57,11 @@ Principles:
    `localStorage`, parent DOM, or `window.api`. Everything goes through the bridge.
 
 ### Chosen sandbox: `sandbox="allow-scripts"` iframe + postMessage RPC
-We already render card HTML in an iframe (B1). For *scripts*, use an iframe with
+
+We already render card HTML in an iframe (B1). For _scripts_, use an iframe with
 **`sandbox="allow-scripts"` and NOT `allow-same-origin`** → the iframe gets a unique
 **opaque origin**: scripts run, but cannot access the parent window/DOM, cookies,
-storage, or make same-origin requests. Its *only* channel to the app is
+storage, or make same-origin requests. Its _only_ channel to the app is
 `postMessage`. The host (renderer) injects a small **bridge shim** that wraps
 postMessage into the friendly API; every call is permission-checked host-side and,
 where it touches the engine (vars, generation, storage), forwarded over IPC to main.
@@ -70,7 +74,7 @@ where it touches the engine (vars, generation, storage), forwarded over IPC to m
 ```
 
 Why not Node `vm`? Not a boundary (already rejected for templates). Why not only
-quickjs? quickjs is great for *pure logic* (no DOM) and we already use it for
+quickjs? quickjs is great for _pure logic_ (no DOM) and we already use it for
 templates — but plugins need to render UI, so the iframe is the natural home; quickjs
 remains an option for headless "logic-only" plugin hooks if we want a lighter path.
 
@@ -80,16 +84,16 @@ remains an option for headless "logic-only" plugin hooks if we want a lighter pa
 
 ## 3. Plugin taxonomy
 
-| | **Card script** | **App extension** |
-|---|---|---|
-| Ships in | a character card / lorebook (`extensions.rp_terminal.scripts`) or a standalone plugin package | a standalone plugin package |
-| Lifecycle | loaded when its card is active in a session | loaded at app start (if enabled) |
-| Typical API | vars, chat read, generate, render UI in-message | + register panels/buttons/commands, lifecycle hooks |
-| Trust | scoped to the active world/session | broader (touches the shell) — stricter permission prompts |
-| js-slash-runner analog | the frontend scripts it runs | the extension itself |
+|                        | **Card script**                                                                               | **App extension**                                         |
+| ---------------------- | --------------------------------------------------------------------------------------------- | --------------------------------------------------------- |
+| Ships in               | a character card / lorebook (`extensions.rp_terminal.scripts`) or a standalone plugin package | a standalone plugin package                               |
+| Lifecycle              | loaded when its card is active in a session                                                   | loaded at app start (if enabled)                          |
+| Typical API            | vars, chat read, generate, render UI in-message                                               | + register panels/buttons/commands, lifecycle hooks       |
+| Trust                  | scoped to the active world/session                                                            | broader (touches the shell) — stricter permission prompts |
+| js-slash-runner analog | the frontend scripts it runs                                                                  | the extension itself                                      |
 
-Both run in the same sandbox model; they differ in *which API capabilities* and
-*UI extension points* they may request.
+Both run in the same sandbox model; they differ in _which API capabilities_ and
+_UI extension points_ they may request.
 
 ---
 
@@ -97,17 +101,24 @@ Both run in the same sandbox model; they differ in *which API capabilities* and
 
 ```jsonc
 {
-  "id": "dev.author.my-plugin",        // reverse-DNS, unique
+  "id": "dev.author.my-plugin", // reverse-DNS, unique
   "name": "My Plugin",
   "version": "1.0.0",
-  "type": "app-extension",             // "card-script" | "app-extension"
-  "entry": "main.js",                  // sandboxed entry; may pull in main.css/html
+  "type": "app-extension", // "card-script" | "app-extension"
+  "entry": "main.js", // sandboxed entry; may pull in main.css/html
   "apiVersion": "rpt.v1",
-  "permissions": [                     // requested capabilities (see §6)
-    "vars:read", "vars:write", "chat:read", "generate",
-    "ui:panel", "slash:register", "storage"
+  "permissions": [
+    // requested capabilities (see §6)
+    "vars:read",
+    "vars:write",
+    "chat:read",
+    "generate",
+    "ui:panel",
+    "slash:register",
+    "storage"
   ],
-  "contributes": {                     // declarative UI/command surface
+  "contributes": {
+    // declarative UI/command surface
     "panels": [{ "id": "stats", "title": "Stats" }],
     "commands": [{ "name": "roll", "description": "Roll dice" }]
   }
@@ -153,8 +164,8 @@ Every method is gated by a manifest permission. Sketch (promise-based):
   callbacks.
 - **lorebook** (`lorebook:read`) — `getEntries()`, `activate(keys)`.
 - **ui** (`ui:panel`/`ui:button`/`ui:toast`) — `registerPanel(def)`,
-  `registerButton(def)`, `toast(msg)`, `openModal(html)` (rendered in *the plugin's
-  own* sandboxed surface).
+  `registerButton(def)`, `toast(msg)`, `openModal(html)` (rendered in _the plugin's
+  own_ sandboxed surface).
 - **slash** (`slash:register`) — `registerCommand(name, handler)`,
   `runCommand(line)`.
 - **storage** (`storage`) — plugin-scoped key/value (`get/set/keys`), persisted under
@@ -193,7 +204,7 @@ full STScript grammar are a later stretch goal — flagged as a known fidelity g
 > **Hard constraint: no code is reused from the js-slash-runner repo.** That project
 > is AGPL-3.0 and this project's license is undecided. Everything here is **clean-room**
 > — written from observed behavior / public docs only. We do not copy its source, vendor
-> its files, or load it. (APIs/function names are not copyrightable; *implementations*
+> its files, or load it. (APIs/function names are not copyrightable; _implementations_
 > are — so we reimplement, never copy.) This mirrors how the ST-Prompt-Template engine
 > was built.
 
@@ -218,14 +229,14 @@ for v1 and degrade gracefully (unknown calls no-op + warn in the Logs panel).
 
 ## 11. Phased implementation plan
 
-| Phase | Deliverable | Reuses |
-|---|---|---|
-| **D0** ✅ | This design doc + decisions on the open questions (§12). | — |
-| **D1/P1** ✅ | **Card-script runtime**: sandboxed `allow-scripts` opaque-origin iframe (network-blocking CSP) + postMessage RPC bridge (`rpt.v1`) + core API (vars/global, chat:read, generate [permission-prompted], ui:toast, lifecycle events). Runs `card.extensions.rp_terminal.scripts` as a right-sidebar panel; local-var writes land on the latest floor and sync the status widgets. Per-card enable + `generate` grant persisted in `plugin-grants.json`. Implemented in `pluginService` (main) + `bridgeShim` + `CardScriptHost` (renderer). *This alone delivers js-slash-runner-style interactivity, safely.* | B1 iframe, vars engine, IPC |
-| **D2** | **Plugin host/loader**: manifest, `plugins/` dir, install/enable/disable, permission prompts, Plugins tab. | file storage, SQLite |
-| **D3** | **App-extension contributions**: `registerPanel/registerButton/registerCommand`, event hooks, shell UI injection points. | tabbed shell |
-| **D4** | **Slash-command runtime (subset)** + **Tavern Helper shim**. | D1 bridge |
-| **D5** | Packaging (`.zip` / PNG cartridge), settings persistence, optional `net` allow-list. | cartridge parser (vNext §L) |
+| Phase        | Deliverable                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  | Reuses                      |
+| ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------- |
+| **D0** ✅    | This design doc + decisions on the open questions (§12).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     | —                           |
+| **D1/P1** ✅ | **Card-script runtime**: sandboxed `allow-scripts` opaque-origin iframe (network-blocking CSP) + postMessage RPC bridge (`rpt.v1`) + core API (vars/global, chat:read, generate [permission-prompted], ui:toast, lifecycle events). Runs `card.extensions.rp_terminal.scripts` as a right-sidebar panel; local-var writes land on the latest floor and sync the status widgets. Per-card enable + `generate` grant persisted in `plugin-grants.json`. Implemented in `pluginService` (main) + `bridgeShim` + `CardScriptHost` (renderer). _This alone delivers js-slash-runner-style interactivity, safely._ | B1 iframe, vars engine, IPC |
+| **D2/P2** ✅ | **Plugin host/loader**: Zod manifest, `plugins/<id>/` dir, folder install/update, uninstall, enable/disable with a permission-approval prompt, per-profile enable+grant state, Plugins tab. Standalone plugins run app-wide (headless in P2) in the same sandbox via a shared RPC dispatcher with manifest-permission enforcement. `pluginHostService` + `pluginsStore` + `PluginHost`/`PluginsPanel`.                                                                                                                                                                                                       | file storage                |
+| **D3**       | **App-extension contributions**: `registerPanel/registerButton/registerCommand`, event hooks, shell UI injection points.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     | tabbed shell                |
+| **D4**       | **Slash-command runtime (subset)** + **Tavern Helper shim**.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 | D1 bridge                   |
+| **D5**       | Packaging (`.zip` / PNG cartridge), settings persistence, optional `net` allow-list.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         | cartridge parser (vNext §L) |
 
 D1 is the highest-value, lowest-risk start and is mostly additive on B1.
 

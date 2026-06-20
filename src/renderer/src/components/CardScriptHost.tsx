@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useChatStore } from '../stores/chatStore'
+import { useToastStore } from '../stores/toastStore'
 import { buildScriptSrcDoc, CardScript } from '../plugin/bridgeShim'
+import { dispatchRpc } from '../plugin/dispatch'
 
 interface Props {
   profileId: string
@@ -13,11 +15,6 @@ interface Props {
 interface Grants {
   enabled?: boolean
   generate?: boolean
-}
-
-interface Toast {
-  id: number
-  msg: string
 }
 
 /**
@@ -39,8 +36,6 @@ export const CardScriptHost: React.FC<Props> = ({
   const grantsRef = useRef<Grants>({})
   const [enabled, setEnabled] = useState(true)
   const [height, setHeight] = useState(0)
-  const [toasts, setToasts] = useState<Toast[]>([])
-  const toastSeq = useRef(0)
 
   const srcDoc = useMemo(() => buildScriptSrcDoc(scripts), [scripts])
 
@@ -64,57 +59,33 @@ export const CardScriptHost: React.FC<Props> = ({
     post({ __rptevent: 1, name, payload })
   }
 
-  const pushToast = (msg: string): void => {
-    const id = ++toastSeq.current
-    setToasts((t) => [...t, { id, msg }])
-    setTimeout(() => setToasts((t) => t.filter((x) => x.id !== id)), 3200)
-  }
+  const pushToast = (msg: string): void => useToastStore.getState().push(msg)
 
-  // Dispatch one permission-checked RPC from a script. Throws → reported to the
-  // script as a rejected promise.
-  const handleRpc = async (method: string, args: any[]): Promise<any> => {
-    switch (method) {
-      case 'vars': {
-        const res = await window.api.pluginVars(profileId, chatId, args[0])
-        // Keep the status-panel widgets in sync with local-var writes.
-        if (res && res.scope === 'local') {
-          useChatStore.getState().setLatestFloorVariables(res.store)
-        }
-        return res ? res.value : undefined
-      }
-      case 'chat.getMessages':
-        return window.api.pluginGetMessages(profileId, chatId)
-      case 'chat.getLastMessage': {
-        const msgs = await window.api.pluginGetMessages(profileId, chatId)
-        return msgs.length ? msgs[msgs.length - 1].response : ''
-      }
-      case 'generate':
-        return doGenerate(String(args[0] ?? ''))
-      case 'ui.toast':
-        pushToast(String(args[0] ?? ''))
-        return true
-      default:
-        throw new Error('unknown method: ' + method)
-    }
-  }
-
-  // `generate` is a sensitive capability — prompt once per card, then remember.
-  const doGenerate = async (text: string): Promise<boolean> => {
-    if (useChatStore.getState().isGenerating) {
-      throw new Error('busy: a generation is already running')
-    }
-    if (!grantsRef.current.generate) {
-      const ok = window.confirm(
-        `The scripts in "${cardName}" want to trigger an AI generation:\n\n` +
-          `"${text.slice(0, 200)}${text.length > 200 ? '…' : ''}"\n\n` +
-          `Allow card scripts to start generations? (You can change this later.)`
-      )
-      if (!ok) throw new Error('permission denied: generate')
-      grantsRef.current = await window.api.pluginSetGrants(profileId, cardId, { generate: true })
-    }
-    await useChatStore.getState().sendAction(profileId, text)
+  // Card scripts auto-grant low-risk caps; `generate` prompts once per card.
+  const ensure = async (perm: string): Promise<boolean> => {
+    if (perm !== 'generate') return true
+    if (grantsRef.current.generate) return true
+    const ok = window.confirm(
+      `The scripts in "${cardName}" want to trigger AI generation.\n\n` +
+        `Allow card scripts to start generations? (You can change this later.)`
+    )
+    if (!ok) return false
+    grantsRef.current = await window.api.pluginSetGrants(profileId, cardId, { generate: true })
     return true
   }
+
+  // Dispatch one permission-checked RPC from a script (shared with PluginHost).
+  // Throws → reported to the script as a rejected promise.
+  const handleRpc = (method: string, args: any[]): Promise<any> =>
+    dispatchRpc(method, args, {
+      profileId,
+      getChatId: () => chatId,
+      ensure,
+      toast: pushToast,
+      syncLocalVars: (store) => useChatStore.getState().setLatestFloorVariables(store),
+      triggerGenerate: (text) => useChatStore.getState().sendAction(profileId, text),
+      isGenerating: () => useChatStore.getState().isGenerating
+    })
 
   // RPC + lifecycle messages from the sandboxed frame.
   useEffect(() => {
@@ -189,16 +160,6 @@ export const CardScriptHost: React.FC<Props> = ({
         />
       ) : (
         <div className="rpt-script-off">Scripts disabled.</div>
-      )}
-
-      {toasts.length > 0 && (
-        <div className="rpt-toast-stack">
-          {toasts.map((t) => (
-            <div key={t.id} className="rpt-toast">
-              {t.msg}
-            </div>
-          ))}
-        </div>
       )}
     </div>
   )

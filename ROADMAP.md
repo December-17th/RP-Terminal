@@ -25,15 +25,15 @@ Status legend: ✅ done · 🚧 in progress · ⬜ not started
 
 ---
 
-## Phase A — Make RP usable (P0)  🚧
+## Phase A — Make RP usable (P0) 🚧
 
 - ✅ **A1. Streaming responses** — SSE for OpenAI + Anthropic; deltas over an IPC event
   channel; live text rendered for generate + regenerate.
-- ✅ **A2. Message actions** — regenerate + delete-from-here. *(swipe/edit: ⬜ follow-up)*
+- ✅ **A2. Message actions** — regenerate + delete-from-here. _(swipe/edit: ⬜ follow-up)_
 - ✅ **A3. Token budget + truncation** — CJK-aware token estimate; `fitToBudget` keeps
   the system/lore prefix + most-recent turns and trims the oldest history to a
-  configurable `max_context_tokens` (API panel); trims are logged. *(condensing/
-  summarizing dropped turns is a future refinement.)*
+  configurable `max_context_tokens` (API panel); trims are logged. _(condensing/
+  summarizing dropped turns is a future refinement.)_
 - ✅ **A4. Persona / user name** — `settings.persona.name` wired into `{{user}}`.
 - ✅ **A5. Delete sessions/characters** + refresh chat list after generate.
 - ✅ **A6. Per-provider trailing-message fix** — drop trailing assistant prefill on the
@@ -44,10 +44,10 @@ Remaining in Phase A: message swipes (edit is done). Phase A is otherwise comple
 
 ---
 
-## Phase B — The visual thesis  ✅ (core)
+## Phase B — The visual thesis ✅ (core)
 
 - ✅ **B1. Safe HTML render pipeline** — `MessageContent` splits ```html fenced blocks
-  and renders them in a **sandboxed iframe** (`sandbox="allow-same-origin"`, no scripts)
+and renders them in a **sandboxed iframe** (`sandbox="allow-same-origin"`, no scripts)
   with DOMPurify sanitization; CSS is fully isolated per card; auto-height via a
   ResizeObserver. Prose renders as GFM markdown. Card scripts are intentionally
   stripped (spec §3.3 — never execute imported scripts), so cards render statically.
@@ -58,12 +58,12 @@ Remaining in Phase A: message swipes (edit is done). Phase A is otherwise comple
 - ⬜ Remaining: per-rule enable/disable + edit in the panel; `trimStrings`; macro
   substitution inside replacements; prompt-time regex placement.
 
-## Phase C — ST-Prompt-Template + advanced preset/lorebook (P1)  ⬜
+## Phase C — ST-Prompt-Template + advanced preset/lorebook (P1) ⬜
 
 - ✅ **C1. ST-Prompt-Template engine** — EJS-style `<% %>`/`<%- %>`/`<%= %>` compiled to
   JS and run in a **quickjs-emscripten WASM sandbox** (fully isolated from Node/FS —
   verified the classic vm escape returns `undefined`). Helpers `getvar/setvar/incvar/
-  decvar/delvar` (+ local/global aliases) bound to chat vars; `variables`, `userName`,
+decvar/delvar` (+ local/global aliases) bound to chat vars; `variables`, `userName`,
   `charName`, `lastUserMessage/lastCharMessage` constants. Applied to authored content
   (system/char/lore/literal blocks) in `promptBuilder`; chat-var mutations thread into
   the new floor, global vars persist per profile (`template-globals.json`). Fail-safe:
@@ -75,13 +75,13 @@ Remaining in Phase A: message swipes (edit is done). Phase A is otherwise comple
 - ⬜ **C3. Lorebook advanced** — insertion position/depth, probability, recursion,
   configurable scan depth; standalone lorebook import/export; multiple books.
 
-## Phase D — Agentic mode (P2, design doc first)  ⬜
+## Phase D — Agentic mode (P2, design doc first) ⬜
 
 - ⬜ **D1. Tool/function-calling loop** — state read/write, lorebook query, dice/RNG,
   sub-generation; explicit stop conditions.
 - ⬜ **D2. State-schema + widget editor UI**; richer status widgets.
 
-## Phase P — Plugin / extension system  🚧 (P1 built)
+## Phase P — Plugin / extension system 🚧 (P1+P2 built)
 
 Third-party plugins (js-slash-runner class). **Design doc:**
 [docs/plugin-system-design.md](docs/plugin-system-design.md). Changes the threat
@@ -103,15 +103,20 @@ compatibility shim.
   in the Logs panel. Mock card ships a demo script. (`pluginService` + `bridgeShim` +
   `CardScriptHost`.) In-app **Scripts** tab (`ScriptManager`) to add/edit/delete a card's
   scripts with live reload. Developer API reference: [docs/plugin-api.md](docs/plugin-api.md).
-- ⬜ **P2. Plugin host/loader** — manifest, install/enable/disable, permission
-  prompts, Plugins tab.
-- ⬜ **P3. App-extension contributions** — register panels/buttons/commands + hooks.
+- ✅ **P2. Plugin host/loader** — Zod manifest + `plugins/<id>/` dir; folder
+  install/update, uninstall, enable/disable with a permission-approval prompt;
+  per-profile enable+grant state; **Plugins** tab. Standalone plugins run app-wide
+  (headless) in the same sandbox via a shared RPC dispatcher with manifest-permission
+  enforcement; bundled example scaffolder for testing.
+  (`pluginHostService`, `pluginsStore`, `PluginHost`, `PluginsPanel`.)
+- ⬜ **P3. App-extension contributions** — register panels/buttons/commands + hooks
+  (give standalone plugins visible UI surfaces; they're headless until then).
 - ⬜ **P4. Slash-command runtime (subset) + Tavern-Helper shim.**
 - ⬜ **P5. Packaging** (.zip / PNG cartridge), settings, opt-in `net`.
 - ⬜ Open decisions (see doc §12): compat ambition, permission UX, distribution,
   network allowance, whether to allow app-extensions in v1.
 
-## Phase E — Quality (ongoing)  ⬜
+## Phase E — Quality (ongoing) ⬜
 
 - ⬜ Tests for pure modules (png/preset/regex parsers, promptBuilder, lorebook
   matching, event folding).
@@ -133,7 +138,7 @@ compatibility shim.
 
 - **License: undecided** (tentatively leaning AGPL-3.0). No `LICENSE` file or
   `package.json` `license` field set yet — pending the owner's decision.
-- Provenance is recorded in `CLAUDE.md` → *Licensing & Attribution*: no third-party
+- Provenance is recorded in `CLAUDE.md` → _Licensing & Attribution_: no third-party
   source is copied; the template engine is a clean-room reimplementation of
   ST-Prompt-Template (AGPL-3.0), and we are format-compatible with SillyTavern
   (AGPL-3.0) without using its code — so neither binds the license choice.
@@ -149,6 +154,7 @@ existing foundation (Electron shell, provider/streaming layer, prompt builder,
 card schema, rpt-event, logs) — additive, not a rewrite.
 
 ### Locked stack decisions
+
 - **Stay on Electron (not Tauri).** Tauri's Rust backend would force rewriting the
   whole Node engine (SQLite/quickjs/streaming/Zod) — or shipping a Node sidecar that
   negates Tauri's benefit — and its per-OS system WebView (esp. Linux WebKitGTK)
@@ -169,16 +175,18 @@ card schema, rpt-event, logs) — additive, not a rewrite.
 - **Keyword-triggered lorebook stays the primary mechanism.** Vector RAG is an
   optional, additive layer — never a prerequisite.
 
-### Phase F — Relational storage (SQLite)  ✅
+### Phase F — Relational storage (SQLite) ✅
+
 - Migrated JSON-per-record to **`better-sqlite3`** (externalized + rebuilt for
   Electron): tables profiles, settings, presets, characters, lorebooks,
   lorebook_entries, chats, floors (+ forward-facing rpg_entities,
   episodic_memory). WAL + FKs; one DB with FKs (not per-session files).
 - One-time, atomic, idempotent JSON→SQLite migration on first run.
-- *Packaging note:* native `.node` must be asar-unpacked when building installers
+- _Packaging note:_ native `.node` must be asar-unpacked when building installers
   (verify `electron-builder` auto-unpack at Milestone packaging).
 
-### Phase G — Four-layer prompt-cache assembly  ✅ (increment 1)
+### Phase G — Four-layer prompt-cache assembly ✅ (increment 1)
+
 - promptBuilder documents + enforces the L1 static core → L2 semi-static lore →
   L3 rolling history → L4 volatile (user action **always last**) layering, so the
   cacheable prefix is byte-stable across turns.
@@ -190,37 +198,43 @@ card schema, rpt-event, logs) — additive, not a rewrite.
 - ⬜ Remaining: hold L2 (world info) stable across turns instead of re-matching
   every turn (needs FSM transitions, Phase H); Bedrock `cachePoint` passthrough.
 
-### Phase H — Manual FSM modes + persona expansion  ⬜
+### Phase H — Manual FSM modes + persona expansion ⬜
+
 - **Manual mode switch** (Explore / Dialogue / Combat) in the UI; each mode tunes
   output-token ceiling, retrieval breadth, and granularity.
 - **Optional** auto-routing: a user-configured cheap API classifies intent. Off
   by default; manual is the baseline.
 - Expand the decoupled global persona with concrete sensory-grounded attributes.
 
-### Phase I — Combat math engine + append-only injection  ⬜
+### Phase I — Combat math engine + append-only injection ⬜
+
 - Sandboxed scripting (`isolated-vm` or `quickjs-emscripten`, **not** node `vm`)
   in a worker; scripts read/write entity state and do RNG/math.
 - LLM becomes flavor-only; results injected as a compact event block at the
   bottom of the prompt (L4) to preserve the cache.
 
-### Phase J — Multi-lorebook + protection/mutation (keyword-based)  ⬜
+### Phase J — Multi-lorebook + protection/mutation (keyword-based) ⬜
+
 - Load multiple books per session; per-entry/-book toggles; live mid-session
   edit. Keyword matching (no embeddings required).
 - Protected/unprotected entries; model tool-requests mutate unprotected lore via
   a backend gatekeeper; deferred injection at the next mode transition.
 
-### Phase K — Optional embeddings + RAG + auto-routing  ⬜  *(opt-in)*
+### Phase K — Optional embeddings + RAG + auto-routing ⬜ _(opt-in)_
+
 - User-configured embedding API; vector store via `sqlite-vec`. Episodic memory
   summarization + retrieval. Strictly additive to keyword lorebooks; off unless
   the user enables and configures it.
 
-### Phase L — PNG cartridge + recommended settings  ⬜
+### Phase L — PNG cartridge + recommended settings ⬜
+
 - Extend the importer to unpack a ZIP appended after the PNG `IEND` (manifest,
   `ui_schema`, `memory_schema`, bundled lorebooks, scripts). Add export/packing.
 - Card-provided **recommended settings** that optionally auto-tune client
   thresholds/limits on load (always user-overridable).
 
-### Phase M — The Forge (authoring tool)  ⬜  *(last)*
+### Phase M — The Forge (authoring tool) ⬜ _(last)_
+
 - In-app workspace using user-configured text/vision APIs to generate schemas,
   UI layouts, and sandboxed scripts from natural language; preview canvas; pack
   to a cartridge PNG.
@@ -230,7 +244,7 @@ card schema, rpt-event, logs) — additive, not a rewrite.
 ## Known issues / security
 
 - `sandbox: false` + rendering untrusted card HTML is an XSS surface — must land
-  DOMPurify + a sandbox model *with* B1, not after.
+  DOMPurify + a sandbox model _with_ B1, not after.
 - ST-Prompt-Template `<% %>` blocks are currently stripped, not evaluated (C1).
 - Combat/Forge scripts run untrusted author code — require a real JS sandbox
   (`isolated-vm`/`quickjs`), never node `vm` (Phase I).

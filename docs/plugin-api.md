@@ -8,7 +8,7 @@ SillyTavern), built on RP Terminal's own API.
 
 > **Stability.** Everything documented under **"Available now"** is part of the
 > `rpt.v1` contract. Additive changes stay within `v1`; anything breaking bumps to
-> `v2` (and the host can offer both). Sections marked **Roadmap** are *not* yet
+> `v2` (and the host can offer both). Sections marked **Roadmap** are _not_ yet
 > callable — don't ship against them.
 
 ---
@@ -25,9 +25,7 @@ A card script is an entry in a character card under
     "name": "My Character",
     "extensions": {
       "rp_terminal": {
-        "scripts": [
-          { "name": "stats-panel", "code": "/* your JS here */" }
-        ]
+        "scripts": [{ "name": "stats-panel", "code": "/* your JS here */" }]
       }
     }
   }
@@ -74,8 +72,8 @@ async function refresh() {
   root.appendChild(btn)
 }
 
-rpt.on('ready', refresh)            // initial paint
-rpt.on('generation:end', refresh)   // re-read after each AI response
+rpt.on('ready', refresh) // initial paint
+rpt.on('generation:end', refresh) // re-read after each AI response
 refresh()
 ```
 
@@ -94,6 +92,7 @@ The host renders them in an `<iframe sandbox="allow-scripts">` **without**
 document carries a strict Content-Security-Policy. The practical consequences:
 
 **You CAN:**
+
 - Run normal JavaScript: timers, `Promise`/`async`, JSON, `Math`, closures, etc.
 - Fully control your own document — `document.body` is your canvas. Create DOM,
   attach event listeners, inject `<style>`, animate, etc. Base dark-theme styling
@@ -102,6 +101,7 @@ document carries a strict Content-Security-Policy. The practical consequences:
 - Render inline images via `data:`/`blob:` URLs.
 
 **You CANNOT (by construction, not by policy):**
+
 - Touch the parent page — no access to the app's `window`, DOM, React, stores, or
   `window.api`. The opaque origin makes cross-frame access throw.
 - Reach the network — `fetch`, `XMLHttpRequest`, `WebSocket`, `EventSource`,
@@ -121,6 +121,7 @@ permission-checked on the host side before it runs (see [§6](#6-permissions)).
 
 All scripts of a card share one iframe (they are same-author, so they are not
 isolated from each other). The frame is **rebuilt from scratch** when:
+
 - you switch the active card or session (the panel is keyed by card + chat), or
 - you toggle the panel's **On/Off** switch.
 
@@ -136,6 +137,7 @@ before your code). **Every method that crosses into the app returns a `Promise`*
 — `await` it.
 
 ### `rpt.version`
+
 `string` — the API version, currently `"rpt.v1"`. Use it to feature-detect.
 
 ### Variables — `rpt.vars` (chat-local) and `rpt.global` (per-profile)
@@ -144,14 +146,14 @@ Both objects expose the same shape. `rpt.vars` reads/writes the **current
 session's** variables; `rpt.global` reads/writes variables shared across all of a
 profile's chats. Keys are **dot/bracket paths** (`"stats.hp"`, `"party[0].name"`).
 
-| Method | Returns | Description |
-|---|---|---|
-| `rpt.vars.get(key)` | `Promise<any>` | Value at `key`, or `undefined` if unset. |
-| `rpt.vars.all()` | `Promise<object>` | The entire variable object for the scope. |
-| `rpt.vars.set(key, value)` | `Promise<value>` | Set `key`; creates intermediate objects. Resolves with `value`. |
-| `rpt.vars.inc(key, n?)` | `Promise<number>` | Add `n` (default `1`); treats missing/NaN as `0`. Resolves with the new number. |
-| `rpt.vars.dec(key, n?)` | `Promise<number>` | Subtract `n` (default `1`). Resolves with the new number. |
-| `rpt.vars.del(key)` | `Promise<undefined>` | Delete `key`. |
+| Method                     | Returns              | Description                                                                     |
+| -------------------------- | -------------------- | ------------------------------------------------------------------------------- |
+| `rpt.vars.get(key)`        | `Promise<any>`       | Value at `key`, or `undefined` if unset.                                        |
+| `rpt.vars.all()`           | `Promise<object>`    | The entire variable object for the scope.                                       |
+| `rpt.vars.set(key, value)` | `Promise<value>`     | Set `key`; creates intermediate objects. Resolves with `value`.                 |
+| `rpt.vars.inc(key, n?)`    | `Promise<number>`    | Add `n` (default `1`); treats missing/NaN as `0`. Resolves with the new number. |
+| `rpt.vars.dec(key, n?)`    | `Promise<number>`    | Subtract `n` (default `1`). Resolves with the new number.                       |
+| `rpt.vars.del(key)`        | `Promise<undefined>` | Delete `key`.                                                                   |
 
 `value` may be any JSON-serializable type (number, string, boolean, array,
 object). **Permission:** auto-granted (`vars:read`/`vars:write`). See
@@ -162,15 +164,15 @@ await rpt.vars.set('inventory', ['torch', 'rope'])
 await rpt.vars.inc('stats.gold', 25)
 const gold = await rpt.vars.get('stats.gold')
 
-await rpt.global.set('newGamePlus', true)   // survives across sessions
+await rpt.global.set('newGamePlus', true) // survives across sessions
 ```
 
 ### Chat — `rpt.chat`
 
-| Method | Returns | Description |
-|---|---|---|
-| `rpt.chat.getMessages()` | `Promise<Message[]>` | The full transcript, oldest first. |
-| `rpt.chat.getLastMessage()` | `Promise<string>` | The latest AI response text (`''` if none). |
+| Method                      | Returns              | Description                                 |
+| --------------------------- | -------------------- | ------------------------------------------- |
+| `rpt.chat.getMessages()`    | `Promise<Message[]>` | The full transcript, oldest first.          |
+| `rpt.chat.getLastMessage()` | `Promise<string>`    | The latest AI response text (`''` if none). |
 
 `Message` = `{ floor: number, user: string, response: string }`. `floor` is the
 turn index (floor `0` is the opening greeting, which has an empty `user`). The
@@ -213,12 +215,12 @@ btn.onclick = async () => {
 
 ### UI — `rpt.ui`
 
-| Method | Returns | Description |
-|---|---|---|
+| Method                  | Returns         | Description                                  |
+| ----------------------- | --------------- | -------------------------------------------- |
 | `rpt.ui.toast(message)` | `Promise<true>` | Show a transient toast (auto-dismisses ~3s). |
 
 **Permission:** auto-granted (`ui`). For richer UI, render directly into your
-iframe `document.body` — that *is* your UI surface.
+iframe `document.body` — that _is_ your UI surface.
 
 ### Logging — `rpt.log`
 
@@ -240,16 +242,19 @@ rpt.on(eventName, callback) // register a handler; multiple handlers per event O
 Handlers registered at top level are guaranteed to be in place before any event
 fires. Available events:
 
-| Event | Payload | Fires when |
-|---|---|---|
-| `ready` | `{}` | The frame has loaded and the API is connected. Use for initial paint. |
-| `generation:start` | `{}` | A turn begins (whether user- or script-triggered). |
-| `generation:end` | `{}` | A turn finishes. Re-read vars/chat here to refresh your UI. |
-| `chat:changed` | `{ floors: number }` | The session's message count changed (new floor, regenerate, delete). |
+| Event              | Payload              | Fires when                                                            |
+| ------------------ | -------------------- | --------------------------------------------------------------------- |
+| `ready`            | `{}`                 | The frame has loaded and the API is connected. Use for initial paint. |
+| `generation:start` | `{}`                 | A turn begins (whether user- or script-triggered).                    |
+| `generation:end`   | `{}`                 | A turn finishes. Re-read vars/chat here to refresh your UI.           |
+| `chat:changed`     | `{ floors: number }` | The session's message count changed (new floor, regenerate, delete).  |
 
 ```js
 rpt.on('generation:start', () => setBusy(true))
-rpt.on('generation:end', () => { setBusy(false); refresh() })
+rpt.on('generation:end', () => {
+  setBusy(false)
+  refresh()
+})
 ```
 
 ---
@@ -259,7 +264,7 @@ rpt.on('generation:end', () => { setBusy(false); refresh() })
 There are two scopes:
 
 - **Local (`rpt.vars`)** — the active session's variables. Concretely, these are
-  stored on the **latest floor's** `variables`. This is the *same* object that:
+  stored on the **latest floor's** `variables`. This is the _same_ object that:
   - drives the right-panel **status widgets** (`ui_layout` entries reference these
     by path, e.g. a `StatBar` bound to `stats.hp`),
   - is mutated by `<rpt-event>` tags the model emits, and by ST-Prompt-Template
@@ -290,12 +295,12 @@ The host enforces a capability check on every engine-touching call. Per the
 [design decisions](plugin-system-design.md#12-decisions-resolved-2026-06-20), low-risk
 capabilities are auto-granted and only sensitive ones prompt:
 
-| Capability | Methods | Grant |
-|---|---|---|
-| `vars:read` / `vars:write` | `rpt.vars.*`, `rpt.global.*` | **Auto** |
-| `chat:read` | `rpt.chat.*` | **Auto** |
-| `ui` | `rpt.ui.toast` | **Auto** |
-| `generate` | `rpt.generate` | **Prompted** once per card, then remembered |
+| Capability                 | Methods                      | Grant                                       |
+| -------------------------- | ---------------------------- | ------------------------------------------- |
+| `vars:read` / `vars:write` | `rpt.vars.*`, `rpt.global.*` | **Auto**                                    |
+| `chat:read`                | `rpt.chat.*`                 | **Auto**                                    |
+| `ui`                       | `rpt.ui.toast`               | **Auto**                                    |
+| `generate`                 | `rpt.generate`               | **Prompted** once per card, then remembered |
 
 Grants are stored **per card** (the card id is the script's identity) in
 `profiles/<id>/plugin-grants.json`. The panel's **On/Off** toggle disables a
@@ -326,6 +331,7 @@ scripts keep running.
 ## 8. Recipes
 
 **React to what the model wrote:**
+
 ```js
 rpt.on('generation:end', async () => {
   const text = await rpt.chat.getLastMessage()
@@ -337,6 +343,7 @@ rpt.on('generation:end', async () => {
 ```
 
 **A quick-action bar that drives the story:**
+
 ```js
 for (const action of ['Look around', 'Wait', 'Leave']) {
   const b = document.createElement('button')
@@ -347,6 +354,7 @@ for (const action of ['Look around', 'Wait', 'Leave']) {
 ```
 
 **Cross-session counter:**
+
 ```js
 rpt.on('generation:end', async () => {
   const total = await rpt.global.inc('turnsPlayed')
@@ -374,24 +382,88 @@ rpt.on('generation:end', async () => {
 
 ---
 
-## 10. Roadmap (not yet callable)
+## 10. Standalone plugins (installable)
 
-Planned for later plugin phases (see the [design doc](plugin-system-design.md)):
+Beyond card scripts, RP Terminal runs **standalone plugins** installed from disk
+and managed in the **Plugins** tab. They use the same sandbox and the same
+`rpt.v1` API as card scripts; they differ in _distribution_ and _permissions_.
 
-- `rpt.chat.sendUserMessage` / `editMessage` (`chat:write`).
-- `rpt.lorebook.getEntries` / `activate` (`lorebook:read`).
-- `rpt.slash.registerCommand` / `runCommand` + a minimal STScript subset.
-- A **Tavern-Helper compatibility shim** mapping common
-  `getVariables`/`setVariables`/`triggerSlash`/`generate` calls onto `rpt.v1`
-  (clean-room — see below).
-- `rpt.storage` — plugin-scoped key/value persistence.
-- **App extensions** (panels/buttons/commands/hooks), a manifest, and an
-  install/enable/disable **Plugins** tab (P2+).
-- Opt-in `net` with a host allow-list.
+A plugin is a folder under `userData/rp-terminal-data/plugins/<id>/`:
+
+```
+my-plugin/
+  manifest.json
+  main.js
+```
+
+`manifest.json`:
+
+```jsonc
+{
+  "id": "dev.author.my-plugin", // reverse-DNS, unique; also the install dir name
+  "name": "My Plugin",
+  "version": "1.0.0",
+  "description": "What it does.",
+  "author": "you",
+  "type": "app-extension", // "app-extension" | "card-script"
+  "entry": "main.js", // sandboxed entry script
+  "apiVersion": "rpt.v1",
+  "permissions": ["vars:read", "vars:write", "chat:read", "ui:toast"]
+}
+```
+
+**Install / manage** (Plugins tab):
+
+- **Install…** — pick a folder containing `manifest.json`; it's copied into the
+  plugins dir (re-installing the same `id` updates it).
+- **+ Example** — drops a small headless example plugin in, for testing.
+- **On/Off** — enabling shows the plugin's requested permissions for approval;
+  approving grants exactly those. Disabling stops it.
+- **🗑** — uninstall (deletes the plugin's files).
+
+**Permissions are manifest-driven** (unlike card scripts, which auto-grant
+low-risk caps). A plugin may only call methods whose permission it **declared in
+the manifest and the user approved on enable**; anything else rejects with
+`permission denied`. Sensitive caps (`generate`, `chat:write`, `net`) are
+highlighted in the approval prompt. Enable-state + grants persist per profile in
+`profiles/<id>/plugins-state.json`.
+
+**Runtime.** Enabled plugins run **app-wide** (not tied to a card) in a hidden
+sandboxed iframe — they are **headless in P2** (no visible UI surface until the
+P3 contribution points land). They can read/write variables, read chat, trigger
+generation, toast, log, and react to lifecycle events; their vars/chat/generate
+calls act on the **currently active session** (and `rpt.global` works even with
+no session open).
+
+```js
+// main.js — a headless plugin
+rpt.on('ready', () => rpt.ui.toast('Loaded'))
+rpt.on('generation:end', async () => {
+  const n = await rpt.global.inc('turnsPlayed')
+  rpt.log('turns this profile:', n)
+})
+```
 
 ---
 
-## 11. Versioning & compatibility
+## 11. Roadmap (not yet callable)
+
+Planned for later plugin phases (see the [design doc](plugin-system-design.md)):
+
+- **UI contribution points** for standalone plugins —
+  `registerPanel`/`registerButton`/`registerCommand` so plugins get visible
+  surfaces in the shell (P3). Today standalone plugins are headless.
+- `rpt.chat.sendUserMessage` / `editMessage` (`chat:write`).
+- `rpt.lorebook.getEntries` / `activate` (`lorebook:read`).
+- `rpt.slash.registerCommand` / `runCommand` + a minimal STScript subset, plus a
+  clean-room **Tavern-Helper compatibility shim** mapping common
+  `getVariables`/`setVariables`/`triggerSlash`/`generate` calls onto `rpt.v1` (P4).
+- `rpt.storage` — plugin-scoped key/value persistence.
+- Packaging (`.zip` / PNG cartridge) and opt-in `net` with a host allow-list (P5).
+
+---
+
+## 12. Versioning & compatibility
 
 - `rpt.version === 'rpt.v1'`. New methods/events added to v1 are additive and
   safe; existing signatures won't change under v1.
@@ -402,10 +474,10 @@ Planned for later plugin phases (see the [design doc](plugin-system-design.md)):
 
 ---
 
-## 12. Provenance
+## 13. Provenance
 
 The `rpt` API is **original, clean-room** work. RP Terminal does **not** copy,
 vendor, or load any code from js-slash-runner / Tavern Helper (AGPL-3.0). We match
-*formats and concepts* where useful for compatibility, and implement them
+_formats and concepts_ where useful for compatibility, and implement them
 ourselves. See [`plugin-system-design.md` §9](plugin-system-design.md#9-js-slash-runner--tavern-helper-compatibility)
 and the repo's `CLAUDE.md` → Licensing & Attribution.

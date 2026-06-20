@@ -65,6 +65,16 @@ const api = {
   pluginSetGrants: (profileId: string, cardId: string, patch: any) =>
     ipcRenderer.invoke('plugin-set-grants', profileId, cardId, patch),
   pluginLog: (label: string, message: string) => ipcRenderer.invoke('plugin-log', label, message),
+  // Plugin host/loader (P2)
+  pluginsList: (profileId: string) => ipcRenderer.invoke('plugins-list', profileId),
+  pluginsInstallDialog: () => ipcRenderer.invoke('plugins-install-dialog'),
+  pluginsUninstall: (profileId: string, id: string) =>
+    ipcRenderer.invoke('plugins-uninstall', profileId, id),
+  pluginsSetEnabled: (profileId: string, id: string, enabled: boolean, grants?: string[]) =>
+    ipcRenderer.invoke('plugins-set-enabled', profileId, id, enabled, grants),
+  pluginsSetGrants: (profileId: string, id: string, grants: string[]) =>
+    ipcRenderer.invoke('plugins-set-grants', profileId, id, grants),
+  pluginsScaffoldExample: () => ipcRenderer.invoke('plugins-scaffold-example'),
   // Subscribe to incremental generation text. Returns an unsubscribe function.
   onGenerationDelta: (cb: (payload: { chatId: string; delta: string }) => void) => {
     const listener = (_e: IpcRendererEvent, payload: { chatId: string; delta: string }) =>

@@ -15,8 +15,12 @@ import { RegexPanel } from './components/RegexPanel'
 import { MessageContent } from './components/MessageContent'
 import { FpsOverlay } from './components/FpsOverlay'
 import { CardScriptHost } from './components/CardScriptHost'
+import { PluginsPanel } from './components/PluginsPanel'
+import { PluginHost } from './components/PluginHost'
 import { useLogStore } from './stores/logStore'
 import { useRegexStore } from './stores/regexStore'
+import { usePluginsStore } from './stores/pluginsStore'
+import { useToastStore } from './stores/toastStore'
 
 type PanelTab =
   | 'world'
@@ -25,9 +29,25 @@ type PanelTab =
   | 'lorebook'
   | 'scripts'
   | 'regex'
+  | 'plugins'
   | 'api'
   | 'settings'
   | 'logs'
+
+/** Single shared toast surface for the sandboxed runtime (card scripts + plugins). */
+function ToastStack() {
+  const toasts = useToastStore((s) => s.toasts)
+  if (!toasts.length) return null
+  return (
+    <div className="rpt-toast-stack">
+      {toasts.map((t) => (
+        <div key={t.id} className="rpt-toast">
+          {t.msg}
+        </div>
+      ))}
+    </div>
+  )
+}
 
 interface MenuItem {
   label: string
@@ -252,6 +272,7 @@ export default function App() {
       loadChats(activeProfile.id)
       usePresetStore.getState().load(activeProfile.id)
       useRegexStore.getState().load(activeProfile.id)
+      usePluginsStore.getState().load(activeProfile.id)
     }
   }, [activeProfile])
 
@@ -582,6 +603,9 @@ export default function App() {
       case 'regex':
         return <RegexPanel profileId={activeProfile.id} />
 
+      case 'plugins':
+        return <PluginsPanel profileId={activeProfile.id} />
+
       case 'settings':
         return (
           <div className="panel">
@@ -643,6 +667,7 @@ export default function App() {
           {tab('lorebook', 'Lorebook', !activeCharacter)}
           {tab('scripts', 'Scripts', !activeCharacter)}
           {tab('regex', 'Regex')}
+          {tab('plugins', 'Plugins')}
           {tab('api', 'API')}
           {tab('settings', 'Settings')}
           {tab('logs', 'Logs')}
@@ -824,6 +849,10 @@ export default function App() {
       </div>
 
       {settings?.ui?.show_fps && <FpsOverlay />}
+
+      {/* App-wide standalone-plugin runtime (headless) + shared toast surface. */}
+      <PluginHost profileId={activeProfile.id} />
+      <ToastStack />
 
       {menu && (
         <ContextMenu
