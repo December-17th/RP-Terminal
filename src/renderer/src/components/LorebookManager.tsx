@@ -26,6 +26,8 @@ export const LorebookManager: React.FC<Props> = ({
     loadLibrary,
     open,
     createNew,
+    importLorebook,
+    exportCurrent,
     removeCurrent,
     save,
     loadSession,
@@ -79,6 +81,21 @@ export const LorebookManager: React.FC<Props> = ({
         <div className="panel-header-actions">
           {dirty && <span style={{ fontSize: '0.8em', opacity: 0.7 }}>unsaved</span>}
           <button onClick={() => guardDirty() && createNew(profileId)}>+ New</button>
+          <button
+            className="btn-ghost"
+            title="Import an ST world-info / lorebook JSON as a new lorebook"
+            onClick={() => guardDirty() && importLorebook(profileId)}
+          >
+            Import
+          </button>
+          <button
+            className="btn-ghost"
+            disabled={!currentId}
+            title="Export this lorebook to a JSON file"
+            onClick={() => exportCurrent(profileId)}
+          >
+            Export
+          </button>
           <button className="btn-accent" disabled={!dirty} onClick={() => save(profileId)}>
             Save
           </button>
@@ -282,6 +299,16 @@ const EntryCard: React.FC<EntryCardProps> = ({
                     insertion_depth: e.target.value === '' ? null : Number(e.target.value)
                   })
                 }
+              />
+            </label>
+            <label className="order-field" title="Chance this entry fires when matched (100 = always).">
+              Prob %
+              <input
+                type="number"
+                min={0}
+                max={100}
+                value={entry.probability}
+                onChange={(e) => onChange({ probability: Number(e.target.value) })}
               />
             </label>
           </div>

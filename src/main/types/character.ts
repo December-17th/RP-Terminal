@@ -19,6 +19,8 @@ export const LorebookEntrySchema = z.object({
   constant: z.boolean().default(false),
   /** require a secondary key match in addition to a primary key */
   selective: z.boolean().default(false),
+  /** % chance (0–100) a matched entry actually fires; <100 rolls each turn */
+  probability: z.number().default(100),
   comment: z.string().default('')
 })
 export type LorebookEntry = z.infer<typeof LorebookEntrySchema>

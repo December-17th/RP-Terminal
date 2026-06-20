@@ -11,6 +11,8 @@ export interface LorebookEntry {
   case_sensitive: boolean
   constant: boolean
   selective: boolean
+  /** % chance (0–100) a matched entry fires; <100 rolls each turn. */
+  probability: number
   comment: string
 }
 
@@ -34,6 +36,7 @@ const emptyEntry = (): LorebookEntry => ({
   case_sensitive: false,
   constant: false,
   selective: false,
+  probability: 100,
   comment: ''
 })
 
@@ -49,6 +52,8 @@ interface LorebookState {
   loadLibrary: (profileId: string) => Promise<void>
   open: (profileId: string, id: string) => Promise<void>
   createNew: (profileId: string) => Promise<void>
+  importLorebook: (profileId: string) => Promise<void>
+  exportCurrent: (profileId: string) => Promise<void>
   removeCurrent: (profileId: string) => Promise<void>
   save: (profileId: string) => Promise<void>
 
@@ -93,6 +98,19 @@ export const useLorebookStore = create<LorebookState>((set, get) => ({
     const summary = await window.api.createLorebook(profileId, 'New Lorebook')
     await get().loadLibrary(profileId)
     await get().open(profileId, summary.id)
+  },
+
+  importLorebook: async (profileId) => {
+    const summary = await window.api.importLorebookDialog(profileId)
+    if (!summary) return
+    await get().loadLibrary(profileId)
+    await get().open(profileId, summary.id)
+  },
+
+  exportCurrent: async (profileId) => {
+    const { currentId, lorebook } = get()
+    if (!currentId || !lorebook) return
+    await window.api.exportLorebookDialog(profileId, currentId, lorebook.name)
   },
 
   removeCurrent: async (profileId) => {

@@ -212,6 +212,25 @@ app.whenReady().then(() => {
     // Drop the deleted book from any session that still references it.
     chatService.removeLorebookIdFromChats(profileId, id)
   })
+  ipcMain.handle('import-lorebook-dialog', async (event, profileId) => {
+    const { dialog } = require('electron')
+    const result = await dialog.showOpenDialog(BrowserWindow.fromWebContents(event.sender)!, {
+      properties: ['openFile'],
+      filters: [{ name: 'Lorebook / World Info', extensions: ['json'] }]
+    })
+    if (result.canceled || result.filePaths.length === 0) return null
+    return lorebookService.importLorebookFromFile(profileId, result.filePaths[0])
+  })
+  ipcMain.handle('export-lorebook-dialog', async (event, profileId, id, name) => {
+    const { dialog } = require('electron')
+    const safeName = String(name || 'lorebook').replace(/[^\w.-]+/g, '_')
+    const result = await dialog.showSaveDialog(BrowserWindow.fromWebContents(event.sender)!, {
+      defaultPath: `${safeName}.json`,
+      filters: [{ name: 'Lorebook', extensions: ['json'] }]
+    })
+    if (result.canceled || !result.filePath) return false
+    return lorebookService.exportLorebookToFile(profileId, id, result.filePath)
+  })
   // Per-session active lorebook selection
   ipcMain.handle('get-chat-lorebooks', (_, profileId, chatId) =>
     chatService.getChatLorebookIds(profileId, chatId)

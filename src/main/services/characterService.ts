@@ -2,8 +2,12 @@ import fs from 'fs'
 import path from 'path'
 import { getAppDir, ensureDir } from './storageService'
 import { getDb } from './db'
-import { RPTerminalCard, RPTerminalCardSchema, Lorebook, LorebookSchema } from '../types/character'
-import { saveCharacterLorebook, deleteCharacterLorebook } from './lorebookService'
+import { RPTerminalCard, RPTerminalCardSchema } from '../types/character'
+import {
+  saveCharacterLorebook,
+  deleteCharacterLorebook,
+  normalizeLorebookData
+} from './lorebookService'
 import { parseStPng } from '../parsers/stPngParser'
 
 const getAvatarsDir = (): string => path.join(getAppDir(), 'avatars')
@@ -56,26 +60,6 @@ export const deleteCharacter = (profileId: string, characterId: string): void =>
   if (fs.existsSync(avatar)) fs.unlinkSync(avatar)
 }
 
-const normalizeLorebook = (raw: any, fallbackName: string): Lorebook | null => {
-  if (!raw) return null
-  const rawEntries = Array.isArray(raw.entries) ? raw.entries : Object.values(raw.entries || {})
-  if (!Array.isArray(rawEntries) || rawEntries.length === 0) return null
-
-  const entries = rawEntries.map((e: any) => ({
-    keys: e.keys || e.key || [],
-    secondary_keys: e.secondary_keys || e.keysecondary || [],
-    content: e.content || '',
-    enabled: e.enabled !== false && e.disable !== true,
-    insertion_order: e.insertion_order ?? e.order ?? 100,
-    case_sensitive: e.case_sensitive === true || e.caseSensitive === true,
-    constant: e.constant === true,
-    selective: e.selective === true,
-    comment: e.comment || e.name || ''
-  }))
-
-  return LorebookSchema.parse({ name: raw.name || fallbackName, entries })
-}
-
 export const importCharacterFromFile = (profileId: string, filePath: string): string | null => {
   try {
     const ext = path.extname(filePath).toLowerCase()
@@ -113,7 +97,7 @@ export const importCharacterFromFile = (profileId: string, filePath: string): st
     const newId = crypto.randomUUID()
     saveCharacter(profileId, newId, card)
 
-    const lorebook = normalizeLorebook(src.character_book || stData.character_book, card.data.name)
+    const lorebook = normalizeLorebookData(src.character_book || stData.character_book, card.data.name)
     if (lorebook) saveCharacterLorebook(profileId, newId, lorebook)
 
     if (ext === '.png') {

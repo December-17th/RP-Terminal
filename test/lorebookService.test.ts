@@ -1,5 +1,9 @@
 import { describe, it, expect } from 'vitest'
-import { matchEntries, matchAcross } from '../src/main/services/lorebookService'
+import {
+  matchEntries,
+  matchAcross,
+  normalizeLorebookData
+} from '../src/main/services/lorebookService'
 import { LorebookSchema } from '../src/main/types/character'
 
 const book = (entries: any[]): ReturnType<typeof LorebookSchema.parse> =>
@@ -46,6 +50,67 @@ describe('matchEntries', () => {
   it('returns nothing for a null/empty book', () => {
     expect(matchEntries(null, 'a')).toEqual([])
     expect(matchEntries(book([]), 'a')).toEqual([])
+  })
+
+  it('gates a matched entry on probability via the injected rng', () => {
+    const lb = book([{ keys: ['a'], content: 'maybe', probability: 50 }])
+    expect(matchEntries(lb, 'a', () => 0.9)).toHaveLength(0) // 90 >= 50 -> fails
+    expect(matchEntries(lb, 'a', () => 0.1)).toHaveLength(1) // 10 < 50 -> fires
+  })
+
+  it('probability 100 always fires, 0 never fires', () => {
+    const always = book([{ keys: ['a'], content: 'x', probability: 100 }])
+    const never = book([{ keys: ['a'], content: 'x', probability: 0 }])
+    expect(matchEntries(always, 'a', () => 0.999)).toHaveLength(1)
+    expect(matchEntries(never, 'a', () => 0)).toHaveLength(0)
+  })
+
+  it('applies probability to constant entries too', () => {
+    const lb = book([{ content: 'c', constant: true, probability: 30 }])
+    expect(matchEntries(lb, 'anything', () => 0.5)).toHaveLength(0)
+    expect(matchEntries(lb, 'anything', () => 0.2)).toHaveLength(1)
+  })
+})
+
+describe('normalizeLorebookData', () => {
+  it('maps ST aliases: object-keyed entries, key/keysecondary, order, position→depth, probability', () => {
+    const lb = normalizeLorebookData(
+      {
+        name: 'World',
+        entries: {
+          '0': {
+            key: ['dragon'],
+            keysecondary: ['fire'],
+            content: 'lore',
+            order: 5,
+            position: 4,
+            depth: 3,
+            probability: 80,
+            selective: true
+          }
+        }
+      },
+      'fallback'
+    )
+    expect(lb).not.toBeNull()
+    expect(lb!.name).toBe('World')
+    const e = lb!.entries[0]
+    expect(e.keys).toEqual(['dragon'])
+    expect(e.secondary_keys).toEqual(['fire'])
+    expect(e.insertion_order).toBe(5)
+    expect(e.insertion_depth).toBe(3) // ST position 4 = at depth
+    expect(e.probability).toBe(80)
+    expect(e.selective).toBe(true)
+  })
+
+  it('leaves insertion_depth null when the entry is not positioned at depth', () => {
+    const lb = normalizeLorebookData({ entries: [{ keys: ['x'], content: 'y', position: 0 }] }, 'f')
+    expect(lb!.entries[0].insertion_depth).toBeNull()
+  })
+
+  it('returns null when there are no usable entries', () => {
+    expect(normalizeLorebookData({ entries: {} }, 'f')).toBeNull()
+    expect(normalizeLorebookData(null, 'f')).toBeNull()
   })
 })
 

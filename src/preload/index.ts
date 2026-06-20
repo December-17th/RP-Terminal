@@ -59,6 +59,10 @@ const api = {
     ipcRenderer.invoke('create-lorebook', profileId, name),
   deleteLorebook: (profileId: string, id: string) =>
     ipcRenderer.invoke('delete-lorebook', profileId, id),
+  importLorebookDialog: (profileId: string) =>
+    ipcRenderer.invoke('import-lorebook-dialog', profileId),
+  exportLorebookDialog: (profileId: string, id: string, name: string) =>
+    ipcRenderer.invoke('export-lorebook-dialog', profileId, id, name),
   getChatLorebooks: (profileId: string, chatId: string) =>
     ipcRenderer.invoke('get-chat-lorebooks', profileId, chatId),
   setChatLorebooks: (profileId: string, chatId: string, ids: string[] | null) =>
