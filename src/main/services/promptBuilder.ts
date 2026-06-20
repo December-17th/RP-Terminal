@@ -9,6 +9,55 @@ export interface ChatMessage {
   content: string
 }
 
+// CJK ranges (Chinese/Japanese/Korean + fullwidth) tokenize denser than Latin,
+// so estimate them ~1 token/char and other text ~4 chars/token. Rough, but good
+// enough to keep us under a budget with margin without a real tokenizer.
+const CJK = /[　-鿿가-힯＀-￯]/
+
+export const estimateTokens = (text: string): number => {
+  if (!text) return 0
+  let cjk = 0
+  let other = 0
+  for (const ch of text) {
+    if (CJK.test(ch)) cjk++
+    else other++
+  }
+  return cjk + Math.ceil(other / 4)
+}
+
+const msgTokens = (m: ChatMessage): number => estimateTokens(m.content) + 4
+
+/**
+ * Trim the prompt to fit a token budget. Keeps the leading system/lore prefix
+ * (L1/L2) and the most recent conversation turns, dropping the OLDEST history
+ * first; the final user turn is always retained. Returns how many messages were
+ * dropped so the caller can log it.
+ */
+export const fitToBudget = (
+  messages: ChatMessage[],
+  maxTokens: number
+): { messages: ChatMessage[]; dropped: number } => {
+  const total = messages.reduce((s, m) => s + msgTokens(m), 0)
+  if (total <= maxTokens) return { messages, dropped: 0 }
+
+  const convoStart = messages.findIndex((m) => m.role !== 'system')
+  if (convoStart === -1) return { messages, dropped: 0 }
+
+  const head = messages.slice(0, convoStart)
+  let convo = messages.slice(convoStart)
+  const headCost = head.reduce((s, m) => s + msgTokens(m), 0)
+  let convoCost = convo.reduce((s, m) => s + msgTokens(m), 0)
+  let dropped = 0
+
+  // Drop oldest conversation messages until we fit (always keep the last turn).
+  while (headCost + convoCost > maxTokens && convo.length > 1) {
+    convoCost -= msgTokens(convo[0])
+    convo = convo.slice(1)
+    dropped++
+  }
+  return { messages: [...head, ...convo], dropped }
+}
+
 export interface BuildPromptArgs {
   card: RPTerminalCard
   preset: Preset

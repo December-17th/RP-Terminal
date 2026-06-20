@@ -4,7 +4,7 @@ import { getCharacter } from './characterService'
 import { getCharacterLorebook } from './lorebookService'
 import { getChat, appendFloor, truncateFloors } from './chatService'
 import { getAllFloors, getFloor } from './floorService'
-import { buildPrompt } from './promptBuilder'
+import { buildPrompt, fitToBudget } from './promptBuilder'
 import { streamProvider, DeltaCallback } from './apiService'
 import { parseContent, RPEvent } from '../parsers/contentParser'
 import { log } from './logService'
@@ -60,7 +60,7 @@ export const generate = async (
   const lorebook = getCharacterLorebook(profileId, chat.character_id)
   const floors = getAllFloors(profileId, chatId, chat.floor_count)
 
-  const messages = buildPrompt({
+  const built = buildPrompt({
     card,
     preset,
     lorebook,
@@ -68,6 +68,13 @@ export const generate = async (
     userAction,
     userName: settings.persona?.name || 'User'
   })
+
+  // Trim oldest history to stay under the configured context budget.
+  const budget = settings.generation?.max_context_tokens || 32000
+  const { messages, dropped } = fitToBudget(built, budget)
+  if (dropped > 0) {
+    log('info', `context budget ${budget} tok — trimmed ${dropped} oldest message(s)`)
+  }
 
   log(
     'request',

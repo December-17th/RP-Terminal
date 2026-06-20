@@ -11,6 +11,9 @@ export interface Settings {
   persona: {
     name: string;
   };
+  generation: {
+    max_context_tokens: number;
+  };
   ui: {
     theme: string;
     font_size: number;

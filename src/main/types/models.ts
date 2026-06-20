@@ -18,6 +18,10 @@ export interface Settings {
   persona: {
     name: string;
   };
+  generation: {
+    /** Max estimated input tokens for the assembled prompt; oldest history is trimmed to fit. */
+    max_context_tokens: number;
+  };
   ui: {
     theme: string;
     font_size: number;

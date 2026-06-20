@@ -211,6 +211,15 @@ export default function App() {
               <div style={{ fontSize: '0.78em', color: 'var(--rpt-text-secondary)', marginTop: 4 }}>
                 Replaces {'{{user}}'} in prompts, cards and lorebooks.
               </div>
+
+              <label className="field-label" style={{ marginTop: 16 }}>Max Context (tokens)</label>
+              <input type="number" min={1000} step={1000} placeholder="32000"
+                value={settings?.generation?.max_context_tokens ?? 32000}
+                onChange={e => updateSettings(activeProfile.id, { generation: { ...settings!.generation, max_context_tokens: Number(e.target.value) || 32000 } })} />
+              <div style={{ fontSize: '0.78em', color: 'var(--rpt-text-secondary)', marginTop: 4 }}>
+                Oldest turns are trimmed to keep the prompt under this estimate. Raise it for
+                large-context models.
+              </div>
             </div>
           </div>
         );

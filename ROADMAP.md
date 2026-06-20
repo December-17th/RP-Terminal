@@ -30,15 +30,17 @@ Status legend: ✅ done · 🚧 in progress · ⬜ not started
 - ✅ **A1. Streaming responses** — SSE for OpenAI + Anthropic; deltas over an IPC event
   channel; live text rendered for generate + regenerate.
 - ✅ **A2. Message actions** — regenerate + delete-from-here. *(swipe/edit: ⬜ follow-up)*
-- ⬜ **A3. Token budget + truncation** — keep system + recent N, drop/condense oldest
-  so long sessions don't overflow the context window. *(next focused pass)*
+- ✅ **A3. Token budget + truncation** — CJK-aware token estimate; `fitToBudget` keeps
+  the system/lore prefix + most-recent turns and trims the oldest history to a
+  configurable `max_context_tokens` (API panel); trims are logged. *(condensing/
+  summarizing dropped turns is a future refinement.)*
 - ✅ **A4. Persona / user name** — `settings.persona.name` wired into `{{user}}`.
 - ✅ **A5. Delete sessions/characters** + refresh chat list after generate.
 - ✅ **A6. Per-provider trailing-message fix** — drop trailing assistant prefill on the
   OpenAI-compatible path (fixes Claude/Bedrock-proxy 400s).
 - ✅ **Extra: session preview panel** — session list shows the latest floor's opening text.
 
-Remaining in Phase A: **A3 (token budget)**, swipe/edit messages.
+Remaining in Phase A: message swipes (edit is done). Phase A is otherwise complete.
 
 ---
 
