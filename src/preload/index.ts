@@ -1,4 +1,4 @@
-import { contextBridge, ipcRenderer } from 'electron'
+import { contextBridge, ipcRenderer, IpcRendererEvent } from 'electron'
 import { electronAPI } from '@electron-toolkit/preload'
 
 // Custom APIs for renderer
@@ -26,7 +26,21 @@ const api = {
   importPresetDialog: (profileId: string) => ipcRenderer.invoke('import-preset-dialog', profileId),
   getLorebook: (profileId: string, charId: string) => ipcRenderer.invoke('get-lorebook', profileId, charId),
   saveLorebook: (profileId: string, charId: string, lorebook: any) =>
-    ipcRenderer.invoke('save-lorebook', profileId, charId, lorebook)
+    ipcRenderer.invoke('save-lorebook', profileId, charId, lorebook),
+  // Subscribe to incremental generation text. Returns an unsubscribe function.
+  onGenerationDelta: (cb: (payload: { chatId: string; delta: string }) => void) => {
+    const listener = (_e: IpcRendererEvent, payload: { chatId: string; delta: string }) => cb(payload)
+    ipcRenderer.on('generation-delta', listener)
+    return () => ipcRenderer.removeListener('generation-delta', listener)
+  },
+  // Logs
+  getLogs: () => ipcRenderer.invoke('get-logs'),
+  clearLogs: () => ipcRenderer.invoke('clear-logs'),
+  onLog: (cb: (entry: any) => void) => {
+    const listener = (_e: IpcRendererEvent, entry: any) => cb(entry)
+    ipcRenderer.on('log-event', listener)
+    return () => ipcRenderer.removeListener('log-event', listener)
+  }
 }
 
 // Use `contextBridge` APIs to expose Electron APIs to

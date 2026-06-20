@@ -2,19 +2,23 @@ import { Settings } from '../types/models'
 import { PresetParameters } from '../types/preset'
 import { ChatMessage } from './promptBuilder'
 
+export type DeltaCallback = (delta: string) => void
+
 /**
- * Call the configured provider and return the raw assistant text. Generation
- * parameters come from the active preset (preset wins over settings defaults).
+ * Stream a completion from the configured provider. Each text chunk is handed to
+ * `onDelta` as it arrives; the full concatenated text is returned when done.
+ * Generation parameters come from the active preset (preset wins over defaults).
  */
-export const callProvider = async (
+export const streamProvider = async (
   settings: Settings,
   messages: ChatMessage[],
-  params: PresetParameters
+  params: PresetParameters,
+  onDelta: DeltaCallback
 ): Promise<string> => {
   if (settings.api.provider === 'anthropic') {
-    return completeAnthropic(settings, messages, params)
+    return streamAnthropic(settings, messages, params, onDelta)
   }
-  return completeOpenAICompatible(settings, messages, params)
+  return streamOpenAICompatible(settings, messages, params, onDelta)
 }
 
 // Drop undefined params so we don't send nulls to providers that reject them.
@@ -26,10 +30,39 @@ const cleanParams = (params: PresetParameters): Record<string, unknown> => {
   return out
 }
 
-const completeOpenAICompatible = async (
+/**
+ * Read an SSE body line by line, handing each `data:` payload (minus the prefix)
+ * to `handle`. Buffers partial lines across chunks. `[DONE]` is filtered out.
+ */
+const readSse = async (
+  response: Response,
+  handle: (data: string) => void
+): Promise<void> => {
+  if (!response.body) throw new Error('No response body to stream')
+  const reader = response.body.getReader()
+  const decoder = new TextDecoder()
+  let buffer = ''
+
+  for (;;) {
+    const { done, value } = await reader.read()
+    if (done) break
+    buffer += decoder.decode(value, { stream: true })
+    const lines = buffer.split('\n')
+    buffer = lines.pop() ?? '' // keep the trailing partial line
+    for (const line of lines) {
+      const trimmed = line.trim()
+      if (!trimmed.startsWith('data:')) continue
+      const data = trimmed.slice(5).trim()
+      if (data && data !== '[DONE]') handle(data)
+    }
+  }
+}
+
+const streamOpenAICompatible = async (
   settings: Settings,
   messages: ChatMessage[],
-  params: PresetParameters
+  params: PresetParameters,
+  onDelta: DeltaCallback
 ): Promise<string> => {
   const { endpoint, api_key, model } = settings.api
   const base = endpoint || 'https://api.openai.com/v1'
@@ -52,7 +85,7 @@ const completeOpenAICompatible = async (
       'Content-Type': 'application/json',
       Authorization: `Bearer ${api_key}`
     },
-    body: JSON.stringify({ model, messages: outMessages, ...cleanParams(params), stream: false })
+    body: JSON.stringify({ model, messages: outMessages, ...cleanParams(params), stream: true })
   })
 
   if (!response.ok) {
@@ -60,14 +93,51 @@ const completeOpenAICompatible = async (
     throw new Error(`API Error: ${response.status} ${response.statusText} - ${errorText}`)
   }
 
-  const data = await response.json()
-  return data.choices?.[0]?.message?.content ?? ''
+  // Some OpenAI-compatible proxies ignore stream:true and return a normal JSON
+  // completion. Fall back to parsing that instead of silently yielding nothing.
+  const contentType = response.headers.get('content-type') || ''
+  if (!contentType.includes('text/event-stream')) {
+    const text = await response.text()
+    let content = ''
+    try {
+      const json = JSON.parse(text)
+      content = json.choices?.[0]?.message?.content ?? json.choices?.[0]?.text ?? ''
+    } catch {
+      throw new Error(`Non-streaming response was not valid JSON: ${text.slice(0, 800)}`)
+    }
+    if (!content) throw new Error(`Provider returned an empty completion: ${text.slice(0, 800)}`)
+    onDelta(content)
+    return content
+  }
+
+  let full = ''
+  const rawFrames: string[] = []
+  await readSse(response, (data) => {
+    rawFrames.push(data)
+    try {
+      const json = JSON.parse(data)
+      const delta = json.choices?.[0]?.delta?.content
+      if (typeof delta === 'string' && delta) {
+        full += delta
+        onDelta(delta)
+      }
+    } catch {
+      // ignore keep-alive / non-JSON lines
+    }
+  })
+  if (!full) {
+    throw new Error(
+      `Stream produced no text. Raw frames:\n${rawFrames.slice(0, 8).join('\n').slice(0, 800) || '(none)'}`
+    )
+  }
+  return full
 }
 
-const completeAnthropic = async (
+const streamAnthropic = async (
   settings: Settings,
   messages: ChatMessage[],
-  params: PresetParameters
+  params: PresetParameters,
+  onDelta: DeltaCallback
 ): Promise<string> => {
   const { endpoint, api_key, model } = settings.api
   const base = endpoint || 'https://api.anthropic.com/v1'
@@ -109,7 +179,7 @@ const completeAnthropic = async (
       temperature: params.temperature ?? 0.9,
       ...(params.top_p !== undefined ? { top_p: params.top_p } : {}),
       ...(params.top_k !== undefined ? { top_k: params.top_k } : {}),
-      stream: false
+      stream: true
     })
   })
 
@@ -120,6 +190,18 @@ const completeAnthropic = async (
     )
   }
 
-  const data = await response.json()
-  return data.content?.[0]?.text ?? ''
+  let full = ''
+  await readSse(response, (data) => {
+    try {
+      const json = JSON.parse(data)
+      // content_block_delta carries incremental text_delta chunks.
+      if (json.type === 'content_block_delta' && typeof json.delta?.text === 'string') {
+        full += json.delta.text
+        onDelta(json.delta.text)
+      }
+    } catch {
+      // ignore non-JSON lines
+    }
+  })
+  return full
 }

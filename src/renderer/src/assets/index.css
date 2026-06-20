@@ -232,6 +232,88 @@ body {
   padding: 6px 0 0;
 }
 
+.generating-pulse {
+  color: var(--rpt-text-secondary);
+  animation: rpt-pulse 1.2s ease-in-out infinite;
+}
+@keyframes rpt-pulse {
+  0%, 100% { opacity: 0.4; }
+  50% { opacity: 1; }
+}
+
+/* ---------- Logs console ---------- */
+.log-console {
+  background: #0a0a0a;
+  font-family: ui-monospace, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace;
+  font-size: 12px;
+  padding: 8px;
+}
+.log-empty {
+  opacity: 0.5;
+  font-style: italic;
+  padding: 12px 6px;
+}
+.log-autoscroll {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.8em;
+  color: var(--rpt-text-secondary);
+}
+.log-line {
+  border-bottom: 1px solid #1a1a1a;
+  padding: 2px 0;
+}
+.log-line-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  cursor: default;
+  white-space: nowrap;
+  overflow: hidden;
+}
+.log-line-head:hover {
+  background: rgba(255, 255, 255, 0.03);
+}
+.log-time {
+  color: #5a5a5a;
+  flex: 0 0 auto;
+}
+.log-glyph {
+  flex: 0 0 auto;
+  width: 12px;
+  text-align: center;
+}
+.log-label {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.log-caret {
+  flex: 0 0 auto;
+  color: #5a5a5a;
+}
+.log-detail {
+  margin: 4px 0 6px 20px;
+  padding: 8px;
+  background: #111;
+  border-left: 2px solid var(--rpt-border);
+  border-radius: 3px;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 320px;
+  overflow: auto;
+  color: #c8c8c8;
+}
+.lvl-request .log-glyph,
+.lvl-request .log-label { color: #5b8def; }
+.lvl-response .log-glyph,
+.lvl-response .log-label { color: #4caf72; }
+.lvl-error .log-glyph,
+.lvl-error .log-label { color: #e74c3c; }
+.lvl-info .log-glyph,
+.lvl-info .log-label { color: #aaaaaa; }
+
 .floor-list {
   flex: 1;
   overflow-y: auto;
@@ -257,8 +339,9 @@ body {
 }
 
 .action-input-container {
-  margin-top: 20px;
+  margin-top: 16px;
   display: flex;
+  align-items: stretch;
   gap: 10px;
 }
 
@@ -267,11 +350,18 @@ body {
   background-color: var(--rpt-bg-secondary);
   border: 1px solid var(--rpt-border);
   color: var(--rpt-text-primary);
-  padding: 10px;
+  padding: 12px;
   border-radius: 4px;
-  resize: none;
+  resize: vertical;
   font-family: inherit;
-  height: 60px;
+  min-height: 20vh;
+  line-height: 1.5;
+}
+
+.action-input-container button {
+  align-self: stretch;
+  padding-left: 22px;
+  padding-right: 22px;
 }
 
 button {

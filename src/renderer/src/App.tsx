@@ -8,19 +8,22 @@ import Markdown from 'react-markdown';
 import { LayoutRenderer } from './components/LayoutRenderer';
 import { LorebookManager } from './components/LorebookManager';
 import { PresetManager } from './components/PresetManager';
+import { LogsPanel } from './components/LogsPanel';
+import { useLogStore } from './stores/logStore';
 
-type PanelTab = 'characters' | 'sessions' | 'preset' | 'lorebook' | 'api';
+type PanelTab = 'characters' | 'sessions' | 'preset' | 'lorebook' | 'api' | 'logs';
 
 export default function App() {
   const { profiles, activeProfile, loadProfiles, createProfile } = useProfileStore();
   const { settings, loadSettings, updateSettings } = useSettingsStore();
   const { characters, activeCharacter, loadCharacters, setActiveCharacter, importMockCharacter, deleteCharacter } = useCharacterStore();
-  const { chats, activeChatId, floors, isGenerating, error, loadChats, createChat, setActiveChat, sendAction, regenerate, deleteChat } = useChatStore();
+  const { chats, activeChatId, floors, isGenerating, streamingText, error, loadChats, createChat, setActiveChat, sendAction, regenerate, deleteChat } = useChatStore();
 
   const [newProfileName, setNewProfileName] = useState('');
   const [actionInput, setActionInput] = useState('');
   const [presetName, setPresetName] = useState<string>('');
   const [panel, setPanel] = useState<PanelTab>('characters');
+  const [pendingUserMsg, setPendingUserMsg] = useState('');
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
@@ -31,6 +34,15 @@ export default function App() {
 
   useEffect(() => {
     loadProfiles();
+    // Live streaming text for the active chat's in-flight response.
+    const unsubDelta = window.api.onGenerationDelta(({ chatId, delta }) => {
+      if (chatId === useChatStore.getState().activeChatId) {
+        useChatStore.getState().appendDelta(delta);
+      }
+    });
+    // Live log stream for the Logs panel.
+    const unsubLog = window.api.onLog((entry) => useLogStore.getState().add(entry));
+    return () => { unsubDelta(); unsubLog(); };
   }, []);
 
   useEffect(() => {
@@ -235,6 +247,9 @@ export default function App() {
             <div className="panel-body"><div style={{ opacity: 0.6, fontStyle: 'italic' }}>Select a character first.</div></div>
           </div>
         );
+
+      case 'logs':
+        return <LogsPanel />;
     }
   };
 
@@ -248,6 +263,7 @@ export default function App() {
           {tab('preset', 'Preset')}
           {tab('lorebook', 'Lorebook', !activeCharacter)}
           {tab('api', 'API')}
+          {tab('logs', 'Logs')}
         </div>
         <span className="nav-status">
           {activeProfile.name} · {activeCharacter?.card.data.name || 'no character'} · {presetName || 'Default Preset'}
@@ -271,8 +287,12 @@ export default function App() {
                 ))}
                 {isGenerating && (
                   <div className="floor-block">
-                    <div className="user-action">&gt; {actionInput}</div>
-                    <div><em>Generating...</em></div>
+                    {pendingUserMsg && <div className="user-action">&gt; {pendingUserMsg}</div>}
+                    <div>
+                      {streamingText
+                        ? <Markdown>{streamingText}</Markdown>
+                        : <em className="generating-pulse">Generating…</em>}
+                    </div>
                   </div>
                 )}
                 {error && (
@@ -289,7 +309,11 @@ export default function App() {
                     className="btn-ghost"
                     disabled={isGenerating}
                     title="Re-roll the last response"
-                    onClick={() => regenerate(activeProfile.id)}
+                    onClick={() => {
+                      const lastUser = [...floors].reverse().find(f => f.user_message.content);
+                      setPendingUserMsg(lastUser?.user_message.content || '');
+                      regenerate(activeProfile.id);
+                    }}
                   >
                     ↻ Regenerate
                   </button>
@@ -305,6 +329,7 @@ export default function App() {
                     if (e.key === 'Enter' && !e.shiftKey) {
                       e.preventDefault();
                       if (!isGenerating && actionInput.trim()) {
+                        setPendingUserMsg(actionInput.trim());
                         sendAction(activeProfile.id, actionInput.trim());
                         setActionInput('');
                       }
@@ -316,6 +341,7 @@ export default function App() {
                 <button
                   disabled={isGenerating || !actionInput.trim()}
                   onClick={() => {
+                    setPendingUserMsg(actionInput.trim());
                     sendAction(activeProfile.id, actionInput.trim());
                     setActionInput('');
                   }}

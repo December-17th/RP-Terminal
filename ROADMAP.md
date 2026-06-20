@@ -27,8 +27,8 @@ Status legend: ✅ done · 🚧 in progress · ⬜ not started
 
 ## Phase A — Make RP usable (P0)  🚧
 
-- ⬜ **A1. Streaming responses** — SSE for OpenAI + Anthropic; incremental floor text
-  over an IPC event channel. *(next focused pass)*
+- ✅ **A1. Streaming responses** — SSE for OpenAI + Anthropic; deltas over an IPC event
+  channel; live text rendered for generate + regenerate.
 - ✅ **A2. Message actions** — regenerate + delete-from-here. *(swipe/edit: ⬜ follow-up)*
 - ⬜ **A3. Token budget + truncation** — keep system + recent N, drop/condense oldest
   so long sessions don't overflow the context window. *(next focused pass)*
@@ -38,7 +38,7 @@ Status legend: ✅ done · 🚧 in progress · ⬜ not started
   OpenAI-compatible path (fixes Claude/Bedrock-proxy 400s).
 - ✅ **Extra: session preview panel** — session list shows the latest floor's opening text.
 
-Remaining in Phase A: **A1 (streaming)**, **A3 (token budget)**, swipe/edit messages.
+Remaining in Phase A: **A3 (token budget)**, swipe/edit messages.
 
 ---
 

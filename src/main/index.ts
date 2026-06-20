@@ -11,6 +11,7 @@ import * as floorService from './services/floorService'
 import * as presetService from './services/presetService'
 import * as lorebookService from './services/lorebookService'
 import * as generationService from './services/generationService'
+import * as logService from './services/logService'
 
 function createWindow(): void {
   // Create the browser window.
@@ -88,12 +89,30 @@ app.whenReady().then(() => {
     const chat = chatService.getChat(profileId, chatId)
     return chat ? floorService.getAllFloors(profileId, chatId, chat.floor_count) : []
   })
-  ipcMain.handle('generate', (_, profileId, chatId, userAction) =>
-    generationService.generate(profileId, chatId, userAction)
-  )
-  ipcMain.handle('regenerate', (_, profileId, chatId) =>
-    generationService.regenerate(profileId, chatId)
-  )
+  ipcMain.handle('generate', async (event, profileId, chatId, userAction) => {
+    try {
+      return await generationService.generate(profileId, chatId, userAction, (delta) =>
+        event.sender.send('generation-delta', { chatId, delta })
+      )
+    } catch (err: any) {
+      logService.log('error', '✗ generate failed', err?.message || String(err))
+      throw err
+    }
+  })
+  ipcMain.handle('regenerate', async (event, profileId, chatId) => {
+    try {
+      return await generationService.regenerate(profileId, chatId, (delta) =>
+        event.sender.send('generation-delta', { chatId, delta })
+      )
+    } catch (err: any) {
+      logService.log('error', '✗ regenerate failed', err?.message || String(err))
+      throw err
+    }
+  })
+
+  // Logs
+  ipcMain.handle('get-logs', () => logService.getLogs())
+  ipcMain.handle('clear-logs', () => logService.clearLogs())
   ipcMain.handle('delete-chat', (_, profileId, chatId) =>
     chatService.deleteChat(profileId, chatId)
   )
@@ -125,6 +144,7 @@ app.whenReady().then(() => {
   )
 
   createWindow()
+  logService.log('info', 'RP Terminal started')
 
   app.on('activate', function () {
     // On macOS it's common to re-create a window in the app when the
