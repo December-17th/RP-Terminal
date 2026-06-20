@@ -137,6 +137,7 @@ const RuleEditor: React.FC<{
   const [source, setSource] = useState(rule.source)
   const [flags, setFlags] = useState(rule.flags)
   const [replace, setReplace] = useState(rule.replace)
+  const [trim, setTrim] = useState(rule.trimStrings.join(', '))
   const [markdownOnly, setMarkdownOnly] = useState(rule.markdownOnly)
   const [promptOnly, setPromptOnly] = useState(rule.promptOnly)
 
@@ -147,7 +148,19 @@ const RuleEditor: React.FC<{
       headerActions={
         <button
           className="btn-accent"
-          onClick={() => onSave({ source, flags, replace, markdownOnly, promptOnly })}
+          onClick={() =>
+            onSave({
+              source,
+              flags,
+              replace,
+              markdownOnly,
+              promptOnly,
+              trimStrings: trim
+                .split(',')
+                .map((s) => s.trim())
+                .filter(Boolean)
+            })
+          }
         >
           Save
         </button>
@@ -164,8 +177,11 @@ const RuleEditor: React.FC<{
         className="modal-textarea"
         value={replace}
         onChange={(e) => setReplace(e.target.value)}
-        placeholder="Use $1 for capture groups; \n for a newline."
+        placeholder="$1 = capture group · {{match}} = matched text · {{user}}/{{char}} · \n = newline"
       />
+
+      <label className="field-label">Trim strings (comma-separated; removed from {'{{match}}'})</label>
+      <input value={trim} onChange={(e) => setTrim(e.target.value)} placeholder="e.g. *, _" />
 
       <div className="entry-toggles">
         <label>

@@ -232,6 +232,8 @@ export default function App() {
   const toolbarButtons = useToolbarStore((s) => s.buttons)
   const regexRules = useRegexStore((s) => s.rules)
   const cardCss = activeCharacter?.card.data.extensions?.rp_terminal?.css as string | undefined
+  const personaName = settings?.persona?.name || 'User'
+  const charName = activeCharacter?.card.data.name || 'Character'
 
   // Apply display regex (beautification) to each stored response at render time.
   const renderedFloors = useMemo(
@@ -240,9 +242,9 @@ export default function App() {
         floor: f.floor,
         user: f.user_message.content,
         rawResponse: f.response.content,
-        html: useRegexStore.getState().apply(f.response.content)
+        html: useRegexStore.getState().apply(f.response.content, { user: personaName, char: charName })
       })),
-    [floors, regexRules]
+    [floors, regexRules, personaName, charName]
   )
 
   const [newProfileName, setNewProfileName] = useState('')

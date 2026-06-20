@@ -20,6 +20,8 @@ export interface RenderRegexRule {
   disabled: boolean
   markdownOnly: boolean
   promptOnly: boolean
+  /** Substrings removed from each match before `{{match}}` is substituted. */
+  trimStrings: string[]
 }
 
 export interface RegexScriptInfo {
@@ -54,7 +56,10 @@ const normalizeRule = (r: any): RenderRegexRule => {
     placement,
     disabled: r.disabled === true,
     markdownOnly: r.markdownOnly === true,
-    promptOnly: r.promptOnly === true
+    promptOnly: r.promptOnly === true,
+    trimStrings: Array.isArray(r.trimStrings)
+      ? r.trimStrings.filter((s: any) => typeof s === 'string')
+      : []
   }
 }
 
@@ -145,6 +150,7 @@ export interface RegexRulePatch {
   disabled?: boolean
   markdownOnly?: boolean
   promptOnly?: boolean
+  trimStrings?: string[]
 }
 
 /** Edit one rule in place (enable/disable, find/flags, replacement, scope), preserving
@@ -172,6 +178,7 @@ export const updateRule = (
   if (patch.disabled !== undefined) rule.disabled = patch.disabled
   if (patch.markdownOnly !== undefined) rule.markdownOnly = patch.markdownOnly
   if (patch.promptOnly !== undefined) rule.promptOnly = patch.promptOnly
+  if (patch.trimStrings !== undefined) rule.trimStrings = patch.trimStrings
 
   writeJsonSyncAtomic(p, Array.isArray(data) ? arr : arr[0])
 }

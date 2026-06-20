@@ -10,6 +10,7 @@ export interface RenderRegexRule {
   disabled: boolean
   markdownOnly: boolean
   promptOnly: boolean
+  trimStrings: string[]
 }
 
 export interface RegexScriptInfo {
@@ -30,6 +31,12 @@ export interface RegexRulePatch {
   disabled?: boolean
   markdownOnly?: boolean
   promptOnly?: boolean
+  trimStrings?: string[]
+}
+
+export interface RegexApplyContext {
+  user?: string
+  char?: string
 }
 
 interface RegexState {
@@ -46,7 +53,7 @@ interface RegexState {
     patch: RegexRulePatch
   ) => Promise<void>
   /** Apply all enabled display rules to an AI response, returning transformed text. */
-  apply: (content: string) => string
+  apply: (content: string, ctx?: RegexApplyContext) => string
 }
 
 // Compiled-RegExp cache so we don't recompile every render.
@@ -96,14 +103,33 @@ export const useRegexStore = create<RegexState>((set, get) => ({
     await get().load(profileId)
   },
 
-  apply: (content) => {
+  apply: (content, ctx) => {
     let out = content
     for (const rule of get().rules) {
       try {
         const re = getRe(rule)
         re.lastIndex = 0
-        const replace = rule.replace.replace(/\\n/g, '\n')
-        out = out.replace(re, replace)
+        out = out.replace(re, (...args) => {
+          // String.replace fn args: (match, p1..pN, offset, string [, namedGroups])
+          const rest = [...args]
+          if (typeof rest[rest.length - 1] === 'object') rest.pop() // drop named-groups obj
+          rest.pop() // drop the whole `string`
+          rest.pop() // drop `offset`
+          const match: string = rest[0]
+          const groups = rest.slice(1) as Array<string | undefined>
+
+          // {{match}} = the match with trimStrings stripped out.
+          let trimmed = match
+          for (const t of rule.trimStrings) if (t) trimmed = trimmed.split(t).join('')
+
+          return rule.replace
+            .replace(/\{\{match\}\}/gi, trimmed)
+            .replace(/\{\{user\}\}/gi, ctx?.user ?? '')
+            .replace(/\{\{char\}\}/gi, ctx?.char ?? '')
+            .replace(/\$&/g, match)
+            .replace(/\$(\d{1,2})/g, (_, n) => groups[Number(n) - 1] ?? '')
+            .replace(/\\n/g, '\n')
+        })
       } catch {
         // skip a rule that fails to compile/apply
       }
