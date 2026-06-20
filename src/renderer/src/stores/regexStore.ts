@@ -1,4 +1,7 @@
 import { create } from 'zustand'
+import { applyRegexRules, type RegexApplyContext } from '../../../shared/regexTransform'
+
+export type { RegexApplyContext }
 
 export interface RenderRegexRule {
   id: string
@@ -32,11 +35,6 @@ export interface RegexRulePatch {
   markdownOnly?: boolean
   promptOnly?: boolean
   trimStrings?: string[]
-}
-
-export interface RegexApplyContext {
-  user?: string
-  char?: string
 }
 
 interface RegexState {
@@ -103,37 +101,7 @@ export const useRegexStore = create<RegexState>((set, get) => ({
     await get().load(profileId)
   },
 
-  apply: (content, ctx) => {
-    let out = content
-    for (const rule of get().rules) {
-      try {
-        const re = getRe(rule)
-        re.lastIndex = 0
-        out = out.replace(re, (...args) => {
-          // String.replace fn args: (match, p1..pN, offset, string [, namedGroups])
-          const rest = [...args]
-          if (typeof rest[rest.length - 1] === 'object') rest.pop() // drop named-groups obj
-          rest.pop() // drop the whole `string`
-          rest.pop() // drop `offset`
-          const match: string = rest[0]
-          const groups = rest.slice(1) as Array<string | undefined>
-
-          // {{match}} = the match with trimStrings stripped out.
-          let trimmed = match
-          for (const t of rule.trimStrings) if (t) trimmed = trimmed.split(t).join('')
-
-          return rule.replace
-            .replace(/\{\{match\}\}/gi, trimmed)
-            .replace(/\{\{user\}\}/gi, ctx?.user ?? '')
-            .replace(/\{\{char\}\}/gi, ctx?.char ?? '')
-            .replace(/\$&/g, match)
-            .replace(/\$(\d{1,2})/g, (_, n) => groups[Number(n) - 1] ?? '')
-            .replace(/\\n/g, '\n')
-        })
-      } catch {
-        // skip a rule that fails to compile/apply
-      }
-    }
-    return out
-  }
+  // Display rules are pre-filtered (placement 2) by getRenderRegex, so no placement
+  // filter here; pass the compiled-RegExp cache. Transform shared with the main path.
+  apply: (content, ctx) => applyRegexRules(content, get().rules, ctx ?? {}, { compile: getRe })
 }))
