@@ -13,7 +13,7 @@ import { FloorFile } from '../types/chat'
 import { Lorebook } from '../types/character'
 
 /** Apply a single rpt-event to a mutable variables object (nested path set/add/remove). */
-const applyEvent = (vars: Record<string, any>, evt: RPEvent): void => {
+export const applyEvent = (vars: Record<string, any>, evt: RPEvent): void => {
   if (evt.type !== 'state') return
   const parts = evt.path.split('.')
   let obj = vars

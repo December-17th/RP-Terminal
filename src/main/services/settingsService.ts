@@ -37,7 +37,7 @@ export const getDefaultSettings = (): Settings => ({
  * field doesn't wipe a section), and ensure at least one API preset exists —
  * seeding one from the live `api` block so pre-presets profiles migrate cleanly.
  */
-const normalize = (stored: Partial<Settings>): Settings => {
+export const normalize = (stored: Partial<Settings>): Settings => {
   const d = getDefaultSettings()
   const api = { ...d.api, ...(stored.api || {}) }
   const persona = { ...d.persona, ...(stored.persona || {}) }

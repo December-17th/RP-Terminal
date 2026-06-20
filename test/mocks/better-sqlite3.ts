@@ -1,0 +1,22 @@
+/**
+ * Stub for the native better-sqlite3 (built for Electron's ABI, unloadable under
+ * plain Node). Only needs to be importable — the pure helpers under test never
+ * instantiate or query a database. A `getDb()` call would throw, which is fine.
+ */
+class Statement {
+  get(): undefined {
+    return undefined
+  }
+  all(): unknown[] {
+    return []
+  }
+  run(): void {}
+}
+
+export default class Database {
+  pragma(): void {}
+  exec(): void {}
+  prepare(): Statement {
+    return new Statement()
+  }
+}

@@ -13,7 +13,7 @@ interface ChatRow {
   lorebook_ids: string | null
 }
 
-const parseLorebookIds = (raw: string | null): string[] | null => {
+export const parseLorebookIds = (raw: string | null): string[] | null => {
   if (raw == null) return null
   try {
     const v = JSON.parse(raw)

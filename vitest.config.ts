@@ -12,7 +12,10 @@ export default defineConfig({
     environment: 'node',
     include: ['test/**/*.test.ts'],
     alias: {
-      electron: resolve(process.cwd(), 'test/mocks/electron.ts')
+      electron: resolve(process.cwd(), 'test/mocks/electron.ts'),
+      // Native module built for Electron's ABI — stub it so modules that import the
+      // DB layer load under plain Node. The pure helpers under test never open a DB.
+      'better-sqlite3': resolve(process.cwd(), 'test/mocks/better-sqlite3.ts')
     }
   }
 })
