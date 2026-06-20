@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { useChatStore } from '../stores/chatStore'
 import { useToastStore } from '../stores/toastStore'
 import { buildScriptSrcDoc, CardScript } from '../plugin/bridgeShim'
+import { buildMvuEvents } from '../plugin/mvuEvents'
 import { dispatchRpc } from '../plugin/dispatch'
 import { registerFrameCommand } from '../plugin/slash'
 
@@ -145,6 +146,12 @@ export const CardScriptHost: React.FC<Props> = ({
       }
       if (state.floors.length !== prev.floors.length) {
         emit('chat:changed', { floors: state.floors.length })
+      }
+      // A new floor landed — replay this turn's MVU variable changes to the scripts
+      // (mag_* events) so MagVarUpdate front-end UIs refresh.
+      if (state.floors.length > prev.floors.length) {
+        const latest = state.floors[state.floors.length - 1]
+        for (const ev of buildMvuEvents(latest?.variables)) emit(ev.name, ev.payload)
       }
     })
   }, [])
