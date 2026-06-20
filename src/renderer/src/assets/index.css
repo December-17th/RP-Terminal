@@ -1,0 +1,125 @@
+:root {
+  --rpt-bg-primary: #121212;
+  --rpt-bg-secondary: #1e1e1e;
+  --rpt-text-primary: #e0e0e0;
+  --rpt-text-secondary: #aaaaaa;
+  --rpt-accent: #5b8def;
+  --rpt-border: #333333;
+}
+
+body {
+  margin: 0;
+  font-family: 'Inter', sans-serif;
+  background-color: var(--rpt-bg-primary);
+  color: var(--rpt-text-primary);
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+#root {
+  display: flex;
+  height: 100%;
+}
+
+.sidebar-left {
+  width: 25%;
+  min-width: 250px;
+  max-width: 350px;
+  background-color: var(--rpt-bg-secondary);
+  border-right: 1px solid var(--rpt-border);
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  overflow-y: auto;
+}
+
+.main-content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  padding: 20px;
+  overflow: hidden;
+}
+
+.sidebar-right {
+  width: 25%;
+  min-width: 250px;
+  max-width: 350px;
+  background-color: var(--rpt-bg-secondary);
+  border-left: 1px solid var(--rpt-border);
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  overflow-y: auto;
+}
+
+.floor-list {
+  flex: 1;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  padding-right: 10px;
+}
+
+.floor-block {
+  padding: 15px;
+  background-color: var(--rpt-bg-secondary);
+  border-radius: 8px;
+  border: 1px solid var(--rpt-border);
+}
+
+.user-action {
+  color: var(--rpt-accent);
+  font-weight: bold;
+  margin-bottom: 10px;
+  border-bottom: 1px solid var(--rpt-border);
+  padding-bottom: 5px;
+}
+
+.action-input-container {
+  margin-top: 20px;
+  display: flex;
+  gap: 10px;
+}
+
+.action-input {
+  flex: 1;
+  background-color: var(--rpt-bg-secondary);
+  border: 1px solid var(--rpt-border);
+  color: var(--rpt-text-primary);
+  padding: 10px;
+  border-radius: 4px;
+  resize: none;
+  font-family: inherit;
+  height: 60px;
+}
+
+button {
+  background-color: var(--rpt-accent);
+  color: white;
+  border: none;
+  padding: 10px 15px;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+input {
+  background-color: var(--rpt-bg-primary);
+  border: 1px solid var(--rpt-border);
+  color: var(--rpt-text-primary);
+  padding: 8px;
+  border-radius: 4px;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+h3 { margin-top: 0; }
