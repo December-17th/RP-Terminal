@@ -262,6 +262,27 @@ export const parseMvuCommands = (content: string): ParsedMvu => {
   return { text: text.trim(), commands }
 }
 
+/** Parse a block as a single JS object — JSON first, then the tolerant reader
+ * (unquoted keys / single quotes). Returns null if it isn't an object. Used by the
+ * init-var seeding (R2) to read `[initvar]` code blocks. */
+export const parseJsObject = (src: string): Record<string, any> | null => {
+  const t = src.trim()
+  if (!t) return null
+  try {
+    const v = JSON.parse(t)
+    return isObj(v) ? (v as Record<string, any>) : null
+  } catch {
+    /* fall through to the tolerant reader */
+  }
+  try {
+    const list = parseArgList(t)
+    const v = list.length ? list[0] : undefined
+    return isObj(v) ? (v as Record<string, any>) : null
+  } catch {
+    return null
+  }
+}
+
 /** Apply commands to a mutable `stat_data` object; returns a per-command delta log. */
 export const applyMvuCommands = (
   statData: Record<string, any>,

@@ -3,6 +3,8 @@ import { getDb } from './db'
 import { ChatSession, FloorFile, ChatMode, CHAT_MODES } from '../types/chat'
 import { LorebookEntry } from '../types/character'
 import { getCharacter } from './characterService'
+import { getLorebookById } from './lorebookService'
+import { buildInitialStatData } from './mvuSchema'
 import { saveFloor, deleteFloorAndSubsequent, updateFloorFields } from './floorService'
 
 interface ChatRow {
@@ -192,6 +194,12 @@ export const createChat = (profileId: string, characterId: string): ChatSession 
   // Seed the opening greeting (first_mes) as floor 0, with no user message.
   const card = getCharacter(profileId, characterId)
   if (card?.data.first_mes) {
+    // Seed initial MVU/RPG state (R2): native defaults ⊕ [initvar] entries from the
+    // character's own lorebook, so the status panel starts populated before turn 1.
+    const defaults = card.data.extensions?.rp_terminal?.state_schema?.defaults
+    const charBook = getLorebookById(profileId, characterId)
+    const statData = buildInitialStatData(defaults, charBook ? [charBook] : [])
+
     const greeting: FloorFile = {
       floor: 0,
       chat_id: id,
@@ -199,7 +207,7 @@ export const createChat = (profileId: string, characterId: string): ChatSession 
       user_message: { content: '', timestamp: now },
       response: { content: card.data.first_mes, model: '', provider: 'greeting' },
       events: [],
-      variables: {}
+      variables: Object.keys(statData).length ? { stat_data: statData } : {}
     }
     appendFloor(profileId, id, greeting)
   }
