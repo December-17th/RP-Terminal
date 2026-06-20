@@ -42,10 +42,42 @@ export const useCharacterStore = create<CharacterState>((set) => ({
         description: 'A helpful interactive fiction guide.',
         personality: 'Helpful, concise, and imaginative.',
         first_mes: 'Welcome to the terminal. What would you like to do?',
-        mes_example: '<user> Look around </user>\n<bot> You are standing in a dimly lit terminal. Rows of glowing text cascade down the screens around you. </bot>',
+        mes_example: '<user> Look around </user>\n<bot> You are standing in a dimly lit terminal. Rows of glowing text cascade down the screens around you. \n<rpt-event type="state" action="add" path="stats.exp" value="10" />\n</bot>',
         scenario: 'The user is exploring a virtual terminal.',
         system_prompt: 'You are an AI game master. Describe the outcomes of the user\'s actions in a narrative prose style. Enclose game state updates in <rpt-event> tags if necessary.',
-        extensions: {}
+        extensions: {},
+        ui_layout: [
+          {
+            id: 'hp_bar',
+            type: 'StatBar',
+            path: 'stats.hp',
+            config: { label: 'Health', max: 100, color: '#e74c3c' }
+          },
+          {
+            id: 'mp_bar',
+            type: 'StatBar',
+            path: 'stats.mp',
+            config: { label: 'Mana', max: 50, color: '#3498db' }
+          },
+          {
+            id: 'exp_bar',
+            type: 'StatBar',
+            path: 'stats.exp',
+            config: { label: 'Experience', max: 100, color: '#f1c40f' }
+          },
+          {
+            id: 'status_text',
+            type: 'Text',
+            path: 'status',
+            config: { label: 'Condition', defaultValue: 'Healthy' }
+          },
+          {
+            id: 'inventory_list',
+            type: 'List',
+            path: 'inventory',
+            config: { label: 'Backpack' }
+          }
+        ]
       }
     };
     await window.api.saveCharacter(profileId, mockId, mockCard);

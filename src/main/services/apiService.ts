@@ -1,13 +1,29 @@
 import { Settings } from '../types/models';
 
-export const completeChat = async (settings: Settings, messages: any[]): Promise<string> => {
+import { applyRegexRules, loadRegexRules, StRegexRule } from '../parsers/stRegexEngine';
+import { parseContent, ParsedContent } from '../parsers/contentParser';
+
+// Optionally load regex rules from a global setting or a specific file
+// For MVP, we'll try to load any regex file in the active profile or use none
+let activeRegexRules: StRegexRule[] = [];
+
+export const completeChat = async (settings: Settings, messages: any[]): Promise<ParsedContent> => {
   const { provider } = settings.api;
+  let rawText = '';
   
   if (provider === 'anthropic') {
-    return completeAnthropic(settings, messages);
+    rawText = await completeAnthropic(settings, messages);
   } else {
-    return completeOpenAICompatible(settings, messages);
+    rawText = await completeOpenAICompatible(settings, messages);
   }
+
+  // Pipeline Stage 2: ST Regex Engine
+  const regexProcessed = applyRegexRules(rawText, activeRegexRules, 'text');
+
+  // Pipeline Stage 3: RP Terminal Tag Parser
+  const parsed = parseContent(regexProcessed);
+
+  return parsed;
 };
 
 const completeOpenAICompatible = async (settings: Settings, messages: any[]): Promise<string> => {

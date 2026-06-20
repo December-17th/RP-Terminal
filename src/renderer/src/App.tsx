@@ -4,6 +4,7 @@ import { useCharacterStore } from './stores/characterStore';
 import { useChatStore } from './stores/chatStore';
 import { useSettingsStore } from './stores/settingsStore';
 import Markdown from 'react-markdown';
+import { LayoutRenderer } from './components/LayoutRenderer';
 
 export default function App() {
   const { profiles, activeProfile, loadProfiles, createProfile } = useProfileStore();
@@ -176,11 +177,17 @@ export default function App() {
       </div>
 
       <div className="sidebar-right">
-        {activeChatId ? (
+        {activeChatId && activeCharacter ? (
           <div>
             <h3 style={{ borderBottom: '1px solid var(--rpt-border)', paddingBottom: 10 }}>RPG Status</h3>
-            <div style={{ opacity: 0.6, marginTop: 20 }}>
-              <em>(RPG UI Layout Engine pending implementation in Phase 2)</em>
+            <div style={{ marginTop: 20 }}>
+              {activeCharacter.card.data.ui_layout ? (
+                <LayoutRenderer layoutSchema={activeCharacter.card.data.ui_layout} />
+              ) : (
+                <div style={{ opacity: 0.6 }}>
+                  <em>(Card does not define a UI Layout)</em>
+                </div>
+              )}
             </div>
           </div>
         ) : (
