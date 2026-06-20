@@ -117,6 +117,7 @@ app.whenReady().then(() => {
       throw err
     }
   })
+  ipcMain.handle('abort-generation', (_, chatId) => generationService.abortGeneration(chatId))
 
   // Logs
   ipcMain.handle('get-logs', () => logService.getLogs())

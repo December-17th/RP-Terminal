@@ -1,6 +1,7 @@
 import { Settings } from '../types/models'
 import { PresetParameters } from '../types/preset'
 import { ChatMessage } from './promptBuilder'
+import { log } from './logService'
 
 export type DeltaCallback = (delta: string) => void
 
@@ -13,12 +14,13 @@ export const streamProvider = async (
   settings: Settings,
   messages: ChatMessage[],
   params: PresetParameters,
-  onDelta: DeltaCallback
+  onDelta: DeltaCallback,
+  signal?: AbortSignal
 ): Promise<string> => {
   if (settings.api.provider === 'anthropic') {
-    return streamAnthropic(settings, messages, params, onDelta)
+    return streamAnthropic(settings, messages, params, onDelta, signal)
   }
-  return streamOpenAICompatible(settings, messages, params, onDelta)
+  return streamOpenAICompatible(settings, messages, params, onDelta, signal)
 }
 
 // Drop undefined params so we don't send nulls to providers that reject them.
@@ -62,7 +64,8 @@ const streamOpenAICompatible = async (
   settings: Settings,
   messages: ChatMessage[],
   params: PresetParameters,
-  onDelta: DeltaCallback
+  onDelta: DeltaCallback,
+  signal?: AbortSignal
 ): Promise<string> => {
   const { endpoint, api_key, model } = settings.api
   const base = endpoint || 'https://api.openai.com/v1'
@@ -92,7 +95,8 @@ const streamOpenAICompatible = async (
       'Content-Type': 'application/json',
       Authorization: `Bearer ${api_key}`
     },
-    body: JSON.stringify({ model, messages: outMessages, ...cleanParams(params), stream: true })
+    body: JSON.stringify({ model, messages: outMessages, ...cleanParams(params), stream: true }),
+    signal
   })
 
   if (!response.ok) {
@@ -119,20 +123,25 @@ const streamOpenAICompatible = async (
 
   let full = ''
   const rawFrames: string[] = []
-  await readSse(response, (data) => {
-    rawFrames.push(data)
-    try {
-      const json = JSON.parse(data)
-      const delta = json.choices?.[0]?.delta?.content
-      if (typeof delta === 'string' && delta) {
-        full += delta
-        onDelta(delta)
+  try {
+    await readSse(response, (data) => {
+      rawFrames.push(data)
+      try {
+        const json = JSON.parse(data)
+        const delta = json.choices?.[0]?.delta?.content
+        if (typeof delta === 'string' && delta) {
+          full += delta
+          onDelta(delta)
+        }
+      } catch {
+        // ignore keep-alive / non-JSON lines
       }
-    } catch {
-      // ignore keep-alive / non-JSON lines
-    }
-  })
-  if (!full) {
+    })
+  } catch (e) {
+    if (signal?.aborted) return full // user stopped — keep whatever streamed
+    throw e
+  }
+  if (!full && !signal?.aborted) {
     throw new Error(
       `Stream produced no text. Raw frames:\n${rawFrames.slice(0, 8).join('\n').slice(0, 800) || '(none)'}`
     )
@@ -144,7 +153,8 @@ const streamAnthropic = async (
   settings: Settings,
   messages: ChatMessage[],
   params: PresetParameters,
-  onDelta: DeltaCallback
+  onDelta: DeltaCallback,
+  signal?: AbortSignal
 ): Promise<string> => {
   const { endpoint, api_key, model } = settings.api
   const base = endpoint || 'https://api.anthropic.com/v1'
@@ -171,6 +181,25 @@ const streamAnthropic = async (
     }
   }
 
+  // Prompt caching (Phase G). cache_control breakpoints mark the end of a stable
+  // prefix; max 4 per request, ephemeral = 5-min TTL. Two breakpoints:
+  //  1. the system block (large, static per session) — caches tools+system.
+  //  2. the last message before the new user turn — caches the history prefix.
+  // The final user turn (volatile) stays past the last breakpoint, so it never
+  // invalidates the cached head. Only the prefix below the model's min-cacheable
+  // size (~4096 tokens on Opus) is skipped — silently, no error.
+  const EPHEMERAL = { type: 'ephemeral' as const }
+  const system = systemPrompt.trim()
+    ? [{ type: 'text', text: systemPrompt.trim(), cache_control: EPHEMERAL }]
+    : undefined
+
+  const cacheIdx = merged.length - 2 // message just before the final user turn
+  const outMessages = merged.map((m, i) =>
+    i === cacheIdx
+      ? { role: m.role, content: [{ type: 'text', text: m.content, cache_control: EPHEMERAL }] }
+      : m
+  )
+
   const response = await fetch(url, {
     method: 'POST',
     headers: {
@@ -180,14 +209,15 @@ const streamAnthropic = async (
     },
     body: JSON.stringify({
       model: model || 'claude-opus-4-8',
-      system: systemPrompt.trim() || undefined,
-      messages: merged,
+      system,
+      messages: outMessages,
       max_tokens: params.max_tokens ?? 4000,
       temperature: params.temperature ?? 0.9,
       ...(params.top_p !== undefined ? { top_p: params.top_p } : {}),
       ...(params.top_k !== undefined ? { top_k: params.top_k } : {}),
       stream: true
-    })
+    }),
+    signal
   })
 
   if (!response.ok) {
@@ -198,17 +228,30 @@ const streamAnthropic = async (
   }
 
   let full = ''
-  await readSse(response, (data) => {
-    try {
-      const json = JSON.parse(data)
-      // content_block_delta carries incremental text_delta chunks.
-      if (json.type === 'content_block_delta' && typeof json.delta?.text === 'string') {
-        full += json.delta.text
-        onDelta(json.delta.text)
+  let usage: any = null
+  try {
+    await readSse(response, (data) => {
+      try {
+        const json = JSON.parse(data)
+        if (json.type === 'message_start' && json.message?.usage) usage = json.message.usage
+        // content_block_delta carries incremental text_delta chunks.
+        if (json.type === 'content_block_delta' && typeof json.delta?.text === 'string') {
+          full += json.delta.text
+          onDelta(json.delta.text)
+        }
+      } catch {
+        // ignore non-JSON lines
       }
-    } catch {
-      // ignore non-JSON lines
-    }
-  })
+    })
+  } catch (e) {
+    if (signal?.aborted) return full // user stopped — keep whatever streamed
+    throw e
+  }
+  if (usage) {
+    log(
+      'info',
+      `cache — read ${usage.cache_read_input_tokens ?? 0} · write ${usage.cache_creation_input_tokens ?? 0} · fresh ${usage.input_tokens ?? 0} tok`
+    )
+  }
   return full
 }

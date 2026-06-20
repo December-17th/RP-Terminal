@@ -17,6 +17,7 @@ const api = {
     ipcRenderer.invoke('generate', profileId, chatId, userAction),
   regenerate: (profileId: string, chatId: string) =>
     ipcRenderer.invoke('regenerate', profileId, chatId),
+  abortGeneration: (chatId: string) => ipcRenderer.invoke('abort-generation', chatId),
   deleteChat: (profileId: string, chatId: string) =>
     ipcRenderer.invoke('delete-chat', profileId, chatId),
   deleteCharacter: (profileId: string, charId: string) =>

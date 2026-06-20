@@ -49,12 +49,21 @@ const applyEvent = (vars: Record<string, any>, evt: RPEvent): void => {
  * tag parse), fold state events into the running variables, persist a new floor,
  * and return it. All orchestration lives here so the renderer just calls one IPC.
  */
+// In-flight generations keyed by chat, so the renderer can abort one to stop
+// burning provider tokens.
+const activeControllers = new Map<string, AbortController>()
+
+/** Abort the in-flight generation for a chat (if any). */
+export const abortGeneration = (chatId: string): void => {
+  activeControllers.get(chatId)?.abort()
+}
+
 export const generate = async (
   profileId: string,
   chatId: string,
   userAction: string,
   onDelta: DeltaCallback = () => {}
-): Promise<FloorFile> => {
+): Promise<FloorFile | null> => {
   const chat = getChat(profileId, chatId)
   if (!chat) throw new Error('Chat session not found')
 
@@ -81,15 +90,31 @@ export const generate = async (
     messages
   )
 
+  const controller = new AbortController()
+  activeControllers.set(chatId, controller)
+
   let raw: string
   try {
-    raw = await streamProvider(settings, messages, preset.parameters, onDelta)
+    raw = await streamProvider(settings, messages, preset.parameters, onDelta, controller.signal)
   } catch (err: any) {
+    if (controller.signal.aborted) {
+      log('info', '⏹ generation stopped by user')
+      return null
+    }
     log('error', `✗ provider call failed`, err?.message || String(err))
     throw err
+  } finally {
+    activeControllers.delete(chatId)
   }
 
-  log('response', `← ${raw.length} chars`, raw)
+  const stopped = controller.signal.aborted
+  // Stopped with nothing generated: don't persist an empty floor.
+  if (stopped && !raw.trim()) {
+    log('info', '⏹ generation stopped (no text)')
+    return null
+  }
+
+  log('response', `← ${raw.length} chars${stopped ? ' (stopped)' : ''}`, raw)
 
   // Stage 2: ST regex rules. Stage 3: rpt-event extraction.
   const regexed = applyRegexRules(raw, loadProfileRegexRules(profileId), 'text')
@@ -123,7 +148,7 @@ export const regenerate = async (
   profileId: string,
   chatId: string,
   onDelta: DeltaCallback = () => {}
-): Promise<FloorFile> => {
+): Promise<FloorFile | null> => {
   const chat = getChat(profileId, chatId)
   if (!chat || chat.floor_count === 0) throw new Error('Nothing to regenerate')
 

@@ -17,7 +17,7 @@ export default function App() {
   const { profiles, activeProfile, loadProfiles, createProfile } = useProfileStore();
   const { settings, loadSettings, updateSettings } = useSettingsStore();
   const { characters, activeCharacter, loadCharacters, setActiveCharacter, importMockCharacter, deleteCharacter } = useCharacterStore();
-  const { chats, activeChatId, floors, isGenerating, streamingText, error, loadChats, createChat, setActiveChat, sendAction, regenerate, deleteChat } = useChatStore();
+  const { chats, activeChatId, floors, isGenerating, streamingText, error, loadChats, createChat, setActiveChat, sendAction, regenerate, stopGeneration, deleteChat } = useChatStore();
 
   const activePresetName = usePresetStore((s) => s.preset?.name);
 
@@ -327,14 +327,18 @@ export default function App() {
                   disabled={isGenerating}
                 />
                 <button
-                  disabled={isGenerating || !actionInput.trim()}
+                  className={`send-btn ${isGenerating ? 'stop' : ''}`}
+                  title={isGenerating ? 'Stop generation' : 'Send'}
+                  disabled={!isGenerating && !actionInput.trim()}
                   onClick={() => {
+                    if (isGenerating) { stopGeneration(); return; }
+                    if (!actionInput.trim()) return;
                     setPendingUserMsg(actionInput.trim());
                     sendAction(activeProfile.id, actionInput.trim());
                     setActionInput('');
                   }}
                 >
-                  Act
+                  {isGenerating ? '■' : '⏎'}
                 </button>
               </div>
             </>

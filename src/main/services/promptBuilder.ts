@@ -67,6 +67,16 @@ const buildHistory = (
  * Assemble the final provider message array from the card, preset ordering,
  * matched lorebook entries and chat history. The preset's prompt blocks drive
  * the order; dynamic markers expand to live content.
+ *
+ * Phase G — cache-friendly layering. The output is ordered for maximal prefix
+ * reuse so providers (OpenAI auto prefix-caching; Anthropic cache_control —
+ * applied in apiService) can cache a stable head across turns:
+ *   L1 static core   — system prompts + character description + examples (stable per session)
+ *   L2 semi-static   — world info / lorebook (changes only when keywords change)
+ *   L3 rolling history — prior turns (append-only; the prefix is byte-stable)
+ *   L4 volatile      — the new user action, ALWAYS the final message (0% cache)
+ * The only invariant we hard-enforce here is L4-last: the pending user action is
+ * appended after everything else so nothing volatile sits inside the cached prefix.
  */
 export const buildPrompt = (args: BuildPromptArgs): ChatMessage[] => {
   const { card, preset, lorebook, floors, userAction } = args

@@ -103,12 +103,17 @@ card schema, rpt-event, logs) — additive, not a rewrite.
 - *Packaging note:* native `.node` must be asar-unpacked when building installers
   (verify `electron-builder` auto-unpack at Milestone packaging).
 
-### Phase G — Four-layer prompt-cache assembly  ⬜
-- Rebuild prompt assembly into immutable layers for provider prompt caching:
-  L1 static core (byte-identical every turn), L2 semi-static lore/memory,
-  L3 rolling history, L4 volatile state appended at the very bottom.
-- Map L1–L2 onto Anthropic `cache_control` breakpoints / OpenAI prefix caching.
-  *(Verify exact breakpoint count + TTL against current provider docs.)*
+### Phase G — Four-layer prompt-cache assembly  ✅ (increment 1)
+- promptBuilder documents + enforces the L1 static core → L2 semi-static lore →
+  L3 rolling history → L4 volatile (user action **always last**) layering, so the
+  cacheable prefix is byte-stable across turns.
+- Anthropic native path: `cache_control: {ephemeral}` breakpoints on the system
+  block + the last pre-turn message (2 of the max 4; 5-min TTL); cache read/write
+  token counts logged to the Logs panel for verification.
+- OpenAI-compatible path relies on the provider's automatic prefix caching, which
+  the stable-prefix assembly feeds (no markers in the OpenAI wire format).
+- ⬜ Remaining: hold L2 (world info) stable across turns instead of re-matching
+  every turn (needs FSM transitions, Phase H); Bedrock `cachePoint` passthrough.
 
 ### Phase H — Manual FSM modes + persona expansion  ⬜
 - **Manual mode switch** (Explore / Dialogue / Combat) in the UI; each mode tunes

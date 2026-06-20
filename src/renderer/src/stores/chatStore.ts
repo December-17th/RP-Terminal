@@ -36,6 +36,7 @@ interface ChatState {
   setActiveChat: (profileId: string, chatId: string) => Promise<void>
   sendAction: (profileId: string, actionText: string) => Promise<void>
   regenerate: (profileId: string) => Promise<void>
+  stopGeneration: () => Promise<void>
   deleteChat: (profileId: string, chatId: string) => Promise<void>
   appendDelta: (delta: string) => void
 }
@@ -78,7 +79,11 @@ export const useChatStore = create<ChatState>((set, get) => ({
       // Main assembles the prompt (card + preset + lorebook + history), streams the
       // provider (deltas arrive via appendDelta), post-processes, persists and returns.
       const newFloor = await window.api.generate(profileId, activeChatId, actionText)
-      set((state) => ({ floors: [...state.floors, newFloor], isGenerating: false, streamingText: '' }))
+      set((state) => ({
+        floors: newFloor ? [...state.floors, newFloor] : state.floors,
+        isGenerating: false,
+        streamingText: ''
+      }))
       get().loadChats(profileId) // refresh session previews / sort order
     } catch (err: any) {
       console.error(err)
@@ -95,7 +100,11 @@ export const useChatStore = create<ChatState>((set, get) => ({
       // Optimistically drop the last floor so the UI shows the re-roll in progress.
       set((state) => ({ floors: state.floors.slice(0, -1) }))
       const newFloor = await window.api.regenerate(profileId, activeChatId)
-      set((state) => ({ floors: [...state.floors, newFloor], isGenerating: false, streamingText: '' }))
+      set((state) => ({
+        floors: newFloor ? [...state.floors, newFloor] : state.floors,
+        isGenerating: false,
+        streamingText: ''
+      }))
       get().loadChats(profileId)
     } catch (err: any) {
       console.error(err)
@@ -103,6 +112,14 @@ export const useChatStore = create<ChatState>((set, get) => ({
       const restored = await window.api.getFloors(profileId, activeChatId)
       set({ floors: restored, isGenerating: false, streamingText: '', error: err?.message || 'Regeneration failed' })
     }
+  },
+
+  stopGeneration: async () => {
+    const { activeChatId } = get()
+    if (!activeChatId) return
+    // Aborts the provider request in main; the in-flight generate()/regenerate()
+    // promise then resolves with the partial floor (or null) and clears state.
+    await window.api.abortGeneration(activeChatId)
   },
 
   deleteChat: async (profileId, chatId) => {
