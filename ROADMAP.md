@@ -81,6 +81,29 @@ Remaining in Phase A: message swipes (edit is done). Phase A is otherwise comple
   sub-generation; explicit stop conditions.
 - ⬜ **D2. State-schema + widget editor UI**; richer status widgets.
 
+## Phase P — Plugin / extension system  🚧 (design)
+
+Third-party plugins (js-slash-runner class). **Design doc:**
+[docs/plugin-system-design.md](docs/plugin-system-design.md). Changes the threat
+model to "run untrusted third-party code" — sandbox-by-construction is the crux.
+Builds on existing primitives (B1 iframe sandbox, quickjs, vars engine, IPC) — a new
+subsystem, not a rewrite. js-slash-runner is **not** installable as-is (it's a ST
+extension bound to ST's runtime); we ship our own versioned API + a Tavern-Helper
+compatibility shim.
+
+- ✅ **D0. Design doc** — taxonomy (card scripts vs app extensions), manifest,
+  `sandbox="allow-scripts"` iframe + postMessage RPC, permission model, `rpt.v1` API,
+  slash/STScript-subset, compat-shim strategy, phased plan, open questions.
+- ⬜ **P1. Card-script runtime** — sandboxed iframe + bridge + core API
+  (vars/chat-read/generate/ui); runs `card.extensions.rp_terminal.scripts`.
+- ⬜ **P2. Plugin host/loader** — manifest, install/enable/disable, permission
+  prompts, Plugins tab.
+- ⬜ **P3. App-extension contributions** — register panels/buttons/commands + hooks.
+- ⬜ **P4. Slash-command runtime (subset) + Tavern-Helper shim.**
+- ⬜ **P5. Packaging** (.zip / PNG cartridge), settings, opt-in `net`.
+- ⬜ Open decisions (see doc §12): compat ambition, permission UX, distribution,
+  network allowance, whether to allow app-extensions in v1.
+
 ## Phase E — Quality (ongoing)  ⬜
 
 - ⬜ Tests for pure modules (png/preset/regex parsers, promptBuilder, lorebook
