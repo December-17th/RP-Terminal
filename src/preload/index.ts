@@ -15,6 +15,12 @@ const api = {
   getFloors: (profileId: string, chatId: string) => ipcRenderer.invoke('get-floors', profileId, chatId),
   generate: (profileId: string, chatId: string, userAction: string) =>
     ipcRenderer.invoke('generate', profileId, chatId, userAction),
+  regenerate: (profileId: string, chatId: string) =>
+    ipcRenderer.invoke('regenerate', profileId, chatId),
+  deleteChat: (profileId: string, chatId: string) =>
+    ipcRenderer.invoke('delete-chat', profileId, chatId),
+  deleteCharacter: (profileId: string, charId: string) =>
+    ipcRenderer.invoke('delete-character', profileId, charId),
   getPreset: (profileId: string) => ipcRenderer.invoke('get-preset', profileId),
   savePreset: (profileId: string, preset: any) => ipcRenderer.invoke('save-preset', profileId, preset),
   importPresetDialog: (profileId: string) => ipcRenderer.invoke('import-preset-dialog', profileId),

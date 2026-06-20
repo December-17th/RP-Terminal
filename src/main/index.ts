@@ -91,6 +91,15 @@ app.whenReady().then(() => {
   ipcMain.handle('generate', (_, profileId, chatId, userAction) =>
     generationService.generate(profileId, chatId, userAction)
   )
+  ipcMain.handle('regenerate', (_, profileId, chatId) =>
+    generationService.regenerate(profileId, chatId)
+  )
+  ipcMain.handle('delete-chat', (_, profileId, chatId) =>
+    chatService.deleteChat(profileId, chatId)
+  )
+  ipcMain.handle('delete-character', (_, profileId, charId) =>
+    characterService.deleteCharacter(profileId, charId)
+  )
 
   // Presets
   ipcMain.handle('get-preset', (_, profileId) => presetService.getPreset(profileId))

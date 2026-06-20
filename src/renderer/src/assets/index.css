@@ -80,9 +80,10 @@ body {
 }
 
 .sidebar-left {
-  width: 25%;
+  flex: 0 0 25%;
   min-width: 300px;
   max-width: 460px;
+  box-sizing: border-box;
   background-color: var(--rpt-bg-secondary);
   border-right: 1px solid var(--rpt-border);
   display: flex;
@@ -90,9 +91,11 @@ body {
   overflow: hidden;
 }
 
+/* Center fills whatever the (capped) side panels leave, so the layout always
+   spans the full window. Stays ~50% until the panels hit their max-width. */
 .main-content {
-  width: 50%;
-  flex: 0 0 50%;
+  flex: 1 1 auto;
+  min-width: 0;
   display: flex;
   flex-direction: column;
   padding: 20px;
@@ -100,9 +103,10 @@ body {
 }
 
 .sidebar-right {
-  width: 25%;
+  flex: 0 0 25%;
   min-width: 300px;
   max-width: 460px;
+  box-sizing: border-box;
   background-color: var(--rpt-bg-secondary);
   border-left: 1px solid var(--rpt-border);
   padding: 20px;
@@ -153,6 +157,79 @@ body {
   width: 100%;
   text-align: left;
   margin: 4px 0;
+}
+.panel-list-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin: 4px 0;
+}
+.panel-list-row .panel-list-item {
+  flex: 1;
+  margin: 0;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.row-del {
+  flex: 0 0 auto;
+}
+
+/* ---------- Session cards ---------- */
+.session-card {
+  border: 1px solid var(--rpt-border);
+  border-radius: 8px;
+  padding: 10px 12px;
+  margin: 6px 0;
+  background: var(--rpt-bg-primary);
+  cursor: pointer;
+  transition: border-color 0.15s ease;
+}
+.session-card:hover {
+  border-color: var(--rpt-text-secondary);
+}
+.session-card.active {
+  border-color: var(--rpt-accent);
+  box-shadow: inset 0 0 0 1px var(--rpt-accent);
+}
+.session-card-top {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+.session-time {
+  font-size: 0.78em;
+  color: var(--rpt-text-secondary);
+  flex: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.session-count {
+  font-size: 0.72em;
+  color: var(--rpt-text-secondary);
+}
+.session-del {
+  padding: 2px 6px;
+}
+.session-preview {
+  font-size: 0.85em;
+  color: var(--rpt-text-primary);
+  line-height: 1.4;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+/* ---------- Chat toolbar ---------- */
+.chat-toolbar {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 6px 0 0;
 }
 
 .floor-list {

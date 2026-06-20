@@ -38,6 +38,11 @@ export const getCharacter = (profileId: string, characterId: string): RPTerminal
   return parsed.success ? parsed.data : null
 }
 
+export const deleteCharacter = (profileId: string, characterId: string): void => {
+  const dir = path.join(getCharactersDir(profileId), characterId)
+  if (fs.existsSync(dir)) fs.rmSync(dir, { recursive: true, force: true })
+}
+
 export const saveCharacter = (
   profileId: string,
   characterId: string,

@@ -4,8 +4,8 @@ import { getSettings } from './settingsService'
 import { getPreset } from './presetService'
 import { getCharacter } from './characterService'
 import { getCharacterLorebook } from './lorebookService'
-import { getChat, getChatsDir, appendFloor } from './chatService'
-import { getAllFloors } from './floorService'
+import { getChat, getChatsDir, appendFloor, truncateFloors } from './chatService'
+import { getAllFloors, getFloor } from './floorService'
 import { buildPrompt } from './promptBuilder'
 import { callProvider } from './apiService'
 import { applyRegexRules, loadRegexRules, StRegexRule } from '../parsers/stRegexEngine'
@@ -63,7 +63,14 @@ export const generate = async (
   const lorebook = getCharacterLorebook(profileId, chat.character_id)
   const floors = getAllFloors(profileId, chatId, chat.floor_count)
 
-  const messages = buildPrompt({ card, preset, lorebook, floors, userAction })
+  const messages = buildPrompt({
+    card,
+    preset,
+    lorebook,
+    floors,
+    userAction,
+    userName: settings.persona?.name || 'User'
+  })
 
   const raw = await callProvider(settings, messages, preset.parameters)
 
@@ -89,4 +96,21 @@ export const generate = async (
 
   appendFloor(profileId, chatId, floor)
   return floor
+}
+
+/**
+ * Re-roll the latest turn: drop the last floor and generate again from the same
+ * user action. Refuses to regenerate the opening greeting (it has no action).
+ */
+export const regenerate = async (profileId: string, chatId: string): Promise<FloorFile> => {
+  const chat = getChat(profileId, chatId)
+  if (!chat || chat.floor_count === 0) throw new Error('Nothing to regenerate')
+
+  const lastIndex = chat.floor_count - 1
+  const last = getFloor(profileId, chatId, lastIndex)
+  if (!last) throw new Error('Last floor missing')
+  if (!last.user_message.content) throw new Error('Cannot regenerate the opening greeting')
+
+  truncateFloors(profileId, chatId, lastIndex)
+  return generate(profileId, chatId, last.user_message.content)
 }

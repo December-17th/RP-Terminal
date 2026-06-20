@@ -15,6 +15,9 @@ export interface Settings {
     model: string;
     default_params: Record<string, any>;
   };
+  persona: {
+    name: string;
+  };
   ui: {
     theme: string;
     font_size: number;

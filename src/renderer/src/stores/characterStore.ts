@@ -12,6 +12,7 @@ interface CharacterState {
   setActiveCharacter: (char: CharacterCard) => void;
   importCharacter: (profileId: string) => Promise<void>;
   importMockCharacter: (profileId: string) => Promise<void>;
+  deleteCharacter: (profileId: string, characterId: string) => Promise<void>;
 }
 
 export const useCharacterStore = create<CharacterState>((set) => ({
@@ -25,6 +26,15 @@ export const useCharacterStore = create<CharacterState>((set) => ({
     }
   },
   setActiveCharacter: (char) => set({ activeCharacter: char }),
+  deleteCharacter: async (profileId, characterId) => {
+    await window.api.deleteCharacter(profileId, characterId);
+    const characters = await window.api.getCharacters(profileId);
+    set((state) => ({
+      characters,
+      activeCharacter:
+        state.activeCharacter?.id === characterId ? null : state.activeCharacter
+    }));
+  },
   importCharacter: async (profileId: string) => {
     const newId = await window.api.importCharacterDialog(profileId);
     if (newId) {

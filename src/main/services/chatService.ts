@@ -4,7 +4,7 @@ import { v4 as uuidv4 } from 'uuid'
 import { getAppDir, ensureDir, writeJsonSyncAtomic, readJsonSync, listDirectoriesSync } from './storageService'
 import { ChatSession, FloorFile } from '../types/chat'
 import { getCharacter } from './characterService'
-import { saveFloor } from './floorService'
+import { saveFloor, deleteFloorAndSubsequent } from './floorService'
 
 export const getChatsDir = (profileId: string): string =>
   path.join(getAppDir(), 'profiles', profileId, 'chats')
@@ -13,7 +13,11 @@ const getChatJsonPath = (profileId: string, chatId: string): string =>
   path.join(getChatsDir(profileId), chatId, 'chat.json')
 
 const preview = (text: string, len = 80): string =>
-  text.replace(/\s+/g, ' ').trim().slice(0, len)
+  text
+    .replace(/<[^>]+>/g, ' ') // drop any HTML so previews read as plain text
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, len)
 
 export const getChat = (profileId: string, chatId: string): ChatSession | null =>
   readJsonSync<ChatSession>(getChatJsonPath(profileId, chatId))
@@ -86,10 +90,27 @@ export const appendFloor = (profileId: string, chatId: string, floor: FloorFile)
     floor: floor.floor,
     timestamp: floor.timestamp,
     user_preview: preview(floor.user_message.content),
-    response_preview: preview(floor.response.content)
+    response_preview: preview(floor.response.content, 220)
   })
   chat.floor_index.sort((a, b) => a.floor - b.floor)
   chat.floor_count = chat.floor_index.length
   chat.updated_at = new Date().toISOString()
   saveChat(profileId, chat)
+}
+
+/** Delete floors >= fromFloor (e.g. for regenerate / edit) and fix the index. */
+export const truncateFloors = (profileId: string, chatId: string, fromFloor: number): void => {
+  deleteFloorAndSubsequent(profileId, chatId, fromFloor)
+  const chat = getChat(profileId, chatId)
+  if (!chat) return
+  chat.floor_index = chat.floor_index.filter((e) => e.floor < fromFloor)
+  chat.floor_count = chat.floor_index.length
+  chat.updated_at = new Date().toISOString()
+  saveChat(profileId, chat)
+}
+
+/** Remove a chat session and all its floor files. */
+export const deleteChat = (profileId: string, chatId: string): void => {
+  const dir = path.join(getChatsDir(profileId), chatId)
+  if (fs.existsSync(dir)) fs.rmSync(dir, { recursive: true, force: true })
 }

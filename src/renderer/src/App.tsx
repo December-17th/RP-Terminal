@@ -14,8 +14,8 @@ type PanelTab = 'characters' | 'sessions' | 'preset' | 'lorebook' | 'api';
 export default function App() {
   const { profiles, activeProfile, loadProfiles, createProfile } = useProfileStore();
   const { settings, loadSettings, updateSettings } = useSettingsStore();
-  const { characters, activeCharacter, loadCharacters, setActiveCharacter, importMockCharacter } = useCharacterStore();
-  const { chats, activeChatId, floors, isGenerating, error, loadChats, createChat, setActiveChat, sendAction } = useChatStore();
+  const { characters, activeCharacter, loadCharacters, setActiveCharacter, importMockCharacter, deleteCharacter } = useCharacterStore();
+  const { chats, activeChatId, floors, isGenerating, error, loadChats, createChat, setActiveChat, sendAction, regenerate, deleteChat } = useChatStore();
 
   const [newProfileName, setNewProfileName] = useState('');
   const [actionInput, setActionInput] = useState('');
@@ -113,6 +113,13 @@ export default function App() {
               <label className="field-label">Model</label>
               <input type="text" placeholder="e.g. gpt-4o" value={settings?.api?.model || ''}
                 onChange={e => updateSettings(activeProfile.id, { api: { ...settings!.api, model: e.target.value } })} />
+
+              <label className="field-label" style={{ marginTop: 16 }}>Your Persona Name</label>
+              <input type="text" placeholder="User" value={settings?.persona?.name ?? 'User'}
+                onChange={e => updateSettings(activeProfile.id, { persona: { ...settings!.persona, name: e.target.value } })} />
+              <div style={{ fontSize: '0.78em', color: 'var(--rpt-text-secondary)', marginTop: 4 }}>
+                Replaces {'{{user}}'} in prompts, cards and lorebooks.
+              </div>
             </div>
           </div>
         );
@@ -130,13 +137,25 @@ export default function App() {
             <div className="panel-body">
               {characters.length === 0 && <div style={{ opacity: 0.6, fontStyle: 'italic' }}>No characters. Import a card or add the mock guide.</div>}
               {characters.map(c => (
-                <button
-                  key={c.id}
-                  className={`panel-list-item ${activeCharacter?.id === c.id ? 'btn-accent' : ''}`}
-                  onClick={() => { setActiveCharacter(c); setPanel('sessions'); }}
-                >
-                  {c.card.data.name}
-                </button>
+                <div key={c.id} className="panel-list-row">
+                  <button
+                    className={`panel-list-item ${activeCharacter?.id === c.id ? 'btn-accent' : ''}`}
+                    onClick={() => { setActiveCharacter(c); setPanel('sessions'); }}
+                  >
+                    {c.card.data.name}
+                  </button>
+                  <button
+                    className="btn-ghost danger row-del"
+                    title="Delete character"
+                    onClick={() => {
+                      if (confirm(`Delete character "${c.card.data.name}" and its lorebook? This cannot be undone.`)) {
+                        deleteCharacter(activeProfile.id, c.id);
+                      }
+                    }}
+                  >
+                    🗑
+                  </button>
+                </div>
               ))}
             </div>
           </div>
@@ -164,15 +183,35 @@ export default function App() {
                   {chats.filter(c => c.character_id === activeCharacter.id).length === 0 && (
                     <div style={{ opacity: 0.6, fontStyle: 'italic' }}>No sessions yet. Start a new one.</div>
                   )}
-                  {chats.filter(c => c.character_id === activeCharacter.id).map(c => (
-                    <button
-                      key={c.id}
-                      className={`panel-list-item ${activeChatId === c.id ? 'btn-accent' : ''}`}
-                      onClick={() => setActiveChat(activeProfile.id, c.id)}
-                    >
-                      {new Date(c.updated_at).toLocaleString()}
-                    </button>
-                  ))}
+                  {chats.filter(c => c.character_id === activeCharacter.id).map(c => {
+                    const last = c.floor_index?.[c.floor_index.length - 1];
+                    const previewText = last?.response_preview || 'Empty session';
+                    return (
+                      <div
+                        key={c.id}
+                        className={`session-card ${activeChatId === c.id ? 'active' : ''}`}
+                        onClick={() => setActiveChat(activeProfile.id, c.id)}
+                      >
+                        <div className="session-card-top">
+                          <span className="session-time">{new Date(c.updated_at).toLocaleString()}</span>
+                          <span className="session-count">{c.floor_count ?? 0} ✦</span>
+                          <button
+                            className="btn-ghost danger session-del"
+                            title="Delete session"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              if (confirm('Delete this session? This cannot be undone.')) {
+                                deleteChat(activeProfile.id, c.id);
+                              }
+                            }}
+                          >
+                            🗑
+                          </button>
+                        </div>
+                        <div className="session-preview">{previewText}</div>
+                      </div>
+                    );
+                  })}
                 </>
               )}
             </div>
@@ -243,6 +282,19 @@ export default function App() {
                 )}
                 <div ref={messagesEndRef} />
               </div>
+
+              {floors.some(f => f.user_message.content) && (
+                <div className="chat-toolbar">
+                  <button
+                    className="btn-ghost"
+                    disabled={isGenerating}
+                    title="Re-roll the last response"
+                    onClick={() => regenerate(activeProfile.id)}
+                  >
+                    ↻ Regenerate
+                  </button>
+                </div>
+              )}
 
               <div className="action-input-container">
                 <textarea

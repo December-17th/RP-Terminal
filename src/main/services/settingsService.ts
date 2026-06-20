@@ -15,6 +15,9 @@ export const getDefaultSettings = (): Settings => ({
       max_tokens: 4000
     }
   },
+  persona: {
+    name: 'User'
+  },
   ui: {
     theme: 'dark',
     font_size: 16,

@@ -37,13 +37,22 @@ const completeOpenAICompatible = async (
     ? base
     : `${base.replace(/\/$/, '')}/chat/completions`
 
+  // Some backends (notably Claude via a Bedrock/OpenAI-compat proxy) reject a
+  // trailing assistant "prefill" message — they require the conversation to end
+  // with a user turn. Assistant prefill is only legal on the native Anthropic
+  // path, so strip any trailing assistant message(s) here.
+  let outMessages = messages
+  while (outMessages.length > 1 && outMessages[outMessages.length - 1].role === 'assistant') {
+    outMessages = outMessages.slice(0, -1)
+  }
+
   const response = await fetch(url, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
       Authorization: `Bearer ${api_key}`
     },
-    body: JSON.stringify({ model, messages, ...cleanParams(params), stream: false })
+    body: JSON.stringify({ model, messages: outMessages, ...cleanParams(params), stream: false })
   })
 
   if (!response.ok) {
