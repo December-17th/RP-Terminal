@@ -142,6 +142,14 @@ existing foundation (Electron shell, provider/streaming layer, prompt builder,
 card schema, rpt-event, logs) — additive, not a rewrite.
 
 ### Locked stack decisions
+- **Stay on Electron (not Tauri).** Tauri's Rust backend would force rewriting the
+  whole Node engine (SQLite/quickjs/streaming/Zod) — or shipping a Node sidecar that
+  negates Tauri's benefit — and its per-OS system WebView (esp. Linux WebKitGTK)
+  would break the consistent card HTML/CSS/iframe rendering the visual thesis depends
+  on. No planned feature needs Tauri (the plugin iframe sandbox is a web standard,
+  identical on both). Framework choice is also irrelevant to the AGPL/license concern.
+  Revisit only if small footprint becomes a hard requirement — and then via a
+  Node-sidecar split, not a rewrite.
 - **Node-only, single runtime.** No Python sidecar, no local ML models.
 - **Main process = the engine.** No separate REST/WebSocket app; keep Electron
   IPC as the frontend↔backend bridge.
