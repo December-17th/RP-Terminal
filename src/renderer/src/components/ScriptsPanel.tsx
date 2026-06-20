@@ -3,6 +3,7 @@ import { Modal } from './Modal'
 import { ScopeSection } from './ScopeSection'
 import { ScriptManager } from './ScriptManager'
 import { useScriptsStore, ScriptInfo, ArtifactScope } from '../stores/scriptsStore'
+import { useCardScriptsStore } from '../stores/cardScriptsStore'
 
 interface Props {
   profileId: string
@@ -37,9 +38,19 @@ export const ScriptsPanel: React.FC<Props> = ({
   const [editing, setEditing] = useState<ScriptInfo | null>(null)
   const [editCard, setEditCard] = useState(false)
 
+  // Master on/off for the active world's script runtime (the toggle relocated from the
+  // right-panel runtime so the right side stays game-UI only).
+  const runtimeOn = useCardScriptsStore((s) =>
+    activeCardId ? (s.enabledByCard[activeCardId] ?? true) : true
+  )
+
   useEffect(() => {
     load(profileId)
   }, [profileId])
+
+  useEffect(() => {
+    if (activeCardId) useCardScriptsStore.getState().load(profileId, activeCardId)
+  }, [profileId, activeCardId])
 
   const cardScripts: { name: string; code: string; enabled?: boolean }[] = Array.isArray(
     card?.data?.extensions?.rp_terminal?.scripts
@@ -125,6 +136,21 @@ export const ScriptsPanel: React.FC<Props> = ({
       <div className="panel-header">
         <h3>Scripts</h3>
         <div className="panel-header-actions">
+          {activeCardId && (
+            <button
+              className={`rpt-script-toggle ${runtimeOn ? 'on' : ''}`}
+              title={
+                runtimeOn
+                  ? 'Script runtime running for this world — click to disable'
+                  : 'Script runtime disabled for this world — click to enable'
+              }
+              onClick={() =>
+                useCardScriptsStore.getState().setEnabled(profileId, activeCardId, !runtimeOn)
+              }
+            >
+              {runtimeOn ? 'Runtime On' : 'Runtime Off'}
+            </button>
+          )}
           {activeCardId && (
             <button className="btn-ghost" onClick={() => setEditCard(true)}>
               Card scripts

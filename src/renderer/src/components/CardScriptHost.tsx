@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { useChatStore } from '../stores/chatStore'
 import { useToastStore } from '../stores/toastStore'
 import { useScriptsStore } from '../stores/scriptsStore'
+import { useCardScriptsStore } from '../stores/cardScriptsStore'
 import { buildScriptSrcDoc, CardScript } from '../plugin/bridgeShim'
 import { buildMvuEvents } from '../plugin/mvuEvents'
 import { dispatchRpc } from '../plugin/dispatch'
@@ -39,7 +40,8 @@ export const CardScriptHost: React.FC<Props> = ({
   const frameRef = useRef<HTMLIFrameElement>(null)
   const grantsRef = useRef<Grants>({})
   const cmdCleanups = useRef(new Map<string, () => void>())
-  const [enabled, setEnabled] = useState(true)
+  // Master on/off lives in the Scripts (left) panel now; the right panel is game-UI only.
+  const enabled = useCardScriptsStore((s) => s.enabledByCard[cardId] ?? true)
   const [height, setHeight] = useState(0)
   const [srcDoc, setSrcDoc] = useState('')
   const [scriptCount, setScriptCount] = useState(0)
@@ -60,7 +62,7 @@ export const CardScriptHost: React.FC<Props> = ({
     window.api.pluginGetGrants(profileId, cardId).then((g: Grants) => {
       if (!alive) return
       grantsRef.current = g || {}
-      setEnabled(g?.enabled !== false)
+      useCardScriptsStore.getState().seed(cardId, g?.enabled !== false)
       setGrantsLoaded(true)
     })
     return () => {
@@ -202,46 +204,19 @@ export const CardScriptHost: React.FC<Props> = ({
     })
   }, [])
 
-  const toggleEnabled = (): void => {
-    const next = !enabled
-    setEnabled(next)
-    setHeight(0)
-    window.api.pluginSetGrants(profileId, cardId, { enabled: next }).then((g: Grants) => {
-      grantsRef.current = g || {}
-    })
-  }
-
-  // Nothing to run for this world (no card scripts + no active-scope store scripts) — stay
-  // out of the way rather than render an empty panel.
-  if (enabled && scriptCount === 0) return null
+  // The right panel is reserved for game UI — render only the script-produced UI (the
+  // sandboxed iframe), no management chrome. The master on/off toggle lives in the Scripts
+  // (left) panel. Disabled, or nothing to run → render nothing here.
+  if (!enabled || scriptCount === 0) return null
 
   return (
-    <div className="rpt-script-panel">
-      <div className="rpt-script-head">
-        <span className="rpt-script-title">
-          ⚙ Card Scripts <span className="rpt-script-count">{scriptCount}</span>
-        </span>
-        <button
-          className={`rpt-script-toggle ${enabled ? 'on' : ''}`}
-          title={enabled ? 'Disable this card’s scripts' : 'Enable this card’s scripts'}
-          onClick={toggleEnabled}
-        >
-          {enabled ? 'On' : 'Off'}
-        </button>
-      </div>
-
-      {enabled ? (
-        <iframe
-          ref={frameRef}
-          className="rpt-script-frame"
-          sandbox="allow-scripts"
-          srcDoc={srcDoc}
-          style={{ height: height || 1 }}
-          title="card scripts"
-        />
-      ) : (
-        <div className="rpt-script-off">Scripts disabled.</div>
-      )}
-    </div>
+    <iframe
+      ref={frameRef}
+      className="rpt-script-frame"
+      sandbox="allow-scripts"
+      srcDoc={srcDoc}
+      style={{ height: height || 1 }}
+      title="card scripts"
+    />
   )
 }
