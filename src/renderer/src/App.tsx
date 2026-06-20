@@ -8,7 +8,7 @@ import { useSettingsStore } from './stores/settingsStore'
 import { usePresetStore } from './stores/presetStore'
 import { LayoutRenderer } from './components/LayoutRenderer'
 import { LorebookManager } from './components/LorebookManager'
-import { ScriptManager } from './components/ScriptManager'
+import { ScriptsPanel } from './components/ScriptsPanel'
 import { PresetManager } from './components/PresetManager'
 import { LogsPanel } from './components/LogsPanel'
 import { RegexPanel } from './components/RegexPanel'
@@ -541,23 +541,14 @@ export default function App() {
         )
 
       case 'scripts':
-        return activeCharacter ? (
-          <ScriptManager
-            key={activeCharacter.id}
+        return (
+          <ScriptsPanel
             profileId={activeProfile.id}
-            characterId={activeCharacter.id}
-            characterName={activeCharacter.card.data.name}
-            card={activeCharacter.card}
+            activeCardId={activeCharacter?.id ?? null}
+            activeCardName={activeCharacter?.card.data.name ?? null}
+            activeChatId={activeChatId ?? null}
+            card={activeCharacter?.card ?? null}
           />
-        ) : (
-          <div className="panel">
-            <div className="panel-header">
-              <h3>Scripts</h3>
-            </div>
-            <div className="panel-body">
-              <div style={{ opacity: 0.6, fontStyle: 'italic' }}>Select a World first.</div>
-            </div>
-          </div>
         )
 
       case 'regex':
@@ -904,14 +895,14 @@ export default function App() {
                   </div>
                 ) : null}
               </div>
-              {activeCharacter.card.data.extensions?.rp_terminal?.scripts?.length ? (
+              {activeChatId ? (
                 <CardScriptHost
                   key={`${activeCharacter.id}:${activeChatId}`}
                   profileId={activeProfile.id}
                   chatId={activeChatId}
                   cardId={activeCharacter.id}
                   cardName={activeCharacter.card.data.name}
-                  scripts={activeCharacter.card.data.extensions.rp_terminal.scripts}
+                  scripts={activeCharacter.card.data.extensions?.rp_terminal?.scripts || []}
                 />
               ) : null}
             </div>

@@ -14,6 +14,7 @@ import * as generationService from './services/generationService'
 import * as logService from './services/logService'
 import * as migrationService from './services/migrationService'
 import * as regexService from './services/regexService'
+import * as scriptService from './services/scriptService'
 import * as templateService from './services/templateService'
 import * as pluginService from './services/pluginService'
 import * as pluginHostService from './services/pluginHostService'
@@ -187,6 +188,45 @@ app.whenReady().then(() => {
   ipcMain.handle('regex-set-scope', (_, profileId, file, scope, owner) =>
     regexService.setScriptScope(profileId, file, scope, owner)
   )
+  ipcMain.handle('regex-set-disabled', (_, profileId, file, disabled) =>
+    regexService.setScriptDisabled(profileId, file, disabled)
+  )
+
+  // Scripts (profile-level library; scope global/world/session + per-script toggle)
+  ipcMain.handle('list-scripts', (_, profileId) => scriptService.listScripts(profileId))
+  ipcMain.handle('get-script', (_, profileId, file) => scriptService.getScript(profileId, file))
+  ipcMain.handle('save-script', (_, profileId, script, scope, owner) =>
+    scriptService.saveScript(profileId, script, scope, owner)
+  )
+  ipcMain.handle('update-script', (_, profileId, file, patch) =>
+    scriptService.updateScript(profileId, file, patch)
+  )
+  ipcMain.handle('script-set-scope', (_, profileId, file, scope, owner) =>
+    scriptService.setScriptScope(profileId, file, scope, owner)
+  )
+  ipcMain.handle('script-set-disabled', (_, profileId, file, disabled) =>
+    scriptService.setScriptDisabled(profileId, file, disabled)
+  )
+  ipcMain.handle('delete-script', (_, profileId, file) =>
+    scriptService.deleteScript(profileId, file)
+  )
+  // The merged runtime script set for a chat: card-embedded (World) + active-scope store
+  // scripts, with remote `import` directives resolved when `allowRemote` (per-card grant).
+  ipcMain.handle('get-runtime-scripts', async (_, profileId, cardId, chatId, allowRemote) => {
+    const card = cardId ? characterService.getCharacter(profileId, cardId) : null
+    const cardScripts = ((card?.data.extensions?.rp_terminal as any)?.scripts || [])
+      .filter((s: any) => s && s.enabled !== false)
+      .map((s: any) => ({ name: s.name || 'script', code: s.code || '' }))
+    const storeScripts = scriptService.getActiveScripts(profileId, { cardId, chatId })
+    const hosts = new Set<string>()
+    const out: { name: string; code: string }[] = []
+    for (const s of [...cardScripts, ...storeScripts]) {
+      const resolved = await scriptService.resolveRemoteImports(profileId, s.code, !!allowRemote)
+      resolved.hosts.forEach((h) => hosts.add(h))
+      out.push({ name: s.name, code: resolved.code })
+    }
+    return { scripts: out, remoteHosts: Array.from(hosts) }
+  })
   ipcMain.handle('regex-script-rules', (_, profileId, file) =>
     regexService.getScriptRules(profileId, file)
   )

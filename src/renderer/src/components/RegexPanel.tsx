@@ -1,9 +1,11 @@
 import React, { useEffect, useState } from 'react'
 import { Modal } from './Modal'
+import { ScopeSection } from './ScopeSection'
 import {
   useRegexStore,
   RegexRuleDetail,
   RegexRulePatch,
+  RegexScriptInfo,
   ArtifactScope
 } from '../stores/regexStore'
 
@@ -14,8 +16,15 @@ interface Props {
   activeChatId: string | null
 }
 
+const SCOPES: { key: ArtifactScope; title: string; hint: string }[] = [
+  { key: 'global', title: 'Global', hint: 'every session' },
+  { key: 'world', title: 'World', hint: 'this card' },
+  { key: 'session', title: 'Session', hint: 'this chat' }
+]
+
 export const RegexPanel: React.FC<Props> = ({ profileId, activeCardId, activeChatId }) => {
-  const { scripts, loadScripts, importScripts, remove, updateRule, setScope } = useRegexStore()
+  const { scripts, loadScripts, importScripts, remove, updateRule, setScope, setDisabled } =
+    useRegexStore()
   const [expanded, setExpanded] = useState<string | null>(null)
   const [rules, setRules] = useState<Record<string, RegexRuleDetail[]>>({})
   const [editing, setEditing] = useState<RegexRuleDetail | null>(null)
@@ -50,6 +59,96 @@ export const RegexPanel: React.FC<Props> = ({ profileId, activeCardId, activeCha
     setScope(profileId, file, scope, owner ?? undefined)
   }
 
+  const renderScript = (s: RegexScriptInfo): React.ReactNode => {
+    const ownedElsewhere =
+      (s.scope === 'world' || s.scope === 'session') &&
+      s.owner !== (s.scope === 'world' ? activeCardId : activeChatId)
+    return (
+      <div key={s.file} className={`entry-card ${s.disabled ? 'disabled' : ''}`}>
+        <div className="entry-head">
+          <input
+            type="checkbox"
+            checked={!s.disabled}
+            title={s.disabled ? 'Script disabled' : 'Script enabled'}
+            onChange={() => setDisabled(profileId, s.file, !s.disabled)}
+          />
+          <div className="entry-head-main" onClick={() => toggleExpand(s.file)}>
+            <span className="entry-title">{s.scriptName}</span>
+            <span className="entry-keys-preview">
+              {s.ruleCount} rule{s.ruleCount === 1 ? '' : 's'}
+            </span>
+          </div>
+          <select
+            className="scope-select"
+            value={s.scope}
+            title="Scope — World binds to the active card; Session to the active chat."
+            onClick={(e) => e.stopPropagation()}
+            onChange={(e) => changeScope(s.file, e.target.value as ArtifactScope)}
+          >
+            <option value="global">Global</option>
+            <option value="world" disabled={!activeCardId}>
+              World
+            </option>
+            <option value="session" disabled={!activeChatId}>
+              Session
+            </option>
+          </select>
+          {ownedElsewhere && (
+            <span className="entry-keys-preview" title="Bound to a different world/session">
+              other {s.scope}
+            </span>
+          )}
+          <button className="btn-ghost" onClick={() => toggleExpand(s.file)}>
+            {expanded === s.file ? '▾' : '▸'}
+          </button>
+          <button
+            className="btn-ghost danger"
+            title="Delete script"
+            onClick={() => {
+              if (confirm(`Delete regex script "${s.scriptName}"?`)) remove(profileId, s.file)
+            }}
+          >
+            🗑
+          </button>
+        </div>
+        {expanded === s.file && (
+          <div className="entry-body" style={{ display: 'block' }}>
+            {(rules[s.file] || []).length === 0 ? (
+              <div style={{ opacity: 0.6, fontStyle: 'italic' }}>No rules in this script.</div>
+            ) : (
+              (rules[s.file] || []).map((r) => (
+                <div key={r.index} className={`prompt-row ${r.disabled ? 'disabled' : ''}`}>
+                  <div className="prompt-row-head">
+                    <input
+                      type="checkbox"
+                      checked={!r.disabled}
+                      title={r.disabled ? 'Disabled' : 'Enabled'}
+                      onChange={() => patchRule(r, { disabled: !r.disabled })}
+                    />
+                    <span
+                      className="prompt-name"
+                      title="Edit rule"
+                      onClick={() => setEditing(r)}
+                      style={{ fontFamily: 'monospace', fontSize: '0.85em' }}
+                    >
+                      /{r.source || '(empty)'}/{r.flags}
+                    </span>
+                    {r.promptOnly && <span className="role-badge">prompt</span>}
+                    <div className="prompt-actions">
+                      <button className="btn-ghost" title="Edit" onClick={() => setEditing(r)}>
+                        ✎
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        )}
+      </div>
+    )
+  }
+
   return (
     <div className="panel">
       <div className="panel-header">
@@ -62,95 +161,34 @@ export const RegexPanel: React.FC<Props> = ({ profileId, activeCardId, activeCha
         <div style={{ fontSize: '0.82em', color: 'var(--rpt-text-secondary)', marginBottom: 10 }}>
           SillyTavern regex scripts transform the AI&apos;s output for display (e.g. the
           <em> 美化</em> beautification cards). Applied at render time — the stored history keeps
-          the model&apos;s raw output. Expand a script to enable/disable or edit individual rules.
+          the model&apos;s raw output. Toggle a whole script on/off, set its scope, or expand to edit
+          individual rules.
         </div>
         {scripts.length === 0 ? (
           <div style={{ opacity: 0.6, fontStyle: 'italic' }}>
             No scripts. Import a SillyTavern regex JSON.
           </div>
         ) : (
-          scripts.map((s) => (
-            <div key={s.file} className="entry-card">
-              <div className="entry-head">
-                <div className="entry-head-main" onClick={() => toggleExpand(s.file)}>
-                  <span className="entry-title">{s.scriptName}</span>
-                  <span className="entry-keys-preview">
-                    {s.ruleCount} rule{s.ruleCount === 1 ? '' : 's'}
-                  </span>
-                </div>
-                <select
-                  className="scope-select"
-                  value={s.scope}
-                  title="Scope — which sessions this script applies to. World binds it to the active card; Session to the active chat."
-                  onClick={(e) => e.stopPropagation()}
-                  onChange={(e) => changeScope(s.file, e.target.value as ArtifactScope)}
-                >
-                  <option value="global">Global</option>
-                  <option value="world" disabled={!activeCardId}>
-                    World
-                  </option>
-                  <option value="session" disabled={!activeChatId}>
-                    Session
-                  </option>
-                </select>
-                {(s.scope === 'world' || s.scope === 'session') &&
-                  s.owner !== (s.scope === 'world' ? activeCardId : activeChatId) && (
-                    <span
-                      className="entry-keys-preview"
-                      title="Bound to a different world/session than the one active now"
-                    >
-                      other {s.scope}
-                    </span>
-                  )}
-                <button className="btn-ghost" onClick={() => toggleExpand(s.file)}>
-                  {expanded === s.file ? '▾' : '▸'}
-                </button>
-                <button
-                  className="btn-ghost danger"
-                  title="Delete script"
-                  onClick={() => {
-                    if (confirm(`Delete regex script "${s.scriptName}"?`)) remove(profileId, s.file)
-                  }}
-                >
-                  🗑
-                </button>
-              </div>
-              {expanded === s.file && (
-                <div className="entry-body" style={{ display: 'block' }}>
-                  {(rules[s.file] || []).length === 0 ? (
-                    <div style={{ opacity: 0.6, fontStyle: 'italic' }}>No rules in this script.</div>
-                  ) : (
-                    (rules[s.file] || []).map((r) => (
-                      <div key={r.index} className={`prompt-row ${r.disabled ? 'disabled' : ''}`}>
-                        <div className="prompt-row-head">
-                          <input
-                            type="checkbox"
-                            checked={!r.disabled}
-                            title={r.disabled ? 'Disabled' : 'Enabled'}
-                            onChange={() => patchRule(r, { disabled: !r.disabled })}
-                          />
-                          <span
-                            className="prompt-name"
-                            title="Edit rule"
-                            onClick={() => setEditing(r)}
-                            style={{ fontFamily: 'monospace', fontSize: '0.85em' }}
-                          >
-                            /{r.source || '(empty)'}/{r.flags}
-                          </span>
-                          {r.promptOnly && <span className="role-badge">prompt</span>}
-                          <div className="prompt-actions">
-                            <button className="btn-ghost" title="Edit" onClick={() => setEditing(r)}>
-                              ✎
-                            </button>
-                          </div>
-                        </div>
-                      </div>
-                    ))
-                  )}
-                </div>
-              )}
-            </div>
-          ))
+          SCOPES.map(({ key, title, hint }) => {
+            const inScope = scripts.filter((s) => s.scope === key)
+            return (
+              <ScopeSection
+                key={key}
+                title={title}
+                hint={hint}
+                count={inScope.length}
+                defaultOpen={key !== 'session'}
+              >
+                {inScope.length === 0 ? (
+                  <div style={{ opacity: 0.55, fontStyle: 'italic', padding: '4px 2px' }}>
+                    No {title.toLowerCase()} regex.
+                  </div>
+                ) : (
+                  inScope.map(renderScript)
+                )}
+              </ScopeSection>
+            )
+          })
         )}
       </div>
 

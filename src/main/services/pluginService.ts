@@ -161,6 +161,8 @@ export const getMessages = (profileId: string, chatId: string): PluginMessage[] 
 export interface CardGrants {
   enabled?: boolean
   generate?: boolean
+  /** Allow this world's scripts to load code from the internet (remote import directives). */
+  remoteScripts?: boolean
 }
 
 const grantsPath = (profileId: string): string =>

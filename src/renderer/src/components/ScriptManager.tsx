@@ -12,12 +12,13 @@ interface Props {
 interface Draft {
   name: string
   code: string
+  enabled?: boolean
 }
 
 const readScripts = (card: any): Draft[] => {
   const arr = card?.data?.extensions?.rp_terminal?.scripts
   return Array.isArray(arr)
-    ? arr.map((s: any) => ({ name: s?.name || '', code: s?.code || '' }))
+    ? arr.map((s: any) => ({ name: s?.name || '', code: s?.code || '', enabled: s?.enabled }))
     : []
 }
 
@@ -64,7 +65,8 @@ export const ScriptManager: React.FC<Props> = ({ profileId, characterId, charact
     next.data.extensions.rp_terminal = next.data.extensions.rp_terminal || {}
     next.data.extensions.rp_terminal.scripts = drafts.map((s) => ({
       name: s.name.trim() || 'script',
-      code: s.code
+      code: s.code,
+      ...(s.enabled === false ? { enabled: false } : {})
     }))
     await useCharacterStore.getState().saveCard(profileId, characterId, next)
     setDirty(false)
@@ -95,8 +97,14 @@ export const ScriptManager: React.FC<Props> = ({ profileId, characterId, charact
           </div>
         ) : (
           drafts.map((s, i) => (
-            <div key={i} className="entry-card">
+            <div key={i} className={`entry-card ${s.enabled === false ? 'disabled' : ''}`}>
               <div className="entry-head">
+                <input
+                  type="checkbox"
+                  checked={s.enabled !== false}
+                  title={s.enabled === false ? 'Script disabled' : 'Script enabled'}
+                  onChange={() => updateScript(i, { enabled: s.enabled === false })}
+                />
                 <div
                   className="entry-head-main"
                   onClick={() => setExpanded((cur) => (cur === i ? null : i))}

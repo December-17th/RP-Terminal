@@ -6,6 +6,7 @@ import {
   isScopeActive,
   saveRegexScript,
   setScriptScope,
+  setScriptDisabled,
   getScriptScope,
   getAllRules,
   listScripts,
@@ -71,6 +72,17 @@ describe('regex scope store', () => {
     expect(getScriptScope(profileId, target.file)).toEqual({ scope: 'world', owner: 'card-Z' })
     setScriptScope(profileId, target.file, 'global')
     expect(getScriptScope(profileId, target.file)).toEqual({ scope: 'global' })
+  })
+
+  it('setScriptDisabled hides a script from getAllRules but keeps it listed', () => {
+    const target = listScripts(profileId).find((s) => s.scriptName === 'session-1')!
+    const before = getAllRules(profileId).length
+    setScriptDisabled(profileId, target.file, true)
+    expect(getAllRules(profileId)).toHaveLength(before - 1) // dropped from the active rule set
+    const listed = listScripts(profileId).find((s) => s.file === target.file)!
+    expect(listed.disabled).toBe(true) // still visible in the manager
+    setScriptDisabled(profileId, target.file, false)
+    expect(getAllRules(profileId)).toHaveLength(before) // re-enabled
   })
 
   it('deleteScript removes the file and its scope entry', () => {

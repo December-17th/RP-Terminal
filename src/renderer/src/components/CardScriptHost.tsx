@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useChatStore } from '../stores/chatStore'
 import { useToastStore } from '../stores/toastStore'
+import { useScriptsStore } from '../stores/scriptsStore'
 import { buildScriptSrcDoc, CardScript } from '../plugin/bridgeShim'
 import { buildMvuEvents } from '../plugin/mvuEvents'
 import { dispatchRpc } from '../plugin/dispatch'
@@ -17,6 +18,7 @@ interface Props {
 interface Grants {
   enabled?: boolean
   generate?: boolean
+  remoteScripts?: boolean
 }
 
 /**
@@ -39,21 +41,65 @@ export const CardScriptHost: React.FC<Props> = ({
   const cmdCleanups = useRef(new Map<string, () => void>())
   const [enabled, setEnabled] = useState(true)
   const [height, setHeight] = useState(0)
+  const [srcDoc, setSrcDoc] = useState('')
+  const [scriptCount, setScriptCount] = useState(0)
+  const [grantsLoaded, setGrantsLoaded] = useState(false)
 
-  const srcDoc = useMemo(() => buildScriptSrcDoc(scripts), [scripts])
+  // Card-embedded scripts feed the runtime as the World scope; a change to them (or to the
+  // profile scripts store) re-triggers a refetch of the merged, import-resolved set.
+  const storeScripts = useScriptsStore((s) => s.scripts)
+  const scriptsKey = useMemo(
+    () => (scripts || []).map((s) => `${s.name}:${s.code.length}`).join('|'),
+    [scripts]
+  )
 
   // Load persisted grants (enable state + sensitive caps) for this card.
   useEffect(() => {
     let alive = true
+    setGrantsLoaded(false)
     window.api.pluginGetGrants(profileId, cardId).then((g: Grants) => {
       if (!alive) return
       grantsRef.current = g || {}
       setEnabled(g?.enabled !== false)
+      setGrantsLoaded(true)
     })
     return () => {
       alive = false
     }
   }, [profileId, cardId])
+
+  // Build the sandboxed document from the MERGED runtime scripts (card-embedded + active-
+  // scope store scripts), with remote `import` directives resolved in main. The first remote
+  // load prompts once per world; the grant is then persisted (and the fetch cached).
+  useEffect(() => {
+    if (!enabled || !grantsLoaded) return
+    let alive = true
+    ;(async () => {
+      const allow = grantsRef.current.remoteScripts === true
+      let res = await window.api.getRuntimeScripts(profileId, cardId, chatId, allow)
+      if (!alive) return
+      if (res?.remoteHosts?.length && !allow) {
+        const ok = window.confirm(
+          `Scripts in "${cardName}" load code from the internet:\n\n` +
+            res.remoteHosts.map((h: string) => '  • ' + h).join('\n') +
+            `\n\nAllow remote scripts for this world? (fetched once, then cached)`
+        )
+        if (ok) {
+          grantsRef.current = await window.api.pluginSetGrants(profileId, cardId, {
+            remoteScripts: true
+          })
+          res = await window.api.getRuntimeScripts(profileId, cardId, chatId, true)
+          if (!alive) return
+        }
+      }
+      const list = res?.scripts || []
+      setScriptCount(list.length)
+      setSrcDoc(buildScriptSrcDoc(list))
+    })()
+    return () => {
+      alive = false
+    }
+  }, [profileId, cardId, chatId, cardName, enabled, grantsLoaded, scriptsKey, storeScripts])
 
   const post = (msg: any): void => {
     frameRef.current?.contentWindow?.postMessage(msg, '*')
@@ -165,11 +211,15 @@ export const CardScriptHost: React.FC<Props> = ({
     })
   }
 
+  // Nothing to run for this world (no card scripts + no active-scope store scripts) — stay
+  // out of the way rather than render an empty panel.
+  if (enabled && scriptCount === 0) return null
+
   return (
     <div className="rpt-script-panel">
       <div className="rpt-script-head">
         <span className="rpt-script-title">
-          ⚙ Card Scripts <span className="rpt-script-count">{scripts.length}</span>
+          ⚙ Card Scripts <span className="rpt-script-count">{scriptCount}</span>
         </span>
         <button
           className={`rpt-script-toggle ${enabled ? 'on' : ''}`}

@@ -54,7 +54,9 @@ export const RPTerminalExtSchema = z.object({
    * defaults + validation. Native cards can instead put plain defaults in
    * `state_schema.defaults`. */
   data_schema: z.string().default(''),
-  scripts: z.array(z.object({ name: z.string(), code: z.string() })).default([]),
+  scripts: z
+    .array(z.object({ name: z.string(), code: z.string(), enabled: z.boolean().optional() }))
+    .default([]),
   game_rules: z.record(z.string(), z.any()).default({}),
   assets: z.record(z.string(), z.string()).default({})
 })

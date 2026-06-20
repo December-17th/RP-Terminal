@@ -118,6 +118,27 @@ const api = {
     ipcRenderer.invoke('delete-regex', profileId, file),
   setRegexScope: (profileId: string, file: string, scope: string, owner?: string) =>
     ipcRenderer.invoke('regex-set-scope', profileId, file, scope, owner),
+  setRegexDisabled: (profileId: string, file: string, disabled: boolean) =>
+    ipcRenderer.invoke('regex-set-disabled', profileId, file, disabled),
+  // Scripts library
+  listScripts: (profileId: string) => ipcRenderer.invoke('list-scripts', profileId),
+  getScript: (profileId: string, file: string) => ipcRenderer.invoke('get-script', profileId, file),
+  saveScript: (profileId: string, script: any, scope?: string, owner?: string) =>
+    ipcRenderer.invoke('save-script', profileId, script, scope, owner),
+  updateScript: (profileId: string, file: string, patch: any) =>
+    ipcRenderer.invoke('update-script', profileId, file, patch),
+  setScriptScope: (profileId: string, file: string, scope: string, owner?: string) =>
+    ipcRenderer.invoke('script-set-scope', profileId, file, scope, owner),
+  setScriptDisabled: (profileId: string, file: string, disabled: boolean) =>
+    ipcRenderer.invoke('script-set-disabled', profileId, file, disabled),
+  deleteScript: (profileId: string, file: string) =>
+    ipcRenderer.invoke('delete-script', profileId, file),
+  getRuntimeScripts: (
+    profileId: string,
+    cardId: string | null,
+    chatId: string | null,
+    allowRemote: boolean
+  ) => ipcRenderer.invoke('get-runtime-scripts', profileId, cardId, chatId, allowRemote),
   getRegexRules: (profileId: string, file: string) =>
     ipcRenderer.invoke('regex-script-rules', profileId, file),
   updateRegexRule: (profileId: string, file: string, index: number, patch: any) =>

@@ -31,6 +31,7 @@ export interface RegexScriptInfo {
   ruleCount: number
   scope: ArtifactScope
   owner?: string
+  disabled: boolean
 }
 
 const regexDir = (profileId: string): string =>
@@ -53,6 +54,8 @@ export interface ScopeContext {
 export interface ScopeMeta {
   scope: ArtifactScope
   owner?: string
+  /** Script-level enable toggle; a disabled script never contributes rules at runtime. */
+  disabled?: boolean
 }
 
 // Scope lives in a sidecar (`_meta.json`: filename → {scope, owner}) so we never
@@ -74,7 +77,13 @@ export const isScopeActive = (meta: ScopeMeta | undefined, ctx: ScopeContext): b
 export const getScriptScope = (profileId: string, file: string): ScopeMeta =>
   readMeta(profileId)[file] ?? { scope: 'global' }
 
-/** Assign a script's scope (and owner for world/session). global clears the entry. */
+// Drop a meta entry once it carries no information (global + no owner + enabled).
+const pruneMeta = (meta: Record<string, ScopeMeta>, file: string): void => {
+  const m = meta[file]
+  if (m && (m.scope ?? 'global') === 'global' && !m.owner && !m.disabled) delete meta[file]
+}
+
+/** Assign a script's scope (and owner for world/session), preserving its disabled flag. */
 export const setScriptScope = (
   profileId: string,
   file: string,
@@ -83,8 +92,19 @@ export const setScriptScope = (
 ): void => {
   if (isUnsafe(file)) return
   const meta = readMeta(profileId)
-  if (scope === 'global') delete meta[file]
-  else meta[file] = { scope, owner }
+  const prev = meta[file] || ({ scope: 'global' } as ScopeMeta)
+  meta[file] = { scope, owner: scope === 'global' ? undefined : owner, disabled: prev.disabled }
+  pruneMeta(meta, file)
+  writeMeta(profileId, meta)
+}
+
+/** Enable/disable a whole regex script (independent of its scope). */
+export const setScriptDisabled = (profileId: string, file: string, disabled: boolean): void => {
+  if (isUnsafe(file)) return
+  const meta = readMeta(profileId)
+  const prev = meta[file] || ({ scope: 'global' } as ScopeMeta)
+  meta[file] = { scope: prev.scope ?? 'global', owner: prev.owner, disabled: disabled || undefined }
+  pruneMeta(meta, file)
   writeMeta(profileId, meta)
 }
 
@@ -132,11 +152,12 @@ const rulesInFile = (filePath: string): any[] => {
 export const getAllRules = (profileId: string, ctx?: ScopeContext): RenderRegexRule[] => {
   const dir = regexDir(profileId)
   if (!fs.existsSync(dir)) return []
-  const meta = ctx ? readMeta(profileId) : null
+  const meta = readMeta(profileId)
   const out: RenderRegexRule[] = []
   for (const file of listFilesSync(dir)) {
     if (!file.endsWith('.json') || file.startsWith('_')) continue // _meta.json is the sidecar
-    if (meta && !isScopeActive(meta[file], ctx!)) continue
+    if (meta[file]?.disabled) continue // a disabled script contributes nothing
+    if (ctx && !isScopeActive(meta[file], ctx)) continue
     for (const raw of rulesInFile(path.join(dir, file))) out.push(normalizeRule(raw))
   }
   return out
@@ -199,7 +220,8 @@ export const listScripts = (profileId: string): RegexScriptInfo[] => {
         scriptName: rules[0]?.scriptName || rules[0]?.name || file.replace(/\.json$/, ''),
         ruleCount: rules.length,
         scope: m?.scope ?? 'global',
-        owner: m?.owner
+        owner: m?.owner,
+        disabled: m?.disabled === true
       }
     })
 }

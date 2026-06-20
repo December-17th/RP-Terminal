@@ -29,6 +29,7 @@ export interface RegexScriptInfo {
   ruleCount: number
   scope: ArtifactScope
   owner?: string
+  disabled: boolean
 }
 
 export interface RegexRuleDetail extends RenderRegexRule {
@@ -60,6 +61,7 @@ interface RegexState {
     scope: ArtifactScope,
     owner?: string
   ) => Promise<void>
+  setDisabled: (profileId: string, file: string, disabled: boolean) => Promise<void>
   updateRule: (
     profileId: string,
     file: string,
@@ -118,6 +120,12 @@ export const useRegexStore = create<RegexState>((set, get) => ({
 
   setScope: async (profileId, file, scope, owner) => {
     await window.api.setRegexScope(profileId, file, scope, owner)
+    await get().load(profileId)
+    await get().loadScripts(profileId)
+  },
+
+  setDisabled: async (profileId, file, disabled) => {
+    await window.api.setRegexDisabled(profileId, file, disabled)
     await get().load(profileId)
     await get().loadScripts(profileId)
   },

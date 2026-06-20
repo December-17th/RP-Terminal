@@ -938,6 +938,55 @@ select {
   font-size: 0.78em;
 }
 
+/* Collapsible scope groups (Global / World / Session) in the scripts + regex managers. */
+.scope-section {
+  border: 1px solid var(--rpt-border);
+  border-radius: 6px;
+  margin-bottom: 8px;
+  overflow: hidden;
+}
+.scope-section-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  text-align: left;
+  background: var(--rpt-bg-secondary);
+  border: none;
+  border-radius: 0;
+  padding: 7px 10px;
+  cursor: pointer;
+  color: var(--rpt-text-primary);
+}
+.scope-section-head:hover {
+  background: var(--rpt-bg-tertiary, var(--rpt-bg-secondary));
+}
+.scope-section-caret {
+  opacity: 0.7;
+  width: 12px;
+}
+.scope-section-title {
+  font-weight: 600;
+}
+.scope-section-hint {
+  font-size: 0.76em;
+  color: var(--rpt-text-secondary);
+  margin-left: auto;
+  font-style: italic;
+}
+.scope-section-body {
+  padding: 6px 8px;
+}
+.link-btn {
+  background: none;
+  border: none;
+  color: var(--rpt-accent, #6cf);
+  padding: 0;
+  cursor: pointer;
+  font-size: inherit;
+  text-decoration: underline;
+}
+
 /* ---------- Modal ---------- */
 .modal-overlay {
   position: fixed;
