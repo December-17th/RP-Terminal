@@ -130,7 +130,6 @@ export const ScriptsPanel: React.FC<Props> = ({
               Card scripts
             </button>
           )}
-          <button onClick={() => addScript('global')}>+ Script</button>
         </div>
       </div>
       <div className="panel-body">
@@ -151,13 +150,30 @@ export const ScriptsPanel: React.FC<Props> = ({
               hint={hint}
               count={inScope.length + cardOnesHere.length}
               defaultOpen={key !== 'session'}
+              action={(() => {
+                const blocked =
+                  (key === 'world' && !activeCardId) || (key === 'session' && !activeChatId)
+                return (
+                  <button
+                    className="link-btn"
+                    disabled={blocked}
+                    title={
+                      blocked
+                        ? key === 'world'
+                          ? 'Select a world first'
+                          : 'Open a session first'
+                        : `Add a ${title.toLowerCase()} script`
+                    }
+                    onClick={() => addScript(key)}
+                  >
+                    + add
+                  </button>
+                )
+              })()}
             >
               {inScope.length === 0 && cardOnesHere.length === 0 ? (
                 <div style={{ opacity: 0.55, fontStyle: 'italic', padding: '4px 2px' }}>
-                  No {title.toLowerCase()} scripts.{' '}
-                  <button className="link-btn" onClick={() => addScript(key)}>
-                    + add
-                  </button>
+                  No {title.toLowerCase()} scripts yet.
                 </div>
               ) : (
                 <>

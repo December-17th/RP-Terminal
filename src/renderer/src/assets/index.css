@@ -948,18 +948,30 @@ select {
 .scope-section-head {
   display: flex;
   align-items: center;
-  gap: 8px;
-  width: 100%;
-  text-align: left;
   background: var(--rpt-bg-secondary);
+}
+.scope-section-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  min-width: 0;
+  text-align: left;
+  background: none;
   border: none;
   border-radius: 0;
   padding: 7px 10px;
   cursor: pointer;
   color: var(--rpt-text-primary);
 }
-.scope-section-head:hover {
+.scope-section-toggle:hover {
   background: var(--rpt-bg-tertiary, var(--rpt-bg-secondary));
+}
+.scope-section-action {
+  display: flex;
+  align-items: center;
+  padding-right: 10px;
+  white-space: nowrap;
 }
 .scope-section-caret {
   opacity: 0.7;
@@ -985,6 +997,11 @@ select {
   cursor: pointer;
   font-size: inherit;
   text-decoration: underline;
+}
+.link-btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+  text-decoration: none;
 }
 
 /* ---------- Modal ---------- */
