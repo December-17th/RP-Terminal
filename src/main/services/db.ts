@@ -5,10 +5,10 @@ import { getAppDir, ensureDir } from './storageService'
 let db: Database.Database | null = null
 
 /**
- * Relational schema. Current-feature tables (profiles..floors) plus a couple of
- * forward-facing tables (rpg_entities, episodic_memory) so future migrations are
- * additive. JSON blobs are used where the shape is owned by a Zod schema on the
- * application side (cards, settings, presets).
+ * Relational schema for session/state data only. Portable, user-shareable
+ * artifacts — presets, lorebooks, regex — are intentionally NOT stored here;
+ * they live as JSON files in their native format (see preset/lorebook services).
+ * JSON blobs are used for cards/settings where a Zod schema owns the shape.
  */
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS profiles (
@@ -25,11 +25,6 @@ CREATE TABLE IF NOT EXISTS settings (
   data TEXT NOT NULL
 );
 
-CREATE TABLE IF NOT EXISTS presets (
-  profile_id TEXT PRIMARY KEY REFERENCES profiles(id) ON DELETE CASCADE,
-  data TEXT NOT NULL
-);
-
 CREATE TABLE IF NOT EXISTS characters (
   id TEXT PRIMARY KEY,
   profile_id TEXT NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
@@ -38,31 +33,6 @@ CREATE TABLE IF NOT EXISTS characters (
   created_at TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_characters_profile ON characters(profile_id);
-
-CREATE TABLE IF NOT EXISTS lorebooks (
-  id TEXT PRIMARY KEY,
-  profile_id TEXT NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
-  character_id TEXT,
-  name TEXT NOT NULL
-);
-CREATE INDEX IF NOT EXISTS idx_lorebooks_character ON lorebooks(character_id);
-
-CREATE TABLE IF NOT EXISTS lorebook_entries (
-  id TEXT PRIMARY KEY,
-  lorebook_id TEXT NOT NULL REFERENCES lorebooks(id) ON DELETE CASCADE,
-  sort INTEGER NOT NULL DEFAULT 0,
-  keys TEXT NOT NULL,
-  secondary_keys TEXT NOT NULL,
-  content TEXT NOT NULL,
-  enabled INTEGER NOT NULL DEFAULT 1,
-  insertion_order INTEGER NOT NULL DEFAULT 100,
-  case_sensitive INTEGER NOT NULL DEFAULT 0,
-  constant INTEGER NOT NULL DEFAULT 0,
-  selective INTEGER NOT NULL DEFAULT 0,
-  protected INTEGER NOT NULL DEFAULT 0,
-  comment TEXT NOT NULL DEFAULT ''
-);
-CREATE INDEX IF NOT EXISTS idx_entries_lorebook ON lorebook_entries(lorebook_id);
 
 CREATE TABLE IF NOT EXISTS chats (
   id TEXT PRIMARY KEY,
@@ -104,6 +74,17 @@ CREATE TABLE IF NOT EXISTS episodic_memory (
 );
 `
 
+// Presets/lorebooks were briefly stored in SQL during early Phase F; they are now
+// file-based, so drop the tables if an older DB still has them. The source JSON
+// on disk is the surviving copy.
+const DROP_LEGACY = `
+DROP TABLE IF EXISTS lorebook_entries;
+DROP TABLE IF EXISTS lorebooks;
+DROP TABLE IF EXISTS presets;
+DROP TABLE IF EXISTS presets_legacy;
+DROP TABLE IF EXISTS profile_state;
+`
+
 export const getDb = (): Database.Database => {
   if (db) return db
   ensureDir(getAppDir())
@@ -111,5 +92,6 @@ export const getDb = (): Database.Database => {
   db.pragma('journal_mode = WAL')
   db.pragma('foreign_keys = ON')
   db.exec(SCHEMA)
+  db.exec(DROP_LEGACY)
   return db
 }

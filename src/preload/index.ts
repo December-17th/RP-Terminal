@@ -21,8 +21,17 @@ const api = {
     ipcRenderer.invoke('delete-chat', profileId, chatId),
   deleteCharacter: (profileId: string, charId: string) =>
     ipcRenderer.invoke('delete-character', profileId, charId),
-  getPreset: (profileId: string) => ipcRenderer.invoke('get-preset', profileId),
-  savePreset: (profileId: string, preset: any) => ipcRenderer.invoke('save-preset', profileId, preset),
+  listPresets: (profileId: string) => ipcRenderer.invoke('list-presets', profileId),
+  getActivePresetId: (profileId: string) => ipcRenderer.invoke('get-active-preset-id', profileId),
+  getActivePreset: (profileId: string) => ipcRenderer.invoke('get-active-preset', profileId),
+  getPreset: (profileId: string, presetId: string) => ipcRenderer.invoke('get-preset', profileId, presetId),
+  setActivePreset: (profileId: string, presetId: string) =>
+    ipcRenderer.invoke('set-active-preset', profileId, presetId),
+  createPreset: (profileId: string, name: string) => ipcRenderer.invoke('create-preset', profileId, name),
+  savePreset: (profileId: string, presetId: string, preset: any) =>
+    ipcRenderer.invoke('save-preset', profileId, presetId, preset),
+  deletePreset: (profileId: string, presetId: string) =>
+    ipcRenderer.invoke('delete-preset', profileId, presetId),
   importPresetDialog: (profileId: string) => ipcRenderer.invoke('import-preset-dialog', profileId),
   getLorebook: (profileId: string, charId: string) => ipcRenderer.invoke('get-lorebook', profileId, charId),
   saveLorebook: (profileId: string, charId: string, lorebook: any) =>

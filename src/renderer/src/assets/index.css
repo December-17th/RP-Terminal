@@ -82,7 +82,6 @@ body {
 .sidebar-left {
   flex: 0 0 25%;
   min-width: 300px;
-  max-width: 460px;
   box-sizing: border-box;
   background-color: var(--rpt-bg-secondary);
   border-right: 1px solid var(--rpt-border);
@@ -91,11 +90,12 @@ body {
   overflow: hidden;
 }
 
-/* Center fills whatever the (capped) side panels leave, so the layout always
-   spans the full window. Stays ~50% until the panels hit their max-width. */
+/* Exactly half the window; side panels split the other half 25%/25%. */
 .main-content {
-  flex: 1 1 auto;
+  flex: 0 0 50%;
+  width: 50%;
   min-width: 0;
+  box-sizing: border-box;
   display: flex;
   flex-direction: column;
   padding: 20px;
@@ -105,7 +105,6 @@ body {
 .sidebar-right {
   flex: 0 0 25%;
   min-width: 300px;
-  max-width: 460px;
   box-sizing: border-box;
   background-color: var(--rpt-bg-secondary);
   border-left: 1px solid var(--rpt-border);
@@ -622,4 +621,28 @@ select {
   color: var(--rpt-text-secondary);
   font-style: italic;
   padding: 10px 0;
+}
+
+/* Preset selector + actions */
+.preset-select-row select {
+  width: 100%;
+  padding: 8px;
+}
+.preset-actions {
+  display: flex;
+  gap: 6px;
+  margin-top: 8px;
+}
+.preset-actions button {
+  flex: 1;
+}
+
+/* Roomy editor textarea inside the popup modal */
+.modal-textarea {
+  width: 100%;
+  min-height: 45vh;
+  box-sizing: border-box;
+  font-family: inherit;
+  line-height: 1.5;
+  resize: vertical;
 }

@@ -1,7 +1,7 @@
 import fs from 'fs'
 import path from 'path'
 import { getSettings } from './settingsService'
-import { getPreset } from './presetService'
+import { getActivePreset } from './presetService'
 import { getCharacter } from './characterService'
 import { getCharacterLorebook } from './lorebookService'
 import { getAppDir } from './storageService'
@@ -62,7 +62,7 @@ export const generate = async (
   if (!card) throw new Error('Character card not found')
 
   const settings = getSettings(profileId)
-  const preset = getPreset(profileId)
+  const preset = getActivePreset(profileId)
   const lorebook = getCharacterLorebook(profileId, chat.character_id)
   const floors = getAllFloors(profileId, chatId, chat.floor_count)
 

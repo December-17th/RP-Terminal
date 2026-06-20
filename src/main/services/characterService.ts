@@ -8,7 +8,7 @@ import {
   Lorebook,
   LorebookSchema
 } from '../types/character'
-import { saveCharacterLorebook } from './lorebookService'
+import { saveCharacterLorebook, deleteCharacterLorebook } from './lorebookService'
 import { parseStPng } from '../parsers/stPngParser'
 
 const getAvatarsDir = (): string => path.join(getAppDir(), 'avatars')
@@ -53,12 +53,10 @@ export const saveCharacter = (
 }
 
 export const deleteCharacter = (profileId: string, characterId: string): void => {
-  const db = getDb()
-  db.prepare('DELETE FROM lorebooks WHERE character_id = ? AND profile_id = ?').run(
-    characterId,
-    profileId
-  )
-  db.prepare('DELETE FROM characters WHERE id = ? AND profile_id = ?').run(characterId, profileId)
+  getDb()
+    .prepare('DELETE FROM characters WHERE id = ? AND profile_id = ?')
+    .run(characterId, profileId)
+  deleteCharacterLorebook(profileId, characterId)
   const avatar = getAvatarPath(characterId)
   if (fs.existsSync(avatar)) fs.unlinkSync(avatar)
 }

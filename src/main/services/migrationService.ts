@@ -3,9 +3,7 @@ import path from 'path'
 import { getAppDir, ensureDir, readJsonSync, listDirectoriesSync } from './storageService'
 import { getDb } from './db'
 import { saveCharacter, getAvatarPath } from './characterService'
-import { saveCharacterLorebook } from './lorebookService'
 import { saveSettings } from './settingsService'
-import { savePreset } from './presetService'
 import { saveFloor } from './floorService'
 import { log } from './logService'
 import { RPTerminalCard } from '../types/character'
@@ -62,16 +60,10 @@ const migrateProfileInner = (p: any): void => {
   const settings = readJsonSync(path.join(profileDir, 'settings.json'))
   if (settings) saveSettings(p.id, settings as any)
 
-  const preset = readJsonSync(path.join(profileDir, 'preset.json'))
-  if (preset) {
-    try {
-      savePreset(p.id, preset as any)
-    } catch (e: any) {
-      log('error', `Skipped invalid preset for ${p.id}`, e?.message)
-    }
-  }
+  // Presets and lorebooks stay as JSON files (read lazily by their services) —
+  // not migrated into SQLite.
 
-  // Characters (+ embedded lorebook + avatar).
+  // Characters (+ avatar).
   const charsDir = path.join(profileDir, 'characters')
   for (const charId of listDirectoriesSync(charsDir)) {
     const card = readJsonSync<RPTerminalCard>(path.join(charsDir, charId, 'card.json'))
@@ -81,14 +73,6 @@ const migrateProfileInner = (p: any): void => {
     } catch (e: any) {
       log('error', `Skipped invalid card ${charId}`, e?.message)
       continue
-    }
-    const lorebook = readJsonSync(path.join(charsDir, charId, 'lorebook.json'))
-    if (lorebook) {
-      try {
-        saveCharacterLorebook(p.id, charId, lorebook as any)
-      } catch {
-        /* ignore bad lorebook */
-      }
     }
     const avatar = path.join(charsDir, charId, 'avatar.png')
     if (fs.existsSync(avatar)) {

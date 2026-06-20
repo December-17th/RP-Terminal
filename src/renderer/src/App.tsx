@@ -11,7 +11,7 @@ import { PresetManager } from './components/PresetManager';
 import { LogsPanel } from './components/LogsPanel';
 import { useLogStore } from './stores/logStore';
 
-type PanelTab = 'characters' | 'sessions' | 'preset' | 'lorebook' | 'api' | 'logs';
+type PanelTab = 'world' | 'sessions' | 'preset' | 'lorebook' | 'api' | 'logs';
 
 export default function App() {
   const { profiles, activeProfile, loadProfiles, createProfile } = useProfileStore();
@@ -19,18 +19,14 @@ export default function App() {
   const { characters, activeCharacter, loadCharacters, setActiveCharacter, importMockCharacter, deleteCharacter } = useCharacterStore();
   const { chats, activeChatId, floors, isGenerating, streamingText, error, loadChats, createChat, setActiveChat, sendAction, regenerate, deleteChat } = useChatStore();
 
+  const activePresetName = usePresetStore((s) => s.preset?.name);
+
   const [newProfileName, setNewProfileName] = useState('');
   const [actionInput, setActionInput] = useState('');
-  const [presetName, setPresetName] = useState<string>('');
-  const [panel, setPanel] = useState<PanelTab>('characters');
+  const [panel, setPanel] = useState<PanelTab>('world');
   const [pendingUserMsg, setPendingUserMsg] = useState('');
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
-
-  const loadPreset = async (profileId: string) => {
-    const preset = await window.api.getPreset(profileId);
-    setPresetName(preset?.name || '');
-  };
 
   useEffect(() => {
     loadProfiles();
@@ -50,7 +46,7 @@ export default function App() {
       loadSettings(activeProfile.id);
       loadCharacters(activeProfile.id);
       loadChats(activeProfile.id);
-      loadPreset(activeProfile.id);
+      usePresetStore.getState().load(activeProfile.id);
     }
   }, [activeProfile]);
 
@@ -79,14 +75,6 @@ export default function App() {
       </div>
     );
   }
-
-  const importPreset = async () => {
-    const name = await window.api.importPresetDialog(activeProfile.id);
-    if (name) {
-      await usePresetStore.getState().load(activeProfile.id);
-      loadPreset(activeProfile.id);
-    }
-  };
 
   const tab = (key: PanelTab, label: string, disabled = false) => (
     <button
@@ -136,18 +124,18 @@ export default function App() {
           </div>
         );
 
-      case 'characters':
+      case 'world':
         return (
           <div className="panel">
             <div className="panel-header">
-              <h3>Characters</h3>
+              <h3>World</h3>
               <div className="panel-header-actions">
                 <button onClick={() => useCharacterStore.getState().importCharacter(activeProfile.id)}>Import</button>
                 <button className="btn-ghost" onClick={() => importMockCharacter(activeProfile.id)}>+ Mock</button>
               </div>
             </div>
             <div className="panel-body">
-              {characters.length === 0 && <div style={{ opacity: 0.6, fontStyle: 'italic' }}>No characters. Import a card or add the mock guide.</div>}
+              {characters.length === 0 && <div style={{ opacity: 0.6, fontStyle: 'italic' }}>No worlds yet. Import a character card or add the mock guide.</div>}
               {characters.map(c => (
                 <div key={c.id} className="panel-list-row">
                   <button
@@ -231,7 +219,7 @@ export default function App() {
         );
 
       case 'preset':
-        return <PresetManager profileId={activeProfile.id} onImport={importPreset} />;
+        return <PresetManager profileId={activeProfile.id} />;
 
       case 'lorebook':
         return activeCharacter ? (
@@ -244,7 +232,7 @@ export default function App() {
         ) : (
           <div className="panel">
             <div className="panel-header"><h3>Lorebook</h3></div>
-            <div className="panel-body"><div style={{ opacity: 0.6, fontStyle: 'italic' }}>Select a character first.</div></div>
+            <div className="panel-body"><div style={{ opacity: 0.6, fontStyle: 'italic' }}>Select a World first.</div></div>
           </div>
         );
 
@@ -258,7 +246,7 @@ export default function App() {
       <div className="top-nav">
         <span className="nav-brand">RP Terminal</span>
         <div className="nav-tabs">
-          {tab('characters', 'Characters')}
+          {tab('world', 'World')}
           {tab('sessions', 'Sessions', !activeCharacter)}
           {tab('preset', 'Preset')}
           {tab('lorebook', 'Lorebook', !activeCharacter)}
@@ -266,7 +254,7 @@ export default function App() {
           {tab('logs', 'Logs')}
         </div>
         <span className="nav-status">
-          {activeProfile.name} · {activeCharacter?.card.data.name || 'no character'} · {presetName || 'Default Preset'}
+          {activeProfile.name} · {activeCharacter?.card.data.name || 'no world'} · {activePresetName || 'no preset'}
         </span>
       </div>
 

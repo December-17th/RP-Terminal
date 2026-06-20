@@ -35,10 +35,21 @@ export interface Preset {
   prompts: PromptBlock[]
 }
 
+export interface PresetSummary {
+  id: string
+  name: string
+}
+
 interface PresetState {
+  presets: PresetSummary[]
+  activeId: string | null
   preset: Preset | null
   dirty: boolean
   load: (profileId: string) => Promise<void>
+  select: (profileId: string, presetId: string) => Promise<void>
+  createNew: (profileId: string) => Promise<void>
+  importPreset: (profileId: string) => Promise<void>
+  remove: (profileId: string) => Promise<void>
   save: (profileId: string) => Promise<void>
   setName: (name: string) => void
   setParam: (key: keyof PresetParameters, value: number | undefined) => void
@@ -57,38 +68,64 @@ const mutate = (
 }
 
 export const usePresetStore = create<PresetState>((set, get) => ({
+  presets: [],
+  activeId: null,
   preset: null,
   dirty: false,
 
   load: async (profileId) => {
-    const preset = await window.api.getPreset(profileId)
-    set({ preset, dirty: false })
+    const presets = await window.api.listPresets(profileId)
+    const activeId = await window.api.getActivePresetId(profileId)
+    const preset = activeId ? await window.api.getPreset(profileId, activeId) : null
+    set({ presets, activeId, preset, dirty: false })
+  },
+
+  select: async (profileId, presetId) => {
+    await window.api.setActivePreset(profileId, presetId)
+    const preset = await window.api.getPreset(profileId, presetId)
+    set({ activeId: presetId, preset, dirty: false })
+  },
+
+  createNew: async (profileId) => {
+    const summary = await window.api.createPreset(profileId, 'New Preset')
+    const presets = await window.api.listPresets(profileId)
+    const preset = await window.api.getPreset(profileId, summary.id)
+    set({ presets, activeId: summary.id, preset, dirty: false })
+  },
+
+  importPreset: async (profileId) => {
+    const name = await window.api.importPresetDialog(profileId)
+    if (name) await get().load(profileId)
+  },
+
+  remove: async (profileId) => {
+    const { activeId } = get()
+    if (!activeId) return
+    await window.api.deletePreset(profileId, activeId)
+    await get().load(profileId)
   },
 
   save: async (profileId) => {
-    const { preset } = get()
-    if (!preset) return
-    await window.api.savePreset(profileId, preset)
-    set({ dirty: false })
+    const { preset, activeId } = get()
+    if (!preset || !activeId) return
+    await window.api.savePreset(profileId, activeId, preset)
+    const presets = await window.api.listPresets(profileId) // name may have changed
+    set({ presets, dirty: false })
   },
 
   setName: (name) => mutate(set, (p) => ({ ...p, name })),
-
   setParam: (key, value) =>
     mutate(set, (p) => ({ ...p, parameters: { ...p.parameters, [key]: value } })),
-
   updateBlock: (index, patch) =>
     mutate(set, (p) => ({
       ...p,
       prompts: p.prompts.map((b, i) => (i === index ? { ...b, ...patch } : b))
     })),
-
   toggleBlock: (index) =>
     mutate(set, (p) => ({
       ...p,
       prompts: p.prompts.map((b, i) => (i === index ? { ...b, enabled: !b.enabled } : b))
     })),
-
   moveBlock: (index, dir) =>
     mutate(set, (p) => {
       const target = index + dir
@@ -97,7 +134,6 @@ export const usePresetStore = create<PresetState>((set, get) => ({
       ;[prompts[index], prompts[target]] = [prompts[target], prompts[index]]
       return { ...p, prompts }
     }),
-
   addBlock: () =>
     mutate(set, (p) => ({
       ...p,
@@ -113,7 +149,6 @@ export const usePresetStore = create<PresetState>((set, get) => ({
         }
       ]
     })),
-
   deleteBlock: (index) =>
     mutate(set, (p) => ({ ...p, prompts: p.prompts.filter((_, i) => i !== index) }))
 }))
