@@ -1,0 +1,18 @@
+{
+  "type": "script",
+  "enabled": true,
+  "name": "自动重试",
+  "id": "5f0f7a1e-e824-426b-8401-f8266c0cfeaa",
+  "content": "$(async () => {\n  const MIN_LENGTH = 5;    // 最小有效长度\n  const RETRY_DELAY = 500; // 重试延迟(ms)\n\n  let enabled = true;\n  let retryCount = 0;\n\n  // 生成结束后检查\n  eventOn(tavern_events.GENERATION_ENDED, () => {\n    if (!enabled) return;\n\n    setTimeout(() => {\n      try {\n        const lastMsg = getChatMessages(-1)[0];\n        if (!lastMsg || lastMsg.role !== 'assistant') return;\n\n        const len = (lastMsg.message || '').trim().length;\n\n        if (len < MIN_LENGTH) {\n          retryCount++;\n          toastr.info(`过短(${len}字)，第${retryCount}次重试...`, '重试');\n          $('#option_regenerate').click();\n        } else {\n          if (retryCount > 0) toastr.success(`成功！重试${retryCount}次`, '✅');\n          retryCount = 0;\n        }\n      } catch (e) {}\n    }, RETRY_DELAY);\n  });\n\n  // 停止\n  eventOn(getButtonEvent('停止'), () => {\n    enabled = false;\n    toastr.warning(`已停止，重试${retryCount}次`, '停止');\n    retryCount = 0;\n  });\n\n  // 开启\n  eventOn(getButtonEvent('开启'), () => {\n    enabled = true;\n    retryCount = 0;\n    toastr.success('已开启', '✅');\n  });\n\n  toastr.success('自动重试已启用', '✅');\n});",
+  "info": "",
+  "button": {
+    "enabled": true,
+    "buttons": [
+      {
+        "name": "停止",
+        "visible": true
+      }
+    ]
+  },
+  "data": {}
+}
