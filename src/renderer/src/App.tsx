@@ -21,7 +21,7 @@ import { useLogStore } from './stores/logStore'
 import { useRegexStore } from './stores/regexStore'
 import { usePluginsStore } from './stores/pluginsStore'
 import { useToastStore } from './stores/toastStore'
-import { initSlash, isSlashLine, runSlash } from './plugin/slash'
+import { initSlash, isSlashLine, runSlash, listCommands, SlashCommand } from './plugin/slash'
 
 type PanelTab =
   | 'world'
@@ -236,6 +236,8 @@ export default function App() {
 
   const [newProfileName, setNewProfileName] = useState('')
   const [actionInput, setActionInput] = useState('')
+  const [slashIndex, setSlashIndex] = useState(0)
+  const [slashDismissed, setSlashDismissed] = useState(false)
   const [panel, setPanel] = useState<PanelTab>('world')
   const [pendingUserMsg, setPendingUserMsg] = useState('')
   const [editing, setEditing] = useState<{ floor: number; field: 'user' | 'response' } | null>(null)
@@ -249,6 +251,7 @@ export default function App() {
   } | null>(null)
 
   const messagesEndRef = useRef<HTMLDivElement>(null)
+  const actionRef = useRef<HTMLTextAreaElement>(null)
 
   useEffect(() => {
     loadProfiles()
@@ -658,6 +661,25 @@ export default function App() {
     }
   }
 
+  // Slash-command autocomplete: while the box holds just "/" + a partial command
+  // name (no space yet), show a menu of matching commands above the input.
+  const slashQueryMatch = actionInput.match(/^\/(\S*)$/)
+  const slashQuery = slashQueryMatch ? slashQueryMatch[1].toLowerCase() : null
+  const slashItems = useMemo(
+    () => (slashQuery === null ? [] : listCommands().filter((c) => c.name.startsWith(slashQuery))),
+    [slashQuery]
+  )
+  const slashOpen = slashQuery !== null && !slashDismissed && slashItems.length > 0
+  const slashActive = Math.min(slashIndex, slashItems.length - 1)
+
+  // Accept a command from the menu: fill the box with "/name " ready for args.
+  const completeCommand = (cmd: SlashCommand): void => {
+    setActionInput('/' + cmd.name + ' ')
+    setSlashDismissed(false)
+    setSlashIndex(0)
+    requestAnimationFrame(() => actionRef.current?.focus())
+  }
+
   // Submit the action box: a leading "/" runs a slash command (output toasted)
   // instead of starting a generation.
   const submitAction = (): void => {
@@ -790,17 +812,72 @@ export default function App() {
               )}
 
               <div className="action-input-container">
+                {slashOpen && (
+                  <div className="slash-menu" role="listbox">
+                    {slashItems.map((c, i) => (
+                      <button
+                        key={c.name}
+                        type="button"
+                        role="option"
+                        aria-selected={i === slashActive}
+                        className={`slash-item ${i === slashActive ? 'active' : ''}`}
+                        // mousedown (not click) + preventDefault keeps the textarea focused
+                        onMouseDown={(e) => {
+                          e.preventDefault()
+                          completeCommand(c)
+                        }}
+                        onMouseEnter={() => setSlashIndex(i)}
+                      >
+                        <span className="slash-name">/{c.name}</span>
+                        <span className="slash-desc">{c.description}</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
                 <textarea
+                  ref={actionRef}
                   className="action-input"
                   value={actionInput}
-                  onChange={(e) => setActionInput(e.target.value)}
+                  onChange={(e) => {
+                    setActionInput(e.target.value)
+                    setSlashDismissed(false)
+                    setSlashIndex(0)
+                  }}
                   onKeyDown={(e) => {
+                    if (slashOpen) {
+                      if (e.key === 'ArrowDown') {
+                        e.preventDefault()
+                        setSlashIndex(
+                          (i) => (Math.min(i, slashItems.length - 1) + 1) % slashItems.length
+                        )
+                        return
+                      }
+                      if (e.key === 'ArrowUp') {
+                        e.preventDefault()
+                        setSlashIndex(
+                          (i) =>
+                            (Math.min(i, slashItems.length - 1) - 1 + slashItems.length) %
+                            slashItems.length
+                        )
+                        return
+                      }
+                      if (e.key === 'Enter' || e.key === 'Tab') {
+                        e.preventDefault()
+                        completeCommand(slashItems[slashActive])
+                        return
+                      }
+                      if (e.key === 'Escape') {
+                        e.preventDefault()
+                        setSlashDismissed(true)
+                        return
+                      }
+                    }
                     if (e.key === 'Enter' && !e.shiftKey) {
                       e.preventDefault()
                       if (!isGenerating) submitAction()
                     }
                   }}
-                  placeholder="What do you do?  (type /help for commands)"
+                  placeholder="What do you do?  (type / for commands)"
                   disabled={isGenerating}
                 />
                 <button

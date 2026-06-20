@@ -78,12 +78,12 @@ export const CardScriptHost: React.FC<Props> = ({
 
   // Dispatch one permission-checked RPC from a script (shared with PluginHost).
   // Throws → reported to the script as a rejected promise.
-  const registerCommand = (name: string): void => {
+  const registerCommand = (name: string, description?: string): void => {
     const key = name.toLowerCase()
     if (cmdCleanups.current.has(key)) return
     cmdCleanups.current.set(
       key,
-      registerFrameCommand(key, (args, raw) => emit('slash:' + key, { args, raw }))
+      registerFrameCommand(key, (args, raw) => emit('slash:' + key, { args, raw }), description)
     )
   }
 

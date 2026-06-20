@@ -144,13 +144,14 @@ export const initSlash = (): void => {
  */
 export const registerFrameCommand = (
   name: string,
-  invoke: (args: string[], raw: string) => void
+  invoke: (args: string[], raw: string) => void,
+  description?: string
 ): (() => void) => {
   const key = name.toLowerCase()
   if (builtinNames.has(key)) return () => {}
   const entry: SlashCommand = {
     name: key,
-    description: '(plugin command)',
+    description: description || '(plugin command)',
     builtin: false,
     run: (args, raw) => {
       invoke(args, raw)

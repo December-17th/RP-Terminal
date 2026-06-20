@@ -106,12 +106,13 @@ export const BRIDGE_SHIM = `
     },
     slash: {
       // Register a /command; the handler runs here when the command is invoked.
-      registerCommand: function (name, handler) {
+      // opts.description (optional) shows in the chat-box command menu.
+      registerCommand: function (name, handler, opts) {
         rpt.on('slash:' + String(name).toLowerCase(), function (p) {
           try { if (typeof handler === 'function') handler((p && p.args) || [], (p && p.raw) || ''); }
           catch (e) { console.error(e); }
         });
-        return __rpc('slash.register', [String(name)]);
+        return __rpc('slash.register', [String(name), opts && opts.description ? String(opts.description) : '']);
       },
       // Run a slash line (built-in or another plugin's command); resolves output.
       runCommand: function (line) { return __rpc('slash.run', [String(line)]); }

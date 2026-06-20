@@ -49,12 +49,12 @@ const PluginFrame: React.FC<{ profileId: string; plugin: InstalledPlugin }> = ({
   // Plugins are gated purely by their granted (manifest-approved) permissions.
   const ensure = async (perm: string): Promise<boolean> => grantsSet.has(perm)
 
-  const registerCommand = (name: string): void => {
+  const registerCommand = (name: string, description?: string): void => {
     const key = name.toLowerCase()
     if (cmdCleanups.current.has(key)) return
     cmdCleanups.current.set(
       key,
-      registerFrameCommand(key, (args, raw) => emit('slash:' + key, { args, raw }))
+      registerFrameCommand(key, (args, raw) => emit('slash:' + key, { args, raw }), description)
     )
   }
 

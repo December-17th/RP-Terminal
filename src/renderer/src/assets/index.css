@@ -524,6 +524,56 @@ body {
   border: 1px solid var(--rpt-border);
   color: var(--rpt-text-secondary);
 }
+/* Slash-command autocomplete menu (above the action input) */
+.slash-menu {
+  position: absolute;
+  left: 0;
+  bottom: calc(100% + 6px);
+  z-index: 50;
+  width: min(440px, 100%);
+  max-height: 260px;
+  overflow-y: auto;
+  background: var(--rpt-bg-secondary);
+  border: 1px solid var(--rpt-border);
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+  padding: 4px;
+}
+.slash-item {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  width: 100%;
+  text-align: left;
+  background: transparent;
+  border: 0;
+  color: var(--rpt-text-primary);
+  padding: 6px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-family: inherit;
+}
+.slash-item.active {
+  background: var(--rpt-accent);
+  color: #fff;
+}
+.slash-name {
+  font-family: ui-monospace, Menlo, Consolas, monospace;
+  font-size: 0.86em;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.slash-desc {
+  font-size: 0.78em;
+  opacity: 0.7;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.slash-item.active .slash-desc {
+  opacity: 0.9;
+}
+
 .perm-chip.sensitive {
   border-color: #e0a23c;
   color: #e0a23c;

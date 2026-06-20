@@ -20,7 +20,7 @@ export interface DispatchCtx {
   /** Plugin requested a visible panel (standalone plugins only; no-op for cards). */
   registerPanel?: (def: any) => void
   /** Register a slash command owned by this frame. */
-  registerCommand?: (name: string) => void
+  registerCommand?: (name: string, description?: string) => void
   /** Push local-scope var writes into the chat store so status widgets update live. */
   syncLocalVars: (store: Record<string, any>) => void
   /** Run a full generation turn (resolves when the new floor lands). */
@@ -78,7 +78,7 @@ export const dispatchRpc = async (method: string, args: any[], ctx: DispatchCtx)
     }
     case 'slash.register': {
       if (!(await ctx.ensure('slash'))) permDenied('slash')
-      ctx.registerCommand?.(String(args[0] ?? ''))
+      ctx.registerCommand?.(String(args[0] ?? ''), args[1] ? String(args[1]) : undefined)
       return true
     }
     default:

@@ -174,7 +174,7 @@ async function render() {
 rpt.ui.registerPanel({ title: 'Example Plugin' })
 rpt.slash.registerCommand('hello', function (args) {
   rpt.ui.toast('Hello ' + (args[0] || 'world') + '!')
-})
+}, { description: 'Greet someone: /hello [name]' })
 rpt.on('ready', render)
 rpt.on('generation:end', async function () {
   await rpt.global.inc('pluginTurns')
