@@ -5,6 +5,7 @@ import { getLorebookById } from './lorebookService'
 import { getChat, getChatLorebookIds, appendFloor, truncateFloors } from './chatService'
 import { getAllFloors, getFloor } from './floorService'
 import { buildPrompt, fitToBudget } from './promptBuilder'
+import { getPromptRules } from './regexService'
 import { loadGlobals, saveGlobals } from './templateService'
 import { streamProvider, DeltaCallback } from './apiService'
 import { parseContent, RPEvent } from '../parsers/contentParser'
@@ -88,6 +89,7 @@ export const generate = async (
     },
     scanDepth: settings.lorebook?.scan_depth ?? 3,
     maxRecursion: settings.lorebook?.max_recursion ?? 0,
+    promptRegex: getPromptRules(profileId),
     template: {
       vars: workingVars,
       globals,

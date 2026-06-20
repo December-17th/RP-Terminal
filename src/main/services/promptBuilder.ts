@@ -3,6 +3,7 @@ import { Preset } from '../types/preset'
 import { FloorFile } from '../types/chat'
 import { Lorebook } from '../types/character'
 import { matchAcross } from './lorebookService'
+import { applyRegex, RenderRegexRule } from './regexService'
 import { evalTemplate, TemplateContext } from './templateService'
 
 export interface ChatMessage {
@@ -79,9 +80,14 @@ export interface BuildPromptArgs {
   scanDepth?: number
   /** Max recursive lorebook match passes (default 0 = off). */
   maxRecursion?: number
+  /** Regex rules applied to outgoing prompt text (placement 1 = user, 2 = AI). */
+  promptRegex?: RenderRegexRule[]
   /** ST-Prompt-Template context; when present, authored content is run through the engine. */
   template?: TemplateContext
 }
+
+/** No-op text transform (used when there are no prompt-time regex rules). */
+const identity = (t: string): string => t
 
 type Renderer = (text: string) => string
 
@@ -114,32 +120,26 @@ const buildCharDescription = (card: RPTerminalCard, charName: string, render: Re
   return parts.join('\n')
 }
 
-/** Expand the running history into alternating messages, ending with the new action. */
+/** Expand the running history into alternating messages, ending with the new action.
+ * `applyUser`/`applyAssistant` run prompt-time regex on the raw text before macros. */
 const buildHistory = (
   floors: FloorFile[],
   userAction: string,
   charName: string,
   userName: string,
-  personaDesc: string
+  personaDesc: string,
+  applyUser: (t: string) => string,
+  applyAssistant: (t: string) => string
 ): ChatMessage[] => {
   const msgs: ChatMessage[] = []
+  const user = (t: string): string => expandMacros(applyUser(t), charName, userName, personaDesc)
+  const assistant = (t: string): string =>
+    expandMacros(applyAssistant(t), charName, userName, personaDesc)
   for (const f of floors) {
-    if (f.user_message.content) {
-      msgs.push({
-        role: 'user',
-        content: expandMacros(f.user_message.content, charName, userName, personaDesc)
-      })
-    }
-    if (f.response.content) {
-      msgs.push({
-        role: 'assistant',
-        content: expandMacros(f.response.content, charName, userName, personaDesc)
-      })
-    }
+    if (f.user_message.content) msgs.push({ role: 'user', content: user(f.user_message.content) })
+    if (f.response.content) msgs.push({ role: 'assistant', content: assistant(f.response.content) })
   }
-  if (userAction) {
-    msgs.push({ role: 'user', content: expandMacros(userAction, charName, userName, personaDesc) })
-  }
+  if (userAction) msgs.push({ role: 'user', content: user(userAction) })
   return msgs
 }
 
@@ -209,6 +209,17 @@ export const buildPrompt = (args: BuildPromptArgs): ChatMessage[] => {
   const render = makeRender(personaMacro)
   const personaContent = personaInject ? makeRender('')(args.persona!.description) : ''
 
+  // Prompt-time regex: transform history/user text on its way into the prompt
+  // (placement 1 = user, 2 = AI). Display-only (markdownOnly) rules are excluded upstream.
+  const promptRegex = args.promptRegex ?? []
+  const regexCtx = { user: userName, char: charName }
+  const applyUser = promptRegex.length
+    ? (t: string): string => applyRegex(t, promptRegex, 1, regexCtx)
+    : identity
+  const applyAssistant = promptRegex.length
+    ? (t: string): string => applyRegex(t, promptRegex, 2, regexCtx)
+    : identity
+
   // Lorebook scan over the last few turns plus the pending action, across all
   // active lorebooks. Entries with a numeric insertion_depth are injected into the
   // history at that depth; the rest go into the top-level World Info block.
@@ -251,7 +262,17 @@ export const buildPrompt = (args: BuildPromptArgs): ChatMessage[] => {
         break
       }
       case 'chat_history': {
-        messages.push(...buildHistory(floors, userAction, charName, userName, personaMacro))
+        messages.push(
+          ...buildHistory(
+            floors,
+            userAction,
+            charName,
+            userName,
+            personaMacro,
+            applyUser,
+            applyAssistant
+          )
+        )
         historyEmitted = true
         break
       }
@@ -287,7 +308,17 @@ export const buildPrompt = (args: BuildPromptArgs): ChatMessage[] => {
   // Safety net: a preset with no chat_history marker would otherwise send no
   // conversation at all. Append history + action so generation still works.
   if (!historyEmitted) {
-    messages.push(...buildHistory(floors, userAction, charName, userName, personaMacro))
+    messages.push(
+      ...buildHistory(
+        floors,
+        userAction,
+        charName,
+        userName,
+        personaMacro,
+        applyUser,
+        applyAssistant
+      )
+    )
   }
 
   // Persona description at the top: a stable, cache-friendly system block placed

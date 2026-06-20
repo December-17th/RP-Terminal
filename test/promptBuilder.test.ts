@@ -193,6 +193,35 @@ describe('buildPrompt', () => {
     expect(deep.some((m) => m.content.includes('DRAGON-LORE'))).toBe(true)
   })
 
+  it('applies prompt-time regex to history/user text (placement 1, not the AI turn)', () => {
+    const promptRegex = [
+      {
+        id: 'r',
+        scriptName: 's',
+        source: 'FOO',
+        flags: 'g',
+        replace: 'BAR',
+        placement: [1],
+        disabled: false,
+        markdownOnly: false,
+        promptOnly: false,
+        trimStrings: []
+      }
+    ]
+    const messages = buildPrompt({
+      card: card(),
+      preset: preset([blk('chat_history')]),
+      lorebooks: [],
+      floors: [floor(0, 'I say FOO', 'ok FOO')],
+      userAction: 'and FOO again',
+      promptRegex
+    })
+    expect(messages.some((m) => m.role === 'user' && m.content === 'I say BAR')).toBe(true)
+    expect(last(messages).content).toBe('and BAR again')
+    // The AI turn is placement 2, so the placement-1 rule leaves it untouched.
+    expect(messages.some((m) => m.role === 'assistant' && m.content === 'ok FOO')).toBe(true)
+  })
+
   it('safety nets: an empty preset still injects world info and history', () => {
     const messages = buildPrompt({
       card: card(),

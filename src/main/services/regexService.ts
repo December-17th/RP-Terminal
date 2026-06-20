@@ -87,6 +87,52 @@ export const getRenderRules = (profileId: string): RenderRegexRule[] =>
     (r) => !r.disabled && !r.promptOnly && (r.placement.length === 0 || r.placement.includes(2))
   )
 
+/** Rules that transform text on its way *into the prompt* (everything not display-only). */
+export const getPromptRules = (profileId: string): RenderRegexRule[] =>
+  getAllRules(profileId).filter((r) => !r.disabled && !r.markdownOnly)
+
+/**
+ * Apply regex rules to a single string for a given placement (1 = user input,
+ * 2 = AI output). Rules with an empty placement list apply everywhere. Supports
+ * trimStrings, the `{{match}}`/`{{user}}`/`{{char}}` macros, `$N`/`$&` capture
+ * groups, and `\n`. Pure — mirrors the renderer's display applier.
+ */
+export const applyRegex = (
+  text: string,
+  rules: RenderRegexRule[],
+  placement: number,
+  ctx: { user?: string; char?: string } = {}
+): string => {
+  let out = text
+  for (const rule of rules) {
+    if (rule.placement.length > 0 && !rule.placement.includes(placement)) continue
+    let re: RegExp
+    try {
+      re = new RegExp(rule.source, rule.flags)
+    } catch {
+      continue
+    }
+    out = out.replace(re, (...args) => {
+      const rest = [...args]
+      if (typeof rest[rest.length - 1] === 'object') rest.pop() // named-groups obj
+      rest.pop() // whole string
+      rest.pop() // offset
+      const match: string = rest[0]
+      const groups = rest.slice(1) as Array<string | undefined>
+      let trimmed = match
+      for (const t of rule.trimStrings) if (t) trimmed = trimmed.split(t).join('')
+      return rule.replace
+        .replace(/\{\{match\}\}/gi, trimmed)
+        .replace(/\{\{user\}\}/gi, ctx.user ?? '')
+        .replace(/\{\{char\}\}/gi, ctx.char ?? '')
+        .replace(/\$&/g, match)
+        .replace(/\$(\d{1,2})/g, (_, n) => groups[Number(n) - 1] ?? '')
+        .replace(/\\n/g, '\n')
+    })
+  }
+  return out
+}
+
 export const listScripts = (profileId: string): RegexScriptInfo[] => {
   const dir = regexDir(profileId)
   if (!fs.existsSync(dir)) return []
