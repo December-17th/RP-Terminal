@@ -769,6 +769,14 @@ details[open] > .stat-group-title::before {
   gap: 6px;
   align-items: center;
 }
+.script-actions-empty {
+  font-size: 0.78em;
+  color: var(--rpt-text-secondary);
+  font-style: italic;
+}
+.script-actions-empty code {
+  font-style: normal;
+}
 
 /* Slash-command autocomplete menu (above the action input) */
 .slash-menu {

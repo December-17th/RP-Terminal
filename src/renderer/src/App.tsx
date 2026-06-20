@@ -783,19 +783,25 @@ export default function App() {
 
               {/* Action buttons contributed by scripts/plugins (rpt.ui.registerButton),
                   grouped under a menu in the bar above the input — expanded by default. */}
-              {toolbarButtons.length > 0 && (
-                <div className="script-actions-bar">
-                  <button
-                    className={`script-actions-toggle ${scriptMenuOpen ? 'open' : ''}`}
-                    title={scriptMenuOpen ? 'Hide script actions' : 'Show script actions'}
-                    onClick={() => setScriptMenuOpen((o) => !o)}
-                  >
-                    ☰<span className="script-actions-count">{toolbarButtons.length}</span>
-                    <span className="script-actions-caret">{scriptMenuOpen ? '▾' : '▸'}</span>
-                  </button>
-                  {scriptMenuOpen && (
-                    <div className="script-actions-list">
-                      {toolbarButtons.map((b) => (
+              <div className="script-actions-bar">
+                <button
+                  className={`script-actions-toggle ${scriptMenuOpen ? 'open' : ''}`}
+                  title={scriptMenuOpen ? 'Hide script actions' : 'Show script actions'}
+                  onClick={() => setScriptMenuOpen((o) => !o)}
+                >
+                  ☰ Actions
+                  <span className="script-actions-count">{toolbarButtons.length}</span>
+                  <span className="script-actions-caret">{scriptMenuOpen ? '▾' : '▸'}</span>
+                </button>
+                {scriptMenuOpen && (
+                  <div className="script-actions-list">
+                    {toolbarButtons.length === 0 ? (
+                      <span className="script-actions-empty">
+                        No script actions — a script can add one with{' '}
+                        <code>rpt.ui.registerButton()</code>
+                      </span>
+                    ) : (
+                      toolbarButtons.map((b) => (
                         <button
                           key={b.key}
                           className="nav-ext-btn"
@@ -804,11 +810,11 @@ export default function App() {
                         >
                           {b.label}
                         </button>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              )}
+                      ))
+                    )}
+                  </div>
+                )}
+              </div>
 
               <div className="action-input-container">
                 {slashOpen && (
