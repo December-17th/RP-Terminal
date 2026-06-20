@@ -12,9 +12,15 @@ const api = {
   importCharacterDialog: (profileId: string) => ipcRenderer.invoke('import-character-dialog', profileId),
   getChats: (profileId: string) => ipcRenderer.invoke('get-chats', profileId),
   createChat: (profileId: string, charId: string) => ipcRenderer.invoke('create-chat', profileId, charId),
-  getFloor: (profileId: string, chatId: string, floorIndex: number) => ipcRenderer.invoke('get-floor', profileId, chatId, floorIndex),
-  saveFloor: (profileId: string, chatId: string, floor: any) => ipcRenderer.invoke('save-floor', profileId, chatId, floor),
-  apiComplete: (settings: any, messages: any[]) => ipcRenderer.invoke('api-complete', settings, messages)
+  getFloors: (profileId: string, chatId: string) => ipcRenderer.invoke('get-floors', profileId, chatId),
+  generate: (profileId: string, chatId: string, userAction: string) =>
+    ipcRenderer.invoke('generate', profileId, chatId, userAction),
+  getPreset: (profileId: string) => ipcRenderer.invoke('get-preset', profileId),
+  savePreset: (profileId: string, preset: any) => ipcRenderer.invoke('save-preset', profileId, preset),
+  importPresetDialog: (profileId: string) => ipcRenderer.invoke('import-preset-dialog', profileId),
+  getLorebook: (profileId: string, charId: string) => ipcRenderer.invoke('get-lorebook', profileId, charId),
+  saveLorebook: (profileId: string, charId: string, lorebook: any) =>
+    ipcRenderer.invoke('save-lorebook', profileId, charId, lorebook)
 }
 
 // Use `contextBridge` APIs to expose Electron APIs to

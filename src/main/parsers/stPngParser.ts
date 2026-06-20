@@ -25,7 +25,7 @@ export const parseStPng = (filePath: string): any | null => {
                // format: keyword (null), compression flag (1 byte), compression method (1 byte), language tag (null term), translated keyword (null term), text
                let i = nullIdx + 1;
                const compressionFlag = data[i++];
-               const compressionMethod = data[i++];
+               i++; // compression method (unused)
                while (i < data.length && data[i] !== 0) i++; // skip lang tag
                i++;
                while (i < data.length && data[i] !== 0) i++; // skip translated keyword

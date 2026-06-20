@@ -1,82 +1,87 @@
-import { Settings } from '../types/models';
+import { Settings } from '../types/models'
+import { PresetParameters } from '../types/preset'
+import { ChatMessage } from './promptBuilder'
 
-import { applyRegexRules, loadRegexRules, StRegexRule } from '../parsers/stRegexEngine';
-import { parseContent, ParsedContent } from '../parsers/contentParser';
-
-// Optionally load regex rules from a global setting or a specific file
-// For MVP, we'll try to load any regex file in the active profile or use none
-let activeRegexRules: StRegexRule[] = [];
-
-export const completeChat = async (settings: Settings, messages: any[]): Promise<ParsedContent> => {
-  const { provider } = settings.api;
-  let rawText = '';
-  
-  if (provider === 'anthropic') {
-    rawText = await completeAnthropic(settings, messages);
-  } else {
-    rawText = await completeOpenAICompatible(settings, messages);
+/**
+ * Call the configured provider and return the raw assistant text. Generation
+ * parameters come from the active preset (preset wins over settings defaults).
+ */
+export const callProvider = async (
+  settings: Settings,
+  messages: ChatMessage[],
+  params: PresetParameters
+): Promise<string> => {
+  if (settings.api.provider === 'anthropic') {
+    return completeAnthropic(settings, messages, params)
   }
+  return completeOpenAICompatible(settings, messages, params)
+}
 
-  // Pipeline Stage 2: ST Regex Engine
-  const regexProcessed = applyRegexRules(rawText, activeRegexRules, 'text');
+// Drop undefined params so we don't send nulls to providers that reject them.
+const cleanParams = (params: PresetParameters): Record<string, unknown> => {
+  const out: Record<string, unknown> = {}
+  for (const [k, v] of Object.entries(params)) {
+    if (v !== undefined) out[k] = v
+  }
+  return out
+}
 
-  // Pipeline Stage 3: RP Terminal Tag Parser
-  const parsed = parseContent(regexProcessed);
+const completeOpenAICompatible = async (
+  settings: Settings,
+  messages: ChatMessage[],
+  params: PresetParameters
+): Promise<string> => {
+  const { endpoint, api_key, model } = settings.api
+  const base = endpoint || 'https://api.openai.com/v1'
+  const url = base.endsWith('/chat/completions')
+    ? base
+    : `${base.replace(/\/$/, '')}/chat/completions`
 
-  return parsed;
-};
-
-const completeOpenAICompatible = async (settings: Settings, messages: any[]): Promise<string> => {
-  const { endpoint, api_key, model, default_params } = settings.api;
-  
-  const url = endpoint.endsWith('/chat/completions') ? endpoint : `${endpoint.replace(/\/$/, '')}/chat/completions`;
-  
   const response = await fetch(url, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'Authorization': `Bearer ${api_key}`
+      Authorization: `Bearer ${api_key}`
     },
-    body: JSON.stringify({
-      model,
-      messages,
-      ...default_params,
-      stream: false
-    })
-  });
+    body: JSON.stringify({ model, messages, ...cleanParams(params), stream: false })
+  })
 
   if (!response.ok) {
-    const errorText = await response.text();
-    throw new Error(`API Error: ${response.status} ${response.statusText} - ${errorText}`);
+    const errorText = await response.text()
+    throw new Error(`API Error: ${response.status} ${response.statusText} - ${errorText}`)
   }
 
-  const data = await response.json();
-  return data.choices[0].message.content;
-};
+  const data = await response.json()
+  return data.choices?.[0]?.message?.content ?? ''
+}
 
-const completeAnthropic = async (settings: Settings, messages: any[]): Promise<string> => {
-  const { endpoint, api_key, model, default_params } = settings.api;
-  // Fallback to default anthropic endpoint if empty
-  const baseUrl = endpoint || 'https://api.anthropic.com/v1';
-  const url = baseUrl.endsWith('/messages') ? baseUrl : `${baseUrl.replace(/\/$/, '')}/messages`;
-  
-  // Extract system prompt since Anthropic uses a top-level system parameter
-  let systemPrompt = '';
-  const anthropicMessages = messages.filter(m => {
+const completeAnthropic = async (
+  settings: Settings,
+  messages: ChatMessage[],
+  params: PresetParameters
+): Promise<string> => {
+  const { endpoint, api_key, model } = settings.api
+  const base = endpoint || 'https://api.anthropic.com/v1'
+  const url = base.endsWith('/messages') ? base : `${base.replace(/\/$/, '')}/messages`
+
+  // Anthropic takes the system prompt at the top level and requires alternating
+  // user/assistant roles, so hoist system messages and merge same-role runs.
+  let systemPrompt = ''
+  const convo = messages.filter((m) => {
     if (m.role === 'system') {
-      systemPrompt += m.content + '\n';
-      return false;
+      systemPrompt += m.content + '\n'
+      return false
     }
-    return true;
-  });
+    return true
+  })
 
-  // Combine consecutive messages of the same role if any (Anthropic requires alternating roles)
-  const mergedMessages: any[] = [];
-  for (const msg of anthropicMessages) {
-    if (mergedMessages.length > 0 && mergedMessages[mergedMessages.length - 1].role === msg.role) {
-      mergedMessages[mergedMessages.length - 1].content += '\n\n' + msg.content;
+  const merged: ChatMessage[] = []
+  for (const msg of convo) {
+    const last = merged[merged.length - 1]
+    if (last && last.role === msg.role) {
+      last.content += '\n\n' + msg.content
     } else {
-      mergedMessages.push({ ...msg });
+      merged.push({ ...msg })
     }
   }
 
@@ -88,20 +93,24 @@ const completeAnthropic = async (settings: Settings, messages: any[]): Promise<s
       'anthropic-version': '2023-06-01'
     },
     body: JSON.stringify({
-      model: model || 'claude-3-5-sonnet-20240620',
+      model: model || 'claude-opus-4-8',
       system: systemPrompt.trim() || undefined,
-      messages: mergedMessages,
-      max_tokens: default_params.max_tokens || 4000,
-      temperature: default_params.temperature || 0.9,
+      messages: merged,
+      max_tokens: params.max_tokens ?? 4000,
+      temperature: params.temperature ?? 0.9,
+      ...(params.top_p !== undefined ? { top_p: params.top_p } : {}),
+      ...(params.top_k !== undefined ? { top_k: params.top_k } : {}),
       stream: false
     })
-  });
+  })
 
   if (!response.ok) {
-    const errorText = await response.text();
-    throw new Error(`Anthropic API Error: ${response.status} ${response.statusText} - ${errorText}`);
+    const errorText = await response.text()
+    throw new Error(
+      `Anthropic API Error: ${response.status} ${response.statusText} - ${errorText}`
+    )
   }
 
-  const data = await response.json();
-  return data.content[0].text;
-};
+  const data = await response.json()
+  return data.content?.[0]?.text ?? ''
+}

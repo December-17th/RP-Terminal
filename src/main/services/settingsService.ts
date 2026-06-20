@@ -1,5 +1,5 @@
 import path from 'path';
-import { getAppDir, ensureDir, writeJsonSyncAtomic, readJsonSync } from './storageService';
+import { getAppDir, writeJsonSyncAtomic, readJsonSync } from './storageService';
 import { Settings } from '../types/models';
 
 export const getSettingsPath = (profileId: string) => path.join(getAppDir(), 'profiles', profileId, 'settings.json');

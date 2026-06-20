@@ -1,6 +1,6 @@
 import path from 'path';
 import { v4 as uuidv4 } from 'uuid';
-import { getAppDir, ensureDir, writeJsonSyncAtomic, readJsonSync, listDirectoriesSync } from './storageService';
+import { getAppDir, ensureDir, writeJsonSyncAtomic, readJsonSync } from './storageService';
 import { Profile } from '../types/models';
 
 const getProfilesDir = () => path.join(getAppDir(), 'profiles');

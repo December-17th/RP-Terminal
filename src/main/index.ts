@@ -8,7 +8,9 @@ import * as settingsService from './services/settingsService'
 import * as characterService from './services/characterService'
 import * as chatService from './services/chatService'
 import * as floorService from './services/floorService'
-import * as apiService from './services/apiService'
+import * as presetService from './services/presetService'
+import * as lorebookService from './services/lorebookService'
+import * as generationService from './services/generationService'
 
 function createWindow(): void {
   // Create the browser window.
@@ -82,12 +84,36 @@ app.whenReady().then(() => {
 
   ipcMain.handle('get-chats', (_, profileId) => chatService.getChats(profileId))
   ipcMain.handle('create-chat', (_, profileId, charId) => chatService.createChat(profileId, charId))
-  ipcMain.handle('get-floor', (_, profileId, chatId, floorIndex) => floorService.getFloor(profileId, chatId, floorIndex))
-  ipcMain.handle('save-floor', (_, profileId, chatId, floor) => {
-    floorService.saveFloor(profileId, chatId, floor)
-    chatService.updateChatIndex(profileId, { id: chatId, updated_at: new Date().toISOString() } as any)
+  ipcMain.handle('get-floors', (_, profileId, chatId) => {
+    const chat = chatService.getChat(profileId, chatId)
+    return chat ? floorService.getAllFloors(profileId, chatId, chat.floor_count) : []
   })
-  ipcMain.handle('api-complete', (_, settings, messages) => apiService.completeChat(settings, messages))
+  ipcMain.handle('generate', (_, profileId, chatId, userAction) =>
+    generationService.generate(profileId, chatId, userAction)
+  )
+
+  // Presets
+  ipcMain.handle('get-preset', (_, profileId) => presetService.getPreset(profileId))
+  ipcMain.handle('save-preset', (_, profileId, preset) => presetService.savePreset(profileId, preset))
+  ipcMain.handle('import-preset-dialog', async (event, profileId) => {
+    const { dialog } = require('electron')
+    const result = await dialog.showOpenDialog(BrowserWindow.fromWebContents(event.sender)!, {
+      properties: ['openFile'],
+      filters: [{ name: 'SillyTavern Preset', extensions: ['json'] }]
+    })
+    if (!result.canceled && result.filePaths.length > 0) {
+      return presetService.importPresetFromFile(profileId, result.filePaths[0])
+    }
+    return null
+  })
+
+  // Lorebook
+  ipcMain.handle('get-lorebook', (_, profileId, charId) =>
+    lorebookService.getCharacterLorebook(profileId, charId)
+  )
+  ipcMain.handle('save-lorebook', (_, profileId, charId, lorebook) =>
+    lorebookService.saveCharacterLorebook(profileId, charId, lorebook)
+  )
 
   createWindow()
 
