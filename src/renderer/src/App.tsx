@@ -21,6 +21,7 @@ import { useLogStore } from './stores/logStore'
 import { useRegexStore } from './stores/regexStore'
 import { usePluginsStore } from './stores/pluginsStore'
 import { useToastStore } from './stores/toastStore'
+import { initSlash, isSlashLine, runSlash } from './plugin/slash'
 
 type PanelTab =
   | 'world'
@@ -251,6 +252,7 @@ export default function App() {
 
   useEffect(() => {
     loadProfiles()
+    initSlash() // register built-in slash commands once
     // Live streaming text for the active chat's in-flight response.
     const unsubDelta = window.api.onGenerationDelta(({ chatId, delta }) => {
       if (chatId === useChatStore.getState().activeChatId) {
@@ -656,6 +658,23 @@ export default function App() {
     }
   }
 
+  // Submit the action box: a leading "/" runs a slash command (output toasted)
+  // instead of starting a generation.
+  const submitAction = (): void => {
+    const text = actionInput.trim()
+    if (!text) return
+    if (isSlashLine(text)) {
+      runSlash(text).then((out) => {
+        if (out) useToastStore.getState().push(out)
+      })
+      setActionInput('')
+      return
+    }
+    setPendingUserMsg(text)
+    sendAction(activeProfile.id, text)
+    setActionInput('')
+  }
+
   return (
     <>
       <div className="top-nav">
@@ -778,14 +797,10 @@ export default function App() {
                   onKeyDown={(e) => {
                     if (e.key === 'Enter' && !e.shiftKey) {
                       e.preventDefault()
-                      if (!isGenerating && actionInput.trim()) {
-                        setPendingUserMsg(actionInput.trim())
-                        sendAction(activeProfile.id, actionInput.trim())
-                        setActionInput('')
-                      }
+                      if (!isGenerating) submitAction()
                     }
                   }}
-                  placeholder="What do you do?"
+                  placeholder="What do you do?  (type /help for commands)"
                   disabled={isGenerating}
                 />
                 <button
@@ -797,10 +812,7 @@ export default function App() {
                       stopGeneration()
                       return
                     }
-                    if (!actionInput.trim()) return
-                    setPendingUserMsg(actionInput.trim())
-                    sendAction(activeProfile.id, actionInput.trim())
-                    setActionInput('')
+                    submitAction()
                   }}
                 >
                   {isGenerating ? '■' : '⏎'}

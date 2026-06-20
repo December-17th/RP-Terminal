@@ -2,7 +2,7 @@ import React, { useEffect } from 'react'
 import { usePluginsStore, InstalledPlugin } from '../stores/pluginsStore'
 
 /** Permissions that require explicit approval (mirrors the host's set). */
-const SENSITIVE = ['generate', 'chat:write', 'net']
+const SENSITIVE = ['generate', 'chat:write', 'net', 'slash']
 
 /**
  * Plugins tab (P2). Lists installed standalone plugins; install (folder),

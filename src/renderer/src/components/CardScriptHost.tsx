@@ -3,6 +3,7 @@ import { useChatStore } from '../stores/chatStore'
 import { useToastStore } from '../stores/toastStore'
 import { buildScriptSrcDoc, CardScript } from '../plugin/bridgeShim'
 import { dispatchRpc } from '../plugin/dispatch'
+import { registerFrameCommand } from '../plugin/slash'
 
 interface Props {
   profileId: string
@@ -34,6 +35,7 @@ export const CardScriptHost: React.FC<Props> = ({
 }) => {
   const frameRef = useRef<HTMLIFrameElement>(null)
   const grantsRef = useRef<Grants>({})
+  const cmdCleanups = useRef(new Map<string, () => void>())
   const [enabled, setEnabled] = useState(true)
   const [height, setHeight] = useState(0)
 
@@ -76,16 +78,35 @@ export const CardScriptHost: React.FC<Props> = ({
 
   // Dispatch one permission-checked RPC from a script (shared with PluginHost).
   // Throws → reported to the script as a rejected promise.
+  const registerCommand = (name: string): void => {
+    const key = name.toLowerCase()
+    if (cmdCleanups.current.has(key)) return
+    cmdCleanups.current.set(
+      key,
+      registerFrameCommand(key, (args, raw) => emit('slash:' + key, { args, raw }))
+    )
+  }
+
   const handleRpc = (method: string, args: any[]): Promise<any> =>
     dispatchRpc(method, args, {
       profileId,
       getChatId: () => chatId,
       ensure,
       toast: pushToast,
+      registerCommand,
       syncLocalVars: (store) => useChatStore.getState().setLatestFloorVariables(store),
       triggerGenerate: (text) => useChatStore.getState().sendAction(profileId, text),
       isGenerating: () => useChatStore.getState().isGenerating
     })
+
+  // Unregister this frame's slash commands when it unmounts.
+  useEffect(() => {
+    const cleanups = cmdCleanups.current
+    return () => {
+      cleanups.forEach((off) => off())
+      cleanups.clear()
+    }
+  }, [])
 
   // RPC + lifecycle messages from the sandboxed frame.
   useEffect(() => {

@@ -81,7 +81,7 @@ decvar/delvar` (+ local/global aliases) bound to chat vars; `variables`, `userNa
   sub-generation; explicit stop conditions.
 - ⬜ **D2. State-schema + widget editor UI**; richer status widgets.
 
-## Phase P — Plugin / extension system 🚧 (P1+P2 built, P3 panels)
+## Phase P — Plugin / extension system 🚧 (P1–P4 built)
 
 Third-party plugins (js-slash-runner class). **Design doc:**
 [docs/plugin-system-design.md](docs/plugin-system-design.md). Changes the threat
@@ -113,7 +113,13 @@ compatibility shim.
   visible, titled, auto-sizing panel in the right sidebar (renders its own iframe UI;
   kept on a stable mount so iframes never reparent/reload). Example plugin ships a panel.
   ⬜ Remaining: `registerButton` (shell toolbar) + `registerCommand`.
-- ⬜ **P4. Slash-command runtime (subset) + Tavern-Helper shim.**
+- ✅ **P4. Slash-command runtime (subset) + Tavern-Helper shim** — `/name args`
+  registry with built-ins (`/setvar`, `/getvar`, `/incvar`, `/setglobalvar`, `/echo`,
+  `/gen`, `/help`), runnable from the chat box (`/` prefix) or via `rpt.slash.runCommand`;
+  `rpt.slash.registerCommand` for plugin/script commands (sensitive `slash` perm).
+  Clean-room `TavernHelper` shim maps the common TH surface onto `rpt.v1`. Example plugin
+  ships a `/hello` command. (`slash.ts` + `bridgeShim`.) ⬜ Remaining: pipes/closures/macros
+  (full STScript), broader TH coverage.
 - ⬜ **P5. Packaging** (.zip / PNG cartridge), settings, opt-in `net`.
 - ⬜ Open decisions (see doc §12): compat ambition, permission UX, distribution,
   network allowance, whether to allow app-extensions in v1.

@@ -16,7 +16,7 @@ export const PERMISSIONS = [
   'generate',
   'ui:toast',
   'ui:panel',
-  'slash:register',
+  'slash',
   'storage',
   'lorebook:read',
   'net'
@@ -24,7 +24,7 @@ export const PERMISSIONS = [
 export type Permission = (typeof PERMISSIONS)[number]
 
 /** Permissions that require explicit user approval (the rest are auto-granted). */
-export const SENSITIVE_PERMISSIONS: Permission[] = ['generate', 'chat:write', 'net']
+export const SENSITIVE_PERMISSIONS: Permission[] = ['generate', 'chat:write', 'net', 'slash']
 
 export const PluginManifestSchema = z
   .object({

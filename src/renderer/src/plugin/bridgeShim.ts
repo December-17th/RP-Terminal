@@ -104,6 +104,18 @@ export const BRIDGE_SHIM = `
       // Render your UI into document.body; the host shows this frame in the panel.
       registerPanel: function (def) { return __rpc('ui.registerPanel', [def || {}]); }
     },
+    slash: {
+      // Register a /command; the handler runs here when the command is invoked.
+      registerCommand: function (name, handler) {
+        rpt.on('slash:' + String(name).toLowerCase(), function (p) {
+          try { if (typeof handler === 'function') handler((p && p.args) || [], (p && p.raw) || ''); }
+          catch (e) { console.error(e); }
+        });
+        return __rpc('slash.register', [String(name)]);
+      },
+      // Run a slash line (built-in or another plugin's command); resolves output.
+      runCommand: function (line) { return __rpc('slash.run', [String(line)]); }
+    },
     log: function () {
       var a = Array.prototype.slice.call(arguments).map(String).join(' ');
       console.log('[card-script]', a);
@@ -135,6 +147,56 @@ export const BRIDGE_SHIM = `
 })();
 `
 
+/**
+ * Best-effort, clean-room Tavern-Helper / js-slash-runner compatibility shim.
+ * Maps the *common* TH surface onto `rpt.v1` so many community scripts run with
+ * little change. Written from public docs / observed behavior only — NO code is
+ * copied from js-slash-runner (AGPL). Differences from ST: everything here is
+ * async (returns Promises), and only the mapped subset exists; deeply
+ * ST-coupled calls (jQuery DOM surgery, full STScript, ST internals) are out of
+ * scope and simply won't be present.
+ */
+export const TAVERN_SHIM = `
+(function () {
+  if (typeof rpt === 'undefined') return;
+  function vstore(opt) { return opt && opt.type === 'global' ? rpt.global : rpt.vars; }
+  var TH = {
+    getVariables: function (opt) { return vstore(opt).all(); },
+    setVariables: function (vars, opt) {
+      var s = vstore(opt), keys = Object.keys(vars || {});
+      return Promise.all(keys.map(function (k) { return s.set(k, vars[k]); })).then(function () { return vars; });
+    },
+    insertOrAssignVariables: function (vars, opt) { return TH.setVariables(vars, opt); },
+    getChatMessages: function () { return rpt.chat.getMessages(); },
+    getLastMessage: function () { return rpt.chat.getLastMessage(); },
+    triggerSlash: function (cmd) { return rpt.slash.runCommand(cmd); },
+    triggerSlashWithResult: function (cmd) { return rpt.slash.runCommand(cmd); },
+    generate: function (arg) {
+      var t = typeof arg === 'string' ? arg : (arg && (arg.user_input || arg.userInput || arg.prompt)) || '';
+      return rpt.generate(t);
+    },
+    generateRaw: function (arg) { return TH.generate(arg); },
+    eventOn: function (name, cb) { return rpt.on(name, cb); },
+    eventOnce: function (name, cb) {
+      var fired = false;
+      rpt.on(name, function (p) { if (!fired) { fired = true; cb(p); } });
+    },
+    registerSlashCommand: function (name, cb) { return rpt.slash.registerCommand(name, cb); },
+    toastr: {
+      info: function (m) { return rpt.ui.toast(String(m)); },
+      success: function (m) { return rpt.ui.toast(String(m)); },
+      warning: function (m) { return rpt.ui.toast(String(m)); },
+      error: function (m) { return rpt.ui.toast(String(m)); }
+    }
+  };
+  window.TavernHelper = TH;
+  // A few loose globals that some scripts call unqualified.
+  window.getVariables = TH.getVariables;
+  window.setVariables = TH.setVariables;
+  window.triggerSlash = TH.triggerSlash;
+})();
+`
+
 export interface CardScript {
   name: string
   code: string
@@ -155,6 +217,7 @@ export const buildScriptSrcDoc = (scripts: CardScript[]): string => {
     `<meta http-equiv="Content-Security-Policy" content="${CSP}">` +
     `<style>${HOST_STYLE}</style></head><body>` +
     `<script>${BRIDGE_SHIM}</script>` +
+    `<script>${TAVERN_SHIM}</script>` +
     `<script>${userCode}</script>` +
     `</body></html>`
   )

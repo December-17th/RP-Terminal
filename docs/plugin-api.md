@@ -226,6 +226,27 @@ that _is_ your UI surface. Card scripts already have a visible panel, so
 `registerPanel` is a no-op for them; a standalone plugin stays headless until it
 calls it (see [§10](#10-standalone-plugins-installable)).
 
+### Slash commands — `rpt.slash`
+
+| Method                              | Returns           | Description                                                               |
+| ----------------------------------- | ----------------- | ------------------------------------------------------------------------- |
+| `rpt.slash.runCommand(line)`        | `Promise<string>` | Run a `/command` line (built-in or registered); resolves its output text. |
+| `rpt.slash.registerCommand(name,h)` | `Promise<true>`   | Register a `/name` command; `h(args, raw)` runs when it's invoked.        |
+
+**Permission:** `slash` (sensitive — declared in a plugin's manifest, auto-granted
+for card scripts). The handler receives `args` (whitespace-split tokens) and `raw`
+(everything after the command name). Built-in command names can't be overridden,
+and a registered command is removed when its plugin/script unloads. See
+[§11 Slash command runtime](#11-slash-command-runtime) for built-ins.
+
+```js
+rpt.slash.registerCommand('roll', (args) => {
+  const sides = Number(args[0]) || 6
+  rpt.ui.toast('🎲 ' + (1 + Math.floor(Math.random() * sides)))
+})
+await rpt.slash.runCommand('/setvar mood cheerful')
+```
+
 ### Logging — `rpt.log`
 
 ```js
@@ -299,12 +320,16 @@ The host enforces a capability check on every engine-touching call. Per the
 [design decisions](plugin-system-design.md#12-decisions-resolved-2026-06-20), low-risk
 capabilities are auto-granted and only sensitive ones prompt:
 
-| Capability                 | Methods                      | Grant                                       |
-| -------------------------- | ---------------------------- | ------------------------------------------- |
-| `vars:read` / `vars:write` | `rpt.vars.*`, `rpt.global.*` | **Auto**                                    |
-| `chat:read`                | `rpt.chat.*`                 | **Auto**                                    |
-| `ui`                       | `rpt.ui.toast`               | **Auto**                                    |
-| `generate`                 | `rpt.generate`               | **Prompted** once per card, then remembered |
+| Capability                 | Methods                      | Grant                                           |
+| -------------------------- | ---------------------------- | ----------------------------------------------- |
+| `vars:read` / `vars:write` | `rpt.vars.*`, `rpt.global.*` | **Auto**                                        |
+| `chat:read`                | `rpt.chat.*`                 | **Auto**                                        |
+| `ui:toast` / `ui:panel`    | `rpt.ui.*`                   | **Auto** (`registerPanel` is a no-op for cards) |
+| `slash`                    | `rpt.slash.*`                | **Auto** for cards                              |
+| `generate`                 | `rpt.generate`               | **Prompted** once per card, then remembered     |
+
+(For **standalone plugins** this is different — _every_ capability must be in the
+manifest and approved on enable; see [§10](#10-standalone-plugins-installable).)
 
 Grants are stored **per card** (the card id is the script's identity) in
 `profiles/<id>/plugin-grants.json`. The panel's **On/Off** toggle disables a
@@ -459,24 +484,75 @@ render()
 
 ---
 
-## 11. Roadmap (not yet callable)
+## 11. Slash command runtime
+
+A minimal `/command` runtime (a deliberate **subset** of SillyTavern's STScript —
+`/name arg1 arg2`, no pipes/closures/macros). Commands run two ways:
+
+- **From the chat box** — type a line starting with `/` and send; it runs the
+  command (output shown as a toast) instead of starting a generation.
+- **From a script/plugin** — `await rpt.slash.runCommand('/setvar hp 20')`.
+
+Built-ins:
+
+| Command                 | Description                                |
+| ----------------------- | ------------------------------------------ |
+| `/help`                 | List available commands.                   |
+| `/echo <text>`          | Return the text.                           |
+| `/setvar <key> <value>` | Set a chat (local) variable.               |
+| `/getvar <key>`         | Read a chat variable.                      |
+| `/incvar <key> [n]`     | Add `n` (default 1) to a numeric variable. |
+| `/setglobalvar <k> <v>` | Set a global variable.                     |
+| `/getglobalvar <k>`     | Read a global variable.                    |
+| `/gen <text>`           | Start a generation with `<text>`.          |
+
+Values are JSON-parsed when possible (`10` → number, `{"a":1}` → object), else
+treated as a string. Plugins/scripts add their own via
+`rpt.slash.registerCommand` ([§4](#slash-commands--rptslash)); built-in names
+can't be overridden, and a plugin command is removed when its plugin unloads.
+Plugin-registered commands are fire-and-forget in v1 (no return value).
+
+## 12. Tavern-Helper compatibility (best-effort)
+
+To run many community **Tavern Helper / js-slash-runner** frontend scripts with
+little change, every sandbox also gets a **`TavernHelper`** global (plus loose
+`getVariables`/`setVariables`/`triggerSlash`) that maps the common surface onto
+`rpt.v1`:
+
+| TavernHelper                           | maps to                           |
+| -------------------------------------- | --------------------------------- |
+| `getVariables({type})`                 | `rpt.vars.all()` / `rpt.global`   |
+| `setVariables(vars,{type})`            | `rpt.vars.set` / `rpt.global.set` |
+| `getChatMessages()` / `getLastMessage` | `rpt.chat.*`                      |
+| `triggerSlash(cmd)`                    | `rpt.slash.runCommand`            |
+| `generate({user_input})`               | `rpt.generate`                    |
+| `eventOn(name, cb)`                    | `rpt.on`                          |
+| `registerSlashCommand(name, cb)`       | `rpt.slash.registerCommand`       |
+| `toastr.info/success/...`              | `rpt.ui.toast`                    |
+
+**Caveats:** this is a _subset_ and everything is **async** (returns Promises),
+unlike ST where some of these are synchronous. Deeply ST-coupled calls (jQuery
+DOM surgery, full STScript, ST-internal APIs, `getContext`) are out of scope and
+simply won't be present — unknown calls throw rather than silently work. The shim
+is **clean-room** (written from public docs/observed behavior; no js-slash-runner
+code is copied or loaded).
+
+## 13. Roadmap (not yet callable)
 
 Planned for later plugin phases (see the [design doc](plugin-system-design.md)):
 
-- **More UI contribution points** for standalone plugins — `registerButton`
-  (shell toolbar) and `registerCommand`. `registerPanel` already ships (P3);
-  buttons/commands are still planned.
+- **`registerButton`** — a shell-toolbar button contribution (P3 leftover;
+  `registerPanel` and the slash runtime already ship).
 - `rpt.chat.sendUserMessage` / `editMessage` (`chat:write`).
 - `rpt.lorebook.getEntries` / `activate` (`lorebook:read`).
-- `rpt.slash.registerCommand` / `runCommand` + a minimal STScript subset, plus a
-  clean-room **Tavern-Helper compatibility shim** mapping common
-  `getVariables`/`setVariables`/`triggerSlash`/`generate` calls onto `rpt.v1` (P4).
+- A fuller **STScript** subset (pipes/closures/macros) and broader
+  Tavern-Helper coverage — the v1 slash runtime + shim are intentionally minimal.
 - `rpt.storage` — plugin-scoped key/value persistence.
 - Packaging (`.zip` / PNG cartridge) and opt-in `net` with a host allow-list (P5).
 
 ---
 
-## 12. Versioning & compatibility
+## 14. Versioning & compatibility
 
 - `rpt.version === 'rpt.v1'`. New methods/events added to v1 are additive and
   safe; existing signatures won't change under v1.
@@ -487,7 +563,7 @@ Planned for later plugin phases (see the [design doc](plugin-system-design.md)):
 
 ---
 
-## 13. Provenance
+## 15. Provenance
 
 The `rpt` API is **original, clean-room** work. RP Terminal does **not** copy,
 vendor, or load any code from js-slash-runner / Tavern Helper (AGPL-3.0). We match

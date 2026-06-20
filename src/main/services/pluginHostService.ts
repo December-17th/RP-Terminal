@@ -145,12 +145,12 @@ export const scaffoldExample = (): string => {
     id,
     name: 'Example Plugin',
     version: '1.0.0',
-    description: 'Shows a panel that counts generations this profile, with a reset button.',
+    description: 'Panel counting generations this profile (+ reset), and a /hello slash command.',
     author: 'RP Terminal',
     type: 'app-extension',
     entry: 'main.js',
     apiVersion: 'rpt.v1',
-    permissions: ['vars:read', 'vars:write', 'ui:toast', 'ui:panel']
+    permissions: ['vars:read', 'vars:write', 'ui:toast', 'ui:panel', 'slash']
   })
   fs.writeFileSync(path.join(dir, 'manifest.json'), JSON.stringify(manifest, null, 2), 'utf-8')
 
@@ -172,6 +172,9 @@ async function render() {
 }
 
 rpt.ui.registerPanel({ title: 'Example Plugin' })
+rpt.slash.registerCommand('hello', function (args) {
+  rpt.ui.toast('Hello ' + (args[0] || 'world') + '!')
+})
 rpt.on('ready', render)
 rpt.on('generation:end', async function () {
   await rpt.global.inc('pluginTurns')

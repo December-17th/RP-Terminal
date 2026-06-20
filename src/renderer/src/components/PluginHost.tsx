@@ -4,6 +4,7 @@ import { useToastStore } from '../stores/toastStore'
 import { usePluginsStore, InstalledPlugin } from '../stores/pluginsStore'
 import { buildScriptSrcDoc } from '../plugin/bridgeShim'
 import { dispatchRpc } from '../plugin/dispatch'
+import { registerFrameCommand } from '../plugin/slash'
 
 /**
  * Standalone-plugin runtime (P2/P3). Mounted in the right sidebar, it runs every
@@ -33,6 +34,7 @@ const PluginFrame: React.FC<{ profileId: string; plugin: InstalledPlugin }> = ({
   plugin
 }) => {
   const frameRef = useRef<HTMLIFrameElement>(null)
+  const cmdCleanups = useRef(new Map<string, () => void>())
   const [panel, setPanel] = useState<{ title: string } | null>(null)
   const [height, setHeight] = useState(0)
   const srcDoc = useMemo(
@@ -47,6 +49,15 @@ const PluginFrame: React.FC<{ profileId: string; plugin: InstalledPlugin }> = ({
   // Plugins are gated purely by their granted (manifest-approved) permissions.
   const ensure = async (perm: string): Promise<boolean> => grantsSet.has(perm)
 
+  const registerCommand = (name: string): void => {
+    const key = name.toLowerCase()
+    if (cmdCleanups.current.has(key)) return
+    cmdCleanups.current.set(
+      key,
+      registerFrameCommand(key, (args, raw) => emit('slash:' + key, { args, raw }))
+    )
+  }
+
   const handleRpc = (method: string, args: any[]): Promise<any> =>
     dispatchRpc(method, args, {
       profileId,
@@ -54,6 +65,7 @@ const PluginFrame: React.FC<{ profileId: string; plugin: InstalledPlugin }> = ({
       ensure,
       toast: (m) => useToastStore.getState().push(m),
       registerPanel: (def) => setPanel({ title: (def && def.title) || plugin.manifest.name }),
+      registerCommand,
       syncLocalVars: (store) => useChatStore.getState().setLatestFloorVariables(store),
       triggerGenerate: (text) => useChatStore.getState().sendAction(profileId, text),
       isGenerating: () => useChatStore.getState().isGenerating
@@ -92,6 +104,15 @@ const PluginFrame: React.FC<{ profileId: string; plugin: InstalledPlugin }> = ({
         emit('chat:changed', { floors: state.floors.length })
       }
     })
+  }, [])
+
+  // Unregister this plugin's slash commands when it unmounts (disable/uninstall).
+  useEffect(() => {
+    const cleanups = cmdCleanups.current
+    return () => {
+      cleanups.forEach((off) => off())
+      cleanups.clear()
+    }
   }, [])
 
   // Stable structure regardless of panel state — toggling only changes styles, so
