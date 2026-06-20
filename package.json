@@ -21,7 +21,9 @@
   "dependencies": {
     "@electron-toolkit/preload": "^3.0.2",
     "@electron-toolkit/utils": "^4.0.0",
+    "@types/adm-zip": "^0.5.8",
     "@types/better-sqlite3": "^7.6.13",
+    "adm-zip": "^0.5.17",
     "better-sqlite3": "^12.11.1",
     "dompurify": "^3.4.11",
     "quickjs-emscripten": "^0.32.0",

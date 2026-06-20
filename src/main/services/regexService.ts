@@ -73,10 +73,7 @@ export const getAllRules = (profileId: string): RenderRegexRule[] => {
 /** Rules that transform the AI response for *display* (placement 2, not prompt-only). */
 export const getRenderRules = (profileId: string): RenderRegexRule[] =>
   getAllRules(profileId).filter(
-    (r) =>
-      !r.disabled &&
-      !r.promptOnly &&
-      (r.placement.length === 0 || r.placement.includes(2))
+    (r) => !r.disabled && !r.promptOnly && (r.placement.length === 0 || r.placement.includes(2))
   )
 
 export const listScripts = (profileId: string): RegexScriptInfo[] => {

@@ -63,8 +63,10 @@ export const CardScriptHost: React.FC<Props> = ({
 
   const pushToast = (msg: string): void => useToastStore.getState().push(msg)
 
-  // Card scripts auto-grant low-risk caps; `generate` prompts once per card.
+  // Card scripts auto-grant low-risk caps; `net` is never allowed (no manifest
+  // allow-list); `generate` prompts once per card.
   const ensure = async (perm: string): Promise<boolean> => {
+    if (perm === 'net') return false
     if (perm !== 'generate') return true
     if (grantsRef.current.generate) return true
     const ok = window.confirm(
@@ -94,6 +96,7 @@ export const CardScriptHost: React.FC<Props> = ({
       ensure,
       toast: pushToast,
       registerCommand,
+      storageOwner: 'card:' + cardId,
       syncLocalVars: (store) => useChatStore.getState().setLatestFloorVariables(store),
       triggerGenerate: (text) => useChatStore.getState().sendAction(profileId, text),
       isGenerating: () => useChatStore.getState().isGenerating

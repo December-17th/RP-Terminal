@@ -26,6 +26,7 @@ interface PluginsState {
   plugins: InstalledPlugin[]
   load: (profileId: string) => Promise<void>
   install: (profileId: string) => Promise<string | null>
+  installZip: (profileId: string) => Promise<string | null>
   uninstall: (profileId: string, id: string) => Promise<void>
   setEnabled: (profileId: string, id: string, enabled: boolean, grants?: string[]) => Promise<void>
   scaffoldExample: (profileId: string) => Promise<void>
@@ -39,6 +40,11 @@ export const usePluginsStore = create<PluginsState>((set, get) => ({
   },
   install: async (profileId) => {
     const id = await window.api.pluginsInstallDialog()
+    if (id) await get().load(profileId)
+    return id
+  },
+  installZip: async (profileId) => {
+    const id = await window.api.pluginsInstallZipDialog()
     if (id) await get().load(profileId)
     return id
   },

@@ -16,6 +16,7 @@ export const PERMISSIONS = [
   'generate',
   'ui:toast',
   'ui:panel',
+  'ui:button',
   'slash',
   'storage',
   'lorebook:read',
@@ -37,6 +38,8 @@ export const PluginManifestSchema = z
     entry: z.string().default('main.js'),
     apiVersion: z.string().default('rpt.v1'),
     permissions: z.array(z.string()).default([]),
+    /** Allow-listed hostnames for the opt-in `net` capability (host-enforced). */
+    net: z.array(z.string()).default([]),
     contributes: z.record(z.string(), z.any()).default({})
   })
   .transform((m) => ({ ...m, name: m.name || m.id }))

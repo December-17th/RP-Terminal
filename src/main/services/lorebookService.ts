@@ -11,10 +11,7 @@ const lorebookPath = (profileId: string, characterId: string): string =>
 const legacyLorebookPath = (profileId: string, characterId: string): string =>
   path.join(getAppDir(), 'profiles', profileId, 'characters', characterId, 'lorebook.json')
 
-export const getCharacterLorebook = (
-  profileId: string,
-  characterId: string
-): Lorebook | null => {
+export const getCharacterLorebook = (profileId: string, characterId: string): Lorebook | null => {
   let data = readJsonSync(lorebookPath(profileId, characterId))
   if (!data) data = readJsonSync(legacyLorebookPath(profileId, characterId)) // migrate-on-read
   if (!data) return null

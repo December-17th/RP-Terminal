@@ -20,10 +20,9 @@ const preview = (text: string, len = 80): string =>
     .slice(0, len)
 
 const touch = (chatId: string): void => {
-  getDb().prepare('UPDATE chats SET updated_at = ? WHERE id = ?').run(
-    new Date().toISOString(),
-    chatId
-  )
+  getDb()
+    .prepare('UPDATE chats SET updated_at = ? WHERE id = ?')
+    .run(new Date().toISOString(), chatId)
 }
 
 /** Build the renderer-facing session object: count + a single-entry index of the latest floor. */

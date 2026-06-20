@@ -28,9 +28,9 @@ export const getDefaultSettings = (): Settings => ({
 })
 
 export const getSettings = (profileId: string): Settings => {
-  const row = getDb()
-    .prepare('SELECT data FROM settings WHERE profile_id = ?')
-    .get(profileId) as { data: string } | undefined
+  const row = getDb().prepare('SELECT data FROM settings WHERE profile_id = ?').get(profileId) as
+    | { data: string }
+    | undefined
   if (!row) return getDefaultSettings()
   try {
     return { ...getDefaultSettings(), ...JSON.parse(row.data) }

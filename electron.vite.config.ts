@@ -7,7 +7,12 @@ export default defineConfig({
     build: {
       rollupOptions: {
         // Native/WASM modules: resolve at runtime, don't bundle their binaries.
-        external: ['better-sqlite3', 'quickjs-emscripten', '@jitl/quickjs-wasmfile-release-sync']
+        external: [
+          'better-sqlite3',
+          'quickjs-emscripten',
+          '@jitl/quickjs-wasmfile-release-sync',
+          'adm-zip'
+        ]
       }
     }
   },

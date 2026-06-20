@@ -21,6 +21,7 @@ import { useLogStore } from './stores/logStore'
 import { useRegexStore } from './stores/regexStore'
 import { usePluginsStore } from './stores/pluginsStore'
 import { useToastStore } from './stores/toastStore'
+import { useToolbarStore } from './stores/toolbarStore'
 import { initSlash, isSlashLine, runSlash, listCommands, SlashCommand } from './plugin/slash'
 
 type PanelTab =
@@ -219,6 +220,7 @@ export default function App() {
   )
 
   const activePresetName = usePresetStore((s) => s.preset?.name)
+  const toolbarButtons = useToolbarStore((s) => s.buttons)
   const regexRules = useRegexStore((s) => s.rules)
   const cardCss = activeCharacter?.card.data.extensions?.rp_terminal?.css as string | undefined
 
@@ -713,6 +715,15 @@ export default function App() {
           {tab('settings', 'Settings')}
           {tab('logs', 'Logs')}
         </div>
+        {toolbarButtons.length > 0 && (
+          <div className="nav-ext">
+            {toolbarButtons.map((b) => (
+              <button key={b.key} className="nav-ext-btn" title={b.label} onClick={b.onClick}>
+                {b.label}
+              </button>
+            ))}
+          </div>
+        )}
         <span className="nav-status">
           {activeProfile.name} · {activeCharacter?.card.data.name || 'no world'} ·{' '}
           {activePresetName || 'no preset'}

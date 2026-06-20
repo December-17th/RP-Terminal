@@ -19,6 +19,8 @@ export interface DispatchCtx {
   toast: (msg: string) => void
   /** Plugin requested a visible panel (standalone plugins only; no-op for cards). */
   registerPanel?: (def: any) => void
+  /** Plugin requested a shell-toolbar button (standalone plugins only). */
+  registerButton?: (def: any) => void
   /** Register a slash command owned by this frame. */
   registerCommand?: (name: string, description?: string) => void
   /** Push local-scope var writes into the chat store so status widgets update live. */
@@ -26,6 +28,10 @@ export interface DispatchCtx {
   /** Run a full generation turn (resolves when the new floor lands). */
   triggerGenerate: (text: string) => Promise<void>
   isGenerating: () => boolean
+  /** Storage namespace owner (e.g. `plugin:<id>` or `card:<id>`). */
+  storageOwner: string
+  /** Plugin id for host-mediated net.fetch (undefined → net unavailable, e.g. cards). */
+  netOwner?: string
 }
 
 const permDenied = (perm: string): never => {
@@ -71,6 +77,20 @@ export const dispatchRpc = async (method: string, args: any[], ctx: DispatchCtx)
       if (!(await ctx.ensure('ui:panel'))) permDenied('ui:panel')
       ctx.registerPanel?.(args[0] || {})
       return true
+    }
+    case 'ui.registerButton': {
+      if (!(await ctx.ensure('ui:button'))) permDenied('ui:button')
+      ctx.registerButton?.(args[0] || {})
+      return true
+    }
+    case 'storage': {
+      if (!(await ctx.ensure('storage'))) permDenied('storage')
+      return window.api.pluginStorage(ctx.profileId, ctx.storageOwner, args[0] || { op: 'all' })
+    }
+    case 'net.fetch': {
+      if (!(await ctx.ensure('net'))) permDenied('net')
+      if (!ctx.netOwner) throw new Error('net is not available here')
+      return window.api.pluginNetFetch(ctx.netOwner, String(args[0] ?? ''), args[1] || {})
     }
     case 'slash.run': {
       if (!(await ctx.ensure('slash'))) permDenied('slash')

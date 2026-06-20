@@ -215,16 +215,18 @@ btn.onclick = async () => {
 
 ### UI — `rpt.ui`
 
-| Method                          | Returns         | Description                                                                                   |
-| ------------------------------- | --------------- | --------------------------------------------------------------------------------------------- |
-| `rpt.ui.toast(message)`         | `Promise<true>` | Show a transient toast (auto-dismisses ~3s).                                                  |
-| `rpt.ui.registerPanel({title})` | `Promise<true>` | **Standalone plugins only.** Request a visible, titled panel in the shell (needs `ui:panel`). |
+| Method                                       | Returns         | Description                                                                                     |
+| -------------------------------------------- | --------------- | ----------------------------------------------------------------------------------------------- |
+| `rpt.ui.toast(message)`                      | `Promise<true>` | Show a transient toast (auto-dismisses ~3s).                                                    |
+| `rpt.ui.registerPanel({title})`              | `Promise<true>` | **Standalone plugins only.** Request a visible, titled panel in the shell (needs `ui:panel`).   |
+| `rpt.ui.registerButton({id,label}, handler)` | `Promise<true>` | **Standalone plugins only.** Add a top-nav button; `handler` runs on click (needs `ui:button`). |
 
 **Permission:** `toast` is auto-granted (`ui:toast`); `registerPanel` needs
-`ui:panel`. For richer UI, render directly into your iframe `document.body` —
-that _is_ your UI surface. Card scripts already have a visible panel, so
-`registerPanel` is a no-op for them; a standalone plugin stays headless until it
-calls it (see [§10](#10-standalone-plugins-installable)).
+`ui:panel`; `registerButton` needs `ui:button`. For richer UI, render directly
+into your iframe `document.body` — that _is_ your UI surface. Card scripts already
+have a visible panel, so `registerPanel`/`registerButton` are no-ops for them; a
+standalone plugin stays headless until it calls `registerPanel`
+(see [§10](#10-standalone-plugins-installable)).
 
 ### Slash commands — `rpt.slash`
 
@@ -246,6 +248,48 @@ rpt.slash.registerCommand('roll', (args) => {
 })
 await rpt.slash.runCommand('/setvar mood cheerful')
 ```
+
+### Storage — `rpt.storage`
+
+Plugin-scoped persistent key/value, isolated per plugin (or per card), separate
+from chat variables. **Permission:** `storage` (auto-granted for cards; declared
+in a plugin's manifest).
+
+| Method                    | Returns              | Description      |
+| ------------------------- | -------------------- | ---------------- |
+| `rpt.storage.get(key)`    | `Promise<any>`       | Read a value.    |
+| `rpt.storage.set(key, v)` | `Promise<v>`         | Persist a value. |
+| `rpt.storage.remove(key)` | `Promise<undefined>` | Delete a key.    |
+| `rpt.storage.keys()`      | `Promise<string[]>`  | List keys.       |
+| `rpt.storage.all()`       | `Promise<object>`    | The whole store. |
+
+```js
+const seen = (await rpt.storage.get('seenIntro')) || false
+if (!seen) {
+  rpt.ui.toast('Welcome!')
+  await rpt.storage.set('seenIntro', true)
+}
+```
+
+### Network (opt-in) — `rpt.net`
+
+**Standalone plugins only, off by default.** The sandbox itself can't reach the
+network; `rpt.net.fetch` is performed by the host, but **only** to hostnames in
+the plugin's manifest `net` allow-list (re-checked in main), **https-only**, no
+redirects, no ambient credentials, with a timeout and a ~1 MB response cap.
+**Permission:** `net` (sensitive — approved on enable). Not available to card
+scripts.
+
+```js
+// manifest: { "permissions": ["net"], "net": ["api.example.com"] }
+const res = await rpt.net.fetch('https://api.example.com/data')
+if (res.ok) {
+  const data = JSON.parse(res.body)
+}
+```
+
+`fetch(url, opts?)` → `Promise<{ ok, status, headers, body, error? }>`. `opts`:
+`{ method?: 'GET'|'POST', headers?: {}, body?: string }`.
 
 ### Logging — `rpt.log`
 
@@ -320,13 +364,15 @@ The host enforces a capability check on every engine-touching call. Per the
 [design decisions](plugin-system-design.md#12-decisions-resolved-2026-06-20), low-risk
 capabilities are auto-granted and only sensitive ones prompt:
 
-| Capability                 | Methods                      | Grant                                           |
-| -------------------------- | ---------------------------- | ----------------------------------------------- |
-| `vars:read` / `vars:write` | `rpt.vars.*`, `rpt.global.*` | **Auto**                                        |
-| `chat:read`                | `rpt.chat.*`                 | **Auto**                                        |
-| `ui:toast` / `ui:panel`    | `rpt.ui.*`                   | **Auto** (`registerPanel` is a no-op for cards) |
-| `slash`                    | `rpt.slash.*`                | **Auto** for cards                              |
-| `generate`                 | `rpt.generate`               | **Prompted** once per card, then remembered     |
+| Capability                        | Methods                      | Grant                                        |
+| --------------------------------- | ---------------------------- | -------------------------------------------- |
+| `vars:read` / `vars:write`        | `rpt.vars.*`, `rpt.global.*` | **Auto**                                     |
+| `chat:read`                       | `rpt.chat.*`                 | **Auto**                                     |
+| `ui:toast`/`ui:panel`/`ui:button` | `rpt.ui.*`                   | **Auto** (panel/button are no-ops for cards) |
+| `slash`                           | `rpt.slash.*`                | **Auto** for cards                           |
+| `storage`                         | `rpt.storage.*`              | **Auto**                                     |
+| `net`                             | `rpt.net.*`                  | **Denied** for cards (plugins only)          |
+| `generate`                        | `rpt.generate`               | **Prompted** once per card, then remembered  |
 
 (For **standalone plugins** this is different — _every_ capability must be in the
 manifest and approved on enable; see [§10](#10-standalone-plugins-installable).)
@@ -336,7 +382,9 @@ Grants are stored **per card** (the card id is the script's identity) in
 card's scripts entirely (also persisted there). A denied or not-yet-granted
 sensitive call rejects, so always wrap `rpt.generate` in try/catch.
 
-There is **no network capability in v1**, by design.
+Card scripts have **no network** access; standalone plugins can opt in via the
+`net` capability (see [§Network](#network-opt-in--rptnet) and the manifest `net`
+allow-list).
 
 ---
 
@@ -437,15 +485,18 @@ my-plugin/
   "type": "app-extension", // "app-extension" | "card-script"
   "entry": "main.js", // sandboxed entry script
   "apiVersion": "rpt.v1",
-  "permissions": ["vars:read", "vars:write", "chat:read", "ui:toast"]
+  "permissions": ["vars:read", "vars:write", "chat:read", "ui:toast"],
+  "net": [] // hostnames allowed if the plugin requests the `net` permission
 }
 ```
 
 **Install / manage** (Plugins tab):
 
-- **Install…** — pick a folder containing `manifest.json`; it's copied into the
+- **Folder…** — pick a folder containing `manifest.json`; it's copied into the
   plugins dir (re-installing the same `id` updates it).
-- **+ Example** — drops a small headless example plugin in, for testing.
+- **.zip…** — pick a `.zip` (manifest at its root or in a single wrapper folder);
+  it's extracted and installed.
+- **+ Example** — drops a small example plugin in, for testing.
 - **On/Off** — enabling shows the plugin's requested permissions for approval;
   approving grants exactly those. Disabling stops it.
 - **🗑** — uninstall (deletes the plugin's files).
@@ -462,9 +513,11 @@ iframe. By default a plugin is **headless** (hidden); calling
 `rpt.ui.registerPanel({ title })` (needs `ui:panel`) gives it a **visible, titled,
 auto-sizing panel** in the right sidebar — render your UI into `document.body`
 just like a card script. Plugins can read/write variables, read chat, trigger
-generation, toast, log, and react to lifecycle events; their vars/chat/generate
-calls act on the **currently active session** (and `rpt.global` works even with no
-session open).
+generation, toast, log, react to lifecycle events, contribute a top-nav button
+(`rpt.ui.registerButton`) and slash commands (`rpt.slash`), persist data
+(`rpt.storage`), and — if they declare an allow-list and the user approves —
+fetch over the network (`rpt.net`). Their vars/chat/generate calls act on the
+**currently active session** (and `rpt.global` works even with no session open).
 
 ```js
 // main.js — a plugin with a panel
@@ -539,16 +592,15 @@ code is copied or loaded).
 
 ## 13. Roadmap (not yet callable)
 
-Planned for later plugin phases (see the [design doc](plugin-system-design.md)):
+Phase P (P1–P5) is shipped. Still planned (see the
+[design doc](plugin-system-design.md)):
 
-- **`registerButton`** — a shell-toolbar button contribution (P3 leftover;
-  `registerPanel` and the slash runtime already ship).
 - `rpt.chat.sendUserMessage` / `editMessage` (`chat:write`).
 - `rpt.lorebook.getEntries` / `activate` (`lorebook:read`).
 - A fuller **STScript** subset (pipes/closures/macros) and broader
   Tavern-Helper coverage — the v1 slash runtime + shim are intentionally minimal.
-- `rpt.storage` — plugin-scoped key/value persistence.
-- Packaging (`.zip` / PNG cartridge) and opt-in `net` with a host allow-list (P5).
+- **PNG cartridge** install (aligns with the vNext card format); only folder/`.zip`
+  ship today.
 
 ---
 

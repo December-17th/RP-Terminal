@@ -524,6 +524,27 @@ body {
   border: 1px solid var(--rpt-border);
   color: var(--rpt-text-secondary);
 }
+/* Plugin-contributed top-nav buttons (rpt.ui.registerButton) */
+.nav-ext {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+.nav-ext-btn {
+  font-size: 0.8em;
+  padding: 4px 10px;
+  border-radius: 6px;
+  border: 1px solid var(--rpt-border);
+  background: var(--rpt-bg-secondary);
+  color: var(--rpt-text-primary);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.nav-ext-btn:hover {
+  border-color: var(--rpt-accent);
+  color: var(--rpt-accent);
+}
+
 /* Slash-command autocomplete menu (above the action input) */
 .slash-menu {
   position: absolute;

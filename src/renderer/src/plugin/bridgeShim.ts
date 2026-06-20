@@ -102,7 +102,24 @@ export const BRIDGE_SHIM = `
       toast: function (msg) { return __rpc('ui.toast', [String(msg)]); },
       // Standalone plugins only: request a visible, titled panel in the shell.
       // Render your UI into document.body; the host shows this frame in the panel.
-      registerPanel: function (def) { return __rpc('ui.registerPanel', [def || {}]); }
+      registerPanel: function (def) { return __rpc('ui.registerPanel', [def || {}]); },
+      // Standalone plugins only: add a top-nav button. handler runs when clicked.
+      registerButton: function (def, handler) {
+        var id = String((def && def.id) || (def && def.label) || 'button');
+        if (typeof handler === 'function') rpt.on('button:' + id, handler);
+        return __rpc('ui.registerButton', [def || {}]);
+      }
+    },
+    storage: {
+      get: function (k) { return __rpc('storage', [{ op: 'get', key: String(k) }]); },
+      set: function (k, v) { return __rpc('storage', [{ op: 'set', key: String(k), value: v }]); },
+      remove: function (k) { return __rpc('storage', [{ op: 'remove', key: String(k) }]); },
+      keys: function () { return __rpc('storage', [{ op: 'keys' }]); },
+      all: function () { return __rpc('storage', [{ op: 'all' }]); }
+    },
+    net: {
+      // Opt-in, allow-listed, host-mediated fetch (standalone plugins only).
+      fetch: function (url, opts) { return __rpc('net.fetch', [String(url), opts || {}]); }
     },
     slash: {
       // Register a /command; the handler runs here when the command is invoked.

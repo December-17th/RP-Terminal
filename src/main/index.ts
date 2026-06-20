@@ -17,6 +17,8 @@ import * as regexService from './services/regexService'
 import * as templateService from './services/templateService'
 import * as pluginService from './services/pluginService'
 import * as pluginHostService from './services/pluginHostService'
+import * as pluginStorageService from './services/pluginStorageService'
+import * as pluginNetService from './services/pluginNetService'
 
 function createWindow(): void {
   // Create the browser window.
@@ -35,6 +37,11 @@ function createWindow(): void {
   mainWindow.on('ready-to-show', () => {
     mainWindow.maximize()
     mainWindow.show()
+  })
+
+  // Surface renderer crashes in the main log (cheap, and these are rare/important).
+  mainWindow.webContents.on('render-process-gone', (_e, details) => {
+    logService.log('error', '[renderer gone]', JSON.stringify(details))
   })
 
   mainWindow.webContents.setWindowOpenHandler((details) => {
@@ -229,6 +236,16 @@ app.whenReady().then(() => {
     if (result.canceled || result.filePaths.length === 0) return null
     return pluginHostService.installFromFolder(result.filePaths[0])
   })
+  ipcMain.handle('plugins-install-zip-dialog', async (event) => {
+    const { dialog } = require('electron')
+    const result = await dialog.showOpenDialog(BrowserWindow.fromWebContents(event.sender)!, {
+      title: 'Select a plugin .zip',
+      properties: ['openFile'],
+      filters: [{ name: 'Plugin package', extensions: ['zip'] }]
+    })
+    if (result.canceled || result.filePaths.length === 0) return null
+    return pluginHostService.installFromZip(result.filePaths[0])
+  })
   ipcMain.handle('plugins-uninstall', (_, profileId, id) =>
     pluginHostService.uninstall(profileId, id)
   )
@@ -239,6 +256,14 @@ app.whenReady().then(() => {
     pluginHostService.setGrants(profileId, id, grants)
   )
   ipcMain.handle('plugins-scaffold-example', () => pluginHostService.scaffoldExample())
+  // Plugin-scoped persistent storage (P5). `owner` is host-supplied, not from the iframe.
+  ipcMain.handle('plugin-storage', (_, profileId, owner, action) =>
+    pluginStorageService.storageOp(profileId, owner, action)
+  )
+  // Opt-in host-mediated fetch (P5). pluginId is host-supplied; allow-list re-read from disk.
+  ipcMain.handle('plugin-net-fetch', (_, pluginId, url, opts) =>
+    pluginNetService.netFetch(pluginId, url, opts)
+  )
 
   createWindow()
   logService.log('info', 'RP Terminal started')

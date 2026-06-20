@@ -2,12 +2,7 @@ import fs from 'fs'
 import path from 'path'
 import { getAppDir, ensureDir } from './storageService'
 import { getDb } from './db'
-import {
-  RPTerminalCard,
-  RPTerminalCardSchema,
-  Lorebook,
-  LorebookSchema
-} from '../types/character'
+import { RPTerminalCard, RPTerminalCardSchema, Lorebook, LorebookSchema } from '../types/character'
 import { saveCharacterLorebook, deleteCharacterLorebook } from './lorebookService'
 import { parseStPng } from '../parsers/stPngParser'
 

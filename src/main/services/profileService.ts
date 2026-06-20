@@ -4,7 +4,9 @@ import { Profile } from '../types/models'
 
 export const getProfiles = (): Profile[] => {
   return getDb()
-    .prepare('SELECT id, name, avatar_path as avatar_path, password_hash, created_at, last_active FROM profiles ORDER BY last_active DESC')
+    .prepare(
+      'SELECT id, name, avatar_path as avatar_path, password_hash, created_at, last_active FROM profiles ORDER BY last_active DESC'
+    )
     .all() as Profile[]
 }
 

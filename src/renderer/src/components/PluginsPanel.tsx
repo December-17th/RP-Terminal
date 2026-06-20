@@ -10,7 +10,8 @@ const SENSITIVE = ['generate', 'chat:write', 'net', 'slash']
  * runtime itself is <PluginHost/> at the app root.
  */
 export const PluginsPanel: React.FC<{ profileId: string }> = ({ profileId }) => {
-  const { plugins, load, install, uninstall, setEnabled, scaffoldExample } = usePluginsStore()
+  const { plugins, load, install, installZip, uninstall, setEnabled, scaffoldExample } =
+    usePluginsStore()
 
   useEffect(() => {
     load(profileId)
@@ -43,7 +44,12 @@ export const PluginsPanel: React.FC<{ profileId: string }> = ({ profileId }) => 
       <div className="panel-header">
         <h3>Plugins</h3>
         <div className="panel-header-actions">
-          <button onClick={() => install(profileId)}>Install…</button>
+          <button onClick={() => install(profileId)} title="Install from a plugin folder">
+            Folder…
+          </button>
+          <button onClick={() => installZip(profileId)} title="Install from a .zip">
+            .zip…
+          </button>
           <button className="btn-ghost" onClick={() => scaffoldExample(profileId)}>
             + Example
           </button>
@@ -51,14 +57,14 @@ export const PluginsPanel: React.FC<{ profileId: string }> = ({ profileId }) => 
       </div>
       <div className="panel-body">
         <div style={{ fontSize: '0.78em', color: 'var(--rpt-text-secondary)', marginBottom: 10 }}>
-          Standalone plugins run app-wide in a sandbox (no network). Install a folder containing a{' '}
-          <code>manifest.json</code>, or add the bundled example. See{' '}
-          <code>docs/plugin-api.md</code>.
+          Standalone plugins run app-wide in a sandbox. Install from a folder or a <code>.zip</code>{' '}
+          containing a <code>manifest.json</code>, or add the bundled example. Network access is off
+          unless a plugin declares (and you approve) it. See <code>docs/plugin-api.md</code>.
         </div>
 
         {plugins.length === 0 ? (
           <div style={{ opacity: 0.6, fontStyle: 'italic', padding: '20px 0' }}>
-            No plugins installed. Use “Install…” or “+ Example”.
+            No plugins installed. Use “Folder…”, “.zip…”, or “+ Example”.
           </div>
         ) : (
           plugins.map((p) => (

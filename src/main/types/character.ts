@@ -73,7 +73,10 @@ export type CardData = z.infer<typeof CardDataSchema>
 export const RPTerminalCardSchema = z.object({
   // Accept any spec on read (legacy 'rpterminal', ST 'chara_card_v2', etc.) and
   // normalize to v3 so older/foreign saved cards migrate instead of being dropped.
-  spec: z.string().default('chara_card_v3').transform(() => 'chara_card_v3' as const),
+  spec: z
+    .string()
+    .default('chara_card_v3')
+    .transform(() => 'chara_card_v3' as const),
   spec_version: z.string().default('3.0'),
   data: CardDataSchema
 })

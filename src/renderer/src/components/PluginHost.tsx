@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useChatStore } from '../stores/chatStore'
 import { useToastStore } from '../stores/toastStore'
+import { useToolbarStore } from '../stores/toolbarStore'
 import { usePluginsStore, InstalledPlugin } from '../stores/pluginsStore'
 import { buildScriptSrcDoc } from '../plugin/bridgeShim'
 import { dispatchRpc } from '../plugin/dispatch'
@@ -35,6 +36,7 @@ const PluginFrame: React.FC<{ profileId: string; plugin: InstalledPlugin }> = ({
 }) => {
   const frameRef = useRef<HTMLIFrameElement>(null)
   const cmdCleanups = useRef(new Map<string, () => void>())
+  const btnKeys = useRef(new Set<string>())
   const [panel, setPanel] = useState<{ title: string } | null>(null)
   const [height, setHeight] = useState(0)
   const srcDoc = useMemo(
@@ -65,7 +67,19 @@ const PluginFrame: React.FC<{ profileId: string; plugin: InstalledPlugin }> = ({
       ensure,
       toast: (m) => useToastStore.getState().push(m),
       registerPanel: (def) => setPanel({ title: (def && def.title) || plugin.manifest.name }),
+      registerButton: (def) => {
+        const id = String((def && def.id) || (def && def.label) || 'button')
+        const key = plugin.id + '::' + id
+        btnKeys.current.add(key)
+        useToolbarStore.getState().add({
+          key,
+          label: String((def && def.label) || (def && def.id) || 'Button'),
+          onClick: () => emit('button:' + id, {})
+        })
+      },
       registerCommand,
+      storageOwner: 'plugin:' + plugin.id,
+      netOwner: plugin.id,
       syncLocalVars: (store) => useChatStore.getState().setLatestFloorVariables(store),
       triggerGenerate: (text) => useChatStore.getState().sendAction(profileId, text),
       isGenerating: () => useChatStore.getState().isGenerating
@@ -106,12 +120,15 @@ const PluginFrame: React.FC<{ profileId: string; plugin: InstalledPlugin }> = ({
     })
   }, [])
 
-  // Unregister this plugin's slash commands when it unmounts (disable/uninstall).
+  // Unregister this plugin's slash commands + toolbar buttons when it unmounts.
   useEffect(() => {
     const cleanups = cmdCleanups.current
+    const keys = btnKeys.current
     return () => {
       cleanups.forEach((off) => off())
       cleanups.clear()
+      keys.forEach((k) => useToolbarStore.getState().remove(k))
+      keys.clear()
     }
   }, [])
 

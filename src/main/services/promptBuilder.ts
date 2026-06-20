@@ -108,7 +108,10 @@ const buildHistory = (
       msgs.push({ role: 'user', content: expandMacros(f.user_message.content, charName, userName) })
     }
     if (f.response.content) {
-      msgs.push({ role: 'assistant', content: expandMacros(f.response.content, charName, userName) })
+      msgs.push({
+        role: 'assistant',
+        content: expandMacros(f.response.content, charName, userName)
+      })
     }
   }
   if (userAction) {
@@ -144,7 +147,10 @@ export const buildPrompt = (args: BuildPromptArgs): ChatMessage[] => {
     : (t) => expandMacros(t, charName, userName)
 
   // Lorebook scan over the last few turns plus the pending action.
-  const scanText = [...floors.slice(-3).flatMap((f) => [f.user_message.content, f.response.content]), userAction]
+  const scanText = [
+    ...floors.slice(-3).flatMap((f) => [f.user_message.content, f.response.content]),
+    userAction
+  ]
     .filter(Boolean)
     .join('\n')
   const worldInfo = matchEntries(lorebook, scanText)

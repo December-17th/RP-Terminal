@@ -44,6 +44,7 @@ format. **The current code is an MVP foundation, not the final architecture.**
   yet.
 
 Key commands:
+
 - `npm run dev` — launch Electron with HMR.
 - `npm run typecheck` — `typecheck:node` + `typecheck:web`; **must pass** (`build`
   runs it first). Always run before considering a change done.
@@ -105,6 +106,7 @@ JSON blobs inside SQL because a Zod schema owns their shape. Data root:
 `app.getPath('userData')/rp-terminal-data/` (`rpterminal.db` + `profiles/<id>/{presets,lorebooks,regex}/` + `avatars/`).
 
 **Design patterns / invariants:**
+
 - Services are **function modules** (named exports), imported as namespaces
   (`import * as fooService`). No classes, no DI.
 - **All generation happens in main.** The renderer calls one `generate` IPC and
@@ -142,8 +144,8 @@ files still carry semicolons from the scaffold — match Prettier, not them.)
 - **Validation/IO:** parse untrusted input with Zod `safeParse` and skip/getDefault
   on failure; wrap file/JSON/DB reads in try/catch; writes are atomic
   (`writeJsonSyncAtomic`). Never trust imported card/preset/lorebook shape.
-- **Comments** explain *why* (especially provider/format quirks and safety nets),
-  not *what*. Match the surrounding density.
+- **Comments** explain _why_ (especially provider/format quirks and safety nets),
+  not _what_. Match the surrounding density.
 - **IPC handlers stay thin** — validate/route only; logic lives in services.
 - **Errors** thrown in main propagate to the renderer (shown as an error block)
   and should be logged via `logService.log('error', …)` so they appear in the
@@ -185,7 +187,8 @@ compatibility targets. Specifics:
 - **Runtime dependencies** (all permissive, compatible with bundling into an AGPL work):
   `electron`, `react`/`react-dom`, `zustand`, `zod`, `uuid`, `react-markdown`,
   `remark-gfm`, `rehype-raw` (MIT); `better-sqlite3` (MIT); `quickjs-emscripten` + QuickJS
-  (MIT); `dompurify` (Apache-2.0 / MPL-2.0); `react-virtuoso` (MIT). Dev tooling
+  (MIT); `dompurify` (Apache-2.0 / MPL-2.0); `react-virtuoso` (MIT); `adm-zip` (MIT,
+  used for `.zip` plugin install). Dev tooling
   (`electron-vite`, `electron-builder`, `vite`, `typescript`, `eslint`, `prettier`) is MIT.
 - The project was scaffolded from the **electron-vite** React-TS template (MIT); some
   boilerplate may remain (e.g. `assets/main.css`, `Versions.tsx`).
@@ -207,6 +210,7 @@ streaming (A1); regenerate + delete + persona (A2/A4/A5); provider message fix
 (A6); logs console; **SQLite migration (Phase F)**; **multiple file-based presets**.
 
 **Immediate next steps:**
+
 1. **Phase G — Four-layer prompt-cache assembly:** rebuild `promptBuilder` into
    immutable layers (L1 static core → L2 semi-static lore/memory → L3 rolling
    history → L4 volatile state at the bottom) mapped onto Anthropic `cache_control`
@@ -216,7 +220,7 @@ streaming (A1); regenerate + delete + persona (A2/A4/A5); provider message fix
 3. **Phase B — the visual thesis:** safe HTML render pipeline (DOMPurify +
    `rehype-raw`/sandbox) so card/regex HTML actually renders; regex engine
    fidelity + management UI.
-4. **Phase C — ST-Prompt-Template (EJS):** currently `<% %>` blocks are *stripped*,
+4. **Phase C — ST-Prompt-Template (EJS):** currently `<% %>` blocks are _stripped_,
    not evaluated.
 
 **Locked architectural decisions for vNext (do not relitigate):** Node-only, **no
@@ -227,7 +231,7 @@ user-API-based — **keyword lorebooks remain primary**; keep React + virtualiza
 heavy work to `worker_threads`/`utilityProcess` when needed.
 
 **Known gaps / security:** `sandbox: false` + future untrusted-HTML rendering is an
-XSS surface — land DOMPurify *with* Phase B. Untrusted author scripts (combat/Forge)
+XSS surface — land DOMPurify _with_ Phase B. Untrusted author scripts (combat/Forge)
 will need a real JS sandbox (`isolated-vm`/`quickjs`), never node `vm`. An empty
 preset injects no lorebook today (no `world_info` marker) — `promptBuilder` should
 gain a world-info safety net.

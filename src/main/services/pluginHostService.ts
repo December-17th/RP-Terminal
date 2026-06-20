@@ -1,5 +1,7 @@
 import fs from 'fs'
+import os from 'os'
 import path from 'path'
+import AdmZip from 'adm-zip'
 import {
   getAppDir,
   ensureDir,
@@ -87,6 +89,13 @@ export const listPlugins = (profileId: string): InstalledPlugin[] => {
   return out.sort((a, b) => a.manifest.name.localeCompare(b.manifest.name))
 }
 
+/** The `net` allow-list for a plugin, read fresh from its manifest on disk
+ * (never trust the renderer for the allow-list). */
+export const getNetAllow = (id: string): string[] => {
+  const m = readManifest(pluginDir(id))
+  return m ? m.net : []
+}
+
 /** Install (or update) a plugin from a source folder containing manifest.json. */
 export const installFromFolder = (srcDir: string): string => {
   const manifest = readManifest(srcDir)
@@ -98,6 +107,30 @@ export const installFromFolder = (srcDir: string): string => {
   fs.cpSync(srcDir, dest, { recursive: true })
   log('info', `Installed plugin ${manifest.id} (${manifest.name})`)
   return manifest.id
+}
+
+/** Find the folder holding manifest.json — the extract root, or a single nested
+ * folder (common when a zip wraps the plugin in a directory). */
+const findManifestRoot = (dir: string): string | null => {
+  if (fs.existsSync(path.join(dir, 'manifest.json'))) return dir
+  for (const sub of listDirectoriesSync(dir)) {
+    if (fs.existsSync(path.join(dir, sub, 'manifest.json'))) return path.join(dir, sub)
+  }
+  return null
+}
+
+/** Install a plugin from a `.zip`: extract to a temp dir, then install the folder. */
+export const installFromZip = (zipPath: string): string => {
+  const tmp = path.join(os.tmpdir(), `rpt-plugin-${Date.now()}`)
+  ensureDir(tmp)
+  try {
+    new AdmZip(zipPath).extractAllTo(tmp, true)
+    const root = findManifestRoot(tmp)
+    if (!root) throw new Error('No manifest.json found in the .zip')
+    return installFromFolder(root)
+  } finally {
+    fs.rmSync(tmp, { recursive: true, force: true })
+  }
 }
 
 export const uninstall = (profileId: string, id: string): void => {

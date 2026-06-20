@@ -36,10 +36,7 @@ const cleanParams = (params: PresetParameters): Record<string, unknown> => {
  * Read an SSE body line by line, handing each `data:` payload (minus the prefix)
  * to `handle`. Buffers partial lines across chunks. `[DONE]` is filtered out.
  */
-const readSse = async (
-  response: Response,
-  handle: (data: string) => void
-): Promise<void> => {
+const readSse = async (response: Response, handle: (data: string) => void): Promise<void> => {
   if (!response.body) throw new Error('No response body to stream')
   const reader = response.body.getReader()
   const decoder = new TextDecoder()
@@ -222,9 +219,7 @@ const streamAnthropic = async (
 
   if (!response.ok) {
     const errorText = await response.text()
-    throw new Error(
-      `Anthropic API Error: ${response.status} ${response.statusText} - ${errorText}`
-    )
+    throw new Error(`Anthropic API Error: ${response.status} ${response.statusText} - ${errorText}`)
   }
 
   let full = ''

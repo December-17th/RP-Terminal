@@ -81,7 +81,7 @@ decvar/delvar` (+ local/global aliases) bound to chat vars; `variables`, `userNa
   sub-generation; explicit stop conditions.
 - ⬜ **D2. State-schema + widget editor UI**; richer status widgets.
 
-## Phase P — Plugin / extension system 🚧 (P1–P4 built)
+## Phase P — Plugin / extension system ✅ (P1–P5; vNext: PNG cartridge)
 
 Third-party plugins (js-slash-runner class). **Design doc:**
 [docs/plugin-system-design.md](docs/plugin-system-design.md). Changes the threat
@@ -109,10 +109,10 @@ compatibility shim.
   (headless) in the same sandbox via a shared RPC dispatcher with manifest-permission
   enforcement; bundled example scaffolder for testing.
   (`pluginHostService`, `pluginsStore`, `PluginHost`, `PluginsPanel`.)
-- 🟡 **P3. App-extension contributions** — ✅ `rpt.ui.registerPanel`: a plugin gets a
-  visible, titled, auto-sizing panel in the right sidebar (renders its own iframe UI;
-  kept on a stable mount so iframes never reparent/reload). Example plugin ships a panel.
-  ⬜ Remaining: `registerButton` (shell toolbar) + `registerCommand`.
+- ✅ **P3. App-extension contributions** — `rpt.ui.registerPanel` (visible, titled,
+  auto-sizing right-sidebar panel; stable mount so iframes never reparent/reload),
+  `rpt.ui.registerButton` (top-nav button via `toolbarStore`), `rpt.slash.registerCommand`,
+  and lifecycle hooks. Frame contributions are cleaned up on unload.
 - ✅ **P4. Slash-command runtime (subset) + Tavern-Helper shim** — `/name args`
   registry with built-ins (`/setvar`, `/getvar`, `/incvar`, `/setglobalvar`, `/echo`,
   `/gen`, `/help`), runnable from the chat box (`/` prefix) or via `rpt.slash.runCommand`;
@@ -120,9 +120,11 @@ compatibility shim.
   Clean-room `TavernHelper` shim maps the common TH surface onto `rpt.v1`. Example plugin
   ships a `/hello` command. (`slash.ts` + `bridgeShim`.) ⬜ Remaining: pipes/closures/macros
   (full STScript), broader TH coverage.
-- ⬜ **P5. Packaging** (.zip / PNG cartridge), settings, opt-in `net`.
-- ⬜ Open decisions (see doc §12): compat ambition, permission UX, distribution,
-  network allowance, whether to allow app-extensions in v1.
+- ✅ **P5. Packaging + persistence + net** — `.zip` install (adm-zip → temp extract →
+  install), `rpt.storage` (per-owner JSON KV, isolated per plugin/card), and opt-in
+  **`net`**: host-mediated `rpt.net.fetch` to a manifest `net` allow-list (re-checked in
+  main), https-only, no redirects/credentials, size-capped; sensitive perm.
+  (`pluginStorageService` + `pluginNetService`.) ⬜ PNG-cartridge install remains (vNext).
 
 ## Phase E — Quality (ongoing) ⬜
 
