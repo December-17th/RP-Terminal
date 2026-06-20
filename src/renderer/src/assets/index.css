@@ -231,6 +231,74 @@ body {
   padding: 6px 0 0;
 }
 
+/* Inline message editor (right-click a message) */
+.edit-area {
+  margin: 4px 0;
+}
+.edit-area textarea {
+  width: 100%;
+  box-sizing: border-box;
+  min-height: 60px;
+  overflow: hidden; /* height is auto-sized to content */
+  background-color: var(--rpt-bg-primary);
+  border: 1px solid var(--rpt-accent);
+  color: var(--rpt-text-primary);
+  border-radius: 6px;
+  padding: 10px;
+  font-family: inherit;
+  line-height: 1.5;
+  resize: vertical;
+}
+
+/* Right-click context menu */
+.context-menu {
+  position: fixed;
+  z-index: 2000;
+  min-width: 160px;
+  background: var(--rpt-bg-secondary);
+  border: 1px solid var(--rpt-border);
+  border-radius: 8px;
+  padding: 4px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+}
+.context-menu-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: transparent;
+  color: var(--rpt-text-primary);
+  padding: 8px 10px;
+  border-radius: 5px;
+  font-size: 0.9em;
+}
+.context-menu-item:hover {
+  background: var(--rpt-accent);
+  color: #fff;
+}
+.context-menu-item.danger:hover {
+  background: #e74c3c;
+}
+.edit-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 6px;
+}
+.edit-hint {
+  font-size: 0.78em;
+  color: var(--rpt-text-secondary);
+  margin-left: auto;
+}
+
+/* Sandboxed card/regex HTML render frame */
+.card-frame {
+  width: 100%;
+  border: 0;
+  display: block;
+  background: transparent;
+  overflow: hidden;
+}
+
 .generating-pulse {
   color: var(--rpt-text-secondary);
   animation: rpt-pulse 1.2s ease-in-out infinite;

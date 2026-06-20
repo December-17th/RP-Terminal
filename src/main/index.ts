@@ -13,6 +13,7 @@ import * as lorebookService from './services/lorebookService'
 import * as generationService from './services/generationService'
 import * as logService from './services/logService'
 import * as migrationService from './services/migrationService'
+import * as regexService from './services/regexService'
 
 function createWindow(): void {
   // Create the browser window.
@@ -122,8 +123,28 @@ app.whenReady().then(() => {
   // Logs
   ipcMain.handle('get-logs', () => logService.getLogs())
   ipcMain.handle('clear-logs', () => logService.clearLogs())
+
+  // Regex (display beautification scripts)
+  ipcMain.handle('get-render-regex', (_, profileId) => regexService.getRenderRules(profileId))
+  ipcMain.handle('list-regex', (_, profileId) => regexService.listScripts(profileId))
+  ipcMain.handle('delete-regex', (_, profileId, file) => regexService.deleteScript(profileId, file))
+  ipcMain.handle('import-regex-dialog', async (event, profileId) => {
+    const { dialog } = require('electron')
+    const result = await dialog.showOpenDialog(BrowserWindow.fromWebContents(event.sender)!, {
+      properties: ['openFile', 'multiSelections'],
+      filters: [{ name: 'SillyTavern Regex', extensions: ['json'] }]
+    })
+    if (result.canceled) return null
+    const names = result.filePaths
+      .map((p) => regexService.importRegexFromFile(profileId, p))
+      .filter(Boolean)
+    return names.length
+  })
   ipcMain.handle('delete-chat', (_, profileId, chatId) =>
     chatService.deleteChat(profileId, chatId)
+  )
+  ipcMain.handle('edit-floor', (_, profileId, chatId, floorIndex, userContent, responseContent) =>
+    chatService.editFloorContent(profileId, chatId, floorIndex, userContent, responseContent)
   )
   ipcMain.handle('delete-character', (_, profileId, charId) =>
     characterService.deleteCharacter(profileId, charId)

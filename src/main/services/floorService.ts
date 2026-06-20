@@ -77,6 +77,31 @@ export const saveFloor = (_profileId: string, chatId: string, floor: FloorFile):
     )
 }
 
+/** Edit a stored floor's text in place (user message and/or AI response). */
+export const updateFloorFields = (
+  _profileId: string,
+  chatId: string,
+  floorIndex: number,
+  userContent: string | null,
+  responseContent: string | null
+): void => {
+  const db = getDb()
+  if (userContent !== null) {
+    db.prepare('UPDATE floors SET user_content = ? WHERE chat_id = ? AND floor = ?').run(
+      userContent,
+      chatId,
+      floorIndex
+    )
+  }
+  if (responseContent !== null) {
+    db.prepare('UPDATE floors SET response_content = ? WHERE chat_id = ? AND floor = ?').run(
+      responseContent,
+      chatId,
+      floorIndex
+    )
+  }
+}
+
 export const deleteFloorAndSubsequent = (
   _profileId: string,
   chatId: string,

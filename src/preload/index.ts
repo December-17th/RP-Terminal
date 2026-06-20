@@ -20,6 +20,13 @@ const api = {
   abortGeneration: (chatId: string) => ipcRenderer.invoke('abort-generation', chatId),
   deleteChat: (profileId: string, chatId: string) =>
     ipcRenderer.invoke('delete-chat', profileId, chatId),
+  editFloor: (
+    profileId: string,
+    chatId: string,
+    floorIndex: number,
+    userContent: string | null,
+    responseContent: string | null
+  ) => ipcRenderer.invoke('edit-floor', profileId, chatId, floorIndex, userContent, responseContent),
   deleteCharacter: (profileId: string, charId: string) =>
     ipcRenderer.invoke('delete-character', profileId, charId),
   listPresets: (profileId: string) => ipcRenderer.invoke('list-presets', profileId),
@@ -46,6 +53,11 @@ const api = {
   // Logs
   getLogs: () => ipcRenderer.invoke('get-logs'),
   clearLogs: () => ipcRenderer.invoke('clear-logs'),
+  // Regex
+  getRenderRegex: (profileId: string) => ipcRenderer.invoke('get-render-regex', profileId),
+  listRegex: (profileId: string) => ipcRenderer.invoke('list-regex', profileId),
+  deleteRegex: (profileId: string, file: string) => ipcRenderer.invoke('delete-regex', profileId, file),
+  importRegexDialog: (profileId: string) => ipcRenderer.invoke('import-regex-dialog', profileId),
   onLog: (cb: (entry: any) => void) => {
     const listener = (_e: IpcRendererEvent, entry: any) => cb(entry)
     ipcRenderer.on('log-event', listener)

@@ -38,6 +38,7 @@ interface ChatState {
   regenerate: (profileId: string) => Promise<void>
   stopGeneration: () => Promise<void>
   deleteChat: (profileId: string, chatId: string) => Promise<void>
+  editFloor: (profileId: string, floorIndex: number, field: 'user' | 'response', text: string) => Promise<void>
   appendDelta: (delta: string) => void
 }
 
@@ -120,6 +121,28 @@ export const useChatStore = create<ChatState>((set, get) => ({
     // Aborts the provider request in main; the in-flight generate()/regenerate()
     // promise then resolves with the partial floor (or null) and clears state.
     await window.api.abortGeneration(activeChatId)
+  },
+
+  editFloor: async (profileId, floorIndex, field, text) => {
+    const { activeChatId } = get()
+    if (!activeChatId) return
+    await window.api.editFloor(
+      profileId,
+      activeChatId,
+      floorIndex,
+      field === 'user' ? text : null,
+      field === 'response' ? text : null
+    )
+    set((state) => ({
+      floors: state.floors.map((f) =>
+        f.floor === floorIndex
+          ? field === 'user'
+            ? { ...f, user_message: { ...f.user_message, content: text } }
+            : { ...f, response: { ...f.response, content: text } }
+          : f
+      )
+    }))
+    get().loadChats(profileId)
   },
 
   deleteChat: async (profileId, chatId) => {

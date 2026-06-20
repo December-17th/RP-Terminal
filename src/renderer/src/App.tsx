@@ -1,4 +1,5 @@
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useState, useRef, useMemo } from 'react';
+import { createPortal } from 'react-dom';
 import { useProfileStore } from './stores/profileStore';
 import { useCharacterStore } from './stores/characterStore';
 import { useChatStore } from './stores/chatStore';
@@ -9,22 +10,111 @@ import { LayoutRenderer } from './components/LayoutRenderer';
 import { LorebookManager } from './components/LorebookManager';
 import { PresetManager } from './components/PresetManager';
 import { LogsPanel } from './components/LogsPanel';
+import { RegexPanel } from './components/RegexPanel';
+import { MessageContent } from './components/MessageContent';
 import { useLogStore } from './stores/logStore';
+import { useRegexStore } from './stores/regexStore';
 
-type PanelTab = 'world' | 'sessions' | 'preset' | 'lorebook' | 'api' | 'logs';
+type PanelTab = 'world' | 'sessions' | 'preset' | 'lorebook' | 'regex' | 'api' | 'logs';
+
+interface MenuItem { label: string; onClick: () => void; danger?: boolean; }
+
+function ContextMenu({ x, y, items, onClose }: { x: number; y: number; items: MenuItem[]; onClose: () => void; }) {
+  useEffect(() => {
+    const close = (): void => onClose();
+    // Defer so the opening right-click doesn't immediately dismiss it.
+    const t = setTimeout(() => {
+      window.addEventListener('click', close);
+      window.addEventListener('contextmenu', close);
+      window.addEventListener('resize', close);
+    });
+    return () => {
+      clearTimeout(t);
+      window.removeEventListener('click', close);
+      window.removeEventListener('contextmenu', close);
+      window.removeEventListener('resize', close);
+    };
+  }, []);
+
+  return createPortal(
+    <div className="context-menu" style={{ left: x, top: y }} onClick={e => e.stopPropagation()}>
+      {items.map(it => (
+        <button
+          key={it.label}
+          className={`context-menu-item ${it.danger ? 'danger' : ''}`}
+          onClick={() => { it.onClick(); onClose(); }}
+        >
+          {it.label}
+        </button>
+      ))}
+    </div>,
+    document.body
+  );
+}
+
+function EditArea({ value, onChange, onSave, onCancel }: {
+  value: string;
+  onChange: (v: string) => void;
+  onSave: () => void;
+  onCancel: () => void;
+}) {
+  const ref = useRef<HTMLTextAreaElement>(null);
+  // Auto-size to the content so the editor matches the message.
+  useEffect(() => {
+    const el = ref.current;
+    if (el) { el.style.height = 'auto'; el.style.height = `${el.scrollHeight}px`; }
+  }, [value]);
+
+  return (
+    <div className="edit-area">
+      <textarea
+        ref={ref}
+        autoFocus
+        value={value}
+        onChange={e => onChange(e.target.value)}
+        onKeyDown={e => {
+          if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); onSave(); }
+          if (e.key === 'Escape') { e.preventDefault(); onCancel(); }
+        }}
+      />
+      <div className="edit-actions">
+        <button className="btn-accent" onClick={onSave}>Save</button>
+        <button className="btn-ghost" onClick={onCancel}>Cancel</button>
+        <span className="edit-hint">Ctrl+Enter to save · Esc to cancel</span>
+      </div>
+    </div>
+  );
+}
 
 export default function App() {
   const { profiles, activeProfile, loadProfiles, createProfile } = useProfileStore();
   const { settings, loadSettings, updateSettings } = useSettingsStore();
   const { characters, activeCharacter, loadCharacters, setActiveCharacter, importMockCharacter, deleteCharacter } = useCharacterStore();
-  const { chats, activeChatId, floors, isGenerating, streamingText, error, loadChats, createChat, setActiveChat, sendAction, regenerate, stopGeneration, deleteChat } = useChatStore();
+  const { chats, activeChatId, floors, isGenerating, streamingText, error, loadChats, createChat, setActiveChat, sendAction, regenerate, stopGeneration, deleteChat, editFloor } = useChatStore();
 
   const activePresetName = usePresetStore((s) => s.preset?.name);
+  const regexRules = useRegexStore((s) => s.rules);
+  const cardCss = activeCharacter?.card.data.extensions?.rp_terminal?.css as string | undefined;
+
+  // Apply display regex (beautification) to each stored response at render time.
+  const renderedFloors = useMemo(
+    () =>
+      floors.map((f) => ({
+        floor: f.floor,
+        user: f.user_message.content,
+        rawResponse: f.response.content,
+        html: useRegexStore.getState().apply(f.response.content)
+      })),
+    [floors, regexRules]
+  );
 
   const [newProfileName, setNewProfileName] = useState('');
   const [actionInput, setActionInput] = useState('');
   const [panel, setPanel] = useState<PanelTab>('world');
   const [pendingUserMsg, setPendingUserMsg] = useState('');
+  const [editing, setEditing] = useState<{ floor: number; field: 'user' | 'response' } | null>(null);
+  const [editText, setEditText] = useState('');
+  const [menu, setMenu] = useState<{ x: number; y: number; floor: number; field: 'user' | 'response'; value: string } | null>(null);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
@@ -47,6 +137,7 @@ export default function App() {
       loadCharacters(activeProfile.id);
       loadChats(activeProfile.id);
       usePresetStore.getState().load(activeProfile.id);
+      useRegexStore.getState().load(activeProfile.id);
     }
   }, [activeProfile]);
 
@@ -236,6 +327,9 @@ export default function App() {
           </div>
         );
 
+      case 'regex':
+        return <RegexPanel profileId={activeProfile.id} />;
+
       case 'logs':
         return <LogsPanel />;
     }
@@ -250,6 +344,7 @@ export default function App() {
           {tab('sessions', 'Sessions', !activeCharacter)}
           {tab('preset', 'Preset')}
           {tab('lorebook', 'Lorebook', !activeCharacter)}
+          {tab('regex', 'Regex')}
           {tab('api', 'API')}
           {tab('logs', 'Logs')}
         </div>
@@ -265,14 +360,38 @@ export default function App() {
           {activeChatId ? (
             <>
               <div className="floor-list">
-                {floors.map(f => (
-                  <div key={f.floor} className="floor-block">
-                    {f.user_message.content && (
-                      <div className="user-action">&gt; {f.user_message.content}</div>
-                    )}
-                    <div><Markdown>{f.response.content}</Markdown></div>
-                  </div>
-                ))}
+                {renderedFloors.map(f => {
+                  const editingUser = editing?.floor === f.floor && editing.field === 'user';
+                  const editingResp = editing?.floor === f.floor && editing.field === 'response';
+                  const saveEdit = () => {
+                    if (editing) editFloor(activeProfile.id, editing.floor, editing.field, editText);
+                    setEditing(null);
+                  };
+                  return (
+                    <div key={f.floor} className="floor-block">
+                      {editingUser ? (
+                        <EditArea value={editText} onChange={setEditText} onSave={saveEdit} onCancel={() => setEditing(null)} />
+                      ) : f.user ? (
+                        <div
+                          className="user-action"
+                          title="Right-click for options"
+                          onContextMenu={e => { e.preventDefault(); setMenu({ x: e.clientX, y: e.clientY, floor: f.floor, field: 'user', value: f.user }); }}
+                        >
+                          &gt; {f.user}
+                        </div>
+                      ) : null}
+                      {editingResp ? (
+                        <EditArea value={editText} onChange={setEditText} onSave={saveEdit} onCancel={() => setEditing(null)} />
+                      ) : (
+                        <MessageContent
+                          content={f.html}
+                          css={cardCss}
+                          onContextMenu={(x, y) => setMenu({ x, y, floor: f.floor, field: 'response', value: f.rawResponse })}
+                        />
+                      )}
+                    </div>
+                  );
+                })}
                 {isGenerating && (
                   <div className="floor-block">
                     {pendingUserMsg && <div className="user-action">&gt; {pendingUserMsg}</div>}
@@ -366,6 +485,23 @@ export default function App() {
           )}
         </div>
       </div>
+
+      {menu && (
+        <ContextMenu
+          x={menu.x}
+          y={menu.y}
+          onClose={() => setMenu(null)}
+          items={[
+            {
+              label: '✎ Edit message',
+              onClick: () => {
+                setEditing({ floor: menu.floor, field: menu.field });
+                setEditText(menu.value);
+              }
+            }
+          ]}
+        />
+      )}
     </>
   );
 }

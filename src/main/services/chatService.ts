@@ -2,7 +2,7 @@ import { v4 as uuidv4 } from 'uuid'
 import { getDb } from './db'
 import { ChatSession, FloorFile } from '../types/chat'
 import { getCharacter } from './characterService'
-import { saveFloor, deleteFloorAndSubsequent } from './floorService'
+import { saveFloor, deleteFloorAndSubsequent, updateFloorFields } from './floorService'
 
 interface ChatRow {
   id: string
@@ -118,4 +118,16 @@ export const truncateFloors = (profileId: string, chatId: string, fromFloor: num
 
 export const deleteChat = (_profileId: string, chatId: string): void => {
   getDb().prepare('DELETE FROM chats WHERE id = ?').run(chatId)
+}
+
+/** Edit a floor's user message and/or response text, then bump updated_at. */
+export const editFloorContent = (
+  profileId: string,
+  chatId: string,
+  floorIndex: number,
+  userContent: string | null,
+  responseContent: string | null
+): void => {
+  updateFloorFields(profileId, chatId, floorIndex, userContent, responseContent)
+  touch(chatId)
 }

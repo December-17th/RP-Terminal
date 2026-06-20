@@ -42,14 +42,19 @@ Remaining in Phase A: **A3 (token budget)**, swipe/edit messages.
 
 ---
 
-## Phase B — The visual thesis (P0/P1)  ⬜
+## Phase B — The visual thesis  ✅ (core)
 
-- ⬜ **B1. Safe HTML render pipeline** — DOMPurify + `rehype-raw` (or sandboxed iframe)
-  so card/regex-authored HTML renders; apply card `css` scoped to the chat. This is
-  what makes imported `美化` cards look like SillyTavern.
-- ⬜ **B2. Regex engine fidelity + management UI** — honor `trimStrings`,
-  `markdownOnly`/`promptOnly`, placement, and macro substitution in replacements;
-  add regex import + a management panel (mirrors lorebook/preset).
+- ✅ **B1. Safe HTML render pipeline** — `MessageContent` splits ```html fenced blocks
+  and renders them in a **sandboxed iframe** (`sandbox="allow-same-origin"`, no scripts)
+  with DOMPurify sanitization; CSS is fully isolated per card; auto-height via a
+  ResizeObserver. Prose renders as GFM markdown. Card scripts are intentionally
+  stripped (spec §3.3 — never execute imported scripts), so cards render statically.
+- ✅ **B2. Render-time regex** — display regex now runs at render time (stored history
+  keeps the model's raw output), with import + a Regex management panel (list/delete).
+  ST `findRegex` `/…/flags` parsing, placement-2 (AI-output) filtering, `markdownOnly`
+  vs `promptOnly` honored.
+- ⬜ Remaining: per-rule enable/disable + edit in the panel; `trimStrings`; macro
+  substitution inside replacements; prompt-time regex placement.
 
 ## Phase C — ST-Prompt-Template + advanced preset/lorebook (P1)  ⬜
 

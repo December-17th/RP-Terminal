@@ -1,29 +1,14 @@
-import fs from 'fs'
-import path from 'path'
 import { getSettings } from './settingsService'
 import { getActivePreset } from './presetService'
 import { getCharacter } from './characterService'
 import { getCharacterLorebook } from './lorebookService'
-import { getAppDir } from './storageService'
 import { getChat, appendFloor, truncateFloors } from './chatService'
 import { getAllFloors, getFloor } from './floorService'
 import { buildPrompt } from './promptBuilder'
 import { streamProvider, DeltaCallback } from './apiService'
-import { applyRegexRules, loadRegexRules, StRegexRule } from '../parsers/stRegexEngine'
 import { parseContent, RPEvent } from '../parsers/contentParser'
 import { log } from './logService'
 import { FloorFile } from '../types/chat'
-
-/** Load every regex rule file under profiles/{id}/regex/ (empty if none). */
-const loadProfileRegexRules = (profileId: string): StRegexRule[] => {
-  const dir = path.join(getAppDir(), 'profiles', profileId, 'regex')
-  if (!fs.existsSync(dir)) return []
-  const rules: StRegexRule[] = []
-  for (const file of fs.readdirSync(dir)) {
-    if (file.endsWith('.json')) rules.push(...loadRegexRules(path.join(dir, file)))
-  }
-  return rules
-}
 
 /** Apply a single rpt-event to a mutable variables object (nested path set/add/remove). */
 const applyEvent = (vars: Record<string, any>, evt: RPEvent): void => {
@@ -116,9 +101,10 @@ export const generate = async (
 
   log('response', `← ${raw.length} chars${stopped ? ' (stopped)' : ''}`, raw)
 
-  // Stage 2: ST regex rules. Stage 3: rpt-event extraction.
-  const regexed = applyRegexRules(raw, loadProfileRegexRules(profileId), 'text')
-  const parsed = parseContent(regexed)
+  // Extract rpt-event state tags. The RAW response is stored — display regex
+  // (markdownOnly beautification) is applied at render time, not persisted, so
+  // history sent back to the model stays in the model's own output format.
+  const parsed = parseContent(raw)
 
   // Carry forward the latest variables and apply this turn's events.
   const prevVars = floors.length > 0 ? floors[floors.length - 1].variables : {}
