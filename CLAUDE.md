@@ -177,6 +177,11 @@ compatibility targets. Specifics:
   character cards (v2/v3), world-info/lorebooks, regex scripts, and chat-completion
   presets. These are file-format parsers (`src/main/parsers/*`) reading ST's JSON; **no
   SillyTavern code is used**.
+- **js-slash-runner / Tavern Helper** (github.com/n0vi028/js-slash-runner, **AGPL-3.0**)
+  — **HARD CONSTRAINT: do not reuse any code from this repo.** The planned plugin system
+  (`docs/plugin-system-design.md`) and any Tavern-Helper compatibility shim are
+  **clean-room** — written from public docs/observed behavior only. Never copy, vendor,
+  or load its source. (See also the plugin design doc §9.)
 - **Runtime dependencies** (all permissive, compatible with bundling into an AGPL work):
   `electron`, `react`/`react-dom`, `zustand`, `zod`, `uuid`, `react-markdown`,
   `remark-gfm`, `rehype-raw` (MIT); `better-sqlite3` (MIT); `quickjs-emscripten` + QuickJS

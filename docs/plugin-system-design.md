@@ -186,6 +186,13 @@ full STScript grammar are a later stretch goal — flagged as a known fidelity g
 
 ## 9. js-slash-runner / Tavern Helper compatibility
 
+> **Hard constraint: no code is reused from the js-slash-runner repo.** That project
+> is AGPL-3.0 and this project's license is undecided. Everything here is **clean-room**
+> — written from observed behavior / public docs only. We do not copy its source, vendor
+> its files, or load it. (APIs/function names are not copyrightable; *implementations*
+> are — so we reimplement, never copy.) This mirrors how the ST-Prompt-Template engine
+> was built.
+
 We do **not** load ST extensions directly. Instead, inject a **`TavernHelper` shim**
 into card-script iframes that maps the common Tavern-Helper surface onto `rpt.v1`:
 `getVariables/setVariables` → vars, `getChatMessages` → chat.getMessages,
