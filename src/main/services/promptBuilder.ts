@@ -84,6 +84,7 @@ export const buildPrompt = (args: BuildPromptArgs): ChatMessage[] => {
 
   const messages: ChatMessage[] = []
   let historyEmitted = false
+  let worldInfoEmitted = false
 
   for (const block of preset.prompts) {
     if (block.enabled === false) continue
@@ -100,6 +101,7 @@ export const buildPrompt = (args: BuildPromptArgs): ChatMessage[] => {
       }
       case 'world_info': {
         if (worldInfo) messages.push({ role: block.role, content: `World Info:\n${worldInfo}` })
+        worldInfoEmitted = true
         break
       }
       case 'chat_history': {
@@ -117,6 +119,16 @@ export const buildPrompt = (args: BuildPromptArgs): ChatMessage[] => {
         if (content) messages.push({ role: block.role, content })
       }
     }
+  }
+
+  // Safety net: a preset without a world_info marker (e.g. an empty preset) would
+  // otherwise drop matched lorebook entries. Inject them just before the first
+  // conversation message so keyword/constant world info still reaches the model.
+  if (worldInfo && !worldInfoEmitted) {
+    const convoStart = messages.findIndex((m) => m.role !== 'system')
+    const wiMessage: ChatMessage = { role: 'system', content: `World Info:\n${worldInfo}` }
+    if (convoStart === -1) messages.push(wiMessage)
+    else messages.splice(convoStart, 0, wiMessage)
   }
 
   // Safety net: a preset with no chat_history marker would otherwise send no
