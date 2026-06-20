@@ -20,7 +20,30 @@ import { parseContent, RPEvent } from '../parsers/contentParser'
 import { parseMvuCommands, applyMvuCommands } from '../parsers/mvuParser'
 import { log } from './logService'
 import { FloorFile } from '../types/chat'
-import { Lorebook, LorebookEntry } from '../types/character'
+import { Lorebook, LorebookEntry, getRpExt } from '../types/character'
+
+/**
+ * Combine the FSM mode addendum with a World Card's custom agent prompts (Track S §3).
+ * A card's `agent.prompts.system` is a world-level system instruction and applies in
+ * every mode; a per-mode prompt (`agent.prompts[mode]`, e.g. `combat`) applies only when
+ * the FSM is engaged. Returned as a single trimmed, newline-joined system addendum.
+ */
+export const composeAddendum = (
+  agent: any,
+  mode: string,
+  fsmEnabled: boolean,
+  modeAddendum: string
+): string => {
+  const prompts = agent?.prompts || {}
+  return [
+    fsmEnabled ? modeAddendum : '',
+    typeof prompts.system === 'string' ? prompts.system : '',
+    fsmEnabled && typeof prompts[mode] === 'string' ? prompts[mode] : ''
+  ]
+    .map((s) => (s || '').trim())
+    .filter(Boolean)
+    .join('\n\n')
+}
 
 /** Apply a single rpt-event to a mutable variables object (nested path set/add/remove). */
 export const applyEvent = (vars: Record<string, any>, evt: RPEvent): void => {
@@ -139,7 +162,8 @@ export const generate = async (
     maxRecursion,
     matchedEntries,
     promptRegex: getPromptRules(profileId, { cardId: chat.character_id, chatId }),
-    modeAddendum: fsmEnabled ? modeConfig.addendum : '',
+    // FSM mode addendum + the World Card's custom agent prompts (system + per-mode).
+    modeAddendum: composeAddendum(getRpExt(card)?.agent, mode, fsmEnabled, modeConfig.addendum),
     template: {
       vars: workingVars,
       globals,

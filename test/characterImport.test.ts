@@ -4,6 +4,8 @@ import os from 'os'
 import path from 'path'
 import {
   collectBundledRegex,
+  collectBundledPresets,
+  collectBundledLorebooks,
   summarizeCardBundle,
   hasBundle,
   parseCardFile
@@ -55,15 +57,33 @@ describe('collectBundledRegex', () => {
   })
 })
 
+describe('collectBundledPresets / collectBundledLorebooks', () => {
+  it('reads presets[] and lorebooks[] from rp_terminal, filtering non-objects', () => {
+    const c = card({
+      rp_terminal: {
+        presets: [{ name: 'P1', parameters: {}, prompts: [] }, null, 'nope'],
+        lorebooks: [{ name: 'Extra', entries: [] }]
+      }
+    })
+    expect(collectBundledPresets(c)).toHaveLength(1)
+    expect(collectBundledLorebooks(c)).toHaveLength(1)
+    expect(collectBundledPresets(card({}))).toEqual([])
+    expect(collectBundledLorebooks(card({}))).toEqual([])
+  })
+})
+
 describe('summarizeCardBundle + hasBundle', () => {
-  it('counts regex, scripts, ui widgets and flags a World Card', () => {
+  it('counts regex, presets, lorebooks, scripts, ui widgets and flags a World Card', () => {
     const parsed = {
       card: card({
         regex_scripts: [regexRule('a'), regexRule('b')],
         rp_terminal: {
           world_card: '1.0',
           scripts: [{ name: 's', code: '' }],
-          ui_layout: [{ type: 'StatBar', path: 'hp' }]
+          ui_layout: [{ type: 'StatBar', path: 'hp' }],
+          presets: [{ name: 'P', parameters: {}, prompts: [] }],
+          lorebooks: [{ name: 'Extra', entries: [] }],
+          plugins: [{ manifest: {} }]
         }
       }),
       lorebook: { name: 'L', entries: [{ keys: ['k'], content: 'c' } as any] }
@@ -75,14 +95,24 @@ describe('summarizeCardBundle + hasBundle', () => {
       regexScripts: 2,
       loreEntries: 1,
       scripts: 1,
-      uiWidgets: 1
+      uiWidgets: 1,
+      presets: 1,
+      lorebooks: 1,
+      pluginsSkipped: 1
     })
     expect(hasBundle(s)).toBe(true)
   })
 
   it('a plain card (no bundle) does not warrant the install confirm', () => {
     const s = summarizeCardBundle({ card: card({}), lorebook: null } as any)
-    expect(s).toMatchObject({ isWorldCard: false, regexScripts: 0, scripts: 0, uiWidgets: 0 })
+    expect(s).toMatchObject({
+      isWorldCard: false,
+      regexScripts: 0,
+      scripts: 0,
+      uiWidgets: 0,
+      presets: 0,
+      lorebooks: 0
+    })
     expect(hasBundle(s)).toBe(false)
   })
 })

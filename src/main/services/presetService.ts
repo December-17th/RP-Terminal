@@ -116,6 +116,35 @@ export const deletePreset = (profileId: string, presetId: string): void => {
   writeJsonSyncAtomic(activePath(profileId), { id: next ?? null })
 }
 
+/**
+ * Install a preset bundled in a World Card (Track S §3). Accepts our native
+ * `{ name, parameters, prompts }` shape directly, else normalizes an ST chat-completion
+ * preset. Never hijacks the active preset, and skips (returns null) if a preset with the
+ * same name already exists so re-importing a world is idempotent. Returns the name.
+ */
+export const installBundledPreset = (profileId: string, raw: any): string | null => {
+  try {
+    let preset: Preset | null = null
+    // Native bundles carry a structured `parameters` object — parse those directly;
+    // otherwise treat it as an ST preset and run it through the importer's normalizer.
+    if (raw && typeof raw === 'object' && raw.parameters && typeof raw.parameters === 'object') {
+      const direct = PresetSchema.safeParse(raw)
+      if (direct.success) preset = direct.data
+    }
+    if (!preset) {
+      const normalized = parseStPreset(raw, raw?.name || 'Bundled Preset')
+      if (normalized) preset = PresetSchema.parse(normalized)
+    }
+    if (!preset) return null
+    if (listPresets(profileId).some((p) => p.name === preset!.name)) return null // dedup by name
+    createPresetFromData(profileId, preset.name, preset, false)
+    return preset.name
+  } catch (error) {
+    console.error('Failed to install bundled preset:', error)
+    return null
+  }
+}
+
 /** Import a SillyTavern preset file as a NEW active preset. Returns its name. */
 export const importPresetFromFile = (profileId: string, filePath: string): string | null => {
   try {

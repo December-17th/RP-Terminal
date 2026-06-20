@@ -110,9 +110,12 @@ app.whenReady().then(() => {
     if (summary && characterService.hasBundle(summary)) {
       const items = [
         summary.loreEntries && `${summary.loreEntries} lore entries`,
+        summary.lorebooks && `${summary.lorebooks} extra lorebooks`,
         summary.regexScripts && `${summary.regexScripts} regex scripts`,
+        summary.presets && `${summary.presets} presets`,
         summary.scripts && `${summary.scripts} card scripts`,
-        summary.uiWidgets && `${summary.uiWidgets} UI widgets`
+        summary.uiWidgets && `${summary.uiWidgets} UI widgets`,
+        summary.pluginsSkipped && `${summary.pluginsSkipped} plugins (skipped — not yet supported)`
       ].filter(Boolean)
       const { response } = await dialog.showMessageBox(win, {
         type: 'question',

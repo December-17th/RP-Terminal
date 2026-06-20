@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import { useToastStore } from './toastStore'
 import { useRegexStore } from './regexStore'
+import { usePresetStore } from './presetStore'
 
 export interface CharacterCard {
   id: string
@@ -44,11 +45,13 @@ export const useCharacterStore = create<CharacterState>((set) => ({
     const characters = await window.api.getCharacters(profileId)
     set({ characters, activeCharacter: characters.find((c: any) => c.id === res.id) || null })
 
-    // Surface what the one-click import installed (regex/lore/scripts) as a toast.
+    // Surface what the one-click import installed as a toast.
     const s = res.summary
     if (s) {
       const parts = [
         s.regexScripts && `${s.regexScripts} regex`,
+        s.presets && `${s.presets} presets`,
+        s.lorebooks && `${s.lorebooks} lorebooks`,
         s.loreEntries && `${s.loreEntries} lore`,
         s.scripts && `${s.scripts} scripts`
       ].filter(Boolean)
@@ -65,6 +68,7 @@ export const useCharacterStore = create<CharacterState>((set) => ({
         await useRegexStore.getState().load(profileId)
         await useRegexStore.getState().loadScripts(profileId)
       }
+      if (s.presets) await usePresetStore.getState().load(profileId)
     }
   },
   saveCard: async (profileId: string, characterId: string, card: any) => {

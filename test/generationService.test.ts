@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { applyEvent } from '../src/main/services/generationService'
+import { applyEvent, composeAddendum } from '../src/main/services/generationService'
 
 const evt = (path: string, action: string, value: unknown, type = 'state'): any => ({
   type,
@@ -49,5 +49,26 @@ describe('applyEvent (state folding)', () => {
     const vars: any = {}
     applyEvent(vars, evt('a.b.c', 'set', 'x'))
     expect(vars).toEqual({ a: { b: { c: 'x' } } })
+  })
+})
+
+describe('composeAddendum (card agent prompts)', () => {
+  const agent = { prompts: { system: 'World law: be terse.', combat: 'Roll initiative.' } }
+
+  it("applies a card's system prompt in every mode (even FSM off)", () => {
+    expect(composeAddendum(agent, 'explore', false, '')).toBe('World law: be terse.')
+  })
+
+  it('adds the FSM mode addendum + per-mode card prompt only when the FSM is engaged', () => {
+    expect(composeAddendum(agent, 'combat', true, 'MODE: Combat')).toBe(
+      'MODE: Combat\n\nWorld law: be terse.\n\nRoll initiative.'
+    )
+    // FSM off → no mode addendum, no per-mode prompt; just the world system prompt.
+    expect(composeAddendum(agent, 'combat', false, 'MODE: Combat')).toBe('World law: be terse.')
+  })
+
+  it('returns empty when the card has no agent config', () => {
+    expect(composeAddendum(undefined, 'explore', true, '')).toBe('')
+    expect(composeAddendum({}, 'explore', false, '')).toBe('')
   })
 })

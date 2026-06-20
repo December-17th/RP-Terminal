@@ -6,9 +6,11 @@ import { RPTerminalCard, RPTerminalCardSchema, Lorebook } from '../types/charact
 import {
   saveCharacterLorebook,
   deleteCharacterLorebook,
-  normalizeLorebookData
+  normalizeLorebookData,
+  saveLorebookById
 } from './lorebookService'
 import * as regexService from './regexService'
+import { installBundledPreset } from './presetService'
 import { parseStPng } from '../parsers/stPngParser'
 
 const getAvatarsDir = (): string => path.join(getAppDir(), 'avatars')
@@ -76,6 +78,10 @@ export interface ImportSummary {
   loreEntries: number
   scripts: number
   uiWidgets: number
+  presets: number
+  lorebooks: number
+  /** Bundled plugins detected but NOT installed yet (package format/grant flow TBD). */
+  pluginsSkipped: number
 }
 
 export interface ImportResult {
@@ -95,6 +101,20 @@ export const collectBundledRegex = (card: RPTerminalCard): any[] => {
   return [...fromSt, ...fromRpt].filter((r) => r && typeof r === 'object')
 }
 
+/** Bundled chat-completion presets from `rp_terminal.presets[]` (Track S §3). */
+export const collectBundledPresets = (card: RPTerminalCard): any[] => {
+  const rpt: any = card.data.extensions?.rp_terminal || {}
+  return Array.isArray(rpt.presets) ? rpt.presets.filter((p: any) => p && typeof p === 'object') : []
+}
+
+/** Extra bundled lorebooks from `rp_terminal.lorebooks[]` (beyond `character_book`). */
+export const collectBundledLorebooks = (card: RPTerminalCard): any[] => {
+  const rpt: any = card.data.extensions?.rp_terminal || {}
+  return Array.isArray(rpt.lorebooks)
+    ? rpt.lorebooks.filter((b: any) => b && typeof b === 'object')
+    : []
+}
+
 /** Count what a parsed card bundles, for the import confirm + summary toast. */
 export const summarizeCardBundle = (parsed: ParsedCard): ImportSummary => {
   const ext: any = parsed.card.data.extensions || {}
@@ -105,13 +125,21 @@ export const summarizeCardBundle = (parsed: ParsedCard): ImportSummary => {
     regexScripts: collectBundledRegex(parsed.card).length,
     loreEntries: parsed.lorebook?.entries.length || 0,
     scripts: Array.isArray(rpt.scripts) ? rpt.scripts.length : 0,
-    uiWidgets: Array.isArray(rpt.ui_layout) ? rpt.ui_layout.length : 0
+    uiWidgets: Array.isArray(rpt.ui_layout) ? rpt.ui_layout.length : 0,
+    presets: collectBundledPresets(parsed.card).length,
+    lorebooks: collectBundledLorebooks(parsed.card).length,
+    pluginsSkipped: Array.isArray(rpt.plugins) ? rpt.plugins.length : 0
   }
 }
 
 /** True when a card carries enough of a bundle to warrant the install confirm. */
 export const hasBundle = (s: ImportSummary): boolean =>
-  s.isWorldCard || s.regexScripts > 0 || s.scripts > 0 || s.uiWidgets > 0
+  s.isWorldCard ||
+  s.regexScripts > 0 ||
+  s.scripts > 0 ||
+  s.uiWidgets > 0 ||
+  s.presets > 0 ||
+  s.lorebooks > 0
 
 /**
  * Parse a card file (PNG/JSON) into a normalized, **lossless** RPTerminalCard
@@ -196,6 +224,22 @@ export const importCharacterFromFile = (
       if (regexService.saveRegexScript(profileId, script, 'world', newId)) regexScripts++
     }
 
+    // Route bundled chat-completion presets into the preset store (never made active).
+    let presets = 0
+    for (const p of collectBundledPresets(card)) {
+      if (installBundledPreset(profileId, p)) presets++
+    }
+
+    // Route extra bundled lorebooks (beyond character_book) into the lorebook library.
+    let lorebooks = 0
+    for (const lb of collectBundledLorebooks(card)) {
+      const normalized = normalizeLorebookData(lb, lb?.name || 'Bundled Lorebook')
+      if (normalized) {
+        saveLorebookById(profileId, crypto.randomUUID(), normalized)
+        lorebooks++
+      }
+    }
+
     if (path.extname(filePath).toLowerCase() === '.png') {
       ensureDir(getAvatarsDir())
       fs.copyFileSync(filePath, getAvatarPath(newId))
@@ -203,6 +247,8 @@ export const importCharacterFromFile = (
 
     const summary = summarizeCardBundle(parsed)
     summary.regexScripts = regexScripts
+    summary.presets = presets
+    summary.lorebooks = lorebooks
     return { id: newId, summary }
   } catch (error) {
     console.error('Failed to import character:', error)
