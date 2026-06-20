@@ -76,14 +76,13 @@ export const listPlugins = (profileId: string): InstalledPlugin[] => {
       error = `Entry script not found: ${manifest.entry}`
     }
 
-    out.push({
-      id,
-      manifest,
-      enabled: !!st.enabled && !error,
-      grants: st.grants || [],
-      code,
-      error
-    })
+    // An enabled plugin whose granted set no longer covers its manifest's
+    // permissions (e.g. an update — or re-install — added one) needs re-approval:
+    // surface it as off so enabling re-grants the current permissions and remounts
+    // its runtime. This avoids a stale grant silently denying new capabilities.
+    const grants = st.grants || []
+    const enabled = !!st.enabled && !error && manifest.permissions.every((p) => grants.includes(p))
+    out.push({ id, manifest, enabled, grants, code, error })
   }
 
   return out.sort((a, b) => a.manifest.name.localeCompare(b.manifest.name))

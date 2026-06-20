@@ -665,12 +665,12 @@ export default function App() {
 
   // Slash-command autocomplete: while the box holds just "/" + a partial command
   // name (no space yet), show a menu of matching commands above the input.
+  // (Plain consts, not a hook — this code lives after the early `activeProfile`
+  // return, so a `useMemo` here would violate the Rules of Hooks.)
   const slashQueryMatch = actionInput.match(/^\/(\S*)$/)
   const slashQuery = slashQueryMatch ? slashQueryMatch[1].toLowerCase() : null
-  const slashItems = useMemo(
-    () => (slashQuery === null ? [] : listCommands().filter((c) => c.name.startsWith(slashQuery))),
-    [slashQuery]
-  )
+  const slashItems =
+    slashQuery === null ? [] : listCommands().filter((c) => c.name.startsWith(slashQuery))
   const slashOpen = slashQuery !== null && !slashDismissed && slashItems.length > 0
   const slashActive = Math.min(slashIndex, slashItems.length - 1)
 
