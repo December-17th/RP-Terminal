@@ -17,6 +17,7 @@ import { getPromptRules } from './regexService'
 import { loadGlobals, saveGlobals } from './templateService'
 import { streamProvider, DeltaCallback } from './apiService'
 import { parseContent, RPEvent } from '../parsers/contentParser'
+import { parseMvuCommands, applyMvuCommands } from '../parsers/mvuParser'
 import { log } from './logService'
 import { FloorFile } from '../types/chat'
 import { Lorebook, LorebookEntry } from '../types/character'
@@ -204,11 +205,23 @@ export const generate = async (
   // (markdownOnly beautification) is applied at render time, not persisted, so
   // history sent back to the model stays in the model's own output format.
   const parsed = parseContent(raw)
+  // MVU (Track R): parse + apply <UpdateVariable> commands into stat_data, recording
+  // this turn's deltas. Runs after the rpt-event strip; its blocks are stripped too, so
+  // the persisted/display text is clean narrative.
+  const mvu = parseMvuCommands(parsed.text)
 
   // workingVars already holds any template setvar() mutations from this build;
   // apply this turn's rpt-events on top, then persist global vars.
   const variables = workingVars
   for (const evt of parsed.events) applyEvent(variables, evt)
+  if (mvu.commands.length) {
+    if (typeof variables.stat_data !== 'object' || variables.stat_data === null) {
+      variables.stat_data = {}
+    }
+    const deltas = applyMvuCommands(variables.stat_data as Record<string, any>, mvu.commands)
+    variables.delta_data = deltas
+    log('info', `MVU — applied ${mvu.commands.length} command(s) to stat_data`)
+  }
   saveGlobals(profileId, globals)
 
   const now = new Date().toISOString()
@@ -217,7 +230,7 @@ export const generate = async (
     chat_id: chatId,
     timestamp: now,
     user_message: { content: userAction, timestamp: now },
-    response: { content: parsed.text, model: settings.api.model, provider: settings.api.provider },
+    response: { content: mvu.text, model: settings.api.model, provider: settings.api.provider },
     events: parsed.events,
     variables
   }
