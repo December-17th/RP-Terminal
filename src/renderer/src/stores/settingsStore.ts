@@ -19,6 +19,7 @@ export interface Settings {
     font_size: number;
     sidebar_collapsed: boolean;
     history_strip_visible: boolean;
+    show_fps: boolean;
   };
 }
 

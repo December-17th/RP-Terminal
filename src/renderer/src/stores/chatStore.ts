@@ -42,7 +42,28 @@ interface ChatState {
   appendDelta: (delta: string) => void
 }
 
-export const useChatStore = create<ChatState>((set, get) => ({
+export const useChatStore = create<ChatState>((set, get) => {
+  // Coalesce streamed tokens: append to a buffer and flush to state at most once
+  // per animation frame. This avoids an O(n^2) re-render/markdown-parse storm on
+  // long responses (and a backlog freeze when the window is backgrounded).
+  let streamBuffer = ''
+  let rafId: number | null = null
+  const flush = (): void => {
+    rafId = null
+    set({ streamingText: streamBuffer })
+  }
+  const scheduleFlush = (): void => {
+    if (rafId == null) rafId = requestAnimationFrame(flush)
+  }
+  const resetStream = (): void => {
+    streamBuffer = ''
+    if (rafId != null) {
+      cancelAnimationFrame(rafId)
+      rafId = null
+    }
+  }
+
+  return {
   chats: [],
   activeChatId: null,
   floors: [],
@@ -50,7 +71,10 @@ export const useChatStore = create<ChatState>((set, get) => ({
   streamingText: '',
   error: null,
 
-  appendDelta: (delta) => set((state) => ({ streamingText: state.streamingText + delta })),
+  appendDelta: (delta) => {
+    streamBuffer += delta
+    scheduleFlush()
+  },
 
   loadChats: async (profileId) => {
     const chats = await window.api.getChats(profileId)
@@ -75,11 +99,13 @@ export const useChatStore = create<ChatState>((set, get) => ({
     const { activeChatId } = get()
     if (!activeChatId) return
 
+    resetStream()
     set({ isGenerating: true, streamingText: '', error: null })
     try {
       // Main assembles the prompt (card + preset + lorebook + history), streams the
       // provider (deltas arrive via appendDelta), post-processes, persists and returns.
       const newFloor = await window.api.generate(profileId, activeChatId, actionText)
+      resetStream()
       set((state) => ({
         floors: newFloor ? [...state.floors, newFloor] : state.floors,
         isGenerating: false,
@@ -88,6 +114,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
       get().loadChats(profileId) // refresh session previews / sort order
     } catch (err: any) {
       console.error(err)
+      resetStream()
       set({ isGenerating: false, streamingText: '', error: err?.message || 'Generation failed' })
     }
   },
@@ -96,11 +123,13 @@ export const useChatStore = create<ChatState>((set, get) => ({
     const { activeChatId, floors } = get()
     if (!activeChatId || floors.length === 0) return
 
+    resetStream()
     set({ isGenerating: true, streamingText: '', error: null })
     try {
       // Optimistically drop the last floor so the UI shows the re-roll in progress.
       set((state) => ({ floors: state.floors.slice(0, -1) }))
       const newFloor = await window.api.regenerate(profileId, activeChatId)
+      resetStream()
       set((state) => ({
         floors: newFloor ? [...state.floors, newFloor] : state.floors,
         isGenerating: false,
@@ -109,6 +138,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
       get().loadChats(profileId)
     } catch (err: any) {
       console.error(err)
+      resetStream()
       // Reload the persisted floors so the optimistic removal can't desync state.
       const restored = await window.api.getFloors(profileId, activeChatId)
       set({ floors: restored, isGenerating: false, streamingText: '', error: err?.message || 'Regeneration failed' })
@@ -156,4 +186,5 @@ export const useChatStore = create<ChatState>((set, get) => ({
       }
     })
   }
-}))
+  }
+})

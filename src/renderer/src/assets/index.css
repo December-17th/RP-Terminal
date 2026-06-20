@@ -395,6 +395,30 @@ body {
   background-color: var(--rpt-bg-secondary);
   border-radius: 8px;
   border: 1px solid var(--rpt-border);
+  font-size: var(--rpt-chat-font, 16px);
+}
+
+/* Lightweight render for the in-flight streaming response. */
+.streaming-text {
+  white-space: pre-wrap;
+  word-break: break-word;
+  line-height: 1.5;
+}
+
+/* FPS overlay */
+.fps-overlay {
+  position: fixed;
+  bottom: 8px;
+  right: 10px;
+  z-index: 3000;
+  font-family: ui-monospace, Menlo, Consolas, monospace;
+  font-size: 12px;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.6);
+  pointer-events: none;
+  user-select: none;
 }
 
 .user-action {

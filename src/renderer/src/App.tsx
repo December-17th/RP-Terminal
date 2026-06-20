@@ -1,21 +1,22 @@
 import { useEffect, useState, useRef, useMemo } from 'react';
 import { createPortal } from 'react-dom';
+import { useShallow } from 'zustand/react/shallow';
 import { useProfileStore } from './stores/profileStore';
 import { useCharacterStore } from './stores/characterStore';
 import { useChatStore } from './stores/chatStore';
 import { useSettingsStore } from './stores/settingsStore';
 import { usePresetStore } from './stores/presetStore';
-import Markdown from 'react-markdown';
 import { LayoutRenderer } from './components/LayoutRenderer';
 import { LorebookManager } from './components/LorebookManager';
 import { PresetManager } from './components/PresetManager';
 import { LogsPanel } from './components/LogsPanel';
 import { RegexPanel } from './components/RegexPanel';
 import { MessageContent } from './components/MessageContent';
+import { FpsOverlay } from './components/FpsOverlay';
 import { useLogStore } from './stores/logStore';
 import { useRegexStore } from './stores/regexStore';
 
-type PanelTab = 'world' | 'sessions' | 'preset' | 'lorebook' | 'regex' | 'api' | 'logs';
+type PanelTab = 'world' | 'sessions' | 'preset' | 'lorebook' | 'regex' | 'api' | 'settings' | 'logs';
 
 interface MenuItem { label: string; onClick: () => void; danger?: boolean; }
 
@@ -49,6 +50,23 @@ function ContextMenu({ x, y, items, onClose }: { x: number; y: number; items: Me
       ))}
     </div>,
     document.body
+  );
+}
+
+/**
+ * Isolated streaming view — subscribes only to streamingText so the high-frequency
+ * per-frame updates re-render just this tiny node, not the whole chat (which would
+ * reconcile every prior message + card iframe each frame and tank the FPS).
+ */
+function StreamingView({ pendingUserMsg }: { pendingUserMsg: string }) {
+  const streamingText = useChatStore(s => s.streamingText);
+  return (
+    <div className="floor-block">
+      {pendingUserMsg && <div className="user-action">&gt; {pendingUserMsg}</div>}
+      {streamingText
+        ? <div className="streaming-text">{streamingText}</div>
+        : <em className="generating-pulse">Generating…</em>}
+    </div>
   );
 }
 
@@ -90,7 +108,25 @@ export default function App() {
   const { profiles, activeProfile, loadProfiles, createProfile } = useProfileStore();
   const { settings, loadSettings, updateSettings } = useSettingsStore();
   const { characters, activeCharacter, loadCharacters, setActiveCharacter, importMockCharacter, deleteCharacter } = useCharacterStore();
-  const { chats, activeChatId, floors, isGenerating, streamingText, error, loadChats, createChat, setActiveChat, sendAction, regenerate, stopGeneration, deleteChat, editFloor } = useChatStore();
+  // Select everything EXCEPT streamingText, so App doesn't re-render per streamed
+  // frame (that high-frequency state lives in <StreamingView/>).
+  const { chats, activeChatId, floors, isGenerating, error, loadChats, createChat, setActiveChat, sendAction, regenerate, stopGeneration, deleteChat, editFloor } = useChatStore(
+    useShallow((s) => ({
+      chats: s.chats,
+      activeChatId: s.activeChatId,
+      floors: s.floors,
+      isGenerating: s.isGenerating,
+      error: s.error,
+      loadChats: s.loadChats,
+      createChat: s.createChat,
+      setActiveChat: s.setActiveChat,
+      sendAction: s.sendAction,
+      regenerate: s.regenerate,
+      stopGeneration: s.stopGeneration,
+      deleteChat: s.deleteChat,
+      editFloor: s.editFloor
+    }))
+  );
 
   const activePresetName = usePresetStore((s) => s.preset?.name);
   const regexRules = useRegexStore((s) => s.rules);
@@ -146,6 +182,11 @@ export default function App() {
       messagesEndRef.current.scrollIntoView({ behavior: 'smooth' });
     }
   }, [floors]);
+
+  // Apply the chat font size preference to the message area.
+  useEffect(() => {
+    document.documentElement.style.setProperty('--rpt-chat-font', `${settings?.ui?.font_size ?? 16}px`);
+  }, [settings?.ui?.font_size]);
 
   if (!activeProfile) {
     return (
@@ -339,6 +380,29 @@ export default function App() {
       case 'regex':
         return <RegexPanel profileId={activeProfile.id} />;
 
+      case 'settings':
+        return (
+          <div className="panel">
+            <div className="panel-header"><h3>Settings</h3></div>
+            <div className="panel-body">
+              <label className="field-label">Chat Font Size (px)</label>
+              <input type="number" min={10} max={28}
+                value={settings?.ui?.font_size ?? 16}
+                onChange={e => updateSettings(activeProfile.id, { ui: { ...settings!.ui, font_size: Number(e.target.value) || 16 } })} />
+
+              <label className="entry-toggles" style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 18 }}>
+                <input type="checkbox" checked={settings?.ui?.show_fps ?? false}
+                  onChange={e => updateSettings(activeProfile.id, { ui: { ...settings!.ui, show_fps: e.target.checked } })} />
+                Show FPS counter (bottom-right)
+              </label>
+
+              <div style={{ fontSize: '0.78em', color: 'var(--rpt-text-secondary)', marginTop: 18 }}>
+                UI preferences. API keys, persona and context budget live in the API tab.
+              </div>
+            </div>
+          </div>
+        );
+
       case 'logs':
         return <LogsPanel />;
     }
@@ -355,6 +419,7 @@ export default function App() {
           {tab('lorebook', 'Lorebook', !activeCharacter)}
           {tab('regex', 'Regex')}
           {tab('api', 'API')}
+          {tab('settings', 'Settings')}
           {tab('logs', 'Logs')}
         </div>
         <span className="nav-status">
@@ -401,16 +466,7 @@ export default function App() {
                     </div>
                   );
                 })}
-                {isGenerating && (
-                  <div className="floor-block">
-                    {pendingUserMsg && <div className="user-action">&gt; {pendingUserMsg}</div>}
-                    <div>
-                      {streamingText
-                        ? <Markdown>{streamingText}</Markdown>
-                        : <em className="generating-pulse">Generating…</em>}
-                    </div>
-                  </div>
-                )}
+                {isGenerating && <StreamingView pendingUserMsg={pendingUserMsg} />}
                 {error && (
                   <div className="floor-block" style={{ borderColor: '#e74c3c', color: '#e74c3c' }}>
                     Error: {error}
@@ -494,6 +550,8 @@ export default function App() {
           )}
         </div>
       </div>
+
+      {settings?.ui?.show_fps && <FpsOverlay />}
 
       {menu && (
         <ContextMenu

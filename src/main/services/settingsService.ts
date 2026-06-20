@@ -22,7 +22,8 @@ export const getDefaultSettings = (): Settings => ({
     theme: 'dark',
     font_size: 16,
     sidebar_collapsed: false,
-    history_strip_visible: true
+    history_strip_visible: true,
+    show_fps: false
   }
 })
 

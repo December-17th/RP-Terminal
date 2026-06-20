@@ -88,18 +88,16 @@ Remaining in Phase A: message swipes (edit is done). Phase A is otherwise comple
 - ⬜ Virtualize the floor list (`react-virtuoso` already a dep).
 - ⬜ Remove dead code (`Modal.tsx`, unused `lorebooks` dir); unify shared types.
 
-## UX / polish (planned)  ⬜
+## UX / polish
 
-- ⬜ **FPS / performance overlay** — a small, toggleable counter pinned to the
-  bottom-right corner showing render FPS (and optionally last-generation latency /
-  token estimate), for spotting UI jank from long histories or heavy card iframes.
-  Off by default; toggled from the Settings tab. Implementation: a fixed-position
-  overlay component driven by `requestAnimationFrame` frame timing.
-- ⬜ **Settings tab (left panel)** — a dedicated **Settings** left-panel tab that
-  consolidates app/UI settings now scattered across the API tab: theme, font size,
-  default context budget, FPS-overlay toggle, "auto-switch to Sessions on World
-  select" behavior, and "recommended settings from card" auto-apply (vNext §
-  Recommended Settings). Keep provider keys in the API tab; move UI prefs here.
+- ✅ **FPS / performance overlay** — toggleable bottom-right counter (`FpsOverlay`,
+  rAF frame timing, color-coded), off by default, toggled from Settings.
+- ✅ **Settings tab (left panel)** — dedicated tab with chat font size + FPS toggle
+  (provider keys/persona/context stay in API). ⬜ Future: theme, auto-switch
+  behavior, card "recommended settings" auto-apply (vNext).
+- ✅ **Streaming perf fix** — stream deltas are coalesced to one render per rAF frame
+  and the in-flight partial renders as plain text (markdown/HTML only on finalize),
+  fixing the O(n²) re-render freeze (and the lock-up when backgrounded mid-stream).
 
 ## Licensing
 
