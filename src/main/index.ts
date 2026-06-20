@@ -14,6 +14,7 @@ import * as generationService from './services/generationService'
 import * as logService from './services/logService'
 import * as migrationService from './services/migrationService'
 import * as regexService from './services/regexService'
+import * as templateService from './services/templateService'
 
 function createWindow(): void {
   // Create the browser window.
@@ -68,6 +69,9 @@ app.whenReady().then(() => {
   } catch (err: any) {
     logService.log('error', 'Startup DB migration failed', err?.message || String(err))
   }
+
+  // Initialize the sandboxed template engine (non-blocking for the rest of startup).
+  templateService.initTemplates().then(() => logService.log('info', 'Template engine ready'))
 
   // Register IPC Handlers
   ipcMain.handle('get-profiles', () => profileService.getProfiles())

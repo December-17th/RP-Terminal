@@ -3,6 +3,7 @@ import { Preset } from '../types/preset'
 import { FloorFile } from '../types/chat'
 import { Lorebook } from '../types/character'
 import { matchEntries } from './lorebookService'
+import { evalTemplate, TemplateContext } from './templateService'
 
 export interface ChatMessage {
   role: 'system' | 'user' | 'assistant'
@@ -65,7 +66,11 @@ export interface BuildPromptArgs {
   floors: FloorFile[]
   userAction: string
   userName?: string
+  /** ST-Prompt-Template context; when present, authored content is run through the engine. */
+  template?: TemplateContext
 }
+
+type Renderer = (text: string) => string
 
 /**
  * Expand the handful of macros we support and strip ST-Prompt-Template control
@@ -81,12 +86,12 @@ const expandMacros = (text: string, charName: string, userName: string): string 
     .trim()
 }
 
-const buildCharDescription = (card: RPTerminalCard, charName: string, userName: string): string => {
+const buildCharDescription = (card: RPTerminalCard, charName: string, render: Renderer): string => {
   const d = card.data
   const parts: string[] = [`Name: ${charName}`]
-  if (d.description) parts.push(`Description: ${expandMacros(d.description, charName, userName)}`)
-  if (d.personality) parts.push(`Personality: ${expandMacros(d.personality, charName, userName)}`)
-  if (d.scenario) parts.push(`Scenario: ${expandMacros(d.scenario, charName, userName)}`)
+  if (d.description) parts.push(`Description: ${render(d.description)}`)
+  if (d.personality) parts.push(`Personality: ${render(d.personality)}`)
+  if (d.scenario) parts.push(`Scenario: ${render(d.scenario)}`)
   return parts.join('\n')
 }
 
@@ -132,12 +137,18 @@ export const buildPrompt = (args: BuildPromptArgs): ChatMessage[] => {
   const charName = card.data.name || 'Character'
   const userName = args.userName || 'User'
 
+  // Authored content (system/char/lore) runs through the ST-Prompt-Template engine;
+  // history and the user action only get {{char}}/{{user}} macros (not templated).
+  const render: Renderer = args.template
+    ? (t) => evalTemplate(expandMacros(t, charName, userName), args.template as TemplateContext)
+    : (t) => expandMacros(t, charName, userName)
+
   // Lorebook scan over the last few turns plus the pending action.
   const scanText = [...floors.slice(-3).flatMap((f) => [f.user_message.content, f.response.content]), userAction]
     .filter(Boolean)
     .join('\n')
   const worldInfo = matchEntries(lorebook, scanText)
-    .map((e) => expandMacros(e.content, charName, userName))
+    .map((e) => render(e.content))
     .filter(Boolean)
     .join('\n\n')
 
@@ -150,11 +161,11 @@ export const buildPrompt = (args: BuildPromptArgs): ChatMessage[] => {
 
     switch (block.marker) {
       case 'char_description': {
-        messages.push({ role: block.role, content: buildCharDescription(card, charName, userName) })
+        messages.push({ role: block.role, content: buildCharDescription(card, charName, render) })
         break
       }
       case 'mes_example': {
-        const ex = expandMacros(card.data.mes_example, charName, userName)
+        const ex = render(card.data.mes_example)
         if (ex) messages.push({ role: block.role, content: `Example dialogue:\n${ex}` })
         break
       }
@@ -169,12 +180,12 @@ export const buildPrompt = (args: BuildPromptArgs): ChatMessage[] => {
         break
       }
       case 'post_history': {
-        const ph = expandMacros(card.data.post_history_instructions, charName, userName)
+        const ph = render(card.data.post_history_instructions)
         if (ph) messages.push({ role: block.role, content: ph })
         break
       }
       default: {
-        const content = expandMacros(block.content, charName, userName)
+        const content = render(block.content)
         if (content) messages.push({ role: block.role, content })
       }
     }

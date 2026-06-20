@@ -60,8 +60,16 @@ Remaining in Phase A: message swipes (edit is done). Phase A is otherwise comple
 
 ## Phase C — ST-Prompt-Template + advanced preset/lorebook (P1)  ⬜
 
-- ⬜ **C1. EJS-style template engine** — `getvar`/`setvar`/`getwi`/`define` bound to
-  `floor.variables`; integrate into `promptBuilder` (replaces today's strip-only stub).
+- ✅ **C1. ST-Prompt-Template engine** — EJS-style `<% %>`/`<%- %>`/`<%= %>` compiled to
+  JS and run in a **quickjs-emscripten WASM sandbox** (fully isolated from Node/FS —
+  verified the classic vm escape returns `undefined`). Helpers `getvar/setvar/incvar/
+  decvar/delvar` (+ local/global aliases) bound to chat vars; `variables`, `userName`,
+  `charName`, `lastUserMessage/lastCharMessage` constants. Applied to authored content
+  (system/char/lore/literal blocks) in `promptBuilder`; chat-var mutations thread into
+  the new floor, global vars persist per profile (`template-globals.json`). Fail-safe:
+  any error strips the tags so generation never breaks.
+  - ⬜ Remaining (long tail): `getwi/getchar/getpreset/getqr`, message accessors,
+    `define`, lodash/faker, prompt/regex injection — not yet bridged.
 - ⬜ **C2. Preset fidelity** — depth-injected prompts, more markers, per-prompt injection
   position; bind preset params ↔ provider request.
 - ⬜ **C3. Lorebook advanced** — insertion position/depth, probability, recursion,
@@ -79,6 +87,30 @@ Remaining in Phase A: message swipes (edit is done). Phase A is otherwise comple
   matching, event folding).
 - ⬜ Virtualize the floor list (`react-virtuoso` already a dep).
 - ⬜ Remove dead code (`Modal.tsx`, unused `lorebooks` dir); unify shared types.
+
+## UX / polish (planned)  ⬜
+
+- ⬜ **FPS / performance overlay** — a small, toggleable counter pinned to the
+  bottom-right corner showing render FPS (and optionally last-generation latency /
+  token estimate), for spotting UI jank from long histories or heavy card iframes.
+  Off by default; toggled from the Settings tab. Implementation: a fixed-position
+  overlay component driven by `requestAnimationFrame` frame timing.
+- ⬜ **Settings tab (left panel)** — a dedicated **Settings** left-panel tab that
+  consolidates app/UI settings now scattered across the API tab: theme, font size,
+  default context budget, FPS-overlay toggle, "auto-switch to Sessions on World
+  select" behavior, and "recommended settings from card" auto-apply (vNext §
+  Recommended Settings). Keep provider keys in the API tab; move UI prefs here.
+
+## Licensing
+
+- **License: undecided** (tentatively leaning AGPL-3.0). No `LICENSE` file or
+  `package.json` `license` field set yet — pending the owner's decision.
+- Provenance is recorded in `CLAUDE.md` → *Licensing & Attribution*: no third-party
+  source is copied; the template engine is a clean-room reimplementation of
+  ST-Prompt-Template (AGPL-3.0), and we are format-compatible with SillyTavern
+  (AGPL-3.0) without using its code — so neither binds the license choice.
+- Before release: choose a license, add the `LICENSE` file + `package.json` field, and
+  run a dependency license audit (all current runtime deps are permissive — MIT/Apache/MPL).
 
 ---
 

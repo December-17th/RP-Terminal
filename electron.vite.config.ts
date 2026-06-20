@@ -6,8 +6,8 @@ export default defineConfig({
   main: {
     build: {
       rollupOptions: {
-        // Native module: leave as a runtime require, don't bundle the .node binary.
-        external: ['better-sqlite3']
+        // Native/WASM modules: resolve at runtime, don't bundle their binaries.
+        external: ['better-sqlite3', 'quickjs-emscripten', '@jitl/quickjs-wasmfile-release-sync']
       }
     }
   },

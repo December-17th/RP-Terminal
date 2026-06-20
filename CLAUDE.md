@@ -157,6 +157,41 @@ Electron via `electron-builder install-app-deps`; packaging will need asar-unpac
 
 ---
 
+## Licensing & Attribution
+
+**License: undecided (tentatively leaning AGPL-3.0).** No `LICENSE` file or
+`package.json` `license` field is set yet — don't assert a license until the owner
+decides. Regardless of the final choice, record code provenance here so the decision
+stays well-informed.
+
+**No third-party source has been copied into this repo.** Everything is original
+code; external projects are used only as (a) npm dependencies, or (b) data-format
+compatibility targets. Specifics:
+
+- **ST-Prompt-Template** (github.com/zonde306/ST-Prompt-Template, **AGPL-3.0**) — the
+  templating engine in `src/main/services/templateService.ts` is a **clean-room
+  reimplementation** of its EJS syntax + `getvar/setvar/…` helper API. No source was
+  copied; it was written from the published docs. (Upstream is AGPL-3.0, which is
+  compatible with our AGPL-3.0 either way.)
+- **SillyTavern** (**AGPL-3.0**) — we are **format-compatible** with ST: we read its
+  character cards (v2/v3), world-info/lorebooks, regex scripts, and chat-completion
+  presets. These are file-format parsers (`src/main/parsers/*`) reading ST's JSON; **no
+  SillyTavern code is used**.
+- **Runtime dependencies** (all permissive, compatible with bundling into an AGPL work):
+  `electron`, `react`/`react-dom`, `zustand`, `zod`, `uuid`, `react-markdown`,
+  `remark-gfm`, `rehype-raw` (MIT); `better-sqlite3` (MIT); `quickjs-emscripten` + QuickJS
+  (MIT); `dompurify` (Apache-2.0 / MPL-2.0); `react-virtuoso` (MIT). Dev tooling
+  (`electron-vite`, `electron-builder`, `vite`, `typescript`, `eslint`, `prettier`) is MIT.
+- The project was scaffolded from the **electron-vite** React-TS template (MIT); some
+  boilerplate may remain (e.g. `assets/main.css`, `Versions.tsx`).
+
+**Before release (once the license is chosen):** add the `LICENSE` file, set
+`package.json` `license`, add per-file SPDX headers if desired, and run a dependency
+license audit (e.g. `license-checker`). If AGPL-3.0 is chosen, all current deps are
+compatible (permissive); if a more permissive license is chosen instead, note that
+ST-Prompt-Template/SillyTavern are AGPL-3.0 — but since no code from them is used
+(clean-room engine + format parsers only), that does not bind this project.
+
 ## Roadmap & Current Focus
 
 Full plan with status markers lives in [ROADMAP.md](ROADMAP.md). Synthesis:

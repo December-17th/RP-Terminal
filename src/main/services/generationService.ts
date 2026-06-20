@@ -5,6 +5,7 @@ import { getCharacterLorebook } from './lorebookService'
 import { getChat, appendFloor, truncateFloors } from './chatService'
 import { getAllFloors, getFloor } from './floorService'
 import { buildPrompt, fitToBudget } from './promptBuilder'
+import { loadGlobals, saveGlobals } from './templateService'
 import { streamProvider, DeltaCallback } from './apiService'
 import { parseContent, RPEvent } from '../parsers/contentParser'
 import { log } from './logService'
@@ -60,13 +61,30 @@ export const generate = async (
   const lorebook = getCharacterLorebook(profileId, chat.character_id)
   const floors = getAllFloors(profileId, chatId, chat.floor_count)
 
+  // Seed the working variables from the latest floor; ST-Prompt-Template code in
+  // authored content (getvar/setvar/…) reads and mutates these during the build.
+  const lastFloor = floors[floors.length - 1]
+  const workingVars: Record<string, any> = JSON.parse(JSON.stringify(lastFloor?.variables ?? {}))
+  const globals = loadGlobals(profileId)
+  const userName = settings.persona?.name || 'User'
+
   const built = buildPrompt({
     card,
     preset,
     lorebook,
     floors,
     userAction,
-    userName: settings.persona?.name || 'User'
+    userName,
+    template: {
+      vars: workingVars,
+      globals,
+      constants: {
+        userName,
+        charName: card.data.name || 'Character',
+        lastUserMessage: userAction,
+        lastCharMessage: lastFloor?.response.content || ''
+      }
+    }
   })
 
   // Trim oldest history to stay under the configured context budget.
@@ -113,10 +131,11 @@ export const generate = async (
   // history sent back to the model stays in the model's own output format.
   const parsed = parseContent(raw)
 
-  // Carry forward the latest variables and apply this turn's events.
-  const prevVars = floors.length > 0 ? floors[floors.length - 1].variables : {}
-  const variables: Record<string, any> = JSON.parse(JSON.stringify(prevVars))
+  // workingVars already holds any template setvar() mutations from this build;
+  // apply this turn's rpt-events on top, then persist global vars.
+  const variables = workingVars
   for (const evt of parsed.events) applyEvent(variables, evt)
+  saveGlobals(profileId, globals)
 
   const now = new Date().toISOString()
   const floor: FloorFile = {
