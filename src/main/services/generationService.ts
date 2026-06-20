@@ -1,8 +1,8 @@
 import { getSettings } from './settingsService'
 import { getActivePreset } from './presetService'
 import { getCharacter } from './characterService'
-import { getCharacterLorebook } from './lorebookService'
-import { getChat, appendFloor, truncateFloors } from './chatService'
+import { getLorebookById } from './lorebookService'
+import { getChat, getChatLorebookIds, appendFloor, truncateFloors } from './chatService'
 import { getAllFloors, getFloor } from './floorService'
 import { buildPrompt, fitToBudget } from './promptBuilder'
 import { loadGlobals, saveGlobals } from './templateService'
@@ -10,6 +10,7 @@ import { streamProvider, DeltaCallback } from './apiService'
 import { parseContent, RPEvent } from '../parsers/contentParser'
 import { log } from './logService'
 import { FloorFile } from '../types/chat'
+import { Lorebook } from '../types/character'
 
 /** Apply a single rpt-event to a mutable variables object (nested path set/add/remove). */
 const applyEvent = (vars: Record<string, any>, evt: RPEvent): void => {
@@ -58,7 +59,12 @@ export const generate = async (
 
   const settings = getSettings(profileId)
   const preset = getActivePreset(profileId)
-  const lorebook = getCharacterLorebook(profileId, chat.character_id)
+  // A session injects all its selected lorebooks; with none chosen it defaults to
+  // the character's own lorebook (id == characterId), preserving prior behavior.
+  const lorebookIds = getChatLorebookIds(profileId, chatId) ?? [chat.character_id]
+  const lorebooks = lorebookIds
+    .map((id) => getLorebookById(profileId, id))
+    .filter((lb): lb is Lorebook => lb !== null)
   const floors = getAllFloors(profileId, chatId, chat.floor_count)
 
   // Seed the working variables from the latest floor; ST-Prompt-Template code in
@@ -71,10 +77,15 @@ export const generate = async (
   const built = buildPrompt({
     card,
     preset,
-    lorebook,
+    lorebooks,
     floors,
     userAction,
     userName,
+    persona: {
+      description: settings.persona?.description || '',
+      inject: settings.persona?.inject !== false,
+      depth: settings.persona?.depth ?? null
+    },
     template: {
       vars: workingVars,
       globals,

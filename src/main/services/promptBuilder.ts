@@ -2,7 +2,7 @@ import { RPTerminalCard } from '../types/character'
 import { Preset } from '../types/preset'
 import { FloorFile } from '../types/chat'
 import { Lorebook } from '../types/character'
-import { matchEntries } from './lorebookService'
+import { matchAcross } from './lorebookService'
 import { evalTemplate, TemplateContext } from './templateService'
 
 export interface ChatMessage {
@@ -59,13 +59,22 @@ export const fitToBudget = (
   return { messages: [...head, ...convo], dropped }
 }
 
+export interface PersonaArgs {
+  description: string
+  inject: boolean
+  /** null = inject at the top (before history); a number = depth from the bottom. */
+  depth: number | null
+}
+
 export interface BuildPromptArgs {
   card: RPTerminalCard
   preset: Preset
-  lorebook: Lorebook | null
+  /** All lorebooks active for this session (matched + merged together). */
+  lorebooks: Lorebook[]
   floors: FloorFile[]
   userAction: string
   userName?: string
+  persona?: PersonaArgs
   /** ST-Prompt-Template context; when present, authored content is run through the engine. */
   template?: TemplateContext
 }
@@ -77,11 +86,17 @@ type Renderer = (text: string) => string
  * blocks (`<% ... %>`). A real EJS-style template engine is a planned follow-up;
  * until then we strip the syntax so it never leaks into the prompt.
  */
-const expandMacros = (text: string, charName: string, userName: string): string => {
+const expandMacros = (
+  text: string,
+  charName: string,
+  userName: string,
+  personaDesc = ''
+): string => {
   if (!text) return ''
   return text
     .replace(/\{\{char\}\}/gi, charName)
     .replace(/\{\{user\}\}/gi, userName)
+    .replace(/\{\{persona\}\}/gi, personaDesc)
     .replace(/<%[\s\S]*?%>/g, '')
     .trim()
 }
@@ -100,24 +115,53 @@ const buildHistory = (
   floors: FloorFile[],
   userAction: string,
   charName: string,
-  userName: string
+  userName: string,
+  personaDesc: string
 ): ChatMessage[] => {
   const msgs: ChatMessage[] = []
   for (const f of floors) {
     if (f.user_message.content) {
-      msgs.push({ role: 'user', content: expandMacros(f.user_message.content, charName, userName) })
+      msgs.push({
+        role: 'user',
+        content: expandMacros(f.user_message.content, charName, userName, personaDesc)
+      })
     }
     if (f.response.content) {
       msgs.push({
         role: 'assistant',
-        content: expandMacros(f.response.content, charName, userName)
+        content: expandMacros(f.response.content, charName, userName, personaDesc)
       })
     }
   }
   if (userAction) {
-    msgs.push({ role: 'user', content: expandMacros(userAction, charName, userName) })
+    msgs.push({ role: 'user', content: expandMacros(userAction, charName, userName, personaDesc) })
   }
   return msgs
+}
+
+/**
+ * Splice depth-positioned system blocks into an assembled message array. `depth`
+ * counts messages up from the bottom; the trailing user action always stays last
+ * (so nothing volatile lands after it). Insertions are clamped into the
+ * conversation region (never into the cached system prefix), and applied bottom-up
+ * so earlier inserts don't shift the targets of later ones.
+ */
+const applyDepthInjections = (
+  messages: ChatMessage[],
+  items: Array<{ depth: number; content: string }>,
+  convoStart: number,
+  hasTrailingUser: boolean
+): void => {
+  const base = messages.length
+  const maxIdx = hasTrailingUser ? base - 1 : base
+  const start = convoStart === -1 ? base : convoStart
+  const planned = items
+    .map((it) => ({
+      idx: Math.max(start, Math.min(base - it.depth, maxIdx)),
+      content: it.content
+    }))
+    .sort((a, b) => b.idx - a.idx)
+  for (const p of planned) messages.splice(p.idx, 0, { role: 'system', content: p.content })
 }
 
 /**
@@ -136,24 +180,37 @@ const buildHistory = (
  * appended after everything else so nothing volatile sits inside the cached prefix.
  */
 export const buildPrompt = (args: BuildPromptArgs): ChatMessage[] => {
-  const { card, preset, lorebook, floors, userAction } = args
+  const { card, preset, lorebooks, floors, userAction } = args
   const charName = card.data.name || 'Character'
   const userName = args.userName || 'User'
 
-  // Authored content (system/char/lore) runs through the ST-Prompt-Template engine;
-  // history and the user action only get {{char}}/{{user}} macros (not templated).
-  const render: Renderer = args.template
-    ? (t) => evalTemplate(expandMacros(t, charName, userName), args.template as TemplateContext)
-    : (t) => expandMacros(t, charName, userName)
+  const personaInject = !!args.persona?.inject && !!args.persona?.description?.trim()
+  // {{persona}} expands to the description in authored content (but not inside the
+  // persona block itself — that's rendered with an empty persona to avoid recursion).
+  const personaMacro = personaInject ? args.persona!.description : ''
 
-  // Lorebook scan over the last few turns plus the pending action.
+  const makeRender =
+    (pd: string): Renderer =>
+    (t) =>
+      args.template
+        ? evalTemplate(expandMacros(t, charName, userName, pd), args.template as TemplateContext)
+        : expandMacros(t, charName, userName, pd)
+  const render = makeRender(personaMacro)
+  const personaContent = personaInject ? makeRender('')(args.persona!.description) : ''
+
+  // Lorebook scan over the last few turns plus the pending action, across all
+  // active lorebooks. Entries with a numeric insertion_depth are injected into the
+  // history at that depth; the rest go into the top-level World Info block.
   const scanText = [
     ...floors.slice(-3).flatMap((f) => [f.user_message.content, f.response.content]),
     userAction
   ]
     .filter(Boolean)
     .join('\n')
-  const worldInfo = matchEntries(lorebook, scanText)
+  const matched = matchAcross(lorebooks, scanText)
+  const topEntries = matched.filter((e) => e.insertion_depth == null)
+  const depthEntries = matched.filter((e) => e.insertion_depth != null)
+  const worldInfo = topEntries
     .map((e) => render(e.content))
     .filter(Boolean)
     .join('\n\n')
@@ -181,7 +238,7 @@ export const buildPrompt = (args: BuildPromptArgs): ChatMessage[] => {
         break
       }
       case 'chat_history': {
-        messages.push(...buildHistory(floors, userAction, charName, userName))
+        messages.push(...buildHistory(floors, userAction, charName, userName, personaMacro))
         historyEmitted = true
         break
       }
@@ -210,7 +267,41 @@ export const buildPrompt = (args: BuildPromptArgs): ChatMessage[] => {
   // Safety net: a preset with no chat_history marker would otherwise send no
   // conversation at all. Append history + action so generation still works.
   if (!historyEmitted) {
-    messages.push(...buildHistory(floors, userAction, charName, userName))
+    messages.push(...buildHistory(floors, userAction, charName, userName, personaMacro))
+  }
+
+  // Persona description at the top: a stable, cache-friendly system block placed
+  // just before the conversation begins.
+  if (personaContent && (args.persona?.depth == null)) {
+    const convoStart = messages.findIndex((m) => m.role !== 'system')
+    const pm: ChatMessage = { role: 'system', content: `[${userName}'s Persona]\n${personaContent}` }
+    if (convoStart === -1) messages.push(pm)
+    else messages.splice(convoStart, 0, pm)
+  }
+
+  // Depth-positioned injections: lorebook entries with a numeric depth, plus the
+  // persona block if it was given a depth instead of top placement.
+  const byDepth = new Map<number, string[]>()
+  for (const e of depthEntries) {
+    const c = render(e.content)
+    if (!c) continue
+    const d = e.insertion_depth as number
+    if (!byDepth.has(d)) byDepth.set(d, [])
+    byDepth.get(d)!.push(c)
+  }
+  const depthItems = [...byDepth.entries()].map(([depth, contents]) => ({
+    depth,
+    content: `World Info:\n${contents.join('\n\n')}`
+  }))
+  if (personaContent && args.persona?.depth != null) {
+    depthItems.push({
+      depth: args.persona.depth,
+      content: `[${userName}'s Persona]\n${personaContent}`
+    })
+  }
+  if (depthItems.length) {
+    const convoStart = messages.findIndex((m) => m.role !== 'system')
+    applyDepthInjections(messages, depthItems, convoStart, userAction !== '')
   }
 
   return messages

@@ -6,6 +6,8 @@ export interface LorebookEntry {
   content: string
   enabled: boolean
   insertion_order: number
+  /** null = inject at the top (World Info block); a number = depth from the bottom of chat. */
+  insertion_depth: number | null
   case_sensitive: boolean
   constant: boolean
   selective: boolean
@@ -17,12 +19,18 @@ export interface Lorebook {
   entries: LorebookEntry[]
 }
 
+export interface LorebookSummary {
+  id: string
+  name: string
+}
+
 const emptyEntry = (): LorebookEntry => ({
   keys: [],
   secondary_keys: [],
   content: '',
   enabled: true,
   insertion_order: 100,
+  insertion_depth: null,
   case_sensitive: false,
   constant: false,
   selective: false,
@@ -30,10 +38,23 @@ const emptyEntry = (): LorebookEntry => ({
 })
 
 interface LorebookState {
+  library: LorebookSummary[]
+  /** Which lorebook is open in the editor (id; equals characterId for a card's own book). */
+  currentId: string | null
   lorebook: Lorebook | null
   dirty: boolean
-  load: (profileId: string, charId: string) => Promise<void>
-  save: (profileId: string, charId: string) => Promise<void>
+  /** Active lorebook ids for the loaded session; null = default (the character's own book). */
+  sessionIds: string[] | null
+
+  loadLibrary: (profileId: string) => Promise<void>
+  open: (profileId: string, id: string) => Promise<void>
+  createNew: (profileId: string) => Promise<void>
+  removeCurrent: (profileId: string) => Promise<void>
+  save: (profileId: string) => Promise<void>
+
+  loadSession: (profileId: string, chatId: string) => Promise<void>
+  setSession: (profileId: string, chatId: string, ids: string[]) => Promise<void>
+
   setName: (name: string) => void
   addEntry: () => void
   updateEntry: (index: number, patch: Partial<LorebookEntry>) => void
@@ -52,19 +73,52 @@ const mutate = (
 }
 
 export const useLorebookStore = create<LorebookState>((set, get) => ({
+  library: [],
+  currentId: null,
   lorebook: null,
   dirty: false,
+  sessionIds: null,
 
-  load: async (profileId, charId) => {
-    const lorebook = await window.api.getLorebook(profileId, charId)
-    set({ lorebook: lorebook ?? { name: 'New Lorebook', entries: [] }, dirty: false })
+  loadLibrary: async (profileId) => {
+    const library = await window.api.listLorebooks(profileId)
+    set({ library })
   },
 
-  save: async (profileId, charId) => {
-    const { lorebook } = get()
-    if (!lorebook) return
-    await window.api.saveLorebook(profileId, charId, lorebook)
+  open: async (profileId, id) => {
+    const lorebook = await window.api.getLorebook(profileId, id)
+    set({ currentId: id, lorebook: lorebook ?? { name: 'New Lorebook', entries: [] }, dirty: false })
+  },
+
+  createNew: async (profileId) => {
+    const summary = await window.api.createLorebook(profileId, 'New Lorebook')
+    await get().loadLibrary(profileId)
+    await get().open(profileId, summary.id)
+  },
+
+  removeCurrent: async (profileId) => {
+    const { currentId } = get()
+    if (!currentId) return
+    await window.api.deleteLorebook(profileId, currentId)
+    await get().loadLibrary(profileId)
+    set({ currentId: null, lorebook: null, dirty: false })
+  },
+
+  save: async (profileId) => {
+    const { lorebook, currentId } = get()
+    if (!lorebook || !currentId) return
+    await window.api.saveLorebook(profileId, currentId, lorebook)
+    await get().loadLibrary(profileId) // name may have changed
     set({ dirty: false })
+  },
+
+  loadSession: async (profileId, chatId) => {
+    const sessionIds = await window.api.getChatLorebooks(profileId, chatId)
+    set({ sessionIds })
+  },
+
+  setSession: async (profileId, chatId, ids) => {
+    await window.api.setChatLorebooks(profileId, chatId, ids)
+    set({ sessionIds: ids })
   },
 
   setName: (name) => mutate(set, (lb) => ({ ...lb, name })),

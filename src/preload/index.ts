@@ -49,10 +49,20 @@ const api = {
   deletePreset: (profileId: string, presetId: string) =>
     ipcRenderer.invoke('delete-preset', profileId, presetId),
   importPresetDialog: (profileId: string) => ipcRenderer.invoke('import-preset-dialog', profileId),
-  getLorebook: (profileId: string, charId: string) =>
-    ipcRenderer.invoke('get-lorebook', profileId, charId),
-  saveLorebook: (profileId: string, charId: string, lorebook: any) =>
-    ipcRenderer.invoke('save-lorebook', profileId, charId, lorebook),
+  // Lorebook library (id-keyed; a character's own lorebook has id == characterId)
+  listLorebooks: (profileId: string) => ipcRenderer.invoke('list-lorebooks', profileId),
+  getLorebook: (profileId: string, id: string) =>
+    ipcRenderer.invoke('get-lorebook', profileId, id),
+  saveLorebook: (profileId: string, id: string, lorebook: any) =>
+    ipcRenderer.invoke('save-lorebook', profileId, id, lorebook),
+  createLorebook: (profileId: string, name: string) =>
+    ipcRenderer.invoke('create-lorebook', profileId, name),
+  deleteLorebook: (profileId: string, id: string) =>
+    ipcRenderer.invoke('delete-lorebook', profileId, id),
+  getChatLorebooks: (profileId: string, chatId: string) =>
+    ipcRenderer.invoke('get-chat-lorebooks', profileId, chatId),
+  setChatLorebooks: (profileId: string, chatId: string, ids: string[] | null) =>
+    ipcRenderer.invoke('set-chat-lorebooks', profileId, chatId, ids),
   // Card-script runtime (P1)
   pluginVars: (profileId: string, chatId: string, action: any) =>
     ipcRenderer.invoke('plugin-vars', profileId, chatId, action),

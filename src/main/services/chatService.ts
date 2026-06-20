@@ -10,6 +10,17 @@ interface ChatRow {
   created_at: string
   updated_at: string
   floor_count: number
+  lorebook_ids: string | null
+}
+
+const parseLorebookIds = (raw: string | null): string[] | null => {
+  if (raw == null) return null
+  try {
+    const v = JSON.parse(raw)
+    return Array.isArray(v) ? v.filter((x) => typeof x === 'string') : null
+  } catch {
+    return null
+  }
 }
 
 const preview = (text: string, len = 80): string =>
@@ -41,6 +52,7 @@ const buildSession = (row: ChatRow): ChatSession => {
     created_at: row.created_at,
     updated_at: row.updated_at,
     floor_count: row.floor_count,
+    lorebook_ids: parseLorebookIds(row.lorebook_ids),
     floor_index: last
       ? [
           {
@@ -59,7 +71,7 @@ const COUNT_SQL = '(SELECT COUNT(*) FROM floors f WHERE f.chat_id = chats.id) AS
 export const getChats = (profileId: string): ChatSession[] => {
   const rows = getDb()
     .prepare(
-      `SELECT id, character_id, created_at, updated_at, ${COUNT_SQL}
+      `SELECT id, character_id, created_at, updated_at, lorebook_ids, ${COUNT_SQL}
        FROM chats WHERE profile_id = ? ORDER BY updated_at DESC`
     )
     .all(profileId) as ChatRow[]
@@ -69,11 +81,30 @@ export const getChats = (profileId: string): ChatSession[] => {
 export const getChat = (profileId: string, chatId: string): ChatSession | null => {
   const row = getDb()
     .prepare(
-      `SELECT id, character_id, created_at, updated_at, ${COUNT_SQL}
+      `SELECT id, character_id, created_at, updated_at, lorebook_ids, ${COUNT_SQL}
        FROM chats WHERE id = ? AND profile_id = ?`
     )
     .get(chatId, profileId) as ChatRow | undefined
   return row ? buildSession(row) : null
+}
+
+/** The active lorebook ids for a session (null = default to the character's own lorebook). */
+export const getChatLorebookIds = (profileId: string, chatId: string): string[] | null => {
+  const row = getDb()
+    .prepare('SELECT lorebook_ids FROM chats WHERE id = ? AND profile_id = ?')
+    .get(chatId, profileId) as { lorebook_ids: string | null } | undefined
+  return row ? parseLorebookIds(row.lorebook_ids) : null
+}
+
+/** Set the active lorebook ids for a session (pass null to fall back to default). */
+export const setChatLorebookIds = (
+  profileId: string,
+  chatId: string,
+  ids: string[] | null
+): void => {
+  getDb()
+    .prepare('UPDATE chats SET lorebook_ids = ? WHERE id = ? AND profile_id = ?')
+    .run(ids === null ? null : JSON.stringify(ids), chatId, profileId)
 }
 
 export const createChat = (profileId: string, characterId: string): ChatSession => {

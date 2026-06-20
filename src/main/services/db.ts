@@ -39,7 +39,9 @@ CREATE TABLE IF NOT EXISTS chats (
   profile_id TEXT NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
   character_id TEXT NOT NULL,
   created_at TEXT NOT NULL,
-  updated_at TEXT NOT NULL
+  updated_at TEXT NOT NULL,
+  -- JSON array of active lorebook ids; NULL means "default to the character's own lorebook".
+  lorebook_ids TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_chats_profile ON chats(profile_id);
 
@@ -85,6 +87,19 @@ DROP TABLE IF EXISTS presets_legacy;
 DROP TABLE IF EXISTS profile_state;
 `
 
+/** Add a column to a table if a pre-existing DB doesn't already have it (idempotent). */
+const addColumnIfMissing = (
+  database: Database.Database,
+  table: string,
+  column: string,
+  ddl: string
+): void => {
+  const cols = database.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>
+  if (!cols.some((c) => c.name === column)) {
+    database.exec(`ALTER TABLE ${table} ADD COLUMN ${ddl}`)
+  }
+}
+
 export const getDb = (): Database.Database => {
   if (db) return db
   ensureDir(getAppDir())
@@ -93,5 +108,7 @@ export const getDb = (): Database.Database => {
   db.pragma('foreign_keys = ON')
   db.exec(SCHEMA)
   db.exec(DROP_LEGACY)
+  // Lightweight forward migrations for DBs created before a column existed.
+  addColumnIfMissing(db, 'chats', 'lorebook_ids', 'lorebook_ids TEXT')
   return db
 }

@@ -1,5 +1,14 @@
 import { create } from 'zustand';
 
+export interface ApiPreset {
+  id: string;
+  name: string;
+  provider: string;
+  endpoint: string;
+  api_key: string;
+  model: string;
+}
+
 export interface Settings {
   api: {
     provider: string;
@@ -8,8 +17,13 @@ export interface Settings {
     model: string;
     default_params: Record<string, any>;
   };
+  api_presets: ApiPreset[];
+  active_api_preset_id: string;
   persona: {
     name: string;
+    description: string;
+    inject: boolean;
+    depth: number | null;
   };
   generation: {
     max_context_tokens: number;

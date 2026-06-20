@@ -196,12 +196,26 @@ app.whenReady().then(() => {
     return null
   })
 
-  // Lorebook
-  ipcMain.handle('get-lorebook', (_, profileId, charId) =>
-    lorebookService.getCharacterLorebook(profileId, charId)
+  // Lorebook library (file-based, id-keyed; a character's own lorebook has id == characterId)
+  ipcMain.handle('list-lorebooks', (_, profileId) => lorebookService.listLorebooks(profileId))
+  ipcMain.handle('get-lorebook', (_, profileId, id) =>
+    lorebookService.getLorebookById(profileId, id)
   )
-  ipcMain.handle('save-lorebook', (_, profileId, charId, lorebook) =>
-    lorebookService.saveCharacterLorebook(profileId, charId, lorebook)
+  ipcMain.handle('save-lorebook', (_, profileId, id, lorebook) =>
+    lorebookService.saveLorebookById(profileId, id, lorebook)
+  )
+  ipcMain.handle('create-lorebook', (_, profileId, name) =>
+    lorebookService.createLorebook(profileId, name)
+  )
+  ipcMain.handle('delete-lorebook', (_, profileId, id) =>
+    lorebookService.deleteLorebookById(profileId, id)
+  )
+  // Per-session active lorebook selection
+  ipcMain.handle('get-chat-lorebooks', (_, profileId, chatId) =>
+    chatService.getChatLorebookIds(profileId, chatId)
+  )
+  ipcMain.handle('set-chat-lorebooks', (_, profileId, chatId, ids) =>
+    chatService.setChatLorebookIds(profileId, chatId, ids)
   )
 
   // Card-script runtime (P1) — permission-checked engine bridge for sandboxed scripts.

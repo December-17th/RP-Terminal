@@ -1,5 +1,5 @@
 import { getDb } from './db'
-import { Settings } from '../types/models'
+import { Settings, ApiPreset } from '../types/models'
 
 export const getDefaultSettings = (): Settings => ({
   api: {
@@ -12,8 +12,13 @@ export const getDefaultSettings = (): Settings => ({
       max_tokens: 4000
     }
   },
+  api_presets: [],
+  active_api_preset_id: '',
   persona: {
-    name: 'User'
+    name: 'User',
+    description: '',
+    inject: true,
+    depth: null
   },
   generation: {
     max_context_tokens: 32000
@@ -27,15 +32,52 @@ export const getDefaultSettings = (): Settings => ({
   }
 })
 
+/**
+ * Merge stored settings over the defaults (per-section, so adding a new nested
+ * field doesn't wipe a section), and ensure at least one API preset exists —
+ * seeding one from the live `api` block so pre-presets profiles migrate cleanly.
+ */
+const normalize = (stored: Partial<Settings>): Settings => {
+  const d = getDefaultSettings()
+  const api = { ...d.api, ...(stored.api || {}) }
+  const persona = { ...d.persona, ...(stored.persona || {}) }
+  const generation = { ...d.generation, ...(stored.generation || {}) }
+  const ui = { ...d.ui, ...(stored.ui || {}) }
+
+  let api_presets: ApiPreset[] = Array.isArray(stored.api_presets) ? stored.api_presets : []
+  let active_api_preset_id = stored.active_api_preset_id || ''
+
+  if (api_presets.length === 0) {
+    // Deterministic id so repeated reads before the first save stay stable.
+    const id = 'default'
+    api_presets = [
+      {
+        id,
+        name: 'Default',
+        provider: api.provider,
+        endpoint: api.endpoint,
+        api_key: api.api_key,
+        model: api.model
+      }
+    ]
+    active_api_preset_id = id
+  }
+  if (!api_presets.some((p) => p.id === active_api_preset_id)) {
+    active_api_preset_id = api_presets[0].id
+  }
+
+  return { api, api_presets, active_api_preset_id, persona, generation, ui }
+}
+
 export const getSettings = (profileId: string): Settings => {
   const row = getDb().prepare('SELECT data FROM settings WHERE profile_id = ?').get(profileId) as
     | { data: string }
     | undefined
-  if (!row) return getDefaultSettings()
+  if (!row) return normalize({})
   try {
-    return { ...getDefaultSettings(), ...JSON.parse(row.data) }
+    return normalize(JSON.parse(row.data))
   } catch {
-    return getDefaultSettings()
+    return normalize({})
   }
 }
 

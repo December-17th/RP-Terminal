@@ -15,7 +15,9 @@ import { RegexPanel } from './components/RegexPanel'
 import { MessageContent } from './components/MessageContent'
 import { FpsOverlay } from './components/FpsOverlay'
 import { CardScriptHost } from './components/CardScriptHost'
-import { PluginsPanel } from './components/PluginsPanel'
+import { PersonaPanel } from './components/PersonaPanel'
+import { ApiSettingsPanel } from './components/ApiSettingsPanel'
+import { SettingsPanel } from './components/SettingsPanel'
 import { PluginHost } from './components/PluginHost'
 import { useLogStore } from './stores/logStore'
 import { useRegexStore } from './stores/regexStore'
@@ -27,11 +29,11 @@ import { initSlash, isSlashLine, runSlash, listCommands, SlashCommand } from './
 type PanelTab =
   | 'world'
   | 'sessions'
+  | 'persona'
   | 'preset'
   | 'lorebook'
   | 'scripts'
   | 'regex'
-  | 'plugins'
   | 'api'
   | 'settings'
   | 'logs'
@@ -176,7 +178,7 @@ function EditArea({
 
 export default function App() {
   const { profiles, activeProfile, loadProfiles, createProfile } = useProfileStore()
-  const { settings, loadSettings, updateSettings } = useSettingsStore()
+  const { settings, loadSettings } = useSettingsStore()
   const {
     characters,
     activeCharacter,
@@ -340,105 +342,10 @@ export default function App() {
   const renderPanel = () => {
     switch (panel) {
       case 'api':
-        return (
-          <div className="panel">
-            <div className="panel-header">
-              <h3>API Settings</h3>
-            </div>
-            <div className="panel-body">
-              <label className="field-label">Provider</label>
-              <select
-                value={settings?.api?.provider || 'openai'}
-                onChange={(e) =>
-                  updateSettings(activeProfile.id, {
-                    api: { ...settings!.api, provider: e.target.value }
-                  })
-                }
-                style={{ width: '100%', marginBottom: 10 }}
-              >
-                <option value="openai">OpenAI</option>
-                <option value="anthropic">Anthropic</option>
-                <option value="openrouter">OpenRouter</option>
-                <option value="custom">Custom (OpenAI Compatible)</option>
-              </select>
-              <label className="field-label">Endpoint URL</label>
-              <input
-                type="text"
-                placeholder="https://api.openai.com/v1"
-                value={settings?.api?.endpoint || ''}
-                onChange={(e) =>
-                  updateSettings(activeProfile.id, {
-                    api: { ...settings!.api, endpoint: e.target.value }
-                  })
-                }
-                style={{ marginBottom: 10 }}
-              />
-              <label className="field-label">API Key</label>
-              <input
-                type="password"
-                placeholder="sk-..."
-                value={settings?.api?.api_key || ''}
-                onChange={(e) =>
-                  updateSettings(activeProfile.id, {
-                    api: { ...settings!.api, api_key: e.target.value }
-                  })
-                }
-                style={{ marginBottom: 10 }}
-              />
-              <label className="field-label">Model</label>
-              <input
-                type="text"
-                placeholder="e.g. gpt-4o"
-                value={settings?.api?.model || ''}
-                onChange={(e) =>
-                  updateSettings(activeProfile.id, {
-                    api: { ...settings!.api, model: e.target.value }
-                  })
-                }
-              />
+        return <ApiSettingsPanel profileId={activeProfile.id} />
 
-              <label className="field-label" style={{ marginTop: 16 }}>
-                Your Persona Name
-              </label>
-              <input
-                type="text"
-                placeholder="User"
-                value={settings?.persona?.name ?? 'User'}
-                onChange={(e) =>
-                  updateSettings(activeProfile.id, {
-                    persona: { ...settings!.persona, name: e.target.value }
-                  })
-                }
-              />
-              <div style={{ fontSize: '0.78em', color: 'var(--rpt-text-secondary)', marginTop: 4 }}>
-                Replaces {'{{user}}'} in prompts, cards and lorebooks.
-              </div>
-
-              <label className="field-label" style={{ marginTop: 16 }}>
-                Max Context (tokens)
-              </label>
-              <input
-                type="number"
-                min={1000}
-                step={1000}
-                placeholder="32000"
-                value={settings?.generation?.max_context_tokens ?? 32000}
-                onChange={(e) =>
-                  updateSettings(activeProfile.id, {
-                    generation: {
-                      ...settings!.generation,
-                      max_context_tokens: Number(e.target.value) || 32000
-                    }
-                  })
-                }
-              />
-              <div style={{ fontSize: '0.78em', color: 'var(--rpt-text-secondary)', marginTop: 4 }}>
-                Oldest turns are trimmed to keep the prompt under this estimate. Raise it for
-                large-context models.
-              </div>
-            </div>
-          </div>
-        )
+      case 'persona':
+        return <PersonaPanel profileId={activeProfile.id} />
 
       case 'world':
         return (
@@ -575,6 +482,7 @@ export default function App() {
             profileId={activeProfile.id}
             characterId={activeCharacter.id}
             characterName={activeCharacter.card.data.name}
+            chatId={activeChatId}
           />
         ) : (
           <div className="panel">
@@ -610,53 +518,8 @@ export default function App() {
       case 'regex':
         return <RegexPanel profileId={activeProfile.id} />
 
-      case 'plugins':
-        return <PluginsPanel profileId={activeProfile.id} />
-
       case 'settings':
-        return (
-          <div className="panel">
-            <div className="panel-header">
-              <h3>Settings</h3>
-            </div>
-            <div className="panel-body">
-              <label className="field-label">Chat Font Size (px)</label>
-              <input
-                type="number"
-                min={10}
-                max={28}
-                value={settings?.ui?.font_size ?? 16}
-                onChange={(e) =>
-                  updateSettings(activeProfile.id, {
-                    ui: { ...settings!.ui, font_size: Number(e.target.value) || 16 }
-                  })
-                }
-              />
-
-              <label
-                className="entry-toggles"
-                style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 18 }}
-              >
-                <input
-                  type="checkbox"
-                  checked={settings?.ui?.show_fps ?? false}
-                  onChange={(e) =>
-                    updateSettings(activeProfile.id, {
-                      ui: { ...settings!.ui, show_fps: e.target.checked }
-                    })
-                  }
-                />
-                Show FPS counter (bottom-right)
-              </label>
-
-              <div
-                style={{ fontSize: '0.78em', color: 'var(--rpt-text-secondary)', marginTop: 18 }}
-              >
-                UI preferences. API keys, persona and context budget live in the API tab.
-              </div>
-            </div>
-          </div>
-        )
+        return <SettingsPanel profileId={activeProfile.id} />
 
       case 'logs':
         return <LogsPanel />
@@ -706,11 +569,11 @@ export default function App() {
         <div className="nav-tabs">
           {tab('world', 'World')}
           {tab('sessions', 'Sessions', !activeCharacter)}
+          {tab('persona', 'Persona')}
           {tab('preset', 'Preset')}
           {tab('lorebook', 'Lorebook', !activeCharacter)}
           {tab('scripts', 'Scripts', !activeCharacter)}
           {tab('regex', 'Regex')}
-          {tab('plugins', 'Plugins')}
           {tab('api', 'API')}
           {tab('settings', 'Settings')}
           {tab('logs', 'Logs')}

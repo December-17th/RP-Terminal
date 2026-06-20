@@ -12,6 +12,8 @@ export interface ChatSession {
   updated_at: string
   floor_count: number
   floor_index: FloorIndexEntry[]
+  /** Active lorebook ids for this session; null = default to the character's own lorebook. */
+  lorebook_ids: string[] | null
 }
 
 export interface FloorFile {

@@ -11,6 +11,9 @@ export const LorebookEntrySchema = z.object({
   content: z.string().default(''),
   enabled: z.boolean().default(true),
   insertion_order: z.number().default(100),
+  /** How many messages up from the bottom of the chat to inject this entry.
+   * null = inject at the top (in the World Info block) — the default. */
+  insertion_depth: z.number().nullable().default(null),
   case_sensitive: z.boolean().default(false),
   /** constant entries are always injected regardless of keyword match */
   constant: z.boolean().default(false),

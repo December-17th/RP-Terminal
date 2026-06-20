@@ -7,7 +7,18 @@ export interface Profile {
   last_active: string
 }
 
+/** A saved, named API connection. The active one is mirrored into `Settings.api`. */
+export interface ApiPreset {
+  id: string
+  name: string
+  provider: string
+  endpoint: string
+  api_key: string
+  model: string
+}
+
 export interface Settings {
+  // The live/active connection used by generation. Mirrors the selected api_preset.
   api: {
     provider: string
     endpoint: string
@@ -15,8 +26,17 @@ export interface Settings {
     model: string
     default_params: Record<string, any>
   }
+  // Saved connection presets the user can switch between.
+  api_presets: ApiPreset[]
+  active_api_preset_id: string
   persona: {
     name: string
+    /** Free-text bio for {{user}}, injected into the prompt when `inject` is on. */
+    description: string
+    /** Whether to inject the persona description into the prompt. */
+    inject: boolean
+    /** Injection depth (messages from the bottom); null = at the top, before history. */
+    depth: number | null
   }
   generation: {
     /** Max estimated input tokens for the assembled prompt; oldest history is trimmed to fit. */

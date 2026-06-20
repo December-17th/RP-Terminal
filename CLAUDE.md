@@ -69,13 +69,13 @@ src/
                              rpg_entities, episodic_memory). WAL + FKs. Drops legacy preset/lorebook tables.
       storageService.ts      Filesystem helpers (getAppDir, ensureDir, read/writeJsonSyncAtomic, listers)
       profileService.ts      SQL
-      settingsService.ts     SQL (Settings stored as a JSON blob)
+      settingsService.ts     SQL (Settings = JSON blob, normalized on read); api_presets[] + persona{name,description,inject,depth}
       characterService.ts    SQL (card = JSON blob); avatars copied to userData/.../avatars/<id>.png
-      chatService.ts         SQL; getChats/getChat/createChat/appendFloor/truncateFloors/deleteChat
+      chatService.ts         SQL; getChats/getChat/createChat/appendFloor/truncateFloors/deleteChat + get/setChatLorebookIds (chats.lorebook_ids col)
       floorService.ts        SQL; one row per floor (PK chat_id+floor)
       presetService.ts       FILE-based, multi-preset (profiles/<id>/presets/<uuid>.json + _active.json)
-      lorebookService.ts     FILE-based (profiles/<id>/lorebooks/<characterId>.json) + matchEntries (pure)
-      promptBuilder.ts       Assembles the provider message[] from card+preset+lorebook+history
+      lorebookService.ts     FILE-based id-keyed library (profiles/<id>/lorebooks/<id>.json; id==characterId for a card's own book) + matchEntries/matchAcross (pure)
+      promptBuilder.ts       Assembles the provider message[] from card+preset+lorebooks[]+persona+history (incl. per-entry insertion_depth)
       generationService.ts   Orchestrates a turn: build -> stream -> regex -> rpt-event parse -> fold
                              state -> persist floor. generate() + regenerate().
       apiService.ts          streamProvider(): SSE for OpenAI-compatible + Anthropic
