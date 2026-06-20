@@ -68,13 +68,17 @@ export const LorebookManager: React.FC<Props> = ({
 
   const toggleExpand = (i: number): void => setExpanded((cur) => (cur === i ? null : i))
 
+  // Switching/creating a lorebook replaces the editor — confirm first if there are
+  // unsaved edits, so a stray dropdown change can't silently discard them.
+  const guardDirty = (): boolean => !dirty || confirm('Discard unsaved changes to this lorebook?')
+
   return (
     <div className="panel">
       <div className="panel-header">
         <h3 title={`Lorebooks — ${characterName}`}>Lorebooks</h3>
         <div className="panel-header-actions">
           {dirty && <span style={{ fontSize: '0.8em', opacity: 0.7 }}>unsaved</span>}
-          <button onClick={() => createNew(profileId)}>+ New</button>
+          <button onClick={() => guardDirty() && createNew(profileId)}>+ New</button>
           <button className="btn-accent" disabled={!dirty} onClick={() => save(profileId)}>
             Save
           </button>
@@ -105,7 +109,10 @@ export const LorebookManager: React.FC<Props> = ({
 
         <label className="field-label">Editing</label>
         <div className="preset-select-row">
-          <select value={currentId ?? ''} onChange={(e) => open(profileId, e.target.value)}>
+          <select
+            value={currentId ?? ''}
+            onChange={(e) => guardDirty() && open(profileId, e.target.value)}
+          >
             {options.map((o) => (
               <option key={o.id} value={o.id}>
                 {o.name}

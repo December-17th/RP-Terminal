@@ -158,15 +158,22 @@ const streamAnthropic = async (
   const url = base.endsWith('/messages') ? base : `${base.replace(/\/$/, '')}/messages`
 
   // Anthropic takes the system prompt at the top level and requires alternating
-  // user/assistant roles, so hoist system messages and merge same-role runs.
+  // user/assistant roles. Hoist only the LEADING system run (the static system
+  // prefix) into the top-level system param; a system message that appears AFTER
+  // the conversation has begun is a positional injection (e.g. a depth-placed
+  // lorebook/persona block) — Anthropic has no inline system role, so keep it
+  // where it sits by demoting it to a user turn (same-role merge folds it in).
   let systemPrompt = ''
-  const convo = messages.filter((m) => {
-    if (m.role === 'system') {
+  let convoStarted = false
+  const convo: ChatMessage[] = []
+  for (const m of messages) {
+    if (m.role === 'system' && !convoStarted) {
       systemPrompt += m.content + '\n'
-      return false
+      continue
     }
-    return true
-  })
+    convoStarted = true
+    convo.push(m.role === 'system' ? { role: 'user', content: m.content } : m)
+  }
 
   const merged: ChatMessage[] = []
   for (const msg of convo) {

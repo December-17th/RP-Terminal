@@ -667,7 +667,7 @@ body {
   border-radius: 8px;
   resize: vertical;
   font-family: inherit;
-  min-height: 20vh;
+  min-height: 10vh;
   line-height: 1.5;
 }
 
