@@ -220,17 +220,25 @@ D1 is the highest-value, lowest-risk start and is mostly additive on B1.
 
 ---
 
-## 12. Open questions (need a decision before/while building)
+## 12. Decisions (resolved 2026-06-20)
 
-1. **Compat ambition** — target real js-slash-runner script compatibility (build the
-   shim + a slash runtime), or ship our own clean API first and add the shim later?
-2. **Permission UX** — per-plugin approval prompts, or "trust all local plugins"
-   with a global toggle (simpler, less safe)?
-3. **Distribution** — plugin **folders**, **`.zip`** packages, and/or **PNG
-   cartridges** (consistent with the vNext card format)?
-4. **Network** — allow plugin `fetch` at all (opt-in, allow-listed), or forbid v1?
-5. **App-extension trust** — are shell extensions allowed, or v1 card-scripts only
-   (smaller blast radius)?
+1. **Start with P1 — the card-script runtime** (our `rpt.v1` API first). The
+   Tavern-Helper compat shim + slash runtime come later (P4).
+2. **Permission UX: prompt only for sensitive capabilities.** Low-risk caps
+   (`vars:read`, `chat:read`, `ui:*`, `storage`) are auto-granted; the user is
+   prompted to approve sensitive ones (`generate`, `chat:write`, and `net` if ever
+   enabled). Granted set is recorded per plugin.
+3. **v1 = card scripts only.** App-extension contributions (panels/commands/hooks,
+   P3) come after — smaller blast radius first.
+4. **No network in v1.** The `net` capability is not implemented; plugins cannot
+   `fetch`. Revisit (opt-in, host allow-list) post-v1.
+5. **Distribution: TBD at P2.** Likely plugin folders / `.zip`; PNG cartridges align
+   with the vNext card format. Card scripts (P1) need no installer — they travel in
+   the card's `extensions.rp_terminal.scripts`.
+
+These choices simplify P1: a sandboxed iframe + bridge + a small auto-granted API
+(`vars`, `chat:read`, `generate` [prompted], `ui:toast`/in-message UI), no network,
+running scripts embedded in the active card.
 
 ---
 
