@@ -177,6 +177,22 @@ describe('buildPrompt', () => {
     expect(penultimate.role).toBe('assistant')
   })
 
+  it('respects scanDepth — keywords only in turns beyond the depth do not match', () => {
+    const args = {
+      card: card(),
+      preset: preset([blk('world_info'), blk('chat_history')]),
+      lorebooks: [book([{ keys: ['dragon'], content: 'DRAGON-LORE' }])],
+      floors: [floor(0, 'a dragon!', 'ok'), floor(1, 'b', 'c'), floor(2, 'd', 'e')],
+      userAction: 'nothing relevant'
+    }
+    // depth 1 scans only the last turn + action -> 'dragon' (3 turns back) is missed.
+    const shallow = buildPrompt({ ...args, scanDepth: 1 })
+    expect(shallow.some((m) => m.content.includes('DRAGON-LORE'))).toBe(false)
+    // depth 5 covers the older turn -> it matches.
+    const deep = buildPrompt({ ...args, scanDepth: 5 })
+    expect(deep.some((m) => m.content.includes('DRAGON-LORE'))).toBe(true)
+  })
+
   it('safety nets: an empty preset still injects world info and history', () => {
     const messages = buildPrompt({
       card: card(),

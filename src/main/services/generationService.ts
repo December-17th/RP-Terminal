@@ -86,6 +86,8 @@ export const generate = async (
       inject: settings.persona?.inject !== false,
       depth: settings.persona?.depth ?? null
     },
+    scanDepth: settings.lorebook?.scan_depth ?? 3,
+    maxRecursion: settings.lorebook?.max_recursion ?? 0,
     template: {
       vars: workingVars,
       globals,

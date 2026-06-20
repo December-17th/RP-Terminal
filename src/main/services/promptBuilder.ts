@@ -75,6 +75,10 @@ export interface BuildPromptArgs {
   userAction: string
   userName?: string
   persona?: PersonaArgs
+  /** How many recent turns to scan for lorebook keywords (default 3). */
+  scanDepth?: number
+  /** Max recursive lorebook match passes (default 0 = off). */
+  maxRecursion?: number
   /** ST-Prompt-Template context; when present, authored content is run through the engine. */
   template?: TemplateContext
 }
@@ -208,13 +212,14 @@ export const buildPrompt = (args: BuildPromptArgs): ChatMessage[] => {
   // Lorebook scan over the last few turns plus the pending action, across all
   // active lorebooks. Entries with a numeric insertion_depth are injected into the
   // history at that depth; the rest go into the top-level World Info block.
+  const scanDepth = Math.max(1, args.scanDepth ?? 3)
   const scanText = [
-    ...floors.slice(-3).flatMap((f) => [f.user_message.content, f.response.content]),
+    ...floors.slice(-scanDepth).flatMap((f) => [f.user_message.content, f.response.content]),
     userAction
   ]
     .filter(Boolean)
     .join('\n')
-  const matched = matchAcross(lorebooks, scanText)
+  const matched = matchAcross(lorebooks, scanText, Math.random, args.maxRecursion ?? 0)
   const topEntries = matched.filter((e) => e.insertion_depth == null)
   const depthEntries = matched.filter((e) => e.insertion_depth != null)
   const worldInfo = topEntries

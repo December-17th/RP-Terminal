@@ -279,6 +279,22 @@ const EntryCard: React.FC<EntryCardProps> = ({
               />
               Case sensitive
             </label>
+            <label title="This entry can't be triggered by recursion (only the conversation scan).">
+              <input
+                type="checkbox"
+                checked={entry.exclude_recursion}
+                onChange={(e) => onChange({ exclude_recursion: e.target.checked })}
+              />
+              No recursion in
+            </label>
+            <label title="This entry's content won't trigger further recursive matches.">
+              <input
+                type="checkbox"
+                checked={entry.prevent_recursion}
+                onChange={(e) => onChange({ prevent_recursion: e.target.checked })}
+              />
+              No recursion out
+            </label>
             <label className="order-field">
               Order
               <input

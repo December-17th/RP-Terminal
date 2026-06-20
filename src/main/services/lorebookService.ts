@@ -89,55 +89,92 @@ export const deleteCharacterLorebook = (profileId: string, characterId: string):
  * Returns entries sorted by insertion_order (lower = earlier). Pure aside from the
  * injectable `rng` (defaults to Math.random) — pass a fixed rng to test the roll.
  */
+/** Does an entry qualify for this scan text (constant, or keyword + optional secondary)? */
+const entryQualifies = (entry: LorebookEntry, scanText: string): boolean => {
+  if (entry.constant) return true
+  const haystack = entry.case_sensitive ? scanText : scanText.toLowerCase()
+  const hits = (keys: string[]): boolean =>
+    keys.some((k) => {
+      if (!k) return false
+      const needle = entry.case_sensitive ? k : k.toLowerCase()
+      return haystack.includes(needle)
+    })
+  if (!hits(entry.keys)) return false
+  if (entry.selective && entry.secondary_keys.length > 0) return hits(entry.secondary_keys)
+  return true
+}
+
+/** Probability gate — entries with probability < 100 roll once when they qualify. */
+const rollPasses = (entry: LorebookEntry, rng: () => number): boolean =>
+  entry.probability >= 100 || rng() * 100 < entry.probability
+
 export const matchEntries = (
   lorebook: Lorebook | null,
   scanText: string,
   rng: () => number = Math.random
 ): LorebookEntry[] => {
   if (!lorebook || lorebook.entries.length === 0) return []
-  const matched: LorebookEntry[] = []
-
-  const rollFails = (entry: LorebookEntry): boolean =>
-    entry.probability < 100 && rng() * 100 >= entry.probability
-
-  for (const entry of lorebook.entries) {
-    if (!entry.enabled) continue
-    if (entry.constant) {
-      if (!rollFails(entry)) matched.push(entry)
-      continue
-    }
-    const haystack = entry.case_sensitive ? scanText : scanText.toLowerCase()
-    const keyHit = entry.keys.some((k) => {
-      if (!k) return false
-      const needle = entry.case_sensitive ? k : k.toLowerCase()
-      return haystack.includes(needle)
-    })
-    if (!keyHit) continue
-
-    if (entry.selective && entry.secondary_keys.length > 0) {
-      const secHit = entry.secondary_keys.some((k) => {
-        if (!k) return false
-        const needle = entry.case_sensitive ? k : k.toLowerCase()
-        return haystack.includes(needle)
-      })
-      if (!secHit) continue
-    }
-    if (rollFails(entry)) continue
-    matched.push(entry)
-  }
-
-  return matched.sort((a, b) => a.insertion_order - b.insertion_order)
+  return lorebook.entries
+    .filter((e) => e.enabled && entryQualifies(e, scanText) && rollPasses(e, rng))
+    .sort((a, b) => a.insertion_order - b.insertion_order)
 }
 
-/** Match across several active lorebooks at once, merged and ordered together. */
+/**
+ * Match across all active lorebooks, merged and ordered together. With
+ * `maxRecursion > 0`, matched entries' content is fed back as scan text for further
+ * passes (ST-style recursion): `exclude_recursion` entries can't be triggered by a
+ * recursive pass, and `prevent_recursion` entries' content doesn't feed the next
+ * pass. Each entry is decided (and probability-rolled) at most once.
+ */
 export const matchAcross = (
   lorebooks: Lorebook[],
   scanText: string,
-  rng: () => number = Math.random
-): LorebookEntry[] =>
-  lorebooks
-    .flatMap((lb) => matchEntries(lb, scanText, rng))
-    .sort((a, b) => a.insertion_order - b.insertion_order)
+  rng: () => number = Math.random,
+  maxRecursion = 0
+): LorebookEntry[] => {
+  let pool = lorebooks.flatMap((lb) => lb.entries).filter((e) => e.enabled)
+  const fired: LorebookEntry[] = []
+
+  // One pass: qualify each pool entry against `text`, roll, and drop it from the
+  // pool whether it fired or not (so it can't double-roll on a later pass).
+  const runPass = (text: string, recursive: boolean): LorebookEntry[] => {
+    const passFired: LorebookEntry[] = []
+    const remaining: LorebookEntry[] = []
+    for (const e of pool) {
+      if (recursive && e.exclude_recursion) {
+        remaining.push(e)
+        continue
+      }
+      if (entryQualifies(e, text)) {
+        if (rollPasses(e, rng)) passFired.push(e)
+      } else {
+        remaining.push(e)
+      }
+    }
+    pool = remaining
+    return passFired
+  }
+
+  const feed = (entries: LorebookEntry[]): string =>
+    entries
+      .filter((e) => !e.prevent_recursion)
+      .map((e) => e.content)
+      .join('\n')
+
+  fired.push(...runPass(scanText, false))
+
+  let recursionText = feed(fired)
+  let steps = 0
+  while (maxRecursion > 0 && steps < maxRecursion && pool.length && recursionText.trim()) {
+    const passFired = runPass(recursionText, true)
+    if (passFired.length === 0) break
+    fired.push(...passFired)
+    recursionText = feed(passFired)
+    steps++
+  }
+
+  return fired.sort((a, b) => a.insertion_order - b.insertion_order)
+}
 
 /**
  * Normalize a raw ST world-info / character_book object into our Lorebook shape.
@@ -162,6 +199,8 @@ export const normalizeLorebookData = (raw: any, fallbackName: string): Lorebook 
     constant: e.constant === true,
     selective: e.selective === true,
     probability: typeof e.probability === 'number' ? e.probability : 100,
+    exclude_recursion: e.exclude_recursion === true || e.excludeRecursion === true,
+    prevent_recursion: e.prevent_recursion === true || e.preventRecursion === true,
     comment: e.comment || e.name || ''
   }))
 

@@ -13,6 +13,10 @@ export interface LorebookEntry {
   selective: boolean
   /** % chance (0–100) a matched entry fires; <100 rolls each turn. */
   probability: number
+  /** can't be activated by recursion (only the conversation scan). */
+  exclude_recursion: boolean
+  /** this entry's content doesn't trigger further recursive matches. */
+  prevent_recursion: boolean
   comment: string
 }
 
@@ -37,6 +41,8 @@ const emptyEntry = (): LorebookEntry => ({
   constant: false,
   selective: false,
   probability: 100,
+  exclude_recursion: false,
+  prevent_recursion: false,
   comment: ''
 })
 

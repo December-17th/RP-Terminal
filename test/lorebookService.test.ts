@@ -123,4 +123,33 @@ describe('matchAcross', () => {
     ])
     expect(matchAcross([a, b], 'x marks').map((e) => e.content)).toEqual(['B-const', 'B-key', 'A'])
   })
+
+  const recursionBook = (overrides: { exclude?: boolean; prevent?: boolean } = {}): any =>
+    book([
+      { keys: ['dragon'], content: 'The dragon guards gold.', prevent_recursion: overrides.prevent === true },
+      { keys: ['gold'], content: 'Gold is treasure.', exclude_recursion: overrides.exclude === true }
+    ])
+
+  it('does not recurse when maxRecursion is 0', () => {
+    const out = matchAcross([recursionBook()], 'a dragon appears', () => 0, 0)
+    expect(out.map((e) => e.content)).toEqual(['The dragon guards gold.'])
+  })
+
+  it("recurses: a matched entry's content triggers another entry", () => {
+    const out = matchAcross([recursionBook()], 'a dragon appears', () => 0, 2)
+    expect(out.map((e) => e.content).sort()).toEqual([
+      'Gold is treasure.',
+      'The dragon guards gold.'
+    ])
+  })
+
+  it('exclude_recursion entries are not triggered by a recursive pass', () => {
+    const out = matchAcross([recursionBook({ exclude: true })], 'a dragon appears', () => 0, 2)
+    expect(out.map((e) => e.content)).toEqual(['The dragon guards gold.'])
+  })
+
+  it("prevent_recursion entries don't feed the next pass", () => {
+    const out = matchAcross([recursionBook({ prevent: true })], 'a dragon appears', () => 0, 2)
+    expect(out.map((e) => e.content)).toEqual(['The dragon guards gold.'])
+  })
 })

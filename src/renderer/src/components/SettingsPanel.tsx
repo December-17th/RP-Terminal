@@ -86,6 +86,41 @@ export const SettingsPanel: React.FC<{ profileId: string }> = ({ profileId }) =>
               />
               Show FPS counter (bottom-right)
             </label>
+
+            <label className="field-label" style={{ marginTop: 18 }}>
+              Lorebook Scan Depth (turns)
+            </label>
+            <input
+              type="number"
+              min={1}
+              value={settings.lorebook?.scan_depth ?? 3}
+              onChange={(e) =>
+                updateSettings(profileId, {
+                  lorebook: { ...settings.lorebook, scan_depth: Number(e.target.value) || 1 }
+                })
+              }
+            />
+            <div style={{ fontSize: '0.78em', color: 'var(--rpt-text-secondary)', marginTop: 4 }}>
+              How many recent turns are scanned for lorebook keywords.
+            </div>
+
+            <label className="field-label" style={{ marginTop: 14 }}>
+              Lorebook Recursion Steps
+            </label>
+            <input
+              type="number"
+              min={0}
+              value={settings.lorebook?.max_recursion ?? 0}
+              onChange={(e) =>
+                updateSettings(profileId, {
+                  lorebook: { ...settings.lorebook, max_recursion: Number(e.target.value) || 0 }
+                })
+              }
+            />
+            <div style={{ fontSize: '0.78em', color: 'var(--rpt-text-secondary)', marginTop: 4 }}>
+              Matched entries&apos; content can trigger more entries, up to this many passes
+              (0 = off).
+            </div>
           </>
         )}
 

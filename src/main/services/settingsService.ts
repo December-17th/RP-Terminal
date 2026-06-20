@@ -55,6 +55,10 @@ export const getDefaultSettings = (): Settings => ({
   generation: {
     max_context_tokens: 32000
   },
+  lorebook: {
+    scan_depth: 3,
+    max_recursion: 0
+  },
   ui: {
     theme: 'dark',
     font_size: 16,
@@ -74,6 +78,7 @@ export const normalize = (stored: Partial<Settings>): Settings => {
   const api = { ...d.api, ...(stored.api || {}) }
   const persona = { ...d.persona, ...(stored.persona || {}) }
   const generation = { ...d.generation, ...(stored.generation || {}) }
+  const lorebook = { ...d.lorebook, ...(stored.lorebook || {}) }
   const ui = { ...d.ui, ...(stored.ui || {}) }
 
   let api_presets: ApiPreset[] = Array.isArray(stored.api_presets) ? stored.api_presets : []
@@ -98,7 +103,7 @@ export const normalize = (stored: Partial<Settings>): Settings => {
     active_api_preset_id = api_presets[0].id
   }
 
-  return { api, api_presets, active_api_preset_id, persona, generation, ui }
+  return { api, api_presets, active_api_preset_id, persona, generation, lorebook, ui }
 }
 
 export const getSettings = (profileId: string): Settings => {

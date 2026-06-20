@@ -41,6 +41,12 @@ export interface Settings {
     /** Max estimated input tokens for the assembled prompt; oldest history is trimmed to fit. */
     max_context_tokens: number
   }
+  lorebook: {
+    /** How many recent turns (floors) to scan for keyword matches. */
+    scan_depth: number
+    /** Max recursive match passes fed by matched entries' content (0 = off). */
+    max_recursion: number
+  }
   ui: {
     theme: string
     font_size: number

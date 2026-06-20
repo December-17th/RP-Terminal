@@ -27,6 +27,10 @@ export interface Settings {
   generation: {
     max_context_tokens: number;
   };
+  lorebook: {
+    scan_depth: number;
+    max_recursion: number;
+  };
   ui: {
     theme: string;
     font_size: number;

@@ -21,6 +21,10 @@ export const LorebookEntrySchema = z.object({
   selective: z.boolean().default(false),
   /** % chance (0–100) a matched entry actually fires; <100 rolls each turn */
   probability: z.number().default(100),
+  /** this entry can NOT be activated by recursion (only by the conversation scan) */
+  exclude_recursion: z.boolean().default(false),
+  /** this entry's content does NOT trigger further recursive matches */
+  prevent_recursion: z.boolean().default(false),
   comment: z.string().default('')
 })
 export type LorebookEntry = z.infer<typeof LorebookEntrySchema>
