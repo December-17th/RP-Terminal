@@ -15,6 +15,8 @@ import { RegexPanel } from './components/RegexPanel'
 import { MessageContent } from './components/MessageContent'
 import { FpsOverlay } from './components/FpsOverlay'
 import { CardScriptHost } from './components/CardScriptHost'
+import { StatView } from './components/StatView'
+import { isPlainObject } from './components/statViewHelpers'
 import { PersonaPanel } from './components/PersonaPanel'
 import { ApiSettingsPanel } from './components/ApiSettingsPanel'
 import { SettingsPanel } from './components/SettingsPanel'
@@ -595,6 +597,11 @@ export default function App() {
   const currentFloor = showStreaming ? undefined : renderedFloors[page]
   // The FSM scene switcher is active in 'manual'/'agentic' agent modes; 'off' greys it out.
   const fsmEnabled = settings?.agent?.mode === 'manual' || settings?.agent?.mode === 'agentic'
+  // RPG state for the right panel: the latest floor's stat_data (MVU / R3) + the card's
+  // declarative ui_layout (if any). Either or both drive the status panel.
+  const latestVars = floors.length ? floors[floors.length - 1]?.variables : undefined
+  const statData = isPlainObject(latestVars?.stat_data) ? latestVars!.stat_data : undefined
+  const uiLayout = activeCharacter?.card.data.extensions?.rp_terminal?.ui_layout
 
   // Render a single floor block (user action + AI response) with inline edit + menu.
   const renderFloorBlock = (f: (typeof renderedFloors)[number]): ReactNode => {
@@ -864,15 +871,13 @@ export default function App() {
                 RPG Status
               </h3>
               <div style={{ marginTop: 20 }}>
-                {activeCharacter.card.data.extensions?.rp_terminal?.ui_layout?.length ? (
-                  <LayoutRenderer
-                    layoutSchema={activeCharacter.card.data.extensions.rp_terminal.ui_layout}
-                  />
-                ) : (
+                {uiLayout?.length ? <LayoutRenderer layoutSchema={uiLayout} /> : null}
+                {statData && Object.keys(statData).length ? <StatView data={statData} /> : null}
+                {!uiLayout?.length && !(statData && Object.keys(statData).length) ? (
                   <div style={{ opacity: 0.6 }}>
-                    <em>(Card does not define a UI Layout)</em>
+                    <em>(No RPG state for this session yet)</em>
                   </div>
-                )}
+                ) : null}
               </div>
               {activeCharacter.card.data.extensions?.rp_terminal?.scripts?.length ? (
                 <CardScriptHost

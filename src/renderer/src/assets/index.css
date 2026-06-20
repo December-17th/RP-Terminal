@@ -245,6 +245,92 @@ body {
   padding: 6px 0 0;
 }
 
+/* MVU / RPG status auto-view (R3) — recursive render of stat_data */
+.stat-view {
+  font-size: 0.86rem;
+}
+.stat-group {
+  margin: 3px 0;
+}
+.stat-group > summary.stat-group-title {
+  cursor: pointer;
+  font-weight: 600;
+  color: var(--rpt-text-primary);
+  padding: 3px 0;
+  list-style: none;
+}
+.stat-group > summary.stat-group-title::-webkit-details-marker {
+  display: none;
+}
+.stat-group-title::before {
+  content: '▸';
+  display: inline-block;
+  margin-right: 5px;
+  color: var(--rpt-text-secondary);
+  transition: transform 0.15s ease;
+}
+details[open] > .stat-group-title::before {
+  transform: rotate(90deg);
+}
+.stat-count {
+  color: var(--rpt-text-secondary);
+  font-weight: 400;
+  font-size: 0.85em;
+}
+.stat-children,
+.stat-array {
+  margin-left: 11px;
+  border-left: 1px solid var(--rpt-border);
+  padding-left: 9px;
+}
+.stat-row {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 2px 0;
+}
+.stat-key {
+  color: var(--rpt-text-secondary);
+}
+.stat-val {
+  color: var(--rpt-text-primary);
+  font-weight: 500;
+}
+.stat-desc {
+  color: var(--rpt-text-secondary);
+  font-size: 0.85em;
+  font-style: italic;
+  margin-left: auto;
+  text-align: right;
+}
+.stat-item {
+  padding: 1px 0;
+}
+.stat-empty {
+  color: var(--rpt-text-secondary);
+  opacity: 0.6;
+}
+.stat-bar {
+  padding: 3px 0;
+}
+.stat-bar-head {
+  display: flex;
+  justify-content: space-between;
+}
+.stat-bar-track {
+  height: 8px;
+  margin-top: 2px;
+  background: var(--rpt-bg-primary);
+  border: 1px solid var(--rpt-border);
+  border-radius: 5px;
+  overflow: hidden;
+}
+.stat-bar-fill {
+  height: 100%;
+  background: var(--rpt-accent);
+  transition: width 0.3s ease-out;
+}
+
 /* FSM mode switch (Phase H) — Explore / Dialogue / Combat */
 .mode-switch {
   display: flex;
