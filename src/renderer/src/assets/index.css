@@ -730,6 +730,46 @@ details[open] > .stat-group-title::before {
   color: var(--rpt-accent);
 }
 
+/* Script/plugin action buttons, grouped under a menu in the bar above the input. */
+.script-actions-bar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 6px 0 0;
+}
+.script-actions-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 0.8em;
+  padding: 4px 9px;
+  border-radius: 6px;
+  border: 1px solid var(--rpt-border);
+  background: var(--rpt-bg-secondary);
+  color: var(--rpt-text-secondary);
+  cursor: pointer;
+}
+.script-actions-toggle.open {
+  color: var(--rpt-text-primary);
+  border-color: var(--rpt-accent);
+}
+.script-actions-count {
+  font-size: 0.82em;
+  background: var(--rpt-bg-primary);
+  border-radius: 8px;
+  padding: 0 6px;
+}
+.script-actions-caret {
+  opacity: 0.7;
+}
+.script-actions-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+
 /* Slash-command autocomplete menu (above the action input) */
 .slash-menu {
   position: absolute;

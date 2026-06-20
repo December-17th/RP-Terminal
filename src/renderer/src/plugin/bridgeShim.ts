@@ -103,7 +103,8 @@ export const BRIDGE_SHIM = `
       // Standalone plugins only: request a visible, titled panel in the shell.
       // Render your UI into document.body; the host shows this frame in the panel.
       registerPanel: function (def) { return __rpc('ui.registerPanel', [def || {}]); },
-      // Standalone plugins only: add a top-nav button. handler runs when clicked.
+      // Add an action button (shown in the menu above the chat input, for card scripts
+      // and plugins alike). handler runs when the button is clicked.
       registerButton: function (def, handler) {
         var id = String((def && def.id) || (def && def.label) || 'button');
         if (typeof handler === 'function') rpt.on('button:' + id, handler);

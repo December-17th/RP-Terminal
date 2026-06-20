@@ -3,6 +3,7 @@ import { useChatStore } from '../stores/chatStore'
 import { useToastStore } from '../stores/toastStore'
 import { useScriptsStore } from '../stores/scriptsStore'
 import { useCardScriptsStore } from '../stores/cardScriptsStore'
+import { useToolbarStore } from '../stores/toolbarStore'
 import { buildScriptSrcDoc, CardScript } from '../plugin/bridgeShim'
 import { buildMvuEvents } from '../plugin/mvuEvents'
 import { dispatchRpc } from '../plugin/dispatch'
@@ -40,6 +41,7 @@ export const CardScriptHost: React.FC<Props> = ({
   const frameRef = useRef<HTMLIFrameElement>(null)
   const grantsRef = useRef<Grants>({})
   const cmdCleanups = useRef(new Map<string, () => void>())
+  const btnKeys = useRef(new Set<string>())
   // Master on/off lives in the Scripts (left) panel now; the right panel is game-UI only.
   const enabled = useCardScriptsStore((s) => s.enabledByCard[cardId] ?? true)
   const [height, setHeight] = useState(0)
@@ -95,6 +97,10 @@ export const CardScriptHost: React.FC<Props> = ({
         }
       }
       const list = res?.scripts || []
+      // The frame is about to reload and re-register; drop this card's stale buttons first
+      // so a button from a now-removed script doesn't linger in the menu.
+      btnKeys.current.forEach((k) => useToolbarStore.getState().remove(k))
+      btnKeys.current.clear()
       setScriptCount(list.length)
       setSrcDoc(buildScriptSrcDoc(list))
     })()
@@ -138,6 +144,19 @@ export const CardScriptHost: React.FC<Props> = ({
     )
   }
 
+  // A script-contributed action button → lands in the menu above the input; clicking it
+  // posts `button:<id>` back to this card's frame. Keyed by card so it's cleaned up on unmount.
+  const registerButton = (def: any): void => {
+    const id = String((def && def.id) || (def && def.label) || 'button')
+    const key = 'card:' + cardId + '::' + id
+    btnKeys.current.add(key)
+    useToolbarStore.getState().add({
+      key,
+      label: String((def && def.label) || (def && def.id) || 'Button'),
+      onClick: () => emit('button:' + id, {})
+    })
+  }
+
   const handleRpc = (method: string, args: any[]): Promise<any> =>
     dispatchRpc(method, args, {
       profileId,
@@ -145,18 +164,22 @@ export const CardScriptHost: React.FC<Props> = ({
       ensure,
       toast: pushToast,
       registerCommand,
+      registerButton,
       storageOwner: 'card:' + cardId,
       syncLocalVars: (store) => useChatStore.getState().setLatestFloorVariables(store),
       triggerGenerate: (text) => useChatStore.getState().sendAction(profileId, text),
       isGenerating: () => useChatStore.getState().isGenerating
     })
 
-  // Unregister this frame's slash commands when it unmounts.
+  // Unregister this frame's slash commands + toolbar buttons when it unmounts.
   useEffect(() => {
     const cleanups = cmdCleanups.current
+    const keys = btnKeys.current
     return () => {
       cleanups.forEach((off) => off())
       cleanups.clear()
+      keys.forEach((k) => useToolbarStore.getState().remove(k))
+      keys.clear()
     }
   }, [])
 

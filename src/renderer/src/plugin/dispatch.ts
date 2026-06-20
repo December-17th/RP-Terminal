@@ -19,7 +19,7 @@ export interface DispatchCtx {
   toast: (msg: string) => void
   /** Plugin requested a visible panel (standalone plugins only; no-op for cards). */
   registerPanel?: (def: any) => void
-  /** Plugin requested a shell-toolbar button (standalone plugins only). */
+  /** A script/plugin requested an action button (rendered in the menu above the input). */
   registerButton?: (def: any) => void
   /** Register a slash command owned by this frame. */
   registerCommand?: (name: string, description?: string) => void

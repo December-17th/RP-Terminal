@@ -258,6 +258,8 @@ export default function App() {
   const [slashIndex, setSlashIndex] = useState(0)
   const [slashDismissed, setSlashDismissed] = useState(false)
   const [panel, setPanel] = useState<PanelTab>('world')
+  // Script/plugin-contributed action buttons live in a menu above the input, open by default.
+  const [scriptMenuOpen, setScriptMenuOpen] = useState(true)
   const [pendingUserMsg, setPendingUserMsg] = useState('')
   const [editing, setEditing] = useState<{ floor: number; field: 'user' | 'response' } | null>(null)
   const [editText, setEditText] = useState('')
@@ -684,15 +686,6 @@ export default function App() {
           {tab('settings', 'Settings')}
           {tab('logs', 'Logs')}
         </div>
-        {toolbarButtons.length > 0 && (
-          <div className="nav-ext">
-            {toolbarButtons.map((b) => (
-              <button key={b.key} className="nav-ext-btn" title={b.label} onClick={b.onClick}>
-                {b.label}
-              </button>
-            ))}
-          </div>
-        )}
         <span className="nav-status">
           {activeProfile.name} · {activeCharacter?.card.data.name || 'no world'} ·{' '}
           {activePresetName || 'no preset'}
@@ -787,6 +780,35 @@ export default function App() {
                   </button>
                 )}
               </div>
+
+              {/* Action buttons contributed by scripts/plugins (rpt.ui.registerButton),
+                  grouped under a menu in the bar above the input — expanded by default. */}
+              {toolbarButtons.length > 0 && (
+                <div className="script-actions-bar">
+                  <button
+                    className={`script-actions-toggle ${scriptMenuOpen ? 'open' : ''}`}
+                    title={scriptMenuOpen ? 'Hide script actions' : 'Show script actions'}
+                    onClick={() => setScriptMenuOpen((o) => !o)}
+                  >
+                    ☰<span className="script-actions-count">{toolbarButtons.length}</span>
+                    <span className="script-actions-caret">{scriptMenuOpen ? '▾' : '▸'}</span>
+                  </button>
+                  {scriptMenuOpen && (
+                    <div className="script-actions-list">
+                      {toolbarButtons.map((b) => (
+                        <button
+                          key={b.key}
+                          className="nav-ext-btn"
+                          title={b.label}
+                          onClick={b.onClick}
+                        >
+                          {b.label}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
 
               <div className="action-input-container">
                 {slashOpen && (
