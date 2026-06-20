@@ -215,12 +215,16 @@ btn.onclick = async () => {
 
 ### UI — `rpt.ui`
 
-| Method                  | Returns         | Description                                  |
-| ----------------------- | --------------- | -------------------------------------------- |
-| `rpt.ui.toast(message)` | `Promise<true>` | Show a transient toast (auto-dismisses ~3s). |
+| Method                          | Returns         | Description                                                                                   |
+| ------------------------------- | --------------- | --------------------------------------------------------------------------------------------- |
+| `rpt.ui.toast(message)`         | `Promise<true>` | Show a transient toast (auto-dismisses ~3s).                                                  |
+| `rpt.ui.registerPanel({title})` | `Promise<true>` | **Standalone plugins only.** Request a visible, titled panel in the shell (needs `ui:panel`). |
 
-**Permission:** auto-granted (`ui`). For richer UI, render directly into your
-iframe `document.body` — that _is_ your UI surface.
+**Permission:** `toast` is auto-granted (`ui:toast`); `registerPanel` needs
+`ui:panel`. For richer UI, render directly into your iframe `document.body` —
+that _is_ your UI surface. Card scripts already have a visible panel, so
+`registerPanel` is a no-op for them; a standalone plugin stays headless until it
+calls it (see [§10](#10-standalone-plugins-installable)).
 
 ### Logging — `rpt.log`
 
@@ -428,20 +432,29 @@ the manifest and the user approved on enable**; anything else rejects with
 highlighted in the approval prompt. Enable-state + grants persist per profile in
 `profiles/<id>/plugins-state.json`.
 
-**Runtime.** Enabled plugins run **app-wide** (not tied to a card) in a hidden
-sandboxed iframe — they are **headless in P2** (no visible UI surface until the
-P3 contribution points land). They can read/write variables, read chat, trigger
+**Runtime.** Enabled plugins run **app-wide** (not tied to a card) in a sandboxed
+iframe. By default a plugin is **headless** (hidden); calling
+`rpt.ui.registerPanel({ title })` (needs `ui:panel`) gives it a **visible, titled,
+auto-sizing panel** in the right sidebar — render your UI into `document.body`
+just like a card script. Plugins can read/write variables, read chat, trigger
 generation, toast, log, and react to lifecycle events; their vars/chat/generate
-calls act on the **currently active session** (and `rpt.global` works even with
-no session open).
+calls act on the **currently active session** (and `rpt.global` works even with no
+session open).
 
 ```js
-// main.js — a headless plugin
-rpt.on('ready', () => rpt.ui.toast('Loaded'))
+// main.js — a plugin with a panel
+const out = document.createElement('div')
+document.body.appendChild(out)
+async function render() {
+  out.textContent = 'Turns: ' + ((await rpt.global.get('turnsPlayed')) || 0)
+}
+rpt.ui.registerPanel({ title: 'My Plugin' })
+rpt.on('ready', render)
 rpt.on('generation:end', async () => {
-  const n = await rpt.global.inc('turnsPlayed')
-  rpt.log('turns this profile:', n)
+  await rpt.global.inc('turnsPlayed')
+  render()
 })
+render()
 ```
 
 ---
@@ -450,9 +463,9 @@ rpt.on('generation:end', async () => {
 
 Planned for later plugin phases (see the [design doc](plugin-system-design.md)):
 
-- **UI contribution points** for standalone plugins —
-  `registerPanel`/`registerButton`/`registerCommand` so plugins get visible
-  surfaces in the shell (P3). Today standalone plugins are headless.
+- **More UI contribution points** for standalone plugins — `registerButton`
+  (shell toolbar) and `registerCommand`. `registerPanel` already ships (P3);
+  buttons/commands are still planned.
 - `rpt.chat.sendUserMessage` / `editMessage` (`chat:write`).
 - `rpt.lorebook.getEntries` / `activate` (`lorebook:read`).
 - `rpt.slash.registerCommand` / `runCommand` + a minimal STScript subset, plus a

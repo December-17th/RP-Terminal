@@ -99,7 +99,10 @@ export const BRIDGE_SHIM = `
     },
     generate: function (text) { return __rpc('generate', [String(text == null ? '' : text)]); },
     ui: {
-      toast: function (msg) { return __rpc('ui.toast', [String(msg)]); }
+      toast: function (msg) { return __rpc('ui.toast', [String(msg)]); },
+      // Standalone plugins only: request a visible, titled panel in the shell.
+      // Render your UI into document.body; the host shows this frame in the panel.
+      registerPanel: function (def) { return __rpc('ui.registerPanel', [def || {}]); }
     },
     log: function () {
       var a = Array.prototype.slice.call(arguments).map(String).join(' ');

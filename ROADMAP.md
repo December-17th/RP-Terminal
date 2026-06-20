@@ -81,7 +81,7 @@ decvar/delvar` (+ local/global aliases) bound to chat vars; `variables`, `userNa
   sub-generation; explicit stop conditions.
 - ⬜ **D2. State-schema + widget editor UI**; richer status widgets.
 
-## Phase P — Plugin / extension system 🚧 (P1+P2 built)
+## Phase P — Plugin / extension system 🚧 (P1+P2 built, P3 panels)
 
 Third-party plugins (js-slash-runner class). **Design doc:**
 [docs/plugin-system-design.md](docs/plugin-system-design.md). Changes the threat
@@ -109,8 +109,10 @@ compatibility shim.
   (headless) in the same sandbox via a shared RPC dispatcher with manifest-permission
   enforcement; bundled example scaffolder for testing.
   (`pluginHostService`, `pluginsStore`, `PluginHost`, `PluginsPanel`.)
-- ⬜ **P3. App-extension contributions** — register panels/buttons/commands + hooks
-  (give standalone plugins visible UI surfaces; they're headless until then).
+- 🟡 **P3. App-extension contributions** — ✅ `rpt.ui.registerPanel`: a plugin gets a
+  visible, titled, auto-sizing panel in the right sidebar (renders its own iframe UI;
+  kept on a stable mount so iframes never reparent/reload). Example plugin ships a panel.
+  ⬜ Remaining: `registerButton` (shell toolbar) + `registerCommand`.
 - ⬜ **P4. Slash-command runtime (subset) + Tavern-Helper shim.**
 - ⬜ **P5. Packaging** (.zip / PNG cartridge), settings, opt-in `net`.
 - ⬜ Open decisions (see doc §12): compat ambition, permission UX, distribution,

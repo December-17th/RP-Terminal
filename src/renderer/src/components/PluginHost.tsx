@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useChatStore } from '../stores/chatStore'
 import { useToastStore } from '../stores/toastStore'
 import { usePluginsStore, InstalledPlugin } from '../stores/pluginsStore'
@@ -6,22 +6,25 @@ import { buildScriptSrcDoc } from '../plugin/bridgeShim'
 import { dispatchRpc } from '../plugin/dispatch'
 
 /**
- * Standalone-plugin runtime (P2). Mounted once at the app root, it runs every
- * enabled plugin in its own sandboxed (`allow-scripts`, opaque-origin) iframe —
- * headless in P2 (no UI surface until P3 contribution points). Each plugin's
- * `rpt` calls are enforced against its manifest-granted permission set, and act
- * on the currently active session. Shares the bridge shim + RPC dispatcher with
- * card scripts.
+ * Standalone-plugin runtime (P2/P3). Mounted in the right sidebar, it runs every
+ * enabled plugin in its own sandboxed (`allow-scripts`, opaque-origin) iframe.
+ * A plugin that calls `rpt.ui.registerPanel(...)` (P3) gets a visible, titled,
+ * auto-sizing panel here; plugins that don't stay mounted but hidden (headless).
+ * Each plugin's `rpt` calls are enforced against its manifest-granted permission
+ * set and act on the active session. Shares the bridge shim + RPC dispatcher with
+ * card scripts. Kept in one stable mount so iframes never reparent (which would
+ * reload them and wipe their state).
  */
 export const PluginHost: React.FC<{ profileId: string }> = ({ profileId }) => {
   const plugins = usePluginsStore((s) => s.plugins)
   const running = plugins.filter((p) => p.enabled && !p.error && p.code)
+  if (running.length === 0) return null
   return (
-    <>
+    <div className="rpt-plugin-dock">
       {running.map((p) => (
         <PluginFrame key={p.id} profileId={profileId} plugin={p} />
       ))}
-    </>
+    </div>
   )
 }
 
@@ -30,6 +33,8 @@ const PluginFrame: React.FC<{ profileId: string; plugin: InstalledPlugin }> = ({
   plugin
 }) => {
   const frameRef = useRef<HTMLIFrameElement>(null)
+  const [panel, setPanel] = useState<{ title: string } | null>(null)
+  const [height, setHeight] = useState(0)
   const srcDoc = useMemo(
     () => buildScriptSrcDoc([{ name: plugin.id, code: plugin.code }]),
     [plugin.code]
@@ -48,6 +53,7 @@ const PluginFrame: React.FC<{ profileId: string; plugin: InstalledPlugin }> = ({
       getChatId: () => useChatStore.getState().activeChatId,
       ensure,
       toast: (m) => useToastStore.getState().push(m),
+      registerPanel: (def) => setPanel({ title: (def && def.title) || plugin.manifest.name }),
       syncLocalVars: (store) => useChatStore.getState().setLatestFloorVariables(store),
       triggerGenerate: (text) => useChatStore.getState().sendAction(profileId, text),
       isGenerating: () => useChatStore.getState().isGenerating
@@ -58,7 +64,9 @@ const PluginFrame: React.FC<{ profileId: string; plugin: InstalledPlugin }> = ({
       if (e.source !== frameRef.current?.contentWindow) return
       const d = e.data
       if (!d || typeof d !== 'object') return
-      if (d.__rptlog) {
+      if (d.__rptresize) {
+        setHeight(Math.min(Math.max(0, Number(d.height) || 0), 1200))
+      } else if (d.__rptlog) {
         window.api.pluginLog(plugin.manifest.name, String(d.msg))
       } else if (d.__rptready) {
         emit('ready', {})
@@ -69,7 +77,6 @@ const PluginFrame: React.FC<{ profileId: string; plugin: InstalledPlugin }> = ({
             post({ __rptres: 1, id: d.id, ok: false, error: err?.message || String(err) })
           )
       }
-      // __rptresize ignored — plugin frames are headless in P2.
     }
     window.addEventListener('message', onMessage)
     return () => window.removeEventListener('message', onMessage)
@@ -87,13 +94,22 @@ const PluginFrame: React.FC<{ profileId: string; plugin: InstalledPlugin }> = ({
     })
   }, [])
 
+  // Stable structure regardless of panel state — toggling only changes styles, so
+  // the iframe element is never moved in the DOM (a move would reload it).
   return (
-    <iframe
-      ref={frameRef}
-      sandbox="allow-scripts"
-      srcDoc={srcDoc}
-      title={`plugin ${plugin.id}`}
-      style={{ position: 'absolute', width: 0, height: 0, border: 0, visibility: 'hidden' }}
-    />
+    <div className="rpt-plugin-panel" style={{ display: panel ? 'block' : 'none' }}>
+      <div className="rpt-plugin-head" style={{ display: panel ? 'flex' : 'none' }}>
+        <span className="rpt-plugin-title">{panel?.title}</span>
+        <span className="rpt-plugin-by">{plugin.manifest.name}</span>
+      </div>
+      <iframe
+        ref={frameRef}
+        className="rpt-plugin-frame"
+        sandbox="allow-scripts"
+        srcDoc={srcDoc}
+        title={`plugin ${plugin.id}`}
+        style={panel ? { height: height || 1 } : { width: 0, height: 0, border: 0 }}
+      />
+    </div>
   )
 }

@@ -145,24 +145,39 @@ export const scaffoldExample = (): string => {
     id,
     name: 'Example Plugin',
     version: '1.0.0',
-    description: 'Headless demo: counts turns per profile and toasts after each generation.',
+    description: 'Shows a panel that counts generations this profile, with a reset button.',
     author: 'RP Terminal',
     type: 'app-extension',
     entry: 'main.js',
     apiVersion: 'rpt.v1',
-    permissions: ['vars:read', 'vars:write', 'ui:toast']
+    permissions: ['vars:read', 'vars:write', 'ui:toast', 'ui:panel']
   })
   fs.writeFileSync(path.join(dir, 'manifest.json'), JSON.stringify(manifest, null, 2), 'utf-8')
 
-  const main = `// Example RP Terminal plugin (rpt.v1) — headless.
-rpt.on('ready', function () {
-  rpt.ui.toast('Example plugin loaded')
-})
+  const main = `// Example RP Terminal plugin (rpt.v1) — renders a panel (P3).
+const root = document.createElement('div')
+document.body.appendChild(root)
+
+async function render() {
+  const n = (await rpt.global.get('pluginTurns')) || 0
+  root.innerHTML = '<div style="margin-bottom:6px">Generations this profile: <b>' + n + '</b></div>'
+  const btn = document.createElement('button')
+  btn.textContent = 'Reset count'
+  btn.onclick = async function () {
+    await rpt.global.set('pluginTurns', 0)
+    rpt.ui.toast('Reset')
+    render()
+  }
+  root.appendChild(btn)
+}
+
+rpt.ui.registerPanel({ title: 'Example Plugin' })
+rpt.on('ready', render)
 rpt.on('generation:end', async function () {
-  var n = await rpt.global.inc('pluginTurns')
-  rpt.ui.toast('Turns this profile: ' + n)
-  rpt.log('generation ended; total turns =', n)
+  await rpt.global.inc('pluginTurns')
+  render()
 })
+render()
 `
   fs.writeFileSync(path.join(dir, 'main.js'), main, 'utf-8')
   log('info', `Scaffolded example plugin at ${dir}`)

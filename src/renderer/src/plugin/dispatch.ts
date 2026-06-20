@@ -15,6 +15,8 @@ export interface DispatchCtx {
   ensure: (permission: string) => Promise<boolean>
   /** Show a transient toast. */
   toast: (msg: string) => void
+  /** Plugin requested a visible panel (standalone plugins only; no-op for cards). */
+  registerPanel?: (def: any) => void
   /** Push local-scope var writes into the chat store so status widgets update live. */
   syncLocalVars: (store: Record<string, any>) => void
   /** Run a full generation turn (resolves when the new floor lands). */
@@ -59,6 +61,11 @@ export const dispatchRpc = async (method: string, args: any[], ctx: DispatchCtx)
     case 'ui.toast': {
       if (!(await ctx.ensure('ui:toast'))) permDenied('ui:toast')
       ctx.toast(String(args[0] ?? ''))
+      return true
+    }
+    case 'ui.registerPanel': {
+      if (!(await ctx.ensure('ui:panel'))) permDenied('ui:panel')
+      ctx.registerPanel?.(args[0] || {})
       return true
     }
     default:

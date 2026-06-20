@@ -845,13 +845,15 @@ export default function App() {
           ) : (
             <div style={{ opacity: 0.5 }}>Waiting for session...</div>
           )}
+          {/* App-wide standalone-plugin runtime: panels render here, headless
+              plugins stay mounted but hidden. Kept outside the session
+              conditional so plugin iframes never reparent/reload. */}
+          <PluginHost profileId={activeProfile.id} />
         </div>
       </div>
 
       {settings?.ui?.show_fps && <FpsOverlay />}
 
-      {/* App-wide standalone-plugin runtime (headless) + shared toast surface. */}
-      <PluginHost profileId={activeProfile.id} />
       <ToastStack />
 
       {menu && (
