@@ -36,8 +36,8 @@ prompt-cache discipline or the "keyword lorebook is primary" stance.
 
 ### Non-goals (this track)
 
-- **Auto-routing of modes.** Mode switching is manual; an optional cheap-API intent
-  classifier is a later, opt-in add (locked decision — keyword/manual is the baseline).
+- **Auto-routing of modes.** Auto-routing is the future `agentic` Agent Mode (a cheap-API
+  intent classifier picks the scene); `manual` is the baseline and ships first.
 - **Local ML / embeddings.** RAG is Phase K (Track 4), strictly additive and opt-in.
 - **A full STScript/agent DSL.** Tools are a fixed registry + card-declared + (later)
   plugin-contributed; not a general scripting language.
@@ -72,8 +72,23 @@ together rather than five independent features.
 
 ## 3. The FSM (Phase H) — the keystone
 
-A session is always in exactly one **mode**. The mode is a small enum, switched
-manually from the chat header, and it does three things:
+The whole FSM is gated by a three-way **Agent Mode** setting (`settings.agent.mode`,
+**default `off`**):
+
+- **off** — classic: the scene switcher is greyed out, no per-mode tuning, world-info
+  re-matched **every turn** (ST-style dynamic keyword lore — the familiar baseline).
+- **manual** — the switcher is live; the user picks Explore/Dialogue/Combat by hand; the
+  per-mode behavior below applies (tuning + L2 cache-on-transition).
+- **agentic** — like manual, plus an intent classifier **auto-routes** the mode each turn.
+  The auto-router is not built yet (it's the future agentic capability — §1 non-goals);
+  `agentic` behaves like `manual` until it lands.
+
+This split is deliberate: it keeps fully-dynamic lore as the default and confines the
+"stable L2 within a mode" trade-off (new keywords don't fire until a transition) to users
+who opt into the FSM.
+
+When agentic, a session is always in exactly one **mode**. The mode is a small enum,
+switched manually from the chat header, and it does three things:
 
 | Mode         | Tunes                                                                   | Lorebook scan        |
 | ------------ | ----------------------------------------------------------------------- | -------------------- |
@@ -288,7 +303,8 @@ spends against:
 
 ```
 L1 static core    — system + char description + examples         (stable per session)
-L2 semi-static    — world info / lore   ── now stable PER MODE (Phase H), re-matched on transition
+L2 semi-static    — world info / lore   ── agentic: stable PER MODE, re-matched on transition;
+                                            classic: re-matched every turn (dynamic lore)
 L3 rolling history— prior turns + tool hops (append-only)         (byte-stable prefix)
 L4 volatile       — new user action, <rpt-result>, [Combat] block (always last, 0% cache)
 ```
@@ -314,7 +330,7 @@ give the insertion machinery; the new work is *when* (transition vs. every turn)
 | `rpg_entities` table   | now used (combat entities); no schema change needed                             |
 | `LorebookEntrySchema`  | `protected: boolean` (default `false`)                                          |
 | `contentParser`        | parse `<rpt-action>` (+ keep `<rpt-event>`); emit a result for each             |
-| Settings               | `mode → config` map (per-mode output ceiling / scan breadth / addendum)         |
+| Settings               | `agent.mode` (off / manual / agentic); `mode → config` map (per-mode output ceiling / scan breadth / addendum) |
 | API preset             | `supports_tools` flag (gates the §6 function-calling transport)                 |
 | Card `rp_terminal`     | optional `tools` declaration; combat script in `scripts`/`game_rules`           |
 

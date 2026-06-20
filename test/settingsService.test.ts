@@ -97,6 +97,24 @@ describe('settings normalize', () => {
     expect(s.modes.explore.scan_depth).toBe(4)
   })
 
+  it('defaults agent mode to off (classic)', () => {
+    expect(normalize({}).agent.mode).toBe('off')
+  })
+
+  it('preserves a valid stored agent mode', () => {
+    expect(normalize({ agent: { mode: 'manual' } }).agent.mode).toBe('manual')
+    expect(normalize({ agent: { mode: 'agentic' } }).agent.mode).toBe('agentic')
+  })
+
+  it('coerces an unknown agent mode to off', () => {
+    expect(normalize({ agent: { mode: 'bogus' } as any }).agent.mode).toBe('off')
+  })
+
+  it('migrates the legacy boolean agent toggle (enabled → manual / off)', () => {
+    expect(normalize({ agent: { enabled: true } as any }).agent.mode).toBe('manual')
+    expect(normalize({ agent: { enabled: false } as any }).agent.mode).toBe('off')
+  })
+
   it('merges a partial mode override while keeping the other tuning fields', () => {
     const s = normalize({ modes: { combat: { max_output_tokens: 800 } } as any })
     expect(s.modes.combat.max_output_tokens).toBe(800) // overridden

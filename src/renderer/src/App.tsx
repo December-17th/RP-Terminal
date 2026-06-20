@@ -593,6 +593,8 @@ export default function App() {
   const page = Math.min(Math.max(viewIndex, 0), Math.max(pageCount - 1, 0))
   const showStreaming = isGenerating && page >= renderedFloors.length
   const currentFloor = showStreaming ? undefined : renderedFloors[page]
+  // The FSM scene switcher is active in 'manual'/'agentic' agent modes; 'off' greys it out.
+  const fsmEnabled = settings?.agent?.mode === 'manual' || settings?.agent?.mode === 'agentic'
 
   // Render a single floor block (user action + AI response) with inline edit + menu.
   const renderFloorBlock = (f: (typeof renderedFloors)[number]): ReactNode => {
@@ -724,15 +726,23 @@ export default function App() {
               </div>
 
               <div className="chat-toolbar">
-                <div className="mode-switch" role="tablist" aria-label="Session mode">
+                <div
+                  className={`mode-switch ${fsmEnabled ? '' : 'disabled'}`}
+                  role="tablist"
+                  aria-label="Session mode"
+                >
                   {(['explore', 'dialogue', 'combat'] as const).map((m) => (
                     <button
                       key={m}
                       role="tab"
                       aria-selected={activeChatMode === m}
                       className={`mode-btn ${activeChatMode === m ? 'active' : ''}`}
-                      disabled={isGenerating}
-                      title={`Switch to ${m} mode`}
+                      disabled={isGenerating || !fsmEnabled}
+                      title={
+                        fsmEnabled
+                          ? `Switch to ${m} mode`
+                          : 'Set Agent Mode to Manual or Agentic in Settings to switch scenes'
+                      }
                       onClick={() => setMode(activeProfile.id, m)}
                     >
                       {m[0].toUpperCase() + m.slice(1)}

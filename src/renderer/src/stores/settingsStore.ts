@@ -31,6 +31,9 @@ export interface Settings {
     scan_depth: number;
     max_recursion: number;
   };
+  agent: {
+    mode: 'off' | 'manual' | 'agentic';
+  };
   ui: {
     theme: string;
     font_size: number;

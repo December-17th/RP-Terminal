@@ -250,6 +250,10 @@ body {
   display: flex;
   gap: 4px;
 }
+/* Classic mode: the whole group is inert (each button is also :disabled). */
+.mode-switch.disabled {
+  cursor: not-allowed;
+}
 .mode-btn {
   padding: 3px 12px;
   font-size: 12px;

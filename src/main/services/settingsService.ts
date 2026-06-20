@@ -1,6 +1,6 @@
 import { safeStorage } from 'electron'
 import { getDb } from './db'
-import { Settings, ApiPreset, ModeConfig } from '../types/models'
+import { Settings, ApiPreset, ModeConfig, AgentMode } from '../types/models'
 
 // API keys are encrypted at rest via the OS keyring (Electron safeStorage). A
 // stored value is prefixed so encrypted keys are distinguishable from legacy
@@ -71,6 +71,10 @@ export const getDefaultSettings = (): Settings => ({
         'Combat mode: keep narration terse and reactive. Do not invent dice rolls or numeric outcomes — mechanics are resolved by the system.'
     }
   },
+  // Classic by default: ST-style dynamic lore, no FSM. Manual/agentic are opt-in.
+  agent: {
+    mode: 'off'
+  },
   ui: {
     theme: 'dark',
     font_size: 16,
@@ -92,6 +96,17 @@ export const normalize = (stored: Partial<Settings>): Settings => {
   const generation = { ...d.generation, ...(stored.generation || {}) }
   const lorebook = { ...d.lorebook, ...(stored.lorebook || {}) }
   const ui = { ...d.ui, ...(stored.ui || {}) }
+
+  // Agent mode: accept the three-way enum; migrate the legacy boolean `enabled` toggle
+  // (true → manual), else default off.
+  const storedAgent = (stored.agent || {}) as { mode?: string; enabled?: boolean }
+  const validAgentModes: AgentMode[] = ['off', 'manual', 'agentic']
+  const agentMode: AgentMode = validAgentModes.includes(storedAgent.mode as AgentMode)
+    ? (storedAgent.mode as AgentMode)
+    : storedAgent.enabled === true
+      ? 'manual'
+      : 'off'
+  const agent = { mode: agentMode }
 
   // Merge each known mode over its default so adding a tuning field never wipes a mode.
   const storedModes = (stored.modes || {}) as Record<string, Partial<ModeConfig>>
@@ -122,7 +137,7 @@ export const normalize = (stored: Partial<Settings>): Settings => {
     active_api_preset_id = api_presets[0].id
   }
 
-  return { api, api_presets, active_api_preset_id, persona, generation, lorebook, modes, ui }
+  return { api, api_presets, active_api_preset_id, persona, generation, lorebook, modes, agent, ui }
 }
 
 /** The tuning config for a mode, falling back to Explore (then defaults) for unknown modes. */

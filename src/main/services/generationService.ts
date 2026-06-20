@@ -68,8 +68,12 @@ export const generate = async (
 
   const settings = getSettings(profileId)
   const preset = getActivePreset(profileId)
-  // Phase H — the session's manual FSM mode tunes retrieval breadth, the output
-  // ceiling, and an optional per-mode system instruction.
+  // The FSM is on in 'manual' and 'agentic' agent modes (agentic adds auto-routing — TBD,
+  // so it behaves like manual for now). It enables per-mode tuning (retrieval breadth,
+  // output ceiling, system addendum) + L2 cache-on-transition. 'off' = classic: ST-style,
+  // no FSM tuning, lore re-matched every turn (fully dynamic keywords).
+  // TODO(agentic): when agent.mode === 'agentic', classify intent here and setChatMode().
+  const fsmEnabled = settings.agent?.mode === 'manual' || settings.agent?.mode === 'agentic'
   const mode = getChatMode(profileId, chatId)
   const modeConfig = resolveModeConfig(settings, mode)
   // A session injects all its selected lorebooks; with none chosen it defaults to
@@ -87,29 +91,35 @@ export const generate = async (
   const globals = loadGlobals(profileId)
   const userName = settings.persona?.name || 'User'
 
-  // Phase H inc 2 — L2 cache: match the active lorebooks once per mode and reuse the
-  // result across turns within that mode, so the world-info block stays byte-stable for
-  // the provider prefix cache (Phase G). A mode transition or a lorebook-selection change
-  // (cleared in setChatLorebookIds) forces a fresh match. By design this means new
-  // keywords raised mid-mode don't pull in new lore until the next mode transition.
-  const scanDepth = modeConfig.scan_depth ?? settings.lorebook?.scan_depth ?? 3
+  const scanDepth = fsmEnabled
+    ? (modeConfig.scan_depth ?? settings.lorebook?.scan_depth ?? 3)
+    : (settings.lorebook?.scan_depth ?? 3)
   const maxRecursion = settings.lorebook?.max_recursion ?? 0
-  const cached = getCachedWorldInfo(profileId, chatId)
+  const scanText = buildScanText(floors, userAction, scanDepth)
+
+  // L2 world-info matching differs by mode:
+  //  • Agentic — Phase H inc 2 cache: match once per FSM mode and reuse across turns
+  //    within that mode, so the world-info block stays byte-stable for the provider
+  //    prefix cache (Phase G). A transition / lorebook-selection change forces a re-match;
+  //    by design new keywords raised mid-mode don't pull new lore until the next transition.
+  //  • Classic — re-match every turn for fully dynamic keyword lore (ST behavior); any
+  //    stale agentic cache is cleared so a later switch back to agentic starts fresh.
   let matchedEntries: LorebookEntry[]
-  if (cached && cached.mode === mode) {
-    matchedEntries = cached.entries
+  if (fsmEnabled) {
+    const cached = getCachedWorldInfo(profileId, chatId)
+    if (cached && cached.mode === mode) {
+      matchedEntries = cached.entries
+    } else {
+      matchedEntries = matchAcross(lorebooks, scanText, Math.random, maxRecursion)
+      setCachedWorldInfo(profileId, chatId, { mode, entries: matchedEntries })
+      log(
+        'info',
+        `world info (re)matched for ${mode} mode — ${matchedEntries.length} entr${matchedEntries.length === 1 ? 'y' : 'ies'} cached`
+      )
+    }
   } else {
-    matchedEntries = matchAcross(
-      lorebooks,
-      buildScanText(floors, userAction, scanDepth),
-      Math.random,
-      maxRecursion
-    )
-    setCachedWorldInfo(profileId, chatId, { mode, entries: matchedEntries })
-    log(
-      'info',
-      `world info (re)matched for ${mode} mode — ${matchedEntries.length} entr${matchedEntries.length === 1 ? 'y' : 'ies'} cached`
-    )
+    matchedEntries = matchAcross(lorebooks, scanText, Math.random, maxRecursion)
+    setCachedWorldInfo(profileId, chatId, null)
   }
 
   const built = buildPrompt({
@@ -128,7 +138,7 @@ export const generate = async (
     maxRecursion,
     matchedEntries,
     promptRegex: getPromptRules(profileId),
-    modeAddendum: modeConfig.addendum,
+    modeAddendum: fsmEnabled ? modeConfig.addendum : '',
     template: {
       vars: workingVars,
       globals,
@@ -148,19 +158,19 @@ export const generate = async (
     log('info', `context budget ${budget} tok — trimmed ${dropped} oldest message(s)`)
   }
 
-  // Mode caps the output ceiling: don't exceed the preset's max_tokens, but lower it
-  // to the mode's limit (e.g. Combat is terse). Falls back to the mode limit if the
-  // preset doesn't specify one.
+  // Agentic mode caps the output ceiling at the FSM mode's limit (e.g. Combat is terse),
+  // never exceeding the preset's own max_tokens. Classic mode uses the preset value as-is.
   const presetMax = preset.parameters.max_tokens
-  const params = {
-    ...preset.parameters,
-    max_tokens:
-      presetMax != null ? Math.min(presetMax, modeConfig.max_output_tokens) : modeConfig.max_output_tokens
-  }
+  const maxTokens = fsmEnabled
+    ? presetMax != null
+      ? Math.min(presetMax, modeConfig.max_output_tokens)
+      : modeConfig.max_output_tokens
+    : presetMax
+  const params = { ...preset.parameters, max_tokens: maxTokens }
 
   log(
     'request',
-    `→ ${settings.api.provider} · ${settings.api.model || '(no model)'} · ${mode} mode · ${messages.length} msgs · ${settings.api.endpoint || '(default endpoint)'}`,
+    `→ ${settings.api.provider} · ${settings.api.model || '(no model)'} · ${fsmEnabled ? `${mode} mode` : 'classic'} · ${messages.length} msgs · ${settings.api.endpoint || '(default endpoint)'}`,
     messages
   )
 

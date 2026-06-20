@@ -1,6 +1,6 @@
 import React, { useState } from 'react'
 import { useProfileStore } from '../stores/profileStore'
-import { useSettingsStore } from '../stores/settingsStore'
+import { useSettingsStore, Settings } from '../stores/settingsStore'
 import { PluginsPanel } from './PluginsPanel'
 
 /**
@@ -70,6 +70,28 @@ export const SettingsPanel: React.FC<{ profileId: string }> = ({ profileId }) =>
                 })
               }
             />
+
+            <label className="field-label" style={{ marginTop: 18 }}>
+              Agent Mode
+            </label>
+            <select
+              value={settings.agent?.mode ?? 'off'}
+              onChange={(e) =>
+                updateSettings(profileId, {
+                  agent: { ...settings.agent, mode: e.target.value as Settings['agent']['mode'] }
+                })
+              }
+              style={{ width: '100%' }}
+            >
+              <option value="off">Off (Classic)</option>
+              <option value="manual">Manual</option>
+              <option value="agentic">Agentic</option>
+            </select>
+            <div style={{ fontSize: '0.78em', color: 'var(--rpt-text-secondary)', marginTop: 4 }}>
+              <b>Off</b>: classic — dynamic lore every turn, no scene modes. <b>Manual</b>: enables
+              the Explore/Dialogue/Combat switcher with per-mode tuning + caching. <b>Agentic</b>:
+              same, with automatic mode routing (auto-routing coming soon).
+            </div>
 
             <label
               className="entry-toggles"

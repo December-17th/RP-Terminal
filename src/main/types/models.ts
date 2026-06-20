@@ -17,6 +17,13 @@ export interface ApiPreset {
   model: string
 }
 
+/** How the agentic FSM operates:
+ *  - 'off'     — classic: no FSM, ST-style dynamic lore re-matched every turn.
+ *  - 'manual'  — FSM on; the user switches Explore/Dialogue/Combat by hand.
+ *  - 'agentic' — FSM on + automatic mode routing (auto-router TBD; behaves like
+ *    'manual' until that lands). */
+export type AgentMode = 'off' | 'manual' | 'agentic'
+
 /** Per-mode generation tuning for the manual FSM (Phase H). Keyed by ChatMode. */
 export interface ModeConfig {
   /** Output-token ceiling for this mode (caps the active preset's max_tokens). */
@@ -59,6 +66,10 @@ export interface Settings {
   }
   /** Per-mode generation tuning for the manual FSM (Explore/Dialogue/Combat). */
   modes: Record<string, ModeConfig>
+  /** How the agentic FSM operates: off (classic) / manual / agentic (see AgentMode). */
+  agent: {
+    mode: AgentMode
+  }
   ui: {
     theme: string
     font_size: number
