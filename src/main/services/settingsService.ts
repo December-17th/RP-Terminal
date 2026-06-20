@@ -1,5 +1,41 @@
+import { safeStorage } from 'electron'
 import { getDb } from './db'
 import { Settings, ApiPreset } from '../types/models'
+
+// API keys are encrypted at rest via the OS keyring (Electron safeStorage). A
+// stored value is prefixed so encrypted keys are distinguishable from legacy
+// plaintext, which is migrated transparently: read as-is, re-encrypted on the
+// next save. If the keyring is unavailable, keys fall back to plaintext.
+const ENC_PREFIX = 'enc:v1:'
+
+export const encryptSecret = (plain: string): string => {
+  if (!plain || plain.startsWith(ENC_PREFIX)) return plain
+  try {
+    if (safeStorage.isEncryptionAvailable()) {
+      return ENC_PREFIX + safeStorage.encryptString(plain).toString('base64')
+    }
+  } catch {
+    // keyring unavailable — fall through to storing plaintext
+  }
+  return plain
+}
+
+export const decryptSecret = (stored: string): string => {
+  if (!stored || !stored.startsWith(ENC_PREFIX)) return stored || ''
+  try {
+    return safeStorage.decryptString(Buffer.from(stored.slice(ENC_PREFIX.length), 'base64'))
+  } catch {
+    // Can't decrypt (moved machines / different OS user) — drop the stale key.
+    return ''
+  }
+}
+
+/** Apply a transform to every api_key field (the live api block + every preset). */
+const mapApiKeys = (s: Settings, fn: (k: string) => string): Settings => ({
+  ...s,
+  api: { ...s.api, api_key: fn(s.api.api_key) },
+  api_presets: s.api_presets.map((p) => ({ ...p, api_key: fn(p.api_key) }))
+})
 
 export const getDefaultSettings = (): Settings => ({
   api: {
@@ -69,19 +105,24 @@ export const getSettings = (profileId: string): Settings => {
   const row = getDb().prepare('SELECT data FROM settings WHERE profile_id = ?').get(profileId) as
     | { data: string }
     | undefined
-  if (!row) return normalize({})
-  try {
-    return normalize(JSON.parse(row.data))
-  } catch {
-    return normalize({})
+  let stored: Partial<Settings> = {}
+  if (row) {
+    try {
+      stored = JSON.parse(row.data)
+    } catch {
+      stored = {}
+    }
   }
+  // Decrypt api keys so the renderer always works with plaintext.
+  return mapApiKeys(normalize(stored), decryptSecret)
 }
 
 export const saveSettings = (profileId: string, settings: Settings): void => {
+  const toStore = mapApiKeys(settings, encryptSecret)
   getDb()
     .prepare(
       `INSERT INTO settings (profile_id, data) VALUES (?, ?)
        ON CONFLICT(profile_id) DO UPDATE SET data = excluded.data`
     )
-    .run(profileId, JSON.stringify(settings))
+    .run(profileId, JSON.stringify(toStore))
 }

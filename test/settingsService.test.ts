@@ -1,5 +1,33 @@
 import { describe, it, expect } from 'vitest'
-import { normalize, getDefaultSettings } from '../src/main/services/settingsService'
+import {
+  normalize,
+  getDefaultSettings,
+  encryptSecret,
+  decryptSecret
+} from '../src/main/services/settingsService'
+
+describe('api-key encryption', () => {
+  it('round-trips a secret through encrypt/decrypt', () => {
+    const enc = encryptSecret('sk-secret-123')
+    expect(enc).not.toBe('sk-secret-123')
+    expect(enc.startsWith('enc:v1:')).toBe(true)
+    expect(decryptSecret(enc)).toBe('sk-secret-123')
+  })
+
+  it('leaves empty strings untouched', () => {
+    expect(encryptSecret('')).toBe('')
+    expect(decryptSecret('')).toBe('')
+  })
+
+  it('does not double-encrypt an already-encrypted value', () => {
+    const enc = encryptSecret('k')
+    expect(encryptSecret(enc)).toBe(enc)
+  })
+
+  it('passes through legacy plaintext on decrypt (transparent migration)', () => {
+    expect(decryptSecret('plain-legacy-key')).toBe('plain-legacy-key')
+  })
+})
 
 describe('settings normalize', () => {
   it('seeds a single "Default" API preset from the live api block when none exist', () => {
