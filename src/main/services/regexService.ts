@@ -1,7 +1,13 @@
 import fs from 'fs'
 import path from 'path'
 import { randomUUID } from 'crypto'
-import { getAppDir, ensureDir, readJsonSync, listFilesSync } from './storageService'
+import {
+  getAppDir,
+  ensureDir,
+  readJsonSync,
+  writeJsonSyncAtomic,
+  listFilesSync
+} from './storageService'
 
 /** A regex rule flattened to a form the renderer can compile and apply. */
 export interface RenderRegexRule {
@@ -108,8 +114,64 @@ export const importRegexFromFile = (profileId: string, filePath: string): string
 }
 
 export const deleteScript = (profileId: string, file: string): void => {
-  // Guard against path traversal — only delete a plain filename in the regex dir.
-  if (file.includes('/') || file.includes('\\') || file.includes('..')) return
+  if (isUnsafe(file)) return
   const p = path.join(regexDir(profileId), file)
   if (fs.existsSync(p)) fs.unlinkSync(p)
+}
+
+/** Guard against path traversal — only operate on a plain filename in the regex dir. */
+const isUnsafe = (file: string): boolean =>
+  file.includes('/') || file.includes('\\') || file.includes('..')
+
+export interface RegexRuleDetail extends RenderRegexRule {
+  file: string
+  index: number
+}
+
+/** The rules in one script file, each tagged with its file + index for editing. */
+export const getScriptRules = (profileId: string, file: string): RegexRuleDetail[] => {
+  if (isUnsafe(file)) return []
+  return rulesInFile(path.join(regexDir(profileId), file)).map((r, index) => ({
+    ...normalizeRule(r),
+    file,
+    index
+  }))
+}
+
+export interface RegexRulePatch {
+  source?: string
+  flags?: string
+  replace?: string
+  disabled?: boolean
+  markdownOnly?: boolean
+  promptOnly?: boolean
+}
+
+/** Edit one rule in place (enable/disable, find/flags, replacement, scope), preserving
+ * the file's original shape and any ST fields we don't manage. */
+export const updateRule = (
+  profileId: string,
+  file: string,
+  index: number,
+  patch: RegexRulePatch
+): void => {
+  if (isUnsafe(file)) return
+  const p = path.join(regexDir(profileId), file)
+  const data = readJsonSync<any>(p)
+  if (!data) return
+  const arr = Array.isArray(data) ? data : [data]
+  const rule = arr[index]
+  if (!rule || typeof rule !== 'object') return
+
+  if (patch.source !== undefined || patch.flags !== undefined) {
+    const cur = parseFind(rule.findRegex ?? rule.regex ?? '')
+    rule.findRegex = `/${patch.source ?? cur.source}/${patch.flags ?? cur.flags}`
+    delete rule.regex // normalize onto findRegex
+  }
+  if (patch.replace !== undefined) rule.replaceString = patch.replace
+  if (patch.disabled !== undefined) rule.disabled = patch.disabled
+  if (patch.markdownOnly !== undefined) rule.markdownOnly = patch.markdownOnly
+  if (patch.promptOnly !== undefined) rule.promptOnly = patch.promptOnly
+
+  writeJsonSyncAtomic(p, Array.isArray(data) ? arr : arr[0])
 }

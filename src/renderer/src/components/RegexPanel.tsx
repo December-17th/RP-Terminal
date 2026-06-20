@@ -1,16 +1,39 @@
-import React, { useEffect } from 'react'
-import { useRegexStore } from '../stores/regexStore'
+import React, { useEffect, useState } from 'react'
+import { Modal } from './Modal'
+import { useRegexStore, RegexRuleDetail, RegexRulePatch } from '../stores/regexStore'
 
 interface Props {
   profileId: string
 }
 
 export const RegexPanel: React.FC<Props> = ({ profileId }) => {
-  const { scripts, loadScripts, importScripts, remove } = useRegexStore()
+  const { scripts, loadScripts, importScripts, remove, updateRule } = useRegexStore()
+  const [expanded, setExpanded] = useState<string | null>(null)
+  const [rules, setRules] = useState<Record<string, RegexRuleDetail[]>>({})
+  const [editing, setEditing] = useState<RegexRuleDetail | null>(null)
 
   useEffect(() => {
     loadScripts(profileId)
   }, [profileId])
+
+  const fetchRules = async (file: string): Promise<void> => {
+    const r = await window.api.getRegexRules(profileId, file)
+    setRules((cur) => ({ ...cur, [file]: r || [] }))
+  }
+
+  const toggleExpand = async (file: string): Promise<void> => {
+    if (expanded === file) {
+      setExpanded(null)
+      return
+    }
+    setExpanded(file)
+    if (!rules[file]) await fetchRules(file)
+  }
+
+  const patchRule = async (rule: RegexRuleDetail, patch: RegexRulePatch): Promise<void> => {
+    await updateRule(profileId, rule.file, rule.index, patch)
+    await fetchRules(rule.file)
+  }
 
   return (
     <div className="panel">
@@ -24,7 +47,7 @@ export const RegexPanel: React.FC<Props> = ({ profileId }) => {
         <div style={{ fontSize: '0.82em', color: 'var(--rpt-text-secondary)', marginBottom: 10 }}>
           SillyTavern regex scripts transform the AI&apos;s output for display (e.g. the
           <em> 美化</em> beautification cards). Applied at render time — the stored history keeps
-          the model&apos;s raw output.
+          the model&apos;s raw output. Expand a script to enable/disable or edit individual rules.
         </div>
         {scripts.length === 0 ? (
           <div style={{ opacity: 0.6, fontStyle: 'italic' }}>
@@ -32,28 +55,136 @@ export const RegexPanel: React.FC<Props> = ({ profileId }) => {
           </div>
         ) : (
           scripts.map((s) => (
-            <div key={s.file} className="panel-list-row">
-              <div className="panel-list-item" style={{ cursor: 'default' }}>
-                <div style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                  {s.scriptName}
+            <div key={s.file} className="entry-card">
+              <div className="entry-head">
+                <div className="entry-head-main" onClick={() => toggleExpand(s.file)}>
+                  <span className="entry-title">{s.scriptName}</span>
+                  <span className="entry-keys-preview">
+                    {s.ruleCount} rule{s.ruleCount === 1 ? '' : 's'}
+                  </span>
                 </div>
-                <div style={{ fontSize: '0.78em', color: 'var(--rpt-text-secondary)' }}>
-                  {s.ruleCount} rule{s.ruleCount === 1 ? '' : 's'}
-                </div>
+                <button className="btn-ghost" onClick={() => toggleExpand(s.file)}>
+                  {expanded === s.file ? '▾' : '▸'}
+                </button>
+                <button
+                  className="btn-ghost danger"
+                  title="Delete script"
+                  onClick={() => {
+                    if (confirm(`Delete regex script "${s.scriptName}"?`)) remove(profileId, s.file)
+                  }}
+                >
+                  🗑
+                </button>
               </div>
-              <button
-                className="btn-ghost danger row-del"
-                title="Delete script"
-                onClick={() => {
-                  if (confirm(`Delete regex script "${s.scriptName}"?`)) remove(profileId, s.file)
-                }}
-              >
-                🗑
-              </button>
+              {expanded === s.file && (
+                <div className="entry-body" style={{ display: 'block' }}>
+                  {(rules[s.file] || []).length === 0 ? (
+                    <div style={{ opacity: 0.6, fontStyle: 'italic' }}>No rules in this script.</div>
+                  ) : (
+                    (rules[s.file] || []).map((r) => (
+                      <div key={r.index} className={`prompt-row ${r.disabled ? 'disabled' : ''}`}>
+                        <div className="prompt-row-head">
+                          <input
+                            type="checkbox"
+                            checked={!r.disabled}
+                            title={r.disabled ? 'Disabled' : 'Enabled'}
+                            onChange={() => patchRule(r, { disabled: !r.disabled })}
+                          />
+                          <span
+                            className="prompt-name"
+                            title="Edit rule"
+                            onClick={() => setEditing(r)}
+                            style={{ fontFamily: 'monospace', fontSize: '0.85em' }}
+                          >
+                            /{r.source || '(empty)'}/{r.flags}
+                          </span>
+                          {r.promptOnly && <span className="role-badge">prompt</span>}
+                          <div className="prompt-actions">
+                            <button className="btn-ghost" title="Edit" onClick={() => setEditing(r)}>
+                              ✎
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+              )}
             </div>
           ))
         )}
       </div>
+
+      {editing && (
+        <RuleEditor
+          rule={editing}
+          onClose={() => setEditing(null)}
+          onSave={async (patch) => {
+            await patchRule(editing, patch)
+            setEditing(null)
+          }}
+        />
+      )}
     </div>
+  )
+}
+
+const RuleEditor: React.FC<{
+  rule: RegexRuleDetail
+  onClose: () => void
+  onSave: (patch: RegexRulePatch) => void
+}> = ({ rule, onClose, onSave }) => {
+  const [source, setSource] = useState(rule.source)
+  const [flags, setFlags] = useState(rule.flags)
+  const [replace, setReplace] = useState(rule.replace)
+  const [markdownOnly, setMarkdownOnly] = useState(rule.markdownOnly)
+  const [promptOnly, setPromptOnly] = useState(rule.promptOnly)
+
+  return (
+    <Modal
+      title={`Edit Rule — ${rule.scriptName}`}
+      onClose={onClose}
+      headerActions={
+        <button
+          className="btn-accent"
+          onClick={() => onSave({ source, flags, replace, markdownOnly, promptOnly })}
+        >
+          Save
+        </button>
+      }
+    >
+      <label className="field-label">Find (regex)</label>
+      <input value={source} onChange={(e) => setSource(e.target.value)} />
+
+      <label className="field-label">Flags</label>
+      <input value={flags} onChange={(e) => setFlags(e.target.value)} placeholder="g" />
+
+      <label className="field-label">Replace</label>
+      <textarea
+        className="modal-textarea"
+        value={replace}
+        onChange={(e) => setReplace(e.target.value)}
+        placeholder="Use $1 for capture groups; \n for a newline."
+      />
+
+      <div className="entry-toggles">
+        <label>
+          <input
+            type="checkbox"
+            checked={markdownOnly}
+            onChange={(e) => setMarkdownOnly(e.target.checked)}
+          />
+          Markdown only (display)
+        </label>
+        <label>
+          <input
+            type="checkbox"
+            checked={promptOnly}
+            onChange={(e) => setPromptOnly(e.target.checked)}
+          />
+          Prompt only (not applied to display)
+        </label>
+      </div>
+    </Modal>
   )
 }

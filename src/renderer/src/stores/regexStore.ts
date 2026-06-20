@@ -18,6 +18,20 @@ export interface RegexScriptInfo {
   ruleCount: number
 }
 
+export interface RegexRuleDetail extends RenderRegexRule {
+  file: string
+  index: number
+}
+
+export interface RegexRulePatch {
+  source?: string
+  flags?: string
+  replace?: string
+  disabled?: boolean
+  markdownOnly?: boolean
+  promptOnly?: boolean
+}
+
 interface RegexState {
   rules: RenderRegexRule[]
   scripts: RegexScriptInfo[]
@@ -25,6 +39,12 @@ interface RegexState {
   loadScripts: (profileId: string) => Promise<void>
   importScripts: (profileId: string) => Promise<number>
   remove: (profileId: string, file: string) => Promise<void>
+  updateRule: (
+    profileId: string,
+    file: string,
+    index: number,
+    patch: RegexRulePatch
+  ) => Promise<void>
   /** Apply all enabled display rules to an AI response, returning transformed text. */
   apply: (content: string) => string
 }
@@ -68,6 +88,12 @@ export const useRegexStore = create<RegexState>((set, get) => ({
     await window.api.deleteRegex(profileId, file)
     await get().load(profileId)
     await get().loadScripts(profileId)
+  },
+
+  updateRule: async (profileId, file, index, patch) => {
+    await window.api.updateRegexRule(profileId, file, index, patch)
+    // Refresh the compiled display rules so the chat re-renders with the change.
+    await get().load(profileId)
   },
 
   apply: (content) => {

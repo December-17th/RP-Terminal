@@ -109,6 +109,10 @@ const api = {
   listRegex: (profileId: string) => ipcRenderer.invoke('list-regex', profileId),
   deleteRegex: (profileId: string, file: string) =>
     ipcRenderer.invoke('delete-regex', profileId, file),
+  getRegexRules: (profileId: string, file: string) =>
+    ipcRenderer.invoke('regex-script-rules', profileId, file),
+  updateRegexRule: (profileId: string, file: string, index: number, patch: any) =>
+    ipcRenderer.invoke('regex-update-rule', profileId, file, index, patch),
   importRegexDialog: (profileId: string) => ipcRenderer.invoke('import-regex-dialog', profileId),
   onLog: (cb: (entry: any) => void) => {
     const listener = (_e: IpcRendererEvent, entry: any) => cb(entry)

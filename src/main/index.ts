@@ -143,6 +143,12 @@ app.whenReady().then(() => {
   ipcMain.handle('get-render-regex', (_, profileId) => regexService.getRenderRules(profileId))
   ipcMain.handle('list-regex', (_, profileId) => regexService.listScripts(profileId))
   ipcMain.handle('delete-regex', (_, profileId, file) => regexService.deleteScript(profileId, file))
+  ipcMain.handle('regex-script-rules', (_, profileId, file) =>
+    regexService.getScriptRules(profileId, file)
+  )
+  ipcMain.handle('regex-update-rule', (_, profileId, file, index, patch) =>
+    regexService.updateRule(profileId, file, index, patch)
+  )
   ipcMain.handle('import-regex-dialog', async (event, profileId) => {
     const { dialog } = require('electron')
     const result = await dialog.showOpenDialog(BrowserWindow.fromWebContents(event.sender)!, {
