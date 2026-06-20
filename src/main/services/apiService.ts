@@ -70,13 +70,20 @@ const streamOpenAICompatible = async (
     ? base
     : `${base.replace(/\/$/, '')}/chat/completions`
 
-  // Some backends (notably Claude via a Bedrock/OpenAI-compat proxy) reject a
-  // trailing assistant "prefill" message — they require the conversation to end
-  // with a user turn. Assistant prefill is only legal on the native Anthropic
-  // path, so strip any trailing assistant message(s) here.
+  // Strict backends (e.g. Claude via a Bedrock/OpenAI-compat proxy) require the
+  // conversation to END with a user message and reject a trailing assistant
+  // "prefill". Presets routinely place jailbreak/post-history blocks *after* the
+  // user's turn, so move the last user message to the very end — trailing
+  // system/assistant blocks slide just before it. Content is preserved and the
+  // request ends on a user turn.
   let outMessages = messages
-  while (outMessages.length > 1 && outMessages[outMessages.length - 1].role === 'assistant') {
-    outMessages = outMessages.slice(0, -1)
+  const lastUserIdx = messages.map((m) => m.role).lastIndexOf('user')
+  if (lastUserIdx !== -1 && lastUserIdx !== messages.length - 1) {
+    outMessages = [
+      ...messages.slice(0, lastUserIdx),
+      ...messages.slice(lastUserIdx + 1),
+      messages[lastUserIdx]
+    ]
   }
 
   const response = await fetch(url, {

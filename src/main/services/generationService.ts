@@ -4,7 +4,8 @@ import { getSettings } from './settingsService'
 import { getPreset } from './presetService'
 import { getCharacter } from './characterService'
 import { getCharacterLorebook } from './lorebookService'
-import { getChat, getChatsDir, appendFloor, truncateFloors } from './chatService'
+import { getAppDir } from './storageService'
+import { getChat, appendFloor, truncateFloors } from './chatService'
 import { getAllFloors, getFloor } from './floorService'
 import { buildPrompt } from './promptBuilder'
 import { streamProvider, DeltaCallback } from './apiService'
@@ -15,7 +16,7 @@ import { FloorFile } from '../types/chat'
 
 /** Load every regex rule file under profiles/{id}/regex/ (empty if none). */
 const loadProfileRegexRules = (profileId: string): StRegexRule[] => {
-  const dir = path.join(getChatsDir(profileId), '..', 'regex')
+  const dir = path.join(getAppDir(), 'profiles', profileId, 'regex')
   if (!fs.existsSync(dir)) return []
   const rules: StRegexRule[] = []
   for (const file of fs.readdirSync(dir)) {

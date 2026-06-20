@@ -1,8 +1,5 @@
-import path from 'path';
-import { getAppDir, writeJsonSyncAtomic, readJsonSync } from './storageService';
-import { Settings } from '../types/models';
-
-export const getSettingsPath = (profileId: string) => path.join(getAppDir(), 'profiles', profileId, 'settings.json');
+import { getDb } from './db'
+import { Settings } from '../types/models'
 
 export const getDefaultSettings = (): Settings => ({
   api: {
@@ -24,14 +21,25 @@ export const getDefaultSettings = (): Settings => ({
     sidebar_collapsed: false,
     history_strip_visible: true
   }
-});
+})
 
 export const getSettings = (profileId: string): Settings => {
-  const settingsPath = getSettingsPath(profileId);
-  const settings = readJsonSync<Settings>(settingsPath);
-  return settings || getDefaultSettings();
-};
+  const row = getDb()
+    .prepare('SELECT data FROM settings WHERE profile_id = ?')
+    .get(profileId) as { data: string } | undefined
+  if (!row) return getDefaultSettings()
+  try {
+    return { ...getDefaultSettings(), ...JSON.parse(row.data) }
+  } catch {
+    return getDefaultSettings()
+  }
+}
 
-export const saveSettings = (profileId: string, settings: Settings) => {
-  writeJsonSyncAtomic(getSettingsPath(profileId), settings);
-};
+export const saveSettings = (profileId: string, settings: Settings): void => {
+  getDb()
+    .prepare(
+      `INSERT INTO settings (profile_id, data) VALUES (?, ?)
+       ON CONFLICT(profile_id) DO UPDATE SET data = excluded.data`
+    )
+    .run(profileId, JSON.stringify(settings))
+}

@@ -12,6 +12,7 @@ import * as presetService from './services/presetService'
 import * as lorebookService from './services/lorebookService'
 import * as generationService from './services/generationService'
 import * as logService from './services/logService'
+import * as migrationService from './services/migrationService'
 
 function createWindow(): void {
   // Create the browser window.
@@ -59,6 +60,13 @@ app.whenReady().then(() => {
   app.on('browser-window-created', (_, window) => {
     optimizer.watchWindowShortcuts(window)
   })
+
+  // Initialize SQLite and migrate any legacy JSON data on first run.
+  try {
+    migrationService.migrateIfNeeded()
+  } catch (err: any) {
+    logService.log('error', 'Startup DB migration failed', err?.message || String(err))
+  }
 
   // Register IPC Handlers
   ipcMain.handle('get-profiles', () => profileService.getProfiles())

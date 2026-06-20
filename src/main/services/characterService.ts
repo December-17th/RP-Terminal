@@ -1,6 +1,7 @@
 import fs from 'fs'
 import path from 'path'
-import { getAppDir, ensureDir, writeJsonSyncAtomic, readJsonSync, listDirectoriesSync } from './storageService'
+import { getAppDir, ensureDir } from './storageService'
+import { getDb } from './db'
 import {
   RPTerminalCard,
   RPTerminalCardSchema,
@@ -10,37 +11,31 @@ import {
 import { saveCharacterLorebook } from './lorebookService'
 import { parseStPng } from '../parsers/stPngParser'
 
-export const getCharactersDir = (profileId: string): string =>
-  path.join(getAppDir(), 'profiles', profileId, 'characters')
+const getAvatarsDir = (): string => path.join(getAppDir(), 'avatars')
+export const getAvatarPath = (characterId: string): string =>
+  path.join(getAvatarsDir(), `${characterId}.png`)
 
 export const getCharacters = (profileId: string): Array<{ id: string; card: RPTerminalCard }> => {
-  const charsDir = getCharactersDir(profileId)
-  if (!fs.existsSync(charsDir)) return []
+  const rows = getDb()
+    .prepare('SELECT id, card FROM characters WHERE profile_id = ? ORDER BY created_at')
+    .all(profileId) as Array<{ id: string; card: string }>
 
-  const characters: Array<{ id: string; card: RPTerminalCard }> = []
-  for (const id of listDirectoriesSync(charsDir)) {
-    const raw = readJsonSync(path.join(charsDir, id, 'card.json'))
-    if (!raw) continue
-    const parsed = RPTerminalCardSchema.safeParse(raw)
-    if (parsed.success) {
-      characters.push({ id, card: parsed.data })
-    } else {
-      console.warn(`Skipping invalid card ${id}:`, parsed.error.issues?.[0]?.message)
-    }
+  const out: Array<{ id: string; card: RPTerminalCard }> = []
+  for (const row of rows) {
+    const parsed = RPTerminalCardSchema.safeParse(safeJson(row.card))
+    if (parsed.success) out.push({ id: row.id, card: parsed.data })
+    else console.warn(`Skipping invalid card ${row.id}:`, parsed.error.issues?.[0]?.message)
   }
-  return characters
+  return out
 }
 
 export const getCharacter = (profileId: string, characterId: string): RPTerminalCard | null => {
-  const raw = readJsonSync(path.join(getCharactersDir(profileId), characterId, 'card.json'))
-  if (!raw) return null
-  const parsed = RPTerminalCardSchema.safeParse(raw)
+  const row = getDb()
+    .prepare('SELECT card FROM characters WHERE id = ? AND profile_id = ?')
+    .get(characterId, profileId) as { card: string } | undefined
+  if (!row) return null
+  const parsed = RPTerminalCardSchema.safeParse(safeJson(row.card))
   return parsed.success ? parsed.data : null
-}
-
-export const deleteCharacter = (profileId: string, characterId: string): void => {
-  const dir = path.join(getCharactersDir(profileId), characterId)
-  if (fs.existsSync(dir)) fs.rmSync(dir, { recursive: true, force: true })
 }
 
 export const saveCharacter = (
@@ -48,21 +43,28 @@ export const saveCharacter = (
   characterId: string,
   card: RPTerminalCard
 ): void => {
-  // Validate (and fill defaults) before persisting so storage is always canonical.
   const parsed = RPTerminalCardSchema.parse(card)
-  const charDir = path.join(getCharactersDir(profileId), characterId)
-  ensureDir(charDir)
-  writeJsonSyncAtomic(path.join(charDir, 'card.json'), parsed)
+  getDb()
+    .prepare(
+      `INSERT INTO characters (id, profile_id, card, created_at) VALUES (?, ?, ?, ?)
+       ON CONFLICT(id) DO UPDATE SET card = excluded.card`
+    )
+    .run(characterId, profileId, JSON.stringify(parsed), new Date().toISOString())
 }
 
-/**
- * Normalize an embedded ST `character_book` (array-of-entries with `keys`) or a
- * standalone world-info object (`entries` keyed by id with `key`) into our
- * Lorebook shape. Returns null if there's nothing usable.
- */
+export const deleteCharacter = (profileId: string, characterId: string): void => {
+  const db = getDb()
+  db.prepare('DELETE FROM lorebooks WHERE character_id = ? AND profile_id = ?').run(
+    characterId,
+    profileId
+  )
+  db.prepare('DELETE FROM characters WHERE id = ? AND profile_id = ?').run(characterId, profileId)
+  const avatar = getAvatarPath(characterId)
+  if (fs.existsSync(avatar)) fs.unlinkSync(avatar)
+}
+
 const normalizeLorebook = (raw: any, fallbackName: string): Lorebook | null => {
   if (!raw) return null
-
   const rawEntries = Array.isArray(raw.entries) ? raw.entries : Object.values(raw.entries || {})
   if (!Array.isArray(rawEntries) || rawEntries.length === 0) return null
 
@@ -81,28 +83,17 @@ const normalizeLorebook = (raw: any, fallbackName: string): Lorebook | null => {
   return LorebookSchema.parse({ name: raw.name || fallbackName, entries })
 }
 
-/**
- * Import an ST character card (PNG with embedded JSON, or raw JSON) and convert
- * it to a canonical RPTerminalCard. Handles v1 (flat), v2 and v3 (data-wrapped)
- * specs, extracts an embedded lorebook, and preserves an existing rp_terminal
- * extension block if the card already has one.
- */
 export const importCharacterFromFile = (profileId: string, filePath: string): string | null => {
   try {
     const ext = path.extname(filePath).toLowerCase()
     let stData: any = null
 
-    if (ext === '.png') {
-      stData = parseStPng(filePath)
-    } else if (ext === '.json') {
-      stData = JSON.parse(fs.readFileSync(filePath, 'utf-8'))
-    }
+    if (ext === '.png') stData = parseStPng(filePath)
+    else if (ext === '.json') stData = JSON.parse(fs.readFileSync(filePath, 'utf-8'))
     if (!stData) return null
 
-    // v2/v3 wrap fields under `data`; v1 is flat.
     const isWrapped = stData.spec === 'chara_card_v2' || stData.spec === 'chara_card_v3'
     const src = isWrapped ? stData.data : stData
-
     const existingRpExt = src.extensions?.rp_terminal
 
     const card: RPTerminalCard = RPTerminalCardSchema.parse({
@@ -129,23 +120,25 @@ export const importCharacterFromFile = (profileId: string, filePath: string): st
     const newId = crypto.randomUUID()
     saveCharacter(profileId, newId, card)
 
-    // Extract an embedded lorebook (v3 `character_book`, or `data.character_book`).
-    const lorebook = normalizeLorebook(
-      src.character_book || stData.character_book,
-      card.data.name
-    )
-    if (lorebook) {
-      saveCharacterLorebook(profileId, newId, lorebook)
-    }
+    const lorebook = normalizeLorebook(src.character_book || stData.character_book, card.data.name)
+    if (lorebook) saveCharacterLorebook(profileId, newId, lorebook)
 
-    // Copy the source PNG as the avatar.
     if (ext === '.png') {
-      fs.copyFileSync(filePath, path.join(getCharactersDir(profileId), newId, 'avatar.png'))
+      ensureDir(getAvatarsDir())
+      fs.copyFileSync(filePath, getAvatarPath(newId))
     }
 
     return newId
   } catch (error) {
     console.error('Failed to import character:', error)
+    return null
+  }
+}
+
+const safeJson = (s: string): unknown => {
+  try {
+    return JSON.parse(s)
+  } catch {
     return null
   }
 }
