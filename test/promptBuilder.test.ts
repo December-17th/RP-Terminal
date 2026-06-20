@@ -1,5 +1,11 @@
 import { describe, it, expect } from 'vitest'
-import { buildPrompt, estimateTokens, fitToBudget, ChatMessage } from '../src/main/services/promptBuilder'
+import {
+  buildPrompt,
+  buildScanText,
+  estimateTokens,
+  fitToBudget,
+  ChatMessage
+} from '../src/main/services/promptBuilder'
 import { RPTerminalCardSchema, LorebookSchema } from '../src/main/types/character'
 
 // --- tiny factories -------------------------------------------------------
@@ -28,6 +34,25 @@ const floor = (n: number, user: string, resp: string): any => ({
   variables: {}
 })
 const last = (m: ChatMessage[]): ChatMessage => m[m.length - 1]
+
+describe('buildScanText', () => {
+  it('joins the last scanDepth turns plus the action, skipping blanks', () => {
+    const floors = [floor(0, '', 'greet'), floor(1, 'u1', 'a1'), floor(2, 'u2', 'a2')]
+    const txt = buildScanText(floors, 'my action', 1)
+    expect(txt).toContain('u2')
+    expect(txt).toContain('a2')
+    expect(txt).toContain('my action')
+    expect(txt).not.toContain('u1') // floor 1 is outside scanDepth 1
+    expect(txt).not.toContain('greet') // floor 0 greeting too
+  })
+
+  it('clamps scanDepth to at least 1', () => {
+    const floors = [floor(0, 'u0', 'a0'), floor(1, 'u1', 'a1')]
+    const txt = buildScanText(floors, 'act', 0)
+    expect(txt).toContain('u1') // last turn still included
+    expect(txt).toContain('act')
+  })
+})
 
 describe('estimateTokens', () => {
   it('is 0 for empty, ~chars/4 for latin, ~1/char for CJK', () => {
@@ -103,6 +128,34 @@ describe('buildPrompt', () => {
       modeAddendum: '   '
     })
     expect(messages.every((m) => m.content.trim() !== '')).toBe(true)
+  })
+
+  it('uses matchedEntries verbatim and skips the keyword scan when provided (L2 cache)', () => {
+    const messages = buildPrompt({
+      card: card(),
+      preset: preset([blk('char_description'), blk('world_info'), blk('chat_history')]),
+      // This book WOULD match on "dragon" if the scan ran...
+      lorebooks: [book([{ keys: ['dragon'], content: 'FROM-LIVE-MATCH' }])],
+      floors: [],
+      userAction: 'I see a dragon',
+      // ...but a pre-matched (cached) set is supplied, so the scan is bypassed.
+      matchedEntries: book([{ keys: [], content: 'FROM-CACHE' }]).entries
+    })
+    const wi = messages.find((m) => m.content.startsWith('World Info:'))
+    expect(wi?.content).toContain('FROM-CACHE')
+    expect(wi?.content).not.toContain('FROM-LIVE-MATCH')
+  })
+
+  it('treats an empty matchedEntries cache as "nothing matched" (no re-scan)', () => {
+    const messages = buildPrompt({
+      card: card(),
+      preset: preset([blk('char_description'), blk('world_info'), blk('chat_history')]),
+      lorebooks: [book([{ keys: ['dragon'], content: 'SHOULD-NOT-APPEAR' }])],
+      floors: [],
+      userAction: 'I see a dragon',
+      matchedEntries: []
+    })
+    expect(messages.some((m) => m.content.includes('SHOULD-NOT-APPEAR'))).toBe(false)
   })
 
   it('injects top (depth-null) lorebook entries into a World Info block', () => {

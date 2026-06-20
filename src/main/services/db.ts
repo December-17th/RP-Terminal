@@ -43,7 +43,12 @@ CREATE TABLE IF NOT EXISTS chats (
   -- JSON array of active lorebook ids; NULL means "default to the character's own lorebook".
   lorebook_ids TEXT,
   -- Active FSM mode (Explore/Dialogue/Combat); NULL is treated as 'explore'.
-  mode TEXT
+  mode TEXT,
+  -- Cached L2 world-info matched for the current mode: {mode, entries}. Reused across
+  -- turns within a mode and re-matched only on a mode transition (Phase H inc 2 / Phase G).
+  cached_world_info TEXT,
+  -- Forward-facing (Phase J): queued lore mutations flushed at the next mode transition.
+  pending_lore TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_chats_profile ON chats(profile_id);
 
@@ -113,5 +118,7 @@ export const getDb = (): Database.Database => {
   // Lightweight forward migrations for DBs created before a column existed.
   addColumnIfMissing(db, 'chats', 'lorebook_ids', 'lorebook_ids TEXT')
   addColumnIfMissing(db, 'chats', 'mode', 'mode TEXT')
+  addColumnIfMissing(db, 'chats', 'cached_world_info', 'cached_world_info TEXT')
+  addColumnIfMissing(db, 'chats', 'pending_lore', 'pending_lore TEXT')
   return db
 }

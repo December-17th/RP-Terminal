@@ -1,17 +1,25 @@
 import { getSettings, resolveModeConfig } from './settingsService'
 import { getActivePreset } from './presetService'
 import { getCharacter } from './characterService'
-import { getLorebookById } from './lorebookService'
-import { getChat, getChatLorebookIds, getChatMode, appendFloor, truncateFloors } from './chatService'
+import { getLorebookById, matchAcross } from './lorebookService'
+import {
+  getChat,
+  getChatLorebookIds,
+  getChatMode,
+  getCachedWorldInfo,
+  setCachedWorldInfo,
+  appendFloor,
+  truncateFloors
+} from './chatService'
 import { getAllFloors, getFloor } from './floorService'
-import { buildPrompt, fitToBudget } from './promptBuilder'
+import { buildPrompt, buildScanText, fitToBudget } from './promptBuilder'
 import { getPromptRules } from './regexService'
 import { loadGlobals, saveGlobals } from './templateService'
 import { streamProvider, DeltaCallback } from './apiService'
 import { parseContent, RPEvent } from '../parsers/contentParser'
 import { log } from './logService'
 import { FloorFile } from '../types/chat'
-import { Lorebook } from '../types/character'
+import { Lorebook, LorebookEntry } from '../types/character'
 
 /** Apply a single rpt-event to a mutable variables object (nested path set/add/remove). */
 export const applyEvent = (vars: Record<string, any>, evt: RPEvent): void => {
@@ -79,6 +87,31 @@ export const generate = async (
   const globals = loadGlobals(profileId)
   const userName = settings.persona?.name || 'User'
 
+  // Phase H inc 2 — L2 cache: match the active lorebooks once per mode and reuse the
+  // result across turns within that mode, so the world-info block stays byte-stable for
+  // the provider prefix cache (Phase G). A mode transition or a lorebook-selection change
+  // (cleared in setChatLorebookIds) forces a fresh match. By design this means new
+  // keywords raised mid-mode don't pull in new lore until the next mode transition.
+  const scanDepth = modeConfig.scan_depth ?? settings.lorebook?.scan_depth ?? 3
+  const maxRecursion = settings.lorebook?.max_recursion ?? 0
+  const cached = getCachedWorldInfo(profileId, chatId)
+  let matchedEntries: LorebookEntry[]
+  if (cached && cached.mode === mode) {
+    matchedEntries = cached.entries
+  } else {
+    matchedEntries = matchAcross(
+      lorebooks,
+      buildScanText(floors, userAction, scanDepth),
+      Math.random,
+      maxRecursion
+    )
+    setCachedWorldInfo(profileId, chatId, { mode, entries: matchedEntries })
+    log(
+      'info',
+      `world info (re)matched for ${mode} mode — ${matchedEntries.length} entr${matchedEntries.length === 1 ? 'y' : 'ies'} cached`
+    )
+  }
+
   const built = buildPrompt({
     card,
     preset,
@@ -91,8 +124,9 @@ export const generate = async (
       inject: settings.persona?.inject !== false,
       depth: settings.persona?.depth ?? null
     },
-    scanDepth: modeConfig.scan_depth ?? settings.lorebook?.scan_depth ?? 3,
-    maxRecursion: settings.lorebook?.max_recursion ?? 0,
+    scanDepth,
+    maxRecursion,
+    matchedEntries,
     promptRegex: getPromptRules(profileId),
     modeAddendum: modeConfig.addendum,
     template: {

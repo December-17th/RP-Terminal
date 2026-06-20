@@ -1,7 +1,7 @@
 import { RPTerminalCard } from '../types/character'
 import { Preset } from '../types/preset'
 import { FloorFile } from '../types/chat'
-import { Lorebook } from '../types/character'
+import { Lorebook, LorebookEntry } from '../types/character'
 import { matchAcross } from './lorebookService'
 import { applyRegex, RenderRegexRule } from './regexService'
 import { evalTemplate, TemplateContext } from './templateService'
@@ -80,6 +80,9 @@ export interface BuildPromptArgs {
   scanDepth?: number
   /** Max recursive lorebook match passes (default 0 = off). */
   maxRecursion?: number
+  /** Pre-matched world-info entries (Phase H inc 2 cache). When given, the internal
+   * keyword scan is skipped and these are used verbatim — stable L2 within a mode. */
+  matchedEntries?: LorebookEntry[]
   /** Regex rules applied to outgoing prompt text (placement 1 = user, 2 = AI). */
   promptRegex?: RenderRegexRule[]
   /** Per-mode system instruction (Phase H); a stable block just before the conversation. */
@@ -177,6 +180,21 @@ const applyDepthInjections = (
   for (const p of planned) messages.splice(p.idx, 0, { role: p.role, content: p.content })
 }
 
+/** The text scanned for lorebook keywords: the last `scanDepth` turns + the pending action. */
+export const buildScanText = (
+  floors: FloorFile[],
+  userAction: string,
+  scanDepth: number
+): string =>
+  [
+    ...floors
+      .slice(-Math.max(1, scanDepth))
+      .flatMap((f) => [f.user_message.content, f.response.content]),
+    userAction
+  ]
+    .filter(Boolean)
+    .join('\n')
+
 /**
  * Assemble the final provider message array from the card, preset ordering,
  * matched lorebook entries and chat history. The preset's prompt blocks drive
@@ -225,14 +243,16 @@ export const buildPrompt = (args: BuildPromptArgs): ChatMessage[] => {
   // Lorebook scan over the last few turns plus the pending action, across all
   // active lorebooks. Entries with a numeric insertion_depth are injected into the
   // history at that depth; the rest go into the top-level World Info block.
-  const scanDepth = Math.max(1, args.scanDepth ?? 3)
-  const scanText = [
-    ...floors.slice(-scanDepth).flatMap((f) => [f.user_message.content, f.response.content]),
-    userAction
-  ]
-    .filter(Boolean)
-    .join('\n')
-  const matched = matchAcross(lorebooks, scanText, Math.random, args.maxRecursion ?? 0)
+  // Phase H inc 2: use the cached/pre-matched entries when provided (stable L2 within a
+  // mode); otherwise fall back to a fresh keyword scan over the recent turns + action.
+  const matched =
+    args.matchedEntries ??
+    matchAcross(
+      lorebooks,
+      buildScanText(floors, userAction, args.scanDepth ?? 3),
+      Math.random,
+      args.maxRecursion ?? 0
+    )
   const topEntries = matched.filter((e) => e.insertion_depth == null)
   const depthEntries = matched.filter((e) => e.insertion_depth != null)
   const worldInfo = topEntries

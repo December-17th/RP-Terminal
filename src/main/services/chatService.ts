@@ -1,6 +1,7 @@
 import { v4 as uuidv4 } from 'uuid'
 import { getDb } from './db'
 import { ChatSession, FloorFile, ChatMode, CHAT_MODES } from '../types/chat'
+import { LorebookEntry } from '../types/character'
 import { getCharacter } from './characterService'
 import { saveFloor, deleteFloorAndSubsequent, updateFloorFields } from './floorService'
 
@@ -96,6 +97,45 @@ export const getChatLorebookIds = (profileId: string, chatId: string): string[] 
   return row ? parseLorebookIds(row.lorebook_ids) : null
 }
 
+/** The world-info matched for the mode it was cached under (Phase H inc 2). */
+export interface CachedWorldInfo {
+  mode: string
+  entries: LorebookEntry[]
+}
+
+/** Read the cached L2 world-info for a session, or null if absent/unparseable. */
+export const getCachedWorldInfo = (profileId: string, chatId: string): CachedWorldInfo | null => {
+  const row = getDb()
+    .prepare('SELECT cached_world_info FROM chats WHERE id = ? AND profile_id = ?')
+    .get(chatId, profileId) as { cached_world_info: string | null } | undefined
+  if (!row?.cached_world_info) return null
+  try {
+    const v = JSON.parse(row.cached_world_info)
+    if (v && typeof v.mode === 'string' && Array.isArray(v.entries)) return v as CachedWorldInfo
+  } catch {
+    // fall through — treat a corrupt cache as a miss (forces a clean re-match)
+  }
+  return null
+}
+
+/** Store (or clear, with null) the cached L2 world-info for a session. */
+export const setCachedWorldInfo = (
+  profileId: string,
+  chatId: string,
+  value: CachedWorldInfo | null
+): void => {
+  getDb()
+    .prepare('UPDATE chats SET cached_world_info = ? WHERE id = ? AND profile_id = ?')
+    .run(value === null ? null : JSON.stringify(value), chatId, profileId)
+}
+
+/** Invalidate the cached world-info for every session in a profile — called after a
+ * lorebook edit so the next turn re-matches against the updated content (otherwise the
+ * stable-within-a-mode cache would hide the edit until the next transition). */
+export const clearWorldInfoCacheForProfile = (profileId: string): void => {
+  getDb().prepare('UPDATE chats SET cached_world_info = NULL WHERE profile_id = ?').run(profileId)
+}
+
 /** Set the active lorebook ids for a session (pass null to fall back to default). */
 export const setChatLorebookIds = (
   profileId: string,
@@ -105,6 +145,8 @@ export const setChatLorebookIds = (
   getDb()
     .prepare('UPDATE chats SET lorebook_ids = ? WHERE id = ? AND profile_id = ?')
     .run(ids === null ? null : JSON.stringify(ids), chatId, profileId)
+  // The active book set changed — drop the cached match so the next turn re-scans.
+  setCachedWorldInfo(profileId, chatId, null)
 }
 
 /** The active FSM mode for a session (Phase H); a missing/invalid value defaults to 'explore'. */

@@ -1,6 +1,6 @@
 # Agentic Mode — Design (Track 3)
 
-Status: **Living draft — T3.1 (Phase H) increment 1 shipped; the rest is design-only.**
+Status: **Living draft — T3.1 (Phase H) shipped (both increments); the rest is design-only.**
 This is the refreshed Phase D design doc that opens Track 3 (the "Agentic foundation").
 It defines the contract for four roadmap phases that share three foundations:
 
@@ -102,8 +102,9 @@ Phase-G L2 cache goal is unmet. With an FSM:
 
 - New `mode` column on `chats` (idempotent `addColumnIfMissing`, same pattern as
   `lorebook_ids` in [`db.ts`](../src/main/services/db.ts)); default `'explore'`.
-- A cached-L2 blob + a `pending_lore` queue stored per chat (column or a small
-  `chat_state` row) so they survive reload.
+- A cached-L2 blob (`cached_world_info`, **implemented**) + a reserved `pending_lore`
+  column per chat (drain lands in Phase J) so they survive reload. Stored as plain
+  `chats` columns, for parity with `lorebook_ids`.
 - UI: a 3-button mode switcher in the chat header. Auto-route stays **off**.
 
 ---
@@ -326,7 +327,7 @@ No migration drops data; all additions are idempotent forward-migrations.
 | Phase                       | Deliverable                                                                                                                                                              | Reuses                                  |
 | --------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------- |
 | **T3.0** (this doc)         | The contract: action schema, FSM semantics, sandbox message shape, gatekeeper rules, cache obligations.                                                                 | plugin-design doc style                 |
-| **T3.1 — Phase H** 🚧       | ✅ inc.1: `mode` column + accessors, 3-button switcher, `mode → config` tuning (output ceiling / scan depth / system addendum), `resolveModeConfig`, mode-capped `max_tokens`. ⬜ inc.2: **L2 matched-on-transition + cached on chat**; `pending_lore` queue plumbing (no producers yet). | `db` migration pattern, `matchAcross`   |
+| **T3.1 — Phase H** ✅       | inc.1: `mode` column + accessors, 3-button switcher, `mode → config` tuning, `resolveModeConfig`, mode-capped `max_tokens`. inc.2: **L2 matched-on-transition, cached per chat** (`cached_world_info`; reused within a mode; invalidated on transition / book-selection change / lore edit via `clearWorldInfoCacheForProfile`). `pending_lore` **column reserved**; its drain + producers land in Phase J. | `db` migration pattern, `matchAcross`   |
 | **T3.2 — Worker harness**   | `worker_threads` + quickjs, seeded-RNG message contract, timeout/kill. Unit-tested in isolation.                                                                        | `templateService` quickjs pattern       |
 | **T3.3 — D1 action loop**   | `<rpt-action>`/`<rpt-result>` in `contentParser`; transport-agnostic executor + tool registry (`roll_dice`/`get_state`/`set_state`/`query_lorebook`); the loop in `generate()` with cap + abort + logging. | `contentParser`, `applyEvent`, abort map |
 | **T3.4 — Phase I**          | `combat_action` → worker; `rpg_entities` read/write; L4 event-block injection; flavor-only narration. Card combat script.                                                | T3.2 harness, T3.3 loop                 |
@@ -354,8 +355,11 @@ carrying I and J in the meantime.
    VM. ✅ Resolved — §7.
 6. _Open:_ Should `sub_generate` be in v1 or deferred? (Recursion/cost risk — lean
    defer until the loop + caps are proven.)
-7. _Open:_ Where exactly to persist cached-L2 + `pending_lore` — extra `chats` columns
-   vs. a `chat_state` row. (Lean columns for parity with `lorebook_ids`.)
+7. **Persist cached-L2 + `pending_lore` as plain `chats` columns** (`cached_world_info`,
+   `pending_lore`), for parity with `lorebook_ids`. ✅ Resolved — implemented in T3.1 inc.2.
+   _Note:_ stable-within-a-mode means new keywords raised mid-mode don't pull new lore
+   until the next transition (by design); lore *edits* clear the cache profile-wide so
+   authoring stays responsive.
 8. _Open:_ Per-mode preset vs. per-mode param override on one preset. (Lean override —
    avoids preset sprawl.)
 

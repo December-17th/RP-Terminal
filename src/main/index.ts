@@ -207,9 +207,12 @@ app.whenReady().then(() => {
   ipcMain.handle('get-lorebook', (_, profileId, id) =>
     lorebookService.getLorebookById(profileId, id)
   )
-  ipcMain.handle('save-lorebook', (_, profileId, id, lorebook) =>
-    lorebookService.saveLorebookById(profileId, id, lorebook)
-  )
+  ipcMain.handle('save-lorebook', (_, profileId, id, lorebook) => {
+    const result = lorebookService.saveLorebookById(profileId, id, lorebook)
+    // A book changed — drop the per-session L2 cache so edits show up next turn.
+    chatService.clearWorldInfoCacheForProfile(profileId)
+    return result
+  })
   ipcMain.handle('create-lorebook', (_, profileId, name) =>
     lorebookService.createLorebook(profileId, name)
   )
