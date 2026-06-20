@@ -23,6 +23,19 @@ body {
   height: 100%;
 }
 
+/* Thin scrollbars app-wide (~half the default width). */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--rpt-border);
+  border-radius: 4px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
 /* ---------- Top navigation ---------- */
 .top-nav {
   flex: 0 0 auto;
@@ -381,13 +394,20 @@ body {
 .lvl-info .log-glyph,
 .lvl-info .log-label { color: #aaaaaa; }
 
-.floor-list {
+.floor-stage {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+}
+.floor-viewport {
   flex: 1;
   overflow-y: auto;
   display: flex;
   flex-direction: column;
   gap: 20px;
   padding-right: 10px;
+  padding-bottom: 6px;
 }
 
 .floor-block {
@@ -396,6 +416,52 @@ body {
   border-radius: 8px;
   border: 1px solid var(--rpt-border);
   font-size: var(--rpt-chat-font, 16px);
+}
+
+.floor-empty {
+  margin: auto;
+  opacity: 0.5;
+  font-style: italic;
+}
+
+/* Prev/next arrows pinned to the bottom corners of the text box; page number
+   ([n/total]) sits just above the right arrow. */
+.pager-btn {
+  position: absolute;
+  bottom: 0;
+  width: 30px;
+  height: 24px;
+  border-radius: 6px;
+  background: var(--rpt-bg-secondary);
+  border: 1px solid var(--rpt-border);
+  color: var(--rpt-text-primary);
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+  z-index: 2;
+}
+.pager-prev {
+  left: 0;
+}
+.pager-next {
+  /* Offset past the viewport scrollbar so the button stays fully inside the box. */
+  right: 18px;
+}
+.pager-btn:hover:not(:disabled) {
+  border-color: var(--rpt-accent);
+}
+.pager-btn:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+.floor-pageinfo {
+  position: absolute;
+  right: 18px;
+  bottom: 28px;
+  font-size: 0.75em;
+  color: var(--rpt-text-secondary);
+  font-variant-numeric: tabular-nums;
+  z-index: 2;
 }
 
 /* Lightweight render for the in-flight streaming response. */

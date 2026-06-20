@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef, useMemo } from 'react'
+import { useEffect, useState, useRef, useMemo, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { useShallow } from 'zustand/react/shallow'
 import { useProfileStore } from './stores/profileStore'
@@ -112,6 +112,12 @@ function ContextMenu({
  */
 function StreamingView({ pendingUserMsg }: { pendingUserMsg: string }) {
   const streamingText = useChatStore((s) => s.streamingText)
+  const endRef = useRef<HTMLDivElement>(null)
+  // Keep the latest streamed text in view as it grows (scoped to this node so the
+  // high-frequency updates don't re-render the rest of the chat).
+  useEffect(() => {
+    endRef.current?.scrollIntoView({ block: 'end' })
+  }, [streamingText])
   return (
     <div className="floor-block">
       {pendingUserMsg && <div className="user-action">&gt; {pendingUserMsg}</div>}
@@ -120,6 +126,7 @@ function StreamingView({ pendingUserMsg }: { pendingUserMsg: string }) {
       ) : (
         <em className="generating-pulse">Generating…</em>
       )}
+      <div ref={endRef} />
     </div>
   )
 }
@@ -253,8 +260,10 @@ export default function App() {
     field: 'user' | 'response'
     value: string
   } | null>(null)
+  // Which floor (page) the chat history is showing — one floor at a time.
+  const [viewIndex, setViewIndex] = useState(0)
 
-  const messagesEndRef = useRef<HTMLDivElement>(null)
+  const viewportRef = useRef<HTMLDivElement>(null)
   const actionRef = useRef<HTMLTextAreaElement>(null)
 
   useEffect(() => {
@@ -285,11 +294,20 @@ export default function App() {
     }
   }, [activeProfile])
 
+  // Paginated floor view: jump to the newest floor when the floor set changes
+  // (new turn, chat switch), and to the in-flight (streaming) page while generating.
   useEffect(() => {
-    if (messagesEndRef.current) {
-      messagesEndRef.current.scrollIntoView({ behavior: 'smooth' })
-    }
-  }, [floors])
+    setViewIndex(Math.max(0, floors.length - 1))
+  }, [floors.length, activeChatId])
+
+  useEffect(() => {
+    if (isGenerating) setViewIndex(floors.length)
+  }, [isGenerating])
+
+  // Reset scroll to the top of the floor when the visible page changes.
+  useEffect(() => {
+    viewportRef.current?.scrollTo({ top: 0 })
+  }, [viewIndex])
 
   // Apply the chat font size preference to the message area.
   useEffect(() => {
@@ -562,6 +580,63 @@ export default function App() {
     setActionInput('')
   }
 
+  // One floor per page. While generating, an extra trailing page shows the live
+  // streaming response. `viewIndex` is clamped here so it stays in range as the
+  // floor count changes.
+  const pageCount = renderedFloors.length + (isGenerating ? 1 : 0)
+  const page = Math.min(Math.max(viewIndex, 0), Math.max(pageCount - 1, 0))
+  const showStreaming = isGenerating && page >= renderedFloors.length
+  const currentFloor = showStreaming ? undefined : renderedFloors[page]
+
+  // Render a single floor block (user action + AI response) with inline edit + menu.
+  const renderFloorBlock = (f: (typeof renderedFloors)[number]): ReactNode => {
+    const editingUser = editing?.floor === f.floor && editing.field === 'user'
+    const editingResp = editing?.floor === f.floor && editing.field === 'response'
+    const saveEdit = (): void => {
+      if (editing) editFloor(activeProfile.id, editing.floor, editing.field, editText)
+      setEditing(null)
+    }
+    return (
+      <div key={f.floor} className="floor-block">
+        {editingUser ? (
+          <EditArea
+            value={editText}
+            onChange={setEditText}
+            onSave={saveEdit}
+            onCancel={() => setEditing(null)}
+          />
+        ) : f.user ? (
+          <div
+            className="user-action"
+            title="Right-click for options"
+            onContextMenu={(e) => {
+              e.preventDefault()
+              setMenu({ x: e.clientX, y: e.clientY, floor: f.floor, field: 'user', value: f.user })
+            }}
+          >
+            &gt; {f.user}
+          </div>
+        ) : null}
+        {editingResp ? (
+          <EditArea
+            value={editText}
+            onChange={setEditText}
+            onSave={saveEdit}
+            onCancel={() => setEditing(null)}
+          />
+        ) : (
+          <MessageContent
+            content={f.html}
+            css={cardCss}
+            onContextMenu={(x, y) =>
+              setMenu({ x, y, floor: f.floor, field: 'response', value: f.rawResponse })
+            }
+          />
+        )}
+      </div>
+    )
+  }
+
   return (
     <>
       <div className="top-nav">
@@ -599,73 +674,47 @@ export default function App() {
         <div className="main-content">
           {activeChatId ? (
             <>
-              <div className="floor-list">
-                {renderedFloors.map((f) => {
-                  const editingUser = editing?.floor === f.floor && editing.field === 'user'
-                  const editingResp = editing?.floor === f.floor && editing.field === 'response'
-                  const saveEdit = () => {
-                    if (editing) editFloor(activeProfile.id, editing.floor, editing.field, editText)
-                    setEditing(null)
-                  }
-                  return (
-                    <div key={f.floor} className="floor-block">
-                      {editingUser ? (
-                        <EditArea
-                          value={editText}
-                          onChange={setEditText}
-                          onSave={saveEdit}
-                          onCancel={() => setEditing(null)}
-                        />
-                      ) : f.user ? (
-                        <div
-                          className="user-action"
-                          title="Right-click for options"
-                          onContextMenu={(e) => {
-                            e.preventDefault()
-                            setMenu({
-                              x: e.clientX,
-                              y: e.clientY,
-                              floor: f.floor,
-                              field: 'user',
-                              value: f.user
-                            })
-                          }}
-                        >
-                          &gt; {f.user}
-                        </div>
-                      ) : null}
-                      {editingResp ? (
-                        <EditArea
-                          value={editText}
-                          onChange={setEditText}
-                          onSave={saveEdit}
-                          onCancel={() => setEditing(null)}
-                        />
-                      ) : (
-                        <MessageContent
-                          content={f.html}
-                          css={cardCss}
-                          onContextMenu={(x, y) =>
-                            setMenu({
-                              x,
-                              y,
-                              floor: f.floor,
-                              field: 'response',
-                              value: f.rawResponse
-                            })
-                          }
-                        />
-                      )}
+              <div className="floor-stage">
+                <div className="floor-viewport" ref={viewportRef}>
+                  {showStreaming ? (
+                    <StreamingView pendingUserMsg={pendingUserMsg} />
+                  ) : currentFloor ? (
+                    renderFloorBlock(currentFloor)
+                  ) : (
+                    <div className="floor-empty">No messages yet.</div>
+                  )}
+                  {error && (
+                    <div
+                      className="floor-block"
+                      style={{ borderColor: '#e74c3c', color: '#e74c3c' }}
+                    >
+                      Error: {error}
                     </div>
-                  )
-                })}
-                {isGenerating && <StreamingView pendingUserMsg={pendingUserMsg} />}
-                {error && (
-                  <div className="floor-block" style={{ borderColor: '#e74c3c', color: '#e74c3c' }}>
-                    Error: {error}
-                  </div>
+                  )}
+                </div>
+                {pageCount > 0 && (
+                  <>
+                    <button
+                      className="pager-btn pager-prev"
+                      title="Previous floor"
+                      disabled={page <= 0}
+                      onClick={() => setViewIndex(Math.max(0, page - 1))}
+                    >
+                      ↩
+                    </button>
+                    <span className="floor-pageinfo">
+                      [{page + 1}/{pageCount}]
+                    </span>
+                    <button
+                      className="pager-btn pager-next"
+                      title="Next floor"
+                      disabled={page >= pageCount - 1}
+                      onClick={() => setViewIndex(Math.min(pageCount - 1, page + 1))}
+                    >
+                      ↪
+                    </button>
+                  </>
                 )}
-                <div ref={messagesEndRef} />
               </div>
 
               {floors.some((f) => f.user_message.content) && (
