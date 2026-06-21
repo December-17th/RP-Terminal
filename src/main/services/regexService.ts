@@ -16,6 +16,7 @@ import {
   RegexRuleDetail,
   RegexRulePatch
 } from '../../shared/regexTypes'
+import { readScopeMeta, getScopeMeta, setScope, setDisabled, removeScopeEntry } from './scopeMeta'
 
 // Re-export the shared types + predicate so existing importers (tests, the renderer store)
 // keep their import path while src/shared is the single source of truth.
@@ -33,24 +34,15 @@ export type {
 const regexDir = (profileId: string): string =>
   path.join(getAppDir(), 'profiles', profileId, 'regex')
 
-// Scope lives in a sidecar (`_meta.json`: filename → {scope, owner, disabled}) so we never
-// touch the ST regex-script format itself. Files with no entry are `global`.
-const metaPath = (profileId: string): string => path.join(regexDir(profileId), '_meta.json')
+// Scope/owner/disabled live in a `_meta.json` sidecar (shared scopeMeta helper) so we
+// never touch the ST regex-script format itself. Files with no entry are `global`.
 const readMeta = (profileId: string): Record<string, ScopeMeta> =>
-  readJsonSync<Record<string, ScopeMeta>>(metaPath(profileId)) || {}
-const writeMeta = (profileId: string, meta: Record<string, ScopeMeta>): void =>
-  writeJsonSyncAtomic(metaPath(profileId), meta)
+  readScopeMeta(regexDir(profileId))
 
 export const getScriptScope = (profileId: string, file: string): ScopeMeta =>
-  readMeta(profileId)[file] ?? { scope: 'global' }
+  getScopeMeta(regexDir(profileId), file)
 
-// Drop a meta entry once it carries no information (global + no owner + enabled).
-const pruneMeta = (meta: Record<string, ScopeMeta>, file: string): void => {
-  const m = meta[file]
-  if (m && (m.scope ?? 'global') === 'global' && !m.owner && !m.disabled) delete meta[file]
-}
-
-/** Assign a script's scope (and owner for world/session), preserving its disabled flag. */
+/** Assign a regex script's scope (and owner for world/session), preserving its disabled flag. */
 export const setScriptScope = (
   profileId: string,
   file: string,
@@ -58,21 +50,13 @@ export const setScriptScope = (
   owner?: string
 ): void => {
   if (isUnsafe(file)) return
-  const meta = readMeta(profileId)
-  const prev = meta[file] || ({ scope: 'global' } as ScopeMeta)
-  meta[file] = { scope, owner: scope === 'global' ? undefined : owner, disabled: prev.disabled }
-  pruneMeta(meta, file)
-  writeMeta(profileId, meta)
+  setScope(regexDir(profileId), file, scope, owner)
 }
 
 /** Enable/disable a whole regex script (independent of its scope). */
 export const setScriptDisabled = (profileId: string, file: string, disabled: boolean): void => {
   if (isUnsafe(file)) return
-  const meta = readMeta(profileId)
-  const prev = meta[file] || ({ scope: 'global' } as ScopeMeta)
-  meta[file] = { scope: prev.scope ?? 'global', owner: prev.owner, disabled: disabled || undefined }
-  pruneMeta(meta, file)
-  writeMeta(profileId, meta)
+  setDisabled(regexDir(profileId), file, disabled)
 }
 
 /** SillyTavern stores findRegex as `/pattern/flags`; split it (default flag g). */
@@ -229,12 +213,7 @@ export const deleteScript = (profileId: string, file: string): void => {
   if (isUnsafe(file)) return
   const p = path.join(regexDir(profileId), file)
   if (fs.existsSync(p)) fs.unlinkSync(p)
-  // Drop any scope entry so the sidecar doesn't accumulate orphans.
-  const meta = readMeta(profileId)
-  if (meta[file]) {
-    delete meta[file]
-    writeMeta(profileId, meta)
-  }
+  removeScopeEntry(regexDir(profileId), file) // keep the sidecar free of orphans
 }
 
 /** Guard against path traversal — only operate on a plain filename in the regex dir. */

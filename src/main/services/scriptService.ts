@@ -10,6 +10,7 @@ import {
 } from './storageService'
 import { ArtifactScope, ScopeContext, ScopeMeta, isScopeActive } from '../../shared/artifactScope'
 import { StoredScript, ScriptInfo } from '../../shared/scriptTypes'
+import { readScopeMeta, setScope, setDisabled, removeScopeEntry } from './scopeMeta'
 
 /**
  * Profile-level scripts library (companion to the regex store), so card scripts gain
@@ -30,11 +31,9 @@ const scriptsDir = (profileId: string): string =>
   path.join(getAppDir(), 'profiles', profileId, 'scripts')
 const scriptPath = (profileId: string, file: string): string =>
   path.join(scriptsDir(profileId), file)
-const metaPath = (profileId: string): string => path.join(scriptsDir(profileId), '_meta.json')
+// Scope/owner/disabled live in a `_meta.json` sidecar (shared scopeMeta helper).
 const readMeta = (profileId: string): Record<string, ScopeMeta> =>
-  readJsonSync<Record<string, ScopeMeta>>(metaPath(profileId)) || {}
-const writeMeta = (profileId: string, meta: Record<string, ScopeMeta>): void =>
-  writeJsonSyncAtomic(metaPath(profileId), meta)
+  readScopeMeta(scriptsDir(profileId))
 
 const isUnsafe = (file: string): boolean =>
   file.includes('/') || file.includes('\\') || file.includes('..') || file.startsWith('_')
@@ -150,30 +149,19 @@ export const setScriptScope = (
   owner?: string
 ): void => {
   if (isUnsafe(file)) return
-  const meta = readMeta(profileId)
-  const prev = meta[file] || {}
-  // Preserve the disabled flag across scope changes; drop the owner for global.
-  meta[file] = { scope, owner: scope === 'global' ? undefined : owner, disabled: prev.disabled }
-  writeMeta(profileId, meta)
+  setScope(scriptsDir(profileId), file, scope, owner)
 }
 
 export const setScriptDisabled = (profileId: string, file: string, disabled: boolean): void => {
   if (isUnsafe(file)) return
-  const meta = readMeta(profileId)
-  const prev = meta[file] || { scope: 'global' as ArtifactScope }
-  meta[file] = { ...prev, disabled }
-  writeMeta(profileId, meta)
+  setDisabled(scriptsDir(profileId), file, disabled)
 }
 
 export const deleteScript = (profileId: string, file: string): void => {
   if (isUnsafe(file)) return
   const p = scriptPath(profileId, file)
   if (fs.existsSync(p)) fs.unlinkSync(p)
-  const meta = readMeta(profileId)
-  if (meta[file]) {
-    delete meta[file]
-    writeMeta(profileId, meta)
-  }
+  removeScopeEntry(scriptsDir(profileId), file)
 }
 
 /** Enabled scripts whose scope is active for this card/chat context, in name order. */
