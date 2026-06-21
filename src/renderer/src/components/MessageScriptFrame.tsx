@@ -73,6 +73,11 @@ export function MessageScriptFrame({ html }: { html: string }): React.ReactEleme
             : 'remote UI blocked — no active world to attach the network grant to'
         )
       }
+      // Diagnostic: the frame's actual network state (drives the iframe CSP).
+      window.api.pluginLog(
+        'message-html',
+        `frame built: allowRemote=${allow} (cardId=${cardId ?? 'none'}, wantsRemote=${wantsRemote})`
+      )
       if (alive) setSrcDoc(buildMessageHtmlDoc(html, { allowRemote: allow }))
     })()
     return () => {
