@@ -225,7 +225,8 @@ export function MessageScriptFrame({ html }: { html: string }): React.ReactEleme
           ▶ Run
         </button>
         <span className="message-card-gate-note">
-          runs the card&apos;s own UI code (may request Full Trust)
+          runs the card&apos;s own UI code — a misbehaving card can hang the app (close &amp; reopen
+          to recover) until frames are process-isolated
         </span>
       </div>
     )
