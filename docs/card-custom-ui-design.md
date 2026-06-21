@@ -90,22 +90,45 @@ and uses the TavernHelper/Mvu shim to read/write message variables.
 
 This is the design doc's "webview card-UI (B)", generalized to any panel + write-back.
 
-### iframe vs webview (why webview, and when an iframe is OK)
+### Embedding mechanisms: iframe vs webview vs WebContentsView
 
 In Chrome, sandboxed/cross-origin iframes are out-of-process (OOPIF). **In Electron they are not**
 (electron#17868) — a same-process iframe shares the host renderer's thread, so a card's synchronous
-infinite loop freezes the whole app (the bug that shelved frontend cards; the `IsolateSandboxedIframes`
-flag had no effect from the non-sandboxed renderer). An iframe gives two separate things, only one of
-which it can deliver here:
-- **Security / containment ✅** — `sandbox="allow-scripts"` (no `allow-same-origin`) + CSP + DOMPurify
-  stops the card touching the parent DOM, cookies, or `window.api`.
-- **Compute isolation ❌** — a runaway script blocks the shared thread; the heartbeat watchdog can't
-  even fire to recover it.
+infinite loop freezes the whole app (the bug that shelved frontend cards; `IsolateSandboxedIframes`
+had no effect from the non-sandboxed renderer). An iframe gives security but not compute isolation:
+- **Security / containment ✅** — `sandbox="allow-scripts"` (no `allow-same-origin`) + CSP + DOMPurify.
+- **Compute isolation ❌** — a runaway script blocks the shared thread; the watchdog can't even fire.
 
-So: **iframe** is acceptable for TRUSTED cards or if we accept "a bad card can hang the app — close &
-reopen" (today's click-to-run gate), and it's simpler to embed/postMessage/theme. **webview** is the
-only in-window mechanism that survives a runaway card (separate process). `utilityProcess`/Workers
-isolate compute but have no DOM, so they can't render UI.
+The three in-window options trade efficiency against isolation and integration:
+
+| | iframe | `<webview>` | `WebContentsView` |
+|---|---|---|---|
+| Process isolation (hang/crash-safe) | ❌ same-process | ✅ separate | ✅ separate |
+| Memory / perf | lightest | heavy (embedder + guest plumbing) | lighter than webview |
+| Electron support | ✅ | discouraged | ✅ recommended |
+| DOM integration (resize/scroll/clip) | ✅ in-flow | ✅ in-flow | ❌ overlay (pixel bounds) |
+
+- **iframe** — same-process, so a bad card freezes the app; fine for TRUSTED cards or behind the
+  click-to-run "close & reopen to recover" gate. Simplest to embed/postMessage/theme.
+- **`<webview>`** — an in-flow DOM element that's process-isolated (hang-safe); heavier and
+  architecturally discouraged by Electron, but it sizes/scrolls/clips like an element.
+- **`WebContentsView`** — the modern `BrowserView` replacement: same isolation as webview but lighter
+  and Electron-recommended. The catch — it's a MAIN-PROCESS native view positioned by absolute pixel
+  bounds OVER the window, not in the DOM. For a *resizable, scrollable, chrome-wrapped* panel that
+  means continuous bounds-sync over IPC (the view trails the edge during a live drag), z-order
+  occlusion (it paints on top of the panel header, dropdowns, toasts, modals), no DOM clipping/rounded
+  corners, and a main-process view registry. Great for a large STABLE rectangle; painful for a small
+  dynamic dockable panel.
+  - **Key mitigation:** if panels are STATIC and **card-determined** (fixed positions/sizes, not
+    user-resizable/movable) most of that pain disappears — stable rects, no live-drag trailing,
+    predictable z-order (carve the header out as a separate strip). That flips `WebContentsView` to the
+    most attractive isolated option for a card-authored fixed layout. See the WebContentsView plan below.
+- **`utilityProcess`/Workers** isolate compute but have no DOM, so they can't render UI.
+
+**Optimization ordering (in-panel card UI):** native / no frame (Option 1) > iframe (trusted) >
+`<webview>` (untrusted, easy DOM integration) > `WebContentsView` (untrusted, best perf but
+overlay-integration tax — unless the layout is static/card-determined, which flips it to first among
+the isolated options).
 
 **Option 1 sidesteps the whole question**: native render + field-logic in quickjs (interruptible via a
 deadline/interrupt handler) is secure AND hang-proof with no frame. Since the StatusMenuBuilder output
