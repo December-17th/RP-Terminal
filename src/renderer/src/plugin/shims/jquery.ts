@@ -44,13 +44,19 @@ export const JQUERY_SHIM = `
   // Re-run <script> tags in freshly-injected content so a loaded UI actually executes.
   function runScripts(container){ toArr(container.querySelectorAll('script')).forEach(function(old){ var s=document.createElement('script'); if (old.src) s.src=old.src; else s.textContent=old.textContent; if (old.type) s.type=old.type; old.parentNode.replaceChild(s, old); }); }
   function llog(m){ try{ parent.postMessage({__rptlog:1,msg:'[jquery.load] '+m},'*'); }catch(_){} }
+  // Prefer the host-mediated fetch (runs in main — no opaque-origin CORS wall); fall back to
+  // a direct fetch when the rpt bridge isn't present.
+  function getText(u){
+    if (window.rpt && rpt.fetchText) return rpt.fetchText(u);
+    return fetch(u).then(function(r){ if (!r.ok) throw new Error(r.status + ' ' + r.statusText); return r.text(); });
+  }
   // Fetch a (possibly full-document) page and mount it: rewrite its relative asset URLs to
   // absolute against the page URL (so a built SPA's /assets/* resolve), pull its <head>
   // styles/links into our document, inject its <body>, and execute its scripts.
   p.load = function(url, cb){
     var self=this, u=String(url);
     llog('fetching ' + u);
-    fetch(u).then(function(r){ if (!r.ok) throw new Error(r.status + ' ' + r.statusText); return r.text(); }).then(function(html){
+    getText(u).then(function(html){
       var doc = new DOMParser().parseFromString(html, 'text/html');
       function abs(el, attr){ var v=el.getAttribute(attr); if (v){ try { el.setAttribute(attr, new URL(v, u).href); } catch(e){} } }
       toArr(doc.querySelectorAll('[src]')).forEach(function(el){ abs(el, 'src'); });

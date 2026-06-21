@@ -176,6 +176,12 @@ export const dispatchRpc = async (method: string, args: any[], ctx: DispatchCtx)
       const scope = { cardId: ctx.cardId ?? null, chatId: ctx.getChatId() }
       return window.api.scriptRegexList(ctx.profileId, scope)
     }
+    case 'net.fetchText': {
+      // Host-mediated text fetch (the .load / frontend-card path). The world's
+      // remoteScripts grant is the real gate, re-checked in main.
+      if (!(await ctx.ensure('remote:fetch'))) permDenied('remote:fetch')
+      return window.api.scriptFetchText(ctx.profileId, ctx.cardId, String(args[0] ?? ''))
+    }
     // --- TH-7 audio (runs in the trusted parent, not the sandbox). ---
     case 'audio.playBgm': {
       if (!(await ctx.ensure('audio'))) permDenied('audio')

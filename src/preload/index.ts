@@ -117,6 +117,8 @@ const api = {
     ipcRenderer.invoke('script-regex-format', profileId, ctx, text, macroCtx),
   scriptRegexList: (profileId: string, ctx?: any) =>
     ipcRenderer.invoke('script-regex-list', profileId, ctx),
+  scriptFetchText: (profileId: string, cardId: string | undefined, url: string) =>
+    ipcRenderer.invoke('script-fetch-text', profileId, cardId, url),
   pluginGetGrants: (profileId: string, cardId: string) =>
     ipcRenderer.invoke('plugin-get-grants', profileId, cardId),
   pluginSetGrants: (profileId: string, cardId: string, patch: any) =>

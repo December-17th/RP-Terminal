@@ -53,6 +53,10 @@ export const registerPluginIpc = (ipcMain: IpcMain): void => {
   ipcMain.handle('script-regex-list', (_, profileId, ctx) =>
     scriptApiService.listRegexes(profileId, ctx)
   )
+  // Host-mediated remote fetch for the .load() / frontend-card path (grant-gated in main).
+  ipcMain.handle('script-fetch-text', (_, profileId, cardId, url) =>
+    scriptApiService.fetchRemoteText(profileId, cardId, url)
+  )
   ipcMain.handle('plugin-get-grants', (_, profileId, cardId) =>
     pluginService.getGrants(profileId, cardId)
   )

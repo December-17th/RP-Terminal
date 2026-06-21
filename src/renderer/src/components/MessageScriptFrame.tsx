@@ -26,7 +26,9 @@ const ALLOWED_CAPS = new Set([
   'card:read',
   'worldbook:read',
   'preset:read',
-  'regex:read'
+  'regex:read',
+  // Remote text fetch for .load() frontend cards — re-gated by the world grant in main.
+  'remote:fetch'
 ])
 
 export function MessageScriptFrame({ html }: { html: string }): React.ReactElement | null {

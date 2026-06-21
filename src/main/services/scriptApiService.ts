@@ -10,6 +10,8 @@ import { getChat } from './chatService'
 import { getLorebookById, listLorebooks, saveLorebookById } from './lorebookService'
 import { getActivePreset, listPresets } from './presetService'
 import { getRenderRules, applyRegex } from './regexService'
+import { getGrants } from './pluginService'
+import { log } from './logService'
 import { ScopeContext } from '../../shared/artifactScope'
 import { LorebookEntry, LorebookEntrySchema } from '../types/character'
 
@@ -104,3 +106,28 @@ export const listRegexes = (
   ctx?: ScopeContext
 ): Array<{ find: string; replace: string }> =>
   getRenderRules(profileId, ctx).map((r) => ({ find: r.source, replace: r.replace }))
+
+/**
+ * Host-mediated text fetch for the sandbox `.load()` / remote-UI path. The fetch runs in
+ * the main process (Node — no browser CORS/opaque-origin wall), but is gated by the same
+ * per-world `remoteScripts` grant the renderer prompts for, and restricted to https +
+ * a size cap. This is what lets a frontend card pull its UI from a CDN.
+ */
+export const fetchRemoteText = async (
+  profileId: string,
+  cardId: string | undefined,
+  url: string
+): Promise<string> => {
+  if (!cardId) throw new Error('no active world to attach the network grant to')
+  if (getGrants(profileId, cardId).remoteScripts !== true) {
+    throw new Error('remote loading is not granted for this world')
+  }
+  const u = String(url)
+  if (!/^https:\/\//i.test(u)) throw new Error('only https URLs are allowed')
+  const res = await fetch(u, { redirect: 'follow' })
+  if (!res.ok) throw new Error(`${res.status} ${res.statusText}`)
+  const text = await res.text()
+  if (text.length > 8_000_000) throw new Error('remote response too large (>8MB)')
+  log('info', `⚙ remote fetch ok (${text.length} bytes) — ${u}`)
+  return text
+}
