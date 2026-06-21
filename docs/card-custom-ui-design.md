@@ -21,6 +21,9 @@ a drag-and-drop builder that generates these status menus for ST/MVU cards.
   NOT record replayable ops, so `reevaluateVariables` (rebuild from the model's stored
   `<UpdateVariable>`) resets to model-only state. The Status panel's Re-evaluate button is, by design,
   "discard my edits and rebuild from the model."
+- **Inline beautification frames are read-only in history** — a non-latest floor's frame runs for
+  display but its writes are denied and reads bind to that floor's snapshot; only the current floor's
+  frame is live/writable. (Read-only = no writes, not no scripts.)
 - **Any web app (incl. a Vue SPA) runs in a `WebContentsView`** — it's a full Chromium page, so a
   card's Vue frontend (e.g. 命定之诗) WILL run, and the separate process solves the freeze. The gating
   work is the clean-room ST/TavernHelper/Mvu **runtime shim** the card's code calls (task #2), which is
@@ -61,9 +64,11 @@ and can write message variables. This is distinct from a panel and changes the f
   (1) thread the floor id down (`ChatView → MessageContent → MessageScriptFrame`) so a frame binds to
   THAT floor's variables (messageId) for reads/writes;
   (2) key frames by floor so flipping a page cleanly remounts with the new floor's content + vars;
-  (3) render history frames **read-only** against the floor's snapshot, and run the live, writable frame
-  only on the current/latest floor — keeps flips cheap (no Vue re-boot in history), avoids mutating past
-  state, and keeps at most ONE live frame.
+  (3) **Decided: history frames are read-only.** A non-latest frame still RUNS (so a script/Vue UI
+  mounts and displays) but its write capabilities are denied and its `vars:read` is bound to that
+  floor's snapshot — read-only means *no writes*, NOT *no scripts* (stripping scripts would leave a
+  script-driven UI an empty shell). The live, writable frame runs only on the current/latest floor —
+  at most one live writable frame, no mutating past state.
 
 ## What the StatusMenuBuilder actually produces (from `dist/layout-rpg.json`)
 
