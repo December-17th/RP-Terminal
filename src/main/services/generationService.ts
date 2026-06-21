@@ -237,17 +237,14 @@ export const generate = async (
 
   log('response', `← ${raw.length} chars${stopped ? ' (stopped)' : ''}`, raw)
 
-  // Drop the model's <thinking> reasoning first — it must not be displayed, sent back as
-  // history, or (crucially) left to corrupt the tag strippers: a stray "<UpdateVariable>"
-  // mentioned inside the reasoning would otherwise make the MVU stripper eat the narrative.
+  // The FULL raw response is stored (lossless) — reasoning/state strips + display regex are
+  // applied at VIEW time (renderer) and history-assembly time, never baked into storage. We
+  // only clean a COPY here to drive state extraction (drop <thinking> first so a stray
+  // "<UpdateVariable>" mention in the reasoning can't make the MVU stripper eat the narrative).
   const cleaned = stripThinking(raw)
-  // Extract rpt-event state tags. The cleaned response is stored — display regex
-  // (markdownOnly beautification) is applied at render time, not persisted, so
-  // history sent back to the model stays in the model's own output format.
   const parsed = parseContent(cleaned)
-  // MVU (Track R): parse + apply <UpdateVariable> commands into stat_data, recording
-  // this turn's deltas. Runs after the rpt-event strip; its blocks are stripped too, so
-  // the persisted/display text is clean narrative.
+  // MVU (Track R): parse <UpdateVariable> commands into stat_data, recording this turn's
+  // deltas. Reads the cleaned copy for extraction only — the FULL response is what's stored.
   const mvu = parseMvuCommands(parsed.text)
 
   // workingVars already holds any template setvar() mutations from this build;
@@ -270,7 +267,10 @@ export const generate = async (
     chat_id: chatId,
     timestamp: now,
     user_message: { content: userAction, timestamp: now },
-    response: { content: mvu.text, model: settings.api.model, provider: settings.api.provider },
+    // Lossless: the complete AI output (incl. <thinking>, <UpdateVariable>, etc.) is stored.
+    response: { content: raw, model: settings.api.model, provider: settings.api.provider },
+    // The complete prompt that produced it, for full-fidelity inspection/replay.
+    request: messages,
     events: parsed.events,
     variables
   }

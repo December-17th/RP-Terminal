@@ -42,4 +42,7 @@ export interface FloorFile {
   events: Array<{ type: string; path: string; value: unknown; action: string }>
   /** Cumulative game state after applying this floor's events. */
   variables: Record<string, unknown>
+  /** The full provider prompt (message array) that produced this floor — stored losslessly for
+   * inspection/replay. Absent on legacy floors saved before this was captured. */
+  request?: Array<{ role: string; content: string }>
 }

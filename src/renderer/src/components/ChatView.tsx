@@ -11,6 +11,7 @@ import { ScriptActionsBar } from './ScriptActionsBar'
 import { Composer } from './Composer'
 import { ContextMenu } from './ContextMenu'
 import { expandMacros } from '../../../shared/macros'
+import { cleanForDisplay } from '../../../shared/responseView'
 
 /**
  * The center column: the paginated floor stage, the mode/regenerate toolbar, the
@@ -65,7 +66,10 @@ export function ChatView({ profileId }: { profileId: string }): React.ReactEleme
   const renderedFloors = useMemo(
     () =>
       floors.map((f) => {
-        const withMacros = expandMacros(f.response.content, {
+        // Stored content is the FULL raw response; strip reasoning + our state tags for display.
+        // The card's own regex folds its <UpdateVariable> blocks, so disabling it shows the
+        // original — and nothing is ever truncated in storage.
+        const withMacros = expandMacros(cleanForDisplay(f.response.content), {
           user: personaName,
           char: charName,
           vars: f.variables

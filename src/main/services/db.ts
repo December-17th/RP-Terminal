@@ -123,5 +123,7 @@ export const getDb = (): Database.Database => {
   // TH-2 swipes: alternate responses per floor + the active index.
   addColumnIfMissing(db, 'floors', 'swipes', 'swipes TEXT')
   addColumnIfMissing(db, 'floors', 'swipe_id', 'swipe_id INTEGER')
+  // The full prompt (message array) sent for this floor — lossless inspection/replay.
+  addColumnIfMissing(db, 'floors', 'request', 'request TEXT')
   return db
 }

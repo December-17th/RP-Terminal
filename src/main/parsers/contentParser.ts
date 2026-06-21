@@ -10,20 +10,9 @@ export interface ParsedContent {
   events: RPEvent[]
 }
 
-/**
- * Strip the model's chain-of-thought (`<think>` / `<thinking>` blocks) from a response before
- * any parsing or display. Reasoning shouldn't be shown or sent back as history — and, critically,
- * a tag MENTIONED inside the reasoning (e.g. the literal "Output <UpdateVariable> ..." this card
- * writes) would otherwise make the `<UpdateVariable>` / `<rpt-event>` strippers match from that
- * stray mention all the way to the real closing tag, swallowing the whole narrative.
- */
-export const stripThinking = (content: string): string =>
-  content
-    // Closed blocks (the common case) — non-greedy so multiple blocks each match.
-    .replace(/<think(?:ing)?\b[^>]*>[\s\S]*?<\/think(?:ing)?>/gi, '')
-    // A dangling, unclosed trailing block (truncated output) → drop it to the end.
-    .replace(/<think(?:ing)?\b[^>]*>[\s\S]*$/i, '')
-    .trim()
+// Reasoning-strip lives in the shared view-time module (used by storage extraction, the renderer,
+// and history assembly alike). Re-exported here for the parser's existing callers.
+export { stripThinking } from '../../shared/responseView'
 
 /**
  * Parses <rpt-event> tags from AI output.

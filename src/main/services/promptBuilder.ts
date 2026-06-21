@@ -5,6 +5,7 @@ import { Lorebook, LorebookEntry } from '../types/character'
 import { matchAcross } from './lorebookService'
 import { applyRegex, RenderRegexRule } from './regexService'
 import { evalTemplate, TemplateContext } from './templateService'
+import { cleanForHistory } from '../../shared/responseView'
 import { expandMacros, MacroContext } from '../../shared/macros'
 
 export interface ChatMessage {
@@ -128,7 +129,10 @@ const buildHistory = (
   const assistant = (t: string): string => macroOnly(applyAssistant(t), macroCtx)
   for (const f of floors) {
     if (f.user_message.content) msgs.push({ role: 'user', content: user(f.user_message.content) })
-    if (f.response.content) msgs.push({ role: 'assistant', content: assistant(f.response.content) })
+    // The stored response is the FULL raw output; strip reasoning + state tags for the prompt
+    // (the model never re-reads its own <thinking> / <UpdateVariable>).
+    const resp = cleanForHistory(f.response.content)
+    if (resp) msgs.push({ role: 'assistant', content: assistant(resp) })
   }
   if (userAction) msgs.push({ role: 'user', content: user(userAction) })
   return msgs
@@ -175,7 +179,7 @@ export const buildScanText = (
   [
     ...floors
       .slice(-Math.max(1, scanDepth))
-      .flatMap((f) => [f.user_message.content, f.response.content]),
+      .flatMap((f) => [f.user_message.content, cleanForHistory(f.response.content)]),
     userAction
   ]
     .filter(Boolean)
