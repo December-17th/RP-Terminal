@@ -31,10 +31,10 @@ const buildCsp = (allowRemote: boolean): string => {
   const s = allowRemote ? " https:" : ''
   return [
     "default-src 'none'",
-    // blob: is needed so modules served as same-origin blob: URLs (the frontend-card
-    // module loader rewrites imports to blobs) can be imported. blob: is page-created
-    // data, not network, so it's safe even when the network is locked.
-    `script-src 'unsafe-inline' blob:${s}`,
+    // data:/blob: are needed so modules the frontend-card loader serves locally (it rewrites
+    // imports to data: URLs — blob:null modules can't be imported from the opaque origin)
+    // can load. Both are page-created, not network, so safe even when the network is locked.
+    `script-src 'unsafe-inline' data: blob:${s}`,
     `style-src 'unsafe-inline'${s}`,
     `img-src data: blob:${s}`,
     `font-src data:${s}`,

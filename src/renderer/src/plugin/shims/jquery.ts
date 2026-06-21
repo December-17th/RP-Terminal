@@ -99,26 +99,29 @@ export const JQUERY_SHIM = `
           llog('module entries: ' + entryUrls.join(', '));
           var graph = await rpt.fetchModuleGraph(entryUrls);
           var srcByUrl = {}; (graph||[]).forEach(function(m){ srcByUrl[m.url] = m.source; });
-          var blobByUrl = {};
+          // data: URL per module — blob:null modules can't be imported from the opaque origin,
+          // but a self-contained data: module imports fine.
+          var mkmod = function(src){ return 'data:text/javascript;charset=utf-8,' + encodeURIComponent(src); };
+          var urlByUrl = {};
           var depUrls = function(src, base){ return moduleImports(src).map(function(spec){ try { return new URL(spec, base).href; } catch(e){ return null; } }).filter(function(d){ return d && srcByUrl[d]; }); };
-          var rewrite = function(src, base){ return src.replace(/((?:from|import)\\s*\\(?\\s*)(['"])([^'"]+)(['"])/g, function(w, pre, q1, spec, q2){ try { var abs=new URL(spec, base).href; if (blobByUrl[abs]) return pre+q1+blobByUrl[abs]+q2; } catch(e){} return w; }); };
+          var rewrite = function(src, base){ return src.replace(/((?:from|import)\\s*\\(?\\s*)(['"])([^'"]+)(['"])/g, function(w, pre, q1, spec, q2){ try { var abs=new URL(spec, base).href; if (urlByUrl[abs]) return pre+q1+urlByUrl[abs]+q2; } catch(e){} return w; }); };
           var urls = Object.keys(srcByUrl), guard = 0;
-          var pending = function(){ return urls.some(function(x){ return !blobByUrl[x]; }); };
+          var pending = function(){ return urls.some(function(x){ return !urlByUrl[x]; }); };
           while (pending() && guard++ < urls.length + 2) {
             urls.forEach(function(x){
-              if (blobByUrl[x]) return;
-              if (depUrls(srcByUrl[x], x).every(function(d){ return blobByUrl[d]; })) {
-                blobByUrl[x] = URL.createObjectURL(new Blob([rewrite(srcByUrl[x], x)], {type:'application/javascript'}));
+              if (urlByUrl[x]) return;
+              if (depUrls(srcByUrl[x], x).every(function(d){ return urlByUrl[d]; })) {
+                urlByUrl[x] = mkmod(rewrite(srcByUrl[x], x));
               }
             });
           }
-          urls.forEach(function(x){ if (!blobByUrl[x]) blobByUrl[x] = URL.createObjectURL(new Blob([rewrite(srcByUrl[x], x)], {type:'application/javascript'})); });
+          urls.forEach(function(x){ if (!urlByUrl[x]) urlByUrl[x] = mkmod(rewrite(srcByUrl[x], x)); });
           modScripts.forEach(function(sc){
             var srcAttr = sc.getAttribute('src');
-            if (srcAttr) { try { var a=new URL(srcAttr, u).href; if (blobByUrl[a]) sc.setAttribute('src', blobByUrl[a]); } catch(e){} }
+            if (srcAttr) { try { var a=new URL(srcAttr, u).href; if (urlByUrl[a]) sc.setAttribute('src', urlByUrl[a]); } catch(e){} }
             else sc.textContent = rewrite(sc.textContent||'', u);
           });
-          llog('modules: blobbed ' + Object.keys(blobByUrl).length + '/' + urls.length + ', rewrote ' + modScripts.length + ' entry script(s)');
+          llog('modules: ' + Object.keys(urlByUrl).length + '/' + urls.length + ' encoded, rewrote ' + modScripts.length + ' entry script(s)');
           modScripts.forEach(function(sc){ if (!sc.getAttribute('src')) llog('entry head: ' + String(sc.textContent||'').slice(0, 160)); });
         } catch(e){ llog('module graph fail: ' + ((e&&e.message)||e)); }
       }
