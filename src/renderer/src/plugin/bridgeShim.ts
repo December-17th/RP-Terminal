@@ -276,15 +276,25 @@ export interface CardScript {
   code: string
 }
 
-/** Build the full sandboxed-iframe document: CSP + base style + shim + each
- * script wrapped in try/catch so one bad script can't break the others. */
+/** Build the full sandboxed-iframe document: CSP + base style + shim + each user
+ * script in its OWN <script> tag. A separate tag per script is essential: a single
+ * shared tag fails to *parse* as a whole, so one script's syntax error would kill all
+ * the others (a try/catch only catches runtime errors, not parse errors). Errors —
+ * syntax and runtime — are surfaced to the host's Logs panel via __rptError. */
 export const buildScriptSrcDoc = (scripts: CardScript[]): string => {
-  const userCode = scripts
+  // Defined first so each user-script tag's catch + the global error handler can use it.
+  const errorReporter =
+    `<script>` +
+    `function __rptError(name, e){try{parent.postMessage({__rptlog:1,msg:'['+name+'] '+((e&&e.message)||e)},'*')}catch(_){}}` +
+    `window.addEventListener('error',function(ev){__rptError('script', ev.message+' @'+(ev.lineno||'?')+':'+(ev.colno||'?'))});` +
+    `</script>`
+
+  const userScripts = scripts
     .map(
       (s) =>
-        `try {\n${s.code}\n} catch (e) { console.error(${JSON.stringify(s.name || 'script')}, e); }`
+        `<script>try {\n${s.code}\n} catch (e) { __rptError(${JSON.stringify(s.name || 'script')}, e); }</script>`
     )
-    .join('\n;\n')
+    .join('')
 
   return (
     `<!doctype html><html><head><meta charset="utf-8">` +
@@ -293,7 +303,8 @@ export const buildScriptSrcDoc = (scripts: CardScript[]): string => {
     `<script>${BRIDGE_SHIM}</script>` +
     `<script>${LIB_SHIM}</script>` +
     `<script>${TAVERN_SHIM}</script>` +
-    `<script>${userCode}</script>` +
+    errorReporter +
+    userScripts +
     `</body></html>`
   )
 }
