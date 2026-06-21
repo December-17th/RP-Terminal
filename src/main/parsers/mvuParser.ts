@@ -474,11 +474,17 @@ export const applyJsonPatch = (root: Record<string, any>, ops: JsonPatchOp[]): M
     if (!segs.length) continue
     const before = clone(getAtSeg(root, segs))
     switch (o.op) {
+      // RFC-6902 `add`/`replace` plus the non-standard aliases real MVU/variable frameworks emit
+      // (e.g. this card initializes keys with `insert`).
       case 'add':
+      case 'insert':
+      case 'set':
       case 'replace':
         setAtSeg(root, segs, o.value)
         break
       case 'remove':
+      case 'delete':
+      case 'unset':
         removeAtSeg(root, segs)
         break
       case 'move': {

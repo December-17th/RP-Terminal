@@ -163,6 +163,22 @@ describe('applyMvuCommands', () => {
     expect(deltas).toContainEqual({ path: '角色.梅芙.MP', old: undefined, new: '1450/1450' })
   })
 
+  it('treats insert/set as add and delete/unset as remove (MVU-framework aliases)', () => {
+    // The 命定之诗 card initializes its whole state tree with op:"insert".
+    const sd: Record<string, any> = {}
+    const deltas = applyJsonPatch(sd, [
+      { op: 'insert', path: '/世界', value: { 时间: 'day 1' } },
+      { op: 'insert', path: '/主角/属性', value: { 力量: 3 } },
+      { op: 'set', path: '/命运点数', value: 0 }
+    ])
+    expect(sd.世界).toEqual({ 时间: 'day 1' })
+    expect(sd.主角.属性).toEqual({ 力量: 3 })
+    expect(sd.命运点数).toBe(0)
+    expect(deltas).toHaveLength(3) // all applied, not skipped
+    applyJsonPatch(sd, [{ op: 'delete', path: '/命运点数' }])
+    expect(sd.命运点数).toBeUndefined()
+  })
+
   it('handles assign-by-key, remove-by-key, and move', () => {
     const stat: Record<string, any> = { inv: { gold: 1 }, party: ['a', 'b', 'c'], bag: { gem: 9 } }
     const deltas = applyMvuCommands(stat, [
