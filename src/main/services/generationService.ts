@@ -295,6 +295,29 @@ export const generate = async (
 }
 
 /**
+ * Re-derive every floor's MVU `stat_data` by replaying its stored `<UpdateVariable>` updates from
+ * scratch — enabled by lossless storage. Lets the user re-apply variable updates after a parser
+ * change WITHOUT a costly regeneration: no new API call, the narrative is untouched, only the
+ * derived state is recomputed. Cumulative (floor N's stat_data = replay of floors 0..N). Returns
+ * the updated floors.
+ */
+export const reevaluateVariables = (profileId: string, chatId: string): FloorFile[] => {
+  const floors = getAllFloors(profileId, chatId)
+  const stat: Record<string, unknown> = {}
+  for (const f of floors) {
+    const mvu = parseMvuCommands(stripThinking(f.response.content))
+    const deltas = [
+      ...(mvu.commands.length ? applyMvuCommands(stat, mvu.commands) : []),
+      ...(mvu.patches.length ? applyJsonPatch(stat, mvu.patches) : [])
+    ]
+    f.variables = { ...f.variables, stat_data: JSON.parse(JSON.stringify(stat)), delta_data: deltas }
+    saveFloor(profileId, chatId, f)
+  }
+  log('info', `MVU re-evaluate — replayed ${floors.length} floor(s); rebuilt stat_data`)
+  return floors
+}
+
+/**
  * Custom one-off generation (TH-4 `generateRaw`). Builds a minimal message array from the
  * config — optional system prompt, optional recent history, and the user input — applies
  * sampler/max_tokens overrides over the active preset, and returns the raw text WITHOUT

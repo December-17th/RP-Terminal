@@ -1,5 +1,6 @@
 import { useChatStore } from '../stores/chatStore'
 import { useCharacterStore } from '../stores/characterStore'
+import { useToastStore } from '../stores/toastStore'
 import { LayoutRenderer } from './LayoutRenderer'
 import { StatView } from './StatView'
 import { isPlainObject } from './statViewHelpers'
@@ -27,8 +28,28 @@ export function RightPanel({ profileId }: { profileId: string }): React.ReactEle
     <>
       {activeChatId && activeCharacter ? (
         <div>
-          <h3 style={{ borderBottom: '1px solid var(--rpt-border)', paddingBottom: 10 }}>
+          <h3
+            style={{
+              borderBottom: '1px solid var(--rpt-border)',
+              paddingBottom: 10,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: 8
+            }}
+          >
             RPG Status
+            <button
+              className="btn-accent"
+              style={{ fontSize: '0.62em', padding: '3px 8px', fontWeight: 400 }}
+              title="Re-apply the stored variable updates from every message to rebuild the state — no regeneration (e.g. after a parser update)."
+              onClick={async () => {
+                await useChatStore.getState().reevaluateVariables(profileId)
+                useToastStore.getState().push('State re-evaluated from stored updates')
+              }}
+            >
+              ↻ Re-evaluate
+            </button>
           </h3>
           <div style={{ marginTop: 20 }}>
             {uiLayout?.length ? <LayoutRenderer layoutSchema={uiLayout} /> : null}

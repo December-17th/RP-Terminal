@@ -20,6 +20,8 @@ const api = {
     ipcRenderer.invoke('create-chat', profileId, charId),
   getFloors: (profileId: string, chatId: string) =>
     ipcRenderer.invoke('get-floors', profileId, chatId),
+  reevaluateVariables: (profileId: string, chatId: string) =>
+    ipcRenderer.invoke('reevaluate-variables', profileId, chatId),
   generate: (profileId: string, chatId: string, userAction: string) =>
     ipcRenderer.invoke('generate', profileId, chatId, userAction),
   regenerate: (profileId: string, chatId: string) =>

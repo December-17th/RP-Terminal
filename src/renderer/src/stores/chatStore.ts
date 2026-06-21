@@ -39,6 +39,8 @@ interface ChatState {
   loadChats: (profileId: string) => Promise<void>
   createChat: (profileId: string, characterId: string) => Promise<void>
   setActiveChat: (profileId: string, chatId: string) => Promise<void>
+  /** Re-derive stat_data by replaying the stored <UpdateVariable> updates (no regeneration). */
+  reevaluateVariables: (profileId: string) => Promise<void>
   /** Switch the open session's FSM mode (Explore/Dialogue/Combat). */
   setMode: (profileId: string, mode: string) => Promise<void>
   sendAction: (profileId: string, actionText: string) => Promise<void>
@@ -132,6 +134,13 @@ export const useChatStore = create<ChatState>((set, get) => {
         window.api.getChatMode(profileId, chatId)
       ])
       set({ floors, activeChatMode: mode || 'explore' })
+    },
+
+    reevaluateVariables: async (profileId) => {
+      const { activeChatId } = get()
+      if (!activeChatId) return
+      const floors = await window.api.reevaluateVariables(profileId, activeChatId)
+      set({ floors })
     },
 
     setMode: async (profileId, mode) => {

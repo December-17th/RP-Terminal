@@ -13,6 +13,10 @@ export const registerChatIpc = (ipcMain: IpcMain): void => {
     const chat = chatService.getChat(profileId, chatId)
     return chat ? floorService.getAllFloors(profileId, chatId, chat.floor_count) : []
   })
+  // Re-apply the stored <UpdateVariable> updates to rebuild stat_data (no regeneration).
+  ipcMain.handle('reevaluate-variables', (_, profileId, chatId) =>
+    generationService.reevaluateVariables(profileId, chatId)
+  )
   ipcMain.handle('delete-chat', (_, profileId, chatId) => chatService.deleteChat(profileId, chatId))
   ipcMain.handle('edit-floor', (_, profileId, chatId, floorIndex, userContent, responseContent) =>
     chatService.editFloorContent(profileId, chatId, floorIndex, userContent, responseContent)
