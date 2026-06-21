@@ -9,6 +9,7 @@ import { StatusView } from '../StatusView'
 import { CardScriptHost } from '../CardScriptHost'
 import { LogsPanel } from '../LogsPanel'
 import { PanelRouter } from '../PanelRouter'
+import { WcvPanel } from './WcvPanel'
 import { useWorkspaceContext } from './context'
 
 /**
@@ -69,7 +70,9 @@ export const ViewRegistry: Record<string, ViewEntry> = {
   chat: { title: 'Chat', Component: ChatPanel, fill: true },
   status: { title: 'RPG Status', Component: StatusPanel },
   'card-scripts': { title: 'Card Scripts', Component: CardScriptsPanel },
-  logs: { title: 'Logs', Component: LogsPanel, fill: true }
+  logs: { title: 'Logs', Component: LogsPanel, fill: true },
+  // Spike: an out-of-process WebContentsView card-UI panel (loads a test page for now).
+  wcv: { title: 'Card UI (WCV)', Component: WcvPanel, fill: true }
 }
 
 /** Stable list of pickable views for a panel header's dropdown. */

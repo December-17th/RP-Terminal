@@ -6,6 +6,7 @@ import icon from '../../resources/icon.png?asset'
 import * as logService from './services/logService'
 import * as migrationService from './services/migrationService'
 import * as templateService from './services/templateService'
+import * as wcvManager from './services/wcvManager'
 import { registerIpc } from './ipc'
 
 function createWindow(): void {
@@ -21,6 +22,9 @@ function createWindow(): void {
       sandbox: false
     }
   })
+
+  // Give the WebContentsView manager the window so it can overlay card-UI panels (spike).
+  wcvManager.init(mainWindow)
 
   mainWindow.on('ready-to-show', () => {
     mainWindow.maximize()
