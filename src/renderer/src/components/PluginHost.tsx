@@ -4,7 +4,7 @@ import { useToastStore } from '../stores/toastStore'
 import { useToolbarStore } from '../stores/toolbarStore'
 import { usePluginsStore, InstalledPlugin } from '../stores/pluginsStore'
 import { buildScriptSrcDoc } from '../plugin/bridgeShim'
-import { chatTransitionEvents, TAVERN_EVENTS } from '../plugin/events'
+import { chatTransitionEvents, messageMutationEvents, TAVERN_EVENTS } from '../plugin/events'
 import { dispatchRpc } from '../plugin/dispatch'
 import { registerFrameCommand } from '../plugin/slash'
 
@@ -121,6 +121,20 @@ const PluginFrame: React.FC<{ profileId: string; plugin: InstalledPlugin }> = ({
         { isGenerating: state.isGenerating, floorCount: state.floors.length }
       )) {
         if (ev.name === TAVERN_EVENTS.GENERATION_STARTED) streamAccum.current = ''
+        emit(ev.name, ev.payload)
+      }
+      for (const ev of messageMutationEvents(
+        prev.floors.map((f) => ({
+          floor: f.floor,
+          content: f.response.content,
+          swipeId: f.swipe_id ?? 0
+        })),
+        state.floors.map((f) => ({
+          floor: f.floor,
+          content: f.response.content,
+          swipeId: f.swipe_id ?? 0
+        }))
+      )) {
         emit(ev.name, ev.payload)
       }
     })

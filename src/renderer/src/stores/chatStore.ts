@@ -20,6 +20,9 @@ export interface Floor {
   chat_id: string
   user_message: { content: string }
   response: { content: string }
+  /** Alternate responses (TH-2 swipes); swipes[swipe_id] === response.content. */
+  swipes?: string[]
+  swipe_id?: number
   variables: Record<string, any>
 }
 
@@ -48,6 +51,9 @@ interface ChatState {
     field: 'user' | 'response',
     text: string
   ) => Promise<void>
+  /** Navigate or generate a floor's swipe. 'left'/'right' rotate existing alternates;
+   * 'right' past the last alternate on the latest floor generates a new one. */
+  swipe: (profileId: string, floorIndex: number, dir: 'left' | 'right') => Promise<void>
   appendDelta: (delta: string) => void
   /** Replace the latest floor's variables (used by card scripts that mutate state
    * outside a generation turn, so status widgets reflect the change immediately). */
@@ -215,6 +221,66 @@ export const useChatStore = create<ChatState>((set, get) => {
         )
       }))
       get().loadChats(profileId)
+    },
+
+    swipe: async (profileId, floorIndex, dir) => {
+      const { activeChatId, floors, isGenerating } = get()
+      if (!activeChatId || isGenerating) return
+      const idx = floors.findIndex((f) => f.floor === floorIndex)
+      if (idx < 0) return
+      const f = floors[idx]
+      const swipeArr = f.swipes && f.swipes.length ? f.swipes : [f.response.content]
+      const cur = f.swipe_id ?? 0
+      const isLastFloor = idx === floors.length - 1
+
+      // Apply a server-returned swiped floor to the store (response text + active index).
+      const applyUpdated = (updated: any): void =>
+        set((state) => ({
+          floors: state.floors.map((fl) =>
+            fl.floor === floorIndex
+              ? {
+                  ...fl,
+                  response: { ...fl.response, content: updated.response.content },
+                  swipes: updated.swipes,
+                  swipe_id: updated.swipe_id
+                }
+              : fl
+          )
+        }))
+
+      // Navigate within existing alternates.
+      const target = dir === 'left' ? cur - 1 : cur + 1
+      if (dir === 'left' ? cur > 0 : cur < swipeArr.length - 1) {
+        const updated = await window.api.setActiveSwipe(profileId, activeChatId, floorIndex, target)
+        if (updated) applyUpdated(updated)
+        return
+      }
+
+      // Right past the last alternate on the latest floor → generate a new swipe.
+      if (dir !== 'right' || !isLastFloor) return
+      resetStream()
+      set({ isGenerating: true, streamingText: '', error: null })
+      try {
+        set((state) => ({ floors: state.floors.slice(0, -1) })) // show the re-roll in progress
+        const fresh = await window.api.generateSwipe(profileId, activeChatId)
+        resetStream()
+        set((state) => ({
+          floors: fresh ? [...state.floors, fresh] : state.floors,
+          isGenerating: false,
+          streamingText: ''
+        }))
+        get().loadChats(profileId)
+      } catch (err: any) {
+        console.error(err)
+        resetStream()
+        const restored = await window.api.getFloors(profileId, activeChatId)
+        set({
+          floors: restored,
+          isGenerating: false,
+          streamingText: '',
+          error: err?.message || 'Swipe failed'
+        })
+      }
     },
 
     deleteChat: async (profileId, chatId) => {

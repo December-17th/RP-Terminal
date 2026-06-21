@@ -65,3 +65,38 @@ export const chatTransitionEvents = (prev: ChatLifecycle, next: ChatLifecycle): 
   }
   return out
 }
+
+/** A floor reduced to what message-mutation diffing needs (TH-2). */
+export interface FloorDescriptor {
+  floor: number
+  content: string
+  swipeId: number
+}
+
+/**
+ * Diff two floor snapshots into per-message mutation events (TH-2), so scripts react to
+ * edits/swipes/deletes done in the UI or via the script API:
+ *  - a floor present before but gone after → MESSAGE_DELETED
+ *  - same floor, active swipe changed      → MESSAGE_SWIPED
+ *  - same floor, response text changed     → MESSAGE_UPDATED
+ * New floors are already signalled by MESSAGE_RECEIVED (chatTransitionEvents). Pure +
+ * unit-tested; the hosts call it from their chat-store subscription. Payload = floor index.
+ */
+export const messageMutationEvents = (
+  prev: FloorDescriptor[],
+  next: FloorDescriptor[]
+): RuntimeEvent[] => {
+  const out: RuntimeEvent[] = []
+  const nextById = new Map(next.map((f) => [f.floor, f]))
+  for (const p of prev) {
+    const n = nextById.get(p.floor)
+    if (!n) {
+      out.push({ name: TAVERN_EVENTS.MESSAGE_DELETED, payload: p.floor })
+    } else if (n.swipeId !== p.swipeId) {
+      out.push({ name: TAVERN_EVENTS.MESSAGE_SWIPED, payload: p.floor })
+    } else if (n.content !== p.content) {
+      out.push({ name: TAVERN_EVENTS.MESSAGE_UPDATED, payload: p.floor })
+    }
+  }
+  return out
+}

@@ -11,7 +11,8 @@ import {
   appendFloor,
   truncateFloors
 } from './chatService'
-import { getAllFloors, getFloor } from './floorService'
+import { getAllFloors, getFloor, saveFloor } from './floorService'
+import { normalizeSwipes } from './swipeHelpers'
 import { buildPrompt, buildScanText, fitToBudget } from './promptBuilder'
 import { getPromptRules } from './regexService'
 import { loadGlobals, saveGlobals } from './templateService'
@@ -282,4 +283,41 @@ export const regenerate = async (
 
   truncateFloors(profileId, chatId, lastIndex)
   return generate(profileId, chatId, last.user_message.content, onDelta)
+}
+
+/**
+ * Generate an additional response for the latest turn and store it as a NEW swipe
+ * (alternate) on that floor, without discarding the existing alternates (TH-2). Like
+ * regenerate, but the prior responses are preserved and the new one becomes active.
+ */
+export const generateSwipe = async (
+  profileId: string,
+  chatId: string,
+  onDelta: DeltaCallback = () => {}
+): Promise<FloorFile | null> => {
+  const chat = getChat(profileId, chatId)
+  if (!chat || chat.floor_count === 0) throw new Error('Nothing to swipe')
+
+  const lastIndex = chat.floor_count - 1
+  const last = getFloor(profileId, chatId, lastIndex)
+  if (!last) throw new Error('Last floor missing')
+  if (!last.user_message.content) throw new Error('Cannot swipe the opening greeting')
+
+  // Capture the existing alternates before the re-roll drops the floor.
+  const prior = normalizeSwipes(last.swipes, last.response.content, last.swipe_id).swipes
+
+  truncateFloors(profileId, chatId, lastIndex)
+  const fresh = await generate(profileId, chatId, last.user_message.content, onDelta)
+  if (!fresh) {
+    // Aborted / empty — restore the original floor so the swipe attempt loses nothing.
+    saveFloor(profileId, chatId, last)
+    return getFloor(profileId, chatId, lastIndex)
+  }
+
+  // Append the new response to the prior alternates and make it the active swipe.
+  const swipes = [...prior, fresh.response.content]
+  fresh.swipes = swipes
+  fresh.swipe_id = swipes.length - 1
+  saveFloor(profileId, chatId, fresh)
+  return fresh
 }

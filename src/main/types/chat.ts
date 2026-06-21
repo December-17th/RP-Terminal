@@ -33,6 +33,11 @@ export interface FloorFile {
     model: string
     provider: string
   }
+  /** Alternate responses for this floor (TH swipes). swipes[swipe_id] === response.content;
+   * absent/empty ⇒ a single-swipe floor (legacy). */
+  swipes?: string[]
+  /** Index of the active swipe within `swipes`. */
+  swipe_id?: number
   /** State events extracted from this floor's response (rpt-event tags). */
   events: Array<{ type: string; path: string; value: unknown; action: string }>
   /** Cumulative game state after applying this floor's events. */

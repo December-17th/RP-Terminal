@@ -6,7 +6,7 @@ import { useCardScriptsStore } from '../stores/cardScriptsStore'
 import { useToolbarStore } from '../stores/toolbarStore'
 import { buildScriptSrcDoc, CardScript } from '../plugin/bridgeShim'
 import { buildMvuEvents } from '../plugin/mvuEvents'
-import { chatTransitionEvents, TAVERN_EVENTS } from '../plugin/events'
+import { chatTransitionEvents, messageMutationEvents, TAVERN_EVENTS } from '../plugin/events'
 import { dispatchRpc } from '../plugin/dispatch'
 import { registerFrameCommand } from '../plugin/slash'
 
@@ -166,6 +166,7 @@ export const CardScriptHost: React.FC<Props> = ({
     dispatchRpc(method, args, {
       profileId,
       getChatId: () => chatId,
+      cardId,
       ensure,
       toast: pushToast,
       registerCommand,
@@ -232,6 +233,21 @@ export const CardScriptHost: React.FC<Props> = ({
         { isGenerating: state.isGenerating, floorCount: state.floors.length }
       )) {
         if (ev.name === TAVERN_EVENTS.GENERATION_STARTED) streamAccum.current = ''
+        emit(ev.name, ev.payload)
+      }
+      // Per-message edits/swipes/deletes → MESSAGE_UPDATED/SWIPED/DELETED.
+      for (const ev of messageMutationEvents(
+        prev.floors.map((f) => ({
+          floor: f.floor,
+          content: f.response.content,
+          swipeId: f.swipe_id ?? 0
+        })),
+        state.floors.map((f) => ({
+          floor: f.floor,
+          content: f.response.content,
+          swipeId: f.swipe_id ?? 0
+        }))
+      )) {
         emit(ev.name, ev.payload)
       }
       // A new floor landed — replay this turn's MVU variable changes to the scripts

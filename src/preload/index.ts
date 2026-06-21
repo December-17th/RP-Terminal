@@ -73,6 +73,11 @@ const api = {
     ipcRenderer.invoke('get-chat-mode', profileId, chatId),
   setChatMode: (profileId: string, chatId: string, mode: string) =>
     ipcRenderer.invoke('set-chat-mode', profileId, chatId, mode),
+  // TH-2 swipes
+  setActiveSwipe: (profileId: string, chatId: string, floorIndex: number, swipeId: number) =>
+    ipcRenderer.invoke('set-active-swipe', profileId, chatId, floorIndex, swipeId),
+  generateSwipe: (profileId: string, chatId: string) =>
+    ipcRenderer.invoke('generate-swipe', profileId, chatId),
   // Card-script runtime (P1)
   pluginVars: (profileId: string, chatId: string, action: any) =>
     ipcRenderer.invoke('plugin-vars', profileId, chatId, action),
@@ -80,6 +85,12 @@ const api = {
     ipcRenderer.invoke('plugin-get-vars', profileId, chatId),
   pluginGetMessages: (profileId: string, chatId: string) =>
     ipcRenderer.invoke('plugin-get-messages', profileId, chatId),
+  pluginSetMessage: (profileId: string, chatId: string, floorIndex: number, patch: any) =>
+    ipcRenderer.invoke('plugin-set-message', profileId, chatId, floorIndex, patch),
+  pluginDeleteMessages: (profileId: string, chatId: string, fromIndex: number) =>
+    ipcRenderer.invoke('plugin-delete-messages', profileId, chatId, fromIndex),
+  pluginCreateMessage: (profileId: string, chatId: string, msg: any) =>
+    ipcRenderer.invoke('plugin-create-message', profileId, chatId, msg),
   pluginGetGrants: (profileId: string, cardId: string) =>
     ipcRenderer.invoke('plugin-get-grants', profileId, cardId),
   pluginSetGrants: (profileId: string, cardId: string, patch: any) =>

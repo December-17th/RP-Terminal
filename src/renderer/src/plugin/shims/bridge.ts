@@ -47,9 +47,14 @@ export const BRIDGE_SHIM = `
     version: 'rpt.v1',
     vars: vars('local'),
     global: vars('global'),
+    // Low-level scoped variable op (local/global/message/character) for the TH shim.
+    var: function (action) { return __rpc('vars', [action || { op: 'get' }]); },
     chat: {
       getMessages: function () { return __rpc('chat.getMessages', []); },
-      getLastMessage: function () { return __rpc('chat.getLastMessage', []); }
+      getLastMessage: function () { return __rpc('chat.getLastMessage', []); },
+      setMessage: function (floor, patch) { return __rpc('chat.setMessage', [floor, patch || {}]); },
+      createMessage: function (msg) { return __rpc('chat.createMessage', [msg || {}]); },
+      deleteMessages: function (fromFloor) { return __rpc('chat.deleteMessages', [fromFloor]); }
     },
     generate: function (text) { return __rpc('generate', [String(text == null ? '' : text)]); },
     ui: {

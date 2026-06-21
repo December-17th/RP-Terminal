@@ -27,7 +27,8 @@ export function ChatView({ profileId }: { profileId: string }): React.ReactEleme
     sendAction,
     regenerate,
     stopGeneration,
-    editFloor
+    editFloor,
+    swipe
   } = useChatStore(
     useShallow((s) => ({
       floors: s.floors,
@@ -37,7 +38,8 @@ export function ChatView({ profileId }: { profileId: string }): React.ReactEleme
       sendAction: s.sendAction,
       regenerate: s.regenerate,
       stopGeneration: s.stopGeneration,
-      editFloor: s.editFloor
+      editFloor: s.editFloor,
+      swipe: s.swipe
     }))
   )
   const activeCharacter = useCharacterStore((s) => s.activeCharacter)
@@ -65,7 +67,9 @@ export function ChatView({ profileId }: { profileId: string }): React.ReactEleme
         rawResponse: f.response.content,
         html: useRegexStore
           .getState()
-          .apply(f.response.content, { user: personaName, char: charName })
+          .apply(f.response.content, { user: personaName, char: charName }),
+        swipeId: f.swipe_id ?? 0,
+        swipeCount: f.swipes?.length ?? 1
       })),
     [floors, regexRules, personaName, charName]
   )
@@ -132,10 +136,13 @@ export function ChatView({ profileId }: { profileId: string }): React.ReactEleme
               cardCss={cardCss}
               editing={editing}
               editText={editText}
+              isLast={page === renderedFloors.length - 1}
+              isGenerating={isGenerating}
               onEditTextChange={setEditText}
               onSaveEdit={saveEdit}
               onCancelEdit={() => setEditing(null)}
               onOpenMenu={setMenu}
+              onSwipe={(dir) => swipe(profileId, currentFloor.floor, dir)}
             />
           ) : (
             <div className="floor-empty">No messages yet.</div>

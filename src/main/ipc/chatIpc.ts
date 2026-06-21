@@ -40,6 +40,21 @@ export const registerChatIpc = (ipcMain: IpcMain): void => {
   })
   ipcMain.handle('abort-generation', (_, chatId) => generationService.abortGeneration(chatId))
 
+  // TH-2 swipes: switch the active alternate, or generate a new one for the latest floor.
+  ipcMain.handle('set-active-swipe', (_, profileId, chatId, floorIndex, swipeId) =>
+    floorService.setActiveSwipe(profileId, chatId, floorIndex, swipeId)
+  )
+  ipcMain.handle('generate-swipe', async (event, profileId, chatId) => {
+    try {
+      return await generationService.generateSwipe(profileId, chatId, (delta) =>
+        event.sender.send('generation-delta', { chatId, delta })
+      )
+    } catch (err: any) {
+      logService.log('error', '✗ swipe failed', err?.message || String(err))
+      throw err
+    }
+  })
+
   // Per-session active lorebook selection + FSM mode (Phase H).
   ipcMain.handle('get-chat-lorebooks', (_, profileId, chatId) =>
     chatService.getChatLorebookIds(profileId, chatId)

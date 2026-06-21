@@ -1,8 +1,10 @@
 import path from 'path'
-import { getChat } from './chatService'
+import { getChat, appendFloor, truncateFloors } from './chatService'
 import { getAllFloors, getFloor, saveFloor } from './floorService'
+import { normalizeSwipes } from './swipeHelpers'
 import { loadGlobals, saveGlobals } from './templateService'
 import { getAppDir, readJsonSync, writeJsonSyncAtomic } from './storageService'
+import { FloorFile } from '../types/chat'
 
 /**
  * Host-side engine bridge for the P1 card-script runtime. Card scripts run in a
@@ -53,14 +55,18 @@ const delPath = (obj: any, p: string): void => {
   if (cur) delete cur[parts[parts.length - 1]]
 }
 
-export type VarScope = 'local' | 'global'
-export type VarOp = 'get' | 'set' | 'inc' | 'dec' | 'del'
+export type VarScope = 'local' | 'global' | 'message' | 'character'
+export type VarOp = 'get' | 'set' | 'inc' | 'dec' | 'del' | 'insert'
 
 export interface VarAction {
   op: VarOp
   scope?: VarScope
   key?: string
   value?: any
+  /** For scope 'message': the floor index to target (defaults to the latest floor). */
+  messageId?: number
+  /** For scope 'character': the card id whose persistent vars to read/mutate. */
+  cardId?: string
 }
 
 export interface VarResult {
@@ -78,6 +84,10 @@ const applyOp = (store: Record<string, any>, action: VarAction): any => {
     case 'set':
       if (key) setPath(store, key, value)
       return value
+    case 'insert':
+      // Insert-or-keep: only writes when the key is currently absent (TH insertVariables).
+      if (key && getPath(store, key) === undefined) setPath(store, key, value)
+      return key ? getPath(store, key) : undefined
     case 'inc': {
       if (!key) return undefined
       const n = (Number(getPath(store, key)) || 0) + (value === undefined ? 1 : Number(value))
@@ -98,9 +108,37 @@ const applyOp = (store: Record<string, any>, action: VarAction): any => {
   }
 }
 
-/** Read/mutate a chat-local (latest floor) or global variable. */
+// Character-scoped vars persist per card across all its sessions (TH-2). File-keyed by
+// card id, alongside the per-profile template globals.
+const characterVarsPath = (profileId: string): string =>
+  path.join(getAppDir(), 'profiles', profileId, 'character-vars.json')
+
+const loadCharacterVars = (profileId: string): Record<string, Record<string, any>> =>
+  readJsonSync<Record<string, Record<string, any>>>(characterVarsPath(profileId)) || {}
+
+const saveCharacterVars = (profileId: string, all: Record<string, Record<string, any>>): void => {
+  try {
+    writeJsonSyncAtomic(characterVarsPath(profileId), all)
+  } catch {
+    /* non-fatal */
+  }
+}
+
+/**
+ * Read/mutate a variable in one of four scopes (TH-2):
+ *  - `global`    — per-profile template globals.
+ *  - `local`     — the latest floor's variables (drives the status widgets).
+ *  - `message`   — a specific floor's variables (`action.messageId`, default = latest).
+ *  - `character` — per-card vars persisted across sessions (`action.cardId`).
+ * (The `script` scope maps to per-owner storage in the shim, not here.)
+ */
 export const pluginVars = (profileId: string, chatId: string, action: VarAction): VarResult => {
-  const scope: VarScope = action.scope === 'global' ? 'global' : 'local'
+  const scope: VarScope =
+    action.scope === 'global' ||
+    action.scope === 'message' ||
+    action.scope === 'character'
+      ? action.scope
+      : 'local'
 
   if (scope === 'global') {
     const globals = loadGlobals(profileId)
@@ -109,13 +147,27 @@ export const pluginVars = (profileId: string, chatId: string, action: VarAction)
     return { value, scope, store: globals }
   }
 
-  // Local scope lives on the latest floor's variables — the same object the
-  // status widgets read and the next generation seeds from.
+  if (scope === 'character') {
+    const cardId = action.cardId
+    if (!cardId) return { value: undefined, scope, store: {} }
+    const all = loadCharacterVars(profileId)
+    const store = all[cardId] || {}
+    const value = applyOp(store, action)
+    if (action.op !== 'get') {
+      all[cardId] = store
+      saveCharacterVars(profileId, all)
+    }
+    return { value, scope, store }
+  }
+
+  // local / message both live on a floor's variables — the same object the status
+  // widgets read and the next generation seeds from. local = latest; message = by id.
   const chat = getChat(profileId, chatId)
   const count = chat?.floor_count ?? 0
   if (count === 0) return { value: undefined, scope, store: {} }
+  const target = scope === 'message' && typeof action.messageId === 'number' ? action.messageId : count - 1
 
-  const floor = getFloor(profileId, chatId, count - 1)
+  const floor = getFloor(profileId, chatId, target)
   const store: Record<string, any> = floor?.variables ?? {}
   const value = applyOp(store, action)
   if (action.op !== 'get' && floor) {
@@ -151,6 +203,59 @@ export const getMessages = (profileId: string, chatId: string): PluginMessage[] 
     user: f.user_message.content,
     response: f.response.content
   }))
+}
+
+/** Edit a floor's user and/or response text in place (TH setChatMessages). Keeps the
+ *  active swipe in sync with the edited response. */
+export const setMessage = (
+  profileId: string,
+  chatId: string,
+  floorIndex: number,
+  patch: { user?: string; response?: string }
+): boolean => {
+  const floor = getFloor(profileId, chatId, floorIndex)
+  if (!floor) return false
+  if (typeof patch.user === 'string') floor.user_message.content = patch.user
+  if (typeof patch.response === 'string') {
+    floor.response.content = patch.response
+    const s = normalizeSwipes(floor.swipes, patch.response, floor.swipe_id)
+    s.swipes[s.swipe_id] = patch.response
+    floor.swipes = s.swipes
+    floor.swipe_id = s.swipe_id
+  }
+  saveFloor(profileId, chatId, floor)
+  return true
+}
+
+/** Delete a floor and everything after it (TH deleteChatMessages). */
+export const deleteMessages = (profileId: string, chatId: string, fromIndex: number): boolean => {
+  truncateFloors(profileId, chatId, Math.max(0, fromIndex))
+  return true
+}
+
+/** Append a new floor (TH createChatMessages — append only; mid-history insert is not
+ *  supported by the floor model). Returns the new floor index, or -1 on failure. */
+export const createMessage = (
+  profileId: string,
+  chatId: string,
+  msg: { user?: string; response?: string }
+): number => {
+  const chat = getChat(profileId, chatId)
+  if (!chat) return -1
+  const now = new Date().toISOString()
+  const floor: FloorFile = {
+    floor: chat.floor_count,
+    chat_id: chatId,
+    timestamp: now,
+    user_message: { content: msg.user || '', timestamp: now },
+    response: { content: msg.response || '', model: '', provider: '' },
+    events: [],
+    // Carry the running state forward so widgets/next-turn seeding stay coherent.
+    variables:
+      chat.floor_count > 0 ? (getFloor(profileId, chatId, chat.floor_count - 1)?.variables ?? {}) : {}
+  }
+  appendFloor(profileId, chatId, floor)
+  return floor.floor
 }
 
 // --- Per-card permission grants (file-based, per profile) ---

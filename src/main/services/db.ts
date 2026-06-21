@@ -120,5 +120,8 @@ export const getDb = (): Database.Database => {
   addColumnIfMissing(db, 'chats', 'mode', 'mode TEXT')
   addColumnIfMissing(db, 'chats', 'cached_world_info', 'cached_world_info TEXT')
   addColumnIfMissing(db, 'chats', 'pending_lore', 'pending_lore TEXT')
+  // TH-2 swipes: alternate responses per floor + the active index.
+  addColumnIfMissing(db, 'floors', 'swipes', 'swipes TEXT')
+  addColumnIfMissing(db, 'floors', 'swipe_id', 'swipe_id INTEGER')
   return db
 }

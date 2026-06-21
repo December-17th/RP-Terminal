@@ -583,6 +583,38 @@ details[open] > .stat-group-title::before {
   z-index: 2;
 }
 
+/* Swipe (alternate-response) controls under a floor's response (TH-2). */
+.swipe-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+  opacity: 0.7;
+}
+.swipe-btn {
+  width: 26px;
+  height: 22px;
+  border-radius: 6px;
+  background: var(--rpt-bg-secondary);
+  border: 1px solid var(--rpt-border);
+  color: var(--rpt-text-primary);
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+}
+.swipe-btn:hover:not(:disabled) {
+  border-color: var(--rpt-accent);
+}
+.swipe-btn:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+.swipe-count {
+  font-size: 0.75em;
+  color: var(--rpt-text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+
 /* Lightweight render for the in-flight streaming response. */
 .streaming-text {
   white-space: pre-wrap;

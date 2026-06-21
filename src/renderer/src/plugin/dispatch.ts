@@ -13,6 +13,8 @@ export interface DispatchCtx {
   profileId: string
   /** Active chat id for local vars / chat reads / generate; null when none open. */
   getChatId: () => string | null
+  /** Owning card id (card scripts only) — used for the `character` variable scope. */
+  cardId?: string
   /** Resolve a permission: true = allowed, false = denied (may prompt + persist). */
   ensure: (permission: string) => Promise<boolean>
   /** Show a transient toast. */
@@ -44,15 +46,37 @@ export const dispatchRpc = async (method: string, args: any[], ctx: DispatchCtx)
       const action = args[0] || { op: 'get' }
       const perm = action.op === 'get' ? 'vars:read' : 'vars:write'
       if (!(await ctx.ensure(perm))) permDenied(perm)
-      // Global scope ignores chatId; local scope needs the active chat.
+      // The `character` scope is bound to the owning card; the host supplies the id so a
+      // script can't address another card's vars.
+      if (action.scope === 'character') action.cardId = ctx.cardId
+      // Global scope ignores chatId; local/message scope needs the active chat.
       const res = await window.api.pluginVars(ctx.profileId, ctx.getChatId() || '', action)
-      if (res && res.scope === 'local') ctx.syncLocalVars(res.store)
+      // local + message (latest floor) writes feed the live status widgets.
+      if (res && (res.scope === 'local' || res.scope === 'message')) ctx.syncLocalVars(res.store)
       return res ? res.value : undefined
     }
     case 'chat.getMessages': {
       if (!(await ctx.ensure('chat:read'))) permDenied('chat:read')
       const chatId = ctx.getChatId()
       return chatId ? window.api.pluginGetMessages(ctx.profileId, chatId) : []
+    }
+    case 'chat.setMessage': {
+      if (!(await ctx.ensure('chat:write'))) permDenied('chat:write')
+      const chatId = ctx.getChatId()
+      if (!chatId) return false
+      return window.api.pluginSetMessage(ctx.profileId, chatId, Number(args[0]), args[1] || {})
+    }
+    case 'chat.createMessage': {
+      if (!(await ctx.ensure('chat:write'))) permDenied('chat:write')
+      const chatId = ctx.getChatId()
+      if (!chatId) return -1
+      return window.api.pluginCreateMessage(ctx.profileId, chatId, args[0] || {})
+    }
+    case 'chat.deleteMessages': {
+      if (!(await ctx.ensure('chat:write'))) permDenied('chat:write')
+      const chatId = ctx.getChatId()
+      if (!chatId) return false
+      return window.api.pluginDeleteMessages(ctx.profileId, chatId, Number(args[0]))
     }
     case 'chat.getLastMessage': {
       if (!(await ctx.ensure('chat:read'))) permDenied('chat:read')

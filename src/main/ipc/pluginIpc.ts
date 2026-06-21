@@ -16,6 +16,16 @@ export const registerPluginIpc = (ipcMain: IpcMain): void => {
   ipcMain.handle('plugin-get-messages', (_, profileId, chatId) =>
     pluginService.getMessages(profileId, chatId)
   )
+  // TH-2 message write API (gated behind chat:write in the renderer dispatcher).
+  ipcMain.handle('plugin-set-message', (_, profileId, chatId, floorIndex, patch) =>
+    pluginService.setMessage(profileId, chatId, floorIndex, patch)
+  )
+  ipcMain.handle('plugin-delete-messages', (_, profileId, chatId, fromIndex) =>
+    pluginService.deleteMessages(profileId, chatId, fromIndex)
+  )
+  ipcMain.handle('plugin-create-message', (_, profileId, chatId, msg) =>
+    pluginService.createMessage(profileId, chatId, msg)
+  )
   ipcMain.handle('plugin-get-grants', (_, profileId, cardId) =>
     pluginService.getGrants(profileId, cardId)
   )

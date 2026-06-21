@@ -17,22 +17,80 @@ export const TAVERN_SHIM = `
   if (typeof rpt === 'undefined') return;
   // Canonical ST/TH event-name enum (single source of truth in plugin/events.ts).
   var tavern_events = ${TAVERN_EVENTS_LITERAL};
-  function vstore(opt) { return opt && opt.type === 'global' ? rpt.global : rpt.vars; }
+  // --- Variable scopes (TH-2): chat(local)/global/message/character/script. ---
+  function scopeOf(opt) {
+    var t = opt && opt.type;
+    if (t === 'global' || t === 'message' || t === 'character' || t === 'script') return t;
+    return 'local';
+  }
+  function mid(opt) { return opt && (opt.message_id != null ? opt.message_id : opt.messageId); }
+  function writeVars(op, vars, opt) {
+    var scope = scopeOf(opt), keys = Object.keys(vars || {});
+    if (scope === 'script') {
+      // script scope ≈ this owner's isolated storage KV.
+      if (op === 'del') return Promise.all(keys.map(function (k) { return rpt.storage.remove(k); }));
+      return Promise.all(keys.map(function (k) { return rpt.storage.set(k, vars[k]); })).then(function () { return vars; });
+    }
+    return Promise.all(keys.map(function (k) {
+      return rpt.var({ op: op, scope: scope, key: k, value: vars[k], messageId: mid(opt) });
+    })).then(function () { return vars; });
+  }
+  // Slice a transcript by a TH range: number (one), "a-b" string, or {start,end}.
+  function sliceRange(all, range) {
+    if (range == null) return all;
+    if (typeof range === 'number') return all.slice(range, range + 1);
+    if (typeof range === 'string') {
+      var p = range.split('-'), a = parseInt(p[0], 10) || 0;
+      var b = p.length > 1 ? parseInt(p[1], 10) : a;
+      return all.slice(a, b + 1);
+    }
+    if (typeof range === 'object') {
+      var s = range.start || 0, e = range.end != null ? range.end : all.length - 1;
+      return all.slice(s, e + 1);
+    }
+    return all;
+  }
   var TH = {
-    getVariables: function (opt) { return vstore(opt).all(); },
-    setVariables: function (vars, opt) {
-      var s = vstore(opt), keys = Object.keys(vars || {});
-      return Promise.all(keys.map(function (k) { return s.set(k, vars[k]); })).then(function () { return vars; });
+    getVariables: function (opt) {
+      return scopeOf(opt) === 'script' ? rpt.storage.all()
+        : rpt.var({ op: 'get', scope: scopeOf(opt), messageId: mid(opt) });
     },
-    insertOrAssignVariables: function (vars, opt) { return TH.setVariables(vars, opt); },
-    replaceVariables: function (vars, opt) { return TH.setVariables(vars, opt); },
+    setVariables: function (vars, opt) { return writeVars('set', vars, opt); },
+    insertOrAssignVariables: function (vars, opt) { return writeVars('set', vars, opt); },
+    insertVariables: function (vars, opt) { return writeVars('insert', vars, opt); },
+    replaceVariables: function (vars, opt) { return writeVars('set', vars, opt); },
+    deleteVariable: function (key, opt) {
+      var o = {}; o[key] = 1; return writeVars('del', o, opt);
+    },
     updateVariablesWith: function (updater, opt) {
       return TH.getVariables(opt).then(function (vars) {
         var next = typeof updater === 'function' ? updater(vars || {}) : vars;
         return TH.setVariables(next || vars || {}, opt).then(function () { return next || vars; });
       });
     },
-    getChatMessages: function () { return rpt.chat.getMessages(); },
+    getChatMessages: function (range) {
+      return rpt.chat.getMessages().then(function (all) { return sliceRange(all || [], range); });
+    },
+    setChatMessages: function (messages) {
+      var arr = Array.isArray(messages) ? messages : [messages];
+      return Promise.all(arr.map(function (m) {
+        var id = m && (m.message_id != null ? m.message_id : m.floor);
+        var patch = {};
+        if (m && m.message != null) patch.response = m.message;
+        if (m && m.user != null) patch.user = m.user;
+        return rpt.chat.setMessage(id, patch);
+      }));
+    },
+    createChatMessages: function (messages) {
+      var arr = Array.isArray(messages) ? messages : [messages];
+      return Promise.all(arr.map(function (m) {
+        return rpt.chat.createMessage({ user: m && m.user, response: m && (m.message != null ? m.message : m.response) });
+      }));
+    },
+    deleteChatMessages: function (ids) {
+      var from = Array.isArray(ids) ? Math.min.apply(Math, ids) : ids;
+      return rpt.chat.deleteMessages(Number(from));
+    },
     getLastMessage: function () { return rpt.chat.getLastMessage(); },
     getLastMessageId: function () {
       return rpt.chat.getMessages().then(function (m) { return m && m.length ? m.length - 1 : -1; });
@@ -68,6 +126,14 @@ export const TAVERN_SHIM = `
   window.tavern_events = tavern_events;
   window.getVariables = TH.getVariables;
   window.setVariables = TH.setVariables;
+  window.insertVariables = TH.insertVariables;
+  window.insertOrAssignVariables = TH.insertOrAssignVariables;
+  window.deleteVariable = TH.deleteVariable;
+  window.updateVariablesWith = TH.updateVariablesWith;
+  window.getChatMessages = TH.getChatMessages;
+  window.setChatMessages = TH.setChatMessages;
+  window.createChatMessages = TH.createChatMessages;
+  window.deleteChatMessages = TH.deleteChatMessages;
   window.triggerSlash = TH.triggerSlash;
   window.eventOn = TH.eventOn;
   window.eventOnce = TH.eventOnce;

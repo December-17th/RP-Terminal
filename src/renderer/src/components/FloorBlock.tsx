@@ -8,6 +8,9 @@ export interface RenderedFloor {
   user: string
   rawResponse: string
   html: string
+  /** Active swipe index + total alternates for this floor (TH-2). */
+  swipeId: number
+  swipeCount: number
 }
 
 /** Where + what a floor's right-click "edit" context menu targets. */
@@ -25,22 +28,33 @@ export function FloorBlock({
   cardCss,
   editing,
   editText,
+  isLast,
+  isGenerating,
   onEditTextChange,
   onSaveEdit,
   onCancelEdit,
-  onOpenMenu
+  onOpenMenu,
+  onSwipe
 }: {
   f: RenderedFloor
   cardCss?: string
   editing: { floor: number; field: 'user' | 'response' } | null
   editText: string
+  isLast: boolean
+  isGenerating: boolean
   onEditTextChange: (v: string) => void
   onSaveEdit: () => void
   onCancelEdit: () => void
   onOpenMenu: (m: FloorMenuTarget) => void
+  onSwipe: (dir: 'left' | 'right') => void
 }): ReactNode {
   const editingUser = editing?.floor === f.floor && editing.field === 'user'
   const editingResp = editing?.floor === f.floor && editing.field === 'response'
+  // Swipe controls show on the latest floor (so a right-swipe can generate a new
+  // alternate) and on any floor that already has more than one alternate.
+  const showSwipes = !editingResp && f.user !== '' && (f.swipeCount > 1 || isLast)
+  // Right is enabled when more alternates exist, or — on the last floor — to generate one.
+  const canRight = f.swipeId < f.swipeCount - 1 || isLast
   return (
     <div className="floor-block">
       {editingUser ? (
@@ -77,6 +91,29 @@ export function FloorBlock({
             onOpenMenu({ x, y, floor: f.floor, field: 'response', value: f.rawResponse })
           }
         />
+      )}
+      {showSwipes && (
+        <div className="swipe-controls">
+          <button
+            className="swipe-btn"
+            title="Previous response"
+            disabled={isGenerating || f.swipeId <= 0}
+            onClick={() => onSwipe('left')}
+          >
+            ‹
+          </button>
+          <span className="swipe-count">
+            {f.swipeId + 1}/{f.swipeCount}
+          </span>
+          <button
+            className="swipe-btn"
+            title={f.swipeId < f.swipeCount - 1 ? 'Next response' : 'Generate a new response'}
+            disabled={isGenerating || !canRight}
+            onClick={() => onSwipe('right')}
+          >
+            ›
+          </button>
+        </div>
       )}
     </div>
   )

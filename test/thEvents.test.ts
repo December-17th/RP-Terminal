@@ -2,7 +2,8 @@ import { describe, it, expect } from 'vitest'
 import {
   TAVERN_EVENTS,
   TAVERN_EVENTS_LITERAL,
-  chatTransitionEvents
+  chatTransitionEvents,
+  messageMutationEvents
 } from '../src/renderer/src/plugin/events'
 import { buildScriptSrcDoc } from '../src/renderer/src/plugin/bridgeShim'
 
@@ -65,6 +66,30 @@ describe('chatTransitionEvents', () => {
   })
 })
 
+describe('messageMutationEvents (TH-2)', () => {
+  const f = (floor: number, content: string, swipeId = 0) => ({ floor, content, swipeId })
+
+  it('emits MESSAGE_DELETED for floors that disappear', () => {
+    const evs = messageMutationEvents([f(0, 'a'), f(1, 'b')], [f(0, 'a')])
+    expect(evs).toEqual([{ name: TAVERN_EVENTS.MESSAGE_DELETED, payload: 1 }])
+  })
+
+  it('emits MESSAGE_SWIPED when the active swipe index changes', () => {
+    const evs = messageMutationEvents([f(0, 'a', 0)], [f(0, 'b', 1)])
+    expect(evs).toEqual([{ name: TAVERN_EVENTS.MESSAGE_SWIPED, payload: 0 }])
+  })
+
+  it('emits MESSAGE_UPDATED when only the text changes', () => {
+    const evs = messageMutationEvents([f(0, 'a', 0)], [f(0, 'a2', 0)])
+    expect(evs).toEqual([{ name: TAVERN_EVENTS.MESSAGE_UPDATED, payload: 0 }])
+  })
+
+  it('emits nothing for unchanged floors or pure appends', () => {
+    expect(messageMutationEvents([f(0, 'a')], [f(0, 'a')])).toEqual([])
+    expect(messageMutationEvents([f(0, 'a')], [f(0, 'a'), f(1, 'b')])).toEqual([])
+  })
+})
+
 describe('sandbox shim wiring (TH-1)', () => {
   const doc = buildScriptSrcDoc([{ name: 's', code: 'noop()' }])
 
@@ -85,5 +110,29 @@ describe('sandbox shim wiring (TH-1)', () => {
     expect(doc).toContain('onFirst:')
     expect(doc).toContain('waitFor:')
     expect(doc).toContain('once:')
+  })
+})
+
+describe('sandbox shim wiring (TH-2)', () => {
+  const doc = buildScriptSrcDoc([{ name: 's', code: 'noop()' }])
+
+  it('exposes the message + variable-scope helpers on the TH shim', () => {
+    for (const name of [
+      'insertVariables',
+      'deleteVariable',
+      'getChatMessages',
+      'setChatMessages',
+      'createChatMessages',
+      'deleteChatMessages'
+    ]) {
+      expect(doc).toContain(name)
+    }
+  })
+
+  it('exposes the low-level scoped var op + message-write methods on the rpt bridge', () => {
+    expect(doc).toContain('var: function (action)')
+    expect(doc).toContain('setMessage:')
+    expect(doc).toContain('createMessage:')
+    expect(doc).toContain('deleteMessages:')
   })
 })
