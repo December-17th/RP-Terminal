@@ -278,7 +278,11 @@ const normalize = (op: string, args: unknown[], comment?: string): MvuCommand | 
 /** Parse `<UpdateVariable>` blocks out of model output into normalized commands. */
 export const parseMvuCommands = (content: string): ParsedMvu => {
   const commands: MvuCommand[] = []
-  const blockRe = /<(UpdateVariable|update|updatevariable)>([\s\S]*?)<\/\1>/gi
+  // Tempered match: the inner part can't span ANOTHER `<UpdateVariable>` opening, so a STRAY
+  // unclosed mention (e.g. the model narrating "Output <UpdateVariable> ...") no longer makes the
+  // lazy match run from that mention to the real closing tag and delete the narrative between.
+  const blockRe =
+    /<(UpdateVariable|update|updatevariable)>((?:(?!<(?:UpdateVariable|update|updatevariable)>)[\s\S])*?)<\/\1>/gi
   const text = content.replace(blockRe, (_full, _tag, inner) => {
     for (const { op, argsSrc, comment } of findCalls(inner)) {
       const cmd = normalize(op, parseArgList(argsSrc), comment)

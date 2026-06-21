@@ -70,6 +70,18 @@ describe('parseMvuCommands', () => {
     expect(r.commands).toEqual([])
     expect(r.text).toBe('Just narration.')
   })
+
+  it('ignores a stray unclosed <UpdateVariable> mention and strips only the real block', () => {
+    // The reported bug: a stray "<UpdateVariable>" (no close) before the real block made the
+    // lazy match span to the real close, deleting the narrative. Tempered match must not.
+    const raw =
+      'I will output <UpdateVariable> next.\nThe rain falls hard.\n' +
+      "<UpdateVariable>\n_.set('hp', 100, 80);//hit\n</UpdateVariable>"
+    const { text, commands } = parseMvuCommands(raw)
+    expect(text).toContain('I will output <UpdateVariable> next.')
+    expect(text).toContain('The rain falls hard.')
+    expect(commands).toEqual([{ op: 'set', path: 'hp', value: 80, reason: 'hit' }])
+  })
 })
 
 describe('applyMvuCommands', () => {
