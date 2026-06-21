@@ -9,70 +9,37 @@ import {
   listFilesSync
 } from './storageService'
 import { applyRegexRules, RegexApplyContext } from '../../shared/regexTransform'
+import { ArtifactScope, ScopeContext, ScopeMeta, isScopeActive } from '../../shared/artifactScope'
+import {
+  RenderRegexRule,
+  RegexScriptInfo,
+  RegexRuleDetail,
+  RegexRulePatch
+} from '../../shared/regexTypes'
 
-/** A regex rule flattened to a form the renderer can compile and apply. */
-export interface RenderRegexRule {
-  id: string
-  scriptName: string
-  source: string
-  flags: string
-  replace: string
-  placement: number[]
-  disabled: boolean
-  markdownOnly: boolean
-  promptOnly: boolean
-  /** Substrings removed from each match before `{{match}}` is substituted. */
-  trimStrings: string[]
-}
-
-export interface RegexScriptInfo {
-  file: string
-  scriptName: string
-  ruleCount: number
-  scope: ArtifactScope
-  owner?: string
-  disabled: boolean
+// Re-export the shared types + predicate so existing importers (tests, the renderer store)
+// keep their import path while src/shared is the single source of truth.
+export { isScopeActive }
+export type {
+  ArtifactScope,
+  ScopeContext,
+  ScopeMeta,
+  RenderRegexRule,
+  RegexScriptInfo,
+  RegexRuleDetail,
+  RegexRulePatch
 }
 
 const regexDir = (profileId: string): string =>
   path.join(getAppDir(), 'profiles', profileId, 'regex')
 
-/**
- * Artifact scope (Track S, §6). A script is active for a given turn when its scope
- * matches the active context:
- *  • global  — every session (the legacy/default behavior for profile-wide regex).
- *  • world   — bound to a card (owner = character id); active when that world loads.
- *  • session — bound to one chat (owner = chat id).
- * Bundled regex from a World Card defaults to `world`, owned by the imported card, so
- * it lights up only for that world instead of polluting every session.
- */
-export type ArtifactScope = 'global' | 'world' | 'session'
-export interface ScopeContext {
-  cardId?: string | null
-  chatId?: string | null
-}
-export interface ScopeMeta {
-  scope: ArtifactScope
-  owner?: string
-  /** Script-level enable toggle; a disabled script never contributes rules at runtime. */
-  disabled?: boolean
-}
-
-// Scope lives in a sidecar (`_meta.json`: filename → {scope, owner}) so we never
+// Scope lives in a sidecar (`_meta.json`: filename → {scope, owner, disabled}) so we never
 // touch the ST regex-script format itself. Files with no entry are `global`.
 const metaPath = (profileId: string): string => path.join(regexDir(profileId), '_meta.json')
 const readMeta = (profileId: string): Record<string, ScopeMeta> =>
   readJsonSync<Record<string, ScopeMeta>>(metaPath(profileId)) || {}
 const writeMeta = (profileId: string, meta: Record<string, ScopeMeta>): void =>
   writeJsonSyncAtomic(metaPath(profileId), meta)
-
-/** Pure scope predicate — exported for unit testing the resolution rules. */
-export const isScopeActive = (meta: ScopeMeta | undefined, ctx: ScopeContext): boolean => {
-  const scope = meta?.scope ?? 'global'
-  if (scope === 'world') return !!ctx.cardId && meta?.owner === ctx.cardId
-  if (scope === 'session') return !!ctx.chatId && meta?.owner === ctx.chatId
-  return true // global (and any unknown) is always active
-}
 
 export const getScriptScope = (profileId: string, file: string): ScopeMeta =>
   readMeta(profileId)[file] ?? { scope: 'global' }
@@ -274,11 +241,6 @@ export const deleteScript = (profileId: string, file: string): void => {
 const isUnsafe = (file: string): boolean =>
   file.includes('/') || file.includes('\\') || file.includes('..')
 
-export interface RegexRuleDetail extends RenderRegexRule {
-  file: string
-  index: number
-}
-
 /** The rules in one script file, each tagged with its file + index for editing. */
 export const getScriptRules = (profileId: string, file: string): RegexRuleDetail[] => {
   if (isUnsafe(file)) return []
@@ -287,16 +249,6 @@ export const getScriptRules = (profileId: string, file: string): RegexRuleDetail
     file,
     index
   }))
-}
-
-export interface RegexRulePatch {
-  source?: string
-  flags?: string
-  replace?: string
-  disabled?: boolean
-  markdownOnly?: boolean
-  promptOnly?: boolean
-  trimStrings?: string[]
 }
 
 /** Edit one rule in place (enable/disable, find/flags, replacement, scope), preserving

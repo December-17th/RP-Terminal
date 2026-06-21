@@ -8,7 +8,8 @@ import {
   writeJsonSyncAtomic,
   listFilesSync
 } from './storageService'
-import { ArtifactScope, ScopeContext, ScopeMeta, isScopeActive } from './regexService'
+import { ArtifactScope, ScopeContext, ScopeMeta, isScopeActive } from '../../shared/artifactScope'
+import { StoredScript, ScriptInfo } from '../../shared/scriptTypes'
 
 /**
  * Profile-level scripts library (companion to the regex store), so card scripts gain
@@ -22,32 +23,17 @@ import { ArtifactScope, ScopeContext, ScopeMeta, isScopeActive } from './regexSe
  * only detect import hosts (`extractImportHosts`/`runtimeImportHosts`) for the grant + CSP.
  */
 
-export interface StoredScript {
-  name: string
-  code: string
-}
-
-export interface ScriptInfo extends StoredScript {
-  file: string
-  scope: ArtifactScope
-  owner?: string
-  disabled: boolean
-  /** Remote URLs this script pulls via import directives (for the UI + grant prompt). */
-  remoteHosts: string[]
-}
-
-interface ScriptMeta extends ScopeMeta {
-  disabled?: boolean
-}
+// Re-export the shared types so existing importers keep their path (single source: src/shared).
+export type { StoredScript, ScriptInfo }
 
 const scriptsDir = (profileId: string): string =>
   path.join(getAppDir(), 'profiles', profileId, 'scripts')
 const scriptPath = (profileId: string, file: string): string =>
   path.join(scriptsDir(profileId), file)
 const metaPath = (profileId: string): string => path.join(scriptsDir(profileId), '_meta.json')
-const readMeta = (profileId: string): Record<string, ScriptMeta> =>
-  readJsonSync<Record<string, ScriptMeta>>(metaPath(profileId)) || {}
-const writeMeta = (profileId: string, meta: Record<string, ScriptMeta>): void =>
+const readMeta = (profileId: string): Record<string, ScopeMeta> =>
+  readJsonSync<Record<string, ScopeMeta>>(metaPath(profileId)) || {}
+const writeMeta = (profileId: string, meta: Record<string, ScopeMeta>): void =>
   writeJsonSyncAtomic(metaPath(profileId), meta)
 
 const isUnsafe = (file: string): boolean =>
@@ -95,7 +81,7 @@ export const extractImportHosts = (code: string): string[] =>
 
 // --- Store CRUD -------------------------------------------------------------
 
-const fileMeta = (meta: Record<string, ScriptMeta>, file: string): ScriptMeta =>
+const fileMeta = (meta: Record<string, ScopeMeta>, file: string): ScopeMeta =>
   meta[file] ?? { scope: 'global' }
 
 export const listScripts = (profileId: string): ScriptInfo[] => {

@@ -1,17 +1,9 @@
 import { create } from 'zustand'
-import type { ArtifactScope, ScopeContext } from './regexStore'
+import type { ArtifactScope, ScopeContext } from '../../../shared/artifactScope'
+import type { ScriptInfo } from '../../../shared/scriptTypes'
 
-export type { ArtifactScope, ScopeContext }
-
-export interface ScriptInfo {
-  file: string
-  name: string
-  code: string
-  scope: ArtifactScope
-  owner?: string
-  disabled: boolean
-  remoteHosts: string[]
-}
+// Single source of truth is src/shared; re-export so components keep importing from the store.
+export type { ArtifactScope, ScopeContext, ScriptInfo }
 
 interface ScriptsState {
   scripts: ScriptInfo[]

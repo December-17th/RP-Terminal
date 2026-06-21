@@ -1,51 +1,16 @@
 import { create } from 'zustand'
 import { applyRegexRules, type RegexApplyContext } from '../../../shared/regexTransform'
+import type { ArtifactScope, ScopeContext } from '../../../shared/artifactScope'
+import type {
+  RenderRegexRule,
+  RegexScriptInfo,
+  RegexRuleDetail,
+  RegexRulePatch
+} from '../../../shared/regexTypes'
 
-export type { RegexApplyContext }
-
-export interface RenderRegexRule {
-  id: string
-  scriptName: string
-  source: string
-  flags: string
-  replace: string
-  placement: number[]
-  disabled: boolean
-  markdownOnly: boolean
-  promptOnly: boolean
-  trimStrings: string[]
-}
-
-export type ArtifactScope = 'global' | 'world' | 'session'
-
-export interface ScopeContext {
-  cardId?: string | null
-  chatId?: string | null
-}
-
-export interface RegexScriptInfo {
-  file: string
-  scriptName: string
-  ruleCount: number
-  scope: ArtifactScope
-  owner?: string
-  disabled: boolean
-}
-
-export interface RegexRuleDetail extends RenderRegexRule {
-  file: string
-  index: number
-}
-
-export interface RegexRulePatch {
-  source?: string
-  flags?: string
-  replace?: string
-  disabled?: boolean
-  markdownOnly?: boolean
-  promptOnly?: boolean
-  trimStrings?: string[]
-}
+// Single source of truth is src/shared; re-export so components keep importing from the store.
+export type { RegexApplyContext, ArtifactScope, ScopeContext }
+export type { RenderRegexRule, RegexScriptInfo, RegexRuleDetail, RegexRulePatch }
 
 interface RegexState {
   rules: RenderRegexRule[]
