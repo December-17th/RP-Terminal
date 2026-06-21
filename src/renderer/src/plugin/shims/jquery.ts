@@ -105,6 +105,8 @@ export const JQUERY_SHIM = `
       var target = self[0] || document.body;
       scripts.forEach(function(old){ execScript(old, target); });
       llog('mounted ' + u + ' (' + scripts.length + ' script(s); Vue=' + (!!window.Vue) + ')');
+      // Confirm the app actually rendered into its mount point (vs a height-only issue).
+      setTimeout(function(){ try { var app=document.getElementById('app'); llog('post-mount: #app=' + (app?('children:'+app.childElementCount):'missing') + ', bodyH=' + document.body.scrollHeight); } catch(e){} }, 500);
       if (typeof cb === 'function') cb();
     }).catch(function(e){ llog((e && e.message) || e); });
     return this;

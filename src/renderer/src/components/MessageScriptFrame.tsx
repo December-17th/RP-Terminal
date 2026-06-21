@@ -37,7 +37,10 @@ export function MessageScriptFrame({ html }: { html: string }): React.ReactEleme
   const cardId = useCharacterStore((s) => s.activeCharacter?.id ?? null)
 
   const frameRef = useRef<HTMLIFrameElement>(null)
-  const [height, setHeight] = useState(80)
+  // A generous default so full-page frontend cards (Vue apps sized to 100vh, which can't
+  // grow a content-driven scrollHeight) are usable; the ResizeObserver shrinks/grows it
+  // to real content for non-full-page blocks.
+  const [height, setHeight] = useState(560)
   const [srcDoc, setSrcDoc] = useState('')
 
   // Build the sandbox doc once the world's network grant is known. A frontend card that
