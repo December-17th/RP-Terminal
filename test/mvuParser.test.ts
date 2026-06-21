@@ -1,5 +1,10 @@
 import { describe, it, expect } from 'vitest'
-import { parseMvuCommands, applyMvuCommands } from '../src/main/parsers/mvuParser'
+import {
+  parseMvuCommands,
+  applyMvuCommands,
+  parseJsonPatch,
+  applyJsonPatch
+} from '../src/main/parsers/mvuParser'
 
 describe('parseMvuCommands', () => {
   it('uses the LAST arg as the new value and the //comment as the reason, strips the block', () => {
@@ -82,6 +87,26 @@ describe('parseMvuCommands', () => {
     expect(text).toContain('The rain falls hard.')
     expect(commands).toEqual([{ op: 'set', path: 'hp', value: 80, reason: 'hit' }])
   })
+
+  it('extracts <JSONPatch> ops from an <UpdateVariable> block and strips the block', () => {
+    const raw =
+      'Scene.\n<UpdateVariable>\n<Analysis>note</Analysis>\n<JSONPatch>\n' +
+      '[{"op":"replace","path":"/角色/梅芙/HP","value":"750/750"},{"op":"add","path":"/世界/时间","value":"day 1"}]\n' +
+      '</JSONPatch>\n</UpdateVariable>\nMore.'
+    const { text, commands, patches } = parseMvuCommands(raw)
+    expect(text).toBe('Scene.\n\nMore.')
+    expect(commands).toEqual([])
+    expect(patches).toEqual([
+      { op: 'replace', path: '/角色/梅芙/HP', value: '750/750' },
+      { op: 'add', path: '/世界/时间', value: 'day 1' }
+    ])
+  })
+
+  it('parseJsonPatch tolerates malformed/invalid input', () => {
+    expect(parseJsonPatch('not json')).toEqual([])
+    expect(parseJsonPatch('{"op":"add"}')).toEqual([]) // not an array
+    expect(parseJsonPatch('[{"path":"/a"}]')).toEqual([]) // op missing
+  })
 })
 
 describe('applyMvuCommands', () => {
@@ -118,6 +143,24 @@ describe('applyMvuCommands', () => {
     const stat: Record<string, any> = {}
     applyMvuCommands(stat, [{ op: 'insert', path: 'items', value: 'sword' }])
     expect(stat.items).toEqual(['sword'])
+  })
+
+  it('applies JSON Patch (replace/add/remove/move/copy) over JSON-Pointer paths', () => {
+    const sd: Record<string, any> = { 角色: { 梅芙: { HP: '1/1' } }, 世界: {}, list: ['a'] }
+    const deltas = applyJsonPatch(sd, [
+      { op: 'replace', path: '/角色/梅芙/HP', value: '750/750' },
+      { op: 'add', path: '/角色/梅芙/MP', value: '1450/1450' },
+      { op: 'add', path: '/世界/时间', value: 'day 1' },
+      { op: 'remove', path: '/世界/时间' },
+      { op: 'move', path: '/角色/梅芙/生命', from: '/角色/梅芙/HP' },
+      { op: 'add', path: '/list/-', value: 'b' } // array-append token
+    ])
+    expect(sd.角色.梅芙.HP).toBeUndefined() // moved away
+    expect(sd.角色.梅芙.生命).toBe('750/750')
+    expect(sd.角色.梅芙.MP).toBe('1450/1450')
+    expect(sd.世界.时间).toBeUndefined() // added then removed
+    expect(sd.list).toEqual(['a', 'b'])
+    expect(deltas).toContainEqual({ path: '角色.梅芙.MP', old: undefined, new: '1450/1450' })
   })
 
   it('handles assign-by-key, remove-by-key, and move', () => {

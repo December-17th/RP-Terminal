@@ -43,10 +43,23 @@ export interface MvuDelta {
   reason?: string
 }
 
+/** A single RFC-6902 JSON Patch op — the `<JSONPatch>` MVU dialect (e.g. 命定之诗). */
+export interface JsonPatchOp {
+  op: string // add | remove | replace | move | copy | test
+  /** JSON Pointer resolved against stat_data, e.g. "/角色/梅芙/HP". */
+  path: string
+  value?: unknown
+  /** source pointer for move/copy. */
+  from?: string
+}
+
 export interface ParsedMvu {
   /** Narrative text with the `<UpdateVariable>` blocks stripped. */
   text: string
+  /** `_.set(...)`-style commands (classic MagVarUpdate dialect). */
   commands: MvuCommand[]
+  /** `<JSONPatch>[…]` ops (the JSON-Patch dialect). */
+  patches: JsonPatchOp[]
 }
 
 // --- dot/bracket path helpers (independent copy; parsers don't import services) ---
@@ -278,19 +291,24 @@ const normalize = (op: string, args: unknown[], comment?: string): MvuCommand | 
 /** Parse `<UpdateVariable>` blocks out of model output into normalized commands. */
 export const parseMvuCommands = (content: string): ParsedMvu => {
   const commands: MvuCommand[] = []
+  const patches: JsonPatchOp[] = []
   // Tempered match: the inner part can't span ANOTHER `<UpdateVariable>` opening, so a STRAY
   // unclosed mention (e.g. the model narrating "Output <UpdateVariable> ...") no longer makes the
   // lazy match run from that mention to the real closing tag and delete the narrative between.
   const blockRe =
     /<(UpdateVariable|update|updatevariable)>((?:(?!<(?:UpdateVariable|update|updatevariable)>)[\s\S])*?)<\/\1>/gi
   const text = content.replace(blockRe, (_full, _tag, inner) => {
+    // <JSONPatch>[…]</JSONPatch> dialect (this card): one JSON array of RFC-6902 ops.
+    const jp = /<JSONPatch>([\s\S]*?)<\/JSONPatch>/i.exec(inner)
+    if (jp) for (const p of parseJsonPatch(jp[1])) patches.push(p)
+    // `_.set(...)` dialect (classic MagVarUpdate).
     for (const { op, argsSrc, comment } of findCalls(inner)) {
       const cmd = normalize(op, parseArgList(argsSrc), comment)
       if (cmd) commands.push(cmd)
     }
     return ''
   })
-  return { text: text.trim(), commands }
+  return { text: text.trim(), commands, patches }
 }
 
 /** Parse a block as a single JS object — JSON first, then the tolerant reader
@@ -383,6 +401,104 @@ export const applyMvuCommands = (
       }
     }
     deltas.push({ path: c.path, old: before, new: clone(getPath(statData, c.path)), reason: c.reason })
+  }
+  return deltas
+}
+
+// --- JSON Patch (RFC 6902) — the `<JSONPatch>` MVU dialect. JSON Pointer paths are resolved
+// against stat_data (the same root as `_.set`). Implemented from the spec; no code copied. ---
+
+const ptrSegments = (pointer: string): string[] =>
+  String(pointer)
+    .split('/')
+    .slice(1)
+    .map((s) => s.replace(/~1/g, '/').replace(/~0/g, '~'))
+
+const getAtSeg = (obj: any, segs: string[]): any => {
+  let cur = obj
+  for (const s of segs) {
+    if (cur == null) return undefined
+    cur = cur[s]
+  }
+  return cur
+}
+
+const setAtSeg = (obj: any, segs: string[], val: any): void => {
+  let cur = obj
+  for (let i = 0; i < segs.length - 1; i++) {
+    const k = segs[i]
+    if (typeof cur[k] !== 'object' || cur[k] === null) cur[k] = {}
+    cur = cur[k]
+  }
+  const last = segs[segs.length - 1]
+  if (Array.isArray(cur) && last === '-') cur.push(val) // JSON Patch array-append token
+  else cur[last] = val
+}
+
+const removeAtSeg = (obj: any, segs: string[]): void => {
+  let cur = obj
+  for (let i = 0; i < segs.length - 1; i++) {
+    if (cur == null) return
+    cur = cur[segs[i]]
+  }
+  if (cur == null) return
+  const last = segs[segs.length - 1]
+  if (Array.isArray(cur)) cur.splice(Number(last), 1)
+  else delete cur[last]
+}
+
+/** Parse a `<JSONPatch>` body (a JSON array of ops). Tolerant: invalid JSON → []. */
+export const parseJsonPatch = (src: string): JsonPatchOp[] => {
+  let arr: unknown
+  try {
+    arr = JSON.parse(String(src).trim())
+  } catch {
+    return []
+  }
+  if (!Array.isArray(arr)) return []
+  const out: JsonPatchOp[] = []
+  for (const o of arr) {
+    if (o && typeof o === 'object' && typeof (o as any).op === 'string' && typeof (o as any).path === 'string') {
+      const a = o as any
+      out.push({ op: a.op, path: a.path, value: a.value, from: a.from })
+    }
+  }
+  return out
+}
+
+/** Apply RFC-6902 ops to a mutable root (stat_data); returns a per-op delta log (mag_* events). */
+export const applyJsonPatch = (root: Record<string, any>, ops: JsonPatchOp[]): MvuDelta[] => {
+  const deltas: MvuDelta[] = []
+  for (const o of ops) {
+    const segs = ptrSegments(o.path)
+    if (!segs.length) continue
+    const before = clone(getAtSeg(root, segs))
+    switch (o.op) {
+      case 'add':
+      case 'replace':
+        setAtSeg(root, segs, o.value)
+        break
+      case 'remove':
+        removeAtSeg(root, segs)
+        break
+      case 'move': {
+        if (!o.from) continue
+        const fromSegs = ptrSegments(o.from)
+        const v = clone(getAtSeg(root, fromSegs))
+        removeAtSeg(root, fromSegs)
+        setAtSeg(root, segs, v)
+        break
+      }
+      case 'copy': {
+        if (!o.from) continue
+        setAtSeg(root, segs, clone(getAtSeg(root, ptrSegments(o.from))))
+        break
+      }
+      case 'test':
+      default:
+        continue // assertions + unknown ops don't mutate
+    }
+    deltas.push({ path: segs.join('.'), old: before, new: clone(getAtSeg(root, segs)) })
   }
   return deltas
 }

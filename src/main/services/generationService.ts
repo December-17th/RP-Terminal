@@ -18,7 +18,7 @@ import { getPromptRules } from './regexService'
 import { loadGlobals, saveGlobals } from './templateService'
 import { streamProvider, DeltaCallback } from './apiService'
 import { parseContent, stripThinking, RPEvent } from '../parsers/contentParser'
-import { parseMvuCommands, applyMvuCommands } from '../parsers/mvuParser'
+import { parseMvuCommands, applyMvuCommands, applyJsonPatch } from '../parsers/mvuParser'
 import { log } from './logService'
 import { FloorFile } from '../types/chat'
 import { Lorebook, LorebookEntry, getRpExt } from '../types/character'
@@ -258,13 +258,21 @@ export const generate = async (
   // apply this turn's rpt-events on top, then persist global vars.
   const variables = workingVars
   for (const evt of parsed.events) applyEvent(variables, evt)
-  if (mvu.commands.length) {
+  if (mvu.commands.length || mvu.patches.length) {
     if (typeof variables.stat_data !== 'object' || variables.stat_data === null) {
       variables.stat_data = {}
     }
-    const deltas = applyMvuCommands(variables.stat_data as Record<string, any>, mvu.commands)
+    const sd = variables.stat_data as Record<string, any>
+    // Both MVU dialects target stat_data: classic `_.set(...)` and the `<JSONPatch>` form.
+    const deltas = [
+      ...(mvu.commands.length ? applyMvuCommands(sd, mvu.commands) : []),
+      ...(mvu.patches.length ? applyJsonPatch(sd, mvu.patches) : [])
+    ]
     variables.delta_data = deltas
-    log('info', `MVU — applied ${mvu.commands.length} command(s) to stat_data`)
+    log(
+      'info',
+      `MVU — ${mvu.commands.length} cmd + ${mvu.patches.length} patch → ${deltas.length} delta(s) on stat_data`
+    )
   }
   saveGlobals(profileId, globals)
 
