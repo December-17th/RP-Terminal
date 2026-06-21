@@ -57,6 +57,9 @@ export const registerPluginIpc = (ipcMain: IpcMain): void => {
   ipcMain.handle('script-fetch-text', (_, profileId, cardId, url) =>
     scriptApiService.fetchRemoteText(profileId, cardId, url)
   )
+  ipcMain.handle('script-fetch-module-graph', (_, profileId, cardId, urls) =>
+    scriptApiService.fetchModuleGraph(profileId, cardId, urls)
+  )
   ipcMain.handle('plugin-get-grants', (_, profileId, cardId) =>
     pluginService.getGrants(profileId, cardId)
   )

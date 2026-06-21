@@ -182,6 +182,16 @@ export const dispatchRpc = async (method: string, args: any[], ctx: DispatchCtx)
       if (!(await ctx.ensure('remote:fetch'))) permDenied('remote:fetch')
       return window.api.scriptFetchText(ctx.profileId, ctx.cardId, String(args[0] ?? ''))
     }
+    case 'net.fetchModuleGraph': {
+      // Host-fetched ES-module graph (served to the sandbox as blob: URLs via an import
+      // map — cross-origin import() doesn't work in the opaque iframe).
+      if (!(await ctx.ensure('remote:fetch'))) permDenied('remote:fetch')
+      return window.api.scriptFetchModuleGraph(
+        ctx.profileId,
+        ctx.cardId,
+        Array.isArray(args[0]) ? args[0] : []
+      )
+    }
     // --- TH-7 audio (runs in the trusted parent, not the sandbox). ---
     case 'audio.playBgm': {
       if (!(await ctx.ensure('audio'))) permDenied('audio')

@@ -88,6 +88,9 @@ export const BRIDGE_SHIM = `
     // Host-mediated text fetch (runs in main — no browser CORS), gated by the world's
     // remoteScripts grant. Used by the mini-jQuery .load() for frontend cards.
     fetchText: function (url) { return __rpc('net.fetchText', [String(url)]); },
+    // Host-fetched ES-module graph → [{url, source}], served back as blob: URLs via an
+    // import map (cross-origin import() doesn't work in the opaque sandbox).
+    fetchModuleGraph: function (urls) { return __rpc('net.fetchModuleGraph', [urls || []]); },
     // TH-3 read/CRUD: character card, worldbook (lorebook), preset, regex.
     card: {
       getData: function () { return __rpc('card.getData', []); },

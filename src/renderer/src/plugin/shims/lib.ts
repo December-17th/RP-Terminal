@@ -58,14 +58,14 @@ export const LIB_LOADER =
   `<script type="module">` +
   // Publish a readiness promise so dynamically-injected page scripts (jQuery .load) can
   // await the libs before running — the deferred-module ordering doesn't cover them.
+  // NOTE: cross-origin import() fails in the opaque sandbox, so we load global libs by
+  // host-fetching their UMD build and running it INLINE (covered by 'unsafe-inline').
   `window.__rptLibsReady = (async () => {` +
   `function L(m){try{parent.postMessage({__rptlog:1,msg:'[libs] '+m},'*');}catch(_){}}` +
-  `try{const m=await import('https://testingcf.jsdelivr.net/npm/lodash/+esm');window._=window.lodash=(m&&m.default)||m;L('lodash ok');}catch(e){L('lodash fail: '+((e&&e.message)||e));}` +
-  `try{const m=await import('https://testingcf.jsdelivr.net/npm/zod/+esm');window.z={z:(m&&(m.z||m.default))||m};L('zod ok');}catch(e){L('zod fail: '+((e&&e.message)||e));}` +
+  `async function ftext(u){ return (window.rpt&&rpt.fetchText)?rpt.fetchText(u):fetch(u).then(function(r){return r.text();}); }` +
+  `async function loadGlobal(name, url){ try{ if(window[name]){ return; } var src=await ftext(url); var s=document.createElement('script'); s.textContent=src; (document.head||document.documentElement).appendChild(s); L(name+(window[name]?' ok':' loaded-but-undefined')); }catch(e){ L(name+' fail: '+((e&&e.message)||e)); } }` +
   // Vue 3 global for frontend cards built as Vue apps (they reference Vue directly, as the
-  // ST host page provides it). Use the self-contained browser ESM build — the bundler build
-  // (vue/+esm) references process.env / internal imports and won't load standalone. The
-  // namespace carries the named exports (createApp/ref/defineComponent/…) the cards use.
-  `try{const m=await import('https://testingcf.jsdelivr.net/npm/vue@3/dist/vue.esm-browser.prod.js');window.Vue=(m&&m.createApp)?m:((m&&m.default)||m);L('vue ok');}catch(e){L('vue fail: '+((e&&e.message)||e));}` +
+  // ST host page provides it). The UMD global build sets window.Vue when run inline.
+  `await loadGlobal('Vue', 'https://testingcf.jsdelivr.net/npm/vue@3/dist/vue.global.prod.js');` +
   `})();` +
   `</script>`

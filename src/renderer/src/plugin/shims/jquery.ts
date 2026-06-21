@@ -51,18 +51,25 @@ export const JQUERY_SHIM = `
     if (window.rpt && rpt.fetchText) return rpt.fetchText(u);
     return fetch(u).then(function(r){ if (!r.ok) throw new Error(r.status + ' ' + r.statusText); return r.text(); });
   }
+  // Pull import specifiers out of a module's source (static from-imports, side-effect
+  // imports, and dynamic import()).
+  function moduleImports(src){
+    var specs=[], m;
+    var re1=/from\\s*['"]([^'"]+)['"]/g; while((m=re1.exec(src))) specs.push(m[1]);
+    var re2=/\\bimport\\s*['"]([^'"]+)['"]/g; while((m=re2.exec(src))) specs.push(m[1]);
+    var re3=/\\bimport\\s*\\(\\s*['"]([^'"]+)['"]\\s*\\)/g; while((m=re3.exec(src))) specs.push(m[1]);
+    return specs;
+  }
   // Fetch a (possibly full-document) page and mount it: rewrite its relative asset URLs to
   // absolute against the page URL (so a built SPA's /assets/* resolve), pull its <head>
-  // styles/links into our document, inject its <body>, and execute its scripts.
+  // styles/links into our document, resolve the entry module's imports to same-origin
+  // blob: URLs via an import map (cross-origin import() fails in the opaque sandbox), inject
+  // its <body>, and execute its scripts.
   p.load = function(url, cb){
     var self=this, u=String(url);
     llog('fetching ' + u);
-    getText(u).then(function(html){
-      // Wait for the runtime libs (Vue/lodash/zod) so a card entry module that uses a
-      // global Vue doesn't run before it's defined (the dynamic inject below isn't part
-      // of the deferred-module ordering, so it can otherwise race the lib loader).
-      return Promise.resolve(window.__rptLibsReady).catch(function(){}).then(function(){ return html; });
-    }).then(function(html){
+    getText(u).then(async function(html){
+      await Promise.resolve(window.__rptLibsReady).catch(function(){}); // Vue global ready
       var doc = new DOMParser().parseFromString(html, 'text/html');
       function abs(el, attr){ var v=el.getAttribute(attr); if (v){ try { el.setAttribute(attr, new URL(v, u).href); } catch(e){} } }
       toArr(doc.querySelectorAll('[src]')).forEach(function(el){ abs(el, 'src'); });
@@ -74,11 +81,30 @@ export const JQUERY_SHIM = `
       // scripts from the markup so innerHTML doesn't leave inert duplicates.
       var scripts = (doc.head ? toArr(doc.head.querySelectorAll('script')) : []).concat(doc.body ? toArr(doc.body.querySelectorAll('script')) : []);
       if (doc.body) toArr(doc.body.querySelectorAll('script')).forEach(function(s){ if (s.parentNode) s.parentNode.removeChild(s); });
+
+      // Resolve the entry modules' imports to blob: URLs via an import map.
+      var modUrls = [];
+      scripts.forEach(function(sc){
+        if ((sc.getAttribute('type')||'').indexOf('module') < 0) return;
+        if (sc.getAttribute('src')) { try { modUrls.push(new URL(sc.getAttribute('src'), u).href); } catch(e){} }
+        else moduleImports(sc.textContent||'').forEach(function(spec){ try { var a=new URL(spec, u).href; if(/^https:/i.test(a)) modUrls.push(a); }catch(e){} });
+      });
+      if (modUrls.length && window.rpt && rpt.fetchModuleGraph) {
+        try {
+          var graph = await rpt.fetchModuleGraph(modUrls);
+          var imports = {};
+          (graph||[]).forEach(function(mod){ imports[mod.url] = URL.createObjectURL(new Blob([mod.source], {type:'application/javascript'})); });
+          var im = document.createElement('script'); im.type='importmap'; im.textContent = JSON.stringify({ imports: imports });
+          (document.head||document.documentElement).appendChild(im);
+          llog('importmap: ' + (graph?graph.length:0) + ' module(s)');
+        } catch(e){ llog('module graph fail: ' + ((e&&e.message)||e)); }
+      }
+
       var bodyHtml = doc.body ? doc.body.innerHTML : html;
       self.each(function(){ this.innerHTML = bodyHtml; });
       var target = self[0] || document.body;
       scripts.forEach(function(old){ execScript(old, target); });
-      llog('mounted ' + u + ' (' + scripts.length + ' script(s); Vue=' + (!!window.Vue) + ', _=' + (!!window._) + ')');
+      llog('mounted ' + u + ' (' + scripts.length + ' script(s); Vue=' + (!!window.Vue) + ')');
       if (typeof cb === 'function') cb();
     }).catch(function(e){ llog((e && e.message) || e); });
     return this;

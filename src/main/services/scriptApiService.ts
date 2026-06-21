@@ -131,3 +131,58 @@ export const fetchRemoteText = async (
   log('info', `⚙ remote fetch ok (${text.length} bytes) — ${u}`)
   return text
 }
+
+// Pull every import specifier (static + dynamic + re-export) out of a module's source.
+const importSpecifiers = (src: string): string[] => {
+  const specs: string[] = []
+  let m: RegExpExecArray | null
+  const re = /(?:^|[^.\w$])(?:import|export)\b[^'"]*?from\s*['"]([^'"]+)['"]|(?:^|[^.\w$])import\s*['"]([^'"]+)['"]/g
+  while ((m = re.exec(src)) !== null) specs.push(m[1] || m[2])
+  const dyn = /[^.\w$]import\s*\(\s*['"]([^'"]+)['"]\s*\)/g
+  while ((m = dyn.exec(src)) !== null) specs.push(m[1])
+  return specs
+}
+
+/**
+ * Recursively fetch an ES-module graph in main (no browser CORS / opaque-origin wall), so
+ * the renderer can serve the modules to the sandbox as same-origin blob: URLs via an import
+ * map. Cross-origin `import()` doesn't work inside the opaque sandbox, so this is how a
+ * frontend card's module imports (json5, etc.) actually resolve. Grant-gated, https-only,
+ * bounded. Returns each fetched module's url + source.
+ */
+export const fetchModuleGraph = async (
+  profileId: string,
+  cardId: string | undefined,
+  entryUrls: string[]
+): Promise<Array<{ url: string; source: string }>> => {
+  if (!cardId || getGrants(profileId, cardId).remoteScripts !== true) {
+    throw new Error('remote loading is not granted for this world')
+  }
+  const out: Array<{ url: string; source: string }> = []
+  const seen = new Set<string>()
+  const queue = (entryUrls || []).filter((u) => /^https:\/\//i.test(u))
+  while (queue.length > 0 && out.length < 400) {
+    const url = queue.shift() as string
+    if (seen.has(url)) continue
+    seen.add(url)
+    let source: string
+    try {
+      const r = await fetch(url, { redirect: 'follow' })
+      if (!r.ok) continue
+      source = await r.text()
+    } catch {
+      continue
+    }
+    out.push({ url, source })
+    for (const spec of importSpecifiers(source)) {
+      try {
+        const abs = new URL(spec, url).href
+        if (/^https:\/\//i.test(abs) && !seen.has(abs)) queue.push(abs)
+      } catch {
+        /* skip unresolvable specifier */
+      }
+    }
+  }
+  log('info', `⚙ module graph fetched — ${out.length} module(s)`)
+  return out
+}

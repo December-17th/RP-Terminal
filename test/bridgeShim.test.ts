@@ -33,21 +33,24 @@ describe('buildScriptSrcDoc', () => {
   it('locks the CSP by default and opens https only when allowRemote', () => {
     const locked = buildScriptSrcDoc([{ name: 's', code: 'x()' }])
     expect(locked).toContain("connect-src 'none'")
-    expect(locked).not.toContain('https:')
+    // The locked CSP must not open the network — check the directives, not a blanket
+    // 'https:' (shim code legitimately contains https in regexes/URLs).
+    expect(locked).not.toContain('connect-src https:')
+    expect(locked).not.toContain("script-src 'unsafe-inline' https:")
 
     const open = buildScriptSrcDoc([{ name: 's', code: 'x()' }], { allowRemote: true })
     expect(open).toContain("script-src 'unsafe-inline' https:")
     expect(open).toContain('connect-src https:')
   })
 
-  it('injects the CDN lib-loader (real lodash/zod) only when allowRemote', () => {
+  it('injects the lib-loader (host-fetched Vue global) only when allowRemote', () => {
     const locked = buildScriptSrcDoc([{ name: 's', code: "import 'x'" }])
-    expect(locked).not.toContain('lodash/+esm')
+    expect(locked).not.toContain('vue.global.prod.js')
 
     const open = buildScriptSrcDoc([{ name: 's', code: "import 'x'" }], { allowRemote: true })
-    expect(open).toContain('lodash/+esm')
-    expect(open).toContain('zod/+esm')
-    expect(open).toContain('window.z={z:') // shaped as the MVU zod wrapper
+    // Vue is loaded by host-fetching its UMD build + running it inline (cross-origin
+    // import() fails in the opaque sandbox).
+    expect(open).toContain('vue.global.prod.js')
   })
 
   it('exposes the Tavern Helper globals (eventOn + jQuery stub) to scripts', () => {
@@ -73,7 +76,7 @@ describe('buildMessageHtmlDoc (TH-6)', () => {
     expect(doc).toContain('rpt.v1') // BRIDGE_SHIM present
     expect(doc).toContain('TavernHelper') // TAVERN_SHIM present
     expect(doc).toContain("connect-src 'none'") // network off by default
-    expect(doc).not.toContain('https:')
+    expect(doc).not.toContain('connect-src https:')
   })
 
   it('extracts the <body> of a full document', () => {
