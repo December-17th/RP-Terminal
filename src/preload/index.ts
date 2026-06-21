@@ -22,6 +22,8 @@ const api = {
     ipcRenderer.invoke('get-floors', profileId, chatId),
   reevaluateVariables: (profileId: string, chatId: string) =>
     ipcRenderer.invoke('reevaluate-variables', profileId, chatId),
+  applyVariableOps: (profileId: string, chatId: string, floor: number, ops: unknown[]) =>
+    ipcRenderer.invoke('apply-variable-ops', profileId, chatId, floor, ops),
   generate: (profileId: string, chatId: string, userAction: string) =>
     ipcRenderer.invoke('generate', profileId, chatId, userAction),
   regenerate: (profileId: string, chatId: string) =>

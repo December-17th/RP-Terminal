@@ -18,7 +18,7 @@ import { getPromptRules } from './regexService'
 import { loadGlobals, saveGlobals } from './templateService'
 import { streamProvider, DeltaCallback } from './apiService'
 import { parseContent, stripThinking, RPEvent } from '../parsers/contentParser'
-import { parseMvuCommands, applyMvuCommands, applyJsonPatch } from '../parsers/mvuParser'
+import { parseMvuCommands, applyMvuCommands, applyJsonPatch, JsonPatchOp } from '../parsers/mvuParser'
 import { log } from './logService'
 import { FloorFile } from '../types/chat'
 import { Lorebook, LorebookEntry, getRpExt } from '../types/character'
@@ -315,6 +315,34 @@ export const reevaluateVariables = (profileId: string, chatId: string): FloorFil
   }
   log('info', `MVU re-evaluate — replayed ${floors.length} floor(s); rebuilt stat_data`)
   return floors
+}
+
+/**
+ * Variable WRITE-BACK bridge: apply JSONPatch ops to ONE floor's stat_data (the message
+ * variables) and persist. This is the path by which native/script panel UI MODIFIES state
+ * instead of only displaying it (a button, checkbox, or manual edit). Reuses the same
+ * `applyJsonPatch` engine as the model's `<UpdateVariable>`, so author/user writes fold in
+ * identically and survive a later re-evaluate. Returns the updated floor (or null if the
+ * floor is gone / there are no ops). Targets a specific floor — the caller passes the latest.
+ */
+export const applyVariableOps = (
+  profileId: string,
+  chatId: string,
+  floor: number,
+  ops: JsonPatchOp[]
+): FloorFile | null => {
+  if (!Array.isArray(ops) || ops.length === 0) return null
+  const f = getFloor(profileId, chatId, floor)
+  if (!f) return null
+  const sd: Record<string, unknown> =
+    f.variables.stat_data && typeof f.variables.stat_data === 'object'
+      ? (f.variables.stat_data as Record<string, unknown>)
+      : {}
+  const deltas = applyJsonPatch(sd, ops)
+  f.variables = { ...f.variables, stat_data: sd, delta_data: deltas }
+  saveFloor(profileId, chatId, f)
+  log('info', `variable write-back — applied ${ops.length} op(s) to floor ${floor}`)
+  return f
 }
 
 /**

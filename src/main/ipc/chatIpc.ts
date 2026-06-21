@@ -17,6 +17,10 @@ export const registerChatIpc = (ipcMain: IpcMain): void => {
   ipcMain.handle('reevaluate-variables', (_, profileId, chatId) =>
     generationService.reevaluateVariables(profileId, chatId)
   )
+  // Variable write-back: apply JSONPatch ops to a floor's stat_data (panel UI editing state).
+  ipcMain.handle('apply-variable-ops', (_, profileId, chatId, floor, ops) =>
+    generationService.applyVariableOps(profileId, chatId, floor, ops)
+  )
   ipcMain.handle('delete-chat', (_, profileId, chatId) => chatService.deleteChat(profileId, chatId))
   ipcMain.handle('edit-floor', (_, profileId, chatId, floorIndex, userContent, responseContent) =>
     chatService.editFloorContent(profileId, chatId, floorIndex, userContent, responseContent)
