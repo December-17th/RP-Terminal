@@ -58,4 +58,8 @@ export const LIB_LOADER =
   `<script type="module">` +
   `try{const m=await import('https://testingcf.jsdelivr.net/npm/lodash/+esm');window._=window.lodash=(m&&m.default)||m;}catch(e){}` +
   `try{const m=await import('https://testingcf.jsdelivr.net/npm/zod/+esm');window.z={z:(m&&(m.z||m.default))||m};}catch(e){}` +
+  // Vue 3 global for frontend cards built as Vue apps (they reference `Vue` directly, as
+  // the ST host page provides it). The namespace carries the named exports
+  // (createApp/ref/defineComponent/…) the cards use.
+  `try{const m=await import('https://testingcf.jsdelivr.net/npm/vue/+esm');window.Vue=(m&&m.createApp)?m:((m&&m.default)||m);}catch(e){}` +
   `</script>`
