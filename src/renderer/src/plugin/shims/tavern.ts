@@ -1,6 +1,8 @@
 /** Clean-room Tavern-Helper compatibility shim — maps the common TH surface onto
  * `rpt`. JS-as-a-string for the sandbox. NO js-slash-runner code (see bridgeShim.ts). */
 
+import { TAVERN_EVENTS_LITERAL } from '../events'
+
 /**
  * Best-effort, clean-room Tavern-Helper / js-slash-runner compatibility shim.
  * Maps the *common* TH surface onto `rpt.v1` so many community scripts run with
@@ -13,6 +15,8 @@
 export const TAVERN_SHIM = `
 (function () {
   if (typeof rpt === 'undefined') return;
+  // Canonical ST/TH event-name enum (single source of truth in plugin/events.ts).
+  var tavern_events = ${TAVERN_EVENTS_LITERAL};
   function vstore(opt) { return opt && opt.type === 'global' ? rpt.global : rpt.vars; }
   var TH = {
     getVariables: function (opt) { return vstore(opt).all(); },
@@ -42,15 +46,14 @@ export const TAVERN_SHIM = `
     },
     generateRaw: function (arg) { return TH.generate(arg); },
     eventOn: function (name, cb) { return rpt.on(name, cb); },
-    eventOnce: function (name, cb) {
-      var fired = false;
-      rpt.on(name, function (p) { if (!fired) { fired = true; cb(p); } });
-    },
-    eventMakeFirst: function (name, cb) { return rpt.on(name, cb); },
+    eventOnce: function (name, cb) { return rpt.once(name, cb); },
+    eventMakeFirst: function (name, cb) { return rpt.onFirst(name, cb); },
+    eventMakeLast: function (name, cb) { return rpt.on(name, cb); },
+    eventWaitFor: function (name) { return rpt.waitFor(name); },
     // Dispatch to this frame's own eventOn listeners (e.g. declarative button clicks).
     eventEmit: function (name, payload) { rpt.emit(name, payload); return Promise.resolve(); },
-    eventRemoveListener: function () {},
-    eventClearEvent: function () {},
+    eventRemoveListener: function (name, cb) { rpt.off(name, cb); return Promise.resolve(); },
+    eventClearEvent: function (name) { rpt.off(name); return Promise.resolve(); },
     registerSlashCommand: function (name, cb) { return rpt.slash.registerCommand(name, cb); },
     toastr: {
       info: function (m) { return rpt.ui.toast(String(m)); },
@@ -59,14 +62,18 @@ export const TAVERN_SHIM = `
       error: function (m) { return rpt.ui.toast(String(m)); }
     }
   };
+  TH.tavern_events = tavern_events;
   window.TavernHelper = TH;
   // Loose globals that TH / MVU scripts call unqualified.
+  window.tavern_events = tavern_events;
   window.getVariables = TH.getVariables;
   window.setVariables = TH.setVariables;
   window.triggerSlash = TH.triggerSlash;
   window.eventOn = TH.eventOn;
   window.eventOnce = TH.eventOnce;
   window.eventMakeFirst = TH.eventMakeFirst;
+  window.eventMakeLast = TH.eventMakeLast;
+  window.eventWaitFor = TH.eventWaitFor;
   window.eventEmit = TH.eventEmit;
   window.eventRemoveListener = TH.eventRemoveListener;
   window.eventClearEvent = TH.eventClearEvent;

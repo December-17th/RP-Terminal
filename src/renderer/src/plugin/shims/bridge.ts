@@ -96,8 +96,33 @@ export const BRIDGE_SHIM = `
       parent.postMessage({ __rptlog: 1, msg: a }, '*');
     },
     on: function (name, cb) {
-      if (typeof cb !== 'function') return;
+      if (typeof cb !== 'function') return cb;
       (__handlers[name] = __handlers[name] || []).push(cb);
+      return cb;
+    },
+    // Register a listener at the FRONT of the queue (TH eventMakeFirst).
+    onFirst: function (name, cb) {
+      if (typeof cb !== 'function') return cb;
+      (__handlers[name] = __handlers[name] || []).unshift(cb);
+      return cb;
+    },
+    // Remove a listener (by identity, incl. once-wrappers). Omit cb to clear all for name.
+    off: function (name, cb) {
+      var hs = __handlers[name];
+      if (!hs) return;
+      if (typeof cb !== 'function') { __handlers[name] = []; return; }
+      __handlers[name] = hs.filter(function (h) { return h !== cb && h.__orig !== cb; });
+    },
+    // Fire-once listener; auto-removes after the first dispatch.
+    once: function (name, cb) {
+      function wrap(p) { rpt.off(name, wrap); if (typeof cb === 'function') cb(p); }
+      wrap.__orig = cb;
+      rpt.on(name, wrap);
+      return wrap;
+    },
+    // Resolve a promise on the next dispatch of an event (TH eventWaitFor).
+    waitFor: function (name) {
+      return new Promise(function (resolve) { rpt.once(name, resolve); });
     },
     // Dispatch an event to this frame's own listeners (script-side emit, e.g. button clicks).
     emit: function (name, payload) {

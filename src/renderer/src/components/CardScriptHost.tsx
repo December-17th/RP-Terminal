@@ -6,6 +6,7 @@ import { useCardScriptsStore } from '../stores/cardScriptsStore'
 import { useToolbarStore } from '../stores/toolbarStore'
 import { buildScriptSrcDoc, CardScript } from '../plugin/bridgeShim'
 import { buildMvuEvents } from '../plugin/mvuEvents'
+import { chatTransitionEvents, TAVERN_EVENTS } from '../plugin/events'
 import { dispatchRpc } from '../plugin/dispatch'
 import { registerFrameCommand } from '../plugin/slash'
 
@@ -116,6 +117,9 @@ export const CardScriptHost: React.FC<Props> = ({
   const emit = (name: string, payload: any): void => {
     post({ __rptevent: 1, name, payload })
   }
+  // Accumulates the in-flight response so STREAM_TOKEN_RECEIVED carries the full text
+  // so far (ST/TH semantics), reset at the start of each generation.
+  const streamAccum = useRef('')
 
   const pushToast = (msg: string): void => useToastStore.getState().push(msg)
 
@@ -203,6 +207,8 @@ export const CardScriptHost: React.FC<Props> = ({
         window.api.pluginLog(cardName, String(d.msg))
       } else if (d.__rptready) {
         emit('ready', {})
+        // This host remounts per card+chat, so a fresh frame == a (re)loaded chat.
+        emit(TAVERN_EVENTS.CHAT_CHANGED, { chatId })
       } else if (d.__rpt) {
         handleRpcRef
           .current(String(d.method), Array.isArray(d.args) ? d.args : [])
@@ -217,14 +223,16 @@ export const CardScriptHost: React.FC<Props> = ({
     // Uses handleRpcRef so it always dispatches through the latest closure.
   }, [profileId, chatId, cardId, cardName])
 
-  // Forward generation/chat lifecycle to scripts so reactive UIs can refresh.
+  // Forward generation/chat lifecycle to scripts so reactive UIs can refresh — both the
+  // legacy rpt.v1 names and the canonical tavern_events (TH-1).
   useEffect(() => {
     return useChatStore.subscribe((state, prev) => {
-      if (state.isGenerating !== prev.isGenerating) {
-        emit(state.isGenerating ? 'generation:start' : 'generation:end', {})
-      }
-      if (state.floors.length !== prev.floors.length) {
-        emit('chat:changed', { floors: state.floors.length })
+      for (const ev of chatTransitionEvents(
+        { isGenerating: prev.isGenerating, floorCount: prev.floors.length },
+        { isGenerating: state.isGenerating, floorCount: state.floors.length }
+      )) {
+        if (ev.name === TAVERN_EVENTS.GENERATION_STARTED) streamAccum.current = ''
+        emit(ev.name, ev.payload)
       }
       // A new floor landed — replay this turn's MVU variable changes to the scripts
       // (mag_* events) so MagVarUpdate front-end UIs refresh.
@@ -234,6 +242,16 @@ export const CardScriptHost: React.FC<Props> = ({
       }
     })
   }, [])
+
+  // Forward streamed tokens to scripts as STREAM_TOKEN_RECEIVED (full text so far),
+  // for this chat only. Mirrors ST/TH where the listener gets the accumulated message.
+  useEffect(() => {
+    return window.api.onGenerationDelta(({ chatId: cid, delta }) => {
+      if (cid !== chatId) return
+      streamAccum.current += delta
+      emit(TAVERN_EVENTS.STREAM_TOKEN_RECEIVED, streamAccum.current)
+    })
+  }, [chatId])
 
   // The right panel is reserved for game UI — render only the script-produced UI (the
   // sandboxed iframe), no management chrome. The master on/off toggle lives in the Scripts
