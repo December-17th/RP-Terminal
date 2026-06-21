@@ -6,6 +6,7 @@ import { matchAcross } from './lorebookService'
 import { applyRegex, RenderRegexRule } from './regexService'
 import { evalTemplate, TemplateContext } from './templateService'
 import { cleanForHistory } from '../../shared/responseView'
+import { log } from './logService'
 import { expandMacros, MacroContext } from '../../shared/macros'
 
 export interface ChatMessage {
@@ -318,6 +319,11 @@ export const buildPrompt = (args: BuildPromptArgs): ChatMessage[] => {
     if (convoStart === -1) messages.push(wiMessage)
     else messages.splice(convoStart, 0, wiMessage)
   }
+  // Diagnostic: where did the matched lore go? (empty render vs emitted-but-trimmable.)
+  log(
+    'info',
+    `worldInfo: ${worldInfo.length} chars · ${topEntries.length} top + ${depthEntries.length} depth · emitted=${worldInfoEmitted ? 'preset-marker' : worldInfo ? 'safety-net(head)' : 'EMPTY'}`
+  )
 
   // Safety net: a preset with no chat_history marker would otherwise send no
   // conversation at all. Append history + action so generation still works.
