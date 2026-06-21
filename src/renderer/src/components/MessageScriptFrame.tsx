@@ -42,6 +42,10 @@ export function MessageScriptFrame({ html }: { html: string }): React.ReactEleme
   // to real content for non-full-page blocks.
   const [height, setHeight] = useState(560)
   const [srcDoc, setSrcDoc] = useState('')
+  // Frontend cards run arbitrary (card-author + CDN) UI code in a same-process iframe — a
+  // buggy one (e.g. an ST card looping without the ST runtime) can freeze the whole app.
+  // So don't auto-run: opening a session stays responsive; the user clicks to run the UI.
+  const [running, setRunning] = useState(false)
   // A trusted world's frontend cards run same-origin (native ES-module imports / ST-style
   // runtime), at the cost of full app access — only for a world whose card the user trusts.
   const [trusted, setTrusted] = useState(false)
@@ -52,7 +56,7 @@ export function MessageScriptFrame({ html }: { html: string }): React.ReactEleme
   // remote UI prompts once for FULL TRUST (per-world): granting runs it same-origin so it
   // works natively. Declining leaves it sandboxed (network only if previously granted).
   useEffect(() => {
-    if (!profileId) return
+    if (!profileId || !running) return
     let alive = true
     ;(async () => {
       const wantsRemote = /https?:\/\//i.test(html)
@@ -96,7 +100,7 @@ export function MessageScriptFrame({ html }: { html: string }): React.ReactEleme
     return () => {
       alive = false
     }
-  }, [html, profileId, cardId])
+  }, [html, profileId, cardId, running])
 
   const post = (msg: unknown): void => frameRef.current?.contentWindow?.postMessage(msg, '*')
   const emit = (name: string, payload: unknown): void => post({ __rptevent: 1, name, payload })
@@ -184,6 +188,20 @@ export function MessageScriptFrame({ html }: { html: string }): React.ReactEleme
   }, [chatId])
 
   if (!profileId) return null
+  // Until the user opts in, show a lightweight gate instead of auto-running the UI.
+  if (!running) {
+    return (
+      <div className="message-card-gate">
+        <span className="message-card-gate-label">⛶ Interactive UI in this message</span>
+        <button className="btn-accent" onClick={() => setRunning(true)}>
+          ▶ Run
+        </button>
+        <span className="message-card-gate-note">
+          runs the card&apos;s own UI code (may request Full Trust)
+        </span>
+      </div>
+    )
+  }
   return (
     <iframe
       ref={frameRef}

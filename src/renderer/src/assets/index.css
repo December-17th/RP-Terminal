@@ -615,6 +615,27 @@ details[open] > .stat-group-title::before {
   font-variant-numeric: tabular-nums;
 }
 
+/* Click-to-run gate for an interactive message UI (frontend card). */
+.message-card-gate {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 10px 12px;
+  margin: 8px 0;
+  border: 1px dashed var(--rpt-border);
+  border-radius: 8px;
+  background: var(--rpt-bg-secondary);
+}
+.message-card-gate-label {
+  font-size: 0.9em;
+  color: var(--rpt-text-primary);
+}
+.message-card-gate-note {
+  font-size: 0.75em;
+  color: var(--rpt-text-secondary);
+}
+
 /* Lightweight render for the in-flight streaming response. */
 .streaming-text {
   white-space: pre-wrap;
