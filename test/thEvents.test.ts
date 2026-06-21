@@ -177,3 +177,18 @@ describe('sandbox shim wiring (TH-4)', () => {
     expect(doc).toContain('window.generateImage = TH.generateImage')
   })
 })
+
+describe('sandbox shim wiring (TH-7)', () => {
+  const doc = buildScriptSrcDoc([{ name: 's', code: 'noop()' }])
+
+  it('exposes the audio namespace on the rpt bridge', () => {
+    expect(doc).toContain('audio: {')
+    expect(doc).toContain('playBgm:')
+    expect(doc).toContain('playSfx:')
+  })
+
+  it('maps the TH audio names', () => {
+    expect(doc).toContain('audioPlay:')
+    expect(doc).toContain('audioStop:')
+  })
+})

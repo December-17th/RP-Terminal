@@ -1,4 +1,5 @@
 import { runSlash } from './slash'
+import * as audioService from './audioService'
 
 /**
  * Shared host-side RPC dispatcher for the sandboxed runtime — used by both card
@@ -174,6 +175,31 @@ export const dispatchRpc = async (method: string, args: any[], ctx: DispatchCtx)
       if (!(await ctx.ensure('regex:read'))) permDenied('regex:read')
       const scope = { cardId: ctx.cardId ?? null, chatId: ctx.getChatId() }
       return window.api.scriptRegexList(ctx.profileId, scope)
+    }
+    // --- TH-7 audio (runs in the trusted parent, not the sandbox). ---
+    case 'audio.playBgm': {
+      if (!(await ctx.ensure('audio'))) permDenied('audio')
+      return audioService.playBgm(String(args[0] ?? ''), args[1] || {})
+    }
+    case 'audio.pauseBgm': {
+      if (!(await ctx.ensure('audio'))) permDenied('audio')
+      return audioService.pauseBgm()
+    }
+    case 'audio.resumeBgm': {
+      if (!(await ctx.ensure('audio'))) permDenied('audio')
+      return audioService.resumeBgm()
+    }
+    case 'audio.stopBgm': {
+      if (!(await ctx.ensure('audio'))) permDenied('audio')
+      return audioService.stopBgm()
+    }
+    case 'audio.setVolume': {
+      if (!(await ctx.ensure('audio'))) permDenied('audio')
+      return audioService.setBgmVolume(Number(args[0]))
+    }
+    case 'audio.playSfx': {
+      if (!(await ctx.ensure('audio'))) permDenied('audio')
+      return audioService.playSfx(String(args[0] ?? ''), args[1] || {})
     }
     case 'slash.run': {
       if (!(await ctx.ensure('slash'))) permDenied('slash')

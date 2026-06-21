@@ -103,6 +103,15 @@ export const BRIDGE_SHIM = `
       format: function (text, ctx) { return __rpc('regex.format', [String(text == null ? '' : text), ctx]); },
       list: function () { return __rpc('regex.list', []); }
     },
+    // TH-7: audio playback (background music + one-shot SFX), runs in the parent window.
+    audio: {
+      playBgm: function (url, opts) { return __rpc('audio.playBgm', [String(url == null ? '' : url), opts || {}]); },
+      pauseBgm: function () { return __rpc('audio.pauseBgm', []); },
+      resumeBgm: function () { return __rpc('audio.resumeBgm', []); },
+      stopBgm: function () { return __rpc('audio.stopBgm', []); },
+      setVolume: function (v) { return __rpc('audio.setVolume', [v]); },
+      playSfx: function (url, opts) { return __rpc('audio.playSfx', [String(url == null ? '' : url), opts || {}]); }
+    },
     slash: {
       // Register a /command; the handler runs here when the command is invoked.
       // opts.description (optional) shows in the chat-box command menu.

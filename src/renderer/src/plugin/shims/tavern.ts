@@ -131,6 +131,14 @@ export const TAVERN_SHIM = `
     },
     stopGeneration: function () { return rpt.stopGeneration(); },
     generateImage: function (prompt) { return rpt.generateImage(prompt); },
+    // TH-7 audio. audioPlay(url, type, opts) — type 'bgm' (default) or 'sfx'.
+    audioPlay: function (url, type, opts) {
+      return type === 'sfx' ? rpt.audio.playSfx(url, opts) : rpt.audio.playBgm(url, opts);
+    },
+    audioPause: function () { return rpt.audio.pauseBgm(); },
+    audioResume: function () { return rpt.audio.resumeBgm(); },
+    audioStop: function () { return rpt.audio.stopBgm(); },
+    audioSetVolume: function (v) { return rpt.audio.setVolume(v); },
     eventOn: function (name, cb) { return rpt.on(name, cb); },
     eventOnce: function (name, cb) { return rpt.once(name, cb); },
     eventMakeFirst: function (name, cb) { return rpt.onFirst(name, cb); },
