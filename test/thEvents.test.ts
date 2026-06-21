@@ -136,3 +136,28 @@ describe('sandbox shim wiring (TH-2)', () => {
     expect(doc).toContain('deleteMessages:')
   })
 })
+
+describe('sandbox shim wiring (TH-3)', () => {
+  const doc = buildScriptSrcDoc([{ name: 's', code: 'noop()' }])
+
+  it('exposes the read/CRUD namespaces on the rpt bridge', () => {
+    expect(doc).toContain('card: {')
+    expect(doc).toContain('lore: {')
+    expect(doc).toContain('preset: {')
+    expect(doc).toContain('regex: {')
+  })
+
+  it('maps the TH read/CRUD names onto the bridge', () => {
+    for (const name of [
+      'getCharData',
+      'getWorldbook',
+      'getWorldbookNames',
+      'replaceWorldbookEntries',
+      'getPreset',
+      'getTavernRegexes',
+      'formatAsTavernRegexedString'
+    ]) {
+      expect(doc).toContain(name)
+    }
+  })
+})

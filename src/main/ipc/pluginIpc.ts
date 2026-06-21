@@ -1,5 +1,6 @@
 import { IpcMain, BrowserWindow, dialog } from 'electron'
 import * as pluginService from '../services/pluginService'
+import * as scriptApiService from '../services/scriptApiService'
 import * as pluginHostService from '../services/pluginHostService'
 import * as pluginStorageService from '../services/pluginStorageService'
 import * as pluginNetService from '../services/pluginNetService'
@@ -25,6 +26,32 @@ export const registerPluginIpc = (ipcMain: IpcMain): void => {
   )
   ipcMain.handle('plugin-create-message', (_, profileId, chatId, msg) =>
     pluginService.createMessage(profileId, chatId, msg)
+  )
+
+  // TH-3 read/CRUD API (card · worldbook · preset · regex). Permission-gated in the
+  // renderer dispatcher; these are pure data access.
+  ipcMain.handle('script-card-data', (_, profileId, chatId, cardId) =>
+    scriptApiService.getCharData(profileId, chatId, cardId)
+  )
+  ipcMain.handle('script-card-avatar', (_, profileId, chatId, cardId) =>
+    scriptApiService.getCharAvatarPath(profileId, chatId, cardId)
+  )
+  ipcMain.handle('script-worldbook-list', (_, profileId) =>
+    scriptApiService.listWorldbooks(profileId)
+  )
+  ipcMain.handle('script-worldbook-get', (_, profileId, chatId, id, cardId) =>
+    scriptApiService.getWorldbook(profileId, chatId, id, cardId)
+  )
+  ipcMain.handle('script-worldbook-set', (_, profileId, chatId, id, entries, cardId) =>
+    scriptApiService.setWorldbookEntries(profileId, chatId, id, entries, cardId)
+  )
+  ipcMain.handle('script-preset-get', (_, profileId) => scriptApiService.getPresetInfo(profileId))
+  ipcMain.handle('script-preset-list', (_, profileId) => scriptApiService.listPresetNames(profileId))
+  ipcMain.handle('script-regex-format', (_, profileId, ctx, text, macroCtx) =>
+    scriptApiService.formatWithRegex(profileId, ctx, text, macroCtx)
+  )
+  ipcMain.handle('script-regex-list', (_, profileId, ctx) =>
+    scriptApiService.listRegexes(profileId, ctx)
   )
   ipcMain.handle('plugin-get-grants', (_, profileId, cardId) =>
     pluginService.getGrants(profileId, cardId)

@@ -173,6 +173,17 @@ export const generate = async (
         charName: card.data.name || 'Character',
         lastUserMessage: userAction,
         lastCharMessage: lastFloor?.response.content || ''
+      },
+      // TH-3 read-only template accessors (getchar/getwi/getMessageHistory/…).
+      data: {
+        charData: card.data as Record<string, unknown>,
+        worldInfo: matchedEntries.map((e) => ({ name: e.comment || '', content: e.content })),
+        messages: floors.map((f) => ({
+          user: f.user_message.content,
+          assistant: f.response.content
+        })),
+        chatName: card.data.name || '',
+        presetName: preset.name
       }
     }
   })

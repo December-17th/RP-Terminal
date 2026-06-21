@@ -95,6 +95,22 @@ export const TAVERN_SHIM = `
     getLastMessageId: function () {
       return rpt.chat.getMessages().then(function (m) { return m && m.length ? m.length - 1 : -1; });
     },
+    // --- TH-3 read/CRUD: card, worldbook, preset, regex. ---
+    getCharData: function () { return rpt.card.getData(); },
+    getCharAvatarPath: function () { return rpt.card.getAvatarPath(); },
+    getWorldbookNames: function () { return rpt.lore.list(); },
+    getCharWorldbookNames: function () { return rpt.lore.list(); },
+    getWorldbook: function (id) { return rpt.lore.get(id); },
+    getChatWorldbook: function () { return rpt.lore.get(); },
+    replaceWorldbookEntries: function (id, entries) {
+      // Accept (id, entries) or (entries) — the latter targets the active card's book.
+      if (Array.isArray(id)) { entries = id; id = undefined; }
+      return rpt.lore.setEntries(id, entries);
+    },
+    getPreset: function () { return rpt.preset.get(); },
+    getPresetNames: function () { return rpt.preset.list(); },
+    getTavernRegexes: function () { return rpt.regex.list(); },
+    formatAsTavernRegexedString: function (text, ctx) { return rpt.regex.format(text, ctx); },
     getCurrentMessageId: function () { return TH.getLastMessageId(); },
     triggerSlash: function (cmd) { return rpt.slash.runCommand(cmd); },
     triggerSlashWithResult: function (cmd) { return rpt.slash.runCommand(cmd); },
@@ -134,6 +150,13 @@ export const TAVERN_SHIM = `
   window.setChatMessages = TH.setChatMessages;
   window.createChatMessages = TH.createChatMessages;
   window.deleteChatMessages = TH.deleteChatMessages;
+  window.getCharData = TH.getCharData;
+  window.getWorldbook = TH.getWorldbook;
+  window.getWorldbookNames = TH.getWorldbookNames;
+  window.replaceWorldbookEntries = TH.replaceWorldbookEntries;
+  window.getPreset = TH.getPreset;
+  window.getTavernRegexes = TH.getTavernRegexes;
+  window.formatAsTavernRegexedString = TH.formatAsTavernRegexedString;
   window.triggerSlash = TH.triggerSlash;
   window.eventOn = TH.eventOn;
   window.eventOnce = TH.eventOnce;

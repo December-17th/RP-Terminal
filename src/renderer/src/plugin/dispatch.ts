@@ -116,6 +116,51 @@ export const dispatchRpc = async (method: string, args: any[], ctx: DispatchCtx)
       if (!ctx.netOwner) throw new Error('net is not available here')
       return window.api.pluginNetFetch(ctx.netOwner, String(args[0] ?? ''), args[1] || {})
     }
+    // --- TH-3 read/CRUD API (card · worldbook · preset · regex). ---
+    case 'card.getData': {
+      if (!(await ctx.ensure('card:read'))) permDenied('card:read')
+      return window.api.scriptCardData(ctx.profileId, ctx.getChatId() || '', ctx.cardId)
+    }
+    case 'card.getAvatarPath': {
+      if (!(await ctx.ensure('card:read'))) permDenied('card:read')
+      return window.api.scriptCardAvatar(ctx.profileId, ctx.getChatId() || '', ctx.cardId)
+    }
+    case 'lore.list': {
+      if (!(await ctx.ensure('worldbook:read'))) permDenied('worldbook:read')
+      return window.api.scriptWorldbookList(ctx.profileId)
+    }
+    case 'lore.get': {
+      if (!(await ctx.ensure('worldbook:read'))) permDenied('worldbook:read')
+      return window.api.scriptWorldbookGet(ctx.profileId, ctx.getChatId() || '', args[0], ctx.cardId)
+    }
+    case 'lore.setEntries': {
+      if (!(await ctx.ensure('worldbook:write'))) permDenied('worldbook:write')
+      return window.api.scriptWorldbookSet(
+        ctx.profileId,
+        ctx.getChatId() || '',
+        args[0],
+        args[1],
+        ctx.cardId
+      )
+    }
+    case 'preset.get': {
+      if (!(await ctx.ensure('preset:read'))) permDenied('preset:read')
+      return window.api.scriptPresetGet(ctx.profileId)
+    }
+    case 'preset.list': {
+      if (!(await ctx.ensure('preset:read'))) permDenied('preset:read')
+      return window.api.scriptPresetList(ctx.profileId)
+    }
+    case 'regex.format': {
+      if (!(await ctx.ensure('regex:read'))) permDenied('regex:read')
+      const scope = { cardId: ctx.cardId ?? null, chatId: ctx.getChatId() }
+      return window.api.scriptRegexFormat(ctx.profileId, scope, String(args[0] ?? ''), args[1])
+    }
+    case 'regex.list': {
+      if (!(await ctx.ensure('regex:read'))) permDenied('regex:read')
+      const scope = { cardId: ctx.cardId ?? null, chatId: ctx.getChatId() }
+      return window.api.scriptRegexList(ctx.profileId, scope)
+    }
     case 'slash.run': {
       if (!(await ctx.ensure('slash'))) permDenied('slash')
       return runSlash(String(args[0] ?? ''))

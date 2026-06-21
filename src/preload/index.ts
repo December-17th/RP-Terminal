@@ -91,6 +91,27 @@ const api = {
     ipcRenderer.invoke('plugin-delete-messages', profileId, chatId, fromIndex),
   pluginCreateMessage: (profileId: string, chatId: string, msg: any) =>
     ipcRenderer.invoke('plugin-create-message', profileId, chatId, msg),
+  // TH-3 read/CRUD API
+  scriptCardData: (profileId: string, chatId: string, cardId?: string) =>
+    ipcRenderer.invoke('script-card-data', profileId, chatId, cardId),
+  scriptCardAvatar: (profileId: string, chatId: string, cardId?: string) =>
+    ipcRenderer.invoke('script-card-avatar', profileId, chatId, cardId),
+  scriptWorldbookList: (profileId: string) => ipcRenderer.invoke('script-worldbook-list', profileId),
+  scriptWorldbookGet: (profileId: string, chatId: string, id?: string, cardId?: string) =>
+    ipcRenderer.invoke('script-worldbook-get', profileId, chatId, id, cardId),
+  scriptWorldbookSet: (
+    profileId: string,
+    chatId: string,
+    id: string | undefined,
+    entries: any,
+    cardId?: string
+  ) => ipcRenderer.invoke('script-worldbook-set', profileId, chatId, id, entries, cardId),
+  scriptPresetGet: (profileId: string) => ipcRenderer.invoke('script-preset-get', profileId),
+  scriptPresetList: (profileId: string) => ipcRenderer.invoke('script-preset-list', profileId),
+  scriptRegexFormat: (profileId: string, ctx: any, text: string, macroCtx?: any) =>
+    ipcRenderer.invoke('script-regex-format', profileId, ctx, text, macroCtx),
+  scriptRegexList: (profileId: string, ctx?: any) =>
+    ipcRenderer.invoke('script-regex-list', profileId, ctx),
   pluginGetGrants: (profileId: string, cardId: string) =>
     ipcRenderer.invoke('plugin-get-grants', profileId, cardId),
   pluginSetGrants: (profileId: string, cardId: string, patch: any) =>

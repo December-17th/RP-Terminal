@@ -22,10 +22,20 @@ export const initTemplates = async (): Promise<void> => {
   }
 }
 
+/** Read-only data exposed to the TH-3 template helpers (getchar/getwi/…). */
+export interface TemplateData {
+  charData?: Record<string, unknown>
+  worldInfo?: Array<{ name: string; content: string }>
+  messages?: Array<{ user: string; assistant: string }>
+  chatName?: string
+  presetName?: string
+}
+
 export interface TemplateContext {
   vars: Record<string, any> // chat/local variables (mutated by setvar)
   globals: Record<string, any> // global variables (persisted per profile)
   constants: Record<string, unknown> // userName, charName, lastUserMessage, …
+  data?: TemplateData // TH-3: card/world-info/history/preset accessors
 }
 
 const hasTags = (s: string): boolean => s.includes('<%')
@@ -62,7 +72,7 @@ const setPath = (obj: any, p: string, val: any): void => {
 /** Compile an EJS-style template into a JS function body that builds `__out`. */
 const compile = (tmpl: string): string => {
   let body = ''
-  const re = /<%([=_-]?)([\s\S]*?)[-_]?%>/g
+  const re = /<%([=#_-]?)([\s\S]*?)[-_]?%>/g
   let last = 0
   let m: RegExpExecArray | null
   while ((m = re.exec(tmpl)) !== null) {
@@ -70,8 +80,13 @@ const compile = (tmpl: string): string => {
     if (lit) body += `__out += ${JSON.stringify(lit)};\n`
     const kind = m[1]
     const code = m[2]
-    if (kind === '=' || kind === '-') body += `__out += __str(${code});\n`
-    else body += `${code}\n`
+    if (kind === '#') {
+      /* <%# comment %> — emit nothing */
+    } else if (kind === '=' || kind === '-') {
+      body += `__out += __str(${code});\n`
+    } else {
+      body += `${code}\n`
+    }
     last = m.index + m[0].length
   }
   const tail = tmpl.slice(last)
@@ -149,6 +164,23 @@ const installBridge = (vm: QuickJSContext, ctx: TemplateContext): void => {
     return undefined
   })
 
+  // --- TH-3 data accessors (read-only) over card / world-info / history / preset. ---
+  const data = ctx.data || {}
+  reg('getchar', (field: any) => {
+    const cd = data.charData || {}
+    return field == null || field === '' ? cd : getPath(cd, String(field))
+  })
+  reg('getwi', (name: any) => {
+    const wi = data.worldInfo || []
+    if (name == null || name === '') return wi.map((e) => e.content).join('\n')
+    const hit = wi.find((e) => (e.name || '').toLowerCase() === String(name).toLowerCase())
+    return hit ? hit.content : ''
+  })
+  reg('getMessageHistory', () => data.messages || [])
+  reg('getCurrentChatName', () => data.chatName || '')
+  reg('getPreset', () => data.presetName || '')
+  reg('getqr', () => '') // quick-replies aren't modeled in RP Terminal — stubbed
+
   // Read-only constants.
   const setConst = (name: string, val: any): void => {
     const h = jsToHandle(vm, val)
@@ -168,6 +200,19 @@ const installBridge = (vm: QuickJSContext, ctx: TemplateContext): void => {
     function getGlobalVar(k,o){return getvar(k,Object.assign({scope:'global'},o||{}));}
     function setGlobalVar(k,v,o){return setvar(k,v,Object.assign({scope:'global'},o||{}));}
     function incGlobalVar(k,v,o){return incvar(k,v,Object.assign({scope:'global'},o||{}));}
+    // ST-Prompt-Template define(): register a reusable value/function for the rest of the template.
+    function define(n,v){ if(n!=null) globalThis[n]=v; return v; }
+    // Minimal clean-room faker subset for generated placeholder data (not the real lib).
+    var faker = {
+      number: function(a,b){ if(a==null){a=0;b=100;} if(b==null){b=a;a=0;} return Math.floor(Math.random()*(b-a+1))+a; },
+      float: function(a,b){ a=a||0; b=(b==null)?1:b; return a+Math.random()*(b-a); },
+      bool: function(){ return Math.random()<0.5; },
+      pick: function(arr){ return (arr&&arr.length)?arr[Math.floor(Math.random()*arr.length)]:undefined; },
+      uuid: function(){ return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g,function(c){var r=Math.random()*16|0;return (c==='x'?r:(r&0x3|0x8)).toString(16);}); },
+      name: function(){ return faker.pick(['Aria','Bjorn','Cora','Darian','Eira','Finn','Gwen','Hale','Iris','Joran']); },
+      word: function(){ return faker.pick(['ember','hollow','thorn','willow','quartz','raven','mist','dawn','vale','cinder']); },
+      lorem: function(n){ n=n||8; var w=[]; for(var i=0;i<n;i++) w.push(faker.word()); return w.join(' '); }
+    };
   `
   const r = vm.evalCode(boot)
   if (r.error) r.error.dispose()

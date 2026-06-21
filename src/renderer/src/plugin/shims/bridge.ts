@@ -81,6 +81,24 @@ export const BRIDGE_SHIM = `
       // Opt-in, allow-listed, host-mediated fetch (standalone plugins only).
       fetch: function (url, opts) { return __rpc('net.fetch', [String(url), opts || {}]); }
     },
+    // TH-3 read/CRUD: character card, worldbook (lorebook), preset, regex.
+    card: {
+      getData: function () { return __rpc('card.getData', []); },
+      getAvatarPath: function () { return __rpc('card.getAvatarPath', []); }
+    },
+    lore: {
+      list: function () { return __rpc('lore.list', []); },
+      get: function (id) { return __rpc('lore.get', [id]); },
+      setEntries: function (id, entries) { return __rpc('lore.setEntries', [id, entries]); }
+    },
+    preset: {
+      get: function () { return __rpc('preset.get', []); },
+      list: function () { return __rpc('preset.list', []); }
+    },
+    regex: {
+      format: function (text, ctx) { return __rpc('regex.format', [String(text == null ? '' : text), ctx]); },
+      list: function () { return __rpc('regex.list', []); }
+    },
     slash: {
       // Register a /command; the handler runs here when the command is invoked.
       // opts.description (optional) shows in the chat-box command menu.
