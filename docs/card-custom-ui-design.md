@@ -159,3 +159,84 @@ Under `data.extensions.rp_terminal`:
    sandboxed `getV/setVal` + config import. Highest value, safe, no new infrastructure.
 3. **Option 2** after task #1 (webview) + task #2 (shim) — the `panel-ui` webview view for
    pixel-exact author UIs.
+
+---
+
+# WebContentsView plan (Option 2, static card-determined layout)
+
+A concrete plan for embedding a card's own UI via `WebContentsView` instead of `<webview>`. The
+pivot that makes it clean: **the card determines a STATIC layout** (fixed panel positions/sizes,
+not user-resizable/movable), which removes the live-resize bounds-sync and most z-order occlusion —
+the only real downsides of the overlay model. This becomes its own opt-in workspace mode, coexisting
+with the resizable workspace (which stays the default for native / Option-1 cards).
+
+## Why static + card-determined fixes the overlay tax
+`WebContentsView` is a main-process native view positioned over the window by pixel bounds. The pain
+is *dynamic* layouts: live-drag trailing, occluding floating UI, reflow on every resize. If the card
+fixes the regions, the rects are computed once per window size (not per drag), there are no movable
+splitters over the views, and panel chrome can be carved into fixed strips the views never cover.
+
+## Card-declared layout (under `data.extensions.rp_terminal`)
+```jsonc
+"panel_ui": {
+  "mode": "static",                 // opt into the fixed, card-determined workspace
+  "grid": { "cols": 12, "rows": 12 },
+  "slots": [
+    { "id": "chat",   "view": "chat",   "rect": [0, 0, 8, 12] },   // native React region
+    { "id": "status", "view": "wcv",    "rect": [8, 0, 4, 12],     // a WebContentsView region
+      "entry": "status.html", "title": "Status" }
+  ]
+}
+```
+- `rect` = `[col, row, colSpan, rowSpan]` in the grid → pixel bounds at render time.
+- `view: 'chat'|'status'|…` reuses the existing `ViewRegistry` for native regions; `view: 'wcv'`
+  marks a region hosting the card's bundle. Bundle files (`entry` HTML/JS/CSS) ship in the card
+  (alongside `scripts`).
+
+## Architecture
+- **Renderer (`StaticWorkspace`)**: when the active card has `panel_ui.mode === 'static'`, render this
+  instead of the resizable `Workspace`. It lays out the grid, renders native slots as React panels,
+  and for each `wcv` slot renders a placeholder `<div>` with a fixed header strip + an empty body;
+  a `ResizeObserver` on the body reports its rect (relative to the window) to main. No splitters.
+- **Main (`wcvManager`)**: a registry of `WebContentsView`s keyed by `chatId:slotId`. IPC:
+  `wcv-ensure(slot, bounds, entry)` (create + attach + `setBounds`), `wcv-set-bounds(slot, bounds)`
+  (on window-resize / tab-change, throttled), `wcv-destroy(slot)` (on unmount / session switch),
+  `wcv-set-visible(slot, bool)` (hide when a modal opens over it or the tab is hidden). Each view
+  loads `entry` from the card's extracted bundle dir with a locked-down `webPreferences`
+  (no node integration, `contextIsolation: true`, a narrow preload).
+- **The bridge both ways**:
+  - *read* — on floor change, main pushes `stat_data` to each view (`webContents.send('mvu:vars', …)`);
+    the shim resolves `getVariables`/`getV` from it.
+  - *write* — the view's shim calls `replaceVariables`/`insertOrAssignVariables`/`Mvu.setMvuVariable`
+    → preload → `apply-variable-ops` (the bridge built in step 1) → floor persisted → re-render +
+    re-push to all views. One write path for native and script UI alike.
+
+## Runtime shim (clean-room; = task #2)
+The view's preload exposes only the narrow TavernHelper/MVU surface the card UI needs:
+`getVariables({type:'message'})`, `replaceVariables`, `insertOrAssignVariables`, `Mvu.getMvuData`/
+`setMvuVariable`, `getV`, the event subset, `getCurrentMessageId`. All reads come from the pushed
+`stat_data`; all writes go through `apply-variable-ops`. No `window.top/parent`, no host DOM.
+
+## Lifecycle, perf, security
+- One OS/renderer process per live `WebContentsView` → create lazily, destroy on session switch,
+  cap/reuse where possible. `setVisible(false)` when its tab/panel is hidden.
+- Window-resize → recompute grid rects → `wcv-set-bounds` (throttled ~60ms). No per-frame sync.
+- Sandbox: `nodeIntegration:false`, `contextIsolation:true`, `sandbox:true`, CSP on the loaded page,
+  bundle served from a card-scoped dir, writes validated against `data_schema`; per-card consent
+  (same posture as the click-to-run gate). Never expose `window.api`.
+
+## Build steps
+1. `wcvManager` (main) + the `wcv-*` IPC + a card-scoped bundle extraction dir.
+2. `panel_ui` static-layout schema in `RPTerminalExtSchema` (Zod) + import handling.
+3. `StaticWorkspace` (renderer): grid layout, native slots via `ViewRegistry`, `wcv` slot
+   placeholders + `ResizeObserver` → `wcv-set-bounds`; switch to it when the card is static-mode.
+4. The clean-room shim preload + the read-push / write-via-`apply-variable-ops` wiring.
+5. Lifecycle (create/destroy/visible), window-resize bounds sync, security hardening.
+
+## When to prefer this vs `<webview>`
+- **`WebContentsView` + static layout** → best perf + Electron-supported; the card owns a fixed,
+  predictable layout. The plan above.
+- **`<webview>`** → if we instead want card UI inside the *resizable/movable* workspace (in-flow DOM
+  that scrolls/clips with the panel), accept the heavier, discouraged tag.
+- **Either way, Option 1 (native, no frame) remains the default** for declarative StatusMenuBuilder-
+  style cards; Option 2 is the fidelity path for cards that ship real UI code.
