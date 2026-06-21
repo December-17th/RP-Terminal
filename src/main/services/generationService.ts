@@ -146,6 +146,13 @@ export const generate = async (
     matchedEntries = matchAcross(lorebooks, scanText, Math.random, maxRecursion)
     setCachedWorldInfo(profileId, chatId, null)
   }
+  // Diagnostic: surface lorebook reach so an empty/unattached book is obvious in the Logs panel
+  // (0 books = nothing attached; books but 0 matched = no constant entries + no keyword hit).
+  const loreEntryCount = lorebooks.reduce((n, lb) => n + lb.entries.length, 0)
+  log(
+    'info',
+    `lorebook: ${lorebooks.length} book(s) / ${loreEntryCount} entr${loreEntryCount === 1 ? 'y' : 'ies'} → ${matchedEntries.length} matched · ids=[${lorebookIds.join(', ') || 'none'}]`
+  )
 
   const built = buildPrompt({
     card,

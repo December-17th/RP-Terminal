@@ -11,6 +11,15 @@ describe('expandMacros (TH-5)', () => {
     expect(expandMacros('I am {{persona}}', { persona: 'a knight' })).toBe('I am a knight')
   })
 
+  it('strips {{// comment }} macros (empty, inline, and multi-line)', () => {
+    expect(expandMacros('{{//}}keep')).toBe('keep')
+    expect(expandMacros('a {{// note here}} b')).toBe('a  b')
+    expect(expandMacros('{{//声明：\n禁止传播}}正文', { user: 'x' })).toBe('正文')
+    expect(expandMacros('{{// c是claude, g是Gemini}}\nGo', {})).toBe('\nGo')
+    // not a comment — unknown macro is left intact
+    expect(expandMacros('{{unknown}}')).toBe('{{unknown}}')
+  })
+
   it('reads local + global variables', () => {
     expect(expandMacros('HP: {{getvar::hp}}', { vars: { hp: 80 } })).toBe('HP: 80')
     expect(expandMacros('{{getvar::stats.str}}', { vars: { stats: { str: 12 } } })).toBe('12')

@@ -75,6 +75,12 @@ export const expandMacros = (text: string, ctx: MacroContext = {}): string => {
   for (let pass = 0; pass < 5; pass++) {
     let changed = false
     out = out.replace(MACRO_RE, (whole, body: string) => {
+      // {{// comment }} — ST comment macro: stripped from the prompt entirely (may span lines;
+      // any body starting with `//`, not just the empty `{{//}}` form).
+      if (body.trim().startsWith('//')) {
+        changed = true
+        return ''
+      }
       const sep = body.indexOf('::')
       const name = (sep < 0 ? body : body.slice(0, sep)).trim().toLowerCase()
       const a = sep < 0 ? '' : body.slice(sep + 2)
