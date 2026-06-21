@@ -58,6 +58,11 @@ export const JQUERY_SHIM = `
     var self=this, u=String(url);
     llog('fetching ' + u);
     getText(u).then(function(html){
+      // Wait for the runtime libs (Vue/lodash/zod) so a card entry module that uses a
+      // global Vue doesn't run before it's defined (the dynamic inject below isn't part
+      // of the deferred-module ordering, so it can otherwise race the lib loader).
+      return Promise.resolve(window.__rptLibsReady).catch(function(){}).then(function(){ return html; });
+    }).then(function(html){
       var doc = new DOMParser().parseFromString(html, 'text/html');
       function abs(el, attr){ var v=el.getAttribute(attr); if (v){ try { el.setAttribute(attr, new URL(v, u).href); } catch(e){} } }
       toArr(doc.querySelectorAll('[src]')).forEach(function(el){ abs(el, 'src'); });
@@ -73,7 +78,7 @@ export const JQUERY_SHIM = `
       self.each(function(){ this.innerHTML = bodyHtml; });
       var target = self[0] || document.body;
       scripts.forEach(function(old){ execScript(old, target); });
-      llog('mounted ' + u + ' (' + scripts.length + ' script(s))');
+      llog('mounted ' + u + ' (' + scripts.length + ' script(s); Vue=' + (!!window.Vue) + ', _=' + (!!window._) + ')');
       if (typeof cb === 'function') cb();
     }).catch(function(e){ llog((e && e.message) || e); });
     return this;

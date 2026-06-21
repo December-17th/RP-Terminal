@@ -56,10 +56,14 @@ export const LIB_SHIM = `
  */
 export const LIB_LOADER =
   `<script type="module">` +
+  // Publish a readiness promise so dynamically-injected page scripts (jQuery .load) can
+  // await the libs before running — the deferred-module ordering doesn't cover them.
+  `window.__rptLibsReady = (async () => {` +
   `try{const m=await import('https://testingcf.jsdelivr.net/npm/lodash/+esm');window._=window.lodash=(m&&m.default)||m;}catch(e){}` +
   `try{const m=await import('https://testingcf.jsdelivr.net/npm/zod/+esm');window.z={z:(m&&(m.z||m.default))||m};}catch(e){}` +
   // Vue 3 global for frontend cards built as Vue apps (they reference `Vue` directly, as
   // the ST host page provides it). The namespace carries the named exports
   // (createApp/ref/defineComponent/…) the cards use.
   `try{const m=await import('https://testingcf.jsdelivr.net/npm/vue/+esm');window.Vue=(m&&m.createApp)?m:((m&&m.default)||m);}catch(e){}` +
+  `})();` +
   `</script>`
