@@ -211,21 +211,15 @@ app.whenReady().then(() => {
     scriptService.deleteScript(profileId, file)
   )
   // The merged runtime script set for a chat: card-embedded (World) + active-scope store
-  // scripts, with remote `import` directives resolved when `allowRemote` (per-card grant).
-  ipcMain.handle('get-runtime-scripts', async (_, profileId, cardId, chatId, allowRemote) => {
+  // scripts (raw — remote `import`s load natively in the sandbox under the remoteScripts
+  // grant, 1B). Also reports the remote hosts those scripts import from (grant + CSP).
+  ipcMain.handle('get-runtime-scripts', (_, profileId, cardId, chatId) => {
     const card = cardId ? characterService.getCharacter(profileId, cardId) : null
     const cardScripts = ((card?.data.extensions?.rp_terminal as any)?.scripts || [])
       .filter((s: any) => s && s.enabled !== false)
       .map((s: any) => ({ name: s.name || 'script', code: s.code || '' }))
-    const storeScripts = scriptService.getActiveScripts(profileId, { cardId, chatId })
-    const hosts = new Set<string>()
-    const out: { name: string; code: string }[] = []
-    for (const s of [...cardScripts, ...storeScripts]) {
-      const resolved = await scriptService.resolveRemoteImports(profileId, s.code, !!allowRemote)
-      resolved.hosts.forEach((h) => hosts.add(h))
-      out.push({ name: s.name, code: resolved.code })
-    }
-    return { scripts: out, remoteHosts: Array.from(hosts) }
+    const scripts = [...cardScripts, ...scriptService.getActiveScripts(profileId, { cardId, chatId })]
+    return { scripts, remoteHosts: scriptService.runtimeImportHosts(scripts) }
   })
   ipcMain.handle('regex-script-rules', (_, profileId, file) =>
     regexService.getScriptRules(profileId, file)

@@ -4,8 +4,8 @@ import path from 'path'
 import { randomUUID } from 'crypto'
 import {
   extractImports,
-  inlineImports,
-  resolveRemoteImports,
+  extractImportHosts,
+  runtimeImportHosts,
   saveScript,
   listScripts,
   getScript,
@@ -18,48 +18,54 @@ import {
 import { getAppDir } from '../src/main/services/storageService'
 
 describe('extractImports', () => {
-  it('finds import "url", import \'url\', and // @import url; dedups', () => {
+  it('finds every static + dynamic + directive import form (and dedups)', () => {
     const code = [
-      'import "https://a.com/x.js"',
-      "import 'https://b.com/y.js' ;",
-      '// @import https://a.com/x.js',
-      '// @import   https://c.com/z.js',
-      'const k = "import not-a-directive"'
+      "import 'https://a.com/side.js';", // side-effect (the real MVU form)
+      "import Default from 'https://b.com/d.js'", // default
+      "import { x, y } from 'https://c.com/named.js'", // named
+      "import * as ns from 'https://d.com/star.js'", // namespace
+      "export { z } from 'https://e.com/re.js'", // re-export
+      "const m = await import('https://f.com/dyn.js')", // dynamic
+      '// @import https://g.com/directive.js', // comment directive
+      'const k = "import not-a-real one"' // string, ignored
     ].join('\n')
-    expect(extractImports(code)).toEqual([
-      'https://a.com/x.js',
-      'https://b.com/y.js',
-      'https://c.com/z.js'
+    expect(extractImports(code).sort()).toEqual(
+      [
+        'https://a.com/side.js',
+        'https://b.com/d.js',
+        'https://c.com/named.js',
+        'https://d.com/star.js',
+        'https://e.com/re.js',
+        'https://f.com/dyn.js',
+        'https://g.com/directive.js'
+      ].sort()
+    )
+  })
+
+  it('handles minified imports with no spaces', () => {
+    expect(extractImports("import{klona as e}from'https://cdn/klona/+esm';")).toEqual([
+      'https://cdn/klona/+esm'
     ])
   })
 
-  it('returns [] when there are no import directives', () => {
+  it('returns [] when there are no imports', () => {
     expect(extractImports('const x = 1\nfoo()')).toEqual([])
   })
 })
 
-describe('inlineImports', () => {
-  it('replaces resolved directives with the fetched code and neutralizes the rest', () => {
-    const code = 'import "https://a.com/x.js"\nrun()\n// @import https://miss.com/m.js'
-    const out = inlineImports(code, { 'https://a.com/x.js': 'window.LIB=1' })
-    expect(out).toContain('window.LIB=1')
-    expect(out).toContain('run()')
-    expect(out).toContain('not loaded') // the unresolved one is commented out
-    expect(out).not.toMatch(/^import /m) // no raw import lines remain
-  })
-})
-
-describe('resolveRemoteImports (no-fetch paths)', () => {
-  it('passes code through unchanged when there are no imports', async () => {
-    const r = await resolveRemoteImports('p', 'plain()', true)
-    expect(r).toEqual({ code: 'plain()', hosts: [] })
+describe('extractImportHosts / runtimeImportHosts', () => {
+  it('returns distinct hosts of absolute-URL imports only', () => {
+    const code = "import 'https://cdn.example/a.js'\nimport x from 'https://cdn.example/b.js'\nimport './local.js'"
+    expect(extractImportHosts(code)).toEqual(['cdn.example']) // deduped; relative skipped
   })
 
-  it('reports hosts but does not fetch when not allowed', async () => {
-    const r = await resolveRemoteImports('p', 'import "https://cdn.example/x.js"\ngo()', false)
-    expect(r.hosts).toEqual(['cdn.example'])
-    expect(r.code).toContain('not loaded')
-    expect(r.code).toContain('go()')
+  it('unions hosts across the runtime script set', () => {
+    const scripts = [
+      { name: 'a', code: "import 'https://one.cdn/x.js'" },
+      { name: 'b', code: "import y from 'https://two.cdn/y.js'" },
+      { name: 'c', code: 'plain()' }
+    ]
+    expect(runtimeImportHosts(scripts).sort()).toEqual(['one.cdn', 'two.cdn'])
   })
 })
 

@@ -1,6 +1,6 @@
 import fs from 'fs'
 import path from 'path'
-import { randomUUID, createHash } from 'crypto'
+import { randomUUID } from 'crypto'
 import {
   getAppDir,
   ensureDir,
@@ -9,7 +9,6 @@ import {
   listFilesSync
 } from './storageService'
 import { ArtifactScope, ScopeContext, ScopeMeta, isScopeActive } from './regexService'
-import { log } from './logService'
 
 /**
  * Profile-level scripts library (companion to the regex store), so card scripts gain
@@ -18,9 +17,9 @@ import { log } from './logService'
  * Card-embedded scripts (`rp_terminal.scripts`) stay on the card and are merged in at
  * runtime as the World scope — this store adds Global/Session (and extra World) scripts.
  *
- * Scripts run in the same sandboxed iframe as card scripts (no network at runtime), but
- * their code may carry remote `import` directives that the MAIN process resolves at load
- * time (fetch + cache) — see resolveRemoteImports. The iframe stays network-isolated.
+ * A script may import remote ES modules. We don't fetch those in main; the iframe loads
+ * them natively as a module when the per-card `remoteScripts` grant is on (1B). Here we
+ * only detect import hosts (`extractImportHosts`/`runtimeImportHosts`) for the grant + CSP.
  */
 
 export interface StoredScript {
@@ -46,8 +45,6 @@ const scriptsDir = (profileId: string): string =>
 const scriptPath = (profileId: string, file: string): string =>
   path.join(scriptsDir(profileId), file)
 const metaPath = (profileId: string): string => path.join(scriptsDir(profileId), '_meta.json')
-const cacheDir = (profileId: string): string => path.join(scriptsDir(profileId), '_cache')
-
 const readMeta = (profileId: string): Record<string, ScriptMeta> =>
   readJsonSync<Record<string, ScriptMeta>>(metaPath(profileId)) || {}
 const writeMeta = (profileId: string, meta: Record<string, ScriptMeta>): void =>
@@ -56,46 +53,45 @@ const writeMeta = (profileId: string, meta: Record<string, ScriptMeta>): void =>
 const isUnsafe = (file: string): boolean =>
   file.includes('/') || file.includes('\\') || file.includes('..') || file.startsWith('_')
 
-// --- Remote import directives (pure) ---------------------------------------
+// --- Remote import detection (pure) ----------------------------------------
+//
+// Scripts that pull remote ES modules are run natively as <script type="module"> (1B),
+// so we don't fetch/inline here — we only detect the URLs they import to (a) report the
+// hosts for the per-card remote-scripts grant and (b) build the iframe CSP allow-list.
 
-// Matches a whole line that is either `import "URL"` / `import 'URL'` or a
-// `// @import URL` comment directive (the comment form may omit quotes). Classic
-// (non-module) scripts can't use real ES imports, so these lines are extracted and
-// replaced with the fetched code inline. Group 2 is the URL (group 1 is the optional quote).
-const IMPORT_LINE =
-  /^[ \t]*(?:\/\/[ \t]*@import[ \t]+|import[ \t]+)(['"]?)([^'"\s;]+)\1[ \t]*;?[ \t]*$/gm
+const IMPORT_PATTERNS: RegExp[] = [
+  /(?:import|export)[^'";]*?\bfrom\s*['"]([^'"]+)['"]/g, // import/export … from '…'
+  /\bimport\s*['"]([^'"]+)['"]/g, // import '…' (side-effect)
+  /\bimport\s*\(\s*['"]([^'"]+)['"]\s*\)/g, // import('…') (dynamic)
+  /\/\/[ \t]*@import[ \t]+['"]?([^'"\s;]+)/g // // @import … directive
+]
 
-/** URLs a script imports (deduped, in first-seen order). Pure. */
+/** URLs/specifiers a script imports (deduped). Pure. */
 export const extractImports = (code: string): string[] => {
   const out: string[] = []
-  for (const m of code.matchAll(IMPORT_LINE)) {
-    const url = m[2].trim()
-    if (url && !out.includes(url)) out.push(url)
+  const c = code || ''
+  for (const re of IMPORT_PATTERNS) {
+    re.lastIndex = 0
+    let m: RegExpExecArray | null
+    while ((m = re.exec(c))) {
+      const url = m[1].trim()
+      if (url && !out.includes(url)) out.push(url)
+    }
   }
   return out
 }
 
-/**
- * Replace each import directive line with the fetched remote code (or a comment when a
- * URL couldn't be resolved / wasn't allowed). Pure — the fetching is done separately so
- * this stays testable. Unresolved imports are neutralized so a script never hard-errors.
- */
-export const inlineImports = (code: string, resolved: Record<string, string>): string =>
-  code.replace(IMPORT_LINE, (_full, _quote: string, url: string) => {
-    const key = String(url).trim()
-    if (Object.prototype.hasOwnProperty.call(resolved, key)) {
-      return `/* @import ${key} */\n${resolved[key]}\n/* end @import ${key} */`
-    }
-    return `/* @import ${key} — not loaded (remote scripts not allowed or fetch failed) */`
-  })
-
-const hostOf = (url: string): string => {
+const urlHost = (u: string): string | null => {
   try {
-    return new URL(url).host
+    return new URL(u).host || null
   } catch {
-    return url
+    return null // bare/relative specifier — no host
   }
 }
+
+/** Distinct remote hosts a script imports from (absolute URLs only). */
+export const extractImportHosts = (code: string): string[] =>
+  Array.from(new Set(extractImports(code).map(urlHost).filter((h): h is string => !!h)))
 
 // --- Store CRUD -------------------------------------------------------------
 
@@ -119,7 +115,7 @@ export const listScripts = (profileId: string): ScriptInfo[] => {
       scope: m.scope ?? 'global',
       owner: m.owner,
       disabled: m.disabled === true,
-      remoteHosts: extractImports(data.code || '').map(hostOf)
+      remoteHosts: extractImportHosts(data.code || '')
     })
   }
   return out
@@ -201,64 +197,9 @@ export const getActiveScripts = (profileId: string, ctx: ScopeContext): StoredSc
     .map((s) => ({ name: s.name, code: s.code }))
 }
 
-// --- Remote import resolution (main-process fetch + cache) ------------------
-
-const cachePathFor = (profileId: string, url: string): string =>
-  path.join(cacheDir(profileId), `${createHash('sha256').update(url).digest('hex')}.js`)
-
-/**
- * Fetch a remote script (https only), caching to disk so a granted world loads offline
- * after the first fetch. Returns the JS source or null on failure. Main process only.
- */
-const fetchRemote = async (profileId: string, url: string): Promise<string | null> => {
-  if (!/^https:\/\//i.test(url)) {
-    log('error', `remote script import blocked (not https): ${url}`)
-    return null
-  }
-  const cache = cachePathFor(profileId, url)
-  const cached = readCached(cache)
-  if (cached != null) return cached
-  try {
-    const res = await fetch(url)
-    if (!res.ok) throw new Error(`HTTP ${res.status}`)
-    const text = await res.text()
-    ensureDir(cacheDir(profileId))
-    fs.writeFileSync(cache, text, 'utf-8')
-    log('info', `fetched remote script ${url} (${text.length} bytes, cached)`)
-    return text
-  } catch (err: any) {
-    log('error', `failed to fetch remote script ${url}: ${err?.message || err}`)
-    return null
-  }
-}
-
-const readCached = (cache: string): string | null => {
-  try {
-    return fs.existsSync(cache) ? fs.readFileSync(cache, 'utf-8') : null
-  } catch {
-    return null
-  }
-}
-
-/**
- * Resolve a script's remote import directives. When `allow` is false the directives are
- * neutralized (no fetch) and the hosts are reported so the caller can prompt for a grant.
- * Returns the rewritten code plus the set of remote hosts the script referenced.
- */
-export const resolveRemoteImports = async (
-  profileId: string,
-  code: string,
-  allow: boolean
-): Promise<{ code: string; hosts: string[] }> => {
-  const urls = extractImports(code)
-  const hosts = Array.from(new Set(urls.map(hostOf)))
-  if (urls.length === 0) return { code, hosts }
-  const resolved: Record<string, string> = {}
-  if (allow) {
-    for (const url of urls) {
-      const js = await fetchRemote(profileId, url)
-      if (js != null) resolved[url] = js
-    }
-  }
-  return { code: inlineImports(code, resolved), hosts }
+/** The remote hosts the active runtime scripts import from — for the grant + CSP. */
+export const runtimeImportHosts = (scripts: StoredScript[]): string[] => {
+  const hosts = new Set<string>()
+  for (const s of scripts) for (const h of extractImportHosts(s.code)) hosts.add(h)
+  return Array.from(hosts)
 }

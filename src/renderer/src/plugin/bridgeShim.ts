@@ -13,18 +13,32 @@
  * own design, not derived from js-slash-runner.
  */
 
-/** Content-Security-Policy for the iframe document. `connect-src 'none'` (plus
- * the lack of `allow-same-origin`) is what makes "no network in v1" real:
- * fetch/XHR/WebSocket are blocked, and images/fonts are limited to inline data. */
-const CSP = [
-  "default-src 'none'",
-  "script-src 'unsafe-inline'",
-  "style-src 'unsafe-inline'",
-  'img-src data: blob:',
-  'font-src data:',
-  "connect-src 'none'",
-  "form-action 'none'"
-].join('; ')
+/**
+ * Content-Security-Policy for the iframe document.
+ *  • Locked (default): `connect-src 'none'` + no `allow-same-origin` = "no network".
+ *    fetch/XHR/WebSocket and remote `import` are blocked; assets limited to inline data.
+ *  • Remote-enabled (per-card `remoteScripts` grant): adds `https:` to script/connect/etc.
+ *    so user scripts can `import` ES-module graphs natively from CDNs (approach 1B). This
+ *    is the documented cost of the grant — the world's scripts gain internet access.
+ */
+const buildCsp = (allowRemote: boolean): string => {
+  const s = allowRemote ? " https:" : ''
+  return [
+    "default-src 'none'",
+    `script-src 'unsafe-inline'${s}`,
+    `style-src 'unsafe-inline'${s}`,
+    `img-src data: blob:${s}`,
+    `font-src data:${s}`,
+    `connect-src ${allowRemote ? 'https:' : "'none'"}`,
+    "form-action 'none'"
+  ].join('; ')
+}
+
+// A script is run as an ES module (so its `import`/`export` work) when it uses static
+// module syntax. Dynamic `import(...)` alone doesn't require a module context, so it's
+// excluded — classic scripts keep their global-scope semantics.
+const MODULE_SYNTAX = /^[ \t]*(?:import[\s{*'"]|export[\s{*])/m
+export const isModuleScript = (code: string): boolean => MODULE_SYNTAX.test(code || '')
 
 /** Base styling injected into the iframe so script UIs match the app shell. */
 const HOST_STYLE = `
@@ -276,29 +290,39 @@ export interface CardScript {
   code: string
 }
 
-/** Build the full sandboxed-iframe document: CSP + base style + shim + each user
- * script in its OWN <script> tag. A separate tag per script is essential: a single
- * shared tag fails to *parse* as a whole, so one script's syntax error would kill all
- * the others (a try/catch only catches runtime errors, not parse errors). Errors —
- * syntax and runtime — are surfaced to the host's Logs panel via __rptError. */
-export const buildScriptSrcDoc = (scripts: CardScript[]): string => {
-  // Defined first so each user-script tag's catch + the global error handler can use it.
+/**
+ * Build the full sandboxed-iframe document: CSP + base style + shims + each user script
+ * in its OWN <script> tag. Per-tag is essential: a single shared tag fails to *parse* as a
+ * whole, so one script's syntax error would kill the others. Scripts that use ES-module
+ * syntax run as `<script type="module">` (so their `import` works — natively loading the
+ * remote graph when `allowRemote`); the rest run as classic scripts wrapped in try/catch.
+ * Errors (syntax, runtime, and unhandled rejections) are surfaced to the host's Logs panel.
+ */
+export const buildScriptSrcDoc = (
+  scripts: CardScript[],
+  opts: { allowRemote?: boolean } = {}
+): string => {
+  // Defined first so each user-script tag's catch + the global handlers can use it.
   const errorReporter =
     `<script>` +
     `function __rptError(name, e){try{parent.postMessage({__rptlog:1,msg:'['+name+'] '+((e&&e.message)||e)},'*')}catch(_){}}` +
-    `window.addEventListener('error',function(ev){__rptError('script', ev.message+' @'+(ev.lineno||'?')+':'+(ev.colno||'?'))});` +
+    `window.addEventListener('error',function(ev){__rptError('script', (ev.message||(ev.error&&ev.error.message)||'error')+' @'+(ev.lineno||'?')+':'+(ev.colno||'?'))});` +
+    `window.addEventListener('unhandledrejection',function(ev){var r=ev.reason;__rptError('script','unhandled rejection: '+((r&&r.message)||r))});` +
     `</script>`
 
   const userScripts = scripts
-    .map(
-      (s) =>
-        `<script>try {\n${s.code}\n} catch (e) { __rptError(${JSON.stringify(s.name || 'script')}, e); }</script>`
+    .map((s) =>
+      isModuleScript(s.code)
+        ? // Module: imports must be top-level (can't wrap in try/catch) — the global
+          // error/rejection handlers above catch its failures instead.
+          `<script type="module">\n${s.code}\n</script>`
+        : `<script>try {\n${s.code}\n} catch (e) { __rptError(${JSON.stringify(s.name || 'script')}, e); }</script>`
     )
     .join('')
 
   return (
     `<!doctype html><html><head><meta charset="utf-8">` +
-    `<meta http-equiv="Content-Security-Policy" content="${CSP}">` +
+    `<meta http-equiv="Content-Security-Policy" content="${buildCsp(!!opts.allowRemote)}">` +
     `<style>${HOST_STYLE}</style></head><body>` +
     `<script>${BRIDGE_SHIM}</script>` +
     `<script>${LIB_SHIM}</script>` +

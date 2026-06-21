@@ -73,27 +73,28 @@ export const CardScriptHost: React.FC<Props> = ({
   }, [profileId, cardId])
 
   // Build the sandboxed document from the MERGED runtime scripts (card-embedded + active-
-  // scope store scripts), with remote `import` directives resolved in main. The first remote
-  // load prompts once per world; the grant is then persisted (and the fetch cached).
+  // scope store scripts). Scripts that import remote ES modules load them natively (1B) —
+  // which needs the per-card `remoteScripts` grant (it relaxes the iframe CSP to allow the
+  // CDN). The first such world prompts once; the grant then persists.
   useEffect(() => {
     if (!enabled || !grantsLoaded) return
     let alive = true
     ;(async () => {
-      const allow = grantsRef.current.remoteScripts === true
-      let res = await window.api.getRuntimeScripts(profileId, cardId, chatId, allow)
+      const res = await window.api.getRuntimeScripts(profileId, cardId, chatId)
       if (!alive) return
+      let allow = grantsRef.current.remoteScripts === true
       if (res?.remoteHosts?.length && !allow) {
         const ok = window.confirm(
           `Scripts in "${cardName}" load code from the internet:\n\n` +
             res.remoteHosts.map((h: string) => '  • ' + h).join('\n') +
-            `\n\nAllow remote scripts for this world? (fetched once, then cached)`
+            `\n\nAllow these scripts to load remote code (grants this world's scripts ` +
+            `internet access)? You can change this later.`
         )
         if (ok) {
           grantsRef.current = await window.api.pluginSetGrants(profileId, cardId, {
             remoteScripts: true
           })
-          res = await window.api.getRuntimeScripts(profileId, cardId, chatId, true)
-          if (!alive) return
+          allow = true
         }
       }
       const list = res?.scripts || []
@@ -102,7 +103,7 @@ export const CardScriptHost: React.FC<Props> = ({
       btnKeys.current.forEach((k) => useToolbarStore.getState().remove(k))
       btnKeys.current.clear()
       setScriptCount(list.length)
-      setSrcDoc(buildScriptSrcDoc(list))
+      setSrcDoc(buildScriptSrcDoc(list, { allowRemote: allow }))
     })()
     return () => {
       alive = false
