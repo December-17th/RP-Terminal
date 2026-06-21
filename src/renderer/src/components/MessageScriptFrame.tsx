@@ -42,46 +42,56 @@ export function MessageScriptFrame({ html }: { html: string }): React.ReactEleme
   // to real content for non-full-page blocks.
   const [height, setHeight] = useState(560)
   const [srcDoc, setSrcDoc] = useState('')
+  // A trusted world's frontend cards run same-origin (native ES-module imports / ST-style
+  // runtime), at the cost of full app access — only for a world whose card the user trusts.
+  const [trusted, setTrusted] = useState(false)
+  const trustedRef = useRef(false)
+  trustedRef.current = trusted
 
-  // Build the sandbox doc once the world's network grant is known. A frontend card that
-  // pulls a remote UI (a URL in its markup) needs the per-world `remoteScripts` grant to
-  // open the CSP — we reuse the same grant card scripts use, and prompt once if it isn't
-  // set. Without the grant, the frame stays network-off.
+  // Build the sandbox doc once the world's grants are known. A frontend card that pulls a
+  // remote UI prompts once for FULL TRUST (per-world): granting runs it same-origin so it
+  // works natively. Declining leaves it sandboxed (network only if previously granted).
   useEffect(() => {
     if (!profileId) return
     let alive = true
     ;(async () => {
       const wantsRemote = /https?:\/\//i.test(html)
+      let trust = false
       let allow = false
       if (cardId) {
         const g = await window.api.pluginGetGrants(profileId, cardId)
-        allow = g?.remoteScripts === true
-        if (!allow && wantsRemote) {
+        trust = g?.trusted === true
+        allow = trust || g?.remoteScripts === true
+        if (!trust && wantsRemote) {
           const ok = window.confirm(
-            'A UI embedded in this message loads content from the internet.\n\n' +
-              "Allow this world's message HTML to load remote content? (You can change this later.)"
+            'A UI embedded in this message needs FULL TRUST to run — a native (same-origin) ' +
+              'runtime, the way SillyTavern frontend cards work.\n\n' +
+              "Grant this ONLY for a world whose card you made or trust: a trusted world's code " +
+              'can read app data, including your API keys.\n\n' +
+              'Trust this world and run its UI natively?'
           )
           if (ok) {
-            await window.api.pluginSetGrants(profileId, cardId, { remoteScripts: true })
+            await window.api.pluginSetGrants(profileId, cardId, { trusted: true, remoteScripts: true })
+            trust = true
             allow = true
           }
         }
       }
-      // Surface the most common failure mode (a remote UI that can't reach the network).
       if (wantsRemote && !allow) {
         window.api.pluginLog(
           'message-html',
           cardId
-            ? 'remote UI blocked — network grant declined for this world (re-render to be re-prompted)'
-            : 'remote UI blocked — no active world to attach the network grant to'
+            ? 'frontend card blocked — full trust declined for this world (re-render to be re-prompted)'
+            : 'frontend card blocked — no active world to attach the trust grant to'
         )
       }
-      // Diagnostic: the frame's actual network state (drives the iframe CSP).
       window.api.pluginLog(
         'message-html',
-        `frame built: allowRemote=${allow} (cardId=${cardId ?? 'none'}, wantsRemote=${wantsRemote})`
+        `frame built: trusted=${trust}, allowRemote=${allow} (cardId=${cardId ?? 'none'})`
       )
-      if (alive) setSrcDoc(buildMessageHtmlDoc(html, { allowRemote: allow }))
+      if (!alive) return
+      setTrusted(trust)
+      setSrcDoc(buildMessageHtmlDoc(html, { allowRemote: allow, trusted: trust }))
     })()
     return () => {
       alive = false
@@ -97,7 +107,9 @@ export function MessageScriptFrame({ html }: { html: string }): React.ReactEleme
       profileId: profileId || '',
       getChatId: () => chatId,
       cardId: cardId || undefined,
-      ensure: async (perm: string) => ALLOWED_CAPS.has(perm),
+      // A trusted (same-origin) frame already has full app access, so its rpt calls are
+      // unrestricted; an untrusted frame is limited to the safe read/display caps.
+      ensure: async (perm: string) => trustedRef.current || ALLOWED_CAPS.has(perm),
       toast: (m) => useToastStore.getState().push(m),
       syncLocalVars: (store) => useChatStore.getState().setLatestFloorVariables(store),
       triggerGenerate: async () => {
@@ -176,7 +188,9 @@ export function MessageScriptFrame({ html }: { html: string }): React.ReactEleme
     <iframe
       ref={frameRef}
       className="card-frame"
-      sandbox="allow-scripts"
+      // Trusted worlds run same-origin (native runtime, full access); otherwise the opaque
+      // sandbox. allow-same-origin + allow-scripts is intentional here — it IS the trust grant.
+      sandbox={trusted ? 'allow-scripts allow-same-origin' : 'allow-scripts'}
       srcDoc={srcDoc}
       style={{ width: '100%', height, border: 0, display: 'block' }}
       title="message script"

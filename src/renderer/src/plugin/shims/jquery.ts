@@ -94,7 +94,9 @@ export const JQUERY_SHIM = `
         if (srcAttr) { try { entryUrls.push(new URL(srcAttr, u).href); } catch(e){} }
         else moduleImports(sc.textContent||'').forEach(function(spec){ try { var a=new URL(spec, u).href; if(/^https:/i.test(a)) entryUrls.push(a); }catch(e){} });
       });
-      if (entryUrls.length && window.rpt && rpt.fetchModuleGraph) {
+      // Trusted (same-origin) frames import cross-origin modules natively — skip the
+      // host-fetch + data: rewrite entirely.
+      if (!window.__rptTrusted && entryUrls.length && window.rpt && rpt.fetchModuleGraph) {
         try {
           llog('module entries: ' + entryUrls.join(', '));
           var graph = await rpt.fetchModuleGraph(entryUrls);

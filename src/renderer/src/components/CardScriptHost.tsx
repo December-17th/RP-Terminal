@@ -22,6 +22,7 @@ interface Grants {
   enabled?: boolean
   generate?: boolean
   remoteScripts?: boolean
+  trusted?: boolean
 }
 
 /**
@@ -49,6 +50,9 @@ export const CardScriptHost: React.FC<Props> = ({
   const [srcDoc, setSrcDoc] = useState('')
   const [scriptCount, setScriptCount] = useState(0)
   const [grantsLoaded, setGrantsLoaded] = useState(false)
+  // A trusted world runs its card scripts same-origin (native ES-module imports / ST-style
+  // runtime) at the cost of full app access — the trust grant covers the world's own scripts.
+  const [trusted, setTrusted] = useState(false)
 
   // Card-embedded scripts feed the runtime as the World scope; a change to them (or to the
   // profile scripts store) re-triggers a refetch of the merged, import-resolved set.
@@ -83,18 +87,24 @@ export const CardScriptHost: React.FC<Props> = ({
     ;(async () => {
       const res = await window.api.getRuntimeScripts(profileId, cardId, chatId)
       if (!alive) return
-      let allow = grantsRef.current.remoteScripts === true
-      if (res?.remoteHosts?.length && !allow) {
+      let trust = grantsRef.current.trusted === true
+      let allow = trust || grantsRef.current.remoteScripts === true
+      // Scripts that load remote ES modules need a same-origin (trusted) runtime — the
+      // opaque sandbox can't import cross-origin modules. Prompt once for full trust.
+      if (res?.remoteHosts?.length && !trust) {
         const ok = window.confirm(
-          `Scripts in "${cardName}" load code from the internet:\n\n` +
+          `Scripts in "${cardName}" load & run code from the internet:\n\n` +
             res.remoteHosts.map((h: string) => '  • ' + h).join('\n') +
-            `\n\nAllow these scripts to load remote code (grants this world's scripts ` +
-            `internet access)? You can change this later.`
+            `\n\nRun this world's scripts with FULL TRUST (a native runtime, the way ` +
+            `SillyTavern runs them)? Grant this ONLY for a world you trust — its code can ` +
+            `read app data, including your API keys.`
         )
         if (ok) {
           grantsRef.current = await window.api.pluginSetGrants(profileId, cardId, {
+            trusted: true,
             remoteScripts: true
           })
+          trust = true
           allow = true
         }
       }
@@ -104,7 +114,8 @@ export const CardScriptHost: React.FC<Props> = ({
       btnKeys.current.forEach((k) => useToolbarStore.getState().remove(k))
       btnKeys.current.clear()
       setScriptCount(list.length)
-      setSrcDoc(buildScriptSrcDoc(list, { allowRemote: allow }))
+      setTrusted(trust)
+      setSrcDoc(buildScriptSrcDoc(list, { allowRemote: allow, trusted: trust }))
     })()
     return () => {
       alive = false
@@ -126,6 +137,9 @@ export const CardScriptHost: React.FC<Props> = ({
   // Card scripts auto-grant low-risk caps; `net` is never allowed (no manifest
   // allow-list); `generate` prompts once per card.
   const ensure = async (perm: string): Promise<boolean> => {
+    // A trusted (same-origin) world already has full app access, so its rpt calls are
+    // unrestricted.
+    if (grantsRef.current.trusted) return true
     if (perm === 'net') return false
     if (perm !== 'generate') return true
     if (grantsRef.current.generate) return true
@@ -278,7 +292,9 @@ export const CardScriptHost: React.FC<Props> = ({
     <iframe
       ref={frameRef}
       className="rpt-script-frame"
-      sandbox="allow-scripts"
+      // Trusted worlds run their scripts same-origin (native runtime, full access);
+      // otherwise the opaque sandbox.
+      sandbox={trusted ? 'allow-scripts allow-same-origin' : 'allow-scripts'}
       srcDoc={srcDoc}
       style={{ height: height || 1 }}
       title="card scripts"

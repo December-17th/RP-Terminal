@@ -268,6 +268,11 @@ export interface CardGrants {
   generate?: boolean
   /** Allow this world's scripts to load code from the internet (remote import directives). */
   remoteScripts?: boolean
+  /** Full trust: run this world's own frames (card scripts + its frontend cards) with a
+   * real (same-origin) origin so native ES-module imports / ST-style runtime work. Implies
+   * the frame can reach the app (incl. API keys) — only for a world whose card you trust.
+   * Scoped to the world card's scripts + what they import. */
+  trusted?: boolean
 }
 
 const grantsPath = (profileId: string): string =>

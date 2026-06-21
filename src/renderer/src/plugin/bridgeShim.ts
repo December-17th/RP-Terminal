@@ -92,11 +92,14 @@ const ERROR_REPORTER =
   `window.addEventListener('unhandledrejection',function(ev){var r=ev.reason;__rptError('script','unhandled rejection: '+((r&&r.message)||r))});` +
   `</script>`
 
-/** The shim/CSP/style head shared by both sandbox documents. */
-const sandboxHead = (allowRemote: boolean): string =>
+/** The shim/CSP/style head shared by both sandbox documents. `trusted` frames run with a
+ * real (same-origin) origin set by the host, so native ES-module imports work and the
+ * frontend-card loader can skip its data:-URL rewriting. */
+const sandboxHead = (allowRemote: boolean, trusted: boolean): string =>
   `<!doctype html><html><head><meta charset="utf-8">` +
   `<meta http-equiv="Content-Security-Policy" content="${buildCsp(allowRemote)}">` +
   `<style>${HOST_STYLE}</style></head><body>` +
+  `<script>window.__rptTrusted=${trusted ? 'true' : 'false'};</script>` +
   `<script>${BRIDGE_SHIM}</script>` +
   `<script>${LIB_SHIM}</script>` +
   `<script>${TAVERN_SHIM}</script>` +
@@ -106,7 +109,7 @@ const sandboxHead = (allowRemote: boolean): string =>
 
 export const buildScriptSrcDoc = (
   scripts: CardScript[],
-  opts: { allowRemote?: boolean } = {}
+  opts: { allowRemote?: boolean; trusted?: boolean } = {}
 ): string => {
   const userScripts = scripts
     .map((s) =>
@@ -118,7 +121,7 @@ export const buildScriptSrcDoc = (
     )
     .join('')
 
-  return sandboxHead(!!opts.allowRemote) + userScripts + `</body></html>`
+  return sandboxHead(!!opts.allowRemote, !!opts.trusted) + userScripts + `</body></html>`
 }
 
 /** Strip a full-document wrapper down to its body so model HTML inlines into our host doc. */
@@ -136,8 +139,10 @@ const extractBody = (html: string): string => {
  * API available — but the host gates it at LEAST privilege (model HTML is less trusted than
  * card scripts). Network stays off by default (allowRemote=false).
  */
-export const buildMessageHtmlDoc = (html: string, opts: { allowRemote?: boolean } = {}): string =>
-  sandboxHead(!!opts.allowRemote) + extractBody(html) + `</body></html>`
+export const buildMessageHtmlDoc = (
+  html: string,
+  opts: { allowRemote?: boolean; trusted?: boolean } = {}
+): string => sandboxHead(!!opts.allowRemote, !!opts.trusted) + extractBody(html) + `</body></html>`
 
 /** True when an html block carries a <script> (→ render as an interactive sandbox, not static). */
 export const isInteractiveHtml = (html: string): boolean => /<script[\s>]/i.test(html)
