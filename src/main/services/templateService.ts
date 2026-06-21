@@ -200,6 +200,15 @@ const installBridge = (vm: QuickJSContext, ctx: TemplateContext): void => {
     function getGlobalVar(k,o){return getvar(k,Object.assign({scope:'global'},o||{}));}
     function setGlobalVar(k,v,o){return setvar(k,v,Object.assign({scope:'global'},o||{}));}
     function incGlobalVar(k,v,o){return incvar(k,v,Object.assign({scope:'global'},o||{}));}
+    // Message- and chat-scoped variants (storeFor maps every non-global scope to the chat vars,
+    // so these read/write the same store until a dedicated per-message store exists). Defining
+    // them stops ReferenceErrors in cards that call getMessageVar/getChatVar/etc.
+    function getMessageVar(k,o){return getvar(k,Object.assign({scope:'message'},o||{}));}
+    function setMessageVar(k,v,o){return setvar(k,v,Object.assign({scope:'message'},o||{}));}
+    function incMessageVar(k,v,o){return incvar(k,v,Object.assign({scope:'message'},o||{}));}
+    function decMessageVar(k,v,o){return decvar(k,v,Object.assign({scope:'message'},o||{}));}
+    function getChatVar(k,o){return getvar(k,Object.assign({scope:'chat'},o||{}));}
+    function setChatVar(k,v,o){return setvar(k,v,Object.assign({scope:'chat'},o||{}));}
     // ST-Prompt-Template define(): register a reusable value/function for the rest of the template.
     function define(n,v){ if(n!=null) globalThis[n]=v; return v; }
     // Minimal clean-room faker subset for generated placeholder data (not the real lib).

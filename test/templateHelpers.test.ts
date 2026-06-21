@@ -27,6 +27,14 @@ describe('templateService TH-3 helpers', () => {
     expect(evalTemplate('a<%# secret note %>b', ctx())).toBe('ab')
   })
 
+  it('defines message/chat-scoped var helpers (no ReferenceError; map to chat vars)', () => {
+    const c = ctx({ vars: { hp: 80 } })
+    expect(evalTemplate('<%= getMessageVar("hp") %>', c)).toBe('80')
+    expect(evalTemplate('<%= getChatVar("hp") %>', c)).toBe('80')
+    evalTemplate('<% setMessageVar("mp", 50) %>', c)
+    expect(c.vars.mp).toBe(50)
+  })
+
   it('getchar() returns the card data, or a field', () => {
     expect(evalTemplate("<%= getchar('name') %>", ctx())).toBe('Mira')
     expect(evalTemplate("<%= getchar('personality') %>", ctx())).toBe('curious')
