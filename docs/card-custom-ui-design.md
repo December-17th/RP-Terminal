@@ -28,6 +28,32 @@ a drag-and-drop builder that generates these status menus for ST/MVU cards.
   not API compatibility. Bundle loading (the card's built assets, possibly fetched from a CDN) + CSP
   must also be handled.
 
+## Inline-in-message UI (clarification, 2026-06-21)
+
+Beautification regex can replace message text with **inline UI** (HTML/Vue) that has its own settings
+and can write message variables. This is distinct from a panel and changes the frame choice:
+
+- **Inline UI → iframe, NOT WebContentsView.** Inline widgets live in the message, scroll with it, can
+  be many, and reflow as the response streams — the worst case for WCV's absolute-bounds overlay. The
+  in-flow iframe is the right (only practical) tool. So the **center stays native `ChatView`**
+  (rendering inline iframes per message); **WCV is reserved for stable side/static panels.** The earlier
+  "center = WCV" idea applies only to a card that ships ONE monolithic full-screen UI — the opposite of
+  inline-per-message.
+- **Already built:** `MessageContent` renders regex→HTML inline — lightweight styled HTML inline in the
+  message DOM (react-markdown + rehype-raw + DOMPurify, no scripts), and full HTML/Vue blocks in a frame
+  (passive → `card-frame` `allow-same-origin`; interactive → `MessageScriptFrame` `allow-scripts` + the
+  `rpt` API).
+- **Vars-write already works + persists:** an interactive frame calls `rpt.vars` / TavernHelper
+  `insertOrAssignVariables`/`replaceVariables` → `pluginService.pluginVars` (permission-gated,
+  scope-aware) → the floor's variables + `saveFloor`, and syncs the live status widgets. This **overlaps
+  the new `apply-variable-ops` bridge** — consolidate, or keep the bridge for the native Option-1 UI and
+  let frames keep using `pluginVars`.
+- **New work:** a per-inline-UI **settings** model (configurable styles per widget/instance), injected
+  into the frame as CSS vars / a config object the frame reads via `rpt`.
+- **Freeze trade-off is inherent** to inline interactive frames (same-process) and WCV can't fix it.
+  Prefer native rendering for *declarative* beautifications (safe/fast); gate/limit heavy (Vue)
+  interactive frames; run only the visible/latest message's frame; keep the watchdog.
+
 ## What the StatusMenuBuilder actually produces (from `dist/layout-rpg.json`)
 
 Its output is a **declarative JSON config (~72 KB), not runnable code**:
