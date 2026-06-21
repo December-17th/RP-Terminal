@@ -82,22 +82,43 @@ export const JQUERY_SHIM = `
       var scripts = (doc.head ? toArr(doc.head.querySelectorAll('script')) : []).concat(doc.body ? toArr(doc.body.querySelectorAll('script')) : []);
       if (doc.body) toArr(doc.body.querySelectorAll('script')).forEach(function(s){ if (s.parentNode) s.parentNode.removeChild(s); });
 
-      // Resolve the entry modules' imports to blob: URLs via an import map.
-      var modUrls = [];
-      scripts.forEach(function(sc){
-        if ((sc.getAttribute('type')||'').indexOf('module') < 0) return;
-        if (sc.getAttribute('src')) { try { modUrls.push(new URL(sc.getAttribute('src'), u).href); } catch(e){} }
-        else moduleImports(sc.textContent||'').forEach(function(spec){ try { var a=new URL(spec, u).href; if(/^https:/i.test(a)) modUrls.push(a); }catch(e){} });
+      // Resolve module imports by REWRITING each import specifier to a same-origin blob:
+      // URL. (An import map doesn't work here: the static LIB_LOADER module already began
+      // module loading, so a late-injected map is ignored.) Fetch the graph in main, blob
+      // each module in dependency order — rewriting its inter-module imports — then rewrite
+      // the entry module scripts to point at the blobs.
+      var modScripts = scripts.filter(function(sc){ return (sc.getAttribute('type')||'').indexOf('module') >= 0; });
+      var entryUrls = [];
+      modScripts.forEach(function(sc){
+        var srcAttr = sc.getAttribute('src');
+        if (srcAttr) { try { entryUrls.push(new URL(srcAttr, u).href); } catch(e){} }
+        else moduleImports(sc.textContent||'').forEach(function(spec){ try { var a=new URL(spec, u).href; if(/^https:/i.test(a)) entryUrls.push(a); }catch(e){} });
       });
-      if (modUrls.length && window.rpt && rpt.fetchModuleGraph) {
+      if (entryUrls.length && window.rpt && rpt.fetchModuleGraph) {
         try {
-          llog('module entries: ' + modUrls.join(', '));
-          var graph = await rpt.fetchModuleGraph(modUrls);
-          var imports = {};
-          (graph||[]).forEach(function(mod){ imports[mod.url] = URL.createObjectURL(new Blob([mod.source], {type:'application/javascript'})); });
-          var im = document.createElement('script'); im.type='importmap'; im.textContent = JSON.stringify({ imports: imports });
-          (document.head||document.documentElement).appendChild(im);
-          llog('importmap injected (' + (graph?graph.length:0) + ' module(s)): ' + Object.keys(imports).join(', '));
+          llog('module entries: ' + entryUrls.join(', '));
+          var graph = await rpt.fetchModuleGraph(entryUrls);
+          var srcByUrl = {}; (graph||[]).forEach(function(m){ srcByUrl[m.url] = m.source; });
+          var blobByUrl = {};
+          var depUrls = function(src, base){ return moduleImports(src).map(function(spec){ try { return new URL(spec, base).href; } catch(e){ return null; } }).filter(function(d){ return d && srcByUrl[d]; }); };
+          var rewrite = function(src, base){ return src.replace(/((?:from|import)\\s*\\(?\\s*)(['"])([^'"]+)(['"])/g, function(w, pre, q1, spec, q2){ try { var abs=new URL(spec, base).href; if (blobByUrl[abs]) return pre+q1+blobByUrl[abs]+q2; } catch(e){} return w; }); };
+          var urls = Object.keys(srcByUrl), guard = 0;
+          var pending = function(){ return urls.some(function(x){ return !blobByUrl[x]; }); };
+          while (pending() && guard++ < urls.length + 2) {
+            urls.forEach(function(x){
+              if (blobByUrl[x]) return;
+              if (depUrls(srcByUrl[x], x).every(function(d){ return blobByUrl[d]; })) {
+                blobByUrl[x] = URL.createObjectURL(new Blob([rewrite(srcByUrl[x], x)], {type:'application/javascript'}));
+              }
+            });
+          }
+          urls.forEach(function(x){ if (!blobByUrl[x]) blobByUrl[x] = URL.createObjectURL(new Blob([rewrite(srcByUrl[x], x)], {type:'application/javascript'})); });
+          modScripts.forEach(function(sc){
+            var srcAttr = sc.getAttribute('src');
+            if (srcAttr) { try { var a=new URL(srcAttr, u).href; if (blobByUrl[a]) sc.setAttribute('src', blobByUrl[a]); } catch(e){} }
+            else sc.textContent = rewrite(sc.textContent||'', u);
+          });
+          llog('modules: blobbed ' + Object.keys(blobByUrl).length + '/' + urls.length + ', rewrote ' + modScripts.length + ' entry script(s)');
         } catch(e){ llog('module graph fail: ' + ((e&&e.message)||e)); }
       }
 
