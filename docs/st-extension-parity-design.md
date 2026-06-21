@@ -1,9 +1,30 @@
 # SillyTavern-Extension Feature Parity — Implementation Plan (Track TH)
 
-Status: **Plan.** Goal: close the gaps from the ROADMAP "ST-extension feature-parity audit"
-so RP Terminal matches the feature set of **Tavern Helper** (js-slash-runner) and
-**ST-Prompt-Template**. Sequenced by dependency + value into increments TH-1…TH-8, each of
-which ships something testable.
+Status: **Shipped (TH-1…TH-8).** Goal: close the gaps from the ROADMAP "ST-extension
+feature-parity audit" so RP Terminal matches the feature set of **Tavern Helper**
+(js-slash-runner) and **ST-Prompt-Template**. Sequenced by dependency + value into increments
+TH-1…TH-8, each shipped as its own commit with typecheck + the Vitest suite green.
+
+**Implemented:**
+- **TH-1** `0062350` — canonical `tavern_events` enum + emit (GENERATION/MESSAGE/CHAT/
+  STREAM), `eventMakeFirst/Last/WaitFor/RemoveListener/Once`, stream-token forwarding.
+- **TH-2** `6b174ff` — swipes (alternate responses) end-to-end; variable scopes
+  message/character/script + insert/delete; message script API (get/set/create/delete);
+  MESSAGE_UPDATED/SWIPED/DELETED diff events.
+- **TH-3** `f147f67` — card/worldbook/preset/regex read+CRUD script API; template helpers
+  getchar/getwi/getMessageHistory/getCurrentChatName/getPreset, `<%# %>` fix, define, faker.
+- **TH-4** `abcbc4c` — generateRaw (non-persisted, cache-safe), stopGeneration, image hook.
+- **TH-5** `fa5394c` — shared macro engine ({{getvar/setvar/roll/random/pick/…}}); fixed the
+  macros→EJS→regex order (templates ran through the builder for the first time); render-time
+  macro pass on output.
+- **TH-6** `627071e` — embedded interactive HTML in messages (frontend cards) at least
+  privilege; reuses the card-script sandbox + runtime events.
+- **TH-7** `62f8ddc` — audio API (BGM + SFX) behind an `audio` cap.
+- **TH-8** `d9880e4` — STScript subset: pipes / closures / named args / `{{pipe}}` + built-ins.
+
+**Deferred (noted in commits):** `[GENERATE:BEFORE]/[GENERATE:AFTER]` + `@INJECT` positional
+markers (uncertain ST contract); render-time **EJS** on output (quickjs engine is main-side —
+render-time macros cover the common cases); STScript while/loops + the long-tail command set.
 
 **Hard constraint (unchanged):** clean-room only — reimplement the API *surface and behavior*
 from public docs/observed behavior; **never** copy js-slash-runner code (AGPL). ST-Prompt-Template
