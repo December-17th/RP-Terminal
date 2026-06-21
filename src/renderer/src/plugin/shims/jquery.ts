@@ -6,10 +6,15 @@
  * has opened the CSP. ST-DOM-coupled selectors that match nothing degrade to no-ops, as
  * before. NOT real jQuery — a small compatible subset, reimplemented from public behavior.
  */
+import { STRIP_PARENT_RE } from '../sourceRewrite'
+
 export const JQUERY_SHIM = `
 (function () {
   if (window.$ && window.jQuery) return;
   function toArr(x){ return [].slice.call(x); }
+  // Redirect cross-origin runtime reaches (window.top/parent → window) to the frame-local ST
+  // shim — see ../sourceRewrite.ts. Applied to every script we materialize from a loaded card.
+  function stripParent(s){ return String(s==null?'':s).replace(new RegExp(${JSON.stringify(STRIP_PARENT_RE.source)}, 'g'), 'window'); }
   function JQ(nodes){ this.length = nodes.length; for (var i=0;i<nodes.length;i++) this[i]=nodes[i]; }
   var p = JQ.prototype;
   p.each = function(fn){ for (var i=0;i<this.length;i++) fn.call(this[i], i, this[i]); return this; };
@@ -44,7 +49,7 @@ export const JQUERY_SHIM = `
   function llog(m){ try{ parent.postMessage({__rptlog:1,msg:'[jquery.load] '+m},'*'); }catch(_){} }
   // Re-create a parsed <script> so it actually executes (innerHTML-injected scripts don't),
   // preserving its attributes (src/type=module/crossorigin/…) and inline body.
-  function execScript(old, target){ var s=document.createElement('script'); for (var i=0;i<old.attributes.length;i++){ s.setAttribute(old.attributes[i].name, old.attributes[i].value); } if (!old.src) s.textContent = old.textContent; s.addEventListener('error', function(){ llog('script load/instantiate error: ' + (s.src || '(inline ' + (s.type||'classic') + ')') + ' — likely an unresolved import'); }); target.appendChild(s); }
+  function execScript(old, target){ var s=document.createElement('script'); for (var i=0;i<old.attributes.length;i++){ s.setAttribute(old.attributes[i].name, old.attributes[i].value); } if (!old.src) s.textContent = stripParent(old.textContent); s.addEventListener('error', function(){ llog('script load/instantiate error: ' + (s.src || '(inline ' + (s.type||'classic') + ')') + ' — likely an unresolved import'); }); target.appendChild(s); }
   // Prefer the host-mediated fetch (runs in main — no opaque-origin CORS wall); fall back to
   // a direct fetch when the rpt bridge isn't present.
   function getText(u){
@@ -104,7 +109,7 @@ export const JQUERY_SHIM = `
           var srcByUrl = {}; (graph||[]).forEach(function(m){ srcByUrl[m.url] = m.source; });
           // data: URL per module — blob:null modules can't be imported from the opaque origin,
           // but a self-contained data: module imports fine.
-          var mkmod = function(src){ return 'data:text/javascript;charset=utf-8,' + encodeURIComponent(src); };
+          var mkmod = function(src){ return 'data:text/javascript;charset=utf-8,' + encodeURIComponent(stripParent(src)); };
           var urlByUrl = {};
           var depUrls = function(src, base){ return moduleImports(src).map(function(spec){ try { return new URL(spec, base).href; } catch(e){ return null; } }).filter(function(d){ return d && srcByUrl[d]; }); };
           // Always wrap the replacement in DOUBLE quotes: encodeURIComponent leaves raw
@@ -125,7 +130,7 @@ export const JQUERY_SHIM = `
           modScripts.forEach(function(sc){
             var srcAttr = sc.getAttribute('src');
             if (srcAttr) { try { var a=new URL(srcAttr, u).href; if (urlByUrl[a]) sc.setAttribute('src', urlByUrl[a]); } catch(e){} }
-            else sc.textContent = rewrite(sc.textContent||'', u);
+            else sc.textContent = stripParent(rewrite(sc.textContent||'', u));
           });
           llog('modules: ' + Object.keys(urlByUrl).length + '/' + urls.length + ' encoded, rewrote ' + modScripts.length + ' entry script(s)');
           modScripts.forEach(function(sc){ if (!sc.getAttribute('src')) llog('entry head: ' + String(sc.textContent||'').slice(0, 160)); });

@@ -16,6 +16,7 @@
 
 import { BRIDGE_SHIM } from './shims/bridge'
 import { TAVERN_SHIM } from './shims/tavern'
+import { ST_RUNTIME_SHIM } from './shims/stRuntime'
 import { JQUERY_SHIM } from './shims/jquery'
 import { LIB_SHIM, LIB_LOADER } from './shims/lib'
 
@@ -119,6 +120,8 @@ const sandboxHead = (allowRemote: boolean, trusted: boolean): string =>
   `<script>${BRIDGE_SHIM}</script>` +
   `<script>${LIB_SHIM}</script>` +
   `<script>${TAVERN_SHIM}</script>` +
+  // ST/MVU runtime shim depends on TAVERN_SHIM's globals, so it loads after it.
+  `<script>${ST_RUNTIME_SHIM}</script>` +
   `<script>${JQUERY_SHIM}</script>` +
   ERROR_REPORTER +
   (allowRemote ? LIB_LOADER : '')

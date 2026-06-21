@@ -88,6 +88,17 @@ describe('buildMessageHtmlDoc (TH-6)', () => {
   })
 })
 
+describe('ST runtime shim (task #2)', () => {
+  it('injects a frame-local SillyTavern + Mvu so template cards find their host', () => {
+    const doc = buildMessageHtmlDoc('<div id="app"></div><script>x()</script>')
+    expect(doc).toContain('window.SillyTavern')
+    expect(doc).toContain('window.Mvu')
+    // env-check gate: EjsTemplate reported enabled + a synchronous getCurrentMessageId.
+    expect(doc).toContain('EjsTemplate')
+    expect(doc).toContain('window.getCurrentMessageId')
+  })
+})
+
 describe('jQuery shim (frontend cards)', () => {
   it('ships a real DOM-backed mini-jQuery with a working .load', () => {
     const doc = buildScriptSrcDoc([{ name: 's', code: 'x()' }])

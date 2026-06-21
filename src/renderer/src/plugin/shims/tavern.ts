@@ -183,7 +183,7 @@ export const TAVERN_SHIM = `
   window.triggerSlash = TH.triggerSlash;
   // TH runtime probes used by frontend cards' environment checks. We report our TH-compat
   // level; waitGlobalInitialized resolves once a named global appears (else times out).
-  window.getTavernHelperVersion = function(){ return '4.3.17'; };
+  window.getTavernHelperVersion = function(){ return '4.8.11'; };
   TH.getTavernHelperVersion = window.getTavernHelperVersion;
   window.waitGlobalInitialized = function(name){
     return new Promise(function(resolve, reject){
