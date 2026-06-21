@@ -159,6 +159,11 @@ export const BRIDGE_SHIM = `
     on: function (name, cb) {
       if (typeof cb !== 'function') return;
       (__handlers[name] = __handlers[name] || []).push(cb);
+    },
+    // Dispatch an event to this frame's own listeners (script-side emit, e.g. button clicks).
+    emit: function (name, payload) {
+      var hs = __handlers[name];
+      if (hs) hs.slice().forEach(function (h) { try { h(payload); } catch (e) { console.error(e); } });
     }
   };
   window.rpt = rpt;
@@ -227,8 +232,8 @@ export const TAVERN_SHIM = `
       rpt.on(name, function (p) { if (!fired) { fired = true; cb(p); } });
     },
     eventMakeFirst: function (name, cb) { return rpt.on(name, cb); },
-    // Host→script events are one-way; script-side emit/remove are best-effort no-ops.
-    eventEmit: function () { return Promise.resolve(); },
+    // Dispatch to this frame's own eventOn listeners (e.g. declarative button clicks).
+    eventEmit: function (name, payload) { rpt.emit(name, payload); return Promise.resolve(); },
     eventRemoveListener: function () {},
     eventClearEvent: function () {},
     registerSlashCommand: function (name, cb) { return rpt.slash.registerCommand(name, cb); },

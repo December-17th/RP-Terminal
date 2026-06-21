@@ -6,6 +6,7 @@ import {
   extractImports,
   extractImportHosts,
   runtimeImportHosts,
+  normalizeImportedScripts,
   saveScript,
   listScripts,
   getScript,
@@ -66,6 +67,44 @@ describe('extractImportHosts / runtimeImportHosts', () => {
       { name: 'c', code: 'plain()' }
     ]
     expect(runtimeImportHosts(scripts).sort()).toEqual(['one.cdn', 'two.cdn'])
+  })
+})
+
+describe('normalizeImportedScripts (Tavern Helper JSON)', () => {
+  it('maps a TH script: content→code, name/enabled, visible buttons→auto-registerButton', () => {
+    const th = {
+      type: 'script',
+      enabled: true,
+      name: '【命定之诗】MVU beta',
+      content: "import 'https://cdn/bundle.js';",
+      button: {
+        enabled: true,
+        buttons: [
+          { name: '重新读取初始变量', visible: true },
+          { name: '清除旧楼层变量', visible: false } // hidden → skipped
+        ]
+      }
+    }
+    const [s] = normalizeImportedScripts(th)
+    expect(s.name).toBe('【命定之诗】MVU beta')
+    expect(s.enabled).toBe(true)
+    expect(s.code).toContain("import 'https://cdn/bundle.js';") // original content kept
+    expect(s.code).toContain('rpt.ui.registerButton') // buttons baked in
+    expect(s.code).toContain('重新读取初始变量')
+    expect(s.code).not.toContain('清除旧楼层变量') // the hidden one is dropped
+  })
+
+  it('accepts an array, the native {name,code} shape, and honors enabled:false', () => {
+    const out = normalizeImportedScripts([
+      { type: 'script', name: 'a', content: 'x()' },
+      { name: 'native', code: 'y()' },
+      { type: 'script', name: 'off', content: 'z()', enabled: false },
+      { name: 'junk' }, // no code → skipped
+      null
+    ])
+    expect(out.map((s) => s.name)).toEqual(['a', 'native', 'off'])
+    expect(out.find((s) => s.name === 'off')!.enabled).toBe(false)
+    expect(out.find((s) => s.name === 'a')!.code).toBe('x()') // no buttons → code unchanged
   })
 })
 

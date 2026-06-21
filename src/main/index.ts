@@ -210,6 +210,19 @@ app.whenReady().then(() => {
   ipcMain.handle('delete-script', (_, profileId, file) =>
     scriptService.deleteScript(profileId, file)
   )
+  ipcMain.handle('import-script-dialog', async (event, profileId, scope, owner) => {
+    const { dialog } = require('electron')
+    const result = await dialog.showOpenDialog(BrowserWindow.fromWebContents(event.sender)!, {
+      properties: ['openFile', 'multiSelections'],
+      filters: [{ name: 'Tavern Helper / RPT Scripts', extensions: ['json'] }]
+    })
+    if (result.canceled) return 0
+    let count = 0
+    for (const fp of result.filePaths) {
+      count += scriptService.importScriptsFromFile(profileId, fp, scope || 'global', owner)
+    }
+    return count
+  })
   // The merged runtime script set for a chat: card-embedded (World) + active-scope store
   // scripts (raw — remote `import`s load natively in the sandbox under the remoteScripts
   // grant, 1B). Also reports the remote hosts those scripts import from (grant + CSP).

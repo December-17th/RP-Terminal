@@ -4,6 +4,7 @@ import { ScopeSection } from './ScopeSection'
 import { ScriptManager } from './ScriptManager'
 import { useScriptsStore, ScriptInfo, ArtifactScope } from '../stores/scriptsStore'
 import { useCardScriptsStore } from '../stores/cardScriptsStore'
+import { useToastStore } from '../stores/toastStore'
 
 interface Props {
   profileId: string
@@ -66,6 +67,15 @@ export const ScriptsPanel: React.FC<Props> = ({
     // Re-read so the editor opens on the freshly-created script.
     const created = useScriptsStore.getState().scripts.find((s) => s.file === file)
     if (created) setEditing(created)
+  }
+
+  // Import Tavern Helper / native script JSON files. Default to World scope (bound to the
+  // active card) when one is loaded — these scripts usually belong to a specific world —
+  // else Global. The user can rescope afterward.
+  const importScripts = async (): Promise<void> => {
+    const scope: ArtifactScope = activeCardId ? 'world' : 'global'
+    const n = await useScriptsStore.getState().importFiles(profileId, scope, ownerFor(scope))
+    if (n) useToastStore.getState().push(`Imported ${n} script${n === 1 ? '' : 's'} (${scope})`)
   }
 
   const changeScope = (s: ScriptInfo, scope: ArtifactScope): void => {
@@ -136,6 +146,9 @@ export const ScriptsPanel: React.FC<Props> = ({
       <div className="panel-header">
         <h3>Scripts</h3>
         <div className="panel-header-actions">
+          <button onClick={importScripts} title="Import script JSON files (Tavern Helper format)">
+            Import
+          </button>
           {activeCardId && (
             <button
               className={`rpt-script-toggle ${runtimeOn ? 'on' : ''}`}

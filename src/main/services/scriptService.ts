@@ -203,3 +203,74 @@ export const runtimeImportHosts = (scripts: StoredScript[]): string[] => {
   for (const s of scripts) for (const h of extractImportHosts(s.code)) hosts.add(h)
   return Array.from(hosts)
 }
+
+// --- Import from JSON (Tavern Helper script format) -------------------------
+
+export interface ImportedScript {
+  name: string
+  code: string
+  enabled: boolean
+}
+
+/** Append auto-`registerButton` calls for a TH script's declarative `button.buttons[]`
+ * so they appear in the ☰ Actions menu; clicking one emits the button name as a local
+ * event (`eventEmit`) the script's content can listen for via `eventOn`. */
+const withButtons = (code: string, buttons: string[]): string => {
+  if (buttons.length === 0) return code
+  return (
+    code +
+    `\n;(function(){var __b=${JSON.stringify(buttons)};` +
+    `if(typeof rpt!=='undefined'&&rpt.ui&&rpt.ui.registerButton){__b.forEach(function(n){` +
+    `rpt.ui.registerButton({id:n,label:n},function(){try{if(typeof eventEmit==='function')eventEmit(n);}catch(e){}});});}})();\n`
+  )
+}
+
+/**
+ * Normalize an imported scripts payload — a Tavern Helper script object
+ * (`{type:'script', name, enabled, content, button:{buttons:[{name,visible}]}}`), an array
+ * of them, or our native `{name, code}` — into store scripts. The declarative buttons are
+ * baked into the code as auto-registered menu buttons. Pure.
+ */
+export const normalizeImportedScripts = (raw: any): ImportedScript[] => {
+  const items = Array.isArray(raw) ? raw : [raw]
+  const out: ImportedScript[] = []
+  for (const it of items) {
+    if (!it || typeof it !== 'object') continue
+    const code =
+      typeof it.content === 'string' ? it.content : typeof it.code === 'string' ? it.code : ''
+    if (!code) continue
+    const buttons = Array.isArray(it.button?.buttons)
+      ? it.button.buttons
+          .filter((b: any) => b && b.visible !== false && b.name)
+          .map((b: any) => String(b.name))
+      : []
+    out.push({
+      name: (typeof it.name === 'string' && it.name) || 'Imported Script',
+      code: withButtons(code, buttons),
+      enabled: it.enabled !== false
+    })
+  }
+  return out
+}
+
+/** Import one JSON file of TH/native scripts into the store at a scope. Returns the count. */
+export const importScriptsFromFile = (
+  profileId: string,
+  filePath: string,
+  scope: ArtifactScope = 'global',
+  owner?: string
+): number => {
+  let raw: any
+  try {
+    raw = JSON.parse(fs.readFileSync(filePath, 'utf-8'))
+  } catch {
+    return 0
+  }
+  let count = 0
+  for (const s of normalizeImportedScripts(raw)) {
+    const file = saveScript(profileId, { name: s.name, code: s.code }, scope, owner)
+    if (!s.enabled) setScriptDisabled(profileId, file, true)
+    count++
+  }
+  return count
+}

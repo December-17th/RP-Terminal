@@ -133,6 +133,8 @@ const api = {
     ipcRenderer.invoke('script-set-disabled', profileId, file, disabled),
   deleteScript: (profileId: string, file: string) =>
     ipcRenderer.invoke('delete-script', profileId, file),
+  importScriptDialog: (profileId: string, scope?: string, owner?: string) =>
+    ipcRenderer.invoke('import-script-dialog', profileId, scope, owner),
   getRuntimeScripts: (profileId: string, cardId: string | null, chatId: string | null) =>
     ipcRenderer.invoke('get-runtime-scripts', profileId, cardId, chatId),
   getRegexRules: (profileId: string, file: string) =>

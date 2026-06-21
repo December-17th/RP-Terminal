@@ -31,6 +31,7 @@ interface ScriptsState {
   ) => Promise<void>
   setDisabled: (profileId: string, file: string, disabled: boolean) => Promise<void>
   remove: (profileId: string, file: string) => Promise<void>
+  importFiles: (profileId: string, scope: ArtifactScope, owner?: string) => Promise<number>
 }
 
 export const useScriptsStore = create<ScriptsState>((set, get) => ({
@@ -65,5 +66,11 @@ export const useScriptsStore = create<ScriptsState>((set, get) => ({
   remove: async (profileId, file) => {
     await window.api.deleteScript(profileId, file)
     await get().load(profileId)
+  },
+
+  importFiles: async (profileId, scope, owner) => {
+    const n = await window.api.importScriptDialog(profileId, scope, owner)
+    if (n) await get().load(profileId)
+    return n || 0
   }
 }))
