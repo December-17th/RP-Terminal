@@ -25,8 +25,8 @@ const api = {
   applyVariableOps: (profileId: string, chatId: string, floor: number, ops: unknown[]) =>
     ipcRenderer.invoke('apply-variable-ops', profileId, chatId, floor, ops),
   // WebContentsView card-UI panels (spike): position/lifecycle, fire-and-forget.
-  wcvEnsure: (id: string, bounds: unknown, url: string) =>
-    ipcRenderer.send('wcv-ensure', id, bounds, url),
+  wcvEnsure: (id: string, bounds: unknown, url: string, ctx: unknown) =>
+    ipcRenderer.send('wcv-ensure', id, bounds, url, ctx),
   wcvSetBounds: (id: string, bounds: unknown) => ipcRenderer.send('wcv-set-bounds', id, bounds),
   wcvSetVisible: (id: string, visible: boolean) =>
     ipcRenderer.send('wcv-set-visible', id, visible),

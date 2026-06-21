@@ -47,9 +47,11 @@ export const ensure = (
   id: string,
   bounds: Bounds,
   url: string,
-  ctx: { profileId: string; chatId: string }
+  ctx: { profileId: string; chatId: string } = { profileId: '', chatId: '' }
 ): void => {
   if (!mainWindow) return
+  // Defensive: a fire-and-forget IPC call with a missing/garbled ctx must never crash main.
+  if (!ctx || typeof ctx !== 'object') ctx = { profileId: '', chatId: '' }
   let slot = slots.get(id)
   if (!slot) {
     const view = new WebContentsView({
