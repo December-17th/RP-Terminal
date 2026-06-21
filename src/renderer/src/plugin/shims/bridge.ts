@@ -57,6 +57,10 @@ export const BRIDGE_SHIM = `
       deleteMessages: function (fromFloor) { return __rpc('chat.deleteMessages', [fromFloor]); }
     },
     generate: function (text) { return __rpc('generate', [String(text == null ? '' : text)]); },
+    // TH-4: custom one-off generation (returns text, not persisted) + stop + image hook.
+    generateRaw: function (config) { return __rpc('generate.raw', [config || {}]); },
+    stopGeneration: function () { return __rpc('generate.stop', []); },
+    generateImage: function (prompt) { return __rpc('generate.image', [String(prompt == null ? '' : prompt)]); },
     ui: {
       toast: function (msg) { return __rpc('ui.toast', [String(msg)]); },
       // Standalone plugins only: request a visible, titled panel in the shell.

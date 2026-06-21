@@ -91,6 +91,11 @@ const api = {
     ipcRenderer.invoke('plugin-delete-messages', profileId, chatId, fromIndex),
   pluginCreateMessage: (profileId: string, chatId: string, msg: any) =>
     ipcRenderer.invoke('plugin-create-message', profileId, chatId, msg),
+  // TH-4 generation control
+  generateRaw: (profileId: string, chatId: string, config: any) =>
+    ipcRenderer.invoke('generate-raw', profileId, chatId, config),
+  generateImage: (profileId: string, prompt: string) =>
+    ipcRenderer.invoke('generate-image', profileId, prompt),
   // TH-3 read/CRUD API
   scriptCardData: (profileId: string, chatId: string, cardId?: string) =>
     ipcRenderer.invoke('script-card-data', profileId, chatId, cardId),

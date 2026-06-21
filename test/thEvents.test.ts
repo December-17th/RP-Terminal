@@ -161,3 +161,19 @@ describe('sandbox shim wiring (TH-3)', () => {
     }
   })
 })
+
+describe('sandbox shim wiring (TH-4)', () => {
+  const doc = buildScriptSrcDoc([{ name: 's', code: 'noop()' }])
+
+  it('exposes generation control on the rpt bridge', () => {
+    expect(doc).toContain('generateRaw: function (config)')
+    expect(doc).toContain('stopGeneration: function ()')
+    expect(doc).toContain('generateImage: function (prompt)')
+  })
+
+  it('maps the TH generation-control names', () => {
+    expect(doc).toContain('window.generateRaw = TH.generateRaw')
+    expect(doc).toContain('window.stopGeneration = TH.stopGeneration')
+    expect(doc).toContain('window.generateImage = TH.generateImage')
+  })
+})

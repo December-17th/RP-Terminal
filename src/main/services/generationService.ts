@@ -13,7 +13,7 @@ import {
 } from './chatService'
 import { getAllFloors, getFloor, saveFloor } from './floorService'
 import { normalizeSwipes } from './swipeHelpers'
-import { buildPrompt, buildScanText, fitToBudget } from './promptBuilder'
+import { buildPrompt, buildScanText, fitToBudget, ChatMessage } from './promptBuilder'
 import { getPromptRules } from './regexService'
 import { loadGlobals, saveGlobals } from './templateService'
 import { streamProvider, DeltaCallback } from './apiService'
@@ -273,6 +273,80 @@ export const generate = async (
 
   appendFloor(profileId, chatId, floor)
   return floor
+}
+
+/**
+ * Custom one-off generation (TH-4 `generateRaw`). Builds a minimal message array from the
+ * config — optional system prompt, optional recent history, and the user input — applies
+ * sampler/max_tokens overrides over the active preset, and returns the raw text WITHOUT
+ * persisting a floor. Because it never touches the chat transcript, it can't disturb the
+ * L1–L4 prompt-cache layering of the real conversation. Aborts via the same controller map
+ * as a normal turn (so `stopGeneration` cancels it too).
+ */
+export interface RawGenConfig {
+  userInput?: string
+  prompt?: string
+  systemPrompt?: string
+  /** Include this many most-recent floors as history (default 0 = fully raw). */
+  maxChatHistory?: number
+  maxTokens?: number
+  /** Sampler parameter overrides merged over the active preset (temperature, top_p, …). */
+  overrides?: Record<string, unknown>
+}
+
+export const generateRaw = async (
+  profileId: string,
+  chatId: string,
+  config: RawGenConfig = {},
+  onDelta: DeltaCallback = () => {}
+): Promise<string> => {
+  const settings = getSettings(profileId)
+  const preset = getActivePreset(profileId)
+
+  const messages: ChatMessage[] = []
+  if (config.systemPrompt) messages.push({ role: 'system', content: String(config.systemPrompt) })
+  const histN = Math.max(0, Number(config.maxChatHistory) || 0)
+  if (histN > 0) {
+    const chat = getChat(profileId, chatId)
+    const floors = chat ? getAllFloors(profileId, chatId, chat.floor_count) : []
+    for (const f of floors.slice(-histN)) {
+      if (f.user_message.content) messages.push({ role: 'user', content: f.user_message.content })
+      if (f.response.content) messages.push({ role: 'assistant', content: f.response.content })
+    }
+  }
+  messages.push({ role: 'user', content: String(config.userInput ?? config.prompt ?? '') })
+
+  const params = {
+    ...preset.parameters,
+    ...(config.overrides || {}),
+    ...(config.maxTokens != null ? { max_tokens: config.maxTokens } : {})
+  }
+
+  const controller = new AbortController()
+  activeControllers.set(chatId, controller)
+  log('request', `→ generateRaw · ${messages.length} msg(s)`, messages)
+  try {
+    return await streamProvider(settings, messages, params, onDelta, controller.signal)
+  } catch (err: any) {
+    if (controller.signal.aborted) return ''
+    log('error', '✗ generateRaw failed', err?.message || String(err))
+    throw err
+  } finally {
+    activeControllers.delete(chatId)
+  }
+}
+
+/**
+ * Image-generation hook (TH-4). No image provider is wired yet, so this is a logged
+ * stub that returns null; the API surface exists so scripts/cards can call it and
+ * degrade gracefully until a provider is configured.
+ */
+export const generateImage = async (
+  _profileId: string,
+  prompt: string
+): Promise<string | null> => {
+  log('info', `image generation requested (no provider configured): ${String(prompt).slice(0, 80)}`)
+  return null
 }
 
 /**

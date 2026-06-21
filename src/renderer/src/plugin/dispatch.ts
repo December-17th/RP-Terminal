@@ -92,6 +92,20 @@ export const dispatchRpc = async (method: string, args: any[], ctx: DispatchCtx)
       await ctx.triggerGenerate(String(args[0] ?? ''))
       return true
     }
+    case 'generate.raw': {
+      if (!(await ctx.ensure('generate'))) permDenied('generate')
+      return window.api.generateRaw(ctx.profileId, ctx.getChatId() || '', args[0] || {})
+    }
+    case 'generate.stop': {
+      // Low-risk: stopping is always allowed.
+      const chatId = ctx.getChatId()
+      if (chatId) await window.api.abortGeneration(chatId)
+      return true
+    }
+    case 'generate.image': {
+      if (!(await ctx.ensure('generate'))) permDenied('generate')
+      return window.api.generateImage(ctx.profileId, String(args[0] ?? ''))
+    }
     case 'ui.toast': {
       if (!(await ctx.ensure('ui:toast'))) permDenied('ui:toast')
       ctx.toast(String(args[0] ?? ''))

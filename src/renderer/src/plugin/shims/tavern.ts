@@ -118,7 +118,19 @@ export const TAVERN_SHIM = `
       var t = typeof arg === 'string' ? arg : (arg && (arg.user_input || arg.userInput || arg.prompt)) || '';
       return rpt.generate(t);
     },
-    generateRaw: function (arg) { return TH.generate(arg); },
+    // generateRaw: a one-off custom generation (returns text, NOT added to the chat).
+    generateRaw: function (arg) {
+      var c = (typeof arg === 'string') ? { userInput: arg } : (arg || {});
+      return rpt.generateRaw({
+        userInput: c.user_input || c.userInput || c.prompt || '',
+        systemPrompt: c.system_prompt || c.systemPrompt,
+        maxChatHistory: c.max_chat_history != null ? c.max_chat_history : c.maxChatHistory,
+        maxTokens: c.max_tokens != null ? c.max_tokens : c.maxTokens,
+        overrides: c.overrides || c.generation_config || {}
+      });
+    },
+    stopGeneration: function () { return rpt.stopGeneration(); },
+    generateImage: function (prompt) { return rpt.generateImage(prompt); },
     eventOn: function (name, cb) { return rpt.on(name, cb); },
     eventOnce: function (name, cb) { return rpt.once(name, cb); },
     eventMakeFirst: function (name, cb) { return rpt.onFirst(name, cb); },
@@ -157,6 +169,9 @@ export const TAVERN_SHIM = `
   window.getPreset = TH.getPreset;
   window.getTavernRegexes = TH.getTavernRegexes;
   window.formatAsTavernRegexedString = TH.formatAsTavernRegexedString;
+  window.generateRaw = TH.generateRaw;
+  window.stopGeneration = TH.stopGeneration;
+  window.generateImage = TH.generateImage;
   window.triggerSlash = TH.triggerSlash;
   window.eventOn = TH.eventOn;
   window.eventOnce = TH.eventOnce;

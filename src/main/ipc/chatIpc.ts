@@ -40,6 +40,20 @@ export const registerChatIpc = (ipcMain: IpcMain): void => {
   })
   ipcMain.handle('abort-generation', (_, chatId) => generationService.abortGeneration(chatId))
 
+  // TH-4 generation control: a custom one-off generation (not persisted, not streamed to
+  // the chat view) + an image-generation hook.
+  ipcMain.handle('generate-raw', async (_, profileId, chatId, config) => {
+    try {
+      return await generationService.generateRaw(profileId, chatId, config)
+    } catch (err: any) {
+      logService.log('error', '✗ generate-raw failed', err?.message || String(err))
+      throw err
+    }
+  })
+  ipcMain.handle('generate-image', (_, profileId, prompt) =>
+    generationService.generateImage(profileId, prompt)
+  )
+
   // TH-2 swipes: switch the active alternate, or generate a new one for the latest floor.
   ipcMain.handle('set-active-swipe', (_, profileId, chatId, floorIndex, swipeId) =>
     floorService.setActiveSwipe(profileId, chatId, floorIndex, swipeId)
