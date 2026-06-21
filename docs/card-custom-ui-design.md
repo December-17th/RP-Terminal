@@ -53,6 +53,17 @@ and can write message variables. This is distinct from a panel and changes the f
 - **Freeze trade-off is inherent** to inline interactive frames (same-process) and WCV can't fix it.
   Prefer native rendering for *declarative* beautifications (safe/fast); gate/limit heavy (Vue)
   interactive frames; run only the visible/latest message's frame; keep the watchdog.
+- **History rendering (single-floor pager):** only the current page's frames are mounted, so the freeze
+  risk is bounded to one floor — not the whole history. Static/regex beautifications already render
+  per-floor-correctly (`ChatView`'s macro+regex pass uses each floor's `f.variables`). The gap: live
+  script/Vue frames receive only `html` (no floor id), so they'd read/write the LATEST floor's vars
+  regardless of which page is shown. To render history correctly:
+  (1) thread the floor id down (`ChatView → MessageContent → MessageScriptFrame`) so a frame binds to
+  THAT floor's variables (messageId) for reads/writes;
+  (2) key frames by floor so flipping a page cleanly remounts with the new floor's content + vars;
+  (3) render history frames **read-only** against the floor's snapshot, and run the live, writable frame
+  only on the current/latest floor — keeps flips cheap (no Vue re-boot in history), avoids mutating past
+  state, and keeps at most ONE live frame.
 
 ## What the StatusMenuBuilder actually produces (from `dist/layout-rpg.json`)
 
