@@ -14,6 +14,20 @@ and — new — **WRITES message variables** (not just displays them). Two autho
 Reference target: [KritBlade/MVU_Zod_StatusMenuBuilder](https://github.com/KritBlade/MVU_Zod_StatusMenuBuilder),
 a drag-and-drop builder that generates these status menus for ST/MVU cards.
 
+## Decisions (2026-06-21)
+
+- **Frame model = `WebContentsView`, static card-determined layout** (not webview-in-a-resizable-panel).
+- **Manual/panel edits are transient** — the write-back bridge mutates `stat_data` directly and does
+  NOT record replayable ops, so `reevaluateVariables` (rebuild from the model's stored
+  `<UpdateVariable>`) resets to model-only state. The Status panel's Re-evaluate button is, by design,
+  "discard my edits and rebuild from the model."
+- **Any web app (incl. a Vue SPA) runs in a `WebContentsView`** — it's a full Chromium page, so a
+  card's Vue frontend (e.g. 命定之诗) WILL run, and the separate process solves the freeze. The gating
+  work is the clean-room ST/TavernHelper/Mvu **runtime shim** the card's code calls (task #2), which is
+  **identical regardless of frame** (WCV / webview / iframe) — the frame buys isolation + integration,
+  not API compatibility. Bundle loading (the card's built assets, possibly fetched from a CDN) + CSP
+  must also be handled.
+
 ## What the StatusMenuBuilder actually produces (from `dist/layout-rpg.json`)
 
 Its output is a **declarative JSON config (~72 KB), not runnable code**:
@@ -49,8 +63,11 @@ MODIFY message variables. New capability (the heart of this feature):
 - "Message variables" (TavernHelper message scope) == our `floor.variables`. Default target = the
   latest floor (the current message).
 - Optionally re-run the card's `globalLogic` / MVU recompute after a write so derived stats update.
-- Guardrails: validate ops against `data_schema`/`state_schema` where present; user/script writes
-  persist losslessly alongside the model's, so "re-evaluate" still works.
+- Guardrails: validate ops against `data_schema`/`state_schema` where present.
+- **Re-evaluate interaction (decided):** bridge writes mutate `stat_data` directly and are NOT recorded
+  as replayable ops, so `reevaluateVariables` (rebuild from the model's stored `<UpdateVariable>`)
+  resets to model-only state — manual/panel edits are **transient by design**. (Also: `applyVariableOps`
+  currently overwrites the floor's `delta_data` with the user-op deltas; cosmetic, fix when convenient.)
 
 ## Option 1 — Native UI from a card-imported config (recommended first)
 
