@@ -119,6 +119,7 @@ export const JQUERY_SHIM = `
             else sc.textContent = rewrite(sc.textContent||'', u);
           });
           llog('modules: blobbed ' + Object.keys(blobByUrl).length + '/' + urls.length + ', rewrote ' + modScripts.length + ' entry script(s)');
+          modScripts.forEach(function(sc){ if (!sc.getAttribute('src')) llog('entry head: ' + String(sc.textContent||'').slice(0, 160)); });
         } catch(e){ llog('module graph fail: ' + ((e&&e.message)||e)); }
       }
 
