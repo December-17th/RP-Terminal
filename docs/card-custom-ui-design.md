@@ -90,6 +90,27 @@ and uses the TavernHelper/Mvu shim to read/write message variables.
 
 This is the design doc's "webview card-UI (B)", generalized to any panel + write-back.
 
+### iframe vs webview (why webview, and when an iframe is OK)
+
+In Chrome, sandboxed/cross-origin iframes are out-of-process (OOPIF). **In Electron they are not**
+(electron#17868) — a same-process iframe shares the host renderer's thread, so a card's synchronous
+infinite loop freezes the whole app (the bug that shelved frontend cards; the `IsolateSandboxedIframes`
+flag had no effect from the non-sandboxed renderer). An iframe gives two separate things, only one of
+which it can deliver here:
+- **Security / containment ✅** — `sandbox="allow-scripts"` (no `allow-same-origin`) + CSP + DOMPurify
+  stops the card touching the parent DOM, cookies, or `window.api`.
+- **Compute isolation ❌** — a runaway script blocks the shared thread; the heartbeat watchdog can't
+  even fire to recover it.
+
+So: **iframe** is acceptable for TRUSTED cards or if we accept "a bad card can hang the app — close &
+reopen" (today's click-to-run gate), and it's simpler to embed/postMessage/theme. **webview** is the
+only in-window mechanism that survives a runaway card (separate process). `utilityProcess`/Workers
+isolate compute but have no DOM, so they can't render UI.
+
+**Option 1 sidesteps the whole question**: native render + field-logic in quickjs (interruptible via a
+deadline/interrupt handler) is secure AND hang-proof with no frame. Since the StatusMenuBuilder output
+is declarative, Option 1 covers that ecosystem without running arbitrary author DOM/JS.
+
 ## How a card picks an option
 
 Under `data.extensions.rp_terminal`:
