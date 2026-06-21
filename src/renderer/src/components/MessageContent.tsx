@@ -2,6 +2,8 @@ import React, { useEffect, useMemo, useRef, useState } from 'react'
 import Markdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import DOMPurify from 'dompurify'
+import { isInteractiveHtml } from '../plugin/bridgeShim'
+import { MessageScriptFrame } from './MessageScriptFrame'
 
 interface Props {
   content: string
@@ -34,7 +36,13 @@ export const MessageContent: React.FC<Props> = ({ content, css, onContextMenu })
     >
       {parts.map((p, i) =>
         p.type === 'html' ? (
-          <HtmlFrame key={i} html={p.text} css={css} onContextMenu={onContextMenu} />
+          // An html block with a <script> is an interactive "frontend card" (TH-6) —
+          // run it in the scripted sandbox; otherwise render it as static sanitized HTML.
+          isInteractiveHtml(p.text) ? (
+            <MessageScriptFrame key={i} html={p.text} />
+          ) : (
+            <HtmlFrame key={i} html={p.text} css={css} onContextMenu={onContextMenu} />
+          )
         ) : p.text.trim() ? (
           <Markdown key={i} remarkPlugins={[remarkGfm]}>
             {p.text}

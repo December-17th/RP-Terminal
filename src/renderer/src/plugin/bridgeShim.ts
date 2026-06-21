@@ -79,18 +79,30 @@ export interface CardScript {
  * remote graph when `allowRemote`); the rest run as classic scripts wrapped in try/catch.
  * Errors (syntax, runtime, and unhandled rejections) are surfaced to the host's Logs panel.
  */
+// Surfaces syntax/runtime/unhandled-rejection errors to the host's Logs panel. Shared by
+// the card-script doc and the message-HTML doc (TH-6).
+const ERROR_REPORTER =
+  `<script>` +
+  `function __rptError(name, e){try{parent.postMessage({__rptlog:1,msg:'['+name+'] '+((e&&e.message)||e)},'*')}catch(_){}}` +
+  `window.addEventListener('error',function(ev){__rptError('script', (ev.message||(ev.error&&ev.error.message)||'error')+' @'+(ev.lineno||'?')+':'+(ev.colno||'?'))});` +
+  `window.addEventListener('unhandledrejection',function(ev){var r=ev.reason;__rptError('script','unhandled rejection: '+((r&&r.message)||r))});` +
+  `</script>`
+
+/** The shim/CSP/style head shared by both sandbox documents. */
+const sandboxHead = (allowRemote: boolean): string =>
+  `<!doctype html><html><head><meta charset="utf-8">` +
+  `<meta http-equiv="Content-Security-Policy" content="${buildCsp(allowRemote)}">` +
+  `<style>${HOST_STYLE}</style></head><body>` +
+  `<script>${BRIDGE_SHIM}</script>` +
+  `<script>${LIB_SHIM}</script>` +
+  `<script>${TAVERN_SHIM}</script>` +
+  ERROR_REPORTER +
+  (allowRemote ? LIB_LOADER : '')
+
 export const buildScriptSrcDoc = (
   scripts: CardScript[],
   opts: { allowRemote?: boolean } = {}
 ): string => {
-  // Defined first so each user-script tag's catch + the global handlers can use it.
-  const errorReporter =
-    `<script>` +
-    `function __rptError(name, e){try{parent.postMessage({__rptlog:1,msg:'['+name+'] '+((e&&e.message)||e)},'*')}catch(_){}}` +
-    `window.addEventListener('error',function(ev){__rptError('script', (ev.message||(ev.error&&ev.error.message)||'error')+' @'+(ev.lineno||'?')+':'+(ev.colno||'?'))});` +
-    `window.addEventListener('unhandledrejection',function(ev){var r=ev.reason;__rptError('script','unhandled rejection: '+((r&&r.message)||r))});` +
-    `</script>`
-
   const userScripts = scripts
     .map((s) =>
       isModuleScript(s.code)
@@ -101,17 +113,26 @@ export const buildScriptSrcDoc = (
     )
     .join('')
 
-  return (
-    `<!doctype html><html><head><meta charset="utf-8">` +
-    `<meta http-equiv="Content-Security-Policy" content="${buildCsp(!!opts.allowRemote)}">` +
-    `<style>${HOST_STYLE}</style></head><body>` +
-    `<script>${BRIDGE_SHIM}</script>` +
-    `<script>${LIB_SHIM}</script>` +
-    `<script>${TAVERN_SHIM}</script>` +
-    errorReporter +
-    // Real lodash/zod (for module scripts) only when network is available for this world.
-    (opts.allowRemote ? LIB_LOADER : '') +
-    userScripts +
-    `</body></html>`
-  )
+  return sandboxHead(!!opts.allowRemote) + userScripts + `</body></html>`
 }
+
+/** Strip a full-document wrapper down to its body so model HTML inlines into our host doc. */
+const extractBody = (html: string): string => {
+  const body = /<body[^>]*>([\s\S]*?)<\/body>/i.exec(html)
+  if (body) return body[1]
+  // Drop a stray <!doctype>/<html>/<head> if present but no <body> tag.
+  return html.replace(/<!doctype[^>]*>/i, '').replace(/<\/?html[^>]*>/gi, '').replace(/<head[\s\S]*?<\/head>/i, '')
+}
+
+/**
+ * Build the sandboxed document for an interactive HTML block embedded in a chat message
+ * (TH-6 "frontend card"). The model-authored markup + its <script> tags run inside the
+ * same opaque-origin, no-`allow-same-origin` sandbox as card scripts, with the full `rpt`
+ * API available — but the host gates it at LEAST privilege (model HTML is less trusted than
+ * card scripts). Network stays off by default (allowRemote=false).
+ */
+export const buildMessageHtmlDoc = (html: string, opts: { allowRemote?: boolean } = {}): string =>
+  sandboxHead(!!opts.allowRemote) + extractBody(html) + `</body></html>`
+
+/** True when an html block carries a <script> (→ render as an interactive sandbox, not static). */
+export const isInteractiveHtml = (html: string): boolean => /<script[\s>]/i.test(html)
