@@ -2,6 +2,7 @@ import { create } from 'zustand'
 import { useToastStore } from './toastStore'
 import { useRegexStore } from './regexStore'
 import { usePresetStore } from './presetStore'
+import { useChatStore } from './chatStore'
 
 export interface CharacterCard {
   id: string
@@ -31,19 +32,29 @@ export const useCharacterStore = create<CharacterState>((set) => ({
       set({ activeCharacter: characters[0] })
     }
   },
-  setActiveCharacter: (char) => set({ activeCharacter: char }),
+  setActiveCharacter: (char) =>
+    set((state) => {
+      // Switching to a different world invalidates the open session (it belongs to the
+      // previous world) — drop it so a stale chat isn't rendered for the new world.
+      if (char.id !== state.activeCharacter?.id) useChatStore.getState().clearActiveChat()
+      return { activeCharacter: char }
+    }),
   deleteCharacter: async (profileId, characterId) => {
     await window.api.deleteCharacter(profileId, characterId)
     const characters = await window.api.getCharacters(profileId)
-    set((state) => ({
-      characters,
-      activeCharacter: state.activeCharacter?.id === characterId ? null : state.activeCharacter
-    }))
+    set((state) => {
+      const wasActive = state.activeCharacter?.id === characterId
+      // The deleted world's session (+ its loaded floors) must not linger.
+      if (wasActive) useChatStore.getState().clearActiveChat()
+      return { characters, activeCharacter: wasActive ? null : state.activeCharacter }
+    })
   },
   importCharacter: async (profileId: string) => {
     const res = await window.api.importCharacterDialog(profileId)
     if (!res?.id) return
     const characters = await window.api.getCharacters(profileId)
+    // A freshly imported world has no open session yet — clear any stale one.
+    useChatStore.getState().clearActiveChat()
     set({ characters, activeCharacter: characters.find((c: any) => c.id === res.id) || null })
 
     // Surface what the one-click import installed as a toast.
@@ -164,6 +175,7 @@ refresh();
     }
     await window.api.saveCharacter(profileId, mockId, mockCard)
     const characters = await window.api.getCharacters(profileId)
+    useChatStore.getState().clearActiveChat()
     set({ characters, activeCharacter: characters.find((c: any) => c.id === mockId) || null })
   }
 }))

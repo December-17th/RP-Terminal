@@ -45,6 +45,9 @@ interface ChatState {
   regenerate: (profileId: string) => Promise<void>
   stopGeneration: () => Promise<void>
   deleteChat: (profileId: string, chatId: string) => Promise<void>
+  /** Drop the active session + its loaded floors (e.g. when switching/deleting worlds, so a
+   * stale chat from another world isn't rendered). */
+  clearActiveChat: () => void
   editFloor: (
     profileId: string,
     floorIndex: number,
@@ -293,6 +296,11 @@ export const useChatStore = create<ChatState>((set, get) => {
           floors: isActive ? [] : state.floors
         }
       })
+    },
+
+    clearActiveChat: () => {
+      resetStream()
+      set({ activeChatId: null, floors: [], activeChatMode: 'explore', streamingText: '', error: null })
     }
   }
 })

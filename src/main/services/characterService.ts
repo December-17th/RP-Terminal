@@ -56,9 +56,15 @@ export const saveCharacter = (
 }
 
 export const deleteCharacter = (profileId: string, characterId: string): void => {
-  getDb()
-    .prepare('DELETE FROM characters WHERE id = ? AND profile_id = ?')
-    .run(characterId, profileId)
+  const db = getDb()
+  db.prepare('DELETE FROM characters WHERE id = ? AND profile_id = ?').run(characterId, profileId)
+  // Cascade the character's sessions (chats); their floors are FK ON DELETE CASCADE.
+  // character_id is a plain column (not an FK), so this isn't automatic — without it the
+  // chats are orphaned and a stale activeChatId can re-render a deleted world's frontend cards.
+  db.prepare('DELETE FROM chats WHERE character_id = ? AND profile_id = ?').run(
+    characterId,
+    profileId
+  )
   deleteCharacterLorebook(profileId, characterId)
   const avatar = getAvatarPath(characterId)
   if (fs.existsSync(avatar)) fs.unlinkSync(avatar)
