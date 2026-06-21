@@ -41,9 +41,10 @@ export const JQUERY_SHIM = `
   p.is = function(sel){ return this[0] ? this[0].matches(sel) : false; };
   p.data = function(k,v){ if (v===undefined) return this[0] ? this[0].dataset[k] : undefined; return this.each(function(){ this.dataset[k]=v; }); };
   p.ready = function(fn){ if (document.readyState!=='loading') fn(); else document.addEventListener('DOMContentLoaded', function(){ fn(); }); return this; };
-  // Re-run <script> tags in freshly-injected content so a loaded UI actually executes.
-  function runScripts(container){ toArr(container.querySelectorAll('script')).forEach(function(old){ var s=document.createElement('script'); if (old.src) s.src=old.src; else s.textContent=old.textContent; if (old.type) s.type=old.type; old.parentNode.replaceChild(s, old); }); }
   function llog(m){ try{ parent.postMessage({__rptlog:1,msg:'[jquery.load] '+m},'*'); }catch(_){} }
+  // Re-create a parsed <script> so it actually executes (innerHTML-injected scripts don't),
+  // preserving its attributes (src/type=module/crossorigin/…) and inline body.
+  function execScript(old, target){ var s=document.createElement('script'); for (var i=0;i<old.attributes.length;i++){ s.setAttribute(old.attributes[i].name, old.attributes[i].value); } if (!old.src) s.textContent = old.textContent; target.appendChild(s); }
   // Prefer the host-mediated fetch (runs in main — no opaque-origin CORS wall); fall back to
   // a direct fetch when the rpt bridge isn't present.
   function getText(u){
@@ -62,10 +63,17 @@ export const JQUERY_SHIM = `
       toArr(doc.querySelectorAll('[src]')).forEach(function(el){ abs(el, 'src'); });
       toArr(doc.querySelectorAll('link[href]')).forEach(function(el){ abs(el, 'href'); });
       var head = document.head || document.getElementsByTagName('head')[0];
+      // Pull the page's <head> styles in (a built SPA's CSS lives here).
       if (doc.head && head) toArr(doc.head.querySelectorAll('link[rel="stylesheet"], style')).forEach(function(el){ head.appendChild(el.cloneNode(true)); });
+      // Collect ALL scripts (head entry bundle + body), in document order. Strip body
+      // scripts from the markup so innerHTML doesn't leave inert duplicates.
+      var scripts = (doc.head ? toArr(doc.head.querySelectorAll('script')) : []).concat(doc.body ? toArr(doc.body.querySelectorAll('script')) : []);
+      if (doc.body) toArr(doc.body.querySelectorAll('script')).forEach(function(s){ if (s.parentNode) s.parentNode.removeChild(s); });
       var bodyHtml = doc.body ? doc.body.innerHTML : html;
-      self.each(function(){ this.innerHTML = bodyHtml; runScripts(this); });
-      llog('mounted ' + u);
+      self.each(function(){ this.innerHTML = bodyHtml; });
+      var target = self[0] || document.body;
+      scripts.forEach(function(old){ execScript(old, target); });
+      llog('mounted ' + u + ' (' + scripts.length + ' script(s))');
       if (typeof cb === 'function') cb();
     }).catch(function(e){ llog((e && e.message) || e); });
     return this;
