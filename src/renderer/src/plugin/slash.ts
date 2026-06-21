@@ -1,5 +1,6 @@
 import { useProfileStore } from '../stores/profileStore'
 import { useChatStore } from '../stores/chatStore'
+import { runScript, looksLikeStScript, StCtx } from './stscript'
 
 /**
  * Minimal slash-command runtime (P4). A registry of built-in commands plus
@@ -63,17 +64,52 @@ export const isSlashLine = (line: string): boolean => line.trim().startsWith('/'
 export const listCommands = (): SlashCommand[] =>
   [...registry.values()].sort((a, b) => a.name.localeCompare(b.name))
 
-/** Run a `/command` line; resolves with output text (may be empty). */
-export const runSlash = async (line: string): Promise<string> => {
-  const parsed = parseSlash(line)
-  if (!parsed) return ''
-  const cmd = registry.get(parsed.name)
-  if (!cmd) return `Unknown command: /${parsed.name}`
+/** Run one registered command by name with a raw arg string. */
+const runRegistered = async (name: string, raw: string): Promise<string> => {
+  const cmd = registry.get(name.toLowerCase())
+  if (!cmd) return `Unknown command: /${name}`
   try {
-    return (await cmd.run(parsed.args, parsed.raw)) || ''
+    return (await cmd.run(raw.length ? raw.trim().split(/\s+/) : [], raw)) || ''
   } catch (e: any) {
-    return `/${parsed.name} failed: ${e?.message || String(e)}`
+    return `/${name} failed: ${e?.message || String(e)}`
   }
+}
+
+/**
+ * Run an STScript line (TH-8): pipes / closures / `{{pipe}}` / macros over the built-ins,
+ * delegating unknown commands to the registry. Loads a variable snapshot up front so
+ * `{{getvar::x}}` resolves synchronously during expansion.
+ */
+const runStScript = async (line: string): Promise<string> => {
+  const pid = profileId()
+  const snap = pid
+    ? await window.api.pluginGetVars(pid, chatId() || '')
+    : { local: {}, global: {} }
+  const ctx: StCtx = {
+    vars: snap.local || {},
+    globals: snap.global || {},
+    setVar: async (key, value, scope) => {
+      await varOp(scope, 'set', key, value)
+    },
+    fallback: (cmd) => runRegistered(cmd.name, cmd.value)
+  }
+  try {
+    return await runScript(line, ctx)
+  } catch (e: any) {
+    return `script failed: ${e?.message || String(e)}`
+  }
+}
+
+/** Run a `/command` line; resolves with output text (may be empty). A line that pipes
+ * or uses a closure runs through the STScript interpreter; a single command keeps the
+ * simple registry path (backward-compatible). */
+export const runSlash = async (line: string): Promise<string> => {
+  if (!isSlashLine(line)) return ''
+  const t = line.trim()
+  if (looksLikeStScript(t)) return runStScript(t)
+  const parsed = parseSlash(t)
+  if (!parsed) return ''
+  return runRegistered(parsed.name, parsed.raw)
 }
 
 const builtin = (name: string, description: string, run: SlashCommand['run']): void => {
