@@ -25,6 +25,16 @@ describe('statView helpers', () => {
     expect(asBar({ value: 'x', max: 100 })).toBeNull() // non-numeric value
   })
 
+  it('detects "current/max" string bars (MVU convention, e.g. HP "750/750")', () => {
+    expect(asBar('750/750')).toEqual({ value: 750, max: 750 })
+    expect(asBar('30 / 100')).toEqual({ value: 30, max: 100 })
+    expect(asBar('1450/1450')).toEqual({ value: 1450, max: 1450 })
+    expect(asBar('Lv.5')).toBeNull() // not a ratio
+    expect(asBar('0金18银0铜')).toBeNull()
+    expect(asBar('5/0')).toBeNull() // max must be > 0
+    expect(classify('750/750')).toBe('bar')
+  })
+
   it('classifies nodes (bar > valueDesc > array > object > primitive)', () => {
     expect(classify({ value: 30, max: 100 })).toBe('bar')
     expect(classify([80, 'hp'])).toBe('valueDesc')

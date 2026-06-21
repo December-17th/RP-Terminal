@@ -26,8 +26,18 @@ export const asValueDesc = (
   return null
 }
 
-/** A `{ value|current, max }` numeric pair → rendered as a progress bar. */
+/** A `{ value|current, max }` pair, or a `"current/max"` string (a common MVU convention,
+ * e.g. HP `"750/750"`) → rendered as a progress bar. */
 export const asBar = (v: unknown): { value: number; max: number } | null => {
+  if (typeof v === 'string') {
+    const m = /^\s*(-?\d+(?:\.\d+)?)\s*\/\s*(\d+(?:\.\d+)?)\s*$/.exec(v)
+    if (m) {
+      const value = Number(m[1])
+      const max = Number(m[2])
+      if (max > 0) return { value, max }
+    }
+    return null
+  }
   if (!isPlainObject(v)) return null
   const cur = v.value ?? v.current
   const max = v.max
