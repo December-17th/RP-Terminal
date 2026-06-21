@@ -46,11 +46,12 @@ export function MessageScriptFrame({ html }: { html: string }): React.ReactEleme
     if (!profileId) return
     let alive = true
     ;(async () => {
+      const wantsRemote = /https?:\/\//i.test(html)
       let allow = false
       if (cardId) {
         const g = await window.api.pluginGetGrants(profileId, cardId)
         allow = g?.remoteScripts === true
-        if (!allow && /https?:\/\//i.test(html)) {
+        if (!allow && wantsRemote) {
           const ok = window.confirm(
             'A UI embedded in this message loads content from the internet.\n\n' +
               "Allow this world's message HTML to load remote content? (You can change this later.)"
@@ -60,6 +61,15 @@ export function MessageScriptFrame({ html }: { html: string }): React.ReactEleme
             allow = true
           }
         }
+      }
+      // Surface the most common failure mode (a remote UI that can't reach the network).
+      if (wantsRemote && !allow) {
+        window.api.pluginLog(
+          'message-html',
+          cardId
+            ? 'remote UI blocked — network grant declined for this world (re-render to be re-prompted)'
+            : 'remote UI blocked — no active world to attach the network grant to'
+        )
       }
       if (alive) setSrcDoc(buildMessageHtmlDoc(html, { allowRemote: allow }))
     })()

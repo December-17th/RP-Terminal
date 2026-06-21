@@ -43,7 +43,27 @@ export const JQUERY_SHIM = `
   p.ready = function(fn){ if (document.readyState!=='loading') fn(); else document.addEventListener('DOMContentLoaded', function(){ fn(); }); return this; };
   // Re-run <script> tags in freshly-injected content so a loaded UI actually executes.
   function runScripts(container){ toArr(container.querySelectorAll('script')).forEach(function(old){ var s=document.createElement('script'); if (old.src) s.src=old.src; else s.textContent=old.textContent; if (old.type) s.type=old.type; old.parentNode.replaceChild(s, old); }); }
-  p.load = function(url, cb){ var self=this; fetch(String(url)).then(function(r){ return r.text(); }).then(function(html){ var m=/<body[^>]*>([\\s\\S]*?)<\\/body>/i.exec(html); var content=m?m[1]:html; self.each(function(){ this.innerHTML=content; runScripts(this); }); if (typeof cb==='function') cb(); }).catch(function(e){ try{ parent.postMessage({__rptlog:1,msg:'[jquery.load] '+((e&&e.message)||e)},'*'); }catch(_){} }); return this; };
+  function llog(m){ try{ parent.postMessage({__rptlog:1,msg:'[jquery.load] '+m},'*'); }catch(_){} }
+  // Fetch a (possibly full-document) page and mount it: rewrite its relative asset URLs to
+  // absolute against the page URL (so a built SPA's /assets/* resolve), pull its <head>
+  // styles/links into our document, inject its <body>, and execute its scripts.
+  p.load = function(url, cb){
+    var self=this, u=String(url);
+    llog('fetching ' + u);
+    fetch(u).then(function(r){ if (!r.ok) throw new Error(r.status + ' ' + r.statusText); return r.text(); }).then(function(html){
+      var doc = new DOMParser().parseFromString(html, 'text/html');
+      function abs(el, attr){ var v=el.getAttribute(attr); if (v){ try { el.setAttribute(attr, new URL(v, u).href); } catch(e){} } }
+      toArr(doc.querySelectorAll('[src]')).forEach(function(el){ abs(el, 'src'); });
+      toArr(doc.querySelectorAll('link[href]')).forEach(function(el){ abs(el, 'href'); });
+      var head = document.head || document.getElementsByTagName('head')[0];
+      if (doc.head && head) toArr(doc.head.querySelectorAll('link[rel="stylesheet"], style')).forEach(function(el){ head.appendChild(el.cloneNode(true)); });
+      var bodyHtml = doc.body ? doc.body.innerHTML : html;
+      self.each(function(){ this.innerHTML = bodyHtml; runScripts(this); });
+      llog('mounted ' + u);
+      if (typeof cb === 'function') cb();
+    }).catch(function(e){ llog((e && e.message) || e); });
+    return this;
+  };
   function $(sel){
     if (sel instanceof JQ) return sel;
     if (typeof sel === 'function') return new JQ([document]).ready(sel);
