@@ -50,9 +50,14 @@ export const CardScriptHost: React.FC<Props> = ({
   const [srcDoc, setSrcDoc] = useState('')
   const [scriptCount, setScriptCount] = useState(0)
   const [grantsLoaded, setGrantsLoaded] = useState(false)
-  // A trusted world runs its card scripts same-origin (native ES-module imports / ST-style
-  // runtime) at the cost of full app access — the trust grant covers the world's own scripts.
-  const [trusted, setTrusted] = useState(false)
+  // Trust (full `rpt` caps for this world) lives in the persisted grants and is read in
+  // `ensure`; the frame stays process-isolated (opaque sandbox) regardless.
+  // Watchdog state (mirrors MessageScriptFrame): detect a wedged frame and let the user
+  // reload (fresh process) or stop it. Works because the frame is in its own process.
+  const [hung, setHung] = useState(false)
+  const [stopped, setStopped] = useState(false)
+  const [reloadNonce, setReloadNonce] = useState(0)
+  const lastAliveRef = useRef(0)
 
   // Card-embedded scripts feed the runtime as the World scope; a change to them (or to the
   // profile scripts store) re-triggers a refetch of the merged, import-resolved set.
@@ -95,9 +100,9 @@ export const CardScriptHost: React.FC<Props> = ({
         const ok = window.confirm(
           `Scripts in "${cardName}" load & run code from the internet:\n\n` +
             res.remoteHosts.map((h: string) => '  • ' + h).join('\n') +
-            `\n\nRun this world's scripts with FULL TRUST (a native runtime, the way ` +
-            `SillyTavern runs them)? Grant this ONLY for a world you trust — its code can ` +
-            `read app data, including your API keys.`
+            `\n\nGrant this world's scripts FULL access to app features (generate, fetch, ` +
+            `write chat & lore)? They still run sandboxed in their own process — they can't ` +
+            `read your API keys or app memory directly. Grant this ONLY for a world you trust.`
         )
         if (ok) {
           grantsRef.current = await window.api.pluginSetGrants(profileId, cardId, {
@@ -114,7 +119,6 @@ export const CardScriptHost: React.FC<Props> = ({
       btnKeys.current.forEach((k) => useToolbarStore.getState().remove(k))
       btnKeys.current.clear()
       setScriptCount(list.length)
-      setTrusted(trust)
       setSrcDoc(buildScriptSrcDoc(list, { allowRemote: allow, trusted: trust }))
     })()
     return () => {
@@ -137,8 +141,7 @@ export const CardScriptHost: React.FC<Props> = ({
   // Card scripts auto-grant low-risk caps; `net` is never allowed (no manifest
   // allow-list); `generate` prompts once per card.
   const ensure = async (perm: string): Promise<boolean> => {
-    // A trusted (same-origin) world already has full app access, so its rpt calls are
-    // unrestricted.
+    // A trusted world has full rpt caps (still process-isolated), so its calls are unrestricted.
     if (grantsRef.current.trusted) return true
     if (perm === 'net') return false
     if (perm !== 'generate') return true
@@ -215,6 +218,12 @@ export const CardScriptHost: React.FC<Props> = ({
       if (e.source !== frameRef.current?.contentWindow) return
       const d = e.data
       if (!d || typeof d !== 'object') return
+      // Any message proves the frame's event loop is alive → reset the watchdog.
+      lastAliveRef.current = Date.now()
+      if (d.__rptpong) {
+        setHung(false)
+        return
+      }
 
       if (d.__rptresize) {
         setHeight(Math.min(Math.max(0, Number(d.height) || 0), 1200))
@@ -283,21 +292,78 @@ export const CardScriptHost: React.FC<Props> = ({
     })
   }, [chatId])
 
+  // Heartbeat the frame; flag it hung if it stops answering (likely an infinite loop in a
+  // card script). The frame is process-isolated, so this timer keeps firing even when the
+  // frame is wedged. Resets on (re)mount via reloadNonce.
+  useEffect(() => {
+    if (!enabled || stopped || !srcDoc) return
+    // Ref reset (not state) avoids a synchronous re-render; `hung` is cleared by the pong
+    // handler and the Reload/Stop buttons.
+    lastAliveRef.current = Date.now()
+    const id = setInterval(() => {
+      post({ __rptping: 1, t: Date.now() })
+      if (Date.now() - lastAliveRef.current > 12000) setHung(true)
+    }, 3000)
+    return () => clearInterval(id)
+  }, [enabled, stopped, srcDoc, reloadNonce])
+
   // The right panel is reserved for game UI — render only the script-produced UI (the
   // sandboxed iframe), no management chrome. The master on/off toggle lives in the Scripts
   // (left) panel. Disabled, or nothing to run → render nothing here.
   if (!enabled || scriptCount === 0) return null
 
+  if (stopped) {
+    return (
+      <div className="message-card-gate">
+        <span className="message-card-gate-label">⏹ Card UI stopped</span>
+        <button
+          className="btn-accent"
+          onClick={() => {
+            setStopped(false)
+            setReloadNonce((n) => n + 1)
+          }}
+        >
+          ▶ Restart
+        </button>
+      </div>
+    )
+  }
+
   return (
-    <iframe
-      ref={frameRef}
-      className="rpt-script-frame"
-      // Trusted worlds run their scripts same-origin (native runtime, full access);
-      // otherwise the opaque sandbox.
-      sandbox={trusted ? 'allow-scripts allow-same-origin' : 'allow-scripts'}
-      srcDoc={srcDoc}
-      style={{ height: height || 1 }}
-      title="card scripts"
-    />
+    <div className="message-card-host">
+      {hung && (
+        <div className="message-card-hung">
+          <span className="message-card-hung-label">⚠ This card UI stopped responding.</span>
+          <button
+            className="btn-accent"
+            onClick={() => {
+              setHung(false)
+              setReloadNonce((n) => n + 1)
+            }}
+          >
+            Reload
+          </button>
+          <button
+            onClick={() => {
+              setHung(false)
+              setStopped(true)
+            }}
+          >
+            Stop
+          </button>
+        </div>
+      )}
+      <iframe
+        // Remount (fresh process) on Reload. Opaque sandbox (no allow-same-origin) keeps the
+        // frame process-isolated, so a runaway script can't freeze the host.
+        key={reloadNonce}
+        ref={frameRef}
+        className="rpt-script-frame"
+        sandbox="allow-scripts"
+        srcDoc={srcDoc}
+        style={{ height: height || 1 }}
+        title="card scripts"
+      />
+    </div>
   )
 }

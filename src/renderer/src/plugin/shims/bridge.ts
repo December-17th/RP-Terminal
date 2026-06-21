@@ -48,6 +48,10 @@ export const BRIDGE_SHIM = `
       for (var i = 0; i < hs.length; i++) {
         try { hs[i](d.payload); } catch (err) { console.error(err); }
       }
+    } else if (d.__rptping) {
+      // Host watchdog heartbeat — a reply proves this (process-isolated) frame's event loop
+      // is still turning. Silence for too long ⇒ the host flags it as hung and offers a kill.
+      try { parent.postMessage({ __rptpong: 1, t: d.t }, '*'); } catch (_) {}
     }
   });
 

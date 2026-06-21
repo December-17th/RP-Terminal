@@ -42,12 +42,19 @@ export function MessageScriptFrame({ html }: { html: string }): React.ReactEleme
   // to real content for non-full-page blocks.
   const [height, setHeight] = useState(560)
   const [srcDoc, setSrcDoc] = useState('')
-  // Frontend cards run arbitrary (card-author + CDN) UI code in a same-process iframe — a
-  // buggy one (e.g. an ST card looping without the ST runtime) can freeze the whole app.
-  // So don't auto-run: opening a session stays responsive; the user clicks to run the UI.
+  // Frontend cards run arbitrary (card-author + CDN) UI code. Each frame is process-isolated
+  // (opaque sandbox), so a buggy one can't freeze the host — but it still shouldn't auto-run:
+  // opening a session stays responsive; the user clicks to run the UI.
   const [running, setRunning] = useState(false)
-  // A trusted world's frontend cards run same-origin (native ES-module imports / ST-style
-  // runtime), at the cost of full app access — only for a world whose card the user trusts.
+  // Watchdog: because the frame is in its own process, the host thread keeps running even if
+  // the frame loops. A ping/pong heartbeat detects a frame that's gone silent; the user can
+  // then reload it (fresh process) or stop it (kill the process, back to the gate).
+  const [hung, setHung] = useState(false)
+  const [reloadNonce, setReloadNonce] = useState(0)
+  const lastAliveRef = useRef(0)
+  // A trusted world grants its frontend cards full `rpt` capabilities (generate / fetch /
+  // chat & lore writes); the frame stays process-isolated, so trust no longer means raw app
+  // access — only what the RPC bridge exposes. Enforced host-side via `ensure`.
   const [trusted, setTrusted] = useState(false)
   const trustedRef = useRef(false)
   trustedRef.current = trusted
@@ -68,11 +75,11 @@ export function MessageScriptFrame({ html }: { html: string }): React.ReactEleme
         allow = trust || g?.remoteScripts === true
         if (!trust && wantsRemote) {
           const ok = window.confirm(
-            'A UI embedded in this message needs FULL TRUST to run — a native (same-origin) ' +
-              'runtime, the way SillyTavern frontend cards work.\n\n' +
-              "Grant this ONLY for a world whose card you made or trust: a trusted world's code " +
-              'can read app data, including your API keys.\n\n' +
-              'Trust this world and run its UI natively?'
+            'A UI embedded in this message wants to load code from the internet and use the ' +
+              "app's full features (start generations, fetch, write chat & lore).\n\n" +
+              'It still runs sandboxed in its own process — it cannot read your API keys or app ' +
+              'memory directly, only what the bridge exposes. Grant this only for a world you ' +
+              'trust.\n\nTrust this world and run its UI?'
           )
           if (ok) {
             await window.api.pluginSetGrants(profileId, cardId, { trusted: true, remoteScripts: true })
@@ -131,6 +138,12 @@ export function MessageScriptFrame({ html }: { html: string }): React.ReactEleme
       if (e.source !== frameRef.current?.contentWindow) return
       const d = e.data
       if (!d || typeof d !== 'object') return
+      // Any message proves the frame's event loop is alive → reset the watchdog.
+      lastAliveRef.current = Date.now()
+      if (d.__rptpong) {
+        setHung(false)
+        return
+      }
       if (d.__rptresize) {
         setHeight(Math.min(Math.max(0, Number(d.height) || 0), 1200))
       } else if (d.__rptlog) {
@@ -187,6 +200,21 @@ export function MessageScriptFrame({ html }: { html: string }): React.ReactEleme
     })
   }, [chatId])
 
+  // Heartbeat the running frame; flag it hung if it stops answering (likely an infinite loop
+  // in the card's own code). The frame is process-isolated, so this timer keeps firing even
+  // when the frame is wedged. Resets on (re)mount via reloadNonce.
+  useEffect(() => {
+    if (!running || !srcDoc) return
+    // Ref reset (not state) avoids a synchronous re-render; `hung` is cleared by the pong
+    // handler and the Reload/Stop buttons.
+    lastAliveRef.current = Date.now()
+    const id = setInterval(() => {
+      post({ __rptping: 1, t: Date.now() })
+      if (Date.now() - lastAliveRef.current > 12000) setHung(true)
+    }, 3000)
+    return () => clearInterval(id)
+  }, [running, srcDoc, reloadNonce])
+
   if (!profileId) return null
   // Until the user opts in, show a lightweight gate instead of auto-running the UI.
   if (!running) {
@@ -203,15 +231,40 @@ export function MessageScriptFrame({ html }: { html: string }): React.ReactEleme
     )
   }
   return (
-    <iframe
-      ref={frameRef}
-      className="card-frame"
-      // Trusted worlds run same-origin (native runtime, full access); otherwise the opaque
-      // sandbox. allow-same-origin + allow-scripts is intentional here — it IS the trust grant.
-      sandbox={trusted ? 'allow-scripts allow-same-origin' : 'allow-scripts'}
-      srcDoc={srcDoc}
-      style={{ width: '100%', height, border: 0, display: 'block' }}
-      title="message script"
-    />
+    <div className="message-card-host">
+      {hung && (
+        <div className="message-card-hung">
+          <span className="message-card-hung-label">⚠ This interactive UI stopped responding.</span>
+          <button
+            className="btn-accent"
+            onClick={() => {
+              setHung(false)
+              setReloadNonce((n) => n + 1)
+            }}
+          >
+            Reload
+          </button>
+          <button
+            onClick={() => {
+              setHung(false)
+              setRunning(false)
+            }}
+          >
+            Stop
+          </button>
+        </div>
+      )}
+      <iframe
+        // Remount (fresh process) on Reload. Opaque sandbox (no allow-same-origin) keeps the
+        // frame process-isolated, so a runaway card can't freeze the host.
+        key={reloadNonce}
+        ref={frameRef}
+        className="card-frame"
+        sandbox="allow-scripts"
+        srcDoc={srcDoc}
+        style={{ width: '100%', height, border: 0, display: 'block' }}
+        title="message script"
+      />
+    </div>
   )
 }

@@ -635,6 +635,38 @@ details[open] > .stat-group-title::before {
   font-size: 0.75em;
   color: var(--rpt-text-secondary);
 }
+.btn-accent {
+  font: inherit;
+  color: #fff;
+  background: var(--rpt-accent);
+  border: 1px solid var(--rpt-accent);
+  border-radius: 6px;
+  padding: 4px 12px;
+  cursor: pointer;
+}
+.btn-accent:hover {
+  filter: brightness(1.1);
+}
+
+/* Watchdog: shown when a process-isolated card frame stops responding. */
+.message-card-host {
+  position: relative;
+}
+.message-card-hung {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 8px 12px;
+  margin: 8px 0;
+  border: 1px solid #e0564f;
+  border-radius: 8px;
+  background: rgba(224, 86, 79, 0.12);
+}
+.message-card-hung-label {
+  font-size: 0.9em;
+  color: var(--rpt-text-primary);
+}
 
 /* Lightweight render for the in-flight streaming response. */
 .streaming-text {

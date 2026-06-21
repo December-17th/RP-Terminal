@@ -83,6 +83,20 @@ export interface CardScript {
  * remote graph when `allowRemote`); the rest run as classic scripts wrapped in try/catch.
  * Errors (syntax, runtime, and unhandled rejections) are surfaced to the host's Logs panel.
  */
+// Every card frame runs at a unique opaque origin (no `allow-same-origin`), which Chromium
+// hosts in its OWN renderer process (IsolateSandboxedIframes, default since Chromium 132) —
+// so a runaway frame can't freeze the host thread. The cost: opaque origins throw on Storage
+// access (SecurityError). Many UI libs touch localStorage on init, so back it with an
+// in-memory store. Injected before any framework/user script runs.
+const STORAGE_POLYFILL =
+  `<script>(function(){try{window.localStorage.getItem('__rpt');return;}catch(e){}` +
+  `function mk(){var m={};return{getItem:function(k){k=String(k);return Object.prototype.hasOwnProperty.call(m,k)?m[k]:null;},` +
+  `setItem:function(k,v){m[String(k)]=String(v);},removeItem:function(k){delete m[String(k)];},` +
+  `clear:function(){m={};},key:function(i){return Object.keys(m)[i]||null;},get length(){return Object.keys(m).length;}};}` +
+  `try{Object.defineProperty(window,'localStorage',{value:mk(),configurable:true});}catch(_){}` +
+  `try{Object.defineProperty(window,'sessionStorage',{value:mk(),configurable:true});}catch(_){}` +
+  `})();</script>`
+
 // Surfaces syntax/runtime/unhandled-rejection errors to the host's Logs panel. Shared by
 // the card-script doc and the message-HTML doc (TH-6).
 const ERROR_REPORTER =
@@ -92,14 +106,16 @@ const ERROR_REPORTER =
   `window.addEventListener('unhandledrejection',function(ev){var r=ev.reason;__rptError('script','unhandled rejection: '+((r&&r.message)||r))});` +
   `</script>`
 
-/** The shim/CSP/style head shared by both sandbox documents. `trusted` frames run with a
- * real (same-origin) origin set by the host, so native ES-module imports work and the
- * frontend-card loader can skip its data:-URL rewriting. */
+/** The shim/CSP/style head shared by both sandbox documents. Every frame runs at an opaque
+ * origin (process-isolated) regardless of trust; `trusted` is purely a capability grant
+ * (full `rpt` caps + remote fetch), enforced host-side over the RPC bridge — it no longer
+ * changes the frame's origin. `window.__rptTrusted` is exposed informationally. */
 const sandboxHead = (allowRemote: boolean, trusted: boolean): string =>
   `<!doctype html><html><head><meta charset="utf-8">` +
   `<meta http-equiv="Content-Security-Policy" content="${buildCsp(allowRemote)}">` +
   `<style>${HOST_STYLE}</style></head><body>` +
   `<script>window.__rptTrusted=${trusted ? 'true' : 'false'};</script>` +
+  STORAGE_POLYFILL +
   `<script>${BRIDGE_SHIM}</script>` +
   `<script>${LIB_SHIM}</script>` +
   `<script>${TAVERN_SHIM}</script>` +
