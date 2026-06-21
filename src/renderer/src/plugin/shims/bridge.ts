@@ -7,6 +7,25 @@ export const BRIDGE_SHIM = `
   var __pending = {};
   var __handlers = {};
 
+  // Forward console.error/warn to the host Logs panel — frameworks (Vue, etc.) route their
+  // runtime errors there, not to window.onerror, so this is how a card UI's failures surface.
+  try {
+    ['error', 'warn'].forEach(function (level) {
+      var orig = console[level] ? console[level].bind(console) : function () {};
+      console[level] = function () {
+        try {
+          var parts = Array.prototype.slice.call(arguments).map(function (a) {
+            if (a instanceof Error) return a.message + (a.stack ? ' | ' + String(a.stack).split('\\n').slice(0, 3).join(' ') : '');
+            if (a && typeof a === 'object') { try { return JSON.stringify(a); } catch (_) { return String(a); } }
+            return String(a);
+          });
+          parent.postMessage({ __rptlog: 1, msg: '[console.' + level + '] ' + parts.join(' ') }, '*');
+        } catch (_) {}
+        return orig.apply(null, arguments);
+      };
+    });
+  } catch (_) {}
+
   function __rpc(method, args) {
     return new Promise(function (resolve, reject) {
       var id = ++__seq;
