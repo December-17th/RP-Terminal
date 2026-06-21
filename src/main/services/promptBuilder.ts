@@ -5,6 +5,7 @@ import { Lorebook, LorebookEntry } from '../types/character'
 import { matchAcross } from './lorebookService'
 import { applyRegex, RenderRegexRule } from './regexService'
 import { evalTemplate, TemplateContext } from './templateService'
+import { expandMacros, MacroContext } from '../../shared/macros'
 
 export interface ChatMessage {
   role: 'system' | 'user' | 'assistant'
@@ -96,25 +97,13 @@ const identity = (t: string): string => t
 
 type Renderer = (text: string) => string
 
-/**
- * Expand the handful of macros we support and strip ST-Prompt-Template control
- * blocks (`<% ... %>`). A real EJS-style template engine is a planned follow-up;
- * until then we strip the syntax so it never leaks into the prompt.
- */
-const expandMacros = (
-  text: string,
-  charName: string,
-  userName: string,
-  personaDesc = ''
-): string => {
-  if (!text) return ''
-  return text
-    .replace(/\{\{char\}\}/gi, charName)
-    .replace(/\{\{user\}\}/gi, userName)
-    .replace(/\{\{persona\}\}/gi, personaDesc)
-    .replace(/<%[\s\S]*?%>/g, '')
-    .trim()
-}
+/** Strip any leftover EJS tags (used only when no template engine is available). */
+const stripEjs = (s: string): string => s.replace(/<%[\s\S]*?%>/g, '')
+
+/** History/output text: expand {{macros}} then drop any stray EJS (templates don't run
+ * on the model's own output at prompt-time) and trim. */
+const macroOnly = (text: string, ctx: MacroContext): string =>
+  stripEjs(expandMacros(text, ctx)).trim()
 
 const buildCharDescription = (card: RPTerminalCard, charName: string, render: Renderer): string => {
   const d = card.data
@@ -130,16 +119,13 @@ const buildCharDescription = (card: RPTerminalCard, charName: string, render: Re
 const buildHistory = (
   floors: FloorFile[],
   userAction: string,
-  charName: string,
-  userName: string,
-  personaDesc: string,
+  macroCtx: MacroContext,
   applyUser: (t: string) => string,
   applyAssistant: (t: string) => string
 ): ChatMessage[] => {
   const msgs: ChatMessage[] = []
-  const user = (t: string): string => expandMacros(applyUser(t), charName, userName, personaDesc)
-  const assistant = (t: string): string =>
-    expandMacros(applyAssistant(t), charName, userName, personaDesc)
+  const user = (t: string): string => macroOnly(applyUser(t), macroCtx)
+  const assistant = (t: string): string => macroOnly(applyAssistant(t), macroCtx)
   for (const f of floors) {
     if (f.user_message.content) msgs.push({ role: 'user', content: user(f.user_message.content) })
     if (f.response.content) msgs.push({ role: 'assistant', content: assistant(f.response.content) })
@@ -220,12 +206,24 @@ export const buildPrompt = (args: BuildPromptArgs): ChatMessage[] => {
   // persona block itself — that's rendered with an empty persona to avoid recursion).
   const personaMacro = personaInject ? args.persona!.description : ''
 
+  // Central transform order for authored content: macros → EJS template → (regex runs
+  // separately on history/user text). The macro pass shares the template's var/global
+  // stores so {{setvar}} and <% setvar() %> stay coherent; it leaves <%...%> intact so
+  // the engine runs next. (Previously macros stripped EJS before eval — templates never
+  // executed via the builder; that's fixed here.)
+  const macroBase = (pd: string): MacroContext => ({
+    user: userName,
+    char: charName,
+    persona: pd,
+    vars: args.template?.vars,
+    globals: args.template?.globals
+  })
   const makeRender =
     (pd: string): Renderer =>
-    (t) =>
-      args.template
-        ? evalTemplate(expandMacros(t, charName, userName, pd), args.template as TemplateContext)
-        : expandMacros(t, charName, userName, pd)
+    (t) => {
+      const m = expandMacros(t, macroBase(pd))
+      return args.template ? evalTemplate(m, args.template as TemplateContext) : stripEjs(m).trim()
+    }
   const render = makeRender(personaMacro)
   const personaContent = personaInject ? makeRender('')(args.persona!.description) : ''
 
@@ -284,17 +282,7 @@ export const buildPrompt = (args: BuildPromptArgs): ChatMessage[] => {
         break
       }
       case 'chat_history': {
-        messages.push(
-          ...buildHistory(
-            floors,
-            userAction,
-            charName,
-            userName,
-            personaMacro,
-            applyUser,
-            applyAssistant
-          )
-        )
+        messages.push(...buildHistory(floors, userAction, macroBase(personaMacro), applyUser, applyAssistant))
         historyEmitted = true
         break
       }
@@ -331,15 +319,7 @@ export const buildPrompt = (args: BuildPromptArgs): ChatMessage[] => {
   // conversation at all. Append history + action so generation still works.
   if (!historyEmitted) {
     messages.push(
-      ...buildHistory(
-        floors,
-        userAction,
-        charName,
-        userName,
-        personaMacro,
-        applyUser,
-        applyAssistant
-      )
+      ...buildHistory(floors, userAction, macroBase(personaMacro), applyUser, applyAssistant)
     )
   }
 

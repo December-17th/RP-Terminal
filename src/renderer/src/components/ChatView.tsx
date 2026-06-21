@@ -10,6 +10,7 @@ import { ChatToolbar } from './ChatToolbar'
 import { ScriptActionsBar } from './ScriptActionsBar'
 import { Composer } from './Composer'
 import { ContextMenu } from './ContextMenu'
+import { expandMacros } from '../../../shared/macros'
 
 /**
  * The center column: the paginated floor stage, the mode/regenerate toolbar, the
@@ -58,19 +59,26 @@ export function ChatView({ profileId }: { profileId: string }): React.ReactEleme
   const personaName = settings?.persona?.name || 'User'
   const charName = activeCharacter?.card.data.name || 'Character'
 
-  // Apply display regex (beautification) to each stored response at render time.
+  // Render-time transform of each stored response: macros (TH-5, with this floor's vars)
+  // → display regex (beautification). The model's raw output stays stored; this is
+  // display-only. (EJS template eval on output isn't run here — the engine is main-side.)
   const renderedFloors = useMemo(
     () =>
-      floors.map((f) => ({
-        floor: f.floor,
-        user: f.user_message.content,
-        rawResponse: f.response.content,
-        html: useRegexStore
-          .getState()
-          .apply(f.response.content, { user: personaName, char: charName }),
-        swipeId: f.swipe_id ?? 0,
-        swipeCount: f.swipes?.length ?? 1
-      })),
+      floors.map((f) => {
+        const withMacros = expandMacros(f.response.content, {
+          user: personaName,
+          char: charName,
+          vars: f.variables
+        })
+        return {
+          floor: f.floor,
+          user: f.user_message.content,
+          rawResponse: f.response.content,
+          html: useRegexStore.getState().apply(withMacros, { user: personaName, char: charName }),
+          swipeId: f.swipe_id ?? 0,
+          swipeCount: f.swipes?.length ?? 1
+        }
+      }),
     [floors, regexRules, personaName, charName]
   )
 
