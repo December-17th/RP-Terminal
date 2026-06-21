@@ -5,26 +5,34 @@
  * the model emit update commands wrapped in an `<UpdateVariable>` block, e.g.
  *
  *   <UpdateVariable>
- *   _.set('主角.生命值', 80, '受到攻击');
- *   _.add('命运点数', 1, '完成任务');
- *   _.assign('关系列表.艾莉', { 好感: 5 });
+ *   _.set('主角.生命值', 100, 80);//受到攻击
+ *   _.add('命运点数', 1);//完成任务
+ *   _.assign('关系列表.艾莉', '好感', 5);
  *   _.insert('任务列表', 0, { 名: '寻找钥匙' });
  *   _.remove('世界.地点');
  *   </UpdateVariable>
  *
- * This module parses those blocks (sibling to `contentParser`'s `<rpt-event>`) and
- * applies them to a `stat_data` object, recording a per-turn `delta_data` audit.
- * Reimplemented from the observed MVU command grammar — no MVU/js-slash-runner code
- * is used. Argument values are parsed by a tolerant JS-literal reader, NOT `eval`.
+ * MVU grammar (verified against MagVarUpdate, MIT): the **new value is always the LAST
+ * argument** — `_.set(path, old, new)` records `old` but applies `new` (the old value "isn't
+ * actually checked"), and `_.set(path, new)` is also valid. The **reason is the trailing
+ * `//comment`**, never a positional argument. This module parses those blocks (sibling to
+ * `contentParser`'s `<rpt-event>`) and applies them to `stat_data`, recording a per-turn
+ * `delta_data` audit. Reimplemented from the documented grammar — no MVU code is copied (MVU
+ * is MIT and could be, but we keep it clean). Args are read by a tolerant JS-literal reader,
+ * NOT `eval`.
  */
 
 export interface MvuCommand {
-  op: 'set' | 'add' | 'assign' | 'insert' | 'remove'
+  op: 'set' | 'add' | 'assign' | 'insert' | 'remove' | 'move'
   path: string
   value?: unknown
   /** insert position; omitted = append. */
   index?: number
-  /** human-readable reason (3rd command arg) recorded in delta_data. */
+  /** assign/remove member key or array index (3-arg assign sets it; 2-arg remove deletes it). */
+  key?: string | number
+  /** move destination path. */
+  to?: string
+  /** human-readable reason — MVU's trailing `//comment`, recorded in delta_data. */
   reason?: string
 }
 
@@ -195,9 +203,9 @@ const parseArgList = (src: string): unknown[] => {
 
 /** Find `_.op(...)` calls in a block, extracting balanced `(...)` args (so parens
  * inside strings/objects don't truncate the match the way a naive regex would). */
-const findCalls = (block: string): Array<{ op: string; argsSrc: string }> => {
-  const out: Array<{ op: string; argsSrc: string }> = []
-  const re = /_\.(set|add|delta|assign|insert|remove|unset|delete)\s*\(/g
+const findCalls = (block: string): Array<{ op: string; argsSrc: string; comment?: string }> => {
+  const out: Array<{ op: string; argsSrc: string; comment?: string }> = []
+  const re = /_\.(set|add|delta|assign|insert|remove|unset|delete|move)\s*\(/g
   let m: RegExpExecArray | null
   while ((m = re.exec(block)) !== null) {
     const op = m[1]
@@ -215,34 +223,53 @@ const findCalls = (block: string): Array<{ op: string; argsSrc: string }> => {
       else if (c === ')' || c === ']' || c === '}') depth--
       i++
     }
-    out.push({ op, argsSrc: block.slice(start, i - 1) })
+    // MVU's reason is a trailing `//comment` on the SAME line (after an optional `;`).
+    // Use [ \t]* (not \s*) so it can't reach a `//` on a following line.
+    const tail = block.slice(i).match(/^[ \t]*;?[ \t]*\/\/([^\n\r]*)/)
+    out.push({ op, argsSrc: block.slice(start, i - 1), comment: tail ? tail[1].trim() : undefined })
     re.lastIndex = i
   }
   return out
 }
 
-const strArg = (a: unknown): string | undefined => (typeof a === 'string' ? a : undefined)
+const keyArg = (a: unknown): string | number =>
+  typeof a === 'number' ? a : typeof a === 'string' ? a : String(a)
 
-const normalize = (op: string, args: unknown[]): MvuCommand | null => {
+const normalize = (op: string, args: unknown[], comment?: string): MvuCommand | null => {
   const path = typeof args[0] === 'string' ? args[0] : args[0] == null ? '' : String(args[0])
   if (!path) return null
+  const reason = comment || undefined
+  // MVU's new value is ALWAYS the last argument; any earlier value arg is the OLD value, which
+  // MVU records but does not apply.
+  const last = args[args.length - 1]
   switch (op) {
     case 'set':
-      return { op: 'set', path, value: args[1], reason: strArg(args[2]) }
+      if (args.length < 2) return null
+      return { op: 'set', path, value: last, reason }
     case 'add':
     case 'delta':
-      return { op: 'add', path, value: args[1], reason: strArg(args[2]) }
+      if (args.length < 2) return null
+      return { op: 'add', path, value: last, reason }
     case 'assign':
-      return { op: 'assign', path, value: args[1], reason: strArg(args[2]) }
+      if (args.length < 2) return null
+      // (path, key, value) sets a specific member; (path, value) merges.
+      return args.length >= 3
+        ? { op: 'assign', path, key: keyArg(args[1]), value: last, reason }
+        : { op: 'assign', path, value: last, reason }
     case 'insert':
-      // (path, index, value, reason?) when arg2 is numeric, else (path, value, reason?).
-      if (args.length >= 3 && typeof args[1] === 'number')
-        return { op: 'insert', path, index: args[1], value: args[2], reason: strArg(args[3]) }
-      return { op: 'insert', path, value: args[1], reason: strArg(args[2]) }
+      if (args.length < 2) return null
+      // (path, index, value) inserts at index; (path, value) appends.
+      return args.length >= 3 && typeof args[1] === 'number'
+        ? { op: 'insert', path, index: args[1], value: last, reason }
+        : { op: 'insert', path, value: last, reason }
     case 'remove':
     case 'unset':
     case 'delete':
-      return { op: 'remove', path, reason: strArg(args[1]) }
+      // (path, key) removes a member; (path) removes the whole path.
+      return args.length >= 2 ? { op: 'remove', path, key: keyArg(args[1]), reason } : { op: 'remove', path, reason }
+    case 'move':
+      if (args.length < 2) return null
+      return { op: 'move', path, to: String(args[1]), reason }
     default:
       return null
   }
@@ -253,8 +280,8 @@ export const parseMvuCommands = (content: string): ParsedMvu => {
   const commands: MvuCommand[] = []
   const blockRe = /<(UpdateVariable|update|updatevariable)>([\s\S]*?)<\/\1>/gi
   const text = content.replace(blockRe, (_full, _tag, inner) => {
-    for (const { op, argsSrc } of findCalls(inner)) {
-      const cmd = normalize(op, parseArgList(argsSrc))
+    for (const { op, argsSrc, comment } of findCalls(inner)) {
+      const cmd = normalize(op, parseArgList(argsSrc), comment)
       if (cmd) commands.push(cmd)
     }
     return ''
@@ -301,6 +328,16 @@ export const applyMvuCommands = (
         break
       }
       case 'assign': {
+        if (c.key != null) {
+          // (path, key, value): set a specific member on the collection at path.
+          let coll = getPath(statData, c.path)
+          if (coll == null || typeof coll !== 'object') {
+            coll = typeof c.key === 'number' ? [] : {}
+            setPath(statData, c.path, coll)
+          }
+          coll[c.key] = c.value
+          break
+        }
         const cur = getPath(statData, c.path)
         if (Array.isArray(cur) && Array.isArray(c.value))
           setPath(statData, c.path, [...cur, ...c.value])
@@ -318,9 +355,28 @@ export const applyMvuCommands = (
         else arr.push(c.value)
         break
       }
-      case 'remove':
+      case 'remove': {
+        if (c.key != null) {
+          // (path, key): remove one member from the collection at path.
+          const cur = getPath(statData, c.path)
+          if (Array.isArray(cur) && typeof c.key === 'number') cur.splice(c.key, 1)
+          else if (isObj(cur)) delete cur[c.key]
+          break
+        }
         delPath(statData, c.path)
         break
+      }
+      case 'move': {
+        // (from, to): relocate the value, recording the destination delta too.
+        const v = clone(getPath(statData, c.path))
+        if (c.to) {
+          const beforeTo = clone(getPath(statData, c.to))
+          setPath(statData, c.to, v)
+          deltas.push({ path: c.to, old: beforeTo, new: clone(v), reason: c.reason })
+        }
+        delPath(statData, c.path)
+        break
+      }
     }
     deltas.push({ path: c.path, old: before, new: clone(getPath(statData, c.path)), reason: c.reason })
   }

@@ -2,14 +2,30 @@ import { describe, it, expect } from 'vitest'
 import { parseMvuCommands, applyMvuCommands } from '../src/main/parsers/mvuParser'
 
 describe('parseMvuCommands', () => {
-  it('extracts commands from an <UpdateVariable> block and strips it from the text', () => {
+  it('uses the LAST arg as the new value and the //comment as the reason, strips the block', () => {
+    // Real MVU: _.set(path, old, new) — old (100) is ignored, new (80) applied; reason is //comment.
     const raw =
-      'You strike the goblin.\n<UpdateVariable>\n_.set(\'hp\', 80, \'hit\');\n_.add(\'gold\', 5);\n</UpdateVariable>\nIt reels.'
+      'You strike the goblin.\n<UpdateVariable>\n_.set(\'hp\', 100, 80);//took damage\n_.add(\'gold\', 5);\n</UpdateVariable>\nIt reels.'
     const { text, commands } = parseMvuCommands(raw)
     expect(text).toBe('You strike the goblin.\n\nIt reels.')
     expect(commands).toEqual([
-      { op: 'set', path: 'hp', value: 80, reason: 'hit' },
+      { op: 'set', path: 'hp', value: 80, reason: 'took damage' },
       { op: 'add', path: 'gold', value: 5, reason: undefined }
+    ])
+  })
+
+  it('parses the key/index forms and move, with //comment reasons', () => {
+    const { commands } = parseMvuCommands(
+      '<UpdateVariable>\n' +
+        "_.assign('inv', 'sword', 3);//forged\n" +
+        "_.remove('party', 0);//left\n" +
+        "_.move('bag.gem', 'vault.gem');\n" +
+        '</UpdateVariable>'
+    )
+    expect(commands).toEqual([
+      { op: 'assign', path: 'inv', key: 'sword', value: 3, reason: 'forged' },
+      { op: 'remove', path: 'party', key: 0, reason: 'left' },
+      { op: 'move', path: 'bag.gem', to: 'vault.gem', reason: undefined }
     ])
   })
 
@@ -90,5 +106,21 @@ describe('applyMvuCommands', () => {
     const stat: Record<string, any> = {}
     applyMvuCommands(stat, [{ op: 'insert', path: 'items', value: 'sword' }])
     expect(stat.items).toEqual(['sword'])
+  })
+
+  it('handles assign-by-key, remove-by-key, and move', () => {
+    const stat: Record<string, any> = { inv: { gold: 1 }, party: ['a', 'b', 'c'], bag: { gem: 9 } }
+    const deltas = applyMvuCommands(stat, [
+      { op: 'assign', path: 'inv', key: 'sword', value: 3 }, // set a specific member
+      { op: 'remove', path: 'party', key: 1 }, // drop array index 1
+      { op: 'move', path: 'bag.gem', to: 'vault.gem' }
+    ])
+    expect(stat.inv).toEqual({ gold: 1, sword: 3 })
+    expect(stat.party).toEqual(['a', 'c'])
+    expect(stat.bag.gem).toBeUndefined()
+    expect(stat.vault.gem).toBe(9)
+    // move records the destination delta + the source removal
+    expect(deltas).toContainEqual({ path: 'vault.gem', old: undefined, new: 9, reason: undefined })
+    expect(deltas).toContainEqual({ path: 'bag.gem', old: 9, new: undefined, reason: undefined })
   })
 })
