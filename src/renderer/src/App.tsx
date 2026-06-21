@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect } from 'react'
 import { useProfileStore } from './stores/profileStore'
 import { useCharacterStore } from './stores/characterStore'
 import { useChatStore } from './stores/chatStore'
@@ -11,10 +11,10 @@ import { FpsOverlay } from './components/FpsOverlay'
 import { ToastStack } from './components/ToastStack'
 import { ProfilePicker } from './components/ProfilePicker'
 import { TopNav } from './components/TopNav'
-import { PanelRouter } from './components/PanelRouter'
-import { ChatView } from './components/ChatView'
-import { RightPanel } from './components/RightPanel'
-import type { PanelTab } from './components/panelTabs'
+import { Workspace } from './components/workspace/Workspace'
+import { PluginHost } from './components/PluginHost'
+import { useNavStore } from './stores/navStore'
+import { useWorkspaceStore } from './stores/workspaceStore'
 import { initSlash } from './plugin/slash'
 
 export default function App(): React.ReactElement {
@@ -27,7 +27,8 @@ export default function App(): React.ReactElement {
   const loadChats = useChatStore((s) => s.loadChats)
   const activeChatId = useChatStore((s) => s.activeChatId)
 
-  const [panel, setPanel] = useState<PanelTab>('world')
+  const panel = useNavStore((s) => s.panel)
+  const setPanel = useNavStore((s) => s.setPanel)
 
   useEffect(() => {
     loadProfiles()
@@ -48,11 +49,15 @@ export default function App(): React.ReactElement {
 
   useEffect(() => {
     if (activeProfile) {
-      loadSettings(activeProfile.id)
-      loadCharacters(activeProfile.id)
-      loadChats(activeProfile.id)
-      usePresetStore.getState().load(activeProfile.id)
-      usePluginsStore.getState().load(activeProfile.id)
+      const pid = activeProfile.id
+      // Seed the workspace from this profile's saved per-mode layouts once settings land.
+      loadSettings(pid).then(() =>
+        useWorkspaceStore.getState().load(pid, useSettingsStore.getState().settings?.workspace?.layouts)
+      )
+      loadCharacters(pid)
+      loadChats(pid)
+      usePresetStore.getState().load(pid)
+      usePluginsStore.getState().load(pid)
     }
   }, [activeProfile])
 
@@ -81,18 +86,12 @@ export default function App(): React.ReactElement {
     <>
       <TopNav panel={panel} profileName={activeProfile.name} onSelectPanel={setPanel} />
 
-      <div className="app-body">
-        <div className="sidebar-left">
-          <PanelRouter panel={panel} profileId={activeProfile.id} onSelectPanel={setPanel} />
-        </div>
+      <Workspace profileId={activeProfile.id} />
 
-        <div className="main-content">
-          <ChatView profileId={activeProfile.id} />
-        </div>
-
-        <div className="sidebar-right">
-          <RightPanel profileId={activeProfile.id} />
-        </div>
+      {/* Standalone-plugin runtime stays mounted app-wide (outside the workspace) so its
+          iframes never reparent/reload; the dock is height-bounded by CSS. */}
+      <div className="app-plugin-dock">
+        <PluginHost profileId={activeProfile.id} />
       </div>
 
       {settings?.ui?.show_fps && <FpsOverlay />}

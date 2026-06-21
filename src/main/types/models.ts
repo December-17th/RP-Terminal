@@ -1,3 +1,5 @@
+import type { ModeLayouts } from '../../shared/workspaceLayout'
+
 export interface Profile {
   id: string
   name: string
@@ -76,5 +78,9 @@ export interface Settings {
     sidebar_collapsed: boolean
     history_strip_visible: boolean
     show_fps: boolean
+  }
+  /** Reconfigurable panel workspace: a saved split-tree layout per FSM mode (renderer-only). */
+  workspace: {
+    layouts: ModeLayouts
   }
 }

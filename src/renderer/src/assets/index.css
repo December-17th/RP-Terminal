@@ -128,6 +128,116 @@ body {
   overflow-y: auto;
 }
 
+/* ---------- Reconfigurable panel workspace ---------- */
+.ws-root {
+  flex: 1;
+  display: flex;
+  overflow: hidden;
+  min-width: 0;
+  min-height: 0;
+}
+.ws-split {
+  flex: 1;
+  display: flex;
+  overflow: hidden;
+  min-width: 0;
+  min-height: 0;
+}
+.ws-split-row {
+  flex-direction: row;
+}
+.ws-split-col {
+  flex-direction: column;
+}
+.ws-pane {
+  display: flex;
+  overflow: hidden;
+  min-width: 0;
+  min-height: 0;
+}
+.ws-splitter {
+  flex: 0 0 6px;
+  background: transparent;
+  transition: background-color 0.12s ease;
+}
+.ws-splitter:hover,
+.ws-splitter:active {
+  background: var(--rpt-accent);
+}
+.ws-splitter-row {
+  cursor: col-resize;
+}
+.ws-splitter-col {
+  cursor: row-resize;
+}
+.ws-panel {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  background-color: var(--rpt-bg-secondary);
+  border: 1px solid var(--rpt-border);
+  border-radius: 6px;
+}
+.ws-panel-head {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 6px;
+  border-bottom: 1px solid var(--rpt-border);
+  background-color: var(--rpt-bg-primary);
+}
+.ws-view-pick {
+  background-color: var(--rpt-bg-secondary);
+  color: var(--rpt-text-primary);
+  border: 1px solid var(--rpt-border);
+  border-radius: 4px;
+  font-size: 12px;
+  padding: 2px 6px;
+  cursor: pointer;
+}
+.ws-panel-spacer {
+  flex: 1;
+}
+.ws-panel-btn {
+  background: transparent;
+  border: none;
+  color: var(--rpt-text-secondary);
+  cursor: pointer;
+  padding: 1px 6px;
+  font-size: 13px;
+  line-height: 1;
+  border-radius: 4px;
+}
+.ws-panel-btn:hover {
+  background-color: var(--rpt-bg-secondary);
+  color: var(--rpt-text-primary);
+}
+.ws-panel-body {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.ws-panel-body.ws-fill {
+  overflow: hidden;
+}
+.ws-panel-body.ws-scroll {
+  overflow: auto;
+  padding: 14px;
+}
+/* Standalone-plugin panels render app-wide; bound the dock so it can't squash the workspace. */
+.app-plugin-dock {
+  flex: 0 0 auto;
+  max-height: 40vh;
+  overflow: auto;
+  padding: 0 8px;
+}
+
 /* ---------- Left-panel drawer ---------- */
 .panel {
   display: flex;

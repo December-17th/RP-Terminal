@@ -81,7 +81,10 @@ export const getDefaultSettings = (): Settings => ({
     sidebar_collapsed: false,
     history_strip_visible: true,
     show_fps: false
-  }
+  },
+  // Panel-workspace layouts are seeded by the renderer (it owns the view ids); main
+  // just persists whatever the renderer saved. Empty here = "use built-in defaults".
+  workspace: { layouts: {} }
 })
 
 /**
@@ -96,6 +99,9 @@ export const normalize = (stored: Partial<Settings>): Settings => {
   const generation = { ...d.generation, ...(stored.generation || {}) }
   const lorebook = { ...d.lorebook, ...(stored.lorebook || {}) }
   const ui = { ...d.ui, ...(stored.ui || {}) }
+  // Preserve the renderer's saved per-mode layouts verbatim (normalize otherwise drops
+  // unknown keys, since it returns an explicit allowlist of fields below).
+  const workspace = { layouts: stored.workspace?.layouts || {} }
 
   // Agent mode: accept the three-way enum; migrate the legacy boolean `enabled` toggle
   // (true → manual), else default off.
@@ -137,7 +143,18 @@ export const normalize = (stored: Partial<Settings>): Settings => {
     active_api_preset_id = api_presets[0].id
   }
 
-  return { api, api_presets, active_api_preset_id, persona, generation, lorebook, modes, agent, ui }
+  return {
+    api,
+    api_presets,
+    active_api_preset_id,
+    persona,
+    generation,
+    lorebook,
+    modes,
+    agent,
+    ui,
+    workspace
+  }
 }
 
 /** The tuning config for a mode, falling back to Explore (then defaults) for unknown modes. */

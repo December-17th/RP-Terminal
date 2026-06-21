@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import type { ModeLayouts } from '../../../shared/workspaceLayout';
 
 export interface ApiPreset {
   id: string;
@@ -41,6 +42,7 @@ export interface Settings {
     history_strip_visible: boolean;
     show_fps: boolean;
   };
+  workspace?: { layouts: ModeLayouts };
 }
 
 interface SettingsState {
