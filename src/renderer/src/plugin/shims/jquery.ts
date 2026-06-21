@@ -104,7 +104,10 @@ export const JQUERY_SHIM = `
           var mkmod = function(src){ return 'data:text/javascript;charset=utf-8,' + encodeURIComponent(src); };
           var urlByUrl = {};
           var depUrls = function(src, base){ return moduleImports(src).map(function(spec){ try { return new URL(spec, base).href; } catch(e){ return null; } }).filter(function(d){ return d && srcByUrl[d]; }); };
-          var rewrite = function(src, base){ return src.replace(/((?:from|import)\\s*\\(?\\s*)(['"])([^'"]+)(['"])/g, function(w, pre, q1, spec, q2){ try { var abs=new URL(spec, base).href; if (urlByUrl[abs]) return pre+q1+urlByUrl[abs]+q2; } catch(e){} return w; }); };
+          // Always wrap the replacement in DOUBLE quotes: encodeURIComponent leaves raw
+          // single-quotes in the data: URL (it doesn't escape '), which would close a
+          // single-quoted specifier early; it DOES escape " (→ %22), so "" is safe.
+          var rewrite = function(src, base){ return src.replace(/((?:from|import)\\s*\\(?\\s*)(['"])([^'"]+)(['"])/g, function(w, pre, q1, spec, q2){ try { var abs=new URL(spec, base).href; if (urlByUrl[abs]) return pre+'"'+urlByUrl[abs]+'"'; } catch(e){} return w; }); };
           var urls = Object.keys(srcByUrl), guard = 0;
           var pending = function(){ return urls.some(function(x){ return !urlByUrl[x]; }); };
           while (pending() && guard++ < urls.length + 2) {
