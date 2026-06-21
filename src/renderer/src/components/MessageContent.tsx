@@ -13,12 +13,15 @@ interface Props {
   onContextMenu?: (x: number, y: number) => void
 }
 
-const HTML_FENCE = /```html\s*([\s\S]*?)```/gi
+// An HTML block is either a ```html fenced document OR a bare <html>/<body> block
+// (the common Tavern-Helper "frontend card" shape, emitted without a code fence).
+const HTML_BLOCK = /```html\s*([\s\S]*?)```|(<(?:html|body)[\s\S]*?<\/(?:html|body)>)/gi
 
 /**
  * Renders an AI message. SillyTavern-style beautification regex emits ```html
- * fenced documents; those segments are rendered as sanitized HTML inside a
- * sandboxed iframe (script-free, CSS fully isolated). Everything else renders as
+ * fenced documents (or bare <body>/<html> frontend cards); those segments are
+ * rendered inside a sandboxed iframe — interactive (scripted) when they carry a
+ * <script>, otherwise sanitized + script-free. Everything else renders as
  * GitHub-flavored markdown.
  */
 export const MessageContent: React.FC<Props> = ({ content, css, onContextMenu }) => {
@@ -55,14 +58,15 @@ export const MessageContent: React.FC<Props> = ({ content, css, onContextMenu })
 
 type Segment = { type: 'md' | 'html'; text: string }
 
-const splitHtml = (content: string): Segment[] => {
+export const splitHtml = (content: string): Segment[] => {
   const segs: Segment[] = []
-  const re = new RegExp(HTML_FENCE)
+  const re = new RegExp(HTML_BLOCK)
   let last = 0
   let m: RegExpExecArray | null
   while ((m = re.exec(content)) !== null) {
     if (m.index > last) segs.push({ type: 'md', text: content.slice(last, m.index) })
-    segs.push({ type: 'html', text: m[1] })
+    // m[1] = fenced inner; m[2] = bare <html>/<body> block.
+    segs.push({ type: 'html', text: m[1] !== undefined ? m[1] : m[2] })
     last = m.index + m[0].length
   }
   if (last < content.length) segs.push({ type: 'md', text: content.slice(last) })
