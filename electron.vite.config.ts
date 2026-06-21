@@ -22,7 +22,18 @@ export default defineConfig({
       }
     }
   },
-  preload: {},
+  preload: {
+    build: {
+      rollupOptions: {
+        // The host preload (full window.api) + a separate locked-down preload for
+        // WebContentsView card-UI panels (minimal host bridge only).
+        input: {
+          index: resolve('src/preload/index.ts'),
+          wcvPreload: resolve('src/preload/wcvPreload.ts')
+        }
+      }
+    }
+  },
   renderer: {
     resolve: {
       alias: {

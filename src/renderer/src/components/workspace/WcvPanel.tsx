@@ -1,5 +1,7 @@
 import { useEffect, useRef } from 'react'
 import { useWorkspaceStore } from '../../stores/workspaceStore'
+import { useWorkspaceContext } from './context'
+import { useChatStore } from '../../stores/chatStore'
 
 /**
  * SPIKE — renderer host for an out-of-process `WebContentsView` card-UI panel. The native view
@@ -8,26 +10,33 @@ import { useWorkspaceStore } from '../../stores/workspaceStore'
  * changes (a splitter drag / mode switch can move us without resizing). The WebContentsView
  * paints OVER this div, so the placeholder is only visible while it loads or if unsupported.
  *
- * Bounds-sync over IPC + the overlay nature is exactly the "overlay tax" the static
- * card-determined layout is meant to remove; here it's good enough to prove the mechanism.
+ * The loaded page talks to the host via `window.rptHost` (the locked-down wcvPreload): it reads
+ * the latest floor's stat_data and writes it back through the variable bridge. This test page
+ * proves that round-trip before we load a real card frontend + the ST/TavernHelper/Mvu shim.
  */
-
-// Minimal self-contained page so the spike needs no bundled assets yet. The real view will
-// load the card's frontend build + a runtime shim preload.
 const TEST_URL =
-  'data:text/html,' +
+  'data:text/html;charset=utf-8,' +
   encodeURIComponent(
-    '<!doctype html><html><body style="margin:0;height:100vh;display:flex;align-items:center;' +
-      'justify-content:center;font-family:system-ui,sans-serif;background:#0f1420;color:#9fe1cb">' +
-      '<div style="text-align:center"><div style="font-size:20px;font-weight:600">WebContentsView ✓</div>' +
-      '<div style="opacity:.7;font-size:13px;margin-top:6px">out-of-process card-UI panel — spike</div></div>' +
-      '</body></html>'
+    `<!doctype html><html><head><meta charset="utf-8"></head>
+<body style="margin:0;height:100vh;box-sizing:border-box;padding:16px;font-family:system-ui,sans-serif;background:#0f1420;color:#9fe1cb">
+<div style="font-weight:600;font-size:15px;margin-bottom:8px">WebContentsView &harr; host bridge</div>
+<pre id="v" style="font-size:12px;white-space:pre-wrap;color:#cfe;max-height:52vh;overflow:auto;background:#0a0e16;padding:8px;border-radius:6px;margin:0">…</pre>
+<button id="b" style="margin-top:10px;padding:6px 12px;border-radius:6px;border:1px solid #2a3450;background:#16203a;color:#9fe1cb;cursor:pointer">+1 spikeCounter (write + persist)</button>
+<div id="s" style="margin-top:8px;font-size:11px;opacity:.6"></div>
+<script>
+const pre=document.getElementById('v'),s=document.getElementById('s');
+async function refresh(){try{pre.textContent=JSON.stringify(await window.rptHost.getVariables(),null,2)}catch(e){pre.textContent='no rptHost: '+e}}
+document.getElementById('b').onclick=async()=>{try{const v=await window.rptHost.getVariables();const n=((v&&v.spikeCounter)||0)+1;await window.rptHost.applyVariableOps([{op:'add',path:'/spikeCounter',value:n}]);s.textContent='wrote spikeCounter='+n;await refresh()}catch(e){s.textContent='write failed: '+e}};
+if(window.rptHost&&window.rptHost.onVarsChanged)window.rptHost.onVarsChanged(refresh);
+refresh();
+</script></body></html>`
   )
 
 export function WcvPanel({ slotId = 'spike' }: { slotId?: string }): React.ReactElement {
   const hostRef = useRef<HTMLDivElement>(null)
-  // Re-measure when the layout object changes (splitter resize / mode switch can shift our position).
-  const layouts = useWorkspaceStore((s) => s.layouts)
+  const layouts = useWorkspaceStore((s) => s.layouts) // re-measure when the layout changes
+  const { profileId } = useWorkspaceContext()
+  const chatId = useChatStore((s) => s.activeChatId)
 
   useEffect(() => {
     const el = hostRef.current
@@ -36,7 +45,7 @@ export function WcvPanel({ slotId = 'spike' }: { slotId?: string }): React.React
       const r = el.getBoundingClientRect()
       return { x: r.left, y: r.top, width: r.width, height: r.height }
     }
-    window.api.wcvEnsure(slotId, rect(), TEST_URL)
+    window.api.wcvEnsure(slotId, rect(), TEST_URL, { profileId, chatId: chatId || '' })
     const onChange = (): void => window.api.wcvSetBounds(slotId, rect())
     const ro = new ResizeObserver(onChange)
     ro.observe(el)
@@ -46,7 +55,7 @@ export function WcvPanel({ slotId = 'spike' }: { slotId?: string }): React.React
       window.removeEventListener('resize', onChange)
       window.api.wcvDestroy(slotId)
     }
-  }, [slotId])
+  }, [slotId, profileId, chatId])
 
   useEffect(() => {
     const el = hostRef.current

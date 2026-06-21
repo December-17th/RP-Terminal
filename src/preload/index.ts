@@ -198,6 +198,15 @@ const api = {
     const listener = (_e: IpcRendererEvent, entry: any) => cb(entry)
     ipcRenderer.on('log-event', listener)
     return () => ipcRenderer.removeListener('log-event', listener)
+  },
+  // A WebContentsView card panel wrote variables → refresh the host's native panels.
+  onWcvHostVars: (cb: (payload: { chatId: string; variables: unknown }) => void) => {
+    const listener = (
+      _e: IpcRendererEvent,
+      payload: { chatId: string; variables: unknown }
+    ): void => cb(payload)
+    ipcRenderer.on('wcv-host-vars', listener)
+    return () => ipcRenderer.removeListener('wcv-host-vars', listener)
   }
 }
 

@@ -41,9 +41,16 @@ export default function App(): React.ReactElement {
     })
     // Live log stream for the Logs panel.
     const unsubLog = window.api.onLog((entry) => useLogStore.getState().add(entry))
+    // A WebContentsView card panel wrote variables → reflect them in the native panels.
+    const unsubWcv = window.api.onWcvHostVars(({ chatId, variables }) => {
+      if (chatId === useChatStore.getState().activeChatId) {
+        useChatStore.getState().setLatestFloorVariables(variables)
+      }
+    })
     return () => {
       unsubDelta()
       unsubLog()
+      unsubWcv()
     }
   }, [])
 

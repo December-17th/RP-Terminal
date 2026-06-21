@@ -1,4 +1,5 @@
 import { WebContentsView, BrowserWindow } from 'electron'
+import { join } from 'path'
 import { log } from './logService'
 
 /**
@@ -6,9 +7,9 @@ import { log } from './logService'
  *
  * Each panel slot gets one WebContentsView added to the main window's contentView, so it runs
  * in its own process (hang/crash-isolated) and paints OVER the React UI at the pixel bounds the
- * renderer reports for that slot. Proves the embedding mechanism (create / position / load /
- * destroy) ahead of the static card-UI workspace + the ST/MVU runtime shim. Bounds are
- * window-content-relative (same origin as the renderer's getBoundingClientRect).
+ * renderer reports for that slot. Each carries a (profileId, chatId) context so the host-bridge
+ * IPC (read/write message variables) can resolve the right session from the calling view's
+ * webContents id. Bounds are window-content-relative (same origin as getBoundingClientRect).
  */
 
 interface Bounds {
@@ -18,8 +19,14 @@ interface Bounds {
   height: number
 }
 
+interface Slot {
+  view: WebContentsView
+  profileId: string
+  chatId: string
+}
+
 let mainWindow: BrowserWindow | null = null
-const views = new Map<string, WebContentsView>()
+const slots = new Map<string, Slot>()
 
 export const init = (win: BrowserWindow): void => {
   mainWindow = win
@@ -34,39 +41,53 @@ const round = (b: Bounds): Bounds => ({
   height: Math.max(0, Math.round(b.height))
 })
 
-/** Create the view for `id` (once) loading `url`, then position it at `bounds`. */
-export const ensure = (id: string, bounds: Bounds, url: string): void => {
+/** Create the view for `id` (once) loading `url` with the locked-down shim preload, bind its
+ *  session context, then position it at `bounds`. */
+export const ensure = (
+  id: string,
+  bounds: Bounds,
+  url: string,
+  ctx: { profileId: string; chatId: string }
+): void => {
   if (!mainWindow) return
-  let view = views.get(id)
-  if (!view) {
-    // Locked down: no node, isolated, sandboxed. (A shim preload is added in a later step.)
-    view = new WebContentsView({
-      webPreferences: { contextIsolation: true, sandbox: true, nodeIntegration: false }
+  let slot = slots.get(id)
+  if (!slot) {
+    const view = new WebContentsView({
+      webPreferences: {
+        contextIsolation: true,
+        sandbox: true,
+        nodeIntegration: false,
+        preload: join(__dirname, '../preload/wcvPreload.js')
+      }
     })
-    views.set(id, view)
+    slot = { view, profileId: ctx.profileId, chatId: ctx.chatId }
+    slots.set(id, slot)
     mainWindow.contentView.addChildView(view)
     view.webContents.loadURL(url)
     log('info', `wcv: created '${id}'`)
+  } else {
+    slot.profileId = ctx.profileId
+    slot.chatId = ctx.chatId
   }
-  view.setBounds(round(bounds))
+  slot.view.setBounds(round(bounds))
 }
 
 export const setBounds = (id: string, bounds: Bounds): void => {
-  views.get(id)?.setBounds(round(bounds))
+  slots.get(id)?.view.setBounds(round(bounds))
 }
 
 /** Hide without destroying (e.g. while a modal is open over it, or its tab is hidden). */
 export const setVisible = (id: string, visible: boolean): void => {
-  views.get(id)?.setVisible(visible)
+  slots.get(id)?.view.setVisible(visible)
 }
 
 export const destroy = (id: string): void => {
-  const view = views.get(id)
-  if (!view) return
-  views.delete(id)
+  const slot = slots.get(id)
+  if (!slot) return
+  slots.delete(id)
   try {
-    mainWindow?.contentView.removeChildView(view)
-    if (!view.webContents.isDestroyed()) view.webContents.close()
+    mainWindow?.contentView.removeChildView(slot.view)
+    if (!slot.view.webContents.isDestroyed()) slot.view.webContents.close()
   } catch (err) {
     log('error', `wcv: destroy '${id}' failed`, String(err))
   }
@@ -74,5 +95,29 @@ export const destroy = (id: string): void => {
 }
 
 export const destroyAll = (): void => {
-  for (const id of [...views.keys()]) destroy(id)
+  for (const id of [...slots.keys()]) destroy(id)
+}
+
+/** Resolve a view's slot context from its webContents id (for the host-bridge IPC). */
+export const contextFor = (
+  webContentsId: number
+): { slotId: string; profileId: string; chatId: string } | null => {
+  for (const [slotId, s] of slots) {
+    if (s.view.webContents.id === webContentsId) {
+      return { slotId, profileId: s.profileId, chatId: s.chatId }
+    }
+  }
+  return null
+}
+
+/** Push updated variables to the host renderer so native panels reflect a WCV write. */
+export const pushHostVars = (chatId: string, variables: unknown): void => {
+  mainWindow?.webContents.send('wcv-host-vars', { chatId, variables })
+}
+
+/** Notify sibling WCVs on the same chat that the variables changed. */
+export const notifyVarsChanged = (chatId: string, statData: unknown): void => {
+  for (const s of slots.values()) {
+    if (s.chatId === chatId) s.view.webContents.send('wcv-vars-changed', statData)
+  }
 }
