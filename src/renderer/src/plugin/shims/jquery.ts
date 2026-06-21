@@ -44,7 +44,7 @@ export const JQUERY_SHIM = `
   function llog(m){ try{ parent.postMessage({__rptlog:1,msg:'[jquery.load] '+m},'*'); }catch(_){} }
   // Re-create a parsed <script> so it actually executes (innerHTML-injected scripts don't),
   // preserving its attributes (src/type=module/crossorigin/…) and inline body.
-  function execScript(old, target){ var s=document.createElement('script'); for (var i=0;i<old.attributes.length;i++){ s.setAttribute(old.attributes[i].name, old.attributes[i].value); } if (!old.src) s.textContent = old.textContent; target.appendChild(s); }
+  function execScript(old, target){ var s=document.createElement('script'); for (var i=0;i<old.attributes.length;i++){ s.setAttribute(old.attributes[i].name, old.attributes[i].value); } if (!old.src) s.textContent = old.textContent; s.addEventListener('error', function(){ llog('script load/instantiate error: ' + (s.src || '(inline ' + (s.type||'classic') + ')') + ' — likely an unresolved import'); }); target.appendChild(s); }
   // Prefer the host-mediated fetch (runs in main — no opaque-origin CORS wall); fall back to
   // a direct fetch when the rpt bridge isn't present.
   function getText(u){
@@ -91,12 +91,13 @@ export const JQUERY_SHIM = `
       });
       if (modUrls.length && window.rpt && rpt.fetchModuleGraph) {
         try {
+          llog('module entries: ' + modUrls.join(', '));
           var graph = await rpt.fetchModuleGraph(modUrls);
           var imports = {};
           (graph||[]).forEach(function(mod){ imports[mod.url] = URL.createObjectURL(new Blob([mod.source], {type:'application/javascript'})); });
           var im = document.createElement('script'); im.type='importmap'; im.textContent = JSON.stringify({ imports: imports });
           (document.head||document.documentElement).appendChild(im);
-          llog('importmap: ' + (graph?graph.length:0) + ' module(s)');
+          llog('importmap injected (' + (graph?graph.length:0) + ' module(s)): ' + Object.keys(imports).join(', '));
         } catch(e){ llog('module graph fail: ' + ((e&&e.message)||e)); }
       }
 
