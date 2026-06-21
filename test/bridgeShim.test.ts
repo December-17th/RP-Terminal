@@ -34,4 +34,20 @@ describe('buildScriptSrcDoc', () => {
     expect(open).toContain("script-src 'unsafe-inline' https:")
     expect(open).toContain('connect-src https:')
   })
+
+  it('injects the CDN lib-loader (real lodash/zod) only when allowRemote', () => {
+    const locked = buildScriptSrcDoc([{ name: 's', code: "import 'x'" }])
+    expect(locked).not.toContain('lodash/+esm')
+
+    const open = buildScriptSrcDoc([{ name: 's', code: "import 'x'" }], { allowRemote: true })
+    expect(open).toContain('lodash/+esm')
+    expect(open).toContain('zod/+esm')
+    expect(open).toContain('window.z={z:') // shaped as the MVU zod wrapper
+  })
+
+  it('exposes the Tavern Helper globals (eventOn + jQuery stub) to scripts', () => {
+    const doc = buildScriptSrcDoc([{ name: 's', code: 'x()' }])
+    expect(doc).toContain('window.eventOn')
+    expect(doc).toContain('window.jQuery')
+  })
 })

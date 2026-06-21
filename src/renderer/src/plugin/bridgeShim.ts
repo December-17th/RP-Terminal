@@ -4,8 +4,9 @@
  * BRIDGE_SHIM is plain JS injected as the first <script> inside every card-script
  * iframe. The iframe runs with `sandbox="allow-scripts"` and *without*
  * `allow-same-origin`, so it gets a unique opaque origin: scripts execute but
- * cannot touch the parent window/DOM, our origin's storage/cookies, or
- * (enforced by the CSP below) the network. Its only channel to the app is
+ * cannot touch the parent window/DOM or our origin's storage/cookies. The network
+ * is blocked by the CSP by default; a per-card `remoteScripts` grant relaxes it so
+ * scripts can `import` remote ES modules (1B). Its only channel to the app is
  * `postMessage`, which the shim wraps into the friendly promise-based `rpt` API.
  *
  * The host (CardScriptHost) validates `event.source` and permission-checks every
@@ -225,6 +226,11 @@ export const TAVERN_SHIM = `
       var fired = false;
       rpt.on(name, function (p) { if (!fired) { fired = true; cb(p); } });
     },
+    eventMakeFirst: function (name, cb) { return rpt.on(name, cb); },
+    // Host→script events are one-way; script-side emit/remove are best-effort no-ops.
+    eventEmit: function () { return Promise.resolve(); },
+    eventRemoveListener: function () {},
+    eventClearEvent: function () {},
     registerSlashCommand: function (name, cb) { return rpt.slash.registerCommand(name, cb); },
     toastr: {
       info: function (m) { return rpt.ui.toast(String(m)); },
@@ -234,10 +240,34 @@ export const TAVERN_SHIM = `
     }
   };
   window.TavernHelper = TH;
-  // A few loose globals that some scripts call unqualified.
+  // Loose globals that TH / MVU scripts call unqualified.
   window.getVariables = TH.getVariables;
   window.setVariables = TH.setVariables;
   window.triggerSlash = TH.triggerSlash;
+  window.eventOn = TH.eventOn;
+  window.eventOnce = TH.eventOnce;
+  window.eventMakeFirst = TH.eventMakeFirst;
+  window.eventEmit = TH.eventEmit;
+  window.eventRemoveListener = TH.eventRemoveListener;
+  window.eventClearEvent = TH.eventClearEvent;
+  if (!window.toastr) window.toastr = TH.toastr;
+
+  // Minimal jQuery no-op stub so ST-DOM-coupled calls ($('#x').prop('checked'), chaining)
+  // don't throw. It can't reach a real ST DOM (there isn't one) — getters return undefined,
+  // everything else is chainable so scripts degrade instead of crashing.
+  if (!window.$) {
+    var jqo = {};
+    ['on','off','one','click','append','prepend','after','before','remove','detach','empty',
+     'addClass','removeClass','toggleClass','css','attr','val','text','html','hide','show',
+     'toggle','trigger','find','closest','parent','children','each','ready'].forEach(function (m) {
+      jqo[m] = function () { return jqo; };
+    });
+    ['prop','data','is','hasClass'].forEach(function (m) { jqo[m] = function () { return undefined; }; });
+    jqo.length = 0;
+    var jq = function () { return jqo; };
+    jq.fn = jqo; jq.extend = Object.assign; jq.noop = function () {};
+    window.$ = window.jQuery = jq;
+  }
 })();
 `
 
@@ -285,6 +315,21 @@ export const LIB_SHIM = `
 })();
 `
 
+/**
+ * When remote scripts are allowed, load REAL lodash + zod from a CDN and expose the
+ * globals that Tavern Helper / MVU scripts assume exist: a callable/chainable `_`
+ * (`_(x).sortBy()…`) and `z` shaped as `{ z: <zod v4> }` (the MVU zod wrapper —
+ * `z.z.object`, `z.z.coerce`, …). It's a `type="module"` with TOP-LEVEL AWAIT, so it
+ * finishes setting the globals before any user module (or its imports) evaluates. Falls
+ * back silently to the clean-room LIB_SHIM `_` if the CDN is unreachable. The clean-room
+ * stance is intact: lodash/zod are MIT npm libs, not js-slash-runner code.
+ */
+const LIB_LOADER =
+  `<script type="module">` +
+  `try{const m=await import('https://testingcf.jsdelivr.net/npm/lodash/+esm');window._=window.lodash=(m&&m.default)||m;}catch(e){}` +
+  `try{const m=await import('https://testingcf.jsdelivr.net/npm/zod/+esm');window.z={z:(m&&(m.z||m.default))||m};}catch(e){}` +
+  `</script>`
+
 export interface CardScript {
   name: string
   code: string
@@ -328,6 +373,8 @@ export const buildScriptSrcDoc = (
     `<script>${LIB_SHIM}</script>` +
     `<script>${TAVERN_SHIM}</script>` +
     errorReporter +
+    // Real lodash/zod (for module scripts) only when network is available for this world.
+    (opts.allowRemote ? LIB_LOADER : '') +
     userScripts +
     `</body></html>`
   )
