@@ -58,11 +58,23 @@ export const RPTerminalExtSchema = z.object({
     .array(z.object({ name: z.string(), code: z.string(), enabled: z.boolean().optional() }))
     .default([]),
   game_rules: z.record(z.string(), z.any()).default({}),
-  assets: z.record(z.string(), z.string()).default({})
+  assets: z.record(z.string(), z.string()).default({}),
+
+  // --- World Card bundle slots (Track S). Optional so a plain card stays minimal; the
+  // element shapes stay loose (z.any) because they're foreign formats (ST regex/preset/
+  // lorebook) normalized on import. See docs/world-card-design.md §3. ---
+  /** Bundle version marker; present ⇒ this is a World Card. */
+  world_card: z.string().optional(),
+  meta: z.record(z.string(), z.any()).optional(),
+  regex: z.array(z.any()).optional(),
+  presets: z.array(z.any()).optional(),
+  lorebooks: z.array(z.any()).optional(),
+  plugins: z.array(z.any()).optional(),
+  agent: z.record(z.string(), z.any()).optional(),
+  combat: z.record(z.string(), z.any()).optional(),
+  recommended_settings: z.record(z.string(), z.any()).optional()
 })
-  // Preserve unknown/future bundle slots (world_card, meta, regex, presets,
-  // lorebooks, plugins, agent, combat, recommended_settings) instead of stripping
-  // them — the World Card manifest (Track S) is additive and must round-trip.
+  // Still catch any further unknown/future slots so the manifest round-trips.
   .catchall(z.any())
 export type RPTerminalExt = z.infer<typeof RPTerminalExtSchema>
 

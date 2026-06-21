@@ -2,7 +2,7 @@ import fs from 'fs'
 import path from 'path'
 import { getAppDir, ensureDir } from './storageService'
 import { getDb } from './db'
-import { RPTerminalCard, RPTerminalCardSchema, Lorebook } from '../types/character'
+import { RPTerminalCard, RPTerminalCardSchema, Lorebook, getRpExt } from '../types/character'
 import {
   saveCharacterLorebook,
   deleteCharacterLorebook,
@@ -96,40 +96,40 @@ export interface ImportResult {
  * one ST regex-script object. Canonical source is `regex_scripts` (§3 of the design).
  */
 export const collectBundledRegex = (card: RPTerminalCard): any[] => {
-  const ext: any = card.data.extensions || {}
-  const fromSt = Array.isArray(ext.regex_scripts) ? ext.regex_scripts : []
-  const fromRpt = Array.isArray(ext.rp_terminal?.regex) ? ext.rp_terminal.regex : []
-  return [...fromSt, ...fromRpt].filter((r) => r && typeof r === 'object')
+  const rpt = getRpExt(card)
+  // `regex_scripts` is the ST-standard key (extensions level, untyped via catchall).
+  const fromSt = card.data.extensions?.regex_scripts
+  const fromRpt = rpt?.regex
+  return [...(Array.isArray(fromSt) ? fromSt : []), ...(Array.isArray(fromRpt) ? fromRpt : [])].filter(
+    (r) => r && typeof r === 'object'
+  )
 }
 
 /** Bundled chat-completion presets from `rp_terminal.presets[]` (Track S §3). */
 export const collectBundledPresets = (card: RPTerminalCard): any[] => {
-  const rpt: any = card.data.extensions?.rp_terminal || {}
-  return Array.isArray(rpt.presets) ? rpt.presets.filter((p: any) => p && typeof p === 'object') : []
+  const p = getRpExt(card)?.presets
+  return Array.isArray(p) ? p.filter((x) => x && typeof x === 'object') : []
 }
 
 /** Extra bundled lorebooks from `rp_terminal.lorebooks[]` (beyond `character_book`). */
 export const collectBundledLorebooks = (card: RPTerminalCard): any[] => {
-  const rpt: any = card.data.extensions?.rp_terminal || {}
-  return Array.isArray(rpt.lorebooks)
-    ? rpt.lorebooks.filter((b: any) => b && typeof b === 'object')
-    : []
+  const b = getRpExt(card)?.lorebooks
+  return Array.isArray(b) ? b.filter((x) => x && typeof x === 'object') : []
 }
 
 /** Count what a parsed card bundles, for the import confirm + summary toast. */
 export const summarizeCardBundle = (parsed: ParsedCard): ImportSummary => {
-  const ext: any = parsed.card.data.extensions || {}
-  const rpt: any = ext.rp_terminal || {}
+  const rpt = getRpExt(parsed.card)
   return {
     name: parsed.card.data.name,
-    isWorldCard: !!rpt.world_card,
+    isWorldCard: !!rpt?.world_card,
     regexScripts: collectBundledRegex(parsed.card).length,
     loreEntries: parsed.lorebook?.entries.length || 0,
-    scripts: Array.isArray(rpt.scripts) ? rpt.scripts.length : 0,
-    uiWidgets: Array.isArray(rpt.ui_layout) ? rpt.ui_layout.length : 0,
+    scripts: Array.isArray(rpt?.scripts) ? rpt.scripts.length : 0,
+    uiWidgets: Array.isArray(rpt?.ui_layout) ? rpt.ui_layout.length : 0,
     presets: collectBundledPresets(parsed.card).length,
     lorebooks: collectBundledLorebooks(parsed.card).length,
-    pluginsSkipped: Array.isArray(rpt.plugins) ? rpt.plugins.length : 0
+    pluginsSkipped: Array.isArray(rpt?.plugins) ? rpt.plugins.length : 0
   }
 }
 

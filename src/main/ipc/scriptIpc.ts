@@ -36,9 +36,9 @@ export const registerScriptIpc = (ipcMain: IpcMain): void => {
   // grant, 1B). Also reports the remote hosts those scripts import from (grant + CSP).
   ipcMain.handle('get-runtime-scripts', (_, profileId, cardId, chatId) => {
     const card = cardId ? characterService.getCharacter(profileId, cardId) : null
-    const cardScripts = ((card?.data.extensions?.rp_terminal as any)?.scripts || [])
-      .filter((s: any) => s && s.enabled !== false)
-      .map((s: any) => ({ name: s.name || 'script', code: s.code || '' }))
+    const cardScripts = (card?.data.extensions?.rp_terminal?.scripts || [])
+      .filter((s) => s && s.enabled !== false)
+      .map((s) => ({ name: s.name || 'script', code: s.code || '' }))
     const scripts = [
       ...cardScripts,
       ...scriptService.getActiveScripts(profileId, { cardId, chatId })
