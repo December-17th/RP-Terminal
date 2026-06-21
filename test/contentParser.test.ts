@@ -1,5 +1,33 @@
 import { describe, it, expect } from 'vitest'
-import { parseContent } from '../src/main/parsers/contentParser'
+import { parseContent, stripThinking } from '../src/main/parsers/contentParser'
+import { parseMvuCommands } from '../src/main/parsers/mvuParser'
+
+describe('stripThinking', () => {
+  it('removes <think>/<thinking> blocks (incl. attributes), keeps the narrative', () => {
+    expect(stripThinking('<thinking>plan the scene</thinking>\nThe rain falls.')).toBe(
+      'The rain falls.'
+    )
+    expect(stripThinking('<think>a</think>X<think>b</think>Y')).toBe('XY')
+    expect(stripThinking('<thinking foo="1">x</thinking>Done')).toBe('Done')
+    expect(stripThinking('all narration, no cot')).toBe('all narration, no cot')
+  })
+
+  it('drops a dangling unclosed trailing block (truncated output)', () => {
+    expect(stripThinking('Scene text.\n<thinking>cut off mid-reaso')).toBe('Scene text.')
+  })
+
+  it('prevents a stray <UpdateVariable> in reasoning from eating the narrative', () => {
+    // The real bug: thinking mentions "<UpdateVariable>" with no close, so the MVU stripper
+    // would match through to the real block, deleting <gametxt>. Stripping thinking first fixes it.
+    const raw =
+      '<thinking>Then I will output <UpdateVariable> with the patch.</thinking>\n' +
+      '<gametxt>The guild hall roars with rain.</gametxt>\n' +
+      "<UpdateVariable>\n_.set('hp', 100, 80);//hit\n</UpdateVariable>"
+    const { text, commands } = parseMvuCommands(stripThinking(raw))
+    expect(text).toContain('<gametxt>The guild hall roars with rain.</gametxt>')
+    expect(commands).toEqual([{ op: 'set', path: 'hp', value: 80, reason: 'hit' }])
+  })
+})
 
 describe('parseContent', () => {
   it('strips an rpt-event tag and returns trimmed narrative text', () => {

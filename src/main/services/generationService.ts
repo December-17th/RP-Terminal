@@ -17,7 +17,7 @@ import { buildPrompt, buildScanText, fitToBudget, ChatMessage } from './promptBu
 import { getPromptRules } from './regexService'
 import { loadGlobals, saveGlobals } from './templateService'
 import { streamProvider, DeltaCallback } from './apiService'
-import { parseContent, RPEvent } from '../parsers/contentParser'
+import { parseContent, stripThinking, RPEvent } from '../parsers/contentParser'
 import { parseMvuCommands, applyMvuCommands } from '../parsers/mvuParser'
 import { log } from './logService'
 import { FloorFile } from '../types/chat'
@@ -237,10 +237,14 @@ export const generate = async (
 
   log('response', `← ${raw.length} chars${stopped ? ' (stopped)' : ''}`, raw)
 
-  // Extract rpt-event state tags. The RAW response is stored — display regex
+  // Drop the model's <thinking> reasoning first — it must not be displayed, sent back as
+  // history, or (crucially) left to corrupt the tag strippers: a stray "<UpdateVariable>"
+  // mentioned inside the reasoning would otherwise make the MVU stripper eat the narrative.
+  const cleaned = stripThinking(raw)
+  // Extract rpt-event state tags. The cleaned response is stored — display regex
   // (markdownOnly beautification) is applied at render time, not persisted, so
   // history sent back to the model stays in the model's own output format.
-  const parsed = parseContent(raw)
+  const parsed = parseContent(cleaned)
   // MVU (Track R): parse + apply <UpdateVariable> commands into stat_data, recording
   // this turn's deltas. Runs after the rpt-event strip; its blocks are stripped too, so
   // the persisted/display text is clean narrative.
