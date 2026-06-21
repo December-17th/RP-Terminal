@@ -39,7 +39,7 @@ describe('buildScriptSrcDoc', () => {
     expect(locked).not.toContain("script-src 'unsafe-inline' https:")
 
     const open = buildScriptSrcDoc([{ name: 's', code: 'x()' }], { allowRemote: true })
-    expect(open).toContain("script-src 'unsafe-inline' https:")
+    expect(open).toContain("script-src 'unsafe-inline' blob: https:")
     expect(open).toContain('connect-src https:')
   })
 
