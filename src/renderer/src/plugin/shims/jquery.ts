@@ -1,0 +1,65 @@
+/**
+ * Clean-room minimal jQuery-compatible `$` for the sandbox (replaces the old no-op stub).
+ * It operates on the iframe's OWN document, so Tavern-Helper "frontend cards" that use
+ * basic jQuery DOM ops work, and `$(sel).load(url)` fetches a remote UI and injects it
+ * (executing its <script> tags) — the fetch only succeeds when the world's network grant
+ * has opened the CSP. ST-DOM-coupled selectors that match nothing degrade to no-ops, as
+ * before. NOT real jQuery — a small compatible subset, reimplemented from public behavior.
+ */
+export const JQUERY_SHIM = `
+(function () {
+  if (window.$ && window.jQuery) return;
+  function toArr(x){ return [].slice.call(x); }
+  function JQ(nodes){ this.length = nodes.length; for (var i=0;i<nodes.length;i++) this[i]=nodes[i]; }
+  var p = JQ.prototype;
+  p.each = function(fn){ for (var i=0;i<this.length;i++) fn.call(this[i], i, this[i]); return this; };
+  p.get = function(i){ return this[i]; };
+  p.html = function(v){ if (v===undefined) return this[0] && this[0].innerHTML; return this.each(function(){ this.innerHTML = v; }); };
+  p.text = function(v){ if (v===undefined) return this[0] && this[0].textContent; return this.each(function(){ this.textContent = v; }); };
+  p.val = function(v){ if (v===undefined) return this[0] && this[0].value; return this.each(function(){ this.value = v; }); };
+  p.attr = function(k,v){ if (v===undefined) return this[0] && this[0].getAttribute(k); return this.each(function(){ this.setAttribute(k,v); }); };
+  p.prop = function(k,v){ if (v===undefined) return this[0] ? this[0][k] : undefined; return this.each(function(){ this[k]=v; }); };
+  p.css = function(k,v){ if (k && typeof k==='object'){ return this.each(function(){ for (var n in k) this.style[n]=k[n]; }); } if (v===undefined) return this[0] && getComputedStyle(this[0])[k]; return this.each(function(){ this.style[k]=v; }); };
+  p.addClass = function(c){ return this.each(function(){ var el=this; String(c).split(/\\s+/).forEach(function(x){ if(x) el.classList.add(x); }); }); };
+  p.removeClass = function(c){ return this.each(function(){ var el=this; String(c).split(/\\s+/).forEach(function(x){ if(x) el.classList.remove(x); }); }); };
+  p.toggleClass = function(c){ return this.each(function(){ this.classList.toggle(c); }); };
+  p.hasClass = function(c){ return this[0] ? this[0].classList.contains(c) : false; };
+  p.append = function(v){ return this.each(function(){ var t=this; if (typeof v==='string') t.insertAdjacentHTML('beforeend', v); else if (v instanceof JQ) v.each(function(){ t.appendChild(this); }); else if (v && v.nodeType) t.appendChild(v); }); };
+  p.prepend = function(v){ return this.each(function(){ if (typeof v==='string') this.insertAdjacentHTML('afterbegin', v); else if (v && v.nodeType) this.insertBefore(v, this.firstChild); }); };
+  p.remove = function(){ return this.each(function(){ this.parentNode && this.parentNode.removeChild(this); }); };
+  p.empty = function(){ return this.each(function(){ this.innerHTML=''; }); };
+  p.hide = function(){ return this.each(function(){ this.style.display='none'; }); };
+  p.show = function(){ return this.each(function(){ this.style.display=''; }); };
+  p.on = function(ev, a, b){ var fn = (typeof a==='function') ? a : b; return this.each(function(){ var el=this; String(ev).split(/\\s+/).forEach(function(e){ el.addEventListener(e, fn); }); }); };
+  p.off = function(ev, fn){ return this.each(function(){ this.removeEventListener(ev, fn); }); };
+  p.click = function(fn){ return fn ? this.on('click', fn) : this.each(function(){ this.click(); }); };
+  p.trigger = function(ev){ return this.each(function(){ this.dispatchEvent(new Event(ev, {bubbles:true})); }); };
+  p.find = function(sel){ var out=[]; this.each(function(){ out = out.concat(toArr(this.querySelectorAll(sel))); }); return new JQ(out); };
+  p.children = function(){ var out=[]; this.each(function(){ out = out.concat(toArr(this.children)); }); return new JQ(out); };
+  p.parent = function(){ var out=[]; this.each(function(){ this.parentNode && out.push(this.parentNode); }); return new JQ(out); };
+  p.closest = function(sel){ var out=[]; this.each(function(){ var e=this.closest && this.closest(sel); e && out.push(e); }); return new JQ(out); };
+  p.is = function(sel){ return this[0] ? this[0].matches(sel) : false; };
+  p.data = function(k,v){ if (v===undefined) return this[0] ? this[0].dataset[k] : undefined; return this.each(function(){ this.dataset[k]=v; }); };
+  p.ready = function(fn){ if (document.readyState!=='loading') fn(); else document.addEventListener('DOMContentLoaded', function(){ fn(); }); return this; };
+  // Re-run <script> tags in freshly-injected content so a loaded UI actually executes.
+  function runScripts(container){ toArr(container.querySelectorAll('script')).forEach(function(old){ var s=document.createElement('script'); if (old.src) s.src=old.src; else s.textContent=old.textContent; if (old.type) s.type=old.type; old.parentNode.replaceChild(s, old); }); }
+  p.load = function(url, cb){ var self=this; fetch(String(url)).then(function(r){ return r.text(); }).then(function(html){ var m=/<body[^>]*>([\\s\\S]*?)<\\/body>/i.exec(html); var content=m?m[1]:html; self.each(function(){ this.innerHTML=content; runScripts(this); }); if (typeof cb==='function') cb(); }).catch(function(e){ try{ parent.postMessage({__rptlog:1,msg:'[jquery.load] '+((e&&e.message)||e)},'*'); }catch(_){} }); return this; };
+  function $(sel){
+    if (sel instanceof JQ) return sel;
+    if (typeof sel === 'function') return new JQ([document]).ready(sel);
+    if (sel && (sel.nodeType || sel===window)) return new JQ([sel]);
+    if (typeof sel === 'string'){
+      var s = sel.trim();
+      if (s.charAt(0)==='<'){ var d=document.createElement('div'); d.innerHTML=s; return new JQ(toArr(d.childNodes).filter(function(n){ return n.nodeType===1; })); }
+      try { return new JQ(toArr(document.querySelectorAll(s))); } catch(e){ return new JQ([]); }
+    }
+    return new JQ([]);
+  }
+  $.fn = p;
+  $.noop = function(){};
+  $.extend = Object.assign;
+  $.get = function(url, cb){ return fetch(String(url)).then(function(r){ return r.text(); }).then(function(d){ if (cb) cb(d); return d; }); };
+  $.ajax = function(o){ o=o||{}; return fetch(String(o.url), { method: o.type||o.method||'GET' }).then(function(r){ return o.dataType==='json' ? r.json() : r.text(); }).then(function(d){ if (o.success) o.success(d); return d; }).catch(function(e){ if (o.error) o.error(e); }); };
+  window.$ = window.jQuery = $;
+})();
+`

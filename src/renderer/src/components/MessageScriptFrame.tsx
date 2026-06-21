@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useProfileStore } from '../stores/profileStore'
 import { useChatStore } from '../stores/chatStore'
 import { useCharacterStore } from '../stores/characterStore'
@@ -36,7 +36,37 @@ export function MessageScriptFrame({ html }: { html: string }): React.ReactEleme
 
   const frameRef = useRef<HTMLIFrameElement>(null)
   const [height, setHeight] = useState(80)
-  const srcDoc = useMemo(() => buildMessageHtmlDoc(html, { allowRemote: false }), [html])
+  const [srcDoc, setSrcDoc] = useState('')
+
+  // Build the sandbox doc once the world's network grant is known. A frontend card that
+  // pulls a remote UI (a URL in its markup) needs the per-world `remoteScripts` grant to
+  // open the CSP — we reuse the same grant card scripts use, and prompt once if it isn't
+  // set. Without the grant, the frame stays network-off.
+  useEffect(() => {
+    if (!profileId) return
+    let alive = true
+    ;(async () => {
+      let allow = false
+      if (cardId) {
+        const g = await window.api.pluginGetGrants(profileId, cardId)
+        allow = g?.remoteScripts === true
+        if (!allow && /https?:\/\//i.test(html)) {
+          const ok = window.confirm(
+            'A UI embedded in this message loads content from the internet.\n\n' +
+              "Allow this world's message HTML to load remote content? (You can change this later.)"
+          )
+          if (ok) {
+            await window.api.pluginSetGrants(profileId, cardId, { remoteScripts: true })
+            allow = true
+          }
+        }
+      }
+      if (alive) setSrcDoc(buildMessageHtmlDoc(html, { allowRemote: allow }))
+    })()
+    return () => {
+      alive = false
+    }
+  }, [html, profileId, cardId])
 
   const post = (msg: unknown): void => frameRef.current?.contentWindow?.postMessage(msg, '*')
   const emit = (name: string, payload: unknown): void => post({ __rptevent: 1, name, payload })

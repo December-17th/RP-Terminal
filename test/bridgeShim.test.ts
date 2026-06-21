@@ -84,3 +84,20 @@ describe('buildMessageHtmlDoc (TH-6)', () => {
     expect(doc).not.toContain('<title>t</title>')
   })
 })
+
+describe('jQuery shim (frontend cards)', () => {
+  it('ships a real DOM-backed mini-jQuery with a working .load', () => {
+    const doc = buildScriptSrcDoc([{ name: 's', code: 'x()' }])
+    expect(doc).toContain('window.$ = window.jQuery')
+    expect(doc).toContain('p.load = function')
+  })
+})
+
+describe('buildMessageHtmlDoc remote grant (TH-6)', () => {
+  it('opens the CSP for the network when allowRemote is granted', () => {
+    const locked = buildMessageHtmlDoc('<body><script>x()</script></body>')
+    expect(locked).toContain("connect-src 'none'")
+    const open = buildMessageHtmlDoc('<body><script>x()</script></body>', { allowRemote: true })
+    expect(open).toContain('connect-src https:')
+  })
+})

@@ -16,6 +16,7 @@
 
 import { BRIDGE_SHIM } from './shims/bridge'
 import { TAVERN_SHIM } from './shims/tavern'
+import { JQUERY_SHIM } from './shims/jquery'
 import { LIB_SHIM, LIB_LOADER } from './shims/lib'
 
 /**
@@ -96,6 +97,7 @@ const sandboxHead = (allowRemote: boolean): string =>
   `<script>${BRIDGE_SHIM}</script>` +
   `<script>${LIB_SHIM}</script>` +
   `<script>${TAVERN_SHIM}</script>` +
+  `<script>${JQUERY_SHIM}</script>` +
   ERROR_REPORTER +
   (allowRemote ? LIB_LOADER : '')
 

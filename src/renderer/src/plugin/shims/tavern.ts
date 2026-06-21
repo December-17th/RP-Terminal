@@ -190,22 +190,6 @@ export const TAVERN_SHIM = `
   window.eventRemoveListener = TH.eventRemoveListener;
   window.eventClearEvent = TH.eventClearEvent;
   if (!window.toastr) window.toastr = TH.toastr;
-
-  // Minimal jQuery no-op stub so ST-DOM-coupled calls ($('#x').prop('checked'), chaining)
-  // don't throw. It can't reach a real ST DOM (there isn't one) — getters return undefined,
-  // everything else is chainable so scripts degrade instead of crashing.
-  if (!window.$) {
-    var jqo = {};
-    ['on','off','one','click','append','prepend','after','before','remove','detach','empty',
-     'addClass','removeClass','toggleClass','css','attr','val','text','html','hide','show',
-     'toggle','trigger','find','closest','parent','children','each','ready'].forEach(function (m) {
-      jqo[m] = function () { return jqo; };
-    });
-    ['prop','data','is','hasClass'].forEach(function (m) { jqo[m] = function () { return undefined; }; });
-    jqo.length = 0;
-    var jq = function () { return jqo; };
-    jq.fn = jqo; jq.extend = Object.assign; jq.noop = function () {};
-    window.$ = window.jQuery = jq;
-  }
+  // jQuery ($) is provided by the separate JQUERY_SHIM (a real DOM-backed mini-jQuery).
 })();
 `
