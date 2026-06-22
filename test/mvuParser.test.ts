@@ -179,6 +179,20 @@ describe('applyMvuCommands', () => {
     expect(sd.命运点数).toBeUndefined()
   })
 
+  it('creates an ARRAY (not object) when add targets /- on a missing path (命定之诗 身份/职业)', () => {
+    // The opening patch appends with `/主角/身份/-`; the intermediate must be created as an array so it
+    // satisfies the card's Zod schema (the bug produced `{ "-": … }` → "expected array, received object").
+    const sd: Record<string, any> = {}
+    applyJsonPatch(sd, [
+      { op: 'add', path: '/主角/身份/-', value: '被召唤的勇者' },
+      { op: 'add', path: '/主角/职业/-', value: '暂无' },
+      { op: 'add', path: '/主角/身份/-', value: '勇者' }
+    ])
+    expect(Array.isArray(sd.主角.身份)).toBe(true)
+    expect(sd.主角.身份).toEqual(['被召唤的勇者', '勇者'])
+    expect(sd.主角.职业).toEqual(['暂无'])
+  })
+
   it('applies op:delta (increment) to numbers, [value,…] tuples, and "current/max" strings', () => {
     // The exact shape 命定之诗 emits (EXP +30, MP -500), plus a [value, label] tuple.
     const sd: Record<string, any> = {

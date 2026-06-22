@@ -427,7 +427,12 @@ const setAtSeg = (obj: any, segs: string[], val: any): void => {
   let cur = obj
   for (let i = 0; i < segs.length - 1; i++) {
     const k = segs[i]
-    if (typeof cur[k] !== 'object' || cur[k] === null) cur[k] = {}
+    // The container's type is decided by the NEXT segment: the array-append token `-` or a numeric
+    // index ⇒ an array; anything else ⇒ an object. Creating it as the wrong type is why `add
+    // /主角/身份/-` was building `{ "-": … }` instead of `[ … ]` (failing the card's array schema).
+    const next = segs[i + 1]
+    const wantArray = next === '-' || /^\d+$/.test(next)
+    if (cur[k] == null || typeof cur[k] !== 'object') cur[k] = wantArray ? [] : {}
     cur = cur[k]
   }
   const last = segs[segs.length - 1]
