@@ -1,6 +1,7 @@
 # MVU (MagVarUpdate) + Zod Schema Support — Design
 
-Status: **Draft — design-doc-first, no code yet.** High priority: this is the backbone of
+Status: **✅ Implemented (2026-06)** — kept as the historical design record; MVU + Zod schema
+support shipped (`mvuParser` / `mvuSchema` / `mvuZod` + tests). This was the backbone of
 the **right-panel RPG UI**. It plans compatibility with **MagVarUpdate (MVU)** — the
 SillyTavern variable-management framework — and the **Zod data-schemas** that MVU cards
 ship, so the large ecosystem of MVU RPG cards drives RP Terminal's status panel.

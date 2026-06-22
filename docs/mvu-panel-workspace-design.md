@@ -1,6 +1,7 @@
 # MVU + the Reconfigurable Panel Workspace — Design
 
-Status: proposal. Supersedes the fixed 3-column layout's right column with a dockable workspace,
+Status: **✅ Implemented** — the dockable panel workspace shipped (`Workspace` / `viewRegistry` /
+`workspaceStore`); kept as the historical design record. Supersedes the fixed 3-column layout's right column with a dockable workspace,
 and defines how MVU compatibility, a native game engine, and the UI coexist.
 
 ## Goals

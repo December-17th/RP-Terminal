@@ -1,5 +1,8 @@
 # Plan — ST-Prompt-Template engine (remaining work)
 
+> **Status: ✅ Complete (Phases A–E, 2026-06).** This is the historical plan record; all phases
+> shipped — see the per-phase markers below.
+
 How to finish RP Terminal's ST-Prompt-Template compatibility. The engine
 ([`templateService.ts`](../src/main/services/templateService.ts)) is a quickjs-WASM EJS engine, applied
 at prompt-build time in `promptBuilder`. **It's much more built than the comparison doc first implied** —

@@ -1,6 +1,7 @@
 # Card Custom UI in the Panel Workspace — Investigation & Design
 
-Status: investigation + proposal. Builds on `docs/mvu-panel-workspace-design.md` (the two
+Status: **Partially implemented** — card UI runs out-of-process in WCV (`WcvPanel`, currently a
+spike; the full card-host migration is ROADMAP Track C0). Builds on `docs/mvu-panel-workspace-design.md` (the two
 MVU-rendering layers) now that Phase 1 gives us movable left/right panels.
 
 ## Goal

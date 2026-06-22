@@ -36,7 +36,7 @@ decision about the dual card-host stacks.
 Do **0 → 1 → 2** in order (each is cheap and unblocks confidence in the next). **3** is the one judgment call
 and can run in parallel once decided. **4** is partly a one-off sweep, partly an ongoing convention.
 
-**Progress (2026-06-22):** Phases **0–3 done** — 0–2 committed (`6dfbdb2`, `51c40fc`, `687d941`); **3 done via Option A** (freeze + document; the full WCV migration is ROADMAP Track C0 feature work, not hygiene). Tests 304 → 322, lint 761 → 0 errors. **Phase 4 remains.**
+**Progress (2026-06-22):** **All phases (0–4) done.** 0–2 committed (`6dfbdb2`, `51c40fc`, `687d941`); 3 via Option A (`e7fd91c` — freeze + document; the full WCV migration is ROADMAP Track C0 feature work); 4 = `ts-prune` sweep (no dead orphans) + doc-status fixes. Tests 304 → 322, lint 761 → 0 errors.
 
 ---
 
@@ -209,6 +209,19 @@ typecheck/test/build are untouched.
 ---
 
 ## Phase 4 — Discovery sweep + doc hygiene **[A, D]**
+
+> **Status: ✅ Done (2026-06-22).** **4a (sweep):** ran `ts-prune` on both tsconfigs — **no confirmed
+> dead orphans** (the one real orphan, `MessageScriptFrame`, was removed in Phase 1). Its flags are
+> false positives (cross-tsconfig / test-only / IPC / dynamic-registry usage) plus intentional
+> pending-feature scaffolding (`addSwipe` → message swipes; `updateProfileActivity` → the
+> `last_active` ordering; `getProfile`; `defaultModeLayouts`) and test-covered helpers
+> (`buildMessageHtmlDoc`, `matchEntries`, `stRegexEngine`, `classify`, `stopAll`, `stripParentRefs`).
+> Nothing deleted — `ts-prune`/`knip` stay a manual check, not a CI gate (too noisy for this
+> codebase's dynamic surfaces). **4b (docs):** corrected stale statuses (`mvu-support-design`
+> "no code yet" → implemented; `mvu-panel-workspace-design` "proposal" → shipped;
+> `card-custom-ui-design` → partial/WCV; `st-prompt-template-plan` → complete) and noted git history
+> as the canonical changelog in `progress-log.md`. (`world-card-design` still says "no code yet"
+> though `buildWorldCardExport` exists — left for owner verification.)
 
 **4a. Run `knip` (or `ts-prune`) once [D].** The two-card-host transition almost certainly left more orphaned
 exports than just `MessageScriptFrame`. Run it as a dev-dependency, **triage the report manually** (don't
