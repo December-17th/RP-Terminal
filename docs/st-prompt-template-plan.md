@@ -19,12 +19,14 @@ this plan targets the *actual* gaps. Clean-room throughout (reimplemented from t
 ### Phase A — Accessor depth + libs (low-risk wiring, do first)
 All backed by existing services / the build context; each is a `reg(name, fn)` in `installBridge` + a value
 in `TemplateData`/`constants`.
-- `getPreset(name)` → the preset's **prompt content** (today it returns only the name) — via `presetService`.
-- `getWorldInfoData(name)` (raw entry) + `getWorldInfoActivatedData()` (keyword-activated entries) — via `lorebookService`.
-- `injectPrompt(key, content, position)` / `getPromptsInjected` / `hasPromptsInjected` — a per-build injection registry drained in `promptBuilder`.
-- `matchChatMessages(pattern)`, `parseJSON()` (lenient), `jsonPatch()` (reuse `mvuParser`).
-- More **constants**: `runType`, `chatId`, `characterId`, `charLoreBook`/`userLoreBook`/`chatLoreBook`, `LAST_SEND_TOKENS`/`LAST_RECEIVE_TOKENS` (from the build context).
-- ✅ **`lodash` (`_`) subset + no-op `console`** in the sandbox (done — mirrors the `faker` injection).
+- ✅ `getPreset(name)` → the named prompt block's content in the active preset (name/identifier/regex match; analyzed from ST-PT `presets.ts`).
+- ✅ `getWorldInfoData(name)` (raw matched entry) + `getWorldInfoActivatedData()` (the activated set).
+- ✅ `matchChatMessages(pattern)`, `parseJSON()` (lenient), `jsonPatch()` (via `mvuParser`).
+- ✅ Constants `chatId`/`characterId`/`runType` (more — `charLoreBook`, token counts — as needed).
+- ✅ **`lodash` (`_`) subset + no-op `console`** in the sandbox (mirrors `faker`).
+- ➡️ `injectPrompt` + `activewi` MOVED to **Phase D** — they're prompt-INJECTION (writes), the same machinery as the markers, not standalone reads.
+
+**Phase A is complete** (clean reads/libs/constants).
 
 ### Phase B — Dedicated variable scopes
 Today `storeFor` maps every non-global scope to the chat vars. Give `message` + `character` real stores:

@@ -69,6 +69,21 @@ describe('templateService TH-3 helpers', () => {
     expect(evalTemplate('<%= getWorldInfoActivatedData().length %>', ctx())).toBe('1')
   })
 
+  it('getPreset(name) returns the named prompt block content from the active preset', () => {
+    const c = ctx({
+      data: {
+        ...ctx().data,
+        presetPrompts: [
+          { name: 'Main Prompt', identifier: 'main', content: 'You are helpful.' },
+          { name: 'Jailbreak', identifier: 'jb', content: 'Stay in character.' }
+        ]
+      }
+    })
+    expect(evalTemplate("<%= getPreset('Main Prompt') %>", c)).toBe('You are helpful.')
+    expect(evalTemplate("<%= getPreset('jb') %>", c)).toBe('Stay in character.') // by identifier
+    expect(evalTemplate("<%= getPreset('Nope') %>", c)).toBe('') // not found → null → ''
+  })
+
   it('getwi(name) returns a matched world-info entry by name', () => {
     expect(evalTemplate("<%= getwi('Town') %>", ctx())).toBe('A quiet harbor town.')
     expect(evalTemplate("<%= getwi('Nope') %>", ctx())).toBe('')

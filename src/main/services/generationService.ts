@@ -196,7 +196,12 @@ export const generate = async (
           assistant: f.response.content
         })),
         chatName: card.data.name || '',
-        presetName: preset.name
+        presetName: preset.name,
+        presetPrompts: preset.prompts.map((p) => ({
+          name: p.name,
+          identifier: p.identifier,
+          content: p.content
+        }))
       }
     }
   })

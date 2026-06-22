@@ -30,6 +30,8 @@ export interface TemplateData {
   messages?: Array<{ user: string; assistant: string }>
   chatName?: string
   presetName?: string
+  /** The active preset's prompt blocks (for getPreset(name) → a named block's content). */
+  presetPrompts?: Array<{ name: string; identifier: string; content: string }>
 }
 
 export interface TemplateContext {
@@ -188,7 +190,21 @@ const installBridge = (vm: QuickJSContext, ctx: TemplateContext): void => {
   reg('getWorldInfoActivatedData', () => data.worldInfo || [])
   reg('getMessageHistory', () => data.messages || [])
   reg('getCurrentChatName', () => data.chatName || '')
-  reg('getPreset', () => data.presetName || '')
+  // getpreset(name): the CONTENT of the prompt entry named `name` (or matching it as a regex) in the
+  // ACTIVE preset — matching ST-Prompt-Template. No name → the preset's name (RPT back-compat).
+  reg('getPreset', (name: any) => {
+    if (name == null || name === '') return data.presetName || ''
+    const ps = data.presetPrompts || []
+    const s = String(name)
+    let re: RegExp | null = null
+    try {
+      re = new RegExp(s)
+    } catch {
+      /* not a valid regex — name/identifier equality only */
+    }
+    const hit = ps.find((p) => p.name === s || p.identifier === s || (re ? re.test(p.name) : false))
+    return hit ? hit.content : null
+  })
   reg('getqr', () => '') // quick-replies aren't modeled in RP Terminal — stubbed
   reg('matchChatMessages', (pattern: any) => {
     try {
