@@ -7,6 +7,8 @@
  * seed data (`layoutDefaults`), not here — this module stays generic.
  */
 
+import { clone } from './objectPath'
+
 export type ViewId = string
 
 export interface PanelNode {
@@ -38,8 +40,6 @@ export type NodePath = number[]
 
 /** Minimum pane weight (percent) so a pane can't be dragged to nothing. */
 export const MIN_SIZE = 8
-
-const clone = <T>(v: T): T => JSON.parse(JSON.stringify(v))
 
 const evenSizes = (n: number): number[] => Array(n).fill(100 / n)
 

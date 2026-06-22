@@ -22,6 +22,8 @@
  * NOT `eval`.
  */
 
+import { getPath, setPath, delPath, clone } from '../../shared/objectPath'
+
 export interface MvuCommand {
   op: 'set' | 'add' | 'assign' | 'insert' | 'remove' | 'move'
   path: string
@@ -62,47 +64,9 @@ export interface ParsedMvu {
   patches: JsonPatchOp[]
 }
 
-// --- dot/bracket path helpers (independent copy; parsers don't import services) ---
-const toParts = (p: string): string[] =>
-  String(p)
-    .replace(/\[(\w+)\]/g, '.$1')
-    .split('.')
-    .filter(Boolean)
-
-const getPath = (obj: any, p: string): any => {
-  let cur = obj
-  for (const part of toParts(p)) {
-    if (cur == null) return undefined
-    cur = cur[part]
-  }
-  return cur
-}
-
-const setPath = (obj: any, p: string, val: any): void => {
-  const parts = toParts(p)
-  let cur = obj
-  for (let i = 0; i < parts.length - 1; i++) {
-    const k = parts[i]
-    if (typeof cur[k] !== 'object' || cur[k] === null) cur[k] = {}
-    cur = cur[k]
-  }
-  cur[parts[parts.length - 1]] = val
-}
-
-const delPath = (obj: any, p: string): void => {
-  const parts = toParts(p)
-  let cur = obj
-  for (let i = 0; i < parts.length - 1; i++) {
-    if (cur == null) return
-    cur = cur[parts[i]]
-  }
-  if (cur) delete cur[parts[parts.length - 1]]
-}
-
+// dot/bracket path + clone live in the shared objectPath module; isObj stays local (used widely below)
 const isObj = (v: unknown): v is Record<string, unknown> =>
   typeof v === 'object' && v !== null && !Array.isArray(v)
-
-const clone = <T>(v: T): T => (v === undefined ? v : JSON.parse(JSON.stringify(v)))
 
 // --- tolerant JS-literal argument reader (handles single/double quotes, numbers,
 // booleans, null, arrays, and objects with quoted OR unquoted keys) ---

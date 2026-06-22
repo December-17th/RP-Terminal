@@ -1,4 +1,5 @@
 import { runSandbox } from './sandboxService'
+import { clone } from '../../shared/objectPath'
 
 /**
  * MVU Zod schema support (Track R / R4) — clean-room.
@@ -124,8 +125,6 @@ export const extractMvuSchema = async (code: string): Promise<SchemaNode | null>
   const res = await runSandbox(job)
   return res.ok && res.result && typeof res.result === 'object' ? (res.result as SchemaNode) : null
 }
-
-const clone = <T>(v: T): T => (v === undefined ? v : JSON.parse(JSON.stringify(v)))
 
 /** Compute the default `stat_data` from a recorded schema tree (walks `.prefault`/
  * `.default` leaves; objects build a skeleton, arrays/records empty). */

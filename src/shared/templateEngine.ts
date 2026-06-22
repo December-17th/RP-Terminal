@@ -3,6 +3,7 @@
 // Type-only import — the shared engine never pulls a runtime quickjs variant; the host injects one via
 // `initEngine(loader)` (main → wasmfile variant; renderer → embedded singlefile variant).
 import type { QuickJSContext, QuickJSHandle, QuickJSWASMModule } from 'quickjs-emscripten'
+import { toParts, getPath, setPath } from './objectPath'
 
 /**
  * ST-Prompt-Template compatible EJS engine — the PURE core, shared by the main
@@ -67,33 +68,7 @@ export const initEngine = async (loader: () => Promise<QuickJSWASMModule>): Prom
 export const hasTags = (s: string): boolean => s.includes('<%')
 export const stripTags = (s: string): string => s.replace(/<%[\s\S]*?%>/g, '')
 
-// --- dot/bracket path get/set on the host side (lodash-ish, minimal) ---
-const toParts = (p: string): string[] =>
-  String(p)
-    .replace(/\[(\w+)\]/g, '.$1')
-    .split('.')
-    .filter(Boolean)
-
-const getPath = (obj: any, p: string | null): any => {
-  if (p == null) return obj
-  let cur = obj
-  for (const part of toParts(p)) {
-    if (cur == null) return undefined
-    cur = cur[part]
-  }
-  return cur
-}
-
-const setPath = (obj: any, p: string, val: any): void => {
-  const parts = toParts(p)
-  let cur = obj
-  for (let i = 0; i < parts.length - 1; i++) {
-    const k = parts[i]
-    if (typeof cur[k] !== 'object' || cur[k] === null) cur[k] = {}
-    cur = cur[k]
-  }
-  cur[parts[parts.length - 1]] = val
-}
+// dot/bracket path get/set live in the shared objectPath module
 
 /** Compile an EJS-style template into a JS function body that builds `__out`. */
 const compile = (tmpl: string): string => {

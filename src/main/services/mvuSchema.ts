@@ -1,5 +1,6 @@
 import { Lorebook } from '../types/character'
 import { parseJsObject } from '../parsers/mvuParser'
+import { deepMerge } from '../../shared/objectPath'
 
 /**
  * MVU schema / initialization (Track R / R2). Seeds the initial `stat_data` for a
@@ -15,17 +16,6 @@ import { parseJsObject } from '../parsers/mvuParser'
 
 const isObj = (v: unknown): v is Record<string, any> =>
   typeof v === 'object' && v !== null && !Array.isArray(v)
-
-const clone = <T>(v: T): T => (v === undefined ? v : JSON.parse(JSON.stringify(v)))
-
-/** Recursively merge `source` into `target` (objects merge; everything else replaces). */
-const deepMerge = (target: Record<string, any>, source: Record<string, any>): void => {
-  for (const k of Object.keys(source)) {
-    const sv = source[k]
-    if (isObj(sv) && isObj(target[k])) deepMerge(target[k], sv)
-    else target[k] = clone(sv)
-  }
-}
 
 // RPT's `[initvar]` plus ST-Prompt-Template's `[InitialVariables]` / `@@initial_variables` (parity).
 const INITVAR_RE = /\[initvar\]|\[InitialVariables\]|@@initial_variables/i

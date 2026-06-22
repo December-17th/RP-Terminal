@@ -5,6 +5,7 @@ import { normalizeSwipes } from './swipeHelpers'
 import { loadGlobals, saveGlobals } from './templateService'
 import { getAppDir, readJsonSync, writeJsonSyncAtomic } from './storageService'
 import { FloorFile } from '../types/chat'
+import { getPath, setPath, delPath } from '../../shared/objectPath'
 
 /**
  * Host-side engine bridge for the P1 card-script runtime. Card scripts run in a
@@ -16,44 +17,7 @@ import { FloorFile } from '../types/chat'
  * Clean-room: this is our own API surface, not derived from js-slash-runner.
  */
 
-// --- dot/bracket path get/set (parity with templateService's variable engine;
-// duplicated deliberately to keep the two process-boundary helpers independent). ---
-const toParts = (p: string): string[] =>
-  String(p)
-    .replace(/\[(\w+)\]/g, '.$1')
-    .split('.')
-    .filter(Boolean)
-
-const getPath = (obj: any, p: string | null | undefined): any => {
-  if (p == null || p === '') return obj
-  let cur = obj
-  for (const part of toParts(p)) {
-    if (cur == null) return undefined
-    cur = cur[part]
-  }
-  return cur
-}
-
-const setPath = (obj: any, p: string, val: any): void => {
-  const parts = toParts(p)
-  let cur = obj
-  for (let i = 0; i < parts.length - 1; i++) {
-    const k = parts[i]
-    if (typeof cur[k] !== 'object' || cur[k] === null) cur[k] = {}
-    cur = cur[k]
-  }
-  cur[parts[parts.length - 1]] = val
-}
-
-const delPath = (obj: any, p: string): void => {
-  const parts = toParts(p)
-  let cur = obj
-  for (let i = 0; i < parts.length - 1; i++) {
-    if (cur == null) return
-    cur = cur[parts[i]]
-  }
-  if (cur) delete cur[parts[parts.length - 1]]
-}
+// dot/bracket var get/set/del live in the shared objectPath module
 
 export type VarScope = 'local' | 'global' | 'message' | 'character'
 export type VarOp = 'get' | 'set' | 'inc' | 'dec' | 'del' | 'insert'
