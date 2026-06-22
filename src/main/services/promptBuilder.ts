@@ -3,6 +3,7 @@ import { Preset } from '../types/preset'
 import { FloorFile } from '../types/chat'
 import { Lorebook, LorebookEntry } from '../types/character'
 import { matchAcross } from './lorebookService'
+import { parseEntryMarker, GenerateMarker } from '../parsers/injectMarkers'
 import { applyRegex, RenderRegexRule } from './regexService'
 import { evalTemplate, TemplateContext } from './templateService'
 import { cleanForHistory } from '../../shared/responseView'
@@ -172,11 +173,7 @@ const applyDepthInjections = (
 }
 
 /** The text scanned for lorebook keywords: the last `scanDepth` turns + the pending action. */
-export const buildScanText = (
-  floors: FloorFile[],
-  userAction: string,
-  scanDepth: number
-): string =>
+export const buildScanText = (floors: FloorFile[], userAction: string, scanDepth: number): string =>
   [
     ...floors
       .slice(-Math.max(1, scanDepth))
@@ -256,8 +253,18 @@ export const buildPrompt = (args: BuildPromptArgs): ChatMessage[] => {
       Math.random,
       args.maxRecursion ?? 0
     )
-  const topEntries = matched.filter((e) => e.insertion_depth == null)
-  const depthEntries = matched.filter((e) => e.insertion_depth != null)
+  // Phase D: a matched entry whose comment/decorator is an injection marker is drained into a prompt
+  // POSITION below, not emitted as plain world-info. Partition markers out; @@dont_activate drops the
+  // entry entirely. Non-marker cards are unaffected (parseEntryMarker → marker null → all "regular").
+  const parsedMatched = matched.map((e) => ({ e, p: parseEntryMarker(e.comment, e.content) }))
+  const regular = parsedMatched
+    .filter(({ p }) => !p.marker && p.activation !== 'never')
+    .map(({ e }) => e)
+  const genMarkers = parsedMatched.filter(
+    ({ p }) => p.marker?.kind === 'generate' && p.activation !== 'never'
+  )
+  const topEntries = regular.filter((e) => e.insertion_depth == null)
+  const depthEntries = regular.filter((e) => e.insertion_depth != null)
   const worldInfo = topEntries
     .map((e) => render(e.content))
     .filter(Boolean)
@@ -287,7 +294,9 @@ export const buildPrompt = (args: BuildPromptArgs): ChatMessage[] => {
         break
       }
       case 'chat_history': {
-        messages.push(...buildHistory(floors, userAction, macroBase(personaMacro), applyUser, applyAssistant))
+        messages.push(
+          ...buildHistory(floors, userAction, macroBase(personaMacro), applyUser, applyAssistant)
+        )
         historyEmitted = true
         break
       }
@@ -346,9 +355,12 @@ export const buildPrompt = (args: BuildPromptArgs): ChatMessage[] => {
 
   // Persona description at the top: a stable, cache-friendly system block placed
   // just before the conversation begins.
-  if (personaContent && (args.persona?.depth == null)) {
+  if (personaContent && args.persona?.depth == null) {
     const convoStart = messages.findIndex((m) => m.role !== 'system')
-    const pm: ChatMessage = { role: 'system', content: `[${userName}'s Persona]\n${personaContent}` }
+    const pm: ChatMessage = {
+      role: 'system',
+      content: `[${userName}'s Persona]\n${personaContent}`
+    }
     if (convoStart === -1) messages.push(pm)
     else messages.splice(convoStart, 0, pm)
   }
@@ -378,6 +390,28 @@ export const buildPrompt = (args: BuildPromptArgs): ChatMessage[] => {
   if (depthItems.length) {
     const convoStart = messages.findIndex((m) => m.role !== 'system')
     applyDepthInjections(messages, depthItems, convoStart, userAction !== '')
+  }
+
+  // Phase D: drain [GENERATE:*] marker entries into message positions. The array is final here, so the
+  // 0-based [GENERATE:{idx}:*] indices are stable; whole-prompt BEFORE→start, AFTER→end. Splice high→low
+  // so earlier inserts don't shift later targets. (REGEX / @INJECT / RENDER markers aren't handled yet.)
+  if (genMarkers.length) {
+    const injections = genMarkers
+      .map(({ e, p }) => {
+        const g = p.marker as GenerateMarker
+        if (g.regex) return null // [GENERATE:REGEX:…] needs message matching — later
+        const body = p.private ? `<% { %>${p.template}<% } %>` : p.template
+        const content = render(body)
+        if (!content) return null
+        const base = g.index != null ? g.index : g.side === 'before' ? 0 : messages.length
+        const at = Math.max(0, Math.min(g.side === 'after' ? base + 1 : base, messages.length))
+        return { at, order: e.insertion_order, content }
+      })
+      .filter((x): x is { at: number; order: number; content: string } => x != null)
+      .sort((a, b) => b.at - a.at || b.order - a.order)
+    for (const inj of injections) {
+      messages.splice(inj.at, 0, { role: 'system', content: inj.content })
+    }
   }
 
   return messages

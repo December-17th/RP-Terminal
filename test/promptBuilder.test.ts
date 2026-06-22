@@ -317,4 +317,51 @@ describe('buildPrompt', () => {
     expect(messages.some((m) => m.role === 'assistant' && m.content === 'hi')).toBe(true)
     expect(last(messages)).toEqual({ role: 'user', content: 'go' })
   })
+
+  // --- Phase D: injection markers ---
+  it('drains a [GENERATE:BEFORE] marker entry to the prompt start (not into World Info)', () => {
+    const messages = buildPrompt({
+      card: card(),
+      preset: preset([blk('char_description'), blk('world_info'), blk('chat_history')]),
+      lorebooks: [book([{ comment: '[GENERATE:BEFORE]', content: 'INJECTED-BEFORE', constant: true }])],
+      floors: [],
+      userAction: 'go'
+    })
+    expect(messages[0].content).toBe('INJECTED-BEFORE')
+    const wi = messages.find((m) => m.content.startsWith('World Info:'))
+    expect(wi?.content.includes('INJECTED-BEFORE') ?? false).toBe(false)
+  })
+
+  it('drains [GENERATE:AFTER] and the @@generate_after decorator form to the prompt end', () => {
+    const fromComment = buildPrompt({
+      card: card(),
+      preset: preset([blk('char_description'), blk('chat_history')]),
+      lorebooks: [book([{ comment: '[GENERATE:AFTER]', content: 'INJECTED-AFTER', constant: true }])],
+      floors: [],
+      userAction: 'go'
+    })
+    expect(last(fromComment).content).toBe('INJECTED-AFTER')
+
+    const fromDecorator = buildPrompt({
+      card: card(),
+      preset: preset([blk('char_description'), blk('chat_history')]),
+      lorebooks: [book([{ comment: '', content: '@@generate_after\nDECOR-AFTER', constant: true }])],
+      floors: [],
+      userAction: 'go'
+    })
+    expect(last(fromDecorator).content).toBe('DECOR-AFTER') // the @@ line is stripped
+  })
+
+  it('drops a marker entry tagged @@dont_activate', () => {
+    const messages = buildPrompt({
+      card: card(),
+      preset: preset([blk('world_info'), blk('chat_history')]),
+      lorebooks: [
+        book([{ comment: '[GENERATE:BEFORE]', content: '@@dont_activate\nNOPE', constant: true }])
+      ],
+      floors: [],
+      userAction: 'go'
+    })
+    expect(messages.some((m) => m.content.includes('NOPE'))).toBe(false)
+  })
 })
