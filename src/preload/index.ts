@@ -8,6 +8,7 @@ const api = {
   getSettings: (profileId: string) => ipcRenderer.invoke('get-settings', profileId),
   saveSettings: (profileId: string, settings: any) =>
     ipcRenderer.invoke('save-settings', profileId, settings),
+  listModels: (api: unknown) => ipcRenderer.invoke('list-models', api),
   getCharacters: (profileId: string) => ipcRenderer.invoke('get-characters', profileId),
   saveCharacter: (profileId: string, charId: string, card: any) =>
     ipcRenderer.invoke('save-character', profileId, charId, card),

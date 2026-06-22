@@ -26,6 +26,45 @@ export const streamProvider = async (
   return streamOpenAICompatible(settings, messages, params, onDelta, signal)
 }
 
+/**
+ * List the models available at the configured provider (GET /models), mirroring the auth each
+ * provider uses for generation: OpenAI-compatible (openai/openrouter/custom) → `data[].id` with a
+ * Bearer key; Anthropic → `data[].id` with x-api-key; Google → `models[].name` (sans the "models/"
+ * prefix) with x-goog-api-key. Used by the API settings tab's "Fetch models" button. Throws on a
+ * non-OK response so the renderer can surface the error.
+ */
+export const listModels = async (api: Settings['api']): Promise<string[]> => {
+  const key = api.api_key || ''
+  const collect = (rows: unknown, field: 'id' | 'name'): string[] =>
+    (Array.isArray(rows) ? rows : [])
+      .map((m) => (m as Record<string, unknown>)?.[field])
+      .filter((v): v is string => typeof v === 'string' && v.length > 0)
+  const fail = async (r: Response): Promise<never> => {
+    throw new Error(`models ${r.status}: ${(await r.text()).slice(0, 200)}`)
+  }
+
+  if (api.provider === 'anthropic') {
+    const base = (api.endpoint || 'https://api.anthropic.com/v1').replace(/\/$/, '')
+    const r = await fetch(`${base}/models?limit=1000`, {
+      headers: { 'x-api-key': key, 'anthropic-version': '2023-06-01' }
+    })
+    if (!r.ok) return fail(r)
+    return collect(((await r.json()) as { data?: unknown }).data, 'id')
+  }
+  if (api.provider === 'google' || api.provider === 'gemini') {
+    const base = (api.endpoint || 'https://generativelanguage.googleapis.com/v1beta').replace(/\/$/, '')
+    const r = await fetch(`${base}/models?pageSize=1000`, { headers: { 'x-goog-api-key': key } })
+    if (!r.ok) return fail(r)
+    return collect(((await r.json()) as { models?: unknown }).models, 'name').map((n) =>
+      n.replace(/^models\//, '')
+    )
+  }
+  const base = (api.endpoint || 'https://api.openai.com/v1').replace(/\/$/, '')
+  const r = await fetch(`${base}/models`, { headers: { Authorization: `Bearer ${key}` } })
+  if (!r.ok) return fail(r)
+  return collect(((await r.json()) as { data?: unknown }).data, 'id')
+}
+
 // Drop undefined params so we don't send nulls to providers that reject them.
 const cleanParams = (params: PresetParameters): Record<string, unknown> => {
   const out: Record<string, unknown> = {}
