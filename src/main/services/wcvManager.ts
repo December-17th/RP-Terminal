@@ -1,7 +1,27 @@
-import { WebContentsView, BrowserWindow } from 'electron'
+import { WebContentsView, BrowserWindow, session } from 'electron'
 import { is } from '@electron-toolkit/utils'
 import { join } from 'path'
 import { log } from './logService'
+
+// Card UI panels run in their own session partition. jsDelivr serves `/gh/` HTML as text/plain (to
+// stop it being used to host pages), so Chromium shows it as raw text; the card's UI is meant to be
+// loaded AS HTML (its regex does `$('body').load(...)`). We force text/html on the .html document so
+// the WebContentsView renders it + runs its module script. Narrow: jsDelivr host + .html only, so JS
+// modules (served as application/javascript) are untouched.
+const WCV_PARTITION = 'wcv-cards'
+let sessionReady = false
+const ensureSession = (): void => {
+  if (sessionReady) return
+  sessionReady = true
+  const ses = session.fromPartition(WCV_PARTITION)
+  ses.webRequest.onHeadersReceived({ urls: ['https://*.jsdelivr.net/*'] }, (details, cb) => {
+    if (!/\.html(\?|$)/i.test(details.url)) return cb({})
+    const headers: Record<string, string[]> = { ...details.responseHeaders }
+    for (const k of Object.keys(headers)) if (k.toLowerCase() === 'content-type') delete headers[k]
+    headers['content-type'] = ['text/html; charset=utf-8']
+    cb({ responseHeaders: headers })
+  })
+}
 
 /**
  * SPIKE — out-of-process card-UI panels via `WebContentsView`.
@@ -53,10 +73,12 @@ export const ensure = (
   if (!mainWindow) return
   // Defensive: a fire-and-forget IPC call with a missing/garbled ctx must never crash main.
   if (!ctx || typeof ctx !== 'object') ctx = { profileId: '', chatId: '' }
+  ensureSession()
   let slot = slots.get(id)
   if (!slot) {
     const view = new WebContentsView({
       webPreferences: {
+        partition: WCV_PARTITION,
         // Trusted-card main-world shim (spike): the preload defines window.SillyTavern/Mvu/… in the
         // page world, so contextIsolation is off. Still a separate process with nodeIntegration:false
         // → no host/Node reach. Production vendors assets + hardens (contextBridge / CSP).
