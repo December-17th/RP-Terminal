@@ -18,6 +18,29 @@ Running status of the MVU / panel-workspace track. Newest first.
 - **MVU `op:delta`** (increment) so EXP/MP-style updates apply; live model→card broadcast on floor change.
 - **API settings: fetch + select models** — a provider-aware `GET /models` (a "Fetch models" button + a
   model dropdown), `apiService.listModels` + `list-models` IPC.
+- **Worldbook + ST-chat compat (Track C0).** Sync worldbook NAME getters (`getCharWorldbookNames` via
+  `sendSync` — cards call them WITHOUT await) + `getWorldbook`/`updateWorldbookWith` over the file-based
+  `lorebookService` (card book at `id==characterId`, resolved from the chat row); `SillyTavern.chat[]`
+  + `swipes`/`saveChat`/`reloadCurrentChat` so the home's "start game" picks a greeting swipe (floor-0
+  swipes = `first_mes` + `alternate_greetings`); `saveChat` re-folds the scenario's `<UpdateVariable>`.
+  `getTavernHelperVersion` ≥ the card's minimum (4.3.17).
+- **MVU `add /-` fix** — RFC-6902 array-append now creates an ARRAY (not `{ "-": … }`) so `主角.身份`/`职业`
+  pass the card's Zod schema (+test).
+- **Inline frontend cards = the WCV compat layer.** `MessageContent` routes a card's regex-injected
+  SCRIPTED block to `WcvMessageFrame` (wrap → `data:` URL → out-of-process WCV + shim), card-agnostic;
+  the overlay is clamped to its scroll container so it can't paint over the composer.
+- **API-key masking (the retained security measure).** The renderer never sees a full key after first
+  entry — `maskedSettings` + retain-on-save in `settingsService`, masked `get-settings`, `ApiSettingsPanel`
+  masked-field + Replace, `list-models` resolves the real key in main. Broad security hardening DEFERRED
+  (owner decision).
+- **Codebase review + doc-drift fixes.** Flagged the TWO parallel frontend-card compat layers (iframe
+  sandbox vs WCV) + the WCV threat model as the fork to resolve; fixed ROADMAP drift (Phase E tests,
+  `<%%>`/C1, the lorebook script-API status, the frontend-card path). 273 tests.
+- **Assessment — script lorebook mutation:** ✅ on the iframe rpt/TH path (`rpt.lore.get/set` + TH
+  `replaceWorldbookEntries` → `scriptApiService.setWorldbookEntries` → `saveLorebookById`, gated by
+  `worldbook:read/write`) — add/remove/edit/toggle via read-modify-write. The Track C0 WCV trusted-card
+  bridge is read + **toggle only** (write-back applies `enabled`); extend `wcv-host-replace-worldbook`
+  for parity.
 - Remaining: the AUTO-onboarding overlay (`home`→`custom_start` on a new chat, then dismiss into play); the
   auto-start finish alternative (wire `createChat`/`triggerSlash` to the session system); the status UI's
   outer (edit/settings) layer.
