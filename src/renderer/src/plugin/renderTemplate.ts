@@ -15,8 +15,14 @@ void initRendererEngine()
 export function buildRenderContext(vars: Record<string, unknown>): TemplateContext {
   const card = useCharacterStore.getState().activeCharacter?.card
   const persona = useSettingsStore.getState().settings?.persona
+  // MVU / ST-PT cards root their state at `stat_data` (like the WCV card shim's variables), while the raw
+  // floor object nests it. Expose BOTH: keep `variables.stat_data.*` and also hoist stat_data's keys to the
+  // top, so `variables.主角` / getvar('主角…') resolve too. (Fresh object → render-time setvar is transient.)
+  const sd = vars?.stat_data
+  const root: Record<string, unknown> =
+    sd && typeof sd === 'object' ? { ...vars, ...(sd as Record<string, unknown>) } : vars
   return {
-    vars,
+    vars: root,
     globals: {},
     constants: {
       userName: persona?.name || 'User',
