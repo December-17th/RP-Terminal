@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { parseEntryMarker } from '../src/main/parsers/injectMarkers'
+import { parseEntryMarker, markerIndex, PositionMessage } from '../src/main/parsers/injectMarkers'
 
 describe('injectMarkers — parseEntryMarker', () => {
   it('parses [GENERATE:BEFORE]/[GENERATE:AFTER] comment markers', () => {
@@ -77,5 +77,41 @@ describe('injectMarkers — parseEntryMarker', () => {
     expect(r.template).toBe('A quiet harbor town.')
     expect(r.activation).toBeNull()
     expect(r.private).toBe(false)
+  })
+})
+
+describe('injectMarkers — markerIndex (position math)', () => {
+  // indices: 0=system, 1=user(u1), 2=assistant(a1), 3=user(u2)
+  const msgs: PositionMessage[] = [
+    { role: 'system', content: 's' },
+    { role: 'user', content: 'u1' },
+    { role: 'assistant', content: 'a1' },
+    { role: 'user', content: 'u2' }
+  ]
+
+  it('[GENERATE] whole-prompt + indexed + regex', () => {
+    expect(markerIndex({ kind: 'generate', side: 'before' }, msgs)).toBe(0)
+    expect(markerIndex({ kind: 'generate', side: 'after' }, msgs)).toBe(4)
+    expect(markerIndex({ kind: 'generate', side: 'before', index: 2 }, msgs)).toBe(2)
+    expect(markerIndex({ kind: 'generate', side: 'after', index: 2 }, msgs)).toBe(3)
+    expect(markerIndex({ kind: 'generate', side: 'before', regex: 'a1' }, msgs)).toBe(2)
+  })
+
+  it('@INJECT absolute pos (0 / 1-based / negative)', () => {
+    expect(markerIndex({ kind: 'inject', pos: 0 }, msgs)).toBe(0)
+    expect(markerIndex({ kind: 'inject', pos: 2 }, msgs)).toBe(1) // 1-based → 0-based
+    expect(markerIndex({ kind: 'inject', pos: -1 }, msgs)).toBe(3) // before the last
+  })
+
+  it('@INJECT target mode (nth message of a role, before/after)', () => {
+    expect(markerIndex({ kind: 'inject', target: 'user', index: 1, at: 'after' }, msgs)).toBe(2)
+    expect(markerIndex({ kind: 'inject', target: 'user', index: 2, at: 'before' }, msgs)).toBe(3)
+    expect(markerIndex({ kind: 'inject', target: 'assistant', index: 1, at: 'before' }, msgs)).toBe(2)
+    expect(markerIndex({ kind: 'inject', target: 'user', index: 9 }, msgs)).toBeNull() // no 9th user
+  })
+
+  it('@INJECT regex mode + render markers return null', () => {
+    expect(markerIndex({ kind: 'inject', regex: 'a1', at: 'after' }, msgs)).toBe(3)
+    expect(markerIndex({ kind: 'render', side: 'before' }, msgs)).toBeNull()
   })
 })

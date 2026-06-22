@@ -3,7 +3,7 @@ import { Preset } from '../types/preset'
 import { FloorFile } from '../types/chat'
 import { Lorebook, LorebookEntry } from '../types/character'
 import { matchAcross } from './lorebookService'
-import { parseEntryMarker, GenerateMarker } from '../parsers/injectMarkers'
+import { parseEntryMarker, markerIndex, Marker, InjectMarker } from '../parsers/injectMarkers'
 import { applyRegex, RenderRegexRule } from './regexService'
 import { evalTemplate, TemplateContext } from './templateService'
 import { cleanForHistory } from '../../shared/responseView'
@@ -260,9 +260,22 @@ export const buildPrompt = (args: BuildPromptArgs): ChatMessage[] => {
   const regular = parsedMatched
     .filter(({ p }) => !p.marker && p.activation !== 'never')
     .map(({ e }) => e)
-  const genMarkers = parsedMatched.filter(
-    ({ p }) => p.marker?.kind === 'generate' && p.activation !== 'never'
-  )
+  // @@activate / @@always_enabled force-activate a marker entry even when the keyword scan didn't match
+  // it. Pre-filter cheaply (anchored regex, no full parse) before parsing the few candidates.
+  const looksMarked = (e: LorebookEntry): boolean =>
+    /^\s*@@/.test(e.content) || /^\s*(\[GENERATE|\[RENDER|@INJECT)/i.test(e.comment)
+  const keyOf = (e: LorebookEntry): string => `${e.comment} ${e.content}`
+  const matchedKeys = new Set(matched.map(keyOf))
+  const forced = lorebooks
+    .flatMap((lb) => lb.entries)
+    .filter((e) => e.enabled !== false && looksMarked(e) && !matchedKeys.has(keyOf(e)))
+    .map((e) => ({ e, p: parseEntryMarker(e.comment, e.content) }))
+    .filter(({ p }) => p.marker && p.activation === 'force')
+  // All marker entries to drain into positions (matched markers + forced), minus @@dont_activate.
+  const markerEntries = [
+    ...parsedMatched.filter(({ p }) => p.marker && p.activation !== 'never'),
+    ...forced
+  ]
   const topEntries = regular.filter((e) => e.insertion_depth == null)
   const depthEntries = regular.filter((e) => e.insertion_depth != null)
   const worldInfo = topEntries
@@ -392,26 +405,32 @@ export const buildPrompt = (args: BuildPromptArgs): ChatMessage[] => {
     applyDepthInjections(messages, depthItems, convoStart, userAction !== '')
   }
 
-  // Phase D: drain [GENERATE:*] marker entries into message positions. The array is final here, so the
-  // 0-based [GENERATE:{idx}:*] indices are stable; whole-prompt BEFORE→start, AFTER→end. Splice high→low
-  // so earlier inserts don't shift later targets. (REGEX / @INJECT / RENDER markers aren't handled yet.)
-  if (genMarkers.length) {
-    const injections = genMarkers
+  // Phase D: drain [GENERATE:*] + @INJECT marker entries into message positions (the array is final, so
+  // markerIndex's 0-based positions + regex/target lookups are stable). RENDER markers → markerIndex null
+  // (handled at render time). Splice high→low so earlier inserts don't shift later targets; ties by order.
+  if (markerEntries.length) {
+    const injections = markerEntries
       .map(({ e, p }) => {
-        const g = p.marker as GenerateMarker
-        if (g.regex) return null // [GENERATE:REGEX:…] needs message matching — later
+        const marker = p.marker as Marker
+        const at = markerIndex(marker, messages)
+        if (at == null) return null
         const body = p.private ? `<% { %>${p.template}<% } %>` : p.template
         const content = render(body)
         if (!content) return null
-        const base = g.index != null ? g.index : g.side === 'before' ? 0 : messages.length
-        const at = Math.max(0, Math.min(g.side === 'after' ? base + 1 : base, messages.length))
-        return { at, order: e.insertion_order, content }
+        const isInject = marker.kind === 'inject'
+        const role: ChatMessage['role'] = isInject
+          ? ((marker as InjectMarker).role ?? 'system')
+          : 'system'
+        const order = (isInject ? (marker as InjectMarker).order : undefined) ?? e.insertion_order
+        return { at: Math.max(0, Math.min(at, messages.length)), role, content, order }
       })
-      .filter((x): x is { at: number; order: number; content: string } => x != null)
+      .filter(
+        (x): x is { at: number; role: ChatMessage['role']; content: string; order: number } =>
+          x != null
+      )
       .sort((a, b) => b.at - a.at || b.order - a.order)
-    for (const inj of injections) {
-      messages.splice(inj.at, 0, { role: 'system', content: inj.content })
-    }
+    for (const inj of injections)
+      messages.splice(inj.at, 0, { role: inj.role, content: inj.content })
   }
 
   return messages

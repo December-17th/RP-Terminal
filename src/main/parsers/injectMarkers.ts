@@ -128,3 +128,63 @@ export function parseEntryMarker(comment: string, content: string): ParsedEntryM
   const marker = parseCommentMarker(comment) ?? decoratorMarker
   return { marker, template, activation, private: priv }
 }
+
+/** Minimal message shape the position math needs (the prompt's role + content). */
+export interface PositionMessage {
+  role: string
+  content: string
+}
+
+const safeTest = (pattern: string, content: string): boolean => {
+  try {
+    return new RegExp(pattern).test(content)
+  } catch {
+    return false
+  }
+}
+
+/**
+ * The 0-based insertion index for a BUILD-TIME marker against the (final) message array, or null when it
+ * doesn't apply (a render marker, or a regex/target with no match). From the ST-PT source:
+ * - `[GENERATE]`: before→idx (whole-prompt → 0), after→idx+1 (whole-prompt → end); REGEX→relative to the
+ *   first message matching the pattern.
+ * - `@INJECT` absolute `pos`: `0`→0, `N>0`→`N-1` (1-based), `N<0`→`len+N+1` (clamped ≥1) then −1.
+ * - `@INJECT` target: the nth (1-based; negatives from the end) message of `target`'s role, before/after.
+ * - `@INJECT` regex: relative to the first matching message.
+ */
+export const markerIndex = (m: Marker, messages: PositionMessage[]): number | null => {
+  if (m.kind === 'generate') {
+    if (m.regex) {
+      const rx = m.regex
+      const idx = messages.findIndex((x) => safeTest(rx, x.content))
+      return idx < 0 ? null : m.side === 'after' ? idx + 1 : idx
+    }
+    if (m.index != null) return m.side === 'after' ? m.index + 1 : m.index
+    return m.side === 'before' ? 0 : messages.length
+  }
+  if (m.kind === 'inject') {
+    if (m.pos != null) {
+      if (m.pos === 0) return 0
+      if (m.pos > 0) return m.pos - 1
+      return Math.max(1, messages.length + m.pos + 1) - 1
+    }
+    if (m.target) {
+      const target = m.target
+      const total = messages.filter((x) => x.role === target).length
+      let occ = m.index ?? 1
+      if (occ < 0) occ = total + occ + 1
+      let count = 0
+      for (let i = 0; i < messages.length; i++) {
+        if (messages[i].role === target && ++count === occ) return m.at === 'after' ? i + 1 : i
+      }
+      return null
+    }
+    if (m.regex) {
+      const rx = m.regex
+      const idx = messages.findIndex((x) => safeTest(rx, x.content))
+      return idx < 0 ? null : m.at === 'after' ? idx + 1 : idx
+    }
+    return null
+  }
+  return null // render marker — not a build-time injection
+}

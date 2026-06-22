@@ -364,4 +364,62 @@ describe('buildPrompt', () => {
     })
     expect(messages.some((m) => m.content.includes('NOPE'))).toBe(false)
   })
+
+  it('@INJECT pos=0 inserts a message of the given role at the start', () => {
+    const messages = buildPrompt({
+      card: card(),
+      preset: preset([blk('char_description'), blk('chat_history')]),
+      lorebooks: [book([{ comment: '@INJECT pos=0,role=user', content: 'INJ-AT-0', constant: true }])],
+      floors: [],
+      userAction: 'go'
+    })
+    expect(messages[0]).toEqual({ role: 'user', content: 'INJ-AT-0' })
+  })
+
+  it('@INJECT target=user,index=1,at=after inserts after the first user message', () => {
+    const messages = buildPrompt({
+      card: card(),
+      preset: preset([blk('char_description'), blk('chat_history')]),
+      lorebooks: [
+        book([
+          {
+            comment: '@INJECT target=user,index=1,at=after,role=system',
+            content: 'AFTER-U1',
+            constant: true
+          }
+        ])
+      ],
+      floors: [floor(0, 'u1', 'a1')],
+      userAction: 'u2'
+    })
+    const firstUserIdx = messages.findIndex((m) => m.role === 'user')
+    expect(messages[firstUserIdx + 1]).toEqual({ role: 'system', content: 'AFTER-U1' })
+  })
+
+  it('[GENERATE:REGEX:p] injects relative to the first matching message', () => {
+    const messages = buildPrompt({
+      card: card(),
+      preset: preset([blk('char_description'), blk('chat_history')]),
+      lorebooks: [
+        book([{ comment: '[GENERATE:REGEX:dragon]', content: 'NEAR-DRAGON', constant: true }])
+      ],
+      floors: [floor(0, 'I see a dragon', 'ok')],
+      userAction: 'go'
+    })
+    const injIdx = messages.findIndex((m) => m.content === 'NEAR-DRAGON')
+    expect(injIdx).toBeGreaterThanOrEqual(0)
+    expect(messages[injIdx + 1]?.content).toContain('dragon') // injected just before the match
+  })
+
+  it('@@activate force-activates a marker entry the keyword scan did not match', () => {
+    const messages = buildPrompt({
+      card: card(),
+      preset: preset([blk('char_description'), blk('chat_history')]),
+      // no keys + not constant → the scan won't match it, but @@activate forces it in.
+      lorebooks: [book([{ comment: '[GENERATE:BEFORE]', content: '@@activate\nFORCED' }])],
+      floors: [],
+      userAction: 'go'
+    })
+    expect(messages[0].content).toBe('FORCED')
+  })
 })
