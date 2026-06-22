@@ -91,16 +91,21 @@ export const registerWcvIpc = (ipcMain: IpcMain): void => {
   // A card's own lorebook is its character_book (stored under id == characterId). The card's home reads
   // its expansions/cores (getCharWorldbookNames → getWorldbook) and toggles them (updateWorldbookWith →
   // replace). The worldbook `name` arg is the card's own book, so we resolve to its character regardless.
-  ipcMain.handle('wcv-host-get-worldbook-names', (e) => {
+  // SYNC: cards call getCharWorldbookNames WITHOUT await (it's synchronous in TavernHelper). An async
+  // Promise return makes `.primary` read as undefined → the card bails before getWorldbook. Return inline.
+  ipcMain.on('wcv-host-get-worldbook-names-sync', (e) => {
     const c = cardLoreCtx(e.sender.id)
-    if (!c) return { primary: null, additional: [] }
+    if (!c) {
+      e.returnValue = { primary: null, additional: [] }
+      return
+    }
     const lb = lorebookService.getLorebookById(c.profileId, c.characterId)
     log(
       'info',
       'wcv worldbook',
       `char ${c.characterId.slice(0, 8)} → ${lb ? `${lb.entries.length} entries` : 'no book'}`
     )
-    return { primary: lb ? lb.name || c.characterId : null, additional: [] }
+    e.returnValue = { primary: lb ? lb.name || c.characterId : null, additional: [] }
   })
 
   // Entries of the card's worldbook, mapped to the TavernHelper entry shape (the card reads .name +
@@ -110,7 +115,7 @@ export const registerWcvIpc = (ipcMain: IpcMain): void => {
     if (!c) return []
     const lb = lorebookService.getLorebookById(c.profileId, c.characterId)
     if (!lb) return []
-    return lb.entries.map((en, i) => ({
+    const out = lb.entries.map((en, i) => ({
       uid: i,
       name: en.comment || `Entry ${i + 1}`,
       comment: en.comment || '',
@@ -118,6 +123,8 @@ export const registerWcvIpc = (ipcMain: IpcMain): void => {
       content: en.content,
       keys: en.keys
     }))
+    log('info', 'wcv getWorldbook', `${out.length} entries (${out.filter((o) => /^\[DLC\]/.test(o.name)).length} DLC) → card`)
+    return out
   })
 
   // Persist a worldbook the card modified — apply enabled toggles back onto our entries (matched by

@@ -251,15 +251,16 @@ const helpers: Record<string, any> = {
   },
   // Worldbook (lorebook) access — backed by the host's file-based lorebookService over IPC. The card
   // reads its expansions/cores from its own book and toggles them; the host applies enabled-changes back.
+  // SYNC (sendSync): cards call these worldbook-NAME getters synchronously (no await) — an async Promise
+  // would make `.primary` read as undefined and the card bails. The heavier entry getters below stay async.
   getCharWorldbookNames: (..._a: any[]) => {
     note('getCharWorldbookNames')
-    return ipcRenderer.invoke('wcv-host-get-worldbook-names')
+    return ipcRenderer.sendSync('wcv-host-get-worldbook-names-sync')
   },
   getWorldbookNames: (..._a: any[]) => {
     note('getWorldbookNames')
-    return ipcRenderer
-      .invoke('wcv-host-get-worldbook-names')
-      .then((r: any) => [r?.primary, ...(r?.additional || [])].filter(Boolean))
+    const r = ipcRenderer.sendSync('wcv-host-get-worldbook-names-sync')
+    return [r?.primary, ...(r?.additional || [])].filter(Boolean)
   },
   getWorldbook: (name: any) => {
     note('getWorldbook')
@@ -278,13 +279,12 @@ const helpers: Record<string, any> = {
   },
   getCurrentCharPrimaryLorebook: () => {
     note('getCurrentCharPrimaryLorebook')
-    return ipcRenderer.invoke('wcv-host-get-worldbook-names').then((r: any) => r?.primary ?? null)
+    return ipcRenderer.sendSync('wcv-host-get-worldbook-names-sync')?.primary ?? null
   },
   getCharLorebooks: (..._a: any[]) => {
     note('getCharLorebooks')
-    return ipcRenderer
-      .invoke('wcv-host-get-worldbook-names')
-      .then((r: any) => [r?.primary, ...(r?.additional || [])].filter(Boolean))
+    const r = ipcRenderer.sendSync('wcv-host-get-worldbook-names-sync')
+    return [r?.primary, ...(r?.additional || [])].filter(Boolean)
   },
   getLorebookEntries: (name: any) => {
     note('getLorebookEntries')
