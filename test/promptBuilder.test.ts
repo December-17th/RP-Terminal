@@ -423,6 +423,19 @@ describe('buildPrompt', () => {
     })
     expect(messages[0].content).toBe('FORCED')
   })
+
+  it('keeps an [InitialVariables] entry out of the prompt (it seeds vars, not lore)', () => {
+    const messages = buildPrompt({
+      card: card(),
+      preset: preset([blk('world_info'), blk('chat_history')]),
+      lorebooks: [
+        book([{ comment: '[InitialVariables]', content: '{"主角":{"hp":100}}', constant: true }])
+      ],
+      floors: [],
+      userAction: 'go'
+    })
+    expect(messages.some((m) => m.content.includes('主角') || m.content.includes('hp'))).toBe(false)
+  })
 })
 
 describe('buildPrompt — EJS in constant lore (命定之诗 real-card shape)', () => {

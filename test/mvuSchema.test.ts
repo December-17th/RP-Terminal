@@ -22,6 +22,15 @@ describe('parseInitVars', () => {
     const b = book([{ comment: 'lore', content: '```json\n{"hp":1}\n```' }])
     expect(parseInitVars([b])).toEqual({})
   })
+
+  it('also recognizes ST-PT [InitialVariables] / @@initial_variables (content as JSON)', () => {
+    // [InitialVariables]: the content IS the JSON object (no fence).
+    const b1 = book([{ comment: '[InitialVariables]', content: '{"主角":{"等级":1},"金币":10}' }])
+    expect(parseInitVars([b1])).toEqual({ 主角: { 等级: 1 }, 金币: 10 })
+    // @@initial_variables: the decorator line is stripped, the rest is the object.
+    const b2 = book([{ comment: '', content: '@@initial_variables\n{ hp: 50 }' }])
+    expect(parseInitVars([b2])).toEqual({ hp: 50 })
+  })
 })
 
 describe('buildInitialStatData', () => {

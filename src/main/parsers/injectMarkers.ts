@@ -24,6 +24,10 @@ export interface RenderMarker {
   kind: 'render'
   side: Side
 }
+/** `[InitialVariables]` / `@@initial_variables` — seeds initial variables; never enters the prompt. */
+export interface InitVarsMarker {
+  kind: 'initvars'
+}
 export interface InjectMarker {
   kind: 'inject'
   role?: Role
@@ -37,7 +41,7 @@ export interface InjectMarker {
   regex?: string
   order?: number
 }
-export type Marker = GenerateMarker | RenderMarker | InjectMarker
+export type Marker = GenerateMarker | RenderMarker | InjectMarker | InitVarsMarker
 
 export interface ParsedEntryMarker {
   /** The injection marker (from the comment or an `@@` decorator), or null for a plain WI entry. */
@@ -53,6 +57,7 @@ export interface ParsedEntryMarker {
 const reGenRegex = /^\s*\[GENERATE:REGEX:(.+)\]\s*$/i
 const reGenerate = /^\s*\[GENERATE:(?:(\d+):)?(BEFORE|AFTER)\]\s*$/i
 const reRender = /^\s*\[RENDER:(BEFORE|AFTER)\]\s*$/i
+const reInitVars = /^\s*\[InitialVariables\]\s*$/i
 const reInject = /^\s*@INJECT\s+(.+?)\s*$/i
 
 const isRole = (v: string | undefined): v is Role =>
@@ -90,6 +95,7 @@ const parseCommentMarker = (comment: string): Marker | null => {
     return g
   }
   if ((m = c.match(reRender))) return { kind: 'render', side: m[1].toLowerCase() as Side }
+  if (reInitVars.test(c)) return { kind: 'initvars' }
   if ((m = c.match(reInject))) return parseInject(m[1])
   return null
 }
@@ -98,7 +104,8 @@ const DECOR_MARKER: Record<string, Marker> = {
   '@@generate_before': { kind: 'generate', side: 'before' },
   '@@generate_after': { kind: 'generate', side: 'after' },
   '@@render_before': { kind: 'render', side: 'before' },
-  '@@render_after': { kind: 'render', side: 'after' }
+  '@@render_after': { kind: 'render', side: 'after' },
+  '@@initial_variables': { kind: 'initvars' }
 }
 
 /** Classify a lorebook entry by its `comment` + `content`. A plain entry → marker null, template = content. */

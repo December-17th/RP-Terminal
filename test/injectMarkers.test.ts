@@ -31,6 +31,11 @@ describe('injectMarkers — parseEntryMarker', () => {
     expect(parseEntryMarker('[RENDER:AFTER]', 'x').marker).toEqual({ kind: 'render', side: 'after' })
   })
 
+  it('parses [InitialVariables] / @@initial_variables → initvars (kept out of the prompt)', () => {
+    expect(parseEntryMarker('[InitialVariables]', '{"hp":1}').marker).toEqual({ kind: 'initvars' })
+    expect(parseEntryMarker('', '@@initial_variables\n{"hp":1}').marker).toEqual({ kind: 'initvars' })
+  })
+
   it('parses @INJECT (absolute / target / regex modes)', () => {
     expect(parseEntryMarker('@INJECT pos=0,role=system', 'x').marker).toEqual({
       kind: 'inject',
