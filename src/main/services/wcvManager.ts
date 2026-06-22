@@ -17,8 +17,19 @@ const ensureSession = (): void => {
   ses.webRequest.onHeadersReceived({ urls: ['https://*.jsdelivr.net/*'] }, (details, cb) => {
     if (!/\.html(\?|$)/i.test(details.url)) return cb({})
     const headers: Record<string, string[]> = { ...details.responseHeaders }
-    for (const k of Object.keys(headers)) if (k.toLowerCase() === 'content-type') delete headers[k]
+    for (const k of Object.keys(headers)) {
+      const lk = k.toLowerCase()
+      if (lk === 'content-type' || lk === 'content-security-policy') delete headers[k]
+    }
     headers['content-type'] = ['text/html; charset=utf-8']
+    // Card-UI CSP: confine the card to jsDelivr + self for code/connections (the host bridge is IPC,
+    // not network, so it's unaffected). Lenient on images; the real control is connect-src — the card
+    // can't fetch/XHR/WebSocket to arbitrary origins (the exfiltration vector).
+    headers['content-security-policy'] = [
+      "default-src 'self' https://*.jsdelivr.net 'unsafe-inline' 'unsafe-eval' data: blob:; " +
+        'img-src * data: blob:; ' +
+        "connect-src 'self' https://*.jsdelivr.net"
+    ]
     cb({ responseHeaders: headers })
   })
 }

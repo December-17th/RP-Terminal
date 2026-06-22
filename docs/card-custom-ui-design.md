@@ -347,3 +347,24 @@ worldbook entries, tracks `initialized_lorebooks`. Plus `dist/data_schema/index.
 
 Licensing: MVU/MagVarUpdate is MIT (loadable/vendorable); the React/gsap/openseadragon/immer deps are
 permissive; the card's own frontend is user content we run on the user's behalf.
+
+---
+
+# WCV trust model + hardening status
+
+The WCV card UI is a working spike for TRUSTED cards. Hardening status:
+
+- **Implemented:** process isolation (separate renderer, `nodeIntegration:false` → no host/Node reach);
+  a **CSP** on the card page — `connect-src` limited to jsDelivr + self, so the card can't fetch/XHR/
+  WebSocket to arbitrary origins (the exfiltration vector); scripts/styles limited to jsDelivr + self +
+  the eval the React app needs; **per-card click-to-consent** before any remote code runs; the host
+  bridge (`rptHost`) is narrow and **session-scoped** (read/write only THIS session's variables,
+  resolved in main from the calling `webContents` id).
+- **Deferred — full `contextIsolation:true`.** The shim runs in the page's MAIN world
+  (`contextIsolation:false`) because the card's libs (lodash/Zod/jQuery) must be REAL main-world objects,
+  which `contextBridge` can't pass (it clones and strips prototypes). The production fix is a **host-page
+  refactor**: load the libs in-page (vendored / CDN classic scripts), define the ST/Mvu shim in-page, and
+  expose only the narrow `rptHost` bridge across the isolation boundary via `contextBridge`. Until then,
+  WCV card UI is trusted-card-only.
+- **Deferred — vendoring.** The spike loads the card's frontend from jsDelivr at runtime; production
+  should cache/vendor a card's assets (offline + integrity) behind the consent gate.

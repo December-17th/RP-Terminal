@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useWorkspaceStore } from '../../stores/workspaceStore'
 import { useWorkspaceContext } from './context'
 import { useChatStore } from '../../stores/chatStore'
@@ -81,6 +81,22 @@ function WcvPanel({ slotId, url }: { slotId: string; url: string }): React.React
 export function WcvTestView(): React.ReactElement {
   return <WcvPanel slotId="wcv-test" url={TEST_URL} />
 }
+
+// Per-card consent: the card UI runs the card's OWN remote code (from jsDelivr) in an isolated process,
+// with access to this session's variables. Don't auto-run it — gate behind an explicit click.
 export function WcvCardView(): React.ReactElement {
-  return <WcvPanel slotId="wcv-card" url={STATUS_URL} />
+  const [run, setRun] = useState(false)
+  if (run) return <WcvPanel slotId="wcv-card" url={STATUS_URL} />
+  return (
+    <div style={{ padding: 20, maxWidth: 480 }}>
+      <h3 style={{ marginTop: 0 }}>命定之诗 — card UI</h3>
+      <p style={{ opacity: 0.8, fontSize: 13, lineHeight: 1.6 }}>
+        Runs the card&apos;s own UI code, loaded from <code>jsdelivr.net</code>, in an isolated process.
+        It can read and write this session&apos;s variables. Only run cards you trust.
+      </p>
+      <button className="btn-accent" onClick={() => setRun(true)}>
+        Run card UI
+      </button>
+    </div>
+  )
 }
