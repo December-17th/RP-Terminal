@@ -22,7 +22,9 @@ import {
 } from './promptBuilder'
 import { getPromptRules } from './regexService'
 import { loadGlobals, saveGlobals } from './templateService'
-import { streamProvider, DeltaCallback } from './apiService'
+import { streamProvider, DeltaCallback, UsageCallback } from './apiService'
+import { normalizeUsage } from './promptCacheMetrics'
+import { recordTurn, resetChat } from './cacheMetricsService'
 import { parseContent, stripThinking, RPEvent } from '../parsers/contentParser'
 import {
   parseMvuCommands,
@@ -240,12 +242,17 @@ export const generate = async (
     messages
   )
 
+  let rawUsage: unknown = null
+  const onUsage: UsageCallback = (u) => {
+    rawUsage = u
+  }
+
   const controller = new AbortController()
   activeControllers.set(chatId, controller)
 
   let raw: string
   try {
-    raw = await streamProvider(settings, messages, params, onDelta, controller.signal)
+    raw = await streamProvider(settings, messages, params, onDelta, controller.signal, onUsage)
   } catch (err: any) {
     if (controller.signal.aborted) {
       log('info', '⏹ generation stopped by user')
@@ -265,6 +272,9 @@ export const generate = async (
   }
 
   log('response', `← ${raw.length} chars${stopped ? ' (stopped)' : ''}`, raw)
+
+  // Cache harness: record this turn's assembled prompt (what was sent) + provider usage.
+  recordTurn(chatId, messages, normalizeUsage(settings.api.provider, rawUsage))
 
   // The FULL raw response is stored (lossless) — reasoning/state strips + display regex are
   // applied at VIEW time (renderer) and history-assembly time, never baked into storage. We
@@ -474,6 +484,7 @@ export const regenerate = async (
   if (!last.user_message.content) throw new Error('Cannot regenerate the opening greeting')
 
   truncateFloors(profileId, chatId, lastIndex)
+  resetChat(chatId)
   return generate(profileId, chatId, last.user_message.content, onDelta)
 }
 
