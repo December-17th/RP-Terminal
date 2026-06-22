@@ -299,3 +299,51 @@ The view's preload exposes only the narrow TavernHelper/MVU surface the card UI 
   that scrolls/clips with the panel), accept the heavier, discouraged tag.
 - **Either way, Option 1 (native, no frame) remains the default** for declarative StatusMenuBuilder-
   style cards; Option 2 is the fidelity path for cards that ship real UI code.
+
+---
+
+# 命定之诗 boot chain + shim requirements (from the actual bundles, 2026-06-21)
+
+The card ships several frontends, all as scripts that cascade-import more: a **status UI**, a
+**start-only character-creation** frontend, and the **MVU variable framework** itself.
+
+## The status UI
+Regex emits an inline frame that jQuery-loads the UI:
+```html
+<body><script>$('body').load('https://.../FrontEnd-for-destined-journey@1.8.2/dist/status/index.html')</script></body>
+```
+`dist/status/index.html` is **not jQuery/Vue — it's a React ESM app** (`<script type="module">`)
+that imports its deps from jsDelivr at runtime: `react`/`react-dom` (`scheduler`), `immer`, `gsap`,
+`openseadragon`. (jQuery is only the *outer* `.load()` glue; in a WCV we load the status URL directly.)
+
+## The MVU framework (`MagVarUpdate/artifact/bundle.js`, MIT)
+Exposes **`window.Mvu`**: `getMvuData`, `replaceMvuData`, `parseMessage`, `setMvuVariable`,
+`getMvuVariable`, `reloadInitVar`, `events` (`VARIABLE_INITIALIZED`, `VARIABLE_UPDATE_STARTED`, …).
+Depends on a LARGE host global surface: `SillyTavern`; `getVariables`/`replaceVariables`/
+`insertOrAssignVariables`/`updateVariablesWith`; `getChatMessages`/`setChatMessages`; `eventOn`/
+`eventEmit`/`eventRemoveListener`; lorebook APIs (`getCurrentCharPrimaryLorebook`, `getCharLorebooks`,
+`getLorebookEntries`, `getLorebookSettings`/`setLorebookSettings`); `generate`/`generateRaw`;
+`substitudeMacros`. Reads/writes `stat_data` (+ optional `schema`), processes `<initvar>` blocks from
+worldbook entries, tracks `initialized_lorebooks`. Plus `dist/data_schema/index.js` = the variable schema.
+
+## Shim requirements (WCV preload)
+- **`window.SillyTavern.getContext()` + the bare TavernHelper globals.** Map to what we have: vars →
+  the `rptHost`/`apply-variable-ops` bridge; `getChatMessages` → `pluginGetMessages`; `substitudeMacros`
+  → `expandMacros`; events → a small bus; lorebook → lorebook services; `generate(Raw)` → `generateRaw`.
+  Many can START as stubs/no-ops and be filled as the UI actually calls them.
+- **`window.Mvu` — a THIN shim is likely enough for the UI.** The status app only *displays*: it reads
+  `Mvu.getMvuData()` (→ `{ stat_data, schema }` from `rptHost`) and maybe `setMvuVariable` (→ the
+  bridge). The bundle's heavy deps (lorebook/generate/getChatMessages) drive its *update* pipeline —
+  which we already do natively (`mvuParser`). So shim `getMvuData/getMvuVariable/setMvuVariable/events`
+  over our state; load the real MIT bundle only if the UI needs its exact behavior.
+- **Network/CSP.** The status app imports ESM from jsDelivr at runtime → the WCV must allow jsDelivr
+  (load from the jsDelivr origin for the spike; vendor/proxy + tighten CSP for production).
+- **Electron security decision.** To give the card's main-world code the bare window globals it
+  expects, either `contextBridge` (locked, limited) or `contextIsolation:false` (a main-world shim —
+  simpler, acceptable for TRUSTED cards since the WCV is still a separate process with `nodeIntegration:
+  false`; production hardens). Loading a remote card page also grants it `rptHost` → trusted-only.
+- **Spike tactic — a missing-API logger.** Expose the globals as accessors that log every property
+  touched on first load → the exact call checklist, instead of guessing what to shim.
+
+Licensing: MVU/MagVarUpdate is MIT (loadable/vendorable); the React/gsap/openseadragon/immer deps are
+permissive; the card's own frontend is user content we run on the user's behalf.
