@@ -6,6 +6,7 @@ feature-parity audit" so RP Terminal matches the feature set of **Tavern Helper*
 TH-1…TH-8, each shipped as its own commit with typecheck + the Vitest suite green.
 
 **Implemented:**
+
 - **TH-1** `0062350` — canonical `tavern_events` enum + emit (GENERATION/MESSAGE/CHAT/
   STREAM), `eventMakeFirst/Last/WaitFor/RemoveListener/Once`, stream-token forwarding.
 - **TH-2** `6b174ff` — swipes (alternate responses) end-to-end; variable scopes
@@ -26,7 +27,7 @@ TH-1…TH-8, each shipped as its own commit with typecheck + the Vitest suite gr
 markers (uncertain ST contract); render-time **EJS** on output (quickjs engine is main-side —
 render-time macros cover the common cases); STScript while/loops + the long-tail command set.
 
-**Hard constraint (unchanged):** clean-room only — reimplement the API *surface and behavior*
+**Hard constraint (unchanged):** clean-room only — reimplement the API _surface and behavior_
 from public docs/observed behavior; **never** copy js-slash-runner code (AGPL). ST-Prompt-Template
 is already a clean-room engine (`templateService`); we extend it the same way.
 
@@ -56,8 +57,10 @@ Effort: S(<½ day) · M(1–2 days) · L(3–5 days) · XL(>1 week). Each phase 
 pure logic + a commit.
 
 ### TH-1 — Event backbone (foundational) · M
+
 The reactive substrate everything else leans on. Today we emit `generation:start/end`,
 `chat:changed`, `mag_*`. Deliver:
+
 - A canonical `tavern_events` enum mapped onto our pipeline: `GENERATION_STARTED/ENDED`,
   `MESSAGE_SENT/RECEIVED/UPDATED/DELETED/SWIPED`, `CHAT_CHANGED`, `STREAM_TOKEN_RECEIVED`.
 - Emit `STREAM_TOKEN_RECEIVED` by forwarding `apiService` deltas (already on the
@@ -67,7 +70,9 @@ The reactive substrate everything else leans on. Today we emit `generation:start
   depend on it; high leverage, contained.
 
 ### TH-2 — Message + variable model · L
+
 The data model scripts manipulate; also lands the deprioritized **message swipes**.
+
 - **Chat message script API** over the floor model (a flattened message view):
   `getChatMessages(range, opts)`, `setChatMessages` (edit), `createChatMessages` (insert),
   `deleteChatMessages`, `rotateChatMessages` (swipes). Swipes add an alternate-responses array to
@@ -79,8 +84,10 @@ The data model scripts manipulate; also lands the deprioritized **message swipes
 - **Why second:** unblocks message-scope templates (TH-3/5) and is the highest-touch data change.
 
 ### TH-3 — Read/CRUD API batch (lorebook · card · preset · regex) + template helpers · L
+
 High compatibility value, lower risk — mostly wiring existing services to the dispatch + template
 bridge.
+
 - **World-Info/lorebook script API** (`lorebookService`): read (`getWorldbook`, entries),
   CRUD (`createWorldbook`/entries, edit, delete), `getCharWorldbookNames`/`getChatWorldbook`,
   bind/unbind. Gate writes behind `worldbook:write`.
@@ -93,6 +100,7 @@ bridge.
 - **Why third:** big surface, batchable, builds confidence before the riskier generation/prompt work.
 
 ### TH-4 — Generation control · M
+
 - `generateRaw(config)` — custom prompt injects, builtin-prompt overrides, sampler/max_tokens
   overrides; extend the `generate` IPC contract + `generationService` to accept an override config.
 - `stopGeneration` — expose the existing `abortGeneration`.
@@ -100,6 +108,7 @@ bridge.
 - (Stream-token events already shipped in TH-1.)
 
 ### TH-5 — Prompt-text features · M
+
 - **Macro system**: a substitution pass for the ST built-ins + TH macros (`{{getvar::}}`,
   `{{get_message_variable::}}`, `{{roll}}`, `{{random}}`, `{{pick}}`, …) in prompts + messages — a
   pure `expandMacros(text, ctx)` run in `promptBuilder` and at render, reusing the var stores.
@@ -108,19 +117,23 @@ bridge.
 - **Render-time template evaluation** on AI output — a second `evalTemplate` pass at display.
 
 ### TH-6 — Embedded interactive HTML in messages ("前端卡") · L
-Render `<script>`/HTML blocks *inside a chat message* as sandboxed interactive iframes (distinct
+
+Render `<script>`/HTML blocks _inside a chat message_ as sandboxed interactive iframes (distinct
 from card-level scripts). Detect embedded blocks in a floor's response → mount per-block
 `CardScriptHost`-style iframes via `buildScriptSrcDoc` (same sandbox, CSP, `rpt` API). Reuses TH-1/2
 events so the embedded UI is reactive.
 
 ### TH-7 — Audio API · M
+
 A small renderer audio service + `rpt.audio` (play/pause/stop BGM, one-shot SFX, playback modes),
 gated by an `audio` cap. Self-contained; can slot anytime after TH-1.
 
 ### TH-8 — STScript slash-command language · XL (last)
+
 A parser/interpreter for the ST slash-command language: the built-in `/command` set
 (`/setvar /getvar /if /gen /trigger /send /addswipe /echo …`), pipes, and closures, over the
 existing `slash` registry. Largest item, and partly obviated for power users by the JS API — so last.
+
 - N/A throughout: direct ST DOM/jQuery manipulation (RP Terminal isn't ST; the `$` stub stays a stub).
 
 ---

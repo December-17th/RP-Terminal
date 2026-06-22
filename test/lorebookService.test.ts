@@ -32,9 +32,7 @@ describe('matchEntries', () => {
   })
 
   it('requires a secondary key when selective', () => {
-    const lb = book([
-      { keys: ['king'], secondary_keys: ['throne'], content: 'x', selective: true }
-    ])
+    const lb = book([{ keys: ['king'], secondary_keys: ['throne'], content: 'x', selective: true }])
     expect(matchEntries(lb, 'the king walks')).toHaveLength(0)
     expect(matchEntries(lb, 'the king on the throne')).toHaveLength(1)
   })
@@ -126,8 +124,16 @@ describe('matchAcross', () => {
 
   const recursionBook = (overrides: { exclude?: boolean; prevent?: boolean } = {}): any =>
     book([
-      { keys: ['dragon'], content: 'The dragon guards gold.', prevent_recursion: overrides.prevent === true },
-      { keys: ['gold'], content: 'Gold is treasure.', exclude_recursion: overrides.exclude === true }
+      {
+        keys: ['dragon'],
+        content: 'The dragon guards gold.',
+        prevent_recursion: overrides.prevent === true
+      },
+      {
+        keys: ['gold'],
+        content: 'Gold is treasure.',
+        exclude_recursion: overrides.exclude === true
+      }
     ])
 
   it('does not recurse when maxRecursion is 0', () => {

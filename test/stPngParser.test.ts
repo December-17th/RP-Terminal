@@ -14,11 +14,17 @@ const chunk = (type: string, data: Buffer): Buffer => {
 }
 
 const textChunk = (keyword: string, text: string): Buffer =>
-  chunk('tEXt', Buffer.concat([Buffer.from(keyword, 'latin1'), Buffer.from([0]), Buffer.from(text, 'latin1')]))
+  chunk(
+    'tEXt',
+    Buffer.concat([Buffer.from(keyword, 'latin1'), Buffer.from([0]), Buffer.from(text, 'latin1')])
+  )
 
 const tmpFiles: string[] = []
 const writePng = (...chunks: Buffer[]): string => {
-  const p = path.join(os.tmpdir(), `rpt-png-${Date.now()}-${Math.random().toString(36).slice(2)}.png`)
+  const p = path.join(
+    os.tmpdir(),
+    `rpt-png-${Date.now()}-${Math.random().toString(36).slice(2)}.png`
+  )
   fs.writeFileSync(p, Buffer.concat([PNG_SIG, ...chunks]))
   tmpFiles.push(p)
   return p

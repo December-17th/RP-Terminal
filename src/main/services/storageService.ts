@@ -3,18 +3,18 @@ import path from 'path'
 import { app } from 'electron'
 
 // Get the base data directory for the app
-export const getAppDir = () => {
+export const getAppDir = (): string => {
   const userDataPath = app.getPath('userData')
   return path.join(userDataPath, 'rp-terminal-data')
 }
 
-export const ensureDir = (dirPath: string) => {
+export const ensureDir = (dirPath: string): void => {
   if (!fs.existsSync(dirPath)) {
     fs.mkdirSync(dirPath, { recursive: true })
   }
 }
 
-export const writeJsonSyncAtomic = (filePath: string, data: any) => {
+export const writeJsonSyncAtomic = (filePath: string, data: any): void => {
   ensureDir(path.dirname(filePath))
   const tmpPath = `${filePath}.tmp`
   const jsonStr = JSON.stringify(data, null, 2)

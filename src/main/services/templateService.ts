@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
 // Globals are an untyped variable bag (Record<string, any>), matching TemplateContext.globals.
 import path from 'path'
 import { getQuickJS } from 'quickjs-emscripten'

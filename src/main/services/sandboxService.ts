@@ -72,7 +72,11 @@ const ensureWorker = (): Worker | null => {
     return w
   } catch (e) {
     // Spawn failed (e.g. the worker bundle is missing) — stick to in-process.
-    log('error', 'sandbox worker unavailable; using in-process fallback', String((e as Error)?.message || e))
+    log(
+      'error',
+      'sandbox worker unavailable; using in-process fallback',
+      String((e as Error)?.message || e)
+    )
     workerBroken = true
     return null
   }

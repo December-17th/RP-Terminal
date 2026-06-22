@@ -46,7 +46,9 @@ export const registerPluginIpc = (ipcMain: IpcMain): void => {
     scriptApiService.setWorldbookEntries(profileId, chatId, id, entries, cardId)
   )
   ipcMain.handle('script-preset-get', (_, profileId) => scriptApiService.getPresetInfo(profileId))
-  ipcMain.handle('script-preset-list', (_, profileId) => scriptApiService.listPresetNames(profileId))
+  ipcMain.handle('script-preset-list', (_, profileId) =>
+    scriptApiService.listPresetNames(profileId)
+  )
   ipcMain.handle('script-regex-format', (_, profileId, ctx, text, macroCtx) =>
     scriptApiService.formatWithRegex(profileId, ctx, text, macroCtx)
   )

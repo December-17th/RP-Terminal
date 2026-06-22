@@ -24,11 +24,19 @@ export const buildMvuEvents = (variables: Record<string, unknown> | undefined): 
   if (deltas.length === 0) return []
 
   const statData = (variables.stat_data ?? {}) as unknown
-  const events: MvuEvent[] = [{ name: 'mag_variable_update_started', payload: { stat_data: statData } }]
+  const events: MvuEvent[] = [
+    { name: 'mag_variable_update_started', payload: { stat_data: statData } }
+  ]
   for (const d of deltas) {
     events.push({
       name: 'mag_variable_updated',
-      payload: { stat_data: statData, path: d.path, oldValue: d.old, newValue: d.new, reason: d.reason }
+      payload: {
+        stat_data: statData,
+        path: d.path,
+        oldValue: d.old,
+        newValue: d.new,
+        reason: d.reason
+      }
     })
   }
   events.push({

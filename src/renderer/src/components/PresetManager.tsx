@@ -51,7 +51,11 @@ export const PresetManager: React.FC<Props> = ({ profileId }) => {
     load(profileId)
   }, [profileId])
 
-  const numField = (key: keyof PresetParameters, label: string, required = false): React.ReactNode => {
+  const numField = (
+    key: keyof PresetParameters,
+    label: string,
+    required = false
+  ): React.ReactNode => {
     if (!preset) return null
     const v = preset.parameters[key]
     return (
@@ -62,7 +66,9 @@ export const PresetManager: React.FC<Props> = ({ profileId }) => {
           step="0.01"
           value={v ?? ''}
           placeholder={required ? '' : 'unset'}
-          onChange={(e) => setParam(key, e.target.value === '' ? undefined : Number(e.target.value))}
+          onChange={(e) =>
+            setParam(key, e.target.value === '' ? undefined : Number(e.target.value))
+          }
         />
       </label>
     )
@@ -137,7 +143,14 @@ export const PresetManager: React.FC<Props> = ({ profileId }) => {
               {OPTIONAL_PARAMS.map((k) => numField(k, k.replace(/_/g, ' ')))}
             </div>
 
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 16 }}>
+            <div
+              style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                marginTop: 16
+              }}
+            >
               <h4 style={{ margin: 0 }}>
                 Prompt Manager{' '}
                 <span style={{ opacity: 0.5, fontWeight: 'normal' }}>(top → bottom)</span>
@@ -155,9 +168,17 @@ export const PresetManager: React.FC<Props> = ({ profileId }) => {
               const markerLabel = MARKER_LABEL[block.marker]
               const isDynamic = block.marker !== 'none'
               return (
-                <div key={block.identifier} className={`prompt-row ${block.enabled ? '' : 'disabled'}`}>
+                <div
+                  key={block.identifier}
+                  className={`prompt-row ${block.enabled ? '' : 'disabled'}`}
+                >
                   <div className="prompt-row-head">
-                    <input type="checkbox" checked={block.enabled} onChange={() => toggleBlock(i)} title="Enabled" />
+                    <input
+                      type="checkbox"
+                      checked={block.enabled}
+                      onChange={() => toggleBlock(i)}
+                      title="Enabled"
+                    />
                     <span className="prompt-name" onClick={() => setEditing(i)} title="Edit">
                       {block.name || block.identifier}
                     </span>
@@ -167,12 +188,19 @@ export const PresetManager: React.FC<Props> = ({ profileId }) => {
                       <span className="role-badge">{block.role}</span>
                     )}
                     {block.injection_depth != null && (
-                      <span className="marker-badge" title="Injected into chat history at this depth">
+                      <span
+                        className="marker-badge"
+                        title="Injected into chat history at this depth"
+                      >
                         @{block.injection_depth}
                       </span>
                     )}
                     <div className="prompt-actions">
-                      <button className="btn-ghost" disabled={i === 0} onClick={() => moveBlock(i, -1)}>
+                      <button
+                        className="btn-ghost"
+                        disabled={i === 0}
+                        onClick={() => moveBlock(i, -1)}
+                      >
                         ▲
                       </button>
                       <button
@@ -186,7 +214,11 @@ export const PresetManager: React.FC<Props> = ({ profileId }) => {
                         ✎
                       </button>
                       {!isDynamic && (
-                        <button className="btn-ghost danger" onClick={() => deleteBlock(i)} title="Delete">
+                        <button
+                          className="btn-ghost danger"
+                          onClick={() => deleteBlock(i)}
+                          title="Delete"
+                        >
                           🗑
                         </button>
                       )}
@@ -211,12 +243,15 @@ export const PresetManager: React.FC<Props> = ({ profileId }) => {
           }
         >
           <label className="field-label">Name</label>
-          <input value={editingBlock.name} onChange={(e) => updateBlock(editing, { name: e.target.value })} />
+          <input
+            value={editingBlock.name}
+            onChange={(e) => updateBlock(editing, { name: e.target.value })}
+          />
 
           {editingBlock.marker !== 'none' ? (
             <div className="dynamic-note">
-              Dynamic block — content is injected automatically ({MARKER_LABEL[editingBlock.marker]}).
-              Toggle and reorder it in the list to control where it appears.
+              Dynamic block — content is injected automatically ({MARKER_LABEL[editingBlock.marker]}
+              ). Toggle and reorder it in the list to control where it appears.
             </div>
           ) : (
             <>
@@ -253,8 +288,8 @@ export const PresetManager: React.FC<Props> = ({ profileId }) => {
                 }
               />
               <div className="dynamic-note">
-                Blank = inline, in preset order. A number injects this block into the chat
-                history that many messages up from the bottom (like a depth lorebook entry).
+                Blank = inline, in preset order. A number injects this block into the chat history
+                that many messages up from the bottom (like a depth lorebook entry).
               </div>
             </>
           )}

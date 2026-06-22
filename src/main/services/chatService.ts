@@ -163,7 +163,9 @@ export const getChatMode = (profileId: string, chatId: string): ChatMode => {
 /** Switch a session's FSM mode. Unknown values are coerced to 'explore'. */
 export const setChatMode = (profileId: string, chatId: string, mode: ChatMode): void => {
   const m: ChatMode = CHAT_MODES.includes(mode) ? mode : 'explore'
-  getDb().prepare('UPDATE chats SET mode = ? WHERE id = ? AND profile_id = ?').run(m, chatId, profileId)
+  getDb()
+    .prepare('UPDATE chats SET mode = ? WHERE id = ? AND profile_id = ?')
+    .run(m, chatId, profileId)
 }
 
 /** Strip a lorebook id out of every session's active set (called when it's deleted). */

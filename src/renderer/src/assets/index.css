@@ -546,8 +546,13 @@ details[open] > .stat-group-title::before {
   animation: rpt-pulse 1.2s ease-in-out infinite;
 }
 @keyframes rpt-pulse {
-  0%, 100% { opacity: 0.4; }
-  50% { opacity: 1; }
+  0%,
+  100% {
+    opacity: 0.4;
+  }
+  50% {
+    opacity: 1;
+  }
 }
 
 /* ---------- Logs console ---------- */
@@ -615,13 +620,21 @@ details[open] > .stat-group-title::before {
   color: #c8c8c8;
 }
 .lvl-request .log-glyph,
-.lvl-request .log-label { color: #5b8def; }
+.lvl-request .log-label {
+  color: #5b8def;
+}
 .lvl-response .log-glyph,
-.lvl-response .log-label { color: #4caf72; }
+.lvl-response .log-label {
+  color: #4caf72;
+}
 .lvl-error .log-glyph,
-.lvl-error .log-label { color: #e74c3c; }
+.lvl-error .log-label {
+  color: #e74c3c;
+}
 .lvl-info .log-glyph,
-.lvl-info .log-label { color: #aaaaaa; }
+.lvl-info .log-label {
+  color: #aaaaaa;
+}
 
 .floor-stage {
   position: relative;
@@ -1067,8 +1080,14 @@ details[open] > .stat-group-title::before {
   animation: rpt-toast-in 0.18s ease-out;
 }
 @keyframes rpt-toast-in {
-  from { opacity: 0; transform: translateY(6px); }
-  to { opacity: 1; transform: translateY(0); }
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 .user-action {
@@ -1153,7 +1172,9 @@ input[type='radio'] {
   accent-color: var(--rpt-accent);
 }
 
-h3 { margin-top: 0; }
+h3 {
+  margin-top: 0;
+}
 
 textarea {
   background-color: var(--rpt-bg-primary);

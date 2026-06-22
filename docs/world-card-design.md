@@ -1,7 +1,7 @@
 # World Card + One-Click Setup — Design (Track S)
 
 Status: **Draft — design-doc-first, no code yet.** High priority. Defines the **World
-Card**: an evolution of the character card into an ST-compatible *superset* that bundles
+Card**: an evolution of the character card into an ST-compatible _superset_ that bundles
 everything a world needs — scripts, regex, lorebooks, presets, plugins, a custom agent
 config, custom UI, and combat — so importing one card is a **one-click setup**. Pairs
 with the Track S "global/session/world scoping" item; together they make installing and
@@ -15,14 +15,14 @@ Today a card carries prose + an embedded lorebook + (under `rp_terminal`) script
 Everything else a polished world needs — its regex, its preset, its plugins, its agent
 prompts, its combat rules — must be installed by hand, and the importer actively
 **throws most of it away** (it keeps only known fields + `extensions.rp_terminal`). The
-World Card makes a card the *single distributable unit* for a complete experience.
+World Card makes a card the _single distributable unit_ for a complete experience.
 
 ### Goals
 
 - **One-click import**: dropping in a World Card installs **everything it bundles** —
   scripts, regex, lorebook(s), presets, plugins, agent config, UI, combat — into the
   right stores, with one confirm.
-- **Backward-compatible both ways**: a World Card *is* a valid SillyTavern
+- **Backward-compatible both ways**: a World Card _is_ a valid SillyTavern
   `chara_card_v3` (ST reads the prose/lorebook/regex and ignores our namespace); and we
   still import plain ST v2/v3 cards unchanged (no `rp_terminal` → behaves as today).
 - **Expandable + forward-compatible**: a versioned, additive bundle namespace with room
@@ -34,7 +34,7 @@ World Card makes a card the *single distributable unit* for a complete experienc
 - A new card **spec** string. World Cards stay `spec: 'chara_card_v3'` so ST still reads
   them; "World-ness" lives entirely in `extensions.rp_terminal` (+ standard ST keys).
 - A hosted marketplace / auto-update.
-- Replacing the plugin or MVU systems — the World Card *bundles* and *routes* to them.
+- Replacing the plugin or MVU systems — the World Card _bundles_ and _routes_ to them.
 
 ---
 
@@ -50,7 +50,7 @@ and docs become "World Card". No format break — a World Card is a chara_card_v
 ## 3. The format — `extensions.rp_terminal` as the bundle manifest
 
 ST ignores unknown `extensions.*`, so our entire superset rides there (plus the standard
-ST `extensions.regex_scripts`, which ST *also* applies). Slots:
+ST `extensions.regex_scripts`, which ST _also_ applies). Slots:
 
 ```jsonc
 extensions.rp_terminal = {
@@ -96,7 +96,7 @@ importer drops it.
   now (prose + `character_book`); the new slots are simply empty.
 - **A World Card opened in SillyTavern** — ST reads name/description/`character_book`/
   `regex_scripts`, ignores `rp_terminal` → the world degrades to a normal character (prose
-  + lore + regex still work; the engine extras are dormant). True superset, no fork.
+  - lore + regex still work; the engine extras are dormant). True superset, no fork.
 - **Spec unchanged** (`chara_card_v3`) so existing ST tooling round-trips it.
 
 ---
@@ -105,7 +105,7 @@ importer drops it.
 
 Rework `importCharacterFromFile` from "whitelist + drop" to **lossless extract + route**:
 
-1. **Preserve the full card** — keep *all* `extensions.*` (not just `rp_terminal`), so ST
+1. **Preserve the full card** — keep _all_ `extensions.*` (not just `rp_terminal`), so ST
    keys and future slots survive a round-trip. (Fixes today's data loss.)
 2. **Detect the bundle** — `rp_terminal.world_card` present (or any non-empty slot) ⇒ run
    the one-click installer; otherwise plain-card import.
@@ -177,14 +177,14 @@ Until then, the inline JSON manifest covers scripts/regex/lorebook/preset/agent 
 
 ## 9. Phased plan
 
-| Phase | Deliverable | Reuses |
-| --- | --- | --- |
-| **S0** (this doc) | World Card format + manifest slots + one-click import + scope model. | — |
-| **S1 — Lossless import + regex** | Stop dropping extensions; extract bundled `regex_scripts`/`regex` into the regex store on import; the install-summary confirm. **Bundled regex from `4.2.1.png` finally works.** | importer, regex service |
-| **S2 — Scope model** | `scope` (global/world/session) + `owner` on regex/preset/plugin (lorebook has the seam); generation resolves the active set; scope selector per manager. | `chats.lorebook_ids` pattern |
-| **S3 — Bundle slots** | ✅ `presets[]` → preset store (dedup, never auto-active), `lorebooks[]` → lore library, `agent.prompts` (system + per-mode) applied at generation (`composeAddendum`). ⏳ deferred: `plugins[]` (package format + grant/disable flow), `combat`, `recommended_settings`. | preset/plugin/lorebook services, Phase H/I |
-| **S4 — Export / packing** | ✅ "Export World" → chara_card_v3 JSON: own lorebook → `character_book`, world regex → `extensions.regex_scripts`, `world_card` stamped (`buildWorldCardExport`, pure + round-trips). ⏳ presets/extra-lorebooks/plugins export awaits their scope bindings. | S1–S3 |
-| **S5 — PNG cartridge** | Compressed-`iTXt` read + appended-ZIP cartridge import/export (Phase L). | `adm-zip`, `stPngParser` |
+| Phase                            | Deliverable                                                                                                                                                                                                                                                              | Reuses                                     |
+| -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------ |
+| **S0** (this doc)                | World Card format + manifest slots + one-click import + scope model.                                                                                                                                                                                                     | —                                          |
+| **S1 — Lossless import + regex** | Stop dropping extensions; extract bundled `regex_scripts`/`regex` into the regex store on import; the install-summary confirm. **Bundled regex from `4.2.1.png` finally works.**                                                                                         | importer, regex service                    |
+| **S2 — Scope model**             | `scope` (global/world/session) + `owner` on regex/preset/plugin (lorebook has the seam); generation resolves the active set; scope selector per manager.                                                                                                                 | `chats.lorebook_ids` pattern               |
+| **S3 — Bundle slots**            | ✅ `presets[]` → preset store (dedup, never auto-active), `lorebooks[]` → lore library, `agent.prompts` (system + per-mode) applied at generation (`composeAddendum`). ⏳ deferred: `plugins[]` (package format + grant/disable flow), `combat`, `recommended_settings`. | preset/plugin/lorebook services, Phase H/I |
+| **S4 — Export / packing**        | ✅ "Export World" → chara_card_v3 JSON: own lorebook → `character_book`, world regex → `extensions.regex_scripts`, `world_card` stamped (`buildWorldCardExport`, pure + round-trips). ⏳ presets/extra-lorebooks/plugins export awaits their scope bindings.             | S1–S3                                      |
+| **S5 — PNG cartridge**           | Compressed-`iTXt` read + appended-ZIP cartridge import/export (Phase L).                                                                                                                                                                                                 | `adm-zip`, `stPngParser`                   |
 
 **S1 is the recommended first slice** — small, immediately fixes the data loss, and makes
 the existing `4.2.1.png` regex import work end-to-end. S2 (scoping) is the larger structural

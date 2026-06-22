@@ -106,9 +106,10 @@ export const collectBundledRegex = (card: RPTerminalCard): any[] => {
   // `regex_scripts` is the ST-standard key (extensions level, untyped via catchall).
   const fromSt = card.data.extensions?.regex_scripts
   const fromRpt = rpt?.regex
-  return [...(Array.isArray(fromSt) ? fromSt : []), ...(Array.isArray(fromRpt) ? fromRpt : [])].filter(
-    (r) => r && typeof r === 'object'
-  )
+  return [
+    ...(Array.isArray(fromSt) ? fromSt : []),
+    ...(Array.isArray(fromRpt) ? fromRpt : [])
+  ].filter((r) => r && typeof r === 'object')
 }
 
 /** Bundled chat-completion presets from `rp_terminal.presets[]` (Track S §3). */

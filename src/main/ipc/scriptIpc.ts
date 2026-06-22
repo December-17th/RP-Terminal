@@ -17,7 +17,9 @@ export const registerScriptIpc = (ipcMain: IpcMain): void => {
   ipcMain.handle('script-set-disabled', (_, profileId, file, disabled) =>
     scriptService.setScriptDisabled(profileId, file, disabled)
   )
-  ipcMain.handle('delete-script', (_, profileId, file) => scriptService.deleteScript(profileId, file))
+  ipcMain.handle('delete-script', (_, profileId, file) =>
+    scriptService.deleteScript(profileId, file)
+  )
   ipcMain.handle('import-script-dialog', async (event, profileId, scope, owner) => {
     const result = await dialog.showOpenDialog(BrowserWindow.fromWebContents(event.sender)!, {
       properties: ['openFile', 'multiSelections'],

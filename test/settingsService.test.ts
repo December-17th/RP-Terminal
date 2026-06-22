@@ -91,7 +91,9 @@ describe('settings normalize', () => {
 
   it('repairs an active_api_preset_id that points at no existing preset', () => {
     const s = normalize({
-      api_presets: [{ id: 'a', name: 'A', provider: 'openai', endpoint: '', api_key: '', model: '' }],
+      api_presets: [
+        { id: 'a', name: 'A', provider: 'openai', endpoint: '', api_key: '', model: '' }
+      ],
       active_api_preset_id: 'gone'
     })
     expect(s.active_api_preset_id).toBe('a')

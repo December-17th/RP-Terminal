@@ -256,7 +256,9 @@ const runCommand = async (cmd: StCommand, pipe: string, ctx: StCtx): Promise<str
     }
     case 'run': {
       if (isClosure(cmd.value)) return runScript(closureBody(cmd.value), ctx)
-      return String((await ctx.fallback({ name: firstWord(value), named, value: rest(value) }, pipe)) ?? '')
+      return String(
+        (await ctx.fallback({ name: firstWord(value), named, value: rest(value) }, pipe)) ?? ''
+      )
     }
     default:
       return String((await ctx.fallback({ name: cmd.name, named, value }, pipe)) ?? '')

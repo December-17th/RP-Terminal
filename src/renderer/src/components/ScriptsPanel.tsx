@@ -60,7 +60,11 @@ export const ScriptsPanel: React.FC<Props> = ({
     : []
 
   const ownerFor = (scope: ArtifactScope): string | undefined =>
-    scope === 'world' ? activeCardId ?? undefined : scope === 'session' ? activeChatId ?? undefined : undefined
+    scope === 'world'
+      ? (activeCardId ?? undefined)
+      : scope === 'session'
+        ? (activeChatId ?? undefined)
+        : undefined
 
   const addScript = async (scope: ArtifactScope): Promise<void> => {
     const file = await add(profileId, { name: 'new-script', code: '' }, scope, ownerFor(scope))
@@ -99,7 +103,10 @@ export const ScriptsPanel: React.FC<Props> = ({
             {s.name || 'Untitled script'}
           </span>
           {s.remoteHosts.length > 0 && (
-            <span className="role-badge" title={`Loads remote code from ${s.remoteHosts.join(', ')}`}>
+            <span
+              className="role-badge"
+              title={`Loads remote code from ${s.remoteHosts.join(', ')}`}
+            >
               ⬇ {s.remoteHosts.length}
             </span>
           )}
@@ -174,9 +181,9 @@ export const ScriptsPanel: React.FC<Props> = ({
       <div className="panel-body">
         <div style={{ fontSize: '0.8em', color: 'var(--rpt-text-secondary)', marginBottom: 10 }}>
           Sandboxed JavaScript that runs in the right-panel <b>⚙ Card Scripts</b> while a session is
-          open (vars/chat/generate/ui via the <code>rpt</code> API). Scope a script to{' '}
-          <b>Global</b>, <b>World</b> (this card) or <b>Session</b> (this chat). Pull a remote library
-          by adding <code>// @import https://…</code> at the top — fetched once with your permission.
+          open (vars/chat/generate/ui via the <code>rpt</code> API). Scope a script to <b>Global</b>
+          , <b>World</b> (this card) or <b>Session</b> (this chat). Pull a remote library by adding{' '}
+          <code>{'// @import https://…'}</code> at the top — fetched once with your permission.
         </div>
 
         {SCOPES.map(({ key, title, hint }) => {
@@ -218,16 +225,26 @@ export const ScriptsPanel: React.FC<Props> = ({
                 <>
                   {inScope.map(renderRow)}
                   {cardOnesHere.map((cs, i) => (
-                    <div key={`card-${i}`} className={`prompt-row ${cs.enabled === false ? 'disabled' : ''}`}>
+                    <div
+                      key={`card-${i}`}
+                      className={`prompt-row ${cs.enabled === false ? 'disabled' : ''}`}
+                    >
                       <div className="prompt-row-head">
                         <span className="prompt-name" style={{ opacity: 0.85 }}>
                           {cs.name || 'Untitled'}
                         </span>
-                        <span className="entry-keys-preview" title="Embedded in the card; edit via “Card scripts”">
+                        <span
+                          className="entry-keys-preview"
+                          title="Embedded in the card; edit via “Card scripts”"
+                        >
                           on card
                         </span>
                         <div className="prompt-actions">
-                          <button className="btn-ghost" title="Edit on card" onClick={() => setEditCard(true)}>
+                          <button
+                            className="btn-ghost"
+                            title="Edit on card"
+                            onClick={() => setEditCard(true)}
+                          >
                             ✎
                           </button>
                         </div>
@@ -278,13 +295,20 @@ const ScriptEditor: React.FC<{
       title={`Edit Script — ${script.name}`}
       onClose={onClose}
       headerActions={
-        <button className="btn-accent" onClick={() => onSave({ name: name.trim() || 'script', code })}>
+        <button
+          className="btn-accent"
+          onClick={() => onSave({ name: name.trim() || 'script', code })}
+        >
           Save
         </button>
       }
     >
       <label className="field-label">Name</label>
-      <input value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. stats-panel" />
+      <input
+        value={name}
+        onChange={(e) => setName(e.target.value)}
+        placeholder="e.g. stats-panel"
+      />
 
       <label className="field-label">Code (JavaScript)</label>
       <textarea
@@ -292,12 +316,14 @@ const ScriptEditor: React.FC<{
         spellCheck={false}
         value={code}
         onChange={(e) => setCode(e.target.value)}
-        placeholder={'// @import https://cdn.jsdelivr.net/…/bundle.js\nrpt.on("ready", () => { … })'}
+        placeholder={
+          '// @import https://cdn.jsdelivr.net/…/bundle.js\nrpt.on("ready", () => { … })'
+        }
       />
       <div style={{ fontSize: '0.78em', color: 'var(--rpt-text-secondary)', marginTop: 6 }}>
-        Add <code>// @import https://…</code> (or <code>import &quot;https://…&quot;</code>) on its own
-        line to load a remote JS library. Remote code is fetched in the main process (cached) only
-        after you allow it for this world.
+        Add <code>{'// @import https://…'}</code> (or <code>import &quot;https://…&quot;</code>) on
+        its own line to load a remote JS library. Remote code is fetched in the main process
+        (cached) only after you allow it for this world.
       </div>
     </Modal>
   )

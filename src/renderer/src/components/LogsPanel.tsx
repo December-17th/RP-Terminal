@@ -49,10 +49,17 @@ export const LogsPanel: React.FC = () => {
       </div>
       <div className="panel-body log-console">
         {entries.length === 0 ? (
-          <div className="log-empty">No activity yet. Send a message to see raw requests, responses and errors.</div>
+          <div className="log-empty">
+            No activity yet. Send a message to see raw requests, responses and errors.
+          </div>
         ) : (
           entries.map((e) => (
-            <LogLine key={e.id} entry={e} expanded={expanded.has(e.id)} onToggle={() => toggle(e.id)} />
+            <LogLine
+              key={e.id}
+              entry={e}
+              expanded={expanded.has(e.id)}
+              onToggle={() => toggle(e.id)}
+            />
           ))
         )}
         <div ref={endRef} />

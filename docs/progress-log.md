@@ -21,9 +21,9 @@ Running status of the MVU / panel-workspace track. Newest first.
 - **Worldbook + ST-chat compat (Track C0).** Sync worldbook NAME getters (`getCharWorldbookNames` via
   `sendSync` — cards call them WITHOUT await) + `getWorldbook`/`updateWorldbookWith` over the file-based
   `lorebookService` (card book at `id==characterId`, resolved from the chat row); `SillyTavern.chat[]`
-  + `swipes`/`saveChat`/`reloadCurrentChat` so the home's "start game" picks a greeting swipe (floor-0
-  swipes = `first_mes` + `alternate_greetings`); `saveChat` re-folds the scenario's `<UpdateVariable>`.
-  `getTavernHelperVersion` ≥ the card's minimum (4.3.17).
+  - `swipes`/`saveChat`/`reloadCurrentChat` so the home's "start game" picks a greeting swipe (floor-0
+    swipes = `first_mes` + `alternate_greetings`); `saveChat` re-folds the scenario's `<UpdateVariable>`.
+    `getTavernHelperVersion` ≥ the card's minimum (4.3.17).
 - **MVU `add /-` fix** — RFC-6902 array-append now creates an ARRAY (not `{ "-": … }`) so `主角.身份`/`职业`
   pass the card's Zod schema (+test).
 - **Inline frontend cards = the WCV compat layer.** `MessageContent` routes a card's regex-injected
@@ -48,6 +48,7 @@ Running status of the MVU / panel-workspace track. Newest first.
 ## 2026-06-21
 
 ### Done this session
+
 - **MVU state pipeline (both dialects).** `<UpdateVariable>` parsing supports classic
   `_.set(path, old, new)` (reason from a trailing `//comment`) and `<JSONPatch>` (RFC-6902 +
   the non-standard `insert`/`set`→add and `delete`/`unset`→remove aliases the cards use).
@@ -97,6 +98,7 @@ Running status of the MVU / panel-workspace track. Newest first.
   change → `notifyVarsChanged`). Also added the MVU `op:delta` increment so EXP/MP-style updates apply.
 
 ### Architecture state
+
 - State source of truth = `floor.variables.stat_data` (MVU tree). Read by `StatView`/`LayoutRenderer`;
   written by the model (`<UpdateVariable>`) AND now by panel UI / scripts / WebContentsView card pages
   via the `apply-variable-ops` bridge (the `pluginVars` path also persists message-scope writes).
@@ -105,6 +107,7 @@ Running status of the MVU / panel-workspace track. Newest first.
   it's the chosen path for embedding a card's own (e.g. Vue) UI in a static panel.
 
 ### Next / open
+
 - **WCV card UI — productionize** (the spike runs the real card UI live). Remaining: test the card's
   WRITE path (its interactive controls → `apply-variable-ops`); harden — it's TRUSTED-CARD only now
   (`contextIsolation:false`, remote jsDelivr load, the page gets `rptHost`), so production needs vendored

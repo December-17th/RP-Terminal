@@ -64,7 +64,12 @@ export function WcvMessageFrame({ html }: { html: string }): React.ReactElement 
         left = Math.max(left, c.left)
         right = Math.min(right, c.right)
       }
-      return { x: left, y: top, width: Math.max(0, right - left), height: Math.max(0, bottom - top) }
+      return {
+        x: left,
+        y: top,
+        width: Math.max(0, right - left),
+        height: Math.max(0, bottom - top)
+      }
     }
     window.api.wcvEnsure(slotId, rect(), dataUrl, { profileId, chatId: chatId || '', characterId })
     const onChange = (): void => window.api.wcvSetBounds(slotId, rect())

@@ -62,9 +62,7 @@ export const LorebookManager: React.FC<Props> = ({
   const effective = sessionIds ?? [characterId]
   const toggleSession = (id: string): void => {
     if (!chatId) return
-    const next = effective.includes(id)
-      ? effective.filter((i) => i !== id)
-      : [...effective, id]
+    const next = effective.includes(id) ? effective.filter((i) => i !== id) : [...effective, id]
     setSession(profileId, chatId, next)
   }
 
@@ -117,7 +115,13 @@ export const LorebookManager: React.FC<Props> = ({
                 </label>
               ))}
             </div>
-            <div style={{ fontSize: '0.76em', color: 'var(--rpt-text-secondary)', margin: '4px 0 14px' }}>
+            <div
+              style={{
+                fontSize: '0.76em',
+                color: 'var(--rpt-text-secondary)',
+                margin: '4px 0 14px'
+              }}
+            >
               All checked lorebooks are scanned together each turn.{' '}
               {sessionIds === null && <em>(default: this character&apos;s own lorebook)</em>}
             </div>
@@ -303,7 +307,10 @@ const EntryCard: React.FC<EntryCardProps> = ({
                 onChange={(e) => onChange({ insertion_order: Number(e.target.value) })}
               />
             </label>
-            <label className="order-field" title="Messages up from the bottom of the chat. Blank = top (World Info block).">
+            <label
+              className="order-field"
+              title="Messages up from the bottom of the chat. Blank = top (World Info block)."
+            >
               Depth
               <input
                 type="number"
@@ -317,7 +324,10 @@ const EntryCard: React.FC<EntryCardProps> = ({
                 }
               />
             </label>
-            <label className="order-field" title="Chance this entry fires when matched (100 = always).">
+            <label
+              className="order-field"
+              title="Chance this entry fires when matched (100 = always)."
+            >
               Prob %
               <input
                 type="number"

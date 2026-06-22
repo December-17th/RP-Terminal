@@ -54,8 +54,7 @@ export const RegexPanel: React.FC<Props> = ({ profileId, activeCardId, activeCha
 
   // world binds the script to the active card; session to the active chat; global to none.
   const changeScope = (file: string, scope: ArtifactScope): void => {
-    const owner =
-      scope === 'world' ? activeCardId : scope === 'session' ? activeChatId : undefined
+    const owner = scope === 'world' ? activeCardId : scope === 'session' ? activeChatId : undefined
     setScope(profileId, file, scope, owner ?? undefined)
   }
 
@@ -161,8 +160,8 @@ export const RegexPanel: React.FC<Props> = ({ profileId, activeCardId, activeCha
         <div style={{ fontSize: '0.82em', color: 'var(--rpt-text-secondary)', marginBottom: 10 }}>
           SillyTavern regex scripts transform the AI&apos;s output for display (e.g. the
           <em> 美化</em> beautification cards). Applied at render time — the stored history keeps
-          the model&apos;s raw output. Toggle a whole script on/off, set its scope, or expand to edit
-          individual rules.
+          the model&apos;s raw output. Toggle a whole script on/off, set its scope, or expand to
+          edit individual rules.
         </div>
         {scripts.length === 0 ? (
           <div style={{ opacity: 0.6, fontStyle: 'italic' }}>
@@ -257,7 +256,9 @@ const RuleEditor: React.FC<{
         placeholder="$1 = capture group · {{match}} = matched text · {{user}}/{{char}} · \n = newline"
       />
 
-      <label className="field-label">Trim strings (comma-separated; removed from {'{{match}}'})</label>
+      <label className="field-label">
+        Trim strings (comma-separated; removed from {'{{match}}'})
+      </label>
       <input value={trim} onChange={(e) => setTrim(e.target.value)} placeholder="e.g. *, _" />
 
       <div className="entry-toggles">

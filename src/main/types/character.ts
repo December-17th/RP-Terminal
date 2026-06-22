@@ -45,56 +45,57 @@ export const WidgetDefSchema = z.object({
 export type WidgetDef = z.infer<typeof WidgetDefSchema>
 
 /** RP Terminal specific card payload, stored under data.extensions.rp_terminal. */
-export const RPTerminalExtSchema = z.object({
-  ui_layout: z.array(WidgetDefSchema).default([]),
-  css: z.string().default(''),
-  theme: z.record(z.string(), z.any()).default({}),
-  state_schema: z.record(z.string(), z.any()).default({}),
-  /** MVU Zod `data_schema` source (JS). Run sandboxed (R4) to derive stat_data
-   * defaults + validation. Native cards can instead put plain defaults in
-   * `state_schema.defaults`. */
-  data_schema: z.string().default(''),
-  scripts: z
-    .array(z.object({ name: z.string(), code: z.string(), enabled: z.boolean().optional() }))
-    .default([]),
-  game_rules: z.record(z.string(), z.any()).default({}),
-  assets: z.record(z.string(), z.string()).default({}),
+export const RPTerminalExtSchema = z
+  .object({
+    ui_layout: z.array(WidgetDefSchema).default([]),
+    css: z.string().default(''),
+    theme: z.record(z.string(), z.any()).default({}),
+    state_schema: z.record(z.string(), z.any()).default({}),
+    /** MVU Zod `data_schema` source (JS). Run sandboxed (R4) to derive stat_data
+     * defaults + validation. Native cards can instead put plain defaults in
+     * `state_schema.defaults`. */
+    data_schema: z.string().default(''),
+    scripts: z
+      .array(z.object({ name: z.string(), code: z.string(), enabled: z.boolean().optional() }))
+      .default([]),
+    game_rules: z.record(z.string(), z.any()).default({}),
+    assets: z.record(z.string(), z.string()).default({}),
 
-  /** Static, card-determined panel layout (the WCV plan): a grid of slots, each hosting a native
-   *  view (by id, e.g. "chat"/"status") or an out-of-process card-UI WebContentsView ("wcv" + an
-   *  `entry` URL). `rect` is [col, row, colSpan, rowSpan] in the grid. */
-  panel_ui: z
-    .object({
-      mode: z.literal('static').optional(),
-      grid: z.object({ cols: z.number(), rows: z.number() }).default({ cols: 12, rows: 12 }),
-      slots: z
-        .array(
-          z.object({
-            id: z.string(),
-            view: z.string(),
-            rect: z.tuple([z.number(), z.number(), z.number(), z.number()]),
-            entry: z.string().optional(),
-            title: z.string().optional()
-          })
-        )
-        .default([])
-    })
-    .optional(),
+    /** Static, card-determined panel layout (the WCV plan): a grid of slots, each hosting a native
+     *  view (by id, e.g. "chat"/"status") or an out-of-process card-UI WebContentsView ("wcv" + an
+     *  `entry` URL). `rect` is [col, row, colSpan, rowSpan] in the grid. */
+    panel_ui: z
+      .object({
+        mode: z.literal('static').optional(),
+        grid: z.object({ cols: z.number(), rows: z.number() }).default({ cols: 12, rows: 12 }),
+        slots: z
+          .array(
+            z.object({
+              id: z.string(),
+              view: z.string(),
+              rect: z.tuple([z.number(), z.number(), z.number(), z.number()]),
+              entry: z.string().optional(),
+              title: z.string().optional()
+            })
+          )
+          .default([])
+      })
+      .optional(),
 
-  // --- World Card bundle slots (Track S). Optional so a plain card stays minimal; the
-  // element shapes stay loose (z.any) because they're foreign formats (ST regex/preset/
-  // lorebook) normalized on import. See docs/world-card-design.md §3. ---
-  /** Bundle version marker; present ⇒ this is a World Card. */
-  world_card: z.string().optional(),
-  meta: z.record(z.string(), z.any()).optional(),
-  regex: z.array(z.any()).optional(),
-  presets: z.array(z.any()).optional(),
-  lorebooks: z.array(z.any()).optional(),
-  plugins: z.array(z.any()).optional(),
-  agent: z.record(z.string(), z.any()).optional(),
-  combat: z.record(z.string(), z.any()).optional(),
-  recommended_settings: z.record(z.string(), z.any()).optional()
-})
+    // --- World Card bundle slots (Track S). Optional so a plain card stays minimal; the
+    // element shapes stay loose (z.any) because they're foreign formats (ST regex/preset/
+    // lorebook) normalized on import. See docs/world-card-design.md §3. ---
+    /** Bundle version marker; present ⇒ this is a World Card. */
+    world_card: z.string().optional(),
+    meta: z.record(z.string(), z.any()).optional(),
+    regex: z.array(z.any()).optional(),
+    presets: z.array(z.any()).optional(),
+    lorebooks: z.array(z.any()).optional(),
+    plugins: z.array(z.any()).optional(),
+    agent: z.record(z.string(), z.any()).optional(),
+    combat: z.record(z.string(), z.any()).optional(),
+    recommended_settings: z.record(z.string(), z.any()).optional()
+  })
   // Still catch any further unknown/future slots so the manifest round-trips.
   .catchall(z.any())
 export type RPTerminalExt = z.infer<typeof RPTerminalExtSchema>

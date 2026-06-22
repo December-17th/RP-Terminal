@@ -6,6 +6,7 @@ SillyTavern variable-management framework — and the **Zod data-schemas** that 
 ship, so the large ecosystem of MVU RPG cards drives RP Terminal's status panel.
 
 Reference artifacts analyzed:
+
 - MVU runtime — `MagicalAstrogy/MagVarUpdate/artifact/bundle.js`
 - `mvu_zod` schema utility — `StageDog/tavern_resource/dist/util/mvu_zod.js`
 - An example card schema — `The-poem-of-destiny/FrontEnd-for-destined-journey/dist/data_schema/index.js`
@@ -55,18 +56,18 @@ The good news: **RP Terminal already has the same concept** — AI-emitted state
 into a per-message variable object that drives status widgets. MVU is a richer, schema-validated
 version of our `<rpt-event>` + `floor.variables` + widget pipeline.
 
-| MVU concept | RP Terminal today | Fit | Gap |
-| --- | --- | --- | --- |
-| `stat_data` (per-message nested state) | `floor.variables` (per-floor nested object), seeded from the previous floor | ✅ near-identical | scope naming only |
-| `_.set/add/assign/insert/remove/delta` commands | `applyEvent` does `set`/`add`/`remove` on a path ([generationService.ts](../src/main/services/generationService.ts)) | ✅ same idea | missing `assign`(merge), `insert`(index), `delta`; different op set |
-| `<UpdateVariable>` + `_.x('path', val, 'reason')` syntax | `<rpt-event type=… path=… value=… />` parser ([contentParser.ts](../src/main/parsers/contentParser.ts)) | ⚠️ same role | **new parser needed** for MVU syntax + JSON5 arg values |
-| Registered **Zod schema** for shape/defaults/validation | `RPTerminalExt.state_schema` is a `z.record(any)` **placeholder, unused** ([character.ts](../src/main/types/character.ts)); Zod 4 is the project's validator | ⚠️ slot exists | **new**: real schema layer + defaults + validate/reconcile |
-| `[initvar]` seeding of initial state | none — `floor.variables` starts `{}` | ❌ | **new**: init from schema defaults + lorebook `[initvar]` |
-| Variable scopes `message`/`chat`/`global` | `local`(floor) + `global`(profile) ([pluginService.ts](../src/main/services/pluginService.ts)) | ⚠️ | `message`→floor ✅; `global`→global ✅; **no `chat` scope** (add one) |
-| Front-end UI reads `stat_data` + MVU events | right panel = `LayoutRenderer` (declarative `ui_layout` widgets bound to `floor.variables`) + `CardScriptHost` (iframe scripts) ([App.tsx](../src/renderer/src/App.tsx)) | ⚠️ MVP | widgets are 3 inline-styled types (StatBar/Text/List), flat-path, no nesting; **no MVU events emitted** |
-| Tavern-Helper API surface MVU calls | clean-room `TAVERN_SHIM` already maps `getVariables`/`setVariables`/`insertOrAssignVariables`/`getChatMessages`/`eventOn`/`toastr` onto `rpt.v1` ([bridgeShim.ts](../src/renderer/src/plugin/bridgeShim.ts)) | ✅ foundation | extend with `{type}` scoping, `updateVariablesWith`, `replaceVariables`, message-id reads |
-| Scripts shipped **in a lorebook** | scripts come from **cards** (`extensions.rp_terminal.scripts`) + plugins; lorebook entries have no script field | ❌ | **new**: a lorebook-script source |
-| Sandbox to run untrusted card schema/UI JS | `allow-scripts` iframe (P1) + quickjs WASM (templates) | ✅ exists | data_schema's **remote imports are CSP-blocked**; needs a local `mvu_zod` + import rewriting (and the T3.2 worker for headless validation) |
+| MVU concept                                              | RP Terminal today                                                                                                                                                                                            | Fit               | Gap                                                                                                                                        |
+| -------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| `stat_data` (per-message nested state)                   | `floor.variables` (per-floor nested object), seeded from the previous floor                                                                                                                                  | ✅ near-identical | scope naming only                                                                                                                          |
+| `_.set/add/assign/insert/remove/delta` commands          | `applyEvent` does `set`/`add`/`remove` on a path ([generationService.ts](../src/main/services/generationService.ts))                                                                                         | ✅ same idea      | missing `assign`(merge), `insert`(index), `delta`; different op set                                                                        |
+| `<UpdateVariable>` + `_.x('path', val, 'reason')` syntax | `<rpt-event type=… path=… value=… />` parser ([contentParser.ts](../src/main/parsers/contentParser.ts))                                                                                                      | ⚠️ same role      | **new parser needed** for MVU syntax + JSON5 arg values                                                                                    |
+| Registered **Zod schema** for shape/defaults/validation  | `RPTerminalExt.state_schema` is a `z.record(any)` **placeholder, unused** ([character.ts](../src/main/types/character.ts)); Zod 4 is the project's validator                                                 | ⚠️ slot exists    | **new**: real schema layer + defaults + validate/reconcile                                                                                 |
+| `[initvar]` seeding of initial state                     | none — `floor.variables` starts `{}`                                                                                                                                                                         | ❌                | **new**: init from schema defaults + lorebook `[initvar]`                                                                                  |
+| Variable scopes `message`/`chat`/`global`                | `local`(floor) + `global`(profile) ([pluginService.ts](../src/main/services/pluginService.ts))                                                                                                               | ⚠️                | `message`→floor ✅; `global`→global ✅; **no `chat` scope** (add one)                                                                      |
+| Front-end UI reads `stat_data` + MVU events              | right panel = `LayoutRenderer` (declarative `ui_layout` widgets bound to `floor.variables`) + `CardScriptHost` (iframe scripts) ([App.tsx](../src/renderer/src/App.tsx))                                     | ⚠️ MVP            | widgets are 3 inline-styled types (StatBar/Text/List), flat-path, no nesting; **no MVU events emitted**                                    |
+| Tavern-Helper API surface MVU calls                      | clean-room `TAVERN_SHIM` already maps `getVariables`/`setVariables`/`insertOrAssignVariables`/`getChatMessages`/`eventOn`/`toastr` onto `rpt.v1` ([bridgeShim.ts](../src/renderer/src/plugin/bridgeShim.ts)) | ✅ foundation     | extend with `{type}` scoping, `updateVariablesWith`, `replaceVariables`, message-id reads                                                  |
+| Scripts shipped **in a lorebook**                        | scripts come from **cards** (`extensions.rp_terminal.scripts`) + plugins; lorebook entries have no script field                                                                                              | ❌                | **new**: a lorebook-script source                                                                                                          |
+| Sandbox to run untrusted card schema/UI JS               | `allow-scripts` iframe (P1) + quickjs WASM (templates)                                                                                                                                                       | ✅ exists         | data_schema's **remote imports are CSP-blocked**; needs a local `mvu_zod` + import rewriting (and the T3.2 worker for headless validation) |
 
 **Net:** the data model, the apply-events pattern, Zod, the sandboxes, the widget registry, and a
 TH shim already exist. The genuinely new work is the **MVU command parser**, the **schema/init
@@ -78,18 +79,18 @@ layer**, the **right-panel widget upgrade**, **lorebook-borne scripts**, and a c
 
 Two ways to support MVU cards:
 
-- **A. Run the MVU `bundle.js` as-is** in the sandbox. Requires reproducing MVU's *entire* host
+- **A. Run the MVU `bundle.js` as-is** in the sandbox. Requires reproducing MVU's _entire_ host
   surface: message/chat/global scoped variables, the ST event bus (`MESSAGE_RECEIVED`,
   `worldinfo_entries_loaded`, …), `registerFunctionTool`/`registerMacro`, lodash + jQuery + YAML +
   JSON5 + jsonrepair + Zod **inside** the sandbox, `SillyTavern.POPUP`, and **un-blocking remote
   CDN imports** (the bundle and `mvu_zod` both `import` from jsdelivr — our iframe CSP is
   `connect-src 'none'`). Heavy, fragile, version-coupled, and security-awkward.
-- **B. Clean-room reimplement the MVU *protocol*** (the `<UpdateVariable>` command grammar + the
+- **B. Clean-room reimplement the MVU _protocol_** (the `<UpdateVariable>` command grammar + the
   schema registry + init + the `mag_*` events) natively, folding into `floor.variables`. Small,
   testable, integrates with the existing pipeline, no giant untrusted bundle, no remote imports.
 
 **Recommendation: B (clean-room native).** The MVU command grammar and the `registerMvuSchema`
-contract are a *protocol*, not copyrightable code — we reimplement it the same way the
+contract are a _protocol_, not copyrightable code — we reimplement it the same way the
 ST-Prompt-Template engine was built (clean-room from observed behavior). We still **run the card's
 own `data_schema` and front-end UI scripts** (those are user content, sandboxed), but MVU's engine
 itself is ours. This sidesteps the js-slash-runner constraint entirely and avoids vendoring AGPL
@@ -119,9 +120,10 @@ bundles. (See §11.)
 ## 5. MVU command protocol (R1)
 
 A new pure parser `parseMvuCommands(text)` (sibling to `parseContent`):
+
 - Extract `<UpdateVariable>` / `<update>` / `<updatevariable>` blocks (strip from display text).
 - Within each, match `_.op(args);` statements for `op ∈ {set, add, delta, assign, insert,
-  remove, unset, delete}`.
+remove, unset, delete}`.
 - **Argument parsing is JSON5, never `eval`** — split the `(...)` on top-level commas (respecting
   quotes/brackets), parse each arg with a JSON5-ish reader. Arg 1 = path, arg 2 = value, arg 3 =
   reason (optional).
@@ -140,8 +142,8 @@ A new pure parser `parseMvuCommands(text)` (sibling to `parseContent`):
 ## 6. Schema layer + `mvu_zod` (R2 / R4)
 
 - **Clean-room `mvu_zod` (recording shim)** — rather than bundle real Zod into the sandbox, inject a
-  Zod-shaped *recording* builder (`MVU_ZOD_SHIM`): `z.object/string/number/array/record/enum/...` with
-  chainable `.prefault()/.default()/.describe()/.optional()/...` that capture the schema's *structure*
+  Zod-shaped _recording_ builder (`MVU_ZOD_SHIM`): `z.object/string/number/array/record/enum/...` with
+  chainable `.prefault()/.default()/.describe()/.optional()/...` that capture the schema's _structure_
   as a plain tree, and `registerMvuSchema(schema)` stores it. Card ES-module imports are rewritten to
   the injected globals (`__mvuImports`); `$` (jQuery-ready), `_` (lodash), `YAML`, `toastr` are stubbed.
 - **Running the card's `data_schema`:** execute it in the **T3.2 sandbox**; the recorded tree
@@ -169,6 +171,7 @@ A new pure parser `parseMvuCommands(text)` (sibling to `parseContent`):
 Today's [WidgetRegistry](../src/renderer/src/components/WidgetRegistry.tsx) is 3 inline-styled
 widgets (StatBar/Text/List) bound to a flat `path`. MVU `stat_data` is deeply nested with
 descriptions. Upgrade:
+
 - **Nested rendering** — an `ObjectView`/`Section` widget that recursively renders sub-objects,
   arrays (quests, inventory, relationships), and `value/description` tuples; bars for numeric
   ranges; collapsible groups.
@@ -207,6 +210,7 @@ widget editor): build **one** authoring surface that serves both MVU and native 
 ## 10. Lorebook-embedded scripts (R5)
 
 MVU's schema + front-end ship **in a lorebook**, not a card. Add a lorebook-script source:
+
 - Extend `LorebookEntry` with an optional `script`/`type` (or detect fenced JS / a flagged entry,
   per ST convention) so a book can carry `data_schema` + UI scripts.
 - Route those scripts through the same sandbox as card scripts (schema → worker; UI → `CardScriptHost`
@@ -233,19 +237,19 @@ MVU's schema + front-end ship **in a lorebook**, not a card. Add a lorebook-scri
 
 ## 12. Phased plan
 
-| Phase | Deliverable | Reuses |
-| --- | --- | --- |
-| **R0** (this doc) | MVU protocol analysis + compatibility map + clean-room decision. | — |
-| **R1 — Command protocol** | `parseMvuCommands` + applier (`<UpdateVariable>` + `_.set/add/delta/assign/insert/remove`, JSON5 args, `delta_data`), folded in `generate()` beside `<rpt-event>`. Pure + tested. **Live MVU state tracking.** | `applyEvent`, `setPath`/`getPath`, `contentParser` |
-| **R2 — Schema + init** | ✅ init/defaults seeding — native `state_schema.defaults` ⊕ `[initvar]` JSON code blocks (deep-merged) → floor-0 `stat_data`, so the panel is populated before turn 1 (`mvuSchema`, wired in `createChat`). ⬜ deferred: YAML init blocks, the `chat` var scope (→ R5), and reconcile/validation (→ R4 Zod). | Zod 4, `chats` migration pattern |
-| **R3 — RPG UI upgrade** | ✅ recursive `StatView` auto-renders `stat_data` (collapsible object groups, arrays, value/description tuples, value/max bars) with tokenized styles; shown in the right panel for cards without a `ui_layout`; live via the latest-floor variables. ⬜ deferred: schema-derived ordering/labels (pairs with R4), `mag_*` event push (R5), two-sided layout (separate todo). | `LayoutRenderer`, latest-floor variables |
-| **R4 — Card Zod schema in the sandbox** | ✅ clean-room recording `mvu_zod` shim + import rewriting runs a card's `data_schema` in the **T3.2 sandbox** and captures a serializable schema tree → `schemaDefaults` seeds `stat_data` in `createChat` (card field `extensions.rp_terminal.data_schema`); light `validateStatData`. ⬜ deferred: transforms/refinements, per-turn reconcile wiring, schema-derived UI order. | **T3.2 worker harness** |
-| **R5 — Events + front-end shim** | ✅ `mag_*` events (`buildMvuEvents`) emitted to card iframes on each fold; `TAVERN_SHIM` gains `updateVariablesWith` / `replaceVariables` / `getLastMessageId` / `getCurrentMessageId`; clean-room `_` (lodash subset) + `YAML` injected into the sandbox (`LIB_SHIM`). ⬜ deferred: lorebook-borne scripts (a script source on lorebook entries) — MVU front-ends can live in card `scripts` meanwhile. | `bridgeShim`/`CardScriptHost` |
+| Phase                                   | Deliverable                                                                                                                                                                                                                                                                                                                                                                                              | Reuses                                             |
+| --------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------- |
+| **R0** (this doc)                       | MVU protocol analysis + compatibility map + clean-room decision.                                                                                                                                                                                                                                                                                                                                         | —                                                  |
+| **R1 — Command protocol**               | `parseMvuCommands` + applier (`<UpdateVariable>` + `_.set/add/delta/assign/insert/remove`, JSON5 args, `delta_data`), folded in `generate()` beside `<rpt-event>`. Pure + tested. **Live MVU state tracking.**                                                                                                                                                                                           | `applyEvent`, `setPath`/`getPath`, `contentParser` |
+| **R2 — Schema + init**                  | ✅ init/defaults seeding — native `state_schema.defaults` ⊕ `[initvar]` JSON code blocks (deep-merged) → floor-0 `stat_data`, so the panel is populated before turn 1 (`mvuSchema`, wired in `createChat`). ⬜ deferred: YAML init blocks, the `chat` var scope (→ R5), and reconcile/validation (→ R4 Zod).                                                                                             | Zod 4, `chats` migration pattern                   |
+| **R3 — RPG UI upgrade**                 | ✅ recursive `StatView` auto-renders `stat_data` (collapsible object groups, arrays, value/description tuples, value/max bars) with tokenized styles; shown in the right panel for cards without a `ui_layout`; live via the latest-floor variables. ⬜ deferred: schema-derived ordering/labels (pairs with R4), `mag_*` event push (R5), two-sided layout (separate todo).                             | `LayoutRenderer`, latest-floor variables           |
+| **R4 — Card Zod schema in the sandbox** | ✅ clean-room recording `mvu_zod` shim + import rewriting runs a card's `data_schema` in the **T3.2 sandbox** and captures a serializable schema tree → `schemaDefaults` seeds `stat_data` in `createChat` (card field `extensions.rp_terminal.data_schema`); light `validateStatData`. ⬜ deferred: transforms/refinements, per-turn reconcile wiring, schema-derived UI order.                         | **T3.2 worker harness**                            |
+| **R5 — Events + front-end shim**        | ✅ `mag_*` events (`buildMvuEvents`) emitted to card iframes on each fold; `TAVERN_SHIM` gains `updateVariablesWith` / `replaceVariables` / `getLastMessageId` / `getCurrentMessageId`; clean-room `_` (lodash subset) + `YAML` injected into the sandbox (`LIB_SHIM`). ⬜ deferred: lorebook-borne scripts (a script source on lorebook entries) — MVU front-ends can live in card `scripts` meanwhile. | `bridgeShim`/`CardScriptHost`                      |
 
 **Dependency notes:** R1 is standalone and the highest-value first slice (MVU cards start tracking
 state immediately). R3 builds on R1 and is the visible "RPG UI" win — **R1 + R3 is the recommended
 first milestone.** R4 depends on the **T3.2 worker harness**, so MVU support and Track 3's sandbox
-work are synergistic (build the harness once, used by combat *and* MVU schema validation). R5 layers
+work are synergistic (build the harness once, used by combat _and_ MVU schema validation). R5 layers
 full front-end-card compatibility on top.
 
 ---

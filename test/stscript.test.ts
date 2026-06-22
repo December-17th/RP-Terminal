@@ -7,7 +7,10 @@ import {
   StCtx
 } from '../src/renderer/src/plugin/stscript'
 
-const makeCtx = (vars: Record<string, unknown> = {}, globals: Record<string, unknown> = {}): StCtx & {
+const makeCtx = (
+  vars: Record<string, unknown> = {},
+  globals: Record<string, unknown> = {}
+): StCtx & {
   fb: ReturnType<typeof vi.fn>
 } => {
   const fb = vi.fn(async (cmd: { name: string }) => 'FB:' + cmd.name)

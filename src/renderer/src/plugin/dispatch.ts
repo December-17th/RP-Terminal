@@ -146,7 +146,12 @@ export const dispatchRpc = async (method: string, args: any[], ctx: DispatchCtx)
     }
     case 'lore.get': {
       if (!(await ctx.ensure('worldbook:read'))) permDenied('worldbook:read')
-      return window.api.scriptWorldbookGet(ctx.profileId, ctx.getChatId() || '', args[0], ctx.cardId)
+      return window.api.scriptWorldbookGet(
+        ctx.profileId,
+        ctx.getChatId() || '',
+        args[0],
+        ctx.cardId
+      )
     }
     case 'lore.setEntries': {
       if (!(await ctx.ensure('worldbook:write'))) permDenied('worldbook:write')

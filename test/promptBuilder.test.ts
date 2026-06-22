@@ -11,7 +11,8 @@ import { RPTerminalCardSchema, LorebookSchema } from '../src/main/types/characte
 import { initTemplates } from '../src/main/services/templateService'
 
 // --- tiny factories -------------------------------------------------------
-const card = (data: any = {}): any => RPTerminalCardSchema.parse({ data: { name: 'Aria', ...data } })
+const card = (data: any = {}): any =>
+  RPTerminalCardSchema.parse({ data: { name: 'Aria', ...data } })
 const book = (entries: any[]): any => LorebookSchema.parse({ name: 'B', entries })
 const blk = (marker: string, content = '', role = 'system'): any => ({
   identifier: marker || 'lit',
@@ -98,7 +99,9 @@ describe('buildPrompt', () => {
     expect(messages[0].role).toBe('system')
     expect(messages[0].content).toContain('Name: Aria')
     expect(messages[0].content).toContain('A knight.')
-    expect(messages.some((m) => m.role === 'assistant' && m.content === 'Hello traveler')).toBe(true)
+    expect(messages.some((m) => m.role === 'assistant' && m.content === 'Hello traveler')).toBe(
+      true
+    )
     expect(last(messages)).toEqual({ role: 'user', content: 'I wave back' })
   })
 
@@ -189,7 +192,11 @@ describe('buildPrompt', () => {
   it('injects the persona at the top and expands {{persona}}/{{user}} macros', () => {
     const messages = buildPrompt({
       card: card(),
-      preset: preset([blk('char_description'), blk('none', 'Bio: {{user}} is {{persona}}'), blk('chat_history')]),
+      preset: preset([
+        blk('char_description'),
+        blk('none', 'Bio: {{user}} is {{persona}}'),
+        blk('chat_history')
+      ]),
       lorebooks: [],
       floors: [floor(0, '', 'hi')],
       userAction: 'hello',
@@ -214,9 +221,9 @@ describe('buildPrompt', () => {
       persona: { description: 'a wanderer', inject: true, depth: 1 }
     })
     expect(last(messages).content).toBe('go')
-    expect(messages.some((m) => m.role === 'system' && m.content.includes("[Lyra's Persona]"))).toBe(
-      true
-    )
+    expect(
+      messages.some((m) => m.role === 'system' && m.content.includes("[Lyra's Persona]"))
+    ).toBe(true)
   })
 
   it('does not inject the persona when inject is false or description is blank', () => {
@@ -235,7 +242,10 @@ describe('buildPrompt', () => {
     const messages = buildPrompt({
       card: card(),
       preset: preset([blk('world_info'), blk('chat_history')]),
-      lorebooks: [book([{ keys: ['alpha'], content: 'AAA' }]), book([{ keys: ['beta'], content: 'BBB' }])],
+      lorebooks: [
+        book([{ keys: ['alpha'], content: 'AAA' }]),
+        book([{ keys: ['beta'], content: 'BBB' }])
+      ],
       floors: [],
       userAction: 'alpha and beta'
     })
@@ -325,7 +335,9 @@ describe('buildPrompt', () => {
     const messages = buildPrompt({
       card: card(),
       preset: preset([blk('char_description'), blk('world_info'), blk('chat_history')]),
-      lorebooks: [book([{ comment: '[GENERATE:BEFORE]', content: 'INJECTED-BEFORE', constant: true }])],
+      lorebooks: [
+        book([{ comment: '[GENERATE:BEFORE]', content: 'INJECTED-BEFORE', constant: true }])
+      ],
       floors: [],
       userAction: 'go'
     })
@@ -338,7 +350,9 @@ describe('buildPrompt', () => {
     const fromComment = buildPrompt({
       card: card(),
       preset: preset([blk('char_description'), blk('chat_history')]),
-      lorebooks: [book([{ comment: '[GENERATE:AFTER]', content: 'INJECTED-AFTER', constant: true }])],
+      lorebooks: [
+        book([{ comment: '[GENERATE:AFTER]', content: 'INJECTED-AFTER', constant: true }])
+      ],
       floors: [],
       userAction: 'go'
     })
@@ -347,7 +361,9 @@ describe('buildPrompt', () => {
     const fromDecorator = buildPrompt({
       card: card(),
       preset: preset([blk('char_description'), blk('chat_history')]),
-      lorebooks: [book([{ comment: '', content: '@@generate_after\nDECOR-AFTER', constant: true }])],
+      lorebooks: [
+        book([{ comment: '', content: '@@generate_after\nDECOR-AFTER', constant: true }])
+      ],
       floors: [],
       userAction: 'go'
     })
@@ -371,7 +387,9 @@ describe('buildPrompt', () => {
     const messages = buildPrompt({
       card: card(),
       preset: preset([blk('char_description'), blk('chat_history')]),
-      lorebooks: [book([{ comment: '@INJECT pos=0,role=user', content: 'INJ-AT-0', constant: true }])],
+      lorebooks: [
+        book([{ comment: '@INJECT pos=0,role=user', content: 'INJ-AT-0', constant: true }])
+      ],
       floors: [],
       userAction: 'go'
     })

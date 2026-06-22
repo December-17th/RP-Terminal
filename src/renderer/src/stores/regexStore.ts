@@ -20,12 +20,7 @@ interface RegexState {
   loadScripts: (profileId: string) => Promise<void>
   importScripts: (profileId: string) => Promise<number>
   remove: (profileId: string, file: string) => Promise<void>
-  setScope: (
-    profileId: string,
-    file: string,
-    scope: ArtifactScope,
-    owner?: string
-  ) => Promise<void>
+  setScope: (profileId: string, file: string, scope: ArtifactScope, owner?: string) => Promise<void>
   setDisabled: (profileId: string, file: string, disabled: boolean) => Promise<void>
   updateRule: (
     profileId: string,

@@ -15,7 +15,11 @@ const rule = (over: Partial<RenderRegexRule>): RenderRegexRule => ({
   ...over
 })
 
-const apply = (text: string, rules: RenderRegexRule[], ctx?: { user?: string; char?: string }): string => {
+const apply = (
+  text: string,
+  rules: RenderRegexRule[],
+  ctx?: { user?: string; char?: string }
+): string => {
   useRegexStore.setState({ rules })
   return useRegexStore.getState().apply(text, ctx)
 }
@@ -26,7 +30,11 @@ describe('regexStore.apply', () => {
   })
 
   it('{{match}} is the matched text with trimStrings removed', () => {
-    const r = rule({ source: '\\*\\*[^*]+\\*\\*', replace: '<b>{{match}}</b>', trimStrings: ['**'] })
+    const r = rule({
+      source: '\\*\\*[^*]+\\*\\*',
+      replace: '<b>{{match}}</b>',
+      trimStrings: ['**']
+    })
     expect(apply('hi **bold** there', [r])).toBe('hi <b>bold</b> there')
   })
 

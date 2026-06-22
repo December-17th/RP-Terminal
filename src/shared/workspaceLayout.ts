@@ -65,12 +65,7 @@ function mapPanels(node: WsNode, fn: (p: PanelNode) => PanelNode): WsNode {
  * `deltaPct` (percent of that split's extent). The two panes trade weight, their sum
  * preserved, each clamped to >= MIN_SIZE.
  */
-export function resizeSplit(
-  root: WsNode,
-  path: NodePath,
-  index: number,
-  deltaPct: number
-): WsNode {
+export function resizeSplit(root: WsNode, path: NodePath, index: number, deltaPct: number): WsNode {
   return updateAtPath(root, path, (n) => {
     if (n.type !== 'split') return n
     if (index < 0 || index + 1 >= n.sizes.length) return n
@@ -116,8 +111,14 @@ function normalizeNode(n: WsNode): WsNode {
       : { type: 'panel', key: n.key, view: n.view }
   }
   const children = n.children.map(normalizeNode)
-  const ok = Array.isArray(n.sizes) && n.sizes.length === children.length && n.sizes.every((s) => s > 0)
-  return { type: 'split', dir: n.dir, sizes: ok ? n.sizes.slice() : evenSizes(children.length), children }
+  const ok =
+    Array.isArray(n.sizes) && n.sizes.length === children.length && n.sizes.every((s) => s > 0)
+  return {
+    type: 'split',
+    dir: n.dir,
+    sizes: ok ? n.sizes.slice() : evenSizes(children.length),
+    children
+  }
 }
 
 /**
@@ -126,7 +127,8 @@ function normalizeNode(n: WsNode): WsNode {
  * arrays otherwise. Keeps old settings from crashing the workspace after a shape change.
  */
 export function mergeWithDefault(saved: unknown, def: LayoutSpec): LayoutSpec {
-  const root = saved && typeof saved === 'object' ? (saved as Record<string, unknown>).root : undefined
+  const root =
+    saved && typeof saved === 'object' ? (saved as Record<string, unknown>).root : undefined
   if (!validateNode(root)) return clone(def)
   return { root: normalizeNode(root) }
 }

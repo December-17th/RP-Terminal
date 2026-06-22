@@ -20,9 +20,9 @@ coexist, and lets the same state drive multiple UIs.
 - **State** — `stat_data` (the MVU variable tree) is the single source of truth, mode-agnostic.
   Already tracked: the `_.set` + `<JSONPatch>` engines (`mvuParser`), lossless storage, and the
   "re-evaluate" replay all operate on it.
-- **Logic** — *how* state changes. Pluggable **systems** (combat, leveling, events, relationships).
+- **Logic** — _how_ state changes. Pluggable **systems** (combat, leveling, events, relationships).
   Each system is flagged AI-driven (MVU) or native (deterministic).
-- **View** — panels that *render* state. Pluggable **views** arranged in the workspace.
+- **View** — panels that _render_ state. Pluggable **views** arranged in the workspace.
 
 `stat_data` is the universal currency: every view reads it, every system writes it.
 
@@ -52,10 +52,12 @@ Replace the fixed right column with a **dockable panel container**.
 `stat_data`**. The user (or the card/mode) chooses which to show; they can be shown side by side.
 
 ### (A) Native MVU views — the default, safe, no isolation
+
 Data-driven renderers that interpret `stat_data` (+ an optional layout/schema). **No card code
 runs.** `StatView` is the seed; grow it into a **view kit**: stat bars, key/value grids, lists,
 tables, tabs, collapsible groups, a map widget, an inventory grid, a relationship list, a quest
 tracker. Driven, in priority order, by:
+
 1. the card's `rp_terminal.ui_layout` (our native layout spec), else
 2. the MVU `data_schema` (auto-derive: bars for value/max, lists for arrays, …), else
 3. pure auto-render (today's `StatView` fallback).
@@ -64,6 +66,7 @@ This **is** the "MVU mod" UI: AI updates variables → native views render them.
 themeable, always works, no webview.
 
 ### (B) Card's own MVU UI — the exact-fidelity compat view
+
 Host the card's actual frontend (its Vue/HTML app) in a **process-isolated `<webview>`** (task #1)
 with the **deep ST/MVU runtime shim** (task #2). Renders the card's bespoke UI exactly. It's just
 another panel (the "Card UI" view), so it docks alongside native views. Cost: needs the isolation +

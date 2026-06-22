@@ -27,13 +27,21 @@ describe('injectMarkers — parseEntryMarker', () => {
   })
 
   it('parses [RENDER:*]', () => {
-    expect(parseEntryMarker('[RENDER:BEFORE]', 'x').marker).toEqual({ kind: 'render', side: 'before' })
-    expect(parseEntryMarker('[RENDER:AFTER]', 'x').marker).toEqual({ kind: 'render', side: 'after' })
+    expect(parseEntryMarker('[RENDER:BEFORE]', 'x').marker).toEqual({
+      kind: 'render',
+      side: 'before'
+    })
+    expect(parseEntryMarker('[RENDER:AFTER]', 'x').marker).toEqual({
+      kind: 'render',
+      side: 'after'
+    })
   })
 
   it('parses [InitialVariables] / @@initial_variables → initvars (kept out of the prompt)', () => {
     expect(parseEntryMarker('[InitialVariables]', '{"hp":1}').marker).toEqual({ kind: 'initvars' })
-    expect(parseEntryMarker('', '@@initial_variables\n{"hp":1}').marker).toEqual({ kind: 'initvars' })
+    expect(parseEntryMarker('', '@@initial_variables\n{"hp":1}').marker).toEqual({
+      kind: 'initvars'
+    })
   })
 
   it('parses @INJECT (absolute / target / regex modes)', () => {
@@ -42,7 +50,9 @@ describe('injectMarkers — parseEntryMarker', () => {
       role: 'system',
       pos: 0
     })
-    expect(parseEntryMarker('@INJECT target=user,index=1,at=after,role=system', 'x').marker).toEqual({
+    expect(
+      parseEntryMarker('@INJECT target=user,index=1,at=after,role=system', 'x').marker
+    ).toEqual({
       kind: 'inject',
       role: 'system',
       target: 'user',
@@ -129,7 +139,9 @@ describe('injectMarkers — markerIndex (position math)', () => {
   it('@INJECT target mode (nth message of a role, before/after)', () => {
     expect(markerIndex({ kind: 'inject', target: 'user', index: 1, at: 'after' }, msgs)).toBe(2)
     expect(markerIndex({ kind: 'inject', target: 'user', index: 2, at: 'before' }, msgs)).toBe(3)
-    expect(markerIndex({ kind: 'inject', target: 'assistant', index: 1, at: 'before' }, msgs)).toBe(2)
+    expect(markerIndex({ kind: 'inject', target: 'assistant', index: 1, at: 'before' }, msgs)).toBe(
+      2
+    )
     expect(markerIndex({ kind: 'inject', target: 'user', index: 9 }, msgs)).toBeNull() // no 9th user
   })
 

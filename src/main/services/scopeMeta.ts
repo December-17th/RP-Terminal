@@ -27,12 +27,7 @@ export const getScopeMeta = (dir: string, file: string): ScopeMeta =>
   readScopeMeta(dir)[file] ?? { scope: 'global' }
 
 /** Set scope (+ owner for world/session), preserving the disabled flag. */
-export const setScope = (
-  dir: string,
-  file: string,
-  scope: ArtifactScope,
-  owner?: string
-): void => {
+export const setScope = (dir: string, file: string, scope: ArtifactScope, owner?: string): void => {
   const meta = readScopeMeta(dir)
   const prev = meta[file] || ({ scope: 'global' } as ScopeMeta)
   meta[file] = { scope, owner: scope === 'global' ? undefined : owner, disabled: prev.disabled }

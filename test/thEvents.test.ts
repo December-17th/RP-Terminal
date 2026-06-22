@@ -34,18 +34,24 @@ describe('chatTransitionEvents', () => {
   })
 
   it('emits both legacy + canonical names when generation ends', () => {
-    const evs = chatTransitionEvents({ isGenerating: true, floorCount: 1 }, {
-      isGenerating: false,
-      floorCount: 1
-    })
+    const evs = chatTransitionEvents(
+      { isGenerating: true, floorCount: 1 },
+      {
+        isGenerating: false,
+        floorCount: 1
+      }
+    )
     expect(evs.map((e) => e.name)).toEqual(['generation:end', TAVERN_EVENTS.GENERATION_ENDED])
   })
 
   it('emits chat:changed + MESSAGE_RECEIVED (with the new floor index) when a floor lands', () => {
-    const evs = chatTransitionEvents({ isGenerating: true, floorCount: 0 }, {
-      isGenerating: false,
-      floorCount: 1
-    })
+    const evs = chatTransitionEvents(
+      { isGenerating: true, floorCount: 0 },
+      {
+        isGenerating: false,
+        floorCount: 1
+      }
+    )
     expect(evs.map((e) => e.name)).toEqual([
       'generation:end',
       TAVERN_EVENTS.GENERATION_ENDED,

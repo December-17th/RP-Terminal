@@ -76,7 +76,13 @@ const urlHost = (u: string): string | null => {
 
 /** Distinct remote hosts a script imports from (absolute URLs only). */
 export const extractImportHosts = (code: string): string[] =>
-  Array.from(new Set(extractImports(code).map(urlHost).filter((h): h is string => !!h)))
+  Array.from(
+    new Set(
+      extractImports(code)
+        .map(urlHost)
+        .filter((h): h is string => !!h)
+    )
+  )
 
 // --- Store CRUD -------------------------------------------------------------
 

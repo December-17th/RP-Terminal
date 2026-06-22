@@ -3,13 +3,15 @@
 How to finish RP Terminal's ST-Prompt-Template compatibility. The engine
 ([`templateService.ts`](../src/main/services/templateService.ts)) is a quickjs-WASM EJS engine, applied
 at prompt-build time in `promptBuilder`. **It's much more built than the comparison doc first implied** —
-this plan targets the *actual* gaps. Clean-room throughout (reimplemented from the public docs:
+this plan targets the _actual_ gaps. Clean-room throughout (reimplemented from the public docs:
 [features](https://github.com/zonde306/ST-Prompt-Template/blob/main/docs/features.md) /
 [reference](https://github.com/zonde306/ST-Prompt-Template/blob/main/docs/reference.md)).
 
 ## Status (2026-06-22)
+
 **The engine is built and Phase A is complete.** This session, each step tested (`npm test` — now 278) +
 typechecked + built + committed:
+
 - `61be977` — the engine is **togglable** (`settings.templates.enabled`, default on). Off → EJS tags are
   **stripped** (not passed through); `{{macros}}` still expand. Gate lives in `evalTemplate`
   (`ctx.enabled === false → stripTags`), wired from `generationService` + a `SettingsPanel` checkbox.
@@ -26,6 +28,7 @@ typechecked + built + committed:
 into Phase C. Details below.
 
 ## Already done (verified in code)
+
 - EJS syntax: `<% %>` / `<%= %>` / `<%- %>`, **`<%# comment %>`**, `<%_`/`_%>` whitespace trim.
 - Variables: `getvar`/`setvar`/`incvar`/`decvar`/`delvar` + `local`/`global`/`message`/`chat` scope aliases.
 - Accessors: `getchar(field)`, `getwi(name)`, `getMessageHistory()`, `getCurrentChatName()`, `getPreset()`, `getqr()` (stub).
@@ -35,8 +38,10 @@ into Phase C. Details below.
 ## Remaining gaps → phased plan
 
 ### Phase A — Accessor depth + libs (low-risk wiring, do first)
+
 All backed by existing services / the build context; each is a `reg(name, fn)` in `installBridge` + a value
 in `TemplateData`/`constants`.
+
 - ✅ `getPreset(name)` → the named prompt block's content in the active preset (name/identifier/regex match; analyzed from ST-PT `presets.ts`).
 - ✅ `getWorldInfoData(name)` (raw matched entry) + `getWorldInfoActivatedData()` (the activated set).
 - ✅ `matchChatMessages(pattern)`, `parseJSON()` (lenient), `jsonPatch()` (via `mvuParser`).
@@ -47,13 +52,15 @@ in `TemplateData`/`constants`.
 **Phase A is complete** (clean reads/libs/constants).
 
 ### Phase B — Dedicated variable scopes → **folds into Phase C**
+
 Re-checking the reference: the **template engine's scopes are `local`/`global`/`message`** — `character`/
-`script` are TavernHelper-JS-API scopes, *not* the engine. `local`/`global` already have real stores
+`script` are TavernHelper-JS-API scopes, _not_ the engine. `local`/`global` already have real stores
 (chat vars + per-profile globals). The only real gap is a true **`message`** scope — and message vars are
-*per-message*, a context RPT only has at **render time**. So "dedicated message scope" is implemented as
+_per-message_, a context RPT only has at **render time**. So "dedicated message scope" is implemented as
 part of **Phase C (C2)**, backed by the floor's `variables`. There is no standalone Phase B.
 
 ### Phase C — Render-time evaluation (DETAILED DESIGN) — ✅ **implemented** (pending visual check)
+
 ST-PT evaluates templates on **AI output** too (`[RENDER:BEFORE/AFTER]`, `@@render_*`, `<%- %>`).
 
 **Decision (locked):** run the **full EJS engine in the RENDERER** for both modes, **rate-limited** — eval
@@ -65,10 +72,11 @@ spike surfaced: (1) the Vite **dev server mis-serves** the wasmfile `.wasm` (ret
 bytes), so the renderer uses the **singlefile** variant `@jitl/quickjs-singlefile-browser-release-sync` (WASM
 embedded as base64 → no fetch; works in dev + prod, and keeps the wasmfile `.wasm` out of the renderer build);
 (2) the app CSP needed **`'wasm-unsafe-eval'`** (permits WASM compile, not JS eval). The engine is now
-variant-agnostic (`initEngine(loader)`): `src/shared` imports only quickjs *types*; main injects the wasmfile
+variant-agnostic (`initEngine(loader)`): `src/shared` imports only quickjs _types_; main injects the wasmfile
 variant, the renderer injects the singlefile one (`rendererEngine.initRendererEngine`).
 
 **Two modes (same renderer engine):**
+
 - **(i) Live / render-as-it-goes** — during streaming, re-eval the accumulated text **every N tokens** (the
   rate limit; default 500) so the displayed partial reflects the template. Maps to ST-PT `runType: 'render'`
   — **transient**: re-derived each pass, never persisted.
@@ -77,6 +85,7 @@ variant, the renderer injects the singlefile one (`rendererEngine.initRendererEn
   response once** (original model output preserved by default, so this is opt-in).
 
 **Architecture — a shared engine (the key refactor, C1):**
+
 - **C1 ✅ — extracted the core engine to `src/shared/templateEngine.ts`.** Moved the pure pieces out of
   `templateService.ts`: `initEngine` (loads quickjs), `compile` (EJS→JS), `installBridge` (the `reg()`
   helpers), `evalTemplate`, and the path / `hasTags` / `stripTags` helpers. Both processes import it.
@@ -97,14 +106,15 @@ variant, the renderer injects the singlefile one (`rendererEngine.initRendererEn
     committed floor's vars (the in-flight floor isn't folded yet).
 - **C3 ✅ — settings.** `templates.render = { enabled, live, rate_tokens: 500, final_pass }` (models + service
   default/normalize + renderer store); nested controls under the engine toggle in `SettingsPanel`.
-  *(The `render_permanent` overwrite — rewriting the stored floor — is **deferred**; the final pass is
-  transient/display-only, preserving the raw model output.)*
+  _(The `render_permanent` overwrite — rewriting the stored floor — is **deferred**; the final pass is
+  transient/display-only, preserving the raw model output.)_
 
 **Sub-step order:** C1 ✅ → runtime spike ✅ → C2 ✅ → C3 ✅. Built + committed (`81e5f92`, `55239a1`,
 `9bcc7b0`, `ff12979`). Remaining: a visual check in the running app, then the deferred `render_permanent`
 overwrite (opt-in, rewrites the stored floor).
 
 ### Phase D — Injection markers + decorators
+
 **Step 0 — source analysis (DONE; from ST-Prompt-Template `src/features/inject-prompt.ts` +
 `src/modules/handler.ts`).** The contract:
 
@@ -120,18 +130,19 @@ overwrite (opt-in, rewrites the stored floor).
   = from end), `target=`+`index=`+`at=before|after` (relative to the nth message of a role), `regex=` (inject
   before/after the first matching message), `order=` (tie-break). Applied **back-to-front** (finalPos desc, then order).
 - **runType gates timing:** `generate` (build) → `[GENERATE:*]`; `preparation` (preload) → `[GENERATE:BEFORE/
-  AFTER]` only, skips `@@dont_preload`; `render` → `[RENDER:*]`; `render_permanent` → rewrites `message.mes`
+AFTER]` only, skips `@@dont_preload`; `render` → `[RENDER:*]`; `render_permanent` → rewrites `message.mes`
   once. Each gated by a setting (`generate_loader_enabled` / `render_loader_enabled` / `raw_message_evaluation_enabled`).
 - **Decorators:** `@@private` wraps content in an IIFE scope; `@@dont_preload`/`@@dont_activate`/`@@only_preload`
   control activation; `@@generate_*`/`@@render_*` are the decorator form of the markers; `@@if`/`@@iframe`/`@@activate`.
 - **Order:** preload WI → `[GENERATE:BEFORE]` → per message (`[GENERATE:idx:BEFORE]` + content + `[GENERATE:idx:
-  AFTER]`) → `[GENERATE:AFTER]` → (display) `[RENDER:BEFORE]` + HTML + `[RENDER:AFTER]`.
+AFTER]`) → `[GENERATE:AFTER]` → (display) `[RENDER:BEFORE]` + HTML + `[RENDER:AFTER]`.
 
 **Step 1 — implement in RPT (build-time markers DONE — `a6ca8cf` / `4986149` / `724d3dc`):**
+
 - ✅ **D1** `src/main/parsers/injectMarkers.ts` — `parseEntryMarker(comment, content)` classifies an entry
   into a Generate/Render/Inject marker (or plain lore), strips `@@` decorator lines to the template body,
   reads activation (`@@activate`/`@@always_enabled`/`@@dont_activate`) + `@@private`. `markerIndex(marker,
-  messages)` is the exact position math (from the ST-PT source).
+messages)` is the exact position math (from the ST-PT source).
 - ✅ **D2/D3** `promptBuilder` partitions matched entries: plain lore → World Info/depth as before; marker
   entries are drained into message positions via `markerIndex` — `[GENERATE:BEFORE/AFTER/{idx}/REGEX]` +
   `@INJECT` (absolute/target/regex, default role system), spliced high→low so inserts don't shift later
@@ -147,6 +158,7 @@ overwrite (opt-in, rewrites the stored floor).
 
 **Phase D is complete.** Verified against the example card (no markers used; safe), with the full
 marker/decorator surface implemented + unit-tested.
+
 - 🧪 **Tested against the example card (命定之诗, `0bd6360`):** all 469 lorebook entries are plain
   worldbuilding — the `[…]` comments are category labels, **not** markers (0 injection markers in the whole
   book), and 34 entries use **build-time EJS** (`getvar`/`getMessageVar` over `stat_data`, `<%_` trim). Phase
@@ -155,9 +167,11 @@ marker/decorator surface implemented + unit-tested.
   validate against).
 
 ### Phase E — The `EjsTemplate` API surface ✅ (`be21a5f`)
+
 `w.EjsTemplate.*` in `wcvPreload.ts`, backed by the engine running IN the WCV preload (its own quickjs
 **singlefile** instance — sync, WASM allowed by the card CSP; strips as a fail-safe until the WASM loads).
 Built on a new `evalTemplateDetailed(template, ctx) → { output, error }` (engine).
+
 - Core: `evalTemplate`, `prepareContext` (hoists `stat_data`), `getSyntaxErrorInfo`, `allVariables`,
   `saveVariables` (→ `rptHost.setVariables` + rehydrate).
 - Thin stubs: `setFeatures`/`getFeatures`/`resetFeatures`, `refreshWorldInfo`, `compileTemplate`, `defines`,
@@ -167,6 +181,7 @@ Built on a new `evalTemplateDetailed(template, ctx) → { output, error }` (engi
   so the API is a no-op during its normal play.)
 
 ## Sequencing — ✅ COMPLETE
+
 **A ✅ → C ✅ (B folds in) → D ✅ → E ✅.** The whole ST-Prompt-Template plan is implemented: A (helpers/
 libs/constants), C (render-time eval, two modes), D (injection markers + decorators + `[InitialVariables]` +
 `[RENDER:*]`), E (the `EjsTemplate` API). B's only real gap (`message` scope) was realized inside C. Remaining
@@ -174,6 +189,7 @@ non-goals: `render_permanent` (opt-in stored-floor overwrite) and the moot prelo
 (`@@dont_preload`/`@@only_preload`/`@@preprocessing` — RPT has no card-open preload phase).
 
 ## Decisions (answered)
+
 1. **Render-time eval (Phase C):** **full EJS in the RENDERER**, both modes, **rate-limited** — eval every
    N tokens (**default 500**, adjustable), **not** per-token — plus an **optional final pass** at stream end
    (`render` transient; `render_permanent` opt-in). See Phase C for the full design.

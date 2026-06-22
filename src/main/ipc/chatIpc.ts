@@ -6,9 +6,7 @@ import * as logService from '../services/logService'
 
 export const registerChatIpc = (ipcMain: IpcMain): void => {
   ipcMain.handle('get-chats', (_, profileId) => chatService.getChats(profileId))
-  ipcMain.handle('create-chat', (_, profileId, charId) =>
-    chatService.createChat(profileId, charId)
-  )
+  ipcMain.handle('create-chat', (_, profileId, charId) => chatService.createChat(profileId, charId))
   ipcMain.handle('get-floors', (_, profileId, chatId) => {
     const chat = chatService.getChat(profileId, chatId)
     return chat ? floorService.getAllFloors(profileId, chatId, chat.floor_count) : []

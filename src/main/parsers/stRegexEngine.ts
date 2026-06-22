@@ -18,7 +18,7 @@ export const loadRegexRules = (filePath: string): StRegexRule[] => {
 
     return rulesArray
       .map((rule: any) => {
-        let regexPattern = rule.regex || rule.findRegex || ''
+        const regexPattern = rule.regex || rule.findRegex || ''
         const flags = rule.flags || 'g'
 
         try {
@@ -60,7 +60,7 @@ export const applyRegexRules = (
     if (!rule.placement.includes(targetPlacement)) continue
 
     // Convert ST specific replacement syntax like {{\n}} to real newlines if needed
-    let replaceStr = rule.replaceString.replace(/\\n/g, '\n')
+    const replaceStr = rule.replaceString.replace(/\\n/g, '\n')
 
     result = result.replace(rule.regex, replaceStr)
   }

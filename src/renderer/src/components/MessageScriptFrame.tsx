@@ -82,7 +82,10 @@ export function MessageScriptFrame({ html }: { html: string }): React.ReactEleme
               'trust.\n\nTrust this world and run its UI?'
           )
           if (ok) {
-            await window.api.pluginSetGrants(profileId, cardId, { trusted: true, remoteScripts: true })
+            await window.api.pluginSetGrants(profileId, cardId, {
+              trusted: true,
+              remoteScripts: true
+            })
             trust = true
             allow = true
           }
@@ -152,7 +155,8 @@ export function MessageScriptFrame({ html }: { html: string }): React.ReactEleme
         emit(TAVERN_EVENTS.CHAT_CHANGED, { chatId })
         // Seed the current MVU state so a freshly mounted front-end paints immediately.
         const floors = useChatStore.getState().floors
-        for (const ev of buildMvuEvents(floors[floors.length - 1]?.variables)) emit(ev.name, ev.payload)
+        for (const ev of buildMvuEvents(floors[floors.length - 1]?.variables))
+          emit(ev.name, ev.payload)
       } else if (d.__rpt) {
         handleRpcRef
           .current(String(d.method), Array.isArray(d.args) ? d.args : [])
@@ -176,7 +180,11 @@ export function MessageScriptFrame({ html }: { html: string }): React.ReactEleme
         if (ev.name === TAVERN_EVENTS.GENERATION_STARTED) streamAccum.current = ''
         emit(ev.name, ev.payload)
       }
-      const desc = (f: { floor: number; response: { content: string }; swipe_id?: number }) => ({
+      const desc = (f: {
+        floor: number
+        response: { content: string }
+        swipe_id?: number
+      }): { floor: number; content: string; swipeId: number } => ({
         floor: f.floor,
         content: f.response.content,
         swipeId: f.swipe_id ?? 0

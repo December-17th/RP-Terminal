@@ -49,7 +49,9 @@ describe('expandMacros (TH-5)', () => {
   })
 
   it('resolves nested macros', () => {
-    expect(expandMacros('{{getvar::{{user}}}}', { user: 'alice', vars: { alice: 'hi' } })).toBe('hi')
+    expect(expandMacros('{{getvar::{{user}}}}', { user: 'alice', vars: { alice: 'hi' } })).toBe(
+      'hi'
+    )
   })
 
   it('leaves EJS tags and unknown macros untouched', () => {

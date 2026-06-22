@@ -55,8 +55,7 @@ describe('parseContent', () => {
 
   it('lowercases the type and ignores tags missing required attrs', () => {
     const { events } = parseContent(
-      '<rpt-event type="STATE" path="x" value="1" />' +
-        '<rpt-event type="state" path="noValue" />' // missing value -> ignored
+      '<rpt-event type="STATE" path="x" value="1" />' + '<rpt-event type="state" path="noValue" />' // missing value -> ignored
     )
     expect(events).toHaveLength(1)
     expect(events[0].type).toBe('state')

@@ -1,0 +1,5 @@
+# Normalize line endings: store and check out text files as LF everywhere.
+# This stops Prettier (configured endOfLine: lf) from fighting Windows autocrlf,
+# which was the source of ~449 phantom prettier/prettier lint errors.
+# `text=auto` lets git auto-detect binary files and leave them untouched.
+* text=auto eol=lf

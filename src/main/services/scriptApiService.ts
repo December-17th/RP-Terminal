@@ -136,7 +136,8 @@ export const fetchRemoteText = async (
 const importSpecifiers = (src: string): string[] => {
   const specs: string[] = []
   let m: RegExpExecArray | null
-  const re = /(?:^|[^.\w$])(?:import|export)\b[^'"]*?from\s*['"]([^'"]+)['"]|(?:^|[^.\w$])import\s*['"]([^'"]+)['"]/g
+  const re =
+    /(?:^|[^.\w$])(?:import|export)\b[^'"]*?from\s*['"]([^'"]+)['"]|(?:^|[^.\w$])import\s*['"]([^'"]+)['"]/g
   while ((m = re.exec(src)) !== null) specs.push(m[1] || m[2])
   const dyn = /[^.\w$]import\s*\(\s*['"]([^'"]+)['"]\s*\)/g
   while ((m = dyn.exec(src)) !== null) specs.push(m[1])

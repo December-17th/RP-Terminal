@@ -85,7 +85,9 @@ export default function App(): React.ReactElement {
     const unsubEvents = useChatStore.subscribe((state, prev) => {
       const chatId = state.activeChatId
       if (!chatId) return
-      const toDesc = (fs: typeof state.floors): { floor: number; content: string; swipeId: number }[] =>
+      const toDesc = (
+        fs: typeof state.floors
+      ): { floor: number; content: string; swipeId: number }[] =>
         fs.map((f) => ({ floor: f.floor, content: f.response.content, swipeId: f.swipe_id ?? 0 }))
       const events = [
         ...chatTransitionEvents(
@@ -112,7 +114,9 @@ export default function App(): React.ReactElement {
       const pid = activeProfile.id
       // Seed the workspace from this profile's saved per-mode layouts once settings land.
       loadSettings(pid).then(() =>
-        useWorkspaceStore.getState().load(pid, useSettingsStore.getState().settings?.workspace?.layouts)
+        useWorkspaceStore
+          .getState()
+          .load(pid, useSettingsStore.getState().settings?.workspace?.layouts)
       )
       loadCharacters(pid)
       loadChats(pid)

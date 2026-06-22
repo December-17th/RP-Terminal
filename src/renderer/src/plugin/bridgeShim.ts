@@ -29,7 +29,7 @@ import { LIB_SHIM, LIB_LOADER } from './shims/lib'
  *    is the documented cost of the grant — the world's scripts gain internet access.
  */
 const buildCsp = (allowRemote: boolean): string => {
-  const s = allowRemote ? " https:" : ''
+  const s = allowRemote ? ' https:' : ''
   return [
     "default-src 'none'",
     // data:/blob: are needed so modules the frontend-card loader serves locally (it rewrites
@@ -148,7 +148,10 @@ const extractBody = (html: string): string => {
   const body = /<body[^>]*>([\s\S]*?)<\/body>/i.exec(html)
   if (body) return body[1]
   // Drop a stray <!doctype>/<html>/<head> if present but no <body> tag.
-  return html.replace(/<!doctype[^>]*>/i, '').replace(/<\/?html[^>]*>/gi, '').replace(/<head[\s\S]*?<\/head>/i, '')
+  return html
+    .replace(/<!doctype[^>]*>/i, '')
+    .replace(/<\/?html[^>]*>/gi, '')
+    .replace(/<head[\s\S]*?<\/head>/i, '')
 }
 
 /**

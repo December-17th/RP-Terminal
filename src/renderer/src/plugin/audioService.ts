@@ -18,10 +18,7 @@ const clampVol = (v: unknown): number => {
 }
 
 /** Start (or replace) the background track. */
-export const playBgm = (
-  url: string,
-  opts: { mode?: BgmMode; volume?: number } = {}
-): boolean => {
+export const playBgm = (url: string, opts: { mode?: BgmMode; volume?: number } = {}): boolean => {
   stopBgm()
   const a = new Audio(String(url))
   a.loop = opts.mode !== 'once'

@@ -123,7 +123,10 @@ export const addSwipe = (
 ): FloorFile | null => {
   const floor = getFloor(profileId, chatId, floorIndex)
   if (!floor) return null
-  const state = appendSwipe(normalizeSwipes(floor.swipes, floor.response.content, floor.swipe_id), content)
+  const state = appendSwipe(
+    normalizeSwipes(floor.swipes, floor.response.content, floor.swipe_id),
+    content
+  )
   floor.swipes = state.swipes
   floor.swipe_id = state.swipe_id
   floor.response.content = content

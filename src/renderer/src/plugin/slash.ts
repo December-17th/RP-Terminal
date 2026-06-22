@@ -82,9 +82,7 @@ const runRegistered = async (name: string, raw: string): Promise<string> => {
  */
 const runStScript = async (line: string): Promise<string> => {
   const pid = profileId()
-  const snap = pid
-    ? await window.api.pluginGetVars(pid, chatId() || '')
-    : { local: {}, global: {} }
+  const snap = pid ? await window.api.pluginGetVars(pid, chatId() || '') : { local: {}, global: {} }
   const ctx: StCtx = {
     vars: snap.local || {},
     globals: snap.global || {},

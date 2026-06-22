@@ -279,7 +279,9 @@ const normalize = (op: string, args: unknown[], comment?: string): MvuCommand | 
     case 'unset':
     case 'delete':
       // (path, key) removes a member; (path) removes the whole path.
-      return args.length >= 2 ? { op: 'remove', path, key: keyArg(args[1]), reason } : { op: 'remove', path, reason }
+      return args.length >= 2
+        ? { op: 'remove', path, key: keyArg(args[1]), reason }
+        : { op: 'remove', path, reason }
     case 'move':
       if (args.length < 2) return null
       return { op: 'move', path, to: String(args[1]), reason }
@@ -400,7 +402,12 @@ export const applyMvuCommands = (
         break
       }
     }
-    deltas.push({ path: c.path, old: before, new: clone(getPath(statData, c.path)), reason: c.reason })
+    deltas.push({
+      path: c.path,
+      old: before,
+      new: clone(getPath(statData, c.path)),
+      reason: c.reason
+    })
   }
   return deltas
 }
@@ -436,7 +443,8 @@ const setAtSeg = (obj: any, segs: string[], val: any): void => {
     cur = cur[k]
   }
   const last = segs[segs.length - 1]
-  if (Array.isArray(cur) && last === '-') cur.push(val) // JSON Patch array-append token
+  if (Array.isArray(cur) && last === '-')
+    cur.push(val) // JSON Patch array-append token
   else cur[last] = val
 }
 
@@ -463,7 +471,12 @@ export const parseJsonPatch = (src: string): JsonPatchOp[] => {
   if (!Array.isArray(arr)) return []
   const out: JsonPatchOp[] = []
   for (const o of arr) {
-    if (o && typeof o === 'object' && typeof (o as any).op === 'string' && typeof (o as any).path === 'string') {
+    if (
+      o &&
+      typeof o === 'object' &&
+      typeof (o as any).op === 'string' &&
+      typeof (o as any).path === 'string'
+    ) {
       const a = o as any
       out.push({ op: a.op, path: a.path, value: a.value, from: a.from })
     }

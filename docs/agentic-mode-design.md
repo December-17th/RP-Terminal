@@ -52,7 +52,7 @@ Every phase below is constrained by these. They are the reason the design hangs
 together rather than five independent features.
 
 1. **Cache discipline — new content lands at L4 or changes only on transition.**
-   Tool results, combat event blocks, and flushed lore all append at the *bottom*
+   Tool results, combat event blocks, and flushed lore all append at the _bottom_
    (L4) of the prompt, or change only at a mode transition. The cached L1–L3 prefix
    must stay byte-stable across turns within a mode (Phase G). Violating this regresses
    caching — it is the single constraint that touches every phase. See §11.
@@ -102,15 +102,15 @@ in settings with card `game_rules` able to override per-card.
 
 ### Transition = the cache/injection checkpoint
 
-This is *why* H is the keystone. Today [`promptBuilder`](../src/main/services/promptBuilder.ts)
+This is _why_ H is the keystone. Today [`promptBuilder`](../src/main/services/promptBuilder.ts)
 re-runs `matchAcross` **every turn**, so L2 (world info) is never byte-stable and the
 Phase-G L2 cache goal is unmet. With an FSM:
 
-- **L2 is matched on transition and cached on the chat**, reused across turns *within*
+- **L2 is matched on transition and cached on the chat**, reused across turns _within_
   a mode until the next transition. Stable L2 → the cacheable prefix grows from L1 to
   L1+L2 (closes the Phase G "hold L2 stable" gap).
 - **Deferred injections flush on transition** — lore the model mutated (Phase J) and
-  any queued world-info changes are folded into the prompt *at* the transition, never
+  any queued world-info changes are folded into the prompt _at_ the transition, never
   mid-conversation, so the within-mode prefix never moves.
 
 ### Storage & UI
@@ -129,10 +129,10 @@ Phase-G L2 cache goal is unmet. With an FSM:
 How does the model request an action? Two transports, and the recommendation is to
 support **both behind one executor**.
 
-| Transport                       | Pros                                                                | Cons                                                          |
-| ------------------------------- | ------------------------------------------------------------------- | ------------------------------------------------------------ |
-| **A. Tags** (`<rpt-action …>`)  | works on *every* endpoint; plain text → cache-clean; parser exists  | model must emit well-formed tags; weaker structure           |
-| **B. Function-calling**         | structured, validated, provider-native                              | per-provider rebuild of `streamProvider`; many proxies lack it |
+| Transport                      | Pros                                                               | Cons                                                           |
+| ------------------------------ | ------------------------------------------------------------------ | -------------------------------------------------------------- |
+| **A. Tags** (`<rpt-action …>`) | works on _every_ endpoint; plain text → cache-clean; parser exists | model must emit well-formed tags; weaker structure             |
+| **B. Function-calling**        | structured, validated, provider-native                             | per-provider rebuild of `streamProvider`; many proxies lack it |
 
 **Decision: the executor is transport-agnostic.** Ship the **tag transport first**
 (it reuses [`contentParser`](../src/main/parsers/contentParser.ts) +
@@ -148,17 +148,17 @@ mutation ship on tags, and true tool-calling becomes a later, isolated enhanceme
 //   <rpt-action tool="roll_dice" id="a1">{ "sides": 20, "count": 1 }</rpt-action>
 // Function-call form (upgrade) maps 1:1 onto the same internal record:
 {
-  "id": "a1",            // correlates the request with its result
-  "tool": "roll_dice",   // registry key
+  "id": "a1", // correlates the request with its result
+  "tool": "roll_dice", // registry key
   "input": { "sides": 20, "count": 1 }
 }
 // Result injected back at L4:
 //   <rpt-result id="a1">{ "rolls": [14], "total": 14 }</rpt-result>
 ```
 
-`<rpt-event>` (the existing state-mutation tag) stays as-is — it is a *fire-and-forget*
-state write folded into `floor.variables`. `<rpt-action>` is a *request that produces
-a result the model sees*. Both are parsed in `contentParser`.
+`<rpt-event>` (the existing state-mutation tag) stays as-is — it is a _fire-and-forget_
+state write folded into `floor.variables`. `<rpt-action>` is a _request that produces
+a result the model sees_. Both are parsed in `contentParser`.
 
 ---
 
@@ -181,21 +181,21 @@ build prompt ─▶ call model ─▶ any actions?
 
 - **Iteration cap** (e.g. 5 hops/turn) + abort wiring through the existing
   `activeControllers` map. Each hop is logged (tool, input, result, tokens).
-- **Cache-safe:** each hop only *appends* results at L4, so L1–L3 stay byte-stable.
+- **Cache-safe:** each hop only _appends_ results at L4, so L1–L3 stay byte-stable.
 
 ### Tool registry
 
 Tools are named functions in main, each with a Zod input schema. Built-in v1 set:
 
-| Tool            | Permission tier | Backed by                                                  |
-| --------------- | --------------- | ---------------------------------------------------------- |
-| `roll_dice`     | safe            | seeded RNG                                                 |
-| `get_state`     | safe            | `floor.variables` (read)                                   |
-| `set_state`     | safe            | `floor.variables` (bounded write; same fold as `rpt-event`) |
-| `query_lorebook`| safe            | read-only `matchAcross`                                    |
-| `combat_action` | gated           | worker sandbox (§7, Phase I)                               |
-| `update_lore`   | sensitive       | gatekeeper (§8, Phase J)                                   |
-| `sub_generate`  | sensitive       | a nested provider call (cost/recursion-capped)             |
+| Tool             | Permission tier | Backed by                                                   |
+| ---------------- | --------------- | ----------------------------------------------------------- |
+| `roll_dice`      | safe            | seeded RNG                                                  |
+| `get_state`      | safe            | `floor.variables` (read)                                    |
+| `set_state`      | safe            | `floor.variables` (bounded write; same fold as `rpt-event`) |
+| `query_lorebook` | safe            | read-only `matchAcross`                                     |
+| `combat_action`  | gated           | worker sandbox (§7, Phase I)                                |
+| `update_lore`    | sensitive       | gatekeeper (§8, Phase J)                                    |
+| `sub_generate`   | sensitive       | a nested provider call (cost/recursion-capped)              |
 
 Tools may also be **card-declared** (`extensions.rp_terminal.game_rules` / a new
 `tools` field) and later **plugin-contributed** (`rpt.tools.register`, fitting the
@@ -273,7 +273,7 @@ at the bottom; the cached prefix is untouched.
   unprotected = the model may propose changes.
 - **`update_lore` tool (gatekeeper):** the model requests a change → the backend
   validates (unprotected entries only, Zod-checked, size/field-bounded) → applies it to
-  a **chat-scoped lore overlay**, *not* the shared library file (preserving the portable
+  a **chat-scoped lore overlay**, _not_ the shared library file (preserving the portable
   artifact). The overlay is merged over the base book at match time.
 - **Deferred injection:** a mutation does **not** rewrite the prompt mid-conversation
   (that would break the within-mode cache). It is queued (`pending_lore`, §3) and folded
@@ -285,7 +285,7 @@ at the bottom; the cached prefix is untouched.
 
 Authoring UI over the already-schema'd `extensions.rp_terminal.state_schema` +
 `ui_layout` ([`RPTerminalExt`](../src/main/types/character.ts)). The renderer already
-*renders* widgets (`LayoutRenderer` / `WidgetRegistry`); this adds the *authoring* side:
+_renders_ widgets (`LayoutRenderer` / `WidgetRegistry`); this adds the _authoring_ side:
 
 - **State-schema editor** — define the state tree (keys, types, defaults) that
   `<rpt-event>`/`set_state` mutate and that widgets bind to.
@@ -310,29 +310,30 @@ L4 volatile       — new user action, <rpt-result>, [Combat] block (always last
 ```
 
 Phase-by-phase obligations:
-- **H** makes L2 stable within a mode (the win) and flushes deferred changes *at* the
+
+- **H** makes L2 stable within a mode (the win) and flushes deferred changes _at_ the
   boundary.
 - **D1** appends tool results at L4 only — the loop never edits L1–L3.
 - **I** injects combat events at L4.
 - **J** queues lore changes and applies them only at an H transition.
 
 `applyDepthInjections` and the existing L4-last invariant in `promptBuilder` already
-give the insertion machinery; the new work is *when* (transition vs. every turn) and
-*where* (L4 vs. depth), not *how to splice*.
+give the insertion machinery; the new work is _when_ (transition vs. every turn) and
+_where_ (L4 vs. depth), not _how to splice_.
 
 ---
 
 ## 12. Data-model changes (summary)
 
-| Where                  | Change                                                                          |
-| ---------------------- | ------------------------------------------------------------------------------- |
-| `chats` table          | `mode TEXT` (default `explore`); cached-L2 blob + `pending_lore` queue per chat  |
-| `rpg_entities` table   | now used (combat entities); no schema change needed                             |
-| `LorebookEntrySchema`  | `protected: boolean` (default `false`)                                          |
-| `contentParser`        | parse `<rpt-action>` (+ keep `<rpt-event>`); emit a result for each             |
-| Settings               | `agent.mode` (off / manual / agentic); `mode → config` map (per-mode output ceiling / scan breadth / addendum) |
-| API preset             | `supports_tools` flag (gates the §6 function-calling transport)                 |
-| Card `rp_terminal`     | optional `tools` declaration; combat script in `scripts`/`game_rules`           |
+| Where                 | Change                                                                                                         |
+| --------------------- | -------------------------------------------------------------------------------------------------------------- |
+| `chats` table         | `mode TEXT` (default `explore`); cached-L2 blob + `pending_lore` queue per chat                                |
+| `rpg_entities` table  | now used (combat entities); no schema change needed                                                            |
+| `LorebookEntrySchema` | `protected: boolean` (default `false`)                                                                         |
+| `contentParser`       | parse `<rpt-action>` (+ keep `<rpt-event>`); emit a result for each                                            |
+| Settings              | `agent.mode` (off / manual / agentic); `mode → config` map (per-mode output ceiling / scan breadth / addendum) |
+| API preset            | `supports_tools` flag (gates the §6 function-calling transport)                                                |
+| Card `rp_terminal`    | optional `tools` declaration; combat script in `scripts`/`game_rules`                                          |
 
 No migration drops data; all additions are idempotent forward-migrations.
 
@@ -340,16 +341,16 @@ No migration drops data; all additions are idempotent forward-migrations.
 
 ## 13. Phased implementation plan
 
-| Phase                       | Deliverable                                                                                                                                                              | Reuses                                  |
-| --------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------- |
-| **T3.0** (this doc)         | The contract: action schema, FSM semantics, sandbox message shape, gatekeeper rules, cache obligations.                                                                 | plugin-design doc style                 |
-| **T3.1 — Phase H** ✅       | inc.1: `mode` column + accessors, 3-button switcher, `mode → config` tuning, `resolveModeConfig`, mode-capped `max_tokens`. inc.2: **L2 matched-on-transition, cached per chat** (`cached_world_info`; reused within a mode; invalidated on transition / book-selection change / lore edit via `clearWorldInfoCacheForProfile`). `pending_lore` **column reserved**; its drain + producers land in Phase J. | `db` migration pattern, `matchAcross`   |
-| **T3.2 — Worker harness**   | `worker_threads` + quickjs, seeded-RNG message contract, timeout/kill. Unit-tested in isolation.                                                                        | `templateService` quickjs pattern       |
-| **T3.3 — D1 action loop**   | `<rpt-action>`/`<rpt-result>` in `contentParser`; transport-agnostic executor + tool registry (`roll_dice`/`get_state`/`set_state`/`query_lorebook`); the loop in `generate()` with cap + abort + logging. | `contentParser`, `applyEvent`, abort map |
-| **T3.4 — Phase I**          | `combat_action` → worker; `rpg_entities` read/write; L4 event-block injection; flavor-only narration. Card combat script.                                                | T3.2 harness, T3.3 loop                 |
-| **T3.5 — Phase J**          | `protected` flag; `update_lore` gatekeeper → chat overlay; deferred injection flushed at H transition.                                                                  | T3.1 queue, T3.3 loop                   |
-| **T3.6 — D1 tool transport**| Provider function-calling (Anthropic `tool_use` ↔ OpenAI `tool_calls`) behind `supports_tools`; tag path stays the fallback.                                            | `apiService`, Phase G cache breakpoints |
-| **T3.7 — D2**               | State-schema + widget authoring UI with live preview.                                                                                                                   | `LayoutRenderer`/`WidgetRegistry`       |
+| Phase                        | Deliverable                                                                                                                                                                                                                                                                                                                                                                                                 | Reuses                                   |
+| ---------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------- |
+| **T3.0** (this doc)          | The contract: action schema, FSM semantics, sandbox message shape, gatekeeper rules, cache obligations.                                                                                                                                                                                                                                                                                                     | plugin-design doc style                  |
+| **T3.1 — Phase H** ✅        | inc.1: `mode` column + accessors, 3-button switcher, `mode → config` tuning, `resolveModeConfig`, mode-capped `max_tokens`. inc.2: **L2 matched-on-transition, cached per chat** (`cached_world_info`; reused within a mode; invalidated on transition / book-selection change / lore edit via `clearWorldInfoCacheForProfile`). `pending_lore` **column reserved**; its drain + producers land in Phase J. | `db` migration pattern, `matchAcross`    |
+| **T3.2 — Worker harness**    | `worker_threads` + quickjs, seeded-RNG message contract, timeout/kill. Unit-tested in isolation.                                                                                                                                                                                                                                                                                                            | `templateService` quickjs pattern        |
+| **T3.3 — D1 action loop**    | `<rpt-action>`/`<rpt-result>` in `contentParser`; transport-agnostic executor + tool registry (`roll_dice`/`get_state`/`set_state`/`query_lorebook`); the loop in `generate()` with cap + abort + logging.                                                                                                                                                                                                  | `contentParser`, `applyEvent`, abort map |
+| **T3.4 — Phase I**           | `combat_action` → worker; `rpg_entities` read/write; L4 event-block injection; flavor-only narration. Card combat script.                                                                                                                                                                                                                                                                                   | T3.2 harness, T3.3 loop                  |
+| **T3.5 — Phase J**           | `protected` flag; `update_lore` gatekeeper → chat overlay; deferred injection flushed at H transition.                                                                                                                                                                                                                                                                                                      | T3.1 queue, T3.3 loop                    |
+| **T3.6 — D1 tool transport** | Provider function-calling (Anthropic `tool_use` ↔ OpenAI `tool_calls`) behind `supports_tools`; tag path stays the fallback.                                                                                                                                                                                                                                                                                | `apiService`, Phase G cache breakpoints  |
+| **T3.7 — D2**                | State-schema + widget authoring UI with live preview.                                                                                                                                                                                                                                                                                                                                                       | `LayoutRenderer`/`WidgetRegistry`        |
 
 **T3.1 (Phase H) is the recommended first slice** — smallest, lowest-risk, unblocks the
 caching + deferred-injection model the rest depends on, and is independently useful.
@@ -374,7 +375,7 @@ carrying I and J in the meantime.
 7. **Persist cached-L2 + `pending_lore` as plain `chats` columns** (`cached_world_info`,
    `pending_lore`), for parity with `lorebook_ids`. ✅ Resolved — implemented in T3.1 inc.2.
    _Note:_ stable-within-a-mode means new keywords raised mid-mode don't pull new lore
-   until the next transition (by design); lore *edits* clear the cache profile-wide so
+   until the next transition (by design); lore _edits_ clear the cache profile-wide so
    authoring stays responsive.
 8. _Open:_ Per-mode preset vs. per-mode param override on one preset. (Lean override —
    avoids preset sprawl.)

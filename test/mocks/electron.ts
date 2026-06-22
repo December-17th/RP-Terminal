@@ -25,4 +25,13 @@ export const ipcRenderer = {
   removeListener: (): void => {}
 }
 
-export default { app, BrowserWindow, ipcMain, dialog, shell, contextBridge, ipcRenderer, safeStorage }
+export default {
+  app,
+  BrowserWindow,
+  ipcMain,
+  dialog,
+  shell,
+  contextBridge,
+  ipcRenderer,
+  safeStorage
+}

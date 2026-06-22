@@ -52,7 +52,10 @@ export const listModels = async (api: Settings['api']): Promise<string[]> => {
     return collect(((await r.json()) as { data?: unknown }).data, 'id')
   }
   if (api.provider === 'google' || api.provider === 'gemini') {
-    const base = (api.endpoint || 'https://generativelanguage.googleapis.com/v1beta').replace(/\/$/, '')
+    const base = (api.endpoint || 'https://generativelanguage.googleapis.com/v1beta').replace(
+      /\/$/,
+      ''
+    )
     const r = await fetch(`${base}/models?pageSize=1000`, { headers: { 'x-goog-api-key': key } })
     if (!r.ok) return fail(r)
     return collect(((await r.json()) as { models?: unknown }).models, 'name').map((n) =>

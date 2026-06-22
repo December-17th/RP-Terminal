@@ -54,7 +54,7 @@ and can write message variables. This is distinct from a panel and changes the f
 - **New work:** a per-inline-UI **settings** model (configurable styles per widget/instance), injected
   into the frame as CSS vars / a config object the frame reads via `rpt`.
 - **Freeze trade-off is inherent** to inline interactive frames (same-process) and WCV can't fix it.
-  Prefer native rendering for *declarative* beautifications (safe/fast); gate/limit heavy (Vue)
+  Prefer native rendering for _declarative_ beautifications (safe/fast); gate/limit heavy (Vue)
   interactive frames; run only the visible/latest message's frame; keep the watchdog.
 - **History rendering (single-floor pager):** only the current page's frames are mounted, so the freeze
   risk is bounded to one floor — not the whole history. Static/regex beautifications already render
@@ -66,7 +66,7 @@ and can write message variables. This is distinct from a panel and changes the f
   (2) key frames by floor so flipping a page cleanly remounts with the new floor's content + vars;
   (3) **Decided: history frames are read-only.** A non-latest frame still RUNS (so a script/Vue UI
   mounts and displays) but its write capabilities are denied and its `vars:read` is bound to that
-  floor's snapshot — read-only means *no writes*, NOT *no scripts* (stripping scripts would leave a
+  floor's snapshot — read-only means _no writes_, NOT _no scripts_ (stripping scripts would leave a
   script-driven UI an empty shell). The live, writable frame runs only on the current/latest floor —
   at most one live writable frame, no mutating past state.
 
@@ -90,7 +90,7 @@ Its output is a **declarative JSON config (~72 KB), not runnable code**:
 **Implication:** this is a declarative UI tree with a finite widget vocabulary + small sandboxed
 JS — almost perfectly suited to a NATIVE renderer. We'd consume the author's CONFIG (data), i.e.
 format-compatibility (like reading ST cards), so its AGPL-3.0 doesn't bind us; and being AGPL
-(OSI/free, compatible with our AGPL-3.0 lean) we *could* adapt its logic if ever needed — unlike
+(OSI/free, compatible with our AGPL-3.0 lean) we _could_ adapt its logic if ever needed — unlike
 the AFPL JS-Slash-Runner (do-not-vendor).
 
 ## Shared prerequisite — a variable WRITE-BACK bridge
@@ -155,17 +155,18 @@ In Chrome, sandboxed/cross-origin iframes are out-of-process (OOPIF). **In Elect
 (electron#17868) — a same-process iframe shares the host renderer's thread, so a card's synchronous
 infinite loop freezes the whole app (the bug that shelved frontend cards; `IsolateSandboxedIframes`
 had no effect from the non-sandboxed renderer). An iframe gives security but not compute isolation:
+
 - **Security / containment ✅** — `sandbox="allow-scripts"` (no `allow-same-origin`) + CSP + DOMPurify.
 - **Compute isolation ❌** — a runaway script blocks the shared thread; the watchdog can't even fire.
 
 The three in-window options trade efficiency against isolation and integration:
 
-| | iframe | `<webview>` | `WebContentsView` |
-|---|---|---|---|
-| Process isolation (hang/crash-safe) | ❌ same-process | ✅ separate | ✅ separate |
-| Memory / perf | lightest | heavy (embedder + guest plumbing) | lighter than webview |
-| Electron support | ✅ | discouraged | ✅ recommended |
-| DOM integration (resize/scroll/clip) | ✅ in-flow | ✅ in-flow | ❌ overlay (pixel bounds) |
+|                                      | iframe          | `<webview>`                       | `WebContentsView`         |
+| ------------------------------------ | --------------- | --------------------------------- | ------------------------- |
+| Process isolation (hang/crash-safe)  | ❌ same-process | ✅ separate                       | ✅ separate               |
+| Memory / perf                        | lightest        | heavy (embedder + guest plumbing) | lighter than webview      |
+| Electron support                     | ✅              | discouraged                       | ✅ recommended            |
+| DOM integration (resize/scroll/clip) | ✅ in-flow      | ✅ in-flow                        | ❌ overlay (pixel bounds) |
 
 - **iframe** — same-process, so a bad card freezes the app; fine for TRUSTED cards or behind the
   click-to-run "close & reopen to recover" gate. Simplest to embed/postMessage/theme.
@@ -173,7 +174,7 @@ The three in-window options trade efficiency against isolation and integration:
   architecturally discouraged by Electron, but it sizes/scrolls/clips like an element.
 - **`WebContentsView`** — the modern `BrowserView` replacement: same isolation as webview but lighter
   and Electron-recommended. The catch — it's a MAIN-PROCESS native view positioned by absolute pixel
-  bounds OVER the window, not in the DOM. For a *resizable, scrollable, chrome-wrapped* panel that
+  bounds OVER the window, not in the DOM. For a _resizable, scrollable, chrome-wrapped_ panel that
   means continuous bounds-sync over IPC (the view trails the edge during a live drag), z-order
   occlusion (it paints on top of the panel header, dropdowns, toasts, modals), no DOM clipping/rounded
   corners, and a main-process view registry. Great for a large STABLE rectangle; painful for a small
@@ -230,12 +231,14 @@ the only real downsides of the overlay model. This becomes its own opt-in worksp
 with the resizable workspace (which stays the default for native / Option-1 cards).
 
 ## Why static + card-determined fixes the overlay tax
+
 `WebContentsView` is a main-process native view positioned over the window by pixel bounds. The pain
-is *dynamic* layouts: live-drag trailing, occluding floating UI, reflow on every resize. If the card
+is _dynamic_ layouts: live-drag trailing, occluding floating UI, reflow on every resize. If the card
 fixes the regions, the rects are computed once per window size (not per drag), there are no movable
 splitters over the views, and panel chrome can be carved into fixed strips the views never cover.
 
 ## Card-declared layout (under `data.extensions.rp_terminal`)
+
 ```jsonc
 "panel_ui": {
   "mode": "static",                 // opt into the fixed, card-determined workspace
@@ -247,12 +250,14 @@ splitters over the views, and panel chrome can be carved into fixed strips the v
   ]
 }
 ```
+
 - `rect` = `[col, row, colSpan, rowSpan]` in the grid → pixel bounds at render time.
 - `view: 'chat'|'status'|…` reuses the existing `ViewRegistry` for native regions; `view: 'wcv'`
   marks a region hosting the card's bundle. Bundle files (`entry` HTML/JS/CSS) ship in the card
   (alongside `scripts`).
 
 ## Architecture
+
 - **Renderer (`StaticWorkspace`)**: when the active card has `panel_ui.mode === 'static'`, render this
   instead of the resizable `Workspace`. It lays out the grid, renders native slots as React panels,
   and for each `wcv` slot renders a placeholder `<div>` with a fixed header strip + an empty body;
@@ -264,19 +269,21 @@ splitters over the views, and panel chrome can be carved into fixed strips the v
   loads `entry` from the card's extracted bundle dir with a locked-down `webPreferences`
   (no node integration, `contextIsolation: true`, a narrow preload).
 - **The bridge both ways**:
-  - *read* — on floor change, main pushes `stat_data` to each view (`webContents.send('mvu:vars', …)`);
+  - _read_ — on floor change, main pushes `stat_data` to each view (`webContents.send('mvu:vars', …)`);
     the shim resolves `getVariables`/`getV` from it.
-  - *write* — the view's shim calls `replaceVariables`/`insertOrAssignVariables`/`Mvu.setMvuVariable`
+  - _write_ — the view's shim calls `replaceVariables`/`insertOrAssignVariables`/`Mvu.setMvuVariable`
     → preload → `apply-variable-ops` (the bridge built in step 1) → floor persisted → re-render +
     re-push to all views. One write path for native and script UI alike.
 
 ## Runtime shim (clean-room; = task #2)
+
 The view's preload exposes only the narrow TavernHelper/MVU surface the card UI needs:
 `getVariables({type:'message'})`, `replaceVariables`, `insertOrAssignVariables`, `Mvu.getMvuData`/
 `setMvuVariable`, `getV`, the event subset, `getCurrentMessageId`. All reads come from the pushed
 `stat_data`; all writes go through `apply-variable-ops`. No `window.top/parent`, no host DOM.
 
 ## Lifecycle, perf, security
+
 - One OS/renderer process per live `WebContentsView` → create lazily, destroy on session switch,
   cap/reuse where possible. `setVisible(false)` when its tab/panel is hidden.
 - Window-resize → recompute grid rects → `wcv-set-bounds` (throttled ~60ms). No per-frame sync.
@@ -285,6 +292,7 @@ The view's preload exposes only the narrow TavernHelper/MVU surface the card UI 
   (same posture as the click-to-run gate). Never expose `window.api`.
 
 ## Build steps
+
 1. `wcvManager` (main) + the `wcv-*` IPC + a card-scoped bundle extraction dir.
 2. `panel_ui` static-layout schema in `RPTerminalExtSchema` (Zod) + import handling.
 3. `StaticWorkspace` (renderer): grid layout, native slots via `ViewRegistry`, `wcv` slot
@@ -293,9 +301,10 @@ The view's preload exposes only the narrow TavernHelper/MVU surface the card UI 
 5. Lifecycle (create/destroy/visible), window-resize bounds sync, security hardening.
 
 ## When to prefer this vs `<webview>`
+
 - **`WebContentsView` + static layout** → best perf + Electron-supported; the card owns a fixed,
   predictable layout. The plan above.
-- **`<webview>`** → if we instead want card UI inside the *resizable/movable* workspace (in-flow DOM
+- **`<webview>`** → if we instead want card UI inside the _resizable/movable_ workspace (in-flow DOM
   that scrolls/clips with the panel), accept the heavier, discouraged tag.
 - **Either way, Option 1 (native, no frame) remains the default** for declarative StatusMenuBuilder-
   style cards; Option 2 is the fidelity path for cards that ship real UI code.
@@ -308,15 +317,23 @@ The card ships several frontends, all as scripts that cascade-import more: a **s
 **start-only character-creation** frontend, and the **MVU variable framework** itself.
 
 ## The status UI
+
 Regex emits an inline frame that jQuery-loads the UI:
+
 ```html
-<body><script>$('body').load('https://.../FrontEnd-for-destined-journey@1.8.2/dist/status/index.html')</script></body>
+<body>
+  <script>
+    $('body').load('https://.../FrontEnd-for-destined-journey@1.8.2/dist/status/index.html')
+  </script>
+</body>
 ```
+
 `dist/status/index.html` is **not jQuery/Vue — it's a React ESM app** (`<script type="module">`)
 that imports its deps from jsDelivr at runtime: `react`/`react-dom` (`scheduler`), `immer`, `gsap`,
-`openseadragon`. (jQuery is only the *outer* `.load()` glue; in a WCV we load the status URL directly.)
+`openseadragon`. (jQuery is only the _outer_ `.load()` glue; in a WCV we load the status URL directly.)
 
 ## The MVU framework (`MagVarUpdate/artifact/bundle.js`, MIT)
+
 Exposes **`window.Mvu`**: `getMvuData`, `replaceMvuData`, `parseMessage`, `setMvuVariable`,
 `getMvuVariable`, `reloadInitVar`, `events` (`VARIABLE_INITIALIZED`, `VARIABLE_UPDATE_STARTED`, …).
 Depends on a LARGE host global surface: `SillyTavern`; `getVariables`/`replaceVariables`/
@@ -327,13 +344,14 @@ Depends on a LARGE host global surface: `SillyTavern`; `getVariables`/`replaceVa
 worldbook entries, tracks `initialized_lorebooks`. Plus `dist/data_schema/index.js` = the variable schema.
 
 ## Shim requirements (WCV preload)
+
 - **`window.SillyTavern.getContext()` + the bare TavernHelper globals.** Map to what we have: vars →
   the `rptHost`/`apply-variable-ops` bridge; `getChatMessages` → `pluginGetMessages`; `substitudeMacros`
   → `expandMacros`; events → a small bus; lorebook → lorebook services; `generate(Raw)` → `generateRaw`.
   Many can START as stubs/no-ops and be filled as the UI actually calls them.
-- **`window.Mvu` — a THIN shim is likely enough for the UI.** The status app only *displays*: it reads
+- **`window.Mvu` — a THIN shim is likely enough for the UI.** The status app only _displays_: it reads
   `Mvu.getMvuData()` (→ `{ stat_data, schema }` from `rptHost`) and maybe `setMvuVariable` (→ the
-  bridge). The bundle's heavy deps (lorebook/generate/getChatMessages) drive its *update* pipeline —
+  bridge). The bundle's heavy deps (lorebook/generate/getChatMessages) drive its _update_ pipeline —
   which we already do natively (`mvuParser`). So shim `getMvuData/getMvuVariable/setMvuVariable/events`
   over our state; load the real MIT bundle only if the UI needs its exact behavior.
 - **Network/CSP.** The status app imports ESM from jsDelivr at runtime → the WCV must allow jsDelivr
@@ -341,7 +359,7 @@ worldbook entries, tracks `initialized_lorebooks`. Plus `dist/data_schema/index.
 - **Electron security decision.** To give the card's main-world code the bare window globals it
   expects, either `contextBridge` (locked, limited) or `contextIsolation:false` (a main-world shim —
   simpler, acceptable for TRUSTED cards since the WCV is still a separate process with `nodeIntegration:
-  false`; production hardens). Loading a remote card page also grants it `rptHost` → trusted-only.
+false`; production hardens). Loading a remote card page also grants it `rptHost` → trusted-only.
 - **Spike tactic — a missing-API logger.** Expose the globals as accessors that log every property
   touched on first load → the exact call checklist, instead of guessing what to shim.
 
@@ -378,14 +396,16 @@ The WCV card UI is a working spike for TRUSTED cards. Hardening status:
 - `dist/status/` — the status panel. **DONE:** runs in a WCV (React app); our shim works.
 - `dist/home/` — the home / launcher screen. A **Vue** app (`window.Vue` global), imports `json5`, and
   CHECKS the environment at boot: `getTavernHelperVersion()` plus `tavernHelper`/`ejsTemplate`/`mvu`
-  status (it shows "加载中…" until `allOk`). A *different* global surface than the React status UI.
+  status (it shows "加载中…" until `allOk`). A _different_ global surface than the React status UI.
 - `dist/custom_start/` — character creation (a one-time "start" flow). Writes the INITIAL variables.
 - `dist/data_schema/index.js` — the variable Zod schema. `dist/image_preload/index.js` — an image
   preloader (minor; could run as a card script or be ignored).
 
 ## What integrating the others needs
+
 Same-author React/Vue ESM apps, loaded the same way (`$('body').load` → a WCV), but each reaches for a
 slightly different global set, so the shim is extended per frontend:
+
 - **home/custom_start use Vue** → provide `window.Vue` (load the Vue lib, as we do lodash/jQuery).
 - **They check the environment** → shim `getTavernHelperVersion()` (return a version) and report
   TavernHelper / EjsTemplate / MVU status as ok/enabled so `allOk` passes.
@@ -395,6 +415,7 @@ slightly different global set, so the shim is extended per frontend:
   integrating — `home`/`custom_start` inline the bundle on line 1, not line 2.
 
 ## The external MVU framework (MagVarUpdate, MIT)
+
 We run the `<UpdateVariable>` update pipeline NATIVELY (`mvuParser`: `_.set` + JSONPatch + `delta`); the
 thin `window.Mvu` shim serves the UIs' reads/writes. **Recommendation: keep this — do NOT load the full
 MVU bundle** (it needs the whole host surface and would run a second, conflicting update engine).
@@ -403,8 +424,10 @@ and report MVU "status: ok" to home's env check. Optionally port MVU's schema-de
 natively (MIT, reusable) for robustness.
 
 ## Onboarding flow (home → creation → first turn)
+
 In SillyTavern the card's UIs are a one-time ONBOARDING SEQUENCE tied to the first message, NOT
 persistent panels:
+
 1. New chat → the first message (首页) shows; a regex replaces it with the **home** UI (inline).
 2. Home: accept terms → the message UI swaps to the **character-creation** UI.
 3. Creation finish → a starting prompt enters the user's INPUT box; the player sends it.
@@ -420,12 +443,14 @@ how/when the onboarding runs on a new chat (overlay on first message vs manual).
 the vars via our existing generation + `mvuParser`.
 
 ## Known issues
+
 - **Status UI: only the inner layer renders.** The card's MVU status UI has TWO layers — an outer layer
   (with **edit** + **settings** buttons) wrapping an inner display layer. In the WCV only the INNER layer
   shows; the outer layer (and its buttons) is missing. Likely a separate wrapper/regex/frontend we don't
   load yet, or the outer chrome is clipped by the WCV bounds. Low priority — investigate when polishing.
 
 ## Options
+
 - **A — Status only (current).** The in-session status panel is the primary UI; skip `home` (launcher)
   and `custom_start` (one-time). Char creation handled natively / manually. Lowest effort.
 - **B — Add home + custom_start as WCV views.** Extend the shim (Vue + env-check + data_schema); add a

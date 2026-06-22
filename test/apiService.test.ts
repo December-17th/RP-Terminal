@@ -2,7 +2,11 @@ import { describe, it, expect } from 'vitest'
 import { buildGeminiBody } from '../src/main/services/apiService'
 import { ChatMessage } from '../src/main/services/promptBuilder'
 
-const params = (p: Record<string, number> = {}): any => ({ temperature: 0.9, max_tokens: 4000, ...p })
+const params = (p: Record<string, number> = {}): any => ({
+  temperature: 0.9,
+  max_tokens: 4000,
+  ...p
+})
 
 describe('buildGeminiBody', () => {
   it('hoists the leading system run into systemInstruction and maps assistant→model', () => {

@@ -30,8 +30,7 @@ const api = {
   wcvEnsure: (id: string, bounds: unknown, url: string, ctx: unknown) =>
     ipcRenderer.send('wcv-ensure', id, bounds, url, ctx),
   wcvSetBounds: (id: string, bounds: unknown) => ipcRenderer.send('wcv-set-bounds', id, bounds),
-  wcvSetVisible: (id: string, visible: boolean) =>
-    ipcRenderer.send('wcv-set-visible', id, visible),
+  wcvSetVisible: (id: string, visible: boolean) => ipcRenderer.send('wcv-set-visible', id, visible),
   wcvDestroy: (id: string) => ipcRenderer.send('wcv-destroy', id),
   wcvBroadcastVars: (chatId: string, statData: unknown) =>
     ipcRenderer.send('wcv-broadcast-vars', chatId, statData),
@@ -70,8 +69,7 @@ const api = {
   importPresetDialog: (profileId: string) => ipcRenderer.invoke('import-preset-dialog', profileId),
   // Lorebook library (id-keyed; a character's own lorebook has id == characterId)
   listLorebooks: (profileId: string) => ipcRenderer.invoke('list-lorebooks', profileId),
-  getLorebook: (profileId: string, id: string) =>
-    ipcRenderer.invoke('get-lorebook', profileId, id),
+  getLorebook: (profileId: string, id: string) => ipcRenderer.invoke('get-lorebook', profileId, id),
   saveLorebook: (profileId: string, id: string, lorebook: any) =>
     ipcRenderer.invoke('save-lorebook', profileId, id, lorebook),
   createLorebook: (profileId: string, name: string) =>
@@ -120,7 +118,8 @@ const api = {
     ipcRenderer.invoke('script-card-data', profileId, chatId, cardId),
   scriptCardAvatar: (profileId: string, chatId: string, cardId?: string) =>
     ipcRenderer.invoke('script-card-avatar', profileId, chatId, cardId),
-  scriptWorldbookList: (profileId: string) => ipcRenderer.invoke('script-worldbook-list', profileId),
+  scriptWorldbookList: (profileId: string) =>
+    ipcRenderer.invoke('script-worldbook-list', profileId),
   scriptWorldbookGet: (profileId: string, chatId: string, id?: string, cardId?: string) =>
     ipcRenderer.invoke('script-worldbook-get', profileId, chatId, id, cardId),
   scriptWorldbookSet: (
@@ -162,7 +161,7 @@ const api = {
     ipcRenderer.invoke('plugin-net-fetch', pluginId, url, opts),
   // Subscribe to incremental generation text. Returns an unsubscribe function.
   onGenerationDelta: (cb: (payload: { chatId: string; delta: string }) => void) => {
-    const listener = (_e: IpcRendererEvent, payload: { chatId: string; delta: string }) =>
+    const listener = (_e: IpcRendererEvent, payload: { chatId: string; delta: string }): void =>
       cb(payload)
     ipcRenderer.on('generation-delta', listener)
     return () => ipcRenderer.removeListener('generation-delta', listener)
@@ -203,7 +202,7 @@ const api = {
     ipcRenderer.invoke('regex-update-rule', profileId, file, index, patch),
   importRegexDialog: (profileId: string) => ipcRenderer.invoke('import-regex-dialog', profileId),
   onLog: (cb: (entry: any) => void) => {
-    const listener = (_e: IpcRendererEvent, entry: any) => cb(entry)
+    const listener = (_e: IpcRendererEvent, entry: any): void => cb(entry)
     ipcRenderer.on('log-event', listener)
     return () => ipcRenderer.removeListener('log-event', listener)
   },

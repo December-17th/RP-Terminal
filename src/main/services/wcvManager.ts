@@ -103,7 +103,12 @@ export const ensure = (
         preload: join(__dirname, '../preload/wcvPreload.js')
       }
     })
-    slot = { view, profileId: ctx.profileId, chatId: ctx.chatId, characterId: ctx.characterId || '' }
+    slot = {
+      view,
+      profileId: ctx.profileId,
+      chatId: ctx.chatId,
+      characterId: ctx.characterId || ''
+    }
     slots.set(id, slot)
     mainWindow.contentView.addChildView(view)
     view.webContents.loadURL(url)

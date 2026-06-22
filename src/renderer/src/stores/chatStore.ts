@@ -328,7 +328,13 @@ export const useChatStore = create<ChatState>((set, get) => {
 
     clearActiveChat: () => {
       resetStream()
-      set({ activeChatId: null, floors: [], activeChatMode: 'explore', streamingText: '', error: null })
+      set({
+        activeChatId: null,
+        floors: [],
+        activeChatMode: 'explore',
+        streamingText: '',
+        error: null
+      })
     }
   }
 })

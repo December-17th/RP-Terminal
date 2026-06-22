@@ -10,7 +10,7 @@ describe('parseMvuCommands', () => {
   it('uses the LAST arg as the new value and the //comment as the reason, strips the block', () => {
     // Real MVU: _.set(path, old, new) — old (100) is ignored, new (80) applied; reason is //comment.
     const raw =
-      'You strike the goblin.\n<UpdateVariable>\n_.set(\'hp\', 100, 80);//took damage\n_.add(\'gold\', 5);\n</UpdateVariable>\nIt reels.'
+      "You strike the goblin.\n<UpdateVariable>\n_.set('hp', 100, 80);//took damage\n_.add('gold', 5);\n</UpdateVariable>\nIt reels."
     const { text, commands } = parseMvuCommands(raw)
     expect(text).toBe('You strike the goblin.\n\nIt reels.')
     expect(commands).toEqual([
@@ -55,12 +55,12 @@ describe('parseMvuCommands', () => {
 
   it('normalizes insert (index form vs append) and delta→add, unset→remove', () => {
     const { commands } = parseMvuCommands(
-      "<UpdateVariable>" +
+      '<UpdateVariable>' +
         "_.insert('quests', 0, { name: 'key' });" +
         "_.insert('log', 'entry');" +
         "_.delta('time', 1);" +
         "_.unset('world.place');" +
-        "</UpdateVariable>"
+        '</UpdateVariable>'
     )
     expect(commands).toEqual([
       { op: 'insert', path: 'quests', index: 0, value: { name: 'key' }, reason: undefined },

@@ -9,9 +9,7 @@ export const isPlainObject = (v: unknown): v is Record<string, unknown> =>
   typeof v === 'object' && v !== null && !Array.isArray(v)
 
 /** MVU value-with-description: a `[value, "desc"]` tuple or `{ value, description }`. */
-export const asValueDesc = (
-  v: unknown
-): { value: unknown; description: string } | null => {
+export const asValueDesc = (v: unknown): { value: unknown; description: string } | null => {
   if (
     Array.isArray(v) &&
     v.length === 2 &&

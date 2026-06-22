@@ -7,7 +7,10 @@ const book = (entries: any[]): any => LorebookSchema.parse({ name: 'B', entries 
 describe('parseInitVars', () => {
   it('merges JSON code blocks from [initvar]-marked entries', () => {
     const b = book([
-      { comment: '[initvar] setup', content: 'Start:\n```json\n{"主角":{"生命值":100},"金币":0}\n```' },
+      {
+        comment: '[initvar] setup',
+        content: 'Start:\n```json\n{"主角":{"生命值":100},"金币":0}\n```'
+      },
       { keys: ['x'], content: 'plain lore ```json\n{"金币":99}\n```' } // not marked → ignored
     ])
     expect(parseInitVars([b])).toEqual({ 主角: { 生命值: 100 }, 金币: 0 })

@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
 // The quickjs bridge is dynamically typed (vm.dump → any, helper args are user-supplied), so `any` is
 // intentional throughout this file — same as the original engine in templateService.
 // Type-only import — the shared engine never pulls a runtime quickjs variant; the host injects one via

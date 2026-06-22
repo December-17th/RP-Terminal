@@ -23,9 +23,13 @@ describe('applyRegexRules', () => {
   })
 
   it('skips disabled rules and rules for a different placement', () => {
-    expect(applyRegexRules('foo', [rule({ regex: /foo/g, replaceString: 'x', disabled: true })])).toBe('foo')
     expect(
-      applyRegexRules('foo', [rule({ regex: /foo/g, replaceString: 'x', placement: ['ai_output'] })])
+      applyRegexRules('foo', [rule({ regex: /foo/g, replaceString: 'x', disabled: true })])
+    ).toBe('foo')
+    expect(
+      applyRegexRules('foo', [
+        rule({ regex: /foo/g, replaceString: 'x', placement: ['ai_output'] })
+      ])
     ).toBe('foo')
   })
 
@@ -49,7 +53,10 @@ describe('loadRegexRules', () => {
     while (tmp.length) fs.rmSync(tmp.pop()!, { force: true })
   })
   const writeRules = (data: unknown): string => {
-    const p = path.join(os.tmpdir(), `rpt-rx-${Date.now()}-${Math.random().toString(36).slice(2)}.json`)
+    const p = path.join(
+      os.tmpdir(),
+      `rpt-rx-${Date.now()}-${Math.random().toString(36).slice(2)}.json`
+    )
     fs.writeFileSync(p, JSON.stringify(data))
     tmp.push(p)
     return p

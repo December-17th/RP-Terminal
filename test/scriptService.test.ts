@@ -56,7 +56,8 @@ describe('extractImports', () => {
 
 describe('extractImportHosts / runtimeImportHosts', () => {
   it('returns distinct hosts of absolute-URL imports only', () => {
-    const code = "import 'https://cdn.example/a.js'\nimport x from 'https://cdn.example/b.js'\nimport './local.js'"
+    const code =
+      "import 'https://cdn.example/a.js'\nimport x from 'https://cdn.example/b.js'\nimport './local.js'"
     expect(extractImportHosts(code)).toEqual(['cdn.example']) // deduped; relative skipped
   })
 
@@ -116,7 +117,12 @@ afterAll(() => fs.rmSync(profileDir, { recursive: true, force: true }))
 describe('scripts store', () => {
   it('saves, lists, scopes, toggles and resolves active scripts by context', () => {
     const g = saveScript(profileId, { name: 'global-one', code: 'a()' })
-    const w = saveScript(profileId, { name: 'world-A', code: 'import "https://x/y.js"\nb()' }, 'world', 'card-A')
+    const w = saveScript(
+      profileId,
+      { name: 'world-A', code: 'import "https://x/y.js"\nb()' },
+      'world',
+      'card-A'
+    )
     const s = saveScript(profileId, { name: 'session-1', code: 'c()' }, 'session', 'chat-1')
 
     const all = listScripts(profileId)
@@ -127,16 +133,19 @@ describe('scripts store', () => {
     // No context → none of the scoped scripts (only global).
     expect(getActiveScripts(profileId, {}).map((x) => x.name)).toEqual(['global-one'])
     // Right world → global + world-A.
-    expect(getActiveScripts(profileId, { cardId: 'card-A' }).map((x) => x.name).sort()).toEqual([
-      'global-one',
-      'world-A'
-    ])
+    expect(
+      getActiveScripts(profileId, { cardId: 'card-A' })
+        .map((x) => x.name)
+        .sort()
+    ).toEqual(['global-one', 'world-A'])
     // Right world + session → all three.
     expect(getActiveScripts(profileId, { cardId: 'card-A', chatId: 'chat-1' })).toHaveLength(3)
 
     // Disable global-one → it drops out of the active set but stays in the list.
     setScriptDisabled(profileId, g, true)
-    expect(getActiveScripts(profileId, { cardId: 'card-A' }).map((x) => x.name)).toEqual(['world-A'])
+    expect(getActiveScripts(profileId, { cardId: 'card-A' }).map((x) => x.name)).toEqual([
+      'world-A'
+    ])
     expect(listScripts(profileId).find((x) => x.file === g)!.disabled).toBe(true)
 
     // Rescope world-A to global keeps its disabled flag intact (false here) + drops owner.

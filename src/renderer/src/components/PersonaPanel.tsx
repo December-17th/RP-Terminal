@@ -41,8 +41,8 @@ export const PersonaPanel: React.FC<{ profileId: string }> = ({ profileId }) => 
           onChange={(e) => patch({ description: e.target.value })}
         />
         <div style={{ fontSize: '0.78em', color: 'var(--rpt-text-secondary)', marginTop: 4 }}>
-          Injected into the prompt so the model knows who you are. Also available as{' '}
-          {'{{persona}}'} in authored content.
+          Injected into the prompt so the model knows who you are. Also available as {'{{persona}}'}{' '}
+          in authored content.
         </div>
 
         <label

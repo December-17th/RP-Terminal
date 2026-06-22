@@ -24,6 +24,7 @@ Status legend: ✅ wired · 🟡 partial · ⬜ not yet · 🔁 stub (logs, retu
   [`lorebookService`](../src/main/services/lorebookService.ts), `floorService`, `generationService`).
 
 ### Sync vs async (important)
+
 TavernHelper **name/getter** methods are called **synchronously** by cards (no `await`) — the shim must
 return inline (`ipcRenderer.sendSync`), never a Promise, or `.primary`/etc. read as `undefined`. Heavy
 reads/writes (`getWorldbook`, `updateWorldbookWith`, `saveChat`, `generate`) are async (the card awaits).
@@ -38,20 +39,20 @@ world**. It cannot read or modify another session or world, and never receives t
 Enforcement: each WCV carries a context `{ profileId, chatId, characterId }` (set when the view is
 created). The host IPC handlers resolve targets **from that context** (`wcvManager.contextFor(sender.id)`)
 — a card can only ever reach its own session's floors, variables, and its own card's lorebook. Generation
-is host-side (the card *requests* it; the key stays in main, masked from the renderer).
+is host-side (the card _requests_ it; the key stays in main, masked from the renderer).
 
 ---
 
 ## 3. Globals the shim provides
 
-| Global | Purpose | Source |
-|---|---|---|
-| `window.SillyTavern` | `getContext()`, `chat[]` (+ swipes), `saveChat()`, `reloadCurrentChat()`, `substituteParams()` | wcvPreload |
-| `window.TavernHelper` | the TH JS API (variables, messages, worldbook, events, …) | wcvPreload |
-| `window.Mvu` | MagVarUpdate API (`getMvuData`/`getMvuVariable`/`setMvuVariable`/`replaceMvuData`/`parseMessage`/`events`) | wcvPreload |
-| `window.rptHost` | low-level host bridge (`getVariables`/`applyVariableOps`/`setVariables`/`setInput`/`onVarsChanged`) | wcvPreload |
-| `window._` `window.z` `window.$` `window.toastr` | lodash, Zod, jQuery, toastr (the libs cards externalize) | wcvPreload |
-| `window.Vue` `window.VueRouter` `window.Pinia` | lazily provided for Vue-app cards | wcvPreload |
+| Global                                           | Purpose                                                                                                    | Source     |
+| ------------------------------------------------ | ---------------------------------------------------------------------------------------------------------- | ---------- |
+| `window.SillyTavern`                             | `getContext()`, `chat[]` (+ swipes), `saveChat()`, `reloadCurrentChat()`, `substituteParams()`             | wcvPreload |
+| `window.TavernHelper`                            | the TH JS API (variables, messages, worldbook, events, …)                                                  | wcvPreload |
+| `window.Mvu`                                     | MagVarUpdate API (`getMvuData`/`getMvuVariable`/`setMvuVariable`/`replaceMvuData`/`parseMessage`/`events`) | wcvPreload |
+| `window.rptHost`                                 | low-level host bridge (`getVariables`/`applyVariableOps`/`setVariables`/`setInput`/`onVarsChanged`)        | wcvPreload |
+| `window._` `window.z` `window.$` `window.toastr` | lodash, Zod, jQuery, toastr (the libs cards externalize)                                                   | wcvPreload |
+| `window.Vue` `window.VueRouter` `window.Pinia`   | lazily provided for Vue-app cards                                                                          | wcvPreload |
 
 > Plugins (app extensions, not card UIs) use the separate `rpt.v1` postMessage API — see
 > [docs/plugin-api.md](plugin-api.md). The two share the same main-side backing.
@@ -61,6 +62,7 @@ is host-side (the card *requests* it; the key stays in main, masked from the ren
 ## 4. API surface by category
 
 ### Variables / MVU state — ✅
+
 State of truth is `floor.variables.stat_data` (the MVU tree). Reads come from a **synchronous mirror**
 (hydrated via `sendSync`, kept fresh by a `wcv-vars-changed` push); writes go through the host bridge.
 
@@ -70,21 +72,25 @@ State of truth is `floor.variables.stat_data` (the MVU tree). Reads come from a 
 - The host folds the model's `<UpdateVariable>` (`_.set` + `<JSONPatch>` incl. `delta`/array-append) natively (`mvuParser`); the shim does NOT load the full MVU bundle.
 
 ### Chat / messages — 🟡
+
 - `SillyTavern.chat[]` — ✅ built from floors (each message carries `swipes`/`swipe_id`); `saveChat()` + `reloadCurrentChat()` — ✅
 - `getChatMessages()` (now returns `message_id` = chat-array index) / `getCurrentMessageId()` — ✅ (read)
 - `setChatMessages([{message_id, message}])` — ✅ edit content by index (→ floor+role, then re-fold + reload). `deleteChatMessages(ids)` — ✅ truncates from the earliest targeted message's floor (the floor model couples user+assistant, so arbitrary mid-chat single-message deletes aren't supported).
 - `createChatMessages` — 🟡 routes to the composer-inject for onboarding; general insert-a-message deferred (ambiguous in the floor model). Per-message swipe/var edits — ⬜.
 
 ### Worldbook / lorebook — 🟡
+
 - `getCharWorldbookNames('current')` → `{ primary, additional }` — ✅ (sync) · `getWorldbook(name)` → entries — ✅
 - `updateWorldbookWith(name, fn)` / `replaceWorldbook(name, entries)` — 🟡 **toggle only** today (the WCV write-back applies `enabled` by uid). ⬜ full CRUD (add/remove/edit) — extend `wcv-host-replace-worldbook` to a full replace (the iframe path's `scriptApiService.setWorldbookEntries` already does this; reuse it).
 - `createWorldbook` / bind-unbind to char/chat — ⬜
 - Backing: [`scriptApiService`](../src/main/services/scriptApiService.ts) (`getWorldbook`/`setWorldbookEntries`) + `lorebookService`. The card's own book is at `id == characterId`.
 
 ### Character / preset — ✅ (read)
+
 - `getCharData()` / `getCharAvatarPath()` — ✅ (sync, ctx-scoped) · `getPreset()` (active preset name + sampler params) / `getPresetNames()` — ✅ (sync) · `SillyTavern.getContext()` — ✅
 
 ### Generation — ✅ (request)
+
 - `generate(text)` — ✅ runs a normal visible turn (host-side via `generationService.generate`, then a
   host reload refreshes the chat + sibling WCVs); resolves with the response text. `generateRaw(config)`
   — ✅ a one-off completion → text (`user_input`/`system_prompt`/`max_chat_history`/`overrides`,
@@ -93,15 +99,18 @@ State of truth is `floor.variables.stat_data` (the MVU tree). Reads come from a 
 - `triggerSlash` / `execute` (STScript) — 🔁 stub.
 
 ### Regex — 🟡
+
 - `getTavernRegexes()` (list active display regex) / `formatAsTavernRegexedString(text)` (apply them to a
   string) — ✅ (sync, scoped to the card's world+session, via `scriptApiService`). `replaceTavernRegexes`
   (write) — 🔁 stub (runtime regex rewrites are risky — can break the card's own beautification — and rare).
 
 ### Events — ✅
+
 - `eventOn`/`eventOnce`/`eventEmit`/`eventMakeFirst`/`eventRemoveListener` + `SillyTavern.eventSource.on/emit` — ✅ (a local bus). The `tavern_events` enum is provided (`window.tavern_events` + `getContext().eventTypes`/`event_types`).
 - Lifecycle + mutation events — ✅ `GENERATION_STARTED/ENDED`, `CHAT_CHANGED`, `MESSAGE_RECEIVED/UPDATED/DELETED/SWIPED` are broadcast to WCVs, computed from the chat-store transition (reusing the iframe-script event functions — no generation-pipeline change). MVU `mag_variable_*` events fire on a host vars push. `STREAM_TOKEN_RECEIVED` ✅ (during `generate`); ⬜ `MESSAGE_SENT`.
 
 ### UI / misc — ✅ / 🔁
+
 - `toastr.*` — ✅ · `substituteParams`/`substitudeMacros` — 🟡 (pass-through) · `getTavernHelperVersion()` — ✅ (reports ≥ the card's required minimum) · `waitGlobalInitialized()` — ✅ (resolves true)
 - Audio (background music / SFX) — 🔁 stubs (`audioPlay`/`audioPause`/`audioImport`/`audioMode`/`audioEnable`, no-op + logged). Cards play audio directly under the CSP (native `<audio>`/WebAudio) — the real path.
 

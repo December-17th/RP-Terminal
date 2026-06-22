@@ -25,18 +25,18 @@ the kind of thing worth tidying before it compounds. **Not shaky, not in trouble
 
 ## The basics (sanity checks)
 
-| Check | Result |
-|---|---|
-| Builds? | ✅ `npm run typecheck` + `electron-vite build` pass |
-| Tests? | ✅ **304 pass**, 34 test files (`test/*.test.ts`) — strong breadth over the pure modules |
-| Secrets committed? | ✅ None (`sk-…`/`AIza…`/PEM scan clean; API keys are encrypted via `safeStorage` in `settingsService.ts`) |
-| Deps coherent? | ✅ `package-lock.json` present (464 KB), `npm ls --depth=0` clean |
-| Dead deps? | ✅ `vue`/`vue-router`/`pinia`/`jquery` look unused but are **lazily provided to card scripts** (`wcvPreload.ts:416,429–431`) — justified |
-| `node_modules`/`out` ignored? | ✅ in `.gitignore`; the SQLite data dir lives under `app.getPath('userData')` (outside the repo) |
+| Check                         | Result                                                                                                                                   |
+| ----------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| Builds?                       | ✅ `npm run typecheck` + `electron-vite build` pass                                                                                      |
+| Tests?                        | ✅ **304 pass**, 34 test files (`test/*.test.ts`) — strong breadth over the pure modules                                                 |
+| Secrets committed?            | ✅ None (`sk-…`/`AIza…`/PEM scan clean; API keys are encrypted via `safeStorage` in `settingsService.ts`)                                |
+| Deps coherent?                | ✅ `package-lock.json` present (464 KB), `npm ls --depth=0` clean                                                                        |
+| Dead deps?                    | ✅ `vue`/`vue-router`/`pinia`/`jquery` look unused but are **lazily provided to card scripts** (`wcvPreload.ts:416,429–431`) — justified |
+| `node_modules`/`out` ignored? | ✅ in `.gitignore`; the SQLite data dir lives under `app.getPath('userData')` (outside the repo)                                         |
 
 ---
 
-## A. Docs ↔ code drift + consolidation  — _severity: Low–Medium_
+## A. Docs ↔ code drift + consolidation — _severity: Low–Medium_
 
 There are **14 docs** (CLAUDE.md, ROADMAP.md, + 12 in `docs/`). Findings:
 
@@ -46,7 +46,7 @@ There are **14 docs** (CLAUDE.md, ROADMAP.md, + 12 in `docs/`). Findings:
    block now describes `index.ts` correctly and lists the previously-missing `ipc/`, `shared/`, `wcvPreload.ts`,
    `workers/`, and renderer `plugin/`. _(was Low)_
 2. ~~`ROADMAP.md` untracked while `CLAUDE.md` links it~~ — **mis-finding, corrected 2026-06-22.** Both
-   `CLAUDE.md` and `ROADMAP.md` are *intentionally* gitignored (`.gitignore`: "AI assistant / planning files —
+   `CLAUDE.md` and `ROADMAP.md` are _intentionally_ gitignored (`.gitignore`: "AI assistant / planning files —
    kept local, not tracked in the repo"). A clone has neither, so there's no broken cross-reference. No action.
    _(Info)_
 3. **Status is tracked in three overlapping places:** `ROADMAP.md`, `docs/progress-log.md`, and the git
@@ -63,7 +63,7 @@ There are **14 docs** (CLAUDE.md, ROADMAP.md, + 12 in `docs/`). Findings:
 
 ---
 
-## B. Unfinished work  — _severity: Low_
+## B. Unfinished work — _severity: Low_
 
 Remarkably little. The whole `src/` tree has **one** `TODO` and a couple of honest, documented stubs:
 
@@ -80,7 +80,7 @@ No "throw 'not implemented'" landmines, no silently-empty handlers found.
 
 ---
 
-## C. Inconsistency across the codebase  — _severity: Low_
+## C. Inconsistency across the codebase — _severity: Low_
 
 - **Error reporting in `main` is mixed.** CLAUDE.md says main-process errors should go through
   `logService.log('error', …)` so they reach the Logs panel + stdout. But **12 `console.error/warn` calls
@@ -95,7 +95,7 @@ No "throw 'not implemented'" landmines, no silently-empty handlers found.
 
 ---
 
-## D. Dead / orphaned code  — _severity: Medium_
+## D. Dead / orphaned code — _severity: Medium_
 
 - **`MessageScriptFrame.tsx` is orphaned.** It's defined + exported ([MessageScriptFrame.tsx:34](src/renderer/src/components/MessageScriptFrame.tsx))
   but **never rendered** (`<MessageScriptFrame` has zero matches in `src/`). It's the retired in-message
@@ -116,7 +116,7 @@ No "throw 'not implemented'" landmines, no silently-empty handlers found.
 
 ---
 
-## E. Duplication  — _severity: Medium_
+## E. Duplication — _severity: Medium_
 
 - **Two TavernHelper / card-host compat layers.** The iframe `plugin/shims/tavern.ts` (+ `lib`, `bridge`,
   `stRuntime`, `jquery`) and the WCV `preload/wcvPreload.ts` are **two implementations of the same
@@ -137,7 +137,7 @@ No "throw 'not implemented'" landmines, no silently-empty handlers found.
 
 ---
 
-## F. Over-engineering  — _severity: Low (context-dependent)_
+## F. Over-engineering — _severity: Low (context-dependent)_
 
 The repo is large for an "MVP foundation" (CLAUDE.md's own framing), with several full subsystems:
 
@@ -155,7 +155,7 @@ The repo is large for an "MVP foundation" (CLAUDE.md's own framing), with severa
 
 ---
 
-## G. Performance  — _severity: Low_
+## G. Performance — _severity: Low_
 
 Mostly fine; a few things to be aware of, none hot enough to act on now:
 
@@ -175,7 +175,7 @@ Mostly fine; a few things to be aware of, none hot enough to act on now:
 
 ---
 
-## H. Maintainability  — _severity: Medium (lint hygiene)_
+## H. Maintainability — _severity: Medium (lint hygiene)_
 
 - **ESLint is unusable as a gate: 761 problems (289 errors / 472 warnings).** Decomposed:
   - `449` `prettier/prettier` — almost entirely **CRLF vs LF churn** (Windows `autocrlf` vs Prettier's
@@ -195,6 +195,7 @@ Mostly fine; a few things to be aware of, none hot enough to act on now:
   ~30 minutes of config tuning (prettier eol, drop `react/prop-types`, scope `no-explicit-any`) would drop
   this from 761 → a small, _meaningful_ number you could actually gate on. **This is the highest-value
   maintainability fix.** _(Medium)_
+
 - **Comments are good** — they explain _why_ (provider quirks, safety nets, the sync-vs-async shim rule),
   matching the house style. No misleading comments spotted beyond the CLAUDE.md `index.ts` claim (A.1).
 - **Coupling is reasonable** — `src/shared` correctly imports nothing from `src/main`/`src/renderer`; services
@@ -205,6 +206,7 @@ Mostly fine; a few things to be aware of, none hot enough to act on now:
 ## Prioritized backlog (what actually deserves attention)
 
 **Worth doing (cheap, high-value):**
+
 1. **Tune ESLint** so it's a usable gate: `.gitattributes` eol fix (−449), turn off `react/prop-types` (−26),
    scope `no-explicit-any` per-file (−~200). [H] — biggest ROI.
 2. **Delete `MessageScriptFrame.tsx`** (orphaned), after confirming `messageContent.test.ts` doesn't depend on
@@ -213,14 +215,12 @@ Mostly fine; a few things to be aware of, none hot enough to act on now:
    `workers`/`plugin` structure omissions. (The "ROADMAP untracked" sub-item was a mis-finding — both planning
    docs are gitignored by design.) [A]
 
-**Worth doing soon (medium effort):**
-4. **Extract `shared/objectPath.ts`** and collapse the 4–6 `getPath`/`setPath`/`clone` copies into it
-   (carefully — they differ slightly). [E]
-5. **Finish or formally pause the iframe→WCV card-host migration.** Right now you maintain two TavernHelper
-   layers + two card-host stacks. Decide the timeline; until then, every TH-API change is double work. [D/E]
-6. **Run `knip`/`ts-prune`** to find the rest of the orphaned exports the two-card-host transition likely left.
+**Worth doing soon (medium effort):** 4. **Extract `shared/objectPath.ts`** and collapse the 4–6 `getPath`/`setPath`/`clone` copies into it
+(carefully — they differ slightly). [E] 5. **Finish or formally pause the iframe→WCV card-host migration.** Right now you maintain two TavernHelper
+layers + two card-host stacks. Decide the timeline; until then, every TH-API change is double work. [D/E] 6. **Run `knip`/`ts-prune`** to find the rest of the orphaned exports the two-card-host transition likely left.
 
 **Fine as-is / conscious choices (don't sweat):**
+
 - The `generateImage`/agentic/`plugins-skipped` stubs (documented, graceful).
 - The sandbox subsystem (justified by the untrusted-script threat model).
 - `vue`/`pinia`/`jquery` deps (lazily provided to cards).

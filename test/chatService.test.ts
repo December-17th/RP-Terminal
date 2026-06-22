@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest'
 import { parseLorebookIds } from '../src/main/services/chatService'
 
 describe('parseLorebookIds', () => {
-  it('returns null for a null column (default = character\'s own book)', () => {
+  it("returns null for a null column (default = character's own book)", () => {
     expect(parseLorebookIds(null)).toBeNull()
   })
 

@@ -97,7 +97,11 @@ export const useLorebookStore = create<LorebookState>((set, get) => ({
 
   open: async (profileId, id) => {
     const lorebook = await window.api.getLorebook(profileId, id)
-    set({ currentId: id, lorebook: lorebook ?? { name: 'New Lorebook', entries: [] }, dirty: false })
+    set({
+      currentId: id,
+      lorebook: lorebook ?? { name: 'New Lorebook', entries: [] },
+      dirty: false
+    })
   },
 
   createNew: async (profileId) => {

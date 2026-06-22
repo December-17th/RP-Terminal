@@ -204,7 +204,11 @@ export const saveRegexScript = (
   if (rules.length === 0 || !rules.some((r) => r && typeof r === 'object')) return null
   ensureDir(regexDir(profileId))
   const fileName = `${randomUUID()}.json`
-  fs.writeFileSync(path.join(regexDir(profileId), fileName), JSON.stringify(rules, null, 2), 'utf-8')
+  fs.writeFileSync(
+    path.join(regexDir(profileId), fileName),
+    JSON.stringify(rules, null, 2),
+    'utf-8'
+  )
   if (scope !== 'global') setScriptScope(profileId, fileName, scope, owner)
   return rules[0]?.scriptName || rules[0]?.name || 'Imported regex'
 }

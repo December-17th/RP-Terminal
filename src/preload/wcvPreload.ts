@@ -1,4 +1,4 @@
-/* eslint-disable @typescript-eslint/no-explicit-any, @typescript-eslint/explicit-function-return-type, @typescript-eslint/no-unused-vars, @typescript-eslint/no-require-imports --
+/* eslint-disable @typescript-eslint/explicit-function-return-type, @typescript-eslint/no-require-imports --
    spike shim: it bridges the untyped ST / TavernHelper / MVU host globals into the card page, a flat bag
    of small dynamic stubs whose placeholder params (_d/_o/_a) mirror the real host-API signatures; jQuery
    is lazily require()'d on first use (importing it at preload load crashes — see below). */

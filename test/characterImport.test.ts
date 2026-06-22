@@ -15,7 +15,10 @@ import { RPTerminalCardSchema, LorebookSchema } from '../src/main/types/characte
 
 const tmpFiles: string[] = []
 const writeJson = (obj: unknown): string => {
-  const p = path.join(os.tmpdir(), `rpt-card-${Date.now()}-${Math.random().toString(36).slice(2)}.json`)
+  const p = path.join(
+    os.tmpdir(),
+    `rpt-card-${Date.now()}-${Math.random().toString(36).slice(2)}.json`
+  )
   fs.writeFileSync(p, JSON.stringify(obj), 'utf-8')
   tmpFiles.push(p)
   return p
@@ -46,7 +49,10 @@ describe('collectBundledRegex', () => {
   })
 
   it('preserves the regex slots through Zod parsing (catchall, not stripped)', () => {
-    const c = card({ regex_scripts: [regexRule('keep')], rp_terminal: { regex: [regexRule('also')] } })
+    const c = card({
+      regex_scripts: [regexRule('keep')],
+      rp_terminal: { regex: [regexRule('also')] }
+    })
     // The schema must NOT drop these unknown keys — that is the losslessness fix.
     expect((c.data.extensions as any).regex_scripts).toHaveLength(1)
     expect((c.data.extensions as any).rp_terminal.regex).toHaveLength(1)
@@ -54,7 +60,9 @@ describe('collectBundledRegex', () => {
 
   it('ignores non-object entries and missing slots', () => {
     expect(collectBundledRegex(card({}))).toEqual([])
-    expect(collectBundledRegex(card({ regex_scripts: ['nope', null, regexRule('ok')] }))).toHaveLength(1)
+    expect(
+      collectBundledRegex(card({ regex_scripts: ['nope', null, regexRule('ok')] }))
+    ).toHaveLength(1)
   })
 })
 
@@ -144,7 +152,11 @@ describe('parseCardFile (lossless)', () => {
   })
 
   it('imports an unwrapped raw JSON card (no spec field)', () => {
-    const file = writeJson({ name: 'Raw', description: 'hi', extensions: { regex_scripts: [regexRule('r')] } })
+    const file = writeJson({
+      name: 'Raw',
+      description: 'hi',
+      extensions: { regex_scripts: [regexRule('r')] }
+    })
     const parsed = parseCardFile(file)!
     expect(parsed.card.data.name).toBe('Raw')
     expect(parsed.card.data.description).toBe('hi')
@@ -166,7 +178,10 @@ describe('buildWorldCardExport (S4) — round-trips with import', () => {
         agent: { prompts: { system: 'be terse' } }
       }
     })
-    const book = LorebookSchema.parse({ name: 'Book', entries: [{ keys: ['town'], content: 'A town.' }] })
+    const book = LorebookSchema.parse({
+      name: 'Book',
+      entries: [{ keys: ['town'], content: 'A town.' }]
+    })
     const worldRegex = [regexRule('beautify')]
 
     const exported = buildWorldCardExport(src, book, worldRegex)

@@ -33,7 +33,7 @@ export const parseContent = (content: string): ParsedContent => {
       const actionMatch = attrsString.match(/action="([^"]+)"/i)
 
       if (typeMatch && pathMatch && valueMatch) {
-        let valueStr = valueMatch[1]
+        const valueStr = valueMatch[1]
         let value: any = valueStr
 
         // Try to parse as JSON if it's a number, boolean, or object

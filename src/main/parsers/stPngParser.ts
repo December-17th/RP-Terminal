@@ -44,7 +44,7 @@ export const parseStPng = (filePath: string): any | null => {
               // ST stores base64 encoded JSON
               const decoded = Buffer.from(textData, 'base64').toString('utf-8')
               return JSON.parse(decoded)
-            } catch (e) {
+            } catch {
               // Maybe it wasn't base64? Try raw
               return JSON.parse(textData)
             }

@@ -134,9 +134,7 @@ const saveCharacterVars = (profileId: string, all: Record<string, Record<string,
  */
 export const pluginVars = (profileId: string, chatId: string, action: VarAction): VarResult => {
   const scope: VarScope =
-    action.scope === 'global' ||
-    action.scope === 'message' ||
-    action.scope === 'character'
+    action.scope === 'global' || action.scope === 'message' || action.scope === 'character'
       ? action.scope
       : 'local'
 
@@ -165,7 +163,8 @@ export const pluginVars = (profileId: string, chatId: string, action: VarAction)
   const chat = getChat(profileId, chatId)
   const count = chat?.floor_count ?? 0
   if (count === 0) return { value: undefined, scope, store: {} }
-  const target = scope === 'message' && typeof action.messageId === 'number' ? action.messageId : count - 1
+  const target =
+    scope === 'message' && typeof action.messageId === 'number' ? action.messageId : count - 1
 
   const floor = getFloor(profileId, chatId, target)
   const store: Record<string, any> = floor?.variables ?? {}
@@ -252,7 +251,9 @@ export const createMessage = (
     events: [],
     // Carry the running state forward so widgets/next-turn seeding stay coherent.
     variables:
-      chat.floor_count > 0 ? (getFloor(profileId, chatId, chat.floor_count - 1)?.variables ?? {}) : {}
+      chat.floor_count > 0
+        ? (getFloor(profileId, chatId, chat.floor_count - 1)?.variables ?? {})
+        : {}
   }
   appendFloor(profileId, chatId, floor)
   return floor.floor

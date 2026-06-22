@@ -35,7 +35,8 @@ refresh();
 
 // 命定之诗's real status UI (React ESM app; imports its deps from jsDelivr at runtime). Loaded with
 // the wcvPreload shim providing window.Mvu / SillyTavern / the TavernHelper globals (+ a logger).
-const FRONTEND = 'https://testingcf.jsdelivr.net/gh/The-poem-of-destiny/FrontEnd-for-destined-journey@1.8.2/dist'
+const FRONTEND =
+  'https://testingcf.jsdelivr.net/gh/The-poem-of-destiny/FrontEnd-for-destined-journey@1.8.2/dist'
 const STATUS_URL = `${FRONTEND}/status/index.html`
 const HOME_URL = `${FRONTEND}/home/index.html`
 const CUSTOM_START_URL = `${FRONTEND}/custom_start/index.html`
@@ -118,8 +119,8 @@ function ConsentCardView({
     <div style={{ padding: 20, maxWidth: 480 }}>
       <h3 style={{ marginTop: 0 }}>{title}</h3>
       <p style={{ opacity: 0.8, fontSize: 13, lineHeight: 1.6 }}>
-        Runs the card&apos;s own UI code, loaded from <code>jsdelivr.net</code>, in an isolated process.
-        It can read and write this session&apos;s variables. Only run cards you trust.
+        Runs the card&apos;s own UI code, loaded from <code>jsdelivr.net</code>, in an isolated
+        process. It can read and write this session&apos;s variables. Only run cards you trust.
       </p>
       <button className="btn-accent" onClick={() => setRun(true)}>
         Run card UI
@@ -134,5 +135,11 @@ export function WcvHomeView(): React.ReactElement {
   return <ConsentCardView slotId="wcv-home" url={HOME_URL} title="命定之诗 — Home" />
 }
 export function WcvCustomStartView(): React.ReactElement {
-  return <ConsentCardView slotId="wcv-start" url={CUSTOM_START_URL} title="命定之诗 — Character Creation" />
+  return (
+    <ConsentCardView
+      slotId="wcv-start"
+      url={CUSTOM_START_URL}
+      title="命定之诗 — Character Creation"
+    />
+  )
 }
