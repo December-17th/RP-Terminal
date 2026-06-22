@@ -224,6 +224,26 @@ const installBridge = (vm: QuickJSContext, ctx: TemplateContext): void => {
       word: function(){ return faker.pick(['ember','hollow','thorn','willow','quartz','raven','mist','dawn','vale','cinder']); },
       lorem: function(n){ n=n||8; var w=[]; for(var i=0;i<n;i++) w.push(faker.word()); return w.join(' '); }
     };
+    // Minimal clean-room lodash subset (dot-path only) + a no-op console — ST-PT exposes _ and console.
+    function __ks(p){ return String(p==null?'':p).split('.').filter(Boolean); }
+    var _ = {
+      get: function(o,p,d){ var ks=__ks(p),c=o; for(var i=0;i<ks.length;i++){ if(c==null) return d; c=c[ks[i]]; } return c===undefined?d:c; },
+      set: function(o,p,v){ var ks=__ks(p),c=o; for(var i=0;i<ks.length-1;i++){ if(typeof c[ks[i]]!=='object'||c[ks[i]]==null) c[ks[i]]={}; c=c[ks[i]]; } if(ks.length) c[ks[ks.length-1]]=v; return o; },
+      has: function(o,p){ return _.get(o,p,undefined)!==undefined; },
+      keys: function(o){ return o?Object.keys(o):[]; },
+      values: function(o){ return o?Object.keys(o).map(function(k){return o[k];}):[]; },
+      isEmpty: function(o){ if(o==null) return true; if(Array.isArray(o)||typeof o==='string') return o.length===0; return Object.keys(o).length===0; },
+      clamp: function(n,a,b){ return Math.min(Math.max(n,a),b); },
+      random: function(a,b){ if(b==null){b=a;a=0;} return a+Math.floor(Math.random()*(b-a+1)); },
+      sample: function(a){ return (a&&a.length)?a[Math.floor(Math.random()*a.length)]:undefined; },
+      uniq: function(a){ return Array.isArray(a)?a.filter(function(x,i){return a.indexOf(x)===i;}):[]; },
+      range: function(a,b,s){ if(b==null){b=a;a=0;} s=s||1; var r=[]; for(var i=a;(s>0?i<b:i>b);i+=s) r.push(i); return r; },
+      capitalize: function(s){ s=String(s==null?'':s); return s.charAt(0).toUpperCase()+s.slice(1).toLowerCase(); },
+      merge: function(t){ for(var i=1;i<arguments.length;i++){ var s=arguments[i]; if(s) for(var k in s) t[k]=s[k]; } return t; },
+      pick: function(o,ks){ var r={}; (ks||[]).forEach(function(k){ if(o&&k in o) r[k]=o[k]; }); return r; },
+      omit: function(o,ks){ var r={}; for(var k in o){ if((ks||[]).indexOf(k)<0) r[k]=o[k]; } return r; }
+    };
+    var console = { log: function(){}, info: function(){}, warn: function(){}, error: function(){} };
   `
   const r = vm.evalCode(boot)
   if (r.error) r.error.dispose()

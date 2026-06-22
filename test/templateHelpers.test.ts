@@ -40,6 +40,21 @@ describe('templateService TH-3 helpers', () => {
     expect(evalTemplate("<%= getchar('personality') %>", ctx())).toBe('curious')
   })
 
+  it('exposes a lodash subset (_) and a no-op console', () => {
+    const c = ctx({ vars: { a: { b: 42 } } })
+    expect(evalTemplate("<%= _.get(variables, 'a.b') %>", c)).toBe('42')
+    expect(evalTemplate("<%= _.capitalize('hELLO') %>", ctx())).toBe('Hello')
+    expect(evalTemplate('<%= _.clamp(9, 0, 5) %>', ctx())).toBe('5')
+    expect(evalTemplate('<% console.log("noop") %>ok', ctx())).toBe('ok')
+  })
+
+  it('strips tags (does not evaluate) when the engine is toggled off', () => {
+    const off = ctx({ enabled: false, vars: { n: 1 } })
+    expect(evalTemplate('a<%= 1 + 1 %>b', off)).toBe('ab')
+    evalTemplate('<% setvar("n", 99) %>', off)
+    expect(off.vars.n).toBe(1) // not mutated — engine was off
+  })
+
   it('getwi(name) returns a matched world-info entry by name', () => {
     expect(evalTemplate("<%= getwi('Town') %>", ctx())).toBe('A quiet harbor town.')
     expect(evalTemplate("<%= getwi('Nope') %>", ctx())).toBe('')

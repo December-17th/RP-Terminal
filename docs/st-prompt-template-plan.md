@@ -24,7 +24,7 @@ in `TemplateData`/`constants`.
 - `injectPrompt(key, content, position)` / `getPromptsInjected` / `hasPromptsInjected` — a per-build injection registry drained in `promptBuilder`.
 - `matchChatMessages(pattern)`, `parseJSON()` (lenient), `jsonPatch()` (reuse `mvuParser`).
 - More **constants**: `runType`, `chatId`, `characterId`, `charLoreBook`/`userLoreBook`/`chatLoreBook`, `LAST_SEND_TOKENS`/`LAST_RECEIVE_TOKENS` (from the build context).
-- A clean-room **`lodash` (`_`) subset** in the sandbox (mirrors the existing `faker` injection).
+- ✅ **`lodash` (`_`) subset + no-op `console`** in the sandbox (done — mirrors the `faker` injection).
 
 ### Phase B — Dedicated variable scopes
 Today `storeFor` maps every non-global scope to the chat vars. Give `message` + `character` real stores:
