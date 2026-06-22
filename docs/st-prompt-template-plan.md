@@ -44,13 +44,33 @@ Likely shape: a small **renderer-side quickjs render-eval** reusing the `install
 data pushed to the renderer), driven by the streaming/finalize hooks in `StreamingView`/`ChatView`, with a
 per-mode flag. (The main engine stays the prompt-build path.)
 
-### Phase D — Injection markers + decorators — **analyze the source first (decided)**
-**Step 0 — read the source** (SillyTavern's prompt assembly + ST-Prompt-Template's marker/decorator
-implementation) to pin down the EXACT contract before writing any code: positions/ordering, the
-regex-target semantics, decorator precedence, and the world-info activation effects. THEN implement in
-`promptBuilder` + the WI matcher.
-- `[GENERATE:BEFORE/AFTER]`, `[GENERATE:{idx}:BEFORE/AFTER]`, `[GENERATE:REGEX:pattern]`, `@INJECT pos/target/regex`.
-- Decorators: `@@activate`, `@@if`, `@@generate_before/after`, `@@render_before/after`, `@@iframe`, `@@private`, `@@dont_activate`, `@@dont_preload`, `@@only_preload`, `@@message_formatting`.
+### Phase D — Injection markers + decorators
+**Step 0 — source analysis (DONE; from ST-Prompt-Template `src/features/inject-prompt.ts` +
+`src/modules/handler.ts`).** The contract:
+
+- **The markers are WORLD-INFO ENTRIES, not inline card text.** An entry whose `comment` (title) IS a
+  marker — e.g. `[GENERATE:BEFORE]` — or whose `decorator` is the `@@` form — `@@generate_before` — has its
+  CONTENT (an EJS template) injected at that position. In RPT terms: a **lorebook entry** titled/decorated
+  as a marker → inject its (template-evaluated) content at the computed spot.
+- **Marker → position:** `[GENERATE:BEFORE]`/`@@generate_before` → start of the FIRST message;
+  `[GENERATE:AFTER]`/`@@generate_after` → end of the LAST; `[GENERATE:{idx}:BEFORE/AFTER]`/
+  `@@generate_before|after {idx}` → before/after message `idx`; `[RENDER:BEFORE/AFTER]`/`@@render_before|after`
+  → before/after the rendered message HTML (Phase C).
+- **`@INJECT`** (separate; also a WI-entry `comment` prefix): `role=`, `pos=` (1-based; `0`=prepend, negative
+  = from end), `target=`+`index=`+`at=before|after` (relative to the nth message of a role), `regex=` (inject
+  before/after the first matching message), `order=` (tie-break). Applied **back-to-front** (finalPos desc, then order).
+- **runType gates timing:** `generate` (build) → `[GENERATE:*]`; `preparation` (preload) → `[GENERATE:BEFORE/
+  AFTER]` only, skips `@@dont_preload`; `render` → `[RENDER:*]`; `render_permanent` → rewrites `message.mes`
+  once. Each gated by a setting (`generate_loader_enabled` / `render_loader_enabled` / `raw_message_evaluation_enabled`).
+- **Decorators:** `@@private` wraps content in an IIFE scope; `@@dont_preload`/`@@dont_activate`/`@@only_preload`
+  control activation; `@@generate_*`/`@@render_*` are the decorator form of the markers; `@@if`/`@@iframe`/`@@activate`.
+- **Order:** preload WI → `[GENERATE:BEFORE]` → per message (`[GENERATE:idx:BEFORE]` + content + `[GENERATE:idx:
+  AFTER]`) → `[GENERATE:AFTER]` → (display) `[RENDER:BEFORE]` + HTML + `[RENDER:AFTER]`.
+
+**Step 1 — implement in RPT:** carry markers on the **lorebook entry** (the `comment` already exists; add a
+`decorators` field); in `promptBuilder`, after normal assembly, drain marker entries into their positions
+(reuse `matchAcross` for activation + `evalTemplate` for the content); `[RENDER:*]` entries feed Phase C;
+`@INJECT` is the positional injector (back-to-front).
 
 ### Phase E — The `EjsTemplate` API surface
 For cards/scripts that call the extension directly (`globalThis.EjsTemplate.*` + exposing it through the WCV shim):
