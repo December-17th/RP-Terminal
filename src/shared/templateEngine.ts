@@ -325,10 +325,18 @@ const installBridge = (vm: QuickJSContext, ctx: TemplateContext): void => {
  * template can never break output. Engine toggled off (`ctx.enabled === false`)
  * or not yet initialized → also strips.
  */
-export const evalTemplate = (template: string, ctx: TemplateContext): string => {
-  if (!template || !hasTags(template)) return template
-  if (ctx.enabled === false) return stripTags(template) // engine toggled off in settings
-  if (!QJS) return stripTags(template)
+/**
+ * Render a template, returning both the output and any error message (null when clean). On any error the
+ * output is the tag-stripped template (fail-safe). No `<%`, engine off, or not-yet-initialized → no error.
+ * `evalTemplate` wraps this for the common output-only path; `getSyntaxErrorInfo` uses the error.
+ */
+export const evalTemplateDetailed = (
+  template: string,
+  ctx: TemplateContext
+): { output: string; error: string | null } => {
+  if (!template || !hasTags(template)) return { output: template, error: null }
+  if (ctx.enabled === false) return { output: stripTags(template), error: null }
+  if (!QJS) return { output: stripTags(template), error: null }
 
   const vm = QJS.newContext()
   try {
@@ -338,16 +346,21 @@ export const evalTemplate = (template: string, ctx: TemplateContext): string => 
     if (res.error) {
       const err = vm.dump(res.error)
       res.error.dispose()
-      logFn('error', 'Template error', typeof err === 'object' ? JSON.stringify(err) : String(err))
-      return stripTags(template)
+      const msg = typeof err === 'object' ? JSON.stringify(err) : String(err)
+      logFn('error', 'Template error', msg)
+      return { output: stripTags(template), error: msg }
     }
     const out = vm.getString(res.value)
     res.value.dispose()
-    return out
+    return { output: out, error: null }
   } catch (e: any) {
-    logFn('error', 'Template eval failed', e?.message || String(e))
-    return stripTags(template)
+    const msg = e?.message || String(e)
+    logFn('error', 'Template eval failed', msg)
+    return { output: stripTags(template), error: msg }
   } finally {
     vm.dispose()
   }
 }
+
+export const evalTemplate = (template: string, ctx: TemplateContext): string =>
+  evalTemplateDetailed(template, ctx).output

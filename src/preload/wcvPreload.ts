@@ -5,6 +5,15 @@
 import { ipcRenderer } from 'electron'
 import _ from 'lodash'
 import { z as zod } from 'zod'
+import variant from '@jitl/quickjs-singlefile-browser-release-sync'
+import { newQuickJSWASMModuleFromVariant } from 'quickjs-emscripten-core'
+import {
+  initEngine,
+  evalTemplate as ejsEval,
+  evalTemplateDetailed as ejsEvalDetailed,
+  setEngineDeps,
+  TemplateContext
+} from '../shared/templateEngine'
 
 /**
  * SHIM for a card's own frontend running in a WebContentsView — e.g. 命定之诗's React status UI, which
@@ -196,7 +205,10 @@ const helpers: Record<string, any> = {
     note('insertOrAssignVariables')
     const entries = Object.entries(vars || {})
     for (const [k, v] of entries) statData[k] = v // optimistic
-    if (entries.length) void rptHost.applyVariableOps(entries.map(([k, v]) => ({ op: 'add', path: '/' + k, value: v })))
+    if (entries.length)
+      void rptHost.applyVariableOps(
+        entries.map(([k, v]) => ({ op: 'add', path: '/' + k, value: v }))
+      )
   },
   updateVariablesWith: (..._a: any[]) => note('updateVariablesWith'),
   getChatMessages: (..._a: any[]) => {
@@ -252,8 +264,7 @@ const helpers: Record<string, any> = {
     const arr = Array.isArray(msgs) ? msgs : [msgs]
     const last = arr[arr.length - 1]
     const text =
-      (last && (last.message ?? last.content ?? last.mes)) ||
-      (typeof last === 'string' ? last : '')
+      (last && (last.message ?? last.content ?? last.mes)) || (typeof last === 'string' ? last : '')
     if (text) rptHost.setInput(String(text)) // inject mode: starting prompt → the input box
     return ''
   },
@@ -430,6 +441,48 @@ w.toastr = {
   clear: () => {},
   remove: () => {},
   options: {}
+}
+
+// --- EjsTemplate API (Phase E): the ST-Prompt-Template engine running in the card's WCV context, so cards
+// can call globalThis.EjsTemplate.* directly (SYNC, like the other host globals). Its own quickjs singlefile
+// instance (the card CSP allows WASM); evalTemplate strips tags as a fail-safe until the WASM has loaded. ---
+setEngineDeps({ log: (_l: any, m: any, d: any) => DEBUG && console.warn('[ejs]', m, d) })
+void initEngine(() => newQuickJSWASMModuleFromVariant(variant))
+
+const buildEjsCtx = (data?: any): TemplateContext => {
+  const sd = data?.variables ?? statData ?? {}
+  // Hoist stat_data to the root (like render-time) so variables.主角 AND variables.stat_data.主角 resolve.
+  const vars = sd && typeof sd === 'object' ? { ...sd, stat_data: sd } : {}
+  return {
+    vars,
+    globals: {},
+    constants: { ...(data?.constants || {}) },
+    data: data?.data || {},
+    enabled: true
+  }
+}
+
+w.EjsTemplate = {
+  evalTemplate: (tmpl: any, data?: any) => ejsEval(String(tmpl ?? ''), buildEjsCtx(data)),
+  prepareContext: (data?: any) => buildEjsCtx(data),
+  getSyntaxErrorInfo: (tmpl: any, data?: any) => {
+    const err = ejsEvalDetailed(String(tmpl ?? ''), buildEjsCtx(data)).error
+    return err ? { message: err } : null
+  },
+  allVariables: () => statData,
+  saveVariables: (vars: any) => {
+    statData = vars || {}
+    rptHost.setVariables(statData)
+    return true
+  },
+  compileTemplate: (tmpl: any) => (data?: any) => ejsEval(String(tmpl ?? ''), buildEjsCtx(data)),
+  // Thin stubs — RPT has no engine feature flags or a card-open preload phase.
+  setFeatures: (..._a: any[]) => undefined,
+  getFeatures: () => ({}),
+  resetFeatures: () => undefined,
+  refreshWorldInfo: (..._a: any[]) => undefined,
+  defines: {},
+  initialVariables: () => statData
 }
 
 if (DEBUG) console.info('[rpt-shim] starter shim installed (WebContentsView card panel)')

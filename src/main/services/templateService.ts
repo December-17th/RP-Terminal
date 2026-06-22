@@ -16,7 +16,7 @@ import { initEngine, setEngineDeps } from '../../shared/templateEngine'
  */
 
 // Re-export the engine surface so existing imports (promptBuilder, tests, …) are unchanged.
-export { evalTemplate, hasTags, stripTags } from '../../shared/templateEngine'
+export { evalTemplate, evalTemplateDetailed, hasTags, stripTags } from '../../shared/templateEngine'
 export type { TemplateData, TemplateContext } from '../../shared/templateEngine'
 
 export const initTemplates = async (): Promise<void> => {

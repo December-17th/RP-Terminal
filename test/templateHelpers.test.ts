@@ -1,5 +1,10 @@
 import { describe, it, expect, beforeAll } from 'vitest'
-import { initTemplates, evalTemplate, TemplateContext } from '../src/main/services/templateService'
+import {
+  initTemplates,
+  evalTemplate,
+  evalTemplateDetailed,
+  TemplateContext
+} from '../src/main/services/templateService'
 
 const ctx = (over: Partial<TemplateContext> = {}): TemplateContext => ({
   vars: {},
@@ -55,6 +60,13 @@ describe('templateService TH-3 helpers', () => {
     expect(off.vars.n).toBe(1) // not mutated — engine was off
   })
 
+  it('evalTemplateDetailed surfaces a template error (vs evalTemplate stripping)', () => {
+    const bad = evalTemplateDetailed('<%= someUndefinedFn() %>', ctx())
+    expect(bad.error).toBeTruthy() // the error is reported (for getSyntaxErrorInfo)
+    expect(bad.output).toBe('') // ...and the output is stripped (fail-safe)
+    expect(evalTemplateDetailed('<%= 1 + 1 %>', ctx())).toEqual({ output: '2', error: null })
+  })
+
   it('matchChatMessages / parseJSON / jsonPatch helpers', () => {
     expect(evalTemplate("<%= matchChatMessages('hello') %>", ctx())).toBe('true')
     expect(evalTemplate("<%= matchChatMessages('nope') %>", ctx())).toBe('false')
@@ -65,7 +77,9 @@ describe('templateService TH-3 helpers', () => {
   })
 
   it('getWorldInfoData returns the raw entry; getWorldInfoActivatedData returns all', () => {
-    expect(evalTemplate("<%= getWorldInfoData('Town').content %>", ctx())).toBe('A quiet harbor town.')
+    expect(evalTemplate("<%= getWorldInfoData('Town').content %>", ctx())).toBe(
+      'A quiet harbor town.'
+    )
     expect(evalTemplate('<%= getWorldInfoActivatedData().length %>', ctx())).toBe('1')
   })
 
