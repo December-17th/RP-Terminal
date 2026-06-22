@@ -40,12 +40,15 @@ the kind of thing worth tidying before it compounds. **Not shaky, not in trouble
 
 There are **14 docs** (CLAUDE.md, ROADMAP.md, + 12 in `docs/`). Findings:
 
-1. **`CLAUDE.md` is stale on the IPC layout.** It says `src/main/index.ts` holds "**ALL** ipcMain handlers."
-   In reality `index.ts` is a thin entry that calls `registerIpc(ipcMain)` ([ipc/index.ts](src/main/ipc/index.ts)),
-   which delegates to 10 domain modules (`profileIpc`, `chatIpc`, …). The handlers moved out of `index.ts`;
-   the doc didn't follow. _(Low)_
-2. **`ROADMAP.md` is untracked by git** (`git ls-files ROADMAP.md` → empty) yet `CLAUDE.md` (tracked) links to
-   it. A fresh clone won't have the roadmap. Either track it or stop pointing at it. _(Low)_
+1. **`CLAUDE.md` was stale on the IPC layout** — it said `src/main/index.ts` holds "**ALL** ipcMain handlers,"
+   but `index.ts` is a thin entry that calls `registerIpc(ipcMain)` ([ipc/index.ts](src/main/ipc/index.ts)),
+   which delegates to 10 domain modules (`profileIpc`, `chatIpc`, …). ✅ **Fixed 2026-06-22** — the structure
+   block now describes `index.ts` correctly and lists the previously-missing `ipc/`, `shared/`, `wcvPreload.ts`,
+   `workers/`, and renderer `plugin/`. _(was Low)_
+2. ~~`ROADMAP.md` untracked while `CLAUDE.md` links it~~ — **mis-finding, corrected 2026-06-22.** Both
+   `CLAUDE.md` and `ROADMAP.md` are *intentionally* gitignored (`.gitignore`: "AI assistant / planning files —
+   kept local, not tracked in the repo"). A clone has neither, so there's no broken cross-reference. No action.
+   _(Info)_
 3. **Status is tracked in three overlapping places:** `ROADMAP.md`, `docs/progress-log.md`, and the git
    history. `progress-log.md` is a hand-maintained "newest first" changelog that largely restates commits.
    Pick one source of truth. _(Low)_
@@ -206,8 +209,9 @@ Mostly fine; a few things to be aware of, none hot enough to act on now:
    scope `no-explicit-any` per-file (−~200). [H] — biggest ROI.
 2. **Delete `MessageScriptFrame.tsx`** (orphaned), after confirming `messageContent.test.ts` doesn't depend on
    it. [D]
-3. **Fix the two CLAUDE.md / ROADMAP doc-drift items** (the `index.ts` IPC claim; track ROADMAP.md or stop
-   linking it). [A]
+3. ✅ **Done (2026-06-22)** — fixed CLAUDE.md's `index.ts` IPC claim + the `ipc/`/`shared/`/`wcvPreload`/
+   `workers`/`plugin` structure omissions. (The "ROADMAP untracked" sub-item was a mis-finding — both planning
+   docs are gitignored by design.) [A]
 
 **Worth doing soon (medium effort):**
 4. **Extract `shared/objectPath.ts`** and collapse the 4–6 `getPath`/`setPath`/`clone` copies into it
