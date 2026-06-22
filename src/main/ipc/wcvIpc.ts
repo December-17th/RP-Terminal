@@ -27,7 +27,10 @@ export const registerWcvIpc = (ipcMain: IpcMain): void => {
   // present BEFORE the card's React app first renders (an async read would land after default render).
   ipcMain.on('wcv-host-get-vars-sync', (e) => {
     const ctx = wcvManager.contextFor(e.sender.id)
-    if (!ctx) return (e.returnValue = {})
+    if (!ctx) {
+      e.returnValue = {}
+      return
+    }
     const floors = floorService.getAllFloors(ctx.profileId, ctx.chatId)
     e.returnValue = floors[floors.length - 1]?.variables?.stat_data ?? {}
   })
