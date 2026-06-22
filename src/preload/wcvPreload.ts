@@ -249,17 +249,46 @@ const helpers: Record<string, any> = {
     note('generateRaw')
     return ''
   },
+  // Worldbook (lorebook) access — backed by the host's file-based lorebookService over IPC. The card
+  // reads its expansions/cores from its own book and toggles them; the host applies enabled-changes back.
+  getCharWorldbookNames: (..._a: any[]) => {
+    note('getCharWorldbookNames')
+    return ipcRenderer.invoke('wcv-host-get-worldbook-names')
+  },
+  getWorldbookNames: (..._a: any[]) => {
+    note('getWorldbookNames')
+    return ipcRenderer
+      .invoke('wcv-host-get-worldbook-names')
+      .then((r: any) => [r?.primary, ...(r?.additional || [])].filter(Boolean))
+  },
+  getWorldbook: (name: any) => {
+    note('getWorldbook')
+    return ipcRenderer.invoke('wcv-host-get-worldbook', name)
+  },
+  replaceWorldbook: (name: any, entries: any) => {
+    note('replaceWorldbook')
+    return ipcRenderer.invoke('wcv-host-replace-worldbook', name, entries)
+  },
+  updateWorldbookWith: async (name: any, updater: any) => {
+    note('updateWorldbookWith')
+    const entries = await ipcRenderer.invoke('wcv-host-get-worldbook', name)
+    const updated = typeof updater === 'function' ? await updater(entries) : entries
+    await ipcRenderer.invoke('wcv-host-replace-worldbook', name, updated)
+    return updated
+  },
   getCurrentCharPrimaryLorebook: () => {
     note('getCurrentCharPrimaryLorebook')
-    return null
+    return ipcRenderer.invoke('wcv-host-get-worldbook-names').then((r: any) => r?.primary ?? null)
   },
-  getCharLorebooks: () => {
+  getCharLorebooks: (..._a: any[]) => {
     note('getCharLorebooks')
-    return []
+    return ipcRenderer
+      .invoke('wcv-host-get-worldbook-names')
+      .then((r: any) => [r?.primary, ...(r?.additional || [])].filter(Boolean))
   },
-  getLorebookEntries: () => {
+  getLorebookEntries: (name: any) => {
     note('getLorebookEntries')
-    return []
+    return ipcRenderer.invoke('wcv-host-get-worldbook', name)
   },
   getLorebookSettings: () => {
     note('getLorebookSettings')

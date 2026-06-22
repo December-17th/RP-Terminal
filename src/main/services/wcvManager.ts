@@ -9,6 +9,10 @@ import { log } from './logService'
 // the WebContentsView renders it + runs its module script. Narrow: jsDelivr host + .html only, so JS
 // modules (served as application/javascript) are untouched.
 const WCV_PARTITION = 'wcv-cards'
+// Shared with the inline-message path (WcvMessageFrame sets the same policy via a <meta> tag).
+export const CARD_CSP =
+  "default-src 'self' https: 'unsafe-inline' 'unsafe-eval' data: blob:; " +
+  'img-src * data: blob:; media-src * data: blob:; connect-src * data: blob:'
 let sessionReady = false
 const ensureSession = (): void => {
   if (sessionReady) return
@@ -22,14 +26,10 @@ const ensureSession = (): void => {
       if (lk === 'content-type' || lk === 'content-security-policy') delete headers[k]
     }
     headers['content-type'] = ['text/html; charset=utf-8']
-    // Card-UI CSP: confine the card to jsDelivr + self for code/connections (the host bridge is IPC,
-    // not network, so it's unaffected). Lenient on images; the real control is connect-src — the card
-    // can't fetch/XHR/WebSocket to arbitrary origins (the exfiltration vector).
-    headers['content-security-policy'] = [
-      "default-src 'self' https://*.jsdelivr.net 'unsafe-inline' 'unsafe-eval' data: blob:; " +
-        'img-src * data: blob:; ' +
-        "connect-src 'self' https://*.jsdelivr.net"
-    ]
+    // Card-UI CSP (trusted-card): allow https code/styles/fonts/media — cards pull fonts from Google,
+    // audio from CDNs, images from anywhere. Process isolation (separate WCV process, nodeIntegration
+    // off, no host/Node reach) is the real boundary here, not the CSP.
+    headers['content-security-policy'] = [CARD_CSP]
     cb({ responseHeaders: headers })
   })
 }
@@ -55,6 +55,7 @@ interface Slot {
   view: WebContentsView
   profileId: string
   chatId: string
+  characterId: string
 }
 
 let mainWindow: BrowserWindow | null = null
@@ -79,7 +80,10 @@ export const ensure = (
   id: string,
   bounds: Bounds,
   url: string,
-  ctx: { profileId: string; chatId: string } = { profileId: '', chatId: '' }
+  ctx: { profileId: string; chatId: string; characterId?: string } = {
+    profileId: '',
+    chatId: ''
+  }
 ): void => {
   if (!mainWindow) return
   // Defensive: a fire-and-forget IPC call with a missing/garbled ctx must never crash main.
@@ -99,7 +103,7 @@ export const ensure = (
         preload: join(__dirname, '../preload/wcvPreload.js')
       }
     })
-    slot = { view, profileId: ctx.profileId, chatId: ctx.chatId }
+    slot = { view, profileId: ctx.profileId, chatId: ctx.chatId, characterId: ctx.characterId || '' }
     slots.set(id, slot)
     mainWindow.contentView.addChildView(view)
     view.webContents.loadURL(url)
@@ -109,6 +113,7 @@ export const ensure = (
   } else {
     slot.profileId = ctx.profileId
     slot.chatId = ctx.chatId
+    slot.characterId = ctx.characterId || ''
   }
   slot.view.setBounds(round(bounds))
 }
@@ -142,10 +147,10 @@ export const destroyAll = (): void => {
 /** Resolve a view's slot context from its webContents id (for the host-bridge IPC). */
 export const contextFor = (
   webContentsId: number
-): { slotId: string; profileId: string; chatId: string } | null => {
+): { slotId: string; profileId: string; chatId: string; characterId: string } | null => {
   for (const [slotId, s] of slots) {
     if (s.view.webContents.id === webContentsId) {
-      return { slotId, profileId: s.profileId, chatId: s.chatId }
+      return { slotId, profileId: s.profileId, chatId: s.chatId, characterId: s.characterId }
     }
   }
   return null

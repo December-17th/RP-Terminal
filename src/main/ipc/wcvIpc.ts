@@ -2,6 +2,7 @@ import { IpcMain } from 'electron'
 import * as wcvManager from '../services/wcvManager'
 import * as floorService from '../services/floorService'
 import * as generationService from '../services/generationService'
+import * as lorebookService from '../services/lorebookService'
 
 /**
  * WebContentsView card-UI panel IPC (spike). Position commands are fire-and-forget (`on`);
@@ -71,6 +72,53 @@ export const registerWcvIpc = (ipcMain: IpcMain): void => {
     wcvManager.pushHostVars(ctx.chatId, latest.variables)
     wcvManager.notifyVarsChanged(ctx.chatId, statData)
     return statData
+  })
+
+  // --- Worldbook (lorebook) bridge ---
+  // A card's own lorebook is stored under id == characterId. The card's home reads its expansions/cores
+  // from here (getCharWorldbookNames → getWorldbook) and toggles them (updateWorldbookWith → replace).
+  // The worldbook `name` arg is the card's own book, so we resolve to ctx.characterId regardless.
+  ipcMain.handle('wcv-host-get-worldbook-names', (e) => {
+    const ctx = wcvManager.contextFor(e.sender.id)
+    if (!ctx?.characterId) return { primary: null, additional: [] }
+    const lb = lorebookService.getLorebookById(ctx.profileId, ctx.characterId)
+    return { primary: lb ? lb.name || ctx.characterId : null, additional: [] }
+  })
+
+  // Entries of the card's worldbook, mapped to the TavernHelper entry shape (the card reads .name +
+  // .enabled). `uid` is the array index, used to match writes back without losing our other fields.
+  ipcMain.handle('wcv-host-get-worldbook', (e) => {
+    const ctx = wcvManager.contextFor(e.sender.id)
+    if (!ctx?.characterId) return []
+    const lb = lorebookService.getLorebookById(ctx.profileId, ctx.characterId)
+    if (!lb) return []
+    return lb.entries.map((en, i) => ({
+      uid: i,
+      name: en.comment || `Entry ${i + 1}`,
+      comment: en.comment || '',
+      enabled: en.enabled,
+      content: en.content,
+      keys: en.keys
+    }))
+  })
+
+  // Persist a worldbook the card modified — apply enabled toggles back onto our entries (matched by
+  // uid, falling back to name/comment) so every other field is preserved.
+  ipcMain.handle('wcv-host-replace-worldbook', (e, _name, entries) => {
+    const ctx = wcvManager.contextFor(e.sender.id)
+    if (!ctx?.characterId) return false
+    const lb = lorebookService.getLorebookById(ctx.profileId, ctx.characterId)
+    if (!lb) return false
+    for (const te of Array.isArray(entries) ? entries : []) {
+      const i = typeof te?.uid === 'number' ? te.uid : -1
+      const target =
+        i >= 0 && i < lb.entries.length
+          ? lb.entries[i]
+          : lb.entries.find((en) => (en.comment || '') === (te?.name ?? te?.comment ?? ''))
+      if (target) target.enabled = te?.enabled !== false
+    }
+    lorebookService.saveLorebookById(ctx.profileId, ctx.characterId, lb)
+    return true
   })
 
   // Map the chat's floors → TavernHelper-style message objects (sync; getChatMessages from the card).
