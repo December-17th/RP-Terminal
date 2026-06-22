@@ -178,10 +178,12 @@ const helpers: Record<string, any> = {
     note('getCurrentMessageId')
     return 0
   },
-  // home's launcher checks the TavernHelper version is present.
+  // home's launcher GATES onboarding on a minimum TavernHelper version (命定之诗 wants >= 4.3.17 —
+  // it warns "版本过低"/too-low below that). Report the card's required minimum so the gate passes;
+  // bump if a future card demands higher (cards use their build-target API surface regardless).
   getTavernHelperVersion: () => {
     note('getTavernHelperVersion')
-    return '3.0.0'
+    return '4.3.17'
   },
   // custom_start's "embark" flow awaits this before proceeding — report "already initialized".
   waitGlobalInitialized: (..._a: any[]) => {
