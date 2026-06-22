@@ -81,7 +81,13 @@ export const getDefaultSettings = (): Settings => ({
     max_recursion: 0
   },
   templates: {
-    enabled: true
+    enabled: true,
+    render: {
+      enabled: true,
+      live: true,
+      rate_tokens: 500,
+      final_pass: true
+    }
   },
   // FSM modes (Phase H). Explore = wide retrieval + descriptive; Dialogue = tighter;
   // Combat = terse (mechanics are resolved by the engine, not narrated numbers).
@@ -122,7 +128,13 @@ export const normalize = (stored: Partial<Settings>): Settings => {
   const persona = { ...d.persona, ...(stored.persona || {}) }
   const generation = { ...d.generation, ...(stored.generation || {}) }
   const lorebook = { ...d.lorebook, ...(stored.lorebook || {}) }
-  const templates = { ...d.templates, ...(stored.templates || {}) }
+  const storedTemplates = (stored.templates || {}) as Partial<Settings['templates']>
+  const templates = {
+    ...d.templates,
+    ...storedTemplates,
+    // Merge render separately so adding a render field never wipes the sub-object.
+    render: { ...d.templates.render, ...(storedTemplates.render || {}) }
+  }
   const ui = { ...d.ui, ...(stored.ui || {}) }
   // Preserve the renderer's saved per-mode layouts verbatim (normalize otherwise drops
   // unknown keys, since it returns an explicit allowlist of fields below).

@@ -12,6 +12,7 @@ import { Composer } from './Composer'
 import { ContextMenu } from './ContextMenu'
 import { expandMacros } from '../../../shared/macros'
 import { cleanForDisplay } from '../../../shared/responseView'
+import { renderTemplate } from '../plugin/renderTemplate'
 
 /**
  * The center column: the paginated floor stage, the mode/regenerate toolbar, the
@@ -60,16 +61,17 @@ export function ChatView({ profileId }: { profileId: string }): React.ReactEleme
   const personaName = settings?.persona?.name || 'User'
   const charName = activeCharacter?.card.data.name || 'Character'
 
-  // Render-time transform of each stored response: macros (TH-5, with this floor's vars)
-  // → display regex (beautification). The model's raw output stays stored; this is
-  // display-only. (EJS template eval on output isn't run here — the engine is main-side.)
+  // Render-time transform of each stored response: EJS template eval (Phase C final pass, with this
+  // floor's vars) → macros (TH-5) → display regex (beautification). The model's raw output stays
+  // stored; this is display-only.
   const renderedFloors = useMemo(
     () =>
       floors.map((f) => {
         // Stored content is the FULL raw response; strip reasoning + our state tags for display.
         // The card's own regex folds its <UpdateVariable> blocks, so disabling it shows the
         // original — and nothing is ever truncated in storage.
-        const withMacros = expandMacros(cleanForDisplay(f.response.content), {
+        const evaled = renderTemplate(cleanForDisplay(f.response.content), f.variables, 'final')
+        const withMacros = expandMacros(evaled, {
           user: personaName,
           char: charName,
           vars: f.variables
@@ -83,7 +85,7 @@ export function ChatView({ profileId }: { profileId: string }): React.ReactEleme
           swipeCount: f.swipes?.length ?? 1
         }
       }),
-    [floors, regexRules, personaName, charName]
+    [floors, regexRules, personaName, charName, settings?.templates]
   )
 
   // Paginated floor view: jump to the newest floor when the floor set changes

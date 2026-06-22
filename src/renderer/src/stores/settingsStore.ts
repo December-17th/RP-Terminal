@@ -34,6 +34,12 @@ export interface Settings {
   };
   templates: {
     enabled: boolean;
+    render: {
+      enabled: boolean;
+      live: boolean;
+      rate_tokens: number;
+      final_pass: boolean;
+    };
   };
   agent: {
     mode: 'off' | 'manual' | 'agentic';

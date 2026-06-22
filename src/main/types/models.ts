@@ -69,6 +69,16 @@ export interface Settings {
   /** ST-Prompt-Template EJS engine (`<% %>` template processing) on/off. */
   templates: {
     enabled: boolean
+    /** Render-time eval (Phase C): apply the engine to AI output as it displays. */
+    render: {
+      enabled: boolean
+      /** Re-eval live during streaming (rate-limited), not just on complete. */
+      live: boolean
+      /** Live-eval cadence: re-eval after roughly this many new tokens (not per token). */
+      rate_tokens: number
+      /** Run one eval pass when streaming completes. */
+      final_pass: boolean
+    }
   }
   /** Per-mode generation tuning for the manual FSM (Explore/Dialogue/Combat). */
   modes: Record<string, ModeConfig>
