@@ -179,6 +179,13 @@ const installBridge = (vm: QuickJSContext, ctx: TemplateContext): void => {
     const hit = wi.find((e) => (e.name || '').toLowerCase() === String(name).toLowerCase())
     return hit ? hit.content : ''
   })
+  reg('getWorldInfoData', (name: any) => {
+    const wi = data.worldInfo || []
+    if (name == null || name === '') return wi
+    return wi.find((e) => (e.name || '').toLowerCase() === String(name).toLowerCase()) || null
+  })
+  // Our worldInfo IS the keyword-matched/activated set for this build.
+  reg('getWorldInfoActivatedData', () => data.worldInfo || [])
   reg('getMessageHistory', () => data.messages || [])
   reg('getCurrentChatName', () => data.chatName || '')
   reg('getPreset', () => data.presetName || '')

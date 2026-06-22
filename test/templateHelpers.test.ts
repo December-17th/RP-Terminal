@@ -64,6 +64,11 @@ describe('templateService TH-3 helpers', () => {
     ).toBe('5')
   })
 
+  it('getWorldInfoData returns the raw entry; getWorldInfoActivatedData returns all', () => {
+    expect(evalTemplate("<%= getWorldInfoData('Town').content %>", ctx())).toBe('A quiet harbor town.')
+    expect(evalTemplate('<%= getWorldInfoActivatedData().length %>', ctx())).toBe('1')
+  })
+
   it('getwi(name) returns a matched world-info entry by name', () => {
     expect(evalTemplate("<%= getwi('Town') %>", ctx())).toBe('A quiet harbor town.')
     expect(evalTemplate("<%= getwi('Nope') %>", ctx())).toBe('')
