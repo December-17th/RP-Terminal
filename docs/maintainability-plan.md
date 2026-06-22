@@ -36,9 +36,15 @@ decision about the dual card-host stacks.
 Do **0 → 1 → 2** in order (each is cheap and unblocks confidence in the next). **3** is the one judgment call
 and can run in parallel once decided. **4** is partly a one-off sweep, partly an ongoing convention.
 
+**Progress (2026-06-22):** Phases **0–2 are ✅ done and committed** (`6dfbdb2`, `51c40fc`, `687d941`) — tests 304 → 322, lint 761 → 0 errors. **Phases 3–4 remain.**
+
 ---
 
 ## Phase 0 — Restore the lint gate **[H]**
+
+> **Status: ✅ Done (2026-06-22)** — commit `6dfbdb2`. Lint 761 → 0 errors (37 advisory
+> warnings); `npm run lint` now exits 0. Went with global-off for `no-explicit-any`, plus a
+> `test/**` override and demoting the advisory react-hooks/react-refresh rules to warnings.
 
 **Problem:** ESLint reports **761 problems (289 errors / 472 warnings)**, but it's almost all noise — so lint
 is effectively off and can't catch real regressions. Decomposed by the report: `449` prettier CRLF-vs-LF
@@ -80,6 +86,10 @@ muddies a real diff.
 
 ## Phase 1 — Delete dead code + cheap consistency **[C, D]**
 
+> **Status: ✅ Done (2026-06-22)** — commit `51c40fc`. Deleted `MessageScriptFrame.tsx`; routed
+> the 6 service-level `console.*` calls to `logService` (parsers left console-only). 1c
+> (semicolons) was already resolved by Phase 0's format pass.
+
 **1a. Delete `MessageScriptFrame.tsx` [D].** It's the retired in-message iframe card path, superseded by
 `WcvMessageFrame` (what `MessageContent.tsx` actually renders). **Verified orphan:** zero importers in `src/`,
 no `<MessageScriptFrame` usage, and no test references it by name (the only non-def mention is a _comment_ in
@@ -108,6 +118,11 @@ intentionally retained).
 ---
 
 ## Phase 2 — De-duplicate object-path / clone utilities **[E]**
+
+> **Status: ✅ Done (2026-06-22)** — commit `687d941`. Extracted `src/shared/objectPath.ts`
+> (+18 pinning tests); migrated the 3 bracket-aware path copies, 4 `clone` copies, and the sole
+> `deepMerge`. The plain-`split('.')` helpers (`macros`/`wcvPreload`/`stscript`) were left as-is
+> by design — folding them in would change path semantics.
 
 **Problem:** the same small helpers are reimplemented **4–6×**, with subtle differences that make a naive
 merge wrong:
