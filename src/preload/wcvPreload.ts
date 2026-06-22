@@ -130,6 +130,8 @@ const context = {
   chat: [] as any[],
   eventSource: { on, emit, makeFirst: on, once: on, removeListener: () => {} },
   eventTypes: {},
+  // home/custom_start probe the environment: report EjsTemplate (ST-Prompt-Template) as enabled.
+  extensionSettings: { EjsTemplate: { enabled: true } },
   getContext: () => context
 }
 w.SillyTavern = {
@@ -174,6 +176,20 @@ const helpers: Record<string, any> = {
   getCurrentMessageId: () => {
     note('getCurrentMessageId')
     return 0
+  },
+  // home's launcher checks the TavernHelper version is present.
+  getTavernHelperVersion: () => {
+    note('getTavernHelperVersion')
+    return '3.0.0'
+  },
+  // custom_start starts the game after creation. Stubbed for now — wire to our session system later.
+  createChat: (..._a: any[]) => {
+    note('createChat')
+    return ''
+  },
+  triggerSlash: (..._a: any[]) => {
+    note('triggerSlash')
+    return ''
   },
   eventOn: (n: string, cb: any) => {
     note('eventOn')
@@ -243,6 +259,9 @@ const getJq = (): any => {
 }
 Object.defineProperty(w, '$', { configurable: true, get: getJq })
 Object.defineProperty(w, 'jQuery', { configurable: true, get: getJq })
+// Vue: home/custom_start are Vue apps expecting `window.Vue`. Lazy-required (defensive, like jQuery).
+let vueCache: any = null
+Object.defineProperty(w, 'Vue', { configurable: true, get: () => (vueCache ||= require('vue')) })
 const toast = (level: string) => (msg?: any) => {
   note('toastr.' + level)
   if (DEBUG) console.info('[card toastr.' + level + ']', msg)

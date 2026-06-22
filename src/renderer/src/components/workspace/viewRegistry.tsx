@@ -9,7 +9,7 @@ import { StatusView } from '../StatusView'
 import { CardScriptHost } from '../CardScriptHost'
 import { LogsPanel } from '../LogsPanel'
 import { PanelRouter } from '../PanelRouter'
-import { WcvTestView, WcvCardView } from './WcvPanel'
+import { WcvTestView, WcvCardView, WcvHomeView, WcvCustomStartView } from './WcvPanel'
 import { useWorkspaceContext } from './context'
 
 /**
@@ -73,7 +73,9 @@ export const ViewRegistry: Record<string, ViewEntry> = {
   logs: { title: 'Logs', Component: LogsPanel, fill: true },
   // Spike: out-of-process WebContentsView card-UI panels.
   wcv: { title: 'Card UI (WCV test)', Component: WcvTestView, fill: true },
-  'wcv-card': { title: '命定之诗 Status (WCV)', Component: WcvCardView, fill: true }
+  'wcv-card': { title: '命定之诗 Status (WCV)', Component: WcvCardView, fill: true },
+  'wcv-home': { title: '命定之诗 Home (WCV)', Component: WcvHomeView, fill: true },
+  'wcv-start': { title: '命定之诗 Creation (WCV)', Component: WcvCustomStartView, fill: true }
 }
 
 /** Stable list of pickable views for a panel header's dropdown. */

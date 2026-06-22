@@ -402,6 +402,12 @@ Instead load the **data_schema** to fill the schema gap (so schema-dependent UIs
 and report MVU "status: ok" to home's env check. Optionally port MVU's schema-defaults / `initvar` logic
 natively (MIT, reusable) for robustness.
 
+## Known issues
+- **Status UI: only the inner layer renders.** The card's MVU status UI has TWO layers — an outer layer
+  (with **edit** + **settings** buttons) wrapping an inner display layer. In the WCV only the INNER layer
+  shows; the outer layer (and its buttons) is missing. Likely a separate wrapper/regex/frontend we don't
+  load yet, or the outer chrome is clipped by the WCV bounds. Low priority — investigate when polishing.
+
 ## Options
 - **A — Status only (current).** The in-session status panel is the primary UI; skip `home` (launcher)
   and `custom_start` (one-time). Char creation handled natively / manually. Lowest effort.
