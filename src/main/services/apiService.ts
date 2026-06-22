@@ -5,6 +5,9 @@ import { log } from './logService'
 
 export type DeltaCallback = (delta: string) => void
 
+/** Receives the provider's RAW usage object (shape differs per provider) once known. */
+export type UsageCallback = (raw: unknown) => void
+
 /**
  * Stream a completion from the configured provider. Each text chunk is handed to
  * `onDelta` as it arrives; the full concatenated text is returned when done.
@@ -15,15 +18,16 @@ export const streamProvider = async (
   messages: ChatMessage[],
   params: PresetParameters,
   onDelta: DeltaCallback,
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  onUsage?: UsageCallback
 ): Promise<string> => {
   if (settings.api.provider === 'anthropic') {
-    return streamAnthropic(settings, messages, params, onDelta, signal)
+    return streamAnthropic(settings, messages, params, onDelta, signal, onUsage)
   }
   if (settings.api.provider === 'google' || settings.api.provider === 'gemini') {
-    return streamGemini(settings, messages, params, onDelta, signal)
+    return streamGemini(settings, messages, params, onDelta, signal, onUsage)
   }
-  return streamOpenAICompatible(settings, messages, params, onDelta, signal)
+  return streamOpenAICompatible(settings, messages, params, onDelta, signal, onUsage)
 }
 
 /**
@@ -107,7 +111,8 @@ const streamOpenAICompatible = async (
   messages: ChatMessage[],
   params: PresetParameters,
   onDelta: DeltaCallback,
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  onUsage?: UsageCallback
 ): Promise<string> => {
   const { endpoint, api_key, model } = settings.api
   const base = endpoint || 'https://api.openai.com/v1'
@@ -137,7 +142,13 @@ const streamOpenAICompatible = async (
       'Content-Type': 'application/json',
       Authorization: `Bearer ${api_key}`
     },
-    body: JSON.stringify({ model, messages: outMessages, ...cleanParams(params), stream: true }),
+    body: JSON.stringify({
+      model,
+      messages: outMessages,
+      ...cleanParams(params),
+      stream: true,
+      stream_options: { include_usage: true }
+    }),
     signal
   })
 
@@ -164,12 +175,14 @@ const streamOpenAICompatible = async (
   }
 
   let full = ''
+  let usage: any = null
   const rawFrames: string[] = []
   try {
     await readSse(response, (data) => {
       rawFrames.push(data)
       try {
         const json = JSON.parse(data)
+        if (json.usage) usage = json.usage
         const delta = json.choices?.[0]?.delta?.content
         if (typeof delta === 'string' && delta) {
           full += delta
@@ -188,6 +201,7 @@ const streamOpenAICompatible = async (
       `Stream produced no text. Raw frames:\n${rawFrames.slice(0, 8).join('\n').slice(0, 800) || '(none)'}`
     )
   }
+  if (usage) onUsage?.(usage)
   return full
 }
 
@@ -196,7 +210,8 @@ const streamAnthropic = async (
   messages: ChatMessage[],
   params: PresetParameters,
   onDelta: DeltaCallback,
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  onUsage?: UsageCallback
 ): Promise<string> => {
   const { endpoint, api_key, model } = settings.api
   const base = endpoint || 'https://api.anthropic.com/v1'
@@ -300,6 +315,7 @@ const streamAnthropic = async (
       `cache — read ${usage.cache_read_input_tokens ?? 0} · write ${usage.cache_creation_input_tokens ?? 0} · fresh ${usage.input_tokens ?? 0} tok`
     )
   }
+  if (usage) onUsage?.(usage)
   return full
 }
 
@@ -362,7 +378,8 @@ const streamGemini = async (
   messages: ChatMessage[],
   params: PresetParameters,
   onDelta: DeltaCallback,
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  onUsage?: UsageCallback
 ): Promise<string> => {
   const { endpoint, api_key, model } = settings.api
   const base = (endpoint || 'https://generativelanguage.googleapis.com/v1beta').replace(/\/$/, '')
@@ -414,6 +431,7 @@ const streamGemini = async (
       `gemini — prompt ${usage.promptTokenCount ?? 0} · output ${usage.candidatesTokenCount ?? 0} · cached ${usage.cachedContentTokenCount ?? 0} tok`
     )
   }
+  if (usage) onUsage?.(usage)
   if (!full && !signal?.aborted) {
     throw new Error('Gemini stream produced no text')
   }
