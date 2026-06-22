@@ -2,6 +2,7 @@ import fs from 'fs'
 import path from 'path'
 import { getAppDir, ensureDir } from './storageService'
 import { getDb } from './db'
+import { log } from './logService'
 import { RPTerminalCard, RPTerminalCardSchema, Lorebook, getRpExt } from '../types/character'
 import {
   saveCharacterLorebook,
@@ -27,7 +28,7 @@ export const getCharacters = (profileId: string): Array<{ id: string; card: RPTe
   for (const row of rows) {
     const parsed = RPTerminalCardSchema.safeParse(safeJson(row.card))
     if (parsed.success) out.push({ id: row.id, card: parsed.data })
-    else console.warn(`Skipping invalid card ${row.id}:`, parsed.error.issues?.[0]?.message)
+    else log('info', `Skipping invalid card ${row.id}:`, parsed.error.issues?.[0]?.message)
   }
   return out
 }
@@ -259,7 +260,7 @@ export const importCharacterFromFile = (
     summary.lorebooks = lorebooks
     return { id: newId, summary }
   } catch (error) {
-    console.error('Failed to import character:', error)
+    log('error', 'Failed to import character:', error)
     return null
   }
 }

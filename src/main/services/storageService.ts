@@ -1,6 +1,7 @@
 import fs from 'fs'
 import path from 'path'
 import { app } from 'electron'
+import { log } from './logService'
 
 // Get the base data directory for the app
 export const getAppDir = (): string => {
@@ -30,7 +31,7 @@ export const readJsonSync = <T = any>(filePath: string): T | null => {
     const raw = fs.readFileSync(filePath, 'utf-8')
     return JSON.parse(raw) as T
   } catch (error) {
-    console.error(`Failed to read JSON file at ${filePath}`, error)
+    log('error', `Failed to read JSON file at ${filePath}`, error)
     return null
   }
 }

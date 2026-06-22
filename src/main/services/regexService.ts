@@ -8,6 +8,7 @@ import {
   writeJsonSyncAtomic,
   listFilesSync
 } from './storageService'
+import { log } from './logService'
 import { applyRegexRules, RegexApplyContext } from '../../shared/regexTransform'
 import { ArtifactScope, ScopeContext, ScopeMeta, isScopeActive } from '../../shared/artifactScope'
 import {
@@ -183,7 +184,7 @@ export const importRegexFromFile = (profileId: string, filePath: string): string
     const data = JSON.parse(fs.readFileSync(filePath, 'utf-8'))
     return saveRegexScript(profileId, data)
   } catch (error) {
-    console.error('Failed to import regex:', error)
+    log('error', 'Failed to import regex:', error)
     return null
   }
 }

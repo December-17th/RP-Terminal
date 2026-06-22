@@ -8,6 +8,7 @@ import {
   writeJsonSyncAtomic,
   listFilesSync
 } from './storageService'
+import { log } from './logService'
 import { Preset, PresetSchema, getDefaultPreset } from '../types/preset'
 import { parseStPreset } from '../parsers/stPresetParser'
 
@@ -140,7 +141,7 @@ export const installBundledPreset = (profileId: string, raw: any): string | null
     createPresetFromData(profileId, preset.name, preset, false)
     return preset.name
   } catch (error) {
-    console.error('Failed to install bundled preset:', error)
+    log('error', 'Failed to install bundled preset:', error)
     return null
   }
 }
@@ -155,7 +156,7 @@ export const importPresetFromFile = (profileId: string, filePath: string): strin
     createPresetFromData(profileId, preset.name, preset, true)
     return preset.name
   } catch (error) {
-    console.error('Failed to import preset:', error)
+    log('error', 'Failed to import preset:', error)
     return null
   }
 }
