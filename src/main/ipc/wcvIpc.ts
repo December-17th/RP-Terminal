@@ -23,6 +23,15 @@ export const registerWcvIpc = (ipcMain: IpcMain): void => {
     return floors[floors.length - 1]?.variables?.stat_data ?? {}
   })
 
+  // Synchronous variant: the shim hydrates its mirror with this at preload load, so stat_data is
+  // present BEFORE the card's React app first renders (an async read would land after default render).
+  ipcMain.on('wcv-host-get-vars-sync', (e) => {
+    const ctx = wcvManager.contextFor(e.sender.id)
+    if (!ctx) return (e.returnValue = {})
+    const floors = floorService.getAllFloors(ctx.profileId, ctx.chatId)
+    e.returnValue = floors[floors.length - 1]?.variables?.stat_data ?? {}
+  })
+
   // Write JSONPatch ops to the latest floor's stat_data via the same bridge the model uses,
   // then push the result to the host renderer (native panels) and any sibling WCVs.
   ipcMain.handle('wcv-host-apply-vars', (e, ops) => {

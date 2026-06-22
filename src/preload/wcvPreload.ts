@@ -64,7 +64,13 @@ const hydrate = (v: any) => {
   emit('mag_variable_initialized', statData)
   emit('mag_variable_updated', statData)
 }
-rptHost.getVariables().then(hydrate)
+// Sync initial read so the mirror is populated BEFORE the card's first render (an async IPC read
+// would land after the React app has already rendered defaults). sendSync blocks briefly — fine once.
+try {
+  statData = ipcRenderer.sendSync('wcv-host-get-vars-sync') || {}
+} catch {
+  statData = {}
+}
 rptHost.onVarsChanged(hydrate)
 
 const getByPath = (root: any, path: string) =>
@@ -111,14 +117,19 @@ w.SillyTavern = {
   getContext: () => {
     note('SillyTavern.getContext')
     return context
+  },
+  substituteParams: (t: string) => {
+    note('SillyTavern.substituteParams')
+    return t
   }
 }
 
 // --- bare TavernHelper globals (wired where we can; logged stubs otherwise) ---
 const helpers: Record<string, any> = {
-  getVariables: async (_o?: any) => {
+  getVariables: (_o?: any) => {
     note('getVariables')
-    return statData
+    // TavernHelper returns the scope's variable object, which for MVU wraps stat_data.
+    return { stat_data: statData }
   },
   replaceVariables: (..._a: any[]) => note('replaceVariables'),
   insertOrAssignVariables: (vars: any, _o?: any) => {
