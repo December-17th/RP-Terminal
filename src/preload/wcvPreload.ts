@@ -2,6 +2,10 @@
    spike shim: it bridges the untyped ST / TavernHelper / MVU host globals into the card page, a flat bag
    of small dynamic stubs whose placeholder params (_d/_o/_a) mirror the real host-API signatures; jQuery
    is lazily require()'d on first use (importing it at preload load crashes — see below). */
+
+// CANONICAL card-facing TavernHelper / MVU / EjsTemplate surface (ROADMAP Track C0). New
+// card-facing TH/MVU helpers land HERE (+ src/shared/templateEngine.ts) — NOT in the iframe
+// shim plugin/shims/tavern.ts, which is frozen for card use (it backs plugins + app UI only).
 import { ipcRenderer } from 'electron'
 import _ from 'lodash'
 import { z as zod } from 'zod'

@@ -1,3 +1,13 @@
+/**
+ * FROZEN for card use (2026-06-22, maintainability Phase 3). This iframe TavernHelper
+ * shim now backs only the PLUGIN runtime (`PluginHost`) and trusted APP-owned UI — it is
+ * NOT a path for card UI/scripts. Do NOT add new TavernHelper/MVU surface here: the
+ * canonical card-facing TH/MVU/EJS surface is `src/preload/wcvPreload.ts` (+ the shared
+ * `src/shared/templateEngine.ts`). Card UI/scripts move out-of-process to WCV under ROADMAP
+ * Track C0. The rest of the iframe stack (bridgeShim/dispatch/events/slash/shims/*) stays —
+ * the plugin runtime is built on it; only card-facing TH growth is frozen here.
+ */
+
 /** Clean-room Tavern-Helper compatibility shim — maps the common TH surface onto
  * `rpt`. JS-as-a-string for the sandbox. NO js-slash-runner code (see bridgeShim.ts). */
 

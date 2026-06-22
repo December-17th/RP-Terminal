@@ -36,7 +36,7 @@ decision about the dual card-host stacks.
 Do **0 → 1 → 2** in order (each is cheap and unblocks confidence in the next). **3** is the one judgment call
 and can run in parallel once decided. **4** is partly a one-off sweep, partly an ongoing convention.
 
-**Progress (2026-06-22):** Phases **0–2 are ✅ done and committed** (`6dfbdb2`, `51c40fc`, `687d941`) — tests 304 → 322, lint 761 → 0 errors. **Phases 3–4 remain.**
+**Progress (2026-06-22):** Phases **0–3 done** — 0–2 committed (`6dfbdb2`, `51c40fc`, `687d941`); **3 done via Option A** (freeze + document; the full WCV migration is ROADMAP Track C0 feature work, not hygiene). Tests 304 → 322, lint 761 → 0 errors. **Phase 4 remains.**
 
 ---
 
@@ -162,6 +162,14 @@ why rather than forcing it.
 
 ## Phase 3 — Settle the dual card-host stack **[D, E, F]** _(the one real decision)_
 
+> **Status: ✅ Done via Option A (2026-06-22).** Froze the iframe TavernHelper shim for card use
+> (`plugin/shims/tavern.ts` header) and documented the iframe-vs-WCV boundary (`wcvPreload.ts`
+> header + CLAUDE.md invariants). **Correction:** the original Option C below was inaccurate — the
+> iframe stack is the **plugin runtime's** shared foundation (`PluginHost` uses
+> `bridgeShim`/`dispatch`/`events`/`slash`), so it can't be deleted; only `CardScriptHost` +
+> `mvuEvents` are card-exclusive. The real migration is **ROADMAP Track C0** (feature work),
+> tracked there, not here.
+
 **Problem — the single biggest structural item.** There are **two implementations of the TavernHelper / MVU /
 SillyTavern surface**: the iframe stack (`plugin/shims/tavern.ts` + `lib`/`bridge`/`stRuntime`/`jquery`, driven
 by `CardScriptHost`) and the WCV stack (`preload/wcvPreload.ts`). Per the ROADMAP decision, WCV owns **all
@@ -181,10 +189,13 @@ every TH-API change currently has to be made **twice**.
   Reduces real duplication, but the two run in different runtimes (renderer-iframe vs preload), so the
   shareable surface is smaller than it looks. _Cost: a spike to map what's genuinely shareable, then a
   medium refactor. Do only if Option A's "make it twice" friction proves real and recurring._
-- **Option C — Finish the migration.** Move the trusted app-UI panels off `CardScriptHost`/iframe onto WCV
-  too, then delete the entire iframe stack (`CardScriptHost`, `plugin/dispatch|bridgeShim|sourceRewrite|slash|
-stscript|audioService`, `plugin/shims/*`) and its 8+ test files. _Cost: multi-session; this is a roadmap
-  item, not hygiene._ Biggest long-term payoff, but it's a project, not a cleanup.
+- **Option C — Finish the migration (= ROADMAP Track C0, feature work).** ⚠️ The original framing here
+  was wrong: the iframe stack can **not** be deleted, because `bridgeShim`/`dispatch`/`events`/`slash`/
+  `shims/*` are the shared foundation of the **plugin runtime** (`PluginHost`), a separate shipped
+  subsystem. Only `CardScriptHost.tsx` (+ `mvuEvents`) is card-exclusive. The real work is generalizing
+  WCV beyond its current spike (hardcoded jsDelivr URLs) into a card-driven UI host and expanding the
+  `wcvPreload` bridge to the full surface (lorebook CRUD, chat write, regex, generate-request). _Cost:
+  multi-session feature work — tracked as **Track C0** in ROADMAP, not a maintainability cleanup._
 
 **Recommendation:** take **Option A now** (cheap, immediately ends accidental double-implementation), and put
 **Option C** on the roadmap as the eventual end-state. Revisit **Option B** only if a few real TH-API changes
