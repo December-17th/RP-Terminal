@@ -57,6 +57,12 @@ export default function App(): React.ReactElement {
         useComposerStore.getState().injectInput(text)
       }
     })
+    // A card panel (e.g. home "start game") changed message content via saveChat → reload the floors.
+    const unsubReload = window.api.onWcvHostReload(({ chatId }) => {
+      const st = useChatStore.getState()
+      const pid = useProfileStore.getState().activeProfile?.id
+      if (pid && chatId === st.activeChatId) st.setActiveChat(pid, chatId)
+    })
     // Broadcast the latest stat_data to any WebContentsView card panel whenever floors change
     // (a model turn / re-evaluate / edit), so the card's own UI reflects model-driven updates live.
     const unsubFloors = useChatStore.subscribe((state, prev) => {
@@ -71,6 +77,7 @@ export default function App(): React.ReactElement {
       unsubLog()
       unsubWcv()
       unsubInput()
+      unsubReload()
       unsubFloors()
     }
   }, [])

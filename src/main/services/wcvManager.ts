@@ -166,6 +166,11 @@ export const pushHostInput = (chatId: string, text: string): void => {
   mainWindow?.webContents.send('wcv-host-input', { chatId, text })
 }
 
+/** Ask the host renderer to reload a chat's floors (a card UI changed message content via saveChat). */
+export const pushHostReload = (chatId: string): void => {
+  mainWindow?.webContents.send('wcv-host-reload', { chatId })
+}
+
 /** Notify sibling WCVs on the same chat that the variables changed. */
 export const notifyVarsChanged = (chatId: string, statData: unknown): void => {
   for (const s of slots.values()) {

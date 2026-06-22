@@ -217,6 +217,12 @@ const api = {
       cb(payload)
     ipcRenderer.on('wcv-host-input', listener)
     return () => ipcRenderer.removeListener('wcv-host-input', listener)
+  },
+  // A card panel changed message content via saveChat → reload the active chat's floors.
+  onWcvHostReload: (cb: (payload: { chatId: string }) => void) => {
+    const listener = (_e: IpcRendererEvent, payload: { chatId: string }): void => cb(payload)
+    ipcRenderer.on('wcv-host-reload', listener)
+    return () => ipcRenderer.removeListener('wcv-host-reload', listener)
   }
 }
 

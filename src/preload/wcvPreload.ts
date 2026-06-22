@@ -127,8 +127,12 @@ w.Mvu = {
 }
 
 // --- SillyTavern.getContext() (minimal; the card may probe more fields → logged) ---
+// The ST chat array (each message carries its swipes) — built SYNC at load from the host's floors and
+// kept mutable, so the home's "start game" can select a greeting swipe (chat[0].swipe_id/.mes) before
+// saveChat() persists it. The env guard cards use is `!SillyTavern.chat || chat.length === 0`.
+const stChat: any[] = ipcRenderer.sendSync('wcv-host-get-chat-sync') || []
 const context = {
-  chat: [] as any[],
+  chat: stChat,
   eventSource: { on, emit, makeFirst: on, once: on, removeListener: () => {} },
   eventTypes: {},
   // home/custom_start probe the environment: report EjsTemplate (ST-Prompt-Template) as enabled.
@@ -136,6 +140,7 @@ const context = {
   getContext: () => context
 }
 w.SillyTavern = {
+  chat: stChat,
   getContext: () => {
     note('SillyTavern.getContext')
     return context
@@ -143,6 +148,15 @@ w.SillyTavern = {
   substituteParams: (t: string) => {
     note('SillyTavern.substituteParams')
     return t
+  },
+  // The home's "start game" mutates chat[0] (swipe_id/mes) then persists + reloads the chat.
+  saveChat: async () => {
+    note('SillyTavern.saveChat')
+    return ipcRenderer.invoke('wcv-host-save-chat', w.SillyTavern.chat)
+  },
+  reloadCurrentChat: async () => {
+    note('SillyTavern.reloadCurrentChat')
+    return ipcRenderer.invoke('wcv-host-reload-chat')
   }
 }
 

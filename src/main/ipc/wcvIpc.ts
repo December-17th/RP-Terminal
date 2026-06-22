@@ -4,6 +4,7 @@ import * as floorService from '../services/floorService'
 import * as generationService from '../services/generationService'
 import * as lorebookService from '../services/lorebookService'
 import * as chatService from '../services/chatService'
+import * as characterService from '../services/characterService'
 import { log } from '../services/logService'
 
 // Resolve the calling card UI's character (its lorebook is its character_book, stored at id ==
@@ -143,6 +144,80 @@ export const registerWcvIpc = (ipcMain: IpcMain): void => {
       if (target) target.enabled = te?.enabled !== false
     }
     lorebookService.saveLorebookById(c.profileId, c.characterId, lb)
+    return true
+  })
+
+  // --- ST chat array (SillyTavern.chat) — for the home's "start game" (greeting-swipe select + reload) ---
+  // SYNC: the shim builds SillyTavern.chat from this at load. Each floor → its (optional) user message +
+  // the assistant message, carrying its swipes; floor 0's swipes default to the card's greetings
+  // (first_mes + alternate_greetings) so a swipe pick has something to select.
+  ipcMain.on('wcv-host-get-chat-sync', (e) => {
+    const ctx = wcvManager.contextFor(e.sender.id)
+    if (!ctx) {
+      e.returnValue = []
+      return
+    }
+    const characterId =
+      ctx.characterId || chatService.getChat(ctx.profileId, ctx.chatId)?.character_id || ''
+    const card = characterId ? characterService.getCharacter(ctx.profileId, characterId) : null
+    const name = (card?.data as { name?: string })?.name || 'Character'
+    const greetings = card
+      ? [
+          (card.data as { first_mes?: string }).first_mes,
+          ...((card.data as { alternate_greetings?: string[] }).alternate_greetings || [])
+        ].filter((g): g is string => !!g)
+      : []
+    const floors = floorService.getAllFloors(ctx.profileId, ctx.chatId)
+    const chat: Array<Record<string, unknown>> = []
+    floors.forEach((f, i) => {
+      if (f.user_message?.content)
+        chat.push({
+          is_user: true,
+          name: 'You',
+          mes: f.user_message.content,
+          send_date: f.timestamp,
+          swipes: [f.user_message.content],
+          swipe_id: 0,
+          extra: {}
+        })
+      const swipes =
+        f.swipes && f.swipes.length ? f.swipes : i === 0 && greetings.length ? greetings : [f.response?.content ?? '']
+      chat.push({
+        is_user: false,
+        name,
+        mes: f.response?.content ?? '',
+        send_date: f.timestamp,
+        swipes,
+        swipe_id: f.swipe_id ?? 0,
+        extra: {}
+      })
+    })
+    e.returnValue = chat
+  })
+
+  // Persist a chat the card mutated (e.g. a greeting-swipe selection): map assistant messages back to
+  // floors in order, updating content + swipes/swipe_id; user messages are read-only here.
+  ipcMain.handle('wcv-host-save-chat', (e, chat) => {
+    const ctx = wcvManager.contextFor(e.sender.id)
+    if (!ctx || !Array.isArray(chat)) return false
+    const floors = floorService.getAllFloors(ctx.profileId, ctx.chatId)
+    const assistant = chat.filter((m) => m && !m.is_user)
+    assistant.forEach((m, i) => {
+      const f = floors[i]
+      if (!f) return
+      if (typeof m.mes === 'string') f.response.content = m.mes
+      if (Array.isArray(m.swipes)) f.swipes = m.swipes
+      if (typeof m.swipe_id === 'number') f.swipe_id = m.swipe_id
+      floorService.saveFloor(ctx.profileId, ctx.chatId, f)
+    })
+    log('info', 'wcv saveChat', `${assistant.length} assistant msg(s) → floors`)
+    return true
+  })
+
+  // Ask the host renderer to reload the active chat's floors (after saveChat changed message content).
+  ipcMain.handle('wcv-host-reload-chat', (e) => {
+    const ctx = wcvManager.contextFor(e.sender.id)
+    if (ctx) wcvManager.pushHostReload(ctx.chatId)
     return true
   })
 
