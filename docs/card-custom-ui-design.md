@@ -402,6 +402,23 @@ Instead load the **data_schema** to fill the schema gap (so schema-dependent UIs
 and report MVU "status: ok" to home's env check. Optionally port MVU's schema-defaults / `initvar` logic
 natively (MIT, reusable) for robustness.
 
+## Onboarding flow (home → creation → first turn)
+In SillyTavern the card's UIs are a one-time ONBOARDING SEQUENCE tied to the first message, NOT
+persistent panels:
+1. New chat → the first message (首页) shows; a regex replaces it with the **home** UI (inline).
+2. Home: accept terms → the message UI swaps to the **character-creation** UI.
+3. Creation finish → a starting prompt enters the user's INPUT box; the player sends it.
+4. The AI's response carries the `<UpdateVariable>` that fills the MVU vars → the **status** UI
+   (persistent) then displays them.
+
+So `home`/`custom_start` are onboarding (one-time); `status` is the persistent in-session panel (working).
+From the bundle, `custom_start`'s finish uses `createChat` + `createChatMessages` + `triggerSlash`
+(programmatic) — it does NOT touch `#send_textarea` (this version auto-creates the message + triggers,
+rather than only populating the input). Integration ⇒ wire those to our session + generation system
+(and/or redirect the finish to inject into RP Terminal's input box, per the desired UX), and decide
+how/when the onboarding runs on a new chat (overlay on first message vs manual). The AI turn then fills
+the vars via our existing generation + `mvuParser`.
+
 ## Known issues
 - **Status UI: only the inner layer renders.** The card's MVU status UI has TWO layers — an outer layer
   (with **edit** + **settings** buttons) wrapping an inner display layer. In the WCV only the INNER layer
