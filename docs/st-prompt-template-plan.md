@@ -127,10 +127,20 @@ overwrite (opt-in, rewrites the stored floor).
 - **Order:** preload WI → `[GENERATE:BEFORE]` → per message (`[GENERATE:idx:BEFORE]` + content + `[GENERATE:idx:
   AFTER]`) → `[GENERATE:AFTER]` → (display) `[RENDER:BEFORE]` + HTML + `[RENDER:AFTER]`.
 
-**Step 1 — implement in RPT:** carry markers on the **lorebook entry** (the `comment` already exists; add a
-`decorators` field); in `promptBuilder`, after normal assembly, drain marker entries into their positions
-(reuse `matchAcross` for activation + `evalTemplate` for the content); `[RENDER:*]` entries feed Phase C;
-`@INJECT` is the positional injector (back-to-front).
+**Step 1 — implement in RPT (build-time markers DONE — `a6ca8cf` / `4986149` / `724d3dc`):**
+- ✅ **D1** `src/main/parsers/injectMarkers.ts` — `parseEntryMarker(comment, content)` classifies an entry
+  into a Generate/Render/Inject marker (or plain lore), strips `@@` decorator lines to the template body,
+  reads activation (`@@activate`/`@@always_enabled`/`@@dont_activate`) + `@@private`. `markerIndex(marker,
+  messages)` is the exact position math (from the ST-PT source).
+- ✅ **D2/D3** `promptBuilder` partitions matched entries: plain lore → World Info/depth as before; marker
+  entries are drained into message positions via `markerIndex` — `[GENERATE:BEFORE/AFTER/{idx}/REGEX]` +
+  `@INJECT` (absolute/target/regex, default role system), spliced high→low so inserts don't shift later
+  targets. `@@activate`/`@@always_enabled` force-activate unmatched marker entries; `@@private` wraps the
+  content in a block scope; `@@dont_activate` drops it. +16 tests.
+- ⬜ **Remaining:** `[RENDER:*]` (render-time injection around the displayed message — renderer-side, ties to
+  Phase C); `[InitialVariables]` / `@@initial_variables` (entry JSON → initial chat variables). The preload
+  decorators (`@@dont_preload`/`@@only_preload`/`@@preprocessing`) are moot — RPT has no card-open preload
+  phase; `@@if`/`@@iframe`/`@@message_formatting` are minor.
 
 ### Phase E — The `EjsTemplate` API surface
 For cards/scripts that call the extension directly (`globalThis.EjsTemplate.*` + exposing it through the WCV shim):
