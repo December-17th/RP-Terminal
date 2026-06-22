@@ -137,10 +137,16 @@ overwrite (opt-in, rewrites the stored floor).
   `@INJECT` (absolute/target/regex, default role system), spliced high→low so inserts don't shift later
   targets. `@@activate`/`@@always_enabled` force-activate unmatched marker entries; `@@private` wraps the
   content in a block scope; `@@dont_activate` drops it. +16 tests.
-- ⬜ **Remaining:** `[RENDER:*]` (render-time injection around the displayed message — renderer-side, ties to
-  Phase C); `[InitialVariables]` / `@@initial_variables` (entry JSON → initial chat variables). The preload
-  decorators (`@@dont_preload`/`@@only_preload`/`@@preprocessing`) are moot — RPT has no card-open preload
-  phase; `@@if`/`@@iframe`/`@@message_formatting` are minor.
+- ✅ **`[InitialVariables]` / `@@initial_variables`** (`80c7449`) — `mvuSchema.parseInitVars` recognizes them
+  (seeds floor-0 `stat_data` via the existing `buildInitialStatData` → `createChat`); `parseEntryMarker`'s
+  `initvars` kind keeps them out of the prompt.
+- ✅ **`[RENDER:*]`** (`815159d`) — `collectRenderMarkers` (always-on render entries) → `getRenderMarkers` IPC
+  → `ChatView` wraps each displayed message, every template re-evaluated with that floor's vars.
+- ⬜ Moot/minor only: the preload decorators (`@@dont_preload`/`@@only_preload`/`@@preprocessing`) — RPT has
+  no card-open preload phase; `@@if`/`@@iframe`/`@@message_formatting` are minor display niceties.
+
+**Phase D is complete.** Verified against the example card (no markers used; safe), with the full
+marker/decorator surface implemented + unit-tested.
 - 🧪 **Tested against the example card (命定之诗, `0bd6360`):** all 469 lorebook entries are plain
   worldbuilding — the `[…]` comments are category labels, **not** markers (0 injection markers in the whole
   book), and 34 entries use **build-time EJS** (`getvar`/`getMessageVar` over `stat_data`, `<%_` trim). Phase
