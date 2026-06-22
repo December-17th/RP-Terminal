@@ -114,7 +114,14 @@ export const getDefaultSettings = (): Settings => ({
   },
   // Panel-workspace layouts are seeded by the renderer (it owns the view ids); main
   // just persists whatever the renderer saved. Empty here = "use built-in defaults".
-  workspace: { layouts: {} }
+  workspace: { layouts: {} },
+  cache: {
+    level: 0,
+    l1_mode: 'partition',
+    ttl: '5m',
+    prewarm: false,
+    breakpoint_optimizer: false
+  }
 })
 
 /**
@@ -139,6 +146,7 @@ export const normalize = (stored: Partial<Settings>): Settings => {
   // Preserve the renderer's saved per-mode layouts verbatim (normalize otherwise drops
   // unknown keys, since it returns an explicit allowlist of fields below).
   const workspace = { layouts: stored.workspace?.layouts || {} }
+  const cache = { ...d.cache, ...(stored.cache || {}) }
 
   // Agent mode: accept the three-way enum; migrate the legacy boolean `enabled` toggle
   // (true → manual), else default off.
@@ -191,7 +199,8 @@ export const normalize = (stored: Partial<Settings>): Settings => {
     modes,
     agent,
     ui,
-    workspace
+    workspace,
+    cache
   }
 }
 

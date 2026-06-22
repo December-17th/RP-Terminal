@@ -158,3 +158,28 @@ describe('resolveModeConfig', () => {
     expect(resolveModeConfig(s, 'nonsense')).toBe(s.modes.explore)
   })
 })
+
+describe('settings cache section', () => {
+  it('defaults to level 0 / partition (behavior-preserving)', () => {
+    const c = getDefaultSettings().cache
+    expect(c.level).toBe(0)
+    expect(c.l1_mode).toBe('partition')
+    expect(c.ttl).toBe('5m')
+    expect(c.prewarm).toBe(false)
+    expect(c.breakpoint_optimizer).toBe(false)
+  })
+
+  it('merges a stored cache section over defaults without wiping unset fields', () => {
+    const s = normalize({ cache: { level: 1, l1_mode: 'diff' } } as any)
+    expect(s.cache.level).toBe(1)
+    expect(s.cache.l1_mode).toBe('diff')
+    // unset fields fall back to defaults
+    expect(s.cache.ttl).toBe('5m')
+    expect(s.cache.prewarm).toBe(false)
+  })
+
+  it('supplies the cache section when stored settings omit it entirely', () => {
+    const s = normalize({})
+    expect(s.cache.level).toBe(0)
+  })
+})

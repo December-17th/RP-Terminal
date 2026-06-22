@@ -97,4 +97,18 @@ export interface Settings {
   workspace: {
     layouts: ModeLayouts
   }
+  /** Prompt-cache optimization dial (see docs/prompt-cache-optimization-design.md).
+   *  level 0 = baseline (today); 1 = Frozen Core. l1_mode selects the L1 sub-experiment. */
+  cache: {
+    /** 0 = baseline, 1 = Frozen Core (2/3 reserved for later phases). */
+    level: number
+    /** L1 sub-mode: 'partition' (placeholder state in the frontier) | 'diff' (floor-0 state). */
+    l1_mode: 'partition' | 'diff'
+    /** Reserved for provider realization (Anthropic cache_control TTL). */
+    ttl: '5m' | '1h'
+    /** Reserved: pre-warm the cache at chat open. */
+    prewarm: boolean
+    /** Reserved: place Anthropic breakpoints at the true stable boundary. */
+    breakpoint_optimizer: boolean
+  }
 }
