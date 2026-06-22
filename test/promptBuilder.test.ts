@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, beforeAll } from 'vitest'
 import {
   buildPrompt,
   buildScanText,
@@ -7,6 +7,7 @@ import {
   ChatMessage
 } from '../src/main/services/promptBuilder'
 import { RPTerminalCardSchema, LorebookSchema } from '../src/main/types/character'
+import { initTemplates } from '../src/main/services/templateService'
 
 // --- tiny factories -------------------------------------------------------
 const card = (data: any = {}): any => RPTerminalCardSchema.parse({ data: { name: 'Aria', ...data } })
@@ -421,5 +422,33 @@ describe('buildPrompt', () => {
       userAction: 'go'
     })
     expect(messages[0].content).toBe('FORCED')
+  })
+})
+
+describe('buildPrompt — EJS in constant lore (命定之诗 real-card shape)', () => {
+  beforeAll(async () => {
+    await initTemplates()
+  })
+
+  it('evaluates <% getvar("stat_data…") %> in a constant entry into World Info', () => {
+    const messages = buildPrompt({
+      card: card(),
+      preset: preset([blk('char_description'), blk('world_info'), blk('chat_history')]),
+      lorebooks: [
+        book([
+          {
+            comment: '命定系统-核心', // a category label (no marker)
+            content: '等级:<%= getvar("stat_data.主角.等级") %>',
+            constant: true
+          }
+        ])
+      ],
+      floors: [],
+      userAction: 'go',
+      // Build-time vars root at the raw floor object, so getvar reads the full stat_data path.
+      template: { vars: { stat_data: { 主角: { 等级: 7 } } }, globals: {}, constants: {} }
+    })
+    const wi = messages.find((m) => m.content.startsWith('World Info:'))
+    expect(wi?.content).toContain('等级:7')
   })
 })

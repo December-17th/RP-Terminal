@@ -78,6 +78,24 @@ describe('injectMarkers — parseEntryMarker', () => {
     expect(r.activation).toBeNull()
     expect(r.private).toBe(false)
   })
+
+  it('does not mistake bracketed category comments for markers (命定之诗 lorebook shapes)', () => {
+    // Real entry comments from the example card — [Category] labels, not [GENERATE:…] markers.
+    const realComments = [
+      '[诺斯加德联盟-总览]',
+      '[种族-魔物]',
+      '[DLC][事件][猩红之影]入口',
+      '➡️种族开始',
+      '命定系统-奥托·阿波卡利斯(by_lili)',
+      '[索伦蒂斯王国-珍珠湾]'
+    ]
+    for (const c of realComments) {
+      // Content begins with `<%_` (an EJS trim tag), which must NOT read as an @@ decorator.
+      const r = parseEntryMarker(c, '<%_ const x = getvar("stat_data.主角.等级") _%>等级:<%= x %>')
+      expect(r.marker).toBeNull()
+      expect(r.activation).toBeNull()
+    }
+  })
 })
 
 describe('injectMarkers — markerIndex (position math)', () => {
