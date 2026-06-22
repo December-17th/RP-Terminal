@@ -32,6 +32,9 @@ export interface Settings {
     scan_depth: number;
     max_recursion: number;
   };
+  templates: {
+    enabled: boolean;
+  };
   agent: {
     mode: 'off' | 'manual' | 'agentic';
   };

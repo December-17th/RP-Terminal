@@ -66,6 +66,10 @@ export interface Settings {
     /** Max recursive match passes fed by matched entries' content (0 = off). */
     max_recursion: number
   }
+  /** ST-Prompt-Template EJS engine (`<% %>` template processing) on/off. */
+  templates: {
+    enabled: boolean
+  }
   /** Per-mode generation tuning for the manual FSM (Explore/Dialogue/Combat). */
   modes: Record<string, ModeConfig>
   /** How the agentic FSM operates: off (classic) / manual / agentic (see AgentMode). */

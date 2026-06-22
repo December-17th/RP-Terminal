@@ -109,6 +109,25 @@ export const SettingsPanel: React.FC<{ profileId: string }> = ({ profileId }) =>
               Show FPS counter (bottom-right)
             </label>
 
+            <label
+              className="entry-toggles"
+              style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 14 }}
+            >
+              <input
+                type="checkbox"
+                checked={settings.templates?.enabled ?? true}
+                onChange={(e) =>
+                  updateSettings(profileId, {
+                    templates: { ...settings.templates, enabled: e.target.checked }
+                  })
+                }
+              />
+              ST-Prompt-Template engine ({'<% %>'} templates in cards/presets/lorebook)
+            </label>
+            <div style={{ fontSize: '0.78em', color: 'var(--rpt-text-secondary)', marginTop: 4 }}>
+              When off, EJS template tags are stripped instead of evaluated ({'{{macros}}'} still work).
+            </div>
+
             <label className="field-label" style={{ marginTop: 18 }}>
               Lorebook Scan Depth (turns)
             </label>

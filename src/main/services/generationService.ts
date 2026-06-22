@@ -173,6 +173,9 @@ export const generate = async (
     // FSM mode addendum + the World Card's custom agent prompts (system + per-mode).
     modeAddendum: composeAddendum(getRpExt(card)?.agent, mode, fsmEnabled, modeConfig.addendum),
     template: {
+      // EJS engine on/off (settings toggle). When off, evalTemplate strips tags instead of running them;
+      // {{macros}} still expand (they share vars/globals below).
+      enabled: settings.templates?.enabled !== false,
       vars: workingVars,
       globals,
       constants: {

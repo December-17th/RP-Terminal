@@ -80,6 +80,9 @@ export const getDefaultSettings = (): Settings => ({
     scan_depth: 3,
     max_recursion: 0
   },
+  templates: {
+    enabled: true
+  },
   // FSM modes (Phase H). Explore = wide retrieval + descriptive; Dialogue = tighter;
   // Combat = terse (mechanics are resolved by the engine, not narrated numbers).
   modes: {
@@ -119,6 +122,7 @@ export const normalize = (stored: Partial<Settings>): Settings => {
   const persona = { ...d.persona, ...(stored.persona || {}) }
   const generation = { ...d.generation, ...(stored.generation || {}) }
   const lorebook = { ...d.lorebook, ...(stored.lorebook || {}) }
+  const templates = { ...d.templates, ...(stored.templates || {}) }
   const ui = { ...d.ui, ...(stored.ui || {}) }
   // Preserve the renderer's saved per-mode layouts verbatim (normalize otherwise drops
   // unknown keys, since it returns an explicit allowlist of fields below).
@@ -171,6 +175,7 @@ export const normalize = (stored: Partial<Settings>): Settings => {
     persona,
     generation,
     lorebook,
+    templates,
     modes,
     agent,
     ui,

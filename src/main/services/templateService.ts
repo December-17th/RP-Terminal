@@ -36,6 +36,8 @@ export interface TemplateContext {
   globals: Record<string, any> // global variables (persisted per profile)
   constants: Record<string, unknown> // userName, charName, lastUserMessage, …
   data?: TemplateData // TH-3: card/world-info/history/preset accessors
+  /** When false, the EJS engine is OFF (settings toggle) — tags are stripped, not evaluated. */
+  enabled?: boolean
 }
 
 const hasTags = (s: string): boolean => s.includes('<%')
@@ -235,6 +237,7 @@ const installBridge = (vm: QuickJSContext, ctx: TemplateContext): void => {
  */
 export const evalTemplate = (template: string, ctx: TemplateContext): string => {
   if (!template || !hasTags(template)) return template
+  if (ctx.enabled === false) return stripTags(template) // engine toggled off in settings
   if (!QJS) return stripTags(template)
 
   const vm = QJS.newContext()
