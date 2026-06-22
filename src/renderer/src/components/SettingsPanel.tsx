@@ -19,6 +19,14 @@ export const SettingsPanel: React.FC<{ profileId: string }> = ({ profileId }) =>
     setNewName('')
   }
 
+  // Patch a field of the nested templates.render block (render-time eval settings).
+  const updateRender = (patch: Partial<Settings['templates']['render']>): void => {
+    if (!settings) return
+    updateSettings(profileId, {
+      templates: { ...settings.templates, render: { ...settings.templates.render, ...patch } }
+    })
+  }
+
   return (
     <div className="panel">
       <div className="panel-header">
@@ -125,8 +133,70 @@ export const SettingsPanel: React.FC<{ profileId: string }> = ({ profileId }) =>
               ST-Prompt-Template engine ({'<% %>'} templates in cards/presets/lorebook)
             </label>
             <div style={{ fontSize: '0.78em', color: 'var(--rpt-text-secondary)', marginTop: 4 }}>
-              When off, EJS template tags are stripped instead of evaluated ({'{{macros}}'} still work).
+              When off, EJS template tags are stripped instead of evaluated ({'{{macros}}'} still
+              work).
             </div>
+
+            {settings.templates?.enabled !== false && (
+              <div style={{ marginLeft: 22, marginTop: 8 }}>
+                <label
+                  className="entry-toggles"
+                  style={{ display: 'flex', alignItems: 'center', gap: 8 }}
+                >
+                  <input
+                    type="checkbox"
+                    checked={settings.templates?.render?.enabled ?? true}
+                    onChange={(e) => updateRender({ enabled: e.target.checked })}
+                  />
+                  Render-time eval (apply templates to AI output on display)
+                </label>
+                {settings.templates?.render?.enabled !== false && (
+                  <>
+                    <label
+                      className="entry-toggles"
+                      style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 8 }}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={settings.templates?.render?.live ?? true}
+                        onChange={(e) => updateRender({ live: e.target.checked })}
+                      />
+                      Live during streaming (rate-limited)
+                    </label>
+                    <label
+                      className="entry-toggles"
+                      style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 8 }}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={settings.templates?.render?.final_pass ?? true}
+                        onChange={(e) => updateRender({ final_pass: e.target.checked })}
+                      />
+                      Final pass when streaming completes
+                    </label>
+                    <label className="field-label" style={{ marginTop: 10 }}>
+                      Live eval cadence (≈ tokens)
+                    </label>
+                    <input
+                      type="number"
+                      min={50}
+                      value={settings.templates?.render?.rate_tokens ?? 500}
+                      onChange={(e) => updateRender({ rate_tokens: Number(e.target.value) || 500 })}
+                    />
+                    <div
+                      style={{
+                        fontSize: '0.78em',
+                        color: 'var(--rpt-text-secondary)',
+                        marginTop: 4
+                      }}
+                    >
+                      During streaming, re-run the engine roughly every this many tokens (not per
+                      token).
+                    </div>
+                  </>
+                )}
+              </div>
+            )}
 
             <label className="field-label" style={{ marginTop: 18 }}>
               Lorebook Scan Depth (turns)
@@ -159,8 +229,8 @@ export const SettingsPanel: React.FC<{ profileId: string }> = ({ profileId }) =>
               }
             />
             <div style={{ fontSize: '0.78em', color: 'var(--rpt-text-secondary)', marginTop: 4 }}>
-              Matched entries&apos; content can trigger more entries, up to this many passes
-              (0 = off).
+              Matched entries&apos; content can trigger more entries, up to this many passes (0 =
+              off).
             </div>
           </>
         )}
