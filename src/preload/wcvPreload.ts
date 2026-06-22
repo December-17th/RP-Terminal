@@ -255,13 +255,22 @@ const helpers: Record<string, any> = {
     note('substitudeMacros')
     return t
   },
-  generate: async (..._a: any[]) => {
+  generate: async (a: any) => {
     note('generate')
-    return ''
+    const text = typeof a === 'string' ? a : (a?.user_input ?? a?.userInput ?? a?.text ?? '')
+    return ipcRenderer.invoke('wcv-host-generate', String(text ?? ''))
   },
-  generateRaw: async (..._a: any[]) => {
+  generateRaw: async (cfg: any) => {
     note('generateRaw')
-    return ''
+    const c = cfg && typeof cfg === 'object' ? cfg : {}
+    return ipcRenderer.invoke('wcv-host-generate-raw', {
+      userInput: c.user_input ?? c.userInput ?? c.prompt,
+      prompt: c.prompt,
+      systemPrompt: c.system_prompt ?? c.systemPrompt,
+      maxChatHistory: c.max_chat_history ?? c.maxChatHistory ?? 0,
+      maxTokens: c.max_tokens ?? c.maxTokens,
+      overrides: c.overrides
+    })
   },
   // Worldbook (lorebook) access — backed by the host's file-based lorebookService over IPC. The card
   // reads its expansions/cores from its own book and toggles them; the host applies enabled-changes back.

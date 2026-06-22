@@ -83,10 +83,12 @@ State of truth is `floor.variables.stat_data` (the MVU tree). Reads come from a 
 ### Character / preset — ✅ (read)
 - `getCharData()` / `getCharAvatarPath()` — ✅ (sync, ctx-scoped) · `getPreset()` (active preset name + sampler params) / `getPresetNames()` — ✅ (sync) · `SillyTavern.getContext()` — ✅
 
-### Generation — 🔁 / ⬜
-- `generate(text)` / `generateRaw(...)` — 🔁 stubs in the WCV shim today. Target: a card *requests*
-  generation (host-side, keyed by the active preset); the AI key never reaches the card. (The iframe
-  `rpt.generate` path is wired with a per-card grant; bring the equivalent to the WCV shim.)
+### Generation — ✅ (request)
+- `generate(text)` — ✅ runs a normal visible turn (host-side via `generationService.generate`, then a
+  host reload refreshes the chat + sibling WCVs); resolves with the response text. `generateRaw(config)`
+  — ✅ a one-off completion → text (`user_input`/`system_prompt`/`max_chat_history`/`overrides`,
+  mapped to `RawGenConfig`). **The AI key never reaches the card** (generation is fully host-side).
+  ⬜ live stream-token events to the card (the call resolves on completion for now).
 - `triggerSlash` / `execute` (STScript) — 🔁 stub.
 
 ### Regex — 🟡
@@ -119,6 +121,12 @@ ctx-scoped IPC handler, and update this doc.
 
 ## 6. Near-term gaps (Track C0)
 
-Expose the FULL surface in the WCV shim, all ctx-scoped: lorebook **CRUD** (not just toggle), chat
-**write**, **regex** API, **generate-request** (host-side, no key to the card). Each is backed by an
-existing service — the work is wiring the shim method + a scoped IPC handler.
+**Done:** lorebook CRUD, char/preset reads, regex read + format, `generate`/`generateRaw`. **Remaining**
+(all ctx-scoped, backed by existing services — wire a shim method + a scoped IPC handler):
+
+- **Chat write** — `setChatMessages` / `createChatMessages` / `deleteChatMessages` (needs the chat-index ↔ floor mapping).
+- **Regex write** — `replaceTavernRegexes`.
+- **Full `tavern_events`** — hook `generationService` lifecycle (start/end, message received) → a `wcv-event` broadcast the shim dispatches on its bus.
+- **Stream-token events** to the card during `generate`.
+- **Audio** API.
+- Separately, the **ST-Prompt-Template template helpers** (`getwi`/`getchar`/`getpreset`/`define`/render-time eval/markers/faker) extend `templateService`, not the WCV shim.

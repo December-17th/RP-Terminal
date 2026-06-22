@@ -194,6 +194,21 @@ export const registerWcvIpc = (ipcMain: IpcMain): void => {
       : String(text ?? '')
   })
 
+  // --- Generation requests (Track C0) — the card REQUESTS; the host runs it (AI key stays in main). ---
+  // generate(text) = a normal visible turn (new floor); generateRaw(config) = a one-off completion → text.
+  ipcMain.handle('wcv-host-generate', async (e, text) => {
+    const ctx = wcvManager.contextFor(e.sender.id)
+    if (!ctx) return ''
+    const floor = await generationService.generate(ctx.profileId, ctx.chatId, String(text ?? ''))
+    wcvManager.pushHostReload(ctx.chatId) // a new floor → refresh the host chat UI + sibling WCVs
+    return floor?.response?.content ?? ''
+  })
+  ipcMain.handle('wcv-host-generate-raw', async (e, config) => {
+    const ctx = wcvManager.contextFor(e.sender.id)
+    if (!ctx) return ''
+    return generationService.generateRaw(ctx.profileId, ctx.chatId, config || {})
+  })
+
   // --- ST chat array (SillyTavern.chat) — for the home's "start game" (greeting-swipe select + reload) ---
   // SYNC: the shim builds SillyTavern.chat from this at load. Each floor → its (optional) user message +
   // the assistant message, carrying its swipes; floor 0's swipes default to the card's greetings
