@@ -1,7 +1,9 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 // The quickjs bridge is dynamically typed (vm.dump → any, helper args are user-supplied), so `any` is
 // intentional throughout this file — same as the original engine in templateService.
-import { getQuickJS, QuickJSContext, QuickJSHandle, QuickJSWASMModule } from 'quickjs-emscripten'
+// Type-only import — the shared engine never pulls a runtime quickjs variant; the host injects one via
+// `initEngine(loader)` (main → wasmfile variant; renderer → embedded singlefile variant).
+import type { QuickJSContext, QuickJSHandle, QuickJSWASMModule } from 'quickjs-emscripten'
 
 /**
  * ST-Prompt-Template compatible EJS engine — the PURE core, shared by the main
@@ -49,11 +51,15 @@ export interface TemplateContext {
 
 let QJS: QuickJSWASMModule | null = null
 
-/** Load the quickjs WASM module. Idempotent; each process loads its own instance. */
-export const initEngine = async (): Promise<void> => {
+/**
+ * Load the quickjs WASM module via the host-provided `loader` (main passes the default
+ * wasmfile variant; the renderer passes a singlefile browser variant so the WASM is
+ * embedded — no .wasm fetch under a bundler). Idempotent; each process loads its own.
+ */
+export const initEngine = async (loader: () => Promise<QuickJSWASMModule>): Promise<void> => {
   if (QJS) return
   try {
-    QJS = await getQuickJS()
+    QJS = await loader()
   } catch (e: any) {
     logFn('error', 'Template engine failed to initialize', e?.message || String(e))
   }

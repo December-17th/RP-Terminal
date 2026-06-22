@@ -1,6 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 // Globals are an untyped variable bag (Record<string, any>), matching TemplateContext.globals.
 import path from 'path'
+import { getQuickJS } from 'quickjs-emscripten'
 import { getAppDir, readJsonSync, writeJsonSyncAtomic } from './storageService'
 import { log } from './logService'
 import { applyJsonPatch } from '../parsers/mvuParser'
@@ -25,7 +26,8 @@ export const initTemplates = async (): Promise<void> => {
     log: (level, msg, detail) => log(level as Parameters<typeof log>[0], msg, detail),
     applyJsonPatch
   })
-  await initEngine()
+  // Main runs in Node — the default wasmfile variant loads from node_modules.
+  await initEngine(() => getQuickJS())
 }
 
 // --- per-profile global variable persistence (JSON file) ---

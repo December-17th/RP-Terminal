@@ -9,10 +9,13 @@
          scripts. This does NOT loosen the untrusted-HTML path: B1's card-HTML iframe
          is sandboxed WITHOUT allow-scripts (so scripts never run there), and the top
          frame never injects untrusted inline scripts. The plugin iframes' own meta
-         CSP (connect-src 'none') still closes their network. -->
+         CSP (connect-src 'none') still closes their network.
+         `'wasm-unsafe-eval'` lets the shared ST-Prompt-Template engine compile its
+         quickjs WASM sandbox at render-time (Phase C). It permits WebAssembly ONLY —
+         not JS eval/new Function (that would be the broader 'unsafe-eval'). -->
     <meta
       http-equiv="Content-Security-Policy"
-      content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:"
+      content="default-src 'self'; script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data:"
     />
   </head>
 
