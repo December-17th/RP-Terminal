@@ -9,6 +9,7 @@ import { evalTemplate, TemplateContext } from './templateService'
 import { cleanForHistory } from '../../shared/responseView'
 import { log } from './logService'
 import { expandMacros, MacroContext } from '../../shared/macros'
+import { buildStateBlock } from './cacheLayers'
 
 export interface ChatMessage {
   role: 'system' | 'user' | 'assistant'
@@ -93,6 +94,12 @@ export interface BuildPromptArgs {
   modeAddendum?: string
   /** ST-Prompt-Template context; when present, authored content is run through the engine. */
   template?: TemplateContext
+  /** Prompt-cache level (0 = baseline; ≥1 = L1 Frozen Core). */
+  cacheLevel?: number
+  /** L1 sub-mode (partition = placeholder state, diff = floor-0 state). */
+  l1Mode?: 'partition' | 'diff'
+  /** Floor-0-derived frozen variable snapshot the frontier renders against at level ≥1. */
+  frozenVars?: Record<string, any>
 }
 
 /** No-op text transform (used when there are no prompt-time regex rules). */
@@ -213,21 +220,34 @@ export const buildPrompt = (args: BuildPromptArgs): ChatMessage[] => {
   // stores so {{setvar}} and <% setvar() %> stay coherent; it leaves <%...%> intact so
   // the engine runs next. (Previously macros stripped EJS before eval — templates never
   // executed via the builder; that's fixed here.)
-  const macroBase = (pd: string): MacroContext => ({
+  const macroBase = (
+    pd: string,
+    vars?: Record<string, any>,
+    globals?: Record<string, any>
+  ): MacroContext => ({
     user: userName,
     char: charName,
     persona: pd,
-    vars: args.template?.vars,
-    globals: args.template?.globals
+    vars: vars ?? args.template?.vars,
+    globals: globals ?? args.template?.globals
   })
   const makeRender =
-    (pd: string): Renderer =>
+    (pd: string, tmpl?: TemplateContext): Renderer =>
     (t) => {
-      const m = expandMacros(t, macroBase(pd))
-      return args.template ? evalTemplate(m, args.template as TemplateContext) : stripEjs(m).trim()
+      const m = expandMacros(t, macroBase(pd, tmpl?.vars, tmpl?.globals))
+      return tmpl ? evalTemplate(m, tmpl) : stripEjs(m).trim()
     }
-  const render = makeRender(personaMacro)
-  const personaContent = personaInject ? makeRender('')(args.persona!.description) : ''
+  // L1 Frozen Core: at cache level ≥1 the durable frontier renders against a FROZEN
+  // variable snapshot (floor-0 derived), so its bytes are byte-stable across turns and
+  // the provider prefix cache holds. Live state moves to a tail block (appended below).
+  const cacheLevel = args.cacheLevel ?? 0
+  const frontierTemplate: TemplateContext | undefined = args.template
+    ? cacheLevel >= 1
+      ? { ...args.template, vars: args.frozenVars ?? {} }
+      : args.template
+    : undefined
+  const render = makeRender(personaMacro, frontierTemplate)
+  const personaContent = personaInject ? makeRender('', frontierTemplate)(args.persona!.description) : ''
 
   // Prompt-time regex: transform history/user text on its way into the prompt
   // (placement 1 = user, 2 = AI). Display-only (markdownOnly) rules are excluded upstream.
@@ -431,6 +451,17 @@ export const buildPrompt = (args: BuildPromptArgs): ChatMessage[] => {
       .sort((a, b) => b.at - a.at || b.order - a.order)
     for (const inj of injections)
       messages.splice(inj.at, 0, { role: inj.role, content: inj.content })
+  }
+
+  // L1: relocate live state to one tail block, just before the user action (so it sits
+  // in the volatile tail, never in the cached frontier). 'partition' showed placeholders
+  // in the frontier; 'diff' showed floor-0 values — either way this block is the live truth.
+  if (cacheLevel >= 1) {
+    const stateBlock = buildStateBlock(args.template?.vars)
+    if (stateBlock) {
+      const insertAt = userAction !== '' ? messages.length - 1 : messages.length
+      messages.splice(insertAt, 0, { role: 'system', content: stateBlock })
+    }
   }
 
   return messages

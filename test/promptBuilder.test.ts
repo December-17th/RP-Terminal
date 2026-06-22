@@ -496,3 +496,86 @@ describe('collectRenderMarkers', () => {
     expect(collectRenderMarkers([lb])).toEqual({ before: ['HEADER'], after: ['FOOTER'] })
   })
 })
+
+describe('buildPrompt — L1 Frozen Core', () => {
+  beforeAll(async () => {
+    await initTemplates()
+  })
+
+  const mkArgs = (statLevel: number, cacheLevel: number, l1Mode: 'partition' | 'diff'): any => ({
+    card: card(),
+    preset: preset([blk('char_description'), blk('world_info'), blk('chat_history')]),
+    lorebooks: [
+      book([
+        {
+          comment: '命定系统-核心',
+          content: '等级:<%= getvar("stat_data.主角.等级") %>',
+          constant: true
+        }
+      ])
+    ],
+    floors: [],
+    userAction: 'go',
+    cacheLevel,
+    l1Mode,
+    // floor-0 frozen vars (level 1 renders the frontier against these)
+    frozenVars:
+      l1Mode === 'partition'
+        ? { stat_data: { 主角: { 等级: '⟦state⟧' } } }
+        : { stat_data: { 主角: { 等级: 1 } } },
+    template: {
+      vars: { stat_data: { 主角: { 等级: statLevel } } },
+      globals: {},
+      constants: {}
+    }
+  })
+
+  it('level 0 still renders live state into world info (unchanged behavior)', () => {
+    const messages = buildPrompt(mkArgs(7, 0, 'partition'))
+    const wi = messages.find((m) => m.content.startsWith('World Info:'))
+    expect(wi?.content).toContain('等级:7')
+  })
+
+  it('partition: frontier world info is byte-identical across differing live state', () => {
+    const a = buildPrompt(mkArgs(7, 1, 'partition'))
+    const b = buildPrompt(mkArgs(42, 1, 'partition'))
+    const wiA = a.find((m) => m.content.startsWith('World Info:'))!
+    const wiB = b.find((m) => m.content.startsWith('World Info:'))!
+    expect(wiA.content).toBe(wiB.content) // frozen → identical bytes
+    expect(wiA.content).toContain('等级:⟦state⟧') // placeholder, not a real value
+  })
+
+  it("diff: frontier shows the floor-0 value (stable) regardless of live state", () => {
+    const a = buildPrompt(mkArgs(7, 1, 'diff'))
+    const b = buildPrompt(mkArgs(42, 1, 'diff'))
+    const wiA = a.find((m) => m.content.startsWith('World Info:'))!
+    const wiB = b.find((m) => m.content.startsWith('World Info:'))!
+    expect(wiA.content).toBe(wiB.content)
+    expect(wiA.content).toContain('等级:1') // floor-0 seed value
+  })
+
+  it('appends the current-state tail block right before the user action', () => {
+    const messages = buildPrompt(mkArgs(7, 1, 'partition'))
+    expect(last(messages)).toEqual({ role: 'user', content: 'go' })
+    const penultimate = messages[messages.length - 2]
+    expect(penultimate.role).toBe('system')
+    expect(penultimate.content).toContain('[Current State]')
+    expect(penultimate.content).toContain('"等级":7') // the LIVE value, in the tail
+  })
+
+  it('omits the tail state block when there is no stat_data', () => {
+    const messages = buildPrompt({
+      card: card(),
+      preset: preset([blk('char_description'), blk('chat_history')]),
+      lorebooks: [],
+      floors: [],
+      userAction: 'go',
+      cacheLevel: 1,
+      l1Mode: 'partition',
+      frozenVars: {},
+      template: { vars: {}, globals: {}, constants: {} }
+    })
+    expect(messages.some((m) => m.content.includes('[Current State]'))).toBe(false)
+    expect(last(messages)).toEqual({ role: 'user', content: 'go' })
+  })
+})
