@@ -27,21 +27,37 @@ Running status of the MVU / panel-workspace track. Newest first.
   lifts the nav tab; `PluginHost` moved to a bounded app-root dock.
 - **Design doc:** `docs/mvu-panel-workspace-design.md` (State/Logic/View split; native vs
   webview MVU UI; the 5-phase plan).
+- **Variable write-back bridge** (`applyVariableOps`, commit `c4f334a`): panel UI / scripts can now
+  MODIFY message variables (JSONPatch ops → the same `applyJsonPatch` engine the model uses →
+  persisted), not just display them.
+- **Card-custom-UI investigation + decisions** (`docs/card-custom-ui-design.md`): two import modes
+  (native config vs script-embedded UI); the StatusMenuBuilder format (AGPL, declarative); the
+  iframe/webview/WebContentsView comparison. Decisions: frame model = **WebContentsView, static
+  card-determined layout**; manual/panel edits **transient** (Re-evaluate resets to model state);
+  inline-message beautification UI is an **iframe** (not WCV) and **read-only in history**; the
+  center stays native chat.
+- **WebContentsView spike (verified on hardware).** `wcvManager` overlays an out-of-process
+  WebContentsView on a panel (commit `6b488f4`); a locked-down `wcvPreload` (`window.rptHost`) +
+  per-slot session context give the card page a host bridge that READS the latest floor's
+  `stat_data` and WRITES it back through `applyVariableOps`, pushing the result so native panels stay
+  in sync (commit `856394c`). Round-trip confirmed live: a button in the WCV page increments a
+  counter shown in the native RPG Status panel, persisted across restart.
 
 ### Architecture state
-- State source of truth = `floor.variables.stat_data` (MVU tree). Read by `StatView` /
-  `LayoutRenderer`; written (today) only by the model via `<UpdateVariable>`.
-- Generation is main-side; the renderer is a thin UI over IPC. Frontend-card execution is
-  shelved behind a click-to-run gate (Electron iframes are same-process — true isolation needs
-  `<webview>`).
+- State source of truth = `floor.variables.stat_data` (MVU tree). Read by `StatView`/`LayoutRenderer`;
+  written by the model (`<UpdateVariable>`) AND now by panel UI / scripts / WebContentsView card pages
+  via the `apply-variable-ops` bridge (the `pluginVars` path also persists message-scope writes).
+- Generation is main-side; the renderer is a thin UI over IPC. **WebContentsView gives true process
+  isolation** — the iframe-same-process freeze that shelved frontend cards does not apply to it — so
+  it's the chosen path for embedding a card's own (e.g. Vue) UI in a static panel.
 
 ### Next / open
-- **Phase 2 — native MVU view kit:** grow `StatView`/`WidgetRegistry` into tabs/grids/inventory/
-  relationship/map widgets, driven by `ui_layout` then the MVU `data_schema`.
-- **Card custom UI embedding (investigating now):** let the left/right panels host a card's own
-  MVU UI that can run scripts and WRITE message variables — two import modes (native-UI settings
-  vs script-embedded UI). See `docs/card-custom-ui-design.md`.
-- **Task #1:** process-isolate frontend-card frames via `<webview>` (the only reliable Electron
-  OOP path) — prerequisite for safely running card-authored UI/scripts.
-- **Task #2:** deep ST/MVU runtime shim (clean-room) — getVariables/replaceVariables(message
-  scope), Mvu API, events, `<|ws_slot|>` injection.
+- **Load 命定之诗's frontend into a WCV + start the clean-room ST/TavernHelper/Mvu shim** on top of
+  `rptHost` (`window.SillyTavern.getContext` / `window.Mvu` / `getVariables({type})` / events), then
+  iterate on what it calls. The active path (= the hard part of task #2).
+- **Inline frames read-only in history** (decided, deferred): thread the floor id through
+  `ChatView → MessageContent → MessageScriptFrame`, deny writes + snapshot reads on non-latest floors.
+- **Phase 2 native MVU view kit** (Option 1) — deprioritized vs the custom-frontend/WCV path, but
+  still the safe default renderer for declarative StatusMenuBuilder-style cards.
+- **Static card-UI workspace** (`StaticWorkspace` + card-declared grid) — the production home for WCV
+  panels once the shim proves out.
