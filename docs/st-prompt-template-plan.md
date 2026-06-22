@@ -154,13 +154,23 @@ marker/decorator surface implemented + unit-tested.
   this card** — deferred unless full ST-PT parity is wanted (they'd be built speculatively, with nothing to
   validate against).
 
-### Phase E — The `EjsTemplate` API surface
-For cards/scripts that call the extension directly (`globalThis.EjsTemplate.*` + exposing it through the WCV shim):
-`prepareContext`, `evalTemplate`, `getSyntaxErrorInfo`, `allVariables`, `saveVariables`, `setFeatures`/`getFeatures`/`resetFeatures`, `refreshWorldInfo`, `compileTemplate`, `defines`, `initialVariables`. Mostly thin wrappers over the engine + the build data.
+### Phase E — The `EjsTemplate` API surface ✅ (`be21a5f`)
+`w.EjsTemplate.*` in `wcvPreload.ts`, backed by the engine running IN the WCV preload (its own quickjs
+**singlefile** instance — sync, WASM allowed by the card CSP; strips as a fail-safe until the WASM loads).
+Built on a new `evalTemplateDetailed(template, ctx) → { output, error }` (engine).
+- Core: `evalTemplate`, `prepareContext` (hoists `stat_data`), `getSyntaxErrorInfo`, `allVariables`,
+  `saveVariables` (→ `rptHost.setVariables` + rehydrate).
+- Thin stubs: `setFeatures`/`getFeatures`/`resetFeatures`, `refreshWorldInfo`, `compileTemplate`, `defines`,
+  `initialVariables` (RPT has no engine feature flags or card-open preload phase).
+- Runtime-verified when a card calls the API — the example card uses the TH API + MVU, not `EjsTemplate.*`,
+  so it's a no-op there.
 
-## Sequencing
-**A ✅ → C (B folds in) → D → E.** A (reads/libs/constants) is done; B's only real gap (`message` scope) is
-realized inside C. **C and D are the architectural pieces** (C is next); E is a thin compatibility cap.
+## Sequencing — ✅ COMPLETE
+**A ✅ → C ✅ (B folds in) → D ✅ → E ✅.** The whole ST-Prompt-Template plan is implemented: A (helpers/
+libs/constants), C (render-time eval, two modes), D (injection markers + decorators + `[InitialVariables]` +
+`[RENDER:*]`), E (the `EjsTemplate` API). B's only real gap (`message` scope) was realized inside C. Remaining
+non-goals: `render_permanent` (opt-in stored-floor overwrite) and the moot preload decorators
+(`@@dont_preload`/`@@only_preload`/`@@preprocessing` — RPT has no card-open preload phase).
 
 ## Decisions (answered)
 1. **Render-time eval (Phase C):** **full EJS in the RENDERER**, both modes, **rate-limited** — eval every
