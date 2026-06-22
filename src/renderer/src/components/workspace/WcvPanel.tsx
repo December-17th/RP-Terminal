@@ -10,10 +10,11 @@ import { useChatStore } from '../../stores/chatStore'
  * changes (a splitter drag / mode switch can move us without resizing). The WebContentsView
  * paints OVER this div, so the placeholder is only visible while it loads or if unsupported.
  *
- * The loaded page talks to the host via `window.rptHost` (the locked-down wcvPreload): it reads
- * the latest floor's stat_data and writes it back through the variable bridge. This test page
- * proves that round-trip before we load a real card frontend + the ST/TavernHelper/Mvu shim.
+ * The loaded page talks to the host via the wcvPreload shim (`window.rptHost` + the ST/Mvu globals).
+ * Two views are registered: a self-contained round-trip test page, and the real 命定之诗 status UI.
  */
+
+// Round-trip test page (no bundled assets): reads + writes the host's stat_data via the bridge.
 const TEST_URL =
   'data:text/html;charset=utf-8,' +
   encodeURIComponent(
@@ -32,7 +33,12 @@ refresh();
 </script></body></html>`
   )
 
-export function WcvPanel({ slotId = 'spike' }: { slotId?: string }): React.ReactElement {
+// 命定之诗's real status UI (React ESM app; imports its deps from jsDelivr at runtime). Loaded with
+// the wcvPreload shim providing window.Mvu / SillyTavern / the TavernHelper globals (+ a logger).
+const STATUS_URL =
+  'https://testingcf.jsdelivr.net/gh/The-poem-of-destiny/FrontEnd-for-destined-journey@1.8.2/dist/status/index.html'
+
+function WcvPanel({ slotId, url }: { slotId: string; url: string }): React.ReactElement {
   const hostRef = useRef<HTMLDivElement>(null)
   const layouts = useWorkspaceStore((s) => s.layouts) // re-measure when the layout changes
   const { profileId } = useWorkspaceContext()
@@ -45,7 +51,7 @@ export function WcvPanel({ slotId = 'spike' }: { slotId?: string }): React.React
       const r = el.getBoundingClientRect()
       return { x: r.left, y: r.top, width: r.width, height: r.height }
     }
-    window.api.wcvEnsure(slotId, rect(), TEST_URL, { profileId, chatId: chatId || '' })
+    window.api.wcvEnsure(slotId, rect(), url, { profileId, chatId: chatId || '' })
     const onChange = (): void => window.api.wcvSetBounds(slotId, rect())
     const ro = new ResizeObserver(onChange)
     ro.observe(el)
@@ -55,7 +61,7 @@ export function WcvPanel({ slotId = 'spike' }: { slotId?: string }): React.React
       window.removeEventListener('resize', onChange)
       window.api.wcvDestroy(slotId)
     }
-  }, [slotId, profileId, chatId])
+  }, [slotId, url, profileId, chatId])
 
   useEffect(() => {
     const el = hostRef.current
@@ -69,4 +75,12 @@ export function WcvPanel({ slotId = 'spike' }: { slotId?: string }): React.React
       <div style={{ opacity: 0.5, padding: 12, fontSize: 13 }}>Loading WebContentsView…</div>
     </div>
   )
+}
+
+// Stable wrapper components so the workspace view-picker can mount each without remount churn.
+export function WcvTestView(): React.ReactElement {
+  return <WcvPanel slotId="wcv-test" url={TEST_URL} />
+}
+export function WcvCardView(): React.ReactElement {
+  return <WcvPanel slotId="wcv-card" url={STATUS_URL} />
 }

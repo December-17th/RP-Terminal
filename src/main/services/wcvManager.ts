@@ -1,4 +1,5 @@
 import { WebContentsView, BrowserWindow } from 'electron'
+import { is } from '@electron-toolkit/utils'
 import { join } from 'path'
 import { log } from './logService'
 
@@ -56,8 +57,11 @@ export const ensure = (
   if (!slot) {
     const view = new WebContentsView({
       webPreferences: {
-        contextIsolation: true,
-        sandbox: true,
+        // Trusted-card main-world shim (spike): the preload defines window.SillyTavern/Mvu/… in the
+        // page world, so contextIsolation is off. Still a separate process with nodeIntegration:false
+        // → no host/Node reach. Production vendors assets + hardens (contextBridge / CSP).
+        contextIsolation: false,
+        sandbox: false,
         nodeIntegration: false,
         preload: join(__dirname, '../preload/wcvPreload.js')
       }
@@ -66,6 +70,8 @@ export const ensure = (
     slots.set(id, slot)
     mainWindow.contentView.addChildView(view)
     view.webContents.loadURL(url)
+    // Spike: surface the card's console so its missing-API log is visible.
+    if (is.dev) view.webContents.openDevTools({ mode: 'detach' })
     log('info', `wcv: created '${id}'`)
   } else {
     slot.profileId = ctx.profileId
