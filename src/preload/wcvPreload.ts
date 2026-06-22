@@ -183,6 +183,11 @@ const helpers: Record<string, any> = {
     note('getTavernHelperVersion')
     return '3.0.0'
   },
+  // custom_start's "embark" flow awaits this before proceeding — report "already initialized".
+  waitGlobalInitialized: (..._a: any[]) => {
+    note('waitGlobalInitialized')
+    return Promise.resolve(true)
+  },
   // Onboarding finish — default is to INJECT the starting prompt into RP Terminal's input box (the
   // player presses Send). These fire once at finish, so they log their args (always) to confirm the
   // exact shapes; auto-start (create session + message + generate) is the opt-in alternative.
