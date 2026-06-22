@@ -18,9 +18,10 @@ const CONNECTION_KEYS = ['provider', 'endpoint', 'api_key', 'model'] as const
  * active preset; switch presets to swap providers/keys/models in one click.
  */
 export const ApiSettingsPanel: React.FC<{ profileId: string }> = ({ profileId }) => {
-  const { settings, updateSettings } = useSettingsStore()
+  const { settings, updateSettings, loadSettings } = useSettingsStore()
   const [models, setModels] = React.useState<string[]>([])
   const [fetching, setFetching] = React.useState(false)
+  const [replacingKey, setReplacingKey] = React.useState(false)
   if (!settings) return null
 
   const presets = settings.api_presets
@@ -31,11 +32,10 @@ export const ApiSettingsPanel: React.FC<{ profileId: string }> = ({ profileId })
   const fetchModels = async (): Promise<void> => {
     setFetching(true)
     try {
-      const list: string[] = await window.api.listModels({
-        provider: active.provider,
-        endpoint: active.endpoint,
-        api_key: active.api_key
-      })
+      const list: string[] = await window.api.listModels(
+        { provider: active.provider, endpoint: active.endpoint, api_key: active.api_key },
+        profileId
+      )
       setModels(list)
       if (!list.length) useToastStore.getState().push('No models returned by the provider')
     } catch (e) {
@@ -69,17 +69,19 @@ export const ApiSettingsPanel: React.FC<{ profileId: string }> = ({ profileId })
   const selectPreset = (id: string): void => {
     const p = presets.find((x) => x.id === id)
     if (!p) return
+    setReplacingKey(false)
     updateSettings(profileId, { active_api_preset_id: id, api: mirror(p) })
   }
 
   const newPreset = (): void => {
+    setReplacingKey(false)
     const id = crypto.randomUUID()
     const created: ApiPreset = {
       id,
       name: 'New API Preset',
       provider: settings.api.provider,
       endpoint: settings.api.endpoint,
-      api_key: settings.api.api_key,
+      api_key: '', // a new preset gets its own key (the active one is masked, not a real value)
       model: settings.api.model
     }
     updateSettings(profileId, {
@@ -90,6 +92,7 @@ export const ApiSettingsPanel: React.FC<{ profileId: string }> = ({ profileId })
   }
 
   const deletePreset = (): void => {
+    setReplacingKey(false)
     if (presets.length <= 1) return
     const remaining = presets.filter((p) => p.id !== active.id)
     updateSettings(profileId, {
@@ -162,13 +165,35 @@ export const ApiSettingsPanel: React.FC<{ profileId: string }> = ({ profileId })
         />
 
         <label className="field-label">API Key</label>
-        <input
-          type="password"
-          placeholder="sk-..."
-          value={active.api_key}
-          onChange={(e) => editActive({ api_key: e.target.value })}
-          style={{ marginBottom: 10 }}
-        />
+        {active.api_key.includes('•') && !replacingKey ? (
+          // A stored key is shown masked (≥2/3 hidden); the real key lives encrypted in main. "Replace"
+          // swaps in an editable field for a new key — which is the only time the key is shown in full.
+          <div style={{ display: 'flex', gap: 6, marginBottom: 10 }}>
+            <input
+              type="text"
+              readOnly
+              value={active.api_key}
+              title="Stored securely — most of the key is hidden"
+              style={{ flex: 1, fontFamily: 'monospace', opacity: 0.8 }}
+            />
+            <button onClick={() => setReplacingKey(true)}>Replace</button>
+          </div>
+        ) : (
+          <input
+            type="text"
+            placeholder="sk-..."
+            autoFocus={replacingKey}
+            value={active.api_key.includes('•') ? '' : active.api_key}
+            onChange={(e) => editActive({ api_key: e.target.value })}
+            // On leaving the field, re-fetch the masked view (the value already autosaved) so the key
+            // doesn't stay visible after entry.
+            onBlur={() => {
+              setReplacingKey(false)
+              loadSettings(profileId)
+            }}
+            style={{ marginBottom: 10 }}
+          />
+        )}
 
         <label className="field-label">Model</label>
         <div style={{ display: 'flex', gap: 6 }}>

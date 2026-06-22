@@ -4,8 +4,29 @@ import {
   getDefaultSettings,
   resolveModeConfig,
   encryptSecret,
-  decryptSecret
+  decryptSecret,
+  maskSecret,
+  isMaskedKey
 } from '../src/main/services/settingsService'
+
+describe('api-key masking', () => {
+  it('masks ≥ 2/3 of a key, keeping only a few first/last chars', () => {
+    const key = 'sk-proj-ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'
+    const m = maskSecret(key)
+    expect(m).toContain('•')
+    expect(m).not.toBe(key)
+    const visible = m.replace(/•/g, '')
+    expect(visible.length).toBeLessThanOrEqual(Math.ceil(key.length / 3)) // ≥ 2/3 hidden
+    expect(key.startsWith(visible.slice(0, 2))).toBe(true) // keeps the real prefix
+    expect(isMaskedKey(m)).toBe(true)
+  })
+  it('fully masks short inputs, leaves empty alone, and detects real keys', () => {
+    expect(maskSecret('')).toBe('')
+    expect(maskSecret('abc')).toBe('••••••••')
+    expect(isMaskedKey('sk-real-key-no-bullets')).toBe(false)
+    expect(isMaskedKey('')).toBe(false)
+  })
+})
 
 describe('api-key encryption', () => {
   it('round-trips a secret through encrypt/decrypt', () => {

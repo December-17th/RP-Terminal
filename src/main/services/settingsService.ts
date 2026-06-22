@@ -37,6 +37,27 @@ const mapApiKeys = (s: Settings, fn: (k: string) => string): Settings => ({
   api_presets: s.api_presets.map((p) => ({ ...p, api_key: fn(p.api_key) }))
 })
 
+// API keys are only ever shown to the UI in FULL when first entered; afterward the renderer receives a
+// MASKED value (≥ 2/3 hidden) and the real key stays encrypted in main. A save that sends a masked/empty
+// value back means "unchanged" → the stored key is retained. So the full key never round-trips the UI.
+const MASK_CHAR = '•'
+export const isMaskedKey = (k: string): boolean => !!k && k.includes(MASK_CHAR)
+
+/** Mask a plaintext key for display: at most ~1/3 visible (first/last few chars), the rest hidden.
+ *  Guarantees ≥ 2/3 masked; the middle is a fixed run so the key's length isn't revealed either. */
+export const maskSecret = (plain: string): string => {
+  const k = plain || ''
+  if (!k) return ''
+  const visible = Math.min(8, Math.floor(k.length / 3))
+  if (visible < 2) return MASK_CHAR.repeat(8)
+  const front = Math.ceil(visible / 2)
+  const back = visible - front
+  return k.slice(0, front) + MASK_CHAR.repeat(8) + (back ? k.slice(k.length - back) : '')
+}
+
+/** A copy of settings with every api key masked (for sending to the renderer). */
+export const maskedSettings = (s: Settings): Settings => mapApiKeys(s, maskSecret)
+
 export const getDefaultSettings = (): Settings => ({
   api: {
     provider: 'openai',
@@ -177,8 +198,41 @@ export const getSettings = (profileId: string): Settings => {
   return mapApiKeys(normalize(stored), decryptSecret)
 }
 
+/** Read the stored settings WITHOUT decrypting — to retain still-encrypted keys on save. */
+const readStoredEncrypted = (profileId: string): Settings => {
+  const row = getDb().prepare('SELECT data FROM settings WHERE profile_id = ?').get(profileId) as
+    | { data: string }
+    | undefined
+  let stored: Partial<Settings> = {}
+  if (row) {
+    try {
+      stored = JSON.parse(row.data)
+    } catch {
+      stored = {}
+    }
+  }
+  return normalize(stored)
+}
+
 export const saveSettings = (profileId: string, settings: Settings): void => {
-  const toStore = mapApiKeys(settings, encryptSecret)
+  // The renderer only holds MASKED keys (or a freshly-typed real one). A masked/empty incoming value
+  // means "unchanged" → keep the stored encrypted key (the api mirror tracks the active preset's key);
+  // a real value gets encrypted. The full key therefore never has to round-trip through the renderer.
+  const prev = readStoredEncrypted(profileId)
+  const prevById = new Map(prev.api_presets.map((p) => [p.id, p.api_key]))
+  const resolve = (incoming: string, stored: string | undefined): string =>
+    !incoming || isMaskedKey(incoming) ? stored || '' : encryptSecret(incoming)
+  const toStore: Settings = {
+    ...settings,
+    api: {
+      ...settings.api,
+      api_key: resolve(settings.api.api_key, prevById.get(settings.active_api_preset_id))
+    },
+    api_presets: settings.api_presets.map((p) => ({
+      ...p,
+      api_key: resolve(p.api_key, prevById.get(p.id))
+    }))
+  }
   getDb()
     .prepare(
       `INSERT INTO settings (profile_id, data) VALUES (?, ?)
