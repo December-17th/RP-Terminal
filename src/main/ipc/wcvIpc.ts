@@ -180,8 +180,15 @@ export const registerWcvIpc = (ipcMain: IpcMain): void => {
           swipe_id: 0,
           extra: {}
         })
+      // The greeting floor's swipes are the card's greetings (first_mes + alternate_greetings) — the
+      // home's "start game" picks a scenario by index here. Prefer them over any short stored floor
+      // swipes; later floors use their own response swipes.
       const swipes =
-        f.swipes && f.swipes.length ? f.swipes : i === 0 && greetings.length ? greetings : [f.response?.content ?? '']
+        i === 0 && greetings.length
+          ? greetings
+          : f.swipes && f.swipes.length
+            ? f.swipes
+            : [f.response?.content ?? '']
       chat.push({
         is_user: false,
         name,
@@ -192,6 +199,11 @@ export const registerWcvIpc = (ipcMain: IpcMain): void => {
         extra: {}
       })
     })
+    log(
+      'info',
+      'wcv getChat',
+      `${chat.length} msg(s), greeting swipes=${(chat[0]?.swipes as string[] | undefined)?.length ?? 0}`
+    )
     e.returnValue = chat
   })
 
