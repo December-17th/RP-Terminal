@@ -30,21 +30,21 @@ overlap (both touch variables/world-info), but their centers differ — ST-PT is
 | Feature | ST-Prompt-Template | RPT |
 |---|---|---|
 | EJS `<% %>` / `<%= %>` / `<%- %>` | ✅ | ✅ (quickjs WASM sandbox) |
-| `<%# comment %>`, `<#escape-ejs>` | ✅ | 🟡 (`<%#` not yet; verify trim parity) |
+| `<%# comment %>`, `<#escape-ejs>` | ✅ | 🟡 `<%#` comments ✅ + `<%_`/`_%>` trim ✅; `<#escape-ejs>` ⬜ |
 | Eval **before send** | ✅ | ✅ (authored system/char/lore/literal blocks) |
 | Eval **render-time** (on AI output) | ✅ `[RENDER:*]`, `@@render_*` | ⬜ deferred (engine is main-side, render is renderer-side → needs an IPC eval bridge; render-time *macros* cover common cases) |
 | `getvar/setvar/incvar/decvar/delvar` (+ scope aliases) | ✅ | ✅ local/global |
-| Variable scopes: global / local / **message** / **character** | ✅ all four | 🟡 local + global (message/character ⬜) |
+| Variable scopes: global / local / **message** / **character** | ✅ all four | 🟡 local/global/message/chat aliases exist, but message/character currently map to the chat store (no dedicated per-message/character store yet) |
 | `insvar` / `patchVariables` (JSON Patch) / `setVariableSchema` (Zod) | ✅ | 🟡 (RPT has a native JSON-Patch + Zod schema engine for MVU `stat_data`, but not exposed as these template helpers) |
-| `getwi` / `getWorldInfoData` / `activewi` | ✅ | ⬜ (long tail — not bridged into the template engine) |
-| `getchar` / `getCharData` | ✅ | ⬜ template helper (data exists via `scriptApiService`) |
-| `getpreset` / `getqr` | ✅ | ⬜ |
-| `getChatMessages` / `matchChatMessages` | ✅ | ⬜ template helper (exists in the JS API) |
-| `define()` (persistent macros) | ✅ | ⬜ |
+| `getwi` / `getWorldInfoData` / `activewi` | ✅ | 🟡 `getwi` ✅ (entry content); `getWorldInfoData`/`activewi` ⬜ |
+| `getchar` / `getCharData` | ✅ | ✅ `getchar(field)` |
+| `getpreset` / `getqr` | ✅ | 🟡 `getPreset` → preset NAME only (not prompt content); `getqr` stub |
+| `getChatMessages` / `matchChatMessages` | ✅ | 🟡 `getMessageHistory()` ✅; `matchChatMessages` ⬜ |
+| `define()` (persistent macros) | ✅ | ✅ |
 | `injectPrompt` / `getPromptsInjected` | ✅ | ⬜ |
 | `[GENERATE:BEFORE/AFTER]`, `@INJECT`, `[GENERATE:REGEX:]`, decorators (`@@activate/@@if/@@iframe/…`) | ✅ | ⬜ deferred (uncertain ST contract; verify first) |
-| `faker` | ✅ | ⬜ |
-| `lodash` (`_`) / `jQuery` (`$`) | ✅ | 🟡 `_` subset in the sandbox; **real** `_`/`$` in the WCV |
+| `faker` | ✅ | 🟡 clean-room subset in the sandbox (number/float/bool/pick/uuid/name/word/lorem) |
+| `lodash` (`_`) / `jQuery` (`$`) | ✅ | ⬜ `_` not in the template sandbox (only `faker`); `$` N/A (template engine, not DOM) |
 | `[InitialVariables]` preload | ✅ | ✅ equivalent: `state_schema.defaults` ⊕ `[initvar]` blocks |
 | Token/char counters (`LAST_SEND_TOKENS`, …) | ✅ | 🟡 (cache read/write tokens logged; not exposed as template vars) |
 
@@ -74,8 +74,11 @@ overlap (both touch variables/world-info), but their centers differ — ST-PT is
 
 ## 4. Where RPT is BEHIND (priorities)
 
-- **ST-PT templating long tail**: `getwi/getchar/getpreset/getqr`, `define`, render-time eval on AI
-  output, the `[GENERATE/RENDER/INJECT]` markers + decorators, `faker`, message/character variable scopes.
+- **ST-PT templating long tail** (narrower than first assessed — `getchar`/`getwi`/`getMessageHistory`/
+  `define`/`faker`/`<%#` are already done; see [docs/st-prompt-template-plan.md](st-prompt-template-plan.md)):
+  render-time eval on AI output, the `[GENERATE/RENDER/INJECT]` markers + decorators, dedicated
+  message/character scopes, accessor depth (`getpreset` content, `getWorldInfoData`/`activewi`,
+  `injectPrompt`), `lodash` in the sandbox, and the `EjsTemplate` API surface.
 - **TH JS API in the WCV shim**: lorebook **CRUD** (not just toggle), chat **write**, **regex** API,
   host-side **generate**, the full `tavern_events` enum, audio API. (Most are backed by an existing
   service — the work is wiring the WCV shim method + a ctx-scoped IPC handler. See
