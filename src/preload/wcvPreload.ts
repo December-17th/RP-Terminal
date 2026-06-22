@@ -79,6 +79,25 @@ try {
 }
 rptHost.onVarsChanged(hydrate)
 
+// --- TavernHelper event enum (snake_case, mirrors ST event_types) + host event delivery. The host
+// computes these from the chat-store transition and pushes them here; we re-emit on the local bus so a
+// card's eventOn(tavern_events.X, fn) listeners fire. ---
+const tavern_events = {
+  GENERATION_STARTED: 'generation_started',
+  GENERATION_ENDED: 'generation_ended',
+  GENERATION_STOPPED: 'generation_stopped',
+  MESSAGE_SENT: 'message_sent',
+  MESSAGE_RECEIVED: 'message_received',
+  MESSAGE_UPDATED: 'message_updated',
+  MESSAGE_DELETED: 'message_deleted',
+  MESSAGE_SWIPED: 'message_swiped',
+  CHAT_CHANGED: 'chat_changed',
+  STREAM_TOKEN_RECEIVED: 'stream_token_received'
+}
+ipcRenderer.on('wcv-event', (_e: any, d: any) => {
+  if (d && d.name) emit(d.name, d.payload)
+})
+
 const getByPath = (root: any, path: string) =>
   String(path)
     .split('.')
@@ -134,7 +153,8 @@ const stChat: any[] = ipcRenderer.sendSync('wcv-host-get-chat-sync') || []
 const context = {
   chat: stChat,
   eventSource: { on, emit, makeFirst: on, once: on, removeListener: () => {} },
-  eventTypes: {},
+  eventTypes: tavern_events,
+  event_types: tavern_events,
   // home/custom_start probe the environment: report EjsTemplate (ST-Prompt-Template) as enabled.
   extensionSettings: { EjsTemplate: { enabled: true } },
   getContext: () => context
@@ -356,6 +376,8 @@ const helpers: Record<string, any> = {
 Object.assign(w, helpers)
 // Some cards call these via a TavernHelper namespace instead of bare globals.
 w.TavernHelper = helpers
+// Cards reference the event enum as a bare global too: eventOn(tavern_events.MESSAGE_RECEIVED, fn).
+w.tavern_events = tavern_events
 
 // --- libraries the card bundle externalizes as bare globals (lodash `_`, Zod `z`, jQuery `$`, `toastr`) ---
 w._ = _

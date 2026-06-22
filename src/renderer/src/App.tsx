@@ -19,6 +19,7 @@ import { useNavStore } from './stores/navStore'
 import { useWorkspaceStore } from './stores/workspaceStore'
 import { useComposerStore } from './stores/composerStore'
 import { initSlash } from './plugin/slash'
+import { chatTransitionEvents, messageMutationEvents } from './plugin/events'
 
 export default function App(): React.ReactElement {
   const activeProfile = useProfileStore((s) => s.activeProfile)
@@ -72,6 +73,23 @@ export default function App(): React.ReactElement {
         : undefined
       if (sd) window.api.wcvBroadcastVars(state.activeChatId, sd)
     })
+    // Broadcast TavernHelper lifecycle/mutation events to WCV cards — reusing the same pure event
+    // functions the iframe scripts use (CardScriptHost). generation start/end + message
+    // received/updated/deleted/swiped, computed from the chat-store transition.
+    const unsubEvents = useChatStore.subscribe((state, prev) => {
+      const chatId = state.activeChatId
+      if (!chatId) return
+      const toDesc = (fs: typeof state.floors): { floor: number; content: string; swipeId: number }[] =>
+        fs.map((f) => ({ floor: f.floor, content: f.response.content, swipeId: f.swipe_id ?? 0 }))
+      const events = [
+        ...chatTransitionEvents(
+          { isGenerating: prev.isGenerating, floorCount: prev.floors.length },
+          { isGenerating: state.isGenerating, floorCount: state.floors.length }
+        ),
+        ...messageMutationEvents(toDesc(prev.floors), toDesc(state.floors))
+      ]
+      for (const ev of events) window.api.wcvBroadcastEvent(chatId, ev.name, ev.payload)
+    })
     return () => {
       unsubDelta()
       unsubLog()
@@ -79,6 +97,7 @@ export default function App(): React.ReactElement {
       unsubInput()
       unsubReload()
       unsubFloors()
+      unsubEvents()
     }
   }, [])
 

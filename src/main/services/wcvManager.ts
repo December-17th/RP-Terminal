@@ -177,3 +177,11 @@ export const notifyVarsChanged = (chatId: string, statData: unknown): void => {
     if (s.chatId === chatId) s.view.webContents.send('wcv-vars-changed', statData)
   }
 }
+
+/** Broadcast a TavernHelper lifecycle/mutation event (generation_started, message_received, …) to the
+ *  card WCVs on a chat, so their `eventOn(tavern_events.X, …)` listeners fire. */
+export const notifyEvent = (chatId: string, name: string, payload: unknown): void => {
+  for (const s of slots.values()) {
+    if (s.chatId === chatId) s.view.webContents.send('wcv-event', { name, payload })
+  }
+}

@@ -74,6 +74,10 @@ export const registerWcvIpc = (ipcMain: IpcMain): void => {
   ipcMain.on('wcv-broadcast-vars', (_e, chatId, statData) =>
     wcvManager.notifyVarsChanged(chatId, statData)
   )
+  // Host → card panels: a TavernHelper lifecycle/mutation event (computed from the chat-store transition).
+  ipcMain.on('wcv-broadcast-event', (_e, chatId, name, payload) =>
+    wcvManager.notifyEvent(chatId, name, payload)
+  )
   // Card → host: set RP Terminal's chat input box (the onboarding finish's "inject prompt").
   ipcMain.on('wcv-host-set-input', (e, text) => {
     const ctx = wcvManager.contextFor(e.sender.id)

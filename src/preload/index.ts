@@ -35,6 +35,8 @@ const api = {
   wcvDestroy: (id: string) => ipcRenderer.send('wcv-destroy', id),
   wcvBroadcastVars: (chatId: string, statData: unknown) =>
     ipcRenderer.send('wcv-broadcast-vars', chatId, statData),
+  wcvBroadcastEvent: (chatId: string, name: string, payload: unknown) =>
+    ipcRenderer.send('wcv-broadcast-event', chatId, name, payload),
   generate: (profileId: string, chatId: string, userAction: string) =>
     ipcRenderer.invoke('generate', profileId, chatId, userAction),
   regenerate: (profileId: string, chatId: string) =>

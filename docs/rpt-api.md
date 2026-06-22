@@ -98,8 +98,8 @@ State of truth is `floor.variables.stat_data` (the MVU tree). Reads come from a 
   (write) — ⬜.
 
 ### Events — ✅
-- `eventOn`/`eventOnce`/`eventEmit`/`eventMakeFirst`/`eventRemoveListener` + `SillyTavern.eventSource.on/emit` — ✅ (a local bus). MVU lifecycle events (`mag_variable_update_started/updated/ended`, `mag_variable_initialized`) fire on a host vars-changed push.
-- The full `tavern_events` enum (GENERATION_STARTED/ENDED, MESSAGE_*, CHAT_CHANGED, STREAM_TOKEN_RECEIVED) mapped to our pipeline — 🟡 (subset).
+- `eventOn`/`eventOnce`/`eventEmit`/`eventMakeFirst`/`eventRemoveListener` + `SillyTavern.eventSource.on/emit` — ✅ (a local bus). The `tavern_events` enum is provided (`window.tavern_events` + `getContext().eventTypes`/`event_types`).
+- Lifecycle + mutation events — ✅ `GENERATION_STARTED/ENDED`, `CHAT_CHANGED`, `MESSAGE_RECEIVED/UPDATED/DELETED/SWIPED` are broadcast to WCVs, computed from the chat-store transition (reusing the iframe-script event functions — no generation-pipeline change). MVU `mag_variable_*` events fire on a host vars push. ⬜ `STREAM_TOKEN_RECEIVED` (streaming), `MESSAGE_SENT`.
 
 ### UI / misc — ✅ / 🔁
 - `toastr.*` — ✅ · `substituteParams`/`substitudeMacros` — 🟡 (pass-through) · `getTavernHelperVersion()` — ✅ (reports ≥ the card's required minimum) · `waitGlobalInitialized()` — ✅ (resolves true)
@@ -127,7 +127,7 @@ ctx-scoped IPC handler, and update this doc.
 
 - **Chat write** — ✅ `setChatMessages` (edit) + `deleteChatMessages` (truncate-from) done. ⬜ `createChatMessages` general insert (floor-model design), per-message swipe/var edits.
 - **Regex write** — `replaceTavernRegexes`.
-- **Full `tavern_events`** — hook `generationService` lifecycle (start/end, message received) → a `wcv-event` broadcast the shim dispatches on its bus.
+- ✅ **`tavern_events`** — lifecycle + mutation events broadcast to WCVs from the chat-store transition (reused the iframe-script event functions; no `generationService` change). ⬜ `STREAM_TOKEN_RECEIVED`, `MESSAGE_SENT`.
 - **Stream-token events** to the card during `generate`.
 - **Audio** API.
 - Separately, the **ST-Prompt-Template template helpers** (`getwi`/`getchar`/`getpreset`/`define`/render-time eval/markers/faker) extend `templateService`, not the WCV shim.
