@@ -187,10 +187,18 @@ const helpers: Record<string, any> = {
       return []
     }
   },
-  setChatMessages: (..._a: any[]) => note('setChatMessages'),
+  setChatMessages: (msgs: any, ..._a: any[]) => {
+    note('setChatMessages')
+    return ipcRenderer.invoke('wcv-host-set-chat-messages', msgs)
+  },
+  deleteChatMessages: (ids: any, ..._a: any[]) => {
+    note('deleteChatMessages')
+    return ipcRenderer.invoke('wcv-host-delete-chat-messages', ids)
+  },
   getCurrentMessageId: () => {
     note('getCurrentMessageId')
-    return 0
+    const m = ipcRenderer.sendSync('wcv-host-get-messages-sync')
+    return Array.isArray(m) ? Math.max(0, m.length - 1) : 0
   },
   // home's launcher GATES onboarding on a minimum TavernHelper version (命定之诗 wants >= 4.3.17 —
   // it warns "版本过低"/too-low below that). Report the card's required minimum so the gate passes;

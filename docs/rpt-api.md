@@ -70,9 +70,10 @@ State of truth is `floor.variables.stat_data` (the MVU tree). Reads come from a 
 - The host folds the model's `<UpdateVariable>` (`_.set` + `<JSONPatch>` incl. `delta`/array-append) natively (`mvuParser`); the shim does NOT load the full MVU bundle.
 
 ### Chat / messages — 🟡
-- `SillyTavern.chat[]` — ✅ built from floors (each message carries `swipes`/`swipe_id`); `saveChat()` + `reloadCurrentChat()` — ✅ (greeting-swipe select → re-fold → reload)
-- `getChatMessages(range)` / `getCurrentMessageId()` — ✅ (read)
-- `setChatMessages` / `createChatMessages` (insert) / `deleteChatMessages` / per-message vars — 🟡 (`createChatMessages` routes to the composer-inject for onboarding; full write ⬜)
+- `SillyTavern.chat[]` — ✅ built from floors (each message carries `swipes`/`swipe_id`); `saveChat()` + `reloadCurrentChat()` — ✅
+- `getChatMessages()` (now returns `message_id` = chat-array index) / `getCurrentMessageId()` — ✅ (read)
+- `setChatMessages([{message_id, message}])` — ✅ edit content by index (→ floor+role, then re-fold + reload). `deleteChatMessages(ids)` — ✅ truncates from the earliest targeted message's floor (the floor model couples user+assistant, so arbitrary mid-chat single-message deletes aren't supported).
+- `createChatMessages` — 🟡 routes to the composer-inject for onboarding; general insert-a-message deferred (ambiguous in the floor model). Per-message swipe/var edits — ⬜.
 
 ### Worldbook / lorebook — 🟡
 - `getCharWorldbookNames('current')` → `{ primary, additional }` — ✅ (sync) · `getWorldbook(name)` → entries — ✅
@@ -124,7 +125,7 @@ ctx-scoped IPC handler, and update this doc.
 **Done:** lorebook CRUD, char/preset reads, regex read + format, `generate`/`generateRaw`. **Remaining**
 (all ctx-scoped, backed by existing services — wire a shim method + a scoped IPC handler):
 
-- **Chat write** — `setChatMessages` / `createChatMessages` / `deleteChatMessages` (needs the chat-index ↔ floor mapping).
+- **Chat write** — ✅ `setChatMessages` (edit) + `deleteChatMessages` (truncate-from) done. ⬜ `createChatMessages` general insert (floor-model design), per-message swipe/var edits.
 - **Regex write** — `replaceTavernRegexes`.
 - **Full `tavern_events`** — hook `generationService` lifecycle (start/end, message received) → a `wcv-event` broadcast the shim dispatches on its bus.
 - **Stream-token events** to the card during `generate`.

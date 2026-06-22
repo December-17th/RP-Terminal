@@ -8,6 +8,7 @@ import * as characterService from '../services/characterService'
 import * as scriptApiService from '../services/scriptApiService'
 import { log } from '../services/logService'
 import { LorebookEntry, LorebookEntrySchema } from '../types/character'
+import { FloorFile } from '../types/chat'
 
 // Coerce a TavernHelper-shaped worldbook entry (from getWorldbook, possibly edited or freshly built by a
 // card) back into a valid LorebookEntry. `name` → comment; unknown fields (uid) are dropped by the schema;
@@ -32,6 +33,30 @@ const cardLoreCtx = (senderId: number): { profileId: string; characterId: string
   const characterId =
     ctx.characterId || chatService.getChat(ctx.profileId, ctx.chatId)?.character_id || ''
   return characterId ? { profileId: ctx.profileId, characterId } : null
+}
+
+// The chat-array index space SillyTavern.chat / getChatMessages / setChatMessages share: per floor, the
+// (optional) user message then the assistant message. Maps an index → its source floor + role so a card's
+// write can be applied back to the right floor.
+const chatIndexMap = (floors: FloorFile[]): Array<{ floorIdx: number; isUser: boolean }> => {
+  const map: Array<{ floorIdx: number; isUser: boolean }> = []
+  floors.forEach((f, i) => {
+    if (f.user_message?.content) map.push({ floorIdx: i, isUser: true })
+    map.push({ floorIdx: i, isUser: false })
+  })
+  return map
+}
+
+// After a card mutates the chat (edit / delete): re-fold <UpdateVariable> into stat_data, push it to the
+// host native panels + sibling WCVs, and reload the host chat UI.
+const afterChatMutation = (profileId: string, chatId: string): void => {
+  const rebuilt = generationService.reevaluateVariables(profileId, chatId)
+  const latest = rebuilt[rebuilt.length - 1]
+  if (latest) {
+    wcvManager.pushHostVars(chatId, latest.variables)
+    wcvManager.notifyVarsChanged(chatId, latest.variables.stat_data ?? {})
+  }
+  wcvManager.pushHostReload(chatId)
 }
 
 /**
@@ -311,11 +336,59 @@ export const registerWcvIpc = (ipcMain: IpcMain): void => {
       return
     }
     const floors = floorService.getAllFloors(ctx.profileId, ctx.chatId)
-    const msgs: Array<{ role: string; message: string }> = []
-    for (const f of floors) {
-      if (f.user_message?.content) msgs.push({ role: 'user', message: f.user_message.content })
-      msgs.push({ role: 'assistant', message: f.response?.content ?? '' })
-    }
+    const msgs: Array<{ message_id: number; role: string; message: string }> = []
+    chatIndexMap(floors).forEach((m, i) => {
+      const f = floors[m.floorIdx]
+      msgs.push({
+        message_id: i,
+        role: m.isUser ? 'user' : 'assistant',
+        message: m.isUser ? f.user_message.content : (f.response?.content ?? '')
+      })
+    })
     e.returnValue = msgs
+  })
+
+  // Edit message content by chat-array index (TH setChatMessages). Each index maps back to its floor +
+  // role; then re-fold + reload. (Content only for now — swipes/role edits are a follow-up.)
+  ipcMain.handle('wcv-host-set-chat-messages', (e, messages) => {
+    const ctx = wcvManager.contextFor(e.sender.id)
+    if (!ctx) return false
+    const floors = floorService.getAllFloors(ctx.profileId, ctx.chatId)
+    const map = chatIndexMap(floors)
+    const touched = new Set<number>()
+    for (const m of Array.isArray(messages) ? messages : []) {
+      const id = typeof m?.message_id === 'number' ? m.message_id : -1
+      const slot = id >= 0 ? map[id] : undefined
+      if (!slot || typeof m?.message !== 'string') continue
+      if (slot.isUser) floors[slot.floorIdx].user_message.content = m.message
+      else floors[slot.floorIdx].response.content = m.message
+      touched.add(slot.floorIdx)
+    }
+    for (const fi of touched) floorService.saveFloor(ctx.profileId, ctx.chatId, floors[fi])
+    if (touched.size) afterChatMutation(ctx.profileId, ctx.chatId)
+    log('info', 'wcv setChatMessages', `${touched.size} floor(s) edited`)
+    return touched.size > 0
+  })
+
+  // Delete messages (TH deleteChatMessages). Our model couples user+assistant per floor, so this
+  // TRUNCATES from the earliest targeted message's floor onward (the common "delete from here / undo").
+  ipcMain.handle('wcv-host-delete-chat-messages', (e, messageIds) => {
+    const ctx = wcvManager.contextFor(e.sender.id)
+    if (!ctx) return false
+    const floors = floorService.getAllFloors(ctx.profileId, ctx.chatId)
+    const map = chatIndexMap(floors)
+    const ids = (Array.isArray(messageIds) ? messageIds : [messageIds]).filter(
+      (n): n is number => typeof n === 'number'
+    )
+    const floorIdxs = ids
+      .map((id) => map[id]?.floorIdx)
+      .filter((n): n is number => typeof n === 'number')
+    if (!floorIdxs.length) return false
+    const fromFloor = floors[Math.min(...floorIdxs)]?.floor
+    if (typeof fromFloor !== 'number') return false
+    chatService.truncateFloors(ctx.profileId, ctx.chatId, fromFloor)
+    afterChatMutation(ctx.profileId, ctx.chatId)
+    log('info', 'wcv deleteChatMessages', `truncated from floor ${fromFloor}`)
+    return true
   })
 }
