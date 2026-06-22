@@ -2,6 +2,8 @@
    spike shim: it bridges the untyped ST / TavernHelper / MVU host globals into the card page, a flat bag
    of small dynamic stubs whose placeholder params (_d/_o/_a) mirror the real host-API signatures. */
 import { ipcRenderer } from 'electron'
+import _ from 'lodash'
+import { z as zod } from 'zod'
 
 /**
  * STARTER SHIM (spike) for a card's own frontend running in a WebContentsView — e.g. 命定之诗's React
@@ -179,5 +181,22 @@ const helpers: Record<string, any> = {
 Object.assign(w, helpers)
 // Some cards call these via a TavernHelper namespace instead of bare globals.
 w.TavernHelper = helpers
+
+// --- libraries the card bundle externalizes as bare globals (lodash `_`, Zod `z`, `toastr`) ---
+w._ = _
+w.z = zod
+const toast = (level: string) => (msg?: any) => {
+  note('toastr.' + level)
+  console.info('[card toastr.' + level + ']', msg)
+}
+w.toastr = {
+  success: toast('success'),
+  error: toast('error'),
+  info: toast('info'),
+  warning: toast('warning'),
+  clear: () => {},
+  remove: () => {},
+  options: {}
+}
 
 console.info('[rpt-shim] starter shim installed (WebContentsView card panel)')
