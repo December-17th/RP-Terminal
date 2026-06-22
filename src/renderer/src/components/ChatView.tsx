@@ -57,6 +57,19 @@ export function ChatView({ profileId }: { profileId: string }): React.ReactEleme
   const [viewIndex, setViewIndex] = useState(0)
   const viewportRef = useRef<HTMLDivElement>(null)
 
+  // ST-PT [RENDER:*]: active render-marker templates for this session (evaluated per-message below).
+  const [renderMarkers, setRenderMarkers] = useState<{ before: string[]; after: string[] }>({
+    before: [],
+    after: []
+  })
+  useEffect(() => {
+    if (!activeChatId) return
+    window.api
+      .getRenderMarkers(profileId, activeChatId)
+      .then(setRenderMarkers)
+      .catch(() => setRenderMarkers({ before: [], after: [] }))
+  }, [activeChatId, profileId])
+
   const cardCss = activeCharacter?.card.data.extensions?.rp_terminal?.css as string | undefined
   const personaName = settings?.persona?.name || 'User'
   const charName = activeCharacter?.card.data.name || 'Character'
@@ -71,7 +84,20 @@ export function ChatView({ profileId }: { profileId: string }): React.ReactEleme
         // The card's own regex folds its <UpdateVariable> blocks, so disabling it shows the
         // original — and nothing is ever truncated in storage.
         const evaled = renderTemplate(cleanForDisplay(f.response.content), f.variables, 'final')
-        const withMacros = expandMacros(evaled, {
+        // [RENDER:*]: wrap with the active render-marker templates (each evaled with this floor's vars).
+        const renderOn =
+          settings?.templates?.enabled !== false && settings?.templates?.render?.enabled !== false
+        const wrap = (tmpls: string[]): string =>
+          renderOn
+            ? tmpls
+                .map((t) => renderTemplate(t, f.variables, 'final'))
+                .filter(Boolean)
+                .join('\n\n')
+            : ''
+        const body = [wrap(renderMarkers.before), evaled, wrap(renderMarkers.after)]
+          .filter(Boolean)
+          .join('\n\n')
+        const withMacros = expandMacros(body, {
           user: personaName,
           char: charName,
           vars: f.variables
@@ -85,7 +111,7 @@ export function ChatView({ profileId }: { profileId: string }): React.ReactEleme
           swipeCount: f.swipes?.length ?? 1
         }
       }),
-    [floors, regexRules, personaName, charName, settings?.templates]
+    [floors, regexRules, personaName, charName, settings?.templates, renderMarkers]
   )
 
   // Paginated floor view: jump to the newest floor when the floor set changes

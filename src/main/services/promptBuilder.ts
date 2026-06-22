@@ -264,7 +264,7 @@ export const buildPrompt = (args: BuildPromptArgs): ChatMessage[] => {
   // it. Pre-filter cheaply (anchored regex, no full parse) before parsing the few candidates.
   const looksMarked = (e: LorebookEntry): boolean =>
     /^\s*@@/.test(e.content) || /^\s*(\[GENERATE|\[RENDER|@INJECT)/i.test(e.comment)
-  const keyOf = (e: LorebookEntry): string => `${e.comment} ${e.content}`
+  const keyOf = (e: LorebookEntry): string => JSON.stringify([e.comment, e.content])
   const matchedKeys = new Set(matched.map(keyOf))
   const forced = lorebooks
     .flatMap((lb) => lb.entries)
@@ -434,4 +434,27 @@ export const buildPrompt = (args: BuildPromptArgs): ChatMessage[] => {
   }
 
   return messages
+}
+
+/**
+ * Active `[RENDER:*]` marker entries' RAW templates, split by side. These are render-time injections —
+ * the renderer evaluates each per-message (with that floor's vars) and wraps the displayed text. Only
+ * always-on entries (`constant` or `@@activate`/`@@always_enabled`) are included; keyword-matched render
+ * markers aren't supported (render is display-time, decoupled from a turn's keyword scan).
+ */
+export const collectRenderMarkers = (
+  lorebooks: Lorebook[]
+): { before: string[]; after: string[] } => {
+  const before: string[] = []
+  const after: string[] = []
+  for (const lb of lorebooks) {
+    for (const e of lb.entries) {
+      if (e.enabled === false) continue
+      const { marker, template, activation } = parseEntryMarker(e.comment, e.content)
+      if (marker?.kind !== 'render' || activation === 'never') continue
+      if (!e.constant && activation !== 'force') continue
+      ;(marker.side === 'after' ? after : before).push(template)
+    }
+  }
+  return { before, after }
 }

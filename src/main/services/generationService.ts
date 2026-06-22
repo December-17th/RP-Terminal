@@ -13,12 +13,23 @@ import {
 } from './chatService'
 import { getAllFloors, getFloor, saveFloor } from './floorService'
 import { normalizeSwipes } from './swipeHelpers'
-import { buildPrompt, buildScanText, fitToBudget, ChatMessage } from './promptBuilder'
+import {
+  buildPrompt,
+  buildScanText,
+  fitToBudget,
+  collectRenderMarkers,
+  ChatMessage
+} from './promptBuilder'
 import { getPromptRules } from './regexService'
 import { loadGlobals, saveGlobals } from './templateService'
 import { streamProvider, DeltaCallback } from './apiService'
 import { parseContent, stripThinking, RPEvent } from '../parsers/contentParser'
-import { parseMvuCommands, applyMvuCommands, applyJsonPatch, JsonPatchOp } from '../parsers/mvuParser'
+import {
+  parseMvuCommands,
+  applyMvuCommands,
+  applyJsonPatch,
+  JsonPatchOp
+} from '../parsers/mvuParser'
 import { log } from './logService'
 import { FloorFile } from '../types/chat'
 import { Lorebook, LorebookEntry, getRpExt } from '../types/character'
@@ -305,6 +316,20 @@ export const generate = async (
   return floor
 }
 
+/** Active render-marker templates ([RENDER:*]) for a session — the renderer evals + wraps each message. */
+export const getRenderMarkers = (
+  profileId: string,
+  chatId: string
+): { before: string[]; after: string[] } => {
+  const chat = getChat(profileId, chatId)
+  if (!chat) return { before: [], after: [] }
+  const ids = getChatLorebookIds(profileId, chatId) ?? [chat.character_id]
+  const lorebooks = ids
+    .map((id) => getLorebookById(profileId, id))
+    .filter((b): b is Lorebook => !!b)
+  return collectRenderMarkers(lorebooks)
+}
+
 /**
  * Re-derive every floor's MVU `stat_data` by replaying its stored `<UpdateVariable>` updates from
  * scratch — enabled by lossless storage. Lets the user re-apply variable updates after a parser
@@ -321,7 +346,11 @@ export const reevaluateVariables = (profileId: string, chatId: string): FloorFil
       ...(mvu.commands.length ? applyMvuCommands(stat, mvu.commands) : []),
       ...(mvu.patches.length ? applyJsonPatch(stat, mvu.patches) : [])
     ]
-    f.variables = { ...f.variables, stat_data: JSON.parse(JSON.stringify(stat)), delta_data: deltas }
+    f.variables = {
+      ...f.variables,
+      stat_data: JSON.parse(JSON.stringify(stat)),
+      delta_data: deltas
+    }
     saveFloor(profileId, chatId, f)
   }
   log('info', `MVU re-evaluate — replayed ${floors.length} floor(s); rebuilt stat_data`)
@@ -422,10 +451,7 @@ export const generateRaw = async (
  * stub that returns null; the API surface exists so scripts/cards can call it and
  * degrade gracefully until a provider is configured.
  */
-export const generateImage = async (
-  _profileId: string,
-  prompt: string
-): Promise<string | null> => {
+export const generateImage = async (_profileId: string, prompt: string): Promise<string | null> => {
   log('info', `image generation requested (no provider configured): ${String(prompt).slice(0, 80)}`)
   return null
 }

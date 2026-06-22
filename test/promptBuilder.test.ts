@@ -2,6 +2,7 @@ import { describe, it, expect, beforeAll } from 'vitest'
 import {
   buildPrompt,
   buildScanText,
+  collectRenderMarkers,
   estimateTokens,
   fitToBudget,
   ChatMessage
@@ -463,5 +464,17 @@ describe('buildPrompt — EJS in constant lore (命定之诗 real-card shape)', 
     })
     const wi = messages.find((m) => m.content.startsWith('World Info:'))
     expect(wi?.content).toContain('等级:7')
+  })
+})
+
+describe('collectRenderMarkers', () => {
+  it('collects active [RENDER:*] templates by side; skips inactive / @@dont_activate', () => {
+    const lb = book([
+      { comment: '[RENDER:BEFORE]', content: 'HEADER', constant: true },
+      { comment: '', content: '@@render_after\nFOOTER', constant: true },
+      { comment: '[RENDER:BEFORE]', content: 'INACTIVE' }, // not constant/forced → skipped
+      { comment: '[RENDER:AFTER]', content: '@@dont_activate\nNOPE', constant: true } // dropped
+    ])
+    expect(collectRenderMarkers([lb])).toEqual({ before: ['HEADER'], after: ['FOOTER'] })
   })
 })

@@ -81,6 +81,10 @@ export const registerChatIpc = (ipcMain: IpcMain): void => {
   ipcMain.handle('get-chat-lorebooks', (_, profileId, chatId) =>
     chatService.getChatLorebookIds(profileId, chatId)
   )
+  // ST-PT [RENDER:*]: the active render-marker templates for this session (the renderer wraps each message).
+  ipcMain.handle('get-render-markers', (_, profileId, chatId) =>
+    generationService.getRenderMarkers(profileId, chatId)
+  )
   ipcMain.handle('set-chat-lorebooks', (_, profileId, chatId, ids) =>
     chatService.setChatLorebookIds(profileId, chatId, ids)
   )

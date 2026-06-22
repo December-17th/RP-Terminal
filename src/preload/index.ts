@@ -84,6 +84,8 @@ const api = {
     ipcRenderer.invoke('export-lorebook-dialog', profileId, id, name),
   getChatLorebooks: (profileId: string, chatId: string) =>
     ipcRenderer.invoke('get-chat-lorebooks', profileId, chatId),
+  getRenderMarkers: (profileId: string, chatId: string) =>
+    ipcRenderer.invoke('get-render-markers', profileId, chatId),
   setChatLorebooks: (profileId: string, chatId: string, ids: string[] | null) =>
     ipcRenderer.invoke('set-chat-lorebooks', profileId, chatId, ids),
   getChatMode: (profileId: string, chatId: string) =>
