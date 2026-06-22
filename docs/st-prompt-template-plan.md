@@ -76,7 +76,7 @@ building C2 on top — quickjs-in-renderer is only confirmable by running the ap
   response once** (original model output preserved by default, so this is opt-in).
 
 **Architecture — a shared engine (the key refactor, C1):**
-- **C1 — extract the core engine to `src/shared/templateEngine.ts`.** Move the pure pieces out of
+- **C1 ✅ — extracted the core engine to `src/shared/templateEngine.ts`.** Moved the pure pieces out of
   `templateService.ts`: `initEngine` (loads quickjs), `compile` (EJS→JS), `installBridge` (the `reg()`
   helpers), `evalTemplate`, and the path / `hasTags` / `stripTags` helpers. Both processes import it.
   - **`src/shared` must not import `src/main`.** The one main-coupled helper, `jsonPatch` (uses
@@ -97,8 +97,8 @@ building C2 on top — quickjs-in-renderer is only confirmable by running the ap
 - **C3 — settings.** Extend the `templates` block to `templates.render = { enabled, live, rate_tokens: 500,
   final_pass, permanent }`; surface under the existing engine toggle in `SettingsPanel`.
 
-**Sub-step order:** C1 (shared engine, main-tested) → **runtime spike** (confirm quickjs loads in the
-renderer) → C2 (hooks + live/final modes) → C3 (settings). Commit between each.
+**Sub-step order:** C1 ✅ (shared engine, main-tested) → **runtime spike (next)** (confirm quickjs loads in
+the renderer) → C2 (hooks + live/final modes) → C3 (settings). Commit between each.
 
 ### Phase D — Injection markers + decorators
 **Step 0 — source analysis (DONE; from ST-Prompt-Template `src/features/inject-prompt.ts` +
