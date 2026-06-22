@@ -371,7 +371,20 @@ const helpers: Record<string, any> = {
   formatAsTavernRegexedString: (text: any, ..._a: any[]) => {
     note('formatAsTavernRegexedString')
     return ipcRenderer.sendSync('wcv-host-format-regex', text)
-  }
+  },
+  // replaceTavernRegexes — writing the regex store at runtime is risky (it can break the card's own
+  // beautification) and rare; stubbed (logged) for now. The regex READS above are wired.
+  replaceTavernRegexes: (..._a: any[]) => {
+    note('replaceTavernRegexes')
+    return Promise.resolve()
+  },
+  // Audio — cards play their own audio directly (the CSP allows media:), so these are no-op stubs that
+  // keep TH-audio-API cards from crashing; native <audio>/WebAudio is the real path.
+  audioImport: (..._a: any[]) => note('audioImport'),
+  audioPlay: (..._a: any[]) => note('audioPlay'),
+  audioPause: (..._a: any[]) => note('audioPause'),
+  audioMode: (..._a: any[]) => note('audioMode'),
+  audioEnable: (..._a: any[]) => note('audioEnable')
 }
 Object.assign(w, helpers)
 // Some cards call these via a TavernHelper namespace instead of bare globals.

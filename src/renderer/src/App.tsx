@@ -42,6 +42,12 @@ export default function App(): React.ReactElement {
     const unsubDelta = window.api.onGenerationDelta(({ chatId, delta }) => {
       if (chatId === useChatStore.getState().activeChatId) {
         useChatStore.getState().appendDelta(delta)
+        // Forward streamed tokens to WCV cards (STREAM_TOKEN_RECEIVED) — the accumulated text so far.
+        window.api.wcvBroadcastEvent(
+          chatId,
+          'stream_token_received',
+          useChatStore.getState().streamingText
+        )
       }
     })
     // Live log stream for the Logs panel.

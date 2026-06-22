@@ -89,21 +89,21 @@ State of truth is `floor.variables.stat_data` (the MVU tree). Reads come from a 
   host reload refreshes the chat + sibling WCVs); resolves with the response text. `generateRaw(config)`
   — ✅ a one-off completion → text (`user_input`/`system_prompt`/`max_chat_history`/`overrides`,
   mapped to `RawGenConfig`). **The AI key never reaches the card** (generation is fully host-side).
-  ⬜ live stream-token events to the card (the call resolves on completion for now).
+  ✅ live `STREAM_TOKEN_RECEIVED` events fire to the card as tokens stream (the accumulated text).
 - `triggerSlash` / `execute` (STScript) — 🔁 stub.
 
 ### Regex — 🟡
 - `getTavernRegexes()` (list active display regex) / `formatAsTavernRegexedString(text)` (apply them to a
   string) — ✅ (sync, scoped to the card's world+session, via `scriptApiService`). `replaceTavernRegexes`
-  (write) — ⬜.
+  (write) — 🔁 stub (runtime regex rewrites are risky — can break the card's own beautification — and rare).
 
 ### Events — ✅
 - `eventOn`/`eventOnce`/`eventEmit`/`eventMakeFirst`/`eventRemoveListener` + `SillyTavern.eventSource.on/emit` — ✅ (a local bus). The `tavern_events` enum is provided (`window.tavern_events` + `getContext().eventTypes`/`event_types`).
-- Lifecycle + mutation events — ✅ `GENERATION_STARTED/ENDED`, `CHAT_CHANGED`, `MESSAGE_RECEIVED/UPDATED/DELETED/SWIPED` are broadcast to WCVs, computed from the chat-store transition (reusing the iframe-script event functions — no generation-pipeline change). MVU `mag_variable_*` events fire on a host vars push. ⬜ `STREAM_TOKEN_RECEIVED` (streaming), `MESSAGE_SENT`.
+- Lifecycle + mutation events — ✅ `GENERATION_STARTED/ENDED`, `CHAT_CHANGED`, `MESSAGE_RECEIVED/UPDATED/DELETED/SWIPED` are broadcast to WCVs, computed from the chat-store transition (reusing the iframe-script event functions — no generation-pipeline change). MVU `mag_variable_*` events fire on a host vars push. `STREAM_TOKEN_RECEIVED` ✅ (during `generate`); ⬜ `MESSAGE_SENT`.
 
 ### UI / misc — ✅ / 🔁
 - `toastr.*` — ✅ · `substituteParams`/`substitudeMacros` — 🟡 (pass-through) · `getTavernHelperVersion()` — ✅ (reports ≥ the card's required minimum) · `waitGlobalInitialized()` — ✅ (resolves true)
-- Audio (background music / SFX) — ⬜ in the shim (cards currently load audio directly under the widened CSP).
+- Audio (background music / SFX) — 🔁 stubs (`audioPlay`/`audioPause`/`audioImport`/`audioMode`/`audioEnable`, no-op + logged). Cards play audio directly under the CSP (native `<audio>`/WebAudio) — the real path.
 
 ---
 
@@ -122,12 +122,15 @@ ctx-scoped IPC handler, and update this doc.
 
 ## 6. Near-term gaps (Track C0)
 
-**Done:** lorebook CRUD, char/preset reads, regex read + format, `generate`/`generateRaw`. **Remaining**
-(all ctx-scoped, backed by existing services — wire a shim method + a scoped IPC handler):
+**Done — the TavernHelper JS API is substantially complete:** variables/MVU, lorebook CRUD, char/preset
+reads, regex read+format, chat read+write (`setChatMessages`/`deleteChatMessages`), `generate`/
+`generateRaw`, `tavern_events` lifecycle+mutation, `STREAM_TOKEN_RECEIVED`. **Leftovers:**
 
-- **Chat write** — ✅ `setChatMessages` (edit) + `deleteChatMessages` (truncate-from) done. ⬜ `createChatMessages` general insert (floor-model design), per-message swipe/var edits.
-- **Regex write** — `replaceTavernRegexes`.
-- ✅ **`tavern_events`** — lifecycle + mutation events broadcast to WCVs from the chat-store transition (reused the iframe-script event functions; no `generationService` change). ⬜ `STREAM_TOKEN_RECEIVED`, `MESSAGE_SENT`.
-- **Stream-token events** to the card during `generate`.
-- **Audio** API.
-- Separately, the **ST-Prompt-Template template helpers** (`getwi`/`getchar`/`getpreset`/`define`/render-time eval/markers/faker) extend `templateService`, not the WCV shim.
+- ⬜ `createChatMessages` general insert (needs a floor-model design decision); per-message swipe/var edits.
+- ⬜ `MESSAGE_SENT` event (the user message is bundled into the floor — no separate transition).
+- 🔁 `replaceTavernRegexes` (regex write) + the **audio** API — graceful stubs (low-value / risky; the regex
+  reads + native `<audio>`/WebAudio cover the real cases).
+
+> The other Track C0 half — the **ST-Prompt-Template template engine** long-tail (`getwi`/`getchar`/
+> `getpreset`/`define`/render-time eval/`[GENERATE]`+`@INJECT` markers/`faker`) — extends `templateService`,
+> a separate subsystem, **not yet started**.
