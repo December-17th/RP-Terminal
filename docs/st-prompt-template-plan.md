@@ -53,19 +53,20 @@ Re-checking the reference: the **template engine's scopes are `local`/`global`/`
 *per-message*, a context RPT only has at **render time**. So "dedicated message scope" is implemented as
 part of **Phase C (C2)**, backed by the floor's `variables`. There is no standalone Phase B.
 
-### Phase C — Render-time evaluation (DETAILED DESIGN) — **next up**
+### Phase C — Render-time evaluation (DETAILED DESIGN) — ✅ **implemented** (pending visual check)
 ST-PT evaluates templates on **AI output** too (`[RENDER:BEFORE/AFTER]`, `@@render_*`, `<%- %>`).
 
 **Decision (locked):** run the **full EJS engine in the RENDERER** for both modes, **rate-limited** — eval
 the accumulated text **every N tokens (default 500, user-adjustable)** rather than per-token — plus an
 **optional final pass** when the stream ends.
 
-**Why renderer-side is feasible:** live render can't afford per-chunk IPC to main, so the engine must run
-locally in the renderer. `quickjs-emscripten` ships a **browser-targeted async variant** (embedded WASM) that
-**bundles cleanly into the renderer** via Vite. Main keeps its **sync** `@jitl/quickjs-wasmfile-release-sync`
-variant (externalized in `electron.vite.config.ts`); the renderer uses the async default. Each process loads
-its **own** quickjs instance — same engine code, separate contexts. *(Runtime-verify the renderer load before
-building C2 on top — quickjs-in-renderer is only confirmable by running the app.)*
+**Renderer-side proved out (runtime spike, since removed).** quickjs runs in the renderer, with two fixes the
+spike surfaced: (1) the Vite **dev server mis-serves** the wasmfile `.wasm` (returns index.html → bad magic
+bytes), so the renderer uses the **singlefile** variant `@jitl/quickjs-singlefile-browser-release-sync` (WASM
+embedded as base64 → no fetch; works in dev + prod, and keeps the wasmfile `.wasm` out of the renderer build);
+(2) the app CSP needed **`'wasm-unsafe-eval'`** (permits WASM compile, not JS eval). The engine is now
+variant-agnostic (`initEngine(loader)`): `src/shared` imports only quickjs *types*; main injects the wasmfile
+variant, the renderer injects the singlefile one (`rendererEngine.initRendererEngine`).
 
 **Two modes (same renderer engine):**
 - **(i) Live / render-as-it-goes** — during streaming, re-eval the accumulated text **every N tokens** (the
@@ -85,20 +86,23 @@ building C2 on top — quickjs-in-renderer is only confirmable by running the ap
   - `templateService.ts` keeps the node-coupled parts (global persistence `loadGlobals`/`saveGlobals`, the
     `TemplateData` build wiring) and **re-exports** `evalTemplate` / `initTemplates` / the types, so existing
     imports + the 278 tests stay unchanged (no regression). C1 is verifiable entirely in main.
-- **C2 — renderer render-eval + stream hooks.**
-  - A renderer module (e.g. `src/renderer/src/plugin/renderTemplate.ts`) calls `initEngine()` once, then
-    `evalTemplate(text, ctx)` on the hooks.
-  - **Render context** = the build data the floor already carries (vars, char, world-info, constants),
-    assembled into a `TemplateContext` renderer-side (much of it already flows for the WCV message frames).
-    **`message` scope** reads/writes the **floor's `variables`** (the per-message store) — Phase B realized here.
-  - **Hooks:** the streaming view tracks a token counter (≈ accumulated length); crossing N triggers a live
-    eval (i); stream-complete runs the final pass (ii). A render error **falls back to the raw text** — same
-    fail-safe as the build path.
-- **C3 — settings.** Extend the `templates` block to `templates.render = { enabled, live, rate_tokens: 500,
-  final_pass, permanent }`; surface under the existing engine toggle in `SettingsPanel`.
+- **C2 ✅ — renderer render-eval + stream hooks.**
+  - `src/renderer/src/plugin/renderTemplate.ts` kicks off `initRendererEngine()` at app start, builds a render
+    context from the stores (floor `variables` + `userName`/`charName`/`charData`), and evals message text
+    gated by the toggles (master off → strip; render/mode off → raw). Engine errors fall back to raw text.
+  - **Final pass** — wired into `ChatView`'s `renderedFloors`: each stored response runs EJS → macros →
+    display regex (the floor's `variables` = the `message` scope, so Phase B is realized here).
+  - **Live pass** — `StreamingView`: rate-limited via a quantized `checkpoint` `useMemo` dep (no per-frame
+    eval, no refs-in-render); shows the rendered head + the raw tail so text keeps flowing. Uses the latest
+    committed floor's vars (the in-flight floor isn't folded yet).
+- **C3 ✅ — settings.** `templates.render = { enabled, live, rate_tokens: 500, final_pass }` (models + service
+  default/normalize + renderer store); nested controls under the engine toggle in `SettingsPanel`.
+  *(The `render_permanent` overwrite — rewriting the stored floor — is **deferred**; the final pass is
+  transient/display-only, preserving the raw model output.)*
 
-**Sub-step order:** C1 ✅ (shared engine, main-tested) → **runtime spike (next)** (confirm quickjs loads in
-the renderer) → C2 (hooks + live/final modes) → C3 (settings). Commit between each.
+**Sub-step order:** C1 ✅ → runtime spike ✅ → C2 ✅ → C3 ✅. Built + committed (`81e5f92`, `55239a1`,
+`9bcc7b0`, `ff12979`). Remaining: a visual check in the running app, then the deferred `render_permanent`
+overwrite (opt-in, rewrites the stored floor).
 
 ### Phase D — Injection markers + decorators
 **Step 0 — source analysis (DONE; from ST-Prompt-Template `src/features/inject-prompt.ts` +
