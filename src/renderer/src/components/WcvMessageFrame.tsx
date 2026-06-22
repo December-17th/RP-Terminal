@@ -43,9 +43,28 @@ export function WcvMessageFrame({ html }: { html: string }): React.ReactElement 
   useEffect(() => {
     const el = hostRef.current
     if (!el) return
+    // Nearest scrollable ancestor. A WebContentsView is a native overlay that does NOT clip to a div, so
+    // clamp its bounds to this container — otherwise it paints over the composer / chrome when scrolled.
+    let scrollEl: HTMLElement | null = el.parentElement
+    while (scrollEl) {
+      const oy = getComputedStyle(scrollEl).overflowY
+      if (oy === 'auto' || oy === 'scroll') break
+      scrollEl = scrollEl.parentElement
+    }
     const rect = (): { x: number; y: number; width: number; height: number } => {
       const r = el.getBoundingClientRect()
-      return { x: r.left, y: r.top, width: r.width, height: r.height }
+      let top = r.top
+      let bottom = r.bottom
+      let left = r.left
+      let right = r.right
+      if (scrollEl) {
+        const c = scrollEl.getBoundingClientRect()
+        top = Math.max(top, c.top)
+        bottom = Math.min(bottom, c.bottom)
+        left = Math.max(left, c.left)
+        right = Math.min(right, c.right)
+      }
+      return { x: left, y: top, width: Math.max(0, right - left), height: Math.max(0, bottom - top) }
     }
     window.api.wcvEnsure(slotId, rect(), dataUrl, { profileId, chatId: chatId || '', characterId })
     const onChange = (): void => window.api.wcvSetBounds(slotId, rect())

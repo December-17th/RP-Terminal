@@ -222,7 +222,15 @@ export const registerWcvIpc = (ipcMain: IpcMain): void => {
       if (typeof m.swipe_id === 'number') f.swipe_id = m.swipe_id
       floorService.saveFloor(ctx.profileId, ctx.chatId, f)
     })
-    log('info', 'wcv saveChat', `${assistant.length} assistant msg(s) → floors`)
+    // The greeting/scenario content changed → re-fold its <UpdateVariable> into stat_data (same as the
+    // Re-evaluate button) so the MVU UIs get the opening state, then push it to the host + sibling WCVs.
+    const rebuilt = generationService.reevaluateVariables(ctx.profileId, ctx.chatId)
+    const latest = rebuilt[rebuilt.length - 1]
+    if (latest) {
+      wcvManager.pushHostVars(ctx.chatId, latest.variables)
+      wcvManager.notifyVarsChanged(ctx.chatId, latest.variables.stat_data ?? {})
+    }
+    log('info', 'wcv saveChat', `${assistant.length} assistant msg(s) → floors + reevaluated`)
     return true
   })
 
