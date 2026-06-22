@@ -31,6 +31,8 @@ const api = {
   wcvSetVisible: (id: string, visible: boolean) =>
     ipcRenderer.send('wcv-set-visible', id, visible),
   wcvDestroy: (id: string) => ipcRenderer.send('wcv-destroy', id),
+  wcvBroadcastVars: (chatId: string, statData: unknown) =>
+    ipcRenderer.send('wcv-broadcast-vars', chatId, statData),
   generate: (profileId: string, chatId: string, userAction: string) =>
     ipcRenderer.invoke('generate', profileId, chatId, userAction),
   regenerate: (profileId: string, chatId: string) =>

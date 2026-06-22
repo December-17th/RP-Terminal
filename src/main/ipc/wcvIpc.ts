@@ -14,6 +14,10 @@ export const registerWcvIpc = (ipcMain: IpcMain): void => {
   ipcMain.on('wcv-set-bounds', (_e, id, bounds) => wcvManager.setBounds(id, bounds))
   ipcMain.on('wcv-set-visible', (_e, id, visible) => wcvManager.setVisible(id, visible))
   ipcMain.on('wcv-destroy', (_e, id) => wcvManager.destroy(id))
+  // Host → card panels: the latest stat_data changed (model turn / edit) — refresh their mirrors.
+  ipcMain.on('wcv-broadcast-vars', (_e, chatId, statData) =>
+    wcvManager.notifyVarsChanged(chatId, statData)
+  )
 
   // Read the latest floor's message variables (stat_data) for the calling panel's session.
   ipcMain.handle('wcv-host-get-vars', (e) => {

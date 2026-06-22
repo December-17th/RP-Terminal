@@ -47,10 +47,20 @@ export default function App(): React.ReactElement {
         useChatStore.getState().setLatestFloorVariables(variables)
       }
     })
+    // Broadcast the latest stat_data to any WebContentsView card panel whenever floors change
+    // (a model turn / re-evaluate / edit), so the card's own UI reflects model-driven updates live.
+    const unsubFloors = useChatStore.subscribe((state, prev) => {
+      if (state.floors === prev.floors || !state.activeChatId) return
+      const sd = state.floors.length
+        ? state.floors[state.floors.length - 1]?.variables?.stat_data
+        : undefined
+      if (sd) window.api.wcvBroadcastVars(state.activeChatId, sd)
+    })
     return () => {
       unsubDelta()
       unsubLog()
       unsubWcv()
+      unsubFloors()
     }
   }, [])
 
