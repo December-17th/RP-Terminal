@@ -55,6 +55,15 @@ describe('templateService TH-3 helpers', () => {
     expect(off.vars.n).toBe(1) // not mutated — engine was off
   })
 
+  it('matchChatMessages / parseJSON / jsonPatch helpers', () => {
+    expect(evalTemplate("<%= matchChatMessages('hello') %>", ctx())).toBe('true')
+    expect(evalTemplate("<%= matchChatMessages('nope') %>", ctx())).toBe('false')
+    expect(evalTemplate(`<%= parseJSON('{"a":1}').a %>`, ctx())).toBe('1')
+    expect(
+      evalTemplate("<%= jsonPatch({n:1}, [{op:'replace',path:'/n',value:5}]).n %>", ctx())
+    ).toBe('5')
+  })
+
   it('getwi(name) returns a matched world-info entry by name', () => {
     expect(evalTemplate("<%= getwi('Town') %>", ctx())).toBe('A quiet harbor town.')
     expect(evalTemplate("<%= getwi('Nope') %>", ctx())).toBe('')

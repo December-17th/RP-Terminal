@@ -182,7 +182,10 @@ export const generate = async (
         userName,
         charName: card.data.name || 'Character',
         lastUserMessage: userAction,
-        lastCharMessage: lastFloor?.response.content || ''
+        lastCharMessage: lastFloor?.response.content || '',
+        chatId,
+        characterId: chat.character_id,
+        runType: 'generate'
       },
       // TH-3 read-only template accessors (getchar/getwi/getMessageHistory/…).
       data: {

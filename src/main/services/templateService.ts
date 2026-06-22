@@ -2,6 +2,7 @@ import path from 'path'
 import { getQuickJS, QuickJSContext, QuickJSWASMModule } from 'quickjs-emscripten'
 import { getAppDir, readJsonSync, writeJsonSyncAtomic } from './storageService'
 import { log } from './logService'
+import { applyJsonPatch } from '../parsers/mvuParser'
 
 /**
  * ST-Prompt-Template compatible engine. Card/preset templates are EJS-style
@@ -182,6 +183,29 @@ const installBridge = (vm: QuickJSContext, ctx: TemplateContext): void => {
   reg('getCurrentChatName', () => data.chatName || '')
   reg('getPreset', () => data.presetName || '')
   reg('getqr', () => '') // quick-replies aren't modeled in RP Terminal — stubbed
+  reg('matchChatMessages', (pattern: any) => {
+    try {
+      const re = new RegExp(String(pattern))
+      return (data.messages || []).some((m) => re.test(m.user || '') || re.test(m.assistant || ''))
+    } catch {
+      return false
+    }
+  })
+  reg('parseJSON', (s: any) => {
+    try {
+      return JSON.parse(String(s))
+    } catch {
+      return null // lenient: malformed → null rather than throw
+    }
+  })
+  reg('jsonPatch', (obj: any, ops: any) => {
+    try {
+      applyJsonPatch(obj || {}, Array.isArray(ops) ? ops : [])
+    } catch {
+      /* leave obj as-is on a bad patch */
+    }
+    return obj
+  })
 
   // Read-only constants.
   const setConst = (name: string, val: any): void => {
