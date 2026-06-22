@@ -368,3 +368,46 @@ The WCV card UI is a working spike for TRUSTED cards. Hardening status:
   WCV card UI is trusted-card-only.
 - **Deferred — vendoring.** The spike loads the card's frontend from jsDelivr at runtime; production
   should cache/vendor a card's assets (offline + integrity) behind the consent gate.
+
+---
+
+# Other 命定之诗 frontends — analysis (#5)
+
+`FrontEnd-for-destined-journey@1.8.2` ships FOUR frontends + two utilities:
+
+- `dist/status/` — the status panel. **DONE:** runs in a WCV (React app); our shim works.
+- `dist/home/` — the home / launcher screen. A **Vue** app (`window.Vue` global), imports `json5`, and
+  CHECKS the environment at boot: `getTavernHelperVersion()` plus `tavernHelper`/`ejsTemplate`/`mvu`
+  status (it shows "加载中…" until `allOk`). A *different* global surface than the React status UI.
+- `dist/custom_start/` — character creation (a one-time "start" flow). Writes the INITIAL variables.
+- `dist/data_schema/index.js` — the variable Zod schema. `dist/image_preload/index.js` — an image
+  preloader (minor; could run as a card script or be ignored).
+
+## What integrating the others needs
+Same-author React/Vue ESM apps, loaded the same way (`$('body').load` → a WCV), but each reaches for a
+slightly different global set, so the shim is extended per frontend:
+- **home/custom_start use Vue** → provide `window.Vue` (load the Vue lib, as we do lodash/jQuery).
+- **They check the environment** → shim `getTavernHelperVersion()` (return a version) and report
+  TavernHelper / EjsTemplate / MVU status as ok/enabled so `allOk` passes.
+- **custom_start writes the initial state** → the write path (#1) is ready; it likely drives its form
+  from the schema, so load `dist/data_schema/index.js` and expose it via `getMvuData().schema`.
+- Discover each frontend's exact globals by scanning its bundle (the method we used for status) when
+  integrating — `home`/`custom_start` inline the bundle on line 1, not line 2.
+
+## The external MVU framework (MagVarUpdate, MIT)
+We run the `<UpdateVariable>` update pipeline NATIVELY (`mvuParser`: `_.set` + JSONPatch + `delta`); the
+thin `window.Mvu` shim serves the UIs' reads/writes. **Recommendation: keep this — do NOT load the full
+MVU bundle** (it needs the whole host surface and would run a second, conflicting update engine).
+Instead load the **data_schema** to fill the schema gap (so schema-dependent UIs + custom_start work),
+and report MVU "status: ok" to home's env check. Optionally port MVU's schema-defaults / `initvar` logic
+natively (MIT, reusable) for robustness.
+
+## Options
+- **A — Status only (current).** The in-session status panel is the primary UI; skip `home` (launcher)
+  and `custom_start` (one-time). Char creation handled natively / manually. Lowest effort.
+- **B — Add home + custom_start as WCV views.** Extend the shim (Vue + env-check + data_schema); add a
+  `home` view and a `custom_start` flow gated to session start. Runs the card's full frontend suite.
+  Medium effort (per-frontend globals + the creation-timing UX).
+- **C — Recommended: status now (done) → `custom_start` next** (char creation closes the create→play
+  loop and exercises the write path) → `home` as a launcher view if wanted. Keep the native MVU engine
+  and load `data_schema` throughout.
