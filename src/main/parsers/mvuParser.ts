@@ -467,6 +467,21 @@ export const parseJsonPatch = (src: string): JsonPatchOp[] => {
 }
 
 /** Apply RFC-6902 ops to a mutable root (stat_data); returns a per-op delta log (mag_* events). */
+/** Apply a numeric `delta` (increment/decrement) to a stat value, honoring the common MVU value
+ *  shapes: a plain number, a `[value, …]` tuple, or a "current/max" string. Missing → starts at 0. */
+const applyNumericDelta = (cur: any, delta: number): any => {
+  if (cur == null) return delta
+  if (typeof cur === 'number') return cur + delta
+  if (Array.isArray(cur) && typeof cur[0] === 'number') return [cur[0] + delta, ...cur.slice(1)]
+  if (typeof cur === 'string') {
+    const cm = cur.match(/^\s*(-?\d+(?:\.\d+)?)\s*\/\s*(.+)$/) // "current/max"
+    if (cm) return `${parseFloat(cm[1]) + delta}/${cm[2].trim()}`
+    const n = parseFloat(cur)
+    if (!Number.isNaN(n) && /^\s*-?\d/.test(cur)) return String(n + delta)
+  }
+  return cur // not a number-bearing shape — leave unchanged
+}
+
 export const applyJsonPatch = (root: Record<string, any>, ops: JsonPatchOp[]): MvuDelta[] => {
   const deltas: MvuDelta[] = []
   for (const o of ops) {
@@ -498,6 +513,13 @@ export const applyJsonPatch = (root: Record<string, any>, ops: JsonPatchOp[]): M
       case 'copy': {
         if (!o.from) continue
         setAtSeg(root, segs, clone(getAtSeg(root, ptrSegments(o.from))))
+        break
+      }
+      // Non-standard MVU op: increment the existing numeric stat by `value` (e.g. EXP +30, MP -500).
+      case 'delta': {
+        const d = typeof o.value === 'number' ? o.value : parseFloat(String(o.value))
+        if (Number.isNaN(d)) continue
+        setAtSeg(root, segs, applyNumericDelta(getAtSeg(root, segs), d))
         break
       }
       case 'test':

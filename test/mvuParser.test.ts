@@ -179,6 +179,22 @@ describe('applyMvuCommands', () => {
     expect(sd.命运点数).toBeUndefined()
   })
 
+  it('applies op:delta (increment) to numbers, [value,…] tuples, and "current/max" strings', () => {
+    // The exact shape 命定之诗 emits (EXP +30, MP -500), plus a [value, label] tuple.
+    const sd: Record<string, any> = {
+      主角: { 累计经验值: 30, 法力值: '2250/2250', 体力: [1250, '体力值'] }
+    }
+    const deltas = applyJsonPatch(sd, [
+      { op: 'delta', path: '/主角/累计经验值', value: 30 },
+      { op: 'delta', path: '/主角/法力值', value: -500 },
+      { op: 'delta', path: '/主角/体力', value: -50 }
+    ])
+    expect(sd.主角.累计经验值).toBe(60)
+    expect(sd.主角.法力值).toBe('1750/2250')
+    expect(sd.主角.体力).toEqual([1200, '体力值'])
+    expect(deltas).toHaveLength(3) // all applied (not skipped as unknown ops)
+  })
+
   it('handles assign-by-key, remove-by-key, and move', () => {
     const stat: Record<string, any> = { inv: { gold: 1 }, party: ['a', 'b', 'c'], bag: { gem: 9 } }
     const deltas = applyMvuCommands(stat, [
