@@ -32,18 +32,25 @@ Today `storeFor` maps every non-global scope to the chat vars. Give `message` + 
 - `character` scope → a per-card store (`profiles/<id>/template-char-<cardId>.json`, like globals).
 - Persist both on the build path (like `saveGlobals`).
 
-### Phase C — Render-time evaluation **(needs a decision — see below)**
-ST-PT also evaluates templates on **AI output** (`[RENDER:BEFORE/AFTER]`, `@@render_*`, `<%- %>` at render).
-The engine is **main-side** (quickjs); display is **renderer-side + sync**. Options:
-- **(a) IPC eval bridge** — the renderer calls main to eval the response template, then re-renders. Async; one extra round-trip per message render.
-- **(b) Renderer-side engine** — a second quickjs instance in the renderer (or the sandbox iframe) evaluating at render. Keeps it sync-ish; duplicates the engine.
-- **(c) Macro-only** — keep the existing render-time macro pass (covers `{{getvar}}` etc.); skip full EJS at render.
+### Phase C — Render-time evaluation — **TWO modes (decided)**
+ST-PT evaluates templates on **AI output** too (`[RENDER:BEFORE/AFTER]`, `@@render_*`, `<%- %>`). Both
+timings are required:
+- **(i) Render-as-it-goes** — eval on each streaming chunk so the displayed partial reflects the template
+  LIVE. Favors a **renderer-side** eval (per-chunk IPC to main would be too chatty).
+- **(ii) Render-on-complete** — eval the finished response once (renderer engine, or main via IPC). Maps
+  to ST-PT `runType: 'render'` (transient) vs `'render_permanent'`.
 
-### Phase D — Injection markers + decorators **(verify the ST contract first)**
-Positional prompt injection + world-info activation control, implemented in `promptBuilder` + the WI matcher:
+Likely shape: a small **renderer-side quickjs render-eval** reusing the `installBridge` helpers (the build
+data pushed to the renderer), driven by the streaming/finalize hooks in `StreamingView`/`ChatView`, with a
+per-mode flag. (The main engine stays the prompt-build path.)
+
+### Phase D — Injection markers + decorators — **analyze the source first (decided)**
+**Step 0 — read the source** (SillyTavern's prompt assembly + ST-Prompt-Template's marker/decorator
+implementation) to pin down the EXACT contract before writing any code: positions/ordering, the
+regex-target semantics, decorator precedence, and the world-info activation effects. THEN implement in
+`promptBuilder` + the WI matcher.
 - `[GENERATE:BEFORE/AFTER]`, `[GENERATE:{idx}:BEFORE/AFTER]`, `[GENERATE:REGEX:pattern]`, `@INJECT pos/target/regex`.
 - Decorators: `@@activate`, `@@if`, `@@generate_before/after`, `@@render_before/after`, `@@iframe`, `@@private`, `@@dont_activate`, `@@dont_preload`, `@@only_preload`, `@@message_formatting`.
-- ROADMAP flags the exact ST semantics as uncertain — **confirm behavior against ST-PT before building.**
 
 ### Phase E — The `EjsTemplate` API surface
 For cards/scripts that call the extension directly (`globalThis.EjsTemplate.*` + exposing it through the WCV shim):
@@ -53,6 +60,8 @@ For cards/scripts that call the extension directly (`globalThis.EjsTemplate.*` +
 **A → B → C → D → E.** A and B are low-risk wiring + the highest value-per-effort; C and D are the
 architectural pieces gated on the decisions below; E is a thin compatibility cap.
 
-## Decisions needed
-1. **Render-time eval approach (Phase C)** — (a) IPC bridge, (b) renderer-side engine, or (c) macro-only.
-2. **Injection markers (Phase D)** — tackle now (after verifying the ST contract) or defer (ROADMAP currently defers them).
+## Decisions (answered)
+1. **Render-time eval (Phase C):** TWO modes — render-as-it-goes (during streaming) + render-on-complete.
+   Leans renderer-side (streaming can't afford per-chunk IPC). See Phase C.
+2. **Injection markers (Phase D):** analyze the SillyTavern + ST-Prompt-Template source to establish the
+   exact contract before implementing. See Phase D Step 0.
