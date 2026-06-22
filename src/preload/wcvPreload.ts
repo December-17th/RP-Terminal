@@ -1,9 +1,9 @@
-/* eslint-disable @typescript-eslint/no-explicit-any, @typescript-eslint/explicit-function-return-type, @typescript-eslint/no-unused-vars --
+/* eslint-disable @typescript-eslint/no-explicit-any, @typescript-eslint/explicit-function-return-type, @typescript-eslint/no-unused-vars, @typescript-eslint/no-require-imports --
    spike shim: it bridges the untyped ST / TavernHelper / MVU host globals into the card page, a flat bag
-   of small dynamic stubs whose placeholder params (_d/_o/_a) mirror the real host-API signatures. */
+   of small dynamic stubs whose placeholder params (_d/_o/_a) mirror the real host-API signatures; jQuery
+   is lazily require()'d on first use (importing it at preload load crashes — see below). */
 import { ipcRenderer } from 'electron'
 import _ from 'lodash'
-import jquery from 'jquery'
 import { z as zod } from 'zod'
 
 /**
@@ -190,9 +190,20 @@ w.TavernHelper = helpers
 // --- libraries the card bundle externalizes as bare globals (lodash `_`, Zod `z`, jQuery `$`, `toastr`) ---
 w._ = _
 w.z = zod
-// jQuery: the import may already be the jQuery fn (has .fn) or a factory needing the window.
-const jqMod: any = jquery
-w.$ = w.jQuery = jqMod && jqMod.fn ? jqMod : typeof jqMod === 'function' ? jqMod(w) : jqMod
+// jQuery: required LAZILY on first access. Requiring at preload load crashes — jQuery probes
+// document.documentElement at import time, which is null before the page parses (and that failure
+// takes the whole preload down). The card only touches `$` once its deferred module runs, by which
+// point the DOM is ready, so a getter that requires on first access is safe.
+let jqCache: any = null
+const getJq = (): any => {
+  if (!jqCache) {
+    const m: any = require('jquery')
+    jqCache = m && m.fn ? m : typeof m === 'function' ? m(w) : m
+  }
+  return jqCache
+}
+Object.defineProperty(w, '$', { configurable: true, get: getJq })
+Object.defineProperty(w, 'jQuery', { configurable: true, get: getJq })
 const toast = (level: string) => (msg?: any) => {
   note('toastr.' + level)
   console.info('[card toastr.' + level + ']', msg)
