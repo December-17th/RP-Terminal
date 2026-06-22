@@ -3,6 +3,7 @@
    of small dynamic stubs whose placeholder params (_d/_o/_a) mirror the real host-API signatures. */
 import { ipcRenderer } from 'electron'
 import _ from 'lodash'
+import jquery from 'jquery'
 import { z as zod } from 'zod'
 
 /**
@@ -131,6 +132,10 @@ const helpers: Record<string, any> = {
     return []
   },
   setChatMessages: (..._a: any[]) => note('setChatMessages'),
+  getCurrentMessageId: () => {
+    note('getCurrentMessageId')
+    return 0
+  },
   eventOn: (n: string, cb: any) => {
     note('eventOn')
     on(n, cb)
@@ -182,9 +187,12 @@ Object.assign(w, helpers)
 // Some cards call these via a TavernHelper namespace instead of bare globals.
 w.TavernHelper = helpers
 
-// --- libraries the card bundle externalizes as bare globals (lodash `_`, Zod `z`, `toastr`) ---
+// --- libraries the card bundle externalizes as bare globals (lodash `_`, Zod `z`, jQuery `$`, `toastr`) ---
 w._ = _
 w.z = zod
+// jQuery: the import may already be the jQuery fn (has .fn) or a factory needing the window.
+const jqMod: any = jquery
+w.$ = w.jQuery = jqMod && jqMod.fn ? jqMod : typeof jqMod === 'function' ? jqMod(w) : jqMod
 const toast = (level: string) => (msg?: any) => {
   note('toastr.' + level)
   console.info('[card toastr.' + level + ']', msg)
