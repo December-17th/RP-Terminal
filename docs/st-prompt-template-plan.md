@@ -141,6 +141,12 @@ overwrite (opt-in, rewrites the stored floor).
   Phase C); `[InitialVariables]` / `@@initial_variables` (entry JSON → initial chat variables). The preload
   decorators (`@@dont_preload`/`@@only_preload`/`@@preprocessing`) are moot — RPT has no card-open preload
   phase; `@@if`/`@@iframe`/`@@message_formatting` are minor.
+- 🧪 **Tested against the example card (命定之诗, `0bd6360`):** all 469 lorebook entries are plain
+  worldbuilding — the `[…]` comments are category labels, **not** markers (0 injection markers in the whole
+  book), and 34 entries use **build-time EJS** (`getvar`/`getMessageVar` over `stat_data`, `<%_` trim). Phase
+  D correctly leaves them as lore (no false positives). So `[RENDER:*]` / `[InitialVariables]` are **unused by
+  this card** — deferred unless full ST-PT parity is wanted (they'd be built speculatively, with nothing to
+  validate against).
 
 ### Phase E — The `EjsTemplate` API surface
 For cards/scripts that call the extension directly (`globalThis.EjsTemplate.*` + exposing it through the WCV shim):
