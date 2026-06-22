@@ -7,24 +7,27 @@ import _ from 'lodash'
 import { z as zod } from 'zod'
 
 /**
- * STARTER SHIM (spike) for a card's own frontend running in a WebContentsView — e.g. 命定之诗's React
- * status UI, which reads `window.Mvu.getMvuData()` and the bare TavernHelper globals. Runs in the
- * page's MAIN world (contextIsolation:false) so it can DEFINE those globals; every host call is
- * wrapped in a LOGGER so the first load prints exactly what the card reaches for. Reads come from a
- * synchronous `stat_data` mirror (MVU getters are sync; our IPC is async, so we hydrate + push);
- * writes go through the host bridge (`apply-variable-ops`). The heavy MVU update-pipeline deps
- * (lorebook/generate/getChatMessages) are stubs — we do that natively (`mvuParser`).
+ * SHIM for a card's own frontend running in a WebContentsView — e.g. 命定之诗's React status UI, which
+ * reads `window.Mvu.getMvuData()` + the bare TavernHelper globals. Runs in the page's MAIN world
+ * (contextIsolation:false) so it can DEFINE those globals. READS come from a synchronous `stat_data`
+ * mirror (MVU getters are sync; our IPC is async, so we hydrate via sendSync + keep fresh by push).
+ * WRITES go through the host bridge (apply-variable-ops / set-vars), updating the mirror optimistically
+ * so the card sees its own edit instantly. Heavy MVU update-pipeline deps (lorebook/generate) are
+ * stubs — we do that natively (mvuParser).
  *
- * Trusted-card only: a main-world shim + a remote page sharing the bridge. The WCV is still a
- * separate process with nodeIntegration:false (no host/Node reach); production vendors assets +
- * hardens (contextBridge / CSP).
+ * Trusted-card only: a main-world shim + a remote page sharing the bridge. The WCV is still a separate
+ * process with nodeIntegration:false (no host/Node reach); production vendors assets + hardens.
+ *
+ * Diagnostics are OFF by default; add `#rptdebug` to the panel URL to log every host call + subscription.
  */
 const w = window as any
+const DEBUG = typeof location !== 'undefined' && /rptdebug/i.test(location.hash + location.search)
 
 // --- host bridge (IPC) ---
 const rptHost = {
   getVariables: (): Promise<any> => ipcRenderer.invoke('wcv-host-get-vars'),
   applyVariableOps: (ops: any[]): Promise<any> => ipcRenderer.invoke('wcv-host-apply-vars', ops),
+  setVariables: (sd: any): Promise<any> => ipcRenderer.invoke('wcv-host-set-vars', sd),
   onVarsChanged: (cb: (v: any) => void) => {
     const l = (_e: any, v: any): void => cb(v)
     ipcRenderer.on('wcv-vars-changed', l)
@@ -33,20 +36,18 @@ const rptHost = {
 }
 w.rptHost = rptHost
 
-// --- missing-API logger: print each unique host call once ---
+// --- missing-API logger: print each unique host call once (DEBUG only) ---
 const seen = new Set<string>()
 const note = (name: string) => {
-  if (!seen.has(name)) {
-    seen.add(name)
-    console.warn('[rpt-shim] card called:', name)
-  }
+  if (!DEBUG || seen.has(name)) return
+  seen.add(name)
+  console.warn('[rpt-shim] card called:', name)
 }
 
 // --- event bus (eventOn / eventEmit) ---
 const bus: Record<string, Array<(...a: any[]) => void>> = {}
 const on = (name: string, cb: (...a: any[]) => void) => {
-  // Diagnostic: surface exactly which events the card subscribes to, so we emit the right ones.
-  console.info('[rpt-shim] subscribe:', name)
+  if (DEBUG) console.info('[rpt-shim] subscribe:', name)
   ;(bus[name] ||= []).push(cb)
 }
 const emit = (name: string, ...args: any[]) => {
@@ -63,14 +64,13 @@ const emit = (name: string, ...args: any[]) => {
 let statData: any = {}
 const hydrate = (v: any) => {
   statData = v || {}
-  // Fire the full MVU update cycle (using the same names exposed on Mvu.events) so whichever event
-  // the card's UI listens to triggers a refresh.
+  // Fire the full MVU update cycle (names match Mvu.events) so whichever event the card listens to fires.
   emit('mag_variable_update_started', statData)
   emit('mag_variable_updated', statData)
   emit('mag_variable_update_ended', statData)
 }
-// Sync initial read so the mirror is populated BEFORE the card's first render (an async IPC read
-// would land after the React app has already rendered defaults). sendSync blocks briefly — fine once.
+// Sync initial read so the mirror is populated BEFORE the card's first render (an async IPC read would
+// land after the React app has already rendered defaults). sendSync blocks briefly — fine once.
 try {
   statData = ipcRenderer.sendSync('wcv-host-get-vars-sync') || {}
 } catch {
@@ -82,9 +82,18 @@ const getByPath = (root: any, path: string) =>
   String(path)
     .split('.')
     .reduce((o, k) => (o == null ? undefined : o[k]), root)
+const setByPath = (root: any, path: string, value: any) => {
+  const parts = String(path).split('.')
+  let o = root
+  for (let i = 0; i < parts.length - 1; i++) {
+    if (o[parts[i]] == null || typeof o[parts[i]] !== 'object') o[parts[i]] = {}
+    o = o[parts[i]]
+  }
+  o[parts[parts.length - 1]] = value
+}
 const toPointer = (path: string) => '/' + String(path).replace(/\./g, '/')
 
-// --- window.Mvu (thin: display reads from the mirror, writes through the bridge) ---
+// --- window.Mvu (display reads from the mirror; writes persist via the bridge + update the mirror) ---
 w.Mvu = {
   getMvuData: (_o?: any) => {
     note('Mvu.getMvuData')
@@ -97,10 +106,15 @@ w.Mvu = {
   },
   setMvuVariable: (_d: any, path: string, value: any, _o?: any) => {
     note('Mvu.setMvuVariable')
+    setByPath(statData, path, value) // optimistic — card sees its own write instantly
     void rptHost.applyVariableOps([{ op: 'add', path: toPointer(path), value }])
     return value
   },
-  replaceMvuData: (_d: any, _o?: any) => note('Mvu.replaceMvuData'),
+  replaceMvuData: (d: any, _o?: any) => {
+    note('Mvu.replaceMvuData')
+    statData = (d && d.stat_data) || d || {}
+    void rptHost.setVariables(statData)
+  },
   parseMessage: (..._a: any[]) => note('Mvu.parseMessage'),
   reloadInitVar: (..._a: any[]) => note('Mvu.reloadInitVar'),
   events: {
@@ -136,16 +150,25 @@ const helpers: Record<string, any> = {
     // TavernHelper returns the scope's variable object, which for MVU wraps stat_data.
     return { stat_data: statData }
   },
-  replaceVariables: (..._a: any[]) => note('replaceVariables'),
+  replaceVariables: (vars: any, _o?: any) => {
+    note('replaceVariables')
+    statData = (vars && vars.stat_data) || vars || {}
+    void rptHost.setVariables(statData)
+  },
   insertOrAssignVariables: (vars: any, _o?: any) => {
     note('insertOrAssignVariables')
-    const ops = Object.entries(vars || {}).map(([k, v]) => ({ op: 'add', path: '/' + k, value: v }))
-    if (ops.length) void rptHost.applyVariableOps(ops)
+    const entries = Object.entries(vars || {})
+    for (const [k, v] of entries) statData[k] = v // optimistic
+    if (entries.length) void rptHost.applyVariableOps(entries.map(([k, v]) => ({ op: 'add', path: '/' + k, value: v })))
   },
   updateVariablesWith: (..._a: any[]) => note('updateVariablesWith'),
   getChatMessages: (..._a: any[]) => {
     note('getChatMessages')
-    return []
+    try {
+      return ipcRenderer.sendSync('wcv-host-get-messages-sync') || []
+    } catch {
+      return []
+    }
   },
   setChatMessages: (..._a: any[]) => note('setChatMessages'),
   getCurrentMessageId: () => {
@@ -207,9 +230,9 @@ w.TavernHelper = helpers
 w._ = _
 w.z = zod
 // jQuery: required LAZILY on first access. Requiring at preload load crashes — jQuery probes
-// document.documentElement at import time, which is null before the page parses (and that failure
-// takes the whole preload down). The card only touches `$` once its deferred module runs, by which
-// point the DOM is ready, so a getter that requires on first access is safe.
+// document.documentElement at import time, which is null before the page parses (and that failure takes
+// the whole preload down). The card only touches `$` once its deferred module runs, by which point the
+// DOM is ready, so a getter that requires on first access is safe.
 let jqCache: any = null
 const getJq = (): any => {
   if (!jqCache) {
@@ -222,7 +245,7 @@ Object.defineProperty(w, '$', { configurable: true, get: getJq })
 Object.defineProperty(w, 'jQuery', { configurable: true, get: getJq })
 const toast = (level: string) => (msg?: any) => {
   note('toastr.' + level)
-  console.info('[card toastr.' + level + ']', msg)
+  if (DEBUG) console.info('[card toastr.' + level + ']', msg)
 }
 w.toastr = {
   success: toast('success'),
@@ -234,4 +257,4 @@ w.toastr = {
   options: {}
 }
 
-console.info('[rpt-shim] starter shim installed (WebContentsView card panel)')
+if (DEBUG) console.info('[rpt-shim] starter shim installed (WebContentsView card panel)')

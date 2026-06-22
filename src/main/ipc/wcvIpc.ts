@@ -53,4 +53,34 @@ export const registerWcvIpc = (ipcMain: IpcMain): void => {
     wcvManager.notifyVarsChanged(ctx.chatId, statData)
     return statData
   })
+
+  // Replace the latest floor's stat_data wholesale (Mvu.replaceMvuData / replaceVariables from the card).
+  ipcMain.handle('wcv-host-set-vars', (e, statData) => {
+    const ctx = wcvManager.contextFor(e.sender.id)
+    if (!ctx) return null
+    const floors = floorService.getAllFloors(ctx.profileId, ctx.chatId)
+    const latest = floors[floors.length - 1]
+    if (!latest) return null
+    latest.variables = { ...latest.variables, stat_data: statData }
+    floorService.saveFloor(ctx.profileId, ctx.chatId, latest)
+    wcvManager.pushHostVars(ctx.chatId, latest.variables)
+    wcvManager.notifyVarsChanged(ctx.chatId, statData)
+    return statData
+  })
+
+  // Map the chat's floors → TavernHelper-style message objects (sync; getChatMessages from the card).
+  ipcMain.on('wcv-host-get-messages-sync', (e) => {
+    const ctx = wcvManager.contextFor(e.sender.id)
+    if (!ctx) {
+      e.returnValue = []
+      return
+    }
+    const floors = floorService.getAllFloors(ctx.profileId, ctx.chatId)
+    const msgs: Array<{ role: string; message: string }> = []
+    for (const f of floors) {
+      if (f.user_message?.content) msgs.push({ role: 'user', message: f.user_message.content })
+      msgs.push({ role: 'assistant', message: f.response?.content ?? '' })
+    }
+    e.returnValue = msgs
+  })
 }
