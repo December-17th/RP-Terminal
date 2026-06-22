@@ -162,8 +162,9 @@ Built on a new `evalTemplateDetailed(template, ctx) → { output, error }` (engi
   `saveVariables` (→ `rptHost.setVariables` + rehydrate).
 - Thin stubs: `setFeatures`/`getFeatures`/`resetFeatures`, `refreshWorldInfo`, `compileTemplate`, `defines`,
   `initialVariables` (RPT has no engine feature flags or card-open preload phase).
-- Runtime-verified when a card calls the API — the example card uses the TH API + MVU, not `EjsTemplate.*`,
-  so it's a no-op there.
+- Runtime-verified ✅ — `EjsTemplate.evalTemplate('<%= 1 + 1 %>')` → `"2"` in a WCV panel's DevTools, so the
+  quickjs engine loads + runs in the WCV preload. (The example card uses the TH API + MVU, not `EjsTemplate.*`,
+  so the API is a no-op during its normal play.)
 
 ## Sequencing — ✅ COMPLETE
 **A ✅ → C ✅ (B folds in) → D ✅ → E ✅.** The whole ST-Prompt-Template plan is implemented: A (helpers/
