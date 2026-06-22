@@ -60,6 +60,27 @@ export const RPTerminalExtSchema = z.object({
   game_rules: z.record(z.string(), z.any()).default({}),
   assets: z.record(z.string(), z.string()).default({}),
 
+  /** Static, card-determined panel layout (the WCV plan): a grid of slots, each hosting a native
+   *  view (by id, e.g. "chat"/"status") or an out-of-process card-UI WebContentsView ("wcv" + an
+   *  `entry` URL). `rect` is [col, row, colSpan, rowSpan] in the grid. */
+  panel_ui: z
+    .object({
+      mode: z.literal('static').optional(),
+      grid: z.object({ cols: z.number(), rows: z.number() }).default({ cols: 12, rows: 12 }),
+      slots: z
+        .array(
+          z.object({
+            id: z.string(),
+            view: z.string(),
+            rect: z.tuple([z.number(), z.number(), z.number(), z.number()]),
+            entry: z.string().optional(),
+            title: z.string().optional()
+          })
+        )
+        .default([])
+    })
+    .optional(),
+
   // --- World Card bundle slots (Track S). Optional so a plain card stays minimal; the
   // element shapes stay loose (z.any) because they're foreign formats (ST regex/preset/
   // lorebook) normalized on import. See docs/world-card-design.md §3. ---

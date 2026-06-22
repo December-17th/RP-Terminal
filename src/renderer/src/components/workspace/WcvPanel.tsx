@@ -38,7 +38,7 @@ refresh();
 const STATUS_URL =
   'https://testingcf.jsdelivr.net/gh/The-poem-of-destiny/FrontEnd-for-destined-journey@1.8.2/dist/status/index.html'
 
-function WcvPanel({ slotId, url }: { slotId: string; url: string }): React.ReactElement {
+export function WcvPanel({ slotId, url }: { slotId: string; url: string }): React.ReactElement {
   const hostRef = useRef<HTMLDivElement>(null)
   const layouts = useWorkspaceStore((s) => s.layouts) // re-measure when the layout changes
   const { profileId } = useWorkspaceContext()
@@ -80,6 +80,23 @@ function WcvPanel({ slotId, url }: { slotId: string; url: string }): React.React
 // Stable wrapper components so the workspace view-picker can mount each without remount churn.
 export function WcvTestView(): React.ReactElement {
   return <WcvPanel slotId="wcv-test" url={TEST_URL} />
+}
+
+// A default static layout for trying the StaticWorkspace on a card that doesn't declare `panel_ui`:
+// chat on the left, the native RPG status top-right, the card's own WCV UI bottom-right.
+export const DEFAULT_STATIC_LAYOUT = {
+  grid: { cols: 12, rows: 12 },
+  slots: [
+    { id: 'chat', view: 'chat', rect: [0, 0, 6, 12] as [number, number, number, number] },
+    { id: 'status', view: 'status', rect: [6, 0, 6, 6] as [number, number, number, number] },
+    {
+      id: 'card',
+      view: 'wcv',
+      rect: [6, 6, 6, 6] as [number, number, number, number],
+      entry: STATUS_URL,
+      title: '命定之诗 Status'
+    }
+  ]
 }
 
 // Per-card consent: the card UI runs the card's OWN remote code (from jsDelivr) in an isolated process,

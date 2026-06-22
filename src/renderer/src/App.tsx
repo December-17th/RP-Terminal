@@ -12,6 +12,8 @@ import { ToastStack } from './components/ToastStack'
 import { ProfilePicker } from './components/ProfilePicker'
 import { TopNav } from './components/TopNav'
 import { Workspace } from './components/workspace/Workspace'
+import { StaticWorkspace } from './components/workspace/StaticWorkspace'
+import { DEFAULT_STATIC_LAYOUT } from './components/workspace/WcvPanel'
 import { PluginHost } from './components/PluginHost'
 import { useNavStore } from './stores/navStore'
 import { useWorkspaceStore } from './stores/workspaceStore'
@@ -24,6 +26,7 @@ export default function App(): React.ReactElement {
   const loadSettings = useSettingsStore((s) => s.loadSettings)
   const loadCharacters = useCharacterStore((s) => s.loadCharacters)
   const activeCharacterId = useCharacterStore((s) => s.activeCharacter?.id ?? null)
+  const activeCharacter = useCharacterStore((s) => s.activeCharacter)
   const loadChats = useChatStore((s) => s.loadChats)
   const activeChatId = useChatStore((s) => s.activeChatId)
 
@@ -99,11 +102,25 @@ export default function App(): React.ReactElement {
 
   if (!activeProfile) return <ProfilePicker />
 
+  // A card can declare a static, card-determined layout; the dev flag `localStorage['rpt-static-demo']`
+  // forces a default static layout so the StaticWorkspace can be tried on a card that doesn't.
+  const cardPanelUi = activeCharacter?.card?.data?.extensions?.rp_terminal?.panel_ui
+  const staticLayout =
+    cardPanelUi?.mode === 'static' && cardPanelUi.slots?.length
+      ? cardPanelUi
+      : typeof localStorage !== 'undefined' && localStorage.getItem('rpt-static-demo')
+        ? DEFAULT_STATIC_LAYOUT
+        : null
+
   return (
     <>
       <TopNav panel={panel} profileName={activeProfile.name} onSelectPanel={setPanel} />
 
-      <Workspace profileId={activeProfile.id} />
+      {staticLayout ? (
+        <StaticWorkspace profileId={activeProfile.id} layout={staticLayout} />
+      ) : (
+        <Workspace profileId={activeProfile.id} />
+      )}
 
       {/* Standalone-plugin runtime stays mounted app-wide (outside the workspace) so its
           iframes never reparent/reload; the dock is height-bounded by CSS. */}
