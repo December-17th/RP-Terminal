@@ -6,6 +6,21 @@ import * as lorebookService from '../services/lorebookService'
 import * as chatService from '../services/chatService'
 import * as characterService from '../services/characterService'
 import { log } from '../services/logService'
+import { LorebookEntry, LorebookEntrySchema } from '../types/character'
+
+// Coerce a TavernHelper-shaped worldbook entry (from getWorldbook, possibly edited or freshly built by a
+// card) back into a valid LorebookEntry. `name` → comment; unknown fields (uid) are dropped by the schema;
+// our other fields round-trip because getWorldbook returns them, so a full replace is lossless.
+const toLoreEntry = (te: unknown): LorebookEntry => {
+  const src = (te && typeof te === 'object' ? te : {}) as Record<string, unknown>
+  const { uid: _uid, name, ...rest } = src
+  void _uid
+  return LorebookEntrySchema.parse({
+    ...rest,
+    comment: String(name ?? rest.comment ?? ''),
+    enabled: rest.enabled !== false
+  })
+}
 
 // Resolve the calling card UI's character (its lorebook is its character_book, stored at id ==
 // characterId). Prefer the slot ctx; fall back to the chat row — the renderer's activeCharacter can be
@@ -116,34 +131,27 @@ export const registerWcvIpc = (ipcMain: IpcMain): void => {
     if (!c) return []
     const lb = lorebookService.getLorebookById(c.profileId, c.characterId)
     if (!lb) return []
-    const out = lb.entries.map((en, i) => ({
-      uid: i,
-      name: en.comment || `Entry ${i + 1}`,
-      comment: en.comment || '',
-      enabled: en.enabled,
-      content: en.content,
-      keys: en.keys
-    }))
-    log('info', 'wcv getWorldbook', `${out.length} entries (${out.filter((o) => /^\[DLC\]/.test(o.name)).length} DLC) → card`)
+    // Return the FULL entry fields (+ TH aliases uid/name) so a card's write round-trips losslessly.
+    const out = lb.entries.map((en, i) => ({ ...en, uid: i, name: en.comment || `Entry ${i + 1}` }))
+    log(
+      'info',
+      'wcv getWorldbook',
+      `${out.length} entries (${out.filter((o) => /^\[DLC\]/.test(o.name)).length} DLC) → card`
+    )
     return out
   })
 
-  // Persist a worldbook the card modified — apply enabled toggles back onto our entries (matched by
-  // uid, falling back to name/comment) so every other field is preserved.
+  // Persist a worldbook the card modified — a FULL replace (TavernHelper replaceWorldbookEntries):
+  // add / remove / edit / toggle. Lossless because getWorldbook returns the full fields; new entries
+  // (built by the card) get schema defaults.
   ipcMain.handle('wcv-host-replace-worldbook', (e, _name, entries) => {
     const c = cardLoreCtx(e.sender.id)
     if (!c) return false
     const lb = lorebookService.getLorebookById(c.profileId, c.characterId)
     if (!lb) return false
-    for (const te of Array.isArray(entries) ? entries : []) {
-      const i = typeof te?.uid === 'number' ? te.uid : -1
-      const target =
-        i >= 0 && i < lb.entries.length
-          ? lb.entries[i]
-          : lb.entries.find((en) => (en.comment || '') === (te?.name ?? te?.comment ?? ''))
-      if (target) target.enabled = te?.enabled !== false
-    }
+    lb.entries = (Array.isArray(entries) ? entries : []).map(toLoreEntry)
     lorebookService.saveLorebookById(c.profileId, c.characterId, lb)
+    log('info', 'wcv replaceWorldbook', `${lb.entries.length} entries → card book`)
     return true
   })
 
