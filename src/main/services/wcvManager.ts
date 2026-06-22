@@ -156,6 +156,11 @@ export const pushHostVars = (chatId: string, variables: unknown): void => {
   mainWindow?.webContents.send('wcv-host-vars', { chatId, variables })
 }
 
+/** Push a "set the chat input box" request to the host renderer (card onboarding / a card UI). */
+export const pushHostInput = (chatId: string, text: string): void => {
+  mainWindow?.webContents.send('wcv-host-input', { chatId, text })
+}
+
 /** Notify sibling WCVs on the same chat that the variables changed. */
 export const notifyVarsChanged = (chatId: string, statData: unknown): void => {
   for (const s of slots.values()) {

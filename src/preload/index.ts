@@ -209,6 +209,13 @@ const api = {
     ): void => cb(payload)
     ipcRenderer.on('wcv-host-vars', listener)
     return () => ipcRenderer.removeListener('wcv-host-vars', listener)
+  },
+  // A card panel asked to set the chat input box (onboarding finish "inject prompt").
+  onWcvHostInput: (cb: (payload: { chatId: string; text: string }) => void) => {
+    const listener = (_e: IpcRendererEvent, payload: { chatId: string; text: string }): void =>
+      cb(payload)
+    ipcRenderer.on('wcv-host-input', listener)
+    return () => ipcRenderer.removeListener('wcv-host-input', listener)
   }
 }
 

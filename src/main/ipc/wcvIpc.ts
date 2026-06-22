@@ -18,6 +18,11 @@ export const registerWcvIpc = (ipcMain: IpcMain): void => {
   ipcMain.on('wcv-broadcast-vars', (_e, chatId, statData) =>
     wcvManager.notifyVarsChanged(chatId, statData)
   )
+  // Card → host: set RP Terminal's chat input box (the onboarding finish's "inject prompt").
+  ipcMain.on('wcv-host-set-input', (e, text) => {
+    const ctx = wcvManager.contextFor(e.sender.id)
+    if (ctx) wcvManager.pushHostInput(ctx.chatId, String(text ?? ''))
+  })
 
   // Read the latest floor's message variables (stat_data) for the calling panel's session.
   ipcMain.handle('wcv-host-get-vars', (e) => {

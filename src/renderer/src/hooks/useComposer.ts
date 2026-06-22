@@ -1,5 +1,6 @@
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useToastStore } from '../stores/toastStore'
+import { useComposerStore } from '../stores/composerStore'
 import { isSlashLine, runSlash, listCommands, SlashCommand } from '../plugin/slash'
 
 export interface ComposerApi {
@@ -29,6 +30,16 @@ export function useComposer({
   const [slashIndex, setSlashIndex] = useState(0)
   const [slashDismissed, setSlashDismissed] = useState(false)
   const actionRef = useRef<HTMLTextAreaElement>(null)
+
+  // Consume a one-shot injected input (card onboarding "set the starting prompt"), filling the box.
+  const pendingInput = useComposerStore((s) => s.pendingInput)
+  useEffect(() => {
+    if (pendingInput != null) {
+      setActionInput(pendingInput)
+      useComposerStore.getState().consumeInput()
+      requestAnimationFrame(() => actionRef.current?.focus())
+    }
+  }, [pendingInput])
 
   // While the box holds just "/" + a partial command name (no space yet), show a menu
   // of matching commands above the input.

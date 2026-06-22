@@ -28,6 +28,7 @@ const rptHost = {
   getVariables: (): Promise<any> => ipcRenderer.invoke('wcv-host-get-vars'),
   applyVariableOps: (ops: any[]): Promise<any> => ipcRenderer.invoke('wcv-host-apply-vars', ops),
   setVariables: (sd: any): Promise<any> => ipcRenderer.invoke('wcv-host-set-vars', sd),
+  setInput: (text: any) => ipcRenderer.send('wcv-host-set-input', text),
   onVarsChanged: (cb: (v: any) => void) => {
     const l = (_e: any, v: any): void => cb(v)
     ipcRenderer.on('wcv-vars-changed', l)
@@ -182,13 +183,36 @@ const helpers: Record<string, any> = {
     note('getTavernHelperVersion')
     return '3.0.0'
   },
-  // custom_start starts the game after creation. Stubbed for now — wire to our session system later.
-  createChat: (..._a: any[]) => {
+  // Onboarding finish — default is to INJECT the starting prompt into RP Terminal's input box (the
+  // player presses Send). These fire once at finish, so they log their args (always) to confirm the
+  // exact shapes; auto-start (create session + message + generate) is the opt-in alternative.
+  createChat: (...a: any[]) => {
     note('createChat')
+    try {
+      console.info('[card createChat]', JSON.stringify(a)?.slice(0, 200))
+    } catch {
+      /* unserializable */
+    }
     return ''
   },
-  triggerSlash: (..._a: any[]) => {
+  createChatMessages: (msgs: any, _o?: any) => {
+    note('createChatMessages')
+    try {
+      console.info('[card createChatMessages]', JSON.stringify(msgs)?.slice(0, 500))
+    } catch {
+      /* unserializable */
+    }
+    const arr = Array.isArray(msgs) ? msgs : [msgs]
+    const last = arr[arr.length - 1]
+    const text =
+      (last && (last.message ?? last.content ?? last.mes)) ||
+      (typeof last === 'string' ? last : '')
+    if (text) rptHost.setInput(String(text)) // inject mode: starting prompt → the input box
+    return ''
+  },
+  triggerSlash: (cmd: any, ..._a: any[]) => {
     note('triggerSlash')
+    console.info('[card triggerSlash]', cmd)
     return ''
   },
   eventOn: (n: string, cb: any) => {

@@ -17,6 +17,7 @@ import { DEFAULT_STATIC_LAYOUT } from './components/workspace/WcvPanel'
 import { PluginHost } from './components/PluginHost'
 import { useNavStore } from './stores/navStore'
 import { useWorkspaceStore } from './stores/workspaceStore'
+import { useComposerStore } from './stores/composerStore'
 import { initSlash } from './plugin/slash'
 
 export default function App(): React.ReactElement {
@@ -50,6 +51,12 @@ export default function App(): React.ReactElement {
         useChatStore.getState().setLatestFloorVariables(variables)
       }
     })
+    // A card panel asked to set the chat input box (onboarding finish "inject prompt").
+    const unsubInput = window.api.onWcvHostInput(({ chatId, text }) => {
+      if (chatId === useChatStore.getState().activeChatId) {
+        useComposerStore.getState().injectInput(text)
+      }
+    })
     // Broadcast the latest stat_data to any WebContentsView card panel whenever floors change
     // (a model turn / re-evaluate / edit), so the card's own UI reflects model-driven updates live.
     const unsubFloors = useChatStore.subscribe((state, prev) => {
@@ -63,6 +70,7 @@ export default function App(): React.ReactElement {
       unsubDelta()
       unsubLog()
       unsubWcv()
+      unsubInput()
       unsubFloors()
     }
   }, [])
