@@ -45,6 +45,8 @@ const note = (name: string) => {
 // --- event bus (eventOn / eventEmit) ---
 const bus: Record<string, Array<(...a: any[]) => void>> = {}
 const on = (name: string, cb: (...a: any[]) => void) => {
+  // Diagnostic: surface exactly which events the card subscribes to, so we emit the right ones.
+  console.info('[rpt-shim] subscribe:', name)
   ;(bus[name] ||= []).push(cb)
 }
 const emit = (name: string, ...args: any[]) => {
@@ -61,8 +63,11 @@ const emit = (name: string, ...args: any[]) => {
 let statData: any = {}
 const hydrate = (v: any) => {
   statData = v || {}
-  emit('mag_variable_initialized', statData)
+  // Fire the full MVU update cycle (using the same names exposed on Mvu.events) so whichever event
+  // the card's UI listens to triggers a refresh.
+  emit('mag_variable_update_started', statData)
   emit('mag_variable_updated', statData)
+  emit('mag_variable_update_ended', statData)
 }
 // Sync initial read so the mirror is populated BEFORE the card's first render (an async IPC read
 // would land after the React app has already rendered defaults). sendSync blocks briefly — fine once.
