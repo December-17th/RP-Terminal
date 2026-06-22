@@ -2,6 +2,26 @@
 
 Running status of the MVU / panel-workspace track. Newest first.
 
+## 2026-06-22
+
+- **WCV card-UI productionization (#1–#5).** Card write-back (optimistic mirror + `replaceMvuData` via a
+  `wcv-host-set-vars` IPC); shim cleanup (DEBUG-gated logs, real `getChatMessages`); hardening (CSP
+  locking `connect-src` to jsDelivr, per-card click-to-consent, trust-model docs; full
+  `contextIsolation:true` deferred — needs a host-page refactor); the static card-determined workspace
+  (`RPTerminalExtSchema.panel_ui` grid + `StaticWorkspace`); and the card's OTHER frontends integrated —
+  the shim grew `window.Vue`/`VueRouter`/`Pinia` + `getTavernHelperVersion`/`extensionSettings`/
+  `waitGlobalInitialized`.
+- **Full onboarding loop works end-to-end (verified).** `home` launcher renders; `custom_start` (character
+  creation) runs; its finish INJECTS a starting prompt into RP Terminal's input box (new composer-injection
+  bridge: `rptHost.setInput` → `wcv-host-input` → `composerStore` → the Composer) → the player sends → the
+  AI fills the MVU vars → the status UI shows them.
+- **MVU `op:delta`** (increment) so EXP/MP-style updates apply; live model→card broadcast on floor change.
+- **API settings: fetch + select models** — a provider-aware `GET /models` (a "Fetch models" button + a
+  model dropdown), `apiService.listModels` + `list-models` IPC.
+- Remaining: the AUTO-onboarding overlay (`home`→`custom_start` on a new chat, then dismiss into play); the
+  auto-start finish alternative (wire `createChat`/`triggerSlash` to the session system); the status UI's
+  outer (edit/settings) layer.
+
 ## 2026-06-21
 
 ### Done this session

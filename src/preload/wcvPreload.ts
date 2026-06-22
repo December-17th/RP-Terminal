@@ -193,19 +193,17 @@ const helpers: Record<string, any> = {
   // exact shapes; auto-start (create session + message + generate) is the opt-in alternative.
   createChat: (...a: any[]) => {
     note('createChat')
-    try {
-      console.info('[card createChat]', JSON.stringify(a)?.slice(0, 200))
-    } catch {
-      /* unserializable */
-    }
+    if (DEBUG) console.info('[card createChat]', JSON.stringify(a)?.slice(0, 200))
     return ''
   },
   createChatMessages: (msgs: any, _o?: any) => {
     note('createChatMessages')
-    try {
-      console.info('[card createChatMessages]', JSON.stringify(msgs)?.slice(0, 500))
-    } catch {
-      /* unserializable */
+    if (DEBUG) {
+      try {
+        console.info('[card createChatMessages]', JSON.stringify(msgs)?.slice(0, 500))
+      } catch {
+        /* unserializable */
+      }
     }
     const arr = Array.isArray(msgs) ? msgs : [msgs]
     const last = arr[arr.length - 1]
@@ -217,7 +215,7 @@ const helpers: Record<string, any> = {
   },
   triggerSlash: (cmd: any, ..._a: any[]) => {
     note('triggerSlash')
-    console.info('[card triggerSlash]', cmd)
+    if (DEBUG) console.info('[card triggerSlash]', cmd)
     return ''
   },
   eventOn: (n: string, cb: any) => {
