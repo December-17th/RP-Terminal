@@ -5,6 +5,7 @@ import * as generationService from '../services/generationService'
 import * as lorebookService from '../services/lorebookService'
 import * as chatService from '../services/chatService'
 import * as characterService from '../services/characterService'
+import * as scriptApiService from '../services/scriptApiService'
 import { log } from '../services/logService'
 import { LorebookEntry, LorebookEntrySchema } from '../types/character'
 
@@ -153,6 +154,44 @@ export const registerWcvIpc = (ipcMain: IpcMain): void => {
     lorebookService.saveLorebookById(c.profileId, c.characterId, lb)
     log('info', 'wcv replaceWorldbook', `${lb.entries.length} entries → card book`)
     return true
+  })
+
+  // --- Character / preset / regex reads (Track C0) — sync, ctx-scoped via scriptApiService ---
+  ipcMain.on('wcv-host-get-char-data', (e) => {
+    const ctx = wcvManager.contextFor(e.sender.id)
+    e.returnValue = ctx
+      ? scriptApiService.getCharData(ctx.profileId, ctx.chatId, ctx.characterId)
+      : null
+  })
+  ipcMain.on('wcv-host-get-char-avatar', (e) => {
+    const ctx = wcvManager.contextFor(e.sender.id)
+    e.returnValue = ctx
+      ? scriptApiService.getCharAvatarPath(ctx.profileId, ctx.chatId, ctx.characterId)
+      : null
+  })
+  ipcMain.on('wcv-host-get-preset', (e) => {
+    const ctx = wcvManager.contextFor(e.sender.id)
+    e.returnValue = ctx ? scriptApiService.getPresetInfo(ctx.profileId) : null
+  })
+  ipcMain.on('wcv-host-get-preset-names', (e) => {
+    const ctx = wcvManager.contextFor(e.sender.id)
+    e.returnValue = ctx ? scriptApiService.listPresetNames(ctx.profileId) : []
+  })
+  ipcMain.on('wcv-host-get-regexes', (e) => {
+    const ctx = wcvManager.contextFor(e.sender.id)
+    e.returnValue = ctx
+      ? scriptApiService.listRegexes(ctx.profileId, { cardId: ctx.characterId, chatId: ctx.chatId })
+      : []
+  })
+  ipcMain.on('wcv-host-format-regex', (e, text) => {
+    const ctx = wcvManager.contextFor(e.sender.id)
+    e.returnValue = ctx
+      ? scriptApiService.formatWithRegex(
+          ctx.profileId,
+          { cardId: ctx.characterId, chatId: ctx.chatId },
+          text
+        )
+      : String(text ?? '')
   })
 
   // --- ST chat array (SillyTavern.chat) — for the home's "start game" (greeting-swipe select + reload) ---

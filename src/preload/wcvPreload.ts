@@ -308,7 +308,33 @@ const helpers: Record<string, any> = {
     note('getLorebookSettings')
     return {}
   },
-  setLorebookSettings: () => note('setLorebookSettings')
+  setLorebookSettings: () => note('setLorebookSettings'),
+
+  // --- character / preset / regex reads (Track C0) — sync getters, ctx-scoped via scriptApiService ---
+  getCharData: (..._a: any[]) => {
+    note('getCharData')
+    return ipcRenderer.sendSync('wcv-host-get-char-data')
+  },
+  getCharAvatarPath: (..._a: any[]) => {
+    note('getCharAvatarPath')
+    return ipcRenderer.sendSync('wcv-host-get-char-avatar')
+  },
+  getPreset: (..._a: any[]) => {
+    note('getPreset')
+    return ipcRenderer.sendSync('wcv-host-get-preset')
+  },
+  getPresetNames: (..._a: any[]) => {
+    note('getPresetNames')
+    return ipcRenderer.sendSync('wcv-host-get-preset-names')
+  },
+  getTavernRegexes: (..._a: any[]) => {
+    note('getTavernRegexes')
+    return ipcRenderer.sendSync('wcv-host-get-regexes')
+  },
+  formatAsTavernRegexedString: (text: any, ..._a: any[]) => {
+    note('formatAsTavernRegexedString')
+    return ipcRenderer.sendSync('wcv-host-format-regex', text)
+  }
 }
 Object.assign(w, helpers)
 // Some cards call these via a TavernHelper namespace instead of bare globals.

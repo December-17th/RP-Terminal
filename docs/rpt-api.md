@@ -80,8 +80,8 @@ State of truth is `floor.variables.stat_data` (the MVU tree). Reads come from a 
 - `createWorldbook` / bind-unbind to char/chat — ⬜
 - Backing: [`scriptApiService`](../src/main/services/scriptApiService.ts) (`getWorldbook`/`setWorldbookEntries`) + `lorebookService`. The card's own book is at `id == characterId`.
 
-### Character card — ✅ (read)
-- `SillyTavern.getContext()`, `getCharData()` (via scriptApiService) — ✅ · avatar path — ✅
+### Character / preset — ✅ (read)
+- `getCharData()` / `getCharAvatarPath()` — ✅ (sync, ctx-scoped) · `getPreset()` (active preset name + sampler params) / `getPresetNames()` — ✅ (sync) · `SillyTavern.getContext()` — ✅
 
 ### Generation — 🔁 / ⬜
 - `generate(text)` / `generateRaw(...)` — 🔁 stubs in the WCV shim today. Target: a card *requests*
@@ -89,9 +89,10 @@ State of truth is `floor.variables.stat_data` (the MVU tree). Reads come from a 
   `rpt.generate` path is wired with a per-card grant; bring the equivalent to the WCV shim.)
 - `triggerSlash` / `execute` (STScript) — 🔁 stub.
 
-### Regex — ⬜ (in the WCV shim)
-- `getTavernRegexes` / `replaceTavernRegexes` / `formatAsTavernRegexedString` — ⬜ in the WCV shim
-  (backed by `scriptApiService.formatWithRegex`/`listRegexes` on the iframe path; wire into the shim).
+### Regex — 🟡
+- `getTavernRegexes()` (list active display regex) / `formatAsTavernRegexedString(text)` (apply them to a
+  string) — ✅ (sync, scoped to the card's world+session, via `scriptApiService`). `replaceTavernRegexes`
+  (write) — ⬜.
 
 ### Events — ✅
 - `eventOn`/`eventOnce`/`eventEmit`/`eventMakeFirst`/`eventRemoveListener` + `SillyTavern.eventSource.on/emit` — ✅ (a local bus). MVU lifecycle events (`mag_variable_update_started/updated/ended`, `mag_variable_initialized`) fire on a host vars-changed push.
@@ -109,7 +110,8 @@ Card → host channels (resolved against the calling view's ctx), in
 [`wcvIpc`](../src/main/ipc/wcvIpc.ts): `wcv-host-get-vars(-sync)`, `wcv-host-apply-vars`,
 `wcv-host-set-vars`, `wcv-host-get-messages-sync`, `wcv-host-set-input`,
 `wcv-host-get-worldbook-names-sync` / `-get-worldbook` / `-replace-worldbook`,
-`wcv-host-get-chat-sync` / `-save-chat` / `-reload-chat`. Host → card: `wcv-vars-changed` (mirror
+`wcv-host-get-chat-sync` / `-save-chat` / `-reload-chat`, `wcv-host-get-char-data` / `-get-char-avatar` /
+`-get-preset` / `-get-preset-names` / `-get-regexes` / `-format-regex`. Host → card: `wcv-vars-changed` (mirror
 refresh). To add an API: add the shim method (sync getter → `sendSync`; heavy → `invoke`) + the
 ctx-scoped IPC handler, and update this doc.
 
