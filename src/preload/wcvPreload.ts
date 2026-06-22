@@ -259,9 +259,15 @@ const getJq = (): any => {
 }
 Object.defineProperty(w, '$', { configurable: true, get: getJq })
 Object.defineProperty(w, 'jQuery', { configurable: true, get: getJq })
-// Vue: home/custom_start are Vue apps expecting `window.Vue`. Lazy-required (defensive, like jQuery).
-let vueCache: any = null
-Object.defineProperty(w, 'Vue', { configurable: true, get: () => (vueCache ||= require('vue')) })
+// Vue ecosystem: home/custom_start expect these as window globals. Lazy-required (defensive, like
+// jQuery — only resolved when the card's deferred bundle first touches them).
+const lazyGlobal = (name: string, mod: string) => {
+  let cache: any = null
+  Object.defineProperty(w, name, { configurable: true, get: () => (cache ||= require(mod)) })
+}
+lazyGlobal('Vue', 'vue')
+lazyGlobal('VueRouter', 'vue-router')
+lazyGlobal('Pinia', 'pinia')
 const toast = (level: string) => (msg?: any) => {
   note('toastr.' + level)
   if (DEBUG) console.info('[card toastr.' + level + ']', msg)
