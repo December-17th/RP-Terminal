@@ -3,7 +3,7 @@ import Markdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import DOMPurify from 'dompurify'
 import { isInteractiveHtml } from '../plugin/bridgeShim'
-import { MessageScriptFrame } from './MessageScriptFrame'
+import { WcvMessageFrame } from './WcvMessageFrame'
 
 interface Props {
   content: string
@@ -39,10 +39,12 @@ export const MessageContent: React.FC<Props> = ({ content, css, onContextMenu })
     >
       {parts.map((p, i) =>
         p.type === 'html' ? (
-          // An html block with a <script> is an interactive "frontend card" (TH-6) —
-          // run it in the scripted sandbox; otherwise render it as static sanitized HTML.
+          // A scripted html block is the card's regex-injected "frontend card" — run it as-is in an
+          // isolated WebContentsView where the preload shim is the TavernHelper compat layer, so the
+          // card's own code does its (possibly nested) loading. Script-free html stays a light, static,
+          // sanitized inline frame.
           isInteractiveHtml(p.text) ? (
-            <MessageScriptFrame key={i} html={p.text} />
+            <WcvMessageFrame key={i} html={p.text} />
           ) : (
             <HtmlFrame key={i} html={p.text} css={css} onContextMenu={onContextMenu} />
           )
