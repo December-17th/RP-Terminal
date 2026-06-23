@@ -4,10 +4,11 @@ import { useProfileStore } from '../stores/profileStore'
 import { useChatStore } from '../stores/chatStore'
 import { useCharacterStore } from '../stores/characterStore'
 import { buildCardDoc } from './cardDoc'
-import { fitInlineCardHeight } from './cardFrameHeight'
+import { fitInlineCardHeight, capCardHeight } from './cardFrameHeight'
 import { installCardBridge } from '../cardBridge'
 import { buildInlineLibTags } from '../cardBridge/cardLibs'
-import { buildEnvHead } from '../../../shared/cardEnv'
+import { buildEnvHead, replaceVhInContent } from '../../../shared/cardEnv'
+import type { CardSizing } from '../../../shared/cardRenderMode'
 
 installCardBridge() // idempotent; ensures window.__rptCardBridge exists before any frame mounts.
 
@@ -23,9 +24,11 @@ installCardBridge() // idempotent; ensures window.__rptCardBridge exists before 
  */
 export function InlineCardFrame({
   html,
+  sizing = 'fit',
   onContextMenu
 }: {
   html: string
+  sizing?: CardSizing
   onContextMenu?: (x: number, y: number) => void
 }): React.ReactElement {
   const ref = useRef<HTMLIFrameElement>(null)
@@ -53,16 +56,22 @@ export function InlineCardFrame({
       `}catch(e){console.error('[rpt card bridge]',e);}})();</script>`
     // The shared rendering-env: base reset + avatar CSS + the assumed-lib tags (Vue/jQuery/Pinia/Router +
     // SP2's jQuery-UI/touch-punch/FontAwesome/Tailwind) + the --TH-viewport-height bootstrap, built ONCE
-    // in cardEnv so inline and WCV inject the same thing. `fit` = content-fit (the default); the sizing-
-    // mode branch lands in SP2 T7. Avatar URLs are omitted today (no sync source — charAvatarPath is a
-    // stub and RPT has no persona avatar), so those rules no-op until avatar serving is wired.
-    const env = buildEnvHead({
-      libTags: buildInlineLibTags(),
-      sizing: 'fit',
-      viewportHeightPx: typeof window !== 'undefined' ? window.innerHeight : undefined
-    })
-    return buildCardDoc(html, { headInject: boot + env })
-  }, [html, profileId, chatId, characterId])
+    // in cardEnv so inline and WCV inject the same thing. Avatar URLs are omitted today (no sync source —
+    // charAvatarPath is a stub and RPT has no persona avatar), so those rules no-op until wired.
+    // Sizing: `fill` seeds --TH-viewport-height to a viewport-fraction box (the card fills it via the vh
+    // rewrite below, sized in the effect); `fit` content-fits (the effect measures + neutralizes vh).
+    const vp =
+      typeof window === 'undefined'
+        ? undefined
+        : sizing === 'fill'
+          ? capCardHeight(Number.MAX_SAFE_INTEGER, window.innerHeight)
+          : window.innerHeight
+    const env = buildEnvHead({ libTags: buildInlineLibTags(), sizing, viewportHeightPx: vp })
+    // In fill, rewrite the card's `min-height:NNvh` onto var(--TH-viewport-height) so a viewport-sized
+    // card fills the frame; in fit we instead neutralize it (in the effect) so the card content-fits.
+    const docHtml = sizing === 'fill' ? replaceVhInContent(html) : html
+    return buildCardDoc(docHtml, { headInject: boot + env })
+  }, [html, profileId, chatId, characterId, sizing])
 
   // Auto-height (same-origin: read contentDocument) + right-click forwarding. Mirrors HtmlFrame.
   useEffect(() => {
@@ -94,7 +103,7 @@ export function InlineCardFrame({
         /* ignore */
       }
     }
-    const measure = (): void => {
+    const measureFit = (): void => {
       try {
         const doc = frame.contentDocument
         const root = doc?.documentElement
@@ -117,6 +126,19 @@ export function InlineCardFrame({
         /* cross-origin guard (shouldn't happen — same origin) */
       }
     }
+    // Fill: a fixed viewport-fraction box. The card's min-height:100vh (rewritten to var(--TH-viewport-
+    // height) in the srcDoc) fills it; no content measure/neutralize — set the height and keep the CSS var
+    // in sync. capCardHeight's cap (~70% of the viewport) is the fill height.
+    const applyFill = (): void => {
+      try {
+        const t = capCardHeight(Number.MAX_SAFE_INTEGER, window.innerHeight)
+        setHeight(t)
+        frame.contentDocument?.documentElement.style.setProperty('--TH-viewport-height', `${t}px`)
+      } catch {
+        /* ignore */
+      }
+    }
+    const refresh = (): void => (sizing === 'fill' ? applyFill() : measureFit())
     const onCtx = (e: Event): void => {
       e.preventDefault()
       const me = e as MouseEvent
@@ -125,15 +147,14 @@ export function InlineCardFrame({
       ctxRef.current?.(rect.left + me.clientX, rect.top + me.clientY)
     }
     const onLoad = (): void => {
-      measure()
+      refresh()
       try {
         const doc = frame.contentDocument
         const body = doc?.body
-        if (body && 'ResizeObserver' in window) {
-          observer = new ResizeObserver(measure)
-          // OBSERVE `body` (content-sized via the neutralize above): it shrinks when the card collapses a
-          // sub-panel, firing a re-measure so the frame follows back DOWN. documentElement fills the
-          // viewport, so observing it would never fire on shrink (and its scrollHeight can't shrink either).
+        // Fit observes `body` (content-sized via the neutralize above): it shrinks when the card collapses
+        // a sub-panel, firing a re-measure so the frame follows back DOWN. Fill is a fixed box (no observe).
+        if (sizing !== 'fill' && body && 'ResizeObserver' in window) {
+          observer = new ResizeObserver(measureFit)
           observer.observe(body)
         }
         doc?.addEventListener('contextmenu', onCtx)
@@ -142,8 +163,10 @@ export function InlineCardFrame({
       }
     }
     frame.addEventListener('load', onLoad)
+    window.addEventListener('resize', refresh)
     return () => {
       frame.removeEventListener('load', onLoad)
+      window.removeEventListener('resize', refresh)
       observer?.disconnect()
       try {
         ;(frame.contentWindow as any)?.__rptDispose?.()
@@ -151,7 +174,7 @@ export function InlineCardFrame({
         /* ignore */
       }
     }
-  }, [srcDoc])
+  }, [srcDoc, sizing])
 
   // margin: 10px top/bottom breathing room between the card and the surrounding message text.
   return (

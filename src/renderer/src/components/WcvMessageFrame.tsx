@@ -4,8 +4,9 @@ import { useChatStore } from '../stores/chatStore'
 import { useCharacterStore } from '../stores/characterStore'
 import { buildCardDoc } from './cardDoc'
 import { capCardHeight } from './cardFrameHeight'
-import { buildEnvHead } from '../../../shared/cardEnv'
+import { buildEnvHead, replaceVhInContent } from '../../../shared/cardEnv'
 import { buildWcvLibTags } from '../cardBridge/cardLibs'
+import type { CardSizing } from '../../../shared/cardRenderMode'
 
 /**
  * Renders a card's regex-injected "frontend card" — whatever HTML+script block the card's regex puts
@@ -27,7 +28,13 @@ const CSP =
   "default-src 'self' https: 'unsafe-inline' 'unsafe-eval' data: blob:; " +
   'img-src * data: blob:; media-src * data: blob:; connect-src * data: blob:'
 
-export function WcvMessageFrame({ html }: { html: string }): React.ReactElement {
+export function WcvMessageFrame({
+  html,
+  sizing = 'fit'
+}: {
+  html: string
+  sizing?: CardSizing
+}): React.ReactElement {
   const hostRef = useRef<HTMLDivElement>(null)
   const slotId = useRef(`msg-wcv-${seq++}`).current
   const profileId = useProfileStore((s) => s.activeProfile?.id ?? '')
@@ -45,21 +52,22 @@ export function WcvMessageFrame({ html }: { html: string }): React.ReactElement 
     () =>
       'data:text/html;charset=utf-8,' +
       encodeURIComponent(
-        buildCardDoc(html, {
-          // CSP meta first, then the SHARED rendering-env (base reset + the NEW assumed libs via CDN +
-          // the --TH-viewport-height bootstrap). The core Vue/jQuery/Pinia/VueRouter still come from the
-          // preload (lower-risk SP2 T5 — the working path is untouched); only jQuery-UI/touch-punch/
-          // FontAwesome/Tailwind are added here. `fit` = content-fit (default); sizing branch lands in T7.
+        // CSP meta first, then the SHARED rendering-env (base reset + the NEW assumed libs via CDN +
+        // the --TH-viewport-height bootstrap). The core Vue/jQuery/Pinia/VueRouter still come from the
+        // preload (lower-risk SP2 T5 — the working path is untouched); only jQuery-UI/touch-punch/
+        // FontAwesome/Tailwind are added here. In `fill`, rewrite the card's min-height:NNvh onto the
+        // viewport variable; the overlay's capCardHeight (onWcvSlotSize) windows it either way.
+        buildCardDoc(sizing === 'fill' ? replaceVhInContent(html) : html, {
           headInject:
             `<meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="${CSP}">` +
             buildEnvHead({
               libTags: buildWcvLibTags(),
-              sizing: 'fit',
+              sizing,
               viewportHeightPx: typeof window !== 'undefined' ? window.innerHeight : undefined
             })
         })
       ),
-    [html]
+    [html, sizing]
   )
 
   useEffect(() => {
