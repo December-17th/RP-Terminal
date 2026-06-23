@@ -1,5 +1,5 @@
 // test/thRuntime.test.ts
-import { describe, it, expect, vi } from 'vitest'
+import { describe, it, expect } from 'vitest'
 import { createThRuntime } from '../src/shared/thRuntime'
 import type { Host } from '../src/shared/thRuntime/types'
 
