@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { buildCardDoc } from '../src/renderer/src/components/WcvMessageFrame'
+import { buildCardDoc } from '../src/renderer/src/components/cardDoc'
 
 // A SillyTavern beautification card as emitted by the example regex scripts: a full
 // `<!doctype html>` document whose <style> and font <link> live in <head>, with the
@@ -38,13 +38,15 @@ describe('buildCardDoc (WCV card document)', () => {
   })
 
   it('injects the card CSP <meta> into the document head', () => {
-    const doc = buildCardDoc(FULL_CARD)
+    const cspMeta = '<meta http-equiv="Content-Security-Policy" content="test-csp">'
+    const doc = buildCardDoc(FULL_CARD, { headInject: cspMeta })
     expect(doc).toMatch(/http-equiv="Content-Security-Policy"/i)
   })
 
   it('still wraps a bare loader fragment (no <head>) and injects the CSP', () => {
     const loader = '<body><script>$("body").load("https://cdn/x.html")</script></body>'
-    const doc = buildCardDoc(loader)
+    const cspMeta = '<meta http-equiv="Content-Security-Policy" content="test-csp">'
+    const doc = buildCardDoc(loader, { headInject: cspMeta })
     expect(doc).toContain('$("body").load')
     expect(doc).toMatch(/http-equiv="Content-Security-Policy"/i)
     expect(doc).toMatch(/<head>/i)

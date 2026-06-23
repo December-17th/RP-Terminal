@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { useProfileStore } from '../stores/profileStore'
 import { useChatStore } from '../stores/chatStore'
 import { useCharacterStore } from '../stores/characterStore'
+import { buildCardDoc } from './cardDoc'
 
 /**
  * Renders a card's regex-injected "frontend card" — whatever HTML+script block the card's regex puts
@@ -23,28 +24,6 @@ const CSP =
   "default-src 'self' https: 'unsafe-inline' 'unsafe-eval' data: blob:; " +
   'img-src * data: blob:; media-src * data: blob:; connect-src * data: blob:'
 
-/**
- * Build the document that runs inside the card's WebContentsView from the regex-injected block.
- *
- * The block is EITHER a full `<!doctype html>` document — whose `<style>`/font `<link>` live in
- * `<head>` (the static beautification cards) — OR a bare `<body>`/fragment whose script loads its UI
- * (the `$('body').load(...)` loader cards). We must keep the `<head>` for the former: stripping it
- * drops ALL the card's CSS, including its `html,body{background:transparent}`, so the view falls back
- * to Chromium's default white canvas and the card paints as an oversized white box of unstyled text
- * over the app UI. Either way we inject our CSP `<meta>` at the very top of `<head>` (process
- * isolation is the real boundary; the CSP just shapes which assets the trusted card may load).
- */
-export function buildCardDoc(html: string): string {
-  const meta = `<meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="${CSP}">`
-  // Full document: keep it intact (doctype/head/styles/body/script); just inject our <meta> first.
-  if (/<head[\s>]/i.test(html)) {
-    return html.replace(/<head([^>]*)>/i, (_m, attrs) => `<head${attrs}>${meta}`)
-  }
-  // Bare fragment: take the <body> inner if present, else the whole string, and wrap it.
-  const inner = html.match(/<body[^>]*>([\s\S]*?)<\/body>/i)?.[1] ?? html
-  return `<!doctype html><html><head>${meta}</head><body>${inner}</body></html>`
-}
-
 export function WcvMessageFrame({ html }: { html: string }): React.ReactElement {
   const hostRef = useRef<HTMLDivElement>(null)
   const slotId = useRef(`msg-wcv-${seq++}`).current
@@ -60,7 +39,13 @@ export function WcvMessageFrame({ html }: { html: string }): React.ReactElement 
   // Build the card document (preserving its <head> CSS) and hand the whole thing to the WCV as a
   // data: URL — its scripts then run with the shim, doing their own (possibly nested) loading.
   const dataUrl = useMemo(
-    () => 'data:text/html;charset=utf-8,' + encodeURIComponent(buildCardDoc(html)),
+    () =>
+      'data:text/html;charset=utf-8,' +
+      encodeURIComponent(
+        buildCardDoc(html, {
+          headInject: `<meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="${CSP}">`
+        })
+      ),
     [html]
   )
 
