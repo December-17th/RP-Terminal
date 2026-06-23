@@ -6,7 +6,8 @@ import { useCharacterStore } from '../stores/characterStore'
 import { buildCardDoc } from './cardDoc'
 import { fitInlineCardHeight } from './cardFrameHeight'
 import { installCardBridge } from '../cardBridge'
-import { CARD_LIB_URLS } from '../cardBridge/cardLibs'
+import { buildInlineLibTags } from '../cardBridge/cardLibs'
+import { buildEnvHead } from '../../../shared/cardEnv'
 
 installCardBridge() // idempotent; ensures window.__rptCardBridge exists before any frame mounts.
 
@@ -38,29 +39,29 @@ export function InlineCardFrame({
 
   const srcDoc = useMemo(() => {
     const ctx = { profileId, chatId, characterId }
-    const libTags = CARD_LIB_URLS.map((u) => `<script src="${u}"></script>`).join('')
-    // Classic bootstrap: runs synchronously during head parse, BEFORE the card's deferred modules.
-    // It pulls the bridge globals from the parent realm and copies the bridge's own enumerable keys
-    // (Object.keys, since the bridge is a plain object literal) onto the iframe window (guarding
-    // undefined), then loads the realm-bound DOM libs. The ctx JSON has `<` escaped to < so a
-    // value can never break out of this inline <script> (e.g. a stray "</script>").
-    // Base reset cards are authored against. SillyTavern/Tavern-Helper always inject this (it mirrors
-    // Tailwind's preflight); without it our iframe defaults to content-box + an 8px body margin, so a
-    // card's `width:100%` element with padding computes wider than its parent and overflows (the ellia
-    // sub-UI's right-edge clip). Placed at head start so the card's own styles can still override it.
-    const reset =
-      `<style>*,*::before,*::after{box-sizing:border-box}` +
-      `html,body{margin:0!important;padding:0;overflow:hidden!important;max-width:100%!important}</style>`
+    // Classic bridge bootstrap: runs synchronously during head parse, BEFORE the card's deferred
+    // modules. It pulls the bridge globals from the parent realm and copies the bridge's own enumerable
+    // keys (Object.keys, since the bridge is a plain object literal) onto the iframe window (guarding
+    // undefined). The ctx JSON has `<` escaped to < so a value can never break out of this inline
+    // <script> (e.g. a stray "</script>").
     const boot =
       `<meta charset="utf-8">` +
-      reset +
       `<script>(function(){try{` +
       `var ctx=${JSON.stringify(ctx).replace(/</g, '\\u003c')};` +
       `var g=window.parent.__rptCardBridge(ctx);` +
       `Object.keys(g).forEach(function(k){try{if(g[k]!==undefined)window[k]=g[k];}catch(e){}});` +
-      `}catch(e){console.error('[rpt card bridge]',e);}})();</script>` +
-      libTags
-    return buildCardDoc(html, { headInject: boot })
+      `}catch(e){console.error('[rpt card bridge]',e);}})();</script>`
+    // The shared rendering-env: base reset + avatar CSS + the assumed-lib tags (Vue/jQuery/Pinia/Router +
+    // SP2's jQuery-UI/touch-punch/FontAwesome/Tailwind) + the --TH-viewport-height bootstrap, built ONCE
+    // in cardEnv so inline and WCV inject the same thing. `fit` = content-fit (the default); the sizing-
+    // mode branch lands in SP2 T7. Avatar URLs are omitted today (no sync source — charAvatarPath is a
+    // stub and RPT has no persona avatar), so those rules no-op until avatar serving is wired.
+    const env = buildEnvHead({
+      libTags: buildInlineLibTags(),
+      sizing: 'fit',
+      viewportHeightPx: typeof window !== 'undefined' ? window.innerHeight : undefined
+    })
+    return buildCardDoc(html, { headInject: boot + env })
   }, [html, profileId, chatId, characterId])
 
   // Auto-height (same-origin: read contentDocument) + right-click forwarding. Mirrors HtmlFrame.

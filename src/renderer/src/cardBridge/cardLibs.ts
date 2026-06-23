@@ -21,17 +21,6 @@ import {
 } from '../../../shared/cardEnv'
 
 /**
- * Ordered list of classic-script URLs to inject before the card's own scripts.
- *
- * Order matters: Vue FIRST (the Pinia and VueRouter global/IIFE builds bind to window.Vue at load
- * time), then jQuery, then Pinia, then VueRouter — matching the WCV preload's global parity.
- *
- * @deprecated superseded by `buildInlineLibTags()` (the full SP2 assumed-libs set). Still consumed by
- * `InlineCardFrame` until SP2 task 4 switches it to `buildEnvHead({ libTags: buildInlineLibTags() })`.
- */
-export const CARD_LIB_URLS: string[] = [vueUrl, jqueryUrl, piniaUrl, vueRouterUrl]
-
-/**
  * The full ordered set of assumed-lib tags for an INLINE card, matching JS-Slash-Runner's `third_party`
  * env. CSS as <link>, JS as classic <script src>. Intra-family order is load-bearing: jQuery → jQuery-UI
  * → touch-punch (touch-punch patches jQuery-UI, which extends jQuery); Vue → Vue-Router/Pinia (they bind
