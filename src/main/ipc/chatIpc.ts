@@ -2,6 +2,7 @@ import { IpcMain } from 'electron'
 import * as chatService from '../services/chatService'
 import * as floorService from '../services/floorService'
 import * as generationService from '../services/generationService'
+import * as chatWriteService from '../services/chatWriteService'
 import * as logService from '../services/logService'
 import * as usageMetricsService from '../services/usageMetricsService'
 
@@ -27,6 +28,25 @@ export const registerChatIpc = (ipcMain: IpcMain): void => {
   ipcMain.handle('edit-floor', (_, profileId, chatId, floorIndex, userContent, responseContent) =>
     chatService.editFloorContent(profileId, chatId, floorIndex, userContent, responseContent)
   )
+
+  // TavernHelper chat-WRITE (SP3) — the same chatWriteService the WCV path uses, reached from the inline
+  // card host via window.api (explicit ctx). Each mutation re-folds <UpdateVariable> into stat_data; the
+  // renderer reloads its own floors after (no host push needed — it IS the host).
+  ipcMain.handle('chat-set-messages', (_, profileId, chatId, messages) => {
+    const n = chatWriteService.setChatMessages(profileId, chatId, messages)
+    if (n) chatWriteService.afterChatMutation(profileId, chatId)
+    return n > 0
+  })
+  ipcMain.handle('chat-delete-messages', (_, profileId, chatId, ids) => {
+    const ok = chatWriteService.deleteChatMessages(profileId, chatId, ids)
+    if (ok) chatWriteService.afterChatMutation(profileId, chatId)
+    return ok
+  })
+  ipcMain.handle('chat-save', (_, profileId, chatId, chat) => {
+    if (!chatWriteService.saveChat(profileId, chatId, chat)) return false
+    chatWriteService.afterChatMutation(profileId, chatId)
+    return true
+  })
 
   ipcMain.handle('generate', async (event, profileId, chatId, userAction) => {
     try {

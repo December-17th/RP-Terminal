@@ -53,6 +53,13 @@ const api = {
     responseContent: string | null
   ) =>
     ipcRenderer.invoke('edit-floor', profileId, chatId, floorIndex, userContent, responseContent),
+  // TavernHelper chat-write (SP3) — the inline card host reaches chatWriteService via these.
+  setChatMessages: (profileId: string, chatId: string, messages: unknown) =>
+    ipcRenderer.invoke('chat-set-messages', profileId, chatId, messages),
+  deleteChatMessages: (profileId: string, chatId: string, ids: unknown) =>
+    ipcRenderer.invoke('chat-delete-messages', profileId, chatId, ids),
+  saveChat: (profileId: string, chatId: string, chat: unknown) =>
+    ipcRenderer.invoke('chat-save', profileId, chatId, chat),
   deleteCharacter: (profileId: string, charId: string) =>
     ipcRenderer.invoke('delete-character', profileId, charId),
   listPresets: (profileId: string) => ipcRenderer.invoke('list-presets', profileId),
