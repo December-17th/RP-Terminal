@@ -281,3 +281,28 @@ clean-room preserved (no JSR source vendored).
   it reintroduces the documented subscription leak.
 - **Inline perf** — Tailwind JIT + jQuery-UI + FA load in the renderer process for every inline card (no
   isolation). Acceptable per the trusted-card stance; revisit if a card list feels heavy (spec §6.3 lazy option).
+
+## Status (built 2026-06-23, branch `feat/sp2-rendering-env-parity`)
+
+Implemented T1, T2, T4, T5, T6, T7, T8 (commits `ecc8e44`, `2976f2c`, `72a0f8f`, `062c11e`, `8bc97b4`,
+`36805c1`, `31e884f`). Static gate green at every commit: `npm run typecheck` + `npm test` (452) +
+`npm run build`. **Remaining: a human Electron smoke test** — all visual/runtime behavior (Tailwind/FA/
+jQuery-UI actually styling cards in both transports; `fill` sizing; the `window.top` full-page card inline)
+is only verifiable by running the app.
+
+**Scope decisions taken during the build (deviations from the plan, all noted in commits):**
+- **T3 (avatar CSS) descoped** — RPT has no sync avatar source (`Host.charAvatarPath` is a `null` stub; the
+  persona has no avatar field). The `cardEnv` avatar machinery is present and emits rules when a URL exists,
+  so it lights up for free once avatar serving is wired. No `Host.userAvatarPath` was added.
+- **jQuery-UI / touch-punch / FontAwesome via CDN, not npm** (only Tailwind vendored) — avoids mutating the
+  *shared* `node_modules` through the worktree junction; faithful to JSR, which CDN-loads them.
+- **T5 lower-risk WCV variant** — the new libs inject into the WCV doc head (CDN); the core Vue/jQuery/Pinia/
+  VueRouter stay in the `wcvPreload` lazy globals (working path untouched), rather than the plan's full
+  "move everything to the doc head, define-once."
+- **T6 per-card sizing override deferred** — only the GLOBAL `settings.cards.sizing` toggle shipped. The
+  per-card override (regex `_meta` + block marker + per-card UI, mirroring `renderMode` across ~10 files) is
+  a clean follow-up; the global toggle already delivers Fit/Fill.
+
+Build-env note: this worktree's `node_modules` was an empty dir; a junction to the main repo's
+`node_modules` was created so Vite's `?url` imports (and the vendored Tailwind) resolve. `node_modules` is
+gitignored — not committed.
