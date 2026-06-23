@@ -32,6 +32,7 @@ import {
   applyJsonPatch,
   JsonPatchOp
 } from '../parsers/mvuParser'
+import { frozenVarsFor } from './cacheLayers'
 import { log } from './logService'
 import { FloorFile } from '../types/chat'
 import { Lorebook, LorebookEntry, getRpExt } from '../types/character'
@@ -129,6 +130,14 @@ export const generate = async (
   const globals = loadGlobals(profileId)
   const userName = settings.persona?.name || 'User'
 
+  // Prompt-cache level (L1 Frozen Core when ≥1). The frozen snapshot is derived from the
+  // FIRST floor's variables — constant across the session — so the frontier render is
+  // byte-stable. 'partition' shows placeholders for state; 'diff' shows the floor-0 values.
+  const cacheLevel = settings.cache?.level ?? 0
+  const l1Mode = settings.cache?.l1_mode ?? 'partition'
+  const floor0Vars = floors[0]?.variables ?? {}
+  const frozenVars = cacheLevel >= 1 ? frozenVarsFor(l1Mode, floor0Vars) : {}
+
   const scanDepth = fsmEnabled
     ? (modeConfig.scan_depth ?? settings.lorebook?.scan_depth ?? 3)
     : (settings.lorebook?.scan_depth ?? 3)
@@ -183,6 +192,9 @@ export const generate = async (
     maxRecursion,
     matchedEntries,
     promptRegex: getPromptRules(profileId, { cardId: chat.character_id, chatId }),
+    cacheLevel,
+    l1Mode,
+    frozenVars,
     // FSM mode addendum + the World Card's custom agent prompts (system + per-mode).
     modeAddendum: composeAddendum(getRpExt(card)?.agent, mode, fsmEnabled, modeConfig.addendum),
     template: {
