@@ -6,6 +6,7 @@ import * as lorebookService from '../services/lorebookService'
 import * as chatService from '../services/chatService'
 import * as characterService from '../services/characterService'
 import * as scriptApiService from '../services/scriptApiService'
+import * as settingsService from '../services/settingsService'
 import { log } from '../services/logService'
 import { LorebookEntry, LorebookEntrySchema } from '../types/character'
 import { FloorFile } from '../types/chat'
@@ -216,6 +217,17 @@ export const registerWcvIpc = (ipcMain: IpcMain): void => {
     const ctx = wcvManager.contextFor(e.sender.id)
     e.returnValue = ctx ? scriptApiService.listPresetNames(ctx.profileId) : []
   })
+  // Persona display name (ctx-scoped settings) — so WCV chat shows the real user name, not "User".
+  ipcMain.on('wcv-host-get-persona-name', (e) => {
+    const ctx = wcvManager.contextFor(e.sender.id)
+    try {
+      e.returnValue = ctx
+        ? settingsService.getSettings(ctx.profileId).persona?.name || 'User'
+        : 'User'
+    } catch {
+      e.returnValue = 'User'
+    }
+  })
   ipcMain.on('wcv-host-get-regexes', (e) => {
     const ctx = wcvManager.contextFor(e.sender.id)
     e.returnValue = ctx
@@ -360,6 +372,21 @@ export const registerWcvIpc = (ipcMain: IpcMain): void => {
       })
     })
     e.returnValue = msgs
+  })
+
+  // Raw floor rows for the calling panel's session (the unified TH runtime maps these to TH/ST message
+  // shapes itself — same source the renderer uses). SYNC so the runtime's sync getters can read floors.
+  ipcMain.on('wcv-host-get-floors-sync', (e) => {
+    const ctx = wcvManager.contextFor(e.sender.id)
+    if (!ctx) {
+      e.returnValue = []
+      return
+    }
+    try {
+      e.returnValue = floorService.getAllFloors(ctx.profileId, ctx.chatId)
+    } catch {
+      e.returnValue = []
+    }
   })
 
   // Edit message content by chat-array index (TH setChatMessages). Each index maps back to its floor +
