@@ -3,6 +3,7 @@ dist
 out
 .DS_Store
 .eslintcache
+*.tsbuildinfo
 *.log*
 
 # AI assistant / planning files — kept local, not tracked in the repo
