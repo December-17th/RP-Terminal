@@ -51,6 +51,7 @@ function mockHost(over: Partial<Host> = {}): { host: Host; calls: any } {
     onHostEvent: () => () => {},
     evalTemplate: (t) => 'ejs:' + t,
     evalTemplateError: () => null,
+    prepareContext: (d) => ({ vars: d || {}, enabled: true }),
     ...over
   }
   return { host, calls, fireVars: (sd: any) => varsCb && varsCb(sd) } as any
@@ -65,6 +66,9 @@ describe('createThRuntime', () => {
     expect(g.Mvu).toBeTruthy()
     expect(g.SillyTavern).toBeTruthy()
     expect(g.EjsTemplate).toBeTruthy()
+    // prepareContext must delegate to the host (a full EJS context), not return the raw input —
+    // regression guard: cards detect/use the engine via prepareContext()'s shape (enabled, vars).
+    expect(g.EjsTemplate.prepareContext({ x: 1 })).toEqual({ vars: { x: 1 }, enabled: true })
     expect(g.tavern_events.MESSAGE_RECEIVED).toBe('message_received')
   })
 

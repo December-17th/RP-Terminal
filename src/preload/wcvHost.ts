@@ -13,6 +13,7 @@ type Deps = {
   ctx: CardCtx
   evalTemplate: (tmpl: string, data?: any) => string
   evalTemplateError: (tmpl: string, data?: any) => string | null
+  prepareContext: (data?: any) => any
 }
 
 export function createWcvHost(deps: Deps): Host {
@@ -89,6 +90,7 @@ export function createWcvHost(deps: Deps): Host {
       return () => ipcRenderer.removeListener('wcv-event', l)
     },
     evalTemplate: deps.evalTemplate,
-    evalTemplateError: deps.evalTemplateError
+    evalTemplateError: deps.evalTemplateError,
+    prepareContext: deps.prepareContext
   }
 }

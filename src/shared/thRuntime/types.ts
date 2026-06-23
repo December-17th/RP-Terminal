@@ -72,6 +72,7 @@ export interface Host {
   onHostEvent(cb: (name: string, payload?: any) => void): () => void
   evalTemplate(tmpl: string, data?: any): string
   evalTemplateError(tmpl: string, data?: any): string | null
+  prepareContext(data?: any): any
 }
 
 /** What createThRuntime returns — spread onto the card window by each transport. */

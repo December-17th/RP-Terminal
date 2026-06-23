@@ -165,7 +165,8 @@ const g = createThRuntime(
     evalTemplateError: (tmpl, data) => {
       const err = ejsEvalDetailed(String(tmpl ?? ''), buildEjsCtx(data)).error
       return err || null
-    }
+    },
+    prepareContext: (data) => buildEjsCtx(data)
   })
 )
 Object.assign(w, g)

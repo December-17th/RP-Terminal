@@ -119,6 +119,9 @@ export function createInlineHost(ctx: CardCtx): Host {
     evalTemplateError: (tmpl) => {
       const r = evalTemplateDetailed(tmpl, buildRenderContext(latestVars()))
       return r.error ?? null
-    }
+    },
+    // The full render context (with `enabled`, hoisted vars, etc.) — cards call prepareContext() and
+    // expect a usable EJS context, not the raw input. Mirrors the old createCardBridge behavior.
+    prepareContext: () => buildRenderContext(latestVars())
   }
 }

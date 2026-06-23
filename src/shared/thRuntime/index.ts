@@ -235,7 +235,7 @@ export function createThRuntime(host: Host): ThGlobals {
   // --- EjsTemplate (engine lives in the transport via host.evalTemplate) ---
   const EjsTemplate = {
     evalTemplate: (tmpl: string, data?: any) => host.evalTemplate(tmpl, data),
-    prepareContext: (data?: any) => data || {},
+    prepareContext: (data?: any) => host.prepareContext(data),
     getSyntaxErrorInfo: (tmpl: string, data?: any) => {
       const e = host.evalTemplateError(tmpl, data)
       return e ? { message: e } : null
