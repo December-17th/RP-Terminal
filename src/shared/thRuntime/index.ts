@@ -206,11 +206,15 @@ export function createThRuntime(host: Host): ThGlobals {
   }
 
   // --- SillyTavern ---
-  const stChat = (): any[] =>
-    floorsToStChat(host.floors(), {
-      charName: host.charData()?.name || 'Character',
-      userName: host.personaName()
+  const stChat = (): any[] => {
+    const cd = host.charData()
+    const greetings = [cd?.first_mes, ...(cd?.alternate_greetings || [])].filter((g: any) => !!g)
+    return floorsToStChat(host.floors(), {
+      charName: cd?.name || 'Character',
+      userName: host.personaName(),
+      greetings
     })
+  }
   const eventSource = { on, emit, makeFirst: on, once: on, removeListener: off }
   const getContext = (): any => ({
     chat: stChat(),

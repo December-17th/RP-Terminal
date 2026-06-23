@@ -20,28 +20,36 @@ export function currentMessageId(floors: FloorLike[]): number {
 /** Floors → the SillyTavern `chat[]` shape (each turn = a user + an assistant message). */
 export function floorsToStChat(
   floors: FloorLike[],
-  names: { charName: string; userName: string }
+  names: { charName: string; userName: string; greetings?: string[] }
 ): StMessage[] {
   const out: StMessage[] = []
-  for (const f of floors) {
-    out.push({
-      is_user: true,
-      name: names.userName,
-      mes: f.user_message?.content ?? '',
-      send_date: '',
-      swipes: [],
-      swipe_id: 0,
-      extra: {}
-    })
+  floors.forEach((f, i) => {
+    if (f.user_message?.content) {
+      out.push({
+        is_user: true,
+        name: names.userName,
+        mes: f.user_message.content,
+        send_date: '',
+        swipes: [f.user_message.content],
+        swipe_id: 0,
+        extra: {}
+      })
+    }
+    const swipes =
+      i === 0 && names.greetings && names.greetings.length
+        ? names.greetings
+        : f.swipes && f.swipes.length
+          ? f.swipes
+          : [f.response?.content ?? '']
     out.push({
       is_user: false,
       name: names.charName,
       mes: f.response?.content ?? '',
       send_date: '',
-      swipes: f.swipes ?? [f.response?.content ?? ''],
+      swipes,
       swipe_id: f.swipe_id ?? 0,
       extra: {}
     })
-  }
+  })
   return out
 }

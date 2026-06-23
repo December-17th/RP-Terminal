@@ -51,7 +51,7 @@ describe('floorsToStChat', () => {
       is_user: true,
       name: 'Player',
       mes: 'hi',
-      swipes: [],
+      swipes: ['hi'],
       swipe_id: 0
     })
     expect(chat[3]).toMatchObject({
@@ -64,6 +64,59 @@ describe('floorsToStChat', () => {
   })
   it('defaults assistant swipes to [response content] when none', () => {
     const chat = floorsToStChat([{ response: { content: 'x' } }], { charName: 'C', userName: 'U' })
-    expect(chat[1].swipes).toEqual(['x'])
+    expect(chat[0].swipes).toEqual(['x'])
+  })
+
+  it('skips user message when content is absent (greeting floor produces only assistant msg)', () => {
+    const chat = floorsToStChat([{ response: { content: 'greet' } }], {
+      charName: 'C',
+      userName: 'U'
+    })
+    expect(chat).toHaveLength(1)
+    expect(chat[0].is_user).toBe(false)
+    expect(chat[0].mes).toBe('greet')
+  })
+
+  it('uses greetings as floor-0 assistant swipes when provided', () => {
+    const chat = floorsToStChat([{ response: { content: 'greet' }, swipes: ['x'] }], {
+      charName: 'C',
+      userName: 'U',
+      greetings: ['g1', 'g2']
+    })
+    expect(chat[0].swipes).toEqual(['g1', 'g2'])
+  })
+
+  it('uses floor own swipes (not greetings) for non-zero floors', () => {
+    const twoFloors = [
+      { response: { content: 'greet' } },
+      {
+        user_message: { content: 'hello' },
+        response: { content: 'reply' },
+        swipes: ['reply', 'alt'],
+        swipe_id: 0
+      }
+    ]
+    const chat = floorsToStChat(twoFloors, {
+      charName: 'C',
+      userName: 'U',
+      greetings: ['g1', 'g2']
+    })
+    // floor 0: only assistant (no user msg), swipes = greetings
+    expect(chat[0].is_user).toBe(false)
+    expect(chat[0].swipes).toEqual(['g1', 'g2'])
+    // floor 1: user then assistant; assistant swipes = floor's own
+    expect(chat[1].is_user).toBe(true)
+    expect(chat[1].mes).toBe('hello')
+    expect(chat[2].is_user).toBe(false)
+    expect(chat[2].swipes).toEqual(['reply', 'alt'])
+  })
+
+  it('user message with content appears with swipes: [content]', () => {
+    const chat = floorsToStChat(
+      [{ user_message: { content: 'hey' }, response: { content: 'yo' } }],
+      { charName: 'C', userName: 'U' }
+    )
+    expect(chat[0].is_user).toBe(true)
+    expect(chat[0].swipes).toEqual(['hey'])
   })
 })
