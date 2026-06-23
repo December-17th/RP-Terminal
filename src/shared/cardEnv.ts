@@ -23,6 +23,17 @@ export interface EnvHeadOpts {
   viewportHeightPx?: number
 }
 
+// --- CDN-hosted assumed libs (faithful to JSR, which CDN-loads these) ---
+// Only Tailwind is vendored (resources/cardlibs/tailwind.min.js); the rest load from jsDelivr. The app
+// card CSP allows blanket https:, so both transports can use these directly. Unversioned where JSR is,
+// so cards get the same builds.
+export const FONTAWESOME_CSS_URL =
+  'https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free/css/all.min.css'
+export const JQUERY_UI_JS_URL = 'https://cdn.jsdelivr.net/npm/jquery-ui/dist/jquery-ui.min.js'
+export const JQUERY_UI_THEME_CSS_URL =
+  'https://cdn.jsdelivr.net/npm/jquery-ui/themes/base/theme.min.css'
+export const JQUERY_UI_TOUCH_PUNCH_URL = 'https://cdn.jsdelivr.net/npm/jquery-ui-touch-punch'
+
 /**
  * The base CSS reset cards assume. Mirrors SillyTavern/Tavern-Helper's `createSrcContent` (≈ Tailwind
  * preflight): without it our iframe defaults to content-box + an 8px body margin, so a `width:100%`+padding
