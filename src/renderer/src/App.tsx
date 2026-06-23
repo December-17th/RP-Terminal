@@ -8,6 +8,7 @@ import { useLogStore } from './stores/logStore'
 import { useRegexStore } from './stores/regexStore'
 import { usePluginsStore } from './stores/pluginsStore'
 import { FpsOverlay } from './components/FpsOverlay'
+import { UsageOverlay } from './components/UsageOverlay'
 import { ToastStack } from './components/ToastStack'
 import { ProfilePicker } from './components/ProfilePicker'
 import { TopNav } from './components/TopNav'
@@ -173,6 +174,7 @@ export default function App(): React.ReactElement {
       </div>
 
       {settings?.ui?.show_fps && <FpsOverlay />}
+      {settings?.ui?.usage_meter?.enabled && <UsageOverlay profileId={activeProfile.id} />}
 
       <ToastStack />
     </>

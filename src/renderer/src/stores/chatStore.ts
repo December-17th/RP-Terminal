@@ -1,4 +1,5 @@
 import { create } from 'zustand'
+import type { FloorMetrics } from '../../../shared/usageTypes'
 
 export interface FloorIndexEntry {
   floor: number
@@ -23,6 +24,8 @@ export interface Floor {
   /** Alternate responses (TH-2 swipes); swipes[swipe_id] === response.content. */
   swipes?: string[]
   swipe_id?: number
+  /** Cache/token metrics for this floor (present once it has been through a metered turn). */
+  metrics?: FloorMetrics
   variables: Record<string, any>
 }
 

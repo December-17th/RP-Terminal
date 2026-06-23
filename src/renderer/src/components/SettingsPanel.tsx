@@ -123,6 +123,22 @@ export const SettingsPanel: React.FC<{ profileId: string }> = ({ profileId }) =>
             >
               <input
                 type="checkbox"
+                checked={settings.ui?.usage_meter?.enabled ?? false}
+                onChange={(e) =>
+                  updateSettings(profileId, {
+                    ui: { ...settings.ui, usage_meter: { ...settings.ui.usage_meter, enabled: e.target.checked } }
+                  })
+                }
+              />
+              Show token / cache meter (floating overlay)
+            </label>
+
+            <label
+              className="entry-toggles"
+              style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 14 }}
+            >
+              <input
+                type="checkbox"
                 checked={settings.templates?.enabled ?? true}
                 onChange={(e) =>
                   updateSettings(profileId, {
