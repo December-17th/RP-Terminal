@@ -166,6 +166,33 @@ A card with no override produces no marker → falls back to the global default.
 - `rpt-card://` scheme + `wcvManager` (isolated mode only; inline mode serves `buildCardDoc` output via `srcdoc`).
 - `buildCardDoc`, `HtmlFrame` (static cards), `src/shared/templateEngine.ts`.
 
+## Alternatives considered
+
+### Shadow DOM for the inline path (rejected)
+
+Considered hosting scripted inline cards in a **shadow root** instead of a same-origin iframe, for
+free content-height growth and native page scroll. Rejected: a shadow root is not a document or a
+realm — it shares the page's `document`, `window`, global scope, and `customElements` registry. For
+the full-document Vue/ESM cards this is fatal:
+
+- `<script>` in injected markup doesn't execute; `type="module"` scripts can only run at document
+  level, not "inside" a shadow root.
+- Card code (`createApp(App).mount('#app')`, `document.querySelector('#app')`) misses, because the
+  card markup lives in the shadow tree, not `document` — and the shared realm means the card's
+  `document` global can't be swapped.
+- Cross-card collisions: shared global scope + one `customElements` registry → second `const app` /
+  `customElements.define(...)` throws.
+- Full-document CSS misbehaves: `html,body` selectors match nothing, `100vh` resolves to the viewport
+  (the oversize bug returns), `position:fixed` escapes, `@font-face` is ignored, the `<head>`/CSP
+  `<meta>` are meaningless.
+- It's also a robustness regression vs. the iframe: no realm isolation, so a card's globals/listeners/
+  prototype tweaks mutate the actual app. And it still requires the same CSP loosening (shadow DOM is
+  governed by the page CSP).
+
+The two real benefits (auto-height, native scroll) are already delivered by the auto-height iframe.
+Shadow DOM remains defensible only for the *static* `HtmlFrame` path (no scripts, no realm to protect)
+— an unrelated, out-of-scope optimization.
+
 ## Risks & mitigations
 
 - **No process isolation in inline mode** — a runaway card can block the renderer. Mitigation: that's
