@@ -33,6 +33,9 @@ export const JQUERY_UI_JS_URL = 'https://cdn.jsdelivr.net/npm/jquery-ui/dist/jqu
 export const JQUERY_UI_THEME_CSS_URL =
   'https://cdn.jsdelivr.net/npm/jquery-ui/themes/base/theme.min.css'
 export const JQUERY_UI_TOUCH_PUNCH_URL = 'https://cdn.jsdelivr.net/npm/jquery-ui-touch-punch'
+// WCV cards load Tailwind from the CDN: the WCV page can't reach the renderer-origin vendored ?url asset.
+// Pinned to the same v3 the inline vendored build is.
+export const TAILWIND_CDN_URL = 'https://cdn.tailwindcss.com/3.4.16'
 
 /**
  * The base CSS reset cards assume. Mirrors SillyTavern/Tavern-Helper's `createSrcContent` (≈ Tailwind

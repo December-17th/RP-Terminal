@@ -17,8 +17,12 @@ import {
   FONTAWESOME_CSS_URL,
   JQUERY_UI_JS_URL,
   JQUERY_UI_THEME_CSS_URL,
-  JQUERY_UI_TOUCH_PUNCH_URL
+  JQUERY_UI_TOUCH_PUNCH_URL,
+  TAILWIND_CDN_URL
 } from '../../../shared/cardEnv'
+
+const cssTag = (href: string): string => `<link rel="stylesheet" href="${href}">`
+const jsTag = (src: string): string => `<script src="${src}"></script>`
 
 /**
  * The full ordered set of assumed-lib tags for an INLINE card, matching JS-Slash-Runner's `third_party`
@@ -27,17 +31,32 @@ import {
  * window.Vue). Tailwind is the vendored same-origin asset; FontAwesome / jQuery-UI / touch-punch are CDN.
  */
 export function buildInlineLibTags(): string {
-  const css = (href: string): string => `<link rel="stylesheet" href="${href}">`
-  const js = (src: string): string => `<script src="${src}"></script>`
   return [
-    css(FONTAWESOME_CSS_URL),
-    css(JQUERY_UI_THEME_CSS_URL),
-    js(tailwindUrl),
-    js(jqueryUrl),
-    js(JQUERY_UI_JS_URL),
-    js(JQUERY_UI_TOUCH_PUNCH_URL),
-    js(vueUrl),
-    js(vueRouterUrl),
-    js(piniaUrl)
+    cssTag(FONTAWESOME_CSS_URL),
+    cssTag(JQUERY_UI_THEME_CSS_URL),
+    jsTag(tailwindUrl),
+    jsTag(jqueryUrl),
+    jsTag(JQUERY_UI_JS_URL),
+    jsTag(JQUERY_UI_TOUCH_PUNCH_URL),
+    jsTag(vueUrl),
+    jsTag(vueRouterUrl),
+    jsTag(piniaUrl)
+  ].join('')
+}
+
+/**
+ * The assumed-lib tags for a WCV card. The WCV preload already provides Vue/jQuery/Pinia/VueRouter as
+ * lazy window globals, so only the NEW assumed libs are injected here — and all from CDN, because the
+ * vendored Tailwind `?url` asset is renderer-origin and unreachable from the WCV page. jQuery-UI and
+ * touch-punch bind to the preload's lazy `window.jQuery` when they execute (contextIsolation:false, so
+ * the doc scripts and the preload share one window).
+ */
+export function buildWcvLibTags(): string {
+  return [
+    cssTag(FONTAWESOME_CSS_URL),
+    cssTag(JQUERY_UI_THEME_CSS_URL),
+    jsTag(TAILWIND_CDN_URL),
+    jsTag(JQUERY_UI_JS_URL),
+    jsTag(JQUERY_UI_TOUCH_PUNCH_URL)
   ].join('')
 }
