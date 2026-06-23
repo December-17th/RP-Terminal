@@ -13,6 +13,7 @@ import { useRegexStore } from '../stores/regexStore'
 import { useSettingsStore } from '../stores/settingsStore'
 import { evalTemplate } from '../../../shared/templateEngine'
 import { buildRenderContext } from '../plugin/renderTemplate'
+import { setVarOps, assignVarOps, replaceStatDataOps, type VarOp } from './ops'
 
 export type CardCtx = { profileId: string; chatId: string; characterId: string }
 
@@ -106,8 +107,47 @@ const toastr = {
 }
 
 export function createCardBridge(ctx: CardCtx): Record<string, unknown> {
-  void ctx // reserved for Phase C async writes (profileId/chatId/characterId)
   const bus = makeBus()
+
+  // ---- variable-write path (Phase C) ------------------------------------------------------------
+  // The target floor is the latest floor's own `.floor` value (NOT an array index) — chatStore's
+  // applyVariableOps matches ops against `f.floor`, and defaults to the latest floor when omitted.
+  const floorIndex = (): number => {
+    const floors = useChatStore.getState().floors
+    return floors.length ? (floors[floors.length - 1].floor ?? floors.length - 1) : 0
+  }
+  const writeVars = async (ops: VarOp[]): Promise<void> => {
+    if (!ops.length) return
+    // Optimistic: chatStore.applyVariableOps persists via window.api AND folds the returned floor
+    // back into the store, so the card sees its own change immediately. Don't double-call window.api.
+    try {
+      await useChatStore.getState().applyVariableOps(ctx.profileId, ops, floorIndex())
+    } catch (e) {
+      console.error('[card writeVars]', e)
+    }
+  }
+
+  // ---- worldbook (lorebook) write path (Phase C) ------------------------------------------------
+  // A card's own book is keyed by characterId (WCV invariant: lorebookService.getLorebookById uses
+  // the character id; preload getLorebook/saveLorebook are id-keyed). getLorebook → { name, entries }.
+  const fetchWorldbook = async (_name?: any): Promise<any> => {
+    try {
+      return await window.api.getLorebook(ctx.profileId, ctx.characterId)
+    } catch {
+      return { entries: [] }
+    }
+  }
+  const saveWorldbook = async (_name: any, entries: any): Promise<void> => {
+    const lb = (await fetchWorldbook()) || { name: '', entries: [] }
+    const next = Array.isArray(entries) ? { ...lb, entries } : entries
+    try {
+      await window.api.saveLorebook(ctx.profileId, ctx.characterId, next)
+    } catch (e) {
+      console.error('[card saveWorldbook]', e)
+    }
+  }
+  const normalizeWb = (lb: any): any[] =>
+    Array.isArray(lb?.entries) ? lb.entries : Array.isArray(lb) ? lb : []
 
   // ---- EjsTemplate: reuse the renderer's already-initialized shared engine -----------------------
   const EjsTemplate = {
@@ -151,8 +191,14 @@ export function createCardBridge(ctx: CardCtx): Record<string, unknown> {
       return p ? { name: p.name, parameters: p.parameters } : null
     },
     getPresetNames: (..._a: any[]) => usePresetStore.getState().presets.map((p: any) => p.name),
-    getCharWorldbookNames: (..._a: any[]) => ({ primary: null, additional: [] }), // refined in Phase C
-    getWorldbookNames: (..._a: any[]) => [],
+    getCharWorldbookNames: (..._a: any[]) => {
+      const name = useCharacterStore.getState().activeCharacter?.card?.data?.name || null
+      return { primary: name, additional: [] }
+    },
+    getWorldbookNames: (..._a: any[]) => {
+      const name = useCharacterStore.getState().activeCharacter?.card?.data?.name
+      return name ? [name] : []
+    },
     getCurrentCharPrimaryLorebook: () => null,
     getCharLorebooks: (..._a: any[]) => [],
     getTavernRegexes: (..._a: any[]) =>
@@ -179,21 +225,50 @@ export function createCardBridge(ctx: CardCtx): Record<string, unknown> {
     audioEnable: () => {},
     errorCatched,
 
-    // ASYNC ops — implemented in Phase C; here they no-op safely so a read-only card never crashes.
-    replaceVariables: async (..._a: any[]) => undefined,
-    insertOrAssignVariables: async (..._a: any[]) => undefined,
-    updateVariablesWith: async (..._a: any[]) => undefined,
+    // ASYNC write ops — Phase C: real window.api persistence + optimistic store updates.
+    insertOrAssignVariables: async (vars: any, _opts?: any) => {
+      // Deep-assign the given object's top-level keys into stat_data.
+      const obj = vars?.stat_data && typeof vars.stat_data === 'object' ? vars.stat_data : vars
+      await writeVars(assignVarOps(obj))
+    },
+    replaceVariables: async (vars: any, _opts?: any) => {
+      // Wholesale replace stat_data (expressed per top-level key — see ops.ts).
+      const next = vars?.stat_data && typeof vars.stat_data === 'object' ? vars.stat_data : vars
+      await writeVars(replaceStatDataOps(statData(), next))
+    },
+    updateVariablesWith: async (updater: any, _opts?: any) => {
+      if (typeof updater !== 'function') return
+      const next = updater(structuredClone(statData()))
+      await writeVars(replaceStatDataOps(statData(), next))
+    },
+    generate: async (a: any) => {
+      const action = typeof a === 'string' ? a : (a?.user_input ?? a?.injects ?? '')
+      const r: any = await window.api.generate(ctx.profileId, ctx.chatId, action)
+      return typeof r === 'string' ? r : (r?.content ?? '')
+    },
+    generateRaw: async (config: any) => {
+      const r: any = await window.api.generateRaw(ctx.profileId, ctx.chatId, config)
+      return typeof r === 'string' ? r : (r?.content ?? '')
+    },
+    getWorldbook: async (name: any) => normalizeWb(await fetchWorldbook(name)),
+    getLorebookEntries: async (name: any) => normalizeWb(await fetchWorldbook(name)),
+    replaceWorldbook: async (name: any, entries: any) => {
+      await saveWorldbook(name, entries)
+      return true
+    },
+    updateWorldbookWith: async (name: any, updater: any) => {
+      const cur = normalizeWb(await fetchWorldbook(name))
+      const next = typeof updater === 'function' ? updater(cur) : cur
+      await saveWorldbook(name, next)
+      return next
+    },
+
+    // ASYNC ops still stubbed (out of C1 scope) — no-op safely so a card never crashes.
     setChatMessages: async (..._a: any[]) => false,
     deleteChatMessages: async (..._a: any[]) => false,
     createChat: async (..._a: any[]) => '',
     createChatMessages: async (..._a: any[]) => '',
     triggerSlash: async (..._a: any[]) => '',
-    generate: async (..._a: any[]) => '',
-    generateRaw: async (..._a: any[]) => '',
-    getWorldbook: async (..._a: any[]) => [],
-    replaceWorldbook: async (..._a: any[]) => false,
-    updateWorldbookWith: async (..._a: any[]) => [],
-    getLorebookEntries: async (..._a: any[]) => [],
     replaceTavernRegexes: async (..._a: any[]) => undefined
   }
 
@@ -204,8 +279,18 @@ export function createCardBridge(ctx: CardCtx): Record<string, unknown> {
       const v = getByPath(statData(), path)
       return v === undefined ? o?.default_value : v
     },
-    setMvuVariable: (_d: any, _path: string, _value: any, _o?: any) => undefined, // write: Phase C
-    replaceMvuData: (_d: any, _o?: any) => undefined, // write: Phase C
+    setMvuVariable: (_d: any, path: string, value: any, _o?: any) => {
+      bus.emit(MVU_EVENTS.VARIABLE_UPDATE_STARTED, statData())
+      void writeVars(setVarOps(path, value)).then(() => {
+        bus.emit(MVU_EVENTS.VARIABLE_UPDATED, statData())
+        bus.emit(MVU_EVENTS.VARIABLE_UPDATE_ENDED, statData())
+      })
+      return value
+    },
+    replaceMvuData: (d: any, _o?: any) => {
+      const next = d?.stat_data && typeof d.stat_data === 'object' ? d.stat_data : d
+      void writeVars(replaceStatDataOps(statData(), next))
+    },
     parseMessage: (..._a: any[]) => undefined,
     reloadInitVar: (..._a: any[]) => undefined,
     events: MVU_EVENTS
