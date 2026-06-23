@@ -44,8 +44,16 @@ export function InlineCardFrame({
     // (Object.keys, since the bridge is a plain object literal) onto the iframe window (guarding
     // undefined), then loads the realm-bound DOM libs. The ctx JSON has `<` escaped to < so a
     // value can never break out of this inline <script> (e.g. a stray "</script>").
+    // Base reset cards are authored against. SillyTavern/Tavern-Helper always inject this (it mirrors
+    // Tailwind's preflight); without it our iframe defaults to content-box + an 8px body margin, so a
+    // card's `width:100%` element with padding computes wider than its parent and overflows (the ellia
+    // sub-UI's right-edge clip). Placed at head start so the card's own styles can still override it.
+    const reset =
+      `<style>*,*::before,*::after{box-sizing:border-box}` +
+      `html,body{margin:0!important;padding:0;overflow:hidden!important;max-width:100%!important}</style>`
     const boot =
       `<meta charset="utf-8">` +
+      reset +
       `<script>(function(){try{` +
       `var ctx=${JSON.stringify(ctx).replace(/</g, '\\u003c')};` +
       `var g=window.parent.__rptCardBridge(ctx);` +
