@@ -293,7 +293,7 @@ export const SettingsPanel: React.FC<{ profileId: string }> = ({ profileId }) =>
               <button
                 style={{ marginTop: 6 }}
                 onClick={() => {
-                  const model = settings.api.model || 'model-id'
+                  const model = settings.api?.model || 'model-id'
                   if (settings.pricing?.[model]) return
                   updateSettings(profileId, {
                     pricing: {
