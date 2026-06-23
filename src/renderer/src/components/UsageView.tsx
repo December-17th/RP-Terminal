@@ -41,6 +41,7 @@ export const UsageView: React.FC<{ profileId: string }> = ({ profileId }) => {
   const actualPct = series.map((s) => (s.m.turn.usage ? cacheHitPct(s.m.turn.usage) : 0))
 
   const exportData = (kind: 'csv' | 'json'): void => {
+    if (series.length === 0) return
     const rows = series.map((s) => ({
       floor: s.floor,
       promptTokens: s.m.turn.promptTokens,
