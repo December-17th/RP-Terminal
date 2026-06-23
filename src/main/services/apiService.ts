@@ -1,84 +1,268 @@
-import { Settings } from '../types/models';
+import { Settings } from '../types/models'
+import { PresetParameters } from '../types/preset'
+import { ChatMessage } from './promptBuilder'
+import { log } from './logService'
 
-import { applyRegexRules, loadRegexRules, StRegexRule } from '../parsers/stRegexEngine';
-import { parseContent, ParsedContent } from '../parsers/contentParser';
+export type DeltaCallback = (delta: string) => void
 
-// Optionally load regex rules from a global setting or a specific file
-// For MVP, we'll try to load any regex file in the active profile or use none
-let activeRegexRules: StRegexRule[] = [];
+/** Receives the provider's RAW usage object (shape differs per provider) once known. */
+export type UsageCallback = (raw: unknown) => void
 
-export const completeChat = async (settings: Settings, messages: any[]): Promise<ParsedContent> => {
-  const { provider } = settings.api;
-  let rawText = '';
-  
-  if (provider === 'anthropic') {
-    rawText = await completeAnthropic(settings, messages);
-  } else {
-    rawText = await completeOpenAICompatible(settings, messages);
+/**
+ * Stream a completion from the configured provider. Each text chunk is handed to
+ * `onDelta` as it arrives; the full concatenated text is returned when done.
+ * Generation parameters come from the active preset (preset wins over defaults).
+ */
+export const streamProvider = async (
+  settings: Settings,
+  messages: ChatMessage[],
+  params: PresetParameters,
+  onDelta: DeltaCallback,
+  signal?: AbortSignal,
+  onUsage?: UsageCallback
+): Promise<string> => {
+  if (settings.api.provider === 'anthropic') {
+    return streamAnthropic(settings, messages, params, onDelta, signal, onUsage)
+  }
+  if (settings.api.provider === 'google' || settings.api.provider === 'gemini') {
+    return streamGemini(settings, messages, params, onDelta, signal, onUsage)
+  }
+  return streamOpenAICompatible(settings, messages, params, onDelta, signal, onUsage)
+}
+
+/**
+ * List the models available at the configured provider (GET /models), mirroring the auth each
+ * provider uses for generation: OpenAI-compatible (openai/openrouter/custom) → `data[].id` with a
+ * Bearer key; Anthropic → `data[].id` with x-api-key; Google → `models[].name` (sans the "models/"
+ * prefix) with x-goog-api-key. Used by the API settings tab's "Fetch models" button. Throws on a
+ * non-OK response so the renderer can surface the error.
+ */
+export const listModels = async (api: Settings['api']): Promise<string[]> => {
+  const key = api.api_key || ''
+  const collect = (rows: unknown, field: 'id' | 'name'): string[] =>
+    (Array.isArray(rows) ? rows : [])
+      .map((m) => (m as Record<string, unknown>)?.[field])
+      .filter((v): v is string => typeof v === 'string' && v.length > 0)
+  const fail = async (r: Response): Promise<never> => {
+    throw new Error(`models ${r.status}: ${(await r.text()).slice(0, 200)}`)
   }
 
-  // Pipeline Stage 2: ST Regex Engine
-  const regexProcessed = applyRegexRules(rawText, activeRegexRules, 'text');
+  if (api.provider === 'anthropic') {
+    const base = (api.endpoint || 'https://api.anthropic.com/v1').replace(/\/$/, '')
+    const r = await fetch(`${base}/models?limit=1000`, {
+      headers: { 'x-api-key': key, 'anthropic-version': '2023-06-01' }
+    })
+    if (!r.ok) return fail(r)
+    return collect(((await r.json()) as { data?: unknown }).data, 'id')
+  }
+  if (api.provider === 'google' || api.provider === 'gemini') {
+    const base = (api.endpoint || 'https://generativelanguage.googleapis.com/v1beta').replace(
+      /\/$/,
+      ''
+    )
+    const r = await fetch(`${base}/models?pageSize=1000`, { headers: { 'x-goog-api-key': key } })
+    if (!r.ok) return fail(r)
+    return collect(((await r.json()) as { models?: unknown }).models, 'name').map((n) =>
+      n.replace(/^models\//, '')
+    )
+  }
+  const base = (api.endpoint || 'https://api.openai.com/v1').replace(/\/$/, '')
+  const r = await fetch(`${base}/models`, { headers: { Authorization: `Bearer ${key}` } })
+  if (!r.ok) return fail(r)
+  return collect(((await r.json()) as { data?: unknown }).data, 'id')
+}
 
-  // Pipeline Stage 3: RP Terminal Tag Parser
-  const parsed = parseContent(regexProcessed);
+// Drop undefined params so we don't send nulls to providers that reject them.
+const cleanParams = (params: PresetParameters): Record<string, unknown> => {
+  const out: Record<string, unknown> = {}
+  for (const [k, v] of Object.entries(params)) {
+    if (v !== undefined) out[k] = v
+  }
+  return out
+}
 
-  return parsed;
-};
+/**
+ * Read an SSE body line by line, handing each `data:` payload (minus the prefix)
+ * to `handle`. Buffers partial lines across chunks. `[DONE]` is filtered out.
+ */
+const readSse = async (response: Response, handle: (data: string) => void): Promise<void> => {
+  if (!response.body) throw new Error('No response body to stream')
+  const reader = response.body.getReader()
+  const decoder = new TextDecoder()
+  let buffer = ''
 
-const completeOpenAICompatible = async (settings: Settings, messages: any[]): Promise<string> => {
-  const { endpoint, api_key, model, default_params } = settings.api;
-  
-  const url = endpoint.endsWith('/chat/completions') ? endpoint : `${endpoint.replace(/\/$/, '')}/chat/completions`;
-  
+  for (;;) {
+    const { done, value } = await reader.read()
+    if (done) break
+    buffer += decoder.decode(value, { stream: true })
+    const lines = buffer.split('\n')
+    buffer = lines.pop() ?? '' // keep the trailing partial line
+    for (const line of lines) {
+      const trimmed = line.trim()
+      if (!trimmed.startsWith('data:')) continue
+      const data = trimmed.slice(5).trim()
+      if (data && data !== '[DONE]') handle(data)
+    }
+  }
+}
+
+const streamOpenAICompatible = async (
+  settings: Settings,
+  messages: ChatMessage[],
+  params: PresetParameters,
+  onDelta: DeltaCallback,
+  signal?: AbortSignal,
+  onUsage?: UsageCallback
+): Promise<string> => {
+  const { endpoint, api_key, model } = settings.api
+  const base = endpoint || 'https://api.openai.com/v1'
+  const url = base.endsWith('/chat/completions')
+    ? base
+    : `${base.replace(/\/$/, '')}/chat/completions`
+
+  // Strict backends (e.g. Claude via a Bedrock/OpenAI-compat proxy) require the
+  // conversation to END with a user message and reject a trailing assistant
+  // "prefill". Presets routinely place jailbreak/post-history blocks *after* the
+  // user's turn, so move the last user message to the very end — trailing
+  // system/assistant blocks slide just before it. Content is preserved and the
+  // request ends on a user turn.
+  let outMessages = messages
+  const lastUserIdx = messages.map((m) => m.role).lastIndexOf('user')
+  if (lastUserIdx !== -1 && lastUserIdx !== messages.length - 1) {
+    outMessages = [
+      ...messages.slice(0, lastUserIdx),
+      ...messages.slice(lastUserIdx + 1),
+      messages[lastUserIdx]
+    ]
+  }
+
   const response = await fetch(url, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'Authorization': `Bearer ${api_key}`
+      Authorization: `Bearer ${api_key}`
     },
     body: JSON.stringify({
       model,
-      messages,
-      ...default_params,
-      stream: false
-    })
-  });
+      messages: outMessages,
+      ...cleanParams(params),
+      stream: true,
+      stream_options: { include_usage: true }
+    }),
+    signal
+  })
 
   if (!response.ok) {
-    const errorText = await response.text();
-    throw new Error(`API Error: ${response.status} ${response.statusText} - ${errorText}`);
+    const errorText = await response.text()
+    throw new Error(`API Error: ${response.status} ${response.statusText} - ${errorText}`)
   }
 
-  const data = await response.json();
-  return data.choices[0].message.content;
-};
-
-const completeAnthropic = async (settings: Settings, messages: any[]): Promise<string> => {
-  const { endpoint, api_key, model, default_params } = settings.api;
-  // Fallback to default anthropic endpoint if empty
-  const baseUrl = endpoint || 'https://api.anthropic.com/v1';
-  const url = baseUrl.endsWith('/messages') ? baseUrl : `${baseUrl.replace(/\/$/, '')}/messages`;
-  
-  // Extract system prompt since Anthropic uses a top-level system parameter
-  let systemPrompt = '';
-  const anthropicMessages = messages.filter(m => {
-    if (m.role === 'system') {
-      systemPrompt += m.content + '\n';
-      return false;
+  // Some OpenAI-compatible proxies ignore stream:true and return a normal JSON
+  // completion. Fall back to parsing that instead of silently yielding nothing.
+  const contentType = response.headers.get('content-type') || ''
+  if (!contentType.includes('text/event-stream')) {
+    const text = await response.text()
+    let content = ''
+    try {
+      const json = JSON.parse(text)
+      content = json.choices?.[0]?.message?.content ?? json.choices?.[0]?.text ?? ''
+    } catch {
+      throw new Error(`Non-streaming response was not valid JSON: ${text.slice(0, 800)}`)
     }
-    return true;
-  });
+    if (!content) throw new Error(`Provider returned an empty completion: ${text.slice(0, 800)}`)
+    onDelta(content)
+    return content
+  }
 
-  // Combine consecutive messages of the same role if any (Anthropic requires alternating roles)
-  const mergedMessages: any[] = [];
-  for (const msg of anthropicMessages) {
-    if (mergedMessages.length > 0 && mergedMessages[mergedMessages.length - 1].role === msg.role) {
-      mergedMessages[mergedMessages.length - 1].content += '\n\n' + msg.content;
+  let full = ''
+  let usage: any = null
+  const rawFrames: string[] = []
+  try {
+    await readSse(response, (data) => {
+      rawFrames.push(data)
+      try {
+        const json = JSON.parse(data)
+        if (json.usage) usage = json.usage
+        const delta = json.choices?.[0]?.delta?.content
+        if (typeof delta === 'string' && delta) {
+          full += delta
+          onDelta(delta)
+        }
+      } catch {
+        // ignore keep-alive / non-JSON lines
+      }
+    })
+  } catch (e) {
+    if (signal?.aborted) return full // user stopped — keep whatever streamed
+    throw e
+  }
+  if (!full && !signal?.aborted) {
+    throw new Error(
+      `Stream produced no text. Raw frames:\n${rawFrames.slice(0, 8).join('\n').slice(0, 800) || '(none)'}`
+    )
+  }
+  if (usage) onUsage?.(usage)
+  return full
+}
+
+const streamAnthropic = async (
+  settings: Settings,
+  messages: ChatMessage[],
+  params: PresetParameters,
+  onDelta: DeltaCallback,
+  signal?: AbortSignal,
+  onUsage?: UsageCallback
+): Promise<string> => {
+  const { endpoint, api_key, model } = settings.api
+  const base = endpoint || 'https://api.anthropic.com/v1'
+  const url = base.endsWith('/messages') ? base : `${base.replace(/\/$/, '')}/messages`
+
+  // Anthropic takes the system prompt at the top level and requires alternating
+  // user/assistant roles. Hoist only the LEADING system run (the static system
+  // prefix) into the top-level system param; a system message that appears AFTER
+  // the conversation has begun is a positional injection (e.g. a depth-placed
+  // lorebook/persona block) — Anthropic has no inline system role, so keep it
+  // where it sits by demoting it to a user turn (same-role merge folds it in).
+  let systemPrompt = ''
+  let convoStarted = false
+  const convo: ChatMessage[] = []
+  for (const m of messages) {
+    if (m.role === 'system' && !convoStarted) {
+      systemPrompt += m.content + '\n'
+      continue
+    }
+    convoStarted = true
+    convo.push(m.role === 'system' ? { role: 'user', content: m.content } : m)
+  }
+
+  const merged: ChatMessage[] = []
+  for (const msg of convo) {
+    const last = merged[merged.length - 1]
+    if (last && last.role === msg.role) {
+      last.content += '\n\n' + msg.content
     } else {
-      mergedMessages.push({ ...msg });
+      merged.push({ ...msg })
     }
   }
+
+  // Prompt caching (Phase G). cache_control breakpoints mark the end of a stable
+  // prefix; max 4 per request, ephemeral = 5-min TTL. Two breakpoints:
+  //  1. the system block (large, static per session) — caches tools+system.
+  //  2. the last message before the new user turn — caches the history prefix.
+  // The final user turn (volatile) stays past the last breakpoint, so it never
+  // invalidates the cached head. Only the prefix below the model's min-cacheable
+  // size (~4096 tokens on Opus) is skipped — silently, no error.
+  const EPHEMERAL = { type: 'ephemeral' as const }
+  const system = systemPrompt.trim()
+    ? [{ type: 'text', text: systemPrompt.trim(), cache_control: EPHEMERAL }]
+    : undefined
+
+  const cacheIdx = merged.length - 2 // message just before the final user turn
+  const outMessages = merged.map((m, i) =>
+    i === cacheIdx
+      ? { role: m.role, content: [{ type: 'text', text: m.content, cache_control: EPHEMERAL }] }
+      : m
+  )
 
   const response = await fetch(url, {
     method: 'POST',
@@ -88,20 +272,168 @@ const completeAnthropic = async (settings: Settings, messages: any[]): Promise<s
       'anthropic-version': '2023-06-01'
     },
     body: JSON.stringify({
-      model: model || 'claude-3-5-sonnet-20240620',
-      system: systemPrompt.trim() || undefined,
-      messages: mergedMessages,
-      max_tokens: default_params.max_tokens || 4000,
-      temperature: default_params.temperature || 0.9,
-      stream: false
-    })
-  });
+      model: model || 'claude-opus-4-8',
+      system,
+      messages: outMessages,
+      max_tokens: params.max_tokens ?? 4000,
+      temperature: params.temperature ?? 0.9,
+      ...(params.top_p !== undefined ? { top_p: params.top_p } : {}),
+      ...(params.top_k !== undefined ? { top_k: params.top_k } : {}),
+      stream: true
+    }),
+    signal
+  })
 
   if (!response.ok) {
-    const errorText = await response.text();
-    throw new Error(`Anthropic API Error: ${response.status} ${response.statusText} - ${errorText}`);
+    const errorText = await response.text()
+    throw new Error(`Anthropic API Error: ${response.status} ${response.statusText} - ${errorText}`)
   }
 
-  const data = await response.json();
-  return data.content[0].text;
-};
+  let full = ''
+  let usage: any = null
+  try {
+    await readSse(response, (data) => {
+      try {
+        const json = JSON.parse(data)
+        if (json.type === 'message_start' && json.message?.usage) usage = json.message.usage
+        // content_block_delta carries incremental text_delta chunks.
+        if (json.type === 'content_block_delta' && typeof json.delta?.text === 'string') {
+          full += json.delta.text
+          onDelta(json.delta.text)
+        }
+      } catch {
+        // ignore non-JSON lines
+      }
+    })
+  } catch (e) {
+    if (signal?.aborted) return full // user stopped — keep whatever streamed
+    throw e
+  }
+  if (usage) {
+    log(
+      'info',
+      `cache — read ${usage.cache_read_input_tokens ?? 0} · write ${usage.cache_creation_input_tokens ?? 0} · fresh ${usage.input_tokens ?? 0} tok`
+    )
+  }
+  if (usage) onUsage?.(usage)
+  return full
+}
+
+/**
+ * Build a Gemini request body from our provider-neutral messages + params. Gemini
+ * differs from OpenAI/Anthropic: the system prompt is a top-level `systemInstruction`,
+ * the assistant role is `model`, turns carry `parts: [{ text }]`, and sampler knobs
+ * live under camelCase `generationConfig`. The LEADING system run is hoisted into
+ * `systemInstruction`; a system message that appears AFTER the conversation begins is
+ * a positional injection (depth-placed lore/persona) — Gemini has no inline system
+ * role, so it is demoted to a user turn. Consecutive same-role turns are merged
+ * (Gemini requires alternation). Exported pure for unit testing.
+ */
+export const buildGeminiBody = (
+  messages: ChatMessage[],
+  params: PresetParameters
+): Record<string, unknown> => {
+  let systemText = ''
+  let convoStarted = false
+  const convo: Array<{ role: 'user' | 'model'; text: string }> = []
+  for (const m of messages) {
+    if (m.role === 'system' && !convoStarted) {
+      systemText += m.content + '\n'
+      continue
+    }
+    convoStarted = true
+    convo.push({ role: m.role === 'assistant' ? 'model' : 'user', text: m.content })
+  }
+
+  const merged: Array<{ role: 'user' | 'model'; text: string }> = []
+  for (const c of convo) {
+    const last = merged[merged.length - 1]
+    if (last && last.role === c.role) last.text += '\n\n' + c.text
+    else merged.push({ ...c })
+  }
+  const contents = merged.map((c) => ({ role: c.role, parts: [{ text: c.text }] }))
+
+  // Map our sampler params onto Gemini's camelCase generationConfig (it ignores the rest).
+  const generationConfig: Record<string, unknown> = {}
+  if (params.temperature !== undefined) generationConfig.temperature = params.temperature
+  if (params.max_tokens !== undefined) generationConfig.maxOutputTokens = params.max_tokens
+  if (params.top_p !== undefined) generationConfig.topP = params.top_p
+  if (params.top_k !== undefined) generationConfig.topK = params.top_k
+  if (params.frequency_penalty !== undefined)
+    generationConfig.frequencyPenalty = params.frequency_penalty
+  if (params.presence_penalty !== undefined)
+    generationConfig.presencePenalty = params.presence_penalty
+
+  const body: Record<string, unknown> = { contents, generationConfig }
+  if (systemText.trim()) body.systemInstruction = { parts: [{ text: systemText.trim() }] }
+  return body
+}
+
+/**
+ * Stream from Google's Gemini (Generative Language) API. The model name goes in the
+ * URL path; `?alt=sse` yields a `data:`-framed event stream that `readSse` can read.
+ */
+const streamGemini = async (
+  settings: Settings,
+  messages: ChatMessage[],
+  params: PresetParameters,
+  onDelta: DeltaCallback,
+  signal?: AbortSignal,
+  onUsage?: UsageCallback
+): Promise<string> => {
+  const { endpoint, api_key, model } = settings.api
+  const base = (endpoint || 'https://generativelanguage.googleapis.com/v1beta').replace(/\/$/, '')
+  const modelName = model || 'gemini-2.5-flash'
+  const url = `${base}/models/${encodeURIComponent(modelName)}:streamGenerateContent?alt=sse`
+
+  const body = buildGeminiBody(messages, params)
+
+  const response = await fetch(url, {
+    method: 'POST',
+    // Key via header (not the ?key= query param) so it never lands in a logged URL.
+    headers: { 'Content-Type': 'application/json', 'x-goog-api-key': api_key },
+    body: JSON.stringify(body),
+    signal
+  })
+
+  if (!response.ok) {
+    const errorText = await response.text()
+    throw new Error(`Gemini API Error: ${response.status} ${response.statusText} - ${errorText}`)
+  }
+
+  let full = ''
+  let usage: any = null
+  try {
+    await readSse(response, (data) => {
+      try {
+        const json = JSON.parse(data)
+        const parts = json.candidates?.[0]?.content?.parts
+        if (Array.isArray(parts)) {
+          for (const p of parts) {
+            if (typeof p?.text === 'string' && p.text) {
+              full += p.text
+              onDelta(p.text)
+            }
+          }
+        }
+        if (json.usageMetadata) usage = json.usageMetadata
+      } catch {
+        // ignore keep-alive / non-JSON lines
+      }
+    })
+  } catch (e) {
+    if (signal?.aborted) return full // user stopped — keep whatever streamed
+    throw e
+  }
+  if (usage) {
+    log(
+      'info',
+      `gemini — prompt ${usage.promptTokenCount ?? 0} · output ${usage.candidatesTokenCount ?? 0} · cached ${usage.cachedContentTokenCount ?? 0} tok`
+    )
+  }
+  if (usage) onUsage?.(usage)
+  if (!full && !signal?.aborted) {
+    throw new Error('Gemini stream produced no text')
+  }
+  return full
+}

@@ -19,24 +19,96 @@ body {
 
 #root {
   display: flex;
+  flex-direction: column;
   height: 100%;
 }
 
-.sidebar-left {
-  width: 25%;
-  min-width: 250px;
-  max-width: 350px;
-  background-color: var(--rpt-bg-secondary);
-  border-right: 1px solid var(--rpt-border);
-  padding: 20px;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  overflow-y: auto;
+/* Thin scrollbars app-wide (~half the default width). */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--rpt-border);
+  border-radius: 4px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
 }
 
-.main-content {
+/* ---------- Top navigation ---------- */
+.top-nav {
+  flex: 0 0 auto;
+  height: 52px;
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  padding: 0 16px;
+  background-color: var(--rpt-bg-secondary);
+  border-bottom: 1px solid var(--rpt-border);
+}
+.nav-brand {
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: var(--rpt-text-primary);
+  white-space: nowrap;
+}
+.nav-tabs {
+  display: flex;
+  gap: 4px;
+}
+.nav-tab {
+  background: transparent;
+  color: var(--rpt-text-secondary);
+  border: 1px solid transparent;
+  padding: 7px 14px;
+  border-radius: 6px;
+  font-size: 0.9em;
+}
+.nav-tab:hover:not(:disabled) {
+  color: var(--rpt-text-primary);
+  background: var(--rpt-bg-primary);
+}
+.nav-tab.active {
+  color: #fff;
+  background: var(--rpt-accent);
+}
+.nav-tab:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+.nav-status {
+  margin-left: auto;
+  font-size: 0.85em;
+  color: var(--rpt-text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.app-body {
   flex: 1;
+  display: flex;
+  overflow: hidden;
+}
+
+.sidebar-left {
+  flex: 0 0 25%;
+  min-width: 300px;
+  box-sizing: border-box;
+  background-color: var(--rpt-bg-secondary);
+  border-right: 1px solid var(--rpt-border);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* Exactly half the window; side panels split the other half 25%/25%. */
+.main-content {
+  flex: 0 0 50%;
+  width: 50%;
+  min-width: 0;
+  box-sizing: border-box;
   display: flex;
   flex-direction: column;
   padding: 20px;
@@ -44,9 +116,9 @@ body {
 }
 
 .sidebar-right {
-  width: 25%;
-  min-width: 250px;
-  max-width: 350px;
+  flex: 0 0 25%;
+  min-width: 300px;
+  box-sizing: border-box;
   background-color: var(--rpt-bg-secondary);
   border-left: 1px solid var(--rpt-border);
   padding: 20px;
@@ -56,13 +128,528 @@ body {
   overflow-y: auto;
 }
 
-.floor-list {
+/* ---------- Reconfigurable panel workspace ---------- */
+.ws-root {
+  flex: 1;
+  display: flex;
+  overflow: hidden;
+  min-width: 0;
+  min-height: 0;
+}
+.ws-split {
+  flex: 1;
+  display: flex;
+  overflow: hidden;
+  min-width: 0;
+  min-height: 0;
+}
+.ws-split-row {
+  flex-direction: row;
+}
+.ws-split-col {
+  flex-direction: column;
+}
+.ws-pane {
+  display: flex;
+  overflow: hidden;
+  min-width: 0;
+  min-height: 0;
+}
+.ws-splitter {
+  flex: 0 0 6px;
+  background: transparent;
+  transition: background-color 0.12s ease;
+}
+.ws-splitter:hover,
+.ws-splitter:active {
+  background: var(--rpt-accent);
+}
+.ws-splitter-row {
+  cursor: col-resize;
+}
+.ws-splitter-col {
+  cursor: row-resize;
+}
+.ws-panel {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  background-color: var(--rpt-bg-secondary);
+  border: 1px solid var(--rpt-border);
+  border-radius: 6px;
+}
+.ws-panel-head {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 6px;
+  border-bottom: 1px solid var(--rpt-border);
+  background-color: var(--rpt-bg-primary);
+}
+.ws-view-pick {
+  background-color: var(--rpt-bg-secondary);
+  color: var(--rpt-text-primary);
+  border: 1px solid var(--rpt-border);
+  border-radius: 4px;
+  font-size: 12px;
+  padding: 2px 6px;
+  cursor: pointer;
+}
+.ws-panel-spacer {
+  flex: 1;
+}
+.ws-panel-btn {
+  background: transparent;
+  border: none;
+  color: var(--rpt-text-secondary);
+  cursor: pointer;
+  padding: 1px 6px;
+  font-size: 13px;
+  line-height: 1;
+  border-radius: 4px;
+}
+.ws-panel-btn:hover {
+  background-color: var(--rpt-bg-secondary);
+  color: var(--rpt-text-primary);
+}
+.ws-panel-body {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.ws-panel-body.ws-fill {
+  overflow: hidden;
+}
+.ws-panel-body.ws-scroll {
+  overflow: auto;
+  padding: 14px;
+}
+/* Standalone-plugin panels render app-wide; bound the dock so it can't squash the workspace. */
+.app-plugin-dock {
+  flex: 0 0 auto;
+  max-height: 40vh;
+  overflow: auto;
+  padding: 0 8px;
+}
+
+/* ---------- Left-panel drawer ---------- */
+.panel {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+}
+.panel-header {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--rpt-border);
+  background: var(--rpt-bg-primary);
+}
+.panel-header h3,
+.panel-header h4 {
+  margin: 0;
+  font-size: 1em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.panel-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 0 0 auto;
+}
+.panel-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px;
+}
+.panel-list-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  margin: 4px 0;
+}
+.panel-list-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin: 4px 0;
+}
+.panel-list-row .panel-list-item {
+  flex: 1;
+  margin: 0;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.row-del {
+  flex: 0 0 auto;
+}
+
+/* ---------- Session cards ---------- */
+.session-card {
+  border: 1px solid var(--rpt-border);
+  border-radius: 8px;
+  padding: 10px 12px;
+  margin: 6px 0;
+  background: var(--rpt-bg-primary);
+  cursor: pointer;
+  transition: border-color 0.15s ease;
+}
+.session-card:hover {
+  border-color: var(--rpt-text-secondary);
+}
+.session-card.active {
+  border-color: var(--rpt-accent);
+  box-shadow: inset 0 0 0 1px var(--rpt-accent);
+}
+.session-card-top {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+.session-time {
+  font-size: 0.78em;
+  color: var(--rpt-text-secondary);
+  flex: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.session-count {
+  font-size: 0.72em;
+  color: var(--rpt-text-secondary);
+}
+.session-del {
+  padding: 2px 6px;
+}
+.session-preview {
+  font-size: 0.85em;
+  color: var(--rpt-text-primary);
+  line-height: 1.4;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+/* ---------- Chat toolbar ---------- */
+.chat-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 0 0;
+}
+
+/* MVU / RPG status auto-view (R3) — recursive render of stat_data */
+.stat-view {
+  font-size: 0.86rem;
+}
+.stat-group {
+  margin: 3px 0;
+}
+.stat-group > summary.stat-group-title {
+  cursor: pointer;
+  font-weight: 600;
+  color: var(--rpt-text-primary);
+  padding: 3px 0;
+  list-style: none;
+}
+.stat-group > summary.stat-group-title::-webkit-details-marker {
+  display: none;
+}
+.stat-group-title::before {
+  content: '▸';
+  display: inline-block;
+  margin-right: 5px;
+  color: var(--rpt-text-secondary);
+  transition: transform 0.15s ease;
+}
+details[open] > .stat-group-title::before {
+  transform: rotate(90deg);
+}
+.stat-count {
+  color: var(--rpt-text-secondary);
+  font-weight: 400;
+  font-size: 0.85em;
+}
+.stat-children,
+.stat-array {
+  margin-left: 11px;
+  border-left: 1px solid var(--rpt-border);
+  padding-left: 9px;
+}
+.stat-row {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 2px 0;
+}
+.stat-key {
+  color: var(--rpt-text-secondary);
+}
+.stat-val {
+  color: var(--rpt-text-primary);
+  font-weight: 500;
+}
+.stat-desc {
+  color: var(--rpt-text-secondary);
+  font-size: 0.85em;
+  font-style: italic;
+  margin-left: auto;
+  text-align: right;
+}
+.stat-item {
+  padding: 1px 0;
+}
+.stat-empty {
+  color: var(--rpt-text-secondary);
+  opacity: 0.6;
+}
+.stat-bar {
+  padding: 3px 0;
+}
+.stat-bar-head {
+  display: flex;
+  justify-content: space-between;
+}
+.stat-bar-track {
+  height: 8px;
+  margin-top: 2px;
+  background: var(--rpt-bg-primary);
+  border: 1px solid var(--rpt-border);
+  border-radius: 5px;
+  overflow: hidden;
+}
+.stat-bar-fill {
+  height: 100%;
+  background: var(--rpt-accent);
+  transition: width 0.3s ease-out;
+}
+
+/* FSM mode switch (Phase H) — Explore / Dialogue / Combat */
+.mode-switch {
+  display: flex;
+  gap: 4px;
+}
+/* Classic mode: the whole group is inert (each button is also :disabled). */
+.mode-switch.disabled {
+  cursor: not-allowed;
+}
+.mode-btn {
+  padding: 3px 12px;
+  font-size: 12px;
+  border: 1px solid var(--rpt-border);
+  background: transparent;
+  color: var(--rpt-text-secondary);
+  border-radius: 4px;
+  cursor: pointer;
+}
+.mode-btn:hover:not(:disabled):not(.active) {
+  color: var(--rpt-text-primary);
+  border-color: var(--rpt-text-secondary);
+}
+.mode-btn.active {
+  background: var(--rpt-accent);
+  border-color: var(--rpt-accent);
+  color: #fff;
+}
+.mode-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+/* Inline message editor (right-click a message) */
+.edit-area {
+  margin: 4px 0;
+}
+.edit-area textarea {
+  width: 100%;
+  box-sizing: border-box;
+  min-height: 60px;
+  overflow: hidden; /* height is auto-sized to content */
+  background-color: var(--rpt-bg-primary);
+  border: 1px solid var(--rpt-accent);
+  color: var(--rpt-text-primary);
+  border-radius: 6px;
+  padding: 10px;
+  font-family: inherit;
+  line-height: 1.5;
+  resize: vertical;
+}
+
+/* Right-click context menu */
+.context-menu {
+  position: fixed;
+  z-index: 2000;
+  min-width: 160px;
+  background: var(--rpt-bg-secondary);
+  border: 1px solid var(--rpt-border);
+  border-radius: 8px;
+  padding: 4px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+}
+.context-menu-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: transparent;
+  color: var(--rpt-text-primary);
+  padding: 8px 10px;
+  border-radius: 5px;
+  font-size: 0.9em;
+}
+.context-menu-item:hover {
+  background: var(--rpt-accent);
+  color: #fff;
+}
+.context-menu-item.danger:hover {
+  background: #e74c3c;
+}
+.edit-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 6px;
+}
+.edit-hint {
+  font-size: 0.78em;
+  color: var(--rpt-text-secondary);
+  margin-left: auto;
+}
+
+/* Sandboxed card/regex HTML render frame */
+.card-frame {
+  width: 100%;
+  border: 0;
+  display: block;
+  background: transparent;
+  overflow: hidden;
+}
+
+.generating-pulse {
+  color: var(--rpt-text-secondary);
+  animation: rpt-pulse 1.2s ease-in-out infinite;
+}
+@keyframes rpt-pulse {
+  0%,
+  100% {
+    opacity: 0.4;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+/* ---------- Logs console ---------- */
+.log-console {
+  background: #0a0a0a;
+  font-family: ui-monospace, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace;
+  font-size: 12px;
+  padding: 8px;
+}
+.log-empty {
+  opacity: 0.5;
+  font-style: italic;
+  padding: 12px 6px;
+}
+.log-autoscroll {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.8em;
+  color: var(--rpt-text-secondary);
+}
+.log-line {
+  border-bottom: 1px solid #1a1a1a;
+  padding: 2px 0;
+}
+.log-line-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  cursor: default;
+  white-space: nowrap;
+  overflow: hidden;
+}
+.log-line-head:hover {
+  background: rgba(255, 255, 255, 0.03);
+}
+.log-time {
+  color: #5a5a5a;
+  flex: 0 0 auto;
+}
+.log-glyph {
+  flex: 0 0 auto;
+  width: 12px;
+  text-align: center;
+}
+.log-label {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.log-caret {
+  flex: 0 0 auto;
+  color: #5a5a5a;
+}
+.log-detail {
+  margin: 4px 0 6px 20px;
+  padding: 8px;
+  background: #111;
+  border-left: 2px solid var(--rpt-border);
+  border-radius: 3px;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 320px;
+  overflow: auto;
+  color: #c8c8c8;
+}
+.lvl-request .log-glyph,
+.lvl-request .log-label {
+  color: #5b8def;
+}
+.lvl-response .log-glyph,
+.lvl-response .log-label {
+  color: #4caf72;
+}
+.lvl-error .log-glyph,
+.lvl-error .log-label {
+  color: #e74c3c;
+}
+.lvl-info .log-glyph,
+.lvl-info .log-label {
+  color: #aaaaaa;
+}
+
+.floor-stage {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+}
+.floor-viewport {
   flex: 1;
   overflow-y: auto;
   display: flex;
   flex-direction: column;
   gap: 20px;
   padding-right: 10px;
+  padding-bottom: 6px;
 }
 
 .floor-block {
@@ -70,6 +657,437 @@ body {
   background-color: var(--rpt-bg-secondary);
   border-radius: 8px;
   border: 1px solid var(--rpt-border);
+  font-size: var(--rpt-chat-font, 16px);
+}
+
+.floor-empty {
+  margin: auto;
+  opacity: 0.5;
+  font-style: italic;
+}
+
+/* Prev/next arrows pinned to the bottom corners of the text box; page number
+   ([n/total]) sits just above the right arrow. */
+.pager-btn {
+  position: absolute;
+  bottom: 0;
+  width: 30px;
+  height: 24px;
+  border-radius: 6px;
+  background: var(--rpt-bg-secondary);
+  border: 1px solid var(--rpt-border);
+  color: var(--rpt-text-primary);
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+  z-index: 2;
+}
+.pager-prev {
+  left: 0;
+}
+.pager-next {
+  /* Offset past the viewport scrollbar so the button stays fully inside the box. */
+  right: 18px;
+}
+.pager-btn:hover:not(:disabled) {
+  border-color: var(--rpt-accent);
+}
+.pager-btn:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+.floor-pageinfo {
+  position: absolute;
+  right: 18px;
+  bottom: 28px;
+  font-size: 0.75em;
+  color: var(--rpt-text-secondary);
+  font-variant-numeric: tabular-nums;
+  z-index: 2;
+}
+
+/* Swipe (alternate-response) controls under a floor's response (TH-2). */
+.swipe-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+  opacity: 0.7;
+}
+.swipe-btn {
+  width: 26px;
+  height: 22px;
+  border-radius: 6px;
+  background: var(--rpt-bg-secondary);
+  border: 1px solid var(--rpt-border);
+  color: var(--rpt-text-primary);
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+}
+.swipe-btn:hover:not(:disabled) {
+  border-color: var(--rpt-accent);
+}
+.swipe-btn:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+.swipe-count {
+  font-size: 0.75em;
+  color: var(--rpt-text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Click-to-run gate for an interactive message UI (frontend card). */
+.message-card-gate {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 10px 12px;
+  margin: 8px 0;
+  border: 1px dashed var(--rpt-border);
+  border-radius: 8px;
+  background: var(--rpt-bg-secondary);
+}
+.message-card-gate-label {
+  font-size: 0.9em;
+  color: var(--rpt-text-primary);
+}
+.message-card-gate-note {
+  font-size: 0.75em;
+  color: var(--rpt-text-secondary);
+}
+.btn-accent {
+  font: inherit;
+  color: #fff;
+  background: var(--rpt-accent);
+  border: 1px solid var(--rpt-accent);
+  border-radius: 6px;
+  padding: 4px 12px;
+  cursor: pointer;
+}
+.btn-accent:hover {
+  filter: brightness(1.1);
+}
+
+/* Watchdog: shown when a process-isolated card frame stops responding. */
+.message-card-host {
+  position: relative;
+}
+.message-card-hung {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 8px 12px;
+  margin: 8px 0;
+  border: 1px solid #e0564f;
+  border-radius: 8px;
+  background: rgba(224, 86, 79, 0.12);
+}
+.message-card-hung-label {
+  font-size: 0.9em;
+  color: var(--rpt-text-primary);
+}
+
+/* Lightweight render for the in-flight streaming response. */
+.streaming-text {
+  white-space: pre-wrap;
+  word-break: break-word;
+  line-height: 1.5;
+}
+
+/* FPS overlay */
+.fps-overlay {
+  position: fixed;
+  bottom: 8px;
+  right: 10px;
+  z-index: 3000;
+  font-family: ui-monospace, Menlo, Consolas, monospace;
+  font-size: 12px;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.6);
+  pointer-events: none;
+  user-select: none;
+}
+
+/* Card-script runtime (P1) panel in the right sidebar */
+.rpt-script-panel {
+  margin-top: 20px;
+  border-top: 1px solid var(--rpt-border);
+  padding-top: 12px;
+}
+.rpt-script-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+.rpt-script-title {
+  font-size: 0.82em;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--rpt-text-secondary);
+}
+.rpt-script-count {
+  display: inline-block;
+  min-width: 16px;
+  text-align: center;
+  padding: 0 5px;
+  margin-left: 4px;
+  border-radius: 8px;
+  background: var(--rpt-bg-secondary);
+  color: var(--rpt-text-primary);
+}
+.rpt-script-toggle {
+  font-size: 0.78em;
+  padding: 2px 10px;
+  border-radius: 10px;
+  border: 1px solid var(--rpt-border);
+  background: var(--rpt-bg-secondary);
+  color: var(--rpt-text-secondary);
+  cursor: pointer;
+}
+.rpt-script-toggle.on {
+  border-color: var(--rpt-accent);
+  color: var(--rpt-accent);
+}
+.rpt-script-frame {
+  width: 100%;
+  border: 0;
+  display: block;
+  background: transparent;
+  overflow: hidden;
+}
+.rpt-script-off {
+  font-size: 0.82em;
+  font-style: italic;
+  opacity: 0.6;
+}
+/* Plugin panel dock (P3) — visible plugin UIs in the right sidebar */
+.rpt-plugin-dock {
+  margin-top: 20px;
+}
+.rpt-plugin-panel {
+  margin-top: 12px;
+  border: 1px solid var(--rpt-border);
+  border-radius: 8px;
+  overflow: hidden;
+  background: var(--rpt-bg-secondary);
+}
+.rpt-plugin-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--rpt-border);
+}
+.rpt-plugin-title {
+  font-size: 0.82em;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+.rpt-plugin-by {
+  font-size: 0.7em;
+  opacity: 0.5;
+}
+.rpt-plugin-frame {
+  width: 100%;
+  border: 0;
+  display: block;
+  background: transparent;
+  overflow: hidden;
+}
+
+/* Plugins panel — permission chips */
+.plugin-perms {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.perm-chip {
+  font-size: 0.72em;
+  padding: 2px 8px;
+  border-radius: 10px;
+  background: var(--rpt-bg-secondary);
+  border: 1px solid var(--rpt-border);
+  color: var(--rpt-text-secondary);
+}
+/* Plugin-contributed top-nav buttons (rpt.ui.registerButton) */
+.nav-ext {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+.nav-ext-btn {
+  font-size: 0.8em;
+  padding: 4px 10px;
+  border-radius: 6px;
+  border: 1px solid var(--rpt-border);
+  background: var(--rpt-bg-secondary);
+  color: var(--rpt-text-primary);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.nav-ext-btn:hover {
+  border-color: var(--rpt-accent);
+  color: var(--rpt-accent);
+}
+
+/* Script/plugin action buttons, grouped under a menu in the bar above the input. */
+.script-actions-bar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 6px 0 0;
+}
+.script-actions-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 0.8em;
+  padding: 4px 9px;
+  border-radius: 6px;
+  border: 1px solid var(--rpt-border);
+  background: var(--rpt-bg-secondary);
+  color: var(--rpt-text-secondary);
+  cursor: pointer;
+}
+.script-actions-toggle.open {
+  color: var(--rpt-text-primary);
+  border-color: var(--rpt-accent);
+}
+.script-actions-count {
+  font-size: 0.82em;
+  background: var(--rpt-bg-primary);
+  border-radius: 8px;
+  padding: 0 6px;
+}
+.script-actions-caret {
+  opacity: 0.7;
+}
+.script-actions-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+.script-actions-empty {
+  font-size: 0.78em;
+  color: var(--rpt-text-secondary);
+  font-style: italic;
+}
+.script-actions-empty code {
+  font-style: normal;
+}
+
+/* Slash-command autocomplete menu (above the action input) */
+.slash-menu {
+  position: absolute;
+  left: 0;
+  bottom: calc(100% + 6px);
+  z-index: 50;
+  width: min(440px, 100%);
+  max-height: 260px;
+  overflow-y: auto;
+  background: var(--rpt-bg-secondary);
+  border: 1px solid var(--rpt-border);
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+  padding: 4px;
+}
+.slash-item {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  width: 100%;
+  text-align: left;
+  background: transparent;
+  border: 0;
+  color: var(--rpt-text-primary);
+  padding: 6px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-family: inherit;
+}
+.slash-item.active {
+  background: var(--rpt-accent);
+  color: #fff;
+}
+.slash-name {
+  font-family: ui-monospace, Menlo, Consolas, monospace;
+  font-size: 0.86em;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.slash-desc {
+  font-size: 0.78em;
+  opacity: 0.7;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.slash-item.active .slash-desc {
+  opacity: 0.9;
+}
+
+.perm-chip.sensitive {
+  border-color: #e0a23c;
+  color: #e0a23c;
+}
+
+/* Code editor in the Scripts panel */
+.script-code {
+  width: 100%;
+  box-sizing: border-box;
+  min-height: 220px;
+  resize: vertical;
+  font-family: ui-monospace, Menlo, Consolas, monospace;
+  font-size: 12.5px;
+  line-height: 1.5;
+  tab-size: 2;
+  white-space: pre;
+  overflow: auto;
+  background: var(--rpt-bg-secondary);
+  border: 1px solid var(--rpt-border);
+  color: var(--rpt-text-primary);
+  border-radius: 6px;
+  padding: 8px;
+}
+.rpt-toast-stack {
+  position: fixed;
+  bottom: 16px;
+  right: 16px;
+  z-index: 4000;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  pointer-events: none;
+}
+.rpt-toast {
+  background: var(--rpt-bg-secondary);
+  border: 1px solid var(--rpt-accent);
+  color: var(--rpt-text-primary);
+  padding: 8px 14px;
+  border-radius: 8px;
+  font-size: 0.85em;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+  animation: rpt-toast-in 0.18s ease-out;
+}
+@keyframes rpt-toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 .user-action {
@@ -81,21 +1099,42 @@ body {
 }
 
 .action-input-container {
-  margin-top: 20px;
-  display: flex;
-  gap: 10px;
+  margin-top: 16px;
+  position: relative;
 }
 
 .action-input {
-  flex: 1;
+  width: 100%;
+  box-sizing: border-box;
   background-color: var(--rpt-bg-secondary);
   border: 1px solid var(--rpt-border);
   color: var(--rpt-text-primary);
-  padding: 10px;
-  border-radius: 4px;
-  resize: none;
+  padding: 12px;
+  padding-bottom: 52px; /* leave room for the in-box send/stop button */
+  border-radius: 8px;
+  resize: vertical;
   font-family: inherit;
-  height: 60px;
+  min-height: 10vh;
+  line-height: 1.5;
+}
+
+/* Tiny circular send/stop button anchored to the bottom-right of the input. */
+.send-btn {
+  position: absolute;
+  bottom: 10px;
+  right: 10px;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 15px;
+  line-height: 1;
+}
+.send-btn.stop {
+  background-color: #e74c3c;
 }
 
 button {
@@ -122,4 +1161,375 @@ input {
   box-sizing: border-box;
 }
 
-h3 { margin-top: 0; }
+/* Checkboxes/radios must not inherit the full-width text-input sizing,
+   otherwise they stretch and crush adjacent flex content (e.g. row titles). */
+input[type='checkbox'],
+input[type='radio'] {
+  width: auto;
+  flex: 0 0 auto;
+  padding: 0;
+  margin: 0;
+  accent-color: var(--rpt-accent);
+}
+
+h3 {
+  margin-top: 0;
+}
+
+textarea {
+  background-color: var(--rpt-bg-primary);
+  border: 1px solid var(--rpt-border);
+  color: var(--rpt-text-primary);
+  padding: 8px;
+  border-radius: 4px;
+  width: 100%;
+  box-sizing: border-box;
+  font-family: inherit;
+  resize: vertical;
+}
+
+select {
+  background-color: var(--rpt-bg-primary);
+  color: var(--rpt-text-primary);
+  border: 1px solid var(--rpt-border);
+  border-radius: 4px;
+  padding: 6px;
+}
+
+/* Compact scope picker used inline in artifact-manager rows (regex, etc.). */
+.scope-select {
+  padding: 2px 4px;
+  font-size: 0.78em;
+}
+
+/* Collapsible scope groups (Global / World / Session) in the scripts + regex managers. */
+.scope-section {
+  border: 1px solid var(--rpt-border);
+  border-radius: 6px;
+  margin-bottom: 8px;
+  overflow: hidden;
+}
+.scope-section-head {
+  display: flex;
+  align-items: center;
+  background: var(--rpt-bg-secondary);
+}
+.scope-section-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  min-width: 0;
+  text-align: left;
+  background: none;
+  border: none;
+  border-radius: 0;
+  padding: 7px 10px;
+  cursor: pointer;
+  color: var(--rpt-text-primary);
+}
+.scope-section-toggle:hover {
+  background: var(--rpt-bg-tertiary, var(--rpt-bg-secondary));
+}
+.scope-section-action {
+  display: flex;
+  align-items: center;
+  padding-right: 10px;
+  white-space: nowrap;
+}
+.scope-section-caret {
+  opacity: 0.7;
+  width: 12px;
+}
+.scope-section-title {
+  font-weight: 600;
+}
+.scope-section-hint {
+  font-size: 0.76em;
+  color: var(--rpt-text-secondary);
+  margin-left: auto;
+  font-style: italic;
+}
+.scope-section-body {
+  padding: 6px 8px;
+}
+.link-btn {
+  background: none;
+  border: none;
+  color: var(--rpt-accent, #6cf);
+  padding: 0;
+  cursor: pointer;
+  font-size: inherit;
+  text-decoration: underline;
+}
+.link-btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+  text-decoration: none;
+}
+
+/* ---------- Modal ---------- */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+.modal-panel {
+  width: 760px;
+  max-width: 92vw;
+  height: 82vh;
+  background: var(--rpt-bg-secondary);
+  border: 1px solid var(--rpt-border);
+  border-radius: 10px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+}
+
+.modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 18px;
+  border-bottom: 1px solid var(--rpt-border);
+  background: var(--rpt-bg-primary);
+}
+
+.modal-body {
+  padding: 18px;
+  overflow-y: auto;
+  flex: 1;
+}
+
+.field-label {
+  display: block;
+  font-size: 0.8em;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--rpt-text-secondary);
+  margin: 10px 0 4px;
+}
+
+.btn-ghost {
+  background: transparent;
+  color: var(--rpt-text-secondary);
+  padding: 4px 8px;
+  border: 1px solid transparent;
+}
+.btn-ghost:hover {
+  color: var(--rpt-text-primary);
+  border-color: var(--rpt-border);
+}
+.btn-ghost.danger:hover {
+  color: #e74c3c;
+  border-color: #e74c3c;
+}
+.btn-accent {
+  background: var(--rpt-accent);
+}
+
+/* ---------- Lorebook entries ---------- */
+.entry-card {
+  border: 1px solid var(--rpt-border);
+  border-radius: 8px;
+  margin-bottom: 10px;
+  background: var(--rpt-bg-primary);
+  overflow: hidden;
+}
+.entry-card.disabled {
+  opacity: 0.55;
+}
+.entry-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+}
+.entry-head-main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  cursor: pointer;
+  min-width: 0;
+}
+.entry-title {
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.entry-keys-preview {
+  font-size: 0.8em;
+  color: var(--rpt-text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.entry-order {
+  font-size: 0.8em;
+  color: var(--rpt-text-secondary);
+}
+.entry-body {
+  padding: 0 12px 14px;
+  border-top: 1px solid var(--rpt-border);
+}
+.entry-content {
+  min-height: 110px;
+}
+.entry-toggles {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  align-items: center;
+  margin-top: 10px;
+  font-size: 0.85em;
+}
+.entry-toggles label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.entry-toggles .order-field input {
+  width: 70px;
+  margin-left: 6px;
+}
+
+/* ---------- Preset / prompt manager ---------- */
+.param-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
+  gap: 10px;
+}
+.param-field {
+  display: flex;
+  flex-direction: column;
+  font-size: 0.8em;
+  color: var(--rpt-text-secondary);
+  gap: 4px;
+}
+.prompt-row {
+  border: 1px solid var(--rpt-border);
+  border-radius: 8px;
+  margin-bottom: 8px;
+  background: var(--rpt-bg-primary);
+}
+.prompt-row.disabled {
+  opacity: 0.5;
+}
+.prompt-row-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+}
+.prompt-name {
+  flex: 1;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.prompt-actions {
+  display: flex;
+  gap: 2px;
+}
+.marker-badge {
+  font-size: 0.72em;
+  background: var(--rpt-accent);
+  color: #fff;
+  padding: 2px 8px;
+  border-radius: 10px;
+}
+.role-badge {
+  font-size: 0.72em;
+  background: var(--rpt-bg-secondary);
+  border: 1px solid var(--rpt-border);
+  color: var(--rpt-text-secondary);
+  padding: 2px 8px;
+  border-radius: 10px;
+}
+.prompt-body {
+  padding: 0 12px 12px;
+  border-top: 1px solid var(--rpt-border);
+}
+.prompt-meta {
+  display: flex;
+  gap: 12px;
+  align-items: flex-end;
+}
+.dynamic-note {
+  font-size: 0.85em;
+  color: var(--rpt-text-secondary);
+  font-style: italic;
+  padding: 10px 0;
+}
+
+/* Preset selector + actions */
+.preset-select-row select {
+  width: 100%;
+  padding: 8px;
+}
+.preset-actions {
+  display: flex;
+  gap: 6px;
+  margin-top: 8px;
+}
+.preset-actions button {
+  flex: 1;
+}
+.preset-actions input {
+  flex: 1;
+  min-width: 0;
+}
+
+/* Per-session active-lorebook checklist */
+.lorebook-select-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  border: 1px solid var(--rpt-border);
+  border-radius: 4px;
+  padding: 8px;
+  max-height: 180px;
+  overflow-y: auto;
+  background: var(--rpt-bg-primary);
+}
+.lorebook-select-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.88em;
+  cursor: pointer;
+}
+
+/* Collapsible section ("dropdown") inside the Settings panel */
+.settings-section {
+  border: 1px solid var(--rpt-border);
+  border-radius: 4px;
+}
+.settings-section > summary {
+  cursor: pointer;
+  padding: 8px 10px;
+  font-weight: 600;
+  user-select: none;
+}
+.settings-section-body {
+  border-top: 1px solid var(--rpt-border);
+}
+
+/* Roomy editor textarea inside the popup modal */
+.modal-textarea {
+  width: 100%;
+  min-height: 45vh;
+  box-sizing: border-box;
+  font-family: inherit;
+  line-height: 1.5;
+  resize: vertical;
+}

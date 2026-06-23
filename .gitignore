@@ -4,3 +4,11 @@ out
 .DS_Store
 .eslintcache
 *.log*
+
+# AI assistant / planning files — kept local, not tracked in the repo
+CLAUDE.md
+ROADMAP.md
+CODE-REVIEW.md
+
+# Local example SillyTavern content (not part of the app)
+example sillytarvern character card, presets, extensions and scripts/

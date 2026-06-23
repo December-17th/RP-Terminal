@@ -3,12 +3,11 @@ import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
 
-import * as profileService from './services/profileService'
-import * as settingsService from './services/settingsService'
-import * as characterService from './services/characterService'
-import * as chatService from './services/chatService'
-import * as floorService from './services/floorService'
-import * as apiService from './services/apiService'
+import * as logService from './services/logService'
+import * as migrationService from './services/migrationService'
+import * as templateService from './services/templateService'
+import * as wcvManager from './services/wcvManager'
+import { registerIpc } from './ipc'
 
 function createWindow(): void {
   // Create the browser window.
@@ -24,9 +23,17 @@ function createWindow(): void {
     }
   })
 
+  // Give the WebContentsView manager the window so it can overlay card-UI panels (spike).
+  wcvManager.init(mainWindow)
+
   mainWindow.on('ready-to-show', () => {
     mainWindow.maximize()
     mainWindow.show()
+  })
+
+  // Surface renderer crashes in the main log (cheap, and these are rare/important).
+  mainWindow.webContents.on('render-process-gone', (_e, details) => {
+    logService.log('error', '[renderer gone]', JSON.stringify(details))
   })
 
   mainWindow.webContents.setWindowOpenHandler((details) => {
@@ -57,39 +64,21 @@ app.whenReady().then(() => {
     optimizer.watchWindowShortcuts(window)
   })
 
-  // Register IPC Handlers
-  ipcMain.handle('get-profiles', () => profileService.getProfiles())
-  ipcMain.handle('create-profile', (_, name) => profileService.createProfile(name))
-  ipcMain.handle('get-settings', (_, profileId) => settingsService.getSettings(profileId))
-  ipcMain.handle('save-settings', (_, profileId, settings) => settingsService.saveSettings(profileId, settings))
-  ipcMain.handle('get-characters', (_, profileId) => characterService.getCharacters(profileId))
-  ipcMain.handle('save-character', (_, profileId, charId, card) => characterService.saveCharacter(profileId, charId, card))
-  
-  ipcMain.handle('import-character-dialog', async (event, profileId) => {
-    const { dialog } = require('electron');
-    const result = await dialog.showOpenDialog(BrowserWindow.fromWebContents(event.sender)!, {
-      properties: ['openFile'],
-      filters: [
-        { name: 'Character Cards', extensions: ['png', 'json'] }
-      ]
-    });
-    
-    if (!result.canceled && result.filePaths.length > 0) {
-      return characterService.importCharacterFromFile(profileId, result.filePaths[0]);
-    }
-    return null;
-  });
+  // Initialize SQLite and migrate any legacy JSON data on first run.
+  try {
+    migrationService.migrateIfNeeded()
+  } catch (err: any) {
+    logService.log('error', 'Startup DB migration failed', err?.message || String(err))
+  }
 
-  ipcMain.handle('get-chats', (_, profileId) => chatService.getChats(profileId))
-  ipcMain.handle('create-chat', (_, profileId, charId) => chatService.createChat(profileId, charId))
-  ipcMain.handle('get-floor', (_, profileId, chatId, floorIndex) => floorService.getFloor(profileId, chatId, floorIndex))
-  ipcMain.handle('save-floor', (_, profileId, chatId, floor) => {
-    floorService.saveFloor(profileId, chatId, floor)
-    chatService.updateChatIndex(profileId, { id: chatId, updated_at: new Date().toISOString() } as any)
-  })
-  ipcMain.handle('api-complete', (_, settings, messages) => apiService.completeChat(settings, messages))
+  // Initialize the sandboxed template engine (non-blocking for the rest of startup).
+  templateService.initTemplates().then(() => logService.log('info', 'Template engine ready'))
+
+  // Register all IPC handlers, grouped by domain (see src/main/ipc/).
+  registerIpc(ipcMain)
 
   createWindow()
+  logService.log('info', 'RP Terminal started')
 
   app.on('activate', function () {
     // On macOS it's common to re-create a window in the app when the

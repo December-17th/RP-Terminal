@@ -1,16 +1,16 @@
 {
   "name": "rp-terminal",
   "version": "1.0.0",
-  "description": "An Electron application with React and TypeScript",
+  "description": "Desktop client for sophisticated AI roleplay (SillyTavern-compatible)",
   "main": "./out/main/index.js",
-  "author": "example.com",
-  "homepage": "https://electron-vite.org",
   "scripts": {
     "format": "prettier --write .",
     "lint": "eslint --cache .",
     "typecheck:node": "tsc --noEmit -p tsconfig.node.json --composite false",
     "typecheck:web": "tsc --noEmit -p tsconfig.web.json --composite false",
     "typecheck": "npm run typecheck:node && npm run typecheck:web",
+    "test": "vitest run",
+    "test:watch": "vitest",
     "start": "electron-vite preview",
     "dev": "electron-vite dev",
     "build": "npm run typecheck && electron-vite build",
@@ -23,12 +23,22 @@
   "dependencies": {
     "@electron-toolkit/preload": "^3.0.2",
     "@electron-toolkit/utils": "^4.0.0",
+    "@jitl/quickjs-singlefile-browser-release-sync": "^0.32.0",
+    "@types/adm-zip": "^0.5.8",
+    "@types/better-sqlite3": "^7.6.13",
+    "adm-zip": "^0.5.17",
+    "better-sqlite3": "^12.11.1",
     "dompurify": "^3.4.11",
+    "jquery": "^4.0.0",
+    "lodash": "^4.18.1",
+    "pinia": "^3.0.4",
+    "quickjs-emscripten": "^0.32.0",
     "react-markdown": "^10.1.0",
-    "react-virtuoso": "^4.18.7",
     "rehype-raw": "^7.0.0",
     "remark-gfm": "^4.0.1",
     "uuid": "^14.0.0",
+    "vue": "^3.5.38",
+    "vue-router": "^5.1.0",
     "zod": "^4.4.3",
     "zustand": "^5.0.14"
   },
@@ -37,6 +47,8 @@
     "@electron-toolkit/eslint-config-ts": "^3.1.0",
     "@electron-toolkit/tsconfig": "^2.0.0",
     "@types/dompurify": "^3.0.5",
+    "@types/jquery": "^4.0.1",
+    "@types/lodash": "^4.17.24",
     "@types/node": "^22.19.1",
     "@types/react": "^19.2.7",
     "@types/react-dom": "^19.2.3",
@@ -53,6 +65,7 @@
     "react": "^19.2.1",
     "react-dom": "^19.2.1",
     "typescript": "^5.9.3",
-    "vite": "^7.2.6"
+    "vite": "^7.2.6",
+    "vitest": "^4.1.9"
   }
 }

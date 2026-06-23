@@ -1,199 +1,180 @@
-import { useEffect, useState, useRef } from 'react';
-import { useProfileStore } from './stores/profileStore';
-import { useCharacterStore } from './stores/characterStore';
-import { useChatStore } from './stores/chatStore';
-import { useSettingsStore } from './stores/settingsStore';
-import Markdown from 'react-markdown';
-import { LayoutRenderer } from './components/LayoutRenderer';
+import { useEffect } from 'react'
+import { useProfileStore } from './stores/profileStore'
+import { useCharacterStore } from './stores/characterStore'
+import { useChatStore } from './stores/chatStore'
+import { useSettingsStore } from './stores/settingsStore'
+import { usePresetStore } from './stores/presetStore'
+import { useLogStore } from './stores/logStore'
+import { useRegexStore } from './stores/regexStore'
+import { usePluginsStore } from './stores/pluginsStore'
+import { FpsOverlay } from './components/FpsOverlay'
+import { ToastStack } from './components/ToastStack'
+import { ProfilePicker } from './components/ProfilePicker'
+import { TopNav } from './components/TopNav'
+import { Workspace } from './components/workspace/Workspace'
+import { StaticWorkspace } from './components/workspace/StaticWorkspace'
+import { DEFAULT_STATIC_LAYOUT } from './components/workspace/WcvPanel'
+import { PluginHost } from './components/PluginHost'
+import { useNavStore } from './stores/navStore'
+import { useWorkspaceStore } from './stores/workspaceStore'
+import { useComposerStore } from './stores/composerStore'
+import { initSlash } from './plugin/slash'
+import { chatTransitionEvents, messageMutationEvents } from './plugin/events'
 
-export default function App() {
-  const { profiles, activeProfile, loadProfiles, createProfile } = useProfileStore();
-  const { settings, loadSettings, updateSettings } = useSettingsStore();
-  const { characters, activeCharacter, loadCharacters, setActiveCharacter, importMockCharacter } = useCharacterStore();
-  const { chats, activeChatId, floors, isGenerating, loadChats, createChat, setActiveChat, sendAction } = useChatStore();
+export default function App(): React.ReactElement {
+  const activeProfile = useProfileStore((s) => s.activeProfile)
+  const loadProfiles = useProfileStore((s) => s.loadProfiles)
+  const settings = useSettingsStore((s) => s.settings)
+  const loadSettings = useSettingsStore((s) => s.loadSettings)
+  const loadCharacters = useCharacterStore((s) => s.loadCharacters)
+  const activeCharacterId = useCharacterStore((s) => s.activeCharacter?.id ?? null)
+  const activeCharacter = useCharacterStore((s) => s.activeCharacter)
+  const loadChats = useChatStore((s) => s.loadChats)
+  const activeChatId = useChatStore((s) => s.activeChatId)
 
-  const [newProfileName, setNewProfileName] = useState('');
-  const [actionInput, setActionInput] = useState('');
-
-  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const panel = useNavStore((s) => s.panel)
+  const setPanel = useNavStore((s) => s.setPanel)
 
   useEffect(() => {
-    loadProfiles();
-  }, []);
+    loadProfiles()
+    initSlash() // register built-in slash commands once
+    // Live streaming text for the active chat's in-flight response.
+    const unsubDelta = window.api.onGenerationDelta(({ chatId, delta }) => {
+      if (chatId === useChatStore.getState().activeChatId) {
+        useChatStore.getState().appendDelta(delta)
+        // Forward streamed tokens to WCV cards (STREAM_TOKEN_RECEIVED) — the accumulated text so far.
+        window.api.wcvBroadcastEvent(
+          chatId,
+          'stream_token_received',
+          useChatStore.getState().streamingText
+        )
+      }
+    })
+    // Live log stream for the Logs panel.
+    const unsubLog = window.api.onLog((entry) => useLogStore.getState().add(entry))
+    // A WebContentsView card panel wrote variables → reflect them in the native panels.
+    const unsubWcv = window.api.onWcvHostVars(({ chatId, variables }) => {
+      if (chatId === useChatStore.getState().activeChatId) {
+        useChatStore.getState().setLatestFloorVariables(variables)
+      }
+    })
+    // A card panel asked to set the chat input box (onboarding finish "inject prompt").
+    const unsubInput = window.api.onWcvHostInput(({ chatId, text }) => {
+      if (chatId === useChatStore.getState().activeChatId) {
+        useComposerStore.getState().injectInput(text)
+      }
+    })
+    // A card panel (e.g. home "start game") changed message content via saveChat → reload the floors.
+    const unsubReload = window.api.onWcvHostReload(({ chatId }) => {
+      const st = useChatStore.getState()
+      const pid = useProfileStore.getState().activeProfile?.id
+      if (pid && chatId === st.activeChatId) st.setActiveChat(pid, chatId)
+    })
+    // Broadcast the latest stat_data to any WebContentsView card panel whenever floors change
+    // (a model turn / re-evaluate / edit), so the card's own UI reflects model-driven updates live.
+    const unsubFloors = useChatStore.subscribe((state, prev) => {
+      if (state.floors === prev.floors || !state.activeChatId) return
+      const sd = state.floors.length
+        ? state.floors[state.floors.length - 1]?.variables?.stat_data
+        : undefined
+      if (sd) window.api.wcvBroadcastVars(state.activeChatId, sd)
+    })
+    // Broadcast TavernHelper lifecycle/mutation events to WCV cards — reusing the same pure event
+    // functions the iframe scripts use (CardScriptHost). generation start/end + message
+    // received/updated/deleted/swiped, computed from the chat-store transition.
+    const unsubEvents = useChatStore.subscribe((state, prev) => {
+      const chatId = state.activeChatId
+      if (!chatId) return
+      const toDesc = (
+        fs: typeof state.floors
+      ): { floor: number; content: string; swipeId: number }[] =>
+        fs.map((f) => ({ floor: f.floor, content: f.response.content, swipeId: f.swipe_id ?? 0 }))
+      const events = [
+        ...chatTransitionEvents(
+          { isGenerating: prev.isGenerating, floorCount: prev.floors.length },
+          { isGenerating: state.isGenerating, floorCount: state.floors.length }
+        ),
+        ...messageMutationEvents(toDesc(prev.floors), toDesc(state.floors))
+      ]
+      for (const ev of events) window.api.wcvBroadcastEvent(chatId, ev.name, ev.payload)
+    })
+    return () => {
+      unsubDelta()
+      unsubLog()
+      unsubWcv()
+      unsubInput()
+      unsubReload()
+      unsubFloors()
+      unsubEvents()
+    }
+  }, [])
 
   useEffect(() => {
     if (activeProfile) {
-      loadSettings(activeProfile.id);
-      loadCharacters(activeProfile.id);
-      loadChats(activeProfile.id);
+      const pid = activeProfile.id
+      // Seed the workspace from this profile's saved per-mode layouts once settings land.
+      loadSettings(pid).then(() =>
+        useWorkspaceStore
+          .getState()
+          .load(pid, useSettingsStore.getState().settings?.workspace?.layouts)
+      )
+      loadCharacters(pid)
+      loadChats(pid)
+      usePresetStore.getState().load(pid)
+      usePluginsStore.getState().load(pid)
     }
-  }, [activeProfile]);
+  }, [activeProfile])
 
+  // Resolve display regex for the active world/session scope (global ⊕ world(card) ⊕
+  // session(chat)) so a card's bundled regex only fires when that world is loaded.
   useEffect(() => {
-    if (messagesEndRef.current) {
-      messagesEndRef.current.scrollIntoView({ behavior: 'smooth' });
+    if (activeProfile) {
+      useRegexStore.getState().load(activeProfile.id, {
+        cardId: activeCharacterId,
+        chatId: activeChatId ?? null
+      })
     }
-  }, [floors]);
+  }, [activeProfile, activeCharacterId, activeChatId])
 
-  if (!activeProfile) {
-    return (
-      <div style={{ padding: 20 }}>
-        <h2>RP Terminal MVP</h2>
-        <div>
-          <h3>Select Profile</h3>
-          {profiles.map(p => (
-            <button key={p.id} onClick={() => useProfileStore.getState().setActiveProfile(p)} style={{ display: 'block', margin: '5px 0' }}>
-              {p.name}
-            </button>
-          ))}
-          <div style={{ marginTop: 20 }}>
-            <input value={newProfileName} onChange={e => setNewProfileName(e.target.value)} placeholder="New Profile Name" />
-            <button onClick={() => createProfile(newProfileName)} style={{ marginTop: 10 }}>Create</button>
-          </div>
-        </div>
-      </div>
-    );
-  }
+  // Apply the chat font size preference to the message area.
+  useEffect(() => {
+    document.documentElement.style.setProperty(
+      '--rpt-chat-font',
+      `${settings?.ui?.font_size ?? 16}px`
+    )
+  }, [settings?.ui?.font_size])
+
+  if (!activeProfile) return <ProfilePicker />
+
+  // A card can declare a static, card-determined layout; the dev flag `localStorage['rpt-static-demo']`
+  // forces a default static layout so the StaticWorkspace can be tried on a card that doesn't.
+  const cardPanelUi = activeCharacter?.card?.data?.extensions?.rp_terminal?.panel_ui
+  const staticLayout =
+    cardPanelUi?.mode === 'static' && cardPanelUi.slots?.length
+      ? cardPanelUi
+      : typeof localStorage !== 'undefined' && localStorage.getItem('rpt-static-demo')
+        ? DEFAULT_STATIC_LAYOUT
+        : null
 
   return (
     <>
-      <div className="sidebar-left">
-        <h3>{activeProfile.name}</h3>
-        
-        <div>
-          <h4>Settings</h4>
-          <select 
-            value={settings?.api?.provider || 'openai'} 
-            onChange={e => updateSettings(activeProfile.id, { api: { ...settings!.api, provider: e.target.value } })}
-            style={{ width: '100%', marginBottom: 5, padding: 8, backgroundColor: 'var(--rpt-bg-primary)', color: 'var(--rpt-text-primary)', border: '1px solid var(--rpt-border)', borderRadius: 4 }}
-          >
-            <option value="openai">OpenAI</option>
-            <option value="anthropic">Anthropic</option>
-            <option value="openrouter">OpenRouter</option>
-            <option value="custom">Custom (OpenAI Compatible)</option>
-          </select>
-          <input 
-            type="text" 
-            placeholder="API Endpoint URL" 
-            value={settings?.api?.endpoint || ''} 
-            onChange={e => updateSettings(activeProfile.id, { api: { ...settings!.api, endpoint: e.target.value } })}
-            style={{ marginBottom: 5 }}
-          />
-          <input 
-            type="password" 
-            placeholder="API Key" 
-            value={settings?.api?.api_key || ''} 
-            onChange={e => updateSettings(activeProfile.id, { api: { ...settings!.api, api_key: e.target.value } })}
-            style={{ marginBottom: 5 }}
-          />
-          <input 
-            type="text" 
-            placeholder="Model (e.g. gpt-4o)" 
-            value={settings?.api?.model || ''} 
-            onChange={e => updateSettings(activeProfile.id, { api: { ...settings!.api, model: e.target.value } })}
-          />
-        </div>
+      <TopNav panel={panel} profileName={activeProfile.name} onSelectPanel={setPanel} />
 
-        <div>
-          <h4>Characters</h4>
-          {characters.map(c => (
-            <button key={c.id} onClick={() => setActiveCharacter(c)} style={{ display: 'block', margin: '5px 0', width: '100%', opacity: activeCharacter?.id === c.id ? 1 : 0.7 }}>
-              {c.card.data.name}
-            </button>
-          ))}
-          <button onClick={() => useCharacterStore.getState().importCharacter(activeProfile.id)} style={{ width: '100%', marginTop: 5 }}>+ Import Character File</button>
-          <button onClick={() => importMockCharacter(activeProfile.id)} style={{ width: '100%', marginTop: 5, backgroundColor: 'var(--rpt-bg-secondary)', border: '1px solid var(--rpt-border)' }}>+ Add Mock Guide</button>
-        </div>
+      {staticLayout ? (
+        <StaticWorkspace profileId={activeProfile.id} layout={staticLayout} />
+      ) : (
+        <Workspace profileId={activeProfile.id} />
+      )}
 
-        {activeCharacter && (
-          <div>
-            <h4>Sessions</h4>
-            <button onClick={() => createChat(activeProfile.id, activeCharacter.id)} style={{ width: '100%' }}>+ New Session</button>
-            {chats.filter(c => c.character_id === activeCharacter.id).map(c => (
-              <button key={c.id} onClick={() => setActiveChat(activeProfile.id, c.id)} style={{ display: 'block', margin: '5px 0', width: '100%', opacity: activeChatId === c.id ? 1 : 0.7 }}>
-                {new Date(c.updated_at).toLocaleString()}
-              </button>
-            ))}
-          </div>
-        )}
+      {/* Standalone-plugin runtime stays mounted app-wide (outside the workspace) so its
+          iframes never reparent/reload; the dock is height-bounded by CSS. */}
+      <div className="app-plugin-dock">
+        <PluginHost profileId={activeProfile.id} />
       </div>
 
-      <div className="main-content">
-        {activeChatId ? (
-          <>
-            <div className="floor-list">
-              {floors.map(f => (
-                <div key={f.floor} className="floor-block">
-                  <div className="user-action">
-                    &gt; {f.user_message.content}
-                  </div>
-                  <div>
-                    <Markdown>{f.response.content}</Markdown>
-                  </div>
-                </div>
-              ))}
-              {isGenerating && (
-                <div className="floor-block">
-                  <div className="user-action">&gt; {actionInput}</div>
-                  <div><em>Generating...</em></div>
-                </div>
-              )}
-              <div ref={messagesEndRef} />
-            </div>
-            
-            <div className="action-input-container">
-              <textarea 
-                className="action-input" 
-                value={actionInput}
-                onChange={e => setActionInput(e.target.value)}
-                onKeyDown={e => {
-                  if (e.key === 'Enter' && !e.shiftKey) {
-                    e.preventDefault();
-                    if (!isGenerating && actionInput.trim()) {
-                      sendAction(activeProfile.id, actionInput.trim(), settings, activeCharacter);
-                      setActionInput('');
-                    }
-                  }
-                }}
-                placeholder="What do you do?"
-                disabled={isGenerating}
-              />
-              <button 
-                disabled={isGenerating || !actionInput.trim()} 
-                onClick={() => {
-                  sendAction(activeProfile.id, actionInput.trim(), settings, activeCharacter);
-                  setActionInput('');
-                }}
-              >
-                Act
-              </button>
-            </div>
-          </>
-        ) : (
-          <div style={{ margin: 'auto', opacity: 0.5 }}>
-            {activeCharacter ? 'Select or create a session.' : 'Select a character.'}
-          </div>
-        )}
-      </div>
+      {settings?.ui?.show_fps && <FpsOverlay />}
 
-      <div className="sidebar-right">
-        {activeChatId && activeCharacter ? (
-          <div>
-            <h3 style={{ borderBottom: '1px solid var(--rpt-border)', paddingBottom: 10 }}>RPG Status</h3>
-            <div style={{ marginTop: 20 }}>
-              {activeCharacter.card.data.ui_layout ? (
-                <LayoutRenderer layoutSchema={activeCharacter.card.data.ui_layout} />
-              ) : (
-                <div style={{ opacity: 0.6 }}>
-                  <em>(Card does not define a UI Layout)</em>
-                </div>
-              )}
-            </div>
-          </div>
-        ) : (
-          <div style={{ opacity: 0.5 }}>Waiting for session...</div>
-        )}
-      </div>
+      <ToastStack />
     </>
-  );
+  )
 }
