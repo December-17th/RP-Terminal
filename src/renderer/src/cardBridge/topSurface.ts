@@ -58,16 +58,6 @@ export function installCardTopSurface(): void {
   if (w.__rptTopSurfaceInstalled) return
   w.__rptTopSurfaceInstalled = true
   rebuild()
-  // One-time visible marker so the renderer console confirms the window.top surface is live (an inline
-  // full-page card reads window.top.SillyTavern...). If you don't see this, no inline card has mounted.
-  try {
-    console.info(
-      '[rpt] card top surface on window.top:',
-      EXPOSE.filter((k) => w[k] !== undefined).join(', ') || '(none!)'
-    )
-  } catch {
-    /* ignore */
-  }
   let key = ctxKey(activeCtx())
   const onChange = (): void => {
     const k = ctxKey(activeCtx())

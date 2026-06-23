@@ -285,10 +285,18 @@ clean-room preserved (no JSR source vendored).
 ## Status (built 2026-06-23, branch `feat/sp2-rendering-env-parity`)
 
 Implemented T1, T2, T4, T5, T6, T7, T8 (commits `ecc8e44`, `2976f2c`, `72a0f8f`, `062c11e`, `8bc97b4`,
-`36805c1`, `31e884f`). Static gate green at every commit: `npm run typecheck` + `npm test` (452) +
-`npm run build`. **Remaining: a human Electron smoke test** — all visual/runtime behavior (Tailwind/FA/
-jQuery-UI actually styling cards in both transports; `fill` sizing; the `window.top` full-page card inline)
-is only verifiable by running the app.
+`36805c1`, `31e884f`; T8 install fix `563f99e`). Static gate green at every commit: `npm run typecheck` +
+`npm test` (452) + `npm run build`.
+
+**Smoke-validated (2026-06-23, from this worktree):** the 命定之诗 **home gets its EJS environment INLINE**
+— `window.top.{SillyTavern,…}` resolves (T8 confirmed). The app must be run from a build of THIS branch
+(the main worktree `E:\Projects\RP Terminal` is on `feat/dual-mode-card-rendering`, which predates SP2 — a
+build from there shows none of this). Expected/benign: the vendored Tailwind Play build logs
+"cdn.tailwindcss.com should not be used in production" whenever a card loads it — that's the Play runtime's
+own warning, not a CDN fetch (inline uses the vendored asset).
+
+**Still only verifiable visually (deferred to your testing):** Tailwind/FA/jQuery-UI actually *styling*
+cards, and `fill` sizing — no card in use exercises them yet.
 
 **Scope decisions taken during the build (deviations from the plan, all noted in commits):**
 - **T3 (avatar CSS) descoped** — RPT has no sync avatar source (`Host.charAvatarPath` is a `null` stub; the
