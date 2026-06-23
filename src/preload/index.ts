@@ -229,6 +229,20 @@ const api = {
     const listener = (_e: IpcRendererEvent, payload: { chatId: string }): void => cb(payload)
     ipcRenderer.on('wcv-host-reload', listener)
     return () => ipcRenderer.removeListener('wcv-host-reload', listener)
+  },
+  // An inline card reported its content height → size that message slot to fit.
+  onWcvSlotSize: (cb: (payload: { slotId: string; height: number }) => void) => {
+    const listener = (_e: IpcRendererEvent, payload: { slotId: string; height: number }): void =>
+      cb(payload)
+    ipcRenderer.on('wcv-slot-size', listener)
+    return () => ipcRenderer.removeListener('wcv-slot-size', listener)
+  },
+  // An inline card overlay forwarded a wheel delta → scroll the message list past it.
+  onWcvWheel: (cb: (payload: { slotId: string; dy: number }) => void) => {
+    const listener = (_e: IpcRendererEvent, payload: { slotId: string; dy: number }): void =>
+      cb(payload)
+    ipcRenderer.on('wcv-host-wheel', listener)
+    return () => ipcRenderer.removeListener('wcv-host-wheel', listener)
   }
 }
 

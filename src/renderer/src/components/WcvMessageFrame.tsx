@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useProfileStore } from '../stores/profileStore'
 import { useChatStore } from '../stores/chatStore'
 import { useCharacterStore } from '../stores/characterStore'
@@ -23,22 +23,46 @@ const CSP =
   "default-src 'self' https: 'unsafe-inline' 'unsafe-eval' data: blob:; " +
   'img-src * data: blob:; media-src * data: blob:; connect-src * data: blob:'
 
+/**
+ * Build the document that runs inside the card's WebContentsView from the regex-injected block.
+ *
+ * The block is EITHER a full `<!doctype html>` document — whose `<style>`/font `<link>` live in
+ * `<head>` (the static beautification cards) — OR a bare `<body>`/fragment whose script loads its UI
+ * (the `$('body').load(...)` loader cards). We must keep the `<head>` for the former: stripping it
+ * drops ALL the card's CSS, including its `html,body{background:transparent}`, so the view falls back
+ * to Chromium's default white canvas and the card paints as an oversized white box of unstyled text
+ * over the app UI. Either way we inject our CSP `<meta>` at the very top of `<head>` (process
+ * isolation is the real boundary; the CSP just shapes which assets the trusted card may load).
+ */
+export function buildCardDoc(html: string): string {
+  const meta = `<meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="${CSP}">`
+  // Full document: keep it intact (doctype/head/styles/body/script); just inject our <meta> first.
+  if (/<head[\s>]/i.test(html)) {
+    return html.replace(/<head([^>]*)>/i, (_m, attrs) => `<head${attrs}>${meta}`)
+  }
+  // Bare fragment: take the <body> inner if present, else the whole string, and wrap it.
+  const inner = html.match(/<body[^>]*>([\s\S]*?)<\/body>/i)?.[1] ?? html
+  return `<!doctype html><html><head>${meta}</head><body>${inner}</body></html>`
+}
+
 export function WcvMessageFrame({ html }: { html: string }): React.ReactElement {
   const hostRef = useRef<HTMLDivElement>(null)
   const slotId = useRef(`msg-wcv-${seq++}`).current
   const profileId = useProfileStore((s) => s.activeProfile?.id ?? '')
   const chatId = useChatStore((s) => s.activeChatId)
   const characterId = useCharacterStore((s) => s.activeCharacter?.id ?? '')
+  // Slot height is driven by the card's own reported content height (auto-size); start small so a short
+  // card doesn't reserve a big empty box before it reports. scrollElRef lets the wheel-forward handler
+  // scroll the message list (the card's nearest scrollable ancestor).
+  const [height, setHeight] = useState(120)
+  const scrollElRef = useRef<HTMLElement | null>(null)
 
-  // Wrap the regex block in a minimal document (with a CSP) and hand the whole thing to the WCV as a
+  // Build the card document (preserving its <head> CSS) and hand the whole thing to the WCV as a
   // data: URL — its scripts then run with the shim, doing their own (possibly nested) loading.
-  const dataUrl = useMemo(() => {
-    const inner = html.match(/<body[^>]*>([\s\S]*?)<\/body>/i)?.[1] ?? html
-    const doc =
-      '<!doctype html><html><head><meta charset="utf-8">' +
-      `<meta http-equiv="Content-Security-Policy" content="${CSP}"></head><body>${inner}</body></html>`
-    return 'data:text/html;charset=utf-8,' + encodeURIComponent(doc)
-  }, [html])
+  const dataUrl = useMemo(
+    () => 'data:text/html;charset=utf-8,' + encodeURIComponent(buildCardDoc(html)),
+    [html]
+  )
 
   useEffect(() => {
     const el = hostRef.current
@@ -51,6 +75,7 @@ export function WcvMessageFrame({ html }: { html: string }): React.ReactElement 
       if (oy === 'auto' || oy === 'scroll') break
       scrollEl = scrollEl.parentElement
     }
+    scrollElRef.current = scrollEl // shared with the wheel-forward handler
     const rect = (): { x: number; y: number; width: number; height: number } => {
       const r = el.getBoundingClientRect()
       let top = r.top
@@ -89,8 +114,31 @@ export function WcvMessageFrame({ html }: { html: string }): React.ReactElement 
     }
   }, [slotId, dataUrl, profileId, chatId, characterId])
 
+  // Auto-size the slot to the card's reported content height, and scroll the message list when the card
+  // forwards a wheel delta (the native overlay would otherwise swallow it). Both are filtered to our slot.
+  useEffect(() => {
+    const offSize = window.api.onWcvSlotSize((p: { slotId: string; height: number }) => {
+      // Fit the card's content, but cap it so a full-viewport-designed card (min-height:100vh, e.g. the
+      // character viewer) becomes a contained, scrollable widget instead of filling the message area. A
+      // native overlay clips to its bounds anyway, so the excess scrolls internally (wheel-chaining
+      // forwards to the message list at the edges). 0.7 leaves surrounding chat visible for context.
+      if (p.slotId === slotId && p.height > 0) {
+        const viewport = scrollElRef.current?.clientHeight ?? window.innerHeight
+        const cap = Math.max(280, Math.round(viewport * 0.7))
+        setHeight(Math.min(p.height, cap))
+      }
+    })
+    const offWheel = window.api.onWcvWheel((p: { slotId: string; dy: number }) => {
+      if (p.slotId === slotId) scrollElRef.current?.scrollBy({ top: p.dy })
+    })
+    return () => {
+      offSize()
+      offWheel()
+    }
+  }, [slotId])
+
   return (
-    <div ref={hostRef} style={{ width: '100%', height: '70vh', minHeight: 360 }}>
+    <div ref={hostRef} style={{ width: '100%', height, minHeight: 80 }}>
       <div style={{ opacity: 0.4, padding: 12, fontSize: 12 }}>Loading card UI…</div>
     </div>
   )

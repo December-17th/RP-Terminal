@@ -8,7 +8,14 @@ import { log } from './logService'
 // loaded AS HTML (its regex does `$('body').load(...)`). We force text/html on the .html document so
 // the WebContentsView renders it + runs its module script. Narrow: jsDelivr host + .html only, so JS
 // modules (served as application/javascript) are untouched.
-const WCV_PARTITION = 'wcv-cards'
+// `persist:` → the session is written to disk under the app's user-data dir, so a card's localStorage
+// (and other DOM storage) survives app restarts. Without the prefix it would be in-memory and wiped on
+// quit. All inline cards share this one origin (rpt-card://card), so they share this store.
+const WCV_PARTITION = 'persist:wcv-cards'
+// Custom scheme the inline card documents load from (registered privileged in main/index.ts). It gives
+// each card a real, storage-enabled origin — a data: URL is opaque-origin, where Chromium disables
+// localStorage/etc. and a storage-using card throws. The per-slot HTML is served from `slot.html`.
+export const CARD_SCHEME = 'rpt-card'
 // Shared with the inline-message path (WcvMessageFrame sets the same policy via a <meta> tag).
 export const CARD_CSP =
   "default-src 'self' https: 'unsafe-inline' 'unsafe-eval' data: blob:; " +
@@ -18,6 +25,15 @@ const ensureSession = (): void => {
   if (sessionReady) return
   sessionReady = true
   const ses = session.fromPartition(WCV_PARTITION)
+  // Serve inline card documents from rpt-card://card/<slotId> so they run on a real (storage-enabled)
+  // origin instead of an opaque data: URL. The HTML is whatever the renderer built for that slot.
+  ses.protocol.handle(CARD_SCHEME, (req) => {
+    const id = decodeURIComponent(new URL(req.url).pathname.replace(/^\/+/, ''))
+    const html = slots.get(id)?.html ?? '<!doctype html><meta charset="utf-8"><title>card</title>'
+    return new Response(html, {
+      headers: { 'content-type': 'text/html; charset=utf-8', 'content-security-policy': CARD_CSP }
+    })
+  })
   ses.webRequest.onHeadersReceived({ urls: ['https://*.jsdelivr.net/*'] }, (details, cb) => {
     if (!/\.html(\?|$)/i.test(details.url)) return cb({})
     const headers: Record<string, string[]> = { ...details.responseHeaders }
@@ -32,6 +48,18 @@ const ensureSession = (): void => {
     headers['content-security-policy'] = [CARD_CSP]
     cb({ responseHeaders: headers })
   })
+}
+
+// A renderer-built inline document arrives as a data:text/html URL; decode it so we can serve it from
+// the storage-enabled rpt-card origin. Returns null for any other URL (e.g. a remote https card UI).
+const decodeDataHtml = (url: string): string | null => {
+  const m = /^data:text\/html[^,]*,/i.exec(url)
+  if (!m) return null
+  try {
+    return decodeURIComponent(url.slice(m[0].length))
+  } catch {
+    return url.slice(m[0].length)
+  }
 }
 
 /**
@@ -56,6 +84,8 @@ interface Slot {
   profileId: string
   chatId: string
   characterId: string
+  /** The inline card document served to this slot via rpt-card://card/<id> (when loaded from a data: URL). */
+  html?: string
 }
 
 let mainWindow: BrowserWindow | null = null
@@ -89,6 +119,10 @@ export const ensure = (
   // Defensive: a fire-and-forget IPC call with a missing/garbled ctx must never crash main.
   if (!ctx || typeof ctx !== 'object') ctx = { profileId: '', chatId: '' }
   ensureSession()
+  // Inline documents arrive as data: URLs (opaque origin → no storage). Stash the HTML and load it from
+  // the storage-enabled rpt-card origin instead; remote (https) card UIs already have a real origin.
+  const inlineHtml = decodeDataHtml(url)
+  const loadUrl = inlineHtml !== null ? `${CARD_SCHEME}://card/${encodeURIComponent(id)}` : url
   let slot = slots.get(id)
   if (!slot) {
     const view = new WebContentsView({
@@ -103,15 +137,19 @@ export const ensure = (
         preload: join(__dirname, '../preload/wcvPreload.js')
       }
     })
+    // Transparent backing so a card's `html,body{background:transparent}` composites over the message
+    // bubble behind it instead of painting an opaque white rectangle.
+    view.setBackgroundColor('#00000000')
     slot = {
       view,
       profileId: ctx.profileId,
       chatId: ctx.chatId,
-      characterId: ctx.characterId || ''
+      characterId: ctx.characterId || '',
+      html: inlineHtml ?? undefined
     }
     slots.set(id, slot)
     mainWindow.contentView.addChildView(view)
-    view.webContents.loadURL(url)
+    view.webContents.loadURL(loadUrl) // html must be on the slot first — the scheme handler reads it
     // Spike: surface the card's console so its missing-API log is visible.
     if (is.dev) view.webContents.openDevTools({ mode: 'detach' })
     log('info', `wcv: created '${id}'`)
@@ -119,6 +157,7 @@ export const ensure = (
     slot.profileId = ctx.profileId
     slot.chatId = ctx.chatId
     slot.characterId = ctx.characterId || ''
+    if (inlineHtml !== null) slot.html = inlineHtml // keep the served doc fresh (no reload here)
   }
   slot.view.setBounds(round(bounds))
 }
@@ -159,6 +198,17 @@ export const contextFor = (
     }
   }
   return null
+}
+
+/** An inline card reported its content height → host sizes that message slot to fit (no inner scroll). */
+export const pushSlotSize = (slotId: string, height: number): void => {
+  mainWindow?.webContents.send('wcv-slot-size', { slotId, height })
+}
+
+/** Forward a wheel delta from a card overlay to the host so the message list scrolls (the native view
+ *  would otherwise swallow the wheel). Carries the slotId so only that card's host frame reacts. */
+export const pushWheel = (slotId: string, dy: number): void => {
+  mainWindow?.webContents.send('wcv-host-wheel', { slotId, dy })
 }
 
 /** Push updated variables to the host renderer so native panels reflect a WCV write. */

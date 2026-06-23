@@ -70,6 +70,16 @@ export const registerWcvIpc = (ipcMain: IpcMain): void => {
   ipcMain.on('wcv-set-bounds', (_e, id, bounds) => wcvManager.setBounds(id, bounds))
   ipcMain.on('wcv-set-visible', (_e, id, visible) => wcvManager.setVisible(id, visible))
   ipcMain.on('wcv-destroy', (_e, id) => wcvManager.destroy(id))
+  // Inline card → host: content height (auto-size the message slot) and wheel deltas (scroll the
+  // message list past the overlay). Resolve the slot from the sender so only that frame reacts.
+  ipcMain.on('wcv-content-size', (e, size) => {
+    const ctx = wcvManager.contextFor(e.sender.id)
+    if (ctx) wcvManager.pushSlotSize(ctx.slotId, Math.round(Number(size?.height)) || 0)
+  })
+  ipcMain.on('wcv-wheel', (e, d) => {
+    const ctx = wcvManager.contextFor(e.sender.id)
+    if (ctx) wcvManager.pushWheel(ctx.slotId, Number(d?.dy) || 0)
+  })
   // Host → card panels: the latest stat_data changed (model turn / edit) — refresh their mirrors.
   ipcMain.on('wcv-broadcast-vars', (_e, chatId, statData) =>
     wcvManager.notifyVarsChanged(chatId, statData)

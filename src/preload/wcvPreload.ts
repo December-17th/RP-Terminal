@@ -50,6 +50,73 @@ const rptHost = {
 }
 w.rptHost = rptHost
 
+// --- inline-card layout bridge ---
+// A WebContentsView is a native overlay: it has a fixed slot height and swallows wheel events. Report
+// the card's real content height so the host can size its message slot to fit (no inner scrollbar), and
+// forward wheel deltas so the message list scrolls when the pointer is over the card. The host applies
+// both only to an inline message frame (the workspace panel ignores them), so this is safe to always run.
+let lastReportedHeight = -1
+const measureContentHeight = (): number =>
+  // body.scrollHeight is the content height (not viewport-clamped like documentElement); +8 absorbs
+  // sub-pixel rounding / a collapsed top margin so the card's bottom edge never clips.
+  Math.ceil((document.body?.scrollHeight || document.documentElement?.scrollHeight || 0) + 8)
+const reportHeight = (): void => {
+  const h = measureContentHeight()
+  if (h > 8 && h !== lastReportedHeight) {
+    lastReportedHeight = h
+    try {
+      ipcRenderer.send('wcv-content-size', { height: h })
+    } catch {
+      /* ignore */
+    }
+  }
+}
+const startLayoutBridge = (): void => {
+  reportHeight()
+  try {
+    const ro = new ResizeObserver(reportHeight)
+    if (document.documentElement) ro.observe(document.documentElement)
+    if (document.body) ro.observe(document.body)
+  } catch {
+    /* ignore */
+  }
+}
+if (document.readyState === 'loading')
+  window.addEventListener('DOMContentLoaded', startLayoutBridge)
+else startLayoutBridge()
+window.addEventListener('load', reportHeight)
+// Scroll-chaining. Walk from the element under the pointer up to the root: if ANY scroll container can
+// still move in the wheel direction, let it scroll natively and don't forward. Only when nothing inside
+// can scroll (every scroller is at its edge, or there are none) do we forward the delta so the host
+// scrolls the message list. Checking inner containers — not just the document — is what stops a card
+// whose scroll lives in an overflow:auto panel (e.g. 角色查看器) from fighting the message-box scroll.
+const canScrollDir = (el: HTMLElement, dy: number): boolean => {
+  const maxTop = el.scrollHeight - el.clientHeight
+  if (maxTop <= 1) return false
+  return (dy < 0 && el.scrollTop > 0) || (dy > 0 && el.scrollTop < maxTop - 1)
+}
+window.addEventListener(
+  'wheel',
+  (e: WheelEvent) => {
+    try {
+      const dy = e.deltaY
+      if (!dy) return
+      const root = document.scrollingElement || document.documentElement
+      let node: HTMLElement | null = e.target as HTMLElement | null
+      while (node && node.nodeType === 1) {
+        const oy = node === root ? 'auto' : getComputedStyle(node).overflowY
+        if ((oy === 'auto' || oy === 'scroll') && canScrollDir(node, dy)) return // it'll scroll
+        node = node.parentElement
+      }
+      if (root instanceof HTMLElement && canScrollDir(root, dy)) return
+      ipcRenderer.send('wcv-wheel', { dy })
+    } catch {
+      /* ignore */
+    }
+  },
+  { passive: true }
+)
+
 // --- missing-API logger: print each unique host call once (DEBUG only) ---
 const seen = new Set<string>()
 const note = (name: string) => {
@@ -399,7 +466,24 @@ const helpers: Record<string, any> = {
   audioPlay: (..._a: any[]) => note('audioPlay'),
   audioPause: (..._a: any[]) => note('audioPause'),
   audioMode: (..._a: any[]) => note('audioMode'),
-  audioEnable: (..._a: any[]) => note('audioEnable')
+  audioEnable: (..._a: any[]) => note('audioEnable'),
+  // errorCatched(fn) → a wrapped fn that runs fn but swallows+logs any throw/rejection instead of
+  // letting it escape. Cards wrap their onMounted init in it (`errorCatched(init)()`); without it the
+  // bare global is undefined → ReferenceError aborts the Vue mount → the card renders as raw text.
+  errorCatched:
+    (fn: any) =>
+    (...args: any[]) => {
+      note('errorCatched')
+      try {
+        const r = typeof fn === 'function' ? fn(...args) : undefined
+        if (r && typeof r.catch === 'function')
+          return r.catch((e: any) => console.error('[card errorCatched]', e))
+        return r
+      } catch (e) {
+        console.error('[card errorCatched]', e)
+        return undefined
+      }
+    }
 }
 Object.assign(w, helpers)
 // Some cards call these via a TavernHelper namespace instead of bare globals.
