@@ -1,14 +1,9 @@
 import { ChatMessage, estimateTokens } from './promptBuilder'
 import { cacheHitPct } from '../../shared/usageCost'
 import { TurnMetric, CumulativeMetric, FloorMetrics } from '../../shared/usageTypes'
+import { Usage } from '../../shared/usageTypes'
 
-/** Provider-neutral cache usage for one turn. */
-export interface Usage {
-  cacheRead: number
-  cacheWrite: number
-  input: number
-  output: number
-}
+export type { Usage } from '../../shared/usageTypes'
 
 /** One recorded turn's metrics (proxy + optional live usage). */
 export interface TurnStat {
