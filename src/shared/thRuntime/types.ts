@@ -3,7 +3,12 @@ import type { VarOp } from './ops'
 
 export type CardCtx = { profileId: string; chatId: string; characterId: string }
 
-export type ThMessage = { message_id: number; role: 'user' | 'assistant'; message: string; name?: string }
+export type ThMessage = {
+  message_id: number
+  role: 'user' | 'assistant'
+  message: string
+  name?: string
+}
 
 export type StMessage = {
   is_user: boolean
