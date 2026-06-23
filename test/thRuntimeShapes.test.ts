@@ -8,7 +8,13 @@ import {
 
 const floors = [
   { floor: 0, user_message: { content: 'hi' }, response: { content: 'hello' } },
-  { floor: 1, user_message: { content: 'bye' }, response: { content: 'cya' }, swipes: ['cya', 'later'], swipe_id: 1 }
+  {
+    floor: 1,
+    user_message: { content: 'bye' },
+    response: { content: 'cya' },
+    swipes: ['cya', 'later'],
+    swipe_id: 1
+  }
 ]
 
 describe('floorsToThMessages', () => {
@@ -41,8 +47,20 @@ describe('floorsToStChat', () => {
   it('emits user+assistant ST messages with names and swipes', () => {
     const chat = floorsToStChat(floors, { charName: 'Ellia', userName: 'Player' })
     expect(chat).toHaveLength(4)
-    expect(chat[0]).toMatchObject({ is_user: true, name: 'Player', mes: 'hi', swipes: [], swipe_id: 0 })
-    expect(chat[3]).toMatchObject({ is_user: false, name: 'Ellia', mes: 'cya', swipes: ['cya', 'later'], swipe_id: 1 })
+    expect(chat[0]).toMatchObject({
+      is_user: true,
+      name: 'Player',
+      mes: 'hi',
+      swipes: [],
+      swipe_id: 0
+    })
+    expect(chat[3]).toMatchObject({
+      is_user: false,
+      name: 'Ellia',
+      mes: 'cya',
+      swipes: ['cya', 'later'],
+      swipe_id: 1
+    })
   })
   it('defaults assistant swipes to [response content] when none', () => {
     const chat = floorsToStChat([{ response: { content: 'x' } }], { charName: 'C', userName: 'U' })
