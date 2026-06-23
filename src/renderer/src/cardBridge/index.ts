@@ -1,7 +1,10 @@
 // src/renderer/src/cardBridge/index.ts
 import { createCardBridge, type CardCtx } from './createCardBridge'
+import { installCardTopSurface } from './topSurface'
 import lodash from 'lodash'
 import { z } from 'zod'
+
+export { installCardTopSurface } from './topSurface'
 
 /**
  * Install window.__rptCardBridge so an inline card's bootstrap (running in a same-origin iframe)
@@ -19,4 +22,7 @@ export function installCardBridge(): void {
     g.z = z
     return g
   }
+  // Also expose the namespaced card surface on the renderer top window, so an inline full-page card's
+  // window.top.{SillyTavern,TavernHelper,Mvu,EjsTemplate} resolves (SP2 T8). Idempotent + self-guarded.
+  installCardTopSurface()
 }
