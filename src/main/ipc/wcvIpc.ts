@@ -4,7 +4,6 @@ import * as floorService from '../services/floorService'
 import * as generationService from '../services/generationService'
 import * as lorebookService from '../services/lorebookService'
 import * as chatService from '../services/chatService'
-import * as characterService from '../services/characterService'
 import * as scriptApiService from '../services/scriptApiService'
 import * as settingsService from '../services/settingsService'
 import { log } from '../services/logService'
@@ -260,66 +259,6 @@ export const registerWcvIpc = (ipcMain: IpcMain): void => {
     return generationService.generateRaw(ctx.profileId, ctx.chatId, config || {})
   })
 
-  // --- ST chat array (SillyTavern.chat) — for the home's "start game" (greeting-swipe select + reload) ---
-  // SYNC: the shim builds SillyTavern.chat from this at load. Each floor → its (optional) user message +
-  // the assistant message, carrying its swipes; floor 0's swipes default to the card's greetings
-  // (first_mes + alternate_greetings) so a swipe pick has something to select.
-  ipcMain.on('wcv-host-get-chat-sync', (e) => {
-    const ctx = wcvManager.contextFor(e.sender.id)
-    if (!ctx) {
-      e.returnValue = []
-      return
-    }
-    const characterId =
-      ctx.characterId || chatService.getChat(ctx.profileId, ctx.chatId)?.character_id || ''
-    const card = characterId ? characterService.getCharacter(ctx.profileId, characterId) : null
-    const name = (card?.data as { name?: string })?.name || 'Character'
-    const greetings = card
-      ? [
-          (card.data as { first_mes?: string }).first_mes,
-          ...((card.data as { alternate_greetings?: string[] }).alternate_greetings || [])
-        ].filter((g): g is string => !!g)
-      : []
-    const floors = floorService.getAllFloors(ctx.profileId, ctx.chatId)
-    const chat: Array<Record<string, unknown>> = []
-    floors.forEach((f, i) => {
-      if (f.user_message?.content)
-        chat.push({
-          is_user: true,
-          name: 'You',
-          mes: f.user_message.content,
-          send_date: f.timestamp,
-          swipes: [f.user_message.content],
-          swipe_id: 0,
-          extra: {}
-        })
-      // The greeting floor's swipes are the card's greetings (first_mes + alternate_greetings) — the
-      // home's "start game" picks a scenario by index here. Prefer them over any short stored floor
-      // swipes; later floors use their own response swipes.
-      const swipes =
-        i === 0 && greetings.length
-          ? greetings
-          : f.swipes && f.swipes.length
-            ? f.swipes
-            : [f.response?.content ?? '']
-      chat.push({
-        is_user: false,
-        name,
-        mes: f.response?.content ?? '',
-        send_date: f.timestamp,
-        swipes,
-        swipe_id: f.swipe_id ?? 0,
-        extra: {}
-      })
-    })
-    log(
-      'info',
-      'wcv getChat',
-      `${chat.length} msg(s), greeting swipes=${(chat[0]?.swipes as string[] | undefined)?.length ?? 0}`
-    )
-    e.returnValue = chat
-  })
-
   // Persist a chat the card mutated (e.g. a greeting-swipe selection): map assistant messages back to
   // floors in order, updating content + swipes/swipe_id; user messages are read-only here.
   ipcMain.handle('wcv-host-save-chat', (e, chat) => {
@@ -352,26 +291,6 @@ export const registerWcvIpc = (ipcMain: IpcMain): void => {
     const ctx = wcvManager.contextFor(e.sender.id)
     if (ctx) wcvManager.pushHostReload(ctx.chatId)
     return true
-  })
-
-  // Map the chat's floors → TavernHelper-style message objects (sync; getChatMessages from the card).
-  ipcMain.on('wcv-host-get-messages-sync', (e) => {
-    const ctx = wcvManager.contextFor(e.sender.id)
-    if (!ctx) {
-      e.returnValue = []
-      return
-    }
-    const floors = floorService.getAllFloors(ctx.profileId, ctx.chatId)
-    const msgs: Array<{ message_id: number; role: string; message: string }> = []
-    chatIndexMap(floors).forEach((m, i) => {
-      const f = floors[m.floorIdx]
-      msgs.push({
-        message_id: i,
-        role: m.isUser ? 'user' : 'assistant',
-        message: m.isUser ? f.user_message.content : (f.response?.content ?? '')
-      })
-    })
-    e.returnValue = msgs
   })
 
   // Raw floor rows for the calling panel's session (the unified TH runtime maps these to TH/ST message
