@@ -70,8 +70,11 @@ export const MessageContent: React.FC<Props> = ({ content, css, onContextMenu })
 
 type Segment = { type: 'md' | 'html'; text: string; mode?: CardRenderMode }
 
-// A render-mode marker the regex applier emits immediately before a card block (see regexStore.apply).
-const MODE_MARKER = /<!--\s*rpt:mode=(inline|isolated)\s*-->\s*$/i
+// A render-mode marker the regex applier emits before a card block (see regexStore.apply). It is NOT
+// necessarily flush against the block: the card payload is often wrapped in a ``` code fence, so the
+// marker can be followed by the opening fence (e.g. `<!--rpt:mode=isolated-->```\n<body>…`). So match
+// the marker anywhere in the md before the block — NOT anchored to the end — and strip it in place.
+const MODE_MARKER = /<!--\s*rpt:mode=(inline|isolated)\s*-->/i
 
 export const splitHtml = (content: string): Segment[] => {
   const segs: Segment[] = []
@@ -85,7 +88,9 @@ export const splitHtml = (content: string): Segment[] => {
       const mk = md.match(MODE_MARKER)
       if (mk) {
         pendingMode = mk[1].toLowerCase() as CardRenderMode
-        md = md.slice(0, mk.index) // strip the marker from the visible md text
+        // Strip the marker in place (it may sit before a code fence, not at the end of the md).
+        const at = mk.index ?? 0
+        md = md.slice(0, at) + md.slice(at + mk[0].length)
       }
       // Push the md text only if non-empty: a segment that was ONLY a mode marker becomes '' after
       // stripping, so we skip it (the marker must never render as text).

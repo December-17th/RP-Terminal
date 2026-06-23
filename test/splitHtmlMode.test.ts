@@ -29,4 +29,12 @@ describe('splitHtml mode marker', () => {
     // The marker text must not leak into ANY segment.
     expect(segs.some((s) => s.text.includes('rpt:mode'))).toBe(false)
   })
+  it('parses the marker when the payload is wrapped in a bare ``` fence (marker not flush to the block)', () => {
+    // The 命定之诗 home regex replaces 【首页】 with "```\n<body>…</body>\n```" (a bare fence, no "html").
+    // The marker is prepended, so ``` sits BETWEEN the marker and the <body> block HTML_BLOCK matches.
+    // Regression: the old end-anchored marker regex failed here, so the card stayed inline.
+    const segs = splitHtml('<!--rpt:mode=isolated-->```\n<body>x</body>\n```')
+    expect(segs.find((s) => s.type === 'html')!.mode).toBe('isolated')
+    expect(segs.some((s) => s.text.includes('rpt:mode'))).toBe(false)
+  })
 })
