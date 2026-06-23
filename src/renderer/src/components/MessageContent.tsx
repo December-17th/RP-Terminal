@@ -87,6 +87,8 @@ export const splitHtml = (content: string): Segment[] => {
         pendingMode = mk[1].toLowerCase() as CardRenderMode
         md = md.slice(0, mk.index) // strip the marker from the visible md text
       }
+      // Push the md text only if non-empty: a segment that was ONLY a mode marker becomes '' after
+      // stripping, so we skip it (the marker must never render as text).
       if (md) segs.push({ type: 'md', text: md })
     }
     segs.push({
