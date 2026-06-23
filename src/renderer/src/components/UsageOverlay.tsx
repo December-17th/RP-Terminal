@@ -124,14 +124,15 @@ export const UsageOverlay: React.FC<{ profileId: string }> = ({ profileId }) => 
 
   return (
     <div className="usage-overlay" style={{ position: 'fixed', zIndex: 60, ...pos }}>
-      <div
-        className="usage-overlay-head"
-        onPointerDown={onPointerDown}
-        onPointerMove={onPointerMove}
-        onPointerUp={onPointerUp}
-        style={{ cursor: 'move', display: 'flex', alignItems: 'center', gap: 6 }}
-      >
-        <span style={{ fontWeight: 600 }}>usage</span>
+      <div className="usage-overlay-head" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+        <span
+          onPointerDown={onPointerDown}
+          onPointerMove={onPointerMove}
+          onPointerUp={onPointerUp}
+          style={{ fontWeight: 600, cursor: 'move', flex: 1 }}
+        >
+          usage
+        </span>
         <button title="Fields" onClick={() => setGearOpen((v) => !v)}>
           ⚙
         </button>
