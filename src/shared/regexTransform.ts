@@ -21,7 +21,7 @@ export interface RegexApplyContext {
  *  code must pass through verbatim, so we apply ONLY the substitutions SillyTavern's native
  *  String.replace does and skip our plain-text `\n`→newline shorthand (a card's script legitimately
  *  contains literal `\n`, e.g. inside `/[\r\n]/`, that must not become a real newline). */
-const isCodePayload = (s: string): boolean =>
+export const isCardPayload = (s: string): boolean =>
   /```html|<script[\s>]|<style[\s>]|<(?:html|body)[\s>]/i.test(s)
 
 /** Build a rule's replacement for one match: trimStrings stripped from `{{match}}`, the
@@ -45,7 +45,7 @@ const buildReplacement = (
       const i = Number(n) - 1
       return i < groups.length ? (groups[i] ?? '') : m
     })
-  if (!isCodePayload(rule.replace)) out = out.replace(/\\n/g, '\n')
+  if (!isCardPayload(rule.replace)) out = out.replace(/\\n/g, '\n')
   return out
 }
 
@@ -64,6 +64,11 @@ export interface ApplyOptions<R> {
   placement?: number
   /** Supply a compiled RegExp for a rule (e.g. a cache); defaults to a fresh `new RegExp`. */
   compile?: (rule: R) => RegExp
+  /**
+   * Render-only: given the matched rule, return a marker string to PREPEND to that rule's
+   * replacement output (e.g. a per-card render-mode HTML comment). Undefined → no marker.
+   */
+  marker?: (rule: R) => string | undefined
 }
 
 /** Apply rules to `text` in order. A rule that fails to compile is skipped. */
@@ -91,7 +96,9 @@ export const applyRegexRules = <R extends RegexLikeRule>(
     re.lastIndex = 0 // reset stateful (global) regexes — important for cached instances
     out = out.replace(re, (...args) => {
       const { match, groups } = replaceArgs(args)
-      return buildReplacement(rule, match, groups, ctx)
+      const repl = buildReplacement(rule, match, groups, ctx)
+      const mk = opts.marker?.(rule)
+      return mk ? mk + repl : repl
     })
   }
   return out
