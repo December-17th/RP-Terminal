@@ -4,6 +4,9 @@ import remarkGfm from 'remark-gfm'
 import DOMPurify from 'dompurify'
 import { isInteractiveHtml } from '../plugin/bridgeShim'
 import { WcvMessageFrame } from './WcvMessageFrame'
+import { InlineCardFrame } from './InlineCardFrame'
+import { useSettingsStore } from '../stores/settingsStore'
+import { resolveCardMode, DEFAULT_CARD_RENDER_MODE } from '../../../shared/cardRenderMode'
 
 interface Props {
   content: string
@@ -26,6 +29,8 @@ const HTML_BLOCK = /```html\s*([\s\S]*?)```|(<(?:html|body)[\s\S]*?<\/(?:html|bo
  */
 export const MessageContent: React.FC<Props> = ({ content, css, onContextMenu }) => {
   const parts = useMemo(() => splitHtml(content), [content])
+  const globalMode =
+    useSettingsStore((s) => s.settings?.cards?.renderMode) ?? DEFAULT_CARD_RENDER_MODE
   return (
     <div
       onContextMenu={
@@ -44,7 +49,11 @@ export const MessageContent: React.FC<Props> = ({ content, css, onContextMenu })
           // card's own code does its (possibly nested) loading. Script-free html stays a light, static,
           // sanitized inline frame.
           isInteractiveHtml(p.text) ? (
-            <WcvMessageFrame key={i} html={p.text} />
+            resolveCardMode(undefined, globalMode) === 'isolated' ? (
+              <WcvMessageFrame key={i} html={p.text} />
+            ) : (
+              <InlineCardFrame key={i} html={p.text} onContextMenu={onContextMenu} />
+            )
           ) : (
             <HtmlFrame key={i} html={p.text} css={css} onContextMenu={onContextMenu} />
           )
