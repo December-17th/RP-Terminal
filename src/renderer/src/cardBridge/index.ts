@@ -10,6 +10,7 @@ import { z } from 'zod'
  * bind to the iframe's document; only realm-safe values (data + pure functions) come from here.
  */
 export function installCardBridge(): void {
+  if (typeof window === 'undefined') return
   if ((window as any).__rptCardBridge) return
   ;(window as any).__rptCardBridge = (ctx: CardCtx): Record<string, unknown> => {
     const g = createCardBridge(ctx)
