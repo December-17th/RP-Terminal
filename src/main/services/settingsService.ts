@@ -90,7 +90,8 @@ export const getDefaultSettings = (): Settings => ({
     }
   },
   cards: {
-    renderMode: 'inline'
+    renderMode: 'inline',
+    sizing: 'fit'
   },
   // FSM modes (Phase H). Explore = wide retrieval + descriptive; Dialogue = tighter;
   // Combat = terse (mechanics are resolved by the engine, not narrated numbers).
