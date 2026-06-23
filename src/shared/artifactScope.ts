@@ -7,6 +7,8 @@
  * session(owner === active chat). See docs/world-card-design.md §6.
  */
 
+import type { CardRenderMode } from './cardRenderMode'
+
 export type ArtifactScope = 'global' | 'world' | 'session'
 
 export interface ScopeContext {
@@ -19,6 +21,8 @@ export interface ScopeMeta {
   owner?: string
   /** Per-artifact enable toggle; a disabled artifact never contributes at runtime. */
   disabled?: boolean
+  /** Per-card render-mode override; absent = follow the global default. */
+  renderMode?: CardRenderMode
 }
 
 /** Pure scope predicate. */
