@@ -18,7 +18,7 @@ const floors = [
 ]
 
 describe('floorsToThMessages', () => {
-  it('flattens floors to sequential ids (user 2i, assistant 2i+1)', () => {
+  it('flattens floors to compact sequential ids (= the chat-array index)', () => {
     expect(floorsToThMessages(floors)).toEqual([
       { message_id: 0, role: 'user', message: 'hi' },
       { message_id: 1, role: 'assistant', message: 'hello' },
@@ -26,17 +26,17 @@ describe('floorsToThMessages', () => {
       { message_id: 3, role: 'assistant', message: 'cya' }
     ])
   })
-  it('handles missing content as empty strings', () => {
-    expect(floorsToThMessages([{}])).toEqual([
-      { message_id: 0, role: 'user', message: '' },
-      { message_id: 1, role: 'assistant', message: '' }
-    ])
+  it('skips an empty user slot (compact) — a contentless floor yields only the assistant message', () => {
+    expect(floorsToThMessages([{}])).toEqual([{ message_id: 0, role: 'assistant', message: '' }])
   })
 })
 
 describe('currentMessageId', () => {
-  it('is the last flat index', () => {
+  it('is the last chat-array index', () => {
     expect(currentMessageId(floors)).toBe(3)
+  })
+  it('is the compact last index (a greeting-only chat → 0, not 1)', () => {
+    expect(currentMessageId([{ response: { content: 'greet' } }])).toBe(0)
   })
   it('is 0 for no floors', () => {
     expect(currentMessageId([])).toBe(0)

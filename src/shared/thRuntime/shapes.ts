@@ -1,31 +1,35 @@
 // src/shared/thRuntime/shapes.ts
 import type { FloorLike, ThMessage, StMessage } from './types'
 
-/** Floors → a flat TH message list with sequential ids (floor i → user 2i, assistant 2i+1). */
+/**
+ * Floors → a flat TH message list. message_id = the COMPACT chat-array index (`chatIndexMap`) — the SAME
+ * space `setChatMessages`/`deleteChatMessages` and `SillyTavern.chat[]` use, so a `message_id` round-trips
+ * get→set to the correct floor. (Previously this numbered an empty user slot at `2i`, diverging from the
+ * set/delete path — reconciled by deriving both from `chatIndexMap`.)
+ */
 export function floorsToThMessages(floors: FloorLike[]): ThMessage[] {
-  const out: ThMessage[] = []
-  floors.forEach((f, i) => {
-    out.push({ message_id: i * 2, role: 'user', message: f.user_message?.content ?? '' })
-    out.push({ message_id: i * 2 + 1, role: 'assistant', message: f.response?.content ?? '' })
-  })
-  return out
+  return chatIndexMap(floors).map((slot, id) => ({
+    message_id: id,
+    role: slot.isUser ? 'user' : 'assistant',
+    message:
+      (slot.isUser
+        ? floors[slot.floorIdx].user_message?.content
+        : floors[slot.floorIdx].response?.content) ?? ''
+  }))
 }
 
-/** Last flat message index (2n-1), or 0 when there are no floors. */
+/** Last chat-array index (the latest assistant message), or 0 when there are no floors. */
 export function currentMessageId(floors: FloorLike[]): number {
-  const n = floors.length
-  return n > 0 ? n * 2 - 1 : 0
+  const len = chatIndexMap(floors).length
+  return len > 0 ? len - 1 : 0
 }
 
 /**
- * Floors → the COMPACT chat-array index space `setChatMessages`/`deleteChatMessages` use: per floor, the
- * user slot ONLY when it has content, then the assistant slot. This matches `floorsToStChat` (SillyTavern's
- * `chat[]`, which also skips empty user messages).
- *
- * KNOWN DIVERGENCE (preserved, not introduced here): `floorsToThMessages` (`getChatMessages`) instead emits
- * a user message at `2i` even when empty, so a `message_id` read from `getChatMessages` does NOT line up
- * with this map once a floor has an empty user message (floor 0's greeting). Moved verbatim from `wcvIpc`
- * to keep both transports identical; reconciling the get/set id spaces is a separate, deliberate fix.
+ * Floors → the chat-array index space: per floor, the user slot ONLY when it has content (matching
+ * SillyTavern's `chat[]`, which has no empty user messages), then the assistant slot. The sequential index
+ * IS the `message_id`. This is the ONE canonical mapping — `floorsToThMessages` (getChatMessages),
+ * `setChatMessages`/`deleteChatMessages`, and `floorsToStChat` (`chat[]`) all derive from it, so an id
+ * round-trips get→set to the correct floor.
  */
 export function chatIndexMap(floors: FloorLike[]): Array<{ floorIdx: number; isUser: boolean }> {
   const out: Array<{ floorIdx: number; isUser: boolean }> = []
