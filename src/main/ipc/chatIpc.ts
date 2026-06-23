@@ -3,6 +3,7 @@ import * as chatService from '../services/chatService'
 import * as floorService from '../services/floorService'
 import * as generationService from '../services/generationService'
 import * as logService from '../services/logService'
+import * as usageMetricsService from '../services/usageMetricsService'
 
 export const registerChatIpc = (ipcMain: IpcMain): void => {
   ipcMain.handle('get-chats', (_, profileId) => chatService.getChats(profileId))
@@ -11,6 +12,9 @@ export const registerChatIpc = (ipcMain: IpcMain): void => {
     const chat = chatService.getChat(profileId, chatId)
     return chat ? floorService.getAllFloors(profileId, chatId, chat.floor_count) : []
   })
+  ipcMain.handle('backfill-usage-metrics', (_, profileId, chatId) =>
+    usageMetricsService.backfillUsageMetrics(profileId, chatId)
+  )
   // Re-apply the stored <UpdateVariable> updates to rebuild stat_data (no regeneration).
   ipcMain.handle('reevaluate-variables', (_, profileId, chatId) =>
     generationService.reevaluateVariables(profileId, chatId)

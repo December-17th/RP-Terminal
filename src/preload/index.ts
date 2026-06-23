@@ -22,6 +22,8 @@ const api = {
     ipcRenderer.invoke('create-chat', profileId, charId),
   getFloors: (profileId: string, chatId: string) =>
     ipcRenderer.invoke('get-floors', profileId, chatId),
+  backfillUsageMetrics: (profileId: string, chatId: string) =>
+    ipcRenderer.invoke('backfill-usage-metrics', profileId, chatId),
   reevaluateVariables: (profileId: string, chatId: string) =>
     ipcRenderer.invoke('reevaluate-variables', profileId, chatId),
   applyVariableOps: (profileId: string, chatId: string, floor: number, ops: unknown[]) =>
