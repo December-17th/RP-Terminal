@@ -1516,53 +1516,48 @@ git commit -m "feat(cards): scope sidecar renderMode override + setRenderMode"
 
 ```ts
 // test/regexRenderMode.test.ts
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
+// Mirrors the established integration pattern in test/regexScope.test.ts: real getAppDir() + a unique
+// profile + saveRegexScript, cleaned up in afterAll. (No vi.mock — the repo's regex tests use the real
+// test app dir.) The `it`s run in order and share the saved script, like regexScope.test.ts.
+import { describe, it, expect, afterAll } from 'vitest'
 import fs from 'fs'
-import os from 'os'
 import path from 'path'
+import { randomUUID } from 'crypto'
+import {
+  saveRegexScript,
+  setScriptRenderMode,
+  getAllRules,
+  listScripts
+} from '../src/main/services/regexService'
+import { getAppDir } from '../src/main/services/storageService'
 
-// Point the app dir at a temp folder before importing the service.
-let appDir: string
-vi.mock('../src/main/services/storageService', async (orig) => {
-  const actual = (await orig()) as any
-  return { ...actual, getAppDir: () => appDir }
-})
-
-import * as regexService from '../src/main/services/regexService'
-
-const profile = 'p1'
-const regexDir = (): string => path.join(appDir, 'profiles', profile, 'regex')
-
-beforeEach(() => {
-  appDir = fs.mkdtempSync(path.join(os.tmpdir(), 'rpt-regex-'))
-  fs.mkdirSync(regexDir(), { recursive: true })
-  fs.writeFileSync(
-    path.join(regexDir(), 'card.json'),
-    JSON.stringify([{ scriptName: 'Card', findRegex: '/x/g', replaceString: '<html></html>', placement: [2] }])
-  )
-})
-afterEach(() => fs.rmSync(appDir, { recursive: true, force: true }))
+const profileId = `test-${randomUUID()}`
+const profileDir = path.join(getAppDir(), 'profiles', profileId)
+afterAll(() => fs.rmSync(profileDir, { recursive: true, force: true }))
 
 describe('regexService renderMode', () => {
   it('rules carry no renderMode by default', () => {
-    expect(regexService.getAllRules(profile)[0].renderMode).toBeUndefined()
+    saveRegexScript(profileId, {
+      scriptName: 'Card',
+      findRegex: '/x/g',
+      replaceString: '<html></html>',
+      placement: [2]
+    })
+    expect(getAllRules(profileId)[0].renderMode).toBeUndefined()
   })
   it('setScriptRenderMode stamps the rule + script info', () => {
-    regexService.setScriptRenderMode(profile, 'card.json', 'isolated')
-    expect(regexService.getAllRules(profile)[0].renderMode).toBe('isolated')
-    expect(regexService.listScripts(profile).find((s) => s.file === 'card.json')?.renderMode).toBe(
-      'isolated'
-    )
+    const file = listScripts(profileId)[0].file
+    setScriptRenderMode(profileId, file, 'isolated')
+    expect(getAllRules(profileId)[0].renderMode).toBe('isolated')
+    expect(listScripts(profileId).find((s) => s.file === file)?.renderMode).toBe('isolated')
   })
   it('null clears it', () => {
-    regexService.setScriptRenderMode(profile, 'card.json', 'isolated')
-    regexService.setScriptRenderMode(profile, 'card.json', null)
-    expect(regexService.getAllRules(profile)[0].renderMode).toBeUndefined()
+    const file = listScripts(profileId)[0].file
+    setScriptRenderMode(profileId, file, null)
+    expect(getAllRules(profileId)[0].renderMode).toBeUndefined()
   })
 })
 ```
-
-> If mocking `getAppDir` per the above doesn't match how other regexService tests set up their temp dir, follow the existing pattern in the repo's regex tests (search `test/` for `regexService`); the assertions stay the same.
 
 - [ ] **Step 2: Run — fails**
 
