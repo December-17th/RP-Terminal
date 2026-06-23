@@ -7,10 +7,10 @@
 // (iframe-realm), NOT by assigning the renderer's Vue onto the iframe (that would create nodes in the
 // top document and break Vue's instanceof guards).
 // Vite `?url` resolves each to a same-origin asset URL the iframe can load under 'self' CSP.
-import vueUrl from 'vue/dist/vue.global.prod.js?url'
-import jqueryUrl from 'jquery/dist/jquery.min.js?url'
-import piniaUrl from 'pinia/dist/pinia.iife.prod.js?url'
-import vueRouterUrl from 'vue-router/dist/vue-router.global.prod.js?url'
+import vueUrl from '../../../../node_modules/vue/dist/vue.global.prod.js?url'
+import jqueryUrl from '../../../../node_modules/jquery/dist/jquery.min.js?url'
+import piniaUrl from '../../../../node_modules/pinia/dist/pinia.iife.prod.js?url'
+import vueRouterUrl from '../../../../node_modules/vue-router/dist/vue-router.global.prod.js?url'
 
 /**
  * Ordered list of classic-script URLs to inject before the card's own scripts.
