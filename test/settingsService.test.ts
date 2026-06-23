@@ -189,6 +189,8 @@ describe('settings usage-meter + pricing', () => {
     const s = getDefaultSettings()
     expect(s.ui.usage_meter.enabled).toBe(false)
     expect(s.ui.usage_meter.x).toBeNull()
+    expect(s.ui.usage_meter.y).toBeNull()
+    expect(s.ui.usage_meter.collapsed).toBe(false)
     expect(Array.isArray(s.ui.usage_meter.fields)).toBe(true)
     expect(s.ui.usage_view.columns.length).toBeGreaterThan(0)
     expect(s.pricing).toEqual({})
@@ -199,7 +201,7 @@ describe('settings usage-meter + pricing', () => {
     expect(s.ui.usage_meter.enabled).toBe(true)
     expect(s.ui.usage_meter.x).toBe(12)
     expect(s.ui.usage_meter.collapsed).toBe(false) // default preserved
-    expect(Array.isArray(s.ui.usage_meter.fields)).toBe(true)
+    expect(s.ui.usage_meter.fields).toEqual(['proxyPct', 'cacheHitPct', 'promptTokens', 'avgCacheHitPct'])
   })
 
   it('keeps stored pricing rows', () => {
