@@ -41,6 +41,9 @@ export interface Settings {
       final_pass: boolean
     }
   }
+  cards?: {
+    renderMode: 'inline' | 'isolated'
+  }
   agent: {
     mode: 'off' | 'manual' | 'agentic'
   }

@@ -1,5 +1,6 @@
 import type { ModeLayouts } from '../../shared/workspaceLayout'
 import type { ModelRates } from '../../shared/usageTypes'
+import type { CardRenderMode } from '../../shared/cardRenderMode'
 
 export interface Profile {
   id: string
@@ -80,6 +81,10 @@ export interface Settings {
       /** Run one eval pass when streaming completes. */
       final_pass: boolean
     }
+  }
+  /** Card rendering: the global default mode for scripted beautification cards. */
+  cards: {
+    renderMode: CardRenderMode
   }
   /** Per-mode generation tuning for the manual FSM (Explore/Dialogue/Combat). */
   modes: Record<string, ModeConfig>
