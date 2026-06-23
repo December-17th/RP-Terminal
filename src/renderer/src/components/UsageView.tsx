@@ -12,7 +12,9 @@ const pct = (n: number): string => `${Math.round(n)}%`
 /** Flatten the active chat's floors into a per-turn metric series. */
 const useSeries = (): { floor: number; m: FloorMetrics }[] => {
   const floors = useChatStore((s) => s.floors)
-  return floors.filter((f) => f.metrics).map((f) => ({ floor: f.floor, m: f.metrics as FloorMetrics }))
+  return floors
+    .filter((f) => f.metrics)
+    .map((f) => ({ floor: f.floor, m: f.metrics as FloorMetrics }))
 }
 
 export const UsageView: React.FC<{ profileId: string }> = ({ profileId }) => {
@@ -27,7 +29,11 @@ export const UsageView: React.FC<{ profileId: string }> = ({ profileId }) => {
     return (
       <div style={{ padding: 12 }}>
         <div style={{ opacity: 0.6 }}>No metered turns in this chat yet.</div>
-        <BackfillButton profileId={profileId} chatId={activeChatId} onDone={() => activeProfile && setActiveChat(profileId, activeChatId!)} />
+        <BackfillButton
+          profileId={profileId}
+          chatId={activeChatId}
+          onDone={() => activeProfile && setActiveChat(profileId, activeChatId!)}
+        />
       </div>
     )
   }
@@ -57,7 +63,10 @@ export const UsageView: React.FC<{ profileId: string }> = ({ profileId }) => {
       blob = new Blob([JSON.stringify(rows, null, 2)], { type: 'application/json' })
     } else {
       const cols = Object.keys(rows[0])
-      const csv = [cols.join(','), ...rows.map((r) => cols.map((k) => (r as any)[k] ?? '').join(','))].join('\n')
+      const csv = [
+        cols.join(','),
+        ...rows.map((r) => cols.map((k) => (r as any)[k] ?? '').join(','))
+      ].join('\n')
       blob = new Blob([csv], { type: 'text/csv' })
     }
     const url = URL.createObjectURL(blob)
@@ -70,14 +79,21 @@ export const UsageView: React.FC<{ profileId: string }> = ({ profileId }) => {
 
   return (
     <div style={{ padding: 12, display: 'flex', flexDirection: 'column', gap: 12 }}>
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '2px 16px', fontSize: 13 }}>
-        <span>turns</span><span>{c.turns}</span>
-        <span>avg est cache</span><span>{pct(c.avgProxyPct)}</span>
-        <span>avg actual cache</span><span>{c.usageTurns ? pct(c.avgCacheHitPct) : '—'}</span>
-        <span>avg prompt tok</span><span>{tok(c.avgPromptTokens)}</span>
+      <div
+        style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '2px 16px', fontSize: 13 }}
+      >
+        <span>turns</span>
+        <span>{c.turns}</span>
+        <span>avg est cache</span>
+        <span>{pct(c.avgProxyPct)}</span>
+        <span>avg actual cache</span>
+        <span>{c.usageTurns ? pct(c.avgCacheHitPct) : '—'}</span>
+        <span>avg prompt tok</span>
+        <span>{tok(c.avgPromptTokens)}</span>
         <span>total read / write</span>
         <span>{c.usage ? `${tok(c.usage.cacheRead)} / ${tok(c.usage.cacheWrite)}` : '—'}</span>
-        <span>session $</span><span>{sessionCost == null ? '—' : `$${sessionCost.toFixed(2)}`}</span>
+        <span>session $</span>
+        <span>{sessionCost == null ? '—' : `$${sessionCost.toFixed(2)}`}</span>
       </div>
 
       <div>
@@ -99,7 +115,13 @@ export const UsageView: React.FC<{ profileId: string }> = ({ profileId }) => {
         <thead>
           <tr style={{ textAlign: 'right', opacity: 0.7 }}>
             <th style={{ textAlign: 'left' }}>#</th>
-            <th>prompt</th><th>est</th><th>actual</th><th>read</th><th>write</th><th>out</th><th>$</th>
+            <th>prompt</th>
+            <th>est</th>
+            <th>actual</th>
+            <th>read</th>
+            <th>write</th>
+            <th>out</th>
+            <th>$</th>
           </tr>
         </thead>
         <tbody>
@@ -125,17 +147,21 @@ export const UsageView: React.FC<{ profileId: string }> = ({ profileId }) => {
       <div style={{ display: 'flex', gap: 8 }}>
         <button onClick={() => exportData('csv')}>Export CSV</button>
         <button onClick={() => exportData('json')}>Export JSON</button>
-        <BackfillButton profileId={profileId} chatId={activeChatId} onDone={() => activeProfile && setActiveChat(profileId, activeChatId!)} />
+        <BackfillButton
+          profileId={profileId}
+          chatId={activeChatId}
+          onDone={() => activeProfile && setActiveChat(profileId, activeChatId!)}
+        />
       </div>
     </div>
   )
 }
 
-const BackfillButton: React.FC<{ profileId: string; chatId: string | null; onDone: () => void }> = ({
-  profileId,
-  chatId,
-  onDone
-}) => {
+const BackfillButton: React.FC<{
+  profileId: string
+  chatId: string | null
+  onDone: () => void
+}> = ({ profileId, chatId, onDone }) => {
   const [busy, setBusy] = React.useState(false)
   if (!chatId) return null
   return (

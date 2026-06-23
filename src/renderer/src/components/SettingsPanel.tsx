@@ -126,7 +126,10 @@ export const SettingsPanel: React.FC<{ profileId: string }> = ({ profileId }) =>
                 checked={settings.ui?.usage_meter?.enabled ?? false}
                 onChange={(e) =>
                   updateSettings(profileId, {
-                    ui: { ...settings.ui, usage_meter: { ...settings.ui.usage_meter, enabled: e.target.checked } }
+                    ui: {
+                      ...settings.ui,
+                      usage_meter: { ...settings.ui.usage_meter, enabled: e.target.checked }
+                    }
                   })
                 }
               />
@@ -255,11 +258,16 @@ export const SettingsPanel: React.FC<{ profileId: string }> = ({ profileId }) =>
           <details className="settings-section" style={{ marginTop: 20 }}>
             <summary>Token pricing ($ / 1M tokens)</summary>
             <div className="settings-section-body">
-              <div style={{ fontSize: '0.78em', color: 'var(--rpt-text-secondary)', marginBottom: 6 }}>
+              <div
+                style={{ fontSize: '0.78em', color: 'var(--rpt-text-secondary)', marginBottom: 6 }}
+              >
                 Optional. Empty ⇒ the meter shows tokens only. Keyed by exact model id.
               </div>
               {Object.entries(settings.pricing ?? {}).map(([model, rates]) => (
-                <div key={model} style={{ display: 'flex', gap: 4, alignItems: 'center', marginBottom: 4 }}>
+                <div
+                  key={model}
+                  style={{ display: 'flex', gap: 4, alignItems: 'center', marginBottom: 4 }}
+                >
                   <span style={{ flex: 1, fontSize: 12 }}>{model}</span>
                   {(['input', 'output', 'cacheRead', 'cacheWrite'] as const).map((k) => (
                     <input

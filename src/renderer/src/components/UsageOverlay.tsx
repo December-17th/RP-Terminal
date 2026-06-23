@@ -39,7 +39,13 @@ const valueFor = (
     case 'proxyPct':
       return pct(t.proxyPct)
     case 'cacheHitPct':
-      return t.usage ? pct((t.usage.cacheRead / Math.max(1, t.usage.cacheRead + t.usage.cacheWrite + t.usage.input)) * 100) : '—'
+      return t.usage
+        ? pct(
+            (t.usage.cacheRead /
+              Math.max(1, t.usage.cacheRead + t.usage.cacheWrite + t.usage.input)) *
+              100
+          )
+        : '—'
     case 'cacheRead':
       return t.usage ? tok(t.usage.cacheRead) : '—'
     case 'cacheWrite':
@@ -126,11 +132,18 @@ export const UsageOverlay: React.FC<{ profileId: string }> = ({ profileId }) => 
         style={{ cursor: 'move', display: 'flex', alignItems: 'center', gap: 6 }}
       >
         <span style={{ fontWeight: 600 }}>usage</span>
-        <button title="Fields" onClick={() => setGearOpen((v) => !v)}>⚙</button>
-        <button title={meter.collapsed ? 'Expand' : 'Collapse'} onClick={() => persist({ collapsed: !meter.collapsed })}>
+        <button title="Fields" onClick={() => setGearOpen((v) => !v)}>
+          ⚙
+        </button>
+        <button
+          title={meter.collapsed ? 'Expand' : 'Collapse'}
+          onClick={() => persist({ collapsed: !meter.collapsed })}
+        >
           {meter.collapsed ? '▣' : '▢'}
         </button>
-        <button title="Hide (Settings to re-enable)" onClick={() => persist({ enabled: false })}>✕</button>
+        <button title="Hide (Settings to re-enable)" onClick={() => persist({ enabled: false })}>
+          ✕
+        </button>
       </div>
 
       {gearOpen && (
@@ -158,7 +171,10 @@ export const UsageOverlay: React.FC<{ profileId: string }> = ({ profileId }) => 
           {rows
             .filter((r) => r.value != null)
             .map((r) => (
-              <div key={r.key} style={{ display: 'flex', justifyContent: 'space-between', gap: 12 }}>
+              <div
+                key={r.key}
+                style={{ display: 'flex', justifyContent: 'space-between', gap: 12 }}
+              >
                 <span style={{ opacity: 0.7 }}>{r.label}</span>
                 <span>{r.value}</span>
               </div>

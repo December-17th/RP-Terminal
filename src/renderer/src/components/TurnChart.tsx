@@ -28,17 +28,28 @@ export interface Series {
 }
 
 /** A small multi-series line chart (hand-rolled SVG, no chart dep). */
-export const TurnChart: React.FC<{ series: Series[]; min: number; max: number; height?: number }> = ({
-  series,
-  min,
-  max,
-  height = 80
-}) => {
+export const TurnChart: React.FC<{
+  series: Series[]
+  min: number
+  max: number
+  height?: number
+}> = ({ series, min, max, height = 80 }) => {
   const width = 280
   return (
-    <svg width="100%" viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="none" style={{ display: 'block' }}>
+    <svg
+      width="100%"
+      viewBox={`0 0 ${width} ${height}`}
+      preserveAspectRatio="none"
+      style={{ display: 'block' }}
+    >
       {series.map((s) => (
-        <path key={s.label} d={linePath(s.values, width, height, min, max)} fill="none" stroke={s.color} strokeWidth={1.5} />
+        <path
+          key={s.label}
+          d={linePath(s.values, width, height, min, max)}
+          fill="none"
+          stroke={s.color}
+          strokeWidth={1.5}
+        />
       ))}
     </svg>
   )
