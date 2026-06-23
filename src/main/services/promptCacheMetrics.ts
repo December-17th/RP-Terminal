@@ -1,4 +1,6 @@
 import { ChatMessage, estimateTokens } from './promptBuilder'
+import { cacheHitPct } from '../../shared/usageCost'
+import { TurnMetric, CumulativeMetric, FloorMetrics } from '../../shared/usageTypes'
 
 /** Provider-neutral cache usage for one turn. */
 export interface Usage {
@@ -114,4 +116,82 @@ export const summarize = (turns: TurnStat[]): CacheReport => {
     totalPromptTokens,
     usage: anyUsage ? u : null
   }
+}
+
+const sumUsage = (
+  a: { cacheRead: number; cacheWrite: number; input: number; output: number } | null,
+  b: { cacheRead: number; cacheWrite: number; input: number; output: number } | null
+): { cacheRead: number; cacheWrite: number; input: number; output: number } | null => {
+  if (!a) return b ? { ...b } : null
+  if (!b) return { ...a }
+  return {
+    cacheRead: a.cacheRead + b.cacheRead,
+    cacheWrite: a.cacheWrite + b.cacheWrite,
+    input: a.input + b.input,
+    output: a.output + b.output
+  }
+}
+
+/**
+ * Build one floor's metrics: its own turn numbers (the deterministic stable-prefix proxy +
+ * optional real usage) plus a cumulative snapshot derived from the previous floor's cumulative
+ * (so each floor is a self-contained, truncation-safe graph point). Averages are running means.
+ */
+export const buildFloorMetrics = (args: {
+  messages: ChatMessage[]
+  prevMessages: ChatMessage[] | null
+  usage: { cacheRead: number; cacheWrite: number; input: number; output: number } | null
+  provider: string
+  model: string
+  cacheLevel: number
+  l1Mode: 'partition' | 'diff'
+  ts: string
+  responseText: string
+  prevCumulative: CumulativeMetric | null
+}): FloorMetrics => {
+  const proxy = args.prevMessages
+    ? stablePrefixTokens(args.prevMessages, args.messages)
+    : { messages: 0, tokens: 0 }
+  const promptTokens = args.messages.reduce((n, msg) => n + estimateTokens(msg.content), 0)
+  const outputTokens = args.usage ? args.usage.output : estimateTokens(args.responseText)
+  const turn: TurnMetric = {
+    ts: args.ts,
+    provider: args.provider,
+    model: args.model,
+    cacheLevel: args.cacheLevel,
+    l1Mode: args.l1Mode,
+    promptTokens,
+    proxyTokens: proxy.tokens,
+    proxyPct: promptTokens > 0 ? (proxy.tokens / promptTokens) * 100 : 0,
+    outputTokens,
+    usage: args.usage
+  }
+
+  const c = args.prevCumulative
+  const prevTurns = c?.turns ?? 0
+  const prevUsageTurns = c?.usageTurns ?? 0
+  const turns = prevTurns + 1
+  const hadUsage = !!args.usage
+  const usageTurns = prevUsageTurns + (hadUsage ? 1 : 0)
+  const totalPromptTokens = (c?.totalPromptTokens ?? 0) + promptTokens
+  const totalProxyTokens = (c?.totalProxyTokens ?? 0) + proxy.tokens
+  const totalOutputTokens = (c?.totalOutputTokens ?? 0) + outputTokens
+  const avgProxyPct = ((c?.avgProxyPct ?? 0) * prevTurns + turn.proxyPct) / turns
+  const avgCacheHitPct = hadUsage
+    ? ((c?.avgCacheHitPct ?? 0) * prevUsageTurns + cacheHitPct(args.usage!)) / usageTurns
+    : (c?.avgCacheHitPct ?? 0)
+
+  const cumulative: CumulativeMetric = {
+    turns,
+    usageTurns,
+    totalPromptTokens,
+    totalProxyTokens,
+    totalOutputTokens,
+    usage: sumUsage(c?.usage ?? null, args.usage),
+    avgPromptTokens: totalPromptTokens / turns,
+    avgOutputTokens: totalOutputTokens / turns,
+    avgProxyPct,
+    avgCacheHitPct
+  }
+  return { turn, cumulative }
 }
