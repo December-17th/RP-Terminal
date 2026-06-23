@@ -253,13 +253,33 @@ export function createCardBridge(ctx: CardCtx): Record<string, unknown> {
       await writeVars(replaceStatDataOps(statData(), next))
     },
     generate: async (a: any) => {
-      const action = typeof a === 'string' ? a : (a?.user_input ?? a?.injects ?? '')
-      const r: any = await window.api.generate(ctx.profileId, ctx.chatId, action)
-      return typeof r === 'string' ? r : (r?.content ?? '')
+      // Mirror wcvPreload.generate: extract the user input from the TH-style action arg.
+      const action = typeof a === 'string' ? a : (a?.user_input ?? a?.userInput ?? a?.text ?? '')
+      // window.api.generate resolves the persisted FLOOR object (text at .response.content),
+      // NOT a bare { content } — mirror wcvPreload's r?.response?.content extraction.
+      const r: any = await window.api.generate(ctx.profileId, ctx.chatId, String(action ?? ''))
+      // Best-effort: fold the new floor into the active chat's store so the inline-mode UI shows
+      // the turn without a reload (only when generating for the chat the user is viewing).
+      if (r && typeof r !== 'string' && ctx.chatId === useChatStore.getState().activeChatId) {
+        useChatStore.setState((s) => ({ floors: [...s.floors, r] }))
+      }
+      return typeof r === 'string' ? r : (r?.response?.content ?? '')
     },
     generateRaw: async (config: any) => {
-      const r: any = await window.api.generateRaw(ctx.profileId, ctx.chatId, config)
-      return typeof r === 'string' ? r : (r?.content ?? '')
+      // Cards pass TavernHelper snake_case; generationService.generateRaw reads camelCase.
+      // Normalize field-for-field, mirroring wcvPreload.generateRaw.
+      const c = config && typeof config === 'object' ? config : {}
+      const mappedConfig = {
+        userInput: c.user_input ?? c.userInput ?? c.prompt,
+        prompt: c.prompt,
+        systemPrompt: c.system_prompt ?? c.systemPrompt,
+        maxChatHistory: c.max_chat_history ?? c.maxChatHistory ?? 0,
+        maxTokens: c.max_tokens ?? c.maxTokens,
+        overrides: c.overrides
+      }
+      // generationService.generateRaw returns a plain string (no floor persisted).
+      const r: any = await window.api.generateRaw(ctx.profileId, ctx.chatId, mappedConfig)
+      return typeof r === 'string' ? r : (r?.response?.content ?? '')
     },
     getWorldbook: async (name: any) => normalizeWb(await fetchWorldbook(name)),
     getLorebookEntries: async (name: any) => normalizeWb(await fetchWorldbook(name)),

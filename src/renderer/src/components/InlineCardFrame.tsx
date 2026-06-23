@@ -39,14 +39,16 @@ export function InlineCardFrame({
     const ctx = { profileId, chatId, characterId }
     const libTags = CARD_LIB_URLS.map((u) => `<script src="${u}"></script>`).join('')
     // Classic bootstrap: runs synchronously during head parse, BEFORE the card's deferred modules.
-    // It pulls the bridge globals from the parent realm and copies the bridge's own-enumerable keys
-    // onto the iframe window (guarding undefined), then loads the realm-bound DOM libs.
+    // It pulls the bridge globals from the parent realm and copies the bridge's own enumerable keys
+    // (Object.keys, since the bridge is a plain object literal) onto the iframe window (guarding
+    // undefined), then loads the realm-bound DOM libs. The ctx JSON has `<` escaped to < so a
+    // value can never break out of this inline <script> (e.g. a stray "</script>").
     const boot =
       `<meta charset="utf-8">` +
       `<script>(function(){try{` +
-      `var ctx=${JSON.stringify(ctx)};` +
+      `var ctx=${JSON.stringify(ctx).replace(/</g, '\\u003c')};` +
       `var g=window.parent.__rptCardBridge(ctx);` +
-      `for(var k in g){try{if(g[k]!==undefined)window[k]=g[k];}catch(e){}}` +
+      `Object.keys(g).forEach(function(k){try{if(g[k]!==undefined)window[k]=g[k];}catch(e){}});` +
       `}catch(e){console.error('[rpt card bridge]',e);}})();</script>` +
       libTags
     return buildCardDoc(html, { headInject: boot })
@@ -79,6 +81,9 @@ export function InlineCardFrame({
         const body = doc?.body
         if (body && 'ResizeObserver' in window) {
           observer = new ResizeObserver(measure)
+          // Guard on `body` (it's the last thing parsed, so its presence means the doc is ready),
+          // but OBSERVE `documentElement` intentionally: measure() sizes the frame from
+          // documentElement.scrollHeight, so we watch the element whose height we read.
           observer.observe(doc!.documentElement)
         }
         doc?.addEventListener('contextmenu', onCtx)
