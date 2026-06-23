@@ -1049,22 +1049,70 @@ git commit -m "feat(cards): route interactive cards to InlineCardFrame by global
 ```ts
 // test/cardBridgeOps.test.ts
 import { describe, it, expect } from 'vitest'
-import { setVarOps } from '../src/renderer/src/cardBridge/ops'
+import {
+  toPointer,
+  keyPointer,
+  setVarOps,
+  assignVarOps,
+  replaceStatDataOps
+} from '../src/renderer/src/cardBridge/ops'
+
+describe('toPointer', () => {
+  it('converts a dot path to an RFC-6902 JSON Pointer', () => {
+    expect(toPointer('a.b.c')).toBe('/a/b/c')
+    expect(toPointer('hp')).toBe('/hp')
+  })
+  it('escapes ~ and / per the spec', () => {
+    expect(toPointer('a/b')).toBe('/a~1b')
+    expect(toPointer('a~b')).toBe('/a~0b')
+  })
+})
+
+describe('keyPointer', () => {
+  it('treats the whole string as one key (no dot-splitting)', () => {
+    expect(keyPointer('a.b')).toBe('/a.b')
+  })
+})
 
 describe('setVarOps', () => {
-  it('builds a single set op at a dotted path', () => {
-    expect(setVarOps('a.b.c', 5)).toEqual([{ op: 'set', path: 'a.b.c', value: 5 }])
+  it('builds one set op at a dot path, as a JSON Pointer', () => {
+    expect(setVarOps('a.b.c', 5)).toEqual([{ op: 'set', path: '/a/b/c', value: 5 }])
   })
-  it('builds assign ops from an object of path→value', () => {
-    expect(setVarOps({ 'x.y': 1, z: 2 })).toEqual([
-      { op: 'set', path: 'x.y', value: 1 },
-      { op: 'set', path: 'z', value: 2 }
+})
+
+describe('assignVarOps', () => {
+  it('sets each TOP-LEVEL key (keys are not dot-split)', () => {
+    expect(assignVarOps({ x: 1, 'y.z': 2 })).toEqual([
+      { op: 'set', path: '/x', value: 1 },
+      { op: 'set', path: '/y.z', value: 2 }
     ])
+  })
+})
+
+describe('replaceStatDataOps', () => {
+  it('removes keys absent from next, then sets every key of next', () => {
+    expect(replaceStatDataOps({ a: 1, b: 2 }, { b: 9, c: 3 })).toEqual([
+      { op: 'remove', path: '/a' },
+      { op: 'set', path: '/b', value: 9 },
+      { op: 'set', path: '/c', value: 3 }
+    ])
+  })
+  it('treats a missing current as empty', () => {
+    expect(replaceStatDataOps(undefined, { a: 1 })).toEqual([{ op: 'set', path: '/a', value: 1 }])
   })
 })
 ```
 
-> Confirm the op shape the main applier expects by reading `chatStore.applyVariableOps` / `window.api.applyVariableOps` and `src/main` variable-op handling. If the canonical op uses a different `op` name (e.g. `'replace'`) or key (`from`), match it exactly and update this test. `VarOp` is `{ op, path, value?, from? }` (per `chatStore`).
+> **Confirmed op contract (verified against the codebase — use exactly this, NOT a dot-path
+> `{op:'set', path:'a.b.c'}`):** `window.api.applyVariableOps(profileId, chatId, floor, ops)` →
+> `generationService.applyVariableOps` → `applyJsonPatch(stat_data, ops)`. Ops are RFC-6902 JSON Patch
+> `{ op, path, value?, from? }` where **`path` is a JSON Pointer resolved against the `stat_data` root**
+> (`/a/b/c`, leading slash, slash-separated; `~`→`~0`, `/`→`~1`). The applier is lenient on `op`
+> (`set`/`add`/`insert`/`replace` all set the value; `remove`/`delete`/`unset` delete; `delta`
+> increments). **Critical:** `ptrSegments` does `path.split('/').slice(1)`, so an empty path (`''`),
+> the string `'stat_data'`, or a dot-path yields ZERO segments and the op is **silently skipped** —
+> there is no whole-root replace, so a wholesale stat_data replace MUST be expressed per top-level key
+> (that's what `replaceStatDataOps` does).
 
 - [ ] **Step 2: Run it — fails (no `ops.ts`)**
 
@@ -1074,13 +1122,46 @@ Run: `npx vitest run test/cardBridgeOps.test.ts` → FAIL.
 
 ```ts
 // src/renderer/src/cardBridge/ops.ts
-/* eslint-disable @typescript-eslint/no-explicit-any */
+//
+// Build RFC-6902 JSON Patch ops for the variable write path. The main applier
+// (generationService.applyVariableOps → applyJsonPatch) operates on the floor's `stat_data`, expects
+// JSON Pointer paths, and SKIPS empty/zero-segment paths — so wholesale replaces go per top-level key.
 export type VarOp = { op: string; path: string; value?: unknown; from?: string }
 
-/** Build set-variable ops from either (path, value) or an object map of path→value. */
-export function setVarOps(pathOrMap: string | Record<string, unknown>, value?: unknown): VarOp[] {
-  if (typeof pathOrMap === 'string') return [{ op: 'set', path: pathOrMap, value }]
-  return Object.entries(pathOrMap).map(([path, v]) => ({ op: 'set', path, value: v }))
+const esc = (s: string): string => String(s).replace(/~/g, '~0').replace(/\//g, '~1')
+
+/** Dot/bracket card path ("a.b.c") → JSON Pointer ("/a/b/c"), each segment escaped. */
+export function toPointer(dotPath: string): string {
+  return '/' + String(dotPath).split('.').filter(Boolean).map(esc).join('/')
+}
+
+/** A single key → JSON Pointer ("/key"), WITHOUT dot-splitting (the key may legitimately contain a dot). */
+export function keyPointer(key: string): string {
+  return '/' + esc(key)
+}
+
+/** One "set" op at a dot path (e.g. from Mvu.setMvuVariable). */
+export function setVarOps(dotPath: string, value: unknown): VarOp[] {
+  return [{ op: 'set', path: toPointer(dotPath), value }]
+}
+
+/** "set" ops for each TOP-LEVEL key of `obj` (TavernHelper insert/assign semantics — keys are not paths). */
+export function assignVarOps(obj: Record<string, unknown>): VarOp[] {
+  return Object.entries(obj || {}).map(([k, v]) => ({ op: 'set', path: keyPointer(k), value: v }))
+}
+
+/** Ops that make stat_data equal `next`: remove top-level keys absent from `next`, then set all of
+ *  `next`. (A whole-root replace path is skipped by the applier, so replace is expressed per key.) */
+export function replaceStatDataOps(
+  current: Record<string, unknown> | undefined,
+  next: Record<string, unknown>
+): VarOp[] {
+  const cur = current && typeof current === 'object' ? current : {}
+  const safeNext = next && typeof next === 'object' ? next : {}
+  const ops: VarOp[] = []
+  for (const k of Object.keys(cur)) if (!(k in safeNext)) ops.push({ op: 'remove', path: keyPointer(k) })
+  for (const [k, v] of Object.entries(safeNext)) ops.push({ op: 'set', path: keyPointer(k), value: v })
+  return ops
 }
 ```
 
@@ -1093,7 +1174,7 @@ Run: `npx vitest run test/cardBridgeOps.test.ts` → PASS.
 In `createCardBridge.ts`, import the op builder and the chat store, then replace the async stubs. Use the live ctx-resolved ids and the latest floor index:
 
 ```ts
-import { setVarOps } from './ops'
+import { setVarOps, assignVarOps, replaceStatDataOps } from './ops'
 // (useChatStore already imported)
 
 const floorIndex = (): number => Math.max(0, useChatStore.getState().floors.length - 1)
@@ -1112,16 +1193,19 @@ Replace the relevant `helpers` entries:
 
 ```ts
     insertOrAssignVariables: async (vars: any, _opts?: any) => {
-      await writeVars(setVarOps(vars))
+      // Deep-assign the given object's top-level keys into stat_data.
+      const obj = vars?.stat_data && typeof vars.stat_data === 'object' ? vars.stat_data : vars
+      await writeVars(assignVarOps(obj))
     },
     replaceVariables: async (vars: any, _opts?: any) => {
-      // wholesale replace of stat_data; express as a single set at the root stat_data path.
-      await writeVars([{ op: 'set', path: 'stat_data', value: vars?.stat_data ?? vars }])
+      // Wholesale replace stat_data (expressed per top-level key — see ops.ts).
+      const next = vars?.stat_data && typeof vars.stat_data === 'object' ? vars.stat_data : vars
+      await writeVars(replaceStatDataOps(statData(), next))
     },
     updateVariablesWith: async (updater: any, _opts?: any) => {
       if (typeof updater !== 'function') return
       const next = updater(structuredClone(statData()))
-      await writeVars([{ op: 'set', path: 'stat_data', value: next }])
+      await writeVars(replaceStatDataOps(statData(), next))
     },
     generate: async (a: any) => {
       const action = typeof a === 'string' ? a : (a?.user_input ?? a?.injects ?? '')
@@ -1151,14 +1235,15 @@ And the Mvu writes:
 ```ts
     setMvuVariable: (_d: any, path: string, value: any, _o?: any) => {
       bus.emit(MVU_EVENTS.VARIABLE_UPDATE_STARTED, statData())
-      void writeVars([{ op: 'set', path: `stat_data.${path}`, value }]).then(() => {
+      void writeVars(setVarOps(path, value)).then(() => {
         bus.emit(MVU_EVENTS.VARIABLE_UPDATED, statData())
         bus.emit(MVU_EVENTS.VARIABLE_UPDATE_ENDED, statData())
       })
       return value
     },
     replaceMvuData: (d: any, _o?: any) => {
-      void writeVars([{ op: 'set', path: 'stat_data', value: d?.stat_data ?? d }])
+      const next = d?.stat_data && typeof d.stat_data === 'object' ? d.stat_data : d
+      void writeVars(replaceStatDataOps(statData(), next))
     },
 ```
 
