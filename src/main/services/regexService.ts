@@ -17,7 +17,8 @@ import {
   RegexRuleDetail,
   RegexRulePatch
 } from '../../shared/regexTypes'
-import { readScopeMeta, getScopeMeta, setScope, setDisabled, removeScopeEntry } from './scopeMeta'
+import { readScopeMeta, getScopeMeta, setScope, setDisabled, setRenderMode, removeScopeEntry } from './scopeMeta'
+import type { CardRenderMode } from '../../shared/cardRenderMode'
 
 // Re-export the shared types + predicate so existing importers (tests, the renderer store)
 // keep their import path while src/shared is the single source of truth.
@@ -58,6 +59,16 @@ export const setScriptScope = (
 export const setScriptDisabled = (profileId: string, file: string, disabled: boolean): void => {
   if (isUnsafe(file)) return
   setDisabled(regexDir(profileId), file, disabled)
+}
+
+/** Set/clear a regex script's per-card render-mode override (null = follow global default). */
+export const setScriptRenderMode = (
+  profileId: string,
+  file: string,
+  renderMode: CardRenderMode | null
+): void => {
+  if (isUnsafe(file)) return
+  setRenderMode(regexDir(profileId), file, renderMode)
 }
 
 /** SillyTavern stores findRegex as `/pattern/flags`; split it (default flag g). */
@@ -110,7 +121,12 @@ export const getAllRules = (profileId: string, ctx?: ScopeContext): RenderRegexR
     if (!file.endsWith('.json') || file.startsWith('_')) continue // _meta.json is the sidecar
     if (meta[file]?.disabled) continue // a disabled script contributes nothing
     if (ctx && !isScopeActive(meta[file], ctx)) continue
-    for (const raw of rulesInFile(path.join(dir, file))) out.push(normalizeRule(raw))
+    const mode = meta[file]?.renderMode
+    for (const raw of rulesInFile(path.join(dir, file))) {
+      const rule = normalizeRule(raw)
+      if (mode) rule.renderMode = mode
+      out.push(rule)
+    }
   }
   return out
 }
@@ -173,7 +189,8 @@ export const listScripts = (profileId: string): RegexScriptInfo[] => {
         ruleCount: rules.length,
         scope: m?.scope ?? 'global',
         owner: m?.owner,
-        disabled: m?.disabled === true
+        disabled: m?.disabled === true,
+        renderMode: m?.renderMode
       }
     })
 }

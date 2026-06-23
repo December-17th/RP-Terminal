@@ -4,6 +4,7 @@
  */
 import type { RegexLikeRule } from './regexTransform'
 import type { ArtifactScope } from './artifactScope'
+import type { CardRenderMode } from './cardRenderMode'
 
 /** A regex rule flattened to the form the renderer can compile + apply. */
 export interface RenderRegexRule extends RegexLikeRule {
@@ -12,6 +13,7 @@ export interface RenderRegexRule extends RegexLikeRule {
   disabled: boolean
   markdownOnly: boolean
   promptOnly: boolean
+  renderMode?: CardRenderMode
 }
 
 /** A regex "script" file (one or more rules), with its scope metadata. */
@@ -22,6 +24,7 @@ export interface RegexScriptInfo {
   scope: ArtifactScope
   owner?: string
   disabled: boolean
+  renderMode?: CardRenderMode
 }
 
 /** A single rule tagged with its file + index, for editing. */

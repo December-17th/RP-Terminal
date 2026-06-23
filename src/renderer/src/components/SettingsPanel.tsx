@@ -101,6 +101,27 @@ export const SettingsPanel: React.FC<{ profileId: string }> = ({ profileId }) =>
               same, with automatic mode routing (auto-routing coming soon).
             </div>
 
+            <label className="field-label" style={{ marginTop: 18 }}>
+              Card rendering (default)
+            </label>
+            <select
+              value={settings.cards?.renderMode ?? 'inline'}
+              onChange={(e) =>
+                updateSettings(profileId, {
+                  cards: { renderMode: e.target.value as 'inline' | 'isolated' }
+                })
+              }
+              style={{ width: '100%' }}
+            >
+              <option value="inline">Inline (native, embedded in the message)</option>
+              <option value="isolated">Isolated (crash-resistant overlay window)</option>
+            </select>
+            <div style={{ fontSize: '0.78em', color: 'var(--rpt-text-secondary)', marginTop: 4 }}>
+              <b>Inline</b>: beautification cards render directly in the chat and scroll with it.{' '}
+              <b>Isolated</b>: each card runs in its own process — safest for heavy cards. Per-card
+              overrides live in the Regex panel.
+            </div>
+
             <label
               className="entry-toggles"
               style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 18 }}

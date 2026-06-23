@@ -8,6 +8,7 @@ import {
   RegexScriptInfo,
   ArtifactScope
 } from '../stores/regexStore'
+import type { CardRenderMode } from '../../../shared/cardRenderMode'
 
 interface Props {
   profileId: string
@@ -23,7 +24,7 @@ const SCOPES: { key: ArtifactScope; title: string; hint: string }[] = [
 ]
 
 export const RegexPanel: React.FC<Props> = ({ profileId, activeCardId, activeChatId }) => {
-  const { scripts, loadScripts, importScripts, remove, updateRule, setScope, setDisabled } =
+  const { scripts, loadScripts, importScripts, remove, updateRule, setScope, setDisabled, setRenderMode } =
     useRegexStore()
   const [expanded, setExpanded] = useState<string | null>(null)
   const [rules, setRules] = useState<Record<string, RegexRuleDetail[]>>({})
@@ -56,6 +57,10 @@ export const RegexPanel: React.FC<Props> = ({ profileId, activeCardId, activeCha
   const changeScope = (file: string, scope: ArtifactScope): void => {
     const owner = scope === 'world' ? activeCardId : scope === 'session' ? activeChatId : undefined
     setScope(profileId, file, scope, owner ?? undefined)
+  }
+
+  const changeRenderMode = (file: string, v: string): void => {
+    setRenderMode(profileId, file, v === '' ? null : (v as CardRenderMode))
   }
 
   const renderScript = (s: RegexScriptInfo): React.ReactNode => {
@@ -91,6 +96,17 @@ export const RegexPanel: React.FC<Props> = ({ profileId, activeCardId, activeCha
             <option value="session" disabled={!activeChatId}>
               Session
             </option>
+          </select>
+          <select
+            className="scope-select"
+            value={s.renderMode ?? ''}
+            title="Render mode — how this card's UI is displayed (Default follows Settings)."
+            onClick={(e) => e.stopPropagation()}
+            onChange={(e) => changeRenderMode(s.file, e.target.value)}
+          >
+            <option value="">Default</option>
+            <option value="inline">Inline</option>
+            <option value="isolated">Isolated</option>
           </select>
           {ownedElsewhere && (
             <span className="entry-keys-preview" title="Bound to a different world/session">

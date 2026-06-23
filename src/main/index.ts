@@ -1,4 +1,4 @@
-import { app, shell, BrowserWindow, ipcMain } from 'electron'
+import { app, shell, BrowserWindow, ipcMain, protocol } from 'electron'
 import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
@@ -8,6 +8,17 @@ import * as migrationService from './services/migrationService'
 import * as templateService from './services/templateService'
 import * as wcvManager from './services/wcvManager'
 import { registerIpc } from './ipc'
+
+// Card UIs (WebContentsView) are served from this scheme instead of a data: URL: a data: URL is an
+// opaque origin where Chromium disables localStorage/sessionStorage/etc., so a storage-using card
+// throws "Storage is disabled inside 'data:' URLs" and never renders. A standard, secure scheme gives
+// the card a stable, storage-enabled origin (wcvManager serves the per-slot HTML). Must run before ready.
+protocol.registerSchemesAsPrivileged([
+  {
+    scheme: wcvManager.CARD_SCHEME,
+    privileges: { standard: true, secure: true, supportFetchAPI: true, allowServiceWorkers: true }
+  }
+])
 
 function createWindow(): void {
   // Create the browser window.

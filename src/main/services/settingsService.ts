@@ -89,6 +89,9 @@ export const getDefaultSettings = (): Settings => ({
       final_pass: true
     }
   },
+  cards: {
+    renderMode: 'inline'
+  },
   // FSM modes (Phase H). Explore = wide retrieval + descriptive; Dialogue = tighter;
   // Combat = terse (mechanics are resolved by the engine, not narrated numbers).
   modes: {
@@ -165,6 +168,7 @@ export const normalize = (stored: Partial<Settings>): Settings => {
   // unknown keys, since it returns an explicit allowlist of fields below).
   const workspace = { layouts: stored.workspace?.layouts || {} }
   const cache = { ...d.cache, ...(stored.cache || {}) }
+  const cards = { ...d.cards, ...(stored.cards || {}) }
   const pricing = { ...d.pricing, ...(stored.pricing || {}) }
 
   // Agent mode: accept the three-way enum; migrate the legacy boolean `enabled` toggle
@@ -220,6 +224,7 @@ export const normalize = (stored: Partial<Settings>): Settings => {
     ui,
     workspace,
     cache,
+    cards,
     pricing
   }
 }

@@ -4,6 +4,10 @@ import remarkGfm from 'remark-gfm'
 import DOMPurify from 'dompurify'
 import { isInteractiveHtml } from '../plugin/bridgeShim'
 import { WcvMessageFrame } from './WcvMessageFrame'
+import { InlineCardFrame } from './InlineCardFrame'
+import { useSettingsStore } from '../stores/settingsStore'
+import { resolveCardMode, DEFAULT_CARD_RENDER_MODE } from '../../../shared/cardRenderMode'
+import type { CardRenderMode } from '../../../shared/cardRenderMode'
 
 interface Props {
   content: string
@@ -26,6 +30,8 @@ const HTML_BLOCK = /```html\s*([\s\S]*?)```|(<(?:html|body)[\s\S]*?<\/(?:html|bo
  */
 export const MessageContent: React.FC<Props> = ({ content, css, onContextMenu }) => {
   const parts = useMemo(() => splitHtml(content), [content])
+  const globalMode =
+    useSettingsStore((s) => s.settings?.cards?.renderMode) ?? DEFAULT_CARD_RENDER_MODE
   return (
     <div
       onContextMenu={
@@ -44,7 +50,11 @@ export const MessageContent: React.FC<Props> = ({ content, css, onContextMenu })
           // card's own code does its (possibly nested) loading. Script-free html stays a light, static,
           // sanitized inline frame.
           isInteractiveHtml(p.text) ? (
-            <WcvMessageFrame key={i} html={p.text} />
+            resolveCardMode(p.mode, globalMode) === 'isolated' ? (
+              <WcvMessageFrame key={i} html={p.text} />
+            ) : (
+              <InlineCardFrame key={i} html={p.text} onContextMenu={onContextMenu} />
+            )
           ) : (
             <HtmlFrame key={i} html={p.text} css={css} onContextMenu={onContextMenu} />
           )
@@ -58,17 +68,35 @@ export const MessageContent: React.FC<Props> = ({ content, css, onContextMenu })
   )
 }
 
-type Segment = { type: 'md' | 'html'; text: string }
+type Segment = { type: 'md' | 'html'; text: string; mode?: CardRenderMode }
+
+// A render-mode marker the regex applier emits immediately before a card block (see regexStore.apply).
+const MODE_MARKER = /<!--\s*rpt:mode=(inline|isolated)\s*-->\s*$/i
 
 export const splitHtml = (content: string): Segment[] => {
   const segs: Segment[] = []
   const re = new RegExp(HTML_BLOCK)
   let last = 0
   let m: RegExpExecArray | null
+  let pendingMode: CardRenderMode | undefined
   while ((m = re.exec(content)) !== null) {
-    if (m.index > last) segs.push({ type: 'md', text: content.slice(last, m.index) })
-    // m[1] = fenced inner; m[2] = bare <html>/<body> block.
-    segs.push({ type: 'html', text: m[1] !== undefined ? m[1] : m[2] })
+    if (m.index > last) {
+      let md = content.slice(last, m.index)
+      const mk = md.match(MODE_MARKER)
+      if (mk) {
+        pendingMode = mk[1].toLowerCase() as CardRenderMode
+        md = md.slice(0, mk.index) // strip the marker from the visible md text
+      }
+      // Push the md text only if non-empty: a segment that was ONLY a mode marker becomes '' after
+      // stripping, so we skip it (the marker must never render as text).
+      if (md) segs.push({ type: 'md', text: md })
+    }
+    segs.push({
+      type: 'html',
+      text: m[1] !== undefined ? m[1] : m[2],
+      mode: pendingMode
+    })
+    pendingMode = undefined
     last = m.index + m[0].length
   }
   if (last < content.length) segs.push({ type: 'md', text: content.slice(last) })
