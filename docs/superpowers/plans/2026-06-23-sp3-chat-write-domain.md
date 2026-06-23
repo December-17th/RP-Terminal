@@ -160,3 +160,25 @@ WCV behavior unchanged; `createChat`/`createChatMessages`-insert/`triggerSlash` 
 - **Composer store shape (T5)** — verify before wiring; the WCV path confirms such an action exists.
 - **Floor-model coupling** — delete = truncate-from-floor (documented constraint), not arbitrary deletes;
   createChat/insert deferred to SP3.2 for the same reason.
+
+## Status (built 2026-06-23, branch `feat/sp3-chat-write-domain`)
+
+T1–T5 done: `b56dcce` (chatIndexMap → shapes), `9d344c6` (chatWriteService + 9 tests), `f1c9058` (wcvIpc
+delegates; −49 net lines), `d033f51` (inline IPC + window.api), `24959a5` (inline Host implements the five
+methods). Static gate green at every commit: `npm run typecheck` + `npm test` (466) + `npm run build`.
+One `chatWriteService` now backs BOTH transports; the inline host reaches WCV parity for the chat-write
+domain.
+
+**Pending Electron smoke (yours):** a card edits a message + delete-from-here, and the 命定之诗 home's
+**greeting-swipe "start game" now works inline** (was a silent no-op) — verify, then toggle to Isolated for
+parity. WCV behavior should be unchanged by the T3 refactor.
+
+**Findings / deferred:**
+- **get/set message-id divergence (pre-existing, flagged):** `getChatMessages` (`floorsToThMessages`) numbers
+  a user message at `2i` even when empty, but `setChatMessages`/`deleteChatMessages` (`chatIndexMap`, and
+  `SillyTavern.chat[]`) use a COMPACT space that skips empty user slots — so a `message_id` from
+  getChatMessages can map to the wrong floor once a floor has an empty user message (floor 0's greeting).
+  Preserved here (behavior-faithful to both transports); reconciling needs an SP1-touching decision
+  (make `floorsToThMessages` compact too + update `currentMessageId` + tests). Worth a focused follow-up.
+- **SP3.2:** `createChat`, general `createChatMessages` (insert a new message), `triggerSlash` — still stubs
+  in both transports; need the floor-model create/insert design.
