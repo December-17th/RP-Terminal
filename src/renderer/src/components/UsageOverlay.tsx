@@ -70,10 +70,12 @@ export const UsageOverlay: React.FC<{ profileId: string }> = ({ profileId }) => 
   const settings = useSettingsStore((s) => s.settings)
   const updateSettings = useSettingsStore((s) => s.updateSettings)
   const [gearOpen, setGearOpen] = useState(false)
+  const [dragPos, setDragPos] = useState<{ x: number; y: number } | null>(null)
   const dragState = useRef<{ dx: number; dy: number } | null>(null)
 
   if (!settings) return null
   const meter = settings.ui.usage_meter
+  if (!meter) return null
   const latest = [...floors].reverse().find((f) => f.metrics)?.metrics ?? null
   const rates = latest ? settings.pricing?.[latest.turn.model] : undefined
   const enabledFields = new Set(meter.fields)
@@ -83,20 +85,29 @@ export const UsageOverlay: React.FC<{ profileId: string }> = ({ profileId }) => 
   }
 
   const onPointerDown = (e: React.PointerEvent): void => {
-    ;(e.target as HTMLElement).setPointerCapture(e.pointerId)
-    dragState.current = { dx: e.clientX - (meter.x ?? 16), dy: e.clientY - (meter.y ?? window.innerHeight - 160) }
+    e.currentTarget.setPointerCapture(e.pointerId)
+    dragState.current = {
+      dx: e.clientX - (meter.x ?? 16),
+      dy: e.clientY - (meter.y ?? window.innerHeight - 160)
+    }
+    setDragPos({ x: meter.x ?? 16, y: meter.y ?? window.innerHeight - 160 })
   }
   const onPointerMove = (e: React.PointerEvent): void => {
     if (!dragState.current) return
-    persist({ x: e.clientX - dragState.current.dx, y: e.clientY - dragState.current.dy })
+    setDragPos({ x: e.clientX - dragState.current.dx, y: e.clientY - dragState.current.dy })
   }
   const onPointerUp = (e: React.PointerEvent): void => {
+    if (dragState.current) {
+      persist({ x: e.clientX - dragState.current.dx, y: e.clientY - dragState.current.dy })
+    }
     dragState.current = null
-    ;(e.target as HTMLElement).releasePointerCapture(e.pointerId)
+    setDragPos(null)
+    e.currentTarget.releasePointerCapture(e.pointerId)
   }
 
-  const pos: React.CSSProperties =
-    meter.x != null && meter.y != null
+  const pos: React.CSSProperties = dragPos
+    ? { left: dragPos.x, top: dragPos.y }
+    : meter.x != null && meter.y != null
       ? { left: meter.x, top: meter.y }
       : { left: 16, bottom: 16 }
 
