@@ -23,8 +23,7 @@ import {
 import { getPromptRules } from './regexService'
 import { loadGlobals, saveGlobals } from './templateService'
 import { streamProvider, DeltaCallback, UsageCallback } from './apiService'
-import { normalizeUsage } from './promptCacheMetrics'
-import { recordTurn, resetChat } from './cacheMetricsService'
+import { normalizeUsage, buildFloorMetrics } from './promptCacheMetrics'
 import { parseContent, stripThinking, RPEvent } from '../parsers/contentParser'
 import {
   parseMvuCommands,
@@ -285,8 +284,25 @@ export const generate = async (
 
   log('response', `← ${raw.length} chars${stopped ? ' (stopped)' : ''}`, raw)
 
-  // Cache harness: record this turn's assembled prompt (what was sent) + provider usage.
-  recordTurn(chatId, messages, normalizeUsage(settings.api.provider, rawUsage))
+  // Cache meter: compute this turn's metrics (proxy + provider usage) + the cumulative snapshot,
+  // chaining from the previous floor (its stored `request` is the proxy anchor; its cumulative is
+  // the prior tally). Persisted on the floor below; both UI surfaces derive from it.
+  const turnMetrics = buildFloorMetrics({
+    messages,
+    prevMessages: (lastFloor?.request as ChatMessage[] | undefined) ?? null,
+    usage: normalizeUsage(settings.api.provider, rawUsage),
+    provider: settings.api.provider,
+    model: settings.api.model,
+    cacheLevel,
+    l1Mode,
+    ts: new Date().toISOString(),
+    responseText: raw,
+    prevCumulative: lastFloor?.metrics?.cumulative ?? null
+  })
+  log(
+    'info',
+    `cache — stable prefix ${turnMetrics.turn.proxyTokens}/${turnMetrics.turn.promptTokens} tok (${Math.round(turnMetrics.turn.proxyPct)}%)`
+  )
 
   // The FULL raw response is stored (lossless) — reasoning/state strips + display regex are
   // applied at VIEW time (renderer) and history-assembly time, never baked into storage. We
@@ -331,7 +347,8 @@ export const generate = async (
     // The complete prompt that produced it, for full-fidelity inspection/replay.
     request: messages,
     events: parsed.events,
-    variables
+    variables,
+    metrics: turnMetrics
   }
 
   appendFloor(profileId, chatId, floor)
@@ -496,7 +513,6 @@ export const regenerate = async (
   if (!last.user_message.content) throw new Error('Cannot regenerate the opening greeting')
 
   truncateFloors(profileId, chatId, lastIndex)
-  resetChat(chatId)
   return generate(profileId, chatId, last.user_message.content, onDelta)
 }
 
@@ -522,7 +538,6 @@ export const generateSwipe = async (
   const prior = normalizeSwipes(last.swipes, last.response.content, last.swipe_id).swipes
 
   truncateFloors(profileId, chatId, lastIndex)
-  resetChat(chatId)
   const fresh = await generate(profileId, chatId, last.user_message.content, onDelta)
   if (!fresh) {
     // Aborted / empty — restore the original floor so the swipe attempt loses nothing.
