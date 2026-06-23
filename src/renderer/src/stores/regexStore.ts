@@ -1,6 +1,7 @@
 import { create } from 'zustand'
-import { applyRegexRules, type RegexApplyContext } from '../../../shared/regexTransform'
+import { applyRegexRules, isCardPayload, type RegexApplyContext } from '../../../shared/regexTransform'
 import type { ArtifactScope, ScopeContext } from '../../../shared/artifactScope'
+import type { CardRenderMode } from '../../../shared/cardRenderMode'
 import type {
   RenderRegexRule,
   RegexScriptInfo,
@@ -22,6 +23,11 @@ interface RegexState {
   remove: (profileId: string, file: string) => Promise<void>
   setScope: (profileId: string, file: string, scope: ArtifactScope, owner?: string) => Promise<void>
   setDisabled: (profileId: string, file: string, disabled: boolean) => Promise<void>
+  setRenderMode: (
+    profileId: string,
+    file: string,
+    renderMode: CardRenderMode | null
+  ) => Promise<void>
   updateRule: (
     profileId: string,
     file: string,
@@ -43,6 +49,9 @@ const getRe = (rule: RenderRegexRule): RegExp => {
   }
   return re
 }
+
+const modeMarker = (rule: RenderRegexRule): string | undefined =>
+  rule.renderMode && isCardPayload(rule.replace) ? `<!--rpt:mode=${rule.renderMode}-->` : undefined
 
 // Remember the active world/session context so internal reloads (after edit/delete/
 // scope change) keep resolving the same active set the chat is currently showing.
@@ -90,6 +99,12 @@ export const useRegexStore = create<RegexState>((set, get) => ({
     await get().loadScripts(profileId)
   },
 
+  setRenderMode: async (profileId, file, renderMode) => {
+    await window.api.setRegexRenderMode(profileId, file, renderMode)
+    await get().load(profileId)
+    await get().loadScripts(profileId)
+  },
+
   updateRule: async (profileId, file, index, patch) => {
     await window.api.updateRegexRule(profileId, file, index, patch)
     // Refresh the compiled display rules so the chat re-renders with the change.
@@ -98,5 +113,5 @@ export const useRegexStore = create<RegexState>((set, get) => ({
 
   // Display rules are pre-filtered (placement 2) by getRenderRegex, so no placement
   // filter here; pass the compiled-RegExp cache. Transform shared with the main path.
-  apply: (content, ctx) => applyRegexRules(content, get().rules, ctx ?? {}, { compile: getRe })
+  apply: (content, ctx) => applyRegexRules(content, get().rules, ctx ?? {}, { compile: getRe, marker: modeMarker })
 }))
