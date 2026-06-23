@@ -109,8 +109,7 @@ export function createInlineHost(ctx: CardCtx): Host {
       if (ok) await reloadFloors()
       return !!ok
     },
-    createChat: async () => '', // deferred to SP3.2 (needs the floor-model create decision)
-    createChatMessages: async () => '', // deferred to SP3.2
+    createChat: async () => '', // deferred (real chat-create + auto-switch is a UX decision)
     saveChat: async (chat) => {
       const ok = await window.api.saveChat(ctx.profileId, ctx.chatId, chat)
       if (ok) await reloadFloors()

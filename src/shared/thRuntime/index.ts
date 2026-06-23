@@ -169,7 +169,19 @@ export function createThRuntime(host: Host): ThGlobals {
     setChatMessages: async (m: any) => host.setChatMessages(m),
     deleteChatMessages: async (ids: any) => host.deleteChatMessages(ids),
     createChat: async (a?: any) => host.createChat(a),
-    createChatMessages: async (m: any) => host.createChatMessages(m),
+    createChatMessages: async (m: any) => {
+      // Repurposed (as ST/JSR cards' onboarding finish does): inject the LAST message's text into the host
+      // composer for the player to send — NOT a real history insert (deferred; floor-model decision).
+      // Routes through host.setInput so both transports share one path (inline → composer store; WCV →
+      // wcv-host-set-input).
+      const arr = Array.isArray(m) ? m : [m]
+      const last = arr[arr.length - 1]
+      const text =
+        (last && (last.message ?? last.content ?? last.mes)) ||
+        (typeof last === 'string' ? last : '')
+      if (text) host.setInput(String(text))
+      return ''
+    },
     triggerSlash: async (c: any) => host.triggerSlash(String(c ?? '')),
     replaceTavernRegexes: async () => undefined
   }

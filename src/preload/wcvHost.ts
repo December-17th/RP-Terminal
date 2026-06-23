@@ -65,15 +65,6 @@ export function createWcvHost(deps: Deps): Host {
     setChatMessages: (m) => ipcRenderer.invoke('wcv-host-set-chat-messages', m),
     deleteChatMessages: (ids) => ipcRenderer.invoke('wcv-host-delete-chat-messages', ids),
     createChat: () => Promise.resolve(''),
-    createChatMessages: (m: any) => {
-      const arr = Array.isArray(m) ? m : [m]
-      const last = arr[arr.length - 1]
-      const text =
-        (last && (last.message ?? last.content ?? last.mes)) ||
-        (typeof last === 'string' ? last : '')
-      if (text) ipcRenderer.send('wcv-host-set-input', String(text))
-      return Promise.resolve('')
-    },
     saveChat: (chat) => ipcRenderer.invoke('wcv-host-save-chat', chat),
     reloadChat: () => ipcRenderer.invoke('wcv-host-reload-chat'),
     triggerSlash: () => Promise.resolve(''),

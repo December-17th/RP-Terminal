@@ -4,7 +4,13 @@ import { createThRuntime } from '../src/shared/thRuntime'
 import type { Host } from '../src/shared/thRuntime/types'
 
 function mockHost(over: Partial<Host> = {}): { host: Host; calls: any } {
-  const calls: any = { applyVariableOps: [], generate: [], generateRaw: [], saveWorldbook: [] }
+  const calls: any = {
+    applyVariableOps: [],
+    generate: [],
+    generateRaw: [],
+    saveWorldbook: [],
+    setInput: []
+  }
   let varsCb: ((sd: any) => void) | null = null
   const host: Host = {
     ctx: { profileId: 'p', chatId: 'c', characterId: 'ch' },
@@ -37,11 +43,10 @@ function mockHost(over: Partial<Host> = {}): { host: Host; calls: any } {
     setChatMessages: async () => true,
     deleteChatMessages: async () => true,
     createChat: async () => 'id',
-    createChatMessages: async () => '',
     saveChat: async () => true,
     reloadChat: async () => true,
     triggerSlash: async () => '',
-    setInput: () => {},
+    setInput: (t) => calls.setInput.push(t),
     onVarsChanged: (cb) => {
       varsCb = cb
       return () => {
@@ -111,6 +116,13 @@ describe('createThRuntime', () => {
     expect(await g.generate({ user_input: 'yo' })).toBe('gen:yo')
     await g.generateRaw({ user_input: 'x', max_tokens: 7 })
     expect(m.calls.generateRaw[0]).toMatchObject({ userInput: 'x', maxTokens: 7 })
+  })
+
+  it('createChatMessages injects the last message text via host.setInput (onboarding)', async () => {
+    const m: any = mockHost()
+    const g = createThRuntime(m.host)
+    await g.createChatMessages([{ message: 'first' }, { message: 'last prompt' }])
+    expect(m.calls.setInput).toEqual(['last prompt'])
   })
 
   it('errorCatched swallows throws and rejections', async () => {

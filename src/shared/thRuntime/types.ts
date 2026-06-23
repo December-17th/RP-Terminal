@@ -62,7 +62,6 @@ export interface Host {
   setChatMessages(msgs: any): Promise<boolean>
   deleteChatMessages(ids: any): Promise<boolean>
   createChat(arg?: any): Promise<string>
-  createChatMessages(msgs: any): Promise<string>
   saveChat(chat: StMessage[]): Promise<boolean>
   reloadChat(): Promise<boolean>
   triggerSlash(cmd: string): Promise<string>
