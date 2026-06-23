@@ -247,7 +247,9 @@ export const buildPrompt = (args: BuildPromptArgs): ChatMessage[] => {
       : args.template
     : undefined
   const render = makeRender(personaMacro, frontierTemplate)
-  const personaContent = personaInject ? makeRender('', frontierTemplate)(args.persona!.description) : ''
+  const personaContent = personaInject
+    ? makeRender('', frontierTemplate)(args.persona!.description)
+    : ''
 
   // Prompt-time regex: transform history/user text on its way into the prompt
   // (placement 1 = user, 2 = AI). Display-only (markdownOnly) rules are excluded upstream.

@@ -1,11 +1,5 @@
 import { ChatMessage, estimateTokens } from './promptBuilder'
-import {
-  stablePrefixTokens,
-  summarize,
-  TurnStat,
-  Usage,
-  CacheReport
-} from './promptCacheMetrics'
+import { stablePrefixTokens, summarize, TurnStat, Usage, CacheReport } from './promptCacheMetrics'
 import { log } from './logService'
 
 interface ChatMetrics {

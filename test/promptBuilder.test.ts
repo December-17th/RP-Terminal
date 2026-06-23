@@ -545,7 +545,7 @@ describe('buildPrompt — L1 Frozen Core', () => {
     expect(wiA.content).toContain('等级:⟦state⟧') // placeholder, not a real value
   })
 
-  it("diff: frontier shows the floor-0 value (stable) regardless of live state", () => {
+  it('diff: frontier shows the floor-0 value (stable) regardless of live state', () => {
     const a = buildPrompt(mkArgs(7, 1, 'diff'))
     const b = buildPrompt(mkArgs(42, 1, 'diff'))
     const wiA = a.find((m) => m.content.startsWith('World Info:'))!

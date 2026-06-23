@@ -522,6 +522,7 @@ export const generateSwipe = async (
   const prior = normalizeSwipes(last.swipes, last.response.content, last.swipe_id).swipes
 
   truncateFloors(profileId, chatId, lastIndex)
+  resetChat(chatId)
   const fresh = await generate(profileId, chatId, last.user_message.content, onDelta)
   if (!fresh) {
     // Aborted / empty — restore the original floor so the swipe attempt loses nothing.

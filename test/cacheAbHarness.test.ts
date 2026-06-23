@@ -18,9 +18,30 @@ const preset = (): any => ({
   name: 'P',
   parameters: { temperature: 0.9, max_tokens: 100 },
   prompts: [
-    { identifier: 'cd', name: 'cd', role: 'system', content: '', enabled: true, marker: 'char_description' },
-    { identifier: 'wi', name: 'wi', role: 'system', content: '', enabled: true, marker: 'world_info' },
-    { identifier: 'ch', name: 'ch', role: 'system', content: '', enabled: true, marker: 'chat_history' }
+    {
+      identifier: 'cd',
+      name: 'cd',
+      role: 'system',
+      content: '',
+      enabled: true,
+      marker: 'char_description'
+    },
+    {
+      identifier: 'wi',
+      name: 'wi',
+      role: 'system',
+      content: '',
+      enabled: true,
+      marker: 'world_info'
+    },
+    {
+      identifier: 'ch',
+      name: 'ch',
+      role: 'system',
+      content: '',
+      enabled: true,
+      marker: 'chat_history'
+    }
   ]
 })
 const floor = (n: number, user: string, resp: string, hp: number): any => ({
@@ -65,6 +86,7 @@ describe('cache A/B — stable-prefix proxy across L0 / L1a / L1b', () => {
     const t2 = assemble(2, 0, 'partition')
     // The world-info message renders live 好感度, so it differs turn-to-turn → low prefix.
     const wiIdx = t2.findIndex((m) => m.content.startsWith('World Info:'))
+    expect(wiIdx).toBeGreaterThan(0)
     const prefix = stablePrefixTokens(t1, t2)
     expect(prefix.messages).toBeLessThanOrEqual(wiIdx) // cache dies at/before the WI message
   })

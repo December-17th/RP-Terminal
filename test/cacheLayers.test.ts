@@ -1,9 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import {
-  frozenVarsFor,
-  buildStateBlock,
-  STATE_PLACEHOLDER
-} from '../src/main/services/cacheLayers'
+import { frozenVarsFor, buildStateBlock, STATE_PLACEHOLDER } from '../src/main/services/cacheLayers'
 
 describe('frozenVarsFor', () => {
   const floor0 = { config: { hard: true }, stat_data: { 主角: { 等级: 1, hp: 100 } } }
