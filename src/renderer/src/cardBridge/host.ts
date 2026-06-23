@@ -4,6 +4,7 @@ import { useCharacterStore } from '../stores/characterStore'
 import { usePresetStore } from '../stores/presetStore'
 import { useRegexStore } from '../stores/regexStore'
 import { useSettingsStore } from '../stores/settingsStore'
+import { useComposerStore } from '../stores/composerStore'
 import { evalTemplate, evalTemplateDetailed } from '../../../shared/templateEngine'
 import { buildRenderContext } from '../plugin/renderTemplate'
 import type { Host, CardCtx, FloorLike } from '../../../shared/thRuntime/types'
@@ -31,6 +32,14 @@ export function createInlineHost(ctx: CardCtx): Host {
     } catch {
       return { entries: [] }
     }
+  }
+  // After a chat-write, reload the card's chat floors so the edit/delete/save shows. The inline card is in
+  // the active chat (the renderer IS the host), so a full reload (WCV parity) is fine — these ops are rare.
+  const reloadFloors = async (): Promise<boolean> => {
+    if (useChatStore.getState().activeChatId === ctx.chatId) {
+      await useChatStore.getState().setActiveChat(ctx.profileId, ctx.chatId)
+    }
+    return true
   }
   return {
     ctx,
@@ -90,15 +99,27 @@ export function createInlineHost(ctx: CardCtx): Host {
         console.error('[inline saveWorldbook]', e)
       }
     },
-    setChatMessages: async () => false,
-    deleteChatMessages: async () => false,
-    createChat: async () => '',
-    createChatMessages: async () => '',
-    saveChat: async () => true,
-    reloadChat: async () => true,
-    triggerSlash: async () => '',
-    setInput: () => {
-      // inline cards don't drive onboarding; no-op for SP1 (see spec §6).
+    setChatMessages: async (m) => {
+      const ok = await window.api.setChatMessages(ctx.profileId, ctx.chatId, m)
+      if (ok) await reloadFloors()
+      return !!ok
+    },
+    deleteChatMessages: async (ids) => {
+      const ok = await window.api.deleteChatMessages(ctx.profileId, ctx.chatId, ids)
+      if (ok) await reloadFloors()
+      return !!ok
+    },
+    createChat: async () => '', // deferred to SP3.2 (needs the floor-model create decision)
+    createChatMessages: async () => '', // deferred to SP3.2
+    saveChat: async (chat) => {
+      const ok = await window.api.saveChat(ctx.profileId, ctx.chatId, chat)
+      if (ok) await reloadFloors()
+      return !!ok
+    },
+    reloadChat: async () => reloadFloors(),
+    triggerSlash: async () => '', // deferred to SP3.2
+    setInput: (text) => {
+      useComposerStore.getState().injectInput(String(text ?? ''))
     },
 
     onVarsChanged: (cb) => {
