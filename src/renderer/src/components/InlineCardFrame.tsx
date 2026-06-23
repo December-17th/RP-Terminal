@@ -90,6 +90,11 @@ export function InlineCardFrame({
     return () => {
       frame.removeEventListener('load', onLoad)
       observer?.disconnect()
+      try {
+        ;(frame.contentWindow as any)?.__rptDispose?.()
+      } catch {
+        /* ignore */
+      }
     }
   }, [srcDoc])
 

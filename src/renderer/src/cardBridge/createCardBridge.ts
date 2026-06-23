@@ -109,6 +109,17 @@ const toastr = {
 export function createCardBridge(ctx: CardCtx): Record<string, unknown> {
   const bus = makeBus()
 
+  let lastVarsJson = ''
+  const unsub = useChatStore.subscribe((state) => {
+    const f = state.floors[state.floors.length - 1]
+    const json = JSON.stringify(f?.variables ?? null)
+    if (json !== lastVarsJson) {
+      lastVarsJson = json
+      bus.emit(MVU_EVENTS.VARIABLE_UPDATED, statData())
+      bus.emit(TAVERN_EVENTS.MESSAGE_UPDATED)
+    }
+  })
+
   // ---- variable-write path (Phase C) ------------------------------------------------------------
   // The target floor is the latest floor's own `.floor` value (NOT an array index) — chatStore's
   // applyVariableOps matches ops against `f.floor`, and defaults to the latest floor when omitted.
@@ -356,7 +367,8 @@ export function createCardBridge(ctx: CardCtx): Record<string, unknown> {
     EjsTemplate,
     toastr,
     _: undefined, // overwritten below by index.ts globals (lodash)
-    z: undefined
+    z: undefined,
+    __rptDispose: () => unsub()
   }
 }
 
