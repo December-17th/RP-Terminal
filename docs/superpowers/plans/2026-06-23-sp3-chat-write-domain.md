@@ -174,11 +174,10 @@ domain.
 parity. WCV behavior should be unchanged by the T3 refactor.
 
 **Findings / deferred:**
-- **get/set message-id divergence (pre-existing, flagged):** `getChatMessages` (`floorsToThMessages`) numbers
-  a user message at `2i` even when empty, but `setChatMessages`/`deleteChatMessages` (`chatIndexMap`, and
-  `SillyTavern.chat[]`) use a COMPACT space that skips empty user slots — so a `message_id` from
-  getChatMessages can map to the wrong floor once a floor has an empty user message (floor 0's greeting).
-  Preserved here (behavior-faithful to both transports); reconciling needs an SP1-touching decision
-  (make `floorsToThMessages` compact too + update `currentMessageId` + tests). Worth a focused follow-up.
+- **get/set message-id divergence — RESOLVED (`076c52c`):** `floorsToThMessages` (getChatMessages) +
+  `currentMessageId` now DERIVE from the compact `chatIndexMap`, the same space `setChatMessages`/
+  `deleteChatMessages` + `SillyTavern.chat[]` use — so a `message_id` round-trips get→set to the correct
+  floor (previously getChatMessages numbered an empty user slot at `2i`, mismapping on floor 0's greeting).
+  getChatMessages ids are now COMPACT, deliberately superseding SP1's 2-per-floor scheme. Tests updated; 467.
 - **SP3.2:** `createChat`, general `createChatMessages` (insert a new message), `triggerSlash` — still stubs
   in both transports; need the floor-model create/insert design.
