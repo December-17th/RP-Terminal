@@ -183,3 +183,27 @@ describe('settings cache section', () => {
     expect(s.cache.level).toBe(0)
   })
 })
+
+describe('settings usage-meter + pricing', () => {
+  it('defaults: overlay off, empty fields/columns, empty pricing', () => {
+    const s = getDefaultSettings()
+    expect(s.ui.usage_meter.enabled).toBe(false)
+    expect(s.ui.usage_meter.x).toBeNull()
+    expect(Array.isArray(s.ui.usage_meter.fields)).toBe(true)
+    expect(s.ui.usage_view.columns.length).toBeGreaterThan(0)
+    expect(s.pricing).toEqual({})
+  })
+
+  it('merges a stored usage_meter without wiping unset sub-fields', () => {
+    const s = normalize({ ui: { usage_meter: { enabled: true, x: 12 } } } as any)
+    expect(s.ui.usage_meter.enabled).toBe(true)
+    expect(s.ui.usage_meter.x).toBe(12)
+    expect(s.ui.usage_meter.collapsed).toBe(false) // default preserved
+    expect(Array.isArray(s.ui.usage_meter.fields)).toBe(true)
+  })
+
+  it('keeps stored pricing rows', () => {
+    const s = normalize({ pricing: { 'm1': { input: 1, output: 2, cacheRead: 0.1, cacheWrite: 1 } } } as any)
+    expect(s.pricing.m1.output).toBe(2)
+  })
+})

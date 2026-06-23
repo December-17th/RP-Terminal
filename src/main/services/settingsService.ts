@@ -110,7 +110,18 @@ export const getDefaultSettings = (): Settings => ({
     font_size: 16,
     sidebar_collapsed: false,
     history_strip_visible: true,
-    show_fps: false
+    show_fps: false,
+    usage_meter: {
+      enabled: false,
+      x: null,
+      y: null,
+      collapsed: false,
+      fields: ['proxyPct', 'cacheHitPct', 'promptTokens', 'avgCacheHitPct']
+    },
+    usage_view: {
+      columns: ['promptTokens', 'proxyPct', 'cacheHitPct', 'cacheRead', 'cacheWrite', 'outputTokens'],
+      charts: ['cachePct']
+    }
   },
   // Panel-workspace layouts are seeded by the renderer (it owns the view ids); main
   // just persists whatever the renderer saved. Empty here = "use built-in defaults".
@@ -121,7 +132,8 @@ export const getDefaultSettings = (): Settings => ({
     ttl: '5m',
     prewarm: false,
     breakpoint_optimizer: false
-  }
+  },
+  pricing: {}
 })
 
 /**
@@ -142,11 +154,18 @@ export const normalize = (stored: Partial<Settings>): Settings => {
     // Merge render separately so adding a render field never wipes the sub-object.
     render: { ...d.templates.render, ...(storedTemplates.render || {}) }
   }
-  const ui = { ...d.ui, ...(stored.ui || {}) }
+  const storedUi = (stored.ui || {}) as Partial<Settings['ui']>
+  const ui = {
+    ...d.ui,
+    ...storedUi,
+    usage_meter: { ...d.ui.usage_meter, ...(storedUi.usage_meter || {}) },
+    usage_view: { ...d.ui.usage_view, ...(storedUi.usage_view || {}) }
+  }
   // Preserve the renderer's saved per-mode layouts verbatim (normalize otherwise drops
   // unknown keys, since it returns an explicit allowlist of fields below).
   const workspace = { layouts: stored.workspace?.layouts || {} }
   const cache = { ...d.cache, ...(stored.cache || {}) }
+  const pricing = { ...d.pricing, ...(stored.pricing || {}) }
 
   // Agent mode: accept the three-way enum; migrate the legacy boolean `enabled` toggle
   // (true → manual), else default off.
@@ -200,7 +219,8 @@ export const normalize = (stored: Partial<Settings>): Settings => {
     agent,
     ui,
     workspace,
-    cache
+    cache,
+    pricing
   }
 }
 

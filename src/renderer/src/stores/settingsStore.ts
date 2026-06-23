@@ -50,8 +50,20 @@ export interface Settings {
     sidebar_collapsed: boolean
     history_strip_visible: boolean
     show_fps: boolean
+    usage_meter: {
+      enabled: boolean
+      x: number | null
+      y: number | null
+      collapsed: boolean
+      fields: string[]
+    }
+    usage_view: {
+      columns: string[]
+      charts: string[]
+    }
   }
   workspace?: { layouts: ModeLayouts }
+  pricing?: Record<string, { input: number; output: number; cacheRead: number; cacheWrite: number }>
 }
 
 interface SettingsState {

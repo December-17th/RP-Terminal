@@ -1,4 +1,5 @@
 import type { ModeLayouts } from '../../shared/workspaceLayout'
+import type { ModelRates } from '../../shared/usageTypes'
 
 export interface Profile {
   id: string
@@ -92,6 +93,21 @@ export interface Settings {
     sidebar_collapsed: boolean
     history_strip_visible: boolean
     show_fps: boolean
+    /** Floating token/cache meter overlay. */
+    usage_meter: {
+      enabled: boolean
+      /** Persisted drag position (px from top-left); null = default bottom-left. */
+      x: number | null
+      y: number | null
+      collapsed: boolean
+      /** Which metric rows the overlay shows (keys from the meter field catalog). */
+      fields: string[]
+    }
+    /** History/diagnostics 'usage' workspace view config. */
+    usage_view: {
+      columns: string[]
+      charts: string[]
+    }
   }
   /** Reconfigurable panel workspace: a saved split-tree layout per FSM mode (renderer-only). */
   workspace: {
@@ -111,4 +127,6 @@ export interface Settings {
     /** Reserved: place Anthropic breakpoints at the true stable boundary. */
     breakpoint_optimizer: boolean
   }
+  /** Optional per-model token prices ($ / 1M tokens). Empty ⇒ tokens-only (no cost shown). */
+  pricing: Record<string, ModelRates>
 }
