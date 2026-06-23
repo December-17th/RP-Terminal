@@ -179,6 +179,8 @@ const api = {
     ipcRenderer.invoke('delete-regex', profileId, file),
   setRegexScope: (profileId: string, file: string, scope: string, owner?: string) =>
     ipcRenderer.invoke('regex-set-scope', profileId, file, scope, owner),
+  setRegexRenderMode: (profileId: string, file: string, renderMode: string | null) =>
+    ipcRenderer.invoke('regex-set-render-mode', profileId, file, renderMode),
   setRegexDisabled: (profileId: string, file: string, disabled: boolean) =>
     ipcRenderer.invoke('regex-set-disabled', profileId, file, disabled),
   // Scripts library

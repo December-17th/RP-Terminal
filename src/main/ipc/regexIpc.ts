@@ -10,6 +10,9 @@ export const registerRegexIpc = (ipcMain: IpcMain): void => {
   ipcMain.handle('regex-set-scope', (_, profileId, file, scope, owner) =>
     regexService.setScriptScope(profileId, file, scope, owner)
   )
+  ipcMain.handle('regex-set-render-mode', (_, profileId, file, renderMode) =>
+    regexService.setScriptRenderMode(profileId, file, renderMode)
+  )
   ipcMain.handle('regex-set-disabled', (_, profileId, file, disabled) =>
     regexService.setScriptDisabled(profileId, file, disabled)
   )
