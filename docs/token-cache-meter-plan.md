@@ -1272,9 +1272,8 @@ describe('linePath', () => {
   it('maps values to an SVG polyline path scaled to width/height', () => {
     const p = linePath([0, 50, 100], 100, 10, 0, 100)
     // 3 points → "M x,y L x,y L x,y"; first x=0, last x=100; y inverts (100 → 0, 0 → height)
-    expect(p.startsWith('M0,')).toBe(true)
-    expect(p).toContain('L100,0') // value 100 maps to top (y=0)
-    expect(p).toContain('L0,10') // value 0 maps to bottom (y=height)
+    expect(p.startsWith('M0,10')).toBe(true) // first value 0 → bottom (y=height=10)
+    expect(p).toContain('L100,0') // last value 100 → top (y=0)
   })
   it('returns empty string for fewer than 2 points', () => {
     expect(linePath([5], 100, 10, 0, 100)).toBe('')
