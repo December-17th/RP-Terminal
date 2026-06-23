@@ -5,12 +5,16 @@ import { useChatStore } from '../stores/chatStore'
 import { useCharacterStore } from '../stores/characterStore'
 import { buildCardDoc } from './cardDoc'
 import { fitInlineCardHeight, capCardHeight } from './cardFrameHeight'
-import { installCardBridge } from '../cardBridge'
+import { installCardBridge, installCardTopSurface } from '../cardBridge'
 import { buildInlineLibTags } from '../cardBridge/cardLibs'
 import { buildEnvHead, replaceVhInContent } from '../../../shared/cardEnv'
 import type { CardSizing } from '../../../shared/cardRenderMode'
 
 installCardBridge() // idempotent; ensures window.__rptCardBridge exists before any frame mounts.
+// Expose the namespaced card surface on the renderer top window so an inline full-page card's
+// window.top.{SillyTavern,TavernHelper,Mvu,EjsTemplate} resolves. Called HERE (not nested in
+// installCardBridge) so it runs unconditionally at module load, independent of the bridge's guard.
+installCardTopSurface()
 
 /**
  * Inline card renderer — the card runs in a SAME-ORIGIN srcdoc iframe embedded in the message DOM.
