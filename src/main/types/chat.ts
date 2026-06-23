@@ -1,3 +1,5 @@
+import { FloorMetrics } from '../../shared/usageTypes'
+
 /** Manual FSM mode for a session (Phase H). Each mode tunes generation + retrieval. */
 export type ChatMode = 'explore' | 'dialogue' | 'combat'
 export const CHAT_MODES: ChatMode[] = ['explore', 'dialogue', 'combat']
@@ -45,4 +47,7 @@ export interface FloorFile {
   /** The full provider prompt (message array) that produced this floor — stored losslessly for
    * inspection/replay. Absent on legacy floors saved before this was captured. */
   request?: Array<{ role: string; content: string }>
+  /** Cache/token metrics for this floor (this turn's numbers + a cumulative snapshot).
+   * Absent on greeting/legacy floors that never went through a metered generation. */
+  metrics?: FloorMetrics
 }

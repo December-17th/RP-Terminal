@@ -125,5 +125,7 @@ export const getDb = (): Database.Database => {
   addColumnIfMissing(db, 'floors', 'swipe_id', 'swipe_id INTEGER')
   // The full prompt (message array) sent for this floor — lossless inspection/replay.
   addColumnIfMissing(db, 'floors', 'request', 'request TEXT')
+  // Per-turn cache/token metrics (turn + cumulative snapshot) — see token-cache-meter-design.md.
+  addColumnIfMissing(db, 'floors', 'metrics', 'metrics TEXT')
   return db
 }

@@ -16,6 +16,7 @@ interface FloorRow {
   events: string
   variables: string
   request: string | null
+  metrics: string | null
 }
 
 const rowToFloor = (r: FloorRow): FloorFile => {
@@ -35,7 +36,8 @@ const rowToFloor = (r: FloorRow): FloorFile => {
     swipe_id: swipe.swipe_id,
     events: safeJson(r.events, []),
     variables: safeJson(r.variables, {}),
-    request: r.request ? safeJson(r.request, undefined) : undefined
+    request: r.request ? safeJson(r.request, undefined) : undefined,
+    metrics: r.metrics ? safeJson(r.metrics, undefined) : undefined
   }
 }
 
@@ -62,8 +64,8 @@ export const saveFloor = (_profileId: string, chatId: string, floor: FloorFile):
     .prepare(
       `INSERT INTO floors
         (chat_id, floor, timestamp, user_content, user_timestamp, response_content,
-         response_model, response_provider, swipes, swipe_id, events, variables, request)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         response_model, response_provider, swipes, swipe_id, events, variables, request, metrics)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(chat_id, floor) DO UPDATE SET
          timestamp = excluded.timestamp,
          user_content = excluded.user_content,
@@ -75,7 +77,8 @@ export const saveFloor = (_profileId: string, chatId: string, floor: FloorFile):
          swipe_id = excluded.swipe_id,
          events = excluded.events,
          variables = excluded.variables,
-         request = excluded.request`
+         request = excluded.request,
+         metrics = excluded.metrics`
     )
     .run(
       chatId,
@@ -92,7 +95,8 @@ export const saveFloor = (_profileId: string, chatId: string, floor: FloorFile):
       floor.swipe_id ?? null,
       JSON.stringify(floor.events ?? []),
       JSON.stringify(floor.variables ?? {}),
-      floor.request ? JSON.stringify(floor.request) : null
+      floor.request ? JSON.stringify(floor.request) : null,
+      floor.metrics ? JSON.stringify(floor.metrics) : null
     )
 }
 
