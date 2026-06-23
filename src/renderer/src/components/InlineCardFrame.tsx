@@ -4,6 +4,7 @@ import { useProfileStore } from '../stores/profileStore'
 import { useChatStore } from '../stores/chatStore'
 import { useCharacterStore } from '../stores/characterStore'
 import { buildCardDoc } from './cardDoc'
+import { fitInlineCardHeight } from './cardFrameHeight'
 import { installCardBridge } from '../cardBridge'
 import { CARD_LIB_URLS } from '../cardBridge/cardLibs'
 
@@ -59,10 +60,50 @@ export function InlineCardFrame({
     const frame = ref.current
     if (!frame) return
     let observer: ResizeObserver | undefined
+    // A card designed as a full-viewport panel pins an element's min-height to 100vh (html/body, its mount
+    // root #app, OR a deeper wrapper like the character viewer's `.viewer-root`). Inside an auto-height
+    // iframe that makes the element as tall as the frame, which feeds back through the ResizeObserver (the
+    // runaway) and forces an inner scrollbar. Collapsing every `min-height:100vh` to 0 lets the card flow
+    // to its REAL content so the frame fits it. min-height:0 is lossless — it only drops a "fill the
+    // viewport" FLOOR, never clamps real content — so it's safe to apply to the whole subtree. We write
+    // inline !important (the most robust — it beats the card's stylesheet rules at ANY specificity, even
+    // !important class rules), skip already-neutralized nodes so repeated measures stay cheap, and re-apply
+    // on every measure so a loader card's asynchronously-mounted nodes are caught too. height:auto stays on
+    // html/body only (collapsing a deeper element's height could break its internal layout).
+    const neutralizeViewportHeight = (): void => {
+      try {
+        const doc = frame.contentDocument
+        if (!doc) return
+        for (const el of [doc.documentElement, doc.body]) {
+          if (el && el.style.height !== 'auto') el.style.setProperty('height', 'auto', 'important')
+        }
+        if (!doc.body) return
+        for (const el of [doc.body, ...doc.body.querySelectorAll<HTMLElement>('*')]) {
+          if (el.style.minHeight !== '0px') el.style.setProperty('min-height', '0', 'important')
+        }
+      } catch {
+        /* ignore */
+      }
+    }
     const measure = (): void => {
       try {
         const doc = frame.contentDocument
-        if (doc?.documentElement) setHeight(doc.documentElement.scrollHeight + 4)
+        const root = doc?.documentElement
+        if (!root || !doc.body) return
+        neutralizeViewportHeight()
+        // Fit the frame to the card's TRUE content height so it embeds inline with no inner scrollbar.
+        // Two traps this avoids: (1) the ROOT's scrollHeight is FLOORED at the iframe's viewport height,
+        // so reading it while the frame is tall can never report smaller — the frame would never shrink
+        // when a sub-panel closes (a stuck gap). (2) body.scrollHeight DOES shrink but EXCLUDES body's
+        // margins, so the frame ends ~16px short and a scrollbar reappears. So we momentarily collapse the
+        // frame (viewport floor -> ~0), read the root scrollHeight (full content incl. margins, now not
+        // floored), then restore. Both writes are synchronous, so the browser never paints the collapsed
+        // state (no flicker). +8 absorbs sub-pixel rounding so a 1px scrollbar can't sneak back.
+        const prev = frame.style.height
+        frame.style.height = '0'
+        const content = root.scrollHeight
+        frame.style.height = prev
+        setHeight(fitInlineCardHeight(content + 8, window.innerHeight))
       } catch {
         /* cross-origin guard (shouldn't happen — same origin) */
       }
@@ -81,10 +122,10 @@ export function InlineCardFrame({
         const body = doc?.body
         if (body && 'ResizeObserver' in window) {
           observer = new ResizeObserver(measure)
-          // Guard on `body` (it's the last thing parsed, so its presence means the doc is ready),
-          // but OBSERVE `documentElement` intentionally: measure() sizes the frame from
-          // documentElement.scrollHeight, so we watch the element whose height we read.
-          observer.observe(doc!.documentElement)
+          // OBSERVE `body` (content-sized via the neutralize above): it shrinks when the card collapses a
+          // sub-panel, firing a re-measure so the frame follows back DOWN. documentElement fills the
+          // viewport, so observing it would never fire on shrink (and its scrollHeight can't shrink either).
+          observer.observe(body)
         }
         doc?.addEventListener('contextmenu', onCtx)
       } catch {
@@ -103,13 +144,14 @@ export function InlineCardFrame({
     }
   }, [srcDoc])
 
+  // margin: 10px top/bottom breathing room between the card and the surrounding message text.
   return (
     <iframe
       ref={ref}
       className="card-frame"
       sandbox="allow-scripts allow-same-origin"
       srcDoc={srcDoc}
-      style={{ width: '100%', height, border: 0, display: 'block' }}
+      style={{ width: '100%', height, border: 0, display: 'block', margin: '10px 0' }}
       title="card content"
     />
   )

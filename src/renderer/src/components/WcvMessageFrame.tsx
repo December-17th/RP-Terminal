@@ -3,6 +3,7 @@ import { useProfileStore } from '../stores/profileStore'
 import { useChatStore } from '../stores/chatStore'
 import { useCharacterStore } from '../stores/characterStore'
 import { buildCardDoc } from './cardDoc'
+import { capCardHeight } from './cardFrameHeight'
 
 /**
  * Renders a card's regex-injected "frontend card" — whatever HTML+script block the card's regex puts
@@ -108,9 +109,7 @@ export function WcvMessageFrame({ html }: { html: string }): React.ReactElement 
       // native overlay clips to its bounds anyway, so the excess scrolls internally (wheel-chaining
       // forwards to the message list at the edges). 0.7 leaves surrounding chat visible for context.
       if (p.slotId === slotId && p.height > 0) {
-        const viewport = scrollElRef.current?.clientHeight ?? window.innerHeight
-        const cap = Math.max(280, Math.round(viewport * 0.7))
-        setHeight(Math.min(p.height, cap))
+        setHeight(capCardHeight(p.height, scrollElRef.current?.clientHeight ?? window.innerHeight))
       }
     })
     const offWheel = window.api.onWcvWheel((p: { slotId: string; dy: number }) => {
