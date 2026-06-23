@@ -17,8 +17,17 @@ export interface RegexApplyContext {
   char?: string
 }
 
-/** Build a rule's replacement for one match: trimStrings stripped from `{{match}}`,
- * the `{{match}}`/`{{user}}`/`{{char}}` macros, `$N`/`$&` capture groups, and `\n`. */
+/** A "frontend card" payload — beautification HTML carrying its own <script>/<style>. Its embedded
+ *  code must pass through verbatim, so we apply ONLY the substitutions SillyTavern's native
+ *  String.replace does and skip our plain-text `\n`→newline shorthand (a card's script legitimately
+ *  contains literal `\n`, e.g. inside `/[\r\n]/`, that must not become a real newline). */
+const isCodePayload = (s: string): boolean =>
+  /```html|<script[\s>]|<style[\s>]|<(?:html|body)[\s>]/i.test(s)
+
+/** Build a rule's replacement for one match: trimStrings stripped from `{{match}}`, the
+ * `{{match}}`/`{{user}}`/`{{char}}` macros, `$&`/`$N` capture groups, and (plain text only) `\n`.
+ * Capture substitution mirrors native String.replace: `$N` is left LITERAL when the find-regex has
+ * no group N — that's what keeps a card's own `$1` backreference intact instead of blanking it. */
 const buildReplacement = (
   rule: RegexLikeRule,
   match: string,
@@ -27,13 +36,17 @@ const buildReplacement = (
 ): string => {
   let trimmed = match
   for (const t of rule.trimStrings) if (t) trimmed = trimmed.split(t).join('')
-  return rule.replace
+  let out = rule.replace
     .replace(/\{\{match\}\}/gi, trimmed)
     .replace(/\{\{user\}\}/gi, ctx.user ?? '')
     .replace(/\{\{char\}\}/gi, ctx.char ?? '')
     .replace(/\$&/g, match)
-    .replace(/\$(\d{1,2})/g, (_, n) => groups[Number(n) - 1] ?? '')
-    .replace(/\\n/g, '\n')
+    .replace(/\$(\d{1,2})/g, (m, n) => {
+      const i = Number(n) - 1
+      return i < groups.length ? (groups[i] ?? '') : m
+    })
+  if (!isCodePayload(rule.replace)) out = out.replace(/\\n/g, '\n')
+  return out
 }
 
 /** Pull (match, capture groups) out of a String.prototype.replace callback's args,
