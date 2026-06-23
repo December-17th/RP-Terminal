@@ -11,6 +11,7 @@ import { LogsPanel } from '../LogsPanel'
 import { PanelRouter } from '../PanelRouter'
 import { WcvTestView, WcvCardView, WcvHomeView, WcvCustomStartView } from './WcvPanel'
 import { useWorkspaceContext } from './context'
+import { UsageView } from '../UsageView'
 
 /**
  * The set of views a workspace panel can host. Each entry is a self-contained component
@@ -34,6 +35,11 @@ const ChatPanel: React.FC = () => {
 const StatusPanel: React.FC = () => {
   const { profileId } = useWorkspaceContext()
   return <StatusView profileId={profileId} />
+}
+
+const UsagePanel: React.FC = () => {
+  const { profileId } = useWorkspaceContext()
+  return <UsageView profileId={profileId} />
 }
 
 // The card's sandboxed script runtime. Keyed by card+chat so switching sessions
@@ -69,6 +75,7 @@ export const ViewRegistry: Record<string, ViewEntry> = {
   navigator: { title: 'Navigator', Component: NavigatorPanel, fill: true },
   chat: { title: 'Chat', Component: ChatPanel, fill: true },
   status: { title: 'RPG Status', Component: StatusPanel },
+  usage: { title: 'Usage', Component: UsagePanel, fill: true },
   'card-scripts': { title: 'Card Scripts', Component: CardScriptsPanel },
   logs: { title: 'Logs', Component: LogsPanel, fill: true },
   // Spike: out-of-process WebContentsView card-UI panels.
