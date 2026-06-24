@@ -5,7 +5,7 @@ import { Lorebook, LorebookEntry } from '../types/character'
 import { matchAcross } from './lorebookService'
 import { parseEntryMarker, markerIndex, Marker, InjectMarker } from '../parsers/injectMarkers'
 import { applyRegex, RenderRegexRule } from './regexService'
-import { evalTemplate, TemplateContext } from './templateService'
+import { evalTemplate, evalTemplateDetailed, TemplateContext } from './templateService'
 import { cleanForHistory } from '../../shared/responseView'
 import { log } from './logService'
 import { expandMacros, MacroContext } from '../../shared/macros'
@@ -247,6 +247,27 @@ export const buildPrompt = (args: BuildPromptArgs): ChatMessage[] => {
       : args.template
     : undefined
   const render = makeRender(personaMacro, frontierTemplate)
+  // Strict render for PRESET prompt blocks: an EJS error here means a broken preset entry, so FAIL THE TURN
+  // with a detailed log (which entry + the reason + source) rather than silently dropping it. (The engine
+  // returns '' on error so a conditional never leaks all its branches; this turns that into a loud failure
+  // for preset content specifically — card-field renders below stay graceful via `render`.)
+  const renderStrict = (content: string, label: string): string => {
+    const m = expandMacros(
+      content,
+      macroBase(personaMacro, frontierTemplate?.vars, frontierTemplate?.globals)
+    )
+    if (!frontierTemplate) return stripEjs(m).trim()
+    const r = evalTemplateDetailed(m, frontierTemplate)
+    if (r.error) {
+      log(
+        'error',
+        `✗ preset template error in "${label}"`,
+        `${r.error}\n— source: ${content.slice(0, 400)}`
+      )
+      throw new Error(`preset template "${label}": ${r.error}`)
+    }
+    return r.output
+  }
   const personaContent = personaInject
     ? makeRender('', frontierTemplate)(args.persona!.description)
     : ''
@@ -341,7 +362,7 @@ export const buildPrompt = (args: BuildPromptArgs): ChatMessage[] => {
         break
       }
       default: {
-        const content = render(block.content)
+        const content = renderStrict(block.content, block.name || block.identifier)
         if (!content) break
         // A literal block with a numeric depth is injected into the history (like a
         // lorebook/persona entry) rather than emitted here in preset order.
