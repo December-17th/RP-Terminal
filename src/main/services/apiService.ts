@@ -106,6 +106,52 @@ const readSse = async (response: Response, handle: (data: string) => void): Prom
   }
 }
 
+/**
+ * Reasoning models stream their chain-of-thought on a SEPARATE channel (OpenAI-compatible
+ * `delta.reasoning_content` / `delta.reasoning`, Anthropic `thinking` blocks, Gemini `thought` parts)
+ * rather than inside the message content. This assembler inlines that reasoning as a single leading
+ * `<think>…</think>` block so it lands in the lossless store + the reasoning view exactly like models
+ * that emit `<think>` in the content directly. It also feeds `onDelta` so the live view streams it.
+ */
+type ThinkAssembler = {
+  reasoning: (c: string) => void
+  content: (c: string) => void
+  done: () => string
+}
+export const thinkAssembler = (onDelta: DeltaCallback): ThinkAssembler => {
+  let full = ''
+  let open = false
+  const push = (s: string): void => {
+    full += s
+    onDelta(s)
+  }
+  return {
+    reasoning: (c) => {
+      if (!c) return
+      if (!open) {
+        push('<think>')
+        open = true
+      }
+      push(c)
+    },
+    content: (c) => {
+      if (!c) return
+      if (open) {
+        push('</think>\n\n')
+        open = false
+      }
+      push(c)
+    },
+    done: () => {
+      if (open) {
+        push('</think>')
+        open = false
+      }
+      return full
+    }
+  }
+}
+
 const streamOpenAICompatible = async (
   settings: Settings,
   messages: ChatMessage[],
@@ -163,18 +209,23 @@ const streamOpenAICompatible = async (
   if (!contentType.includes('text/event-stream')) {
     const text = await response.text()
     let content = ''
+    let reasoning = ''
     try {
       const json = JSON.parse(text)
-      content = json.choices?.[0]?.message?.content ?? json.choices?.[0]?.text ?? ''
+      const msg = json.choices?.[0]?.message
+      content = msg?.content ?? json.choices?.[0]?.text ?? ''
+      reasoning = msg?.reasoning_content ?? msg?.reasoning ?? ''
     } catch {
       throw new Error(`Non-streaming response was not valid JSON: ${text.slice(0, 800)}`)
     }
-    if (!content) throw new Error(`Provider returned an empty completion: ${text.slice(0, 800)}`)
-    onDelta(content)
-    return content
+    if (!content && !reasoning)
+      throw new Error(`Provider returned an empty completion: ${text.slice(0, 800)}`)
+    const out = reasoning ? `<think>${reasoning}</think>\n\n${content}` : content
+    onDelta(out)
+    return out
   }
 
-  let full = ''
+  const asm = thinkAssembler(onDelta)
   let usage: any = null
   const rawFrames: string[] = []
   try {
@@ -183,19 +234,19 @@ const streamOpenAICompatible = async (
       try {
         const json = JSON.parse(data)
         if (json.usage) usage = json.usage
-        const delta = json.choices?.[0]?.delta?.content
-        if (typeof delta === 'string' && delta) {
-          full += delta
-          onDelta(delta)
-        }
+        const d = json.choices?.[0]?.delta
+        const rc = d?.reasoning_content ?? d?.reasoning // DeepSeek / OpenRouter side channel
+        if (typeof rc === 'string') asm.reasoning(rc)
+        if (typeof d?.content === 'string') asm.content(d.content)
       } catch {
         // ignore keep-alive / non-JSON lines
       }
     })
   } catch (e) {
-    if (signal?.aborted) return full // user stopped — keep whatever streamed
+    if (signal?.aborted) return asm.done() // user stopped — keep whatever streamed
     throw e
   }
+  const full = asm.done()
   if (!full && !signal?.aborted) {
     throw new Error(
       `Stream produced no text. Raw frames:\n${rawFrames.slice(0, 8).join('\n').slice(0, 800) || '(none)'}`
@@ -289,26 +340,27 @@ const streamAnthropic = async (
     throw new Error(`Anthropic API Error: ${response.status} ${response.statusText} - ${errorText}`)
   }
 
-  let full = ''
+  const asm = thinkAssembler(onDelta)
   let usage: any = null
   try {
     await readSse(response, (data) => {
       try {
         const json = JSON.parse(data)
         if (json.type === 'message_start' && json.message?.usage) usage = json.message.usage
-        // content_block_delta carries incremental text_delta chunks.
-        if (json.type === 'content_block_delta' && typeof json.delta?.text === 'string') {
-          full += json.delta.text
-          onDelta(json.delta.text)
+        // content_block_delta carries incremental thinking_delta (extended thinking) + text_delta chunks.
+        if (json.type === 'content_block_delta') {
+          if (typeof json.delta?.thinking === 'string') asm.reasoning(json.delta.thinking)
+          else if (typeof json.delta?.text === 'string') asm.content(json.delta.text)
         }
       } catch {
         // ignore non-JSON lines
       }
     })
   } catch (e) {
-    if (signal?.aborted) return full // user stopped — keep whatever streamed
+    if (signal?.aborted) return asm.done() // user stopped — keep whatever streamed
     throw e
   }
+  const full = asm.done()
   if (usage) {
     log(
       'info',
@@ -401,7 +453,7 @@ const streamGemini = async (
     throw new Error(`Gemini API Error: ${response.status} ${response.statusText} - ${errorText}`)
   }
 
-  let full = ''
+  const asm = thinkAssembler(onDelta)
   let usage: any = null
   try {
     await readSse(response, (data) => {
@@ -411,8 +463,9 @@ const streamGemini = async (
         if (Array.isArray(parts)) {
           for (const p of parts) {
             if (typeof p?.text === 'string' && p.text) {
-              full += p.text
-              onDelta(p.text)
+              // Gemini "thinking" models flag reasoning parts with thought === true.
+              if (p.thought === true) asm.reasoning(p.text)
+              else asm.content(p.text)
             }
           }
         }
@@ -422,9 +475,10 @@ const streamGemini = async (
       }
     })
   } catch (e) {
-    if (signal?.aborted) return full // user stopped — keep whatever streamed
+    if (signal?.aborted) return asm.done() // user stopped — keep whatever streamed
     throw e
   }
+  const full = asm.done()
   if (usage) {
     log(
       'info',

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { buildGeminiBody } from '../src/main/services/apiService'
+import { buildGeminiBody, thinkAssembler } from '../src/main/services/apiService'
 import { ChatMessage } from '../src/main/services/promptBuilder'
 
 const params = (p: Record<string, number> = {}): any => ({
@@ -60,5 +60,43 @@ describe('buildGeminiBody', () => {
     const body: any = buildGeminiBody([{ role: 'user', content: 'hi' }], params())
     expect('systemInstruction' in body).toBe(false)
     expect(body.contents).toEqual([{ role: 'user', parts: [{ text: 'hi' }] }])
+  })
+})
+
+describe('thinkAssembler (inline side-channel reasoning as <think>)', () => {
+  const run = (
+    steps: (a: ReturnType<typeof thinkAssembler>) => void
+  ): { full: string; streamed: string } => {
+    const deltas: string[] = []
+    const a = thinkAssembler((d) => deltas.push(d))
+    steps(a)
+    return { full: a.done(), streamed: deltas.join('') }
+  }
+
+  it('wraps a reasoning run + content into one leading <think> block (streamed identically)', () => {
+    const { full, streamed } = run((a) => {
+      a.reasoning('think ')
+      a.reasoning('hard')
+      a.content('The answer.')
+    })
+    expect(full).toBe('<think>think hard</think>\n\nThe answer.')
+    expect(streamed).toBe(full)
+  })
+
+  it('passes content through untouched when there is no reasoning', () => {
+    expect(run((a) => a.content('Just narrative.')).full).toBe('Just narrative.')
+  })
+
+  it('closes a dangling reasoning-only stream', () => {
+    expect(run((a) => a.reasoning('only thinking')).full).toBe('<think>only thinking</think>')
+  })
+
+  it('ignores empty chunks', () => {
+    const { full } = run((a) => {
+      a.reasoning('')
+      a.content('')
+      a.content('x')
+    })
+    expect(full).toBe('x')
   })
 })
