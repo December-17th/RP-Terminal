@@ -23,6 +23,7 @@ import { initSlash } from './plugin/slash'
 import { chatTransitionEvents, messageMutationEvents } from './plugin/events'
 import { emitCardHostEvent } from './cardBridge/cardHostEvents'
 import { applyTheme } from './theme'
+import { Launcher } from './components/Launcher'
 
 export default function App(): React.ReactElement {
   const activeProfile = useProfileStore((s) => s.activeProfile)
@@ -154,6 +155,9 @@ export default function App(): React.ReactElement {
   }, [settings?.ui?.theme])
 
   if (!activeProfile) return <ProfilePicker />
+
+  // Entry funnel: no open session → the World→Session launcher; an open session → the play workspace.
+  if (!activeChatId) return <Launcher profileId={activeProfile.id} />
 
   // A card can declare a static, card-determined layout; the dev flag `localStorage['rpt-static-demo']`
   // forces a default static layout so the StaticWorkspace can be tried on a card that doesn't.

@@ -19,6 +19,17 @@ const getAvatarsDir = (): string => path.join(getAppDir(), 'avatars')
 export const getAvatarPath = (characterId: string): string =>
   path.join(getAvatarsDir(), `${characterId}.png`)
 
+/** The card's avatar PNG as a `data:` URL (for the renderer launcher/img), or null if none. */
+export const getAvatarDataUrl = (characterId: string): string | null => {
+  try {
+    const p = getAvatarPath(characterId)
+    if (!fs.existsSync(p)) return null
+    return 'data:image/png;base64,' + fs.readFileSync(p).toString('base64')
+  } catch {
+    return null
+  }
+}
+
 export const getCharacters = (profileId: string): Array<{ id: string; card: RPTerminalCard }> => {
   const rows = getDb()
     .prepare('SELECT id, card FROM characters WHERE profile_id = ? ORDER BY created_at')

@@ -1,5 +1,6 @@
 import { useCharacterStore } from '../stores/characterStore'
 import { usePresetStore } from '../stores/presetStore'
+import { useChatStore } from '../stores/chatStore'
 import type { PanelTab } from './panelTabs'
 
 /** The top navigation bar: brand, panel tabs, and the active-context status line. */
@@ -28,7 +29,13 @@ export function TopNav({
 
   return (
     <div className="top-nav">
-      <span className="nav-brand">RP Terminal</span>
+      <button
+        className="nav-brand"
+        onClick={() => useChatStore.getState().clearActiveChat()}
+        title="Back to worlds"
+      >
+        RP Terminal
+      </button>
       <div className="nav-tabs">
         {tab('world', 'World')}
         {tab('sessions', 'Sessions', !hasCharacter)}

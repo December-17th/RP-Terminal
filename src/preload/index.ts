@@ -11,6 +11,8 @@ const api = {
   listModels: (api: unknown, profileId: string) =>
     ipcRenderer.invoke('list-models', api, profileId),
   getCharacters: (profileId: string) => ipcRenderer.invoke('get-characters', profileId),
+  getCharacterAvatar: (characterId: string) =>
+    ipcRenderer.invoke('get-character-avatar', characterId),
   saveCharacter: (profileId: string, charId: string, card: any) =>
     ipcRenderer.invoke('save-character', profileId, charId, card),
   importCharacterDialog: (profileId: string) =>

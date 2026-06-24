@@ -4,6 +4,9 @@ import * as characterService from '../services/characterService'
 
 export const registerCharacterIpc = (ipcMain: IpcMain): void => {
   ipcMain.handle('get-characters', (_, profileId) => characterService.getCharacters(profileId))
+  ipcMain.handle('get-character-avatar', (_, characterId) =>
+    characterService.getAvatarDataUrl(characterId)
+  )
   ipcMain.handle('save-character', (_, profileId, charId, card) =>
     characterService.saveCharacter(profileId, charId, card)
   )
