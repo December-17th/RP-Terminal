@@ -95,6 +95,8 @@ export interface Settings {
   }
   ui: {
     theme: string
+    /** App-UI language (the i18n locale id, e.g. 'en' / 'zh'). Card content is separate. */
+    locale: string
     font_size: number
     sidebar_collapsed: boolean
     history_strip_visible: boolean

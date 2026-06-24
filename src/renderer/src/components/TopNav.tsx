@@ -2,9 +2,10 @@ import { useCharacterStore } from '../stores/characterStore'
 import { usePresetStore } from '../stores/presetStore'
 import { useChatStore } from '../stores/chatStore'
 import { useUiStore } from '../stores/uiStore'
+import { useT } from '../i18n'
 import type { PanelTab } from './panelTabs'
 
-/** The top navigation bar: brand, panel tabs, and the active-context status line. */
+/** The top navigation bar: brand, world/session breadcrumb, panel tabs, and the context status line. */
 export function TopNav({
   panel,
   profileName,
@@ -17,6 +18,7 @@ export function TopNav({
   const activeCharacter = useCharacterStore((s) => s.activeCharacter)
   const activePresetName = usePresetStore((s) => s.preset?.name)
   const hasCharacter = !!activeCharacter
+  const t = useT()
 
   const tab = (key: PanelTab, label: string, disabled = false): React.ReactElement => (
     <button
@@ -33,7 +35,7 @@ export function TopNav({
       <button
         className="nav-brand"
         onClick={() => useChatStore.getState().clearActiveChat()}
-        title="Back to worlds"
+        title={t('nav.backToWorlds')}
       >
         RP Terminal
       </button>
@@ -44,7 +46,7 @@ export function TopNav({
             useUiStore.getState().setLauncherWorldId(null)
             useChatStore.getState().clearActiveChat()
           }}
-          title="Switch world"
+          title={t('nav.switchWorld')}
         >
           <span className="nav-crumb-label">{activeCharacter?.card.data.name || 'World'}</span>
           <span className="nav-crumb-caret">⌄</span>
@@ -56,21 +58,21 @@ export function TopNav({
             if (activeCharacter) useUiStore.getState().setLauncherWorldId(activeCharacter.id)
             useChatStore.getState().clearActiveChat()
           }}
-          title="Switch session"
+          title={t('nav.switchSession')}
         >
-          <span className="nav-crumb-label">Session</span>
+          <span className="nav-crumb-label">{t('nav.session')}</span>
           <span className="nav-crumb-caret">⌄</span>
         </button>
       </div>
       <div className="nav-tabs">
-        {tab('persona', 'Persona')}
-        {tab('preset', 'Preset')}
-        {tab('lorebook', 'Lorebook', !hasCharacter)}
-        {tab('api', 'API')}
+        {tab('persona', t('nav.persona'))}
+        {tab('preset', t('nav.preset'))}
+        {tab('lorebook', t('nav.lorebook'), !hasCharacter)}
+        {tab('api', t('nav.api'))}
         <button className="nav-tab" onClick={() => useUiStore.getState().openSettings()}>
-          Settings
+          {t('nav.settings')}
         </button>
-        {tab('logs', 'Logs')}
+        {tab('logs', t('nav.logs'))}
       </div>
       <span className="nav-status">
         {profileName} · {activeCharacter?.card.data.name || 'no world'} ·{' '}

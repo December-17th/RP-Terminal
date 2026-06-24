@@ -50,6 +50,7 @@ export interface Settings {
   }
   ui: {
     theme: string
+    locale: string
     font_size: number
     sidebar_collapsed: boolean
     history_strip_visible: boolean

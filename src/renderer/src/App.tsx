@@ -23,6 +23,7 @@ import { initSlash } from './plugin/slash'
 import { chatTransitionEvents, messageMutationEvents } from './plugin/events'
 import { emitCardHostEvent } from './cardBridge/cardHostEvents'
 import { applyTheme } from './theme'
+import { useI18nStore } from './i18n'
 import { Launcher } from './components/Launcher'
 import { SettingsModal } from './components/SettingsModal'
 
@@ -154,6 +155,11 @@ export default function App(): React.ReactElement {
   useEffect(() => {
     applyTheme(settings?.ui?.theme)
   }, [settings?.ui?.theme])
+
+  // Sync the UI language from settings (the i18n store re-renders subscribers on change).
+  useEffect(() => {
+    useI18nStore.getState().setLocale(settings?.ui?.locale ?? 'en')
+  }, [settings?.ui?.locale])
 
   if (!activeProfile) return <ProfilePicker />
 
