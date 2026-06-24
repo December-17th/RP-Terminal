@@ -59,6 +59,14 @@ export interface Host {
   generateRaw(cfg: GenCfgNormalized): Promise<string>
   getWorldbook(name?: string): Promise<{ name?: string; entries: any[] }>
   saveWorldbook(name: string | undefined, entries: any[]): Promise<void>
+  // Worldbook CRUD/bind (full library — trusted cards). list/chatWorldbookIds are SYNC (called w/o await).
+  listWorldbooks(): { id: string; name: string }[]
+  chatWorldbookIds(): string[]
+  createWorldbook(name: string): Promise<string> // returns the new id
+  deleteWorldbook(id: string): Promise<boolean>
+  getWorldbookById(id: string): Promise<{ name?: string; entries: any[] }>
+  saveWorldbookById(id: string, entries: any[]): Promise<void>
+  bindWorldbook(id: string, on: boolean): Promise<void>
   setChatMessages(msgs: any): Promise<boolean>
   deleteChatMessages(ids: any): Promise<boolean>
   createChat(arg?: any): Promise<string>

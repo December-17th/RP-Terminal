@@ -62,6 +62,14 @@ export function createWcvHost(deps: Deps): Host {
     },
     saveWorldbook: (name, entries) =>
       ipcRenderer.invoke('wcv-host-replace-worldbook', name, entries),
+    // Worldbook CRUD/bind — stubbed; wired to ctx-scoped wcv-host-* IPC in the worldbook-crud T3.
+    listWorldbooks: () => [],
+    chatWorldbookIds: () => [],
+    createWorldbook: () => Promise.resolve(''),
+    deleteWorldbook: () => Promise.resolve(false),
+    getWorldbookById: () => Promise.resolve({ entries: [] }),
+    saveWorldbookById: () => Promise.resolve(),
+    bindWorldbook: () => Promise.resolve(),
     setChatMessages: (m) => ipcRenderer.invoke('wcv-host-set-chat-messages', m),
     deleteChatMessages: (ids) => ipcRenderer.invoke('wcv-host-delete-chat-messages', ids),
     createChat: () => Promise.resolve(''),

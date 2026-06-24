@@ -86,8 +86,44 @@ export function createThRuntime(host: Host): ThGlobals {
     overrides: c?.overrides
   })
 
-  const wbEntries = async (name?: any): Promise<any[]> =>
-    (await host.getWorldbook(name)).entries || []
+  // Worldbook id↔name map (TH addresses by name; RPT by id). Seeded from the library, refreshed on miss /
+  // create / delete. resolveWbId(name) → the library id, or undefined (own-book convenience / unknown).
+  const wbIdByName = new Map<string, string>()
+  const seedWb = (): void => {
+    wbIdByName.clear()
+    for (const w of host.listWorldbooks() || []) wbIdByName.set(String(w.name).toLowerCase(), w.id)
+  }
+  seedWb()
+  const resolveWbId = (name?: any): string | undefined => {
+    const key = String(name ?? '').toLowerCase()
+    if (!key) return undefined
+    if (!wbIdByName.has(key)) seedWb()
+    return wbIdByName.get(key)
+  }
+  const wbEntries = async (name?: any): Promise<any[]> => {
+    const id = resolveWbId(name)
+    const r = id ? await host.getWorldbookById(id) : await host.getWorldbook(name)
+    return r.entries || []
+  }
+  const doCreateWb = async (name: any): Promise<string> => {
+    const nm = String(name ?? 'New Worldbook')
+    await host.createWorldbook(nm)
+    seedWb()
+    return nm
+  }
+  const doDeleteWb = async (name: any): Promise<boolean> => {
+    const id = resolveWbId(name)
+    if (!id) return false
+    const ok = await host.deleteWorldbook(id)
+    seedWb()
+    return ok
+  }
+  const doBindWb = async (name: any, on: any): Promise<boolean> => {
+    const id = resolveWbId(name)
+    if (!id) return false
+    await host.bindWorldbook(id, on !== false)
+    return true
+  }
 
   // --- TavernHelper helpers (bare + namespaced) ---
   const helpers: Record<string, any> = {
@@ -101,10 +137,9 @@ export function createThRuntime(host: Host): ThGlobals {
     getPreset: () => host.preset(),
     getPresetNames: () => host.presetNames(),
     getCharWorldbookNames: () => host.worldbookNames(),
-    getWorldbookNames: () => {
-      const r = host.worldbookNames()
-      return [r.primary, ...(r.additional || [])].filter(Boolean)
-    },
+    getWorldbookNames: () => host.listWorldbooks().map((w) => w.name),
+    getLorebooks: () => host.listWorldbooks(),
+    getWorldbooks: () => host.listWorldbooks(),
     getCurrentCharPrimaryLorebook: () => host.worldbookNames().primary,
     getCharLorebooks: () => {
       const r = host.worldbookNames()
@@ -157,15 +192,25 @@ export function createThRuntime(host: Host): ThGlobals {
     getWorldbook: async (name: any) => wbEntries(name),
     getLorebookEntries: async (name: any) => wbEntries(name),
     replaceWorldbook: async (name: any, entries: any) => {
-      await host.saveWorldbook(name, entries)
+      const id = resolveWbId(name)
+      if (id) await host.saveWorldbookById(id, entries)
+      else await host.saveWorldbook(name, entries)
       return true
     },
     updateWorldbookWith: async (name: any, updater: any) => {
       const cur = await wbEntries(name)
       const next = typeof updater === 'function' ? await updater(cur) : cur
-      await host.saveWorldbook(name, next)
+      const id = resolveWbId(name)
+      if (id) await host.saveWorldbookById(id, next)
+      else await host.saveWorldbook(name, next)
       return next
     },
+    createWorldbook: doCreateWb,
+    createLorebook: doCreateWb,
+    deleteWorldbook: doDeleteWb,
+    deleteLorebook: doDeleteWb,
+    bindLorebook: doBindWb,
+    setChatWorldbook: doBindWb,
     setChatMessages: async (m: any) => host.setChatMessages(m),
     deleteChatMessages: async (ids: any) => host.deleteChatMessages(ids),
     createChat: async (a?: any) => host.createChat(a),

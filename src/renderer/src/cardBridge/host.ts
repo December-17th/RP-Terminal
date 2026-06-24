@@ -99,6 +99,14 @@ export function createInlineHost(ctx: CardCtx): Host {
         console.error('[inline saveWorldbook]', e)
       }
     },
+    // Worldbook CRUD/bind — stubbed; wired to window.api + the chat store in the worldbook-crud T2.
+    listWorldbooks: () => [],
+    chatWorldbookIds: () => [],
+    createWorldbook: async () => '',
+    deleteWorldbook: async () => false,
+    getWorldbookById: async () => ({ entries: [] }),
+    saveWorldbookById: async () => {},
+    bindWorldbook: async () => {},
     setChatMessages: async (m) => {
       const ok = await window.api.setChatMessages(ctx.profileId, ctx.chatId, m)
       if (ok) await reloadFloors()

@@ -9,8 +9,16 @@ function mockHost(over: Partial<Host> = {}): { host: Host; calls: any } {
     generate: [],
     generateRaw: [],
     saveWorldbook: [],
-    setInput: []
+    setInput: [],
+    createWorldbook: [],
+    deleteWorldbook: [],
+    saveWorldbookById: [],
+    bindWorldbook: []
   }
+  const wbLib = [
+    { id: 'wb1', name: 'Lore A' },
+    { id: 'own', name: 'Ellia' }
+  ]
   let varsCb: ((sd: any) => void) | null = null
   const host: Host = {
     ctx: { profileId: 'p', chatId: 'c', characterId: 'ch' },
@@ -39,6 +47,25 @@ function mockHost(over: Partial<Host> = {}): { host: Host; calls: any } {
     getWorldbook: async () => ({ entries: [{ keys: ['k'] }] }),
     saveWorldbook: async (n, e) => {
       calls.saveWorldbook.push([n, e])
+    },
+    listWorldbooks: () => wbLib,
+    chatWorldbookIds: () => ['own'],
+    createWorldbook: async (n) => {
+      const id = 'id_' + n
+      wbLib.push({ id, name: n })
+      calls.createWorldbook.push(n)
+      return id
+    },
+    deleteWorldbook: async (id) => {
+      calls.deleteWorldbook.push(id)
+      return true
+    },
+    getWorldbookById: async (id) => ({ name: id, entries: [{ id }] }),
+    saveWorldbookById: async (id, e) => {
+      calls.saveWorldbookById.push([id, e])
+    },
+    bindWorldbook: async (id, on) => {
+      calls.bindWorldbook.push([id, on])
     },
     setChatMessages: async () => true,
     deleteChatMessages: async () => true,
@@ -123,6 +150,25 @@ describe('createThRuntime', () => {
     const g = createThRuntime(m.host)
     await g.createChatMessages([{ message: 'first' }, { message: 'last prompt' }])
     expect(m.calls.setInput).toEqual(['last prompt'])
+  })
+
+  it('worldbook CRUD: real library names, create→resolve-by-id, delete/bind/replace by name', async () => {
+    const m: any = mockHost()
+    const g = createThRuntime(m.host)
+    expect(g.getWorldbookNames()).toEqual(['Lore A', 'Ellia']) // the real library, not char-derived
+    // createWorldbook returns the NAME (TH contract); a later getWorldbook(name) resolves it by id
+    expect(await g.createWorldbook('Quests')).toBe('Quests')
+    expect(m.calls.createWorldbook).toEqual(['Quests'])
+    expect((await g.getWorldbook('Quests'))[0].id).toBe('id_Quests')
+    // delete + bind + replace resolve name → id
+    expect(await g.deleteWorldbook('Lore A')).toBe(true)
+    expect(m.calls.deleteWorldbook).toEqual(['wb1'])
+    await g.bindLorebook('Ellia', true)
+    expect(m.calls.bindWorldbook).toEqual([['own', true]])
+    await g.replaceWorldbook('Lore A', [{ keys: ['x'] }])
+    expect(m.calls.saveWorldbookById).toEqual([['wb1', [{ keys: ['x'] }]]])
+    // unknown name no-ops
+    expect(await g.deleteWorldbook('Nope')).toBe(false)
   })
 
   it('errorCatched swallows throws and rejections', async () => {
