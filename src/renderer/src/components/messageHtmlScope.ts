@@ -20,9 +20,10 @@ export const extractStyleBlocks = (html: string): { html: string; css: string } 
   return { html: stripped, css: css.join('\n') }
 }
 
-/** A safe, unique CSS class for a card instance, derived from a React useId() value. */
+/** A safe, unique CSS class for a card instance, derived from a React useId() value. Non-alphanumerics
+ *  become `_` (not deleted) so distinct ids like `a-b` / `ab` stay distinct. */
 export const scopeClassFor = (id: string): string =>
-  'rpt-ih-' + (String(id ?? '').replace(/[^a-zA-Z0-9]/g, '') || '0')
+  'rpt-ih-' + (String(id ?? '').replace(/[^a-zA-Z0-9]/g, '_') || '0')
 
 const scopeSelector = (selector: string, scope: string): string => {
   const s = selector.trim()
@@ -45,8 +46,9 @@ export const scopeCss = (css: string, scope: string): string => {
   } catch {
     return ''
   }
-  root.walkAtRules('import', (rule) => {
-    rule.remove()
+  // Case-insensitive: CSS at-rule names are case-insensitive, so `@IMPORT`/`@Import` must go too.
+  root.walkAtRules((rule) => {
+    if (/^import$/i.test(rule.name)) rule.remove()
   })
   root.walkRules((rule) => {
     const parent = rule.parent

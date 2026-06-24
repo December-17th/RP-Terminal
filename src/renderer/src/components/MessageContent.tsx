@@ -170,10 +170,11 @@ const splitBareHtml = (md: string): Segment[] => {
       end = ne
     }
     if (start > i) out.push({ type: 'md', text: md.slice(i, start) })
-    const block = md.slice(start, end)
-    // A scripted region needs the isolated frame; a `<style>`-driven (or plain) card renders inline
-    // with its CSS scoped to the card (InlineHtml), so it blends with the message.
-    out.push({ type: isInteractiveHtml(block) ? 'html' : 'inline-html', text: block })
+    // Bare regions ALWAYS render inline (CSS scoped, body DOMPurify-sanitized). A stray <script> here
+    // is stripped, NOT executed — unfenced model output must never auto-run with app/bridge access.
+    // An authored frontend card opts into the sandboxed scripted frame via a ```html fence or <body>
+    // (matched by HTML_BLOCK above), so those still reach the frame; only bare HTML changed.
+    out.push({ type: 'inline-html', text: md.slice(start, end) })
     i = end
   }
   return out.length ? out : [{ type: 'md', text: md }]

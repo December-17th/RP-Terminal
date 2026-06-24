@@ -20,9 +20,11 @@ describe('messageHtmlScope — extractStyleBlocks', () => {
 })
 
 describe('messageHtmlScope — scopeClassFor', () => {
-  it('produces a valid, unique-ish class from a useId value', () => {
-    expect(scopeClassFor(':r3:')).toBe('rpt-ih-r3')
+  it('produces a valid class from a useId value, keeping separators distinct', () => {
+    expect(scopeClassFor(':r3:')).toBe('rpt-ih-_r3_')
     expect(scopeClassFor('')).toBe('rpt-ih-0')
+    // distinct ids must not collapse to the same scope
+    expect(scopeClassFor('a-b')).not.toBe(scopeClassFor('ab'))
   })
 })
 

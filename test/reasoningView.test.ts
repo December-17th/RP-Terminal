@@ -36,6 +36,12 @@ describe('reasoningView — <tp> extraction', () => {
     expect(extractTpInfo('<tp>  </tp>')).toBeNull()
   })
 
+  it('returns null fast for an UNCLOSED <tp> with whitespace (ReDoS guard — runs every token)', () => {
+    // The old nested-lazy regex took ~17s on 4000 whitespace chars; this must complete instantly.
+    expect(extractTpInfo('<tp>' + ' '.repeat(8000))).toBeNull()
+    expect(extractTpInfo('<tp>\n'.repeat(2000))).toBeNull()
+  })
+
   it('formatTp joins present fields with a middot', () => {
     expect(formatTp({ time: '子時', location: '听雨阁', weather: '' })).toBe('子時 · 听雨阁')
     expect(formatTp(null)).toBe('')

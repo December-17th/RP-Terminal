@@ -37,11 +37,12 @@ describe('splitHtml (HTML block detection)', () => {
     expect(segs[2].text).toContain('What now?')
   })
 
-  it('routes a scripted bare block to the isolated frame, not inline', () => {
+  it('renders a scripted bare block inline (the <script> is stripped, never auto-run in a frame)', () => {
     const segs = splitHtml('<div><script>alert(1)</script></div>')
-    const block = segs.find((s) => s.type === 'html' || s.type === 'inline-html')!
-    expect(block.type).toBe('html') // has a <script> → frame, not inline
-    expect(isInteractiveHtml(block.text)).toBe(true)
+    expect(segs).toHaveLength(1)
+    // Bare regions never auto-execute: DOMPurify strips the <script> at render. Authored frontend
+    // cards opt into the scripted frame via a ```html fence / <body> (the HTML_BLOCK path).
+    expect(segs[0].type).toBe('inline-html')
   })
 
   it('keeps a card and its SIBLING <style> sheet together as ONE inline region', () => {

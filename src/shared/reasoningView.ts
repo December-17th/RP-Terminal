@@ -66,14 +66,19 @@ export interface TpInfo {
  */
 export const extractTpInfo = (text: string): TpInfo | null => {
   const src = String(text || '')
-  if (!src || !src.includes('<tp')) return null
-  const m = src.match(
-    /<tp\b[^>]*>\s*([^@|<]*?)\s*(?:@\s*([^@|<]*?)\s*?)?(?:\|\s*([^<]*?)\s*)?<\/tp>/i
-  )
+  if (!src.includes('<tp')) return null
+  // Match ONLY the closed form, with a single non-`<` inner capture (no nested lazy quantifiers), then
+  // split the fields in JS. The earlier `\s*(…?)\s*(?:@…)?(?:\|…)?` pattern backtracked catastrophically
+  // on an UNCLOSED `<tp>` followed by whitespace — and this runs on every streamed token (ReasoningPanel),
+  // so an unclosed tag mid-stream froze the renderer. Requiring `</tp>` is also the right UX (nothing to
+  // show until it closes).
+  const m = src.match(/<tp\b[^>]*>([^<]*)<\/tp>/i)
   if (!m) return null
-  const time = normalizeTpText(m[1])
-  const location = normalizeTpText(m[2])
-  const weather = normalizeTpText(m[3])
+  const [timeLoc, weatherPart = ''] = m[1].split('|')
+  const [timePart = '', locationPart = ''] = timeLoc.split('@')
+  const time = normalizeTpText(timePart)
+  const location = normalizeTpText(locationPart)
+  const weather = normalizeTpText(weatherPart)
   if (!time && !location && !weather) return null
   return { time, location, weather }
 }
