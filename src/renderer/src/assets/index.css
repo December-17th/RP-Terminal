@@ -1814,3 +1814,16 @@ select {
   color: var(--rpt-text-secondary);
   font-size: 0.76em;
 }
+
+/* SettingsPanel reused inside the Settings modal — drop its own panel chrome (the modal
+   provides the header, padding, and scroll). Scoped so other modals are unaffected. */
+.settings-modal-content .panel {
+  height: auto;
+}
+.settings-modal-content .panel > .panel-header {
+  display: none;
+}
+.settings-modal-content .panel > .panel-body {
+  padding: 0;
+  overflow: visible;
+}

@@ -1,6 +1,7 @@
 import { useCharacterStore } from '../stores/characterStore'
 import { usePresetStore } from '../stores/presetStore'
 import { useChatStore } from '../stores/chatStore'
+import { useUiStore } from '../stores/uiStore'
 import type { PanelTab } from './panelTabs'
 
 /** The top navigation bar: brand, panel tabs, and the active-context status line. */
@@ -45,7 +46,9 @@ export function TopNav({
         {tab('scripts', 'Scripts', !hasCharacter)}
         {tab('regex', 'Regex')}
         {tab('api', 'API')}
-        {tab('settings', 'Settings')}
+        <button className="nav-tab" onClick={() => useUiStore.getState().openSettings()}>
+          Settings
+        </button>
         {tab('logs', 'Logs')}
       </div>
       <span className="nav-status">
