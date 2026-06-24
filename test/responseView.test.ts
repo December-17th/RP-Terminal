@@ -6,7 +6,8 @@ import {
   cleanForDisplay,
   cleanForHistory,
   hasThinking,
-  extractThinking
+  extractThinking,
+  splitReasoning
 } from '../src/shared/responseView'
 
 describe('responseView (lossless storage, view-time transforms)', () => {
@@ -54,5 +55,43 @@ describe('responseView (lossless storage, view-time transforms)', () => {
     expect(extractThinking('a <think>one</think> b <think>two</think>')).toBe('one\n\ntwo')
     expect(extractThinking('<think>cut off…')).toBe('cut off…') // unclosed (truncated output)
     expect(extractThinking('no reasoning here')).toBe('')
+  })
+
+  describe('splitReasoning (streaming lifecycle: <think> → panel, </think> → body)', () => {
+    it('no reasoning tag → all body, state none', () => {
+      expect(splitReasoning('The rain falls.')).toEqual({
+        reasoning: '',
+        body: 'The rain falls.',
+        state: 'none'
+      })
+    })
+
+    it('open <think> with no close → thinking; reasoning streams, body withheld', () => {
+      const r = splitReasoning('<think>weighing options')
+      expect(r.state).toBe('thinking')
+      expect(r.reasoning).toBe('weighing options')
+      expect(r.body).toBe('') // body only streams after </think>
+    })
+
+    it('closed </think> → done; reasoning is the inner text, body is the rest', () => {
+      const r = splitReasoning('<thinking>plan A</thinking>\nThe rain falls.')
+      expect(r.state).toBe('done')
+      expect(r.reasoning).toBe('plan A')
+      expect(r.body).toBe('The rain falls.')
+    })
+
+    it('a closed block followed by a fresh open one is still thinking', () => {
+      const r = splitReasoning('<think>a</think><think>b')
+      expect(r.state).toBe('thinking')
+      expect(r.reasoning).toBe('a\n\nb')
+      expect(r.body).toBe('')
+    })
+
+    it('keeps <tp> in the body (for the panel to read) and drops rpt-events', () => {
+      const r = splitReasoning('<think>x</think><tp>day-1</tp><rpt-event type="s" />Body.')
+      expect(r.state).toBe('done')
+      expect(r.body).toContain('<tp>day-1</tp>')
+      expect(r.body).not.toContain('<rpt-event')
+    })
   })
 })

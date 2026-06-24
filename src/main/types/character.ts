@@ -49,6 +49,10 @@ export const RPTerminalExtSchema = z
   .object({
     ui_layout: z.array(WidgetDefSchema).default([]),
     css: z.string().default(''),
+    /** Card-customizable reasoning UI: an HTML shell with `{{reasoning}}`/`{{title}}`/`{{tp}}`/
+     * `{{state}}` (+ `{{time}}`/`{{location}}`/`{{weather}}`) slots. The app folds `<think>` into
+     * it (streaming + settled). Empty ⇒ the built-in collapsible reasoning panel. See ReasoningPanel. */
+    reasoning_template: z.string().default(''),
     theme: z.record(z.string(), z.any()).default({}),
     state_schema: z.record(z.string(), z.any()).default({}),
     /** MVU Zod `data_schema` source (JS). Run sandboxed (R4) to derive stat_data

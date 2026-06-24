@@ -59,3 +59,36 @@ export const cleanForDisplay = (text: string): string => stripRptEvents(stripThi
  */
 export const cleanForHistory = (text: string): string =>
   stripMvuBlocks(stripRptEvents(stripThinking(text))).trim()
+
+/** Where a (possibly in-flight) response is in the reasoning lifecycle. */
+export type ReasoningState = 'none' | 'thinking' | 'done'
+
+export interface ReasoningSplit {
+  /** Reasoning text so far (inner content of the <think> block(s), incl. a dangling open one). */
+  reasoning: string
+  /** The displayable body — WITHHELD ('') while still thinking, so it only streams after </think>. */
+  body: string
+  state: ReasoningState
+}
+
+/**
+ * Streaming-aware split of a response into its reasoning and its body, for the live UX where the
+ * model first streams `<think>…` into a reasoning panel and only streams the body once `</think>`
+ * lands:
+ *  - 'thinking' — an OPEN <think>/<thinking> with no close yet → everything after the open tag is
+ *    reasoning-so-far and the body is held back ('').
+ *  - 'done' — the block(s) closed → `reasoning` is the inner text, `body` is the rest (cleaned the
+ *    same way the committed floor renders, via cleanForDisplay — keeps <tp>/<UpdateVariable>).
+ *  - 'none' — no reasoning tag → all body.
+ * Reuses the SAME think regexes as stripThinking/extractThinking so it stays consistent with the
+ * committed floor. Pure + shared (renderer streaming view + the settled FloorBlock).
+ */
+export const splitReasoning = (text: string): ReasoningSplit => {
+  const s = String(text ?? '')
+  const reasoning = stripRptEvents(extractThinking(s)).trim()
+  // An unclosed <think> remains after stripping every CLOSED block ⇒ still thinking.
+  const unclosed = THINK_DANGLING_RE.test(s.replace(THINK_RE, ''))
+  const state: ReasoningState = unclosed ? 'thinking' : reasoning ? 'done' : 'none'
+  const body = state === 'thinking' ? '' : cleanForDisplay(s)
+  return { reasoning, body, state }
+}
