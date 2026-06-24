@@ -49,13 +49,15 @@ body {
 /* ---------- Top navigation ---------- */
 .top-nav {
   flex: 0 0 auto;
-  height: 52px;
+  height: 48px;
   display: flex;
   align-items: center;
   gap: 18px;
-  padding: 0 16px;
+  /* right padding reserves the OS window-control overlay strip (Windows custom title bar) */
+  padding: 0 138px 0 16px;
   background-color: var(--rpt-bg-secondary);
   border-bottom: 1px solid var(--rpt-border);
+  -webkit-app-region: drag;
 }
 .nav-brand {
   font-weight: 700;
@@ -1639,9 +1641,10 @@ select {
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 0 18px;
+  padding: 0 138px 0 18px;
   background: var(--rpt-bg-secondary);
   border-bottom: 1px solid var(--rpt-border);
+  -webkit-app-region: drag;
 }
 .lc-brand {
   font-weight: 700;
@@ -1826,4 +1829,19 @@ select {
 .settings-modal-content .panel > .panel-body {
   padding: 0;
   overflow: visible;
+}
+
+/* Custom title bar (Windows): the top bars are the draggable region; their interactive children
+   are not. A bare strip keeps the window movable on screens with no top bar (the profile picker). */
+.nav-brand,
+.nav-tab,
+.nav-ext-btn,
+.lc-crumb,
+.lc-import {
+  -webkit-app-region: no-drag;
+}
+.ts-drag {
+  -webkit-app-region: drag;
+  height: 40px;
+  flex: 0 0 auto;
 }
