@@ -2,6 +2,7 @@
 import type { Host, ThGlobals } from './types'
 import { floorsToThMessages, floorsToStChat, currentMessageId } from './shapes'
 import { setVarOps, assignVarOps, replaceStatDataOps, type VarOp } from './ops'
+import { expandMacros } from '../macros'
 
 const TAVERN_EVENTS = {
   GENERATION_STARTED: 'generation_started',
@@ -62,6 +63,18 @@ export function createThRuntime(host: Host): ThGlobals {
 
   const writeVars = (ops: VarOp[]): Promise<void> =>
     ops.length ? host.applyVariableOps(ops) : Promise.resolve()
+
+  // Expand {{macros}} (substituteParams / substitudeMacros) over the card's live context: char/user/persona
+  // names + the cached stat_data as chat vars. Pure (shared/macros); leaves <% %> EJS alone.
+  const substMacros = (t: any): any =>
+    typeof t === 'string'
+      ? expandMacros(t, {
+          char: host.charData()?.name,
+          user: host.personaName(),
+          persona: host.personaName(),
+          vars: stat
+        })
+      : t
 
   const errorCatched =
     (fn: any) =>
@@ -164,7 +177,7 @@ export function createThRuntime(host: Host): ThGlobals {
     eventRemoveListener: off,
     // misc
     waitGlobalInitialized: async () => true,
-    substitudeMacros: (t: string) => t,
+    substitudeMacros: substMacros,
     getLorebookSettings: () => ({}),
     setLorebookSettings: () => {},
     audioImport: () => {},
@@ -293,7 +306,7 @@ export function createThRuntime(host: Host): ThGlobals {
   const SillyTavern = {
     chat: stChat(),
     getContext,
-    substituteParams: (t: string) => t,
+    substituteParams: substMacros,
     saveChat: async () => host.saveChat(SillyTavern.chat),
     reloadCurrentChat: async () => host.reloadChat()
   }

@@ -115,6 +115,9 @@ describe('createThRuntime', () => {
     expect(g.getCurrentMessageId()).toBe(1)
     expect(g.getCharData()).toEqual({ name: 'Ellia' })
     expect(g.formatAsTavernRegexedString('hi')).toBe('HI')
+    // substituteParams / substitudeMacros expand {{macros}} over char/user/stat_data
+    expect(g.SillyTavern.substituteParams('{{char}}/{{user}}/{{getvar::hp}}')).toBe('Ellia/Player/1')
+    expect(g.substitudeMacros('hi {{char}}')).toBe('hi Ellia')
     expect(g.SillyTavern.chat[0].name).toBe('Player')
   })
 
