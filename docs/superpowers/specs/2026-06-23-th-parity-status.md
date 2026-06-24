@@ -16,8 +16,9 @@ mode* — holds for the implemented surface.
 Variables/MVU · chat read + write (set/delete/save/reload/setInput) · worldbook read + **CRUD/bind** (full
 library) · char/preset reads · regex **read + format** · `generate`/`generateRaw` · the `tavern_events`
 lifecycle/mutation/**stream** events · `EjsTemplate.*` (the EJS engine) · **`substitudeMacros`/
-`substituteParams`** (now expand `{{macros}}`) · `{{get_X_variable}}`/`{{format_X_variable}}` macros · the
-assumed render-env libs + sizing + `window.top` surface.
+`substituteParams`** (expand `{{macros}}`) · `{{get_X_variable}}`/`{{format_X_variable}}` macros ·
+**`triggerSlash`** (the STScript subset — pipes/closures/`{{pipe}}`/macros, chat **+** global vars,
+`/gen`·`/genraw`·`/trigger`·`/send`) · the assumed render-env libs + sizing + `window.top` surface.
 
 ## Remaining: intentional at-parity stubs (both transports identical)
 
@@ -27,13 +28,18 @@ needs the same pattern as the worldbook/chat-write WCV work: a renderer impl for
 
 | Method | Why deferred | To fill |
 | --- | --- | --- |
-| `triggerSlash` (STScript) | The roadmap's explicit **XL "last" track**; the runner (`plugin/slash.ts`/`stscript.ts`) is renderer-side; the home onboarding works via the composer-inject path already, so it's not blocking. | Inline → `runSlash`/`runScript`; WCV → a `wcv-host-trigger-slash` IPC round-tripped to the renderer runner. |
 | `audio*` (`audioPlay`/Pause/Import/Mode/Enable) | Cards play audio **natively** (`<audio>`/WebAudio) under the card CSP — the real path; the TH audio API is redundant. | Inline → `plugin/audioService`; WCV → an audio IPC (only if a card insists on the API over native). |
 | `replaceTavernRegexes` (regex **write**) | **Risky** (a runtime regex rewrite can break the card's own beautification) and **rare**; the read + `formatAsTavernRegexedString` cover the real cases. | `scriptApiService` regex write, gated. |
 | `registerMacroLike` | Cross-process (a card's custom macro must reach prompt-time expansion in **main**) and low-demand. | A render-time macro registry + a main bridge. |
 
+`triggerSlash` (STScript) was the roadmap's "XL last track" — now **implemented** (the
+[STScript / triggerSlash domain](2026-06-23-stscript-triggerslash-domain.md)): the pure interpreter moved to
+`shared/` and the runtime drives it over the `Host`, so it works in both transports with command dispatch in
+the shared runtime (the only new IPC is the persistent global-var pair). Deferred within it: `while`/loops,
+the long-tail command set, card-registered-command dispatch, `/send`-as-history-insert.
+
 ## Net
 
-The card-API **parity goal is met**, and the high-value functional gaps are closed. The four items above are
-honest, documented stubs — each fillable on demand with the established renderer-impl + WCV-IPC pattern, but
-not worth forcing low-value/risky cross-process code speculatively.
+The card-API **parity goal is met**, and the high-value functional gaps — including `triggerSlash` — are
+closed. The three items above are honest, documented stubs: each fillable on demand with the established
+renderer-impl + WCV-IPC pattern, but not worth forcing low-value/risky cross-process code speculatively.
