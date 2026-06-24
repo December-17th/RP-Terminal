@@ -1,5 +1,9 @@
 # RP Terminal — Codebase Health Check
 
+> **Superseded by [codebase-health-check-2026-06-24.md](codebase-health-check-2026-06-24.md).** The
+> metrics below are point-in-time (304 tests, lint 761, `MessageScriptFrame` orphan, `objectPath` not yet
+> extracted) and no longer reflect the code — the cleanup backlog has since been closed. Kept for history.
+
 _Read-only diagnostic, 2026-06-22. Scope: whole-repo orientation + the failure modes that accumulate when a
 project is built incrementally by an AI assistant. No code was changed._
 
