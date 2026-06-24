@@ -185,6 +185,49 @@ export const registerWcvIpc = (ipcMain: IpcMain): void => {
     return true
   })
 
+  // --- Worldbook CRUD/bind over the full library (trusted cards). list/chat-ids are SYNC. ---
+  ipcMain.on('wcv-host-list-worldbooks-sync', (e) => {
+    const ctx = wcvManager.contextFor(e.sender.id)
+    e.returnValue = ctx ? lorebookService.listLorebooks(ctx.profileId) : []
+  })
+  ipcMain.on('wcv-host-chat-worldbook-ids-sync', (e) => {
+    const ctx = wcvManager.contextFor(e.sender.id)
+    const ids = ctx ? chatService.getChatLorebookIds(ctx.profileId, ctx.chatId) : null
+    e.returnValue = ids ?? (ctx?.characterId ? [ctx.characterId] : [])
+  })
+  ipcMain.handle('wcv-host-create-worldbook', (e, name) => {
+    const ctx = wcvManager.contextFor(e.sender.id)
+    return ctx ? lorebookService.createLorebook(ctx.profileId, String(name ?? 'New Worldbook')).id : ''
+  })
+  ipcMain.handle('wcv-host-delete-worldbook', (e, id) => {
+    const ctx = wcvManager.contextFor(e.sender.id)
+    if (!ctx) return false
+    lorebookService.deleteLorebookById(ctx.profileId, String(id))
+    return true
+  })
+  ipcMain.handle('wcv-host-get-worldbook-by-id', (e, id) => {
+    const ctx = wcvManager.contextFor(e.sender.id)
+    if (!ctx) return { entries: [] }
+    const lb = lorebookService.getLorebookById(ctx.profileId, String(id))
+    return lb ? { name: lb.name, entries: lb.entries } : { entries: [] }
+  })
+  ipcMain.handle('wcv-host-save-worldbook-by-id', (e, id, entries) => {
+    const ctx = wcvManager.contextFor(e.sender.id)
+    if (!ctx) return
+    const lb = lorebookService.getLorebookById(ctx.profileId, String(id)) || { name: '', entries: [] }
+    lb.entries = (Array.isArray(entries) ? entries : []).map(toLoreEntry)
+    lorebookService.saveLorebookById(ctx.profileId, String(id), lb)
+  })
+  ipcMain.handle('wcv-host-bind-worldbook', (e, id, on) => {
+    const ctx = wcvManager.contextFor(e.sender.id)
+    if (!ctx) return
+    const cur =
+      chatService.getChatLorebookIds(ctx.profileId, ctx.chatId) ??
+      (ctx.characterId ? [ctx.characterId] : [])
+    const next = on ? (cur.includes(id) ? cur : [...cur, id]) : cur.filter((x) => x !== id)
+    chatService.setChatLorebookIds(ctx.profileId, ctx.chatId, next)
+  })
+
   // --- Character / preset / regex reads (Track C0) — sync, ctx-scoped via scriptApiService ---
   ipcMain.on('wcv-host-get-char-data', (e) => {
     const ctx = wcvManager.contextFor(e.sender.id)

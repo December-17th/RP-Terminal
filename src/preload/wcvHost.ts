@@ -62,14 +62,30 @@ export function createWcvHost(deps: Deps): Host {
     },
     saveWorldbook: (name, entries) =>
       ipcRenderer.invoke('wcv-host-replace-worldbook', name, entries),
-    // Worldbook CRUD/bind — stubbed; wired to ctx-scoped wcv-host-* IPC in the worldbook-crud T3.
-    listWorldbooks: () => [],
-    chatWorldbookIds: () => [],
-    createWorldbook: () => Promise.resolve(''),
-    deleteWorldbook: () => Promise.resolve(false),
-    getWorldbookById: () => Promise.resolve({ entries: [] }),
-    saveWorldbookById: () => Promise.resolve(),
-    bindWorldbook: () => Promise.resolve(),
+    // Worldbook CRUD/bind — full library via ctx-scoped IPC. list/chat-ids are sync (sendSync).
+    listWorldbooks: () => {
+      try {
+        return ipcRenderer.sendSync('wcv-host-list-worldbooks-sync') || []
+      } catch {
+        return []
+      }
+    },
+    chatWorldbookIds: () => {
+      try {
+        return ipcRenderer.sendSync('wcv-host-chat-worldbook-ids-sync') || []
+      } catch {
+        return []
+      }
+    },
+    createWorldbook: (name) => ipcRenderer.invoke('wcv-host-create-worldbook', name),
+    deleteWorldbook: (id) => ipcRenderer.invoke('wcv-host-delete-worldbook', id),
+    getWorldbookById: async (id) => {
+      const r = await ipcRenderer.invoke('wcv-host-get-worldbook-by-id', id)
+      return { name: r?.name, entries: Array.isArray(r?.entries) ? r.entries : [] }
+    },
+    saveWorldbookById: (id, entries) =>
+      ipcRenderer.invoke('wcv-host-save-worldbook-by-id', id, entries),
+    bindWorldbook: (id, on) => ipcRenderer.invoke('wcv-host-bind-worldbook', id, on),
     setChatMessages: (m) => ipcRenderer.invoke('wcv-host-set-chat-messages', m),
     deleteChatMessages: (ids) => ipcRenderer.invoke('wcv-host-delete-chat-messages', ids),
     createChat: () => Promise.resolve(''),
