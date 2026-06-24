@@ -300,9 +300,10 @@ const installBridge = (vm: QuickJSContext, ctx: TemplateContext): void => {
  * or not yet initialized → also strips.
  */
 /**
- * Render a template, returning both the output and any error message (null when clean). On any error the
- * output is the tag-stripped template (fail-safe). No `<%`, engine off, or not-yet-initialized → no error.
- * `evalTemplate` wraps this for the common output-only path; `getSyntaxErrorInfo` uses the error.
+ * Render a template, returning both the output and any error message (null when clean). On an eval ERROR the
+ * output is **empty** (NOT the tag-stripped template — stripping a `<% if %>…<% else %>…` entry would leak
+ * every branch into the prompt) and the error is returned so the caller can fail loud. Engine off /
+ * not-yet-initialized (non-errors) still strip tags. `evalTemplate` wraps this for the output-only path.
  */
 export const evalTemplateDetailed = (
   template: string,
@@ -322,7 +323,7 @@ export const evalTemplateDetailed = (
       res.error.dispose()
       const msg = typeof err === 'object' ? JSON.stringify(err) : String(err)
       logFn('error', 'Template error', msg)
-      return { output: stripTags(template), error: msg }
+      return { output: '', error: msg }
     }
     const out = vm.getString(res.value)
     res.value.dispose()
@@ -330,7 +331,7 @@ export const evalTemplateDetailed = (
   } catch (e: any) {
     const msg = e?.message || String(e)
     logFn('error', 'Template eval failed', msg)
-    return { output: stripTags(template), error: msg }
+    return { output: '', error: msg }
   } finally {
     vm.dispose()
   }

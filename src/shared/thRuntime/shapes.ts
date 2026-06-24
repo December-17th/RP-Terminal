@@ -25,6 +25,31 @@ export function currentMessageId(floors: FloorLike[]): number {
 }
 
 /**
+ * Index of the LAST message in the chat being assembled for a turn — matching SillyTavern's `lastMessageId`
+ * (= `chat.length - 1`). `hasUserAction` accounts for the pending user input that's appended but not yet a
+ * floor: with it, the opening turn (just a greeting) → 1, the value the 命定之诗-style "is this the opening?"
+ * checks (`lastMessageId === 1`) rely on; without it (regenerate/continue) → the latest assistant index.
+ */
+export function lastMessageIndex(floors: FloorLike[], hasUserAction: boolean): number {
+  return Math.max(0, chatIndexMap(floors).length - (hasUserAction ? 0 : 1))
+}
+
+/** Index of the last USER message in the assembled chat (the pending user action sits at the end). -1 = none. */
+export function lastUserMessageIndex(floors: FloorLike[], hasUserAction: boolean): number {
+  const map = chatIndexMap(floors)
+  if (hasUserAction) return map.length
+  for (let i = map.length - 1; i >= 0; i--) if (map[i].isUser) return i
+  return -1
+}
+
+/** Index of the last ASSISTANT message in the assembled chat. -1 = none. */
+export function lastCharMessageIndex(floors: FloorLike[]): number {
+  const map = chatIndexMap(floors)
+  for (let i = map.length - 1; i >= 0; i--) if (!map[i].isUser) return i
+  return -1
+}
+
+/**
  * Floors → the chat-array index space: per floor, the user slot ONLY when it has content (matching
  * SillyTavern's `chat[]`, which has no empty user messages), then the assistant slot. The sequential index
  * IS the `message_id`. This is the ONE canonical mapping — `floorsToThMessages` (getChatMessages),

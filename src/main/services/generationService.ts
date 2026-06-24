@@ -22,7 +22,7 @@ import {
 } from './promptBuilder'
 import { getPromptRules } from './regexService'
 import { loadGlobals, saveGlobals } from './templateService'
-import { streamProvider, DeltaCallback, UsageCallback } from './apiService'
+import { streamProvider, orderForProvider, DeltaCallback, UsageCallback } from './apiService'
 import { normalizeUsage, buildFloorMetrics } from './promptCacheMetrics'
 import { parseContent, stripThinking, RPEvent } from '../parsers/contentParser'
 import {
@@ -32,6 +32,11 @@ import {
   JsonPatchOp
 } from '../parsers/mvuParser'
 import { frozenVarsFor } from './cacheLayers'
+import {
+  lastMessageIndex,
+  lastUserMessageIndex,
+  lastCharMessageIndex
+} from '../../shared/thRuntime/shapes'
 import { log } from './logService'
 import { FloorFile } from '../types/chat'
 import { Lorebook, LorebookEntry, getRpExt } from '../types/character'
@@ -205,8 +210,14 @@ export const generate = async (
       constants: {
         userName,
         charName: card.data.name || 'Character',
+        assistantName: card.data.name || 'Character',
         lastUserMessage: userAction,
         lastCharMessage: lastFloor?.response.content || '',
+        // SillyTavern message-index globals (ST-Prompt-Template). The pending user action counts as the
+        // last message, so on the opening turn lastMessageId === 1 (presets gate "is this the opening?" on it).
+        lastMessageId: lastMessageIndex(floors, !!userAction.trim()),
+        lastUserMessageId: lastUserMessageIndex(floors, !!userAction.trim()),
+        lastCharMessageId: lastCharMessageIndex(floors),
         chatId,
         characterId: chat.character_id,
         runType: 'generate'
@@ -247,10 +258,15 @@ export const generate = async (
     : presetMax
   const params = { ...preset.parameters, max_tokens: maxTokens }
 
+  // The exact array sent to the API (provider-specific ordering: end-on-user for strict OpenAI-compatible
+  // backends, but a trailing assistant prefill is kept last so the model continues it). Logged + stored, so
+  // the `request` log is a FAITHFUL representation of what went over the wire.
+  const sendMessages = orderForProvider(messages, settings.api.provider)
+
   log(
     'request',
-    `→ ${settings.api.provider} · ${settings.api.model || '(no model)'} · ${fsmEnabled ? `${mode} mode` : 'classic'} · ${messages.length} msgs · ${settings.api.endpoint || '(default endpoint)'}`,
-    messages
+    `→ ${settings.api.provider} · ${settings.api.model || '(no model)'} · ${fsmEnabled ? `${mode} mode` : 'classic'} · ${sendMessages.length} msgs · ${settings.api.endpoint || '(default endpoint)'}`,
+    sendMessages
   )
 
   let rawUsage: unknown = null
@@ -263,7 +279,7 @@ export const generate = async (
 
   let raw: string
   try {
-    raw = await streamProvider(settings, messages, params, onDelta, controller.signal, onUsage)
+    raw = await streamProvider(settings, sendMessages, params, onDelta, controller.signal, onUsage)
   } catch (err: any) {
     if (controller.signal.aborted) {
       log('info', '⏹ generation stopped by user')
@@ -288,7 +304,7 @@ export const generate = async (
   // chaining from the previous floor (its stored `request` is the proxy anchor; its cumulative is
   // the prior tally). Persisted on the floor below; both UI surfaces derive from it.
   const turnMetrics = buildFloorMetrics({
-    messages,
+    messages: sendMessages,
     prevMessages: (lastFloor?.request as ChatMessage[] | undefined) ?? null,
     usage: normalizeUsage(settings.api.provider, rawUsage),
     provider: settings.api.provider,
@@ -345,7 +361,7 @@ export const generate = async (
     // Lossless: the complete AI output (incl. <thinking>, <UpdateVariable>, etc.) is stored.
     response: { content: raw, model: settings.api.model, provider: settings.api.provider },
     // The complete prompt that produced it, for full-fidelity inspection/replay.
-    request: messages,
+    request: sendMessages,
     events: parsed.events,
     variables,
     metrics: turnMetrics

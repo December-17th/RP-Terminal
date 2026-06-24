@@ -485,6 +485,79 @@ describe('buildPrompt — EJS in constant lore (命定之诗 real-card shape)', 
   })
 })
 
+describe('buildPrompt — EJS conditionals: lastMessageId + fail-loud', () => {
+  beforeAll(async () => {
+    await initTemplates()
+  })
+
+  it('renders exactly one branch of a lastMessageId conditional (no branch leak)', () => {
+    const messages = buildPrompt({
+      card: card(),
+      preset: preset([
+        blk('none', '<%_ if (lastMessageId === 1) { _%>OPENING<%_ } else { _%>LATER<%_ } _%>'),
+        blk('chat_history')
+      ]),
+      lorebooks: [],
+      floors: [],
+      userAction: 'go',
+      template: { vars: {}, globals: {}, constants: { lastMessageId: 1 } }
+    })
+    expect(messages.some((m) => m.content === 'OPENING')).toBe(true)
+    expect(messages.some((m) => m.content.includes('LATER'))).toBe(false) // the other branch never leaks
+  })
+
+  it('an EJS getvar() block sees a {{setvar}} authored in a LATER preset block (first prompt)', () => {
+    // The 命定之诗 CoT block reads getvar('ai模型'); a model-toggle block AFTER it does
+    // {{setvar::ai模型::…}}. ST runs the whole macro pass before the EJS pass, so the CoT sees it even on
+    // turn 1. RPT must do the same (not per-block macro→EJS in order).
+    const messages = buildPrompt({
+      card: card(),
+      preset: preset([
+        blk('none', "<%_ if (getvar('mdl') === 'Gemini') { _%>COT-BODY<%_ } _%>"), // reader
+        blk('none', '{{setvar::mdl::Gemini}}'), // setter — AFTER the reader
+        blk('chat_history')
+      ]),
+      lorebooks: [],
+      floors: [],
+      userAction: 'go',
+      template: { vars: {}, globals: {}, constants: {} }
+    })
+    expect(messages.some((m) => m.content === 'COT-BODY')).toBe(true)
+  })
+
+  it('FAILS THE TURN (throws) when a preset block references a missing identifier', () => {
+    expect(() =>
+      buildPrompt({
+        card: card(),
+        preset: preset([blk('none', '<% notDefinedAnywhere %>X'), blk('chat_history')]),
+        lorebooks: [],
+        floors: [],
+        userAction: 'go',
+        template: { vars: {}, globals: {}, constants: {} }
+      })
+    ).toThrow(/notDefinedAnywhere|preset template/i)
+  })
+
+  it('a missing-var conditional throws instead of leaking every branch (the original bug)', () => {
+    // Pre-fix: ReferenceError → stripTags → "GEMDEEPOTHER" leaked into the prompt. Now: fail loud.
+    expect(() =>
+      buildPrompt({
+        card: card(),
+        preset: preset([
+          blk(
+            'none',
+            "<%_ if (m === 'a') { _%>GEM<%_ } else if (m === 'b') { _%>DEEP<%_ } else { _%>OTHER<%_ } _%>"
+          )
+        ]),
+        lorebooks: [],
+        floors: [],
+        userAction: 'go',
+        template: { vars: {}, globals: {}, constants: {} }
+      })
+    ).toThrow()
+  })
+})
+
 describe('collectRenderMarkers', () => {
   it('collects active [RENDER:*] templates by side; skips inactive / @@dont_activate', () => {
     const lb = book([

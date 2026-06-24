@@ -8,6 +8,8 @@ export interface RenderedFloor {
   user: string
   rawResponse: string
   html: string
+  /** Reasoning (`<think>`) the card's regex did NOT beautify — shown in a collapsible section. '' = none. */
+  thinking: string
   /** Active swipe index + total alternates for this floor (TH-2). */
   swipeId: number
   swipeCount: number
@@ -76,6 +78,12 @@ export function FloorBlock({
           &gt; {f.user}
         </div>
       ) : null}
+      {f.thinking && (
+        <details className="reasoning-block">
+          <summary className="reasoning-summary">💭 Reasoning</summary>
+          <div className="reasoning-content">{f.thinking}</div>
+        </details>
+      )}
       {editingResp ? (
         <EditArea
           value={editText}
