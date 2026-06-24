@@ -1,4 +1,5 @@
 import { useComposer } from '../hooks/useComposer'
+import { useT } from '../i18n'
 
 /**
  * The action input: a textarea with slash-command autocomplete and a send/stop button.
@@ -26,6 +27,7 @@ export function Composer({
     submit,
     actionRef
   } = useComposer({ onSendMessage })
+  const t = useT()
 
   return (
     <div className="action-input-container">
@@ -87,12 +89,12 @@ export function Composer({
             if (!isGenerating) submit()
           }
         }}
-        placeholder="What do you do?  (type / for commands)"
+        placeholder={t('composer.placeholder')}
         disabled={isGenerating}
       />
       <button
         className={`send-btn ${isGenerating ? 'stop' : ''}`}
-        title={isGenerating ? 'Stop generation' : 'Send'}
+        title={isGenerating ? t('composer.stop') : t('composer.send')}
         disabled={!isGenerating && !actionInput.trim()}
         onClick={() => {
           if (isGenerating) {

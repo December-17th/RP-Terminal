@@ -31,7 +31,24 @@ const en: Record<string, string> = {
   'settings.preferences': 'Preferences',
   'settings.regex': 'Regex',
   'settings.scripts': 'Scripts',
-  'settings.language': 'Language'
+  'settings.language': 'Language',
+
+  'chat.sessionMode': 'Session mode',
+  'chat.modeExplore': 'Explore',
+  'chat.modeDialogue': 'Dialogue',
+  'chat.modeCombat': 'Combat',
+  'chat.switchToMode': 'Switch to {{mode}} mode',
+  'chat.modeDisabledHint': 'Set Agent Mode to Manual or Agentic in Settings to switch scenes',
+  'chat.regenerate': 'Regenerate',
+  'chat.regenerateTitle': 'Re-roll the last response',
+
+  'composer.placeholder': 'What do you do?  (type / for commands)',
+  'composer.send': 'Send',
+  'composer.stop': 'Stop generation',
+
+  'profile.selectProfile': 'Select Profile',
+  'profile.newProfileName': 'New Profile Name',
+  'profile.create': 'Create'
 }
 
 export default en

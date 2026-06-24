@@ -32,7 +32,24 @@ const zh: Record<string, string> = {
   'settings.preferences': '偏好设置',
   'settings.regex': '正则',
   'settings.scripts': '脚本',
-  'settings.language': '语言'
+  'settings.language': '语言',
+
+  'chat.sessionMode': '会话模式',
+  'chat.modeExplore': '探索',
+  'chat.modeDialogue': '对话',
+  'chat.modeCombat': '战斗',
+  'chat.switchToMode': '切换到「{{mode}}」模式',
+  'chat.modeDisabledHint': '在「设置」中将智能体模式设为「手动」或「智能」以切换场景',
+  'chat.regenerate': '重新生成',
+  'chat.regenerateTitle': '重新生成上一条回复',
+
+  'composer.placeholder': '你要做什么？（输入 / 调用命令）',
+  'composer.send': '发送',
+  'composer.stop': '停止生成',
+
+  'profile.selectProfile': '选择配置档',
+  'profile.newProfileName': '新配置档名称',
+  'profile.create': '创建'
 }
 
 export default zh
