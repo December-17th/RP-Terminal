@@ -1,5 +1,6 @@
 import { type ReactNode } from 'react'
 import { MessageContent } from './MessageContent'
+import { ReasoningPanel } from './ReasoningPanel'
 import { EditArea } from './EditArea'
 
 /** A floor with display regex already applied — what the chat actually renders. */
@@ -28,6 +29,7 @@ export interface FloorMenuTarget {
 export function FloorBlock({
   f,
   cardCss,
+  reasoningTemplate,
   editing,
   editText,
   isLast,
@@ -40,6 +42,8 @@ export function FloorBlock({
 }: {
   f: RenderedFloor
   cardCss?: string
+  /** Card-authored reasoning UI shell (data.extensions.rp_terminal.reasoning_template). */
+  reasoningTemplate?: string
   editing: { floor: number; field: 'user' | 'response' } | null
   editText: string
   isLast: boolean
@@ -79,10 +83,13 @@ export function FloorBlock({
         </div>
       ) : null}
       {f.thinking && (
-        <details className="reasoning-block">
-          <summary className="reasoning-summary">💭 Reasoning</summary>
-          <div className="reasoning-content">{f.thinking}</div>
-        </details>
+        <ReasoningPanel
+          reasoning={f.thinking}
+          body={f.rawResponse}
+          state="done"
+          template={reasoningTemplate}
+          css={cardCss}
+        />
       )}
       {editingResp ? (
         <EditArea

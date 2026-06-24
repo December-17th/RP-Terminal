@@ -71,6 +71,8 @@ export function ChatView({ profileId }: { profileId: string }): React.ReactEleme
   }, [activeChatId, profileId])
 
   const cardCss = activeCharacter?.card.data.extensions?.rp_terminal?.css as string | undefined
+  const reasoningTemplate = activeCharacter?.card.data.extensions?.rp_terminal
+    ?.reasoning_template as string | undefined
   const personaName = settings?.persona?.name || 'User'
   const charName = activeCharacter?.card.data.name || 'Character'
 
@@ -80,11 +82,11 @@ export function ChatView({ profileId }: { profileId: string }): React.ReactEleme
   const renderedFloors = useMemo(
     () =>
       floors.map((f) => {
-        // Stored content is the FULL raw response. Strip only our own state tags here and KEEP the
-        // <thinking> block so the card's display regex can fold/beautify it (if it doesn't, the reasoning
-        // is moved to a dedicated expandable section below the prompt — see the regex handling below, not
-        // stripped). The card's regex also folds its <UpdateVariable> blocks, so disabling it shows the
-        // original — and nothing is ever truncated in storage.
+        // Stored content is the FULL raw response. Strip our own state tags; the <thinking> block is
+        // kept here only so renderTemplate/macros see the same text — it's removed before the display
+        // regex (below) and routed to the ReasoningPanel, so a card regex can NEVER rewrite reasoning
+        // into inline UI. The regex still folds the card's <UpdateVariable> blocks in the body, and
+        // nothing is ever truncated in storage.
         const evaled = renderTemplate(stripRptEvents(f.response.content), f.variables, 'final')
         // [RENDER:*]: wrap with the active render-marker templates (each evaled with this floor's vars).
         const renderOn =
@@ -104,21 +106,17 @@ export function ChatView({ profileId }: { profileId: string }): React.ReactEleme
           char: charName,
           vars: f.variables
         })
-        // Decide how reasoning (<thinking>) is shown. Run the display regex twice — WITH the reasoning and
-        // WITHOUT — and compare (ignoring any leftover raw <think>): if the outputs differ, a card regex
-        // BEAUTIFIED it inline, so keep that. If they match (no thinking regex, or one that merely strips
-        // it), don't lose it — render the reasoning in a dedicated collapsible section under the prompt.
+        // The display regex applies to the BODY ONLY — reasoning (<thinking>) is owned by the
+        // ReasoningPanel and must never be rewritten into inline UI by a card regex. So strip the
+        // reasoning out before the regex runs and route it to the panel via `thinking`.
         const applyRegex = (t: string): string =>
           useRegexStore.getState().apply(t, { user: personaName, char: charName })
-        const regexedWith = applyRegex(withMacros)
-        const regexedWithout = applyRegex(stripThinking(withMacros))
-        const beautifiedInline = stripThinking(regexedWith) !== regexedWithout
         return {
           floor: f.floor,
           user: f.user_message.content,
           rawResponse: f.response.content,
-          html: beautifiedInline ? regexedWith : regexedWithout,
-          thinking: beautifiedInline ? '' : extractThinking(f.response.content),
+          html: applyRegex(stripThinking(withMacros)),
+          thinking: extractThinking(f.response.content),
           swipeId: f.swipe_id ?? 0,
           swipeCount: f.swipes?.length ?? 1
         }
@@ -186,6 +184,7 @@ export function ChatView({ profileId }: { profileId: string }): React.ReactEleme
             <FloorBlock
               f={currentFloor}
               cardCss={cardCss}
+              reasoningTemplate={reasoningTemplate}
               editing={editing}
               editText={editText}
               isLast={page === renderedFloors.length - 1}
