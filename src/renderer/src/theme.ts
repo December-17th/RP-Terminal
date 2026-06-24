@@ -78,4 +78,13 @@ export function applyTheme(id: string | undefined): void {
   const root = document.documentElement
   for (const [k, v] of Object.entries(theme.tokens)) root.style.setProperty(k, v)
   root.dataset.rptTheme = theme.id
+  // Keep the Windows window-control overlay (custom title bar) in step with the theme.
+  try {
+    window.api?.setTitlebarOverlay?.({
+      color: theme.tokens['--rpt-bg-secondary'],
+      symbolColor: theme.tokens['--rpt-text-primary']
+    })
+  } catch {
+    /* no titlebar overlay (non-Windows) */
+  }
 }

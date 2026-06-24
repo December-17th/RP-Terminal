@@ -7,8 +7,10 @@ export function ProfilePicker(): React.ReactElement {
   const [newProfileName, setNewProfileName] = useState('')
 
   return (
-    <div style={{ padding: 20 }}>
-      <h2>RP Terminal</h2>
+    <>
+      <div className="ts-drag" />
+      <div style={{ padding: 20 }}>
+        <h2>RP Terminal</h2>
       <div>
         <h3>Select Profile</h3>
         {profiles.map((p) => (
@@ -32,5 +34,6 @@ export function ProfilePicker(): React.ReactElement {
         </div>
       </div>
     </div>
+    </>
   )
 }

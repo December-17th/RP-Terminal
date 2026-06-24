@@ -13,6 +13,8 @@ const api = {
   getCharacters: (profileId: string) => ipcRenderer.invoke('get-characters', profileId),
   getCharacterAvatar: (characterId: string) =>
     ipcRenderer.invoke('get-character-avatar', characterId),
+  setTitlebarOverlay: (overlay: { color: string; symbolColor: string }) =>
+    ipcRenderer.invoke('set-titlebar-overlay', overlay),
   saveCharacter: (profileId: string, charId: string, card: any) =>
     ipcRenderer.invoke('save-character', profileId, charId, card),
   importCharacterDialog: (profileId: string) =>

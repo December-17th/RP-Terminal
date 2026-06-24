@@ -27,6 +27,15 @@ function createWindow(): void {
     height: 670,
     show: false,
     autoHideMenuBar: true,
+    // Custom merged title bar (Windows): hide the native bar; the min/max/close render as an
+    // overlay top-right and the renderer's top bar (TopNav / launcher bar) is the draggable region.
+    // The overlay color is re-synced to the active theme via the 'set-titlebar-overlay' IPC.
+    ...(process.platform === 'win32'
+      ? {
+          titleBarStyle: 'hidden' as const,
+          titleBarOverlay: { color: '#1e1e1e', symbolColor: '#e0e0e0', height: 48 }
+        }
+      : {}),
     ...(process.platform === 'linux' ? { icon } : {}),
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
@@ -87,6 +96,16 @@ app.whenReady().then(() => {
 
   // Register all IPC handlers, grouped by domain (see src/main/ipc/).
   registerIpc(ipcMain)
+
+  // Sync the Windows window-control overlay (custom title bar) to the active theme's colors.
+  ipcMain.handle('set-titlebar-overlay', (e, overlay: { color: string; symbolColor: string }) => {
+    if (process.platform !== 'win32') return
+    try {
+      BrowserWindow.fromWebContents(e.sender)?.setTitleBarOverlay(overlay)
+    } catch {
+      /* overlay not configured / invalid color */
+    }
+  })
 
   createWindow()
   logService.log('info', 'RP Terminal started')
