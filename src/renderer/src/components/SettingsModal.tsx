@@ -6,6 +6,7 @@ import { ScriptsPanel } from './ScriptsPanel'
 import { useUiStore } from '../stores/uiStore'
 import { useCharacterStore } from '../stores/characterStore'
 import { useChatStore } from '../stores/chatStore'
+import { useT } from '../i18n'
 
 type Section = 'app' | 'regex' | 'scripts'
 
@@ -20,6 +21,7 @@ export function SettingsModal({ profileId }: { profileId: string }): React.React
   const activeCharacter = useCharacterStore((s) => s.activeCharacter)
   const activeChatId = useChatStore((s) => s.activeChatId)
   const [section, setSection] = useState<Section>('app')
+  const t = useT()
   if (!open) return null
 
   const cardId = activeCharacter?.id ?? null
@@ -34,14 +36,17 @@ export function SettingsModal({ profileId }: { profileId: string }): React.React
   )
 
   return (
-    <Modal title="Settings" onClose={close}>
+    <Modal title={t('settings.title')} onClose={close}>
       <div className="settings-shell">
         <div className="settings-rail">
-          <div className="settings-rail-group">App</div>
-          {railItem('app', 'Preferences')}
-          <div className="settings-rail-group">World{cardName ? ` · ${cardName}` : ''}</div>
-          {railItem('regex', 'Regex')}
-          {railItem('scripts', 'Scripts')}
+          <div className="settings-rail-group">{t('settings.groupApp')}</div>
+          {railItem('app', t('settings.preferences'))}
+          <div className="settings-rail-group">
+            {t('settings.groupWorld')}
+            {cardName ? ` · ${cardName}` : ''}
+          </div>
+          {railItem('regex', t('settings.regex'))}
+          {railItem('scripts', t('settings.scripts'))}
         </div>
         <div className="settings-content">
           {section === 'app' ? (

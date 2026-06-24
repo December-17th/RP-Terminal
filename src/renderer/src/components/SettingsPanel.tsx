@@ -3,6 +3,7 @@ import { useProfileStore } from '../stores/profileStore'
 import { useSettingsStore, Settings } from '../stores/settingsStore'
 import { PluginsPanel } from './PluginsPanel'
 import { THEME_LIST } from '../theme'
+import { LOCALE_LIST } from '../i18n'
 
 /**
  * Settings tab — profile switching/creation, UI preferences, and plugin management
@@ -78,6 +79,23 @@ export const SettingsPanel: React.FC<{ profileId: string }> = ({ profileId }) =>
               {THEME_LIST.map((t) => (
                 <option key={t.id} value={t.id}>
                   {t.name}
+                </option>
+              ))}
+            </select>
+
+            <label className="field-label" style={{ marginTop: 18 }}>
+              Language
+            </label>
+            <select
+              value={settings.ui?.locale ?? 'en'}
+              onChange={(e) =>
+                updateSettings(profileId, { ui: { ...settings.ui, locale: e.target.value } })
+              }
+              style={{ width: '100%' }}
+            >
+              {LOCALE_LIST.map((l) => (
+                <option key={l.id} value={l.id}>
+                  {l.name}
                 </option>
               ))}
             </select>

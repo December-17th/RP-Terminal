@@ -111,6 +111,7 @@ export const getDefaultSettings = (): Settings => ({
   },
   ui: {
     theme: 'dark',
+    locale: 'en',
     font_size: 16,
     sidebar_collapsed: false,
     history_strip_visible: true,
