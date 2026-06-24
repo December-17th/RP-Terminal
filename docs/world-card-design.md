@@ -1,6 +1,6 @@
 # World Card + One-Click Setup — Design (Track S)
 
-Status: **Draft — design-doc-first, no code yet.** High priority. Defines the **World
+Status: **Partially implemented — see the §9 phase table** (S1 lossless import + bundled-regex, S3 preset/lorebook/agent routing, and S4 "Export World" via `buildWorldCardExport` have landed; S2 scope model + S5 PNG cartridge pending). High priority. Defines the **World
 Card**: an evolution of the character card into an ST-compatible _superset_ that bundles
 everything a world needs — scripts, regex, lorebooks, presets, plugins, a custom agent
 config, custom UI, and combat — so importing one card is a **one-click setup**. Pairs

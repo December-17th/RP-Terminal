@@ -21,7 +21,8 @@ since the last check, concentrated on TavernHelper "both transports" parity (inl
 | `npm test` | ✅ **499 pass / 59 files** (was 304 / 34) |
 | `npm run lint` | ✅ **clean** (was 761 problems; config tuned in the interim) |
 | Unfinished-work markers | ✅ **1 TODO** in all of `src/` (the documented `agentic` stub, `generationService.ts:118`) |
-| `dangerouslySetInnerHTML` / `rehype-raw` usage | ✅ **none** in `src/` |
+| `rehype-raw` usage | ✅ **none** in `src/` (dead dep) |
+| `dangerouslySetInnerHTML` usage | ⚠️ **one** intentional site (`InlineHtml`: DOMPurify-sanitized + CSS-scoped) — see the §5 correction |
 | Secrets committed | ✅ none (keys encrypted via `safeStorage`, resolved main-side, sent via headers) |
 
 What's left is **minor hygiene** — a couple of small duplicate literals, two stale doc statements, and a
@@ -125,8 +126,12 @@ The two TavernHelper compat layers are **intentional** (dual-mode parity, built 
 
 Per the owner's standing decision, broad security hardening is **parked until before a public release**;
 the one retained measure (API-key masking, keys resolved main-side and sent via headers) is intact and
-correct. The XSS risk flagged in the old architecture memory is now **mitigated**: message markdown
-renders through `react-markdown` **without `rehype-raw`** (raw HTML is escaped), and HTML blocks go
+correct. **Correction (2026-06-24):** the XSS risk is **mitigated by sanitization, not escaping** — the
+"raw HTML is escaped / no `dangerouslySetInnerHTML`" framing above is **stale**. Bare top-level HTML now
+renders **inline in the message DOM via `dangerouslySetInnerHTML`**
+([MessageContent.tsx:255](src/renderer/src/components/MessageContent.tsx)), DOMPurify-sanitized
+(scripts/handlers/`<form>`/embedders stripped) + CSS-scoped per card. Markdown still renders through
+`react-markdown` without `rehype-raw` (a genuinely dead dep); full-document / scripted HTML blocks go
 through `DOMPurify.sanitize` + a **script-less** `sandbox="allow-same-origin"` iframe
 ([MessageContent.tsx:143–151,201](src/renderer/src/components/MessageContent.tsx)); scripted cards run in
 the intentional WCV/inline sandboxes. The plugin net proxy ([pluginNetService.ts](src/main/services/pluginNetService.ts))

@@ -1,7 +1,7 @@
 # RP Terminal — Progress Log
 
 > **Canonical changelog = git history.** This is a curated, non-exhaustive highlights log; use
-> `git log` for the authoritative record and ROADMAP.md for forward-looking plans.
+> `git log` for the authoritative record and the design/plan docs under `docs/` for forward-looking work.
 
 Running status of the MVU / panel-workspace track. Newest first.
 
