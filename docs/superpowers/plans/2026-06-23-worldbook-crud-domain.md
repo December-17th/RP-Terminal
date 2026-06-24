@@ -103,3 +103,12 @@ tests pass; entry-level fine CRUD / file import / char-primary rebind stay out o
   (flag if you want it scoped to own+created).
 - **Adapter/interface lockstep** — widening `Host` breaks both adapters until wired; land the interface +
   adapter stubs together so typecheck stays green (Task 1 note).
+
+## Status (built 2026-06-23, branch `feat/worldbook-crud`)
+
+DONE — T1 `7aadcc7` (Host seam + thRuntime id↔name resolver/helpers + tests), T2 `eabf2fb` (inline adapter
+via `window.api` + `lorebookStore`), T3 `020fc91` (WCV adapter + ctx-scoped `wcv-host-*` IPC). Static gate
+green throughout (`typecheck` + `npm test` 471 + `build`). Both transports have full worldbook CRUD/bind at
+parity (scope = full library, user-confirmed). **Pending Electron smoke:** a card lists/creates/writes-by-
+name/binds (then confirm it matches into prompts)/unbinds/deletes a worldbook — inline + Isolated. Out of
+scope (noted): entry-level fine CRUD, file import, char-primary rebind.
