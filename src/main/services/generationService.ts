@@ -32,6 +32,11 @@ import {
   JsonPatchOp
 } from '../parsers/mvuParser'
 import { frozenVarsFor } from './cacheLayers'
+import {
+  lastMessageIndex,
+  lastUserMessageIndex,
+  lastCharMessageIndex
+} from '../../shared/thRuntime/shapes'
 import { log } from './logService'
 import { FloorFile } from '../types/chat'
 import { Lorebook, LorebookEntry, getRpExt } from '../types/character'
@@ -205,8 +210,14 @@ export const generate = async (
       constants: {
         userName,
         charName: card.data.name || 'Character',
+        assistantName: card.data.name || 'Character',
         lastUserMessage: userAction,
         lastCharMessage: lastFloor?.response.content || '',
+        // SillyTavern message-index globals (ST-Prompt-Template). The pending user action counts as the
+        // last message, so on the opening turn lastMessageId === 1 (presets gate "is this the opening?" on it).
+        lastMessageId: lastMessageIndex(floors, !!userAction.trim()),
+        lastUserMessageId: lastUserMessageIndex(floors, !!userAction.trim()),
+        lastCharMessageId: lastCharMessageIndex(floors),
         chatId,
         characterId: chat.character_id,
         runType: 'generate'

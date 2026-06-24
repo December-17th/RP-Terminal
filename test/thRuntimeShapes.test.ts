@@ -3,7 +3,10 @@ import { describe, it, expect } from 'vitest'
 import {
   floorsToThMessages,
   currentMessageId,
-  floorsToStChat
+  floorsToStChat,
+  lastMessageIndex,
+  lastUserMessageIndex,
+  lastCharMessageIndex
 } from '../src/shared/thRuntime/shapes'
 
 const floors = [
@@ -40,6 +43,37 @@ describe('currentMessageId', () => {
   })
   it('is 0 for no floors', () => {
     expect(currentMessageId([])).toBe(0)
+  })
+})
+
+describe('lastMessageIndex (SillyTavern lastMessageId)', () => {
+  const greeting = [{ response: { content: 'greet' } }]
+  it('opening turn (greeting + pending user action) → 1, the "is this the opening?" value', () => {
+    expect(lastMessageIndex(greeting, true)).toBe(1)
+  })
+  it('later turn with a pending user action → index of that new user message', () => {
+    expect(lastMessageIndex(floors, true)).toBe(4) // [u,a,u,a] + pending user
+  })
+  it('no pending user action (regenerate/continue) → the latest assistant index', () => {
+    expect(lastMessageIndex(floors, false)).toBe(3)
+    expect(lastMessageIndex(floors, false)).toBe(currentMessageId(floors))
+  })
+  it('empty chat → 0', () => {
+    expect(lastMessageIndex([], true)).toBe(0)
+  })
+})
+
+describe('lastUserMessageIndex / lastCharMessageIndex', () => {
+  it('pending user action is the last user message', () => {
+    expect(lastUserMessageIndex([{ response: { content: 'g' } }], true)).toBe(1)
+  })
+  it('without a pending action, finds the last user/assistant slots', () => {
+    expect(lastUserMessageIndex(floors, false)).toBe(2)
+    expect(lastCharMessageIndex(floors)).toBe(3)
+  })
+  it('greeting-only chat → last assistant is index 0, no user message', () => {
+    expect(lastCharMessageIndex([{ response: { content: 'g' } }])).toBe(0)
+    expect(lastUserMessageIndex([{ response: { content: 'g' } }], false)).toBe(-1)
   })
 })
 
