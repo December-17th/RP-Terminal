@@ -142,7 +142,7 @@ export const UsageOverlay: React.FC<{ profileId: string }> = ({ profileId }) => 
         >
           {meter.collapsed ? '▣' : '▢'}
         </button>
-        <button title="Hide (Settings to re-enable)" onClick={() => persist({ enabled: false })}>
+        <button title="Hide (Preferences to re-enable)" onClick={() => persist({ enabled: false })}>
           ✕
         </button>
       </div>

@@ -69,13 +69,13 @@ export function TopNav({
         <button
           className="nav-tab"
           onClick={() => useUiStore.getState().openWorldSettings()}
-          title="World settings — regex & scripts for this world"
+          title="Settings — regex & scripts for this world"
         >
-          World
+          Settings
         </button>
         {tab('api', 'API')}
         <button className="nav-tab" onClick={() => useUiStore.getState().openSettings()}>
-          Settings
+          Preferences
         </button>
         {tab('logs', 'Logs')}
       </div>

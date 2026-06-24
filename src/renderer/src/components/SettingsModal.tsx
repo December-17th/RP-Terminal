@@ -12,7 +12,7 @@ export function SettingsModal({ profileId }: { profileId: string }): React.React
   const close = useUiStore((s) => s.closeSettings)
   if (!open) return null
   return (
-    <Modal title="Settings" onClose={close}>
+    <Modal title="Preferences" onClose={close}>
       <div className="settings-modal-content">
         <SettingsPanel profileId={profileId} />
       </div>

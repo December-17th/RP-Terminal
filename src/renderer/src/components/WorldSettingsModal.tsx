@@ -22,7 +22,7 @@ export function WorldSettingsModal({ profileId }: { profileId: string }): React.
   const cardId = activeCharacter?.id ?? null
   const cardName = activeCharacter?.card?.data?.name ?? null
   return (
-    <Modal title={cardName ? `World — ${cardName}` : 'World'} onClose={close}>
+    <Modal title={cardName ? `Settings — ${cardName}` : 'Settings'} onClose={close}>
       <div className="world-settings">
         <div className="ws-tabs">
           <button

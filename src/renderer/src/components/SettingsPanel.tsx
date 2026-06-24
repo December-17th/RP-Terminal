@@ -31,7 +31,7 @@ export const SettingsPanel: React.FC<{ profileId: string }> = ({ profileId }) =>
   return (
     <div className="panel">
       <div className="panel-header">
-        <h3>Settings</h3>
+        <h3>Preferences</h3>
       </div>
       <div className="panel-body">
         <label className="field-label">Profile</label>

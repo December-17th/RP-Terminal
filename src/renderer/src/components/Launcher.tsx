@@ -73,7 +73,7 @@ export function Launcher({ profileId }: { profileId: string }): React.ReactEleme
           <button
             className="lc-crumb"
             onClick={() => useUiStore.getState().openSettings()}
-            title="Settings"
+            title="Preferences"
           >
             ⚙
           </button>
