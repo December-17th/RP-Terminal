@@ -1885,3 +1885,46 @@ select {
   color: var(--rpt-text-secondary);
   opacity: 0.5;
 }
+
+/* World settings popup — Regex/Scripts tabs hosting the existing managers. */
+.ws-tabs {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 10px;
+  border-bottom: 1px solid var(--rpt-border);
+  padding-bottom: 10px;
+}
+.ws-tab {
+  background: transparent;
+  border: none;
+  color: var(--rpt-text-secondary);
+  padding: 6px 14px;
+  border-radius: 6px;
+  cursor: pointer;
+  font: inherit;
+}
+.ws-tab:hover {
+  color: var(--rpt-text-primary);
+  background: var(--rpt-bg-tertiary);
+}
+.ws-tab.active {
+  color: var(--rpt-on-accent);
+  background: var(--rpt-accent);
+}
+/* The hosted managers flow in the modal's own scroll (no nested panel scroll); keep their action
+   buttons but drop the redundant title bar (the tab strip already names the section). */
+.world-settings .panel {
+  height: auto;
+}
+.world-settings .panel > .panel-header {
+  padding: 0 0 8px;
+  background: transparent;
+  border-bottom: none;
+}
+.world-settings .panel > .panel-header > h3 {
+  display: none;
+}
+.world-settings .panel > .panel-body {
+  padding: 0;
+  overflow: visible;
+}

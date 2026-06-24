@@ -66,8 +66,13 @@ export function TopNav({
         {tab('persona', 'Persona')}
         {tab('preset', 'Preset')}
         {tab('lorebook', 'Lorebook', !hasCharacter)}
-        {tab('scripts', 'Scripts', !hasCharacter)}
-        {tab('regex', 'Regex')}
+        <button
+          className="nav-tab"
+          onClick={() => useUiStore.getState().openWorldSettings()}
+          title="World settings — regex & scripts for this world"
+        >
+          World
+        </button>
         {tab('api', 'API')}
         <button className="nav-tab" onClick={() => useUiStore.getState().openSettings()}>
           Settings

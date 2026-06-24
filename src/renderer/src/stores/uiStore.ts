@@ -8,6 +8,10 @@ interface UiState {
   /** When set, the launcher opens directly to this world's session list (breadcrumb deep-link). */
   launcherWorldId: string | null
   setLauncherWorldId: (id: string | null) => void
+  /** The per-world settings popup (regex + scripts for the active world). */
+  worldSettingsOpen: boolean
+  openWorldSettings: () => void
+  closeWorldSettings: () => void
 }
 
 export const useUiStore = create<UiState>((set) => ({
@@ -15,5 +19,8 @@ export const useUiStore = create<UiState>((set) => ({
   openSettings: () => set({ settingsOpen: true }),
   closeSettings: () => set({ settingsOpen: false }),
   launcherWorldId: null,
-  setLauncherWorldId: (launcherWorldId) => set({ launcherWorldId })
+  setLauncherWorldId: (launcherWorldId) => set({ launcherWorldId }),
+  worldSettingsOpen: false,
+  openWorldSettings: () => set({ worldSettingsOpen: true }),
+  closeWorldSettings: () => set({ worldSettingsOpen: false })
 }))

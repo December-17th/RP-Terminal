@@ -25,6 +25,7 @@ import { emitCardHostEvent } from './cardBridge/cardHostEvents'
 import { applyTheme } from './theme'
 import { Launcher } from './components/Launcher'
 import { SettingsModal } from './components/SettingsModal'
+import { WorldSettingsModal } from './components/WorldSettingsModal'
 
 export default function App(): React.ReactElement {
   const activeProfile = useProfileStore((s) => s.activeProfile)
@@ -195,6 +196,7 @@ export default function App(): React.ReactElement {
 
       {/* App-wide overlays — render over BOTH the launcher and play. */}
       <SettingsModal profileId={activeProfile.id} />
+      <WorldSettingsModal profileId={activeProfile.id} />
       <ToastStack />
     </>
   )
