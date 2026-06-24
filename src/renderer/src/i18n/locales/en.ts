@@ -48,7 +48,41 @@ const en: Record<string, string> = {
 
   'profile.selectProfile': 'Select Profile',
   'profile.newProfileName': 'New Profile Name',
-  'profile.create': 'Create'
+  'profile.create': 'Create',
+
+  'prefs.profile': 'Profile',
+  'prefs.newProfileName': 'New profile name',
+  'prefs.create': '+ Create',
+  'prefs.profileHint': 'Switching profiles swaps characters, sessions, presets and settings.',
+  'prefs.theme': 'Theme',
+  'prefs.language': 'Language',
+  'prefs.fontSize': 'Chat Font Size (px)',
+  'prefs.agentMode': 'Agent Mode',
+  'prefs.agentOff': 'Off (Classic)',
+  'prefs.agentManual': 'Manual',
+  'prefs.agentAgentic': 'Agentic',
+  'prefs.cardRendering': 'Card rendering (default)',
+  'prefs.cardInline': 'Inline (native, embedded in the message)',
+  'prefs.cardIsolated': 'Isolated (crash-resistant overlay window)',
+  'prefs.cardSizing': 'Card sizing (default)',
+  'prefs.sizeFit': "Fit (size to the card's content)",
+  'prefs.sizeFill': 'Fill (cards sized to the viewport fill the frame)',
+  'prefs.showFps': 'Show FPS counter (bottom-right)',
+  'prefs.showUsageMeter': 'Show token / cache meter (floating overlay)',
+  'prefs.templateEngine': 'ST-Prompt-Template engine (<% %> templates in cards/presets/lorebook)',
+  'prefs.renderEval': 'Render-time eval (apply templates to AI output on display)',
+  'prefs.renderLive': 'Live during streaming (rate-limited)',
+  'prefs.renderFinal': 'Final pass when streaming completes',
+  'prefs.renderCadence': 'Live eval cadence (≈ tokens)',
+  'prefs.scanDepth': 'Lorebook Scan Depth (turns)',
+  'prefs.scanDepthHint': 'How many recent turns are scanned for lorebook keywords.',
+  'prefs.recursion': 'Lorebook Recursion Steps',
+  'prefs.pricing': 'Token pricing ($ / 1M tokens)',
+  'prefs.pricingHint': 'Optional. Empty ⇒ the meter shows tokens only. Keyed by exact model id.',
+  'prefs.remove': 'Remove',
+  'prefs.addPriceRow': 'Add row for "{{model}}"',
+  'prefs.currentModel': 'current model',
+  'prefs.plugins': 'Plugins'
 }
 
 export default en

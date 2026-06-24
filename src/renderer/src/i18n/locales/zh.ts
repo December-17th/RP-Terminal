@@ -49,7 +49,41 @@ const zh: Record<string, string> = {
 
   'profile.selectProfile': '选择配置档',
   'profile.newProfileName': '新配置档名称',
-  'profile.create': '创建'
+  'profile.create': '创建',
+
+  'prefs.profile': '配置档',
+  'prefs.newProfileName': '新配置档名称',
+  'prefs.create': '+ 创建',
+  'prefs.profileHint': '切换配置档会同时切换角色、会话、预设与设置。',
+  'prefs.theme': '主题',
+  'prefs.language': '语言',
+  'prefs.fontSize': '聊天字号（像素）',
+  'prefs.agentMode': '智能体模式',
+  'prefs.agentOff': '关闭（经典）',
+  'prefs.agentManual': '手动',
+  'prefs.agentAgentic': '智能',
+  'prefs.cardRendering': '卡片渲染（默认）',
+  'prefs.cardInline': '内联（原生，嵌入消息中）',
+  'prefs.cardIsolated': '隔离（抗崩溃的悬浮窗口）',
+  'prefs.cardSizing': '卡片尺寸（默认）',
+  'prefs.sizeFit': '自适应（贴合卡片内容）',
+  'prefs.sizeFill': '填充（按视口尺寸的卡片填满框架）',
+  'prefs.showFps': '显示 FPS 计数器（右下角）',
+  'prefs.showUsageMeter': '显示 Token / 缓存计量（悬浮层）',
+  'prefs.templateEngine': 'ST-Prompt-Template 引擎（卡片/预设/世界书中的 <% %> 模板）',
+  'prefs.renderEval': '渲染时求值（在显示时对 AI 输出应用模板）',
+  'prefs.renderLive': '流式生成时实时渲染（有频率限制）',
+  'prefs.renderFinal': '流式完成后做最终一遍',
+  'prefs.renderCadence': '实时求值频率（约 Token 数）',
+  'prefs.scanDepth': '世界书扫描深度（回合）',
+  'prefs.scanDepthHint': '扫描最近多少回合以匹配世界书关键词。',
+  'prefs.recursion': '世界书递归层数',
+  'prefs.pricing': 'Token 定价（美元 / 百万 Token）',
+  'prefs.pricingHint': '可选。留空 ⇒ 计量仅显示 Token。按精确的模型 id 索引。',
+  'prefs.remove': '删除',
+  'prefs.addPriceRow': '为「{{model}}」添加一行',
+  'prefs.currentModel': '当前模型',
+  'prefs.plugins': '插件'
 }
 
 export default zh

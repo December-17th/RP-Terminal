@@ -3,7 +3,7 @@ import { useProfileStore } from '../stores/profileStore'
 import { useSettingsStore, Settings } from '../stores/settingsStore'
 import { PluginsPanel } from './PluginsPanel'
 import { THEME_LIST } from '../theme'
-import { LOCALE_LIST } from '../i18n'
+import { LOCALE_LIST, useT } from '../i18n'
 
 /**
  * Settings tab — profile switching/creation, UI preferences, and plugin management
@@ -13,6 +13,7 @@ export const SettingsPanel: React.FC<{ profileId: string }> = ({ profileId }) =>
   const { profiles, activeProfile, setActiveProfile, createProfile } = useProfileStore()
   const { settings, updateSettings } = useSettingsStore()
   const [newName, setNewName] = useState('')
+  const t = useT()
 
   const createIfNamed = (): void => {
     const name = newName.trim()
@@ -35,7 +36,7 @@ export const SettingsPanel: React.FC<{ profileId: string }> = ({ profileId }) =>
         <h3>Settings</h3>
       </div>
       <div className="panel-body">
-        <label className="field-label">Profile</label>
+        <label className="field-label">{t('prefs.profile')}</label>
         <div className="preset-select-row">
           <select
             value={activeProfile?.id ?? ''}
@@ -54,20 +55,20 @@ export const SettingsPanel: React.FC<{ profileId: string }> = ({ profileId }) =>
         <div className="preset-actions">
           <input
             value={newName}
-            placeholder="New profile name"
+            placeholder={t('prefs.newProfileName')}
             onChange={(e) => setNewName(e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && createIfNamed()}
           />
-          <button onClick={createIfNamed}>+ Create</button>
+          <button onClick={createIfNamed}>{t('prefs.create')}</button>
         </div>
         <div style={{ fontSize: '0.78em', color: 'var(--rpt-text-secondary)', marginTop: 4 }}>
-          Switching profiles swaps characters, sessions, presets and settings.
+          {t('prefs.profileHint')}
         </div>
 
         {settings && (
           <>
             <label className="field-label" style={{ marginTop: 20 }}>
-              Theme
+              {t('prefs.theme')}
             </label>
             <select
               value={settings.ui?.theme ?? 'dark'}
@@ -84,7 +85,7 @@ export const SettingsPanel: React.FC<{ profileId: string }> = ({ profileId }) =>
             </select>
 
             <label className="field-label" style={{ marginTop: 18 }}>
-              Language
+              {t('prefs.language')}
             </label>
             <select
               value={settings.ui?.locale ?? 'en'}
@@ -101,7 +102,7 @@ export const SettingsPanel: React.FC<{ profileId: string }> = ({ profileId }) =>
             </select>
 
             <label className="field-label" style={{ marginTop: 18 }}>
-              Chat Font Size (px)
+              {t('prefs.fontSize')}
             </label>
             <input
               type="number"
@@ -116,7 +117,7 @@ export const SettingsPanel: React.FC<{ profileId: string }> = ({ profileId }) =>
             />
 
             <label className="field-label" style={{ marginTop: 18 }}>
-              Agent Mode
+              {t('prefs.agentMode')}
             </label>
             <select
               value={settings.agent?.mode ?? 'off'}
@@ -127,9 +128,9 @@ export const SettingsPanel: React.FC<{ profileId: string }> = ({ profileId }) =>
               }
               style={{ width: '100%' }}
             >
-              <option value="off">Off (Classic)</option>
-              <option value="manual">Manual</option>
-              <option value="agentic">Agentic</option>
+              <option value="off">{t('prefs.agentOff')}</option>
+              <option value="manual">{t('prefs.agentManual')}</option>
+              <option value="agentic">{t('prefs.agentAgentic')}</option>
             </select>
             <div style={{ fontSize: '0.78em', color: 'var(--rpt-text-secondary)', marginTop: 4 }}>
               <b>Off</b>: classic — dynamic lore every turn, no scene modes. <b>Manual</b>: enables
@@ -138,7 +139,7 @@ export const SettingsPanel: React.FC<{ profileId: string }> = ({ profileId }) =>
             </div>
 
             <label className="field-label" style={{ marginTop: 18 }}>
-              Card rendering (default)
+              {t('prefs.cardRendering')}
             </label>
             <select
               value={settings.cards?.renderMode ?? 'inline'}
@@ -152,8 +153,8 @@ export const SettingsPanel: React.FC<{ profileId: string }> = ({ profileId }) =>
               }
               style={{ width: '100%' }}
             >
-              <option value="inline">Inline (native, embedded in the message)</option>
-              <option value="isolated">Isolated (crash-resistant overlay window)</option>
+              <option value="inline">{t('prefs.cardInline')}</option>
+              <option value="isolated">{t('prefs.cardIsolated')}</option>
             </select>
             <div style={{ fontSize: '0.78em', color: 'var(--rpt-text-secondary)', marginTop: 4 }}>
               <b>Inline</b>: beautification cards render directly in the chat and scroll with it.{' '}
@@ -162,7 +163,7 @@ export const SettingsPanel: React.FC<{ profileId: string }> = ({ profileId }) =>
             </div>
 
             <label className="field-label" style={{ marginTop: 18 }}>
-              Card sizing (default)
+              {t('prefs.cardSizing')}
             </label>
             <select
               value={settings.cards?.sizing ?? 'fit'}
@@ -176,8 +177,8 @@ export const SettingsPanel: React.FC<{ profileId: string }> = ({ profileId }) =>
               }
               style={{ width: '100%' }}
             >
-              <option value="fit">Fit (size to the card&apos;s content)</option>
-              <option value="fill">Fill (cards sized to the viewport fill the frame)</option>
+              <option value="fit">{t('prefs.sizeFit')}</option>
+              <option value="fill">{t('prefs.sizeFill')}</option>
             </select>
             <div style={{ fontSize: '0.78em', color: 'var(--rpt-text-secondary)', marginTop: 4 }}>
               <b>Fit</b>: the card grows to its content height (no scrollbar). <b>Fill</b>: cards built
@@ -198,7 +199,7 @@ export const SettingsPanel: React.FC<{ profileId: string }> = ({ profileId }) =>
                   })
                 }
               />
-              Show FPS counter (bottom-right)
+              {t('prefs.showFps')}
             </label>
 
             <label
@@ -217,7 +218,7 @@ export const SettingsPanel: React.FC<{ profileId: string }> = ({ profileId }) =>
                   })
                 }
               />
-              Show token / cache meter (floating overlay)
+              {t('prefs.showUsageMeter')}
             </label>
 
             <label
@@ -233,7 +234,7 @@ export const SettingsPanel: React.FC<{ profileId: string }> = ({ profileId }) =>
                   })
                 }
               />
-              ST-Prompt-Template engine ({'<% %>'} templates in cards/presets/lorebook)
+              {t('prefs.templateEngine')}
             </label>
             <div style={{ fontSize: '0.78em', color: 'var(--rpt-text-secondary)', marginTop: 4 }}>
               When off, EJS template tags are stripped instead of evaluated ({'{{macros}}'} still
@@ -251,7 +252,7 @@ export const SettingsPanel: React.FC<{ profileId: string }> = ({ profileId }) =>
                     checked={settings.templates?.render?.enabled ?? true}
                     onChange={(e) => updateRender({ enabled: e.target.checked })}
                   />
-                  Render-time eval (apply templates to AI output on display)
+                  {t('prefs.renderEval')}
                 </label>
                 {settings.templates?.render?.enabled !== false && (
                   <>
@@ -264,7 +265,7 @@ export const SettingsPanel: React.FC<{ profileId: string }> = ({ profileId }) =>
                         checked={settings.templates?.render?.live ?? true}
                         onChange={(e) => updateRender({ live: e.target.checked })}
                       />
-                      Live during streaming (rate-limited)
+                      {t('prefs.renderLive')}
                     </label>
                     <label
                       className="entry-toggles"
@@ -275,10 +276,10 @@ export const SettingsPanel: React.FC<{ profileId: string }> = ({ profileId }) =>
                         checked={settings.templates?.render?.final_pass ?? true}
                         onChange={(e) => updateRender({ final_pass: e.target.checked })}
                       />
-                      Final pass when streaming completes
+                      {t('prefs.renderFinal')}
                     </label>
                     <label className="field-label" style={{ marginTop: 10 }}>
-                      Live eval cadence (≈ tokens)
+                      {t('prefs.renderCadence')}
                     </label>
                     <input
                       type="number"
@@ -302,7 +303,7 @@ export const SettingsPanel: React.FC<{ profileId: string }> = ({ profileId }) =>
             )}
 
             <label className="field-label" style={{ marginTop: 18 }}>
-              Lorebook Scan Depth (turns)
+              {t('prefs.scanDepth')}
             </label>
             <input
               type="number"
@@ -315,11 +316,11 @@ export const SettingsPanel: React.FC<{ profileId: string }> = ({ profileId }) =>
               }
             />
             <div style={{ fontSize: '0.78em', color: 'var(--rpt-text-secondary)', marginTop: 4 }}>
-              How many recent turns are scanned for lorebook keywords.
+              {t('prefs.scanDepthHint')}
             </div>
 
             <label className="field-label" style={{ marginTop: 14 }}>
-              Lorebook Recursion Steps
+              {t('prefs.recursion')}
             </label>
             <input
               type="number"
@@ -340,12 +341,12 @@ export const SettingsPanel: React.FC<{ profileId: string }> = ({ profileId }) =>
 
         {settings && (
           <details className="settings-section" style={{ marginTop: 20 }}>
-            <summary>Token pricing ($ / 1M tokens)</summary>
+            <summary>{t('prefs.pricing')}</summary>
             <div className="settings-section-body">
               <div
                 style={{ fontSize: '0.78em', color: 'var(--rpt-text-secondary)', marginBottom: 6 }}
               >
-                Optional. Empty ⇒ the meter shows tokens only. Keyed by exact model id.
+                {t('prefs.pricingHint')}
               </div>
               {Object.entries(settings.pricing ?? {}).map(([model, rates]) => (
                 <div
@@ -371,7 +372,7 @@ export const SettingsPanel: React.FC<{ profileId: string }> = ({ profileId }) =>
                     />
                   ))}
                   <button
-                    title="Remove"
+                    title={t('prefs.remove')}
                     onClick={() => {
                       const next = { ...(settings.pricing ?? {}) }
                       delete next[model]
@@ -395,14 +396,14 @@ export const SettingsPanel: React.FC<{ profileId: string }> = ({ profileId }) =>
                   })
                 }}
               >
-                + Add row for &quot;{settings.api?.model || 'current model'}&quot;
+                + {t('prefs.addPriceRow', { model: settings.api?.model || t('prefs.currentModel') })}
               </button>
             </div>
           </details>
         )}
 
         <details className="settings-section" style={{ marginTop: 20 }}>
-          <summary>Plugins</summary>
+          <summary>{t('prefs.plugins')}</summary>
           <div className="settings-section-body">
             <PluginsPanel profileId={profileId} />
           </div>
