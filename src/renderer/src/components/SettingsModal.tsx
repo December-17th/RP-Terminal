@@ -10,8 +10,8 @@ import { useChatStore } from '../stores/chatStore'
 type Section = 'app' | 'regex' | 'scripts'
 
 /**
- * The single Settings popup, VS Code-style: a category rail (App / World) on the RIGHT and the
- * selected section's content on the LEFT. One trigger (useUiStore.openSettings), reachable from the
+ * The single Settings popup, VS Code-style: a category rail (App / World) on the LEFT and the
+ * selected section's content on the RIGHT. One trigger (useUiStore.openSettings), reachable from the
  * launcher gear and the play "Settings" button; rendered once at the App level.
  */
 export function SettingsModal({ profileId }: { profileId: string }): React.ReactElement | null {
@@ -36,6 +36,13 @@ export function SettingsModal({ profileId }: { profileId: string }): React.React
   return (
     <Modal title="Settings" onClose={close}>
       <div className="settings-shell">
+        <div className="settings-rail">
+          <div className="settings-rail-group">App</div>
+          {railItem('app', 'Preferences')}
+          <div className="settings-rail-group">World{cardName ? ` · ${cardName}` : ''}</div>
+          {railItem('regex', 'Regex')}
+          {railItem('scripts', 'Scripts')}
+        </div>
         <div className="settings-content">
           {section === 'app' ? (
             <div className="settings-modal-content">
@@ -60,13 +67,6 @@ export function SettingsModal({ profileId }: { profileId: string }): React.React
               )}
             </div>
           )}
-        </div>
-        <div className="settings-rail">
-          <div className="settings-rail-group">App</div>
-          {railItem('app', 'Preferences')}
-          <div className="settings-rail-group">World{cardName ? ` · ${cardName}` : ''}</div>
-          {railItem('regex', 'Regex')}
-          {railItem('scripts', 'Scripts')}
         </div>
       </div>
     </Modal>
