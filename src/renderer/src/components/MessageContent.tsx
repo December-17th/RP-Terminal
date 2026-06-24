@@ -1,8 +1,9 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react'
+import React, { useEffect, useId, useMemo, useRef, useState } from 'react'
 import Markdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import DOMPurify from 'dompurify'
 import { isInteractiveHtml } from '../plugin/bridgeShim'
+import { extractStyleBlocks, scopeCss, scopeClassFor } from './messageHtmlScope'
 import { WcvMessageFrame } from './WcvMessageFrame'
 import { InlineCardFrame } from './InlineCardFrame'
 import { useSettingsStore } from '../stores/settingsStore'
@@ -36,8 +37,7 @@ export const MessageContent: React.FC<Props> = ({ content, css, onContextMenu })
   const parts = useMemo(() => splitHtml(content), [content])
   const globalMode =
     useSettingsStore((s) => s.settings?.cards?.renderMode) ?? DEFAULT_CARD_RENDER_MODE
-  const globalSizing =
-    useSettingsStore((s) => s.settings?.cards?.sizing) ?? DEFAULT_CARD_SIZING
+  const globalSizing = useSettingsStore((s) => s.settings?.cards?.sizing) ?? DEFAULT_CARD_SIZING
   return (
     <div
       onContextMenu={
@@ -69,6 +69,8 @@ export const MessageContent: React.FC<Props> = ({ content, css, onContextMenu })
           ) : (
             <HtmlFrame key={i} html={p.text} css={css} onContextMenu={onContextMenu} />
           )
+        ) : p.type === 'inline-html' ? (
+          <InlineHtml key={i} html={p.text} />
         ) : p.text.trim() ? (
           <Markdown key={i} remarkPlugins={[remarkGfm]}>
             {p.text}
@@ -79,13 +81,103 @@ export const MessageContent: React.FC<Props> = ({ content, css, onContextMenu })
   )
 }
 
-type Segment = { type: 'md' | 'html'; text: string; mode?: CardRenderMode }
+// 'inline-html' is a lightweight, script-free HTML block (an item/status card `<div>`, a table, …)
+// rendered INLINE in the message DOM (sanitized, no iframe); 'html' is a full-document or scripted
+// block that runs in an isolated frame.
+type Segment = { type: 'md' | 'html' | 'inline-html'; text: string; mode?: CardRenderMode }
 
 // A render-mode marker the regex applier emits before a card block (see regexStore.apply). It is NOT
 // necessarily flush against the block: the card payload is often wrapped in a ``` code fence, so the
 // marker can be followed by the opening fence (e.g. `<!--rpt:mode=isolated-->```\n<body>…`). So match
 // the marker anywhere in the md before the block — NOT anchored to the end — and strip it in place.
 const MODE_MARKER = /<!--\s*rpt:mode=(inline|isolated)\s*-->/i
+
+// Bare top-level HTML containers the model may emit inline — an item/status card as a `<div>`, a
+// `<table>`, a `<details>`, etc. — NOT wrapped in <body>/<html> or a ```html fence. A conservative
+// allowlist of structural elements so we never hijack body state tags (<tp>/<gametxt>/
+// <UpdateVariable>) or content react-markdown already renders from markdown syntax (lists/tables).
+const BARE_HTML_TAGS =
+  'div|section|article|aside|header|footer|main|nav|figure|details|table|center|form'
+// A region STARTS at a container or a `<style>` sheet; a `<script>` only joins as a SIBLING (a lone
+// bare `<script>` stays markdown rather than auto-running). Used to find + extend an HTML region.
+const REGION_START_RE = new RegExp(`<(?:${BARE_HTML_TAGS}|style)\\b`, 'i')
+const REGION_NEXT_RE = new RegExp(`<(?:${BARE_HTML_TAGS}|style|script)\\b`, 'i')
+
+/**
+ * The index just past the balanced close of the HTML element whose opening `<tag…>` starts at
+ * `start`, or -1 if it never closes (so the caller falls back to treating the rest as markdown).
+ * Counts nested opens of the SAME tag so a card's inner `<div>`s don't end the block early.
+ * Pragmatic (not a full HTML parser): attribute values containing `>` would confuse it, but the
+ * presentational cards we target don't use them.
+ */
+const matchBareElement = (text: string, start: number): number => {
+  const open = /^<([a-zA-Z][\w-]*)\b[^>]*?(\/?)>/.exec(text.slice(start))
+  if (!open) return -1
+  if (open[2] === '/') return start + open[0].length // self-closed: <div/>
+  const tag = open[1]
+  const openEnd = start + open[0].length
+  const re = new RegExp(`<${tag}\\b[^>]*?(/?)>|</${tag}\\s*>`, 'gi')
+  re.lastIndex = openEnd
+  let depth = 1
+  let m: RegExpExecArray | null
+  while ((m = re.exec(text)) !== null) {
+    if (m[0][1] === '/') {
+      if (--depth === 0) return m.index + m[0].length
+    } else if (m[1] !== '/') {
+      depth++ // a nested NON-self-closed open of the same tag
+    }
+  }
+  return -1
+}
+
+// End of one HTML element at `start`: a `<style>`/`<script>` block (to its raw close tag — CSS/JS
+// content isn't parsed) or a balanced container element.
+const matchHtmlElement = (text: string, start: number): number => {
+  const tagM = /^<([a-zA-Z][\w-]*)\b/.exec(text.slice(start))
+  if (!tagM) return -1
+  const tag = tagM[1].toLowerCase()
+  if (tag === 'style' || tag === 'script') {
+    const cm = new RegExp(`</${tag}\\s*>`, 'i').exec(text.slice(start))
+    return cm ? start + cm.index + cm[0].length : -1
+  }
+  return matchBareElement(text, start)
+}
+
+// Split a markdown segment around any bare top-level HTML regions. A "region" is a run of adjacent
+// (whitespace-separated) HTML elements + `<style>`/`<script>` blocks — so a card and its SIBLING
+// `<style>` sheet (the common `<div>…</div><style>…</style>` shape) stay together. The prose around
+// a region stays markdown; the region renders inline ('inline-html', styles scoped to the card)
+// unless it carries a `<script>` (which needs the isolated, sandboxed frame → 'html').
+const splitBareHtml = (md: string): Segment[] => {
+  const out: Segment[] = []
+  let i = 0
+  for (;;) {
+    const m = REGION_START_RE.exec(md.slice(i))
+    let end = m ? matchHtmlElement(md, i + m.index) : -1
+    if (!m || end < 0) {
+      const tail = md.slice(i)
+      if (tail) out.push({ type: 'md', text: tail })
+      break
+    }
+    const start = i + m.index
+    // Absorb following sibling HTML/style/script blocks (only whitespace between) into the region.
+    for (;;) {
+      const ws = /^\s*/.exec(md.slice(end))?.[0].length ?? 0
+      const next = REGION_NEXT_RE.exec(md.slice(end + ws))
+      if (!next || next.index !== 0) break
+      const ne = matchHtmlElement(md, end + ws)
+      if (ne < 0) break
+      end = ne
+    }
+    if (start > i) out.push({ type: 'md', text: md.slice(i, start) })
+    const block = md.slice(start, end)
+    // A scripted region needs the isolated frame; a `<style>`-driven (or plain) card renders inline
+    // with its CSS scoped to the card (InlineHtml), so it blends with the message.
+    out.push({ type: isInteractiveHtml(block) ? 'html' : 'inline-html', text: block })
+    i = end
+  }
+  return out.length ? out : [{ type: 'md', text: md }]
+}
 
 export const splitHtml = (content: string): Segment[] => {
   const segs: Segment[] = []
@@ -117,7 +209,10 @@ export const splitHtml = (content: string): Segment[] => {
   }
   if (last < content.length) segs.push({ type: 'md', text: content.slice(last) })
   if (segs.length === 0) segs.push({ type: 'md', text: content })
-  return segs
+  // Second pass: lift bare top-level HTML blocks out of the markdown segments (the <body>/<html>/
+  // ```html blocks were already extracted above and aren't re-scanned). Mode markers only precede
+  // the model's own frontend cards, so these inline blocks default to inline mode.
+  return segs.flatMap((s) => (s.type === 'md' ? splitBareHtml(s.text) : [s]))
 }
 
 const FRAGMENT_BASE = `
@@ -127,6 +222,39 @@ const FRAGMENT_BASE = `
   a { color: #5b8def; }
   img { max-width: 100%; }
 `
+
+// Tags barred from the card body. Scripts + event handlers + javascript: URLs are stripped by
+// DOMPurify's defaults; we also bar embedders, `<form>` (submission/phishing), and `<base>`/`<meta>`/
+// `<link>`. `<style>` is extracted + scoped BEFORE sanitizing (so it's gone from the body here).
+// `<input>`/`<label>`/`<button>` are deliberately allowed — CSS-`:checked` cards need them, and
+// without scripts/`<form>` they're inert. Scripted cards never reach here (routed to a frame).
+const INLINE_HTML_FORBID_TAGS = ['style', 'link', 'iframe', 'object', 'embed', 'base', 'meta', 'form']
+
+/**
+ * Render a model-authored card INLINE in the message DOM (no iframe) so it blends with the prose.
+ * Any `<style>` is lifted out and scoped to this card's unique container class (selector-prefixing,
+ * `@import` stripped — see messageHtmlScope) so its CSS can't leak into the app UI; the body is
+ * DOMPurify-sanitized. `<style>` (React child, not innerHTML) keeps a stray `</style>` in CSS text
+ * from breaking out. CSS-`:checked` interactivity (a `<label>` toggling a `<checkbox>`) works
+ * natively. Inline-only trade-off: model HTML lives in the app document (per the deferred-hardening
+ * stance) — scripts/handlers are still stripped.
+ */
+const InlineHtml: React.FC<{ html: string }> = ({ html }) => {
+  const scope = scopeClassFor(useId())
+  const { body, css } = useMemo(() => {
+    const { html: bodyHtml, css: rawCss } = extractStyleBlocks(html)
+    return {
+      body: DOMPurify.sanitize(bodyHtml, { FORBID_TAGS: INLINE_HTML_FORBID_TAGS, ADD_ATTR: ['target'] }),
+      css: scopeCss(rawCss, scope)
+    }
+  }, [html, scope])
+  return (
+    <div className={`inline-html ${scope}`}>
+      {css ? <style>{css}</style> : null}
+      <div dangerouslySetInnerHTML={{ __html: body }} />
+    </div>
+  )
+}
 
 const HtmlFrame: React.FC<{
   html: string

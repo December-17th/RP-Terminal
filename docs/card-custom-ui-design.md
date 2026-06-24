@@ -43,10 +43,21 @@ and can write message variables. This is distinct from a panel and changes the f
   (rendering inline iframes per message); **WCV is reserved for stable side/static panels.** The earlier
   "center = WCV" idea applies only to a card that ships ONE monolithic full-screen UI — the opposite of
   inline-per-message.
-- **Already built:** `MessageContent` renders regex→HTML inline — lightweight styled HTML inline in the
-  message DOM (react-markdown + rehype-raw + DOMPurify, no scripts), and full HTML/Vue blocks in a frame
-  (passive → `card-frame` `allow-same-origin`; interactive → `MessageScriptFrame` `allow-scripts` + the
-  `rpt` API).
+- **Built (2026-06-24):** `MessageContent` renders model-authored HTML cards **inline** in the message
+  DOM so they BLEND with the message (the SillyTavern approach — `messageFormatting` renders into
+  `.mes_text` and scopes message `<style>` under it). `splitHtml` lifts a bare top-level HTML *region*
+  (adjacent containers + `<style>`/`<script>`, so a card and its sibling `<style>` sheet stay together)
+  out of the markdown; `InlineHtml` then: extracts the `<style>` (`extractStyleBlocks`), scopes its CSS
+  to a unique per-card container class via postcss (`scopeCss`/`scopeClassFor` in `messageHtmlScope.ts`
+  — selector-prefix `.rpt-ih-<id>`, `:root`/`html`/`body`→container, drop `@import`, keep
+  `@keyframes`/`@font-face`) so it can't leak into the app UI; renders the DOMPurify-sanitized body via
+  `dangerouslySetInnerHTML` and the scoped `<style>` as a React child. `<input>`/`<label>` are allowed
+  so CSS-`:checked` interactive cards (fold/flip) work; `<script>`/`<form>`/`<iframe>` etc. are stripped.
+  Only a region carrying a `<script>` goes to a frame (WCV/`InlineCardFrame`); full `<html>/<body>`/
+  ```html docs still use the passive `HtmlFrame`. NB: NOT the old "react-markdown + rehype-raw" plan
+  (`rehype-raw` is a dead dep). **Trade-off:** inline card HTML lives in the app document, so the
+  permissive renderer CSP loses raw-HTML as its second line of defense (see
+  `codebase-health-check-2026-06-24.md` §5) — accepted per the owner's deferred-hardening stance.
 - **Vars-write already works + persists:** an interactive frame calls `rpt.vars` / TavernHelper
   `insertOrAssignVariables`/`replaceVariables` → `pluginService.pluginVars` (permission-gated,
   scope-aware) → the floor's variables + `saveFloor`, and syncs the live status widgets. This **overlaps
