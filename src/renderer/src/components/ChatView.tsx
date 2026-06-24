@@ -11,12 +11,7 @@ import { ScriptActionsBar } from './ScriptActionsBar'
 import { Composer } from './Composer'
 import { ContextMenu } from './ContextMenu'
 import { expandMacros } from '../../../shared/macros'
-import {
-  stripRptEvents,
-  stripThinking,
-  hasThinking,
-  extractThinking
-} from '../../../shared/responseView'
+import { stripRptEvents, stripThinking, extractThinking } from '../../../shared/responseView'
 import { renderTemplate } from '../plugin/renderTemplate'
 
 /**
@@ -109,20 +104,21 @@ export function ChatView({ profileId }: { profileId: string }): React.ReactEleme
           char: charName,
           vars: f.variables
         })
-        const regexed = useRegexStore.getState().apply(withMacros, {
-          user: personaName,
-          char: charName
-        })
-        // If the card's display regex folded <thinking> (none remain), keep its inline beautified
-        // block. Otherwise DON'T strip it away — pull the reasoning into a dedicated expandable section
-        // (rendered under the player prompt in FloorBlock) and drop only the raw block from the body.
-        const foldedByCard = !hasThinking(regexed)
+        // Decide how reasoning (<thinking>) is shown. Run the display regex twice — WITH the reasoning and
+        // WITHOUT — and compare (ignoring any leftover raw <think>): if the outputs differ, a card regex
+        // BEAUTIFIED it inline, so keep that. If they match (no thinking regex, or one that merely strips
+        // it), don't lose it — render the reasoning in a dedicated collapsible section under the prompt.
+        const applyRegex = (t: string): string =>
+          useRegexStore.getState().apply(t, { user: personaName, char: charName })
+        const regexedWith = applyRegex(withMacros)
+        const regexedWithout = applyRegex(stripThinking(withMacros))
+        const beautifiedInline = stripThinking(regexedWith) !== regexedWithout
         return {
           floor: f.floor,
           user: f.user_message.content,
           rawResponse: f.response.content,
-          html: foldedByCard ? regexed : stripThinking(regexed),
-          thinking: foldedByCard ? '' : extractThinking(f.response.content),
+          html: beautifiedInline ? regexedWith : regexedWithout,
+          thinking: beautifiedInline ? '' : extractThinking(f.response.content),
           swipeId: f.swipe_id ?? 0,
           swipeCount: f.swipes?.length ?? 1
         }
