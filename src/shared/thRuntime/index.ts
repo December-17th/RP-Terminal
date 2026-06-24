@@ -100,10 +100,19 @@ export function createThRuntime(host: Host): ThGlobals {
     if (!wbIdByName.has(key)) seedWb()
     return wbIdByName.get(key)
   }
+  // Map RPT entries to the TavernHelper worldbook-entry shape cards read: add `uid` (array index) + `name`
+  // (= our `comment`/title). Cards like the 命定之诗 home display `entry.name`; without this the raw
+  // entries (no `name`) show blank. Done HERE so EVERY read path — both transports, own book or by-id —
+  // is consistent (previously only the WCV own-book handler mapped, so by-id + all inline reads were raw).
+  const toThWbEntry = (en: any, i: number): any => ({
+    ...en,
+    uid: typeof en?.uid === 'number' ? en.uid : i,
+    name: en?.name || en?.comment || `Entry ${i + 1}`
+  })
   const wbEntries = async (name?: any): Promise<any[]> => {
     const id = resolveWbId(name)
     const r = id ? await host.getWorldbookById(id) : await host.getWorldbook(name)
-    return r.entries || []
+    return (r.entries || []).map(toThWbEntry)
   }
   const doCreateWb = async (name: any): Promise<string> => {
     const nm = String(name ?? 'New Worldbook')

@@ -44,7 +44,7 @@ function mockHost(over: Partial<Host> = {}): { host: Host; calls: any } {
       calls.generateRaw.push(cfg)
       return 'raw'
     },
-    getWorldbook: async () => ({ entries: [{ keys: ['k'] }] }),
+    getWorldbook: async () => ({ entries: [{ keys: ['k'], comment: 'Lore Title' }] }),
     saveWorldbook: async (n, e) => {
       calls.saveWorldbook.push([n, e])
     },
@@ -150,6 +150,13 @@ describe('createThRuntime', () => {
     const g = createThRuntime(m.host)
     await g.createChatMessages([{ message: 'first' }, { message: 'last prompt' }])
     expect(m.calls.setInput).toEqual(['last prompt'])
+  })
+
+  it('getWorldbook returns entries in the TH shape (uid + name from our comment)', async () => {
+    const m: any = mockHost()
+    const g = createThRuntime(m.host)
+    const ents = await g.getWorldbook('') // empty name → the card's own book (host.getWorldbook)
+    expect(ents[0]).toMatchObject({ keys: ['k'], uid: 0, name: 'Lore Title' })
   })
 
   it('worldbook CRUD: real library names, create→resolve-by-id, delete/bind/replace by name', async () => {
