@@ -199,7 +199,10 @@ export function ChatView({ profileId }: { profileId: string }): React.ReactEleme
             <div className="floor-empty">No messages yet.</div>
           )}
           {error && (
-            <div className="floor-block" style={{ borderColor: '#e74c3c', color: '#e74c3c' }}>
+            <div
+              className="floor-block"
+              style={{ borderColor: 'var(--rpt-danger)', color: 'var(--rpt-danger)' }}
+            >
               Error: {error}
             </div>
           )}

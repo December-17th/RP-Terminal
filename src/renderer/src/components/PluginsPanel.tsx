@@ -113,7 +113,7 @@ const PluginRow: React.FC<{
           <div style={{ fontSize: '0.85em', marginBottom: 8 }}>{m.description}</div>
         )}
         {plugin.error ? (
-          <div style={{ color: '#e74c3c', fontSize: '0.82em' }}>⚠ {plugin.error}</div>
+          <div style={{ color: 'var(--rpt-danger)', fontSize: '0.82em' }}>⚠ {plugin.error}</div>
         ) : (
           <div className="plugin-perms">
             {m.permissions.length === 0 ? (
