@@ -27,9 +27,15 @@ const floorIndex = (): number => {
 }
 
 export function createInlineHost(ctx: CardCtx): Host {
+  // Resolve the card's characterId RELIABLY: ctx.characterId comes from activeCharacter, which is empty/
+  // stale when a chat is opened directly — so fall back to the active chat row's character_id (the WCV path
+  // resolves likewise from the chat row). The card's own lorebook is stored at id == characterId.
+  const cardCharacterId = (): string =>
+    ctx.characterId ||
+    (useChatStore.getState().chats.find((c) => c.id === ctx.chatId)?.character_id ?? '')
   const fetchWb = async (): Promise<any> => {
     try {
-      return await window.api.getLorebook(ctx.profileId, ctx.characterId)
+      return await window.api.getLorebook(ctx.profileId, cardCharacterId())
     } catch {
       return { entries: [] }
     }
@@ -57,10 +63,14 @@ export function createInlineHost(ctx: CardCtx): Host {
       return p ? { name: p.name, parameters: p.parameters } : null
     },
     presetNames: () => usePresetStore.getState().presets.map((p: any) => p.name),
-    worldbookNames: () => ({
-      primary: useCharacterStore.getState().activeCharacter?.card?.data?.name || null,
-      additional: []
-    }),
+    worldbookNames: () => {
+      // The card's OWN lorebook NAME (faithful to WCV: lb.name || characterId) — so getWorldbook(primary)
+      // resolves back to its real library id. NOT activeCharacter's display name (a different value that
+      // wouldn't resolve, forcing the own-book fallback).
+      const charId = cardCharacterId()
+      const own = useLorebookStore.getState().library.find((w) => w.id === charId)
+      return { primary: own?.name || charId || null, additional: [] }
+    },
     regexes: () =>
       useRegexStore.getState().rules.map((r: any) => ({ find: r.source, replace: r.replace })),
     formatRegex: (t) => useRegexStore.getState().apply(t),
@@ -99,15 +109,17 @@ export function createInlineHost(ctx: CardCtx): Host {
       const lb = (await fetchWb()) || { name: '', entries: [] }
       const next = Array.isArray(entries) ? { ...lb, entries } : entries
       try {
-        await window.api.saveLorebook(ctx.profileId, ctx.characterId, next)
+        await window.api.saveLorebook(ctx.profileId, cardCharacterId(), next)
       } catch (e) {
         console.error('[inline saveWorldbook]', e)
       }
     },
     // Worldbook CRUD/bind — full library via window.api + the lorebook store (sync getters read the store).
     listWorldbooks: () => useLorebookStore.getState().library,
-    chatWorldbookIds: () =>
-      useLorebookStore.getState().sessionIds ?? (ctx.characterId ? [ctx.characterId] : []),
+    chatWorldbookIds: () => {
+      const own = cardCharacterId()
+      return useLorebookStore.getState().sessionIds ?? (own ? [own] : [])
+    },
     createWorldbook: async (name: string) => {
       const summary = await window.api.createLorebook(ctx.profileId, String(name ?? 'New Worldbook'))
       await useLorebookStore.getState().loadLibrary(ctx.profileId)
@@ -132,8 +144,8 @@ export function createInlineHost(ctx: CardCtx): Host {
       await window.api.saveLorebook(ctx.profileId, id, next)
     },
     bindWorldbook: async (id: string, on: boolean) => {
-      const cur =
-        useLorebookStore.getState().sessionIds ?? (ctx.characterId ? [ctx.characterId] : [])
+      const own = cardCharacterId()
+      const cur = useLorebookStore.getState().sessionIds ?? (own ? [own] : [])
       const next = on ? (cur.includes(id) ? cur : [...cur, id]) : cur.filter((x) => x !== id)
       await useLorebookStore.getState().setSession(ctx.profileId, ctx.chatId, next)
     },
