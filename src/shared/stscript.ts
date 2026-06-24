@@ -27,6 +27,10 @@ export interface StCtx {
   /** Run a command this interpreter doesn't handle (delegates to the host registry). */
   fallback: (cmd: StCommand, pipe: string) => Promise<string> | string
   rng?: () => number
+  /** Optional macro identity so a script's `{{char}}` / `{{user}}` / `{{persona}}` args expand. */
+  char?: string
+  user?: string
+  persona?: string
 }
 
 class StAbort extends Error {}
@@ -200,7 +204,10 @@ const runCommand = async (cmd: StCommand, pipe: string, ctx: StCtx): Promise<str
       : expandMacros(s.replace(/\{\{pipe\}\}/gi, pipe), {
           vars: ctx.vars,
           globals: ctx.globals,
-          rng: ctx.rng
+          rng: ctx.rng,
+          char: ctx.char,
+          user: ctx.user,
+          persona: ctx.persona
         })
   const named: Record<string, string> = {}
   for (const k of Object.keys(cmd.named)) named[k] = expand(cmd.named[k])

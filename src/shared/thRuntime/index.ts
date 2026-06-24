@@ -3,6 +3,7 @@ import type { Host, ThGlobals } from './types'
 import { floorsToThMessages, floorsToStChat, currentMessageId } from './shapes'
 import { setVarOps, assignVarOps, replaceStatDataOps, type VarOp } from './ops'
 import { expandMacros } from '../macros'
+import { runScript, type StCtx } from '../stscript'
 
 const TAVERN_EVENTS = {
   GENERATION_STARTED: 'generation_started',
@@ -98,6 +99,50 @@ export function createThRuntime(host: Host): ThGlobals {
     maxTokens: c?.max_tokens ?? c?.maxTokens,
     overrides: c?.overrides
   })
+
+  // STScript / triggerSlash — run the common slash-command subset over the Host. The interpreter lives in
+  // shared/stscript; here we build its StCtx from the Host so it reaches parity by construction (both
+  // adapters already implement every method it touches). Local/chat vars = the cached stat_data (read +
+  // optimistic in-place write, persisted via setVarOps/writeVars exactly like setMvuVariable); globals = the
+  // persistent per-profile store (host.getGlobalVars/setGlobalVar); the fallback maps the non-built-in
+  // commands /gen·/genraw·/trigger·/send onto the card-facing generate/setInput.
+  const genText = (r: any): string => (typeof r === 'string' ? r : (r?.content ?? ''))
+  const runTriggerSlash = async (command: string): Promise<string> => {
+    const ctx: StCtx = {
+      vars: stat,
+      globals: (await host.getGlobalVars()) || {},
+      char: host.charData()?.name,
+      user: host.personaName(),
+      persona: host.personaName(),
+      setVar: async (key, value, scope) => {
+        if (scope === 'global') await host.setGlobalVar(key, value)
+        else await writeVars(setVarOps(key, value))
+      },
+      fallback: async (cmd, pipe) => {
+        const text = cmd.value || pipe
+        switch (cmd.name) {
+          case 'gen':
+            return genText(await host.generate(text))
+          case 'genraw':
+            return host.generateRaw(normRaw({ user_input: text, ...cmd.named }))
+          case 'trigger':
+            return genText(await host.generate(''))
+          case 'send':
+            host.setInput(text)
+            return ''
+          default:
+            console.warn('[triggerSlash] unsupported command', cmd.name)
+            return ''
+        }
+      }
+    }
+    try {
+      return await runScript(String(command ?? ''), ctx)
+    } catch (e) {
+      console.error('[triggerSlash]', e)
+      return ''
+    }
+  }
 
   // Worldbook id↔name map (TH addresses by name; RPT by id). Seeded from the library, refreshed on miss /
   // create / delete. resolveWbId(name) → the library id, or undefined (own-book convenience / unknown).
@@ -249,7 +294,7 @@ export function createThRuntime(host: Host): ThGlobals {
       if (text) host.setInput(String(text))
       return ''
     },
-    triggerSlash: async (c: any) => host.triggerSlash(String(c ?? '')),
+    triggerSlash: (c: any) => runTriggerSlash(String(c ?? '')),
     replaceTavernRegexes: async () => undefined
   }
 

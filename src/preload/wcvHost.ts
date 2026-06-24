@@ -91,8 +91,9 @@ export function createWcvHost(deps: Deps): Host {
     createChat: () => Promise.resolve(''),
     saveChat: (chat) => ipcRenderer.invoke('wcv-host-save-chat', chat),
     reloadChat: () => ipcRenderer.invoke('wcv-host-reload-chat'),
-    triggerSlash: () => Promise.resolve(''),
     setInput: (text) => ipcRenderer.send('wcv-host-set-input', text),
+    getGlobalVars: () => ipcRenderer.invoke('wcv-host-get-global-vars'),
+    setGlobalVar: (key, value) => ipcRenderer.invoke('wcv-host-set-global-var', key, value),
 
     onVarsChanged: (cb) => {
       const l = (_e: any, v: any): void => cb(v)

@@ -122,7 +122,10 @@ export function createInlineHost(ctx: CardCtx): Host {
       return useLorebookStore.getState().sessionIds ?? (own ? [own] : [])
     },
     createWorldbook: async (name: string) => {
-      const summary = await window.api.createLorebook(ctx.profileId, String(name ?? 'New Worldbook'))
+      const summary = await window.api.createLorebook(
+        ctx.profileId,
+        String(name ?? 'New Worldbook')
+      )
       await useLorebookStore.getState().loadLibrary(ctx.profileId)
       return summary?.id ?? ''
     },
@@ -167,9 +170,25 @@ export function createInlineHost(ctx: CardCtx): Host {
       return !!ok
     },
     reloadChat: async () => reloadFloors(),
-    triggerSlash: async () => '', // deferred to SP3.2
     setInput: (text) => {
       useComposerStore.getState().injectInput(String(text ?? ''))
+    },
+    // Global (per-profile) variables for triggerSlash's /setglobalvar / /getglobalvar — the same
+    // template-globals store the renderer's chat-input slash uses (pluginVars global scope).
+    getGlobalVars: async () => {
+      try {
+        return (await window.api.pluginGetVars(ctx.profileId, ctx.chatId))?.global || {}
+      } catch {
+        return {}
+      }
+    },
+    setGlobalVar: async (key, value) => {
+      await window.api.pluginVars(ctx.profileId, ctx.chatId, {
+        op: 'set',
+        scope: 'global',
+        key,
+        value
+      })
     },
 
     onVarsChanged: (cb) => {
