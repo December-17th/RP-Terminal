@@ -54,6 +54,28 @@ describe('expandMacros (TH-5)', () => {
     )
   })
 
+  it('reads scoped variables via {{get_X_variable}} (global → globals; others → chat vars)', () => {
+    const vars = { hp: 80, nested: { str: 12 } }
+    expect(expandMacros('{{get_chat_variable::hp}}', { vars })).toBe('80')
+    expect(expandMacros('{{get_message_variable::nested.str}}', { vars })).toBe('12')
+    expect(expandMacros('{{get_character_variable::hp}}', { vars })).toBe('80')
+    expect(expandMacros('{{get_preset_variable::hp}}', { vars })).toBe('80')
+    expect(expandMacros('{{get_global_variable::seen}}', { globals: { seen: 3 } })).toBe('3')
+    expect(expandMacros('{{get_chat_variable::missing}}', { vars })).toBe('')
+  })
+
+  it('formats objects/arrays as JSON via {{format_X_variable}}, primitives as strings', () => {
+    const vars = { obj: { a: 1 }, list: [1, 2], n: 5, name: 'Cora' }
+    expect(expandMacros('{{format_chat_variable::obj}}', { vars })).toBe('{"a":1}')
+    expect(expandMacros('{{format_chat_variable::list}}', { vars })).toBe('[1,2]')
+    expect(expandMacros('{{format_chat_variable::n}}', { vars })).toBe('5')
+    expect(expandMacros('{{format_chat_variable::name}}', { vars })).toBe('Cora')
+    expect(expandMacros('{{format_global_variable::g}}', { globals: { g: { x: true } } })).toBe(
+      '{"x":true}'
+    )
+    expect(expandMacros('{{format_chat_variable::missing}}', { vars })).toBe('')
+  })
+
   it('leaves EJS tags and unknown macros untouched', () => {
     expect(expandMacros('<%= getvar("x") %> {{user}}', { user: 'A' })).toBe('<%= getvar("x") %> A')
     expect(expandMacros('{{mystery}}', {})).toBe('{{mystery}}')

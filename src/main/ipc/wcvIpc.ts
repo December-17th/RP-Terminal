@@ -4,11 +4,11 @@ import * as floorService from '../services/floorService'
 import * as generationService from '../services/generationService'
 import * as lorebookService from '../services/lorebookService'
 import * as chatService from '../services/chatService'
-import * as characterService from '../services/characterService'
+import * as chatWriteService from '../services/chatWriteService'
 import * as scriptApiService from '../services/scriptApiService'
+import * as settingsService from '../services/settingsService'
 import { log } from '../services/logService'
 import { LorebookEntry, LorebookEntrySchema } from '../types/character'
-import { FloorFile } from '../types/chat'
 
 // Coerce a TavernHelper-shaped worldbook entry (from getWorldbook, possibly edited or freshly built by a
 // card) back into a valid LorebookEntry. `name` → comment; unknown fields (uid) are dropped by the schema;
@@ -35,27 +35,17 @@ const cardLoreCtx = (senderId: number): { profileId: string; characterId: string
   return characterId ? { profileId: ctx.profileId, characterId } : null
 }
 
-// The chat-array index space SillyTavern.chat / getChatMessages / setChatMessages share: per floor, the
-// (optional) user message then the assistant message. Maps an index → its source floor + role so a card's
-// write can be applied back to the right floor.
-const chatIndexMap = (floors: FloorFile[]): Array<{ floorIdx: number; isUser: boolean }> => {
-  const map: Array<{ floorIdx: number; isUser: boolean }> = []
-  floors.forEach((f, i) => {
-    if (f.user_message?.content) map.push({ floorIdx: i, isUser: true })
-    map.push({ floorIdx: i, isUser: false })
-  })
-  return map
-}
-
-// After a card mutates the chat (edit / delete): re-fold <UpdateVariable> into stat_data, push it to the
-// host native panels + sibling WCVs, and reload the host chat UI.
-const afterChatMutation = (profileId: string, chatId: string): void => {
-  const rebuilt = generationService.reevaluateVariables(profileId, chatId)
-  const latest = rebuilt[rebuilt.length - 1]
+// Push the re-folded latest-floor vars to the host native panels + sibling WCVs (after a card mutation).
+const pushVars = (chatId: string, latest: { variables: any } | null): void => {
   if (latest) {
     wcvManager.pushHostVars(chatId, latest.variables)
     wcvManager.notifyVarsChanged(chatId, latest.variables.stat_data ?? {})
   }
+}
+// After an edit / delete: re-fold <UpdateVariable> into stat_data (via chatWriteService), push it, and
+// reload the host chat UI.
+const afterChatMutation = (profileId: string, chatId: string): void => {
+  pushVars(chatId, chatWriteService.afterChatMutation(profileId, chatId))
   wcvManager.pushHostReload(chatId)
 }
 
@@ -195,6 +185,49 @@ export const registerWcvIpc = (ipcMain: IpcMain): void => {
     return true
   })
 
+  // --- Worldbook CRUD/bind over the full library (trusted cards). list/chat-ids are SYNC. ---
+  ipcMain.on('wcv-host-list-worldbooks-sync', (e) => {
+    const ctx = wcvManager.contextFor(e.sender.id)
+    e.returnValue = ctx ? lorebookService.listLorebooks(ctx.profileId) : []
+  })
+  ipcMain.on('wcv-host-chat-worldbook-ids-sync', (e) => {
+    const ctx = wcvManager.contextFor(e.sender.id)
+    const ids = ctx ? chatService.getChatLorebookIds(ctx.profileId, ctx.chatId) : null
+    e.returnValue = ids ?? (ctx?.characterId ? [ctx.characterId] : [])
+  })
+  ipcMain.handle('wcv-host-create-worldbook', (e, name) => {
+    const ctx = wcvManager.contextFor(e.sender.id)
+    return ctx ? lorebookService.createLorebook(ctx.profileId, String(name ?? 'New Worldbook')).id : ''
+  })
+  ipcMain.handle('wcv-host-delete-worldbook', (e, id) => {
+    const ctx = wcvManager.contextFor(e.sender.id)
+    if (!ctx) return false
+    lorebookService.deleteLorebookById(ctx.profileId, String(id))
+    return true
+  })
+  ipcMain.handle('wcv-host-get-worldbook-by-id', (e, id) => {
+    const ctx = wcvManager.contextFor(e.sender.id)
+    if (!ctx) return { entries: [] }
+    const lb = lorebookService.getLorebookById(ctx.profileId, String(id))
+    return lb ? { name: lb.name, entries: lb.entries } : { entries: [] }
+  })
+  ipcMain.handle('wcv-host-save-worldbook-by-id', (e, id, entries) => {
+    const ctx = wcvManager.contextFor(e.sender.id)
+    if (!ctx) return
+    const lb = lorebookService.getLorebookById(ctx.profileId, String(id)) || { name: '', entries: [] }
+    lb.entries = (Array.isArray(entries) ? entries : []).map(toLoreEntry)
+    lorebookService.saveLorebookById(ctx.profileId, String(id), lb)
+  })
+  ipcMain.handle('wcv-host-bind-worldbook', (e, id, on) => {
+    const ctx = wcvManager.contextFor(e.sender.id)
+    if (!ctx) return
+    const cur =
+      chatService.getChatLorebookIds(ctx.profileId, ctx.chatId) ??
+      (ctx.characterId ? [ctx.characterId] : [])
+    const next = on ? (cur.includes(id) ? cur : [...cur, id]) : cur.filter((x) => x !== id)
+    chatService.setChatLorebookIds(ctx.profileId, ctx.chatId, next)
+  })
+
   // --- Character / preset / regex reads (Track C0) — sync, ctx-scoped via scriptApiService ---
   ipcMain.on('wcv-host-get-char-data', (e) => {
     const ctx = wcvManager.contextFor(e.sender.id)
@@ -215,6 +248,17 @@ export const registerWcvIpc = (ipcMain: IpcMain): void => {
   ipcMain.on('wcv-host-get-preset-names', (e) => {
     const ctx = wcvManager.contextFor(e.sender.id)
     e.returnValue = ctx ? scriptApiService.listPresetNames(ctx.profileId) : []
+  })
+  // Persona display name (ctx-scoped settings) — so WCV chat shows the real user name, not "User".
+  ipcMain.on('wcv-host-get-persona-name', (e) => {
+    const ctx = wcvManager.contextFor(e.sender.id)
+    try {
+      e.returnValue = ctx
+        ? settingsService.getSettings(ctx.profileId).persona?.name || 'User'
+        : 'User'
+    } catch {
+      e.returnValue = 'User'
+    }
   })
   ipcMain.on('wcv-host-get-regexes', (e) => {
     const ctx = wcvManager.contextFor(e.sender.id)
@@ -248,90 +292,15 @@ export const registerWcvIpc = (ipcMain: IpcMain): void => {
     return generationService.generateRaw(ctx.profileId, ctx.chatId, config || {})
   })
 
-  // --- ST chat array (SillyTavern.chat) — for the home's "start game" (greeting-swipe select + reload) ---
-  // SYNC: the shim builds SillyTavern.chat from this at load. Each floor → its (optional) user message +
-  // the assistant message, carrying its swipes; floor 0's swipes default to the card's greetings
-  // (first_mes + alternate_greetings) so a swipe pick has something to select.
-  ipcMain.on('wcv-host-get-chat-sync', (e) => {
-    const ctx = wcvManager.contextFor(e.sender.id)
-    if (!ctx) {
-      e.returnValue = []
-      return
-    }
-    const characterId =
-      ctx.characterId || chatService.getChat(ctx.profileId, ctx.chatId)?.character_id || ''
-    const card = characterId ? characterService.getCharacter(ctx.profileId, characterId) : null
-    const name = (card?.data as { name?: string })?.name || 'Character'
-    const greetings = card
-      ? [
-          (card.data as { first_mes?: string }).first_mes,
-          ...((card.data as { alternate_greetings?: string[] }).alternate_greetings || [])
-        ].filter((g): g is string => !!g)
-      : []
-    const floors = floorService.getAllFloors(ctx.profileId, ctx.chatId)
-    const chat: Array<Record<string, unknown>> = []
-    floors.forEach((f, i) => {
-      if (f.user_message?.content)
-        chat.push({
-          is_user: true,
-          name: 'You',
-          mes: f.user_message.content,
-          send_date: f.timestamp,
-          swipes: [f.user_message.content],
-          swipe_id: 0,
-          extra: {}
-        })
-      // The greeting floor's swipes are the card's greetings (first_mes + alternate_greetings) — the
-      // home's "start game" picks a scenario by index here. Prefer them over any short stored floor
-      // swipes; later floors use their own response swipes.
-      const swipes =
-        i === 0 && greetings.length
-          ? greetings
-          : f.swipes && f.swipes.length
-            ? f.swipes
-            : [f.response?.content ?? '']
-      chat.push({
-        is_user: false,
-        name,
-        mes: f.response?.content ?? '',
-        send_date: f.timestamp,
-        swipes,
-        swipe_id: f.swipe_id ?? 0,
-        extra: {}
-      })
-    })
-    log(
-      'info',
-      'wcv getChat',
-      `${chat.length} msg(s), greeting swipes=${(chat[0]?.swipes as string[] | undefined)?.length ?? 0}`
-    )
-    e.returnValue = chat
-  })
-
-  // Persist a chat the card mutated (e.g. a greeting-swipe selection): map assistant messages back to
-  // floors in order, updating content + swipes/swipe_id; user messages are read-only here.
+  // Persist a chat the card mutated (e.g. a greeting-swipe selection): assistant messages → floors in
+  // order (content + swipes/swipe_id). Re-fold + push vars, but NO host reload — the card calls
+  // reloadCurrentChat itself after saveChat.
   ipcMain.handle('wcv-host-save-chat', (e, chat) => {
     const ctx = wcvManager.contextFor(e.sender.id)
-    if (!ctx || !Array.isArray(chat)) return false
-    const floors = floorService.getAllFloors(ctx.profileId, ctx.chatId)
-    const assistant = chat.filter((m) => m && !m.is_user)
-    assistant.forEach((m, i) => {
-      const f = floors[i]
-      if (!f) return
-      if (typeof m.mes === 'string') f.response.content = m.mes
-      if (Array.isArray(m.swipes)) f.swipes = m.swipes
-      if (typeof m.swipe_id === 'number') f.swipe_id = m.swipe_id
-      floorService.saveFloor(ctx.profileId, ctx.chatId, f)
-    })
-    // The greeting/scenario content changed → re-fold its <UpdateVariable> into stat_data (same as the
-    // Re-evaluate button) so the MVU UIs get the opening state, then push it to the host + sibling WCVs.
-    const rebuilt = generationService.reevaluateVariables(ctx.profileId, ctx.chatId)
-    const latest = rebuilt[rebuilt.length - 1]
-    if (latest) {
-      wcvManager.pushHostVars(ctx.chatId, latest.variables)
-      wcvManager.notifyVarsChanged(ctx.chatId, latest.variables.stat_data ?? {})
-    }
-    log('info', 'wcv saveChat', `${assistant.length} assistant msg(s) → floors + reevaluated`)
+    if (!ctx) return false
+    if (!chatWriteService.saveChat(ctx.profileId, ctx.chatId, chat)) return false
+    pushVars(ctx.chatId, chatWriteService.afterChatMutation(ctx.profileId, ctx.chatId))
+    log('info', 'wcv saveChat', 'assistant msgs → floors + reevaluated')
     return true
   })
 
@@ -342,67 +311,38 @@ export const registerWcvIpc = (ipcMain: IpcMain): void => {
     return true
   })
 
-  // Map the chat's floors → TavernHelper-style message objects (sync; getChatMessages from the card).
-  ipcMain.on('wcv-host-get-messages-sync', (e) => {
+  // Raw floor rows for the calling panel's session (the unified TH runtime maps these to TH/ST message
+  // shapes itself — same source the renderer uses). SYNC so the runtime's sync getters can read floors.
+  ipcMain.on('wcv-host-get-floors-sync', (e) => {
     const ctx = wcvManager.contextFor(e.sender.id)
     if (!ctx) {
       e.returnValue = []
       return
     }
-    const floors = floorService.getAllFloors(ctx.profileId, ctx.chatId)
-    const msgs: Array<{ message_id: number; role: string; message: string }> = []
-    chatIndexMap(floors).forEach((m, i) => {
-      const f = floors[m.floorIdx]
-      msgs.push({
-        message_id: i,
-        role: m.isUser ? 'user' : 'assistant',
-        message: m.isUser ? f.user_message.content : (f.response?.content ?? '')
-      })
-    })
-    e.returnValue = msgs
+    try {
+      e.returnValue = floorService.getAllFloors(ctx.profileId, ctx.chatId)
+    } catch {
+      e.returnValue = []
+    }
   })
 
-  // Edit message content by chat-array index (TH setChatMessages). Each index maps back to its floor +
-  // role; then re-fold + reload. (Content only for now — swipes/role edits are a follow-up.)
+  // Edit message content by chat-array index (TH setChatMessages); then re-fold + reload.
   ipcMain.handle('wcv-host-set-chat-messages', (e, messages) => {
     const ctx = wcvManager.contextFor(e.sender.id)
     if (!ctx) return false
-    const floors = floorService.getAllFloors(ctx.profileId, ctx.chatId)
-    const map = chatIndexMap(floors)
-    const touched = new Set<number>()
-    for (const m of Array.isArray(messages) ? messages : []) {
-      const id = typeof m?.message_id === 'number' ? m.message_id : -1
-      const slot = id >= 0 ? map[id] : undefined
-      if (!slot || typeof m?.message !== 'string') continue
-      if (slot.isUser) floors[slot.floorIdx].user_message.content = m.message
-      else floors[slot.floorIdx].response.content = m.message
-      touched.add(slot.floorIdx)
-    }
-    for (const fi of touched) floorService.saveFloor(ctx.profileId, ctx.chatId, floors[fi])
-    if (touched.size) afterChatMutation(ctx.profileId, ctx.chatId)
-    log('info', 'wcv setChatMessages', `${touched.size} floor(s) edited`)
-    return touched.size > 0
+    const n = chatWriteService.setChatMessages(ctx.profileId, ctx.chatId, messages)
+    if (n) afterChatMutation(ctx.profileId, ctx.chatId)
+    log('info', 'wcv setChatMessages', `${n} floor(s) edited`)
+    return n > 0
   })
 
-  // Delete messages (TH deleteChatMessages). Our model couples user+assistant per floor, so this
-  // TRUNCATES from the earliest targeted message's floor onward (the common "delete from here / undo").
+  // Delete messages (TH deleteChatMessages) — truncates from the earliest targeted message's floor.
   ipcMain.handle('wcv-host-delete-chat-messages', (e, messageIds) => {
     const ctx = wcvManager.contextFor(e.sender.id)
     if (!ctx) return false
-    const floors = floorService.getAllFloors(ctx.profileId, ctx.chatId)
-    const map = chatIndexMap(floors)
-    const ids = (Array.isArray(messageIds) ? messageIds : [messageIds]).filter(
-      (n): n is number => typeof n === 'number'
-    )
-    const floorIdxs = ids
-      .map((id) => map[id]?.floorIdx)
-      .filter((n): n is number => typeof n === 'number')
-    if (!floorIdxs.length) return false
-    const fromFloor = floors[Math.min(...floorIdxs)]?.floor
-    if (typeof fromFloor !== 'number') return false
-    chatService.truncateFloors(ctx.profileId, ctx.chatId, fromFloor)
+    if (!chatWriteService.deleteChatMessages(ctx.profileId, ctx.chatId, messageIds)) return false
     afterChatMutation(ctx.profileId, ctx.chatId)
-    log('info', 'wcv deleteChatMessages', `truncated from floor ${fromFloor}`)
+    log('info', 'wcv deleteChatMessages', 'truncated')
     return true
   })
 }

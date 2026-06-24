@@ -3,6 +3,10 @@ import { useProfileStore } from '../stores/profileStore'
 import { useChatStore } from '../stores/chatStore'
 import { useCharacterStore } from '../stores/characterStore'
 import { buildCardDoc } from './cardDoc'
+import { capCardHeight } from './cardFrameHeight'
+import { buildEnvHead, replaceVhInContent } from '../../../shared/cardEnv'
+import { buildWcvLibTags } from '../cardBridge/cardLibs'
+import type { CardSizing } from '../../../shared/cardRenderMode'
 
 /**
  * Renders a card's regex-injected "frontend card" — whatever HTML+script block the card's regex puts
@@ -24,7 +28,13 @@ const CSP =
   "default-src 'self' https: 'unsafe-inline' 'unsafe-eval' data: blob:; " +
   'img-src * data: blob:; media-src * data: blob:; connect-src * data: blob:'
 
-export function WcvMessageFrame({ html }: { html: string }): React.ReactElement {
+export function WcvMessageFrame({
+  html,
+  sizing = 'fit'
+}: {
+  html: string
+  sizing?: CardSizing
+}): React.ReactElement {
   const hostRef = useRef<HTMLDivElement>(null)
   const slotId = useRef(`msg-wcv-${seq++}`).current
   const profileId = useProfileStore((s) => s.activeProfile?.id ?? '')
@@ -42,11 +52,25 @@ export function WcvMessageFrame({ html }: { html: string }): React.ReactElement 
     () =>
       'data:text/html;charset=utf-8,' +
       encodeURIComponent(
-        buildCardDoc(html, {
-          headInject: `<meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="${CSP}">`
+        // CSP meta first, then the SHARED rendering-env (base reset + the NEW assumed libs via CDN +
+        // the --TH-viewport-height bootstrap). The core Vue/jQuery/Pinia/VueRouter still come from the
+        // preload (lower-risk SP2 T5 — the working path is untouched); only jQuery-UI/touch-punch/
+        // FontAwesome/Tailwind are added here. In `fill`, rewrite the card's min-height:NNvh onto the
+        // viewport variable; the overlay's capCardHeight (onWcvSlotSize) windows it either way.
+        buildCardDoc(sizing === 'fill' ? replaceVhInContent(html) : html, {
+          headInject:
+            `<meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="${CSP}">` +
+            buildEnvHead({
+              libTags: buildWcvLibTags(),
+              sizing,
+              viewportHeightPx: typeof window !== 'undefined' ? window.innerHeight : undefined,
+              // The WCV overlay is a fixed capped height — let a taller card scroll itself (the base reset's
+              // overflow:hidden would otherwise clip the lower half). Inline auto-sizes instead.
+              scrollable: true
+            })
         })
       ),
-    [html]
+    [html, sizing]
   )
 
   useEffect(() => {
@@ -108,9 +132,7 @@ export function WcvMessageFrame({ html }: { html: string }): React.ReactElement 
       // native overlay clips to its bounds anyway, so the excess scrolls internally (wheel-chaining
       // forwards to the message list at the edges). 0.7 leaves surrounding chat visible for context.
       if (p.slotId === slotId && p.height > 0) {
-        const viewport = scrollElRef.current?.clientHeight ?? window.innerHeight
-        const cap = Math.max(280, Math.round(viewport * 0.7))
-        setHeight(Math.min(p.height, cap))
+        setHeight(capCardHeight(p.height, scrollElRef.current?.clientHeight ?? window.innerHeight))
       }
     })
     const offWheel = window.api.onWcvWheel((p: { slotId: string; dy: number }) => {

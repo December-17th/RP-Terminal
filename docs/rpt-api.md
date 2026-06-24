@@ -120,10 +120,10 @@ State of truth is `floor.variables.stat_data` (the MVU tree). Reads come from a 
 
 Card → host channels (resolved against the calling view's ctx), in
 [`wcvIpc`](../src/main/ipc/wcvIpc.ts): `wcv-host-get-vars(-sync)`, `wcv-host-apply-vars`,
-`wcv-host-set-vars`, `wcv-host-get-messages-sync`, `wcv-host-set-input`,
+`wcv-host-set-vars`, `wcv-host-get-floors-sync`, `wcv-host-set-input`,
 `wcv-host-get-worldbook-names-sync` / `-get-worldbook` / `-replace-worldbook`,
-`wcv-host-get-chat-sync` / `-save-chat` / `-reload-chat`, `wcv-host-get-char-data` / `-get-char-avatar` /
-`-get-preset` / `-get-preset-names` / `-get-regexes` / `-format-regex`. Host → card: `wcv-vars-changed` (mirror
+`-save-chat` / `-reload-chat`, `wcv-host-get-char-data` / `-get-char-avatar` /
+`-get-preset` / `-get-preset-names` / `-get-regexes` / `-format-regex` / `-get-persona-name`. Host → card: `wcv-vars-changed` (mirror
 refresh). To add an API: add the shim method (sync getter → `sendSync`; heavy → `invoke`) + the
 ctx-scoped IPC handler, and update this doc.
 

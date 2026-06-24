@@ -3,6 +3,8 @@ import { createCardBridge, type CardCtx } from './createCardBridge'
 import lodash from 'lodash'
 import { z } from 'zod'
 
+export { installCardTopSurface } from './topSurface'
+
 /**
  * Install window.__rptCardBridge so an inline card's bootstrap (running in a same-origin iframe)
  * can synchronously fetch its API globals via window.parent.__rptCardBridge(ctx). Idempotent.

@@ -13,11 +13,17 @@
          `'wasm-unsafe-eval'` lets the shared ST-Prompt-Template engine compile its
          quickjs WASM sandbox at render-time (Phase C). It permits WebAssembly ONLY —
          not JS eval/new Function (that would be the broader 'unsafe-eval').
-         Trusted card CDN hosts are allowed in script/style/font/connect to support
-         inline card ESM + font loading (Phase A). -->
+         `https:` is allowed in script/style/font/connect so INLINE trusted cards
+         (InlineCardFrame: a same-origin srcdoc that INHERITS this policy — a child
+         <meta> can only tighten it) can load their own ESM modules, stylesheets, and
+         fonts from ANY CDN, at parity with the Isolated (WCV) path's CSP
+         (wcvManager.CARD_CSP / WcvMessageFrame). Inline cards already run trusted
+         (allow-scripts allow-same-origin), so this matches their trust level. We keep
+         `'wasm-unsafe-eval'` rather than the broader `'unsafe-eval'` — no card has
+         needed JS eval. -->
     <meta
       http-equiv="Content-Security-Policy"
-      content="default-src 'self'; script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval' blob: https://cdn.jsdelivr.net https://fastly.jsdelivr.net https://unpkg.com https://esm.sh https://cdnjs.cloudflare.com; style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://fastly.jsdelivr.net https://unpkg.com https://esm.sh https://cdnjs.cloudflare.com https://fonts.googleapis.com; font-src 'self' data: https://fonts.gstatic.com https://cdn.jsdelivr.net; img-src 'self' data: blob: https:; connect-src 'self' data: blob: https://cdn.jsdelivr.net https://fastly.jsdelivr.net https://unpkg.com https://esm.sh https://cdnjs.cloudflare.com; media-src 'self' data: blob: https:"
+      content="default-src 'self'; script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval' blob: https:; style-src 'self' 'unsafe-inline' https:; font-src 'self' data: https:; img-src 'self' data: blob: https:; connect-src 'self' data: blob: https:; media-src 'self' data: blob: https:"
     />
   </head>
 

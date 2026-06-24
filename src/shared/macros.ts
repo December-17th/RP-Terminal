@@ -59,6 +59,16 @@ const roll = (expr: string, rng: () => number): number => {
 const splitChoices = (raw: string): string[] =>
   (raw.includes('::') ? raw.split('::') : raw.split(',')).map((s) => s.trim()).filter(Boolean)
 
+// Format a value for the `{{format_X_variable::}}` family: objects/arrays → JSON, primitives → string.
+const formatVar = (v: unknown): string =>
+  v == null ? '' : typeof v === 'object' ? JSON.stringify(v) : String(v)
+
+// The scoped variable-read macros `{{get_X_variable::path}}` / `{{format_X_variable::path}}`, X ∈
+// global/chat/message/preset/character. RPT has one chat-var store + a global store, so `global` reads from
+// ctx.globals and every other scope reads from ctx.vars (chat vars) — matching how the EJS helpers alias
+// message/character to the chat store (RPT has no dedicated per-message/preset/character var stores).
+const VAR_MACRO_RE = /^(get|format)_(global|chat|message|preset|character)_variable$/
+
 // Match a single macro whose body has no braces, so the INNERMOST `{{...}}` matches first.
 // Combined with the multi-pass loop, nested macros (`{{getvar::{{user}}}}`) resolve
 // inside-out, and `<%...%>` (no `{{`) is never touched.
@@ -84,6 +94,13 @@ export const expandMacros = (text: string, ctx: MacroContext = {}): string => {
       const sep = body.indexOf('::')
       const name = (sep < 0 ? body : body.slice(0, sep)).trim().toLowerCase()
       const a = sep < 0 ? '' : body.slice(sep + 2)
+      // Scoped TH variable reads: {{get_X_variable::path}} / {{format_X_variable::path}}.
+      const vm = VAR_MACRO_RE.exec(name)
+      if (vm) {
+        const val = path(vm[2] === 'global' ? ctx.globals : ctx.vars, a.trim())
+        changed = true
+        return vm[1] === 'format' ? formatVar(val) : String(val ?? '')
+      }
       let res: string | null = null
       switch (name) {
         case 'char':

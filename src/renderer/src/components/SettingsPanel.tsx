@@ -108,7 +108,10 @@ export const SettingsPanel: React.FC<{ profileId: string }> = ({ profileId }) =>
               value={settings.cards?.renderMode ?? 'inline'}
               onChange={(e) =>
                 updateSettings(profileId, {
-                  cards: { renderMode: e.target.value as 'inline' | 'isolated' }
+                  cards: {
+                    renderMode: e.target.value as 'inline' | 'isolated',
+                    sizing: settings.cards?.sizing ?? 'fit'
+                  }
                 })
               }
               style={{ width: '100%' }}
@@ -120,6 +123,30 @@ export const SettingsPanel: React.FC<{ profileId: string }> = ({ profileId }) =>
               <b>Inline</b>: beautification cards render directly in the chat and scroll with it.{' '}
               <b>Isolated</b>: each card runs in its own process — safest for heavy cards. Per-card
               overrides live in the Regex panel.
+            </div>
+
+            <label className="field-label" style={{ marginTop: 18 }}>
+              Card sizing (default)
+            </label>
+            <select
+              value={settings.cards?.sizing ?? 'fit'}
+              onChange={(e) =>
+                updateSettings(profileId, {
+                  cards: {
+                    renderMode: settings.cards?.renderMode ?? 'inline',
+                    sizing: e.target.value as 'fit' | 'fill'
+                  }
+                })
+              }
+              style={{ width: '100%' }}
+            >
+              <option value="fit">Fit (size to the card's content)</option>
+              <option value="fill">Fill (cards sized to the viewport fill the frame)</option>
+            </select>
+            <div style={{ fontSize: '0.78em', color: 'var(--rpt-text-secondary)', marginTop: 4 }}>
+              <b>Fit</b>: the card grows to its content height (no scrollbar). <b>Fill</b>: cards built
+              to fill a viewport (<code>100vh</code>) are mapped onto the frame via{' '}
+              <code>--TH-viewport-height</code>.
             </div>
 
             <label

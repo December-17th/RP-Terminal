@@ -43,6 +43,7 @@ export interface Settings {
   }
   cards?: {
     renderMode: 'inline' | 'isolated'
+    sizing: 'fit' | 'fill'
   }
   agent: {
     mode: 'off' | 'manual' | 'agentic'
