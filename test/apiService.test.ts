@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { buildGeminiBody, thinkAssembler } from '../src/main/services/apiService'
+import { buildGeminiBody, thinkAssembler, orderForProvider } from '../src/main/services/apiService'
 import { ChatMessage } from '../src/main/services/promptBuilder'
 
 const params = (p: Record<string, number> = {}): any => ({
@@ -60,6 +60,35 @@ describe('buildGeminiBody', () => {
     const body: any = buildGeminiBody([{ role: 'user', content: 'hi' }], params())
     expect('systemInstruction' in body).toBe(false)
     expect(body.contents).toEqual([{ role: 'user', parts: [{ text: 'hi' }] }])
+  })
+})
+
+describe('orderForProvider (end-on-user vs preserving a trailing assistant prefill)', () => {
+  const m = (role: ChatMessage['role'], content = ''): ChatMessage => ({ role, content })
+
+  it('keeps a trailing assistant prefill LAST so the model continues it (CoT [START THINKING])', () => {
+    const msgs = [m('system', 's'), m('user', 'u'), m('assistant', 'PREFILL')]
+    expect(orderForProvider(msgs, 'openai')).toEqual(msgs) // unchanged — prefill stays last
+  })
+
+  it('moves the last user message to the end when the trailing blocks are system (strict backends)', () => {
+    const msgs = [m('system', 's'), m('user', 'u'), m('system', 'jailbreak')]
+    expect(orderForProvider(msgs, 'openai')).toEqual([
+      m('system', 's'),
+      m('system', 'jailbreak'),
+      m('user', 'u')
+    ])
+  })
+
+  it('is a no-op when the user message is already last', () => {
+    const msgs = [m('system', 's'), m('user', 'u')]
+    expect(orderForProvider(msgs, 'openai')).toEqual(msgs)
+  })
+
+  it('leaves non-OpenAI providers (anthropic/gemini) untouched', () => {
+    const msgs = [m('user', 'u'), m('system', 'x')]
+    expect(orderForProvider(msgs, 'anthropic')).toEqual(msgs)
+    expect(orderForProvider(msgs, 'gemini')).toEqual(msgs)
   })
 })
 

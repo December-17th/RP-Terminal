@@ -31,6 +31,26 @@ export const streamProvider = async (
 }
 
 /**
+ * End the conversation on a user message for strict OpenAI-compatible backends that reject a trailing
+ * assistant "prefill" — EXCEPT when the preset intends one (the last message is `assistant`), which the
+ * model must CONTINUE (e.g. a CoT `[START THINKING]` block). Moving a user turn past such a prefill makes
+ * the model ignore it and reason on its own (the English-vs-prompt-directed-thinking bug). Non-OpenAI
+ * providers keep their own ordering. Applied in generationService BEFORE the request is logged, so the
+ * logged/stored prompt matches exactly what's sent.
+ */
+export const orderForProvider = (messages: ChatMessage[], provider?: string): ChatMessage[] => {
+  if (provider === 'anthropic' || provider === 'google' || provider === 'gemini') return messages
+  if (messages[messages.length - 1]?.role === 'assistant') return messages // keep the trailing prefill last
+  const lastUserIdx = messages.map((m) => m.role).lastIndexOf('user')
+  if (lastUserIdx === -1 || lastUserIdx === messages.length - 1) return messages
+  return [
+    ...messages.slice(0, lastUserIdx),
+    ...messages.slice(lastUserIdx + 1),
+    messages[lastUserIdx]
+  ]
+}
+
+/**
  * List the models available at the configured provider (GET /models), mirroring the auth each
  * provider uses for generation: OpenAI-compatible (openai/openrouter/custom) → `data[].id` with a
  * Bearer key; Anthropic → `data[].id` with x-api-key; Google → `models[].name` (sans the "models/"
@@ -166,22 +186,8 @@ const streamOpenAICompatible = async (
     ? base
     : `${base.replace(/\/$/, '')}/chat/completions`
 
-  // Strict backends (e.g. Claude via a Bedrock/OpenAI-compat proxy) require the
-  // conversation to END with a user message and reject a trailing assistant
-  // "prefill". Presets routinely place jailbreak/post-history blocks *after* the
-  // user's turn, so move the last user message to the very end — trailing
-  // system/assistant blocks slide just before it. Content is preserved and the
-  // request ends on a user turn.
-  let outMessages = messages
-  const lastUserIdx = messages.map((m) => m.role).lastIndexOf('user')
-  if (lastUserIdx !== -1 && lastUserIdx !== messages.length - 1) {
-    outMessages = [
-      ...messages.slice(0, lastUserIdx),
-      ...messages.slice(lastUserIdx + 1),
-      messages[lastUserIdx]
-    ]
-  }
-
+  // Message ordering (end-on-user vs preserving a trailing assistant prefill) is decided upstream in
+  // generationService via orderForProvider, BEFORE the request is logged — so the log matches what's sent.
   const response = await fetch(url, {
     method: 'POST',
     headers: {
@@ -190,7 +196,7 @@ const streamOpenAICompatible = async (
     },
     body: JSON.stringify({
       model,
-      messages: outMessages,
+      messages,
       ...cleanParams(params),
       stream: true,
       stream_options: { include_usage: true }
