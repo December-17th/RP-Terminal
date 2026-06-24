@@ -11,7 +11,12 @@ import { ScriptActionsBar } from './ScriptActionsBar'
 import { Composer } from './Composer'
 import { ContextMenu } from './ContextMenu'
 import { expandMacros } from '../../../shared/macros'
-import { stripRptEvents, stripThinking } from '../../../shared/responseView'
+import {
+  stripRptEvents,
+  stripThinking,
+  hasThinking,
+  extractThinking
+} from '../../../shared/responseView'
 import { renderTemplate } from '../plugin/renderTemplate'
 
 /**
@@ -81,9 +86,10 @@ export function ChatView({ profileId }: { profileId: string }): React.ReactEleme
     () =>
       floors.map((f) => {
         // Stored content is the FULL raw response. Strip only our own state tags here and KEEP the
-        // <thinking> block so the card's display regex can fold/beautify it (any leftover raw reasoning
-        // is stripped AFTER the regex below). The card's regex also folds its <UpdateVariable> blocks, so
-        // disabling it shows the original — and nothing is ever truncated in storage.
+        // <thinking> block so the card's display regex can fold/beautify it (if it doesn't, the reasoning
+        // is moved to a dedicated expandable section below the prompt — see the regex handling below, not
+        // stripped). The card's regex also folds its <UpdateVariable> blocks, so disabling it shows the
+        // original — and nothing is ever truncated in storage.
         const evaled = renderTemplate(stripRptEvents(f.response.content), f.variables, 'final')
         // [RENDER:*]: wrap with the active render-marker templates (each evaled with this floor's vars).
         const renderOn =
@@ -103,15 +109,20 @@ export function ChatView({ profileId }: { profileId: string }): React.ReactEleme
           char: charName,
           vars: f.variables
         })
+        const regexed = useRegexStore.getState().apply(withMacros, {
+          user: personaName,
+          char: charName
+        })
+        // If the card's display regex folded <thinking> (none remain), keep its inline beautified
+        // block. Otherwise DON'T strip it away — pull the reasoning into a dedicated expandable section
+        // (rendered under the player prompt in FloorBlock) and drop only the raw block from the body.
+        const foldedByCard = !hasThinking(regexed)
         return {
           floor: f.floor,
           user: f.user_message.content,
           rawResponse: f.response.content,
-          // Regex first (so a reasoning-beautification rule can transform <thinking>…</thinking>), then
-          // strip any leftover raw reasoning the regex didn't fold — so un-styled <think> never leaks.
-          html: stripThinking(
-            useRegexStore.getState().apply(withMacros, { user: personaName, char: charName })
-          ),
+          html: foldedByCard ? regexed : stripThinking(regexed),
+          thinking: foldedByCard ? '' : extractThinking(f.response.content),
           swipeId: f.swipe_id ?? 0,
           swipeCount: f.swipes?.length ?? 1
         }

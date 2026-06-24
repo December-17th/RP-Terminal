@@ -4,7 +4,9 @@ import {
   stripRptEvents,
   stripMvuBlocks,
   cleanForDisplay,
-  cleanForHistory
+  cleanForHistory,
+  hasThinking,
+  extractThinking
 } from '../src/shared/responseView'
 
 describe('responseView (lossless storage, view-time transforms)', () => {
@@ -38,5 +40,19 @@ describe('responseView (lossless storage, view-time transforms)', () => {
     expect(stripRptEvents('hello')).toBe('hello')
     expect(stripMvuBlocks('hello')).toBe('hello')
     expect(stripThinking('hello')).toBe('hello')
+  })
+
+  it('hasThinking detects a raw <think>/<thinking> open tag (gone once a regex folds it)', () => {
+    expect(hasThinking('<think>plan</think> body')).toBe(true)
+    expect(hasThinking('<thinking>plan')).toBe(true) // dangling/unclosed
+    expect(hasThinking('<details>plan</details> body')).toBe(false) // already folded by a card regex
+    expect(hasThinking('plain narrative')).toBe(false)
+  })
+
+  it('extractThinking returns the inner reasoning (closed blocks + a dangling trailing one)', () => {
+    expect(extractThinking('<thinking>plan A</thinking>\nThe rain falls.')).toBe('plan A')
+    expect(extractThinking('a <think>one</think> b <think>two</think>')).toBe('one\n\ntwo')
+    expect(extractThinking('<think>cut off…')).toBe('cut off…') // unclosed (truncated output)
+    expect(extractThinking('no reasoning here')).toBe('')
   })
 })

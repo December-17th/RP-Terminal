@@ -23,6 +23,25 @@ export const stripThinking = (text: string): string =>
     .replace(THINK_DANGLING_RE, '')
     .trim()
 
+// Whether any raw <think>/<thinking> OPEN tag remains — e.g. the card's display regex didn't fold it.
+// Used to decide between the card's inline beautification and our own dedicated reasoning section.
+export const hasThinking = (text: string): boolean =>
+  /<think(?:ing)?\b[^>]*>/i.test(String(text ?? ''))
+
+// The reasoning text itself — the inner content of each <think> block plus any dangling unclosed
+// trailing one — for rendering in a dedicated expandable section when no card regex beautifies it.
+export const extractThinking = (text: string): string => {
+  const s = String(text ?? '')
+  const closed = [...s.matchAll(/<think(?:ing)?\b[^>]*>([\s\S]*?)<\/think(?:ing)?>/gi)].map(
+    (m) => m[1]
+  )
+  const dangling = /<think(?:ing)?\b[^>]*>([\s\S]*)$/i.exec(s.replace(THINK_RE, ''))
+  return [...closed, ...(dangling ? [dangling[1]] : [])]
+    .map((t) => t.trim())
+    .filter(Boolean)
+    .join('\n\n')
+}
+
 export const stripRptEvents = (text: string): string => String(text ?? '').replace(RPT_EVENT_RE, '')
 
 export const stripMvuBlocks = (text: string): string => String(text ?? '').replace(MVU_BLOCK_RE, '')
