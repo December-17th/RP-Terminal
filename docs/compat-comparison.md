@@ -7,7 +7,7 @@ docs](https://n0vi028.github.io/JS-Slash-Runner-Doc/), [ST-Prompt-Template
 features](https://github.com/zonde306/ST-Prompt-Template/blob/main/docs/features.md) +
 [reference](https://github.com/zonde306/ST-Prompt-Template/blob/main/docs/reference.md).
 
-Legend: ✅ full · 🟡 partial · ⬜ none · N/A not applicable
+Legend: ✅ full · 🟡 partial · ⬜ none · 🔁 stub · N/A not applicable
 
 ---
 
@@ -16,78 +16,86 @@ Legend: ✅ full · 🟡 partial · ⬜ none · N/A not applicable
 |                     | Tavern Helper (JS-Slash-Runner)                                                | ST-Prompt-Template                                                                | RP Terminal                                                         |
 | ------------------- | ------------------------------------------------------------------------------ | --------------------------------------------------------------------------------- | ------------------------------------------------------------------- |
 | **Kind**            | A **JS script runtime** + frontend-card renderer, as a SillyTavern _extension_ | A **prompt-template engine** (EJS) extending ST's macro syntax, as an _extension_ | A **standalone Electron app** that is _format-compatible_ with both |
-| **Runs**            | Inside the ST web page (its runtime, jQuery/DOM)                               | Inside ST's prompt-build + message-render pipeline                                | Its own engine (main process) + an out-of-process WCV for card UI   |
+| **Runs**            | Inside the ST web page (its runtime, jQuery/DOM)                               | Inside ST's prompt-build + message-render pipeline                                | Its own engine (main process) + **dual-mode** card UI: inline same-origin iframe (default) or out-of-process WCV (isolated) |
 | **License**         | AFPL (non-free) — never vendored; clean-room shim only                         | AGPL-3.0 — clean-room reimpl. of the engine                                       | undecided (leaning AGPL)                                            |
-| **RPT counterpart** | `rpt` API + `TAVERN_SHIM` + the **WCV shim** (`wcvPreload`)                    | `templateService` (quickjs EJS engine)                                            | —                                                                   |
+| **RPT counterpart** | the **card runtime** `shared/thRuntime` (one surface, two transports: `cardBridge` + `wcvPreload`) | `templateService` + `renderTemplate` (quickjs EJS engine) | —                                                                   |
 
 RPT carries **both** compat surfaces: the EJS template engine _and_ the TH JS API. The two extensions
 overlap (both touch variables/world-info), but their centers differ — ST-PT is templating, TH is scripting.
 
 ---
 
-## 2. Prompt templating (vs ST-Prompt-Template → RPT `templateService`)
+## 2. Prompt templating (vs ST-Prompt-Template → RPT `templateService` + `renderTemplate`)
+
+> Full status in [st-prompt-template-plan.md](st-prompt-template-plan.md) — **Phases A–E complete.**
 
 | Feature                                                                                              | ST-Prompt-Template            | RPT                                                                                                                                              |
 | ---------------------------------------------------------------------------------------------------- | ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
 | EJS `<% %>` / `<%= %>` / `<%- %>`                                                                    | ✅                            | ✅ (quickjs WASM sandbox)                                                                                                                        |
-| `<%# comment %>`, `<#escape-ejs>`                                                                    | ✅                            | 🟡 `<%#` comments ✅ + `<%_`/`_%>` trim ✅; `<#escape-ejs>` ⬜                                                                                   |
+| `<%# comment %>`, `<%_`/`_%>` trim, `<#escape-ejs>`                                                  | ✅                            | 🟡 `<%#` + trim ✅; `<#escape-ejs>` ⬜                                                                                                           |
 | Eval **before send**                                                                                 | ✅                            | ✅ (authored system/char/lore/literal blocks)                                                                                                    |
-| Eval **render-time** (on AI output)                                                                  | ✅ `[RENDER:*]`, `@@render_*` | ⬜ deferred (engine is main-side, render is renderer-side → needs an IPC eval bridge; render-time _macros_ cover common cases)                   |
-| `getvar/setvar/incvar/decvar/delvar` (+ scope aliases)                                               | ✅                            | ✅ local/global                                                                                                                                  |
-| Variable scopes: global / local / **message** / **character**                                        | ✅ all four                   | 🟡 local/global/message/chat aliases exist, but message/character currently map to the chat store (no dedicated per-message/character store yet) |
-| `insvar` / `patchVariables` (JSON Patch) / `setVariableSchema` (Zod)                                 | ✅                            | 🟡 (RPT has a native JSON-Patch + Zod schema engine for MVU `stat_data`, but not exposed as these template helpers)                              |
-| `getwi` / `getWorldInfoData` / `activewi`                                                            | ✅                            | 🟡 `getwi` ✅ (entry content); `getWorldInfoData`/`activewi` ⬜                                                                                  |
+| Eval **render-time** (on AI output)                                                                  | ✅ `[RENDER:*]`, `@@render_*` | ✅ full EJS in the renderer, rate-limited live + final pass (`renderTemplate`, gated by `settings.templates.render`); `render_permanent` overwrite ⬜ |
+| `getvar/setvar/incvar/decvar/delvar` (+ scope aliases)                                               | ✅                            | ✅ local/global (message scope realized at render-time)                                                                                          |
+| Variable scopes: global / local / **message**                                                        | ✅                            | ✅ local/global + message (the floor's `variables` at render-time)                                                                              |
+| `getwi` / `getWorldInfoData` / `getWorldInfoActivatedData`                                           | ✅                            | ✅ `getwi`/`getWorldInfoData`/`getWorldInfoActivatedData`                                                                                        |
 | `getchar` / `getCharData`                                                                            | ✅                            | ✅ `getchar(field)`                                                                                                                              |
-| `getpreset` / `getqr`                                                                                | ✅                            | 🟡 `getPreset` → preset NAME only (not prompt content); `getqr` stub                                                                             |
-| `getChatMessages` / `matchChatMessages`                                                              | ✅                            | 🟡 `getMessageHistory()` ✅; `matchChatMessages` ⬜                                                                                              |
+| `getpreset(name)`                                                                                    | ✅                            | ✅ named prompt-block content (name/identifier/regex match)                                                                                      |
+| `getChatMessages` / `matchChatMessages` / `parseJSON` / `jsonPatch`                                  | ✅                            | ✅ `getMessageHistory`/`matchChatMessages`/`parseJSON`/`jsonPatch`                                                                              |
 | `define()` (persistent macros)                                                                       | ✅                            | ✅                                                                                                                                               |
-| `injectPrompt` / `getPromptsInjected`                                                                | ✅                            | ⬜                                                                                                                                               |
-| `[GENERATE:BEFORE/AFTER]`, `@INJECT`, `[GENERATE:REGEX:]`, decorators (`@@activate/@@if/@@iframe/…`) | ✅                            | ⬜ deferred (uncertain ST contract; verify first)                                                                                                |
-| `faker`                                                                                              | ✅                            | 🟡 clean-room subset in the sandbox (number/float/bool/pick/uuid/name/word/lorem)                                                                |
-| `lodash` (`_`) / `jQuery` (`$`)                                                                      | ✅                            | ⬜ `_` not in the template sandbox (only `faker`); `$` N/A (template engine, not DOM)                                                            |
-| `[InitialVariables]` preload                                                                         | ✅                            | ✅ equivalent: `state_schema.defaults` ⊕ `[initvar]` blocks                                                                                      |
-| Token/char counters (`LAST_SEND_TOKENS`, …)                                                          | ✅                            | 🟡 (cache read/write tokens logged; not exposed as template vars)                                                                                |
+| `[GENERATE:BEFORE/AFTER/{idx}]`, `@INJECT`, `[GENERATE:REGEX:]`, `@@` decorators                     | ✅                            | ✅ build-time (`injectMarkers` + `promptBuilder`); preload decorators ⬜ (RPT has no card-open preload phase)                                    |
+| `[InitialVariables]` / `@@initial_variables` preload                                                | ✅                            | ✅ (`mvuSchema.parseInitVars` → floor-0 `stat_data`) + `state_schema.defaults`                                                                  |
+| `injectPrompt` / `getPromptsInjected`                                                                | ✅                            | 🟡 (the marker/@INJECT machinery covers the inject path; not exposed as these helpers)                                                          |
+| `faker`                                                                                              | ✅                            | 🟡 clean-room subset (number/float/bool/pick/uuid/name/word/lorem)                                                                              |
+| `lodash` (`_`)                                                                                       | ✅                            | ✅ clean-room `_` subset in the sandbox                                                                                                          |
+| `EjsTemplate.*` API surface                                                                          | ✅                            | ✅ (`evalTemplate`/`prepareContext`/`getSyntaxErrorInfo`/`allVariables`/`saveVariables`)                                                         |
+| Token/char counters (`LAST_SEND_TOKENS`, …)                                                          | ✅                            | 🟡 (cache read/write tokens logged; not exposed as template vars)                                                                               |
 
 ---
 
-## 3. Script / card JS API (vs Tavern Helper → RPT `rpt` + WCV shim)
+## 3. Script / card JS API (vs Tavern Helper → RPT `shared/thRuntime`)
 
-| Category                                                                 | Tavern Helper         | RPT (iframe `rpt` path)                                                                                                                    | RPT (WCV card path)                                                                               |
-| ------------------------------------------------------------------------ | --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------- |
-| **Variables** get/set/insert/replace/updateWith, scopes                  | ✅                    | ✅ local/global (message/char/script 🟡)                                                                                                   | ✅ (MVU `stat_data` + JSONPatch)                                                                  |
-| **Chat** read (messages, last id)                                        | ✅                    | ✅                                                                                                                                         | ✅                                                                                                |
-| **Chat** write (set/create/delete/rotate/swipes)                         | ✅                    | 🟡                                                                                                                                         | 🟡 (`SillyTavern.chat[]`+`saveChat`/`reloadCurrentChat`; greeting-swipe select ✅; full write ⬜) |
-| **Worldbook** get/create/edit/delete entries                             | ✅                    | 🟡 read + **replace-all** (`rpt.lore.get/set`, gated `worldbook:read/write`) → add/remove/edit/toggle by read-modify-write; create/bind ⬜ | 🟡 read + **toggle only** (extend to full replace)                                                |
-| `getCharWorldbookNames` / bind to char/chat                              | ✅                    | 🟡 names ✅, bind ⬜                                                                                                                       | ✅ names (sync); bind ⬜                                                                          |
-| **Character card** read (`getCharData`, avatar)                          | ✅                    | ✅                                                                                                                                         | ✅                                                                                                |
-| **Generation** `generate`                                                | ✅                    | ✅ (per-card grant)                                                                                                                        | 🔁 stub (bring host-side generate to the shim)                                                    |
-| `generateRaw` / `stop` / stream-token events                             | ✅                    | ⬜                                                                                                                                         | ⬜                                                                                                |
-| **Regex** `getTavernRegexes` / `replace` / `formatAsTavernRegexedString` | ✅                    | 🟡 (`scriptApiService` format/list)                                                                                                        | ⬜ (wire into shim)                                                                               |
-| **Events** `eventOn/Once/Emit/MakeFirst/RemoveListener`                  | ✅                    | ✅                                                                                                                                         | ✅ (local bus + MVU lifecycle)                                                                    |
-| Full `tavern_events` enum mapped to pipeline                             | ✅                    | 🟡 subset                                                                                                                                  | 🟡 subset                                                                                         |
-| **Audio** background music / SFX API                                     | ✅                    | ⬜                                                                                                                                         | ⬜ (cards load audio directly under the CSP)                                                      |
-| **Slash / STScript** command set, pipes, closures                        | ✅                    | 🟡 small registry + built-ins                                                                                                              | 🔁 `triggerSlash` stub                                                                            |
-| **Embedded interactive HTML / 前端卡**                                   | ✅ (same-page iframe) | ✅ (sandboxed iframe + mini-`$().load`)                                                                                                    | ✅ **out-of-process WCV** (the chosen path)                                                       |
-| `rpt.storage` (per-owner KV), `rpt.net` (allow-listed fetch)             | ~ (TH has its own)    | ✅                                                                                                                                         | 🟡                                                                                                |
+The TH JS API a card's scripts + frontend call. **One surface** (`createThRuntime` over a `Host` seam),
+**two transports at parity** — inline `cardBridge` (default) and WCV `wcvPreload` (isolated). The old
+iframe-`rpt`/`MessageScriptFrame` path is **retired**; the column below applies to both transports.
+
+| Category | Tavern Helper | RP Terminal (`thRuntime`) |
+| --- | --- | --- |
+| **Variables** get/set/insert/replace/updateWith, MVU | ✅ | ✅ (`stat_data` + RFC-6902 JSONPatch) |
+| **Chat** read (messages, last id) | ✅ | ✅ |
+| **Chat** write (set/delete/save/reload/setInput) | ✅ | ✅ (shared `chatWriteService`); general mid-history insert ⬜ |
+| **Worldbook** get/create/edit/delete entries + bind | ✅ | ✅ full library CRUD + bind (read-modify-write; trusted-card stance) |
+| `getCharWorldbookNames` | ✅ | ✅ (sync) |
+| **Character / preset** read (`getCharData`, avatar, preset) | ✅ | ✅ |
+| **Generation** `generate` / `generateRaw` | ✅ | ✅ host-side (the AI key never reaches the card) |
+| `stop` / stream-token events | ✅ | 🟡 `STREAM_TOKEN_RECEIVED` ✅; `stopGenerationById` ⬜ |
+| **Regex** `getTavernRegexes` / `formatAsTavernRegexedString` / `replace` | ✅ | 🟡 read + format ✅; `replaceTavernRegexes` (write) 🔁 stub |
+| **Events** `eventOn/Once/Emit/MakeFirst/RemoveListener` | ✅ | ✅ (local bus + MVU lifecycle + stream) |
+| Full `tavern_events` enum mapped to pipeline | ✅ | 🟡 ~10-event subset; `MESSAGE_SENT` ⬜ |
+| **Slash / STScript** `triggerSlash` (pipes, closures) | ✅ | 🟡 subset (`shared/stscript`): `/gen`·`/genraw`·`/trigger`·`/send`, chat+global vars; `while`/long-tail ⬜ |
+| **Macros** `substituteParams`/`substitudeMacros` + `{{get/format_X_variable}}` | ✅ | ✅; `registerMacroLike` ⬜ |
+| **EJS** `EjsTemplate.*` | ✅ | ✅ |
+| **Audio** background music / SFX API | ✅ | 🔁 stub (cards load audio natively under the CSP) |
+| **Embedded interactive HTML / 前端卡** | ✅ (same-page iframe) | ✅ dual-mode: inline same-origin iframe (default) + out-of-process WCV (isolated) |
 
 ---
 
 ## 4. Where RPT is BEHIND (priorities)
 
-- **ST-PT templating long tail** (narrower than first assessed — `getchar`/`getwi`/`getMessageHistory`/
-  `define`/`faker`/`<%#` are already done; see [docs/st-prompt-template-plan.md](st-prompt-template-plan.md)):
-  render-time eval on AI output, the `[GENERATE/RENDER/INJECT]` markers + decorators, dedicated
-  message/character scopes, accessor depth (`getpreset` content, `getWorldInfoData`/`activewi`,
-  `injectPrompt`), `lodash` in the sandbox, and the `EjsTemplate` API surface.
-- **TH JS API in the WCV shim**: lorebook **CRUD** (not just toggle), chat **write**, **regex** API,
-  host-side **generate**, the full `tavern_events` enum, audio API. (Most are backed by an existing
-  service — the work is wiring the WCV shim method + a ctx-scoped IPC handler. See
-  [docs/rpt-api.md](rpt-api.md).)
+- **ST-PT templating:** narrowed to non-goals/edge cases — `render_permanent` (opt-in stored-floor
+  overwrite), preload decorators (no card-open preload phase), `<#escape-ejs>`, token-counter template
+  vars, `injectPrompt`/`getPromptsInjected` as named helpers. The core (render-time eval, the markers,
+  message scope) is **done** ([st-prompt-template-plan.md](st-prompt-template-plan.md)).
+- **TH JS API:** `stopGenerationById`/`stopAllGeneration`, the full `tavern_events` enum (we wire ~10) +
+  `MESSAGE_SENT`, `replaceTavernRegexes` (regex write), `registerMacroLike`, general mid-history message
+  insert / per-message swipe edits, and the **audio** API. Most are graceful stubs or low-value; see
+  [docs/rpt-api.md](rpt-api.md) §6 and [th-parity-status.md](superpowers/specs/2026-06-23-th-parity-status.md).
 
 ## 5. Where RPT is AHEAD (its own design)
 
-- **Out-of-process card isolation** — card UIs run in a `WebContentsView` (separate process); a broken
-  card can't freeze the app. ST/TH run frontend cards in same-page iframes (same renderer).
+- **Optional out-of-process card isolation** — a card can render in a `WebContentsView` (separate process)
+  so a broken card can't freeze the app; ST/TH only have same-page iframes. RPT defaults to an inline
+  same-origin iframe (native feel) **with WCV as the opt-in crash-safe escape hatch** — a choice ST doesn't
+  offer.
 - **Native MVU state engine** — `<UpdateVariable>` (`_.set` + RFC-6902 `<JSONPatch>` incl. `delta` +
   array-append) folded natively into `stat_data`; no MVU bundle loaded, plus a "Re-evaluate" replay.
 - **Generation centralized in main** — the card/script never sees the AI key (masked from the renderer);
@@ -100,6 +108,8 @@ overlap (both touch variables/world-info), but their centers differ — ST-PT is
 ## 6. Net
 
 RPT is **strong on the app/engine + MVU + isolation** axes and **format-compatible** with ST cards,
-lorebooks, regex, and presets. The compatibility _gaps_ are the ST-PT template long-tail and the deeper
-TH JS API — both clean-room, both backed by services that already exist, so closing them is wiring work,
-tracked under **Track C0** + the **TH-parity audit** in [ROADMAP.md](../ROADMAP.md).
+lorebooks, regex, and presets. The remaining compatibility _gaps_ are a thin ST-PT edge-tail and a few TH
+JS API leftovers — both clean-room, most backed by services that already exist, so closing them is wiring
+work. Tracked under **Track C0** + the
+[TH-parity status](superpowers/specs/2026-06-23-th-parity-status.md); the card-author-facing catalog +
+ST→RPT transformation mapping live in [docs/sdk/](sdk/component-inventory.md).
