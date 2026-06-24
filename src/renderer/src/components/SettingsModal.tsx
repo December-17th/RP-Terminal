@@ -1,20 +1,73 @@
+import { useState } from 'react'
 import { Modal } from './Modal'
 import { SettingsPanel } from './SettingsPanel'
+import { RegexPanel } from './RegexPanel'
+import { ScriptsPanel } from './ScriptsPanel'
 import { useUiStore } from '../stores/uiStore'
+import { useCharacterStore } from '../stores/characterStore'
+import { useChatStore } from '../stores/chatStore'
+
+type Section = 'app' | 'regex' | 'scripts'
 
 /**
- * The Settings popup — wraps the existing SettingsPanel in a Modal so settings/theme are reachable
- * from both the launcher and play (via the gear buttons → useUiStore.openSettings). Rendered once at
- * the App level so it overlays whichever screen is showing.
+ * The single Settings popup, VS Code-style: a category rail (App / World) on the LEFT and the
+ * selected section's content on the RIGHT. One trigger (useUiStore.openSettings), reachable from the
+ * launcher gear and the play "Settings" button; rendered once at the App level.
  */
 export function SettingsModal({ profileId }: { profileId: string }): React.ReactElement | null {
   const open = useUiStore((s) => s.settingsOpen)
   const close = useUiStore((s) => s.closeSettings)
+  const activeCharacter = useCharacterStore((s) => s.activeCharacter)
+  const activeChatId = useChatStore((s) => s.activeChatId)
+  const [section, setSection] = useState<Section>('app')
   if (!open) return null
+
+  const cardId = activeCharacter?.id ?? null
+  const cardName = activeCharacter?.card?.data?.name ?? null
+  const railItem = (key: Section, label: string): React.ReactElement => (
+    <button
+      className={`settings-rail-item ${section === key ? 'active' : ''}`}
+      onClick={() => setSection(key)}
+    >
+      {label}
+    </button>
+  )
+
   return (
     <Modal title="Settings" onClose={close}>
-      <div className="settings-modal-content">
-        <SettingsPanel profileId={profileId} />
+      <div className="settings-shell">
+        <div className="settings-rail">
+          <div className="settings-rail-group">App</div>
+          {railItem('app', 'Preferences')}
+          <div className="settings-rail-group">World{cardName ? ` · ${cardName}` : ''}</div>
+          {railItem('regex', 'Regex')}
+          {railItem('scripts', 'Scripts')}
+        </div>
+        <div className="settings-content">
+          {section === 'app' ? (
+            <div className="settings-modal-content">
+              <SettingsPanel profileId={profileId} />
+            </div>
+          ) : (
+            <div className="world-settings">
+              {section === 'scripts' ? (
+                <ScriptsPanel
+                  profileId={profileId}
+                  activeCardId={cardId}
+                  activeCardName={cardName}
+                  activeChatId={activeChatId ?? null}
+                  card={activeCharacter?.card ?? null}
+                />
+              ) : (
+                <RegexPanel
+                  profileId={profileId}
+                  activeCardId={cardId}
+                  activeChatId={activeChatId ?? null}
+                />
+              )}
+            </div>
+          )}
+        </div>
       </div>
     </Modal>
   )

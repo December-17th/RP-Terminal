@@ -1885,3 +1885,111 @@ select {
   color: var(--rpt-text-secondary);
   opacity: 0.5;
 }
+
+/* World settings popup — Regex/Scripts tabs hosting the existing managers. */
+.ws-tabs {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 10px;
+  border-bottom: 1px solid var(--rpt-border);
+  padding-bottom: 10px;
+}
+.ws-tab {
+  background: transparent;
+  border: none;
+  color: var(--rpt-text-secondary);
+  padding: 6px 14px;
+  border-radius: 6px;
+  cursor: pointer;
+  font: inherit;
+}
+.ws-tab:hover {
+  color: var(--rpt-text-primary);
+  background: var(--rpt-bg-tertiary);
+}
+.ws-tab.active {
+  color: var(--rpt-on-accent);
+  background: var(--rpt-accent);
+}
+/* The inner Regex/Scripts row under the World tab — lighter than the top App/World row. */
+.ws-subtabs {
+  border-bottom: none;
+  padding-bottom: 0;
+  margin-bottom: 8px;
+}
+
+/* VS Code-style Settings layout: content pane on the LEFT, category rail on the RIGHT. */
+.modal-panel:has(.settings-shell) {
+  width: 990px;
+}
+.modal-body:has(.settings-shell) {
+  padding: 0;
+  overflow: hidden;
+}
+.settings-shell {
+  display: flex;
+  height: 100%;
+  min-height: 0;
+}
+.settings-content {
+  flex: 1;
+  min-width: 0;
+  overflow-y: auto;
+  padding: 18px;
+}
+.settings-rail {
+  flex: 0 0 178px;
+  border-right: 1px solid var(--rpt-border);
+  overflow-y: auto;
+  padding: 12px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.settings-rail-group {
+  font-size: 0.72em;
+  font-weight: 600;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--rpt-text-secondary);
+  padding: 16px 8px 5px;
+}
+.settings-rail-group:first-child {
+  padding-top: 2px;
+}
+.settings-rail-item {
+  text-align: left;
+  background: transparent;
+  border: none;
+  color: var(--rpt-text-primary);
+  padding: 7px 10px 7px 20px;
+  border-radius: 6px;
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.9em;
+}
+.settings-rail-item:hover {
+  background: var(--rpt-bg-tertiary);
+  color: var(--rpt-text-primary);
+}
+.settings-rail-item.active {
+  background: var(--rpt-accent);
+  color: var(--rpt-on-accent);
+}
+/* The hosted managers flow in the modal's own scroll (no nested panel scroll); keep their action
+   buttons but drop the redundant title bar (the tab strip already names the section). */
+.world-settings .panel {
+  height: auto;
+}
+.world-settings .panel > .panel-header {
+  padding: 0 0 8px;
+  background: transparent;
+  border-bottom: none;
+}
+.world-settings .panel > .panel-header > h3 {
+  display: none;
+}
+.world-settings .panel > .panel-body {
+  padding: 0;
+  overflow: visible;
+}
