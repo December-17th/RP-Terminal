@@ -506,6 +506,25 @@ describe('buildPrompt — EJS conditionals: lastMessageId + fail-loud', () => {
     expect(messages.some((m) => m.content.includes('LATER'))).toBe(false) // the other branch never leaks
   })
 
+  it('an EJS getvar() block sees a {{setvar}} authored in a LATER preset block (first prompt)', () => {
+    // The 命定之诗 CoT block reads getvar('ai模型'); a model-toggle block AFTER it does
+    // {{setvar::ai模型::…}}. ST runs the whole macro pass before the EJS pass, so the CoT sees it even on
+    // turn 1. RPT must do the same (not per-block macro→EJS in order).
+    const messages = buildPrompt({
+      card: card(),
+      preset: preset([
+        blk('none', "<%_ if (getvar('mdl') === 'Gemini') { _%>COT-BODY<%_ } _%>"), // reader
+        blk('none', '{{setvar::mdl::Gemini}}'), // setter — AFTER the reader
+        blk('chat_history')
+      ]),
+      lorebooks: [],
+      floors: [],
+      userAction: 'go',
+      template: { vars: {}, globals: {}, constants: {} }
+    })
+    expect(messages.some((m) => m.content === 'COT-BODY')).toBe(true)
+  })
+
   it('FAILS THE TURN (throws) when a preset block references a missing identifier', () => {
     expect(() =>
       buildPrompt({

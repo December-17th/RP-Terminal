@@ -247,26 +247,37 @@ export const buildPrompt = (args: BuildPromptArgs): ChatMessage[] => {
       : args.template
     : undefined
   const render = makeRender(personaMacro, frontierTemplate)
-  // Strict render for PRESET prompt blocks: an EJS error here means a broken preset entry, so FAIL THE TURN
-  // with a detailed log (which entry + the reason + source) rather than silently dropping it. (The engine
-  // returns '' on error so a conditional never leaks all its branches; this turns that into a loud failure
-  // for preset content specifically — card-field renders below stay graceful via `render`.)
-  const renderStrict = (content: string, label: string): string => {
-    const m = expandMacros(
+  // Expand {{macros}} for one entry — applying {{setvar}}/{{addvar}}/… side effects to the shared var store.
+  const macroPass = (content: string): string =>
+    expandMacros(
       content,
       macroBase(personaMacro, frontierTemplate?.vars, frontierTemplate?.globals)
     )
-    if (!frontierTemplate) return stripEjs(m).trim()
-    const r = evalTemplateDetailed(m, frontierTemplate)
+  // EJS-evaluate already-macro-expanded PRESET content. An error here means a broken preset entry → FAIL THE
+  // TURN with a detailed log (which entry + reason + source), so a conditional never silently drops or leaks
+  // all its branches. (Card-field renders below stay graceful via `render`.)
+  const ejsStrict = (expanded: string, label: string): string => {
+    if (!frontierTemplate) return stripEjs(expanded).trim()
+    const r = evalTemplateDetailed(expanded, frontierTemplate)
     if (r.error) {
       log(
         'error',
         `✗ preset template error in "${label}"`,
-        `${r.error}\n— source: ${content.slice(0, 400)}`
+        `${r.error}\n— source: ${expanded.slice(0, 400)}`
       )
       throw new Error(`preset template "${label}": ${r.error}`)
     }
     return r.output
+  }
+  // ST-faithful macro PRE-PASS: apply every enabled literal preset block's {{macros}} (so {{setvar}} side
+  // effects land in the shared var store) BEFORE any EJS runs — so an EJS getvar() in one block sees a
+  // {{setvar}} authored in a LATER block (e.g. a model-selector toggle a CoT block reads) on the very first
+  // prompt, matching ST (whole macro pass, then whole EJS pass). Cached so macros aren't re-applied below
+  // (addvar/random run once); the EJS pass in the loop reads the fully-populated vars.
+  const macroExpanded = new Map<(typeof preset.prompts)[number], string>()
+  for (const b of preset.prompts) {
+    if (b.enabled !== false && b.marker === 'none' && b.content)
+      macroExpanded.set(b, macroPass(b.content))
   }
   const personaContent = personaInject
     ? makeRender('', frontierTemplate)(args.persona!.description)
@@ -362,7 +373,10 @@ export const buildPrompt = (args: BuildPromptArgs): ChatMessage[] => {
         break
       }
       default: {
-        const content = renderStrict(block.content, block.name || block.identifier)
+        const content = ejsStrict(
+          macroExpanded.get(block) ?? macroPass(block.content),
+          block.name || block.identifier
+        )
         if (!content) break
         // A literal block with a numeric depth is injected into the history (like a
         // lorebook/persona entry) rather than emitted here in preset order.
