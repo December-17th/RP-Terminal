@@ -37,9 +37,32 @@ export function TopNav({
       >
         RP Terminal
       </button>
+      <div className="nav-crumbs">
+        <button
+          className="nav-crumb"
+          onClick={() => {
+            useUiStore.getState().setLauncherWorldId(null)
+            useChatStore.getState().clearActiveChat()
+          }}
+          title="Switch world"
+        >
+          <span className="nav-crumb-label">{activeCharacter?.card.data.name || 'World'}</span>
+          <span className="nav-crumb-caret">⌄</span>
+        </button>
+        <span className="nav-crumb-sep">/</span>
+        <button
+          className="nav-crumb"
+          onClick={() => {
+            if (activeCharacter) useUiStore.getState().setLauncherWorldId(activeCharacter.id)
+            useChatStore.getState().clearActiveChat()
+          }}
+          title="Switch session"
+        >
+          <span className="nav-crumb-label">Session</span>
+          <span className="nav-crumb-caret">⌄</span>
+        </button>
+      </div>
       <div className="nav-tabs">
-        {tab('world', 'World')}
-        {tab('sessions', 'Sessions', !hasCharacter)}
         {tab('persona', 'Persona')}
         {tab('preset', 'Preset')}
         {tab('lorebook', 'Lorebook', !hasCharacter)}

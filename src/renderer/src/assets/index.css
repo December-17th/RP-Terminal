@@ -1834,6 +1834,7 @@ select {
 /* Custom title bar (Windows): the top bars are the draggable region; their interactive children
    are not. A bare strip keeps the window movable on screens with no top bar (the profile picker). */
 .nav-brand,
+.nav-crumb,
 .nav-tab,
 .nav-ext-btn,
 .lc-crumb,
@@ -1844,4 +1845,43 @@ select {
   -webkit-app-region: drag;
   height: 40px;
   flex: 0 0 auto;
+}
+
+/* Play-mode breadcrumb (world / session switchers) — replaces the old World/Sessions tabs. */
+.nav-crumbs {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+}
+.nav-crumb {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  background: transparent;
+  border: none;
+  color: var(--rpt-text-primary);
+  font: inherit;
+  font-size: 0.9em;
+  padding: 5px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.nav-crumb:hover {
+  background: var(--rpt-bg-tertiary);
+}
+.nav-crumb-label {
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.nav-crumb-caret {
+  opacity: 0.6;
+  font-size: 0.85em;
+}
+.nav-crumb-sep {
+  color: var(--rpt-text-secondary);
+  opacity: 0.5;
 }

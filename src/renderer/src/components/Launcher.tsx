@@ -15,6 +15,8 @@ export function Launcher({ profileId }: { profileId: string }): React.ReactEleme
   const chats = useChatStore((s) => s.chats)
   const createChat = useChatStore((s) => s.createChat)
   const setActiveChat = useChatStore((s) => s.setActiveChat)
+  const launcherWorldId = useUiStore((s) => s.launcherWorldId)
+  const setLauncherWorldId = useUiStore((s) => s.setLauncherWorldId)
 
   // null = the world chooser; a card = that world's session list.
   const [selected, setSelected] = useState<CharacterCard | null>(null)
@@ -39,6 +41,17 @@ export function Launcher({ profileId }: { profileId: string }): React.ReactEleme
       alive = false
     }
   }, [characters])
+
+  // Breadcrumb deep-link: if the session switcher set a world id, open straight to its session list.
+  useEffect(() => {
+    if (!launcherWorldId) return
+    const w = characters.find((c) => c.id === launcherWorldId)
+    if (w) {
+      setActiveCharacter(w)
+      setSelected(w)
+    }
+    setLauncherWorldId(null)
+  }, [launcherWorldId, characters])
 
   const openWorld = (c: CharacterCard): void => {
     setActiveCharacter(c)
