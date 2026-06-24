@@ -114,4 +114,14 @@ render-time never leaks branches or crashes; gate (`typecheck` + `npm test` + `b
   don't hit fail-loud — tracked separately, not in this plan.
 - **`matchChatMessages` widening** is deferred (zero impact here); revisit if a preset relies on its
   `{ start/end/role }` scoping.
+
+## Status
+
+DONE (2026-06-24, branch `fix/thinking-reasoning-display`). T1 `acef7be` (`lastMessageId` + siblings in the
+build-time constants, derived via `chatIndexMap`/`lastMessageIndex`; +8 shapes tests). T2 `1941f38` (engine
+returns `''` on eval error; `promptBuilder.renderStrict` logs + throws on a broken preset block; chatIpc
+already surfaces it; +3 promptBuilder tests). Gate green throughout (typecheck + 494 + build). Deferred:
+`matchChatMessages` full signature; a broader ST-PT builtins audit. **Pending Electron smoke:** generate a
+turn with the 命定之诗 preset — the `request` log should now carry the CoT `think_format` body + a single
+`[START THINKING]`, and a deliberately-broken entry should fail the turn with a clear logged reason.
 ```
