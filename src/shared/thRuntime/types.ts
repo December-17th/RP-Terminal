@@ -72,8 +72,11 @@ export interface Host {
   createChat(arg?: any): Promise<string>
   saveChat(chat: StMessage[]): Promise<boolean>
   reloadChat(): Promise<boolean>
-  triggerSlash(cmd: string): Promise<string>
   setInput(text: string): void
+  // Global (per-profile) variables — the persistent scope for triggerSlash's /setglobalvar / /getglobalvar.
+  // (Local/chat vars use statData + applyVariableOps; the runtime runs the STScript interpreter itself.)
+  getGlobalVars(): Promise<Record<string, any>>
+  setGlobalVar(key: string, value: any): Promise<void>
   // --- events + engine ---
   onVarsChanged(cb: (statData: any) => void): () => void
   onHostEvent(cb: (name: string, payload?: any) => void): () => void

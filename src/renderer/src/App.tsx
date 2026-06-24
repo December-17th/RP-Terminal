@@ -21,6 +21,7 @@ import { useWorkspaceStore } from './stores/workspaceStore'
 import { useComposerStore } from './stores/composerStore'
 import { initSlash } from './plugin/slash'
 import { chatTransitionEvents, messageMutationEvents } from './plugin/events'
+import { emitCardHostEvent } from './cardBridge/cardHostEvents'
 
 export default function App(): React.ReactElement {
   const activeProfile = useProfileStore((s) => s.activeProfile)
@@ -43,12 +44,10 @@ export default function App(): React.ReactElement {
     const unsubDelta = window.api.onGenerationDelta(({ chatId, delta }) => {
       if (chatId === useChatStore.getState().activeChatId) {
         useChatStore.getState().appendDelta(delta)
-        // Forward streamed tokens to WCV cards (STREAM_TOKEN_RECEIVED) — the accumulated text so far.
-        window.api.wcvBroadcastEvent(
-          chatId,
-          'stream_token_received',
-          useChatStore.getState().streamingText
-        )
+        // Forward streamed tokens to card UIs (STREAM_TOKEN_RECEIVED) — the accumulated text so far.
+        const streamingText = useChatStore.getState().streamingText
+        window.api.wcvBroadcastEvent(chatId, 'stream_token_received', streamingText)
+        emitCardHostEvent('stream_token_received', streamingText)
       }
     })
     // Live log stream for the Logs panel.
@@ -97,7 +96,10 @@ export default function App(): React.ReactElement {
         ),
         ...messageMutationEvents(toDesc(prev.floors), toDesc(state.floors))
       ]
-      for (const ev of events) window.api.wcvBroadcastEvent(chatId, ev.name, ev.payload)
+      for (const ev of events) {
+        window.api.wcvBroadcastEvent(chatId, ev.name, ev.payload)
+        emitCardHostEvent(ev.name, ev.payload)
+      }
     })
     return () => {
       unsubDelta()

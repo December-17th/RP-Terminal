@@ -6,6 +6,7 @@ import * as lorebookService from '../services/lorebookService'
 import * as chatService from '../services/chatService'
 import * as chatWriteService from '../services/chatWriteService'
 import * as scriptApiService from '../services/scriptApiService'
+import * as pluginService from '../services/pluginService'
 import * as settingsService from '../services/settingsService'
 import { log } from '../services/logService'
 import { LorebookEntry, LorebookEntrySchema } from '../types/character'
@@ -197,7 +198,9 @@ export const registerWcvIpc = (ipcMain: IpcMain): void => {
   })
   ipcMain.handle('wcv-host-create-worldbook', (e, name) => {
     const ctx = wcvManager.contextFor(e.sender.id)
-    return ctx ? lorebookService.createLorebook(ctx.profileId, String(name ?? 'New Worldbook')).id : ''
+    return ctx
+      ? lorebookService.createLorebook(ctx.profileId, String(name ?? 'New Worldbook')).id
+      : ''
   })
   ipcMain.handle('wcv-host-delete-worldbook', (e, id) => {
     const ctx = wcvManager.contextFor(e.sender.id)
@@ -214,7 +217,10 @@ export const registerWcvIpc = (ipcMain: IpcMain): void => {
   ipcMain.handle('wcv-host-save-worldbook-by-id', (e, id, entries) => {
     const ctx = wcvManager.contextFor(e.sender.id)
     if (!ctx) return
-    const lb = lorebookService.getLorebookById(ctx.profileId, String(id)) || { name: '', entries: [] }
+    const lb = lorebookService.getLorebookById(ctx.profileId, String(id)) || {
+      name: '',
+      entries: []
+    }
     lb.entries = (Array.isArray(entries) ? entries : []).map(toLoreEntry)
     lorebookService.saveLorebookById(ctx.profileId, String(id), lb)
   })
@@ -302,6 +308,23 @@ export const registerWcvIpc = (ipcMain: IpcMain): void => {
     pushVars(ctx.chatId, chatWriteService.afterChatMutation(ctx.profileId, ctx.chatId))
     log('info', 'wcv saveChat', 'assistant msgs → floors + reevaluated')
     return true
+  })
+
+  // Global (per-profile) variables for a card's triggerSlash /setglobalvar / /getglobalvar — the same
+  // template-globals store pluginService exposes to the renderer slash path.
+  ipcMain.handle('wcv-host-get-global-vars', (e) => {
+    const ctx = wcvManager.contextFor(e.sender.id)
+    return ctx ? pluginService.getVars(ctx.profileId, ctx.chatId).global : {}
+  })
+  ipcMain.handle('wcv-host-set-global-var', (e, key, value) => {
+    const ctx = wcvManager.contextFor(e.sender.id)
+    if (ctx)
+      pluginService.pluginVars(ctx.profileId, ctx.chatId, {
+        op: 'set',
+        scope: 'global',
+        key,
+        value
+      })
   })
 
   // Ask the host renderer to reload the active chat's floors (after saveChat changed message content).

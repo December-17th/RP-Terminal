@@ -13,12 +13,14 @@ function mockHost(over: Partial<Host> = {}): { host: Host; calls: any } {
     createWorldbook: [],
     deleteWorldbook: [],
     saveWorldbookById: [],
-    bindWorldbook: []
+    bindWorldbook: [],
+    setGlobalVar: []
   }
   const wbLib = [
     { id: 'wb1', name: 'Lore A' },
     { id: 'own', name: 'Ellia' }
   ]
+  const globals: Record<string, any> = { coins: 7 }
   let varsCb: ((sd: any) => void) | null = null
   const host: Host = {
     ctx: { profileId: 'p', chatId: 'c', characterId: 'ch' },
@@ -72,8 +74,12 @@ function mockHost(over: Partial<Host> = {}): { host: Host; calls: any } {
     createChat: async () => 'id',
     saveChat: async () => true,
     reloadChat: async () => true,
-    triggerSlash: async () => '',
     setInput: (t) => calls.setInput.push(t),
+    getGlobalVars: async () => globals,
+    setGlobalVar: async (key: string, value: any) => {
+      globals[key] = value
+      calls.setGlobalVar.push([key, value])
+    },
     onVarsChanged: (cb) => {
       varsCb = cb
       return () => {
@@ -115,6 +121,11 @@ describe('createThRuntime', () => {
     expect(g.getCurrentMessageId()).toBe(1)
     expect(g.getCharData()).toEqual({ name: 'Ellia' })
     expect(g.formatAsTavernRegexedString('hi')).toBe('HI')
+    // substituteParams / substitudeMacros expand {{macros}} over char/user/stat_data
+    expect(g.SillyTavern.substituteParams('{{char}}/{{user}}/{{getvar::hp}}')).toBe(
+      'Ellia/Player/1'
+    )
+    expect(g.substitudeMacros('hi {{char}}')).toBe('hi Ellia')
     expect(g.SillyTavern.chat[0].name).toBe('Player')
   })
 
@@ -176,6 +187,31 @@ describe('createThRuntime', () => {
     expect(m.calls.saveWorldbookById).toEqual([['wb1', [{ keys: ['x'] }]]])
     // unknown name no-ops
     expect(await g.deleteWorldbook('Nope')).toBe(false)
+  })
+
+  it('triggerSlash runs the STScript subset over the Host (chat vars, macros, pipes)', async () => {
+    const m: any = mockHost()
+    const g = createThRuntime(m.host)
+    // chat-var round-trip: /setvar persists to stat_data via applyVariableOps, /getvar reads it back
+    expect(await g.triggerSlash('/setvar key=hp 5 | /getvar key=hp')).toBe('5')
+    expect(m.calls.applyVariableOps).toContainEqual([{ op: 'set', path: '/hp', value: 5 }])
+    // macro identity (char/user) expands in args
+    expect(await g.triggerSlash('/echo {{char}}/{{user}}')).toBe('Ellia/Player')
+    // pipes thread {{pipe}}
+    expect(await g.triggerSlash('/echo a | /echo {{pipe}}!')).toBe('a!')
+    // an unsupported command resolves to '' (warned, not thrown)
+    expect(await g.triggerSlash('/nope whatever')).toBe('')
+  })
+
+  it('triggerSlash: /gen → host.generate; globals persist via host.setGlobalVar', async () => {
+    const m: any = mockHost()
+    const g = createThRuntime(m.host)
+    expect(await g.triggerSlash('/gen hi there')).toBe('gen:hi there')
+    expect(m.calls.generate).toContain('hi there')
+    // /getglobalvar reads the (seeded) persistent store; /setglobalvar writes through the Host
+    expect(await g.triggerSlash('/getglobalvar key=coins')).toBe('7')
+    await g.triggerSlash('/setglobalvar key=coins 12')
+    expect(m.calls.setGlobalVar).toContainEqual(['coins', 12])
   })
 
   it('errorCatched swallows throws and rejections', async () => {
