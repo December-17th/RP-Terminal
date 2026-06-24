@@ -1,10 +1,20 @@
 :root {
+  /* Default theme (dark / Midnight) — the full semantic token set. Alternate themes override these
+     via applyTheme() (src/renderer/src/theme.ts). Every fill is paired with a text / on-* token so
+     contrast holds across themes; see docs/ui-rehaul-design.md §7. */
   --rpt-bg-primary: #121212;
   --rpt-bg-secondary: #1e1e1e;
+  --rpt-bg-tertiary: #2a2a2e;
+  --rpt-bg-elevated: #1e1e24;
   --rpt-text-primary: #e0e0e0;
   --rpt-text-secondary: #aaaaaa;
+  --rpt-text-tertiary: #6f6f78;
   --rpt-accent: #5b8def;
+  --rpt-on-accent: #ffffff;
   --rpt-border: #333333;
+  --rpt-danger: #e74c3c;
+  --rpt-success: #4caf72;
+  --rpt-warning: #e0a23c;
 }
 
 body {
@@ -70,7 +80,7 @@ body {
   background: var(--rpt-bg-primary);
 }
 .nav-tab.active {
-  color: #fff;
+  color: var(--rpt-on-accent);
   background: var(--rpt-accent);
 }
 .nav-tab:disabled {
@@ -466,7 +476,7 @@ details[open] > .stat-group-title::before {
 .mode-btn.active {
   background: var(--rpt-accent);
   border-color: var(--rpt-accent);
-  color: #fff;
+  color: var(--rpt-on-accent);
 }
 .mode-btn:disabled {
   opacity: 0.5;
@@ -515,10 +525,10 @@ details[open] > .stat-group-title::before {
 }
 .context-menu-item:hover {
   background: var(--rpt-accent);
-  color: #fff;
+  color: var(--rpt-on-accent);
 }
 .context-menu-item.danger:hover {
-  background: #e74c3c;
+  background: var(--rpt-danger);
 }
 .edit-actions {
   display: flex;
@@ -557,7 +567,7 @@ details[open] > .stat-group-title::before {
 
 /* ---------- Logs console ---------- */
 .log-console {
-  background: #0a0a0a;
+  background: var(--rpt-bg-primary);
   font-family: ui-monospace, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace;
   font-size: 12px;
   padding: 8px;
@@ -575,7 +585,7 @@ details[open] > .stat-group-title::before {
   color: var(--rpt-text-secondary);
 }
 .log-line {
-  border-bottom: 1px solid #1a1a1a;
+  border-bottom: 1px solid var(--rpt-border);
   padding: 2px 0;
 }
 .log-line-head {
@@ -587,10 +597,10 @@ details[open] > .stat-group-title::before {
   overflow: hidden;
 }
 .log-line-head:hover {
-  background: rgba(255, 255, 255, 0.03);
+  background: color-mix(in srgb, var(--rpt-text-primary) 6%, transparent);
 }
 .log-time {
-  color: #5a5a5a;
+  color: var(--rpt-text-tertiary);
   flex: 0 0 auto;
 }
 .log-glyph {
@@ -605,31 +615,31 @@ details[open] > .stat-group-title::before {
 }
 .log-caret {
   flex: 0 0 auto;
-  color: #5a5a5a;
+  color: var(--rpt-text-tertiary);
 }
 .log-detail {
   margin: 4px 0 6px 20px;
   padding: 8px;
-  background: #111;
+  background: var(--rpt-bg-primary);
   border-left: 2px solid var(--rpt-border);
   border-radius: 3px;
   white-space: pre-wrap;
   word-break: break-word;
   max-height: 320px;
   overflow: auto;
-  color: #c8c8c8;
+  color: var(--rpt-text-primary);
 }
 .lvl-request .log-glyph,
 .lvl-request .log-label {
-  color: #5b8def;
+  color: var(--rpt-accent);
 }
 .lvl-response .log-glyph,
 .lvl-response .log-label {
-  color: #4caf72;
+  color: var(--rpt-success);
 }
 .lvl-error .log-glyph,
 .lvl-error .log-label {
-  color: #e74c3c;
+  color: var(--rpt-danger);
 }
 .lvl-info .log-glyph,
 .lvl-info .log-label {
@@ -760,7 +770,7 @@ details[open] > .stat-group-title::before {
 }
 .btn-accent {
   font: inherit;
-  color: #fff;
+  color: var(--rpt-on-accent);
   background: var(--rpt-accent);
   border: 1px solid var(--rpt-accent);
   border-radius: 6px;
@@ -782,9 +792,9 @@ details[open] > .stat-group-title::before {
   flex-wrap: wrap;
   padding: 8px 12px;
   margin: 8px 0;
-  border: 1px solid #e0564f;
+  border: 1px solid var(--rpt-danger);
   border-radius: 8px;
-  background: rgba(224, 86, 79, 0.12);
+  background: color-mix(in srgb, var(--rpt-danger) 14%, transparent);
 }
 .message-card-hung-label {
   font-size: 0.9em;
@@ -1017,7 +1027,7 @@ details[open] > .stat-group-title::before {
 }
 .slash-item.active {
   background: var(--rpt-accent);
-  color: #fff;
+  color: var(--rpt-on-accent);
 }
 .slash-name {
   font-family: ui-monospace, Menlo, Consolas, monospace;
@@ -1037,8 +1047,8 @@ details[open] > .stat-group-title::before {
 }
 
 .perm-chip.sensitive {
-  border-color: #e0a23c;
-  color: #e0a23c;
+  border-color: var(--rpt-warning);
+  color: var(--rpt-warning);
 }
 
 /* Code editor in the Scripts panel */
@@ -1176,12 +1186,12 @@ details[open] > .stat-group-title::before {
   line-height: 1;
 }
 .send-btn.stop {
-  background-color: #e74c3c;
+  background-color: var(--rpt-danger);
 }
 
 button {
   background-color: var(--rpt-accent);
-  color: white;
+  color: var(--rpt-on-accent);
   border: none;
   padding: 10px 15px;
   border-radius: 4px;
@@ -1369,8 +1379,8 @@ select {
   border-color: var(--rpt-border);
 }
 .btn-ghost.danger:hover {
-  color: #e74c3c;
-  border-color: #e74c3c;
+  color: var(--rpt-danger);
+  border-color: var(--rpt-danger);
 }
 .btn-accent {
   background: var(--rpt-accent);
@@ -1485,7 +1495,7 @@ select {
 .marker-badge {
   font-size: 0.72em;
   background: var(--rpt-accent);
-  color: #fff;
+  color: var(--rpt-on-accent);
   padding: 2px 8px;
   border-radius: 10px;
 }

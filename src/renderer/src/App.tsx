@@ -22,6 +22,7 @@ import { useComposerStore } from './stores/composerStore'
 import { initSlash } from './plugin/slash'
 import { chatTransitionEvents, messageMutationEvents } from './plugin/events'
 import { emitCardHostEvent } from './cardBridge/cardHostEvents'
+import { applyTheme } from './theme'
 
 export default function App(): React.ReactElement {
   const activeProfile = useProfileStore((s) => s.activeProfile)
@@ -146,6 +147,11 @@ export default function App(): React.ReactElement {
       `${settings?.ui?.font_size ?? 16}px`
     )
   }, [settings?.ui?.font_size])
+
+  // Apply the selected theme's token set whenever it changes (and on first settings load).
+  useEffect(() => {
+    applyTheme(settings?.ui?.theme)
+  }, [settings?.ui?.theme])
 
   if (!activeProfile) return <ProfilePicker />
 

@@ -6,7 +6,9 @@ import eslintPluginReactHooks from 'eslint-plugin-react-hooks'
 import eslintPluginReactRefresh from 'eslint-plugin-react-refresh'
 
 export default defineConfig(
-  { ignores: ['**/node_modules', '**/dist', '**/out'] },
+  // Never lint vendored/minified bundles (e.g. resources/cardlibs/tailwind.min.js) — eslint flags
+  // thousands of "errors" in the minified one-liner and reds the gate.
+  { ignores: ['**/node_modules', '**/dist', '**/out', '**/*.min.js'] },
   tseslint.configs.recommended,
   eslintPluginReact.configs.flat.recommended,
   eslintPluginReact.configs.flat['jsx-runtime'],

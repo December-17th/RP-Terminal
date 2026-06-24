@@ -2,6 +2,7 @@ import React, { useState } from 'react'
 import { useProfileStore } from '../stores/profileStore'
 import { useSettingsStore, Settings } from '../stores/settingsStore'
 import { PluginsPanel } from './PluginsPanel'
+import { THEME_LIST } from '../theme'
 
 /**
  * Settings tab — profile switching/creation, UI preferences, and plugin management
@@ -65,6 +66,23 @@ export const SettingsPanel: React.FC<{ profileId: string }> = ({ profileId }) =>
         {settings && (
           <>
             <label className="field-label" style={{ marginTop: 20 }}>
+              Theme
+            </label>
+            <select
+              value={settings.ui?.theme ?? 'dark'}
+              onChange={(e) =>
+                updateSettings(profileId, { ui: { ...settings.ui, theme: e.target.value } })
+              }
+              style={{ width: '100%' }}
+            >
+              {THEME_LIST.map((t) => (
+                <option key={t.id} value={t.id}>
+                  {t.name}
+                </option>
+              ))}
+            </select>
+
+            <label className="field-label" style={{ marginTop: 18 }}>
               Chat Font Size (px)
             </label>
             <input
@@ -140,7 +158,7 @@ export const SettingsPanel: React.FC<{ profileId: string }> = ({ profileId }) =>
               }
               style={{ width: '100%' }}
             >
-              <option value="fit">Fit (size to the card's content)</option>
+              <option value="fit">Fit (size to the card&apos;s content)</option>
               <option value="fill">Fill (cards sized to the viewport fill the frame)</option>
             </select>
             <div style={{ fontSize: '0.78em', color: 'var(--rpt-text-secondary)', marginTop: 4 }}>
@@ -359,7 +377,7 @@ export const SettingsPanel: React.FC<{ profileId: string }> = ({ profileId }) =>
                   })
                 }}
               >
-                + Add row for "{settings.api?.model || 'current model'}"
+                + Add row for &quot;{settings.api?.model || 'current model'}&quot;
               </button>
             </div>
           </details>

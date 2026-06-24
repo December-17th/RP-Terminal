@@ -25,7 +25,8 @@ export const FpsOverlay: React.FC = () => {
     return () => cancelAnimationFrame(raf)
   }, [])
 
-  const color = fps >= 50 ? '#4caf72' : fps >= 30 ? '#e6b800' : '#e74c3c'
+  const color =
+    fps >= 50 ? 'var(--rpt-success)' : fps >= 30 ? 'var(--rpt-warning)' : 'var(--rpt-danger)'
   return (
     <div className="fps-overlay" style={{ color }}>
       {fps} FPS
