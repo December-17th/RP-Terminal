@@ -100,7 +100,7 @@ export const RegexPanel: React.FC<Props> = ({ profileId, activeCardId, activeCha
           <select
             className="scope-select"
             value={s.renderMode ?? ''}
-            title="Render mode — how this card's UI is displayed (Default follows Preferences)."
+            title="Render mode — how this card's UI is displayed (Default follows Settings)."
             onClick={(e) => e.stopPropagation()}
             onChange={(e) => changeRenderMode(s.file, e.target.value)}
           >

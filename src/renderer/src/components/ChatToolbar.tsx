@@ -33,7 +33,7 @@ export function ChatToolbar({
             title={
               fsmEnabled
                 ? `Switch to ${m} mode`
-                : 'Set Agent Mode to Manual or Agentic in Preferences to switch scenes'
+                : 'Set Agent Mode to Manual or Agentic in Settings to switch scenes'
             }
             onClick={() => setMode(profileId, m)}
           >

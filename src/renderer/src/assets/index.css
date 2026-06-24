@@ -1911,6 +1911,12 @@ select {
   color: var(--rpt-on-accent);
   background: var(--rpt-accent);
 }
+/* The inner Regex/Scripts row under the World tab — lighter than the top App/World row. */
+.ws-subtabs {
+  border-bottom: none;
+  padding-bottom: 0;
+  margin-bottom: 8px;
+}
 /* The hosted managers flow in the modal's own scroll (no nested panel scroll); keep their action
    buttons but drop the redundant title bar (the tab strip already names the section). */
 .world-settings .panel {
