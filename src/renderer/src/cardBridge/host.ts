@@ -6,6 +6,7 @@ import { useRegexStore } from '../stores/regexStore'
 import { useSettingsStore } from '../stores/settingsStore'
 import { useComposerStore } from '../stores/composerStore'
 import { useLorebookStore } from '../stores/lorebookStore'
+import { onCardHostEvent } from './cardHostEvents'
 import { evalTemplate, evalTemplateDetailed } from '../../../shared/templateEngine'
 import { buildRenderContext } from '../plugin/renderTemplate'
 import type { Host, CardCtx, FloorLike } from '../../../shared/thRuntime/types'
@@ -184,7 +185,9 @@ export function createInlineHost(ctx: CardCtx): Host {
         }
       })
     },
-    onHostEvent: () => () => {},
+    // Inline cards receive the host lifecycle/mutation/stream events App.tsx computes (parity with WCV's
+    // wcv-event channel). The thRuntime feeds these into the card's bus + re-emits.
+    onHostEvent: (cb) => onCardHostEvent(cb),
     evalTemplate: (tmpl) => evalTemplate(tmpl, buildRenderContext(latestVars())),
     evalTemplateError: (tmpl) => {
       const r = evalTemplateDetailed(tmpl, buildRenderContext(latestVars()))
