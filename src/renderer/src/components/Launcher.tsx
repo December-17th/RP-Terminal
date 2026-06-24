@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useCharacterStore, CharacterCard } from '../stores/characterStore'
 import { useChatStore } from '../stores/chatStore'
+import { useUiStore } from '../stores/uiStore'
 
 /**
  * The entry launcher: choose a world (character card) → choose a session → play. Shown by App
@@ -55,6 +56,14 @@ export function Launcher({ profileId }: { profileId: string }): React.ReactEleme
           </button>
           <span className="lc-sep">/</span>
           <span className="lc-crumb-cur">{selected.card?.data?.name || 'World'}</span>
+          <span className="lc-spacer" />
+          <button
+            className="lc-crumb"
+            onClick={() => useUiStore.getState().openSettings()}
+            title="Settings"
+          >
+            ⚙
+          </button>
         </div>
         <div className="lc-scroll">
           <div className="lc-h">{selected.card?.data?.name || 'World'} — sessions</div>
@@ -96,6 +105,13 @@ export function Launcher({ profileId }: { profileId: string }): React.ReactEleme
         <span className="lc-spacer" />
         <button className="lc-import" onClick={() => importCharacter(profileId)}>
           + Import a card
+        </button>
+        <button
+          className="lc-crumb"
+          onClick={() => useUiStore.getState().openSettings()}
+          title="Settings"
+        >
+          ⚙
         </button>
       </div>
       <div className="lc-scroll">

@@ -24,6 +24,7 @@ import { chatTransitionEvents, messageMutationEvents } from './plugin/events'
 import { emitCardHostEvent } from './cardBridge/cardHostEvents'
 import { applyTheme } from './theme'
 import { Launcher } from './components/Launcher'
+import { SettingsModal } from './components/SettingsModal'
 
 export default function App(): React.ReactElement {
   const activeProfile = useProfileStore((s) => s.activeProfile)
@@ -156,9 +157,6 @@ export default function App(): React.ReactElement {
 
   if (!activeProfile) return <ProfilePicker />
 
-  // Entry funnel: no open session → the World→Session launcher; an open session → the play workspace.
-  if (!activeChatId) return <Launcher profileId={activeProfile.id} />
-
   // A card can declare a static, card-determined layout; the dev flag `localStorage['rpt-static-demo']`
   // forces a default static layout so the StaticWorkspace can be tried on a card that doesn't.
   const cardPanelUi = activeCharacter?.card?.data?.extensions?.rp_terminal?.panel_ui
@@ -171,23 +169,32 @@ export default function App(): React.ReactElement {
 
   return (
     <>
-      <TopNav panel={panel} profileName={activeProfile.name} onSelectPanel={setPanel} />
-
-      {staticLayout ? (
-        <StaticWorkspace profileId={activeProfile.id} layout={staticLayout} />
+      {/* Entry funnel: no open session → the World→Session launcher; an open session → play. */}
+      {!activeChatId ? (
+        <Launcher profileId={activeProfile.id} />
       ) : (
-        <Workspace profileId={activeProfile.id} />
+        <>
+          <TopNav panel={panel} profileName={activeProfile.name} onSelectPanel={setPanel} />
+
+          {staticLayout ? (
+            <StaticWorkspace profileId={activeProfile.id} layout={staticLayout} />
+          ) : (
+            <Workspace profileId={activeProfile.id} />
+          )}
+
+          {/* Standalone-plugin runtime stays mounted app-wide (outside the workspace) so its
+              iframes never reparent/reload; the dock is height-bounded by CSS. */}
+          <div className="app-plugin-dock">
+            <PluginHost profileId={activeProfile.id} />
+          </div>
+
+          {settings?.ui?.show_fps && <FpsOverlay />}
+          {settings?.ui?.usage_meter?.enabled && <UsageOverlay profileId={activeProfile.id} />}
+        </>
       )}
 
-      {/* Standalone-plugin runtime stays mounted app-wide (outside the workspace) so its
-          iframes never reparent/reload; the dock is height-bounded by CSS. */}
-      <div className="app-plugin-dock">
-        <PluginHost profileId={activeProfile.id} />
-      </div>
-
-      {settings?.ui?.show_fps && <FpsOverlay />}
-      {settings?.ui?.usage_meter?.enabled && <UsageOverlay profileId={activeProfile.id} />}
-
+      {/* App-wide overlays — render over BOTH the launcher and play. */}
+      <SettingsModal profileId={activeProfile.id} />
       <ToastStack />
     </>
   )
