@@ -21,6 +21,12 @@ export interface EnvHeadOpts {
   sizing: CardSizing
   /** Initial `--TH-viewport-height` (px). When omitted/<=0, the bootstrap falls back to window.innerHeight. */
   viewportHeightPx?: number
+  /**
+   * Let the card scroll internally (overflow:auto, overriding the base reset's overflow:hidden). The WCV
+   * overlay is a fixed, capped height, so a taller card MUST scroll itself; the inline iframe instead
+   * auto-sizes to content (no internal scroll) and leaves this false.
+   */
+  scrollable?: boolean
 }
 
 // --- CDN-hosted assumed libs (faithful to JSR, which CDN-loads these) ---
@@ -85,7 +91,10 @@ function viewportBootstrap(viewportHeightPx?: number): string {
  * bootstrap, or the WCV CSP meta) into `buildCardDoc`'s `headInject`.
  */
 export function buildEnvHead(opts: EnvHeadOpts): string {
-  const styleBody = BASE_RESET_CSS + avatarCss(opts.userAvatarUrl, opts.charAvatarUrl)
+  // Override the base reset's overflow:hidden back to auto when the card must scroll itself (WCV). Same
+  // selector + !important, emitted AFTER the reset, so the later rule wins.
+  const scroll = opts.scrollable ? 'html,body{overflow:auto!important}' : ''
+  const styleBody = BASE_RESET_CSS + avatarCss(opts.userAvatarUrl, opts.charAvatarUrl) + scroll
   return `<style>${styleBody}</style>` + opts.libTags + viewportBootstrap(opts.viewportHeightPx)
 }
 

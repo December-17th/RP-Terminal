@@ -63,7 +63,10 @@ export function WcvMessageFrame({
             buildEnvHead({
               libTags: buildWcvLibTags(),
               sizing,
-              viewportHeightPx: typeof window !== 'undefined' ? window.innerHeight : undefined
+              viewportHeightPx: typeof window !== 'undefined' ? window.innerHeight : undefined,
+              // The WCV overlay is a fixed capped height — let a taller card scroll itself (the base reset's
+              // overflow:hidden would otherwise clip the lower half). Inline auto-sizes instead.
+              scrollable: true
             })
         })
       ),

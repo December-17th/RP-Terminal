@@ -91,4 +91,11 @@ describe('buildEnvHead', () => {
     const head = buildEnvHead({ libTags: '', sizing: 'fit' })
     expect(head).toContain('var h=window.innerHeight;')
   })
+
+  it('keeps overflow:hidden by default, but overrides to auto when scrollable (WCV)', () => {
+    expect(buildEnvHead(opts)).not.toContain('overflow:auto')
+    expect(buildEnvHead({ ...opts, scrollable: true })).toContain(
+      'html,body{overflow:auto!important}'
+    )
+  })
 })
