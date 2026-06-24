@@ -5,6 +5,7 @@ import { usePresetStore } from '../stores/presetStore'
 import { useRegexStore } from '../stores/regexStore'
 import { useSettingsStore } from '../stores/settingsStore'
 import { useComposerStore } from '../stores/composerStore'
+import { useLorebookStore } from '../stores/lorebookStore'
 import { evalTemplate, evalTemplateDetailed } from '../../../shared/templateEngine'
 import { buildRenderContext } from '../plugin/renderTemplate'
 import type { Host, CardCtx, FloorLike } from '../../../shared/thRuntime/types'
@@ -41,6 +42,10 @@ export function createInlineHost(ctx: CardCtx): Host {
     }
     return true
   }
+  // Seed the lorebook store so the SYNC worldbook getters (listWorldbooks/chatWorldbookIds) have data even
+  // if the UI hasn't opened the lorebook panel. Fire-and-forget; resolveWbId refreshes on a later miss.
+  void useLorebookStore.getState().loadLibrary(ctx.profileId)
+  if (ctx.chatId) void useLorebookStore.getState().loadSession(ctx.profileId, ctx.chatId)
   return {
     ctx,
     statData: () => statOf(),
@@ -99,14 +104,39 @@ export function createInlineHost(ctx: CardCtx): Host {
         console.error('[inline saveWorldbook]', e)
       }
     },
-    // Worldbook CRUD/bind — stubbed; wired to window.api + the chat store in the worldbook-crud T2.
-    listWorldbooks: () => [],
-    chatWorldbookIds: () => [],
-    createWorldbook: async () => '',
-    deleteWorldbook: async () => false,
-    getWorldbookById: async () => ({ entries: [] }),
-    saveWorldbookById: async () => {},
-    bindWorldbook: async () => {},
+    // Worldbook CRUD/bind — full library via window.api + the lorebook store (sync getters read the store).
+    listWorldbooks: () => useLorebookStore.getState().library,
+    chatWorldbookIds: () =>
+      useLorebookStore.getState().sessionIds ?? (ctx.characterId ? [ctx.characterId] : []),
+    createWorldbook: async (name: string) => {
+      const summary = await window.api.createLorebook(ctx.profileId, String(name ?? 'New Worldbook'))
+      await useLorebookStore.getState().loadLibrary(ctx.profileId)
+      return summary?.id ?? ''
+    },
+    deleteWorldbook: async (id: string) => {
+      try {
+        await window.api.deleteLorebook(ctx.profileId, id)
+        await useLorebookStore.getState().loadLibrary(ctx.profileId)
+        return true
+      } catch {
+        return false
+      }
+    },
+    getWorldbookById: async (id: string) => {
+      const lb = await window.api.getLorebook(ctx.profileId, id)
+      return { name: lb?.name, entries: Array.isArray(lb?.entries) ? lb.entries : [] }
+    },
+    saveWorldbookById: async (id: string, entries: any[]) => {
+      const lb = (await window.api.getLorebook(ctx.profileId, id)) || { name: '', entries: [] }
+      const next = Array.isArray(entries) ? { ...lb, entries } : entries
+      await window.api.saveLorebook(ctx.profileId, id, next)
+    },
+    bindWorldbook: async (id: string, on: boolean) => {
+      const cur =
+        useLorebookStore.getState().sessionIds ?? (ctx.characterId ? [ctx.characterId] : [])
+      const next = on ? (cur.includes(id) ? cur : [...cur, id]) : cur.filter((x) => x !== id)
+      await useLorebookStore.getState().setSession(ctx.profileId, ctx.chatId, next)
+    },
     setChatMessages: async (m) => {
       const ok = await window.api.setChatMessages(ctx.profileId, ctx.chatId, m)
       if (ok) await reloadFloors()
