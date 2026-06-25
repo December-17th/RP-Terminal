@@ -79,6 +79,26 @@ export interface ExprResult {
  * `6d6`, `1d4-1`, `STR`. `critDice` (default 1) multiplies the number of dice
  * rolled per dice term — pass 2 to double dice on a crit (modifiers are not doubled).
  */
+interface ExprTerm {
+  sign: number
+  body: string
+}
+
+/** Split an expression into signed terms: '2d6-1' → [{+, '2d6'}, {-, '1'}]. */
+const parseTerms = (expr: string): ExprTerm[] => {
+  const cleaned = String(expr ?? '').replace(/\s+/g, '')
+  if (!cleaned) return []
+  return (cleaned.match(/[+-]?[^+-]+/g) ?? []).map((t) => ({
+    sign: t.startsWith('-') ? -1 : 1,
+    body: t.replace(/^[+-]/, '')
+  }))
+}
+
+const diceTerm = (body: string): { count: number; sides: number } | null => {
+  const m = body.match(/^(\d+)d(\d+)$/i)
+  return m ? { count: parseInt(m[1], 10), sides: parseInt(m[2], 10) } : null
+}
+
 export const rollExpr = (
   rng: Rng,
   expr: string,
@@ -88,19 +108,11 @@ export const rollExpr = (
   const rolls: number[] = []
   let total = 0
   let modifier = 0
-  const cleaned = String(expr ?? '').replace(/\s+/g, '')
-  if (!cleaned) return { total: 0, rolls, modifier: 0 }
-
-  const terms = cleaned.match(/[+-]?[^+-]+/g) ?? []
-  for (const term of terms) {
-    const sign = term.startsWith('-') ? -1 : 1
-    const body = term.replace(/^[+-]/, '')
-    const dice = body.match(/^(\d+)d(\d+)$/i)
+  for (const { sign, body } of parseTerms(expr)) {
+    const dice = diceTerm(body)
     if (dice) {
-      const count = parseInt(dice[1], 10) * critDice
-      const sides = parseInt(dice[2], 10)
-      for (let i = 0; i < count; i++) {
-        const r = rollDie(rng, sides)
+      for (let i = 0; i < dice.count * critDice; i++) {
+        const r = rollDie(rng, dice.sides)
         rolls.push(r)
         total += sign * r
       }
@@ -120,4 +132,32 @@ export const rollExpr = (
     }
   }
   return { total, rolls, modifier }
+}
+
+/**
+ * Expected value of a dice expression — no RNG. `NdM` averages to `N·(M+1)/2`;
+ * ability tokens and constants add as-is. Used by the enemy AI (policy.ts) to
+ * score options without rolling.
+ */
+export const averageExpr = (
+  expr: string,
+  mods: Partial<Record<Ability, number>> = {},
+  critDice = 1
+): number => {
+  let total = 0
+  for (const { sign, body } of parseTerms(expr)) {
+    const dice = diceTerm(body)
+    if (dice) {
+      total += sign * dice.count * critDice * ((dice.sides + 1) / 2)
+      continue
+    }
+    const upper = body.toUpperCase() as Ability
+    if (ABILITIES.includes(upper)) {
+      total += sign * (mods[upper] ?? 0)
+      continue
+    }
+    const num = Number(body)
+    if (!Number.isNaN(num)) total += sign * num
+  }
+  return total
 }

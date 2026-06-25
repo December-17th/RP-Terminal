@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { makeRng, rollDie, rollD20, rollExpr } from '../../src/shared/combat/dice'
+import { makeRng, rollDie, rollD20, rollExpr, averageExpr } from '../../src/shared/combat/dice'
 
 // A deterministic rng that replays a fixed sequence (looping) — lets tests force
 // exact die faces without depending on the PRNG's internals.
@@ -80,5 +80,15 @@ describe('rollExpr', () => {
     expect(r.rolls).toEqual([4, 4, 4, 4])
     expect(r.modifier).toBe(3)
     expect(r.total).toBe(19)
+  })
+})
+
+describe('averageExpr', () => {
+  it('returns the expected value with no RNG', () => {
+    expect(averageExpr('2d6+3')).toBe(10) // 2*3.5 + 3
+    expect(averageExpr('1d6+STR', { STR: 3 })).toBe(6.5)
+    expect(averageExpr('1d4-1')).toBe(1.5)
+    expect(averageExpr('')).toBe(0)
+    expect(averageExpr('2d6', {}, 2)).toBe(14) // critDice doubles the dice
   })
 })
