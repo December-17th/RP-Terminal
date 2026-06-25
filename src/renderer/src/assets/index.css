@@ -1214,6 +1214,11 @@ button:disabled {
   cursor: not-allowed;
 }
 
+select:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 input {
   background-color: var(--rpt-bg-primary);
   border: 1px solid var(--rpt-border);

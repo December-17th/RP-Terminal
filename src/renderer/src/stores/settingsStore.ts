@@ -45,6 +45,14 @@ export interface Settings {
     renderMode: 'inline' | 'isolated'
     sizing: 'fit' | 'fill'
   }
+  /** Prompt-cache optimization dial (mirrors main `Settings['cache']`). level 0 = baseline. */
+  cache: {
+    level: number
+    l1_mode: 'partition' | 'diff'
+    ttl: '5m' | '1h'
+    prewarm: boolean
+    breakpoint_optimizer: boolean
+  }
   agent: {
     mode: 'off' | 'manual' | 'agentic'
   }
