@@ -6,6 +6,7 @@ import {
   collectBundledRegex,
   collectBundledPresets,
   collectBundledLorebooks,
+  collectBundledScripts,
   summarizeCardBundle,
   hasBundle,
   parseCardFile,
@@ -78,6 +79,30 @@ describe('collectBundledPresets / collectBundledLorebooks', () => {
     expect(collectBundledLorebooks(c)).toHaveLength(1)
     expect(collectBundledPresets(card({}))).toEqual([])
     expect(collectBundledLorebooks(card({}))).toEqual([])
+  })
+})
+
+describe('collectBundledScripts', () => {
+  it('reads Tavern Helper scripts from extensions.tavern_helper.scripts, filtering non-objects', () => {
+    const c = card({
+      tavern_helper: {
+        scripts: [
+          { type: 'script', name: 'a', content: '//a' },
+          null,
+          'nope',
+          { type: 'script', name: 'b', content: '//b' }
+        ],
+        variables: {}
+      }
+    })
+    expect(collectBundledScripts(c).map((s) => s.name)).toEqual(['a', 'b'])
+  })
+
+  it('returns [] when the card carries no TH scripts (native rp_terminal.scripts are not here)', () => {
+    expect(collectBundledScripts(card({}))).toEqual([])
+    expect(
+      collectBundledScripts(card({ rp_terminal: { scripts: [{ name: 's', code: '' }] } }))
+    ).toEqual([])
   })
 })
 

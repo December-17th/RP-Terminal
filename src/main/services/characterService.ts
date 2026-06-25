@@ -142,6 +142,17 @@ export const collectBundledLorebooks = (card: RPTerminalCard): any[] => {
   return Array.isArray(b) ? b.filter((x) => x && typeof x === 'object') : []
 }
 
+/**
+ * Bundled Tavern Helper scripts from the card's standard `extensions.tavern_helper.scripts[]`
+ * (the same slot presets use). These are routed into the script store on import. NOTE: the
+ * card's *native* `rp_terminal.scripts` are NOT here — those ride on the card and load at
+ * runtime (`get-runtime-scripts`); only the ST/TH-format scripts need importing.
+ */
+export const collectBundledScripts = (card: RPTerminalCard): any[] => {
+  const arr = (card.data.extensions as any)?.tavern_helper?.scripts
+  return Array.isArray(arr) ? arr.filter((s) => s && typeof s === 'object') : []
+}
+
 /** Count what a parsed card bundles, for the import confirm + summary toast. */
 export const summarizeCardBundle = (parsed: ParsedCard): ImportSummary => {
   const rpt = getRpExt(parsed.card)
@@ -150,7 +161,10 @@ export const summarizeCardBundle = (parsed: ParsedCard): ImportSummary => {
     isWorldCard: !!rpt?.world_card,
     regexScripts: collectBundledRegex(parsed.card).length,
     loreEntries: parsed.lorebook?.entries.length || 0,
-    scripts: Array.isArray(rpt?.scripts) ? rpt.scripts.length : 0,
+    // Native (rp_terminal.scripts, ride on the card) + bundled TH scripts (imported to store).
+    scripts:
+      (Array.isArray(rpt?.scripts) ? rpt.scripts.length : 0) +
+      collectBundledScripts(parsed.card).length,
     uiWidgets: Array.isArray(rpt?.ui_layout) ? rpt.ui_layout.length : 0,
     presets: collectBundledPresets(parsed.card).length,
     lorebooks: collectBundledLorebooks(parsed.card).length,
@@ -225,9 +239,10 @@ export const inspectCardFile = (filePath: string): ImportSummary | null => {
 }
 
 /**
- * One-click World Card import: persist the (lossless) card + its embedded lorebook,
- * and **extract bundled regex into the profile regex store** (the slot the old
- * importer silently dropped). Returns the new id plus an install summary.
+ * One-click World Card import: persist the (lossless) card + its embedded lorebook, and
+ * **extract bundled regex, Tavern Helper scripts, presets, and extra lorebooks** into their
+ * profile stores (scoped to this world) — the slots the old importer silently dropped.
+ * Returns the new id plus an install summary.
  */
 export const importCharacterFromFile = (
   profileId: string,
@@ -248,6 +263,21 @@ export const importCharacterFromFile = (
     let regexScripts = 0
     for (const script of collectBundledRegex(card)) {
       if (regexService.saveRegexScript(profileId, script, 'world', newId)) regexScripts++
+    }
+
+    // Route bundled Tavern Helper scripts (extensions.tavern_helper.scripts — the standard
+    // ST slot) into the script store, scoped to this world so they run when the card is loaded
+    // and show in the Scripts manager. (Native rp_terminal.scripts ride on the card instead.)
+    let scripts = 0
+    for (const s of scriptService.normalizeImportedScripts(collectBundledScripts(card))) {
+      const file = scriptService.saveScript(
+        profileId,
+        { name: s.name, code: s.code },
+        'world',
+        newId
+      )
+      if (!s.enabled) scriptService.setScriptDisabled(profileId, file, true)
+      scripts++
     }
 
     // Route bundled chat-completion presets into the preset store (never made active).
@@ -273,6 +303,9 @@ export const importCharacterFromFile = (
 
     const summary = summarizeCardBundle(parsed)
     summary.regexScripts = regexScripts
+    // Native scripts ride on the card; add the count actually imported into the store.
+    summary.scripts =
+      (Array.isArray(getRpExt(card)?.scripts) ? getRpExt(card)!.scripts!.length : 0) + scripts
     summary.presets = presets
     summary.lorebooks = lorebooks
     return { id: newId, summary }

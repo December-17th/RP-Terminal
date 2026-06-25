@@ -2,6 +2,7 @@ import { create } from 'zustand'
 import { useToastStore } from './toastStore'
 import { useRegexStore } from './regexStore'
 import { usePresetStore } from './presetStore'
+import { useScriptsStore } from './scriptsStore'
 import { useChatStore } from './chatStore'
 
 export interface CharacterCard {
@@ -80,6 +81,9 @@ export const useCharacterStore = create<CharacterState>((set) => ({
         await useRegexStore.getState().load(profileId)
         await useRegexStore.getState().loadScripts(profileId)
       }
+      // Bundled TH scripts landed in the profile script store (world-scoped) — refresh the
+      // Scripts manager so they show up under the new world.
+      if (s.scripts) await useScriptsStore.getState().load(profileId)
       if (s.presets) await usePresetStore.getState().load(profileId)
     }
   },

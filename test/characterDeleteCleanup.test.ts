@@ -33,6 +33,9 @@ const worldCard = (): any => ({
     name: 'Cleanup World',
     extensions: {
       regex_scripts: [regexRule('beautify-a'), regexRule('beautify-b')],
+      tavern_helper: {
+        scripts: [{ type: 'script', enabled: true, name: 'card-script', content: '//x' }]
+      },
       rp_terminal: { world_card: '1.0' }
     }
   }
@@ -57,10 +60,11 @@ describe('deleteCharacter — world-scoped artifact cleanup', () => {
     expect(ownedRegex).toHaveLength(2)
     expect(ownedRegex.every((s) => s.scope === 'world')).toBe(true)
 
-    // A world-scoped store script bound to this card (card-embedded scripts stay on the card;
-    // this is the kind a user would assign manually) must also be cleaned up.
-    scriptService.saveScript(profileId, { name: 'world-script', code: '//x' }, 'world', charId)
-    expect(scriptService.listScripts(profileId).filter((s) => s.owner === charId)).toHaveLength(1)
+    // The card's Tavern Helper script (extensions.tavern_helper.scripts) was routed into the
+    // script store as a world-scoped script owned by this card.
+    const ownedScripts = scriptService.listScripts(profileId).filter((s) => s.owner === charId)
+    expect(ownedScripts).toHaveLength(1)
+    expect(ownedScripts[0]).toMatchObject({ name: 'card-script', scope: 'world' })
 
     deleteCharacter(profileId, charId)
 
