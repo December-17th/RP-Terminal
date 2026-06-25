@@ -117,10 +117,16 @@ export const SettingsPanel: React.FC<{ profileId: string }> = ({ profileId }) =>
             />
 
             <label className="field-label" style={{ marginTop: 18 }}>
-              {t('prefs.agentMode')}
+              {t('prefs.agentMode')}{' '}
+              <span style={{ opacity: 0.5, fontWeight: 'normal' }}>
+                ({t('prefs.agentComingSoon')})
+              </span>
             </label>
+            {/* Disabled until Gameplay Mode (FSM scene routing) is implemented. */}
             <select
               value={settings.agent?.mode ?? 'off'}
+              disabled
+              title={t('prefs.agentDisabledTitle')}
               onChange={(e) =>
                 updateSettings(profileId, {
                   agent: { ...settings.agent, mode: e.target.value as Settings['agent']['mode'] }
@@ -326,6 +332,31 @@ export const SettingsPanel: React.FC<{ profileId: string }> = ({ profileId }) =>
             />
             <div style={{ fontSize: '0.78em', color: 'var(--rpt-text-secondary)', marginTop: 4 }}>
               {t('prefs.recursionHint')}
+            </div>
+
+            <label className="field-label" style={{ marginTop: 18 }}>
+              {t('prefs.cacheOpt')}{' '}
+              <span style={{ opacity: 0.5, fontWeight: 'normal' }}>
+                ({t('prefs.agentComingSoon')})
+              </span>
+            </label>
+            {/* Disabled until the cache-optimization dial is exposed; pinned to baseline (level 0). */}
+            <select
+              value={String(settings.cache?.level ?? 0)}
+              disabled
+              title={t('prefs.cacheDisabledTitle')}
+              onChange={(e) =>
+                updateSettings(profileId, {
+                  cache: { ...settings.cache, level: Number(e.target.value) }
+                })
+              }
+              style={{ width: '100%' }}
+            >
+              <option value="0">{t('prefs.cacheBaseline')}</option>
+              <option value="1">{t('prefs.cacheFrozenCore')}</option>
+            </select>
+            <div style={{ fontSize: '0.78em', color: 'var(--rpt-text-secondary)', marginTop: 4 }}>
+              {t('prefs.cacheHint')}
             </div>
           </>
         )}
