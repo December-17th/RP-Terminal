@@ -14,6 +14,9 @@ full-page card scripts to a process-isolated WCV instead of the crippled inline 
    (`replaceScriptButtons` + `eventOn(getButtonEvent(...))`) and/or a declarative manifest slot — the host
    has zero card-specific knowledge.
 3. Fold the existing hardcoded `wcv-card` / `wcv-home` / `wcv-start` spike views into the same mechanism.
+   **Locked delivery for 命定之诗 (see §4b):** `状态栏` → a script-registered WCV **panel** (replaces the old
+   `wcv-card` hardcode + the status regex); `首页` / `自定义开局` → stay **inline regex** (drop `wcv-home` /
+   `wcv-start`).
 
 ---
 
@@ -122,10 +125,21 @@ host process and the DOM, not the API.
 ### 4b. Card/script-declared surfaces (the no-hardcode hook)
 A surface is registered two ways, both card-driven:
 
-- **Runtime (covers `创意工坊` unmodified):** when a WCV script calls `replaceScriptButtons([...])`, the shim
-  sends `wcv-register-button` → main → renderer `toolbarStore`. The script's button appears in the menu with
-  **no host knowledge of the card**.
-- **Declarative (for docked panels like the status UI):** extend the existing schema (`character.ts:62` for
+- **Runtime button → modal (covers `创意工坊` unmodified):** when a WCV script calls `replaceScriptButtons([...])`,
+  the shim sends `wcv-register-button` → main → renderer `toolbarStore`. The script's button appears in the
+  menu with **no host knowledge of the card**.
+- **Runtime panel (covers the `状态栏` status UI):** add a card-facing API `registerScriptPanel(def)` to
+  `thRuntime` (an RPT extension, also exposed bare + on `TavernHelper`):
+
+  ```js
+  registerScriptPanel({ id, title, slot, entry })
+  ```
+
+  The script tells the host to dock a WCV panel whose body loads `entry` (a URL) with the `wcvPreload` shim.
+  The host registers a dynamic view (id/title) and mounts it via `WcvPanel`/`wcvManager` at `slot` — **the URL
+  comes from the script, nothing is hardcoded.** This is the script-form replacement for the old hardcoded
+  `wcv-card` view: same status page, same shim, now registered by the card.
+- **Declarative (alternative to the runtime panel):** extend the existing schema (`character.ts:62` for
   `scripts[]`, `character.ts:71` for `panel_ui`) with a per-script/per-slot `surface`:
 
   ```jsonc
@@ -135,11 +149,41 @@ A surface is registered two ways, both card-driven:
     "transport": "wcv",          // (default for surfaces) process-isolated
     "title": "命定创意工坊",
     "button": "命定创意工坊",     // for kind:"modal" — the menu button that opens it
-    "slot": "right"              // for kind:"panel"
+    "slot": "right",             // for kind:"panel"
+    "entry": "…/status/index.html" // for a page-backed panel
   }
   ```
 
   A card may ship both a declarative panel and runtime buttons; the registry merges them.
+
+#### Delivery decision for 命定之诗 (locked)
+
+- **首页 (#6) and 自定义开局 (#7) stay inline regex.** They're one-time, message-anchored onboarding — the
+  existing inline-card path (`WcvMessageFrame`/`InlineCardFrame`) renders them per the card's regex, unchanged.
+- **状态栏 (#5) becomes a script-registered WCV panel, not a regex.** The persistent status display belongs
+  docked (mounted once, survives message paging, live-updates from the latest floor's vars over the existing
+  bridge) — not re-injected per AI message. Replace the regex with a tiny card script:
+
+  ```js
+  // 【命定之诗】状态栏 (replaces regex #5)
+  registerScriptPanel({
+    id: 'mds-status',
+    title: '状态栏',
+    slot: 'right',
+    entry: 'https://testingcf.jsdelivr.net/gh/The-poem-of-destiny/FrontEnd-for-destined-journey@1.8.2/dist/status/index.html',
+  })
+  ```
+
+  The `status/index.html` bundle is unchanged — it just renders into the WCV panel body instead of an inline
+  message frame; the `wcvPreload` shim supplies `window.Mvu`/`TavernHelper`/`SillyTavern` exactly as the
+  current `wcv-card` spike does.
+
+**Import transform (so existing 命定之诗 cards work without re-authoring):** the importer detects the
+status-loader regex (`placement:[2]`, replacement does `.load('…/status/index.html')`) and converts it to the
+panel registration above — synthesizing the script into `rp_terminal.scripts` (or a `panel_ui` slot) and
+**skipping** it as a display regex. The home/custom_start loader regexes (`…/home/…`, `…/custom_start/…`) are
+**not** matched by this rule, so they import normally and stay inline. (Detection keys on the distinct
+`status/index.html` URL, so it won't catch the other two.)
 
 ### 4c. Button bus across the WCV boundary
 Add the missing event trio to `thRuntime` (`index.ts`): `getButtonEvent` (identity-mapped to the raw name,
@@ -177,6 +221,7 @@ Concrete additions to the canonical surface (`thRuntime/index.ts`) + the WCV hos
 | `getScriptId` | ⬜ | add (stable per-script id) |
 | `getVariables({type:'script'})` / `updateVariablesWith(..,{type:'script'})` | 🟡 always stat_data (`index.ts:198`/`:246`) | honor `script` scope → script-owned KV |
 | `getButtonEvent` / `eventOn` / `replaceScriptButtons` | ⬜ | add + bridge (4c) |
+| `registerScriptPanel({id,title,slot,entry})` (RPT ext) | ⬜ | add — dock a WCV panel loading `entry` via `WcvPanel`/`wcvManager` (4b); the `状态栏` path |
 
 Regex write is the only genuinely missing **wiring** (the rest are getters/bus). The write *storage*
 already exists in `regexService` — what's missing is the TH-shape bridge that maps `updateTavernRegexesWith` /
@@ -225,15 +270,17 @@ Gate behind the same trusted-card consent that already guards remote card code (
 4. **Modal presentation** (4d) — hidden full-window WCV toggled by the button. → **`创意工坊` opens and can
    read/diff/write.**
 5. **OAuth window-open** (4f) — completes cloud login.
-6. **Declarative `surface` schema** (4b), then **retire the hardcoded `wcv-*` views** (`viewRegistry.tsx:84`,
-   `WcvPanel.tsx`) — replace, don't remove. The status/home/creation UIs do NOT depend on these
-   entries: the card delivers them via its own regex (`status/home/custom_start` are injected by regex
-   #5 状态栏 / #6 首页 / #7 自定义开局, `placement:[2]`), which RP Terminal already renders through the
-   card-agnostic inline path (`WcvMessageFrame` isolated / `InlineCardFrame`). The hardcoded entries are a
-   spike shortcut (manual dropdown → "Run card UI" → load the status page in a docked panel), not the card's
-   delivery mechanism. Delete them only once (a) the regex→inline path covers the in-message UIs and (b) any
-   wanted DOCKED panel is reproduced by a card-declared `surface` (seed this card's three surfaces on import
-   if a persistent docked panel is desired).
+6. **Panel registration + `surface` schema** (4b): add `registerScriptPanel` + the dynamic panel-view
+   registry, and the **import transform** that turns the `状态栏` status-loader regex into the panel script
+   (skipping it as a display regex). Then **retire the hardcoded `wcv-*` views** (`viewRegistry.tsx:84`,
+   `WcvPanel.tsx`) — **replace, don't remove**, per the locked decision:
+   - `状态栏` → a script-registered WCV **panel** (`registerScriptPanel`, §4b) replacing `wcv-card` + the regex.
+   - `首页` / `自定义开局` → stay **inline regex** (#6/#7, `placement:[2]`), already rendered by the
+     card-agnostic inline path (`WcvMessageFrame` isolated / `InlineCardFrame`); just drop the `wcv-home` /
+     `wcv-start` hardcodes.
+
+   Delete a hardcoded entry only once its replacement (the panel script for status; the inline-regex path for
+   home/creation) is in place — so there's no window where 命定之诗 loses UI.
 
 After step 4 the button works for download/sync; 5 adds cloud login; 6 removes the hardcoding so every card
 gets the same door.
@@ -252,7 +299,12 @@ gets the same door.
 
 ## 7. Files this will touch (for the eventual implementation)
 
-- `src/shared/thRuntime/index.ts` — API gaps + button bus + script-scope vars (4c, 4e).
+- `src/shared/thRuntime/index.ts` — API gaps + button bus + script-scope vars + `registerScriptPanel` (4c, 4e).
+- `src/main/services/characterService.ts` (import transform) — detect the `状态栏` status-loader regex
+  (`.load('…/status/index.html')`, `placement:[2]`) → synthesize the `registerScriptPanel` script into
+  `rp_terminal.scripts` and skip it as a display regex; leave `首页`/`自定义开局` regexes untouched.
+- `src/renderer/src/components/workspace/viewRegistry.tsx` — a **dynamic** panel-view registry fed by
+  `registerScriptPanel` (panel body = `WcvPanel` loading the script's `entry`), replacing the static `wcv-*`.
 - `src/main/ipc/wcvIpc.ts` — `wcv-register-button`, `wcv-button-click`, `wcv-host-replace-regexes`,
   `isCharacterTavernRegexesEnabled`, `getCurrentCharacterName`, chat-id getter, script-scope var IPC.
 - `src/main/services/wcvManager.ts` — modal show/hide lifecycle; `setWindowOpenHandler` for OAuth.
