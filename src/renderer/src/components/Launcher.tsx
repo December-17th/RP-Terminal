@@ -13,6 +13,7 @@ export function Launcher({ profileId }: { profileId: string }): React.ReactEleme
   const characters = useCharacterStore((s) => s.characters)
   const setActiveCharacter = useCharacterStore((s) => s.setActiveCharacter)
   const importCharacter = useCharacterStore((s) => s.importCharacter)
+  const deleteCharacter = useCharacterStore((s) => s.deleteCharacter)
   const chats = useChatStore((s) => s.chats)
   const createChat = useChatStore((s) => s.createChat)
   const setActiveChat = useChatStore((s) => s.setActiveChat)
@@ -140,23 +141,36 @@ export function Launcher({ profileId }: { profileId: string }): React.ReactEleme
               const desc = String(d.creator_notes || d.description || '').trim()
               const count = chats.filter((ch) => ch.character_id === c.id).length
               const url = avatars[c.id]
+              const name = d.name || t('launcher.untitled')
               return (
-                <button key={c.id} className="lc-wrow" onClick={() => openWorld(c)}>
-                  {url ? (
-                    <img className="lc-av" src={url} alt="" />
-                  ) : (
-                    <span className="lc-av lc-av-ph">{String(d.name || '?').slice(0, 1)}</span>
-                  )}
-                  <span className="lc-wtext">
-                    <span className="lc-wname">{d.name || t('launcher.untitled')}</span>
-                    {desc && <span className="lc-wdesc">{desc}</span>}
-                    <span className="lc-wmeta">
-                      {count === 1
-                        ? t('launcher.sessionOne', { count })
-                        : t('launcher.sessionMany', { count })}
+                <div key={c.id} className="lc-wrow-wrap">
+                  <button className="lc-wrow" onClick={() => openWorld(c)}>
+                    {url ? (
+                      <img className="lc-av" src={url} alt="" />
+                    ) : (
+                      <span className="lc-av lc-av-ph">{String(d.name || '?').slice(0, 1)}</span>
+                    )}
+                    <span className="lc-wtext">
+                      <span className="lc-wname">{name}</span>
+                      {desc && <span className="lc-wdesc">{desc}</span>}
+                      <span className="lc-wmeta">
+                        {count === 1
+                          ? t('launcher.sessionOne', { count })
+                          : t('launcher.sessionMany', { count })}
+                      </span>
                     </span>
-                  </span>
-                </button>
+                  </button>
+                  <button
+                    className="btn-ghost danger lc-wdel"
+                    title={t('world.deleteTitle')}
+                    onClick={() => {
+                      if (confirm(t('world.confirmDelete', { name })))
+                        deleteCharacter(profileId, c.id)
+                    }}
+                  >
+                    🗑
+                  </button>
+                </div>
               )
             })}
           </div>
