@@ -5,6 +5,7 @@ import { useSettingsStore } from '../stores/settingsStore'
 import { splitReasoning } from '../../../shared/responseView'
 import { renderTemplate } from '../plugin/renderTemplate'
 import { ReasoningPanel } from './ReasoningPanel'
+import { useT } from '../i18n'
 
 /**
  * Isolated streaming view — subscribes only to streamingText so the high-frequency
@@ -16,6 +17,7 @@ import { ReasoningPanel } from './ReasoningPanel'
  * body streams into the main box. See splitReasoning.
  */
 export function StreamingView({ pendingUserMsg }: { pendingUserMsg: string }): React.ReactElement {
+  const t = useT()
   const streamingText = useChatStore((s) => s.streamingText)
   const templates = useSettingsStore((s) => s.settings?.templates)
   const activeCharacter = useCharacterStore((s) => s.activeCharacter)
@@ -68,7 +70,9 @@ export function StreamingView({ pendingUserMsg }: { pendingUserMsg: string }): R
       {display ? (
         <div className="streaming-text">{display}</div>
       ) : state === 'none' ? (
-        <em className="generating-pulse">{streamingText ? 'Thinking…' : 'Generating…'}</em>
+        <em className="generating-pulse">
+          {streamingText ? t('chat.thinking') : t('chat.generating')}
+        </em>
       ) : null}
       <div ref={endRef} />
     </div>

@@ -1,24 +1,28 @@
 import { useCharacterStore } from '../stores/characterStore'
 import { useChatStore } from '../stores/chatStore'
+import { useT } from '../i18n'
 
 /** Left-panel 'sessions' tab: the chat sessions for the active character. */
 export function SessionsPanel({ profileId }: { profileId: string }): React.ReactElement {
   const activeCharacter = useCharacterStore((s) => s.activeCharacter)
   const { chats, activeChatId, createChat, setActiveChat, deleteChat } = useChatStore()
+  const t = useT()
 
   return (
     <div className="panel">
       <div className="panel-header">
-        <h3>Sessions</h3>
+        <h3>{t('sessions.heading')}</h3>
         {activeCharacter && (
           <div className="panel-header-actions">
-            <button onClick={() => createChat(profileId, activeCharacter.id)}>+ New</button>
+            <button onClick={() => createChat(profileId, activeCharacter.id)}>
+              {t('common.new')}
+            </button>
           </div>
         )}
       </div>
       <div className="panel-body">
         {!activeCharacter ? (
-          <div style={{ opacity: 0.6, fontStyle: 'italic' }}>Select a character first.</div>
+          <div style={{ opacity: 0.6, fontStyle: 'italic' }}>{t('sessions.selectChar')}</div>
         ) : (
           <>
             <div
@@ -31,15 +35,13 @@ export function SessionsPanel({ profileId }: { profileId: string }): React.React
               {activeCharacter.card.data.name}
             </div>
             {chats.filter((c) => c.character_id === activeCharacter.id).length === 0 && (
-              <div style={{ opacity: 0.6, fontStyle: 'italic' }}>
-                No sessions yet. Start a new one.
-              </div>
+              <div style={{ opacity: 0.6, fontStyle: 'italic' }}>{t('sessions.empty')}</div>
             )}
             {chats
               .filter((c) => c.character_id === activeCharacter.id)
               .map((c) => {
                 const last = c.floor_index?.[c.floor_index.length - 1]
-                const previewText = last?.response_preview || 'Empty session'
+                const previewText = last?.response_preview || t('launcher.emptySession')
                 return (
                   <div
                     key={c.id}
@@ -53,10 +55,10 @@ export function SessionsPanel({ profileId }: { profileId: string }): React.React
                       <span className="session-count">{c.floor_count ?? 0} ✦</span>
                       <button
                         className="btn-ghost danger session-del"
-                        title="Delete session"
+                        title={t('sessions.deleteTitle')}
                         onClick={(e) => {
                           e.stopPropagation()
-                          if (confirm('Delete this session? This cannot be undone.')) {
+                          if (confirm(t('sessions.confirmDelete'))) {
                             deleteChat(profileId, c.id)
                           }
                         }}

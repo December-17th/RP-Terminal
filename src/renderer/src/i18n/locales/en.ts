@@ -342,7 +342,57 @@ const en: Record<string, string> = {
   'usage.avgEst': 'avg est',
   'usage.avgCache': 'avg cache',
   'usage.avgPrompt': 'avg prompt',
-  'usage.sessionCost': 'session $'
+  'usage.sessionCost': 'session $',
+
+  'chat.thinking': 'Thinking…',
+  'chat.generating': 'Generating…',
+
+  'status.waiting': 'Waiting for session...',
+  'status.heading': 'RPG Status',
+  'status.reevalTitle':
+    'Re-apply the stored variable updates from every message to rebuild the state — no regeneration (e.g. after a parser update).',
+  'status.reevaluate': '↻ Re-evaluate',
+  'status.reevaluated': 'State re-evaluated from stored updates',
+  'status.noState': '(No RPG state for this session yet)',
+
+  'actions.hide': 'Hide script actions',
+  'actions.show': 'Show script actions',
+  'actions.label': 'Actions',
+  'actions.empty': 'No script actions — a script can add one with rpt.ui.registerButton()',
+
+  'view.navigator': 'Navigator',
+  'view.chat': 'Chat',
+  'view.usage': 'Usage',
+  'view.cardScripts': 'Card Scripts',
+
+  'panel.chooseView': 'Choose which view this panel shows',
+  'panel.showPanel': 'Show panel',
+  'panel.collapsePanel': 'Collapse panel',
+  'panel.resetLayout': 'Reset the {{mode}} layout to default',
+  'panel.unknownView': 'Unknown view: {{view}}',
+
+  'sm.heading': 'Scripts · {{name}}',
+  'sm.headingTitle': 'Scripts — {{name}}',
+  'sm.addScript': '+ Script',
+  'sm.help':
+    'Sandboxed JavaScript that runs with this card. It renders into the right-panel ⚙ Card Scripts while a session is open and uses the rpt API (vars, chat, generate, ui). No network access. See docs/plugin-api.md.',
+  'sm.empty': 'No scripts yet. Click "+ Script" to add one.',
+  'sm.chars': '{{n}} chars',
+  'sm.codeEmpty': 'empty',
+  'sm.codePh': "// rpt.on('ready', () => { ... })",
+
+  'world.heading': 'World',
+  'world.addMock': '+ Mock',
+  'world.empty': 'No worlds yet. Import a character card or add the mock guide.',
+  'world.exportTitle': "Export as World Card (card + lorebook + this world's regex)",
+  'world.deleteTitle': 'Delete character',
+  'world.confirmDelete': 'Delete character "{{name}}" and its lorebook? This cannot be undone.',
+
+  'sessions.heading': 'Sessions',
+  'sessions.selectChar': 'Select a character first.',
+  'sessions.empty': 'No sessions yet. Start a new one.',
+  'sessions.deleteTitle': 'Delete session',
+  'sessions.confirmDelete': 'Delete this session? This cannot be undone.'
 }
 
 export default en

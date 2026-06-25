@@ -336,7 +336,57 @@ const zh: Record<string, string> = {
   'usage.avgEst': '平均预估',
   'usage.avgCache': '平均缓存',
   'usage.avgPrompt': '平均提示',
-  'usage.sessionCost': '会话 $'
+  'usage.sessionCost': '会话 $',
+
+  'chat.thinking': '思考中…',
+  'chat.generating': '生成中…',
+
+  'status.waiting': '等待会话…',
+  'status.heading': 'RPG 状态',
+  'status.reevalTitle':
+    '重新应用每条消息中存储的变量更新以重建状态 —— 无需重新生成（例如解析器更新后）。',
+  'status.reevaluate': '↻ 重新计算',
+  'status.reevaluated': '已根据存储的更新重新计算状态',
+  'status.noState': '（此会话还没有 RPG 状态）',
+
+  'actions.hide': '隐藏脚本动作',
+  'actions.show': '显示脚本动作',
+  'actions.label': '动作',
+  'actions.empty': '没有脚本动作 —— 脚本可通过 rpt.ui.registerButton() 添加。',
+
+  'view.navigator': '导航',
+  'view.chat': '聊天',
+  'view.usage': '用量',
+  'view.cardScripts': '卡片脚本',
+
+  'panel.chooseView': '选择此面板显示的视图',
+  'panel.showPanel': '显示面板',
+  'panel.collapsePanel': '收起面板',
+  'panel.resetLayout': '将「{{mode}}」布局重置为默认',
+  'panel.unknownView': '未知视图：{{view}}',
+
+  'sm.heading': '脚本 · {{name}}',
+  'sm.headingTitle': '脚本 —— {{name}}',
+  'sm.addScript': '+ 脚本',
+  'sm.help':
+    '随此卡片运行的沙箱化 JavaScript。会话打开时渲染到右侧面板「⚙ 卡片脚本」，并使用 rpt API（vars、chat、generate、ui）。无网络访问。详见 docs/plugin-api.md。',
+  'sm.empty': '还没有脚本。点击「+ 脚本」添加一个。',
+  'sm.chars': '{{n}} 字符',
+  'sm.codeEmpty': '空',
+  'sm.codePh': "// rpt.on('ready', () => { ... })",
+
+  'world.heading': '世界',
+  'world.addMock': '+ 示例',
+  'world.empty': '还没有世界。导入一张角色卡或添加示例向导。',
+  'world.exportTitle': '导出为世界卡（卡片 + 世界书 + 此世界的正则）',
+  'world.deleteTitle': '删除角色',
+  'world.confirmDelete': '删除角色「{{name}}」及其世界书？此操作无法撤销。',
+
+  'sessions.heading': '会话',
+  'sessions.selectChar': '请先选择一个角色。',
+  'sessions.empty': '还没有会话。新建一个吧。',
+  'sessions.deleteTitle': '删除会话',
+  'sessions.confirmDelete': '删除此会话？此操作无法撤销。'
 }
 
 export default zh

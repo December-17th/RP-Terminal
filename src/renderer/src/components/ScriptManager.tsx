@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react'
 import { useCharacterStore } from '../stores/characterStore'
+import { useT } from '../i18n'
 
 interface Props {
   profileId: string
@@ -32,6 +33,7 @@ export const ScriptManager: React.FC<Props> = ({ profileId, characterId, charact
   const [drafts, setDrafts] = useState<Draft[]>(() => readScripts(card))
   const [dirty, setDirty] = useState(false)
   const [expanded, setExpanded] = useState<number | null>(0)
+  const t = useT()
 
   // Re-seed when switching characters (or when the card changes underneath us).
   useEffect(() => {
@@ -75,25 +77,25 @@ export const ScriptManager: React.FC<Props> = ({ profileId, characterId, charact
   return (
     <div className="panel">
       <div className="panel-header">
-        <h3 title={`Scripts — ${characterName}`}>Scripts · {characterName}</h3>
+        <h3 title={t('sm.headingTitle', { name: characterName })}>
+          {t('sm.heading', { name: characterName })}
+        </h3>
         <div className="panel-header-actions">
-          {dirty && <span style={{ fontSize: '0.8em', opacity: 0.7 }}>unsaved</span>}
-          <button onClick={addScript}>+ Script</button>
+          {dirty && <span style={{ fontSize: '0.8em', opacity: 0.7 }}>{t('common.unsaved')}</span>}
+          <button onClick={addScript}>{t('sm.addScript')}</button>
           <button className="btn-accent" disabled={!dirty} onClick={save}>
-            Save
+            {t('common.save')}
           </button>
         </div>
       </div>
       <div className="panel-body">
         <div style={{ fontSize: '0.78em', color: 'var(--rpt-text-secondary)', marginBottom: 10 }}>
-          Sandboxed JavaScript that runs with this card. It renders into the right-panel{' '}
-          <b>⚙ Card Scripts</b> while a session is open and uses the <code>rpt</code> API (vars,
-          chat, generate, ui). No network access. See <code>docs/plugin-api.md</code>.
+          {t('sm.help')}
         </div>
 
         {drafts.length === 0 ? (
           <div style={{ opacity: 0.6, fontStyle: 'italic', padding: '20px 0' }}>
-            No scripts yet. Click “+ Script” to add one.
+            {t('sm.empty')}
           </div>
         ) : (
           drafts.map((s, i) => (
@@ -102,16 +104,16 @@ export const ScriptManager: React.FC<Props> = ({ profileId, characterId, charact
                 <input
                   type="checkbox"
                   checked={s.enabled !== false}
-                  title={s.enabled === false ? 'Script disabled' : 'Script enabled'}
+                  title={s.enabled === false ? t('regex.scriptDisabled') : t('regex.scriptEnabled')}
                   onChange={() => updateScript(i, { enabled: s.enabled === false })}
                 />
                 <div
                   className="entry-head-main"
                   onClick={() => setExpanded((cur) => (cur === i ? null : i))}
                 >
-                  <span className="entry-title">{s.name || 'Untitled script'}</span>
+                  <span className="entry-title">{s.name || t('scripts.untitled')}</span>
                   <span className="entry-keys-preview">
-                    {s.code.trim() ? `${s.code.trim().length} chars` : 'empty'}
+                    {s.code.trim() ? t('sm.chars', { n: s.code.trim().length }) : t('sm.codeEmpty')}
                   </span>
                 </div>
                 <button
@@ -123,7 +125,7 @@ export const ScriptManager: React.FC<Props> = ({ profileId, characterId, charact
                 <button
                   className="btn-ghost danger"
                   onClick={() => deleteScript(i)}
-                  title="Delete script"
+                  title={t('scripts.deleteScript')}
                 >
                   🗑
                 </button>
@@ -131,20 +133,20 @@ export const ScriptManager: React.FC<Props> = ({ profileId, characterId, charact
 
               {expanded === i && (
                 <div className="entry-body">
-                  <label className="field-label">Name</label>
+                  <label className="field-label">{t('common.name')}</label>
                   <input
                     value={s.name}
                     onChange={(e) => updateScript(i, { name: e.target.value })}
-                    placeholder="e.g. stats-panel"
+                    placeholder={t('scripts.namePh')}
                   />
 
-                  <label className="field-label">Code (JavaScript)</label>
+                  <label className="field-label">{t('scripts.code')}</label>
                   <textarea
                     className="script-code"
                     spellCheck={false}
                     value={s.code}
                     onChange={(e) => updateScript(i, { code: e.target.value })}
-                    placeholder="// rpt.on('ready', () => { ... })"
+                    placeholder={t('sm.codePh')}
                   />
                 </div>
               )}
