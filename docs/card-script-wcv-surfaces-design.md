@@ -252,6 +252,69 @@ equivalents.**
 | Merged runtime scripts | the shared `get-runtime-scripts` IPC | Single source already; reuse as-is. |
 | Per-card consent / trust grant | the existing `ConsentCardView` + `trusted`/`remoteScripts` grants | Reuse the gate; don't add a parallel consent. |
 
+### 4h. Card-carried panel layout (the workspace the card ships)
+
+**Vision:** a character card carries its own workspace layout — how many WCV panels, where each sits, and how
+big. The schema already models this and just needs to become the **source of truth on import** (it's a spike
+today): `rp_terminal.panel_ui` (`character.ts:71`) is a `grid {cols, rows}` + `slots[]`, each slot a
+`rect: [col, row, colSpan, rowSpan]`, rendered by `StaticWorkspace` (`StaticWorkspace.tsx`), with
+`DEFAULT_STATIC_LAYOUT` (`WcvPanel.tsx`) as a worked example. So:
+
+- **position** = `[col, row]`, **size** = `[colSpan, rowSpan]`, **number of WCV** = how many slots are WCV.
+- **Grid-relative, not pixels** — `[col,row,colSpan,rowSpan]` over a `cols×rows` grid is resolution-independent
+  (resolves to pixel bounds at render time, recomputed on window resize). Optional per-slot `minPx`
+  constraints can be added later; keep the unit grid-relative.
+
+**Slot content kinds** (unifies §4b — a slot says *where*, this says *what*):
+- a **native view** id (`"chat"`, `"status"`, `"usage"`, …) → the existing `ViewRegistry`;
+- `view:"wcv"` + `entry:"…url…"` → a card WCV panel declared inline in the layout (no script needed — best
+  for a static page like the status UI);
+- `view:"<panel-id>"` referencing a `registerScriptPanel({id})` → a script-registered panel placed by the
+  layout (for panels created/conditional at runtime).
+
+This reconciles the two ways to get the **status** panel: with a card-carried layout, the simplest form is a
+**declarative `wcv` slot** carrying the status URL — `registerScriptPanel` (§4b) stays for *dynamic* panels.
+A card may mix: declarative slots for fixed panels, script registration for runtime ones.
+
+**Inline-regex UIs are NOT panels.** `首页`/`自定义开局` (and the beautifications) live in the chat message
+flow via regex; they're independent of `panel_ui`. The layout governs only the docked workspace panels.
+
+**Example — 命定之诗** (`chat` left, status top-right, character-viewer bottom-right; 2 WCV panels):
+
+```jsonc
+"panel_ui": {
+  "mode": "static",
+  "grid": { "cols": 12, "rows": 12 },
+  "slots": [
+    { "id": "chat",   "view": "chat",  "rect": [0, 0, 8, 12] },
+    { "id": "status", "view": "wcv",   "rect": [8, 0, 4, 6], "title": "状态栏",
+      "entry": "https://…/FrontEnd-for-destined-journey@1.8.2/dist/status/index.html" },
+    { "id": "viewer", "view": "wcv",   "rect": [8, 6, 4, 6], "title": "角色查看器", "entry": "…" }
+  ]
+}
+```
+
+**Import wiring:**
+- A card that **carries** `panel_ui` → the workspace uses `StaticWorkspace` with that layout; cards without it
+  keep the default resizable workspace (no regression for plain ST cards).
+- For **legacy** cards that don't carry it (like this 命定之诗 build), the importer **synthesizes** `panel_ui`
+  from detected UIs — the `状态栏` status-loader regex → a `wcv` slot (per the §4b transform); future detected
+  panels add slots. The number of WCV panels is whatever was detected/declared.
+- Surface it in the **import confirm**: extend `summarizeCardBundle` (`characterService.ts:157`) to report the
+  panel count + layout, so the user sees "Layout: N panels" before installing.
+
+**Perf / lifecycle:** each WCV slot is its own OS/renderer process — `N` panels = `N` processes. Create lazily,
+destroy on session switch, cap the count, and `setVisible(false)` when hidden (the policy already in
+`docs/card-custom-ui-design.md`). The card declaring the layout means the rects are stable (computed once per
+window size), which is what keeps the overlay model cheap.
+
+**Open decision — static-locked vs card-seeded-resizable:** does the card's layout **lock** the workspace
+(fixed rects, no user resize — the cleanest fit for the WCV overlay, the recorded direction in
+`docs/card-custom-ui-design.md`), or is it a **default** the user can then resize/rearrange (persisted per
+card+profile), accepting the live-drag bounds-sync tax for WCV slots? Recommendation: **honor the card layout
+as the default and ship static first**, add opt-in resize (persisted, with "reset to card layout") later — so
+the card's vision renders faithfully without paying the resize-overlay cost up front.
+
 ### 4f. Network + OAuth
 `CARD_CSP` already allows `connect-src *` (`wcvManager.ts:20`), so the Cloudflare fetch works. The OAuth
 `window.open` needs a `setWindowOpenHandler` on the **card WCV** (today only the main window has one, which
