@@ -309,8 +309,12 @@ export const replaceTavernRegexes = (
   } else if (owner) {
     deleteScriptsByOwner(profileId, scope, owner)
   }
-  const objs = (Array.isArray(tavernRegexes) ? tavernRegexes : []).map(tavernRegexToStoreObject)
-  if (objs.length) saveRegexScript(profileId, objs, scope, owner)
+  // Persist each regex as its OWN file (one rule per file) so every regex — incl. one a card/workshop
+  // just downloaded — shows as a separate, named, individually-manageable script, matching ST's flat
+  // per-regex model. (Saving them all in one file would bury new regexes inside a multi-rule script.)
+  for (const tr of Array.isArray(tavernRegexes) ? tavernRegexes : []) {
+    saveRegexScript(profileId, [tavernRegexToStoreObject(tr)], scope, owner)
+  }
 }
 
 /** Guard against path traversal — only operate on a plain filename in the regex dir. */
