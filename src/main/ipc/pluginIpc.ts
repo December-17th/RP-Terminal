@@ -5,6 +5,7 @@ import * as pluginHostService from '../services/pluginHostService'
 import * as pluginStorageService from '../services/pluginStorageService'
 import * as pluginNetService from '../services/pluginNetService'
 import * as logService from '../services/logService'
+import { getActivePresetId } from '../services/presetService'
 
 export const registerPluginIpc = (ipcMain: IpcMain): void => {
   // Card-script runtime (P1) — permission-checked engine bridge for sandboxed scripts.
@@ -50,10 +51,15 @@ export const registerPluginIpc = (ipcMain: IpcMain): void => {
     scriptApiService.listPresetNames(profileId)
   )
   ipcMain.handle('script-regex-format', (_, profileId, ctx, text, macroCtx) =>
-    scriptApiService.formatWithRegex(profileId, ctx, text, macroCtx)
+    scriptApiService.formatWithRegex(
+      profileId,
+      { ...ctx, presetId: getActivePresetId(profileId) },
+      text,
+      macroCtx
+    )
   )
   ipcMain.handle('script-regex-list', (_, profileId, ctx) =>
-    scriptApiService.listRegexes(profileId, ctx)
+    scriptApiService.listRegexes(profileId, { ...ctx, presetId: getActivePresetId(profileId) })
   )
   // Host-mediated remote fetch for the .load() / frontend-card path (grant-gated in main).
   ipcMain.handle('script-fetch-text', (_, profileId, cardId, url) =>

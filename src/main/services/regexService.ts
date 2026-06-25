@@ -17,7 +17,14 @@ import {
   RegexRuleDetail,
   RegexRulePatch
 } from '../../shared/regexTypes'
-import { readScopeMeta, getScopeMeta, setScope, setDisabled, setRenderMode, removeScopeEntry } from './scopeMeta'
+import {
+  readScopeMeta,
+  getScopeMeta,
+  setScope,
+  setDisabled,
+  setRenderMode,
+  removeScopeEntry
+} from './scopeMeta'
 import type { CardRenderMode } from '../../shared/cardRenderMode'
 
 // Re-export the shared types + predicate so existing importers (tests, the renderer store)
@@ -236,6 +243,26 @@ export const deleteScript = (profileId: string, file: string): void => {
   const p = path.join(regexDir(profileId), file)
   if (fs.existsSync(p)) fs.unlinkSync(p)
   removeScopeEntry(regexDir(profileId), file) // keep the sidecar free of orphans
+}
+
+/**
+ * Delete every regex script bound to a given scope+owner (e.g. all `preset`-scoped
+ * scripts a preset bundled), so deleting that owner doesn't leave orphans. Returns
+ * the number removed.
+ */
+export const deleteScriptsByOwner = (
+  profileId: string,
+  scope: ArtifactScope,
+  owner: string
+): number => {
+  let removed = 0
+  for (const s of listScripts(profileId)) {
+    if (s.scope === scope && s.owner === owner) {
+      deleteScript(profileId, s.file)
+      removed++
+    }
+  }
+  return removed
 }
 
 /** Guard against path traversal — only operate on a plain filename in the regex dir. */

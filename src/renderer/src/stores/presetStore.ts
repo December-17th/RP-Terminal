@@ -42,6 +42,13 @@ export interface PresetSummary {
   name: string
 }
 
+/** What importing a preset brought in: the preset name + counts of bundled artifacts. */
+export interface PresetImportResult {
+  name: string
+  regexScripts: number
+  scripts: number
+}
+
 interface PresetState {
   presets: PresetSummary[]
   activeId: string | null
@@ -50,7 +57,7 @@ interface PresetState {
   load: (profileId: string) => Promise<void>
   select: (profileId: string, presetId: string) => Promise<void>
   createNew: (profileId: string) => Promise<void>
-  importPreset: (profileId: string) => Promise<void>
+  importPreset: (profileId: string) => Promise<PresetImportResult | null>
   remove: (profileId: string) => Promise<void>
   save: (profileId: string) => Promise<void>
   setName: (name: string) => void
@@ -96,8 +103,9 @@ export const usePresetStore = create<PresetState>((set, get) => ({
   },
 
   importPreset: async (profileId) => {
-    const name = await window.api.importPresetDialog(profileId)
-    if (name) await get().load(profileId)
+    const result = (await window.api.importPresetDialog(profileId)) as PresetImportResult | null
+    if (result) await get().load(profileId)
+    return result
   },
 
   remove: async (profileId) => {

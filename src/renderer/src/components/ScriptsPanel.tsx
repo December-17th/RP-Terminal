@@ -1,9 +1,11 @@
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useMemo, useState } from 'react'
 import { Modal } from './Modal'
 import { ScopeSection } from './ScopeSection'
 import { ScriptManager } from './ScriptManager'
 import { useScriptsStore, ScriptInfo, ArtifactScope } from '../stores/scriptsStore'
 import { useCardScriptsStore } from '../stores/cardScriptsStore'
+import { usePresetStore } from '../stores/presetStore'
+import { useCharacterStore } from '../stores/characterStore'
 import { useToastStore } from '../stores/toastStore'
 import { useT } from '../i18n'
 
@@ -18,6 +20,7 @@ interface Props {
 
 const SCOPES: { key: ArtifactScope; titleKey: string; hintKey: string }[] = [
   { key: 'global', titleKey: 'scope.global', hintKey: 'scope.globalHint' },
+  { key: 'preset', titleKey: 'scope.preset', hintKey: 'scope.presetHint' },
   { key: 'world', titleKey: 'scope.world', hintKey: 'scope.worldHint' },
   { key: 'session', titleKey: 'scope.session', hintKey: 'scope.sessionHint' }
 ]
@@ -37,8 +40,20 @@ export const ScriptsPanel: React.FC<Props> = ({
   card
 }) => {
   const { scripts, load, add, update, setScope, setDisabled, remove } = useScriptsStore()
+  const activePresetId = usePresetStore((s) => s.activeId)
+  const presets = usePresetStore((s) => s.presets)
+  const characters = useCharacterStore((s) => s.characters)
+  const worlds = useMemo(
+    () => characters.map((c) => ({ id: c.id, name: c.card?.data?.name || c.id })),
+    [characters]
+  )
   const [editing, setEditing] = useState<ScriptInfo | null>(null)
   const [editCard, setEditCard] = useState(false)
+  // Which preset/world the Preset/World sections inspect (null = follow the active one).
+  const [viewPreset, setViewPreset] = useState<string | null>(null)
+  const [viewCard, setViewCard] = useState<string | null>(null)
+  const viewPresetId = viewPreset ?? activePresetId
+  const viewCardId = viewCard ?? activeCardId
   const t = useT()
 
   // Master on/off for the active world's script runtime (the toggle relocated from the
@@ -61,15 +76,52 @@ export const ScriptsPanel: React.FC<Props> = ({
     ? card.data.extensions.rp_terminal.scripts
     : []
 
-  const ownerFor = (scope: ArtifactScope): string | undefined =>
+  // The owner a scope is RUNNING against (active context) — drives the active/inactive badge
+  // and the top-level import default.
+  const activeOwnerFor = (scope: ArtifactScope): string | undefined =>
     scope === 'world'
       ? (activeCardId ?? undefined)
       : scope === 'session'
         ? (activeChatId ?? undefined)
-        : undefined
+        : scope === 'preset'
+          ? (activePresetId ?? undefined)
+          : undefined
+
+  // The owner a new binding attaches to (world & preset follow the section dropdown).
+  const bindOwnerFor = (scope: ArtifactScope): string | undefined =>
+    scope === 'world'
+      ? (viewCardId ?? undefined)
+      : scope === 'session'
+        ? (activeChatId ?? undefined)
+        : scope === 'preset'
+          ? (viewPresetId ?? undefined)
+          : undefined
+
+  // The per-section owner dropdown (Preset / World): choose which owner's scripts to view.
+  const ownerDropdown = (scope: 'preset' | 'world'): React.ReactNode => {
+    const opts = scope === 'preset' ? presets : worlds
+    const val = scope === 'preset' ? viewPresetId : viewCardId
+    const setVal = scope === 'preset' ? setViewPreset : setViewCard
+    return (
+      <select
+        className="scope-select"
+        value={val ?? ''}
+        title={t('scope.viewBound', { scope: t('scope.' + scope) })}
+        disabled={opts.length === 0}
+        onChange={(e) => setVal(e.target.value || null)}
+      >
+        {opts.length === 0 && <option value="">{t('scope.noneToView')}</option>}
+        {opts.map((o) => (
+          <option key={o.id} value={o.id}>
+            {o.name}
+          </option>
+        ))}
+      </select>
+    )
+  }
 
   const addScript = async (scope: ArtifactScope): Promise<void> => {
-    const file = await add(profileId, { name: 'new-script', code: '' }, scope, ownerFor(scope))
+    const file = await add(profileId, { name: 'new-script', code: '' }, scope, bindOwnerFor(scope))
     // Re-read so the editor opens on the freshly-created script.
     const created = useScriptsStore.getState().scripts.find((s) => s.file === file)
     if (created) setEditing(created)
@@ -80,7 +132,7 @@ export const ScriptsPanel: React.FC<Props> = ({
   // else Global. The user can rescope afterward.
   const importScripts = async (): Promise<void> => {
     const scope: ArtifactScope = activeCardId ? 'world' : 'global'
-    const n = await useScriptsStore.getState().importFiles(profileId, scope, ownerFor(scope))
+    const n = await useScriptsStore.getState().importFiles(profileId, scope, activeOwnerFor(scope))
     if (n)
       useToastStore.getState().push(
         t(n === 1 ? 'scripts.importedOne' : 'scripts.importedMany', {
@@ -91,13 +143,14 @@ export const ScriptsPanel: React.FC<Props> = ({
   }
 
   const changeScope = (s: ScriptInfo, scope: ArtifactScope): void => {
-    setScope(profileId, s.file, scope, ownerFor(scope))
+    setScope(profileId, s.file, scope, bindOwnerFor(scope))
   }
 
   const renderRow = (s: ScriptInfo): React.ReactNode => {
-    const ownedElsewhere =
-      (s.scope === 'world' && s.owner !== activeCardId) ||
-      (s.scope === 'session' && s.owner !== activeChatId)
+    // A scoped script only RUNS when its owner is the active one; otherwise it's inactive
+    // (bound to a preset/world/chat that isn't loaded). Global always runs (unless disabled).
+    const scoped = s.scope !== 'global'
+    const inactiveOwner = scoped && s.owner !== activeOwnerFor(s.scope)
     return (
       <div key={s.file} className={`prompt-row ${s.disabled ? 'disabled' : ''}`}>
         <div className="prompt-row-head">
@@ -122,11 +175,21 @@ export const ScriptsPanel: React.FC<Props> = ({
               ⬇ {s.remoteHosts.length}
             </span>
           )}
-          {ownedElsewhere && (
-            <span className="entry-keys-preview" title={t('regex.boundElsewhere')}>
-              {t('regex.otherScope', { scope: t('scope.' + s.scope) })}
-            </span>
-          )}
+          {scoped &&
+            (inactiveOwner ? (
+              <span
+                className="entry-keys-preview"
+                title={t('scope.inactiveHint', { scope: t('scope.' + s.scope) })}
+              >
+                {t('scope.inactiveBadge')}
+              </span>
+            ) : (
+              !s.disabled && (
+                <span className="role-badge" title={t('scope.activeHint')}>
+                  {t('scope.activeNow')}
+                </span>
+              )
+            ))}
           <div className="prompt-actions">
             <select
               className="scope-select"
@@ -135,7 +198,10 @@ export const ScriptsPanel: React.FC<Props> = ({
               onChange={(e) => changeScope(s, e.target.value as ArtifactScope)}
             >
               <option value="global">{t('scope.global')}</option>
-              <option value="world" disabled={!activeCardId}>
+              <option value="preset" disabled={!viewPresetId}>
+                {t('scope.preset')}
+              </option>
+              <option value="world" disabled={!viewCardId}>
                 {t('scope.world')}
               </option>
               <option value="session" disabled={!activeChatId}>
@@ -192,8 +258,16 @@ export const ScriptsPanel: React.FC<Props> = ({
         </div>
 
         {SCOPES.map(({ key, titleKey, hintKey }) => {
-          const inScope = scripts.filter((s) => s.scope === key)
-          const cardOnesHere = key === 'world' ? cardScripts : []
+          // Preset/World sections show only the owner picked in their dropdown (default: the
+          // active one); Global/Session show all. Embedded card scripts only show for the
+          // active card (the "Card scripts" editor targets it).
+          const inScope = scripts.filter((s) => {
+            if (s.scope !== key) return false
+            if (key === 'preset') return s.owner === viewPresetId
+            if (key === 'world') return s.owner === viewCardId
+            return true
+          })
+          const cardOnesHere = key === 'world' && viewCardId === activeCardId ? cardScripts : []
           return (
             <ScopeSection
               key={key}
@@ -203,22 +277,29 @@ export const ScriptsPanel: React.FC<Props> = ({
               defaultOpen={key !== 'session'}
               action={(() => {
                 const blocked =
-                  (key === 'world' && !activeCardId) || (key === 'session' && !activeChatId)
+                  (key === 'world' && !viewCardId) ||
+                  (key === 'session' && !activeChatId) ||
+                  (key === 'preset' && !viewPresetId)
                 return (
-                  <button
-                    className="link-btn"
-                    disabled={blocked}
-                    title={
-                      blocked
-                        ? key === 'world'
-                          ? t('scripts.selectWorldFirst')
-                          : t('scripts.openSessionFirst')
-                        : t('scripts.addScopedScript', { scope: t(titleKey) })
-                    }
-                    onClick={() => addScript(key)}
-                  >
-                    {t('scripts.addBtn')}
-                  </button>
+                  <span style={{ display: 'inline-flex', gap: 6, alignItems: 'center' }}>
+                    {(key === 'preset' || key === 'world') && ownerDropdown(key)}
+                    <button
+                      className="link-btn"
+                      disabled={blocked}
+                      title={
+                        blocked
+                          ? key === 'world'
+                            ? t('scripts.selectWorldFirst')
+                            : key === 'preset'
+                              ? t('scripts.selectPresetFirst')
+                              : t('scripts.openSessionFirst')
+                          : t('scripts.addScopedScript', { scope: t(titleKey) })
+                      }
+                      onClick={() => addScript(key)}
+                    >
+                      {t('scripts.addBtn')}
+                    </button>
+                  </span>
                 )
               })()}
             >

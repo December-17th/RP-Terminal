@@ -4,16 +4,18 @@
  *
  * A scoped artifact (regex script, card script, …) is active for a turn when its scope
  * matches the active context: global (always) ⊕ world(owner === active card) ⊕
- * session(owner === active chat). See docs/world-card-design.md §6.
+ * session(owner === active chat) ⊕ preset(owner === active preset). See
+ * docs/world-card-design.md §6.
  */
 
 import type { CardRenderMode } from './cardRenderMode'
 
-export type ArtifactScope = 'global' | 'world' | 'session'
+export type ArtifactScope = 'global' | 'world' | 'session' | 'preset'
 
 export interface ScopeContext {
   cardId?: string | null
   chatId?: string | null
+  presetId?: string | null
 }
 
 export interface ScopeMeta {
@@ -30,5 +32,6 @@ export const isScopeActive = (meta: ScopeMeta | undefined, ctx: ScopeContext): b
   const scope = meta?.scope ?? 'global'
   if (scope === 'world') return !!ctx.cardId && meta?.owner === ctx.cardId
   if (scope === 'session') return !!ctx.chatId && meta?.owner === ctx.chatId
+  if (scope === 'preset') return !!ctx.presetId && meta?.owner === ctx.presetId
   return true // global (and any unknown) is always active
 }

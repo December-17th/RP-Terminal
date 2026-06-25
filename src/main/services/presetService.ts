@@ -11,10 +11,41 @@ import {
 import { log } from './logService'
 import { Preset, PresetSchema, getDefaultPreset } from '../types/preset'
 import { parseStPreset } from '../parsers/stPresetParser'
+import * as regexService from './regexService'
+import * as scriptService from './scriptService'
 
 export interface PresetSummary {
   id: string
   name: string
+}
+
+/** What `importPresetFromFile` installed: the preset plus any artifacts it bundled. */
+export interface PresetImportResult {
+  name: string
+  regexScripts: number
+  scripts: number
+}
+
+/**
+ * ST chat-completion presets can bundle regex + Tavern Helper scripts under
+ * `extensions` (`regex_scripts[]`, `tavern_helper.scripts[]`). These collectors pull
+ * those out so the importer can route them into the regex/script stores, scoped to the
+ * imported preset. Pure; tolerant of the non-standard exports we've seen in the wild
+ * (top-level array wrapping a single preset object).
+ */
+const presetRoot = (raw: any): any =>
+  Array.isArray(raw) ? (raw.find((x) => x && typeof x === 'object') ?? {}) : (raw ?? {})
+
+export const collectPresetRegex = (raw: any): any[] => {
+  const ext = presetRoot(raw)?.extensions
+  const arr = ext?.regex_scripts
+  return Array.isArray(arr) ? arr.filter((r) => r && typeof r === 'object') : []
+}
+
+export const collectPresetScripts = (raw: any): any[] => {
+  const ext = presetRoot(raw)?.extensions
+  const arr = ext?.tavern_helper?.scripts
+  return Array.isArray(arr) ? arr.filter((s) => s && typeof s === 'object') : []
 }
 
 const presetsDir = (profileId: string): string =>
@@ -113,6 +144,10 @@ export const savePreset = (profileId: string, presetId: string, preset: Preset):
 export const deletePreset = (profileId: string, presetId: string): void => {
   const p = presetPath(profileId, presetId)
   if (fs.existsSync(p)) fs.unlinkSync(p)
+  // Remove any regex/scripts the preset bundled (scope=preset, owner=presetId) so a
+  // deleted preset doesn't leave orphaned artifacts firing for a preset that's gone.
+  regexService.deleteScriptsByOwner(profileId, 'preset', presetId)
+  scriptService.deleteScriptsByOwner(profileId, 'preset', presetId)
   const next = getActivePresetId(profileId)
   writeJsonSyncAtomic(activePath(profileId), { id: next ?? null })
 }
@@ -146,15 +181,43 @@ export const installBundledPreset = (profileId: string, raw: any): string | null
   }
 }
 
-/** Import a SillyTavern preset file as a NEW active preset. Returns its name. */
-export const importPresetFromFile = (profileId: string, filePath: string): string | null => {
+/**
+ * Import a SillyTavern preset file as a NEW active preset, AND extract any regex /
+ * Tavern Helper scripts it bundles under `extensions` into the regex/script stores,
+ * scoped to this preset (so they only fire while it's the active preset — mirroring how
+ * ST applies preset-bound regex). Returns the preset name + how many artifacts came with it.
+ */
+export const importPresetFromFile = (
+  profileId: string,
+  filePath: string
+): PresetImportResult | null => {
   try {
     const raw = JSON.parse(fs.readFileSync(filePath, 'utf-8'))
     const normalized = parseStPreset(raw, path.basename(filePath, '.json'))
     if (!normalized) return null
     const preset = PresetSchema.parse(normalized)
-    createPresetFromData(profileId, preset.name, preset, true)
-    return preset.name
+    const presetId = createPresetFromData(profileId, preset.name, preset, true)
+
+    // Route bundled regex (each ST rule → its own script file) scoped to the preset.
+    let regexScripts = 0
+    for (const rule of collectPresetRegex(raw)) {
+      if (regexService.saveRegexScript(profileId, rule, 'preset', presetId)) regexScripts++
+    }
+
+    // Route bundled Tavern Helper scripts (declarative buttons baked in) scoped to the preset.
+    let scripts = 0
+    for (const s of scriptService.normalizeImportedScripts(collectPresetScripts(raw))) {
+      const file = scriptService.saveScript(
+        profileId,
+        { name: s.name, code: s.code },
+        'preset',
+        presetId
+      )
+      if (!s.enabled) scriptService.setScriptDisabled(profileId, file, true)
+      scripts++
+    }
+
+    return { name: preset.name, regexScripts, scripts }
   } catch (error) {
     log('error', 'Failed to import preset:', error)
     return null

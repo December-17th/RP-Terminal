@@ -170,6 +170,25 @@ export const deleteScript = (profileId: string, file: string): void => {
   removeScopeEntry(scriptsDir(profileId), file)
 }
 
+/**
+ * Delete every script bound to a given scope+owner (e.g. all `preset`-scoped scripts a
+ * preset bundled), so deleting that owner doesn't leave orphans. Returns the count removed.
+ */
+export const deleteScriptsByOwner = (
+  profileId: string,
+  scope: ArtifactScope,
+  owner: string
+): number => {
+  let removed = 0
+  for (const s of listScripts(profileId)) {
+    if (s.scope === scope && s.owner === owner) {
+      deleteScript(profileId, s.file)
+      removed++
+    }
+  }
+  return removed
+}
+
 /** Enabled scripts whose scope is active for this card/chat context, in name order. */
 export const getActiveScripts = (profileId: string, ctx: ScopeContext): StoredScript[] => {
   return listScripts(profileId)

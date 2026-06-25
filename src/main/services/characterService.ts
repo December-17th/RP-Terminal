@@ -12,6 +12,7 @@ import {
   getCharacterLorebook
 } from './lorebookService'
 import * as regexService from './regexService'
+import * as scriptService from './scriptService'
 import { installBundledPreset } from './presetService'
 import { parseStPng } from '../parsers/stPngParser'
 
@@ -78,6 +79,11 @@ export const deleteCharacter = (profileId: string, characterId: string): void =>
     profileId
   )
   deleteCharacterLorebook(profileId, characterId)
+  // Remove the world-scoped regex/scripts this card brought in on import (scope='world',
+  // owner=characterId) so a deleted World Card doesn't leave orphans in the managers —
+  // mirrors deletePreset's cleanup of its preset-scoped artifacts.
+  regexService.deleteScriptsByOwner(profileId, 'world', characterId)
+  scriptService.deleteScriptsByOwner(profileId, 'world', characterId)
   const avatar = getAvatarPath(characterId)
   if (fs.existsSync(avatar)) fs.unlinkSync(avatar)
 }
