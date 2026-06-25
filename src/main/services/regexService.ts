@@ -10,6 +10,11 @@ import {
 } from './storageService'
 import { log } from './logService'
 import { applyRegexRules, RegexApplyContext } from '../../shared/regexTransform'
+import {
+  storeRuleToTavernRegex,
+  tavernRegexToStoreObject,
+  type TavernRegex
+} from '../../shared/thRuntime/tavernRegex'
 import { ArtifactScope, ScopeContext, ScopeMeta, isScopeActive } from '../../shared/artifactScope'
 import {
   RenderRegexRule,
@@ -138,15 +143,29 @@ export const getAllRules = (profileId: string, ctx?: ScopeContext): RenderRegexR
   return out
 }
 
-/** Rules that transform the AI response for *display* (placement 2, not prompt-only). */
+/** Rules that transform the AI response for *display* (placement 2, not prompt-only). A rule the user
+ *  PROMOTED to a panel (renderMode 'panel') still runs inline but STRIPS its match (replace → '') — the UI
+ *  moves to a docked panel, so the message shouldn't show its marker or the inline frame. */
 export const getRenderRules = (profileId: string, ctx?: ScopeContext): RenderRegexRule[] =>
+  getAllRules(profileId, ctx)
+    .filter((r) => !r.disabled && !r.promptOnly && (r.placement.length === 0 || r.placement.includes(2)))
+    .map((r) => (r.renderMode === 'panel' ? { ...r, replace: '' } : r))
+
+/** Rules that transform text on its way *into the prompt* (everything not display-only or panel-promoted). */
+export const getPromptRules = (profileId: string, ctx?: ScopeContext): RenderRegexRule[] =>
   getAllRules(profileId, ctx).filter(
-    (r) => !r.disabled && !r.promptOnly && (r.placement.length === 0 || r.placement.includes(2))
+    (r) => !r.disabled && !r.markdownOnly && r.renderMode !== 'panel'
   )
 
-/** Rules that transform text on its way *into the prompt* (everything not display-only). */
-export const getPromptRules = (profileId: string, ctx?: ScopeContext): RenderRegexRule[] =>
-  getAllRules(profileId, ctx).filter((r) => !r.disabled && !r.markdownOnly)
+// A "frontend card" loader regex injects a page via `$('body').load('https://…')`. Pull that URL out so a
+// promoted regex can be hosted as a WCV panel. Only the `.load('https://…')` form (the status/home/start
+// pattern) — NOT bare CDN `import`s in beautification regexes (those are libs, not the page). Pure.
+const LOADER_URL_RE = /\.load\(\s*['"](https?:\/\/[^'"]+)['"]/i
+export const extractCardUiUrl = (replace: string): string | null => {
+  if (typeof replace !== 'string') return null
+  const m = LOADER_URL_RE.exec(replace)
+  return m ? m[1] : null
+}
 
 /**
  * Raw ST regex-script objects belonging to one world (scope=world, owner=cardId), in
@@ -190,6 +209,10 @@ export const listScripts = (profileId: string): RegexScriptInfo[] => {
     .map((file) => {
       const rules = rulesInFile(path.join(dir, file))
       const m = meta[file]
+      // A loader rule's page URL marks the script as promotable to a docked WCV panel.
+      const uiUrl =
+        rules.map((r) => extractCardUiUrl(r.replaceString ?? r.replace ?? '')).find(Boolean) ??
+        undefined
       return {
         file,
         scriptName: rules[0]?.scriptName || rules[0]?.name || file.replace(/\.json$/, ''),
@@ -197,9 +220,26 @@ export const listScripts = (profileId: string): RegexScriptInfo[] => {
         scope: m?.scope ?? 'global',
         owner: m?.owner,
         disabled: m?.disabled === true,
+        uiUrl,
         renderMode: m?.renderMode
       }
     })
+}
+
+/** Active 'panel'-promoted regex UIs for a context — `{ file, scriptName, url }` — so the renderer can
+ *  offer them as selectable WCV panel views. Only those with an extractable loader URL are promotable. */
+export const listPanelRegexes = (
+  profileId: string,
+  ctx?: ScopeContext
+): Array<{ file: string; scriptName: string; url: string }> => {
+  const out: Array<{ file: string; scriptName: string; url: string }> = []
+  for (const s of listScripts(profileId)) {
+    // `uiUrl` is already computed by listScripts (no second read of the rule file).
+    if (s.renderMode !== 'panel' || s.disabled || !s.uiUrl) continue
+    if (ctx && !isScopeActive({ scope: s.scope, owner: s.owner }, ctx)) continue
+    out.push({ file: s.file, scriptName: s.scriptName, url: s.uiUrl })
+  }
+  return out
 }
 
 /** Copy an imported ST regex file into the profile's regex dir. Returns its name. */
@@ -263,6 +303,53 @@ export const deleteScriptsByOwner = (
     }
   }
   return removed
+}
+
+// --- TavernHelper regex bridge (getTavernRegexes / replaceTavernRegexes for card scripts) ---
+//
+// JSR's `getTavernRegexes({type})` / `replaceTavernRegexes(regexes, {type})` operate on a SCOPE:
+// `character` ⇒ this card's world-scoped regexes (owner = cardId), `global` ⇒ global, `preset` ⇒ the
+// active preset's. We map that onto the file+scope store, converting rule shapes via shared/thRuntime.
+
+/** Every rule in the given scope (+owner for non-global), as TavernHelper `TavernRegex` objects. */
+export const getTavernRegexesByScope = (
+  profileId: string,
+  scope: ArtifactScope,
+  owner?: string
+): TavernRegex[] => {
+  const out: TavernRegex[] = []
+  for (const s of listScripts(profileId)) {
+    if ((s.scope ?? 'global') !== scope) continue
+    if (scope !== 'global' && owner && s.owner !== owner) continue
+    for (const r of getScriptRules(profileId, s.file)) out.push(storeRuleToTavernRegex(r))
+  }
+  return out
+}
+
+/**
+ * Completely replace the regexes in a scope with `tavernRegexes` (TH `replaceTavernRegexes`): drop the
+ * existing files for that scope (+owner), then persist the new set as one script file. Faithful to TH's
+ * "replace everything"; for `character` scope this only touches the card's own bucket (owner = cardId).
+ */
+export const replaceTavernRegexes = (
+  profileId: string,
+  scope: ArtifactScope,
+  owner: string | undefined,
+  tavernRegexes: unknown[]
+): void => {
+  // Drop the prior set for this scope (matching the owner when one resolved; if no owner resolved — e.g.
+  // 'preset' with no active preset — clear the whole scope so 'replace' never silently becomes 'append').
+  for (const s of listScripts(profileId)) {
+    if ((s.scope ?? 'global') !== scope) continue
+    if (scope !== 'global' && owner != null && s.owner !== owner) continue
+    deleteScript(profileId, s.file)
+  }
+  // Persist each regex as its OWN file (one rule per file) so every regex — incl. one a card/workshop
+  // just downloaded — shows as a separate, named, individually-manageable script, matching ST's flat
+  // per-regex model. (Saving them all in one file would bury new regexes inside a multi-rule script.)
+  for (const tr of Array.isArray(tavernRegexes) ? tavernRegexes : []) {
+    saveRegexScript(profileId, [tavernRegexToStoreObject(tr)], scope, owner)
+  }
 }
 
 /** Guard against path traversal — only operate on a plain filename in the regex dir. */

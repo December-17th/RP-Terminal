@@ -43,6 +43,20 @@ export function createWcvHost(deps: Deps): Host {
       return { primary: r?.primary ?? null, additional: r?.additional || [] }
     },
     regexes: () => ipcRenderer.sendSync('wcv-host-get-regexes'),
+    regexesFull: (option) => {
+      try {
+        return ipcRenderer.sendSync('wcv-host-get-regexes-full', option) || []
+      } catch {
+        return []
+      }
+    },
+    isCharacterRegexesEnabled: () => {
+      try {
+        return ipcRenderer.sendSync('wcv-host-is-char-regex-enabled') !== false
+      } catch {
+        return true
+      }
+    },
     formatRegex: (t) => ipcRenderer.sendSync('wcv-host-format-regex', t),
     personaName: () => {
       try {
@@ -51,8 +65,26 @@ export function createWcvHost(deps: Deps): Host {
         return 'User'
       }
     },
+    currentChatId: () => {
+      try {
+        return ipcRenderer.sendSync('wcv-host-get-chat-id-sync') || ''
+      } catch {
+        return ''
+      }
+    },
+    getScriptVars: () => {
+      try {
+        return ipcRenderer.sendSync('wcv-host-script-vars-get-sync') || {}
+      } catch {
+        return {}
+      }
+    },
 
     applyVariableOps: (ops: VarOp[]) => ipcRenderer.invoke('wcv-host-apply-vars', ops),
+    replaceRegexes: (regexes, option) =>
+      ipcRenderer.invoke('wcv-host-replace-regexes', regexes, option),
+    setScriptVars: (vars) => ipcRenderer.invoke('wcv-host-script-vars-set', vars),
+    setButtons: (buttons) => ipcRenderer.send('wcv-register-button', buttons),
     setVariables: (sd: any) => ipcRenderer.invoke('wcv-host-set-vars', sd),
     generate: (input: string) => ipcRenderer.invoke('wcv-host-generate', input),
     generateRaw: (cfg) => ipcRenderer.invoke('wcv-host-generate-raw', cfg),

@@ -212,15 +212,18 @@ export interface ImportedScript {
 }
 
 /** Append auto-`registerButton` calls for a TH script's declarative `button.buttons[]`
- * so they appear in the ☰ Actions menu; clicking one emits the button name as a local
- * event (`eventEmit`) the script's content can listen for via `eventOn`. */
+ * so they appear in the ☰ Actions menu. Clicking one emits `getButtonEvent(name)` — the same
+ * event a TH script subscribes to via `eventOn(getButtonEvent(name), …)` to react (e.g. open a
+ * UI); it falls back to the raw name if `getButtonEvent` isn't present. */
 const withButtons = (code: string, buttons: string[]): string => {
   if (buttons.length === 0) return code
   return (
     code +
     `\n;(function(){var __b=${JSON.stringify(buttons)};` +
     `if(typeof rpt!=='undefined'&&rpt.ui&&rpt.ui.registerButton){__b.forEach(function(n){` +
-    `rpt.ui.registerButton({id:n,label:n},function(){try{if(typeof eventEmit==='function')eventEmit(n);}catch(e){}});});}})();\n`
+    `rpt.ui.registerButton({id:n,label:n},function(){try{` +
+    `var __ev=(typeof getButtonEvent==='function')?getButtonEvent(n):n;` +
+    `if(typeof eventEmit==='function')eventEmit(__ev);}catch(e){}});});}})();\n`
   )
 }
 

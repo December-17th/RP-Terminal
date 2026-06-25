@@ -14,13 +14,33 @@ function mockHost(over: Partial<Host> = {}): { host: Host; calls: any } {
     deleteWorldbook: [],
     saveWorldbookById: [],
     bindWorldbook: [],
-    setGlobalVar: []
+    setGlobalVar: [],
+    replaceRegexes: [],
+    setScriptVars: [],
+    setButtons: []
   }
+  let hostCb: ((name: string, payload?: any) => void) | null = null
   const wbLib = [
     { id: 'wb1', name: 'Lore A' },
     { id: 'own', name: 'Ellia' }
   ]
   const globals: Record<string, any> = { coins: 7 }
+  let scriptVars: Record<string, any> = { existing: 1 }
+  let regexFull: any[] = [
+    {
+      id: 'rx1',
+      script_name: 'R',
+      enabled: true,
+      find_regex: '/a/g',
+      replace_string: 'b',
+      trim_strings: [],
+      source: { user_input: false, ai_output: true, slash_command: false, world_info: false },
+      destination: { display: true, prompt: false },
+      run_on_edit: false,
+      min_depth: null,
+      max_depth: null
+    }
+  ]
   let varsCb: ((sd: any) => void) | null = null
   const host: Host = {
     ctx: { profileId: 'p', chatId: 'c', characterId: 'ch' },
@@ -32,8 +52,12 @@ function mockHost(over: Partial<Host> = {}): { host: Host; calls: any } {
     presetNames: () => ['P'],
     worldbookNames: () => ({ primary: 'Ellia', additional: [] }),
     regexes: () => [{ find: 'a', replace: 'b' }],
+    regexesFull: () => regexFull,
+    isCharacterRegexesEnabled: () => true,
     formatRegex: (t) => t.toUpperCase(),
     personaName: () => 'Player',
+    currentChatId: () => 'c',
+    getScriptVars: () => scriptVars,
     applyVariableOps: async (ops) => {
       calls.applyVariableOps.push(ops)
     },
@@ -80,19 +104,40 @@ function mockHost(over: Partial<Host> = {}): { host: Host; calls: any } {
       globals[key] = value
       calls.setGlobalVar.push([key, value])
     },
+    replaceRegexes: async (regexes: any[], option?: any) => {
+      regexFull = regexes
+      calls.replaceRegexes.push([regexes, option])
+    },
+    setScriptVars: async (v: Record<string, any>) => {
+      scriptVars = v
+      calls.setScriptVars.push(v)
+    },
+    setButtons: (b: any) => {
+      calls.setButtons.push(b)
+    },
     onVarsChanged: (cb) => {
       varsCb = cb
       return () => {
         varsCb = null
       }
     },
-    onHostEvent: () => () => {},
+    onHostEvent: (cb) => {
+      hostCb = cb
+      return () => {
+        hostCb = null
+      }
+    },
     evalTemplate: (t) => 'ejs:' + t,
     evalTemplateError: () => null,
     prepareContext: (d) => ({ vars: d || {}, enabled: true }),
     ...over
   }
-  return { host, calls, fireVars: (sd: any) => varsCb && varsCb(sd) } as any
+  return {
+    host,
+    calls,
+    fireVars: (sd: any) => varsCb && varsCb(sd),
+    fireHostEvent: (n: string, p?: any) => hostCb && hostCb(n, p)
+  } as any
 }
 
 describe('createThRuntime', () => {
@@ -183,10 +228,34 @@ describe('createThRuntime', () => {
     expect(m.calls.deleteWorldbook).toEqual(['wb1'])
     await g.bindLorebook('Ellia', true)
     expect(m.calls.bindWorldbook).toEqual([['own', true]])
-    await g.replaceWorldbook('Lore A', [{ keys: ['x'] }])
-    expect(m.calls.saveWorldbookById).toEqual([['wb1', [{ keys: ['x'] }]]])
+    // replaceWorldbook maps the card's TavernHelper entry shape → native before persisting (resolves name→id)
+    await g.replaceWorldbook('Lore A', [{ name: 'E', strategy: { type: 'constant', keys: ['x'] } }])
+    expect(m.calls.saveWorldbookById[0][0]).toBe('wb1')
+    expect(m.calls.saveWorldbookById[0][1][0]).toMatchObject({
+      keys: ['x'],
+      constant: true,
+      comment: 'E'
+    })
     // unknown name no-ops
     expect(await g.deleteWorldbook('Nope')).toBe(false)
+  })
+
+  it('createWorldbookEntries appends (keys/constant mapped); deleteWorldbookEntries removes by predicate', async () => {
+    const m: any = mockHost()
+    const g = createThRuntime(m.host)
+    const created = await g.createWorldbookEntries('Lore A', [
+      { name: 'New', strategy: { type: 'constant', keys: ['x'] } }
+    ])
+    expect(created.new_entries).toHaveLength(1)
+    const afterCreate = m.calls.saveWorldbookById.at(-1)
+    expect(afterCreate[0]).toBe('wb1')
+    expect(
+      afterCreate[1].some((e: any) => e.keys?.includes('x') && e.constant === true)
+    ).toBe(true)
+    // the mock book has one entry (mapped name 'Entry 1') — delete it via predicate
+    const del = await g.deleteWorldbookEntries('Lore A', (e: any) => e.name === 'Entry 1')
+    expect(del.deleted_entries).toHaveLength(1)
+    expect(m.calls.saveWorldbookById.at(-1)[1]).toEqual([]) // nothing kept
   })
 
   it('triggerSlash runs the STScript subset over the Host (chat vars, macros, pipes)', async () => {
@@ -212,6 +281,76 @@ describe('createThRuntime', () => {
     expect(await g.triggerSlash('/getglobalvar key=coins')).toBe('7')
     await g.triggerSlash('/setglobalvar key=coins 12')
     expect(m.calls.setGlobalVar).toContainEqual(['coins', 12])
+  })
+
+  it('script-scope vars use the KV store, not stat_data', async () => {
+    const m: any = mockHost()
+    const g = createThRuntime(m.host)
+    // read: type:'script' returns the KV; no arg returns the message vars
+    expect(g.getVariables({ type: 'script' })).toEqual({ existing: 1 })
+    expect(g.getVariables()).toEqual({ stat_data: { hp: 1 } })
+    // write: updateVariablesWith({type:'script'}) persists via setScriptVars and does NOT touch stat_data
+    const next = await g.updateVariablesWith(
+      (t: any) => {
+        t.cache = { a: 1 }
+        return t
+      },
+      { type: 'script' }
+    )
+    expect(next).toEqual({ existing: 1, cache: { a: 1 } })
+    expect(m.calls.setScriptVars[0]).toEqual({ existing: 1, cache: { a: 1 } })
+    expect(m.calls.applyVariableOps).toEqual([]) // stat_data untouched
+    expect(g.getVariables({ type: 'script' })).toEqual({ existing: 1, cache: { a: 1 } })
+  })
+
+  it('regex: getTavernRegexes reads the host; update/replace write through host.replaceRegexes', async () => {
+    const m: any = mockHost()
+    const g = createThRuntime(m.host)
+    expect(g.getTavernRegexes({ type: 'character' })[0].script_name).toBe('R')
+    expect(g.isCharacterTavernRegexesEnabled()).toBe(true)
+    // updateTavernRegexesWith: the updater's returned list is written for that option
+    const added = { id: 'rx2', script_name: 'New', find_regex: '/x/g', replace_string: 'y' }
+    const out = await g.updateTavernRegexesWith(
+      (list: any[]) => [...list, added],
+      { type: 'character' }
+    )
+    expect(out).toHaveLength(2)
+    expect(m.calls.replaceRegexes[0][0]).toHaveLength(2)
+    expect(m.calls.replaceRegexes[0][1]).toEqual({ type: 'character' })
+    // replaceTavernRegexes writes directly
+    await g.replaceTavernRegexes([added], { type: 'global' })
+    expect(m.calls.replaceRegexes[1]).toEqual([[added], { type: 'global' }])
+  })
+
+  it('exposes getScriptId (stable), getCurrentCharacterName, SillyTavern.getCurrentChatId', () => {
+    const { host } = mockHost()
+    const g = createThRuntime(host)
+    expect(g.getCurrentCharacterName()).toBe('Ellia')
+    expect(g.SillyTavern.getCurrentChatId()).toBe('c')
+    const id = g.getScriptId()
+    expect(typeof id).toBe('string')
+    expect(g.getScriptId()).toBe(id) // stable across calls
+  })
+
+  it('script buttons: replaceScriptButtons pushes visible buttons; a click event fires eventOn', () => {
+    const m: any = mockHost()
+    const g = createThRuntime(m.host)
+    // getButtonEvent is identity (button name == event name)
+    expect(g.getButtonEvent('命定创意工坊')).toBe('命定创意工坊')
+    // replaceScriptButtons stores all, but only the VISIBLE ones are pushed to the host (the toolbar)
+    g.replaceScriptButtons([
+      { name: '命定创意工坊', visible: true },
+      { name: 'hidden', visible: false }
+    ])
+    expect(g.getScriptButtons()).toHaveLength(2)
+    expect(m.calls.setButtons.at(-1)).toEqual([{ name: '命定创意工坊', visible: true }])
+    // a toolbar click arrives as a host event named after the button → the script's eventOn fires
+    let clicked = 0
+    g.eventOn(g.getButtonEvent('命定创意工坊'), () => {
+      clicked++
+    })
+    m.fireHostEvent('命定创意工坊')
+    expect(clicked).toBe(1)
   })
 
   it('errorCatched swallows throws and rejections', async () => {

@@ -11,6 +11,7 @@ import {
 import type { CardRenderMode } from '../../../shared/cardRenderMode'
 import { usePresetStore } from '../stores/presetStore'
 import { useCharacterStore } from '../stores/characterStore'
+import { usePanelRegexStore } from '../stores/panelRegexStore'
 import { useT } from '../i18n'
 
 interface Props {
@@ -130,8 +131,10 @@ export const RegexPanel: React.FC<Props> = ({ profileId, activeCardId, activeCha
     setScope(profileId, file, scope, bindOwnerFor(scope) ?? undefined)
   }
 
-  const changeRenderMode = (file: string, v: string): void => {
-    setRenderMode(profileId, file, v === '' ? null : (v as CardRenderMode))
+  const changeRenderMode = async (file: string, v: string): Promise<void> => {
+    await setRenderMode(profileId, file, v === '' ? null : (v as CardRenderMode))
+    // Promoting/unpromoting a UI regex changes which docked panels are available — refresh the list.
+    await usePanelRegexStore.getState().load(profileId, { cardId: activeCardId, chatId: activeChatId })
   }
 
   const renderScript = (s: RegexScriptInfo): React.ReactNode => {
@@ -184,6 +187,8 @@ export const RegexPanel: React.FC<Props> = ({ profileId, activeCardId, activeCha
             <option value="">{t('regex.renderDefault')}</option>
             <option value="inline">{t('regex.renderInline')}</option>
             <option value="isolated">{t('regex.renderIsolated')}</option>
+            {/* Only a loader regex (it injects a page URL) can become a docked panel. */}
+            {s.uiUrl && <option value="panel">{t('regex.renderPanel')}</option>}
           </select>
           {scoped &&
             (inactiveOwner ? (

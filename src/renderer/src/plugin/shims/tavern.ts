@@ -158,6 +158,19 @@ export const TAVERN_SHIM = `
     eventEmit: function (name, payload) { rpt.emit(name, payload); return Promise.resolve(); },
     eventRemoveListener: function (name, cb) { rpt.off(name, cb); return Promise.resolve(); },
     eventClearEvent: function (name) { rpt.off(name); return Promise.resolve(); },
+    // The event a declarative button's click fires. TH scripts subscribe via
+    // eventOn(getButtonEvent(name), …); our auto-registered button handler emits the same name.
+    // Identity (the raw button name) keeps it consistent with both new scripts (which emit
+    // getButtonEvent(name)) and older ones already baked to emit the raw name.
+    getButtonEvent: function (name) { return String(name == null ? '' : name); },
+    // A stable id for the running script (TH scripts tag DOM/iframes with it and scope their
+    // own variables by it). Our scripts share one frame, so it's a per-frame constant — enough
+    // for a card's main UI script; cross-script isolation by id isn't modeled.
+    getScriptId: function () { return window.__rptScriptId || (window.__rptScriptId = 'rpt_script_' + Math.random().toString(36).slice(2, 10)); },
+    // Our action buttons come from the static button.buttons metadata (baked in by
+    // scriptService.withButtons), so dynamic replacement is a resolved no-op — enough for
+    // scripts that call it before wiring eventOn(getButtonEvent(...)).
+    replaceScriptButtons: function () { return Promise.resolve(); },
     registerSlashCommand: function (name, cb) { return rpt.slash.registerCommand(name, cb); },
     toastr: {
       info: function (m) { return rpt.ui.toast(String(m)); },
@@ -212,6 +225,9 @@ export const TAVERN_SHIM = `
   window.eventEmit = TH.eventEmit;
   window.eventRemoveListener = TH.eventRemoveListener;
   window.eventClearEvent = TH.eventClearEvent;
+  window.getButtonEvent = TH.getButtonEvent;
+  window.getScriptId = TH.getScriptId;
+  window.replaceScriptButtons = TH.replaceScriptButtons;
   if (!window.toastr) window.toastr = TH.toastr;
   // jQuery ($) is provided by the separate JQUERY_SHIM (a real DOM-backed mini-jQuery).
 })();

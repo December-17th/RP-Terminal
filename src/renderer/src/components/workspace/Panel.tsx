@@ -1,7 +1,9 @@
 import React from 'react'
 import type { PanelNode } from '../../../../shared/workspaceLayout'
 import { useWorkspaceStore } from '../../stores/workspaceStore'
+import { usePanelRegexStore, VIEW_PREFIX } from '../../stores/panelRegexStore'
 import { ViewRegistry, VIEW_OPTIONS } from './viewRegistry'
+import { WcvPanel } from './WcvPanel'
 import { useT } from '../../i18n'
 
 /** Maps the built-in view ids to i18n keys; unknown/spike views fall back to their English title. */
@@ -24,8 +26,19 @@ export const Panel: React.FC<{ node: PanelNode; mode: string }> = ({ node, mode 
   const setView = useWorkspaceStore((s) => s.setView)
   const toggleHidden = useWorkspaceStore((s) => s.toggleHidden)
   const resetMode = useWorkspaceStore((s) => s.resetMode)
+  const panelRegexes = usePanelRegexStore((s) => s.panels)
   const entry = ViewRegistry[node.view]
   const t = useT()
+
+  // Card UIs the user promoted to panels (renderMode:'panel') extend the built-in views; a panel hosting one
+  // loads its page URL in a WebContentsView.
+  const regexPanel =
+    node.view.startsWith(VIEW_PREFIX) &&
+    panelRegexes.find((p) => `${VIEW_PREFIX}${p.file}` === node.view)
+  const viewOptions = [
+    ...VIEW_OPTIONS,
+    ...panelRegexes.map((p) => ({ id: `${VIEW_PREFIX}${p.file}`, title: p.scriptName }))
+  ]
 
   return (
     <div className="ws-panel">
@@ -36,7 +49,7 @@ export const Panel: React.FC<{ node: PanelNode; mode: string }> = ({ node, mode 
           title={t('panel.chooseView')}
           onChange={(e) => setView(mode, node.key, e.target.value)}
         >
-          {VIEW_OPTIONS.map((o) => (
+          {viewOptions.map((o) => (
             <option key={o.id} value={o.id}>
               {VIEW_LABEL_KEY[o.id] ? t(VIEW_LABEL_KEY[o.id]) : o.title}
             </option>
@@ -59,7 +72,11 @@ export const Panel: React.FC<{ node: PanelNode; mode: string }> = ({ node, mode 
         </button>
       </div>
       {!node.hidden &&
-        (entry ? (
+        (regexPanel ? (
+          <div className="ws-panel-body ws-fill">
+            <WcvPanel slotId={`${VIEW_PREFIX}${regexPanel.file}:${node.key}`} url={regexPanel.url} />
+          </div>
+        ) : entry ? (
           <div className={`ws-panel-body ${entry.fill ? 'ws-fill' : 'ws-scroll'}`}>
             <entry.Component />
           </div>

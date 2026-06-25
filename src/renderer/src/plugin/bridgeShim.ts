@@ -126,20 +126,36 @@ const sandboxHead = (allowRemote: boolean, trusted: boolean): string =>
   ERROR_REPORTER +
   (allowRemote ? LIB_LOADER : '')
 
+// `scriptService.withButtons` appends a `;(function(){var __b=[…]; …registerButton…})()` IIFE
+// that registers a script's declarative action buttons. Split it off into its OWN classic
+// <script> so the button still registers even when the main body is a module whose remote
+// import fails/defers — i.e. the button appears in the ☰ menu regardless of the bundle loading.
+const BUTTON_IIFE_RE = /\n?;\(function\(\)\{var __b=/
+
+const oneScriptTags = (s: CardScript): string => {
+  const m = BUTTON_IIFE_RE.exec(s.code || '')
+  const main = (m ? s.code.slice(0, m.index) : s.code || '').trim()
+  const buttons = (m ? s.code.slice(m.index) : '').trim()
+  const errId = (suffix: string): string => JSON.stringify((s.name || 'script') + suffix)
+  // Module: imports must be top-level (can't wrap in try/catch) — the global error/rejection
+  // handlers catch its failures instead. Classic scripts are try/caught for the Logs panel.
+  const mainTag = main.trim()
+    ? isModuleScript(main)
+      ? `<script type="module">\n${main}\n</script>`
+      : `<script>try {\n${main}\n} catch (e) { __rptError(${errId('')}, e); }</script>`
+    : ''
+  // The button IIFE only touches globals (rpt/eventEmit/getButtonEvent), so it runs standalone.
+  const buttonTag = buttons.trim()
+    ? `<script>try {\n${buttons}\n} catch (e) { __rptError(${errId(' buttons')}, e); }</script>`
+    : ''
+  return mainTag + buttonTag
+}
+
 export const buildScriptSrcDoc = (
   scripts: CardScript[],
   opts: { allowRemote?: boolean; trusted?: boolean } = {}
 ): string => {
-  const userScripts = scripts
-    .map((s) =>
-      isModuleScript(s.code)
-        ? // Module: imports must be top-level (can't wrap in try/catch) — the global
-          // error/rejection handlers above catch its failures instead.
-          `<script type="module">\n${s.code}\n</script>`
-        : `<script>try {\n${s.code}\n} catch (e) { __rptError(${JSON.stringify(s.name || 'script')}, e); }</script>`
-    )
-    .join('')
-
+  const userScripts = scripts.map(oneScriptTags).join('')
   return sandboxHead(!!opts.allowRemote, !!opts.trusted) + userScripts + `</body></html>`
 }
 

@@ -166,6 +166,46 @@ export const setBounds = (id: string, bounds: Bounds): void => {
   slots.get(id)?.view.setBounds(round(bounds))
 }
 
+// The main window's content rect (0,0 → content size) — a full-window modal fills this.
+const contentRect = (): Bounds => {
+  const [w, h] = mainWindow?.getContentSize() ?? [1280, 800]
+  return { x: 0, y: 0, width: w, height: h }
+}
+
+/**
+ * Show/hide the off-screen card-script engine WCV as a full-window modal. ON slides it on-screen (and raises
+ * it above any panel WCVs); OFF parks it off-screen at the SAME full size — so its page keeps running and the
+ * overlay detector keeps a real viewport (a 0-size view would break detection). Driven by the engine's
+ * overlay detector (`wcv-overlay`); the engine WCV is created off-screen by `CardScriptWcvHost`.
+ */
+export const setModal = (id: string, on: boolean): void => {
+  const slot = slots.get(id)
+  if (!slot) return
+  const r = contentRect()
+  if (on) {
+    mainWindow?.contentView.addChildView(slot.view) // re-add → raise to the top of the z-order
+    slot.view.setBounds(r)
+  } else {
+    slot.view.setBounds({ x: -(r.width + 2000), y: 0, width: r.width, height: r.height })
+  }
+}
+
+/** Notify the renderer that a lorebook changed (a card wrote/created/deleted a worldbook), so the lorebook
+ *  store can refresh its library + reload the open editor (it would otherwise show a stale view). */
+export const pushLorebookChanged = (id: string): void => {
+  mainWindow?.webContents.send('wcv-lorebook-changed', { id })
+}
+
+/** Push a card script's action buttons to the renderer toolbar (the menu above the input). */
+export const pushCardButtons = (
+  slotId: string,
+  chatId: string,
+  characterId: string,
+  buttons: { name: string; visible: boolean }[]
+): void => {
+  mainWindow?.webContents.send('wcv-card-buttons', { slotId, chatId, characterId, buttons })
+}
+
 /** Hide without destroying (e.g. while a modal is open over it, or its tab is hidden). */
 export const setVisible = (id: string, visible: boolean): void => {
   slots.get(id)?.view.setVisible(visible)

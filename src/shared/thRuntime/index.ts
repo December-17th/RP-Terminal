@@ -2,6 +2,7 @@
 import type { Host, ThGlobals } from './types'
 import { floorsToThMessages, floorsToStChat, currentMessageId } from './shapes'
 import { setVarOps, assignVarOps, replaceStatDataOps, type VarOp } from './ops'
+import { nativeToThEntry, thToNativeEntry } from './worldbookEntry'
 import { expandMacros } from '../macros'
 import { runScript, type StCtx } from '../stscript'
 
@@ -61,6 +62,21 @@ export function createThRuntime(host: Host): ThGlobals {
     emit(TAVERN_EVENTS.MESSAGE_UPDATED)
   })
   const offHost = host.onHostEvent((name, payload) => emit(name, payload))
+
+  // Stable per-runtime script id (TH getScriptId) — our card scripts share one frame, so a per-frame
+  // constant is enough (cross-script isolation by id isn't modeled; matches the inline shim's behavior).
+  const scriptId = 'rpt_script_' + Math.random().toString(36).slice(2, 10)
+
+  // Script action buttons (TH replaceScriptButtons/getScriptButtons): the host renders the visible ones in
+  // the menu above the input; a click comes back as a host event named getButtonEvent(name) (= the raw
+  // name) → the script's eventOn(getButtonEvent(name)) fires. The button name IS the event name (identity),
+  // consistent with the legacy inline `withButtons` baking.
+  let scriptButtons: { name: string; visible: boolean }[] = []
+  const normButtons = (b: any): { name: string; visible: boolean }[] =>
+    (Array.isArray(b) ? b : [])
+      .filter((x) => x && x.name != null)
+      .map((x) => ({ name: String(x.name), visible: x.visible !== false }))
+  const pushButtons = (): void => host.setButtons(scriptButtons.filter((b) => b.visible))
 
   const writeVars = (ops: VarOp[]): Promise<void> =>
     ops.length ? host.applyVariableOps(ops) : Promise.resolve()
@@ -158,19 +174,28 @@ export function createThRuntime(host: Host): ThGlobals {
     if (!wbIdByName.has(key)) seedWb()
     return wbIdByName.get(key)
   }
-  // Map RPT entries to the TavernHelper worldbook-entry shape cards read: add `uid` (array index) + `name`
-  // (= our `comment`/title). Cards like the 命定之诗 home display `entry.name`; without this the raw
-  // entries (no `name`) show blank. Done HERE so EVERY read path — both transports, own book or by-id —
-  // is consistent (previously only the WCV own-book handler mapped, so by-id + all inline reads were raw).
-  const toThWbEntry = (en: any, i: number): any => ({
-    ...en,
-    uid: typeof en?.uid === 'number' ? en.uid : i,
-    name: en?.name || en?.comment || `Entry ${i + 1}`
-  })
+  // Map RPT native entries to the TavernHelper `WorldbookEntry` shape cards read — `uid`/`name` AND the
+  // `strategy.{type,keys,keys_secondary}` / `position` / `extra` a card expects (shared/thRuntime/
+  // worldbookEntry). Done HERE so EVERY read path — both transports, own book or by-id — is consistent;
+  // without the strategy/keys, a card's diff over `entry.strategy.keys` throws and keys/constant are lost.
   const wbEntries = async (name?: any): Promise<any[]> => {
     const id = resolveWbId(name)
     const r = id ? await host.getWorldbookById(id) : await host.getWorldbook(name)
-    return (r.entries || []).map(toThWbEntry)
+    return (r.entries || []).map(nativeToThEntry)
+  }
+  // Persist a full set of TavernHelper-shaped entries to a book (TH→native via the shared mapper, by id
+  // when resolvable else by name). Shared by replace / update / create / delete entry paths.
+  const saveWb = async (name: any, thEntries: any[]): Promise<void> => {
+    const native = (Array.isArray(thEntries) ? thEntries : []).map(thToNativeEntry)
+    const id = resolveWbId(name)
+    if (id) await host.saveWorldbookById(id, native)
+    else await host.saveWorldbook(name, native)
+  }
+  const doCreateWbEntries = async (name: any, newEntries: any): Promise<any> => {
+    const added = Array.isArray(newEntries) ? newEntries : []
+    const all = [...(await wbEntries(name)), ...added]
+    await saveWb(name, all)
+    return { worldbook: all, new_entries: added }
   }
   const doCreateWb = async (name: any): Promise<string> => {
     const nm = String(name ?? 'New Worldbook')
@@ -195,7 +220,34 @@ export function createThRuntime(host: Host): ThGlobals {
   // --- TavernHelper helpers (bare + namespaced) ---
   const helpers: Record<string, any> = {
     // SYNC getters
-    getVariables: () => ({ stat_data: stat }),
+    // type:'script' ⇒ the card's own KV store (NOT stat_data); any other scope ⇒ the message vars.
+    getVariables: (opt?: any) =>
+      opt && opt.type === 'script' ? host.getScriptVars() : { stat_data: stat },
+    getScriptId: () => scriptId,
+    getCurrentCharacterName: () => host.charData()?.name ?? '',
+    // Button name == event name (identity) — TH cards subscribe via eventOn(getButtonEvent(name), …).
+    getButtonEvent: (name: any) => String(name == null ? '' : name),
+    getScriptButtons: () => scriptButtons,
+    replaceScriptButtons: (b: any) => {
+      scriptButtons = normButtons(b)
+      pushButtons()
+      return scriptButtons
+    },
+    appendInexistentScriptButtons: (b: any) => {
+      const have = new Set(scriptButtons.map((x) => x.name))
+      for (const x of normButtons(b)) if (!have.has(x.name)) scriptButtons.push(x)
+      pushButtons()
+      return scriptButtons
+    },
+    updateScriptButtonsWith: (updater: any) => {
+      if (typeof updater === 'function') {
+        // Accept either a returned array OR in-place mutation that returns void (both are common JSR usages).
+        const r = updater(scriptButtons)
+        scriptButtons = normButtons(Array.isArray(r) ? r : scriptButtons)
+      }
+      pushButtons()
+      return scriptButtons
+    },
     getChatMessages: () => floorsToThMessages(host.floors()),
     getCurrentMessageId: () => currentMessageId(host.floors()),
     getTavernHelperVersion: () => '4.3.17',
@@ -212,7 +264,8 @@ export function createThRuntime(host: Host): ThGlobals {
       const r = host.worldbookNames()
       return [r.primary, ...(r.additional || [])].filter(Boolean)
     },
-    getTavernRegexes: () => host.regexes(),
+    getTavernRegexes: (option?: any) => host.regexesFull(option),
+    isCharacterTavernRegexesEnabled: () => host.isCharacterRegexesEnabled(),
     formatAsTavernRegexedString: (t: any) => (typeof t === 'string' ? host.formatRegex(t) : t),
     // EVENTS
     eventOn: on,
@@ -243,12 +296,21 @@ export function createThRuntime(host: Host): ThGlobals {
       stat = clone(next) || {}
       await writeVars(ops)
     },
-    updateVariablesWith: async (updater: any) => {
+    updateVariablesWith: async (updater: any, opt?: any) => {
       if (typeof updater !== 'function') return
+      // type:'script' ⇒ read-modify-write the card's own KV (the updater returns the FULL object), keeping
+      // it out of stat_data — e.g. the workshop caches its cloud project under a script var.
+      if (opt && opt.type === 'script') {
+        const cur = clone(host.getScriptVars()) || {}
+        const next = (await updater(cur)) || cur
+        await host.setScriptVars(next)
+        return next
+      }
       const next = updater(clone(stat))
       const ops = replaceStatDataOps(stat, next)
       stat = clone(next) || {}
       await writeVars(ops)
+      return next
     },
     generate: async (a: any) => {
       const input = typeof a === 'string' ? a : (a?.user_input ?? a?.userInput ?? a?.text ?? '')
@@ -259,18 +321,40 @@ export function createThRuntime(host: Host): ThGlobals {
     getWorldbook: async (name: any) => wbEntries(name),
     getLorebookEntries: async (name: any) => wbEntries(name),
     replaceWorldbook: async (name: any, entries: any) => {
-      const id = resolveWbId(name)
-      if (id) await host.saveWorldbookById(id, entries)
-      else await host.saveWorldbook(name, entries)
+      // Card sends TavernHelper-shaped entries; persist native (strategy.keys→keys, type:'constant'→constant).
+      await saveWb(name, entries)
+      return true
+    },
+    replaceWorldbookEntries: async (name: any, entries: any) => {
+      // TH alias (older name): accept (name, entries) or (entries) for the active card's book.
+      if (Array.isArray(name)) {
+        entries = name
+        name = undefined
+      }
+      await saveWb(name, entries)
       return true
     },
     updateWorldbookWith: async (name: any, updater: any) => {
       const cur = await wbEntries(name)
       const next = typeof updater === 'function' ? await updater(cur) : cur
-      const id = resolveWbId(name)
-      if (id) await host.saveWorldbookById(id, next)
-      else await host.saveWorldbook(name, next)
+      await saveWb(name, next)
       return next
+    },
+    // Append new entries (TH createWorldbookEntries) → { worldbook, new_entries }.
+    createWorldbookEntries: doCreateWbEntries,
+    createLorebookEntries: doCreateWbEntries,
+    // Delete entries matching `predicate` (TH deleteWorldbookEntries) → { worldbook, deleted_entries }.
+    // The workshop's uninstall calls this, filtering by `extra.cw_project_id`.
+    deleteWorldbookEntries: async (name: any, predicate: any) => {
+      const cur = await wbEntries(name)
+      const kept: any[] = []
+      const deleted: any[] = []
+      for (const e of cur) {
+        if (typeof predicate === 'function' && predicate(e)) deleted.push(e)
+        else kept.push(e)
+      }
+      await saveWb(name, kept)
+      return { worldbook: kept, deleted_entries: deleted }
     },
     createWorldbook: doCreateWb,
     createLorebook: doCreateWb,
@@ -295,7 +379,15 @@ export function createThRuntime(host: Host): ThGlobals {
       return ''
     },
     triggerSlash: (c: any) => runTriggerSlash(String(c ?? '')),
-    replaceTavernRegexes: async () => undefined
+    replaceTavernRegexes: async (regexes: any, option?: any) =>
+      host.replaceRegexes(Array.isArray(regexes) ? regexes : [], option),
+    updateTavernRegexesWith: async (updater: any, option?: any) => {
+      const cur = host.regexesFull(option)
+      if (typeof updater !== 'function') return cur
+      const next = await updater(cur)
+      await host.replaceRegexes(Array.isArray(next) ? next : cur, option)
+      return Array.isArray(next) ? next : cur
+    }
   }
 
   // --- Mvu ---
@@ -352,6 +444,7 @@ export function createThRuntime(host: Host): ThGlobals {
     chat: stChat(),
     getContext,
     substituteParams: substMacros,
+    getCurrentChatId: () => host.currentChatId(),
     saveChat: async () => host.saveChat(SillyTavern.chat),
     reloadCurrentChat: async () => host.reloadChat()
   }

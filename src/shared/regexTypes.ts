@@ -25,6 +25,9 @@ export interface RegexScriptInfo {
   owner?: string
   disabled: boolean
   renderMode?: CardRenderMode
+  /** Present when a rule loads a card UI page (`$('body').load('https://…')`) — i.e. the script is
+   * promotable to a docked WCV panel (renderMode:'panel'). The UI's page URL. */
+  uiUrl?: string
 }
 
 /** A single rule tagged with its file + index, for editing. */

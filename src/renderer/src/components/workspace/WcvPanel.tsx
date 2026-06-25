@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef } from 'react'
 import { useWorkspaceStore } from '../../stores/workspaceStore'
 import { useWorkspaceContext } from './context'
 import { useChatStore } from '../../stores/chatStore'
@@ -32,14 +32,6 @@ if(window.rptHost&&window.rptHost.onVarsChanged)window.rptHost.onVarsChanged(ref
 refresh();
 </script></body></html>`
   )
-
-// 命定之诗's real status UI (React ESM app; imports its deps from jsDelivr at runtime). Loaded with
-// the wcvPreload shim providing window.Mvu / SillyTavern / the TavernHelper globals (+ a logger).
-const FRONTEND =
-  'https://testingcf.jsdelivr.net/gh/The-poem-of-destiny/FrontEnd-for-destined-journey@1.8.2/dist'
-const STATUS_URL = `${FRONTEND}/status/index.html`
-const HOME_URL = `${FRONTEND}/home/index.html`
-const CUSTOM_START_URL = `${FRONTEND}/custom_start/index.html`
 
 export function WcvPanel({ slotId, url }: { slotId: string; url: string }): React.ReactElement {
   const hostRef = useRef<HTMLDivElement>(null)
@@ -80,66 +72,8 @@ export function WcvPanel({ slotId, url }: { slotId: string; url: string }): Reac
   )
 }
 
-// Stable wrapper components so the workspace view-picker can mount each without remount churn.
+// A dev round-trip test view for the WebContentsView host (host↔card bridge). Card UIs are not hardcoded
+// here anymore — they render inline (regex) by default, or the user promotes one to a panel.
 export function WcvTestView(): React.ReactElement {
   return <WcvPanel slotId="wcv-test" url={TEST_URL} />
-}
-
-// A default static layout for trying the StaticWorkspace on a card that doesn't declare `panel_ui`:
-// chat on the left, the native RPG status top-right, the card's own WCV UI bottom-right.
-export const DEFAULT_STATIC_LAYOUT = {
-  grid: { cols: 12, rows: 12 },
-  slots: [
-    { id: 'chat', view: 'chat', rect: [0, 0, 6, 12] as [number, number, number, number] },
-    { id: 'status', view: 'status', rect: [6, 0, 6, 6] as [number, number, number, number] },
-    {
-      id: 'card',
-      view: 'wcv',
-      rect: [6, 6, 6, 6] as [number, number, number, number],
-      entry: STATUS_URL,
-      title: '命定之诗 Status'
-    }
-  ]
-}
-
-// Per-card consent: a card UI runs the card's OWN remote code (from jsDelivr) in an isolated process,
-// with access to this session's variables. Don't auto-run it — gate behind an explicit click.
-function ConsentCardView({
-  slotId,
-  url,
-  title
-}: {
-  slotId: string
-  url: string
-  title: string
-}): React.ReactElement {
-  const [run, setRun] = useState(false)
-  if (run) return <WcvPanel slotId={slotId} url={url} />
-  return (
-    <div style={{ padding: 20, maxWidth: 480 }}>
-      <h3 style={{ marginTop: 0 }}>{title}</h3>
-      <p style={{ opacity: 0.8, fontSize: 13, lineHeight: 1.6 }}>
-        Runs the card&apos;s own UI code, loaded from <code>jsdelivr.net</code>, in an isolated
-        process. It can read and write this session&apos;s variables. Only run cards you trust.
-      </p>
-      <button className="btn-accent" onClick={() => setRun(true)}>
-        Run card UI
-      </button>
-    </div>
-  )
-}
-export function WcvCardView(): React.ReactElement {
-  return <ConsentCardView slotId="wcv-card" url={STATUS_URL} title="命定之诗 — Status UI" />
-}
-export function WcvHomeView(): React.ReactElement {
-  return <ConsentCardView slotId="wcv-home" url={HOME_URL} title="命定之诗 — Home" />
-}
-export function WcvCustomStartView(): React.ReactElement {
-  return (
-    <ConsentCardView
-      slotId="wcv-start"
-      url={CUSTOM_START_URL}
-      title="命定之诗 — Character Creation"
-    />
-  )
 }

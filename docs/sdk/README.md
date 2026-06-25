@@ -18,6 +18,9 @@ cards) reads them as the contract. They must track the code.
   parity.
 - **[../world-card-design.md](../world-card-design.md)** — the bundle format + one-click import + PNG
   cartridge plan (the "container" the inventory points to).
+- **[../card-script-wcv-surfaces-design.md](../card-script-wcv-surfaces-design.md)** — design (not built):
+  run full-page card scripts in a process-isolated WCV and let cards register their own panel/modal surfaces
+  (the `创意工坊` case). Touches `thRuntime` + the format when implemented — update this contract then.
 
 ## Maintenance contract (read before changing card-facing code)
 

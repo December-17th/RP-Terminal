@@ -258,8 +258,9 @@ export const importCharacterFromFile = (
 
     if (lorebook) saveCharacterLorebook(profileId, newId, lorebook)
 
-    // Route each bundled ST regex script into the profile regex store (one file each),
-    // scoped to this world so it only fires when this card is loaded (Track S §6).
+    // Route each bundled ST regex script into the profile regex store (one file each), scoped to this world
+    // so it only fires when this card is loaded (Track S §6). A card's UI regexes (status/home/…) import as
+    // normal INLINE display regexes by default — the user can later promote one to a docked WCV panel.
     let regexScripts = 0
     for (const script of collectBundledRegex(card)) {
       if (regexService.saveRegexScript(profileId, script, 'world', newId)) regexScripts++

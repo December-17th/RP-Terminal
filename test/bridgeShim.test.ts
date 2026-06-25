@@ -58,6 +58,27 @@ describe('buildScriptSrcDoc', () => {
     expect(doc).toContain('window.eventOn')
     expect(doc).toContain('window.jQuery')
   })
+
+  it('splits a script’s appended button IIFE into its own classic <script>', () => {
+    // A remote-module script with a withButtons-appended action-button IIFE: the module body
+    // and the button registration must end up in SEPARATE tags, so the button registers even
+    // if the module fails. The IIFE form mirrors scriptService.withButtons.
+    const iife =
+      ';(function(){var __b=["B"];if(typeof rpt!=="undefined"&&rpt.ui&&rpt.ui.registerButton){' +
+      'rpt.ui.registerButton({id:"B",label:"B"},function(){});}})();'
+    const doc = buildScriptSrcDoc([
+      { name: 'cw', code: 'import "data:text/javascript,1"\n' + iife }
+    ])
+    // The import stays in a module tag; the button IIFE is in a separate classic try/catch tag.
+    expect(doc).toContain('<script type="module">\nimport "data:text/javascript,1"')
+    expect(doc).toContain('try {\n;(function(){var __b=["B"]')
+    // The IIFE must NOT be inside the module tag (it would die with a failed import there).
+    const moduleTag = doc.slice(
+      doc.indexOf('<script type="module">'),
+      doc.indexOf('</script>', doc.indexOf('<script type="module">'))
+    )
+    expect(moduleTag).not.toContain('registerButton')
+  })
 })
 
 describe('isInteractiveHtml (TH-6)', () => {

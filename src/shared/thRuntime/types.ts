@@ -1,5 +1,6 @@
 // src/shared/thRuntime/types.ts
 import type { VarOp } from './ops'
+import type { TavernRegex } from './tavernRegex'
 
 export type CardCtx = { profileId: string; chatId: string; characterId: string }
 
@@ -50,8 +51,19 @@ export interface Host {
   presetNames(): string[]
   worldbookNames(): { primary: string | null; additional: string[] }
   regexes(): { find: string; replace: string }[]
+  // Full TavernHelper-shaped regexes for a scope (getTavernRegexes); `option` is the TH `{type}` arg.
+  regexesFull(option?: any): TavernRegex[]
+  isCharacterRegexesEnabled(): boolean
   formatRegex(text: string): string
   personaName(): string
+  // Active chat id — the WCV transport's ctx is empty (main resolves the session from e.sender), so this
+  // is a getter rather than `ctx.chatId` (SillyTavern.getCurrentChatId).
+  currentChatId(): string
+  // Script-scope variables (TH getVariables({type:'script'}) ) — a card-owned KV store, NOT stat_data.
+  getScriptVars(): Record<string, any>
+  // Render the script's action buttons (replaceScriptButtons) — the host shows the visible ones in the
+  // menu above the input; a click is delivered back as a host event named after the button.
+  setButtons(buttons: { name: string; visible: boolean }[]): void
   // --- ASYNC ops ---
   applyVariableOps(ops: VarOp[]): Promise<void>
   setVariables(statData: any): Promise<void>
@@ -59,6 +71,10 @@ export interface Host {
   generateRaw(cfg: GenCfgNormalized): Promise<string>
   getWorldbook(name?: string): Promise<{ name?: string; entries: any[] }>
   saveWorldbook(name: string | undefined, entries: any[]): Promise<void>
+  // Replace the regexes in a scope (replaceTavernRegexes/updateTavernRegexesWith); `option` is TH `{type}`.
+  replaceRegexes(regexes: any[], option?: any): Promise<void>
+  // Persist the card-scope KV (the full object; mirrors updateVariablesWith({type:'script'}) returning all).
+  setScriptVars(vars: Record<string, any>): Promise<void>
   // Worldbook CRUD/bind (full library — trusted cards). list/chatWorldbookIds are SYNC (called w/o await).
   listWorldbooks(): { id: string; name: string }[]
   chatWorldbookIds(): string[]

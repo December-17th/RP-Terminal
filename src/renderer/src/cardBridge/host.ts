@@ -9,6 +9,7 @@ import { useLorebookStore } from '../stores/lorebookStore'
 import { onCardHostEvent } from './cardHostEvents'
 import { evalTemplate, evalTemplateDetailed } from '../../../shared/templateEngine'
 import { buildRenderContext } from '../plugin/renderTemplate'
+import { storeRuleToTavernRegex } from '../../../shared/thRuntime/tavernRegex'
 import type { Host, CardCtx, FloorLike } from '../../../shared/thRuntime/types'
 import type { VarOp } from '../../../shared/thRuntime/ops'
 
@@ -53,6 +54,16 @@ export function createInlineHost(ctx: CardCtx): Host {
   // if the UI hasn't opened the lorebook panel. Fire-and-forget; resolveWbId refreshes on a later miss.
   void useLorebookStore.getState().loadLibrary(ctx.profileId)
   if (ctx.chatId) void useLorebookStore.getState().loadSession(ctx.profileId, ctx.chatId)
+  // Script-scope vars (TH getVariables({type:'script'})) — a card-owned KV. getScriptVars must be SYNC, so
+  // back it with a cache hydrated async from the same plugin-storage the WCV transport uses (owner card:<id>).
+  const scriptVarOwner = (): string => 'card:' + cardCharacterId()
+  let scriptVarCache: Record<string, any> = {}
+  void window.api
+    .pluginStorage(ctx.profileId, scriptVarOwner(), { op: 'all' })
+    .then((all: any) => {
+      scriptVarCache = all || {}
+    })
+    .catch(() => {})
   return {
     ctx,
     statData: () => statOf(),
@@ -74,8 +85,14 @@ export function createInlineHost(ctx: CardCtx): Host {
     },
     regexes: () =>
       useRegexStore.getState().rules.map((r: any) => ({ find: r.source, replace: r.replace })),
+    // Best-effort: map the renderer's active (display) rules to TavernRegex. Inline cards rarely read the
+    // full regex set; the workshop (which does) runs in the WCV transport with the scope-aware host.
+    regexesFull: () => useRegexStore.getState().rules.map((r: any) => storeRuleToTavernRegex(r)),
+    isCharacterRegexesEnabled: () => true,
     formatRegex: (t) => useRegexStore.getState().apply(t),
     personaName: () => useSettingsStore.getState().settings?.persona?.name || 'User',
+    currentChatId: () => ctx.chatId,
+    getScriptVars: () => scriptVarCache,
 
     applyVariableOps: async (ops: VarOp[]) => {
       await useChatStore.getState().applyVariableOps(ctx.profileId, ops as any, floorIndex())
@@ -113,6 +130,29 @@ export function createInlineHost(ctx: CardCtx): Host {
         await window.api.saveLorebook(ctx.profileId, cardCharacterId(), next)
       } catch (e) {
         console.error('[inline saveWorldbook]', e)
+      }
+    },
+    // Card regex-write is a WCV-transport capability (the workshop runs there). Inline cards don't get a
+    // store-write path here — a documented best-effort no-op, like createChat below.
+    replaceRegexes: async () => {
+      console.warn('[inline host] replaceTavernRegexes is a WCV-transport capability; ignored inline')
+    },
+    // Script action buttons are a card-scripts (WCV) feature; inline MESSAGE cards don't register them.
+    setButtons: () => {},
+    setScriptVars: async (vars: Record<string, any>) => {
+      const owner = scriptVarOwner()
+      const next = vars || {}
+      const prevKeys = Object.keys(scriptVarCache)
+      scriptVarCache = next
+      try {
+        for (const k of Object.keys(next)) {
+          await window.api.pluginStorage(ctx.profileId, owner, { op: 'set', key: k, value: next[k] })
+        }
+        for (const k of prevKeys) {
+          if (!(k in next)) await window.api.pluginStorage(ctx.profileId, owner, { op: 'remove', key: k })
+        }
+      } catch (e) {
+        console.error('[inline setScriptVars]', e)
       }
     },
     // Worldbook CRUD/bind — full library via window.api + the lorebook store (sync getters read the store).

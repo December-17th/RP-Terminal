@@ -4,6 +4,8 @@ import { useCharacterStore } from './stores/characterStore'
 import { useChatStore } from './stores/chatStore'
 import { useSettingsStore } from './stores/settingsStore'
 import { usePresetStore } from './stores/presetStore'
+import { useLorebookStore } from './stores/lorebookStore'
+import { usePanelRegexStore } from './stores/panelRegexStore'
 import { useLogStore } from './stores/logStore'
 import { useRegexStore } from './stores/regexStore'
 import { usePluginsStore } from './stores/pluginsStore'
@@ -14,7 +16,7 @@ import { ProfilePicker } from './components/ProfilePicker'
 import { TopNav } from './components/TopNav'
 import { Workspace } from './components/workspace/Workspace'
 import { StaticWorkspace } from './components/workspace/StaticWorkspace'
-import { DEFAULT_STATIC_LAYOUT } from './components/workspace/WcvPanel'
+import { CardScriptWcvHost } from './components/CardScriptWcvHost'
 import { PluginHost } from './components/PluginHost'
 import { useNavStore } from './stores/navStore'
 import { useWorkspaceStore } from './stores/workspaceStore'
@@ -163,17 +165,35 @@ export default function App(): React.ReactElement {
     useI18nStore.getState().setLocale(settings?.ui?.locale ?? 'en')
   }, [settings?.ui?.locale])
 
+  // Load the active card's promoted regex panels (renderMode:'panel') so they appear in the view-pickers.
+  // activePresetId is a dep because list-panel-regex resolves preset-scoped rules against the active preset.
+  useEffect(() => {
+    const pid = activeProfile?.id
+    if (!pid) return
+    void usePanelRegexStore
+      .getState()
+      .load(pid, { cardId: activeCharacter?.id, chatId: activeChatId })
+  }, [activeProfile?.id, activeCharacter?.id, activeChatId, activePresetId])
+
+  // A card script (e.g. the 创意工坊 workshop) wrote a worldbook in its WCV → refresh the lorebook editor
+  // so it doesn't show a stale view (reload the open book only if the user has no unsaved edits).
+  useEffect(() => {
+    const pid = activeProfile?.id
+    if (!pid) return
+    return window.api.onWcvLorebookChanged(({ id }) => {
+      const lb = useLorebookStore.getState()
+      void lb.loadLibrary(pid)
+      if (lb.currentId === id && !lb.dirty) void lb.open(pid, id)
+    })
+  }, [activeProfile?.id])
+
   if (!activeProfile) return <ProfilePicker />
 
-  // A card can declare a static, card-determined layout; the dev flag `localStorage['rpt-static-demo']`
-  // forces a default static layout so the StaticWorkspace can be tried on a card that doesn't.
+  // An RPT-native card can declare its own static, card-determined layout (rp_terminal.panel_ui); else the
+  // resizable workspace. (ST-compat cards' UIs are inline regex by default, promotable to panels by the user.)
   const cardPanelUi = activeCharacter?.card?.data?.extensions?.rp_terminal?.panel_ui
   const staticLayout =
-    cardPanelUi?.mode === 'static' && cardPanelUi.slots?.length
-      ? cardPanelUi
-      : typeof localStorage !== 'undefined' && localStorage.getItem('rpt-static-demo')
-        ? DEFAULT_STATIC_LAYOUT
-        : null
+    cardPanelUi?.mode === 'static' && cardPanelUi.slots?.length ? cardPanelUi : null
 
   return (
     <>
@@ -188,6 +208,19 @@ export default function App(): React.ReactElement {
             <StaticWorkspace profileId={activeProfile.id} layout={staticLayout} />
           ) : (
             <Workspace profileId={activeProfile.id} />
+          )}
+
+          {/* The invisible card-script engine: runs the active card's scripts (the 创意工坊 workshop +
+              background MVU/automation) in a hidden, off-screen WCV — app-wide and independent of the panel
+              layout, so the workshop button works in the resizable workspace AND a static panel_ui layout. */}
+          {activeCharacter && (
+            <CardScriptWcvHost
+              key={`${activeCharacter.id}:${activeChatId}`}
+              profileId={activeProfile.id}
+              chatId={activeChatId}
+              cardId={activeCharacter.id}
+              cardName={activeCharacter.card.data.name}
+            />
           )}
 
           {/* Standalone-plugin runtime stays mounted app-wide (outside the workspace) so its

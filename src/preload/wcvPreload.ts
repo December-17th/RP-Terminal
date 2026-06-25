@@ -51,6 +51,75 @@ const rptHost = {
 }
 w.rptHost = rptHost
 
+// Surface a card script's runtime errors (uncaught + unhandled rejections) to the MAIN log, so a card
+// author / maintainer sees them without opening the WCV devtools (parity with the inline host's pluginLog).
+const reportCardError = (msg: string): void => {
+  try {
+    ipcRenderer.send('wcv-card-error', String(msg))
+  } catch {
+    /* ignore */
+  }
+}
+window.addEventListener('error', (e: any) => {
+  reportCardError((e?.message || 'error') + (e?.error?.stack ? ' | ' + e.error.stack : ''))
+})
+window.addEventListener('unhandledrejection', (e: any) => {
+  const r = e?.reason
+  reportCardError('unhandledrejection: ' + ((r && r.message) || r))
+})
+
+// --- Card-script modal detection (card-scripts host only) ---
+// A button-launched card UI (e.g. the 创意工坊 workshop) appends a full-screen `position:fixed; inset:0`
+// overlay to the body. The card-scripts WCV is normally a small/background slot, so we watch for such an
+// overlay and tell main to expand this WCV to a full-window modal (and shrink back when it's removed).
+// Scoped to the card-scripts host by URL so status/panel WCVs (which legitimately fill their slot) aren't
+// resized. The host doc is served from rpt-card://card/card-scripts:<…>.
+if (typeof location !== 'undefined' && /card-scripts/i.test(location.href)) {
+  let lastOverlay = false
+  const hasModalOverlay = (): boolean => {
+    const body = document.body
+    if (!body) return false
+    const vw = window.innerWidth
+    const vh = window.innerHeight
+    for (const el of Array.from(body.querySelectorAll<HTMLElement>('*'))) {
+      const s = getComputedStyle(el)
+      if (s.position !== 'fixed' && s.position !== 'absolute') continue
+      if (s.display === 'none' || s.visibility === 'hidden' || s.opacity === '0') continue
+      const r = el.getBoundingClientRect()
+      // A near-full-viewport fixed/absolute element ⇒ a modal overlay (the workshop uses inset:0).
+      if (r.width >= vw * 0.6 && r.height >= vh * 0.6) return true
+    }
+    return false
+  }
+  const checkOverlay = (): void => {
+    const has = hasModalOverlay()
+    if (has !== lastOverlay) {
+      lastOverlay = has
+      try {
+        ipcRenderer.send('wcv-overlay', has)
+      } catch {
+        /* ignore */
+      }
+    }
+  }
+  const startOverlayWatch = (): void => {
+    try {
+      new MutationObserver(checkOverlay).observe(document.documentElement, {
+        childList: true,
+        subtree: true,
+        attributes: true,
+        attributeFilter: ['style', 'class', 'hidden']
+      })
+    } catch {
+      /* ignore */
+    }
+    checkOverlay()
+  }
+  if (document.readyState === 'loading')
+    window.addEventListener('DOMContentLoaded', startOverlayWatch)
+  else startOverlayWatch()
+}
+
 // --- inline-card layout bridge ---
 // A WebContentsView is a native overlay: it has a fixed slot height and swallows wheel events. Report
 // the card's real content height so the host can size its message slot to fit (no inner scrollbar), and
@@ -177,6 +246,26 @@ w.TavernHelper = g.TavernHelper
 // `toastr`; the lib globals below are required()'d lazily because importing them at preload load crashes.
 w._ = _
 w.z = zod
+// YAML — MVU / data_schema card scripts reference a `YAML` global (the ST host provides one). We don't ship
+// a full parser; mirror the inline LIB_SHIM's clean-room best-effort (JSON passthrough) so the global exists
+// — without it the script throws `YAML is not defined`. (A real YAML parser is out of scope, as in-app.)
+if (!w.YAML)
+  w.YAML = {
+    parse: (s: any) => {
+      try {
+        return JSON.parse(String(s))
+      } catch {
+        return {}
+      }
+    },
+    stringify: (o: any) => {
+      try {
+        return JSON.stringify(o, null, 2)
+      } catch {
+        return ''
+      }
+    }
+  }
 // jQuery: required LAZILY on first access. Requiring at preload load crashes — jQuery probes
 // document.documentElement at import time, which is null before the page parses (and that failure takes
 // the whole preload down). The card only touches `$` once its deferred module runs, by which point the

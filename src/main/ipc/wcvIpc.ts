@@ -6,10 +6,13 @@ import * as lorebookService from '../services/lorebookService'
 import * as chatService from '../services/chatService'
 import * as chatWriteService from '../services/chatWriteService'
 import * as scriptApiService from '../services/scriptApiService'
+import * as regexService from '../services/regexService'
+import * as pluginStorageService from '../services/pluginStorageService'
 import * as pluginService from '../services/pluginService'
 import * as settingsService from '../services/settingsService'
 import { getActivePresetId } from '../services/presetService'
 import { log } from '../services/logService'
+import { ArtifactScope } from '../../shared/artifactScope'
 import { LorebookEntry, LorebookEntrySchema } from '../types/character'
 
 // Coerce a TavernHelper-shaped worldbook entry (from getWorldbook, possibly edited or freshly built by a
@@ -51,6 +54,33 @@ const afterChatMutation = (profileId: string, chatId: string): void => {
   wcvManager.pushHostReload(chatId)
 }
 
+// TH regex `{type}` option → store scope: character ⇒ this card's world bucket (owner = cardId), global ⇒
+// global, preset ⇒ the active preset's. (`getTavernRegexes`/`replaceTavernRegexes`.)
+const regexScopeFor = (
+  profileId: string,
+  characterId: string,
+  option: any
+): { scope: ArtifactScope; owner?: string } => {
+  const t = option && option.type
+  if (t === 'global') return { scope: 'global' }
+  if (t === 'preset') return { scope: 'preset', owner: getActivePresetId(profileId) || undefined }
+  return { scope: 'world', owner: characterId }
+}
+
+// A card regex write re-renders the chat (regexes affect display); debounce so a card can't thrash it.
+const regexReloadTimers = new Map<string, ReturnType<typeof setTimeout>>()
+const debouncedRegexReload = (chatId: string): void => {
+  const prev = regexReloadTimers.get(chatId)
+  if (prev) clearTimeout(prev)
+  regexReloadTimers.set(
+    chatId,
+    setTimeout(() => {
+      regexReloadTimers.delete(chatId)
+      wcvManager.pushHostReload(chatId)
+    }, 300)
+  )
+}
+
 /**
  * WebContentsView card-UI panel IPC (spike). Position commands are fire-and-forget (`on`);
  * the host-bridge reads/writes are request/response (`handle`). The bridge resolves the
@@ -62,6 +92,39 @@ export const registerWcvIpc = (ipcMain: IpcMain): void => {
   ipcMain.on('wcv-set-bounds', (_e, id, bounds) => wcvManager.setBounds(id, bounds))
   ipcMain.on('wcv-set-visible', (_e, id, visible) => wcvManager.setVisible(id, visible))
   ipcMain.on('wcv-destroy', (_e, id) => wcvManager.destroy(id))
+  // A card script in a WCV threw / rejected — surface it to the main log (it'd otherwise only show in the
+  // WCV devtools). Includes the calling slot for context.
+  ipcMain.on('wcv-card-error', (e, msg) => {
+    const ctx = wcvManager.contextFor(e.sender.id)
+    log('error', `wcv card-script${ctx ? ` [${ctx.slotId}]` : ''}`, String(msg))
+  })
+  // A card script (replaceScriptButtons) declared its action buttons → push them to the renderer toolbar.
+  ipcMain.on('wcv-register-button', (e, buttons) => {
+    const ctx = wcvManager.contextFor(e.sender.id)
+    if (ctx) {
+      const list = Array.isArray(buttons) ? buttons : []
+      wcvManager.pushCardButtons(ctx.slotId, ctx.chatId, ctx.characterId, list)
+      log(
+        'info',
+        'wcv card buttons',
+        list
+          .map((b: any) => b && b.name)
+          .filter(Boolean)
+          .join(', ') || '(none)'
+      )
+    }
+  })
+  // The user clicked a card-script button in the toolbar → deliver it as the button-named event to the
+  // chat's card WCVs (the script's eventOn(getButtonEvent(name)) fires).
+  ipcMain.on('wcv-button-click', (_e, chatId, name) => {
+    wcvManager.notifyEvent(String(chatId), String(name), undefined)
+  })
+  // A card script's overlay opened/closed (a full-screen inset:0 element appeared/left) → expand the
+  // card-script WCV to a full-window modal, or restore it to its panel rect.
+  ipcMain.on('wcv-overlay', (e, has) => {
+    const ctx = wcvManager.contextFor(e.sender.id)
+    if (ctx) wcvManager.setModal(ctx.slotId, !!has)
+  })
   // Inline card → host: content height (auto-size the message slot) and wheel deltas (scroll the
   // message list past the overlay). Resolve the slot from the sender so only that frame reacts.
   ipcMain.on('wcv-content-size', (e, size) => {
@@ -183,6 +246,7 @@ export const registerWcvIpc = (ipcMain: IpcMain): void => {
     if (!lb) return false
     lb.entries = (Array.isArray(entries) ? entries : []).map(toLoreEntry)
     lorebookService.saveLorebookById(c.profileId, c.characterId, lb)
+    wcvManager.pushLorebookChanged(c.characterId) // refresh the lorebook editor if it's open
     log('info', 'wcv replaceWorldbook', `${lb.entries.length} entries → card book`)
     return true
   })
@@ -199,14 +263,16 @@ export const registerWcvIpc = (ipcMain: IpcMain): void => {
   })
   ipcMain.handle('wcv-host-create-worldbook', (e, name) => {
     const ctx = wcvManager.contextFor(e.sender.id)
-    return ctx
-      ? lorebookService.createLorebook(ctx.profileId, String(name ?? 'New Worldbook')).id
-      : ''
+    if (!ctx) return ''
+    const id = lorebookService.createLorebook(ctx.profileId, String(name ?? 'New Worldbook')).id
+    wcvManager.pushLorebookChanged(id)
+    return id
   })
   ipcMain.handle('wcv-host-delete-worldbook', (e, id) => {
     const ctx = wcvManager.contextFor(e.sender.id)
     if (!ctx) return false
     lorebookService.deleteLorebookById(ctx.profileId, String(id))
+    wcvManager.pushLorebookChanged(String(id))
     return true
   })
   ipcMain.handle('wcv-host-get-worldbook-by-id', (e, id) => {
@@ -224,6 +290,7 @@ export const registerWcvIpc = (ipcMain: IpcMain): void => {
     }
     lb.entries = (Array.isArray(entries) ? entries : []).map(toLoreEntry)
     lorebookService.saveLorebookById(ctx.profileId, String(id), lb)
+    wcvManager.pushLorebookChanged(String(id)) // refresh the lorebook editor if it's open
   })
   ipcMain.handle('wcv-host-bind-worldbook', (e, id, on) => {
     const ctx = wcvManager.contextFor(e.sender.id)
@@ -290,6 +357,62 @@ export const registerWcvIpc = (ipcMain: IpcMain): void => {
           text
         )
       : String(text ?? '')
+  })
+
+  // Full TavernHelper-shaped regexes for a scope (getTavernRegexes({type})). SYNC (cards call w/o await).
+  ipcMain.on('wcv-host-get-regexes-full', (e, option) => {
+    const c = cardLoreCtx(e.sender.id)
+    if (!c) {
+      e.returnValue = []
+      return
+    }
+    const { scope, owner } = regexScopeFor(c.profileId, c.characterId, option)
+    e.returnValue = regexService.getTavernRegexesByScope(c.profileId, scope, owner)
+  })
+  // isCharacterTavernRegexesEnabled — RPT keeps the card's world-scoped regexes active while the card is
+  // open; there's no per-card disable toggle, so report enabled.
+  ipcMain.on('wcv-host-is-char-regex-enabled', (e) => {
+    e.returnValue = true
+  })
+  // Replace a scope's regexes (replaceTavernRegexes / updateTavernRegexesWith) → store, then reload chat.
+  ipcMain.handle('wcv-host-replace-regexes', (e, regexes, option) => {
+    const c = cardLoreCtx(e.sender.id)
+    if (!c) return false
+    const { scope, owner } = regexScopeFor(c.profileId, c.characterId, option)
+    regexService.replaceTavernRegexes(c.profileId, scope, owner, Array.isArray(regexes) ? regexes : [])
+    const ctx = wcvManager.contextFor(e.sender.id)
+    if (ctx) debouncedRegexReload(ctx.chatId)
+    log('info', 'wcv replaceTavernRegexes', `${(regexes || []).length} regex(es) → ${scope}`)
+    return true
+  })
+
+  // Active chat id for SillyTavern.getCurrentChatId() (the WCV ctx is empty; resolve from e.sender). SYNC.
+  ipcMain.on('wcv-host-get-chat-id-sync', (e) => {
+    const ctx = wcvManager.contextFor(e.sender.id)
+    e.returnValue = ctx?.chatId ?? ''
+  })
+  // Script-scope vars (getVariables({type:'script'})) — the card's own KV (owner card:<id>), NOT stat_data.
+  ipcMain.on('wcv-host-script-vars-get-sync', (e) => {
+    const c = cardLoreCtx(e.sender.id)
+    e.returnValue = c
+      ? pluginStorageService.storageOp(c.profileId, 'card:' + c.characterId, { op: 'all' }) || {}
+      : {}
+  })
+  // Persist the whole script-var object (updateVariablesWith({type:'script'}) returns all): set new keys,
+  // drop removed ones.
+  ipcMain.handle('wcv-host-script-vars-set', (e, vars) => {
+    const c = cardLoreCtx(e.sender.id)
+    if (!c) return false
+    const owner = 'card:' + c.characterId
+    const next = vars && typeof vars === 'object' ? vars : {}
+    const cur = pluginStorageService.storageOp(c.profileId, owner, { op: 'all' }) || {}
+    for (const k of Object.keys(next)) {
+      pluginStorageService.storageOp(c.profileId, owner, { op: 'set', key: k, value: next[k] })
+    }
+    for (const k of Object.keys(cur)) {
+      if (!(k in next)) pluginStorageService.storageOp(c.profileId, owner, { op: 'remove', key: k })
+    }
+    return true
   })
 
   // --- Generation requests (Track C0) — the card REQUESTS; the host runs it (AI key stays in main). ---

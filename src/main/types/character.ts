@@ -25,7 +25,10 @@ export const LorebookEntrySchema = z.object({
   exclude_recursion: z.boolean().default(false),
   /** this entry's content does NOT trigger further recursive matches */
   prevent_recursion: z.boolean().default(false),
-  comment: z.string().default('')
+  comment: z.string().default(''),
+  /** Opaque per-entry metadata round-tripped for the card runtime (TavernHelper `WorldbookEntry.extra`,
+   * e.g. the 创意工坊 workshop tags its entries with `cw_project_id`/`cw_entry_key`). */
+  extra: z.record(z.string(), z.any()).optional()
 })
 export type LorebookEntry = z.infer<typeof LorebookEntrySchema>
 

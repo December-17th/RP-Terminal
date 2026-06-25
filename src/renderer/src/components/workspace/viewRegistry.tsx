@@ -1,15 +1,12 @@
 /* eslint-disable react-refresh/only-export-components -- a view registry intentionally
    co-locates its internal wrapper components with the registry/options it exports. */
 import React from 'react'
-import { useChatStore } from '../../stores/chatStore'
-import { useCharacterStore } from '../../stores/characterStore'
 import { useNavStore } from '../../stores/navStore'
 import { ChatView } from '../ChatView'
 import { StatusView } from '../StatusView'
-import { CardScriptHost } from '../CardScriptHost'
 import { LogsPanel } from '../LogsPanel'
 import { PanelRouter } from '../PanelRouter'
-import { WcvTestView, WcvCardView, WcvHomeView, WcvCustomStartView } from './WcvPanel'
+import { WcvTestView } from './WcvPanel'
 import { useWorkspaceContext } from './context'
 import { UsageView } from '../UsageView'
 import { useT } from '../../i18n'
@@ -43,25 +40,14 @@ const UsagePanel: React.FC = () => {
   return <UsageView profileId={profileId} />
 }
 
-// The card's sandboxed script runtime. Keyed by card+chat so switching sessions
-// remounts cleanly (matches the old RightPanel behavior).
+// The card's scripts now run in the app-wide invisible script engine (CardScriptWcvHost in App.tsx), not in
+// a panel — so this view is just an explanatory note. Visible card UI lives in declared panels (status, …).
 const CardScriptsPanel: React.FC = () => {
-  const { profileId } = useWorkspaceContext()
-  const activeChatId = useChatStore((s) => s.activeChatId)
-  const activeCharacter = useCharacterStore((s) => s.activeCharacter)
   const t = useT()
-  if (!activeChatId || !activeCharacter) {
-    return <div style={{ opacity: 0.5 }}>{t('status.waiting')}</div>
-  }
   return (
-    <CardScriptHost
-      key={`${activeCharacter.id}:${activeChatId}`}
-      profileId={profileId}
-      chatId={activeChatId}
-      cardId={activeCharacter.id}
-      cardName={activeCharacter.card.data.name}
-      scripts={activeCharacter.card.data.extensions?.rp_terminal?.scripts || []}
-    />
+    <div style={{ opacity: 0.6, fontSize: 13, lineHeight: 1.6, padding: 4 }}>
+      {t('cardScripts.engineNote')}
+    </div>
   )
 }
 
@@ -80,11 +66,9 @@ export const ViewRegistry: Record<string, ViewEntry> = {
   usage: { title: 'Usage', Component: UsagePanel, fill: true },
   'card-scripts': { title: 'Card Scripts', Component: CardScriptsPanel },
   logs: { title: 'Logs', Component: LogsPanel, fill: true },
-  // Spike: out-of-process WebContentsView card-UI panels.
-  wcv: { title: 'Card UI (WCV test)', Component: WcvTestView, fill: true },
-  'wcv-card': { title: '命定之诗 Status (WCV)', Component: WcvCardView, fill: true },
-  'wcv-home': { title: '命定之诗 Home (WCV)', Component: WcvHomeView, fill: true },
-  'wcv-start': { title: '命定之诗 Creation (WCV)', Component: WcvCustomStartView, fill: true }
+  // Dev round-trip test for the out-of-process WebContentsView host. Card UIs are no longer hardcoded —
+  // a card's UI regexes render inline by default, or the user promotes one to a panel (renderMode:'panel').
+  wcv: { title: 'Card UI (WCV test)', Component: WcvTestView, fill: true }
 }
 
 /** Stable list of pickable views for a panel header's dropdown. */
