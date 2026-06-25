@@ -16,7 +16,6 @@ import { ProfilePicker } from './components/ProfilePicker'
 import { TopNav } from './components/TopNav'
 import { Workspace } from './components/workspace/Workspace'
 import { StaticWorkspace } from './components/workspace/StaticWorkspace'
-import { DEFAULT_STATIC_LAYOUT } from './components/workspace/WcvPanel'
 import { CardScriptWcvHost } from './components/CardScriptWcvHost'
 import { PluginHost } from './components/PluginHost'
 import { useNavStore } from './stores/navStore'
@@ -189,15 +188,11 @@ export default function App(): React.ReactElement {
 
   if (!activeProfile) return <ProfilePicker />
 
-  // A card can declare a static, card-determined layout; the dev flag `localStorage['rpt-static-demo']`
-  // forces a default static layout so the StaticWorkspace can be tried on a card that doesn't.
+  // An RPT-native card can declare its own static, card-determined layout (rp_terminal.panel_ui); else the
+  // resizable workspace. (ST-compat cards' UIs are inline regex by default, promotable to panels by the user.)
   const cardPanelUi = activeCharacter?.card?.data?.extensions?.rp_terminal?.panel_ui
   const staticLayout =
-    cardPanelUi?.mode === 'static' && cardPanelUi.slots?.length
-      ? cardPanelUi
-      : typeof localStorage !== 'undefined' && localStorage.getItem('rpt-static-demo')
-        ? DEFAULT_STATIC_LAYOUT
-        : null
+    cardPanelUi?.mode === 'static' && cardPanelUi.slots?.length ? cardPanelUi : null
 
   return (
     <>

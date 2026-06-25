@@ -6,7 +6,7 @@ import { ChatView } from '../ChatView'
 import { StatusView } from '../StatusView'
 import { LogsPanel } from '../LogsPanel'
 import { PanelRouter } from '../PanelRouter'
-import { WcvTestView, WcvCardView, WcvHomeView, WcvCustomStartView } from './WcvPanel'
+import { WcvTestView } from './WcvPanel'
 import { useWorkspaceContext } from './context'
 import { UsageView } from '../UsageView'
 import { useT } from '../../i18n'
@@ -66,11 +66,9 @@ export const ViewRegistry: Record<string, ViewEntry> = {
   usage: { title: 'Usage', Component: UsagePanel, fill: true },
   'card-scripts': { title: 'Card Scripts', Component: CardScriptsPanel },
   logs: { title: 'Logs', Component: LogsPanel, fill: true },
-  // Spike: out-of-process WebContentsView card-UI panels.
-  wcv: { title: 'Card UI (WCV test)', Component: WcvTestView, fill: true },
-  'wcv-card': { title: '命定之诗 Status (WCV)', Component: WcvCardView, fill: true },
-  'wcv-home': { title: '命定之诗 Home (WCV)', Component: WcvHomeView, fill: true },
-  'wcv-start': { title: '命定之诗 Creation (WCV)', Component: WcvCustomStartView, fill: true }
+  // Dev round-trip test for the out-of-process WebContentsView host. Card UIs are no longer hardcoded —
+  // a card's UI regexes render inline by default, or the user promotes one to a panel (renderMode:'panel').
+  wcv: { title: 'Card UI (WCV test)', Component: WcvTestView, fill: true }
 }
 
 /** Stable list of pickable views for a panel header's dropdown. */
