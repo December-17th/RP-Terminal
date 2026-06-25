@@ -142,6 +142,10 @@ export type CombatStatus = 'active' | 'party' | 'enemy'
  *  is pure over this whole object). `seed` is stored so a replay reproduces the fight. */
 export interface CombatState {
   seed: number
+  /** monotonic counter of randomness-consuming steps. The per-action RNG is seeded
+   *  from (seed, rngCursor), so replay is reproducible AND a fight resumes
+   *  deterministically after an app restart without persisting live RNG state. */
+  rngCursor: number
   grid: GridSpec
   combatants: Combatant[]
   /** combatant ids in initiative order. */
