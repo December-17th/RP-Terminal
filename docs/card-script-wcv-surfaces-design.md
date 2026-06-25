@@ -253,20 +253,21 @@ This reconciles the two ways to get the **status** panel: with a card-carried la
 **declarative `wcv` slot** carrying the status URL — `registerScriptPanel` (§4b) stays for *dynamic* panels.
 A card may mix: declarative slots for fixed panels, script registration for runtime ones.
 
-**Inline-regex UIs are NOT panels.** `首页`/`自定义开局` (and the beautifications) live in the chat message
-flow via regex; they're independent of `panel_ui`. The layout governs only the docked workspace panels.
+**Inline-regex UIs are NOT panels.** `首页`/`自定义开局` (onboarding) AND the in-message beautifications —
+including **角色查看器** (#11, `placement:[1,2]`), 命运抽卡, the combat/dialogue skins — live in the chat
+message flow via regex (rendered by `WcvMessageFrame`/`InlineCardFrame`). They are independent of `panel_ui`;
+the layout governs ONLY the docked workspace panels. For 命定之诗 the only docked panel is `状态栏`.
 
-**Example — 命定之诗** (`chat` left, status top-right, character-viewer bottom-right; 2 WCV panels):
+**Example — 命定之诗** (`chat` left, `状态栏` right; **1 WCV panel** — everything else stays inline):
 
 ```jsonc
 "panel_ui": {
   "mode": "static",
   "grid": { "cols": 12, "rows": 12 },
   "slots": [
-    { "id": "chat",   "view": "chat",  "rect": [0, 0, 8, 12] },
-    { "id": "status", "view": "wcv",   "rect": [8, 0, 4, 6], "title": "状态栏",
-      "entry": "https://…/FrontEnd-for-destined-journey@1.8.2/dist/status/index.html" },
-    { "id": "viewer", "view": "wcv",   "rect": [8, 6, 4, 6], "title": "角色查看器", "entry": "…" }
+    { "id": "chat",   "view": "chat", "rect": [0, 0, 8, 12] },
+    { "id": "status", "view": "wcv",  "rect": [8, 0, 4, 12], "title": "状态栏",
+      "entry": "https://…/FrontEnd-for-destined-journey@1.8.2/dist/status/index.html" }
   ]
 }
 ```
