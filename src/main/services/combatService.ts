@@ -191,8 +191,14 @@ export const startEncounter = (chatId: string, setup: EncounterSetup): CombatSta
   return record.state
 }
 
-export const getEncounterState = (chatId: string): CombatState | null =>
-  readRecord(chatId)?.state ?? null
+/** The renderer view-model: the live state + the ability catalog (to render the
+ *  action bar / ranges). Hook scripts are intentionally NOT exposed to the renderer. */
+export const getEncounter = (
+  chatId: string
+): { state: CombatState; abilities: Record<string, AbilityDef> } | null => {
+  const record = readRecord(chatId)
+  return record ? { state: record.state, abilities: record.abilities } : null
+}
 
 export const applyPlayerAction = async (
   chatId: string,

@@ -11,7 +11,7 @@ export const registerCombatIpc = (ipcMain: IpcMain): void => {
   ipcMain.handle('combat-start', (_, _profileId, chatId, setup) =>
     combatService.startEncounter(chatId, setup)
   )
-  ipcMain.handle('combat-get', (_, _profileId, chatId) => combatService.getEncounterState(chatId))
+  ipcMain.handle('combat-get', (_, _profileId, chatId) => combatService.getEncounter(chatId))
   ipcMain.handle('combat-action', async (_, _profileId, chatId, action) => {
     try {
       return await combatService.applyPlayerAction(chatId, action)
