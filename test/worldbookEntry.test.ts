@@ -76,6 +76,7 @@ describe('round-trip native → TH → native', () => {
       enabled: true,
       insertion_order: 50,
       insertion_depth: null,
+      case_sensitive: true,
       probability: 100,
       extra: { cw_entry_key: 'e1' }
     }
@@ -85,6 +86,7 @@ describe('round-trip native → TH → native', () => {
     expect(back.comment).toBe('Title')
     expect(back.content).toBe('hello')
     expect(back.insertion_order).toBe(50)
+    expect(back.case_sensitive).toBe(true) // round-trips (was being reset to false)
     expect(back.extra).toEqual({ cw_entry_key: 'e1' })
   })
 })

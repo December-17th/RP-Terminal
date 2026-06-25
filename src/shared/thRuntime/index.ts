@@ -191,6 +191,12 @@ export function createThRuntime(host: Host): ThGlobals {
     if (id) await host.saveWorldbookById(id, native)
     else await host.saveWorldbook(name, native)
   }
+  const doCreateWbEntries = async (name: any, newEntries: any): Promise<any> => {
+    const added = Array.isArray(newEntries) ? newEntries : []
+    const all = [...(await wbEntries(name)), ...added]
+    await saveWb(name, all)
+    return { worldbook: all, new_entries: added }
+  }
   const doCreateWb = async (name: any): Promise<string> => {
     const nm = String(name ?? 'New Worldbook')
     await host.createWorldbook(nm)
@@ -234,7 +240,11 @@ export function createThRuntime(host: Host): ThGlobals {
       return scriptButtons
     },
     updateScriptButtonsWith: (updater: any) => {
-      if (typeof updater === 'function') scriptButtons = normButtons(updater(scriptButtons))
+      if (typeof updater === 'function') {
+        // Accept either a returned array OR in-place mutation that returns void (both are common JSR usages).
+        const r = updater(scriptButtons)
+        scriptButtons = normButtons(Array.isArray(r) ? r : scriptButtons)
+      }
       pushButtons()
       return scriptButtons
     },
@@ -331,18 +341,8 @@ export function createThRuntime(host: Host): ThGlobals {
       return next
     },
     // Append new entries (TH createWorldbookEntries) → { worldbook, new_entries }.
-    createWorldbookEntries: async (name: any, newEntries: any) => {
-      const added = Array.isArray(newEntries) ? newEntries : []
-      const all = [...(await wbEntries(name)), ...added]
-      await saveWb(name, all)
-      return { worldbook: all, new_entries: added }
-    },
-    createLorebookEntries: async (name: any, newEntries: any) => {
-      const added = Array.isArray(newEntries) ? newEntries : []
-      const all = [...(await wbEntries(name)), ...added]
-      await saveWb(name, all)
-      return { worldbook: all, new_entries: added }
-    },
+    createWorldbookEntries: doCreateWbEntries,
+    createLorebookEntries: doCreateWbEntries,
     // Delete entries matching `predicate` (TH deleteWorldbookEntries) → { worldbook, deleted_entries }.
     // The workshop's uninstall calls this, filtering by `extra.cw_project_id`.
     deleteWorldbookEntries: async (name: any, predicate: any) => {

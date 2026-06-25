@@ -65,7 +65,8 @@ export const thToNativeEntry = (th: any): Record<string, any> => {
     selective: secKeys.length > 0,
     insertion_order: typeof p.order === 'number' ? p.order : 100,
     insertion_depth: p.type === 'at_depth' && typeof p.depth === 'number' ? p.depth : null,
-    case_sensitive: false,
+    // Preserve case_sensitive across a round-trip (nativeToThEntry spreads it onto the TH entry); default off.
+    case_sensitive: t.case_sensitive === true,
     probability: typeof t.probability === 'number' ? t.probability : 100,
     exclude_recursion: t.recursion?.prevent_incoming === true,
     prevent_recursion: t.recursion?.prevent_outgoing === true,

@@ -166,13 +166,14 @@ export default function App(): React.ReactElement {
   }, [settings?.ui?.locale])
 
   // Load the active card's promoted regex panels (renderMode:'panel') so they appear in the view-pickers.
+  // activePresetId is a dep because list-panel-regex resolves preset-scoped rules against the active preset.
   useEffect(() => {
     const pid = activeProfile?.id
     if (!pid) return
     void usePanelRegexStore
       .getState()
       .load(pid, { cardId: activeCharacter?.id, chatId: activeChatId })
-  }, [activeProfile?.id, activeCharacter?.id, activeChatId])
+  }, [activeProfile?.id, activeCharacter?.id, activeChatId, activePresetId])
 
   // A card script (e.g. the 创意工坊 workshop) wrote a worldbook in its WCV → refresh the lorebook editor
   // so it doesn't show a stale view (reload the open book only if the user has no unsaved edits).

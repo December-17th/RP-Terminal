@@ -234,14 +234,10 @@ export const listPanelRegexes = (
 ): Array<{ file: string; scriptName: string; url: string }> => {
   const out: Array<{ file: string; scriptName: string; url: string }> = []
   for (const s of listScripts(profileId)) {
-    if (s.renderMode !== 'panel' || s.disabled) continue
+    // `uiUrl` is already computed by listScripts (no second read of the rule file).
+    if (s.renderMode !== 'panel' || s.disabled || !s.uiUrl) continue
     if (ctx && !isScopeActive({ scope: s.scope, owner: s.owner }, ctx)) continue
-    let url: string | null = null
-    for (const r of getScriptRules(profileId, s.file)) {
-      url = extractCardUiUrl(r.replace)
-      if (url) break
-    }
-    if (url) out.push({ file: s.file, scriptName: s.scriptName, url })
+    out.push({ file: s.file, scriptName: s.scriptName, url: s.uiUrl })
   }
   return out
 }
@@ -341,12 +337,12 @@ export const replaceTavernRegexes = (
   owner: string | undefined,
   tavernRegexes: unknown[]
 ): void => {
-  if (scope === 'global') {
-    for (const s of listScripts(profileId)) {
-      if ((s.scope ?? 'global') === 'global') deleteScript(profileId, s.file)
-    }
-  } else if (owner) {
-    deleteScriptsByOwner(profileId, scope, owner)
+  // Drop the prior set for this scope (matching the owner when one resolved; if no owner resolved — e.g.
+  // 'preset' with no active preset — clear the whole scope so 'replace' never silently becomes 'append').
+  for (const s of listScripts(profileId)) {
+    if ((s.scope ?? 'global') !== scope) continue
+    if (scope !== 'global' && owner != null && s.owner !== owner) continue
+    deleteScript(profileId, s.file)
   }
   // Persist each regex as its OWN file (one rule per file) so every regex — incl. one a card/workshop
   // just downloaded — shows as a separate, named, individually-manageable script, matching ST's flat

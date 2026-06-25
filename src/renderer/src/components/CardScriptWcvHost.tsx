@@ -125,12 +125,14 @@ export function CardScriptWcvHost({
 
   // Mount the engine WCV OFF-SCREEN at full-window size so the scripts run invisibly. It's never positioned
   // to a panel; `wcvManager.setModal` slides it on-screen for the workshop modal and back off on close.
+  // `enabled` is a dep so toggling card scripts OFF tears the WCV down (its cleanup runs) — otherwise it
+  // would keep running the card's scripts despite the off switch.
   useEffect(() => {
-    if (!dataUrl || needsConsent) return
+    if (!enabled || !dataUrl || needsConsent) return
     const off = { x: -100000, y: 0, width: window.innerWidth || 1280, height: window.innerHeight || 800 }
     window.api.wcvEnsure(slotId, off, dataUrl, { profileId, chatId, characterId: cardId })
     return () => window.api.wcvDestroy(slotId)
-  }, [slotId, dataUrl, needsConsent, profileId, chatId, cardId])
+  }, [slotId, dataUrl, needsConsent, enabled, profileId, chatId, cardId])
 
   // Card scripts (replaceScriptButtons) → the menu above the input. Each button posts back to the engine on
   // click (the script's eventOn(getButtonEvent(name)) fires). Scoped to OUR slot; cleared on unmount.
