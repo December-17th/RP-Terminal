@@ -130,6 +130,43 @@ export const collectBundledRegex = (card: RPTerminalCard): any[] => {
   ].filter((r) => r && typeof r === 'object')
 }
 
+/**
+ * A card ships its status UI as a regex that injects an inline frame loading `…/status/index.html`. In RPT
+ * the persistent status display belongs in a DOCKED panel, not re-injected per message — so on import we
+ * LIFT that loader regex out into a `panel_ui` wcv slot and DON'T import it as a display regex. The
+ * home / custom_start loaders (different URLs) are left alone — they stay inline onboarding. Pure.
+ */
+const STATUS_LOADER_RE = /https?:\/\/[^\s'"]+?\/status\/index\.html/i
+
+export const liftStatusPanel = (regexes: any[]): { panelUi: any | null; regexes: any[] } => {
+  let statusUrl: string | null = null
+  let title = '状态栏'
+  const kept: any[] = []
+  for (const r of Array.isArray(regexes) ? regexes : []) {
+    const repl = String((r && (r.replaceString ?? r.replace)) ?? '')
+    const m = !statusUrl ? repl.match(STATUS_LOADER_RE) : null
+    if (m) {
+      statusUrl = m[0]
+      const n = r && (r.scriptName ?? r.name)
+      if (typeof n === 'string' && n.trim()) title = n.trim()
+    } else {
+      kept.push(r)
+    }
+  }
+  if (!statusUrl) return { panelUi: null, regexes }
+  return {
+    panelUi: {
+      mode: 'static',
+      grid: { cols: 12, rows: 12 },
+      slots: [
+        { id: 'chat', view: 'chat', rect: [0, 0, 8, 12] },
+        { id: 'status', view: 'wcv', rect: [8, 0, 4, 12], title, entry: statusUrl }
+      ]
+    },
+    regexes: kept
+  }
+}
+
 /** Bundled chat-completion presets from `rp_terminal.presets[]` (Track S §3). */
 export const collectBundledPresets = (card: RPTerminalCard): any[] => {
   const p = getRpExt(card)?.presets
@@ -254,6 +291,14 @@ export const importCharacterFromFile = (
     const { card, lorebook } = parsed
 
     const newId = crypto.randomUUID()
+
+    // Lift the status-UI loader regex into a docked panel_ui slot (a persistent panel, not an inline-per-
+    // message frame); the rest import as display regexes. Don't override a card that authored its own layout.
+    const { panelUi, regexes: displayRegex } = liftStatusPanel(collectBundledRegex(card))
+    if (panelUi && !getRpExt(card)?.panel_ui) {
+      const ext = (card.data.extensions || (card.data.extensions = {} as any)) as any
+      ext.rp_terminal = { ...(ext.rp_terminal || {}), panel_ui: panelUi }
+    }
     saveCharacter(profileId, newId, card)
 
     if (lorebook) saveCharacterLorebook(profileId, newId, lorebook)
@@ -261,7 +306,7 @@ export const importCharacterFromFile = (
     // Route each bundled ST regex script into the profile regex store (one file each),
     // scoped to this world so it only fires when this card is loaded (Track S §6).
     let regexScripts = 0
-    for (const script of collectBundledRegex(card)) {
+    for (const script of displayRegex) {
       if (regexService.saveRegexScript(profileId, script, 'world', newId)) regexScripts++
     }
 
