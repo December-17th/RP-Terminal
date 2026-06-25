@@ -59,23 +59,23 @@ describe('remoteImportUrls', () => {
 })
 
 describe('inlineRemoteModuleGraph', () => {
-  it('converts a side-effect entry import to a non-blocking dynamic data: import', () => {
+  it('rewrites a side-effect entry import to a static data: module import', () => {
     const entry = "import 'https://cdn/index.js';\nconsole.log('after');"
     const graph = [{ url: 'https://cdn/index.js', source: 'export const v = 1;' }]
     const out = inlineRemoteModuleGraph(entry, graph)
-    // Side-effect import → dynamic import().catch(...) so the rest of the script still runs.
-    expect(out).toMatch(/import\("data:text\/javascript;charset=utf-8,[^"]+"\)\.catch\(/)
+    // Static `import "data:…"` (NOT dynamic import() — that fails in the opaque srcdoc frame).
+    expect(out).toMatch(/import "data:text\/javascript;charset=utf-8,[^"]+";/)
+    expect(out).not.toContain('import(')
     expect(out).toContain("console.log('after');")
     const dataUrl = out.match(/"(data:[^"]+)"/)![1]
     expect(decodeDataUrl(dataUrl)).toBe('export const v = 1;')
   })
 
-  it('keeps a bound entry import static (dynamic would lose the binding)', () => {
+  it('rewrites a bound entry import to a static data: module import', () => {
     const entry = "import x from 'https://cdn/index.js';\nx();"
     const graph = [{ url: 'https://cdn/index.js', source: 'export default () => 1;' }]
     const out = inlineRemoteModuleGraph(entry, graph)
     expect(out).toMatch(/import x from "data:text\/javascript;charset=utf-8,[^"]+";/)
-    expect(out).not.toContain('.catch(')
   })
 
   it('inlines a dependency and rewrites the parent’s import to the child data: URL', () => {

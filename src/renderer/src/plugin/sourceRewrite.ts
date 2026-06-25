@@ -104,19 +104,9 @@ export const inlineRemoteModuleGraph = (entryCode: string, graph: ModuleSource[]
     if (!dataByUrl.has(u)) dataByUrl.set(u, mkmod(rewrite(srcByUrl.get(u) as string, u)))
   }
 
-  // Rewrite the entry script's imports. A bare side-effect `import '…'` becomes a NON-BLOCKING
-  // dynamic import so a failed/slow bundle load can't abort the rest of the script — notably its
-  // baked action-button registration (which must run for the button to appear in the menu). This
-  // also strips the entry's static module syntax, so it runs as a classic script and its
-  // top-level (the button IIFE) executes synchronously. Bound/dynamic imports keep their data: URL.
-  return entryCode.replace(new RegExp(IMPORT_SPEC_RE.source, 'g'), (whole, pre, _q1, spec) => {
-    try {
-      const data = dataByUrl.get(new URL(spec, 'https://rpt.local/').href)
-      if (!data) return whole
-      if (/^import\s*$/.test(pre)) return 'import("' + data + '").catch(function () {})'
-      return pre + '"' + data + '"'
-    } catch {
-      return whole
-    }
-  })
+  // Rewrite the entry's imports to STATIC data: module imports. (Dynamic `import()` is avoided:
+  // it fails — often throwing synchronously — inside the opaque `about:srcdoc` sandbox frame,
+  // whereas a static `<script type="module">` importing a self-contained data: URL works there.)
+  // Entry specifiers are absolute https, so the base is immaterial here.
+  return rewrite(entryCode, 'https://rpt.local/')
 }
