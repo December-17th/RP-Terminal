@@ -14,9 +14,9 @@ full-page card scripts to a process-isolated WCV instead of the crippled inline 
    (`replaceScriptButtons` + `eventOn(getButtonEvent(...))`) and/or a declarative manifest slot — the host
    has zero card-specific knowledge.
 3. Fold the existing hardcoded `wcv-card` / `wcv-home` / `wcv-start` spike views into the same mechanism.
-   **Locked delivery for 命定之诗 (see §4b):** `状态栏` → a script-registered WCV **panel** (replaces the old
-   `wcv-card` hardcode + the status regex); `首页` / `自定义开局` → stay **inline regex** (drop `wcv-home` /
-   `wcv-start`).
+   **Locked delivery for 命定之诗 (see §4b):** `状态栏` → a declarative WCV **panel slot** in the card's
+   `panel_ui` layout (replaces the old `wcv-card` hardcode + the status regex); `首页` / `自定义开局` → stay
+   **inline regex** (drop `wcv-home` / `wcv-start`). Layout is **static-locked** (card owns the rects; §4h).
 
 ---
 
@@ -123,55 +123,33 @@ through the shared runtime (per `CLAUDE.md`'s "one surface, two transports" rule
 host process and the DOM, not the API.
 
 ### 4b. Card/script-declared surfaces (the no-hardcode hook)
-A surface is registered two ways, both card-driven:
+A surface is declared by the card (never hardcoded), one of:
 
 - **Runtime button → modal (covers `创意工坊` unmodified):** when a WCV script calls `replaceScriptButtons([...])`,
   the shim sends `wcv-register-button` → main → renderer `toolbarStore`. The script's button appears in the
   menu with **no host knowledge of the card**.
-- **Runtime panel (covers the `状态栏` status UI):** add a card-facing API `registerScriptPanel(def)` to
-  `thRuntime` (an RPT extension, also exposed bare + on `TavernHelper`):
-
-  ```js
-  registerScriptPanel({ id, title, slot, entry })
-  ```
-
-  The script tells the host to dock a WCV panel whose body loads `entry` (a URL) with the `wcvPreload` shim.
-  The host registers a dynamic view (id/title) and mounts it via `WcvPanel`/`wcvManager` at `slot` — **the URL
-  comes from the script, nothing is hardcoded.** This is the script-form replacement for the old hardcoded
-  `wcv-card` view: same status page, same shim, now registered by the card.
-- **Declarative (alternative to the runtime panel):** extend the existing schema (`character.ts:62` for
-  `scripts[]`, `character.ts:71` for `panel_ui`) with a per-script/per-slot `surface`:
-
-  ```jsonc
-  // rp_terminal.scripts[i].surface  — OR a panel_ui slot
-  "surface": {
-    "kind": "panel" | "modal",   // docked in a workspace slot, or full-window button-launched
-    "transport": "wcv",          // (default for surfaces) process-isolated
-    "title": "命定创意工坊",
-    "button": "命定创意工坊",     // for kind:"modal" — the menu button that opens it
-    "slot": "right",             // for kind:"panel"
-    "entry": "…/status/index.html" // for a page-backed panel
-  }
-  ```
-
-  A card may ship both a declarative panel and runtime buttons; the registry merges them.
+- **Declarative panel (covers the `状态栏` status UI — the chosen path):** a WCV panel is a `panel_ui` slot
+  (`view:"wcv"` + `entry` URL + `rect`) in the card-carried layout (§4h). The card declares *where*, *how big*,
+  and *what page* — **nothing is hardcoded**, and no script is needed for a static page. The host mounts the
+  `entry` via `WcvPanel`/`wcvManager` with the `wcvPreload` shim. This replaces the old hardcoded `wcv-card`
+  view.
+- **Runtime panel (deferred — dynamic panels only):** a card-facing `registerScriptPanel({id,title,slot,entry})`
+  on `thRuntime` lets a *script* add a panel at runtime (e.g. one that only appears under some condition); the
+  layout can reference it by id. Not needed for `状态栏` (which is static → a declarative slot). Keep as a
+  future hook; not on the critical path.
 
 #### Delivery decision for 命定之诗 (locked)
 
 - **首页 (#6) and 自定义开局 (#7) stay inline regex.** They're one-time, message-anchored onboarding — the
   existing inline-card path (`WcvMessageFrame`/`InlineCardFrame`) renders them per the card's regex, unchanged.
-- **状态栏 (#5) becomes a script-registered WCV panel, not a regex.** The persistent status display belongs
+- **状态栏 (#5) becomes a declarative WCV panel slot, not a regex.** The persistent status display belongs
   docked (mounted once, survives message paging, live-updates from the latest floor's vars over the existing
-  bridge) — not re-injected per AI message. Replace the regex with a tiny card script:
+  bridge) — not re-injected per AI message. It's a slot in the card's `panel_ui` layout (§4h):
 
-  ```js
-  // 【命定之诗】状态栏 (replaces regex #5)
-  registerScriptPanel({
-    id: 'mds-status',
-    title: '状态栏',
-    slot: 'right',
-    entry: 'https://testingcf.jsdelivr.net/gh/The-poem-of-destiny/FrontEnd-for-destined-journey@1.8.2/dist/status/index.html',
-  })
+  ```jsonc
+  // panel_ui.slots[] — the status panel (replaces regex #5)
+  { "id": "status", "view": "wcv", "rect": [8, 0, 4, 6], "title": "状态栏",
+    "entry": "https://testingcf.jsdelivr.net/gh/The-poem-of-destiny/FrontEnd-for-destined-journey@1.8.2/dist/status/index.html" }
   ```
 
   The `status/index.html` bundle is unchanged — it just renders into the WCV panel body instead of an inline
@@ -179,11 +157,10 @@ A surface is registered two ways, both card-driven:
   current `wcv-card` spike does.
 
 **Import transform (so existing 命定之诗 cards work without re-authoring):** the importer detects the
-status-loader regex (`placement:[2]`, replacement does `.load('…/status/index.html')`) and converts it to the
-panel registration above — synthesizing the script into `rp_terminal.scripts` (or a `panel_ui` slot) and
-**skipping** it as a display regex. The home/custom_start loader regexes (`…/home/…`, `…/custom_start/…`) are
-**not** matched by this rule, so they import normally and stay inline. (Detection keys on the distinct
-`status/index.html` URL, so it won't catch the other two.)
+status-loader regex (`placement:[2]`, replacement does `.load('…/status/index.html')`) and converts it to a
+`panel_ui` `wcv` slot (above) — **skipping** it as a display regex. The home/custom_start loader regexes
+(`…/home/…`, `…/custom_start/…`) are **not** matched by this rule, so they import normally and stay inline.
+(Detection keys on the distinct `status/index.html` URL, so it won't catch the other two.)
 
 ### 4c. Button bus across the WCV boundary
 Add the missing event trio to `thRuntime` (`index.ts`): `getButtonEvent` (identity-mapped to the raw name,
@@ -221,7 +198,7 @@ Concrete additions to the canonical surface (`thRuntime/index.ts`) + the WCV hos
 | `getScriptId` | ⬜ | add (stable per-script id) |
 | `getVariables({type:'script'})` / `updateVariablesWith(..,{type:'script'})` | 🟡 always stat_data (`index.ts:198`/`:246`) | honor `script` scope → script-owned KV |
 | `getButtonEvent` / `eventOn` / `replaceScriptButtons` | ⬜ | add + bridge (4c) |
-| `registerScriptPanel({id,title,slot,entry})` (RPT ext) | ⬜ | add — dock a WCV panel loading `entry` via `WcvPanel`/`wcvManager` (4b); the `状态栏` path |
+| `registerScriptPanel({id,title,slot,entry})` (RPT ext) | ⬜ deferred | dynamic panels only — NOT the `状态栏` path (that's a declarative `panel_ui` slot, §4b/§4h). Future hook. |
 
 Regex write is the only genuinely missing **wiring** (the rest are getters/bus). The write *storage*
 already exists in `regexService` — what's missing is the TH-shape bridge that maps `updateTavernRegexesWith` /
@@ -308,12 +285,10 @@ destroy on session switch, cap the count, and `setVisible(false)` when hidden (t
 `docs/card-custom-ui-design.md`). The card declaring the layout means the rects are stable (computed once per
 window size), which is what keeps the overlay model cheap.
 
-**Open decision — static-locked vs card-seeded-resizable:** does the card's layout **lock** the workspace
-(fixed rects, no user resize — the cleanest fit for the WCV overlay, the recorded direction in
-`docs/card-custom-ui-design.md`), or is it a **default** the user can then resize/rearrange (persisted per
-card+profile), accepting the live-drag bounds-sync tax for WCV slots? Recommendation: **honor the card layout
-as the default and ship static first**, add opt-in resize (persisted, with "reset to card layout") later — so
-the card's vision renders faithfully without paying the resize-overlay cost up front.
+**Layout mode (locked): static.** The card's layout **locks** the workspace — fixed rects, no user
+resize/rearrange in v1 (the cleanest fit for the WCV overlay: stable bounds computed once per window size, no
+live-drag trailing; the recorded direction in `docs/card-custom-ui-design.md`). Opt-in resize (persisted per
+card+profile, with "reset to card layout") is a **deferred** follow-up, not built first.
 
 ### 4f. Network + OAuth
 `CARD_CSP` already allows `connect-src *` (`wcvManager.ts:20`), so the Cloudflare fetch works. The OAuth
@@ -333,17 +308,19 @@ Gate behind the same trusted-card consent that already guards remote card code (
 4. **Modal presentation** (4d) — hidden full-window WCV toggled by the button. → **`创意工坊` opens and can
    read/diff/write.**
 5. **OAuth window-open** (4f) — completes cloud login.
-6. **Panel registration + `surface` schema** (4b): add `registerScriptPanel` + the dynamic panel-view
-   registry, and the **import transform** that turns the `状态栏` status-loader regex into the panel script
-   (skipping it as a display regex). Then **retire the hardcoded `wcv-*` views** (`viewRegistry.tsx:84`,
-   `WcvPanel.tsx`) — **replace, don't remove**, per the locked decision:
-   - `状态栏` → a script-registered WCV **panel** (`registerScriptPanel`, §4b) replacing `wcv-card` + the regex.
+6. **Card-carried layout (§4h, static-locked) + the import transform**: make `panel_ui` the source of truth —
+   when a card carries it, render `StaticWorkspace`; else keep the resizable workspace. Add the import
+   transform that turns the `状态栏` status-loader regex into a `panel_ui` `wcv` slot (skipping it as a display
+   regex), and surface the panel count in the import confirm. Then **retire the hardcoded `wcv-*` views**
+   (`viewRegistry.tsx:84`, `WcvPanel.tsx`) — **replace, don't remove**, per the locked decision:
+   - `状态栏` → a declarative `wcv` **panel slot** (§4b/§4h) replacing `wcv-card` + the regex.
    - `首页` / `自定义开局` → stay **inline regex** (#6/#7, `placement:[2]`), already rendered by the
      card-agnostic inline path (`WcvMessageFrame` isolated / `InlineCardFrame`); just drop the `wcv-home` /
      `wcv-start` hardcodes.
 
-   Delete a hardcoded entry only once its replacement (the panel script for status; the inline-regex path for
-   home/creation) is in place — so there's no window where 命定之诗 loses UI.
+   Delete a hardcoded entry only once its replacement (the panel slot for status; the inline-regex path for
+   home/creation) is in place — so there's no window where 命定之诗 loses UI. (`registerScriptPanel` is
+   deferred — dynamic panels only, §4e.)
 
 After step 4 the button works for download/sync; 5 adds cloud login; 6 removes the hardcoding so every card
 gets the same door.
@@ -362,20 +339,23 @@ gets the same door.
 
 ## 7. Files this will touch (for the eventual implementation)
 
-- `src/shared/thRuntime/index.ts` — API gaps + button bus + script-scope vars + `registerScriptPanel` (4c, 4e).
-- `src/main/services/characterService.ts` (import transform) — detect the `状态栏` status-loader regex
-  (`.load('…/status/index.html')`, `placement:[2]`) → synthesize the `registerScriptPanel` script into
-  `rp_terminal.scripts` and skip it as a display regex; leave `首页`/`自定义开局` regexes untouched.
-- `src/renderer/src/components/workspace/viewRegistry.tsx` — a **dynamic** panel-view registry fed by
-  `registerScriptPanel` (panel body = `WcvPanel` loading the script's `entry`), replacing the static `wcv-*`.
+- `src/shared/thRuntime/index.ts` — API gaps + button bus + script-scope vars (4c, 4e). `registerScriptPanel`
+  is deferred (dynamic panels only).
+- `src/main/services/characterService.ts` — (a) import transform: detect the `状态栏` status-loader regex
+  (`.load('…/status/index.html')`, `placement:[2]`) → add a `panel_ui` `wcv` slot + skip it as a display
+  regex; leave `首页`/`自定义开局` regexes untouched. (b) `summarizeCardBundle` (`:157`) reports the panel
+  count/layout for the import confirm.
+- `src/renderer/src/components/workspace/StaticWorkspace.tsx` + the workspace switch — render the card's
+  `panel_ui` (static-locked) when present; `wcv` slots mount `WcvPanel` with the slot's `entry`. Retire the
+  static `wcv-card/home/start` entries in `viewRegistry.tsx`/`WcvPanel.tsx`.
 - `src/main/ipc/wcvIpc.ts` — `wcv-register-button`, `wcv-button-click`, `wcv-host-replace-regexes`,
   `isCharacterTavernRegexesEnabled`, `getCurrentCharacterName`, chat-id getter, script-scope var IPC.
 - `src/main/services/wcvManager.ts` — modal show/hide lifecycle; `setWindowOpenHandler` for OAuth.
 - `src/preload/wcvPreload.ts` — script-module loading + the button/close bridge.
 - `src/renderer/src/components/CardScriptWcvHost.tsx` (new) + transport selection in `viewRegistry.tsx`.
 - `src/renderer/src/stores/toolbarStore.ts` — already fits; feed it from the WCV bridge.
-- `src/main/types/character.ts` — the `surface` schema (4b).
-- Delete the hardcoded `wcv-card/home/start` in `viewRegistry.tsx` + `WcvPanel.tsx` (step 6).
+- `src/main/types/character.ts` — `panel_ui` (`:71`) already models the layout; no schema change needed
+  (optional later: a min-size constraint / explicit static-lock marker).
 **Reuse, don't modify** (per §4g): `src/main/services/regexService.ts` (regex write storage),
 `src/renderer/src/App.tsx` (already broadcasts lifecycle/MVU events to all WCVs on the chat),
 `src/main/services/scriptApiService.ts` + `src/main/ipc/pluginIpc.ts` + `src/renderer/src/plugin/*`
