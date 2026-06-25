@@ -107,7 +107,9 @@ through the host bridge as RFC-6902 JSON Patch.
 
 - `getCharWorldbookNames('current')` → `{ primary, additional }` — ✅ (sync) · `getWorldbook(name)` → entries — ✅
 - `updateWorldbookWith(name, fn)` / `replaceWorldbook(name, entries)` — ✅ **full replace** (add/remove/edit via read-modify-write).
-- `createWorldbook` / `deleteWorldbook` / `bindWorldbook` (bind-unbind to chat) + `getWorldbookNames`/`getLorebooks` — ✅ **library-wide CRUD + bind** (trusted-card stance). id↔name is resolved in the runtime (`wbIdByName`); entries are mapped to the TH shape (`uid`/`name`) there so both transports + by-id reads are consistent.
+- `createWorldbookEntries(name, entries)` → `{ worldbook, new_entries }` · `deleteWorldbookEntries(name, predicate)` → `{ worldbook, deleted_entries }` — ✅ (the workshop's install/uninstall path; predicate filters on `extra`).
+- `createWorldbook` / `deleteWorldbook` / `bindWorldbook` (bind-unbind to chat) + `getWorldbookNames`/`getLorebooks` — ✅ **library-wide CRUD + bind** (trusted-card stance). id↔name is resolved in the runtime (`wbIdByName`).
+- **Entry shape:** entries cross the card boundary in the TavernHelper `WorldbookEntry` shape (`strategy.{type,keys,keys_secondary}` / `position` / `recursion` / `extra`) and are mapped to/from our native `LorebookEntry` (`keys`/`constant`/`selective`/…) by the shared [`thRuntime/worldbookEntry`](../src/shared/thRuntime/worldbookEntry.ts) on EVERY read+write path, so `strategy.type:'constant'`↔`constant`, `strategy.keys`↔`keys`, and `extra` (card tags like `cw_project_id`) round-trip. (`LorebookEntrySchema` gained an optional `extra`.)
 - Backing: file-based [`lorebookService`](../src/main/services/lorebookService.ts) (+ `scriptApiService`). The card's own book is at `id == characterId`.
 
 ### Character / preset — ✅ (read)

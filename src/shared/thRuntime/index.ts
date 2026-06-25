@@ -183,6 +183,14 @@ export function createThRuntime(host: Host): ThGlobals {
     const r = id ? await host.getWorldbookById(id) : await host.getWorldbook(name)
     return (r.entries || []).map(nativeToThEntry)
   }
+  // Persist a full set of TavernHelper-shaped entries to a book (TH→native via the shared mapper, by id
+  // when resolvable else by name). Shared by replace / update / create / delete entry paths.
+  const saveWb = async (name: any, thEntries: any[]): Promise<void> => {
+    const native = (Array.isArray(thEntries) ? thEntries : []).map(thToNativeEntry)
+    const id = resolveWbId(name)
+    if (id) await host.saveWorldbookById(id, native)
+    else await host.saveWorldbook(name, native)
+  }
   const doCreateWb = async (name: any): Promise<string> => {
     const nm = String(name ?? 'New Worldbook')
     await host.createWorldbook(nm)
@@ -304,20 +312,49 @@ export function createThRuntime(host: Host): ThGlobals {
     getLorebookEntries: async (name: any) => wbEntries(name),
     replaceWorldbook: async (name: any, entries: any) => {
       // Card sends TavernHelper-shaped entries; persist native (strategy.keys→keys, type:'constant'→constant).
-      const native = (Array.isArray(entries) ? entries : []).map(thToNativeEntry)
-      const id = resolveWbId(name)
-      if (id) await host.saveWorldbookById(id, native)
-      else await host.saveWorldbook(name, native)
+      await saveWb(name, entries)
+      return true
+    },
+    replaceWorldbookEntries: async (name: any, entries: any) => {
+      // TH alias (older name): accept (name, entries) or (entries) for the active card's book.
+      if (Array.isArray(name)) {
+        entries = name
+        name = undefined
+      }
+      await saveWb(name, entries)
       return true
     },
     updateWorldbookWith: async (name: any, updater: any) => {
       const cur = await wbEntries(name)
       const next = typeof updater === 'function' ? await updater(cur) : cur
-      const native = (Array.isArray(next) ? next : []).map(thToNativeEntry)
-      const id = resolveWbId(name)
-      if (id) await host.saveWorldbookById(id, native)
-      else await host.saveWorldbook(name, native)
+      await saveWb(name, next)
       return next
+    },
+    // Append new entries (TH createWorldbookEntries) → { worldbook, new_entries }.
+    createWorldbookEntries: async (name: any, newEntries: any) => {
+      const added = Array.isArray(newEntries) ? newEntries : []
+      const all = [...(await wbEntries(name)), ...added]
+      await saveWb(name, all)
+      return { worldbook: all, new_entries: added }
+    },
+    createLorebookEntries: async (name: any, newEntries: any) => {
+      const added = Array.isArray(newEntries) ? newEntries : []
+      const all = [...(await wbEntries(name)), ...added]
+      await saveWb(name, all)
+      return { worldbook: all, new_entries: added }
+    },
+    // Delete entries matching `predicate` (TH deleteWorldbookEntries) → { worldbook, deleted_entries }.
+    // The workshop's uninstall calls this, filtering by `extra.cw_project_id`.
+    deleteWorldbookEntries: async (name: any, predicate: any) => {
+      const cur = await wbEntries(name)
+      const kept: any[] = []
+      const deleted: any[] = []
+      for (const e of cur) {
+        if (typeof predicate === 'function' && predicate(e)) deleted.push(e)
+        else kept.push(e)
+      }
+      await saveWb(name, kept)
+      return { worldbook: kept, deleted_entries: deleted }
     },
     createWorldbook: doCreateWb,
     createLorebook: doCreateWb,

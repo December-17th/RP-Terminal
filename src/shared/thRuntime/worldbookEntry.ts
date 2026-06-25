@@ -70,6 +70,8 @@ export const thToNativeEntry = (th: any): Record<string, any> => {
     exclude_recursion: t.recursion?.prevent_incoming === true,
     prevent_recursion: t.recursion?.prevent_outgoing === true,
     comment: t.name || t.comment || '',
-    extra: t.extra && typeof t.extra === 'object' ? t.extra : undefined
+    // Keep card metadata (the workshop's cw_project_id/cw_entry_key) but don't persist an empty object.
+    extra:
+      t.extra && typeof t.extra === 'object' && Object.keys(t.extra).length ? t.extra : undefined
   }
 }

@@ -240,6 +240,24 @@ describe('createThRuntime', () => {
     expect(await g.deleteWorldbook('Nope')).toBe(false)
   })
 
+  it('createWorldbookEntries appends (keys/constant mapped); deleteWorldbookEntries removes by predicate', async () => {
+    const m: any = mockHost()
+    const g = createThRuntime(m.host)
+    const created = await g.createWorldbookEntries('Lore A', [
+      { name: 'New', strategy: { type: 'constant', keys: ['x'] } }
+    ])
+    expect(created.new_entries).toHaveLength(1)
+    const afterCreate = m.calls.saveWorldbookById.at(-1)
+    expect(afterCreate[0]).toBe('wb1')
+    expect(
+      afterCreate[1].some((e: any) => e.keys?.includes('x') && e.constant === true)
+    ).toBe(true)
+    // the mock book has one entry (mapped name 'Entry 1') — delete it via predicate
+    const del = await g.deleteWorldbookEntries('Lore A', (e: any) => e.name === 'Entry 1')
+    expect(del.deleted_entries).toHaveLength(1)
+    expect(m.calls.saveWorldbookById.at(-1)[1]).toEqual([]) // nothing kept
+  })
+
   it('triggerSlash runs the STScript subset over the Host (chat vars, macros, pipes)', async () => {
     const m: any = mockHost()
     const g = createThRuntime(m.host)
