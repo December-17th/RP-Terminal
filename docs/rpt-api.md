@@ -93,6 +93,7 @@ through the host bridge as RFC-6902 JSON Patch.
 - `getVariables()` → `{ stat_data }` · `Mvu.getMvuData()` / `getMvuVariable(path)` — ✅ (sync)
 - `Mvu.setMvuVariable(path, value)` · `insertOrAssignVariables(vars)` · `updateVariablesWith(fn)` — ✅ (→ `applyVariableOps` JSONPatch → persisted)
 - `Mvu.replaceMvuData(d)` / `replaceVariables(vars)` — ✅
+- **Script scope** — `getVariables({type:'script'})` / `updateVariablesWith(fn, {type:'script'})` — ✅ (sync read) a card-owned KV store (`plugin-storage`, owner `card:<id>`), **separate from `stat_data`** so a script's private cache never pollutes the character variables.
 - The host folds the model's `<UpdateVariable>` (`_.set` + `<JSONPatch>` incl. `delta`/array-append) natively (`mvuParser`); the runtime does NOT load the full MVU bundle.
 
 ### Chat / messages — 🟡
@@ -112,6 +113,7 @@ through the host bridge as RFC-6902 JSON Patch.
 ### Character / preset — ✅ (read)
 
 - `getCharData()` / `getCharAvatarPath()` — ✅ (sync, ctx-scoped) · `getPreset()` (active preset name + sampler params) / `getPresetNames()` — ✅ (sync) · `SillyTavern.getContext()` — ✅
+- `getCurrentCharacterName()` (from `charData().name`) · `SillyTavern.getCurrentChatId()` (the WCV ctx is empty — resolved from `e.sender` via `-get-chat-id-sync`) · `getScriptId()` (stable per-runtime id) — ✅ (sync)
 
 ### Generation — ✅ (request)
 
@@ -124,11 +126,15 @@ through the host bridge as RFC-6902 JSON Patch.
   `/gen`·`/genraw`·`/trigger`·`/send`) via the shared [`stscript`](../src/shared/stscript.ts) interpreter.
   `while`/loops + the long-tail command set — ⬜.
 
-### Regex — 🟡
+### Regex — ✅
 
-- `getTavernRegexes()` (list active display regex) / `formatAsTavernRegexedString(text)` (apply them to a
-  string) — ✅ (sync, scoped to the card's world+session, via `scriptApiService`). `replaceTavernRegexes`
-  (write) — 🔁 stub (runtime regex rewrites are risky — can break the card's own beautification — and rare).
+- `getTavernRegexes(option)` → full `TavernRegex[]` for a scope (`{type:'character'}` = the card's world
+  bucket, `'global'`, `'preset'`) / `formatAsTavernRegexedString(text)` (apply active display regex to a
+  string) / `isCharacterTavernRegexesEnabled()` — ✅ (sync). Shapes map via
+  [`shared/thRuntime/tavernRegex`](../src/shared/thRuntime/tavernRegex.ts).
+- `replaceTavernRegexes(regexes, option)` / `updateTavernRegexesWith(fn, option)` — ✅ **write** (full replace
+  of the scope's bucket), backed by the existing `regexService` CRUD; the chat re-render is **debounced** so a
+  card can't thrash it. (WCV transport; the inline transport is a documented no-op — see `cardBridge/host.ts`.)
 
 ### Events — ✅
 
@@ -159,7 +165,9 @@ Card → host channels (resolved against the calling view's ctx), in
 `wcv-host-set-vars`, `wcv-host-get-floors-sync`, `wcv-host-set-input`, the worldbook channels
 (`-get-worldbook-names-sync` / `-get-worldbook` / `-replace-worldbook` / create / delete / bind),
 `-save-chat` / `-reload-chat`, `wcv-host-get-char-data` / `-get-char-avatar` / `-get-preset` /
-`-get-preset-names` / `-get-regexes` / `-format-regex` / `-get-persona-name`, and the chat-write channels
+`-get-preset-names` / `-get-regexes` / `-format-regex` / `-get-persona-name`, the regex-full + write channels
+(`-get-regexes-full` / `-replace-regexes` / `-is-char-regex-enabled`), `-get-chat-id-sync`, the script-scope
+KV channels (`-script-vars-get-sync` / `-script-vars-set`), and the chat-write channels
 (`chat-set-messages` / `-delete-messages` / `-save`). Host → card: `wcv-vars-changed` (mirror refresh) +
 `wcv-event` (lifecycle/mutation/stream). To add an API: add the runtime method
 ([`thRuntime/index.ts`](../src/shared/thRuntime/index.ts)) + a `Host` method on **both** adapters (sync
@@ -170,17 +178,17 @@ this doc + [docs/sdk/](sdk/component-inventory.md).
 
 ## 6. Near-term gaps
 
-**Done — the TavernHelper JS API is substantially complete:** variables/MVU, lorebook **CRUD/bind**,
-char/preset reads, regex read+format, chat read+write (`setChatMessages`/`deleteChatMessages`),
-`generate`/`generateRaw` + `STREAM_TOKEN_RECEIVED`, `tavern_events` lifecycle+mutation, **`triggerSlash`**
-(STScript subset), `EjsTemplate.*`, and the `{{get_X_variable}}`/`{{format_X_variable}}` macros.
-**Leftovers:**
+**Done — the TavernHelper JS API is substantially complete:** variables/MVU (+ script scope), lorebook
+**CRUD/bind**, char/preset reads, regex **read+format+write** (`getTavernRegexes`/`updateTavernRegexesWith`/
+`replaceTavernRegexes`), chat read+write (`setChatMessages`/`deleteChatMessages`), `generate`/`generateRaw` +
+`STREAM_TOKEN_RECEIVED`, `tavern_events` lifecycle+mutation, **`triggerSlash`** (STScript subset),
+`EjsTemplate.*`, and the `{{get_X_variable}}`/`{{format_X_variable}}` macros. **Leftovers:**
 
 - ⬜ `createChatMessages` general insert (needs a floor-model design decision); real `createChat`
   (auto-switch UX); per-message swipe/var edits.
 - ⬜ `MESSAGE_SENT` event; the full `tavern_events` enum (we wire ~10); `stopGenerationById`.
-- 🔁 `replaceTavernRegexes` (regex write), `registerMacroLike`, + the **audio** API — graceful stubs
-  (low-value / risky; the regex reads + native `<audio>`/WebAudio cover the real cases).
+- 🔁 `registerMacroLike` + the **audio** API — graceful stubs (low-value / risky; native `<audio>`/WebAudio
+  covers the real audio cases).
 
 > The **ST-Prompt-Template template engine** (`getwi`/`getchar`/`getpreset`/`define`/`faker`/render-time
 > eval / `[GENERATE]`+`@INJECT` markers / `[InitialVariables]` / `[RENDER:*]`) is a separate subsystem

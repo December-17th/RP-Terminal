@@ -65,7 +65,7 @@ transports implement the same surface, so a card behaves identically in either
 
 | Global | Contents | Status |
 | --- | --- | --- |
-| `TavernHelper` (+ bare helpers) | variables, chat r/w, worldbook CRUD, char/preset read, regex read/format, generate, events, `triggerSlash`, macros, audio | ✅ (gaps below) |
+| `TavernHelper` (+ bare helpers) | variables (+ script scope), chat r/w, worldbook CRUD, char/preset read, regex read/format/write, generate, events, `triggerSlash`, macros, audio | ✅ (gaps below) |
 | `Mvu` | `getMvuData`/`getMvuVariable`/`setMvuVariable`/`replaceMvuData`/`parseMessage`/`events` | ✅ |
 | `SillyTavern` | `getContext()`, `chat[]` (+swipes), `substituteParams`, `saveChat`, `reloadCurrentChat`, `eventSource` | ✅ |
 | `EjsTemplate` | `evalTemplate`/`prepareContext`/`getSyntaxErrorInfo`/`allVariables`/`saveVariables`/… | ✅ |
@@ -76,13 +76,13 @@ transports implement the same surface, so a card behaves identically in either
 
 | Domain | Methods | Status | Notes |
 | --- | --- | --- | --- |
-| **Variables / MVU** | `getVariables`, `insertOrAssignVariables`, `replaceVariables`, `updateVariablesWith`; `Mvu.*` | ✅ | State of truth = `floor.variables.stat_data`. Writes → RFC-6902 JSON-Patch (`applyVariableOps`). |
+| **Variables / MVU** | `getVariables`, `insertOrAssignVariables`, `replaceVariables`, `updateVariablesWith`; `Mvu.*` | ✅ | State of truth = `floor.variables.stat_data`. Writes → RFC-6902 JSON-Patch (`applyVariableOps`). `type:'script'` → a card KV (`plugin-storage`), separate from `stat_data`. |
 | **Chat read** | `getChatMessages`, `getCurrentMessageId` | ✅ | `message_id` = compact chat-array index. |
 | **Chat write** | `setChatMessages`, `deleteChatMessages`, `saveChat`, `reloadCurrentChat`, `setInput`, `createChatMessages` | ✅ / 🟡 | `createChatMessages` → composer-inject (onboarding); general mid-history insert ⬜ (floor-model decision). |
 | **Worldbook** | get / `createWorldbook` / `deleteWorldbook` / `replaceWorldbook` / `updateWorldbookWith` / `bindWorldbook` / names | ✅ | **Full library CRUD + bind** (trusted-card stance). id↔name resolved in the runtime. |
-| **Character / preset** | `getCharData`, `getCharAvatarPath`, `getPreset`, `getPresetNames` | ✅ | Read-only. |
+| **Character / preset** | `getCharData`, `getCharAvatarPath`, `getPreset`, `getPresetNames`, `getCurrentCharacterName`, `SillyTavern.getCurrentChatId`, `getScriptId` | ✅ | Read-only (sync). |
 | **Generation** | `generate`, `generateRaw` (+ `STREAM_TOKEN_RECEIVED`) | ✅ | Host-side; **the AI key never reaches the card**. `stopGenerationById` ⬜. |
-| **Regex** | `getTavernRegexes`, `formatAsTavernRegexedString` | ✅ | `replaceTavernRegexes` (write) 🔁 stub (risky/rare). |
+| **Regex** | `getTavernRegexes(option)`, `isCharacterTavernRegexesEnabled`, `formatAsTavernRegexedString`, `replaceTavernRegexes`, `updateTavernRegexesWith` | ✅ | Read + **write** (full replace of a scope's bucket via `regexService`; debounced reload). Shapes map in [`thRuntime/tavernRegex`](../../src/shared/thRuntime/tavernRegex.ts). |
 | **Events** | `eventOn/Once/Emit/MakeFirst/RemoveListener`; `tavern_events`; MVU `mag_variable_*` | ✅ / 🟡 | ~10 lifecycle/mutation/stream events wired; the full ST enum is a subset. `MESSAGE_SENT` ⬜. |
 | **STScript** | `triggerSlash` | 🟡 | Subset via [`shared/stscript`](../../src/shared/stscript.ts): pipes/closures/macros, chat+global vars, `/gen`·`/genraw`·`/trigger`·`/send`. `while`/loops + long-tail commands ⬜. |
 | **EJS** | `EjsTemplate.*` | ✅ | Backed by the quickjs engine (Layer C of ST-PT). |
