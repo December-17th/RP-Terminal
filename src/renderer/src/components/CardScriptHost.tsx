@@ -5,7 +5,8 @@ import { useScriptsStore } from '../stores/scriptsStore'
 import { usePresetStore } from '../stores/presetStore'
 import { useCardScriptsStore } from '../stores/cardScriptsStore'
 import { useToolbarStore } from '../stores/toolbarStore'
-import { buildScriptSrcDoc, CardScript } from '../plugin/bridgeShim'
+import { buildScriptSrcDoc, isModuleScript, CardScript } from '../plugin/bridgeShim'
+import { remoteImportUrls, inlineRemoteModuleGraph, ModuleSource } from '../plugin/sourceRewrite'
 import { buildMvuEvents } from '../plugin/mvuEvents'
 import { chatTransitionEvents, messageMutationEvents, TAVERN_EVENTS } from '../plugin/events'
 import { dispatchRpc } from '../plugin/dispatch'
@@ -18,6 +19,42 @@ interface Props {
   cardName: string
   scripts: CardScript[]
 }
+
+// Remote module graphs are immutable per URL-set, so cache them across reloads (chat/preset
+// switches) instead of re-fetching the CDN every time the frame rebuilds.
+const moduleGraphCache = new Map<string, ModuleSource[]>()
+
+/**
+ * A static `import 'https://…'` can't resolve natively in the opaque (process-isolated) frame,
+ * so for each module script with remote imports we host-fetch the module graph and inline it as
+ * self-contained `data:` URLs (the same trick `$.load()` uses). Grant-gated by the caller; on any
+ * failure the script is left untouched (its import then fails in-frame and surfaces to the Logs
+ * panel). Returns a new list — never mutates the input.
+ */
+const inlineRemoteImports = async (
+  profileId: string,
+  cardId: string,
+  scripts: CardScript[]
+): Promise<CardScript[]> =>
+  Promise.all(
+    scripts.map(async (s) => {
+      if (!isModuleScript(s.code)) return s
+      const urls = remoteImportUrls(s.code)
+      if (urls.length === 0) return s
+      const key = urls.slice().sort().join('|')
+      try {
+        let graph = moduleGraphCache.get(key)
+        if (!graph) {
+          graph = await window.api.scriptFetchModuleGraph(profileId, cardId, urls)
+          if (graph && graph.length) moduleGraphCache.set(key, graph)
+        }
+        if (graph && graph.length) return { ...s, code: inlineRemoteModuleGraph(s.code, graph) }
+      } catch {
+        /* leave as-is — the native import will fail and report to the Logs panel */
+      }
+      return s
+    })
+  )
 
 interface Grants {
   enabled?: boolean
@@ -47,6 +84,11 @@ export const CardScriptHost: React.FC<Props> = ({
   const btnKeys = useRef(new Set<string>())
   // Master on/off lives in the Scripts (left) panel now; the right panel is game-UI only.
   const enabled = useCardScriptsStore((s) => s.enabledByCard[cardId] ?? true)
+  // Trust grant (may this world load & run remote code), settable from the Scripts panel's
+  // grant button. Reactive so granting/revoking re-resolves the runtime without re-opening.
+  const trustedGrant = useCardScriptsStore((s) => s.trustedByCard[cardId])
+  // The auto-prompt fires at most once per card mount; after that the grant button is the path.
+  const promptedRef = useRef(false)
   const [height, setHeight] = useState(0)
   const [srcDoc, setSrcDoc] = useState('')
   const [scriptCount, setScriptCount] = useState(0)
@@ -75,10 +117,12 @@ export const CardScriptHost: React.FC<Props> = ({
   useEffect(() => {
     let alive = true
     setGrantsLoaded(false)
+    promptedRef.current = false // re-allow the one-time prompt for the newly active card
     window.api.pluginGetGrants(profileId, cardId).then((g: Grants) => {
       if (!alive) return
       grantsRef.current = g || {}
       useCardScriptsStore.getState().seed(cardId, g?.enabled !== false)
+      useCardScriptsStore.getState().seedTrust(cardId, g?.trusted === true)
       setGrantsLoaded(true)
     })
     return () => {
@@ -87,43 +131,55 @@ export const CardScriptHost: React.FC<Props> = ({
   }, [profileId, cardId])
 
   // Build the sandboxed document from the MERGED runtime scripts (card-embedded + active-
-  // scope store scripts). Scripts that import remote ES modules load them natively (1B) —
-  // which needs the per-card `remoteScripts` grant (it relaxes the iframe CSP to allow the
-  // CDN). The first such world prompts once; the grant then persists.
+  // scope store scripts). Scripts that import remote ES modules need the per-card
+  // `remoteScripts` grant; their remote imports are host-fetched and inlined as `data:` URLs
+  // (the opaque frame can't import cross-origin natively). The first such world prompts once;
+  // the grant then persists.
   useEffect(() => {
     if (!enabled || !grantsLoaded) return
     let alive = true
     ;(async () => {
       const res = await window.api.getRuntimeScripts(profileId, cardId, chatId)
       if (!alive) return
-      let trust = grantsRef.current.trusted === true
+      // Trust comes from the reactive store (seeded from grants, set by the Scripts panel's
+      // grant button) so granting/revoking there re-runs this effect.
+      let trust = trustedGrant === true || grantsRef.current.trusted === true
       let allow = trust || grantsRef.current.remoteScripts === true
-      // Scripts that load remote ES modules need a same-origin (trusted) runtime — the
-      // opaque sandbox can't import cross-origin modules. Prompt once for full trust.
-      if (res?.remoteHosts?.length && !trust) {
-        const ok = window.confirm(
-          `Scripts in "${cardName}" load & run code from the internet:\n\n` +
-            res.remoteHosts.map((h: string) => '  • ' + h).join('\n') +
-            `\n\nGrant this world's scripts FULL access to app features (generate, fetch, ` +
-            `write chat & lore)? They still run sandboxed in their own process — they can't ` +
-            `read your API keys or app memory directly. Grant this ONLY for a world you trust.`
-        )
+      // Scripts that load remote ES modules need the remote-loading grant. Auto-prompt at most
+      // once per card mount (the first time we see remote scripts); thereafter the user grants
+      // via the Scripts panel button — so a later grant/revoke there doesn't re-prompt.
+      if (res?.remoteHosts?.length && !promptedRef.current) {
+        promptedRef.current = true
+        const ok =
+          !trust &&
+          window.confirm(
+            `Scripts in "${cardName}" load & run code from the internet:\n\n` +
+              res.remoteHosts.map((h: string) => '  • ' + h).join('\n') +
+              `\n\nGrant this world's scripts FULL access to app features (generate, fetch, ` +
+              `write chat & lore)? They still run sandboxed in their own process — they can't ` +
+              `read your API keys or app memory directly. Grant this ONLY for a world you trust.`
+          )
         if (ok) {
           grantsRef.current = await window.api.pluginSetGrants(profileId, cardId, {
             trusted: true,
             remoteScripts: true
           })
+          useCardScriptsStore.getState().seedTrust(cardId, true)
           trust = true
           allow = true
         }
       }
       const list = res?.scripts || []
+      // Inline any remote module imports (host-fetched) so they resolve in the opaque frame —
+      // only when remote loading is allowed for this world.
+      const prepared = allow ? await inlineRemoteImports(profileId, cardId, list) : list
+      if (!alive) return
       // The frame is about to reload and re-register; drop this card's stale buttons first
       // so a button from a now-removed script doesn't linger in the menu.
       btnKeys.current.forEach((k) => useToolbarStore.getState().remove(k))
       btnKeys.current.clear()
-      setScriptCount(list.length)
-      setSrcDoc(buildScriptSrcDoc(list, { allowRemote: allow, trusted: trust }))
+      setScriptCount(prepared.length)
+      setSrcDoc(buildScriptSrcDoc(prepared, { allowRemote: allow, trusted: trust }))
     })()
     return () => {
       alive = false
@@ -137,7 +193,8 @@ export const CardScriptHost: React.FC<Props> = ({
     grantsLoaded,
     scriptsKey,
     storeScripts,
-    activePresetId
+    activePresetId,
+    trustedGrant
   ])
 
   const post = (msg: any): void => {

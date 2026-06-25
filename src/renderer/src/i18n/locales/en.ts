@@ -313,6 +313,15 @@ const en: Record<string, string> = {
   'scripts.runtimeOff': 'Runtime Off',
   'scripts.runtimeOnTitle': 'Script runtime running for this world — click to disable',
   'scripts.runtimeOffTitle': 'Script runtime disabled for this world — click to enable',
+  'scripts.trusted': 'Trusted',
+  'scripts.grant': 'Grant access',
+  'scripts.trustedTitle':
+    'This world may load & run remote code (its scripts can import from a CDN). Click to revoke.',
+  'scripts.grantTitle':
+    'Grant this world permission to load & run remote code — needed for scripts that import from a CDN.',
+  'scripts.grantConfirm':
+    'Allow “{{name}}” to load & run code from the internet?\n\nIts scripts gain full access to app features (generate, fetch, write chat & lore). They still run sandboxed in their own process and cannot read your API keys or app memory. Grant ONLY for a world you trust.',
+  'scripts.revokeConfirm': 'Revoke remote-code permission for “{{name}}”?',
   'scripts.cardScripts': 'Card scripts',
   'scripts.help':
     'Sandboxed JavaScript that runs in the right-panel ⚙ Card Scripts while a session is open (vars/chat/generate/ui via the rpt API). Scope a script to Global, World (this card) or Session (this chat). Pull a remote library by adding "// @import https://…" at the top — fetched once with your permission.',

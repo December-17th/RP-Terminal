@@ -304,6 +304,13 @@ const zh: Record<string, string> = {
   'scripts.runtimeOff': '运行时关',
   'scripts.runtimeOnTitle': '此世界的脚本运行时正在运行 —— 点击禁用',
   'scripts.runtimeOffTitle': '此世界的脚本运行时已禁用 —— 点击启用',
+  'scripts.trusted': '已授权',
+  'scripts.grant': '授予权限',
+  'scripts.trustedTitle': '此世界可加载并运行远程代码（其脚本可从 CDN 导入）。点击撤销。',
+  'scripts.grantTitle': '授予此世界加载并运行远程代码的权限 —— 需要从 CDN 导入的脚本所必需。',
+  'scripts.grantConfirm':
+    '允许「{{name}}」从互联网加载并运行代码？\n\n其脚本将获得对应用功能的完全访问权限（生成、抓取、写入聊天与世界书）。它们仍在各自独立的进程中沙箱运行，无法读取你的 API 密钥或应用内存。请仅对你信任的世界授权。',
+  'scripts.revokeConfirm': '撤销「{{name}}」的远程代码权限？',
   'scripts.cardScripts': '卡片脚本',
   'scripts.help':
     '在会话打开时于右侧面板「⚙ 卡片脚本」中运行的沙箱化 JavaScript（通过 rpt API 访问 vars/chat/generate/ui）。可将脚本范围设为全局、世界（当前卡片）或会话（当前对话）。在顶部添加 "// @import https://…" 可拉取远程库 —— 经你许可后获取一次。',

@@ -61,6 +61,21 @@ export const ScriptsPanel: React.FC<Props> = ({
   const runtimeOn = useCardScriptsStore((s) =>
     activeCardId ? (s.enabledByCard[activeCardId] ?? true) : true
   )
+  // Whether this world is granted to load & run remote code (needed for scripts that import
+  // from a CDN). Toggled by the grant button below.
+  const trusted = useCardScriptsStore((s) =>
+    activeCardId ? (s.trustedByCard[activeCardId] ?? false) : false
+  )
+
+  const toggleTrust = (): void => {
+    if (!activeCardId) return
+    if (trusted) {
+      if (confirm(t('scripts.revokeConfirm', { name: activeCardName || '' })))
+        useCardScriptsStore.getState().setTrusted(profileId, activeCardId, false)
+    } else if (confirm(t('scripts.grantConfirm', { name: activeCardName || '' }))) {
+      useCardScriptsStore.getState().setTrusted(profileId, activeCardId, true)
+    }
+  }
 
   useEffect(() => {
     load(profileId)
@@ -243,6 +258,15 @@ export const ScriptsPanel: React.FC<Props> = ({
               }
             >
               {runtimeOn ? t('scripts.runtimeOn') : t('scripts.runtimeOff')}
+            </button>
+          )}
+          {activeCardId && (
+            <button
+              className={`rpt-script-toggle ${trusted ? 'on' : ''}`}
+              title={trusted ? t('scripts.trustedTitle') : t('scripts.grantTitle')}
+              onClick={toggleTrust}
+            >
+              {trusted ? `🔓 ${t('scripts.trusted')}` : `🔒 ${t('scripts.grant')}`}
             </button>
           )}
           {activeCardId && (

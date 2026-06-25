@@ -92,6 +92,7 @@ describe('normalizeImportedScripts (Tavern Helper JSON)', () => {
     expect(s.code).toContain("import 'https://cdn/bundle.js';") // original content kept
     expect(s.code).toContain('rpt.ui.registerButton') // buttons baked in
     expect(s.code).toContain('重新读取初始变量')
+    expect(s.code).toContain('getButtonEvent') // click emits getButtonEvent(name) for TH eventOn
     expect(s.code).not.toContain('清除旧楼层变量') // the hidden one is dropped
   })
 
