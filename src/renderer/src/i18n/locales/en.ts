@@ -77,6 +77,18 @@ const en: Record<string, string> = {
   'prefs.scanDepth': 'Lorebook Scan Depth (turns)',
   'prefs.scanDepthHint': 'How many recent turns are scanned for lorebook keywords.',
   'prefs.recursion': 'Lorebook Recursion Steps',
+  'prefs.agentHint':
+    'Off: classic — dynamic lore every turn, no scene modes. Manual: enables the Explore/Dialogue/Combat switcher with per-mode tuning + caching. Agentic: same, with automatic mode routing (auto-routing coming soon).',
+  'prefs.cardRenderingHint':
+    'Inline: beautification cards render directly in the chat and scroll with it. Isolated: each card runs in its own process — safest for heavy cards. Per-card overrides live in the Regex panel.',
+  'prefs.cardSizingHint':
+    'Fit: the card grows to its content height (no scrollbar). Fill: cards built to fill a viewport (100vh) are mapped onto the frame via --TH-viewport-height.',
+  'prefs.templateEngineHint':
+    'When off, EJS template tags are stripped instead of evaluated ({{macros}} still work).',
+  'prefs.renderCadenceHint':
+    'During streaming, re-run the engine roughly every this many tokens (not per token).',
+  'prefs.recursionHint':
+    "Matched entries' content can trigger more entries, up to this many passes (0 = off).",
   'prefs.pricing': 'Token pricing ($ / 1M tokens)',
   'prefs.pricingHint': 'Optional. Empty ⇒ the meter shows tokens only. Keyed by exact model id.',
   'prefs.remove': 'Remove',

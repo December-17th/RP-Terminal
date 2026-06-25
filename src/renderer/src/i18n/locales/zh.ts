@@ -78,6 +78,15 @@ const zh: Record<string, string> = {
   'prefs.scanDepth': '世界书扫描深度（回合）',
   'prefs.scanDepthHint': '扫描最近多少回合以匹配世界书关键词。',
   'prefs.recursion': '世界书递归层数',
+  'prefs.agentHint':
+    '关闭：经典模式 —— 每回合动态匹配世界书，无场景模式。手动：启用「探索/对话/战斗」切换器，含每模式调优与缓存。智能：同上，并自动路由模式（自动路由即将推出）。',
+  'prefs.cardRenderingHint':
+    '内联：美化卡片直接在聊天中渲染并随之滚动。隔离：每张卡片在独立进程中运行 —— 对重型卡片最安全。每卡片的覆盖设置在「正则」面板中。',
+  'prefs.cardSizingHint':
+    '自适应：卡片增长至其内容高度（无滚动条）。填充：为填满视口（100vh）而构建的卡片会通过 --TH-viewport-height 映射到框架上。',
+  'prefs.templateEngineHint': '关闭后，EJS 模板标签将被剥离而非求值（{{macros}} 宏仍然有效）。',
+  'prefs.renderCadenceHint': '流式生成时，大约每这么多 Token 重新运行一次引擎（而非每个 Token）。',
+  'prefs.recursionHint': '已匹配条目的内容可触发更多条目，最多这么多轮（0 = 关闭）。',
   'prefs.pricing': 'Token 定价（美元 / 百万 Token）',
   'prefs.pricingHint': '可选。留空 ⇒ 计量仅显示 Token。按精确的模型 id 索引。',
   'prefs.remove': '删除',

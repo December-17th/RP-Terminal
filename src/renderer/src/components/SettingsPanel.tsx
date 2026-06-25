@@ -133,9 +133,7 @@ export const SettingsPanel: React.FC<{ profileId: string }> = ({ profileId }) =>
               <option value="agentic">{t('prefs.agentAgentic')}</option>
             </select>
             <div style={{ fontSize: '0.78em', color: 'var(--rpt-text-secondary)', marginTop: 4 }}>
-              <b>Off</b>: classic — dynamic lore every turn, no scene modes. <b>Manual</b>: enables
-              the Explore/Dialogue/Combat switcher with per-mode tuning + caching. <b>Agentic</b>:
-              same, with automatic mode routing (auto-routing coming soon).
+              {t('prefs.agentHint')}
             </div>
 
             <label className="field-label" style={{ marginTop: 18 }}>
@@ -157,9 +155,7 @@ export const SettingsPanel: React.FC<{ profileId: string }> = ({ profileId }) =>
               <option value="isolated">{t('prefs.cardIsolated')}</option>
             </select>
             <div style={{ fontSize: '0.78em', color: 'var(--rpt-text-secondary)', marginTop: 4 }}>
-              <b>Inline</b>: beautification cards render directly in the chat and scroll with it.{' '}
-              <b>Isolated</b>: each card runs in its own process — safest for heavy cards. Per-card
-              overrides live in the Regex panel.
+              {t('prefs.cardRenderingHint')}
             </div>
 
             <label className="field-label" style={{ marginTop: 18 }}>
@@ -181,9 +177,7 @@ export const SettingsPanel: React.FC<{ profileId: string }> = ({ profileId }) =>
               <option value="fill">{t('prefs.sizeFill')}</option>
             </select>
             <div style={{ fontSize: '0.78em', color: 'var(--rpt-text-secondary)', marginTop: 4 }}>
-              <b>Fit</b>: the card grows to its content height (no scrollbar). <b>Fill</b>: cards built
-              to fill a viewport (<code>100vh</code>) are mapped onto the frame via{' '}
-              <code>--TH-viewport-height</code>.
+              {t('prefs.cardSizingHint')}
             </div>
 
             <label
@@ -237,8 +231,7 @@ export const SettingsPanel: React.FC<{ profileId: string }> = ({ profileId }) =>
               {t('prefs.templateEngine')}
             </label>
             <div style={{ fontSize: '0.78em', color: 'var(--rpt-text-secondary)', marginTop: 4 }}>
-              When off, EJS template tags are stripped instead of evaluated ({'{{macros}}'} still
-              work).
+              {t('prefs.templateEngineHint')}
             </div>
 
             {settings.templates?.enabled !== false && (
@@ -294,8 +287,7 @@ export const SettingsPanel: React.FC<{ profileId: string }> = ({ profileId }) =>
                         marginTop: 4
                       }}
                     >
-                      During streaming, re-run the engine roughly every this many tokens (not per
-                      token).
+                      {t('prefs.renderCadenceHint')}
                     </div>
                   </>
                 )}
@@ -333,8 +325,7 @@ export const SettingsPanel: React.FC<{ profileId: string }> = ({ profileId }) =>
               }
             />
             <div style={{ fontSize: '0.78em', color: 'var(--rpt-text-secondary)', marginTop: 4 }}>
-              Matched entries&apos; content can trigger more entries, up to this many passes (0 =
-              off).
+              {t('prefs.recursionHint')}
             </div>
           </>
         )}
@@ -396,7 +387,8 @@ export const SettingsPanel: React.FC<{ profileId: string }> = ({ profileId }) =>
                   })
                 }}
               >
-                + {t('prefs.addPriceRow', { model: settings.api?.model || t('prefs.currentModel') })}
+                +{' '}
+                {t('prefs.addPriceRow', { model: settings.api?.model || t('prefs.currentModel') })}
               </button>
             </div>
           </details>
