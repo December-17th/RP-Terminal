@@ -1,6 +1,8 @@
 # Card Script Surfaces — running card scripts in a WCV & letting cards register their own UI
 
-Status: **Design / not built.** Motivating case: the `【命定之诗】创意工坊` button does nothing in RP Terminal.
+Status: **Design / not built.** Implementation plan:
+[docs/superpowers/plans/2026-06-25-card-script-wcv-surfaces.md](superpowers/plans/2026-06-25-card-script-wcv-surfaces.md).
+Motivating case: the `【命定之诗】创意工坊` button does nothing in RP Terminal.
 Builds on `docs/card-custom-ui-design.md` (the iframe-vs-WCV analysis + the `WebContentsView` plan) and the
 already-built WCV spike (`wcvManager`, `wcvPreload`, the `wcvIpc` host bridge). This doc generalizes that
 spike from **three hardcoded `命定之诗` URLs** into a **card/script-driven surface registry**, and routes
