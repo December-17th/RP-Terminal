@@ -171,15 +171,41 @@ Concrete additions to the canonical surface (`thRuntime/index.ts`) + the WCV hos
 | `getWorldbook` / `updateWorldbookWith` | ✅ (`index.ts:259`/`:267`) | none |
 | `getTavernRegexes(option)` | 🟡 ignores `option` (`index.ts:215`) | honor `global`/`character`/`preset` |
 | `isCharacterTavernRegexesEnabled` | ⬜ | add (host getter) |
-| `updateTavernRegexesWith` / `replaceTavernRegexes` | 🔁 no-op (`index.ts:298`) | **regex WRITE** — new host method + `wcv-host-replace-regexes` IPC backed by a regex replace service (mirror the worldbook replace path, `wcvIpc.ts:179`) |
+| `updateTavernRegexesWith` / `replaceTavernRegexes` | 🔁 no-op (`index.ts:298`) | **regex WRITE bridge** — wire to the EXISTING `regexService` (`updateRule`/`saveRegexScript`/`deleteScript`/`setScriptDisabled`); add only a `TavernRegex[]`→store shape map + `wcv-host-replace-regexes` IPC (mirror the worldbook replace path, `wcvIpc.ts:179`). Do NOT build a new regex store. |
 | `getCurrentCharacterName` | ⬜ | add (from `charData().name`) |
 | `SillyTavern.getCurrentChatId` | ⬜ | add to the `SillyTavern` object (`index.ts:351`) |
 | `getScriptId` | ⬜ | add (stable per-script id) |
 | `getVariables({type:'script'})` / `updateVariablesWith(..,{type:'script'})` | 🟡 always stat_data (`index.ts:198`/`:246`) | honor `script` scope → script-owned KV |
 | `getButtonEvent` / `eventOn` / `replaceScriptButtons` | ⬜ | add + bridge (4c) |
 
-Regex write is the only genuinely missing **capability** (the rest are getters/wiring); it needs a small
-main-side regex replace service + IPC.
+Regex write is the only genuinely missing **wiring** (the rest are getters/bus). The write *storage*
+already exists in `regexService` — what's missing is the TH-shape bridge that maps `updateTavernRegexesWith` /
+`replaceTavernRegexes(TavernRegex[], option)` onto it. See the reuse map (§4g) for why this must land on the
+canonical WCV host only, not the legacy `scriptApiService`/`dispatch` path.
+
+### 4g. Duplication / reuse map — land on the canonical stack, don't grow a third one
+
+The codebase already runs **two parallel card stacks** (verified): a **legacy** one — `bridgeShim` +
+`dispatch.ts` + `shims/tavern.ts` (the frozen `TAVERN_SHIM`) + `scriptApiService.ts`, used by
+`CardScriptHost` (card scripts) and `PluginHost` (plugins) — and the **canonical** one — `shared/thRuntime`
+over two transports (`cardBridge` inline / `wcvPreload` WCV) + the `wcvIpc`/`wcvHost` bridge, used by the
+card-HTML renderers (`InlineCardFrame`, `WcvMessageFrame`, `WcvPanel`). Card scripts (the `创意工坊` case)
+sit on the **legacy** stack; this design moves them to the **canonical** one. The hard rule for the
+implementation: **reuse the canonical pieces; do not extend the legacy stack and do not write new
+equivalents.**
+
+| Need | Reuse (don't rebuild) | Notes / duplication to avoid |
+| --- | --- | --- |
+| Out-of-process host + bounds/visibility | `wcvManager` + `window.api.wcv*` (`wcvEnsure`/`SetBounds`/`SetVisible`/`Destroy`, already exposed in `preload/index.ts`) | A WCV manager already serves both inline-message frames and panels; add a slot, not a new manager. |
+| Building the script's WCV page | `buildCardDoc` + `cardEnv`/`buildWcvLibTags` (as `WcvMessageFrame` does) — wrap each script as `<script type="module">` | The inline iframe's `buildScriptSrcDoc` (`bridgeShim.ts`) is the LEGACY-stack doc builder; don't reuse it for the WCV path. |
+| TH/MVU/ST API surface | `shared/thRuntime` (one place) | Do NOT add the new helpers (regex write, `getButtonEvent`, `getCurrentChatId`, script-scope vars) to `shims/tavern.ts` — it's frozen, and that would re-create drift. |
+| Host data access (worldbook/regex/char/preset reads + worldbook write) | the `wcvIpc` host bridge (worldbook read+write already there) | `scriptApiService.ts` is the LEGACY parallel of `wcvIpc` over the same services (`lorebookService`, `regexService`, …). Card-script reads/writes go through `wcvIpc`; leave `scriptApiService` for the plugin path. |
+| Regex write storage | `regexService` (`updateRule`/`saveRegexScript`/`deleteScript`) | No existing TH-regex-write bridge; add the shape map only. |
+| Lifecycle/MVU events → script | the existing `App.tsx` → `wcvBroadcastEvent`/`wcvBroadcastVars` → `wcvManager.notifyEvent` path | `CardScriptHost` has its OWN event forwarding (`chatTransitionEvents`/`messageMutationEvents`/`buildMvuEvents` → iframe, `CardScriptHost.tsx:322-364`) computed from the SAME `plugin/events.ts`. Moving scripts to the WCV makes that bespoke forwarding unnecessary — reuse App's broadcast, don't port it. |
+| Button menu UI | `toolbarStore` + `ScriptActionsBar` | Already host-rendered; add only the WCV→toolbar bridge (§4c). |
+| Modal show/hide | `wcvSetVisible` + the script's own backdrop | No new `Modal.tsx`/portal needed — the WCV is the modal. |
+| Merged runtime scripts | the shared `get-runtime-scripts` IPC | Single source already; reuse as-is. |
+| Per-card consent / trust grant | the existing `ConsentCardView` + `trusted`/`remoteScripts` grants | Reuse the gate; don't add a parallel consent. |
 
 ### 4f. Network + OAuth
 `CARD_CSP` already allows `connect-src *` (`wcvManager.ts:20`), so the Cloudflare fetch works. The OAuth
@@ -228,5 +254,10 @@ gets the same door.
 - `src/renderer/src/stores/toolbarStore.ts` — already fits; feed it from the WCV bridge.
 - `src/main/types/character.ts` — the `surface` schema (4b).
 - Delete the hardcoded `wcv-card/home/start` in `viewRegistry.tsx` + `WcvPanel.tsx` (step 6).
+**Reuse, don't modify** (per §4g): `src/main/services/regexService.ts` (regex write storage),
+`src/renderer/src/App.tsx` (already broadcasts lifecycle/MVU events to all WCVs on the chat),
+`src/main/services/scriptApiService.ts` + `src/main/ipc/pluginIpc.ts` + `src/renderer/src/plugin/*`
+(the legacy iframe/plugin stack — leave it for plugins; do not extend it for card scripts).
+
 - **SDK docs**: when step 1/4b land, update `docs/sdk/component-inventory.md` §2 (runtime API) + §4 (format)
   and `docs/rpt-api.md`, per `docs/sdk/README.md`.
