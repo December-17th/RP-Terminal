@@ -12,6 +12,8 @@ const THINK_RE = /<think(?:ing)?\b[^>]*>[\s\S]*?<\/think(?:ing)?>/gi
 const THINK_DANGLING_RE = /<think(?:ing)?\b[^>]*>[\s\S]*$/i
 // Our own self-closing state tag.
 const RPT_EVENT_RE = /<rpt-event\s+[^>]*?\/?>/gi
+// The combat-initiation cue (Track Combat) — surfaced as an "Enter Combat" affordance, hidden in prose.
+const COMBAT_START_RE = /<rpt-combat-start\b[^>]*?\/?>(?:[\s\S]*?<\/rpt-combat-start>)?/gi
 // MVU <UpdateVariable> blocks — tempered so a STRAY unclosed mention can't over-match (keep in
 // sync with mvuParser's blockRe).
 const MVU_BLOCK_RE =
@@ -42,7 +44,10 @@ export const extractThinking = (text: string): string => {
     .join('\n\n')
 }
 
-export const stripRptEvents = (text: string): string => String(text ?? '').replace(RPT_EVENT_RE, '')
+export const stripRptEvents = (text: string): string =>
+  String(text ?? '')
+    .replace(RPT_EVENT_RE, '')
+    .replace(COMBAT_START_RE, '')
 
 export const stripMvuBlocks = (text: string): string => String(text ?? '').replace(MVU_BLOCK_RE, '')
 

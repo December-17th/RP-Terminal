@@ -246,7 +246,10 @@ yet an SDK you'd hand a card author:
 | Native MVU view kit | render StatusMenuBuilder-style declarative widgets (`StatBar/StatRow/Image/Checkbox/RichText/QuestList`) natively (no frame) | ⬜ Option 1 (recommended) |
 | Variable write-back bridge | panel/script UI mutates `stat_data` (JSON-Patch → persisted) | ✅ `applyVariableOps` |
 | Reasoning UI | card `reasoning_template` slots fold `<think>` | ✅ (`reasoning_template`; `ReasoningPanel`) |
-| Combat resolver | sandboxed `rp_terminal.combat` script | ⬜ (Phase I) |
+| Combat engine | native deterministic d20 grid engine (`shared/combat`); seeded, card-overridable | ✅ (Track Combat P1–P4) |
+| Combat view | native `CombatView` (grid · initiative · action bar · log); Combat-mode layout | ✅ (P5) |
+| Combat AI touchpoints | `<rpt-combat-start>` cue, `<rpt-combat-result>` adjudication, narration, `ai` enemy ctrl | ✅ (P6) |
+| Combat bundle | card-shipped `rp_terminal.combat` (abilities/bestiary/party/maps/scripts/skin) → `buildEncounter` | ✅ schema + builder (P7); see [combat-system-design.md](../combat-system-design.md) §10 |
 | Agent / FSM modes | card-defined explore/dialogue/combat tuning + prompts | 🟡 modes exist; card-defined `agent` slot ⬜ |
 | Plugin packages | bundled `plugins[]` install via the permission/sandbox model | ⬜ (World Card S3) |
 

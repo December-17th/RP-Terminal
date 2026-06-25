@@ -398,6 +398,8 @@ const en: Record<string, string> = {
   'status.noState': '(No RPG state for this session yet)',
 
   'combat.empty': 'No active combat.',
+  'combat.cueDetected': 'A fight is breaking out.',
+  'combat.enter': 'Enter Combat',
   'combat.round': 'Round {{round}}',
   'combat.turnOf': '{{name}}’s turn',
   'combat.victoryParty': 'Victory — the party prevails!',

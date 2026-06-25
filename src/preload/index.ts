@@ -205,6 +205,8 @@ const api = {
     ipcRenderer.invoke('combat-end-turn', profileId, chatId),
   combatEnemyTurn: (profileId: string, chatId: string) =>
     ipcRenderer.invoke('combat-enemy-turn', profileId, chatId),
+  combatStartFromCard: (profileId: string, chatId: string, cue: unknown) =>
+    ipcRenderer.invoke('combat-start-from-card', profileId, chatId, cue),
   combatAdjudicate: (profileId: string, chatId: string, prose: string) =>
     ipcRenderer.invoke('combat-adjudicate', profileId, chatId, prose),
   combatNarrate: (profileId: string, chatId: string) =>

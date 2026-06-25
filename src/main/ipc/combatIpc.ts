@@ -11,6 +11,14 @@ export const registerCombatIpc = (ipcMain: IpcMain): void => {
   ipcMain.handle('combat-start', (_, _profileId, chatId, setup) =>
     combatService.startEncounter(chatId, setup)
   )
+  ipcMain.handle('combat-start-from-card', (_, profileId, chatId, cue) => {
+    try {
+      return combatService.startFromCard(profileId, chatId, cue)
+    } catch (err: any) {
+      logService.log('error', '✗ combat-start-from-card failed', err?.message || String(err))
+      throw err
+    }
+  })
   ipcMain.handle('combat-get', (_, _profileId, chatId) => combatService.getEncounter(chatId))
   ipcMain.handle('combat-action', async (_, _profileId, chatId, action) => {
     try {

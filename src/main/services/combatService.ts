@@ -11,7 +11,11 @@
 import { getDb } from './db'
 import { runSandbox } from './sandboxService'
 import { generateRaw } from './generationService'
+import { getCharacter } from './characterService'
+import { getChat } from './chatService'
 import { log } from './logService'
+import { getRpExt } from '../types/character'
+import { buildEncounter, type CombatBundle } from '../../shared/combat/bundle'
 import { clone } from '../../shared/objectPath'
 import {
   advanceTurn,
@@ -200,6 +204,24 @@ export const startEncounter = (chatId: string, setup: EncounterSetup): CombatSta
   const record = createEncounter(setup)
   writeRecord(chatId, record)
   return record.state
+}
+
+/**
+ * Start a fight from the active world's `combat` bundle + the AI's combat-start cue
+ * (the "Enter Combat" path): resolve the chat's card, build the encounter via the
+ * bundle, and persist it. Throws if the world ships no combat bundle.
+ */
+export const startFromCard = (
+  profileId: string,
+  chatId: string,
+  cue?: { enemies?: string; map?: string } | null,
+  seed?: number
+): CombatState => {
+  const chat = getChat(profileId, chatId)
+  const card = chat ? getCharacter(profileId, chat.character_id) : null
+  const bundle = (card ? getRpExt(card)?.combat : null) as CombatBundle | null | undefined
+  if (!bundle) throw new Error('This world has no combat bundle')
+  return startEncounter(chatId, buildEncounter(bundle, cue ?? null, { seed }))
 }
 
 /** The renderer view-model: the live state + the ability catalog (to render the

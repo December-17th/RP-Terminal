@@ -24,7 +24,7 @@ import { getPromptRules } from './regexService'
 import { loadGlobals, saveGlobals } from './templateService'
 import { streamProvider, orderForProvider, DeltaCallback, UsageCallback } from './apiService'
 import { normalizeUsage, buildFloorMetrics } from './promptCacheMetrics'
-import { parseContent, stripThinking, RPEvent } from '../parsers/contentParser'
+import { parseContent, parseCombatStart, stripThinking, RPEvent } from '../parsers/contentParser'
 import {
   parseMvuCommands,
   applyMvuCommands,
@@ -354,6 +354,12 @@ export const generate = async (
       `MVU — ${mvu.commands.length} cmd + ${mvu.patches.length} patch → ${deltas.length} delta(s) on stat_data`
     )
   }
+  // Combat (Track Combat / P7): if the model signalled a fight, stash the cue on this
+  // floor's vars so the chat can surface an "Enter Combat" affordance. The tag itself is
+  // stripped at view time (responseView), never baked into storage.
+  const combatCue = parseCombatStart(parsed.text).cue
+  if (combatCue) variables.combat_cue = combatCue
+
   saveGlobals(profileId, globals)
 
   const now = new Date().toISOString()

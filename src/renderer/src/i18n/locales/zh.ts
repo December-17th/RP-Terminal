@@ -387,6 +387,8 @@ const zh: Record<string, string> = {
   'status.noState': '（此会话还没有 RPG 状态）',
 
   'combat.empty': '当前没有进行中的战斗。',
+  'combat.cueDetected': '战斗一触即发。',
+  'combat.enter': '进入战斗',
   'combat.round': '第 {{round}} 回合',
   'combat.turnOf': '轮到 {{name}}',
   'combat.victoryParty': '胜利 —— 队伍取得了胜利！',

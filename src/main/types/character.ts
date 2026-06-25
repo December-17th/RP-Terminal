@@ -47,6 +47,66 @@ export const WidgetDefSchema = z.object({
 })
 export type WidgetDef = z.infer<typeof WidgetDefSchema>
 
+/** World-Card combat bundle (Track Combat / P7; docs/combat-system-design.md §10).
+ *  Permissive on purpose — structure fields are validated, but ability/map shapes stay
+ *  loose (z.any) and unknown keys pass through, so a partial or future bundle still
+ *  round-trips instead of failing card import. The engine's `buildEncounter` normalizes
+ *  what it reads. Structure fields are snake_case; ability/stat-block internals are the
+ *  engine's camelCase shapes. */
+const CombatStatBlockSchema = z
+  .object({
+    hp: z.number(),
+    maxHp: z.number().optional(),
+    ac: z.number().optional(),
+    speed: z.number().optional(),
+    mods: z.record(z.string(), z.number()).optional(),
+    abilities: z.array(z.string()).optional(),
+    resist: z.array(z.string()).optional(),
+    vulnerable: z.array(z.string()).optional()
+  })
+  .passthrough()
+
+export const CombatBundleSchema = z
+  .object({
+    ruleset: z.string().optional(),
+    grid: z
+      .object({ type: z.string().optional(), cell_ft: z.number().optional() })
+      .passthrough()
+      .optional(),
+    enemy_controller: z.enum(['weighted', 'ai']).optional(),
+    abilities: z.array(z.any()).optional(),
+    bestiary: z
+      .array(
+        z
+          .object({
+            id: z.string(),
+            name: z.string().optional(),
+            tier: z.string().optional(),
+            block: CombatStatBlockSchema,
+            abilities: z.array(z.string()).optional(),
+            controller: z.enum(['weighted', 'ai']).optional()
+          })
+          .passthrough()
+      )
+      .optional(),
+    party: z
+      .array(
+        z
+          .object({
+            id: z.string(),
+            name: z.string().optional(),
+            block: CombatStatBlockSchema,
+            abilities: z.array(z.string()).optional()
+          })
+          .passthrough()
+      )
+      .optional(),
+    maps: z.array(z.any()).optional(),
+    scripts: z.record(z.string(), z.string()).optional(),
+    skin: z.record(z.string(), z.any()).optional()
+  })
+  .passthrough()
+
 /** RP Terminal specific card payload, stored under data.extensions.rp_terminal. */
 export const RPTerminalExtSchema = z
   .object({
@@ -100,7 +160,7 @@ export const RPTerminalExtSchema = z
     lorebooks: z.array(z.any()).optional(),
     plugins: z.array(z.any()).optional(),
     agent: z.record(z.string(), z.any()).optional(),
-    combat: z.record(z.string(), z.any()).optional(),
+    combat: CombatBundleSchema.optional(),
     recommended_settings: z.record(z.string(), z.any()).optional()
   })
   // Still catch any further unknown/future slots so the manifest round-trips.

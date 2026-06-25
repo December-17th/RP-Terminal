@@ -47,6 +47,7 @@ export function ChatView({ profileId }: { profileId: string }): React.ReactEleme
     }))
   )
   const activeCharacter = useCharacterStore((s) => s.activeCharacter)
+  const activeChatMode = useChatStore((s) => s.activeChatMode)
   const settings = useSettingsStore((s) => s.settings)
   const regexRules = useRegexStore((s) => s.rules)
 
@@ -176,6 +177,23 @@ export function ChatView({ profileId }: { profileId: string }): React.ReactEleme
     regenerate(profileId)
   }
 
+  // Combat (Track Combat / P7): when the latest turn carried a combat-start cue and we're
+  // not already in combat, offer to spin up the encounter from the world's combat bundle.
+  const latestVars = floors.length ? floors[floors.length - 1]?.variables : undefined
+  const combatCue =
+    latestVars && typeof latestVars.combat_cue === 'object' && latestVars.combat_cue
+      ? (latestVars.combat_cue as { enemies?: string; map?: string })
+      : null
+  const enterCombat = async (): Promise<void> => {
+    if (!activeChatId) return
+    try {
+      await window.api.combatStartFromCard(profileId, activeChatId, combatCue)
+      useChatStore.getState().setMode(profileId, 'combat')
+    } catch {
+      /* no combat bundle for this world — ignore */
+    }
+  }
+
   return (
     <>
       <div className="floor-stage">
@@ -234,6 +252,28 @@ export function ChatView({ profileId }: { profileId: string }): React.ReactEleme
           </>
         )}
       </div>
+
+      {combatCue && activeChatMode !== 'combat' ? (
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: 10,
+            padding: '6px 10px',
+            margin: '6px 0',
+            borderRadius: 6,
+            border: '1px solid var(--rpt-accent, #5b8def)',
+            background: 'var(--rpt-accent-soft, rgba(91,141,239,0.12))',
+            fontSize: 13
+          }}
+        >
+          <span>{t('combat.cueDetected')}</span>
+          <button className="btn-accent" style={{ fontSize: 12 }} onClick={enterCombat}>
+            ⚔ {t('combat.enter')}
+          </button>
+        </div>
+      ) : null}
 
       <ChatToolbar
         profileId={profileId}

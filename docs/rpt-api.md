@@ -153,6 +153,27 @@ through the host bridge as RFC-6902 JSON Patch.
 - `toastr.*` — ✅ · `getTavernHelperVersion()` — ✅ (reports ≥ the card's required minimum) · `waitGlobalInitialized()` — ✅ (resolves true) · `errorCatched(fn)` — ✅
 - Audio (background music / SFX) — 🔁 stubs (`audioPlay`/`audioPause`/`audioImport`/`audioMode`/`audioEnable`, no-op + logged). Cards play audio directly under the CSP (native `<audio>`/WebAudio) — the real path.
 
+### Combat — ✅ (Track Combat)
+
+A native, deterministic grid combat engine (`src/shared/combat`) the AI drives via tags; the player plays
+it in the Combat-mode `CombatView`. The engine owns every number (seeded); the AI only narrates + referees.
+
+- **Initiate** — the model emits `<rpt-combat-start enemies="哥布林 x3 (弱); 头目" map="forest"></rpt-combat-start>`;
+  the chat shows an **Enter Combat** button that builds the encounter from the world's `combat` bundle
+  (`buildEncounter`) and switches to Combat mode. The tag is hidden in prose; the cue is stashed on the floor.
+- **Adjudicate** (Improvise) — for an action the engine can't model, the player's prose → an adjudication
+  prompt; the model replies with
+  `<rpt-combat-result>{ "narration": "…", "ops": [ {"op":"damage|heal|move|condition", …} ] }</rpt-combat-result>`,
+  folded into the fight.
+- **Enemy AI** — an enemy with `controller:"ai"` is asked for
+  `<rpt-action>{ "kind":"ability|move|end", … }</rpt-action>` each turn (weighted-policy fallback); otherwise
+  the native weighted policy decides with no AI call.
+- **Narrate / fold-out** — at the end, the log → a narration prompt; lasting consequences are recorded via
+  the world's `<UpdateVariable>` into `stat_data` (combat never writes `stat_data` directly).
+- **Bundle** — `extensions.rp_terminal.combat`: `ruleset`, `grid`, `enemy_controller`, `abilities[]`,
+  `bestiary[]`, `party[]`, `maps[]`, `scripts{hook→code}` (sandboxed overrides), `skin`. See
+  [combat-system-design.md](combat-system-design.md) §10.
+
 ---
 
 ## 5. Host bridge IPC (for maintainers)
