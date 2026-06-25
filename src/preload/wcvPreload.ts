@@ -246,6 +246,26 @@ w.TavernHelper = g.TavernHelper
 // `toastr`; the lib globals below are required()'d lazily because importing them at preload load crashes.
 w._ = _
 w.z = zod
+// YAML — MVU / data_schema card scripts reference a `YAML` global (the ST host provides one). We don't ship
+// a full parser; mirror the inline LIB_SHIM's clean-room best-effort (JSON passthrough) so the global exists
+// — without it the script throws `YAML is not defined`. (A real YAML parser is out of scope, as in-app.)
+if (!w.YAML)
+  w.YAML = {
+    parse: (s: any) => {
+      try {
+        return JSON.parse(String(s))
+      } catch {
+        return {}
+      }
+    },
+    stringify: (o: any) => {
+      try {
+        return JSON.stringify(o, null, 2)
+      } catch {
+        return ''
+      }
+    }
+  }
 // jQuery: required LAZILY on first access. Requiring at preload load crashes — jQuery probes
 // document.documentElement at import time, which is null before the page parses (and that failure takes
 // the whole preload down). The card only touches `$` once its deferred module runs, by which point the
