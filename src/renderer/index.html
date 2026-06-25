@@ -20,10 +20,16 @@
          (wcvManager.CARD_CSP / WcvMessageFrame). Inline cards already run trusted
          (allow-scripts allow-same-origin), so this matches their trust level. We keep
          `'wasm-unsafe-eval'` rather than the broader `'unsafe-eval'` — no card has
-         needed JS eval. -->
+         needed JS eval.
+         `data:` is allowed in `script-src` because the card-script runtime resolves a
+         script's remote ES-module imports by host-fetching the graph and rewriting them to
+         self-contained `data:` URLs (the opaque srcdoc frame can't import cross-origin, and
+         blob:null modules can't be imported there either). Those srcdoc frames INHERIT this
+         policy (a child <meta> can only tighten it), so `data:` must be allowed here or the
+         modules are blocked. -->
     <meta
       http-equiv="Content-Security-Policy"
-      content="default-src 'self'; script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval' blob: https:; style-src 'self' 'unsafe-inline' https:; font-src 'self' data: https:; img-src 'self' data: blob: https:; connect-src 'self' data: blob: https:; media-src 'self' data: blob: https:"
+      content="default-src 'self'; script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval' data: blob: https:; style-src 'self' 'unsafe-inline' https:; font-src 'self' data: https:; img-src 'self' data: blob: https:; connect-src 'self' data: blob: https:; media-src 'self' data: blob: https:"
     />
   </head>
 

@@ -29,8 +29,11 @@ export const JQUERY_SHIM = `
   p.removeClass = function(c){ return this.each(function(){ var el=this; String(c).split(/\\s+/).forEach(function(x){ if(x) el.classList.remove(x); }); }); };
   p.toggleClass = function(c){ return this.each(function(){ this.classList.toggle(c); }); };
   p.hasClass = function(c){ return this[0] ? this[0].classList.contains(c) : false; };
-  p.append = function(v){ return this.each(function(){ var t=this; if (typeof v==='string') t.insertAdjacentHTML('beforeend', v); else if (v instanceof JQ) v.each(function(){ t.appendChild(this); }); else if (v && v.nodeType) t.appendChild(v); }); };
-  p.prepend = function(v){ return this.each(function(){ if (typeof v==='string') this.insertAdjacentHTML('afterbegin', v); else if (v && v.nodeType) this.insertBefore(v, this.firstChild); }); };
+  // append accepts multiple args (string HTML / node / JQ), like real jQuery.
+  p.append = function(){ var args=toArr(arguments); return this.each(function(){ var t=this; args.forEach(function(v){ if (v==null) return; if (typeof v==='string') t.insertAdjacentHTML('beforeend', v); else if (v instanceof JQ) v.each(function(){ t.appendChild(this); }); else if (v && v.nodeType) t.appendChild(v); }); }); };
+  p.appendTo = function(target){ var $t = (target instanceof JQ) ? target : $(target); $t.append(this); return this; };
+  p.prepend = function(v){ return this.each(function(){ if (typeof v==='string') this.insertAdjacentHTML('afterbegin', v); else if (v && v.nodeType) this.insertBefore(v, this.firstChild); else if (v instanceof JQ){ var t=this; v.each(function(){ t.insertBefore(this, t.firstChild); }); } }); };
+  p.clone = function(){ var out=[]; this.each(function(){ out.push(this.cloneNode(true)); }); return new JQ(out); };
   p.remove = function(){ return this.each(function(){ this.parentNode && this.parentNode.removeChild(this); }); };
   p.empty = function(){ return this.each(function(){ this.innerHTML=''; }); };
   p.hide = function(){ return this.each(function(){ this.style.display='none'; }); };
@@ -46,6 +49,17 @@ export const JQUERY_SHIM = `
   p.is = function(sel){ return this[0] ? this[0].matches(sel) : false; };
   p.data = function(k,v){ if (v===undefined) return this[0] ? this[0].dataset[k] : undefined; return this.each(function(){ this.dataset[k]=v; }); };
   p.ready = function(fn){ if (document.readyState!=='loading') fn(); else document.addEventListener('DOMContentLoaded', function(){ fn(); }); return this; };
+  p.eq = function(i){ i = i<0 ? this.length+i : i; return new JQ(this[i] ? [this[i]] : []); };
+  p.first = function(){ return this.eq(0); };
+  p.last = function(){ return this.eq(this.length-1); };
+  p.width = function(v){ if (v===undefined) return this[0] ? this[0].getBoundingClientRect().width : 0; return this.each(function(){ this.style.width = typeof v==='number' ? v+'px' : v; }); };
+  p.height = function(v){ if (v===undefined) return this[0] ? this[0].getBoundingClientRect().height : 0; return this.each(function(){ this.style.height = typeof v==='number' ? v+'px' : v; }); };
+  p.after = function(v){ return this.each(function(){ if (typeof v==='string') this.insertAdjacentHTML('afterend', v); else if (v && v.nodeType) this.parentNode && this.parentNode.insertBefore(v, this.nextSibling); }); };
+  p.before = function(v){ return this.each(function(){ if (typeof v==='string') this.insertAdjacentHTML('beforebegin', v); else if (v && v.nodeType) this.parentNode && this.parentNode.insertBefore(v, this); }); };
+  p.focus = function(){ this[0] && this[0].focus && this[0].focus(); return this; };
+  p.map = function(fn){ var out=[]; this.each(function(i,el){ var r=fn.call(el, i, el); if (r!=null) out.push(r); }); return new JQ(out); };
+  p.filter = function(sel){ var out=[]; this.each(function(){ if (typeof sel==='function' ? sel.call(this) : this.matches && this.matches(sel)) out.push(this); }); return new JQ(out); };
+  p.toggle = function(show){ return this.each(function(){ this.style.display = (show===undefined ? (this.style.display==='none') : show) ? '' : 'none'; }); };
   function llog(m){ try{ parent.postMessage({__rptlog:1,msg:'[jquery.load] '+m},'*'); }catch(_){} }
   // Re-create a parsed <script> so it actually executes (innerHTML-injected scripts don't),
   // preserving its attributes (src/type=module/crossorigin/…) and inline body.
@@ -148,14 +162,16 @@ export const JQUERY_SHIM = `
     }).catch(function(e){ llog((e && e.message) || e); });
     return this;
   };
-  function $(sel){
+  function $(sel, ctx){
     if (sel instanceof JQ) return sel;
     if (typeof sel === 'function') return new JQ([document]).ready(sel);
     if (sel && (sel.nodeType || sel===window)) return new JQ([sel]);
     if (typeof sel === 'string'){
       var s = sel.trim();
       if (s.charAt(0)==='<'){ var d=document.createElement('div'); d.innerHTML=s; return new JQ(toArr(d.childNodes).filter(function(n){ return n.nodeType===1; })); }
-      try { return new JQ(toArr(document.querySelectorAll(s))); } catch(e){ return new JQ([]); }
+      // $(sel, context): search within the given root (element / JQ / document); default document.
+      var root = ctx instanceof JQ ? ctx[0] : (ctx && ctx.querySelectorAll ? ctx : document);
+      try { return new JQ(toArr((root||document).querySelectorAll(s))); } catch(e){ return new JQ([]); }
     }
     return new JQ([]);
   }
