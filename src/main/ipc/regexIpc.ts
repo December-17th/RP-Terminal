@@ -1,9 +1,12 @@
 import { IpcMain, BrowserWindow, dialog } from 'electron'
 import * as regexService from '../services/regexService'
+import { getActivePresetId } from '../services/presetService'
 
 export const registerRegexIpc = (ipcMain: IpcMain): void => {
   ipcMain.handle('get-render-regex', (_, profileId, ctx) =>
-    regexService.getRenderRules(profileId, ctx)
+    // Inject the active preset id main-side so preset-scoped display rules resolve
+    // without the renderer having to know about preset scope.
+    regexService.getRenderRules(profileId, { ...ctx, presetId: getActivePresetId(profileId) })
   )
   ipcMain.handle('list-regex', (_, profileId) => regexService.listScripts(profileId))
   ipcMain.handle('delete-regex', (_, profileId, file) => regexService.deleteScript(profileId, file))

@@ -1,6 +1,7 @@
 import { IpcMain, BrowserWindow, dialog } from 'electron'
 import * as scriptService from '../services/scriptService'
 import * as characterService from '../services/characterService'
+import { getActivePresetId } from '../services/presetService'
 
 export const registerScriptIpc = (ipcMain: IpcMain): void => {
   ipcMain.handle('list-scripts', (_, profileId) => scriptService.listScripts(profileId))
@@ -43,7 +44,11 @@ export const registerScriptIpc = (ipcMain: IpcMain): void => {
       .map((s) => ({ name: s.name || 'script', code: s.code || '' }))
     const scripts = [
       ...cardScripts,
-      ...scriptService.getActiveScripts(profileId, { cardId, chatId })
+      ...scriptService.getActiveScripts(profileId, {
+        cardId,
+        chatId,
+        presetId: getActivePresetId(profileId)
+      })
     ]
     return { scripts, remoteHosts: scriptService.runtimeImportHosts(scripts) }
   })

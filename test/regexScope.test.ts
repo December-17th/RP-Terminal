@@ -33,6 +33,13 @@ describe('isScopeActive (scope resolution)', () => {
     expect(isScopeActive(meta, { chatId: 'chat-2' })).toBe(false)
     expect(isScopeActive(meta, { cardId: 'chat-1' })).toBe(false)
   })
+
+  it('preset is active only when the active preset owns it', () => {
+    const meta = { scope: 'preset' as const, owner: 'preset-1' }
+    expect(isScopeActive(meta, { presetId: 'preset-1' })).toBe(true)
+    expect(isScopeActive(meta, { presetId: 'preset-2' })).toBe(false)
+    expect(isScopeActive(meta, {})).toBe(false)
+  })
 })
 
 // Integration: exercise the sidecar (_meta.json) round-trip against the test app dir.

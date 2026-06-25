@@ -37,6 +37,7 @@ export default function App(): React.ReactElement {
   const activeCharacter = useCharacterStore((s) => s.activeCharacter)
   const loadChats = useChatStore((s) => s.loadChats)
   const activeChatId = useChatStore((s) => s.activeChatId)
+  const activePresetId = usePresetStore((s) => s.activeId)
 
   const panel = useNavStore((s) => s.panel)
   const setPanel = useNavStore((s) => s.setPanel)
@@ -132,8 +133,9 @@ export default function App(): React.ReactElement {
     }
   }, [activeProfile])
 
-  // Resolve display regex for the active world/session scope (global ⊕ world(card) ⊕
-  // session(chat)) so a card's bundled regex only fires when that world is loaded.
+  // Resolve display regex for the active scope (global ⊕ world(card) ⊕ session(chat) ⊕
+  // preset(active preset)) so bundled regex only fires when its owner is loaded. The active
+  // preset id is injected main-side; re-run on preset switch so its display regex refreshes.
   useEffect(() => {
     if (activeProfile) {
       useRegexStore.getState().load(activeProfile.id, {
@@ -141,7 +143,7 @@ export default function App(): React.ReactElement {
         chatId: activeChatId ?? null
       })
     }
-  }, [activeProfile, activeCharacterId, activeChatId])
+  }, [activeProfile, activeCharacterId, activeChatId, activePresetId])
 
   // Apply the chat font size preference to the message area.
   useEffect(() => {

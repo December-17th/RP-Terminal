@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react'
 import { Modal } from './Modal'
 import { usePresetStore, PresetParameters, PromptMarker } from '../stores/presetStore'
+import { useToastStore } from '../stores/toastStore'
 import { useT } from '../i18n'
 
 interface Props {
@@ -83,6 +84,18 @@ export const PresetManager: React.FC<Props> = ({ profileId }) => {
   // there are unsaved edits so a stray change can't silently discard them.
   const guardDirty = (): boolean => !dirty || confirm(t('preset.confirmDiscard'))
 
+  // Import a preset and report what came with it (presets often bundle their own
+  // regex + Tavern Helper scripts, installed scoped to the preset).
+  const onImport = async (): Promise<void> => {
+    if (!guardDirty()) return
+    const res = await importPreset(profileId)
+    if (!res) return
+    let msg = t('preset.imported', { name: res.name })
+    if (res.regexScripts || res.scripts)
+      msg += t('preset.importedBundle', { regex: res.regexScripts, scripts: res.scripts })
+    useToastStore.getState().push(msg)
+  }
+
   return (
     <div className="panel">
       <div className="panel-header">
@@ -114,7 +127,7 @@ export const PresetManager: React.FC<Props> = ({ profileId }) => {
         </div>
         <div className="preset-actions">
           <button onClick={() => guardDirty() && createNew(profileId)}>{t('common.new')}</button>
-          <button className="btn-ghost" onClick={() => guardDirty() && importPreset(profileId)}>
+          <button className="btn-ghost" onClick={onImport}>
             {t('preset.importST')}
           </button>
           <button

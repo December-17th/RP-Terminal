@@ -1577,6 +1577,24 @@ select {
   cursor: pointer;
 }
 
+/* Lorebook entry search */
+.lore-search-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 14px;
+}
+.lore-search {
+  flex: 1;
+  min-width: 0;
+}
+.lore-search-count {
+  flex: 0 0 auto;
+  font-size: 0.78em;
+  color: var(--rpt-text-secondary);
+  white-space: nowrap;
+}
+
 /* Collapsible section ("dropdown") inside the Settings panel */
 .settings-section {
   border: 1px solid var(--rpt-border);
@@ -1723,11 +1741,15 @@ select {
   flex-direction: column;
   gap: 12px;
 }
+.lc-wrow-wrap {
+  position: relative;
+}
 .lc-wrow {
   display: flex;
   gap: 16px;
   align-items: center;
   text-align: left;
+  width: 100%;
   background: var(--rpt-bg-secondary);
   border: 1px solid var(--rpt-border);
   border-radius: 11px;
@@ -1738,6 +1760,23 @@ select {
 }
 .lc-wrow:hover {
   border-color: var(--rpt-accent);
+}
+/* Delete button overlaid top-right of a world row (the row itself is a button, so this
+   sibling sits over it rather than nesting). Always visible but faint, brightening on hover. */
+.lc-wdel {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  line-height: 1;
+  opacity: 0.4;
+  transition: opacity 0.12s ease;
+}
+.lc-wrow-wrap:hover .lc-wdel,
+.lc-wdel:focus-visible {
+  opacity: 0.75;
+}
+.lc-wdel:hover {
+  opacity: 1;
 }
 .lc-av {
   width: 66px;

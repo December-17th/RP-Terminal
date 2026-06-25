@@ -8,6 +8,7 @@ import * as chatWriteService from '../services/chatWriteService'
 import * as scriptApiService from '../services/scriptApiService'
 import * as pluginService from '../services/pluginService'
 import * as settingsService from '../services/settingsService'
+import { getActivePresetId } from '../services/presetService'
 import { log } from '../services/logService'
 import { LorebookEntry, LorebookEntrySchema } from '../types/character'
 
@@ -269,7 +270,11 @@ export const registerWcvIpc = (ipcMain: IpcMain): void => {
   ipcMain.on('wcv-host-get-regexes', (e) => {
     const ctx = wcvManager.contextFor(e.sender.id)
     e.returnValue = ctx
-      ? scriptApiService.listRegexes(ctx.profileId, { cardId: ctx.characterId, chatId: ctx.chatId })
+      ? scriptApiService.listRegexes(ctx.profileId, {
+          cardId: ctx.characterId,
+          chatId: ctx.chatId,
+          presetId: getActivePresetId(ctx.profileId)
+        })
       : []
   })
   ipcMain.on('wcv-host-format-regex', (e, text) => {
@@ -277,7 +282,11 @@ export const registerWcvIpc = (ipcMain: IpcMain): void => {
     e.returnValue = ctx
       ? scriptApiService.formatWithRegex(
           ctx.profileId,
-          { cardId: ctx.characterId, chatId: ctx.chatId },
+          {
+            cardId: ctx.characterId,
+            chatId: ctx.chatId,
+            presetId: getActivePresetId(ctx.profileId)
+          },
           text
         )
       : String(text ?? '')

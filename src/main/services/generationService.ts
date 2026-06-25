@@ -1,5 +1,5 @@
 import { getSettings, resolveModeConfig } from './settingsService'
-import { getActivePreset } from './presetService'
+import { getActivePreset, getActivePresetId } from './presetService'
 import { getCharacter } from './characterService'
 import { getLorebookById, matchAcross } from './lorebookService'
 import {
@@ -195,7 +195,11 @@ export const generate = async (
     scanDepth,
     maxRecursion,
     matchedEntries,
-    promptRegex: getPromptRules(profileId, { cardId: chat.character_id, chatId }),
+    promptRegex: getPromptRules(profileId, {
+      cardId: chat.character_id,
+      chatId,
+      presetId: getActivePresetId(profileId)
+    }),
     cacheLevel,
     l1Mode,
     frozenVars,

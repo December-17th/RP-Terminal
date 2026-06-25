@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { useChatStore } from '../stores/chatStore'
 import { useToastStore } from '../stores/toastStore'
 import { useScriptsStore } from '../stores/scriptsStore'
+import { usePresetStore } from '../stores/presetStore'
 import { useCardScriptsStore } from '../stores/cardScriptsStore'
 import { useToolbarStore } from '../stores/toolbarStore'
 import { buildScriptSrcDoc, CardScript } from '../plugin/bridgeShim'
@@ -62,6 +63,9 @@ export const CardScriptHost: React.FC<Props> = ({
   // Card-embedded scripts feed the runtime as the World scope; a change to them (or to the
   // profile scripts store) re-triggers a refetch of the merged, import-resolved set.
   const storeScripts = useScriptsStore((s) => s.scripts)
+  // Preset-scoped scripts only run while their preset is active; switching presets must
+  // re-resolve the merged runtime set (the active preset id is applied main-side).
+  const activePresetId = usePresetStore((s) => s.activeId)
   const scriptsKey = useMemo(
     () => (scripts || []).map((s) => `${s.name}:${s.code.length}`).join('|'),
     [scripts]
@@ -124,7 +128,17 @@ export const CardScriptHost: React.FC<Props> = ({
     return () => {
       alive = false
     }
-  }, [profileId, cardId, chatId, cardName, enabled, grantsLoaded, scriptsKey, storeScripts])
+  }, [
+    profileId,
+    cardId,
+    chatId,
+    cardName,
+    enabled,
+    grantsLoaded,
+    scriptsKey,
+    storeScripts,
+    activePresetId
+  ])
 
   const post = (msg: any): void => {
     frameRef.current?.contentWindow?.postMessage(msg, '*')

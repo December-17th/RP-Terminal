@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useMemo, useState } from 'react'
 import { Modal } from './Modal'
 import { ScopeSection } from './ScopeSection'
 import {
@@ -9,6 +9,8 @@ import {
   ArtifactScope
 } from '../stores/regexStore'
 import type { CardRenderMode } from '../../../shared/cardRenderMode'
+import { usePresetStore } from '../stores/presetStore'
+import { useCharacterStore } from '../stores/characterStore'
 import { useT } from '../i18n'
 
 interface Props {
@@ -20,6 +22,7 @@ interface Props {
 
 const SCOPES: { key: ArtifactScope; titleKey: string; hintKey: string }[] = [
   { key: 'global', titleKey: 'scope.global', hintKey: 'scope.globalHint' },
+  { key: 'preset', titleKey: 'scope.preset', hintKey: 'scope.presetHint' },
   { key: 'world', titleKey: 'scope.world', hintKey: 'scope.worldHint' },
   { key: 'session', titleKey: 'scope.session', hintKey: 'scope.sessionHint' }
 ]
@@ -35,10 +38,68 @@ export const RegexPanel: React.FC<Props> = ({ profileId, activeCardId, activeCha
     setDisabled,
     setRenderMode
   } = useRegexStore()
+  const activePresetId = usePresetStore((s) => s.activeId)
+  const presets = usePresetStore((s) => s.presets)
+  const characters = useCharacterStore((s) => s.characters)
+  const worlds = useMemo(
+    () => characters.map((c) => ({ id: c.id, name: c.card?.data?.name || c.id })),
+    [characters]
+  )
   const [expanded, setExpanded] = useState<string | null>(null)
   const [rules, setRules] = useState<Record<string, RegexRuleDetail[]>>({})
   const [editing, setEditing] = useState<RegexRuleDetail | null>(null)
+  // Which preset/world the Preset/World sections are inspecting (null = follow the active
+  // one). Lets you view a non-active owner's scripts; they show as 'inactive' since their
+  // owner isn't loaded.
+  const [viewPreset, setViewPreset] = useState<string | null>(null)
+  const [viewCard, setViewCard] = useState<string | null>(null)
+  const viewPresetId = viewPreset ?? activePresetId
+  const viewCardId = viewCard ?? activeCardId
   const t = useT()
+
+  // The owner a scope is RUNNING against (the active context) — drives the active/inactive badge.
+  const activeOwnerFor = (scope: ArtifactScope): string | null =>
+    scope === 'world'
+      ? activeCardId
+      : scope === 'session'
+        ? activeChatId
+        : scope === 'preset'
+          ? activePresetId
+          : null
+
+  // The owner a new binding attaches to / a section is viewing (world & preset follow the
+  // per-section dropdown; session always the active chat).
+  const bindOwnerFor = (scope: ArtifactScope): string | null =>
+    scope === 'world'
+      ? viewCardId
+      : scope === 'session'
+        ? activeChatId
+        : scope === 'preset'
+          ? viewPresetId
+          : null
+
+  // The per-section owner dropdown (Preset / World): choose which owner's scripts to view.
+  const ownerDropdown = (scope: 'preset' | 'world'): React.ReactNode => {
+    const opts = scope === 'preset' ? presets : worlds
+    const val = scope === 'preset' ? viewPresetId : viewCardId
+    const setVal = scope === 'preset' ? setViewPreset : setViewCard
+    return (
+      <select
+        className="scope-select"
+        value={val ?? ''}
+        title={t('scope.viewBound', { scope: t('scope.' + scope) })}
+        disabled={opts.length === 0}
+        onChange={(e) => setVal(e.target.value || null)}
+      >
+        {opts.length === 0 && <option value="">{t('scope.noneToView')}</option>}
+        {opts.map((o) => (
+          <option key={o.id} value={o.id}>
+            {o.name}
+          </option>
+        ))}
+      </select>
+    )
+  }
 
   useEffect(() => {
     loadScripts(profileId)
@@ -63,10 +124,10 @@ export const RegexPanel: React.FC<Props> = ({ profileId, activeCardId, activeCha
     await fetchRules(rule.file)
   }
 
-  // world binds the script to the active card; session to the active chat; global to none.
+  // Binds to the section's viewed owner (world→viewed card, preset→viewed preset),
+  // session→active chat, global→none.
   const changeScope = (file: string, scope: ArtifactScope): void => {
-    const owner = scope === 'world' ? activeCardId : scope === 'session' ? activeChatId : undefined
-    setScope(profileId, file, scope, owner ?? undefined)
+    setScope(profileId, file, scope, bindOwnerFor(scope) ?? undefined)
   }
 
   const changeRenderMode = (file: string, v: string): void => {
@@ -74,9 +135,10 @@ export const RegexPanel: React.FC<Props> = ({ profileId, activeCardId, activeCha
   }
 
   const renderScript = (s: RegexScriptInfo): React.ReactNode => {
-    const ownedElsewhere =
-      (s.scope === 'world' || s.scope === 'session') &&
-      s.owner !== (s.scope === 'world' ? activeCardId : activeChatId)
+    // A scoped script only RUNS when its owner is the active one; otherwise it's inactive
+    // (e.g. bound to a preset/world that isn't loaded). Global always runs (unless disabled).
+    const scoped = s.scope !== 'global'
+    const inactiveOwner = scoped && s.owner !== activeOwnerFor(s.scope)
     return (
       <div key={s.file} className={`entry-card ${s.disabled ? 'disabled' : ''}`}>
         <div className="entry-head">
@@ -102,7 +164,10 @@ export const RegexPanel: React.FC<Props> = ({ profileId, activeCardId, activeCha
             onChange={(e) => changeScope(s.file, e.target.value as ArtifactScope)}
           >
             <option value="global">{t('scope.global')}</option>
-            <option value="world" disabled={!activeCardId}>
+            <option value="preset" disabled={!viewPresetId}>
+              {t('scope.preset')}
+            </option>
+            <option value="world" disabled={!viewCardId}>
               {t('scope.world')}
             </option>
             <option value="session" disabled={!activeChatId}>
@@ -120,11 +185,21 @@ export const RegexPanel: React.FC<Props> = ({ profileId, activeCardId, activeCha
             <option value="inline">{t('regex.renderInline')}</option>
             <option value="isolated">{t('regex.renderIsolated')}</option>
           </select>
-          {ownedElsewhere && (
-            <span className="entry-keys-preview" title={t('regex.boundElsewhere')}>
-              {t('regex.otherScope', { scope: t('scope.' + s.scope) })}
-            </span>
-          )}
+          {scoped &&
+            (inactiveOwner ? (
+              <span
+                className="entry-keys-preview"
+                title={t('scope.inactiveHint', { scope: t('scope.' + s.scope) })}
+              >
+                {t('scope.inactiveBadge')}
+              </span>
+            ) : (
+              !s.disabled && (
+                <span className="role-badge" title={t('scope.activeHint')}>
+                  {t('scope.activeNow')}
+                </span>
+              )
+            ))}
           <button className="btn-ghost" onClick={() => toggleExpand(s.file)}>
             {expanded === s.file ? '▾' : '▸'}
           </button>
@@ -197,7 +272,20 @@ export const RegexPanel: React.FC<Props> = ({ profileId, activeCardId, activeCha
           <div style={{ opacity: 0.6, fontStyle: 'italic' }}>{t('regex.noScripts')}</div>
         ) : (
           SCOPES.map(({ key, titleKey, hintKey }) => {
-            const inScope = scripts.filter((s) => s.scope === key)
+            // Preset/World sections show only the owner picked in their dropdown (default:
+            // the active one); Global/Session show every script of that scope.
+            const inScope = scripts.filter((s) => {
+              if (s.scope !== key) return false
+              if (key === 'preset') return s.owner === viewPresetId
+              if (key === 'world') return s.owner === viewCardId
+              return true
+            })
+            const action =
+              key === 'preset'
+                ? ownerDropdown('preset')
+                : key === 'world'
+                  ? ownerDropdown('world')
+                  : undefined
             return (
               <ScopeSection
                 key={key}
@@ -205,6 +293,7 @@ export const RegexPanel: React.FC<Props> = ({ profileId, activeCardId, activeCha
                 hint={t(hintKey)}
                 count={inScope.length}
                 defaultOpen={key !== 'session'}
+                action={action}
               >
                 {inScope.length === 0 ? (
                   <div style={{ opacity: 0.55, fontStyle: 'italic', padding: '4px 2px' }}>

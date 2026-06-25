@@ -136,10 +136,16 @@ A unified scope every shareable artifact (**lorebook, regex, scripts, plugins**)
 - **world** — bound to a specific card; active whenever that world is loaded (where most
   bundled artifacts land).
 - **session** — a single chat (today's per-chat lorebook selection generalizes to this).
+- **preset** — bound to a specific preset; active only while that preset is the active one.
+  This is where regex/scripts bundled inside an imported ST preset land (`extensions.regex_scripts`
+  + `extensions.tavern_helper.scripts`), mirroring how ST applies preset-bound regex. Implemented
+  for regex + scripts (`presetService.importPresetFromFile`); `owner` = the preset id, and
+  `deletePreset` removes the artifacts it brought in so nothing orphans.
 
 Model: a `scope` + `owner` on each artifact (a `world` scope's owner = a character id; a
-`session` scope's owner = a chat id). Generation resolves the **active set** = global ⊕
-world(active card) ⊕ session(active chat). Replaces today's ad-hoc rules (regex + standalone
+`session` scope's owner = a chat id; a `preset` scope's owner = a preset id). Generation
+resolves the **active set** = global ⊕ world(active card) ⊕ session(active chat) ⊕
+preset(active preset). Replaces today's ad-hoc rules (regex + standalone
 plugins are profile-wide; card scripts world-scoped; lorebooks per-session-selectable) with
 one model + a scope selector in each manager. This is the bigger architectural change — it
 adds a scope dimension to the regex/preset/plugin stores (lorebook already has the per-chat
