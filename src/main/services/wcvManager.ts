@@ -190,6 +190,12 @@ export const setModal = (id: string, on: boolean): void => {
   }
 }
 
+/** Notify the renderer that a lorebook changed (a card wrote/created/deleted a worldbook), so the lorebook
+ *  store can refresh its library + reload the open editor (it would otherwise show a stale view). */
+export const pushLorebookChanged = (id: string): void => {
+  mainWindow?.webContents.send('wcv-lorebook-changed', { id })
+}
+
 /** Push a card script's action buttons to the renderer toolbar (the menu above the input). */
 export const pushCardButtons = (
   slotId: string,

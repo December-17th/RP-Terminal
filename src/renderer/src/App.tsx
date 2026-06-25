@@ -4,6 +4,7 @@ import { useCharacterStore } from './stores/characterStore'
 import { useChatStore } from './stores/chatStore'
 import { useSettingsStore } from './stores/settingsStore'
 import { usePresetStore } from './stores/presetStore'
+import { useLorebookStore } from './stores/lorebookStore'
 import { useLogStore } from './stores/logStore'
 import { useRegexStore } from './stores/regexStore'
 import { usePluginsStore } from './stores/pluginsStore'
@@ -163,6 +164,18 @@ export default function App(): React.ReactElement {
   useEffect(() => {
     useI18nStore.getState().setLocale(settings?.ui?.locale ?? 'en')
   }, [settings?.ui?.locale])
+
+  // A card script (e.g. the 创意工坊 workshop) wrote a worldbook in its WCV → refresh the lorebook editor
+  // so it doesn't show a stale view (reload the open book only if the user has no unsaved edits).
+  useEffect(() => {
+    const pid = activeProfile?.id
+    if (!pid) return
+    return window.api.onWcvLorebookChanged(({ id }) => {
+      const lb = useLorebookStore.getState()
+      void lb.loadLibrary(pid)
+      if (lb.currentId === id && !lb.dirty) void lb.open(pid, id)
+    })
+  }, [activeProfile?.id])
 
   if (!activeProfile) return <ProfilePicker />
 

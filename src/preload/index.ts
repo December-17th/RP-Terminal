@@ -41,6 +41,12 @@ const api = {
   // A card-script toolbar button was clicked → deliver it to the chat's card WCVs (the script's eventOn).
   wcvButtonClick: (chatId: string, name: string) =>
     ipcRenderer.send('wcv-button-click', chatId, name),
+  // A card wrote/created/deleted a worldbook → refresh the lorebook editor.
+  onWcvLorebookChanged: (cb: (p: { id: string }) => void) => {
+    const l = (_e: unknown, p: any): void => cb(p)
+    ipcRenderer.on('wcv-lorebook-changed', l)
+    return () => ipcRenderer.removeListener('wcv-lorebook-changed', l)
+  },
   // Card scripts (replaceScriptButtons) → the renderer toolbar feed.
   onWcvCardButtons: (
     cb: (p: {

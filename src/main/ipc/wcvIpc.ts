@@ -246,6 +246,7 @@ export const registerWcvIpc = (ipcMain: IpcMain): void => {
     if (!lb) return false
     lb.entries = (Array.isArray(entries) ? entries : []).map(toLoreEntry)
     lorebookService.saveLorebookById(c.profileId, c.characterId, lb)
+    wcvManager.pushLorebookChanged(c.characterId) // refresh the lorebook editor if it's open
     log('info', 'wcv replaceWorldbook', `${lb.entries.length} entries → card book`)
     return true
   })
@@ -262,14 +263,16 @@ export const registerWcvIpc = (ipcMain: IpcMain): void => {
   })
   ipcMain.handle('wcv-host-create-worldbook', (e, name) => {
     const ctx = wcvManager.contextFor(e.sender.id)
-    return ctx
-      ? lorebookService.createLorebook(ctx.profileId, String(name ?? 'New Worldbook')).id
-      : ''
+    if (!ctx) return ''
+    const id = lorebookService.createLorebook(ctx.profileId, String(name ?? 'New Worldbook')).id
+    wcvManager.pushLorebookChanged(id)
+    return id
   })
   ipcMain.handle('wcv-host-delete-worldbook', (e, id) => {
     const ctx = wcvManager.contextFor(e.sender.id)
     if (!ctx) return false
     lorebookService.deleteLorebookById(ctx.profileId, String(id))
+    wcvManager.pushLorebookChanged(String(id))
     return true
   })
   ipcMain.handle('wcv-host-get-worldbook-by-id', (e, id) => {
@@ -287,6 +290,7 @@ export const registerWcvIpc = (ipcMain: IpcMain): void => {
     }
     lb.entries = (Array.isArray(entries) ? entries : []).map(toLoreEntry)
     lorebookService.saveLorebookById(ctx.profileId, String(id), lb)
+    wcvManager.pushLorebookChanged(String(id)) // refresh the lorebook editor if it's open
   })
   ipcMain.handle('wcv-host-bind-worldbook', (e, id, on) => {
     const ctx = wcvManager.contextFor(e.sender.id)
