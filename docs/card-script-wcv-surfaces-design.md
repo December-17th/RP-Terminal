@@ -1,0 +1,232 @@
+# Card Script Surfaces — running card scripts in a WCV & letting cards register their own UI
+
+Status: **Design / not built.** Motivating case: the `【命定之诗】创意工坊` button does nothing in RP Terminal.
+Builds on `docs/card-custom-ui-design.md` (the iframe-vs-WCV analysis + the `WebContentsView` plan) and the
+already-built WCV spike (`wcvManager`, `wcvPreload`, the `wcvIpc` host bridge). This doc generalizes that
+spike from **three hardcoded `命定之诗` URLs** into a **card/script-driven surface registry**, and routes
+full-page card scripts to a process-isolated WCV instead of the crippled inline iframe.
+
+## Goal
+
+1. Make `创意工坊` (and any script like it) work: a button in the menu above the input opens a **modal** to
+   download/sync lorebook entries + regex from a cloud store.
+2. Do it **without hardcoding** the card. A card adds its own WCV surface purely through script API calls
+   (`replaceScriptButtons` + `eventOn(getButtonEvent(...))`) and/or a declarative manifest slot — the host
+   has zero card-specific knowledge.
+3. Fold the existing hardcoded `wcv-card` / `wcv-home` / `wcv-start` spike views into the same mechanism.
+
+---
+
+## 1. What `创意工坊` is (verified from the card + bundle)
+
+The card `命定之诗与黄昏之歌v4.2` bundles 6 TavernHelper scripts at `data.extensions.tavern_helper.scripts`.
+Script #4 `【命定之诗】创意工坊` is a single remote import with declarative button metadata
+`button.buttons = [{ name: "命定创意工坊", visible: true }]`:
+
+```js
+import 'https://testingcf.jsdelivr.net/gh/Akabanesaki/myrepo@2.0.3/dist/CreativeWorkshop/index.js'
+```
+
+The fetched bundle (23 KB ESM) is a **full-page TavernHelper app**, not an in-panel widget. Verified from
+the disassembled source:
+
+- On load: `replaceScriptButtons([{name:'命定创意工坊',visible:true}])` + `eventOn(getButtonEvent('命定创意工坊'), handler)`.
+- Handler builds a **full-screen jQuery overlay**:
+  `$('<div id="creative-workshop-agreement-overlay">').css({position:'fixed', inset:'0', zIndex:2147483647, background:'rgba(0,0,0,0.75)', backdropFilter:'blur(6px)'}).appendTo('body')` (agreement gate → workshop UI),
+  and clones `head > style` into the host so its CSS applies.
+- Reads context: `getCharWorldbookNames('current')` → `{primary, additional}` (**sync**), `getCurrentCharacterName()`,
+  `isCharacterTavernRegexesEnabled()`, `SillyTavern.getCurrentChatId()`, `getScriptId()`,
+  `getVariables({type:'script', script_id})`.
+- **Network**: `fetch(...)` to a Cloudflare Worker (`poemofdestinycreativeworkshop.…workers.dev`) for "projects";
+  `window.open(...)` + `postMessage`/`addEventListener('message')` for an **OAuth** login; `localStorage`.
+- **Writes**: diffs the cloud project against the card's book and applies `updateWorldbookWith(name, updater)`
+  (lorebook) and `updateTavernRegexesWith(updater, option)` (regex), caching in script-scope vars via
+  `updateVariablesWith(fn, {type:'script', script_id})`. Uses `_` (lodash) throughout.
+
+Net: *a button that opens a modal to download/sync lorebook entries + regex from a cloud store.*
+
+---
+
+## 2. The current path in RP Terminal — and why the click does nothing
+
+**Routing (verified):** bundled `tavern_helper.scripts` are imported on card import via
+`scriptService.normalizeImportedScripts` (`characterService.ts:272`), which calls `withButtons`
+(`scriptService.ts:218`) to append an IIFE baking the declarative button into
+`rpt.ui.registerButton({id,label}, () => eventEmit(getButtonEvent(name)))`. They run in the **inline
+`CardScriptHost` iframe** — `sandbox="allow-scripts"`, opaque origin, no `allow-same-origin`
+(`CardScriptHost.tsx:427`). The baked button lands in `toolbarStore` (`CardScriptHost.tsx:242`) and renders
+in the menu above the input (`ScriptActionsBar.tsx`). Clicking emits `button:命定创意工坊` into the iframe →
+the baked handler runs `eventEmit(getButtonEvent('命定创意工坊'))` (`bridge.ts` `emit`/`on`) → the module's
+`eventOn` handler.
+
+**Why nothing happens** (the inline iframe is the wrong environment for a full-page app), in order of impact:
+
+1. **The overlay is invisible.** `$('…').appendTo('body')` appends to the *iframe's* body. The iframe is
+   content-sized via `__rptresize` (`bridge.ts:201`), and a `position:fixed` element contributes **0** to
+   `scrollHeight` → the frame stays ~1px in the right panel → the modal is clipped to nothing.
+2. **The handler throws first.** The frozen inline `TAVERN_SHIM` (`shims/tavern.ts`) is missing/incompatible
+   for the workshop's calls: `getCharWorldbookNames` returns a **Promise of a name-list**, not a sync
+   `{primary, additional}` (so `.primary` is `undefined`); and there is **no** `isCharacterTavernRegexesEnabled`,
+   `updateTavernRegexesWith`, `updateWorldbookWith`, `getCurrentCharacterName`, `getScriptId`, script-scope
+   `getVariables`, nor a `SillyTavern` global → `TypeError`, caught to the Logs panel.
+3. **`window.open` is blocked** (no `allow-popups`; `form-action 'none'` in the iframe CSP, `bridgeShim.ts`),
+   and unless the world's `remoteScripts`/`trusted` grant is on, the remote module never loads — so `eventOn`
+   never subscribes and the click reaches no handler at all.
+
+This is not a small bug; the inline iframe fundamentally cannot host this script.
+
+---
+
+## 3. How SillyTavern runs it
+
+JS-Slash-Runner runs each `tavern_helper.script` **in the real ST page** (no per-card isolation). The
+declarative button renders in JSR's script-button bar above the input; clicking emits `getButtonEvent(name)`
+(JSR `@types/iframe/script.d.ts`: `declare function getButtonEvent(button_name: string): string`). Because
+the script runs on the real document, `appendTo('body')` covers the whole app, `window.open`/`fetch` work,
+and the worldbook/regex APIs are ST globals with the signatures in JSR's `@types`:
+
+- `getCharWorldbookNames(name): { primary: string|null; additional: string[] }` — **sync**.
+- `getWorldbook(name): Promise<WorldbookEntry[]>`; `updateWorldbookWith(name, updater): Promise<WorldbookEntry[]>`.
+- `getTavernRegexes(option): TavernRegex[]` (sync); `isCharacterTavernRegexesEnabled(): boolean`;
+  `updateTavernRegexesWith(updater, option): Promise<TavernRegex[]>`.
+
+RP Terminal already mirrors most of these in the **WCV** path — just not the inline one.
+
+---
+
+## 4. Design — "Card Script Surfaces"
+
+A WCV is the right host (the user's "workaround"), but it must be **script-driven, not hardcoded**. The hard
+part is already built: `wcvManager` (`wcvManager.ts`), the `wcvPreload` shim over the canonical
+`createThRuntime` (`wcvPreload.ts`), and a rich host bridge incl. worldbook **read+write** and regex reads
+(`wcvIpc.ts`). What's hardcoded is the *entry point*: `WcvPanel.tsx` embeds the `命定之诗` status/home/start
+URLs and `viewRegistry.tsx:85` registers `wcv-card`/`wcv-home`/`wcv-start`. This design replaces that with a
+registry fed by cards/scripts.
+
+**Core idea:** route a card's full-page scripts to a **process-isolated WCV transport**, surface their
+`replaceScriptButtons` buttons into the existing menu, and present a click as a **panel** (docked) or a
+**full-window modal** — all driven by the script/card.
+
+### 4a. Script-hosting WCV transport
+Add `CardScriptWcvHost` as a sibling to `CardScriptHost`. It hosts the *same* merged runtime scripts
+(`getRuntimeScripts`) in a WCV page built from the `wcvPreload` shim + each script as
+`<script type="module">`. This reuses every bridge in `wcvIpc` — worldbook, regex, vars, generation — and
+gives scripts the real DOM + network + storage they were written for.
+
+**Transport selection.** Default the inline iframe for lightweight in-message widgets; use the WCV for
+full-page scripts. Selected by (in priority order): an explicit manifest flag (4b), else a heuristic
+(script calls `replaceScriptButtons`, or imports remote ESM and builds DOM). Keep both transports at parity
+through the shared runtime (per `CLAUDE.md`'s "one surface, two transports" rule) — the difference is the
+host process and the DOM, not the API.
+
+### 4b. Card/script-declared surfaces (the no-hardcode hook)
+A surface is registered two ways, both card-driven:
+
+- **Runtime (covers `创意工坊` unmodified):** when a WCV script calls `replaceScriptButtons([...])`, the shim
+  sends `wcv-register-button` → main → renderer `toolbarStore`. The script's button appears in the menu with
+  **no host knowledge of the card**.
+- **Declarative (for docked panels like the status UI):** extend the existing schema (`character.ts:62` for
+  `scripts[]`, `character.ts:71` for `panel_ui`) with a per-script/per-slot `surface`:
+
+  ```jsonc
+  // rp_terminal.scripts[i].surface  — OR a panel_ui slot
+  "surface": {
+    "kind": "panel" | "modal",   // docked in a workspace slot, or full-window button-launched
+    "transport": "wcv",          // (default for surfaces) process-isolated
+    "title": "命定创意工坊",
+    "button": "命定创意工坊",     // for kind:"modal" — the menu button that opens it
+    "slot": "right"              // for kind:"panel"
+  }
+  ```
+
+  A card may ship both a declarative panel and runtime buttons; the registry merges them.
+
+### 4c. Button bus across the WCV boundary
+Add the missing event trio to `thRuntime` (`index.ts`): `getButtonEvent` (identity-mapped to the raw name,
+matching the inline `withButtons` contract), a real `eventOn`/`eventEmit`/`eventRemoveListener` bus, and
+`replaceScriptButtons`/`getScriptButtons`. Wiring:
+
+- script → host: `replaceScriptButtons` → `wcv-register-button(name, visible)` → `toolbarStore` (deduped by
+  `card:<id>::<name>`, cleared on WCV teardown — mirror `CardScriptHost.tsx:242`/`:275`).
+- host → script: clicking the menu button → `wcv-button-click(name)` → `wcvManager.notifyEvent(chatId,
+  getButtonEvent(name))` → runtime `emit` → the script's `eventOn` handler. (`wcvManager.notifyEvent`
+  already exists — `wcvManager.ts:238`.)
+
+### 4d. Modal presentation (button-launched overlay)
+For `kind:"modal"` the surface is a **full-window, transparent, hidden** WCV. The module is loaded and
+subscribed up front. On button-click: `setVisible(true)` (`wcvManager.setVisible` exists, `wcvManager.ts:170`)
++ emit the event → the script paints its own `inset:0` backdrop+modal filling the now-visible WCV (a true
+modal over the app). On dismiss: detect the script's overlay teardown — its content height collapses (reuse
+the `wcv-content-size` reporter, `wcvPreload.ts:64`) or the script calls a new `closeSurface()` / its overlay
+close handler posts a message → `setVisible(false)`. No splitter/bounds-sync tax: the rect is the whole
+window content area (recomputed on window-resize only). This makes *any* `replaceScriptButtons`-style card
+work as a modal with no per-card code.
+
+### 4e. Fill the `thRuntime` API gaps
+Concrete additions to the canonical surface (`thRuntime/index.ts`) + the WCV host (`wcvIpc.ts`):
+
+| Workshop call | Status today | Action |
+| --- | --- | --- |
+| `getCharWorldbookNames('current')` | ✅ sync `{primary,additional}` (`index.ts:206`) | none |
+| `getWorldbook` / `updateWorldbookWith` | ✅ (`index.ts:259`/`:267`) | none |
+| `getTavernRegexes(option)` | 🟡 ignores `option` (`index.ts:215`) | honor `global`/`character`/`preset` |
+| `isCharacterTavernRegexesEnabled` | ⬜ | add (host getter) |
+| `updateTavernRegexesWith` / `replaceTavernRegexes` | 🔁 no-op (`index.ts:298`) | **regex WRITE** — new host method + `wcv-host-replace-regexes` IPC backed by a regex replace service (mirror the worldbook replace path, `wcvIpc.ts:179`) |
+| `getCurrentCharacterName` | ⬜ | add (from `charData().name`) |
+| `SillyTavern.getCurrentChatId` | ⬜ | add to the `SillyTavern` object (`index.ts:351`) |
+| `getScriptId` | ⬜ | add (stable per-script id) |
+| `getVariables({type:'script'})` / `updateVariablesWith(..,{type:'script'})` | 🟡 always stat_data (`index.ts:198`/`:246`) | honor `script` scope → script-owned KV |
+| `getButtonEvent` / `eventOn` / `replaceScriptButtons` | ⬜ | add + bridge (4c) |
+
+Regex write is the only genuinely missing **capability** (the rest are getters/wiring); it needs a small
+main-side regex replace service + IPC.
+
+### 4f. Network + OAuth
+`CARD_CSP` already allows `connect-src *` (`wcvManager.ts:20`), so the Cloudflare fetch works. The OAuth
+`window.open` needs a `setWindowOpenHandler` on the **card WCV** (today only the main window has one, which
+denies → external browser, `index.ts:59`) — allow it as a child popup and relay the `postMessage` callback.
+Gate behind the same trusted-card consent that already guards remote card code (the `ConsentCardView` gate,
+`WcvPanel.tsx:107`; the per-card `trusted`/`remoteScripts` grant, `CardScriptHost.tsx`).
+
+---
+
+## 5. Build order
+
+1. **`thRuntime` gaps + regex write** (4e) — pure surface/bridge work, independently useful; unblocks both
+   transports. *Touches the card-facing surface → update the SDK docs (see below).*
+2. **Button bus across WCV** (4c) — `replaceScriptButtons` → menu, click → event.
+3. **`CardScriptWcvHost` transport** (4a) + transport selection — host existing scripts in a WCV.
+4. **Modal presentation** (4d) — hidden full-window WCV toggled by the button. → **`创意工坊` opens and can
+   read/diff/write.**
+5. **OAuth window-open** (4f) — completes cloud login.
+6. **Declarative `surface` schema** (4b) + **delete the hardcoded `wcv-*` views** (`viewRegistry.tsx:84`,
+   `WcvPanel.tsx`) — fold status/home/start into the registry.
+
+After step 4 the button works for download/sync; 5 adds cloud login; 6 removes the hardcoding so every card
+gets the same door.
+
+## 6. Security
+
+- A card script in a WCV runs **out-of-process** (`nodeIntegration:false`, no host/Node reach) — the real
+  isolation boundary, same as the existing spike. Process isolation also fixes the freeze risk that shelved
+  inline frontend cards (`docs/card-custom-ui-design.md`).
+- Remote code + the new `window.open`/OAuth are **trusted-card only**, behind the existing per-card consent +
+  `trusted`/`remoteScripts` grant. Don't auto-run.
+- Worldbook/regex **writes** route through the host bridge (validated against the schema in `wcvIpc.ts`
+  `toLoreEntry`; add the equivalent for regex) — the script never writes files directly.
+- Regex write reloads chat (`tavern_events.CHAT_CHANGED` per JSR semantics) — debounce/guard so a card can't
+  thrash the chat.
+
+## 7. Files this will touch (for the eventual implementation)
+
+- `src/shared/thRuntime/index.ts` — API gaps + button bus + script-scope vars (4c, 4e).
+- `src/main/ipc/wcvIpc.ts` — `wcv-register-button`, `wcv-button-click`, `wcv-host-replace-regexes`,
+  `isCharacterTavernRegexesEnabled`, `getCurrentCharacterName`, chat-id getter, script-scope var IPC.
+- `src/main/services/wcvManager.ts` — modal show/hide lifecycle; `setWindowOpenHandler` for OAuth.
+- `src/preload/wcvPreload.ts` — script-module loading + the button/close bridge.
+- `src/renderer/src/components/CardScriptWcvHost.tsx` (new) + transport selection in `viewRegistry.tsx`.
+- `src/renderer/src/stores/toolbarStore.ts` — already fits; feed it from the WCV bridge.
+- `src/main/types/character.ts` — the `surface` schema (4b).
+- Delete the hardcoded `wcv-card/home/start` in `viewRegistry.tsx` + `WcvPanel.tsx` (step 6).
+- **SDK docs**: when step 1/4b land, update `docs/sdk/component-inventory.md` §2 (runtime API) + §4 (format)
+  and `docs/rpt-api.md`, per `docs/sdk/README.md`.
