@@ -143,15 +143,29 @@ export const getAllRules = (profileId: string, ctx?: ScopeContext): RenderRegexR
   return out
 }
 
-/** Rules that transform the AI response for *display* (placement 2, not prompt-only). */
+/** Rules that transform the AI response for *display* (placement 2, not prompt-only). A rule the user
+ *  PROMOTED to a panel (renderMode 'panel') still runs inline but STRIPS its match (replace → '') — the UI
+ *  moves to a docked panel, so the message shouldn't show its marker or the inline frame. */
 export const getRenderRules = (profileId: string, ctx?: ScopeContext): RenderRegexRule[] =>
+  getAllRules(profileId, ctx)
+    .filter((r) => !r.disabled && !r.promptOnly && (r.placement.length === 0 || r.placement.includes(2)))
+    .map((r) => (r.renderMode === 'panel' ? { ...r, replace: '' } : r))
+
+/** Rules that transform text on its way *into the prompt* (everything not display-only or panel-promoted). */
+export const getPromptRules = (profileId: string, ctx?: ScopeContext): RenderRegexRule[] =>
   getAllRules(profileId, ctx).filter(
-    (r) => !r.disabled && !r.promptOnly && (r.placement.length === 0 || r.placement.includes(2))
+    (r) => !r.disabled && !r.markdownOnly && r.renderMode !== 'panel'
   )
 
-/** Rules that transform text on its way *into the prompt* (everything not display-only). */
-export const getPromptRules = (profileId: string, ctx?: ScopeContext): RenderRegexRule[] =>
-  getAllRules(profileId, ctx).filter((r) => !r.disabled && !r.markdownOnly)
+// A "frontend card" loader regex injects a page via `$('body').load('https://…')`. Pull that URL out so a
+// promoted regex can be hosted as a WCV panel. Only the `.load('https://…')` form (the status/home/start
+// pattern) — NOT bare CDN `import`s in beautification regexes (those are libs, not the page). Pure.
+const LOADER_URL_RE = /\.load\(\s*['"](https?:\/\/[^'"]+)['"]/i
+export const extractCardUiUrl = (replace: string): string | null => {
+  if (typeof replace !== 'string') return null
+  const m = LOADER_URL_RE.exec(replace)
+  return m ? m[1] : null
+}
 
 /**
  * Raw ST regex-script objects belonging to one world (scope=world, owner=cardId), in
@@ -205,6 +219,26 @@ export const listScripts = (profileId: string): RegexScriptInfo[] => {
         renderMode: m?.renderMode
       }
     })
+}
+
+/** Active 'panel'-promoted regex UIs for a context — `{ file, scriptName, url }` — so the renderer can
+ *  offer them as selectable WCV panel views. Only those with an extractable loader URL are promotable. */
+export const listPanelRegexes = (
+  profileId: string,
+  ctx?: ScopeContext
+): Array<{ file: string; scriptName: string; url: string }> => {
+  const out: Array<{ file: string; scriptName: string; url: string }> = []
+  for (const s of listScripts(profileId)) {
+    if (s.renderMode !== 'panel' || s.disabled) continue
+    if (ctx && !isScopeActive({ scope: s.scope, owner: s.owner }, ctx)) continue
+    let url: string | null = null
+    for (const r of getScriptRules(profileId, s.file)) {
+      url = extractCardUiUrl(r.replace)
+      if (url) break
+    }
+    if (url) out.push({ file: s.file, scriptName: s.scriptName, url })
+  }
+  return out
 }
 
 /** Copy an imported ST regex file into the profile's regex dir. Returns its name. */

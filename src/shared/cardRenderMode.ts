@@ -4,8 +4,10 @@
  *
  * - inline:   same-origin srcdoc iframe embedded in the message DOM (native feel).
  * - isolated: out-of-process WebContentsView overlay (crash-isolated).
+ * - panel:    NOT rendered in the message — a URL-loader regex UI the user PROMOTED to a docked WCV panel
+ *             (the message marker is stripped; the UI is selectable as a workspace view). Opt-in per regex.
  */
-export type CardRenderMode = 'inline' | 'isolated'
+export type CardRenderMode = 'inline' | 'isolated' | 'panel'
 
 export const DEFAULT_CARD_RENDER_MODE: CardRenderMode = 'inline'
 

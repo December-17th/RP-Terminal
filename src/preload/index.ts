@@ -208,6 +208,8 @@ const api = {
   getRenderRegex: (profileId: string, ctx?: { cardId?: string | null; chatId?: string | null }) =>
     ipcRenderer.invoke('get-render-regex', profileId, ctx),
   listRegex: (profileId: string) => ipcRenderer.invoke('list-regex', profileId),
+  listPanelRegex: (profileId: string, ctx?: { cardId?: string | null; chatId?: string | null }) =>
+    ipcRenderer.invoke('list-panel-regex', profileId, ctx),
   deleteRegex: (profileId: string, file: string) =>
     ipcRenderer.invoke('delete-regex', profileId, file),
   setRegexScope: (profileId: string, file: string, scope: string, owner?: string) =>

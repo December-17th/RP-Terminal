@@ -9,6 +9,10 @@ export const registerRegexIpc = (ipcMain: IpcMain): void => {
     regexService.getRenderRules(profileId, { ...ctx, presetId: getActivePresetId(profileId) })
   )
   ipcMain.handle('list-regex', (_, profileId) => regexService.listScripts(profileId))
+  // 'panel'-promoted regex UIs (with their loader URL) for the active context → selectable workspace panels.
+  ipcMain.handle('list-panel-regex', (_, profileId, ctx) =>
+    regexService.listPanelRegexes(profileId, { ...ctx, presetId: getActivePresetId(profileId) })
+  )
   ipcMain.handle('delete-regex', (_, profileId, file) => regexService.deleteScript(profileId, file))
   ipcMain.handle('regex-set-scope', (_, profileId, file, scope, owner) =>
     regexService.setScriptScope(profileId, file, scope, owner)
