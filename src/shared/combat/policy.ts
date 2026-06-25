@@ -8,7 +8,7 @@
 
 import { averageExpr } from './dice'
 import { distance, reachable } from './grid'
-import { isAlive } from './resolver'
+import { hasCondition, isAlive } from './resolver'
 import type { AbilityDef, Action, Combatant, Coord, CombatState } from './types'
 
 /** Reachable cell that minimizes (dir=+1, close in) or maximizes (dir=-1, flee)
@@ -45,6 +45,8 @@ export const weightedPolicy = (
 ): Action => {
   const self = state.combatants.find((c) => c.id === enemyId)
   if (!self) return { kind: 'end', actor: enemyId }
+  // Stunned combatants lose their turn (P8 condition mechanic).
+  if (hasCondition(self, 'stunned')) return { kind: 'end', actor: enemyId }
   const foes = state.combatants.filter((c) => c.side !== self.side && isAlive(c))
   if (!foes.length) return { kind: 'end', actor: enemyId }
 

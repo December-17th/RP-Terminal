@@ -13,6 +13,10 @@ import type { AbilityDef, Action, CombatEvent, Combatant, CombatState } from './
 /** A combatant is still in the fight while it has positive HP. */
 export const isAlive = (c: Combatant): boolean => c.block.hp > 0
 
+/** Whether a combatant currently has a named condition. */
+export const hasCondition = (c: Combatant, id: string): boolean =>
+  c.block.conditions.some((cd) => cd.id === id)
+
 const findById = (state: CombatState, id: string): Combatant | undefined =>
   state.combatants.find((c) => c.id === id)
 
@@ -49,7 +53,9 @@ const hitOne = (
   let crit = false
 
   if (ability.toHit) {
-    const atk = rollD20(rng, { mod: actor.block.mods[ability.toHit] ?? 0 })
+    // Attacking a prone target is made with advantage (P8 condition mechanic).
+    const adv = hasCondition(target, 'prone')
+    const atk = rollD20(rng, { mod: actor.block.mods[ability.toHit] ?? 0, adv })
     crit = atk.crit
     const hit = atk.crit || (!atk.fumble && atk.total >= target.block.ac)
     if (!hit) {

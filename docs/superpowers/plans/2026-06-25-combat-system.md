@@ -2,17 +2,28 @@
 
 **Design / spec:** [docs/combat-system-design.md](../../combat-system-design.md)
 
-> **STATUS (2026-06-25): P1–P4 DONE — the first milestone (headless engine + service) is complete;
-> P5 (UI) next.** Shipped: types/dice/grid (P1), native d20 resolver + turn engine + card-override
-> seam (P2), weighted enemy policy (P3), main-process `combatService` + `combat_encounters`
-> persistence + sandbox hook bridge + IPC/preload (P4) — 50 combat unit tests (619 total), all green
-> (typecheck/lint/build). A fully deterministic engine driveable over `window.api.combat*`, no UI, no
-> AI calls. **One design change in P2:** the card-override seam shipped as a single coarse
-> `resolveAction` hook (whole-action override) rather than the granular named hooks
-> (`resolveAttack`/`applyDamage`/…) listed in §5 / design §5; those finer hooks remain a
-> forward-compatible refinement (the `HookName` union already reserves their names). Phases below are
-> sequenced so each is shippable; the first milestone (P1–P4) is a fully unit-tested deterministic
-> engine + service with no UI and no AI calls.
+> **STATUS (2026-06-25): P1–P7 DONE; P8 partially done — the combat track is end-to-end playable.**
+> Shipped: pure engine — types/dice/grid (P1), native d20 resolver + turn engine + card-override seam
+> (P2), weighted enemy policy (P3); main-process `combatService` + `combat_encounters` persistence +
+> sandbox hook bridge + IPC/preload (P4); native `CombatView` + combat store + Combat-mode layout
+> (P5); AI touchpoints — `<rpt-combat-start>` cue, `<rpt-combat-result>` adjudication, narration, `ai`
+> enemy controller (P6); combat bundle schema + `buildEncounter` + Enter-Combat wiring + SDK docs
+> (P7). **P8 (tactical depth):** line-of-sight + the stunned/restrained (immobilize) and prone
+> (attacker advantage) condition mechanics are **done**; **deferred** within P8 — cover, opportunity
+> attacks/reactions, flanking, hex grid, smarter policy. **71 combat unit tests (640 total), all green
+> (typecheck/lint/build).**
+>
+> **Notes / design changes made while building:**
+> - **P2 seam:** shipped as a single coarse `resolveAction` hook (whole-action override) rather than
+>   the granular `resolveAttack`/`applyDamage`/… hooks in §5/design §5; those names are reserved in the
+>   `HookName` union as a forward-compatible refinement.
+> - **Per-action RNG:** the engine derives each action's RNG from `(seed, rngCursor)` (a `rngCursor` on
+>   CombatState) so fights are deterministic AND resume after restart without persisting live RNG.
+> - **Verification gap:** P5 (renderer UI) and the live AI calls in P6 are exercised by typecheck +
+>   build + the existing suite, not by automated UI/provider tests — they need the running app +
+>   a configured provider to verify in-app.
+> - **命定之诗 content** (actual stats/abilities/bestiary/maps/skin) is authored by the world owner
+>   against the P7 `CombatBundleSchema`; it is not fabricated in this repo.
 
 **Goal:** A player-played, turn-based, square-grid d20 combat system for RP Terminal. The player
 makes their party's moves; a native deterministic engine resolves every die (seeded); enemies are

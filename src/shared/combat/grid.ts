@@ -51,6 +51,36 @@ export const octantDir = (from: Coord, to: Coord): Coord => [
 ]
 
 /**
+ * Line-of-sight via Bresenham: true unless a cell strictly between `a` and `b`
+ * blocks sight (`tile.blocksLoS`). The endpoints never block (a combatant standing
+ * in cover can still be the target). Used to gate ranged targeting (P8).
+ */
+export const lineOfSight = (grid: GridSpec, a: Coord, b: Coord): boolean => {
+  let x = a[0]
+  let y = a[1]
+  const dx = Math.abs(b[0] - x)
+  const dy = Math.abs(b[1] - y)
+  const sx = x < b[0] ? 1 : -1
+  const sy = y < b[1] ? 1 : -1
+  let err = dx - dy
+  for (;;) {
+    const atEnd = (x === a[0] && y === a[1]) || (x === b[0] && y === b[1])
+    if (!atEnd && tileAt(grid, [x, y]).blocksLoS) return false
+    if (x === b[0] && y === b[1]) break
+    const e2 = 2 * err
+    if (e2 > -dy) {
+      err -= dy
+      x += sx
+    }
+    if (e2 < dx) {
+      err += dx
+      y += sy
+    }
+  }
+  return true
+}
+
+/**
  * Cells a combatant can reach this turn: Dijkstra over passable, unoccupied cells
  * (other combatants block), normal step = 1, difficult = 2, total ≤ `speed`. The
  * start cell is excluded. Grids are small so a linear-scan frontier is fine.
@@ -58,6 +88,8 @@ export const octantDir = (from: Coord, to: Coord): Coord => [
 export const reachable = (grid: GridSpec, combatants: Combatant[], id: string): Coord[] => {
   const self = combatants.find((c) => c.id === id)
   if (!self) return []
+  // Immobilizing conditions zero out movement (P8).
+  if (self.block.conditions.some((c) => c.id === 'stunned' || c.id === 'restrained')) return []
   const speed = self.block.speed
   const blocked = new Set(combatants.filter((c) => c.id !== id).map((c) => cellKey(c.pos)))
 
