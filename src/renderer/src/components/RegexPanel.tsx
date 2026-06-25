@@ -9,6 +9,7 @@ import {
   ArtifactScope
 } from '../stores/regexStore'
 import type { CardRenderMode } from '../../../shared/cardRenderMode'
+import { useT } from '../i18n'
 
 interface Props {
   profileId: string
@@ -17,18 +18,27 @@ interface Props {
   activeChatId: string | null
 }
 
-const SCOPES: { key: ArtifactScope; title: string; hint: string }[] = [
-  { key: 'global', title: 'Global', hint: 'every session' },
-  { key: 'world', title: 'World', hint: 'this card' },
-  { key: 'session', title: 'Session', hint: 'this chat' }
+const SCOPES: { key: ArtifactScope; titleKey: string; hintKey: string }[] = [
+  { key: 'global', titleKey: 'scope.global', hintKey: 'scope.globalHint' },
+  { key: 'world', titleKey: 'scope.world', hintKey: 'scope.worldHint' },
+  { key: 'session', titleKey: 'scope.session', hintKey: 'scope.sessionHint' }
 ]
 
 export const RegexPanel: React.FC<Props> = ({ profileId, activeCardId, activeChatId }) => {
-  const { scripts, loadScripts, importScripts, remove, updateRule, setScope, setDisabled, setRenderMode } =
-    useRegexStore()
+  const {
+    scripts,
+    loadScripts,
+    importScripts,
+    remove,
+    updateRule,
+    setScope,
+    setDisabled,
+    setRenderMode
+  } = useRegexStore()
   const [expanded, setExpanded] = useState<string | null>(null)
   const [rules, setRules] = useState<Record<string, RegexRuleDetail[]>>({})
   const [editing, setEditing] = useState<RegexRuleDetail | null>(null)
+  const t = useT()
 
   useEffect(() => {
     loadScripts(profileId)
@@ -73,44 +83,46 @@ export const RegexPanel: React.FC<Props> = ({ profileId, activeCardId, activeCha
           <input
             type="checkbox"
             checked={!s.disabled}
-            title={s.disabled ? 'Script disabled' : 'Script enabled'}
+            title={s.disabled ? t('regex.scriptDisabled') : t('regex.scriptEnabled')}
             onChange={() => setDisabled(profileId, s.file, !s.disabled)}
           />
           <div className="entry-head-main" onClick={() => toggleExpand(s.file)}>
             <span className="entry-title">{s.scriptName}</span>
             <span className="entry-keys-preview">
-              {s.ruleCount} rule{s.ruleCount === 1 ? '' : 's'}
+              {s.ruleCount === 1
+                ? t('regex.ruleOne', { count: s.ruleCount })
+                : t('regex.ruleMany', { count: s.ruleCount })}
             </span>
           </div>
           <select
             className="scope-select"
             value={s.scope}
-            title="Scope — World binds to the active card; Session to the active chat."
+            title={t('regex.scopeTitle')}
             onClick={(e) => e.stopPropagation()}
             onChange={(e) => changeScope(s.file, e.target.value as ArtifactScope)}
           >
-            <option value="global">Global</option>
+            <option value="global">{t('scope.global')}</option>
             <option value="world" disabled={!activeCardId}>
-              World
+              {t('scope.world')}
             </option>
             <option value="session" disabled={!activeChatId}>
-              Session
+              {t('scope.session')}
             </option>
           </select>
           <select
             className="scope-select"
             value={s.renderMode ?? ''}
-            title="Render mode — how this card's UI is displayed (Default follows Settings)."
+            title={t('regex.renderModeTitle')}
             onClick={(e) => e.stopPropagation()}
             onChange={(e) => changeRenderMode(s.file, e.target.value)}
           >
-            <option value="">Default</option>
-            <option value="inline">Inline</option>
-            <option value="isolated">Isolated</option>
+            <option value="">{t('regex.renderDefault')}</option>
+            <option value="inline">{t('regex.renderInline')}</option>
+            <option value="isolated">{t('regex.renderIsolated')}</option>
           </select>
           {ownedElsewhere && (
-            <span className="entry-keys-preview" title="Bound to a different world/session">
-              other {s.scope}
+            <span className="entry-keys-preview" title={t('regex.boundElsewhere')}>
+              {t('regex.otherScope', { scope: t('scope.' + s.scope) })}
             </span>
           )}
           <button className="btn-ghost" onClick={() => toggleExpand(s.file)}>
@@ -118,9 +130,10 @@ export const RegexPanel: React.FC<Props> = ({ profileId, activeCardId, activeCha
           </button>
           <button
             className="btn-ghost danger"
-            title="Delete script"
+            title={t('regex.deleteScript')}
             onClick={() => {
-              if (confirm(`Delete regex script "${s.scriptName}"?`)) remove(profileId, s.file)
+              if (confirm(t('regex.confirmDelete', { name: s.scriptName })))
+                remove(profileId, s.file)
             }}
           >
             🗑
@@ -129,7 +142,7 @@ export const RegexPanel: React.FC<Props> = ({ profileId, activeCardId, activeCha
         {expanded === s.file && (
           <div className="entry-body" style={{ display: 'block' }}>
             {(rules[s.file] || []).length === 0 ? (
-              <div style={{ opacity: 0.6, fontStyle: 'italic' }}>No rules in this script.</div>
+              <div style={{ opacity: 0.6, fontStyle: 'italic' }}>{t('regex.noRules')}</div>
             ) : (
               (rules[s.file] || []).map((r) => (
                 <div key={r.index} className={`prompt-row ${r.disabled ? 'disabled' : ''}`}>
@@ -137,20 +150,24 @@ export const RegexPanel: React.FC<Props> = ({ profileId, activeCardId, activeCha
                     <input
                       type="checkbox"
                       checked={!r.disabled}
-                      title={r.disabled ? 'Disabled' : 'Enabled'}
+                      title={r.disabled ? t('common.disabled') : t('common.enabled')}
                       onChange={() => patchRule(r, { disabled: !r.disabled })}
                     />
                     <span
                       className="prompt-name"
-                      title="Edit rule"
+                      title={t('regex.editRuleHint')}
                       onClick={() => setEditing(r)}
                       style={{ fontFamily: 'monospace', fontSize: '0.85em' }}
                     >
-                      /{r.source || '(empty)'}/{r.flags}
+                      /{r.source || t('regex.emptyPattern')}/{r.flags}
                     </span>
-                    {r.promptOnly && <span className="role-badge">prompt</span>}
+                    {r.promptOnly && <span className="role-badge">{t('regex.promptBadge')}</span>}
                     <div className="prompt-actions">
-                      <button className="btn-ghost" title="Edit" onClick={() => setEditing(r)}>
+                      <button
+                        className="btn-ghost"
+                        title={t('common.edit')}
+                        onClick={() => setEditing(r)}
+                      >
                         ✎
                       </button>
                     </div>
@@ -167,36 +184,31 @@ export const RegexPanel: React.FC<Props> = ({ profileId, activeCardId, activeCha
   return (
     <div className="panel">
       <div className="panel-header">
-        <h3>Regex</h3>
+        <h3>{t('regex.heading')}</h3>
         <div className="panel-header-actions">
-          <button onClick={() => importScripts(profileId)}>Import</button>
+          <button onClick={() => importScripts(profileId)}>{t('common.import')}</button>
         </div>
       </div>
       <div className="panel-body">
         <div style={{ fontSize: '0.82em', color: 'var(--rpt-text-secondary)', marginBottom: 10 }}>
-          SillyTavern regex scripts transform the AI&apos;s output for display (e.g. the
-          <em> 美化</em> beautification cards). Applied at render time — the stored history keeps
-          the model&apos;s raw output. Toggle a whole script on/off, set its scope, or expand to
-          edit individual rules.
+          {t('regex.help')}
         </div>
         {scripts.length === 0 ? (
-          <div style={{ opacity: 0.6, fontStyle: 'italic' }}>
-            No scripts. Import a SillyTavern regex JSON.
-          </div>
+          <div style={{ opacity: 0.6, fontStyle: 'italic' }}>{t('regex.noScripts')}</div>
         ) : (
-          SCOPES.map(({ key, title, hint }) => {
+          SCOPES.map(({ key, titleKey, hintKey }) => {
             const inScope = scripts.filter((s) => s.scope === key)
             return (
               <ScopeSection
                 key={key}
-                title={title}
-                hint={hint}
+                title={t(titleKey)}
+                hint={t(hintKey)}
                 count={inScope.length}
                 defaultOpen={key !== 'session'}
               >
                 {inScope.length === 0 ? (
                   <div style={{ opacity: 0.55, fontStyle: 'italic', padding: '4px 2px' }}>
-                    No {title.toLowerCase()} regex.
+                    {t('regex.noneInScope')}
                   </div>
                 ) : (
                   inScope.map(renderScript)
@@ -232,10 +244,11 @@ const RuleEditor: React.FC<{
   const [trim, setTrim] = useState(rule.trimStrings.join(', '))
   const [markdownOnly, setMarkdownOnly] = useState(rule.markdownOnly)
   const [promptOnly, setPromptOnly] = useState(rule.promptOnly)
+  const t = useT()
 
   return (
     <Modal
-      title={`Edit Rule — ${rule.scriptName}`}
+      title={t('regex.editRuleTitle', { name: rule.scriptName })}
       onClose={onClose}
       headerActions={
         <button
@@ -254,28 +267,30 @@ const RuleEditor: React.FC<{
             })
           }
         >
-          Save
+          {t('common.save')}
         </button>
       }
     >
-      <label className="field-label">Find (regex)</label>
+      <label className="field-label">{t('regex.find')}</label>
       <input value={source} onChange={(e) => setSource(e.target.value)} />
 
-      <label className="field-label">Flags</label>
+      <label className="field-label">{t('regex.flags')}</label>
       <input value={flags} onChange={(e) => setFlags(e.target.value)} placeholder="g" />
 
-      <label className="field-label">Replace</label>
+      <label className="field-label">{t('regex.replace')}</label>
       <textarea
         className="modal-textarea"
         value={replace}
         onChange={(e) => setReplace(e.target.value)}
-        placeholder="$1 = capture group · {{match}} = matched text · {{user}}/{{char}} · \n = newline"
+        placeholder={t('regex.replacePh')}
       />
 
-      <label className="field-label">
-        Trim strings (comma-separated; removed from {'{{match}}'})
-      </label>
-      <input value={trim} onChange={(e) => setTrim(e.target.value)} placeholder="e.g. *, _" />
+      <label className="field-label">{t('regex.trim')}</label>
+      <input
+        value={trim}
+        onChange={(e) => setTrim(e.target.value)}
+        placeholder={t('regex.trimPh')}
+      />
 
       <div className="entry-toggles">
         <label>
@@ -284,7 +299,7 @@ const RuleEditor: React.FC<{
             checked={markdownOnly}
             onChange={(e) => setMarkdownOnly(e.target.checked)}
           />
-          Markdown only (display)
+          {t('regex.markdownOnly')}
         </label>
         <label>
           <input
@@ -292,7 +307,7 @@ const RuleEditor: React.FC<{
             checked={promptOnly}
             onChange={(e) => setPromptOnly(e.target.checked)}
           />
-          Prompt only (not applied to display)
+          {t('regex.promptOnly')}
         </label>
       </div>
     </Modal>
