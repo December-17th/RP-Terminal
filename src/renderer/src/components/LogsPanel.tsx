@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react'
 import { useLogStore, LogEntry } from '../stores/logStore'
+import { useT } from '../i18n'
 
 const LEVEL_GLYPH: Record<string, string> = {
   info: 'ℹ',
@@ -12,6 +13,7 @@ export const LogsPanel: React.FC = () => {
   const { entries, load, clear } = useLogStore()
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
   const [autoscroll, setAutoscroll] = useState(true)
+  const t = useT()
   const endRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -32,7 +34,7 @@ export const LogsPanel: React.FC = () => {
   return (
     <div className="panel">
       <div className="panel-header">
-        <h3>Logs</h3>
+        <h3>{t('logs.heading')}</h3>
         <div className="panel-header-actions">
           <label className="log-autoscroll">
             <input
@@ -40,18 +42,16 @@ export const LogsPanel: React.FC = () => {
               checked={autoscroll}
               onChange={(e) => setAutoscroll(e.target.checked)}
             />
-            auto
+            {t('logs.auto')}
           </label>
           <button className="btn-ghost danger" onClick={clear}>
-            Clear
+            {t('logs.clear')}
           </button>
         </div>
       </div>
       <div className="panel-body log-console">
         {entries.length === 0 ? (
-          <div className="log-empty">
-            No activity yet. Send a message to see raw requests, responses and errors.
-          </div>
+          <div className="log-empty">{t('logs.empty')}</div>
         ) : (
           entries.map((e) => (
             <LogLine
