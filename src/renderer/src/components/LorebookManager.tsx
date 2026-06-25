@@ -12,6 +12,10 @@ interface Props {
 
 const splitKeys = (value: string): string[] => value.split(',').map((s) => s.trim())
 
+/** Case-insensitive match of a (lowercased) query against an entry's title, keys, and content. */
+const entryMatches = (e: LorebookEntry, q: string): boolean =>
+  [e.comment, ...e.keys, ...e.secondary_keys, e.content].join('\n').toLowerCase().includes(q)
+
 export const LorebookManager: React.FC<Props> = ({
   profileId,
   characterId,
@@ -39,7 +43,9 @@ export const LorebookManager: React.FC<Props> = ({
     toggleEntry,
     deleteEntry
   } = useLorebookStore()
-  const [expanded, setExpanded] = useState<number | null>(0)
+  // Entries start collapsed; the user expands the one they want.
+  const [expanded, setExpanded] = useState<number | null>(null)
+  const [query, setQuery] = useState('')
   const t = useT()
 
   // Load the library and open the character's own lorebook (id == characterId).
@@ -69,6 +75,15 @@ export const LorebookManager: React.FC<Props> = ({
   }
 
   const toggleExpand = (i: number): void => setExpanded((cur) => (cur === i ? null : i))
+
+  // Entries paired with their store index (so toggle/edit/delete still target the right one),
+  // shown in insertion_order (low → high) to match the order they're injected into the prompt,
+  // then filtered by the search query. Sort is stable, so equal-order entries keep stored order.
+  const q = query.trim().toLowerCase()
+  const indexed = (lorebook?.entries ?? [])
+    .map((entry, i) => ({ entry, i }))
+    .sort((a, b) => a.entry.insertion_order - b.entry.insertion_order)
+  const visible = q ? indexed.filter(({ entry }) => entryMatches(entry, q)) : indexed
 
   // Switching/creating a lorebook replaces the editor — confirm first if there are
   // unsaved edits, so a stray dropdown change can't silently discard them.
@@ -143,7 +158,17 @@ export const LorebookManager: React.FC<Props> = ({
           </select>
         </div>
         <div className="preset-actions">
-          <button onClick={addEntry}>{t('lore.addEntry')}</button>
+          <button
+            onClick={() => {
+              // New entries prepend (index 0). Clear any search so it isn't filtered out,
+              // and expand it so it's ready to edit.
+              addEntry()
+              setQuery('')
+              setExpanded(0)
+            }}
+          >
+            {t('lore.addEntry')}
+          </button>
           <button
             className="btn-ghost danger"
             disabled={currentId === characterId}
@@ -161,13 +186,34 @@ export const LorebookManager: React.FC<Props> = ({
         </label>
         <input value={lorebook?.name || ''} onChange={(e) => setName(e.target.value)} />
 
+        {lorebook && lorebook.entries.length > 0 && (
+          <div className="lore-search-row">
+            <input
+              className="lore-search"
+              type="search"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder={t('lore.searchPlaceholder')}
+            />
+            {q && (
+              <span className="lore-search-count">
+                {t('lore.searchCount', { shown: visible.length, total: lorebook.entries.length })}
+              </span>
+            )}
+          </div>
+        )}
+
         <div style={{ marginTop: 12 }}>
           {!lorebook || lorebook.entries.length === 0 ? (
             <div style={{ opacity: 0.6, fontStyle: 'italic', padding: '20px 0' }}>
               {t('lore.noEntries')}
             </div>
+          ) : visible.length === 0 ? (
+            <div style={{ opacity: 0.6, fontStyle: 'italic', padding: '20px 0' }}>
+              {t('lore.noMatches', { query })}
+            </div>
           ) : (
-            lorebook.entries.map((entry, i) => (
+            visible.map(({ entry, i }) => (
               <EntryCard
                 key={i}
                 entry={entry}

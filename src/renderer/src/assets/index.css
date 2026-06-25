@@ -1577,6 +1577,24 @@ select {
   cursor: pointer;
 }
 
+/* Lorebook entry search */
+.lore-search-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 14px;
+}
+.lore-search {
+  flex: 1;
+  min-width: 0;
+}
+.lore-search-count {
+  flex: 0 0 auto;
+  font-size: 0.78em;
+  color: var(--rpt-text-secondary);
+  white-space: nowrap;
+}
+
 /* Collapsible section ("dropdown") inside the Settings panel */
 .settings-section {
   border: 1px solid var(--rpt-border);
