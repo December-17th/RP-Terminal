@@ -209,13 +209,13 @@ option, smarter weighted policy. Each its own small commit.
 
 ---
 
-## Open items to confirm before P1 (or resolve while building)
+## Decisions locked before P1 (owner, 2026-06-25)
 
-These are the design doc's §14 open questions, narrowed to what blocks P1:
-
-- **Party scope** (single PC vs multi-member party) — shapes `Combatant.side` handling + the P5 action
-  bar, but not the P1–P3 core. *Lean: support a multi-member party from the start (a list either side).*
-- **Initiative model** (d20 round-robin vs side-based) — a P2 decision. *Lean: d20 round-robin.*
+- **Party scope: multi-member party.** The player commands several party members each turn; the core
+  models a list on either side (`Combatant.side: 'party'|'enemy'`) from the start, and the P5 action bar
+  cycles members. No extra P1–P3 core cost.
+- **Initiative: d20 round-robin.** Every combatant rolls `d20 + DEX-mod` once; one shared initiative
+  order interleaves party and enemies (P2 `rollInitiative`).
 
 Everything else (`<rpt-combat-start>` grammar, AI-supplied stats vs templates, death stakes, map source,
 `ai`-controller batching) is downstream of P4 and parked in [combat-system-design.md](../../combat-system-design.md) §14.
