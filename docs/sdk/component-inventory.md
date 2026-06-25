@@ -116,7 +116,11 @@ transports inject the same thing (clean-room mirror of JSR's `createSrcContent`/
 | Passive full doc / non-scripted | Sandboxed `HtmlFrame` (`sandbox="allow-same-origin"`, no scripts) | Static, safe. |
 
 Per-card override: a regex `_meta.renderMode` → a `<!--rpt:mode=inline|isolated-->` marker parsed by
-`splitHtml`. Global default: `settings.cards.renderMode` (`inline`).
+`splitHtml`. Global default: `settings.cards.renderMode` (`inline`). A third mode **`panel`** PROMOTES a
+loader regex (one whose replacement does `$('body').load('https://…')`) out of the message into a docked WCV
+**panel**: the inline marker is stripped, the page URL is exposed via `regexService.listPanelRegexes`, and it
+becomes a selectable workspace view (`regex-panel:<file>`, rendered by `WcvPanel`). Card scripts themselves
+run app-wide in the invisible session-level **engine** (`CardScriptWcvHost`), not in a panel.
 
 ---
 

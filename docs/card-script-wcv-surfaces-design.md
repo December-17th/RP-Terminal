@@ -1,12 +1,45 @@
 # Card Script Surfaces — running card scripts in a WCV & letting cards register their own UI
 
-Status: **Design / not built.** Implementation plan:
+Status: **BUILT (Phases 1–4), 2026-06-25** — `创意工坊` works end-to-end (download/sync/uninstall lorebook
+entries + regex). **Phase 5 (OAuth cloud login) is DEFERRED** (see §0). Implementation plan:
 [docs/superpowers/plans/2026-06-25-card-script-wcv-surfaces.md](superpowers/plans/2026-06-25-card-script-wcv-surfaces.md).
-Motivating case: the `【命定之诗】创意工坊` button does nothing in RP Terminal.
+Motivating case: the `【命定之诗】创意工坊` button did nothing in RP Terminal.
 Builds on `docs/card-custom-ui-design.md` (the iframe-vs-WCV analysis + the `WebContentsView` plan) and the
-already-built WCV spike (`wcvManager`, `wcvPreload`, the `wcvIpc` host bridge). This doc generalizes that
-spike from **three hardcoded `命定之诗` URLs** into a **card/script-driven surface registry**, and routes
-full-page card scripts to a process-isolated WCV instead of the crippled inline iframe.
+WCV spike (`wcvManager`, `wcvPreload`, the `wcvIpc` host bridge).
+
+> **§§4–7 below are the ORIGINAL design (pre-build).** Two things changed during implementation — read §0
+> first; where it conflicts with a later section, §0 wins.
+
+## 0. As-built (2026-06-25) — what shipped, and the two design changes
+
+**The card script engine (built).** A single, invisible, process-isolated `WebContentsView`
+(`CardScriptWcvHost`) runs the active card's merged scripts. **It is mounted ONCE per session at the app
+level (`App.tsx`), parked off-screen** — NOT inside a panel (the original §4a/§4d implied a panel-mounted
+host). So scripts run + the workshop button registers in ANY layout. The button-launched workshop modal
+slides the engine on-screen (`wcvManager.setModal` off↔on-screen) and back off on close (overlay detected by
+a `wcvPreload` MutationObserver). The legacy "Card Scripts" panel view is now just an info note. This is the
+owner's **"default invisible script engine for all cards; panels are for game UI"** direction.
+
+**Card UI placement (CHANGED from §4b/§4h).** The original plan auto-LIFTED the `状态栏` status regex into a
+`panel_ui` slot on import. **That was reverted.** The locked direction is:
+- **ST-compat card UIs that come from regex DEFAULT to inline regex** (rendered in the message, like ST).
+- The **user can PROMOTE** a loader-regex UI (the `$('body').load('https://…')` ones: 状态栏 / 首页 /
+  自定义开局) **to a docked WCV panel** via a per-regex render-mode `'panel'` in the regex manager, then pick
+  which workspace panel shows it. (`renderMode:'panel'` strips the inline marker, `extractCardUiUrl` +
+  `listPanelRegexes` expose it, `Panel.tsx` renders a dynamic `regex-panel:<file>` view via `WcvPanel`.)
+- `rp_terminal.panel_ui` + `StaticWorkspace` stay for **RPT-native cards that author their own layout** (no
+  auto-synthesis for ST cards). The hardcoded `wcv-card/home/start` views were retired.
+
+**Worldbook/regex fidelity (built, beyond the original scope).** Cards exchange entries in the TavernHelper
+shape; the shared mappers `thRuntime/worldbookEntry` (strategy/keys/constant/`extra` ↔ native) and
+`thRuntime/tavernRegex` keep keys/constant/tags lossless on every read+write. Added
+`create/deleteWorldbookEntries` (the workshop's install/uninstall), script-scope vars (so a card's cache
+can't pollute `stat_data`), a WCV `YAML` global, and a lorebook-editor live refresh after a WCV write.
+
+**§0 deferred — Phase 5 (OAuth cloud login).** The workshop's public-project path works WITHOUT login
+(verified). Its `window.open` OAuth (for private projects / publishing) needs a `setWindowOpenHandler` on the
+card WCV + a child-window `postMessage` relay — the highest-risk piece, and not needed for the core flow. See
+the plan's Phase 5. **May still need to be done** if private-project sync / publishing becomes a requirement.
 
 ## Goal
 

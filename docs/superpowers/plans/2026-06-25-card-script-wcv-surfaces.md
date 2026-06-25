@@ -2,6 +2,16 @@
 
 **Design / spec:** [docs/card-script-wcv-surfaces-design.md](../../card-script-wcv-surfaces-design.md)
 
+> **STATUS (2026-06-25): Phases 1–4 DONE & verified in-app. Phase 5 (OAuth) DEFERRED.**
+> Phases 1–3 landed as planned (runtime surface → WCV transport → button bus + modal), with the script host
+> refactored to a **session-level invisible engine** (App.tsx, off-screen) rather than a panel. **Phase 4
+> changed from the plan:** instead of auto-lifting the status regex into `panel_ui`, ST-compat card UIs
+> default to inline regex and the user **promotes** a loader regex to a docked WCV panel (`renderMode:'panel'`)
+> — see design §0. Extra fixes shipped: worldbook TH↔native entry mapper (`worldbookEntry`),
+> `create/deleteWorldbookEntries`, script-scope vars, WCV `YAML` global, lorebook-editor live refresh.
+> **Phase 5 (OAuth cloud login) is deferred** — the public-project workshop works without it; revisit if
+> private-project sync / publishing is needed.
+
 **Goal:** Make `【命定之诗】创意工坊` (and any full-page card script) work — a button above the input opens a
 modal that downloads/syncs lorebook entries + regex — by routing card scripts to a process-isolated WCV on
 the **canonical `thRuntime` stack**, and let cards carry their own docked-panel layout (`状态栏`), with no
