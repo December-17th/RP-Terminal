@@ -52,17 +52,17 @@ any world opts in by shipping a `combat` bundle — and does **not** require a w
 This is not greenfield. The combat track is "build out Phase I richly + add a grid + a native
 view." Reused, not invented:
 
-| Need | Already in the codebase | File |
-| --- | --- | --- |
-| Deterministic dice/math engine | `runScript` — quickjs WASM sandbox, **seeded mulberry32 RNG**, `emit`/`log` collectors, hard timeout/kill | [sandboxRunner.ts](../src/main/services/sandboxRunner.ts) |
-| Off-thread harness + in-process fallback | the worker entry + service wrapper around the same core | [sandboxWorker.ts](../src/main/workers/sandboxWorker.ts), [sandboxService.ts](../src/main/services/sandboxService.ts) |
-| Combatant storage | `rpg_entities` (per-chat: `id / name / data TEXT`) — created, unused | [db.ts:70](../src/main/services/db.ts) |
-| Persistent world state + write-path | `stat_data` MVU tree; `<UpdateVariable>` / `<JSONPatch>` folded by the clean-room parser | [mvuParser.ts](../src/main/parsers/mvuParser.ts) |
-| Combat-mode UI swap | per-FSM-mode workspace layouts; views resolved via a registry | [workspaceStore.ts](../src/renderer/src/stores/workspaceStore.ts), [viewRegistry.tsx](../src/renderer/src/components/workspace/viewRegistry.tsx), [layoutDefaults.ts](../src/shared/layoutDefaults.ts) |
-| AI ⇄ engine transport | `<rpt-action>` / `<rpt-result>` tags + L4-append cache discipline | [agentic-mode-design.md](agentic-mode-design.md) §4–8 |
-| Action/event parse + state fold | `<rpt-event>` parser; `applyEvent` fold in `generate()` | [contentParser.ts](../src/main/parsers/contentParser.ts), [generationService.ts](../src/main/services/generationService.ts) |
-| Per-mode system prompt addendum | `composeAddendum` (`agent.prompts[mode]`, e.g. `combat`) | [generationService.ts:44](../src/main/services/generationService.ts) |
-| Card bundle slot | `extensions.rp_terminal.combat` (loose `z.record`, reserved) | [character.ts:103](../src/main/types/character.ts) |
+| Need                                     | Already in the codebase                                                                                   | File                                                                                                                                                                                                   |
+| ---------------------------------------- | --------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Deterministic dice/math engine           | `runScript` — quickjs WASM sandbox, **seeded mulberry32 RNG**, `emit`/`log` collectors, hard timeout/kill | [sandboxRunner.ts](../src/main/services/sandboxRunner.ts)                                                                                                                                              |
+| Off-thread harness + in-process fallback | the worker entry + service wrapper around the same core                                                   | [sandboxWorker.ts](../src/main/workers/sandboxWorker.ts), [sandboxService.ts](../src/main/services/sandboxService.ts)                                                                                  |
+| Combatant storage                        | `rpg_entities` (per-chat: `id / name / data TEXT`) — created, unused                                      | [db.ts:70](../src/main/services/db.ts)                                                                                                                                                                 |
+| Persistent world state + write-path      | `stat_data` MVU tree; `<UpdateVariable>` / `<JSONPatch>` folded by the clean-room parser                  | [mvuParser.ts](../src/main/parsers/mvuParser.ts)                                                                                                                                                       |
+| Combat-mode UI swap                      | per-FSM-mode workspace layouts; views resolved via a registry                                             | [workspaceStore.ts](../src/renderer/src/stores/workspaceStore.ts), [viewRegistry.tsx](../src/renderer/src/components/workspace/viewRegistry.tsx), [layoutDefaults.ts](../src/shared/layoutDefaults.ts) |
+| AI ⇄ engine transport                    | `<rpt-action>` / `<rpt-result>` tags + L4-append cache discipline                                         | [agentic-mode-design.md](agentic-mode-design.md) §4–8                                                                                                                                                  |
+| Action/event parse + state fold          | `<rpt-event>` parser; `applyEvent` fold in `generate()`                                                   | [contentParser.ts](../src/main/parsers/contentParser.ts), [generationService.ts](../src/main/services/generationService.ts)                                                                            |
+| Per-mode system prompt addendum          | `composeAddendum` (`agent.prompts[mode]`, e.g. `combat`)                                                  | [generationService.ts:44](../src/main/services/generationService.ts)                                                                                                                                   |
+| Card bundle slot                         | `extensions.rp_terminal.combat` (loose `z.record`, reserved)                                              | [character.ts:103](../src/main/types/character.ts)                                                                                                                                                     |
 
 The genuinely new work: the **`CombatState` model + grid math**, the **native d20 resolver + the
 card-override hook contract**, the **enemy controllers**, the **native `CombatView`**, the
@@ -163,14 +163,14 @@ resolve(state: CombatState, action: Action, seed: number)
   replace the resolver wholesale. Same sandbox, same seeded RNG, same `events`-out shape, so
   determinism + cache discipline hold no matter who wrote the logic. Proposed hook names (v1):
 
-  | Hook | When | Default |
-  | --- | --- | --- |
-  | `seedCombatant(template, ctx)` | building the fresh block at setup | native template fill |
-  | `onTurnStart(state, id)` / `onTurnEnd(state, id)` | turn boundaries | tick conditions |
-  | `resolveAttack(state, action)` | an attack/ability action | native d20-vs-AC |
-  | `applyDamage(state, target, dmg)` | after a hit | native typed-damage math |
-  | `enemyPolicy(state, id) → Action` | an enemy decision point | the weighted policy (§6) |
-  | `checkVictory(state) → 'player' \| 'enemy' \| null` | after each action | all-one-side-down |
+  | Hook                                                | When                              | Default                  |
+  | --------------------------------------------------- | --------------------------------- | ------------------------ |
+  | `seedCombatant(template, ctx)`                      | building the fresh block at setup | native template fill     |
+  | `onTurnStart(state, id)` / `onTurnEnd(state, id)`   | turn boundaries                   | tick conditions          |
+  | `resolveAttack(state, action)`                      | an attack/ability action          | native d20-vs-AC         |
+  | `applyDamage(state, target, dmg)`                   | after a hit                       | native typed-damage math |
+  | `enemyPolicy(state, id) → Action`                   | an enemy decision point           | the weighted policy (§6) |
+  | `checkVictory(state) → 'player' \| 'enemy' \| null` | after each action                 | all-one-side-down        |
 
   A world gets native rules for free and reaches for scripts only where it is special.
 
@@ -181,7 +181,7 @@ resolve(state: CombatState, action: Action, seed: number)
 
 ## 6. Enemy controllers (pluggable)
 
-Because combat is player-played, *something* must drive the enemies. Two implementations behind one
+Because combat is player-played, _something_ must drive the enemies. Two implementations behind one
 `enemyPolicy` interface:
 
 - **`weighted` (native, default)** — each enemy scores its legal actions on a small weight set
@@ -237,7 +237,7 @@ This decoupling is what lets any world opt into combat without retrofitting its 
   action bar with AoE preview · combat log · narrow chat) — the per-mode layout machinery already
   exists ([workspaceStore.ts](../src/renderer/src/stores/workspaceStore.ts)).
 - **Card skinning:** the `combat.skin` slot supplies token art, tile art, ability icons, and themed
-  `--rpt-*` CSS tokens so 命定之诗 combat *looks* like 命定之诗 — but the engine and renderer are
+  `--rpt-*` CSS tokens so 命定之诗 combat _looks_ like 命定之诗 — but the engine and renderer are
   native. App UI strings route through `t()` (en/zh), per the i18n rule in `CLAUDE.md`.
 
 ---
@@ -274,7 +274,7 @@ and runs under the existing per-card permission + sandbox model.
 ```
 
 > **SDK-docs obligation (when this is built):** the `combat` slot is a card-facing surface, so per
-> `CLAUDE.md` and [sdk/README.md](sdk/README.md) the *implementation* change must update
+> `CLAUDE.md` and [sdk/README.md](sdk/README.md) the _implementation_ change must update
 > [sdk/component-inventory.md](sdk/component-inventory.md) (§4 format) and `rpt-api.md` (any new
 > runtime API, e.g. `registerScriptPanel`-style combat hooks) **in the same change**. This design
 > doc does **not** edit `docs/sdk/` (nothing is built yet).
@@ -294,15 +294,15 @@ Every AI touchpoint obeys the L1–L4 layering ([agentic-mode-design.md](agentic
 
 ## 12. Phased build order (each slice shippable)
 
-| Phase | Deliverable | Reuses |
-| --- | --- | --- |
-| **C1 — Engine core + resolver seam** | `CombatState`; the `resolve(state, action, seed) → events` contract; native d20 resolver; the card-override hooks (§5); `rpg_entities` wiring. Headless, unit-tested deterministic. | `sandboxRunner`, `rpg_entities` |
-| **C2 — Grid (lean)** | occupancy, movement/pathfinding, range, AoE templates, terrain flags. Headless + tested. | C1 |
-| **C3 — Enemy controllers** | the native `weighted` policy + the `ai` policy (batched per round). | C1, `<rpt-action>` |
-| **C4 — Native `CombatView`** | grid UI, initiative tracker, action bar + AoE preview, the **Improvise** affordance, combat log; Combat-mode layout. | `viewRegistry`, `workspaceStore` |
-| **C5 — AI touchpoints** | the `CombatState` ⇄ prompt serializer; end-of-combat narration prompt + mid-combat adjudication prompt; consequence fold-out via MVU; the `<rpt-combat-start>` tag + "Enter Combat" button. | `contentParser`, `mvuParser`, `generate()` |
-| **C6 — `combat` bundle + 命定之诗 content** | the bundle schema + importer/permission gating; author 命定之诗's templates, abilities, bestiary, maps, skin. **+ update `docs/sdk/` (§10).** | World-Card importer |
-| **C7 — Tactical depth + polish** | LoS, cover, opportunity attacks, reactions, the conditions library, hex option, smarter weighted policy. | C1–C6 |
+| Phase                                       | Deliverable                                                                                                                                                                                 | Reuses                                     |
+| ------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------ |
+| **C1 — Engine core + resolver seam**        | `CombatState`; the `resolve(state, action, seed) → events` contract; native d20 resolver; the card-override hooks (§5); `rpg_entities` wiring. Headless, unit-tested deterministic.         | `sandboxRunner`, `rpg_entities`            |
+| **C2 — Grid (lean)**                        | occupancy, movement/pathfinding, range, AoE templates, terrain flags. Headless + tested.                                                                                                    | C1                                         |
+| **C3 — Enemy controllers**                  | the native `weighted` policy + the `ai` policy (batched per round).                                                                                                                         | C1, `<rpt-action>`                         |
+| **C4 — Native `CombatView`**                | grid UI, initiative tracker, action bar + AoE preview, the **Improvise** affordance, combat log; Combat-mode layout.                                                                        | `viewRegistry`, `workspaceStore`           |
+| **C5 — AI touchpoints**                     | the `CombatState` ⇄ prompt serializer; end-of-combat narration prompt + mid-combat adjudication prompt; consequence fold-out via MVU; the `<rpt-combat-start>` tag + "Enter Combat" button. | `contentParser`, `mvuParser`, `generate()` |
+| **C6 — `combat` bundle + 命定之诗 content** | the bundle schema + importer/permission gating; author 命定之诗's templates, abilities, bestiary, maps, skin. **+ update `docs/sdk/` (§10).**                                               | World-Card importer                        |
+| **C7 — Tactical depth + polish**            | LoS, cover, opportunity attacks, reactions, the conditions library, hex option, smarter weighted policy.                                                                                    | C1–C6                                      |
 
 **Recommended first milestone: C1 + C2 + C3 headless** (a fully testable deterministic tactical
 engine with no UI), then **C4** makes it playable.
@@ -331,8 +331,51 @@ engine with no UI), then **C4** makes it playable.
 4. **Death stakes** — are downed PCs revivable mid-fight, and is death permanent on fold-out? (A
    `consequences` policy in the bundle.)
 5. **`ai` enemy controller cost** — one batched call per round (recommended) vs per-decision; and
-   whether the weighted policy should *advise* the AI to cut tokens.
+   whether the weighted policy should _advise_ the AI to cut tokens.
 6. **Initiative model** — strict d20-initiative round-robin vs side-based (all players, then all
    enemies). (Lean: d20 round-robin.)
 7. **Map source** — card-authored maps only, vs an AI-described layout the engine rasterizes at
    setup. (Lean: card maps first; AI layout later.)
+
+---
+
+## 15. UI design — the native `CombatView` (locked 2026-06-25)
+
+The combat UI is a **clean, tokenized VTT** that stays a **docked workspace panel** (the Combat-mode
+layout `chat | combat | status`) with a **focus toggle** that enlarges the grid within the panel; the
+reserved `combat.skin` slot layers card art on top per world. Native engine owns the numbers; this is
+the view over it. (Owner-locked: docked + focus, clean-native-skinnable.)
+
+**Regions (one panel):** ① **stage** (the grid) · ② **turn-order strip** (initiative avatars across the
+top; current ringed, downed struck-through+dimmed) · ③ **side rail** (active/inspected unit card —
+name · HP bar · condition pills · resources — over the combat log) · ④ **action bar** (Move + ability
+buttons `icon · name · range`, Improvise, End turn).
+
+**Highlight vocabulary (fixed, with a legend) → combat tokens** (added to `index.css`, `color-mix`'d
+off the active theme's accent/warning/danger so they follow theming):
+`--rpt-combat-reach` (reachable, accent wash), `--rpt-combat-aoe` / `--rpt-combat-aoe-strong` (range /
+live AoE preview, warning wash), `--rpt-combat-threat` (danger wash, for later OA), `--rpt-combat-grid`
+(grid lines). Tokens are **shape+color+label** (party = `--rpt-accent`, enemy = `--rpt-danger`, 2-char
+initials, HP underbar) — never color alone (colorblind-safe). This also fixes the P5 stray
+`--rpt-bg` / `--rpt-accent-soft` references (they only worked via CSS fallbacks).
+
+**Interaction state machine:** `idle → select(action) → target(hover-preview) → confirm → resolve`.
+Selecting an ability lights in-range cells; hovering paints the AoE template + rings auto-collected
+targets before commit. **Esc / re-clicking the active action cancels.** Illegal clicks are inert (no
+log spam — a P5 papercut). Clicking a unit while idle **inspects** it (its stats fill the side card).
+
+**Turn feedback:** the engine's structured events drive HP-bar tweens, condition pills, a death fade +
+strike-through, and round dividers in the log. While automated combatants act the bar is replaced by a
+quiet **"Enemies acting…"** state; during Improvise it shows **"The referee is deciding…"**.
+
+**End-of-combat:** a resolution card over the stage — outcome (winner · rounds) + **Narrate the fight**
+(AI prose) and **Return to story** (fold consequences via MVU, clear, restore the prior mode).
+
+**Accessibility:** arrow keys move the cell cursor, `1–9` pick abilities, `Enter` confirms, `Esc`
+cancels; the strip + log are ARIA live regions.
+
+**Debug mock scene (until the lorebook/AI side lands):** `combatService.mockEncounterSetup()` builds a
+hardcoded encounter (2-member party with melee/ranged/AoE abilities + 3 weighted goblins on a 10×8 map
+with a wall + difficult terrain); `startMockEncounter` / the `combat-start-mock` IPC / a **"Start mock
+battle (debug)"** button in the empty `CombatView` let the whole loop (move → attack → AoE → enemy
+turns → end) be played in-app with no AI cue or `combat` bundle.

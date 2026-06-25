@@ -32,6 +32,7 @@ interface CombatStore {
   selection: Selection
   busy: boolean
   load: (profileId: string, chatId: string) => Promise<void>
+  startMock: (profileId: string, chatId: string) => Promise<void>
   reset: () => void
   setSelection: (selection: Selection) => void
   move: (profileId: string, to: Coord) => Promise<void>
@@ -87,6 +88,11 @@ export const useCombatStore = create<CombatStore>((set, get) => {
         abilities: res?.abilities ?? {},
         selection: { mode: 'idle' }
       })
+    },
+
+    startMock: async (profileId, chatId) => {
+      await api().combatStartMock(profileId, chatId)
+      await get().load(profileId, chatId)
     },
 
     reset: () => set({ chatId: null, state: null, abilities: {}, selection: { mode: 'idle' } }),

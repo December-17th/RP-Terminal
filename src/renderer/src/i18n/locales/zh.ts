@@ -402,6 +402,12 @@ const zh: Record<string, string> = {
   'combat.log': '战斗记录',
   'combat.narrate': '叙述战斗',
   'combat.endCombat': '结束战斗',
+  'combat.startMock': '开始模拟战斗（调试）',
+  'combat.enemiesActing': '敌方行动中……',
+  'combat.refereeDeciding': '裁判正在判定……',
+  'combat.focus': '专注',
+  'combat.exitFocus': '退出专注',
+  'combat.returnToStory': '返回故事',
 
   'actions.hide': '隐藏脚本动作',
   'actions.show': '显示脚本动作',

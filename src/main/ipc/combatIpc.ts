@@ -20,6 +20,10 @@ export const registerCombatIpc = (ipcMain: IpcMain): void => {
     }
   })
   ipcMain.handle('combat-get', (_, _profileId, chatId) => combatService.getEncounter(chatId))
+  // Debug: spin up a hardcoded encounter (no card/AI needed) for in-app testing.
+  ipcMain.handle('combat-start-mock', (_, _profileId, chatId) =>
+    combatService.startMockEncounter(chatId)
+  )
   ipcMain.handle('combat-action', async (_, _profileId, chatId, action) => {
     try {
       return await combatService.applyPlayerAction(chatId, action)

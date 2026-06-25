@@ -4,7 +4,8 @@ import {
   playerAction,
   enemyTurn,
   summarizeOutcome,
-  makeRunHook
+  makeRunHook,
+  mockEncounterSetup
 } from '../../src/main/services/combatService'
 import type { AbilityDef, Combatant, Coord } from '../../src/shared/combat/types'
 
@@ -116,6 +117,22 @@ describe('makeRunHook', () => {
     const dummy = createEncounter({ seed: 1, grid, combatants: [C('a', 'party', [0, 0])] }).state
     const run = makeRunHook({})
     expect(await run('onTurnStart', { state: dummy }, 1)).toBeNull()
+  })
+})
+
+describe('mockEncounterSetup', () => {
+  it('builds the debug encounter: 2 party, 3 weighted goblins, abilities, a walled map', () => {
+    const s = mockEncounterSetup()
+    expect(s.grid).toMatchObject({ w: 10, h: 8 })
+    expect(s.combatants.filter((c) => c.side === 'party').map((c) => c.id)).toEqual([
+      'maeve',
+      'kai'
+    ])
+    const goblins = s.combatants.filter((c) => c.side === 'enemy')
+    expect(goblins).toHaveLength(3)
+    expect(goblins.every((g) => g.controller === 'weighted')).toBe(true)
+    expect(Object.keys(s.abilities ?? {}).sort()).toEqual(['bolt', 'fireball', 'strike'])
+    expect(s.grid.tiles?.[3 * 10 + 5].passable).toBe(false)
   })
 })
 

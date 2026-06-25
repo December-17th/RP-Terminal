@@ -199,6 +199,8 @@ const api = {
     ipcRenderer.invoke('combat-start', profileId, chatId, setup),
   combatGet: (profileId: string, chatId: string) =>
     ipcRenderer.invoke('combat-get', profileId, chatId),
+  combatStartMock: (profileId: string, chatId: string) =>
+    ipcRenderer.invoke('combat-start-mock', profileId, chatId),
   combatAction: (profileId: string, chatId: string, action: unknown) =>
     ipcRenderer.invoke('combat-action', profileId, chatId, action),
   combatEndTurn: (profileId: string, chatId: string) =>

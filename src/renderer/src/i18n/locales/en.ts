@@ -413,6 +413,12 @@ const en: Record<string, string> = {
   'combat.log': 'Log',
   'combat.narrate': 'Narrate the fight',
   'combat.endCombat': 'End combat',
+  'combat.startMock': 'Start mock battle (debug)',
+  'combat.enemiesActing': 'Enemies acting…',
+  'combat.refereeDeciding': 'The referee is deciding…',
+  'combat.focus': 'Focus',
+  'combat.exitFocus': 'Exit focus',
+  'combat.returnToStory': 'Return to story',
 
   'actions.hide': 'Hide script actions',
   'actions.show': 'Show script actions',

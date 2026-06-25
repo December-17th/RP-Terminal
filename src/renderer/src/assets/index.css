@@ -15,6 +15,13 @@
   --rpt-danger: #e74c3c;
   --rpt-success: #4caf72;
   --rpt-warning: #e0a23c;
+  /* Combat (Track Combat) — grid highlight washes, color-mix'd off the active theme's
+     accent/warning/danger so they follow theming. See docs/combat-system-design.md §15. */
+  --rpt-combat-reach: color-mix(in srgb, var(--rpt-accent) 22%, transparent);
+  --rpt-combat-aoe: color-mix(in srgb, var(--rpt-warning) 26%, transparent);
+  --rpt-combat-aoe-strong: color-mix(in srgb, var(--rpt-warning) 48%, transparent);
+  --rpt-combat-threat: color-mix(in srgb, var(--rpt-danger) 22%, transparent);
+  --rpt-combat-grid: var(--rpt-border);
 }
 
 body {

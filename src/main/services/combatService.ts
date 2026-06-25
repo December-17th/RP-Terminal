@@ -41,8 +41,11 @@ import type {
   CombatEvent,
   CombatState,
   CombatStatus,
+  Coord,
   GridSpec,
-  Side
+  Side,
+  StatBlock,
+  TileFlags
 } from '../../shared/combat/types'
 
 /** The serialized unit stored per chat: the live state plus the encounter's rules
@@ -223,6 +226,125 @@ export const startFromCard = (
   if (!bundle) throw new Error('This world has no combat bundle')
   return startEncounter(chatId, buildEncounter(bundle, cue ?? null, { seed }))
 }
+
+/**
+ * A hardcoded debug encounter (no card/AI needed): a 2-member party with melee/ranged/AoE
+ * abilities vs 3 weighted goblins on a 10×8 map with a wall + difficult terrain. Lets the whole
+ * combat loop be played in-app before the lorebook/AI side lands. See combat-system-design.md §15.
+ */
+export const mockEncounterSetup = (): EncounterSetup => {
+  const abilities: Record<string, AbilityDef> = {
+    strike: {
+      id: 'strike',
+      name: 'Strike',
+      range: 1,
+      shape: { kind: 'self' },
+      toHit: 'STR',
+      damage: '1d8+STR',
+      damageType: 'slashing'
+    },
+    bolt: {
+      id: 'bolt',
+      name: 'Bolt',
+      range: 6,
+      shape: { kind: 'self' },
+      toHit: 'DEX',
+      damage: '1d8+DEX',
+      damageType: 'piercing'
+    },
+    fireball: {
+      id: 'fireball',
+      name: 'Fireball',
+      range: 8,
+      shape: { kind: 'burst', r: 1 },
+      toHit: null,
+      save: { ability: 'DEX', dc: 13, onSuccess: 0.5 },
+      damage: '3d6',
+      damageType: 'fire',
+      effects: [{ id: 'burning', duration: 2 }]
+    }
+  }
+  const block = (over: Partial<StatBlock>): StatBlock => ({
+    hp: 12,
+    maxHp: 12,
+    ac: 12,
+    speed: 6,
+    mods: {},
+    abilities: [],
+    conditions: [],
+    ...over
+  })
+  const combatants: Combatant[] = [
+    {
+      id: 'maeve',
+      side: 'party',
+      name: 'Maeve',
+      pos: [1, 2],
+      block: block({
+        hp: 20,
+        maxHp: 20,
+        ac: 15,
+        mods: { STR: 3, DEX: 1 },
+        abilities: ['strike', 'fireball']
+      })
+    },
+    {
+      id: 'kai',
+      side: 'party',
+      name: 'Kai',
+      pos: [1, 5],
+      block: block({ hp: 16, maxHp: 16, ac: 14, mods: { DEX: 3 }, abilities: ['bolt'] })
+    },
+    {
+      id: 'gob1',
+      side: 'enemy',
+      name: 'Goblin',
+      pos: [8, 1],
+      block: block({ ac: 13, mods: { STR: 1 }, abilities: ['strike'] }),
+      controller: 'weighted'
+    },
+    {
+      id: 'gob2',
+      side: 'enemy',
+      name: 'Goblin',
+      pos: [8, 3],
+      block: block({ ac: 13, mods: { STR: 1 }, abilities: ['strike'] }),
+      controller: 'weighted'
+    },
+    {
+      id: 'gob3',
+      side: 'enemy',
+      name: 'Goblin',
+      pos: [9, 5],
+      block: block({ ac: 13, mods: { STR: 1 }, abilities: ['strike'] }),
+      controller: 'weighted'
+    }
+  ]
+  const tiles: TileFlags[] = Array.from({ length: 10 * 8 }, () => ({
+    passable: true,
+    blocksLoS: false,
+    difficult: false,
+    hazard: false
+  }))
+  for (const [x, y] of [
+    [5, 3],
+    [5, 4],
+    [5, 5]
+  ] as Coord[]) {
+    tiles[y * 10 + x].passable = false
+    tiles[y * 10 + x].blocksLoS = true
+  }
+  for (const [x, y] of [
+    [4, 2],
+    [6, 2]
+  ] as Coord[])
+    tiles[y * 10 + x].difficult = true
+  const grid: GridSpec = { w: 10, h: 8, cellFt: 5, tiles }
+  return { seed: 12345, grid, combatants, abilities }
+}
+
+export const startMockEncounter = (chatId: string): CombatState =>
+  startEncounter(chatId, mockEncounterSetup())
 
 /** The renderer view-model: the live state + the ability catalog (to render the
  *  action bar / ranges). Hook scripts are intentionally NOT exposed to the renderer. */
