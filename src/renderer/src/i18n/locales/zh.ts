@@ -301,7 +301,42 @@ const zh: Record<string, string> = {
   'scripts.code': '代码（JavaScript）',
   'scripts.codePh': '// @import https://cdn.jsdelivr.net/…/bundle.js\nrpt.on("ready", () => { … })',
   'scripts.codeHelp':
-    '在单独一行添加 "// @import https://…"（或 import "https://…"）以加载远程 JS 库。远程代码在主进程中获取（带缓存），且仅在你为此世界授权后。'
+    '在单独一行添加 "// @import https://…"（或 import "https://…"）以加载远程 JS 库。远程代码在主进程中获取（带缓存），且仅在你为此世界授权后。',
+
+  'common.cancel': '取消',
+
+  'chat.rightClickOptions': '右键查看选项',
+  'chat.prevResponse': '上一条回复',
+  'chat.nextResponse': '下一条回复',
+  'chat.generateNew': '生成新回复',
+  'chat.editHint': 'Ctrl+Enter 保存 · Esc 取消',
+  'chat.reasoning': '💭 推理',
+  'chat.selectSession': '选择或创建一个会话。',
+  'chat.selectCharacter': '选择一个角色。',
+  'chat.noMessages': '还没有消息。',
+  'chat.errorPrefix': '错误：',
+  'chat.prevFloor': '上一层',
+  'chat.nextFloor': '下一层',
+  'chat.editMessage': '✎ 编辑消息',
+
+  'usage.heading': '用量',
+  'usage.fields': '字段',
+  'usage.expand': '展开',
+  'usage.collapse': '收起',
+  'usage.hide': '隐藏（在设置中重新启用）',
+  'usage.noTurns': '还没有回合',
+  'usage.promptTok': '提示 Token',
+  'usage.outputTok': '输出 Token',
+  'usage.estCache': '预估缓存',
+  'usage.actualCache': '实际缓存',
+  'usage.cacheRead': '缓存读取',
+  'usage.cacheWrite': '缓存写入',
+  'usage.turnCost': '本回合 $',
+  'usage.turns': '回合数',
+  'usage.avgEst': '平均预估',
+  'usage.avgCache': '平均缓存',
+  'usage.avgPrompt': '平均提示',
+  'usage.sessionCost': '会话 $'
 }
 
 export default zh

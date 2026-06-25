@@ -307,7 +307,42 @@ const en: Record<string, string> = {
   'scripts.code': 'Code (JavaScript)',
   'scripts.codePh': '// @import https://cdn.jsdelivr.net/…/bundle.js\nrpt.on("ready", () => { … })',
   'scripts.codeHelp':
-    'Add "// @import https://…" (or import "https://…") on its own line to load a remote JS library. Remote code is fetched in the main process (cached) only after you allow it for this world.'
+    'Add "// @import https://…" (or import "https://…") on its own line to load a remote JS library. Remote code is fetched in the main process (cached) only after you allow it for this world.',
+
+  'common.cancel': 'Cancel',
+
+  'chat.rightClickOptions': 'Right-click for options',
+  'chat.prevResponse': 'Previous response',
+  'chat.nextResponse': 'Next response',
+  'chat.generateNew': 'Generate a new response',
+  'chat.editHint': 'Ctrl+Enter to save · Esc to cancel',
+  'chat.reasoning': '💭 Reasoning',
+  'chat.selectSession': 'Select or create a session.',
+  'chat.selectCharacter': 'Select a character.',
+  'chat.noMessages': 'No messages yet.',
+  'chat.errorPrefix': 'Error: ',
+  'chat.prevFloor': 'Previous floor',
+  'chat.nextFloor': 'Next floor',
+  'chat.editMessage': '✎ Edit message',
+
+  'usage.heading': 'usage',
+  'usage.fields': 'Fields',
+  'usage.expand': 'Expand',
+  'usage.collapse': 'Collapse',
+  'usage.hide': 'Hide (Settings to re-enable)',
+  'usage.noTurns': 'no turns yet',
+  'usage.promptTok': 'prompt tok',
+  'usage.outputTok': 'output tok',
+  'usage.estCache': 'est cache',
+  'usage.actualCache': 'actual cache',
+  'usage.cacheRead': 'cache read',
+  'usage.cacheWrite': 'cache write',
+  'usage.turnCost': 'turn $',
+  'usage.turns': 'turns',
+  'usage.avgEst': 'avg est',
+  'usage.avgCache': 'avg cache',
+  'usage.avgPrompt': 'avg prompt',
+  'usage.sessionCost': 'session $'
 }
 
 export default en

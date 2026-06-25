@@ -2,6 +2,7 @@ import { type ReactNode } from 'react'
 import { MessageContent } from './MessageContent'
 import { ReasoningPanel } from './ReasoningPanel'
 import { EditArea } from './EditArea'
+import { useT } from '../i18n'
 
 /** A floor with display regex already applied — what the chat actually renders. */
 export interface RenderedFloor {
@@ -54,6 +55,7 @@ export function FloorBlock({
   onOpenMenu: (m: FloorMenuTarget) => void
   onSwipe: (dir: 'left' | 'right') => void
 }): ReactNode {
+  const t = useT()
   const editingUser = editing?.floor === f.floor && editing.field === 'user'
   const editingResp = editing?.floor === f.floor && editing.field === 'response'
   // Swipe controls show on the latest floor (so a right-swipe can generate a new
@@ -73,7 +75,7 @@ export function FloorBlock({
       ) : f.user ? (
         <div
           className="user-action"
-          title="Right-click for options"
+          title={t('chat.rightClickOptions')}
           onContextMenu={(e) => {
             e.preventDefault()
             onOpenMenu({ x: e.clientX, y: e.clientY, floor: f.floor, field: 'user', value: f.user })
@@ -111,7 +113,7 @@ export function FloorBlock({
         <div className="swipe-controls">
           <button
             className="swipe-btn"
-            title="Previous response"
+            title={t('chat.prevResponse')}
             disabled={isGenerating || f.swipeId <= 0}
             onClick={() => onSwipe('left')}
           >
@@ -122,7 +124,7 @@ export function FloorBlock({
           </span>
           <button
             className="swipe-btn"
-            title={f.swipeId < f.swipeCount - 1 ? 'Next response' : 'Generate a new response'}
+            title={f.swipeId < f.swipeCount - 1 ? t('chat.nextResponse') : t('chat.generateNew')}
             disabled={isGenerating || !canRight}
             onClick={() => onSwipe('right')}
           >
