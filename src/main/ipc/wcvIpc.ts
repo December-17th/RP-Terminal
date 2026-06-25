@@ -92,6 +92,12 @@ export const registerWcvIpc = (ipcMain: IpcMain): void => {
   ipcMain.on('wcv-set-bounds', (_e, id, bounds) => wcvManager.setBounds(id, bounds))
   ipcMain.on('wcv-set-visible', (_e, id, visible) => wcvManager.setVisible(id, visible))
   ipcMain.on('wcv-destroy', (_e, id) => wcvManager.destroy(id))
+  // A card script in a WCV threw / rejected — surface it to the main log (it'd otherwise only show in the
+  // WCV devtools). Includes the calling slot for context.
+  ipcMain.on('wcv-card-error', (e, msg) => {
+    const ctx = wcvManager.contextFor(e.sender.id)
+    log('error', `wcv card-script${ctx ? ` [${ctx.slotId}]` : ''}`, String(msg))
+  })
   // Inline card → host: content height (auto-size the message slot) and wheel deltas (scroll the
   // message list past the overlay). Resolve the slot from the sender so only that frame reacts.
   ipcMain.on('wcv-content-size', (e, size) => {

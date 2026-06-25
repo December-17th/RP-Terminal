@@ -6,7 +6,7 @@ import { useCharacterStore } from '../../stores/characterStore'
 import { useNavStore } from '../../stores/navStore'
 import { ChatView } from '../ChatView'
 import { StatusView } from '../StatusView'
-import { CardScriptHost } from '../CardScriptHost'
+import { CardScriptWcvHost } from '../CardScriptWcvHost'
 import { LogsPanel } from '../LogsPanel'
 import { PanelRouter } from '../PanelRouter'
 import { WcvTestView, WcvCardView, WcvHomeView, WcvCustomStartView } from './WcvPanel'
@@ -43,8 +43,9 @@ const UsagePanel: React.FC = () => {
   return <UsageView profileId={profileId} />
 }
 
-// The card's sandboxed script runtime. Keyed by card+chat so switching sessions
-// remounts cleanly (matches the old RightPanel behavior).
+// The card's script runtime — now process-isolated in a WebContentsView (Phase 2), so full-page card
+// scripts (remote imports, window.open, the 创意工坊 workshop) run as written. Keyed by card+chat so
+// switching sessions remounts cleanly.
 const CardScriptsPanel: React.FC = () => {
   const { profileId } = useWorkspaceContext()
   const activeChatId = useChatStore((s) => s.activeChatId)
@@ -54,13 +55,12 @@ const CardScriptsPanel: React.FC = () => {
     return <div style={{ opacity: 0.5 }}>{t('status.waiting')}</div>
   }
   return (
-    <CardScriptHost
+    <CardScriptWcvHost
       key={`${activeCharacter.id}:${activeChatId}`}
       profileId={profileId}
       chatId={activeChatId}
       cardId={activeCharacter.id}
       cardName={activeCharacter.card.data.name}
-      scripts={activeCharacter.card.data.extensions?.rp_terminal?.scripts || []}
     />
   )
 }

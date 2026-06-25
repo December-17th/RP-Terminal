@@ -51,6 +51,23 @@ const rptHost = {
 }
 w.rptHost = rptHost
 
+// Surface a card script's runtime errors (uncaught + unhandled rejections) to the MAIN log, so a card
+// author / maintainer sees them without opening the WCV devtools (parity with the inline host's pluginLog).
+const reportCardError = (msg: string): void => {
+  try {
+    ipcRenderer.send('wcv-card-error', String(msg))
+  } catch {
+    /* ignore */
+  }
+}
+window.addEventListener('error', (e: any) => {
+  reportCardError((e?.message || 'error') + (e?.error?.stack ? ' | ' + e.error.stack : ''))
+})
+window.addEventListener('unhandledrejection', (e: any) => {
+  const r = e?.reason
+  reportCardError('unhandledrejection: ' + ((r && r.message) || r))
+})
+
 // --- inline-card layout bridge ---
 // A WebContentsView is a native overlay: it has a fixed slot height and swallows wheel events. Report
 // the card's real content height so the host can size its message slot to fit (no inner scrollbar), and
