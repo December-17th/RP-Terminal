@@ -1,5 +1,6 @@
 import { useCharacterStore } from '../stores/characterStore'
 import type { PanelTab } from './panelTabs'
+import { useT } from '../i18n'
 
 /** Left-panel 'world' tab: the character/World Card library (import, mock, export, delete). */
 export function WorldPanel({
@@ -11,25 +12,24 @@ export function WorldPanel({
 }): React.ReactElement {
   const { characters, activeCharacter, setActiveCharacter, importMockCharacter, deleteCharacter } =
     useCharacterStore()
+  const t = useT()
 
   return (
     <div className="panel">
       <div className="panel-header">
-        <h3>World</h3>
+        <h3>{t('world.heading')}</h3>
         <div className="panel-header-actions">
           <button onClick={() => useCharacterStore.getState().importCharacter(profileId)}>
-            Import
+            {t('common.import')}
           </button>
           <button className="btn-ghost" onClick={() => importMockCharacter(profileId)}>
-            + Mock
+            {t('world.addMock')}
           </button>
         </div>
       </div>
       <div className="panel-body">
         {characters.length === 0 && (
-          <div style={{ opacity: 0.6, fontStyle: 'italic' }}>
-            No worlds yet. Import a character card or add the mock guide.
-          </div>
+          <div style={{ opacity: 0.6, fontStyle: 'italic' }}>{t('world.empty')}</div>
         )}
         {characters.map((c) => (
           <div key={c.id} className="panel-list-row">
@@ -44,20 +44,16 @@ export function WorldPanel({
             </button>
             <button
               className="btn-ghost row-del"
-              title="Export as World Card (card + lorebook + this world's regex)"
+              title={t('world.exportTitle')}
               onClick={() => useCharacterStore.getState().exportCharacter(profileId, c.id)}
             >
               ⬇
             </button>
             <button
               className="btn-ghost danger row-del"
-              title="Delete character"
+              title={t('world.deleteTitle')}
               onClick={() => {
-                if (
-                  confirm(
-                    `Delete character "${c.card.data.name}" and its lorebook? This cannot be undone.`
-                  )
-                ) {
+                if (confirm(t('world.confirmDelete', { name: c.card.data.name }))) {
                   deleteCharacter(profileId, c.id)
                 }
               }}

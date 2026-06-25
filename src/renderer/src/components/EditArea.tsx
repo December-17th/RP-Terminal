@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react'
+import { useT } from '../i18n'
 
 export function EditArea({
   value,
@@ -12,6 +13,7 @@ export function EditArea({
   onCancel: () => void
 }): React.ReactElement {
   const ref = useRef<HTMLTextAreaElement>(null)
+  const t = useT()
   // Auto-size to the content so the editor matches the message.
   useEffect(() => {
     const el = ref.current
@@ -41,12 +43,12 @@ export function EditArea({
       />
       <div className="edit-actions">
         <button className="btn-accent" onClick={onSave}>
-          Save
+          {t('common.save')}
         </button>
         <button className="btn-ghost" onClick={onCancel}>
-          Cancel
+          {t('common.cancel')}
         </button>
-        <span className="edit-hint">Ctrl+Enter to save · Esc to cancel</span>
+        <span className="edit-hint">{t('chat.editHint')}</span>
       </div>
     </div>
   )

@@ -8,6 +8,7 @@ import {
   formatTp,
   reasoningSkeleton
 } from '../../../shared/reasoningView'
+import { useT } from '../i18n'
 
 interface Props {
   /** Reasoning text so far (streams in while `state==='thinking'`). */
@@ -43,12 +44,13 @@ export function ReasoningPanel({
   template,
   css
 }: Props): React.ReactElement {
+  const t = useT()
   return template ? (
     <ReasoningFrame template={template} css={css} reasoning={reasoning} body={body} state={state} />
   ) : (
     // Built-in fallback — auto-open while the model is still thinking.
     <details className="reasoning-block" open={state === 'thinking'}>
-      <summary className="reasoning-summary">💭 Reasoning</summary>
+      <summary className="reasoning-summary">{t('chat.reasoning')}</summary>
       <div className="reasoning-content">{reasoning}</div>
     </details>
   )

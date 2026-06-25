@@ -1,6 +1,7 @@
 import React from 'react'
 import { useSettingsStore, ApiPreset, Settings } from '../stores/settingsStore'
 import { useToastStore } from '../stores/toastStore'
+import { useT } from '../i18n'
 
 const PROVIDERS = [
   { value: 'openai', label: 'OpenAI' },
@@ -22,6 +23,7 @@ export const ApiSettingsPanel: React.FC<{ profileId: string }> = ({ profileId })
   const [models, setModels] = React.useState<string[]>([])
   const [fetching, setFetching] = React.useState(false)
   const [replacingKey, setReplacingKey] = React.useState(false)
+  const t = useT()
   if (!settings) return null
 
   const presets = settings.api_presets
@@ -37,11 +39,11 @@ export const ApiSettingsPanel: React.FC<{ profileId: string }> = ({ profileId })
         profileId
       )
       setModels(list)
-      if (!list.length) useToastStore.getState().push('No models returned by the provider')
+      if (!list.length) useToastStore.getState().push(t('api.noModels'))
     } catch (e) {
       useToastStore
         .getState()
-        .push('Fetch models failed: ' + (e instanceof Error ? e.message : String(e)))
+        .push(t('api.fetchFailed') + (e instanceof Error ? e.message : String(e)))
     } finally {
       setFetching(false)
     }
@@ -105,10 +107,10 @@ export const ApiSettingsPanel: React.FC<{ profileId: string }> = ({ profileId })
   return (
     <div className="panel">
       <div className="panel-header">
-        <h3>API</h3>
+        <h3>{t('api.heading')}</h3>
       </div>
       <div className="panel-body">
-        <label className="field-label">API Preset</label>
+        <label className="field-label">{t('api.preset')}</label>
         <div className="preset-select-row">
           <select value={active.id} onChange={(e) => selectPreset(e.target.value)}>
             {presets.map((p) => (
@@ -119,26 +121,26 @@ export const ApiSettingsPanel: React.FC<{ profileId: string }> = ({ profileId })
           </select>
         </div>
         <div className="preset-actions">
-          <button onClick={newPreset}>+ New</button>
+          <button onClick={newPreset}>{t('common.new')}</button>
           <button
             className="btn-ghost danger"
             disabled={presets.length <= 1}
-            title={presets.length <= 1 ? 'Keep at least one preset' : 'Delete this preset'}
+            title={presets.length <= 1 ? t('api.keepOne') : t('api.deletePreset')}
             onClick={() => {
-              if (confirm(`Delete API preset "${active.name}"?`)) deletePreset()
+              if (confirm(t('api.confirmDelete', { name: active.name }))) deletePreset()
             }}
           >
-            Delete
+            {t('common.delete')}
           </button>
         </div>
 
         <label className="field-label" style={{ marginTop: 14 }}>
-          Preset Name
+          {t('api.presetName')}
         </label>
         <input value={active.name} onChange={(e) => editActive({ name: e.target.value })} />
 
         <label className="field-label" style={{ marginTop: 14 }}>
-          Provider
+          {t('api.provider')}
         </label>
         <select
           value={active.provider}
@@ -155,7 +157,7 @@ export const ApiSettingsPanel: React.FC<{ profileId: string }> = ({ profileId })
           ))}
         </select>
 
-        <label className="field-label">Endpoint URL</label>
+        <label className="field-label">{t('api.endpoint')}</label>
         <input
           type="text"
           placeholder="https://api.openai.com/v1"
@@ -164,7 +166,7 @@ export const ApiSettingsPanel: React.FC<{ profileId: string }> = ({ profileId })
           style={{ marginBottom: 10 }}
         />
 
-        <label className="field-label">API Key</label>
+        <label className="field-label">{t('api.apiKey')}</label>
         {active.api_key.includes('•') && !replacingKey ? (
           // A stored key is shown masked (≥2/3 hidden); the real key lives encrypted in main. "Replace"
           // swaps in an editable field for a new key — which is the only time the key is shown in full.
@@ -173,10 +175,10 @@ export const ApiSettingsPanel: React.FC<{ profileId: string }> = ({ profileId })
               type="text"
               readOnly
               value={active.api_key}
-              title="Stored securely — most of the key is hidden"
+              title={t('api.keyStored')}
               style={{ flex: 1, fontFamily: 'monospace', opacity: 0.8 }}
             />
-            <button onClick={() => setReplacingKey(true)}>Replace</button>
+            <button onClick={() => setReplacingKey(true)}>{t('api.replace')}</button>
           </div>
         ) : (
           <input
@@ -195,11 +197,11 @@ export const ApiSettingsPanel: React.FC<{ profileId: string }> = ({ profileId })
           />
         )}
 
-        <label className="field-label">Model</label>
+        <label className="field-label">{t('api.model')}</label>
         <div style={{ display: 'flex', gap: 6 }}>
           <input
             type="text"
-            placeholder="e.g. gpt-4o"
+            placeholder={t('api.modelPh')}
             value={active.model}
             onChange={(e) => editActive({ model: e.target.value })}
             style={{ flex: 1 }}
@@ -207,11 +209,9 @@ export const ApiSettingsPanel: React.FC<{ profileId: string }> = ({ profileId })
           <button
             onClick={fetchModels}
             disabled={fetching || !active.api_key}
-            title={
-              active.api_key ? 'Fetch available models from the provider' : 'Enter an API key first'
-            }
+            title={active.api_key ? t('api.fetchTitle') : t('api.fetchNeedKey')}
           >
-            {fetching ? 'Fetching…' : 'Fetch models'}
+            {fetching ? t('api.fetching') : t('api.fetchModels')}
           </button>
         </div>
         {models.length > 0 && (
@@ -220,7 +220,7 @@ export const ApiSettingsPanel: React.FC<{ profileId: string }> = ({ profileId })
             onChange={(e) => e.target.value && editActive({ model: e.target.value })}
             style={{ width: '100%', marginTop: 6 }}
           >
-            <option value="">— {models.length} models — pick one —</option>
+            <option value="">{t('api.pickModel', { count: models.length })}</option>
             {models.map((m) => (
               <option key={m} value={m}>
                 {m}
@@ -230,7 +230,7 @@ export const ApiSettingsPanel: React.FC<{ profileId: string }> = ({ profileId })
         )}
 
         <label className="field-label" style={{ marginTop: 16 }}>
-          Max Context (tokens)
+          {t('api.maxContext')}
         </label>
         <input
           type="number"
@@ -248,8 +248,7 @@ export const ApiSettingsPanel: React.FC<{ profileId: string }> = ({ profileId })
           }
         />
         <div style={{ fontSize: '0.78em', color: 'var(--rpt-text-secondary)', marginTop: 4 }}>
-          Oldest turns are trimmed to keep the prompt under this estimate. Raise it for
-          large-context models.
+          {t('api.maxContextHint')}
         </div>
       </div>
     </div>

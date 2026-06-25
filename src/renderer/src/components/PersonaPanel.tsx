@@ -1,5 +1,6 @@
 import React from 'react'
 import { useSettingsStore } from '../stores/settingsStore'
+import { useT } from '../i18n'
 
 /**
  * Persona tab — who {{user}} is. The name replaces {{user}}; the description is an
@@ -7,6 +8,7 @@ import { useSettingsStore } from '../stores/settingsStore'
  */
 export const PersonaPanel: React.FC<{ profileId: string }> = ({ profileId }) => {
   const { settings, updateSettings } = useSettingsStore()
+  const t = useT()
   if (!settings) return null
 
   const persona = settings.persona
@@ -17,32 +19,31 @@ export const PersonaPanel: React.FC<{ profileId: string }> = ({ profileId }) => 
   return (
     <div className="panel">
       <div className="panel-header">
-        <h3>Persona</h3>
+        <h3>{t('persona.heading')}</h3>
       </div>
       <div className="panel-body">
-        <label className="field-label">Name</label>
+        <label className="field-label">{t('persona.name')}</label>
         <input
           type="text"
-          placeholder="User"
+          placeholder={t('persona.namePh')}
           value={persona.name ?? 'User'}
           onChange={(e) => patch({ name: e.target.value })}
         />
         <div style={{ fontSize: '0.78em', color: 'var(--rpt-text-secondary)', marginTop: 4 }}>
-          Replaces {'{{user}}'} in prompts, cards and lorebooks.
+          {t('persona.nameHint')}
         </div>
 
         <label className="field-label" style={{ marginTop: 16 }}>
-          Description / Bio
+          {t('persona.description')}
         </label>
         <textarea
           className="entry-content"
-          placeholder="Who you are in this story — appearance, background, personality. Supports {{char}} / {{user}}."
+          placeholder={t('persona.descriptionPh')}
           value={persona.description ?? ''}
           onChange={(e) => patch({ description: e.target.value })}
         />
         <div style={{ fontSize: '0.78em', color: 'var(--rpt-text-secondary)', marginTop: 4 }}>
-          Injected into the prompt so the model knows who you are. Also available as {'{{persona}}'}{' '}
-          in authored content.
+          {t('persona.descriptionHint')}
         </div>
 
         <label
@@ -54,21 +55,21 @@ export const PersonaPanel: React.FC<{ profileId: string }> = ({ profileId }) => 
             checked={persona.inject !== false}
             onChange={(e) => patch({ inject: e.target.checked })}
           />
-          Inject description into the prompt
+          {t('persona.inject')}
         </label>
 
         <label className="field-label" style={{ marginTop: 16 }}>
-          Injection Depth
+          {t('persona.depth')}
         </label>
         <input
           type="number"
           min={0}
-          placeholder="top"
+          placeholder={t('persona.depthPh')}
           value={persona.depth ?? ''}
           onChange={(e) => patch({ depth: e.target.value === '' ? null : Number(e.target.value) })}
         />
         <div style={{ fontSize: '0.78em', color: 'var(--rpt-text-secondary)', marginTop: 4 }}>
-          Messages up from the bottom of the chat. Blank = at the top, before the conversation.
+          {t('persona.depthHint')}
         </div>
       </div>
     </div>

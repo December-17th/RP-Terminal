@@ -13,6 +13,7 @@ import { ContextMenu } from './ContextMenu'
 import { expandMacros } from '../../../shared/macros'
 import { stripRptEvents, stripThinking, extractThinking } from '../../../shared/responseView'
 import { renderTemplate } from '../plugin/renderTemplate'
+import { useT } from '../i18n'
 
 /**
  * The center column: the paginated floor stage, the mode/regenerate toolbar, the
@@ -56,6 +57,7 @@ export function ChatView({ profileId }: { profileId: string }): React.ReactEleme
   // Which floor (page) the chat history is showing — one floor at a time.
   const [viewIndex, setViewIndex] = useState(0)
   const viewportRef = useRef<HTMLDivElement>(null)
+  const t = useT()
 
   // ST-PT [RENDER:*]: active render-marker templates for this session (evaluated per-message below).
   const [renderMarkers, setRenderMarkers] = useState<{ before: string[]; after: string[] }>({
@@ -142,7 +144,7 @@ export function ChatView({ profileId }: { profileId: string }): React.ReactEleme
   if (!activeChatId) {
     return (
       <div style={{ margin: 'auto', opacity: 0.5 }}>
-        {activeCharacter ? 'Select or create a session.' : 'Select a character.'}
+        {activeCharacter ? t('chat.selectSession') : t('chat.selectCharacter')}
       </div>
     )
   }
@@ -196,14 +198,15 @@ export function ChatView({ profileId }: { profileId: string }): React.ReactEleme
               onSwipe={(dir) => swipe(profileId, currentFloor.floor, dir)}
             />
           ) : (
-            <div className="floor-empty">No messages yet.</div>
+            <div className="floor-empty">{t('chat.noMessages')}</div>
           )}
           {error && (
             <div
               className="floor-block"
               style={{ borderColor: 'var(--rpt-danger)', color: 'var(--rpt-danger)' }}
             >
-              Error: {error}
+              {t('chat.errorPrefix')}
+              {error}
             </div>
           )}
         </div>
@@ -211,7 +214,7 @@ export function ChatView({ profileId }: { profileId: string }): React.ReactEleme
           <>
             <button
               className="pager-btn pager-prev"
-              title="Previous floor"
+              title={t('chat.prevFloor')}
               disabled={page <= 0}
               onClick={() => setViewIndex(Math.max(0, page - 1))}
             >
@@ -222,7 +225,7 @@ export function ChatView({ profileId }: { profileId: string }): React.ReactEleme
             </span>
             <button
               className="pager-btn pager-next"
-              title="Next floor"
+              title={t('chat.nextFloor')}
               disabled={page >= pageCount - 1}
               onClick={() => setViewIndex(Math.min(pageCount - 1, page + 1))}
             >
@@ -250,7 +253,7 @@ export function ChatView({ profileId }: { profileId: string }): React.ReactEleme
           onClose={() => setMenu(null)}
           items={[
             {
-              label: '✎ Edit message',
+              label: t('chat.editMessage'),
               onClick: () => {
                 setEditing({ floor: menu.floor, field: menu.field })
                 setEditText(menu.value)

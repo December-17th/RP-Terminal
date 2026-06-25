@@ -4,6 +4,7 @@ import { useToastStore } from '../stores/toastStore'
 import { LayoutRenderer } from './LayoutRenderer'
 import { StatView } from './StatView'
 import { isPlainObject } from './statViewHelpers'
+import { useT } from '../i18n'
 
 /**
  * The "RPG Status" view: the latest floor's MVU stat_data + the card's declarative
@@ -16,9 +17,10 @@ export function StatusView({ profileId }: { profileId: string }): React.ReactEle
   const activeChatId = useChatStore((s) => s.activeChatId)
   const floors = useChatStore((s) => s.floors)
   const activeCharacter = useCharacterStore((s) => s.activeCharacter)
+  const t = useT()
 
   if (!activeChatId || !activeCharacter) {
-    return <div style={{ opacity: 0.5 }}>Waiting for session...</div>
+    return <div style={{ opacity: 0.5 }}>{t('status.waiting')}</div>
   }
 
   const latestVars = floors.length ? floors[floors.length - 1]?.variables : undefined
@@ -37,17 +39,17 @@ export function StatusView({ profileId }: { profileId: string }): React.ReactEle
           gap: 8
         }}
       >
-        RPG Status
+        {t('status.heading')}
         <button
           className="btn-accent"
           style={{ fontSize: '0.62em', padding: '3px 8px', fontWeight: 400 }}
-          title="Re-apply the stored variable updates from every message to rebuild the state — no regeneration (e.g. after a parser update)."
+          title={t('status.reevalTitle')}
           onClick={async () => {
             await useChatStore.getState().reevaluateVariables(profileId)
-            useToastStore.getState().push('State re-evaluated from stored updates')
+            useToastStore.getState().push(t('status.reevaluated'))
           }}
         >
-          ↻ Re-evaluate
+          {t('status.reevaluate')}
         </button>
       </h3>
       <div style={{ marginTop: 20 }}>
@@ -55,7 +57,7 @@ export function StatusView({ profileId }: { profileId: string }): React.ReactEle
         {statData && Object.keys(statData).length ? <StatView data={statData} /> : null}
         {!uiLayout?.length && !(statData && Object.keys(statData).length) ? (
           <div style={{ opacity: 0.6 }}>
-            <em>(No RPG state for this session yet)</em>
+            <em>{t('status.noState')}</em>
           </div>
         ) : null}
       </div>

@@ -3,21 +3,22 @@ import { useChatStore } from '../stores/chatStore'
 import { useSettingsStore } from '../stores/settingsStore'
 import type { FloorMetrics } from '../../../shared/usageTypes'
 import { costFor } from '../../../shared/usageCost'
+import { useT } from '../i18n'
 
 /** The metric rows the overlay can show, in display order. `group` splits This-turn vs Session. */
-const FIELD_CATALOG: { key: string; label: string; group: 'turn' | 'session' }[] = [
-  { key: 'promptTokens', label: 'prompt tok', group: 'turn' },
-  { key: 'outputTokens', label: 'output tok', group: 'turn' },
-  { key: 'proxyPct', label: 'est cache', group: 'turn' },
-  { key: 'cacheHitPct', label: 'actual cache', group: 'turn' },
-  { key: 'cacheRead', label: 'cache read', group: 'turn' },
-  { key: 'cacheWrite', label: 'cache write', group: 'turn' },
-  { key: 'cost', label: 'turn $', group: 'turn' },
-  { key: 'turns', label: 'turns', group: 'session' },
-  { key: 'avgProxyPct', label: 'avg est', group: 'session' },
-  { key: 'avgCacheHitPct', label: 'avg cache', group: 'session' },
-  { key: 'avgPromptTokens', label: 'avg prompt', group: 'session' },
-  { key: 'sessionCost', label: 'session $', group: 'session' }
+const FIELD_CATALOG: { key: string; labelKey: string; group: 'turn' | 'session' }[] = [
+  { key: 'promptTokens', labelKey: 'usage.promptTok', group: 'turn' },
+  { key: 'outputTokens', labelKey: 'usage.outputTok', group: 'turn' },
+  { key: 'proxyPct', labelKey: 'usage.estCache', group: 'turn' },
+  { key: 'cacheHitPct', labelKey: 'usage.actualCache', group: 'turn' },
+  { key: 'cacheRead', labelKey: 'usage.cacheRead', group: 'turn' },
+  { key: 'cacheWrite', labelKey: 'usage.cacheWrite', group: 'turn' },
+  { key: 'cost', labelKey: 'usage.turnCost', group: 'turn' },
+  { key: 'turns', labelKey: 'usage.turns', group: 'session' },
+  { key: 'avgProxyPct', labelKey: 'usage.avgEst', group: 'session' },
+  { key: 'avgCacheHitPct', labelKey: 'usage.avgCache', group: 'session' },
+  { key: 'avgPromptTokens', labelKey: 'usage.avgPrompt', group: 'session' },
+  { key: 'sessionCost', labelKey: 'usage.sessionCost', group: 'session' }
 ]
 
 const pct = (n: number): string => `${Math.round(n)}%`
@@ -78,6 +79,7 @@ export const UsageOverlay: React.FC<{ profileId: string }> = ({ profileId }) => 
   const [gearOpen, setGearOpen] = useState(false)
   const [dragPos, setDragPos] = useState<{ x: number; y: number } | null>(null)
   const dragState = useRef<{ dx: number; dy: number } | null>(null)
+  const t = useT()
 
   if (!settings) return null
   const meter = settings.ui.usage_meter
@@ -131,18 +133,18 @@ export const UsageOverlay: React.FC<{ profileId: string }> = ({ profileId }) => 
           onPointerUp={onPointerUp}
           style={{ fontWeight: 600, cursor: 'move', flex: 1 }}
         >
-          usage
+          {t('usage.heading')}
         </span>
-        <button title="Fields" onClick={() => setGearOpen((v) => !v)}>
+        <button title={t('usage.fields')} onClick={() => setGearOpen((v) => !v)}>
           ⚙
         </button>
         <button
-          title={meter.collapsed ? 'Expand' : 'Collapse'}
+          title={meter.collapsed ? t('usage.expand') : t('usage.collapse')}
           onClick={() => persist({ collapsed: !meter.collapsed })}
         >
           {meter.collapsed ? '▣' : '▢'}
         </button>
-        <button title="Hide (Settings to re-enable)" onClick={() => persist({ enabled: false })}>
+        <button title={t('usage.hide')} onClick={() => persist({ enabled: false })}>
           ✕
         </button>
       </div>
@@ -160,7 +162,7 @@ export const UsageOverlay: React.FC<{ profileId: string }> = ({ profileId }) => 
                   persist({ fields: FIELD_CATALOG.map((c) => c.key).filter((k) => next.has(k)) })
                 }}
               />
-              {f.label}
+              {t(f.labelKey)}
             </label>
           ))}
         </div>
@@ -168,7 +170,7 @@ export const UsageOverlay: React.FC<{ profileId: string }> = ({ profileId }) => 
 
       {!meter.collapsed && !gearOpen && (
         <div className="usage-overlay-body">
-          {!latest && <div style={{ opacity: 0.6 }}>no turns yet</div>}
+          {!latest && <div style={{ opacity: 0.6 }}>{t('usage.noTurns')}</div>}
           {rows
             .filter((r) => r.value != null)
             .map((r) => (
@@ -176,7 +178,7 @@ export const UsageOverlay: React.FC<{ profileId: string }> = ({ profileId }) => 
                 key={r.key}
                 style={{ display: 'flex', justifyContent: 'space-between', gap: 12 }}
               >
-                <span style={{ opacity: 0.7 }}>{r.label}</span>
+                <span style={{ opacity: 0.7 }}>{t(r.labelKey)}</span>
                 <span>{r.value}</span>
               </div>
             ))}

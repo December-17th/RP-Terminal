@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react'
 import { useLorebookStore, LorebookEntry } from '../stores/lorebookStore'
+import { useT } from '../i18n'
 
 interface Props {
   profileId: string
@@ -39,6 +40,7 @@ export const LorebookManager: React.FC<Props> = ({
     deleteEntry
   } = useLorebookStore()
   const [expanded, setExpanded] = useState<number | null>(0)
+  const t = useT()
 
   // Load the library and open the character's own lorebook (id == characterId).
   useEffect(() => {
@@ -54,7 +56,7 @@ export const LorebookManager: React.FC<Props> = ({
   // even before it's been saved to disk.
   const options = useMemo(() => {
     const map = new Map(library.map((l) => [l.id, l.name]))
-    if (!map.has(characterId)) map.set(characterId, `${characterName} (card)`)
+    if (!map.has(characterId)) map.set(characterId, t('lore.cardSuffix', { name: characterName }))
     return [...map.entries()].map(([id, name]) => ({ id, name }))
   }, [library, characterId, characterName])
 
@@ -70,39 +72,39 @@ export const LorebookManager: React.FC<Props> = ({
 
   // Switching/creating a lorebook replaces the editor — confirm first if there are
   // unsaved edits, so a stray dropdown change can't silently discard them.
-  const guardDirty = (): boolean => !dirty || confirm('Discard unsaved changes to this lorebook?')
+  const guardDirty = (): boolean => !dirty || confirm(t('lore.confirmDiscard'))
 
   return (
     <div className="panel">
       <div className="panel-header">
-        <h3 title={`Lorebooks — ${characterName}`}>Lorebooks</h3>
+        <h3 title={t('lore.headingTitle', { name: characterName })}>{t('lore.heading')}</h3>
         <div className="panel-header-actions">
-          {dirty && <span style={{ fontSize: '0.8em', opacity: 0.7 }}>unsaved</span>}
-          <button onClick={() => guardDirty() && createNew(profileId)}>+ New</button>
+          {dirty && <span style={{ fontSize: '0.8em', opacity: 0.7 }}>{t('common.unsaved')}</span>}
+          <button onClick={() => guardDirty() && createNew(profileId)}>{t('common.new')}</button>
           <button
             className="btn-ghost"
-            title="Import an ST world-info / lorebook JSON as a new lorebook"
+            title={t('lore.importTitle')}
             onClick={() => guardDirty() && importLorebook(profileId)}
           >
-            Import
+            {t('common.import')}
           </button>
           <button
             className="btn-ghost"
             disabled={!currentId}
-            title="Export this lorebook to a JSON file"
+            title={t('lore.exportTitle')}
             onClick={() => exportCurrent(profileId)}
           >
-            Export
+            {t('common.export')}
           </button>
           <button className="btn-accent" disabled={!dirty} onClick={() => save(profileId)}>
-            Save
+            {t('common.save')}
           </button>
         </div>
       </div>
       <div className="panel-body">
         {chatId && (
           <>
-            <label className="field-label">Active in this session</label>
+            <label className="field-label">{t('lore.activeInSession')}</label>
             <div className="lorebook-select-list">
               {options.map((o) => (
                 <label key={o.id} className="lorebook-select-item">
@@ -122,13 +124,12 @@ export const LorebookManager: React.FC<Props> = ({
                 margin: '4px 0 14px'
               }}
             >
-              All checked lorebooks are scanned together each turn.{' '}
-              {sessionIds === null && <em>(default: this character&apos;s own lorebook)</em>}
+              {t('lore.activeHint')} {sessionIds === null && <em>{t('lore.activeHintDefault')}</em>}
             </div>
           </>
         )}
 
-        <label className="field-label">Editing</label>
+        <label className="field-label">{t('lore.editing')}</label>
         <div className="preset-select-row">
           <select
             value={currentId ?? ''}
@@ -142,32 +143,28 @@ export const LorebookManager: React.FC<Props> = ({
           </select>
         </div>
         <div className="preset-actions">
-          <button onClick={addEntry}>+ Entry</button>
+          <button onClick={addEntry}>{t('lore.addEntry')}</button>
           <button
             className="btn-ghost danger"
             disabled={currentId === characterId}
-            title={
-              currentId === characterId
-                ? "A character's own lorebook can't be deleted here"
-                : 'Delete this lorebook'
-            }
+            title={currentId === characterId ? t('lore.ownCantDelete') : t('lore.deleteThis')}
             onClick={() => {
-              if (confirm('Delete this lorebook? This cannot be undone.')) removeCurrent(profileId)
+              if (confirm(t('lore.confirmDelete'))) removeCurrent(profileId)
             }}
           >
-            Delete Lorebook
+            {t('lore.deleteLorebook')}
           </button>
         </div>
 
         <label className="field-label" style={{ marginTop: 14 }}>
-          Lorebook Name
+          {t('lore.name')}
         </label>
         <input value={lorebook?.name || ''} onChange={(e) => setName(e.target.value)} />
 
         <div style={{ marginTop: 12 }}>
           {!lorebook || lorebook.entries.length === 0 ? (
             <div style={{ opacity: 0.6, fontStyle: 'italic', padding: '20px 0' }}>
-              No entries yet. Click “+ Entry” to create one.
+              {t('lore.noEntries')}
             </div>
           ) : (
             lorebook.entries.map((entry, i) => (
@@ -205,6 +202,7 @@ const EntryCard: React.FC<EntryCardProps> = ({
   onChange,
   onDelete
 }) => {
+  const t = useT()
   return (
     <div className={`entry-card ${entry.enabled ? '' : 'disabled'}`}>
       <div className="entry-head">
@@ -212,50 +210,54 @@ const EntryCard: React.FC<EntryCardProps> = ({
           type="checkbox"
           checked={entry.enabled}
           onChange={onToggleEnabled}
-          title="Enabled"
+          title={t('lore.enabled')}
           onClick={(e) => e.stopPropagation()}
         />
         <div className="entry-head-main" onClick={onToggleExpand}>
-          <span className="entry-title">{entry.comment || entry.keys[0] || 'Untitled Entry'}</span>
+          <span className="entry-title">
+            {entry.comment || entry.keys[0] || t('lore.untitledEntry')}
+          </span>
           <span className="entry-keys-preview">
-            {entry.constant ? '🔵 constant' : entry.keys.filter(Boolean).join(', ') || 'no keys'}
+            {entry.constant
+              ? t('lore.constantBadge')
+              : entry.keys.filter(Boolean).join(', ') || t('lore.noKeys')}
           </span>
         </div>
-        <span className="entry-order" title="Insertion order">
+        <span className="entry-order" title={t('lore.insertionOrder')}>
           #{entry.insertion_order}
         </span>
         <button className="btn-ghost" onClick={onToggleExpand}>
           {expanded ? '▾' : '▸'}
         </button>
-        <button className="btn-ghost danger" onClick={onDelete} title="Delete entry">
+        <button className="btn-ghost danger" onClick={onDelete} title={t('lore.deleteEntry')}>
           🗑
         </button>
       </div>
 
       {expanded && (
         <div className="entry-body">
-          <label className="field-label">Title / Memo</label>
+          <label className="field-label">{t('lore.titleMemo')}</label>
           <input value={entry.comment} onChange={(e) => onChange({ comment: e.target.value })} />
 
-          <label className="field-label">Primary Keywords (comma-separated)</label>
+          <label className="field-label">{t('lore.primaryKeys')}</label>
           <input
             value={entry.keys.join(', ')}
             onChange={(e) => onChange({ keys: splitKeys(e.target.value) })}
-            placeholder="e.g. castle, fortress, keep"
+            placeholder={t('lore.primaryKeysPh')}
           />
 
-          <label className="field-label">Secondary Keywords (optional)</label>
+          <label className="field-label">{t('lore.secondaryKeys')}</label>
           <input
             value={entry.secondary_keys.join(', ')}
             onChange={(e) => onChange({ secondary_keys: splitKeys(e.target.value) })}
           />
 
-          <label className="field-label">Content</label>
+          <label className="field-label">{t('lore.content')}</label>
           <textarea
             className="entry-content"
             value={entry.content}
             onChange={(e) => onChange({ content: e.target.value })}
-            placeholder="Text injected into the prompt when this entry triggers."
+            placeholder={t('lore.contentPh')}
           />
 
           <div className="entry-toggles">
@@ -265,7 +267,7 @@ const EntryCard: React.FC<EntryCardProps> = ({
                 checked={entry.constant}
                 onChange={(e) => onChange({ constant: e.target.checked })}
               />
-              Constant (always on)
+              {t('lore.constantToggle')}
             </label>
             <label>
               <input
@@ -273,7 +275,7 @@ const EntryCard: React.FC<EntryCardProps> = ({
                 checked={entry.selective}
                 onChange={(e) => onChange({ selective: e.target.checked })}
               />
-              Selective (needs secondary)
+              {t('lore.selective')}
             </label>
             <label>
               <input
@@ -281,37 +283,34 @@ const EntryCard: React.FC<EntryCardProps> = ({
                 checked={entry.case_sensitive}
                 onChange={(e) => onChange({ case_sensitive: e.target.checked })}
               />
-              Case sensitive
+              {t('lore.caseSensitive')}
             </label>
-            <label title="This entry can't be triggered by recursion (only the conversation scan).">
+            <label title={t('lore.noRecursionInTitle')}>
               <input
                 type="checkbox"
                 checked={entry.exclude_recursion}
                 onChange={(e) => onChange({ exclude_recursion: e.target.checked })}
               />
-              No recursion in
+              {t('lore.noRecursionIn')}
             </label>
-            <label title="This entry's content won't trigger further recursive matches.">
+            <label title={t('lore.noRecursionOutTitle')}>
               <input
                 type="checkbox"
                 checked={entry.prevent_recursion}
                 onChange={(e) => onChange({ prevent_recursion: e.target.checked })}
               />
-              No recursion out
+              {t('lore.noRecursionOut')}
             </label>
             <label className="order-field">
-              Order
+              {t('lore.order')}
               <input
                 type="number"
                 value={entry.insertion_order}
                 onChange={(e) => onChange({ insertion_order: Number(e.target.value) })}
               />
             </label>
-            <label
-              className="order-field"
-              title="Messages up from the bottom of the chat. Blank = top (World Info block)."
-            >
-              Depth
+            <label className="order-field" title={t('lore.depthTitle')}>
+              {t('lore.depth')}
               <input
                 type="number"
                 min={0}
@@ -324,11 +323,8 @@ const EntryCard: React.FC<EntryCardProps> = ({
                 }
               />
             </label>
-            <label
-              className="order-field"
-              title="Chance this entry fires when matched (100 = always)."
-            >
-              Prob %
+            <label className="order-field" title={t('lore.probTitle')}>
+              {t('lore.prob')}
               <input
                 type="number"
                 min={0}

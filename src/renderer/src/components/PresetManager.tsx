@@ -1,18 +1,19 @@
 import React, { useEffect, useState } from 'react'
 import { Modal } from './Modal'
 import { usePresetStore, PresetParameters, PromptMarker } from '../stores/presetStore'
+import { useT } from '../i18n'
 
 interface Props {
   profileId: string
 }
 
-const MARKER_LABEL: Record<PromptMarker, string> = {
+const MARKER_KEY: Record<PromptMarker, string> = {
   none: '',
-  char_description: 'Character',
-  mes_example: 'Examples',
-  world_info: 'World Info',
-  chat_history: 'Chat History',
-  post_history: 'Post-History'
+  char_description: 'preset.markerChar',
+  mes_example: 'preset.markerExamples',
+  world_info: 'preset.markerWorldInfo',
+  chat_history: 'preset.markerChatHistory',
+  post_history: 'preset.markerPostHistory'
 }
 
 const OPTIONAL_PARAMS: Array<keyof PresetParameters> = [
@@ -46,6 +47,8 @@ export const PresetManager: React.FC<Props> = ({ profileId }) => {
     deleteBlock
   } = usePresetStore()
   const [editing, setEditing] = useState<number | null>(null)
+  const t = useT()
+  const markerText = (m: PromptMarker): string => (m === 'none' ? '' : t(MARKER_KEY[m]))
 
   useEffect(() => {
     load(profileId)
@@ -78,30 +81,30 @@ export const PresetManager: React.FC<Props> = ({ profileId }) => {
 
   // Switching/creating/importing a preset replaces the editor — confirm first if
   // there are unsaved edits so a stray change can't silently discard them.
-  const guardDirty = (): boolean => !dirty || confirm('Discard unsaved changes to this preset?')
+  const guardDirty = (): boolean => !dirty || confirm(t('preset.confirmDiscard'))
 
   return (
     <div className="panel">
       <div className="panel-header">
-        <h3>Preset</h3>
+        <h3>{t('preset.heading')}</h3>
         <div className="panel-header-actions">
-          {dirty && <span style={{ fontSize: '0.8em', opacity: 0.7 }}>unsaved</span>}
+          {dirty && <span style={{ fontSize: '0.8em', opacity: 0.7 }}>{t('common.unsaved')}</span>}
           <button className="btn-accent" disabled={!dirty} onClick={() => save(profileId)}>
-            Save
+            {t('common.save')}
           </button>
         </div>
       </div>
 
       <div className="panel-body">
         {/* Preset selector */}
-        <label className="field-label">Active Preset</label>
+        <label className="field-label">{t('preset.active')}</label>
         <div className="preset-select-row">
           <select
             value={activeId ?? ''}
             onChange={(e) => guardDirty() && select(profileId, e.target.value)}
             disabled={presets.length === 0}
           >
-            {presets.length === 0 && <option value="">(no presets)</option>}
+            {presets.length === 0 && <option value="">{t('preset.noPresets')}</option>}
             {presets.map((p) => (
               <option key={p.id} value={p.id}>
                 {p.name}
@@ -110,33 +113,33 @@ export const PresetManager: React.FC<Props> = ({ profileId }) => {
           </select>
         </div>
         <div className="preset-actions">
-          <button onClick={() => guardDirty() && createNew(profileId)}>+ New</button>
+          <button onClick={() => guardDirty() && createNew(profileId)}>{t('common.new')}</button>
           <button className="btn-ghost" onClick={() => guardDirty() && importPreset(profileId)}>
-            Import ST
+            {t('preset.importST')}
           </button>
           <button
             className="btn-ghost danger"
             disabled={!activeId}
             onClick={() => {
-              if (confirm('Delete this preset? This cannot be undone.')) remove(profileId)
+              if (confirm(t('preset.confirmDelete'))) remove(profileId)
             }}
           >
-            Delete
+            {t('common.delete')}
           </button>
         </div>
 
         {!preset ? (
           <div style={{ opacity: 0.6, fontStyle: 'italic', marginTop: 16 }}>
-            No preset selected. Create a new one or import a SillyTavern preset.
+            {t('preset.empty')}
           </div>
         ) : (
           <>
             <label className="field-label" style={{ marginTop: 16 }}>
-              Preset Name
+              {t('preset.name')}
             </label>
             <input value={preset.name} onChange={(e) => setName(e.target.value)} />
 
-            <h4 style={{ marginBottom: 8 }}>Generation Parameters</h4>
+            <h4 style={{ marginBottom: 8 }}>{t('preset.genParams')}</h4>
             <div className="param-grid">
               {numField('temperature', 'Temperature', true)}
               {numField('max_tokens', 'Max Tokens', true)}
@@ -152,20 +155,22 @@ export const PresetManager: React.FC<Props> = ({ profileId }) => {
               }}
             >
               <h4 style={{ margin: 0 }}>
-                Prompt Manager{' '}
-                <span style={{ opacity: 0.5, fontWeight: 'normal' }}>(top → bottom)</span>
+                {t('preset.promptManager')}{' '}
+                <span style={{ opacity: 0.5, fontWeight: 'normal' }}>
+                  {t('preset.promptOrder')}
+                </span>
               </h4>
-              <button onClick={addBlock}>+ Prompt</button>
+              <button onClick={addBlock}>{t('preset.addPrompt')}</button>
             </div>
 
             {preset.prompts.length === 0 && (
               <div style={{ opacity: 0.6, fontStyle: 'italic', marginTop: 8 }}>
-                Empty preset — add prompt blocks, or just send chat history as-is.
+                {t('preset.emptyPrompts')}
               </div>
             )}
 
             {preset.prompts.map((block, i) => {
-              const markerLabel = MARKER_LABEL[block.marker]
+              const markerLabel = markerText(block.marker)
               const isDynamic = block.marker !== 'none'
               return (
                 <div
@@ -177,9 +182,13 @@ export const PresetManager: React.FC<Props> = ({ profileId }) => {
                       type="checkbox"
                       checked={block.enabled}
                       onChange={() => toggleBlock(i)}
-                      title="Enabled"
+                      title={t('common.enabled')}
                     />
-                    <span className="prompt-name" onClick={() => setEditing(i)} title="Edit">
+                    <span
+                      className="prompt-name"
+                      onClick={() => setEditing(i)}
+                      title={t('common.edit')}
+                    >
                       {block.name || block.identifier}
                     </span>
                     {markerLabel ? (
@@ -188,10 +197,7 @@ export const PresetManager: React.FC<Props> = ({ profileId }) => {
                       <span className="role-badge">{block.role}</span>
                     )}
                     {block.injection_depth != null && (
-                      <span
-                        className="marker-badge"
-                        title="Injected into chat history at this depth"
-                      >
+                      <span className="marker-badge" title={t('preset.injectedAtDepth')}>
                         @{block.injection_depth}
                       </span>
                     )}
@@ -210,14 +216,18 @@ export const PresetManager: React.FC<Props> = ({ profileId }) => {
                       >
                         ▼
                       </button>
-                      <button className="btn-ghost" onClick={() => setEditing(i)} title="Edit">
+                      <button
+                        className="btn-ghost"
+                        onClick={() => setEditing(i)}
+                        title={t('common.edit')}
+                      >
                         ✎
                       </button>
                       {!isDynamic && (
                         <button
                           className="btn-ghost danger"
                           onClick={() => deleteBlock(i)}
-                          title="Delete"
+                          title={t('common.delete')}
                         >
                           🗑
                         </button>
@@ -234,15 +244,17 @@ export const PresetManager: React.FC<Props> = ({ profileId }) => {
       {/* Roomy entry editor as a popup over the center panel */}
       {editing !== null && editingBlock && (
         <Modal
-          title={`Edit Prompt — ${editingBlock.name || editingBlock.identifier}`}
+          title={t('preset.editPromptTitle', {
+            name: editingBlock.name || editingBlock.identifier
+          })}
           onClose={() => setEditing(null)}
           headerActions={
             <button className="btn-accent" onClick={() => save(profileId)} disabled={!dirty}>
-              Save
+              {t('common.save')}
             </button>
           }
         >
-          <label className="field-label">Name</label>
+          <label className="field-label">{t('common.name')}</label>
           <input
             value={editingBlock.name}
             onChange={(e) => updateBlock(editing, { name: e.target.value })}
@@ -250,12 +262,11 @@ export const PresetManager: React.FC<Props> = ({ profileId }) => {
 
           {editingBlock.marker !== 'none' ? (
             <div className="dynamic-note">
-              Dynamic block — content is injected automatically ({MARKER_LABEL[editingBlock.marker]}
-              ). Toggle and reorder it in the list to control where it appears.
+              {t('preset.dynamicNote', { marker: markerText(editingBlock.marker) })}
             </div>
           ) : (
             <>
-              <label className="field-label">Role</label>
+              <label className="field-label">{t('preset.role')}</label>
               <select
                 value={editingBlock.role}
                 onChange={(e) =>
@@ -267,19 +278,19 @@ export const PresetManager: React.FC<Props> = ({ profileId }) => {
                 <option value="assistant">assistant</option>
               </select>
 
-              <label className="field-label">Content</label>
+              <label className="field-label">{t('common.content')}</label>
               <textarea
                 className="modal-textarea"
                 value={editingBlock.content}
                 onChange={(e) => updateBlock(editing, { content: e.target.value })}
-                placeholder="Prompt text. Supports {{char}} and {{user}}."
+                placeholder={t('preset.contentPh')}
               />
 
-              <label className="field-label">Injection Depth</label>
+              <label className="field-label">{t('preset.injectionDepth')}</label>
               <input
                 type="number"
                 min={0}
-                placeholder="inline"
+                placeholder={t('preset.inlinePh')}
                 value={editingBlock.injection_depth ?? ''}
                 onChange={(e) =>
                   updateBlock(editing, {
@@ -287,10 +298,7 @@ export const PresetManager: React.FC<Props> = ({ profileId }) => {
                   })
                 }
               />
-              <div className="dynamic-note">
-                Blank = inline, in preset order. A number injects this block into the chat history
-                that many messages up from the bottom (like a depth lorebook entry).
-              </div>
+              <div className="dynamic-note">{t('preset.depthNote')}</div>
             </>
           )}
         </Modal>

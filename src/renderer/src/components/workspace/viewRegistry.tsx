@@ -12,6 +12,7 @@ import { PanelRouter } from '../PanelRouter'
 import { WcvTestView, WcvCardView, WcvHomeView, WcvCustomStartView } from './WcvPanel'
 import { useWorkspaceContext } from './context'
 import { UsageView } from '../UsageView'
+import { useT } from '../../i18n'
 
 /**
  * The set of views a workspace panel can host. Each entry is a self-contained component
@@ -48,8 +49,9 @@ const CardScriptsPanel: React.FC = () => {
   const { profileId } = useWorkspaceContext()
   const activeChatId = useChatStore((s) => s.activeChatId)
   const activeCharacter = useCharacterStore((s) => s.activeCharacter)
+  const t = useT()
   if (!activeChatId || !activeCharacter) {
-    return <div style={{ opacity: 0.5 }}>Waiting for session...</div>
+    return <div style={{ opacity: 0.5 }}>{t('status.waiting')}</div>
   }
   return (
     <CardScriptHost

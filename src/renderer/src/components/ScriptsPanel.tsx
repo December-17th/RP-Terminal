@@ -5,6 +5,7 @@ import { ScriptManager } from './ScriptManager'
 import { useScriptsStore, ScriptInfo, ArtifactScope } from '../stores/scriptsStore'
 import { useCardScriptsStore } from '../stores/cardScriptsStore'
 import { useToastStore } from '../stores/toastStore'
+import { useT } from '../i18n'
 
 interface Props {
   profileId: string
@@ -15,10 +16,10 @@ interface Props {
   card: any
 }
 
-const SCOPES: { key: ArtifactScope; title: string; hint: string }[] = [
-  { key: 'global', title: 'Global', hint: 'every session' },
-  { key: 'world', title: 'World', hint: 'this card' },
-  { key: 'session', title: 'Session', hint: 'this chat' }
+const SCOPES: { key: ArtifactScope; titleKey: string; hintKey: string }[] = [
+  { key: 'global', titleKey: 'scope.global', hintKey: 'scope.globalHint' },
+  { key: 'world', titleKey: 'scope.world', hintKey: 'scope.worldHint' },
+  { key: 'session', titleKey: 'scope.session', hintKey: 'scope.sessionHint' }
 ]
 
 /**
@@ -38,6 +39,7 @@ export const ScriptsPanel: React.FC<Props> = ({
   const { scripts, load, add, update, setScope, setDisabled, remove } = useScriptsStore()
   const [editing, setEditing] = useState<ScriptInfo | null>(null)
   const [editCard, setEditCard] = useState(false)
+  const t = useT()
 
   // Master on/off for the active world's script runtime (the toggle relocated from the
   // right-panel runtime so the right side stays game-UI only).
@@ -79,7 +81,13 @@ export const ScriptsPanel: React.FC<Props> = ({
   const importScripts = async (): Promise<void> => {
     const scope: ArtifactScope = activeCardId ? 'world' : 'global'
     const n = await useScriptsStore.getState().importFiles(profileId, scope, ownerFor(scope))
-    if (n) useToastStore.getState().push(`Imported ${n} script${n === 1 ? '' : 's'} (${scope})`)
+    if (n)
+      useToastStore.getState().push(
+        t(n === 1 ? 'scripts.importedOne' : 'scripts.importedMany', {
+          count: n,
+          scope: t('scope.' + scope)
+        })
+      )
   }
 
   const changeScope = (s: ScriptInfo, scope: ArtifactScope): void => {
@@ -96,48 +104,52 @@ export const ScriptsPanel: React.FC<Props> = ({
           <input
             type="checkbox"
             checked={!s.disabled}
-            title={s.disabled ? 'Disabled' : 'Enabled'}
+            title={s.disabled ? t('common.disabled') : t('common.enabled')}
             onChange={() => setDisabled(profileId, s.file, !s.disabled)}
           />
-          <span className="prompt-name" title="Edit script" onClick={() => setEditing(s)}>
-            {s.name || 'Untitled script'}
+          <span
+            className="prompt-name"
+            title={t('scripts.editScript')}
+            onClick={() => setEditing(s)}
+          >
+            {s.name || t('scripts.untitled')}
           </span>
           {s.remoteHosts.length > 0 && (
             <span
               className="role-badge"
-              title={`Loads remote code from ${s.remoteHosts.join(', ')}`}
+              title={t('scripts.loadsRemote', { hosts: s.remoteHosts.join(', ') })}
             >
               ⬇ {s.remoteHosts.length}
             </span>
           )}
           {ownedElsewhere && (
-            <span className="entry-keys-preview" title="Bound to a different world/session">
-              other {s.scope}
+            <span className="entry-keys-preview" title={t('regex.boundElsewhere')}>
+              {t('regex.otherScope', { scope: t('scope.' + s.scope) })}
             </span>
           )}
           <div className="prompt-actions">
             <select
               className="scope-select"
               value={s.scope}
-              title="Scope"
+              title={t('scripts.scopeShort')}
               onChange={(e) => changeScope(s, e.target.value as ArtifactScope)}
             >
-              <option value="global">Global</option>
+              <option value="global">{t('scope.global')}</option>
               <option value="world" disabled={!activeCardId}>
-                World
+                {t('scope.world')}
               </option>
               <option value="session" disabled={!activeChatId}>
-                Session
+                {t('scope.session')}
               </option>
             </select>
-            <button className="btn-ghost" title="Edit" onClick={() => setEditing(s)}>
+            <button className="btn-ghost" title={t('common.edit')} onClick={() => setEditing(s)}>
               ✎
             </button>
             <button
               className="btn-ghost danger"
-              title="Delete script"
+              title={t('scripts.deleteScript')}
               onClick={() => {
-                if (confirm(`Delete script "${s.name}"?`)) remove(profileId, s.file)
+                if (confirm(t('scripts.confirmDelete', { name: s.name }))) remove(profileId, s.file)
               }}
             >
               🗑
@@ -151,49 +163,42 @@ export const ScriptsPanel: React.FC<Props> = ({
   return (
     <div className="panel">
       <div className="panel-header">
-        <h3>Scripts</h3>
+        <h3>{t('scripts.heading')}</h3>
         <div className="panel-header-actions">
-          <button onClick={importScripts} title="Import script JSON files (Tavern Helper format)">
-            Import
+          <button onClick={importScripts} title={t('scripts.importTitle')}>
+            {t('common.import')}
           </button>
           {activeCardId && (
             <button
               className={`rpt-script-toggle ${runtimeOn ? 'on' : ''}`}
-              title={
-                runtimeOn
-                  ? 'Script runtime running for this world — click to disable'
-                  : 'Script runtime disabled for this world — click to enable'
-              }
+              title={runtimeOn ? t('scripts.runtimeOnTitle') : t('scripts.runtimeOffTitle')}
               onClick={() =>
                 useCardScriptsStore.getState().setEnabled(profileId, activeCardId, !runtimeOn)
               }
             >
-              {runtimeOn ? 'Runtime On' : 'Runtime Off'}
+              {runtimeOn ? t('scripts.runtimeOn') : t('scripts.runtimeOff')}
             </button>
           )}
           {activeCardId && (
             <button className="btn-ghost" onClick={() => setEditCard(true)}>
-              Card scripts
+              {t('scripts.cardScripts')}
             </button>
           )}
         </div>
       </div>
       <div className="panel-body">
         <div style={{ fontSize: '0.8em', color: 'var(--rpt-text-secondary)', marginBottom: 10 }}>
-          Sandboxed JavaScript that runs in the right-panel <b>⚙ Card Scripts</b> while a session is
-          open (vars/chat/generate/ui via the <code>rpt</code> API). Scope a script to <b>Global</b>
-          , <b>World</b> (this card) or <b>Session</b> (this chat). Pull a remote library by adding{' '}
-          <code>{'// @import https://…'}</code> at the top — fetched once with your permission.
+          {t('scripts.help')}
         </div>
 
-        {SCOPES.map(({ key, title, hint }) => {
+        {SCOPES.map(({ key, titleKey, hintKey }) => {
           const inScope = scripts.filter((s) => s.scope === key)
           const cardOnesHere = key === 'world' ? cardScripts : []
           return (
             <ScopeSection
               key={key}
-              title={title}
-              hint={hint}
+              title={t(titleKey)}
+              hint={t(hintKey)}
               count={inScope.length + cardOnesHere.length}
               defaultOpen={key !== 'session'}
               action={(() => {
@@ -206,20 +211,20 @@ export const ScriptsPanel: React.FC<Props> = ({
                     title={
                       blocked
                         ? key === 'world'
-                          ? 'Select a world first'
-                          : 'Open a session first'
-                        : `Add a ${title.toLowerCase()} script`
+                          ? t('scripts.selectWorldFirst')
+                          : t('scripts.openSessionFirst')
+                        : t('scripts.addScopedScript', { scope: t(titleKey) })
                     }
                     onClick={() => addScript(key)}
                   >
-                    + add
+                    {t('scripts.addBtn')}
                   </button>
                 )
               })()}
             >
               {inScope.length === 0 && cardOnesHere.length === 0 ? (
                 <div style={{ opacity: 0.55, fontStyle: 'italic', padding: '4px 2px' }}>
-                  No {title.toLowerCase()} scripts yet.
+                  {t('scripts.noneInScope')}
                 </div>
               ) : (
                 <>
@@ -231,18 +236,15 @@ export const ScriptsPanel: React.FC<Props> = ({
                     >
                       <div className="prompt-row-head">
                         <span className="prompt-name" style={{ opacity: 0.85 }}>
-                          {cs.name || 'Untitled'}
+                          {cs.name || t('common.untitled')}
                         </span>
-                        <span
-                          className="entry-keys-preview"
-                          title="Embedded in the card; edit via “Card scripts”"
-                        >
-                          on card
+                        <span className="entry-keys-preview" title={t('scripts.embedded')}>
+                          {t('scripts.onCard')}
                         </span>
                         <div className="prompt-actions">
                           <button
                             className="btn-ghost"
-                            title="Edit on card"
+                            title={t('scripts.editOnCard')}
                             onClick={() => setEditCard(true)}
                           >
                             ✎
@@ -270,7 +272,10 @@ export const ScriptsPanel: React.FC<Props> = ({
       )}
 
       {editCard && activeCardId && (
-        <Modal title={`Card Scripts — ${activeCardName || ''}`} onClose={() => setEditCard(false)}>
+        <Modal
+          title={t('scripts.cardScriptsTitle', { name: activeCardName || '' })}
+          onClose={() => setEditCard(false)}
+        >
           <ScriptManager
             profileId={profileId}
             characterId={activeCardId}
@@ -290,40 +295,37 @@ const ScriptEditor: React.FC<{
 }> = ({ script, onClose, onSave }) => {
   const [name, setName] = useState(script.name)
   const [code, setCode] = useState(script.code)
+  const t = useT()
   return (
     <Modal
-      title={`Edit Script — ${script.name}`}
+      title={t('scripts.editScriptTitle', { name: script.name })}
       onClose={onClose}
       headerActions={
         <button
           className="btn-accent"
           onClick={() => onSave({ name: name.trim() || 'script', code })}
         >
-          Save
+          {t('common.save')}
         </button>
       }
     >
-      <label className="field-label">Name</label>
+      <label className="field-label">{t('common.name')}</label>
       <input
         value={name}
         onChange={(e) => setName(e.target.value)}
-        placeholder="e.g. stats-panel"
+        placeholder={t('scripts.namePh')}
       />
 
-      <label className="field-label">Code (JavaScript)</label>
+      <label className="field-label">{t('scripts.code')}</label>
       <textarea
         className="script-code"
         spellCheck={false}
         value={code}
         onChange={(e) => setCode(e.target.value)}
-        placeholder={
-          '// @import https://cdn.jsdelivr.net/…/bundle.js\nrpt.on("ready", () => { … })'
-        }
+        placeholder={t('scripts.codePh')}
       />
       <div style={{ fontSize: '0.78em', color: 'var(--rpt-text-secondary)', marginTop: 6 }}>
-        Add <code>{'// @import https://…'}</code> (or <code>import &quot;https://…&quot;</code>) on
-        its own line to load a remote JS library. Remote code is fetched in the main process
-        (cached) only after you allow it for this world.
+        {t('scripts.codeHelp')}
       </div>
     </Modal>
   )
