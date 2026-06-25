@@ -16,8 +16,10 @@ function mockHost(over: Partial<Host> = {}): { host: Host; calls: any } {
     bindWorldbook: [],
     setGlobalVar: [],
     replaceRegexes: [],
-    setScriptVars: []
+    setScriptVars: [],
+    setButtons: []
   }
+  let hostCb: ((name: string, payload?: any) => void) | null = null
   const wbLib = [
     { id: 'wb1', name: 'Lore A' },
     { id: 'own', name: 'Ellia' }
@@ -110,19 +112,32 @@ function mockHost(over: Partial<Host> = {}): { host: Host; calls: any } {
       scriptVars = v
       calls.setScriptVars.push(v)
     },
+    setButtons: (b: any) => {
+      calls.setButtons.push(b)
+    },
     onVarsChanged: (cb) => {
       varsCb = cb
       return () => {
         varsCb = null
       }
     },
-    onHostEvent: () => () => {},
+    onHostEvent: (cb) => {
+      hostCb = cb
+      return () => {
+        hostCb = null
+      }
+    },
     evalTemplate: (t) => 'ejs:' + t,
     evalTemplateError: () => null,
     prepareContext: (d) => ({ vars: d || {}, enabled: true }),
     ...over
   }
-  return { host, calls, fireVars: (sd: any) => varsCb && varsCb(sd) } as any
+  return {
+    host,
+    calls,
+    fireVars: (sd: any) => varsCb && varsCb(sd),
+    fireHostEvent: (n: string, p?: any) => hostCb && hostCb(n, p)
+  } as any
 }
 
 describe('createThRuntime', () => {
@@ -291,6 +306,27 @@ describe('createThRuntime', () => {
     const id = g.getScriptId()
     expect(typeof id).toBe('string')
     expect(g.getScriptId()).toBe(id) // stable across calls
+  })
+
+  it('script buttons: replaceScriptButtons pushes visible buttons; a click event fires eventOn', () => {
+    const m: any = mockHost()
+    const g = createThRuntime(m.host)
+    // getButtonEvent is identity (button name == event name)
+    expect(g.getButtonEvent('命定创意工坊')).toBe('命定创意工坊')
+    // replaceScriptButtons stores all, but only the VISIBLE ones are pushed to the host (the toolbar)
+    g.replaceScriptButtons([
+      { name: '命定创意工坊', visible: true },
+      { name: 'hidden', visible: false }
+    ])
+    expect(g.getScriptButtons()).toHaveLength(2)
+    expect(m.calls.setButtons.at(-1)).toEqual([{ name: '命定创意工坊', visible: true }])
+    // a toolbar click arrives as a host event named after the button → the script's eventOn fires
+    let clicked = 0
+    g.eventOn(g.getButtonEvent('命定创意工坊'), () => {
+      clicked++
+    })
+    m.fireHostEvent('命定创意工坊')
+    expect(clicked).toBe(1)
   })
 
   it('errorCatched swallows throws and rejections', async () => {

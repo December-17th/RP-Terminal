@@ -66,6 +66,17 @@ export function createThRuntime(host: Host): ThGlobals {
   // constant is enough (cross-script isolation by id isn't modeled; matches the inline shim's behavior).
   const scriptId = 'rpt_script_' + Math.random().toString(36).slice(2, 10)
 
+  // Script action buttons (TH replaceScriptButtons/getScriptButtons): the host renders the visible ones in
+  // the menu above the input; a click comes back as a host event named getButtonEvent(name) (= the raw
+  // name) → the script's eventOn(getButtonEvent(name)) fires. The button name IS the event name (identity),
+  // consistent with the legacy inline `withButtons` baking.
+  let scriptButtons: { name: string; visible: boolean }[] = []
+  const normButtons = (b: any): { name: string; visible: boolean }[] =>
+    (Array.isArray(b) ? b : [])
+      .filter((x) => x && x.name != null)
+      .map((x) => ({ name: String(x.name), visible: x.visible !== false }))
+  const pushButtons = (): void => host.setButtons(scriptButtons.filter((b) => b.visible))
+
   const writeVars = (ops: VarOp[]): Promise<void> =>
     ops.length ? host.applyVariableOps(ops) : Promise.resolve()
 
@@ -204,6 +215,25 @@ export function createThRuntime(host: Host): ThGlobals {
       opt && opt.type === 'script' ? host.getScriptVars() : { stat_data: stat },
     getScriptId: () => scriptId,
     getCurrentCharacterName: () => host.charData()?.name ?? '',
+    // Button name == event name (identity) — TH cards subscribe via eventOn(getButtonEvent(name), …).
+    getButtonEvent: (name: any) => String(name == null ? '' : name),
+    getScriptButtons: () => scriptButtons,
+    replaceScriptButtons: (b: any) => {
+      scriptButtons = normButtons(b)
+      pushButtons()
+      return scriptButtons
+    },
+    appendInexistentScriptButtons: (b: any) => {
+      const have = new Set(scriptButtons.map((x) => x.name))
+      for (const x of normButtons(b)) if (!have.has(x.name)) scriptButtons.push(x)
+      pushButtons()
+      return scriptButtons
+    },
+    updateScriptButtonsWith: (updater: any) => {
+      if (typeof updater === 'function') scriptButtons = normButtons(updater(scriptButtons))
+      pushButtons()
+      return scriptButtons
+    },
     getChatMessages: () => floorsToThMessages(host.floors()),
     getCurrentMessageId: () => currentMessageId(host.floors()),
     getTavernHelperVersion: () => '4.3.17',

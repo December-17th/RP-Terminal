@@ -86,6 +86,10 @@ interface Slot {
   characterId: string
   /** The inline card document served to this slot via rpt-card://card/<id> (when loaded from a data: URL). */
   html?: string
+  /** Last renderer-reported rect (the panel placement) — the rect to restore to when a modal closes. */
+  lastBounds?: Bounds
+  /** True while this WCV is expanded to a full-window modal (a card script opened an overlay). */
+  modal?: boolean
 }
 
 let mainWindow: BrowserWindow | null = null
@@ -163,7 +167,44 @@ export const ensure = (
 }
 
 export const setBounds = (id: string, bounds: Bounds): void => {
-  slots.get(id)?.view.setBounds(round(bounds))
+  const slot = slots.get(id)
+  if (!slot) return
+  slot.lastBounds = round(bounds)
+  // While a modal overlay is open the WCV fills the window; ignore the renderer's panel-rect updates so
+  // they don't shrink it back mid-modal (we restore to lastBounds when the overlay closes).
+  if (!slot.modal) slot.view.setBounds(slot.lastBounds)
+}
+
+// The main window's content rect (0,0 → content size) — a full-window modal fills this.
+const contentRect = (): Bounds => {
+  const [w, h] = mainWindow?.getContentSize() ?? [0, 0]
+  return { x: 0, y: 0, width: w, height: h }
+}
+
+/**
+ * Expand a card-script WCV to a full-window modal (a card opened an `inset:0` overlay) or restore it to its
+ * last panel rect. On open we also re-add the view so it paints ON TOP of any sibling panel WCVs.
+ */
+export const setModal = (id: string, on: boolean): void => {
+  const slot = slots.get(id)
+  if (!slot) return
+  slot.modal = on
+  if (on) {
+    mainWindow?.contentView.addChildView(slot.view) // re-add → move to top of the z-order
+    slot.view.setBounds(contentRect())
+  } else {
+    slot.view.setBounds(slot.lastBounds ?? contentRect())
+  }
+}
+
+/** Push a card script's action buttons to the renderer toolbar (the menu above the input). */
+export const pushCardButtons = (
+  slotId: string,
+  chatId: string,
+  characterId: string,
+  buttons: { name: string; visible: boolean }[]
+): void => {
+  mainWindow?.webContents.send('wcv-card-buttons', { slotId, chatId, characterId, buttons })
 }
 
 /** Hide without destroying (e.g. while a modal is open over it, or its tab is hidden). */

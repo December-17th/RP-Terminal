@@ -61,6 +61,9 @@ export interface Host {
   currentChatId(): string
   // Script-scope variables (TH getVariables({type:'script'}) ) — a card-owned KV store, NOT stat_data.
   getScriptVars(): Record<string, any>
+  // Render the script's action buttons (replaceScriptButtons) — the host shows the visible ones in the
+  // menu above the input; a click is delivered back as a host event named after the button.
+  setButtons(buttons: { name: string; visible: boolean }[]): void
   // --- ASYNC ops ---
   applyVariableOps(ops: VarOp[]): Promise<void>
   setVariables(statData: any): Promise<void>

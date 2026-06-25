@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useWorkspaceStore } from '../stores/workspaceStore'
 import { useCardScriptsStore } from '../stores/cardScriptsStore'
+import { useToolbarStore } from '../stores/toolbarStore'
 
 /**
  * Card-script runtime (Phase 2) — the WCV transport. Runs the card's merged runtime scripts
@@ -151,6 +152,39 @@ export function CardScriptWcvHost({
     const r = el.getBoundingClientRect()
     window.api.wcvSetBounds(slotId, { x: r.left, y: r.top, width: r.width, height: r.height })
   }, [layouts, slotId, needsConsent])
+
+  // Card scripts (replaceScriptButtons) → the menu above the input. Each button posts back to this WCV on
+  // click (the script's eventOn(getButtonEvent(name)) fires). Scoped to OUR slot; cleared on unmount.
+  useEffect(() => {
+    const btnKeys = new Set<string>()
+    const off = window.api.onWcvCardButtons((p) => {
+      if (p.slotId !== slotId) return
+      const next = new Set<string>()
+      for (const b of p.buttons || []) {
+        if (!b || !b.name) continue
+        const key = `card:${cardId}::${b.name}`
+        next.add(key)
+        btnKeys.add(key)
+        useToolbarStore.getState().add({
+          key,
+          label: b.name,
+          onClick: () => window.api.wcvButtonClick(chatId, b.name)
+        })
+      }
+      // Drop buttons this card previously registered but no longer declares.
+      for (const key of [...btnKeys]) {
+        if (!next.has(key)) {
+          useToolbarStore.getState().remove(key)
+          btnKeys.delete(key)
+        }
+      }
+    })
+    return () => {
+      off()
+      for (const key of btnKeys) useToolbarStore.getState().remove(key)
+      btnKeys.clear()
+    }
+  }, [slotId, cardId, chatId])
 
   if (!enabled || !grantsLoaded) return null
   if (scripts && scripts.length === 0) return null

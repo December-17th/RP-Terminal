@@ -84,6 +84,7 @@ export function createWcvHost(deps: Deps): Host {
     replaceRegexes: (regexes, option) =>
       ipcRenderer.invoke('wcv-host-replace-regexes', regexes, option),
     setScriptVars: (vars) => ipcRenderer.invoke('wcv-host-script-vars-set', vars),
+    setButtons: (buttons) => ipcRenderer.send('wcv-register-button', buttons),
     setVariables: (sd: any) => ipcRenderer.invoke('wcv-host-set-vars', sd),
     generate: (input: string) => ipcRenderer.invoke('wcv-host-generate', input),
     generateRaw: (cfg) => ipcRenderer.invoke('wcv-host-generate-raw', cfg),

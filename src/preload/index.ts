@@ -38,6 +38,22 @@ const api = {
   wcvSetBounds: (id: string, bounds: unknown) => ipcRenderer.send('wcv-set-bounds', id, bounds),
   wcvSetVisible: (id: string, visible: boolean) => ipcRenderer.send('wcv-set-visible', id, visible),
   wcvDestroy: (id: string) => ipcRenderer.send('wcv-destroy', id),
+  // A card-script toolbar button was clicked → deliver it to the chat's card WCVs (the script's eventOn).
+  wcvButtonClick: (chatId: string, name: string) =>
+    ipcRenderer.send('wcv-button-click', chatId, name),
+  // Card scripts (replaceScriptButtons) → the renderer toolbar feed.
+  onWcvCardButtons: (
+    cb: (p: {
+      slotId: string
+      chatId: string
+      characterId: string
+      buttons: { name: string; visible: boolean }[]
+    }) => void
+  ) => {
+    const l = (_e: unknown, p: any): void => cb(p)
+    ipcRenderer.on('wcv-card-buttons', l)
+    return () => ipcRenderer.removeListener('wcv-card-buttons', l)
+  },
   wcvBroadcastVars: (chatId: string, statData: unknown) =>
     ipcRenderer.send('wcv-broadcast-vars', chatId, statData),
   wcvBroadcastEvent: (chatId: string, name: string, payload: unknown) =>

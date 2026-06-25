@@ -98,6 +98,33 @@ export const registerWcvIpc = (ipcMain: IpcMain): void => {
     const ctx = wcvManager.contextFor(e.sender.id)
     log('error', `wcv card-script${ctx ? ` [${ctx.slotId}]` : ''}`, String(msg))
   })
+  // A card script (replaceScriptButtons) declared its action buttons → push them to the renderer toolbar.
+  ipcMain.on('wcv-register-button', (e, buttons) => {
+    const ctx = wcvManager.contextFor(e.sender.id)
+    if (ctx) {
+      const list = Array.isArray(buttons) ? buttons : []
+      wcvManager.pushCardButtons(ctx.slotId, ctx.chatId, ctx.characterId, list)
+      log(
+        'info',
+        'wcv card buttons',
+        list
+          .map((b: any) => b && b.name)
+          .filter(Boolean)
+          .join(', ') || '(none)'
+      )
+    }
+  })
+  // The user clicked a card-script button in the toolbar → deliver it as the button-named event to the
+  // chat's card WCVs (the script's eventOn(getButtonEvent(name)) fires).
+  ipcMain.on('wcv-button-click', (_e, chatId, name) => {
+    wcvManager.notifyEvent(String(chatId), String(name), undefined)
+  })
+  // A card script's overlay opened/closed (a full-screen inset:0 element appeared/left) → expand the
+  // card-script WCV to a full-window modal, or restore it to its panel rect.
+  ipcMain.on('wcv-overlay', (e, has) => {
+    const ctx = wcvManager.contextFor(e.sender.id)
+    if (ctx) wcvManager.setModal(ctx.slotId, !!has)
+  })
   // Inline card → host: content height (auto-size the message slot) and wheel deltas (scroll the
   // message list past the overlay). Resolve the slot from the sender so only that frame reacts.
   ipcMain.on('wcv-content-size', (e, size) => {

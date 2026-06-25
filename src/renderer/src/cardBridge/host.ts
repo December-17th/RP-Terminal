@@ -137,6 +137,8 @@ export function createInlineHost(ctx: CardCtx): Host {
     replaceRegexes: async () => {
       console.warn('[inline host] replaceTavernRegexes is a WCV-transport capability; ignored inline')
     },
+    // Script action buttons are a card-scripts (WCV) feature; inline MESSAGE cards don't register them.
+    setButtons: () => {},
     setScriptVars: async (vars: Record<string, any>) => {
       const owner = scriptVarOwner()
       const next = vars || {}

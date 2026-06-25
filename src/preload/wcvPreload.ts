@@ -68,6 +68,58 @@ window.addEventListener('unhandledrejection', (e: any) => {
   reportCardError('unhandledrejection: ' + ((r && r.message) || r))
 })
 
+// --- Card-script modal detection (card-scripts host only) ---
+// A button-launched card UI (e.g. the 创意工坊 workshop) appends a full-screen `position:fixed; inset:0`
+// overlay to the body. The card-scripts WCV is normally a small/background slot, so we watch for such an
+// overlay and tell main to expand this WCV to a full-window modal (and shrink back when it's removed).
+// Scoped to the card-scripts host by URL so status/panel WCVs (which legitimately fill their slot) aren't
+// resized. The host doc is served from rpt-card://card/card-scripts:<…>.
+if (typeof location !== 'undefined' && /card-scripts/i.test(location.href)) {
+  let lastOverlay = false
+  const hasModalOverlay = (): boolean => {
+    const body = document.body
+    if (!body) return false
+    const vw = window.innerWidth
+    const vh = window.innerHeight
+    for (const el of Array.from(body.querySelectorAll<HTMLElement>('*'))) {
+      const s = getComputedStyle(el)
+      if (s.position !== 'fixed' && s.position !== 'absolute') continue
+      if (s.display === 'none' || s.visibility === 'hidden' || s.opacity === '0') continue
+      const r = el.getBoundingClientRect()
+      // A near-full-viewport fixed/absolute element ⇒ a modal overlay (the workshop uses inset:0).
+      if (r.width >= vw * 0.6 && r.height >= vh * 0.6) return true
+    }
+    return false
+  }
+  const checkOverlay = (): void => {
+    const has = hasModalOverlay()
+    if (has !== lastOverlay) {
+      lastOverlay = has
+      try {
+        ipcRenderer.send('wcv-overlay', has)
+      } catch {
+        /* ignore */
+      }
+    }
+  }
+  const startOverlayWatch = (): void => {
+    try {
+      new MutationObserver(checkOverlay).observe(document.documentElement, {
+        childList: true,
+        subtree: true,
+        attributes: true,
+        attributeFilter: ['style', 'class', 'hidden']
+      })
+    } catch {
+      /* ignore */
+    }
+    checkOverlay()
+  }
+  if (document.readyState === 'loading')
+    window.addEventListener('DOMContentLoaded', startOverlayWatch)
+  else startOverlayWatch()
+}
+
 // --- inline-card layout bridge ---
 // A WebContentsView is a native overlay: it has a fixed slot height and swallows wheel events. Report
 // the card's real content height so the host can size its message slot to fit (no inner scrollbar), and
