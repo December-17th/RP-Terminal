@@ -225,8 +225,15 @@ Gate behind the same trusted-card consent that already guards remote card code (
 4. **Modal presentation** (4d) — hidden full-window WCV toggled by the button. → **`创意工坊` opens and can
    read/diff/write.**
 5. **OAuth window-open** (4f) — completes cloud login.
-6. **Declarative `surface` schema** (4b) + **delete the hardcoded `wcv-*` views** (`viewRegistry.tsx:84`,
-   `WcvPanel.tsx`) — fold status/home/start into the registry.
+6. **Declarative `surface` schema** (4b), then **retire the hardcoded `wcv-*` views** (`viewRegistry.tsx:84`,
+   `WcvPanel.tsx`) — replace, don't remove. The status/home/creation UIs do NOT depend on these
+   entries: the card delivers them via its own regex (`status/home/custom_start` are injected by regex
+   #5 状态栏 / #6 首页 / #7 自定义开局, `placement:[2]`), which RP Terminal already renders through the
+   card-agnostic inline path (`WcvMessageFrame` isolated / `InlineCardFrame`). The hardcoded entries are a
+   spike shortcut (manual dropdown → "Run card UI" → load the status page in a docked panel), not the card's
+   delivery mechanism. Delete them only once (a) the regex→inline path covers the in-message UIs and (b) any
+   wanted DOCKED panel is reproduced by a card-declared `surface` (seed this card's three surfaces on import
+   if a persistent docked panel is desired).
 
 After step 4 the button works for download/sync; 5 adds cloud login; 6 removes the hardcoding so every card
 gets the same door.
