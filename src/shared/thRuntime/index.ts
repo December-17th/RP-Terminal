@@ -62,6 +62,10 @@ export function createThRuntime(host: Host): ThGlobals {
   })
   const offHost = host.onHostEvent((name, payload) => emit(name, payload))
 
+  // Stable per-runtime script id (TH getScriptId) — our card scripts share one frame, so a per-frame
+  // constant is enough (cross-script isolation by id isn't modeled; matches the inline shim's behavior).
+  const scriptId = 'rpt_script_' + Math.random().toString(36).slice(2, 10)
+
   const writeVars = (ops: VarOp[]): Promise<void> =>
     ops.length ? host.applyVariableOps(ops) : Promise.resolve()
 
@@ -195,7 +199,11 @@ export function createThRuntime(host: Host): ThGlobals {
   // --- TavernHelper helpers (bare + namespaced) ---
   const helpers: Record<string, any> = {
     // SYNC getters
-    getVariables: () => ({ stat_data: stat }),
+    // type:'script' ⇒ the card's own KV store (NOT stat_data); any other scope ⇒ the message vars.
+    getVariables: (opt?: any) =>
+      opt && opt.type === 'script' ? host.getScriptVars() : { stat_data: stat },
+    getScriptId: () => scriptId,
+    getCurrentCharacterName: () => host.charData()?.name ?? '',
     getChatMessages: () => floorsToThMessages(host.floors()),
     getCurrentMessageId: () => currentMessageId(host.floors()),
     getTavernHelperVersion: () => '4.3.17',
@@ -212,7 +220,8 @@ export function createThRuntime(host: Host): ThGlobals {
       const r = host.worldbookNames()
       return [r.primary, ...(r.additional || [])].filter(Boolean)
     },
-    getTavernRegexes: () => host.regexes(),
+    getTavernRegexes: (option?: any) => host.regexesFull(option),
+    isCharacterTavernRegexesEnabled: () => host.isCharacterRegexesEnabled(),
     formatAsTavernRegexedString: (t: any) => (typeof t === 'string' ? host.formatRegex(t) : t),
     // EVENTS
     eventOn: on,
@@ -243,12 +252,21 @@ export function createThRuntime(host: Host): ThGlobals {
       stat = clone(next) || {}
       await writeVars(ops)
     },
-    updateVariablesWith: async (updater: any) => {
+    updateVariablesWith: async (updater: any, opt?: any) => {
       if (typeof updater !== 'function') return
+      // type:'script' ⇒ read-modify-write the card's own KV (the updater returns the FULL object), keeping
+      // it out of stat_data — e.g. the workshop caches its cloud project under a script var.
+      if (opt && opt.type === 'script') {
+        const cur = clone(host.getScriptVars()) || {}
+        const next = (await updater(cur)) || cur
+        await host.setScriptVars(next)
+        return next
+      }
       const next = updater(clone(stat))
       const ops = replaceStatDataOps(stat, next)
       stat = clone(next) || {}
       await writeVars(ops)
+      return next
     },
     generate: async (a: any) => {
       const input = typeof a === 'string' ? a : (a?.user_input ?? a?.userInput ?? a?.text ?? '')
@@ -295,7 +313,15 @@ export function createThRuntime(host: Host): ThGlobals {
       return ''
     },
     triggerSlash: (c: any) => runTriggerSlash(String(c ?? '')),
-    replaceTavernRegexes: async () => undefined
+    replaceTavernRegexes: async (regexes: any, option?: any) =>
+      host.replaceRegexes(Array.isArray(regexes) ? regexes : [], option),
+    updateTavernRegexesWith: async (updater: any, option?: any) => {
+      const cur = host.regexesFull(option)
+      if (typeof updater !== 'function') return cur
+      const next = await updater(cur)
+      await host.replaceRegexes(Array.isArray(next) ? next : cur, option)
+      return Array.isArray(next) ? next : cur
+    }
   }
 
   // --- Mvu ---
@@ -352,6 +378,7 @@ export function createThRuntime(host: Host): ThGlobals {
     chat: stChat(),
     getContext,
     substituteParams: substMacros,
+    getCurrentChatId: () => host.currentChatId(),
     saveChat: async () => host.saveChat(SillyTavern.chat),
     reloadCurrentChat: async () => host.reloadChat()
   }

@@ -14,13 +14,31 @@ function mockHost(over: Partial<Host> = {}): { host: Host; calls: any } {
     deleteWorldbook: [],
     saveWorldbookById: [],
     bindWorldbook: [],
-    setGlobalVar: []
+    setGlobalVar: [],
+    replaceRegexes: [],
+    setScriptVars: []
   }
   const wbLib = [
     { id: 'wb1', name: 'Lore A' },
     { id: 'own', name: 'Ellia' }
   ]
   const globals: Record<string, any> = { coins: 7 }
+  let scriptVars: Record<string, any> = { existing: 1 }
+  let regexFull: any[] = [
+    {
+      id: 'rx1',
+      script_name: 'R',
+      enabled: true,
+      find_regex: '/a/g',
+      replace_string: 'b',
+      trim_strings: [],
+      source: { user_input: false, ai_output: true, slash_command: false, world_info: false },
+      destination: { display: true, prompt: false },
+      run_on_edit: false,
+      min_depth: null,
+      max_depth: null
+    }
+  ]
   let varsCb: ((sd: any) => void) | null = null
   const host: Host = {
     ctx: { profileId: 'p', chatId: 'c', characterId: 'ch' },
@@ -32,8 +50,12 @@ function mockHost(over: Partial<Host> = {}): { host: Host; calls: any } {
     presetNames: () => ['P'],
     worldbookNames: () => ({ primary: 'Ellia', additional: [] }),
     regexes: () => [{ find: 'a', replace: 'b' }],
+    regexesFull: () => regexFull,
+    isCharacterRegexesEnabled: () => true,
     formatRegex: (t) => t.toUpperCase(),
     personaName: () => 'Player',
+    currentChatId: () => 'c',
+    getScriptVars: () => scriptVars,
     applyVariableOps: async (ops) => {
       calls.applyVariableOps.push(ops)
     },
@@ -79,6 +101,14 @@ function mockHost(over: Partial<Host> = {}): { host: Host; calls: any } {
     setGlobalVar: async (key: string, value: any) => {
       globals[key] = value
       calls.setGlobalVar.push([key, value])
+    },
+    replaceRegexes: async (regexes: any[], option?: any) => {
+      regexFull = regexes
+      calls.replaceRegexes.push([regexes, option])
+    },
+    setScriptVars: async (v: Record<string, any>) => {
+      scriptVars = v
+      calls.setScriptVars.push(v)
     },
     onVarsChanged: (cb) => {
       varsCb = cb
@@ -212,6 +242,55 @@ describe('createThRuntime', () => {
     expect(await g.triggerSlash('/getglobalvar key=coins')).toBe('7')
     await g.triggerSlash('/setglobalvar key=coins 12')
     expect(m.calls.setGlobalVar).toContainEqual(['coins', 12])
+  })
+
+  it('script-scope vars use the KV store, not stat_data', async () => {
+    const m: any = mockHost()
+    const g = createThRuntime(m.host)
+    // read: type:'script' returns the KV; no arg returns the message vars
+    expect(g.getVariables({ type: 'script' })).toEqual({ existing: 1 })
+    expect(g.getVariables()).toEqual({ stat_data: { hp: 1 } })
+    // write: updateVariablesWith({type:'script'}) persists via setScriptVars and does NOT touch stat_data
+    const next = await g.updateVariablesWith(
+      (t: any) => {
+        t.cache = { a: 1 }
+        return t
+      },
+      { type: 'script' }
+    )
+    expect(next).toEqual({ existing: 1, cache: { a: 1 } })
+    expect(m.calls.setScriptVars[0]).toEqual({ existing: 1, cache: { a: 1 } })
+    expect(m.calls.applyVariableOps).toEqual([]) // stat_data untouched
+    expect(g.getVariables({ type: 'script' })).toEqual({ existing: 1, cache: { a: 1 } })
+  })
+
+  it('regex: getTavernRegexes reads the host; update/replace write through host.replaceRegexes', async () => {
+    const m: any = mockHost()
+    const g = createThRuntime(m.host)
+    expect(g.getTavernRegexes({ type: 'character' })[0].script_name).toBe('R')
+    expect(g.isCharacterTavernRegexesEnabled()).toBe(true)
+    // updateTavernRegexesWith: the updater's returned list is written for that option
+    const added = { id: 'rx2', script_name: 'New', find_regex: '/x/g', replace_string: 'y' }
+    const out = await g.updateTavernRegexesWith(
+      (list: any[]) => [...list, added],
+      { type: 'character' }
+    )
+    expect(out).toHaveLength(2)
+    expect(m.calls.replaceRegexes[0][0]).toHaveLength(2)
+    expect(m.calls.replaceRegexes[0][1]).toEqual({ type: 'character' })
+    // replaceTavernRegexes writes directly
+    await g.replaceTavernRegexes([added], { type: 'global' })
+    expect(m.calls.replaceRegexes[1]).toEqual([[added], { type: 'global' }])
+  })
+
+  it('exposes getScriptId (stable), getCurrentCharacterName, SillyTavern.getCurrentChatId', () => {
+    const { host } = mockHost()
+    const g = createThRuntime(host)
+    expect(g.getCurrentCharacterName()).toBe('Ellia')
+    expect(g.SillyTavern.getCurrentChatId()).toBe('c')
+    const id = g.getScriptId()
+    expect(typeof id).toBe('string')
+    expect(g.getScriptId()).toBe(id) // stable across calls
   })
 
   it('errorCatched swallows throws and rejections', async () => {
