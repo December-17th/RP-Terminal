@@ -1,5 +1,6 @@
 import React, { useEffect } from 'react'
 import { usePluginsStore, InstalledPlugin } from '../stores/pluginsStore'
+import { useT } from '../i18n'
 
 /** Permissions that require explicit approval (mirrors the host's set). */
 const SENSITIVE = ['generate', 'chat:write', 'net', 'slash']
@@ -12,6 +13,7 @@ const SENSITIVE = ['generate', 'chat:write', 'net', 'slash']
 export const PluginsPanel: React.FC<{ profileId: string }> = ({ profileId }) => {
   const { plugins, load, install, installZip, uninstall, setEnabled, scaffoldExample } =
     usePluginsStore()
+  const t = useT()
 
   useEffect(() => {
     load(profileId)
@@ -25,16 +27,21 @@ export const PluginsPanel: React.FC<{ profileId: string }> = ({ profileId }) => 
     const perms = p.manifest.permissions
     const sensitive = perms.filter((x) => SENSITIVE.includes(x))
     const lines = perms.length
-      ? 'It requests:\n' + perms.map((x) => '  • ' + x).join('\n')
-      : 'It requests no special permissions.'
-    const warn = sensitive.length ? `\n\n⚠ Sensitive: ${sensitive.join(', ')}` : ''
-    if (!window.confirm(`Enable "${p.manifest.name}"?\n\n${lines}${warn}`)) return
+      ? t('plugins.itRequests') + perms.map((x) => '  • ' + x).join('\n')
+      : t('plugins.noSpecialPerms')
+    const warn = sensitive.length
+      ? '\n\n' + t('plugins.sensitive', { perms: sensitive.join(', ') })
+      : ''
+    if (
+      !window.confirm(t('plugins.confirmEnable', { name: p.manifest.name }) + `\n\n${lines}${warn}`)
+    )
+      return
     // Approving grants exactly the requested permissions.
     await setEnabled(profileId, p.id, true, perms)
   }
 
   const remove = async (p: InstalledPlugin): Promise<void> => {
-    if (window.confirm(`Uninstall "${p.manifest.name}"? This deletes its files.`)) {
+    if (window.confirm(t('plugins.confirmUninstall', { name: p.manifest.name }))) {
       await uninstall(profileId, p.id)
     }
   }
@@ -42,29 +49,27 @@ export const PluginsPanel: React.FC<{ profileId: string }> = ({ profileId }) => 
   return (
     <div className="panel">
       <div className="panel-header">
-        <h3>Plugins</h3>
+        <h3>{t('plugins.heading')}</h3>
         <div className="panel-header-actions">
-          <button onClick={() => install(profileId)} title="Install from a plugin folder">
-            Folder…
+          <button onClick={() => install(profileId)} title={t('plugins.installFolderTitle')}>
+            {t('plugins.folder')}
           </button>
-          <button onClick={() => installZip(profileId)} title="Install from a .zip">
-            .zip…
+          <button onClick={() => installZip(profileId)} title={t('plugins.installZipTitle')}>
+            {t('plugins.zip')}
           </button>
           <button className="btn-ghost" onClick={() => scaffoldExample(profileId)}>
-            + Example
+            {t('plugins.addExample')}
           </button>
         </div>
       </div>
       <div className="panel-body">
         <div style={{ fontSize: '0.78em', color: 'var(--rpt-text-secondary)', marginBottom: 10 }}>
-          Standalone plugins run app-wide in a sandbox. Install from a folder or a <code>.zip</code>{' '}
-          containing a <code>manifest.json</code>, or add the bundled example. Network access is off
-          unless a plugin declares (and you approve) it. See <code>docs/plugin-api.md</code>.
+          {t('plugins.help')}
         </div>
 
         {plugins.length === 0 ? (
           <div style={{ opacity: 0.6, fontStyle: 'italic', padding: '20px 0' }}>
-            No plugins installed. Use “Folder…”, “.zip…”, or “+ Example”.
+            {t('plugins.empty')}
           </div>
         ) : (
           plugins.map((p) => (
@@ -87,6 +92,7 @@ const PluginRow: React.FC<{
   onRemove: () => void
 }> = ({ plugin, onToggle, onRemove }) => {
   const m = plugin.manifest
+  const t = useT()
   return (
     <div className={`entry-card ${plugin.enabled ? '' : 'disabled'}`}>
       <div className="entry-head">
@@ -102,9 +108,9 @@ const PluginRow: React.FC<{
           disabled={!!plugin.error}
           onClick={onToggle}
         >
-          {plugin.enabled ? 'On' : 'Off'}
+          {plugin.enabled ? t('plugins.on') : t('plugins.off')}
         </button>
-        <button className="btn-ghost danger" onClick={onRemove} title="Uninstall">
+        <button className="btn-ghost danger" onClick={onRemove} title={t('common.uninstall')}>
           🗑
         </button>
       </div>
@@ -117,7 +123,7 @@ const PluginRow: React.FC<{
         ) : (
           <div className="plugin-perms">
             {m.permissions.length === 0 ? (
-              <span className="perm-chip">no permissions</span>
+              <span className="perm-chip">{t('plugins.noPerms')}</span>
             ) : (
               m.permissions.map((perm) => (
                 <span

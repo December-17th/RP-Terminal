@@ -176,7 +176,60 @@ const en: Record<string, string> = {
   'lore.depthTitle': 'Messages up from the bottom of the chat. Blank = top (World Info block).',
   'lore.depth': 'Depth',
   'lore.probTitle': 'Chance this entry fires when matched (100 = always).',
-  'lore.prob': 'Prob %'
+  'lore.prob': 'Prob %',
+
+  'common.enabled': 'Enabled',
+  'common.edit': 'Edit',
+  'common.name': 'Name',
+  'common.content': 'Content',
+  'common.uninstall': 'Uninstall',
+
+  'preset.confirmDiscard': 'Discard unsaved changes to this preset?',
+  'preset.heading': 'Preset',
+  'preset.active': 'Active Preset',
+  'preset.noPresets': '(no presets)',
+  'preset.importST': 'Import ST',
+  'preset.confirmDelete': 'Delete this preset? This cannot be undone.',
+  'preset.empty': 'No preset selected. Create a new one or import a SillyTavern preset.',
+  'preset.name': 'Preset Name',
+  'preset.genParams': 'Generation Parameters',
+  'preset.promptManager': 'Prompt Manager',
+  'preset.promptOrder': '(top → bottom)',
+  'preset.addPrompt': '+ Prompt',
+  'preset.emptyPrompts': 'Empty preset — add prompt blocks, or just send chat history as-is.',
+  'preset.injectedAtDepth': 'Injected into chat history at this depth',
+  'preset.editPromptTitle': 'Edit Prompt — {{name}}',
+  'preset.dynamicNote':
+    'Dynamic block — content is injected automatically ({{marker}}). Toggle and reorder it in the list to control where it appears.',
+  'preset.role': 'Role',
+  'preset.contentPh': 'Prompt text. Supports {{char}} and {{user}}.',
+  'preset.injectionDepth': 'Injection Depth',
+  'preset.inlinePh': 'inline',
+  'preset.depthNote':
+    'Blank = inline, in preset order. A number injects this block into the chat history that many messages up from the bottom (like a depth lorebook entry).',
+  'preset.markerChar': 'Character',
+  'preset.markerExamples': 'Examples',
+  'preset.markerWorldInfo': 'World Info',
+  'preset.markerChatHistory': 'Chat History',
+  'preset.markerPostHistory': 'Post-History',
+
+  'plugins.heading': 'Plugins',
+  'plugins.installFolderTitle': 'Install from a plugin folder',
+  'plugins.folder': 'Folder…',
+  'plugins.installZipTitle': 'Install from a .zip',
+  'plugins.zip': '.zip…',
+  'plugins.addExample': '+ Example',
+  'plugins.help':
+    'Standalone plugins run app-wide in a sandbox. Install from a folder or a .zip containing a manifest.json, or add the bundled example. Network access is off unless a plugin declares (and you approve) it. See docs/plugin-api.md.',
+  'plugins.empty': 'No plugins installed. Use "Folder…", ".zip…", or "+ Example".',
+  'plugins.itRequests': 'It requests:\n',
+  'plugins.noSpecialPerms': 'It requests no special permissions.',
+  'plugins.sensitive': '⚠ Sensitive: {{perms}}',
+  'plugins.confirmEnable': 'Enable "{{name}}"?',
+  'plugins.confirmUninstall': 'Uninstall "{{name}}"? This deletes its files.',
+  'plugins.on': 'On',
+  'plugins.off': 'Off',
+  'plugins.noPerms': 'no permissions'
 }
 
 export default en

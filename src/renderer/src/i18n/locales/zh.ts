@@ -172,7 +172,60 @@ const zh: Record<string, string> = {
   'lore.depthTitle': '从聊天底部往上数的消息数。留空 = 置顶（世界信息块）。',
   'lore.depth': '深度',
   'lore.probTitle': '匹配时此条目触发的概率（100 = 始终）。',
-  'lore.prob': '概率 %'
+  'lore.prob': '概率 %',
+
+  'common.enabled': '已启用',
+  'common.edit': '编辑',
+  'common.name': '名称',
+  'common.content': '内容',
+  'common.uninstall': '卸载',
+
+  'preset.confirmDiscard': '放弃对此预设的未保存更改？',
+  'preset.heading': '预设',
+  'preset.active': '当前预设',
+  'preset.noPresets': '（无预设）',
+  'preset.importST': '导入 ST',
+  'preset.confirmDelete': '删除此预设？此操作无法撤销。',
+  'preset.empty': '未选择预设。新建一个或导入 SillyTavern 预设。',
+  'preset.name': '预设名称',
+  'preset.genParams': '生成参数',
+  'preset.promptManager': '提示词管理器',
+  'preset.promptOrder': '（从上到下）',
+  'preset.addPrompt': '+ 提示词',
+  'preset.emptyPrompts': '空预设 —— 添加提示词块，或直接按原样发送聊天记录。',
+  'preset.injectedAtDepth': '在此深度注入聊天记录',
+  'preset.editPromptTitle': '编辑提示词 —— {{name}}',
+  'preset.dynamicNote':
+    '动态块 —— 内容自动注入（{{marker}}）。在列表中切换启用与排序以控制其出现位置。',
+  'preset.role': '角色',
+  'preset.contentPh': '提示词文本。支持 {{char}} 与 {{user}}。',
+  'preset.injectionDepth': '注入深度',
+  'preset.inlinePh': '内联',
+  'preset.depthNote':
+    '留空 = 内联，按预设顺序。数字会将此块注入到聊天记录中，从底部往上数该数量的消息处（类似深度世界书条目）。',
+  'preset.markerChar': '角色描述',
+  'preset.markerExamples': '示例对话',
+  'preset.markerWorldInfo': '世界信息',
+  'preset.markerChatHistory': '聊天记录',
+  'preset.markerPostHistory': '历史后指令',
+
+  'plugins.heading': '插件',
+  'plugins.installFolderTitle': '从插件文件夹安装',
+  'plugins.folder': '文件夹…',
+  'plugins.installZipTitle': '从 .zip 安装',
+  'plugins.zip': '.zip…',
+  'plugins.addExample': '+ 示例',
+  'plugins.help':
+    '独立插件在沙箱中全局运行。可从文件夹或包含 manifest.json 的 .zip 安装，或添加内置示例。除非插件声明并经你批准，否则网络访问默认关闭。详见 docs/plugin-api.md。',
+  'plugins.empty': '未安装任何插件。使用「文件夹…」「.zip…」或「+ 示例」。',
+  'plugins.itRequests': '它请求：\n',
+  'plugins.noSpecialPerms': '它不请求任何特殊权限。',
+  'plugins.sensitive': '⚠ 敏感权限：{{perms}}',
+  'plugins.confirmEnable': '启用「{{name}}」？',
+  'plugins.confirmUninstall': '卸载「{{name}}」？这将删除其文件。',
+  'plugins.on': '开',
+  'plugins.off': '关',
+  'plugins.noPerms': '无权限'
 }
 
 export default zh
