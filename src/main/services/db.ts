@@ -73,6 +73,14 @@ CREATE TABLE IF NOT EXISTS rpg_entities (
   name TEXT,
   data TEXT NOT NULL DEFAULT '{}'
 );
+-- One active combat encounter per chat (combatService). The data column holds the
+-- serialized EncounterRecord (CombatState + ability catalog + card hook scripts);
+-- ephemeral, deleted when the fight ends. See docs/combat-system-design.md §7.
+CREATE TABLE IF NOT EXISTS combat_encounters (
+  chat_id TEXT PRIMARY KEY REFERENCES chats(id) ON DELETE CASCADE,
+  data TEXT NOT NULL,
+  updated_at TEXT
+);
 CREATE TABLE IF NOT EXISTS episodic_memory (
   id TEXT PRIMARY KEY,
   chat_id TEXT NOT NULL REFERENCES chats(id) ON DELETE CASCADE,

@@ -194,6 +194,21 @@ const api = {
     ipcRenderer.invoke('plugin-storage', profileId, owner, action),
   pluginNetFetch: (pluginId: string, url: string, opts: any) =>
     ipcRenderer.invoke('plugin-net-fetch', pluginId, url, opts),
+  // Local grid combat (Track Combat). One active encounter per chat.
+  combatStart: (profileId: string, chatId: string, setup: unknown) =>
+    ipcRenderer.invoke('combat-start', profileId, chatId, setup),
+  combatGet: (profileId: string, chatId: string) =>
+    ipcRenderer.invoke('combat-get', profileId, chatId),
+  combatAction: (profileId: string, chatId: string, action: unknown) =>
+    ipcRenderer.invoke('combat-action', profileId, chatId, action),
+  combatEndTurn: (profileId: string, chatId: string) =>
+    ipcRenderer.invoke('combat-end-turn', profileId, chatId),
+  combatEnemyTurn: (profileId: string, chatId: string) =>
+    ipcRenderer.invoke('combat-enemy-turn', profileId, chatId),
+  combatEnd: (profileId: string, chatId: string) =>
+    ipcRenderer.invoke('combat-end', profileId, chatId),
+  combatClear: (profileId: string, chatId: string) =>
+    ipcRenderer.invoke('combat-clear', profileId, chatId),
   // Subscribe to incremental generation text. Returns an unsubscribe function.
   onGenerationDelta: (cb: (payload: { chatId: string; delta: string }) => void) => {
     const listener = (_e: IpcRendererEvent, payload: { chatId: string; delta: string }): void =>
