@@ -10,6 +10,11 @@ import {
 } from './storageService'
 import { log } from './logService'
 import { applyRegexRules, RegexApplyContext } from '../../shared/regexTransform'
+import {
+  storeRuleToTavernRegex,
+  tavernRegexToStoreObject,
+  type TavernRegex
+} from '../../shared/thRuntime/tavernRegex'
 import { ArtifactScope, ScopeContext, ScopeMeta, isScopeActive } from '../../shared/artifactScope'
 import {
   RenderRegexRule,
@@ -263,6 +268,49 @@ export const deleteScriptsByOwner = (
     }
   }
   return removed
+}
+
+// --- TavernHelper regex bridge (getTavernRegexes / replaceTavernRegexes for card scripts) ---
+//
+// JSR's `getTavernRegexes({type})` / `replaceTavernRegexes(regexes, {type})` operate on a SCOPE:
+// `character` ⇒ this card's world-scoped regexes (owner = cardId), `global` ⇒ global, `preset` ⇒ the
+// active preset's. We map that onto the file+scope store, converting rule shapes via shared/thRuntime.
+
+/** Every rule in the given scope (+owner for non-global), as TavernHelper `TavernRegex` objects. */
+export const getTavernRegexesByScope = (
+  profileId: string,
+  scope: ArtifactScope,
+  owner?: string
+): TavernRegex[] => {
+  const out: TavernRegex[] = []
+  for (const s of listScripts(profileId)) {
+    if ((s.scope ?? 'global') !== scope) continue
+    if (scope !== 'global' && owner && s.owner !== owner) continue
+    for (const r of getScriptRules(profileId, s.file)) out.push(storeRuleToTavernRegex(r))
+  }
+  return out
+}
+
+/**
+ * Completely replace the regexes in a scope with `tavernRegexes` (TH `replaceTavernRegexes`): drop the
+ * existing files for that scope (+owner), then persist the new set as one script file. Faithful to TH's
+ * "replace everything"; for `character` scope this only touches the card's own bucket (owner = cardId).
+ */
+export const replaceTavernRegexes = (
+  profileId: string,
+  scope: ArtifactScope,
+  owner: string | undefined,
+  tavernRegexes: unknown[]
+): void => {
+  if (scope === 'global') {
+    for (const s of listScripts(profileId)) {
+      if ((s.scope ?? 'global') === 'global') deleteScript(profileId, s.file)
+    }
+  } else if (owner) {
+    deleteScriptsByOwner(profileId, scope, owner)
+  }
+  const objs = (Array.isArray(tavernRegexes) ? tavernRegexes : []).map(tavernRegexToStoreObject)
+  if (objs.length) saveRegexScript(profileId, objs, scope, owner)
 }
 
 /** Guard against path traversal — only operate on a plain filename in the regex dir. */
