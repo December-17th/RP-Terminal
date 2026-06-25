@@ -1,11 +1,24 @@
 # Local Grid Combat System — Design
 
-Status: **Design draft (2026-06-25) — not yet built.** This is the deep-dive for the agentic
-track's **Phase I** ("deterministic combat math in a worker sandbox",
-[agentic-mode-design.md](agentic-mode-design.md) §8) and the **native Combat view** reserved by
-[mvu-panel-workspace-design.md](mvu-panel-workspace-design.md). It is design-doc-first on purpose:
-the **action/event contract**, the **card-override hooks**, and the **`combat` bundle schema** are
-hard to change once cards and saved sessions depend on them.
+Status: **Built (2026-06-25) — branch `feat/combat-system`, P1–P7 + P8-partial; 71 combat unit
+tests.** The deep-dive for the agentic track's **Phase I** ("deterministic combat math in a worker
+sandbox", [agentic-mode-design.md](agentic-mode-design.md) §8) and the **native Combat view** reserved
+by [mvu-panel-workspace-design.md](mvu-panel-workspace-design.md). Implementation + per-phase status:
+[plans/2026-06-25-combat-system.md](superpowers/plans/2026-06-25-combat-system.md). The SDK surface a
+card authors against is enumerated in [sdk/component-inventory.md](sdk/component-inventory.md) §8a and
+[rpt-api.md](rpt-api.md) §4 (Combat).
+
+**As-built deltas from this design (the doc below is the intent; the plan records the rest):**
+
+1. **The override seam is ONE coarse `resolveAction` hook** (whole-action override), not the granular
+   `resolveAttack`/`applyDamage`/… hooks in §5 — those names are reserved in `shared/combat/hooks.ts`
+   `HookName` as a forward-compatible refinement.
+2. **The encounter persists in a new `combat_encounters` table** (one serialized `EncounterRecord` per
+   chat), **not** `rpg_entities` (which stays unused) — §7's "ephemeral, in rpg_entities" is superseded.
+3. **Per-action RNG derives from `(seed, rngCursor)`** (a `rngCursor` field on `CombatState`) so a fight
+   is deterministic AND resumes after an app restart without persisting live RNG state.
+4. **P8 partial:** line-of-sight + stunned/restrained/prone condition mechanics shipped; cover,
+   opportunity attacks/reactions, flanking, and the hex grid remain deferred.
 
 Motivating world: **命定之诗** (a World Card; MVU JSON-Patch dialect). The system is built generic —
 any world opts in by shipping a `combat` bundle — and does **not** require a world to retrofit its

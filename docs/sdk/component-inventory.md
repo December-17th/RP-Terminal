@@ -255,6 +255,50 @@ yet an SDK you'd hand a card author:
 
 ---
 
+## 8a. Combat SDK components (Track Combat)
+
+The combat authoring surface a world targets, all under `extensions.rp_terminal.combat` (the
+`CombatBundleSchema`, [character.ts](../../src/main/types/character.ts)) unless noted. The engine
+(`src/shared/combat/*`) is native and deterministic; a card supplies **content + skin + optional
+script overrides**, never the renderer. Design: [combat-system-design.md](../combat-system-design.md);
+methods/tags: [rpt-api.md](../rpt-api.md) §4 (Combat).
+
+### Authorable now (✅ built)
+
+| Component | Where / shape | Notes |
+| --- | --- | --- |
+| Ability catalog | `combat.abilities[]` (`AbilityDef`) | `range`, `shape` (AoE), `toHit`, `save`, `damage`, `damageType`, `effects` |
+| AoE shapes | `shape.kind` ∈ `self` / `burst{r}` / `aura{r}` / `line{len,width}` / `cone{len}` | engine computes covered cells + auto-targets ([grid.ts](../../src/shared/combat/grid.ts) `templateCells`) |
+| Bestiary | `combat.bestiary[]` (`id`,`name`,`tier`,`block`,`abilities`,`controller`) | enemies the cue resolves against |
+| Party templates | `combat.party[]` | the player-side combatants instantiated at setup |
+| Maps | `combat.maps[]` (`w`,`h`,`cell_ft`,`party_spawns`,`enemy_spawns`) | else a default open grid |
+| Stat block | `block` (`hp`,`maxHp`,`ac`,`speed`,`mods`,`abilities`,`resist`,`vulnerable`) | fresh + ephemeral; only consequences fold back to `stat_data` |
+| Enemy controller | `combat.enemy_controller` `weighted` \| `ai`; per-enemy `controller` | native weighted policy (free) or model-driven |
+| Resolver override (coarse) | `combat.scripts.resolveAction` (sandboxed JS) | `(input{state,action}, rng, emit, log) → {state?, events?}`; replaces native resolution for an action |
+| Combat-start cue | model emits `<rpt-combat-start enemies="…" map="…">` | → Enter-Combat button → `buildEncounter` |
+| Adjudication | model replies `<rpt-combat-result>{narration, ops[]}</rpt-combat-result>` | ops: `damage`/`heal`/`move`/`condition` |
+| Enemy `ai` action | model replies `<rpt-action>{kind,abilityId,targetIds,to}</rpt-action>` | per-turn for `controller:"ai"` |
+| Conditions (mechanical) | `stunned`/`restrained` (immobilize), `prone` (attackers get advantage) | other ids tracked as labels only (no mechanic yet) |
+| Ruleset id | `combat.ruleset` (`rpt-d20-v1`) | selects the native core |
+
+### Potential / planned (⬜ not built)
+
+| Component | What it would add |
+| --- | --- |
+| Granular resolver hooks | `resolveAttack` / `applyDamage` / `onTurnStart` / `onTurnEnd` / `enemyPolicy` / `checkVictory` / `seedCombatant` — names already reserved in `HookName`, only `resolveAction` is wired |
+| Conditions library | author-defined conditions with declarative effects (poisoned/burning/frightened/blinded/grappled, per-turn ticks, save-to-end) |
+| Cover + LoS-gated targeting | `lineOfSight` exists; wire it to block ranged targeting + grant cover AC |
+| Opportunity attacks / reactions | reaction economy: free attack when leaving a threatened cell; reaction abilities |
+| Flanking | positional advantage when allies bracket a target |
+| Hex grid | `grid.type:"hex"` distance + neighbors (engine is square-only today) |
+| Multi-action turns | move-then-attack in one turn (lean v1 is one action per turn) |
+| Combat skin (renderer) | `combat.skin` slot exists (token/tile art, ability icons, `--rpt-*` CSS) but `CombatView` doesn't consume it yet |
+| Narration-as-floor | fold the end-of-combat narration into a chat floor + MVU (currently returned prose / available via `narrationPrompt`) |
+| Batched `ai` enemy turn | one model call per round for all enemies (today: one call per `ai` enemy) |
+| Encounter / bundle authoring UI | a visual editor for abilities/bestiary/maps (pairs with the state-schema/widget editor, agentic D2) |
+
+---
+
 ## 9. How to extend this inventory
 
 When you add or change a card-facing capability:

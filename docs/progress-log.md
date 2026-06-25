@@ -5,6 +5,35 @@
 
 Running status of the MVU / panel-workspace track. Newest first.
 
+## 2026-06-25
+
+- **Local grid combat system — built end-to-end (branch `feat/combat-system`, P1–P7 + P8-partial; 71
+  combat unit tests, 640 total).** A player-played, turn-based, square-grid d20 engine; the engine owns
+  every number (seeded, deterministic, resumable), the AI only narrates + referees. Design:
+  [combat-system-design.md](combat-system-design.md); plan + per-phase status:
+  [plans/2026-06-25-combat-system.md](superpowers/plans/2026-06-25-combat-system.md).
+  - **Pure engine** (`src/shared/combat/`): `types`, `dice` (seeded mulberry32 + d20 adv/dis/crit +
+    `rollExpr`/`averageExpr`), `grid` (Chebyshev distance, Dijkstra movement, burst/line/cone/aura AoE,
+    `lineOfSight`), `resolver` (native d20: attack-vs-AC, saves, typed damage + resist/vuln, conditions,
+    death), `engine` (d20 initiative, turn advance, victory, `applyAction` + the card-override seam),
+    `policy` (weighted enemy AI), `hooks` (`RunHook` seam), `serialize` (AI prompts/result parsing),
+    `bundle` (`buildEncounter`: card bundle + cue → encounter).
+  - **Main**: `combatService` (orchestration + `combat_encounters` persistence + sandbox-backed hooks +
+    `adjudicate`/`narrate`/`startFromCard`), `combatIpc`, `window.api.combat*`.
+  - **Renderer**: native `CombatView` + `combatStore`; Combat FSM mode seeds a combat layout; ChatView
+    shows an **Enter Combat** banner when a turn carries a `combat_cue`.
+  - **AI touchpoints**: `<rpt-combat-start>` cue (detected in `generate()`, tag hidden at view time),
+    `<rpt-combat-result>` adjudication of out-of-system actions, end-of-combat narration, and an `ai`
+    enemy controller (weighted fallback) — all over `generateRaw`, so `generate()` is untouched.
+  - **Card surface**: `extensions.rp_terminal.combat` tightened into a permissive `CombatBundleSchema`;
+    SDK docs updated ([sdk/component-inventory.md](sdk/component-inventory.md) §8/§8a, [rpt-api.md](rpt-api.md) §4).
+  - **As-built deltas**: coarse `resolveAction` hook (not the granular §5 names — reserved); encounter in
+    a new `combat_encounters` table (not `rpg_entities`); per-action RNG from `(seed, rngCursor)`.
+  - **Not verified in-app**: the renderer UI + live AI calls pass typecheck/build but need the running
+    app + a provider to exercise. 命定之诗's actual combat content is owner-authored against the schema.
+  - **Deferred (P8)**: cover, opportunity attacks/reactions, flanking, hex grid, smarter policy; the
+    granular resolver hooks; narration-as-a-chat-floor (currently returned prose / available via prompt).
+
 ## 2026-06-22
 
 - **WCV card-UI productionization (#1–#5).** Card write-back (optimistic mirror + `replaceMvuData` via a
