@@ -238,13 +238,23 @@ export function CombatView({ profileId }: { profileId: string }): React.ReactEle
         ) : null}
 
         {state.status !== 'active' ? (
-          <button
-            className="btn-accent"
-            style={{ fontSize: 12 }}
-            onClick={() => store.getState().endCombat(profileId)}
-          >
-            {t('combat.endCombat')}
-          </button>
+          <section style={{ display: 'flex', gap: 6 }}>
+            <button
+              className="btn-accent"
+              disabled={busy}
+              style={{ fontSize: 12 }}
+              onClick={() => store.getState().narrate(profileId)}
+            >
+              {t('combat.narrate')}
+            </button>
+            <button
+              disabled={busy}
+              style={{ fontSize: 12 }}
+              onClick={() => store.getState().endCombat(profileId)}
+            >
+              {t('combat.endCombat')}
+            </button>
+          </section>
         ) : null}
 
         <section style={{ flex: '1 1 auto', overflow: 'auto', minHeight: 0 }}>

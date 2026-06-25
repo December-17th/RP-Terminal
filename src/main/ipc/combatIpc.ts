@@ -21,14 +21,34 @@ export const registerCombatIpc = (ipcMain: IpcMain): void => {
     }
   })
   ipcMain.handle('combat-end-turn', (_, _profileId, chatId) => combatService.endTurn(chatId))
-  ipcMain.handle('combat-enemy-turn', async (_, _profileId, chatId) => {
+  ipcMain.handle('combat-enemy-turn', async (_, profileId, chatId) => {
     try {
-      return await combatService.runEnemyTurn(chatId)
+      return await combatService.runEnemyTurn(profileId, chatId)
     } catch (err: any) {
       logService.log('error', '✗ combat-enemy-turn failed', err?.message || String(err))
       throw err
     }
   })
+  // AI touchpoints (P6): adjudicate a freeform action; narrate the resolved fight.
+  ipcMain.handle('combat-adjudicate', async (_, profileId, chatId, prose) => {
+    try {
+      return await combatService.adjudicate(profileId, chatId, String(prose ?? ''))
+    } catch (err: any) {
+      logService.log('error', '✗ combat-adjudicate failed', err?.message || String(err))
+      throw err
+    }
+  })
+  ipcMain.handle('combat-narrate', async (_, profileId, chatId) => {
+    try {
+      return await combatService.narrate(profileId, chatId)
+    } catch (err: any) {
+      logService.log('error', '✗ combat-narrate failed', err?.message || String(err))
+      throw err
+    }
+  })
+  ipcMain.handle('combat-narration-prompt', (_, _profileId, chatId) =>
+    combatService.narrationPrompt(chatId)
+  )
   ipcMain.handle('combat-end', (_, _profileId, chatId) => combatService.endEncounter(chatId))
   ipcMain.handle('combat-clear', (_, _profileId, chatId) => combatService.clearEncounter(chatId))
 }

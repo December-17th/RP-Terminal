@@ -37,6 +37,7 @@ interface CombatStore {
   move: (profileId: string, to: Coord) => Promise<void>
   useAbility: (profileId: string, targetCell: Coord) => Promise<void>
   improvise: (profileId: string, prose: string) => Promise<void>
+  narrate: (profileId: string) => Promise<void>
   endTurn: (profileId: string) => Promise<void>
   endCombat: (profileId: string) => Promise<void>
 }
@@ -109,9 +110,30 @@ export const useCombatStore = create<CombatStore>((set, get) => {
         })
     },
 
+    // Improvise routes through the AI referee (combat-adjudicate), not a plain action.
     improvise: async (profileId, prose) => {
-      const actor = actorId()
-      if (actor) await dispatch(profileId, { kind: 'improvise', actor, prose })
+      const { chatId } = get()
+      if (!chatId) return
+      set({ busy: true })
+      try {
+        const { state } = await api().combatAdjudicate(profileId, chatId, prose)
+        set({ state, selection: { mode: 'idle' } })
+      } finally {
+        set({ busy: false })
+      }
+    },
+
+    // Ask the AI to narrate the resolved fight; the prose is appended to the log.
+    narrate: async (profileId) => {
+      const { chatId } = get()
+      if (!chatId) return
+      set({ busy: true })
+      try {
+        const { state } = await api().combatNarrate(profileId, chatId)
+        set({ state })
+      } finally {
+        set({ busy: false })
+      }
     },
 
     endTurn: async (profileId) => {

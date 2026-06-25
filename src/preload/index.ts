@@ -205,6 +205,12 @@ const api = {
     ipcRenderer.invoke('combat-end-turn', profileId, chatId),
   combatEnemyTurn: (profileId: string, chatId: string) =>
     ipcRenderer.invoke('combat-enemy-turn', profileId, chatId),
+  combatAdjudicate: (profileId: string, chatId: string, prose: string) =>
+    ipcRenderer.invoke('combat-adjudicate', profileId, chatId, prose),
+  combatNarrate: (profileId: string, chatId: string) =>
+    ipcRenderer.invoke('combat-narrate', profileId, chatId),
+  combatNarrationPrompt: (profileId: string, chatId: string) =>
+    ipcRenderer.invoke('combat-narration-prompt', profileId, chatId),
   combatEnd: (profileId: string, chatId: string) =>
     ipcRenderer.invoke('combat-end', profileId, chatId),
   combatClear: (profileId: string, chatId: string) =>

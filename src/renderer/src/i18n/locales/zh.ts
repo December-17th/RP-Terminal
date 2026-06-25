@@ -398,6 +398,7 @@ const zh: Record<string, string> = {
   'combat.improvise': '即兴行动',
   'combat.improvisePlaceholder': '描述一个系统无法模拟的行动……',
   'combat.log': '战斗记录',
+  'combat.narrate': '叙述战斗',
   'combat.endCombat': '结束战斗',
 
   'actions.hide': '隐藏脚本动作',

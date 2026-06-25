@@ -10,14 +10,25 @@
 
 import { getDb } from './db'
 import { runSandbox } from './sandboxService'
+import { generateRaw } from './generationService'
 import { log } from './logService'
+import { clone } from '../../shared/objectPath'
 import {
   advanceTurn,
   applyAction,
+  checkVictory,
   rollInitiative,
   type EngineCtx
 } from '../../shared/combat/engine'
 import { weightedPolicy } from '../../shared/combat/policy'
+import {
+  applyCombatResult,
+  buildAdjudicationPrompt,
+  buildEnemyPrompt,
+  buildNarrationPrompt,
+  parseCombatResult,
+  parseEnemyAction
+} from '../../shared/combat/serialize'
 import type { HookName, HookResult, RunHook } from '../../shared/combat/hooks'
 import type {
   AbilityDef,
@@ -215,13 +226,105 @@ export const endTurn = (chatId: string): CombatState => {
   return next.state
 }
 
-export const runEnemyTurn = async (
+/** Enemy decider backed by the model (the `ai` controller): ask for an `<rpt-action>`,
+ *  falling back to the native weighted policy if the reply is unusable. Batches nothing
+ *  yet — one call per automated combatant whose `controller` is `'ai'`. */
+const aiChooser = (
+  profileId: string,
   chatId: string,
-  choose?: ChooseEnemyAction
+  abilities: Record<string, AbilityDef>
+): ChooseEnemyAction => {
+  return async (state, enemyId) => {
+    try {
+      const reply = await generateRaw(profileId, chatId, {
+        userInput: buildEnemyPrompt(state, enemyId)
+      })
+      return parseEnemyAction(reply, enemyId) ?? weightedPolicy(state, enemyId, abilities)
+    } catch (err: any) {
+      log(
+        'error',
+        'combat ai enemy decision failed; using weighted policy',
+        err?.message || String(err)
+      )
+      return weightedPolicy(state, enemyId, abilities)
+    }
+  }
+}
+
+export const runEnemyTurn = async (
+  profileId: string,
+  chatId: string
 ): Promise<{ state: CombatState; events: CombatEvent[] }> => {
-  const res = await enemyTurn(requireRecord(chatId), choose)
+  const record = requireRecord(chatId)
+  const actor = record.state.combatants.find(
+    (c) => c.id === record.state.initiative[record.state.turnIndex]
+  )
+  const choose =
+    actor?.controller === 'ai' ? aiChooser(profileId, chatId, record.abilities) : undefined
+  const res = await enemyTurn(record, choose)
   writeRecord(chatId, res.record)
   return { state: res.record.state, events: res.events }
+}
+
+/**
+ * The mid-fight referee (the Improvise path): build the adjudication prompt for the
+ * current actor's freeform action, ask the model for `<rpt-combat-result>` ops, fold
+ * them into the state, and persist. Degrades gracefully — an empty/unparseable reply
+ * just logs the attempt and leaves the state otherwise unchanged.
+ */
+export const adjudicate = async (
+  profileId: string,
+  chatId: string,
+  prose: string
+): Promise<{ state: CombatState; events: CombatEvent[]; narration: string }> => {
+  const record = requireRecord(chatId)
+  const actorId = record.state.initiative[record.state.turnIndex]
+  const actor = record.state.combatants.find((c) => c.id === actorId)
+  const reply = await generateRaw(profileId, chatId, {
+    userInput: buildAdjudicationPrompt(record.state, actorId, prose)
+  })
+  const { narration, ops } = parseCombatResult(reply)
+  const next = clone(record.state)
+  const logAdds: CombatEvent[] = [
+    {
+      kind: 'info',
+      text: `${actor?.name ?? actorId} improvises: ${prose}`,
+      delta: { actor: actorId, prose }
+    },
+    ...applyCombatResult(next, ops)
+  ]
+  if (narration) logAdds.push({ kind: 'info', text: narration })
+  next.log = [...next.log, ...logAdds]
+  next.status = checkVictory(next)
+  writeRecord(chatId, { ...record, state: next })
+  return { state: next, events: logAdds, narration }
+}
+
+/**
+ * End-of-combat narration (the "describe the fight fully" path): ask the model to
+ * narrate the recorded log as prose; append it to the combat log and persist. The
+ * returned prose is also what a caller can feed to the normal generation flow so it
+ * lands as a chat message + folds MVU consequences (via `narrationPrompt`).
+ */
+export const narrate = async (
+  profileId: string,
+  chatId: string
+): Promise<{ state: CombatState; narration: string }> => {
+  const record = requireRecord(chatId)
+  const prose = await generateRaw(profileId, chatId, {
+    userInput: buildNarrationPrompt(record.state)
+  })
+  const next = clone(record.state)
+  if (prose) next.log = [...next.log, { kind: 'info', text: prose }]
+  writeRecord(chatId, { ...record, state: next })
+  return { state: next, narration: prose }
+}
+
+/** The narration prompt for the current encounter (for the renderer to feed `generate`
+ *  so the narration becomes a chat floor and its `<UpdateVariable>` folds into stat_data). */
+export const narrationPrompt = (chatId: string): string | null => {
+  const record = readRecord(chatId)
+  return record ? buildNarrationPrompt(record.state) : null
 }
 
 export const endEncounter = (chatId: string): CombatOutcome | null => {

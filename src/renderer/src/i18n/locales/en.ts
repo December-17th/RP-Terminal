@@ -409,6 +409,7 @@ const en: Record<string, string> = {
   'combat.improvise': 'Improvise',
   'combat.improvisePlaceholder': 'Describe an action the system can’t model…',
   'combat.log': 'Log',
+  'combat.narrate': 'Narrate the fight',
   'combat.endCombat': 'End combat',
 
   'actions.hide': 'Hide script actions',

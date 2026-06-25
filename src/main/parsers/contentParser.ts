@@ -60,3 +60,29 @@ export const parseContent = (content: string): ParsedContent => {
 
   return { text: text.trim(), events }
 }
+
+/** A combat-initiation cue the AI emits when a scene turns to a fight (Track Combat / P6):
+ *  `<rpt-combat-start enemies="哥布林 x3 (弱); 头目" map="forest"></rpt-combat-start>`. */
+export interface CombatStartCue {
+  enemies: string
+  map: string
+}
+
+/**
+ * Extract an `<rpt-combat-start>` cue (if any) and the narrative with the tag stripped.
+ * The renderer surfaces an "Enter Combat" affordance when `cue` is non-null. Tolerant of
+ * self-closing or paired tags and attribute order; missing attributes default to ''.
+ */
+export const parseCombatStart = (content: string): { text: string; cue: CombatStartCue | null } => {
+  let cue: CombatStartCue | null = null
+  const text = content.replace(
+    /<rpt-combat-start\b([^>]*?)\/?>(?:[\s\S]*?<\/rpt-combat-start>)?/i,
+    (_m, attrs: string) => {
+      const enemies = attrs.match(/enemies="([^"]*)"/i)?.[1] ?? ''
+      const map = attrs.match(/map="([^"]*)"/i)?.[1] ?? ''
+      cue = { enemies, map }
+      return ''
+    }
+  )
+  return { text: cue ? text.trim() : content, cue }
+}
