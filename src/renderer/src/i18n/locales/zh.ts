@@ -280,6 +280,7 @@ const zh: Record<string, string> = {
   'regex.renderDefault': '默认',
   'regex.renderInline': '内联',
   'regex.renderIsolated': '隔离',
+  'regex.renderPanel': '作为面板',
   'regex.confirmDelete': '删除正则脚本「{{name}}」？',
   'regex.deleteScript': '删除脚本',
   'regex.noRules': '此脚本中没有规则。',

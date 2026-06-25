@@ -209,6 +209,10 @@ export const listScripts = (profileId: string): RegexScriptInfo[] => {
     .map((file) => {
       const rules = rulesInFile(path.join(dir, file))
       const m = meta[file]
+      // A loader rule's page URL marks the script as promotable to a docked WCV panel.
+      const uiUrl =
+        rules.map((r) => extractCardUiUrl(r.replaceString ?? r.replace ?? '')).find(Boolean) ??
+        undefined
       return {
         file,
         scriptName: rules[0]?.scriptName || rules[0]?.name || file.replace(/\.json$/, ''),
@@ -216,6 +220,7 @@ export const listScripts = (profileId: string): RegexScriptInfo[] => {
         scope: m?.scope ?? 'global',
         owner: m?.owner,
         disabled: m?.disabled === true,
+        uiUrl,
         renderMode: m?.renderMode
       }
     })

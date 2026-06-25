@@ -288,6 +288,7 @@ const en: Record<string, string> = {
   'regex.renderDefault': 'Default',
   'regex.renderInline': 'Inline',
   'regex.renderIsolated': 'Isolated',
+  'regex.renderPanel': 'As panel',
   'regex.confirmDelete': 'Delete regex script "{{name}}"?',
   'regex.deleteScript': 'Delete script',
   'regex.noRules': 'No rules in this script.',

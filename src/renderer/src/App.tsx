@@ -5,6 +5,7 @@ import { useChatStore } from './stores/chatStore'
 import { useSettingsStore } from './stores/settingsStore'
 import { usePresetStore } from './stores/presetStore'
 import { useLorebookStore } from './stores/lorebookStore'
+import { usePanelRegexStore } from './stores/panelRegexStore'
 import { useLogStore } from './stores/logStore'
 import { useRegexStore } from './stores/regexStore'
 import { usePluginsStore } from './stores/pluginsStore'
@@ -164,6 +165,15 @@ export default function App(): React.ReactElement {
   useEffect(() => {
     useI18nStore.getState().setLocale(settings?.ui?.locale ?? 'en')
   }, [settings?.ui?.locale])
+
+  // Load the active card's promoted regex panels (renderMode:'panel') so they appear in the view-pickers.
+  useEffect(() => {
+    const pid = activeProfile?.id
+    if (!pid) return
+    void usePanelRegexStore
+      .getState()
+      .load(pid, { cardId: activeCharacter?.id, chatId: activeChatId })
+  }, [activeProfile?.id, activeCharacter?.id, activeChatId])
 
   // A card script (e.g. the 创意工坊 workshop) wrote a worldbook in its WCV → refresh the lorebook editor
   // so it doesn't show a stale view (reload the open book only if the user has no unsaved edits).
