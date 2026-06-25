@@ -2,6 +2,7 @@
 import type { Host, ThGlobals } from './types'
 import { floorsToThMessages, floorsToStChat, currentMessageId } from './shapes'
 import { setVarOps, assignVarOps, replaceStatDataOps, type VarOp } from './ops'
+import { nativeToThEntry, thToNativeEntry } from './worldbookEntry'
 import { expandMacros } from '../macros'
 import { runScript, type StCtx } from '../stscript'
 
@@ -173,19 +174,14 @@ export function createThRuntime(host: Host): ThGlobals {
     if (!wbIdByName.has(key)) seedWb()
     return wbIdByName.get(key)
   }
-  // Map RPT entries to the TavernHelper worldbook-entry shape cards read: add `uid` (array index) + `name`
-  // (= our `comment`/title). Cards like the 命定之诗 home display `entry.name`; without this the raw
-  // entries (no `name`) show blank. Done HERE so EVERY read path — both transports, own book or by-id —
-  // is consistent (previously only the WCV own-book handler mapped, so by-id + all inline reads were raw).
-  const toThWbEntry = (en: any, i: number): any => ({
-    ...en,
-    uid: typeof en?.uid === 'number' ? en.uid : i,
-    name: en?.name || en?.comment || `Entry ${i + 1}`
-  })
+  // Map RPT native entries to the TavernHelper `WorldbookEntry` shape cards read — `uid`/`name` AND the
+  // `strategy.{type,keys,keys_secondary}` / `position` / `extra` a card expects (shared/thRuntime/
+  // worldbookEntry). Done HERE so EVERY read path — both transports, own book or by-id — is consistent;
+  // without the strategy/keys, a card's diff over `entry.strategy.keys` throws and keys/constant are lost.
   const wbEntries = async (name?: any): Promise<any[]> => {
     const id = resolveWbId(name)
     const r = id ? await host.getWorldbookById(id) : await host.getWorldbook(name)
-    return (r.entries || []).map(toThWbEntry)
+    return (r.entries || []).map(nativeToThEntry)
   }
   const doCreateWb = async (name: any): Promise<string> => {
     const nm = String(name ?? 'New Worldbook')
@@ -307,17 +303,20 @@ export function createThRuntime(host: Host): ThGlobals {
     getWorldbook: async (name: any) => wbEntries(name),
     getLorebookEntries: async (name: any) => wbEntries(name),
     replaceWorldbook: async (name: any, entries: any) => {
+      // Card sends TavernHelper-shaped entries; persist native (strategy.keys→keys, type:'constant'→constant).
+      const native = (Array.isArray(entries) ? entries : []).map(thToNativeEntry)
       const id = resolveWbId(name)
-      if (id) await host.saveWorldbookById(id, entries)
-      else await host.saveWorldbook(name, entries)
+      if (id) await host.saveWorldbookById(id, native)
+      else await host.saveWorldbook(name, native)
       return true
     },
     updateWorldbookWith: async (name: any, updater: any) => {
       const cur = await wbEntries(name)
       const next = typeof updater === 'function' ? await updater(cur) : cur
+      const native = (Array.isArray(next) ? next : []).map(thToNativeEntry)
       const id = resolveWbId(name)
-      if (id) await host.saveWorldbookById(id, next)
-      else await host.saveWorldbook(name, next)
+      if (id) await host.saveWorldbookById(id, native)
+      else await host.saveWorldbook(name, native)
       return next
     },
     createWorldbook: doCreateWb,

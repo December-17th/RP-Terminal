@@ -228,8 +228,14 @@ describe('createThRuntime', () => {
     expect(m.calls.deleteWorldbook).toEqual(['wb1'])
     await g.bindLorebook('Ellia', true)
     expect(m.calls.bindWorldbook).toEqual([['own', true]])
-    await g.replaceWorldbook('Lore A', [{ keys: ['x'] }])
-    expect(m.calls.saveWorldbookById).toEqual([['wb1', [{ keys: ['x'] }]]])
+    // replaceWorldbook maps the card's TavernHelper entry shape → native before persisting (resolves name→id)
+    await g.replaceWorldbook('Lore A', [{ name: 'E', strategy: { type: 'constant', keys: ['x'] } }])
+    expect(m.calls.saveWorldbookById[0][0]).toBe('wb1')
+    expect(m.calls.saveWorldbookById[0][1][0]).toMatchObject({
+      keys: ['x'],
+      constant: true,
+      comment: 'E'
+    })
     // unknown name no-ops
     expect(await g.deleteWorldbook('Nope')).toBe(false)
   })
