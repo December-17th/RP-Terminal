@@ -2,9 +2,14 @@
 
 **Design / spec:** [docs/combat-system-design.md](../../combat-system-design.md)
 
-> **STATUS (2026-06-25): NOT STARTED — planning only.** No code written yet. Phases below are
-> sequenced so each is shippable; the first milestone (P1–P4) is a fully unit-tested deterministic
-> engine + service with no UI and no AI calls.
+> **STATUS (2026-06-25): P1–P3 DONE (the pure `src/shared/combat` core is complete & tested);
+> P4 next.** Shipped: types/dice/grid (P1), native d20 resolver + turn engine + card-override seam
+> (P2), weighted enemy policy (P3) — 43 unit tests, headless, deterministic. **One design change in
+> P2:** the card-override seam shipped as a single coarse `resolveAction` hook (whole-action
+> override) rather than the granular named hooks (`resolveAttack`/`applyDamage`/…) listed in §5 /
+> design §5; those finer hooks remain a forward-compatible refinement (the `HookName` union already
+> reserves their names). Phases below are sequenced so each is shippable; the first milestone (P1–P4)
+> is a fully unit-tested deterministic engine + service with no UI and no AI calls.
 
 **Goal:** A player-played, turn-based, square-grid d20 combat system for RP Terminal. The player
 makes their party's moves; a native deterministic engine resolves every die (seeded); enemies are
