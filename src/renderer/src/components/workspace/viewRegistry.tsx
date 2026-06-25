@@ -1,12 +1,9 @@
 /* eslint-disable react-refresh/only-export-components -- a view registry intentionally
    co-locates its internal wrapper components with the registry/options it exports. */
 import React from 'react'
-import { useChatStore } from '../../stores/chatStore'
-import { useCharacterStore } from '../../stores/characterStore'
 import { useNavStore } from '../../stores/navStore'
 import { ChatView } from '../ChatView'
 import { StatusView } from '../StatusView'
-import { CardScriptWcvHost } from '../CardScriptWcvHost'
 import { LogsPanel } from '../LogsPanel'
 import { PanelRouter } from '../PanelRouter'
 import { WcvTestView, WcvCardView, WcvHomeView, WcvCustomStartView } from './WcvPanel'
@@ -43,25 +40,14 @@ const UsagePanel: React.FC = () => {
   return <UsageView profileId={profileId} />
 }
 
-// The card's script runtime — now process-isolated in a WebContentsView (Phase 2), so full-page card
-// scripts (remote imports, window.open, the 创意工坊 workshop) run as written. Keyed by card+chat so
-// switching sessions remounts cleanly.
+// The card's scripts now run in the app-wide invisible script engine (CardScriptWcvHost in App.tsx), not in
+// a panel — so this view is just an explanatory note. Visible card UI lives in declared panels (status, …).
 const CardScriptsPanel: React.FC = () => {
-  const { profileId } = useWorkspaceContext()
-  const activeChatId = useChatStore((s) => s.activeChatId)
-  const activeCharacter = useCharacterStore((s) => s.activeCharacter)
   const t = useT()
-  if (!activeChatId || !activeCharacter) {
-    return <div style={{ opacity: 0.5 }}>{t('status.waiting')}</div>
-  }
   return (
-    <CardScriptWcvHost
-      key={`${activeCharacter.id}:${activeChatId}`}
-      profileId={profileId}
-      chatId={activeChatId}
-      cardId={activeCharacter.id}
-      cardName={activeCharacter.card.data.name}
-    />
+    <div style={{ opacity: 0.6, fontSize: 13, lineHeight: 1.6, padding: 4 }}>
+      {t('cardScripts.engineNote')}
+    </div>
   )
 }
 

@@ -86,10 +86,6 @@ interface Slot {
   characterId: string
   /** The inline card document served to this slot via rpt-card://card/<id> (when loaded from a data: URL). */
   html?: string
-  /** Last renderer-reported rect (the panel placement) — the rect to restore to when a modal closes. */
-  lastBounds?: Bounds
-  /** True while this WCV is expanded to a full-window modal (a card script opened an overlay). */
-  modal?: boolean
 }
 
 let mainWindow: BrowserWindow | null = null
@@ -167,33 +163,30 @@ export const ensure = (
 }
 
 export const setBounds = (id: string, bounds: Bounds): void => {
-  const slot = slots.get(id)
-  if (!slot) return
-  slot.lastBounds = round(bounds)
-  // While a modal overlay is open the WCV fills the window; ignore the renderer's panel-rect updates so
-  // they don't shrink it back mid-modal (we restore to lastBounds when the overlay closes).
-  if (!slot.modal) slot.view.setBounds(slot.lastBounds)
+  slots.get(id)?.view.setBounds(round(bounds))
 }
 
 // The main window's content rect (0,0 → content size) — a full-window modal fills this.
 const contentRect = (): Bounds => {
-  const [w, h] = mainWindow?.getContentSize() ?? [0, 0]
+  const [w, h] = mainWindow?.getContentSize() ?? [1280, 800]
   return { x: 0, y: 0, width: w, height: h }
 }
 
 /**
- * Expand a card-script WCV to a full-window modal (a card opened an `inset:0` overlay) or restore it to its
- * last panel rect. On open we also re-add the view so it paints ON TOP of any sibling panel WCVs.
+ * Show/hide the off-screen card-script engine WCV as a full-window modal. ON slides it on-screen (and raises
+ * it above any panel WCVs); OFF parks it off-screen at the SAME full size — so its page keeps running and the
+ * overlay detector keeps a real viewport (a 0-size view would break detection). Driven by the engine's
+ * overlay detector (`wcv-overlay`); the engine WCV is created off-screen by `CardScriptWcvHost`.
  */
 export const setModal = (id: string, on: boolean): void => {
   const slot = slots.get(id)
   if (!slot) return
-  slot.modal = on
+  const r = contentRect()
   if (on) {
-    mainWindow?.contentView.addChildView(slot.view) // re-add → move to top of the z-order
-    slot.view.setBounds(contentRect())
+    mainWindow?.contentView.addChildView(slot.view) // re-add → raise to the top of the z-order
+    slot.view.setBounds(r)
   } else {
-    slot.view.setBounds(slot.lastBounds ?? contentRect())
+    slot.view.setBounds({ x: -(r.width + 2000), y: 0, width: r.width, height: r.height })
   }
 }
 

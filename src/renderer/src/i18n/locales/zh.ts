@@ -390,6 +390,9 @@ const zh: Record<string, string> = {
   'actions.label': '动作',
   'actions.empty': '没有脚本动作 —— 脚本可通过 rpt.ui.registerButton() 添加。',
 
+  'cardScripts.engineNote':
+    '本世界的卡片脚本在后台运行。其按钮显示在输入框上方的「动作」菜单中；卡片界面则显示在各自的面板里。',
+
   'view.navigator': '导航',
   'view.chat': '聊天',
   'view.usage': '用量',

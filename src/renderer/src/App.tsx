@@ -15,6 +15,7 @@ import { TopNav } from './components/TopNav'
 import { Workspace } from './components/workspace/Workspace'
 import { StaticWorkspace } from './components/workspace/StaticWorkspace'
 import { DEFAULT_STATIC_LAYOUT } from './components/workspace/WcvPanel'
+import { CardScriptWcvHost } from './components/CardScriptWcvHost'
 import { PluginHost } from './components/PluginHost'
 import { useNavStore } from './stores/navStore'
 import { useWorkspaceStore } from './stores/workspaceStore'
@@ -188,6 +189,19 @@ export default function App(): React.ReactElement {
             <StaticWorkspace profileId={activeProfile.id} layout={staticLayout} />
           ) : (
             <Workspace profileId={activeProfile.id} />
+          )}
+
+          {/* The invisible card-script engine: runs the active card's scripts (the 创意工坊 workshop +
+              background MVU/automation) in a hidden, off-screen WCV — app-wide and independent of the panel
+              layout, so the workshop button works in the resizable workspace AND a static panel_ui layout. */}
+          {activeCharacter && (
+            <CardScriptWcvHost
+              key={`${activeCharacter.id}:${activeChatId}`}
+              profileId={activeProfile.id}
+              chatId={activeChatId}
+              cardId={activeCharacter.id}
+              cardName={activeCharacter.card.data.name}
+            />
           )}
 
           {/* Standalone-plugin runtime stays mounted app-wide (outside the workspace) so its

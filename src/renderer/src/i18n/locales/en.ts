@@ -401,6 +401,9 @@ const en: Record<string, string> = {
   'actions.label': 'Actions',
   'actions.empty': 'No script actions — a script can add one with rpt.ui.registerButton()',
 
+  'cardScripts.engineNote':
+    'Card scripts run in the background for this world. Their buttons appear in the Actions menu above the input; card UI appears in its own panels.',
+
   'view.navigator': 'Navigator',
   'view.chat': 'Chat',
   'view.usage': 'Usage',
