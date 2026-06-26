@@ -136,6 +136,16 @@ describe('parseCardItem', () => {
     expect(parseCardItem(statData.主角.技能.铁壁, 'skill').DR).toBe(10)
   })
 
+  it('parses 百分比 伤害增幅 + 资源 护盾, and folds 减伤增幅 into DR', () => {
+    const c = parseCardItem(
+      { 类型: '被动', 标签: ['体质'], 效果: { 伤害增幅: '+15%', 护盾: '500', 减伤增幅: '10%' } },
+      'skill'
+    )
+    expect(c.伤害增幅).toBe(15)
+    expect(c.护盾).toBe(500)
+    expect(c.DR).toBe(10) // 减伤增幅 matches the DR branch
+  })
+
   it('tolerates junk / empty items', () => {
     expect(parseCardItem(null, 'skill')).toEqual({})
     expect(parseCardItem({ 标签: 'not-an-array', 效果: 5 }, 'skill')).toEqual({})
@@ -165,7 +175,8 @@ describe('buildCombatant', () => {
     const ext = built.ext as Record<string, any>
     expect(ext.attrs).toEqual({ 力量: 5, 敏捷: 4, 体质: 6, 智力: 2, 精神: 3 })
     expect(ext.tier).toBe(2)
-    expect(ext.equip).toEqual({ 武器攻击: 60, 防御: 50, 命中: 1, 闪避: 2, DR: 0 })
+    // 铁壁 (passive, DR 10%) folds into the aggregate alongside gear.
+    expect(ext.equip).toEqual({ 武器攻击: 60, 防御: 50, 命中: 1, 闪避: 2, DR: 10 })
     expect(ext.passives).toEqual([{ name: '铁壁', combat: expect.objectContaining({ DR: 10 }) }])
   })
 

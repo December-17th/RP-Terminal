@@ -58,11 +58,14 @@ export interface CardCombat {
   闪避?: number
   先攻?: number
   抵抗?: number
-  /** 固伤 (额外固定伤害), DR%, 穿透%, 暴击倍率, from 效果. */
+  /** 固伤 (额外固定伤害), DR%, 穿透%, 暴击倍率, from 效果. (DR also absorbs 减伤增幅.) */
   额外固定伤害?: number
   DR?: number
   穿透?: number
   暴击倍率?: number
+  /** 百分比 伤害增幅 (outgoing damage ×(1+%)) + 资源 护盾 (a flat damage-absorbing pool), from 效果. */
+  伤害增幅?: number
+  护盾?: number
   /** 附加效果: status-on-hit `状态名: 数值+回合`. */
   附加效果?: { 状态: string; 数值?: number; 回合: number }[]
   /** multi-hit N (多段/连击). */
@@ -167,6 +170,8 @@ export const parseCardItem = (item: unknown, _kind: ItemKind): CardCombat => {
     else if (/^DR$|减伤/.test(k)) out.DR = Math.max(out.DR ?? 0, pct(v))
     else if (/穿透/.test(k)) out.穿透 = Math.max(out.穿透 ?? 0, pct(v))
     else if (/暴击倍率/.test(k)) out.暴击倍率 = num(v)
+    else if (/伤害增幅|增伤/.test(k)) out.伤害增幅 = (out.伤害增幅 ?? 0) + pct(v)
+    else if (/护盾/.test(k)) out.护盾 = (out.护盾 ?? 0) + num(v)
     else {
       const st = v.match(/(\d+)\s*\+\s*(\d+)\s*回合/) || v.match(/(\d+)\s*回合/)
       if (st) {
@@ -257,22 +262,31 @@ export const buildCombatant = (char: unknown, ctx: MvuCharCtx): BuiltCombatant =
     })
   }
 
-  // Aggregate equipped gear: weapon 攻击 (max), armor 防御 (sum), 命中/闪避/DR (max).
+  // Aggregate equipped gear + passives: weapon 攻击 (max), armor 防御 (sum), 命中/闪避/DR (max),
+  // 伤害增幅 + 护盾 (sum). Passives contribute the same defensive/offensive mods as gear.
   let 武器攻击 = 0
   let 防御 = 0
   let 命中 = 0
   let 闪避 = 0
   let DR = 0
+  let 伤害增幅 = 0
+  let 护盾 = 0
   const equip: { slot: string; combat: CardCombat }[] = []
+  const foldMods = (combat: CardCombat): void => {
+    if (combat.命中) 命中 = Math.max(命中, combat.命中)
+    if (combat.闪避) 闪避 = Math.max(闪避, combat.闪避)
+    if (combat.DR) DR = Math.max(DR, combat.DR)
+    if (combat.伤害增幅) 伤害增幅 += combat.伤害增幅
+    if (combat.护盾) 护盾 += combat.护盾
+  }
   for (const [slot, gear] of Object.entries(asRec(get(c, paths, 'equipment')))) {
     const combat = parseCardItem(gear, 'equip')
     equip.push({ slot, combat })
     if (combat.攻击) 武器攻击 = Math.max(武器攻击, combat.攻击)
     if (combat.防御) 防御 += combat.防御
-    if (combat.命中) 命中 = Math.max(命中, combat.命中)
-    if (combat.闪避) 闪避 = Math.max(闪避, combat.闪避)
-    if (combat.DR) DR = Math.max(DR, combat.DR)
+    foldMods(combat)
   }
+  for (const p of passives) foldMods(p.combat)
 
   // A basic attack (普攻威力 20) every combatant always has.
   const 普攻Id = `${ctx.id}/普攻`
@@ -313,6 +327,8 @@ export const buildCombatant = (char: unknown, ctx: MvuCharCtx): BuiltCombatant =
     sp,
     maxSp,
     equip: { 武器攻击, 防御, 命中, 闪避, DR },
+    伤害增幅, // outgoing damage ×(1+%) from gear/passives
+    shield: 护盾, // a mutable damage-absorbing pool (depleted before HP)
     passives
   }
 
@@ -328,6 +344,10 @@ interface CombatantExt {
   mp?: number
   sp?: number
   equip?: { 武器攻击?: number; 防御?: number; 命中?: number; 闪避?: number; DR?: number }
+  /** outgoing damage ×(1+%) from gear/passives. */
+  伤害增幅?: number
+  /** a mutable damage-absorbing pool, depleted before HP. */
+  shield?: number
   passives?: { name: string; combat: CardCombat }[]
 }
 const extOf = (c: Combatant): CombatantExt => (c.ext ?? {}) as CombatantExt
@@ -412,12 +432,29 @@ const poemHitOne = (
   const J = afterEquip * (1 - physMitFraction(tExt, derive))
   const hits = cc.多段 && cc.多段 > 1 ? cc.多段 : 1
   let dmg = J * K + (cc.额外固定伤害 ?? 0) * hits
-  dmg *= 1 - targetDR(tExt) / 100
-  const dealt = applyDamageAmount(target, Math.max(0, Math.floor(dmg)))
+  const amp = (cc.伤害增幅 ?? 0) + (aExt.伤害增幅 ?? 0) // 百分比 outgoing 伤害增幅
+  if (amp) dmg *= 1 + amp / 100
+  dmg *= 1 - targetDR(tExt) / 100 // DR (also absorbs 减伤增幅)
+  dmg = Math.max(0, Math.floor(dmg))
+
+  // 护盾 absorbs before HP (depletes the target's mutable shield pool).
+  let absorbed = 0
+  if (tExt.shield && tExt.shield > 0 && dmg > 0) {
+    absorbed = Math.min(tExt.shield, dmg)
+    tExt.shield -= absorbed
+    dmg -= absorbed
+  }
+  const dealt = applyDamageAmount(target, dmg)
   events.push({
     kind: 'damage',
-    text: `${target.name} takes ${dealt} (评级 ×${K}) — HP ${target.block.hp}/${target.block.maxHp}.`,
-    delta: { target: target.id, damage: dealt, hp: target.block.hp, rating: K }
+    text: `${target.name} takes ${dealt}${absorbed ? ` (护盾吸收 ${absorbed})` : ''} (评级 ×${K}) — HP ${target.block.hp}/${target.block.maxHp}.`,
+    delta: {
+      target: target.id,
+      damage: dealt,
+      hp: target.block.hp,
+      rating: K,
+      ...(absorbed ? { shieldAbsorbed: absorbed, shieldLeft: tExt.shield } : {})
+    }
   })
 
   // 状态: 暴击(≥1.3) auto; 有效/勉强(≥0.8) opposition; 擦伤/失手 none.

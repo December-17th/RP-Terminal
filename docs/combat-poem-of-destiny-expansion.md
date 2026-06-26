@@ -254,19 +254,52 @@ not a new MVU key):
 - **A4 — fork the data_schema** to add a `战斗场` scope (replace the remote `mvu zod` loader with ours).
   Pro: a proper combat scope the MVU UI renders. Con: forks + must track the upstream card schema; heavy.
 
-**B. Item-format consistency.** `parseCardItem` reads `标签`(关联属性/有效距离:X/威力:X/攻击·防御:N/范围/
-多段) · `消耗`(攻击|动作: X MP/SP) · `效果`(命中/闪避/先攻/抵抗, 固伤, DR/穿透/暴击倍率, 附加效果
-`数值+回合`). The card's `[技能装备道具生成规则]`/`[品质效果限定]` already define most of this, but we
-should **tighten the lorebook rules so the AI ALWAYS emits these tokens in the parseable shape** (esp.
-`有效距离: X` on every weapon/active skill, `攻击/防御: N` on gear, and the 关联属性 as a bare tag) — and
-reconcile any token the card writes that the parser doesn't yet read (audit needed against real output).
+**B. Item-format consistency — AUDITED + handled (2026-06-26).** Audit of `parseCardItem` vs the card's
+`[技能装备道具生成规则]`/`[品质效果限定]`. Outcome (deliverable:
+[poem-item-combat-compat.md](sdk/examples/poem-item-combat-compat.md)):
+- ✅ Already compatible: 关联属性 (bare or "关联属性: 力量"), 攻击/防御:N, 消耗 攻击/动作:X MP/SP, geometric
+  范围 (爆发/直线/锥形) + 目标类型 (单体/范围:X), 命中/闪避/先攻/状态抵抗, 固伤, DR/穿透/暴击倍率, 附加效果.
+- ⚠️ Two required lorebook tightenings (in the addendum): **威力 must be a literal number** (else → 普攻 20)
+  and **有效距离: X mandatory** on active skills/weapons (else → melee 1).
+- ✅ **Now supported (owner chose "百分比+护盾", built 2026-06-26):** `伤害增幅: X%` (outgoing ×(1+X%)) and
+  `减伤增幅` (folds into the DR step) and `护盾: N` (a flat pool absorbed before HP, aggregated from
+  gear/passives). Passive items now fold their 命中/闪避/DR/伤害增幅/护盾 into the combatant aggregate.
+- ⬜ Still narrative-only (deferred): `治疗增幅` (needs in-combat **healing**), `资源消耗减免` (MP/SP cost),
+  typed-damage split (物理-only 属性减免 today), 集群/意图·部位/战意.
 
 **C. The combat-start trigger.** The `<rpt-combat-start>` cue instruction (shipped as the paste-in
 [poem-preset-combat-instructions.md](sdk/examples/poem-preset-combat-instructions.md)); under A1 this
 instruction also carries the enemy roster format.
 
-**Leaning:** A1 (structured cue payload) — it's the most reliable to parse, keeps combat data out of the
-narrative + MVU, and we control the schema; A2 is the fallback if we'd rather reuse `<char_info>`. Decide
-A-channel + the B-audit scope with the owner before building. Open questions: (1) JSON payload vs reuse
-char_info? (2) do ad-hoc allied NPCs (not in 关系列表) need the same channel? (3) should fold-back write
-enemy deaths/loot anywhere, or only 主角 consequences?
+**DECIDED (2026-06-26): A1 — structured JSON roster on the combat-start cue.** Most reliable to parse, no
+MVU pollution, we own the schema.
+
+### A1 design
+The AI emits the enemy roster as a JSON body inside the combat-start tag:
+```
+<rpt-combat-start map="">
+[
+  { "名称": "哥布林", "数量": 3, "生命层级": "第一层级", "等级": 4,
+    "属性": { "力量": 3, "敏捷": 4, "体质": 3, "智力": 1, "精神": 1 },
+    "装备": { "利爪": { "类型": "天生武器", "品质": "普通", "标签": ["攻击: 20"], "效果": {} } },
+    "技能": {}, "状态效果": {} },
+  { "名称": "头目", "数量": 1, "生命层级": "第二层级", "等级": 8,
+    "属性": { "力量": 6, "敏捷": 4, "体质": 6, "智力": 2, "精神": 3 },
+    "装备": { "巨斧": { "类型": "巨斧", "品质": "优良", "标签": ["攻击: 70","命中: +1"], "效果": {} } },
+    "技能": { "横扫": { "类型": "主动", "消耗": "攻击: 60 SP",
+      "标签": ["力量","范围: 锥形","威力: 150","有效距离: 2"], "效果": { "流血": "20+2回合" } } },
+    "状态效果": {} }
+]
+</rpt-combat-start>
+```
+**Each roster entry uses the card's own stat_data field names** (属性/生命层级/等级/装备/技能/状态效果) — i.e.
+the SAME shape as the bundle's static `enemies` templates — so `poemD20.buildCombatant` parses it
+unchanged. HP/MP/SP/AC are derived (resources optional). `数量` defaults to 1.
+
+App changes (small): `parseCombatStart` extracts the JSON body → `cue.roster`; `startFromCard` passes it
+as `buildEncounterFromMvu({ roster })`; `buildEncounterFromMvu` builds each roster entry ×数量 via
+`buildCombatant` (the static `enemies` path stays as a fallback). Lorebook change: a `<战斗启动协议>`
+instructing the AI to author the roster (reusing `<角色生成>` for the stats) + when to emit.
+
+Open questions: (1) do ad-hoc allied NPCs (not in 关系列表) need the same roster channel (a `side`
+field?)? (2) should fold-back record enemy deaths/loot, or only 主角 consequences?

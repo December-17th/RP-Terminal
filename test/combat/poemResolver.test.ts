@@ -140,6 +140,37 @@ describe('poemResolveAction — 战斗协议 damage', () => {
     expect(b.block.conditions).toEqual([{ id: '灼烧', duration: 2 }])
   })
 
+  it('百分比 伤害增幅 raises outgoing damage (×(1+amp) before DR)', () => {
+    // baseline at this roll deals 345; +50% before DR → 384.30×1.5×0.9 = 518.8 → 518.
+    const a = attacker({ ext: { ...attacker().ext, 伤害增幅: 50 } as Record<string, unknown> })
+    const s = state([a, target()])
+    const res = poemResolveAction(
+      ctx(
+        s,
+        { kind: 'ability', actor: 'A', abilityId: 'A/火球术', targetIds: ['B'] },
+        fixedRoll(15)
+      )
+    )!
+    expect((res.events!.find((e) => e.kind === 'damage')!.delta as any).damage).toBe(518)
+  })
+
+  it('护盾 absorbs damage before HP, depleting the pool', () => {
+    // baseline computed damage 345; a 200 shield absorbs 200 → 145 reaches HP (500→355), shield→0.
+    const b = target({ ext: { ...target().ext, shield: 200 } as Record<string, unknown> })
+    const s = state([attacker(), b])
+    const res = poemResolveAction(
+      ctx(
+        s,
+        { kind: 'ability', actor: 'A', abilityId: 'A/火球术', targetIds: ['B'] },
+        fixedRoll(15)
+      )
+    )!
+    const after = res.state!.combatants.find((c) => c.id === 'B')!
+    expect(after.block.hp).toBe(355)
+    expect((after.ext as any).shield).toBe(0)
+    expect((res.events!.find((e) => e.kind === 'damage')!.delta as any).shieldAbsorbed).toBe(200)
+  })
+
   it('失手 (评级 0) → miss, no damage', () => {
     const res = cast(fixedRoll(2))! // 总值 2+1−3 = 0 → 0
     const b = res.state!.combatants.find((c) => c.id === 'B')!
