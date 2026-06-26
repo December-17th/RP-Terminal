@@ -175,10 +175,18 @@ it in the Combat-mode `CombatView`. The engine owns every number (seeded); the A
   (cover, opportunity attacks, flanking, extended conditions) are **script-authored** via `combat.scripts`.
 - **Narrate / fold-out** — at the end, the log → a narration prompt; lasting consequences are recorded via
   the world's `<UpdateVariable>` into `stat_data` (combat never writes `stat_data` directly).
+- **MVU import / card combat systems** — a world whose stats live in MVU `stat_data` (e.g. 命定之诗)
+  can build the **party from those variables** (`combat.stat_map` + `combat.derive`) instead of
+  `party` templates, and resolve the fight with its **own** rules via a **combat system** (`CombatSystem`
+  = `parseItem` + `buildCombatant` + `resolveAction`, selected by `getSystem(id)`; v1 built-in `poemD20`).
+  The card authors combat numbers into the MVU fields it already preserves (`标签`/`效果`/`消耗`) — no
+  new field; the parsed kit rides in the `Combatant.ext` / `AbilityDef.ext` bag. The system's
+  `resolveAction(ResolverContext)` is injected as the engine RunHook (runs first; `null` → native). See
+  [combat-poem-of-destiny-expansion.md](combat-poem-of-destiny-expansion.md) + component-inventory §8a.
 - **Bundle** — `extensions.rp_terminal.combat`: `ruleset`, `grid`, `enemy_controller`, `abilities[]`
   (incl. `cost` / `requiresLoS`), `bestiary[]`, `party[]`, `maps[]`, `scripts{hook→code}` (sandboxed
-  overrides), `skin`, and the prompts `narration_prompt` / `narration_mode` / `improvise_prompt`. See
-  [combat-system-design.md](combat-system-design.md) §10/§15.
+  overrides), `skin`, the prompts `narration_prompt` / `narration_mode` / `improvise_prompt`, and (MVU
+  import) `stat_map` / `derive`. See [combat-system-design.md](combat-system-design.md) §10/§15.
 
 ---
 

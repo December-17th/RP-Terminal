@@ -5,7 +5,14 @@
 **Builds on:** the app combat engine from [2026-06-25-combat-system.md](2026-06-25-combat-system.md)
 (branch `feat/combat-system`, P1–P8, all green).
 
-> **STATUS (2026-06-25): NOT STARTED — plan awaiting go-ahead.**
+> **STATUS (2026-06-25): BP1–BP3 done; BP4 core done; BP6 done. 666 tests green.**
+> Shipped on branch `feat/poem-combat-extension`: BP1 (bundle `stat_map`/`derive` + `ext` bag),
+> BP2 (`parseCardItem` + `buildEncounterFromMvu` + `poemD20` buildCombatant), BP3 (the `<战斗协议>`
+> resolver on the `resolveAction` seam), BP4-core (the resolver is injected via `getSystem`/`runHookFor`;
+> `startFromCard` imports the party from MVU when the bundle has a `stat_map`), BP6 (SDK docs: §8a +
+> rpt-api §4). **Remaining:** BP4 UI/runtime — per-encounter mode choice (Classic / Narrate /
+> Deterministic) + the AI combat-entry prompt that generates enemy `char_info`→combatants (needs the
+> running app); BP5 — the 命定之诗 bundle config + the standalone status MVU-UI regex; BP7 deferred.
 
 **Goal:** Ship a **combat extension (mod) for the 命定之诗 character card** that imports the party's
 DND-style combat stats from MVU variables and resolves combat with the card's *own* `<战斗协议>` (a

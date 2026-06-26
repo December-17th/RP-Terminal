@@ -249,7 +249,7 @@ yet an SDK you'd hand a card author:
 | Combat engine | native deterministic d20 grid engine (`shared/combat`); seeded, card-overridable | ✅ (Track Combat P1–P4) |
 | Combat view | native `CombatView` (grid · initiative · action bar · log); Combat-mode layout | ✅ (P5) |
 | Combat AI touchpoints | `<rpt-combat-start>` cue, `<rpt-combat-result>` adjudication, narration, `ai` enemy ctrl | ✅ (P6) |
-| Combat bundle | card-shipped `rp_terminal.combat` (abilities/bestiary/party/maps/scripts/skin) → `buildEncounter` | ✅ schema + builder (P7); see [combat-system-design.md](../combat-system-design.md) §10 |
+| Combat bundle | card-shipped `rp_terminal.combat` (abilities/bestiary/party/maps/scripts/skin; + `stat_map`/`derive` for MVU import) → `buildEncounter` / `buildEncounterFromMvu` | ✅ schema + builders (P7 + BP1–4); see [combat-system-design.md](../combat-system-design.md) §10 + §8a |
 | Agent / FSM modes | card-defined explore/dialogue/combat tuning + prompts | 🟡 modes exist; card-defined `agent` slot ⬜ |
 | Plugin packages | bundled `plugins[]` install via the permission/sandbox model | ⬜ (World Card S3) |
 
@@ -282,6 +282,29 @@ methods/tags: [rpt-api.md](../rpt-api.md) §4 (Combat).
 | Combat prompts | card `combat.narration_prompt` / `narration_mode` / `improvise_prompt`; user `settings.combat.*` | steer end-of-combat narration (+ append/new-floor placement) and the freeform-action box; card overrides user |
 | Conditions (mechanical) | `stunned`/`restrained` (immobilize), `prone` (attackers get advantage) | other ids are labels only — extended mechanics are script-authored (below) |
 | Ruleset id | `combat.ruleset` (`rpt-d20-v1`) | selects the native core |
+
+### MVU-driven import + card combat systems (built — the 命定之诗 path)
+
+A world whose stats already live in MVU `stat_data` (e.g. 命定之诗) can build the encounter **party
+from those variables** instead of `combat.party` templates, and resolve the fight with its **own**
+rules via a **combat system** plugged into the `resolveAction` seam. The card authors combat numbers
+into the MVU fields its schema already preserves (`标签`/`效果`/`消耗`) — **no new field** — and the app
+parses them. See [combat-poem-of-destiny-expansion.md](../combat-poem-of-destiny-expansion.md).
+
+| Component | Where / shape | Notes |
+| --- | --- | --- |
+| Stat map | `combat.stat_map` (`StatMap`, [bundle.ts](../../src/shared/combat/bundle.ts)) | `player` key, `party{from,filter}` (e.g. `关系列表` where `在场:true`), `paths` (logical→character path). Structural keys are SDK English; values are the card's (`主角`/`属性`/`生命值`…). |
+| Derive tables | `combat.derive` (`DeriveConfig`) | pure DATA: `attributes`, `tier_coefficient`, `hp_multiplier`, `mp_sp_multiplier`, `rating_tiers`, `attr_mitigation`, `defense_constant`. No formulas/eval. |
+| Encounter import | `buildEncounterFromMvu(statData, stat_map, system, {derive})` | walks `stat_map` → player + present companions → `system.buildCombatant` each → grid. Enemies are AI-generated at entry (deferred). |
+| Combat system | `CombatSystem` = `parseItem` + `buildCombatant` + optional `resolveAction`; selected by id via `getSystem()` ([systems/index.ts](../../src/shared/combat/systems/index.ts)) | the card-side adapter. v1 built-in: **`poemD20`**. |
+| ext bag | `Combatant.ext` / `AbilityDef.ext` (opaque `Record<string,unknown>`) | carries the system's parsed stats (五维, `CardCombat`); the native engine ignores it, the system resolver reads it. |
+| Resolver context | `ResolverContext` = `{state, action, abilities, rng, derive}` | the documented inputs a card resolver receives; `resolveAction` returns `{state?,events?}` or **`null`** (→ native for move/end/improvise/out-of-range). The service injects it as the engine's RunHook (built-in runs first, then sandboxed scripts, then native). |
+| 命定之诗 system | [systems/poemD20.ts](../../src/shared/combat/systems/poemD20.ts) | parses `标签`/`效果`/`消耗`; resolves the card's `<战斗协议>` — 生命层级 d20 pool, `命中−闪避→评级`, `构成→装备减免/属性减免→×评级→DR`, `附加效果`. Intent/集群/战意/typed-damage **deferred**. |
+
+A card-SHIPPED (untrusted, sandboxed) resolver via `combat.scripts` is the **same `ResolverContext`
+contract** — deferred hardening; v1 systems are trusted built-ins. Mode selection (Classic / Combat-
+system Narrate / Deterministic) at combat entry and AI enemy `char_info`→combatant generation are the
+remaining wiring (need the running app).
 
 ### Tactical depth = script-authored (deferred, by design)
 
