@@ -67,6 +67,20 @@ describe('templateService TH-3 helpers', () => {
     expect(evalTemplate('<%= _.sumBy([{n:1},{n:2}], "n") %>', ctx())).toBe('3')
     expect(evalTemplate('<%= _.map([1,2,3], x => x*2).join("") %>', ctx())).toBe('246')
     expect(evalTemplate('<%= _.isEqual({a:1},{a:1}) %>', ctx())).toBe('true')
+    // second batch: each (forEach alias), countBy, orderBy, toNumber
+    expect(evalTemplate('<% let s=0; _.each([1,2,3], x => s+=x) %><%= s %>', ctx())).toBe('6')
+    expect(evalTemplate('<%= JSON.stringify(_.countBy(["a","a","b"])) %>', ctx())).toBe(
+      '{"a":2,"b":1}'
+    )
+    expect(evalTemplate('<%= _.orderBy([3,1,2]).join("") %>', ctx())).toBe('123')
+    expect(evalTemplate('<%= _.toNumber("42") + 1 %>', ctx())).toBe('43')
+  })
+
+  it('reports the offending compiled line when a template throws (helps locate a missing helper)', () => {
+    const r = evalTemplateDetailed('<%= _.totallyMissing(1) %>', ctx())
+    expect(r.output).toBe('')
+    expect(r.error).toMatch(/not a function/)
+    expect(r.error).toMatch(/compiled L\d+:/) // pinpoints the failing compiled line
   })
 
   it('strips tags (does not evaluate) when the engine is toggled off', () => {

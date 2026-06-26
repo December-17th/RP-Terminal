@@ -273,7 +273,7 @@ const installBridge = (vm: QuickJSContext, ctx: TemplateContext): void => {
     // so this is faithful + loses nothing that matters). Key args accept a string OR array (lodash does).
     function __ks(p){ return String(p==null?'':p).split('.').filter(Boolean); }
     function __arr(k){ return Array.isArray(k)?k:(k==null?[]:[k]); }
-    function __it(fn){ return typeof fn==='function'?fn:function(x){return x==null?undefined:x[fn];}; }
+    function __it(fn){ if(fn==null) return function(x){return x;}; return typeof fn==='function'?fn:function(x){return x==null?undefined:x[fn];}; }
     var _ = {
       get: function(o,p,d){ var ks=__ks(p),c=o; for(var i=0;i<ks.length;i++){ if(c==null) return d; c=c[ks[i]]; } return c===undefined?d:c; },
       set: function(o,p,v){ var ks=__ks(p),c=o; for(var i=0;i<ks.length-1;i++){ if(typeof c[ks[i]]!=='object'||c[ks[i]]==null) c[ks[i]]={}; c=c[ks[i]]; } if(ks.length) c[ks[ks.length-1]]=v; return o; },
@@ -331,6 +331,41 @@ const installBridge = (vm: QuickJSContext, ctx: TemplateContext): void => {
       round: function(n,p){ p=p||0; var f=Math.pow(10,p); return Math.round((Number(n)||0)*f)/f; },
       padStart: function(s,len,ch){ s=String(s==null?'':s); ch=ch||' '; while(s.length<len) s=ch+s; return s.slice(s.length-Math.max(len,s.length)); }
     };
+    // Aliases + a second batch of common methods (added as properties so they can reference the above).
+    _.each = _.forEach; _.forOwn = _.forEach; _.collect = _.map; _.detect = _.find;
+    _.orderBy = _.sortBy; // single-key ascending approximation of lodash orderBy
+    _.reject = function(c,fn){ var g=__it(fn); return _.filter(c,function(x,i,cc){ return !g(x,i,cc); }); };
+    _.findKey = function(o,fn){ var g=__it(fn); for(var k in o){ if(g(o[k],k,o)) return k; } return undefined; };
+    _.mapKeys = function(o,fn){ var g=__it(fn),r={}; for(var k in o) r[g(o[k],k,o)]=o[k]; return r; };
+    _.countBy = function(c,fn){ var g=__it(fn),r={}; (Array.isArray(c)?c:[]).forEach(function(x){ var key=g(x); r[key]=(r[key]||0)+1; }); return r; };
+    _.flatMap = function(c,fn){ var g=__it(fn); return _.flatten(_.map(c,g)); };
+    _.times = function(n,fn){ n=Number(n)||0; var r=[]; for(var i=0;i<n;i++) r.push(fn?fn(i):i); return r; };
+    _.max = function(a){ return (Array.isArray(a)&&a.length)?a.reduce(function(m,x){return x>m?x:m;}):undefined; };
+    _.min = function(a){ return (Array.isArray(a)&&a.length)?a.reduce(function(m,x){return x<m?x:m;}):undefined; };
+    _.mean = function(a){ a=Array.isArray(a)?a:[]; return a.length?_.sum(a)/a.length:0; };
+    _.meanBy = function(c,fn){ c=Array.isArray(c)?c:[]; return c.length?_.sumBy(c,fn)/c.length:0; };
+    _.toNumber = function(v){ var n=Number(v); return isNaN(n)?0:n; };
+    _.toString = function(v){ return v==null?'':String(v); };
+    _.trim = function(s){ return String(s==null?'':s).trim(); };
+    _.startsWith = function(s,t){ return String(s==null?'':s).indexOf(t)===0; };
+    _.endsWith = function(s,t){ s=String(s==null?'':s); t=String(t); return t===''?true:s.indexOf(t,s.length-t.length)!==-1; };
+    _.repeat = function(s,n){ s=String(s==null?'':s); n=Number(n)||0; var r=''; for(var i=0;i<n;i++) r+=s; return r; };
+    _.isUndefined = function(v){ return v===undefined; };
+    _.isNull = function(v){ return v===null; };
+    _.isBoolean = function(v){ return typeof v==='boolean'; };
+    _.isInteger = function(v){ return typeof v==='number' && isFinite(v) && Math.floor(v)===v; };
+    _.noop = function(){};
+    _.identity = function(v){ return v; };
+    _.take = function(a,n){ return Array.isArray(a)?a.slice(0,n==null?1:n):[]; };
+    _.takeRight = function(a,n){ n=n==null?1:n; return Array.isArray(a)?a.slice(Math.max(a.length-n,0)):[]; };
+    _.drop = function(a,n){ return Array.isArray(a)?a.slice(n==null?1:n):[]; };
+    _.chunk = function(a,n){ n=Math.max(Number(n)||1,1); var r=[]; a=Array.isArray(a)?a:[]; for(var i=0;i<a.length;i+=n) r.push(a.slice(i,i+n)); return r; };
+    _.findIndex = function(a,fn){ var g=__it(fn); a=Array.isArray(a)?a:[]; for(var i=0;i<a.length;i++) if(g(a[i],i,a)) return i; return -1; };
+    _.nth = function(a,i){ if(!Array.isArray(a)) return undefined; i=Number(i)||0; return i<0?a[a.length+i]:a[i]; };
+    _.invert = function(o){ var r={}; for(var k in o) r[o[k]]=k; return r; };
+    _.uniqBy = function(c,fn){ var g=__it(fn),seen={},r=[]; (Array.isArray(c)?c:[]).forEach(function(x){ var k=g(x); if(!seen[k]){seen[k]=1;r.push(x);} }); return r; };
+    _.concat = function(){ var r=[]; for(var i=0;i<arguments.length;i++){ var a=arguments[i]; if(Array.isArray(a)) r=r.concat(a); else r.push(a); } return r; };
+    _.difference = function(a){ var ex=Array.prototype.slice.call(arguments,1).reduce(function(s,x){return s.concat(x);},[]); return (Array.isArray(a)?a:[]).filter(function(x){return ex.indexOf(x)<0;}); };
     var console = { log: function(){}, info: function(){}, warn: function(){}, error: function(){} };
   `
   const r = vm.evalCode(boot)
@@ -366,7 +401,17 @@ export const evalTemplateDetailed = (
     if (res.error) {
       const err = vm.dump(res.error)
       res.error.dispose()
-      const msg = typeof err === 'object' ? JSON.stringify(err) : String(err)
+      let msg = typeof err === 'object' ? JSON.stringify(err) : String(err)
+      // Pinpoint the offending COMPILED line (program line N == eval.js:N) so a missing helper
+      // ("not a function") or bad construct ("expecting ';'") is obvious without guessing. The error
+      // carries `lineNumber` (SyntaxError) and/or a stack frame "eval.js:N:col" (runtime).
+      const lineNo =
+        (err && typeof err === 'object' && Number(err.lineNumber)) ||
+        Number(/eval\.js:(\d+)/.exec(err && typeof err === 'object' ? err.stack || '' : '')?.[1])
+      if (lineNo) {
+        const srcLine = program.split('\n')[lineNo - 1]
+        if (srcLine) msg += ` | compiled L${lineNo}: ${srcLine.trim().slice(0, 200)}`
+      }
       logFn('error', 'Template error', msg)
       return { output: '', error: msg }
     }
