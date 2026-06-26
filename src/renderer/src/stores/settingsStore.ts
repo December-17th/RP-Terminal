@@ -102,7 +102,11 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
     const current = get().settings
     if (!current) return
     const merged = { ...current, ...newSettings }
-    await window.api.saveSettings(profileId, merged)
+    // Update state synchronously (optimistic) BEFORE the async persist. Controlled inputs read
+    // their `value` from this state; if it only updated after the IPC round-trip, the input would
+    // lag a tick behind each keystroke. That lag desyncs IME composition (e.g. Chinese pinyin),
+    // making the input concatenate every intermediate composition string into gibberish.
     set({ settings: merged })
+    await window.api.saveSettings(profileId, merged)
   }
 }))
