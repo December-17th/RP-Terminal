@@ -407,6 +407,9 @@ const zh: Record<string, string> = {
   'combat.refereeDeciding': '裁判正在判定……',
   'combat.focus': '专注',
   'combat.exitFocus': '退出专注',
+  'combat.popup': '弹出',
+  'combat.closePopup': '关闭',
+  'combat.inPopup': '战斗已在弹出窗口中打开。',
   'combat.returnToStory': '返回故事',
 
   'actions.hide': '隐藏脚本动作',

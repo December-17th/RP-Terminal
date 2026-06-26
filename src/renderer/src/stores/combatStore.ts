@@ -3,16 +3,17 @@ import type {
   AbilityDef,
   Action,
   Combatant,
+  CombatEvent,
   CombatState,
   Coord
 } from '../../../shared/combat/types'
 
 /**
- * Renderer mirror of the active encounter (Track Combat / P5). Holds the CombatState
- * + ability catalog fetched over `window.api.combat*`, plus the current targeting
- * selection. After the player ends a turn it auto-runs automated (enemy) turns until
- * it's a player's turn again or the fight ends. The engine is authoritative — this
- * store only reflects what the main process returns.
+ * Renderer mirror of the active encounter (Track Combat / P5 + UI pass). Holds the
+ * CombatState + ability catalog fetched over `window.api.combat*`, the targeting
+ * selection, and the most-recent resolved events (`lastEvents` + a bumped `eventSeq`)
+ * that drive the CombatView's floating damage/miss numbers. After the player ends a
+ * turn it auto-runs automated (enemy) turns, pacing them so each is visible.
  */
 
 export type Selection = { mode: 'idle' } | { mode: 'move' } | { mode: 'ability'; abilityId: string }
@@ -31,6 +32,10 @@ interface CombatStore {
   abilities: Record<string, AbilityDef>
   selection: Selection
   busy: boolean
+  /** events from the most recent resolved action (for floating-number feedback). */
+  lastEvents: CombatEvent[]
+  /** bumped on every `lastEvents` update so the view can react even to identical events. */
+  eventSeq: number
   load: (profileId: string, chatId: string) => Promise<void>
   startMock: (profileId: string, chatId: string) => Promise<void>
   reset: () => void
@@ -43,16 +48,22 @@ interface CombatStore {
   endCombat: (profileId: string) => Promise<void>
 }
 
+const delay = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms))
+
 export const useCombatStore = create<CombatStore>((set, get) => {
-  // Drive automated combatants (enemies) until control returns to a player or the
-  // fight resolves. The guard caps runaway loops (e.g. all-automated rosters).
+  const pushEvents = (state: CombatState, events: CombatEvent[] = []): void =>
+    set({ state, lastEvents: events, eventSeq: get().eventSeq + 1 })
+
+  // Drive automated combatants (enemies) until control returns to a player or the fight
+  // resolves, pacing each turn so the player sees it. The guard caps runaway loops.
   const runAutomated = async (profileId: string, chatId: string): Promise<void> => {
     let st = get().state
     let guard = 0
     while (st && st.status === 'active' && isAutomated(currentCombatant(st)) && guard++ < 100) {
-      const { state } = await api().combatEnemyTurn(profileId, chatId)
-      set({ state })
+      const { state, events } = await api().combatEnemyTurn(profileId, chatId)
+      pushEvents(state, events)
       st = state
+      await delay(380)
     }
   }
 
@@ -66,8 +77,9 @@ export const useCombatStore = create<CombatStore>((set, get) => {
     if (!chatId) return
     set({ busy: true })
     try {
-      const { state } = await api().combatAction(profileId, chatId, action)
-      set({ state, selection: { mode: 'idle' } })
+      const { state, events } = await api().combatAction(profileId, chatId, action)
+      set({ selection: { mode: 'idle' } })
+      pushEvents(state, events)
     } finally {
       set({ busy: false })
     }
@@ -79,6 +91,8 @@ export const useCombatStore = create<CombatStore>((set, get) => {
     abilities: {},
     selection: { mode: 'idle' },
     busy: false,
+    lastEvents: [],
+    eventSeq: 0,
 
     load: async (profileId, chatId) => {
       const res = await api().combatGet(profileId, chatId)
@@ -122,21 +136,22 @@ export const useCombatStore = create<CombatStore>((set, get) => {
       if (!chatId) return
       set({ busy: true })
       try {
-        const { state } = await api().combatAdjudicate(profileId, chatId, prose)
-        set({ state, selection: { mode: 'idle' } })
+        const { state, events } = await api().combatAdjudicate(profileId, chatId, prose)
+        set({ selection: { mode: 'idle' } })
+        pushEvents(state, events)
       } finally {
         set({ busy: false })
       }
     },
 
-    // Ask the AI to narrate the resolved fight; the prose is appended to the log.
+    // Ask the AI to narrate the resolved fight; it lands in the chat (append / new floor
+    // per the user/card setting), so there's no combat-state change to apply here.
     narrate: async (profileId) => {
       const { chatId } = get()
       if (!chatId) return
       set({ busy: true })
       try {
-        const { state } = await api().combatNarrate(profileId, chatId)
-        set({ state })
+        await api().combatNarrate(profileId, chatId)
       } finally {
         set({ busy: false })
       }

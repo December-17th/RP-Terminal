@@ -24,6 +24,21 @@
   --rpt-combat-grid: var(--rpt-border);
 }
 
+/* Floating combat numbers (damage / miss) rise + fade over the target token. */
+@keyframes rpt-combat-float {
+  from {
+    opacity: 1;
+    transform: translateY(2px);
+  }
+  to {
+    opacity: 0;
+    transform: translateY(-22px);
+  }
+}
+.rpt-combat-float {
+  animation: rpt-combat-float 850ms ease-out forwards;
+}
+
 body {
   margin: 0;
   font-family: 'Inter', sans-serif;

@@ -418,6 +418,9 @@ const en: Record<string, string> = {
   'combat.refereeDeciding': 'The referee is deciding…',
   'combat.focus': 'Focus',
   'combat.exitFocus': 'Exit focus',
+  'combat.popup': 'Pop out',
+  'combat.closePopup': 'Close',
+  'combat.inPopup': 'Combat is open in a pop-out window.',
   'combat.returnToStory': 'Return to story',
 
   'actions.hide': 'Hide script actions',
