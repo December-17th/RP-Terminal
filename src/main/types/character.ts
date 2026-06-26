@@ -104,6 +104,11 @@ export const CombatBundleSchema = z
     maps: z.array(z.any()).optional(),
     scripts: z.record(z.string(), z.string()).optional(),
     skin: z.record(z.string(), z.any()).optional(),
+    /** MVU-import config (build the party from stat_data instead of `party` templates).
+     *  Loose markers — authoritative shapes are StatMap/DeriveConfig in shared/combat/bundle.ts,
+     *  consumed/normalized by buildEncounterFromMvu. */
+    stat_map: z.record(z.string(), z.any()).optional(),
+    derive: z.record(z.string(), z.any()).optional(),
     /** Steers the end-of-combat narration; overrides the user's setting. */
     narration_prompt: z.string().optional(),
     /** Where the narration lands in the chat; overrides the user's setting. */

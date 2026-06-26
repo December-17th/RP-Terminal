@@ -74,6 +74,9 @@ export interface Combatant {
   /** rolled initiative (set by the engine's rollInitiative). */
   initiative?: number
   controller?: Controller
+  /** Card-system extension bag (e.g. the 命定之诗 parsed 五维 + CardCombat). Opaque to the
+   *  native engine; only a card's resolver reads it. See docs/combat-poem-of-destiny-expansion.md. */
+  ext?: Record<string, unknown>
 }
 
 /** Area-of-effect footprint an ability projects onto the grid. */
@@ -113,6 +116,9 @@ export interface AbilityDef {
   /** require clear line-of-sight from the actor to the target (e.g. ranged shots). Lobbed
    *  AoE (fireball over a wall) leaves this false. Default false. */
   requiresLoS?: boolean
+  /** Card-system extension bag (e.g. parsed 威力/攻击/防御/关联属性 for the 命定之诗 resolver).
+   *  Opaque to the native resolver; only a card's resolver reads it. */
+  ext?: Record<string, unknown>
 }
 
 export type ActionKind = 'move' | 'ability' | 'end' | 'improvise'

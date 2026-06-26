@@ -87,4 +87,29 @@ describe('CombatBundleSchema', () => {
     expect(() => CombatBundleSchema.parse(bundle)).not.toThrow()
     expect(() => CombatBundleSchema.parse({})).not.toThrow()
   })
+
+  it('passes the MVU-import stat_map/derive slots through untouched', () => {
+    const withMvu = {
+      stat_map: {
+        player: '主角',
+        party: { from: '关系列表', filter: { 在场: true } },
+        paths: { hp: '生命值', maxHp: '生命值上限', 属性: '属性' }
+      },
+      derive: {
+        attributes: ['力量', '敏捷', '体质', '智力', '精神'],
+        tier_coefficient: { '1': 2.0, '7': 80.0 },
+        rating_tiers: [
+          [20, 1.3],
+          [11, 1.0],
+          [0, 0]
+        ],
+        attr_mitigation: { 物理: 0.0025, 真实: 0 },
+        defense_constant: 2000
+      }
+    }
+    const parsed = CombatBundleSchema.parse(withMvu)
+    // Loose markers must round-trip the CJK domain values verbatim.
+    expect(parsed.stat_map).toEqual(withMvu.stat_map)
+    expect(parsed.derive).toEqual(withMvu.derive)
+  })
 })

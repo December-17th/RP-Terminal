@@ -139,25 +139,27 @@ code, so there is no eval/formula-string surface.
 "stat_map": {
   "player": "主角",
   "party":  { "from": "关系列表", "filter": { "在场": true } },
-  "paths": {
-    "属性":"属性", "hp":"生命值","maxHp":"生命值上限",
+  "paths": {                        // logical key (SDK English) → path inside a character (card CJK)
+    "attributes":"属性", "hp":"生命值","maxHp":"生命值上限",
     "mp":"法力值","maxMp":"法力值上限", "sp":"体力值","maxSp":"体力值上限",
-    "等级":"等级", "生命层级":"生命层级",
-    "装备":"装备", "技能":"技能", "状态效果":"状态效果"
+    "level":"等级", "tier":"生命层级",
+    "equipment":"装备", "skills":"技能", "conditions":"状态效果"
   }
 }
-"derive": {                         // declarative DATA tables + tunables (formulas live in resolver code,
-  "属性": ["力量","敏捷","体质","智力","精神"],   //  no eval surface)
-  "层级系数": {"1":2.0,"2":2.8,"3":4.0,"4":8.0,"5":15.0,"6":35.0,"7":80.0},
-  "hp乘数":   {"1":1,"2":2,"3":4,"4":10,"5":20,"6":40,"7":100},
-  "mpsp乘数": {"1":1,"2":2.5,"3":6,"4":15,"5":35,"6":80,"7":160},
-  "评级": [[30,2.0],[25,1.6],[20,1.3],[11,1.0],[8,0.8],[4,0.3],[0,0]],
-  "属性减免": {"物理":0.0025,"能量":0.004,"精神":0.008,"真实":0},
-  "装备减免常数": 2000
+"derive": {                         // pure DATA tables — formulas live in resolver code (no eval)
+  "attributes": ["力量","敏捷","体质","智力","精神"],
+  "tier_coefficient":  {"1":2.0,"2":2.8,"3":4.0,"4":8.0,"5":15.0,"6":35.0,"7":80.0},
+  "hp_multiplier":     {"1":1,"2":2,"3":4,"4":10,"5":20,"6":40,"7":100},
+  "mp_sp_multiplier":  {"1":1,"2":2.5,"3":6,"4":15,"5":35,"6":80,"7":160},
+  "rating_tiers": [[30,2.0],[25,1.6],[20,1.3],[11,1.0],[8,0.8],[4,0.3],[0,0]],
+  "attr_mitigation": {"物理":0.0025,"能量":0.004,"精神":0.008,"真实":0}, "defense_constant": 2000
 }
 ```
-`buildEncounterFromMvu` reads 生命值上限/法力值上限/体力值上限 **directly** from MVU (the card already
-stores them), using the 资源推演 formula only as a fallback when missing.
+**Key-language convention (BP1):** structural keys (`stat_map`/`derive`/`paths` fields) are the SDK's
+English snake_case (`StatMap`/`DeriveConfig` in `src/shared/combat/bundle.ts`); the card's domain terms
+appear only in **values** (`主角`, `关系列表`, `力量`, `生命值`) and **record keys** (生命层级 `"1".."7"`;
+物理/能量/精神/真实). `buildEncounterFromMvu` reads 生命值上限/法力值上限/体力值上限 **directly** from MVU
+(the card already stores them), using the 资源推演 formula only as a fallback when missing.
 
 ## Open points — all RESOLVED by the investigation
 1. **Strictness** → whitelisted/strict; no `战斗` sub-object; use 标签/效果/消耗. ✔

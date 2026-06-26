@@ -46,6 +46,39 @@ export interface CombatMap {
   enemy_spawns?: Coord[]
 }
 
+/** MVU-import config: where the player + party + per-character stat paths live in a card's
+ *  `stat_data`. Consumed by buildEncounterFromMvu (the alternative to bundle `party` templates).
+ *  Snake_case like the other card-authored bundle-structure fields; the domain VALUES
+ *  (e.g. "主角", "关系列表", "属性") are the card's own, supplied here. */
+export interface StatMap {
+  /** stat_data key holding the player character, e.g. "主角". */
+  player: string
+  /** where companions live + how to filter who's present, e.g. { from:"关系列表", filter:{ 在场:true } }. */
+  party?: { from: string; filter?: Record<string, unknown> }
+  /** logical field → path inside a character object, e.g. { hp:"生命值", maxHp:"生命值上限", 属性:"属性" }. */
+  paths?: Record<string, string>
+}
+
+/** Pure-DATA derivation tables for an MVU-imported encounter — no formulas/eval; the resolver
+ *  code applies these. Record KEYS are the card's domain values (生命层级 "1".."7"; damage types
+ *  物理/能量/精神/真实). See docs/combat-poem-of-destiny-expansion.md. */
+export interface DeriveConfig {
+  /** attribute key order, e.g. ['力量','敏捷','体质','智力','精神']. */
+  attributes?: string[]
+  /** 生命层级 → 战斗层级系数 (damage scaling). */
+  tier_coefficient?: Record<string, number>
+  /** 生命层级 → HP multiplier (资源推演). */
+  hp_multiplier?: Record<string, number>
+  /** 生命层级 → MP/SP multiplier. */
+  mp_sp_multiplier?: Record<string, number>
+  /** [threshold, multiplier] pairs, descending — the 评级 (hit-rating) table. */
+  rating_tiers?: [number, number][]
+  /** damage-type → per-point mitigation fraction (物理/能量/精神/真实). */
+  attr_mitigation?: Record<string, number>
+  /** 装备减免 constant in `防御/(防御+const)` (default 2000). */
+  defense_constant?: number
+}
+
 export interface CombatBundle {
   ruleset?: string
   grid?: { type?: string; cell_ft?: number }
@@ -56,6 +89,9 @@ export interface CombatBundle {
   maps?: CombatMap[]
   scripts?: Partial<Record<HookName, string>>
   skin?: Record<string, unknown>
+  /** MVU-import (BP2+): build the encounter party from `stat_data` instead of `party` templates. */
+  stat_map?: StatMap
+  derive?: DeriveConfig
 }
 
 export interface BuiltEncounter {
