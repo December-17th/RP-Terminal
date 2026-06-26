@@ -78,6 +78,9 @@ const en: Record<string, string> = {
   'prefs.memoryUtilityHint':
     'Which saved API connection writes the summaries — use a cheap, fast model. Defaults to the active connection.',
   'prefs.memoryRecall': 'Memories recalled per turn',
+  'prefs.memoryKeepRecent': 'Keep recent turns verbatim',
+  'prefs.memoryKeepRecentHint':
+    'The most recent turns always stay in full; older ones are summarized once this many have aged out. Lower it to start remembering sooner.',
   'prefs.memoryCheckpoint': 'Summarize every N turns',
   'prefs.memoryCheckpointHint':
     'How often older turns are folded into memory — a background step that never blocks your turn.',

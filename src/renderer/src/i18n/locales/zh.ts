@@ -79,6 +79,9 @@ const zh: Record<string, string> = {
   'prefs.memoryUtilityHint':
     '由哪个已保存的 API 连接来生成概括——建议用便宜且快速的模型。默认使用当前连接。',
   'prefs.memoryRecall': '每回合召回的记忆数',
+  'prefs.memoryKeepRecent': '保留多少最近回合不概括',
+  'prefs.memoryKeepRecentHint':
+    '最近的若干回合始终保留原文；当滑出这一数量后，较旧的回合才会被概括。调小可更早开始记忆。',
   'prefs.memoryCheckpoint': '每 N 回合概括一次',
   'prefs.memoryCheckpointHint': '较旧回合被折叠进记忆的频率——这是后台步骤，不会阻塞你的当前回合。',
   'prefs.cardRendering': '卡片渲染（默认）',

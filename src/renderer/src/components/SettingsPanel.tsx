@@ -483,6 +483,28 @@ export const SettingsPanel: React.FC<{ profileId: string }> = ({ profileId }) =>
                 />
 
                 <label className="field-label" style={{ marginTop: 14 }}>
+                  {t('prefs.memoryKeepRecent')}
+                </label>
+                <input
+                  type="number"
+                  min={1}
+                  value={settings.memory?.keep_recent ?? 10}
+                  onChange={(e) =>
+                    updateSettings(profileId, {
+                      memory: {
+                        ...settings.memory,
+                        keep_recent: Math.max(1, Number(e.target.value) || 1)
+                      }
+                    })
+                  }
+                />
+                <div
+                  style={{ fontSize: '0.78em', color: 'var(--rpt-text-secondary)', marginTop: 4 }}
+                >
+                  {t('prefs.memoryKeepRecentHint')}
+                </div>
+
+                <label className="field-label" style={{ marginTop: 14 }}>
                   {t('prefs.memoryCheckpoint')}
                 </label>
                 <input
