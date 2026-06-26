@@ -7,6 +7,17 @@ Running status of the MVU / panel-workspace track. Newest first.
 
 ## 2026-06-26
 
+- **Structural & maintainability review + plan (branch `refactor/structural-cleanup-2026-06-26`).** Whole-
+  codebase review: [codebase-structural-review-2026-06-26.md](codebase-structural-review-2026-06-26.md)
+  (diagnosis, 9 ranked findings WS-1..WS-9 + per-file notes) and
+  [maintainability-plan-2026-06-26.md](maintainability-plan-2026-06-26.md) (sequenced treatment).
+  Headline: the `Host`-seam two-transport design **resolved** the old dual-card-host risk, but the EJS
+  *engine* is now shared while its *context* is hand-built 3 divergent ways (WS-1, HIGH) — the keystone fix.
+  Other HIGH: the write-back-loop heuristic should be replaced by origin-tagging (WS-3). MED: decompose
+  `buildPrompt` (WS-5), de-escalate L1 cache (WS-2), lodash-out-of-string (WS-4), one broadcast helper
+  (WS-7). LOW: delete dead schema (WS-6), document path dialects (WS-8) + error policy (WS-9). Supersedes
+  [maintainability-plan.md](maintainability-plan.md) (2026-06-22).
+
 - **⚠️ GAP — prompt-build EJS can't run async / `TavernHelper`-using lorebook entries.** The 命定之诗 card
   has constant lorebook entries written as ST-Prompt-Template scriptlets that call the **TavernHelper API**
   and use **`await`**, e.g. `命定系统-艾莉亚核心`:
