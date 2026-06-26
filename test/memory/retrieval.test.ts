@@ -72,6 +72,21 @@ describe('selectFromEntries', () => {
     expect(selectFromEntries(entries, 'x', 2, 0).map((e) => e.id)).toEqual(['a', 'b'])
   })
 
+  it('keeps all pinned even when they exceed count (count caps only the rest)', () => {
+    const entries = [
+      E({ id: 'p1', pinned: true }),
+      E({ id: 'p2', pinned: true }),
+      E({ id: 'p3', pinned: true }),
+      E({ id: 'r1' })
+    ]
+    // count is 2 but 3 are pinned → all 3 survive; the non-pinned 'r1' gets no slot.
+    expect(
+      selectFromEntries(entries, 'x', 2, 0)
+        .map((e) => e.id)
+        .sort()
+    ).toEqual(['p1', 'p2', 'p3'])
+  })
+
   it('dedupes an entry that is both recent and keyword-matched', () => {
     const entries = [E({ id: 'r1', keywords: ['hit'] }), E({ id: 'r2' })]
     const chosen = selectFromEntries(entries, 'a hit lands', 5, 0)

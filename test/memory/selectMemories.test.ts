@@ -108,6 +108,23 @@ describe('selectMemories (orchestration)', () => {
     expect(r.rows.map((x) => x.id)).toEqual(['e1']) // first block kept, second over budget
   })
 
+  it('bounds even the first collection by max_tokens, despite tokenBudget:0', async () => {
+    // Two regressions at once: the first block used to be exempt from the global cap, and a
+    // collection with tokenBudget:0 used to bypass per-collection trimming entirely. With a tiny
+    // max_tokens and huge summaries, only the top line should survive.
+    const huge = 'word '.repeat(100)
+    vi.mocked(getEntries).mockReturnValue([
+      entry({ id: 'a', summary: huge }),
+      entry({ id: 'b', summary: huge })
+    ])
+    const settings = settingsWith([
+      coll({ retrieval: { mode: 'keyword', count: 5, tokenBudget: 0 } })
+    ])
+    settings.memory.max_tokens = 10
+    const r = await selectMemories('p', 'c', 'scan', settings)
+    expect(r.rows.map((x) => x.id)).toEqual(['a']) // first kept, second over the global cap
+  })
+
   it('is a no-op when memory is disabled', async () => {
     const r = await selectMemories('p', 'c', 'scan', {
       memory: { enabled: false }

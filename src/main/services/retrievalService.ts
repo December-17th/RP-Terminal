@@ -91,18 +91,22 @@ export const slotted = (
   tokenBudget: number,
   ranked: MemoryEntry[]
 ): MemoryEntry[] => {
-  const chosen: MemoryEntry[] = []
   const seen = new Set<string>()
-  const take = (e: MemoryEntry): void => {
+  const pinned: MemoryEntry[] = []
+  const rest: MemoryEntry[] = []
+  const take = (e: MemoryEntry, bucket: MemoryEntry[]): void => {
     if (!seen.has(e.id)) {
       seen.add(e.id)
-      chosen.push(e)
+      bucket.push(e)
     }
   }
-  for (const e of entries) if (e.pinned) take(e) // 1. pinned (always present)
-  for (const e of entries.slice(0, RECENT_SLOTS)) take(e) // 2. most-recent (newest-first)
-  for (const e of ranked) take(e) // 3. relevance-ranked
-  return trimToBudget(chosen.slice(0, Math.max(0, count)), tokenBudget)
+  for (const e of entries) if (e.pinned) take(e, pinned) // 1. pinned (always present)
+  for (const e of entries.slice(0, RECENT_SLOTS)) take(e, rest) // 2. most-recent (newest-first)
+  for (const e of ranked) take(e, rest) // 3. relevance-ranked
+  // Pinned are always kept (the token budget is their only ceiling); `count` caps the rest. A user
+  // who pins more than `count` memories means it — don't silently drop the overflow (design §8).
+  const chosen = [...pinned, ...rest.slice(0, Math.max(0, count - pinned.length))]
+  return trimToBudget(chosen, tokenBudget)
 }
 
 /** Keyword-mode selection (pinned → recent → keyword-ranked). Pure. */
@@ -184,6 +188,7 @@ export const selectMemories = async (
   let used = 0
   for (const coll of mem.collections) {
     if (!coll.enabled) continue
+    if (maxTokens > 0 && used >= maxTokens) break // global tail budget exhausted
     const mode = coll.retrieval.mode
     const isStream =
       coll.shape === 'stream' && (mode === 'keyword' || mode === 'vector' || mode === 'hybrid')
@@ -192,7 +197,14 @@ export const selectMemories = async (
 
     const entries = getEntries(profileId, chatId, coll.id)
     if (!entries.length) continue
-    const { count, tokenBudget } = coll.retrieval
+    const { count } = coll.retrieval
+    // Bound this collection's budget by what's left of the global cap, so no single collection —
+    // even the first, even one with tokenBudget unset/0 — can blow the whole tail budget. Each
+    // block still keeps at least its top line (trimToBudget), so memory never silently empties.
+    const remaining = maxTokens > 0 ? maxTokens - used : 0
+    const collBudget = coll.retrieval.tokenBudget
+    const tokenBudget =
+      maxTokens > 0 ? Math.min(collBudget > 0 ? collBudget : remaining, remaining) : collBudget
 
     let chosen: MemoryEntry[]
     let block: string
@@ -213,13 +225,11 @@ export const selectMemories = async (
     }
     if (!block) continue
 
-    // Global tail cap: always keep the first block, then stop once max_tokens is reached
-    // (collections are ordered by priority — events, characters, locations).
-    const cost = estimateTokens(block)
-    if (maxTokens > 0 && blocks.length > 0 && used + cost > maxTokens) continue
+    // Collections are priority-ordered (events, characters, locations); take this block and account
+    // its real cost. The per-collection budget above keeps each within the remaining global budget.
     blocks.push(block)
     rows.push(...chosen)
-    used += cost
+    used += estimateTokens(block)
   }
   return { block: blocks.join('\n\n'), rows }
 }
