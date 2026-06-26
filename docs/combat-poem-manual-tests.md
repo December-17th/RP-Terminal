@@ -63,6 +63,28 @@ Expected:
 
 Capture on failure: the full combat log, console errors, main log.
 
+## 4. Combat sheet (MVU-UI regex) — render + aesthetics
+Steps:
+1. Import [sdk/examples/poem-combat-sheet.regex.json](sdk/examples/poem-combat-sheet.regex.json) as a
+   regex script (`命定之诗-战斗面板`).
+2. Make the sheet appear: put `<战斗状态栏/>` in a message (hand-edit an AI message, or have the preset
+   emit it where the 状态栏 marker goes). The regex replaces it with the rendered panel.
+
+Expected:
+- A **parchment-themed** panel (dark leather bg, parchment text — matching the 状态栏 `羊皮纸` theme)
+  showing: name · 生命层级 · 等级 · 层级系数; HP/MP/SP bars (red/blue/green); the 5 attributes; a derived
+  line (武器攻击 / 防御 / 命中 / 闪避 / 护盾); **技能** as cards with parsed combat details
+  (威力 / 关联属性 / 射程 / 范围 / 消耗 / 命中 / 伤害增幅 / 治疗 / 护盾 / 固伤 / 附加效果), quality-colored;
+  **装备** similarly; and **状态** chips. Numbers should match what the engine computes (same parse/derive).
+- The HTML source ([poem-combat-sheet.html](sdk/examples/poem-combat-sheet.html)) renders its empty state
+  in a plain browser/preview (no `getVariables`) — useful to check styling without the app.
+
+Capture on failure: the renderer console (does `getVariables().stat_data.主角` resolve in the card realm?),
+and a screenshot of the panel vs the 状态栏 for the aesthetic comparison.
+
+> The sheet **mirrors** the engine's `parseCardItem`/`derive` (it can't import app TS — it runs in the card
+> iframe). Keep the two in sync; the parser itself is unit-tested engine-side.
+
 ---
 
 ## Known gaps / deferred (so a tester isn't surprised)
@@ -73,4 +95,6 @@ Capture on failure: the full combat log, console errors, main log.
   always runs through the engine. *(BP4)*
 - **AI dynamic enemy generation** — **built** (channel A1): enemies come from the JSON roster in the
   `<rpt-combat-start>` body. The bundle's static `enemies` templates remain as a fallback. *(BP4)*
-- **Status MVU-UI regex** (the combat sheet showing attrs/derived/abilities) — not built. *(BP5)*
+- **Status MVU-UI regex** (the combat sheet) — **built (v1)**:
+  [poem-combat-sheet.regex.json](sdk/examples/poem-combat-sheet.regex.json) (standalone, parchment-themed,
+  trigger `<战斗状态栏/>`). Needs in-app render/aesthetic verification (§4). *(BP5)*

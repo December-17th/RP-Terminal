@@ -248,7 +248,11 @@ preset** problem (how the AI emits combat data), see the next section.
 ### Remaining build items (after the lorebook design is settled)
 - **AI→engine enemy/NPC channel** (the crux) — parse AI-supplied combatant data into `buildCombatant`
   enemies, replacing the static bundle stopgap. Channel TBD (see next section).
-- **Status MVU-UI regex** (BP5) — the combat sheet; needs the app to render.
+- **Status MVU-UI regex** (BP5) — **built v1**: standalone parchment-themed combat sheet
+  ([sdk/examples/poem-combat-sheet.html](sdk/examples/poem-combat-sheet.html) → `.regex.json`), trigger
+  `<战斗状态栏/>`, reads `getVariables().stat_data.主角`, **mirrors** `parseCardItem`/`derive` (kept in
+  sync manually; the parser is unit-tested engine-side). Owner-chosen option A, styled to match the
+  状态栏 `羊皮纸` theme. Needs in-app render/aesthetic verification.
 - **Per-encounter mode chooser** (BP4) — Classic / Combat-system Narrate / Deterministic.
 - **End-of-combat fold-back verification** — confirm post-fight HP/状态 writes back to `stat_data`
   (主角) via `<UpdateVariable>` in-app.
