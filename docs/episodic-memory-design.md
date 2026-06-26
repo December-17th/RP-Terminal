@@ -424,12 +424,18 @@ Memory **trades cached tokens for uncached ones**: it shrinks the (cacheable) ve
 
 ## 17. Remaining work (prioritized)
 
-The core (§15) ships the `events` stream collection end-to-end. Remaining work, in build order — the **data-management UI is now the headline next deliverable**, ahead of new engine capability, because a memory system the user can't see or correct doesn't earn trust.
+> **BUILT so far (branch `feat/memory-system`):** the full `events` stream engine (§15); the complete
+> **data-management UI** (#1 — browse/filter/edit/pin/delete/add/live-refresh/why-recalled); **entity
+> collections** (#2 — `characters`/`locations` end-to-end: store, one-call structured extraction with
+> T1 key-resolution + T2 delta sheets, in-scope reader injection, sheet rendering in the UI); and the
+> global `max_tokens` tail cap (part of #4). Remaining below.
 
-1. **Data-management UI (TOP PRIORITY — §11.F).** A first-class workspace surface to browse memories by collection, inspect/edit/pin/delete records, query the store ("what do we know about X?"), and see *why* each turn recalled what it did. Builds only on the already-shipped `memoryStore` ops + the `pinned` column; needs no engine changes, and it's what makes everything below trustworthy and debuggable. **Build this next.**
-2. **Entity collections (§5.2) — `characters` / `locations` / `relationships`.** The "more than what happened" half: upsert-keyed, always-in-scope records. The functional headline after the UI. **Gated by the deferred decisions T1 (entity identity/aliasing, §11.Q) and T2 (sheet-update strategy) — resolve those first (§14).**
-3. **Validated, self-correcting structured writes (§11.O).** Schema-validate entity fills (reuse `mvuZod.ts`) with error-injection retry — keeps structured memory well-formed. Pairs with (2).
-4. **Quality pass:** salience + decay (§11.B), token-threshold checkpoint trigger (§7), contradiction/supersede (§11.D), and enforcing the global `memory.max_tokens` cap across collections.
+The core (§15) ships the `events` stream collection end-to-end. Remaining work, in build order:
+
+1. **Data-management UI (§11.F). ✅ DONE.** Browse by collection, inspect/edit/pin/delete, filter, manual "remember this", live auto-refresh, and the "why recalled" highlight. (Deferred sub-part: a free-form query console.)
+2. **Entity collections (§5.2) — `characters` / `locations`. ✅ DONE** (T1/T2 resolved §14). `relationships` + custom kinds still open.
+3. **Validated, self-correcting structured writes (§11.O).** Schema-validate entity fills (reuse `mvuZod.ts`) with error-injection retry — keeps structured memory well-formed. Pairs with (2). _(Next-up.)_
+4. **Quality pass:** ~~global `memory.max_tokens` cap~~ ✅; remaining — salience + decay (§11.B), token-threshold checkpoint trigger (§7), contradiction/supersede (§11.D, partly free for entities via upsert).
 5. **Query-based / conditional injection (§11.P).** Make memory an addressable store cards/templates can target by predicate, not one flat block.
 6. **Scale / optional:** vector + hybrid retrieval (§6, §8 — gated by the T4 backend decision), hierarchical consolidation (§11.E), custom card-defined collections (§5.3), plot/objective tracking (§11.R), document import/seeding (§11.S), `llm`-select (§4).
 7. **Hardening:** wrap append + pointer advance in one transaction (no duplicate on partial failure), utility-call timeout, and a per-collection schema-migration story as structured payloads evolve.
