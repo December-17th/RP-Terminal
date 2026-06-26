@@ -405,6 +405,8 @@ const zh: Record<string, string> = {
   'combat.initiative': '先攻顺序',
   'combat.hp': '生命',
   'combat.move': '移动',
+  'combat.attack': '攻击',
+  'combat.action': '动作',
   'combat.endTurn': '结束回合',
   'combat.improvise': '即兴行动',
   'combat.improvisePlaceholder': '描述一个系统无法模拟的行动……',

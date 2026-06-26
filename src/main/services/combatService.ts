@@ -254,7 +254,8 @@ export const mockEncounterSetup = (): EncounterSetup => {
       shape: { kind: 'self' },
       toHit: 'DEX',
       damage: '1d8+DEX',
-      damageType: 'piercing'
+      damageType: 'piercing',
+      requiresLoS: true
     },
     fireball: {
       id: 'fireball',

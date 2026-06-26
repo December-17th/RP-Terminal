@@ -417,6 +417,8 @@ const en: Record<string, string> = {
   'combat.initiative': 'Initiative',
   'combat.hp': 'HP',
   'combat.move': 'Move',
+  'combat.attack': 'Attack',
+  'combat.action': 'Action',
   'combat.endTurn': 'End turn',
   'combat.improvise': 'Improvise',
   'combat.improvisePlaceholder': 'Describe an action the system can’t model…',

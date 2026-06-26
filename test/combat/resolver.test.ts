@@ -138,6 +138,65 @@ describe('resolveAbility — save-based AoE', () => {
   })
 })
 
+describe('requiresLoS', () => {
+  // A 5x1 lane with a sight-blocking wall at x=2, between the shooter and the target.
+  const lane = (): CombatState => {
+    const tiles = Array.from({ length: 5 }, () => ({
+      passable: true,
+      blocksLoS: false,
+      difficult: false,
+      hazard: false
+    }))
+    tiles[2].blocksLoS = true
+    return {
+      seed: 1,
+      rngCursor: 0,
+      grid: { w: 5, h: 1, cellFt: 5, tiles },
+      combatants: [
+        C('a', 'party', [0, 0], { mods: { DEX: 5 } }),
+        C('e', 'enemy', [4, 0], { ac: 1, hp: 10, maxHp: 10 })
+      ],
+      initiative: ['a', 'e'],
+      turnIndex: 0,
+      round: 1,
+      log: [],
+      status: 'active'
+    }
+  }
+  const bolt: AbilityDef = {
+    id: 'bolt',
+    name: 'Bolt',
+    range: 6,
+    shape: { kind: 'self' },
+    toHit: 'DEX',
+    damage: '1d8',
+    requiresLoS: true
+  }
+
+  it('a wall blocks a line-of-sight ability', () => {
+    const s = lane()
+    const ev = resolveAbility(
+      s,
+      { kind: 'ability', actor: 'a', abilityId: 'bolt', targetCell: [4, 0] },
+      { bolt },
+      seq([0.9, 0.5])
+    )
+    expect(ev.some((e) => e.kind === 'info' && /line of sight/i.test(e.text))).toBe(true)
+    expect(s.combatants[1].block.hp).toBe(10) // unscathed
+  })
+
+  it('a lobbed ability (requiresLoS false) ignores the wall', () => {
+    const s = lane()
+    resolveAbility(
+      s,
+      { kind: 'ability', actor: 'a', abilityId: 'lob', targetCell: [4, 0] },
+      { lob: { ...bolt, id: 'lob', requiresLoS: false } },
+      seq([0.9, 0.5])
+    )
+    expect(s.combatants[1].block.hp).toBeLessThan(10)
+  })
+})
+
 describe('applyDamageAmount / tickConditions / isAlive', () => {
   it('applies resistance and vulnerability', () => {
     expect(applyDamageAmount(C('t', 'enemy', [0, 0], { resist: ['fire'] }), 7, 'fire')).toBe(3)

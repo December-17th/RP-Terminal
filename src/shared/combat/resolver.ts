@@ -7,11 +7,16 @@
 // whole action via the hook seam (see engine.ts / hooks.ts).
 
 import { rollD20, rollExpr, type Rng } from './dice'
-import { clipToGrid, distance, octantDir, targetsInCells, templateCells } from './grid'
+import { clipToGrid, distance, lineOfSight, octantDir, targetsInCells, templateCells } from './grid'
 import type { AbilityDef, Action, CombatEvent, Combatant, CombatState } from './types'
 
 /** A combatant is still in the fight while it has positive HP. */
 export const isAlive = (c: Combatant): boolean => c.block.hp > 0
+
+/** Which per-turn slot an ability consumes (action economy). Attack-roll abilities default to
+ *  the attack slot; everything else (save-based / utility) to the action slot. */
+export const abilityCost = (ability: AbilityDef): 'attack' | 'action' =>
+  ability.cost ?? (ability.toHit ? 'attack' : 'action')
 
 /** Whether a combatant currently has a named condition. */
 export const hasCondition = (c: Combatant, id: string): boolean =>
@@ -137,6 +142,16 @@ export const resolveAbility = (
     })
     return events
   }
+  // Abilities that require sight (e.g. ranged shots) can't be aimed through walls; lobbed
+  // AoE (requiresLoS false) ignores this. Per-target LoS is filtered below.
+  if (ability.requiresLoS && !lineOfSight(state.grid, actor.pos, origin)) {
+    events.push({
+      kind: 'info',
+      text: `${ability.name}: no line of sight.`,
+      delta: { actor: actor.id }
+    })
+    return events
+  }
 
   let targets: Combatant[]
   if (action.targetIds?.length) {
@@ -148,6 +163,8 @@ export const resolveAbility = (
     targets = targetsInCells(state.combatants, cells)
   }
   targets = targets.filter(isAlive)
+  if (ability.requiresLoS)
+    targets = targets.filter((tg) => lineOfSight(state.grid, actor.pos, tg.pos))
 
   events.push({
     kind: 'attack',

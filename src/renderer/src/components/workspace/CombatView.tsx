@@ -5,11 +5,13 @@ import { useCombatStore, currentCombatant, isAutomated } from '../../stores/comb
 import {
   reachable,
   distance,
+  lineOfSight,
   octantDir,
   templateCells,
   clipToGrid,
   tileAt
 } from '../../../../shared/combat/grid'
+import { abilityCost } from '../../../../shared/combat/resolver'
 import type { Combatant, Coord } from '../../../../shared/combat/types'
 import { useT } from '../../i18n'
 
@@ -129,6 +131,7 @@ export function CombatView({ profileId }: { profileId: string }): React.ReactEle
   const { grid } = state
   const actor = currentCombatant(state)
   const playerTurn = state.status === 'active' && !!actor && !isAutomated(actor)
+  const used = state.turnUsed ?? { moved: false, attack: false, action: false }
   const cell = popup ? 42 : 30
   const step = cell + 1 // cell + 1px grid gap
 
@@ -142,7 +145,11 @@ export function CombatView({ profileId }: { profileId: string }): React.ReactEle
     if (ab) {
       for (let y = 0; y < grid.h; y++)
         for (let x = 0; x < grid.w; x++)
-          if (distance(actor.pos, [x, y]) <= ab.range) inRange.add(cellKey([x, y]))
+          if (
+            distance(actor.pos, [x, y]) <= ab.range &&
+            (!ab.requiresLoS || lineOfSight(grid, actor.pos, [x, y]))
+          )
+            inRange.add(cellKey([x, y]))
       if (hover && inRange.has(cellKey(hover))) {
         const dir = octantDir(actor.pos, hover)
         for (const c of clipToGrid(grid, templateCells(ab.shape, hover, dir))) aoe.add(cellKey(c))
@@ -448,11 +455,16 @@ export function CombatView({ profileId }: { profileId: string }): React.ReactEle
           gap: 6
         }}
       >
+        <div style={{ display: 'flex', gap: 8, fontSize: 11, color: 'var(--rpt-text-tertiary)' }}>
+          <BudgetChip label={t('combat.move')} spent={used.moved} />
+          <BudgetChip label={t('combat.attack')} spent={used.attack} />
+          <BudgetChip label={t('combat.action')} spent={used.action} />
+        </div>
         <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
           <ActionBtn
             label={t('combat.move')}
             active={selection.mode === 'move'}
-            disabled={busy}
+            disabled={busy || used.moved}
             onClick={() =>
               store
                 .getState()
@@ -469,7 +481,7 @@ export function CombatView({ profileId }: { profileId: string }): React.ReactEle
                 label={ab.name}
                 hint={ab.range > 1 ? `·${ab.range}` : undefined}
                 active={active}
-                disabled={busy}
+                disabled={busy || used[abilityCost(ab)]}
                 onClick={() =>
                   store
                     .getState()
@@ -664,6 +676,12 @@ export function CombatView({ profileId }: { profileId: string }): React.ReactEle
 
   return <div style={{ height: '100%' }}>{body}</div>
 }
+
+const BudgetChip: React.FC<{ label: string; spent: boolean }> = ({ label, spent }) => (
+  <span style={{ opacity: spent ? 0.4 : 1, textDecoration: spent ? 'line-through' : 'none' }}>
+    {label}
+  </span>
+)
 
 const Legend: React.FC<{ swatch: string; label: string }> = ({ swatch, label }) => (
   <span>

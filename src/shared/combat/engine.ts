@@ -9,9 +9,19 @@
 import { clone } from '../objectPath'
 import { makeRng, rollD20 } from './dice'
 import { reachable } from './grid'
-import { isAlive, resolveAbility, tickConditions } from './resolver'
+import { abilityCost, isAlive, resolveAbility, tickConditions } from './resolver'
 import type { RunHook } from './hooks'
-import type { AbilityDef, Action, CombatEvent, CombatState, CombatStatus } from './types'
+import type {
+  AbilityDef,
+  Action,
+  CombatEvent,
+  CombatState,
+  CombatStatus,
+  TurnBudget
+} from './types'
+
+/** A fresh per-turn action economy: one movement, one attack, one action. */
+const freshBudget = (): TurnBudget => ({ moved: false, attack: false, action: false })
 
 export interface EngineCtx {
   /** the encounter's ability catalog (from the card bundle); keyed by ability id. */
@@ -57,6 +67,7 @@ export const rollInitiative = (state: CombatState, rng = makeRng(seedFor(state))
   next.initiative = order.map((c) => c.id)
   next.turnIndex = 0
   next.round = 1
+  next.turnUsed = freshBudget()
   next.rngCursor = state.rngCursor + 1
   return next
 }
@@ -78,6 +89,7 @@ export const advanceTurn = (state: CombatState): CombatState => {
     const actor = next.combatants.find((c) => c.id === next.initiative[next.turnIndex])
     if (actor && isAlive(actor)) {
       tickConditions(actor)
+      next.turnUsed = freshBudget()
       next.log = [
         ...next.log,
         {
@@ -109,6 +121,13 @@ export const applyAction = async (
       const s = clone(override.state ?? state)
       const events = override.events ?? []
       s.log = [...s.log, ...events]
+      // A whole-action card override still consumes the matching turn budget.
+      const used = s.turnUsed ?? freshBudget()
+      if (action.kind === 'move') s.turnUsed = { ...used, moved: true }
+      else if (action.kind === 'ability') {
+        const ab = action.abilityId ? ctx.abilities?.[action.abilityId] : undefined
+        s.turnUsed = ab ? { ...used, [abilityCost(ab)]: true } : used
+      }
       s.rngCursor = state.rngCursor + 1
       s.status = checkVictory(s)
       return { state: s, events }
@@ -118,11 +137,21 @@ export const applyAction = async (
   const next = clone(state)
   const rng = makeRng(seedFor(state))
   const actor = next.combatants.find((c) => c.id === action.actor)
+  const used = next.turnUsed ?? freshBudget()
+  next.turnUsed = used
   let events: CombatEvent[] = []
 
   switch (action.kind) {
     case 'move': {
       const to = action.to
+      if (used.moved) {
+        events.push({
+          kind: 'info',
+          text: 'Already moved this turn.',
+          delta: { actor: action.actor }
+        })
+        break
+      }
       const legal =
         actor &&
         to &&
@@ -130,6 +159,7 @@ export const applyAction = async (
       if (actor && to && legal) {
         const from = actor.pos
         actor.pos = [to[0], to[1]]
+        next.turnUsed = { ...used, moved: true }
         events.push({
           kind: 'move',
           text: `${actor.name} moves to (${to[0]},${to[1]}).`,
@@ -140,9 +170,22 @@ export const applyAction = async (
       }
       break
     }
-    case 'ability':
+    case 'ability': {
+      const ab = action.abilityId ? ctx.abilities?.[action.abilityId] : undefined
+      const slot = ab ? abilityCost(ab) : 'action'
+      if (ab && used[slot]) {
+        events.push({
+          kind: 'info',
+          text: `No ${slot} left this turn.`,
+          delta: { actor: action.actor }
+        })
+        break
+      }
       events = resolveAbility(next, action, ctx.abilities ?? {}, rng)
+      // Consume the slot only if the ability actually fired (passed range/LoS checks).
+      if (ab && events.some((e) => e.kind === 'attack')) next.turnUsed = { ...used, [slot]: true }
       break
+    }
     case 'improvise':
       events.push({
         kind: 'info',

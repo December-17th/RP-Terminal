@@ -108,6 +108,11 @@ export interface AbilityDef {
   damageType?: string
   /** conditions applied to targets on hit / failed save. */
   effects?: Condition[]
+  /** which per-turn slot this consumes (action economy). Default: `toHit ? 'attack' : 'action'`. */
+  cost?: 'attack' | 'action'
+  /** require clear line-of-sight from the actor to the target (e.g. ranged shots). Lobbed
+   *  AoE (fireball over a wall) leaves this false. Default false. */
+  requiresLoS?: boolean
 }
 
 export type ActionKind = 'move' | 'ability' | 'end' | 'improvise'
@@ -155,4 +160,14 @@ export interface CombatState {
   round: number
   log: CombatEvent[]
   status: CombatStatus
+  /** The active combatant's per-turn action economy: one movement, one attack, one action.
+   *  Reset at the start of each turn. Optional so older/foreign states default to all-fresh. */
+  turnUsed?: TurnBudget
+}
+
+/** Per-turn allowance: each combatant gets one movement, one attack, and one action. */
+export interface TurnBudget {
+  moved: boolean
+  attack: boolean
+  action: boolean
 }

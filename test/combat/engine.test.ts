@@ -121,3 +121,45 @@ describe('applyAction', () => {
     expect(out.rngCursor).toBe(1)
   })
 })
+
+describe('action economy', () => {
+  const strike = {
+    id: 'strike',
+    name: 'Strike',
+    range: 1,
+    shape: { kind: 'self' as const },
+    toHit: 'STR' as const,
+    damage: '1d6'
+  }
+
+  it('permits one move per turn', async () => {
+    const s = state([C('a', 'party', [0, 0], { speed: 2 })])
+    const r1 = await applyAction(s, { kind: 'move', actor: 'a', to: [1, 0] })
+    expect(r1.state.turnUsed?.moved).toBe(true)
+    const r2 = await applyAction(r1.state, { kind: 'move', actor: 'a', to: [2, 0] })
+    expect(r2.state.combatants[0].pos).toEqual([1, 0]) // didn't move again
+    expect(r2.events.some((e) => e.kind === 'info')).toBe(true)
+  })
+
+  it('spends the attack slot and rejects a second attack', async () => {
+    const s = state([
+      C('a', 'party', [0, 0], { mods: { STR: 5 } }),
+      C('e', 'enemy', [1, 0], { ac: 1 })
+    ])
+    const action = { kind: 'ability' as const, actor: 'a', abilityId: 'strike', targetIds: ['e'] }
+    const r1 = await applyAction(s, action, { abilities: { strike } })
+    expect(r1.state.turnUsed?.attack).toBe(true)
+    const r2 = await applyAction(r1.state, action, { abilities: { strike } })
+    expect(r2.events.some((e) => e.kind === 'info' && /attack/i.test(e.text))).toBe(true)
+  })
+
+  it('resets the budget on the next turn', () => {
+    const s = state([C('a', 'party', [0, 0]), C('b', 'enemy', [4, 4])], {
+      initiative: ['a', 'b'],
+      turnUsed: { moved: true, attack: true, action: true }
+    })
+    const next = advanceTurn(s)
+    expect(currentActorId(next)).toBe('b')
+    expect(next.turnUsed).toEqual({ moved: false, attack: false, action: false })
+  })
+})
