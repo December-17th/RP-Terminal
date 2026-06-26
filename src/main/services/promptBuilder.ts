@@ -377,23 +377,35 @@ export const buildPrompt = (args: BuildPromptArgs): ChatMessage[] => {
   ]
   const topEntries = regular.filter((e) => e.insertion_depth == null)
   const depthEntries = regular.filter((e) => e.insertion_depth != null)
-  const worldInfo = topEntries
-    .map((e) => {
-      const out = render(e.content)
-      // Diagnostic: a matched entry that renders to nothing is silently dropped from World Info. The
-      // usual causes are an EJS eval error (look for a "Template error" log just above) or a conditional
-      // that produced an empty string (e.g. a getvar() reading a var that isn't in the build's vars yet —
-      // note that at cache level ≥1 lore renders against the FROZEN floor-0 snapshot, not live state).
-      if (!out && e.content.trim())
-        log(
-          'info',
-          `lorebook entry "${e.comment || '(unnamed)'}" rendered EMPTY — dropped from World Info ` +
-            `(EJS produced no output; if it reads getvar(), the var may be missing from the build's stat_data)`
-        )
-      return out
-    })
-    .filter(Boolean)
-    .join('\n\n')
+  // Render each matched top-level entry, NAMING the entry on failure. A matched entry that renders to
+  // nothing is silently dropped from World Info (`filter(Boolean)`), which is hard to debug — so log
+  // which entry was dropped and why: an EJS eval error (with the failing source) vs. an empty result
+  // (a false conditional, or a getvar() reading a var not in the build's stat_data; note that at cache
+  // level ≥1 lore renders against the FROZEN floor-0 snapshot, not live state). Unlike `ejsStrict` for
+  // presets, lorebook entries stay GRACEFUL (logged + dropped, never throwing the turn).
+  const renderLoreEntry = (e: LorebookEntry): string => {
+    const expanded = expandMacros(
+      e.content,
+      macroBase(personaMacro, frontierTemplate?.vars, frontierTemplate?.globals)
+    )
+    if (!frontierTemplate) return stripEjs(expanded).trim()
+    const r = evalTemplateDetailed(expanded, frontierTemplate)
+    const label = e.comment || '(unnamed)'
+    if (r.error)
+      log(
+        'error',
+        `✗ lorebook entry "${label}" EJS error — dropped from World Info`,
+        `${r.error}\n— source: ${e.content.slice(0, 400)}`
+      )
+    else if (!r.output && e.content.trim())
+      log(
+        'info',
+        `lorebook entry "${label}" rendered EMPTY — dropped from World Info ` +
+          `(EJS produced no output; if it reads getvar(), the var may be missing from the build's stat_data)`
+      )
+    return r.output
+  }
+  const worldInfo = topEntries.map(renderLoreEntry).filter(Boolean).join('\n\n')
 
   const messages: ChatMessage[] = []
   const presetDepthItems: DepthItem[] = []
