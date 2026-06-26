@@ -191,3 +191,82 @@ lives in [plans/2026-06-25-poem-combat-extension.md](superpowers/plans/2026-06-2
 — it splits each phase into **App/SDK surface** (generic, reusable, documented in `docs/sdk/`) vs
 **card-extension content** (命定之诗-specific), and captures an SDK delta per phase. Review/test/commit
 after each phase. The creative-input box stays deferred (recorded there).
+
+## Remaining work (2026-06-26) — and the crux that blocks real testing
+
+**Built + tested (branch `feat/poem-combat-extension`, 670 tests):** BP1 schema + ext bag · BP2 parser +
+`buildEncounterFromMvu` + `poemD20.buildCombatant` · BP3 the `<战斗协议>` resolver · BP4-core resolver
+injection + MVU party import · BP4 enemies from **static bundle templates** + manual-test checklist · BP5
+bundle config + integration test · BP6 SDK docs. The engine path is proven by tests.
+
+**The crux (owner-raised 2026-06-26):** for a real fight the **AI must supply each non-party
+combatant's data** — name, 生命层级, 五维, 装备, 技能, 状态效果 — because **enemies (and ad-hoc NPCs) are
+NOT in MVU `stat_data`**. The card generates them as narrative `<char_info>` panels (`<角色生成>`), which
+are prose, not machine-readable. Today's BP4 static bundle `enemies` are a **stopgap**; there is no real
+end-to-end test path until the AI→engine combatant channel exists. This is fundamentally a **lorebook/
+preset** problem (how the AI emits combat data), see the next section.
+
+**Two hard constraints (verified from the remote `data_schema/index.js`):**
+1. **No new MVU top-level key.** `d = z.object({事件,世界,任务列表,主角,命运点数,关系列表,新闻})` strips
+   unknown keys, so a `stat_data.战斗场` enemy scope would be **deleted** by MVU validation unless we fork
+   the remote schema (the `【命定之诗】mvu zod` loader). → an AI→engine enemy channel should be
+   **app-parsed (the cue payload / char_info), not a new MVU write**, OR ride an existing allowed key.
+2. **Companions don't store HP/MP/SP.** The `关系列表` entry schema whitelists
+   `在场/种族/身份/职业/生命层级/性格/…/等级/属性/状态效果/背包/装备/技能/登神长阶/…` — **no 生命值/法力值/
+   体力值** (only `主角`/`g` has them). So companion (and enemy) resources **must be derived** via the
+   `资源推演` formula — which the card's own `<战斗协议>` already mandates ("首回合按<角色生成>资源推演公式
+   计算HP/MP/SP") and which `poemD20.buildCombatant` already does. ✔ A combatant only needs
+   **属性 + 生命层级 (+等级) + 装备 + 技能 + 状态效果**; HP/MP/SP are computed.
+
+### The combatant-data contract (what the engine needs per entity)
+`name`, `生命层级` (→ tier 1–7), `等级`, `属性{力量,敏捷,体质,智力,精神}`, `装备{slot:{标签[],效果{}}}`
+(攻击/防御 + 检定/DR), `技能{name:{类型,消耗,标签[],效果{}}}` (关联属性/有效距离/威力/范围 + 命中/闪避/附加
+效果), `状态效果{}`. HP/MP/SP/AC are **derived**, never supplied.
+
+### Remaining build items (after the lorebook design is settled)
+- **AI→engine enemy/NPC channel** (the crux) — parse AI-supplied combatant data into `buildCombatant`
+  enemies, replacing the static bundle stopgap. Channel TBD (see next section).
+- **Status MVU-UI regex** (BP5) — the combat sheet; needs the app to render.
+- **Per-encounter mode chooser** (BP4) — Classic / Combat-system Narrate / Deterministic.
+- **End-of-combat fold-back verification** — confirm post-fight HP/状态 writes back to `stat_data`
+  (主角) via `<UpdateVariable>` in-app.
+- **Creative-input box** (BP7) — deferred.
+
+## Lorebook compatibility — the enemy/combatant-data channel (brainstorm 2026-06-26)
+Goal: make the card emit, in a **machine-readable** form the engine can consume, the combat data for
+entities not already in MVU (enemies; ad-hoc NPCs). Three change-buckets:
+
+**A. Enemy/NPC combat-data delivery (the big one).** Channel options (given constraint #1 — app-parsed,
+not a new MVU key):
+- **A1 — structured payload on the combat-start cue.** Lorebook "战斗启动协议": when a fight begins the
+  AI emits `<rpt-combat-start>` carrying a JSON roster of enemies (each: 名称/生命层级/等级/属性/装备/技能/
+  状态效果). The app parses the JSON (reliable, we own the schema, no YAML lib) → `buildCombatant` each.
+  Pro: clean, no MVU pollution, deterministic parse. Con: a new AI output format to author + the AI must
+  produce valid JSON.
+- **A2 — parse the existing `<char_info>` panels.** The AI already emits `<char_info>` YAML per
+  `<角色生成>` when an enemy登场. Capture those blocks at combat start + parse → combatants. Pro: reuses
+  the card's existing output; minimal lorebook change. Con: needs a tolerant YAML/char_info parser (no
+  YAML dep; 属性 are algebra strings `基础+层级+分配=Total`); must decide which blocks belong to the fight.
+- **A3 — enemies in an allowed MVU location.** Write enemies into `关系列表` with an `敌对:true` marker
+  (survives the schema; companions already lack HP so the fields fit). `buildEncounterFromMvu` reads them
+  as the enemy side. Pro: stays in MVU + the MVU UI can show them. Con: semantically pollutes the
+  relationship list/UI; must clean up after the fight.
+- **A4 — fork the data_schema** to add a `战斗场` scope (replace the remote `mvu zod` loader with ours).
+  Pro: a proper combat scope the MVU UI renders. Con: forks + must track the upstream card schema; heavy.
+
+**B. Item-format consistency.** `parseCardItem` reads `标签`(关联属性/有效距离:X/威力:X/攻击·防御:N/范围/
+多段) · `消耗`(攻击|动作: X MP/SP) · `效果`(命中/闪避/先攻/抵抗, 固伤, DR/穿透/暴击倍率, 附加效果
+`数值+回合`). The card's `[技能装备道具生成规则]`/`[品质效果限定]` already define most of this, but we
+should **tighten the lorebook rules so the AI ALWAYS emits these tokens in the parseable shape** (esp.
+`有效距离: X` on every weapon/active skill, `攻击/防御: N` on gear, and the 关联属性 as a bare tag) — and
+reconcile any token the card writes that the parser doesn't yet read (audit needed against real output).
+
+**C. The combat-start trigger.** The `<rpt-combat-start>` cue instruction (shipped as the paste-in
+[poem-preset-combat-instructions.md](sdk/examples/poem-preset-combat-instructions.md)); under A1 this
+instruction also carries the enemy roster format.
+
+**Leaning:** A1 (structured cue payload) — it's the most reliable to parse, keeps combat data out of the
+narrative + MVU, and we control the schema; A2 is the fallback if we'd rather reuse `<char_info>`. Decide
+A-channel + the B-audit scope with the owner before building. Open questions: (1) JSON payload vs reuse
+char_info? (2) do ad-hoc allied NPCs (not in 关系列表) need the same channel? (3) should fold-back write
+enemy deaths/loot anywhere, or only 主角 consequences?
