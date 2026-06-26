@@ -172,6 +172,7 @@ export const getDefaultSettings = (): Settings => ({
       }
     ],
     max_tokens: 600,
+    keep_recent: 10,
     checkpoint_turns: 6,
     checkpoint_tokens: 0,
     utility_api_preset_id: '',

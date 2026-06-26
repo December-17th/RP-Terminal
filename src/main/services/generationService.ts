@@ -22,6 +22,7 @@ import {
 } from './promptBuilder'
 import { getPromptRules } from './regexService'
 import { selectMemories } from './retrievalService'
+import { maybeCompact } from './compactionService'
 import { loadGlobals, saveGlobals } from './templateService'
 import { streamProvider, orderForProvider, DeltaCallback, UsageCallback } from './apiService'
 import { normalizeUsage, buildFloorMetrics } from './promptCacheMetrics'
@@ -387,6 +388,12 @@ export const generate = async (
   }
 
   appendFloor(profileId, chatId, floor)
+  // Episodic memory (docs/episodic-memory-design.md §7): fold aged-out turns into memories. Off
+  // the hot path — the floor is already persisted and returned below. Fail-open; never blocks the
+  // turn (maybeCompact swallows its own errors; the .catch is a belt-and-braces guard).
+  void maybeCompact(profileId, chatId).catch((err) =>
+    log('error', `memory: compaction error — ${err?.message || String(err)}`)
+  )
   return floor
 }
 

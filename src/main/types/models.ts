@@ -178,6 +178,8 @@ export interface Settings {
     collections: MemoryCollection[]
     /** Total tail token budget across all collections' injected blocks. */
     max_tokens: number
+    /** Most-recent floors kept verbatim (never compacted) — the compaction lags this far behind. */
+    keep_recent: number
     /** Fallback write trigger: compact every N turns. */
     checkpoint_turns: number
     /** Primary write trigger (share of context window); 0 = disabled (core uses turns only). */
