@@ -185,7 +185,7 @@ export const generate = async (
 
   // Episodic memory (docs/episodic-memory-design.md §8): recall relevant past memories into the
   // ephemeral tail. No-op when memory is disabled; at cache level 0 it just adds tail context.
-  const memory = selectMemories(profileId, chatId, scanText, settings)
+  const memory = await selectMemories(profileId, chatId, scanText, settings)
   if (memory.rows.length) {
     log('info', `memory: ${memory.rows.length} recalled (${memory.block.length} chars) → tail`)
   }

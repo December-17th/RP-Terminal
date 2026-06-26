@@ -1,11 +1,16 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 
-// Mock the DB-backed reader so we can drive selectMemories' cross-collection orchestration
-// (the real getEntries hits the no-op better-sqlite3 stub and always returns []).
+// Mock the DB-backed reader so we can drive selectMemories' cross-collection orchestration; keep the
+// real cosine but mock utilityEmbed so vector tests don't hit the network.
 vi.mock('../../src/main/services/memoryStore', () => ({ getEntries: vi.fn() }))
+vi.mock('../../src/main/services/embeddingService', async (importActual) => {
+  const actual = await importActual<typeof import('../../src/main/services/embeddingService')>()
+  return { ...actual, utilityEmbed: vi.fn() }
+})
 
 import { selectMemories } from '../../src/main/services/retrievalService'
 import { getEntries } from '../../src/main/services/memoryStore'
+import { utilityEmbed } from '../../src/main/services/embeddingService'
 import type { MemoryEntry } from '../../src/main/services/memoryStore'
 import type { Settings } from '../../src/main/types/models'
 
@@ -43,30 +48,33 @@ const coll = (over: Record<string, unknown> = {}): Record<string, unknown> => ({
 const settingsWith = (collections: unknown[]): Settings =>
   ({ memory: { enabled: true, collections, max_tokens: 600 } }) as unknown as Settings
 
-beforeEach(() => vi.mocked(getEntries).mockReset())
+beforeEach(() => {
+  vi.mocked(getEntries).mockReset()
+  vi.mocked(utilityEmbed).mockReset()
+})
 
 describe('selectMemories (orchestration)', () => {
-  it('recalls from an enabled keyword stream collection', () => {
+  it('recalls from an enabled keyword stream collection', async () => {
     vi.mocked(getEntries).mockReturnValue([
       entry({ id: 'a', summary: 'the duel happened', keywords: ['duel'] })
     ])
-    const r = selectMemories('p', 'c', 'tell me about the duel', settingsWith([coll()]))
+    const r = await selectMemories('p', 'c', 'tell me about the duel', settingsWith([coll()]))
     expect(r.block).toBe('[Earlier events]\n- the duel happened')
     expect(r.rows.map((x) => x.id)).toEqual(['a'])
   })
 
-  it('skips disabled, entity-shaped, and non-keyword collections (no reads)', () => {
+  it('skips disabled, entity-shaped-without-always, and llm collections (no reads)', async () => {
     const collections = [
       coll({ id: 'events', enabled: false }), // disabled
-      coll({ id: 'characters', shape: 'entity' }), // entity (deferred)
-      coll({ id: 'vec', retrieval: { mode: 'vector', count: 5, tokenBudget: 600 } }) // non-keyword
+      coll({ id: 'characters', shape: 'entity' }), // entity but mode keyword (not 'always')
+      coll({ id: 'llm', retrieval: { mode: 'llm', count: 5, tokenBudget: 600 } }) // deferred mode
     ]
-    const r = selectMemories('p', 'c', 'x', settingsWith(collections))
+    const r = await selectMemories('p', 'c', 'x', settingsWith(collections))
     expect(r).toEqual({ block: '', rows: [] })
     expect(getEntries).not.toHaveBeenCalled()
   })
 
-  it('concatenates blocks and aggregates rows across multiple stream collections', () => {
+  it('concatenates blocks and aggregates rows across multiple stream collections', async () => {
     vi.mocked(getEntries).mockImplementation((_p, _c, id) =>
       id === 'events'
         ? [entry({ id: 'e1', summary: 'event one' })]
@@ -78,12 +86,12 @@ describe('selectMemories (orchestration)', () => {
       coll({ id: 'events', inject: { label: 'Events' } }),
       coll({ id: 'facts', inject: { label: 'Facts' } })
     ]
-    const r = selectMemories('p', 'c', 'scan', settingsWith(collections))
+    const r = await selectMemories('p', 'c', 'scan', settingsWith(collections))
     expect(r.block).toBe('[Events]\n- event one\n\n[Facts]\n- fact one')
     expect(r.rows.map((x) => x.id).sort()).toEqual(['e1', 'f1'])
   })
 
-  it('caps the total tail at memory.max_tokens, dropping later collections', () => {
+  it('caps the total tail at memory.max_tokens, dropping later collections', async () => {
     vi.mocked(getEntries).mockImplementation((_p, _c, id) =>
       id === 'events'
         ? [entry({ id: 'e1', summary: 'x'.repeat(200) })]
@@ -96,32 +104,28 @@ describe('selectMemories (orchestration)', () => {
       coll({ id: 'facts', inject: { label: 'Facts' } })
     ])
     settings.memory.max_tokens = 30 // ~one ~52-token block fits; the second is dropped
-    const r = selectMemories('p', 'c', 'scan', settings)
+    const r = await selectMemories('p', 'c', 'scan', settings)
     expect(r.rows.map((x) => x.id)).toEqual(['e1']) // first block kept, second over budget
   })
 
-  it('is a no-op when memory is disabled', () => {
-    const r = selectMemories('p', 'c', 'scan', {
+  it('is a no-op when memory is disabled', async () => {
+    const r = await selectMemories('p', 'c', 'scan', {
       memory: { enabled: false }
     } as unknown as Settings)
     expect(r).toEqual({ block: '', rows: [] })
     expect(getEntries).not.toHaveBeenCalled()
   })
 
-  it('always-includes in-scope entity sheets from an entity collection', () => {
-    vi.mocked(getEntries).mockImplementation((_p, _c, id) =>
-      id === 'characters'
-        ? [
-            entry({
-              id: 'ay',
-              collection: 'characters',
-              entityKey: 'Ayaka',
-              entities: ['the maiden'],
-              summary: 'role: guard'
-            })
-          ]
-        : []
-    )
+  it('always-includes in-scope entity sheets from an entity collection', async () => {
+    vi.mocked(getEntries).mockReturnValue([
+      entry({
+        id: 'ay',
+        collection: 'characters',
+        entityKey: 'Ayaka',
+        entities: ['the maiden'],
+        summary: 'role: guard'
+      })
+    ])
     const collections = [
       coll({
         id: 'characters',
@@ -130,12 +134,12 @@ describe('selectMemories (orchestration)', () => {
         inject: { label: 'Characters' }
       })
     ]
-    const r = selectMemories('p', 'c', 'Ayaka greets you warmly', settingsWith(collections))
+    const r = await selectMemories('p', 'c', 'Ayaka greets you warmly', settingsWith(collections))
     expect(r.block).toBe('[Characters]\n- Ayaka: role: guard')
     expect(r.rows.map((x) => x.id)).toEqual(['ay'])
   })
 
-  it('skips entity sheets whose entity is not in scope this turn', () => {
+  it('skips entity sheets whose entity is not in scope this turn', async () => {
     vi.mocked(getEntries).mockReturnValue([
       entry({ id: 'ay', collection: 'characters', entityKey: 'Ayaka', summary: 'role: guard' })
     ])
@@ -147,9 +151,45 @@ describe('selectMemories (orchestration)', () => {
         inject: { label: 'Characters' }
       })
     ]
-    expect(selectMemories('p', 'c', 'nobody is here', settingsWith(collections))).toEqual({
-      block: '',
-      rows: []
-    })
+    const r = await selectMemories('p', 'c', 'nobody is here', settingsWith(collections))
+    expect(r).toEqual({ block: '', rows: [] })
+  })
+
+  it('vector mode ranks by cosine over embeddings (embeds the scan text once)', async () => {
+    vi.mocked(getEntries).mockReturnValue([
+      entry({ id: 'r1' }),
+      entry({ id: 'r2' }),
+      entry({ id: 'near', summary: 'aligned', embedding: [1, 0, 0] }),
+      entry({ id: 'far', summary: 'orthogonal', embedding: [0, 1, 0] })
+    ])
+    vi.mocked(utilityEmbed).mockResolvedValue({ model: 'm', vectors: [[1, 0, 0]] })
+    const settings = {
+      memory: {
+        enabled: true,
+        embedding_api_preset_id: 'emb',
+        max_tokens: 600,
+        collections: [coll({ retrieval: { mode: 'vector', count: 5, tokenBudget: 600 } })]
+      }
+    } as unknown as Settings
+    const r = await selectMemories('p', 'c', 'q', settings)
+    expect(utilityEmbed).toHaveBeenCalledTimes(1)
+    expect(r.rows.map((x) => x.id)).toContain('near') // cosine 1 surfaces it beyond the recent slots
+    expect(r.rows.map((x) => x.id)).not.toContain('far') // cosine 0 → filtered out
+  })
+
+  it('falls back to keyword when a vector collection has no embedding connection', async () => {
+    vi.mocked(getEntries).mockReturnValue([
+      entry({ id: 'kw', summary: 'the duel', keywords: ['duel'] })
+    ])
+    const settings = {
+      memory: {
+        enabled: true,
+        max_tokens: 600, // no embedding_api_preset_id
+        collections: [coll({ retrieval: { mode: 'vector', count: 5, tokenBudget: 600 } })]
+      }
+    } as unknown as Settings
+    const r = await selectMemories('p', 'c', 'about the duel', settings)
+    expect(utilityEmbed).not.toHaveBeenCalled()
+    expect(r.rows.map((x) => x.id)).toContain('kw')
   })
 })

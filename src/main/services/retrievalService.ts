@@ -1,13 +1,16 @@
 import { Settings } from '../types/models'
 import { getEntries, MemoryEntry } from './memoryStore'
 import { estimateTokens } from './promptBuilder'
+import { utilityEmbed, cosine } from './embeddingService'
 
 /**
  * Memory READER (docs/episodic-memory-design.md §8). Before a turn, select the relevant memories
- * and format them into a tail block. Handles `stream` collections with `keyword` ranking (events,
- * relevance-ranked) and `entity` collections with `always` recall (characters/locations, included
- * when the entity is in scope this turn). vector/hybrid/llm modes are deferred. The selection /
- * formatting helpers are pure and unit-tested; only the `getEntries` read touches the DB.
+ * and format them into a tail block. Handles `stream` collections with `keyword` / `vector` /
+ * `hybrid` ranking (events) and `entity` collections with `always` recall (characters/locations,
+ * included when the entity is in scope this turn). vector/hybrid embed the scan text once per turn
+ * and rank by cosine (hybrid fuses with keyword via reciprocal-rank fusion); both fall back to
+ * keyword when no embedding connection is set. The ranking/formatting helpers are pure and
+ * unit-tested; only the `getEntries` read + the scan-text embed touch the outside world.
  */
 
 /** Reserve a couple of slots for the most-recent memories (continuity across compaction). */
@@ -43,16 +46,50 @@ const trimToBudget = (
   return out
 }
 
-/**
- * Choose up to `count` memories from a stream collection, reserving slots so recall feels
- * intentional: pinned (all) → most-recent → keyword-ranked. `entries` must be newest-first.
- * Pure — no DB.
- */
-export const selectFromEntries = (
+/** Keyword-relevance order: matched memories by score desc, salience desc (recency stable-tiebreak). Pure. */
+export const keywordRanked = (entries: MemoryEntry[], scanText: string): MemoryEntry[] =>
+  entries
+    .map((e) => ({ e, score: keywordScore(e, scanText) }))
+    .filter((x) => x.score > 0)
+    .sort((a, b) => b.score - a.score || b.e.salience - a.e.salience)
+    .map((x) => x.e)
+
+/** Cosine-similarity order vs the query vector; skips memories without a same-dim embedding. Pure. */
+export const vectorRanked = (entries: MemoryEntry[], query: number[]): MemoryEntry[] =>
+  entries
+    .map((e) => ({ e, score: e.embedding ? cosine(e.embedding, query) : 0 }))
+    .filter((x) => x.score > 0)
+    .sort((a, b) => b.score - a.score)
+    .map((x) => x.e)
+
+/** Reciprocal-rank fusion of the keyword and vector orderings (rank-based, no score calibration). Pure. */
+export const hybridRanked = (
   entries: MemoryEntry[],
-  scanText: string,
+  query: number[],
+  scanText: string
+): MemoryEntry[] => {
+  const K = 60
+  const score = new Map<string, number>()
+  const fuse = (ranked: MemoryEntry[]): void =>
+    ranked.forEach((e, i) => score.set(e.id, (score.get(e.id) ?? 0) + 1 / (K + i)))
+  fuse(keywordRanked(entries, scanText))
+  fuse(vectorRanked(entries, query))
+  const byId = new Map(entries.map((e) => [e.id, e]))
+  return [...score.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .map(([id]) => byId.get(id))
+    .filter((e): e is MemoryEntry => !!e)
+}
+
+/**
+ * Choose up to `count` memories, reserving slots so recall feels intentional: pinned (all) →
+ * most-recent → the provided relevance `ranked` order. `entries` must be newest-first. Pure.
+ */
+export const slotted = (
+  entries: MemoryEntry[],
   count: number,
-  tokenBudget: number
+  tokenBudget: number,
+  ranked: MemoryEntry[]
 ): MemoryEntry[] => {
   const chosen: MemoryEntry[] = []
   const seen = new Set<string>()
@@ -62,20 +99,19 @@ export const selectFromEntries = (
       chosen.push(e)
     }
   }
-
-  // 1. pinned (user/card override — always present)
-  for (const e of entries) if (e.pinned) take(e)
-  // 2. most-recent (entries are newest-first)
-  for (const e of entries.slice(0, RECENT_SLOTS)) take(e)
-  // 3. keyword-ranked (score desc, then salience desc; recency is the stable-sort tiebreak)
-  const ranked = entries
-    .map((e) => ({ e, score: keywordScore(e, scanText) }))
-    .filter((x) => x.score > 0)
-    .sort((a, b) => b.score - a.score || b.e.salience - a.e.salience)
-  for (const { e } of ranked) take(e)
-
+  for (const e of entries) if (e.pinned) take(e) // 1. pinned (always present)
+  for (const e of entries.slice(0, RECENT_SLOTS)) take(e) // 2. most-recent (newest-first)
+  for (const e of ranked) take(e) // 3. relevance-ranked
   return trimToBudget(chosen.slice(0, Math.max(0, count)), tokenBudget)
 }
+
+/** Keyword-mode selection (pinned → recent → keyword-ranked). Pure. */
+export const selectFromEntries = (
+  entries: MemoryEntry[],
+  scanText: string,
+  count: number,
+  tokenBudget: number
+): MemoryEntry[] => slotted(entries, count, tokenBudget, keywordRanked(entries, scanText))
 
 /** Format a collection's chosen memories into a labelled tail block (empty when none). */
 export const formatBlock = (label: string, entries: MemoryEntry[]): string => {
@@ -112,17 +148,35 @@ export const formatEntityBlock = (label: string, entries: MemoryEntry[]): string
 }
 
 /**
- * Select recalled-memory text for this turn across all enabled collections, plus the chosen
- * rows (for logging). Returns an empty block when memory is off or nothing matches.
+ * Select recalled-memory text for this turn across all enabled collections, plus the chosen rows
+ * (for logging). Async because vector/hybrid collections embed the scan text once (lazily — keyword
+ * and entity recall stay synchronous and pay no embedding cost). Empty when memory is off or nothing
+ * matches.
  */
-export const selectMemories = (
+export const selectMemories = async (
   profileId: string,
   chatId: string,
   scanText: string,
   settings: Settings
-): { block: string; rows: MemoryEntry[] } => {
+): Promise<{ block: string; rows: MemoryEntry[] }> => {
   const mem = settings.memory
   if (!mem?.enabled) return { block: '', rows: [] }
+
+  // Lazily embed the scan text the first time a vector/hybrid collection needs it (cached for the
+  // rest of this call). null = no embedding connection / embed failed → those collections fall back
+  // to keyword.
+  let queryVec: number[] | null | undefined
+  const queryVector = async (): Promise<number[] | null> => {
+    if (queryVec !== undefined) return queryVec
+    if (!mem.embedding_api_preset_id) return (queryVec = null)
+    try {
+      const r = await utilityEmbed(profileId, [scanText])
+      queryVec = r?.vectors?.[0] ?? null
+    } catch {
+      queryVec = null
+    }
+    return queryVec
+  }
 
   const blocks: string[] = []
   const rows: MemoryEntry[] = []
@@ -130,19 +184,33 @@ export const selectMemories = (
   let used = 0
   for (const coll of mem.collections) {
     if (!coll.enabled) continue
-    const isStream = coll.shape === 'stream' && coll.retrieval.mode === 'keyword'
-    const isEntity = coll.shape === 'entity' && coll.retrieval.mode === 'always'
-    if (!isStream && !isEntity) continue // vector / hybrid / llm — deferred (no read)
+    const mode = coll.retrieval.mode
+    const isStream =
+      coll.shape === 'stream' && (mode === 'keyword' || mode === 'vector' || mode === 'hybrid')
+    const isEntity = coll.shape === 'entity' && mode === 'always'
+    if (!isStream && !isEntity) continue // llm — deferred (no read)
 
     const entries = getEntries(profileId, chatId, coll.id)
     if (!entries.length) continue
     const { count, tokenBudget } = coll.retrieval
-    const chosen = isStream
-      ? selectFromEntries(entries, scanText, count, tokenBudget)
-      : selectEntitiesInScope(entries, scanText, count, tokenBudget)
-    const block = isStream
-      ? formatBlock(coll.inject.label, chosen)
-      : formatEntityBlock(coll.inject.label, chosen)
+
+    let chosen: MemoryEntry[]
+    let block: string
+    if (isEntity) {
+      chosen = selectEntitiesInScope(entries, scanText, count, tokenBudget)
+      block = formatEntityBlock(coll.inject.label, chosen)
+    } else {
+      const qv = mode === 'keyword' ? null : await queryVector()
+      // vector/hybrid with a query vector; otherwise (keyword, or embed unavailable) keyword recall.
+      const ranked =
+        qv && mode === 'vector'
+          ? vectorRanked(entries, qv)
+          : qv && mode === 'hybrid'
+            ? hybridRanked(entries, qv, scanText)
+            : keywordRanked(entries, scanText)
+      chosen = slotted(entries, count, tokenBudget, ranked)
+      block = formatBlock(coll.inject.label, chosen)
+    }
     if (!block) continue
 
     // Global tail cap: always keep the first block, then stop once max_tokens is reached

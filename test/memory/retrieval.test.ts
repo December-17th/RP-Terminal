@@ -6,10 +6,10 @@ import {
   entityInScope,
   selectEntitiesInScope,
   formatEntityBlock,
-  selectMemories
+  vectorRanked,
+  hybridRanked
 } from '../../src/main/services/retrievalService'
 import type { MemoryEntry } from '../../src/main/services/memoryStore'
-import type { Settings } from '../../src/main/types/models'
 
 const E = (over: Partial<MemoryEntry>): MemoryEntry => ({
   id: Math.random().toString(36).slice(2),
@@ -135,29 +135,24 @@ describe('formatEntityBlock', () => {
   })
 })
 
-describe('selectMemories', () => {
-  it('is a no-op when memory is disabled (never touches the DB)', () => {
-    const settings = { memory: { enabled: false } } as unknown as Settings
-    expect(selectMemories('p', 'c', 'scan', settings)).toEqual({ block: '', rows: [] })
+describe('vectorRanked', () => {
+  it('orders by cosine and drops entries without an embedding or with zero similarity', () => {
+    const a = E({ id: 'a', embedding: [1, 0] }) // cosine 1
+    const b = E({ id: 'b', embedding: [0.7, 0.7] }) // cosine ~0.71
+    const none = E({ id: 'none', embedding: null }) // no embedding → dropped
+    const ortho = E({ id: 'ortho', embedding: [0, 1] }) // cosine 0 → dropped
+    expect(vectorRanked([none, b, a, ortho], [1, 0]).map((e) => e.id)).toEqual(['a', 'b'])
   })
+})
 
-  it('returns an empty block when a collection has no stored rows', () => {
-    // getEntries hits the no-op DB stub → [] → empty block, exercising the loop path.
-    const settings = {
-      memory: {
-        enabled: true,
-        collections: [
-          {
-            id: 'events',
-            shape: 'stream',
-            enabled: true,
-            write: { trigger: 'checkpoint', prompt: '' },
-            retrieval: { mode: 'keyword', count: 5, tokenBudget: 600 },
-            inject: { label: 'Earlier' }
-          }
-        ]
-      }
-    } as unknown as Settings
-    expect(selectMemories('p', 'c', 'scan', settings)).toEqual({ block: '', rows: [] })
+describe('hybridRanked', () => {
+  it('fuses keyword and vector orderings — an item strong in either ranks', () => {
+    const kw = E({ id: 'kw', keywords: ['dragon'], embedding: [0, 1] }) // keyword hit, vector orthogonal
+    const vec = E({ id: 'vec', keywords: [], embedding: [1, 0] }) // no keyword, vector aligned
+    const neither = E({ id: 'neither', keywords: [], embedding: [0, 1] }) // in neither ranking
+    const ids = hybridRanked([kw, vec, neither], [1, 0], 'the dragon roars').map((e) => e.id)
+    expect(ids).toContain('kw')
+    expect(ids).toContain('vec')
+    expect(ids).not.toContain('neither')
   })
 })
