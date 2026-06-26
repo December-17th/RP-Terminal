@@ -189,8 +189,10 @@ export function ChatView({ profileId }: { profileId: string }): React.ReactEleme
     try {
       await window.api.combatStartFromCard(profileId, activeChatId, combatCue)
       useChatStore.getState().setMode(profileId, 'combat')
-    } catch {
-      /* no combat bundle for this world — ignore */
+    } catch (e) {
+      // A genuine failure (bad roster, build error) shouldn't be silent — surface it so a blank
+      // CombatView is diagnosable. (A world with no combat bundle just throws here harmlessly.)
+      console.error('Enter Combat failed:', e)
     }
   }
 
