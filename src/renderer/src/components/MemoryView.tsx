@@ -380,7 +380,25 @@ export function MemoryView({ profileId }: { profileId: string }): React.ReactEle
                     </div>
                   </>
                 ) : e.entityKey ? (
-                  entitySheet(e)
+                  <>
+                    {entitySheet(e)}
+                    {/* Entity sheets evolve in place (upsert), so there's no inline field editor yet,
+                        but they must still be pinnable / deletable — the trust path for a bad sheet. */}
+                    <div
+                      style={{ display: 'flex', justifyContent: 'flex-end', gap: 6, marginTop: 8 }}
+                    >
+                      <button
+                        title={e.pinned ? t('memory.unpin') : t('memory.pin')}
+                        onClick={() => void togglePin(e)}
+                        style={{ padding: '2px 8px' }}
+                      >
+                        {e.pinned ? '★' : '☆'}
+                      </button>
+                      <button onClick={() => void remove(e)} style={{ padding: '2px 8px' }}>
+                        {t('common.delete')}
+                      </button>
+                    </div>
+                  </>
                 ) : (
                   <>
                     <div style={{ lineHeight: 1.5 }}>{e.summary}</div>

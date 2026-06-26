@@ -206,6 +206,9 @@ export interface EntryPatch {
   pinned?: boolean
 }
 
+/** The only columns a manual edit may set — interpolated into SQL, so this guards the column names. */
+const EDITABLE_COLUMNS = new Set(['summary', 'keywords', 'pinned'])
+
 /**
  * Map an edit patch to the columns to set. Pure; the keys are a fixed allowlist (summary /
  * keywords / pinned) so they're never interpolated from user input.
@@ -227,7 +230,9 @@ export const updateEntry = (
   patch: EntryPatch
 ): void => {
   const cols = entryPatchToColumns(patch)
-  const keys = Object.keys(cols)
+  // Defence-in-depth: only ever interpolate known column names into the SQL, no matter what `cols`
+  // contains. The values are already parameterized; this hardens the identifiers too.
+  const keys = Object.keys(cols).filter((k) => EDITABLE_COLUMNS.has(k))
   if (!keys.length) return
   const sets = [...keys.map((k) => `${k} = ?`), 'updated_at = ?']
   // A summary edit invalidates the embedding so the writer re-embeds the corrected text.
@@ -340,7 +345,15 @@ export const getEntity = (
   return row ? rowToEntry(row) : null
 }
 
-/** Insert-or-update an entity record (upsert on UNIQUE(chat, collection, entity_key)). */
+/**
+ * Insert-or-update an entity record (upsert on UNIQUE(chat, collection, entity_key)).
+ *
+ * `turn_start`/`turn_end` are intentionally left NULL: an entity sheet is a *consolidated* record
+ * merged from many floors over time, not anchored to one span, so `deleteFromTurn` (rewind-safety)
+ * deliberately does NOT delete it. Entity sheets persist across a rewind — they're advisory
+ * narrative, and MVU holds the authoritative numbers, so a slightly-ahead sheet is low-harm and far
+ * better than dropping the whole consolidated history on any rewind past its last update. (docs §12)
+ */
 export const upsertEntity = (
   _profileId: string,
   chatId: string,

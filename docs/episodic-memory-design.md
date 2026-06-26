@@ -330,7 +330,7 @@ Leverage-ordered for *this* app. Several are now **core** (folded into §5); the
 - **Two distinct properties.** *Within-window fidelity* is lossless (verbatim history, unchanged). *Reach beyond the window* is lossy-but-unbounded (extracted memory). Extraction fidelity is governed by checkpoint cadence — a tunable, not a silent default.
 - **Placement honesty.** Recalled memory appears in the tail, labelled ("Characters present", "Earlier events"), not spliced into the prose where it originally happened — the same signed-off tradeoff the cache design makes for live state.
 - **Determinism where it matters.** MVU stays the deterministic numeric channel; memory is advisory narrative context layered on top, never the source of truth for numbers.
-- **Rewind consistency.** Provenance (`turn_start`/`turn_end`) keeps memory consistent with the floor timeline across re-roll/swipe/rewind (§11.M).
+- **Rewind consistency.** Provenance (`turn_start`/`turn_end`) keeps **stream** memory consistent with the floor timeline across re-roll/swipe/rewind (§11.M): `deleteFromTurn` removes `events` rows with `turn_start ≥ rewind point`. **Entity sheets are deliberately exempt** — they're stored with `turn_start = NULL` because a sheet is a *consolidated* record merged from many floors, not anchored to one span. A rewind therefore leaves entity sheets in place: they may run slightly ahead of a rewound timeline, but since they're advisory and MVU holds the authoritative numbers, that's far cheaper than dropping a character's whole consolidated history on every rewind. (Resolved 2026-06-26; see `upsertEntity`.)
 
 ---
 
