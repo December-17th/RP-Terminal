@@ -355,3 +355,55 @@ _Captured 2026-06-26 from brainstorming. **No decision taken** — options + cur
 The first implementation is the **engine skeleton + the `events` stream collection only**, behind a default-off flag, injecting into the tail. The generic store (§6) + collection registry (§5.3) are built up front so entity collections, vector, and the rest plug in later **without rearchitecting** — but only `events` + keyword recall + a turn-count checkpoint ship in the core. Detailed phased plan: **[plans/2026-06-26-memory-core.md](superpowers/plans/2026-06-26-memory-core.md)**.
 
 **Out of the core (deferred):** entity collections (§5.2 — `characters`/`locations`/`relationships`), vector / hybrid / llm ranking (§6, §8), salience + decay, consolidation, supersede, custom card-defined collections, the memory panel (§11), per-mode recall breadth, the token-threshold trigger, and every thread in §14.
+
+---
+
+## 16. Interaction with the prompt-cache optimization system
+
+Memory and the prompt-cache system ([prompt-cache-optimization-design.md](prompt-cache-optimization-design.md)) are meant to run **at the same time** — memory *is* the "L3" memory half of that design. This section reconciles the two against the code **as built** (L1 Frozen Core ships; L2/L3 are designed).
+
+### 16.1 The tail is shared — memory inherits cache-correct placement for free
+
+At `cache.level ≥ 1`, live MVU state is already relocated to a tail block inserted as a **`system` message just before the final user action** (`buildStateBlock`, [cacheLayers.ts:46](src/main/services/cacheLayers.ts); inserted at [promptBuilder.ts:496](src/main/services/promptBuilder.ts)). On Anthropic, `streamAnthropic` ([apiService.ts:277](src/main/services/apiService.ts)) hoists only the *leading* system run into the top-level `system` param, **demotes** a mid-conversation system message to `user`, and **same-role-merges** consecutive turns — so the state block folds into the final user turn and lands in the volatile tail. The cache breakpoint at `merged.length - 2` ([apiService.ts:317](src/main/services/apiService.ts)) therefore lands on the **last history message** (the true stable boundary), not on the volatile block.
+
+**Consequence:** insert the recalled-memory block the **exact same way** as `buildStateBlock` — a `system` message at `messages.length - 1`. It demotes + merges into the same volatile tail, past the breakpoint, never touching the cached prefix. **Memory needs no new cache machinery; it rides the state-block convention.** The tail co-tenants merge together:
+
+```
+[ … assistant(last history) ] │ [ state + recalled-memory + user action ]
+└──── cached prefix ──────────┘↑ breakpoint #2 (merged.length-2)
+```
+
+> Correctness depends on the demote+merge. If memory used a different role or were placed before history, it could land *at* `merged.length - 2` and poison breakpoint #2. **Rule: memory uses the same role + insertion point as the state block.** Non-Anthropic providers inherit whatever ordering `orderForProvider` already gives the state block.
+
+### 16.2 Compaction is ONE shared checkpoint, not two timers (the main coordination)
+
+Memory's **writer** evicts old verbatim turns once summarized — which **shortens the history prefix and invalidates the provider cache** from the eviction point. The cache design's core discipline (§4) is to **concentrate every cache-invalidating change into infrequent scheduled checkpoints**, append-only between them. And it **already lists "fold the oldest verbatim turns → `episodic_memory`" as a checkpoint action** (§6.3), beside lore eviction, corrections-flush, and probability re-roll.
+
+**So the cache design's `compactionService` and this doc's `compactionService` are the same service** (the name collision is deliberate convergence). Memory contributes the *summarize-into-memory* step of a shared checkpoint that also (later) evicts stale lore, flushes corrections, and re-rolls probability lore — then does exactly one cache-write of the rebuilt frontier.
+
+Reconciliation with the core plan (which uses its own `checkpoint_turns` timer):
+- **`cache.level === 0` (core ships here):** no provider cache to invalidate → memory's independent turn-count checkpoint is fine as-is.
+- **`cache.level ≥ 1`:** the checkpoint **must be unified** — one scheduler fires memory summarization *and* the cache rebuild together, so eviction rides the cache's cadence instead of a second timer that would silently invalidate the cache off-beat.
+
+### 16.3 `fitToBudget` per-turn trimming vs. checkpoint eviction
+
+`fitToBudget` ([promptBuilder.ts:43](src/main/services/promptBuilder.ts)) drops the oldest turns **every turn** when over budget — at `cache.level ≥ 1` that is a per-turn cache invalidation. The cache design says at L3 this drop-oldest is **superseded by** summarize-oldest at the next checkpoint (§6.3). Memory's **`keep_recent` window + checkpoint eviction** *is* that model: the verbatim window stays byte-stable between checkpoints (append-only), eviction batched at the checkpoint. **Synergy, not conflict.** When memory runs with caching, checkpoint eviction replaces per-turn `fitToBudget` trimming; at level 0, `fitToBudget` stays as today.
+
+### 16.4 What must be single-sourced when both are on
+
+- **Checkpoint cadence.** One trigger (token-share primary, turn-count fallback) consumed by both memory and the cache rebuild. The `cache` block has no checkpoint fields today ([models.ts:134](src/main/types/models.ts) — only `level`/`l1_mode`/`ttl`/`prewarm`/`breakpoint_optimizer`); memory adds `checkpoint_turns`/`checkpoint_tokens`. On integration these become **the** checkpoint config, not a memory-private copy.
+- **Tail ordering.** A fixed order for tail co-tenants — `[state][recalled-memory][corrections][user action]` — so the assembled tail is deterministic as more blocks land.
+- **Breakpoint placement.** A second volatile tail block raises the stakes of the reserved `breakpoint_optimizer` (cache design §10): mark breakpoint #2 at the explicit stable boundary (last history message) rather than trusting `merged.length - 2` to land right after demote+merge. The position heuristic holds for one tail block; it is fragile for several.
+
+### 16.5 Cost framing (net effect of running both)
+
+Memory **trades cached tokens for uncached ones**: it shrinks the (cacheable) verbatim history by evicting old turns, but adds a (never-cacheable) recalled-memory block to the tail every turn. Net win when *recalled tokens ≪ evicted verbatim tokens* — a few summaries standing in for many dropped turns. The writer's utility-model calls go to a separate connection, so they never touch the main provider cache. The meter ([promptCacheMetrics.ts](src/main/services/promptCacheMetrics.ts)) already attributes `cache_read`/`cache_creation`/`input`, so the tradeoff is measurable per turn.
+
+### 16.6 Summary matrix
+
+| `cache.level` | `memory.enabled` | Behavior |
+| --- | --- | --- |
+| 0 | off | today's path (control) |
+| 0 | on | memory injects into the history tail; no cache concerns — **core-plan target** |
+| ≥1 | off | Frozen Core as built; no memory |
+| ≥1 | on | **unified checkpoint** (§16.2) + shared tail (§16.1) + checkpoint eviction (§16.3) — the full L3 target |

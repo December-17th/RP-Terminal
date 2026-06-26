@@ -65,11 +65,15 @@ Disabled by default (zero behavior change); when enabled, never blocks or slows 
    pattern (`getCachedWorldInfo`/`setCachedWorldInfo`, [chatService.ts:110](../../../src/main/services/chatService.ts)).
    Add a `memory_state` column on `chats` (`{ last_compacted_floor: number }`) with the same
    get/set shape.
-3. **Tail injection seam exists.** `buildPrompt` pushes the final user action last
-   ([promptBuilder.ts:146](../../../src/main/services/promptBuilder.ts)) and depth injections insert at
-   `messages.length - 1` ([:462](../../../src/main/services/promptBuilder.ts), [:499](../../../src/main/services/promptBuilder.ts)).
-   The memory block rides the same seam — either a new `memoryBlock?: string` arg placed just before the
-   final user action, or a depth-0 injection. Prefer the explicit arg (clearer, testable).
+3. **Tail injection seam exists — reuse the `buildStateBlock` convention exactly.** The L1 live-state
+   block is inserted as a **`system` message at `messages.length - 1`** (just before the final user
+   action) at [promptBuilder.ts:496](../../../src/main/services/promptBuilder.ts). The memory block must
+   use the **same role + same insertion point** so it inherits the cache-correct placement: on Anthropic,
+   `streamAnthropic` demotes the mid-convo system block to `user` and same-role-merges it into the final
+   turn, so the breakpoint at `merged.length - 2` ([apiService.ts:317](../../../src/main/services/apiService.ts))
+   stays on the last *history* message (design §16.1). Implement as a `memoryBlock?: string` arg placed
+   the same way as the state block; order tail co-tenants `[state][memory][action]`. **Do not** invent a
+   new placement — a different role/position would land at the breakpoint and poison the cache.
 4. **Utility call has a template.** `generateRaw` ([generationService.ts:472](../../../src/main/services/generationService.ts))
    already builds a minimal message array + uses the active preset + the abort-controller map. The
    writer needs the same but routed to `memory.utility_api_preset_id` (falling back to the active
