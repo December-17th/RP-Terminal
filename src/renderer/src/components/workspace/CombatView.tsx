@@ -87,6 +87,14 @@ export function CombatView({ profileId }: { profileId: string }): React.ReactEle
           text: `-${e.delta.damage}`,
           color: 'var(--rpt-danger)'
         })
+      else if (e.kind === 'heal' && typeof e.delta?.heal === 'number')
+        add.push({
+          id: ++floatIdRef.current,
+          x: m.pos[0],
+          y: m.pos[1],
+          text: `+${e.delta.heal}`,
+          color: 'var(--rpt-success, #4caf50)'
+        })
       else if (e.kind === 'miss')
         add.push({
           id: ++floatIdRef.current,

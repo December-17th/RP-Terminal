@@ -32,10 +32,12 @@ Paste-in tightening:
   combat start, depleted during the fight).
 - 附加效果 `状态名: 数值+持续回合` (e.g. `灼烧: 30+2回合`) → a condition applied on hit (crit auto;
   有效/勉强 via an opposition check).
+- **Healing** — a skill with 核心功能 `治疗` heals (`base = 关联属性×10×层级系数 + 威力`); a flat
+  `治疗: N` / `恢复: N` (资源) adds to it; `治疗增幅: X%` multiplies. Heals auto-apply to same-side
+  targets (no 命中检定), clamp to maxHp, and aren't reduced by 防御/属性减免/DR.
 
 **Narrative-only in v1 (the engine does NOT yet apply these — keep them as flavor or avoid relying on
 them mechanically):**
-- `治疗增幅: X%` — needs in-combat **healing** support (not built; healing abilities aren't resolved yet).
 - `资源消耗减免: X%` — MP/SP cost reduction (not applied to 消耗 yet).
 - typed-damage split proportions (物理/能量/精神/真实 %) — the resolver currently treats all damage as
   物理 for 属性减免 (typed split is a later refinement).

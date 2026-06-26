@@ -263,9 +263,12 @@ not a new MVU key):
   and **有效距离: X mandatory** on active skills/weapons (else → melee 1).
 - ✅ **Now supported (owner chose "百分比+护盾", built 2026-06-26):** `伤害增幅: X%` (outgoing ×(1+X%)) and
   `减伤增幅` (folds into the DR step) and `护盾: N` (a flat pool absorbed before HP, aggregated from
-  gear/passives). Passive items now fold their 命中/闪避/DR/伤害增幅/护盾 into the combatant aggregate.
-- ⬜ Still narrative-only (deferred): `治疗增幅` (needs in-combat **healing**), `资源消耗减免` (MP/SP cost),
-  typed-damage split (物理-only 属性减免 today), 集群/意图·部位/战意.
+  gear/passives). Passive items now fold their 命中/闪避/DR/伤害增幅/护盾/治疗增幅 into the combatant aggregate.
+- ✅ **Healing (built 2026-06-26):** 核心功能 `治疗` abilities (`base = 关联属性×10×系数 + 威力`) + flat
+  `治疗/恢复` (资源) + `治疗增幅` multiplier; auto-applies to same-side targets, clamps to maxHp, no
+  mitigation. New `heal` CombatEvent kind (green floating number in CombatView).
+- ⬜ Still narrative-only (deferred): `资源消耗减免` (MP/SP cost), typed-damage split (物理-only 属性减免
+  today), 集群/意图·部位/战意, revive of downed allies (heals only living targets).
 
 **C. The combat-start trigger.** The `<rpt-combat-start>` cue instruction (shipped as the paste-in
 [poem-preset-combat-instructions.md](sdk/examples/poem-preset-combat-instructions.md)); under A1 this

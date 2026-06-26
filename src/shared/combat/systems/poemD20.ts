@@ -66,6 +66,10 @@ export interface CardCombat {
   /** 百分比 伤害增幅 (outgoing damage ×(1+%)) + 资源 护盾 (a flat damage-absorbing pool), from 效果. */
   伤害增幅?: number
   护盾?: number
+  /** healing: 核心功能 治疗 (→ 威力-based heal), 治疗增幅 (百分比 ×(1+%)), 治疗量 (flat 资源 heal). */
+  治疗?: boolean
+  治疗增幅?: number
+  治疗量?: number
   /** 附加效果: status-on-hit `状态名: 数值+回合`. */
   附加效果?: { 状态: string; 数值?: number; 回合: number }[]
   /** multi-hit N (多段/连击). */
@@ -142,6 +146,8 @@ export const parseCardItem = (item: unknown, _kind: ItemKind): CardCombat => {
     } else if (/多段|连击/.test(t)) {
       const n = t.match(/(\d+)/)
       out.多段 = n ? parseInt(n[1], 10) : 2
+    } else if (/治疗/.test(t)) {
+      out.治疗 = true // 核心功能: 治疗 → a healing ability (威力 is the heal power)
     } else if (!out.关联属性) {
       const a = ATTRS.find((x) => t.includes(x))
       if (a) out.关联属性 = a
@@ -172,6 +178,8 @@ export const parseCardItem = (item: unknown, _kind: ItemKind): CardCombat => {
     else if (/暴击倍率/.test(k)) out.暴击倍率 = num(v)
     else if (/伤害增幅|增伤/.test(k)) out.伤害增幅 = (out.伤害增幅 ?? 0) + pct(v)
     else if (/护盾/.test(k)) out.护盾 = (out.护盾 ?? 0) + num(v)
+    else if (/治疗增幅/.test(k)) out.治疗增幅 = (out.治疗增幅 ?? 0) + pct(v)
+    else if (/治疗|恢复/.test(k)) out.治疗量 = (out.治疗量 ?? 0) + num(v)
     else {
       const st = v.match(/(\d+)\s*\+\s*(\d+)\s*回合/) || v.match(/(\d+)\s*回合/)
       if (st) {
@@ -271,6 +279,7 @@ export const buildCombatant = (char: unknown, ctx: MvuCharCtx): BuiltCombatant =
   let DR = 0
   let 伤害增幅 = 0
   let 护盾 = 0
+  let 治疗增幅 = 0
   const equip: { slot: string; combat: CardCombat }[] = []
   const foldMods = (combat: CardCombat): void => {
     if (combat.命中) 命中 = Math.max(命中, combat.命中)
@@ -278,6 +287,7 @@ export const buildCombatant = (char: unknown, ctx: MvuCharCtx): BuiltCombatant =
     if (combat.DR) DR = Math.max(DR, combat.DR)
     if (combat.伤害增幅) 伤害增幅 += combat.伤害增幅
     if (combat.护盾) 护盾 += combat.护盾
+    if (combat.治疗增幅) 治疗增幅 += combat.治疗增幅
   }
   for (const [slot, gear] of Object.entries(asRec(get(c, paths, 'equipment')))) {
     const combat = parseCardItem(gear, 'equip')
@@ -328,6 +338,7 @@ export const buildCombatant = (char: unknown, ctx: MvuCharCtx): BuiltCombatant =
     maxSp,
     equip: { 武器攻击, 防御, 命中, 闪避, DR },
     伤害增幅, // outgoing damage ×(1+%) from gear/passives
+    治疗增幅, // outgoing healing ×(1+%) from gear/passives
     shield: 护盾, // a mutable damage-absorbing pool (depleted before HP)
     passives
   }
@@ -346,6 +357,8 @@ interface CombatantExt {
   equip?: { 武器攻击?: number; 防御?: number; 命中?: number; 闪避?: number; DR?: number }
   /** outgoing damage ×(1+%) from gear/passives. */
   伤害增幅?: number
+  /** outgoing healing ×(1+%) from gear/passives. */
+  治疗增幅?: number
   /** a mutable damage-absorbing pool, depleted before HP. */
   shield?: number
   passives?: { name: string; combat: CardCombat }[]
@@ -481,6 +494,32 @@ const poemHitOne = (
     })
 }
 
+/** Resolve one heal: restore HP to an ally — no 命中检定, no mitigation; 治疗增幅 amplifies. The heal
+ *  base is `关联属性×10×层级系数 + 威力` (for a 治疗 ability) plus any flat 治疗量, clamped to maxHp. */
+const poemHealOne = (
+  actor: Combatant,
+  target: Combatant,
+  ability: AbilityDef,
+  derive: DeriveConfig | undefined,
+  events: CombatEvent[]
+): void => {
+  const aExt = extOf(actor)
+  const cc = (ability.ext ?? {}) as CardCombat
+  const attr = (cc.关联属性 ?? '精神') as Attr // healing defaults to 精神
+  const attrV = aExt.attrs?.[attr] ?? 0
+  const coeff = derive?.tier_coefficient?.[String(aExt.tier ?? 1)] ?? 1
+  const base = (cc.治疗 ? attrV * 10 * coeff + (cc.威力 ?? 0) : 0) + (cc.治疗量 ?? 0)
+  const amp = (cc.治疗增幅 ?? 0) + (aExt.治疗增幅 ?? 0)
+  const heal = Math.max(0, Math.floor(base * (1 + amp / 100)))
+  const before = target.block.hp
+  target.block.hp = Math.min(target.block.maxHp, before + heal)
+  events.push({
+    kind: 'heal',
+    text: `${target.name} recovers ${target.block.hp - before} — HP ${target.block.hp}/${target.block.maxHp}.`,
+    delta: { target: target.id, heal: target.block.hp - before, hp: target.block.hp }
+  })
+}
+
 /**
  * Resolve one action via the 命定之诗 战斗协议. Returns `null` for actions the native engine should
  * handle (move / end / improvise, or an attack that can't fire — out of range / no LoS / no such
@@ -521,6 +560,9 @@ export const poemResolveAction = (ctx: ResolverContext): HookResult | null => {
   targets = targets.filter(isAlive)
   if (ability.requiresLoS)
     targets = targets.filter((t) => lineOfSight(state.grid, actor.pos, t.pos))
+  // A heal only affects allies (same side as the actor); attacks hit whoever is targeted.
+  const isHeal = !!cc.治疗 || (cc.治疗量 ?? 0) > 0
+  if (isHeal) targets = targets.filter((t) => t.side === actor.side)
   if (cc.范围目标 && targets.length > cc.范围目标) targets = targets.slice(0, cc.范围目标)
 
   const events: CombatEvent[] = [
@@ -530,7 +572,9 @@ export const poemResolveAction = (ctx: ResolverContext): HookResult | null => {
       delta: { actor: actor.id, ability: ability.id, targets: targets.map((t) => t.id) }
     }
   ]
-  for (const target of targets) poemHitOne(actor, target, ability, rng, derive, events)
+  for (const target of targets)
+    if (isHeal) poemHealOne(actor, target, ability, derive, events)
+    else poemHitOne(actor, target, ability, rng, derive, events)
   return { state, events }
 }
 

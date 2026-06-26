@@ -146,6 +146,22 @@ describe('parseCardItem', () => {
     expect(c.DR).toBe(10) // 减伤增幅 matches the DR branch
   })
 
+  it('parses a 治疗 ability (核心功能 治疗 + 治疗增幅 + flat 恢复)', () => {
+    const c = parseCardItem(
+      {
+        类型: '主动',
+        标签: ['精神', '治疗', '威力: 200', '有效距离: 4'],
+        效果: { 治疗增幅: '+20%', 恢复: '50' }
+      },
+      'skill'
+    )
+    expect(c.治疗).toBe(true)
+    expect(c.关联属性).toBe('精神')
+    expect(c.威力).toBe(200)
+    expect(c.治疗增幅).toBe(20)
+    expect(c.治疗量).toBe(50)
+  })
+
   it('tolerates junk / empty items', () => {
     expect(parseCardItem(null, 'skill')).toEqual({})
     expect(parseCardItem({ 标签: 'not-an-array', 效果: 5 }, 'skill')).toEqual({})

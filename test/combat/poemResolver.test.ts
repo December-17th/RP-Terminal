@@ -171,6 +171,49 @@ describe('poemResolveAction — 战斗协议 damage', () => {
     expect((res.events!.find((e) => e.kind === 'damage')!.delta as any).shieldAbsorbed).toBe(200)
   })
 
+  it('治疗 heals an ally (no 命中检定; 治疗增幅 amplifies; only same-side)', () => {
+    const heal: AbilityDef = {
+      id: 'A/治疗术',
+      name: '治疗术',
+      range: 4,
+      shape: { kind: 'self' },
+      toHit: null,
+      cost: 'action',
+      ext: { 治疗: true, 关联属性: '精神', 威力: 200, 治疗增幅: 50 }
+    }
+    const ally: Combatant = {
+      id: 'C',
+      side: 'party',
+      name: '盟友',
+      pos: [0, 1],
+      block: { hp: 100, maxHp: 1000, ac: 10, speed: 6, mods: {}, conditions: [], abilities: [] },
+      ext: { system: 'poemD20', attrs: {}, tier: 2 } as Record<string, unknown>
+    }
+    const s = state([attacker(), ally, target()])
+    // base = 精神3×10×系数2.8 + 威力200 = 284; ×(1+50%) = 426; HP 100 → 526.
+    const healed = poemResolveAction({
+      ...ctx(
+        s,
+        { kind: 'ability', actor: 'A', abilityId: 'A/治疗术', targetIds: ['C'] },
+        fixedRoll(15)
+      ),
+      abilities: { 'A/治疗术': heal }
+    })!
+    expect(healed.state!.combatants.find((c) => c.id === 'C')!.block.hp).toBe(526)
+    expect(healed.events!.some((e) => e.kind === 'heal')).toBe(true)
+
+    // Aiming the heal at an enemy heals no one (same-side filter) — B is untouched.
+    const onEnemy = poemResolveAction({
+      ...ctx(
+        s,
+        { kind: 'ability', actor: 'A', abilityId: 'A/治疗术', targetIds: ['B'] },
+        fixedRoll(15)
+      ),
+      abilities: { 'A/治疗术': heal }
+    })!
+    expect(onEnemy.events!.some((e) => e.kind === 'heal')).toBe(false)
+  })
+
   it('失手 (评级 0) → miss, no damage', () => {
     const res = cast(fixedRoll(2))! // 总值 2+1−3 = 0 → 0
     const b = res.state!.combatants.find((c) => c.id === 'B')!

@@ -142,7 +142,17 @@ export interface Action {
 /** A resolved fact appended to the combat log; `delta` is the machine-readable form. */
 export interface CombatEvent {
   text: string
-  kind: 'attack' | 'miss' | 'damage' | 'save' | 'move' | 'condition' | 'death' | 'turn' | 'info'
+  kind:
+    | 'attack'
+    | 'miss'
+    | 'damage'
+    | 'heal'
+    | 'save'
+    | 'move'
+    | 'condition'
+    | 'death'
+    | 'turn'
+    | 'info'
   delta?: Record<string, unknown>
 }
 
