@@ -195,9 +195,22 @@ export const getDefaultSettings = (): Settings => ({
         },
         retrieval: { mode: 'always', count: 4, tokenBudget: 500 },
         inject: { label: 'Places' }
+      },
+      {
+        id: 'relationships',
+        shape: 'entity',
+        enabled: true,
+        entityKey: 'the pair',
+        write: {
+          trigger: 'checkpoint',
+          prompt:
+            'For each relationship between two characters that developed in these turns, return a canonical name for the pair (e.g. "Ayaka & Kael") and BOTH names as aliases, plus the fields that changed — dynamic, trust, tension, what they want from each other, unspoken feelings. Narrative only.'
+        },
+        retrieval: { mode: 'always', count: 4, tokenBudget: 400 },
+        inject: { label: 'Relationships' }
       }
     ],
-    max_tokens: 1500,
+    max_tokens: 1800,
     keep_recent: 10,
     checkpoint_turns: 6,
     checkpoint_tokens: 0,
