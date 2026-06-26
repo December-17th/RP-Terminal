@@ -53,6 +53,22 @@ describe('templateService TH-3 helpers', () => {
     expect(evalTemplate('<% console.log("noop") %>ok', ctx())).toBe('ok')
   })
 
+  it('provides cloneDeep, omit(string key), and the common collection helpers (命定之诗 status panel)', () => {
+    // Mirrors the card's `_.omit(_.cloneDeep(data), '事件')` pattern that threw "not a function".
+    const c = ctx({ vars: { stat_data: { hp: 10, 事件: ['x'], 艾莉亚: { lv: 3 } } } })
+    const tmpl =
+      '<%_ const d = _.cloneDeep(getMessageVar("stat_data", { defaults: {} }));' +
+      ' const clean = _.omit(d, "事件"); _%>' +
+      '<%= _.keys(clean).join(",") %>|<%= _.has(clean, "艾莉亚.lv") %>'
+    expect(evalTemplate(tmpl, c)).toBe('hp,艾莉亚|true')
+    // cloneDeep is a real copy (mutating the clone doesn't touch the source vars)
+    expect(c.vars.stat_data.事件).toEqual(['x'])
+    // a sampling of the added helpers
+    expect(evalTemplate('<%= _.sumBy([{n:1},{n:2}], "n") %>', ctx())).toBe('3')
+    expect(evalTemplate('<%= _.map([1,2,3], x => x*2).join("") %>', ctx())).toBe('246')
+    expect(evalTemplate('<%= _.isEqual({a:1},{a:1}) %>', ctx())).toBe('true')
+  })
+
   it('strips tags (does not evaluate) when the engine is toggled off', () => {
     const off = ctx({ enabled: false, vars: { n: 1 } })
     expect(evalTemplate('a<%= 1 + 1 %>b', off)).toBe('ab')
