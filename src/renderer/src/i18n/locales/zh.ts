@@ -432,6 +432,10 @@ const zh: Record<string, string> = {
   'combat.closePopup': '关闭',
   'combat.inPopup': '战斗已在弹出窗口中打开。',
   'combat.returnToStory': '返回故事',
+  'combat.quit': '退出战斗',
+  'combat.quitHint': '退出战斗系统，回到对话中由 AI 演绎继续战斗。',
+  'combat.noViableParty':
+    '队伍中没有可参战的角色（属性／生命值为 0）。请检查角色属性后重试，或退出战斗在对话中由 AI 演绎继续。',
 
   'actions.hide': '隐藏脚本动作',
   'actions.show': '显示脚本动作',

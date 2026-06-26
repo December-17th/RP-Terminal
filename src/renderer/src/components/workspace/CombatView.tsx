@@ -209,6 +209,31 @@ export function CombatView({ profileId }: { profileId: string }): React.ReactEle
     useChatStore.getState().setMode(profileId, 'explore')
   }
 
+  // Guard (a): a party with no viable members — none imported, or all with maxHp 0 (e.g. an
+  // early-game 主角 whose 属性 are still 0 → derived HP 0). Rendering the grid would be a blank /
+  // instant-loss; show a clear message + the quit-to-chat button instead of a confusing board.
+  const partyMembers = state.combatants.filter((c) => c.side === 'party')
+  if (partyMembers.length === 0 || partyMembers.every((c) => c.block.maxHp <= 0)) {
+    return (
+      <div
+        style={{
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'flex-start',
+          gap: 12,
+          padding: 12
+        }}
+      >
+        <div style={{ color: 'var(--rpt-text-secondary)', maxWidth: 360 }}>
+          {t('combat.noViableParty')}
+        </div>
+        <button className="btn-accent" disabled={busy} onClick={onReturn}>
+          {t('combat.quit')}
+        </button>
+      </div>
+    )
+  }
+
   const shown = state.combatants.find((c) => c.id === inspectId) ?? actor
   const banner =
     state.status === 'party'
@@ -557,14 +582,24 @@ export function CombatView({ profileId }: { profileId: string }): React.ReactEle
           <span style={{ opacity: 0.5 }}> · </span>
           <span style={{ color: 'var(--rpt-text-secondary)' }}>{banner}</span>
         </div>
-        <button
-          aria-label={popup ? t('combat.closePopup') : t('combat.popup')}
-          title={popup ? t('combat.closePopup') : t('combat.popup')}
-          onClick={() => setPopup((p) => !p)}
-          style={{ fontSize: 13, padding: '2px 8px' }}
-        >
-          {popup ? '⤡' : '⤢'}
-        </button>
+        <div style={{ display: 'flex', gap: 6 }}>
+          <button
+            disabled={busy}
+            title={t('combat.quitHint')}
+            onClick={onReturn}
+            style={{ fontSize: 12, padding: '2px 8px', color: 'var(--rpt-danger, #e06c75)' }}
+          >
+            {t('combat.quit')}
+          </button>
+          <button
+            aria-label={popup ? t('combat.closePopup') : t('combat.popup')}
+            title={popup ? t('combat.closePopup') : t('combat.popup')}
+            onClick={() => setPopup((p) => !p)}
+            style={{ fontSize: 13, padding: '2px 8px' }}
+          >
+            {popup ? '⤡' : '⤢'}
+          </button>
+        </div>
       </div>
 
       <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>

@@ -446,6 +446,10 @@ const en: Record<string, string> = {
   'combat.closePopup': 'Close',
   'combat.inPopup': 'Combat is open in a pop-out window.',
   'combat.returnToStory': 'Return to story',
+  'combat.quit': 'Quit combat',
+  'combat.quitHint': 'Leave the combat system and continue the fight in chat (AI-narrated).',
+  'combat.noViableParty':
+    'No one in the party can fight (their attributes / HP are 0). Check the characters’ stats and try again, or quit combat to continue the fight in chat (AI-narrated).',
 
   'actions.hide': 'Hide script actions',
   'actions.show': 'Show script actions',
