@@ -7,6 +7,27 @@ Running status of the MVU / panel-workspace track. Newest first.
 
 ## 2026-06-26
 
+- **⚠️ TECH DEBT — WCV variable write-back loop is contained by a heuristic, not properly fixed.** A card
+  (命定之诗) that writes a constantly-CHANGING value (a `date` clock) on its own `mag_variable_update_ended`
+  self-loops: write → broadcast → echo → event → write → … forever. The saga + final state:
+  - Tried, insufficient: WCV exclude-sender on the direct echo (`notifyVarsChanged(…, e.sender.id)`);
+    a value-diff guard in the shared runtime `onVarsChanged`; a source-side **no-op** guard in
+    `applyVariableOps`. None stop a *changing* value, and the echo also returns via the INDIRECT path
+    (host floor update → `wcv-broadcast-vars`), so byte-diffs don't survive the round-trip.
+  - Tried, REVERTED: suppressing MVU events for the card's own writes (compare echo vs live `stat`).
+    It broke cards that **chain initialization through their own update events** — and the prompt-side
+    EJS injection reads those vars, so injection went empty. MVU semantics here are unverified (does a
+    programmatic `insertOrAssignVariables` fire `mag_variable_update_*` in real MVU? we assumed yes).
+  - **Current band-aid (`b01f836`):** self-write events fire again; `applyVariableOps` drops a write once
+    the SAME changed-path **signature** repeats `LOOP_MAX=25` times within `LOOP_WINDOW_MS=400ms`.
+  - **Why it needs a real fix:** the thresholds are guesses — a loop slower than 400 ms isn't caught, and a
+    legitimate rapid same-path animation (≤25 writes is fine, more would be falsely dropped) is at risk.
+    The root cause is architectural: a card-initiated write is echoed back to its author as an MVU event
+    via two paths. A proper fix would **tag the change source** (model-fold vs card-write) end-to-end and
+    fire `mag_variable_update_*` only on model/external folds, removing the need to guess — but that
+    requires confirming real-MVU event semantics first. See the loop-guard note in
+    [rpt-api.md](rpt-api.md) (Host↔card section).
+
 - **命定之诗 combat extension — card-side complete (branch `feat/poem-combat-extension`).** A card-side
   mod that imports the party from MVU `stat_data` and resolves combat with the card's own `<战斗协议>`
   (层级-d20), co-developed with the app combat SDK. Design:
