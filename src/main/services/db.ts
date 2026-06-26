@@ -81,14 +81,31 @@ CREATE TABLE IF NOT EXISTS combat_encounters (
   data TEXT NOT NULL,
   updated_at TEXT
 );
-CREATE TABLE IF NOT EXISTS episodic_memory (
+-- Long-term memory engine (docs/episodic-memory-design.md §6). One generic store
+-- partitioned by the collection column; entity rows upsert on (chat_id, collection,
+-- entity_key) while stream rows (entity_key NULL — distinct under SQLite UNIQUE) coexist.
+-- The core writes/reads only the 'events' collection; entity/vector columns are reserved
+-- (no second migration). The optional sqlite-vec memory_vec table is NOT created here.
+CREATE TABLE IF NOT EXISTS memory_entries (
   id TEXT PRIMARY KEY,
   chat_id TEXT NOT NULL REFERENCES chats(id) ON DELETE CASCADE,
-  chunk TEXT NOT NULL,
-  summary TEXT,
-  embedding BLOB,
-  created_at TEXT
+  collection TEXT NOT NULL,
+  entity_key TEXT,
+  summary TEXT NOT NULL,
+  payload TEXT,
+  keywords TEXT,
+  entities TEXT,
+  salience REAL DEFAULT 1,
+  pinned INTEGER DEFAULT 0,
+  turn_start INTEGER,
+  turn_end INTEGER,
+  superseded_by TEXT,
+  embed_model TEXT,
+  updated_at TEXT,
+  created_at TEXT,
+  UNIQUE(chat_id, collection, entity_key)
 );
+CREATE INDEX IF NOT EXISTS idx_mem_chat_coll ON memory_entries(chat_id, collection);
 `
 
 // Presets/lorebooks were briefly stored in SQL during early Phase F; they are now
@@ -100,6 +117,8 @@ DROP TABLE IF EXISTS lorebooks;
 DROP TABLE IF EXISTS presets;
 DROP TABLE IF EXISTS presets_legacy;
 DROP TABLE IF EXISTS profile_state;
+-- Superseded by memory_entries (was reserved, never written). See db §memory.
+DROP TABLE IF EXISTS episodic_memory;
 `
 
 /** Add a column to a table if a pre-existing DB doesn't already have it (idempotent). */
@@ -128,6 +147,8 @@ export const getDb = (): Database.Database => {
   addColumnIfMissing(db, 'chats', 'mode', 'mode TEXT')
   addColumnIfMissing(db, 'chats', 'cached_world_info', 'cached_world_info TEXT')
   addColumnIfMissing(db, 'chats', 'pending_lore', 'pending_lore TEXT')
+  // Memory checkpoint bookkeeping per chat: {last_compacted_floor}. See compactionService.
+  addColumnIfMissing(db, 'chats', 'memory_state', 'memory_state TEXT')
   // TH-2 swipes: alternate responses per floor + the active index.
   addColumnIfMissing(db, 'floors', 'swipes', 'swipes TEXT')
   addColumnIfMissing(db, 'floors', 'swipe_id', 'swipe_id INTEGER')

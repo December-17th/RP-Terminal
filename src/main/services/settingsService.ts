@@ -1,6 +1,6 @@
 import { safeStorage } from 'electron'
 import { getDb } from './db'
-import { Settings, ApiPreset, ModeConfig, AgentMode } from '../types/models'
+import { Settings, ApiPreset, ModeConfig, AgentMode, MemoryCollection } from '../types/models'
 
 // API keys are encrypted at rest via the OS keyring (Electron safeStorage). A
 // stored value is prefixed so encrypted keys are distinguishable from legacy
@@ -152,8 +152,60 @@ export const getDefaultSettings = (): Settings => ({
     prewarm: false,
     breakpoint_optimizer: false
   },
+  // Long-term memory: off by default. The core ships one built-in `events` stream
+  // collection with keyword recall; the extractor prompt asks for narrative events only
+  // (MVU numbers are tracked separately — docs/episodic-memory-design.md §1).
+  memory: {
+    enabled: false,
+    collections: [
+      {
+        id: 'events',
+        shape: 'stream',
+        enabled: true,
+        write: {
+          trigger: 'checkpoint',
+          prompt:
+            'Summarize what newly happened in these roleplay turns as concise, self-contained memories of narrative events — actions, decisions, revelations, promises, emotional beats. Do NOT restate numeric stats, inventory, or relationship scores (those are tracked separately). Reply with JSON only: {"memories":[{"summary":"one sentence","keywords":["proper nouns / topics"],"salience":0.0-1.0}]}.'
+        },
+        retrieval: { mode: 'keyword', count: 5, tokenBudget: 600 },
+        inject: { label: 'Relevant earlier events' }
+      }
+    ],
+    max_tokens: 600,
+    checkpoint_turns: 6,
+    checkpoint_tokens: 0,
+    utility_api_preset_id: '',
+    embedding_api_preset_id: ''
+  },
   pricing: {}
 })
+
+/**
+ * Merge stored memory collections over the built-in defaults by id (deep on the
+ * write/retrieval/inject sub-objects, so adding a field never wipes one), and keep any
+ * stored collection whose id isn't a built-in (forward-compat for custom card collections).
+ */
+const mergeCollections = (
+  defaults: MemoryCollection[],
+  stored?: MemoryCollection[]
+): MemoryCollection[] => {
+  if (!Array.isArray(stored)) return defaults
+  const byId = new Map(stored.map((c) => [c.id, c]))
+  const merged = defaults.map((d) => {
+    const s = byId.get(d.id)
+    if (!s) return d
+    return {
+      ...d,
+      ...s,
+      write: { ...d.write, ...(s.write || {}) },
+      retrieval: { ...d.retrieval, ...(s.retrieval || {}) },
+      inject: { ...d.inject, ...(s.inject || {}) }
+    }
+  })
+  const defaultIds = new Set(defaults.map((d) => d.id))
+  for (const s of stored) if (s && s.id && !defaultIds.has(s.id)) merged.push(s)
+  return merged
+}
 
 /**
  * Merge stored settings over the defaults (per-section, so adding a new nested
@@ -187,6 +239,12 @@ export const normalize = (stored: Partial<Settings>): Settings => {
   const cards = { ...d.cards, ...(stored.cards || {}) }
   const combat = { ...d.combat, ...(stored.combat || {}) }
   const pricing = { ...d.pricing, ...(stored.pricing || {}) }
+  const storedMemory = (stored.memory || {}) as Partial<Settings['memory']>
+  const memory = {
+    ...d.memory,
+    ...storedMemory,
+    collections: mergeCollections(d.memory.collections, storedMemory.collections)
+  }
 
   // Agent mode: accept the three-way enum; migrate the legacy boolean `enabled` toggle
   // (true → manual), else default off.
@@ -243,6 +301,7 @@ export const normalize = (stored: Partial<Settings>): Settings => {
     cache,
     cards,
     combat,
+    memory,
     pricing
   }
 }
