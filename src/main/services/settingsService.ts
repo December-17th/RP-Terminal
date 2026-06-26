@@ -169,9 +169,35 @@ export const getDefaultSettings = (): Settings => ({
         },
         retrieval: { mode: 'keyword', count: 5, tokenBudget: 600 },
         inject: { label: 'Relevant earlier events' }
+      },
+      {
+        id: 'characters',
+        shape: 'entity',
+        enabled: true,
+        entityKey: 'character name',
+        write: {
+          trigger: 'checkpoint',
+          prompt:
+            'For each character who appeared or developed in these turns, return their canonical name, any aliases used (nicknames, titles), and only the fields that changed — role, personality, goals, relationships, secrets revealed, current status/whereabouts. Narrative development only; do NOT restate numeric stats.'
+        },
+        retrieval: { mode: 'always', count: 6, tokenBudget: 800 },
+        inject: { label: 'Characters in play' }
+      },
+      {
+        id: 'locations',
+        shape: 'entity',
+        enabled: true,
+        entityKey: 'location name',
+        write: {
+          trigger: 'checkpoint',
+          prompt:
+            'For each place that featured or changed in these turns, return its canonical name, any aliases, and the fields that changed — description, current state, who/what is there, notable events. Narrative only.'
+        },
+        retrieval: { mode: 'always', count: 4, tokenBudget: 500 },
+        inject: { label: 'Places' }
       }
     ],
-    max_tokens: 600,
+    max_tokens: 1500,
     keep_recent: 10,
     checkpoint_turns: 6,
     checkpoint_tokens: 0,

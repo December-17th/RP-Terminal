@@ -251,6 +251,124 @@ export const addManualEntry = (
   appendEntries(profileId, chatId, 'events', [{ summary, keywords, pinned: true, salience: 1 }])
 }
 
+// --- Entity collections (upsert-keyed sheets: characters / locations) — docs §5.1, §14 ----------
+
+/** A character/location sheet, stored in an entity row's `payload` (T2: deltas + consolidation). */
+export interface EntitySheet {
+  aliases: string[]
+  /** Current consolidated facts (role, goals, status, description, …). */
+  fields: Record<string, string>
+  /** Append-only dated change notes. */
+  log: { turn: string; note: string }[]
+}
+
+/** One extracted update for an entity (from the writer's structured call). */
+export interface EntityUpdate {
+  aliases?: string[]
+  fields?: Record<string, string>
+  note?: string
+  turn?: string
+}
+
+const emptySheet = (): EntitySheet => ({ aliases: [], fields: {}, log: [] })
+
+const uniqCI = (xs: string[]): string[] => {
+  const seen = new Set<string>()
+  const out: string[] = []
+  for (const x of xs) {
+    const v = x.trim()
+    if (v && !seen.has(v.toLowerCase())) {
+      seen.add(v.toLowerCase())
+      out.push(v)
+    }
+  }
+  return out
+}
+
+/** Merge an update into a sheet: union aliases, overlay changed fields, append a dated note. Pure. */
+export const mergeEntitySheet = (
+  existing: EntitySheet | null,
+  update: EntityUpdate
+): EntitySheet => {
+  const base = existing ?? emptySheet()
+  return {
+    aliases: uniqCI([...base.aliases, ...(update.aliases ?? [])]),
+    fields: { ...base.fields, ...(update.fields ?? {}) },
+    log:
+      update.note && update.note.trim()
+        ? [...base.log, { turn: update.turn ?? '', note: update.note.trim() }]
+        : base.log
+  }
+}
+
+/**
+ * Resolve the upsert key for an entity update (T1): reuse an existing record's key when the
+ * canonical name or any alias matches that record's key or aliases (case-insensitive); otherwise
+ * the canonical name is a new key. Pure.
+ */
+export const resolveEntityKey = (
+  canonical: string,
+  aliases: string[],
+  existing: { entityKey: string; aliases: string[] }[]
+): string => {
+  const want = new Set([canonical, ...aliases].map((s) => s.trim().toLowerCase()).filter(Boolean))
+  for (const rec of existing) {
+    const known = [rec.entityKey, ...rec.aliases].map((s) => s.trim().toLowerCase())
+    if (known.some((k) => want.has(k))) return rec.entityKey
+  }
+  return canonical
+}
+
+/** Read one entity record by key (or null). */
+export const getEntity = (
+  _profileId: string,
+  chatId: string,
+  collection: string,
+  entityKey: string
+): MemoryEntry | null => {
+  const row = getDb()
+    .prepare('SELECT * FROM memory_entries WHERE chat_id = ? AND collection = ? AND entity_key = ?')
+    .get(chatId, collection, entityKey) as MemoryRow | undefined
+  return row ? rowToEntry(row) : null
+}
+
+/** Insert-or-update an entity record (upsert on UNIQUE(chat, collection, entity_key)). */
+export const upsertEntity = (
+  _profileId: string,
+  chatId: string,
+  collection: string,
+  entityKey: string,
+  summary: string,
+  sheet: EntitySheet
+): void => {
+  const now = new Date().toISOString()
+  getDb()
+    .prepare(
+      `INSERT INTO memory_entries
+         (id, chat_id, collection, entity_key, summary, payload, keywords, entities,
+          salience, pinned, turn_start, turn_end, superseded_by, embed_model, updated_at, created_at)
+       VALUES
+         (@id, @chat_id, @collection, @entity_key, @summary, @payload, NULL, @entities,
+          1, 0, NULL, NULL, NULL, NULL, @updated_at, @created_at)
+       ON CONFLICT(chat_id, collection, entity_key) DO UPDATE SET
+         summary = excluded.summary,
+         payload = excluded.payload,
+         entities = excluded.entities,
+         updated_at = excluded.updated_at`
+    )
+    .run({
+      id: randomUUID(),
+      chat_id: chatId,
+      collection,
+      entity_key: entityKey,
+      summary,
+      payload: JSON.stringify(sheet),
+      entities: sheet.aliases.length ? JSON.stringify(sheet.aliases) : null,
+      updated_at: now,
+      created_at: now
+    })
+}
+
 /**
  * The compaction pointer after truncating floors from `fromFloor` (rewind-safety, docs §11.M):
  * rewind to one before the cut so regenerated floors are re-compacted, or null if the cut is

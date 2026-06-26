@@ -4,7 +4,10 @@ import {
   rowToEntry,
   rewindCompactionPointer,
   entryPatchToColumns,
-  type MemoryRow
+  mergeEntitySheet,
+  resolveEntityKey,
+  type MemoryRow,
+  type EntitySheet
 } from '../../src/main/services/memoryStore'
 
 // The DB layer is a no-op stub under Node (see test/mocks/better-sqlite3.ts), so we test
@@ -192,6 +195,69 @@ describe('entryPatchToColumns', () => {
       keywords: '["k"]',
       pinned: 1
     })
+  })
+})
+
+describe('mergeEntitySheet', () => {
+  it('builds a fresh sheet from null + an update', () => {
+    const s = mergeEntitySheet(null, {
+      aliases: ['the swordmaiden'],
+      fields: { role: 'guard' },
+      note: 'introduced at the gate',
+      turn: '0-5'
+    })
+    expect(s).toEqual({
+      aliases: ['the swordmaiden'],
+      fields: { role: 'guard' },
+      log: [{ turn: '0-5', note: 'introduced at the gate' }]
+    })
+  })
+
+  it('overlays fields, unions aliases case-insensitively, and appends the note', () => {
+    const existing: EntitySheet = {
+      aliases: ['Ayaka'],
+      fields: { role: 'guard', mood: 'wary' },
+      log: [{ turn: '0-5', note: 'a' }]
+    }
+    const s = mergeEntitySheet(existing, {
+      aliases: ['ayaka', 'captain'],
+      fields: { mood: 'trusting', goal: 'find her brother' },
+      note: 'warmed up',
+      turn: '6-11'
+    })
+    expect(s.aliases).toEqual(['Ayaka', 'captain']) // 'ayaka' dedups against 'Ayaka'
+    expect(s.fields).toEqual({ role: 'guard', mood: 'trusting', goal: 'find her brother' })
+    expect(s.log).toEqual([
+      { turn: '0-5', note: 'a' },
+      { turn: '6-11', note: 'warmed up' }
+    ])
+  })
+
+  it('leaves the log unchanged when there is no note', () => {
+    const existing: EntitySheet = { aliases: [], fields: {}, log: [{ turn: '1', note: 'x' }] }
+    expect(mergeEntitySheet(existing, { fields: { a: 'b' } }).log).toEqual([
+      { turn: '1', note: 'x' }
+    ])
+  })
+})
+
+describe('resolveEntityKey', () => {
+  const existing = [
+    { entityKey: 'Ayaka', aliases: ['the swordmaiden', 'captain'] },
+    { entityKey: 'The Rusty Anchor', aliases: ['the tavern'] }
+  ]
+
+  it('reuses the key when the canonical name matches (case-insensitive)', () => {
+    expect(resolveEntityKey('ayaka', [], existing)).toBe('Ayaka')
+  })
+
+  it('reuses the key when an alias matches', () => {
+    expect(resolveEntityKey('Captain', [], existing)).toBe('Ayaka')
+    expect(resolveEntityKey('Somebody', ['the tavern'], existing)).toBe('The Rusty Anchor')
+  })
+
+  it('returns the canonical name as a new key when nothing matches', () => {
+    expect(resolveEntityKey('Borin', ['the smith'], existing)).toBe('Borin')
   })
 })
 
