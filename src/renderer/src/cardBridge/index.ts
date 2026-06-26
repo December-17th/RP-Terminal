@@ -1,7 +1,7 @@
 // src/renderer/src/cardBridge/index.ts
 import { createCardBridge, type CardCtx } from './createCardBridge'
 import lodash from 'lodash'
-import { z } from 'zod'
+import { cardZod } from '../../../shared/cardZod'
 
 export { installCardTopSurface } from './topSurface'
 
@@ -18,7 +18,7 @@ export function installCardBridge(): void {
     const g = createCardBridge(ctx)
     // realm-safe pure libs (no DOM): provide from the app bundle.
     g._ = lodash
-    g.z = z
+    g.z = cardZod
     return g
   }
 }

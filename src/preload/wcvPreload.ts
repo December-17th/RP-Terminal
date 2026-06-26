@@ -9,7 +9,7 @@
 // frozen for card use (it backs plugins + app UI only).
 import { ipcRenderer } from 'electron'
 import _ from 'lodash'
-import { z as zod } from 'zod'
+import { cardZod } from '../shared/cardZod'
 import variant from '@jitl/quickjs-singlefile-browser-release-sync'
 import { newQuickJSWASMModuleFromVariant } from 'quickjs-emscripten-core'
 import {
@@ -245,7 +245,7 @@ w.TavernHelper = g.TavernHelper
 // These are transport-level library injection (not part of the TH runtime). The runtime already provides
 // `toastr`; the lib globals below are required()'d lazily because importing them at preload load crashes.
 w._ = _
-w.z = zod
+w.z = cardZod
 // YAML — MVU / data_schema card scripts reference a `YAML` global (the ST host provides one). We don't ship
 // a full parser; mirror the inline LIB_SHIM's clean-room best-effort (JSON passthrough) so the global exists
 // — without it the script throws `YAML is not defined`. (A real YAML parser is out of scope, as in-app.)

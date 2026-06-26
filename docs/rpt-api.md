@@ -73,7 +73,7 @@ low-level bridge name and how the DOM libs are injected differ per transport.
 | `window.Mvu` | MagVarUpdate API (`getMvuData`/`getMvuVariable`/`setMvuVariable`/`replaceMvuData`/`parseMessage`/`events`) | thRuntime |
 | `window.EjsTemplate` | the EJS engine API (`evalTemplate`/`prepareContext`/`getSyntaxErrorInfo`/`allVariables`/`saveVariables`/…) | thRuntime |
 | `window.toastr`, `window.tavern_events` | toast bus; the events enum | thRuntime |
-| `window._` `window.z` `window.$` | lodash, Zod, jQuery (the libs cards externalize) | bridge / libs |
+| `window._` `window.z` `window.$` | lodash, Zod, jQuery (the libs cards externalize). `z` is **self-referential** (`z.z === z`) — MVU schema bundles call `z.z.object(...)` as well as `z.object(...)`; injected via [`shared/cardZod`](../src/shared/cardZod.ts) by both transports. | bridge / libs |
 | `window.Vue` `window.VueRouter` `window.Pinia` | provided for Vue-app cards | libs (iframe realm / preload) |
 | low-level host bridge | inline: `window.parent.__rptCardBridge`; WCV: `window.rptHost` (`getVariables`/`applyVariableOps`/`setVariables`/`setInput`/`onVarsChanged`) | transport |
 

@@ -105,7 +105,7 @@ transports inject the same thing (clean-room mirror of JSR's `createSrcContent`/
   - From `cardEnv` (CDN, both transports): **FontAwesome**, **jQuery-UI (+touch-punch)**, **Tailwind** (v3).
   - From the transport: **jQuery**, **Vue**, **Pinia**, **VueRouter** (iframe-realm classic builds —
     [`cardBridge/cardLibs.ts`](../../src/renderer/src/cardBridge/cardLibs.ts) inline / `wcvPreload` WCV),
-    plus **lodash** (`_`) and **Zod** (`z`) from the bridge.
+    plus **lodash** (`_`) and **Zod** (`z`, self-referential — `z.z === z` — for MVU `z.z.object(...)` schema bundles; see [`shared/cardZod`](../../src/shared/cardZod.ts)) from the bridge.
 
 **Dual-mode routing** ([MessageContent.tsx](../../src/renderer/src/components/MessageContent.tsx)):
 
