@@ -423,6 +423,8 @@ const en: Record<string, string> = {
   'memory.turns': 'turns {{a}}–{{b}}',
   'memory.recalled': 'recalled',
   'memory.recalledTitle': 'Pulled into the most recent turn',
+  'memory.aka': 'aka',
+  'memory.history': 'history ({{count}})',
   'memory.pin': 'Pin (always recall this)',
   'memory.unpin': 'Unpin',
   'status.reevalTitle':

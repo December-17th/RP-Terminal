@@ -411,6 +411,8 @@ const zh: Record<string, string> = {
   'memory.turns': '第 {{a}}–{{b}} 回合',
   'memory.recalled': '已召回',
   'memory.recalledTitle': '已被最近一回合调用',
+  'memory.aka': '又称',
+  'memory.history': '变更记录（{{count}}）',
   'memory.pin': '置顶（始终召回）',
   'memory.unpin': '取消置顶',
   'status.reevalTitle':

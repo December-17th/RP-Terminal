@@ -19,10 +19,20 @@ interface MemoryEntry {
   entityKey: string | null
   summary: string
   keywords: string[]
+  /** Entity rows: aliases. */
+  entities: string[]
+  /** Entity rows: the sheet { aliases, fields, log }. */
+  payload: unknown
   salience: number
   pinned: boolean
   turnStart: number | null
   turnEnd: number | null
+}
+
+/** An entity row's parsed sheet (loose — the payload is whatever was stored). */
+interface EntitySheetView {
+  fields?: Record<string, string>
+  log?: { turn: string; note: string }[]
 }
 
 const secondary = { color: 'var(--rpt-text-secondary)' }
@@ -123,6 +133,53 @@ export function MemoryView({ profileId }: { profileId: string }): React.ReactEle
     await api().memoryAdd(profileId, activeChatId, summary, keywords)
     cancelAdd()
     await refresh()
+  }
+
+  // Render an entity record (character / location) as a sheet: name + aliases + fields + history.
+  const entitySheet = (e: MemoryEntry): React.ReactElement => {
+    const sheet = (e.payload && typeof e.payload === 'object' ? e.payload : {}) as EntitySheetView
+    const fields = sheet.fields && typeof sheet.fields === 'object' ? sheet.fields : {}
+    const log = Array.isArray(sheet.log) ? sheet.log : []
+    return (
+      <>
+        <div style={{ fontWeight: 600 }}>{e.entityKey}</div>
+        {e.entities.length ? (
+          <div style={{ ...secondary, fontSize: '0.72em', marginTop: 2 }}>
+            {t('memory.aka')} {e.entities.join(', ')}
+          </div>
+        ) : null}
+        {Object.keys(fields).length ? (
+          <div style={{ marginTop: 6 }}>
+            {Object.entries(fields).map(([k, v]) => (
+              <div key={k} style={{ fontSize: '0.85em', lineHeight: 1.5 }}>
+                <span style={secondary}>{k}: </span>
+                {v}
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div style={{ lineHeight: 1.5 }}>{e.summary}</div>
+        )}
+        {log.length ? (
+          <details style={{ marginTop: 6 }}>
+            <summary style={{ ...secondary, fontSize: '0.72em', cursor: 'pointer' }}>
+              {t('memory.history', { count: log.length })}
+            </summary>
+            <div style={{ marginTop: 4 }}>
+              {log.map((l, i) => (
+                <div
+                  key={`${l.turn}:${i}`}
+                  style={{ ...secondary, fontSize: '0.78em', lineHeight: 1.5 }}
+                >
+                  {l.turn ? `${l.turn}: ` : ''}
+                  {l.note}
+                </div>
+              ))}
+            </div>
+          </details>
+        ) : null}
+      </>
+    )
   }
 
   const q = filter.trim().toLowerCase()
@@ -274,6 +331,8 @@ export function MemoryView({ profileId }: { profileId: string }): React.ReactEle
                       <button onClick={() => setEditingId(null)}>{t('memory.cancel')}</button>
                     </div>
                   </>
+                ) : e.entityKey ? (
+                  entitySheet(e)
                 ) : (
                   <>
                     <div style={{ lineHeight: 1.5 }}>{e.summary}</div>
@@ -325,7 +384,6 @@ export function MemoryView({ profileId }: { profileId: string }): React.ReactEle
                           {e.turnStart != null
                             ? t('memory.turns', { a: e.turnStart, b: e.turnEnd ?? e.turnStart })
                             : ''}
-                          {e.entityKey ? ` · ${e.entityKey}` : ''}
                         </span>
                       </span>
                       <span style={{ display: 'flex', gap: 6 }}>
