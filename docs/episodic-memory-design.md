@@ -31,19 +31,24 @@
 
 ---
 
-## 2. Current status (audit)
+## 2. Status
 
-| Piece | State |
-| --- | --- |
-| `episodic_memory` table | **Reserved, empty, unused** — declared at [db.ts:84](src/main/services/db.ts), never read or written anywhere in the tree. Folds into the new `memory_entries` (§6); no data migration. |
-| Writer / reader services | **Do not exist** (`compactionService.ts`, `retrievalService.ts`). |
-| `memory` settings block | **Does not exist** — `Settings` ([models.ts:41](src/main/types/models.ts)) has `cache`, no `memory`. The cache design's reserved field names are doc-only. |
-| Utility / embedding connections | **Plumbing exists** — `settings.api_presets[]` ([models.ts:15](src/main/types/models.ts)) already supports multiple named connections; the summarizer/embedder ride on it. |
-| Keyword matcher | **Exists & reusable** — `matchAcross` ([lorebookService.ts:129](src/main/services/lorebookService.ts)) qualifies entries against scan text; same machinery ranks stream memories. |
-| Drop boundary | **Exists** — `fitToBudget` ([promptBuilder.ts:43](src/main/services/promptBuilder.ts)) drops oldest convo messages to fit `max_context_tokens`; compaction hooks the turns it's about to drop. |
-| Vector store | **Not present** — no `sqlite-vec` / vector table yet; better-sqlite3 is already the DB engine, so it slots in (§6). |
+> **This is now BUILT** (branch `feat/memory-system`). The table below is the original
+> **pre-implementation audit** (the starting point), with each row's current state appended — read
+> **§18 (as-built code map)** for the authoritative picture. Kept for the "what was reused vs. what was
+> new" framing the rest of the doc references.
 
-**Conclusion: the slot is carved out, nothing fills it.** This doc fills it — broadened to the multi-collection engine.
+| Piece | Starting point (pre-build) | Now |
+| --- | --- | --- |
+| `episodic_memory` table | **Reserved, empty, unused** — declared at [db.ts:84](src/main/services/db.ts), never read or written. | **Dropped & replaced** by `memory_entries` ([db.ts](src/main/services/db.ts), §6); no data migration. |
+| Writer / reader services | **Did not exist.** | **BUILT** — `compactionService.ts` (writer) + `retrievalService.ts` (reader), §18.2. |
+| `memory` settings block | **Did not exist** — `Settings` had `cache`, no `memory`. | **BUILT** — `memory` block + `MemoryCollection` registry at [models.ts:175](src/main/types/models.ts), defaults in `settingsService.ts` (§9). |
+| Utility / embedding connections | **Plumbing existed** — `settings.api_presets[]` ([models.ts:15](src/main/types/models.ts)) supports multiple named connections. | **Reused** — summarizer + embedder ride on it (`utility_api_preset_id` / `embedding_api_preset_id`). |
+| Keyword matcher | **Existed** — `matchAcross` ([lorebookService.ts:129](src/main/services/lorebookService.ts)) qualifies entries against scan text. | **Pattern reused** — `keywordRanked` in `retrievalService.ts` ranks stream memories the same way. |
+| Drop boundary | **Existed** — `fitToBudget` ([promptBuilder.ts:43](src/main/services/promptBuilder.ts)) drops oldest convo messages. | **Reused** — compaction targets the floors outside the `keep_recent` window (§7). |
+| Vector store | **Not present** — no vector table. | **BUILT (JS, not `sqlite-vec`)** — embeddings in an `embedding` column + brute-force cosine/RRF in JS (T4, §14); `sqlite-vec` deferred. |
+
+**Conclusion: the slot is now filled** — the multi-collection engine is live behind `memory.enabled` (default off). See §17 for remaining work and §18 for the code map.
 
 ---
 
