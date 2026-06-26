@@ -509,7 +509,7 @@ export const buildPrompt = (args: BuildPromptArgs): ChatMessage[] => {
   // persona block if it was given a depth instead of top placement.
   const byDepth = new Map<number, string[]>()
   for (const e of depthEntries) {
-    const c = render(e.content)
+    const c = renderLoreEntry(e) // named+sourced diagnostic on error/empty (same as top-level World Info)
     if (!c) continue
     const d = e.insertion_depth as number
     if (!byDepth.has(d)) byDepth.set(d, [])
