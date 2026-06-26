@@ -9,8 +9,27 @@
 // Heuristic by design: the grammar is whatever the AI emits, so parsing is tolerant and pinned
 // by tests rather than a strict format.
 
-import type { AoeShape, Condition, StatBlock } from '../types'
-import type { BuiltCombatant, CombatSystem, ItemKind, MvuCharCtx } from '../bundle'
+import { clone } from '../../objectPath'
+import { rollD20, type Rng } from '../dice'
+import {
+  clipToGrid,
+  distance,
+  lineOfSight,
+  octantDir,
+  targetsInCells,
+  templateCells
+} from '../grid'
+import { applyDamageAmount, isAlive } from '../resolver'
+import type { AbilityDef, AoeShape, Combatant, CombatEvent, Condition, StatBlock } from '../types'
+import type {
+  BuiltCombatant,
+  CombatSystem,
+  DeriveConfig,
+  ItemKind,
+  MvuCharCtx,
+  ResolverContext
+} from '../bundle'
+import type { HookResult } from '../hooks'
 
 /** The five attributes, in canonical order (also `derive.attributes`). */
 export const ATTRS = ['力量', '敏捷', '体质', '智力', '精神'] as const
@@ -234,11 +253,12 @@ export const buildCombatant = (char: unknown, ctx: MvuCharCtx): BuiltCombatant =
     })
   }
 
-  // Aggregate equipped gear: weapon 攻击 (max), armor 防御 (sum), 命中/闪避 (max).
+  // Aggregate equipped gear: weapon 攻击 (max), armor 防御 (sum), 命中/闪避/DR (max).
   let 武器攻击 = 0
   let 防御 = 0
   let 命中 = 0
   let 闪避 = 0
+  let DR = 0
   const equip: { slot: string; combat: CardCombat }[] = []
   for (const [slot, gear] of Object.entries(asRec(get(c, paths, 'equipment')))) {
     const combat = parseCardItem(gear, 'equip')
@@ -247,6 +267,7 @@ export const buildCombatant = (char: unknown, ctx: MvuCharCtx): BuiltCombatant =
     if (combat.防御) 防御 += combat.防御
     if (combat.命中) 命中 = Math.max(命中, combat.命中)
     if (combat.闪避) 闪避 = Math.max(闪避, combat.闪避)
+    if (combat.DR) DR = Math.max(DR, combat.DR)
   }
 
   // A basic attack (普攻威力 20) every combatant always has.
@@ -271,7 +292,9 @@ export const buildCombatant = (char: unknown, ctx: MvuCharCtx): BuiltCombatant =
     maxHp,
     ac: 10, // unused by the card resolver (命中−闪避 model); kept harmless for the native engine.
     speed: 6,
-    mods: {}, // the five attributes ride in ext, not the native D&D mods.
+    // Bridge 敏捷 into the native DEX mod so the engine's rollInitiative gives the card's
+    // 行动顺序 (敏捷 + d20). The five attributes themselves live in ext for the resolver.
+    mods: { DEX: attrs.敏捷 },
     abilities: abilityIds,
     conditions
   }
@@ -285,16 +308,195 @@ export const buildCombatant = (char: unknown, ctx: MvuCharCtx): BuiltCombatant =
     maxMp,
     sp,
     maxSp,
-    equip: { 武器攻击, 防御, 命中, 闪避 },
+    equip: { 武器攻击, 防御, 命中, 闪避, DR },
     passives
   }
 
   return { block, ext, abilities }
 }
 
-/** The 命定之诗 combat system adapter (resolver added in BP3). The seam's `parseItem` returns an
- *  opaque bag; `parseCardItem` itself stays strongly typed for direct callers. */
+// --- BP3: the <战斗协议> resolver (deterministic; the AI only narrates/adjudicates) ---
+
+/** The shape buildCombatant writes into `Combatant.ext`. */
+interface CombatantExt {
+  attrs?: Record<string, number>
+  tier?: number
+  mp?: number
+  sp?: number
+  equip?: { 武器攻击?: number; 防御?: number; 命中?: number; 闪避?: number; DR?: number }
+  passives?: { name: string; combat: CardCombat }[]
+}
+const extOf = (c: Combatant): CombatantExt => (c.ext ?? {}) as CombatantExt
+
+const DEFAULT_RATING: [number, number][] = [
+  [30, 2.0],
+  [25, 1.6],
+  [20, 1.3],
+  [11, 1.0],
+  [8, 0.8],
+  [4, 0.3],
+  [0, 0]
+]
+
+/** 检定总值 → 评级系数 (first tier whose threshold the total meets). */
+const rating = (total: number, derive?: DeriveConfig): number => {
+  for (const [thr, mult] of derive?.rating_tiers ?? DEFAULT_RATING) if (total >= thr) return mult
+  return 0
+}
+
+/** 属性减免 fraction (BP3: physical only — typed-damage split is a later refinement). */
+const physMitFraction = (tExt: CombatantExt, derive?: DeriveConfig): number => {
+  const a = tExt.attrs ?? {}
+  const f = derive?.attr_mitigation?.物理 ?? 0.0025
+  return Math.min(0.9, ((a.体质 ?? 0) + (a.力量 ?? 0) + (a.敏捷 ?? 0)) * f)
+}
+
+const targetDR = (tExt: CombatantExt): number => {
+  let dr = tExt.equip?.DR ?? 0
+  for (const p of tExt.passives ?? []) if (p.combat.DR) dr = Math.max(dr, p.combat.DR)
+  return dr
+}
+
+/** 附加效果 opposition: (攻方关联属性 + d20) vs (守方 max(体质,精神) + d20). */
+const opposition = (attackerAttrV: number, tExt: CombatantExt, rng: Rng): boolean => {
+  const a = tExt.attrs ?? {}
+  const tResist = Math.max(a.体质 ?? 0, a.精神 ?? 0)
+  return attackerAttrV + rollD20(rng).natural >= tResist + rollD20(rng).natural
+}
+
+/** Resolve one attacker→target strike per 战斗协议 第三阶段 (评级 → 伤害 → 状态), appending events. */
+const poemHitOne = (
+  actor: Combatant,
+  target: Combatant,
+  ability: AbilityDef,
+  rng: Rng,
+  derive: DeriveConfig | undefined,
+  events: CombatEvent[]
+): void => {
+  const aExt = extOf(actor)
+  const tExt = extOf(target)
+  const cc = (ability.ext ?? {}) as CardCombat & { 武器攻击?: number }
+  const atkTier = aExt.tier ?? 1
+  const defTier = tExt.tier ?? 1
+
+  // 攻击检定: d20 pool by 生命层级 gap (high→adv, low→dis), 总值 = d20 + 命中 − 闪避 → 评级.
+  const roll = rollD20(rng, { adv: atkTier > defTier, dis: atkTier < defTier })
+  const 命中 = Math.max(cc.命中 ?? 0, aExt.equip?.命中 ?? 0)
+  let 闪避 = tExt.equip?.闪避 ?? 0
+  if (atkTier > defTier + 1) 闪避 = 0 // 闪避无效
+  const total = roll.natural + 命中 - 闪避
+  const K = rating(total, derive)
+  if (K <= 0) {
+    events.push({
+      kind: 'miss',
+      text: `${actor.name} misses ${target.name} (检定 ${total}).`,
+      delta: { target: target.id, total }
+    })
+    return
+  }
+
+  // 伤害: 构成 → 装备减免 → 属性减免 → ×评级 → +额外固定 → DR. (意图系数 L = 1, deferred.)
+  const attr = (cc.关联属性 ?? '力量') as Attr
+  const attrV = aExt.attrs?.[attr] ?? 0
+  const coeff = derive?.tier_coefficient?.[String(atkTier)] ?? 1
+  const 威力 = cc.威力 ?? 20
+  const 武器攻击 = cc.武器攻击 ?? aExt.equip?.武器攻击 ?? 0
+  const 构成 = attrV * 10 * coeff + 威力 + 武器攻击
+  const defConst = derive?.defense_constant ?? 2000
+  const effDef = (tExt.equip?.防御 ?? 0) * (1 - (cc.穿透 ?? 0) / 100)
+  const afterEquip = 构成 * (defConst / (effDef + defConst))
+  const J = afterEquip * (1 - physMitFraction(tExt, derive))
+  const hits = cc.多段 && cc.多段 > 1 ? cc.多段 : 1
+  let dmg = J * K + (cc.额外固定伤害 ?? 0) * hits
+  dmg *= 1 - targetDR(tExt) / 100
+  const dealt = applyDamageAmount(target, Math.max(0, Math.floor(dmg)))
+  events.push({
+    kind: 'damage',
+    text: `${target.name} takes ${dealt} (评级 ×${K}) — HP ${target.block.hp}/${target.block.maxHp}.`,
+    delta: { target: target.id, damage: dealt, hp: target.block.hp, rating: K }
+  })
+
+  // 状态: 暴击(≥1.3) auto; 有效/勉强(≥0.8) opposition; 擦伤/失手 none.
+  const eff = cc.附加效果 ?? []
+  if (eff.length) {
+    const apply = K >= 1.3 ? true : K >= 0.8 ? opposition(attrV, tExt, rng) : false
+    if (apply) {
+      for (const e of eff)
+        if (!target.block.conditions.some((c) => c.id === e.状态))
+          target.block.conditions.push({ id: e.状态, duration: e.回合 })
+      events.push({
+        kind: 'condition',
+        text: `${target.name}: ${eff.map((e) => e.状态).join(', ')}.`,
+        delta: { target: target.id, conditions: eff.map((e) => e.状态) }
+      })
+    }
+  }
+
+  if (target.block.hp <= 0)
+    events.push({
+      kind: 'death',
+      text: `${target.name} is down!`,
+      delta: { target: target.id, dead: true }
+    })
+}
+
+/**
+ * Resolve one action via the 命定之诗 战斗协议. Returns `null` for actions the native engine should
+ * handle (move / end / improvise, or an attack that can't fire — out of range / no LoS / no such
+ * ability — so the engine reports it without consuming budget). For a firing ability it deducts the
+ * MP/SP 消耗 once, collects targets (explicit ids or the AoE template, capped by 范围:X), and resolves
+ * each strike. Mutates a clone of `state`; the engine appends the events + consumes the action slot.
+ */
+export const poemResolveAction = (ctx: ResolverContext): HookResult | null => {
+  const { action, abilities, rng, derive } = ctx
+  if (action.kind !== 'ability') return null
+  const state = clone(ctx.state)
+  const actor = state.combatants.find((c) => c.id === action.actor)
+  const ability = action.abilityId ? abilities[action.abilityId] : undefined
+  if (!actor || !ability) return null
+
+  const origin = action.targetCell ?? actor.pos
+  if (distance(actor.pos, origin) > ability.range) return null
+  if (ability.requiresLoS && !lineOfSight(state.grid, actor.pos, origin)) return null
+
+  const cc = (ability.ext ?? {}) as CardCombat
+  if (cc.消耗 && actor.ext) {
+    const aExt = actor.ext as CombatantExt
+    if (cc.消耗.mp) aExt.mp = Math.max(0, (aExt.mp ?? 0) - cc.消耗.mp)
+    if (cc.消耗.sp) aExt.sp = Math.max(0, (aExt.sp ?? 0) - cc.消耗.sp)
+  }
+
+  let targets: Combatant[]
+  if (action.targetIds?.length) {
+    const ids = new Set(action.targetIds)
+    targets = state.combatants.filter((c) => ids.has(c.id))
+  } else {
+    const dir = octantDir(actor.pos, origin)
+    targets = targetsInCells(
+      state.combatants,
+      clipToGrid(state.grid, templateCells(ability.shape, origin, dir))
+    )
+  }
+  targets = targets.filter(isAlive)
+  if (ability.requiresLoS)
+    targets = targets.filter((t) => lineOfSight(state.grid, actor.pos, t.pos))
+  if (cc.范围目标 && targets.length > cc.范围目标) targets = targets.slice(0, cc.范围目标)
+
+  const events: CombatEvent[] = [
+    {
+      kind: 'attack',
+      text: `${actor.name} uses ${ability.name}.`,
+      delta: { actor: actor.id, ability: ability.id, targets: targets.map((t) => t.id) }
+    }
+  ]
+  for (const target of targets) poemHitOne(actor, target, ability, rng, derive, events)
+  return { state, events }
+}
+
+/** The 命定之诗 combat system adapter. The seam's `parseItem` returns an opaque bag; `parseCardItem`
+ *  itself stays strongly typed for direct callers. `resolveAction` is the <战斗协议> resolver. */
 export const poemD20System: CombatSystem = {
   parseItem: (item, kind) => parseCardItem(item, kind) as unknown as Record<string, unknown>,
-  buildCombatant
+  buildCombatant,
+  resolveAction: poemResolveAction
 }

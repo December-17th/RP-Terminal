@@ -7,8 +7,18 @@
 // and stat-block internals are the engine's own camelCase shapes (toHit / maxHp), since
 // they flow straight through. See docs/combat-system-design.md §10.
 
-import type { AbilityDef, Combatant, Coord, GridSpec, Side, StatBlock } from './types'
-import type { HookName } from './hooks'
+import type {
+  AbilityDef,
+  Action,
+  Combatant,
+  CombatState,
+  Coord,
+  GridSpec,
+  Side,
+  StatBlock
+} from './types'
+import type { HookName, HookResult } from './hooks'
+import type { Rng } from './dice'
 
 export interface BundleStatBlock {
   hp: number
@@ -223,6 +233,18 @@ export interface BuiltCombatant {
   abilities: AbilityDef[]
 }
 
+/** Everything a card resolver needs to resolve one action deterministically. This is the
+ *  documented SDK seam: the engine hands the system the cloned `state`, the `action`, the ability
+ *  catalog, a seeded `rng`, and the `derive` tables; the system mutates `state` and returns events.
+ *  (A future sandboxed card resolver receives the same data + bound grid/damage helpers.) */
+export interface ResolverContext {
+  state: CombatState
+  action: Action
+  abilities: Record<string, AbilityDef>
+  rng: Rng
+  derive?: DeriveConfig
+}
+
 /** The card-side combat adapter. The generic engine owns traversal/placement/resolution flow;
  *  the system owns interpretation of the card's own stat grammar (and, from BP3, resolution). */
 export interface CombatSystem {
@@ -230,6 +252,10 @@ export interface CombatSystem {
   parseItem(item: unknown, kind: ItemKind): Record<string, unknown>
   /** Turn a character object from stat_data into a combatant + its abilities. */
   buildCombatant(char: unknown, ctx: MvuCharCtx): BuiltCombatant
+  /** Resolve one action (BP3). Return `null` to fall through to native resolution (move / end /
+   *  improvise, or an attack that can't fire so the engine reports it). Mirrors the
+   *  `resolveAction` hook contract, so the service can inject it as the engine's RunHook. */
+  resolveAction?(ctx: ResolverContext): HookResult | null
 }
 
 const matchesFilter = (ch: unknown, filter?: Record<string, unknown>): boolean => {

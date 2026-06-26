@@ -165,7 +165,7 @@ describe('buildCombatant', () => {
     const ext = built.ext as Record<string, any>
     expect(ext.attrs).toEqual({ 力量: 5, 敏捷: 4, 体质: 6, 智力: 2, 精神: 3 })
     expect(ext.tier).toBe(2)
-    expect(ext.equip).toEqual({ 武器攻击: 60, 防御: 50, 命中: 1, 闪避: 2 })
+    expect(ext.equip).toEqual({ 武器攻击: 60, 防御: 50, 命中: 1, 闪避: 2, DR: 0 })
     expect(ext.passives).toEqual([{ name: '铁壁', combat: expect.objectContaining({ DR: 10 }) }])
   })
 
