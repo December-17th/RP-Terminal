@@ -58,8 +58,8 @@ export const registerCombatIpc = (ipcMain: IpcMain): void => {
       throw err
     }
   })
-  ipcMain.handle('combat-narration-prompt', (_, _profileId, chatId) =>
-    combatService.narrationPrompt(chatId)
+  ipcMain.handle('combat-narration-prompt', (_, profileId, chatId) =>
+    combatService.narrationPrompt(profileId, chatId)
   )
   ipcMain.handle('combat-end', (_, _profileId, chatId) => combatService.endEncounter(chatId))
   ipcMain.handle('combat-clear', (_, _profileId, chatId) => combatService.clearEncounter(chatId))

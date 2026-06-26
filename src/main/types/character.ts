@@ -103,7 +103,11 @@ export const CombatBundleSchema = z
       .optional(),
     maps: z.array(z.any()).optional(),
     scripts: z.record(z.string(), z.string()).optional(),
-    skin: z.record(z.string(), z.any()).optional()
+    skin: z.record(z.string(), z.any()).optional(),
+    /** Steers the end-of-combat narration; overrides the user's setting. */
+    narration_prompt: z.string().optional(),
+    /** Where the narration lands in the chat; overrides the user's setting. */
+    narration_mode: z.enum(['append', 'floor']).optional()
   })
   .passthrough()
 

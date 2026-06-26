@@ -386,6 +386,15 @@ const zh: Record<string, string> = {
   'status.reevaluated': '已根据存储的更新重新计算状态',
   'status.noState': '（此会话还没有 RPG 状态）',
 
+  'prefs.combatNarration': '战斗叙述',
+  'prefs.combatNarrationAppend': '追加到当前消息',
+  'prefs.combatNarrationFloor': '作为新消息添加',
+  'prefs.combatNarrationHint': 'AI“叙述战斗”的内容在聊天中的落点。角色卡可覆盖此设置。',
+  'prefs.combatNarrationPrompt': '战斗叙述提示词',
+  'prefs.combatNarrationPromptPh': '例如：以简练、冷硬的笔调叙述，着重描写伤势。',
+  'prefs.combatNarrationPromptHint':
+    '叙述的可选引导。角色卡的 combat.narration_prompt 会覆盖此设置。',
+
   'combat.empty': '当前没有进行中的战斗。',
   'combat.cueDetected': '战斗一触即发。',
   'combat.enter': '进入战斗',

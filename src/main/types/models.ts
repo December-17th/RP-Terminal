@@ -93,6 +93,12 @@ export interface Settings {
   agent: {
     mode: AgentMode
   }
+  /** Combat (Track Combat): end-of-combat narration placement + an optional steering prompt.
+   *  A card's `combat` bundle (`narration_mode` / `narration_prompt`) overrides these. */
+  combat?: {
+    narrationMode?: 'append' | 'floor'
+    narrationPrompt?: string
+  }
   ui: {
     theme: string
     /** App-UI language (the i18n locale id, e.g. 'en' / 'zh'). Card content is separate. */

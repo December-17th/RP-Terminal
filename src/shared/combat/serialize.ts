@@ -54,8 +54,10 @@ export const buildAdjudicationPrompt = (
   ].join('\n')
 }
 
-/** Prompt the AI to narrate the resolved fight and fold lasting consequences into MVU. */
-export const buildNarrationPrompt = (state: CombatState): string => {
+/** Prompt the AI to narrate the resolved fight and fold lasting consequences into MVU.
+ *  `extra` is the author/user steering prompt (card `narration_prompt` or the user setting),
+ *  inserted as guidance after the outcome line. */
+export const buildNarrationPrompt = (state: CombatState, extra?: string): string => {
   const log = state.log.map((e) => `- ${e.text}`).join('\n')
   const result =
     state.status === 'party'
@@ -63,9 +65,12 @@ export const buildNarrationPrompt = (state: CombatState): string => {
       : state.status === 'enemy'
         ? 'The party was defeated.'
         : 'The fight broke off unresolved.'
-  return [
+  const lines = [
     'Narrate the following resolved combat as vivid prose continuing the story.',
-    `Outcome: ${result}`,
+    `Outcome: ${result}`
+  ]
+  if (extra && extra.trim()) lines.push('', extra.trim())
+  lines.push(
     '',
     describeState(state),
     '',
@@ -74,7 +79,8 @@ export const buildNarrationPrompt = (state: CombatState): string => {
     '',
     'After the prose, record the lasting consequences (injuries, deaths, spent resources, loot)',
     'as variable updates in an <UpdateVariable> block, per this world’s schema.'
-  ].join('\n')
+  )
+  return lines.join('\n')
 }
 
 /** Prompt the AI to choose one enemy's action from the legal set (the `ai` controller). */

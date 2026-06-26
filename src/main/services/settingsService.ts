@@ -109,6 +109,12 @@ export const getDefaultSettings = (): Settings => ({
   agent: {
     mode: 'off'
   },
+  // Combat: end-of-combat narration appends to the current floor by default; a card or the
+  // user can switch to a new floor and supply a steering prompt.
+  combat: {
+    narrationMode: 'append',
+    narrationPrompt: ''
+  },
   ui: {
     theme: 'dark',
     locale: 'en',
@@ -124,7 +130,14 @@ export const getDefaultSettings = (): Settings => ({
       fields: ['proxyPct', 'cacheHitPct', 'promptTokens', 'avgCacheHitPct']
     },
     usage_view: {
-      columns: ['promptTokens', 'proxyPct', 'cacheHitPct', 'cacheRead', 'cacheWrite', 'outputTokens'],
+      columns: [
+        'promptTokens',
+        'proxyPct',
+        'cacheHitPct',
+        'cacheRead',
+        'cacheWrite',
+        'outputTokens'
+      ],
       charts: ['cachePct']
     }
   },
@@ -171,6 +184,7 @@ export const normalize = (stored: Partial<Settings>): Settings => {
   const workspace = { layouts: stored.workspace?.layouts || {} }
   const cache = { ...d.cache, ...(stored.cache || {}) }
   const cards = { ...d.cards, ...(stored.cards || {}) }
+  const combat = { ...d.combat, ...(stored.combat || {}) }
   const pricing = { ...d.pricing, ...(stored.pricing || {}) }
 
   // Agent mode: accept the three-way enum; migrate the legacy boolean `enabled` toggle
@@ -227,6 +241,7 @@ export const normalize = (stored: Partial<Settings>): Settings => {
     workspace,
     cache,
     cards,
+    combat,
     pricing
   }
 }

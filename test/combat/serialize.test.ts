@@ -59,6 +59,13 @@ describe('prompt builders', () => {
     expect(p).toContain('party won')
     expect(p).toContain('<UpdateVariable>')
   })
+  it('narration prompt embeds the author/user steering prompt', () => {
+    const s = state([C('hero', 'party', [0, 0])])
+    expect(buildNarrationPrompt(s, 'Write it in a terse, gritty tone.')).toContain(
+      'Write it in a terse, gritty tone.'
+    )
+    expect(buildNarrationPrompt(s, '   ')).not.toContain('  \n') // blank extra is ignored
+  })
   it('enemy prompt asks for an rpt-action', () => {
     const s = state([C('g1', 'enemy', [0, 0]), C('hero', 'party', [1, 0])])
     expect(buildEnemyPrompt(s, 'g1')).toContain('<rpt-action>')

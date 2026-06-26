@@ -177,6 +177,12 @@ export function CombatView({ profileId }: { profileId: string }): React.ReactEle
     }
   }
 
+  const onNarrate = async (): Promise<void> => {
+    await store.getState().narrate(profileId)
+    // The narration landed in the chat (append / new floor) — reload the floors to show it.
+    if (activeChatId) useChatStore.getState().setActiveChat(profileId, activeChatId)
+  }
+
   const onReturn = async (): Promise<void> => {
     await store.getState().endCombat(profileId)
     useChatStore.getState().setMode(profileId, 'explore')
@@ -425,12 +431,7 @@ export function CombatView({ profileId }: { profileId: string }): React.ReactEle
         }}
       >
         <span style={{ fontWeight: 600, flex: 1 }}>{banner}</span>
-        <button
-          className="btn-accent"
-          disabled={busy}
-          style={{ fontSize: 12 }}
-          onClick={() => store.getState().narrate(profileId)}
-        >
+        <button className="btn-accent" disabled={busy} style={{ fontSize: 12 }} onClick={onNarrate}>
           {t('combat.narrate')}
         </button>
         <button disabled={busy} style={{ fontSize: 12 }} onClick={onReturn}>

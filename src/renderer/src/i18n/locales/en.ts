@@ -397,6 +397,16 @@ const en: Record<string, string> = {
   'status.reevaluated': 'State re-evaluated from stored updates',
   'status.noState': '(No RPG state for this session yet)',
 
+  'prefs.combatNarration': 'Combat narration',
+  'prefs.combatNarrationAppend': 'Append to the current message',
+  'prefs.combatNarrationFloor': 'Add as a new message',
+  'prefs.combatNarrationHint':
+    'Where the AI’s “Narrate the fight” account lands in the chat. A world card can override this.',
+  'prefs.combatNarrationPrompt': 'Combat narration prompt',
+  'prefs.combatNarrationPromptPh': 'e.g. Narrate in a terse, gritty tone; dwell on the wounds.',
+  'prefs.combatNarrationPromptHint':
+    'Optional guidance for the narration. A world card’s combat.narration_prompt overrides this.',
+
   'combat.empty': 'No active combat.',
   'combat.cueDetected': 'A fight is breaking out.',
   'combat.enter': 'Enter Combat',
