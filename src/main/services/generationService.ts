@@ -21,6 +21,7 @@ import {
   ChatMessage
 } from './promptBuilder'
 import { getPromptRules } from './regexService'
+import { selectMemories } from './retrievalService'
 import { loadGlobals, saveGlobals } from './templateService'
 import { streamProvider, orderForProvider, DeltaCallback, UsageCallback } from './apiService'
 import { normalizeUsage, buildFloorMetrics } from './promptCacheMetrics'
@@ -180,6 +181,13 @@ export const generate = async (
     `lorebook: ${lorebooks.length} book(s) / ${loreEntryCount} entr${loreEntryCount === 1 ? 'y' : 'ies'} → ${matchedEntries.length} matched · ids=[${lorebookIds.join(', ') || 'none'}]`
   )
 
+  // Episodic memory (docs/episodic-memory-design.md §8): recall relevant past memories into the
+  // ephemeral tail. No-op when memory is disabled; at cache level 0 it just adds tail context.
+  const memory = selectMemories(profileId, chatId, scanText, settings)
+  if (memory.rows.length) {
+    log('info', `memory: ${memory.rows.length} recalled (${memory.block.length} chars) → tail`)
+  }
+
   const built = buildPrompt({
     card,
     preset,
@@ -203,6 +211,7 @@ export const generate = async (
     cacheLevel,
     l1Mode,
     frozenVars,
+    memoryBlock: memory.block,
     // FSM mode addendum + the World Card's custom agent prompts (system + per-mode).
     modeAddendum: composeAddendum(getRpExt(card)?.agent, mode, fsmEnabled, modeConfig.addendum),
     template: {

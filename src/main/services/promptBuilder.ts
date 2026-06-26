@@ -100,6 +100,9 @@ export interface BuildPromptArgs {
   l1Mode?: 'partition' | 'diff'
   /** Floor-0-derived frozen variable snapshot the frontier renders against at level ≥1. */
   frozenVars?: Record<string, any>
+  /** Recalled-memory tail block (retrievalService). Injected just before the user action,
+   *  the same way as the live-state block, so it sits in the volatile tail (§16.1). */
+  memoryBlock?: string
 }
 
 /** No-op text transform (used when there are no prompt-time regex rules). */
@@ -499,6 +502,15 @@ export const buildPrompt = (args: BuildPromptArgs): ChatMessage[] => {
       const insertAt = userAction !== '' ? messages.length - 1 : messages.length
       messages.splice(insertAt, 0, { role: 'system', content: stateBlock })
     }
+  }
+
+  // Recalled memory (docs/episodic-memory-design.md §16.1): same tail convention as the state
+  // block — a system message just before the final user action, so on Anthropic it demotes +
+  // merges into the volatile tail, past the cache breakpoint. Inserted AFTER the state block so
+  // the tail order is [state][memory][action]. Works at any cache level (memory ⟂ cache.level).
+  if (args.memoryBlock) {
+    const insertAt = userAction !== '' ? messages.length - 1 : messages.length
+    messages.splice(insertAt, 0, { role: 'system', content: args.memoryBlock })
   }
 
   return messages
