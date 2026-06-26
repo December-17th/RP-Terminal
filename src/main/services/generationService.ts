@@ -422,13 +422,25 @@ export const reevaluateVariables = (profileId: string, chatId: string): FloorFil
   return floors
 }
 
+// Runaway write-back loop breaker. A card that writes a constantly-CHANGING value on its own
+// `mag_variable_update_ended` (e.g. a `date` clock) re-triggers itself forever — every write is a real
+// change, so the no-op guard can't catch it, and we must KEEP firing self-write events (cards chain
+// initialization through them). We instead detect the runaway *signature*: the SAME set of paths written
+// over and over, rapidly. A legitimate init chain touches DISTINCT paths (the signature changes each
+// write, so the streak resets), so only a true self-feedback loop accumulates a long streak. Keyed by
+// chat; resets when the changed-path signature changes or after a quiet gap.
+const writeLoopGuard = new Map<string, { sig: string; count: number; last: number }>()
+const LOOP_WINDOW_MS = 400 // a write closer than this to the previous same-signature write counts as "rapid"
+const LOOP_MAX = 25 // consecutive rapid same-signature writes before we treat it as a runaway loop and drop
+
 /**
  * Variable WRITE-BACK bridge: apply JSONPatch ops to ONE floor's stat_data (the message
  * variables) and persist. This is the path by which native/script panel UI MODIFIES state
  * instead of only displaying it (a button, checkbox, or manual edit). Reuses the same
  * `applyJsonPatch` engine as the model's `<UpdateVariable>`, so author/user writes fold in
  * identically and survive a later re-evaluate. Returns the updated floor (or null if the
- * floor is gone / there are no ops). Targets a specific floor — the caller passes the latest.
+ * floor is gone / there are no ops / the write was a no-op or a suppressed runaway loop).
+ * Targets a specific floor — the caller passes the latest.
  */
 export const applyVariableOps = (
   profileId: string,
@@ -444,14 +456,32 @@ export const applyVariableOps = (
       ? (f.variables.stat_data as Record<string, unknown>)
       : {}
   const deltas = applyJsonPatch(sd, ops)
-  // No-op guard: a card that recomputes derived stats on its own `mag_variable_update_ended` re-writes
-  // the SAME values every turn. If we persist + broadcast that, the broadcast re-fires the event → the
-  // card writes again → an endless write-back loop (and log spam). Drop the write entirely when nothing
-  // actually changed — checked here at the source (same object shapes) rather than relying on the event-
-  // side diff guard surviving the multi-hop IPC round-trip. `path` is logged so a genuinely-changing
-  // value (a real card bug, not an echo) is visible instead of an opaque "applied 1 op".
+  // No-op guard: drop the write entirely when nothing actually changed (a card re-writing identical
+  // values). Checked at the source (same object shapes) rather than relying on the event-side diff guard
+  // surviving the multi-hop IPC round-trip.
   const changed = deltas.filter((d) => JSON.stringify(d.old) !== JSON.stringify(d.new))
   if (changed.length === 0) return null
+  // Runaway-loop guard: a constantly-changing value hammered on the card's own event signature.
+  const sig = changed
+    .map((d) => d.path)
+    .sort()
+    .join('|')
+  const now = Date.now()
+  const g = writeLoopGuard.get(chatId)
+  if (g && g.sig === sig && now - g.last < LOOP_WINDOW_MS) {
+    g.count++
+    g.last = now
+    if (g.count > LOOP_MAX) {
+      if (g.count === LOOP_MAX + 1)
+        log(
+          'info',
+          `variable write-back — runaway loop on [${sig}] (floor ${floor}); suppressing the self-feedback write so it can't spin (a card writing a changing value on its own update event)`
+        )
+      return null
+    }
+  } else {
+    writeLoopGuard.set(chatId, { sig, count: 1, last: now })
+  }
   f.variables = { ...f.variables, stat_data: sd, delta_data: deltas }
   saveFloor(profileId, chatId, f)
   log(

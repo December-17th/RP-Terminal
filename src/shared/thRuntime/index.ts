@@ -54,18 +54,19 @@ export function createThRuntime(host: Host): ThGlobals {
 
   // --- statData cache (authoritative refresh via host.onVarsChanged; optimistic on write) ---
   let stat: any = host.statData() || {}
+  // Fire MVU events for EVERY genuine stat_data change — including the card's OWN writes looping back.
+  // Cards routinely chain initialization through their own `mag_variable_update_ended` (write a field →
+  // react → write the next), and the prompt-side EJS injection reads the resulting vars via getvar; if we
+  // swallowed self-write events the chain would stall after the first write and those vars would never
+  // populate. We only skip a byte-identical repeat (a true no-op echo). A card that writes a constantly-
+  // CHANGING value on its own event (e.g. a `date` clock) would still spin here — that runaway is broken
+  // at the SOURCE instead (`generationService.applyVariableOps` caps rapid same-path writes), which stops
+  // the persist+broadcast so no echo returns, without muzzling legitimate self-chained writes.
+  let lastFiredJson = JSON.stringify(stat ?? null)
   const offVars = host.onVarsChanged((sd) => {
-    // Compare the incoming stat_data against our LIVE cache `stat` — which every card write below keeps
-    // optimistically current. If they're equal, this notification is the card's OWN write looping back
-    // (WCV: directly, or indirectly via the host re-broadcasting the floor change; inline: via the chat
-    // store subscription) — OR a genuine no-op. Per the MVU contract a card's programmatic write must
-    // NOT fire mag_variable_update_*; those events are for EXTERNAL changes (a model `<UpdateVariable>`
-    // fold, a sibling panel, a host edit). So skip. This is what stops a card that writes a constantly-
-    // CHANGING value (e.g. a `date` clock) on its own update event from self-looping: its optimistic
-    // write already advanced `stat`, so the echo matches and never re-fires. An external change didn't
-    // touch this runtime's `stat`, so it differs → we refresh + fire. Comparing against the live cache
-    // (not a lagging "last fired" snapshot) is the key — it distinguishes self-writes from real changes.
-    if (JSON.stringify(sd ?? null) === JSON.stringify(stat ?? null)) return
+    const json = JSON.stringify(sd ?? null)
+    if (json === lastFiredJson) return
+    lastFiredJson = json
     // MVU event contract (JS-Slash-Runner `exported.mvu.d.ts`): VARIABLE_UPDATE_* handlers receive
     // `(variables: MvuData, variables_before_update: MvuData)` — the WRAPPED `{ stat_data }` object,
     // NOT the bare stat_data. Matches the inline transport (`plugin/mvuEvents.ts`). Emitting bare stat
