@@ -421,6 +421,8 @@ const en: Record<string, string> = {
   'memory.keywordsPh': 'keywords, comma-separated',
   'memory.cancel': 'Cancel',
   'memory.turns': 'turns {{a}}–{{b}}',
+  'memory.recalled': 'recalled',
+  'memory.recalledTitle': 'Pulled into the most recent turn',
   'memory.pin': 'Pin (always recall this)',
   'memory.unpin': 'Unpin',
   'status.reevalTitle':

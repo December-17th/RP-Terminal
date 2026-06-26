@@ -235,6 +235,13 @@ const api = {
     ipcRenderer.on('memory-changed', listener)
     return () => ipcRenderer.removeListener('memory-changed', listener)
   },
+  // Which memory ids the latest turn recalled (transient "why recalled" highlight).
+  onMemoryRecalled: (cb: (payload: { chatId: string; ids: string[] }) => void) => {
+    const listener = (_e: IpcRendererEvent, payload: { chatId: string; ids: string[] }): void =>
+      cb(payload)
+    ipcRenderer.on('memory-recalled', listener)
+    return () => ipcRenderer.removeListener('memory-recalled', listener)
+  },
   // Subscribe to incremental generation text. Returns an unsubscribe function.
   onGenerationDelta: (cb: (payload: { chatId: string; delta: string }) => void) => {
     const listener = (_e: IpcRendererEvent, payload: { chatId: string; delta: string }): void =>

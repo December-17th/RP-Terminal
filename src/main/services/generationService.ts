@@ -23,6 +23,7 @@ import {
 import { getPromptRules } from './regexService'
 import { selectMemories } from './retrievalService'
 import { maybeCompact } from './compactionService'
+import { notifyMemoryRecalled } from './memoryEvents'
 import { loadGlobals, saveGlobals } from './templateService'
 import { streamProvider, orderForProvider, DeltaCallback, UsageCallback } from './apiService'
 import { normalizeUsage, buildFloorMetrics } from './promptCacheMetrics'
@@ -187,6 +188,13 @@ export const generate = async (
   const memory = selectMemories(profileId, chatId, scanText, settings)
   if (memory.rows.length) {
     log('info', `memory: ${memory.rows.length} recalled (${memory.block.length} chars) → tail`)
+  }
+  // Tell the Memory view which memories this turn pulled in (transient "why recalled" highlight).
+  if (settings.memory?.enabled) {
+    notifyMemoryRecalled(
+      chatId,
+      memory.rows.map((r) => r.id)
+    )
   }
 
   const built = buildPrompt({

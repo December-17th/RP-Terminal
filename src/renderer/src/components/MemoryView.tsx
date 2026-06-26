@@ -39,6 +39,7 @@ export function MemoryView({ profileId }: { profileId: string }): React.ReactEle
   const [adding, setAdding] = useState(false)
   const [newSummary, setNewSummary] = useState('')
   const [newKeywords, setNewKeywords] = useState('')
+  const [recalledIds, setRecalledIds] = useState<Set<string>>(new Set())
 
   const refresh = useCallback(async () => {
     if (!activeChatId) {
@@ -65,6 +66,14 @@ export function MemoryView({ profileId }: { profileId: string }): React.ReactEle
     })
     return () => unsub?.()
   }, [activeChatId, refresh])
+
+  // Transient "why recalled" highlight: which memories the latest turn pulled in.
+  useEffect(() => {
+    const unsub = api().onMemoryRecalled?.((payload: { chatId: string; ids: string[] }) => {
+      if (payload?.chatId === activeChatId) setRecalledIds(new Set(payload.ids ?? []))
+    })
+    return () => unsub?.()
+  }, [activeChatId])
 
   if (!activeChatId) return <div style={{ opacity: 0.5 }}>{t('memory.waiting')}</div>
 
@@ -295,11 +304,29 @@ export function MemoryView({ profileId }: { profileId: string }): React.ReactEle
                         gap: 8
                       }}
                     >
-                      <span style={{ ...secondary, fontSize: '0.72em' }}>
-                        {e.turnStart != null
-                          ? t('memory.turns', { a: e.turnStart, b: e.turnEnd ?? e.turnStart })
-                          : ''}
-                        {e.entityKey ? ` · ${e.entityKey}` : ''}
+                      <span
+                        style={{
+                          ...secondary,
+                          fontSize: '0.72em',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: 6
+                        }}
+                      >
+                        {recalledIds.has(e.id) ? (
+                          <span
+                            title={t('memory.recalledTitle')}
+                            style={{ color: 'var(--rpt-accent, #6cf)', fontWeight: 600 }}
+                          >
+                            ● {t('memory.recalled')}
+                          </span>
+                        ) : null}
+                        <span>
+                          {e.turnStart != null
+                            ? t('memory.turns', { a: e.turnStart, b: e.turnEnd ?? e.turnStart })
+                            : ''}
+                          {e.entityKey ? ` · ${e.entityKey}` : ''}
+                        </span>
                       </span>
                       <span style={{ display: 'flex', gap: 6 }}>
                         <button
