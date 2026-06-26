@@ -219,15 +219,20 @@ KV channels (`-script-vars-get-sync` / `-script-vars-set`), and the chat-write c
 `mag_variable_update_ended` / `MESSAGE_UPDATED` would spin forever, because its write loops back to it
 both directly (`notifyVarsChanged`) and indirectly (the host applies the change to the floor, whose
 store update re-broadcasts via `wcv-broadcast-vars` to all slots). Three layers stop this: (1) the
-**primary** cycle-breaker — `generationService.applyVariableOps` returns `null` for a **no-op write**
-(every JSON-Patch op leaves its target unchanged), so the write is never persisted OR broadcast; a card
-that recomputes the SAME derived stats every turn therefore can't re-trigger itself (and the log shows
-the changed `path`s, so a *genuinely*-changing value — a real card bug — is visible rather than an opaque
-"applied 1 op"); (2) the direct write handlers (`wcv-host-apply-vars` / `-set-vars`) pass `e.sender.id`
-to `notifyVarsChanged`, which skips the author's slot; (3) the shared runtime's `onVarsChanged`
-(`thRuntime/index.ts`) skips re-firing events when the incoming `stat_data` is byte-identical to what it
-last fired. Both transports inherit (1) and (3); the inline transport additionally diffs in its own
-`onVarsChanged`. To add an API: add the runtime method
+**primary** cycle-breaker — the shared runtime's `onVarsChanged` (`thRuntime/index.ts`) fires the MVU
+lifecycle events only for **external** changes. It compares the incoming `stat_data` against its LIVE
+cache `stat`, which every card write keeps optimistically current; if they're equal the notification is
+the card's own write echoing back (or a no-op) → skip, because per the MVU contract a card's programmatic
+write must NOT fire `mag_variable_update_*` (those are for model `<UpdateVariable>` folds / sibling-panel
+/ host edits). Comparing against the *live* cache rather than a lagging snapshot is what stops a card
+writing a constantly-**changing** value (e.g. a `date` clock) on its own update event — its optimistic
+write already advanced `stat`, so the echo matches and never re-fires; (2) the direct write handlers
+(`wcv-host-apply-vars` / `-set-vars`) pass `e.sender.id` to `notifyVarsChanged`, which skips the author's
+slot; (3) `generationService.applyVariableOps` returns `null` for a **no-op write** (every JSON-Patch op
+leaves its target unchanged) so it's never persisted or broadcast, and otherwise logs the changed
+`path`s (so a genuinely-changing value is visible rather than an opaque "applied 1 op"). Both transports
+inherit (1) and (3); the inline transport additionally diffs in its own `onVarsChanged`. To add an API:
+add the runtime method
 ([`thRuntime/index.ts`](../src/shared/thRuntime/index.ts)) + a `Host` method on **both** adapters (sync
 getter → `sendSync` / store read; heavy → `invoke` / `window.api`) + the ctx-scoped IPC handler, and update
 this doc + [docs/sdk/](sdk/component-inventory.md).
