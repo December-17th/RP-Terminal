@@ -109,6 +109,40 @@ describe('命定之诗 combat integration (BP5)', () => {
     expect(enc.abilities['头目/横扫'].shape).toEqual({ kind: 'cone', len: 2 })
   })
 
+  it('builds enemies from an AI-supplied roster (A1 cue payload)', () => {
+    const roster = [
+      {
+        名称: '魔物',
+        数量: 2,
+        生命层级: '第一层级',
+        等级: 3,
+        属性: { 力量: 4, 敏捷: 3, 体质: 4, 智力: 1, 精神: 1 },
+        装备: { 爪牙: { 类型: '天生武器', 标签: ['攻击: 25'], 效果: {} } },
+        技能: {},
+        状态效果: {}
+      },
+      {
+        名称: '盟友',
+        阵营: '友方',
+        生命层级: '第二层级',
+        属性: { 敏捷: 8 },
+        装备: {},
+        技能: {},
+        状态效果: {}
+      }
+    ]
+    const enc = buildEncounterFromMvu(statData, statMap, poemD20System, { derive, roster })
+    // 2 拷贝 of 魔物 (enemy) + 1 盟友 routed to the party side.
+    expect(enc.combatants.filter((c) => c.side === 'enemy').map((c) => c.id)).toEqual([
+      '魔物-1',
+      '魔物-2'
+    ])
+    expect(enc.combatants.some((c) => c.id === '盟友' && c.side === 'party')).toBe(true)
+    expect(
+      (enc.combatants.find((c) => c.id === '魔物-1')!.ext as Record<string, any>).equip.武器攻击
+    ).toBe(25)
+  })
+
   it('runs a full fight to a deterministic victory via the 战斗协议 resolver', async () => {
     // A tight grid so the cue-spawned enemies (right edge) sit adjacent to the party (left edge),
     // and the scripted "attack the nearest foe" loop can resolve without modelling movement.

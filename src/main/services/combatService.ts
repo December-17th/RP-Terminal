@@ -275,7 +275,7 @@ const currentStatData = (profileId: string, chatId: string): Record<string, unkn
 export const startFromCard = (
   profileId: string,
   chatId: string,
-  cue?: { enemies?: string; map?: string } | null,
+  cue?: { enemies?: string; map?: string; roster?: Array<Record<string, unknown>> } | null,
   seed?: number
 ): CombatState => {
   const chat = getChat(profileId, chatId)
@@ -292,7 +292,8 @@ export const startFromCard = (
         derive: bundle.derive,
         seed,
         enemies: bundle.enemies,
-        enemiesCue: cue?.enemies
+        enemiesCue: cue?.enemies,
+        roster: cue?.roster
       }
     )
     return startEncounter(chatId, {

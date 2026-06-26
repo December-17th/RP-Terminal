@@ -287,6 +287,9 @@ export const buildEncounterFromMvu = (
     seed?: number
     enemies?: Record<string, unknown>
     enemiesCue?: string
+    /** A1: an AI-supplied roster (character-shaped objects + 名称/数量/阵营) parsed off the
+     *  combat-start cue body. Each entry is built via the system; defaults to the enemy side. */
+    roster?: Array<Record<string, unknown>>
   } = {}
 ): BuiltEncounter => {
   const paths = statMap.paths ?? {}
@@ -359,6 +362,38 @@ export const buildEncounterFromMvu = (
         for (const a of built.abilities) abilities[a.id] = a
         placed++
       }
+    }
+  }
+
+  // A1 roster: AI-supplied combatants from the cue body. Each entry uses the card's stat_data field
+  // names (so the system parses it like a character); `阵营:'友方'` / `side:'party'` joins the party,
+  // else enemy (right edge). `数量` defaults to 1.
+  for (const entry of opts.roster ?? []) {
+    const name =
+      (typeof entry.名称 === 'string' && entry.名称) ||
+      (typeof entry.name === 'string' && entry.name) ||
+      'enemy'
+    const side: Side = entry.阵营 === '友方' || entry.side === 'party' ? 'party' : 'enemy'
+    const count = Math.max(1, Number(entry.数量) || 1)
+    for (let n = 0; n < count; n++) {
+      const id = count > 1 ? `${name}-${n + 1}` : name
+      const built = system.buildCombatant(entry, { id, name, side, paths, derive: opts.derive })
+      const pos: Coord =
+        side === 'party'
+          ? [0, Math.min(idx, grid.h - 1)]
+          : [grid.w - 1, Math.min(placed, grid.h - 1)]
+      combatants.push({
+        id,
+        side,
+        name,
+        pos,
+        block: built.block,
+        ext: built.ext,
+        ...(side === 'enemy' ? { controller: 'weighted' as const } : {})
+      })
+      for (const a of built.abilities) abilities[a.id] = a
+      if (side === 'party') idx++
+      else placed++
     }
   }
 

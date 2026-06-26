@@ -17,8 +17,13 @@
 > BP7 deferred. **BP4 enemy generation (static)**: `buildEncounterFromMvu` now also builds enemies from
 > the bundle's `enemies` templates resolved against the combat-start cue — a fight is playable in-app
 > with bundle-defined opponents (dynamic AI `char_info` enemies still deferred). Manual-test checklist:
-> [combat-poem-manual-tests.md](../../combat-poem-manual-tests.md). **Still needed for in-app combat:** a
-> preset line so the AI emits `<rpt-combat-start enemies=…>` with refs matching `combat.enemies`.
+> [combat-poem-manual-tests.md](../../combat-poem-manual-tests.md). **BP4 AI enemy generation (channel A1,
+> owner-chosen 2026-06-26)**: the AI emits a JSON enemy **roster** in the `<rpt-combat-start>` body;
+> `parseCombatStart` extracts it → `cue.roster` → `buildEncounterFromMvu({ roster })` builds each entry
+> (×数量, `阵营:'友方'`→party) via `buildCombatant`. Paste-in `<战斗启动协议>` snippet in
+> [poem-preset-combat-instructions.md](../../sdk/examples/poem-preset-combat-instructions.md). **Still
+> needed for in-app combat:** add that snippet to the card preset (the app doesn't auto-inject). 676 tests.
+> **Remaining build:** status MVU-UI regex; per-encounter mode chooser; end-of-combat fold-back verify; BP7.
 
 **Goal:** Ship a **combat extension (mod) for the 命定之诗 character card** that imports the party's
 DND-style combat stats from MVU variables and resolves combat with the card's *own* `<战斗协议>` (a
