@@ -2,14 +2,22 @@ import { getSettings } from './settingsService'
 import { getActivePreset } from './presetService'
 import { getChat, getMemoryState, setMemoryState } from './chatService'
 import { getAllFloors } from './floorService'
-import { appendEntries } from './memoryStore'
+import {
+  appendEntries,
+  getEntries,
+  getEntity,
+  upsertEntity,
+  mergeEntitySheet,
+  resolveEntityKey
+} from './memoryStore'
 import { streamProvider } from './apiService'
 import { stripThinking } from '../parsers/contentParser'
 import { notifyMemoryChanged } from './memoryEvents'
 import { log } from './logService'
-import type { NewMemory } from './memoryStore'
+import type { EntitySheet } from './memoryStore'
 import type { ChatMessage } from './promptBuilder'
 import type { FloorFile } from '../types/chat'
+import type { MemoryCollection } from '../types/models'
 
 /**
  * Memory WRITER (docs/episodic-memory-design.md §7). At a turn-count checkpoint, fold the
@@ -55,10 +63,21 @@ const extractJson = (raw: string): string | null => {
   return body.slice(start, end + 1)
 }
 
+const parseMemoryItem = (item: unknown): ParsedMemory | null => {
+  const m = item as { summary?: unknown; keywords?: unknown; salience?: unknown }
+  if (typeof m?.summary !== 'string' || !m.summary.trim()) return null
+  return {
+    summary: m.summary.trim(),
+    keywords: Array.isArray(m.keywords)
+      ? m.keywords.filter((k): k is string => typeof k === 'string')
+      : [],
+    salience: typeof m.salience === 'number' ? clamp01(m.salience) : 1
+  }
+}
+
 /**
- * Parse the utility model's reply into validated memories. Accepts `{"memories":[…]}` or a bare
- * array; drops entries without a non-empty summary; clamps salience to [0,1]. Returns [] on any
- * parse failure (caller treats that as "defer"). Pure.
+ * Parse a stream reply into validated memories. Accepts `{"memories":[…]}` or a bare array; drops
+ * entries without a non-empty summary; clamps salience to [0,1]. Returns [] on parse failure. Pure.
  */
 export const parseMemories = (raw: string): ParsedMemory[] => {
   const json = extractJson(raw)
@@ -74,19 +93,94 @@ export const parseMemories = (raw: string): ParsedMemory[] => {
     : Array.isArray((obj as { memories?: unknown[] })?.memories)
       ? (obj as { memories: unknown[] }).memories
       : []
-  const out: ParsedMemory[] = []
-  for (const item of arr) {
-    const m = item as { summary?: unknown; keywords?: unknown; salience?: unknown }
-    if (typeof m?.summary !== 'string' || !m.summary.trim()) continue
-    out.push({
-      summary: m.summary.trim(),
-      keywords: Array.isArray(m.keywords)
-        ? m.keywords.filter((k): k is string => typeof k === 'string')
-        : [],
-      salience: typeof m.salience === 'number' ? clamp01(m.salience) : 1
-    })
+  return arr.map(parseMemoryItem).filter((x): x is ParsedMemory => x !== null)
+}
+
+/** An entity update parsed from the structured reply (a character / location). */
+export interface ParsedEntity {
+  name: string
+  aliases: string[]
+  fields: Record<string, string>
+  note: string
+}
+
+const parseEntityItem = (item: unknown): ParsedEntity | null => {
+  const e = item as { name?: unknown; aliases?: unknown; fields?: unknown; note?: unknown }
+  if (typeof e?.name !== 'string' || !e.name.trim()) return null
+  const fields: Record<string, string> = {}
+  if (e.fields && typeof e.fields === 'object') {
+    for (const [k, v] of Object.entries(e.fields as Record<string, unknown>)) {
+      if (typeof v === 'string' && v.trim()) fields[k] = v.trim()
+      else if (typeof v === 'number' || typeof v === 'boolean') fields[k] = String(v)
+    }
+  }
+  return {
+    name: e.name.trim(),
+    aliases: Array.isArray(e.aliases)
+      ? e.aliases.filter((a): a is string => typeof a === 'string')
+      : [],
+    fields,
+    note: typeof e.note === 'string' ? e.note.trim() : ''
+  }
+}
+
+/** The structured extraction result, keyed by collection id (stream items vs entity updates). */
+export interface ParsedCompaction {
+  streams: Record<string, ParsedMemory[]>
+  entities: Record<string, ParsedEntity[]>
+}
+
+/**
+ * Parse the combined extraction reply into per-collection items (stream memories / entity updates),
+ * keyed by collection id. Tolerant — unknown keys ignored, malformed items dropped. Pure.
+ */
+export const parseCompaction = (raw: string, collections: MemoryCollection[]): ParsedCompaction => {
+  const out: ParsedCompaction = { streams: {}, entities: {} }
+  const json = extractJson(raw)
+  if (!json) return out
+  let obj: Record<string, unknown>
+  try {
+    const parsed = JSON.parse(json)
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return out
+    obj = parsed as Record<string, unknown>
+  } catch {
+    return out
+  }
+  for (const c of collections) {
+    const arr = Array.isArray(obj[c.id]) ? (obj[c.id] as unknown[]) : []
+    if (c.shape === 'stream') {
+      out.streams[c.id] = arr.map(parseMemoryItem).filter((x): x is ParsedMemory => x !== null)
+    } else {
+      out.entities[c.id] = arr.map(parseEntityItem).filter((x): x is ParsedEntity => x !== null)
+    }
   }
   return out
+}
+
+/** Build the combined extractor system prompt from the enabled checkpoint collections. Pure. */
+export const buildExtractionPrompt = (collections: MemoryCollection[]): string => {
+  const lines = [
+    'You maintain a roleplay memory store. From the transcript below, extract updates as a single',
+    'JSON object and nothing else. Include a key only when it has content. Do NOT restate numeric',
+    'stats, inventory, or scores (those are tracked separately).',
+    ''
+  ]
+  for (const c of collections) {
+    lines.push(
+      c.shape === 'stream'
+        ? `"${c.id}": [{"summary": "one sentence", "keywords": ["proper nouns / topics"], "salience": 0.0-1.0}] — ${c.write.prompt}`
+        : `"${c.id}": [{"name": "canonical name", "aliases": ["other names used"], "fields": {"<field>": "<value>"}, "note": "what changed this span"}] — ${c.write.prompt}`
+    )
+  }
+  return lines.join('\n')
+}
+
+/** A one-line current-state digest of an entity sheet, for the catalogue / injection. Pure. */
+export const entitySummary = (sheet: EntitySheet): string => {
+  const fields = Object.entries(sheet.fields)
+    .map(([k, v]) => `${k}: ${v}`)
+    .join('; ')
+  return fields || sheet.log[sheet.log.length - 1]?.note || ''
 }
 
 /** Render floors as a plain transcript for the summarizer (thinking stripped, blanks skipped). Pure. */
@@ -154,12 +248,10 @@ export const maybeCompact = async (profileId: string, chatId: string): Promise<v
     const settings = getSettings(profileId)
     const mem = settings.memory
     if (!mem?.enabled) return
-    // Core: the single `events` stream collection on a checkpoint trigger. Multiple stream
-    // collections would each need their own pointer — deferred.
-    const coll = mem.collections.find(
-      (c) => c.enabled && c.shape === 'stream' && c.write.trigger === 'checkpoint'
-    )
-    if (!coll) return
+    // All enabled checkpoint collections share one pointer + one structured extraction call:
+    // stream collections (events) append; entity collections (characters/locations) upsert.
+    const colls = mem.collections.filter((c) => c.enabled && c.write.trigger === 'checkpoint')
+    if (!colls.length) return
 
     const chat = getChat(profileId, chatId)
     if (!chat) return
@@ -180,27 +272,64 @@ export const maybeCompact = async (profileId: string, chatId: string): Promise<v
     let reply: string
     try {
       reply = await utilityComplete(profileId, {
-        system: coll.write.prompt,
+        system: buildExtractionPrompt(colls),
         user: floorsToTranscript(floors),
-        maxTokens: coll.write.maxItemsPerCheckpoint ? coll.write.maxItemsPerCheckpoint * 120 : 800
+        maxTokens: 1000
       })
     } catch (err) {
       log('info', `memory: compaction deferred (utility call failed: ${errMsg(err)})`)
       return
     }
 
-    const memories = parseMemories(reply)
-    if (!memories.length) {
-      log('info', 'memory: compaction produced no parseable memories (deferred)')
+    const parsed = parseCompaction(reply, colls)
+    const turnStart = floors[0].floor
+    const turnEnd = floors[floors.length - 1].floor
+    const turnLabel = turnStart === turnEnd ? `${turnStart}` : `${turnStart}-${turnEnd}`
+    let wrote = 0
+
+    // Stream collections (events): append the new memories.
+    for (const [id, memories] of Object.entries(parsed.streams)) {
+      if (!memories.length) continue
+      appendEntries(
+        profileId,
+        chatId,
+        id,
+        memories.map((m) => ({ ...m, turnStart, turnEnd }))
+      )
+      wrote += memories.length
+    }
+
+    // Entity collections (characters/locations): resolve the canonical key (T1), merge the
+    // delta into the existing sheet (T2), upsert. Re-read existing each time so multiple updates
+    // to one entity in a batch compose correctly.
+    for (const [id, ents] of Object.entries(parsed.entities)) {
+      for (const ent of ents) {
+        const existing = getEntries(profileId, chatId, id).map((e) => ({
+          entityKey: e.entityKey ?? '',
+          aliases: e.entities
+        }))
+        const key = resolveEntityKey(ent.name, ent.aliases, existing)
+        const current = getEntity(profileId, chatId, id, key)
+        const sheet = mergeEntitySheet((current?.payload as EntitySheet | undefined) ?? null, {
+          aliases: [ent.name, ...ent.aliases].filter(
+            (a) => a.trim().toLowerCase() !== key.trim().toLowerCase()
+          ),
+          fields: ent.fields,
+          note: ent.note,
+          turn: turnLabel
+        })
+        upsertEntity(profileId, chatId, id, key, entitySummary(sheet), sheet)
+        wrote++
+      }
+    }
+
+    if (!wrote) {
+      log('info', 'memory: compaction produced no parseable updates (deferred)')
       return
     }
 
-    const turnStart = floors[0].floor
-    const turnEnd = floors[floors.length - 1].floor
-    const rows: NewMemory[] = memories.map((m) => ({ ...m, turnStart, turnEnd }))
-    appendEntries(profileId, chatId, coll.id, rows)
     setMemoryState(profileId, chatId, { last_compacted_floor: turnEnd })
-    log('info', `memory: compacted floors ${turnStart}–${turnEnd} → ${memories.length} event(s)`)
+    log('info', `memory: compacted floors ${turnLabel} → ${wrote} update(s)`)
     notifyMemoryChanged(chatId)
   } catch (err) {
     // Last-resort guard: memory work must never break a turn.

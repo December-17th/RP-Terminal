@@ -165,7 +165,7 @@ export const getDefaultSettings = (): Settings => ({
         write: {
           trigger: 'checkpoint',
           prompt:
-            'Summarize what newly happened in these roleplay turns as concise, self-contained memories of narrative events — actions, decisions, revelations, promises, emotional beats. Do NOT restate numeric stats, inventory, or relationship scores (those are tracked separately). Reply with JSON only: {"memories":[{"summary":"one sentence","keywords":["proper nouns / topics"],"salience":0.0-1.0}]}.'
+            'concise, self-contained narrative events — actions, decisions, revelations, promises, emotional beats.'
         },
         retrieval: { mode: 'keyword', count: 5, tokenBudget: 600 },
         inject: { label: 'Relevant earlier events' }

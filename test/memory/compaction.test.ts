@@ -2,8 +2,31 @@ import { describe, it, expect } from 'vitest'
 import {
   compactionRange,
   parseMemories,
+  parseCompaction,
+  buildExtractionPrompt,
+  entitySummary,
   floorsToTranscript
 } from '../../src/main/services/compactionService'
+import type { MemoryCollection } from '../../src/main/types/models'
+
+const COLLS: MemoryCollection[] = [
+  {
+    id: 'events',
+    shape: 'stream',
+    enabled: true,
+    write: { trigger: 'checkpoint', prompt: 'narrative events' },
+    retrieval: { mode: 'keyword', count: 5, tokenBudget: 600 },
+    inject: { label: 'Events' }
+  },
+  {
+    id: 'characters',
+    shape: 'entity',
+    enabled: true,
+    write: { trigger: 'checkpoint', prompt: 'character updates' },
+    retrieval: { mode: 'always', count: 6, tokenBudget: 800 },
+    inject: { label: 'Characters' }
+  }
+]
 
 describe('compactionRange', () => {
   // keepRecent=10, checkpointTurns=6 (the defaults)
@@ -93,5 +116,60 @@ describe('floorsToTranscript', () => {
   it('joins multiple floors with a blank line', () => {
     const txt = floorsToTranscript([floor(0, 'a', 'b'), floor(1, 'c', 'd')])
     expect(txt).toBe('User: a\nAssistant: b\n\nUser: c\nAssistant: d')
+  })
+})
+
+describe('parseCompaction', () => {
+  it('splits stream and entity items by collection id', () => {
+    const raw =
+      '{"events":[{"summary":"the duel"}],"characters":[{"name":"Ayaka","aliases":["maiden"],"fields":{"role":"guard"},"note":"met"}]}'
+    const out = parseCompaction(raw, COLLS)
+    expect(out.streams.events).toEqual([{ summary: 'the duel', keywords: [], salience: 1 }])
+    expect(out.entities.characters).toEqual([
+      { name: 'Ayaka', aliases: ['maiden'], fields: { role: 'guard' }, note: 'met' }
+    ])
+  })
+
+  it('drops malformed items (no summary / no name) and missing keys', () => {
+    const out = parseCompaction(
+      '{"events":[{"no":"summary"}],"characters":[{"aliases":["x"]}]}',
+      COLLS
+    )
+    expect(out.streams.events).toEqual([])
+    expect(out.entities.characters).toEqual([])
+  })
+
+  it('coerces numeric/boolean entity field values to strings and drops empty ones', () => {
+    const out = parseCompaction(
+      '{"characters":[{"name":"X","fields":{"level":7,"alive":true,"x":""}}]}',
+      COLLS
+    )
+    expect(out.entities.characters[0].fields).toEqual({ level: '7', alive: 'true' })
+  })
+
+  it('returns empty maps on non-JSON', () => {
+    expect(parseCompaction('the model refused', COLLS)).toEqual({ streams: {}, entities: {} })
+  })
+})
+
+describe('buildExtractionPrompt', () => {
+  it('describes the per-collection JSON shapes + the no-numbers rule', () => {
+    const p = buildExtractionPrompt(COLLS)
+    expect(p).toContain('"events": [{"summary"')
+    expect(p).toContain('"characters": [{"name"')
+    expect(p).toContain('narrative events') // the collection's own prompt is appended
+    expect(p).toContain('Do NOT restate numeric')
+  })
+})
+
+describe('entitySummary', () => {
+  it('renders the fields digest, else the last note, else empty', () => {
+    expect(entitySummary({ aliases: [], fields: { role: 'guard', mood: 'wary' }, log: [] })).toBe(
+      'role: guard; mood: wary'
+    )
+    expect(entitySummary({ aliases: [], fields: {}, log: [{ turn: '1', note: 'arrived' }] })).toBe(
+      'arrived'
+    )
+    expect(entitySummary({ aliases: [], fields: {}, log: [] })).toBe('')
   })
 })

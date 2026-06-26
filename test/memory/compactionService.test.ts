@@ -11,7 +11,17 @@ vi.mock('../../src/main/services/chatService', () => ({
   setMemoryState: vi.fn()
 }))
 vi.mock('../../src/main/services/floorService', () => ({ getAllFloors: vi.fn() }))
-vi.mock('../../src/main/services/memoryStore', () => ({ appendEntries: vi.fn() }))
+// Keep the real PURE helpers (mergeEntitySheet / resolveEntityKey) but mock the DB ops.
+vi.mock('../../src/main/services/memoryStore', async (importActual) => {
+  const actual = await importActual<typeof import('../../src/main/services/memoryStore')>()
+  return {
+    ...actual,
+    appendEntries: vi.fn(),
+    getEntries: vi.fn(() => []),
+    getEntity: vi.fn(() => null),
+    upsertEntity: vi.fn()
+  }
+})
 vi.mock('../../src/main/services/apiService', () => ({ streamProvider: vi.fn() }))
 vi.mock('../../src/main/services/logService', () => ({ log: vi.fn() }))
 
@@ -20,7 +30,7 @@ import { getSettings } from '../../src/main/services/settingsService'
 import { getActivePreset } from '../../src/main/services/presetService'
 import { getChat, getMemoryState, setMemoryState } from '../../src/main/services/chatService'
 import { getAllFloors } from '../../src/main/services/floorService'
-import { appendEntries } from '../../src/main/services/memoryStore'
+import { appendEntries, upsertEntity } from '../../src/main/services/memoryStore'
 import { streamProvider } from '../../src/main/services/apiService'
 import type { Settings } from '../../src/main/types/models'
 
@@ -70,7 +80,7 @@ describe('maybeCompact', () => {
     vi.mocked(getMemoryState).mockReturnValue({ last_compacted_floor: -1 })
     vi.mocked(getAllFloors).mockReturnValue(floorsRange(0, 16) as never)
     vi.mocked(streamProvider).mockResolvedValue(
-      '{"memories":[{"summary":"the duel on the bridge","keywords":["duel","bridge"],"salience":0.8}]}'
+      '{"events":[{"summary":"the duel on the bridge","keywords":["duel","bridge"],"salience":0.8}]}'
     )
   })
 
@@ -90,6 +100,34 @@ describe('maybeCompact', () => {
         turnEnd: 5 // batch [0,6) → floors 0..5
       }
     ])
+    expect(setMemoryState).toHaveBeenCalledWith('p', 'c', { last_compacted_floor: 5 })
+  })
+
+  it('upserts a character entity with a resolved key and a merged sheet', async () => {
+    const characters = {
+      id: 'characters',
+      shape: 'entity',
+      enabled: true,
+      entityKey: 'character name',
+      write: { trigger: 'checkpoint', prompt: 'characters' },
+      retrieval: { mode: 'always', count: 6, tokenBudget: 800 },
+      inject: { label: 'Characters' }
+    }
+    vi.mocked(getSettings).mockReturnValue(
+      settings({ collections: [eventsCollection, characters] })
+    )
+    vi.mocked(streamProvider).mockResolvedValue(
+      '{"characters":[{"name":"Ayaka","aliases":["the swordmaiden"],"fields":{"role":"guard","goal":"find her brother"},"note":"revealed her quest"}]}'
+    )
+    await maybeCompact('p', 'c')
+    expect(upsertEntity).toHaveBeenCalledTimes(1)
+    const [, , coll, key, summary, sheet] = vi.mocked(upsertEntity).mock.calls[0]
+    expect(coll).toBe('characters')
+    expect(key).toBe('Ayaka') // new entity → the canonical name is the key
+    expect(sheet.aliases).toEqual(['the swordmaiden']) // name===key excluded; the alias is kept
+    expect(sheet.fields).toEqual({ role: 'guard', goal: 'find her brother' })
+    expect(sheet.log).toHaveLength(1)
+    expect(summary).toContain('role: guard')
     expect(setMemoryState).toHaveBeenCalledWith('p', 'c', { last_compacted_floor: 5 })
   })
 
@@ -153,7 +191,7 @@ describe('maybeCompact', () => {
     )
     const first = maybeCompact('p', 'c') // acquires the lock, awaits the pending utility call
     const second = maybeCompact('p', 'c') // sees the lock → early return
-    resolveCall('{"memories":[{"summary":"x"}]}')
+    resolveCall('{"events":[{"summary":"x"}]}')
     await Promise.all([first, second])
     expect(streamProvider).toHaveBeenCalledTimes(1)
     expect(appendEntries).toHaveBeenCalledTimes(1)
