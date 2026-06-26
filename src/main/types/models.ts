@@ -98,6 +98,8 @@ export interface Settings {
   combat?: {
     narrationMode?: 'append' | 'floor'
     narrationPrompt?: string
+    /** Steers the freeform-action / mid-fight-exit adjudication; card overrides it. */
+    improvisePrompt?: string
   }
   ui: {
     theme: string

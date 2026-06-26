@@ -107,7 +107,9 @@ export const CombatBundleSchema = z
     /** Steers the end-of-combat narration; overrides the user's setting. */
     narration_prompt: z.string().optional(),
     /** Where the narration lands in the chat; overrides the user's setting. */
-    narration_mode: z.enum(['append', 'floor']).optional()
+    narration_mode: z.enum(['append', 'floor']).optional(),
+    /** Steers the freeform-action / mid-fight-exit adjudication; overrides the user's setting. */
+    improvise_prompt: z.string().optional()
   })
   .passthrough()
 

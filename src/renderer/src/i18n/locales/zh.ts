@@ -394,6 +394,10 @@ const zh: Record<string, string> = {
   'prefs.combatNarrationPromptPh': '例如：以简练、冷硬的笔调叙述，着重描写伤势。',
   'prefs.combatNarrationPromptHint':
     '叙述的可选引导。角色卡的 combat.narration_prompt 会覆盖此设置。',
+  'prefs.combatImprovisePrompt': '自由行动提示词',
+  'prefs.combatImprovisePromptPh': '例如：严格裁定；只有付出真实代价才允许逃离。',
+  'prefs.combatImprovisePromptHint':
+    '引导自由行动框（独特行动／脱离战斗）的裁定方式。角色卡的 combat.improvise_prompt 会覆盖此设置。',
 
   'combat.empty': '当前没有进行中的战斗。',
   'combat.cueDetected': '战斗一触即发。',
@@ -409,7 +413,7 @@ const zh: Record<string, string> = {
   'combat.action': '动作',
   'combat.endTurn': '结束回合',
   'combat.improvise': '即兴行动',
-  'combat.improvisePlaceholder': '描述一个系统无法模拟的行动……',
+  'combat.improvisePlaceholder': '描述一个独特行动，或你如何脱离战斗……',
   'combat.log': '战斗记录',
   'combat.narrate': '叙述战斗',
   'combat.endCombat': '结束战斗',

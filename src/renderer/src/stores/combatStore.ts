@@ -130,15 +130,20 @@ export const useCombatStore = create<CombatStore>((set, get) => {
         })
     },
 
-    // Improvise routes through the AI referee (combat-adjudicate), not a plain action.
+    // Improvise routes through the AI referee (combat-adjudicate), not a plain action. If the
+    // referee concluded/escaped the fight (`ended`), the encounter was cleared server-side — drop it.
     improvise: async (profileId, prose) => {
       const { chatId } = get()
       if (!chatId) return
       set({ busy: true })
       try {
-        const { state, events } = await api().combatAdjudicate(profileId, chatId, prose)
-        set({ selection: { mode: 'idle' } })
-        pushEvents(state, events)
+        const { state, events, ended } = await api().combatAdjudicate(profileId, chatId, prose)
+        if (ended) {
+          get().reset()
+        } else {
+          set({ selection: { mode: 'idle' } })
+          pushEvents(state, events)
+        }
       } finally {
         set({ busy: false })
       }

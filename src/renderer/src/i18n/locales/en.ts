@@ -406,6 +406,11 @@ const en: Record<string, string> = {
   'prefs.combatNarrationPromptPh': 'e.g. Narrate in a terse, gritty tone; dwell on the wounds.',
   'prefs.combatNarrationPromptHint':
     'Optional guidance for the narration. A world card’s combat.narration_prompt overrides this.',
+  'prefs.combatImprovisePrompt': 'Freeform-action prompt',
+  'prefs.combatImprovisePromptPh':
+    'e.g. Adjudicate strictly; let the player flee only at a real cost.',
+  'prefs.combatImprovisePromptHint':
+    'Steers how the freeform-action box (unique actions / leaving the fight) is adjudicated. A world card’s combat.improvise_prompt overrides this.',
 
   'combat.empty': 'No active combat.',
   'combat.cueDetected': 'A fight is breaking out.',
@@ -421,7 +426,7 @@ const en: Record<string, string> = {
   'combat.action': 'Action',
   'combat.endTurn': 'End turn',
   'combat.improvise': 'Improvise',
-  'combat.improvisePlaceholder': 'Describe an action the system can’t model…',
+  'combat.improvisePlaceholder': 'Describe a unique action, or how you leave the fight…',
   'combat.log': 'Log',
   'combat.narrate': 'Narrate the fight',
   'combat.endCombat': 'End combat',

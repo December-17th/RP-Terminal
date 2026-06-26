@@ -45,12 +45,19 @@ const state = (combatants: Combatant[]): CombatState => ({
 })
 
 describe('prompt builders', () => {
-  it('adjudication prompt names the actor, the action, and the result tag', () => {
+  it('adjudication prompt names the actor, the action, the result tag, and embeds the steering prompt', () => {
     const s = state([C('hero', 'party', [0, 0]), C('g1', 'enemy', [1, 0])])
-    const p = buildAdjudicationPrompt(s, 'hero', 'swing on the chandelier')
+    const p = buildAdjudicationPrompt(
+      s,
+      'hero',
+      'swing on the chandelier',
+      'Be strict about escapes.'
+    )
     expect(p).toContain('swing on the chandelier')
     expect(p).toContain('hero')
     expect(p).toContain('<rpt-combat-result>')
+    expect(p).toContain('Be strict about escapes.')
+    expect(p).toContain('"end"') // the exit signal is offered to the model
   })
   it('narration prompt includes the outcome, log, and an UpdateVariable instruction', () => {
     const s = { ...state([C('hero', 'party', [0, 0])]), status: 'party' as const }
@@ -81,11 +88,19 @@ describe('parseCombatResult', () => {
     expect(r.ops).toHaveLength(1)
   })
   it('is tolerant of a missing / unparseable block', () => {
-    expect(parseCombatResult('no tag here')).toEqual({ narration: '', ops: [] })
+    expect(parseCombatResult('no tag here')).toEqual({ narration: '', ops: [], end: false })
     expect(parseCombatResult('<rpt-combat-result>not json</rpt-combat-result>')).toEqual({
       narration: '',
-      ops: []
+      ops: [],
+      end: false
     })
+  })
+  it('reads the end (mid-fight exit) flag', () => {
+    expect(
+      parseCombatResult(
+        '<rpt-combat-result>{ "narration": "You slip away.", "ops": [], "end": true }</rpt-combat-result>'
+      ).end
+    ).toBe(true)
   })
 })
 

@@ -113,7 +113,8 @@ export const getDefaultSettings = (): Settings => ({
   // user can switch to a new floor and supply a steering prompt.
   combat: {
     narrationMode: 'append',
-    narrationPrompt: ''
+    narrationPrompt: '',
+    improvisePrompt: ''
   },
   ui: {
     theme: 'dark',

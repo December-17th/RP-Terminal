@@ -34,24 +34,30 @@ export const describeState = (state: CombatState): string => {
 export const buildAdjudicationPrompt = (
   state: CombatState,
   actorId: string,
-  prose: string
+  prose: string,
+  extra?: string
 ): string => {
   const actor = state.combatants.find((c) => c.id === actorId)
   const who = actor ? `${actor.name} (${actor.id})` : actorId
-  return [
+  const lines = [
     'You are the combat referee. The player attempts an action the tactical system cannot model.',
-    'Resolve it fairly given the battlefield, then reply with ONLY an <rpt-combat-result> block.',
+    'Resolve it fairly given the battlefield, then reply with ONLY an <rpt-combat-result> block.'
+  ]
+  if (extra && extra.trim()) lines.push('', extra.trim())
+  lines.push(
     '',
     describeState(state),
     '',
     `Acting combatant: ${who}.`,
     `Attempted action: "${prose}"`,
     '',
-    'Reply EXACTLY in this form (JSON inside the tag), with one short narration sentence and the ops:',
+    'Reply EXACTLY in this form (JSON inside the tag): one short narration sentence, the ops, and set',
+    '"end" to true if this action concludes or escapes the fight (the player leaves combat):',
     '<rpt-combat-result>',
-    '{ "narration": "…", "ops": [ {"op":"damage","target":"<id>","amount":0,"type":"fire"}, {"op":"move","target":"<id>","to":[0,0]}, {"op":"condition","target":"<id>","id":"prone","duration":1}, {"op":"heal","target":"<id>","amount":0} ] }',
+    '{ "narration": "…", "ops": [ {"op":"damage","target":"<id>","amount":0,"type":"fire"}, {"op":"move","target":"<id>","to":[0,0]}, {"op":"condition","target":"<id>","id":"prone","duration":1}, {"op":"heal","target":"<id>","amount":0} ], "end": false }',
     '</rpt-combat-result>'
-  ].join('\n')
+  )
+  return lines.join('\n')
 }
 
 /** Prompt the AI to narrate the resolved fight and fold lasting consequences into MVU.
@@ -102,18 +108,22 @@ const extractTag = (text: string, tag: string): string | null => {
   return m ? m[1].trim() : null
 }
 
-/** Parse an `<rpt-combat-result>` block into a narration + normalized ops (tolerant). */
-export const parseCombatResult = (text: string): { narration: string; ops: ResultOp[] } => {
+/** Parse an `<rpt-combat-result>` block into a narration + normalized ops + an `end`
+ *  flag (the AI concluded/escaped the fight → exit combat). Tolerant of malformed input. */
+export const parseCombatResult = (
+  text: string
+): { narration: string; ops: ResultOp[]; end: boolean } => {
   const body = extractTag(text, 'rpt-combat-result')
-  if (!body) return { narration: '', ops: [] }
+  if (!body) return { narration: '', ops: [], end: false }
   try {
     const obj = JSON.parse(body)
     return {
       narration: typeof obj.narration === 'string' ? obj.narration : '',
-      ops: Array.isArray(obj.ops) ? (obj.ops as ResultOp[]) : []
+      ops: Array.isArray(obj.ops) ? (obj.ops as ResultOp[]) : [],
+      end: obj.end === true
     }
   } catch {
-    return { narration: '', ops: [] }
+    return { narration: '', ops: [], end: false }
   }
 }
 

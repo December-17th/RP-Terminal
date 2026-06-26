@@ -61,6 +61,7 @@ export interface Settings {
   combat?: {
     narrationMode?: 'append' | 'floor'
     narrationPrompt?: string
+    improvisePrompt?: string
   }
   ui: {
     theme: string

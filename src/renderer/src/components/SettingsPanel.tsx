@@ -398,6 +398,24 @@ export const SettingsPanel: React.FC<{ profileId: string }> = ({ profileId }) =>
             <div style={{ fontSize: '0.78em', color: 'var(--rpt-text-secondary)', marginTop: 4 }}>
               {t('prefs.combatNarrationPromptHint')}
             </div>
+
+            <label className="field-label" style={{ marginTop: 14 }}>
+              {t('prefs.combatImprovisePrompt')}
+            </label>
+            <textarea
+              value={settings.combat?.improvisePrompt ?? ''}
+              rows={3}
+              placeholder={t('prefs.combatImprovisePromptPh')}
+              onChange={(e) =>
+                updateSettings(profileId, {
+                  combat: { ...settings.combat, improvisePrompt: e.target.value }
+                })
+              }
+              style={{ width: '100%' }}
+            />
+            <div style={{ fontSize: '0.78em', color: 'var(--rpt-text-secondary)', marginTop: 4 }}>
+              {t('prefs.combatImprovisePromptHint')}
+            </div>
           </>
         )}
 

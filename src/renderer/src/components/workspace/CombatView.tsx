@@ -178,6 +178,12 @@ export function CombatView({ profileId }: { profileId: string }): React.ReactEle
     setRefereeing(true)
     try {
       await store.getState().improvise(profileId, text)
+      // If the referee ended the fight, it cleared the encounter + wrote prose to the chat:
+      // reload floors and hand back to the story.
+      if (!store.getState().state && activeChatId) {
+        useChatStore.getState().setActiveChat(profileId, activeChatId)
+        useChatStore.getState().setMode(profileId, 'explore')
+      }
     } finally {
       setRefereeing(false)
       setProse('')
