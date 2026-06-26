@@ -35,6 +35,7 @@ export function MemoryView({ profileId }: { profileId: string }): React.ReactEle
   const [editingId, setEditingId] = useState<string | null>(null)
   const [draftSummary, setDraftSummary] = useState('')
   const [draftKeywords, setDraftKeywords] = useState('')
+  const [filter, setFilter] = useState('')
 
   const refresh = useCallback(async () => {
     if (!activeChatId) {
@@ -86,7 +87,14 @@ export function MemoryView({ profileId }: { profileId: string }): React.ReactEle
     await refresh()
   }
 
-  const collections = Array.from(new Set(entries.map((e) => e.collection)))
+  const q = filter.trim().toLowerCase()
+  const matches = (e: MemoryEntry): boolean =>
+    !q ||
+    `${e.summary} ${e.keywords.join(' ')} ${e.entityKey ?? ''} ${e.collection}`
+      .toLowerCase()
+      .includes(q)
+  const visible = entries.filter(matches)
+  const collections = Array.from(new Set(visible.map((e) => e.collection)))
 
   return (
     <div>
@@ -115,12 +123,26 @@ export function MemoryView({ profileId }: { profileId: string }): React.ReactEle
         </span>
       </h3>
 
+      {entries.length ? (
+        <input
+          value={filter}
+          placeholder={t('memory.filterPh')}
+          onChange={(e) => setFilter(e.target.value)}
+          style={{ width: '100%', marginTop: 10 }}
+        />
+      ) : null}
+
       {loading && !entries.length ? (
         <div style={{ opacity: 0.5 }}>{t('memory.loading')}</div>
       ) : null}
       {!loading && !entries.length ? (
         <div style={{ opacity: 0.6, marginTop: 12 }}>
           <em>{t('memory.empty')}</em>
+        </div>
+      ) : null}
+      {!loading && entries.length > 0 && visible.length === 0 ? (
+        <div style={{ opacity: 0.6, marginTop: 12 }}>
+          <em>{t('memory.noMatches')}</em>
         </div>
       ) : null}
 
@@ -137,7 +159,7 @@ export function MemoryView({ profileId }: { profileId: string }): React.ReactEle
           >
             {coll}
           </div>
-          {entries
+          {visible
             .filter((e) => e.collection === coll)
             .map((e) => (
               <div

@@ -411,6 +411,8 @@ const en: Record<string, string> = {
   'memory.waiting': 'Open a session to see its memories.',
   'memory.count': '{{count}} stored',
   'memory.refresh': 'Refresh',
+  'memory.filterPh': 'Filter memories (summary, keyword, entity)…',
+  'memory.noMatches': 'No memories match the filter.',
   'memory.loading': 'Loading…',
   'memory.empty': 'No memories yet — they appear as older turns are summarized.',
   'memory.confirmDelete': 'Delete this memory? This cannot be undone.',

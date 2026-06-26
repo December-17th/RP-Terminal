@@ -399,6 +399,8 @@ const zh: Record<string, string> = {
   'memory.waiting': '打开一个会话以查看其记忆。',
   'memory.count': '已存 {{count}} 条',
   'memory.refresh': '刷新',
+  'memory.filterPh': '筛选记忆（概要、关键词、实体）…',
+  'memory.noMatches': '没有符合筛选条件的记忆。',
   'memory.loading': '加载中…',
   'memory.empty': '暂无记忆——当较旧的回合被概括后会出现在这里。',
   'memory.confirmDelete': '删除这条记忆？此操作无法撤销。',
