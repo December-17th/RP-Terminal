@@ -146,6 +146,38 @@ describe('parseCardItem', () => {
     expect(c.DR).toBe(10) // 减伤增幅 matches the DR branch
   })
 
+  it('scans flavor-keyed effect prose for hidden mechanics (real catalog format)', () => {
+    // From FrontEnd-for-destined-journey/public/assets/data/equipments.json — the mechanic is in the
+    // VALUE, under a flavor KEY, so the key-based branches miss it and the prose scan must catch it.
+    const c = parseCardItem(
+      {
+        类型: '武器',
+        标签: ['攻击: 180'],
+        效果: {
+          充能: '提高12%伤害。',
+          满盈: '额外提高12%伤害。',
+          凝护: '每次攻击获得50点护盾，不叠加。',
+          锋锐: '普通攻击额外造成5点物理伤害。'
+        }
+      },
+      'equip'
+    )
+    expect(c.攻击).toBe(180)
+    expect(c.伤害增幅).toBe(24) // 12 + 12
+    expect(c.护盾).toBe(50)
+    expect(c.额外固定伤害).toBe(5)
+  })
+
+  it('scans 减伤 / 穿透 / 恢复 prose (either word order)', () => {
+    const c = parseCardItem(
+      { 效果: { 守护: '受到的伤害减少15%。', 破甲: '攻击附带20%穿透。', 回春: '恢复30点生命' } },
+      'skill'
+    )
+    expect(c.DR).toBe(15)
+    expect(c.穿透).toBe(20)
+    expect(c.治疗量).toBe(30)
+  })
+
   it('parses a 治疗 ability (核心功能 治疗 + 治疗增幅 + flat 恢复)', () => {
     const c = parseCardItem(
       {

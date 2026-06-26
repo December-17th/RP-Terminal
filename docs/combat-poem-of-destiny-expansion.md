@@ -171,6 +171,28 @@ appear only in **values** (`主角`, `关系列表`, `力量`, `生命值`) and 
 - `角色查看器v3.0.5` — 64 KB inline Vue character sheet (reads `stat_data`).
 - `状态栏` — remote loader → `FrontEnd-for-destined-journey@1.8.2/dist/status/index.html` (minified;
   can't hand-edit → ship a standalone regex instead).
+
+### Status-UI source repo (found 2026-06-26): `github.com/The-poem-of-destiny/FrontEnd-for-destined-journey`
+The `状态栏`'s source (we previously only had the minified dist). Key facts:
+- **`src/status/` is a React/TSX app** (Vite+pnpm) with tabs 任务/信息/持有物/命定/新闻/地图 (`config/tabs.config.ts`)
+  — **no combat tab**; `core/stores/mvu-data.store.ts` reads `stat_data`; `core/types/mvu-data.d.ts` is
+  `z.infer<Schema>` (confirms the data shape = the recovered schema; **no combat fields**). (`src/home`,
+  `src/custom_start` are Vue.)
+- `public/assets/data/{skills,equipments,items}.json` — the card's **real predefined catalog**.
+  ⚠️ **Two findings that affect `parseCardItem`:**
+  1. Real `效果` are **flavor-name key + mechanic-in-prose-value**, e.g. `{"充能":"提高12%伤害。"}`,
+     `{"凝护":"每次攻击获得50点护盾，不叠加。"}`, `{"锋锐":"普通攻击额外造成5点物理伤害。"}`,
+     `{"能量伤害":"造成100%能量伤害。"}`. Our parser keys off the **key** (`伤害增幅`/`护盾`/…) → it would
+     **miss** these flavor-keyed effects. ✅ **Handled (2026-06-26, owner chose "Both"):** `parseCardItem`
+     now also **scans the value prose** (`scanEffectProse`: 提高X%伤害→伤害增幅, X点护盾→护盾, 额外X点伤害→
+     固伤, 减伤/减少X%→DR, X%穿透→穿透, 恢复X点→治疗) AND the lorebook compat snippet asks AI items to prefer
+     structured effect keys ([poem-item-combat-compat.md](sdk/examples/poem-item-combat-compat.md)).
+  2. Real skills carry **no `有效距离`** and **declare a damage type** (能量/物理) — confirms the bucket-B
+     `有效距离`-mandatory tightening, and that typed-damage (deferred) actually matters (most skills type
+     their damage).
+  (Note: the predefined catalog uses ENGLISH keys `tag/effect/consume/type/rarity`; the **runtime MVU
+  stat_data** the engine reads uses the Chinese keys `标签/效果/消耗/类型/品质` per the schema — `parseCardItem`
+  correctly targets the runtime Chinese keys.)
 - `战斗&生产制作美化` — inline "TRPG战斗面板" beautification of AI-written combat text → the old
   AI-narration paradigm = **Classic mode**'s display; keep it for that mode.
 

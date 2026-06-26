@@ -19,8 +19,14 @@ Paste-in tightening:
 - 技能标签中「威力」必须为具体数值（参照<核心数值表>），如「威力: 300」，不得写品质词。
 - 每个主动技能/武器必须带「有效距离: X」（格数）；范围技能额外带「范围: [爆发/直线/锥形/单体/范围:X]」。
 - 装备战斗数值用「攻击: N」「防御: N」；技能消耗用「消耗: 攻击/动作: X MP/SP」；关联属性用五维之一作为独立标签。
+- 战斗类效果优先用规范效果名作为键（命中/闪避/固伤/伤害增幅/减伤增幅/护盾/穿透/暴击倍率/治疗/治疗增幅/附加效果），
+  数值写在值里；若沿用风味名（如「充能」），须在值的描述中写明机制（如「提高12%伤害」「获得50点护盾」「额外造成5点伤害」），以便解析。
 </战斗数据规范>
 ```
+**Robustness:** the engine's `parseCardItem` reads the structured keys above AND **scans the value prose**
+for the same mechanics (提高X%伤害→伤害增幅, X点护盾→护盾, 额外X点伤害→固伤, 减伤/减少X%→DR, X%穿透→穿透,
+恢复X点→治疗), so the existing **flavor-keyed catalog items** (e.g. `充能: 提高12%伤害`) parse too — the
+tightening just makes AI-authored items cleaner/less ambiguous.
 
 ## Effect contract — what the engine consumes (`效果` keys)
 **Mechanical (applied by the 战斗协议 resolver):**

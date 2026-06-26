@@ -117,6 +117,33 @@ const parseShape = (tag: string, range: number): { shape: AoeShape; 范围目标
 }
 
 /**
+ * Scan a flavor-keyed effect's VALUE prose for mechanics the card hides there (the real catalog format,
+ * verified against FrontEnd-for-destined-journey/public/assets/data): e.g. `充能: 提高12%伤害`,
+ * `凝护: 每次攻击获得50点护盾`, `锋锐: 额外造成5点物理伤害`. Accumulates onto `out` (best-effort).
+ */
+const scanEffectProse = (v: string, out: CardCombat): void => {
+  let m: RegExpMatchArray | null
+  if ((m = v.match(/(?:提高|增加|提升)\s*(\d+(?:\.\d+)?)\s*%\s*治疗/)))
+    out.治疗增幅 = (out.治疗增幅 ?? 0) + parseFloat(m[1])
+  else if ((m = v.match(/(?:提高|增加|提升)\s*(\d+(?:\.\d+)?)\s*%\s*(?:伤害|攻击)/)))
+    out.伤害增幅 = (out.伤害增幅 ?? 0) + parseFloat(m[1])
+  // damage reduction: a 减伤/减少/降低-伤害 phrase (either order) + a %.
+  if (
+    /减伤|(?:减少|降低|减免)[^。]*伤害|伤害[^。]*(?:减少|降低|减免)/.test(v) &&
+    (m = v.match(/(\d+(?:\.\d+)?)\s*%/))
+  )
+    out.DR = Math.max(out.DR ?? 0, parseFloat(m[1]))
+  if ((m = v.match(/(\d+)\s*点?\s*护盾/)) || (m = v.match(/护盾\s*(\d+)/)))
+    out.护盾 = (out.护盾 ?? 0) + parseInt(m[1], 10)
+  if ((m = v.match(/额外(?:造成|附加)?\s*(\d+)\s*点[^，。]*?伤害/)))
+    out.额外固定伤害 = (out.额外固定伤害 ?? 0) + parseInt(m[1], 10)
+  if (/穿透/.test(v) && (m = v.match(/(\d+(?:\.\d+)?)\s*%/)))
+    out.穿透 = Math.max(out.穿透 ?? 0, parseFloat(m[1]))
+  if ((m = v.match(/(?:恢复|治疗)\s*(?:HP\s*)?(\d+)\s*点?/)))
+    out.治疗量 = (out.治疗量 ?? 0) + parseInt(m[1], 10)
+}
+
+/**
  * Parse one 技能/装备 MVU object into normalized combat numbers. Reads the card's own grammar:
  * 标签 (关联属性 / 有效距离:X / 威力:X / 攻击·防御:N / 范围·爆发·直线·锥形·单体 / 多段·连击),
  * 消耗 (攻击|动作: X MP/SP), 效果 (命中/闪避/先攻/抵抗, 固伤, DR/穿透/暴击倍率, 附加效果 数值+回合).
@@ -181,13 +208,15 @@ export const parseCardItem = (item: unknown, _kind: ItemKind): CardCombat => {
     else if (/治疗增幅/.test(k)) out.治疗增幅 = (out.治疗增幅 ?? 0) + pct(v)
     else if (/治疗|恢复/.test(k)) out.治疗量 = (out.治疗量 ?? 0) + num(v)
     else {
+      // Flavor-keyed effect (e.g. 充能/凝护/锋锐): the mechanic is in the VALUE prose, not the key —
+      // a status (数值+回合) or a scanned mechanic (提高X%伤害 / X点护盾 / 额外X点伤害 / …).
       const st = v.match(/(\d+)\s*\+\s*(\d+)\s*回合/) || v.match(/(\d+)\s*回合/)
       if (st) {
         out.附加效果 ??= []
         if (st.length === 3)
           out.附加效果.push({ 状态: k, 数值: parseInt(st[1], 10), 回合: parseInt(st[2], 10) })
         else out.附加效果.push({ 状态: k, 回合: parseInt(st[1], 10) })
-      }
+      } else scanEffectProse(v, out)
     }
   }
 
