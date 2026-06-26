@@ -7,6 +7,25 @@ Running status of the MVU / panel-workspace track. Newest first.
 
 ## 2026-06-26
 
+- **⚠️ GAP — prompt-build EJS can't run async / `TavernHelper`-using lorebook entries.** The 命定之诗 card
+  has constant lorebook entries written as ST-Prompt-Template scriptlets that call the **TavernHelper API**
+  and use **`await`**, e.g. `命定系统-艾莉亚核心`:
+  `const userName = await TavernHelper.triggerSlash('/pass {{user}}')` (an async initializer that seeds
+  `stat_data.关系列表`). RP Terminal's main-process prompt-build engine (`shared/templateEngine`) is
+  **synchronous** (compiles each template into a sync IIFE, so `await` → `SyntaxError: expecting ';'`) and
+  its bridge exposes getvar/setvar/`_`/faker but **not `TavernHelper`**. Git confirms neither was ever
+  present (engine extracted 2026-06-22 `81e5f92`; no `evalCodeAsync`, no `TavernHelper` ever) — so these
+  entries NEVER rendered in the prompt; the failure was just **silent** until the 2026-06-26 naming
+  diagnostic (`5927369`/`fd3b29a`) surfaced it. The card UI (WCV) renders them fine because there it has
+  **real lodash + TavernHelper + async**. ST-Prompt-Template itself runs in the browser with TavernHelper
+  and supports async, so a faithful reimplementation eventually should too — but that needs (a) async EJS
+  eval (`evalCodeAsync` + pending-job pump) and (b) a TavernHelper surface reachable from the main-process
+  builder (architecturally heavy: TavernHelper is renderer-side, and `triggerSlash`/`generate` during
+  prompt assembly invite re-entrancy/side-effects). **For now: out-of-contract.** Such async/side-effecting
+  init belongs in a card SCRIPT (WCV runtime), not a prompt-injected lorebook entry. Pure-lodash display
+  entries (e.g. `status_current_variables`) DO work now that the `_` subset gained `cloneDeep` + the common
+  methods (`9ce2ebe`/`b28157b`). See [rpt-api.md](rpt-api.md) EJS surface + [compat-comparison.md](compat-comparison.md).
+
 - **⚠️ TECH DEBT — WCV variable write-back loop is contained by a heuristic, not properly fixed.** A card
   (命定之诗) that writes a constantly-CHANGING value (a `date` clock) on its own `mag_variable_update_ended`
   self-loops: write → broadcast → echo → event → write → … forever. The saga + final state:
