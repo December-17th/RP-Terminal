@@ -89,4 +89,49 @@ describe('selectMemories (orchestration)', () => {
     expect(r).toEqual({ block: '', rows: [] })
     expect(getEntries).not.toHaveBeenCalled()
   })
+
+  it('always-includes in-scope entity sheets from an entity collection', () => {
+    vi.mocked(getEntries).mockImplementation((_p, _c, id) =>
+      id === 'characters'
+        ? [
+            entry({
+              id: 'ay',
+              collection: 'characters',
+              entityKey: 'Ayaka',
+              entities: ['the maiden'],
+              summary: 'role: guard'
+            })
+          ]
+        : []
+    )
+    const collections = [
+      coll({
+        id: 'characters',
+        shape: 'entity',
+        retrieval: { mode: 'always', count: 6, tokenBudget: 800 },
+        inject: { label: 'Characters' }
+      })
+    ]
+    const r = selectMemories('p', 'c', 'Ayaka greets you warmly', settingsWith(collections))
+    expect(r.block).toBe('[Characters]\n- Ayaka: role: guard')
+    expect(r.rows.map((x) => x.id)).toEqual(['ay'])
+  })
+
+  it('skips entity sheets whose entity is not in scope this turn', () => {
+    vi.mocked(getEntries).mockReturnValue([
+      entry({ id: 'ay', collection: 'characters', entityKey: 'Ayaka', summary: 'role: guard' })
+    ])
+    const collections = [
+      coll({
+        id: 'characters',
+        shape: 'entity',
+        retrieval: { mode: 'always', count: 6, tokenBudget: 800 },
+        inject: { label: 'Characters' }
+      })
+    ]
+    expect(selectMemories('p', 'c', 'nobody is here', settingsWith(collections))).toEqual({
+      block: '',
+      rows: []
+    })
+  })
 })

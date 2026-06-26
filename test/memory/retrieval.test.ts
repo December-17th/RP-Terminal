@@ -3,6 +3,9 @@ import {
   keywordScore,
   selectFromEntries,
   formatBlock,
+  entityInScope,
+  selectEntitiesInScope,
+  formatEntityBlock,
   selectMemories
 } from '../../src/main/services/retrievalService'
 import type { MemoryEntry } from '../../src/main/services/memoryStore'
@@ -90,6 +93,44 @@ describe('formatBlock', () => {
     expect(formatBlock('Earlier events', [E({ summary: 'a' }), E({ summary: 'b' })])).toBe(
       '[Earlier events]\n- a\n- b'
     )
+  })
+})
+
+describe('entityInScope', () => {
+  it('matches the entity key or an alias in the scan text (case-insensitive)', () => {
+    const e = E({ entityKey: 'Ayaka', entities: ['the swordmaiden'] })
+    expect(entityInScope(e, 'we meet AYAKA at dawn')).toBe(true)
+    expect(entityInScope(e, 'the Swordmaiden draws her blade')).toBe(true)
+    expect(entityInScope(e, 'nothing relevant here')).toBe(false)
+  })
+  it('ignores 1-char names to avoid false matches', () => {
+    expect(entityInScope(E({ entityKey: 'X', entities: [] }), 'the box')).toBe(false)
+  })
+})
+
+describe('selectEntitiesInScope', () => {
+  it('returns only in-scope entities, capped at count', () => {
+    const a = E({ id: 'a', entityKey: 'Ayaka', summary: 'guard' })
+    const b = E({ id: 'b', entityKey: 'Borin', summary: 'smith' })
+    const chosen = selectEntitiesInScope([a, b], 'Ayaka and Borin talk', 1, 0)
+    expect(chosen).toHaveLength(1)
+    expect(chosen[0].id).toBe('a')
+  })
+  it('excludes entities not mentioned this turn', () => {
+    expect(
+      selectEntitiesInScope([E({ entityKey: 'Ayaka' })], 'someone else entirely', 5, 0)
+    ).toEqual([])
+  })
+})
+
+describe('formatEntityBlock', () => {
+  it('renders "name: summary" lines', () => {
+    expect(
+      formatEntityBlock('Characters', [E({ entityKey: 'Ayaka', summary: 'role: guard' })])
+    ).toBe('[Characters]\n- Ayaka: role: guard')
+  })
+  it('is empty for no entries', () => {
+    expect(formatEntityBlock('Characters', [])).toBe('')
   })
 })
 

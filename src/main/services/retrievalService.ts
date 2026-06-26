@@ -3,11 +3,11 @@ import { getEntries, MemoryEntry } from './memoryStore'
 import { estimateTokens } from './promptBuilder'
 
 /**
- * Memory READER (docs/episodic-memory-design.md §8). Before a turn, select the memories
- * relevant to the current scan text and format them into a tail block. The core handles
- * only `stream` collections with `keyword` ranking (events); entity/vector/llm modes are
- * skipped (deferred). The selection/formatting helpers are pure and unit-tested; only the
- * `getEntries` read touches the DB.
+ * Memory READER (docs/episodic-memory-design.md §8). Before a turn, select the relevant memories
+ * and format them into a tail block. Handles `stream` collections with `keyword` ranking (events,
+ * relevance-ranked) and `entity` collections with `always` recall (characters/locations, included
+ * when the entity is in scope this turn). vector/hybrid/llm modes are deferred. The selection /
+ * formatting helpers are pure and unit-tested; only the `getEntries` read touches the DB.
  */
 
 /** Reserve a couple of slots for the most-recent memories (continuity across compaction). */
@@ -26,15 +26,19 @@ export const keywordScore = (entry: MemoryEntry, scanText: string): number => {
 }
 
 /** Keep entries until the token budget is reached; always keep at least the first. */
-const trimToBudget = (entries: MemoryEntry[], tokenBudget: number): MemoryEntry[] => {
+const trimToBudget = (
+  entries: MemoryEntry[],
+  tokenBudget: number,
+  cost: (e: MemoryEntry) => number = (e) => estimateTokens(`- ${e.summary}`)
+): MemoryEntry[] => {
   if (tokenBudget <= 0) return entries
   const out: MemoryEntry[] = []
   let used = 0
   for (const e of entries) {
-    const cost = estimateTokens(`- ${e.summary}`)
-    if (out.length && used + cost > tokenBudget) break
+    const c = cost(e)
+    if (out.length && used + c > tokenBudget) break
     out.push(e)
-    used += cost
+    used += c
   }
   return out
 }
@@ -79,6 +83,34 @@ export const formatBlock = (label: string, entries: MemoryEntry[]): string => {
   return `[${label}]\n${entries.map((e) => `- ${e.summary}`).join('\n')}`
 }
 
+/** Whether an entity is "in scope" this turn — its key or any alias appears in the scan text. Pure. */
+export const entityInScope = (entry: MemoryEntry, scanText: string): boolean => {
+  const hay = scanText.toLowerCase()
+  return [entry.entityKey ?? '', ...entry.entities].some((n) => {
+    const v = n.trim().toLowerCase()
+    return v.length > 1 && hay.includes(v)
+  })
+}
+
+/** Entity records whose entity is mentioned this turn, capped at `count` and the token budget. Pure. */
+export const selectEntitiesInScope = (
+  entries: MemoryEntry[],
+  scanText: string,
+  count: number,
+  tokenBudget: number
+): MemoryEntry[] => {
+  const inScope = entries.filter((e) => entityInScope(e, scanText))
+  return trimToBudget(inScope.slice(0, Math.max(0, count)), tokenBudget, (e) =>
+    estimateTokens(`- ${e.entityKey}: ${e.summary}`)
+  )
+}
+
+/** Format in-scope entity sheets into a labelled tail block (`name: current-state digest`). Pure. */
+export const formatEntityBlock = (label: string, entries: MemoryEntry[]): string => {
+  if (!entries.length) return ''
+  return `[${label}]\n${entries.map((e) => `- ${e.entityKey}: ${e.summary}`).join('\n')}`
+}
+
 /**
  * Select recalled-memory text for this turn across all enabled collections, plus the chosen
  * rows (for logging). Returns an empty block when memory is off or nothing matches.
@@ -95,17 +127,21 @@ export const selectMemories = (
   const blocks: string[] = []
   const rows: MemoryEntry[] = []
   for (const coll of mem.collections) {
-    // Core: only stream collections with keyword recall. Entity/vector/llm are deferred.
-    if (!coll.enabled || coll.shape !== 'stream' || coll.retrieval.mode !== 'keyword') continue
+    if (!coll.enabled) continue
+    const isStream = coll.shape === 'stream' && coll.retrieval.mode === 'keyword'
+    const isEntity = coll.shape === 'entity' && coll.retrieval.mode === 'always'
+    if (!isStream && !isEntity) continue // vector / hybrid / llm — deferred (no read)
+
     const entries = getEntries(profileId, chatId, coll.id)
     if (!entries.length) continue
-    const chosen = selectFromEntries(
-      entries,
-      scanText,
-      coll.retrieval.count,
-      coll.retrieval.tokenBudget
-    )
-    const block = formatBlock(coll.inject.label, chosen)
+    const { count, tokenBudget } = coll.retrieval
+    const chosen = isStream
+      ? selectFromEntries(entries, scanText, count, tokenBudget)
+      : selectEntitiesInScope(entries, scanText, count, tokenBudget)
+    const block = isStream
+      ? formatBlock(coll.inject.label, chosen)
+      : formatEntityBlock(coll.inject.label, chosen)
+
     if (block) {
       blocks.push(block)
       rows.push(...chosen)
