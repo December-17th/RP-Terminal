@@ -5,6 +5,7 @@ import { electronAPI } from '@electron-toolkit/preload'
 const api = {
   getProfiles: () => ipcRenderer.invoke('get-profiles'),
   createProfile: (name: string) => ipcRenderer.invoke('create-profile', name),
+  wipeProfile: (profileId: string) => ipcRenderer.invoke('wipe-profile', profileId),
   getSettings: (profileId: string) => ipcRenderer.invoke('get-settings', profileId),
   saveSettings: (profileId: string, settings: any) =>
     ipcRenderer.invoke('save-settings', profileId, settings),

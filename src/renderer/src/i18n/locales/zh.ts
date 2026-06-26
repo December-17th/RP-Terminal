@@ -102,6 +102,12 @@ const zh: Record<string, string> = {
   'prefs.currentModel': '当前模型',
   'prefs.plugins': '插件',
 
+  'prefs.debug': '调试',
+  'prefs.wipeProfile': '清空档案',
+  'prefs.wipeProfileHint':
+    '删除此档案下的所有角色、聊天、预设、世界书、正则与脚本，并将设置重置为默认值。你的 API 连接会被保留。仅用于调试。',
+  'prefs.wipeProfileConfirm': '清空此档案中除 API 连接外的所有内容？此操作无法撤销。',
+
   'persona.heading': '用户人设',
   'persona.name': '名称',
   'persona.namePh': '用户',

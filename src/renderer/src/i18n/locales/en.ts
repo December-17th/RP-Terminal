@@ -104,6 +104,13 @@ const en: Record<string, string> = {
   'prefs.currentModel': 'current model',
   'prefs.plugins': 'Plugins',
 
+  'prefs.debug': 'Debug',
+  'prefs.wipeProfile': 'Wipe profile',
+  'prefs.wipeProfileHint':
+    'Delete every character, chat, preset, lorebook, regex and script in this profile and reset settings to defaults. Your API connections are kept. For debugging only.',
+  'prefs.wipeProfileConfirm':
+    'Wipe everything in this profile except your API connections? This cannot be undone.',
+
   'persona.heading': 'Persona',
   'persona.name': 'Name',
   'persona.namePh': 'User',

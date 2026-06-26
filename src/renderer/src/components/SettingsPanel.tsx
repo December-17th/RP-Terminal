@@ -489,6 +489,30 @@ export const SettingsPanel: React.FC<{ profileId: string }> = ({ profileId }) =>
             <PluginsPanel profileId={profileId} />
           </div>
         </details>
+
+        <details className="settings-section" style={{ marginTop: 20 }}>
+          <summary>{t('prefs.debug')}</summary>
+          <div className="settings-section-body">
+            <div
+              style={{ fontSize: '0.78em', color: 'var(--rpt-text-secondary)', marginBottom: 8 }}
+            >
+              {t('prefs.wipeProfileHint')}
+            </div>
+            <button
+              style={{
+                color: 'var(--rpt-danger, #e06c75)',
+                borderColor: 'var(--rpt-danger, #e06c75)'
+              }}
+              onClick={async () => {
+                if (!window.confirm(t('prefs.wipeProfileConfirm'))) return
+                await window.api.wipeProfile(profileId)
+                window.location.reload()
+              }}
+            >
+              {t('prefs.wipeProfile')}
+            </button>
+          </div>
+        </details>
       </div>
     </div>
   )
