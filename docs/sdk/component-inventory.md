@@ -267,7 +267,9 @@ methods/tags: [rpt-api.md](../rpt-api.md) §4 (Combat).
 
 | Component | Where / shape | Notes |
 | --- | --- | --- |
-| Ability catalog | `combat.abilities[]` (`AbilityDef`) | `range`, `shape` (AoE), `toHit`, `save`, `damage`, `damageType`, `effects` |
+| Ability catalog | `combat.abilities[]` (`AbilityDef`) | `range`, `shape` (AoE), `toHit`, `save`, `damage`, `damageType`, `effects`, `cost`, `requiresLoS` |
+| Action economy | `AbilityDef.cost` `'attack'` \| `'action'` (default: attack-roll → attack, else action) | one move + one attack + one action per turn (`CombatState.turnUsed`) |
+| Line of sight | `AbilityDef.requiresLoS` + terrain `blocksLoS` | true = blocked by walls (ranged); false = lobbed AoE arcs over them |
 | AoE shapes | `shape.kind` ∈ `self` / `burst{r}` / `aura{r}` / `line{len,width}` / `cone{len}` | engine computes covered cells + auto-targets ([grid.ts](../../src/shared/combat/grid.ts) `templateCells`) |
 | Bestiary | `combat.bestiary[]` (`id`,`name`,`tier`,`block`,`abilities`,`controller`) | enemies the cue resolves against |
 | Party templates | `combat.party[]` | the player-side combatants instantiated at setup |
@@ -276,25 +278,29 @@ methods/tags: [rpt-api.md](../rpt-api.md) §4 (Combat).
 | Enemy controller | `combat.enemy_controller` `weighted` \| `ai`; per-enemy `controller` | native weighted policy (free) or model-driven |
 | Resolver override (coarse) | `combat.scripts.resolveAction` (sandboxed JS) | `(input{state,action}, rng, emit, log) → {state?, events?}`; replaces native resolution for an action |
 | Combat-start cue | model emits `<rpt-combat-start enemies="…" map="…">` | → Enter-Combat button → `buildEncounter` |
-| Adjudication | model replies `<rpt-combat-result>{narration, ops[]}</rpt-combat-result>` | ops: `damage`/`heal`/`move`/`condition` |
-| Enemy `ai` action | model replies `<rpt-action>{kind,abilityId,targetIds,to}</rpt-action>` | per-turn for `controller:"ai"` |
-| Conditions (mechanical) | `stunned`/`restrained` (immobilize), `prone` (attackers get advantage) | other ids tracked as labels only (no mechanic yet) |
+| Adjudication / mid-fight exit | model replies `<rpt-combat-result>{narration, ops[], end}</rpt-combat-result>` | ops: `damage`/`heal`/`move`/`condition`; `end:true` concludes/escapes the fight → prose to chat + exit |
+| Combat prompts | card `combat.narration_prompt` / `narration_mode` / `improvise_prompt`; user `settings.combat.*` | steer end-of-combat narration (+ append/new-floor placement) and the freeform-action box; card overrides user |
+| Conditions (mechanical) | `stunned`/`restrained` (immobilize), `prone` (attackers get advantage) | other ids are labels only — extended mechanics are script-authored (below) |
 | Ruleset id | `combat.ruleset` (`rpt-d20-v1`) | selects the native core |
+
+### Tactical depth = script-authored (deferred, by design)
+
+Cover, opportunity attacks / reactions, flanking, and an extended **conditions library** are **not**
+baked into the native engine. They're delivered by **combat scripts that ship with a world or are
+installed by the player**, via the card-override hook seam (`combat.scripts`). Today that's the coarse
+`resolveAction` hook; the granular hooks (`resolveAttack` / `applyDamage` / `onTurnStart` / `onTurnEnd`
+/ `enemyPolicy` / `checkVictory` / `seedCombatant`) are reserved in `HookName` and not yet wired. The
+native engine stays lean (grid · d20 · move/attack/action · LoS · base conditions). Deferred.
 
 ### Potential / planned (⬜ not built)
 
 | Component | What it would add |
 | --- | --- |
-| Granular resolver hooks | `resolveAttack` / `applyDamage` / `onTurnStart` / `onTurnEnd` / `enemyPolicy` / `checkVictory` / `seedCombatant` — names already reserved in `HookName`, only `resolveAction` is wired |
-| Conditions library | author-defined conditions with declarative effects (poisoned/burning/frightened/blinded/grappled, per-turn ticks, save-to-end) |
-| Cover + LoS-gated targeting | `lineOfSight` exists; wire it to block ranged targeting + grant cover AC |
-| Opportunity attacks / reactions | reaction economy: free attack when leaving a threatened cell; reaction abilities |
-| Flanking | positional advantage when allies bracket a target |
+| Granular resolver hooks | wire the reserved `HookName`s so scripts can override single steps, not just whole actions |
+| `ai` enemy controller | **deferred** — dormant scaffold (`aiChooser`/`buildEnemyPrompt`); needs its **own player/world prompt** (the third combat prompt) + per-round batching before production |
 | Hex grid | `grid.type:"hex"` distance + neighbors (engine is square-only today) |
-| Multi-action turns | move-then-attack in one turn (lean v1 is one action per turn) |
+| Keyboard controls | arrow-key cursor / number-key abilities — **deferred**, mouse-only for now |
 | Combat skin (renderer) | `combat.skin` slot exists (token/tile art, ability icons, `--rpt-*` CSS) but `CombatView` doesn't consume it yet |
-| Narration-as-floor | fold the end-of-combat narration into a chat floor + MVU (currently returned prose / available via `narrationPrompt`) |
-| Batched `ai` enemy turn | one model call per round for all enemies (today: one call per `ai` enemy) |
 | Encounter / bundle authoring UI | a visual editor for abilities/bestiary/maps (pairs with the state-schema/widget editor, agentic D2) |
 
 ---

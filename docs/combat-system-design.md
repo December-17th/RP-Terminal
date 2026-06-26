@@ -394,3 +394,31 @@ turns → end) be played in-app with no AI cue or `combat` bundle.
   (`settings.combat.narrationPrompt` / card `combat.narration_prompt`) folds into
   `buildNarrationPrompt(state, extra)`; the narration's `<UpdateVariable>` consequences fold into that
   floor's `stat_data`. A **Combat** section in `SettingsPanel` exposes the user-side controls.
+
+**Rules, controls & deferrals (2026-06-25, owner-decided):**
+
+- **Action economy** — each combatant gets **one movement, one attack, one action** per turn
+  (`CombatState.turnUsed`, reset on turn start). An ability's slot = `abilityCost(ab)` (attack-roll →
+  attack, else action; card-overridable via `AbilityDef.cost`). Enforced in `applyAction`; the
+  CombatView shows Move/Attack/Action budget chips and disables spent slots.
+- **Line of sight** — abilities with `AbilityDef.requiresLoS` (e.g. ranged shots) are blocked by
+  `blocksLoS` terrain (Bresenham `lineOfSight`: a range gate + a per-target filter); lobbed AoE leaves
+  it false and arcs over walls. The CombatView only lights LoS-clear target cells.
+- **Freeform actions + mid-fight exit** — the Improvise box is the input for actions the grid can't
+  model, *including leaving the fight*. It has its **own steering prompt** (user
+  `settings.combat.improvisePrompt` or card `combat.improvise_prompt` → `buildAdjudicationPrompt`'s
+  `extra`). The AI may return `"end": true` in `<rpt-combat-result>` to conclude/escape combat → the
+  prose lands in the chat (append / new floor) and the encounter clears, returning to Explore.
+- **Controls: mouse-only for now.** Keyboard targeting (arrow-key cursor / number-key abilities) is
+  **deferred**; only `Esc` / re-click cancel exists.
+- **Tactical depth is script-authored, deferred (design decision).** Cover, opportunity attacks,
+  reactions, flanking, and an extended conditions library are **NOT** baked into the native engine —
+  they are delivered by **combat scripts that ship with a world or are installed by the player**, via
+  the card-override hook seam (`combat.scripts`; today the coarse `resolveAction` hook, the granular
+  hooks reserved). The native engine stays lean (grid · d20 · move/attack/action · LoS · base
+  conditions). Deferred for now.
+- **AI enemy controller deferred (design decision).** Enemies use the native weighted policy. The `ai`
+  controller scaffold (`aiChooser` + `buildEnemyPrompt`) exists but is dormant (only a combatant with
+  `controller:'ai'` triggers it) and is **not yet wired for production**. When built it will need its
+  **own prompt, player- or world-provided** — the third combat prompt alongside narration and
+  improvise — and the per-round batching from §0. Deferred for now.

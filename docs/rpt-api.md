@@ -161,18 +161,24 @@ it in the Combat-mode `CombatView`. The engine owns every number (seeded); the A
 - **Initiate** — the model emits `<rpt-combat-start enemies="哥布林 x3 (弱); 头目" map="forest"></rpt-combat-start>`;
   the chat shows an **Enter Combat** button that builds the encounter from the world's `combat` bundle
   (`buildEncounter`) and switches to Combat mode. The tag is hidden in prose; the cue is stashed on the floor.
-- **Adjudicate** (Improvise) — for an action the engine can't model, the player's prose → an adjudication
-  prompt; the model replies with
-  `<rpt-combat-result>{ "narration": "…", "ops": [ {"op":"damage|heal|move|condition", …} ] }</rpt-combat-result>`,
-  folded into the fight.
-- **Enemy AI** — an enemy with `controller:"ai"` is asked for
-  `<rpt-action>{ "kind":"ability|move|end", … }</rpt-action>` each turn (weighted-policy fallback); otherwise
-  the native weighted policy decides with no AI call.
+- **Adjudicate / mid-fight exit** (the freeform-action box) — for an action the engine can't model
+  (including leaving the fight), the player's prose → an adjudication prompt (steered by the card's
+  `combat.improvise_prompt` / the user's `settings.combat.improvisePrompt`); the model replies with
+  `<rpt-combat-result>{ "narration": "…", "ops": [ {"op":"damage|heal|move|condition", …} ], "end": false }</rpt-combat-result>`,
+  folded into the fight. `"end": true` concludes/escapes combat → the prose lands in the chat and the
+  encounter exits.
+- **Enemy AI** — **deferred**: a dormant scaffold (`controller:"ai"` → `<rpt-action>{…}</rpt-action>`,
+  weighted-policy fallback) that will need its own player/world prompt before production. Today enemies
+  use the native weighted policy with no AI call.
+- **Action economy / LoS** — each combatant gets one move + one attack + one action per turn
+  (`AbilityDef.cost`); abilities with `requiresLoS` are blocked by `blocksLoS` terrain. Deeper tactics
+  (cover, opportunity attacks, flanking, extended conditions) are **script-authored** via `combat.scripts`.
 - **Narrate / fold-out** — at the end, the log → a narration prompt; lasting consequences are recorded via
   the world's `<UpdateVariable>` into `stat_data` (combat never writes `stat_data` directly).
-- **Bundle** — `extensions.rp_terminal.combat`: `ruleset`, `grid`, `enemy_controller`, `abilities[]`,
-  `bestiary[]`, `party[]`, `maps[]`, `scripts{hook→code}` (sandboxed overrides), `skin`. See
-  [combat-system-design.md](combat-system-design.md) §10.
+- **Bundle** — `extensions.rp_terminal.combat`: `ruleset`, `grid`, `enemy_controller`, `abilities[]`
+  (incl. `cost` / `requiresLoS`), `bestiary[]`, `party[]`, `maps[]`, `scripts{hook→code}` (sandboxed
+  overrides), `skin`, and the prompts `narration_prompt` / `narration_mode` / `improvise_prompt`. See
+  [combat-system-design.md](combat-system-design.md) §10/§15.
 
 ---
 

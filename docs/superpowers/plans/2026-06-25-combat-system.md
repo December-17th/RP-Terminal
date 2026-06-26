@@ -24,6 +24,16 @@
 >   a configured provider to verify in-app.
 > - **命定之诗 content** (actual stats/abilities/bestiary/maps/skin) is authored by the world owner
 >   against the P7 `CombatBundleSchema`; it is not fabricated in this repo.
+>
+> **UI follow-up + deferrals (2026-06-25, owner-decided — see combat-system-design.md §15):** shipped
+> action economy (one move / attack / action per turn), LoS-gated abilities (`requiresLoS`), animation
+> (token slide, HP tween, floating numbers), a pop-out overlay, narration-to-chat (append / new floor)
+> + its steering prompt, and the freeform-action box (own prompt) with an AI-driven mid-fight exit
+> (`"end": true`). **Deferred by decision:** (a) **tactical depth** (cover, opportunity attacks,
+> reactions, flanking, extended conditions) is **script-authored** — delivered by world-bundled or
+> player-installed `combat.scripts` via the hook seam, not the native engine; (b) the **`ai` enemy
+> controller** (dormant scaffold) — when built it needs its **own player/world prompt**; (c) **keyboard
+> controls** (mouse-only for now).
 
 **Goal:** A player-played, turn-based, square-grid d20 combat system for RP Terminal. The player
 makes their party's moves; a native deterministic engine resolves every die (seeded); enemies are
