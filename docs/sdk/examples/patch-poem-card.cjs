@@ -43,6 +43,15 @@ const QIDONG = `<战斗启动协议>
 例外：无需数值结算的纯叙事冲突（碾压性处决、过场、不可逆事件）可不触发本协议，按叙事直接处理。
 </战斗启动协议>`
 
+// item-format tightening, appended to [技能装备道具生成规则] so generated items parse cleanly.
+const SPEC = `
+<战斗数据规范>
+- 技能标签中「威力」必须为具体数值（参照<核心数值表>），如「威力: 300」，不得写品质词。
+- 每个主动技能/武器必须带「有效距离: X」（格数）；范围技能额外带「范围: [爆发/直线/锥形/单体/范围:X]」。
+- 装备战斗数值用「攻击: N」「防御: N」；技能消耗用「消耗: 攻击/动作: X MP/SP」；关联属性用五维之一作为独立标签。
+- 战斗类效果优先用规范效果名作为键（命中/闪避/固伤/伤害增幅/减伤增幅/护盾/穿透/暴击倍率/治疗/治疗增幅/附加效果），数值写在值里；若沿用风味名（如「充能」），须在值描述中写明机制（如「提高12%伤害」「获得50点护盾」「额外造成5点伤害」），以便系统解析。
+</战斗数据规范>`
+
 const crcTable = (() => {
   const t = new Uint32Array(256)
   for (let n = 0; n < 256; n++) {
@@ -96,6 +105,16 @@ const editCard = (card, log) => {
     entries.splice(entries.indexOf(zhan), 0, e) // read before 战斗协议
     log.push('战斗启动协议: added (id ' + e.id + ')')
   } else log.push('战斗启动协议: no template entry (skipped)')
+
+  // 3) append the item-format tightening to [技能装备道具生成规则]
+  const gen = find(/技能装备道具生成规则/)
+  if (gen && typeof gen.content === 'string') {
+    if (gen.content.includes('战斗数据规范')) log.push('战斗数据规范: already present')
+    else {
+      gen.content = gen.content.replace(/\s*$/, '') + '\n' + SPEC + '\n'
+      log.push('战斗数据规范: appended to 技能装备道具生成规则')
+    }
+  } else log.push('战斗数据规范: 技能装备道具生成规则 entry not found')
 }
 
 const buf = fs.readFileSync(SRC)

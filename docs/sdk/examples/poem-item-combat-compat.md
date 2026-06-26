@@ -2,9 +2,12 @@
 
 The combat engine reads an item's combat numbers **only if the AI writes them in the token shapes the
 parser (`parseCardItem`) recognizes**. The card's `[技能装备道具生成规则]` / `[品质效果限定]` already
-emit most of them; this addendum (paste into / tighten those worldbook entries) closes the two gaps that
-would otherwise silently degrade to defaults, and documents exactly which effects are **mechanical** (the
-engine applies them) vs **narrative-only** in v1.
+emit most of them; this addendum closes the two gaps that would otherwise silently degrade to defaults,
+and documents exactly which effects are **mechanical** (the engine applies them) vs **narrative-only** in v1.
+
+> **Applied:** `patch-poem-card.cjs` appends the `<战斗数据规范>` block below into the card's
+> `[技能装备道具生成规则]` worldbook entry (in `v4.2.1+combat.png`). Use the paste-in form only if
+> integrating into a different card by hand.
 
 ## Two required tightenings
 1. **`威力` must be a literal number** in the 技能 标签 (e.g. `威力: 300`), chosen from `<核心数值表>` —

@@ -10,11 +10,10 @@ explicit steps, the expected result, and what to capture if it fails. Branch: `f
 - The 命定之诗 card **patched with the combat extension**:
   `example sillytarvern character card, presets, extensions and scripts/v4.2.1+combat.png` — produced by
   `node docs/sdk/examples/patch-poem-card.cjs` (original `v4.2.1.png` untouched). The patcher writes BOTH:
-  the **combat bundle** (`extensions.rp_terminal.combat`) AND the **mode-choice lorebook** (a new
-  `[战斗启动协议]` entry + the `模式门控` gate on `[战斗协议]`). Re-run it after editing the bundle JSON or
-  the entry text in that script. Import the PNG as a card/world. *(The item-format tightening
-  `<战斗数据规范>` is not auto-applied — the prose-scanning parser handles real items; add it to the card's
-  item-generation rules only if you want cleaner AI-authored effects.)*
+  the **combat bundle** (`extensions.rp_terminal.combat`), the **mode-choice lorebook** (a new
+  `[战斗启动协议]` entry + the `模式门控` gate on `[战斗协议]`), and the **item-format tightening**
+  (`<战斗数据规范>` appended to `[技能装备道具生成规则]`). Re-run it after editing the bundle JSON or the
+  entry text in that script. Import the PNG as a card/world.
 
 ---
 
