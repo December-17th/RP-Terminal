@@ -179,13 +179,70 @@ export const countEntries = (_profileId: string, chatId: string, collection: str
   return row?.n ?? 0
 }
 
+// --- Data-management surface (the Memory view: browse / edit / pin / delete) -------------------
+
+/** Every live entry for a chat across ALL collections (newest-first within each), for the UI. */
+export const getAllEntries = (_profileId: string, chatId: string): MemoryEntry[] => {
+  const rows = getDb()
+    .prepare(
+      `SELECT * FROM memory_entries
+       WHERE chat_id = ? AND superseded_by IS NULL
+       ORDER BY collection ASC, rowid DESC`
+    )
+    .all(chatId) as MemoryRow[]
+  return rows.map(rowToEntry)
+}
+
+/** Fields a manual edit can change. */
+export interface EntryPatch {
+  summary?: string
+  keywords?: string[]
+  pinned?: boolean
+}
+
+/**
+ * Map an edit patch to the columns to set. Pure; the keys are a fixed allowlist (summary /
+ * keywords / pinned) so they're never interpolated from user input.
+ */
+export const entryPatchToColumns = (patch: EntryPatch): Record<string, unknown> => {
+  const cols: Record<string, unknown> = {}
+  if (patch.summary !== undefined) cols.summary = patch.summary
+  if (patch.keywords !== undefined)
+    cols.keywords = patch.keywords.length ? JSON.stringify(patch.keywords) : null
+  if (patch.pinned !== undefined) cols.pinned = patch.pinned ? 1 : 0
+  return cols
+}
+
+/** Apply a manual edit (summary / keywords / pinned) to one entry; touches updated_at. */
+export const updateEntry = (
+  _profileId: string,
+  chatId: string,
+  id: string,
+  patch: EntryPatch
+): void => {
+  const cols = entryPatchToColumns(patch)
+  const keys = Object.keys(cols)
+  if (!keys.length) return
+  const sets = [...keys.map((k) => `${k} = ?`), 'updated_at = ?']
+  const vals = [...keys.map((k) => cols[k]), new Date().toISOString(), id, chatId]
+  getDb()
+    .prepare(`UPDATE memory_entries SET ${sets.join(', ')} WHERE id = ? AND chat_id = ?`)
+    .run(...vals)
+}
+
+/** Delete one entry by id (the UI's per-row delete). Returns the number removed. */
+export const deleteEntry = (_profileId: string, chatId: string, id: string): number => {
+  const info = getDb()
+    .prepare('DELETE FROM memory_entries WHERE id = ? AND chat_id = ?')
+    .run(id, chatId) as { changes?: number } | undefined
+  return info?.changes ?? 0
+}
+
 /**
  * The compaction pointer after truncating floors from `fromFloor` (rewind-safety, docs §11.M):
  * rewind to one before the cut so regenerated floors are re-compacted, or null if the cut is
  * entirely within the still-verbatim range (pointer unchanged). Pure. Lives here (not
  * compactionService) to avoid a chatService↔compactionService import cycle.
  */
-export const rewindCompactionPointer = (
-  lastCompacted: number,
-  fromFloor: number
-): number | null => (lastCompacted >= fromFloor ? fromFloor - 1 : null)
+export const rewindCompactionPointer = (lastCompacted: number, fromFloor: number): number | null =>
+  lastCompacted >= fromFloor ? fromFloor - 1 : null

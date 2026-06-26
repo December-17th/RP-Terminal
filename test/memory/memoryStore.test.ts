@@ -3,6 +3,7 @@ import {
   toRow,
   rowToEntry,
   rewindCompactionPointer,
+  entryPatchToColumns,
   type MemoryRow
 } from '../../src/main/services/memoryStore'
 
@@ -162,6 +163,35 @@ describe('rowToEntry', () => {
     const e = rowToEntry(row)
     expect(e.entityKey).toBe('ayaka')
     expect(e.payload).toEqual({ goals: ['find brother'], rank: 3 })
+  })
+})
+
+describe('entryPatchToColumns', () => {
+  it('includes only provided fields', () => {
+    expect(entryPatchToColumns({})).toEqual({})
+    expect(entryPatchToColumns({ summary: 'new' })).toEqual({ summary: 'new' })
+  })
+
+  it('keeps an explicit empty-string summary (undefined-gated, not falsy-gated)', () => {
+    expect(entryPatchToColumns({ summary: '' })).toEqual({ summary: '' })
+  })
+
+  it('JSON-encodes keywords and nulls an empty list', () => {
+    expect(entryPatchToColumns({ keywords: ['a', 'b'] })).toEqual({ keywords: '["a","b"]' })
+    expect(entryPatchToColumns({ keywords: [] })).toEqual({ keywords: null })
+  })
+
+  it('coerces pinned to 0/1', () => {
+    expect(entryPatchToColumns({ pinned: true })).toEqual({ pinned: 1 })
+    expect(entryPatchToColumns({ pinned: false })).toEqual({ pinned: 0 })
+  })
+
+  it('combines fields', () => {
+    expect(entryPatchToColumns({ summary: 's', keywords: ['k'], pinned: true })).toEqual({
+      summary: 's',
+      keywords: '["k"]',
+      pinned: 1
+    })
   })
 })
 

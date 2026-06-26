@@ -10,6 +10,7 @@ import { registerPluginIpc } from './pluginIpc'
 import { registerLogIpc } from './logIpc'
 import { registerWcvIpc } from './wcvIpc'
 import { registerCombatIpc } from './combatIpc'
+import { registerMemoryIpc } from './memoryIpc'
 
 /** Register every IPC handler, grouped by domain. Called once after app-ready. */
 export const registerIpc = (ipcMain: IpcMain): void => {
@@ -24,4 +25,5 @@ export const registerIpc = (ipcMain: IpcMain): void => {
   registerLogIpc(ipcMain)
   registerWcvIpc(ipcMain)
   registerCombatIpc(ipcMain)
+  registerMemoryIpc(ipcMain)
 }

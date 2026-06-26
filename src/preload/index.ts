@@ -219,6 +219,13 @@ const api = {
     ipcRenderer.invoke('combat-end', profileId, chatId),
   combatClear: (profileId: string, chatId: string) =>
     ipcRenderer.invoke('combat-clear', profileId, chatId),
+  // Long-term memory data management (the Memory view: browse / edit / pin / delete).
+  memoryList: (profileId: string, chatId: string) =>
+    ipcRenderer.invoke('memory-list', profileId, chatId),
+  memoryUpdate: (profileId: string, chatId: string, id: string, patch: unknown) =>
+    ipcRenderer.invoke('memory-update', profileId, chatId, id, patch),
+  memoryDelete: (profileId: string, chatId: string, id: string) =>
+    ipcRenderer.invoke('memory-delete', profileId, chatId, id),
   // Subscribe to incremental generation text. Returns an unsubscribe function.
   onGenerationDelta: (cb: (payload: { chatId: string; delta: string }) => void) => {
     const listener = (_e: IpcRendererEvent, payload: { chatId: string; delta: string }): void =>
