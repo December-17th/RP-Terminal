@@ -246,7 +246,7 @@ export const generate = async (
   })
 
   // Trim oldest history to stay under the configured context budget.
-  const budget = settings.generation?.max_context_tokens || 32000
+  const budget = settings.generation?.max_context_tokens || 200000
   const { messages, dropped } = fitToBudget(built, budget)
   if (dropped > 0) {
     log('info', `context budget ${budget} tok — trimmed ${dropped} oldest message(s)`)

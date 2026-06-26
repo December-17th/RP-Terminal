@@ -82,6 +82,19 @@ export const expandMacros = (text: string, ctx: MacroContext = {}): string => {
   if (!text) return text
   const rng = ctx.rng || Math.random
   let out = text
+  // Legacy non-curly macros (ST `evaluateMacros` preEnvMacros): `<USER>`/`<BOT>`/`<CHAR>` (+ the
+  // `<CHARIFNOTGROUP>` alias), case-insensitive. Cards in the wild still use `<user>` alongside
+  // `{{user}}`; without this they leak into the prompt literally. Done once, before the `{{…}}`
+  // passes (these have no braces, so the curly loop never touches them).
+  if (out.includes('<')) {
+    const u = ctx.user ?? ''
+    const c = ctx.char ?? ''
+    out = out
+      .replace(/<USER>/gi, u)
+      .replace(/<CHARIFNOTGROUP>/gi, c)
+      .replace(/<CHAR>/gi, c)
+      .replace(/<BOT>/gi, c)
+  }
   for (let pass = 0; pass < 5; pass++) {
     let changed = false
     out = out.replace(MACRO_RE, (whole, body: string) => {

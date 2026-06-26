@@ -85,6 +85,58 @@ describe('fitToBudget', () => {
     expect(messages[0].role).toBe('system')
     expect(last(messages).content).toBe('u2')
   })
+
+  it('trims oldest HISTORY turns but never the static world-info prefix', () => {
+    // Large constant lore + a couple of small turns; a tiny budget must evict the old turns,
+    // not the lore (regression: a preset with a user-role block ahead of world_info used to make
+    // fitToBudget classify the lore as droppable "history").
+    const bigLore = 'L'.repeat(400)
+    const messages = buildPrompt({
+      card: card(),
+      preset: preset([blk('world_info'), blk('chat_history')]),
+      lorebooks: [book([{ keys: [], content: bigLore, constant: true, enabled: true }])],
+      floors: [floor(0, '', 'greet'), floor(1, 'old user turn', 'old reply')],
+      userAction: 'latest turn'
+    })
+    expect(messages.some((m) => m.content.includes(bigLore))).toBe(true)
+
+    const { messages: fit, dropped } = fitToBudget(messages, 1)
+    expect(dropped).toBeGreaterThan(0)
+    expect(fit.some((m) => m.content.includes(bigLore))).toBe(true) // lore survived
+    expect(last(fit).content).toBe('latest turn') // latest turn survived
+    expect(fit.some((m) => m.content === 'old user turn')).toBe(false) // oldest turn evicted
+  })
+})
+
+describe('buildPrompt — depth-scoped prompt regex (minDepth)', () => {
+  const placeholderRule = {
+    id: 'r1',
+    scriptName: 'keep-latest-user-input',
+    source: '^([\\s\\S]*)$',
+    flags: 'g',
+    replace: '<|placeholder|>',
+    placement: [1],
+    disabled: false,
+    markdownOnly: false,
+    promptOnly: true,
+    trimStrings: [],
+    minDepth: 1,
+    maxDepth: null
+  }
+
+  it('blanks OLDER user turns but preserves the latest input (depth 0)', () => {
+    const messages = buildPrompt({
+      card: card(),
+      preset: preset([blk('chat_history')]),
+      lorebooks: [],
+      floors: [floor(0, '', 'greet'), floor(1, 'old input', 'a reply')],
+      userAction: 'latest input',
+      promptRegex: [placeholderRule]
+    })
+    expect(last(messages).content).toBe('latest input') // depth 0 → minDepth:1 rule skipped
+    const placeholders = messages.filter((m) => m.content === '<|placeholder|>')
+    expect(placeholders.length).toBe(1) // only the older user turn was blanked
+  })
 })
 
 describe('buildPrompt', () => {

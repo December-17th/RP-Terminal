@@ -74,7 +74,7 @@ export const getDefaultSettings = (): Settings => ({
     depth: null
   },
   generation: {
-    max_context_tokens: 32000
+    max_context_tokens: 200000
   },
   lorebook: {
     scan_depth: 3,

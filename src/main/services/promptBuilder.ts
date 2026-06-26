@@ -34,6 +34,18 @@ export const estimateTokens = (text: string): number => {
 
 const msgTokens = (m: ChatMessage): number => estimateTokens(m.content) + 4
 
+/** Non-enumerable marker tagging a message as a chat-history TURN (vs static system/lore/preset
+ * content). Lets fitToBudget trim the oldest turns without ever evicting the static prefix. A
+ * Symbol + `enumerable:false` means it never serializes into the provider request or the stored
+ * floor (JSON.stringify and object-spread both skip it) and is invisible to deep-equality. */
+const HISTORY_TAG = Symbol('rptHistoryTurn')
+const markHistory = (m: ChatMessage): ChatMessage => {
+  Object.defineProperty(m, HISTORY_TAG, { value: true, enumerable: false, configurable: true })
+  return m
+}
+const isHistoryTurn = (m: ChatMessage): boolean =>
+  (m as unknown as Record<symbol, unknown>)[HISTORY_TAG] === true
+
 /**
  * Trim the prompt to fit a token budget. Keeps the leading system/lore prefix
  * (L1/L2) and the most recent conversation turns, dropping the OLDEST history
@@ -47,6 +59,31 @@ export const fitToBudget = (
   const total = messages.reduce((s, m) => s + msgTokens(m), 0)
   if (total <= maxTokens) return { messages, dropped: 0 }
 
+  // Prefer trimming actual chat-history TURNS (tagged by buildHistory): drop the OLDEST turns
+  // first while keeping ALL static content (system prompts, world info, character card, preset
+  // blocks) and the most recent turns. This is what stops a large constant worldbook from being
+  // evicted just because a preset places a user/assistant block ahead of it in the array.
+  const history = messages.filter(isHistoryTurn)
+  if (history.length > 0) {
+    const removable = history.slice(0, -1) // never drop the latest turn
+    const remove = new Set<ChatMessage>()
+    let running = total
+    for (const m of removable) {
+      if (running <= maxTokens) break
+      remove.add(m)
+      running -= msgTokens(m)
+    }
+    // Even if the static prefix alone still exceeds the budget, keep it intact — truncating the
+    // system/lore mid-way is worse than a slightly over-budget prompt (the model's real context
+    // window is the hard limit). Only history turns are ever dropped on this path.
+    return {
+      messages: remove.size ? messages.filter((m) => !remove.has(m)) : messages,
+      dropped: remove.size
+    }
+  }
+
+  // Legacy fallback (no tagged history — e.g. a hand-built array): keep the leading system
+  // prefix and the most recent messages, dropping oldest from the first non-system message.
   const convoStart = messages.findIndex((m) => m.role !== 'system')
   if (convoStart === -1) return { messages, dropped: 0 }
 
@@ -130,21 +167,29 @@ const buildHistory = (
   floors: FloorFile[],
   userAction: string,
   macroCtx: MacroContext,
-  applyUser: (t: string) => string,
-  applyAssistant: (t: string) => string
+  applyUser: (t: string, depth: number) => string,
+  applyAssistant: (t: string, depth: number) => string
 ): ChatMessage[] => {
-  const msgs: ChatMessage[] = []
-  const user = (t: string): string => macroOnly(applyUser(t), macroCtx)
-  const assistant = (t: string): string => macroOnly(applyAssistant(t), macroCtx)
+  // Collect the raw turns first so each can be assigned its DEPTH — distance from the end of the
+  // chat, latest turn = 0 (ST semantics) — BEFORE depth-scoped prompt regex runs. Without this, a
+  // `minDepth:1` rule like "keep only the latest user input → <|placeholder|>" would also blank the
+  // live input (it has no depth and matches `^[\s\S]*$`).
+  const raw: Array<{ role: 'user' | 'assistant'; text: string }> = []
   for (const f of floors) {
-    if (f.user_message.content) msgs.push({ role: 'user', content: user(f.user_message.content) })
+    if (f.user_message.content) raw.push({ role: 'user', text: f.user_message.content })
     // The stored response is the FULL raw output; strip reasoning + state tags for the prompt
     // (the model never re-reads its own <thinking> / <UpdateVariable>).
     const resp = cleanForHistory(f.response.content)
-    if (resp) msgs.push({ role: 'assistant', content: assistant(resp) })
+    if (resp) raw.push({ role: 'assistant', text: resp })
   }
-  if (userAction) msgs.push({ role: 'user', content: user(userAction) })
-  return msgs
+  if (userAction) raw.push({ role: 'user', text: userAction })
+
+  const n = raw.length
+  return raw.map((r, i) => {
+    const depth = n - 1 - i
+    const transformed = r.role === 'user' ? applyUser(r.text, depth) : applyAssistant(r.text, depth)
+    return markHistory({ role: r.role, content: macroOnly(transformed, macroCtx) })
+  })
 }
 
 /**
@@ -288,10 +333,10 @@ export const buildPrompt = (args: BuildPromptArgs): ChatMessage[] => {
   const promptRegex = args.promptRegex ?? []
   const regexCtx = { user: userName, char: charName }
   const applyUser = promptRegex.length
-    ? (t: string): string => applyRegex(t, promptRegex, 1, regexCtx)
+    ? (t: string, depth: number): string => applyRegex(t, promptRegex, 1, regexCtx, depth)
     : identity
   const applyAssistant = promptRegex.length
-    ? (t: string): string => applyRegex(t, promptRegex, 2, regexCtx)
+    ? (t: string, depth: number): string => applyRegex(t, promptRegex, 2, regexCtx, depth)
     : identity
 
   // Lorebook scan over the last few turns plus the pending action, across all

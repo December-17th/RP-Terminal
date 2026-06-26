@@ -76,7 +76,7 @@ describe('settings normalize', () => {
   it('fills defaults for an empty input', () => {
     const s = normalize({})
     expect(s.persona).toEqual({ name: 'User', description: '', inject: true, depth: null })
-    expect(s.generation.max_context_tokens).toBe(32000)
+    expect(s.generation.max_context_tokens).toBe(200000)
     expect(s.ui.font_size).toBe(16)
   })
 
