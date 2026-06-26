@@ -379,3 +379,18 @@ hardcoded encounter (2-member party with melee/ranged/AoE abilities + 3 weighted
 with a wall + difficult terrain); `startMockEncounter` / the `combat-start-mock` IPC / a **"Start mock
 battle (debug)"** button in the empty `CombatView` let the whole loop (move → attack → AoE → enemy
 turns → end) be played in-app with no AI cue or `combat` bundle.
+
+**As-built UI follow-up (2026-06-25):**
+
+- **Animation** — tokens render in an overlay above a static cell layer and **slide** via a CSS
+  `transform` transition; HP bars **tween**; floating **−N / "miss"** numbers rise + fade over targets
+  (`--rpt-combat-float`), driven by `combatStore.lastEvents` + `eventSeq`. Enemy auto-turns are **paced
+  (~380 ms)** so each is visible — no more teleporting / instant damage.
+- **Presentation** — the header toggle opens a **pop-out overlay** (React portal, ~`min(1100px,92vw) ×
+  88vh`, dim backdrop) for cramped docked panels, rather than only enlarging the grid in-panel.
+- **Narration placement + steering** — "Narrate the fight" sends the request and lands the prose in the
+  **chat**: appended to the current floor **or** as a **new floor**, per `settings.combat.narrationMode`
+  (user) or the card's `combat.narration_mode`. An optional steering prompt
+  (`settings.combat.narrationPrompt` / card `combat.narration_prompt`) folds into
+  `buildNarrationPrompt(state, extra)`; the narration's `<UpdateVariable>` consequences fold into that
+  floor's `stat_data`. A **Combat** section in `SettingsPanel` exposes the user-side controls.
