@@ -55,6 +55,14 @@ export function MemoryView({ profileId }: { profileId: string }): React.ReactEle
     void refresh()
   }, [refresh])
 
+  // Live-refresh when the writer appends a batch (or another panel edits) for this chat.
+  useEffect(() => {
+    const unsub = api().onMemoryChanged?.((payload: { chatId: string }) => {
+      if (payload?.chatId === activeChatId) void refresh()
+    })
+    return () => unsub?.()
+  }, [activeChatId, refresh])
+
   if (!activeChatId) return <div style={{ opacity: 0.5 }}>{t('memory.waiting')}</div>
 
   const startEdit = (e: MemoryEntry): void => {

@@ -5,6 +5,7 @@ import { getAllFloors } from './floorService'
 import { appendEntries } from './memoryStore'
 import { streamProvider } from './apiService'
 import { stripThinking } from '../parsers/contentParser'
+import { notifyMemoryChanged } from './memoryEvents'
 import { log } from './logService'
 import type { NewMemory } from './memoryStore'
 import type { ChatMessage } from './promptBuilder'
@@ -200,6 +201,7 @@ export const maybeCompact = async (profileId: string, chatId: string): Promise<v
     appendEntries(profileId, chatId, coll.id, rows)
     setMemoryState(profileId, chatId, { last_compacted_floor: turnEnd })
     log('info', `memory: compacted floors ${turnStart}–${turnEnd} → ${memories.length} event(s)`)
+    notifyMemoryChanged(chatId)
   } catch (err) {
     // Last-resort guard: memory work must never break a turn.
     log('error', `memory: compaction error — ${errMsg(err)}`)

@@ -226,6 +226,13 @@ const api = {
     ipcRenderer.invoke('memory-update', profileId, chatId, id, patch),
   memoryDelete: (profileId: string, chatId: string, id: string) =>
     ipcRenderer.invoke('memory-delete', profileId, chatId, id),
+  // Notify the Memory view that a chat's memories changed (e.g. the writer appended a batch).
+  // Returns an unsubscribe function.
+  onMemoryChanged: (cb: (payload: { chatId: string }) => void) => {
+    const listener = (_e: IpcRendererEvent, payload: { chatId: string }): void => cb(payload)
+    ipcRenderer.on('memory-changed', listener)
+    return () => ipcRenderer.removeListener('memory-changed', listener)
+  },
   // Subscribe to incremental generation text. Returns an unsubscribe function.
   onGenerationDelta: (cb: (payload: { chatId: string; delta: string }) => void) => {
     const listener = (_e: IpcRendererEvent, payload: { chatId: string; delta: string }): void =>
