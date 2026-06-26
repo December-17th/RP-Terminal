@@ -188,11 +188,20 @@ describe('maybeCompact', () => {
     expect(setMemoryState).not.toHaveBeenCalled()
   })
 
-  it('defers when the reply has no parseable memories', async () => {
+  it('defers when the reply is unparseable (no JSON body)', async () => {
     vi.mocked(streamProvider).mockResolvedValue('the model refused to answer')
     await maybeCompact('p', 'c')
     expect(appendEntries).not.toHaveBeenCalled()
     expect(setMemoryState).not.toHaveBeenCalled()
+  })
+
+  it('advances the pointer (no write) when a parseable reply yields zero items', async () => {
+    // A clean `{"events":[]}` means "nothing worth remembering in these floors" — the pointer must
+    // advance so the same range isn't re-extracted every checkpoint forever (a wasted utility call).
+    vi.mocked(streamProvider).mockResolvedValue('{"events":[]}')
+    await maybeCompact('p', 'c')
+    expect(appendEntries).not.toHaveBeenCalled()
+    expect(setMemoryState).toHaveBeenCalledWith('p', 'c', { last_compacted_floor: 5 })
   })
 
   it('serializes concurrent compaction for the same chat (no duplicate summaries)', async () => {

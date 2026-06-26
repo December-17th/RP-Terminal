@@ -130,6 +130,12 @@ const parseEntityItem = (item: unknown): ParsedEntity | null => {
 
 /** The structured extraction result, keyed by collection id (stream items vs entity updates). */
 export interface ParsedCompaction {
+  /**
+   * Whether the reply parsed into a JSON object at all. `false` = a soft failure (prose / no JSON
+   * body) → the caller defers and retries. `true` even when the object yields zero items ("nothing
+   * worth remembering here") → the caller advances the pointer so the floors aren't re-extracted.
+   */
+  parsed: boolean
   streams: Record<string, ParsedMemory[]>
   entities: Record<string, ParsedEntity[]>
 }
@@ -139,17 +145,18 @@ export interface ParsedCompaction {
  * keyed by collection id. Tolerant — unknown keys ignored, malformed items dropped. Pure.
  */
 export const parseCompaction = (raw: string, collections: MemoryCollection[]): ParsedCompaction => {
-  const out: ParsedCompaction = { streams: {}, entities: {} }
+  const out: ParsedCompaction = { parsed: false, streams: {}, entities: {} }
   const json = extractJson(raw)
   if (!json) return out
   let obj: Record<string, unknown>
   try {
-    const parsed = JSON.parse(json)
-    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return out
-    obj = parsed as Record<string, unknown>
+    const value = JSON.parse(json)
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return out
+    obj = value as Record<string, unknown>
   } catch {
     return out
   }
+  out.parsed = true
   for (const c of collections) {
     const arr = Array.isArray(obj[c.id]) ? (obj[c.id] as unknown[]) : []
     if (c.shape === 'stream') {
@@ -297,6 +304,12 @@ export const maybeCompact = async (profileId: string, chatId: string): Promise<v
     }
 
     const parsed = parseCompaction(reply, colls)
+    if (!parsed.parsed) {
+      // Unparseable reply (prose / no JSON body) — a soft failure. Leave the floors verbatim and
+      // retry next checkpoint; do NOT advance the pointer (that would silently drop these floors).
+      log('info', 'memory: compaction deferred (unparseable reply)')
+      return
+    }
     const turnStart = floors[0].floor
     const turnEnd = floors[floors.length - 1].floor
     const turnLabel = turnStart === turnEnd ? `${turnStart}` : `${turnStart}-${turnEnd}`
@@ -342,18 +355,20 @@ export const maybeCompact = async (profileId: string, chatId: string): Promise<v
         }
       }
 
-      if (n > 0) setMemoryState(profileId, chatId, { last_compacted_floor: turnEnd })
+      // The reply parsed cleanly, so these floors are processed — advance the pointer even when the
+      // model found nothing worth remembering (n === 0). Re-extracting them would just waste calls;
+      // a genuine call/parse failure returned earlier without advancing.
+      setMemoryState(profileId, chatId, { last_compacted_floor: turnEnd })
       return n
     })
 
-    if (!wrote) {
-      log('info', 'memory: compaction produced no parseable updates (deferred)')
-      return
+    if (wrote > 0) {
+      log('info', `memory: compacted floors ${turnLabel} → ${wrote} update(s)`)
+      notifyMemoryChanged(chatId)
+      await embedPending(profileId, chatId)
+    } else {
+      log('info', `memory: floors ${turnLabel} had no extractable updates (pointer advanced)`)
     }
-
-    log('info', `memory: compacted floors ${turnLabel} → ${wrote} update(s)`)
-    notifyMemoryChanged(chatId)
-    await embedPending(profileId, chatId)
   } catch (err) {
     // Last-resort guard: memory work must never break a turn.
     log('error', `memory: compaction error — ${errMsg(err)}`)

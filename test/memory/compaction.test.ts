@@ -147,8 +147,18 @@ describe('parseCompaction', () => {
     expect(out.entities.characters[0].fields).toEqual({ level: '7', alive: 'true' })
   })
 
-  it('returns empty maps on non-JSON', () => {
-    expect(parseCompaction('the model refused', COLLS)).toEqual({ streams: {}, entities: {} })
+  it('returns empty maps + parsed:false on non-JSON', () => {
+    expect(parseCompaction('the model refused', COLLS)).toEqual({
+      parsed: false,
+      streams: {},
+      entities: {}
+    })
+  })
+
+  it('reports parsed:true for a valid-but-empty object (model found nothing)', () => {
+    const out = parseCompaction('{"events":[]}', COLLS)
+    expect(out.parsed).toBe(true)
+    expect(out.streams.events).toEqual([])
   })
 })
 

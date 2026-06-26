@@ -13,6 +13,9 @@ export interface EmbedResult {
   vectors: number[][]
 }
 
+/** Hard ceiling for a single background embeddings call (mirrors the summarizer's timeout). */
+const EMBED_TIMEOUT_MS = 60_000
+
 /** Embed `texts` via the configured embedding connection, or null if none is set. */
 export const utilityEmbed = async (
   profileId: string,
@@ -25,14 +28,24 @@ export const utilityEmbed = async (
   if (!texts.length) return { model: conn.model, vectors: [] }
 
   const endpoint = conn.endpoint.replace(/\/+$/, '')
-  const res = await fetch(`${endpoint}/embeddings`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      ...(conn.api_key ? { Authorization: `Bearer ${conn.api_key}` } : {})
-    },
-    body: JSON.stringify({ model: conn.model, input: texts })
-  })
+  // Bound the background call so a hung embeddings endpoint can't dangle the compaction pass
+  // forever (the caller's fail-open catch handles the resulting abort rejection).
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), EMBED_TIMEOUT_MS)
+  let res: Response
+  try {
+    res = await fetch(`${endpoint}/embeddings`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(conn.api_key ? { Authorization: `Bearer ${conn.api_key}` } : {})
+      },
+      body: JSON.stringify({ model: conn.model, input: texts }),
+      signal: controller.signal
+    })
+  } finally {
+    clearTimeout(timer)
+  }
   if (!res.ok) throw new Error(`embeddings HTTP ${res.status}`)
   const json = (await res.json()) as { data?: { embedding: number[] }[] }
   return { model: conn.model, vectors: (json.data ?? []).map((d) => d.embedding) }
