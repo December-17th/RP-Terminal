@@ -36,6 +36,9 @@ export function MemoryView({ profileId }: { profileId: string }): React.ReactEle
   const [draftSummary, setDraftSummary] = useState('')
   const [draftKeywords, setDraftKeywords] = useState('')
   const [filter, setFilter] = useState('')
+  const [adding, setAdding] = useState(false)
+  const [newSummary, setNewSummary] = useState('')
+  const [newKeywords, setNewKeywords] = useState('')
 
   const refresh = useCallback(async () => {
     if (!activeChatId) {
@@ -95,6 +98,24 @@ export function MemoryView({ profileId }: { profileId: string }): React.ReactEle
     await refresh()
   }
 
+  const cancelAdd = (): void => {
+    setAdding(false)
+    setNewSummary('')
+    setNewKeywords('')
+  }
+
+  const addMemory = async (): Promise<void> => {
+    const summary = newSummary.trim()
+    if (!summary) return
+    const keywords = newKeywords
+      .split(',')
+      .map((k) => k.trim())
+      .filter(Boolean)
+    await api().memoryAdd(profileId, activeChatId, summary, keywords)
+    cancelAdd()
+    await refresh()
+  }
+
   const q = filter.trim().toLowerCase()
   const matches = (e: MemoryEntry): boolean =>
     !q ||
@@ -117,10 +138,16 @@ export function MemoryView({ profileId }: { profileId: string }): React.ReactEle
         }}
       >
         {t('memory.heading')}
-        <span style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+        <span style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
           <span style={{ ...secondary, fontSize: '0.62em' }}>
             {t('memory.count', { count: entries.length })}
           </span>
+          <button
+            style={{ fontSize: '0.62em', padding: '3px 8px', fontWeight: 400 }}
+            onClick={() => setAdding((v) => !v)}
+          >
+            {t('memory.add')}
+          </button>
           <button
             className="btn-accent"
             style={{ fontSize: '0.62em', padding: '3px 8px', fontWeight: 400 }}
@@ -130,6 +157,41 @@ export function MemoryView({ profileId }: { profileId: string }): React.ReactEle
           </button>
         </span>
       </h3>
+
+      {adding ? (
+        <div
+          style={{
+            border: '1px solid var(--rpt-border)',
+            borderRadius: 6,
+            padding: '8px 10px',
+            marginTop: 10
+          }}
+        >
+          <textarea
+            value={newSummary}
+            rows={2}
+            placeholder={t('memory.addSummaryPh')}
+            onChange={(e) => setNewSummary(e.target.value)}
+            style={{ width: '100%' }}
+          />
+          <input
+            value={newKeywords}
+            placeholder={t('memory.keywordsPh')}
+            onChange={(e) => setNewKeywords(e.target.value)}
+            style={{ width: '100%', marginTop: 6 }}
+          />
+          <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+            <button
+              className="btn-accent"
+              disabled={!newSummary.trim()}
+              onClick={() => void addMemory()}
+            >
+              {t('memory.add')}
+            </button>
+            <button onClick={cancelAdd}>{t('memory.cancel')}</button>
+          </div>
+        </div>
+      ) : null}
 
       {entries.length ? (
         <input

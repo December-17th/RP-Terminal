@@ -239,6 +239,19 @@ export const deleteEntry = (_profileId: string, chatId: string, id: string): num
 }
 
 /**
+ * Add a player-authored "remember this" memory: a pinned `events` row with no provenance, so it's
+ * always recalled and isn't tied to a floor range (a rewind won't drop it). docs §11.G.
+ */
+export const addManualEntry = (
+  profileId: string,
+  chatId: string,
+  summary: string,
+  keywords: string[] = []
+): void => {
+  appendEntries(profileId, chatId, 'events', [{ summary, keywords, pinned: true, salience: 1 }])
+}
+
+/**
  * The compaction pointer after truncating floors from `fromFloor` (rewind-safety, docs §11.M):
  * rewind to one before the cut so regenerated floors are re-compacted, or null if the cut is
  * entirely within the still-verbatim range (pointer unchanged). Pure. Lives here (not

@@ -411,6 +411,8 @@ const en: Record<string, string> = {
   'memory.waiting': 'Open a session to see its memories.',
   'memory.count': '{{count}} stored',
   'memory.refresh': 'Refresh',
+  'memory.add': 'Remember this',
+  'memory.addSummaryPh': 'What should the AI always remember?',
   'memory.filterPh': 'Filter memories (summary, keyword, entity)…',
   'memory.noMatches': 'No memories match the filter.',
   'memory.loading': 'Loading…',

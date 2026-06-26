@@ -15,4 +15,7 @@ export const registerMemoryIpc = (ipcMain: IpcMain): void => {
   ipcMain.handle('memory-delete', (_, profileId, chatId, id) =>
     memoryStore.deleteEntry(profileId, chatId, id)
   )
+  ipcMain.handle('memory-add', (_, profileId, chatId, summary, keywords) =>
+    memoryStore.addManualEntry(profileId, chatId, String(summary ?? ''), keywords ?? [])
+  )
 }

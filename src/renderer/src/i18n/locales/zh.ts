@@ -399,6 +399,8 @@ const zh: Record<string, string> = {
   'memory.waiting': '打开一个会话以查看其记忆。',
   'memory.count': '已存 {{count}} 条',
   'memory.refresh': '刷新',
+  'memory.add': '记住这件事',
+  'memory.addSummaryPh': '希望 AI 始终记住什么？',
   'memory.filterPh': '筛选记忆（概要、关键词、实体）…',
   'memory.noMatches': '没有符合筛选条件的记忆。',
   'memory.loading': '加载中…',

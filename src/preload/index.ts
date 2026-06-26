@@ -226,6 +226,8 @@ const api = {
     ipcRenderer.invoke('memory-update', profileId, chatId, id, patch),
   memoryDelete: (profileId: string, chatId: string, id: string) =>
     ipcRenderer.invoke('memory-delete', profileId, chatId, id),
+  memoryAdd: (profileId: string, chatId: string, summary: string, keywords: string[]) =>
+    ipcRenderer.invoke('memory-add', profileId, chatId, summary, keywords),
   // Notify the Memory view that a chat's memories changed (e.g. the writer appended a batch).
   // Returns an unsubscribe function.
   onMemoryChanged: (cb: (payload: { chatId: string }) => void) => {
