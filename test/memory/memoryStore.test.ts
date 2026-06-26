@@ -34,6 +34,7 @@ describe('toRow', () => {
       turn_end: null,
       superseded_by: null,
       embed_model: null,
+      embedding: null,
       updated_at: NOW,
       created_at: NOW
     })
@@ -95,6 +96,7 @@ describe('rowToEntry', () => {
     turn_end: null,
     superseded_by: null,
     embed_model: null,
+    embedding: null,
     updated_at: null,
     created_at: null
   }
@@ -125,6 +127,11 @@ describe('rowToEntry', () => {
     expect(e.keywords).toEqual([])
     expect(e.entities).toEqual([])
     expect(e.payload).toBeNull()
+  })
+
+  it('parses the embedding JSON array (or null)', () => {
+    expect(rowToEntry({ ...base, embedding: '[0.1,0.2,0.3]' }).embedding).toEqual([0.1, 0.2, 0.3])
+    expect(rowToEntry({ ...base, embedding: null }).embedding).toBeNull()
   })
 
   it('round-trips toRow → rowToEntry', () => {

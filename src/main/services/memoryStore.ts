@@ -25,6 +25,7 @@ export interface MemoryRow {
   turn_end: number | null
   superseded_by: string | null
   embed_model: string | null
+  embedding: string | null
   updated_at: string | null
   created_at: string | null
 }
@@ -45,6 +46,7 @@ export interface MemoryEntry {
   turnEnd: number | null
   supersededBy: string | null
   embedModel: string | null
+  embedding: number[] | null
   updatedAt: string | null
   createdAt: string | null
 }
@@ -95,6 +97,7 @@ export const toRow = (
   turn_end: m.turnEnd ?? null,
   superseded_by: null,
   embed_model: m.embedModel ?? null,
+  embedding: null,
   updated_at: now,
   created_at: now
 })
@@ -115,6 +118,7 @@ export const rowToEntry = (r: MemoryRow): MemoryEntry => ({
   turnEnd: r.turn_end,
   supersededBy: r.superseded_by,
   embedModel: r.embed_model,
+  embedding: safeJson<number[] | null>(r.embedding, null),
   updatedAt: r.updated_at,
   createdAt: r.created_at
 })
@@ -135,10 +139,12 @@ export const appendEntries = (
   const stmt = getDb().prepare(
     `INSERT INTO memory_entries
        (id, chat_id, collection, entity_key, summary, payload, keywords, entities,
-        salience, pinned, turn_start, turn_end, superseded_by, embed_model, updated_at, created_at)
+        salience, pinned, turn_start, turn_end, superseded_by, embed_model, embedding,
+        updated_at, created_at)
      VALUES
        (@id, @chat_id, @collection, @entity_key, @summary, @payload, @keywords, @entities,
-        @salience, @pinned, @turn_start, @turn_end, @superseded_by, @embed_model, @updated_at, @created_at)`
+        @salience, @pinned, @turn_start, @turn_end, @superseded_by, @embed_model, @embedding,
+        @updated_at, @created_at)`
   )
   for (const m of rows) stmt.run(toRow(chatId, collection, m, now))
 }
@@ -224,6 +230,8 @@ export const updateEntry = (
   const keys = Object.keys(cols)
   if (!keys.length) return
   const sets = [...keys.map((k) => `${k} = ?`), 'updated_at = ?']
+  // A summary edit invalidates the embedding so the writer re-embeds the corrected text.
+  if (patch.summary !== undefined) sets.push('embedding = NULL')
   const vals = [...keys.map((k) => cols[k]), new Date().toISOString(), id, chatId]
   getDb()
     .prepare(`UPDATE memory_entries SET ${sets.join(', ')} WHERE id = ? AND chat_id = ?`)
@@ -354,6 +362,7 @@ export const upsertEntity = (
          summary = excluded.summary,
          payload = excluded.payload,
          entities = excluded.entities,
+         embedding = NULL,
          updated_at = excluded.updated_at`
     )
     .run({
@@ -368,6 +377,39 @@ export const upsertEntity = (
       created_at: now
     })
 }
+
+/** Store a memory's embedding (+ the model that produced it). */
+export const setEmbedding = (
+  _profileId: string,
+  chatId: string,
+  id: string,
+  embedding: number[],
+  model: string
+): void => {
+  getDb()
+    .prepare(
+      'UPDATE memory_entries SET embedding = ?, embed_model = ? WHERE id = ? AND chat_id = ?'
+    )
+    .run(JSON.stringify(embedding), model, id, chatId)
+}
+
+/**
+ * Memories in a collection that need (re)embedding — no embedding yet, or one from a different
+ * model. For the writer's background embedding pass.
+ */
+export const getEmbeddable = (
+  _profileId: string,
+  chatId: string,
+  collection: string,
+  model: string
+): { id: string; summary: string }[] =>
+  getDb()
+    .prepare(
+      `SELECT id, summary FROM memory_entries
+       WHERE chat_id = ? AND collection = ? AND superseded_by IS NULL
+         AND (embedding IS NULL OR embed_model IS NOT ?)`
+    )
+    .all(chatId, collection, model) as { id: string; summary: string }[]
 
 /**
  * The compaction pointer after truncating floors from `fromFloor` (rewind-safety, docs §11.M):

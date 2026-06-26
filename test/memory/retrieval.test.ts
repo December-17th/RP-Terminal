@@ -26,6 +26,7 @@ const E = (over: Partial<MemoryEntry>): MemoryEntry => ({
   turnEnd: null,
   supersededBy: null,
   embedModel: null,
+  embedding: null,
   updatedAt: null,
   createdAt: null,
   ...over
