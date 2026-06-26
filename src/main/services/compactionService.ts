@@ -9,8 +9,11 @@ import {
   getEntity,
   upsertEntity,
   mergeEntitySheet,
-  resolveEntityKey
+  resolveEntityKey,
+  getEmbeddable,
+  setEmbedding
 } from './memoryStore'
+import { utilityEmbed } from './embeddingService'
 import { streamProvider } from './apiService'
 import { stripThinking } from '../parsers/contentParser'
 import { notifyMemoryChanged } from './memoryEvents'
@@ -350,11 +353,60 @@ export const maybeCompact = async (profileId: string, chatId: string): Promise<v
 
     log('info', `memory: compacted floors ${turnLabel} → ${wrote} update(s)`)
     notifyMemoryChanged(chatId)
+    await embedPending(profileId, chatId)
   } catch (err) {
     // Last-resort guard: memory work must never break a turn.
     log('error', `memory: compaction error — ${errMsg(err)}`)
   } finally {
     compacting.delete(chatId)
+  }
+}
+
+/** Max summaries embedded per collection per pass; the rest catch up on the next compaction. */
+const EMBED_BATCH = 64
+
+/**
+ * Embed memories in vector/hybrid collections that lack a current-model embedding — background,
+ * fail-open. No-op when memory is off or no embedding connection is configured. Also catches up on
+ * existing rows (e.g. after the user enables vector mid-session), a batch at a time.
+ */
+export const embedPending = async (profileId: string, chatId: string): Promise<void> => {
+  try {
+    const settings = getSettings(profileId)
+    const mem = settings.memory
+    if (!mem?.enabled) return
+    const conn = mem.embedding_api_preset_id
+      ? settings.api_presets.find((p) => p.id === mem.embedding_api_preset_id)
+      : undefined
+    if (!conn) return // vector recall disabled — no embedding connection
+    const vectorColls = mem.collections.filter(
+      (c) => c.enabled && (c.retrieval.mode === 'vector' || c.retrieval.mode === 'hybrid')
+    )
+    if (!vectorColls.length) return
+
+    let embedded = 0
+    for (const coll of vectorColls) {
+      const pending = getEmbeddable(profileId, chatId, coll.id, conn.model).slice(0, EMBED_BATCH)
+      if (!pending.length) continue
+      const result = await utilityEmbed(
+        profileId,
+        pending.map((p) => p.summary)
+      )
+      if (!result) return
+      for (let i = 0; i < pending.length; i++) {
+        const vec = result.vectors[i]
+        if (vec && vec.length) {
+          setEmbedding(profileId, chatId, pending[i].id, vec, result.model)
+          embedded++
+        }
+      }
+    }
+    if (embedded > 0) {
+      log('info', `memory: embedded ${embedded} memor${embedded === 1 ? 'y' : 'ies'}`)
+      notifyMemoryChanged(chatId)
+    }
+  } catch (err) {
+    log('info', `memory: embedding deferred (${errMsg(err)})`)
   }
 }
 

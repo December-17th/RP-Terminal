@@ -19,18 +19,31 @@ vi.mock('../../src/main/services/memoryStore', async (importActual) => {
     appendEntries: vi.fn(),
     getEntries: vi.fn(() => []),
     getEntity: vi.fn(() => null),
-    upsertEntity: vi.fn()
+    upsertEntity: vi.fn(),
+    getEmbeddable: vi.fn(() => []),
+    setEmbedding: vi.fn()
   }
 })
+vi.mock('../../src/main/services/embeddingService', () => ({ utilityEmbed: vi.fn() }))
 vi.mock('../../src/main/services/apiService', () => ({ streamProvider: vi.fn() }))
 vi.mock('../../src/main/services/logService', () => ({ log: vi.fn() }))
 
-import { maybeCompact, utilityComplete } from '../../src/main/services/compactionService'
+import {
+  maybeCompact,
+  utilityComplete,
+  embedPending
+} from '../../src/main/services/compactionService'
 import { getSettings } from '../../src/main/services/settingsService'
 import { getActivePreset } from '../../src/main/services/presetService'
 import { getChat, getMemoryState, setMemoryState } from '../../src/main/services/chatService'
 import { getAllFloors } from '../../src/main/services/floorService'
-import { appendEntries, upsertEntity } from '../../src/main/services/memoryStore'
+import {
+  appendEntries,
+  upsertEntity,
+  getEmbeddable,
+  setEmbedding
+} from '../../src/main/services/memoryStore'
+import { utilityEmbed } from '../../src/main/services/embeddingService'
 import { streamProvider } from '../../src/main/services/apiService'
 import type { Settings } from '../../src/main/types/models'
 
@@ -254,5 +267,91 @@ describe('utilityComplete (connection routing)', () => {
       { role: 'user', content: 'USR' }
     ])
     expect(params).toMatchObject({ temperature: 0.3, max_tokens: 500 })
+  })
+})
+
+describe('embedPending', () => {
+  const vecSettings = {
+    memory: {
+      enabled: true,
+      embedding_api_preset_id: 'emb',
+      collections: [
+        {
+          id: 'events',
+          shape: 'stream',
+          enabled: true,
+          write: { trigger: 'checkpoint', prompt: '' },
+          retrieval: { mode: 'hybrid', count: 5, tokenBudget: 600 },
+          inject: { label: 'E' }
+        }
+      ]
+    },
+    api_presets: [
+      {
+        id: 'emb',
+        name: 'Embed',
+        provider: 'openai',
+        endpoint: 'x',
+        api_key: 'k',
+        model: 'text-embed-3'
+      }
+    ]
+  } as unknown as Settings
+
+  beforeEach(() => vi.clearAllMocks())
+
+  it('embeds pending memories and stores the vectors with the model', async () => {
+    vi.mocked(getSettings).mockReturnValue(vecSettings)
+    vi.mocked(getEmbeddable).mockReturnValue([
+      { id: 'm1', summary: 'a' },
+      { id: 'm2', summary: 'b' }
+    ])
+    vi.mocked(utilityEmbed).mockResolvedValue({
+      model: 'text-embed-3',
+      vectors: [
+        [0.1, 0.2],
+        [0.3, 0.4]
+      ]
+    })
+    await embedPending('p', 'c')
+    expect(utilityEmbed).toHaveBeenCalledWith('p', ['a', 'b'])
+    expect(setEmbedding).toHaveBeenCalledTimes(2)
+    expect(vi.mocked(setEmbedding).mock.calls[0]).toEqual([
+      'p',
+      'c',
+      'm1',
+      [0.1, 0.2],
+      'text-embed-3'
+    ])
+    expect(vi.mocked(setEmbedding).mock.calls[1]).toEqual([
+      'p',
+      'c',
+      'm2',
+      [0.3, 0.4],
+      'text-embed-3'
+    ])
+  })
+
+  it('does nothing when no embedding connection is configured', async () => {
+    vi.mocked(getSettings).mockReturnValue(settings()) // no embedding_api_preset_id
+    await embedPending('p', 'c')
+    expect(getEmbeddable).not.toHaveBeenCalled()
+    expect(utilityEmbed).not.toHaveBeenCalled()
+  })
+
+  it('does nothing when nothing needs embedding', async () => {
+    vi.mocked(getSettings).mockReturnValue(vecSettings)
+    vi.mocked(getEmbeddable).mockReturnValue([])
+    await embedPending('p', 'c')
+    expect(utilityEmbed).not.toHaveBeenCalled()
+    expect(setEmbedding).not.toHaveBeenCalled()
+  })
+
+  it('fail-open: swallows an embedding error without writing', async () => {
+    vi.mocked(getSettings).mockReturnValue(vecSettings)
+    vi.mocked(getEmbeddable).mockReturnValue([{ id: 'm1', summary: 'a' }])
+    vi.mocked(utilityEmbed).mockRejectedValue(new Error('429'))
+    await expect(embedPending('p', 'c')).resolves.toBeUndefined()
+    expect(setEmbedding).not.toHaveBeenCalled()
   })
 })
