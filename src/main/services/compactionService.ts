@@ -1,3 +1,4 @@
+import { transact } from './db'
 import { getSettings } from './settingsService'
 import { getActivePreset } from './presetService'
 import { getChat, getMemoryState, setMemoryState } from './chatService'
@@ -296,50 +297,57 @@ export const maybeCompact = async (profileId: string, chatId: string): Promise<v
     const turnStart = floors[0].floor
     const turnEnd = floors[floors.length - 1].floor
     const turnLabel = turnStart === turnEnd ? `${turnStart}` : `${turnStart}-${turnEnd}`
-    let wrote = 0
+    // Apply all writes atomically: event appends + entity upserts + the pointer advance in ONE
+    // transaction, so a mid-way failure rolls back fully (no memories written without the pointer
+    // moving → no duplicates on the next retry).
+    const wrote = transact(() => {
+      let n = 0
 
-    // Stream collections (events): append the new memories.
-    for (const [id, memories] of Object.entries(parsed.streams)) {
-      if (!memories.length) continue
-      appendEntries(
-        profileId,
-        chatId,
-        id,
-        memories.map((m) => ({ ...m, turnStart, turnEnd }))
-      )
-      wrote += memories.length
-    }
-
-    // Entity collections (characters/locations): resolve the canonical key (T1), merge the
-    // delta into the existing sheet (T2), upsert. Re-read existing each time so multiple updates
-    // to one entity in a batch compose correctly.
-    for (const [id, ents] of Object.entries(parsed.entities)) {
-      for (const ent of ents) {
-        const existing = getEntries(profileId, chatId, id).map((e) => ({
-          entityKey: e.entityKey ?? '',
-          aliases: e.entities
-        }))
-        const key = resolveEntityKey(ent.name, ent.aliases, existing)
-        const current = getEntity(profileId, chatId, id, key)
-        const sheet = mergeEntitySheet((current?.payload as EntitySheet | undefined) ?? null, {
-          aliases: [ent.name, ...ent.aliases].filter(
-            (a) => a.trim().toLowerCase() !== key.trim().toLowerCase()
-          ),
-          fields: ent.fields,
-          note: ent.note,
-          turn: turnLabel
-        })
-        upsertEntity(profileId, chatId, id, key, entitySummary(sheet), sheet)
-        wrote++
+      // Stream collections (events): append the new memories.
+      for (const [id, memories] of Object.entries(parsed.streams)) {
+        if (!memories.length) continue
+        appendEntries(
+          profileId,
+          chatId,
+          id,
+          memories.map((m) => ({ ...m, turnStart, turnEnd }))
+        )
+        n += memories.length
       }
-    }
+
+      // Entity collections (characters/locations): resolve the canonical key (T1), merge the
+      // delta into the existing sheet (T2), upsert. Re-read existing each time so multiple updates
+      // to one entity in a batch compose correctly.
+      for (const [id, ents] of Object.entries(parsed.entities)) {
+        for (const ent of ents) {
+          const existing = getEntries(profileId, chatId, id).map((e) => ({
+            entityKey: e.entityKey ?? '',
+            aliases: e.entities
+          }))
+          const key = resolveEntityKey(ent.name, ent.aliases, existing)
+          const current = getEntity(profileId, chatId, id, key)
+          const sheet = mergeEntitySheet((current?.payload as EntitySheet | undefined) ?? null, {
+            aliases: [ent.name, ...ent.aliases].filter(
+              (a) => a.trim().toLowerCase() !== key.trim().toLowerCase()
+            ),
+            fields: ent.fields,
+            note: ent.note,
+            turn: turnLabel
+          })
+          upsertEntity(profileId, chatId, id, key, entitySummary(sheet), sheet)
+          n++
+        }
+      }
+
+      if (n > 0) setMemoryState(profileId, chatId, { last_compacted_floor: turnEnd })
+      return n
+    })
 
     if (!wrote) {
       log('info', 'memory: compaction produced no parseable updates (deferred)')
       return
     }
 
-    setMemoryState(profileId, chatId, { last_compacted_floor: turnEnd })
     log('info', `memory: compacted floors ${turnLabel} → ${wrote} update(s)`)
     notifyMemoryChanged(chatId)
   } catch (err) {

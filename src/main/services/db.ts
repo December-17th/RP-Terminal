@@ -158,3 +158,6 @@ export const getDb = (): Database.Database => {
   addColumnIfMissing(db, 'floors', 'metrics', 'metrics TEXT')
   return db
 }
+
+/** Run `fn` inside a single SQLite transaction (all-or-nothing; rolls back if it throws). */
+export const transact = <T>(fn: () => T): T => getDb().transaction(fn)()
