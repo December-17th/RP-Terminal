@@ -289,7 +289,8 @@ A world whose stats already live in MVU `stat_data` (e.g. 命定之诗) can buil
 from those variables** instead of `combat.party` templates, and resolve the fight with its **own**
 rules via a **combat system** plugged into the `resolveAction` seam. The card authors combat numbers
 into the MVU fields its schema already preserves (`标签`/`效果`/`消耗`) — **no new field** — and the app
-parses them. See [combat-poem-of-destiny-expansion.md](../combat-poem-of-destiny-expansion.md).
+parses them. See [combat-poem-of-destiny-expansion.md](../combat-poem-of-destiny-expansion.md). Reference
+bundle config: [examples/poem-combat-bundle.json](examples/poem-combat-bundle.json).
 
 | Component | Where / shape | Notes |
 | --- | --- | --- |

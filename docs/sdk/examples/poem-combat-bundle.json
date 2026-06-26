@@ -1,0 +1,31 @@
+{
+  "_about": "Embed this object as data.extensions.rp_terminal.combat in the 命定之诗 card. The party is imported from MVU stat_data via stat_map (no static party templates); the built-in poemD20 system runs the card's 战斗协议. Combat numbers are authored by the AI into 标签/效果/消耗 on each 技能/装备 — no new field. See docs/sdk/component-inventory.md §8a and docs/combat-poem-of-destiny-expansion.md.",
+  "ruleset": "poem-d20-v1",
+  "stat_map": {
+    "player": "主角",
+    "party": { "from": "关系列表", "filter": { "在场": true } },
+    "paths": {
+      "attributes": "属性",
+      "hp": "生命值",
+      "maxHp": "生命值上限",
+      "mp": "法力值",
+      "maxMp": "法力值上限",
+      "sp": "体力值",
+      "maxSp": "体力值上限",
+      "level": "等级",
+      "tier": "生命层级",
+      "equipment": "装备",
+      "skills": "技能",
+      "conditions": "状态效果"
+    }
+  },
+  "derive": {
+    "attributes": ["力量", "敏捷", "体质", "智力", "精神"],
+    "tier_coefficient": { "1": 2.0, "2": 2.8, "3": 4.0, "4": 8.0, "5": 15.0, "6": 35.0, "7": 80.0 },
+    "hp_multiplier": { "1": 1, "2": 2, "3": 4, "4": 10, "5": 20, "6": 40, "7": 100 },
+    "mp_sp_multiplier": { "1": 1, "2": 2.5, "3": 6, "4": 15, "5": 35, "6": 80, "7": 160 },
+    "rating_tiers": [[30, 2.0], [25, 1.6], [20, 1.3], [11, 1.0], [8, 0.8], [4, 0.3], [0, 0]],
+    "attr_mitigation": { "物理": 0.0025, "能量": 0.004, "精神": 0.008, "真实": 0 },
+    "defense_constant": 2000
+  }
+}
