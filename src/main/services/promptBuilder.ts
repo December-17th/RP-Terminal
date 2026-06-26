@@ -377,12 +377,13 @@ export const buildPrompt = (args: BuildPromptArgs): ChatMessage[] => {
   ]
   const topEntries = regular.filter((e) => e.insertion_depth == null)
   const depthEntries = regular.filter((e) => e.insertion_depth != null)
-  // Render each matched top-level entry, NAMING the entry on failure. A matched entry that renders to
-  // nothing is silently dropped from World Info (`filter(Boolean)`), which is hard to debug — so log
-  // which entry was dropped and why: an EJS eval error (with the failing source) vs. an empty result
-  // (a false conditional, or a getvar() reading a var not in the build's stat_data; note that at cache
-  // level ≥1 lore renders against the FROZEN floor-0 snapshot, not live state). Unlike `ejsStrict` for
-  // presets, lorebook entries stay GRACEFUL (logged + dropped, never throwing the turn).
+  // Render each matched lorebook entry GRACEFULLY (unlike `ejsStrict` for presets, which throws). On an
+  // EJS error, fall back to the macro-expanded text with EJS tags STRIPPED — so an entry that is mostly
+  // prose with one bad `<%…%>` block (e.g. 命定之诗's 艾莉亚 entry: 10KB of character lore + a trailing
+  // `await TavernHelper.…` seeder our sync/TavernHelper-less prompt engine can't run) still contributes
+  // its prose instead of being dropped whole. This is the pre-1941f38 behavior, kept for lorebook entries
+  // only: presets still fail loud (the branch-leak that 1941f38 fixed is a preset concern). The entry +
+  // reason are logged either way so a genuinely broken entry is visible.
   const renderLoreEntry = (e: LorebookEntry): string => {
     const expanded = expandMacros(
       e.content,
@@ -391,13 +392,16 @@ export const buildPrompt = (args: BuildPromptArgs): ChatMessage[] => {
     if (!frontierTemplate) return stripEjs(expanded).trim()
     const r = evalTemplateDetailed(expanded, frontierTemplate)
     const label = e.comment || '(unnamed)'
-    if (r.error)
+    if (r.error) {
+      const fallback = stripEjs(expanded).trim()
       log(
         'error',
-        `✗ lorebook entry "${label}" EJS error — dropped from World Info`,
+        `✗ lorebook entry "${label}" EJS error — ${fallback ? 'EJS stripped, prose kept' : 'dropped (no prose)'}`,
         `${r.error}\n— source: ${e.content.slice(0, 400)}`
       )
-    else if (!r.output && e.content.trim())
+      return fallback
+    }
+    if (!r.output && e.content.trim())
       log(
         'info',
         `lorebook entry "${label}" rendered EMPTY — dropped from World Info ` +

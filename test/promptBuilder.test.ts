@@ -535,6 +535,31 @@ describe('buildPrompt — EJS in constant lore (命定之诗 real-card shape)', 
     const wi = messages.find((m) => m.content.startsWith('World Info:'))
     expect(wi?.content).toContain('等级:7')
   })
+
+  it('keeps the PROSE of a lorebook entry whose trailing EJS block errors (艾莉亚 shape)', () => {
+    // 命定之诗's 艾莉亚 entry = lots of character prose + a trailing `await TavernHelper…` seeder that
+    // our sync/TavernHelper-less prompt engine can't run. The bad EJS must not take the prose down.
+    const messages = buildPrompt({
+      card: card(),
+      preset: preset([blk('char_description'), blk('world_info'), blk('chat_history')]),
+      lorebooks: [
+        book([
+          {
+            comment: '命定系统-艾莉亚核心',
+            content:
+              '艾莉亚是<user>的同伴。\n<%_ if (true) { const x = await something(); } _%>',
+            constant: true
+          }
+        ])
+      ],
+      floors: [],
+      userAction: 'go',
+      template: { vars: {}, globals: {}, constants: {} }
+    })
+    const wi = messages.find((m) => m.content.startsWith('World Info:'))
+    expect(wi?.content).toContain('艾莉亚是') // prose survived the EJS SyntaxError
+    expect(wi?.content).not.toContain('await') // the dead EJS block was stripped
+  })
 })
 
 describe('buildPrompt — EJS conditionals: lastMessageId + fail-loud', () => {
