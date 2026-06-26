@@ -118,6 +118,16 @@ Both combat-system modes ⇒ **deterministic engine resolution** (no AI in the m
 AI narration cadence. The app already has `settings.combat.narrationMode` + the improvise/adjudicate path
 from phase A to build on; mode is selected **per-encounter at entry**, not as a global setting.
 
+**The entry choice is LOREBOOK-driven (rewritten 2026-06-26).** The player's top-level pick — **Classic /
+AI-decided** vs **Combat system** — is presented by the card itself, not an app dialog: at combat onset the
+`<战斗启动协议>` makes the AI emit `<rpt-combat-start>` + the enemy roster (→ the **⚔ Enter Combat** button =
+the combat-system path), present the two options, and **pause without resolving**. `<战斗协议>` is **gated**
+so it only resolves the fight when the player chose AI-decided (continued in chat); if they enter the
+engine, the AI stays out and resumes only on the engine's hand-back. Deliverable:
+[sdk/examples/poem-preset-combat-instructions.md](sdk/examples/poem-preset-combat-instructions.md). The
+**Narrate vs Deterministic** split is a *sub-choice within* the combat-system path — an app-side narration
+cadence (the per-encounter mode chooser, BP4 UI), not a lorebook concern.
+
 ## Field grammar + parsed shape + stat_map + derive (SIGNED OFF 2026-06-25)
 The "战斗 spec" is the canonical **parse** of the card's real fields, not a new MVU field. The parsed
 `CardCombat` + the character's 五维 are carried on combatants/abilities via an **optional `ext` bag**

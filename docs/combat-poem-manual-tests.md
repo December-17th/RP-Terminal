@@ -39,13 +39,23 @@ Steps:
    名称/数量/属性/装备/技能/生命层级). Add the paste-in `<战斗启动协议>` from
    [sdk/examples/poem-preset-combat-instructions.md](sdk/examples/poem-preset-combat-instructions.md)
    to the preset so the model emits it, then prompt the scene into a fight.
-3. When the **⚔ Enter Combat** banner appears, click it.
+3. **Mode choice (lorebook-driven):** the AI should narrate to the brink, emit the cue+roster, then
+   **offer two options without resolving the fight that turn** — 【进入战斗系统】(click *Enter Combat*) vs
+   【AI演绎】(reply to continue). To test the **combat-system** path, click **⚔ Enter Combat**; to test the
+   **AI-decided** path, instead reply in chat (the AI should then run `<战斗协议>` narratively).
 
-Expected:
+Expected (combat-system path):
 - Combat mode opens on a grid. The **party** (主角 + present companions) is on the **left**, with HP
   equal to their MVU `生命值上限`, and an ability bar listing `普攻` + each character's active 技能
   (e.g. `火球术`). The **enemies** (哥布林 ×2, 头目) are on the **right**.
 - No enemies and an instant "victory" ⇒ the roster JSON was empty or didn't parse (check the tag body).
+
+Expected (mode-choice itself):
+- The onset turn **offers both modes and does NOT resolve combat** (no {战况总览}/{攻击行动} panels, no
+  damage). If the AI auto-resolves the fight at onset, the `<战斗启动协议>` / `<战斗协议>` gate (§2 of the
+  snippet) isn't applied.
+- AI-decided path: replying to continue makes the AI run `<战斗协议>` (panels/数值 in chat); entering the
+  engine instead must keep the AI **out** of resolution until hand-back.
 
 Capture on failure: the renderer console, the main log around `combat-start-from-card`, and the floor's
 `combat_cue` variable.
