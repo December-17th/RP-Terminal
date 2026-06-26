@@ -36,8 +36,9 @@ Steps:
    has a 主角 with real 属性/生命值 (and ideally a companion with `在场: true`).
 2. Get the AI to emit a combat-start cue: its reply must contain
    `<rpt-combat-start enemies="哥布林 x2; 头目"></rpt-combat-start>` (the enemy refs must match the
-   bundle's `enemies` keys — `哥布林` / `头目`). See the **Known gap** below; for now prompt it into a
-   fight or hand-add a preset line instructing it.
+   bundle's `enemies` keys — `哥布林` / `头目`). Add the paste-in instruction from
+   [sdk/examples/poem-preset-combat-instructions.md](sdk/examples/poem-preset-combat-instructions.md)
+   to the preset so the model emits it, then prompt the scene into a fight.
 3. When the **⚔ Enter Combat** banner appears, click it.
 
 Expected:
@@ -65,8 +66,9 @@ Capture on failure: the full combat log, console errors, main log.
 ---
 
 ## Known gaps / deferred (so a tester isn't surprised)
-- **Preset instruction not yet added** — nothing tells the AI to emit `<rpt-combat-start>` with refs
-  matching `combat.enemies`. Until that lands, trigger combat by prompting/instructing manually. *(BP6)*
+- **Preset cue instruction** — shipped as a paste-in snippet
+  ([poem-preset-combat-instructions.md](sdk/examples/poem-preset-combat-instructions.md)); the card author
+  adds it (the app does not auto-inject prompt text). Without it the AI won't emit the cue → no combat. *(BP6)*
 - **Per-encounter mode chooser** (Classic / Combat-system Narrate / Deterministic) — not built; combat
   always runs through the engine. *(BP4)*
 - **AI dynamic enemy generation** (`char_info` → combatants) — not built; enemies come from the bundle's
