@@ -29,6 +29,7 @@ const en: Record<string, string> = {
   'settings.groupApp': 'App',
   'settings.groupWorld': 'World',
   'settings.preferences': 'Preferences',
+  'settings.memory': 'Memory',
   'settings.regex': 'Regex',
   'settings.scripts': 'Scripts',
   'settings.language': 'Language',

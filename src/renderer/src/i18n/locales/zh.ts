@@ -30,6 +30,7 @@ const zh: Record<string, string> = {
   'settings.groupApp': '应用',
   'settings.groupWorld': '世界',
   'settings.preferences': '偏好设置',
+  'settings.memory': '记忆',
   'settings.regex': '正则',
   'settings.scripts': '脚本',
   'settings.language': '语言',
