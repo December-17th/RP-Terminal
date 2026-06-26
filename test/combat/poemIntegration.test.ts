@@ -6,10 +6,9 @@ import {
   type StatMap,
   type DeriveConfig
 } from '../../src/shared/combat/bundle'
-import { poemD20System, buildCombatant } from '../../src/shared/combat/systems/poemD20'
+import { poemD20System } from '../../src/shared/combat/systems/poemD20'
 import { CombatBundleSchema } from '../../src/main/types/character'
 import { createEncounter, playerAction, nextTurn } from '../../src/main/services/combatService'
-import type { Combatant } from '../../src/shared/combat/types'
 
 // The deliverable bundle config the 命定之诗 card embeds — read so the test pins the real artifact.
 const combat = JSON.parse(
@@ -72,18 +71,6 @@ const statData = {
   }
 }
 
-// An AI-generated enemy (the deferred char_info→combatant entry step, simulated here).
-const enemyChar = {
-  属性: { 力量: 5, 敏捷: 3, 体质: 6, 智力: 1, 精神: 2 },
-  生命值: 900,
-  生命值上限: 900,
-  等级: 7,
-  生命层级: '第二层级',
-  装备: { 利爪: { 品质: '优良', 类型: '天生武器', 标签: ['攻击: 40'], 效果: {}, 描述: '' } },
-  技能: {},
-  状态效果: {}
-}
-
 describe('命定之诗 combat integration (BP5)', () => {
   it('the example bundle config is valid + carries the expected stat_map/derive', () => {
     expect(() => CombatBundleSchema.parse(combat)).not.toThrow()
@@ -104,38 +91,47 @@ describe('命定之诗 combat integration (BP5)', () => {
     expect(Object.keys(enc.abilities).sort()).toEqual(['主角/普攻', '主角/火球术', '艾莉亚/普攻'])
   })
 
-  it('runs a full fight to a deterministic victory via the 战斗协议 resolver', async () => {
-    const built = buildEncounterFromMvu(statData, statMap, poemD20System, { derive, seed: 7 })
-    const enemyBuilt = buildCombatant(enemyChar, {
-      id: '魔物',
-      name: '魔物',
-      side: 'enemy',
-      paths: statMap.paths!,
-      derive
+  it('builds enemies from the cue against the bundle templates', () => {
+    const enc = buildEncounterFromMvu(statData, statMap, poemD20System, {
+      derive,
+      enemies: combat.enemies,
+      enemiesCue: '哥布林 x2; 头目'
     })
-    const enemy: Combatant = {
-      id: '魔物',
-      side: 'enemy',
-      name: '魔物',
-      pos: [1, 0],
-      block: enemyBuilt.block,
-      ext: enemyBuilt.ext
-    }
-    const abilities = { ...built.abilities }
-    for (const a of enemyBuilt.abilities) abilities[a.id] = a
+    expect(enc.combatants.filter((c) => c.side === 'enemy').map((c) => c.id)).toEqual([
+      '哥布林-1',
+      '哥布林-2',
+      '头目'
+    ])
+    const boss = enc.combatants.find((c) => c.id === '头目')!
+    expect(boss.block.maxHp).toBe(900)
+    expect((boss.ext as Record<string, any>).equip.武器攻击).toBe(70)
+    expect(enc.abilities['头目/横扫']).toBeTruthy()
+    expect(enc.abilities['头目/横扫'].shape).toEqual({ kind: 'cone', len: 2 })
+  })
+
+  it('runs a full fight to a deterministic victory via the 战斗协议 resolver', async () => {
+    // A tight grid so the cue-spawned enemies (right edge) sit adjacent to the party (left edge),
+    // and the scripted "attack the nearest foe" loop can resolve without modelling movement.
+    const built = buildEncounterFromMvu(statData, statMap, poemD20System, {
+      derive,
+      seed: 7,
+      grid: { w: 2, h: 4, cellFt: 5 },
+      enemies: combat.enemies,
+      enemiesCue: '哥布林 x2; 头目'
+    })
 
     let rec = createEncounter({
       seed: 7,
       grid: built.grid,
-      combatants: [...built.combatants, enemy],
-      abilities,
+      combatants: built.combatants,
+      abilities: built.abilities,
       system: 'poemD20',
       derive
     })
 
     let guard = 0
     let damageEvents = 0
-    while (rec.state.status === 'active' && guard++ < 100) {
+    while (rec.state.status === 'active' && guard++ < 200) {
       const actorId = rec.state.initiative[rec.state.turnIndex]
       const actor = rec.state.combatants.find((c) => c.id === actorId)
       if (actor && actor.block.hp > 0) {
@@ -156,8 +152,10 @@ describe('命定之诗 combat integration (BP5)', () => {
       rec = nextTurn(rec)
     }
 
-    expect(rec.state.status).toBe('party') // the party wins this matchup
-    expect(rec.state.combatants.find((c) => c.id === '魔物')!.block.hp).toBe(0)
+    expect(rec.state.status).toBe('party') // the party clears the goblins + 头目
+    expect(
+      rec.state.combatants.filter((c) => c.side === 'enemy').every((c) => c.block.hp === 0)
+    ).toBe(true)
     expect(damageEvents).toBeGreaterThan(1) // a multi-strike, card-scale fight actually happened
   })
 })

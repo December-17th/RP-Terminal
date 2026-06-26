@@ -14,7 +14,11 @@
 > Deterministic) + the AI combat-entry prompt that generates enemy `char_info`→combatants (needs the
 > running app); BP5 — the standalone status MVU-UI regex (the bundle config + end-to-end integration
 > test shipped as [sdk/examples/poem-combat-bundle.json](../../sdk/examples/poem-combat-bundle.json));
-> BP7 deferred.
+> BP7 deferred. **BP4 enemy generation (static)**: `buildEncounterFromMvu` now also builds enemies from
+> the bundle's `enemies` templates resolved against the combat-start cue — a fight is playable in-app
+> with bundle-defined opponents (dynamic AI `char_info` enemies still deferred). Manual-test checklist:
+> [combat-poem-manual-tests.md](../../combat-poem-manual-tests.md). **Still needed for in-app combat:** a
+> preset line so the AI emits `<rpt-combat-start enemies=…>` with refs matching `combat.enemies`.
 
 **Goal:** Ship a **combat extension (mod) for the 命定之诗 character card** that imports the party's
 DND-style combat stats from MVU variables and resolves combat with the card's *own* `<战斗协议>` (a

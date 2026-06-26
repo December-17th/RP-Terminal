@@ -109,6 +109,7 @@ export const CombatBundleSchema = z
      *  consumed/normalized by buildEncounterFromMvu. */
     stat_map: z.record(z.string(), z.any()).optional(),
     derive: z.record(z.string(), z.any()).optional(),
+    enemies: z.record(z.string(), z.any()).optional(),
     /** Steers the end-of-combat narration; overrides the user's setting. */
     narration_prompt: z.string().optional(),
     /** Where the narration lands in the chat; overrides the user's setting. */

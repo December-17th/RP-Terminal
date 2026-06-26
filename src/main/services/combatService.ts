@@ -267,9 +267,10 @@ const currentStatData = (profileId: string, chatId: string): Record<string, unkn
  * (the "Enter Combat" path): resolve the chat's card, build the encounter, and persist it.
  *
  * If the bundle carries a `stat_map`, the PARTY is imported from the current floor's MVU
- * `stat_data` via the 命定之诗 system (its 战斗协议 resolver runs the fight); otherwise the
- * party comes from the bundle's `party` templates. Enemies still come from the cue (the AI's
- * char_info → combatant entry-generation is the deferred BP4 piece). Throws if no combat bundle.
+ * `stat_data` via the 命定之诗 system (its 战斗协议 resolver runs the fight) and ENEMIES come from
+ * the cue resolved against the bundle's `enemies` templates; otherwise the party/enemies come from
+ * the bundle's `party`/`bestiary` templates. (Dynamic AI-generated enemy char_info is a future
+ * enhancement.) Throws if the world ships no combat bundle.
  */
 export const startFromCard = (
   profileId: string,
@@ -289,7 +290,9 @@ export const startFromCard = (
       poemD20System,
       {
         derive: bundle.derive,
-        seed
+        seed,
+        enemies: bundle.enemies,
+        enemiesCue: cue?.enemies
       }
     )
     return startEncounter(chatId, {

@@ -178,6 +178,10 @@ export const parseCardItem = (item: unknown, _kind: ItemKind): CardCombat => {
     }
   }
 
+  // cone/line length follows 有效距离, independent of where the 范围 tag sat relative to it.
+  if ((out.shape?.kind === 'cone' || out.shape?.kind === 'line') && out.range)
+    out.shape = { ...out.shape, len: out.range }
+
   // Ranged abilities (beyond melee) require line of sight by default.
   if ((out.range ?? 1) > 1) out.需视线 = true
   return out
