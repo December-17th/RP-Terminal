@@ -344,13 +344,13 @@ Leverage-ordered for *this* app. Several are now **core** (folded into §5); the
 
 ---
 
-## 14. Recorded design threads (decisions deferred)
+## 14. Recorded design threads
 
-_Captured 2026-06-26 from brainstorming. **No decision taken** — options + current lean recorded so nothing is lost; resolve before the phase that needs each. None block the core (§15)._
+_Captured 2026-06-26 from brainstorming. T1/T2 **RESOLVED 2026-06-26** (owner) — see below; they now drive the entity-collections build._
 
-**T1 — Entity identity / canonicalization (gates entity collections).** Upsert-keyed entity records need a stable key, but RP names drift ("the tavern" → "The Rusty Anchor"; nicknames; titles; pre-name introductions). Options: (a) **exact-match keys** — simplest, fragments badly; (b) **alias map** per chat (`name→canonical_id`), extractor proposes aliases; (c) **LLM-resolved canonical entity at extraction time** — the structured call already sees the text, returns `entity: ayaka_01 (aka 'the swordmaiden')`, near-zero extra cost. _Lean: (c) for the writer + (b) for the reader's in-scope lookup._ The single biggest correctness risk for "character progression."
+**T1 — Entity identity / canonicalization (gates entity collections). ✅ RESOLVED: LLM-resolved canonical entity + alias map.** RP names drift ("the tavern" → "The Rusty Anchor"; nicknames; titles; pre-name introductions). **Chosen:** the structured extraction call (already made) returns, per entity, a **canonical name + aliases**; the writer reconciles it against existing records (entity_key or any stored alias, case-insensitive) to pick the upsert key, creating a new record only when nothing matches. The reader builds a `name → entity_key` alias map from the stored records for in-scope detection. _(Rejected: exact-match keys — fragments badly; alias-map-only — weak on brand-new names.)_
 
-**T2 — Entity-sheet update strategy (gates entity collections).** On upsert: (a) **LLM rewrites the whole sheet** from old + new — clean, self-consolidating, but re-spends tokens every update and can drift/forget; (b) **append structured deltas** to a JSON `payload` — cheap, auditable, never forgets, but grows and needs periodic rewrite-consolidation. _Lean: (b) with occasional (a)-style consolidation (reuses §11.E); also keeps memory-panel diffs legible._
+**T2 — Entity-sheet update strategy (gates entity collections). ✅ RESOLVED: structured deltas + periodic consolidation.** **Chosen:** each entity record's `payload` holds a consolidated `fields` map + an append-only `log` of dated changes + `aliases`; an update merges the new fields, appends a log note, and refreshes the one-line `summary`. Cheap per update, auditable, never forgets — and the change log is legible in the Memory UI. Periodic LLM consolidation (reuses §11.E) compacts the log when it grows. _(Rejected: full-sheet LLM rewrite every update — re-spends tokens, can drift/forget.)_
 
 **T3 — "In scope" detection for always-include (gates entity collections).** Always-include only works if "who/where is present this turn" is cheap to answer. Candidates: entities named in the last 1–2 floors, current location from `stat_data`/scene, active speakers. _Lean: entities in the recent scan window + current-location var; free if extraction already tags `entities`._
 
