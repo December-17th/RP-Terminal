@@ -13,7 +13,8 @@ const VIEW_LABEL_KEY: Record<string, string> = {
   status: 'status.heading',
   usage: 'view.usage',
   'card-scripts': 'view.cardScripts',
-  logs: 'logs.heading'
+  logs: 'logs.heading',
+  memory: 'view.memory'
 }
 
 /**

@@ -22,10 +22,20 @@ export const MemoryPanel: React.FC<{ profileId: string }> = ({ profileId }) => {
 
   // The recall mode applies to all stream collections (events, facts…); entity collections stay 'always'.
   const setStreamMode = (mode: string): void => {
-    const collections = (mem?.collections ?? []).map((c) =>
+    if (!mem?.collections?.length) return // never overwrite an unseeded registry with []
+    const collections = mem.collections.map((c) =>
       c.shape === 'stream'
         ? { ...c, retrieval: { ...c.retrieval, mode: mode as typeof c.retrieval.mode } }
         : c
+    )
+    patch({ collections })
+  }
+
+  // Update the events collection's recall count, guarding against an unseeded registry.
+  const setEventsCount = (n: number): void => {
+    if (!mem?.collections?.length) return
+    const collections = mem.collections.map((c) =>
+      c.id === 'events' ? { ...c, retrieval: { ...c.retrieval, count: n } } : c
     )
     patch({ collections })
   }
@@ -113,13 +123,7 @@ export const MemoryPanel: React.FC<{ profileId: string }> = ({ profileId }) => {
               type="number"
               min={1}
               value={eventsCount}
-              onChange={(e) => {
-                const n = Math.max(1, Number(e.target.value) || 1)
-                const collections = (mem?.collections ?? []).map((c) =>
-                  c.id === 'events' ? { ...c, retrieval: { ...c.retrieval, count: n } } : c
-                )
-                patch({ collections })
-              }}
+              onChange={(e) => setEventsCount(Math.max(1, Number(e.target.value) || 1))}
             />
 
             <label className="field-label" style={{ marginTop: 16 }}>

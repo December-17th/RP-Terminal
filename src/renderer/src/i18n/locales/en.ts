@@ -437,6 +437,7 @@ const en: Record<string, string> = {
   'memory.history': 'history ({{count}})',
   'memory.pin': 'Pin (always recall this)',
   'memory.unpin': 'Unpin',
+  'memory.actionFailed': 'Action failed',
   'status.reevalTitle':
     'Re-apply the stored variable updates from every message to rebuild the state — no regeneration (e.g. after a parser update).',
   'status.reevaluate': '↻ Re-evaluate',
@@ -498,6 +499,7 @@ const en: Record<string, string> = {
   'view.chat': 'Chat',
   'view.usage': 'Usage',
   'view.cardScripts': 'Card Scripts',
+  'view.memory': 'Memory',
 
   'panel.chooseView': 'Choose which view this panel shows',
   'panel.showPanel': 'Show panel',

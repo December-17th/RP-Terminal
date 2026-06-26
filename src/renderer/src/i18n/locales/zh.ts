@@ -425,6 +425,7 @@ const zh: Record<string, string> = {
   'memory.history': '变更记录（{{count}}）',
   'memory.pin': '置顶（始终召回）',
   'memory.unpin': '取消置顶',
+  'memory.actionFailed': '操作失败',
   'status.reevalTitle':
     '重新应用每条消息中存储的变量更新以重建状态 —— 无需重新生成（例如解析器更新后）。',
   'status.reevaluate': '↻ 重新计算',
@@ -484,6 +485,7 @@ const zh: Record<string, string> = {
   'view.chat': '聊天',
   'view.usage': '用量',
   'view.cardScripts': '卡片脚本',
+  'view.memory': '记忆',
 
   'panel.chooseView': '选择此面板显示的视图',
   'panel.showPanel': '显示面板',

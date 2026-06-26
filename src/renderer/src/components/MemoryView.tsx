@@ -37,6 +37,8 @@ interface EntitySheetView {
 
 const secondary = { color: 'var(--rpt-text-secondary)' }
 
+const errText = (e: unknown): string => (e instanceof Error ? e.message : String(e))
+
 export function MemoryView({ profileId }: { profileId: string }): React.ReactElement {
   const activeChatId = useChatStore((s) => s.activeChatId)
   const t = useT()
@@ -49,7 +51,13 @@ export function MemoryView({ profileId }: { profileId: string }): React.ReactEle
   const [adding, setAdding] = useState(false)
   const [newSummary, setNewSummary] = useState('')
   const [newKeywords, setNewKeywords] = useState('')
-  const [recalledIds, setRecalledIds] = useState<Set<string>>(new Set())
+  // The "why recalled" set is tagged with its chat so a previous chat's highlights never bleed
+  // through after switching (we filter by chatId at render rather than resetting on switch).
+  const [recalled, setRecalled] = useState<{ chatId: string; ids: Set<string> }>({
+    chatId: '',
+    ids: new Set()
+  })
+  const [error, setError] = useState<string | null>(null)
 
   const refresh = useCallback(async () => {
     if (!activeChatId) {
@@ -60,6 +68,9 @@ export function MemoryView({ profileId }: { profileId: string }): React.ReactEle
     try {
       const rows = await api().memoryList(profileId, activeChatId)
       setEntries(Array.isArray(rows) ? rows : [])
+      setError(null)
+    } catch (e) {
+      setError(errText(e))
     } finally {
       setLoading(false)
     }
@@ -77,13 +88,14 @@ export function MemoryView({ profileId }: { profileId: string }): React.ReactEle
     return () => unsub?.()
   }, [activeChatId, refresh])
 
-  // Transient "why recalled" highlight: which memories the latest turn pulled in.
+  // Transient "why recalled" highlight: which memories the latest turn pulled in, tagged with the
+  // originating chat. Filtered to the active chat at render, so no reset-on-switch is needed.
   useEffect(() => {
     const unsub = api().onMemoryRecalled?.((payload: { chatId: string; ids: string[] }) => {
-      if (payload?.chatId === activeChatId) setRecalledIds(new Set(payload.ids ?? []))
+      if (payload?.chatId) setRecalled({ chatId: payload.chatId, ids: new Set(payload.ids ?? []) })
     })
     return () => unsub?.()
-  }, [activeChatId])
+  }, [])
 
   if (!activeChatId) return <div style={{ opacity: 0.5 }}>{t('memory.waiting')}</div>
 
@@ -98,23 +110,38 @@ export function MemoryView({ profileId }: { profileId: string }): React.ReactEle
       .split(',')
       .map((k) => k.trim())
       .filter(Boolean)
-    await api().memoryUpdate(profileId, activeChatId, id, {
-      summary: draftSummary.trim(),
-      keywords
-    })
-    setEditingId(null)
-    await refresh()
+    try {
+      await api().memoryUpdate(profileId, activeChatId, id, {
+        summary: draftSummary.trim(),
+        keywords
+      })
+      setEditingId(null) // keep the editor open on failure so the draft isn't lost
+      setError(null)
+      await refresh()
+    } catch (e) {
+      setError(errText(e))
+    }
   }
 
   const togglePin = async (e: MemoryEntry): Promise<void> => {
-    await api().memoryUpdate(profileId, activeChatId, e.id, { pinned: !e.pinned })
-    await refresh()
+    try {
+      await api().memoryUpdate(profileId, activeChatId, e.id, { pinned: !e.pinned })
+      setError(null)
+      await refresh()
+    } catch (err) {
+      setError(errText(err))
+    }
   }
 
   const remove = async (e: MemoryEntry): Promise<void> => {
     if (!window.confirm(t('memory.confirmDelete'))) return
-    await api().memoryDelete(profileId, activeChatId, e.id)
-    await refresh()
+    try {
+      await api().memoryDelete(profileId, activeChatId, e.id)
+      setError(null)
+      await refresh()
+    } catch (err) {
+      setError(errText(err))
+    }
   }
 
   const cancelAdd = (): void => {
@@ -130,9 +157,14 @@ export function MemoryView({ profileId }: { profileId: string }): React.ReactEle
       .split(',')
       .map((k) => k.trim())
       .filter(Boolean)
-    await api().memoryAdd(profileId, activeChatId, summary, keywords)
-    cancelAdd()
-    await refresh()
+    try {
+      await api().memoryAdd(profileId, activeChatId, summary, keywords)
+      cancelAdd() // leave the form open on failure so the input isn't lost
+      setError(null)
+      await refresh()
+    } catch (e) {
+      setError(errText(e))
+    }
   }
 
   // Render an entity record (character / location) as a sheet: name + aliases + fields + history.
@@ -223,6 +255,22 @@ export function MemoryView({ profileId }: { profileId: string }): React.ReactEle
           </button>
         </span>
       </h3>
+
+      {error ? (
+        <div
+          role="alert"
+          style={{
+            marginTop: 10,
+            padding: '6px 10px',
+            borderRadius: 6,
+            border: '1px solid var(--rpt-danger, #e55)',
+            color: 'var(--rpt-danger, #e55)',
+            fontSize: '0.8em'
+          }}
+        >
+          {t('memory.actionFailed')}: {error}
+        </div>
+      ) : null}
 
       {adding ? (
         <div
@@ -372,7 +420,7 @@ export function MemoryView({ profileId }: { profileId: string }): React.ReactEle
                           gap: 6
                         }}
                       >
-                        {recalledIds.has(e.id) ? (
+                        {recalled.chatId === activeChatId && recalled.ids.has(e.id) ? (
                           <span
                             title={t('memory.recalledTitle')}
                             style={{ color: 'var(--rpt-accent, #6cf)', fontWeight: 600 }}
