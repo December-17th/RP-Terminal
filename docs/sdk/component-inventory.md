@@ -76,14 +76,15 @@ transports implement the same surface, so a card behaves identically in either
 
 | Domain | Methods | Status | Notes |
 | --- | --- | --- | --- |
-| **Variables / MVU** | `getVariables`, `insertOrAssignVariables`, `replaceVariables`, `updateVariablesWith`; `Mvu.*` | ✅ | State of truth = `floor.variables.stat_data`. Writes → RFC-6902 JSON-Patch (`applyVariableOps`). `type:'script'` → a card KV (`plugin-storage`), separate from `stat_data`. |
-| **Chat read** | `getChatMessages`, `getCurrentMessageId` | ✅ | `message_id` = compact chat-array index. |
+| **Variables / MVU** | `getVariables`, `insertOrAssignVariables`, `insertVariables` (no-overwrite), `replaceVariables`, `updateVariablesWith`; `Mvu.*` | ✅ | State of truth = `floor.variables.stat_data`. Writes → RFC-6902 JSON-Patch (`applyVariableOps`). `type:'script'` → a card KV (`plugin-storage`), separate from `stat_data`. |
+| **Prompt injection** | `injectPrompts`, `uninjectPrompts` | 🟡 | Safe **no-op** (returns `{ uninject }`). Prompt is built in main; renderer-side injection can't reach it yet — cards calling these per-turn no longer throw. |
+| **Chat read** | `getChatMessages`, `getCurrentMessageId`, `getLastMessageId` (alias of `getCurrentMessageId`) | ✅ | `message_id` = compact chat-array index. |
 | **Chat write** | `setChatMessages`, `deleteChatMessages`, `saveChat`, `reloadCurrentChat`, `setInput`, `createChatMessages` | ✅ / 🟡 | `createChatMessages` → composer-inject (onboarding); general mid-history insert ⬜ (floor-model decision). |
 | **Worldbook** | get / `createWorldbook` / `deleteWorldbook` / `replaceWorldbook` / `updateWorldbookWith` / `create`+`deleteWorldbookEntries` / `bindWorldbook` / names | ✅ | **Full library CRUD + bind** (trusted-card stance). Entries map TH `WorldbookEntry` (strategy/keys/extra) ↔ native via [`thRuntime/worldbookEntry`](../../src/shared/thRuntime/worldbookEntry.ts). |
 | **Character / preset** | `getCharData`, `getCharAvatarPath`, `getPreset`, `getPresetNames`, `getCurrentCharacterName`, `SillyTavern.getCurrentChatId`, `getScriptId` | ✅ | Read-only (sync). |
 | **Generation** | `generate`, `generateRaw` (+ `STREAM_TOKEN_RECEIVED`) | ✅ | Host-side; **the AI key never reaches the card**. `stopGenerationById` ⬜. |
 | **Regex** | `getTavernRegexes(option)`, `isCharacterTavernRegexesEnabled`, `formatAsTavernRegexedString`, `replaceTavernRegexes`, `updateTavernRegexesWith` | ✅ | Read + **write** (full replace of a scope's bucket via `regexService`; debounced reload). Shapes map in [`thRuntime/tavernRegex`](../../src/shared/thRuntime/tavernRegex.ts). |
-| **Events** | `eventOn/Once/Emit/MakeFirst/RemoveListener`; `tavern_events`; MVU `mag_variable_*` | ✅ / 🟡 | ~10 lifecycle/mutation/stream events wired; the full ST enum is a subset. `MESSAGE_SENT` ⬜. |
+| **Events** | `eventOn/Once/Emit/MakeFirst/RemoveListener`; `tavern_events`; MVU `mag_variable_*` | ✅ / 🟡 | ~10 lifecycle/mutation/stream events wired; the full ST enum is a subset. `MESSAGE_SENT` ⬜. **Payloads match the contract** (both transports): MVU events pass `(variables: MvuData, variables_before_update)` i.e. the wrapped `{ stat_data }`; `MESSAGE_UPDATED` passes the message id. |
 | **STScript** | `triggerSlash` | 🟡 | Subset via [`shared/stscript`](../../src/shared/stscript.ts): pipes/closures/macros, chat+global vars, `/gen`·`/genraw`·`/trigger`·`/send`. `while`/loops + long-tail commands ⬜. |
 | **EJS** | `EjsTemplate.*` | ✅ | Backed by the quickjs engine (Layer C of ST-PT). |
 | **Macros** | `substituteParams`, `substitudeMacros`, `{{get_X_variable}}`/`{{format_X_variable}}` | ✅ | `registerMacroLike` ⬜ (cross-process). |

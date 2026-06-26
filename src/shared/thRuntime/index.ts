@@ -55,11 +55,19 @@ export function createThRuntime(host: Host): ThGlobals {
   // --- statData cache (authoritative refresh via host.onVarsChanged; optimistic on write) ---
   let stat: any = host.statData() || {}
   const offVars = host.onVarsChanged((sd) => {
+    // MVU event contract (JS-Slash-Runner `exported.mvu.d.ts`): VARIABLE_UPDATE_* handlers receive
+    // `(variables: MvuData, variables_before_update: MvuData)` — the WRAPPED `{ stat_data }` object,
+    // NOT the bare stat_data. Matches the inline transport (`plugin/mvuEvents.ts`). Emitting bare stat
+    // broke cards that read `variables.stat_data` (ZodError + "reading 'stat_data' of undefined").
+    const before = { stat_data: stat }
     stat = sd || {}
-    emit(MVU_EVENTS.VARIABLE_UPDATE_STARTED, stat)
-    emit(MVU_EVENTS.VARIABLE_UPDATED, stat)
-    emit(MVU_EVENTS.VARIABLE_UPDATE_ENDED, stat)
-    emit(TAVERN_EVENTS.MESSAGE_UPDATED)
+    const after = { stat_data: stat }
+    emit(MVU_EVENTS.VARIABLE_UPDATE_STARTED, after, before)
+    emit(MVU_EVENTS.VARIABLE_UPDATED, after, before)
+    emit(MVU_EVENTS.VARIABLE_UPDATE_ENDED, after, before)
+    // `tavern_events.MESSAGE_UPDATED` carries the updated message id (`event.d.ts`), never nothing —
+    // a card reading the id (or a field off it) otherwise throws on `undefined`.
+    emit(TAVERN_EVENTS.MESSAGE_UPDATED, currentMessageId(host.floors()))
   })
   const offHost = host.onHostEvent((name, payload) => emit(name, payload))
 
@@ -250,6 +258,12 @@ export function createThRuntime(host: Host): ThGlobals {
     },
     getChatMessages: () => floorsToThMessages(host.floors()),
     getCurrentMessageId: () => currentMessageId(host.floors()),
+    // TH alias: getCurrentMessageId IS getLastMessageId (both = the last message's id). The inline
+    // shim already aliases them (shims/tavern.ts); the WCV runtime was missing the alias, so MVU/status
+    // cards that call getLastMessageId() in their update handler threw "getLastMessageId is not defined"
+    // — which aborted card init and cascaded into a downstream message_updated handler reading a field
+    // off the never-set state ("reading 'event' of undefined").
+    getLastMessageId: () => currentMessageId(host.floors()),
     getTavernHelperVersion: () => '4.3.17',
     getCharData: () => host.charData(),
     getCharAvatarPath: () => host.charAvatarPath(),
@@ -284,11 +298,30 @@ export function createThRuntime(host: Host): ThGlobals {
     audioMode: () => {},
     audioEnable: () => {},
     errorCatched,
+    // Prompt-injection API (TH injectPrompts/uninjectPrompts). RP Terminal assembles the prompt in
+    // the MAIN process, so a renderer-side injection can't reach the build yet — these are safe
+    // no-ops returning the documented `{ uninject }` handle, so a card that calls them every turn
+    // (MVU/status cards do, on message_updated) degrades gracefully instead of throwing on a bare
+    // global. (Depth-positioned injection into the build is a separate feature.)
+    injectPrompts: (_prompts: any, _options?: any) => ({ uninject: () => undefined }),
+    uninjectPrompts: (_ids: any) => undefined,
     // ASYNC writes
     insertOrAssignVariables: async (vars: any) => {
       const obj = vars?.stat_data && typeof vars.stat_data === 'object' ? vars.stat_data : vars
       stat = { ...stat, ...(obj || {}) }
       await writeVars(assignVarOps(obj || {}))
+    },
+    // TH insertVariables: insert-if-ABSENT (never overwrites an existing key) — the no-overwrite
+    // sibling of insertOrAssignVariables, used by cards to seed initial MVU vars. Parity with the
+    // inline shim (shims/tavern.ts), which already exposed it; the WCV runtime was missing it.
+    insertVariables: async (vars: any) => {
+      const obj = vars?.stat_data && typeof vars.stat_data === 'object' ? vars.stat_data : vars
+      const add: Record<string, any> = {}
+      for (const k of Object.keys(obj || {})) if (!(k in stat)) add[k] = obj[k]
+      if (Object.keys(add).length) {
+        stat = { ...stat, ...add }
+        await writeVars(assignVarOps(add))
+      }
     },
     replaceVariables: async (vars: any) => {
       const next = vars?.stat_data && typeof vars.stat_data === 'object' ? vars.stat_data : vars
