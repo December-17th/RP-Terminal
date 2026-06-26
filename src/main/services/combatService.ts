@@ -18,7 +18,14 @@ import { getSettings } from './settingsService'
 import { parseMvuCommands, applyMvuCommands, applyJsonPatch } from '../parsers/mvuParser'
 import { log } from './logService'
 import { getRpExt } from '../types/character'
-import { buildEncounter, type CombatBundle } from '../../shared/combat/bundle'
+import {
+  buildEncounter,
+  buildEncounterFromMvu,
+  type CombatBundle
+} from '../../shared/combat/bundle'
+import type { DeriveConfig } from '../../shared/combat/bundle'
+import { getSystem, poemD20System } from '../../shared/combat/systems'
+import { makeRng } from '../../shared/combat/dice'
 import { clone } from '../../shared/objectPath'
 import {
   advanceTurn,
@@ -57,6 +64,10 @@ export interface EncounterRecord {
   state: CombatState
   abilities: Record<string, AbilityDef>
   hooks: Partial<Record<HookName, string>>
+  /** built-in combat system id (e.g. 'poemD20'); its resolver is injected as the RunHook. */
+  system?: string
+  /** the card's derivation tables, handed to the system resolver. */
+  derive?: DeriveConfig
 }
 
 /** What a caller supplies to begin a fight (assembled from the card bundle, P6/P7). */
@@ -67,6 +78,9 @@ export interface EncounterSetup {
   abilities?: Record<string, AbilityDef>
   /** card-authored override scripts keyed by hook name (run sandboxed). */
   hooks?: Partial<Record<HookName, string>>
+  /** built-in combat system id whose resolver runs this fight (BP4). */
+  system?: string
+  derive?: DeriveConfig
 }
 
 export interface OutcomeCombatant {
@@ -109,9 +123,32 @@ export const makeRunHook = (hooks: Partial<Record<HookName, string>>): RunHook =
   }
 }
 
+/** Build the engine's RunHook for an encounter. When the encounter uses a built-in system with a
+ *  resolver, its `resolveAction` runs first (deterministic, trusted); a `null` from it (move / end /
+ *  improvise / out-of-range) falls through to the card's sandboxed scripts, then native resolution. */
+const runHookFor = (record: EncounterRecord): RunHook | undefined => {
+  const system = getSystem(record.system)
+  const sandbox = Object.keys(record.hooks).length ? makeRunHook(record.hooks) : undefined
+  if (!system?.resolveAction) return sandbox
+  const resolve = system.resolveAction
+  return async (name, input, seed) => {
+    if (name === 'resolveAction' && input.action) {
+      const res = resolve({
+        state: input.state,
+        action: input.action,
+        abilities: record.abilities,
+        rng: makeRng(seed),
+        derive: record.derive
+      })
+      if (res) return res
+    }
+    return sandbox ? sandbox(name, input, seed) : null
+  }
+}
+
 const ctxFor = (record: EncounterRecord): EngineCtx => ({
   abilities: record.abilities,
-  runHook: Object.keys(record.hooks).length ? makeRunHook(record.hooks) : undefined
+  runHook: runHookFor(record)
 })
 
 /** Seed a fresh encounter: instantiate the state, roll initiative, open the log. */
@@ -130,7 +167,13 @@ export const createEncounter = (setup: EncounterSetup): EncounterRecord => {
   }
   const state = rollInitiative(base)
   state.log = [{ kind: 'info', text: 'Combat begins.', delta: { round: 1 } }]
-  return { state, abilities: setup.abilities ?? {}, hooks: setup.hooks ?? {} }
+  return {
+    state,
+    abilities: setup.abilities ?? {},
+    hooks: setup.hooks ?? {},
+    system: setup.system,
+    derive: setup.derive
+  }
 }
 
 /** Apply one player-issued action (does not advance the turn — the caller ends it). */
@@ -212,10 +255,21 @@ export const startEncounter = (chatId: string, setup: EncounterSetup): CombatSta
   return record.state
 }
 
+/** The current floor's MVU `stat_data` (where the party's stats live), or {} if none. */
+const currentStatData = (profileId: string, chatId: string): Record<string, unknown> => {
+  const floors = getAllFloors(profileId, chatId)
+  const vars = (floors[floors.length - 1]?.variables ?? {}) as Record<string, unknown>
+  return (vars.stat_data as Record<string, unknown>) ?? {}
+}
+
 /**
  * Start a fight from the active world's `combat` bundle + the AI's combat-start cue
- * (the "Enter Combat" path): resolve the chat's card, build the encounter via the
- * bundle, and persist it. Throws if the world ships no combat bundle.
+ * (the "Enter Combat" path): resolve the chat's card, build the encounter, and persist it.
+ *
+ * If the bundle carries a `stat_map`, the PARTY is imported from the current floor's MVU
+ * `stat_data` via the 命定之诗 system (its 战斗协议 resolver runs the fight); otherwise the
+ * party comes from the bundle's `party` templates. Enemies still come from the cue (the AI's
+ * char_info → combatant entry-generation is the deferred BP4 piece). Throws if no combat bundle.
  */
 export const startFromCard = (
   profileId: string,
@@ -227,6 +281,28 @@ export const startFromCard = (
   const card = chat ? getCharacter(profileId, chat.character_id) : null
   const bundle = (card ? getRpExt(card)?.combat : null) as CombatBundle | null | undefined
   if (!bundle) throw new Error('This world has no combat bundle')
+
+  if (bundle.stat_map) {
+    const built = buildEncounterFromMvu(
+      currentStatData(profileId, chatId),
+      bundle.stat_map,
+      poemD20System,
+      {
+        derive: bundle.derive,
+        seed
+      }
+    )
+    return startEncounter(chatId, {
+      seed: built.seed,
+      grid: built.grid,
+      combatants: built.combatants,
+      abilities: built.abilities,
+      hooks: built.hooks,
+      system: 'poemD20',
+      derive: bundle.derive
+    })
+  }
+
   return startEncounter(chatId, buildEncounter(bundle, cue ?? null, { seed }))
 }
 
