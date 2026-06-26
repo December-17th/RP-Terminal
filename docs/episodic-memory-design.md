@@ -440,7 +440,72 @@ The core (§15) ships the `events` stream collection end-to-end. Remaining work,
 3. **Validated, self-correcting structured writes (§11.O).** Schema-validate entity fills (reuse `mvuZod.ts`) with error-injection retry — keeps structured memory well-formed. Pairs with (2). _(Next-up.)_
 4. **Quality pass:** ~~global `memory.max_tokens` cap~~ ✅; remaining — salience + decay (§11.B), token-threshold checkpoint trigger (§7), contradiction/supersede (§11.D, partly free for entities via upsert).
 5. **Query-based / conditional injection (§11.P).** Make memory an addressable store cards/templates can target by predicate, not one flat block.
-6. **Scale / optional:** vector + hybrid retrieval (§6, §8 — gated by the T4 backend decision), hierarchical consolidation (§11.E), custom card-defined collections (§5.3), plot/objective tracking (§11.R), document import/seeding (§11.S), `llm`-select (§4).
-7. **Hardening:** wrap append + pointer advance in one transaction (no duplicate on partial failure), utility-call timeout, and a per-collection schema-migration story as structured payloads evolve.
+6. **Scale / optional:** ~~vector + hybrid retrieval (T4 = JS cosine)~~ ✅; remaining — hierarchical consolidation (§11.E), custom card-defined collections (§5.3), plot/objective tracking (§11.R), document import/seeding (§11.S), `llm`-select (§4).
+7. **Hardening:** ~~utility-call timeout~~ ✅; ~~atomic append + pointer (one transaction)~~ ✅; remaining — a per-collection schema-migration story as structured payloads evolve.
 
-**Decisions that gate the above (still open — §13/§14):** entity identity/aliasing (T1) and sheet-update strategy (T2) gate #2–#3; vector backend (T4) gates the vector half of #6; ship-independent-vs-bundled-with-cache-L3 gates the §16 integration work.
+**Decisions resolved:** T1 (entity identity = LLM-canonical + alias map) ✅, T2 (sheet update = deltas + consolidation) ✅, T4 (vector backend = JS cosine) ✅ — see §14. **Still open:** the **salience-decay model** (#4 — the recency·importance·relevance weighting + decay rate; a naive salience tier floods recall, so it needs a deliberate design); ship-independent-vs-bundled-with-cache-L3 gates the §16 integration work.
+
+---
+
+## 18. As-built architecture (code map & status)
+
+_Everything below lives behind `settings.memory.enabled` (default **false**) — off = byte-identical to pre-memory behavior. Branch `feat/memory-system`. The Node test suite stubs `better-sqlite3` to a no-op, so SQL execution + the renderer UI are **not** covered by tests (validated at runtime / owner manual-test); pure logic + mocked orchestration are._
+
+### 18.1 The two flows
+
+```
+WRITE (after each turn, off the hot path)            READ (before each turn)
+  generationService.generate()                         generationService.generate()
+    └─ appendFloor(...)                                   └─ buildScanText(floors, action)
+    └─ void maybeCompact(profile, chat) ──┐               └─ await selectMemories(...) ──┐
+                                          │                                              │
+  compactionService.maybeCompact          │             retrievalService.selectMemories  │
+   in-flight guard · turn-count range     │              per enabled collection:         │
+   floors fitToBudget is about to drop    │               stream+keyword → keywordRanked │
+   utilityComplete(extractor prompt) ─► JSON              stream+vector  → embed scan ·   │
+   parseCompaction → {streams, entities}                   cosine (vectorRanked)          │
+   transact(():                                            stream+hybrid  → RRF            │
+     appendEntries(events)                                 entity+always  → entityInScope │
+     resolveEntityKey · mergeEntitySheet · upsertEntity    slotted(pinned→recent→ranked)  │
+     setMemoryState(pointer))                              → labelled tail blocks,        │
+   notifyMemoryChanged                                       global max_tokens cap        │
+   embedPending → utilityEmbed → setEmbedding             buildPrompt({ memoryBlock }) ◄──┘
+                                          │                  → tail (buildStateBlock conv., §16.1)
+  rewind-safety: chatService.truncateFloors               notifyMemoryRecalled(ids) → UI highlight
+   → deleteFromTurn + rewindCompactionPointer
+```
+
+### 18.2 Main process (`src/main/`)
+
+| File | Responsibility | Key exports |
+| --- | --- | --- |
+| `services/memoryStore.ts` | The `memory_entries` store + all data shaping. **Pure** mappers `toRow`/`rowToEntry`; stream CRUD `appendEntries`/`getEntries`/`deleteFromTurn`/`countEntries`; data-management `getAllEntries`/`updateEntry`(`entryPatchToColumns`)/`deleteEntry`/`addManualEntry`; **entity layer** `EntitySheet`/`mergeEntitySheet`/`resolveEntityKey` (pure T1/T2) + `getEntity`/`upsertEntity`; **embedding** `setEmbedding`/`getEmbeddable`; `rewindCompactionPointer` (pure). | types `MemoryRow`/`MemoryEntry`/`NewMemory`/`EntitySheet`; the functions above |
+| `services/compactionService.ts` | **Writer.** Pure: `compactionRange`, `parseCompaction`(+`parseMemories`/`entitySummary`/`buildExtractionPrompt`/`floorsToTranscript`). Side-effecting: `utilityComplete` (extractor call + 60 s timeout), `maybeCompact` (in-flight-guarded, one transaction), `embedPending` (post-compaction embedding). | `maybeCompact`, `embedPending`, `utilityComplete`, the pure helpers |
+| `services/retrievalService.ts` | **Reader.** Pure ranking: `keywordRanked`/`vectorRanked`/`hybridRanked`(RRF)/`slotted`/`selectFromEntries`/`entityInScope`/`selectEntitiesInScope`/`format*Block`. `selectMemories` (async orchestrator; embeds scan text lazily; global cap). | `selectMemories`, the pure helpers |
+| `services/embeddingService.ts` | Embeddings (T4 = JS). `utilityEmbed` (OpenAI-compatible `/embeddings` on the embedding preset; null when unset) + `cosine` (pure). | `utilityEmbed`, `cosine` |
+| `services/memoryEvents.ts` | Main→renderer broadcasts. | `notifyMemoryChanged`, `notifyMemoryRecalled` |
+| `services/db.ts` | `memory_entries` schema (+ `embedding`, `memory_state` migrations) + `transact()` helper. | `transact` |
+| `services/chatService.ts` | `getMemoryState`/`setMemoryState` (per-chat checkpoint pointer); rewind-safety in `truncateFloors`. | those + existing |
+| `services/settingsService.ts` | The `memory` defaults = the **collection registry** (events/characters/locations/relationships); `mergeCollections` normalize. | `getDefaultSettings`/`normalize` |
+| `services/generationService.ts` | **Wiring**: `await selectMemories` → `buildPrompt({ memoryBlock })`; `notifyMemoryRecalled`; `void maybeCompact` after `appendFloor`. | `generate` |
+| `services/promptBuilder.ts` | `memoryBlock` tail injection (same convention as the live-state block, §16.1). | `buildPrompt` (arg `memoryBlock`) |
+| `types/models.ts` | `MemoryCollection` + the `memory` Settings block. | types |
+| `ipc/memoryIpc.ts` | `memory-list` / `-update` / `-delete` / `-add`. Registered in `ipc/index.ts`. | `registerMemoryIpc` |
+
+### 18.3 Preload & renderer
+
+- **`src/preload/index.ts`** — `memoryList`/`memoryUpdate`/`memoryDelete`/`memoryAdd` + the `onMemoryChanged`/`onMemoryRecalled` subscriptions.
+- **`renderer/components/MemoryView.tsx`** — the data-management **workspace view** (browse by collection, filter, edit/pin/delete, "remember this", entity-sheet rendering, live refresh + recalled-highlight via the events). Registered in `renderer/components/workspace/viewRegistry.tsx` (`memory`).
+- **`renderer/components/MemoryPanel.tsx`** — the **Settings → Memory** category (enable, summarizer connection, recall mode keyword/hybrid/vector, embedding connection, recall count, keep-recent, checkpoint). Wired as a rail item in `renderer/components/SettingsModal.tsx`.
+- **`renderer/stores/settingsStore.ts`** — mirrors the `memory` Settings type (+ `MemoryCollection`) for the renderer.
+- **`renderer/i18n/locales/{en,zh}.ts`** — all `prefs.memory*` + `memory.*` + `settings.memory` strings.
+
+### 18.4 Tests (`test/memory/`, ~90 cases)
+
+`memoryStore.test.ts` + `compaction.test.ts` + `retrieval.test.ts` + `embeddingService.test.ts` — **pure** helpers (mapping, ranking, parsing, cosine, sheet merge, key resolution). `compactionService.test.ts` + `selectMemories.test.ts` — **mocked orchestration** (the writer's gates/fail-open/transaction/embedding pass; the reader's collection dispatch/vector/fallback/cap). Tail-placement in `test/promptBuilder.test.ts`.
+
+### 18.5 Status & next steps
+
+**Done:** events stream engine; characters/locations/relationships entity collections; the data-management UI; vector + hybrid recall; the global token cap; hardening (timeout, atomic writes). **Not yet:** in-app manual verification (the highest-priority next action — nothing here has run live).
+
+**Remaining build items** (none gated except where noted): salience + decay *(needs the decay-model decision)*, token-threshold checkpoint trigger, event contradiction/supersede, query/conditional injection, hierarchical consolidation, custom card-defined collections, plot/objective tracking, document import, per-collection schema migration. See §17 for ordering.
