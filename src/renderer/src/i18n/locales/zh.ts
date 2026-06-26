@@ -395,6 +395,18 @@ const zh: Record<string, string> = {
 
   'status.waiting': '等待会话…',
   'status.heading': 'RPG 状态',
+  'memory.heading': '长期记忆',
+  'memory.waiting': '打开一个会话以查看其记忆。',
+  'memory.count': '已存 {{count}} 条',
+  'memory.refresh': '刷新',
+  'memory.loading': '加载中…',
+  'memory.empty': '暂无记忆——当较旧的回合被概括后会出现在这里。',
+  'memory.confirmDelete': '删除这条记忆？此操作无法撤销。',
+  'memory.keywordsPh': '关键词，用逗号分隔',
+  'memory.cancel': '取消',
+  'memory.turns': '第 {{a}}–{{b}} 回合',
+  'memory.pin': '置顶（始终召回）',
+  'memory.unpin': '取消置顶',
   'status.reevalTitle':
     '重新应用每条消息中存储的变量更新以重建状态 —— 无需重新生成（例如解析器更新后）。',
   'status.reevaluate': '↻ 重新计算',

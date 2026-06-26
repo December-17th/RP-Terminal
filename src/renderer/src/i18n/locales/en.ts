@@ -407,6 +407,18 @@ const en: Record<string, string> = {
 
   'status.waiting': 'Waiting for session...',
   'status.heading': 'RPG Status',
+  'memory.heading': 'Long-Term Memory',
+  'memory.waiting': 'Open a session to see its memories.',
+  'memory.count': '{{count}} stored',
+  'memory.refresh': 'Refresh',
+  'memory.loading': 'Loading…',
+  'memory.empty': 'No memories yet — they appear as older turns are summarized.',
+  'memory.confirmDelete': 'Delete this memory? This cannot be undone.',
+  'memory.keywordsPh': 'keywords, comma-separated',
+  'memory.cancel': 'Cancel',
+  'memory.turns': 'turns {{a}}–{{b}}',
+  'memory.pin': 'Pin (always recall this)',
+  'memory.unpin': 'Unpin',
   'status.reevalTitle':
     'Re-apply the stored variable updates from every message to rebuild the state — no regeneration (e.g. after a parser update).',
   'status.reevaluate': '↻ Re-evaluate',

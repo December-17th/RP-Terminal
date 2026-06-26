@@ -4,6 +4,7 @@ import React from 'react'
 import { useNavStore } from '../../stores/navStore'
 import { ChatView } from '../ChatView'
 import { StatusView } from '../StatusView'
+import { MemoryView } from '../MemoryView'
 import { LogsPanel } from '../LogsPanel'
 import { PanelRouter } from '../PanelRouter'
 import { WcvTestView } from './WcvPanel'
@@ -34,6 +35,11 @@ const ChatPanel: React.FC = () => {
 const StatusPanel: React.FC = () => {
   const { profileId } = useWorkspaceContext()
   return <StatusView profileId={profileId} />
+}
+
+const MemoryViewPanel: React.FC = () => {
+  const { profileId } = useWorkspaceContext()
+  return <MemoryView profileId={profileId} />
 }
 
 const CombatPanel: React.FC = () => {
@@ -69,6 +75,7 @@ export const ViewRegistry: Record<string, ViewEntry> = {
   navigator: { title: 'Navigator', Component: NavigatorPanel, fill: true },
   chat: { title: 'Chat', Component: ChatPanel, fill: true },
   status: { title: 'RPG Status', Component: StatusPanel },
+  memory: { title: 'Memory', Component: MemoryViewPanel },
   combat: { title: 'Combat', Component: CombatPanel, fill: true },
   usage: { title: 'Usage', Component: UsagePanel, fill: true },
   'card-scripts': { title: 'Card Scripts', Component: CardScriptsPanel },
