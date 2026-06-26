@@ -226,8 +226,19 @@ export const utilityComplete = async (
     temperature: 0.3,
     max_tokens: opts.maxTokens ?? 800
   }
-  return streamProvider(apiSettings, messages, params, () => {})
+  // Bound the background call so a hung summarizer can't dangle forever (fail-open handles the
+  // resulting rejection — the checkpoint just retries next turn).
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), UTILITY_TIMEOUT_MS)
+  try {
+    return await streamProvider(apiSettings, messages, params, () => {}, controller.signal)
+  } finally {
+    clearTimeout(timer)
+  }
 }
+
+/** Hard ceiling for a single background summarizer call. */
+const UTILITY_TIMEOUT_MS = 60_000
 
 // Chats with an in-flight compaction. The writer is fire-and-forget (voided after each turn), so a
 // rapid next turn could fire a second checkpoint that reads the SAME last_compacted_floor and
