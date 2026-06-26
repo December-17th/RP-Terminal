@@ -5,7 +5,7 @@
 **Builds on:** the app combat engine from [2026-06-25-combat-system.md](2026-06-25-combat-system.md)
 (branch `feat/combat-system`, P1–P8, all green).
 
-> **STATUS (2026-06-25): BP1–BP3 done; BP4 core done; BP5 bundle+integration done; BP6 done. 669 tests green.**
+> **STATUS (2026-06-26): card-side extension complete; in-app validation + a couple app affordances remain. 109 combat tests green.**
 > Shipped on branch `feat/poem-combat-extension`: BP1 (bundle `stat_map`/`derive` + `ext` bag),
 > BP2 (`parseCardItem` + `buildEncounterFromMvu` + `poemD20` buildCombatant), BP3 (the `<战斗协议>`
 > resolver on the `resolveAction` seam), BP4-core (the resolver is injected via `getSystem`/`runHookFor`;
@@ -23,7 +23,18 @@
 > (×数量, `阵营:'友方'`→party) via `buildCombatant`. Paste-in `<战斗启动协议>` snippet in
 > [poem-preset-combat-instructions.md](../../sdk/examples/poem-preset-combat-instructions.md). **Still
 > needed for in-app combat:** add that snippet to the card preset (the app doesn't auto-inject). 676 tests.
-> **Remaining build:** status MVU-UI regex; per-encounter mode chooser; end-of-combat fold-back verify; BP7.
+> **Since BP6 (2026-06-26):** combat **sheet BUILT**
+> ([poem-combat-sheet.regex.json](../../sdk/examples/poem-combat-sheet.regex.json), trigger `<战斗状态栏/>`,
+> parchment-themed, mirrors parse/derive); **lorebook applied to the card** via
+> [patch-poem-card.cjs](../../sdk/examples/patch-poem-card.cjs) — `<战斗启动协议>` (binary mode choice) +
+> `<战斗协议>` gate + `<战斗数据规范>` + the bundle; **百分比 伤害增幅 / 护盾 / healing** + `scanEffectProse`
+> for the card's flavor-keyed effect prose; **lifecycle/UX** — re-roll/swipe clears the encounter,
+> always-available **Quit-combat → AI演绎**, no-viable-party guard, combat no longer reshapes the layout,
+> empty-body lorebook fix; var write-back loop fixed app-side (value-diff guard + WCV exclude-sender).
+> **Remaining:** per-encounter narration cadence chooser (Classic/Narrate/Deterministic, app UI) ·
+> end-of-combat fold-back verify (in-app) · deferred depth (typed-damage/集群/意图/战意/revive) · BP7
+> creative-input. Full build status: [combat-poem-of-destiny-expansion.md](../../combat-poem-of-destiny-expansion.md)
+> §"Build status".
 
 **Goal:** Ship a **combat extension (mod) for the 命定之诗 character card** that imports the party's
 DND-style combat stats from MVU variables and resolves combat with the card's *own* `<战斗协议>` (a

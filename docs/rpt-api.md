@@ -163,7 +163,13 @@ it in the Combat-mode `CombatView`. The engine owns every number (seeded); the A
 
 - **Initiate** — the model emits `<rpt-combat-start enemies="哥布林 x3 (弱); 头目" map="forest"></rpt-combat-start>`;
   the chat shows an **Enter Combat** button that builds the encounter from the world's `combat` bundle
-  (`buildEncounter`) and switches to Combat mode. The tag is hidden in prose; the cue is stashed on the floor.
+  (`buildEncounter`, or `buildEncounterFromMvu` when the bundle has a `stat_map`) and switches to Combat
+  mode. The tag is hidden in prose; the cue is stashed on the floor. The tag **body may carry a JSON enemy
+  roster** (channel A1) — `parseCombatStart` extracts it to `cue.roster` and the engine builds those
+  combatants. **Lifecycle:** the encounter is per-chat + ephemeral; re-rolling/swiping the originating
+  message clears it (`clearEncounter`), an always-available **Quit combat** button returns to chat
+  (continue AI-narrated), and a no-viable-party guard avoids a blank board. Combat mode shares the default
+  workspace layout (no swap).
 - **Adjudicate / mid-fight exit** (the freeform-action box) — for an action the engine can't model
   (including leaving the fight), the player's prose → an adjudication prompt (steered by the card's
   `combat.improvise_prompt` / the user's `settings.combat.improvisePrompt`); the model replies with

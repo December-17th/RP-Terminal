@@ -58,7 +58,7 @@ view." Reused, not invented:
 | Off-thread harness + in-process fallback | the worker entry + service wrapper around the same core                                                   | [sandboxWorker.ts](../src/main/workers/sandboxWorker.ts), [sandboxService.ts](../src/main/services/sandboxService.ts)                                                                                  |
 | Combatant storage                        | `rpg_entities` (per-chat: `id / name / data TEXT`) — created, unused                                      | [db.ts:70](../src/main/services/db.ts)                                                                                                                                                                 |
 | Persistent world state + write-path      | `stat_data` MVU tree; `<UpdateVariable>` / `<JSONPatch>` folded by the clean-room parser                  | [mvuParser.ts](../src/main/parsers/mvuParser.ts)                                                                                                                                                       |
-| Combat-mode UI swap                      | per-FSM-mode workspace layouts; views resolved via a registry                                             | [workspaceStore.ts](../src/renderer/src/stores/workspaceStore.ts), [viewRegistry.tsx](../src/renderer/src/components/workspace/viewRegistry.tsx), [layoutDefaults.ts](../src/shared/layoutDefaults.ts) |
+| Combat-mode UI                           | per-FSM-mode workspace layouts (all modes share the default shell; the player places the `combat` view); views via a registry | [workspaceStore.ts](../src/renderer/src/stores/workspaceStore.ts), [viewRegistry.tsx](../src/renderer/src/components/workspace/viewRegistry.tsx), [layoutDefaults.ts](../src/shared/layoutDefaults.ts) |
 | AI ⇄ engine transport                    | `<rpt-action>` / `<rpt-result>` tags + L4-append cache discipline                                         | [agentic-mode-design.md](agentic-mode-design.md) §4–8                                                                                                                                                  |
 | Action/event parse + state fold          | `<rpt-event>` parser; `applyEvent` fold in `generate()`                                                   | [contentParser.ts](../src/main/parsers/contentParser.ts), [generationService.ts](../src/main/services/generationService.ts)                                                                            |
 | Per-mode system prompt addendum          | `composeAddendum` (`agent.prompts[mode]`, e.g. `combat`)                                                  | [generationService.ts:44](../src/main/services/generationService.ts)                                                                                                                                   |
@@ -232,10 +232,17 @@ This decoupling is what lets any world opt into combat without retrofitting its 
 
 ## 9. UI — the native `CombatView`
 
-- A new **`combat`** view registered in [viewRegistry.tsx](../src/renderer/src/components/workspace/viewRegistry.tsx);
-  entering Combat mode swaps the workspace to a combat layout (grid center · initiative tracker ·
-  action bar with AoE preview · combat log · narrow chat) — the per-mode layout machinery already
-  exists ([workspaceStore.ts](../src/renderer/src/stores/workspaceStore.ts)).
+- A new **`combat`** view registered in [viewRegistry.tsx](../src/renderer/src/components/workspace/viewRegistry.tsx)
+  (grid center · initiative tracker · action bar with AoE preview · combat log). It's a panel view like
+  any other. **Update 2026-06-26:** entering Combat mode no longer *swaps* the workspace — all FSM modes
+  share the default layout shell ([layoutDefaults.ts](../src/shared/layoutDefaults.ts); the combat-specific
+  seed was removed), and the player places the `combat` view in a panel themselves (it persists per-mode).
+- **Encounter lifecycle (2026-06-26):** the encounter is per-chat + ephemeral (`combat_encounters`). It is
+  **cleared when its originating message is re-rolled/swiped** (regenerate / generate-swipe /
+  set-active-swipe → `clearEncounter`) so a stale fight doesn't outlive the narrative it branched from. An
+  always-available **Quit combat** button in `CombatView` ends the encounter and returns to chat (where the
+  gated `<战斗协议>` can continue it AI-narrated). A **no-viable-party guard** (all party members `maxHp 0`,
+  e.g. a 0-attribute early-game character) shows a clear message instead of a blank/instant-loss board.
 - **Card skinning:** the `combat.skin` slot supplies token art, tile art, ability icons, and themed
   `--rpt-*` CSS tokens so 命定之诗 combat _looks_ like 命定之诗 — but the engine and renderer are
   native. App UI strings route through `t()` (en/zh), per the i18n rule in `CLAUDE.md`.
@@ -299,7 +306,7 @@ Every AI touchpoint obeys the L1–L4 layering ([agentic-mode-design.md](agentic
 | **C1 — Engine core + resolver seam**        | `CombatState`; the `resolve(state, action, seed) → events` contract; native d20 resolver; the card-override hooks (§5); `rpg_entities` wiring. Headless, unit-tested deterministic.         | `sandboxRunner`, `rpg_entities`            |
 | **C2 — Grid (lean)**                        | occupancy, movement/pathfinding, range, AoE templates, terrain flags. Headless + tested.                                                                                                    | C1                                         |
 | **C3 — Enemy controllers**                  | the native `weighted` policy + the `ai` policy (batched per round).                                                                                                                         | C1, `<rpt-action>`                         |
-| **C4 — Native `CombatView`**                | grid UI, initiative tracker, action bar + AoE preview, the **Improvise** affordance, combat log; Combat-mode layout.                                                                        | `viewRegistry`, `workspaceStore`           |
+| **C4 — Native `CombatView`**                | grid UI, initiative tracker, action bar + AoE preview, the **Improvise** affordance, combat log; a Quit-combat button + no-viable-party guard. (Combat shares the default layout — no swap.) | `viewRegistry`, `workspaceStore`           |
 | **C5 — AI touchpoints**                     | the `CombatState` ⇄ prompt serializer; end-of-combat narration prompt + mid-combat adjudication prompt; consequence fold-out via MVU; the `<rpt-combat-start>` tag + "Enter Combat" button. | `contentParser`, `mvuParser`, `generate()` |
 | **C6 — `combat` bundle + 命定之诗 content** | the bundle schema + importer/permission gating; author 命定之诗's templates, abilities, bestiary, maps, skin. **+ update `docs/sdk/` (§10).**                                               | World-Card importer                        |
 | **C7 — Tactical depth + polish**            | LoS, cover, opportunity attacks, reactions, the conditions library, hex option, smarter weighted policy.                                                                                    | C1–C6                                      |

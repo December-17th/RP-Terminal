@@ -278,7 +278,8 @@ methods/tags: [rpt-api.md](../rpt-api.md) §4 (Combat).
 | Stat block | `block` (`hp`,`maxHp`,`ac`,`speed`,`mods`,`abilities`,`resist`,`vulnerable`) | fresh + ephemeral; only consequences fold back to `stat_data` |
 | Enemy controller | `combat.enemy_controller` `weighted` \| `ai`; per-enemy `controller` | native weighted policy (free) or model-driven |
 | Resolver override (coarse) | `combat.scripts.resolveAction` (sandboxed JS) | `(input{state,action}, rng, emit, log) → {state?, events?}`; replaces native resolution for an action |
-| Combat-start cue | model emits `<rpt-combat-start enemies="…" map="…">` | → Enter-Combat button → `buildEncounter` |
+| Combat-start cue | model emits `<rpt-combat-start enemies="…" map="…">`; the **body may carry a JSON enemy roster** (channel A1) | → Enter-Combat button → `buildEncounter` / `buildEncounterFromMvu({ roster })` |
+| Encounter lifecycle | per-chat + ephemeral; **cleared on re-roll/swipe** of the originating message; **Quit-combat** button → back to chat (AI-narrated); no-viable-party guard | combat mode shares the default layout (no swap, 2026-06-26) |
 | Adjudication / mid-fight exit | model replies `<rpt-combat-result>{narration, ops[], end}</rpt-combat-result>` | ops: `damage`/`heal`/`move`/`condition`; `end:true` concludes/escapes the fight → prose to chat + exit |
 | Combat prompts | card `combat.narration_prompt` / `narration_mode` / `improvise_prompt`; user `settings.combat.*` | steer end-of-combat narration (+ append/new-floor placement) and the freeform-action box; card overrides user |
 | Conditions (mechanical) | `stunned`/`restrained` (immobilize), `prone` (attackers get advantage) | other ids are labels only — extended mechanics are script-authored (below) |

@@ -234,9 +234,10 @@ bundle config + integration test · BP6 SDK docs. The engine path is proven by t
 **The crux (owner-raised 2026-06-26):** for a real fight the **AI must supply each non-party
 combatant's data** — name, 生命层级, 五维, 装备, 技能, 状态效果 — because **enemies (and ad-hoc NPCs) are
 NOT in MVU `stat_data`**. The card generates them as narrative `<char_info>` panels (`<角色生成>`), which
-are prose, not machine-readable. Today's BP4 static bundle `enemies` are a **stopgap**; there is no real
-end-to-end test path until the AI→engine combatant channel exists. This is fundamentally a **lorebook/
-preset** problem (how the AI emits combat data), see the next section.
+are prose, not machine-readable. This is fundamentally a **lorebook/preset** problem (how the AI emits
+combat data). **Resolved 2026-06-26 → channel A1:** the AI emits a JSON enemy roster in the
+`<rpt-combat-start>` body; `parseCombatStart` → `cue.roster` → `buildEncounterFromMvu({ roster })`. The
+static bundle `enemies` remain a fallback. (Kept below as the rationale that drove the channel choice.)
 
 **Two hard constraints (verified from the remote `data_schema/index.js`):**
 1. **No new MVU top-level key.** `d = z.object({事件,世界,任务列表,主角,命运点数,关系列表,新闻})` strips
@@ -255,18 +256,29 @@ preset** problem (how the AI emits combat data), see the next section.
 (攻击/防御 + 检定/DR), `技能{name:{类型,消耗,标签[],效果{}}}` (关联属性/有效距离/威力/范围 + 命中/闪避/附加
 效果), `状态效果{}`. HP/MP/SP/AC are **derived**, never supplied.
 
-### Remaining build items (after the lorebook design is settled)
-- **AI→engine enemy/NPC channel** (the crux) — parse AI-supplied combatant data into `buildCombatant`
-  enemies, replacing the static bundle stopgap. Channel TBD (see next section).
-- **Status MVU-UI regex** (BP5) — **built v1**: standalone parchment-themed combat sheet
+### Build status (updated 2026-06-26)
+**Done since the design settled:**
+- **AI→engine enemy/NPC channel** ✅ — **channel A1** (owner-chosen): the AI emits a JSON enemy roster in
+  the `<rpt-combat-start>` body; `parseCombatStart` → `cue.roster` → `buildEncounterFromMvu({ roster })`
+  builds each (`阵营:'友方'`→party). Static bundle `enemies` remain a fallback.
+- **百分比 / 护盾 / healing** ✅ — `伤害增幅` (outgoing ×), 护盾 (absorb pool), 治疗 abilities + 治疗增幅 +
+  flat 治疗量; `scanEffectProse` reads the card's flavor-keyed effect prose (real catalog format).
+- **Status MVU-UI regex** ✅ v1 — standalone parchment combat sheet
   ([sdk/examples/poem-combat-sheet.html](sdk/examples/poem-combat-sheet.html) → `.regex.json`), trigger
-  `<战斗状态栏/>`, reads `getVariables().stat_data.主角`, **mirrors** `parseCardItem`/`derive` (kept in
-  sync manually; the parser is unit-tested engine-side). Owner-chosen option A, styled to match the
-  状态栏 `羊皮纸` theme. Needs in-app render/aesthetic verification.
-- **Per-encounter mode chooser** (BP4) — Classic / Combat-system Narrate / Deterministic.
-- **End-of-combat fold-back verification** — confirm post-fight HP/状态 writes back to `stat_data`
-  (主角) via `<UpdateVariable>` in-app.
-- **Creative-input box** (BP7) — deferred.
+  `<战斗状态栏/>`, mirrors `parseCardItem`/`derive`. (Owner-chosen option A; in-app aesthetic verify pending.)
+- **Lorebook applied to the card** ✅ — [patch-poem-card.cjs](sdk/examples/patch-poem-card.cjs) writes the
+  bundle + `<战斗启动协议>` (mode choice) + `<战斗协议>` gate + `<战斗数据规范>` into `v4.2.1+combat.png`.
+- **Lifecycle/UX** ✅ — re-roll/swipe clears the encounter; an always-available **Quit combat** button
+  returns to chat (AI演绎); a no-viable-party guard; combat no longer reshapes the workspace layout; the
+  empty-body lorebook fix (force visible 正文). Var write-back loop fixed app-side (value-diff guard +
+  WCV exclude-sender).
+
+**Remaining:**
+- **Per-encounter narration cadence chooser** (within combat-system) — Classic vs Narrate vs Deterministic
+  is a UI/app affordance; the lorebook already drives the binary AI-decided-vs-combat-system entry.
+- **End-of-combat fold-back verification** — confirm post-fight HP/状态 writes back to `stat_data` in-app.
+- **Dynamic AI enemy `char_info`** beyond the A1 roster (optional); typed-damage split, 集群, 意图/部位,
+  战意, revive, 资源消耗减免 (deferred depth); **Creative-input box** (BP7).
 
 ## Lorebook compatibility — the enemy/combatant-data channel (brainstorm 2026-06-26)
 Goal: make the card emit, in a **machine-readable** form the engine can consume, the combat data for

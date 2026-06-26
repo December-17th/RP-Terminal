@@ -5,6 +5,31 @@
 
 Running status of the MVU / panel-workspace track. Newest first.
 
+## 2026-06-26
+
+- **命定之诗 combat extension — card-side complete (branch `feat/poem-combat-extension`).** A card-side
+  mod that imports the party from MVU `stat_data` and resolves combat with the card's own `<战斗协议>`
+  (层级-d20), co-developed with the app combat SDK. Design:
+  [combat-poem-of-destiny-expansion.md](combat-poem-of-destiny-expansion.md); plan:
+  [plans/2026-06-25-poem-combat-extension.md](superpowers/plans/2026-06-25-poem-combat-extension.md);
+  manual tests: [combat-poem-manual-tests.md](combat-poem-manual-tests.md).
+  - **Engine/SDK:** `stat_map`/`derive` bundle fields + an `ext` bag on combatants/abilities;
+    `parseCardItem` (incl. `scanEffectProse` for the card's flavor-keyed effect prose) +
+    `buildEncounterFromMvu`; the `<战斗协议>` resolver on the `resolveAction` seam
+    (`getSystem`/`runHookFor`); 百分比 伤害增幅, 护盾, healing (治疗 / 治疗增幅).
+  - **Owner decisions:** enemies via **channel A1** — a JSON roster in the `<rpt-combat-start>` body
+    (static bundle `enemies` fallback); item-format compat = **scan prose + lorebook tighten**
+    (`<战斗数据规范>`); combat sheet = **standalone regex** (option A, parchment `<战斗状态栏/>`); the
+    **binary mode choice** (AI-decided vs combat-system) is **lorebook-driven** (`<战斗启动协议>` + a
+    `<战斗协议>` gate); combat mode **does not reshape the workspace layout** (removed the combat seed).
+  - **Lorebook applied to the card** via [patch-poem-card.cjs](sdk/examples/patch-poem-card.cjs) →
+    `v4.2.1+combat.png` (combat bundle + 战斗启动协议 + 战斗协议 gate + 战斗数据规范).
+  - **Lifecycle/UX:** re-roll/swipe clears the encounter; always-available **Quit combat** → back to chat
+    (AI-narrated); no-viable-party guard; empty-body lorebook fix; the **variable write-back loop** fixed
+    app-side (value-diff guard in the shared runtime + WCV exclude-sender).
+  - **Remaining:** per-encounter narration cadence chooser (app UI); end-of-combat fold-back verify
+    (in-app); deferred depth (typed-damage / 集群 / 意图·部位 / 战意 / revive) + the creative-input box.
+
 ## 2026-06-25
 
 - **Local grid combat system — built end-to-end (branch `feat/combat-system`, P1–P7 + P8-partial; 71
