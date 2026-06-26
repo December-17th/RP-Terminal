@@ -69,6 +69,18 @@ const en: Record<string, string> = {
   'prefs.cacheHint':
     'How aggressively the prompt is structured for provider cache reuse. Baseline uses provider prefix caching as-is; Frozen Core keeps the character/lore prefix byte-stable across turns.',
   'prefs.cacheDisabledTitle': 'Cache optimization is not configurable yet',
+  'prefs.memory': 'Long-Term Memory',
+  'prefs.memoryEnable': 'Remember earlier events across the session',
+  'prefs.memoryHint':
+    'When on, older turns are summarized as they age out of the window and the relevant ones are recalled into each prompt. Off by default; works at any cache setting.',
+  'prefs.memoryUtility': 'Summarizer connection',
+  'prefs.memoryUtilityActive': 'Active connection',
+  'prefs.memoryUtilityHint':
+    'Which saved API connection writes the summaries — use a cheap, fast model. Defaults to the active connection.',
+  'prefs.memoryRecall': 'Memories recalled per turn',
+  'prefs.memoryCheckpoint': 'Summarize every N turns',
+  'prefs.memoryCheckpointHint':
+    'How often older turns are folded into memory — a background step that never blocks your turn.',
   'prefs.cardRendering': 'Card rendering (default)',
   'prefs.cardInline': 'Inline (native, embedded in the message)',
   'prefs.cardIsolated': 'Isolated (crash-resistant overlay window)',

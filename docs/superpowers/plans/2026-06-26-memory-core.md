@@ -2,12 +2,20 @@
 
 **Design / spec:** [docs/episodic-memory-design.md](../../episodic-memory-design.md) (core scope: §15)
 
-> **STATUS (2026-06-26): NOT STARTED.** This plan covers only the **core** — the memory-engine
-> skeleton + the single `events` stream collection, end-to-end, behind a default-off flag, injecting
-> into the prompt tail. The generic store + collection registry are built up front so entity
-> collections, vector mode, and the rest (design §5.2, §6, §8, §11, §14) plug in later **without
-> rearchitecting** — but none of those ship in the core. Decisions in design §13/§14 are **deferred**
-> and do not block any phase here.
+> **STATUS (2026-06-26): P0–P4 BUILT (branch `feat/memory-system`).** The core is end-to-end: the
+> memory-engine skeleton + the single `events` stream collection, behind a default-off flag,
+> injecting into the prompt tail. Shipped: `memory_entries` schema + `memory` settings registry (P0);
+> `memoryStore` CRUD + rewind-safety `deleteFromTurn` (P1); `retrievalService` keyword recall +
+> reserved slots + tail injection via the `buildStateBlock` convention (P2); `compactionService`
+> turn-count checkpoint with one fail-open utility call (P3); minimal settings UI + en/zh i18n +
+> recall/compaction logs (P4). **35 memory unit tests; typecheck + 683 tests + lint(0 err) green.**
+> The generic store + registry are in place so entity collections, vector mode, and the rest (design
+> §5.2, §6, §8, §11, §14) plug in later **without rearchitecting**. Decisions in design §13/§14 stay
+> **deferred**.
+>
+> **Verification gap:** the DB-execution paths (better-sqlite3 is a no-op stub under Node) and the
+> renderer settings UI are covered by pure-helper unit tests + typecheck/build, not by automated
+> DB/UI tests — they need the running app to verify in-app (manual e2e, owner-run).
 
 **Goal:** A chat session that remembers what mattered after old turns leave the verbatim window.
 As floors age out, a background **writer** summarizes them into `events` rows; before each turn a

@@ -70,6 +70,17 @@ const zh: Record<string, string> = {
   'prefs.cacheHint':
     '提示词为命中服务商缓存而构建的激进程度。基线按原样使用服务商前缀缓存；冻结核心在多回合间保持角色/世界书前缀逐字节稳定。',
   'prefs.cacheDisabledTitle': '缓存优化暂不可配置',
+  'prefs.memory': '长期记忆',
+  'prefs.memoryEnable': '在整局会话中记住此前发生的事',
+  'prefs.memoryHint':
+    '开启后，较旧的回合在滑出上下文窗口时会被概括存档，并在每次生成时召回相关条目。默认关闭；与任意缓存设置兼容。',
+  'prefs.memoryUtility': '概括所用连接',
+  'prefs.memoryUtilityActive': '当前连接',
+  'prefs.memoryUtilityHint':
+    '由哪个已保存的 API 连接来生成概括——建议用便宜且快速的模型。默认使用当前连接。',
+  'prefs.memoryRecall': '每回合召回的记忆数',
+  'prefs.memoryCheckpoint': '每 N 回合概括一次',
+  'prefs.memoryCheckpointHint': '较旧回合被折叠进记忆的频率——这是后台步骤，不会阻塞你的当前回合。',
   'prefs.cardRendering': '卡片渲染（默认）',
   'prefs.cardInline': '内联（原生，嵌入消息中）',
   'prefs.cardIsolated': '隔离（抗崩溃的悬浮窗口）',

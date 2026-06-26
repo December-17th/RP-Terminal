@@ -352,6 +352,8 @@ _Captured 2026-06-26 from brainstorming. **No decision taken** — options + cur
 
 ## 15. Core scope (implemented first) → plan
 
+> **BUILT 2026-06-26** on branch `feat/memory-system` (P0–P4). The core below is end-to-end and behind a default-off flag; see [plans/2026-06-26-memory-core.md](superpowers/plans/2026-06-26-memory-core.md) for the as-built status. Everything in §5.2 / §6 vector / §8 vector·hybrid·llm / §11 / §14 remains deferred.
+
 The first implementation is the **engine skeleton + the `events` stream collection only**, behind a default-off flag, injecting into the tail. The generic store (§6) + collection registry (§5.3) are built up front so entity collections, vector, and the rest plug in later **without rearchitecting** — but only `events` + keyword recall + a turn-count checkpoint ship in the core. Detailed phased plan: **[plans/2026-06-26-memory-core.md](superpowers/plans/2026-06-26-memory-core.md)**.
 
 **Out of the core (deferred):** entity collections (§5.2 — `characters`/`locations`/`relationships`), vector / hybrid / llm ranking (§6, §8), salience + decay, consolidation, supersede, custom card-defined collections, the memory panel (§11), per-mode recall breadth, the token-threshold trigger, and every thread in §14.
