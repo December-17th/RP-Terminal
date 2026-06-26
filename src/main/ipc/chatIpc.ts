@@ -3,6 +3,7 @@ import * as chatService from '../services/chatService'
 import * as floorService from '../services/floorService'
 import * as generationService from '../services/generationService'
 import * as chatWriteService from '../services/chatWriteService'
+import * as combatService from '../services/combatService'
 import * as logService from '../services/logService'
 import * as usageMetricsService from '../services/usageMetricsService'
 
@@ -60,9 +61,13 @@ export const registerChatIpc = (ipcMain: IpcMain): void => {
   })
   ipcMain.handle('regenerate', async (event, profileId, chatId) => {
     try {
-      return await generationService.regenerate(profileId, chatId, (delta) =>
+      const floor = await generationService.regenerate(profileId, chatId, (delta) =>
         event.sender.send('generation-delta', { chatId, delta })
       )
+      // Re-rolling the latest message rewrites the narrative that an active fight branched from
+      // (e.g. the message that emitted <rpt-combat-start>) — so abandon the stale encounter.
+      combatService.clearEncounter(chatId)
+      return floor
     } catch (err: any) {
       logService.log('error', '✗ regenerate failed', err?.message || String(err))
       throw err
@@ -85,14 +90,19 @@ export const registerChatIpc = (ipcMain: IpcMain): void => {
   )
 
   // TH-2 swipes: switch the active alternate, or generate a new one for the latest floor.
-  ipcMain.handle('set-active-swipe', (_, profileId, chatId, floorIndex, swipeId) =>
-    floorService.setActiveSwipe(profileId, chatId, floorIndex, swipeId)
-  )
+  // Either changes the active message, so a fight that branched from it is abandoned (clearEncounter).
+  ipcMain.handle('set-active-swipe', (_, profileId, chatId, floorIndex, swipeId) => {
+    const r = floorService.setActiveSwipe(profileId, chatId, floorIndex, swipeId)
+    combatService.clearEncounter(chatId)
+    return r
+  })
   ipcMain.handle('generate-swipe', async (event, profileId, chatId) => {
     try {
-      return await generationService.generateSwipe(profileId, chatId, (delta) =>
+      const floor = await generationService.generateSwipe(profileId, chatId, (delta) =>
         event.sender.send('generation-delta', { chatId, delta })
       )
+      combatService.clearEncounter(chatId)
+      return floor
     } catch (err: any) {
       logService.log('error', '✗ swipe failed', err?.message || String(err))
       throw err
