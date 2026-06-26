@@ -126,6 +126,8 @@ export const selectMemories = (
 
   const blocks: string[] = []
   const rows: MemoryEntry[] = []
+  const maxTokens = mem.max_tokens || 0
+  let used = 0
   for (const coll of mem.collections) {
     if (!coll.enabled) continue
     const isStream = coll.shape === 'stream' && coll.retrieval.mode === 'keyword'
@@ -141,11 +143,15 @@ export const selectMemories = (
     const block = isStream
       ? formatBlock(coll.inject.label, chosen)
       : formatEntityBlock(coll.inject.label, chosen)
+    if (!block) continue
 
-    if (block) {
-      blocks.push(block)
-      rows.push(...chosen)
-    }
+    // Global tail cap: always keep the first block, then stop once max_tokens is reached
+    // (collections are ordered by priority — events, characters, locations).
+    const cost = estimateTokens(block)
+    if (maxTokens > 0 && blocks.length > 0 && used + cost > maxTokens) continue
+    blocks.push(block)
+    rows.push(...chosen)
+    used += cost
   }
   return { block: blocks.join('\n\n'), rows }
 }

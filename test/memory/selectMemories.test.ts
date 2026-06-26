@@ -82,6 +82,23 @@ describe('selectMemories (orchestration)', () => {
     expect(r.rows.map((x) => x.id).sort()).toEqual(['e1', 'f1'])
   })
 
+  it('caps the total tail at memory.max_tokens, dropping later collections', () => {
+    vi.mocked(getEntries).mockImplementation((_p, _c, id) =>
+      id === 'events'
+        ? [entry({ id: 'e1', summary: 'x'.repeat(200) })]
+        : id === 'facts'
+          ? [entry({ id: 'f1', collection: 'facts', summary: 'y'.repeat(200) })]
+          : []
+    )
+    const settings = settingsWith([
+      coll({ id: 'events', inject: { label: 'Events' } }),
+      coll({ id: 'facts', inject: { label: 'Facts' } })
+    ])
+    settings.memory.max_tokens = 30 // ~one ~52-token block fits; the second is dropped
+    const r = selectMemories('p', 'c', 'scan', settings)
+    expect(r.rows.map((x) => x.id)).toEqual(['e1']) // first block kept, second over budget
+  })
+
   it('is a no-op when memory is disabled', () => {
     const r = selectMemories('p', 'c', 'scan', {
       memory: { enabled: false }
