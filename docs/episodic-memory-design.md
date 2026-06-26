@@ -426,9 +426,12 @@ Memory **trades cached tokens for uncached ones**: it shrinks the (cacheable) ve
 
 > **BUILT so far (branch `feat/memory-system`):** the full `events` stream engine (§15); the complete
 > **data-management UI** (#1 — browse/filter/edit/pin/delete/add/live-refresh/why-recalled); **entity
-> collections** (#2 — `characters`/`locations` end-to-end: store, one-call structured extraction with
-> T1 key-resolution + T2 delta sheets, in-scope reader injection, sheet rendering in the UI); and the
-> global `max_tokens` tail cap (part of #4). Remaining below.
+> collections** (#2 — `characters`/`locations`/`relationships` end-to-end: store, one-call structured
+> extraction with T1 key-resolution + T2 delta sheets, in-scope reader injection, sheet rendering);
+> the global `max_tokens` tail cap; **hardening** (utility-call timeout, atomic compaction writes);
+> and **vector + hybrid recall** (#6 — T4 = JS cosine: `embedding` column, embed-on-write +
+> cosine/RRF-on-read, embedding-connection + recall-mode UI; falls back to keyword when unconfigured).
+> Remaining below are refinements/scale.
 
 The core (§15) ships the `events` stream collection end-to-end. Remaining work, in build order:
 
