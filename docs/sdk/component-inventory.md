@@ -67,7 +67,7 @@ transports implement the same surface, so a card behaves identically in either
 | --- | --- | --- |
 | `TavernHelper` (+ bare helpers) | variables (+ script scope), chat r/w, worldbook CRUD, char/preset read, regex read/format/write, generate, events, `triggerSlash`, macros, audio | ✅ (gaps below) |
 | `Mvu` | `getMvuData`/`getMvuVariable`/`setMvuVariable`/`replaceMvuData`/`parseMessage`/`events` | ✅ |
-| `SillyTavern` | `getContext()`, `chat[]` (+swipes), `substituteParams`, `saveChat`, `reloadCurrentChat`, `eventSource` | ✅ |
+| `SillyTavern` | `getContext()`, `chat[]` (+swipes), `substituteParams`, `saveChat`, `reloadCurrentChat`, `eventSource`, `saveSettingsDebounced` (no-op) | ✅ |
 | `EjsTemplate` | `evalTemplate`/`prepareContext`/`getSyntaxErrorInfo`/`allVariables`/`saveVariables`/… | ✅ |
 | `toastr`, `tavern_events` | toast bus; the events enum | ✅ |
 | injected libs | see Layer B | ✅ |

@@ -68,7 +68,7 @@ low-level bridge name and how the DOM libs are injected differ per transport.
 
 | Global | Purpose | Source |
 | --- | --- | --- |
-| `window.SillyTavern` | `getContext()`, `chat[]` (+ swipes), `saveChat()`, `reloadCurrentChat()`, `substituteParams()` | thRuntime |
+| `window.SillyTavern` | `getContext()`, `chat[]` (+ swipes), `saveChat()`, `reloadCurrentChat()`, `substituteParams()`, `saveSettingsDebounced()` (no-op) | thRuntime |
 | `window.TavernHelper` (+ bare helpers) | the TH JS API (variables, messages, worldbook CRUD, events, generate, `triggerSlash`, …) | thRuntime |
 | `window.Mvu` | MagVarUpdate API (`getMvuData`/`getMvuVariable`/`setMvuVariable`/`replaceMvuData`/`parseMessage`/`events`) | thRuntime |
 | `window.EjsTemplate` | the EJS engine API (`evalTemplate`/`prepareContext`/`getSyntaxErrorInfo`/`allVariables`/`saveVariables`/…) | thRuntime |
@@ -101,6 +101,7 @@ through the host bridge as RFC-6902 JSON Patch.
 ### Chat / messages — 🟡
 
 - `SillyTavern.chat[]` — ✅ built from floors (each message carries `swipes`/`swipe_id`); `saveChat()` + `reloadCurrentChat()` — ✅
+- `SillyTavern.saveSettingsDebounced()` / `getContext().saveSettingsDebounced` — 🟡 **safe no-op** (RP Terminal has no ST `settings.json`). Extension-style cards call it after mutating `extensionSettings`; without it they throw `saveSettingsDebounced is not a function`.
 - `getChatMessages()` (returns `message_id` = compact chat-array index) / `getCurrentMessageId()` / `getLastMessageId()` (alias of `getCurrentMessageId`) — ✅ (read)
 - `setChatMessages([{message_id, message}])` — ✅ edit content by index (→ floor+role, re-fold + reload). `deleteChatMessages(ids)` — ✅ truncates from the earliest targeted message's floor (the floor model couples user+assistant, so arbitrary mid-chat single-message deletes aren't supported). Both via the shared `chatWriteService`.
 - `createChatMessages` — 🟡 routes to the composer-inject for onboarding; general insert-a-message deferred (ambiguous in the floor model). `createChat` — 🟡 (inline stub; WCV partial). Per-message swipe/var edits — ⬜.
@@ -208,12 +209,15 @@ Card → host channels (resolved against the calling view's ctx), in
 (`-get-regexes-full` / `-replace-regexes` / `-is-char-regex-enabled`), `-get-chat-id-sync`, the script-scope
 KV channels (`-script-vars-get-sync` / `-script-vars-set`), and the chat-write channels
 (`chat-set-messages` / `-delete-messages` / `-save`). Host → card: `wcv-vars-changed` (mirror refresh) +
-`wcv-event` (lifecycle/mutation/stream). A card-origin variable write (`wcv-host-apply-vars` /
-`-set-vars`) is **not** echoed back to the author (the write handlers pass `e.sender.id` to
-`notifyVarsChanged`, which skips that slot); without this a card that re-writes on its own
-`mag_variable_update_ended` / `MESSAGE_UPDATED` loops forever. Siblings + host panels still refresh, and
-the writer's runtime cache is already updated optimistically. (The inline transport gets the same
-protection via a value-diff guard in its `onVarsChanged`.) To add an API: add the runtime method
+`wcv-event` (lifecycle/mutation/stream). **Write-back loop guard** — a card that re-writes on its own
+`mag_variable_update_ended` / `MESSAGE_UPDATED` would spin forever, because its write loops back to it
+both directly (`notifyVarsChanged`) and indirectly (the host applies the change to the floor, whose
+store update re-broadcasts via `wcv-broadcast-vars` to all slots). Two layers stop this: (1) the direct
+write handlers (`wcv-host-apply-vars` / `-set-vars`) pass `e.sender.id` to `notifyVarsChanged`, which
+skips the author's slot; (2) the **primary** cycle-breaker — the shared runtime's `onVarsChanged`
+(`thRuntime/index.ts`) skips re-firing events when the incoming `stat_data` is byte-identical to what it
+last fired, collapsing the indirect idempotent echo. Both transports inherit (2); the inline transport
+additionally diffs in its own `onVarsChanged`. To add an API: add the runtime method
 ([`thRuntime/index.ts`](../src/shared/thRuntime/index.ts)) + a `Host` method on **both** adapters (sync
 getter → `sendSync` / store read; heavy → `invoke` / `window.api`) + the ctx-scoped IPC handler, and update
 this doc + [docs/sdk/](sdk/component-inventory.md).

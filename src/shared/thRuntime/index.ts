@@ -54,7 +54,18 @@ export function createThRuntime(host: Host): ThGlobals {
 
   // --- statData cache (authoritative refresh via host.onVarsChanged; optimistic on write) ---
   let stat: any = host.statData() || {}
+  // Last stat_data we FIRED events for. A card's own write loops back to it (WCV: directly, OR
+  // indirectly via the host re-broadcasting the floor change; inline: via the chat-store subscription),
+  // so without a value-diff guard a card that re-writes on its own VARIABLE_UPDATE_*/MESSAGE_UPDATED
+  // spins forever. We skip re-firing when the incoming stat_data is byte-identical to what we last
+  // fired, which collapses an idempotent echo. (The inline host had this guard locally; centralizing it
+  // here keeps BOTH transports covered regardless of host. Mirrors that guard: updated only here, so the
+  // first echo after an optimistic write still fires once, then the idempotent repeat is dropped.)
+  let lastFiredJson = JSON.stringify(stat ?? null)
   const offVars = host.onVarsChanged((sd) => {
+    const json = JSON.stringify(sd ?? null)
+    if (json === lastFiredJson) return
+    lastFiredJson = json
     // MVU event contract (JS-Slash-Runner `exported.mvu.d.ts`): VARIABLE_UPDATE_* handlers receive
     // `(variables: MvuData, variables_before_update: MvuData)` — the WRAPPED `{ stat_data }` object,
     // NOT the bare stat_data. Matches the inline transport (`plugin/mvuEvents.ts`). Emitting bare stat
@@ -465,12 +476,17 @@ export function createThRuntime(host: Host): ThGlobals {
     })
   }
   const eventSource = { on, emit, makeFirst: on, once: on, removeListener: off }
+  // ST persists global settings on a debounce; RP Terminal has no ST settings.json, so this is a no-op.
+  // Cards (esp. extension-style ones) call it after mutating extensionSettings — without the function on
+  // the global they throw "SillyTavern.saveSettingsDebounced is not a function" (an unhandledrejection).
+  const saveSettingsDebounced = (): void => undefined
   const getContext = (): any => ({
     chat: stChat(),
     eventSource,
     eventTypes: TAVERN_EVENTS,
     event_types: TAVERN_EVENTS,
     extensionSettings: { EjsTemplate: { enabled: true } },
+    saveSettingsDebounced,
     getContext: () => getContext()
   })
   const SillyTavern = {
@@ -479,7 +495,8 @@ export function createThRuntime(host: Host): ThGlobals {
     substituteParams: substMacros,
     getCurrentChatId: () => host.currentChatId(),
     saveChat: async () => host.saveChat(SillyTavern.chat),
-    reloadCurrentChat: async () => host.reloadChat()
+    reloadCurrentChat: async () => host.reloadChat(),
+    saveSettingsDebounced
   }
 
   // --- EjsTemplate (engine lives in the transport via host.evalTemplate) ---
