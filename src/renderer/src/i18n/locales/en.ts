@@ -78,6 +78,16 @@ const en: Record<string, string> = {
   'prefs.memoryUtilityActive': 'Active connection',
   'prefs.memoryUtilityHint':
     'Which saved API connection writes the summaries — use a cheap, fast model. Defaults to the active connection.',
+  'prefs.memoryMode': 'Recall mode',
+  'prefs.memoryModeKeyword': 'Keyword (default, free)',
+  'prefs.memoryModeHybrid': 'Hybrid (keyword + embeddings)',
+  'prefs.memoryModeVector': 'Embeddings only',
+  'prefs.memoryModeHint':
+    'How memories are matched. Hybrid/Embeddings find related memories even without exact keywords, but need an embedding connection and call it each turn.',
+  'prefs.memoryEmbedding': 'Embedding connection',
+  'prefs.memoryEmbeddingNone': 'None — falls back to keyword',
+  'prefs.memoryEmbeddingHint':
+    'Which saved connection produces embeddings (an embedding model, OpenAI-compatible /embeddings endpoint).',
   'prefs.memoryRecall': 'Memories recalled per turn',
   'prefs.memoryKeepRecent': 'Keep recent turns verbatim',
   'prefs.memoryKeepRecentHint':

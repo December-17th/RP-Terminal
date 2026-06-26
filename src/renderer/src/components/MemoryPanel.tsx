@@ -14,9 +14,20 @@ export const MemoryPanel: React.FC<{ profileId: string }> = ({ profileId }) => {
 
   const mem = settings.memory
   const eventsCount = mem?.collections?.find((c) => c.id === 'events')?.retrieval?.count ?? 5
+  const streamMode = mem?.collections?.find((c) => c.id === 'events')?.retrieval?.mode ?? 'keyword'
 
   const patch = (over: Partial<NonNullable<typeof mem>>): void => {
     updateSettings(profileId, { memory: { ...mem, ...over } })
+  }
+
+  // The recall mode applies to all stream collections (events, facts…); entity collections stay 'always'.
+  const setStreamMode = (mode: string): void => {
+    const collections = (mem?.collections ?? []).map((c) =>
+      c.shape === 'stream'
+        ? { ...c, retrieval: { ...c.retrieval, mode: mode as typeof c.retrieval.mode } }
+        : c
+    )
+    patch({ collections })
   }
 
   const hint = (text: string): React.ReactElement => (
@@ -59,6 +70,41 @@ export const MemoryPanel: React.FC<{ profileId: string }> = ({ profileId }) => {
               ))}
             </select>
             {hint(t('prefs.memoryUtilityHint'))}
+
+            <label className="field-label" style={{ marginTop: 16 }}>
+              {t('prefs.memoryMode')}
+            </label>
+            <select
+              value={streamMode}
+              onChange={(e) => setStreamMode(e.target.value)}
+              style={{ width: '100%' }}
+            >
+              <option value="keyword">{t('prefs.memoryModeKeyword')}</option>
+              <option value="hybrid">{t('prefs.memoryModeHybrid')}</option>
+              <option value="vector">{t('prefs.memoryModeVector')}</option>
+            </select>
+            {hint(t('prefs.memoryModeHint'))}
+
+            {streamMode !== 'keyword' ? (
+              <>
+                <label className="field-label" style={{ marginTop: 16 }}>
+                  {t('prefs.memoryEmbedding')}
+                </label>
+                <select
+                  value={mem?.embedding_api_preset_id ?? ''}
+                  onChange={(e) => patch({ embedding_api_preset_id: e.target.value })}
+                  style={{ width: '100%' }}
+                >
+                  <option value="">{t('prefs.memoryEmbeddingNone')}</option>
+                  {(settings.api_presets ?? []).map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.name}
+                    </option>
+                  ))}
+                </select>
+                {hint(t('prefs.memoryEmbeddingHint'))}
+              </>
+            ) : null}
 
             <label className="field-label" style={{ marginTop: 16 }}>
               {t('prefs.memoryRecall')}

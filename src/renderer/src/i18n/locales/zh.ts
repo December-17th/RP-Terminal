@@ -79,6 +79,16 @@ const zh: Record<string, string> = {
   'prefs.memoryUtilityActive': '当前连接',
   'prefs.memoryUtilityHint':
     '由哪个已保存的 API 连接来生成概括——建议用便宜且快速的模型。默认使用当前连接。',
+  'prefs.memoryMode': '召回方式',
+  'prefs.memoryModeKeyword': '关键词（默认，免费）',
+  'prefs.memoryModeHybrid': '混合（关键词 + 向量）',
+  'prefs.memoryModeVector': '仅向量',
+  'prefs.memoryModeHint':
+    '记忆如何被匹配。混合/向量即使没有精确关键词也能找到相关记忆，但需要下方的向量连接，并在每回合调用它。',
+  'prefs.memoryEmbedding': '向量（Embedding）连接',
+  'prefs.memoryEmbeddingNone': '无 —— 回退到关键词',
+  'prefs.memoryEmbeddingHint':
+    '由哪个已保存的连接生成向量（一个 embedding 模型，OpenAI 兼容的 /embeddings 接口）。',
   'prefs.memoryRecall': '每回合召回的记忆数',
   'prefs.memoryKeepRecent': '保留多少最近回合不概括',
   'prefs.memoryKeepRecentHint':
