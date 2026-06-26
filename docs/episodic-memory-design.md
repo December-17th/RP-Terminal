@@ -290,7 +290,7 @@ Leverage-ordered for *this* app. Several are now **core** (folded into §5); the
 
 **E. Hierarchical consolidation (bounds cost at scale).** Periodically roll many low-salience stream rows into one higher-level summary ("Act 1"), a pyramid. Keeps the catalogue + token cost bounded no matter the session length. Entity sheets self-consolidate (they're upserts), so this mainly serves `events`/`facts`.
 
-**F. User-visible, editable memory panel (trust; cheap given the workspace system).** A "Memory" view (panel-workspace already supports custom views) browsing collections, letting the player **pin**, **edit** (fix a bad summary or character sheet), or **delete** (kill a continuity error). RP users care intensely about continuity; the override builds trust — they see what the AI remembers. `pinned` column reserved (§6).
+**F. Data-management UI — view / edit / query what's remembered (ELEVATED — top of the remaining work, §17).** More than a passive list: a first-class workspace surface (the panel-workspace already supports custom views) to **browse by collection**, **inspect & edit** any record's fields, **pin** (always-include), and **delete** (kill a continuity error) — plus a **filter/query console** ("what do we know about X?") and a "why was this recalled?" readout beside each turn's injected set. This is the feature that makes memory *trustworthy and debuggable*: RP players care intensely about continuity, and being able to *see and correct* the store is what earns their trust. Backed by the already-reserved `pinned` column (§6) and the existing `memoryStore` read/write/delete ops; pairs naturally with entity collections (§5.2), whose sheets are the records most worth hand-editing. **No longer a fast-follow — it is the headline next deliverable.**
 
 **G. Manual "remember this" + card-authored extractor prompts.** Player flags a moment as permanent; card/world authors write the per-collection extractor prompts for their setting (命定之诗 knows 命运 threads + 好感度 beats matter). Rides the card bundle system.
 
@@ -307,6 +307,16 @@ Leverage-ordered for *this* app. Several are now **core** (folded into §5); the
 **M. Rewind-safety (correctness — justifies the provenance columns).** `regenerate`/`generateSwipe` truncate floors ([generationService.ts:528](src/main/services/generationService.ts)). Memory written from truncated floors would desync. Because compaction only fires on *old* floors already past the window, a normal re-roll of the latest turn can't touch compacted memory — but a rewind *past a checkpoint* must invalidate rows with `turn_start ≥ rewind point`. `turn_start`/`turn_end` make that a one-line `DELETE`.
 
 **N. Per-collection model routing (optional).** Cheap model for `events`; a slightly stronger one for `characters`/`relationships` where nuance matters. Just another `utility_api_preset_id` per collection — the registry already allows it.
+
+**O. Validated, self-correcting structured writes.** For entity collections (and any structured `payload`), validate the model's fill against a per-collection schema (reuse the MVU **Zod** path, `mvuZod.ts`) instead of lenient parsing; on a validation failure, **inject the error back into the writer prompt and retry** within the off-hot-path loop. The schema is the contract, so structured memory stays well-formed even when the model drifts. Stream `events` can stay lenient — a malformed summary just defers (§7).
+
+**P. Query-based / conditional injection.** Beyond the single static recalled block, let cards/world templates pull **specific** memories by predicate — entity, collection, recency, tag — through the existing EJS/template + lorebook-conditional machinery. E.g. surface "open threads involving X" only when X is in scope, or a character's sheet only when present. Turns memory from a flat block into an **addressable store** an author can target — the read-side analogue of the card-authored extractor prompts (G).
+
+**Q. Entity aliasing / name resolution.** An alias map per chat (`name → canonical_id`) so entity collections survive name drift ("the tavern" → "The Rusty Anchor"; nicknames; titles): the extractor proposes aliases on write, the reader resolves through them for in-scope detection. Concretizes the §14 T1 decision — the make-or-break for character/location continuity.
+
+**R. Plot / objective tracking.** A first-class collection (or light subsystem) for **open objectives/quests and their lifecycle** — created, advanced, and closed by the model, always surfaced while open — beyond the loose `thread` kind (A). Gives the model an explicit, inspectable "what's unresolved and what's the next beat," rather than hoping a thread memory resurfaces. Composes with the FSM/agentic mode and the data-management UI (an editable quest list).
+
+**S. Seed memory from documents (import).** Import a backstory / lore / prior-transcript file, chunk it, and pre-populate `events` + entity collections (with a snapshot so the import is reversible). Lets a session **start with established memory** instead of cold — for continuing a story, onboarding a complex world, or migrating in existing notes.
 
 ---
 
@@ -409,3 +419,19 @@ Memory **trades cached tokens for uncached ones**: it shrinks the (cacheable) ve
 | 0 | on | memory injects into the history tail; no cache concerns — **core-plan target** |
 | ≥1 | off | Frozen Core as built; no memory |
 | ≥1 | on | **unified checkpoint** (§16.2) + shared tail (§16.1) + checkpoint eviction (§16.3) — the full L3 target |
+
+---
+
+## 17. Remaining work (prioritized)
+
+The core (§15) ships the `events` stream collection end-to-end. Remaining work, in build order — the **data-management UI is now the headline next deliverable**, ahead of new engine capability, because a memory system the user can't see or correct doesn't earn trust.
+
+1. **Data-management UI (TOP PRIORITY — §11.F).** A first-class workspace surface to browse memories by collection, inspect/edit/pin/delete records, query the store ("what do we know about X?"), and see *why* each turn recalled what it did. Builds only on the already-shipped `memoryStore` ops + the `pinned` column; needs no engine changes, and it's what makes everything below trustworthy and debuggable. **Build this next.**
+2. **Entity collections (§5.2) — `characters` / `locations` / `relationships`.** The "more than what happened" half: upsert-keyed, always-in-scope records. The functional headline after the UI. **Gated by the deferred decisions T1 (entity identity/aliasing, §11.Q) and T2 (sheet-update strategy) — resolve those first (§14).**
+3. **Validated, self-correcting structured writes (§11.O).** Schema-validate entity fills (reuse `mvuZod.ts`) with error-injection retry — keeps structured memory well-formed. Pairs with (2).
+4. **Quality pass:** salience + decay (§11.B), token-threshold checkpoint trigger (§7), contradiction/supersede (§11.D), and enforcing the global `memory.max_tokens` cap across collections.
+5. **Query-based / conditional injection (§11.P).** Make memory an addressable store cards/templates can target by predicate, not one flat block.
+6. **Scale / optional:** vector + hybrid retrieval (§6, §8 — gated by the T4 backend decision), hierarchical consolidation (§11.E), custom card-defined collections (§5.3), plot/objective tracking (§11.R), document import/seeding (§11.S), `llm`-select (§4).
+7. **Hardening:** wrap append + pointer advance in one transaction (no duplicate on partial failure), utility-call timeout, and a per-collection schema-migration story as structured payloads evolve.
+
+**Decisions that gate the above (still open — §13/§14):** entity identity/aliasing (T1) and sheet-update strategy (T2) gate #2–#3; vector backend (T4) gates the vector half of #6; ship-independent-vs-bundled-with-cache-L3 gates the §16 integration work.
