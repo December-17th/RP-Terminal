@@ -2,12 +2,13 @@ import { getSettings } from './settingsService'
 import { getActivePreset } from './presetService'
 import { getChat, getMemoryState, setMemoryState } from './chatService'
 import { getAllFloors } from './floorService'
-import { appendEntries, NewMemory } from './memoryStore'
+import { appendEntries } from './memoryStore'
 import { streamProvider } from './apiService'
-import { ChatMessage } from './promptBuilder'
 import { stripThinking } from '../parsers/contentParser'
-import { FloorFile } from '../types/chat'
 import { log } from './logService'
+import type { NewMemory } from './memoryStore'
+import type { ChatMessage } from './promptBuilder'
+import type { FloorFile } from '../types/chat'
 
 /**
  * Memory WRITER (docs/episodic-memory-design.md §7). At a turn-count checkpoint, fold the
@@ -133,12 +134,21 @@ export const utilityComplete = async (
   return streamProvider(apiSettings, messages, params, () => {})
 }
 
+// Chats with an in-flight compaction. The writer is fire-and-forget (voided after each turn), so a
+// rapid next turn could fire a second checkpoint that reads the SAME last_compacted_floor and
+// re-summarizes the same range before the first advances the pointer → duplicate memories + a wasted
+// utility call. This guard serializes compaction per chat.
+const compacting = new Set<string>()
+
 /**
  * Compact aged-out floors into `events` memories if a checkpoint is due. Safe to call after every
- * turn — a no-op when memory is off, the collection is absent, or no full batch has aged out.
- * Never throws (fail-open): summarization failures are logged and retried next turn.
+ * turn — a no-op when memory is off, the collection is absent, no full batch has aged out, or a
+ * compaction is already running for this chat. Never throws (fail-open): summarization failures are
+ * logged and retried next turn.
  */
 export const maybeCompact = async (profileId: string, chatId: string): Promise<void> => {
+  if (compacting.has(chatId)) return
+  compacting.add(chatId)
   try {
     const settings = getSettings(profileId)
     const mem = settings.memory
@@ -193,6 +203,8 @@ export const maybeCompact = async (profileId: string, chatId: string): Promise<v
   } catch (err) {
     // Last-resort guard: memory work must never break a turn.
     log('error', `memory: compaction error — ${errMsg(err)}`)
+  } finally {
+    compacting.delete(chatId)
   }
 }
 

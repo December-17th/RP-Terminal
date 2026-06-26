@@ -1,5 +1,10 @@
 import { describe, it, expect } from 'vitest'
-import { toRow, rowToEntry, type MemoryRow } from '../../src/main/services/memoryStore'
+import {
+  toRow,
+  rowToEntry,
+  rewindCompactionPointer,
+  type MemoryRow
+} from '../../src/main/services/memoryStore'
 
 // The DB layer is a no-op stub under Node (see test/mocks/better-sqlite3.ts), so we test
 // the pure data-shaping helpers — the part with real logic. The SQL wrappers are exercised
@@ -137,5 +142,37 @@ describe('rowToEntry', () => {
       turnEnd: 1,
       pinned: false
     })
+  })
+
+  it('preserves salience 0 (not coerced to the default 1)', () => {
+    // ?? guards null/undefined only, so an explicit 0 must survive both directions.
+    expect(toRow('c', 'events', { summary: 's', salience: 0 }, NOW, 'i').salience).toBe(0)
+    expect(rowToEntry({ ...base, salience: 0 }).salience).toBe(0)
+  })
+
+  it('carries entity_key + a nested payload through the round-trip', () => {
+    const row = toRow(
+      'c1',
+      'characters',
+      { summary: 'sheet', entityKey: 'ayaka', payload: { goals: ['find brother'], rank: 3 } },
+      NOW,
+      'm1'
+    )
+    expect(row.entity_key).toBe('ayaka')
+    const e = rowToEntry(row)
+    expect(e.entityKey).toBe('ayaka')
+    expect(e.payload).toEqual({ goals: ['find brother'], rank: 3 })
+  })
+})
+
+describe('rewindCompactionPointer', () => {
+  it('rewinds to one before the cut when the pointer is at/after it', () => {
+    expect(rewindCompactionPointer(10, 5)).toBe(4) // compacted through 10, cut at 5 → back to 4
+    expect(rewindCompactionPointer(5, 5)).toBe(4) // boundary: cut exactly at the pointer
+  })
+
+  it('leaves the pointer unchanged when the cut is within the still-verbatim range', () => {
+    expect(rewindCompactionPointer(5, 8)).toBeNull() // cut after everything compacted
+    expect(rewindCompactionPointer(-1, 0)).toBeNull() // nothing compacted yet
   })
 })

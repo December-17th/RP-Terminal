@@ -7,7 +7,7 @@ import { getLorebookById } from './lorebookService'
 import { buildInitialStatData, mergeDefaults } from './mvuSchema'
 import { extractMvuSchema, schemaDefaults } from './mvuZod'
 import { saveFloor, deleteFloorAndSubsequent, updateFloorFields } from './floorService'
-import { deleteFromTurn } from './memoryStore'
+import { deleteFromTurn, rewindCompactionPointer } from './memoryStore'
 
 interface ChatRow {
   id: string
@@ -264,10 +264,8 @@ export const truncateFloors = (profileId: string, chatId: string, fromFloor: num
   // rewind the compaction pointer so the regenerated floors get re-compacted later. Cheap no-op
   // when memory is unused (nothing matches, pointer stays -1).
   deleteFromTurn(profileId, chatId, fromFloor)
-  const mem = getMemoryState(profileId, chatId)
-  if (mem.last_compacted_floor >= fromFloor) {
-    setMemoryState(profileId, chatId, { last_compacted_floor: fromFloor - 1 })
-  }
+  const rewound = rewindCompactionPointer(getMemoryState(profileId, chatId).last_compacted_floor, fromFloor)
+  if (rewound !== null) setMemoryState(profileId, chatId, { last_compacted_floor: rewound })
   touch(chatId)
 }
 

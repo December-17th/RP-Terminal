@@ -178,3 +178,14 @@ export const countEntries = (_profileId: string, chatId: string, collection: str
     .get(chatId, collection) as { n: number } | undefined
   return row?.n ?? 0
 }
+
+/**
+ * The compaction pointer after truncating floors from `fromFloor` (rewind-safety, docs §11.M):
+ * rewind to one before the cut so regenerated floors are re-compacted, or null if the cut is
+ * entirely within the still-verbatim range (pointer unchanged). Pure. Lives here (not
+ * compactionService) to avoid a chatService↔compactionService import cycle.
+ */
+export const rewindCompactionPointer = (
+  lastCompacted: number,
+  fromFloor: number
+): number | null => (lastCompacted >= fromFloor ? fromFloor - 1 : null)
