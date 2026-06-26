@@ -444,9 +444,21 @@ export const applyVariableOps = (
       ? (f.variables.stat_data as Record<string, unknown>)
       : {}
   const deltas = applyJsonPatch(sd, ops)
+  // No-op guard: a card that recomputes derived stats on its own `mag_variable_update_ended` re-writes
+  // the SAME values every turn. If we persist + broadcast that, the broadcast re-fires the event → the
+  // card writes again → an endless write-back loop (and log spam). Drop the write entirely when nothing
+  // actually changed — checked here at the source (same object shapes) rather than relying on the event-
+  // side diff guard surviving the multi-hop IPC round-trip. `path` is logged so a genuinely-changing
+  // value (a real card bug, not an echo) is visible instead of an opaque "applied 1 op".
+  const changed = deltas.filter((d) => JSON.stringify(d.old) !== JSON.stringify(d.new))
+  if (changed.length === 0) return null
   f.variables = { ...f.variables, stat_data: sd, delta_data: deltas }
   saveFloor(profileId, chatId, f)
-  log('info', `variable write-back — applied ${ops.length} op(s) to floor ${floor}`)
+  log(
+    'info',
+    `variable write-back — floor ${floor}: ${changed.map((d) => d.path).join(', ')}` +
+      (changed.length < ops.length ? ` (${ops.length - changed.length} no-op)` : '')
+  )
   return f
 }
 

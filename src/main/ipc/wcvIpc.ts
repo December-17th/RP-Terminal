@@ -178,8 +178,11 @@ export const registerWcvIpc = (ipcMain: IpcMain): void => {
     const latest = floors[floors.length - 1]
     if (!latest) return null
     const floor = generationService.applyVariableOps(ctx.profileId, ctx.chatId, latest.floor, ops)
-    const statData = floor?.variables?.stat_data ?? {}
-    wcvManager.pushHostVars(ctx.chatId, floor?.variables)
+    // null = the write changed nothing (no-op). Don't push/broadcast — that re-fires the card's own MVU
+    // events and loops. Just hand back the current stat_data.
+    if (!floor) return latest.variables?.stat_data ?? {}
+    const statData = floor.variables?.stat_data ?? {}
+    wcvManager.pushHostVars(ctx.chatId, floor.variables)
     // Don't echo the write back to the card that made it — that would re-fire its own MVU events and
     // loop if it writes on them. Siblings + the host (native panels) still refresh.
     wcvManager.notifyVarsChanged(ctx.chatId, statData, e.sender.id)
