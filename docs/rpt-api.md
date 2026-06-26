@@ -208,7 +208,12 @@ Card → host channels (resolved against the calling view's ctx), in
 (`-get-regexes-full` / `-replace-regexes` / `-is-char-regex-enabled`), `-get-chat-id-sync`, the script-scope
 KV channels (`-script-vars-get-sync` / `-script-vars-set`), and the chat-write channels
 (`chat-set-messages` / `-delete-messages` / `-save`). Host → card: `wcv-vars-changed` (mirror refresh) +
-`wcv-event` (lifecycle/mutation/stream). To add an API: add the runtime method
+`wcv-event` (lifecycle/mutation/stream). A card-origin variable write (`wcv-host-apply-vars` /
+`-set-vars`) is **not** echoed back to the author (the write handlers pass `e.sender.id` to
+`notifyVarsChanged`, which skips that slot); without this a card that re-writes on its own
+`mag_variable_update_ended` / `MESSAGE_UPDATED` loops forever. Siblings + host panels still refresh, and
+the writer's runtime cache is already updated optimistically. (The inline transport gets the same
+protection via a value-diff guard in its `onVarsChanged`.) To add an API: add the runtime method
 ([`thRuntime/index.ts`](../src/shared/thRuntime/index.ts)) + a `Host` method on **both** adapters (sync
 getter → `sendSync` / store read; heavy → `invoke` / `window.api`) + the ctx-scoped IPC handler, and update
 this doc + [docs/sdk/](sdk/component-inventory.md).

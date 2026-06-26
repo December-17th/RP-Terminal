@@ -180,7 +180,9 @@ export const registerWcvIpc = (ipcMain: IpcMain): void => {
     const floor = generationService.applyVariableOps(ctx.profileId, ctx.chatId, latest.floor, ops)
     const statData = floor?.variables?.stat_data ?? {}
     wcvManager.pushHostVars(ctx.chatId, floor?.variables)
-    wcvManager.notifyVarsChanged(ctx.chatId, statData)
+    // Don't echo the write back to the card that made it — that would re-fire its own MVU events and
+    // loop if it writes on them. Siblings + the host (native panels) still refresh.
+    wcvManager.notifyVarsChanged(ctx.chatId, statData, e.sender.id)
     return statData
   })
 
@@ -194,7 +196,8 @@ export const registerWcvIpc = (ipcMain: IpcMain): void => {
     latest.variables = { ...latest.variables, stat_data: statData }
     floorService.saveFloor(ctx.profileId, ctx.chatId, latest)
     wcvManager.pushHostVars(ctx.chatId, latest.variables)
-    wcvManager.notifyVarsChanged(ctx.chatId, statData)
+    // Don't echo back to the writer (see wcv-host-apply-vars) — avoids a self-triggered MVU event loop.
+    wcvManager.notifyVarsChanged(ctx.chatId, statData, e.sender.id)
     return statData
   })
 
