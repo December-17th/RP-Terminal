@@ -30,7 +30,9 @@ export function AssetManagerPanel({ profileId }: { profileId: string }): React.R
   if (!activeCharacter) {
     return (
       <div className="panel">
-        <div className="panel-header"><h3>{t('assets.heading')}</h3></div>
+        <div className="panel-header">
+          <h3>{t('assets.heading')}</h3>
+        </div>
         <div className="panel-body">
           <div style={{ opacity: 0.6, fontStyle: 'italic' }}>{t('assets.selectWorld')}</div>
         </div>
@@ -42,7 +44,9 @@ export function AssetManagerPanel({ profileId }: { profileId: string }): React.R
     <div className="panel">
       <div className="panel-header" style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
         <h3 style={{ flex: 1 }}>{t('assets.heading')}</h3>
-        <button onClick={() => void refresh(profileId, lorebookIds, roster)}>{t('assets.refresh')}</button>
+        <button onClick={() => void refresh(profileId, lorebookIds, roster)}>
+          {t('assets.refresh')}
+        </button>
         <button
           onClick={async () => {
             const res = await importZip(profileId, lorebookIds, roster)
@@ -55,7 +59,9 @@ export function AssetManagerPanel({ profileId }: { profileId: string }): React.R
           {t('assets.import')}
         </button>
         {primaryId && (
-          <button onClick={() => void window.api.assetOpenFolder(profileId, primaryId, 'character')}>
+          <button
+            onClick={() => void window.api.assetOpenFolder(profileId, primaryId, 'character')}
+          >
             {t('assets.openFolder')}
           </button>
         )}
@@ -69,7 +75,13 @@ export function AssetManagerPanel({ profileId }: { profileId: string }): React.R
             {rows.map((r) => (
               <li
                 key={r.name}
-                style={{ display: 'flex', gap: 10, alignItems: 'center', padding: '6px 0', borderBottom: '1px solid #2a2a3a' }}
+                style={{
+                  display: 'flex',
+                  gap: 10,
+                  alignItems: 'center',
+                  padding: '6px 0',
+                  borderBottom: '1px solid #2a2a3a'
+                }}
               >
                 <Thumb
                   profileId={profileId}
@@ -102,8 +114,11 @@ function Chip({ ok, label }: { ok: boolean; label: string }): React.ReactElement
   return (
     <span
       style={{
-        fontSize: 11, padding: '1px 6px', borderRadius: 6,
-        background: ok ? '#23402a' : '#3a2a2a', color: ok ? '#9fe0b0' : '#e0a0a0'
+        fontSize: 11,
+        padding: '1px 6px',
+        borderRadius: 6,
+        background: ok ? '#23402a' : '#3a2a2a',
+        color: ok ? '#9fe0b0' : '#e0a0a0'
       }}
     >
       {label} {ok ? '✓' : '✗'}
@@ -126,18 +141,24 @@ function Thumb({
   useEffect(() => {
     let live = true
     if (has) {
-      void window.api
-        .assetUrl(profileId, lorebookIds, 'character', name, '头像')
-        .then((u) => { if (live) setUrl(u) })
+      void window.api.assetUrl(profileId, lorebookIds, 'character', name, '头像').then((u) => {
+        if (live) setUrl(u)
+      })
     } else {
       setUrl(null)
     }
-    return () => { live = false }
+    return () => {
+      live = false
+    }
   }, [profileId, lorebookIds.join(','), name, has])
 
   const box: React.CSSProperties = {
-    width: 36, height: 36, borderRadius: 6, objectFit: 'cover',
-    background: '#2a2a3a', flex: '0 0 auto'
+    width: 36,
+    height: 36,
+    borderRadius: 6,
+    objectFit: 'cover',
+    background: '#2a2a3a',
+    flex: '0 0 auto'
   }
   return url ? (
     <img src={url} alt={name} loading="lazy" style={box} />

@@ -10,7 +10,7 @@ describe('categoryForType', () => {
     expect(categoryForType('背景')).toBe('location')
     expect(categoryForType('全景')).toBe('location')
   })
-  it('TYPES_BY_CATEGORY lists each category\'s types', () => {
+  it("TYPES_BY_CATEGORY lists each category's types", () => {
     expect(TYPES_BY_CATEGORY.character).toEqual(['头像', '立绘'])
     expect(TYPES_BY_CATEGORY.location).toEqual(['背景', '全景'])
   })

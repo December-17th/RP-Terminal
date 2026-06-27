@@ -6,11 +6,17 @@ export function parseAssetFilename(filename: string): ParsedAssetName | null {
   const trimmed = filename.trim()
   const dot = trimmed.lastIndexOf('.')
   if (dot <= 0) return null
-  const ext = trimmed.slice(dot + 1).trim().toLowerCase()
+  const ext = trimmed
+    .slice(dot + 1)
+    .trim()
+    .toLowerCase()
   if (!(ASSET_EXTS as readonly string[]).includes(ext)) return null
 
   const stem = trimmed.slice(0, dot)
-  const segments = stem.split('_').map((s) => s.trim()).filter((s) => s.length > 0)
+  const segments = stem
+    .split('_')
+    .map((s) => s.trim())
+    .filter((s) => s.length > 0)
   // Find the type token, scanning from the right so a trailing mood doesn't shadow it.
   let typeIdx = -1
   let type: AssetType | null = null

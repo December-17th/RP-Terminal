@@ -57,7 +57,8 @@ export const registerCharacterIpc = (ipcMain: IpcMain): void => {
         defaultId: 1,
         cancelId: 1,
         message: 'Import assets?',
-        detail: 'Optionally pick a .zip of images (character/ and location/ folders) to import with this world.'
+        detail:
+          'Optionally pick a .zip of images (character/ and location/ folders) to import with this world.'
       })
       if (addAssets.response === 0) {
         const pick = await dialog.showOpenDialog(win, {

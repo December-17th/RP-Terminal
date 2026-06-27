@@ -12,7 +12,9 @@ describe('rosterFromStatData', () => {
     expect(rosterFromStatData({})).toEqual([])
   })
   it('falls back to 主角.名称 when 姓名 is absent', () => {
-    expect(rosterFromStatData({ 主角: { 名称: '游侠' }, 关系列表: { 爱莎: {} } }).sort()).toEqual(['游侠', '爱莎'].sort())
+    expect(rosterFromStatData({ 主角: { 名称: '游侠' }, 关系列表: { 爱莎: {} } }).sort()).toEqual(
+      ['游侠', '爱莎'].sort()
+    )
   })
 })
 
@@ -23,10 +25,22 @@ describe('computeCoverage', () => {
   it('reports avatar/standee/mood-variant coverage and roster membership', () => {
     const rows = computeCoverage(index, ['爱莎', '旅人'])
     const aelia = rows.find((r) => r.name === '爱莎')!
-    expect(aelia).toEqual({ name: '爱莎', hasAvatar: true, hasStandee: false, moodVariants: 2, inRoster: true })
+    expect(aelia).toEqual({
+      name: '爱莎',
+      hasAvatar: true,
+      hasStandee: false,
+      moodVariants: 2,
+      inRoster: true
+    })
     // A roster character with no art still appears, flagged as missing.
     const traveler = rows.find((r) => r.name === '旅人')!
-    expect(traveler).toEqual({ name: '旅人', hasAvatar: false, hasStandee: false, moodVariants: 0, inRoster: true })
+    expect(traveler).toEqual({
+      name: '旅人',
+      hasAvatar: false,
+      hasStandee: false,
+      moodVariants: 0,
+      inRoster: true
+    })
   })
   it('includes folder-only names (art present, not in roster)', () => {
     const rows = computeCoverage(index, [])

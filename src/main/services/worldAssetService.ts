@@ -8,7 +8,13 @@ import AdmZip from 'adm-zip'
 import { parseAssetFilename } from '../../shared/worldAssets/filename'
 import { resolveAsset } from '../../shared/worldAssets/resolve'
 import { computeCoverage, CharacterCoverage } from '../../shared/worldAssets/coverage'
-import { AssetCategory, AssetIndex, AssetType, ASSET_CATEGORIES, categoryForType } from '../../shared/worldAssets/types'
+import {
+  AssetCategory,
+  AssetIndex,
+  AssetType,
+  ASSET_CATEGORIES,
+  categoryForType
+} from '../../shared/worldAssets/types'
 
 /** `<appDir>/profiles/<profileId>/lorebooks/<lorebookId>.assets` */
 const worldAssetsRoot = (profileId: string, lorebookId: string): string =>
@@ -209,7 +215,11 @@ export function importAssetsZip(
     const name = entry.entryName.replace(/\\/g, '/')
     const parts = name.split('/').filter(Boolean)
     // Benign archive noise — skip silently (not a user error).
-    if (parts[0] === '__MACOSX' || parts.some((p) => p.startsWith('.')) || parts.includes('_index.json'))
+    if (
+      parts[0] === '__MACOSX' ||
+      parts.some((p) => p.startsWith('.')) ||
+      parts.includes('_index.json')
+    )
       continue
     if (parts.length !== 2) {
       skip(`outside category folder: ${name}`)

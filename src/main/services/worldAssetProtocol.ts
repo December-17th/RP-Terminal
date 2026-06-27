@@ -15,7 +15,8 @@ export function registerAssetProtocol(): void {
       const segs = url.pathname.replace(/^\/+/, '').split('/')
       const [lorebookId, category, ...rest] = segs
       const file = rest.join('/')
-      if (!profileId || !lorebookId || !category || !file) return new Response('Bad Request', { status: 400 })
+      if (!profileId || !lorebookId || !category || !file)
+        return new Response('Bad Request', { status: 400 })
       const abs = resolveProtocolPath(profileId, lorebookId, category, file)
       if (!abs) return new Response('Not Found', { status: 404 })
       return net.fetch(pathToFileURL(abs).toString())

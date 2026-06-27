@@ -39,7 +39,8 @@ describe('buildIndex / getIndex', () => {
     fs.mkdirSync(path.join(charDir('w1'), '.thumbs'), { recursive: true })
     const idx = svc.getIndex('p1', 'w1', { refresh: true })
     expect(idx.character['爱莎']['头像']).toEqual({
-      base: '爱莎_头像.jpg', moods: { 愤怒: '爱莎_头像_愤怒.png' }
+      base: '爱莎_头像.jpg',
+      moods: { 愤怒: '爱莎_头像_愤怒.png' }
     })
     expect(idx.character['爱莎']['立绘'].base).toBe('爱莎_立绘.webp')
   })
@@ -96,7 +97,9 @@ describe('invalidateWorldAssets', () => {
     // Invalidate the world
     svc.invalidateWorldAssets('p1', 'w1')
     // Next read re-scans disk and picks up both files
-    expect(Object.keys(svc.getIndex('p1', 'w1').character ?? {}).sort()).toEqual(['凯尔', '爱莎'].sort())
+    expect(Object.keys(svc.getIndex('p1', 'w1').character ?? {}).sort()).toEqual(
+      ['凯尔', '爱莎'].sort()
+    )
   })
 
   it('does not affect other worlds in the cache', () => {

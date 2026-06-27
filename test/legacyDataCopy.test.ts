@@ -21,7 +21,9 @@ describe('copyLegacyDataDirIfNeeded', () => {
     const legacy = path.join(root, 'legacy')
     const target = path.join(root, 'target')
     seed(legacy)
-    expect(copyLegacyDataDirIfNeeded({ legacyDir: legacy, targetDir: target, usingDefault: true })).toBe(true)
+    expect(
+      copyLegacyDataDirIfNeeded({ legacyDir: legacy, targetDir: target, usingDefault: true })
+    ).toBe(true)
     expect(fs.existsSync(path.join(target, 'rpterminal.db'))).toBe(true)
     expect(fs.existsSync(path.join(legacy, 'rpterminal.db'))).toBe(true) // legacy kept as backup
   })
@@ -30,19 +32,35 @@ describe('copyLegacyDataDirIfNeeded', () => {
     const target = path.join(root, 'target')
     seed(legacy)
     seed(target)
-    expect(copyLegacyDataDirIfNeeded({ legacyDir: legacy, targetDir: target, usingDefault: true })).toBe(false)
+    expect(
+      copyLegacyDataDirIfNeeded({ legacyDir: legacy, targetDir: target, usingDefault: true })
+    ).toBe(false)
   })
   it('does nothing when not using the default (pointer/override active)', () => {
     const legacy = path.join(root, 'legacy')
     seed(legacy)
-    expect(copyLegacyDataDirIfNeeded({ legacyDir: legacy, targetDir: path.join(root, 't'), usingDefault: false })).toBe(false)
+    expect(
+      copyLegacyDataDirIfNeeded({
+        legacyDir: legacy,
+        targetDir: path.join(root, 't'),
+        usingDefault: false
+      })
+    ).toBe(false)
   })
   it('does nothing when legacy is absent', () => {
-    expect(copyLegacyDataDirIfNeeded({ legacyDir: path.join(root, 'nope'), targetDir: path.join(root, 't'), usingDefault: true })).toBe(false)
+    expect(
+      copyLegacyDataDirIfNeeded({
+        legacyDir: path.join(root, 'nope'),
+        targetDir: path.join(root, 't'),
+        usingDefault: true
+      })
+    ).toBe(false)
   })
   it('does nothing when legacy === target', () => {
     const d = path.join(root, 'same')
     seed(d, false)
-    expect(copyLegacyDataDirIfNeeded({ legacyDir: d, targetDir: d, usingDefault: true })).toBe(false)
+    expect(copyLegacyDataDirIfNeeded({ legacyDir: d, targetDir: d, usingDefault: true })).toBe(
+      false
+    )
   })
 })

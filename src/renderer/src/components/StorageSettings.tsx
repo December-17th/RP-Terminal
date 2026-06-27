@@ -36,10 +36,10 @@ export function StorageSettings(): React.ReactElement {
         </div>
         {pending && (
           <div style={{ marginTop: 10 }}>
-            <div style={{ fontSize: '0.8em', color: 'var(--rpt-text-secondary)' }}>
-              {pending}
+            <div style={{ fontSize: '0.8em', color: 'var(--rpt-text-secondary)' }}>{pending}</div>
+            <div style={{ fontSize: '0.8em', marginTop: 2 }}>
+              {t('settings.storage.restartHint')}
             </div>
-            <div style={{ fontSize: '0.8em', marginTop: 2 }}>{t('settings.storage.restartHint')}</div>
             <button style={{ marginTop: 6 }} onClick={() => void window.api.restartApp()}>
               {t('settings.storage.restartNow')}
             </button>

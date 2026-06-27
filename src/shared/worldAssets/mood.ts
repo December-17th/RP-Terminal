@@ -1,8 +1,13 @@
 /** Minimal synonym table: ascii / loose tokens → the canonical Chinese mood used in filenames.
  *  Unknown moods pass through (trimmed) and simply fall back to base if no file. */
 const MOOD_ALIASES: Record<string, string> = {
-  smile: '微笑', happy: '喜悦', joy: '喜悦', '笑': '微笑',
-  angry: '愤怒', sad: '悲伤', neutral: '平静'
+  smile: '微笑',
+  happy: '喜悦',
+  joy: '喜悦',
+  笑: '微笑',
+  angry: '愤怒',
+  sad: '悲伤',
+  neutral: '平静'
 }
 
 export function normalizeMood(s: string): string {

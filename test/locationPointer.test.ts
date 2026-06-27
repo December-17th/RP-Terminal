@@ -1,6 +1,10 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import fs from 'fs'
-import { pointerPath, readLocationPointer, writeLocationPointer } from '../src/main/services/locationPointer'
+import {
+  pointerPath,
+  readLocationPointer,
+  writeLocationPointer
+} from '../src/main/services/locationPointer'
 
 beforeEach(() => writeLocationPointer(null))
 afterEach(() => writeLocationPointer(null))
