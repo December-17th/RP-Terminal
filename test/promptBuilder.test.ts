@@ -5,6 +5,7 @@ import {
   collectRenderMarkers,
   estimateTokens,
   fitToBudget,
+  mergeConsecutiveRoles,
   ChatMessage
 } from '../src/main/services/promptBuilder'
 import { RPTerminalCardSchema, LorebookSchema } from '../src/main/types/character'
@@ -726,5 +727,49 @@ describe('buildPrompt — L1 Frozen Core', () => {
     })
     expect(messages.some((m) => m.content.includes('[Current State]'))).toBe(false)
     expect(last(messages)).toEqual({ role: 'user', content: 'go' })
+  })
+})
+
+describe('mergeConsecutiveRoles (ST-faithful prompt assembly)', () => {
+  it('coalesces adjacent same-role messages, joined by a newline', () => {
+    const out = mergeConsecutiveRoles([
+      { role: 'system', content: '<梅芙_setting>' },
+      { role: 'system', content: '- body' },
+      { role: 'system', content: '</梅芙_setting>' },
+      { role: 'user', content: 'hi' }
+    ])
+    expect(out).toEqual([
+      { role: 'system', content: '<梅芙_setting>\n- body\n</梅芙_setting>' },
+      { role: 'user', content: 'hi' }
+    ])
+  })
+
+  it('keeps role boundaries (does NOT merge across a different role)', () => {
+    const out = mergeConsecutiveRoles([
+      { role: 'system', content: 'a' },
+      { role: 'user', content: 'b' },
+      { role: 'system', content: 'c' },
+      { role: 'system', content: 'd' }
+    ])
+    expect(out.map((m) => m.role)).toEqual(['system', 'user', 'system'])
+    expect(out[2].content).toBe('c\nd')
+  })
+
+  it('does not mutate the input messages', () => {
+    const input: ChatMessage[] = [
+      { role: 'system', content: 'a' },
+      { role: 'system', content: 'b' }
+    ]
+    mergeConsecutiveRoles(input)
+    expect(input[0].content).toBe('a') // original untouched
+  })
+
+  it('is a no-op for an already-alternating array', () => {
+    const msgs: ChatMessage[] = [
+      { role: 'system', content: 's' },
+      { role: 'user', content: 'u' },
+      { role: 'assistant', content: 'a' }
+    ]
+    expect(mergeConsecutiveRoles(msgs)).toEqual(msgs)
   })
 })

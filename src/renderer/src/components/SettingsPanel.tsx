@@ -240,6 +240,28 @@ export const SettingsPanel: React.FC<{ profileId: string }> = ({ profileId }) =>
               {t('prefs.templateEngineHint')}
             </div>
 
+            <label
+              className="entry-toggles"
+              style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 14 }}
+            >
+              <input
+                type="checkbox"
+                checked={settings.generation?.merge_consecutive_roles !== false}
+                onChange={(e) =>
+                  updateSettings(profileId, {
+                    generation: {
+                      ...settings.generation,
+                      merge_consecutive_roles: e.target.checked
+                    }
+                  })
+                }
+              />
+              {t('prefs.mergeRoles')}
+            </label>
+            <div style={{ fontSize: '0.78em', color: 'var(--rpt-text-secondary)', marginTop: 4 }}>
+              {t('prefs.mergeRolesHint')}
+            </div>
+
             {settings.templates?.enabled !== false && (
               <div style={{ marginLeft: 22, marginTop: 8 }}>
                 <label

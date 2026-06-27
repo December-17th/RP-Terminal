@@ -102,6 +102,23 @@ export const fitToBudget = (
   return { messages: [...head, ...convo], dropped }
 }
 
+/**
+ * Merge consecutive messages of the SAME role into one (joined by a newline), matching SillyTavern's
+ * prompt assembly. A preset commonly splits one logical block across adjacent same-role entries — e.g.
+ * `<{{user}}_setting>` (open) / the body / `</{{user}}_setting>` (close) as three toggleable `system`
+ * entries — and relies on the host coalescing them; without this they reach the model as separate
+ * messages (the lone `<梅芙_setting>` symptom). Pure; gated by `settings.generation.merge_consecutive_roles`.
+ */
+export const mergeConsecutiveRoles = (messages: ChatMessage[]): ChatMessage[] => {
+  const out: ChatMessage[] = []
+  for (const m of messages) {
+    const last = out[out.length - 1]
+    if (last && last.role === m.role) last.content += '\n' + m.content
+    else out.push({ role: m.role, content: m.content })
+  }
+  return out
+}
+
 export interface PersonaArgs {
   description: string
   inject: boolean

@@ -61,6 +61,13 @@ export interface Settings {
   generation: {
     /** Max estimated input tokens for the assembled prompt; oldest history is trimmed to fit. */
     max_context_tokens: number
+    /**
+     * Merge consecutive messages of the SAME role into one before sending (default true) — matches
+     * SillyTavern's prompt assembly. A preset that splits a block across adjacent same-role entries
+     * (e.g. `<{{user}}_setting>` / body / `</{{user}}_setting>`) then arrives as one coherent message
+     * instead of N fragments. Off = send each preset block as its own message (raw).
+     */
+    merge_consecutive_roles?: boolean
   }
   lorebook: {
     /** How many recent turns (floors) to scan for keyword matches. */

@@ -17,6 +17,7 @@ import {
   buildPrompt,
   buildScanText,
   fitToBudget,
+  mergeConsecutiveRoles,
   collectRenderMarkers,
   ChatMessage
 } from './promptBuilder'
@@ -256,10 +257,19 @@ export const generate = async (
 
   // Trim oldest history to stay under the configured context budget.
   const budget = settings.generation?.max_context_tokens || 200000
-  const { messages, dropped } = fitToBudget(built, budget)
+  const { messages: trimmed, dropped } = fitToBudget(built, budget)
   if (dropped > 0) {
     log('info', `context budget ${budget} tok — trimmed ${dropped} oldest message(s)`)
   }
+  // Coalesce consecutive same-role messages (ST-faithful; default on) so a preset that splits a block
+  // across adjacent same-role entries arrives as one coherent message, not N fragments. Runs AFTER
+  // fitToBudget (which needs the per-message history tags) so the stored `request` matches what's sent.
+  const messages =
+    settings.generation?.merge_consecutive_roles !== false
+      ? mergeConsecutiveRoles(trimmed)
+      : trimmed
+  if (messages.length !== trimmed.length)
+    log('info', `merged consecutive same-role messages: ${trimmed.length} → ${messages.length}`)
 
   // Agentic mode caps the output ceiling at the FSM mode's limit (e.g. Combat is terse),
   // never exceeding the preset's own max_tokens. Classic mode uses the preset value as-is.
