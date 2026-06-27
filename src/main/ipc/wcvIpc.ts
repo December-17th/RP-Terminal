@@ -10,6 +10,7 @@ import * as regexService from '../services/regexService'
 import * as pluginStorageService from '../services/pluginStorageService'
 import * as pluginService from '../services/pluginService'
 import * as settingsService from '../services/settingsService'
+import * as worldAssetService from '../services/worldAssetService'
 import { getActivePresetId } from '../services/presetService'
 import { log } from '../services/logService'
 import { ArtifactScope } from '../../shared/artifactScope'
@@ -475,6 +476,16 @@ export const registerWcvIpc = (ipcMain: IpcMain): void => {
     const ctx = wcvManager.contextFor(e.sender.id)
     if (ctx) wcvManager.pushHostReload(ctx.chatId)
     return true
+  })
+
+  // Resolve a World Assets portrait URL for the calling card's world (rptasset://… or null). Mood-aware.
+  ipcMain.handle('wcv-host-asset-url', (e, name, type, mood) => {
+    const ctx = wcvManager.contextFor(e.sender.id)
+    if (!ctx) return null
+    const ids =
+      chatService.getChatLorebookIds(ctx.profileId, ctx.chatId) ??
+      (ctx.characterId ? [ctx.characterId] : [])
+    return worldAssetService.assetUrlForWorld(ctx.profileId, ids, String(name ?? ''), type, mood)
   })
 
   // Raw floor rows for the calling panel's session (the unified TH runtime maps these to TH/ST message

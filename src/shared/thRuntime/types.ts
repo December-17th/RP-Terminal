@@ -93,6 +93,8 @@ export interface Host {
   // (Local/chat vars use statData + applyVariableOps; the runtime runs the STScript interpreter itself.)
   getGlobalVars(): Promise<Record<string, any>>
   setGlobalVar(key: string, value: any): Promise<void>
+  // Resolve a character portrait to an rptasset:// URL for the calling card's world, or null.
+  assetUrl(name: string, type: string, mood?: string): Promise<string | null>
   // --- events + engine ---
   onVarsChanged(cb: (statData: any) => void): () => void
   onHostEvent(cb: (name: string, payload?: any) => void): () => void

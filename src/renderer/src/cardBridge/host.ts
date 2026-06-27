@@ -237,6 +237,16 @@ export function createInlineHost(ctx: CardCtx): Host {
         value
       })
     },
+    // Resolve a character portrait to an rptasset:// URL for this card's world, or null.
+    assetUrl: async (name: string, type: string, mood?: string) => {
+      try {
+        const own = cardCharacterId()
+        const ids = useLorebookStore.getState().sessionIds ?? (own ? [own] : [])
+        return await window.api.assetUrl(ctx.profileId, ids, 'character', name, type, mood)
+      } catch {
+        return null
+      }
+    },
 
     onVarsChanged: (cb) => {
       let last = ''

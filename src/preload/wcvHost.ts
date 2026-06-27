@@ -126,6 +126,8 @@ export function createWcvHost(deps: Deps): Host {
     setInput: (text) => ipcRenderer.send('wcv-host-set-input', text),
     getGlobalVars: () => ipcRenderer.invoke('wcv-host-get-global-vars'),
     setGlobalVar: (key, value) => ipcRenderer.invoke('wcv-host-set-global-var', key, value),
+    assetUrl: (name: string, type: string, mood?: string) =>
+      ipcRenderer.invoke('wcv-host-asset-url', name, type, mood),
 
     onVarsChanged: (cb) => {
       const l = (_e: any, v: any): void => cb(v)

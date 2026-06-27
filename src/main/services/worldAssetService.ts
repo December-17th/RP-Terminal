@@ -155,6 +155,21 @@ export function resolveAssetFile(
   }
 }
 
+/** Resolve a character portrait to an rptasset:// URL for one world's lorebook ids, or null. */
+export function assetUrlForWorld(
+  profileId: string,
+  lorebookIds: string[],
+  name: string,
+  type: AssetType,
+  mood?: string
+): string | null {
+  const category: AssetCategory = 'character'
+  const hit = resolveAssetFile(profileId, lorebookIds, category, name, type, mood)
+  if (!hit) return null
+  const file = hit.absPath.split(/[\\/]/).pop() as string
+  return `rptasset://${profileId}/${hit.lorebookId}/${category}/${encodeURIComponent(file)}`
+}
+
 export function listCoverage(
   profileId: string,
   lorebookIds: string[],
