@@ -17,7 +17,7 @@ _Traceability log for executing [maintainability-plan-2026-06-26.md](maintainabi
 | 0b | Delete dead DB schema | WS-6 | LOW | ✅ done | `663d337` |
 | 0c | Document path dialects + test | WS-8 | LOW | ✅ done | `1b4ada8` |
 | 0d | One broadcast helper | WS-7 | MED | ✅ done | (this commit) |
-| 1 | Unify EJS context (keystone) | WS-1 | HIGH | ⬜ todo | — |
+| 1 | Unify EJS context (keystone) | WS-1 | HIGH | 🔄 in progress | 1a `(this commit)` |
 | 2 | lodash/faker → tested module | WS-4 | MED | ⬜ todo | — |
 | 3 | Decompose buildPrompt | WS-5 | MED | ⬜ todo | — |
 | 4 | De-escalate L1 cache | WS-2 | MED | ⬜ todo | — |
@@ -138,3 +138,27 @@ other (review WS-7).
 modules + `window.api` — `check:deps` confirms no transport cross-import (237 modules, 0 violations).
 
 **Verification.** typecheck ✅ · check:deps ✅ · lint ✅ 0 errors · test ✅ 693 (79 files).
+
+### Stage 6 — Phase 1 / WS-1a: engine stat_data read-fallback + hoisted `variables` ✅
+
+**Why (verified against the real card).** Cards' EJS reads MVU keys in **both** forms —
+`getMessageVar('stat_data.关系列表')` (prefixed) AND `getMessageVar('世界后台状态.X')` (bare, assuming the
+hoisted view) — confirmed in the example card set (preset + scripts). Build-time resolved only the prefixed
+form; render/WCV resolved both (they pre-hoisted). The fix that unifies all three **without** copying the
+live build-time store (which IS the persisted floor vars — copying would drop setvar persistence) is an
+engine-level read-fallback.
+
+**Design decision (locked).** Permissive **superset**, implemented in the engine, not by hoisting-copy:
+`getvar(key)` tries the store path, then falls back to `store.stat_data[key]`; the `variables` constant is
+exposed as the hoisted view. Top-level wins on `getvar` collision; global scope is exempt. No store copy →
+build-time persistence untouched.
+
+**Changes (`src/shared/templateEngine.ts`).**
+- `getvar` gains the `stat_data` read-fallback (non-global, only when the bare path missed).
+- the `variables` constant is set to the hoisted view (`{...vars, ...vars.stat_data}`), read-only snapshot.
+- `test/templateHelpers.test.ts` — +6 cases (prefixed read, bare/hoisted read, top-level-wins,
+  default-fallthrough, `variables` dual access, global-scope exemption).
+
+**Verification.** typecheck ✅ · check:deps ✅ (237 modules) · lint ✅ 0 errors · test ✅ **699** (+6).
+Additive — no existing test changed. WS-1b (shared `buildTemplateContext` to consolidate constants/globals +
+have all callers pass the wrapped shape) follows.

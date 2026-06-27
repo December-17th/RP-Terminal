@@ -150,4 +150,34 @@ describe('templateService TH-3 helpers', () => {
     expect(evalTemplate('<%= faker.number(7, 7) %>', ctx())).toBe('7')
     expect(evalTemplate('<%= faker.uuid().length %>', ctx())).toBe('36')
   })
+
+  // WS-1: the variable surface resolves a stat_data key whether read with the explicit `stat_data.`
+  // prefix or bare (hoisted) — consistently, in every context. The store passed here is the WRAPPED
+  // floor-vars shape ({ stat_data: {...} }) that all three callers now use.
+  describe('stat_data read-fallback + hoisted variables (WS-1)', () => {
+    const wrapped = (): TemplateContext =>
+      ctx({ vars: { 系统名: 'X', stat_data: { 主角: { hp: 42 }, 世界后台状态: { 时局: '安稳' } } } })
+
+    it('getvar resolves a stat_data key with the explicit stat_data. prefix', () => {
+      expect(evalTemplate('<%= getvar("stat_data.主角.hp") %>', wrapped())).toBe('42')
+    })
+    it('getvar resolves a stat_data key BARE (hoisted fallback)', () => {
+      expect(evalTemplate('<%= getvar("主角.hp") %>', wrapped())).toBe('42')
+      expect(evalTemplate('<%= getMessageVar("世界后台状态.时局") %>', wrapped())).toBe('安稳')
+    })
+    it('top-level vars still win over the stat_data fallback', () => {
+      expect(evalTemplate('<%= getvar("系统名") %>', wrapped())).toBe('X')
+    })
+    it('a genuinely missing key still falls through to the default', () => {
+      expect(evalTemplate('<%= getvar("没有", { defaults: "none" }) %>', wrapped())).toBe('none')
+    })
+    it('the `variables` constant exposes both the hoisted key and the stat_data key', () => {
+      expect(evalTemplate('<%= variables.主角.hp %>', wrapped())).toBe('42')
+      expect(evalTemplate('<%= variables.stat_data.主角.hp %>', wrapped())).toBe('42')
+    })
+    it('global scope is NOT affected by the stat_data fallback', () => {
+      const c = ctx({ globals: { g: 1 }, vars: { stat_data: { g: 999 } } })
+      expect(evalTemplate('<%= getGlobalVar("g") %>', c)).toBe('1')
+    })
+  })
 })

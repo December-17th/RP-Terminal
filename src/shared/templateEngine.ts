@@ -128,7 +128,18 @@ const installBridge = (vm: QuickJSContext, ctx: TemplateContext): void => {
   }
 
   reg('getvar', (key: any, opt: any) => {
-    let v = getPath(storeFor(opt), key ?? null)
+    const store = storeFor(opt)
+    let v = getPath(store, key ?? null)
+    // WS-1: stat_data read-fallback. A card EJS reads an MVU key either with the explicit `stat_data.`
+    // prefix OR bare (assuming the hoisted view) — real cards use both forms. Resolve both consistently
+    // in EVERY execution context (prompt-build, render-time, WCV) by falling back to `store.stat_data`
+    // when the bare path misses. This unifies the variable surface WITHOUT copying/hoisting the live
+    // store, so build-time setvar persistence (the store IS the persisted floor vars) is untouched.
+    // Top-level wins on a name collision (we only fall back when the top-level path is undefined).
+    if (v === undefined && key != null && !(opt && opt.scope === 'global')) {
+      const sd = store && typeof store === 'object' ? store.stat_data : undefined
+      if (sd && typeof sd === 'object') v = getPath(sd, key)
+    }
     if (v === undefined && opt && 'defaults' in opt) v = opt.defaults
     return v
   })
@@ -232,7 +243,16 @@ const installBridge = (vm: QuickJSContext, ctx: TemplateContext): void => {
     vm.setProp(vm.global, name, h)
     if (h !== vm.undefined && h !== vm.null) h.dispose()
   }
-  setConst('variables', ctx.vars)
+  // WS-1: expose `variables` as the HOISTED view (stat_data keys lifted to the root, alongside the
+  // `stat_data` key itself) so a card's direct `variables.主角` AND `variables.stat_data.主角` both
+  // resolve, consistently across contexts. Read-only snapshot (jsToHandle deep-copies into the VM), so
+  // this never touches the live store / build-time persistence. stat_data wins on a name collision
+  // (spread last), matching the prior render/WCV hoisting.
+  const sdRoot =
+    ctx.vars && typeof ctx.vars === 'object' ? (ctx.vars as any).stat_data : undefined
+  const hoistedVars =
+    sdRoot && typeof sdRoot === 'object' ? { ...ctx.vars, ...sdRoot } : ctx.vars
+  setConst('variables', hoistedVars)
   for (const [k, v] of Object.entries(ctx.constants)) setConst(k, v)
 
   // Scope alias helpers (getLocalVar / setGlobalVar / …).
