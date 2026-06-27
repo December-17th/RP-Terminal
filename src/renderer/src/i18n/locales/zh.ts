@@ -124,6 +124,7 @@ const zh: Record<string, string> = {
   'settings.storage.restartHint': '需要重启应用以应用新的位置。',
   'settings.storage.restartNow': '立即重启',
   'settings.storage.pending': '重启后将使用：{{path}}',
+  'settings.storage.pendingDefault': '重启后将恢复到默认位置。',
 
   'persona.heading': '用户人设',
   'persona.name': '名称',

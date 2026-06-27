@@ -12,11 +12,11 @@ export function StorageSettings(): React.ReactElement {
 
   const change = async (): Promise<void> => {
     const picked = await window.api.setDataLocationDialog()
-    if (picked) setPending(picked)
+    if (picked) setPending(t('settings.storage.pending', { path: picked }))
   }
   const reset = async (): Promise<void> => {
     await window.api.resetDataLocation()
-    setPending(t('settings.storage.reset'))
+    setPending(t('settings.storage.pendingDefault'))
   }
 
   return (
@@ -37,7 +37,7 @@ export function StorageSettings(): React.ReactElement {
         {pending && (
           <div style={{ marginTop: 10 }}>
             <div style={{ fontSize: '0.8em', color: 'var(--rpt-text-secondary)' }}>
-              {t('settings.storage.pending', { path: pending })}
+              {pending}
             </div>
             <div style={{ fontSize: '0.8em', marginTop: 2 }}>{t('settings.storage.restartHint')}</div>
             <button style={{ marginTop: 6 }} onClick={() => void window.api.restartApp()}>

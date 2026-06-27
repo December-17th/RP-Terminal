@@ -126,6 +126,7 @@ const en: Record<string, string> = {
   'settings.storage.restartHint': 'Restart required to apply the new location.',
   'settings.storage.restartNow': 'Restart now',
   'settings.storage.pending': 'Will use after restart: {{path}}',
+  'settings.storage.pendingDefault': 'Will revert to the default location after restart.',
 
   'persona.heading': 'Persona',
   'persona.name': 'Name',
