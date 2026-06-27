@@ -4,6 +4,8 @@ import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
 
 import * as logService from './services/logService'
+import * as storageService from './services/storageService'
+import { readLocationPointer } from './services/locationPointer'
 import * as migrationService from './services/migrationService'
 import * as templateService from './services/templateService'
 import * as wcvManager from './services/wcvManager'
@@ -88,6 +90,18 @@ app.whenReady().then(() => {
   app.on('browser-window-created', (_, window) => {
     optimizer.watchWindowShortcuts(window)
   })
+
+  // Relocation: on first run with the default location, copy existing %APPDATA% data over (kept as backup).
+  try {
+    const usingDefault = !process.env.RPT_DATA_DIR && !readLocationPointer()?.dataDir
+    storageService.copyLegacyDataDirIfNeeded({
+      legacyDir: join(app.getPath('userData'), 'rp-terminal-data'),
+      targetDir: storageService.getAppDir(),
+      usingDefault
+    })
+  } catch (err: any) {
+    logService.log('error', 'Legacy data-dir copy failed', err?.message || String(err))
+  }
 
   // Initialize SQLite and migrate any legacy JSON data on first run.
   try {

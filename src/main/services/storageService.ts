@@ -80,3 +80,20 @@ export const listFilesSync = (dirPath: string): string[] => {
     .filter((dirent) => dirent.isFile())
     .map((dirent) => dirent.name)
 }
+
+/** One-time copy of the legacy %APPDATA% data dir into the new location, on first run only.
+ *  Runs only when getAppDir used the platform default (no env/pointer), the target has no DB yet,
+ *  and the legacy dir exists. Leaves the legacy copy intact as a backup. Returns true iff it copied. */
+export function copyLegacyDataDirIfNeeded(opts: {
+  legacyDir: string
+  targetDir: string
+  usingDefault: boolean
+}): boolean {
+  const { legacyDir, targetDir, usingDefault } = opts
+  if (!usingDefault) return false
+  if (path.resolve(legacyDir) === path.resolve(targetDir)) return false
+  if (fs.existsSync(path.join(targetDir, 'rpterminal.db'))) return false
+  if (!fs.existsSync(legacyDir)) return false
+  fs.cpSync(legacyDir, targetDir, { recursive: true, errorOnExist: false })
+  return true
+}
