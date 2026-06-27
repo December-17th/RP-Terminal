@@ -20,7 +20,7 @@ _Traceability log for executing [maintainability-plan-2026-06-26.md](maintainabi
 | 1   | Unify EJS context (keystone)   | WS-1  | HIGH  | ✅ done                                              | 1a `396cd13` · 1b `8061410` · 1c `(this commit)` |
 | 2   | lodash/faker → tested module   | WS-4  | MED   | ✅ done (tests + module extract)                     | tests `705e745` · extract (this commit)          |
 | 3   | Decompose buildPrompt          | WS-5  | MED   | ✅ done (preset-loop left by design)                 | inc1 `318f74f` · inc2 `(this commit)`            |
-| 4   | De-escalate L1 cache           | WS-2  | MED   | ✅ done (gated/documented)                           | (this commit)                                    |
+| 4   | Cache system — STASHED         | WS-2  | MED   | ✅ stashed + baseline default                        | gate `ebd67dc` · stash (this commit)             |
 | 5   | Write-back loop (date clock)   | WS-3  | HIGH  | 🟡 guard hardened (date loop); architectural fix deferred | spike `24be4ba` · guard (this commit)        |
 
 Status key: ⬜ todo · 🔄 in progress · ✅ done · ⏸ deferred (with reason).
@@ -408,3 +408,36 @@ guard) remains the proper long-term solution, gated on in-app verification again
 guard should stop the reported date loop now; please confirm in-app. Known limit: a card legitimately
 writing the SAME path 40+ times consecutively between turns (real-time self-driven animation) would be
 capped — out-of-contract, same risk class as before but now timing-independent.
+
+### Stage 16 — WS-2: STASH the cache system + add a true `baseline` mode (owner directive) ✅
+
+**Owner directive.** Cache optimization is low-prio — stash the options for later; add a true baseline mode
+(no optimization at all, not even provider API caching) as a reference; keep the selector greyed out; default
+to baseline.
+
+**Implemented — a three-way `cache.mode` (`baseline` | `provider` | `frozen`), greyed out + pinned/default
+`baseline`:**
+- `baseline` (default): omits Anthropic `cache_control` entirely → **no provider-side prompt caching**, a
+  clean reference control. (OpenAI auto-prefix is transparent / not client-disableable — documented.)
+- `provider`: provider prefix caching as-is (the old level-0 behavior).
+- `frozen`: the dormant L1 Frozen-Core layering (the old level 1) — kept for later review, reachable only via
+  this (unselectable) mode.
+
+**Changes.**
+- `types/models.ts` + `stores/settingsStore.ts` — add `cache.mode` (both copies of the type).
+- `settingsService.ts` — default `mode:'baseline'`; normalize coerces unknown/missing mode → `baseline` and
+  derives `level` from `mode` (frozen → 1, else 0).
+- `apiService.ts` — extracted `buildAnthropicCacheLayout(merged, systemPrompt, cacheOn)` (pure, exported);
+  `baseline` → `cacheOn=false` → no `cache_control` on system or messages.
+- `generationService.ts` — `cacheLevel` derives from `mode === 'frozen'` (so production = 0).
+- `SettingsPanel.tsx` — the (disabled) select now binds `cache.mode` with three options; updated title/hint.
+- i18n `en.ts` + `zh.ts` — `prefs.cacheBaseline` ("Baseline (no caching)"), new `prefs.cacheProvider`,
+  updated hint + disabled title.
+- Decision recorded atop `docs/prompt-cache-optimization-design.md`.
+
+**Intended behavior change:** the default now omits Anthropic `cache_control` (was always-on). Updated the
+settings characterization test deliberately (a legacy stored `level:1` with no `mode` → `baseline`/level 0).
+
+**Verification.** typecheck ✅ · check:deps ✅ · lint ✅ 0 errors · test ✅ **715** (+4: 3 `buildAnthropicCacheLayout`,
++ settings cache-mode cases). **Note (cost):** baseline omits provider caching by default, so token cost
+rises vs the old provider-caching default — intentional (clean reference; the system is parked).

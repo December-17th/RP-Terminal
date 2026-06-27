@@ -160,8 +160,11 @@ describe('resolveModeConfig', () => {
 })
 
 describe('settings cache section', () => {
-  it('defaults to level 0 / partition (behavior-preserving)', () => {
+  // The cache system is STASHED (WS-2): default + pinned to `baseline` (no optimization, not even provider
+  // caching); `level` is derived from `mode` (frozen → 1, else 0).
+  it('defaults to baseline mode / level 0', () => {
     const c = getDefaultSettings().cache
+    expect(c.mode).toBe('baseline')
     expect(c.level).toBe(0)
     expect(c.l1_mode).toBe('partition')
     expect(c.ttl).toBe('5m')
@@ -169,17 +172,26 @@ describe('settings cache section', () => {
     expect(c.breakpoint_optimizer).toBe(false)
   })
 
-  it('merges a stored cache section over defaults without wiping unset fields', () => {
+  it('coerces a legacy stored cache (level 1, no mode) to the stashed baseline', () => {
     const s = normalize({ cache: { level: 1, l1_mode: 'diff' } } as any)
-    expect(s.cache.level).toBe(1)
+    // No explicit mode → pinned to baseline; level derived to 0 (the system is parked).
+    expect(s.cache.mode).toBe('baseline')
+    expect(s.cache.level).toBe(0)
+    // other unset fields still fall back to defaults; l1_mode is preserved (the dormant Frozen-Core knob)
     expect(s.cache.l1_mode).toBe('diff')
-    // unset fields fall back to defaults
     expect(s.cache.ttl).toBe('5m')
     expect(s.cache.prewarm).toBe(false)
   })
 
-  it('supplies the cache section when stored settings omit it entirely', () => {
+  it('preserves an explicit frozen mode and derives level 1', () => {
+    const s = normalize({ cache: { mode: 'frozen' } } as any)
+    expect(s.cache.mode).toBe('frozen')
+    expect(s.cache.level).toBe(1)
+  })
+
+  it('supplies the cache section (baseline) when stored settings omit it entirely', () => {
     const s = normalize({})
+    expect(s.cache.mode).toBe('baseline')
     expect(s.cache.level).toBe(0)
   })
 })
@@ -201,11 +213,18 @@ describe('settings usage-meter + pricing', () => {
     expect(s.ui.usage_meter.enabled).toBe(true)
     expect(s.ui.usage_meter.x).toBe(12)
     expect(s.ui.usage_meter.collapsed).toBe(false) // default preserved
-    expect(s.ui.usage_meter.fields).toEqual(['proxyPct', 'cacheHitPct', 'promptTokens', 'avgCacheHitPct'])
+    expect(s.ui.usage_meter.fields).toEqual([
+      'proxyPct',
+      'cacheHitPct',
+      'promptTokens',
+      'avgCacheHitPct'
+    ])
   })
 
   it('keeps stored pricing rows', () => {
-    const s = normalize({ pricing: { 'm1': { input: 1, output: 2, cacheRead: 0.1, cacheWrite: 1 } } } as any)
+    const s = normalize({
+      pricing: { m1: { input: 1, output: 2, cacheRead: 0.1, cacheWrite: 1 } }
+    } as any)
     expect(s.pricing.m1.output).toBe(2)
   })
 })

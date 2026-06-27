@@ -146,6 +146,9 @@ export const getDefaultSettings = (): Settings => ({
   // just persists whatever the renderer saved. Empty here = "use built-in defaults".
   workspace: { layouts: {} },
   cache: {
+    // Default + pinned to `baseline` (no optimization, not even provider caching) — the cache system is
+    // stashed (selector greyed out). See docs/prompt-cache-optimization-design.md.
+    mode: 'baseline',
     level: 0,
     l1_mode: 'partition',
     ttl: '5m',
@@ -183,7 +186,12 @@ export const normalize = (stored: Partial<Settings>): Settings => {
   // Preserve the renderer's saved per-mode layouts verbatim (normalize otherwise drops
   // unknown keys, since it returns an explicit allowlist of fields below).
   const workspace = { layouts: stored.workspace?.layouts || {} }
+  // Cache: merge stored over defaults, then coerce an unknown/missing `mode` to the stashed default
+  // `baseline`, and keep `level` consistent with `mode` (frozen → 1, else 0) so the dormant Frozen-Core
+  // internals can't be left half-on. (The selector is greyed out, so `mode` only changes via stored data.)
   const cache = { ...d.cache, ...(stored.cache || {}) }
+  if (cache.mode !== 'provider' && cache.mode !== 'frozen') cache.mode = 'baseline'
+  cache.level = cache.mode === 'frozen' ? cache.level || 1 : 0
   const cards = { ...d.cards, ...(stored.cards || {}) }
   const combat = { ...d.combat, ...(stored.combat || {}) }
   const pricing = { ...d.pricing, ...(stored.pricing || {}) }
