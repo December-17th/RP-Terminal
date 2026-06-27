@@ -132,3 +132,26 @@ export function mergeWithDefault(saved: unknown, def: LayoutSpec): LayoutSpec {
   if (!validateNode(root)) return clone(def)
   return { root: normalizeNode(root) }
 }
+
+/** True if any panel leaf in the tree hosts `view`. */
+export function hasPanelView(node: WsNode, view: string): boolean {
+  if (node.type === 'panel') return node.view === view
+  return node.children.some((c) => hasPanelView(c, view))
+}
+
+/** Wrap `root` in a row split with a new left panel hosting `view`. Idempotent: if `view`
+ *  already appears anywhere, returns `root` unchanged (don't double-add on re-seed). */
+export function injectLeftPanel(
+  root: WsNode,
+  view: string,
+  key: string,
+  leftPct = 14
+): WsNode {
+  if (hasPanelView(root, view)) return root
+  return {
+    type: 'split',
+    dir: 'row',
+    sizes: [leftPct, 100 - leftPct],
+    children: [{ type: 'panel', key, view }, root]
+  }
+}
