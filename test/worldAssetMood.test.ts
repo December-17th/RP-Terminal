@@ -24,6 +24,12 @@ describe('currentMoodFor', () => {
   it('returns the LAST mood when several appear (most recent wins)', () => {
     expect(currentMoodFor('爱莎', 'mood="微笑" ... mood="愤怒"')).toBe('愤怒')
   })
+  it('picks the last mood by document position across pattern types (field then attr)', () => {
+    expect(currentMoodFor('爱莎', '情绪：喜悦 ... mood="愤怒"')).toBe('愤怒')
+  })
+  it('picks the last mood by document position across pattern types (attr then field)', () => {
+    expect(currentMoodFor('爱莎', 'mood="愤怒" ... 情绪：喜悦')).toBe('喜悦')
+  })
   it('returns undefined when no mood is present', () => {
     expect(currentMoodFor('爱莎', '只是一段普通的旁白。')).toBeUndefined()
   })
