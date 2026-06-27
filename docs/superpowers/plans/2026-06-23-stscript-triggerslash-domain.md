@@ -45,11 +45,11 @@ Parity by construction (spec §3.1, §6).
 **Files:** move `plugin/stscript.ts` → `shared/stscript.ts`; old path re-exports.
 
 - [ ] **Step 1:** `git mv src/renderer/src/plugin/stscript.ts src/shared/stscript.ts`. Change its macro import
-  from `'../../../shared/macros'` → `'./macros'`.
+      from `'../../../shared/macros'` → `'./macros'`.
 - [ ] **Step 2:** recreate `src/renderer/src/plugin/stscript.ts` as `export * from '../../../shared/stscript'`
-  (keeps `slash.ts` + `test/stscript.test.ts` imports valid).
+      (keeps `slash.ts` + `test/stscript.test.ts` imports valid).
 - [ ] **Step 3:** confirm no other importer of `plugin/stscript` (grep `plugin/stscript`); leave them on the
-  re-export path.
+      re-export path.
 
 **Verify:** `npm test` (`stscript.test.ts` green, **unchanged**) + typecheck + build. This commit must be a
 pure relocation — zero behavior change.
@@ -60,12 +60,12 @@ pure relocation — zero behavior change.
 `cardBridge/host.ts`, `preload/wcvHost.ts`, `test/thRuntime.test.ts`.
 
 - [ ] **Step 1 (macro ctx):** add optional `char?`/`user?`/`persona?` to `StCtx`; in `runCommand`'s `expand`,
-  pass them into `expandMacros({ vars, globals, rng, char, user, persona })`. Additive — `stscript.test.ts`
-  stays green.
+      pass them into `expandMacros({ vars, globals, rng, char, user, persona })`. Additive — `stscript.test.ts`
+      stays green.
 - [ ] **Step 2 (seam):** remove `triggerSlash` from the `Host` interface (`types.ts`) + both adapter stubs +
-  the mock; **add** `getGlobalVars`/`setGlobalVar` to `Host`, both adapters (inline →
-  `window.api.pluginGetVars/pluginVars` global scope; WCV → `wcv-host-get-global-vars`/`-set-global-var` IPC
-  in `wcvIpc.ts` → `pluginService`), and the mock.
+      the mock; **add** `getGlobalVars`/`setGlobalVar` to `Host`, both adapters (inline →
+      `window.api.pluginGetVars/pluginVars` global scope; WCV → `wcv-host-get-global-vars`/`-set-global-var` IPC
+      in `wcvIpc.ts` → `pluginService`), and the mock.
 - [ ] **Step 3 (wire):** in `createThRuntime`, add `runTriggerSlash(command)`:
   - `ctx.vars` = the **live** cached `stat` (optimistic, mirroring `setMvuVariable`); `ctx.globals` =
     `await host.getGlobalVars()`; `ctx.char/user/persona` = `host.charData()?.name` / `host.personaName()`
@@ -80,9 +80,9 @@ pure relocation — zero behavior change.
   - Point `TavernHelper.triggerSlash` (index.ts:252) + any alias (grep `triggerSlash`,
     `executeSlashCommands`, `STscript`) at `runTriggerSlash`. Import `runScript` + `StCtx` from `../stscript`.
 - [ ] **Step 4 (tests):** in `test/thRuntime.test.ts`, add: `triggerSlash('/setvar key=hp 5 | /getvar key=hp')`
-  → `'5'` and `calls.applyVariableOps` got `[{ op:'set', path:'/hp', value:5 }]`; `triggerSlash('/echo {{char}}')`
-  → `'Ellia'`; `triggerSlash('/gen hi there')` → `'gen:hi there'` (mock `generate`); `triggerSlash('/echo a |
-  /echo {{pipe}}!')` → `'a!'`; unknown command → `''`.
+      → `'5'` and `calls.applyVariableOps` got `[{ op:'set', path:'/hp', value:5 }]`; `triggerSlash('/echo {{char}}')`
+      → `'Ellia'`; `triggerSlash('/gen hi there')` → `'gen:hi there'` (mock `generate`); `triggerSlash('/echo a |
+/echo {{pipe}}!')` → `'a!'`; unknown command → `''`.
 
 **Verify:** `npm test` + typecheck + build green. **Manual (Electron, both transports):** a card runs
 `triggerSlash('/setvar key=hp 10 | /getvar key=hp')` (round-trips the var), `triggerSlash('/gen …')` (a turn

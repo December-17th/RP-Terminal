@@ -8,7 +8,7 @@ import {
   type NodePath,
   type WsNode
 } from '../../../shared/workspaceLayout'
-import { DEFAULT_LAYOUT, WORKSPACE_MODES } from '../../../shared/layoutDefaults'
+import { WORKSPACE_MODES, defaultLayoutForMode } from '../../../shared/layoutDefaults'
 import { useSettingsStore } from './settingsStore'
 
 /**
@@ -59,7 +59,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => {
     load: (profileId, saved) => {
       const layouts: ModeLayouts = {}
       for (const mode of WORKSPACE_MODES) {
-        layouts[mode] = mergeWithDefault(saved?.[mode], DEFAULT_LAYOUT)
+        layouts[mode] = mergeWithDefault(saved?.[mode], defaultLayoutForMode(mode))
       }
       set({ profileId, layouts })
     },
@@ -68,6 +68,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => {
       apply(mode, (root) => resizeSplit(root, path, index, deltaPct)),
     setView: (mode, key, view) => apply(mode, (root) => setPanelView(root, key, view)),
     toggleHidden: (mode, key) => apply(mode, (root) => togglePanelHidden(root, key)),
-    resetMode: (mode) => apply(mode, () => JSON.parse(JSON.stringify(DEFAULT_LAYOUT.root)))
+    resetMode: (mode) =>
+      apply(mode, () => JSON.parse(JSON.stringify(defaultLayoutForMode(mode).root)))
   }
 })

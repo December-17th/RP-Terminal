@@ -7,8 +7,10 @@ import eslintPluginReactRefresh from 'eslint-plugin-react-refresh'
 
 export default defineConfig(
   // Never lint vendored/minified bundles (e.g. resources/cardlibs/tailwind.min.js) — eslint flags
-  // thousands of "errors" in the minified one-liner and reds the gate.
-  { ignores: ['**/node_modules', '**/dist', '**/out', '**/*.min.js'] },
+  // thousands of "errors" in the minified one-liner and reds the gate. `.claude/` holds tooling +
+  // nested git worktrees (separate checkouts of src/test); linting those duplicates the tree and,
+  // because their paths don't match the `test/**` override below, reds the gate with spurious errors.
+  { ignores: ['**/node_modules', '**/dist', '**/out', '**/*.min.js', '**/.claude/**'] },
   tseslint.configs.recommended,
   eslintPluginReact.configs.flat.recommended,
   eslintPluginReact.configs.flat['jsx-runtime'],
@@ -59,6 +61,15 @@ export default defineConfig(
     rules: {
       '@typescript-eslint/explicit-function-return-type': 'off',
       '@typescript-eslint/no-empty-function': 'off'
+    }
+  },
+  {
+    // Node CJS scripts (config + the card-patch examples) legitimately use require()/module.exports
+    // and don't need TS return-type annotations.
+    files: ['**/*.cjs'],
+    rules: {
+      '@typescript-eslint/no-require-imports': 'off',
+      '@typescript-eslint/explicit-function-return-type': 'off'
     }
   },
   eslintConfigPrettier

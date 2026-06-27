@@ -51,10 +51,7 @@ describe('buildFloorMetrics', () => {
     expect(t2.cumulative.usage?.cacheRead).toBe(8)
     // avgCacheHitPct only averages over usage turns; t2 hit = 8/(8+0+2) = 80%
     expect(t2.cumulative.avgCacheHitPct).toBeGreaterThan(0)
-    expect(t2.cumulative.avgPromptTokens).toBeCloseTo(
-      t2.cumulative.totalPromptTokens / 2,
-      5
-    )
+    expect(t2.cumulative.avgPromptTokens).toBeCloseTo(t2.cumulative.totalPromptTokens / 2, 5)
   })
 
   it('a usage-less turn does not move usageTurns or avgCacheHitPct', () => {

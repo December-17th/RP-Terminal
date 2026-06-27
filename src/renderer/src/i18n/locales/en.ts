@@ -64,11 +64,12 @@ const en: Record<string, string> = {
   'prefs.agentComingSoon': 'coming soon',
   'prefs.agentDisabledTitle': 'Gameplay Mode is not implemented yet',
   'prefs.cacheOpt': 'Cache Optimization',
-  'prefs.cacheBaseline': 'Baseline',
+  'prefs.cacheBaseline': 'Baseline (no caching)',
+  'prefs.cacheProvider': 'Provider prefix caching',
   'prefs.cacheFrozenCore': 'Frozen Core (experimental)',
   'prefs.cacheHint':
-    'How aggressively the prompt is structured for provider cache reuse. Baseline uses provider prefix caching as-is; Frozen Core keeps the character/lore prefix byte-stable across turns.',
-  'prefs.cacheDisabledTitle': 'Cache optimization is not configurable yet',
+    'How the prompt is structured for cache reuse. Baseline does NO optimization — not even provider prompt caching (a clean reference). Provider uses provider prefix caching as-is; Frozen Core also keeps the character/lore prefix byte-stable across turns. The system is parked for now — locked to Baseline.',
+  'prefs.cacheDisabledTitle': 'Cache optimization is stashed — locked to Baseline for now',
   'prefs.cardRendering': 'Card rendering (default)',
   'prefs.cardInline': 'Inline (native, embedded in the message)',
   'prefs.cardIsolated': 'Isolated (crash-resistant overlay window)',
@@ -93,6 +94,12 @@ const en: Record<string, string> = {
     'Fit: the card grows to its content height (no scrollbar). Fill: cards built to fill a viewport (100vh) are mapped onto the frame via --TH-viewport-height.',
   'prefs.templateEngineHint':
     'When off, EJS template tags are stripped instead of evaluated ({{macros}} still work).',
+  'prefs.mergeRoles': 'Merge consecutive same-role messages',
+  'prefs.mergeRolesHint':
+    'SillyTavern-faithful (recommended): coalesces adjacent messages of the same role into one, so a preset block split across entries (e.g. <{{user}}_setting> / body / </{{user}}_setting>) is sent as one message instead of fragments. Off = send each preset block as its own message.',
+  'prefs.systemAsUser': 'Send system messages as user',
+  'prefs.systemAsUserHint':
+    'Only affects OpenAI-compatible endpoints (openai/openrouter/custom). Relabels system→user before merging — matches SillyTavern for Gemini-behind-OpenAI proxies that handle the system role poorly. No effect on native Anthropic/Gemini connections. Leave off for real OpenAI/Anthropic.',
   'prefs.renderCadenceHint':
     'During streaming, re-run the engine roughly every this many tokens (not per token).',
   'prefs.recursionHint':
@@ -103,6 +110,13 @@ const en: Record<string, string> = {
   'prefs.addPriceRow': 'Add row for "{{model}}"',
   'prefs.currentModel': 'current model',
   'prefs.plugins': 'Plugins',
+
+  'prefs.debug': 'Debug',
+  'prefs.wipeProfile': 'Wipe profile',
+  'prefs.wipeProfileHint':
+    'Delete every character, chat, preset, lorebook, regex and script in this profile and reset settings to defaults. Your API connections are kept. For debugging only.',
+  'prefs.wipeProfileConfirm':
+    'Wipe everything in this profile except your API connections? This cannot be undone.',
 
   'persona.heading': 'Persona',
   'persona.name': 'Name',
@@ -396,6 +410,53 @@ const en: Record<string, string> = {
   'status.reevaluate': '↻ Re-evaluate',
   'status.reevaluated': 'State re-evaluated from stored updates',
   'status.noState': '(No RPG state for this session yet)',
+
+  'prefs.combatNarration': 'Combat narration',
+  'prefs.combatNarrationAppend': 'Append to the current message',
+  'prefs.combatNarrationFloor': 'Add as a new message',
+  'prefs.combatNarrationHint':
+    'Where the AI’s “Narrate the fight” account lands in the chat. A world card can override this.',
+  'prefs.combatNarrationPrompt': 'Combat narration prompt',
+  'prefs.combatNarrationPromptPh': 'e.g. Narrate in a terse, gritty tone; dwell on the wounds.',
+  'prefs.combatNarrationPromptHint':
+    'Optional guidance for the narration. A world card’s combat.narration_prompt overrides this.',
+  'prefs.combatImprovisePrompt': 'Freeform-action prompt',
+  'prefs.combatImprovisePromptPh':
+    'e.g. Adjudicate strictly; let the player flee only at a real cost.',
+  'prefs.combatImprovisePromptHint':
+    'Steers how the freeform-action box (unique actions / leaving the fight) is adjudicated. A world card’s combat.improvise_prompt overrides this.',
+
+  'combat.empty': 'No active combat.',
+  'combat.cueDetected': 'A fight is breaking out.',
+  'combat.enter': 'Enter Combat',
+  'combat.round': 'Round {{round}}',
+  'combat.turnOf': '{{name}}’s turn',
+  'combat.victoryParty': 'Victory — the party prevails!',
+  'combat.victoryEnemy': 'Defeat — the party has fallen.',
+  'combat.initiative': 'Initiative',
+  'combat.hp': 'HP',
+  'combat.move': 'Move',
+  'combat.attack': 'Attack',
+  'combat.action': 'Action',
+  'combat.endTurn': 'End turn',
+  'combat.improvise': 'Improvise',
+  'combat.improvisePlaceholder': 'Describe a unique action, or how you leave the fight…',
+  'combat.log': 'Log',
+  'combat.narrate': 'Narrate the fight',
+  'combat.endCombat': 'End combat',
+  'combat.startMock': 'Start mock battle (debug)',
+  'combat.enemiesActing': 'Enemies acting…',
+  'combat.refereeDeciding': 'The referee is deciding…',
+  'combat.focus': 'Focus',
+  'combat.exitFocus': 'Exit focus',
+  'combat.popup': 'Pop out',
+  'combat.closePopup': 'Close',
+  'combat.inPopup': 'Combat is open in a pop-out window.',
+  'combat.returnToStory': 'Return to story',
+  'combat.quit': 'Quit combat',
+  'combat.quitHint': 'Leave the combat system and continue the fight in chat (AI-narrated).',
+  'combat.noViableParty':
+    'No one in the party can fight (their attributes / HP are 0). Check the characters’ stats and try again, or quit combat to continue the fight in chat (AI-narrated).',
 
   'actions.hide': 'Hide script actions',
   'actions.show': 'Show script actions',

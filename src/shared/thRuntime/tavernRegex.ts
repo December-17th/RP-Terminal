@@ -22,7 +22,8 @@ export type TavernRegex = {
 }
 
 /** SillyTavern stores the pattern as `/source/flags`; build it (mirrors `regexService.parseFind`). */
-export const buildFindRegex = (source: string, flags: string): string => `/${source ?? ''}/${flags ?? ''}`
+export const buildFindRegex = (source: string, flags: string): string =>
+  `/${source ?? ''}/${flags ?? ''}`
 
 /** Split `/source/flags` back to its parts (mirrors `regexService.parseFind`; default flag `g`). */
 export const parseFindRegex = (raw: string): { source: string; flags: string } => {

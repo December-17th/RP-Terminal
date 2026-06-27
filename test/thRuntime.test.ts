@@ -178,10 +178,11 @@ describe('createThRuntime', () => {
     const m: any = mockHost()
     const g = createThRuntime(m.host)
     const seen: any[] = []
-    g.eventOn('mag_variable_updated', (sd: any) => seen.push(sd))
+    g.eventOn('mag_variable_updated', (vars: any) => seen.push(vars))
     m.fireVars({ hp: 99 })
     expect(g.getVariables()).toEqual({ stat_data: { hp: 99 } })
-    expect(seen).toEqual([{ hp: 99 }])
+    // MVU events carry the WRAPPED { stat_data } object (MvuData contract), not bare stat_data.
+    expect(seen).toEqual([{ stat_data: { hp: 99 } }])
   })
 
   it('setMvuVariable persists via applyVariableOps', async () => {
@@ -249,9 +250,7 @@ describe('createThRuntime', () => {
     expect(created.new_entries).toHaveLength(1)
     const afterCreate = m.calls.saveWorldbookById.at(-1)
     expect(afterCreate[0]).toBe('wb1')
-    expect(
-      afterCreate[1].some((e: any) => e.keys?.includes('x') && e.constant === true)
-    ).toBe(true)
+    expect(afterCreate[1].some((e: any) => e.keys?.includes('x') && e.constant === true)).toBe(true)
     // the mock book has one entry (mapped name 'Entry 1') — delete it via predicate
     const del = await g.deleteWorldbookEntries('Lore A', (e: any) => e.name === 'Entry 1')
     expect(del.deleted_entries).toHaveLength(1)
@@ -310,10 +309,9 @@ describe('createThRuntime', () => {
     expect(g.isCharacterTavernRegexesEnabled()).toBe(true)
     // updateTavernRegexesWith: the updater's returned list is written for that option
     const added = { id: 'rx2', script_name: 'New', find_regex: '/x/g', replace_string: 'y' }
-    const out = await g.updateTavernRegexesWith(
-      (list: any[]) => [...list, added],
-      { type: 'character' }
-    )
+    const out = await g.updateTavernRegexesWith((list: any[]) => [...list, added], {
+      type: 'character'
+    })
     expect(out).toHaveLength(2)
     expect(m.calls.replaceRegexes[0][0]).toHaveLength(2)
     expect(m.calls.replaceRegexes[0][1]).toEqual({ type: 'character' })

@@ -9,7 +9,7 @@
 // frozen for card use (it backs plugins + app UI only).
 import { ipcRenderer } from 'electron'
 import _ from 'lodash'
-import { z as zod } from 'zod'
+import { cardZod } from '../shared/cardZod'
 import variant from '@jitl/quickjs-singlefile-browser-release-sync'
 import { newQuickJSWASMModuleFromVariant } from 'quickjs-emscripten-core'
 import {
@@ -17,6 +17,7 @@ import {
   evalTemplate as ejsEval,
   evalTemplateDetailed as ejsEvalDetailed,
   setEngineDeps,
+  buildTemplateContext,
   TemplateContext
 } from '../shared/templateEngine'
 import { createThRuntime } from '../shared/thRuntime'
@@ -210,16 +211,14 @@ setEngineDeps({ log: (_l: any, m: any, d: any) => DEBUG && console.warn('[ejs]',
 void initEngine(() => newQuickJSWASMModuleFromVariant(variant))
 
 const buildEjsCtx = (data?: any): TemplateContext => {
+  // The WCV runtime's `statData` is the BARE stat_data; wrap it so the store is the canonical shape
+  // ({ stat_data }). The engine resolves both `getvar('主角')` and `getvar('stat_data.主角')` from it
+  // (WS-1 fallback), so no pre-hoist. Construction via the shared builder (canonical defaults).
   const sd = data?.variables ?? statData ?? {}
-  // Hoist stat_data to the root (like render-time) so variables.主角 AND variables.stat_data.主角 resolve.
-  const vars = sd && typeof sd === 'object' ? { ...sd, stat_data: sd } : {}
-  return {
-    vars,
-    globals: {},
-    constants: { ...(data?.constants || {}) },
-    data: data?.data || {},
-    enabled: true
-  }
+  return buildTemplateContext(
+    { stat_data: sd && typeof sd === 'object' ? sd : {} },
+    { constants: { ...(data?.constants || {}) }, data: data?.data || {} }
+  )
 }
 
 // --- the unified TH runtime over the WCV Host ---
@@ -245,7 +244,7 @@ w.TavernHelper = g.TavernHelper
 // These are transport-level library injection (not part of the TH runtime). The runtime already provides
 // `toastr`; the lib globals below are required()'d lazily because importing them at preload load crashes.
 w._ = _
-w.z = zod
+w.z = cardZod
 // YAML — MVU / data_schema card scripts reference a `YAML` global (the ST host provides one). We don't ship
 // a full parser; mirror the inline LIB_SHIM's clean-room best-effort (JSON passthrough) so the global exists
 // — without it the script throws `YAML is not defined`. (A real YAML parser is out of scope, as in-app.)

@@ -24,8 +24,8 @@ dual-mode rendering). Rendering/scripting pipeline findings:
   `window.parent.TavernHelper/SillyTavern/Mvu/EjsTemplate` and binds each fn to the iframe;
   RPT does `window.parent.__rptCardBridge(ctx)`). No postMessage/IPC at that seam. The gaps are
   **coverage**, not architecture.
-- **One true divergence:** JSR runs **in-process** (TH functions *are* the ST app, mutating ST state
-  directly); RPT is **two-process** (TH functions are a *shim* translating to main via IPC / Zustand).
+- **One true divergence:** JSR runs **in-process** (TH functions _are_ the ST app, mutating ST state
+  directly); RPT is **two-process** (TH functions are a _shim_ translating to main via IPC / Zustand).
   RPT must therefore reimplement each TH function against its own engine — the clean-room work.
 - **Rendering env gaps** vs JSR's `createSrcContent`: base reset (✅ landed, `899cd98`), the assumed
   libraries (**jQuery-UI(+touch-punch), FontAwesome, Tailwind** — we inject only Vue/jQuery/Pinia/
@@ -80,13 +80,13 @@ Load-bearing properties:
 
 ## Roadmap (subsystems A–D mapped onto the architecture)
 
-| # | Sub-project | Builds | Status |
-|---|---|---|---|
-| **SP1 — Foundation** | Extract `shared/thRuntime` + `Host` + the two adapters from today's `cardBridge`/`wcvPreload` (no new domains) + parity tests | the seam; kills drift | next |
-| **SP2 — (A) Rendering-env parity** | assumed libs, `--TH-viewport-height` + fill/fit toggle, avatar CSS | visual fidelity | |
-| **SP3…n — (B) TH domains** | lorebook CRUD, chat write, regex, generateRaw/stop, full `tavern_events`, audio, macros — one slice per spec | compatibility | |
-| **later — (C) Scripts / STScript** | author script library (global/char) + clean-room STScript interpreter | scripts beyond cards | |
-| **later — (D) EJS / MVU depth** | ST-PT long tail (render-time eval, markers/decorators, scopes) | templating parity | |
+| #                                  | Sub-project                                                                                                                   | Builds                | Status |
+| ---------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- | --------------------- | ------ |
+| **SP1 — Foundation**               | Extract `shared/thRuntime` + `Host` + the two adapters from today's `cardBridge`/`wcvPreload` (no new domains) + parity tests | the seam; kills drift | next   |
+| **SP2 — (A) Rendering-env parity** | assumed libs, `--TH-viewport-height` + fill/fit toggle, avatar CSS                                                            | visual fidelity       |        |
+| **SP3…n — (B) TH domains**         | lorebook CRUD, chat write, regex, generateRaw/stop, full `tavern_events`, audio, macros — one slice per spec                  | compatibility         |        |
+| **later — (C) Scripts / STScript** | author script library (global/char) + clean-room STScript interpreter                                                         | scripts beyond cards  |        |
+| **later — (D) EJS / MVU depth**    | ST-PT long tail (render-time eval, markers/decorators, scopes)                                                                | templating parity     |        |
 
 Each sub-project is its own spec → plan → build cycle so the work stays reviewable.
 

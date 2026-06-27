@@ -45,7 +45,7 @@ and can write message variables. This is distinct from a panel and changes the f
   inline-per-message.
 - **Built (2026-06-24):** `MessageContent` renders model-authored HTML cards **inline** in the message
   DOM so they BLEND with the message (the SillyTavern approach — `messageFormatting` renders into
-  `.mes_text` and scopes message `<style>` under it). `splitHtml` lifts a bare top-level HTML *region*
+  `.mes_text` and scopes message `<style>` under it). `splitHtml` lifts a bare top-level HTML _region_
   (adjacent containers + `<style>`/`<script>`, so a card and its sibling `<style>` sheet stay together)
   out of the markdown; `InlineHtml` then: extracts the `<style>` (`extractStyleBlocks`), scopes its CSS
   to a unique per-card container class via postcss (`scopeCss`/`scopeClassFor` in `messageHtmlScope.ts`
@@ -55,9 +55,8 @@ and can write message variables. This is distinct from a panel and changes the f
   so CSS-`:checked` interactive cards (fold/flip) work; `<script>`/`<form>`/`<iframe>` etc. are stripped.
   Only a region carrying a `<script>` goes to a frame (WCV/`InlineCardFrame`); full `<html>/<body>`/
   ```html docs still use the passive `HtmlFrame`. NB: NOT the old "react-markdown + rehype-raw" plan
-  (`rehype-raw` is a dead dep). **Trade-off:** inline card HTML lives in the app document, so the
-  permissive renderer CSP loses raw-HTML as its second line of defense (see
-  `codebase-health-check-2026-06-24.md` §5) — accepted per the owner's deferred-hardening stance.
+(`rehype-raw`is a dead dep). **Trade-off:** inline card HTML lives in the app document, so the
+permissive renderer CSP loses raw-HTML as its second line of defense (see`codebase-health-check-2026-06-24.md` §5) — accepted per the owner's deferred-hardening stance.
 - **Vars-write already works + persists:** an interactive frame calls `rpt.vars` / TavernHelper
   `insertOrAssignVariables`/`replaceVariables` → `pluginService.pluginVars` (permission-gated,
   scope-aware) → the floor's variables + `saveFloor`, and syncs the live status widgets. This **overlaps

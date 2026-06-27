@@ -33,7 +33,11 @@ export function setChatMessages(profileId: string, chatId: string, messages: unk
  * Delete messages (TH deleteChatMessages). The floor model couples user+assistant, so this TRUNCATES from
  * the earliest targeted message's floor onward (the common "delete from here / undo").
  */
-export function deleteChatMessages(profileId: string, chatId: string, messageIds: unknown): boolean {
+export function deleteChatMessages(
+  profileId: string,
+  chatId: string,
+  messageIds: unknown
+): boolean {
   const floors = floorService.getAllFloors(profileId, chatId)
   const map = chatIndexMap(floors)
   const ids = (Array.isArray(messageIds) ? messageIds : [messageIds]).filter(

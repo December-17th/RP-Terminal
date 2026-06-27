@@ -57,7 +57,9 @@ describe('storeRuleToTavernRegex', () => {
   })
 
   it('promptOnly ⇒ prompt-only destination; a disabled rule ⇒ enabled:false', () => {
-    const tr = storeRuleToTavernRegex(rule({ markdownOnly: false, promptOnly: true, disabled: true }))
+    const tr = storeRuleToTavernRegex(
+      rule({ markdownOnly: false, promptOnly: true, disabled: true })
+    )
     expect(tr.destination).toEqual({ display: false, prompt: true })
     expect(tr.enabled).toBe(false)
   })

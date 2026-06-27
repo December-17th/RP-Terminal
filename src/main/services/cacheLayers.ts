@@ -5,6 +5,12 @@
  * tail block. The two L1 sub-modes differ only in what the frozen snapshot shows for
  * state: 'partition' shows placeholders (no stale value), 'diff' shows the floor-0
  * seed values (stale, corrected by the tail block).
+ *
+ * ⚠️ EXPERIMENTAL / DORMANT (WS-2). Reached only when `settings.cache.level ≥ 1`, but the settings dial
+ * is DISABLED in the UI (pinned to baseline/0), so this whole path is currently unreachable by users and
+ * UNVALIDATED against real provider cache behavior. Keep it gated; don't treat the proxy "stable prefix %"
+ * as a provider cache-hit guarantee. Removal of the partition/diff dual-mode is a candidate if validation
+ * never happens. See the status note atop docs/prompt-cache-optimization-design.md.
  */
 
 export const STATE_PLACEHOLDER = '⟦state⟧'

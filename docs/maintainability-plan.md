@@ -1,5 +1,10 @@
 # RP Terminal — Maintainability Plan
 
+> **Superseded (2026-06-26).** All phases 0–4 below shipped. The current treatment plan is
+> [maintainability-plan-2026-06-26.md](maintainability-plan-2026-06-26.md) (diagnosis:
+> [codebase-structural-review-2026-06-26.md](codebase-structural-review-2026-06-26.md)). This file is kept
+> as the 2026-06-22 historical record.
+
 _Derived from [codebase-health-check.md](codebase-health-check.md) (2026-06-22). The health check is the
 diagnosis; this is the treatment plan. Bracketed tags like **[H]** point back to the report's sections._
 

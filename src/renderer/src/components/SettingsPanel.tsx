@@ -240,6 +240,47 @@ export const SettingsPanel: React.FC<{ profileId: string }> = ({ profileId }) =>
               {t('prefs.templateEngineHint')}
             </div>
 
+            <label
+              className="entry-toggles"
+              style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 14 }}
+            >
+              <input
+                type="checkbox"
+                checked={settings.generation?.merge_consecutive_roles !== false}
+                onChange={(e) =>
+                  updateSettings(profileId, {
+                    generation: {
+                      ...settings.generation,
+                      merge_consecutive_roles: e.target.checked
+                    }
+                  })
+                }
+              />
+              {t('prefs.mergeRoles')}
+            </label>
+            <div style={{ fontSize: '0.78em', color: 'var(--rpt-text-secondary)', marginTop: 4 }}>
+              {t('prefs.mergeRolesHint')}
+            </div>
+
+            <label
+              className="entry-toggles"
+              style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 14 }}
+            >
+              <input
+                type="checkbox"
+                checked={settings.generation?.system_as_user ?? false}
+                onChange={(e) =>
+                  updateSettings(profileId, {
+                    generation: { ...settings.generation, system_as_user: e.target.checked }
+                  })
+                }
+              />
+              {t('prefs.systemAsUser')}
+            </label>
+            <div style={{ fontSize: '0.78em', color: 'var(--rpt-text-secondary)', marginTop: 4 }}>
+              {t('prefs.systemAsUserHint')}
+            </div>
+
             {settings.templates?.enabled !== false && (
               <div style={{ marginLeft: 22, marginTop: 8 }}>
                 <label
@@ -340,23 +381,86 @@ export const SettingsPanel: React.FC<{ profileId: string }> = ({ profileId }) =>
                 ({t('prefs.agentComingSoon')})
               </span>
             </label>
-            {/* Disabled until the cache-optimization dial is exposed; pinned to baseline (level 0). */}
+            {/* Cache optimization is STASHED (low prio): the dial is greyed out and pinned to `baseline`
+                (no optimization at all — not even provider prompt caching). See the design doc. */}
             <select
-              value={String(settings.cache?.level ?? 0)}
+              value={settings.cache?.mode ?? 'baseline'}
               disabled
               title={t('prefs.cacheDisabledTitle')}
               onChange={(e) =>
                 updateSettings(profileId, {
-                  cache: { ...settings.cache, level: Number(e.target.value) }
+                  cache: {
+                    ...settings.cache,
+                    mode: e.target.value as 'baseline' | 'provider' | 'frozen'
+                  }
                 })
               }
               style={{ width: '100%' }}
             >
-              <option value="0">{t('prefs.cacheBaseline')}</option>
-              <option value="1">{t('prefs.cacheFrozenCore')}</option>
+              <option value="baseline">{t('prefs.cacheBaseline')}</option>
+              <option value="provider">{t('prefs.cacheProvider')}</option>
+              <option value="frozen">{t('prefs.cacheFrozenCore')}</option>
             </select>
             <div style={{ fontSize: '0.78em', color: 'var(--rpt-text-secondary)', marginTop: 4 }}>
               {t('prefs.cacheHint')}
+            </div>
+
+            <label className="field-label" style={{ marginTop: 18 }}>
+              {t('prefs.combatNarration')}
+            </label>
+            <select
+              value={settings.combat?.narrationMode ?? 'append'}
+              onChange={(e) =>
+                updateSettings(profileId, {
+                  combat: {
+                    ...settings.combat,
+                    narrationMode: e.target.value as 'append' | 'floor'
+                  }
+                })
+              }
+              style={{ width: '100%' }}
+            >
+              <option value="append">{t('prefs.combatNarrationAppend')}</option>
+              <option value="floor">{t('prefs.combatNarrationFloor')}</option>
+            </select>
+            <div style={{ fontSize: '0.78em', color: 'var(--rpt-text-secondary)', marginTop: 4 }}>
+              {t('prefs.combatNarrationHint')}
+            </div>
+
+            <label className="field-label" style={{ marginTop: 14 }}>
+              {t('prefs.combatNarrationPrompt')}
+            </label>
+            <textarea
+              value={settings.combat?.narrationPrompt ?? ''}
+              rows={3}
+              placeholder={t('prefs.combatNarrationPromptPh')}
+              onChange={(e) =>
+                updateSettings(profileId, {
+                  combat: { ...settings.combat, narrationPrompt: e.target.value }
+                })
+              }
+              style={{ width: '100%' }}
+            />
+            <div style={{ fontSize: '0.78em', color: 'var(--rpt-text-secondary)', marginTop: 4 }}>
+              {t('prefs.combatNarrationPromptHint')}
+            </div>
+
+            <label className="field-label" style={{ marginTop: 14 }}>
+              {t('prefs.combatImprovisePrompt')}
+            </label>
+            <textarea
+              value={settings.combat?.improvisePrompt ?? ''}
+              rows={3}
+              placeholder={t('prefs.combatImprovisePromptPh')}
+              onChange={(e) =>
+                updateSettings(profileId, {
+                  combat: { ...settings.combat, improvisePrompt: e.target.value }
+                })
+              }
+              style={{ width: '100%' }}
+            />
+            <div style={{ fontSize: '0.78em', color: 'var(--rpt-text-secondary)', marginTop: 4 }}>
+              {t('prefs.combatImprovisePromptHint')}
             </div>
           </>
         )}
@@ -429,6 +533,30 @@ export const SettingsPanel: React.FC<{ profileId: string }> = ({ profileId }) =>
           <summary>{t('prefs.plugins')}</summary>
           <div className="settings-section-body">
             <PluginsPanel profileId={profileId} />
+          </div>
+        </details>
+
+        <details className="settings-section" style={{ marginTop: 20 }}>
+          <summary>{t('prefs.debug')}</summary>
+          <div className="settings-section-body">
+            <div
+              style={{ fontSize: '0.78em', color: 'var(--rpt-text-secondary)', marginBottom: 8 }}
+            >
+              {t('prefs.wipeProfileHint')}
+            </div>
+            <button
+              style={{
+                color: 'var(--rpt-danger, #e06c75)',
+                borderColor: 'var(--rpt-danger, #e06c75)'
+              }}
+              onClick={async () => {
+                if (!window.confirm(t('prefs.wipeProfileConfirm'))) return
+                await window.api.wipeProfile(profileId)
+                window.location.reload()
+              }}
+            >
+              {t('prefs.wipeProfile')}
+            </button>
           </div>
         </details>
       </div>

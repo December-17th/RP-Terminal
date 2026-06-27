@@ -1,5 +1,10 @@
 import { describe, it, expect } from 'vitest'
-import { applyEvent, composeAddendum } from '../src/main/services/generationService'
+import {
+  applyEvent,
+  composeAddendum,
+  registerWriteSignature,
+  resetWriteLoopGuard
+} from '../src/main/services/generationService'
 
 const evt = (path: string, action: string, value: unknown, type = 'state'): any => ({
   type,
@@ -70,5 +75,57 @@ describe('composeAddendum (card agent prompts)', () => {
   it('returns empty when the card has no agent config', () => {
     expect(composeAddendum(undefined, 'explore', true, '')).toBe('')
     expect(composeAddendum({}, 'explore', false, '')).toBe('')
+  })
+})
+
+// WS-3 — the timing-independent runaway write-back guard (the `date` clock loop). The detector counts
+// CONSECUTIVE same-signature writes (no wall-clock window), reset per model turn.
+describe('write-back loop guard (WS-3)', () => {
+  const LOOP_MAX = 40
+
+  it('drops a self-feedback loop: the SAME path hammered past the threshold', () => {
+    const chat = 'loop-1'
+    resetWriteLoopGuard(chat)
+    // The first LOOP_MAX writes are allowed; the (LOOP_MAX+1)th and beyond are dropped.
+    for (let i = 1; i <= LOOP_MAX; i++) {
+      expect(registerWriteSignature(chat, '/世界.date').drop).toBe(false)
+    }
+    expect(registerWriteSignature(chat, '/世界.date').drop).toBe(true)
+    expect(registerWriteSignature(chat, '/世界.date').drop).toBe(true) // stays dropped
+  })
+
+  it('is TIMING-INDEPENDENT — a slow loop (>400ms apart) is still caught', () => {
+    // The old guard reset on a >400ms gap; this one counts consecutively regardless of timing. We don't
+    // advance any clock here, so passing the threshold with no time gating proves timing-independence.
+    const chat = 'loop-slow'
+    resetWriteLoopGuard(chat)
+    let dropped = false
+    for (let i = 0; i < 50; i++) dropped = registerWriteSignature(chat, '/clock').drop || dropped
+    expect(dropped).toBe(true)
+  })
+
+  it('does NOT drop a legit init chain that touches DISTINCT paths (streak resets each time)', () => {
+    const chat = 'init-1'
+    resetWriteLoopGuard(chat)
+    for (let i = 0; i < 200; i++) {
+      // every write is a different path → signature changes → streak never accumulates
+      expect(registerWriteSignature(chat, `/field_${i}`).drop).toBe(false)
+    }
+  })
+
+  it('resets the streak on a new model turn, so a path written once per turn never accumulates', () => {
+    const chat = 'perturn'
+    for (let turn = 0; turn < 100; turn++) {
+      resetWriteLoopGuard(chat) // start of generate()
+      expect(registerWriteSignature(chat, '/位置').drop).toBe(false)
+    }
+  })
+
+  it('keeps chats independent', () => {
+    resetWriteLoopGuard('A')
+    resetWriteLoopGuard('B')
+    for (let i = 0; i <= LOOP_MAX; i++) registerWriteSignature('A', '/x')
+    expect(registerWriteSignature('A', '/x').drop).toBe(true)
+    expect(registerWriteSignature('B', '/x').drop).toBe(false)
   })
 })

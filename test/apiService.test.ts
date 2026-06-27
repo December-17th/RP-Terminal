@@ -1,6 +1,43 @@
 import { describe, it, expect } from 'vitest'
-import { buildGeminiBody, thinkAssembler, orderForProvider } from '../src/main/services/apiService'
+import {
+  buildGeminiBody,
+  thinkAssembler,
+  orderForProvider,
+  buildAnthropicCacheLayout
+} from '../src/main/services/apiService'
 import { ChatMessage } from '../src/main/services/promptBuilder'
+
+// Helper: does any part of the payload carry a cache_control breakpoint?
+const hasCacheControl = (v: unknown): boolean => JSON.stringify(v).includes('cache_control')
+
+describe('buildAnthropicCacheLayout (WS-2 baseline mode)', () => {
+  const msgs: ChatMessage[] = [
+    { role: 'user', content: 'u1' },
+    { role: 'assistant', content: 'a1' },
+    { role: 'user', content: 'u2' }
+  ]
+
+  it('baseline (cacheOn=false): NO cache_control anywhere; system stays a plain string', () => {
+    const { system, outMessages } = buildAnthropicCacheLayout(msgs, 'You are Aria.', false)
+    expect(system).toBe('You are Aria.')
+    expect(outMessages).toEqual(msgs) // unchanged, no breakpoints
+    expect(hasCacheControl(system)).toBe(false)
+    expect(hasCacheControl(outMessages)).toBe(false)
+  })
+
+  it('provider/frozen (cacheOn=true): cache_control on the system block + the pre-final message', () => {
+    const { system, outMessages } = buildAnthropicCacheLayout(msgs, 'You are Aria.', true)
+    expect(hasCacheControl(system)).toBe(true)
+    // the breakpoint sits on messages[length-2] (the message just before the final user turn)
+    expect(hasCacheControl(outMessages[1])).toBe(true)
+    expect(hasCacheControl(outMessages[2])).toBe(false) // the volatile final turn is never cached
+  })
+
+  it('omits system entirely when there is no system prompt (either mode)', () => {
+    expect(buildAnthropicCacheLayout(msgs, '   ', false).system).toBeUndefined()
+    expect(buildAnthropicCacheLayout(msgs, '', true).system).toBeUndefined()
+  })
+})
 
 const params = (p: Record<string, number> = {}): any => ({
   temperature: 0.9,

@@ -46,9 +46,7 @@ CREATE TABLE IF NOT EXISTS chats (
   mode TEXT,
   -- Cached L2 world-info matched for the current mode: {mode, entries}. Reused across
   -- turns within a mode and re-matched only on a mode transition (Phase H inc 2 / Phase G).
-  cached_world_info TEXT,
-  -- Forward-facing (Phase J): queued lore mutations flushed at the next mode transition.
-  pending_lore TEXT
+  cached_world_info TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_chats_profile ON chats(profile_id);
 
@@ -66,12 +64,13 @@ CREATE TABLE IF NOT EXISTS floors (
   PRIMARY KEY (chat_id, floor)
 );
 
--- Forward-facing (Phase H/I/K); unused for now.
-CREATE TABLE IF NOT EXISTS rpg_entities (
-  id TEXT PRIMARY KEY,
-  chat_id TEXT NOT NULL REFERENCES chats(id) ON DELETE CASCADE,
-  name TEXT,
-  data TEXT NOT NULL DEFAULT '{}'
+-- One active combat encounter per chat (combatService). The data column holds the
+-- serialized EncounterRecord (CombatState + ability catalog + card hook scripts);
+-- ephemeral, deleted when the fight ends. See docs/combat-system-design.md §7.
+CREATE TABLE IF NOT EXISTS combat_encounters (
+  chat_id TEXT PRIMARY KEY REFERENCES chats(id) ON DELETE CASCADE,
+  data TEXT NOT NULL,
+  updated_at TEXT
 );
 CREATE TABLE IF NOT EXISTS episodic_memory (
   id TEXT PRIMARY KEY,
@@ -85,13 +84,17 @@ CREATE TABLE IF NOT EXISTS episodic_memory (
 
 // Presets/lorebooks were briefly stored in SQL during early Phase F; they are now
 // file-based, so drop the tables if an older DB still has them. The source JSON
-// on disk is the surviving copy.
+// on disk is the surviving copy. `rpg_entities` was a forward-facing table that never
+// had any reader/writer (WS-6) — always empty, so dropping it from old DBs is safe.
+// (`pending_lore`, an unused `chats` column, is left in place: a NULL column is harmless
+// and ALTER ... DROP COLUMN isn't worth the migration risk.)
 const DROP_LEGACY = `
 DROP TABLE IF EXISTS lorebook_entries;
 DROP TABLE IF EXISTS lorebooks;
 DROP TABLE IF EXISTS presets;
 DROP TABLE IF EXISTS presets_legacy;
 DROP TABLE IF EXISTS profile_state;
+DROP TABLE IF EXISTS rpg_entities;
 `
 
 /** Add a column to a table if a pre-existing DB doesn't already have it (idempotent). */
@@ -119,7 +122,6 @@ export const getDb = (): Database.Database => {
   addColumnIfMissing(db, 'chats', 'lorebook_ids', 'lorebook_ids TEXT')
   addColumnIfMissing(db, 'chats', 'mode', 'mode TEXT')
   addColumnIfMissing(db, 'chats', 'cached_world_info', 'cached_world_info TEXT')
-  addColumnIfMissing(db, 'chats', 'pending_lore', 'pending_lore TEXT')
   // TH-2 swipes: alternate responses per floor + the active index.
   addColumnIfMissing(db, 'floors', 'swipes', 'swipes TEXT')
   addColumnIfMissing(db, 'floors', 'swipe_id', 'swipe_id INTEGER')

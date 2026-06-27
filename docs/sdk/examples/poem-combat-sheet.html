@@ -1,0 +1,442 @@
+<!--
+  命定之诗 — combat sheet (MVU-UI), standalone status-area regex SOURCE.
+  Decision: option A (standalone regex), styled to match the 状态栏 "羊皮纸/parchment" theme
+  (FrontEnd-for-destined-journey src/status/config/theme-presets.ts). This file is the readable source;
+  it is wrapped into the importable regex JSON (poem-combat-sheet.regex.json) — findRegex `<战斗状态栏/>`,
+  markdownOnly, runOnEdit — so the AI/preset/user drops `<战斗状态栏/>` and this renders.
+
+  Reads the player's combat capability from MVU stat_data via `getVariables().stat_data.主角` and renders
+  it with the SAME parse/derive logic the engine uses (src/shared/combat/systems/poemD20.ts) — kept a
+  faithful mirror (parser tested engine-side). VERIFY rendering + data-read in-app.
+-->
+<div id="poem-cs-root" class="poem-cs">载入战斗面板…</div>
+
+<style>
+  .poem-cs {
+    --bg: #221912;
+    --card: #2c2016;
+    --border: #5a412a;
+    --window: #1c1410;
+    --t1: #f4e3c8;
+    --t2: #d2b48c;
+    --t3: #a1886b;
+    --hp: #b73a2b;
+    --mp: #305fa8;
+    --sp: #3b7f52;
+    --q-common: #e4d6bb;
+    --q-uncommon: #519767;
+    --q-rare: #578ccb;
+    --q-epic: #9a79cc;
+    --q-legendary: #e1c067;
+    --q-mythic: #cd6b7e;
+    --q-unique: #d6a057;
+    font-family: 'Noto Sans SC', sans-serif;
+    color: var(--t1);
+    background: var(--bg);
+    border: 1px solid color-mix(in srgb, var(--border) 80%, transparent);
+    border-radius: 10px;
+    padding: 12px 14px;
+    line-height: 1.5;
+    font-size: 13px;
+  }
+  .poem-cs h3 {
+    margin: 0 0 2px;
+    font-size: 15px;
+    color: var(--t1);
+    letter-spacing: 0.04em;
+  }
+  .poem-cs .sub {
+    color: var(--t3);
+    font-size: 11px;
+    margin-bottom: 10px;
+  }
+  .poem-cs .bars {
+    display: grid;
+    gap: 5px;
+    margin-bottom: 10px;
+  }
+  .poem-cs .bar {
+    position: relative;
+    height: 16px;
+    border-radius: 4px;
+    background: var(--window);
+    border: 1px solid var(--border);
+    overflow: hidden;
+  }
+  .poem-cs .bar > i {
+    position: absolute;
+    inset: 0;
+    display: block;
+    opacity: 0.85;
+  }
+  .poem-cs .bar > span {
+    position: relative;
+    z-index: 1;
+    font-size: 10px;
+    padding: 0 6px;
+    display: flex;
+    justify-content: space-between;
+    color: #fff;
+    text-shadow: 0 1px 2px #000a;
+  }
+  .poem-cs .attrs {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 6px;
+    margin-bottom: 10px;
+  }
+  .poem-cs .attr {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    text-align: center;
+    padding: 5px 2px;
+  }
+  .poem-cs .attr b {
+    display: block;
+    font-size: 16px;
+    color: var(--t1);
+  }
+  .poem-cs .attr small {
+    color: var(--t3);
+    font-size: 10px;
+  }
+  .poem-cs .derived {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px 12px;
+    margin-bottom: 12px;
+    color: var(--t2);
+    font-size: 12px;
+  }
+  .poem-cs .derived b {
+    color: var(--t1);
+  }
+  .poem-cs .sect {
+    font-size: 12px;
+    color: var(--q-legendary);
+    margin: 12px 0 6px;
+    border-bottom: 1px solid var(--border);
+    padding-bottom: 3px;
+    letter-spacing: 0.05em;
+  }
+  .poem-cs .ab {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-left-width: 3px;
+    border-radius: 6px;
+    padding: 7px 9px;
+    margin-bottom: 6px;
+  }
+  .poem-cs .ab .nm {
+    font-weight: 600;
+  }
+  .poem-cs .ab .meta {
+    color: var(--t2);
+    font-size: 11px;
+    margin-top: 2px;
+  }
+  .poem-cs .ab .meta .tag {
+    display: inline-block;
+    background: var(--window);
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    padding: 0 5px;
+    margin: 2px 4px 0 0;
+    color: var(--t2);
+  }
+  .poem-cs .ab .desc {
+    color: var(--t3);
+    font-size: 11px;
+    margin-top: 3px;
+  }
+  .poem-cs .empty {
+    color: var(--t3);
+    font-size: 11px;
+    font-style: italic;
+  }
+  .poem-cs .status {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+  }
+  .poem-cs .status .s {
+    background: var(--window);
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    padding: 1px 6px;
+    font-size: 11px;
+    color: var(--t2);
+  }
+</style>
+
+<script>
+  ;(function () {
+    var root = document.getElementById('poem-cs-root')
+    if (!root) return
+    function gv() {
+      try {
+        return (getVariables({ type: 'message' }) || getVariables() || {}).stat_data || {}
+      } catch (e) {
+        try {
+          return (getVariables() || {}).stat_data || {}
+        } catch (_) {
+          return {}
+        }
+      }
+    }
+    var SD = gv()
+    var P = SD['主角'] || {}
+
+    // --- derive tables (mirror of src/shared/combat — keep in sync) ---
+    var TIER_COEF = { 1: 2, 2: 2.8, 3: 4, 4: 8, 5: 15, 6: 35, 7: 80 }
+    var QMAP = {
+      普通: 'common',
+      优良: 'uncommon',
+      稀有: 'rare',
+      史诗: 'epic',
+      传说: 'legendary',
+      神话: 'mythic',
+      唯一: 'unique'
+    }
+    var CN = { 一: 1, 二: 2, 三: 3, 四: 4, 五: 5, 六: 6, 七: 7 }
+    var ATTRS = ['力量', '敏捷', '体质', '智力', '精神']
+    function num(v, d) {
+      if (typeof v === 'number') return v
+      var m = String(v == null ? '' : v).match(/-?\d+(\.\d+)?/)
+      return m ? parseFloat(m[0]) : d || 0
+    }
+    function tier(lv, lvl) {
+      var m = String(lv || '').match(/[一二三四五六七]/)
+      if (m) return CN[m[0]]
+      var n = num(lvl)
+      return n > 0 ? Math.min(7, Math.max(1, Math.ceil(n / 4))) : 1
+    }
+    function esc(s) {
+      return String(s == null ? '' : s).replace(/[&<>]/g, function (c) {
+        return { '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]
+      })
+    }
+
+    // --- compact parseCardItem (mirror; reads 标签/效果/消耗 + scans flavor prose) ---
+    function parseItem(it) {
+      it = it || {}
+      var o = {
+        命中: 0,
+        闪避: 0,
+        DR: 0,
+        伤害增幅: 0,
+        护盾: 0,
+        治疗增幅: 0,
+        治疗量: 0,
+        附加效果: []
+      }
+      ;(Array.isArray(it.标签) ? it.标签 : []).forEach(function (raw) {
+        var t = String(raw || '').trim(),
+          m
+        if (ATTRS.indexOf(t) >= 0) o.关联属性 = t
+        else if ((m = t.match(/有效距离[:：]?\s*(\d+)/))) o.有效距离 = +m[1]
+        else if ((m = t.match(/威力[:：]?\s*(\d+)/))) o.威力 = +m[1]
+        else if ((m = t.match(/攻击[:：]?\s*(\d+)/))) o.攻击 = +m[1]
+        else if ((m = t.match(/防御[:：]?\s*(\d+)/))) o.防御 = +m[1]
+        else if (/治疗/.test(t)) o.治疗 = true
+        else if (/范围|爆发|直线|锥形/.test(t)) o.范围 = t.replace(/范围[:：]?\s*/, '')
+        else if (/单体|自身/.test(t)) o.范围 = '单体'
+        else if (!o.关联属性) {
+          var a = ATTRS.filter(function (x) {
+            return t.indexOf(x) >= 0
+          })[0]
+          if (a) o.关联属性 = a
+        }
+      })
+      var eff = it.效果 && typeof it.效果 === 'object' ? it.效果 : {}
+      Object.keys(eff).forEach(function (k) {
+        var v = String(eff[k] == null ? '' : eff[k]),
+          m
+        if (/命中/.test(k)) o.命中 = Math.max(o.命中, num(v))
+        else if (/闪避/.test(k)) o.闪避 = Math.max(o.闪避, num(v))
+        else if (/固伤|额外固定/.test(k)) o.固伤 = (o.固伤 || 0) + num(v)
+        else if (/^DR$|减伤/.test(k)) o.DR = Math.max(o.DR, num(v))
+        else if (/穿透/.test(k)) o.穿透 = num(v)
+        else if (/伤害增幅|增伤/.test(k)) o.伤害增幅 += num(v)
+        else if (/护盾/.test(k)) o.护盾 += num(v)
+        else if (/治疗增幅/.test(k)) o.治疗增幅 += num(v)
+        else if (/治疗|恢复/.test(k)) o.治疗量 += num(v)
+        else if ((m = v.match(/(\d+)\s*\+?\s*(\d+)?\s*回合/)))
+          o.附加效果.push(k + '(' + (m[2] ? m[1] + '/' + m[2] + '回合' : m[1] + '回合') + ')')
+        else {
+          // flavor prose scan
+          if ((m = v.match(/(?:提高|增加|提升)\s*(\d+(?:\.\d+)?)\s*%\s*治疗/)))
+            o.治疗增幅 += parseFloat(m[1])
+          else if ((m = v.match(/(?:提高|增加|提升)\s*(\d+(?:\.\d+)?)\s*%\s*(?:伤害|攻击)/)))
+            o.伤害增幅 += parseFloat(m[1])
+          if (
+            /减伤|(?:减少|降低)[^。]*伤害|伤害[^。]*(?:减少|降低)/.test(v) &&
+            (m = v.match(/(\d+(?:\.\d+)?)\s*%/))
+          )
+            o.DR = Math.max(o.DR, parseFloat(m[1]))
+          if ((m = v.match(/(\d+)\s*点?\s*护盾/))) o.护盾 += +m[1]
+          if ((m = v.match(/额外(?:造成|附加)?\s*(\d+)\s*点[^，。]*?伤害/)))
+            o.固伤 = (o.固伤 || 0) + +m[1]
+        }
+      })
+      return o
+    }
+
+    // --- render ---
+    var T = tier(P['生命层级'], P['等级'])
+    var A = P['属性'] || {}
+    var coef = TIER_COEF[T] || 1
+    var weaponAtk = 0,
+      def = 0,
+      hit = 0,
+      dodge = 0,
+      shield = 0
+    Object.keys(P['装备'] || {}).forEach(function (slot) {
+      var c = parseItem(P['装备'][slot])
+      if (c.攻击) weaponAtk = Math.max(weaponAtk, c.攻击)
+      if (c.防御) def += c.防御
+      hit = Math.max(hit, c.命中)
+      dodge = Math.max(dodge, c.闪避)
+      shield += c.护盾 || 0
+    })
+
+    function bar(label, cur, max, color) {
+      var pct = max > 0 ? Math.max(0, Math.min(100, (cur / max) * 100)) : 0
+      return (
+        '<div class="bar"><i style="width:' +
+        pct +
+        '%;background:' +
+        color +
+        '"></i>' +
+        '<span><b>' +
+        label +
+        '</b><b>' +
+        cur +
+        ' / ' +
+        max +
+        '</b></span></div>'
+      )
+    }
+    function attrCell(a) {
+      return '<div class="attr"><b>' + num(A[a]) + '</b><small>' + a + '</small></div>'
+    }
+
+    function abilityCard(name, it) {
+      var c = parseItem(it)
+      var q = QMAP[it.品质] || 'common'
+      var meta = []
+      if (c.威力) meta.push('威力 ' + c.威力)
+      if (c.关联属性) meta.push(c.关联属性)
+      meta.push('射程 ' + (c.有效距离 || 1))
+      if (c.范围) meta.push(c.范围)
+      if (it.消耗) meta.push('消耗 ' + String(it.消耗).replace(/\s+/g, ''))
+      if (c.治疗) meta.push('治疗')
+      var mods = []
+      if (c.命中) mods.push('命中+' + c.命中)
+      if (c.伤害增幅) mods.push('伤害+' + c.伤害增幅 + '%')
+      if (c.治疗增幅) mods.push('治疗+' + c.治疗增幅 + '%')
+      if (c.DR) mods.push('减伤' + c.DR + '%')
+      if (c.穿透) mods.push('穿透' + c.穿透 + '%')
+      if (c.护盾) mods.push('护盾' + c.护盾)
+      if (c.固伤) mods.push('固伤' + c.固伤)
+      ;(c.附加效果 || []).forEach(function (s) {
+        mods.push(s)
+      })
+      return (
+        '<div class="ab" style="border-left-color:var(--q-' +
+        q +
+        ')">' +
+        '<div class="nm" style="color:var(--q-' +
+        q +
+        ')">' +
+        esc(name) +
+        '</div>' +
+        '<div class="meta">' +
+        meta
+          .map(function (m) {
+            return '<span class="tag">' + esc(m) + '</span>'
+          })
+          .join('') +
+        (mods.length ? '<div>' + mods.map(esc).join(' · ') + '</div>' : '') +
+        '</div>' +
+        (it.描述 ? '<div class="desc">' + esc(it.描述) + '</div>' : '') +
+        '</div>'
+      )
+    }
+
+    var skills = P['技能'] || {},
+      equips = P['装备'] || {},
+      states = P['状态效果'] || {}
+    var html = ''
+    html += '<h3>' + esc(P['姓名'] || '主角') + ' · 战斗面板</h3>'
+    html +=
+      '<div class="sub">' +
+      esc(P['生命层级'] || '第' + T + '层级') +
+      ' · 等级 ' +
+      num(P['等级'], 1) +
+      ' · 层级系数 ×' +
+      coef +
+      '</div>'
+    html +=
+      '<div class="bars">' +
+      bar('HP', num(P['生命值']), num(P['生命值上限']) || num(P['生命值']), 'var(--hp)') +
+      bar('MP', num(P['法力值']), num(P['法力值上限']) || num(P['法力值']), 'var(--mp)') +
+      bar('SP', num(P['体力值']), num(P['体力值上限']) || num(P['体力值']), 'var(--sp)') +
+      '</div>'
+    html += '<div class="attrs">' + ATTRS.map(attrCell).join('') + '</div>'
+    html +=
+      '<div class="derived"><span>武器攻击 <b>' +
+      weaponAtk +
+      '</b></span><span>防御 <b>' +
+      def +
+      '</b></span>' +
+      '<span>命中 <b>+' +
+      hit +
+      '</b></span><span>闪避 <b>+' +
+      dodge +
+      '</b></span>' +
+      (shield ? '<span>护盾 <b>' + shield + '</b></span>' : '') +
+      '</div>'
+
+    html += '<div class="sect">技能</div>'
+    var sk = Object.keys(skills)
+    html += sk.length
+      ? sk
+          .map(function (n) {
+            return abilityCard(n, skills[n])
+          })
+          .join('')
+      : '<div class="empty">无</div>'
+
+    html += '<div class="sect">装备</div>'
+    var eq = Object.keys(equips)
+    html += eq.length
+      ? eq
+          .map(function (n) {
+            return abilityCard(n, equips[n])
+          })
+          .join('')
+      : '<div class="empty">无</div>'
+
+    var st = Object.keys(states)
+    if (st.length) {
+      html +=
+        '<div class="sect">状态</div><div class="status">' +
+        st
+          .map(function (n) {
+            var s = states[n] || {}
+            return (
+              '<span class="s">' +
+              esc(n) +
+              (s.剩余时间 ? ' (' + esc(s.剩余时间) + ')' : '') +
+              '</span>'
+            )
+          })
+          .join('') +
+        '</div>'
+    }
+
+    root.innerHTML = html
+  })()
+</script>

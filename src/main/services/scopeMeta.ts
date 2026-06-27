@@ -21,7 +21,8 @@ const writeScopeMeta = (dir: string, meta: Record<string, ScopeMeta>): void =>
 // Drop an entry once it carries no information (global + no owner + enabled + no renderMode).
 const prune = (meta: Record<string, ScopeMeta>, file: string): void => {
   const m = meta[file]
-  if (m && (m.scope ?? 'global') === 'global' && !m.owner && !m.disabled && !m.renderMode) delete meta[file]
+  if (m && (m.scope ?? 'global') === 'global' && !m.owner && !m.disabled && !m.renderMode)
+    delete meta[file]
 }
 
 export const getScopeMeta = (dir: string, file: string): ScopeMeta =>
@@ -31,7 +32,12 @@ export const getScopeMeta = (dir: string, file: string): ScopeMeta =>
 export const setScope = (dir: string, file: string, scope: ArtifactScope, owner?: string): void => {
   const meta = readScopeMeta(dir)
   const prev = meta[file] || ({ scope: 'global' } as ScopeMeta)
-  meta[file] = { scope, owner: scope === 'global' ? undefined : owner, disabled: prev.disabled, renderMode: prev.renderMode }
+  meta[file] = {
+    scope,
+    owner: scope === 'global' ? undefined : owner,
+    disabled: prev.disabled,
+    renderMode: prev.renderMode
+  }
   prune(meta, file)
   writeScopeMeta(dir, meta)
 }
@@ -40,7 +46,12 @@ export const setScope = (dir: string, file: string, scope: ArtifactScope, owner?
 export const setDisabled = (dir: string, file: string, disabled: boolean): void => {
   const meta = readScopeMeta(dir)
   const prev = meta[file] || ({ scope: 'global' } as ScopeMeta)
-  meta[file] = { scope: prev.scope ?? 'global', owner: prev.owner, disabled: disabled || undefined, renderMode: prev.renderMode }
+  meta[file] = {
+    scope: prev.scope ?? 'global',
+    owner: prev.owner,
+    disabled: disabled || undefined,
+    renderMode: prev.renderMode
+  }
   prune(meta, file)
   writeScopeMeta(dir, meta)
 }

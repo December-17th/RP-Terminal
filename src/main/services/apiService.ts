@@ -38,6 +38,12 @@ export const streamProvider = async (
  * providers keep their own ordering. Applied in generationService BEFORE the request is logged, so the
  * logged/stored prompt matches exactly what's sent.
  */
+/** True for providers reached via the OpenAI-compatible `chat/completions` path (openai/openrouter/custom/
+ *  …) — i.e. anything that is NOT a native Anthropic or Google/Gemini connection (those shape roles via
+ *  their own params: Anthropic's top-level `system`, Gemini's `systemInstruction`). */
+export const isOpenAiCompatibleProvider = (provider?: string): boolean =>
+  provider !== 'anthropic' && provider !== 'google' && provider !== 'gemini'
+
 export const orderForProvider = (messages: ChatMessage[], provider?: string): ChatMessage[] => {
   if (provider === 'anthropic' || provider === 'google' || provider === 'gemini') return messages
   if (messages[messages.length - 1]?.role === 'assistant') return messages // keep the trailing prefill last
@@ -262,6 +268,40 @@ const streamOpenAICompatible = async (
   return full
 }
 
+/**
+ * Build the Anthropic `system` + `messages` payload with (or without) prompt-cache breakpoints.
+ *
+ * Prompt caching (Phase G): cache_control breakpoints mark the end of a stable prefix (max 4/request,
+ * ephemeral = 5-min TTL). Two breakpoints — the system block (static per session) and the last message
+ * before the new user turn (caches the history prefix); the volatile final user turn stays past the last
+ * breakpoint so it never invalidates the cached head. Prefixes below the model's min-cacheable size are
+ * skipped by the provider, silently.
+ *
+ * `cacheOn=false` (the stashed `baseline` mode) omits cache_control entirely — NO provider-side prompt
+ * caching, a clean reference control. Pure + exported for testing. See docs/prompt-cache-optimization-design.md.
+ */
+export const buildAnthropicCacheLayout = (
+  merged: ChatMessage[],
+  systemPrompt: string,
+  cacheOn: boolean
+): { system: unknown; outMessages: unknown[] } => {
+  const EPHEMERAL = { type: 'ephemeral' as const }
+  const sys = systemPrompt.trim()
+  const system = sys
+    ? cacheOn
+      ? [{ type: 'text', text: sys, cache_control: EPHEMERAL }]
+      : sys
+    : undefined
+  if (!cacheOn) return { system, outMessages: merged }
+  const cacheIdx = merged.length - 2 // message just before the final user turn
+  const outMessages = merged.map((m, i) =>
+    i === cacheIdx
+      ? { role: m.role, content: [{ type: 'text', text: m.content, cache_control: EPHEMERAL }] }
+      : m
+  )
+  return { system, outMessages }
+}
+
 const streamAnthropic = async (
   settings: Settings,
   messages: ChatMessage[],
@@ -302,23 +342,12 @@ const streamAnthropic = async (
     }
   }
 
-  // Prompt caching (Phase G). cache_control breakpoints mark the end of a stable
-  // prefix; max 4 per request, ephemeral = 5-min TTL. Two breakpoints:
-  //  1. the system block (large, static per session) — caches tools+system.
-  //  2. the last message before the new user turn — caches the history prefix.
-  // The final user turn (volatile) stays past the last breakpoint, so it never
-  // invalidates the cached head. Only the prefix below the model's min-cacheable
-  // size (~4096 tokens on Opus) is skipped — silently, no error.
-  const EPHEMERAL = { type: 'ephemeral' as const }
-  const system = systemPrompt.trim()
-    ? [{ type: 'text', text: systemPrompt.trim(), cache_control: EPHEMERAL }]
-    : undefined
-
-  const cacheIdx = merged.length - 2 // message just before the final user turn
-  const outMessages = merged.map((m, i) =>
-    i === cacheIdx
-      ? { role: m.role, content: [{ type: 'text', text: m.content, cache_control: EPHEMERAL }] }
-      : m
+  // `baseline` mode (the stashed default) omits provider prompt caching entirely. Otherwise apply the
+  // Anthropic cache_control breakpoints. Extracted to a pure helper so the baseline behavior is testable.
+  const { system, outMessages } = buildAnthropicCacheLayout(
+    merged,
+    systemPrompt,
+    settings.cache?.mode !== 'baseline'
   )
 
   const response = await fetch(url, {

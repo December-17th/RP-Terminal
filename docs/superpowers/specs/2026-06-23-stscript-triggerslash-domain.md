@@ -35,6 +35,7 @@ methods both adapters already implement.
 code**.
 
 **Non-goals (deferred, documented):**
+
 - `while`/loops, sub-pipe expansion beyond the existing closure support, and the long-tail command set
   (`/messages`, `/cut`, `/inject`, regex commands, …).
 - Dispatching **card-registered** commands (`registerFrameCommand`) from a card's own `triggerSlash` (those
@@ -56,16 +57,16 @@ code**.
 3. **Command → `Host` mapping (the `StCtx.fallback`).** Built-ins stay in the interpreter; everything else
    the fallback maps to a `Host` method:
 
-   | Command | Backing | Result |
-   | --- | --- | --- |
-   | `/setvar` `/getvar` `/addvar` (+ chat scope) | interpreter + `StCtx.setVar` → `setVarOps`/`writeVars` | persisted chat var (stat_data) |
-   | `/setglobalvar` `/getglobalvar` `/addglobalvar` | interpreter + `host.getGlobalVars`/`setGlobalVar` | **persisted** global var (§3.4) |
-   | `/echo` `/comment` `/abort` `/if` `/run` `/pass` | interpreter | pipe value |
-   | `/gen` | `host.generate(text || pipe)` | generated text |
-   | `/genraw` | `host.generateRaw(normRaw(args))` | generated text |
-   | `/trigger` | `host.generate('')` | regenerated turn |
-   | `/send` | `host.setInput(text || pipe)` | `''` (composer inject — §3.3) |
-   | unknown | no-op, `console.warn` | `''` |
+   | Command                                          | Backing                                                | Result                          |
+   | ------------------------------------------------ | ------------------------------------------------------ | ------------------------------- | ------ | ----------------------------- |
+   | `/setvar` `/getvar` `/addvar` (+ chat scope)     | interpreter + `StCtx.setVar` → `setVarOps`/`writeVars` | persisted chat var (stat_data)  |
+   | `/setglobalvar` `/getglobalvar` `/addglobalvar`  | interpreter + `host.getGlobalVars`/`setGlobalVar`      | **persisted** global var (§3.4) |
+   | `/echo` `/comment` `/abort` `/if` `/run` `/pass` | interpreter                                            | pipe value                      |
+   | `/gen`                                           | `host.generate(text                                    |                                 | pipe)` | generated text                |
+   | `/genraw`                                        | `host.generateRaw(normRaw(args))`                      | generated text                  |
+   | `/trigger`                                       | `host.generate('')`                                    | regenerated turn                |
+   | `/send`                                          | `host.setInput(text                                    |                                 | pipe)` | `''` (composer inject — §3.3) |
+   | unknown                                          | no-op, `console.warn`                                  | `''`                            |
 
 4. **Both chat and global vars persist.** `StCtx.setVar(key, v, 'local')` → `writeVars(setVarOps(key, v))` —
    the **same** path `Mvu.setMvuVariable` uses, so a card's `/setvar`, its `{{getvar}}`, and its EJS all read
@@ -104,6 +105,7 @@ setGlobalVar(key: string, value: any): Promise<void>
 ## 6. The adapters
 
 Both lose the dead `triggerSlash` stub and gain the global-var pair (the only new code):
+
 - **Inline (`cardBridge/host.ts`)** — `getGlobalVars` → `window.api.pluginGetVars(...).global`; `setGlobalVar`
   → `window.api.pluginVars(..., { op:'set', scope:'global', key, value })`.
 - **WCV (`wcvHost.ts` + `wcvIpc`)** — one ctx-scoped IPC pair `wcv-host-get-global-vars` /
@@ -115,6 +117,7 @@ runtime — so `/setvar` `/gen` `/echo` `/if`… reach parity by construction wi
 ## 7. Files
 
 **Changed**
+
 - `src/renderer/src/plugin/stscript.ts` → **moved** to `src/shared/stscript.ts` (import `./macros`); the old
   path becomes `export * from '../../../shared/stscript'`.
 - `src/shared/stscript.ts` — add optional `char`/`user`/`persona` to `StCtx`; thread into `expandMacros`.
@@ -126,6 +129,7 @@ runtime — so `/setvar` `/gen` `/echo` `/if`… reach parity by construction wi
 - `test/thRuntime.test.ts` — mock-Host: drop `triggerSlash`, add the global-var pair; add `triggerSlash` tests.
 
 **Reused / unchanged**
+
 - The interpreter logic, `test/stscript.test.ts` (still imports the re-export path), `slash.ts` (the renderer
   chat-input slash path), `shared/macros`.
 

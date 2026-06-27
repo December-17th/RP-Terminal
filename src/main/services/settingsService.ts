@@ -74,7 +74,9 @@ export const getDefaultSettings = (): Settings => ({
     depth: null
   },
   generation: {
-    max_context_tokens: 32000
+    max_context_tokens: 200000,
+    merge_consecutive_roles: true,
+    system_as_user: false
   },
   lorebook: {
     scan_depth: 3,
@@ -109,6 +111,13 @@ export const getDefaultSettings = (): Settings => ({
   agent: {
     mode: 'off'
   },
+  // Combat: end-of-combat narration appends to the current floor by default; a card or the
+  // user can switch to a new floor and supply a steering prompt.
+  combat: {
+    narrationMode: 'append',
+    narrationPrompt: '',
+    improvisePrompt: ''
+  },
   ui: {
     theme: 'dark',
     locale: 'en',
@@ -124,7 +133,14 @@ export const getDefaultSettings = (): Settings => ({
       fields: ['proxyPct', 'cacheHitPct', 'promptTokens', 'avgCacheHitPct']
     },
     usage_view: {
-      columns: ['promptTokens', 'proxyPct', 'cacheHitPct', 'cacheRead', 'cacheWrite', 'outputTokens'],
+      columns: [
+        'promptTokens',
+        'proxyPct',
+        'cacheHitPct',
+        'cacheRead',
+        'cacheWrite',
+        'outputTokens'
+      ],
       charts: ['cachePct']
     }
   },
@@ -132,6 +148,9 @@ export const getDefaultSettings = (): Settings => ({
   // just persists whatever the renderer saved. Empty here = "use built-in defaults".
   workspace: { layouts: {} },
   cache: {
+    // Default + pinned to `baseline` (no optimization, not even provider caching) — the cache system is
+    // stashed (selector greyed out). See docs/prompt-cache-optimization-design.md.
+    mode: 'baseline',
     level: 0,
     l1_mode: 'partition',
     ttl: '5m',
@@ -169,8 +188,14 @@ export const normalize = (stored: Partial<Settings>): Settings => {
   // Preserve the renderer's saved per-mode layouts verbatim (normalize otherwise drops
   // unknown keys, since it returns an explicit allowlist of fields below).
   const workspace = { layouts: stored.workspace?.layouts || {} }
+  // Cache: merge stored over defaults, then coerce an unknown/missing `mode` to the stashed default
+  // `baseline`, and keep `level` consistent with `mode` (frozen → 1, else 0) so the dormant Frozen-Core
+  // internals can't be left half-on. (The selector is greyed out, so `mode` only changes via stored data.)
   const cache = { ...d.cache, ...(stored.cache || {}) }
+  if (cache.mode !== 'provider' && cache.mode !== 'frozen') cache.mode = 'baseline'
+  cache.level = cache.mode === 'frozen' ? cache.level || 1 : 0
   const cards = { ...d.cards, ...(stored.cards || {}) }
+  const combat = { ...d.combat, ...(stored.combat || {}) }
   const pricing = { ...d.pricing, ...(stored.pricing || {}) }
 
   // Agent mode: accept the three-way enum; migrate the legacy boolean `enabled` toggle
@@ -227,6 +252,7 @@ export const normalize = (stored: Partial<Settings>): Settings => {
     workspace,
     cache,
     cards,
+    combat,
     pricing
   }
 }

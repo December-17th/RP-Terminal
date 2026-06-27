@@ -138,9 +138,9 @@ A unified scope every shareable artifact (**lorebook, regex, scripts, plugins**)
 - **session** — a single chat (today's per-chat lorebook selection generalizes to this).
 - **preset** — bound to a specific preset; active only while that preset is the active one.
   This is where regex/scripts bundled inside an imported ST preset land (`extensions.regex_scripts`
-  + `extensions.tavern_helper.scripts`), mirroring how ST applies preset-bound regex. Implemented
-  for regex + scripts (`presetService.importPresetFromFile`); `owner` = the preset id, and
-  `deletePreset` removes the artifacts it brought in so nothing orphans.
+  - `extensions.tavern_helper.scripts`), mirroring how ST applies preset-bound regex. Implemented
+    for regex + scripts (`presetService.importPresetFromFile`); `owner` = the preset id, and
+    `deletePreset` removes the artifacts it brought in so nothing orphans.
 
 Model: a `scope` + `owner` on each artifact (a `world` scope's owner = a character id; a
 `session` scope's owner = a chat id; a `preset` scope's owner = a preset id). Generation

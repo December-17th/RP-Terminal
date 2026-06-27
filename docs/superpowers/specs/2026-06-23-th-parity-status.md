@@ -8,8 +8,8 @@
 Every card-facing method behaves the **same** across the two transports (inline `cardBridge` + WCV
 `wcvPreload`), built from the one `shared/thRuntime` over a `Host` seam. The **last real asymmetry** was the
 inline `onHostEvent` no-op (inline cards missed lifecycle/stream events) — fixed by the `cardHostEvents`
-renderer bus (`6d04763`). With that, the architecture goal — *any ST/JSR card runs identically in either
-mode* — holds for the implemented surface.
+renderer bus (`6d04763`). With that, the architecture goal — _any ST/JSR card runs identically in either
+mode_ — holds for the implemented surface.
 
 ## Functional surface (works, both transports)
 
@@ -26,11 +26,11 @@ Each is stubbed the SAME in both transports (so parity holds) and deferred for a
 needs the same pattern as the worldbook/chat-write WCV work: a renderer impl for inline + a ctx-scoped
 `wcv-host-*` IPC for WCV.
 
-| Method | Why deferred | To fill |
-| --- | --- | --- |
-| `audio*` (`audioPlay`/Pause/Import/Mode/Enable) | Cards play audio **natively** (`<audio>`/WebAudio) under the card CSP — the real path; the TH audio API is redundant. | Inline → `plugin/audioService`; WCV → an audio IPC (only if a card insists on the API over native). |
-| `replaceTavernRegexes` (regex **write**) | **Risky** (a runtime regex rewrite can break the card's own beautification) and **rare**; the read + `formatAsTavernRegexedString` cover the real cases. | `scriptApiService` regex write, gated. |
-| `registerMacroLike` | Cross-process (a card's custom macro must reach prompt-time expansion in **main**) and low-demand. | A render-time macro registry + a main bridge. |
+| Method                                          | Why deferred                                                                                                                                             | To fill                                                                                             |
+| ----------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------- |
+| `audio*` (`audioPlay`/Pause/Import/Mode/Enable) | Cards play audio **natively** (`<audio>`/WebAudio) under the card CSP — the real path; the TH audio API is redundant.                                    | Inline → `plugin/audioService`; WCV → an audio IPC (only if a card insists on the API over native). |
+| `replaceTavernRegexes` (regex **write**)        | **Risky** (a runtime regex rewrite can break the card's own beautification) and **rare**; the read + `formatAsTavernRegexedString` cover the real cases. | `scriptApiService` regex write, gated.                                                              |
+| `registerMacroLike`                             | Cross-process (a card's custom macro must reach prompt-time expansion in **main**) and low-demand.                                                       | A render-time macro registry + a main bridge.                                                       |
 
 `triggerSlash` (STScript) was the roadmap's "XL last track" — now **implemented** (the
 [STScript / triggerSlash domain](2026-06-23-stscript-triggerslash-domain.md)): the pure interpreter moved to
