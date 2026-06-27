@@ -607,6 +607,9 @@
 
     /* ── state effect chips ─────────────────────────────────────── */
     function stateChips(states) {
+      /* guard against a malformed 状态效果 being an array (would render
+         numeric-index chips); fall back to {} */
+      if (Array.isArray(states)) states = {}
       var keys = Object.keys(states || {})
       if (!keys.length) {
         return '<div class="poem-pp-empty">无状态效果</div>'
@@ -821,21 +824,10 @@
       })
     }
 
+    /* Render once per injection. The regex engine re-injects this whole
+       fragment on every message — that IS the re-render. No event
+       listeners (matches poem-combat-sheet.html). */
     refresh()
-
-    /* ── re-render on variable change broadcast ──────────────────
-       Mirror poem-combat-sheet.html: listen on the same event the
-       WCV shim fires when the host pushes updated stat_data.      */
-    var RERENDER_EVENTS = [
-      'variablesUpdated',   /* TavernHelper / WCV shim primary */
-      'rpt:varsChanged',    /* RPT custom broadcast             */
-      'message',            /* fallback: some hosts re-trigger  */
-    ]
-    RERENDER_EVENTS.forEach(function (evtName) {
-      try {
-        window.addEventListener(evtName, function () { refresh() })
-      } catch (_) {}
-    })
 
   })()
 </script>
