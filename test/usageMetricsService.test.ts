@@ -16,7 +16,10 @@ const floor = (n: number, req: { role: string; content: string }[] | undefined):
 describe('recomputeMetricsForFloors', () => {
   it('recomputes proxy + cumulative across a request-bearing chain, usage stays null', () => {
     const floors = [
-      floor(0, [{ role: 'system', content: 'AAAA' }, { role: 'user', content: 'hi' }]),
+      floor(0, [
+        { role: 'system', content: 'AAAA' },
+        { role: 'user', content: 'hi' }
+      ]),
       floor(1, [
         { role: 'system', content: 'AAAA' },
         { role: 'user', content: 'hi' },

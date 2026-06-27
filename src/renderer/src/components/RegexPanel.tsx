@@ -134,7 +134,9 @@ export const RegexPanel: React.FC<Props> = ({ profileId, activeCardId, activeCha
   const changeRenderMode = async (file: string, v: string): Promise<void> => {
     await setRenderMode(profileId, file, v === '' ? null : (v as CardRenderMode))
     // Promoting/unpromoting a UI regex changes which docked panels are available — refresh the list.
-    await usePanelRegexStore.getState().load(profileId, { cardId: activeCardId, chatId: activeChatId })
+    await usePanelRegexStore
+      .getState()
+      .load(profileId, { cardId: activeCardId, chatId: activeChatId })
   }
 
   const renderScript = (s: RegexScriptInfo): React.ReactNode => {

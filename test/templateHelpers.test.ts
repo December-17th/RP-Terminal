@@ -53,6 +53,36 @@ describe('templateService TH-3 helpers', () => {
     expect(evalTemplate('<% console.log("noop") %>ok', ctx())).toBe('ok')
   })
 
+  it('provides cloneDeep, omit(string key), and the common collection helpers (命定之诗 status panel)', () => {
+    // Mirrors the card's `_.omit(_.cloneDeep(data), '事件')` pattern that threw "not a function".
+    const c = ctx({ vars: { stat_data: { hp: 10, 事件: ['x'], 艾莉亚: { lv: 3 } } } })
+    const tmpl =
+      '<%_ const d = _.cloneDeep(getMessageVar("stat_data", { defaults: {} }));' +
+      ' const clean = _.omit(d, "事件"); _%>' +
+      '<%= _.keys(clean).join(",") %>|<%= _.has(clean, "艾莉亚.lv") %>'
+    expect(evalTemplate(tmpl, c)).toBe('hp,艾莉亚|true')
+    // cloneDeep is a real copy (mutating the clone doesn't touch the source vars)
+    expect(c.vars.stat_data.事件).toEqual(['x'])
+    // a sampling of the added helpers
+    expect(evalTemplate('<%= _.sumBy([{n:1},{n:2}], "n") %>', ctx())).toBe('3')
+    expect(evalTemplate('<%= _.map([1,2,3], x => x*2).join("") %>', ctx())).toBe('246')
+    expect(evalTemplate('<%= _.isEqual({a:1},{a:1}) %>', ctx())).toBe('true')
+    // second batch: each (forEach alias), countBy, orderBy, toNumber
+    expect(evalTemplate('<% let s=0; _.each([1,2,3], x => s+=x) %><%= s %>', ctx())).toBe('6')
+    expect(evalTemplate('<%= JSON.stringify(_.countBy(["a","a","b"])) %>', ctx())).toBe(
+      '{"a":2,"b":1}'
+    )
+    expect(evalTemplate('<%= _.orderBy([3,1,2]).join("") %>', ctx())).toBe('123')
+    expect(evalTemplate('<%= _.toNumber("42") + 1 %>', ctx())).toBe('43')
+  })
+
+  it('reports the offending compiled line when a template throws (helps locate a missing helper)', () => {
+    const r = evalTemplateDetailed('<%= _.totallyMissing(1) %>', ctx())
+    expect(r.output).toBe('')
+    expect(r.error).toMatch(/not a function/)
+    expect(r.error).toMatch(/compiled L\d+:/) // pinpoints the failing compiled line
+  })
+
   it('strips tags (does not evaluate) when the engine is toggled off', () => {
     const off = ctx({ enabled: false, vars: { n: 1 } })
     expect(evalTemplate('a<%= 1 + 1 %>b', off)).toBe('ab')
@@ -119,5 +149,37 @@ describe('templateService TH-3 helpers', () => {
   it('exposes a minimal faker (deterministic in a degenerate range)', () => {
     expect(evalTemplate('<%= faker.number(7, 7) %>', ctx())).toBe('7')
     expect(evalTemplate('<%= faker.uuid().length %>', ctx())).toBe('36')
+  })
+
+  // WS-1: the variable surface resolves a stat_data key whether read with the explicit `stat_data.`
+  // prefix or bare (hoisted) — consistently, in every context. The store passed here is the WRAPPED
+  // floor-vars shape ({ stat_data: {...} }) that all three callers now use.
+  describe('stat_data read-fallback + hoisted variables (WS-1)', () => {
+    const wrapped = (): TemplateContext =>
+      ctx({
+        vars: { 系统名: 'X', stat_data: { 主角: { hp: 42 }, 世界后台状态: { 时局: '安稳' } } }
+      })
+
+    it('getvar resolves a stat_data key with the explicit stat_data. prefix', () => {
+      expect(evalTemplate('<%= getvar("stat_data.主角.hp") %>', wrapped())).toBe('42')
+    })
+    it('getvar resolves a stat_data key BARE (hoisted fallback)', () => {
+      expect(evalTemplate('<%= getvar("主角.hp") %>', wrapped())).toBe('42')
+      expect(evalTemplate('<%= getMessageVar("世界后台状态.时局") %>', wrapped())).toBe('安稳')
+    })
+    it('top-level vars still win over the stat_data fallback', () => {
+      expect(evalTemplate('<%= getvar("系统名") %>', wrapped())).toBe('X')
+    })
+    it('a genuinely missing key still falls through to the default', () => {
+      expect(evalTemplate('<%= getvar("没有", { defaults: "none" }) %>', wrapped())).toBe('none')
+    })
+    it('the `variables` constant exposes both the hoisted key and the stat_data key', () => {
+      expect(evalTemplate('<%= variables.主角.hp %>', wrapped())).toBe('42')
+      expect(evalTemplate('<%= variables.stat_data.主角.hp %>', wrapped())).toBe('42')
+    })
+    it('global scope is NOT affected by the stat_data fallback', () => {
+      const c = ctx({ globals: { g: 1 }, vars: { stat_data: { g: 999 } } })
+      expect(evalTemplate('<%= getGlobalVar("g") %>', c)).toBe('1')
+    })
   })
 })

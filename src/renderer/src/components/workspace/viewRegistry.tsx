@@ -7,6 +7,7 @@ import { StatusView } from '../StatusView'
 import { LogsPanel } from '../LogsPanel'
 import { PanelRouter } from '../PanelRouter'
 import { WcvTestView } from './WcvPanel'
+import { CombatView } from './CombatView'
 import { useWorkspaceContext } from './context'
 import { UsageView } from '../UsageView'
 import { useT } from '../../i18n'
@@ -33,6 +34,11 @@ const ChatPanel: React.FC = () => {
 const StatusPanel: React.FC = () => {
   const { profileId } = useWorkspaceContext()
   return <StatusView profileId={profileId} />
+}
+
+const CombatPanel: React.FC = () => {
+  const { profileId } = useWorkspaceContext()
+  return <CombatView profileId={profileId} />
 }
 
 const UsagePanel: React.FC = () => {
@@ -63,6 +69,7 @@ export const ViewRegistry: Record<string, ViewEntry> = {
   navigator: { title: 'Navigator', Component: NavigatorPanel, fill: true },
   chat: { title: 'Chat', Component: ChatPanel, fill: true },
   status: { title: 'RPG Status', Component: StatusPanel },
+  combat: { title: 'Combat', Component: CombatPanel, fill: true },
   usage: { title: 'Usage', Component: UsagePanel, fill: true },
   'card-scripts': { title: 'Card Scripts', Component: CardScriptsPanel },
   logs: { title: 'Logs', Component: LogsPanel, fill: true },

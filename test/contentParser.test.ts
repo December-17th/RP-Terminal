@@ -1,6 +1,45 @@
 import { describe, it, expect } from 'vitest'
-import { parseContent, stripThinking } from '../src/main/parsers/contentParser'
+import { parseContent, parseCombatStart, stripThinking } from '../src/main/parsers/contentParser'
 import { parseMvuCommands } from '../src/main/parsers/mvuParser'
+
+describe('parseCombatStart', () => {
+  it('returns null cue when there is no tag', () => {
+    expect(parseCombatStart('just prose').cue).toBeNull()
+  })
+
+  it('parses attributes + strips the tag (no roster)', () => {
+    const r = parseCombatStart(
+      'before <rpt-combat-start enemies="哥布林 x2" map="forest"></rpt-combat-start> after'
+    )
+    expect(r.cue).toEqual({ enemies: '哥布林 x2', map: 'forest' })
+    expect(r.text).toBe('before  after')
+  })
+
+  it('parses a JSON roster from the tag body', () => {
+    const content =
+      'A fight! <rpt-combat-start>[' +
+      '{"名称":"哥布林","数量":2,"生命层级":"第一层级","属性":{"力量":3}},' +
+      '{"名称":"头目","生命层级":"第二层级","属性":{"力量":6}}' +
+      ']</rpt-combat-start> narrative'
+    const r = parseCombatStart(content)
+    expect(r.cue?.roster).toHaveLength(2)
+    expect(r.cue?.roster?.[0]).toMatchObject({ 名称: '哥布林', 数量: 2 })
+    expect(r.text).toBe('A fight!  narrative')
+  })
+
+  it('tolerates a ```json fence + a single object (→ 1-element array)', () => {
+    const r = parseCombatStart(
+      '<rpt-combat-start>```json\n{"名称":"史莱姆"}\n```</rpt-combat-start>'
+    )
+    expect(r.cue?.roster).toEqual([{ 名称: '史莱姆' }])
+  })
+
+  it('ignores an unparseable body (cue still detected)', () => {
+    const r = parseCombatStart('<rpt-combat-start enemies="x">not json</rpt-combat-start>')
+    expect(r.cue).toEqual({ enemies: 'x', map: '' })
+    expect(r.cue?.roster).toBeUndefined()
+  })
+})
 
 describe('stripThinking', () => {
   it('removes <think>/<thinking> blocks (incl. attributes), keeps the narrative', () => {

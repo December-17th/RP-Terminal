@@ -1,8 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import {
-  resolveCardMode,
-  DEFAULT_CARD_RENDER_MODE
-} from '../src/shared/cardRenderMode'
+import { resolveCardMode, DEFAULT_CARD_RENDER_MODE } from '../src/shared/cardRenderMode'
 
 describe('resolveCardMode', () => {
   it('uses the override when present', () => {

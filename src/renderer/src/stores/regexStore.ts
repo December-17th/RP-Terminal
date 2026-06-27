@@ -1,5 +1,9 @@
 import { create } from 'zustand'
-import { applyRegexRules, isCardPayload, type RegexApplyContext } from '../../../shared/regexTransform'
+import {
+  applyRegexRules,
+  isCardPayload,
+  type RegexApplyContext
+} from '../../../shared/regexTransform'
 import type { ArtifactScope, ScopeContext } from '../../../shared/artifactScope'
 import type { CardRenderMode } from '../../../shared/cardRenderMode'
 import type {
@@ -113,5 +117,6 @@ export const useRegexStore = create<RegexState>((set, get) => ({
 
   // Display rules are pre-filtered (placement 2) by getRenderRegex, so no placement
   // filter here; pass the compiled-RegExp cache. Transform shared with the main path.
-  apply: (content, ctx) => applyRegexRules(content, get().rules, ctx ?? {}, { compile: getRe, marker: modeMarker })
+  apply: (content, ctx) =>
+    applyRegexRules(content, get().rules, ctx ?? {}, { compile: getRe, marker: modeMarker })
 }))

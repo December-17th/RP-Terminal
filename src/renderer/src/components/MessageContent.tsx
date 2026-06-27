@@ -229,7 +229,16 @@ const FRAGMENT_BASE = `
 // `<link>`. `<style>` is extracted + scoped BEFORE sanitizing (so it's gone from the body here).
 // `<input>`/`<label>`/`<button>` are deliberately allowed — CSS-`:checked` cards need them, and
 // without scripts/`<form>` they're inert. Scripted cards never reach here (routed to a frame).
-const INLINE_HTML_FORBID_TAGS = ['style', 'link', 'iframe', 'object', 'embed', 'base', 'meta', 'form']
+const INLINE_HTML_FORBID_TAGS = [
+  'style',
+  'link',
+  'iframe',
+  'object',
+  'embed',
+  'base',
+  'meta',
+  'form'
+]
 
 /**
  * Render a model-authored card INLINE in the message DOM (no iframe) so it blends with the prose.
@@ -245,7 +254,10 @@ const InlineHtml: React.FC<{ html: string }> = ({ html }) => {
   const { body, css } = useMemo(() => {
     const { html: bodyHtml, css: rawCss } = extractStyleBlocks(html)
     return {
-      body: DOMPurify.sanitize(bodyHtml, { FORBID_TAGS: INLINE_HTML_FORBID_TAGS, ADD_ATTR: ['target'] }),
+      body: DOMPurify.sanitize(bodyHtml, {
+        FORBID_TAGS: INLINE_HTML_FORBID_TAGS,
+        ADD_ATTR: ['target']
+      }),
       css: scopeCss(rawCss, scope)
     }
   }, [html, scope])

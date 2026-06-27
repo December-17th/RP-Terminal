@@ -5,6 +5,8 @@ import {
   collectRenderMarkers,
   estimateTokens,
   fitToBudget,
+  mergeConsecutiveRoles,
+  systemToUser,
   ChatMessage
 } from '../src/main/services/promptBuilder'
 import { RPTerminalCardSchema, LorebookSchema } from '../src/main/types/character'
@@ -84,6 +86,58 @@ describe('fitToBudget', () => {
     expect(dropped).toBe(2)
     expect(messages[0].role).toBe('system')
     expect(last(messages).content).toBe('u2')
+  })
+
+  it('trims oldest HISTORY turns but never the static world-info prefix', () => {
+    // Large constant lore + a couple of small turns; a tiny budget must evict the old turns,
+    // not the lore (regression: a preset with a user-role block ahead of world_info used to make
+    // fitToBudget classify the lore as droppable "history").
+    const bigLore = 'L'.repeat(400)
+    const messages = buildPrompt({
+      card: card(),
+      preset: preset([blk('world_info'), blk('chat_history')]),
+      lorebooks: [book([{ keys: [], content: bigLore, constant: true, enabled: true }])],
+      floors: [floor(0, '', 'greet'), floor(1, 'old user turn', 'old reply')],
+      userAction: 'latest turn'
+    })
+    expect(messages.some((m) => m.content.includes(bigLore))).toBe(true)
+
+    const { messages: fit, dropped } = fitToBudget(messages, 1)
+    expect(dropped).toBeGreaterThan(0)
+    expect(fit.some((m) => m.content.includes(bigLore))).toBe(true) // lore survived
+    expect(last(fit).content).toBe('latest turn') // latest turn survived
+    expect(fit.some((m) => m.content === 'old user turn')).toBe(false) // oldest turn evicted
+  })
+})
+
+describe('buildPrompt — depth-scoped prompt regex (minDepth)', () => {
+  const placeholderRule = {
+    id: 'r1',
+    scriptName: 'keep-latest-user-input',
+    source: '^([\\s\\S]*)$',
+    flags: 'g',
+    replace: '<|placeholder|>',
+    placement: [1],
+    disabled: false,
+    markdownOnly: false,
+    promptOnly: true,
+    trimStrings: [],
+    minDepth: 1,
+    maxDepth: null
+  }
+
+  it('blanks OLDER user turns but preserves the latest input (depth 0)', () => {
+    const messages = buildPrompt({
+      card: card(),
+      preset: preset([blk('chat_history')]),
+      lorebooks: [],
+      floors: [floor(0, '', 'greet'), floor(1, 'old input', 'a reply')],
+      userAction: 'latest input',
+      promptRegex: [placeholderRule]
+    })
+    expect(last(messages).content).toBe('latest input') // depth 0 → minDepth:1 rule skipped
+    const placeholders = messages.filter((m) => m.content === '<|placeholder|>')
+    expect(placeholders.length).toBe(1) // only the older user turn was blanked
   })
 })
 
@@ -483,6 +537,30 @@ describe('buildPrompt — EJS in constant lore (命定之诗 real-card shape)', 
     const wi = messages.find((m) => m.content.startsWith('World Info:'))
     expect(wi?.content).toContain('等级:7')
   })
+
+  it('keeps the PROSE of a lorebook entry whose trailing EJS block errors (艾莉亚 shape)', () => {
+    // 命定之诗's 艾莉亚 entry = lots of character prose + a trailing `await TavernHelper…` seeder that
+    // our sync/TavernHelper-less prompt engine can't run. The bad EJS must not take the prose down.
+    const messages = buildPrompt({
+      card: card(),
+      preset: preset([blk('char_description'), blk('world_info'), blk('chat_history')]),
+      lorebooks: [
+        book([
+          {
+            comment: '命定系统-艾莉亚核心',
+            content: '艾莉亚是<user>的同伴。\n<%_ if (true) { const x = await something(); } _%>',
+            constant: true
+          }
+        ])
+      ],
+      floors: [],
+      userAction: 'go',
+      template: { vars: {}, globals: {}, constants: {} }
+    })
+    const wi = messages.find((m) => m.content.startsWith('World Info:'))
+    expect(wi?.content).toContain('艾莉亚是') // prose survived the EJS SyntaxError
+    expect(wi?.content).not.toContain('await') // the dead EJS block was stripped
+  })
 })
 
 describe('buildPrompt — EJS conditionals: lastMessageId + fail-loud', () => {
@@ -650,5 +728,77 @@ describe('buildPrompt — L1 Frozen Core', () => {
     })
     expect(messages.some((m) => m.content.includes('[Current State]'))).toBe(false)
     expect(last(messages)).toEqual({ role: 'user', content: 'go' })
+  })
+})
+
+describe('mergeConsecutiveRoles (ST-faithful prompt assembly)', () => {
+  it('coalesces adjacent same-role messages, joined by a newline', () => {
+    const out = mergeConsecutiveRoles([
+      { role: 'system', content: '<梅芙_setting>' },
+      { role: 'system', content: '- body' },
+      { role: 'system', content: '</梅芙_setting>' },
+      { role: 'user', content: 'hi' }
+    ])
+    expect(out).toEqual([
+      { role: 'system', content: '<梅芙_setting>\n- body\n</梅芙_setting>' },
+      { role: 'user', content: 'hi' }
+    ])
+  })
+
+  it('keeps role boundaries (does NOT merge across a different role)', () => {
+    const out = mergeConsecutiveRoles([
+      { role: 'system', content: 'a' },
+      { role: 'user', content: 'b' },
+      { role: 'system', content: 'c' },
+      { role: 'system', content: 'd' }
+    ])
+    expect(out.map((m) => m.role)).toEqual(['system', 'user', 'system'])
+    expect(out[2].content).toBe('c\nd')
+  })
+
+  it('does not mutate the input messages', () => {
+    const input: ChatMessage[] = [
+      { role: 'system', content: 'a' },
+      { role: 'system', content: 'b' }
+    ]
+    mergeConsecutiveRoles(input)
+    expect(input[0].content).toBe('a') // original untouched
+  })
+
+  it('is a no-op for an already-alternating array', () => {
+    const msgs: ChatMessage[] = [
+      { role: 'system', content: 's' },
+      { role: 'user', content: 'u' },
+      { role: 'assistant', content: 'a' }
+    ]
+    expect(mergeConsecutiveRoles(msgs)).toEqual(msgs)
+  })
+})
+
+describe('systemToUser + merge (ST-faithful for Gemini-via-OpenAI)', () => {
+  it('relabels system→user, leaving user/assistant untouched', () => {
+    const out = systemToUser([
+      { role: 'user', content: 'u' },
+      { role: 'assistant', content: 'a' },
+      { role: 'system', content: 's1' },
+      { role: 'system', content: 's2' }
+    ])
+    expect(out.map((m) => m.role)).toEqual(['user', 'assistant', 'user', 'user'])
+  })
+
+  it('system→user THEN merge yields clean user/assistant alternation', () => {
+    // Mirrors the preset shape: user prompt, assistant divider, a run of system blocks, assistant divider.
+    const out = mergeConsecutiveRoles(
+      systemToUser([
+        { role: 'user', content: 'role-prompt' },
+        { role: 'assistant', content: 'ack' },
+        { role: 'system', content: '<info>' },
+        { role: 'system', content: '<梅芙_setting>' },
+        { role: 'system', content: '</info>' },
+        { role: 'assistant', content: 'ack2' }
+      ])
+    )
+    expect(out.map((m) => m.role)).toEqual(['user', 'assistant', 'user', 'assistant'])
+    expect(out[2].content).toBe('<info>\n<梅芙_setting>\n</info>')
   })
 })

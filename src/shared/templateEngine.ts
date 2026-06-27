@@ -4,6 +4,7 @@
 // `initEngine(loader)` (main → wasmfile variant; renderer → embedded singlefile variant).
 import type { QuickJSContext, QuickJSHandle, QuickJSWASMModule } from 'quickjs-emscripten'
 import { toParts, getPath, setPath } from './objectPath'
+import { SANDBOX_LIB_JS } from './sandboxLib'
 
 /**
  * ST-Prompt-Template compatible EJS engine — the PURE core, shared by the main
@@ -48,6 +49,31 @@ export interface TemplateContext {
   /** When false, the EJS engine is OFF (settings toggle) — tags are stripped, not evaluated. */
   enabled?: boolean
 }
+
+export interface TemplateContextOpts {
+  globals?: Record<string, any>
+  constants?: Record<string, unknown>
+  data?: TemplateData
+  enabled?: boolean
+}
+
+/**
+ * Canonical `TemplateContext` constructor — the SINGLE construction path shared by all three execution
+ * contexts (prompt-build, render-time, WCV), so they stop drifting on the globals/constants/enabled
+ * defaults (WS-1). `vars` is the variable store the helpers read/write; the engine resolves BOTH
+ * `getvar('x')` and `getvar('stat_data.x')` from it (the stat_data read-fallback), so callers don't need
+ * to pre-hoist for reads. Defaults: `globals`/`constants` → `{}`, `enabled` → true.
+ */
+export const buildTemplateContext = (
+  vars: Record<string, any>,
+  opts: TemplateContextOpts = {}
+): TemplateContext => ({
+  vars: vars || {},
+  globals: opts.globals ?? {},
+  constants: opts.constants ?? {},
+  data: opts.data,
+  enabled: opts.enabled ?? true
+})
 
 let QJS: QuickJSWASMModule | null = null
 
@@ -128,7 +154,18 @@ const installBridge = (vm: QuickJSContext, ctx: TemplateContext): void => {
   }
 
   reg('getvar', (key: any, opt: any) => {
-    let v = getPath(storeFor(opt), key ?? null)
+    const store = storeFor(opt)
+    let v = getPath(store, key ?? null)
+    // WS-1: stat_data read-fallback. A card EJS reads an MVU key either with the explicit `stat_data.`
+    // prefix OR bare (assuming the hoisted view) — real cards use both forms. Resolve both consistently
+    // in EVERY execution context (prompt-build, render-time, WCV) by falling back to `store.stat_data`
+    // when the bare path misses. This unifies the variable surface WITHOUT copying/hoisting the live
+    // store, so build-time setvar persistence (the store IS the persisted floor vars) is untouched.
+    // Top-level wins on a name collision (we only fall back when the top-level path is undefined).
+    if (v === undefined && key != null && !(opt && opt.scope === 'global')) {
+      const sd = store && typeof store === 'object' ? store.stat_data : undefined
+      if (sd && typeof sd === 'object') v = getPath(sd, key)
+    }
     if (v === undefined && opt && 'defaults' in opt) v = opt.defaults
     return v
   })
@@ -232,11 +269,19 @@ const installBridge = (vm: QuickJSContext, ctx: TemplateContext): void => {
     vm.setProp(vm.global, name, h)
     if (h !== vm.undefined && h !== vm.null) h.dispose()
   }
-  setConst('variables', ctx.vars)
+  // WS-1: expose `variables` as the HOISTED view (stat_data keys lifted to the root, alongside the
+  // `stat_data` key itself) so a card's direct `variables.主角` AND `variables.stat_data.主角` both
+  // resolve, consistently across contexts. Read-only snapshot (jsToHandle deep-copies into the VM), so
+  // this never touches the live store / build-time persistence. stat_data wins on a name collision
+  // (spread last), matching the prior render/WCV hoisting.
+  const sdRoot = ctx.vars && typeof ctx.vars === 'object' ? (ctx.vars as any).stat_data : undefined
+  const hoistedVars = sdRoot && typeof sdRoot === 'object' ? { ...ctx.vars, ...sdRoot } : ctx.vars
+  setConst('variables', hoistedVars)
   for (const [k, v] of Object.entries(ctx.constants)) setConst(k, v)
 
   // Scope alias helpers (getLocalVar / setGlobalVar / …).
-  const boot = `
+  const boot =
+    `
     function __str(x){return (x===undefined||x===null)?'':String(x);}
     function getLocalVar(k,o){return getvar(k,Object.assign({scope:'local'},o||{}));}
     function setLocalVar(k,v,o){return setvar(k,v,Object.assign({scope:'local'},o||{}));}
@@ -256,38 +301,8 @@ const installBridge = (vm: QuickJSContext, ctx: TemplateContext): void => {
     function setChatVar(k,v,o){return setvar(k,v,Object.assign({scope:'chat'},o||{}));}
     // ST-Prompt-Template define(): register a reusable value/function for the rest of the template.
     function define(n,v){ if(n!=null) globalThis[n]=v; return v; }
-    // Minimal clean-room faker subset for generated placeholder data (not the real lib).
-    var faker = {
-      number: function(a,b){ if(a==null){a=0;b=100;} if(b==null){b=a;a=0;} return Math.floor(Math.random()*(b-a+1))+a; },
-      float: function(a,b){ a=a||0; b=(b==null)?1:b; return a+Math.random()*(b-a); },
-      bool: function(){ return Math.random()<0.5; },
-      pick: function(arr){ return (arr&&arr.length)?arr[Math.floor(Math.random()*arr.length)]:undefined; },
-      uuid: function(){ return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g,function(c){var r=Math.random()*16|0;return (c==='x'?r:(r&0x3|0x8)).toString(16);}); },
-      name: function(){ return faker.pick(['Aria','Bjorn','Cora','Darian','Eira','Finn','Gwen','Hale','Iris','Joran']); },
-      word: function(){ return faker.pick(['ember','hollow','thorn','willow','quartz','raven','mist','dawn','vale','cinder']); },
-      lorem: function(n){ n=n||8; var w=[]; for(var i=0;i<n;i++) w.push(faker.word()); return w.join(' '); }
-    };
-    // Minimal clean-room lodash subset (dot-path only) + a no-op console — ST-PT exposes _ and console.
-    function __ks(p){ return String(p==null?'':p).split('.').filter(Boolean); }
-    var _ = {
-      get: function(o,p,d){ var ks=__ks(p),c=o; for(var i=0;i<ks.length;i++){ if(c==null) return d; c=c[ks[i]]; } return c===undefined?d:c; },
-      set: function(o,p,v){ var ks=__ks(p),c=o; for(var i=0;i<ks.length-1;i++){ if(typeof c[ks[i]]!=='object'||c[ks[i]]==null) c[ks[i]]={}; c=c[ks[i]]; } if(ks.length) c[ks[ks.length-1]]=v; return o; },
-      has: function(o,p){ return _.get(o,p,undefined)!==undefined; },
-      keys: function(o){ return o?Object.keys(o):[]; },
-      values: function(o){ return o?Object.keys(o).map(function(k){return o[k];}):[]; },
-      isEmpty: function(o){ if(o==null) return true; if(Array.isArray(o)||typeof o==='string') return o.length===0; return Object.keys(o).length===0; },
-      clamp: function(n,a,b){ return Math.min(Math.max(n,a),b); },
-      random: function(a,b){ if(b==null){b=a;a=0;} return a+Math.floor(Math.random()*(b-a+1)); },
-      sample: function(a){ return (a&&a.length)?a[Math.floor(Math.random()*a.length)]:undefined; },
-      uniq: function(a){ return Array.isArray(a)?a.filter(function(x,i){return a.indexOf(x)===i;}):[]; },
-      range: function(a,b,s){ if(b==null){b=a;a=0;} s=s||1; var r=[]; for(var i=a;(s>0?i<b:i>b);i+=s) r.push(i); return r; },
-      capitalize: function(s){ s=String(s==null?'':s); return s.charAt(0).toUpperCase()+s.slice(1).toLowerCase(); },
-      merge: function(t){ for(var i=1;i<arguments.length;i++){ var s=arguments[i]; if(s) for(var k in s) t[k]=s[k]; } return t; },
-      pick: function(o,ks){ var r={}; (ks||[]).forEach(function(k){ if(o&&k in o) r[k]=o[k]; }); return r; },
-      omit: function(o,ks){ var r={}; for(var k in o){ if((ks||[]).indexOf(k)<0) r[k]=o[k]; } return r; }
-    };
-    var console = { log: function(){}, info: function(){}, warn: function(){}, error: function(){} };
-  `
+
+  ` + SANDBOX_LIB_JS // the clean-room lodash/faker/console subset (extracted — WS-4)
   const r = vm.evalCode(boot)
   if (r.error) r.error.dispose()
   else r.value.dispose()
@@ -304,6 +319,8 @@ const installBridge = (vm: QuickJSContext, ctx: TemplateContext): void => {
  * output is **empty** (NOT the tag-stripped template — stripping a `<% if %>…<% else %>…` entry would leak
  * every branch into the prompt) and the error is returned so the caller can fail loud. Engine off /
  * not-yet-initialized (non-errors) still strip tags. `evalTemplate` wraps this for the output-only path.
+ * Error policy: the "engine eval error → empty + error" / "engine-off → strip" tiers — see
+ * docs/rpt-api.md §7 (WS-9); callers (preset = fail-loud, lore = strip-and-keep-prose) own the fallback.
  */
 export const evalTemplateDetailed = (
   template: string,
@@ -321,7 +338,17 @@ export const evalTemplateDetailed = (
     if (res.error) {
       const err = vm.dump(res.error)
       res.error.dispose()
-      const msg = typeof err === 'object' ? JSON.stringify(err) : String(err)
+      let msg = typeof err === 'object' ? JSON.stringify(err) : String(err)
+      // Pinpoint the offending COMPILED line (program line N == eval.js:N) so a missing helper
+      // ("not a function") or bad construct ("expecting ';'") is obvious without guessing. The error
+      // carries `lineNumber` (SyntaxError) and/or a stack frame "eval.js:N:col" (runtime).
+      const lineNo =
+        (err && typeof err === 'object' && Number(err.lineNumber)) ||
+        Number(/eval\.js:(\d+)/.exec(err && typeof err === 'object' ? err.stack || '' : '')?.[1])
+      if (lineNo) {
+        const srcLine = program.split('\n')[lineNo - 1]
+        if (srcLine) msg += ` | compiled L${lineNo}: ${srcLine.trim().slice(0, 200)}`
+      }
       logFn('error', 'Template error', msg)
       return { output: '', error: msg }
     }

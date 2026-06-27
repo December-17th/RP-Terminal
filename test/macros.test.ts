@@ -11,6 +11,18 @@ describe('expandMacros (TH-5)', () => {
     expect(expandMacros('I am {{persona}}', { persona: 'a knight' })).toBe('I am a knight')
   })
 
+  it('replaces legacy <USER>/<BOT>/<CHAR> (case-insensitive), like ST preEnvMacros', () => {
+    expect(expandMacros('<user> meets <CHAR>', { user: 'Ash', char: 'Mira' })).toBe(
+      'Ash meets Mira'
+    )
+    expect(expandMacros('<USER>/<Bot>', { user: 'Ash', char: 'Mira' })).toBe('Ash/Mira')
+    expect(expandMacros('<CHARIFNOTGROUP>', { char: 'Mira' })).toBe('Mira')
+    // empty context → empty string (never left literal)
+    expect(expandMacros('hi <user>', {})).toBe('hi ')
+    // does not touch unrelated angle-bracket text
+    expect(expandMacros('a <div> b', { user: 'Ash' })).toBe('a <div> b')
+  })
+
   it('strips {{// comment }} macros (empty, inline, and multi-line)', () => {
     expect(expandMacros('{{//}}keep')).toBe('keep')
     expect(expandMacros('a {{// note here}} b')).toBe('a  b')

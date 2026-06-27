@@ -10,6 +10,11 @@ export interface RegexLikeRule {
   replace: string
   placement: number[]
   trimStrings: string[]
+  /** ST depth-scoping: only apply to messages whose depth (distance from the end of the
+   * chat, 0 = latest) is within [minDepth, maxDepth]. null/undefined = no bound. Honored only
+   * when a `depth` is supplied to `applyRegexRules` (prompt-time per-message); ignored otherwise. */
+  minDepth?: number | null
+  maxDepth?: number | null
 }
 
 export interface RegexApplyContext {
@@ -62,6 +67,10 @@ const replaceArgs = (args: unknown[]): { match: string; groups: Array<string | u
 export interface ApplyOptions<R> {
   /** Skip a rule whose non-empty placement list doesn't include this value. */
   placement?: number
+  /** The depth of the message being transformed (distance from the end of the chat, 0 = latest).
+   * When a number, a rule is skipped if `depth` falls outside its [minDepth, maxDepth] (ST semantics).
+   * Undefined = depth-scoping disabled (every rule applies regardless of its min/maxDepth). */
+  depth?: number
   /** Supply a compiled RegExp for a rule (e.g. a cache); defaults to a fresh `new RegExp`. */
   compile?: (rule: R) => RegExp
   /**
@@ -86,6 +95,18 @@ export const applyRegexRules = <R extends RegexLikeRule>(
       !rule.placement.includes(opts.placement)
     ) {
       continue
+    }
+    // ST depth-scoping (regex/engine.js): when a depth is supplied, skip a rule whose
+    // [minDepth, maxDepth] excludes it. The latest turn is depth 0, so a `minDepth:1` rule
+    // (e.g. "keep only the latest user input") never touches the live input — only older turns.
+    if (typeof opts.depth === 'number') {
+      const { minDepth, maxDepth } = rule
+      if (minDepth != null && !Number.isNaN(minDepth) && minDepth >= -1 && opts.depth < minDepth) {
+        continue
+      }
+      if (maxDepth != null && !Number.isNaN(maxDepth) && maxDepth >= 0 && opts.depth > maxDepth) {
+        continue
+      }
     }
     let re: RegExp
     try {

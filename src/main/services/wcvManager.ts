@@ -266,10 +266,22 @@ export const pushHostReload = (chatId: string): void => {
   mainWindow?.webContents.send('wcv-host-reload', { chatId })
 }
 
-/** Notify sibling WCVs on the same chat that the variables changed. */
-export const notifyVarsChanged = (chatId: string, statData: unknown): void => {
+/**
+ * Notify sibling WCVs on the same chat that the variables changed. `exceptWebContentsId` skips one
+ * slot — pass the writer's `e.sender.id` so a card's OWN write isn't echoed back to it. Without this,
+ * the writer's runtime re-fires the MVU variable-update / message-updated events for a change it just
+ * made; a card that recomputes derived stats on those events then writes again → infinite write-back
+ * loop. (The writer already updated its runtime cache optimistically, so it doesn't need the echo.)
+ */
+export const notifyVarsChanged = (
+  chatId: string,
+  statData: unknown,
+  exceptWebContentsId?: number
+): void => {
   for (const s of slots.values()) {
-    if (s.chatId === chatId) s.view.webContents.send('wcv-vars-changed', statData)
+    if (s.chatId !== chatId) continue
+    if (exceptWebContentsId != null && s.view.webContents.id === exceptWebContentsId) continue
+    s.view.webContents.send('wcv-vars-changed', statData)
   }
 }
 

@@ -178,9 +178,14 @@ export const registerWcvIpc = (ipcMain: IpcMain): void => {
     const latest = floors[floors.length - 1]
     if (!latest) return null
     const floor = generationService.applyVariableOps(ctx.profileId, ctx.chatId, latest.floor, ops)
-    const statData = floor?.variables?.stat_data ?? {}
-    wcvManager.pushHostVars(ctx.chatId, floor?.variables)
-    wcvManager.notifyVarsChanged(ctx.chatId, statData)
+    // null = the write changed nothing (no-op). Don't push/broadcast — that re-fires the card's own MVU
+    // events and loops. Just hand back the current stat_data.
+    if (!floor) return latest.variables?.stat_data ?? {}
+    const statData = floor.variables?.stat_data ?? {}
+    wcvManager.pushHostVars(ctx.chatId, floor.variables)
+    // Don't echo the write back to the card that made it — that would re-fire its own MVU events and
+    // loop if it writes on them. Siblings + the host (native panels) still refresh.
+    wcvManager.notifyVarsChanged(ctx.chatId, statData, e.sender.id)
     return statData
   })
 
@@ -194,7 +199,8 @@ export const registerWcvIpc = (ipcMain: IpcMain): void => {
     latest.variables = { ...latest.variables, stat_data: statData }
     floorService.saveFloor(ctx.profileId, ctx.chatId, latest)
     wcvManager.pushHostVars(ctx.chatId, latest.variables)
-    wcvManager.notifyVarsChanged(ctx.chatId, statData)
+    // Don't echo back to the writer (see wcv-host-apply-vars) — avoids a self-triggered MVU event loop.
+    wcvManager.notifyVarsChanged(ctx.chatId, statData, e.sender.id)
     return statData
   })
 
@@ -379,7 +385,12 @@ export const registerWcvIpc = (ipcMain: IpcMain): void => {
     const c = cardLoreCtx(e.sender.id)
     if (!c) return false
     const { scope, owner } = regexScopeFor(c.profileId, c.characterId, option)
-    regexService.replaceTavernRegexes(c.profileId, scope, owner, Array.isArray(regexes) ? regexes : [])
+    regexService.replaceTavernRegexes(
+      c.profileId,
+      scope,
+      owner,
+      Array.isArray(regexes) ? regexes : []
+    )
     const ctx = wcvManager.contextFor(e.sender.id)
     if (ctx) debouncedRegexReload(ctx.chatId)
     log('info', 'wcv replaceTavernRegexes', `${(regexes || []).length} regex(es) → ${scope}`)

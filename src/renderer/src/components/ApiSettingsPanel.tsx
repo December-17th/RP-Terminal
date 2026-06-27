@@ -236,13 +236,13 @@ export const ApiSettingsPanel: React.FC<{ profileId: string }> = ({ profileId })
           type="number"
           min={1000}
           step={1000}
-          placeholder="32000"
-          value={settings.generation?.max_context_tokens ?? 32000}
+          placeholder="200000"
+          value={settings.generation?.max_context_tokens ?? 200000}
           onChange={(e) =>
             updateSettings(profileId, {
               generation: {
                 ...settings.generation,
-                max_context_tokens: Number(e.target.value) || 32000
+                max_context_tokens: Number(e.target.value) || 200000
               }
             })
           }

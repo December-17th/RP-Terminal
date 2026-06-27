@@ -2,10 +2,23 @@
 // the MVU / template / plugin variable engines. Pure module: imported by main,
 // preload, AND renderer, so it must not import from src/main or src/renderer.
 //
-// `toParts` is bracket-aware ("a[0].b" -> ["a", "0", "b"]) and drops empty
-// segments. Callers that need plain split-on-dot semantics with no bracket
-// expansion (shared/macros, preload/wcvPreload, renderer plugin/stscript)
-// intentionally keep their own tiny helpers — don't fold those in here.
+// TWO PATH DIALECTS coexist in the codebase — this is DELIBERATE, not drift (WS-8).
+// Don't "helpfully" merge the split-on-dot helpers into this one: it would change
+// path semantics for the surfaces below and break real cards. The split is pinned
+// by test/pathDialects.test.ts.
+//
+//   Dialect          | Behavior on "a[0].b"        | Where
+//   -----------------|-----------------------------|---------------------------------------
+//   bracket-aware    | ["a","0","b"] (array index) | THIS module (objectPath): MVU parser,
+//   (toParts)        |                             |   templateEngine getvar/setvar
+//   split-on-dot     | ["a[0]","b"] (literal key)  | shared/macros {{getvar}}, the lodash
+//   (key.split('.')) |                             |   `_` subset (__ks), shared/thRuntime
+//                    |                             |   getByPath, preload/wcvPreload,
+//                    |                             |   renderer plugin/stscript
+//
+// Rule of thumb: code that resolves MVU stat_data paths (which use real arrays) uses
+// the bracket-aware dialect; the macro/lodash/stscript surfaces mirror their upstream
+// (ST / lodash) which are split-on-dot, so they keep their own tiny helpers.
 
 /** Split a dot/bracket path into parts: "a[0].b" -> ["a", "0", "b"]. */
 export const toParts = (p: string): string[] =>

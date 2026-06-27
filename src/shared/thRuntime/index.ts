@@ -54,12 +54,41 @@ export function createThRuntime(host: Host): ThGlobals {
 
   // --- statData cache (authoritative refresh via host.onVarsChanged; optimistic on write) ---
   let stat: any = host.statData() || {}
+  // Fire MVU events for EVERY genuine stat_data change — including the card's OWN writes looping back.
+  // Cards routinely chain initialization through their own `mag_variable_update_ended` (write a field →
+  // react → write the next), and the prompt-side EJS injection reads the resulting vars via getvar; if we
+  // swallowed self-write events the chain would stall after the first write and those vars would never
+  // populate. We only skip a byte-identical repeat (a true no-op echo). A card that writes a constantly-
+  // CHANGING value on its own event (e.g. a `date` clock) would still spin here — that runaway is broken
+  // at the SOURCE instead (`generationService.applyVariableOps` caps rapid same-path writes), which stops
+  // the persist+broadcast so no echo returns, without muzzling legitimate self-chained writes.
+  //
+  // WS-3 SPIKE (2026-06-26): this firing-on-every-change DIVERGES from real MVU. In the MIT MagVarUpdate
+  // source, `mag_variable_update_*` are emitted only by `updateVariables`, called only from the AI-message
+  // FOLD path — NOT from programmatic card writes (setMvuVariable/insertOrAssignVariables are pure helpers).
+  // The faithful fix that also kills the loop at the source: tag each change's origin (model-fold vs
+  // card-write) end-to-end and fire here ONLY for model-fold, then retire the generationService heuristic.
+  // DEFERRED — behavior change on the live pipeline (both transports); a prior suppress-self-write attempt
+  // was reverted (broke cards chaining init through their own events), so it needs in-app verification
+  // against 命定之诗 first. See docs/structural-cleanup-log-2026-06-26.md Stage 13.
+  let lastFiredJson = JSON.stringify(stat ?? null)
   const offVars = host.onVarsChanged((sd) => {
+    const json = JSON.stringify(sd ?? null)
+    if (json === lastFiredJson) return
+    lastFiredJson = json
+    // MVU event contract (JS-Slash-Runner `exported.mvu.d.ts`): VARIABLE_UPDATE_* handlers receive
+    // `(variables: MvuData, variables_before_update: MvuData)` — the WRAPPED `{ stat_data }` object,
+    // NOT the bare stat_data. Matches the inline transport (`plugin/mvuEvents.ts`). Emitting bare stat
+    // broke cards that read `variables.stat_data` (ZodError + "reading 'stat_data' of undefined").
+    const before = { stat_data: stat }
     stat = sd || {}
-    emit(MVU_EVENTS.VARIABLE_UPDATE_STARTED, stat)
-    emit(MVU_EVENTS.VARIABLE_UPDATED, stat)
-    emit(MVU_EVENTS.VARIABLE_UPDATE_ENDED, stat)
-    emit(TAVERN_EVENTS.MESSAGE_UPDATED)
+    const after = { stat_data: stat }
+    emit(MVU_EVENTS.VARIABLE_UPDATE_STARTED, after, before)
+    emit(MVU_EVENTS.VARIABLE_UPDATED, after, before)
+    emit(MVU_EVENTS.VARIABLE_UPDATE_ENDED, after, before)
+    // `tavern_events.MESSAGE_UPDATED` carries the updated message id (`event.d.ts`), never nothing —
+    // a card reading the id (or a field off it) otherwise throws on `undefined`.
+    emit(TAVERN_EVENTS.MESSAGE_UPDATED, currentMessageId(host.floors()))
   })
   const offHost = host.onHostEvent((name, payload) => emit(name, payload))
 
@@ -250,6 +279,12 @@ export function createThRuntime(host: Host): ThGlobals {
     },
     getChatMessages: () => floorsToThMessages(host.floors()),
     getCurrentMessageId: () => currentMessageId(host.floors()),
+    // TH alias: getCurrentMessageId IS getLastMessageId (both = the last message's id). The inline
+    // shim already aliases them (shims/tavern.ts); the WCV runtime was missing the alias, so MVU/status
+    // cards that call getLastMessageId() in their update handler threw "getLastMessageId is not defined"
+    // — which aborted card init and cascaded into a downstream message_updated handler reading a field
+    // off the never-set state ("reading 'event' of undefined").
+    getLastMessageId: () => currentMessageId(host.floors()),
     getTavernHelperVersion: () => '4.3.17',
     getCharData: () => host.charData(),
     getCharAvatarPath: () => host.charAvatarPath(),
@@ -284,11 +319,30 @@ export function createThRuntime(host: Host): ThGlobals {
     audioMode: () => {},
     audioEnable: () => {},
     errorCatched,
+    // Prompt-injection API (TH injectPrompts/uninjectPrompts). RP Terminal assembles the prompt in
+    // the MAIN process, so a renderer-side injection can't reach the build yet — these are safe
+    // no-ops returning the documented `{ uninject }` handle, so a card that calls them every turn
+    // (MVU/status cards do, on message_updated) degrades gracefully instead of throwing on a bare
+    // global. (Depth-positioned injection into the build is a separate feature.)
+    injectPrompts: (_prompts: any, _options?: any) => ({ uninject: () => undefined }),
+    uninjectPrompts: (_ids: any) => undefined,
     // ASYNC writes
     insertOrAssignVariables: async (vars: any) => {
       const obj = vars?.stat_data && typeof vars.stat_data === 'object' ? vars.stat_data : vars
       stat = { ...stat, ...(obj || {}) }
       await writeVars(assignVarOps(obj || {}))
+    },
+    // TH insertVariables: insert-if-ABSENT (never overwrites an existing key) — the no-overwrite
+    // sibling of insertOrAssignVariables, used by cards to seed initial MVU vars. Parity with the
+    // inline shim (shims/tavern.ts), which already exposed it; the WCV runtime was missing it.
+    insertVariables: async (vars: any) => {
+      const obj = vars?.stat_data && typeof vars.stat_data === 'object' ? vars.stat_data : vars
+      const add: Record<string, any> = {}
+      for (const k of Object.keys(obj || {})) if (!(k in stat)) add[k] = obj[k]
+      if (Object.keys(add).length) {
+        stat = { ...stat, ...add }
+        await writeVars(assignVarOps(add))
+      }
     },
     replaceVariables: async (vars: any) => {
       const next = vars?.stat_data && typeof vars.stat_data === 'object' ? vars.stat_data : vars
@@ -432,12 +486,17 @@ export function createThRuntime(host: Host): ThGlobals {
     })
   }
   const eventSource = { on, emit, makeFirst: on, once: on, removeListener: off }
+  // ST persists global settings on a debounce; RP Terminal has no ST settings.json, so this is a no-op.
+  // Cards (esp. extension-style ones) call it after mutating extensionSettings — without the function on
+  // the global they throw "SillyTavern.saveSettingsDebounced is not a function" (an unhandledrejection).
+  const saveSettingsDebounced = (): void => undefined
   const getContext = (): any => ({
     chat: stChat(),
     eventSource,
     eventTypes: TAVERN_EVENTS,
     event_types: TAVERN_EVENTS,
     extensionSettings: { EjsTemplate: { enabled: true } },
+    saveSettingsDebounced,
     getContext: () => getContext()
   })
   const SillyTavern = {
@@ -446,7 +505,8 @@ export function createThRuntime(host: Host): ThGlobals {
     substituteParams: substMacros,
     getCurrentChatId: () => host.currentChatId(),
     saveChat: async () => host.saveChat(SillyTavern.chat),
-    reloadCurrentChat: async () => host.reloadChat()
+    reloadCurrentChat: async () => host.reloadChat(),
+    saveSettingsDebounced
   }
 
   // --- EjsTemplate (engine lives in the transport via host.evalTemplate) ---

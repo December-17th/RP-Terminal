@@ -61,6 +61,20 @@ export interface Settings {
   generation: {
     /** Max estimated input tokens for the assembled prompt; oldest history is trimmed to fit. */
     max_context_tokens: number
+    /**
+     * Merge consecutive messages of the SAME role into one before sending (default true) — matches
+     * SillyTavern's prompt assembly. A preset that splits a block across adjacent same-role entries
+     * (e.g. `<{{user}}_setting>` / body / `</{{user}}_setting>`) then arrives as one coherent message
+     * instead of N fragments. Off = send each preset block as its own message (raw).
+     */
+    merge_consecutive_roles?: boolean
+    /**
+     * Send `system` messages as `user` (default false). Only takes effect on the OpenAI-compatible path
+     * (openai/openrouter/custom) — Gemini behind an OpenAI-compat layer handles a `system` role poorly, so
+     * this matches SillyTavern's demotion. No-op for native Anthropic/Gemini connections (they shape system
+     * via their own params). Applied before the role-merge.
+     */
+    system_as_user?: boolean
   }
   lorebook: {
     /** How many recent turns (floors) to scan for keyword matches. */
@@ -93,6 +107,14 @@ export interface Settings {
   agent: {
     mode: AgentMode
   }
+  /** Combat (Track Combat): end-of-combat narration placement + an optional steering prompt.
+   *  A card's `combat` bundle (`narration_mode` / `narration_prompt`) overrides these. */
+  combat?: {
+    narrationMode?: 'append' | 'floor'
+    narrationPrompt?: string
+    /** Steers the freeform-action / mid-fight-exit adjudication; card overrides it. */
+    improvisePrompt?: string
+  }
   ui: {
     theme: string
     /** App-UI language (the i18n locale id, e.g. 'en' / 'zh'). Card content is separate. */
@@ -122,9 +144,18 @@ export interface Settings {
     layouts: ModeLayouts
   }
   /** Prompt-cache optimization dial (see docs/prompt-cache-optimization-design.md).
-   *  level 0 = baseline (today); 1 = Frozen Core. l1_mode selects the L1 sub-experiment. */
+   *  The whole system is STASHED (low prio, 2026-06-26) — the selector is greyed out and pinned to
+   *  `baseline`. `mode` is the user-facing setting; `level`/`l1_mode` are the (dormant) Frozen-Core internals. */
   cache: {
-    /** 0 = baseline, 1 = Frozen Core (2/3 reserved for later phases). */
+    /**
+     * Optimization mode (selector greyed out; default + pinned to `baseline`):
+     *  - `baseline`  — NO optimization at all, NOT even provider-side prompt caching (we omit Anthropic
+     *                  cache_control). A clean reference control for measuring everything else against.
+     *  - `provider`  — provider prefix caching as-is (Anthropic cache_control on); no app-side frozen core.
+     *  - `frozen`    — L1 "Frozen Core" app-side layering (experimental/dormant — stashed).
+     */
+    mode: 'baseline' | 'provider' | 'frozen'
+    /** 0 = baseline, 1 = Frozen Core (2/3 reserved for later phases). Derived from `mode` (frozen → 1). */
     level: number
     /** L1 sub-mode: 'partition' (placeholder state in the frontier) | 'diff' (floor-0 state). */
     l1_mode: 'partition' | 'diff'

@@ -17,7 +17,14 @@ import { useChatStore } from '../stores/chatStore'
 import { useCharacterStore } from '../stores/characterStore'
 
 // The card-facing objects a full-page card reaches via window.top.
-const EXPOSE = ['SillyTavern', 'TavernHelper', 'Mvu', 'EjsTemplate', 'tavern_events', 'toastr'] as const
+const EXPOSE = [
+  'SillyTavern',
+  'TavernHelper',
+  'Mvu',
+  'EjsTemplate',
+  'tavern_events',
+  'toastr'
+] as const
 
 const activeCtx = (): CardCtx => ({
   profileId: useProfileStore.getState().activeProfile?.id ?? '',

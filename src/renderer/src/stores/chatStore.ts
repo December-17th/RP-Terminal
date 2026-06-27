@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import type { FloorMetrics } from '../../../shared/usageTypes'
+import { useCombatStore } from './combatStore'
 
 export interface FloorIndexEntry {
   floor: number
@@ -97,6 +98,12 @@ export const useChatStore = create<ChatState>((set, get) => {
       cancelAnimationFrame(rafId)
       rafId = null
     }
+  }
+  // A re-roll/swipe rewrites the message a fight branched from; the server clears the encounter, so
+  // drop the local combat mirror and leave combat mode if we were in it.
+  const stopStaleCombat = (profileId: string): void => {
+    useCombatStore.getState().reset()
+    if (get().activeChatMode === 'combat') void get().setMode(profileId, 'explore')
   }
 
   return {
@@ -213,6 +220,7 @@ export const useChatStore = create<ChatState>((set, get) => {
           streamingText: ''
         }))
         get().loadChats(profileId)
+        stopStaleCombat(profileId)
       } catch (err: any) {
         console.error(err)
         resetStream()
@@ -287,6 +295,7 @@ export const useChatStore = create<ChatState>((set, get) => {
       if (dir === 'left' ? cur > 0 : cur < swipeArr.length - 1) {
         const updated = await window.api.setActiveSwipe(profileId, activeChatId, floorIndex, target)
         if (updated) applyUpdated(updated)
+        stopStaleCombat(profileId)
         return
       }
 
@@ -304,6 +313,7 @@ export const useChatStore = create<ChatState>((set, get) => {
           streamingText: ''
         }))
         get().loadChats(profileId)
+        stopStaleCombat(profileId)
       } catch (err: any) {
         console.error(err)
         resetStream()

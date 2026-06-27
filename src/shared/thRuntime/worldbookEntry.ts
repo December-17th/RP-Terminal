@@ -54,7 +54,9 @@ export const thToNativeEntry = (th: any): Record<string, any> => {
   const t = th && typeof th === 'object' ? th : {}
   const s = (t.strategy && typeof t.strategy === 'object' ? t.strategy : {}) as any
   const p = (t.position && typeof t.position === 'object' ? t.position : {}) as any
-  const sec = (s.keys_secondary && typeof s.keys_secondary === 'object' ? s.keys_secondary : {}) as any
+  const sec = (
+    s.keys_secondary && typeof s.keys_secondary === 'object' ? s.keys_secondary : {}
+  ) as any
   const secKeys = asStrings(sec.keys)
   return {
     keys: asStrings(s.keys),

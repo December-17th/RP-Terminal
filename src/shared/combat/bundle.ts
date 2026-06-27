@@ -1,0 +1,401 @@
+// Combat core — World-Card `combat` bundle → playable encounter (Track Combat / P7).
+//
+// Pure module. A card ships a `combat` bundle (templates, ability catalog, bestiary,
+// maps, hook scripts); `buildEncounter` turns that bundle + the AI's <rpt-combat-start>
+// cue into the EncounterSetup the engine/service consumes. Bundle STRUCTURE fields are
+// snake_case (card JSON convention: enemy_controller / cell_ft / party_spawns); ability
+// and stat-block internals are the engine's own camelCase shapes (toHit / maxHp), since
+// they flow straight through. See docs/combat-system-design.md §10.
+
+import type {
+  AbilityDef,
+  Action,
+  Combatant,
+  CombatState,
+  Coord,
+  GridSpec,
+  Side,
+  StatBlock
+} from './types'
+import type { HookName, HookResult } from './hooks'
+import type { Rng } from './dice'
+
+export interface BundleStatBlock {
+  hp: number
+  maxHp?: number
+  ac?: number
+  speed?: number
+  mods?: Record<string, number>
+  abilities?: string[]
+  resist?: string[]
+  vulnerable?: string[]
+}
+
+export interface BestiaryEntry {
+  id: string
+  name?: string
+  tier?: string
+  block: BundleStatBlock
+  abilities?: string[]
+  controller?: 'weighted' | 'ai'
+}
+
+export interface PartyTemplate {
+  id: string
+  name?: string
+  block: BundleStatBlock
+  abilities?: string[]
+}
+
+export interface CombatMap {
+  id: string
+  w: number
+  h: number
+  cell_ft?: number
+  party_spawns?: Coord[]
+  enemy_spawns?: Coord[]
+}
+
+/** MVU-import config: where the player + party + per-character stat paths live in a card's
+ *  `stat_data`. Consumed by buildEncounterFromMvu (the alternative to bundle `party` templates).
+ *  Snake_case like the other card-authored bundle-structure fields; the domain VALUES
+ *  (e.g. "主角", "关系列表", "属性") are the card's own, supplied here. */
+export interface StatMap {
+  /** stat_data key holding the player character, e.g. "主角". */
+  player: string
+  /** where companions live + how to filter who's present, e.g. { from:"关系列表", filter:{ 在场:true } }. */
+  party?: { from: string; filter?: Record<string, unknown> }
+  /** logical field → path inside a character object, e.g. { hp:"生命值", maxHp:"生命值上限", 属性:"属性" }. */
+  paths?: Record<string, string>
+}
+
+/** Pure-DATA derivation tables for an MVU-imported encounter — no formulas/eval; the resolver
+ *  code applies these. Record KEYS are the card's domain values (生命层级 "1".."7"; damage types
+ *  物理/能量/精神/真实). See docs/combat-poem-of-destiny-expansion.md. */
+export interface DeriveConfig {
+  /** attribute key order, e.g. ['力量','敏捷','体质','智力','精神']. */
+  attributes?: string[]
+  /** 生命层级 → 战斗层级系数 (damage scaling). */
+  tier_coefficient?: Record<string, number>
+  /** 生命层级 → HP multiplier (资源推演). */
+  hp_multiplier?: Record<string, number>
+  /** 生命层级 → MP/SP multiplier. */
+  mp_sp_multiplier?: Record<string, number>
+  /** [threshold, multiplier] pairs, descending — the 评级 (hit-rating) table. */
+  rating_tiers?: [number, number][]
+  /** damage-type → per-point mitigation fraction (物理/能量/精神/真实). */
+  attr_mitigation?: Record<string, number>
+  /** 装备减免 constant in `防御/(防御+const)` (default 2000). */
+  defense_constant?: number
+}
+
+export interface CombatBundle {
+  ruleset?: string
+  grid?: { type?: string; cell_ft?: number }
+  enemy_controller?: 'weighted' | 'ai'
+  abilities?: AbilityDef[]
+  bestiary?: BestiaryEntry[]
+  party?: PartyTemplate[]
+  maps?: CombatMap[]
+  scripts?: Partial<Record<HookName, string>>
+  skin?: Record<string, unknown>
+  /** MVU-import (BP2+): build the encounter party from `stat_data` instead of `party` templates. */
+  stat_map?: StatMap
+  derive?: DeriveConfig
+  /** MVU-import enemies: character-shaped templates keyed by ref, resolved against the combat-start
+   *  cue and built via the system (so they fight with the card's rules). */
+  enemies?: Record<string, unknown>
+}
+
+export interface BuiltEncounter {
+  seed?: number
+  grid: GridSpec
+  combatants: Combatant[]
+  abilities: Record<string, AbilityDef>
+  hooks: Partial<Record<HookName, string>>
+}
+
+const normalizeBlock = (b: BundleStatBlock, fallbackAbilities?: string[]): StatBlock => ({
+  hp: b.hp,
+  maxHp: b.maxHp ?? b.hp,
+  ac: b.ac ?? 10,
+  speed: b.speed ?? 6,
+  mods: (b.mods ?? {}) as StatBlock['mods'],
+  abilities: b.abilities ?? fallbackAbilities ?? [],
+  conditions: [],
+  resist: b.resist,
+  vulnerable: b.vulnerable
+})
+
+/**
+ * Parse the cue's freeform enemy list into `{ ref, count }` specs. Handles separators
+ * `; , 、 ；`, an `xN`/`×N` count, and a parenthetical tier note that's stripped from
+ * the ref. e.g. "哥布林 x3 (弱); 头目" → [{ref:'哥布林',count:3},{ref:'头目',count:1}].
+ */
+export const parseEnemyCue = (text: string): { ref: string; count: number }[] =>
+  (text || '')
+    .split(/[;,；、]+/)
+    .map((s) => s.trim())
+    .filter(Boolean)
+    .map((part) => {
+      const cm = part.match(/[x×]\s*(\d+)/i)
+      const count = cm ? Math.max(1, parseInt(cm[1], 10)) : 1
+      const ref = part
+        .replace(/[x×]\s*\d+/i, '')
+        .replace(/[(（][^)）]*[)）]/g, '')
+        .trim()
+      return { ref, count }
+    })
+    .filter((e) => e.ref)
+
+const findBestiary = (bundle: CombatBundle, ref: string): BestiaryEntry | undefined => {
+  const n = ref.toLowerCase()
+  return bundle.bestiary?.find(
+    (b) =>
+      b.id === ref ||
+      b.id.toLowerCase() === n ||
+      (b.name ? b.name.toLowerCase() === n || b.name.toLowerCase().includes(n) : false)
+  )
+}
+
+/**
+ * Build a playable encounter from a card's combat bundle and the AI's combat-start cue.
+ * Party members come from `bundle.party`; enemies are resolved from the cue against
+ * `bundle.bestiary` (unknown refs are skipped). Spawns use the map's declared positions
+ * or fall back to opposite edges. Returns the EncounterSetup-shaped object the service
+ * stores; the seed is left to the caller unless provided.
+ */
+export const buildEncounter = (
+  bundle: CombatBundle,
+  cue?: { enemies?: string; map?: string } | null,
+  opts: { seed?: number } = {}
+): BuiltEncounter => {
+  const mapDef = (cue?.map && bundle.maps?.find((m) => m.id === cue.map)) || bundle.maps?.[0]
+  const grid: GridSpec = {
+    w: mapDef?.w ?? 10,
+    h: mapDef?.h ?? 8,
+    cellFt: mapDef?.cell_ft ?? bundle.grid?.cell_ft ?? 5
+  }
+
+  const combatants: Combatant[] = []
+  ;(bundle.party ?? []).forEach((p, i) => {
+    combatants.push({
+      id: p.id,
+      side: 'party',
+      name: p.name ?? p.id,
+      pos: mapDef?.party_spawns?.[i] ?? [0, Math.min(i, grid.h - 1)],
+      block: normalizeBlock(p.block, p.abilities)
+    })
+  })
+
+  const ctrl = bundle.enemy_controller ?? 'weighted'
+  let placed = 0
+  for (const spec of parseEnemyCue(cue?.enemies ?? '')) {
+    const ent = findBestiary(bundle, spec.ref)
+    if (!ent) continue
+    for (let n = 0; n < spec.count; n++) {
+      combatants.push({
+        id: spec.count > 1 ? `${ent.id}-${n + 1}` : ent.id,
+        side: 'enemy',
+        name: ent.name ?? ent.id,
+        pos: mapDef?.enemy_spawns?.[placed] ?? [grid.w - 1, Math.min(placed, grid.h - 1)],
+        block: normalizeBlock(ent.block, ent.abilities),
+        controller: ent.controller ?? ctrl
+      })
+      placed++
+    }
+  }
+
+  const abilities: Record<string, AbilityDef> = {}
+  for (const a of bundle.abilities ?? []) abilities[a.id] = a
+
+  return { seed: opts.seed, grid, combatants, abilities, hooks: bundle.scripts ?? {} }
+}
+
+// --- MVU-driven encounter import (BP2). The card's combat numbers already live in its
+// stat_data; a `CombatSystem` adapter (e.g. systems/poemD20) interprets a character object
+// into a combatant, and this generic plumbing walks `stat_map` to find the party + place them. ---
+
+export type ItemKind = 'skill' | 'equip'
+
+/** Context handed to a CombatSystem when it builds one combatant from a stat_data character. */
+export interface MvuCharCtx {
+  id: string
+  name: string
+  side: Side
+  /** stat_map.paths — logical field (SDK) → path inside the character object (card). */
+  paths: Record<string, string>
+  derive?: DeriveConfig
+}
+
+/** What a CombatSystem returns for one character: a native StatBlock, the card-specific `ext`
+ *  bag, and the abilities (catalog entries) that character contributes. */
+export interface BuiltCombatant {
+  block: StatBlock
+  ext: Record<string, unknown>
+  abilities: AbilityDef[]
+}
+
+/** Everything a card resolver needs to resolve one action deterministically. This is the
+ *  documented SDK seam: the engine hands the system the cloned `state`, the `action`, the ability
+ *  catalog, a seeded `rng`, and the `derive` tables; the system mutates `state` and returns events.
+ *  (A future sandboxed card resolver receives the same data + bound grid/damage helpers.) */
+export interface ResolverContext {
+  state: CombatState
+  action: Action
+  abilities: Record<string, AbilityDef>
+  rng: Rng
+  derive?: DeriveConfig
+}
+
+/** The card-side combat adapter. The generic engine owns traversal/placement/resolution flow;
+ *  the system owns interpretation of the card's own stat grammar (and, from BP3, resolution). */
+export interface CombatSystem {
+  /** Parse one 技能/装备 MVU object → opaque combat data for `AbilityDef.ext`. */
+  parseItem(item: unknown, kind: ItemKind): Record<string, unknown>
+  /** Turn a character object from stat_data into a combatant + its abilities. */
+  buildCombatant(char: unknown, ctx: MvuCharCtx): BuiltCombatant
+  /** Resolve one action (BP3). Return `null` to fall through to native resolution (move / end /
+   *  improvise, or an attack that can't fire so the engine reports it). Mirrors the
+   *  `resolveAction` hook contract, so the service can inject it as the engine's RunHook. */
+  resolveAction?(ctx: ResolverContext): HookResult | null
+}
+
+const matchesFilter = (ch: unknown, filter?: Record<string, unknown>): boolean => {
+  if (!filter) return true
+  if (!ch || typeof ch !== 'object') return false
+  const rec = ch as Record<string, unknown>
+  return Object.entries(filter).every(([k, v]) => rec[k] === v)
+}
+
+/**
+ * Build a playable encounter from MVU `stat_data` via a `stat_map` + a `CombatSystem`.
+ * The **party**: the player is `stat_data[stat_map.player]`; companions come from `stat_map.party.from`
+ * (a record keyed by name) filtered by `stat_map.party.filter` (e.g. `{ 在场: true }`). The **enemies**
+ * (optional): `opts.enemies` is a record of character-shaped templates keyed by ref; `opts.enemiesCue`
+ * (the `<rpt-combat-start enemies>` text) is parsed for `ref xN` and each is built via the same
+ * `system.buildCombatant`. Party spawns down the left edge, enemies down the right. (Dynamic, AI-
+ * generated enemy `char_info` is a future enhancement; static templates make a fight playable now.)
+ */
+export const buildEncounterFromMvu = (
+  statData: Record<string, unknown>,
+  statMap: StatMap,
+  system: CombatSystem,
+  opts: {
+    derive?: DeriveConfig
+    grid?: GridSpec
+    seed?: number
+    enemies?: Record<string, unknown>
+    enemiesCue?: string
+    /** A1: an AI-supplied roster (character-shaped objects + 名称/数量/阵营) parsed off the
+     *  combat-start cue body. Each entry is built via the system; defaults to the enemy side. */
+    roster?: Array<Record<string, unknown>>
+  } = {}
+): BuiltEncounter => {
+  const paths = statMap.paths ?? {}
+  const grid: GridSpec = opts.grid ?? { w: 10, h: 8, cellFt: 5 }
+  const combatants: Combatant[] = []
+  const abilities: Record<string, AbilityDef> = {}
+  let idx = 0
+
+  const place = (char: unknown, id: string, name: string): void => {
+    const built = system.buildCombatant(char, {
+      id,
+      name,
+      side: 'party',
+      paths,
+      derive: opts.derive
+    })
+    combatants.push({
+      id,
+      side: 'party',
+      name,
+      pos: [0, Math.min(idx, grid.h - 1)],
+      block: built.block,
+      ext: built.ext
+    })
+    for (const a of built.abilities) abilities[a.id] = a
+    idx++
+  }
+
+  const player = statData[statMap.player]
+  if (player && typeof player === 'object') {
+    const nm = (player as Record<string, unknown>).姓名
+    place(player, statMap.player, typeof nm === 'string' && nm ? nm : statMap.player)
+  }
+
+  if (statMap.party) {
+    const rec = statData[statMap.party.from]
+    if (rec && typeof rec === 'object') {
+      for (const [name, ch] of Object.entries(rec as Record<string, unknown>)) {
+        if (!matchesFilter(ch, statMap.party.filter)) continue
+        place(ch, name, name)
+      }
+    }
+  }
+
+  // Enemies: resolve the cue (`ref xN; ref2`) against the bundle's enemy templates, building each
+  // through the same system so it fights with the card's rules. Spawns down the right edge.
+  let placed = 0
+  if (opts.enemies) {
+    for (const spec of parseEnemyCue(opts.enemiesCue ?? '')) {
+      const tmpl = opts.enemies[spec.ref]
+      if (!tmpl) continue
+      for (let n = 0; n < spec.count; n++) {
+        const id = spec.count > 1 ? `${spec.ref}-${n + 1}` : spec.ref
+        const built = system.buildCombatant(tmpl, {
+          id,
+          name: spec.ref,
+          side: 'enemy',
+          paths,
+          derive: opts.derive
+        })
+        combatants.push({
+          id,
+          side: 'enemy',
+          name: spec.ref,
+          pos: [grid.w - 1, Math.min(placed, grid.h - 1)],
+          block: built.block,
+          ext: built.ext,
+          controller: 'weighted'
+        })
+        for (const a of built.abilities) abilities[a.id] = a
+        placed++
+      }
+    }
+  }
+
+  // A1 roster: AI-supplied combatants from the cue body. Each entry uses the card's stat_data field
+  // names (so the system parses it like a character); `阵营:'友方'` / `side:'party'` joins the party,
+  // else enemy (right edge). `数量` defaults to 1.
+  for (const entry of opts.roster ?? []) {
+    const name =
+      (typeof entry.名称 === 'string' && entry.名称) ||
+      (typeof entry.name === 'string' && entry.name) ||
+      'enemy'
+    const side: Side = entry.阵营 === '友方' || entry.side === 'party' ? 'party' : 'enemy'
+    const count = Math.max(1, Number(entry.数量) || 1)
+    for (let n = 0; n < count; n++) {
+      const id = count > 1 ? `${name}-${n + 1}` : name
+      const built = system.buildCombatant(entry, { id, name, side, paths, derive: opts.derive })
+      const pos: Coord =
+        side === 'party'
+          ? [0, Math.min(idx, grid.h - 1)]
+          : [grid.w - 1, Math.min(placed, grid.h - 1)]
+      combatants.push({
+        id,
+        side,
+        name,
+        pos,
+        block: built.block,
+        ext: built.ext,
+        ...(side === 'enemy' ? { controller: 'weighted' as const } : {})
+      })
+      for (const a of built.abilities) abilities[a.id] = a
+      if (side === 'party') idx++
+      else placed++
+    }
+  }
+
+  return { seed: opts.seed, grid, combatants, abilities, hooks: {} }
+}

@@ -3,7 +3,9 @@ import { buildEnvHead, replaceVhInContent, BASE_RESET_CSS } from '../src/shared/
 
 describe('replaceVhInContent', () => {
   it('rewrites a CSS-block min-height:100vh to the viewport variable', () => {
-    expect(replaceVhInContent('.a{min-height:100vh}')).toBe('.a{min-height:var(--TH-viewport-height)}')
+    expect(replaceVhInContent('.a{min-height:100vh}')).toBe(
+      '.a{min-height:var(--TH-viewport-height)}'
+    )
   })
 
   it('rewrites a non-100 CSS min-height to a calc fraction (and keeps the terminator)', () => {

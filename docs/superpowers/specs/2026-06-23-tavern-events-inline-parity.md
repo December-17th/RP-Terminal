@@ -21,7 +21,7 @@ cards only ever see the MVU + `MESSAGE_UPDATED` events the runtime fires on a va
 already-computed events (no recomputation, no drift) — i.e. implement the inline `onHostEvent`.
 
 **Non-goals:** the full ~100-name TavernHelper `tavern_events` enum (most have no RPT trigger and would never
-fire — adding only the ones RPT actually emits keeps it honest); new event *sources* beyond what `App.tsx`
+fire — adding only the ones RPT actually emits keeps it honest); new event _sources_ beyond what `App.tsx`
 already computes; STScript / `triggerSlash` (separate track).
 
 ## 3. Design
@@ -29,7 +29,7 @@ already computes; STScript / `triggerSlash` (separate track).
 A tiny renderer-local emitter that `App.tsx` dual-dispatches to, and the inline adapter subscribes to:
 
 - **New `src/renderer/src/cardBridge/cardHostEvents.ts`** — a module singleton: `emitCardHostEvent(name,
-  payload)` + `onCardHostEvent(cb): () => void` (a `Set` of callbacks; emit is try/catch per-cb). Pure, no
+payload)` + `onCardHostEvent(cb): () => void` (a `Set` of callbacks; emit is try/catch per-cb). Pure, no
   deps. Guard `typeof window` is unnecessary (renderer-only module).
 - **`App.tsx`** — at each existing WCV broadcast point, ALSO emit to the local bus:
   - in `onGenerationDelta`: `emitCardHostEvent('stream_token_received', streamingText)`;
@@ -63,7 +63,7 @@ transports now feed `onHostEvent`, so parity holds by construction.
   delivery; a throwing subscriber doesn't break others.
 - Existing suites stay green.
 - **Manual (Electron, inline):** a card with `eventOn('generation_ended'|'stream_token_received'|
-  'message_received', …)` fires inline (e.g. the status card reacting live to a model turn), at parity with
+'message_received', …)` fires inline (e.g. the status card reacting live to a model turn), at parity with
   Isolated.
 
 ## 7. Acceptance

@@ -107,6 +107,10 @@ const normalizeRule = (r: any): RenderRegexRule => {
     disabled: r.disabled === true,
     markdownOnly: r.markdownOnly === true,
     promptOnly: r.promptOnly === true,
+    // ST depth-scoping: carried through so prompt-time application can honor it (e.g. the
+    // "keep only the latest user input → <|placeholder|>" rule has minDepth:1). number | null.
+    minDepth: typeof r.minDepth === 'number' ? r.minDepth : null,
+    maxDepth: typeof r.maxDepth === 'number' ? r.maxDepth : null,
     trimStrings: Array.isArray(r.trimStrings)
       ? r.trimStrings.filter((s: any) => typeof s === 'string')
       : []
@@ -148,7 +152,9 @@ export const getAllRules = (profileId: string, ctx?: ScopeContext): RenderRegexR
  *  moves to a docked panel, so the message shouldn't show its marker or the inline frame. */
 export const getRenderRules = (profileId: string, ctx?: ScopeContext): RenderRegexRule[] =>
   getAllRules(profileId, ctx)
-    .filter((r) => !r.disabled && !r.promptOnly && (r.placement.length === 0 || r.placement.includes(2)))
+    .filter(
+      (r) => !r.disabled && !r.promptOnly && (r.placement.length === 0 || r.placement.includes(2))
+    )
     .map((r) => (r.renderMode === 'panel' ? { ...r, replace: '' } : r))
 
 /** Rules that transform text on its way *into the prompt* (everything not display-only or panel-promoted). */
@@ -197,8 +203,10 @@ export const applyRegex = (
   text: string,
   rules: RenderRegexRule[],
   placement: number,
-  ctx: RegexApplyContext = {}
-): string => applyRegexRules(text, rules, ctx, { placement })
+  ctx: RegexApplyContext = {},
+  /** Message depth (0 = latest turn) for ST depth-scoped rules; omit to disable depth-scoping. */
+  depth?: number
+): string => applyRegexRules(text, rules, ctx, { placement, depth })
 
 export const listScripts = (profileId: string): RegexScriptInfo[] => {
   const dir = regexDir(profileId)

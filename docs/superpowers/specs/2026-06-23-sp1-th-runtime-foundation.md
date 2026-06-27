@@ -11,18 +11,19 @@ The inline (`src/renderer/src/cardBridge/createCardBridge.ts`) and WCV
 (`src/preload/wcvPreload.ts`) transports each build the **same** card-facing surface
 (`TavernHelper`/`Mvu`/`SillyTavern`/`EjsTemplate`/`toastr` + the event bus + enums) but implement every
 function **twice**, against different data sources (Zustand stores + `window.api` vs `ipcRenderer.sendSync`
-+ `invoke`). They have already drifted (e.g. chat-message shape is built in the renderer shim for inline
-but in a main IPC handler for WCV; worldbook reads use different code paths). Every future TH function
-would be written twice — the same class of bug that produced the inline/WCV CSP and height parity defects.
+
+- `invoke`). They have already drifted (e.g. chat-message shape is built in the renderer shim for inline
+  but in a main IPC handler for WCV; worldbook reads use different code paths). Every future TH function
+  would be written twice — the same class of bug that produced the inline/WCV CSP and height parity defects.
 
 ## 2. Goal & non-goals
 
-**Goal:** a single `shared/thRuntime` builds the *entire current* surface from an abstract `Host`
+**Goal:** a single `shared/thRuntime` builds the _entire current_ surface from an abstract `Host`
 interface; the two transports become thin `Host` adapters. Functions that drifted converge to one
 canonical behavior, service-backed where possible. Parity becomes structural, not test-enforced.
 
 **Non-goals (later sub-projects):** new TH domains / filling stubs (SP3+), rendering-env parity — libs,
-`--TH-viewport-height`, avatar CSS (SP2), scripts/STScript (C), EJS/MVU depth (D). SP1 changes *structure*,
+`--TH-viewport-height`, avatar CSS (SP2), scripts/STScript (C), EJS/MVU depth (D). SP1 changes _structure_,
 not the set of features a card can use (except the intended convergence in §5).
 
 ## 3. Module layout
@@ -51,10 +52,20 @@ own types. Both the renderer build and the preload build import it.
 ```ts
 export type CardCtx = { profileId: string; chatId: string; characterId: string }
 export type VarOp = { op: 'add' | 'remove' | 'replace' | 'set'; path: string; value?: any }
-export type ThMessage = { message_id: number; role: 'user' | 'assistant'; message: string; name?: string }
+export type ThMessage = {
+  message_id: number
+  role: 'user' | 'assistant'
+  message: string
+  name?: string
+}
 export type StMessage = {
-  is_user: boolean; name: string; mes: string; send_date: string
-  swipes: string[]; swipe_id: number; extra: Record<string, any>
+  is_user: boolean
+  name: string
+  mes: string
+  send_date: string
+  swipes: string[]
+  swipe_id: number
+  extra: Record<string, any>
 }
 export type FloorLike = {
   floor?: number
@@ -65,8 +76,12 @@ export type FloorLike = {
   swipe_id?: number
 }
 export type GenCfgNormalized = {
-  userInput?: string; prompt?: string; systemPrompt?: string
-  maxChatHistory?: number; maxTokens?: number; overrides?: any
+  userInput?: string
+  prompt?: string
+  systemPrompt?: string
+  maxChatHistory?: number
+  maxTokens?: number
+  overrides?: any
 }
 
 export interface Host {
@@ -116,7 +131,7 @@ toastr, tavern_events, __rptDispose }`. It owns:
 - **Event bus** — local `on/emit/off`. `host.onHostEvent` feeds host-pushed `tavern_events` into it.
   On a var change, emit the MVU lifecycle events + `MESSAGE_UPDATED` (preserving today's behavior).
 - **Shape derivation** (via `shapes.ts`, the single source) from `host.floors()`:
-  `getChatMessages` → `floorsToThMessages` (flat list, **sequential ids** `0..N-1`; floor *i* →
+  `getChatMessages` → `floorsToThMessages` (flat list, **sequential ids** `0..N-1`; floor _i_ →
   user `2i`, assistant `2i+1` — equivalent to today's inline ids, now produced once);
   `getCurrentMessageId` → `currentMessageId`; `SillyTavern.chat` → `floorsToStChat` (with
   `host.charData().name` / `host.personaName()`).
@@ -129,6 +144,7 @@ toastr, tavern_events, __rptDispose }`. It owns:
 - **`__rptDispose`** — calls the unsub fns returned by `host.onVarsChanged` / `host.onHostEvent`.
 
 **Convergence decisions (the only intended behavior changes):**
+
 - **Chat messages / current id:** one mapping in `shapes.ts` fed by `host.floors()`. Removes the
   inline-shim-builds-it vs main-IPC-builds-it split. Canonical shape `{message_id, role, message}` with
   sequential ids. (The WCV adapter gains a `wcv-host-get-floors-sync` IPC returning raw floors; the older

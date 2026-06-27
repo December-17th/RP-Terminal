@@ -7,6 +7,9 @@ import { log } from '../services/logService'
 export const registerProfileIpc = (ipcMain: IpcMain): void => {
   ipcMain.handle('get-profiles', () => profileService.getProfiles())
   ipcMain.handle('create-profile', (_, name) => profileService.createProfile(name))
+  // Debug-only: wipe all of a profile's content (characters/chats/presets/lorebooks/regex/scripts/
+  // plugin data) + reset settings, keeping the API connection config. See profileService.wipeProfile.
+  ipcMain.handle('wipe-profile', (_, profileId) => profileService.wipeProfile(profileId))
   // The renderer never sees a full api key — mask every key before it leaves main (shown in full only
   // when the user first types it; see settingsService for the retain-on-save half).
   ipcMain.handle('get-settings', (_, profileId) =>

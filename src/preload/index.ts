@@ -5,6 +5,7 @@ import { electronAPI } from '@electron-toolkit/preload'
 const api = {
   getProfiles: () => ipcRenderer.invoke('get-profiles'),
   createProfile: (name: string) => ipcRenderer.invoke('create-profile', name),
+  wipeProfile: (profileId: string) => ipcRenderer.invoke('wipe-profile', profileId),
   getSettings: (profileId: string) => ipcRenderer.invoke('get-settings', profileId),
   saveSettings: (profileId: string, settings: any) =>
     ipcRenderer.invoke('save-settings', profileId, settings),
@@ -194,6 +195,31 @@ const api = {
     ipcRenderer.invoke('plugin-storage', profileId, owner, action),
   pluginNetFetch: (pluginId: string, url: string, opts: any) =>
     ipcRenderer.invoke('plugin-net-fetch', pluginId, url, opts),
+  // Local grid combat (Track Combat). One active encounter per chat.
+  combatStart: (profileId: string, chatId: string, setup: unknown) =>
+    ipcRenderer.invoke('combat-start', profileId, chatId, setup),
+  combatGet: (profileId: string, chatId: string) =>
+    ipcRenderer.invoke('combat-get', profileId, chatId),
+  combatStartMock: (profileId: string, chatId: string) =>
+    ipcRenderer.invoke('combat-start-mock', profileId, chatId),
+  combatAction: (profileId: string, chatId: string, action: unknown) =>
+    ipcRenderer.invoke('combat-action', profileId, chatId, action),
+  combatEndTurn: (profileId: string, chatId: string) =>
+    ipcRenderer.invoke('combat-end-turn', profileId, chatId),
+  combatEnemyTurn: (profileId: string, chatId: string) =>
+    ipcRenderer.invoke('combat-enemy-turn', profileId, chatId),
+  combatStartFromCard: (profileId: string, chatId: string, cue: unknown) =>
+    ipcRenderer.invoke('combat-start-from-card', profileId, chatId, cue),
+  combatAdjudicate: (profileId: string, chatId: string, prose: string) =>
+    ipcRenderer.invoke('combat-adjudicate', profileId, chatId, prose),
+  combatNarrate: (profileId: string, chatId: string) =>
+    ipcRenderer.invoke('combat-narrate', profileId, chatId),
+  combatNarrationPrompt: (profileId: string, chatId: string) =>
+    ipcRenderer.invoke('combat-narration-prompt', profileId, chatId),
+  combatEnd: (profileId: string, chatId: string) =>
+    ipcRenderer.invoke('combat-end', profileId, chatId),
+  combatClear: (profileId: string, chatId: string) =>
+    ipcRenderer.invoke('combat-clear', profileId, chatId),
   // Subscribe to incremental generation text. Returns an unsubscribe function.
   onGenerationDelta: (cb: (payload: { chatId: string; delta: string }) => void) => {
     const listener = (_e: IpcRendererEvent, payload: { chatId: string; delta: string }): void =>

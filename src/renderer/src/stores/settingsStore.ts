@@ -27,6 +27,8 @@ export interface Settings {
   }
   generation: {
     max_context_tokens: number
+    merge_consecutive_roles?: boolean
+    system_as_user?: boolean
   }
   lorebook: {
     scan_depth: number
@@ -45,8 +47,10 @@ export interface Settings {
     renderMode: 'inline' | 'isolated'
     sizing: 'fit' | 'fill'
   }
-  /** Prompt-cache optimization dial (mirrors main `Settings['cache']`). level 0 = baseline. */
+  /** Prompt-cache optimization dial (mirrors main `Settings['cache']`). STASHED — greyed out, pinned to
+   *  `baseline` (no optimization, not even provider caching). See docs/prompt-cache-optimization-design.md. */
   cache: {
+    mode: 'baseline' | 'provider' | 'frozen'
     level: number
     l1_mode: 'partition' | 'diff'
     ttl: '5m' | '1h'
@@ -55,6 +59,13 @@ export interface Settings {
   }
   agent: {
     mode: 'off' | 'manual' | 'agentic'
+  }
+  /** Combat (Track Combat): how the AI's end-of-combat narration lands in the chat, and an
+   *  optional author/user prompt that steers it. A card's `combat` bundle can override both. */
+  combat?: {
+    narrationMode?: 'append' | 'floor'
+    narrationPrompt?: string
+    improvisePrompt?: string
   }
   ui: {
     theme: string
@@ -95,7 +106,11 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
     const current = get().settings
     if (!current) return
     const merged = { ...current, ...newSettings }
-    await window.api.saveSettings(profileId, merged)
+    // Update state synchronously (optimistic) BEFORE the async persist. Controlled inputs read
+    // their `value` from this state; if it only updated after the IPC round-trip, the input would
+    // lag a tick behind each keystroke. That lag desyncs IME composition (e.g. Chinese pinyin),
+    // making the input concatenate every intermediate composition string into gibberish.
     set({ settings: merged })
+    await window.api.saveSettings(profileId, merged)
   }
 }))

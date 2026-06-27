@@ -74,7 +74,10 @@ export const Panel: React.FC<{ node: PanelNode; mode: string }> = ({ node, mode 
       {!node.hidden &&
         (regexPanel ? (
           <div className="ws-panel-body ws-fill">
-            <WcvPanel slotId={`${VIEW_PREFIX}${regexPanel.file}:${node.key}`} url={regexPanel.url} />
+            <WcvPanel
+              slotId={`${VIEW_PREFIX}${regexPanel.file}:${node.key}`}
+              url={regexPanel.url}
+            />
           </div>
         ) : entry ? (
           <div className={`ws-panel-body ${entry.fill ? 'ws-fill' : 'ws-scroll'}`}>

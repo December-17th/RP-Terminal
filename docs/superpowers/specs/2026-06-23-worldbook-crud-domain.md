@@ -98,6 +98,7 @@ rule); the rest are async.
 ## 7. Files
 
 **Changed**
+
 - `src/shared/thRuntime/types.ts` — the §4 `Host` additions.
 - `src/shared/thRuntime/index.ts` — id↔name map + the §5 helpers.
 - `src/renderer/src/cardBridge/host.ts` — inline adapter (window.api + stores).
@@ -106,6 +107,7 @@ rule); the rest are async.
 - `test/thRuntime.test.ts` — mock-Host additions + helper behavior (name→id, create, bind).
 
 **Reused / unchanged**
+
 - `lorebookService` (list/create/delete/get/save), `chatService.setChatLorebookIds`, `window.api` lorebook
   methods, the existing `getWorldbook`/`saveWorldbook`/`worldbookNames` own-book path.
 
