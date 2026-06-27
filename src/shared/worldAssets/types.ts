@@ -23,3 +23,13 @@ export interface AssetTypeEntry {
 export type AssetNameEntry = Partial<Record<AssetType, AssetTypeEntry>>
 export type AssetCategoryIndex = Record<string, AssetNameEntry> // name -> entry
 export type AssetIndex = Record<string, AssetCategoryIndex> // category -> name -> ...
+
+/** Which category each asset type belongs to (头像/立绘 → character, 背景/全景 → location). */
+export const TYPES_BY_CATEGORY: Record<AssetCategory, AssetType[]> = {
+  character: ['头像', '立绘'],
+  location: ['背景', '全景']
+}
+
+export function categoryForType(type: AssetType): AssetCategory {
+  return TYPES_BY_CATEGORY.location.includes(type) ? 'location' : 'character'
+}
