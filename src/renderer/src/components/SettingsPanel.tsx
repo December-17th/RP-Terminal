@@ -2,6 +2,7 @@ import React, { useState } from 'react'
 import { useProfileStore } from '../stores/profileStore'
 import { useSettingsStore, Settings } from '../stores/settingsStore'
 import { PluginsPanel } from './PluginsPanel'
+import { StorageSettings } from './StorageSettings'
 import { THEME_LIST } from '../theme'
 import { LOCALE_LIST, useT } from '../i18n'
 
@@ -424,6 +425,8 @@ export const SettingsPanel: React.FC<{ profileId: string }> = ({ profileId }) =>
             </div>
           </details>
         )}
+
+        <StorageSettings />
 
         <details className="settings-section" style={{ marginTop: 20 }}>
           <summary>{t('prefs.plugins')}</summary>

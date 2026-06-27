@@ -116,6 +116,15 @@ const zh: Record<string, string> = {
   'prefs.currentModel': '当前模型',
   'prefs.plugins': '插件',
 
+  'settings.storage.title': '存储位置',
+  'settings.storage.current': '当前数据文件夹',
+  'settings.storage.change': '更改…',
+  'settings.storage.open': '打开',
+  'settings.storage.reset': '恢复默认',
+  'settings.storage.restartHint': '需要重启应用以应用新的位置。',
+  'settings.storage.restartNow': '立即重启',
+  'settings.storage.pending': '重启后将使用：{{path}}',
+
   'persona.heading': '用户人设',
   'persona.name': '名称',
   'persona.namePh': '用户',

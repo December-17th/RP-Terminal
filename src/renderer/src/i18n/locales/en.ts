@@ -118,6 +118,15 @@ const en: Record<string, string> = {
   'prefs.currentModel': 'current model',
   'prefs.plugins': 'Plugins',
 
+  'settings.storage.title': 'Storage location',
+  'settings.storage.current': 'Current data folder',
+  'settings.storage.change': 'Change…',
+  'settings.storage.open': 'Open',
+  'settings.storage.reset': 'Reset to default',
+  'settings.storage.restartHint': 'Restart required to apply the new location.',
+  'settings.storage.restartNow': 'Restart now',
+  'settings.storage.pending': 'Will use after restart: {{path}}',
+
   'persona.heading': 'Persona',
   'persona.name': 'Name',
   'persona.namePh': 'User',
