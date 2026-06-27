@@ -3,6 +3,23 @@ import path from 'path'
 import { app } from 'electron'
 import { log } from './logService'
 
+export const DATA_DIR_NAME = 'rp-terminal-data'
+
+/** Resolve the data-root base. Precedence: explicit override → saved pointer → platform default.
+ *  override/pointer are used verbatim (the chosen folder IS the data dir); the default appends
+ *  DATA_DIR_NAME. Pure — the electron/env reads live in getAppDir. */
+export function resolveDataBase(opts: {
+  override?: string
+  pointer?: string
+  isDev: boolean
+  cwd: string
+  exeDir: string
+}): { dir: string; appendName: boolean } {
+  if (opts.override) return { dir: opts.override, appendName: false }
+  if (opts.pointer) return { dir: opts.pointer, appendName: false }
+  return { dir: opts.isDev ? opts.cwd : opts.exeDir, appendName: true }
+}
+
 // Get the base data directory for the app
 export const getAppDir = (): string => {
   const userDataPath = app.getPath('userData')
