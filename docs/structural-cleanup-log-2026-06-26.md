@@ -14,8 +14,8 @@ _Traceability log for executing [maintainability-plan-2026-06-26.md](maintainabi
 | --- | --- | --- | --- | --- | --- |
 | 0 | Make module-boundary gate real | WS-10 | (pre) | ✅ done | `82d9c48` |
 | 0a | Error-handling policy doc | WS-9 | LOW | ✅ done | `de140ff` |
-| 0b | Delete dead DB schema | WS-6 | LOW | ✅ done | (this commit) |
-| 0c | Document path dialects + test | WS-8 | LOW | ⬜ todo | — |
+| 0b | Delete dead DB schema | WS-6 | LOW | ✅ done | `663d337` |
+| 0c | Document path dialects + test | WS-8 | LOW | ✅ done | (this commit) |
 | 0d | One broadcast helper | WS-7 | MED | ⬜ todo | — |
 | 1 | Unify EJS context (keystone) | WS-1 | HIGH | ⬜ todo | — |
 | 2 | lodash/faker → tested module | WS-4 | MED | ⬜ todo | — |
@@ -105,3 +105,17 @@ behavior change.)
 
 **Verification.** typecheck ✅ · check:deps ✅ (236 modules) · lint ✅ 0 errors · test ✅ 689. No test
 referenced the dropped schema.
+
+### Stage 4 — Phase 0c: document path dialects + pin (WS-8) ✅
+
+**Why.** Two path dialects (bracket-aware `objectPath` vs split-on-dot in macros/lodash/thRuntime/wcvPreload/
+stscript) coexist by deliberate 2026-06-22 decision but were undocumented as a contract — a future "helpful"
+merge would silently change semantics (review WS-8).
+
+**Changes.**
+- `src/shared/objectPath.ts` — expanded the header into an explicit dialect table (which surfaces are
+  bracket-aware vs split-on-dot, and why) + a don't-merge warning.
+- `test/pathDialects.test.ts` (new) — pins both dialects on `a[0].b`: objectPath indexes the array;
+  macros `{{getvar}}` treats `a[0]` as a literal key (and does NOT reach a real array). 4 tests.
+
+**Verification.** typecheck ✅ · check:deps ✅ · lint ✅ 0 errors · test ✅ **693** (+4).
