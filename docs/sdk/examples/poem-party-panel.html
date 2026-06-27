@@ -1,0 +1,841 @@
+<!--
+  命定之诗 — party-avatar panel (BG3-style), standalone panel-area regex SOURCE.
+  Renders a dark, gilded vertical strip of party members (主角 + 在场 companions).
+  Click any portrait → detail overlay (立绘 + identity + 好感度/性格 + 状态效果 + vital shell).
+  Data source: getVariables().stat_data via the TavernHelper page API.
+  Portraits: window.assetUrl(name, type, mood?) → rptasset:// URL or null.
+  Vital bars are a STATIC SHELL — no data binding (companions have no 生命/法力/体力 in MVU).
+  Re-renders on variable-change broadcast, mirrors poem-combat-sheet.html conventions.
+  VERIFY rendering + data-read in-app (manual-verify, PA6).
+-->
+<div id="poem-pp-root" class="poem-pp">
+  <div class="poem-pp-strip" id="poem-pp-strip">
+    <div class="poem-pp-loading">载入…</div>
+  </div>
+</div>
+
+<!-- Detail overlay (shared, populated per-member) -->
+<div id="poem-pp-overlay" class="poem-pp-overlay poem-pp-hidden" role="dialog" aria-modal="true">
+  <div class="poem-pp-overlay-backdrop" id="poem-pp-backdrop"></div>
+  <div class="poem-pp-overlay-sheet" id="poem-pp-sheet">
+    <button class="poem-pp-close" id="poem-pp-close" aria-label="关闭">✕</button>
+    <div class="poem-pp-overlay-body" id="poem-pp-overlay-body"></div>
+  </div>
+</div>
+
+<style>
+  /* ── tokens ──────────────────────────────────────────────────── */
+  .poem-pp {
+    --bg:        var(--rpt-bg-deep,      #18140f);
+    --card:      var(--rpt-bg-card,      #251c14);
+    --border:    var(--rpt-border,       #5a412a);
+    --window:    var(--rpt-bg-window,    #130f0a);
+    --gold:      var(--rpt-accent-gold,  #c9a84c);
+    --gold-hi:   #e8cc6e;
+    --gold-lo:   #7a5e2a;
+    --t1:        var(--rpt-text-primary, #f4e3c8);
+    --t2:        var(--rpt-text-secondary,#c8a87a);
+    --t3:        var(--rpt-text-muted,   #8a6e52);
+    --hp:        #b73a2b;
+    --mp:        #2d5aa0;
+    --sp:        #3b7f52;
+    --hero-ring: #e8cc6e;
+    --comp-ring: #8a9fc8;
+    --overlay-bg:#0d0a07ee;
+    font-family: 'Noto Sans SC', 'Noto Serif SC', serif;
+    display: block;
+    position: relative;
+  }
+
+  /* ── strip ───────────────────────────────────────────────────── */
+  .poem-pp-strip {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 6px;
+    background: linear-gradient(180deg, #1e1710 0%, #130f0a 100%);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    width: 76px;
+    box-shadow:
+      inset 0 1px 0 rgba(201,168,76,.18),
+      inset 0 -1px 0 rgba(0,0,0,.5),
+      0 2px 12px rgba(0,0,0,.6);
+    position: relative;
+  }
+  .poem-pp-strip::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 2px;
+    background: linear-gradient(90deg, transparent, var(--gold), transparent);
+    border-radius: 10px 10px 0 0;
+    opacity: .7;
+  }
+  .poem-pp-loading {
+    color: var(--t3);
+    font-size: 11px;
+    padding: 8px 0;
+  }
+
+  /* ── member card in strip ────────────────────────────────────── */
+  .poem-pp-member {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    cursor: pointer;
+    user-select: none;
+    -webkit-user-select: none;
+  }
+  .poem-pp-member:hover .poem-pp-frame {
+    box-shadow:
+      0 0 0 1px var(--gold-hi),
+      0 0 8px rgba(201,168,76,.45),
+      inset 0 0 6px rgba(0,0,0,.6);
+  }
+
+  /* gilded portrait frame */
+  .poem-pp-frame {
+    position: relative;
+    width: 58px;
+    height: 58px;
+    border-radius: 6px;
+    box-shadow:
+      0 0 0 2px var(--border),
+      0 0 0 3px var(--gold-lo),
+      0 0 0 4px var(--border),
+      inset 0 0 8px rgba(0,0,0,.7);
+    overflow: hidden;
+    flex-shrink: 0;
+    transition: box-shadow .18s ease;
+  }
+  .poem-pp-frame.hero-frame {
+    box-shadow:
+      0 0 0 2px var(--border),
+      0 0 0 3px var(--hero-ring),
+      0 0 0 4px var(--border),
+      0 0 8px rgba(232,204,110,.3),
+      inset 0 0 8px rgba(0,0,0,.7);
+  }
+  /* engraved corner ornaments */
+  .poem-pp-frame::before,
+  .poem-pp-frame::after {
+    content: '';
+    position: absolute;
+    width: 10px; height: 10px;
+    border: 2px solid;
+    border-color: var(--gold-lo);
+    z-index: 3;
+    pointer-events: none;
+  }
+  .poem-pp-frame::before {
+    top: 2px; left: 2px;
+    border-right: none; border-bottom: none;
+  }
+  .poem-pp-frame::after {
+    bottom: 2px; right: 2px;
+    border-left: none; border-top: none;
+  }
+
+  .poem-pp-portrait {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+    position: relative;
+    z-index: 1;
+  }
+  /* mood tint overlay */
+  .poem-pp-mood-tint {
+    position: absolute;
+    inset: 0;
+    z-index: 2;
+    pointer-events: none;
+    border-radius: inherit;
+  }
+
+  /* placeholder (initial/emblem) */
+  .poem-pp-placeholder {
+    width: 100%;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: radial-gradient(ellipse at 50% 30%, #2e2318 0%, #130f0a 100%);
+    font-size: 22px;
+    color: var(--gold);
+    font-weight: 700;
+    letter-spacing: 0;
+    text-shadow: 0 1px 6px rgba(0,0,0,.8), 0 0 12px rgba(201,168,76,.4);
+    position: relative;
+    z-index: 1;
+  }
+  .poem-pp-placeholder::after {
+    content: '';
+    position: absolute;
+    inset: 6px;
+    border: 1px solid rgba(201,168,76,.2);
+    border-radius: 3px;
+    pointer-events: none;
+  }
+
+  /* name label */
+  .poem-pp-name {
+    font-size: 10px;
+    color: var(--t2);
+    text-align: center;
+    max-width: 64px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    letter-spacing: .03em;
+    text-shadow: 0 1px 2px #000;
+  }
+  .poem-pp-member.is-hero .poem-pp-name {
+    color: var(--gold);
+  }
+
+  /* vital bars shell (strip) — static, no values */
+  .poem-pp-vitals-mini {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    width: 58px;
+  }
+  .poem-pp-vbar-mini {
+    height: 4px;
+    border-radius: 2px;
+    background: var(--window);
+    border: 1px solid rgba(90,65,42,.5);
+    overflow: hidden;
+    position: relative;
+  }
+  .poem-pp-vbar-mini::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(90deg, rgba(255,255,255,.06) 0%, transparent 100%);
+  }
+  .poem-pp-vbar-mini.hp-bar { border-color: rgba(183,58,43,.35); }
+  .poem-pp-vbar-mini.mp-bar { border-color: rgba(45,90,160,.35); }
+  .poem-pp-vbar-mini.sp-bar { border-color: rgba(59,127,82,.35); }
+
+  /* ── overlay ─────────────────────────────────────────────────── */
+  .poem-pp-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 9999;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .poem-pp-overlay.poem-pp-hidden {
+    display: none;
+  }
+  .poem-pp-overlay-backdrop {
+    position: absolute;
+    inset: 0;
+    background: var(--overlay-bg);
+    backdrop-filter: blur(3px);
+  }
+  .poem-pp-overlay-sheet {
+    position: relative;
+    z-index: 1;
+    width: min(540px, 92vw);
+    max-height: 88vh;
+    overflow-y: auto;
+    background: linear-gradient(160deg, #1f1810 0%, #130f0a 60%, #0d0a07 100%);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    box-shadow:
+      0 0 0 1px var(--gold-lo),
+      0 0 40px rgba(0,0,0,.85),
+      inset 0 1px 0 rgba(201,168,76,.15),
+      inset 0 -1px 0 rgba(0,0,0,.4);
+    padding: 0 0 20px;
+    /* decorative top border */
+    background-image:
+      linear-gradient(160deg, #1f1810 0%, #130f0a 60%, #0d0a07 100%);
+  }
+  .poem-pp-overlay-sheet::before {
+    content: '';
+    display: block;
+    height: 2px;
+    background: linear-gradient(90deg, transparent, var(--gold), transparent);
+    border-radius: 12px 12px 0 0;
+    opacity: .8;
+  }
+  .poem-pp-close {
+    position: absolute;
+    top: 10px; right: 12px;
+    background: none;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    color: var(--t3);
+    font-size: 13px;
+    width: 24px; height: 24px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 2;
+    transition: color .15s, border-color .15s;
+    padding: 0;
+    line-height: 1;
+  }
+  .poem-pp-close:hover {
+    color: var(--t1);
+    border-color: var(--gold-lo);
+  }
+
+  /* overlay body layout */
+  .poem-pp-overlay-body {
+    padding: 16px 20px 0;
+  }
+
+  /* 立绘 section */
+  .poem-pp-ow-portrait-wrap {
+    display: flex;
+    gap: 18px;
+    align-items: flex-start;
+    margin-bottom: 14px;
+  }
+  .poem-pp-ow-portrait-frame {
+    flex-shrink: 0;
+    width: 120px;
+    height: 180px;
+    border-radius: 8px;
+    position: relative;
+    box-shadow:
+      0 0 0 2px var(--border),
+      0 0 0 3px var(--gold-lo),
+      0 0 0 4px var(--border),
+      0 4px 24px rgba(0,0,0,.7),
+      inset 0 0 12px rgba(0,0,0,.6);
+    overflow: hidden;
+    background: #130f0a;
+  }
+  .poem-pp-ow-portrait-frame::before,
+  .poem-pp-ow-portrait-frame::after {
+    content: '';
+    position: absolute;
+    width: 14px; height: 14px;
+    border: 2px solid var(--gold-lo);
+    z-index: 3;
+    pointer-events: none;
+  }
+  .poem-pp-ow-portrait-frame::before {
+    top: 3px; left: 3px;
+    border-right: none; border-bottom: none;
+  }
+  .poem-pp-ow-portrait-frame::after {
+    bottom: 3px; right: 3px;
+    border-left: none; border-top: none;
+  }
+  .poem-pp-ow-portrait {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+    position: relative;
+    z-index: 1;
+  }
+  .poem-pp-ow-placeholder {
+    width: 100%;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 48px;
+    color: var(--gold);
+    background: radial-gradient(ellipse at 50% 30%, #2e2318 0%, #130f0a 100%);
+    text-shadow: 0 0 20px rgba(201,168,76,.4);
+    position: relative;
+    z-index: 1;
+  }
+
+  /* right-side identity */
+  .poem-pp-ow-info {
+    flex: 1;
+    min-width: 0;
+    padding-top: 4px;
+  }
+  .poem-pp-ow-name {
+    font-size: 18px;
+    font-weight: 700;
+    color: var(--gold);
+    letter-spacing: .05em;
+    margin-bottom: 4px;
+    text-shadow: 0 1px 6px rgba(0,0,0,.6);
+  }
+  .poem-pp-ow-name.hero-name {
+    color: var(--gold-hi);
+  }
+  .poem-pp-ow-identity {
+    font-size: 12px;
+    color: var(--t2);
+    margin-bottom: 10px;
+    line-height: 1.6;
+  }
+  .poem-pp-ow-identity span {
+    display: inline-block;
+    margin-right: 6px;
+  }
+  .poem-pp-ow-identity .dot {
+    color: var(--t3);
+    margin: 0 2px;
+  }
+
+  /* 好感度 / 性格 */
+  .poem-pp-ow-affinity {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-bottom: 10px;
+  }
+  .poem-pp-ow-pill {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 3px 8px;
+    font-size: 11px;
+    color: var(--t2);
+    line-height: 1.4;
+  }
+  .poem-pp-ow-pill b {
+    color: var(--t1);
+  }
+  .poem-pp-ow-pill.affinity-val {
+    border-color: var(--gold-lo);
+  }
+
+  /* vital bars shell (overlay) */
+  .poem-pp-ow-vitals {
+    margin-bottom: 12px;
+  }
+  .poem-pp-ow-sect {
+    font-size: 11px;
+    color: var(--gold);
+    letter-spacing: .05em;
+    margin-bottom: 5px;
+    border-bottom: 1px solid var(--border);
+    padding-bottom: 2px;
+    opacity: .8;
+  }
+  .poem-pp-vbar-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-bottom: 4px;
+  }
+  .poem-pp-vbar-label {
+    font-size: 10px;
+    color: var(--t3);
+    width: 16px;
+    text-align: right;
+    flex-shrink: 0;
+  }
+  .poem-pp-vbar {
+    flex: 1;
+    height: 10px;
+    border-radius: 5px;
+    background: var(--window);
+    border: 1px solid rgba(90,65,42,.5);
+    position: relative;
+    overflow: hidden;
+  }
+  .poem-pp-vbar::before {
+    /* inset sheen */
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 4px;
+    background: linear-gradient(180deg, rgba(255,255,255,.1) 0%, transparent 100%);
+    z-index: 1;
+  }
+  .poem-pp-vbar.hp-bar { border-color: rgba(183,58,43,.45); }
+  .poem-pp-vbar.mp-bar { border-color: rgba(45,90,160,.45); }
+  .poem-pp-vbar.sp-bar { border-color: rgba(59,127,82,.45); }
+  .poem-pp-vbar-dash {
+    font-size: 10px;
+    color: var(--t3);
+    flex-shrink: 0;
+    font-style: italic;
+  }
+
+  /* 状态效果 */
+  .poem-pp-ow-states {
+    margin-bottom: 6px;
+  }
+  .poem-pp-state-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 5px;
+  }
+  .poem-pp-state-chip {
+    background: var(--window);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 3px 7px;
+    font-size: 11px;
+    color: var(--t2);
+    line-height: 1.4;
+  }
+  .poem-pp-state-chip .st-name {
+    color: var(--t1);
+    font-weight: 600;
+  }
+  .poem-pp-state-chip .st-meta {
+    color: var(--t3);
+    margin-left: 3px;
+  }
+  .poem-pp-empty {
+    color: var(--t3);
+    font-size: 11px;
+    font-style: italic;
+  }
+
+  /* divider */
+  .poem-pp-divider {
+    height: 1px;
+    background: linear-gradient(90deg, transparent, var(--border), transparent);
+    margin: 12px 0;
+    opacity: .6;
+  }
+</style>
+
+<script>
+  ;(function () {
+    /* ── helpers ───────────────────────────────────────────────── */
+    function esc(s) {
+      return String(s == null ? '' : s).replace(/[&<>"]/g, function (c) {
+        return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]
+      })
+    }
+    function initial(name) {
+      var s = String(name || '?')
+      return s.charAt(0)
+    }
+    function moodTint(mood) {
+      var MAP = {
+        愤怒: 'rgba(180,40,30,.22)',
+        悲伤: 'rgba(50,80,180,.22)',
+        恐惧: 'rgba(80,0,120,.2)',
+        喜悦: 'rgba(220,180,40,.15)',
+        平静: 'rgba(40,120,80,.12)',
+      }
+      return MAP[mood] || null
+    }
+
+    /* ── data access (mirrors poem-combat-sheet.html gv()) ──────── */
+    function gv() {
+      try {
+        var v = typeof getVariables === 'function'
+          ? (getVariables({ type: 'message' }) || getVariables() || {})
+          : {}
+        /* getVariables may return a Promise; handle both sync and async */
+        if (v && typeof v.then === 'function') {
+          return v.then(function (r) { return (r || {}).stat_data || {} })
+        }
+        return Promise.resolve((v || {}).stat_data || {})
+      } catch (e) {
+        try {
+          var v2 = typeof getVariables === 'function' ? (getVariables() || {}) : {}
+          if (v2 && typeof v2.then === 'function') {
+            return v2.then(function (r) { return (r || {}).stat_data || {} })
+          }
+          return Promise.resolve((v2 || {}).stat_data || {})
+        } catch (_) {
+          return Promise.resolve({})
+        }
+      }
+    }
+
+    /* resolve portrait via window.assetUrl (TavernHelper page API) */
+    function resolveAsset(name, type, mood) {
+      try {
+        if (typeof window.assetUrl === 'function') {
+          var result = window.assetUrl(name, type, mood)
+          if (result && typeof result.then === 'function') return result
+          return Promise.resolve(result || null)
+        }
+      } catch (_) {}
+      return Promise.resolve(null)
+    }
+
+    /* ── DOM refs ───────────────────────────────────────────────── */
+    var stripEl    = document.getElementById('poem-pp-strip')
+    var overlayEl  = document.getElementById('poem-pp-overlay')
+    var backdropEl = document.getElementById('poem-pp-backdrop')
+    var sheetEl    = document.getElementById('poem-pp-sheet')
+    var closeBtn   = document.getElementById('poem-pp-close')
+    var bodyEl     = document.getElementById('poem-pp-overlay-body')
+    if (!stripEl || !overlayEl) return
+
+    /* ── overlay helpers ────────────────────────────────────────── */
+    function openOverlay() { overlayEl.classList.remove('poem-pp-hidden') }
+    function closeOverlay() { overlayEl.classList.add('poem-pp-hidden') }
+
+    closeBtn.addEventListener('click', closeOverlay)
+    backdropEl.addEventListener('click', closeOverlay)
+    document.addEventListener('keydown', function (e) {
+      if (e.key === 'Escape') closeOverlay()
+    })
+
+    /* ── vital bar shell (overlay) ──────────────────────────────── */
+    function vitalShell() {
+      return (
+        '<div class="poem-pp-ow-vitals">' +
+        '<div class="poem-pp-ow-sect">生命 · 法力 · 体力</div>' +
+        vbar('HP', 'hp-bar') +
+        vbar('MP', 'mp-bar') +
+        vbar('SP', 'sp-bar') +
+        '</div>'
+      )
+    }
+    function vbar(label, cls) {
+      return (
+        '<div class="poem-pp-vbar-row">' +
+        '<span class="poem-pp-vbar-label">' + label + '</span>' +
+        '<div class="poem-pp-vbar ' + cls + '"></div>' +
+        '<span class="poem-pp-vbar-dash">—</span>' +
+        '</div>'
+      )
+    }
+
+    /* ── state effect chips ─────────────────────────────────────── */
+    function stateChips(states) {
+      var keys = Object.keys(states || {})
+      if (!keys.length) {
+        return '<div class="poem-pp-empty">无状态效果</div>'
+      }
+      return keys.map(function (k) {
+        var s = states[k] || {}
+        var meta = []
+        if (s['层数'] != null) meta.push('×' + esc(s['层数']))
+        if (s['剩余时间'] != null) meta.push(esc(s['剩余时间']))
+        return (
+          '<span class="poem-pp-state-chip">' +
+          '<span class="st-name">' + esc(k) + '</span>' +
+          (meta.length ? '<span class="st-meta">' + meta.join(' ') + '</span>' : '') +
+          '</span>'
+        )
+      }).join('')
+    }
+
+    /* ── overlay population ─────────────────────────────────────── */
+    function showDetail(member) {
+      var name  = member.name
+      var data  = member.data || {}
+      var isHero = member.isHero
+
+      /* identity line */
+      var job   = esc(data['职业'] || data['身份'] || '')
+      var lvl   = esc(data['等级'] != null ? '等级 ' + data['等级'] : '')
+      var tier  = esc(data['生命层级'] || '')
+      var identParts = [job, lvl, tier].filter(Boolean)
+
+      /* affinity / personality (companions only) */
+      var affPills = ''
+      if (!isHero) {
+        var aff = data['好感度']
+        var per = data['性格']
+        if (aff != null) {
+          affPills += '<span class="poem-pp-ow-pill affinity-val">好感度 <b>' + esc(aff) + '</b></span>'
+        }
+        if (per != null) {
+          affPills += '<span class="poem-pp-ow-pill">性格 <b>' + esc(per) + '</b></span>'
+        }
+      } else {
+        var heroClass = data['职业'] || data['身份'] || ''
+        if (heroClass) {
+          affPills += '<span class="poem-pp-ow-pill"><b>' + esc(heroClass) + '</b></span>'
+        }
+      }
+
+      /* 状态效果 */
+      var states = data['状态效果'] || {}
+
+      /* build inner HTML (立绘 loaded async below) */
+      var nameClass = isHero ? 'poem-pp-ow-name hero-name' : 'poem-pp-ow-name'
+      bodyEl.innerHTML = (
+        '<div class="poem-pp-ow-portrait-wrap">' +
+        '<div class="poem-pp-ow-portrait-frame" id="poem-pp-ow-pf">' +
+        '<div class="poem-pp-ow-placeholder" id="poem-pp-ow-ph">' + esc(initial(name)) + '</div>' +
+        '</div>' +
+        '<div class="poem-pp-ow-info">' +
+        '<div class="' + nameClass + '">' + esc(name) + '</div>' +
+        '<div class="poem-pp-ow-identity">' +
+        identParts.map(function (p, i) {
+          return (i > 0 ? '<span class="dot">·</span>' : '') + '<span>' + p + '</span>'
+        }).join('') +
+        '</div>' +
+        (affPills ? '<div class="poem-pp-ow-affinity">' + affPills + '</div>' : '') +
+        vitalShell() +
+        '</div>' +
+        '</div>' +
+        '<div class="poem-pp-divider"></div>' +
+        '<div class="poem-pp-ow-states">' +
+        '<div class="poem-pp-ow-sect">状态效果</div>' +
+        '<div class="poem-pp-state-row">' + stateChips(states) + '</div>' +
+        '</div>'
+      )
+
+      openOverlay()
+
+      /* async: load 立绘 */
+      var mood = data['当前情绪'] || data['心情'] || undefined
+      resolveAsset(name, '立绘', mood).then(function (url) {
+        var ph = document.getElementById('poem-pp-ow-ph')
+        var pf = document.getElementById('poem-pp-ow-pf')
+        if (!pf) return
+        if (url) {
+          var img = document.createElement('img')
+          img.className = 'poem-pp-ow-portrait'
+          img.alt = name
+          img.src = url
+          if (ph && ph.parentNode === pf) {
+            pf.replaceChild(img, ph)
+          } else {
+            pf.insertBefore(img, pf.firstChild)
+          }
+        }
+        /* if no URL, placeholder stays */
+      })
+    }
+
+    /* ── strip rendering ────────────────────────────────────────── */
+    function renderStrip(party) {
+      if (!party.length) {
+        stripEl.innerHTML = '<div class="poem-pp-loading">无队员</div>'
+        return
+      }
+
+      /* build member elements */
+      stripEl.innerHTML = ''
+
+      party.forEach(function (member) {
+        var name   = member.name
+        var isHero = member.isHero
+        var data   = member.data || {}
+        var mood   = data['当前情绪'] || data['心情'] || undefined
+
+        var memberEl = document.createElement('div')
+        memberEl.className = 'poem-pp-member' + (isHero ? ' is-hero' : '')
+        memberEl.title = name
+
+        /* frame */
+        var frameEl = document.createElement('div')
+        frameEl.className = 'poem-pp-frame' + (isHero ? ' hero-frame' : '')
+
+        /* placeholder (shown until portrait loads) */
+        var phEl = document.createElement('div')
+        phEl.className = 'poem-pp-placeholder'
+        phEl.textContent = initial(name)
+        frameEl.appendChild(phEl)
+
+        /* mood tint overlay */
+        var tintColor = moodTint(mood)
+        if (tintColor) {
+          var tintEl = document.createElement('div')
+          tintEl.className = 'poem-pp-mood-tint'
+          tintEl.style.background = tintColor
+          frameEl.appendChild(tintEl)
+        }
+
+        memberEl.appendChild(frameEl)
+
+        /* name */
+        var nameEl = document.createElement('div')
+        nameEl.className = 'poem-pp-name'
+        nameEl.textContent = name
+        memberEl.appendChild(nameEl)
+
+        /* vital bar shell (strip — 3 thin bars, no labels, no data) */
+        var vitalsEl = document.createElement('div')
+        vitalsEl.className = 'poem-pp-vitals-mini'
+        vitalsEl.innerHTML = (
+          '<div class="poem-pp-vbar-mini hp-bar"></div>' +
+          '<div class="poem-pp-vbar-mini mp-bar"></div>' +
+          '<div class="poem-pp-vbar-mini sp-bar"></div>'
+        )
+        memberEl.appendChild(vitalsEl)
+
+        /* click → overlay */
+        memberEl.addEventListener('click', function () { showDetail(member) })
+
+        stripEl.appendChild(memberEl)
+
+        /* async: load 头像 portrait */
+        resolveAsset(name, '头像', mood).then(function (url) {
+          if (url) {
+            var img = document.createElement('img')
+            img.className = 'poem-pp-portrait'
+            img.alt = name
+            img.src = url
+            /* insert before mood-tint (or at position 0 if no tint) */
+            if (phEl.parentNode === frameEl) {
+              frameEl.insertBefore(img, phEl)
+              /* keep placeholder until image loads, then hide it */
+              img.onload = function () {
+                phEl.style.display = 'none'
+              }
+              img.onerror = function () {
+                img.parentNode && img.parentNode.removeChild(img)
+              }
+            }
+          }
+          /* no URL → placeholder stays */
+        })
+      })
+    }
+
+    /* ── build party from stat_data ─────────────────────────────── */
+    function buildParty(SD) {
+      var hero = SD['主角'] || null
+      var rel  = SD['关系列表'] || {}
+      var party = []
+      if (hero) {
+        party.push({
+          name: hero['姓名'] || hero['名称'] || '主角',
+          data: hero,
+          isHero: true
+        })
+      }
+      Object.entries(rel).forEach(function (entry) {
+        var n = entry[0], c = entry[1]
+        if (c && c['在场'] === true) {
+          party.push({ name: n, data: c, isHero: false })
+        }
+      })
+      return party
+    }
+
+    /* ── initial render ─────────────────────────────────────────── */
+    function refresh() {
+      gv().then(function (SD) {
+        var party = buildParty(SD)
+        renderStrip(party)
+      })
+    }
+
+    refresh()
+
+    /* ── re-render on variable change broadcast ──────────────────
+       Mirror poem-combat-sheet.html: listen on the same event the
+       WCV shim fires when the host pushes updated stat_data.      */
+    var RERENDER_EVENTS = [
+      'variablesUpdated',   /* TavernHelper / WCV shim primary */
+      'rpt:varsChanged',    /* RPT custom broadcast             */
+      'message',            /* fallback: some hosts re-trigger  */
+    ]
+    RERENDER_EVENTS.forEach(function (evtName) {
+      try {
+        window.addEventListener(evtName, function () { refresh() })
+      } catch (_) {}
+    })
+
+  })()
+</script>
