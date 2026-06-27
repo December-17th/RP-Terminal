@@ -7,6 +7,7 @@ import * as logService from './services/logService'
 import * as migrationService from './services/migrationService'
 import * as templateService from './services/templateService'
 import * as wcvManager from './services/wcvManager'
+import * as worldAssetProtocol from './services/worldAssetProtocol'
 import { registerIpc } from './ipc'
 
 // Card UIs (WebContentsView) are served from this scheme instead of a data: URL: a data: URL is an
@@ -17,6 +18,10 @@ protocol.registerSchemesAsPrivileged([
   {
     scheme: wcvManager.CARD_SCHEME,
     privileges: { standard: true, secure: true, supportFetchAPI: true, allowServiceWorkers: true }
+  },
+  {
+    scheme: worldAssetProtocol.ASSET_SCHEME,
+    privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true }
   }
 ])
 
@@ -96,6 +101,7 @@ app.whenReady().then(() => {
 
   // Register all IPC handlers, grouped by domain (see src/main/ipc/).
   registerIpc(ipcMain)
+  worldAssetProtocol.registerAssetProtocol()
 
   // Sync the Windows window-control overlay (custom title bar) to the active theme's colors.
   ipcMain.handle('set-titlebar-overlay', (e, overlay: { color: string; symbolColor: string }) => {
