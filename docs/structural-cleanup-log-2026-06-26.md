@@ -10,18 +10,18 @@ _Traceability log for executing [maintainability-plan-2026-06-26.md](maintainabi
 
 ## Work schedule (status)
 
-| #   | Phase                          | ID    | Pr    | Status                                               | Commit                                           |
-| --- | ------------------------------ | ----- | ----- | ---------------------------------------------------- | ------------------------------------------------ |
-| 0   | Make module-boundary gate real | WS-10 | (pre) | ✅ done                                              | `82d9c48`                                        |
-| 0a  | Error-handling policy doc      | WS-9  | LOW   | ✅ done                                              | `de140ff`                                        |
-| 0b  | Delete dead DB schema          | WS-6  | LOW   | ✅ done                                              | `663d337`                                        |
-| 0c  | Document path dialects + test  | WS-8  | LOW   | ✅ done                                              | `1b4ada8`                                        |
-| 0d  | One broadcast helper           | WS-7  | MED   | ✅ done                                              | (this commit)                                    |
-| 1   | Unify EJS context (keystone)   | WS-1  | HIGH  | ✅ done                                              | 1a `396cd13` · 1b `8061410` · 1c `(this commit)` |
-| 2   | lodash/faker → tested module   | WS-4  | MED   | ✅ done (tests + module extract)                     | tests `705e745` · extract (this commit)          |
-| 3   | Decompose buildPrompt          | WS-5  | MED   | ✅ done (preset-loop left by design)                 | inc1 `318f74f` · inc2 `(this commit)`            |
-| 4   | Cache system — STASHED         | WS-2  | MED   | ✅ stashed + baseline default                        | gate `ebd67dc` · stash (this commit)             |
-| 5   | Write-back loop (date clock)   | WS-3  | HIGH  | 🟡 guard hardened (date loop); architectural fix deferred | spike `24be4ba` · guard (this commit)        |
+| #   | Phase                          | ID    | Pr    | Status                                                    | Commit                                           |
+| --- | ------------------------------ | ----- | ----- | --------------------------------------------------------- | ------------------------------------------------ |
+| 0   | Make module-boundary gate real | WS-10 | (pre) | ✅ done                                                   | `82d9c48`                                        |
+| 0a  | Error-handling policy doc      | WS-9  | LOW   | ✅ done                                                   | `de140ff`                                        |
+| 0b  | Delete dead DB schema          | WS-6  | LOW   | ✅ done                                                   | `663d337`                                        |
+| 0c  | Document path dialects + test  | WS-8  | LOW   | ✅ done                                                   | `1b4ada8`                                        |
+| 0d  | One broadcast helper           | WS-7  | MED   | ✅ done                                                   | (this commit)                                    |
+| 1   | Unify EJS context (keystone)   | WS-1  | HIGH  | ✅ done                                                   | 1a `396cd13` · 1b `8061410` · 1c `(this commit)` |
+| 2   | lodash/faker → tested module   | WS-4  | MED   | ✅ done (tests + module extract)                          | tests `705e745` · extract (this commit)          |
+| 3   | Decompose buildPrompt          | WS-5  | MED   | ✅ done (preset-loop left by design)                      | inc1 `318f74f` · inc2 `(this commit)`            |
+| 4   | Cache system — STASHED         | WS-2  | MED   | ✅ stashed + baseline default                             | gate `ebd67dc` · stash (this commit)             |
+| 5   | Write-back loop (date clock)   | WS-3  | HIGH  | 🟡 guard hardened (date loop); architectural fix deferred | spike `24be4ba` · guard (this commit)            |
 
 Status key: ⬜ todo · 🔄 in progress · ✅ done · ⏸ deferred (with reason).
 
@@ -417,6 +417,7 @@ to baseline.
 
 **Implemented — a three-way `cache.mode` (`baseline` | `provider` | `frozen`), greyed out + pinned/default
 `baseline`:**
+
 - `baseline` (default): omits Anthropic `cache_control` entirely → **no provider-side prompt caching**, a
   clean reference control. (OpenAI auto-prefix is transparent / not client-disableable — documented.)
 - `provider`: provider prefix caching as-is (the old level-0 behavior).
@@ -424,6 +425,7 @@ to baseline.
   this (unselectable) mode.
 
 **Changes.**
+
 - `types/models.ts` + `stores/settingsStore.ts` — add `cache.mode` (both copies of the type).
 - `settingsService.ts` — default `mode:'baseline'`; normalize coerces unknown/missing mode → `baseline` and
   derives `level` from `mode` (frozen → 1, else 0).
@@ -439,5 +441,6 @@ to baseline.
 settings characterization test deliberately (a legacy stored `level:1` with no `mode` → `baseline`/level 0).
 
 **Verification.** typecheck ✅ · check:deps ✅ · lint ✅ 0 errors · test ✅ **715** (+4: 3 `buildAnthropicCacheLayout`,
-+ settings cache-mode cases). **Note (cost):** baseline omits provider caching by default, so token cost
-rises vs the old provider-caching default — intentional (clean reference; the system is parked).
+
+- settings cache-mode cases). **Note (cost):** baseline omits provider caching by default, so token cost
+  rises vs the old provider-caching default — intentional (clean reference; the system is parked).

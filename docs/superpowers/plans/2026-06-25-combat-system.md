@@ -14,6 +14,7 @@
 > (typecheck/lint/build).**
 >
 > **Notes / design changes made while building:**
+>
 > - **P2 seam:** shipped as a single coarse `resolveAction` hook (whole-action override) rather than
 >   the granular `resolveAttack`/`applyDamage`/… hooks in §5/design §5; those names are reserved in the
 >   `HookName` union as a forward-compatible refinement.
@@ -28,12 +29,13 @@
 > **UI follow-up + deferrals (2026-06-25, owner-decided — see combat-system-design.md §15):** shipped
 > action economy (one move / attack / action per turn), LoS-gated abilities (`requiresLoS`), animation
 > (token slide, HP tween, floating numbers), a pop-out overlay, narration-to-chat (append / new floor)
-> + its steering prompt, and the freeform-action box (own prompt) with an AI-driven mid-fight exit
-> (`"end": true`). **Deferred by decision:** (a) **tactical depth** (cover, opportunity attacks,
-> reactions, flanking, extended conditions) is **script-authored** — delivered by world-bundled or
-> player-installed `combat.scripts` via the hook seam, not the native engine; (b) the **`ai` enemy
-> controller** (dormant scaffold) — when built it needs its **own player/world prompt**; (c) **keyboard
-> controls** (mouse-only for now).
+>
+> - its steering prompt, and the freeform-action box (own prompt) with an AI-driven mid-fight exit
+>   (`"end": true`). **Deferred by decision:** (a) **tactical depth** (cover, opportunity attacks,
+>   reactions, flanking, extended conditions) is **script-authored** — delivered by world-bundled or
+>   player-installed `combat.scripts` via the hook seam, not the native engine; (b) the **`ai` enemy
+>   controller** (dormant scaffold) — when built it needs its **own player/world prompt**; (c) **keyboard
+>   controls** (mouse-only for now).
 
 **Goal:** A player-played, turn-based, square-grid d20 combat system for RP Terminal. The player
 makes their party's moves; a native deterministic engine resolves every die (seeded); enemies are
@@ -94,7 +96,7 @@ Zustand, better-sqlite3.
    (same seed) stay consistent. Do **not** import sandboxRunner into `shared/`.
 3. **Storage: a new `combat_encounters` table, not `rpg_entities`.** `rpg_entities`
    ([db.ts:70](../../../src/main/services/db.ts)) is shaped per-entity (`id/name/data`), but the engine
-   is pure over the *whole* `CombatState` (grid + combatants + initiative + turn + log + seed). Store
+   is pure over the _whole_ `CombatState` (grid + combatants + initiative + turn + log + seed). Store
    the serialized `CombatState` as one JSON blob keyed by `chat_id`:
    `combat_encounters (chat_id TEXT PRIMARY KEY REFERENCES chats(id) ON DELETE CASCADE, data TEXT NOT NULL, updated_at TEXT)`
    added to `SCHEMA` (it's `CREATE TABLE IF NOT EXISTS`, so no migration needed). One active encounter
@@ -122,8 +124,8 @@ Zustand, better-sqlite3.
 - **`types.ts`** — `CombatState` (`seed`, `grid`, `combatants[]`, `initiative[]`, `turnIndex`, `round`,
   `log: CombatEvent[]`, `status: 'active'|'player'|'enemy'`), `Combatant` (`id`, `side: 'party'|'enemy'`,
   `name`, `pos: [x,y]`, `block: { hp, maxHp, ac, speed, mods: Record<Ability,number>, abilities: string[],
-  conditions[] }`), `Action` (`{ kind: 'move'|'ability'|'end'|'improvise', actor, target?, path?, abilityId?,
-  prose? }`), `AbilityDef` (range, `shape`, `toHit`, `save`, `damage`, `effects`), `CombatEvent`
+conditions[] }`), `Action` (`{ kind: 'move'|'ability'|'end'|'improvise', actor, target?, path?, abilityId?,
+prose? }`), `AbilityDef` (range, `shape`, `toHit`, `save`, `damage`, `effects`), `CombatEvent`
   (`{ text, kind, delta? }`), `GridSpec` (`w`, `h`, `cellFt`, `tiles: TileFlags[]`).
 - **`dice.ts`** — `makeRng(seed)` (mulberry32, shared per refinement #2); `rollD20(rng, {adv,dis})`;
   `rollExpr(rng, '2d6+3', mods)` (parse `NdM±K`, resolve ability tokens like `+STR`); crit/fumble flags.
@@ -140,13 +142,13 @@ Zustand, better-sqlite3.
 **Files (new):** `src/shared/combat/resolver.ts`, `engine.ts`, `hooks.ts`; tests.
 
 - **`hooks.ts`** — the hook contract + a `RunHook` type: `(name: HookName, input, seed) => Promise<{
-  result?: Partial<CombatState>|CombatEvent-shaped, events: CombatEvent[] } | null>` (null ⇒ no override,
+result?: Partial<CombatState>|CombatEvent-shaped, events: CombatEvent[] } | null>` (null ⇒ no override,
   use native). Hook names: `seedCombatant`, `onTurnStart`, `onTurnEnd`, `resolveAttack`, `applyDamage`,
   `enemyPolicy`, `checkVictory` (design §5).
 - **`resolver.ts`** — native implementations: `resolveAttack` (d20+mod vs AC, adv/dis, crit), `applyDamage`
   (typed, resist/vuln), `applyAbility` (range/AoE check → per-target attack or save), `tickConditions`.
 - **`engine.ts`** — `rollInitiative(state, rng)`; `applyAction(state, action, { rng, runHook }) =>
-  { state, events }` (validates legality, runs the native impl unless `runHook` returns an override,
+{ state, events }` (validates legality, runs the native impl unless `runHook` returns an override,
   appends to log, advances turn); `checkVictory`. **Async** because `runHook` may be (sandbox).
 - **Tests:** attack hit/miss/crit at fixed seeds; AoE save-for-half; movement legality; a stub `runHook`
   proving override precedence over native; victory detection. Card hooks NOT run here (that's P4) — the

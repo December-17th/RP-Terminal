@@ -68,6 +68,7 @@ update Y" mapping.
   repoint the references; don't add new links to it until it exists.
 
 ## Module boundaries — ENFORCED by `npm run check:deps` (dependency-cruiser)
+
 - `shared/thRuntime` is the ONLY module the card transports import from; transports
   (`cardBridge`, `wcvPreload`) never import each other.
 - `renderer` imports `main` ONLY through the typed IPC surface (`shared/ipc`), never main internals.
@@ -77,6 +78,7 @@ update Y" mapping.
   Do NOT add an eslint-disable or bypass the check.
 
 ## Verification
+
 - Before declaring any change done: `npm run typecheck && npm run check:deps && npm run test`.
 - Characterization tests pin current behavior on the cores: thRuntime/bridge parity,
   MVU parser, EJS engine, combat engine, converter declarative path. They assert "same as

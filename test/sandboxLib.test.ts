@@ -33,7 +33,7 @@ describe('sandbox lodash/faker subset (WS-4)', () => {
   it('collection helpers: map / filter / find / sumBy', () => {
     expect(out('<%= _.map([1,2,3], function(n){return n*2}).join(",") %>')).toBe('2,4,6')
     expect(out('<%= _.filter([1,2,3,4], function(n){return n%2===0}).join(",") %>')).toBe('2,4')
-    expect(out("<%= _.find([{id:1},{id:2}], function(x){return x.id===2}).id %>")).toBe('2')
+    expect(out('<%= _.find([{id:1},{id:2}], function(x){return x.id===2}).id %>')).toBe('2')
     expect(out('<%= _.sumBy([{n:2},{n:3}], "n") %>')).toBe('5')
   })
 

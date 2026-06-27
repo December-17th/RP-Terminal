@@ -82,7 +82,8 @@ const editCard = (card, log) => {
 
   const book = d.character_book || (d.character_book = { entries: [] })
   const entries = book.entries || (book.entries = [])
-  const find = (re) => entries.find((e) => re.test(e.comment || e.name || (e.keys && e.keys[0]) || ''))
+  const find = (re) =>
+    entries.find((e) => re.test(e.comment || e.name || (e.keys && e.keys[0]) || ''))
 
   const zhan = find(/^\[?战斗协议\]?$/)
   if (zhan && typeof zhan.content === 'string') {
@@ -131,11 +132,18 @@ while (off < buf.length) {
     const z = data.indexOf(0)
     const keyword = data.slice(0, z).toString('latin1')
     if (keyword === 'chara' || keyword === 'ccv3') {
-      const card = JSON.parse(Buffer.from(data.slice(z + 1).toString('latin1'), 'base64').toString('utf8'))
+      const card = JSON.parse(
+        Buffer.from(data.slice(z + 1).toString('latin1'), 'base64').toString('utf8')
+      )
       log.push('--- ' + keyword + ' ---')
       editCard(card, log)
       const nb64 = Buffer.from(JSON.stringify(card), 'utf8').toString('base64')
-      out.push(makeChunk('tEXt', Buffer.concat([Buffer.from(keyword + '\0', 'latin1'), Buffer.from(nb64, 'latin1')])))
+      out.push(
+        makeChunk(
+          'tEXt',
+          Buffer.concat([Buffer.from(keyword + '\0', 'latin1'), Buffer.from(nb64, 'latin1')])
+        )
+      )
       patched++
       off += total
       continue

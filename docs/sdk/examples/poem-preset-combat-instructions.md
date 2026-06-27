@@ -77,6 +77,7 @@ Each roster entry uses the card's own stat_data field names (so the engine parse
 ```
 
 ## Verifying
+
 Follow [combat-poem-manual-tests.md](../../combat-poem-manual-tests.md) §2–§3: prompt the scene to the
 brink of a fight → the AI emits the cue+roster and **offers the two modes**, without resolving →
-**either** click *Enter Combat* (engine runs it) **or** reply to continue (the AI runs `<战斗协议>`).
+**either** click _Enter Combat_ (engine runs it) **or** reply to continue (the AI runs `<战斗协议>`).

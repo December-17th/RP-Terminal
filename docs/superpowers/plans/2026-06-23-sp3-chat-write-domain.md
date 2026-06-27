@@ -48,11 +48,11 @@ green at each step; the WCV refactor is behavior-preserving.
 **Files:** Modify `src/shared/thRuntime/shapes.ts`; create/extend the shapes test.
 
 - [ ] **Step 1:** add `export function chatIndexMap(floors: FloorLike[]): Array<{ floorIdx: number; isUser: boolean }>`
-  — the inverse of `floorsToThMessages`: per floor, push `{floorIdx,isUser:true}` IF `user_message.content`
-  is non-empty, then always `{floorIdx,isUser:false}`. (Copy the semantics from `wcvIpc.ts`'s current
-  `chatIndexMap` exactly — it's the index space `getChatMessages`/`setChatMessages` share.)
+      — the inverse of `floorsToThMessages`: per floor, push `{floorIdx,isUser:true}` IF `user_message.content`
+      is non-empty, then always `{floorIdx,isUser:false}`. (Copy the semantics from `wcvIpc.ts`'s current
+      `chatIndexMap` exactly — it's the index space `getChatMessages`/`setChatMessages` share.)
 - [ ] **Step 2:** tests — floors with and without user content map to the right `{floorIdx,isUser}` order;
-  empty floors → `[]`; assert it aligns with `floorsToThMessages` ids (index i ↔ message i).
+      empty floors → `[]`; assert it aligns with `floorsToThMessages` ids (index i ↔ message i).
 
 **Verify:** `npm test` (new tests green), typecheck. No wiring yet — pure addition.
 
@@ -63,6 +63,7 @@ green at each step; the WCV refactor is behavior-preserving.
 **Files:** Create `src/main/services/chatWriteService.ts`, `test/chatWriteService.test.ts`.
 
 **Interfaces (produced):**
+
 ```ts
 setChatMessages(profileId, chatId, messages): number        // count of floors touched
 deleteChatMessages(profileId, chatId, ids): boolean
@@ -71,15 +72,15 @@ afterChatMutation(profileId, chatId): { variables: any } | null   // re-fold; re
 ```
 
 - [ ] **Step 1:** move the logic VERBATIM from `wcvIpc.ts` into the service, parameterized by
-  `(profileId, chatId)` instead of `ctx`: `setChatMessages` (map via `chatIndexMap`, edit content by role,
-  `floorService.saveFloor`, return touched count); `deleteChatMessages` (earliest targeted floor →
-  `chatService.truncateFloors`); `saveChat` (assistant→floors: `response.content` + `swipes` + `swipe_id`,
-  `saveFloor`); `afterChatMutation` (`generationService.reevaluateVariables` → return the rebuilt latest floor).
-  Import `chatIndexMap` from `shared/thRuntime/shapes`.
+      `(profileId, chatId)` instead of `ctx`: `setChatMessages` (map via `chatIndexMap`, edit content by role,
+      `floorService.saveFloor`, return touched count); `deleteChatMessages` (earliest targeted floor →
+      `chatService.truncateFloors`); `saveChat` (assistant→floors: `response.content` + `swipes` + `swipe_id`,
+      `saveFloor`); `afterChatMutation` (`generationService.reevaluateVariables` → return the rebuilt latest floor).
+      Import `chatIndexMap` from `shared/thRuntime/shapes`.
 - [ ] **Step 2:** tests against a **stubbed `floorService`/`chatService`/`generationService`** (vi.mock or
-  injected): `setChatMessages` edits the mapped floor's correct role, skips non-string/out-of-range ids,
-  counts touched; `deleteChatMessages` truncates from the earliest targeted floor (and false on no valid
-  ids); `saveChat` writes content+swipes+swipe_id to assistant floors in order, leaves user messages.
+      injected): `setChatMessages` edits the mapped floor's correct role, skips non-string/out-of-range ids,
+      counts touched; `deleteChatMessages` truncates from the earliest targeted floor (and false on no valid
+      ids); `saveChat` writes content+swipes+swipe_id to assistant floors in order, leaves user messages.
 
 **Verify:** `npm test`, typecheck. Not wired into IPC yet (no behavior change in the app).
 
@@ -90,12 +91,12 @@ afterChatMutation(profileId, chatId): { variables: any } | null   // re-fold; re
 **Files:** Modify `src/main/ipc/wcvIpc.ts`.
 
 - [ ] **Step 1:** rewrite `wcv-host-set-chat-messages`/`-delete-chat-messages`/`-save-chat` to: resolve
-  `ctx` from the sender, call `chatWriteService.*(ctx.profileId, ctx.chatId, …)`, then run the EXISTING
-  WCV-specific push (`pushHostVars`/`notifyVarsChanged`/`pushHostReload`) using `afterChatMutation`'s result.
-  Keep the same return values + logs.
+      `ctx` from the sender, call `chatWriteService.*(ctx.profileId, ctx.chatId, …)`, then run the EXISTING
+      WCV-specific push (`pushHostVars`/`notifyVarsChanged`/`pushHostReload`) using `afterChatMutation`'s result.
+      Keep the same return values + logs.
 - [ ] **Step 2:** delete the now-unused local `chatIndexMap` and the inline edit/truncate/save logic from
-  `wcvIpc.ts`. Keep `afterChatMutation`'s WCV push wrapper (or call the service's `afterChatMutation` then
-  push). `wcv-host-save-chat`'s re-fold + push stays equivalent.
+      `wcvIpc.ts`. Keep `afterChatMutation`'s WCV push wrapper (or call the service's `afterChatMutation` then
+      push). `wcv-host-save-chat`'s re-fold + push stays equivalent.
 
 **Verify:** `npm test` + `build` green; **WCV behavior unchanged** (same edits/pushes). Manual WCV smoke
 (card edit/delete; home greeting-swipe in Isolated) deferred to the end — no output should differ.
@@ -107,12 +108,12 @@ afterChatMutation(profileId, chatId): { variables: any } | null   // re-fold; re
 **Files:** Create `src/main/ipc/chatWriteIpc.ts`; register it in the main IPC index; modify `src/preload/index.ts`.
 
 - [ ] **Step 1:** `chatWriteIpc`: `ipcMain.handle('chat-set-messages', (_e, profileId, chatId, messages) => {
-  const n = chatWriteService.setChatMessages(profileId, chatId, messages); if (n) chatWriteService.afterChatMutation(profileId, chatId); return n > 0 })`,
-  and likewise `chat-delete-messages`, `chat-save` (each calls the service + `afterChatMutation` on success).
-  (No WCV-style push — the inline renderer reloads its own store in Task 5.)
+const n = chatWriteService.setChatMessages(profileId, chatId, messages); if (n) chatWriteService.afterChatMutation(profileId, chatId); return n > 0 })`,
+      and likewise `chat-delete-messages`, `chat-save` (each calls the service + `afterChatMutation` on success).
+      (No WCV-style push — the inline renderer reloads its own store in Task 5.)
 - [ ] **Step 2:** register `registerChatWriteIpc` in the IPC index (next to the other `register*Ipc`).
 - [ ] **Step 3:** `window.api`: `setChatMessages(profileId, chatId, messages)`,
-  `deleteChatMessages(profileId, chatId, ids)`, `saveChat(profileId, chatId, chat)` → the new channels.
+      `deleteChatMessages(profileId, chatId, ids)`, `saveChat(profileId, chatId, chat)` → the new channels.
 
 **Verify:** typecheck + build (preload + main). No renderer caller yet.
 
@@ -123,15 +124,15 @@ afterChatMutation(profileId, chatId): { variables: any } | null   // re-fold; re
 **Files:** Modify `src/renderer/src/cardBridge/host.ts`.
 
 - [ ] **Step 1:** `setChatMessages`/`deleteChatMessages`/`saveChat` → the new `window.api.*` with
-  `ctx.profileId, ctx.chatId`, returning its boolean; then refresh the renderer's floors via
-  `useChatStore.getState().setActiveChat(ctx.profileId, ctx.chatId)` (re-loads + re-folds) so the card +
-  native UI see the change. (Only refresh when the chat is the active one.)
+      `ctx.profileId, ctx.chatId`, returning its boolean; then refresh the renderer's floors via
+      `useChatStore.getState().setActiveChat(ctx.profileId, ctx.chatId)` (re-loads + re-folds) so the card +
+      native UI see the change. (Only refresh when the chat is the active one.)
 - [ ] **Step 2:** `reloadChat` → `await useChatStore.getState().setActiveChat(ctx.profileId, ctx.chatId)`;
-  return true.
+      return true.
 - [ ] **Step 3:** `setInput` → the composer store's set-input action. **Verify the store + action name
-  first** (the WCV path proves the effect via `wcv-host-set-input` → `wcvManager.pushHostInput` → composer);
-  import it like `host.ts` imports the other stores. If the composer store isn't a clean fit, keep a guarded
-  fallback but prefer the direct call.
+      first** (the WCV path proves the effect via `wcv-host-set-input` → `wcvManager.pushHostInput` → composer);
+      import it like `host.ts` imports the other stores. If the composer store isn't a clean fit, keep a guarded
+      fallback but prefer the direct call.
 - [ ] **Step 4:** remove the stub comments; confirm no other inline-host method regressed.
 
 **Verify:** typecheck + `npm test` + build green. **Manual (Electron, inline mode):** a card edits a message,
@@ -174,6 +175,7 @@ domain.
 parity. WCV behavior should be unchanged by the T3 refactor.
 
 **Findings / deferred:**
+
 - **get/set message-id divergence — RESOLVED (`076c52c`):** `floorsToThMessages` (getChatMessages) +
   `currentMessageId` now DERIVE from the compact `chatIndexMap`, the same space `setChatMessages`/
   `deleteChatMessages` + `SillyTavern.chat[]` use — so a `message_id` round-trips get→set to the correct

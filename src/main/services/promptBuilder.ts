@@ -605,8 +605,7 @@ const applyInjectionMarkers = (
         x != null
     )
     .sort((a, b) => b.at - a.at || b.order - a.order)
-  for (const inj of injections)
-    messages.splice(inj.at, 0, { role: inj.role, content: inj.content })
+  for (const inj of injections) messages.splice(inj.at, 0, { role: inj.role, content: inj.content })
 }
 
 /**

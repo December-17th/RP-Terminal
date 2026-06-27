@@ -12,15 +12,15 @@ done). Bracketed IDs (**WS-n**) point back to the review's findings._
 ## Guiding principles
 
 - **No behavior change unless explicitly intended.** Most steps are refactors, deletions, or doc edits. The
-  one *intended* behavior change is WS-3 (write-back loop); WS-1 deliberately *aligns* render/WCV behavior
+  one _intended_ behavior change is WS-3 (write-back loop); WS-1 deliberately _aligns_ render/WCV behavior
   to build-time semantics, which is a fix, not a silent change — call it out per step.
 - **Green at every step.** `npm run typecheck && npm run check:deps && npm run test` after each phase
   (the repo's verification gate). Commit per concern so any regression is bisectable.
 - **One module per change/PR** (CLAUDE.md). Extract behind an interface, keep characterization tests green
   at each step. No multi-file autonomous rewrites.
 - **SDK docs move with the code** (CLAUDE.md / `docs/sdk/README.md`). WS-1 and WS-4 touch the card-facing
-  surface → update `docs/sdk/component-inventory.md` + `docs/rpt-api.md` in the *same* change.
-- **Characterization tests pin behavior, not correctness.** If a step *should* change behavior (WS-3),
+  surface → update `docs/sdk/component-inventory.md` + `docs/rpt-api.md` in the _same_ change.
+- **Characterization tests pin behavior, not correctness.** If a step _should_ change behavior (WS-3),
   update the characterization test in the same commit, deliberately — never delete a failing one to go
   green.
 - **Clean-room + module boundaries hold** — `shared/*` must not import `main`/`renderer`; transports never
@@ -30,17 +30,17 @@ done). Bracketed IDs (**WS-n**) point back to the review's findings._
 
 ## At a glance
 
-| Phase | ID | Pr | Effort | Risk | Intended behavior change? |
-| --- | --- | --- | --- | --- | --- |
-| 0a | WS-9 | LOW | ~1h | none | no (doc) |
-| 0b | WS-6 | LOW | ~1h | low | no |
-| 0c | WS-8 | LOW | ~1–2h | none | no (doc + test) |
-| 0d | WS-7 | MED | ~half day | low | no |
-| 1 | **WS-1** | **HIGH** | ~1–2 days | medium | **yes — aligns render/WCV to build semantics** |
-| 2 | WS-4 | MED | ~half day | low | no |
-| 3 | WS-5 | MED | ~1–2 days | medium | no |
-| 4 | WS-2 | MED | decision + ~1 day | medium | maybe (if a mode is removed) |
-| 5 | **WS-3** | **HIGH** | spike + ~1–2 days | medium-high | **yes — by design** |
+| Phase | ID       | Pr       | Effort            | Risk        | Intended behavior change?                      |
+| ----- | -------- | -------- | ----------------- | ----------- | ---------------------------------------------- |
+| 0a    | WS-9     | LOW      | ~1h               | none        | no (doc)                                       |
+| 0b    | WS-6     | LOW      | ~1h               | low         | no                                             |
+| 0c    | WS-8     | LOW      | ~1–2h             | none        | no (doc + test)                                |
+| 0d    | WS-7     | MED      | ~half day         | low         | no                                             |
+| 1     | **WS-1** | **HIGH** | ~1–2 days         | medium      | **yes — aligns render/WCV to build semantics** |
+| 2     | WS-4     | MED      | ~half day         | low         | no                                             |
+| 3     | WS-5     | MED      | ~1–2 days         | medium      | no                                             |
+| 4     | WS-2     | MED      | decision + ~1 day | medium      | maybe (if a mode is removed)                   |
+| 5     | **WS-3** | **HIGH** | spike + ~1–2 days | medium-high | **yes — by design**                            |
 
 Do **0a–0d** first (cheap, derisking, parallelizable). **Phase 1 (WS-1)** is the keystone — land it before
 3 and 4. **Phase 5 (WS-3)** starts with a verification spike and can run on its own track anytime.
@@ -56,12 +56,13 @@ returns `''`/strips ([templateEngine.ts:388-428](../src/shared/templateEngine.ts
 through ([macros.ts:176](../src/shared/macros.ts)).
 
 **Approach (doc-only).**
+
 1. Add an "Error-handling policy" section to `docs/rpt-api.md` (or a short `docs/error-policy.md`) stating
    the rule: **presets fail loud (fail the turn); card/lore content degrades gracefully (strip tags, keep
    prose); engine-off / not-initialized strips; unknown macros pass through verbatim.**
 2. Add a one-line `// Policy: see docs … (WS-9)` comment at each of the four sites pointing to it.
 
-**Why first.** It's the cheapest item and it *codifies the invariant WS-1 and WS-5 must preserve* — so do
+**Why first.** It's the cheapest item and it _codifies the invariant WS-1 and WS-5 must preserve_ — so do
 it before touching the template path.
 
 **Risk:** none. **Verify:** docs only; `npm run typecheck` unaffected.
@@ -76,11 +77,12 @@ readers/writers in `src/`. `episodic_memory` ([db.ts:84](../src/main/services/db
 imminent plan — keep it.
 
 **Approach.**
+
 1. Remove the `rpg_entities` `CREATE TABLE` and the `pending_lore` column + its `addColumnIfMissing` call.
 2. Reconcile the comment in [profileService.ts:81-82](../src/main/services/profileService.ts) (the cascade
    note that references `rpg_entities`).
 3. Leave existing DBs alone (don't write a destructive `DROP` migration — an old DB keeping an empty
-   `rpg_entities` is harmless; only stop *creating* it). Optionally add it to the `DROP_LEGACY` block if a
+   `rpg_entities` is harmless; only stop _creating_ it). Optionally add it to the `DROP_LEGACY` block if a
    clean removal is wanted — decide explicitly.
 
 **Risk:** low (no readers). **Verify:** `npm run test` (db/migration tests); app boots, `getDb()` runs the
@@ -96,6 +98,7 @@ schema without error.
 deliberate Phase-2 (2026-06-22) decision, but undocumented as a contract.
 
 **Approach (no semantics change).**
+
 1. In [objectPath.ts](../src/shared/objectPath.ts), expand the header note into an explicit table: which
    surfaces are bracket-aware, which are split-on-dot, and **why** (MVU `-` append marker, perf, etc.).
 2. Add `test/objectPath.test.ts` cases (or a small `pathDialects.test.ts`) asserting each dialect's
@@ -112,6 +115,7 @@ deliberate Phase-2 (2026-06-22) decision, but undocumented as a contract.
 transport silently misses it.
 
 **Approach.**
+
 1. Add `broadcastHostEvent(chatId, name, payload)` (and a `broadcastStreamToken`) that hits **both**
    transports — co-locate with `cardBridge/cardHostEvents.ts` or a new
    `renderer/src/cardBridge/hostBroadcast.ts`.
@@ -136,6 +140,7 @@ render-time [renderTemplate.ts:15-34](../src/renderer/src/plugin/renderTemplate.
 `runType` resolves differently in each.
 
 **Design decision to lock first (do as part of the spike):**
+
 - **Canonical `vars` shape:** **hoist** stat_data to root **and** keep `stat_data` (so both `getvar('主角')`
   and `getvar('stat_data.主角')` resolve everywhere). This makes build-time match render/WCV — the
   permissive superset — and is the lower-risk direction (build-time gains a form it lacked; nothing that
@@ -147,6 +152,7 @@ render-time [renderTemplate.ts:15-34](../src/renderer/src/plugin/renderTemplate.
   realm, document the limitation rather than silently `{}`.
 
 **Approach (one module per step).**
+
 1. **Add `buildTemplateContext(opts)` to `src/shared`** (new `shared/templateContext.ts`, or export from
    `templateEngine.ts`). Pure; takes `{ vars, globals?, constants?, data? }` and applies the canonical
    hoisting + constant defaults. Imports nothing realm-specific.
@@ -180,6 +186,7 @@ prompt EJS all read the same vars.
 [templateEngine.ts:239-369](../src/shared/templateEngine.ts) — no typecheck/lint/direct tests.
 
 **Approach.**
+
 1. Author the subset as a real `.ts` (e.g. `shared/sandboxLib.ts`) exporting a **string constant** of the
    IIFE body (or a typed object compiled to a string at build). Keep it clean-room (no lodash source).
 2. Engine `installBridge` injects that string instead of the inline literal.
@@ -201,6 +208,7 @@ ES5-ish (no spread/optional-chaining) as the current boot is.
 5× repeated `convoStart` scanning and every prompt concern inline.
 
 **Approach (pure extraction, characterization-guarded).** Extract, one commit each:
+
 1. `partitionLore(matched, lorebooks)` → `{ regular, markerEntries, topEntries, depthEntries }`
    (the `:355-380` block).
 2. `renderPresetBlocks(preset, ctx, render, ejsStrict)` → the `for (block of preset.prompts)` loop.
@@ -224,8 +232,9 @@ ES5-ish (no spread/optional-chaining) as the current boot is.
 [promptBuilder.ts](../src/main/services/promptBuilder.ts)).
 
 **Decision required (not a default).** Pick one:
+
 - **A — Validate.** Run an A/B against a real provider (the `cacheAbHarness` is a starting point) measuring
-  *actual* cache hits, not the proxy %. Keep if it wins; else →
+  _actual_ cache hits, not the proxy %. Keep if it wins; else →
 - **B — Collapse.** Drop `diff` (or `partition`), keeping one mode, removing `placeholderize` + half the
   branching.
 - **C — Gate.** Mark the whole frozen-core path "experimental," document the unvalidated status in
@@ -289,7 +298,7 @@ clock no longer spins.
 ```
 
 Phases 0a–0d + 1 are the focused first push that most lowers future change cost. WS-3 is the highest-severity
-*correctness* item but is gated on the verification spike, so it runs independently rather than blocking the
+_correctness_ item but is gated on the verification spike, so it runs independently rather than blocking the
 refactor train.
 
 ---
@@ -304,5 +313,5 @@ refactor train.
 - **Security hardening** beyond the existing API-key masking — deferred per the owner's standing decision;
   this plan is maintainability-only.
 - Collapsing the **execution surfaces** (iframe plugin host / WCV card host / sandbox worker) — role-distinct
-  and justified; only the *main-process double quickjs load* is a (low-priority) candidate, folded into
+  and justified; only the _main-process double quickjs load_ is a (low-priority) candidate, folded into
   WS-4's vicinity if convenient.

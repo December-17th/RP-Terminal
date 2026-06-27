@@ -21,7 +21,9 @@ describe('path dialects (WS-8)', () => {
   describe('split-on-dot (macros {{getvar}} — mirrors ST)', () => {
     it('treats a[0] as a LITERAL key, not an array index', () => {
       // The whole "a[0]" is one key; the macro reads vars['a[0]'].b.
-      expect(expandMacros('{{getvar::a[0].b}}', { vars: { 'a[0]': { b: 'LITERAL' } } })).toBe('LITERAL')
+      expect(expandMacros('{{getvar::a[0].b}}', { vars: { 'a[0]': { b: 'LITERAL' } } })).toBe(
+        'LITERAL'
+      )
     })
     it('does NOT index into a real array (the dialects differ here)', () => {
       // Same path, real array — split-on-dot can't reach it (vars['a[0]'] is undefined) → empty.

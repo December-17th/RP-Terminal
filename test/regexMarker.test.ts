@@ -21,9 +21,14 @@ describe('isCardPayload', () => {
 
 describe('applyRegexRules marker option', () => {
   it('prepends the marker the callback returns', () => {
-    const out = applyRegexRules('X', [rule({ renderMode: 'isolated' })], {}, {
-      marker: (r: any) => (r.renderMode ? `<!--rpt:mode=${r.renderMode}-->` : undefined)
-    })
+    const out = applyRegexRules(
+      'X',
+      [rule({ renderMode: 'isolated' })],
+      {},
+      {
+        marker: (r: any) => (r.renderMode ? `<!--rpt:mode=${r.renderMode}-->` : undefined)
+      }
+    )
     expect(out).toBe('<!--rpt:mode=isolated--><html><body>card</body></html>')
   })
   it('emits nothing when the callback returns undefined', () => {

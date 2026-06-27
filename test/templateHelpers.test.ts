@@ -156,7 +156,9 @@ describe('templateService TH-3 helpers', () => {
   // floor-vars shape ({ stat_data: {...} }) that all three callers now use.
   describe('stat_data read-fallback + hoisted variables (WS-1)', () => {
     const wrapped = (): TemplateContext =>
-      ctx({ vars: { 系统名: 'X', stat_data: { 主角: { hp: 42 }, 世界后台状态: { 时局: '安稳' } } } })
+      ctx({
+        vars: { 系统名: 'X', stat_data: { 主角: { hp: 42 }, 世界后台状态: { 时局: '安稳' } } }
+      })
 
     it('getvar resolves a stat_data key with the explicit stat_data. prefix', () => {
       expect(evalTemplate('<%= getvar("stat_data.主角.hp") %>', wrapped())).toBe('42')

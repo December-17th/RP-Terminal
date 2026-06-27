@@ -19,7 +19,9 @@ describe('splitHtml mode marker', () => {
     expect(segs.find((s) => s.type === 'html')!.mode).toBeUndefined()
   })
   it('attaches mode + strips the marker when it is the sole content between two blocks', () => {
-    const segs = splitHtml('<html><body>A</body></html><!--rpt:mode=isolated--><html><body>B</body></html>')
+    const segs = splitHtml(
+      '<html><body>A</body></html><!--rpt:mode=isolated--><html><body>B</body></html>'
+    )
     const htmls = segs.filter((s) => s.type === 'html')
     expect(htmls).toHaveLength(2)
     // First block has no marker; second block (B) carries the mode.

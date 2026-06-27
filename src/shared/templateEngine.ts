@@ -280,7 +280,8 @@ const installBridge = (vm: QuickJSContext, ctx: TemplateContext): void => {
   for (const [k, v] of Object.entries(ctx.constants)) setConst(k, v)
 
   // Scope alias helpers (getLocalVar / setGlobalVar / …).
-  const boot = `
+  const boot =
+    `
     function __str(x){return (x===undefined||x===null)?'':String(x);}
     function getLocalVar(k,o){return getvar(k,Object.assign({scope:'local'},o||{}));}
     function setLocalVar(k,v,o){return setvar(k,v,Object.assign({scope:'local'},o||{}));}

@@ -546,8 +546,7 @@ describe('buildPrompt — EJS in constant lore (命定之诗 real-card shape)', 
         book([
           {
             comment: '命定系统-艾莉亚核心',
-            content:
-              '艾莉亚是<user>的同伴。\n<%_ if (true) { const x = await something(); } _%>',
+            content: '艾莉亚是<user>的同伴。\n<%_ if (true) { const x = await something(); } _%>',
             constant: true
           }
         ])

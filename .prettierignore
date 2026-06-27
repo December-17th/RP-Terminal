@@ -5,3 +5,8 @@ package-lock.json
 LICENSE.md
 tsconfig.json
 tsconfig.*.json
+
+# Never reformat vendored/minified assets — Prettier would expand the minified
+# one-liner into thousands of lines (e.g. tailwind.min.js → ~24k lines).
+**/*.min.js
+resources/cardlibs/

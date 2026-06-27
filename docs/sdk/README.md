@@ -30,13 +30,13 @@ The SDK docs are **living**, not point-in-time. The single rule:
 
 The card-facing surface is:
 
-| If you touch… | Update… |
-| --- | --- |
-| [`shared/thRuntime/`](../../src/shared/thRuntime/index.ts) (runtime API — both transports) | component-inventory §2 + rpt-api.md |
-| [`cardBridge/`](../../src/renderer/src/cardBridge/) or [`preload/wcvPreload.ts`](../../src/preload/wcvPreload.ts) (transports) | component-inventory §2–3 |
-| [`shared/cardEnv.ts`](../../src/shared/cardEnv.ts) / `cardLibs` (rendering env, injected libs) | component-inventory §3 |
-| [`types/character.ts`](../../src/main/types/character.ts) (`RPTerminalExtSchema` — the format / bundle slots) | component-inventory §4 |
-| the import / transform pipeline (`stPngParser`, `characterService`, the parsers) | component-inventory §5–6 |
+| If you touch…                                                                                                                  | Update…                             |
+| ------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------- |
+| [`shared/thRuntime/`](../../src/shared/thRuntime/index.ts) (runtime API — both transports)                                     | component-inventory §2 + rpt-api.md |
+| [`cardBridge/`](../../src/renderer/src/cardBridge/) or [`preload/wcvPreload.ts`](../../src/preload/wcvPreload.ts) (transports) | component-inventory §2–3            |
+| [`shared/cardEnv.ts`](../../src/shared/cardEnv.ts) / `cardLibs` (rendering env, injected libs)                                 | component-inventory §3              |
+| [`types/character.ts`](../../src/main/types/character.ts) (`RPTerminalExtSchema` — the format / bundle slots)                  | component-inventory §4              |
+| the import / transform pipeline (`stPngParser`, `characterService`, the parsers)                                               | component-inventory §5–6            |
 
 Keep status markers honest (✅ built / 🟡 partial / 🔁 stub / ⬜ planned) and **cite the file each claim was
 verified against** — per the repo's grounding rule (`CLAUDE.md`), never describe behavior from a name or

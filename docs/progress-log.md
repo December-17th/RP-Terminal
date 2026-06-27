@@ -12,7 +12,7 @@ Running status of the MVU / panel-workspace track. Newest first.
   (diagnosis, 9 ranked findings WS-1..WS-9 + per-file notes) and
   [maintainability-plan-2026-06-26.md](maintainability-plan-2026-06-26.md) (sequenced treatment).
   Headline: the `Host`-seam two-transport design **resolved** the old dual-card-host risk, but the EJS
-  *engine* is now shared while its *context* is hand-built 3 divergent ways (WS-1, HIGH) — the keystone fix.
+  _engine_ is now shared while its _context_ is hand-built 3 divergent ways (WS-1, HIGH) — the keystone fix.
   Other HIGH: the write-back-loop heuristic should be replaced by origin-tagging (WS-3). MED: decompose
   `buildPrompt` (WS-5), de-escalate L1 cache (WS-2), lodash-out-of-string (WS-4), one broadcast helper
   (WS-7). LOW: delete dead schema (WS-6), document path dialects (WS-8) + error policy (WS-9). Supersedes
@@ -42,7 +42,7 @@ Running status of the MVU / panel-workspace track. Newest first.
   self-loops: write → broadcast → echo → event → write → … forever. The saga + final state:
   - Tried, insufficient: WCV exclude-sender on the direct echo (`notifyVarsChanged(…, e.sender.id)`);
     a value-diff guard in the shared runtime `onVarsChanged`; a source-side **no-op** guard in
-    `applyVariableOps`. None stop a *changing* value, and the echo also returns via the INDIRECT path
+    `applyVariableOps`. None stop a _changing_ value, and the echo also returns via the INDIRECT path
     (host floor update → `wcv-broadcast-vars`), so byte-diffs don't survive the round-trip.
   - Tried, REVERTED: suppressing MVU events for the card's own writes (compare echo vs live `stat`).
     It broke cards that **chain initialization through their own update events** — and the prompt-side

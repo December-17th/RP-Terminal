@@ -17,7 +17,7 @@
 - **Tests** live in `test/*.test.ts`, run with `npx vitest run test/<file>.test.ts`. `electron` and `better-sqlite3` are aliased to stubs in `vitest.config.ts` — so the **DB layer (floorService/db) is not unit-testable here**; DB-touching wiring is validated by `npm run typecheck` and the manual checklist, matching how existing floor/DB code is verified.
 - **Renderer components have no test harness** (no @testing-library); they are validated by `npm run typecheck` + the manual checklist.
 - **Must pass before every commit:** `npm run typecheck` (and `npm test` where unit tests exist).
-- **Level-0 invariance:** metrics are computed *from* the already-assembled `messages` (post-hoc), so the assembled prompt stays byte-identical to today.
+- **Level-0 invariance:** metrics are computed _from_ the already-assembled `messages` (post-hoc), so the assembled prompt stays byte-identical to today.
 
 ### Refinements vs the spec (intentional)
 
@@ -27,7 +27,12 @@
 ### Shared type shapes (defined in Task 1, referenced everywhere)
 
 ```ts
-export interface Usage { cacheRead: number; cacheWrite: number; input: number; output: number }
+export interface Usage {
+  cacheRead: number
+  cacheWrite: number
+  input: number
+  output: number
+}
 export interface TurnMetric {
   ts: string
   provider: string
@@ -52,8 +57,16 @@ export interface CumulativeMetric {
   avgProxyPct: number
   avgCacheHitPct: number
 }
-export interface FloorMetrics { turn: TurnMetric; cumulative: CumulativeMetric }
-export interface ModelRates { input: number; output: number; cacheRead: number; cacheWrite: number }
+export interface FloorMetrics {
+  turn: TurnMetric
+  cumulative: CumulativeMetric
+}
+export interface ModelRates {
+  input: number
+  output: number
+  cacheRead: number
+  cacheWrite: number
+}
 ```
 
 ---
@@ -63,11 +76,13 @@ export interface ModelRates { input: number; output: number; cacheRead: number; 
 Pure foundation used by every later task.
 
 **Files:**
+
 - Create: `src/shared/usageTypes.ts`
 - Create: `src/shared/usageCost.ts`
 - Test: `test/usageCost.test.ts`
 
 **Interfaces:**
+
 - Produces: the type shapes above (from `usageTypes.ts`); `costFor(usage, rates) → number | null` and `cacheHitPct(usage) → number` (from `usageCost.ts`).
 
 - [ ] **Step 1: Write the failing test**
@@ -208,10 +223,12 @@ git commit -m "feat(meter): shared usage types + costFor/cacheHitPct"
 The per-turn + cumulative metric builder.
 
 **Files:**
+
 - Modify: `src/main/services/promptCacheMetrics.ts`
 - Test: `test/buildFloorMetrics.test.ts`
 
 **Interfaces:**
+
 - Consumes: `stablePrefixTokens`, `estimateTokens`, `ChatMessage` (existing in this file); `cacheHitPct` from `../../shared/usageCost`; types from `../../shared/usageTypes`.
 - Produces: `buildFloorMetrics(args) → FloorMetrics`; re-exports `Usage` from shared.
 
@@ -273,10 +290,7 @@ describe('buildFloorMetrics', () => {
     expect(t2.cumulative.usage?.cacheRead).toBe(8)
     // avgCacheHitPct only averages over usage turns; t2 hit = 8/(8+0+2) = 80%
     expect(t2.cumulative.avgCacheHitPct).toBeGreaterThan(0)
-    expect(t2.cumulative.avgPromptTokens).toBeCloseTo(
-      t2.cumulative.totalPromptTokens / 2,
-      5
-    )
+    expect(t2.cumulative.avgPromptTokens).toBeCloseTo(t2.cumulative.totalPromptTokens / 2, 5)
   })
 
   it('a usage-less turn does not move usageTurns or avgCacheHitPct', () => {
@@ -421,11 +435,13 @@ git commit -m "feat(meter): buildFloorMetrics (turn + cumulative snapshot)"
 Add the storage column + (de)serialization. DB-layer wiring → validated by typecheck (the DB is stubbed under vitest).
 
 **Files:**
+
 - Modify: `src/main/services/db.ts:127` (migration block)
 - Modify: `src/main/types/chat.ts` (`FloorFile`)
 - Modify: `src/main/services/floorService.ts` (`FloorRow`, `rowToFloor`, `saveFloor`)
 
 **Interfaces:**
+
 - Consumes: `FloorMetrics` from `../../shared/usageTypes`.
 - Produces: `FloorFile.metrics?: FloorMetrics`, persisted/loaded like `request`.
 
@@ -434,8 +450,8 @@ Add the storage column + (de)serialization. DB-layer wiring → validated by typ
 In `src/main/services/db.ts`, immediately after the `addColumnIfMissing(db, 'floors', 'request', 'request TEXT')` line, add:
 
 ```ts
-  // Per-turn cache/token metrics (turn + cumulative snapshot) — see token-cache-meter-design.md.
-  addColumnIfMissing(db, 'floors', 'metrics', 'metrics TEXT')
+// Per-turn cache/token metrics (turn + cumulative snapshot) — see token-cache-meter-design.md.
+addColumnIfMissing(db, 'floors', 'metrics', 'metrics TEXT')
 ```
 
 - [ ] **Step 2: Extend the `FloorFile` type**
@@ -463,13 +479,13 @@ In `src/main/services/floorService.ts`:
 (b) In `rowToFloor`, add to the returned object (after the `request:` line):
 
 ```ts
-    metrics: r.metrics ? safeJson(r.metrics, undefined) : undefined
+metrics: r.metrics ? safeJson(r.metrics, undefined) : undefined
 ```
 
 (c) In `saveFloor`, add `metrics` to the INSERT column list and the `VALUES` placeholders, and to the `ON CONFLICT … DO UPDATE SET` clause. The column list becomes:
 
 ```ts
-      `INSERT INTO floors
+;`INSERT INTO floors
         (chat_id, floor, timestamp, user_content, user_timestamp, response_content,
          response_model, response_provider, swipes, swipe_id, events, variables, request, metrics)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -491,8 +507,8 @@ In `src/main/services/floorService.ts`:
 (d) In the `.run(...)` bind list, add a final argument after the `request` bind:
 
 ```ts
-      floor.request ? JSON.stringify(floor.request) : null,
-      floor.metrics ? JSON.stringify(floor.metrics) : null
+;(floor.request ? JSON.stringify(floor.request) : null,
+  floor.metrics ? JSON.stringify(floor.metrics) : null)
 ```
 
 - [ ] **Step 4: Run typecheck**
@@ -514,10 +530,12 @@ git commit -m "feat(meter): persist floors.metrics column (turn + cumulative)"
 Wire `buildFloorMetrics` into `generate`, attach to the floor, and remove the superseded `cacheMetricsService`. Validated by typecheck + the full suite (level-0 prompt unchanged).
 
 **Files:**
+
 - Modify: `src/main/services/generationService.ts`
 - Delete: `src/main/services/cacheMetricsService.ts`, `test/cacheMetricsService.test.ts`
 
 **Interfaces:**
+
 - Consumes: `buildFloorMetrics`, `normalizeUsage` from `./promptCacheMetrics`.
 
 - [ ] **Step 1: Swap the imports**
@@ -540,32 +558,32 @@ import { normalizeUsage, buildFloorMetrics } from './promptCacheMetrics'
 In `generate`, replace the existing line:
 
 ```ts
-  // Cache harness: record this turn's assembled prompt (what was sent) + provider usage.
-  recordTurn(chatId, messages, normalizeUsage(settings.api.provider, rawUsage))
+// Cache harness: record this turn's assembled prompt (what was sent) + provider usage.
+recordTurn(chatId, messages, normalizeUsage(settings.api.provider, rawUsage))
 ```
 
 with:
 
 ```ts
-  // Cache meter: compute this turn's metrics (proxy + provider usage) + the cumulative snapshot,
-  // chaining from the previous floor (its stored `request` is the proxy anchor; its cumulative is
-  // the prior tally). Persisted on the floor below; both UI surfaces derive from it.
-  const turnMetrics = buildFloorMetrics({
-    messages,
-    prevMessages: (lastFloor?.request as ChatMessage[] | undefined) ?? null,
-    usage: normalizeUsage(settings.api.provider, rawUsage),
-    provider: settings.api.provider,
-    model: settings.api.model,
-    cacheLevel,
-    l1Mode,
-    ts: new Date().toISOString(),
-    responseText: raw,
-    prevCumulative: lastFloor?.metrics?.cumulative ?? null
-  })
-  log(
-    'info',
-    `cache — stable prefix ${turnMetrics.turn.proxyTokens}/${turnMetrics.turn.promptTokens} tok (${Math.round(turnMetrics.turn.proxyPct)}%)`
-  )
+// Cache meter: compute this turn's metrics (proxy + provider usage) + the cumulative snapshot,
+// chaining from the previous floor (its stored `request` is the proxy anchor; its cumulative is
+// the prior tally). Persisted on the floor below; both UI surfaces derive from it.
+const turnMetrics = buildFloorMetrics({
+  messages,
+  prevMessages: (lastFloor?.request as ChatMessage[] | undefined) ?? null,
+  usage: normalizeUsage(settings.api.provider, rawUsage),
+  provider: settings.api.provider,
+  model: settings.api.model,
+  cacheLevel,
+  l1Mode,
+  ts: new Date().toISOString(),
+  responseText: raw,
+  prevCumulative: lastFloor?.metrics?.cumulative ?? null
+})
+log(
+  'info',
+  `cache — stable prefix ${turnMetrics.turn.proxyTokens}/${turnMetrics.turn.promptTokens} tok (${Math.round(turnMetrics.turn.proxyPct)}%)`
+)
 ```
 
 Then add `metrics: turnMetrics` to the `floor` object literal (after the `variables` field):
@@ -609,12 +627,14 @@ git commit -m "feat(meter): attach per-floor metrics from generation; retire cac
 A pure floor-chain recompute (testable) + DB/IPC wrappers for the "Backfill proxy" button.
 
 **Files:**
+
 - Create: `src/main/services/usageMetricsService.ts`
 - Test: `test/usageMetricsService.test.ts`
 - Modify: `src/main/ipc/chatIpc.ts` (handler)
 - Modify: `src/preload/index.ts` (bridge) + `src/preload/index.d.ts` (type)
 
 **Interfaces:**
+
 - Consumes: `buildFloorMetrics` from `./promptCacheMetrics`; `FloorFile` from `../types/chat`; `getAllFloors`, `saveFloor` from `./floorService`.
 - Produces: `recomputeMetricsForFloors(floors) → FloorFile[]` (pure); `backfillUsageMetrics(profileId, chatId) → FloorFile[]` (DB); IPC `backfill-usage-metrics`; `window.api.backfillUsageMetrics(profileId, chatId)`.
 
@@ -641,7 +661,10 @@ const floor = (n: number, req: { role: string; content: string }[] | undefined):
 describe('recomputeMetricsForFloors', () => {
   it('recomputes proxy + cumulative across a request-bearing chain, usage stays null', () => {
     const floors = [
-      floor(0, [{ role: 'system', content: 'AAAA' }, { role: 'user', content: 'hi' }]),
+      floor(0, [
+        { role: 'system', content: 'AAAA' },
+        { role: 'user', content: 'hi' }
+      ]),
       floor(1, [
         { role: 'system', content: 'AAAA' },
         { role: 'user', content: 'hi' },
@@ -739,9 +762,9 @@ import * as usageMetricsService from '../services/usageMetricsService'
 Then register a handler inside `registerChatIpc` (e.g. after the `get-floors` handler):
 
 ```ts
-  ipcMain.handle('backfill-usage-metrics', (_, profileId, chatId) =>
-    usageMetricsService.backfillUsageMetrics(profileId, chatId)
-  )
+ipcMain.handle('backfill-usage-metrics', (_, profileId, chatId) =>
+  usageMetricsService.backfillUsageMetrics(profileId, chatId)
+)
 ```
 
 - [ ] **Step 6: Expose it in preload**
@@ -756,7 +779,7 @@ In `src/preload/index.ts`, add to the `api` object (e.g. after the `getFloors` e
 In `src/preload/index.d.ts`, add the matching signature to the `api` interface (return type `Promise<unknown[]>` is sufficient for the renderer, which reloads floors after):
 
 ```ts
-    backfillUsageMetrics: (profileId: string, chatId: string) => Promise<unknown[]>
+backfillUsageMetrics: (profileId: string, chatId: string) => Promise<unknown[]>
 ```
 
 - [ ] **Step 7: Run typecheck**
@@ -778,12 +801,14 @@ git commit -m "feat(meter): proxy backfill service + IPC bridge"
 Add config to the schema, defaults, and normalize; mirror the renderer type.
 
 **Files:**
+
 - Modify: `src/main/types/models.ts` (`Settings`)
 - Modify: `src/main/services/settingsService.ts` (`getDefaultSettings`, `normalize`)
 - Modify: `src/renderer/src/stores/settingsStore.ts` (renderer `Settings`)
 - Test: `test/settingsService.test.ts`
 
 **Interfaces:**
+
 - Produces: `Settings['ui']['usage_meter']`, `Settings['ui']['usage_view']`, `Settings['pricing']` with defaults + merge.
 
 - [ ] **Step 1: Write the failing test**
@@ -813,7 +838,9 @@ describe('settings usage-meter + pricing', () => {
   })
 
   it('keeps stored pricing rows', () => {
-    const s = normalize({ pricing: { 'm1': { input: 1, output: 2, cacheRead: 0.1, cacheWrite: 1 } } } as any)
+    const s = normalize({
+      pricing: { m1: { input: 1, output: 2, cacheRead: 0.1, cacheWrite: 1 } }
+    } as any)
     expect(s.pricing.m1.output).toBe(2)
   })
 })
@@ -855,8 +882,8 @@ Add fields to the `ui` block (after `show_fps: boolean`):
 Add a new top-level field after the `cache` block (before the closing `}` of `Settings`):
 
 ```ts
-  /** Optional per-model token prices ($ / 1M tokens). Empty ⇒ tokens-only (no cost shown). */
-  pricing: Record<string, ModelRates>
+/** Optional per-model token prices ($ / 1M tokens). Empty ⇒ tokens-only (no cost shown). */
+pricing: Record<string, ModelRates>
 ```
 
 - [ ] **Step 4: Add defaults**
@@ -898,19 +925,19 @@ And add a `pricing` default after the `cache: { … }` block:
 In `src/main/services/settingsService.ts` `normalize`, replace `const ui = { ...d.ui, ...(stored.ui || {}) }` with a nested merge:
 
 ```ts
-  const storedUi = (stored.ui || {}) as Partial<Settings['ui']>
-  const ui = {
-    ...d.ui,
-    ...storedUi,
-    usage_meter: { ...d.ui.usage_meter, ...(storedUi.usage_meter || {}) },
-    usage_view: { ...d.ui.usage_view, ...(storedUi.usage_view || {}) }
-  }
+const storedUi = (stored.ui || {}) as Partial<Settings['ui']>
+const ui = {
+  ...d.ui,
+  ...storedUi,
+  usage_meter: { ...d.ui.usage_meter, ...(storedUi.usage_meter || {}) },
+  usage_view: { ...d.ui.usage_view, ...(storedUi.usage_view || {}) }
+}
 ```
 
 After the `const cache = …` line, add:
 
 ```ts
-  const pricing = { ...d.pricing, ...(stored.pricing || {}) }
+const pricing = { ...d.pricing, ...(stored.pricing || {}) }
 ```
 
 Add `pricing` to the returned object's field list (after `cache`):
@@ -965,12 +992,14 @@ git commit -m "feat(meter): settings — usage_meter, usage_view, pricing"
 The live meter: derives from `chatStore.floors`, draggable with persisted position, gear field-checklist, collapse.
 
 **Files:**
+
 - Modify: `src/renderer/src/stores/chatStore.ts` (`Floor.metrics`)
 - Create: `src/renderer/src/components/UsageOverlay.tsx`
 - Modify: `src/renderer/src/App.tsx` (mount)
 - Modify: `src/renderer/src/components/SettingsPanel.tsx` (enable toggle)
 
 **Interfaces:**
+
 - Consumes: `useChatStore().floors[*].metrics` (`FloorMetrics`), `useSettingsStore()`, `costFor`/`cacheHitPct` from `../../../shared/usageCost`.
 
 - [ ] **Step 1: Add `metrics` to the renderer `Floor` type**
@@ -1034,7 +1063,13 @@ const valueFor = (
     case 'proxyPct':
       return pct(t.proxyPct)
     case 'cacheHitPct':
-      return t.usage ? pct((t.usage.cacheRead / Math.max(1, t.usage.cacheRead + t.usage.cacheWrite + t.usage.input)) * 100) : '—'
+      return t.usage
+        ? pct(
+            (t.usage.cacheRead /
+              Math.max(1, t.usage.cacheRead + t.usage.cacheWrite + t.usage.input)) *
+              100
+          )
+        : '—'
     case 'cacheRead':
       return t.usage ? tok(t.usage.cacheRead) : '—'
     case 'cacheWrite':
@@ -1079,7 +1114,10 @@ export const UsageOverlay: React.FC<{ profileId: string }> = ({ profileId }) => 
 
   const onPointerDown = (e: React.PointerEvent): void => {
     ;(e.target as HTMLElement).setPointerCapture(e.pointerId)
-    dragState.current = { dx: e.clientX - (meter.x ?? 16), dy: e.clientY - (meter.y ?? window.innerHeight - 160) }
+    dragState.current = {
+      dx: e.clientX - (meter.x ?? 16),
+      dy: e.clientY - (meter.y ?? window.innerHeight - 160)
+    }
   }
   const onPointerMove = (e: React.PointerEvent): void => {
     if (!dragState.current) return
@@ -1091,9 +1129,7 @@ export const UsageOverlay: React.FC<{ profileId: string }> = ({ profileId }) => 
   }
 
   const pos: React.CSSProperties =
-    meter.x != null && meter.y != null
-      ? { left: meter.x, top: meter.y }
-      : { left: 16, bottom: 16 }
+    meter.x != null && meter.y != null ? { left: meter.x, top: meter.y } : { left: 16, bottom: 16 }
 
   const rows = FIELD_CATALOG.filter((f) => enabledFields.has(f.key)).map((f) => ({
     ...f,
@@ -1110,11 +1146,18 @@ export const UsageOverlay: React.FC<{ profileId: string }> = ({ profileId }) => 
         style={{ cursor: 'move', display: 'flex', alignItems: 'center', gap: 6 }}
       >
         <span style={{ fontWeight: 600 }}>usage</span>
-        <button title="Fields" onClick={() => setGearOpen((v) => !v)}>⚙</button>
-        <button title={meter.collapsed ? 'Expand' : 'Collapse'} onClick={() => persist({ collapsed: !meter.collapsed })}>
+        <button title="Fields" onClick={() => setGearOpen((v) => !v)}>
+          ⚙
+        </button>
+        <button
+          title={meter.collapsed ? 'Expand' : 'Collapse'}
+          onClick={() => persist({ collapsed: !meter.collapsed })}
+        >
           {meter.collapsed ? '▣' : '▢'}
         </button>
-        <button title="Hide (Settings to re-enable)" onClick={() => persist({ enabled: false })}>✕</button>
+        <button title="Hide (Settings to re-enable)" onClick={() => persist({ enabled: false })}>
+          ✕
+        </button>
       </div>
 
       {gearOpen && (
@@ -1142,7 +1185,10 @@ export const UsageOverlay: React.FC<{ profileId: string }> = ({ profileId }) => 
           {rows
             .filter((r) => r.value != null)
             .map((r) => (
-              <div key={r.key} style={{ display: 'flex', justifyContent: 'space-between', gap: 12 }}>
+              <div
+                key={r.key}
+                style={{ display: 'flex', justifyContent: 'space-between', gap: 12 }}
+              >
                 <span style={{ opacity: 0.7 }}>{r.label}</span>
                 <span>{r.value}</span>
               </div>
@@ -1171,7 +1217,9 @@ import { UsageOverlay } from './components/UsageOverlay'
 Add the mount right after the existing `{settings?.ui?.show_fps && <FpsOverlay />}` line:
 
 ```tsx
-      {settings?.ui?.usage_meter?.enabled && <UsageOverlay profileId={activeProfile.id} />}
+{
+  settings?.ui?.usage_meter?.enabled && <UsageOverlay profileId={activeProfile.id} />
+}
 ```
 
 - [ ] **Step 4: Add the Settings toggle**
@@ -1179,21 +1227,24 @@ Add the mount right after the existing `{settings?.ui?.show_fps && <FpsOverlay /
 In `src/renderer/src/components/SettingsPanel.tsx`, add a toggle right after the existing "Show FPS counter" `<label>…</label>` block:
 
 ```tsx
-            <label
-              className="entry-toggles"
-              style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 14 }}
-            >
-              <input
-                type="checkbox"
-                checked={settings.ui?.usage_meter?.enabled ?? false}
-                onChange={(e) =>
-                  updateSettings(profileId, {
-                    ui: { ...settings.ui, usage_meter: { ...settings.ui.usage_meter, enabled: e.target.checked } }
-                  })
-                }
-              />
-              Show token / cache meter (floating overlay)
-            </label>
+<label
+  className="entry-toggles"
+  style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 14 }}
+>
+  <input
+    type="checkbox"
+    checked={settings.ui?.usage_meter?.enabled ?? false}
+    onChange={(e) =>
+      updateSettings(profileId, {
+        ui: {
+          ...settings.ui,
+          usage_meter: { ...settings.ui.usage_meter, enabled: e.target.checked }
+        }
+      })
+    }
+  />
+  Show token / cache meter (floating overlay)
+</label>
 ```
 
 - [ ] **Step 5: Add minimal overlay styles**
@@ -1251,12 +1302,14 @@ git commit -m "feat(meter): floating usage overlay + Settings toggle"
 The diagnostics surface: summary, est-vs-actual chart, per-turn table, CSV/JSON export, backfill button.
 
 **Files:**
+
 - Create: `src/renderer/src/components/TurnChart.tsx`
 - Create: `src/renderer/src/components/UsageView.tsx`
 - Modify: `src/renderer/src/components/workspace/viewRegistry.tsx` (register `usage`)
 - Test: `test/turnChart.test.ts` (the pure path helper)
 
 **Interfaces:**
+
 - Consumes: `useChatStore().floors`, `useSettingsStore()`, `costFor`/`cacheHitPct`.
 - Produces: a `'usage'` entry in `ViewRegistry` (so it appears in `VIEW_OPTIONS`).
 
@@ -1322,17 +1375,28 @@ export interface Series {
 }
 
 /** A small multi-series line chart (hand-rolled SVG, no chart dep). */
-export const TurnChart: React.FC<{ series: Series[]; min: number; max: number; height?: number }> = ({
-  series,
-  min,
-  max,
-  height = 80
-}) => {
+export const TurnChart: React.FC<{
+  series: Series[]
+  min: number
+  max: number
+  height?: number
+}> = ({ series, min, max, height = 80 }) => {
   const width = 280
   return (
-    <svg width="100%" viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="none" style={{ display: 'block' }}>
+    <svg
+      width="100%"
+      viewBox={`0 0 ${width} ${height}`}
+      preserveAspectRatio="none"
+      style={{ display: 'block' }}
+    >
       {series.map((s) => (
-        <path key={s.label} d={linePath(s.values, width, height, min, max)} fill="none" stroke={s.color} strokeWidth={1.5} />
+        <path
+          key={s.label}
+          d={linePath(s.values, width, height, min, max)}
+          fill="none"
+          stroke={s.color}
+          strokeWidth={1.5}
+        />
       ))}
     </svg>
   )
@@ -1363,7 +1427,9 @@ const pct = (n: number): string => `${Math.round(n)}%`
 /** Flatten the active chat's floors into a per-turn metric series. */
 const useSeries = (): { floor: number; m: FloorMetrics }[] => {
   const floors = useChatStore((s) => s.floors)
-  return floors.filter((f) => f.metrics).map((f) => ({ floor: f.floor, m: f.metrics as FloorMetrics }))
+  return floors
+    .filter((f) => f.metrics)
+    .map((f) => ({ floor: f.floor, m: f.metrics as FloorMetrics }))
 }
 
 export const UsageView: React.FC<{ profileId: string }> = ({ profileId }) => {
@@ -1378,7 +1444,11 @@ export const UsageView: React.FC<{ profileId: string }> = ({ profileId }) => {
     return (
       <div style={{ padding: 12 }}>
         <div style={{ opacity: 0.6 }}>No metered turns in this chat yet.</div>
-        <BackfillButton profileId={profileId} chatId={activeChatId} onDone={() => activeProfile && setActiveChat(profileId, activeChatId!)} />
+        <BackfillButton
+          profileId={profileId}
+          chatId={activeChatId}
+          onDone={() => activeProfile && setActiveChat(profileId, activeChatId!)}
+        />
       </div>
     )
   }
@@ -1407,7 +1477,10 @@ export const UsageView: React.FC<{ profileId: string }> = ({ profileId }) => {
       blob = new Blob([JSON.stringify(rows, null, 2)], { type: 'application/json' })
     } else {
       const cols = Object.keys(rows[0])
-      const csv = [cols.join(','), ...rows.map((r) => cols.map((k) => (r as any)[k] ?? '').join(','))].join('\n')
+      const csv = [
+        cols.join(','),
+        ...rows.map((r) => cols.map((k) => (r as any)[k] ?? '').join(','))
+      ].join('\n')
       blob = new Blob([csv], { type: 'text/csv' })
     }
     const url = URL.createObjectURL(blob)
@@ -1420,14 +1493,21 @@ export const UsageView: React.FC<{ profileId: string }> = ({ profileId }) => {
 
   return (
     <div style={{ padding: 12, display: 'flex', flexDirection: 'column', gap: 12 }}>
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '2px 16px', fontSize: 13 }}>
-        <span>turns</span><span>{c.turns}</span>
-        <span>avg est cache</span><span>{pct(c.avgProxyPct)}</span>
-        <span>avg actual cache</span><span>{c.usageTurns ? pct(c.avgCacheHitPct) : '—'}</span>
-        <span>avg prompt tok</span><span>{tok(c.avgPromptTokens)}</span>
+      <div
+        style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '2px 16px', fontSize: 13 }}
+      >
+        <span>turns</span>
+        <span>{c.turns}</span>
+        <span>avg est cache</span>
+        <span>{pct(c.avgProxyPct)}</span>
+        <span>avg actual cache</span>
+        <span>{c.usageTurns ? pct(c.avgCacheHitPct) : '—'}</span>
+        <span>avg prompt tok</span>
+        <span>{tok(c.avgPromptTokens)}</span>
         <span>total read / write</span>
         <span>{c.usage ? `${tok(c.usage.cacheRead)} / ${tok(c.usage.cacheWrite)}` : '—'}</span>
-        <span>session $</span><span>{sessionCost == null ? '—' : `$${sessionCost.toFixed(2)}`}</span>
+        <span>session $</span>
+        <span>{sessionCost == null ? '—' : `$${sessionCost.toFixed(2)}`}</span>
       </div>
 
       <div>
@@ -1449,7 +1529,13 @@ export const UsageView: React.FC<{ profileId: string }> = ({ profileId }) => {
         <thead>
           <tr style={{ textAlign: 'right', opacity: 0.7 }}>
             <th style={{ textAlign: 'left' }}>#</th>
-            <th>prompt</th><th>est</th><th>actual</th><th>read</th><th>write</th><th>out</th><th>$</th>
+            <th>prompt</th>
+            <th>est</th>
+            <th>actual</th>
+            <th>read</th>
+            <th>write</th>
+            <th>out</th>
+            <th>$</th>
           </tr>
         </thead>
         <tbody>
@@ -1475,17 +1561,21 @@ export const UsageView: React.FC<{ profileId: string }> = ({ profileId }) => {
       <div style={{ display: 'flex', gap: 8 }}>
         <button onClick={() => exportData('csv')}>Export CSV</button>
         <button onClick={() => exportData('json')}>Export JSON</button>
-        <BackfillButton profileId={profileId} chatId={activeChatId} onDone={() => activeProfile && setActiveChat(profileId, activeChatId!)} />
+        <BackfillButton
+          profileId={profileId}
+          chatId={activeChatId}
+          onDone={() => activeProfile && setActiveChat(profileId, activeChatId!)}
+        />
       </div>
     </div>
   )
 }
 
-const BackfillButton: React.FC<{ profileId: string; chatId: string | null; onDone: () => void }> = ({
-  profileId,
-  chatId,
-  onDone
-}) => {
+const BackfillButton: React.FC<{
+  profileId: string
+  chatId: string | null
+  onDone: () => void
+}> = ({ profileId, chatId, onDone }) => {
   const [busy, setBusy] = React.useState(false)
   if (!chatId) return null
   return (
@@ -1548,9 +1638,11 @@ git commit -m "feat(meter): usage history view + SVG chart + export + backfill"
 The user-editable per-model price table (empty by default ⇒ tokens-only).
 
 **Files:**
+
 - Modify: `src/renderer/src/components/SettingsPanel.tsx`
 
 **Interfaces:**
+
 - Consumes: `settings.pricing`, `settings.api.model`, `updateSettings`.
 
 - [ ] **Step 1: Add the pricing editor section**
@@ -1558,63 +1650,68 @@ The user-editable per-model price table (empty by default ⇒ tokens-only).
 In `src/renderer/src/components/SettingsPanel.tsx`, add this `<details>` block right before the existing `<details className="settings-section">` Plugins block:
 
 ```tsx
-        {settings && (
-          <details className="settings-section" style={{ marginTop: 20 }}>
-            <summary>Token pricing ($ / 1M tokens)</summary>
-            <div className="settings-section-body">
-              <div style={{ fontSize: '0.78em', color: 'var(--rpt-text-secondary)', marginBottom: 6 }}>
-                Optional. Empty ⇒ the meter shows tokens only. Keyed by exact model id.
-              </div>
-              {Object.entries(settings.pricing ?? {}).map(([model, rates]) => (
-                <div key={model} style={{ display: 'flex', gap: 4, alignItems: 'center', marginBottom: 4 }}>
-                  <span style={{ flex: 1, fontSize: 12 }}>{model}</span>
-                  {(['input', 'output', 'cacheRead', 'cacheWrite'] as const).map((k) => (
-                    <input
-                      key={k}
-                      type="number"
-                      title={k}
-                      style={{ width: 64 }}
-                      value={rates[k]}
-                      onChange={(e) =>
-                        updateSettings(profileId, {
-                          pricing: {
-                            ...settings.pricing,
-                            [model]: { ...rates, [k]: Number(e.target.value) || 0 }
-                          }
-                        })
-                      }
-                    />
-                  ))}
-                  <button
-                    title="Remove"
-                    onClick={() => {
-                      const next = { ...(settings.pricing ?? {}) }
-                      delete next[model]
-                      updateSettings(profileId, { pricing: next })
-                    }}
-                  >
-                    ✕
-                  </button>
-                </div>
-              ))}
-              <button
-                style={{ marginTop: 6 }}
-                onClick={() => {
-                  const model = settings.api.model || 'model-id'
-                  if (settings.pricing?.[model]) return
+{
+  settings && (
+    <details className="settings-section" style={{ marginTop: 20 }}>
+      <summary>Token pricing ($ / 1M tokens)</summary>
+      <div className="settings-section-body">
+        <div style={{ fontSize: '0.78em', color: 'var(--rpt-text-secondary)', marginBottom: 6 }}>
+          Optional. Empty ⇒ the meter shows tokens only. Keyed by exact model id.
+        </div>
+        {Object.entries(settings.pricing ?? {}).map(([model, rates]) => (
+          <div
+            key={model}
+            style={{ display: 'flex', gap: 4, alignItems: 'center', marginBottom: 4 }}
+          >
+            <span style={{ flex: 1, fontSize: 12 }}>{model}</span>
+            {(['input', 'output', 'cacheRead', 'cacheWrite'] as const).map((k) => (
+              <input
+                key={k}
+                type="number"
+                title={k}
+                style={{ width: 64 }}
+                value={rates[k]}
+                onChange={(e) =>
                   updateSettings(profileId, {
                     pricing: {
                       ...settings.pricing,
-                      [model]: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }
+                      [model]: { ...rates, [k]: Number(e.target.value) || 0 }
                     }
                   })
-                }}
-              >
-                + Add row for “{settings.api?.model || 'current model'}”
-              </button>
-            </div>
-          </details>
-        )}
+                }
+              />
+            ))}
+            <button
+              title="Remove"
+              onClick={() => {
+                const next = { ...(settings.pricing ?? {}) }
+                delete next[model]
+                updateSettings(profileId, { pricing: next })
+              }}
+            >
+              ✕
+            </button>
+          </div>
+        ))}
+        <button
+          style={{ marginTop: 6 }}
+          onClick={() => {
+            const model = settings.api.model || 'model-id'
+            if (settings.pricing?.[model]) return
+            updateSettings(profileId, {
+              pricing: {
+                ...settings.pricing,
+                [model]: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }
+              }
+            })
+          }}
+        >
+          + Add row for “{settings.api?.model || 'current model'}”
+        </button>
+      </div>
+    </details>
+  )
+}
 ```
 
 - [ ] **Step 2: Run typecheck**

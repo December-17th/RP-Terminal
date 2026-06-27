@@ -10,7 +10,7 @@
 
 ## Global Constraints
 
-- **Clean-room only.** Do NOT vendor or copy from js-slash-runner / TavernHelper (AFPL/non-free). The card bridge is an independent implementation of the same *surface*.
+- **Clean-room only.** Do NOT vendor or copy from js-slash-runner / TavernHelper (AFPL/non-free). The card bridge is an independent implementation of the same _surface_.
 - **Cards are trusted.** No card sandboxing/CSP-as-security; the WCV process boundary is the only isolation, and that's opt-in. CSP changes are about letting trusted cards load assets.
 - **Full API parity in both modes.** Any card must work identically in inline or isolated mode: the complete TavernHelper / Mvu / SillyTavern surface, the EJS engine, and the library globals (Vue, jQuery, lodash, zod, toastr) — including the **synchronous** getters.
 - **Do not remove the WCV path.** `WcvMessageFrame` + `wcvManager` + `wcvPreload` stay as the isolated mode.
@@ -23,6 +23,7 @@
 ## File structure
 
 **New**
+
 - `src/shared/cardRenderMode.ts` — the `CardRenderMode` union + `DEFAULT_CARD_RENDER_MODE` + `resolveCardMode()`.
 - `src/renderer/src/components/cardDoc.ts` — `buildCardDoc(html, { headInject })` (moved out of `WcvMessageFrame`, generalized).
 - `src/renderer/src/cardBridge/createCardBridge.ts` — `createCardBridge(ctx)` → the API globals object (reads renderer stores synchronously; writes via `window.api`).
@@ -32,6 +33,7 @@
 - Tests: `test/cardRenderMode.test.ts`, `test/cardDoc.test.ts`, `test/regexMarker.test.ts`, `test/splitHtmlMode.test.ts`, `test/scopeMetaRenderMode.test.ts`, `test/regexRenderMode.test.ts`.
 
 **Changed**
+
 - `src/renderer/index.html` — scoped CSP loosening.
 - `src/renderer/src/components/MessageContent.tsx` — `splitHtml` parses the mode marker; route interactive cards by resolved mode.
 - `src/renderer/src/components/WcvMessageFrame.tsx` — import `buildCardDoc` from `./cardDoc` (no behavior change).
@@ -48,6 +50,7 @@
 - `test/wcvCardDoc.test.ts` — update `buildCardDoc` import path.
 
 **Reused / unchanged**
+
 - `rpt-card://` scheme + `wcvManager` (isolated mode only).
 - `src/shared/templateEngine.ts` + `src/renderer/src/plugin/rendererEngine.ts` (engine already initialized in the renderer) + `src/renderer/src/plugin/renderTemplate.ts` (`buildRenderContext`).
 - `HtmlFrame` (static, script-free cards) — unchanged.
@@ -68,10 +71,12 @@
 ## Task A1: `CardRenderMode` type + `resolveCardMode`
 
 **Files:**
+
 - Create: `src/shared/cardRenderMode.ts`
 - Test: `test/cardRenderMode.test.ts`
 
 **Interfaces:**
+
 - Produces: `type CardRenderMode = 'inline' | 'isolated'`; `const DEFAULT_CARD_RENDER_MODE: CardRenderMode`; `resolveCardMode(override: CardRenderMode | undefined, globalDefault: CardRenderMode): CardRenderMode`.
 
 - [ ] **Step 1: Write the failing test**
@@ -79,10 +84,7 @@
 ```ts
 // test/cardRenderMode.test.ts
 import { describe, it, expect } from 'vitest'
-import {
-  resolveCardMode,
-  DEFAULT_CARD_RENDER_MODE
-} from '../src/shared/cardRenderMode'
+import { resolveCardMode, DEFAULT_CARD_RENDER_MODE } from '../src/shared/cardRenderMode'
 
 describe('resolveCardMode', () => {
   it('uses the override when present', () => {
@@ -143,12 +145,14 @@ git commit -m "feat(cards): shared CardRenderMode type + resolveCardMode"
 ## Task A2: Global-default setting (`cards.renderMode`)
 
 **Files:**
+
 - Modify: `src/main/types/models.ts` (the `Settings` interface)
 - Modify: `src/main/services/settingsService.ts:61-137` (`getDefaultSettings`) and `:144-225` (`normalize`)
 - Modify: `src/renderer/src/stores/settingsStore.ts` (the renderer `Settings` interface)
 - Modify: `src/renderer/src/components/SettingsPanel.tsx` (add the control)
 
 **Interfaces:**
+
 - Consumes: `CardRenderMode` from `src/shared/cardRenderMode` (Task A1).
 - Produces: `settings.cards.renderMode: CardRenderMode` readable in the renderer; default `'inline'`; persisted through `normalize`.
 
@@ -165,10 +169,10 @@ import type { CardRenderMode } from '../../shared/cardRenderMode'
 Add inside `interface Settings { ... }` (place it next to `templates`):
 
 ```ts
-  /** Card rendering: the global default mode for scripted beautification cards. */
-  cards: {
-    renderMode: CardRenderMode
-  }
+/** Card rendering: the global default mode for scripted beautification cards. */
+cards: {
+  renderMode: CardRenderMode
+}
 ```
 
 - [ ] **Step 2: Default it**
@@ -186,7 +190,7 @@ In `src/main/services/settingsService.ts`, inside `getDefaultSettings()` (after 
 In `normalize()`, add a merge line near the other section merges (e.g. after `const cache = ...`):
 
 ```ts
-  const cards = { ...d.cards, ...(stored.cards || {}) }
+const cards = { ...d.cards, ...(stored.cards || {}) }
 ```
 
 and add `cards` to the returned object literal (the `return { api, ..., pricing }` block):
@@ -253,12 +257,14 @@ git commit -m "feat(cards): global default card render mode setting"
 ## Task A3: Move `buildCardDoc` to a shared `cardDoc.ts` with a `headInject` option
 
 **Files:**
+
 - Create: `src/renderer/src/components/cardDoc.ts`
 - Modify: `src/renderer/src/components/WcvMessageFrame.tsx:37-46` (remove local `buildCardDoc`, import it) and `:18-24` (the `CSP` const moves with usage)
 - Modify: `test/wcvCardDoc.test.ts` (import path)
 - Test: `test/cardDoc.test.ts`
 
 **Interfaces:**
+
 - Produces: `buildCardDoc(html: string, opts?: { headInject?: string }): string` — full doc: inject `headInject` at the very start of `<head>`; bare fragment: wrap `<body>` inner in a doc whose `<head>` is exactly `headInject`.
 - Consumes (callers): WCV passes `headInject` = its CSP `<meta>`; `InlineCardFrame` (Task B2) passes the bootstrap.
 
@@ -346,23 +352,27 @@ Expected: PASS (5 tests).
 In `src/renderer/src/components/WcvMessageFrame.tsx`:
 
 1. Add the import at the top:
+
 ```ts
 import { buildCardDoc } from './cardDoc'
 ```
+
 2. Delete the local `export function buildCardDoc(html: string): string { ... }` (lines ~37–46) and its doc comment.
 3. Keep the `CSP` const (lines ~18–24). Change the `dataUrl` memo (lines ~62–65) to pass the CSP as `headInject`:
+
 ```ts
-  const dataUrl = useMemo(
-    () =>
-      'data:text/html;charset=utf-8,' +
-      encodeURIComponent(
-        buildCardDoc(html, {
-          headInject: `<meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="${CSP}">`
-        })
-      ),
-    [html]
-  )
+const dataUrl = useMemo(
+  () =>
+    'data:text/html;charset=utf-8,' +
+    encodeURIComponent(
+      buildCardDoc(html, {
+        headInject: `<meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="${CSP}">`
+      })
+    ),
+  [html]
+)
 ```
+
 (`CARD_SCHEME` serving in `wcvManager` decodes this same data URL — no main-side change; the doc bytes are identical to before, just sourced via the option.)
 
 - [ ] **Step 6: Update the existing WCV doc test's import**
@@ -386,6 +396,7 @@ git commit -m "refactor(cards): extract buildCardDoc to shared cardDoc with head
 ## Task A4: Loosen the renderer CSP, scoped to trusted CDN hosts
 
 **Files:**
+
 - Modify: `src/renderer/index.html:16-19` (the CSP `<meta>`)
 
 **Why now:** inline cards load their ESM (gsap/pinia/js-yaml) and fonts from CDNs and the iframe inherits this CSP. Without this, the Phase B manual test can't load any real card.
@@ -397,9 +408,9 @@ git commit -m "refactor(cards): extract buildCardDoc to shared cardDoc with head
 In `src/renderer/index.html`, replace the `content="..."` of the CSP `<meta>` (line 18) with the scoped allowlist below. Keep the explanatory comment above it and extend it to note the inline-card CDN allowance.
 
 ```html
-    <meta
-      http-equiv="Content-Security-Policy"
-      content="default-src 'self';
+<meta
+  http-equiv="Content-Security-Policy"
+  content="default-src 'self';
         script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval' blob:
           https://cdn.jsdelivr.net https://fastly.jsdelivr.net https://unpkg.com https://esm.sh https://cdnjs.cloudflare.com;
         style-src 'self' 'unsafe-inline'
@@ -409,7 +420,7 @@ In `src/renderer/index.html`, replace the `content="..."` of the CSP `<meta>` (l
         connect-src 'self' data: blob:
           https://cdn.jsdelivr.net https://fastly.jsdelivr.net https://unpkg.com https://esm.sh https://cdnjs.cloudflare.com;
         media-src 'self' data: blob: https:"
-    />
+/>
 ```
 
 (The CSP `content` may be a single line; the multi-line form above is for readability — collapse it to one line if the build complains about newlines in the attribute. Newlines between directives are valid CSP, but keep semicolons.)
@@ -433,11 +444,13 @@ git commit -m "feat(cards): loosen renderer CSP scoped to trusted card CDNs"
 ## Task B1: The renderer card bridge (`createCardBridge` + install)
 
 **Files:**
+
 - Create: `src/renderer/src/cardBridge/createCardBridge.ts`
 - Create: `src/renderer/src/cardBridge/index.ts`
 - Modify (later, B2): imported by `InlineCardFrame`
 
 **Interfaces:**
+
 - Consumes (synchronous store reads): `useChatStore`, `useCharacterStore`, `usePresetStore`, `useRegexStore`, `useProfileStore`, `useSettingsStore` (`.getState()`); the EJS engine via `evalTemplate` + `buildRenderContext` from `src/renderer/src/plugin/renderTemplate`.
 - Consumes (async writes): `window.api.applyVariableOps`, `window.api.generate`, `window.api.generateRaw`, `window.api.getLorebook`, `window.api.saveLorebook`, `window.api.editFloor` (see B-Phase-C tasks for write wiring; B1 ships reads + stubs that don't throw).
 - Produces: `createCardBridge(ctx: CardCtx): Record<string, unknown>` returning the globals object; `installCardBridge()` setting `window.__rptCardBridge`.
@@ -736,10 +749,12 @@ const useSettingsName = (): string => useSettingsStore.getState().settings?.pers
 ```
 
 > **Implementer note (not a placeholder):** the `formatAsTavernRegexedString` body above is written awkwardly to show intent — simplify it to:
+>
 > ```ts
 > formatAsTavernRegexedString: (text: any, ..._a: any[]) =>
 >   typeof text === 'string' ? useRegexStore.getState().apply(text) : text,
 > ```
+>
 > and move the three `import`/`const` helpers (`useRegexStore`, `useSettingsStore`, etc.) to the top of the file with the other imports (the trailing placement above is only to keep the diff readable; consolidate on implementation).
 
 - [ ] **Step 2: Install the bridge globally**
@@ -784,30 +799,32 @@ git commit -m "feat(cards): renderer card bridge (reads + EJS + events; writes s
 
 Every method already appears in Step 1; this table is the audit checklist — confirm each is present and on the right transport. "store read" = synchronous; "window.api" = async (Phase C); "stub" = parity no-op matching wcvPreload.
 
-| Method | Category | Source |
-|---|---|---|
-| getVariables, getChatMessages, getCurrentMessageId, getCharData, getPreset, getPresetNames, getTavernRegexes | sync getter | store read |
-| getTavernHelperVersion | const | `'4.3.17'` |
+| Method                                                                                                       | Category    | Source                              |
+| ------------------------------------------------------------------------------------------------------------ | ----------- | ----------------------------------- |
+| getVariables, getChatMessages, getCurrentMessageId, getCharData, getPreset, getPresetNames, getTavernRegexes | sync getter | store read                          |
+| getTavernHelperVersion                                                                                       | const       | `'4.3.17'`                          |
 | getCharWorldbookNames, getWorldbookNames, getCurrentCharPrimaryLorebook, getCharLorebooks, getCharAvatarPath | sync getter | store read (worldbook refined in C) |
-| formatAsTavernRegexedString | sync | `regexStore.apply` |
-| eventOn/eventMakeFirst/eventOnce/eventEmit/eventRemoveListener | event | per-frame bus |
-| substitudeMacros, getLorebookSettings, setLorebookSettings, waitGlobalInitialized, audio* | stub | parity no-op |
-| errorCatched | helper | wrap+log |
-| replaceVariables, insertOrAssignVariables, updateVariablesWith, Mvu.setMvuVariable, Mvu.replaceMvuData | async write | window.api (Phase C) |
-| setChatMessages, deleteChatMessages, createChatMessages, createChat, triggerSlash | async write | window.api / stub (Phase C) |
-| generate, generateRaw | async | window.api (Phase C) |
-| getWorldbook, replaceWorldbook, updateWorldbookWith, getLorebookEntries | async | window.api (Phase C) |
-| SillyTavern.saveChat, reloadCurrentChat | async | window.api (Phase C) |
+| formatAsTavernRegexedString                                                                                  | sync        | `regexStore.apply`                  |
+| eventOn/eventMakeFirst/eventOnce/eventEmit/eventRemoveListener                                               | event       | per-frame bus                       |
+| substitudeMacros, getLorebookSettings, setLorebookSettings, waitGlobalInitialized, audio\*                   | stub        | parity no-op                        |
+| errorCatched                                                                                                 | helper      | wrap+log                            |
+| replaceVariables, insertOrAssignVariables, updateVariablesWith, Mvu.setMvuVariable, Mvu.replaceMvuData       | async write | window.api (Phase C)                |
+| setChatMessages, deleteChatMessages, createChatMessages, createChat, triggerSlash                            | async write | window.api / stub (Phase C)         |
+| generate, generateRaw                                                                                        | async       | window.api (Phase C)                |
+| getWorldbook, replaceWorldbook, updateWorldbookWith, getLorebookEntries                                      | async       | window.api (Phase C)                |
+| SillyTavern.saveChat, reloadCurrentChat                                                                      | async       | window.api (Phase C)                |
 
 ---
 
 ## Task B2: `InlineCardFrame` component
 
 **Files:**
+
 - Create: `src/renderer/src/cardBridge/cardLibs.ts`
 - Create: `src/renderer/src/components/InlineCardFrame.tsx`
 
 **Interfaces:**
+
 - Consumes: `buildCardDoc` (A3); `installCardBridge` (B1); store hooks for ctx; the lib URLs from `cardLibs`.
 - Produces: `<InlineCardFrame html onContextMenu? />` — a same-origin sandboxed `srcdoc` iframe that auto-heights to content.
 
@@ -841,8 +858,12 @@ export const CARD_LIB_URLS: string[] = [
 ```
 
 If Vite cannot resolve `?url` for these dist files, add a `vite` types reference (`/// <reference types="vite/client" />`) at the top of the file, or declare the module:
+
 ```ts
-declare module '*?url' { const url: string; export default url }
+declare module '*?url' {
+  const url: string
+  export default url
+}
 ```
 
 - [ ] **Step 2: Implement `InlineCardFrame`**
@@ -970,9 +991,11 @@ git commit -m "feat(cards): InlineCardFrame same-origin iframe + bootstrap + aut
 ## Task B3: Route interactive cards to inline (global default)
 
 **Files:**
+
 - Modify: `src/renderer/src/components/MessageContent.tsx:5-6` (imports), `:40-50` (routing)
 
 **Interfaces:**
+
 - Consumes: `InlineCardFrame` (B2), `WcvMessageFrame` (existing), `resolveCardMode` + `DEFAULT_CARD_RENDER_MODE` (A1), `useSettingsStore` (global default).
 - Produces: interactive card segments render via the resolved mode. (Per-segment `mode` arrives in Phase D; here it is always `undefined` → global default.)
 
@@ -993,22 +1016,22 @@ import { resolveCardMode, DEFAULT_CARD_RENDER_MODE } from '../../../shared/cardR
 Inside the `MessageContent` component, before `return`:
 
 ```ts
-  const globalMode =
-    useSettingsStore((s) => s.settings?.cards?.renderMode) ?? DEFAULT_CARD_RENDER_MODE
+const globalMode =
+  useSettingsStore((s) => s.settings?.cards?.renderMode) ?? DEFAULT_CARD_RENDER_MODE
 ```
 
 Replace the interactive-card branch (currently `isInteractiveHtml(p.text) ? (<WcvMessageFrame .../>) : (<HtmlFrame .../>)`) with:
 
 ```tsx
-          isInteractiveHtml(p.text) ? (
-            resolveCardMode(undefined, globalMode) === 'isolated' ? (
-              <WcvMessageFrame key={i} html={p.text} />
-            ) : (
-              <InlineCardFrame key={i} html={p.text} onContextMenu={onContextMenu} />
-            )
-          ) : (
-            <HtmlFrame key={i} html={p.text} css={css} onContextMenu={onContextMenu} />
-          )
+isInteractiveHtml(p.text) ? (
+  resolveCardMode(undefined, globalMode) === 'isolated' ? (
+    <WcvMessageFrame key={i} html={p.text} />
+  ) : (
+    <InlineCardFrame key={i} html={p.text} onContextMenu={onContextMenu} />
+  )
+) : (
+  <HtmlFrame key={i} html={p.text} css={css} onContextMenu={onContextMenu} />
+)
 ```
 
 (The `undefined` first arg becomes `p.mode` in Task D5.)
@@ -1016,6 +1039,7 @@ Replace the interactive-card branch (currently `isInteractiveHtml(p.text) ? (<Wc
 - [ ] **Step 3: Manual test — the three cards inline**
 
 Run: `npm run dev`. With default settings (inline), open a chat whose messages trigger the beautification regex for each of:
+
 - **红花戏票** (ticket card) — renders styled, sized to content, scrolls WITH the chat (no inner scrollbar).
 - **对话美化fix** (Ellia, Vue app importing gsap/pinia, uses global Vue + `errorCatched`) — Vue mounts (no `errorCatched is not defined`, no blank `$1` text), animates, reads variables.
 - **角色查看器v3.0.5** (`min-height:100vh` viewer) — renders; note: a `100vh` card fills ~one viewport inline and scrolls with the page (expected). If its layout is unusable inline, that's the documented case for flipping it to Isolated (Phase D) — record the observation, don't block.
@@ -1036,9 +1060,11 @@ git commit -m "feat(cards): route interactive cards to InlineCardFrame by global
 ## Task C1: Bridge writes (variables, generate, worldbook, chat edit)
 
 **Files:**
+
 - Modify: `src/renderer/src/cardBridge/createCardBridge.ts` (replace the async no-op stubs with real `window.api` calls + optimistic store updates)
 
 **Interfaces:**
+
 - Consumes: `window.api.applyVariableOps(profileId, chatId, floor, ops)`, `window.api.generate(profileId, chatId, userAction)`, `window.api.generateRaw(profileId, chatId, config)`, `window.api.getLorebook(profileId, id)`, `window.api.saveLorebook(profileId, id, lorebook)`, `window.api.editFloor(profileId, chatId, floorIndex, userContent, responseContent)`; the `chatStore.applyVariableOps` action for optimistic updates.
 - Produces: variable writes persist + are visible to the card immediately; `generate`/`generateRaw` return text; worldbook get/replace round-trip.
 
@@ -1159,8 +1185,10 @@ export function replaceStatDataOps(
   const cur = current && typeof current === 'object' ? current : {}
   const safeNext = next && typeof next === 'object' ? next : {}
   const ops: VarOp[] = []
-  for (const k of Object.keys(cur)) if (!(k in safeNext)) ops.push({ op: 'remove', path: keyPointer(k) })
-  for (const [k, v] of Object.entries(safeNext)) ops.push({ op: 'set', path: keyPointer(k), value: v })
+  for (const k of Object.keys(cur))
+    if (!(k in safeNext)) ops.push({ op: 'remove', path: keyPointer(k) })
+  for (const [k, v] of Object.entries(safeNext))
+    ops.push({ op: 'set', path: keyPointer(k), value: v })
   return ops
 }
 ```
@@ -1250,26 +1278,26 @@ And the Mvu writes:
 Add the worldbook helpers near the bottom of `createCardBridge` (using `window.api` — confirm `getCharWorldbookNames`/`getLorebook` mapping against `window.api.scriptWorldbookGet`/`getLorebook` and the active card's own book = `id === characterId`, per the WCV invariants):
 
 ```ts
-  const fetchWorldbook = async (_name?: any): Promise<any> => {
-    // The card's own book is its character_book at id === characterId (WCV invariant). Use the
-    // chat-resolved character id; getLorebook returns { name, entries }.
-    try {
-      return await window.api.getLorebook(ctx.profileId, ctx.characterId)
-    } catch {
-      return { entries: [] }
-    }
+const fetchWorldbook = async (_name?: any): Promise<any> => {
+  // The card's own book is its character_book at id === characterId (WCV invariant). Use the
+  // chat-resolved character id; getLorebook returns { name, entries }.
+  try {
+    return await window.api.getLorebook(ctx.profileId, ctx.characterId)
+  } catch {
+    return { entries: [] }
   }
-  const saveWorldbook = async (_name: any, entries: any): Promise<void> => {
-    const lb = (await fetchWorldbook()) || { name: '', entries: [] }
-    const next = Array.isArray(entries) ? { ...lb, entries } : entries
-    try {
-      await window.api.saveLorebook(ctx.profileId, ctx.characterId, next)
-    } catch (e) {
-      console.error('[card saveWorldbook]', e)
-    }
+}
+const saveWorldbook = async (_name: any, entries: any): Promise<void> => {
+  const lb = (await fetchWorldbook()) || { name: '', entries: [] }
+  const next = Array.isArray(entries) ? { ...lb, entries } : entries
+  try {
+    await window.api.saveLorebook(ctx.profileId, ctx.characterId, next)
+  } catch (e) {
+    console.error('[card saveWorldbook]', e)
   }
-  const normalizeWb = (lb: any): any[] =>
-    Array.isArray(lb?.entries) ? lb.entries : Array.isArray(lb) ? lb : []
+}
+const normalizeWb = (lb: any): any[] =>
+  Array.isArray(lb?.entries) ? lb.entries : Array.isArray(lb) ? lb : []
 ```
 
 Refine the sync worldbook-name getters now that the active book is known:
@@ -1285,7 +1313,7 @@ Refine the sync worldbook-name getters now that the active book is known:
     },
 ```
 
-> **Verify before finalizing:** open `src/preload/index.ts` for the exact `getLorebook`/`saveLorebook`/`applyVariableOps`/`generate`/`generateRaw` signatures and the `chatStore.applyVariableOps` action signature; match arg order exactly. If `getLorebook` needs a lorebook *id* distinct from `characterId`, resolve it via `window.api.getChatLorebooks(profileId, chatId)` first (mirror the WCV worldbook bridge).
+> **Verify before finalizing:** open `src/preload/index.ts` for the exact `getLorebook`/`saveLorebook`/`applyVariableOps`/`generate`/`generateRaw` signatures and the `chatStore.applyVariableOps` action signature; match arg order exactly. If `getLorebook` needs a lorebook _id_ distinct from `characterId`, resolve it via `window.api.getChatLorebooks(profileId, chatId)` first (mirror the WCV worldbook bridge).
 
 - [ ] **Step 6: Type-check + manual write test**
 
@@ -1303,9 +1331,11 @@ git commit -m "feat(cards): inline bridge writes — variables, generate, worldb
 ## Task C2: Bridge events on store changes
 
 **Files:**
+
 - Modify: `src/renderer/src/cardBridge/createCardBridge.ts` (subscribe to `chatStore`; emit MVU/lifecycle events)
 
 **Interfaces:**
+
 - Consumes: `useChatStore.subscribe`.
 - Produces: when the chat's latest-floor variables change (e.g. after a generation), the bridge emits `mag_variable_updated` and `message_received` on the per-frame bus, so cards that registered `eventOn` react. The subscription is torn down when the frame unmounts (the bridge returns an `__rptDispose`).
 
@@ -1316,22 +1346,22 @@ git commit -m "feat(cards): inline bridge writes — variables, generate, worldb
 In `createCardBridge`, after creating `bus`:
 
 ```ts
-  let lastVarsJson = ''
-  const unsub = useChatStore.subscribe((state) => {
-    const f = state.floors[state.floors.length - 1]
-    const json = JSON.stringify(f?.variables ?? null)
-    if (json !== lastVarsJson) {
-      lastVarsJson = json
-      bus.emit(MVU_EVENTS.VARIABLE_UPDATED, statData())
-      bus.emit(TAVERN_EVENTS.MESSAGE_UPDATED)
-    }
-  })
+let lastVarsJson = ''
+const unsub = useChatStore.subscribe((state) => {
+  const f = state.floors[state.floors.length - 1]
+  const json = JSON.stringify(f?.variables ?? null)
+  if (json !== lastVarsJson) {
+    lastVarsJson = json
+    bus.emit(MVU_EVENTS.VARIABLE_UPDATED, statData())
+    bus.emit(TAVERN_EVENTS.MESSAGE_UPDATED)
+  }
+})
 ```
 
 Add to the returned object:
 
 ```ts
-    __rptDispose: () => unsub()
+__rptDispose: () => unsub()
 ```
 
 - [ ] **Step 2: Call dispose on unmount in `InlineCardFrame`**
@@ -1339,11 +1369,11 @@ Add to the returned object:
 The bootstrap assigns globals from the bridge object; capture the dispose on the iframe window and call it on cleanup. In `InlineCardFrame`'s effect cleanup, add:
 
 ```ts
-      try {
-        ;(frame.contentWindow as any)?.__rptDispose?.()
-      } catch {
-        /* ignore */
-      }
+try {
+  ;(frame.contentWindow as any)?.__rptDispose?.()
+} catch {
+  /* ignore */
+}
 ```
 
 (Place it inside the returned cleanup function, alongside `observer?.disconnect()`. The bootstrap already copies `__rptDispose` onto the iframe `window` via the `for (var k in g)` loop, since it's an own-enumerable key.)
@@ -1366,11 +1396,13 @@ git commit -m "feat(cards): inline bridge emits MVU/lifecycle events on store ch
 ## Task D1: `ScopeMeta.renderMode` + `scopeMeta.setRenderMode`
 
 **Files:**
+
 - Modify: `src/shared/artifactScope.ts:17-22` (`ScopeMeta`)
 - Modify: `src/main/services/scopeMeta.ts:20-24` (`prune`), add `setRenderMode`
 - Test: `test/scopeMetaRenderMode.test.ts`
 
 **Interfaces:**
+
 - Consumes: `CardRenderMode` (A1).
 - Produces: `ScopeMeta.renderMode?: CardRenderMode`; `setRenderMode(dir, file, renderMode: CardRenderMode | null): void` (null clears it); `prune` drops an entry only when it also has no `renderMode`.
 
@@ -1429,6 +1461,7 @@ In `src/shared/artifactScope.ts`, add the import and field:
 ```ts
 import type { CardRenderMode } from './cardRenderMode'
 ```
+
 ```ts
 export interface ScopeMeta {
   scope: ArtifactScope
@@ -1440,8 +1473,10 @@ export interface ScopeMeta {
 ```
 
 In `src/main/services/scopeMeta.ts`:
+
 - Add import: `import type { CardRenderMode } from '../../shared/cardRenderMode'`
 - Update `prune` to also require no renderMode:
+
 ```ts
 const prune = (meta: Record<string, ScopeMeta>, file: string): void => {
   const m = meta[file]
@@ -1449,25 +1484,31 @@ const prune = (meta: Record<string, ScopeMeta>, file: string): void => {
     delete meta[file]
 }
 ```
+
 - Update `setScope` and `setDisabled` to preserve `renderMode` (carry `prev.renderMode` in the written object). For `setScope`:
+
 ```ts
-  meta[file] = {
-    scope,
-    owner: scope === 'global' ? undefined : owner,
-    disabled: prev.disabled,
-    renderMode: prev.renderMode
-  }
+meta[file] = {
+  scope,
+  owner: scope === 'global' ? undefined : owner,
+  disabled: prev.disabled,
+  renderMode: prev.renderMode
+}
 ```
+
 For `setDisabled`:
+
 ```ts
-  meta[file] = {
-    scope: prev.scope ?? 'global',
-    owner: prev.owner,
-    disabled: disabled || undefined,
-    renderMode: prev.renderMode
-  }
+meta[file] = {
+  scope: prev.scope ?? 'global',
+  owner: prev.owner,
+  disabled: disabled || undefined,
+  renderMode: prev.renderMode
+}
 ```
+
 - Add the new setter:
+
 ```ts
 /** Set (or clear, with null) a per-card render-mode override, preserving scope/owner/disabled. */
 export const setRenderMode = (
@@ -1504,11 +1545,13 @@ git commit -m "feat(cards): scope sidecar renderMode override + setRenderMode"
 ## Task D2: `regexService` — `setScriptRenderMode` + carry `renderMode` to rules/scripts
 
 **Files:**
+
 - Modify: `src/shared/regexTypes.ts:9-15` (`RenderRegexRule`), `:18-25` (`RegexScriptInfo`)
 - Modify: `src/main/services/regexService.ts` — `getAllRules` (attach), `listScripts` (surface), add `setScriptRenderMode`, re-export `setRenderMode` usage
 - Test: `test/regexRenderMode.test.ts`
 
 **Interfaces:**
+
 - Consumes: `setRenderMode` (D1), `CardRenderMode` (A1).
 - Produces: `RenderRegexRule.renderMode?: CardRenderMode`; `RegexScriptInfo.renderMode?: CardRenderMode`; `setScriptRenderMode(profileId, file, renderMode: CardRenderMode | null): void`; `getAllRules` stamps each rule from the file's `_meta.renderMode`; `listScripts` surfaces it.
 
@@ -1566,29 +1609,45 @@ Run: `npx vitest run test/regexRenderMode.test.ts` → FAIL.
 - [ ] **Step 3: Implement**
 
 In `src/shared/regexTypes.ts`:
+
 ```ts
 import type { CardRenderMode } from './cardRenderMode'
 ```
+
 Add `renderMode?: CardRenderMode` to both `RenderRegexRule` and `RegexScriptInfo`.
 
 In `src/main/services/regexService.ts`:
+
 - Import `setRenderMode` from `./scopeMeta` (add to the existing import) and `CardRenderMode`:
+
 ```ts
-import { readScopeMeta, getScopeMeta, setScope, setDisabled, setRenderMode, removeScopeEntry } from './scopeMeta'
+import {
+  readScopeMeta,
+  getScopeMeta,
+  setScope,
+  setDisabled,
+  setRenderMode,
+  removeScopeEntry
+} from './scopeMeta'
 import type { CardRenderMode } from '../../shared/cardRenderMode'
 ```
+
 - In `getAllRules`, stamp the renderMode per file:
+
 ```ts
-    const mode = meta[file]?.renderMode
-    for (const raw of rulesInFile(path.join(dir, file))) {
-      const rule = normalizeRule(raw)
-      if (mode) rule.renderMode = mode
-      out.push(rule)
-    }
+const mode = meta[file]?.renderMode
+for (const raw of rulesInFile(path.join(dir, file))) {
+  const rule = normalizeRule(raw)
+  if (mode) rule.renderMode = mode
+  out.push(rule)
+}
 ```
+
 (replaces the existing `for (const raw of ...) out.push(normalizeRule(raw))` line.)
+
 - In `listScripts`, add `renderMode: m?.renderMode` to the returned object.
 - Add the setter next to `setScriptScope`:
+
 ```ts
 /** Set/clear a regex script's per-card render-mode override (null = follow global default). */
 export const setScriptRenderMode = (
@@ -1617,10 +1676,12 @@ git commit -m "feat(cards): regexService carries per-card renderMode + setScript
 ## Task D3: IPC + preload for `setRegexRenderMode`
 
 **Files:**
+
 - Modify: `src/main/ipc/regexIpc.ts:10-12` (add handler near `regex-set-scope`)
 - Modify: `src/preload/index.ts:180-181` (add method near `setRegexScope`)
 
 **Interfaces:**
+
 - Produces: `window.api.setRegexRenderMode(profileId, file, renderMode: string | null): Promise<unknown>` → IPC `regex-set-render-mode` → `regexService.setScriptRenderMode`.
 
 **No unit test** (IPC plumbing; exercised end-to-end by Task D6's manual test). One line each, mirroring an existing handler.
@@ -1630,9 +1691,9 @@ git commit -m "feat(cards): regexService carries per-card renderMode + setScript
 In `src/main/ipc/regexIpc.ts`, after the `regex-set-scope` handler:
 
 ```ts
-  ipcMain.handle('regex-set-render-mode', (_, profileId, file, renderMode) =>
-    regexService.setScriptRenderMode(profileId, file, renderMode)
-  )
+ipcMain.handle('regex-set-render-mode', (_, profileId, file, renderMode) =>
+  regexService.setScriptRenderMode(profileId, file, renderMode)
+)
 ```
 
 - [ ] **Step 2: Add the preload method**
@@ -1660,15 +1721,17 @@ git commit -m "feat(cards): IPC + preload for setRegexRenderMode"
 ## Task D4: `regexTransform` — export `isCardPayload` + `marker` apply option
 
 **Files:**
+
 - Modify: `src/shared/regexTransform.ts:24-25` (export rename), `:62-98` (`ApplyOptions` + apply loop)
 - Test: `test/regexMarker.test.ts`
 
 **Interfaces:**
+
 - Produces: `export const isCardPayload(s: string): boolean`; `ApplyOptions.marker?: (rule: R) => string | undefined` — a string prepended to that rule's replacement output per match.
 
 - [ ] **Step 1: Write the failing test**
 
-```ts
+````ts
 // test/regexMarker.test.ts
 import { describe, it, expect } from 'vitest'
 import { applyRegexRules, isCardPayload, type RegexLikeRule } from '../src/shared/regexTransform'
@@ -1693,9 +1756,14 @@ describe('isCardPayload', () => {
 
 describe('applyRegexRules marker option', () => {
   it('prepends the marker the callback returns', () => {
-    const out = applyRegexRules('X', [rule({ renderMode: 'isolated' })], {}, {
-      marker: (r: any) => (r.renderMode ? `<!--rpt:mode=${r.renderMode}-->` : undefined)
-    })
+    const out = applyRegexRules(
+      'X',
+      [rule({ renderMode: 'isolated' })],
+      {},
+      {
+        marker: (r: any) => (r.renderMode ? `<!--rpt:mode=${r.renderMode}-->` : undefined)
+      }
+    )
     expect(out).toBe('<!--rpt:mode=isolated--><html><body>card</body></html>')
   })
   it('emits nothing when the callback returns undefined', () => {
@@ -1703,7 +1771,7 @@ describe('applyRegexRules marker option', () => {
     expect(out).toBe('<html><body>card</body></html>')
   })
 })
-```
+````
 
 - [ ] **Step 2: Run — fails**
 
@@ -1712,16 +1780,21 @@ Run: `npx vitest run test/regexMarker.test.ts` → FAIL (`isCardPayload` not exp
 - [ ] **Step 3: Implement**
 
 In `src/shared/regexTransform.ts`:
+
 - Rename `isCodePayload` → `isCardPayload` and export it; update its one internal use in `buildReplacement`:
-```ts
+
+````ts
 /** A "frontend card" payload — beautification HTML carrying its own <script>/<style>. ... */
 export const isCardPayload = (s: string): boolean =>
   /```html|<script[\s>]|<style[\s>]|<(?:html|body)[\s>]/i.test(s)
-```
+````
+
 ```ts
-  if (!isCardPayload(rule.replace)) out = out.replace(/\\n/g, '\n')
+if (!isCardPayload(rule.replace)) out = out.replace(/\\n/g, '\n')
 ```
+
 - Add to `ApplyOptions<R>`:
+
 ```ts
   /**
    * Render-only: given the matched rule, return a marker string to PREPEND to that rule's
@@ -1729,14 +1802,16 @@ export const isCardPayload = (s: string): boolean =>
    */
   marker?: (rule: R) => string | undefined
 ```
+
 - In the apply loop, change the replace callback:
+
 ```ts
-    out = out.replace(re, (...args) => {
-      const { match, groups } = replaceArgs(args)
-      const repl = buildReplacement(rule, match, groups, ctx)
-      const mk = opts.marker?.(rule)
-      return mk ? mk + repl : repl
-    })
+out = out.replace(re, (...args) => {
+  const { match, groups } = replaceArgs(args)
+  const repl = buildReplacement(rule, match, groups, ctx)
+  const mk = opts.marker?.(rule)
+  return mk ? mk + repl : repl
+})
 ```
 
 - [ ] **Step 4: Run — passes (and the existing regex suite stays green)**
@@ -1756,16 +1831,18 @@ git commit -m "feat(cards): regexTransform marker option + export isCardPayload"
 ## Task D5: `splitHtml` parses the mode marker + route by resolved mode
 
 **Files:**
+
 - Modify: `src/renderer/src/components/MessageContent.tsx:61-77` (`Segment` + `splitHtml`), `:40-50` (routing)
 - Test: `test/splitHtmlMode.test.ts`
 
 **Interfaces:**
+
 - Consumes: `CardRenderMode` (A1).
 - Produces: `Segment = { type: 'md' | 'html'; text: string; mode?: CardRenderMode }`; `splitHtml` strips a trailing `<!--rpt:mode=...-->` from the md text preceding an html block and attaches `mode` to that html segment.
 
 - [ ] **Step 1: Write the failing test**
 
-```ts
+````ts
 // test/splitHtmlMode.test.ts
 import { describe, it, expect } from 'vitest'
 import { splitHtml } from '../src/renderer/src/components/MessageContent'
@@ -1788,7 +1865,7 @@ describe('splitHtml mode marker', () => {
     expect(segs.find((s) => s.type === 'html')!.mode).toBeUndefined()
   })
 })
-```
+````
 
 - [ ] **Step 2: Run — fails**
 
@@ -1797,10 +1874,13 @@ Run: `npx vitest run test/splitHtmlMode.test.ts` → FAIL.
 - [ ] **Step 3: Implement `splitHtml` v2**
 
 In `src/renderer/src/components/MessageContent.tsx`, add the import:
+
 ```ts
 import type { CardRenderMode } from '../../../shared/cardRenderMode'
 ```
+
 Replace the `Segment` type and `splitHtml`:
+
 ```ts
 type Segment = { type: 'md' | 'html'; text: string; mode?: CardRenderMode }
 
@@ -1840,12 +1920,13 @@ export const splitHtml = (content: string): Segment[] => {
 - [ ] **Step 4: Route by the per-segment resolved mode**
 
 Update the routing from Task B3 to use `p.mode`:
+
 ```tsx
-            resolveCardMode(p.mode, globalMode) === 'isolated' ? (
-              <WcvMessageFrame key={i} html={p.text} />
-            ) : (
-              <InlineCardFrame key={i} html={p.text} onContextMenu={onContextMenu} />
-            )
+resolveCardMode(p.mode, globalMode) === 'isolated' ? (
+  <WcvMessageFrame key={i} html={p.text} />
+) : (
+  <InlineCardFrame key={i} html={p.text} onContextMenu={onContextMenu} />
+)
 ```
 
 - [ ] **Step 5: Run — passes**
@@ -1864,10 +1945,12 @@ git commit -m "feat(cards): parse render-mode marker in splitHtml + route by res
 ## Task D6: `regexStore` emits the marker + RegexPanel per-script selector
 
 **Files:**
+
 - Modify: `src/renderer/src/stores/regexStore.ts:1-2` (import), `:15-33` (state), `:81-101` (action + apply)
 - Modify: `src/renderer/src/components/RegexPanel.tsx:25-27` (destructure), add `changeRenderMode` + the selector JSX
 
 **Interfaces:**
+
 - Consumes: `isCardPayload` (D4), `setRegexRenderMode` (D3), `RegexScriptInfo.renderMode` (D2), `CardRenderMode` (A1).
 - Produces: `regexStore.apply` prepends `<!--rpt:mode=...-->` for rules that carry `renderMode` and emit a card payload; `regexStore.setRenderMode(profileId, file, renderMode | null)` action; a Default/Inline/Isolated `<select>` per script.
 
@@ -1876,29 +1959,38 @@ git commit -m "feat(cards): parse render-mode marker in splitHtml + route by res
 - [ ] **Step 1: Emit the marker in `apply`**
 
 In `src/renderer/src/stores/regexStore.ts`:
+
 - Update the import:
+
 ```ts
-import { applyRegexRules, isCardPayload, type RegexApplyContext } from '../../../shared/regexTransform'
+import {
+  applyRegexRules,
+  isCardPayload,
+  type RegexApplyContext
+} from '../../../shared/regexTransform'
 import type { CardRenderMode } from '../../../shared/cardRenderMode'
 ```
+
 - Add the action to the `RegexState` interface:
+
 ```ts
-  setRenderMode: (
-    profileId: string,
-    file: string,
-    renderMode: CardRenderMode | null
-  ) => Promise<void>
+setRenderMode: (profileId: string, file: string, renderMode: CardRenderMode | null) => Promise<void>
 ```
+
 - Add the marker helper above the store and use it in `apply`:
+
 ```ts
 const modeMarker = (rule: RenderRegexRule): string | undefined =>
   rule.renderMode && isCardPayload(rule.replace) ? `<!--rpt:mode=${rule.renderMode}-->` : undefined
 ```
+
 ```ts
-  apply: (content, ctx) =>
-    applyRegexRules(content, get().rules, ctx ?? {}, { compile: getRe, marker: modeMarker })
+apply: (content, ctx) =>
+  applyRegexRules(content, get().rules, ctx ?? {}, { compile: getRe, marker: modeMarker })
 ```
+
 - Add the action implementation (mirror `setScope`):
+
 ```ts
   setRenderMode: async (profileId, file, renderMode) => {
     await window.api.setRegexRenderMode(profileId, file, renderMode)
@@ -1910,34 +2002,55 @@ const modeMarker = (rule: RenderRegexRule): string | undefined =>
 - [ ] **Step 2: Add the selector to `RegexPanel`**
 
 In `src/renderer/src/components/RegexPanel.tsx`:
+
 - Destructure the new action and import the type:
+
 ```ts
-import { useRegexStore, RegexRuleDetail, RegexRulePatch, RegexScriptInfo, ArtifactScope } from '../stores/regexStore'
+import {
+  useRegexStore,
+  RegexRuleDetail,
+  RegexRulePatch,
+  RegexScriptInfo,
+  ArtifactScope
+} from '../stores/regexStore'
 import type { CardRenderMode } from '../../../shared/cardRenderMode'
 ```
+
 ```ts
-  const { scripts, loadScripts, importScripts, remove, updateRule, setScope, setDisabled, setRenderMode } =
-    useRegexStore()
+const {
+  scripts,
+  loadScripts,
+  importScripts,
+  remove,
+  updateRule,
+  setScope,
+  setDisabled,
+  setRenderMode
+} = useRegexStore()
 ```
+
 - Add the change handler next to `changeScope`:
+
 ```ts
-  const changeRenderMode = (file: string, v: string): void => {
-    setRenderMode(profileId, file, v === '' ? null : (v as CardRenderMode))
-  }
+const changeRenderMode = (file: string, v: string): void => {
+  setRenderMode(profileId, file, v === '' ? null : (v as CardRenderMode))
+}
 ```
+
 - In `renderScript`, after the scope `<select>` (the block ending at line ~94), add a render-mode select:
+
 ```tsx
-          <select
-            className="scope-select"
-            value={s.renderMode ?? ''}
-            title="Render mode — how this card's UI is displayed (Default follows Settings)."
-            onClick={(e) => e.stopPropagation()}
-            onChange={(e) => changeRenderMode(s.file, e.target.value)}
-          >
-            <option value="">Default</option>
-            <option value="inline">Inline</option>
-            <option value="isolated">Isolated</option>
-          </select>
+<select
+  className="scope-select"
+  value={s.renderMode ?? ''}
+  title="Render mode — how this card's UI is displayed (Default follows Settings)."
+  onClick={(e) => e.stopPropagation()}
+  onChange={(e) => changeRenderMode(s.file, e.target.value)}
+>
+  <option value="">Default</option>
+  <option value="inline">Inline</option>
+  <option value="isolated">Isolated</option>
+</select>
 ```
 
 - [ ] **Step 3: Type-check + full suite**
@@ -1948,6 +2061,7 @@ Expected: green.
 - [ ] **Step 4: Manual end-to-end test**
 
 Run: `npm run dev`.
+
 1. Set global default = Inline (Settings). Open a chat with the **角色查看器** card → it renders inline.
 2. In the Regex panel, find that script, set its render mode = **Isolated**. Re-render the message (re-open the chat / new turn) → the same card now renders in a WCV overlay (crash-isolated), proving the marker round-trips disk → rules → `apply` → `splitHtml` → routing.
 3. Set it back to **Default** → it follows the global setting again.

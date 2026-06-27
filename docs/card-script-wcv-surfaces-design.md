@@ -22,6 +22,7 @@ owner's **"default invisible script engine for all cards; panels are for game UI
 
 **Card UI placement (CHANGED from §4b/§4h).** The original plan auto-LIFTED the `状态栏` status regex into a
 `panel_ui` slot on import. **That was reverted.** The locked direction is:
+
 - **ST-compat card UIs that come from regex DEFAULT to inline regex** (rendered in the message, like ST).
 - The **user can PROMOTE** a loader-regex UI (the `$('body').load('https://…')` ones: 状态栏 / 首页 /
   自定义开局) **to a docked WCV panel** via a per-regex render-mode `'panel'` in the regex manager, then pick
@@ -81,7 +82,7 @@ the disassembled source:
   (lorebook) and `updateTavernRegexesWith(updater, option)` (regex), caching in script-scope vars via
   `updateVariablesWith(fn, {type:'script', script_id})`. Uses `_` (lodash) throughout.
 
-Net: *a button that opens a modal to download/sync lorebook entries + regex from a cloud store.*
+Net: _a button that opens a modal to download/sync lorebook entries + regex from a cloud store._
 
 ---
 
@@ -99,7 +100,7 @@ the baked handler runs `eventEmit(getButtonEvent('命定创意工坊'))` (`bridg
 
 **Why nothing happens** (the inline iframe is the wrong environment for a full-page app), in order of impact:
 
-1. **The overlay is invisible.** `$('…').appendTo('body')` appends to the *iframe's* body. The iframe is
+1. **The overlay is invisible.** `$('…').appendTo('body')` appends to the _iframe's_ body. The iframe is
    content-sized via `__rptresize` (`bridge.ts:201`), and a `position:fixed` element contributes **0** to
    `scrollHeight` → the frame stays ~1px in the right panel → the modal is clipped to nothing.
 2. **The handler throws first.** The frozen inline `TAVERN_SHIM` (`shims/tavern.ts`) is missing/incompatible
@@ -137,7 +138,7 @@ RP Terminal already mirrors most of these in the **WCV** path — just not the i
 A WCV is the right host (the user's "workaround"), but it must be **script-driven, not hardcoded**. The hard
 part is already built: `wcvManager` (`wcvManager.ts`), the `wcvPreload` shim over the canonical
 `createThRuntime` (`wcvPreload.ts`), and a rich host bridge incl. worldbook **read+write** and regex reads
-(`wcvIpc.ts`). What's hardcoded is the *entry point*: `WcvPanel.tsx` embeds the `命定之诗` status/home/start
+(`wcvIpc.ts`). What's hardcoded is the _entry point_: `WcvPanel.tsx` embeds the `命定之诗` status/home/start
 URLs and `viewRegistry.tsx:85` registers `wcv-card`/`wcv-home`/`wcv-start`. This design replaces that with a
 registry fed by cards/scripts.
 
@@ -146,7 +147,8 @@ registry fed by cards/scripts.
 **full-window modal** — all driven by the script/card.
 
 ### 4a. Script-hosting WCV transport
-Add `CardScriptWcvHost` as a sibling to `CardScriptHost`. It hosts the *same* merged runtime scripts
+
+Add `CardScriptWcvHost` as a sibling to `CardScriptHost`. It hosts the _same_ merged runtime scripts
 (`getRuntimeScripts`) in a WCV page built from the `wcvPreload` shim + each script as
 `<script type="module">`. This reuses every bridge in `wcvIpc` — worldbook, regex, vars, generation — and
 gives scripts the real DOM + network + storage they were written for.
@@ -158,18 +160,19 @@ through the shared runtime (per `CLAUDE.md`'s "one surface, two transports" rule
 host process and the DOM, not the API.
 
 ### 4b. Card/script-declared surfaces (the no-hardcode hook)
+
 A surface is declared by the card (never hardcoded), one of:
 
 - **Runtime button → modal (covers `创意工坊` unmodified):** when a WCV script calls `replaceScriptButtons([...])`,
   the shim sends `wcv-register-button` → main → renderer `toolbarStore`. The script's button appears in the
   menu with **no host knowledge of the card**.
 - **Declarative panel (covers the `状态栏` status UI — the chosen path):** a WCV panel is a `panel_ui` slot
-  (`view:"wcv"` + `entry` URL + `rect`) in the card-carried layout (§4h). The card declares *where*, *how big*,
-  and *what page* — **nothing is hardcoded**, and no script is needed for a static page. The host mounts the
+  (`view:"wcv"` + `entry` URL + `rect`) in the card-carried layout (§4h). The card declares _where_, _how big_,
+  and _what page_ — **nothing is hardcoded**, and no script is needed for a static page. The host mounts the
   `entry` via `WcvPanel`/`wcvManager` with the `wcvPreload` shim. This replaces the old hardcoded `wcv-card`
   view.
 - **Runtime panel (deferred — dynamic panels only):** a card-facing `registerScriptPanel({id,title,slot,entry})`
-  on `thRuntime` lets a *script* add a panel at runtime (e.g. one that only appears under some condition); the
+  on `thRuntime` lets a _script_ add a panel at runtime (e.g. one that only appears under some condition); the
   layout can reference it by id. Not needed for `状态栏` (which is static → a declarative slot). Keep as a
   future hook; not on the critical path.
 
@@ -183,8 +186,13 @@ A surface is declared by the card (never hardcoded), one of:
 
   ```jsonc
   // panel_ui.slots[] — the status panel (replaces regex #5)
-  { "id": "status", "view": "wcv", "rect": [8, 0, 4, 6], "title": "状态栏",
-    "entry": "https://testingcf.jsdelivr.net/gh/The-poem-of-destiny/FrontEnd-for-destined-journey@1.8.2/dist/status/index.html" }
+  {
+    "id": "status",
+    "view": "wcv",
+    "rect": [8, 0, 4, 6],
+    "title": "状态栏",
+    "entry": "https://testingcf.jsdelivr.net/gh/The-poem-of-destiny/FrontEnd-for-destined-journey@1.8.2/dist/status/index.html"
+  }
   ```
 
   The `status/index.html` bundle is unchanged — it just renders into the WCV panel body instead of an inline
@@ -198,6 +206,7 @@ status-loader regex (`placement:[2]`, replacement does `.load('…/status/index.
 (Detection keys on the distinct `status/index.html` URL, so it won't catch the other two.)
 
 ### 4c. Button bus across the WCV boundary
+
 Add the missing event trio to `thRuntime` (`index.ts`): `getButtonEvent` (identity-mapped to the raw name,
 matching the inline `withButtons` contract), a real `eventOn`/`eventEmit`/`eventRemoveListener` bus, and
 `replaceScriptButtons`/`getScriptButtons`. Wiring:
@@ -205,37 +214,40 @@ matching the inline `withButtons` contract), a real `eventOn`/`eventEmit`/`event
 - script → host: `replaceScriptButtons` → `wcv-register-button(name, visible)` → `toolbarStore` (deduped by
   `card:<id>::<name>`, cleared on WCV teardown — mirror `CardScriptHost.tsx:242`/`:275`).
 - host → script: clicking the menu button → `wcv-button-click(name)` → `wcvManager.notifyEvent(chatId,
-  getButtonEvent(name))` → runtime `emit` → the script's `eventOn` handler. (`wcvManager.notifyEvent`
+getButtonEvent(name))` → runtime `emit` → the script's `eventOn` handler. (`wcvManager.notifyEvent`
   already exists — `wcvManager.ts:238`.)
 
 ### 4d. Modal presentation (button-launched overlay)
+
 For `kind:"modal"` the surface is a **full-window, transparent, hidden** WCV. The module is loaded and
 subscribed up front. On button-click: `setVisible(true)` (`wcvManager.setVisible` exists, `wcvManager.ts:170`)
-+ emit the event → the script paints its own `inset:0` backdrop+modal filling the now-visible WCV (a true
-modal over the app). On dismiss: detect the script's overlay teardown — its content height collapses (reuse
-the `wcv-content-size` reporter, `wcvPreload.ts:64`) or the script calls a new `closeSurface()` / its overlay
-close handler posts a message → `setVisible(false)`. No splitter/bounds-sync tax: the rect is the whole
-window content area (recomputed on window-resize only). This makes *any* `replaceScriptButtons`-style card
-work as a modal with no per-card code.
+
+- emit the event → the script paints its own `inset:0` backdrop+modal filling the now-visible WCV (a true
+  modal over the app). On dismiss: detect the script's overlay teardown — its content height collapses (reuse
+  the `wcv-content-size` reporter, `wcvPreload.ts:64`) or the script calls a new `closeSurface()` / its overlay
+  close handler posts a message → `setVisible(false)`. No splitter/bounds-sync tax: the rect is the whole
+  window content area (recomputed on window-resize only). This makes _any_ `replaceScriptButtons`-style card
+  work as a modal with no per-card code.
 
 ### 4e. Fill the `thRuntime` API gaps
+
 Concrete additions to the canonical surface (`thRuntime/index.ts`) + the WCV host (`wcvIpc.ts`):
 
-| Workshop call | Status today | Action |
-| --- | --- | --- |
-| `getCharWorldbookNames('current')` | ✅ sync `{primary,additional}` (`index.ts:206`) | none |
-| `getWorldbook` / `updateWorldbookWith` | ✅ (`index.ts:259`/`:267`) | none |
-| `getTavernRegexes(option)` | 🟡 ignores `option` (`index.ts:215`) | honor `global`/`character`/`preset` |
-| `isCharacterTavernRegexesEnabled` | ⬜ | add (host getter) |
-| `updateTavernRegexesWith` / `replaceTavernRegexes` | 🔁 no-op (`index.ts:298`) | **regex WRITE bridge** — wire to the EXISTING `regexService` (`updateRule`/`saveRegexScript`/`deleteScript`/`setScriptDisabled`); add only a `TavernRegex[]`→store shape map + `wcv-host-replace-regexes` IPC (mirror the worldbook replace path, `wcvIpc.ts:179`). Do NOT build a new regex store. |
-| `getCurrentCharacterName` | ⬜ | add (from `charData().name`) |
-| `SillyTavern.getCurrentChatId` | ⬜ | add to the `SillyTavern` object (`index.ts:351`) |
-| `getScriptId` | ⬜ | add (stable per-script id) |
-| `getVariables({type:'script'})` / `updateVariablesWith(..,{type:'script'})` | 🟡 always stat_data (`index.ts:198`/`:246`) | honor `script` scope → script-owned KV |
-| `getButtonEvent` / `eventOn` / `replaceScriptButtons` | ⬜ | add + bridge (4c) |
-| `registerScriptPanel({id,title,slot,entry})` (RPT ext) | ⬜ deferred | dynamic panels only — NOT the `状态栏` path (that's a declarative `panel_ui` slot, §4b/§4h). Future hook. |
+| Workshop call                                                               | Status today                                    | Action                                                                                                                                                                                                                                                                                              |
+| --------------------------------------------------------------------------- | ----------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `getCharWorldbookNames('current')`                                          | ✅ sync `{primary,additional}` (`index.ts:206`) | none                                                                                                                                                                                                                                                                                                |
+| `getWorldbook` / `updateWorldbookWith`                                      | ✅ (`index.ts:259`/`:267`)                      | none                                                                                                                                                                                                                                                                                                |
+| `getTavernRegexes(option)`                                                  | 🟡 ignores `option` (`index.ts:215`)            | honor `global`/`character`/`preset`                                                                                                                                                                                                                                                                 |
+| `isCharacterTavernRegexesEnabled`                                           | ⬜                                              | add (host getter)                                                                                                                                                                                                                                                                                   |
+| `updateTavernRegexesWith` / `replaceTavernRegexes`                          | 🔁 no-op (`index.ts:298`)                       | **regex WRITE bridge** — wire to the EXISTING `regexService` (`updateRule`/`saveRegexScript`/`deleteScript`/`setScriptDisabled`); add only a `TavernRegex[]`→store shape map + `wcv-host-replace-regexes` IPC (mirror the worldbook replace path, `wcvIpc.ts:179`). Do NOT build a new regex store. |
+| `getCurrentCharacterName`                                                   | ⬜                                              | add (from `charData().name`)                                                                                                                                                                                                                                                                        |
+| `SillyTavern.getCurrentChatId`                                              | ⬜                                              | add to the `SillyTavern` object (`index.ts:351`)                                                                                                                                                                                                                                                    |
+| `getScriptId`                                                               | ⬜                                              | add (stable per-script id)                                                                                                                                                                                                                                                                          |
+| `getVariables({type:'script'})` / `updateVariablesWith(..,{type:'script'})` | 🟡 always stat_data (`index.ts:198`/`:246`)     | honor `script` scope → script-owned KV                                                                                                                                                                                                                                                              |
+| `getButtonEvent` / `eventOn` / `replaceScriptButtons`                       | ⬜                                              | add + bridge (4c)                                                                                                                                                                                                                                                                                   |
+| `registerScriptPanel({id,title,slot,entry})` (RPT ext)                      | ⬜ deferred                                     | dynamic panels only — NOT the `状态栏` path (that's a declarative `panel_ui` slot, §4b/§4h). Future hook.                                                                                                                                                                                           |
 
-Regex write is the only genuinely missing **wiring** (the rest are getters/bus). The write *storage*
+Regex write is the only genuinely missing **wiring** (the rest are getters/bus). The write _storage_
 already exists in `regexService` — what's missing is the TH-shape bridge that maps `updateTavernRegexesWith` /
 `replaceTavernRegexes(TavernRegex[], option)` onto it. See the reuse map (§4g) for why this must land on the
 canonical WCV host only, not the legacy `scriptApiService`/`dispatch` path.
@@ -251,18 +263,18 @@ sit on the **legacy** stack; this design moves them to the **canonical** one. Th
 implementation: **reuse the canonical pieces; do not extend the legacy stack and do not write new
 equivalents.**
 
-| Need | Reuse (don't rebuild) | Notes / duplication to avoid |
-| --- | --- | --- |
-| Out-of-process host + bounds/visibility | `wcvManager` + `window.api.wcv*` (`wcvEnsure`/`SetBounds`/`SetVisible`/`Destroy`, already exposed in `preload/index.ts`) | A WCV manager already serves both inline-message frames and panels; add a slot, not a new manager. |
-| Building the script's WCV page | `buildCardDoc` + `cardEnv`/`buildWcvLibTags` (as `WcvMessageFrame` does) — wrap each script as `<script type="module">` | The inline iframe's `buildScriptSrcDoc` (`bridgeShim.ts`) is the LEGACY-stack doc builder; don't reuse it for the WCV path. |
-| TH/MVU/ST API surface | `shared/thRuntime` (one place) | Do NOT add the new helpers (regex write, `getButtonEvent`, `getCurrentChatId`, script-scope vars) to `shims/tavern.ts` — it's frozen, and that would re-create drift. |
-| Host data access (worldbook/regex/char/preset reads + worldbook write) | the `wcvIpc` host bridge (worldbook read+write already there) | `scriptApiService.ts` is the LEGACY parallel of `wcvIpc` over the same services (`lorebookService`, `regexService`, …). Card-script reads/writes go through `wcvIpc`; leave `scriptApiService` for the plugin path. |
-| Regex write storage | `regexService` (`updateRule`/`saveRegexScript`/`deleteScript`) | No existing TH-regex-write bridge; add the shape map only. |
-| Lifecycle/MVU events → script | the existing `App.tsx` → `wcvBroadcastEvent`/`wcvBroadcastVars` → `wcvManager.notifyEvent` path | `CardScriptHost` has its OWN event forwarding (`chatTransitionEvents`/`messageMutationEvents`/`buildMvuEvents` → iframe, `CardScriptHost.tsx:322-364`) computed from the SAME `plugin/events.ts`. Moving scripts to the WCV makes that bespoke forwarding unnecessary — reuse App's broadcast, don't port it. |
-| Button menu UI | `toolbarStore` + `ScriptActionsBar` | Already host-rendered; add only the WCV→toolbar bridge (§4c). |
-| Modal show/hide | `wcvSetVisible` + the script's own backdrop | No new `Modal.tsx`/portal needed — the WCV is the modal. |
-| Merged runtime scripts | the shared `get-runtime-scripts` IPC | Single source already; reuse as-is. |
-| Per-card consent / trust grant | the existing `ConsentCardView` + `trusted`/`remoteScripts` grants | Reuse the gate; don't add a parallel consent. |
+| Need                                                                   | Reuse (don't rebuild)                                                                                                    | Notes / duplication to avoid                                                                                                                                                                                                                                                                                  |
+| ---------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Out-of-process host + bounds/visibility                                | `wcvManager` + `window.api.wcv*` (`wcvEnsure`/`SetBounds`/`SetVisible`/`Destroy`, already exposed in `preload/index.ts`) | A WCV manager already serves both inline-message frames and panels; add a slot, not a new manager.                                                                                                                                                                                                            |
+| Building the script's WCV page                                         | `buildCardDoc` + `cardEnv`/`buildWcvLibTags` (as `WcvMessageFrame` does) — wrap each script as `<script type="module">`  | The inline iframe's `buildScriptSrcDoc` (`bridgeShim.ts`) is the LEGACY-stack doc builder; don't reuse it for the WCV path.                                                                                                                                                                                   |
+| TH/MVU/ST API surface                                                  | `shared/thRuntime` (one place)                                                                                           | Do NOT add the new helpers (regex write, `getButtonEvent`, `getCurrentChatId`, script-scope vars) to `shims/tavern.ts` — it's frozen, and that would re-create drift.                                                                                                                                         |
+| Host data access (worldbook/regex/char/preset reads + worldbook write) | the `wcvIpc` host bridge (worldbook read+write already there)                                                            | `scriptApiService.ts` is the LEGACY parallel of `wcvIpc` over the same services (`lorebookService`, `regexService`, …). Card-script reads/writes go through `wcvIpc`; leave `scriptApiService` for the plugin path.                                                                                           |
+| Regex write storage                                                    | `regexService` (`updateRule`/`saveRegexScript`/`deleteScript`)                                                           | No existing TH-regex-write bridge; add the shape map only.                                                                                                                                                                                                                                                    |
+| Lifecycle/MVU events → script                                          | the existing `App.tsx` → `wcvBroadcastEvent`/`wcvBroadcastVars` → `wcvManager.notifyEvent` path                          | `CardScriptHost` has its OWN event forwarding (`chatTransitionEvents`/`messageMutationEvents`/`buildMvuEvents` → iframe, `CardScriptHost.tsx:322-364`) computed from the SAME `plugin/events.ts`. Moving scripts to the WCV makes that bespoke forwarding unnecessary — reuse App's broadcast, don't port it. |
+| Button menu UI                                                         | `toolbarStore` + `ScriptActionsBar`                                                                                      | Already host-rendered; add only the WCV→toolbar bridge (§4c).                                                                                                                                                                                                                                                 |
+| Modal show/hide                                                        | `wcvSetVisible` + the script's own backdrop                                                                              | No new `Modal.tsx`/portal needed — the WCV is the modal.                                                                                                                                                                                                                                                      |
+| Merged runtime scripts                                                 | the shared `get-runtime-scripts` IPC                                                                                     | Single source already; reuse as-is.                                                                                                                                                                                                                                                                           |
+| Per-card consent / trust grant                                         | the existing `ConsentCardView` + `trusted`/`remoteScripts` grants                                                        | Reuse the gate; don't add a parallel consent.                                                                                                                                                                                                                                                                 |
 
 ### 4h. Card-carried panel layout (the workspace the card ships)
 
@@ -277,7 +289,8 @@ today): `rp_terminal.panel_ui` (`character.ts:71`) is a `grid {cols, rows}` + `s
   (resolves to pixel bounds at render time, recomputed on window resize). Optional per-slot `minPx`
   constraints can be added later; keep the unit grid-relative.
 
-**Slot content kinds** (unifies §4b — a slot says *where*, this says *what*):
+**Slot content kinds** (unifies §4b — a slot says _where_, this says _what_):
+
 - a **native view** id (`"chat"`, `"status"`, `"usage"`, …) → the existing `ViewRegistry`;
 - `view:"wcv"` + `entry:"…url…"` → a card WCV panel declared inline in the layout (no script needed — best
   for a static page like the status UI);
@@ -285,7 +298,7 @@ today): `rp_terminal.panel_ui` (`character.ts:71`) is a `grid {cols, rows}` + `s
   layout (for panels created/conditional at runtime).
 
 This reconciles the two ways to get the **status** panel: with a card-carried layout, the simplest form is a
-**declarative `wcv` slot** carrying the status URL — `registerScriptPanel` (§4b) stays for *dynamic* panels.
+**declarative `wcv` slot** carrying the status URL — `registerScriptPanel` (§4b) stays for _dynamic_ panels.
 A card may mix: declarative slots for fixed panels, script registration for runtime ones.
 
 **Inline-regex UIs are NOT panels.** `首页`/`自定义开局` (onboarding) AND the in-message beautifications —
@@ -308,6 +321,7 @@ the layout governs ONLY the docked workspace panels. For 命定之诗 the only d
 ```
 
 **Import wiring:**
+
 - A card that **carries** `panel_ui` → the workspace uses `StaticWorkspace` with that layout; cards without it
   keep the default resizable workspace (no regression for plain ST cards).
 - For **legacy** cards that don't carry it (like this 命定之诗 build), the importer **synthesizes** `panel_ui`
@@ -327,6 +341,7 @@ live-drag trailing; the recorded direction in `docs/card-custom-ui-design.md`). 
 card+profile, with "reset to card layout") is a **deferred** follow-up, not built first.
 
 ### 4f. Network + OAuth
+
 `CARD_CSP` already allows `connect-src *` (`wcvManager.ts:20`), so the Cloudflare fetch works. The OAuth
 `window.open` needs a `setWindowOpenHandler` on the **card WCV** (today only the main window has one, which
 denies → external browser, `index.ts:59`) — allow it as a child popup and relay the `postMessage` callback.
@@ -338,7 +353,7 @@ Gate behind the same trusted-card consent that already guards remote card code (
 ## 5. Build order
 
 1. **`thRuntime` gaps + regex write** (4e) — pure surface/bridge work, independently useful; unblocks both
-   transports. *Touches the card-facing surface → update the SDK docs (see below).*
+   transports. _Touches the card-facing surface → update the SDK docs (see below)._
 2. **Button bus across WCV** (4c) — `replaceScriptButtons` → menu, click → event.
 3. **`CardScriptWcvHost` transport** (4a) + transport selection — host existing scripts in a WCV.
 4. **Modal presentation** (4d) — hidden full-window WCV toggled by the button. → **`创意工坊` opens and can
@@ -392,10 +407,10 @@ gets the same door.
 - `src/renderer/src/stores/toolbarStore.ts` — already fits; feed it from the WCV bridge.
 - `src/main/types/character.ts` — `panel_ui` (`:71`) already models the layout; no schema change needed
   (optional later: a min-size constraint / explicit static-lock marker).
-**Reuse, don't modify** (per §4g): `src/main/services/regexService.ts` (regex write storage),
-`src/renderer/src/App.tsx` (already broadcasts lifecycle/MVU events to all WCVs on the chat),
-`src/main/services/scriptApiService.ts` + `src/main/ipc/pluginIpc.ts` + `src/renderer/src/plugin/*`
-(the legacy iframe/plugin stack — leave it for plugins; do not extend it for card scripts).
+  **Reuse, don't modify** (per §4g): `src/main/services/regexService.ts` (regex write storage),
+  `src/renderer/src/App.tsx` (already broadcasts lifecycle/MVU events to all WCVs on the chat),
+  `src/main/services/scriptApiService.ts` + `src/main/ipc/pluginIpc.ts` + `src/renderer/src/plugin/*`
+  (the legacy iframe/plugin stack — leave it for plugins; do not extend it for card scripts).
 
 - **SDK docs**: when step 1/4b land, update `docs/sdk/component-inventory.md` §2 (runtime API) + §4 (format)
   and `docs/rpt-api.md`, per `docs/sdk/README.md`.

@@ -24,7 +24,7 @@ real cards render wrong:
   and **rewrites `min-height:NNvh` → `var(--TH-viewport-height)`** (or `calc(var(...) * N/100)`) in CSS,
   inline `style=`, and JS (`adjust_viewport.js` + `replaceVhInContent`), so cards FILL the window. RPT
   instead **neutralizes** `min-height:NNvh → 0` to force content-fit (`InlineCardFrame.neutralizeViewportHeight`).
-  That's the right default for an embedded beautification, but it means a card *designed* to fill a viewport
+  That's the right default for an embedded beautification, but it means a card _designed_ to fill a viewport
   has no way to do so, and any card reading `var(--TH-viewport-height)` gets an empty value.
 - **No avatar CSS.** JSR injects `.user_avatar/.char_avatar{background-image:url(...)}`; cards that show the
   speaker's avatar via those classes render blank in RPT.
@@ -32,7 +32,7 @@ real cards render wrong:
   `window.top.SillyTavern...`. JSR's iframe is a direct child of the ST page, so `window.top` == the ST app
   and carries the surface. RPT's inline iframe sits in the renderer app frame, which only has
   `window.__rptCardBridge` — so `window.top.SillyTavern` is `undefined` and the card reports "EJS
-  environment not accessible". These cards work only in Isolated/WCV today (where the card *is* its own top
+  environment not accessible". These cards work only in Isolated/WCV today (where the card _is_ its own top
   page). This is inline mode's one real **capability** gap.
 
 ## 2. Goal & non-goals
@@ -40,7 +40,7 @@ real cards render wrong:
 **Goal:** an unmodified ST/JSR card finds the environment it expects in **both** transports — the assumed
 library globals, `--TH-viewport-height` + a `vh` sizing mode, avatar CSS — and full-page `window.top` cards
 additionally work **inline**. Rendering-env injection is shared so the two transports can't drift (the SP1
-discipline, extended from the *API* surface to the *document* surface).
+discipline, extended from the _API_ surface to the _document_ surface).
 
 **Non-goals (later sub-projects):**
 
@@ -74,17 +74,17 @@ discipline, extended from the *API* surface to the *document* surface).
 
 **`third_party_message.html` — the authoritative assumed-libs list** (in JSR's load order):
 
-| Lib | JSR source | RPT today | SP2 |
-| --- | --- | --- | --- |
-| FontAwesome CSS | `@fortawesome/fontawesome-free/css/all.min.css` (CDN `<link>`) | ⬜ | **add** |
-| Tailwind | local `lib/tailwindcss.min.js` (runtime build) | ⬜ | **add** (vendor — see §7) |
-| jQuery | `npm/jquery` (CDN) | ✅ (`?url` / require) | keep |
-| jQuery-UI JS | `npm/jquery-ui/dist/jquery-ui.min.js` | ⬜ | **add** |
-| jQuery-UI theme CSS | `npm/jquery-ui/themes/base/theme.min.css` | ⬜ | **add** |
-| jquery-ui-touch-punch | `npm/jquery-ui-touch-punch` | ⬜ | **add** |
-| Vue | `vue.runtime.global.prod.min.js` (runtime-only) | ✅ `vue.global.prod.js` (**fuller** — includes the template compiler) | keep ours (superset) |
-| Vue-Router | `vue-router.global.prod.min.js` | ✅ | keep |
-| Pinia | — (JSR does **not** inject it) | ✅ | keep (RPT-ahead; 命定之诗 needs it) |
+| Lib                   | JSR source                                                     | RPT today                                                             | SP2                                 |
+| --------------------- | -------------------------------------------------------------- | --------------------------------------------------------------------- | ----------------------------------- |
+| FontAwesome CSS       | `@fortawesome/fontawesome-free/css/all.min.css` (CDN `<link>`) | ⬜                                                                    | **add**                             |
+| Tailwind              | local `lib/tailwindcss.min.js` (runtime build)                 | ⬜                                                                    | **add** (vendor — see §7)           |
+| jQuery                | `npm/jquery` (CDN)                                             | ✅ (`?url` / require)                                                 | keep                                |
+| jQuery-UI JS          | `npm/jquery-ui/dist/jquery-ui.min.js`                          | ⬜                                                                    | **add**                             |
+| jQuery-UI theme CSS   | `npm/jquery-ui/themes/base/theme.min.css`                      | ⬜                                                                    | **add**                             |
+| jquery-ui-touch-punch | `npm/jquery-ui-touch-punch`                                    | ⬜                                                                    | **add**                             |
+| Vue                   | `vue.runtime.global.prod.min.js` (runtime-only)                | ✅ `vue.global.prod.js` (**fuller** — includes the template compiler) | keep ours (superset)                |
+| Vue-Router            | `vue-router.global.prod.min.js`                                | ✅                                                                    | keep                                |
+| Pinia                 | — (JSR does **not** inject it)                                 | ✅                                                                    | keep (RPT-ahead; 命定之诗 needs it) |
 
 Load order matters: Tailwind/FontAwesome first, then jQuery → jQuery-UI → touch-punch, then Vue → Vue-Router
 (Pinia after Vue, as today). jQuery-UI binds to a pre-existing `window.jQuery`; touch-punch patches
@@ -185,7 +185,7 @@ resolves for an inline card (it already resolves for WCV, where the card is its 
   the **card-API surface** (`SillyTavern`, `TavernHelper` + its bare globals, `Mvu`, `EjsTemplate`,
   `tavern_events`, `toastr`, `errorCatched`) — **not** `window.api`, and **not** the libs (a full-page card
   loads its own libs in its own realm). Mirrors JSR `predefine.js` merging the parent's surface, but onto
-  *our* top frame.
+  _our_ top frame.
 - **Lifecycle (avoid the known subscription leak):** build the surface **once**, rebuild+dispose-prior when
   the active profile/chat/character changes (subscribe to the stores in the app bootstrap, call the runtime's
   `__rptDispose` before replacing). Do **not** rebuild on every property access. This single live surface
@@ -198,12 +198,14 @@ resolves for an inline card (it already resolves for WCV, where the card is its 
 ## 5. Files
 
 **New**
+
 - `src/shared/cardEnv.ts` — pure: `buildEnvHead(opts)`, `replaceVhInContent(html)`, the assumed-libs/avatar/
   base-reset/`--TH-viewport-height` head fragments, lib-URL constants.
 - `src/renderer/src/cardBridge/topSurface.ts` — `installCardTopSurface()` + active-session rebind (§4.5).
 - `test/cardEnv.test.ts` — pure tests (§8).
 
 **Changed**
+
 - `src/renderer/src/components/cardDoc.ts` — unchanged API; callers compose `buildEnvHead` into `headInject`.
 - `src/renderer/src/components/InlineCardFrame.tsx` — base reset moves to `cardEnv`; compose `buildEnvHead`;
   apply `replaceVhInContent` in `fill`; set/refresh `--TH-viewport-height`; route sizing mode.
@@ -221,8 +223,9 @@ resolves for an inline card (it already resolves for WCV, where the card is its 
 - `package.json` — `jquery-ui` (+ touch-punch / Tailwind per §7).
 
 **Reused / unchanged**
+
 - `cardFrameHeight.ts` (`fit` keeps `fitInlineCardHeight`; `fill` uses `capCardHeight`), the SP1 `thRuntime`
-  + adapters, the `rpt-card://` scheme, `installCardBridge`, the regex marker pipeline.
+  - adapters, the `rpt-card://` scheme, `installCardBridge`, the regex marker pipeline.
 
 ## 6. Decisions / open questions
 

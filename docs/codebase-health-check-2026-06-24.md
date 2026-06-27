@@ -15,15 +15,15 @@ All objective gates are green and the prior cleanup backlog is essentially close
 since the last check, concentrated on TavernHelper "both transports" parity (inline `cardBridge` + WCV
 `wcvPreload`), reasoning/`<think>` display, and prompt-template (EJS/macro) fidelity.
 
-| Check | Result |
-| --- | --- |
-| `npm run typecheck` (node + web) | ✅ passes |
-| `npm test` | ✅ **499 pass / 59 files** (was 304 / 34) |
-| `npm run lint` | ✅ **clean** (was 761 problems; config tuned in the interim) |
-| Unfinished-work markers | ✅ **1 TODO** in all of `src/` (the documented `agentic` stub, `generationService.ts:118`) |
-| `rehype-raw` usage | ✅ **none** in `src/` (dead dep) |
-| `dangerouslySetInnerHTML` usage | ⚠️ **one** intentional site (`InlineHtml`: DOMPurify-sanitized + CSS-scoped) — see the §5 correction |
-| Secrets committed | ✅ none (keys encrypted via `safeStorage`, resolved main-side, sent via headers) |
+| Check                            | Result                                                                                               |
+| -------------------------------- | ---------------------------------------------------------------------------------------------------- |
+| `npm run typecheck` (node + web) | ✅ passes                                                                                            |
+| `npm test`                       | ✅ **499 pass / 59 files** (was 304 / 34)                                                            |
+| `npm run lint`                   | ✅ **clean** (was 761 problems; config tuned in the interim)                                         |
+| Unfinished-work markers          | ✅ **1 TODO** in all of `src/` (the documented `agentic` stub, `generationService.ts:118`)           |
+| `rehype-raw` usage               | ✅ **none** in `src/` (dead dep)                                                                     |
+| `dangerouslySetInnerHTML` usage  | ⚠️ **one** intentional site (`InlineHtml`: DOMPurify-sanitized + CSS-scoped) — see the §5 correction |
+| Secrets committed                | ✅ none (keys encrypted via `safeStorage`, resolved main-side, sent via headers)                     |
 
 What's left is **minor hygiene** — a couple of small duplicate literals, two stale doc statements, and a
 short list of deferred-by-design security items. Nothing is broken or on fire.
@@ -35,15 +35,15 @@ short list of deferred-by-design security items. Nothing is broken or on fire.
 The [maintainability-plan.md](maintainability-plan.md) reports **all phases 0–4 complete**. Independently
 re-verified against current code:
 
-| Item | Plan status | Verified now |
-| --- | --- | --- |
-| **Phase 0** — restore lint gate | ✅ done | ✅ `npm run lint` exits 0, clean |
-| **Phase 1a** — delete `MessageScriptFrame.tsx` | ✅ done | ✅ file gone; no references |
-| **Phase 1b** — route service `console.*` → `logService` | ✅ done | ✅ (parsers intentionally console-only) |
-| **Phase 2** — extract `shared/objectPath.ts` + migrate copies | ✅ done | ✅ `templateEngine`/`mvuParser`/`mvuZod`/`mvuSchema`/`pluginService`/`workspaceLayout` import it; holdouts documented in the module header |
-| **Phase 3** — settle dual card-host stack | ✅ Option A (freeze) | ✅ now an intentional **dual-mode** feature (inline default / WCV isolated), kept at deliberate parity — no longer "cruft" |
-| **Phase 4a** — `ts-prune` sweep | ✅ done | ✅ no confirmed orphans (kept as a manual check, not a CI gate) |
-| **Phase 4b** — doc status headers | ✅ mostly | ⚠️ **one still open** — see §2 |
+| Item                                                          | Plan status          | Verified now                                                                                                                               |
+| ------------------------------------------------------------- | -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| **Phase 0** — restore lint gate                               | ✅ done              | ✅ `npm run lint` exits 0, clean                                                                                                           |
+| **Phase 1a** — delete `MessageScriptFrame.tsx`                | ✅ done              | ✅ file gone; no references                                                                                                                |
+| **Phase 1b** — route service `console.*` → `logService`       | ✅ done              | ✅ (parsers intentionally console-only)                                                                                                    |
+| **Phase 2** — extract `shared/objectPath.ts` + migrate copies | ✅ done              | ✅ `templateEngine`/`mvuParser`/`mvuZod`/`mvuSchema`/`pluginService`/`workspaceLayout` import it; holdouts documented in the module header |
+| **Phase 3** — settle dual card-host stack                     | ✅ Option A (freeze) | ✅ now an intentional **dual-mode** feature (inline default / WCV isolated), kept at deliberate parity — no longer "cruft"                 |
+| **Phase 4a** — `ts-prune` sweep                               | ✅ done              | ✅ no confirmed orphans (kept as a manual check, not a CI gate)                                                                            |
+| **Phase 4b** — doc status headers                             | ✅ mostly            | ⚠️ **one still open** — see §2                                                                                                             |
 
 **Net: the entire prior backlog is closed except one doc-status line.** Tests grew 304 → 499; the XSS
 risk the old architecture note flagged is now mitigated (see §4).
@@ -109,7 +109,7 @@ The two TavernHelper compat layers are **intentional** (dual-mode parity, built 
    scripts via IPC. _Fix: key the map by a generation id, or refuse/queue concurrent generation per chat._
 2. **Unconditional legacy-table `DROP` with no migration guard** — _Low (irreversible)._
    [db.ts:117](src/main/services/db.ts) runs `DROP TABLE IF EXISTS presets / lorebooks / lorebook_entries
-   / profile_state` on every startup. The comment asserts the on-disk JSON is authoritative, but nothing
+/ profile_state` on every startup. The comment asserts the on-disk JSON is authoritative, but nothing
    verifies the SQL→file export succeeded before the drop. Historical/early-phase risk; still, an
    unconditional irreversible drop deserves a one-time guard. _Fix: drop only after confirming the file
    store exists / a migration flag is set._
@@ -151,12 +151,11 @@ size/time caps).
 ## Prioritized backlog
 
 **Worth doing (cheap):**
+
 1. Fix the `generateRaw`/`generate` AbortController collision (§4.1) — the only real correctness item.
 2. Remove the dead `rehype-raw` dep; fix `world-card-design.md` status; (optionally) hoist `CARD_CSP` to `src/shared`. (§2.1, §3.1, §4.3)
 
-**Worth doing soon (small refactors):**
-3. Extract the shared provider system-hoist/merge helper in `apiService` (§3.2).
-4. Add a guard to the legacy-table `DROP` (§4.2).
+**Worth doing soon (small refactors):** 3. Extract the shared provider system-hoist/merge helper in `apiService` (§3.2). 4. Add a guard to the legacy-table `DROP` (§4.2).
 
 **Deferred by design (don't reopen now):** the Electron-hardening items (§5), the dual-mode card-host
 parity (intentional), the documented `agentic`/`generateImage` stubs, the quickjs sandbox.

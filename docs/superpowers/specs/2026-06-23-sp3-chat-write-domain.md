@@ -39,6 +39,7 @@ Extract the logic out of `wcvIpc.ts` into a shared main **service**; expose it t
 greeting-swipe start works inline.
 
 **Non-goals (later slices):**
+
 - `createChat`, general `createChatMessages` (insert a NEW message), `triggerSlash` — **stubs in BOTH**
   today, need a floor-model design decision (the floor couples user+assistant) → **SP3.2 (onboarding/create
   path)**.
@@ -48,13 +49,13 @@ greeting-swipe start works inline.
 
 ## 3. Current state (the parity gap)
 
-| Method | Inline `host.ts` | WCV `wcvHost.ts` → `wcvIpc.ts` | Backing |
-| --- | --- | --- | --- |
-| `setChatMessages` | `async () => false` (stub) | `invoke('wcv-host-set-chat-messages')` — index→floor, edit content, saveFloor, re-fold+reload | `floorService`, `generationService.reevaluateVariables` |
-| `deleteChatMessages` | `async () => false` | `invoke('wcv-host-delete-chat-messages')` — truncate from earliest targeted floor | `chatService.truncateFloors` |
-| `saveChat` | `async () => true` | `invoke('wcv-host-save-chat')` — assistant→floors (content + `swipes`/`swipe_id`), re-fold | `floorService.saveFloor`, `reevaluateVariables` |
-| `reloadChat` | `async () => true` | `invoke('wcv-host-reload-chat')` — `wcvManager.pushHostReload` | (renderer reload) |
-| `setInput` | `() => {}` (no-op) | `send('wcv-host-set-input')` → composer | composer store |
+| Method               | Inline `host.ts`           | WCV `wcvHost.ts` → `wcvIpc.ts`                                                                | Backing                                                 |
+| -------------------- | -------------------------- | --------------------------------------------------------------------------------------------- | ------------------------------------------------------- |
+| `setChatMessages`    | `async () => false` (stub) | `invoke('wcv-host-set-chat-messages')` — index→floor, edit content, saveFloor, re-fold+reload | `floorService`, `generationService.reevaluateVariables` |
+| `deleteChatMessages` | `async () => false`        | `invoke('wcv-host-delete-chat-messages')` — truncate from earliest targeted floor             | `chatService.truncateFloors`                            |
+| `saveChat`           | `async () => true`         | `invoke('wcv-host-save-chat')` — assistant→floors (content + `swipes`/`swipe_id`), re-fold    | `floorService.saveFloor`, `reevaluateVariables`         |
+| `reloadChat`         | `async () => true`         | `invoke('wcv-host-reload-chat')` — `wcvManager.pushHostReload`                                | (renderer reload)                                       |
+| `setInput`           | `() => {}` (no-op)         | `send('wcv-host-set-input')` → composer                                                       | composer store                                          |
 
 Renderer surface that already exists to lean on: `window.api.editFloor(profile,chat,floorIdx,user,resp)`,
 `window.api.reevaluateVariables(profile,chat)`, `chatStore.loadChats`/`setActiveChat`/`applyVariableOps`.
@@ -109,6 +110,7 @@ service path, not `editFloor`. The service mirrors `wcvIpc`'s current `saveChat`
 ## 5. Files
 
 **New**
+
 - `src/main/services/chatWriteService.ts` — the extracted logic (or a `chatService` section).
 - `src/main/ipc/chatWriteIpc.ts` (or extend chat IPC) — `chat-set-messages`/`-delete-messages`/`-save`.
 - `src/shared/thRuntime/shapes.ts` — add pure `chatIndexMap`.
@@ -116,12 +118,14 @@ service path, not `editFloor`. The service mirrors `wcvIpc`'s current `saveChat`
 - `test/chatWriteService.test.ts` — the service against a mock floor store.
 
 **Changed**
+
 - `src/main/ipc/wcvIpc.ts` — handlers call the service; remove the inline logic + the local `chatIndexMap`.
 - `src/preload/index.ts` — `window.api.setChatMessages`/`deleteChatMessages`/`saveChat`.
 - `src/renderer/src/cardBridge/host.ts` — implement the five stubs.
 - Register the new IPC in the main IPC index.
 
 **Reused / unchanged**
+
 - The WCV host adapter (`wcvHost.ts`) and `thRuntime` surface — the `Host` signatures already exist (SP1);
   only the inline adapter's bodies change. The WCV adapter is untouched.
 

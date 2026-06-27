@@ -22,7 +22,11 @@ export {
   stripTags,
   buildTemplateContext
 } from '../../shared/templateEngine'
-export type { TemplateData, TemplateContext, TemplateContextOpts } from '../../shared/templateEngine'
+export type {
+  TemplateData,
+  TemplateContext,
+  TemplateContextOpts
+} from '../../shared/templateEngine'
 
 export const initTemplates = async (): Promise<void> => {
   // Wire the deps the shared engine can't import from src/main, then load quickjs.

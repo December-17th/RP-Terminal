@@ -24,13 +24,14 @@ The `Host`-seam refactor (`shared/thRuntime` + inline `cardBridge` + WCV `wcvHos
 biggest risk — that finding is now **stale**. The single-runtime / two-transports design is the strongest
 decision in the codebase. Test coverage on the cores is real.
 
-The headline weak spot has **moved**: the EJS *engine* is now shared, but its execution *context* is
+The headline weak spot has **moved**: the EJS _engine_ is now shared, but its execution _context_ is
 hand-rebuilt three different ways with divergent variable shaping, so the same card EJS expression resolves
 differently depending on where it runs. That, not the engine, is the real card-compat liability. New
 feature work (combat, the poem expansion, the variable write-back loop) has added a few well-bounded
 over-builds and one heuristic band-aid the team already flagged as tech debt.
 
 The three highest-leverage moves:
+
 1. **Unify the EJS context builder** (WS-1) — one shared `buildTemplateContext` so build/render/WCV agree.
 2. **De-escalate the L1 "Frozen Core" cache layering** (WS-2) — default-off, unvalidated, threads
    speculative `partition`/`diff` complexity through the hottest function.
@@ -44,17 +45,17 @@ Priorities fold **severity** (correctness / card-compat breadth) together with *
 foundational change that others build on is elevated). The detailed, sequenced treatment is in the plan
 doc.
 
-| Pr | ID | Change | Why this tier | Depends on |
-| --- | --- | --- | --- | --- |
-| **HIGH** | WS-1 | Unify the three EJS context builders into one `shared` builder | Keystone: highest card-compat win; WS-5/WS-2 build on it | WS-9 (recommended precursor) |
-| **HIGH** | WS-3 | Variable write-back loop: tag change origin, retire the 25/400ms heuristic | High-severity correctness on the dominant MVU-card pattern | verification spike (real-MVU event semantics) |
-| **MED** | WS-5 | Decompose `buildPrompt` (325 LOC) into named, testable steps | Maintainability of the compat heart; enabler for WS-2 | WS-1 |
-| **MED** | WS-2 | De-escalate / collapse L1 Frozen Core cache layering | Removes speculative complexity from the hot path | WS-1, WS-5 |
-| **MED** | WS-4 | Move the hand-rolled lodash/faker subset out of the engine string into a tested module | Silent-wrong-output risk; currently untyped/unlinted | none (parallel) |
-| **MED** | WS-7 | One `broadcastHostEvent` helper; lift the App.tsx fan-out into a module | Transport-parity bug risk | none (parallel) |
-| **LOW** | WS-6 | Delete unused DB schema (`rpg_entities`, `pending_lore`) | Reader confusion / migration noise only | none |
-| **LOW** | WS-8 | Document the two path dialects (bracket-aware vs split-on-dot) + pin with a test | Documented trade-off; pin so it stays intentional | none |
-| **LOW** | WS-9 | Write down the error-handling policy; reference it from the 4 sites | Documentation; cheap precursor that de-risks WS-1/WS-5 | none |
+| Pr       | ID   | Change                                                                                 | Why this tier                                              | Depends on                                    |
+| -------- | ---- | -------------------------------------------------------------------------------------- | ---------------------------------------------------------- | --------------------------------------------- |
+| **HIGH** | WS-1 | Unify the three EJS context builders into one `shared` builder                         | Keystone: highest card-compat win; WS-5/WS-2 build on it   | WS-9 (recommended precursor)                  |
+| **HIGH** | WS-3 | Variable write-back loop: tag change origin, retire the 25/400ms heuristic             | High-severity correctness on the dominant MVU-card pattern | verification spike (real-MVU event semantics) |
+| **MED**  | WS-5 | Decompose `buildPrompt` (325 LOC) into named, testable steps                           | Maintainability of the compat heart; enabler for WS-2      | WS-1                                          |
+| **MED**  | WS-2 | De-escalate / collapse L1 Frozen Core cache layering                                   | Removes speculative complexity from the hot path           | WS-1, WS-5                                    |
+| **MED**  | WS-4 | Move the hand-rolled lodash/faker subset out of the engine string into a tested module | Silent-wrong-output risk; currently untyped/unlinted       | none (parallel)                               |
+| **MED**  | WS-7 | One `broadcastHostEvent` helper; lift the App.tsx fan-out into a module                | Transport-parity bug risk                                  | none (parallel)                               |
+| **LOW**  | WS-6 | Delete unused DB schema (`rpg_entities`, `pending_lore`)                               | Reader confusion / migration noise only                    | none                                          |
+| **LOW**  | WS-8 | Document the two path dialects (bracket-aware vs split-on-dot) + pin with a test       | Documented trade-off; pin so it stays intentional          | none                                          |
+| **LOW**  | WS-9 | Write down the error-handling policy; reference it from the 4 sites                    | Documentation; cheap precursor that de-risks WS-1/WS-5     | none                                          |
 
 **Suggested execution order** (cheap derisking first, then the keystone, then what builds on it):
 
@@ -81,6 +82,7 @@ Each: **location** · **what's wrong** · **category** · **blast radius** · **
 vs architectural).
 
 ### WS-1 — Three divergent EJS context builders for one shared engine `[HIGH]`
+
 - **Location:** build-time [generationService.ts:208-245](../src/main/services/generationService.ts);
   render-time [renderTemplate.ts:15-34](../src/renderer/src/plugin/renderTemplate.ts); WCV
   [wcvPreload.ts:212-223](../src/preload/wcvPreload.ts). Engine: [templateEngine.ts:388](../src/shared/templateEngine.ts).
@@ -91,7 +93,7 @@ vs architectural).
   - **`globals`:** build-time wires real per-profile globals; render-time and WCV pass `globals: {}`, so
     `getglobalvar()`/`getGlobalVar()` silently return empty at display/WCV time.
   - **`constants`:** build-time exposes `userName/charName/lastUserMessage/chatId/characterId/runType/
-    lastMessageId/…`; render-time exposes only `userName/charName`; WCV only what's passed in. A card EJS
+lastMessageId/…`; render-time exposes only `userName/charName`; WCV only what's passed in. A card EJS
     referencing `runType`/`chatId` evaluates in the prompt and to `undefined` on screen.
 - **Category:** duplication / inconsistency (semantic drift).
 - **Blast radius:** every card using ST-Prompt-Template EJS in both a prompt entry and a display/`[RENDER]`
@@ -102,6 +104,7 @@ vs architectural).
   is card-facing).
 
 ### WS-2 — L1 "Frozen Core" prompt-cache layering is premature optimization in the hot path `[MED]`
+
 - **Location:** [cacheLayers.ts](../src/main/services/cacheLayers.ts); consumed at
   [promptBuilder.ts:285-294](../src/main/services/promptBuilder.ts) (frozen-vars frontier render),
   [promptBuilder.ts:570-576](../src/main/services/promptBuilder.ts) (`buildStateBlock` tail),
@@ -109,7 +112,7 @@ vs architectural).
 - **What's wrong:** a whole sub-system (frozen floor-0 snapshot, `partition` vs `diff` placeholderization,
   relocated live-state tail) exists to make the prefix byte-stable for provider caches, but it is
   **default-off** (`settings.cache?.level ?? 0`) and unvalidated against real OpenAI/Anthropic cache
-  behavior (the meter measures a *proxy* stable-prefix %, not provider hits). It forks `buildPrompt`'s
+  behavior (the meter measures a _proxy_ stable-prefix %, not provider hits). It forks `buildPrompt`'s
   rendering (`frontierTemplate` re-points `vars` at `frozenVars`), entangling with WS-1, and adds a second
   state representation the model sees (`[Current State]` tail).
 - **Category:** premature-optimization / speculative-generality.
@@ -119,6 +122,7 @@ vs architectural).
   validation plan. If it can't beat plain append-only ordering on a real provider, retire it.
 
 ### WS-3 — Variable write-back loop contained by a guessed heuristic, not fixed at source `[HIGH]`
+
 - **Location:** [generationService.ts:425-493](../src/main/services/generationService.ts) (`writeLoopGuard`,
   `LOOP_WINDOW_MS=400`, `LOOP_MAX=25`); echo paths [wcvManager.ts:276](../src/main/services/wcvManager.ts)
   (`notifyVarsChanged` exclude-sender) + [thRuntime/index.ts:55-83](../src/shared/thRuntime/index.ts)
@@ -137,6 +141,7 @@ vs architectural).
   spike first.
 
 ### WS-4 — Hand-rolled lodash + faker subset (~130 lines) inside a JS string `[MED]`
+
 - **Location:** [templateEngine.ts:239-369](../src/shared/templateEngine.ts) — the `boot` string
   reimplements ~70 lodash methods + faker, injected via `vm.evalCode`.
 - **What's wrong:** a large, untyped reimplementation of a public lib embedded as a string literal → **no
@@ -150,6 +155,7 @@ vs architectural).
   lint + targeted tests. Add methods with a test each; stop expanding reactively.
 
 ### WS-5 — `buildPrompt` is a 325-line orchestrator carrying every concern at once `[MED]`
+
 - **Location:** [promptBuilder.ts:253-578](../src/main/services/promptBuilder.ts).
 - **What's wrong:** one function does macro pre-pass, EJS strict-vs-graceful rendering, lorebook partition
   (regular/marker/forced/depth/render), preset iteration, ≥4 "safety-net" insertions each re-scanning for
@@ -163,6 +169,7 @@ vs architectural).
   at each step. No behavior change.
 
 ### WS-6 — Speculative DB schema with no readers `[LOW]`
+
 - **Location:** [db.ts:70](../src/main/services/db.ts) `rpg_entities` (no reader; only a comment in
   `profileService`); [db.ts:51,130](../src/main/services/db.ts) `pending_lore` column (created+migrated,
   never used); [db.ts:84](../src/main/services/db.ts) `episodic_memory` (reserved per the episodic-memory
@@ -176,6 +183,7 @@ vs architectural).
   its plan is imminent.
 
 ### WS-7 — Dual event/variable broadcast wiring duplicated at the App level `[MED]`
+
 - **Location:** [App.tsx:47-120](../src/renderer/src/App.tsx) — every host event is emitted **twice**
   (`window.api.wcvBroadcastEvent(...)` for WCV cards **and** `emitCardHostEvent(...)` for inline cards);
   same for the streaming-token forward.
@@ -187,13 +195,14 @@ vs architectural).
   move the chat-store subscriptions into an `initCardEventBridge()` module out of `App.tsx`.
 
 ### WS-8 — Path/clone helper proliferation persists (4–5 implementations) `[LOW]`
+
 - **Location:** [objectPath.ts](../src/shared/objectPath.ts) (canonical, bracket-aware) vs
   [macros.ts:22-41](../src/shared/macros.ts) (split-on-dot) vs
   [thRuntime/index.ts:28-34](../src/shared/thRuntime/index.ts) (`getByPath`/`clone`) vs the `_.get`/`_.set`
   `__ks` split inside [templateEngine.ts:274-279](../src/shared/templateEngine.ts) vs `wcvPreload`
   getByPath/setByPath.
 - **What's wrong:** Phase 2 (2026-06-22) consolidated the bracket-aware copies but deliberately left the
-  split-on-dot variants ([objectPath.ts:5-8](../src/shared/objectPath.ts)). Two path *semantics* coexist;
+  split-on-dot variants ([objectPath.ts:5-8](../src/shared/objectPath.ts)). Two path _semantics_ coexist;
   `a[0].b` works in some surfaces and not others.
 - **Category:** duplication / inconsistency.
 - **Blast radius:** medium — MVU paths with array indices behave differently across macro/EJS/runtime.
@@ -202,6 +211,7 @@ vs architectural).
   intentional, not incidental.
 
 ### WS-9 — Inconsistent error-handling philosophy across the template path `[LOW]`
+
 - **Location:** [promptBuilder.ts:304-316](../src/main/services/promptBuilder.ts) preset EJS **throws /
   fails the turn**; [promptBuilder.ts:387-411](../src/main/services/promptBuilder.ts) lorebook EJS **strips
   tags, keeps prose**; [templateEngine.ts:392-394,416](../src/shared/templateEngine.ts) engine returns
@@ -212,8 +222,8 @@ vs architectural).
 - **Category:** inconsistency.
 - **Blast radius:** maintenance + predictability; occasionally user-visible (broken preset fails the turn;
   broken lore degrades).
-- **Recommendation (small, doc-only):** write the policy down — *presets fail loud; card/lore content
-  degrades gracefully; engine-off strips; unknown macros pass through* — and reference it from the four
+- **Recommendation (small, doc-only):** write the policy down — _presets fail loud; card/lore content
+  degrades gracefully; engine-off strips; unknown macros pass through_ — and reference it from the four
   sites. Codifying existing behavior is enough.
 
 ---
@@ -224,6 +234,7 @@ vs architectural).
 > when executing the plan. **Bold** = primary change site.
 
 **Code — main process**
+
 - **`src/main/services/generationService.ts`** — WS-1 (build-time context `:208-245`), WS-3 (`writeLoopGuard`
   `:425-493`), WS-2 (`frozenVarsFor` wiring `:140-143`). Also the `agentic` stub `:118` (leave; documented).
 - **`src/main/services/promptBuilder.ts`** — WS-5 (decompose `:253-578`), WS-2 (frozen frontier `:285-294`,
@@ -235,6 +246,7 @@ vs architectural).
 - **`src/main/services/templateService.ts`** — WS-1 (main re-export surface; engine deps wiring).
 
 **Code — shared**
+
 - **`src/shared/templateEngine.ts`** — WS-4 (lodash/faker boot string `:239-369`), WS-1 (the
   `TemplateContext` type + the new `buildTemplateContext` home), WS-9 (engine error/strip policy
   `:388-428`), WS-8 (`_.get/_.set` `__ks` split `:274-279`).
@@ -244,12 +256,14 @@ vs architectural).
 - **`src/shared/macros.ts`** — WS-8 (own `path`/`setPath` `:22-41`), WS-9 (unknown-macro pass-through `:176`).
 
 **Code — renderer / preload**
+
 - **`src/renderer/src/plugin/renderTemplate.ts`** — WS-1 (render-time context `:15-34`).
 - **`src/preload/wcvPreload.ts`** — WS-1 (WCV `buildEjsCtx` `:212-223`), WS-8 (getByPath/setByPath).
 - **`src/renderer/src/App.tsx`** — WS-7 (dual-broadcast `useEffect` `:47-120`).
 - **`src/renderer/src/cardBridge/host.ts`** — WS-1 (inline host's `buildRenderContext` use `:250-257`).
 
 **Docs (must move with the code per the SDK contract / point-in-time rules)**
+
 - **`docs/sdk/component-inventory.md`** (§2 runtime API, §3 env) — WS-1 (EJS context/variable surface is
   card-facing → update in the same change), WS-4 (the injected `_`/faker is part of the env).
 - **`docs/rpt-api.md`** (EJS surface section) — WS-1, WS-4 (the documented helper/variable surface).
@@ -263,18 +277,18 @@ vs architectural).
 
 ## Subsystem verdicts (A–J)
 
-| Area | Verdict | Key issue |
-| --- | --- | --- |
-| **A. Card-compat runtime (EJS/TH/MVU)** | **REFACTOR** | WS-1 (3 divergent contexts) + WS-4 (lodash-in-string). Async/TH-in-prompt-EJS gap is correctly out-of-contract. |
-| **B. Prompt construction & generation** | **WATCH/REFACTOR** | WS-5 (`buildPrompt` cohesion) + WS-2 (L1 speculative). `fitToBudget` two-path + `estimateTokens` heuristic are justified. |
-| **C. Card import & format pipeline** | **SOLID** | Coherent `chara_card_v3`+`rp_terminal`; pure, tested parsers. No notable smell. |
-| **D. Storage & data model** | **WATCH** | WS-6 (dead schema); `FloorFile` name implies files but floors are SQLite rows. Migrations sound. |
-| **E. Plugin & script sandbox** | **WATCH** | Sandbox worker is clean/tested; concern is the *count* of execution surfaces overall (§ Simplification), not this module. |
-| **F. Combat / game engine** | **WATCH (over-built for scope)** | ~2,850 LOC for a player-played, one-card system **not yet verified in-app**; `poemD20` (616) hints at speculative generality. Don't grow it until exercised live. |
-| **G. WCV card-host & transports** | **SOLID** | `Host` seam gives real parity; off-screen/panel/inline WCVs are role-distinct, not copies. Echo paths feed WS-3. |
-| **H. Renderer architecture** | **WATCH** | ~20 stores but most tiny + single-purpose; the smell is App.tsx broadcast wiring (WS-7), not store count. Card-frame variants are role-distinct. |
-| **I. IPC surface & boundaries** | **WATCH** | 162 handlers (49 in `wcvIpc`); `check:deps` boundaries hold. `window.api` is a flat ~100-method grab-bag — consider namespacing. |
-| **J. Cross-cutting** | **WATCH** | WS-8 (paths), WS-9 (error policy), WS-6 (schema); `agentic` stub is honest. `any` at bridge/IPC is deliberate; real risk is WS-4's untyped string. |
+| Area                                    | Verdict                          | Key issue                                                                                                                                                         |
+| --------------------------------------- | -------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **A. Card-compat runtime (EJS/TH/MVU)** | **REFACTOR**                     | WS-1 (3 divergent contexts) + WS-4 (lodash-in-string). Async/TH-in-prompt-EJS gap is correctly out-of-contract.                                                   |
+| **B. Prompt construction & generation** | **WATCH/REFACTOR**               | WS-5 (`buildPrompt` cohesion) + WS-2 (L1 speculative). `fitToBudget` two-path + `estimateTokens` heuristic are justified.                                         |
+| **C. Card import & format pipeline**    | **SOLID**                        | Coherent `chara_card_v3`+`rp_terminal`; pure, tested parsers. No notable smell.                                                                                   |
+| **D. Storage & data model**             | **WATCH**                        | WS-6 (dead schema); `FloorFile` name implies files but floors are SQLite rows. Migrations sound.                                                                  |
+| **E. Plugin & script sandbox**          | **WATCH**                        | Sandbox worker is clean/tested; concern is the _count_ of execution surfaces overall (§ Simplification), not this module.                                         |
+| **F. Combat / game engine**             | **WATCH (over-built for scope)** | ~2,850 LOC for a player-played, one-card system **not yet verified in-app**; `poemD20` (616) hints at speculative generality. Don't grow it until exercised live. |
+| **G. WCV card-host & transports**       | **SOLID**                        | `Host` seam gives real parity; off-screen/panel/inline WCVs are role-distinct, not copies. Echo paths feed WS-3.                                                  |
+| **H. Renderer architecture**            | **WATCH**                        | ~20 stores but most tiny + single-purpose; the smell is App.tsx broadcast wiring (WS-7), not store count. Card-frame variants are role-distinct.                  |
+| **I. IPC surface & boundaries**         | **WATCH**                        | 162 handlers (49 in `wcvIpc`); `check:deps` boundaries hold. `window.api` is a flat ~100-method grab-bag — consider namespacing.                                  |
+| **J. Cross-cutting**                    | **WATCH**                        | WS-8 (paths), WS-9 (error policy), WS-6 (schema); `agentic` stub is honest. `any` at bridge/IPC is deliberate; real risk is WS-4's untyped string.                |
 
 ---
 
@@ -290,5 +304,5 @@ vs architectural).
 6. **lodash/faker out of the engine string** (WS-4).
 
 **Leave as-is (earns its keep / deliberate):** the `Host`-seam two-transport design; the pure sandbox
-worker; the pure combat engine's *boundaries* (just not its size); `cardEnv.ts`; the JSON-vs-SQLite split;
+worker; the pure combat engine's _boundaries_ (just not its size); `cardEnv.ts`; the JSON-vs-SQLite split;
 API-key masking; the `agentic` placeholder.

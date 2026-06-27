@@ -37,18 +37,18 @@ adds ctx-scoped IPC. Trusted-card scope = full library (spec §3.2).
 
 - [ ] **Step 1:** add the §4 methods to the `Host` interface.
 - [ ] **Step 2:** in `createThRuntime`, build an `idByName` map seeded from `host.listWorldbooks()` at
-  construction; a `resolveId(name)` helper (cached lookup → fresh `host.listWorldbooks()` fallback →
-  undefined). Refresh the map on `createWorldbook`/`deleteWorldbook`.
+      construction; a `resolveId(name)` helper (cached lookup → fresh `host.listWorldbooks()` fallback →
+      undefined). Refresh the map on `createWorldbook`/`deleteWorldbook`.
 - [ ] **Step 3:** add/upgrade the helpers (spec §5): real `getWorldbookNames`/`getLorebooks`,
-  `createWorldbook`/`createLorebook` (→ host + record id↔name + return name), `deleteWorldbook`/
-  `deleteLorebook` (resolve→id→host), `getWorldbook(name?)` (name→id→`getWorldbookById`, else own book),
-  `replaceWorldbook`/`updateWorldbookWith` (name→id→`saveWorldbookById`, else own book), `bindLorebook`/
-  `setChatWorldbook` (resolve→id→`bindWorldbook`). Unknown name on a write → no-op (logged), returns false.
+      `createWorldbook`/`createLorebook` (→ host + record id↔name + return name), `deleteWorldbook`/
+      `deleteLorebook` (resolve→id→host), `getWorldbook(name?)` (name→id→`getWorldbookById`, else own book),
+      `replaceWorldbook`/`updateWorldbookWith` (name→id→`saveWorldbookById`, else own book), `bindLorebook`/
+      `setChatWorldbook` (resolve→id→`bindWorldbook`). Unknown name on a write → no-op (logged), returns false.
 - [ ] **Step 4:** extend the mock Host in `test/thRuntime.test.ts` (track `createWorldbook`/`bindWorldbook`
-  calls; `listWorldbooks` returns a fixture). Tests: `getWorldbookNames` = library names; `createWorldbook`
-  returns the name + a later `getWorldbook(name)` resolves to its id via `getWorldbookById`;
-  `deleteWorldbook(name)` → `host.deleteWorldbook(id)`; `bindLorebook(name, true)` → `host.bindWorldbook(id,
-  true)`; unknown name write no-ops.
+      calls; `listWorldbooks` returns a fixture). Tests: `getWorldbookNames` = library names; `createWorldbook`
+      returns the name + a later `getWorldbook(name)` resolves to its id via `getWorldbookById`;
+      `deleteWorldbook(name)` → `host.deleteWorldbook(id)`; `bindLorebook(name, true)` → `host.bindWorldbook(id,
+true)`; unknown name write no-ops.
 
 **Verify:** `npm test` (new tests) + typecheck. Adapters still satisfy the widened `Host` only after T2/T3,
 so temporarily the adapter files won't compile — do T1→T2→T3 together before the first green commit, OR add
@@ -58,24 +58,24 @@ and stub the two adapters' new methods in the SAME commit so typecheck passes, t
 ### Task 2: Inline adapter (`cardBridge/host.ts`)
 
 - [ ] **Step 1:** `listWorldbooks` (sync) — read a renderer lorebook store if one holds the library; else a
-  module cache seeded by a one-time `window.api.listLorebooks(ctx.profileId)` (refreshed after create/delete).
-  Verify whether a `lorebookStore` exists first (spec §8.1).
+      module cache seeded by a one-time `window.api.listLorebooks(ctx.profileId)` (refreshed after create/delete).
+      Verify whether a `lorebookStore` exists first (spec §8.1).
 - [ ] **Step 2:** `createWorldbook` → `window.api.createLorebook`; `deleteWorldbook` →
-  `window.api.deleteLorebook`; `getWorldbookById` → `window.api.getLorebook`; `saveWorldbookById` →
-  `window.api.saveLorebook` (wrap entries into the `{name, entries}` shape like the existing own-book save).
+      `window.api.deleteLorebook`; `getWorldbookById` → `window.api.getLorebook`; `saveWorldbookById` →
+      `window.api.saveLorebook` (wrap entries into the `{name, entries}` shape like the existing own-book save).
 - [ ] **Step 3:** `chatWorldbookIds` (sync) — the chat store's active lorebook ids; `bindWorldbook(id, on)`
-  → read current ids, add/remove `id`, `window.api.setChatLorebooks(ctx.profileId, ctx.chatId, next)`.
+      → read current ids, add/remove `id`, `window.api.setChatLorebooks(ctx.profileId, ctx.chatId, next)`.
 
 **Verify:** typecheck + build (renderer). Inline cards unaffected until used.
 
 ### Task 3: WCV adapter (`wcvHost.ts` + `wcvIpc.ts`)
 
 - [ ] **Step 1:** `wcvIpc` ctx-scoped handlers (mirror the existing worldbook handlers' ctx resolution):
-  `wcv-host-list-worldbooks-sync` (→ `lorebookService.listLorebooks`), `-create-worldbook`,
-  `-delete-worldbook`, `-get-worldbook-by-id`, `-save-worldbook-by-id`, `-chat-worldbook-ids-sync`
-  (→ `chatService.getChatLorebookIds`), `-bind-worldbook` (read ids → add/remove → `setChatLorebookIds`).
+      `wcv-host-list-worldbooks-sync` (→ `lorebookService.listLorebooks`), `-create-worldbook`,
+      `-delete-worldbook`, `-get-worldbook-by-id`, `-save-worldbook-by-id`, `-chat-worldbook-ids-sync`
+      (→ `chatService.getChatLorebookIds`), `-bind-worldbook` (read ids → add/remove → `setChatLorebookIds`).
 - [ ] **Step 2:** `wcvHost.ts` implements the new `Host` methods over those channels (sync via `sendSync`,
-  async via `invoke`).
+      async via `invoke`).
 
 **Verify:** typecheck + `npm test` + build green. **Manual (Electron, both transports):** a card lists /
 creates / writes-by-name / binds (then confirm it matches into prompts) / unbinds / deletes a worldbook —
@@ -97,8 +97,8 @@ tests pass; entry-level fine CRUD / file import / char-primary rebind stay out o
 ## Risks
 
 - **Sync `listWorldbooks`/`chatWorldbookIds`** (cards call them without await) — needs a sync source; cache
-  + refresh if no store (spec §8.1). The cache can go stale vs an external library edit; refresh on
-  create/delete covers card-driven changes.
+  - refresh if no store (spec §8.1). The cache can go stale vs an external library edit; refresh on
+    create/delete covers card-driven changes.
 - **Scope** = full library (trusted) — a card can delete any book; accepted per the trusted-card stance
   (flag if you want it scoped to own+created).
 - **Adapter/interface lockstep** — widening `Host` breaks both adapters until wired; land the interface +

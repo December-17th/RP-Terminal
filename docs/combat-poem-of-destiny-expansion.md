@@ -13,6 +13,7 @@ resolver script, the MVU UI, and the preset instruction.
 > like `2d6+智力`, resolved by the engine's native d20) is **wrong on two counts** — see "What changed".
 
 ## Scope (owner-locked via Q&A)
+
 - Expansion **for the 命定之诗 character card**, not a redesign of the RP Terminal app.
 - Use the **card's own 5-attribute schema** (力量/敏捷/体质/智力/精神, not D&D 6). Map what exists, define
   the rest. Equipment is fully slotted.
@@ -22,6 +23,7 @@ resolver script, the MVU UI, and the preset instruction.
 - Card-UI edits ship as a **standalone status-area regex JSON** (the live status UI is a remote loader).
 
 ### Why we build this (the strategic frame — owner, 2026-06-25)
+
 The deliverable is an **extension (mod) for the 命定之诗 character card**, NOT a redesign of the app.
 But we **co-develop it alongside the app's combat system on purpose**: the card extension is the first
 real consumer of the combat SDK, so building it is how we discover **what card-facing APIs the SDK must
@@ -30,11 +32,13 @@ needs something the app/SDK doesn't offer yet, that gap is a signal — add the 
 app, document it in `docs/sdk/`, and let the card consume it. Keep a running "SDK delta" per phase.
 
 ## The 命定之诗 stat_data schema (recovered — authoritative)
+
 From `FrontEnd-for-destined-journey@1.8.2/dist/data_schema/index.js`. Top-level: `事件`, `世界{时间,地点}`,
 `任务列表`, **`主角`** (player), `命运点数`, **`关系列表`** (companions keyed by name — same character
 fields + `在场`/`好感度`/`性格`/…), `新闻`.
 
 A **character** (`主角` / each `关系列表[name]`):
+
 - `种族`, `身份[]`, `职业[]`, `生命层级`, `等级`(1–25), `累计经验值`, `升级所需经验`, `冒险者等级`, `属性点`
 - **`属性`**: `{力量,敏捷,体质,智力,精神}` (start at **0**; grow via 属性点)
 - **`生命值`/`生命值上限`**, `法力值`/`上限`, `体力值`/`上限` (flat number pairs)
@@ -45,18 +49,21 @@ A **character** (`主角` / each `关系列表[name]`):
 - `登神长阶` (ascension): `{是否开启,要素,权能,法则,神位,神国{名称,描述}}`
 
 ### Schema strictness — RESOLVED: effectively strict / whitelisted
+
 The remote schema is NOT `.passthrough()`. 技能/背包/character objects end in
 `.transform(r => _.pick(r, [whitelist]))`, so **any unknown key is actively deleted** by MVU validation
 (not merely stripped). We can't edit the remote schema. → **A free-floating `战斗` sub-object cannot
 survive.** Combat data must ride in the **preserved** fields: `标签` (`string[]`), `效果`
-(`record<string,string>` — arbitrary keys), `消耗`. The card's *own* convention already puts it there.
+(`record<string,string>` — arbitrary keys), `消耗`. The card's _own_ convention already puts it there.
 
 ## The card's combat protocol (recovered — this is the real system)
+
 The card ships a complete, self-contained d20 combat system in its worldbook. It is explicitly **not**
 "copy D&D values" ("而不是照抄dnd设定，本世界无任何社交/感知等日常类检定") and explicitly
 **"无任何五维属性加成(转为检定加值)"** — attributes feed **检定 modifiers**, not flat damage.
 
 **`<核心数值表>`** (generation + combat constants):
+
 - 战斗层级系数 (by 生命层级 1→7): `2.0 / 2.8 / 4.0 / 8.0 / 15.0 / 35.0 / 80.0`
 - 装备值 单件攻/防 (by 品质): 普 5–25 … 神 1400–2500
 - 技能威力 (by 品质): 普攻 20, 普 50–100 … 神 5000–8000
@@ -65,6 +72,7 @@ The card ships a complete, self-contained d20 combat system in its worldbook. It
   & damage coefficient `×1.0/1.2/1.4/1.6`.
 
 **`<角色生成>`** resource derivation (the attribute→resource scale — open point 2 RESOLVED):
+
 - `HP = 体质 × 100 × HP乘数 + Σ五维`
 - `MP = (智力+精神) × 50 × MP/SP乘数`
 - `SP = (力量+敏捷) × 50 × MP/SP乘数`
@@ -72,6 +80,7 @@ The card ships a complete, self-contained d20 combat system in its worldbook. It
 - char_info panel格式: 技能 `标签:[关联属性][目标类型][核心功能][威力][特性]`; 装备 `标签:[攻击/防御:N]`.
 
 **`<战斗协议>`** resolution (the engine target):
+
 - **行动顺序**: `(敏捷 × (1+%修正)) + d20 + 固定修正` → descending.
 - **攻击检定**: d20 pool by 生命层级 gap (higher→2d20 high / lower→2d20 low / same→1d20);
   `检定总值 = d20 + 命中 − 闪避`. **评级**: ≥30 超暴击 2.0 | ≥25 强暴击 1.6 | ≥20 暴击 1.3 |
@@ -92,6 +101,7 @@ The card ships a complete, self-contained d20 combat system in its worldbook. It
 (`防御/(防御+2000)` + 属性减免%). Carry `闪避` and `防御`, not an AC.
 
 ## What changed (vs the earlier model in this doc)
+
 1. **No new `战斗` field** — the schema deletes unknown keys. "Formalize the import" = a **parser over the
    card's existing `标签`/`效果`/`消耗` grammar** + a `stat_map`. (The owner's locked "AI authors numbers,
    MVU UI displays them" holds exactly — the card already works this way.)
@@ -101,6 +111,7 @@ The card ships a complete, self-contained d20 combat system in its worldbook. It
    the grid / positioning / turn-order / action-economy / range·LoS / AoE templates the card only narrates.
 
 ## Combat modes (owner-decided 2026-06-25)
+
 At combat entry the AI **prompts the start of combat and generates the combat variables needed** (e.g.
 enemy `char_info` via `<角色生成>`; party stats are read from MVU). The player then picks:
 
@@ -110,7 +121,7 @@ enemy `char_info` via `<角色生成>`; party stats are read from MVU). The play
   AI narrates **at the end of each turn**.
 - **Combat system — Deterministic** — player plays; engine resolves the **whole fight**; AI narrates
   **once at the end**.
-- **Creative input box** *(DEFERRED — record only)* — on any turn the player may type a freeform action
+- **Creative input box** _(DEFERRED — record only)_ — on any turn the player may type a freeform action
   into the combat input box; the AI determines that turn's outcome and writes it back to combat state
   (this is phase A's improvise/`adjudicate` path). Build later.
 
@@ -125,10 +136,11 @@ the combat-system path), present the two options, and **pause without resolving*
 so it only resolves the fight when the player chose AI-decided (continued in chat); if they enter the
 engine, the AI stays out and resumes only on the engine's hand-back. Deliverable:
 [sdk/examples/poem-preset-combat-instructions.md](sdk/examples/poem-preset-combat-instructions.md). The
-**Narrate vs Deterministic** split is a *sub-choice within* the combat-system path — an app-side narration
+**Narrate vs Deterministic** split is a _sub-choice within_ the combat-system path — an app-side narration
 cadence (the per-encounter mode chooser, BP4 UI), not a lorebook concern.
 
 ## Field grammar + parsed shape + stat_map + derive (SIGNED OFF 2026-06-25)
+
 The "战斗 spec" is the canonical **parse** of the card's real fields, not a new MVU field. The parsed
 `CardCombat` + the character's 五维 are carried on combatants/abilities via an **optional `ext` bag**
 (`ext?: Record<string,unknown>` on `Combatant`/`AbilityDef`, non-breaking; native cards ignore it; the
@@ -136,6 +148,7 @@ card resolver reads it). `derive` stays **pure data** (tables + tunables) — fo
 code, so there is no eval/formula-string surface.
 
 **Parser source → normalized `CardCombat` (carried on combatant/ability via an optional `ext` bag):**
+
 - 技能 `消耗` `"攻击: 50 MP"` → `{slot:'攻击'|'动作', mp,sp,hp}`
 - 技能 `标签`: bare `力量/…` → `关联属性`; `有效距离: X` → range(cells); `范围:[层级][+形状]` →
   AoeShape (爆发→burst, 直线→line, 锥形→cone, 自身→self, 单体→single); `威力: X` (or 品质 fallback) → 威力;
@@ -165,6 +178,7 @@ code, so there is no eval/formula-string surface.
   "attr_mitigation": {"物理":0.0025,"能量":0.004,"精神":0.008,"真实":0}, "defense_constant": 2000
 }
 ```
+
 **Key-language convention (BP1):** structural keys (`stat_map`/`derive`/`paths` fields) are the SDK's
 English snake_case (`StatMap`/`DeriveConfig` in `src/shared/combat/bundle.ts`); the card's domain terms
 appear only in **values** (`主角`, `关系列表`, `力量`, `生命值`) and **record keys** (生命层级 `"1".."7"`;
@@ -172,18 +186,22 @@ appear only in **values** (`主角`, `关系列表`, `力量`, `生命值`) and 
 (the card already stores them), using the 资源推演 formula only as a fallback when missing.
 
 ## Open points — all RESOLVED by the investigation
+
 1. **Strictness** → whitelisted/strict; no `战斗` sub-object; use 标签/效果/消耗. ✔
 2. **Attribute→resource scale** → `<角色生成>` formulas (read MVU directly; formula = fallback). ✔
 3. **AC** → there is none; carry 闪避 (hit subtrahend) + 防御 (damage reduction). ✔
 4. **Field names** → verified grammar (关联属性/有效距离/范围/威力/攻击/防御/命中/闪避/先攻/状态抵抗/消耗). ✔
 
 ## Card UI inventory (verified from `v4.2.1.png` `regex_scripts`)
+
 - `角色查看器v3.0.5` — 64 KB inline Vue character sheet (reads `stat_data`).
 - `状态栏` — remote loader → `FrontEnd-for-destined-journey@1.8.2/dist/status/index.html` (minified;
   can't hand-edit → ship a standalone regex instead).
 
 ### Status-UI source repo (found 2026-06-26): `github.com/The-poem-of-destiny/FrontEnd-for-destined-journey`
+
 The `状态栏`'s source (we previously only had the minified dist). Key facts:
+
 - **`src/status/` is a React/TSX app** (Vite+pnpm) with tabs 任务/信息/持有物/命定/新闻/地图 (`config/tabs.config.ts`)
   — **no combat tab**; `core/stores/mvu-data.store.ts` reads `stat_data`; `core/types/mvu-data.d.ts` is
   `z.infer<Schema>` (confirms the data shape = the recovered schema; **no combat fields**). (`src/home`,
@@ -200,13 +218,14 @@ The `状态栏`'s source (we previously only had the minified dist). Key facts:
   2. Real skills carry **no `有效距离`** and **declare a damage type** (能量/物理) — confirms the bucket-B
      `有效距离`-mandatory tightening, and that typed-damage (deferred) actually matters (most skills type
      their damage).
-  (Note: the predefined catalog uses ENGLISH keys `tag/effect/consume/type/rarity`; the **runtime MVU
-  stat_data** the engine reads uses the Chinese keys `标签/效果/消耗/类型/品质` per the schema — `parseCardItem`
-  correctly targets the runtime Chinese keys.)
+     (Note: the predefined catalog uses ENGLISH keys `tag/effect/consume/type/rarity`; the **runtime MVU
+     stat_data** the engine reads uses the Chinese keys `标签/效果/消耗/类型/品质` per the schema — `parseCardItem`
+     correctly targets the runtime Chinese keys.)
 - `战斗&生产制作美化` — inline "TRPG战斗面板" beautification of AI-written combat text → the old
   AI-narration paradigm = **Classic mode**'s display; keep it for that mode.
 
 ## Key locations
+
 - Card + scripts: `example sillytarvern character card, presets, extensions and scripts/` — `v4.2.1.png`
   (the card; worldbook holds `[战斗协议]`,`[核心数值表]`,`[角色生成]`,`[技能装备道具生成规则]`,
   `[品质效果限定]`,`[战斗生产规则]`), preset `命定之诗Kemini5-3.8Can改v6.1.json`
@@ -218,6 +237,7 @@ The `状态栏`'s source (we previously only had the minified dist). Key facts:
   `src/main/types/character.ts` (`CombatBundleSchema` += `stat_map`/`derive`).
 
 ## Implementation
+
 Field spec, stat_map/derive, and the `ext`-bag approach are **signed off (2026-06-25)**. The phased plan
 lives in [plans/2026-06-25-poem-combat-extension.md](superpowers/plans/2026-06-25-poem-combat-extension.md)
 — it splits each phase into **App/SDK surface** (generic, reusable, documented in `docs/sdk/`) vs
@@ -240,6 +260,7 @@ combat data). **Resolved 2026-06-26 → channel A1:** the AI emits a JSON enemy 
 static bundle `enemies` remain a fallback. (Kept below as the rationale that drove the channel choice.)
 
 **Two hard constraints (verified from the remote `data_schema/index.js`):**
+
 1. **No new MVU top-level key.** `d = z.object({事件,世界,任务列表,主角,命运点数,关系列表,新闻})` strips
    unknown keys, so a `stat_data.战斗场` enemy scope would be **deleted** by MVU validation unless we fork
    the remote schema (the `【命定之诗】mvu zod` loader). → an AI→engine enemy channel should be
@@ -252,12 +273,15 @@ static bundle `enemies` remain a fallback. (Kept below as the rationale that dro
    **属性 + 生命层级 (+等级) + 装备 + 技能 + 状态效果**; HP/MP/SP are computed.
 
 ### The combatant-data contract (what the engine needs per entity)
+
 `name`, `生命层级` (→ tier 1–7), `等级`, `属性{力量,敏捷,体质,智力,精神}`, `装备{slot:{标签[],效果{}}}`
 (攻击/防御 + 检定/DR), `技能{name:{类型,消耗,标签[],效果{}}}` (关联属性/有效距离/威力/范围 + 命中/闪避/附加
 效果), `状态效果{}`. HP/MP/SP/AC are **derived**, never supplied.
 
 ### Build status (updated 2026-06-26)
+
 **Done since the design settled:**
+
 - **AI→engine enemy/NPC channel** ✅ — **channel A1** (owner-chosen): the AI emits a JSON enemy roster in
   the `<rpt-combat-start>` body; `parseCombatStart` → `cue.roster` → `buildEncounterFromMvu({ roster })`
   builds each (`阵营:'友方'`→party). Static bundle `enemies` remain a fallback.
@@ -274,6 +298,7 @@ static bundle `enemies` remain a fallback. (Kept below as the rationale that dro
   WCV exclude-sender).
 
 **Remaining:**
+
 - **Per-encounter narration cadence chooser** (within combat-system) — Classic vs Narrate vs Deterministic
   is a UI/app affordance; the lorebook already drives the binary AI-decided-vs-combat-system entry.
 - **End-of-combat fold-back verification** — confirm post-fight HP/状态 writes back to `stat_data` in-app.
@@ -281,11 +306,13 @@ static bundle `enemies` remain a fallback. (Kept below as the rationale that dro
   战意, revive, 资源消耗减免 (deferred depth); **Creative-input box** (BP7).
 
 ## Lorebook compatibility — the enemy/combatant-data channel (brainstorm 2026-06-26)
+
 Goal: make the card emit, in a **machine-readable** form the engine can consume, the combat data for
 entities not already in MVU (enemies; ad-hoc NPCs). Three change-buckets:
 
 **A. Enemy/NPC combat-data delivery (the big one).** Channel options (given constraint #1 — app-parsed,
 not a new MVU key):
+
 - **A1 — structured payload on the combat-start cue.** Lorebook "战斗启动协议": when a fight begins the
   AI emits `<rpt-combat-start>` carrying a JSON roster of enemies (each: 名称/生命层级/等级/属性/装备/技能/
   状态效果). The app parses the JSON (reliable, we own the schema, no YAML lib) → `buildCombatant` each.
@@ -305,6 +332,7 @@ not a new MVU key):
 **B. Item-format consistency — AUDITED + handled (2026-06-26).** Audit of `parseCardItem` vs the card's
 `[技能装备道具生成规则]`/`[品质效果限定]`. Outcome (deliverable:
 [poem-item-combat-compat.md](sdk/examples/poem-item-combat-compat.md)):
+
 - ✅ Already compatible: 关联属性 (bare or "关联属性: 力量"), 攻击/防御:N, 消耗 攻击/动作:X MP/SP, geometric
   范围 (爆发/直线/锥形) + 目标类型 (单体/范围:X), 命中/闪避/先攻/状态抵抗, 固伤, DR/穿透/暴击倍率, 附加效果.
 - ⚠️ Two required lorebook tightenings (in the addendum): **威力 must be a literal number** (else → 普攻 20)
@@ -326,7 +354,9 @@ instruction also carries the enemy roster format.
 MVU pollution, we own the schema.
 
 ### A1 design
+
 The AI emits the enemy roster as a JSON body inside the combat-start tag:
+
 ```
 <rpt-combat-start map="">
 [
@@ -343,6 +373,7 @@ The AI emits the enemy roster as a JSON body inside the combat-start tag:
 ]
 </rpt-combat-start>
 ```
+
 **Each roster entry uses the card's own stat_data field names** (属性/生命层级/等级/装备/技能/状态效果) — i.e.
 the SAME shape as the bundle's static `enemies` templates — so `poemD20.buildCombatant` parses it
 unchanged. HP/MP/SP/AC are derived (resources optional). `数量` defaults to 1.
