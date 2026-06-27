@@ -11,6 +11,9 @@ describe('rosterFromStatData', () => {
     expect(rosterFromStatData(undefined)).toEqual([])
     expect(rosterFromStatData({})).toEqual([])
   })
+  it('falls back to 主角.名称 when 姓名 is absent', () => {
+    expect(rosterFromStatData({ 主角: { 名称: '游侠' }, 关系列表: { 爱莎: {} } }).sort()).toEqual(['游侠', '爱莎'].sort())
+  })
 })
 
 describe('computeCoverage', () => {
