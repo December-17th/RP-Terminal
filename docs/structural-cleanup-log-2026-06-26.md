@@ -13,8 +13,8 @@ _Traceability log for executing [maintainability-plan-2026-06-26.md](maintainabi
 | # | Phase | ID | Pr | Status | Commit |
 | --- | --- | --- | --- | --- | --- |
 | 0 | Make module-boundary gate real | WS-10 | (pre) | ✅ done | `82d9c48` |
-| 0a | Error-handling policy doc | WS-9 | LOW | ✅ done | (this commit) |
-| 0b | Delete dead DB schema | WS-6 | LOW | ⬜ todo | — |
+| 0a | Error-handling policy doc | WS-9 | LOW | ✅ done | `de140ff` |
+| 0b | Delete dead DB schema | WS-6 | LOW | ✅ done | (this commit) |
 | 0c | Document path dialects + test | WS-8 | LOW | ⬜ todo | — |
 | 0d | One broadcast helper | WS-7 | MED | ⬜ todo | — |
 | 1 | Unify EJS context (keystone) | WS-1 | HIGH | ⬜ todo | — |
@@ -89,3 +89,19 @@ behavior change.
 
 **Verification.** typecheck ✅ · check:deps ✅ · lint ✅ 0 errors · test ✅ 689. (Comment + doc only — no
 behavior change.)
+
+### Stage 3 — Phase 0b: delete dead DB schema (WS-6) ✅
+
+**Why.** `rpg_entities` (table) and `pending_lore` (chats column) shipped with zero readers/writers in
+`src/` — speculative "Phase H/I/K/J" surface that misleads readers (review WS-6).
+
+**Changes (`src/main/services/db.ts`).**
+- Removed the `rpg_entities CREATE TABLE` and the `pending_lore` column + its `addColumnIfMissing` migration.
+- Added `DROP TABLE IF EXISTS rpg_entities;` to `DROP_LEGACY` — the table was always empty, so dropping it
+  from older DBs is safe. Left the harmless unused `pending_lore` NULL column in old DBs (no risky
+  `ALTER … DROP COLUMN`); documented the choice in-code.
+- Reconciled the cascade comment in `profileService.ts` (dropped the `rpg_entities` mention).
+- Kept `episodic_memory` (reserved by an imminent plan).
+
+**Verification.** typecheck ✅ · check:deps ✅ (236 modules) · lint ✅ 0 errors · test ✅ 689. No test
+referenced the dropped schema.
