@@ -315,3 +315,25 @@ sites (`thRuntime` `onVarsChanged`, `generationService` `writeLoopGuard`) record
 the proposed fix. **Owner decision required** before implementing.
 
 **Verification.** typecheck ✅ · check:deps ✅ · lint ✅ 0 errors · test ✅ 706 (comment/doc only).
+
+---
+
+## Session summary (2026-06-26)
+
+**Done (all HIGH + MED + LOW, except one cosmetic remainder):** WS-10 (gate made real), WS-9, WS-6, WS-8,
+WS-7, **WS-1** (keystone — EJS context unified), WS-4 (direct tests added), WS-5 (buildPrompt decomposed),
+WS-2 (L1 cache gated/documented), WS-3 (spike complete; faithful fix designed).
+
+**13 commits**, gate green at every stage. Tests **689 → 706** (+17); typecheck/check:deps/lint clean
+throughout. `check:deps` is a NEW gate this session (WS-10).
+
+**Deferred (need owner / can't do safely here):**
+1. **WS-3 implementation** — origin-tag the variable pipeline + retire the heuristic. Spike done & faithful,
+   but a live-pipeline behavior change with prior-revert risk → needs in-app A/B vs 命定之诗. Owner sign-off.
+2. **WS-2 final disposition** — validate the L1 cache (A) or remove the partition/diff dual-mode (B). Owner
+   decision; gated/dormant for now.
+3. **WS-4 remainder** — physical extraction of the lodash/faker string to `shared/sandboxLib.ts`. Cosmetic;
+   the test net (`test/sandboxLib.test.ts`) is in place so it's safe to do as a focused follow-up.
+4. **WS-1 render/WCV runtime spot-check** — unit tests pin build-time; the renderer/WCV panel paths need an
+   in-app look (a status panel + a `[RENDER]` entry).
+5. **Prettier warning drift** (117 advisory, non-failing) — a `npm run format` pass when convenient.
