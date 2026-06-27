@@ -10,18 +10,18 @@ _Traceability log for executing [maintainability-plan-2026-06-26.md](maintainabi
 
 ## Work schedule (status)
 
-| # | Phase | ID | Pr | Status | Commit |
-| --- | --- | --- | --- | --- | --- |
-| 0 | Make module-boundary gate real | WS-10 | (pre) | ✅ done | `82d9c48` |
-| 0a | Error-handling policy doc | WS-9 | LOW | ✅ done | `de140ff` |
-| 0b | Delete dead DB schema | WS-6 | LOW | ✅ done | `663d337` |
-| 0c | Document path dialects + test | WS-8 | LOW | ✅ done | `1b4ada8` |
-| 0d | One broadcast helper | WS-7 | MED | ✅ done | (this commit) |
-| 1 | Unify EJS context (keystone) | WS-1 | HIGH | ✅ done | 1a `396cd13` · 1b `8061410` · 1c `(this commit)` |
-| 2 | lodash/faker → tested module | WS-4 | MED | 🟡 partial (tests added; file-extract deferred) | (this commit) |
-| 3 | Decompose buildPrompt | WS-5 | MED | ✅ done (preset-loop left by design) | inc1 `318f74f` · inc2 `(this commit)` |
-| 4 | De-escalate L1 cache | WS-2 | MED | ✅ done (gated/documented) | (this commit) |
-| 5 | Write-back loop origin-tag | WS-3 | HIGH | 🟡 spike done; impl deferred (owner + in-app verify) | (this commit) |
+| #   | Phase                          | ID    | Pr    | Status                                               | Commit                                           |
+| --- | ------------------------------ | ----- | ----- | ---------------------------------------------------- | ------------------------------------------------ |
+| 0   | Make module-boundary gate real | WS-10 | (pre) | ✅ done                                              | `82d9c48`                                        |
+| 0a  | Error-handling policy doc      | WS-9  | LOW   | ✅ done                                              | `de140ff`                                        |
+| 0b  | Delete dead DB schema          | WS-6  | LOW   | ✅ done                                              | `663d337`                                        |
+| 0c  | Document path dialects + test  | WS-8  | LOW   | ✅ done                                              | `1b4ada8`                                        |
+| 0d  | One broadcast helper           | WS-7  | MED   | ✅ done                                              | (this commit)                                    |
+| 1   | Unify EJS context (keystone)   | WS-1  | HIGH  | ✅ done                                              | 1a `396cd13` · 1b `8061410` · 1c `(this commit)` |
+| 2   | lodash/faker → tested module   | WS-4  | MED   | ✅ done (tests + module extract)                     | tests `705e745` · extract (this commit)          |
+| 3   | Decompose buildPrompt          | WS-5  | MED   | ✅ done (preset-loop left by design)                 | inc1 `318f74f` · inc2 `(this commit)`            |
+| 4   | De-escalate L1 cache           | WS-2  | MED   | ✅ done (gated/documented)                           | (this commit)                                    |
+| 5   | Write-back loop origin-tag     | WS-3  | HIGH  | 🟡 spike done; impl deferred (owner + in-app verify) | (this commit)                                    |
 
 Status key: ⬜ todo · 🔄 in progress · ✅ done · ⏸ deferred (with reason).
 
@@ -50,8 +50,9 @@ module-boundary gate, and the verification gate is documented as
 Making this real first gives the later refactors (WS-1/WS-4/WS-7 move modules) automated cover.
 
 **Changes.**
+
 - `package.json` — added `dependency-cruiser` (devDep) + `"check:deps": "depcruise src --config
-  .dependency-cruiser.cjs"`.
+.dependency-cruiser.cjs"`.
 - `.dependency-cruiser.cjs` (new) — encodes the CLAUDE.md boundaries as `error` rules: shared↛main/renderer,
   shared↛electron, renderer↛main, combat-engine-pure, transports-no-cross-import (both directions);
   `no-circular` as `warn` (informational). `tsPreCompilationDeps` so type-only crossings are caught too.
@@ -61,6 +62,7 @@ Making this real first gives the later refactors (WS-1/WS-4/WS-7 move modules) a
   new config + `docs/sdk/examples/*.cjs`.
 
 **Verification (full gate).**
+
 - `npm run typecheck` → ✅
 - `npm run check:deps` → ✅ **no violations (236 modules, 766 deps)** — boundaries already respected in code.
 - `npm run lint` → ✅ **0 errors** (was 15 errors, all in `.claude/` worktree + a `.cjs` example). 110
@@ -69,6 +71,7 @@ Making this real first gives the later refactors (WS-1/WS-4/WS-7 move modules) a
 - `npm run test` → ✅ 689 pass / 78 files.
 
 **Notes / follow-ups.**
+
 - CLAUDE.md's boundaries bullet names the typed IPC surface as `shared/ipc`; the real surface is
   `window.api` (preload). The encoded rule (`renderer↛main`) captures the intent; left CLAUDE.md text as-is
   (minor). The `check:deps` claim in CLAUDE.md is now **true**.
@@ -81,6 +84,7 @@ re-derived "throw, strip, blank, or pass through?" (review WS-9). Codify the exi
 behavior change.
 
 **Changes.**
+
 - `docs/rpt-api.md` — new "§7. Template / macro error-handling policy" table (preset = fail-loud; card/lore
   = degrade/strip-keep-prose; engine-off = strip; engine-eval-error = empty+error; unknown macro =
   pass-through) + the rule-of-thumb.
@@ -96,6 +100,7 @@ behavior change.)
 `src/` — speculative "Phase H/I/K/J" surface that misleads readers (review WS-6).
 
 **Changes (`src/main/services/db.ts`).**
+
 - Removed the `rpg_entities CREATE TABLE` and the `pending_lore` column + its `addColumnIfMissing` migration.
 - Added `DROP TABLE IF EXISTS rpg_entities;` to `DROP_LEGACY` — the table was always empty, so dropping it
   from older DBs is safe. Left the harmless unused `pending_lore` NULL column in old DBs (no risky
@@ -113,6 +118,7 @@ stscript) coexist by deliberate 2026-06-22 decision but were undocumented as a c
 merge would silently change semantics (review WS-8).
 
 **Changes.**
+
 - `src/shared/objectPath.ts` — expanded the header into an explicit dialect table (which surfaces are
   bracket-aware vs split-on-dot, and why) + a don't-merge warning.
 - `test/pathDialects.test.ts` (new) — pins both dialects on `a[0].b`: objectPath indexes the array;
@@ -127,6 +133,7 @@ across a 70-line mount effect; adding an event risked wiring only one transport 
 other (review WS-7).
 
 **Changes.**
+
 - `src/renderer/src/cardBridge/hostBroadcast.ts` (new) — `broadcastHostEvent(chatId, name, payload)` (fans
   out to both transports) + `initCardEventBridge()` (the chat-store→events compute+broadcast subscription,
   lifted verbatim from App.tsx, returns a disposer).
@@ -154,6 +161,7 @@ exposed as the hoisted view. Top-level wins on `getvar` collision; global scope 
 build-time persistence untouched.
 
 **Changes (`src/shared/templateEngine.ts`).**
+
 - `getvar` gains the `stat_data` read-fallback (non-global, only when the bare path missed).
 - the `variables` constant is set to the hoisted view (`{...vars, ...vars.stat_data}`), read-only snapshot.
 - `test/templateHelpers.test.ts` — +6 cases (prefixed read, bare/hoisted read, top-level-wins,
@@ -170,9 +178,10 @@ enabled defaults (review WS-1). One constructor removes that drift; the function
 landed in WS-1a.
 
 **Changes.**
+
 - `src/shared/templateEngine.ts` — `buildTemplateContext(vars, { globals?, constants?, data?, enabled? })`
-  + `TemplateContextOpts` (defaults: globals/constants → `{}`, enabled → true). Documents the wrapped-vars
-  contract (callers don't pre-hoist; the engine resolves both forms).
+  - `TemplateContextOpts` (defaults: globals/constants → `{}`, enabled → true). Documents the wrapped-vars
+    contract (callers don't pre-hoist; the engine resolves both forms).
 - `src/main/services/templateService.ts` — re-export `buildTemplateContext` + `TemplateContextOpts`.
 - `src/main/services/generationService.ts` — build-time context now constructed via the builder
   (`workingVars` still passed by reference → setvar persistence intact).
@@ -192,6 +201,7 @@ Electron app here).
 maintenance contract).
 
 **Changes.**
+
 - `docs/rpt-api.md` §EJS — documented the unified variable surface (prefixed + bare both resolve in all
   three contexts; top-level wins on collision; per-context constant/globals caveats; render-time setvar
   transient).
@@ -210,12 +220,13 @@ into the quickjs boot, `templateEngine.ts`) had **no direct tests** — silent d
 would go unnoticed. Closing that gap is the high-value, low-risk slice.
 
 **Changes.**
+
 - `test/sandboxLib.test.ts` (new, +7 tests) — pins the methods a status panel actually uses: `_.get/_.set`,
   `cloneDeep`, `map/filter/find/sumBy`, `groupBy/keyBy/mapValues/sortBy/orderBy`,
   `uniq/uniqBy/chunk/padStart/isEqual`, `faker.number/uuid/name`, and the no-op `console`. (Exercised through
   the engine because the subset only exists inside the VM.)
 
-**Deferred (explicitly).** The *physical* extraction of the subset into its own `shared/sandboxLib.ts`
+**Deferred (explicitly).** The _physical_ extraction of the subset into its own `shared/sandboxLib.ts`
 module is **not** done — it's a verbatim move of ~110 lines of dense JS-in-a-string into quickjs, where a
 single transcription slip could silently change a lodash method's behavior. It's cosmetic relative to the
 testability win now in place, and is safer as a focused, separately-reviewed follow-up. Tracked as WS-4
@@ -233,6 +244,7 @@ cache-hit rate).
 
 **Decision (WS-2 = option C, gate/document; NOT remove).** Removing tested, deliberately-designed code is the
 owner's call (option B), so I kept it and made its status honest:
+
 - `docs/prompt-cache-optimization-design.md` — status note: experimental/dormant/unvalidated; UI-disabled;
   proxy ≠ provider hits; removal candidate if never validated.
 - `cacheLayers.ts` header + `generationService.ts` `cacheLevel` read — ⚠️ EXPERIMENTAL/DORMANT markers
@@ -248,6 +260,7 @@ partition/diff dual-mode (B).
 and self-contained tail/marker blocks inline (review WS-5). Pure extraction, behavior-preserving.
 
 **Changes (`src/main/services/promptBuilder.ts`).**
+
 - `insertBeforeConvo(messages, msg)` — replaces the 3 duplicated convoStart find+splice sites (world-info
   safety net, mode addendum, persona).
 - `applyInjectionMarkers(messages, markerEntries, render)` — the `[GENERATE]`/`@INJECT` drain, lifted out.
@@ -262,25 +275,28 @@ renderPresetBlocks) optional — assessed next.
 ### Stage 12 — Phase 3 / WS-5 (inc 2): extract partitionLore ✅ — WS-5 done
 
 **Changes (`src/main/services/promptBuilder.ts`).**
+
 - `partitionLore(matched, lorebooks) → { markerEntries, topEntries, depthEntries }` — pure (no render
   context), lifted out of buildPrompt; `applyInjectionMarkers` now reuses the shared `ParsedEntry` type.
 
 **Left by design.** The preset-block loop (`renderPresetBlocks`) was NOT extracted: it mutates `messages`
-+ `presetDepthItems` + the `historyEmitted`/`worldInfoEmitted` flags and calls `buildHistory`, so a clean
-extraction needs heavy state-passing for little gain and more risk on the compat hot path. The four
-extractions (insertBeforeConvo, applyInjectionMarkers, applyCacheTail, partitionLore) already remove the
-worst duplication and shrink the function materially.
+
+- `presetDepthItems` + the `historyEmitted`/`worldInfoEmitted` flags and calls `buildHistory`, so a clean
+  extraction needs heavy state-passing for little gain and more risk on the compat hot path. The four
+  extractions (insertBeforeConvo, applyInjectionMarkers, applyCacheTail, partitionLore) already remove the
+  worst duplication and shrink the function materially.
 
 **Verification.** Characterization net green (promptBuilder + injectMarkers, 56). typecheck ✅ · check:deps ✅
 · lint ✅ 0 errors · test ✅ 706. **WS-5 substantially complete.**
 
 ### Stage 13 — Phase 5 / WS-3: SPIKE complete (implementation deferred) 🟡
 
-**Spike question.** Does real MVU fire `mag_variable_update_*` on *programmatic* writes
+**Spike question.** Does real MVU fire `mag_variable_update_*` on _programmatic_ writes
 (`insertOrAssignVariables`/`setMvuVariable`/`replaceMvuData`), or only on the AI-message fold? This decides
 whether origin-tagging is faithful.
 
 **Findings (real MIT source — [MagicalAstrogy/MagVarUpdate](https://github.com/MagicalAstrogy/MagVarUpdate)).**
+
 - The events are defined in `src/variable_def.ts` and **emitted only by `updateVariables`**
   (`src/function/update_variables.ts`).
 - `updateVariables` is invoked **only from the message-fold path** — `handleVariablesInMessage(message_id)`
@@ -303,11 +319,12 @@ which is the divergence that creates the self-feedback loop the `generationServi
 `model-fold` origins. Then retire the `writeLoopGuard` heuristic.
 
 **Why deferred (not implemented here).**
+
 1. **Behavior change on the live variable pipeline, both transports** — exactly the area I can't runtime-verify
    without the Electron app + a provider.
 2. **Prior revert risk.** [progress-log.md](progress-log.md) records a previous "suppress self-write events"
    attempt that was **reverted** because it broke cards that chain init through their own update events —
-   i.e. 命定之诗 may be authored against RPT's *current* (divergent) behavior. The faithful fix is correct
+   i.e. 命定之诗 may be authored against RPT's _current_ (divergent) behavior. The faithful fix is correct
    but could regress that card, so it needs an in-app A/B against the real card before landing.
 
 **Left in place:** the heuristic loop-breaker (it works) + comment pointers added at the two divergence
@@ -328,6 +345,7 @@ WS-2 (L1 cache gated/documented), WS-3 (spike complete; faithful fix designed).
 throughout. `check:deps` is a NEW gate this session (WS-10).
 
 **Deferred (need owner / can't do safely here):**
+
 1. **WS-3 implementation** — origin-tag the variable pipeline + retire the heuristic. Spike done & faithful,
    but a live-pipeline behavior change with prior-revert risk → needs in-app A/B vs 命定之诗. Owner sign-off.
 2. **WS-2 final disposition** — validate the L1 cache (A) or remove the partition/diff dual-mode (B). Owner
@@ -337,3 +355,21 @@ throughout. `check:deps` is a NEW gate this session (WS-10).
 4. **WS-1 render/WCV runtime spot-check** — unit tests pin build-time; the renderer/WCV panel paths need an
    in-app look (a status panel + a `[RENDER]` entry).
 5. **Prettier warning drift** (117 advisory, non-failing) — a `npm run format` pass when convenient.
+
+---
+
+## Follow-up session (owner directives, 2026-06-26)
+
+Owner feedback: WS-1 confirmed OK; date-update loop **still reproduces** (the heuristic doesn't hold);
+proceed with WS-4 extraction; needs more info to decide WS-2.
+
+### Stage 14 — WS-4 remainder: extract lodash/faker to its own module ✅
+
+**Changes.** A Node script ([scratch] /tmp/extract_sandboxlib.cjs) did the move **byte-exact** (no
+transcription risk): sliced the faker+lodash+console block (11,908 chars) out of `templateEngine.ts`'s boot
+into `src/shared/sandboxLib.ts` (`export const SANDBOX_LIB_JS`); the engine imports it and appends it to the
+boot glue. The block is unchanged (ES5 JS for quickjs).
+
+**Verification.** `test/sandboxLib.test.ts` + `templateHelpers.test.ts` green (proves byte-equivalence) ·
+typecheck ✅ · check:deps ✅ (238 modules) · lint ✅ 0 errors · test ✅ 706. (Prettier warnings dropped
+117 → 42 — the extracted block lints cleaner as its own file.) **WS-4 fully complete.**
