@@ -161,6 +161,10 @@ through the host bridge as RFC-6902 JSON Patch.
   `chatId` / `runType` constants and per-profile globals exist only at prompt-build time); render-time
   `setvar` is **transient** (a fresh copy, never mutates the stored floor).
 
+### World Assets — ✅
+
+- `assetUrl(name, type, mood?)` → `Promise<string | null>` — resolve a character portrait (`type` = `头像`/`立绘`, mood-aware) from the active world's asset layer. Returns an `rptasset://` URL that loads inside card pages (both transports: inline iframes and WCV panels). Prerequisite: the World Assets layer ([world-assets-plan.md](world-assets-plan.md)). Also exposed as `window.assetUrl` and `window.TavernHelper.assetUrl` on card pages.
+
 ### UI / misc — ✅ / 🔁
 
 - `toastr.*` — ✅ · `getTavernHelperVersion()` — ✅ (reports ≥ the card's required minimum) · `waitGlobalInitialized()` — ✅ (resolves true) · `errorCatched(fn)` — ✅
