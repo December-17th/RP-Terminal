@@ -26,8 +26,12 @@ export const useAssetStore = create<AssetState>((set) => ({
       return
     }
     set({ loading: true })
-    const rows = await window.api.assetCoverage(profileId, lorebookIds, 'character', roster)
-    set({ rows, loading: false })
+    try {
+      const rows = await window.api.assetCoverage(profileId, lorebookIds, 'character', roster)
+      set({ rows, loading: false })
+    } catch {
+      set({ loading: false })
+    }
   },
   refresh: async (profileId, lorebookIds, roster) => {
     await window.api.assetRefresh(profileId, lorebookIds)
