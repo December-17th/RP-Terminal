@@ -433,6 +433,7 @@ export function createThRuntime(host: Host): ThGlobals {
       return ''
     },
     triggerSlash: (c: any) => runTriggerSlash(String(c ?? '')),
+    assetUrl: (name: string, type: string, mood?: string) => host.assetUrl(name, type, mood),
     replaceTavernRegexes: async (regexes: any, option?: any) =>
       host.replaceRegexes(Array.isArray(regexes) ? regexes : [], option),
     updateTavernRegexesWith: async (updater: any, option?: any) => {
