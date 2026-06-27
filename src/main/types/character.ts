@@ -140,6 +140,12 @@ export const RPTerminalExtSchema = z
     game_rules: z.record(z.string(), z.any()).default({}),
     assets: z.record(z.string(), z.string()).default({}),
 
+    /** A card UI panel (renderMode:'panel', matched by its scriptName) the app auto-docks on the
+     *  workspace's left when this card is active. */
+    left_panel: z
+      .object({ name: z.string() })
+      .optional(),
+
     /** Static, card-determined panel layout (the WCV plan): a grid of slots, each hosting a native
      *  view (by id, e.g. "chat"/"status") or an out-of-process card-UI WebContentsView ("wcv" + an
      *  `entry` URL). `rect` is [col, row, colSpan, rowSpan] in the grid. */
