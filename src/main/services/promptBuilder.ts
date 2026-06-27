@@ -224,6 +224,15 @@ const applyDepthInjections = (
   for (const p of planned) messages.splice(p.idx, 0, { role: p.role, content: p.content })
 }
 
+/** Insert a system block just before the first conversation (non-system) message — or append it when
+ *  the array is all-system. Centralizes the convoStart find+splice repeated for the world-info safety
+ *  net, the mode addendum, and the persona block (WS-5). */
+const insertBeforeConvo = (messages: ChatMessage[], msg: ChatMessage): void => {
+  const convoStart = messages.findIndex((m) => m.role !== 'system')
+  if (convoStart === -1) messages.push(msg)
+  else messages.splice(convoStart, 0, msg)
+}
+
 /** The text scanned for lorebook keywords: the last `scanDepth` turns + the pending action. */
 export const buildScanText = (floors: FloorFile[], userAction: string, scanDepth: number): string =>
   [
@@ -469,10 +478,7 @@ export const buildPrompt = (args: BuildPromptArgs): ChatMessage[] => {
   // otherwise drop matched lorebook entries. Inject them just before the first
   // conversation message so keyword/constant world info still reaches the model.
   if (worldInfo && !worldInfoEmitted) {
-    const convoStart = messages.findIndex((m) => m.role !== 'system')
-    const wiMessage: ChatMessage = { role: 'system', content: `World Info:\n${worldInfo}` }
-    if (convoStart === -1) messages.push(wiMessage)
-    else messages.splice(convoStart, 0, wiMessage)
+    insertBeforeConvo(messages, { role: 'system', content: `World Info:\n${worldInfo}` })
   }
   // Diagnostic: where did the matched lore go? (empty render vs emitted-but-trimmable.)
   log(
@@ -493,22 +499,16 @@ export const buildPrompt = (args: BuildPromptArgs): ChatMessage[] => {
   // a mode, so it never invalidates the cached prefix between turns.
   const modeAddendum = args.modeAddendum?.trim()
   if (modeAddendum) {
-    const convoStart = messages.findIndex((m) => m.role !== 'system')
-    const mm: ChatMessage = { role: 'system', content: modeAddendum }
-    if (convoStart === -1) messages.push(mm)
-    else messages.splice(convoStart, 0, mm)
+    insertBeforeConvo(messages, { role: 'system', content: modeAddendum })
   }
 
   // Persona description at the top: a stable, cache-friendly system block placed
   // just before the conversation begins.
   if (personaContent && args.persona?.depth == null) {
-    const convoStart = messages.findIndex((m) => m.role !== 'system')
-    const pm: ChatMessage = {
+    insertBeforeConvo(messages, {
       role: 'system',
       content: `[${userName}'s Persona]\n${personaContent}`
-    }
-    if (convoStart === -1) messages.push(pm)
-    else messages.splice(convoStart, 0, pm)
+    })
   }
 
   // Depth-positioned injections: lorebook entries with a numeric depth, plus the
@@ -538,46 +538,67 @@ export const buildPrompt = (args: BuildPromptArgs): ChatMessage[] => {
     applyDepthInjections(messages, depthItems, convoStart, userAction !== '')
   }
 
-  // Phase D: drain [GENERATE:*] + @INJECT marker entries into message positions (the array is final, so
-  // markerIndex's 0-based positions + regex/target lookups are stable). RENDER markers → markerIndex null
-  // (handled at render time). Splice high→low so earlier inserts don't shift later targets; ties by order.
-  if (markerEntries.length) {
-    const injections = markerEntries
-      .map(({ e, p }) => {
-        const marker = p.marker as Marker
-        const at = markerIndex(marker, messages)
-        if (at == null) return null
-        const body = p.private ? `<% { %>${p.template}<% } %>` : p.template
-        const content = render(body)
-        if (!content) return null
-        const isInject = marker.kind === 'inject'
-        const role: ChatMessage['role'] = isInject
-          ? ((marker as InjectMarker).role ?? 'system')
-          : 'system'
-        const order = (isInject ? (marker as InjectMarker).order : undefined) ?? e.insertion_order
-        return { at: Math.max(0, Math.min(at, messages.length)), role, content, order }
-      })
-      .filter(
-        (x): x is { at: number; role: ChatMessage['role']; content: string; order: number } =>
-          x != null
-      )
-      .sort((a, b) => b.at - a.at || b.order - a.order)
-    for (const inj of injections)
-      messages.splice(inj.at, 0, { role: inj.role, content: inj.content })
-  }
+  // Phase D: drain [GENERATE:*] + @INJECT marker entries into message positions.
+  applyInjectionMarkers(messages, markerEntries, render)
 
-  // L1: relocate live state to one tail block, just before the user action (so it sits
-  // in the volatile tail, never in the cached frontier). 'partition' showed placeholders
-  // in the frontier; 'diff' showed floor-0 values — either way this block is the live truth.
-  if (cacheLevel >= 1) {
-    const stateBlock = buildStateBlock(args.template?.vars)
-    if (stateBlock) {
-      const insertAt = userAction !== '' ? messages.length - 1 : messages.length
-      messages.splice(insertAt, 0, { role: 'system', content: stateBlock })
-    }
-  }
+  // L1 (experimental/dormant — see WS-2): relocate live state to one tail block before the user action.
+  applyCacheTail(messages, cacheLevel, args.template?.vars, userAction !== '')
 
   return messages
+}
+
+/**
+ * Phase D — drain `[GENERATE:*]` + `@INJECT` marker entries into message positions. The array is final
+ * here, so `markerIndex`'s 0-based positions + regex/target lookups are stable. RENDER markers →
+ * `markerIndex` null (handled at render time). Spliced high→low so earlier inserts don't shift later
+ * targets; ties broken by order. Mutates `messages`. (Extracted from buildPrompt — WS-5.)
+ */
+const applyInjectionMarkers = (
+  messages: ChatMessage[],
+  markerEntries: Array<{ e: LorebookEntry; p: ReturnType<typeof parseEntryMarker> }>,
+  render: Renderer
+): void => {
+  if (!markerEntries.length) return
+  const injections = markerEntries
+    .map(({ e, p }) => {
+      const marker = p.marker as Marker
+      const at = markerIndex(marker, messages)
+      if (at == null) return null
+      const body = p.private ? `<% { %>${p.template}<% } %>` : p.template
+      const content = render(body)
+      if (!content) return null
+      const isInject = marker.kind === 'inject'
+      const role: ChatMessage['role'] = isInject
+        ? ((marker as InjectMarker).role ?? 'system')
+        : 'system'
+      const order = (isInject ? (marker as InjectMarker).order : undefined) ?? e.insertion_order
+      return { at: Math.max(0, Math.min(at, messages.length)), role, content, order }
+    })
+    .filter(
+      (x): x is { at: number; role: ChatMessage['role']; content: string; order: number } =>
+        x != null
+    )
+    .sort((a, b) => b.at - a.at || b.order - a.order)
+  for (const inj of injections)
+    messages.splice(inj.at, 0, { role: inj.role, content: inj.content })
+}
+
+/**
+ * L1 "Frozen Core" tail (experimental/dormant — see WS-2; reached only at cacheLevel ≥ 1). Relocates the
+ * live state to one tail block just before the user action, so it sits in the volatile tail, never in the
+ * cached frontier. No-op at cacheLevel 0 or when there's no state. Mutates `messages`. (Extracted — WS-5.)
+ */
+const applyCacheTail = (
+  messages: ChatMessage[],
+  cacheLevel: number,
+  vars: Record<string, any> | undefined,
+  hasTrailingUser: boolean
+): void => {
+  if (cacheLevel < 1) return
+  const stateBlock = buildStateBlock(vars)
+  if (!stateBlock) return
+  const insertAt = hasTrailingUser ? messages.length - 1 : messages.length
+  messages.splice(insertAt, 0, { role: 'system', content: stateBlock })
 }
 
 /**

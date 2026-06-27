@@ -19,7 +19,7 @@ _Traceability log for executing [maintainability-plan-2026-06-26.md](maintainabi
 | 0d | One broadcast helper | WS-7 | MED | ✅ done | (this commit) |
 | 1 | Unify EJS context (keystone) | WS-1 | HIGH | ✅ done | 1a `396cd13` · 1b `8061410` · 1c `(this commit)` |
 | 2 | lodash/faker → tested module | WS-4 | MED | 🟡 partial (tests added; file-extract deferred) | (this commit) |
-| 3 | Decompose buildPrompt | WS-5 | MED | ⬜ todo | — |
+| 3 | Decompose buildPrompt | WS-5 | MED | 🔄 in progress | inc1 `(this commit)` |
 | 4 | De-escalate L1 cache | WS-2 | MED | ✅ done (gated/documented) | (this commit) |
 | 5 | Write-back loop origin-tag | WS-3 | HIGH | ⬜ todo | — |
 
@@ -241,3 +241,20 @@ owner's call (option B), so I kept it and made its status honest:
 **Verification.** typecheck ✅ · check:deps ✅ · lint ✅ 0 errors · test ✅ 706 (comment/doc only). No
 behavior change; the path stays dormant. Open decision for the owner: validate (A) vs remove the
 partition/diff dual-mode (B).
+
+### Stage 11 — Phase 3 / WS-5 (inc 1): decompose buildPrompt — safe extractions ✅
+
+**Why.** `buildPrompt` was a ~325-line orchestrator with the `convoStart` find+splice pattern duplicated 3×
+and self-contained tail/marker blocks inline (review WS-5). Pure extraction, behavior-preserving.
+
+**Changes (`src/main/services/promptBuilder.ts`).**
+- `insertBeforeConvo(messages, msg)` — replaces the 3 duplicated convoStart find+splice sites (world-info
+  safety net, mode addendum, persona).
+- `applyInjectionMarkers(messages, markerEntries, render)` — the `[GENERATE]`/`@INJECT` drain, lifted out.
+- `applyCacheTail(messages, cacheLevel, vars, hasTrailingUser)` — the L1 tail block, lifted out (clean seam
+  for WS-2's dormant path).
+
+**Verification.** Characterization net green — `promptBuilder.test.ts` + `injectMarkers.test.ts` +
+`cacheLayers.test.ts` (61) unchanged. typecheck ✅ · check:deps ✅ · lint ✅ 0 errors · test ✅ 706. No
+behavior change (the produced message array is identical; tests pin it). inc2 (partitionLore /
+renderPresetBlocks) optional — assessed next.
