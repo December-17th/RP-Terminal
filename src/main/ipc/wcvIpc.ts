@@ -385,7 +385,12 @@ export const registerWcvIpc = (ipcMain: IpcMain): void => {
     const c = cardLoreCtx(e.sender.id)
     if (!c) return false
     const { scope, owner } = regexScopeFor(c.profileId, c.characterId, option)
-    regexService.replaceTavernRegexes(c.profileId, scope, owner, Array.isArray(regexes) ? regexes : [])
+    regexService.replaceTavernRegexes(
+      c.profileId,
+      scope,
+      owner,
+      Array.isArray(regexes) ? regexes : []
+    )
     const ctx = wcvManager.contextFor(e.sender.id)
     if (ctx) debouncedRegexReload(ctx.chatId)
     log('info', 'wcv replaceTavernRegexes', `${(regexes || []).length} regex(es) → ${scope}`)

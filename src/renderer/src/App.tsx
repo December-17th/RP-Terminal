@@ -22,8 +22,7 @@ import { useNavStore } from './stores/navStore'
 import { useWorkspaceStore } from './stores/workspaceStore'
 import { useComposerStore } from './stores/composerStore'
 import { initSlash } from './plugin/slash'
-import { chatTransitionEvents, messageMutationEvents } from './plugin/events'
-import { emitCardHostEvent } from './cardBridge/cardHostEvents'
+import { broadcastHostEvent, initCardEventBridge } from './cardBridge/hostBroadcast'
 import { applyTheme } from './theme'
 import { useI18nStore } from './i18n'
 import { Launcher } from './components/Launcher'
@@ -53,8 +52,7 @@ export default function App(): React.ReactElement {
         useChatStore.getState().appendDelta(delta)
         // Forward streamed tokens to card UIs (STREAM_TOKEN_RECEIVED) — the accumulated text so far.
         const streamingText = useChatStore.getState().streamingText
-        window.api.wcvBroadcastEvent(chatId, 'stream_token_received', streamingText)
-        emitCardHostEvent('stream_token_received', streamingText)
+        broadcastHostEvent(chatId, 'stream_token_received', streamingText)
       }
     })
     // Live log stream for the Logs panel.
@@ -86,28 +84,9 @@ export default function App(): React.ReactElement {
         : undefined
       if (sd) window.api.wcvBroadcastVars(state.activeChatId, sd)
     })
-    // Broadcast TavernHelper lifecycle/mutation events to WCV cards — reusing the same pure event
-    // functions the iframe scripts use (CardScriptHost). generation start/end + message
-    // received/updated/deleted/swiped, computed from the chat-store transition.
-    const unsubEvents = useChatStore.subscribe((state, prev) => {
-      const chatId = state.activeChatId
-      if (!chatId) return
-      const toDesc = (
-        fs: typeof state.floors
-      ): { floor: number; content: string; swipeId: number }[] =>
-        fs.map((f) => ({ floor: f.floor, content: f.response.content, swipeId: f.swipe_id ?? 0 }))
-      const events = [
-        ...chatTransitionEvents(
-          { isGenerating: prev.isGenerating, floorCount: prev.floors.length },
-          { isGenerating: state.isGenerating, floorCount: state.floors.length }
-        ),
-        ...messageMutationEvents(toDesc(prev.floors), toDesc(state.floors))
-      ]
-      for (const ev of events) {
-        window.api.wcvBroadcastEvent(chatId, ev.name, ev.payload)
-        emitCardHostEvent(ev.name, ev.payload)
-      }
-    })
+    // Broadcast TavernHelper lifecycle/mutation events to BOTH transports — the compute+fan-out logic
+    // lives in initCardEventBridge (cardBridge/hostBroadcast), so the two paths can't drift (WS-7).
+    const unsubEvents = initCardEventBridge()
     return () => {
       unsubDelta()
       unsubLog()

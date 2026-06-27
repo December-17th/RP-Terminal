@@ -38,10 +38,12 @@
 ### Task 1: Move the JSON-Patch op builders to `shared/thRuntime`
 
 **Files:**
+
 - Create: `src/shared/thRuntime/ops.ts`
 - Modify: `src/renderer/src/cardBridge/ops.ts` (becomes a re-export)
 
 **Interfaces:**
+
 - Produces: `VarOp`, `toPointer`, `keyPointer`, `setVarOps`, `assignVarOps`, `replaceStatDataOps` from `shared/thRuntime/ops`.
 
 - [ ] **Step 1: Create the shared module** — copy the current contents of `src/renderer/src/cardBridge/ops.ts` verbatim into `src/shared/thRuntime/ops.ts`, changing only the top comment path:
@@ -119,9 +121,11 @@ Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>"
 ### Task 2: Define the `Host` interface and runtime types
 
 **Files:**
+
 - Create: `src/shared/thRuntime/types.ts`
 
 **Interfaces:**
+
 - Produces: `Host`, `CardCtx`, `ThMessage`, `StMessage`, `FloorLike`, `GenCfgNormalized`, `ThGlobals`.
 
 - [ ] **Step 1: Write the types file**
@@ -132,7 +136,12 @@ import type { VarOp } from './ops'
 
 export type CardCtx = { profileId: string; chatId: string; characterId: string }
 
-export type ThMessage = { message_id: number; role: 'user' | 'assistant'; message: string; name?: string }
+export type ThMessage = {
+  message_id: number
+  role: 'user' | 'assistant'
+  message: string
+  name?: string
+}
 
 export type StMessage = {
   is_user: boolean
@@ -218,10 +227,12 @@ Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>"
 ### Task 3: Pure shape mappers (TDD)
 
 **Files:**
+
 - Create: `src/shared/thRuntime/shapes.ts`
 - Test: `test/thRuntimeShapes.test.ts`
 
 **Interfaces:**
+
 - Consumes: `FloorLike`, `ThMessage`, `StMessage` from `./types`.
 - Produces: `floorsToThMessages(floors)`, `currentMessageId(floors)`, `floorsToStChat(floors, names)`.
 
@@ -238,7 +249,13 @@ import {
 
 const floors = [
   { floor: 0, user_message: { content: 'hi' }, response: { content: 'hello' } },
-  { floor: 1, user_message: { content: 'bye' }, response: { content: 'cya' }, swipes: ['cya', 'later'], swipe_id: 1 }
+  {
+    floor: 1,
+    user_message: { content: 'bye' },
+    response: { content: 'cya' },
+    swipes: ['cya', 'later'],
+    swipe_id: 1
+  }
 ]
 
 describe('floorsToThMessages', () => {
@@ -271,8 +288,20 @@ describe('floorsToStChat', () => {
   it('emits user+assistant ST messages with names and swipes', () => {
     const chat = floorsToStChat(floors, { charName: 'Ellia', userName: 'Player' })
     expect(chat).toHaveLength(4)
-    expect(chat[0]).toMatchObject({ is_user: true, name: 'Player', mes: 'hi', swipes: [], swipe_id: 0 })
-    expect(chat[3]).toMatchObject({ is_user: false, name: 'Ellia', mes: 'cya', swipes: ['cya', 'later'], swipe_id: 1 })
+    expect(chat[0]).toMatchObject({
+      is_user: true,
+      name: 'Player',
+      mes: 'hi',
+      swipes: [],
+      swipe_id: 0
+    })
+    expect(chat[3]).toMatchObject({
+      is_user: false,
+      name: 'Ellia',
+      mes: 'cya',
+      swipes: ['cya', 'later'],
+      swipe_id: 1
+    })
   })
   it('defaults assistant swipes to [response content] when none', () => {
     const chat = floorsToStChat([{ response: { content: 'x' } }], { charName: 'C', userName: 'U' })
@@ -357,10 +386,12 @@ Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>"
 ### Task 4: `createThRuntime` core (TDD)
 
 **Files:**
+
 - Create: `src/shared/thRuntime/index.ts`
 - Test: `test/thRuntime.test.ts`
 
 **Interfaces:**
+
 - Consumes: `Host`, `ThGlobals` from `./types`; mappers from `./shapes`; op builders from `./ops`.
 - Produces: `createThRuntime(host: Host): ThGlobals` — bag with `TavernHelper`, the bare helpers, `Mvu`, `SillyTavern`, `EjsTemplate`, `toastr`, `tavern_events`, `__rptDispose`.
 
@@ -387,12 +418,22 @@ function mockHost(over: Partial<Host> = {}): { host: Host; calls: any } {
     regexes: () => [{ find: 'a', replace: 'b' }],
     formatRegex: (t) => t.toUpperCase(),
     personaName: () => 'Player',
-    applyVariableOps: async (ops) => { calls.applyVariableOps.push(ops) },
+    applyVariableOps: async (ops) => {
+      calls.applyVariableOps.push(ops)
+    },
     setVariables: async () => {},
-    generate: async (i) => { calls.generate.push(i); return { content: 'gen:' + i } },
-    generateRaw: async (cfg) => { calls.generateRaw.push(cfg); return 'raw' },
+    generate: async (i) => {
+      calls.generate.push(i)
+      return { content: 'gen:' + i }
+    },
+    generateRaw: async (cfg) => {
+      calls.generateRaw.push(cfg)
+      return 'raw'
+    },
     getWorldbook: async () => ({ entries: [{ keys: ['k'] }] }),
-    saveWorldbook: async (n, e) => { calls.saveWorldbook.push([n, e]) },
+    saveWorldbook: async (n, e) => {
+      calls.saveWorldbook.push([n, e])
+    },
     setChatMessages: async () => true,
     deleteChatMessages: async () => true,
     createChat: async () => 'id',
@@ -401,7 +442,12 @@ function mockHost(over: Partial<Host> = {}): { host: Host; calls: any } {
     reloadChat: async () => true,
     triggerSlash: async () => '',
     setInput: () => {},
-    onVarsChanged: (cb) => { varsCb = cb; return () => { varsCb = null } },
+    onVarsChanged: (cb) => {
+      varsCb = cb
+      return () => {
+        varsCb = null
+      }
+    },
     onHostEvent: () => () => {},
     evalTemplate: (t) => 'ejs:' + t,
     evalTemplateError: () => null,
@@ -466,8 +512,16 @@ describe('createThRuntime', () => {
   it('errorCatched swallows throws and rejections', async () => {
     const { host } = mockHost()
     const g = createThRuntime(host)
-    expect(g.errorCatched(() => { throw new Error('x') })()).toBeUndefined()
-    await expect(g.errorCatched(async () => { throw new Error('y') })()).resolves.toBeUndefined()
+    expect(
+      g.errorCatched(() => {
+        throw new Error('x')
+      })()
+    ).toBeUndefined()
+    await expect(
+      g.errorCatched(async () => {
+        throw new Error('y')
+      })()
+    ).resolves.toBeUndefined()
   })
 
   it('__rptDispose unsubscribes from host vars', () => {
@@ -558,7 +612,8 @@ export function createThRuntime(host: Host): ThGlobals {
     (...args: any[]): any => {
       try {
         const r = typeof fn === 'function' ? fn(...args) : undefined
-        if (r && typeof r.then === 'function') return r.catch((e: any) => console.error('[card]', e))
+        if (r && typeof r.then === 'function')
+          return r.catch((e: any) => console.error('[card]', e))
         return r
       } catch (e) {
         console.error('[card]', e)
@@ -575,7 +630,8 @@ export function createThRuntime(host: Host): ThGlobals {
     overrides: c?.overrides
   })
 
-  const wbEntries = async (name?: any): Promise<any[]> => (await host.getWorldbook(name)).entries || []
+  const wbEntries = async (name?: any): Promise<any[]> =>
+    (await host.getWorldbook(name)).entries || []
 
   // --- TavernHelper helpers (bare + namespaced) ---
   const helpers: Record<string, any> = {
@@ -789,10 +845,12 @@ Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>"
 ### Task 5: Inline `Host` adapter + rewire `createCardBridge`
 
 **Files:**
+
 - Create: `src/renderer/src/cardBridge/host.ts`
 - Modify: `src/renderer/src/cardBridge/createCardBridge.ts`
 
 **Interfaces:**
+
 - Consumes: `Host`, `CardCtx` from `shared/thRuntime/types`; `createThRuntime` from `shared/thRuntime`.
 - Produces: `createInlineHost(ctx: CardCtx): Host`.
 
@@ -819,7 +877,7 @@ import type { VarOp } from '../../../shared/thRuntime/ops'
 const floorsOf = (): FloorLike[] => useChatStore.getState().floors as any
 const latestVars = (): any => {
   const f = floorsOf()
-  return f.length ? (f[f.length - 1] as any).variables ?? {} : {}
+  return f.length ? ((f[f.length - 1] as any).variables ?? {}) : {}
 }
 const statOf = (): any => {
   const v = latestVars()
@@ -864,11 +922,13 @@ export function createInlineHost(ctx: CardCtx): Host {
     },
     setVariables: async (sd: any) => {
       // express a whole replace via applyVariableOps in the core; here just persist the given object
-      await useChatStore.getState().applyVariableOps(
-        ctx.profileId,
-        Object.entries(sd || {}).map(([k, v]) => ({ op: 'set', path: '/' + k, value: v })) as any,
-        floorIndex()
-      )
+      await useChatStore
+        .getState()
+        .applyVariableOps(
+          ctx.profileId,
+          Object.entries(sd || {}).map(([k, v]) => ({ op: 'set', path: '/' + k, value: v })) as any,
+          floorIndex()
+        )
     },
     generate: async (input: string) => {
       const r: any = await window.api.generate(ctx.profileId, ctx.chatId, input)
@@ -970,11 +1030,13 @@ Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>"
 ### Task 6: WCV `Host` adapter + floors-sync IPC + rewire `wcvPreload`
 
 **Files:**
+
 - Create: `src/preload/wcvHost.ts`
 - Modify: `src/preload/wcvPreload.ts`
 - Modify: the WCV main IPC file (search for `'wcv-host-get-messages-sync'` to find it) — add `wcv-host-get-floors-sync`.
 
 **Interfaces:**
+
 - Consumes: `Host`, `CardCtx` from `shared/thRuntime/types`; `createThRuntime` from `shared/thRuntime`.
 - Produces: `createWcvHost(deps): Host`.
 
@@ -1053,7 +1115,8 @@ export function createWcvHost(deps: Deps): Host {
       const entries = await ipcRenderer.invoke('wcv-host-get-worldbook', name)
       return { entries: Array.isArray(entries) ? entries : (entries?.entries ?? []) }
     },
-    saveWorldbook: (name, entries) => ipcRenderer.invoke('wcv-host-replace-worldbook', name, entries),
+    saveWorldbook: (name, entries) =>
+      ipcRenderer.invoke('wcv-host-replace-worldbook', name, entries),
     setChatMessages: (m) => ipcRenderer.invoke('wcv-host-set-chat-messages', m),
     deleteChatMessages: (ids) => ipcRenderer.invoke('wcv-host-delete-chat-messages', ids),
     createChat: () => Promise.resolve(''),
@@ -1139,6 +1202,7 @@ Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>"
 ### Task 7: Remove dead surface + full verification
 
 **Files:**
+
 - Modify: `src/renderer/src/cardBridge/createCardBridge.ts`, `src/preload/wcvPreload.ts` (delete any now-unused helpers/imports left behind).
 
 - [ ] **Step 1: Delete leftovers** — remove any now-unreferenced imports, the old `makeBus`/`TAVERN_EVENTS`/`MVU_EVENTS`/`toastr`/`errorCatched`/`stChat`/`getByPath` blocks that survived the rewires, and unused store imports. Let lint/typecheck guide you.
@@ -1164,5 +1228,5 @@ Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>"
 ## Self-Review (author)
 
 - **Spec coverage:** §3 layout → Tasks 1–6; §4 Host → Task 2; §5 thRuntime + convergence → Task 4 (+ shapes Task 3); §6 adapters → Tasks 5–6; §7 migration → the Task 1→7 order; §8 tests → Tasks 3–4; §9 build/realm → Task 5/6 verify steps; §10 acceptance → Task 7. Covered.
-- **Placeholder scan:** the two `> Note` blocks (evalTemplateDetailed export, ctx resolution, persona-name handler) are *verification instructions*, not deferred work — each names the exact thing to confirm and the fallback. No "TODO/handle edge cases" left.
+- **Placeholder scan:** the two `> Note` blocks (evalTemplateDetailed export, ctx resolution, persona-name handler) are _verification instructions_, not deferred work — each names the exact thing to confirm and the fallback. No "TODO/handle edge cases" left.
 - **Type consistency:** `Host` method names match between `types.ts` (Task 2), `createThRuntime` calls (Task 4), and both adapters (Tasks 5–6); `VarOp` shape consistent (Task 1); shape-mapper names match Task 3 ↔ Task 4 imports.

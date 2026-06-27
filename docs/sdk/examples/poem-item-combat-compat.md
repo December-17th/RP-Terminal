@@ -10,6 +10,7 @@ and documents exactly which effects are **mechanical** (the engine applies them)
 > integrating into a different card by hand.
 
 ## Two required tightenings
+
 1. **`威力` must be a literal number** in the 技能 标签 (e.g. `威力: 300`), chosen from `<核心数值表>` —
    never a quality word. If it's missing/non-numeric the engine treats the skill as a basic attack
    (普攻威力 20).
@@ -17,6 +18,7 @@ and documents exactly which effects are **mechanical** (the engine applies them)
    melee (range 1).
 
 Paste-in tightening:
+
 ```
 <战斗数据规范>
 - 技能标签中「威力」必须为具体数值（参照<核心数值表>），如「威力: 300」，不得写品质词。
@@ -26,13 +28,16 @@ Paste-in tightening:
   数值写在值里；若沿用风味名（如「充能」），须在值的描述中写明机制（如「提高12%伤害」「获得50点护盾」「额外造成5点伤害」），以便解析。
 </战斗数据规范>
 ```
+
 **Robustness:** the engine's `parseCardItem` reads the structured keys above AND **scans the value prose**
 for the same mechanics (提高X%伤害→伤害增幅, X点护盾→护盾, 额外X点伤害→固伤, 减伤/减少X%→DR, X%穿透→穿透,
 恢复X点→治疗), so the existing **flavor-keyed catalog items** (e.g. `充能: 提高12%伤害`) parse too — the
 tightening just makes AI-authored items cleaner/less ambiguous.
 
 ## Effect contract — what the engine consumes (`效果` keys)
+
 **Mechanical (applied by the 战斗协议 resolver):**
+
 - `命中` / `闪避` / `先攻` / `状态抵抗` (检定 modifiers; "命中检定: +2" also matches) — multi-source = max.
 - `固伤` (→ 额外固定伤害), `穿透: X%`, `暴击倍率`.
 - `DR: X%` **and `减伤增幅: X%`** (both reduce incoming damage — they fold into the same DR step).
@@ -47,6 +52,7 @@ tightening just makes AI-authored items cleaner/less ambiguous.
 
 **Narrative-only in v1 (the engine does NOT yet apply these — keep them as flavor or avoid relying on
 them mechanically):**
+
 - `资源消耗减免: X%` — MP/SP cost reduction (not applied to 消耗 yet).
 - typed-damage split proportions (物理/能量/精神/真实 %) — the resolver currently treats all damage as
   物理 for 属性减免 (typed split is a later refinement).

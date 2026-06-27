@@ -1,6 +1,27 @@
 # Prompt-Cache Optimization — Design
 
-**Status:** Design (shape approved, pre-implementation)
+> **DECISION (2026-06-26, WS-2): the cache-optimization system is STASHED (low priority).** Owner call: park
+> it for later review. Concretely:
+>
+> - **A three-way `cache.mode` selector exists but is GREYED OUT, pinned + defaulting to `baseline`.**
+>   - **`baseline` (default, pinned):** **NO optimization at all — not even provider-side prompt caching.**
+>     The Anthropic `cache_control` breakpoints are omitted ([apiService `buildAnthropicCacheLayout`](../src/main/services/apiService.ts)).
+>     A clean **reference control** for measuring any future optimization against. (OpenAI's auto prefix
+>     cache is transparent and can't be disabled client-side; "baseline" disables everything we control.)
+>   - **`provider`:** provider prefix caching as-is (Anthropic `cache_control` on), no app-side layering.
+>   - **`frozen`:** the L1 "Frozen Core" app-side layering (`cacheLayers.ts` + the `frontierTemplate`/
+>     `buildStateBlock` fork in `promptBuilder`) — **experimental/dormant, unvalidated**, reachable only via
+>     this (currently unselectable) mode.
+> - **The Frozen-Core options are kept (not deleted) for later review.** It has **never been validated**
+>   against real provider cache behavior — the meter's "stable prefix %" is a _proxy_ (byte-prefix stability),
+>   NOT a measured cache-hit rate. The app already records real provider cache tokens per floor, so a future
+>   A/B (baseline vs provider vs frozen, comparing `cacheRead`) needs no new plumbing.
+> - **To revisit:** un-grey the selector ([SettingsPanel.tsx](../src/renderer/src/components/SettingsPanel.tsx)),
+>   then either validate `frozen` (keep if it beats `provider`) or delete the `partition`/`diff` dual-mode +
+>   the `buildPrompt` fork (review WS-2, option B). See
+>   [structural-cleanup-log-2026-06-26.md](structural-cleanup-log-2026-06-26.md) Stage 16.
+
+**Status:** Design (shape approved) — **STASHED 2026-06-26; default `baseline` (no caching). See the note above.**
 **Date:** 2026-06-22
 **Extends:** Phase G (four-layer cache assembly) and Phase H (per-mode lore freeze).
 **Supersedes:** the deferred "aggressive segment-diff cache stabilization" sketch in `ROADMAP.md` (§590–603).
@@ -23,9 +44,9 @@ those cards behave for the player.**
   context is preserved — verbatim while it fits the window, summarized and retrievable once it
   does not.
 
-**Non-goal (explicitly out of scope, forward-compatible).** Moving MVU variable *computation*
-from the AI to deterministic sandboxed scripts. This design governs *where* `stat_data` sits in
-the prompt, not *how* it is produced, so a later script-driven update engine drops in unchanged.
+**Non-goal (explicitly out of scope, forward-compatible).** Moving MVU variable _computation_
+from the AI to deterministic sandboxed scripts. This design governs _where_ `stat_data` sits in
+the prompt, not _how_ it is produced, so a later script-driven update engine drops in unchanged.
 
 ---
 
@@ -38,18 +59,18 @@ re-write the supposedly-stable head every turn on a heavy MVU card:
 
 1. **Build-time EJS over mutable state (the dominant killer).** `promptBuilder.buildPrompt`
    renders the character description, examples, post-history, **and every matched lorebook
-   entry** through the quickjs engine with `template.vars` set to the *previous floor's*
+   entry** through the quickjs engine with `template.vars` set to the _previous floor's_
    `stat_data` (`promptBuilder.ts` `makeRender` / `render`; fed from
    `generationService.ts`). An entry containing `<%= getvar('stat_data.主角.好感度') %>`
    renders to **different bytes whenever state changes** — i.e. nearly every turn — so L1 and L2
    mutate and `cache_read` collapses to ~0 over the whole prefix.
 2. **Per-turn re-matching with probability rolls.** In classic mode `matchAcross` re-scans every
    turn and `rollPasses` uses `Math.random` (`lorebookService.ts`), so even identical scan text
-   can yield a different matched set / order → L2 bytes change. (Phase H freezes the *set* per
-   mode but not the *rendered content* — problem 1 still applies.)
+   can yield a different matched set / order → L2 bytes change. (Phase H freezes the _set_ per
+   mode but not the _rendered content_ — problem 1 still applies.)
 3. **Depth injections demoted to user turns (Anthropic).** Depth-positioned lore/persona are
    spliced into history and, in `streamAnthropic`, demoted to `user` turns and merged
-   (`apiService.ts`), so volatile content lands *inside* the cached region.
+   (`apiService.ts`), so volatile content lands _inside_ the cached region.
 4. **Position-based breakpoint.** `streamAnthropic` always marks `merged.length - 2`, the message
    before the final user turn — chosen by position, not by where the prompt is actually stable.
 
@@ -81,8 +102,8 @@ breakpoint** — while still showing the model correct current state.
 
 The whole design follows from one reframing. Caching is a prefix match, so **the only cache-safe
 place to add anything is at the end of the byte-stable prefix.** The prompt is therefore not four
-static layers but a **frontier** — the end of the cached prefix — that *ratchets forward* by
-append-only growth, with everything genuinely per-turn living *beyond* it.
+static layers but a **frontier** — the end of the cached prefix — that _ratchets forward_ by
+append-only growth, with everything genuinely per-turn living _beyond_ it.
 
 ```
 [ system + card ][ lore: l1 l2 l3 … ][ verbatim turns: r1 r2 r3 … ] │ state · recalled-memories · corrections · NEW action
@@ -116,12 +137,12 @@ bookkeeping happens together:
 
 **How the prior ideas map onto this one mechanic:**
 
-| Idea | Role in the model |
-| --- | --- |
-| Cache-stable assembly | the frontier/ratchet discipline + breakpoint placement |
-| Append-only lorebook | the lore half of the ratchet |
-| Episodic compression | what compaction does to history |
-| Memory retrieval (RAG) | what fills the ephemeral tail each turn |
+| Idea                      | Role in the model                                                  |
+| ------------------------- | ------------------------------------------------------------------ |
+| Cache-stable assembly     | the frontier/ratchet discipline + breakpoint placement             |
+| Append-only lorebook      | the lore half of the ratchet                                       |
+| Episodic compression      | what compaction does to history                                    |
+| Memory retrieval (RAG)    | what fills the ephemeral tail each turn                            |
 | Segment-diff + correction | how unavoidable mid-frontier drift is deferred between checkpoints |
 
 ---
@@ -132,12 +153,12 @@ The simpler measures are **strict prefixes of the full system** — each is the 
 top layer — so A/B testing is a feature flag (`settings.cache.level`), and every level is
 shippable value plus a rung toward the full design.
 
-| Level | Adds over previous | Byte-stable prefix | History | MVU state via | Memory persistence | Complexity | Holds to ~ |
-| --- | --- | --- | --- | --- | --- | --- | --- |
-| **L0** baseline (today) | Phase G + 2 bp + Phase H | system only (poisoned by in-place EJS) | full verbatim | rendered in place (volatile) | full prompt | — | control |
-| **L1** Frozen Core | freeze L1/L2 *rendering*; relocate live state to tail | system + card + examples | full verbatim | one tail "current state" block | full prompt | low | tens–low hundreds |
-| **L2** Lore Ratchet | append-only lore; roll-once-freeze | system + card + **lore** | full verbatim | tail | full prompt | medium | hundreds |
-| **L3** Full | compaction + episodic memory + retrieval + corrections | system + card + lore + summarized history | summary + recent window | tail | `episodic_memory` table | high | thousands |
+| Level                   | Adds over previous                                     | Byte-stable prefix                        | History                 | MVU state via                  | Memory persistence      | Complexity | Holds to ~        |
+| ----------------------- | ------------------------------------------------------ | ----------------------------------------- | ----------------------- | ------------------------------ | ----------------------- | ---------- | ----------------- |
+| **L0** baseline (today) | Phase G + 2 bp + Phase H                               | system only (poisoned by in-place EJS)    | full verbatim           | rendered in place (volatile)   | full prompt             | —          | control           |
+| **L1** Frozen Core      | freeze L1/L2 _rendering_; relocate live state to tail  | system + card + examples                  | full verbatim           | one tail "current state" block | full prompt             | low        | tens–low hundreds |
+| **L2** Lore Ratchet     | append-only lore; roll-once-freeze                     | system + card + **lore**                  | full verbatim           | tail                           | full prompt             | medium     | hundreds          |
+| **L3** Full             | compaction + episodic memory + retrieval + corrections | system + card + lore + summarized history | summary + recent window | tail                           | `episodic_memory` table | high       | thousands         |
 
 `settings.cache.level` (0–3) selects the level, per profile or per chat. Because levels are
 supersets, switching is a config change, not a rebuild of the codebase.
@@ -147,12 +168,12 @@ frozen-core level:
 
 - **L1a (partition)** — statically detect state-dependent EJS, render the frontier with a frozen
   context, relocate live state to the tail. No stale value ever sits in the prefix.
-- **L1b (diff / correct)** — render live as today, but keep the *old* bytes in place and emit a
-  *correction* in the tail. No template understanding required, but the prefix carries an aging
+- **L1b (diff / correct)** — render live as today, but keep the _old_ bytes in place and emit a
+  _correction_ in the tail. No template understanding required, but the prefix carries an aging
   stale value until the next checkpoint.
 
-L1a vs L1b answers: *is static partitioning worth the complexity, or does a runtime byte-diff get
-most of the win?*
+L1a vs L1b answers: _is static partitioning worth the complexity, or does a runtime byte-diff get
+most of the win?_
 
 ---
 
@@ -168,10 +189,10 @@ the ephemeral tail.
 
 **Fidelity (hybrid; the approved default).**
 
-- *Known continuous state* (`stat_data`) — rendered as a neutral placeholder where the author
+- _Known continuous state_ (`stat_data`) — rendered as a neutral placeholder where the author
   embedded it (e.g. `好感度: <see current state>`), with the live numbers carried only in the
   tail block, from turn 0. No contradiction, no aging, fixed-size correction.
-- *Unpredictable occasional change* (a lore entry / regex result that shifts now and then) — falls
+- _Unpredictable occasional change_ (a lore entry / regex result that shifts now and then) — falls
   to the L1b diff/correction path (§6.5).
 
 Detecting "state-dependent": an EJS fragment is treated as volatile if its compiled body reads
@@ -197,8 +218,8 @@ existing stable prefix (your `p1 l1 r1 p2 [l2]` shape), not back beside earlier 
 
 **State.** The accumulated lore set is persisted per chat — entry ids, the frozen rendered bytes,
 and the roll decisions — extending `CachedWorldInfo` into the broader `PromptState` blob (§8).
-Matching still uses `matchAcross`, but its output is *unioned into* the accumulator rather than
-*replacing* it. Depth-injected lore that is inherently positional/volatile is **not** ratcheted;
+Matching still uses `matchAcross`, but its output is _unioned into_ the accumulator rather than
+_replacing_ it. Depth-injected lore that is inherently positional/volatile is **not** ratcheted;
 it goes to the tail.
 
 **Bounding.** Pure accumulation is bounded only at checkpoints (§6.3), where stale entries
@@ -276,9 +297,9 @@ serializer in `apiService.ts` realizes the cache points:
   system/lore** (they rewrite only at checkpoints, and human turns routinely pause >5 min and
   evaporate the default cache); 5-min TTL is fine on the history breakpoint. On **Opus 4.8** the
   tail's state/corrections may be sent as `role:"system"` mid-conversation messages — cache-safe
-  *and* the non-spoofable operator channel — instead of demoting them to `user` turns (replacing
+  _and_ the non-spoofable operator channel — instead of demoting them to `user` turns (replacing
   the current demotion in `streamAnthropic`).
-- **OpenAI-compatible** — no markers; the append-only frontier *is* what automatic prefix caching
+- **OpenAI-compatible** — no markers; the append-only frontier _is_ what automatic prefix caching
   rewards. Keep the existing last-user-message-to-end fix. **Do not change tools or model
   mid-session** (either invalidates the entire cache).
 - **Gemini** — implicit prefix caching is free; optional explicit `cachedContents` over the frozen
@@ -347,7 +368,7 @@ Opus-4.8 system messages); `promptBuilder.ts` (emit PromptPlan).
 ## 11. Fidelity and correctness
 
 - **The signed-off tradeoff.** Live state and recalled memory move out of their authored
-  positions into the ephemeral tail. The model always sees correct *current* state — just not
+  positions into the ephemeral tail. The model always sees correct _current_ state — just not
   embedded in the prose where the author wrote it. This is the precise point where fidelity bends
   for cache hit. L1a renders a neutral placeholder in place (no stale value); L1b leaves an aging
   stale value with a tail correction; the L1a/L1b A/B measures whether the placeholder is worth
@@ -355,8 +376,8 @@ Opus-4.8 system messages); `promptBuilder.ts` (emit PromptPlan).
 - **Acceptable MVU tracking** = the model receives correct current `stat_data` every turn and
   widgets render from `floor.variables`. Preserved at every level ≥ L1; the only change is
   placement (tail vs in-prose).
-- **Memory persistence** = two distinct properties. *Within-window fidelity* is highest at L0–L2
-  (full verbatim, lossless). *Reach beyond the window* exists only at L3, where durable
+- **Memory persistence** = two distinct properties. _Within-window fidelity_ is highest at L0–L2
+  (full verbatim, lossless). _Reach beyond the window_ exists only at L3, where durable
   `episodic_memory` + recall keep older context available after verbatim turns would otherwise be
   dropped. So L0–L2 are lossless until the window fills and then must trim; L3 is lossy-but-
   unbounded. Summarization fidelity is governed by checkpoint cadence — a tunable, not a silent

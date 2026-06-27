@@ -7,6 +7,17 @@ Running status of the MVU / panel-workspace track. Newest first.
 
 ## 2026-06-26
 
+- **Structural & maintainability review + plan (branch `refactor/structural-cleanup-2026-06-26`).** Whole-
+  codebase review: [codebase-structural-review-2026-06-26.md](codebase-structural-review-2026-06-26.md)
+  (diagnosis, 9 ranked findings WS-1..WS-9 + per-file notes) and
+  [maintainability-plan-2026-06-26.md](maintainability-plan-2026-06-26.md) (sequenced treatment).
+  Headline: the `Host`-seam two-transport design **resolved** the old dual-card-host risk, but the EJS
+  _engine_ is now shared while its _context_ is hand-built 3 divergent ways (WS-1, HIGH) — the keystone fix.
+  Other HIGH: the write-back-loop heuristic should be replaced by origin-tagging (WS-3). MED: decompose
+  `buildPrompt` (WS-5), de-escalate L1 cache (WS-2), lodash-out-of-string (WS-4), one broadcast helper
+  (WS-7). LOW: delete dead schema (WS-6), document path dialects (WS-8) + error policy (WS-9). Supersedes
+  [maintainability-plan.md](maintainability-plan.md) (2026-06-22).
+
 - **⚠️ GAP — prompt-build EJS can't run async / `TavernHelper`-using lorebook entries.** The 命定之诗 card
   has constant lorebook entries written as ST-Prompt-Template scriptlets that call the **TavernHelper API**
   and use **`await`**, e.g. `命定系统-艾莉亚核心`:
@@ -31,7 +42,7 @@ Running status of the MVU / panel-workspace track. Newest first.
   self-loops: write → broadcast → echo → event → write → … forever. The saga + final state:
   - Tried, insufficient: WCV exclude-sender on the direct echo (`notifyVarsChanged(…, e.sender.id)`);
     a value-diff guard in the shared runtime `onVarsChanged`; a source-side **no-op** guard in
-    `applyVariableOps`. None stop a *changing* value, and the echo also returns via the INDIRECT path
+    `applyVariableOps`. None stop a _changing_ value, and the echo also returns via the INDIRECT path
     (host floor update → `wcv-broadcast-vars`), so byte-diffs don't survive the round-trip.
   - Tried, REVERTED: suppressing MVU events for the card's own writes (compare echo vs live `stat`).
     It broke cards that **chain initialization through their own update events** — and the prompt-side
@@ -46,6 +57,13 @@ Running status of the MVU / panel-workspace track. Newest first.
     fire `mag_variable_update_*` only on model/external folds, removing the need to guess — but that
     requires confirming real-MVU event semantics first. See the loop-guard note in
     [rpt-api.md](rpt-api.md) (Host↔card section).
+  - **RESOLVED (spike, 2026-06-26, WS-3):** confirmed against the MIT MagVarUpdate source — real MVU fires
+    `mag_variable_update_*` **only on the AI-message fold** (`updateVariables` ← `handleVariablesInMessage`),
+    **NOT** on programmatic card writes (`setMvuVariable`/`insertOrAssignVariables` are pure helpers). We had
+    "assumed yes"; the answer is **no**. So the origin-tag fix above IS faithful to real MVU. Implementation
+    still **deferred** (live-pipeline behavior change + the prior revert risk → needs in-app verify against
+    命定之诗). Full spike writeup: [structural-cleanup-log-2026-06-26.md](structural-cleanup-log-2026-06-26.md)
+    Stage 13.
 
 - **命定之诗 combat extension — card-side complete (branch `feat/poem-combat-extension`).** A card-side
   mod that imports the party from MVU `stat_data` and resolves combat with the card's own `<战斗协议>`

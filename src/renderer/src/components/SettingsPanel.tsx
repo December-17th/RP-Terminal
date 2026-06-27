@@ -340,20 +340,25 @@ export const SettingsPanel: React.FC<{ profileId: string }> = ({ profileId }) =>
                 ({t('prefs.agentComingSoon')})
               </span>
             </label>
-            {/* Disabled until the cache-optimization dial is exposed; pinned to baseline (level 0). */}
+            {/* Cache optimization is STASHED (low prio): the dial is greyed out and pinned to `baseline`
+                (no optimization at all — not even provider prompt caching). See the design doc. */}
             <select
-              value={String(settings.cache?.level ?? 0)}
+              value={settings.cache?.mode ?? 'baseline'}
               disabled
               title={t('prefs.cacheDisabledTitle')}
               onChange={(e) =>
                 updateSettings(profileId, {
-                  cache: { ...settings.cache, level: Number(e.target.value) }
+                  cache: {
+                    ...settings.cache,
+                    mode: e.target.value as 'baseline' | 'provider' | 'frozen'
+                  }
                 })
               }
               style={{ width: '100%' }}
             >
-              <option value="0">{t('prefs.cacheBaseline')}</option>
-              <option value="1">{t('prefs.cacheFrozenCore')}</option>
+              <option value="baseline">{t('prefs.cacheBaseline')}</option>
+              <option value="provider">{t('prefs.cacheProvider')}</option>
+              <option value="frozen">{t('prefs.cacheFrozenCore')}</option>
             </select>
             <div style={{ fontSize: '0.78em', color: 'var(--rpt-text-secondary)', marginTop: 4 }}>
               {t('prefs.cacheHint')}

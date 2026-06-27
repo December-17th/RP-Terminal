@@ -21,7 +21,7 @@ import {
   ChatMessage
 } from './promptBuilder'
 import { getPromptRules } from './regexService'
-import { loadGlobals, saveGlobals } from './templateService'
+import { loadGlobals, saveGlobals, buildTemplateContext } from './templateService'
 import { streamProvider, orderForProvider, DeltaCallback, UsageCallback } from './apiService'
 import { normalizeUsage, buildFloorMetrics } from './promptCacheMetrics'
 import { parseContent, parseCombatStart, stripThinking, RPEvent } from '../parsers/contentParser'
@@ -106,6 +106,10 @@ export const generate = async (
   const chat = getChat(profileId, chatId)
   if (!chat) throw new Error('Chat session not found')
 
+  // A new model turn legitimately re-fires MVU events; clear the write-back loop streak so a path
+  // re-written once per turn never builds a false runaway streak across turns (WS-3).
+  resetWriteLoopGuard(chatId)
+
   const card = getCharacter(profileId, chat.character_id)
   if (!card) throw new Error('Character card not found')
 
@@ -137,7 +141,10 @@ export const generate = async (
   // Prompt-cache level (L1 Frozen Core when ≥1). The frozen snapshot is derived from the
   // FIRST floor's variables — constant across the session — so the frontier render is
   // byte-stable. 'partition' shows placeholders for state; 'diff' shows the floor-0 values.
-  const cacheLevel = settings.cache?.level ?? 0
+  // ⚠️ STASHED (WS-2, 2026-06-26): the cache system is parked — the UI selector is greyed out and pinned
+  // to `baseline` (no optimization at all, not even provider caching). Frozen Core is reachable only via
+  // the dormant `mode: 'frozen'`. So in production cacheLevel is 0. See the design doc's status note.
+  const cacheLevel = settings.cache?.mode === 'frozen' ? (settings.cache?.level ?? 1) : 0
   const l1Mode = settings.cache?.l1_mode ?? 'partition'
   const floor0Vars = floors[0]?.variables ?? {}
   const frozenVars = cacheLevel >= 1 ? frozenVarsFor(l1Mode, floor0Vars) : {}
@@ -205,11 +212,13 @@ export const generate = async (
     frozenVars,
     // FSM mode addendum + the World Card's custom agent prompts (system + per-mode).
     modeAddendum: composeAddendum(getRpExt(card)?.agent, mode, fsmEnabled, modeConfig.addendum),
-    template: {
+    // Canonical TemplateContext (WS-1) — shared constructor; `workingVars` is the live store (passed by
+    // reference so build-time setvar persists onto the floor). The engine resolves both `getvar('x')` and
+    // `getvar('stat_data.x')` from it.
+    template: buildTemplateContext(workingVars, {
       // EJS engine on/off (settings toggle). When off, evalTemplate strips tags instead of running them;
-      // {{macros}} still expand (they share vars/globals below).
+      // {{macros}} still expand (they share vars/globals).
       enabled: settings.templates?.enabled !== false,
-      vars: workingVars,
       globals,
       constants: {
         userName,
@@ -242,7 +251,7 @@ export const generate = async (
           content: p.content
         }))
       }
-    }
+    })
   })
 
   // Trim oldest history to stay under the configured context budget.
@@ -422,16 +431,53 @@ export const reevaluateVariables = (profileId: string, chatId: string): FloorFil
   return floors
 }
 
-// Runaway write-back loop breaker. A card that writes a constantly-CHANGING value on its own
-// `mag_variable_update_ended` (e.g. a `date` clock) re-triggers itself forever — every write is a real
-// change, so the no-op guard can't catch it, and we must KEEP firing self-write events (cards chain
-// initialization through them). We instead detect the runaway *signature*: the SAME set of paths written
-// over and over, rapidly. A legitimate init chain touches DISTINCT paths (the signature changes each
-// write, so the streak resets), so only a true self-feedback loop accumulates a long streak. Keyed by
-// chat; resets when the changed-path signature changes or after a quiet gap.
-const writeLoopGuard = new Map<string, { sig: string; count: number; last: number }>()
-const LOOP_WINDOW_MS = 400 // a write closer than this to the previous same-signature write counts as "rapid"
-const LOOP_MAX = 25 // consecutive rapid same-signature writes before we treat it as a runaway loop and drop
+// Runaway write-back loop breaker (TIMING-INDEPENDENT). A card that writes a constantly-CHANGING value on
+// its own update event (e.g. a `date` clock) re-triggers itself forever — every write is a real change, so
+// the no-op guard can't catch it. We detect the runaway *signature*: the SAME set of changed paths written
+// CONSECUTIVELY many times. A legitimate init chain touches DISTINCT paths (the signature changes each
+// write, so the streak resets), and per-turn updates are spread across model folds — so only a true
+// self-feedback loop accumulates a long streak. The streak is reset on every model fold
+// (`generate()` → `resetWriteLoopGuard`), so a path legitimately re-written once per turn never accumulates
+// a false streak across turns; a loop accumulates only WITHIN one inter-fold window (no AI turn to break it).
+//
+// WS-3 (2026-06-26): the previous guard was TIME-WINDOWED (≤400 ms between same-sig writes) and so MISSED a
+// loop whose IPC round-trip is slower than the window — exactly the reported `date` clock. Removing the
+// time dependence (count consecutive same-sig writes, reset per turn) catches the slow loop without
+// false-positiving on legit per-turn updates. This is still a band-aid for the architectural divergence the
+// WS-3 SPIKE found (RPT fires MVU `mag_variable_update_*` on the card's own write echoes; real MVU fires
+// them only on the AI fold — MagVarUpdate source). The proper fix (tag change origin; fire events only on
+// model-fold; delete this guard) remains DEFERRED pending in-app verify against 命定之诗 (whose live
+// automation is loaded remotely, so the self-chain assumption can't be checked from the card files). See
+// docs/structural-cleanup-log-2026-06-26.md Stage 13/15 + the note in shared/thRuntime/index.ts.
+const writeLoopGuard = new Map<string, { sig: string; count: number }>()
+const LOOP_MAX = 40 // consecutive same-signature writes (no model fold between) before we treat it as runaway
+
+/** Reset the runaway-loop streak for a chat. Called at the start of each model turn (`generate`) so a path
+ *  legitimately re-written once per turn never builds a false streak across turns — a real self-feedback
+ *  loop (many consecutive same-sig writes with no AI turn between) still trips the guard within one turn. */
+export const resetWriteLoopGuard = (chatId: string): void => {
+  writeLoopGuard.delete(chatId)
+}
+
+/**
+ * Register a write's changed-path signature against the per-chat runaway streak and report whether this
+ * write should be DROPPED as a self-feedback loop. Drops once the SAME signature has been written more than
+ * `LOOP_MAX` times CONSECUTIVELY (a different signature resets the streak; `resetWriteLoopGuard` clears it
+ * each model turn). Pure w.r.t. the module's streak map — exported so the loop logic is unit-testable
+ * without the DB. Returns `{ drop, count }` (count = the post-increment streak length).
+ */
+export const registerWriteSignature = (
+  chatId: string,
+  sig: string
+): { drop: boolean; count: number } => {
+  const g = writeLoopGuard.get(chatId)
+  if (g && g.sig === sig) {
+    g.count++
+    return { drop: g.count > LOOP_MAX, count: g.count }
+  }
+  writeLoopGuard.set(chatId, { sig, count: 1 })
+  return { drop: false, count: 1 }
+}
 
 /**
  * Variable WRITE-BACK bridge: apply JSONPatch ops to ONE floor's stat_data (the message
@@ -461,26 +507,22 @@ export const applyVariableOps = (
   // surviving the multi-hop IPC round-trip.
   const changed = deltas.filter((d) => JSON.stringify(d.old) !== JSON.stringify(d.new))
   if (changed.length === 0) return null
-  // Runaway-loop guard: a constantly-changing value hammered on the card's own event signature.
+  // Runaway-loop guard: a constantly-changing value hammered on the card's own event signature. Counts
+  // CONSECUTIVE writes of the same changed-path signature (timing-independent); reset each model turn.
   const sig = changed
     .map((d) => d.path)
     .sort()
     .join('|')
-  const now = Date.now()
-  const g = writeLoopGuard.get(chatId)
-  if (g && g.sig === sig && now - g.last < LOOP_WINDOW_MS) {
-    g.count++
-    g.last = now
-    if (g.count > LOOP_MAX) {
-      if (g.count === LOOP_MAX + 1)
-        log(
-          'info',
-          `variable write-back — runaway loop on [${sig}] (floor ${floor}); suppressing the self-feedback write so it can't spin (a card writing a changing value on its own update event)`
-        )
-      return null
-    }
-  } else {
-    writeLoopGuard.set(chatId, { sig, count: 1, last: now })
+  const loop = registerWriteSignature(chatId, sig)
+  if (loop.drop) {
+    if (loop.count === LOOP_MAX + 1)
+      log(
+        'info',
+        `variable write-back — runaway loop on [${sig}] (floor ${floor}); suppressing the self-feedback ` +
+          `write so it can't spin (${LOOP_MAX}+ consecutive same-path writes with no AI turn between — ` +
+          `a card writing a changing value on its own update event)`
+      )
+    return null
   }
   f.variables = { ...f.variables, stat_data: sd, delta_data: deltas }
   saveFloor(profileId, chatId, f)

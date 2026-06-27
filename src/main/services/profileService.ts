@@ -78,8 +78,8 @@ export const wipeProfile = (profileId: string): void => {
     active_api_preset_id: cur.active_api_preset_id
   })
 
-  // 2. DB content. Deleting chats cascades to floors / combat_encounters / episodic_memory /
-  //    rpg_entities (FK ON DELETE CASCADE). The profile + (reset) settings rows stay.
+  // 2. DB content. Deleting chats cascades to floors / combat_encounters / episodic_memory
+  //    (FK ON DELETE CASCADE). The profile + (reset) settings rows stay.
   db.transaction((pid: string) => {
     db.prepare('DELETE FROM chats WHERE profile_id = ?').run(pid)
     db.prepare('DELETE FROM characters WHERE profile_id = ?').run(pid)

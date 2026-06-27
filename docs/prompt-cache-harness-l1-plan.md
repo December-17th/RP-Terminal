@@ -4,7 +4,7 @@
 
 **Goal:** Build the measurement harness and the L1 "Frozen Core" cache level so a complex MVU card's character/lore prefix stays byte-stable across turns, with live state relocated to an ephemeral tail block — measured by a deterministic stable-prefix proxy and live provider cache usage.
 
-**Architecture:** A `settings.cache.level` dial (0 = today's behavior, 1 = Frozen Core) gates a behavior change in `promptBuilder`: at level ≥ 1 the durable "frontier" (character description, examples, lore, persona, addendum) is rendered against a *frozen* variable snapshot so its bytes don't change between turns, and the current `stat_data` is appended as a tail block just before the user action. L1 has two sub-modes (`l1_mode`): `partition` (state shown as placeholders in the frontier — clean) and `diff` (state shown as floor-0 values in the frontier — corrected by the tail block). A `cacheMetricsService` records, per chat, the deterministic stable-prefix proxy plus normalized provider cache usage, and logs a per-session report. **No `apiService` breakpoint change is needed for L1** — the existing Anthropic `system`-hoist + `merged.length-2` breakpoint already caches the (now stable) frontier, and the tail state block lands in the final volatile user turn on every provider.
+**Architecture:** A `settings.cache.level` dial (0 = today's behavior, 1 = Frozen Core) gates a behavior change in `promptBuilder`: at level ≥ 1 the durable "frontier" (character description, examples, lore, persona, addendum) is rendered against a _frozen_ variable snapshot so its bytes don't change between turns, and the current `stat_data` is appended as a tail block just before the user action. L1 has two sub-modes (`l1_mode`): `partition` (state shown as placeholders in the frontier — clean) and `diff` (state shown as floor-0 values in the frontier — corrected by the tail block). A `cacheMetricsService` records, per chat, the deterministic stable-prefix proxy plus normalized provider cache usage, and logs a per-session report. **No `apiService` breakpoint change is needed for L1** — the existing Anthropic `system`-hoist + `merged.length-2` breakpoint already caches the (now stable) frontier, and the tail state block lands in the final volatile user turn on every provider.
 
 **Tech Stack:** TypeScript (strict), Electron main process, Vitest (`vitest run`). Pure function modules with named exports — no classes. quickjs-emscripten EJS engine (already initialized). better-sqlite3 + JSON-blob settings.
 
@@ -16,7 +16,7 @@
 - **Shared boundary:** modules under `src/shared` import nothing from `src/main` or `src/renderer`. (The new metrics/layer modules live under `src/main/services`, so they may import from `promptBuilder`.)
 - **Tests:** live in `test/*.test.ts`, import from `../src/main/...`. `electron` and `better-sqlite3` are aliased to stubs in `vitest.config.ts`, so importing `logService`/`settingsService` transitively is fine. Run with `npx vitest run test/<file>.test.ts`.
 - **Must pass before every commit:** `npm run typecheck` and `npm test`.
-- **Level 0 is behavior-preserving.** Every change in this plan must leave `cache.level === 0` output byte-identical to today; the harness only *observes* at level 0.
+- **Level 0 is behavior-preserving.** Every change in this plan must leave `cache.level === 0` output byte-identical to today; the harness only _observes_ at level 0.
 
 ---
 
@@ -25,11 +25,13 @@
 Adds the `cache` config block (the A/B dial) with defaults and normalization. No behavior yet.
 
 **Files:**
+
 - Modify: `src/main/types/models.ts` (the `Settings` interface)
 - Modify: `src/main/services/settingsService.ts` (`getDefaultSettings`, `normalize`)
 - Test: `test/settingsService.test.ts`
 
 **Interfaces:**
+
 - Produces: `Settings['cache'] = { level: number; l1_mode: 'partition' | 'diff'; ttl: '5m' | '1h'; prewarm: boolean; breakpoint_optimizer: boolean }`; `getDefaultSettings().cache`; `normalize(stored).cache`.
 
 - [ ] **Step 1: Write the failing test**
@@ -76,20 +78,20 @@ Expected: FAIL — `getDefaultSettings().cache` is `undefined` (`Cannot read pro
 In `src/main/types/models.ts`, inside the `Settings` interface, after the `workspace` field block, add:
 
 ```typescript
-  /** Prompt-cache optimization dial (see docs/prompt-cache-optimization-design.md).
-   *  level 0 = baseline (today); 1 = Frozen Core. l1_mode selects the L1 sub-experiment. */
-  cache: {
-    /** 0 = baseline, 1 = Frozen Core (2/3 reserved for later phases). */
-    level: number
-    /** L1 sub-mode: 'partition' (placeholder state in the frontier) | 'diff' (floor-0 state). */
-    l1_mode: 'partition' | 'diff'
-    /** Reserved for provider realization (Anthropic cache_control TTL). */
-    ttl: '5m' | '1h'
-    /** Reserved: pre-warm the cache at chat open. */
-    prewarm: boolean
-    /** Reserved: place Anthropic breakpoints at the true stable boundary. */
-    breakpoint_optimizer: boolean
-  }
+/** Prompt-cache optimization dial (see docs/prompt-cache-optimization-design.md).
+ *  level 0 = baseline (today); 1 = Frozen Core. l1_mode selects the L1 sub-experiment. */
+cache: {
+  /** 0 = baseline, 1 = Frozen Core (2/3 reserved for later phases). */
+  level: number
+  /** L1 sub-mode: 'partition' (placeholder state in the frontier) | 'diff' (floor-0 state). */
+  l1_mode: 'partition' | 'diff'
+  /** Reserved for provider realization (Anthropic cache_control TTL). */
+  ttl: '5m' | '1h'
+  /** Reserved: pre-warm the cache at chat open. */
+  prewarm: boolean
+  /** Reserved: place Anthropic breakpoints at the true stable boundary. */
+  breakpoint_optimizer: boolean
+}
 ```
 
 - [ ] **Step 4: Add the default**
@@ -111,26 +113,26 @@ In `src/main/services/settingsService.ts`, inside the object returned by `getDef
 In `src/main/services/settingsService.ts`, inside `normalize`, after the `const workspace = ...` line add:
 
 ```typescript
-  const cache = { ...d.cache, ...(stored.cache || {}) }
+const cache = { ...d.cache, ...(stored.cache || {}) }
 ```
 
 Then add `cache` to the returned object's field list (the `return { api, ..., workspace }` block):
 
 ```typescript
-  return {
-    api,
-    api_presets,
-    active_api_preset_id,
-    persona,
-    generation,
-    lorebook,
-    templates,
-    modes,
-    agent,
-    ui,
-    workspace,
-    cache
-  }
+return {
+  api,
+  api_presets,
+  active_api_preset_id,
+  persona,
+  generation,
+  lorebook,
+  templates,
+  modes,
+  agent,
+  ui,
+  workspace,
+  cache
+}
 ```
 
 - [ ] **Step 6: Run typecheck + test to verify they pass**
@@ -152,10 +154,12 @@ git commit -m "feat(cache): add settings.cache dial (level + l1_mode) with defau
 The deterministic metric and the provider-usage normalizer. No I/O — fully unit-tested.
 
 **Files:**
+
 - Create: `src/main/services/promptCacheMetrics.ts`
 - Test: `test/promptCacheMetrics.test.ts`
 
 **Interfaces:**
+
 - Consumes: `ChatMessage`, `estimateTokens` from `./promptBuilder`.
 - Produces:
   - `interface Usage { cacheRead: number; cacheWrite: number; input: number; output: number }`
@@ -412,10 +416,12 @@ git commit -m "feat(cache): stable-prefix proxy + provider usage normalization"
 Surface each provider's usage object so the harness can record it. The deterministic proxy already works without this, so usage stays optional and null-safe.
 
 **Files:**
+
 - Modify: `src/main/services/apiService.ts` (`streamProvider` + the three `stream*` functions + OpenAI body)
 - Test: `test/apiService.test.ts` (no new test for the SSE plumbing — it's covered by `normalizeUsage` in Task 2 + the integration verification in Task 9; this step is a wiring change validated by typecheck)
 
 **Interfaces:**
+
 - Produces: `streamProvider(settings, messages, params, onDelta, signal?, onUsage?)` where `onUsage?: (raw: unknown) => void`. Each provider calls `onUsage?.(usage)` with its raw usage object.
 - Consumes (later, in Task 5): `generationService` passes `onUsage` and feeds the raw object to `normalizeUsage`.
 
@@ -454,7 +460,7 @@ export const streamProvider = async (
 In `streamAnthropic`, add `onUsage?: UsageCallback` as the final parameter. It already captures `usage` in the SSE loop and logs it after; right after that existing `if (usage) { log(...) }` block, add:
 
 ```typescript
-  if (usage) onUsage?.(usage)
+if (usage) onUsage?.(usage)
 ```
 
 - [ ] **Step 3: Emit usage from the Gemini path**
@@ -462,7 +468,7 @@ In `streamAnthropic`, add `onUsage?: UsageCallback` as the final parameter. It a
 In `streamGemini`, add `onUsage?: UsageCallback` as the final parameter. It already captures `usage` (the `usageMetadata`) and logs it; right after that existing `if (usage) { log(...) }` block, add:
 
 ```typescript
-  if (usage) onUsage?.(usage)
+if (usage) onUsage?.(usage)
 ```
 
 - [ ] **Step 4: Request + emit usage from the OpenAI-compatible path**
@@ -484,20 +490,20 @@ In `streamOpenAICompatible`, add `onUsage?: UsageCallback` as the final paramete
 (b) Capture usage from the stream. Inside the existing `await readSse(response, (data) => { ... })` handler, after the `const json = JSON.parse(data)` line, add (before the `delta` read is fine):
 
 ```typescript
-        if (json.usage) usage = json.usage
+if (json.usage) usage = json.usage
 ```
 
 (c) Declare `usage` alongside `full`: change `let full = ''` (in `streamOpenAICompatible`) to:
 
 ```typescript
-  let full = ''
-  let usage: any = null
+let full = ''
+let usage: any = null
 ```
 
 (d) After the `readSse` try/catch completes (just before `return full`), add:
 
 ```typescript
-  if (usage) onUsage?.(usage)
+if (usage) onUsage?.(usage)
 ```
 
 > Note: some OpenAI-compatible proxies ignore `stream_options` and send no usage chunk — `usage` stays null and `onUsage` is never called. That is expected; the harness degrades to proxy-only metrics.
@@ -521,10 +527,12 @@ git commit -m "feat(cache): surface provider cache usage via optional onUsage ca
 In-memory per-chat metrics with a logged per-session summary. (In-memory is sufficient for an A/B measurement within a run; it moves into the persisted PromptState at L3 — out of scope here.)
 
 **Files:**
+
 - Create: `src/main/services/cacheMetricsService.ts`
 - Test: `test/cacheMetricsService.test.ts`
 
 **Interfaces:**
+
 - Consumes: `ChatMessage`, `estimateTokens` from `./promptBuilder`; `stablePrefixTokens`, `summarize`, `TurnStat`, `Usage`, `CacheReport` from `./promptCacheMetrics`; `log` from `./logService`.
 - Produces:
   - `recordTurn(chatId: string, messages: ChatMessage[], usage: Usage | null): TurnStat`
@@ -585,13 +593,7 @@ Create `src/main/services/cacheMetricsService.ts`:
 
 ```typescript
 import { ChatMessage, estimateTokens } from './promptBuilder'
-import {
-  stablePrefixTokens,
-  summarize,
-  TurnStat,
-  Usage,
-  CacheReport
-} from './promptCacheMetrics'
+import { stablePrefixTokens, summarize, TurnStat, Usage, CacheReport } from './promptCacheMetrics'
 import { log } from './logService'
 
 interface ChatMetrics {
@@ -670,10 +672,12 @@ git commit -m "feat(cache): per-chat metrics accumulation + logged session repor
 Record metrics every turn without changing the prompt. This completes the harness; at `cache.level === 0` the assembled prompt is byte-identical to today.
 
 **Files:**
+
 - Modify: `src/main/services/generationService.ts`
 - Test: covered by Task 9's end-to-end harness test (this wiring has no pure unit; validated by typecheck + the Task 9 verification).
 
 **Interfaces:**
+
 - Consumes: `streamProvider(..., onUsage)`, `normalizeUsage`, `recordTurn`.
 
 - [ ] **Step 1: Add imports**
@@ -691,16 +695,16 @@ import { recordTurn, resetChat } from './cacheMetricsService'
 In `generate`, just before `const controller = new AbortController()`, add:
 
 ```typescript
-  let rawUsage: unknown = null
-  const onUsage: UsageCallback = (u) => {
-    rawUsage = u
-  }
+let rawUsage: unknown = null
+const onUsage: UsageCallback = (u) => {
+  rawUsage = u
+}
 ```
 
 Change the provider call to pass `onUsage`:
 
 ```typescript
-    raw = await streamProvider(settings, messages, params, onDelta, controller.signal, onUsage)
+raw = await streamProvider(settings, messages, params, onDelta, controller.signal, onUsage)
 ```
 
 - [ ] **Step 3: Record the turn after a successful generation**
@@ -708,8 +712,8 @@ Change the provider call to pass `onUsage`:
 In `generate`, after the `log('response', ...)` line (the one that logs the raw response) and before `const cleaned = stripThinking(raw)`, add:
 
 ```typescript
-  // Cache harness: record this turn's assembled prompt (what was sent) + provider usage.
-  recordTurn(chatId, messages, normalizeUsage(settings.api.provider, rawUsage))
+// Cache harness: record this turn's assembled prompt (what was sent) + provider usage.
+recordTurn(chatId, messages, normalizeUsage(settings.api.provider, rawUsage))
 ```
 
 - [ ] **Step 4: Reset metrics on regenerate/truncate**
@@ -717,7 +721,7 @@ In `generate`, after the `log('response', ...)` line (the one that logs the raw 
 In `regenerate` (in the same file), the previous-prompt anchor goes stale after a truncate — reset it so the proxy isn't misled (`resetChat` was already imported in Step 1). Right after `truncateFloors(profileId, chatId, lastIndex)`:
 
 ```typescript
-  resetChat(chatId)
+resetChat(chatId)
 ```
 
 - [ ] **Step 5: Run typecheck + full test suite**
@@ -739,10 +743,12 @@ git commit -m "feat(cache): wire metrics harness into generation (level 0 = meas
 The two transforms that make L1 work: freeze the frontier's variable snapshot and build the tail state block.
 
 **Files:**
+
 - Create: `src/main/services/cacheLayers.ts`
 - Test: `test/cacheLayers.test.ts`
 
 **Interfaces:**
+
 - Produces:
   - `frozenVarsFor(mode: 'partition' | 'diff', floor0Vars: Record<string, any>): Record<string, any>`
   - `buildStateBlock(liveVars: Record<string, any> | undefined): string | null`
@@ -754,11 +760,7 @@ Create `test/cacheLayers.test.ts`:
 
 ```typescript
 import { describe, it, expect } from 'vitest'
-import {
-  frozenVarsFor,
-  buildStateBlock,
-  STATE_PLACEHOLDER
-} from '../src/main/services/cacheLayers'
+import { frozenVarsFor, buildStateBlock, STATE_PLACEHOLDER } from '../src/main/services/cacheLayers'
 
 describe('frozenVarsFor', () => {
   const floor0 = { config: { hard: true }, stat_data: { 主角: { 等级: 1, hp: 100 } } }
@@ -877,10 +879,12 @@ git commit -m "feat(cache): L1 frozen-vars (partition/diff) + tail state block"
 Wire the L1 transforms into prompt assembly: at level ≥ 1 render the frontier against frozen vars and append the tail state block. Level 0 stays byte-identical.
 
 **Files:**
+
 - Modify: `src/main/services/promptBuilder.ts` (`BuildPromptArgs`, the `makeRender`/`macroBase` closures, end of `buildPrompt`)
 - Test: `test/promptBuilder.test.ts`
 
 **Interfaces:**
+
 - Consumes: `frozenVarsFor`, `buildStateBlock` from `./cacheLayers`.
 - Produces (new `BuildPromptArgs` fields): `cacheLevel?: number`, `l1Mode?: 'partition' | 'diff'`, `frozenVars?: Record<string, any>`.
 
@@ -937,7 +941,7 @@ describe('buildPrompt — L1 Frozen Core', () => {
     expect(wiA.content).toContain('等级:⟦state⟧') // placeholder, not a real value
   })
 
-  it("diff: frontier shows the floor-0 value (stable) regardless of live state", () => {
+  it('diff: frontier shows the floor-0 value (stable) regardless of live state', () => {
     const a = buildPrompt(mkArgs(7, 1, 'diff'))
     const b = buildPrompt(mkArgs(42, 1, 'diff'))
     const wiA = a.find((m) => m.content.startsWith('World Info:'))!
@@ -1002,34 +1006,36 @@ In the `BuildPromptArgs` interface, after the `template?: TemplateContext` field
 In `buildPrompt`, replace the `macroBase` + `makeRender` + `render` + `personaContent` block (the section beginning `const macroBase = (pd: string): MacroContext => ({` through `const personaContent = personaInject ? makeRender('')(args.persona!.description) : ''`) with:
 
 ```typescript
-  const macroBase = (
-    pd: string,
-    vars?: Record<string, any>,
-    globals?: Record<string, any>
-  ): MacroContext => ({
-    user: userName,
-    char: charName,
-    persona: pd,
-    vars: vars ?? args.template?.vars,
-    globals: globals ?? args.template?.globals
-  })
-  const makeRender =
-    (pd: string, tmpl?: TemplateContext): Renderer =>
-    (t) => {
-      const m = expandMacros(t, macroBase(pd, tmpl?.vars, tmpl?.globals))
-      return tmpl ? evalTemplate(m, tmpl) : stripEjs(m).trim()
-    }
-  // L1 Frozen Core: at cache level ≥1 the durable frontier renders against a FROZEN
-  // variable snapshot (floor-0 derived), so its bytes are byte-stable across turns and
-  // the provider prefix cache holds. Live state moves to a tail block (appended below).
-  const cacheLevel = args.cacheLevel ?? 0
-  const frontierTemplate: TemplateContext | undefined = args.template
-    ? cacheLevel >= 1
-      ? { ...args.template, vars: args.frozenVars ?? {} }
-      : args.template
-    : undefined
-  const render = makeRender(personaMacro, frontierTemplate)
-  const personaContent = personaInject ? makeRender('', frontierTemplate)(args.persona!.description) : ''
+const macroBase = (
+  pd: string,
+  vars?: Record<string, any>,
+  globals?: Record<string, any>
+): MacroContext => ({
+  user: userName,
+  char: charName,
+  persona: pd,
+  vars: vars ?? args.template?.vars,
+  globals: globals ?? args.template?.globals
+})
+const makeRender =
+  (pd: string, tmpl?: TemplateContext): Renderer =>
+  (t) => {
+    const m = expandMacros(t, macroBase(pd, tmpl?.vars, tmpl?.globals))
+    return tmpl ? evalTemplate(m, tmpl) : stripEjs(m).trim()
+  }
+// L1 Frozen Core: at cache level ≥1 the durable frontier renders against a FROZEN
+// variable snapshot (floor-0 derived), so its bytes are byte-stable across turns and
+// the provider prefix cache holds. Live state moves to a tail block (appended below).
+const cacheLevel = args.cacheLevel ?? 0
+const frontierTemplate: TemplateContext | undefined = args.template
+  ? cacheLevel >= 1
+    ? { ...args.template, vars: args.frozenVars ?? {} }
+    : args.template
+  : undefined
+const render = makeRender(personaMacro, frontierTemplate)
+const personaContent = personaInject
+  ? makeRender('', frontierTemplate)(args.persona!.description)
+  : ''
 ```
 
 > Every existing use of `render` in the block loop, world-info join, depth entries, and marker injections now goes through `frontierTemplate` — no other call-site changes are needed. History (`buildHistory`) keeps calling `macroBase(personaMacro)` directly (live vars), which is correct: stored history is fixed model text and is not part of the frozen frontier.
@@ -1039,16 +1045,16 @@ In `buildPrompt`, replace the `macroBase` + `makeRender` + `render` + `personaCo
 In `buildPrompt`, immediately before the final `return messages`, add:
 
 ```typescript
-  // L1: relocate live state to one tail block, just before the user action (so it sits
-  // in the volatile tail, never in the cached frontier). 'partition' showed placeholders
-  // in the frontier; 'diff' showed floor-0 values — either way this block is the live truth.
-  if (cacheLevel >= 1) {
-    const stateBlock = buildStateBlock(args.template?.vars)
-    if (stateBlock) {
-      const insertAt = userAction !== '' ? messages.length - 1 : messages.length
-      messages.splice(insertAt, 0, { role: 'system', content: stateBlock })
-    }
+// L1: relocate live state to one tail block, just before the user action (so it sits
+// in the volatile tail, never in the cached frontier). 'partition' showed placeholders
+// in the frontier; 'diff' showed floor-0 values — either way this block is the live truth.
+if (cacheLevel >= 1) {
+  const stateBlock = buildStateBlock(args.template?.vars)
+  if (stateBlock) {
+    const insertAt = userAction !== '' ? messages.length - 1 : messages.length
+    messages.splice(insertAt, 0, { role: 'system', content: stateBlock })
   }
+}
 ```
 
 > `buildPrompt` receives the already-frozen `frozenVars` from its caller; it does not call `frozenVarsFor` itself (that lives in `generationService`, Task 8). Only `buildStateBlock` is imported here (per Step 3).
@@ -1072,10 +1078,12 @@ git commit -m "feat(cache): L1 frozen frontier render + tail state block in buil
 Compute the frozen snapshot from floor-0 and pass the cache level/mode into `buildPrompt`.
 
 **Files:**
+
 - Modify: `src/main/services/generationService.ts`
 - Test: covered by Task 9 end-to-end verification (this wiring has no isolated unit; validated by typecheck + Task 9).
 
 **Interfaces:**
+
 - Consumes: `frozenVarsFor` from `./cacheLayers`; the new `buildPrompt` fields from Task 7.
 
 - [ ] **Step 1: Add the import**
@@ -1091,13 +1099,13 @@ import { frozenVarsFor } from './cacheLayers'
 In `generate`, after the existing `const userName = settings.persona?.name || 'User'` line, add:
 
 ```typescript
-  // Prompt-cache level (L1 Frozen Core when ≥1). The frozen snapshot is derived from the
-  // FIRST floor's variables — constant across the session — so the frontier render is
-  // byte-stable. 'partition' shows placeholders for state; 'diff' shows the floor-0 values.
-  const cacheLevel = settings.cache?.level ?? 0
-  const l1Mode = settings.cache?.l1_mode ?? 'partition'
-  const floor0Vars = floors[0]?.variables ?? {}
-  const frozenVars = cacheLevel >= 1 ? frozenVarsFor(l1Mode, floor0Vars) : {}
+// Prompt-cache level (L1 Frozen Core when ≥1). The frozen snapshot is derived from the
+// FIRST floor's variables — constant across the session — so the frontier render is
+// byte-stable. 'partition' shows placeholders for state; 'diff' shows the floor-0 values.
+const cacheLevel = settings.cache?.level ?? 0
+const l1Mode = settings.cache?.l1_mode ?? 'partition'
+const floor0Vars = floors[0]?.variables ?? {}
+const frozenVars = cacheLevel >= 1 ? frozenVarsFor(l1Mode, floor0Vars) : {}
 ```
 
 - [ ] **Step 3: Pass them into `buildPrompt`**
@@ -1129,9 +1137,11 @@ git commit -m "feat(cache): activate L1 frozen core from generation (floor-0 sna
 A deterministic, send-free test proving L1 raises the stable-prefix proxy on a state-mutating MVU card, and a manual app check confirming nothing regresses.
 
 **Files:**
+
 - Create: `test/cacheAbHarness.test.ts`
 
 **Interfaces:**
+
 - Consumes: `buildPrompt`, `ChatMessage` from `../src/main/services/promptBuilder`; `stablePrefixTokens` from `../src/main/services/promptCacheMetrics`; `frozenVarsFor` from `../src/main/services/cacheLayers`; `initTemplates`.
 
 - [ ] **Step 1: Write the A/B test**
@@ -1159,9 +1169,30 @@ const preset = (): any => ({
   name: 'P',
   parameters: { temperature: 0.9, max_tokens: 100 },
   prompts: [
-    { identifier: 'cd', name: 'cd', role: 'system', content: '', enabled: true, marker: 'char_description' },
-    { identifier: 'wi', name: 'wi', role: 'system', content: '', enabled: true, marker: 'world_info' },
-    { identifier: 'ch', name: 'ch', role: 'system', content: '', enabled: true, marker: 'chat_history' }
+    {
+      identifier: 'cd',
+      name: 'cd',
+      role: 'system',
+      content: '',
+      enabled: true,
+      marker: 'char_description'
+    },
+    {
+      identifier: 'wi',
+      name: 'wi',
+      role: 'system',
+      content: '',
+      enabled: true,
+      marker: 'world_info'
+    },
+    {
+      identifier: 'ch',
+      name: 'ch',
+      role: 'system',
+      content: '',
+      enabled: true,
+      marker: 'chat_history'
+    }
   ]
 })
 const floor = (n: number, user: string, resp: string, hp: number): any => ({
@@ -1246,6 +1277,7 @@ Expected: PASS — no existing test regressed.
 - [ ] **Step 4: Manual app verification**
 
 Run the app (`npm run dev`), then:
+
 1. Open a chat using a state-bearing card (or any card; the synthetic test already proves the mechanism).
 2. In Settings, set `cache.level` to `1` (edit settings or add a temporary toggle — a UI control is out of scope for this plan; set it via the settings store / DB for now).
 3. Send 2–3 turns. In the **Logs** panel, confirm a `cache proxy — stable prefix X/Y tok (Z%)` line appears each turn and Z rises after the first turn.

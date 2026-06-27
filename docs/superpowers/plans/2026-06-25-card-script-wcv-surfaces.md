@@ -44,7 +44,7 @@ import-time source of truth for docked panels (`StaticWorkspace`), replacing the
 Verified against the code while reviewing the design; these correct/sharpen the doc:
 
 1. **The event bus already exists.** `thRuntime/index.ts:38-44` has `on`/`emit`/`off`; host→script events flow
-   via `host.onHostEvent` (`index.ts:63`). So the button bus is *only* `getButtonEvent` (identity) +
+   via `host.onHostEvent` (`index.ts:63`). So the button bus is _only_ `getButtonEvent` (identity) +
    `replaceScriptButtons` + a `host.setButtons` push + delivering the click as a host event — **not** a new bus.
 2. **The WCV `ctx` is empty.** `wcvPreload.ts:160` uses a placeholder ctx; main resolves the session from
    `e.sender`. So `SillyTavern.getCurrentChatId()` **cannot** read `host.ctx.chatId` in the WCV transport — add a
@@ -80,31 +80,31 @@ Unblocks both transports; fully unit-testable. **Touches the card-facing surface
 phase** (`docs/sdk/component-inventory.md` §2, `docs/rpt-api.md`).
 
 - [ ] **T1.1 — `Host` interface additions** (`src/shared/thRuntime/types.ts`): `regexesFull(option): TavernRegex[]`
-  (sync), `replaceRegexes(regexes, option): Promise<void>`, `isCharacterRegexesEnabled(): boolean`,
-  `currentChatId(): string` (sync), `getScriptVars(): Record<string,any>` (sync) + `setScriptVars(obj): Promise<void>`,
-  `setButtons(buttons: {name:string;visible:boolean}[]): void`.
+      (sync), `replaceRegexes(regexes, option): Promise<void>`, `isCharacterRegexesEnabled(): boolean`,
+      `currentChatId(): string` (sync), `getScriptVars(): Record<string,any>` (sync) + `setScriptVars(obj): Promise<void>`,
+      `setButtons(buttons: {name:string;visible:boolean}[]): void`.
 - [ ] **T1.2 — Pure TH-regex shape module** `src/shared/thRuntime/tavernRegex.ts`: map our store rule
-  (`RenderRegexRule`) ↔ TH `TavernRegex` (id/script_name/find_regex/replace_string/source/destination/…).
-  Round-trippable. Pure (no realm imports). Unit-tested.
+      (`RenderRegexRule`) ↔ TH `TavernRegex` (id/script_name/find_regex/replace_string/source/destination/…).
+      Round-trippable. Pure (no realm imports). Unit-tested.
 - [ ] **T1.3 — `thRuntime/index.ts` surface** : `getCurrentCharacterName` (from `charData().name`),
-  `SillyTavern.getCurrentChatId = () => host.currentChatId()` (+ `getCurrentCharacterId` from `ctx`/charData),
-  `isCharacterTavernRegexesEnabled`, `getTavernRegexes(option) → host.regexesFull(option)`,
-  `updateTavernRegexesWith(updater, option)` + `replaceTavernRegexes(regexes, option) → host.replaceRegexes`,
-  `getScriptId` (per-frame constant), `getButtonEvent(name) = String(name)`,
-  `replaceScriptButtons`/`getScriptButtons`/`appendInexistentScriptButtons`/`updateScriptButtonsWith` →
-  `host.setButtons`; and **script-scope** in `getVariables`/`setVariables`/`updateVariablesWith`: when
-  `opt.type==='script'` use `host.getScriptVars()`/`setScriptVars()` instead of `stat`.
+      `SillyTavern.getCurrentChatId = () => host.currentChatId()` (+ `getCurrentCharacterId` from `ctx`/charData),
+      `isCharacterTavernRegexesEnabled`, `getTavernRegexes(option) → host.regexesFull(option)`,
+      `updateTavernRegexesWith(updater, option)` + `replaceTavernRegexes(regexes, option) → host.replaceRegexes`,
+      `getScriptId` (per-frame constant), `getButtonEvent(name) = String(name)`,
+      `replaceScriptButtons`/`getScriptButtons`/`appendInexistentScriptButtons`/`updateScriptButtonsWith` →
+      `host.setButtons`; and **script-scope** in `getVariables`/`setVariables`/`updateVariablesWith`: when
+      `opt.type==='script'` use `host.getScriptVars()`/`setScriptVars()` instead of `stat`.
 - [ ] **T1.4 — WCV host adapter** (`src/preload/wcvHost.ts`) + IPC (`src/main/ipc/wcvIpc.ts`):
-  `wcv-host-get-regexes-full(option)` (sync, via `regexService.getAllRules` + shape map),
-  `wcv-host-replace-regexes(regexes, option)` (→ `regexService` `updateRule`/`saveRegexScript`/`deleteScript`/
-  `setScriptDisabled`; **debounced reload**), `wcv-host-is-char-regex-enabled` (sync),
-  `wcv-host-get-chat-id-sync` (sync, `contextFor(e.sender).chatId`),
-  `wcv-host-script-vars` get/set (→ `pluginService.pluginStorage`, owner `card:<characterId>`).
+      `wcv-host-get-regexes-full(option)` (sync, via `regexService.getAllRules` + shape map),
+      `wcv-host-replace-regexes(regexes, option)` (→ `regexService` `updateRule`/`saveRegexScript`/`deleteScript`/
+      `setScriptDisabled`; **debounced reload**), `wcv-host-is-char-regex-enabled` (sync),
+      `wcv-host-get-chat-id-sync` (sync, `contextFor(e.sender).chatId`),
+      `wcv-host-script-vars` get/set (→ `pluginService.pluginStorage`, owner `card:<characterId>`).
 - [ ] **T1.5 — Inline host adapter parity** (`src/renderer/src/cardBridge/host.ts`): implement the same new
-  methods over `window.api` (regex via `scriptRegex*`/a new write IPC, script vars via `pluginStorage`) so both
-  transports stay at parity (CLAUDE.md). `setButtons` no-ops inline (cards run in WCV) or feeds `toolbarStore`.
+      methods over `window.api` (regex via `scriptRegex*`/a new write IPC, script vars via `pluginStorage`) so both
+      transports stay at parity (CLAUDE.md). `setButtons` no-ops inline (cards run in WCV) or feeds `toolbarStore`.
 - [ ] **T1.6 — Tests**: `tavernRegex` round-trip; `getTavernRegexes(option)` filtering; script-scope routing
-  (writes land in the KV store, **not** `stat_data`); `updateTavernRegexesWith` applies via the shape map.
+      (writes land in the KV store, **not** `stat_data`); `updateTavernRegexesWith` applies via the shape map.
 - [ ] **T1.7 — SDK docs**: add the new surface to `component-inventory.md` §2 + `rpt-api.md`.
 
 **Exit:** a unit-tested runtime where `getTavernRegexes`/`updateTavernRegexesWith`/`isCharacterTavernRegexesEnabled`/
@@ -113,17 +113,17 @@ phase** (`docs/sdk/component-inventory.md` §2, `docs/rpt-api.md`).
 ## Phase 2 — Script-host WCV transport
 
 - [ ] **T2.1 — `CardScriptWcvHost.tsx`** (new): build a card doc (`buildCardDoc` + `buildWcvLibTags`, like
-  `WcvMessageFrame`) embedding the merged `get-runtime-scripts` as `<script type="module">`; ensure a **hidden**
-  WCV via `wcvManager` (served from `rpt-card://`), passing `{profileId, chatId, characterId}`. Remote imports
-  load natively (real Chromium page — no `data:` inlining). Grant-gated by the existing `trusted`/`remoteScripts`
-  consent.
+      `WcvMessageFrame`) embedding the merged `get-runtime-scripts` as `<script type="module">`; ensure a **hidden**
+      WCV via `wcvManager` (served from `rpt-card://`), passing `{profileId, chatId, characterId}`. Remote imports
+      load natively (real Chromium page — no `data:` inlining). Grant-gated by the existing `trusted`/`remoteScripts`
+      consent.
 - [ ] **T2.2 — Route the card-scripts panel** (`viewRegistry.tsx` `CardScriptsPanel`) to `CardScriptWcvHost`
-  when the card has scripts; reuse the `ConsentCardView`-style gate. Keep `CardScriptHost` for the plugin path /
-  fallback; do not port its event forwarding (App.tsx already broadcasts to WCVs — design §4g).
+      when the card has scripts; reuse the `ConsentCardView`-style gate. Keep `CardScriptHost` for the plugin path /
+      fallback; do not port its event forwarding (App.tsx already broadcasts to WCVs — design §4g).
 - [ ] **T2.3 — MVU interaction check** (the open risk): confirm RPT's native `mvuParser` still owns the fold;
-  ensure the card's MVU-engine script doesn't double-run (keep it off if so; UI/workshop scripts still run).
+      ensure the card's MVU-engine script doesn't double-run (keep it off if so; UI/workshop scripts still run).
 - [ ] **T2.4 — Verify** scripts receive `tavern_events` (generation/message/mvu) via the existing
-  `wcvBroadcastEvent` path.
+      `wcvBroadcastEvent` path.
 
 **Exit:** the card's scripts run out-of-process; background logic + `eventOn(tavern_events.*)` work. (Button
 visible after Phase 3.)
@@ -131,33 +131,34 @@ visible after Phase 3.)
 ## Phase 3 — Button bus + modal (创意工坊 end-to-end, minus OAuth)
 
 - [ ] **T3.1 — `wcvPreload` button bridge**: `host.setButtons` → `ipcRenderer.send('wcv-register-button', …)`;
-  `ipcRenderer.on('wcv-button-click', (name) => onHostEvent(name))` so the runtime `emit(getButtonEvent(name))`
-  reaches the script's `eventOn`.
+      `ipcRenderer.on('wcv-button-click', (name) => onHostEvent(name))` so the runtime `emit(getButtonEvent(name))`
+      reaches the script's `eventOn`.
 - [ ] **T3.2 — main/renderer toolbar feed** (`wcvIpc.ts` + `wcvManager.ts` + `toolbarStore`): `wcv-register-button`
-  → `mainWindow.webContents.send('wcv-buttons', {slotId, buttons})` → renderer pushes to `toolbarStore`
-  (deduped `card:<id>::<name>`, cleared on WCV destroy). The toolbar button's `onClick` →
-  `window.api.wcvButtonClick(slotId, name)` → `wcvManager.notifyEvent(chatId, name)`.
+      → `mainWindow.webContents.send('wcv-buttons', {slotId, buttons})` → renderer pushes to `toolbarStore`
+      (deduped `card:<id>::<name>`, cleared on WCV destroy). The toolbar button's `onClick` →
+      `window.api.wcvButtonClick(slotId, name)` → `wcvManager.notifyEvent(chatId, name)`.
 - [ ] **T3.3 — Modal presentation** (`wcvManager.ts` + `wcvPreload.ts`): the script-host WCV starts hidden
-  (`setVisible(false)`, offscreen/zero-bounds). On button-click → `setBounds(window content rect)` +
-  `setVisible(true)`. A `wcvPreload` `MutationObserver` reports `hasOverlay` (body has a visible fixed/absolute
-  child); `hasOverlay`→false → host `setVisible(false)`. Window-resize re-bounds while visible.
+      (`setVisible(false)`, offscreen/zero-bounds). On button-click → `setBounds(window content rect)` +
+      `setVisible(true)`. A `wcvPreload` `MutationObserver` reports `hasOverlay` (body has a visible fixed/absolute
+      child); `hasOverlay`→false → host `setVisible(false)`. Window-resize re-bounds while visible.
 - [ ] **T3.4 — Tests**: button dedupe/clear-on-teardown; `hasOverlay` show/hide transitions (pure logic).
 
 **Exit:** the `命定创意工坊` button opens the modal; browse → download/sync writes worldbook (existing bridge)
-+ regex (Phase 1) into the card's book.
+
+- regex (Phase 1) into the card's book.
 
 ## Phase 4 — Card-carried static layout + import transform
 
 - [ ] **T4.1 — Import transform** (`characterService.ts`, pure helper + test): detect the status-loader regex
-  (`placement:[2]`, replacement `.load('…/status/index.html')`) → synthesize a `panel_ui` `wcv` slot
-  (`view:'wcv'`, `entry`, `rect`, `title:'状态栏'`) and **skip** it as a display regex. `首页`/`自定义开局`
-  loaders (different URLs) are untouched → stay inline.
+      (`placement:[2]`, replacement `.load('…/status/index.html')`) → synthesize a `panel_ui` `wcv` slot
+      (`view:'wcv'`, `entry`, `rect`, `title:'状态栏'`) and **skip** it as a display regex. `首页`/`自定义开局`
+      loaders (different URLs) are untouched → stay inline.
 - [ ] **T4.2 — Import summary**: `summarizeCardBundle` (`:157`) reports panel count/layout → "Layout: N panels"
-  in the import confirm.
+      in the import confirm.
 - [ ] **T4.3 — Workspace switch**: when the active card has `panel_ui`, render `StaticWorkspace` (static-locked);
-  a `wcv` slot mounts `WcvPanel` with the slot's `entry`. Cards without `panel_ui` keep the resizable workspace.
+      a `wcv` slot mounts `WcvPanel` with the slot's `entry`. Cards without `panel_ui` keep the resizable workspace.
 - [ ] **T4.4 — Retire hardcodes**: drop `wcv-card`/`wcv-home`/`wcv-start` from `viewRegistry.tsx` and the
-  `命定之诗` URLs/wrappers in `WcvPanel.tsx` (keep the `WcvPanel` component + `DEFAULT_STATIC_LAYOUT` as a generic).
+      `命定之诗` URLs/wrappers in `WcvPanel.tsx` (keep the `WcvPanel` component + `DEFAULT_STATIC_LAYOUT` as a generic).
 - [ ] **T4.5 — Tests**: regex→`panel_ui` synthesis (status matched; home/custom_start not); workspace selection.
 
 **Exit:** `状态栏` renders as a docked WCV panel declared by the card; onboarding stays inline; no hardcoded
@@ -166,7 +167,7 @@ card URLs remain.
 ## Phase 5 — OAuth window-open (deferred, highest risk)
 
 - [ ] **T5.1 — `setWindowOpenHandler` on the card WCV** (`wcvManager.ts`): allow the workshop's OAuth popup as a
-  child window with `opener`, relay its `postMessage` back to the workshop. Gate behind the trusted-card consent.
+      child window with `opener`, relay its `postMessage` back to the workshop. Gate behind the trusted-card consent.
 - [ ] **T5.2 — Verify** the login round-trip (popup → callback → `addEventListener('message')`).
 
 **Exit:** cloud login completes; authenticated sync works.

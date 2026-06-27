@@ -15,8 +15,18 @@ import { initEngine, setEngineDeps } from '../../shared/templateEngine'
  */
 
 // Re-export the engine surface so existing imports (promptBuilder, tests, …) are unchanged.
-export { evalTemplate, evalTemplateDetailed, hasTags, stripTags } from '../../shared/templateEngine'
-export type { TemplateData, TemplateContext } from '../../shared/templateEngine'
+export {
+  evalTemplate,
+  evalTemplateDetailed,
+  hasTags,
+  stripTags,
+  buildTemplateContext
+} from '../../shared/templateEngine'
+export type {
+  TemplateData,
+  TemplateContext,
+  TemplateContextOpts
+} from '../../shared/templateEngine'
 
 export const initTemplates = async (): Promise<void> => {
   // Wire the deps the shared engine can't import from src/main, then load quickjs.

@@ -45,8 +45,10 @@ export interface Settings {
     renderMode: 'inline' | 'isolated'
     sizing: 'fit' | 'fill'
   }
-  /** Prompt-cache optimization dial (mirrors main `Settings['cache']`). level 0 = baseline. */
+  /** Prompt-cache optimization dial (mirrors main `Settings['cache']`). STASHED — greyed out, pinned to
+   *  `baseline` (no optimization, not even provider caching). See docs/prompt-cache-optimization-design.md. */
   cache: {
+    mode: 'baseline' | 'provider' | 'frozen'
     level: number
     l1_mode: 'partition' | 'diff'
     ttl: '5m' | '1h'

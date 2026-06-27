@@ -9,7 +9,7 @@
 SillyTavern "beautification" cards (HTML+CSS+`<script>`, frequently Vue apps that import ESM
 from jsDelivr and call TavernHelper/Mvu/EJS APIs) are emitted inline in AI messages. They currently
 render in a native `WebContentsView` overlay (`WcvMessageFrame` + `wcvManager`, served from the
-`rpt-card://` scheme). A `WebContentsView` is a separate page composited *over* the message, so it:
+`rpt-card://` scheme). A `WebContentsView` is a separate page composited _over_ the message, so it:
 
 - has its own scroll context (a scrollbar beside the card),
 - cannot grow into the message column or be sized to content reliably,
@@ -41,7 +41,7 @@ renderers, chosen by **resolved mode = per-card override ?? global default**:
 - **Inline mode (default)** — a **same-origin `srcdoc` iframe** embedded in the message DOM.
 - **Isolated mode (opt-in)** — the existing `WcvMessageFrame` (`WebContentsView`), unchanged.
 
-Both modes render the *same* card document (built by the existing `buildCardDoc`).
+Both modes render the _same_ card document (built by the existing `buildCardDoc`).
 
 ### Why same-origin for inline mode
 
@@ -151,6 +151,7 @@ A card with no override produces no marker → falls back to the global default.
 ## Files
 
 **New**
+
 - `src/renderer/src/components/InlineCardFrame.tsx` — the same-origin inline iframe + auto-height + bootstrap.
 - `src/renderer/src/cardBridge/*` — `createCardBridge(ctx)` + the renderer EJS engine init + the globals.
 - Regex `renderMode` IPC handler + `setScriptRenderMode` in `regexService` (`_meta` sidecar) + preload `window.api` method.
@@ -158,11 +159,13 @@ A card with no override produces no marker → falls back to the global default.
 - Regex-manager per-script mode selector.
 
 **Changed**
+
 - `src/renderer/index.html` — scoped CSP loosening.
 - `src/renderer/src/components/MessageContent.tsx` — route interactive cards by resolved mode; `splitHtml` parses the mode marker.
 - `src/shared/regexTransform.ts` + `regexStore` — carry `renderMode` on rules; emit the block marker.
 
 **Reused / unchanged**
+
 - `rpt-card://` scheme + `wcvManager` (isolated mode only; inline mode serves `buildCardDoc` output via `srcdoc`).
 - `buildCardDoc`, `HtmlFrame` (static cards), `src/shared/templateEngine.ts`.
 
@@ -190,7 +193,7 @@ the full-document Vue/ESM cards this is fatal:
   governed by the page CSP).
 
 The two real benefits (auto-height, native scroll) are already delivered by the auto-height iframe.
-Shadow DOM remains defensible only for the *static* `HtmlFrame` path (no scripts, no realm to protect)
+Shadow DOM remains defensible only for the _static_ `HtmlFrame` path (no scripts, no realm to protect)
 — an unrelated, out-of-scope optimization.
 
 ## Risks & mitigations
@@ -198,7 +201,7 @@ Shadow DOM remains defensible only for the *static* `HtmlFrame` path (no scripts
 - **No process isolation in inline mode** — a runaway card can block the renderer. Mitigation: that's
   exactly what Isolated (WCV) mode is for; flip a misbehaving card to it.
 - **CSP loosening** — scoped to trusted CDN hosts (not blanket `https:`), centralized for easy review.
-- **localStorage origin differs by mode** (app origin vs `rpt-card`) — a card's *incidental* localStorage
+- **localStorage origin differs by mode** (app origin vs `rpt-card`) — a card's _incidental_ localStorage
   doesn't carry across a mode switch. Canonical RP data lives in SQLite via the bridge, so state is safe;
   document the limitation.
 - **Two bridge implementations** — maintenance cost; mitigated by sharing `templateEngine.ts` and the

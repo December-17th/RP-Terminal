@@ -130,9 +130,18 @@ export interface Settings {
     layouts: ModeLayouts
   }
   /** Prompt-cache optimization dial (see docs/prompt-cache-optimization-design.md).
-   *  level 0 = baseline (today); 1 = Frozen Core. l1_mode selects the L1 sub-experiment. */
+   *  The whole system is STASHED (low prio, 2026-06-26) — the selector is greyed out and pinned to
+   *  `baseline`. `mode` is the user-facing setting; `level`/`l1_mode` are the (dormant) Frozen-Core internals. */
   cache: {
-    /** 0 = baseline, 1 = Frozen Core (2/3 reserved for later phases). */
+    /**
+     * Optimization mode (selector greyed out; default + pinned to `baseline`):
+     *  - `baseline`  — NO optimization at all, NOT even provider-side prompt caching (we omit Anthropic
+     *                  cache_control). A clean reference control for measuring everything else against.
+     *  - `provider`  — provider prefix caching as-is (Anthropic cache_control on); no app-side frozen core.
+     *  - `frozen`    — L1 "Frozen Core" app-side layering (experimental/dormant — stashed).
+     */
+    mode: 'baseline' | 'provider' | 'frozen'
+    /** 0 = baseline, 1 = Frozen Core (2/3 reserved for later phases). Derived from `mode` (frozen → 1). */
     level: number
     /** L1 sub-mode: 'partition' (placeholder state in the frontier) | 'diff' (floor-0 state). */
     l1_mode: 'partition' | 'diff'

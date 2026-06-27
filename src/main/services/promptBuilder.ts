@@ -224,6 +224,64 @@ const applyDepthInjections = (
   for (const p of planned) messages.splice(p.idx, 0, { role: p.role, content: p.content })
 }
 
+/** Insert a system block just before the first conversation (non-system) message — or append it when
+ *  the array is all-system. Centralizes the convoStart find+splice repeated for the world-info safety
+ *  net, the mode addendum, and the persona block (WS-5). */
+const insertBeforeConvo = (messages: ChatMessage[], msg: ChatMessage): void => {
+  const convoStart = messages.findIndex((m) => m.role !== 'system')
+  if (convoStart === -1) messages.push(msg)
+  else messages.splice(convoStart, 0, msg)
+}
+
+/** A matched/forced lorebook entry paired with its parsed marker classification. */
+type ParsedEntry = { e: LorebookEntry; p: ReturnType<typeof parseEntryMarker> }
+
+interface PartitionedLore {
+  /** Marker entries (`[GENERATE]`/`@INJECT`/…) to drain into positions, matched + force-activated. */
+  markerEntries: ParsedEntry[]
+  /** Plain world-info entries with no numeric depth → the top-level World Info block. */
+  topEntries: LorebookEntry[]
+  /** Plain world-info entries with a numeric depth → injected into the history at that depth. */
+  depthEntries: LorebookEntry[]
+}
+
+/**
+ * Partition matched lorebook entries (+ force-activated marker entries from the books) into the three
+ * buckets buildPrompt consumes. Pure (no render context); extracted from buildPrompt (WS-5). A matched
+ * entry whose comment/decorator is an injection marker is drained into a prompt POSITION, not emitted as
+ * plain world-info; `@@dont_activate` drops it; `@@activate`/`@@always_enabled` force-activate an unmatched
+ * marker entry. Non-marker cards are unaffected (parseEntryMarker → marker null → all "regular").
+ */
+const partitionLore = (matched: LorebookEntry[], lorebooks: Lorebook[]): PartitionedLore => {
+  const parsedMatched: ParsedEntry[] = matched.map((e) => ({
+    e,
+    p: parseEntryMarker(e.comment, e.content)
+  }))
+  const regular = parsedMatched
+    .filter(({ p }) => !p.marker && p.activation !== 'never')
+    .map(({ e }) => e)
+  // @@activate / @@always_enabled force-activate a marker entry even when the keyword scan didn't match
+  // it. Pre-filter cheaply (anchored regex, no full parse) before parsing the few candidates.
+  const looksMarked = (e: LorebookEntry): boolean =>
+    /^\s*@@/.test(e.content) || /^\s*(\[GENERATE|\[RENDER|@INJECT)/i.test(e.comment)
+  const keyOf = (e: LorebookEntry): string => JSON.stringify([e.comment, e.content])
+  const matchedKeys = new Set(matched.map(keyOf))
+  const forced = lorebooks
+    .flatMap((lb) => lb.entries)
+    .filter((e) => e.enabled !== false && looksMarked(e) && !matchedKeys.has(keyOf(e)))
+    .map((e) => ({ e, p: parseEntryMarker(e.comment, e.content) }))
+    .filter(({ p }) => p.marker && p.activation === 'force')
+  const markerEntries = [
+    ...parsedMatched.filter(({ p }) => p.marker && p.activation !== 'never'),
+    ...forced
+  ]
+  return {
+    markerEntries,
+    topEntries: regular.filter((e) => e.insertion_depth == null),
+    depthEntries: regular.filter((e) => e.insertion_depth != null)
+  }
+}
+
 /** The text scanned for lorebook keywords: the last `scanDepth` turns + the pending action. */
 export const buildScanText = (floors: FloorFile[], userAction: string, scanDepth: number): string =>
   [
@@ -301,6 +359,7 @@ export const buildPrompt = (args: BuildPromptArgs): ChatMessage[] => {
   // EJS-evaluate already-macro-expanded PRESET content. An error here means a broken preset entry → FAIL THE
   // TURN with a detailed log (which entry + reason + source), so a conditional never silently drops or leaks
   // all its branches. (Card-field renders below stay graceful via `render`.)
+  // Error policy: "preset blocks fail loud" tier — see docs/rpt-api.md §7 (WS-9).
   const ejsStrict = (expanded: string, label: string): string => {
     if (!frontierTemplate) return stripEjs(expanded).trim()
     const r = evalTemplateDetailed(expanded, frontierTemplate)
@@ -352,31 +411,8 @@ export const buildPrompt = (args: BuildPromptArgs): ChatMessage[] => {
       Math.random,
       args.maxRecursion ?? 0
     )
-  // Phase D: a matched entry whose comment/decorator is an injection marker is drained into a prompt
-  // POSITION below, not emitted as plain world-info. Partition markers out; @@dont_activate drops the
-  // entry entirely. Non-marker cards are unaffected (parseEntryMarker → marker null → all "regular").
-  const parsedMatched = matched.map((e) => ({ e, p: parseEntryMarker(e.comment, e.content) }))
-  const regular = parsedMatched
-    .filter(({ p }) => !p.marker && p.activation !== 'never')
-    .map(({ e }) => e)
-  // @@activate / @@always_enabled force-activate a marker entry even when the keyword scan didn't match
-  // it. Pre-filter cheaply (anchored regex, no full parse) before parsing the few candidates.
-  const looksMarked = (e: LorebookEntry): boolean =>
-    /^\s*@@/.test(e.content) || /^\s*(\[GENERATE|\[RENDER|@INJECT)/i.test(e.comment)
-  const keyOf = (e: LorebookEntry): string => JSON.stringify([e.comment, e.content])
-  const matchedKeys = new Set(matched.map(keyOf))
-  const forced = lorebooks
-    .flatMap((lb) => lb.entries)
-    .filter((e) => e.enabled !== false && looksMarked(e) && !matchedKeys.has(keyOf(e)))
-    .map((e) => ({ e, p: parseEntryMarker(e.comment, e.content) }))
-    .filter(({ p }) => p.marker && p.activation === 'force')
-  // All marker entries to drain into positions (matched markers + forced), minus @@dont_activate.
-  const markerEntries = [
-    ...parsedMatched.filter(({ p }) => p.marker && p.activation !== 'never'),
-    ...forced
-  ]
-  const topEntries = regular.filter((e) => e.insertion_depth == null)
-  const depthEntries = regular.filter((e) => e.insertion_depth != null)
+  // Partition matched lore into marker entries (drained into positions below) + top/depth world-info.
+  const { markerEntries, topEntries, depthEntries } = partitionLore(matched, lorebooks)
   // Render each matched lorebook entry GRACEFULLY (unlike `ejsStrict` for presets, which throws). On an
   // EJS error, fall back to the macro-expanded text with EJS tags STRIPPED — so an entry that is mostly
   // prose with one bad `<%…%>` block (e.g. 命定之诗's 艾莉亚 entry: 10KB of character lore + a trailing
@@ -384,6 +420,7 @@ export const buildPrompt = (args: BuildPromptArgs): ChatMessage[] => {
   // its prose instead of being dropped whole. This is the pre-1941f38 behavior, kept for lorebook entries
   // only: presets still fail loud (the branch-leak that 1941f38 fixed is a preset concern). The entry +
   // reason are logged either way so a genuinely broken entry is visible.
+  // Error policy: "card / lorebook content degrades gracefully" tier — see docs/rpt-api.md §7 (WS-9).
   const renderLoreEntry = (e: LorebookEntry): string => {
     const expanded = expandMacros(
       e.content,
@@ -467,10 +504,7 @@ export const buildPrompt = (args: BuildPromptArgs): ChatMessage[] => {
   // otherwise drop matched lorebook entries. Inject them just before the first
   // conversation message so keyword/constant world info still reaches the model.
   if (worldInfo && !worldInfoEmitted) {
-    const convoStart = messages.findIndex((m) => m.role !== 'system')
-    const wiMessage: ChatMessage = { role: 'system', content: `World Info:\n${worldInfo}` }
-    if (convoStart === -1) messages.push(wiMessage)
-    else messages.splice(convoStart, 0, wiMessage)
+    insertBeforeConvo(messages, { role: 'system', content: `World Info:\n${worldInfo}` })
   }
   // Diagnostic: where did the matched lore go? (empty render vs emitted-but-trimmable.)
   log(
@@ -491,22 +525,16 @@ export const buildPrompt = (args: BuildPromptArgs): ChatMessage[] => {
   // a mode, so it never invalidates the cached prefix between turns.
   const modeAddendum = args.modeAddendum?.trim()
   if (modeAddendum) {
-    const convoStart = messages.findIndex((m) => m.role !== 'system')
-    const mm: ChatMessage = { role: 'system', content: modeAddendum }
-    if (convoStart === -1) messages.push(mm)
-    else messages.splice(convoStart, 0, mm)
+    insertBeforeConvo(messages, { role: 'system', content: modeAddendum })
   }
 
   // Persona description at the top: a stable, cache-friendly system block placed
   // just before the conversation begins.
   if (personaContent && args.persona?.depth == null) {
-    const convoStart = messages.findIndex((m) => m.role !== 'system')
-    const pm: ChatMessage = {
+    insertBeforeConvo(messages, {
       role: 'system',
       content: `[${userName}'s Persona]\n${personaContent}`
-    }
-    if (convoStart === -1) messages.push(pm)
-    else messages.splice(convoStart, 0, pm)
+    })
   }
 
   // Depth-positioned injections: lorebook entries with a numeric depth, plus the
@@ -536,46 +564,66 @@ export const buildPrompt = (args: BuildPromptArgs): ChatMessage[] => {
     applyDepthInjections(messages, depthItems, convoStart, userAction !== '')
   }
 
-  // Phase D: drain [GENERATE:*] + @INJECT marker entries into message positions (the array is final, so
-  // markerIndex's 0-based positions + regex/target lookups are stable). RENDER markers → markerIndex null
-  // (handled at render time). Splice high→low so earlier inserts don't shift later targets; ties by order.
-  if (markerEntries.length) {
-    const injections = markerEntries
-      .map(({ e, p }) => {
-        const marker = p.marker as Marker
-        const at = markerIndex(marker, messages)
-        if (at == null) return null
-        const body = p.private ? `<% { %>${p.template}<% } %>` : p.template
-        const content = render(body)
-        if (!content) return null
-        const isInject = marker.kind === 'inject'
-        const role: ChatMessage['role'] = isInject
-          ? ((marker as InjectMarker).role ?? 'system')
-          : 'system'
-        const order = (isInject ? (marker as InjectMarker).order : undefined) ?? e.insertion_order
-        return { at: Math.max(0, Math.min(at, messages.length)), role, content, order }
-      })
-      .filter(
-        (x): x is { at: number; role: ChatMessage['role']; content: string; order: number } =>
-          x != null
-      )
-      .sort((a, b) => b.at - a.at || b.order - a.order)
-    for (const inj of injections)
-      messages.splice(inj.at, 0, { role: inj.role, content: inj.content })
-  }
+  // Phase D: drain [GENERATE:*] + @INJECT marker entries into message positions.
+  applyInjectionMarkers(messages, markerEntries, render)
 
-  // L1: relocate live state to one tail block, just before the user action (so it sits
-  // in the volatile tail, never in the cached frontier). 'partition' showed placeholders
-  // in the frontier; 'diff' showed floor-0 values — either way this block is the live truth.
-  if (cacheLevel >= 1) {
-    const stateBlock = buildStateBlock(args.template?.vars)
-    if (stateBlock) {
-      const insertAt = userAction !== '' ? messages.length - 1 : messages.length
-      messages.splice(insertAt, 0, { role: 'system', content: stateBlock })
-    }
-  }
+  // L1 (experimental/dormant — see WS-2): relocate live state to one tail block before the user action.
+  applyCacheTail(messages, cacheLevel, args.template?.vars, userAction !== '')
 
   return messages
+}
+
+/**
+ * Phase D — drain `[GENERATE:*]` + `@INJECT` marker entries into message positions. The array is final
+ * here, so `markerIndex`'s 0-based positions + regex/target lookups are stable. RENDER markers →
+ * `markerIndex` null (handled at render time). Spliced high→low so earlier inserts don't shift later
+ * targets; ties broken by order. Mutates `messages`. (Extracted from buildPrompt — WS-5.)
+ */
+const applyInjectionMarkers = (
+  messages: ChatMessage[],
+  markerEntries: ParsedEntry[],
+  render: Renderer
+): void => {
+  if (!markerEntries.length) return
+  const injections = markerEntries
+    .map(({ e, p }) => {
+      const marker = p.marker as Marker
+      const at = markerIndex(marker, messages)
+      if (at == null) return null
+      const body = p.private ? `<% { %>${p.template}<% } %>` : p.template
+      const content = render(body)
+      if (!content) return null
+      const isInject = marker.kind === 'inject'
+      const role: ChatMessage['role'] = isInject
+        ? ((marker as InjectMarker).role ?? 'system')
+        : 'system'
+      const order = (isInject ? (marker as InjectMarker).order : undefined) ?? e.insertion_order
+      return { at: Math.max(0, Math.min(at, messages.length)), role, content, order }
+    })
+    .filter(
+      (x): x is { at: number; role: ChatMessage['role']; content: string; order: number } =>
+        x != null
+    )
+    .sort((a, b) => b.at - a.at || b.order - a.order)
+  for (const inj of injections) messages.splice(inj.at, 0, { role: inj.role, content: inj.content })
+}
+
+/**
+ * L1 "Frozen Core" tail (experimental/dormant — see WS-2; reached only at cacheLevel ≥ 1). Relocates the
+ * live state to one tail block just before the user action, so it sits in the volatile tail, never in the
+ * cached frontier. No-op at cacheLevel 0 or when there's no state. Mutates `messages`. (Extracted — WS-5.)
+ */
+const applyCacheTail = (
+  messages: ChatMessage[],
+  cacheLevel: number,
+  vars: Record<string, any> | undefined,
+  hasTrailingUser: boolean
+): void => {
+  if (cacheLevel < 1) return
+  const stateBlock = buildStateBlock(vars)
+  if (!stateBlock) return
+  const insertAt = hasTrailingUser ? messages.length - 1 : messages.length
+  messages.splice(insertAt, 0, { role: 'system', content: stateBlock })
 }
 
 /**

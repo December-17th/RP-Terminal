@@ -27,7 +27,7 @@ the provider's **real usage** (`normalizeUsage`). This feature persists, aggrega
 - Per-swipe metric history (the floor's metric tracks the active/last-generated swipe).
 - Live-streaming output-token counter (output settles once per completed turn).
 - A charting dependency (charts are hand-rolled inline SVG).
-- Pre-send prediction of the *next* prompt's cache hit (the proxy on each completed turn is the "estimate").
+- Pre-send prediction of the _next_ prompt's cache hit (the proxy on each completed turn is the "estimate").
 
 ## 2. Architecture overview
 
@@ -62,30 +62,30 @@ only an instant-update optimization for the overlay.
 ```ts
 /** One generated turn's own metrics. */
 export interface TurnMetric {
-  ts: string                       // ISO timestamp (passed in; not generated inside the pure fn)
+  ts: string // ISO timestamp (passed in; not generated inside the pure fn)
   provider: string
   model: string
-  cacheLevel: number               // settings.cache.level at send time
+  cacheLevel: number // settings.cache.level at send time
   l1Mode: 'partition' | 'diff'
-  promptTokens: number             // estimated total prompt tokens sent (sum of estimateTokens)
-  proxyTokens: number              // stable-prefix proxy tokens vs the previous turn
-  proxyPct: number                 // proxyTokens / promptTokens * 100   (the "estimated" cache hit)
-  outputTokens: number             // usage.output if present, else estimateTokens(responseText)
-  usage: Usage | null              // provider's real usage, or null
+  promptTokens: number // estimated total prompt tokens sent (sum of estimateTokens)
+  proxyTokens: number // stable-prefix proxy tokens vs the previous turn
+  proxyPct: number // proxyTokens / promptTokens * 100   (the "estimated" cache hit)
+  outputTokens: number // usage.output if present, else estimateTokens(responseText)
+  usage: Usage | null // provider's real usage, or null
 }
 
 /** Running tally over all generated floors up to and including this one. */
 export interface CumulativeMetric {
-  turns: number                    // generated turns counted
-  usageTurns: number               // of those, how many reported real usage
+  turns: number // generated turns counted
+  usageTurns: number // of those, how many reported real usage
   totalPromptTokens: number
   totalProxyTokens: number
   totalOutputTokens: number
-  usage: Usage | null              // element-wise sum over usage turns (null if usageTurns === 0)
-  avgPromptTokens: number          // totalPromptTokens / turns
-  avgOutputTokens: number          // totalOutputTokens / turns
-  avgProxyPct: number              // mean proxyPct over ALL turns
-  avgCacheHitPct: number           // mean real cacheHitPct over USAGE turns (0 if none)
+  usage: Usage | null // element-wise sum over usage turns (null if usageTurns === 0)
+  avgPromptTokens: number // totalPromptTokens / turns
+  avgOutputTokens: number // totalOutputTokens / turns
+  avgProxyPct: number // mean proxyPct over ALL turns
+  avgCacheHitPct: number // mean real cacheHitPct over USAGE turns (0 if none)
 }
 
 /** Persisted on each generated floor (floors.metrics). */
@@ -147,7 +147,7 @@ export const buildFloorMetrics = (args: {
   - `FloorRow`: add `metrics: string | null`.
   - `rowToFloor`: `metrics: r.metrics ? safeJson(r.metrics, undefined) : undefined`.
   - `saveFloor` INSERT: add `metrics` to the column list, the `VALUES` placeholders, and the `ON CONFLICT …
-    SET` clause; bind `floor.metrics ? JSON.stringify(floor.metrics) : null`.
+SET` clause; bind `floor.metrics ? JSON.stringify(floor.metrics) : null`.
 
 ### 4.3 Wiring `generationService.generate`
 
@@ -160,8 +160,9 @@ The previous generated floor is already in hand as `lastFloor = floors[floors.le
     prevMessages: lastFloor?.request ?? null,
     usage: normalizeUsage(settings.api.provider, rawUsage),
     provider: settings.api.provider,
-    model: settings.api.model,            // whatever id is sent
-    cacheLevel, l1Mode,
+    model: settings.api.model, // whatever id is sent
+    cacheLevel,
+    l1Mode,
     ts: new Date().toISOString(),
     responseText: cleaned,
     prevCumulative: lastFloor?.metrics?.cumulative ?? null
@@ -208,6 +209,7 @@ usage_meter: {
   fields: ['proxyPct', 'cacheHitPct', 'promptTokens', 'avgCacheHitPct']  // which rows show
 }
 ```
+
 Added to `getDefaultSettings()` and merged in `normalize()` (same pattern as `cache`/`workspace`).
 
 ### 5.2 `usageStore.ts` (zustand, renderer)
@@ -250,7 +252,7 @@ is droppable into any workspace panel slot. `UsageView.tsx` derives the series f
 **Configurable** via a gear (same idiom as the overlay): which columns + which charts show, persisted in
 `settings.ui.usage_view` (`{ columns: string[], charts: string[] }`; defaulted + normalized like the others).
 
-**Logging / export:** the per-floor SQLite history *is* the durable log; the existing one-line `logService`
+**Logging / export:** the per-floor SQLite history _is_ the durable log; the existing one-line `logService`
 summary per turn stays. The view adds **Export (CSV / JSON)** for the active chat's series, and a **Backfill
 proxy** button calling `backfill-usage-metrics` (then refreshing floors).
 
@@ -264,23 +266,31 @@ pricing: {
   'claude-opus-4-8': { input: 5, output: 25, cacheRead: 0.5, cacheWrite: 6.25 }
 }
 ```
+
 Defaulted to `{}` in `getDefaultSettings()` and merged in `normalize()`.
 
 ### 7.2 `costFor` (pure — new `src/shared/usageCost.ts`)
 
 ```ts
-export interface ModelRates { input: number; output: number; cacheRead: number; cacheWrite: number }
+export interface ModelRates {
+  input: number
+  output: number
+  cacheRead: number
+  cacheWrite: number
+}
 
 export const costFor = (usage: Usage | null, rates: ModelRates | undefined): number | null => {
   if (!usage || !rates) return null
   return (
-    usage.cacheRead * rates.cacheRead +
-    usage.cacheWrite * rates.cacheWrite +
-    usage.input * rates.input +
-    usage.output * rates.output
-  ) / 1e6
+    (usage.cacheRead * rates.cacheRead +
+      usage.cacheWrite * rates.cacheWrite +
+      usage.input * rates.input +
+      usage.output * rates.output) /
+    1e6
+  )
 }
 ```
+
 Lives in `src/shared` (imports nothing from main/renderer). Both overlay and view call it with
 `floor.metrics.turn.usage` + the rate row from `settingsStore`. Because cost is derived from stored token
 fields + current settings, **editing a price re-prices all history instantly** with no migration.
@@ -300,6 +310,7 @@ label is a trivial later add).
 ## 8. Files
 
 **New:**
+
 - `src/shared/usageCost.ts` (+ `test/usageCost.test.ts`)
 - `src/main/services/usageMetricsService.ts` (backfill + recompute; + `test/usageMetricsService.test.ts`)
 - `src/renderer/src/stores/usageStore.ts`
@@ -309,6 +320,7 @@ label is a trivial later add).
 - IPC: `src/main/ipc/usageIpc.ts` (backfill handler) — or fold into existing chat IPC
 
 **Modified:**
+
 - `src/main/services/promptCacheMetrics.ts` (`TurnMetric`/`CumulativeMetric`/`FloorMetrics`, `buildFloorMetrics`)
 - `src/main/services/db.ts` (`metrics` column migration)
 - `src/main/services/floorService.ts` + `src/types/chat.ts` (`metrics` (de)serialize + `FloorFile` field)
@@ -321,6 +333,7 @@ label is a trivial later add).
 - `src/renderer/src/components/SettingsPanel.tsx` (overlay toggle + pricing editor)
 
 **Removed:**
+
 - `src/main/services/cacheMetricsService.ts` + `test/cacheMetricsService.test.ts` (superseded by floor-derived cumulative)
 
 ## 9. Testing

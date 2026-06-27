@@ -135,7 +135,9 @@ export function createInlineHost(ctx: CardCtx): Host {
     // Card regex-write is a WCV-transport capability (the workshop runs there). Inline cards don't get a
     // store-write path here — a documented best-effort no-op, like createChat below.
     replaceRegexes: async () => {
-      console.warn('[inline host] replaceTavernRegexes is a WCV-transport capability; ignored inline')
+      console.warn(
+        '[inline host] replaceTavernRegexes is a WCV-transport capability; ignored inline'
+      )
     },
     // Script action buttons are a card-scripts (WCV) feature; inline MESSAGE cards don't register them.
     setButtons: () => {},
@@ -146,10 +148,15 @@ export function createInlineHost(ctx: CardCtx): Host {
       scriptVarCache = next
       try {
         for (const k of Object.keys(next)) {
-          await window.api.pluginStorage(ctx.profileId, owner, { op: 'set', key: k, value: next[k] })
+          await window.api.pluginStorage(ctx.profileId, owner, {
+            op: 'set',
+            key: k,
+            value: next[k]
+          })
         }
         for (const k of prevKeys) {
-          if (!(k in next)) await window.api.pluginStorage(ctx.profileId, owner, { op: 'remove', key: k })
+          if (!(k in next))
+            await window.api.pluginStorage(ctx.profileId, owner, { op: 'remove', key: k })
         }
       } catch (e) {
         console.error('[inline setScriptVars]', e)

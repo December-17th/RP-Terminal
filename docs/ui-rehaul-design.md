@@ -114,7 +114,7 @@ slot already exists (`RPTerminalExtSchema.theme` + `css`) — this defines its s
 ## Build order (the foundation pass)
 
 1. **Token system** — cosmetic, no structural risk; makes the theme switcher real; re-colors the message box
-   + panels via token swap. **First PR.**
+   - panels via token swap. **First PR.**
 2. **Launcher + breadcrumb shell + custom title bar** — the structural nav rework (`App.tsx` entry mode, the
    breadcrumb, window controls). Bigger change; built on the tokens.
 3. **i18n plumbing** — early, alongside; full extraction sweep later.

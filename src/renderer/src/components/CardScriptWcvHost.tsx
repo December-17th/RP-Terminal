@@ -129,7 +129,12 @@ export function CardScriptWcvHost({
   // would keep running the card's scripts despite the off switch.
   useEffect(() => {
     if (!enabled || !dataUrl || needsConsent) return
-    const off = { x: -100000, y: 0, width: window.innerWidth || 1280, height: window.innerHeight || 800 }
+    const off = {
+      x: -100000,
+      y: 0,
+      width: window.innerWidth || 1280,
+      height: window.innerHeight || 800
+    }
     window.api.wcvEnsure(slotId, off, dataUrl, { profileId, chatId, characterId: cardId })
     return () => window.api.wcvDestroy(slotId)
   }, [slotId, dataUrl, needsConsent, enabled, profileId, chatId, cardId])
@@ -188,8 +193,8 @@ export function CardScriptWcvHost({
       >
         <div style={{ fontWeight: 600, marginBottom: 6 }}>{cardName} — card scripts</div>
         <p style={{ opacity: 0.8, fontSize: 12.5, lineHeight: 1.55, margin: '0 0 10px' }}>
-          This world&apos;s scripts (including code loaded from the internet) run in an isolated process with
-          access to this session. Only run worlds you trust.
+          This world&apos;s scripts (including code loaded from the internet) run in an isolated
+          process with access to this session. Only run worlds you trust.
         </p>
         <button
           className="btn-accent"

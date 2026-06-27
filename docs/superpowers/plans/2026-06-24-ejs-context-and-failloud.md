@@ -27,7 +27,7 @@
    strip-and-leak. Render-time (displaying a message) stays graceful (empty, never crashes the UI).
 2. **`lastMessageId` value** (derived from the preset's `lastMessageId === 1` opening-check + ST semantics):
    the index of the **last message in the assembled chat** = `chatIndexMap(floors).length - (userAction.trim()
-   ? 0 : 1)`. Opening turn (floors = `[greeting]`, a pending user action) → `1 - 0 = 1` ✓; turn 2 → `3`;
+? 0 : 1)`. Opening turn (floors = `[greeting]`, a pending user action) → `1 - 0 = 1` ✓; turn 2 → `3`;
    regenerate (no pending action) → last assistant index. `chatIndexMap` is the canonical map already used by
    get/set/delete ([shapes.ts:34](../../../src/shared/thRuntime/shapes.ts#L34)).
 3. **`matchChatMessages` fidelity = DEFER.** It already exists and doesn't throw. For THIS preset
@@ -42,7 +42,7 @@
   `lastCharMessageId`, `assistantName`) to `ctx.constants`; ensure a thrown template error is logged + surfaced
   as a clean generation failure.
 - `src/shared/thRuntime/shapes.ts` — (reuse) `chatIndexMap`; optionally add a tiny `lastMessageIndex(floors,
-  hasUserAction)` helper so build + any other caller compute it identically.
+hasUserAction)` helper so build + any other caller compute it identically.
 - `src/shared/templateEngine.ts` — on eval **error**, return `output: ''` (stop the branch-leak everywhere)
   while still returning the detailed `error`. (The `enabled === false` / `!QJS` non-error paths keep
   `stripTags`.)
@@ -58,32 +58,32 @@
 ### Task 1: Provide `lastMessageId` (+ siblings) to the build-time context
 
 - [ ] **Step 1:** in `shapes.ts`, export `lastMessageIndex(floors: FloorLike[], hasUserAction: boolean):
-  number` = `chatIndexMap(floors).length - (hasUserAction ? 0 : 1)` (clamped ≥ 0). Add `lastUserMessageIndex`
-  / `lastCharMessageIndex` (last index in `chatIndexMap` whose slot `isUser` / `!isUser`, adjusted for the
-  pending user action).
+number` = `chatIndexMap(floors).length - (hasUserAction ? 0 : 1)` (clamped ≥ 0). Add `lastUserMessageIndex`
+      / `lastCharMessageIndex` (last index in `chatIndexMap` whose slot `isUser` / `!isUser`, adjusted for the
+      pending user action).
 - [ ] **Step 2:** in `generationService.ts` `ctx.constants`, add `lastMessageId: lastMessageIndex(floors,
-  !!userAction.trim())`, `lastUserMessageId`, `lastCharMessageId`, and `assistantName: card.data.name || …`.
+!!userAction.trim())`, `lastUserMessageId`, `lastCharMessageId`, and `assistantName: card.data.name || …`.
 - [ ] **Step 3:** test (in `shapes`/a small unit): opening (`[greeting]`, hasUserAction) → `lastMessageId ===
-  1`; turn 2 → `3`; no user action → last assistant index.
+1`; turn 2 → `3`; no user action → last assistant index.
 
 **Verify:** `npm test` + typecheck.
 
 ### Task 2: Fail-loud on build-time template errors (no more branch-leak)
 
 - [ ] **Step 1:** `templateEngine.ts` — in `evalTemplateDetailed`, change the two error-path returns from
-  `stripTags(template)` to `''` (keep `error` populated). Leave the `enabled === false` / `!QJS` paths as
-  `stripTags`. This alone stops the all-branches leak in every caller.
+      `stripTags(template)` to `''` (keep `error` populated). Leave the `enabled === false` / `!QJS` paths as
+      `stripTags`. This alone stops the all-branches leak in every caller.
 - [ ] **Step 2:** `promptBuilder.ts` — add `renderStrict(content, label)`: expand macros, then
-  `evalTemplateDetailed`; if `.error`, `log('error', \`Template error in "${label}"\`, \`${error}\n— source:
-  ${snippet}\`)` and `throw new Error(\`Template error in "${label}": ${error}\`)`. Use it in the
-  `preset.prompts` loop as `renderStrict(block.content, block.name || block.identifier)` (and for the major
-  card renders). Keep the existing `render` for non-fatal helper text if any.
+      `evalTemplateDetailed`; if `.error`, `log('error', \`Template error in "${label}"\`, \`${error}\n— source:
+      ${snippet}\`)` and `throw new Error(\`Template error in "${label}": ${error}\`)`. Use it in the
+`preset.prompts`loop as`renderStrict(block.content, block.name || block.identifier)`(and for the major
+card renders). Keep the existing`render` for non-fatal helper text if any.
 - [ ] **Step 3:** `generationService.ts` — confirm a throw from `buildPrompt` is caught and surfaced as a
-  clean turn failure (logged + error returned to the renderer), not an unhandled crash. Add a try/catch around
-  the build if needed, mirroring the provider-call error path.
+      clean turn failure (logged + error returned to the renderer), not an unhandled crash. Add a try/catch around
+      the build if needed, mirroring the provider-call error path.
 - [ ] **Step 4:** tests — (a) a 3-branch `<% if %>…<% else %>…` with the gate var **set** → exactly one
-  branch; (b) with a **missing identifier** → `evalTemplateDetailed.error` is non-null and `output === ''`
-  (no leaked branches); (c) `renderStrict` on a bad entry **throws** with the entry label in the message.
+      branch; (b) with a **missing identifier** → `evalTemplateDetailed.error` is non-null and `output === ''`
+      (no leaked branches); (c) `renderStrict` on a bad entry **throws** with the entry label in the message.
 
 **Verify:** `npm test` + typecheck + build. **Manual (Electron):** generate a turn with the 命定之诗 preset →
 the `request` log now contains the CoT `think_format` / `Step 0` body and a single `[START THINKING]` block
@@ -103,7 +103,7 @@ render-time never leaks branches or crashes; gate (`typecheck` + `npm test` + `b
 
 ## Risks / notes
 
-- **Fail-loud is a behavior change**: a preset entry that *used* to silently strip will now abort the turn.
+- **Fail-loud is a behavior change**: a preset entry that _used_ to silently strip will now abort the turn.
   That's the point (loud > corrupt), but worth a heads-up — the detailed log makes the offending entry
   obvious, and the deferred `matchChatMessages`/other-builtins audit reduces how often it triggers.
 - **`lastMessageId` exactness**: the `chatIndexMap`-based value matches ST for the opening-detection this
@@ -124,4 +124,7 @@ already surfaces it; +3 promptBuilder tests). Gate green throughout (typecheck +
 `matchChatMessages` full signature; a broader ST-PT builtins audit. **Pending Electron smoke:** generate a
 turn with the 命定之诗 preset — the `request` log should now carry the CoT `think_format` body + a single
 `[START THINKING]`, and a deliberately-broken entry should fail the turn with a clear logged reason.
+
+```
+
 ```

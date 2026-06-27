@@ -66,16 +66,16 @@ stays in main, masked from the renderer).
 One surface, two transports — the table is identical inline vs WCV (parity by construction). Only the
 low-level bridge name and how the DOM libs are injected differ per transport.
 
-| Global | Purpose | Source |
-| --- | --- | --- |
-| `window.SillyTavern` | `getContext()`, `chat[]` (+ swipes), `saveChat()`, `reloadCurrentChat()`, `substituteParams()`, `saveSettingsDebounced()` (no-op) | thRuntime |
-| `window.TavernHelper` (+ bare helpers) | the TH JS API (variables, messages, worldbook CRUD, events, generate, `triggerSlash`, …) | thRuntime |
-| `window.Mvu` | MagVarUpdate API (`getMvuData`/`getMvuVariable`/`setMvuVariable`/`replaceMvuData`/`parseMessage`/`events`) | thRuntime |
-| `window.EjsTemplate` | the EJS engine API (`evalTemplate`/`prepareContext`/`getSyntaxErrorInfo`/`allVariables`/`saveVariables`/…) | thRuntime |
-| `window.toastr`, `window.tavern_events` | toast bus; the events enum | thRuntime |
-| `window._` `window.z` `window.$` | lodash, Zod, jQuery (the libs cards externalize). `z` is **self-referential** (`z.z === z`) — MVU schema bundles call `z.z.object(...)` as well as `z.object(...)`; injected via [`shared/cardZod`](../src/shared/cardZod.ts) by both transports. | bridge / libs |
-| `window.Vue` `window.VueRouter` `window.Pinia` | provided for Vue-app cards | libs (iframe realm / preload) |
-| low-level host bridge | inline: `window.parent.__rptCardBridge`; WCV: `window.rptHost` (`getVariables`/`applyVariableOps`/`setVariables`/`setInput`/`onVarsChanged`) | transport |
+| Global                                         | Purpose                                                                                                                                                                                                                                           | Source                        |
+| ---------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------- |
+| `window.SillyTavern`                           | `getContext()`, `chat[]` (+ swipes), `saveChat()`, `reloadCurrentChat()`, `substituteParams()`, `saveSettingsDebounced()` (no-op)                                                                                                                 | thRuntime                     |
+| `window.TavernHelper` (+ bare helpers)         | the TH JS API (variables, messages, worldbook CRUD, events, generate, `triggerSlash`, …)                                                                                                                                                          | thRuntime                     |
+| `window.Mvu`                                   | MagVarUpdate API (`getMvuData`/`getMvuVariable`/`setMvuVariable`/`replaceMvuData`/`parseMessage`/`events`)                                                                                                                                        | thRuntime                     |
+| `window.EjsTemplate`                           | the EJS engine API (`evalTemplate`/`prepareContext`/`getSyntaxErrorInfo`/`allVariables`/`saveVariables`/…)                                                                                                                                        | thRuntime                     |
+| `window.toastr`, `window.tavern_events`        | toast bus; the events enum                                                                                                                                                                                                                        | thRuntime                     |
+| `window._` `window.z` `window.$`               | lodash, Zod, jQuery (the libs cards externalize). `z` is **self-referential** (`z.z === z`) — MVU schema bundles call `z.z.object(...)` as well as `z.object(...)`; injected via [`shared/cardZod`](../src/shared/cardZod.ts) by both transports. | bridge / libs                 |
+| `window.Vue` `window.VueRouter` `window.Pinia` | provided for Vue-app cards                                                                                                                                                                                                                        | libs (iframe realm / preload) |
+| low-level host bridge                          | inline: `window.parent.__rptCardBridge`; WCV: `window.rptHost` (`getVariables`/`applyVariableOps`/`setVariables`/`setInput`/`onVarsChanged`)                                                                                                      | transport                     |
 
 > Plugins (app extensions, not card UIs) use the separate `rpt.v1` postMessage API — see
 > [docs/plugin-api.md](plugin-api.md). The two share the same main-side backing.
@@ -150,6 +150,16 @@ through the host bridge as RFC-6902 JSON Patch.
 
 - `EjsTemplate.*` (`evalTemplate`/`prepareContext`/`getSyntaxErrorInfo`/`allVariables`/`saveVariables`) — ✅ (the clean-room ST-Prompt-Template engine; see [st-prompt-template-plan.md](st-prompt-template-plan.md)).
 - `substituteParams`/`substitudeMacros` (expand `{{macros}}`) — ✅ · `{{get_X_variable}}`/`{{format_X_variable}}` (X ∈ global/chat/message/preset/character) — ✅ · `registerMacroLike` — ⬜ (cross-process).
+- **Unified variable surface (WS-1).** The EJS engine runs in three contexts — prompt-build (main),
+  render-time (renderer), and the WCV preload — built from one shared `buildTemplateContext` and one
+  engine. An MVU state key resolves the **same way in all three**, whether read with the explicit
+  `stat_data.` prefix OR bare: `getvar('stat_data.主角.hp')` and `getvar('主角.hp')` both work, and
+  `variables.主角` / `variables.stat_data.主角` both resolve (the engine falls back to `stat_data` when the
+  bare path misses; the `variables` constant is the hoisted view). Top-level (preset/chat) vars win over the
+  `stat_data` fallback on a name collision; `global` scope is exempt. _Caveats by context (inherent, not
+  drift):_ render-time/WCV expose only `userName`/`charName` constants and no `globals` (the message-index /
+  `chatId` / `runType` constants and per-profile globals exist only at prompt-build time); render-time
+  `setvar` is **transient** (a fresh copy, never mutates the stored floor).
 
 ### UI / misc — ✅ / 🔁
 
@@ -222,7 +232,7 @@ store update re-broadcasts via `wcv-broadcast-vars` to all slots). **Self-write 
 suppressed** — cards legitimately chain initialization through their own `mag_variable_update_ended`
 (write a field → react → write the next), and the prompt-side EJS injection reads the resulting vars via
 `getvar`, so muzzling them would stall init and leave those vars empty. Instead the loop is bounded at
-the SOURCE: (1) the **primary** breaker — `generationService.applyVariableOps` tracks the *signature* of
+the SOURCE: (1) the **primary** breaker — `generationService.applyVariableOps` tracks the _signature_ of
 each write (its sorted changed-path list) per chat; once the SAME signature is written `LOOP_MAX` times
 rapidly (`LOOP_WINDOW_MS`) it's treated as a runaway feedback loop and dropped (returns `null`, so it's
 never persisted or broadcast → no echo → the loop can't continue). A legit init chain touches DISTINCT
@@ -258,3 +268,19 @@ this doc + [docs/sdk/](sdk/component-inventory.md).
 > eval / `[GENERATE]`+`@INJECT` markers / `[InitialVariables]` / `[RENDER:*]`) is a separate subsystem
 > (`templateService` + `renderTemplate`) and is **complete (Phases A–E)** — see
 > [st-prompt-template-plan.md](st-prompt-template-plan.md).
+
+## 7. Template / macro error-handling policy
+
+One stated rule for how the macro/EJS pipeline fails, so each surface is predictable and the next change
+preserves the invariant (review WS-9). When you add a new template surface, pick the matching tier:
+
+| Surface                         | On error                                                                                                | Why                                                                                                                                                  | Code                                       |
+| ------------------------------- | ------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------ |
+| **Preset blocks**               | **Fail loud** — throw, fail the turn (logged with the block name + reason)                              | A preset is author-trusted infrastructure; a broken `<% if %>…<% else %>` must NOT silently leak every branch (or drop all of them) into the prompt. | `promptBuilder.ts` `ejsStrict`             |
+| **Card / lorebook content**     | **Degrade gracefully** — strip the `<%…%>` tags, keep the surrounding prose; log the entry + reason     | A 10 KB lore entry with one bad trailing `<%…%>` block should still contribute its prose, not vanish.                                                | `promptBuilder.ts` `renderLoreEntry`       |
+| **Engine off / not yet loaded** | **Strip tags** (no eval)                                                                                | The toggle/uninitialized state is not an error; `{{macros}}` still expand.                                                                           | `templateEngine.ts` `evalTemplateDetailed` |
+| **Engine eval error (shared)**  | Return **empty output** + the error string (callers decide: presets throw, lore strips-and-keeps-prose) | Returning the tag-stripped template here would leak every branch; the caller owns the user-facing fallback.                                          | `templateEngine.ts` `evalTemplateDetailed` |
+| **Unknown `{{macro}}`**         | **Pass through verbatim**                                                                               | An unrecognized macro may be meaningful to a later pass or to the model; never blank it.                                                             | `macros.ts` `expandMacros`                 |
+
+Rule of thumb: **author infrastructure fails loud; card-supplied content degrades; non-errors strip; unknown
+passes through.**
