@@ -15,8 +15,8 @@ _Traceability log for executing [maintainability-plan-2026-06-26.md](maintainabi
 | 0 | Make module-boundary gate real | WS-10 | (pre) | ✅ done | `82d9c48` |
 | 0a | Error-handling policy doc | WS-9 | LOW | ✅ done | `de140ff` |
 | 0b | Delete dead DB schema | WS-6 | LOW | ✅ done | `663d337` |
-| 0c | Document path dialects + test | WS-8 | LOW | ✅ done | (this commit) |
-| 0d | One broadcast helper | WS-7 | MED | ⬜ todo | — |
+| 0c | Document path dialects + test | WS-8 | LOW | ✅ done | `1b4ada8` |
+| 0d | One broadcast helper | WS-7 | MED | ✅ done | (this commit) |
 | 1 | Unify EJS context (keystone) | WS-1 | HIGH | ⬜ todo | — |
 | 2 | lodash/faker → tested module | WS-4 | MED | ⬜ todo | — |
 | 3 | Decompose buildPrompt | WS-5 | MED | ⬜ todo | — |
@@ -119,3 +119,22 @@ merge would silently change semantics (review WS-8).
   macros `{{getvar}}` treats `a[0]` as a literal key (and does NOT reach a real array). 4 tests.
 
 **Verification.** typecheck ✅ · check:deps ✅ · lint ✅ 0 errors · test ✅ **693** (+4).
+
+### Stage 5 — Phase 0d: one host-event broadcast helper (WS-7) ✅
+
+**Why.** Every host event was emitted twice in App.tsx (`window.api.wcvBroadcastEvent` + `emitCardHostEvent`)
+across a 70-line mount effect; adding an event risked wiring only one transport and silently breaking the
+other (review WS-7).
+
+**Changes.**
+- `src/renderer/src/cardBridge/hostBroadcast.ts` (new) — `broadcastHostEvent(chatId, name, payload)` (fans
+  out to both transports) + `initCardEventBridge()` (the chat-store→events compute+broadcast subscription,
+  lifted verbatim from App.tsx, returns a disposer).
+- `src/renderer/src/App.tsx` — stream-token broadcast now calls `broadcastHostEvent`; the inline
+  `unsubEvents` subscription replaced by `initCardEventBridge()`; dropped the now-unused
+  `emitCardHostEvent` / `chatTransitionEvents` / `messageMutationEvents` imports. Behavior identical.
+
+**Boundary check.** `hostBroadcast` lives in the inline `cardBridge` transport and imports only renderer
+modules + `window.api` — `check:deps` confirms no transport cross-import (237 modules, 0 violations).
+
+**Verification.** typecheck ✅ · check:deps ✅ · lint ✅ 0 errors · test ✅ 693 (79 files).
