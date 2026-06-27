@@ -13,3 +13,6 @@ CODE-REVIEW.md
 
 # Local example SillyTavern content (not part of the app)
 example sillytarvern character card, presets, extensions and scripts/
+
+# App data folder created next to the app in dev (storage relocation)
+/rp-terminal-data/

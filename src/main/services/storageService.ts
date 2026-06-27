@@ -2,6 +2,7 @@ import fs from 'fs'
 import path from 'path'
 import { app } from 'electron'
 import { log } from './logService'
+import { readLocationPointer } from './locationPointer'
 
 export const DATA_DIR_NAME = 'rp-terminal-data'
 
@@ -20,10 +21,21 @@ export function resolveDataBase(opts: {
   return { dir: opts.isDev ? opts.cwd : opts.exeDir, appendName: true }
 }
 
-// Get the base data directory for the app
+let cachedAppDir: string | null = null
+
+// The data root: RPT_DATA_DIR → saved pointer → platform default (dev=cwd / packaged=exe dir) +
+// DATA_DIR_NAME. Memoized — the location cannot change without an app restart.
 export const getAppDir = (): string => {
-  const userDataPath = app.getPath('userData')
-  return path.join(userDataPath, 'rp-terminal-data')
+  if (cachedAppDir) return cachedAppDir
+  const { dir, appendName } = resolveDataBase({
+    override: process.env.RPT_DATA_DIR,
+    pointer: readLocationPointer()?.dataDir,
+    isDev: !app.isPackaged, // true in `electron-vite dev`, false in a packaged build
+    cwd: process.cwd(),
+    exeDir: path.dirname(app.getPath('exe'))
+  })
+  cachedAppDir = appendName ? path.join(dir, DATA_DIR_NAME) : dir
+  return cachedAppDir
 }
 
 export const ensureDir = (dirPath: string): void => {
