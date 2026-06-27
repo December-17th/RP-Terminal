@@ -297,7 +297,13 @@ const api = {
   assetOpenFolder: (profileId: string, lorebookId: string, category: string) =>
     ipcRenderer.invoke('asset-open-folder', profileId, lorebookId, category),
   assetImportZipDialog: (profileId: string, lorebookId: string) =>
-    ipcRenderer.invoke('asset-import-zip-dialog', profileId, lorebookId)
+    ipcRenderer.invoke('asset-import-zip-dialog', profileId, lorebookId),
+  // Storage location (app-global; pointer file, not per-profile settings)
+  getDataLocation: () => ipcRenderer.invoke('get-data-location'),
+  setDataLocationDialog: () => ipcRenderer.invoke('set-data-location-dialog'),
+  openDataLocation: () => ipcRenderer.invoke('open-data-location'),
+  resetDataLocation: () => ipcRenderer.invoke('reset-data-location'),
+  restartApp: () => ipcRenderer.invoke('restart-app')
 }
 
 // Use `contextBridge` APIs to expose Electron APIs to
