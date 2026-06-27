@@ -162,3 +162,26 @@ build-time persistence untouched.
 **Verification.** typecheck ✅ · check:deps ✅ (237 modules) · lint ✅ 0 errors · test ✅ **699** (+6).
 Additive — no existing test changed. WS-1b (shared `buildTemplateContext` to consolidate constants/globals +
 have all callers pass the wrapped shape) follows.
+
+### Stage 7 — Phase 1 / WS-1b: shared `buildTemplateContext` constructor ✅
+
+**Why.** Three hand-built `TemplateContext` literals (build/render/WCV) drifted on the globals/constants/
+enabled defaults (review WS-1). One constructor removes that drift; the functional read-consistency already
+landed in WS-1a.
+
+**Changes.**
+- `src/shared/templateEngine.ts` — `buildTemplateContext(vars, { globals?, constants?, data?, enabled? })`
+  + `TemplateContextOpts` (defaults: globals/constants → `{}`, enabled → true). Documents the wrapped-vars
+  contract (callers don't pre-hoist; the engine resolves both forms).
+- `src/main/services/templateService.ts` — re-export `buildTemplateContext` + `TemplateContextOpts`.
+- `src/main/services/generationService.ts` — build-time context now constructed via the builder
+  (`workingVars` still passed by reference → setvar persistence intact).
+- `src/renderer/src/plugin/renderTemplate.ts` — `buildRenderContext` drops the manual stat_data pre-hoist
+  (engine fallback covers it), uses the builder; keeps a fresh shallow copy for setvar transience.
+- `src/preload/wcvPreload.ts` — `buildEjsCtx` passes the wrapped `{ stat_data }` shape via the builder
+  (no pre-hoist).
+
+**Verification.** typecheck ✅ · check:deps ✅ · lint ✅ 0 errors · test ✅ 699. Behavior-preserving for
+build-time (tests pin it); render/WCV vars-shaping is now the canonical wrapped form (reads unchanged via
+the WS-1a fallback). Runtime spot-check of render/WCV panels deferred to in-app testing (can't drive the
+Electron app here).

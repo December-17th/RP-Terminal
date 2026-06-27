@@ -1,4 +1,9 @@
-import { evalTemplate, stripTags, TemplateContext } from '../../../shared/templateEngine'
+import {
+  evalTemplate,
+  stripTags,
+  TemplateContext,
+  buildTemplateContext
+} from '../../../shared/templateEngine'
 import { initRendererEngine } from './rendererEngine'
 import { useCharacterStore } from '../stores/characterStore'
 import { useSettingsStore } from '../stores/settingsStore'
@@ -15,22 +20,19 @@ void initRendererEngine()
 export function buildRenderContext(vars: Record<string, unknown>): TemplateContext {
   const card = useCharacterStore.getState().activeCharacter?.card
   const persona = useSettingsStore.getState().settings?.persona
-  // MVU / ST-PT cards root their state at `stat_data` (like the WCV card shim's variables), while the raw
-  // floor object nests it. Expose BOTH: keep `variables.stat_data.*` and also hoist stat_data's keys to the
-  // top, so `variables.主角` / getvar('主角…') resolve too. (Fresh object → render-time setvar is transient.)
-  const sd = vars?.stat_data
-  const root: Record<string, unknown> =
-    sd && typeof sd === 'object' ? { ...vars, ...(sd as Record<string, unknown>) } : vars
-  return {
-    vars: root,
-    globals: {},
-    constants: {
-      userName: persona?.name || 'User',
-      charName: card?.data?.name || 'Character'
-    },
-    data: { charData: card?.data },
-    enabled: true
-  }
+  // Fresh shallow copy so render-time setvar is transient (never mutates the stored floor vars). The engine
+  // resolves both `getvar('主角')` and `getvar('stat_data.主角')` from this wrapped shape (WS-1 fallback),
+  // so we no longer pre-hoist stat_data here. Construction via the shared builder (canonical defaults).
+  return buildTemplateContext(
+    { ...(vars || {}) },
+    {
+      constants: {
+        userName: persona?.name || 'User',
+        charName: card?.data?.name || 'Character'
+      },
+      data: { charData: card?.data }
+    }
+  )
 }
 
 /**

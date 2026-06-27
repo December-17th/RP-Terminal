@@ -21,7 +21,7 @@ import {
   ChatMessage
 } from './promptBuilder'
 import { getPromptRules } from './regexService'
-import { loadGlobals, saveGlobals } from './templateService'
+import { loadGlobals, saveGlobals, buildTemplateContext } from './templateService'
 import { streamProvider, orderForProvider, DeltaCallback, UsageCallback } from './apiService'
 import { normalizeUsage, buildFloorMetrics } from './promptCacheMetrics'
 import { parseContent, parseCombatStart, stripThinking, RPEvent } from '../parsers/contentParser'
@@ -205,11 +205,13 @@ export const generate = async (
     frozenVars,
     // FSM mode addendum + the World Card's custom agent prompts (system + per-mode).
     modeAddendum: composeAddendum(getRpExt(card)?.agent, mode, fsmEnabled, modeConfig.addendum),
-    template: {
+    // Canonical TemplateContext (WS-1) — shared constructor; `workingVars` is the live store (passed by
+    // reference so build-time setvar persists onto the floor). The engine resolves both `getvar('x')` and
+    // `getvar('stat_data.x')` from it.
+    template: buildTemplateContext(workingVars, {
       // EJS engine on/off (settings toggle). When off, evalTemplate strips tags instead of running them;
-      // {{macros}} still expand (they share vars/globals below).
+      // {{macros}} still expand (they share vars/globals).
       enabled: settings.templates?.enabled !== false,
-      vars: workingVars,
       globals,
       constants: {
         userName,
@@ -242,7 +244,7 @@ export const generate = async (
           content: p.content
         }))
       }
-    }
+    })
   })
 
   // Trim oldest history to stay under the configured context budget.

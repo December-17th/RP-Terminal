@@ -49,6 +49,31 @@ export interface TemplateContext {
   enabled?: boolean
 }
 
+export interface TemplateContextOpts {
+  globals?: Record<string, any>
+  constants?: Record<string, unknown>
+  data?: TemplateData
+  enabled?: boolean
+}
+
+/**
+ * Canonical `TemplateContext` constructor — the SINGLE construction path shared by all three execution
+ * contexts (prompt-build, render-time, WCV), so they stop drifting on the globals/constants/enabled
+ * defaults (WS-1). `vars` is the variable store the helpers read/write; the engine resolves BOTH
+ * `getvar('x')` and `getvar('stat_data.x')` from it (the stat_data read-fallback), so callers don't need
+ * to pre-hoist for reads. Defaults: `globals`/`constants` → `{}`, `enabled` → true.
+ */
+export const buildTemplateContext = (
+  vars: Record<string, any>,
+  opts: TemplateContextOpts = {}
+): TemplateContext => ({
+  vars: vars || {},
+  globals: opts.globals ?? {},
+  constants: opts.constants ?? {},
+  data: opts.data,
+  enabled: opts.enabled ?? true
+})
+
 let QJS: QuickJSWASMModule | null = null
 
 /**
