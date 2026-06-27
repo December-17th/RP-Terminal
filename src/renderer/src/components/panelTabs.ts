@@ -5,6 +5,7 @@ export type PanelTab =
   | 'persona'
   | 'preset'
   | 'lorebook'
+  | 'assets'
   | 'scripts'
   | 'regex'
   | 'api'
