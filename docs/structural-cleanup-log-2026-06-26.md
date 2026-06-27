@@ -19,7 +19,7 @@ _Traceability log for executing [maintainability-plan-2026-06-26.md](maintainabi
 | 0d | One broadcast helper | WS-7 | MED | ✅ done | (this commit) |
 | 1 | Unify EJS context (keystone) | WS-1 | HIGH | ✅ done | 1a `396cd13` · 1b `8061410` · 1c `(this commit)` |
 | 2 | lodash/faker → tested module | WS-4 | MED | 🟡 partial (tests added; file-extract deferred) | (this commit) |
-| 3 | Decompose buildPrompt | WS-5 | MED | 🔄 in progress | inc1 `(this commit)` |
+| 3 | Decompose buildPrompt | WS-5 | MED | ✅ done (preset-loop left by design) | inc1 `318f74f` · inc2 `(this commit)` |
 | 4 | De-escalate L1 cache | WS-2 | MED | ✅ done (gated/documented) | (this commit) |
 | 5 | Write-back loop origin-tag | WS-3 | HIGH | ⬜ todo | — |
 
@@ -258,3 +258,18 @@ and self-contained tail/marker blocks inline (review WS-5). Pure extraction, beh
 `cacheLayers.test.ts` (61) unchanged. typecheck ✅ · check:deps ✅ · lint ✅ 0 errors · test ✅ 706. No
 behavior change (the produced message array is identical; tests pin it). inc2 (partitionLore /
 renderPresetBlocks) optional — assessed next.
+
+### Stage 12 — Phase 3 / WS-5 (inc 2): extract partitionLore ✅ — WS-5 done
+
+**Changes (`src/main/services/promptBuilder.ts`).**
+- `partitionLore(matched, lorebooks) → { markerEntries, topEntries, depthEntries }` — pure (no render
+  context), lifted out of buildPrompt; `applyInjectionMarkers` now reuses the shared `ParsedEntry` type.
+
+**Left by design.** The preset-block loop (`renderPresetBlocks`) was NOT extracted: it mutates `messages`
++ `presetDepthItems` + the `historyEmitted`/`worldInfoEmitted` flags and calls `buildHistory`, so a clean
+extraction needs heavy state-passing for little gain and more risk on the compat hot path. The four
+extractions (insertBeforeConvo, applyInjectionMarkers, applyCacheTail, partitionLore) already remove the
+worst duplication and shrink the function materially.
+
+**Verification.** Characterization net green (promptBuilder + injectMarkers, 56). typecheck ✅ · check:deps ✅
+· lint ✅ 0 errors · test ✅ 706. **WS-5 substantially complete.**

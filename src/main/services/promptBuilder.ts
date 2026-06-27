@@ -233,6 +233,55 @@ const insertBeforeConvo = (messages: ChatMessage[], msg: ChatMessage): void => {
   else messages.splice(convoStart, 0, msg)
 }
 
+/** A matched/forced lorebook entry paired with its parsed marker classification. */
+type ParsedEntry = { e: LorebookEntry; p: ReturnType<typeof parseEntryMarker> }
+
+interface PartitionedLore {
+  /** Marker entries (`[GENERATE]`/`@INJECT`/…) to drain into positions, matched + force-activated. */
+  markerEntries: ParsedEntry[]
+  /** Plain world-info entries with no numeric depth → the top-level World Info block. */
+  topEntries: LorebookEntry[]
+  /** Plain world-info entries with a numeric depth → injected into the history at that depth. */
+  depthEntries: LorebookEntry[]
+}
+
+/**
+ * Partition matched lorebook entries (+ force-activated marker entries from the books) into the three
+ * buckets buildPrompt consumes. Pure (no render context); extracted from buildPrompt (WS-5). A matched
+ * entry whose comment/decorator is an injection marker is drained into a prompt POSITION, not emitted as
+ * plain world-info; `@@dont_activate` drops it; `@@activate`/`@@always_enabled` force-activate an unmatched
+ * marker entry. Non-marker cards are unaffected (parseEntryMarker → marker null → all "regular").
+ */
+const partitionLore = (matched: LorebookEntry[], lorebooks: Lorebook[]): PartitionedLore => {
+  const parsedMatched: ParsedEntry[] = matched.map((e) => ({
+    e,
+    p: parseEntryMarker(e.comment, e.content)
+  }))
+  const regular = parsedMatched
+    .filter(({ p }) => !p.marker && p.activation !== 'never')
+    .map(({ e }) => e)
+  // @@activate / @@always_enabled force-activate a marker entry even when the keyword scan didn't match
+  // it. Pre-filter cheaply (anchored regex, no full parse) before parsing the few candidates.
+  const looksMarked = (e: LorebookEntry): boolean =>
+    /^\s*@@/.test(e.content) || /^\s*(\[GENERATE|\[RENDER|@INJECT)/i.test(e.comment)
+  const keyOf = (e: LorebookEntry): string => JSON.stringify([e.comment, e.content])
+  const matchedKeys = new Set(matched.map(keyOf))
+  const forced = lorebooks
+    .flatMap((lb) => lb.entries)
+    .filter((e) => e.enabled !== false && looksMarked(e) && !matchedKeys.has(keyOf(e)))
+    .map((e) => ({ e, p: parseEntryMarker(e.comment, e.content) }))
+    .filter(({ p }) => p.marker && p.activation === 'force')
+  const markerEntries = [
+    ...parsedMatched.filter(({ p }) => p.marker && p.activation !== 'never'),
+    ...forced
+  ]
+  return {
+    markerEntries,
+    topEntries: regular.filter((e) => e.insertion_depth == null),
+    depthEntries: regular.filter((e) => e.insertion_depth != null)
+  }
+}
+
 /** The text scanned for lorebook keywords: the last `scanDepth` turns + the pending action. */
 export const buildScanText = (floors: FloorFile[], userAction: string, scanDepth: number): string =>
   [
@@ -362,31 +411,8 @@ export const buildPrompt = (args: BuildPromptArgs): ChatMessage[] => {
       Math.random,
       args.maxRecursion ?? 0
     )
-  // Phase D: a matched entry whose comment/decorator is an injection marker is drained into a prompt
-  // POSITION below, not emitted as plain world-info. Partition markers out; @@dont_activate drops the
-  // entry entirely. Non-marker cards are unaffected (parseEntryMarker → marker null → all "regular").
-  const parsedMatched = matched.map((e) => ({ e, p: parseEntryMarker(e.comment, e.content) }))
-  const regular = parsedMatched
-    .filter(({ p }) => !p.marker && p.activation !== 'never')
-    .map(({ e }) => e)
-  // @@activate / @@always_enabled force-activate a marker entry even when the keyword scan didn't match
-  // it. Pre-filter cheaply (anchored regex, no full parse) before parsing the few candidates.
-  const looksMarked = (e: LorebookEntry): boolean =>
-    /^\s*@@/.test(e.content) || /^\s*(\[GENERATE|\[RENDER|@INJECT)/i.test(e.comment)
-  const keyOf = (e: LorebookEntry): string => JSON.stringify([e.comment, e.content])
-  const matchedKeys = new Set(matched.map(keyOf))
-  const forced = lorebooks
-    .flatMap((lb) => lb.entries)
-    .filter((e) => e.enabled !== false && looksMarked(e) && !matchedKeys.has(keyOf(e)))
-    .map((e) => ({ e, p: parseEntryMarker(e.comment, e.content) }))
-    .filter(({ p }) => p.marker && p.activation === 'force')
-  // All marker entries to drain into positions (matched markers + forced), minus @@dont_activate.
-  const markerEntries = [
-    ...parsedMatched.filter(({ p }) => p.marker && p.activation !== 'never'),
-    ...forced
-  ]
-  const topEntries = regular.filter((e) => e.insertion_depth == null)
-  const depthEntries = regular.filter((e) => e.insertion_depth != null)
+  // Partition matched lore into marker entries (drained into positions below) + top/depth world-info.
+  const { markerEntries, topEntries, depthEntries } = partitionLore(matched, lorebooks)
   // Render each matched lorebook entry GRACEFULLY (unlike `ejsStrict` for presets, which throws). On an
   // EJS error, fall back to the macro-expanded text with EJS tags STRIPPED — so an entry that is mostly
   // prose with one bad `<%…%>` block (e.g. 命定之诗's 艾莉亚 entry: 10KB of character lore + a trailing
@@ -555,7 +581,7 @@ export const buildPrompt = (args: BuildPromptArgs): ChatMessage[] => {
  */
 const applyInjectionMarkers = (
   messages: ChatMessage[],
-  markerEntries: Array<{ e: LorebookEntry; p: ReturnType<typeof parseEntryMarker> }>,
+  markerEntries: ParsedEntry[],
   render: Renderer
 ): void => {
   if (!markerEntries.length) return
