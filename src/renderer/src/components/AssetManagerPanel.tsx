@@ -5,6 +5,7 @@ import { useLorebookStore } from '../stores/lorebookStore'
 import { useAssetStore, lorebookIdsForWorld } from '../stores/assetStore'
 import { rosterFromStatData } from '../../../shared/worldAssets/coverage'
 import { useT } from '../i18n'
+import { useToastStore } from '../stores/toastStore'
 
 export function AssetManagerPanel({ profileId }: { profileId: string }): React.ReactElement {
   const t = useT()
@@ -14,6 +15,7 @@ export function AssetManagerPanel({ profileId }: { profileId: string }): React.R
   const rows = useAssetStore((s) => s.rows)
   const load = useAssetStore((s) => s.load)
   const refresh = useAssetStore((s) => s.refresh)
+  const importZip = useAssetStore((s) => s.importZip)
 
   const lorebookIds = lorebookIdsForWorld(activeCharacter?.id ?? null, sessionIds)
   const primaryId = lorebookIds[0]
@@ -41,6 +43,17 @@ export function AssetManagerPanel({ profileId }: { profileId: string }): React.R
       <div className="panel-header" style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
         <h3 style={{ flex: 1 }}>{t('assets.heading')}</h3>
         <button onClick={() => void refresh(profileId, lorebookIds, roster)}>{t('assets.refresh')}</button>
+        <button
+          onClick={async () => {
+            const res = await importZip(profileId, lorebookIds, roster)
+            if (res)
+              useToastStore
+                .getState()
+                .push(t('assets.importResult', { imported: res.imported, skipped: res.skipped }))
+          }}
+        >
+          {t('assets.import')}
+        </button>
         {primaryId && (
           <button onClick={() => void window.api.assetOpenFolder(profileId, primaryId, 'character')}>
             {t('assets.openFolder')}

@@ -8,6 +8,8 @@ const zh: Record<string, string> = {
   'assets.heading': '世界素材',
   'assets.selectWorld': '请先选择一个世界。',
   'assets.openFolder': '打开文件夹',
+  'assets.import': '导入素材',
+  'assets.importResult': '已导入 {{imported}}，跳过 {{skipped}}',
   'assets.refresh': '刷新',
   'assets.avatar': '头像',
   'assets.standee': '立绘',

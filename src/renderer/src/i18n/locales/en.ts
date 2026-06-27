@@ -7,6 +7,8 @@ const en: Record<string, string> = {
   'assets.heading': 'World Assets',
   'assets.selectWorld': 'Select a World first.',
   'assets.openFolder': 'Open folder',
+  'assets.import': 'Import assets',
+  'assets.importResult': 'Imported {{imported}}, skipped {{skipped}}',
   'assets.refresh': 'Refresh',
   'assets.avatar': 'Avatar',
   'assets.standee': 'Standee',

@@ -1,4 +1,4 @@
-import { IpcMain } from 'electron'
+import { IpcMain, BrowserWindow, dialog } from 'electron'
 import * as svc from '../services/worldAssetService'
 import { ASSET_SCHEME } from '../services/worldAssetProtocol'
 import { AssetCategory, AssetType } from '../../shared/worldAssets/types'
@@ -43,5 +43,17 @@ export const registerWorldAssetIpc = (ipcMain: IpcMain): void => {
     'asset-open-folder',
     (_e, profileId: string, lorebookId: string, category: AssetCategory) =>
       svc.openAssetsFolder(profileId, lorebookId, category)
+  )
+  ipcMain.handle(
+    'asset-import-zip-dialog',
+    async (event, profileId: string, lorebookId: string) => {
+      const win = BrowserWindow.fromWebContents(event.sender)!
+      const pick = await dialog.showOpenDialog(win, {
+        properties: ['openFile'],
+        filters: [{ name: 'Asset Zip', extensions: ['zip'] }]
+      })
+      if (pick.canceled || !pick.filePaths[0]) return null
+      return svc.importAssetsZip(profileId, lorebookId, pick.filePaths[0])
+    }
   )
 }

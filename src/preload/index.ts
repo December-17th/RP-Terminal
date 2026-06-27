@@ -295,7 +295,9 @@ const api = {
   assetRefresh: (profileId: string, lorebookIds: string[]) =>
     ipcRenderer.invoke('asset-refresh', profileId, lorebookIds),
   assetOpenFolder: (profileId: string, lorebookId: string, category: string) =>
-    ipcRenderer.invoke('asset-open-folder', profileId, lorebookId, category)
+    ipcRenderer.invoke('asset-open-folder', profileId, lorebookId, category),
+  assetImportZipDialog: (profileId: string, lorebookId: string) =>
+    ipcRenderer.invoke('asset-import-zip-dialog', profileId, lorebookId)
 }
 
 // Use `contextBridge` APIs to expose Electron APIs to

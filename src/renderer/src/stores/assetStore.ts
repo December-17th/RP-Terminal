@@ -15,6 +15,11 @@ interface AssetState {
   loading: boolean
   load: (profileId: string, lorebookIds: string[], roster: string[]) => Promise<void>
   refresh: (profileId: string, lorebookIds: string[], roster: string[]) => Promise<void>
+  importZip: (
+    profileId: string,
+    lorebookIds: string[],
+    roster: string[]
+  ) => Promise<{ imported: number; skipped: number } | null>
 }
 
 export const useAssetStore = create<AssetState>((set) => ({
@@ -36,5 +41,12 @@ export const useAssetStore = create<AssetState>((set) => ({
   refresh: async (profileId, lorebookIds, roster) => {
     await window.api.assetRefresh(profileId, lorebookIds)
     await useAssetStore.getState().load(profileId, lorebookIds, roster)
+  },
+  importZip: async (profileId, lorebookIds, roster) => {
+    const target = lorebookIds[0]
+    if (!target) return null
+    const res = await window.api.assetImportZipDialog(profileId, target)
+    if (res) await useAssetStore.getState().load(profileId, lorebookIds, roster)
+    return res
   }
 }))
