@@ -150,6 +150,16 @@ through the host bridge as RFC-6902 JSON Patch.
 
 - `EjsTemplate.*` (`evalTemplate`/`prepareContext`/`getSyntaxErrorInfo`/`allVariables`/`saveVariables`) — ✅ (the clean-room ST-Prompt-Template engine; see [st-prompt-template-plan.md](st-prompt-template-plan.md)).
 - `substituteParams`/`substitudeMacros` (expand `{{macros}}`) — ✅ · `{{get_X_variable}}`/`{{format_X_variable}}` (X ∈ global/chat/message/preset/character) — ✅ · `registerMacroLike` — ⬜ (cross-process).
+- **Unified variable surface (WS-1).** The EJS engine runs in three contexts — prompt-build (main),
+  render-time (renderer), and the WCV preload — built from one shared `buildTemplateContext` and one
+  engine. An MVU state key resolves the **same way in all three**, whether read with the explicit
+  `stat_data.` prefix OR bare: `getvar('stat_data.主角.hp')` and `getvar('主角.hp')` both work, and
+  `variables.主角` / `variables.stat_data.主角` both resolve (the engine falls back to `stat_data` when the
+  bare path misses; the `variables` constant is the hoisted view). Top-level (preset/chat) vars win over the
+  `stat_data` fallback on a name collision; `global` scope is exempt. _Caveats by context (inherent, not
+  drift):_ render-time/WCV expose only `userName`/`charName` constants and no `globals` (the message-index /
+  `chatId` / `runType` constants and per-profile globals exist only at prompt-build time); render-time
+  `setvar` is **transient** (a fresh copy, never mutates the stored floor).
 
 ### UI / misc — ✅ / 🔁
 

@@ -17,7 +17,7 @@ _Traceability log for executing [maintainability-plan-2026-06-26.md](maintainabi
 | 0b | Delete dead DB schema | WS-6 | LOW | ✅ done | `663d337` |
 | 0c | Document path dialects + test | WS-8 | LOW | ✅ done | `1b4ada8` |
 | 0d | One broadcast helper | WS-7 | MED | ✅ done | (this commit) |
-| 1 | Unify EJS context (keystone) | WS-1 | HIGH | 🔄 in progress | 1a `(this commit)` |
+| 1 | Unify EJS context (keystone) | WS-1 | HIGH | ✅ done | 1a `396cd13` · 1b `8061410` · 1c `(this commit)` |
 | 2 | lodash/faker → tested module | WS-4 | MED | ⬜ todo | — |
 | 3 | Decompose buildPrompt | WS-5 | MED | ⬜ todo | — |
 | 4 | De-escalate L1 cache | WS-2 | MED | ⬜ todo | — |
@@ -185,3 +185,20 @@ landed in WS-1a.
 build-time (tests pin it); render/WCV vars-shaping is now the canonical wrapped form (reads unchanged via
 the WS-1a fallback). Runtime spot-check of render/WCV panels deferred to in-app testing (can't drive the
 Electron app here).
+
+### Stage 8 — Phase 1 / WS-1c: SDK docs (card-facing surface) ✅
+
+**Why.** WS-1 changed the card-facing EJS variable surface → SDK docs must move with it (CLAUDE.md / SDK
+maintenance contract).
+
+**Changes.**
+- `docs/rpt-api.md` §EJS — documented the unified variable surface (prefixed + bare both resolve in all
+  three contexts; top-level wins on collision; per-context constant/globals caveats; render-time setvar
+  transient).
+- `docs/sdk/component-inventory.md` — World-info EJS row notes the one-engine / one-`buildTemplateContext`
+  unification + the resolve-both-forms guarantee.
+
+**Verification.** typecheck ✅ · check:deps ✅ · lint ✅ 0 errors · test ✅ 699 (docs-only).
+
+**Phase 1 (WS-1) COMPLETE** — the keystone. The three EJS contexts now share one engine + one constructor
+and resolve the variable surface identically.

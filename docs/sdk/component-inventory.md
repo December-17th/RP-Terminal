@@ -163,7 +163,7 @@ best-effort (arbitrary author JS reaching past the supported surface).
 | Core character fields | `data.*` | `CardDataSchema` (`data.*`) | ✅ direct |
 | Embedded lorebook | `data.character_book` | lorebook library at `id == characterId` ([`LorebookSchema`](../../src/main/types/character.ts)) | ✅ |
 | Standalone world info | separate JSON | lorebook library (uuid id) | ✅ |
-| World-info **EJS** (`<% %>`, `getvar`) | entry `content` | `templateService` (build) + `renderTemplate` (display) | ✅ A–E ([plan](../st-prompt-template-plan.md)) |
+| World-info **EJS** (`<% %>`, `getvar`) | entry `content` | `templateService` (build) + `renderTemplate` (display) + WCV preload — one engine, one `buildTemplateContext`; `getvar('x')` and `getvar('stat_data.x')` resolve identically in all three (WS-1) | ✅ A–E ([plan](../st-prompt-template-plan.md), [API §EJS](../rpt-api.md)) |
 | Injection **markers/decorators** (`[GENERATE]`, `@INJECT`, `@@…`) | entry `comment`/decorator | [`injectMarkers.ts`](../../src/main/parsers/injectMarkers.ts) + `promptBuilder` | ✅ build-time; `[RENDER:*]` partial |
 | `[InitialVariables]` | entry | `mvuSchema.parseInitVars` → floor-0 `stat_data` | ✅ |
 | **Regex scripts** (beautification + state) | `extensions.regex_scripts` | regex store + `rp_terminal.regex`; per-card render mode | ✅ engine ([`stRegexEngine`](../../src/main/parsers/stRegexEngine.ts), `regexTransform`); 🟡 bundled import routing (World Card S1) |
