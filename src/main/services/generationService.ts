@@ -137,6 +137,8 @@ export const generate = async (
   // Prompt-cache level (L1 Frozen Core when ≥1). The frozen snapshot is derived from the
   // FIRST floor's variables — constant across the session — so the frontier render is
   // byte-stable. 'partition' shows placeholders for state; 'diff' shows the floor-0 values.
+  // ⚠️ EXPERIMENTAL / DORMANT (WS-2): the UI dial is disabled, so level is effectively always 0 in
+  // production; the L1 path is unvalidated. See docs/prompt-cache-optimization-design.md status note.
   const cacheLevel = settings.cache?.level ?? 0
   const l1Mode = settings.cache?.l1_mode ?? 'partition'
   const floor0Vars = floors[0]?.variables ?? {}

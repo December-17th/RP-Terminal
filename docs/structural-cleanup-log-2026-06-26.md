@@ -20,7 +20,7 @@ _Traceability log for executing [maintainability-plan-2026-06-26.md](maintainabi
 | 1 | Unify EJS context (keystone) | WS-1 | HIGH | ✅ done | 1a `396cd13` · 1b `8061410` · 1c `(this commit)` |
 | 2 | lodash/faker → tested module | WS-4 | MED | 🟡 partial (tests added; file-extract deferred) | (this commit) |
 | 3 | Decompose buildPrompt | WS-5 | MED | ⬜ todo | — |
-| 4 | De-escalate L1 cache | WS-2 | MED | ⬜ todo | — |
+| 4 | De-escalate L1 cache | WS-2 | MED | ✅ done (gated/documented) | (this commit) |
 | 5 | Write-back loop origin-tag | WS-3 | HIGH | ⬜ todo | — |
 
 Status key: ⬜ todo · 🔄 in progress · ✅ done · ⏸ deferred (with reason).
@@ -222,3 +222,22 @@ testability win now in place, and is safer as a focused, separately-reviewed fol
 remainder.
 
 **Verification.** typecheck ✅ · check:deps ✅ · lint ✅ 0 errors · test ✅ **706** (+7).
+
+### Stage 10 — Phase 4 / WS-2: gate L1 Frozen Core as experimental ✅
+
+**Finding (sharpens the review).** The cache-level `<select>` in `SettingsPanel.tsx` is **`disabled`** (pinned
+to baseline/0), so the entire L1 path (`cacheLayers.ts` + the `frontierTemplate`/`buildStateBlock` fork in
+`promptBuilder`, gated on `cache.level ≥ 1`) is **UI-unreachable / dormant** in production — implemented +
+unit-tested but unvalidated against real provider caching (the meter's "stable prefix %" is a proxy, not a
+cache-hit rate).
+
+**Decision (WS-2 = option C, gate/document; NOT remove).** Removing tested, deliberately-designed code is the
+owner's call (option B), so I kept it and made its status honest:
+- `docs/prompt-cache-optimization-design.md` — status note: experimental/dormant/unvalidated; UI-disabled;
+  proxy ≠ provider hits; removal candidate if never validated.
+- `cacheLayers.ts` header + `generationService.ts` `cacheLevel` read — ⚠️ EXPERIMENTAL/DORMANT markers
+  pointing to the doc.
+
+**Verification.** typecheck ✅ · check:deps ✅ · lint ✅ 0 errors · test ✅ 706 (comment/doc only). No
+behavior change; the path stays dormant. Open decision for the owner: validate (A) vs remove the
+partition/diff dual-mode (B).

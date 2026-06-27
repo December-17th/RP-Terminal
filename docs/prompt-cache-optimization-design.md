@@ -1,6 +1,17 @@
 # Prompt-Cache Optimization — Design
 
-**Status:** Design (shape approved, pre-implementation)
+> **Status update (2026-06-26, WS-2): EXPERIMENTAL / DORMANT — unvalidated, do not treat as a guarantee.**
+> The L1 "Frozen Core" path (`cacheLayers.ts` + the `frontierTemplate`/`buildStateBlock` fork in
+> `promptBuilder`, gated on `settings.cache.level ≥ 1`) is **implemented and unit-tested** but: (a) the
+> settings dial is **`disabled` in the UI** ([SettingsPanel.tsx](../src/renderer/src/components/SettingsPanel.tsx)),
+> so it is **unreachable by users** and dormant in production (level defaults to 0); (b) it has **never been
+> validated against real provider cache behavior** — the "stable prefix %" the meter shows is a *proxy*
+> (byte-prefix stability), NOT a measured provider cache-hit rate. **Decision (WS-2): keep it gated/dormant
+> and documented as experimental** until someone runs a real A/B (the `cacheAbHarness` is a starting point).
+> If validation never happens, the `partition`/`diff` dual-mode + the `buildPrompt` fork are a candidate for
+> removal (review WS-2, option B). See [structural-cleanup-log-2026-06-26.md](structural-cleanup-log-2026-06-26.md).
+
+**Status:** Design (shape approved) — **L1 implemented but dormant/experimental (see the 2026-06-26 note above)**
 **Date:** 2026-06-22
 **Extends:** Phase G (four-layer cache assembly) and Phase H (per-mode lore freeze).
 **Supersedes:** the deferred "aggressive segment-diff cache stabilization" sketch in `ROADMAP.md` (§590–603).
