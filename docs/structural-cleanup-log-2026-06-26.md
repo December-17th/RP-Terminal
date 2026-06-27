@@ -21,7 +21,7 @@ _Traceability log for executing [maintainability-plan-2026-06-26.md](maintainabi
 | 2 | lodash/faker → tested module | WS-4 | MED | 🟡 partial (tests added; file-extract deferred) | (this commit) |
 | 3 | Decompose buildPrompt | WS-5 | MED | ✅ done (preset-loop left by design) | inc1 `318f74f` · inc2 `(this commit)` |
 | 4 | De-escalate L1 cache | WS-2 | MED | ✅ done (gated/documented) | (this commit) |
-| 5 | Write-back loop origin-tag | WS-3 | HIGH | ⬜ todo | — |
+| 5 | Write-back loop origin-tag | WS-3 | HIGH | 🟡 spike done; impl deferred (owner + in-app verify) | (this commit) |
 
 Status key: ⬜ todo · 🔄 in progress · ✅ done · ⏸ deferred (with reason).
 
@@ -273,3 +273,45 @@ worst duplication and shrink the function materially.
 
 **Verification.** Characterization net green (promptBuilder + injectMarkers, 56). typecheck ✅ · check:deps ✅
 · lint ✅ 0 errors · test ✅ 706. **WS-5 substantially complete.**
+
+### Stage 13 — Phase 5 / WS-3: SPIKE complete (implementation deferred) 🟡
+
+**Spike question.** Does real MVU fire `mag_variable_update_*` on *programmatic* writes
+(`insertOrAssignVariables`/`setMvuVariable`/`replaceMvuData`), or only on the AI-message fold? This decides
+whether origin-tagging is faithful.
+
+**Findings (real MIT source — [MagicalAstrogy/MagVarUpdate](https://github.com/MagicalAstrogy/MagVarUpdate)).**
+- The events are defined in `src/variable_def.ts` and **emitted only by `updateVariables`**
+  (`src/function/update_variables.ts`).
+- `updateVariables` is invoked **only from the message-fold path** — `handleVariablesInMessage(message_id)`
+  (after an AI message) and `handleVariablesInCallback` (folding message content). It is NOT called by the
+  programmatic helpers.
+- `store.ts` has **no `eventEmit`**; `setMvuVariable`/`getMvuVariable`/`replaceMvuData` are pure
+  read/mutate helpers on a passed data object (the card persists separately via TavernHelper), so a card
+  calling them does **not** fire `mag_variable_update_*`.
+
+**Conclusion.** In real MVU, `mag_variable_update_*` fire on the **model fold, NOT on programmatic card
+writes.** RPT's `thRuntime` ([index.ts](../src/shared/thRuntime/index.ts) `onVarsChanged`) currently fires
+them on **every** `stat_data` change — including the card's own write echoed back through the broadcast —
+which is the divergence that creates the self-feedback loop the `generationService` heuristic
+(`LOOP_MAX`/`LOOP_WINDOW_MS`) bands over. This **resolves the "unverified" question** flagged in
+[progress-log.md](progress-log.md) (we had "assumed yes"; the answer is **no**).
+
+**Proposed fix (faithful + removes the loop at the source).** Tag each `stat_data` change with its origin
+(`model-fold` vs `card-write`) end-to-end (`applyVariableOps` → persist → `notifyVarsChanged`/
+`wcv-broadcast-vars` → `onVarsChanged`), and in `thRuntime` fire `mag_variable_update_*` **only** for
+`model-fold` origins. Then retire the `writeLoopGuard` heuristic.
+
+**Why deferred (not implemented here).**
+1. **Behavior change on the live variable pipeline, both transports** — exactly the area I can't runtime-verify
+   without the Electron app + a provider.
+2. **Prior revert risk.** [progress-log.md](progress-log.md) records a previous "suppress self-write events"
+   attempt that was **reverted** because it broke cards that chain init through their own update events —
+   i.e. 命定之诗 may be authored against RPT's *current* (divergent) behavior. The faithful fix is correct
+   but could regress that card, so it needs an in-app A/B against the real card before landing.
+
+**Left in place:** the heuristic loop-breaker (it works) + comment pointers added at the two divergence
+sites (`thRuntime` `onVarsChanged`, `generationService` `writeLoopGuard`) recording the spike conclusion and
+the proposed fix. **Owner decision required** before implementing.
+
+**Verification.** typecheck ✅ · check:deps ✅ · lint ✅ 0 errors · test ✅ 706 (comment/doc only).

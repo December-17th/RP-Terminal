@@ -57,6 +57,13 @@ Running status of the MVU / panel-workspace track. Newest first.
     fire `mag_variable_update_*` only on model/external folds, removing the need to guess — but that
     requires confirming real-MVU event semantics first. See the loop-guard note in
     [rpt-api.md](rpt-api.md) (Host↔card section).
+  - **RESOLVED (spike, 2026-06-26, WS-3):** confirmed against the MIT MagVarUpdate source — real MVU fires
+    `mag_variable_update_*` **only on the AI-message fold** (`updateVariables` ← `handleVariablesInMessage`),
+    **NOT** on programmatic card writes (`setMvuVariable`/`insertOrAssignVariables` are pure helpers). We had
+    "assumed yes"; the answer is **no**. So the origin-tag fix above IS faithful to real MVU. Implementation
+    still **deferred** (live-pipeline behavior change + the prior revert risk → needs in-app verify against
+    命定之诗). Full spike writeup: [structural-cleanup-log-2026-06-26.md](structural-cleanup-log-2026-06-26.md)
+    Stage 13.
 
 - **命定之诗 combat extension — card-side complete (branch `feat/poem-combat-extension`).** A card-side
   mod that imports the party from MVU `stat_data` and resolves combat with the card's own `<战斗协议>`

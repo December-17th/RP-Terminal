@@ -62,6 +62,15 @@ export function createThRuntime(host: Host): ThGlobals {
   // CHANGING value on its own event (e.g. a `date` clock) would still spin here — that runaway is broken
   // at the SOURCE instead (`generationService.applyVariableOps` caps rapid same-path writes), which stops
   // the persist+broadcast so no echo returns, without muzzling legitimate self-chained writes.
+  //
+  // WS-3 SPIKE (2026-06-26): this firing-on-every-change DIVERGES from real MVU. In the MIT MagVarUpdate
+  // source, `mag_variable_update_*` are emitted only by `updateVariables`, called only from the AI-message
+  // FOLD path — NOT from programmatic card writes (setMvuVariable/insertOrAssignVariables are pure helpers).
+  // The faithful fix that also kills the loop at the source: tag each change's origin (model-fold vs
+  // card-write) end-to-end and fire here ONLY for model-fold, then retire the generationService heuristic.
+  // DEFERRED — behavior change on the live pipeline (both transports); a prior suppress-self-write attempt
+  // was reverted (broke cards chaining init through their own events), so it needs in-app verification
+  // against 命定之诗 first. See docs/structural-cleanup-log-2026-06-26.md Stage 13.
   let lastFiredJson = JSON.stringify(stat ?? null)
   const offVars = host.onVarsChanged((sd) => {
     const json = JSON.stringify(sd ?? null)

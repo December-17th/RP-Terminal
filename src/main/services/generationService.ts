@@ -430,7 +430,12 @@ export const reevaluateVariables = (profileId: string, chatId: string): FloorFil
 // `mag_variable_update_ended` (e.g. a `date` clock) re-triggers itself forever — every write is a real
 // change, so the no-op guard can't catch it, and we must KEEP firing self-write events (cards chain
 // initialization through them). We instead detect the runaway *signature*: the SAME set of paths written
-// over and over, rapidly. A legitimate init chain touches DISTINCT paths (the signature changes each
+// over and over, rapidly.
+// WS-3 SPIKE (2026-06-26): this heuristic is a band-aid for an architectural divergence — RPT fires MVU
+// `mag_variable_update_*` on the card's own write echoes, whereas real MVU fires them only on the AI fold
+// (verified against MagVarUpdate source). The proper fix (tag change origin; fire events only on model-fold;
+// then delete this guard) is DEFERRED pending owner sign-off + in-app verify. See
+// docs/structural-cleanup-log-2026-06-26.md Stage 13 + the note in shared/thRuntime/index.ts. A legitimate init chain touches DISTINCT paths (the signature changes each
 // write, so the streak resets), so only a true self-feedback loop accumulates a long streak. Keyed by
 // chat; resets when the changed-path signature changes or after a quiet gap.
 const writeLoopGuard = new Map<string, { sig: string; count: number; last: number }>()
