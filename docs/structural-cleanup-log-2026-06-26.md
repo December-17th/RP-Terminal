@@ -21,7 +21,7 @@ _Traceability log for executing [maintainability-plan-2026-06-26.md](maintainabi
 | 2   | lodash/faker → tested module   | WS-4  | MED   | ✅ done (tests + module extract)                     | tests `705e745` · extract (this commit)          |
 | 3   | Decompose buildPrompt          | WS-5  | MED   | ✅ done (preset-loop left by design)                 | inc1 `318f74f` · inc2 `(this commit)`            |
 | 4   | De-escalate L1 cache           | WS-2  | MED   | ✅ done (gated/documented)                           | (this commit)                                    |
-| 5   | Write-back loop origin-tag     | WS-3  | HIGH  | 🟡 spike done; impl deferred (owner + in-app verify) | (this commit)                                    |
+| 5   | Write-back loop (date clock)   | WS-3  | HIGH  | 🟡 guard hardened (date loop); architectural fix deferred | spike `24be4ba` · guard (this commit)        |
 
 Status key: ⬜ todo · 🔄 in progress · ✅ done · ⏸ deferred (with reason).
 
@@ -373,3 +373,38 @@ boot glue. The block is unchanged (ES5 JS for quickjs).
 **Verification.** `test/sandboxLib.test.ts` + `templateHelpers.test.ts` green (proves byte-equivalence) ·
 typecheck ✅ · check:deps ✅ (238 modules) · lint ✅ 0 errors · test ✅ 706. (Prettier warnings dropped
 117 → 42 — the extracted block lints cleaner as its own file.) **WS-4 fully complete.**
+
+### Stage 15 — WS-3: harden the write-back loop guard (date clock still reproduces) ✅
+
+**Owner report.** The `date`-update loop still reproduces — the heuristic doesn't hold.
+
+**Root cause of the heuristic's failure.** The guard was **time-windowed** (`LOOP_WINDOW_MS = 400`): it only
+counted same-signature writes that arrived <400 ms apart. The date loop's round-trip (card write → IPC →
+persist → broadcast → IPC → MVU event → card handler → write) is **slower than 400 ms**, so the window reset
+every iteration and the count never reached the threshold → never caught.
+
+**Why not the architectural fix here.** The spike's faithful fix (fire MVU events only on model-fold) risks
+breaking 命定之诗's init **and I cannot verify it** — its live automation is loaded **remotely** (the local
+`脚本-*.json` files are 177–230-byte stubs; none even contain `mag_variable_update_ended`), so the
+self-chain assumption can't be checked from the card. Landing a live-pipeline event-suppression change blind
+is too risky.
+
+**Fix (app-side, card-internals-independent, can't break init by construction).** Made detection
+**timing-independent**: count **consecutive** same-signature writes (no wall-clock window), and **reset the
+streak each model turn** (`generate()` → `resetWriteLoopGuard`). A loop hammers ONE signature with no AI
+turn between → accumulates → dropped at `LOOP_MAX = 40`. A legit init chain touches **distinct** paths (the
+signature changes → streak resets) and per-turn updates are spread across folds (reset each turn) → never
+accumulate. The loop logic is extracted to a pure `registerWriteSignature(chatId, sig)` and unit-tested.
+
+**Changes (`src/main/services/generationService.ts`).** Removed `LOOP_WINDOW_MS`; `LOOP_MAX` 25 → 40;
+`registerWriteSignature` (+exported) and `resetWriteLoopGuard` (+exported, called at `generate()` start);
+updated the rationale comments. `test/generationService.test.ts` +5 (loop dropped, timing-independence,
+distinct-path init survives, per-turn reset, chat isolation).
+
+**Verification.** typecheck ✅ · check:deps ✅ · lint ✅ 0 errors · test ✅ **711** (+5).
+
+**Still open (owner):** the architectural fix (origin-tag → fire MVU events only on model-fold → delete this
+guard) remains the proper long-term solution, gated on in-app verification against 命定之诗. The hardened
+guard should stop the reported date loop now; please confirm in-app. Known limit: a card legitimately
+writing the SAME path 40+ times consecutively between turns (real-time self-driven animation) would be
+capped — out-of-contract, same risk class as before but now timing-independent.
