@@ -76,8 +76,25 @@ export function getIndex(
   return index
 }
 
-/** Reset the in-memory index cache and close all watchers. Call when a lorebook is deleted
- *  (production invalidation) and in test setup/teardown (the Maps are module-level). */
+/** Drop ONE world's cached index and close its watcher — call when its lorebook is deleted.
+ *  For a full reset (tests / profile-wide clear) use {@link clearAssetCache}. */
+export function invalidateWorldAssets(profileId: string, lorebookId: string): void {
+  const key = cacheKey(profileId, lorebookId)
+  const w = watchers.get(key)
+  if (w) {
+    try {
+      w.close()
+    } catch {
+      /* already closed */
+    }
+    watchers.delete(key)
+  }
+  cache.delete(key)
+}
+
+/** Reset the entire in-memory index cache and close all watchers. Use in test setup/teardown
+ *  (the Maps are module-level) or for a profile-wide reset. For per-world invalidation on
+ *  lorebook delete use {@link invalidateWorldAssets} instead. */
 export function clearAssetCache(): void {
   for (const w of watchers.values()) {
     try {

@@ -1,6 +1,7 @@
 import { IpcMain, BrowserWindow, dialog } from 'electron'
 import * as lorebookService from '../services/lorebookService'
 import * as chatService from '../services/chatService'
+import * as worldAssetService from '../services/worldAssetService'
 
 export const registerLorebookIpc = (ipcMain: IpcMain): void => {
   ipcMain.handle('list-lorebooks', (_, profileId) => lorebookService.listLorebooks(profileId))
@@ -20,6 +21,8 @@ export const registerLorebookIpc = (ipcMain: IpcMain): void => {
     lorebookService.deleteLorebookById(profileId, id)
     // Drop the deleted book from any session that still references it.
     chatService.removeLorebookIdFromChats(profileId, id)
+    // Release the cached asset index + fs.watch handle for this world.
+    worldAssetService.invalidateWorldAssets(profileId, id)
   })
   ipcMain.handle('import-lorebook-dialog', async (event, profileId) => {
     const result = await dialog.showOpenDialog(BrowserWindow.fromWebContents(event.sender)!, {

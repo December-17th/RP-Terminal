@@ -83,3 +83,29 @@ describe('listCoverage', () => {
     expect(rows.find((r) => r.name === '旅人')!.hasAvatar).toBe(false)
   })
 })
+
+describe('invalidateWorldAssets', () => {
+  it('drops the cached index so a later getIndex re-reads from disk', () => {
+    write('w1', '爱莎_头像.jpg')
+    // Warm the cache
+    expect(Object.keys(svc.getIndex('p1', 'w1').character ?? {})).toEqual(['爱莎'])
+    // Write a new file while the cache is warm
+    write('w1', '凯尔_头像.jpg')
+    // Cache still returns the old result
+    expect(Object.keys(svc.getIndex('p1', 'w1').character ?? {})).toEqual(['爱莎'])
+    // Invalidate the world
+    svc.invalidateWorldAssets('p1', 'w1')
+    // Next read re-scans disk and picks up both files
+    expect(Object.keys(svc.getIndex('p1', 'w1').character ?? {}).sort()).toEqual(['凯尔', '爱莎'].sort())
+  })
+
+  it('does not affect other worlds in the cache', () => {
+    write('w1', '爱莎_头像.jpg')
+    write('w2', '旅人_头像.jpg')
+    svc.getIndex('p1', 'w1')
+    svc.getIndex('p1', 'w2')
+    svc.invalidateWorldAssets('p1', 'w1')
+    // w2 cache untouched — re-read should still return the same index
+    expect(Object.keys(svc.getIndex('p1', 'w2').character ?? {})).toEqual(['旅人'])
+  })
+})
