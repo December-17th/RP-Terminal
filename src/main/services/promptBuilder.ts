@@ -301,6 +301,7 @@ export const buildPrompt = (args: BuildPromptArgs): ChatMessage[] => {
   // EJS-evaluate already-macro-expanded PRESET content. An error here means a broken preset entry → FAIL THE
   // TURN with a detailed log (which entry + reason + source), so a conditional never silently drops or leaks
   // all its branches. (Card-field renders below stay graceful via `render`.)
+  // Error policy: "preset blocks fail loud" tier — see docs/rpt-api.md §7 (WS-9).
   const ejsStrict = (expanded: string, label: string): string => {
     if (!frontierTemplate) return stripEjs(expanded).trim()
     const r = evalTemplateDetailed(expanded, frontierTemplate)
@@ -384,6 +385,7 @@ export const buildPrompt = (args: BuildPromptArgs): ChatMessage[] => {
   // its prose instead of being dropped whole. This is the pre-1941f38 behavior, kept for lorebook entries
   // only: presets still fail loud (the branch-leak that 1941f38 fixed is a preset concern). The entry +
   // reason are logged either way so a genuinely broken entry is visible.
+  // Error policy: "card / lorebook content degrades gracefully" tier — see docs/rpt-api.md §7 (WS-9).
   const renderLoreEntry = (e: LorebookEntry): string => {
     const expanded = expandMacros(
       e.content,

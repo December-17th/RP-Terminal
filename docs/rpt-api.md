@@ -258,3 +258,19 @@ this doc + [docs/sdk/](sdk/component-inventory.md).
 > eval / `[GENERATE]`+`@INJECT` markers / `[InitialVariables]` / `[RENDER:*]`) is a separate subsystem
 > (`templateService` + `renderTemplate`) and is **complete (Phases A–E)** — see
 > [st-prompt-template-plan.md](st-prompt-template-plan.md).
+
+## 7. Template / macro error-handling policy
+
+One stated rule for how the macro/EJS pipeline fails, so each surface is predictable and the next change
+preserves the invariant (review WS-9). When you add a new template surface, pick the matching tier:
+
+| Surface | On error | Why | Code |
+| --- | --- | --- | --- |
+| **Preset blocks** | **Fail loud** — throw, fail the turn (logged with the block name + reason) | A preset is author-trusted infrastructure; a broken `<% if %>…<% else %>` must NOT silently leak every branch (or drop all of them) into the prompt. | `promptBuilder.ts` `ejsStrict` |
+| **Card / lorebook content** | **Degrade gracefully** — strip the `<%…%>` tags, keep the surrounding prose; log the entry + reason | A 10 KB lore entry with one bad trailing `<%…%>` block should still contribute its prose, not vanish. | `promptBuilder.ts` `renderLoreEntry` |
+| **Engine off / not yet loaded** | **Strip tags** (no eval) | The toggle/uninitialized state is not an error; `{{macros}}` still expand. | `templateEngine.ts` `evalTemplateDetailed` |
+| **Engine eval error (shared)** | Return **empty output** + the error string (callers decide: presets throw, lore strips-and-keeps-prose) | Returning the tag-stripped template here would leak every branch; the caller owns the user-facing fallback. | `templateEngine.ts` `evalTemplateDetailed` |
+| **Unknown `{{macro}}`** | **Pass through verbatim** | An unrecognized macro may be meaningful to a later pass or to the model; never blank it. | `macros.ts` `expandMacros` |
+
+Rule of thumb: **author infrastructure fails loud; card-supplied content degrades; non-errors strip; unknown
+passes through.**

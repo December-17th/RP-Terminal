@@ -173,6 +173,7 @@ export const expandMacros = (text: string, ctx: MacroContext = {}): string => {
           break
         }
         default:
+          // Error policy: "unknown macro passes through verbatim" — see docs/rpt-api.md §7 (WS-9).
           return whole // unknown macro — leave as-is
       }
       changed = true

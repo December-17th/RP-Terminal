@@ -12,8 +12,8 @@ _Traceability log for executing [maintainability-plan-2026-06-26.md](maintainabi
 
 | # | Phase | ID | Pr | Status | Commit |
 | --- | --- | --- | --- | --- | --- |
-| 0 | Make module-boundary gate real | WS-10 | (pre) | ✅ done | (pending) |
-| 0a | Error-handling policy doc | WS-9 | LOW | ⬜ todo | — |
+| 0 | Make module-boundary gate real | WS-10 | (pre) | ✅ done | `82d9c48` |
+| 0a | Error-handling policy doc | WS-9 | LOW | ✅ done | (this commit) |
 | 0b | Delete dead DB schema | WS-6 | LOW | ⬜ todo | — |
 | 0c | Document path dialects + test | WS-8 | LOW | ⬜ todo | — |
 | 0d | One broadcast helper | WS-7 | MED | ⬜ todo | — |
@@ -73,3 +73,19 @@ Making this real first gives the later refactors (WS-1/WS-4/WS-7 move modules) a
   `window.api` (preload). The encoded rule (`renderer↛main`) captures the intent; left CLAUDE.md text as-is
   (minor). The `check:deps` claim in CLAUDE.md is now **true**.
 - Prettier warning drift (110) noted for a later `npm run format` pass.
+
+### Stage 2 — Phase 0a: error-handling policy written down (WS-9) ✅
+
+**Why.** Four failure policies coexisted in the template/macro path with no stated rule, so each new surface
+re-derived "throw, strip, blank, or pass through?" (review WS-9). Codify the existing behavior; no code
+behavior change.
+
+**Changes.**
+- `docs/rpt-api.md` — new "§7. Template / macro error-handling policy" table (preset = fail-loud; card/lore
+  = degrade/strip-keep-prose; engine-off = strip; engine-eval-error = empty+error; unknown macro =
+  pass-through) + the rule-of-thumb.
+- Comment pointers to §7 added at the four sites: `promptBuilder.ts` `ejsStrict` + `renderLoreEntry`,
+  `templateEngine.ts` `evalTemplateDetailed` docblock, `macros.ts` unknown-macro default.
+
+**Verification.** typecheck ✅ · check:deps ✅ · lint ✅ 0 errors · test ✅ 689. (Comment + doc only — no
+behavior change.)

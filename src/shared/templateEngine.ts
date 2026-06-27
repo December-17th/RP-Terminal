@@ -384,6 +384,8 @@ const installBridge = (vm: QuickJSContext, ctx: TemplateContext): void => {
  * output is **empty** (NOT the tag-stripped template — stripping a `<% if %>…<% else %>…` entry would leak
  * every branch into the prompt) and the error is returned so the caller can fail loud. Engine off /
  * not-yet-initialized (non-errors) still strip tags. `evalTemplate` wraps this for the output-only path.
+ * Error policy: the "engine eval error → empty + error" / "engine-off → strip" tiers — see
+ * docs/rpt-api.md §7 (WS-9); callers (preset = fail-loud, lore = strip-and-keep-prose) own the fallback.
  */
 export const evalTemplateDetailed = (
   template: string,
