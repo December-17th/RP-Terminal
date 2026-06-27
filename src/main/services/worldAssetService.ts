@@ -97,6 +97,7 @@ export function resolveProtocolPath(
   category: string,
   file: string
 ): string | null {
+  if (!(ASSET_CATEGORIES as readonly string[]).includes(category)) return null
   let decoded: string
   try {
     decoded = decodeURIComponent(file)

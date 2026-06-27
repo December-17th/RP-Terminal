@@ -59,6 +59,11 @@ describe('resolveProtocolPath', () => {
   it('returns null for a missing file', () => {
     expect(svc.resolveProtocolPath('p1', 'w1', 'character', '无.jpg')).toBeNull()
   })
+  it('rejects an unknown / traversal category', () => {
+    write('w1', '爱莎_头像.jpg')
+    expect(svc.resolveProtocolPath('p1', 'w1', 'evil', '爱莎_头像.jpg')).toBeNull()
+    expect(svc.resolveProtocolPath('p1', 'w1', 'character/..', '爱莎_头像.jpg')).toBeNull()
+  })
 })
 
 describe('resolveAssetFile', () => {
