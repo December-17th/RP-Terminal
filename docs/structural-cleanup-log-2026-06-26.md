@@ -18,7 +18,7 @@ _Traceability log for executing [maintainability-plan-2026-06-26.md](maintainabi
 | 0c | Document path dialects + test | WS-8 | LOW | ✅ done | `1b4ada8` |
 | 0d | One broadcast helper | WS-7 | MED | ✅ done | (this commit) |
 | 1 | Unify EJS context (keystone) | WS-1 | HIGH | ✅ done | 1a `396cd13` · 1b `8061410` · 1c `(this commit)` |
-| 2 | lodash/faker → tested module | WS-4 | MED | ⬜ todo | — |
+| 2 | lodash/faker → tested module | WS-4 | MED | 🟡 partial (tests added; file-extract deferred) | (this commit) |
 | 3 | Decompose buildPrompt | WS-5 | MED | ⬜ todo | — |
 | 4 | De-escalate L1 cache | WS-2 | MED | ⬜ todo | — |
 | 5 | Write-back loop origin-tag | WS-3 | HIGH | ⬜ todo | — |
@@ -202,3 +202,23 @@ maintenance contract).
 
 **Phase 1 (WS-1) COMPLETE** — the keystone. The three EJS contexts now share one engine + one constructor
 and resolve the variable surface identically.
+
+### Stage 9 — Phase 2 / WS-4 (partial): direct tests for the lodash/faker subset ✅🟡
+
+**Why.** WS-4's core complaint was that the ~130-line clean-room lodash/faker subset (injected as a string
+into the quickjs boot, `templateEngine.ts`) had **no direct tests** — silent drift from lodash semantics
+would go unnoticed. Closing that gap is the high-value, low-risk slice.
+
+**Changes.**
+- `test/sandboxLib.test.ts` (new, +7 tests) — pins the methods a status panel actually uses: `_.get/_.set`,
+  `cloneDeep`, `map/filter/find/sumBy`, `groupBy/keyBy/mapValues/sortBy/orderBy`,
+  `uniq/uniqBy/chunk/padStart/isEqual`, `faker.number/uuid/name`, and the no-op `console`. (Exercised through
+  the engine because the subset only exists inside the VM.)
+
+**Deferred (explicitly).** The *physical* extraction of the subset into its own `shared/sandboxLib.ts`
+module is **not** done — it's a verbatim move of ~110 lines of dense JS-in-a-string into quickjs, where a
+single transcription slip could silently change a lodash method's behavior. It's cosmetic relative to the
+testability win now in place, and is safer as a focused, separately-reviewed follow-up. Tracked as WS-4
+remainder.
+
+**Verification.** typecheck ✅ · check:deps ✅ · lint ✅ 0 errors · test ✅ **706** (+7).
