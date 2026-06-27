@@ -17,12 +17,20 @@ import {
   buildPrompt,
   buildScanText,
   fitToBudget,
+  mergeConsecutiveRoles,
+  systemToUser,
   collectRenderMarkers,
   ChatMessage
 } from './promptBuilder'
 import { getPromptRules } from './regexService'
 import { loadGlobals, saveGlobals, buildTemplateContext } from './templateService'
-import { streamProvider, orderForProvider, DeltaCallback, UsageCallback } from './apiService'
+import {
+  streamProvider,
+  orderForProvider,
+  isOpenAiCompatibleProvider,
+  DeltaCallback,
+  UsageCallback
+} from './apiService'
 import { normalizeUsage, buildFloorMetrics } from './promptCacheMetrics'
 import { parseContent, parseCombatStart, stripThinking, RPEvent } from '../parsers/contentParser'
 import {
@@ -256,10 +264,28 @@ export const generate = async (
 
   // Trim oldest history to stay under the configured context budget.
   const budget = settings.generation?.max_context_tokens || 200000
-  const { messages, dropped } = fitToBudget(built, budget)
+  const { messages: trimmed, dropped } = fitToBudget(built, budget)
   if (dropped > 0) {
     log('info', `context budget ${budget} tok — trimmed ${dropped} oldest message(s)`)
   }
+  // Prompt-assembly passes (ST-faithful), applied AFTER fitToBudget (which needs the per-message history
+  // tags) so the stored `request` matches exactly what's sent:
+  //  (B) system→user — only on the OpenAI-compatible path + when opted in (Gemini-via-OpenAI handles a
+  //      `system` role poorly; Anthropic/Gemini-native shape system via their own params, so skip them).
+  //  (A) merge consecutive same-role (default on) — coalesce a block split across adjacent same-role
+  //      entries into one message. Runs AFTER (B) so converted blocks merge with adjacent user turns.
+  let assembled = trimmed
+  if (settings.generation?.system_as_user && isOpenAiCompatibleProvider(settings.api.provider)) {
+    const before = assembled.filter((m) => m.role === 'system').length
+    assembled = systemToUser(assembled)
+    if (before) log('info', `system→user: relabeled ${before} system message(s) (OpenAI-compatible path)`)
+  }
+  const messages =
+    settings.generation?.merge_consecutive_roles !== false
+      ? mergeConsecutiveRoles(assembled)
+      : assembled
+  if (messages.length !== assembled.length)
+    log('info', `merged consecutive same-role messages: ${assembled.length} → ${messages.length}`)
 
   // Agentic mode caps the output ceiling at the FSM mode's limit (e.g. Combat is terse),
   // never exceeding the preset's own max_tokens. Classic mode uses the preset value as-is.

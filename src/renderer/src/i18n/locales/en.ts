@@ -94,6 +94,12 @@ const en: Record<string, string> = {
     'Fit: the card grows to its content height (no scrollbar). Fill: cards built to fill a viewport (100vh) are mapped onto the frame via --TH-viewport-height.',
   'prefs.templateEngineHint':
     'When off, EJS template tags are stripped instead of evaluated ({{macros}} still work).',
+  'prefs.mergeRoles': 'Merge consecutive same-role messages',
+  'prefs.mergeRolesHint':
+    'SillyTavern-faithful (recommended): coalesces adjacent messages of the same role into one, so a preset block split across entries (e.g. <{{user}}_setting> / body / </{{user}}_setting>) is sent as one message instead of fragments. Off = send each preset block as its own message.',
+  'prefs.systemAsUser': 'Send system messages as user',
+  'prefs.systemAsUserHint':
+    'Only affects OpenAI-compatible endpoints (openai/openrouter/custom). Relabels system→user before merging — matches SillyTavern for Gemini-behind-OpenAI proxies that handle the system role poorly. No effect on native Anthropic/Gemini connections. Leave off for real OpenAI/Anthropic.',
   'prefs.renderCadenceHint':
     'During streaming, re-run the engine roughly every this many tokens (not per token).',
   'prefs.recursionHint':

@@ -61,6 +61,20 @@ export interface Settings {
   generation: {
     /** Max estimated input tokens for the assembled prompt; oldest history is trimmed to fit. */
     max_context_tokens: number
+    /**
+     * Merge consecutive messages of the SAME role into one before sending (default true) — matches
+     * SillyTavern's prompt assembly. A preset that splits a block across adjacent same-role entries
+     * (e.g. `<{{user}}_setting>` / body / `</{{user}}_setting>`) then arrives as one coherent message
+     * instead of N fragments. Off = send each preset block as its own message (raw).
+     */
+    merge_consecutive_roles?: boolean
+    /**
+     * Send `system` messages as `user` (default false). Only takes effect on the OpenAI-compatible path
+     * (openai/openrouter/custom) — Gemini behind an OpenAI-compat layer handles a `system` role poorly, so
+     * this matches SillyTavern's demotion. No-op for native Anthropic/Gemini connections (they shape system
+     * via their own params). Applied before the role-merge.
+     */
+    system_as_user?: boolean
   }
   lorebook: {
     /** How many recent turns (floors) to scan for keyword matches. */

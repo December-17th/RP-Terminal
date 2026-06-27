@@ -38,6 +38,12 @@ export const streamProvider = async (
  * providers keep their own ordering. Applied in generationService BEFORE the request is logged, so the
  * logged/stored prompt matches exactly what's sent.
  */
+/** True for providers reached via the OpenAI-compatible `chat/completions` path (openai/openrouter/custom/
+ *  …) — i.e. anything that is NOT a native Anthropic or Google/Gemini connection (those shape roles via
+ *  their own params: Anthropic's top-level `system`, Gemini's `systemInstruction`). */
+export const isOpenAiCompatibleProvider = (provider?: string): boolean =>
+  provider !== 'anthropic' && provider !== 'google' && provider !== 'gemini'
+
 export const orderForProvider = (messages: ChatMessage[], provider?: string): ChatMessage[] => {
   if (provider === 'anthropic' || provider === 'google' || provider === 'gemini') return messages
   if (messages[messages.length - 1]?.role === 'assistant') return messages // keep the trailing prefill last
