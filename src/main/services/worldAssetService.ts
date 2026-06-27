@@ -4,10 +4,11 @@ import path from 'path'
 import { shell } from 'electron'
 import { getAppDir, ensureDir, listFilesSync } from './storageService'
 import { log } from './logService'
+import AdmZip from 'adm-zip'
 import { parseAssetFilename } from '../../shared/worldAssets/filename'
 import { resolveAsset } from '../../shared/worldAssets/resolve'
 import { computeCoverage, CharacterCoverage } from '../../shared/worldAssets/coverage'
-import { AssetCategory, AssetIndex, AssetType, ASSET_CATEGORIES } from '../../shared/worldAssets/types'
+import { AssetCategory, AssetIndex, AssetType, ASSET_CATEGORIES, categoryForType } from '../../shared/worldAssets/types'
 
 /** `<appDir>/profiles/<profileId>/lorebooks/<lorebookId>.assets` */
 const worldAssetsRoot = (profileId: string, lorebookId: string): string =>
@@ -171,4 +172,78 @@ export function openAssetsFolder(
   const dir = assetsDir(profileId, lorebookId, category)
   ensureDir(dir)
   void shell.openPath(dir)
+}
+
+export interface ImportAssetsResult {
+  imported: number
+  skipped: number
+  byCategory: Record<string, number>
+  skippedReasons: string[]
+}
+
+/** Extract a `.assets`-mirroring zip into one world's asset folders. Only `<category>/<file>`
+ *  entries whose basename parses to the convention AND whose type matches the category are written
+ *  (overwriting); everything else is skipped with a reason. Benign noise is skipped silently. Safe
+ *  against path traversal. Invalidates the world's asset cache when anything was written. */
+export function importAssetsZip(
+  profileId: string,
+  lorebookId: string,
+  zipPath: string
+): ImportAssetsResult {
+  const result: ImportAssetsResult = { imported: 0, skipped: 0, byCategory: {}, skippedReasons: [] }
+  let entries: AdmZip.IZipEntry[]
+  try {
+    entries = new AdmZip(zipPath).getEntries()
+  } catch {
+    result.skipped++
+    result.skippedReasons.push('invalid or unreadable zip')
+    return result
+  }
+  const base = path.resolve(worldAssetsRoot(profileId, lorebookId)) + path.sep
+  const skip = (reason: string): void => {
+    result.skipped++
+    result.skippedReasons.push(reason)
+  }
+  for (const entry of entries) {
+    if (entry.isDirectory) continue
+    const name = entry.entryName.replace(/\\/g, '/')
+    const parts = name.split('/').filter(Boolean)
+    // Benign archive noise — skip silently (not a user error).
+    if (parts[0] === '__MACOSX' || parts.some((p) => p.startsWith('.')) || parts.includes('_index.json'))
+      continue
+    if (parts.length !== 2) {
+      skip(`outside category folder: ${name}`)
+      continue
+    }
+    const [category, file] = parts
+    if (!(ASSET_CATEGORIES as readonly string[]).includes(category)) {
+      skip(`unknown category: ${name}`)
+      continue
+    }
+    const parsed = parseAssetFilename(file)
+    if (!parsed) {
+      skip(`unrecognized name: ${name}`)
+      continue
+    }
+    if (categoryForType(parsed.type) !== category) {
+      skip(`wrong category for type: ${name}`)
+      continue
+    }
+    const destDir = assetsDir(profileId, lorebookId, category as AssetCategory)
+    const dest = path.resolve(destDir, file)
+    if (!dest.startsWith(base)) {
+      skip(`unsafe path: ${name}`)
+      continue
+    }
+    try {
+      ensureDir(destDir)
+      fs.writeFileSync(dest, entry.getData())
+      result.imported++
+      result.byCategory[category] = (result.byCategory[category] ?? 0) + 1
+    } catch {
+      skip(`write failed: ${name}`)
+    }
+  }
+  if (result.imported > 0) invalidateWorldAssets(profileId, lorebookId)
+  return result
 }
