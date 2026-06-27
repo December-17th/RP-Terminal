@@ -262,6 +262,25 @@ export const SettingsPanel: React.FC<{ profileId: string }> = ({ profileId }) =>
               {t('prefs.mergeRolesHint')}
             </div>
 
+            <label
+              className="entry-toggles"
+              style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 14 }}
+            >
+              <input
+                type="checkbox"
+                checked={settings.generation?.system_as_user ?? false}
+                onChange={(e) =>
+                  updateSettings(profileId, {
+                    generation: { ...settings.generation, system_as_user: e.target.checked }
+                  })
+                }
+              />
+              {t('prefs.systemAsUser')}
+            </label>
+            <div style={{ fontSize: '0.78em', color: 'var(--rpt-text-secondary)', marginTop: 4 }}>
+              {t('prefs.systemAsUserHint')}
+            </div>
+
             {settings.templates?.enabled !== false && (
               <div style={{ marginLeft: 22, marginTop: 8 }}>
                 <label

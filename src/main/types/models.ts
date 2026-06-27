@@ -68,6 +68,13 @@ export interface Settings {
      * instead of N fragments. Off = send each preset block as its own message (raw).
      */
     merge_consecutive_roles?: boolean
+    /**
+     * Send `system` messages as `user` (default false). Only takes effect on the OpenAI-compatible path
+     * (openai/openrouter/custom) — Gemini behind an OpenAI-compat layer handles a `system` role poorly, so
+     * this matches SillyTavern's demotion. No-op for native Anthropic/Gemini connections (they shape system
+     * via their own params). Applied before the role-merge.
+     */
+    system_as_user?: boolean
   }
   lorebook: {
     /** How many recent turns (floors) to scan for keyword matches. */

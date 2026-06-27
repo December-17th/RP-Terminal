@@ -97,6 +97,9 @@ const zh: Record<string, string> = {
   'prefs.mergeRoles': '合并相邻同角色消息',
   'prefs.mergeRolesHint':
     '与 SillyTavern 行为一致（推荐）：将相邻的同角色消息合并为一条，使被拆分到多个条目的预设块（如 <{{user}}_setting> / 正文 / </{{user}}_setting>）作为一条消息发送，而非碎片。关闭后每个预设块作为独立消息发送。',
+  'prefs.systemAsUser': '将 system 消息作为 user 发送',
+  'prefs.systemAsUserHint':
+    '仅影响 OpenAI 兼容端点（openai/openrouter/custom）。在合并前把 system 重标为 user，与 SillyTavern 对“OpenAI 兼容层后的 Gemini”（其对 system 角色支持较差）的处理一致。对原生 Anthropic/Gemini 连接无效。使用真实 OpenAI/Anthropic 时请保持关闭。',
   'prefs.renderCadenceHint': '流式生成时，大约每这么多 Token 重新运行一次引擎（而非每个 Token）。',
   'prefs.recursionHint': '已匹配条目的内容可触发更多条目，最多这么多轮（0 = 关闭）。',
   'prefs.pricing': 'Token 定价（美元 / 百万 Token）',

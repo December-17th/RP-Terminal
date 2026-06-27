@@ -28,6 +28,7 @@ export interface Settings {
   generation: {
     max_context_tokens: number
     merge_consecutive_roles?: boolean
+    system_as_user?: boolean
   }
   lorebook: {
     scan_depth: number

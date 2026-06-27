@@ -103,6 +103,16 @@ export const fitToBudget = (
 }
 
 /**
+ * Re-label every `system` message as `user` (content unchanged). Some OpenAI-compatible endpoints —
+ * notably Gemini behind an OpenAI-compat layer — handle a mid-conversation or repeated `system` role
+ * poorly, so SillyTavern demotes system→user there. Gated by `settings.generation.system_as_user` and
+ * applied ONLY on the OpenAI-compatible path (Anthropic/Gemini-native handle system via their own params).
+ * Run BEFORE `mergeConsecutiveRoles` so the converted blocks coalesce with adjacent user turns.
+ */
+export const systemToUser = (messages: ChatMessage[]): ChatMessage[] =>
+  messages.map((m) => (m.role === 'system' ? { role: 'user', content: m.content } : m))
+
+/**
  * Merge consecutive messages of the SAME role into one (joined by a newline), matching SillyTavern's
  * prompt assembly. A preset commonly splits one logical block across adjacent same-role entries — e.g.
  * `<{{user}}_setting>` (open) / the body / `</{{user}}_setting>` (close) as three toggleable `system`
