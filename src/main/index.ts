@@ -4,9 +4,12 @@ import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
 
 import * as logService from './services/logService'
+import * as storageService from './services/storageService'
+import { readLocationPointer } from './services/locationPointer'
 import * as migrationService from './services/migrationService'
 import * as templateService from './services/templateService'
 import * as wcvManager from './services/wcvManager'
+import * as worldAssetProtocol from './services/worldAssetProtocol'
 import { registerIpc } from './ipc'
 
 // Card UIs (WebContentsView) are served from this scheme instead of a data: URL: a data: URL is an
@@ -17,6 +20,10 @@ protocol.registerSchemesAsPrivileged([
   {
     scheme: wcvManager.CARD_SCHEME,
     privileges: { standard: true, secure: true, supportFetchAPI: true, allowServiceWorkers: true }
+  },
+  {
+    scheme: worldAssetProtocol.ASSET_SCHEME,
+    privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true }
   }
 ])
 
@@ -84,6 +91,18 @@ app.whenReady().then(() => {
     optimizer.watchWindowShortcuts(window)
   })
 
+  // Relocation: on first run with the default location, copy existing %APPDATA% data over (kept as backup).
+  try {
+    const usingDefault = !process.env.RPT_DATA_DIR && !readLocationPointer()?.dataDir
+    storageService.copyLegacyDataDirIfNeeded({
+      legacyDir: join(app.getPath('userData'), 'rp-terminal-data'),
+      targetDir: storageService.getAppDir(),
+      usingDefault
+    })
+  } catch (err: any) {
+    logService.log('error', 'Legacy data-dir copy failed', err?.message || String(err))
+  }
+
   // Initialize SQLite and migrate any legacy JSON data on first run.
   try {
     migrationService.migrateIfNeeded()
@@ -96,6 +115,7 @@ app.whenReady().then(() => {
 
   // Register all IPC handlers, grouped by domain (see src/main/ipc/).
   registerIpc(ipcMain)
+  worldAssetProtocol.registerAssetProtocol()
 
   // Sync the Windows window-control overlay (custom title bar) to the active theme's colors.
   ipcMain.handle('set-titlebar-overlay', (e, overlay: { color: string; symbolColor: string }) => {

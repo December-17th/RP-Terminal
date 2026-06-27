@@ -15,6 +15,7 @@ import * as regexService from './regexService'
 import * as scriptService from './scriptService'
 import { installBundledPreset } from './presetService'
 import { parseStPng } from '../parsers/stPngParser'
+import { importAssetsZip } from './worldAssetService'
 
 const getAvatarsDir = (): string => path.join(getAppDir(), 'avatars')
 export const getAvatarPath = (characterId: string): string =>
@@ -107,6 +108,8 @@ export interface ImportSummary {
   lorebooks: number
   /** Bundled plugins detected but NOT installed yet (package format/grant flow TBD). */
   pluginsSkipped: number
+  /** Images extracted from an optional asset zip supplied at import time. */
+  assetsImported: number
 }
 
 export interface ImportResult {
@@ -168,7 +171,8 @@ export const summarizeCardBundle = (parsed: ParsedCard): ImportSummary => {
     uiWidgets: Array.isArray(rpt?.ui_layout) ? rpt.ui_layout.length : 0,
     presets: collectBundledPresets(parsed.card).length,
     lorebooks: collectBundledLorebooks(parsed.card).length,
-    pluginsSkipped: Array.isArray(rpt?.plugins) ? rpt.plugins.length : 0
+    pluginsSkipped: Array.isArray(rpt?.plugins) ? rpt.plugins.length : 0,
+    assetsImported: 0
   }
 }
 
@@ -246,7 +250,8 @@ export const inspectCardFile = (filePath: string): ImportSummary | null => {
  */
 export const importCharacterFromFile = (
   profileId: string,
-  filePath: string
+  filePath: string,
+  assetZipPath?: string
 ): ImportResult | null => {
   try {
     const parsed = parseCardFile(filePath)
@@ -302,6 +307,15 @@ export const importCharacterFromFile = (
       fs.copyFileSync(filePath, getAvatarPath(newId))
     }
 
+    let assetsImported = 0
+    if (assetZipPath) {
+      try {
+        assetsImported = importAssetsZip(profileId, newId, assetZipPath).imported
+      } catch (e) {
+        log('error', 'Asset zip import failed (card import continues):', e)
+      }
+    }
+
     const summary = summarizeCardBundle(parsed)
     summary.regexScripts = regexScripts
     // Native scripts ride on the card; add the count actually imported into the store.
@@ -309,6 +323,7 @@ export const importCharacterFromFile = (
       (Array.isArray(getRpExt(card)?.scripts) ? getRpExt(card)!.scripts!.length : 0) + scripts
     summary.presets = presets
     summary.lorebooks = lorebooks
+    summary.assetsImported = assetsImported
     return { id: newId, summary }
   } catch (error) {
     log('error', 'Failed to import character:', error)

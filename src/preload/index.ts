@@ -306,7 +306,30 @@ const api = {
       cb(payload)
     ipcRenderer.on('wcv-host-wheel', listener)
     return () => ipcRenderer.removeListener('wcv-host-wheel', listener)
-  }
+  },
+  // World Assets (per-world image asset layer)
+  assetCoverage: (profileId: string, lorebookIds: string[], category: string, roster: string[]) =>
+    ipcRenderer.invoke('asset-coverage', profileId, lorebookIds, category, roster),
+  assetUrl: (
+    profileId: string,
+    lorebookIds: string[],
+    category: string,
+    name: string,
+    type: string,
+    mood?: string
+  ) => ipcRenderer.invoke('asset-url', profileId, lorebookIds, category, name, type, mood),
+  assetRefresh: (profileId: string, lorebookIds: string[]) =>
+    ipcRenderer.invoke('asset-refresh', profileId, lorebookIds),
+  assetOpenFolder: (profileId: string, lorebookId: string, category: string) =>
+    ipcRenderer.invoke('asset-open-folder', profileId, lorebookId, category),
+  assetImportZipDialog: (profileId: string, lorebookId: string) =>
+    ipcRenderer.invoke('asset-import-zip-dialog', profileId, lorebookId),
+  // Storage location (app-global; pointer file, not per-profile settings)
+  getDataLocation: () => ipcRenderer.invoke('get-data-location'),
+  setDataLocationDialog: () => ipcRenderer.invoke('set-data-location-dialog'),
+  openDataLocation: () => ipcRenderer.invoke('open-data-location'),
+  resetDataLocation: () => ipcRenderer.invoke('reset-data-location'),
+  restartApp: () => ipcRenderer.invoke('restart-app')
 }
 
 // Use `contextBridge` APIs to expose Electron APIs to

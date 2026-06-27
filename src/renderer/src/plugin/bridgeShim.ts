@@ -19,30 +19,7 @@ import { TAVERN_SHIM } from './shims/tavern'
 import { ST_RUNTIME_SHIM } from './shims/stRuntime'
 import { JQUERY_SHIM } from './shims/jquery'
 import { LIB_SHIM, LIB_LOADER } from './shims/lib'
-
-/**
- * Content-Security-Policy for the iframe document.
- *  • Locked (default): `connect-src 'none'` + no `allow-same-origin` = "no network".
- *    fetch/XHR/WebSocket and remote `import` are blocked; assets limited to inline data.
- *  • Remote-enabled (per-card `remoteScripts` grant): adds `https:` to script/connect/etc.
- *    so user scripts can `import` ES-module graphs natively from CDNs (approach 1B). This
- *    is the documented cost of the grant — the world's scripts gain internet access.
- */
-const buildCsp = (allowRemote: boolean): string => {
-  const s = allowRemote ? ' https:' : ''
-  return [
-    "default-src 'none'",
-    // data:/blob: are needed so modules the frontend-card loader serves locally (it rewrites
-    // imports to data: URLs — blob:null modules can't be imported from the opaque origin)
-    // can load. Both are page-created, not network, so safe even when the network is locked.
-    `script-src 'unsafe-inline' data: blob:${s}`,
-    `style-src 'unsafe-inline'${s}`,
-    `img-src data: blob:${s}`,
-    `font-src data:${s}`,
-    `connect-src ${allowRemote ? 'https:' : "'none'"}`,
-    "form-action 'none'"
-  ].join('; ')
-}
+import { buildCsp } from './csp'
 
 // A script is run as an ES module (so its `import`/`export` work) when it uses static
 // module syntax. Dynamic `import(...)` alone doesn't require a module context, so it's

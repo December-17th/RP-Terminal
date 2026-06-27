@@ -10,6 +10,7 @@ import { SettingsPanel } from './SettingsPanel'
 import { LogsPanel } from './LogsPanel'
 import { WorldPanel } from './WorldPanel'
 import { SessionsPanel } from './SessionsPanel'
+import { AssetManagerPanel } from './AssetManagerPanel'
 import type { PanelTab } from './panelTabs'
 
 /** The left sidebar: routes the active tab to its panel component. */
@@ -40,6 +41,9 @@ export function PanelRouter({
 
     case 'preset':
       return <PresetManager profileId={profileId} />
+
+    case 'assets':
+      return <AssetManagerPanel profileId={profileId} />
 
     case 'lorebook':
       return activeCharacter ? (

@@ -48,7 +48,27 @@ export const registerCharacterIpc = (ipcMain: IpcMain): void => {
       })
       if (response !== 0) return null
     }
-    return characterService.importCharacterFromFile(profileId, filePath)
+    // Optional asset zip — only offered for World Cards (plain cards can use the Asset Manager later).
+    let assetZipPath: string | undefined
+    if (summary?.isWorldCard) {
+      const addAssets = await dialog.showMessageBox(win, {
+        type: 'question',
+        buttons: ['Choose zip…', 'Skip'],
+        defaultId: 1,
+        cancelId: 1,
+        message: 'Import assets?',
+        detail:
+          'Optionally pick a .zip of images (character/ and location/ folders) to import with this world.'
+      })
+      if (addAssets.response === 0) {
+        const pick = await dialog.showOpenDialog(win, {
+          properties: ['openFile'],
+          filters: [{ name: 'Asset Zip', extensions: ['zip'] }]
+        })
+        if (!pick.canceled && pick.filePaths[0]) assetZipPath = pick.filePaths[0]
+      }
+    }
+    return characterService.importCharacterFromFile(profileId, filePath, assetZipPath)
   })
 
   ipcMain.handle('export-character-dialog', async (event, profileId, characterId) => {

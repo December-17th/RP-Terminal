@@ -1,5 +1,6 @@
 import { defineConfig } from 'vitest/config'
-import { resolve } from 'path'
+import { join, resolve } from 'path'
+import os from 'os'
 
 /**
  * Vitest runs the main-process pure modules under Node. Several of them
@@ -11,6 +12,11 @@ export default defineConfig({
   test: {
     environment: 'node',
     include: ['test/**/*.test.ts'],
+    env: {
+      // Pin the data root to a temp dir so the dev (process.cwd()) branch of getAppDir never
+      // writes into the repo during tests. Tests that mock getAppDir are unaffected.
+      RPT_DATA_DIR: join(os.tmpdir(), 'rpt-vitest-data')
+    },
     alias: {
       electron: resolve(process.cwd(), 'test/mocks/electron.ts'),
       // Native module built for Electron's ABI — stub it so modules that import the

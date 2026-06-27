@@ -68,6 +68,7 @@ export function TopNav({
         {tab('persona', t('nav.persona'))}
         {tab('preset', t('nav.preset'))}
         {tab('lorebook', t('nav.lorebook'), !hasCharacter)}
+        {tab('assets', t('nav.assets'), !hasCharacter)}
         {tab('api', t('nav.api'))}
         <button className="nav-tab" onClick={() => useUiStore.getState().openSettings()}>
           {t('nav.settings')}
