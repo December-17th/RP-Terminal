@@ -1,7 +1,6 @@
 import { defineConfig } from 'vitest/config'
-import { resolve } from 'path'
+import { join, resolve } from 'path'
 import os from 'os'
-import { join } from 'path'
 
 /**
  * Vitest runs the main-process pure modules under Node. Several of them

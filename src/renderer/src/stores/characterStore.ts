@@ -66,7 +66,8 @@ export const useCharacterStore = create<CharacterState>((set) => ({
         s.presets && `${s.presets} presets`,
         s.lorebooks && `${s.lorebooks} lorebooks`,
         s.loreEntries && `${s.loreEntries} lore`,
-        s.scripts && `${s.scripts} scripts`
+        s.scripts && `${s.scripts} scripts`,
+        s.assetsImported && `${s.assetsImported} assets`
       ].filter(Boolean)
       useToastStore
         .getState()

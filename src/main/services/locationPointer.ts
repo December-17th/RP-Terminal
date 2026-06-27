@@ -22,7 +22,7 @@ export function readLocationPointer(): LocationPointer | null {
   }
 }
 
-/** Write (or, with null, remove) the pointer. Takes effect on next launch (getAppDir is read once). */
+/** Write (or, with a falsy value — null or '' — remove) the pointer. Takes effect on next launch (getAppDir is read once). */
 export function writeLocationPointer(dataDir: string | null): void {
   const p = pointerPath()
   if (dataDir) {
