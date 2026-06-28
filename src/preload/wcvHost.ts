@@ -79,11 +79,19 @@ export function createWcvHost(deps: Deps): Host {
         return {}
       }
     },
+    getChatVars: () => {
+      try {
+        return ipcRenderer.sendSync('wcv-host-chat-vars-get-sync') || {}
+      } catch {
+        return {}
+      }
+    },
 
     applyVariableOps: (ops: VarOp[]) => ipcRenderer.invoke('wcv-host-apply-vars', ops),
     replaceRegexes: (regexes, option) =>
       ipcRenderer.invoke('wcv-host-replace-regexes', regexes, option),
     setScriptVars: (vars) => ipcRenderer.invoke('wcv-host-script-vars-set', vars),
+    setChatVars: (vars) => ipcRenderer.invoke('wcv-host-chat-vars-set', vars),
     setButtons: (buttons) => ipcRenderer.send('wcv-register-button', buttons),
     setVariables: (sd: any) => ipcRenderer.invoke('wcv-host-set-vars', sd),
     generate: (input: string) => ipcRenderer.invoke('wcv-host-generate', input),

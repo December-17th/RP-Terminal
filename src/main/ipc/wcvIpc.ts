@@ -1,5 +1,6 @@
 import { IpcMain } from 'electron'
 import * as wcvManager from '../services/wcvManager'
+import { getChatCardVars, setChatCardVars } from '../services/chatCardVarsService'
 import * as floorService from '../services/floorService'
 import * as generationService from '../services/generationService'
 import * as lorebookService from '../services/lorebookService'
@@ -424,6 +425,19 @@ export const registerWcvIpc = (ipcMain: IpcMain): void => {
     for (const k of Object.keys(cur)) {
       if (!(k in next)) pluginStorageService.storageOp(c.profileId, owner, { op: 'remove', key: k })
     }
+    return true
+  })
+
+  // Chat-scope vars (getVariables({type:'chat'})) — a per-chat card-owned KV, NOT stat_data. SYNC read.
+  ipcMain.on('wcv-host-chat-vars-get-sync', (e) => {
+    const ctx = wcvManager.contextFor(e.sender.id)
+    e.returnValue = ctx ? getChatCardVars(ctx.profileId, ctx.chatId) : {}
+  })
+  // Persist the whole per-chat KV object (replaceVariables / updateVariablesWith with type:'chat').
+  ipcMain.handle('wcv-host-chat-vars-set', (e, vars) => {
+    const ctx = wcvManager.contextFor(e.sender.id)
+    if (!ctx) return false
+    setChatCardVars(ctx.profileId, ctx.chatId, vars && typeof vars === 'object' ? vars : {})
     return true
   })
 
