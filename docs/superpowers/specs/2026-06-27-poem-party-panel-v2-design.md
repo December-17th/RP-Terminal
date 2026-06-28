@@ -56,19 +56,37 @@ schema-stripped):
 - **IPC + preload:** `wcv-host-chat-vars-get`/`wcv-host-chat-vars-set` (wcvIpc); `chatCardVarsGet`/`Set`
   on `window.api` for the inline transport.
 
-This is reusable by any card; the party panel is its first consumer.
+**Extensible by design — a general scope, not party-specific.** The KV layer stores an arbitrary JSON
+object; nothing about "party" lives in it. The party panel is merely the first consumer (it uses the
+`party.members` / `party.stripPos` keys). Because it's a **single shared per-chat bag**, cards/features must
+**namespace their keys** (e.g. `party.members`, `party.stripPos`, or a feature prefix) to avoid
+collisions between widgets that later share the same chat. The full contract is documented in the SDK
+(see "SDK documentation" below) so future card features can rely on it.
+
+#### Contract (documented in `docs/sdk/`)
+- **Scope:** per **chat/session**, per card surface (the active chat). Survives app restarts for that chat.
+- **Shape:** an arbitrary JSON object; keys are a shared namespace — **prefix your keys**.
+- **NOT** MVU `stat_data`: not AI-authored, not sent to the model, not validated/stripped by the card's
+  `data_schema`. Use `type:'chat'` for UI/session state; use `stat_data` (`type:'message'`) for story state.
+- **vs other scopes:** `message`/`stat_data` = MVU story state (per-chat, in-prompt, schema-bound);
+  `script` = per-**card** KV (all that card's chats); `global` = per-**profile**; `chat` = per-**chat** UI/session KV (new).
+- **API:** read `getVariables({type:'chat'})`; write via the chat-scoped setter (full-object semantics,
+  same family as the other scopes' setters).
 
 ### Card-side changes (`poem-party-panel.html` → regen `regex.json` → re-run patch)
 
-- **Membership:** party = `主角` (always) + a `partyMembers: string[]` read from the per-chat KV
-  (`getVariables({type:'chat'}).partyMembers`). The strip renders only those. Default `[]` (just 主角).
+- **Membership:** party = `主角` (always) + a manual member list (`party.members: string[]`) read from
+  the per-chat KV (`getVariables({type:'chat'})['party.members']`). The strip renders only those.
+  Default `[]` (just 主角).
 - **Manage UI:** a **+** control opens a picker listing **known NPCs** = `关系列表` keys not already in
-  `partyMembers`; clicking one adds it. An **×** on each non-主角 member removes it. Both persist via the
+  `party.members`; clicking one adds it. An **×** on each non-主角 member removes it. Both persist via the
   per-chat setter. (Re-render reflects the updated list.)
 - **Draggable strip:** the strip is `position:absolute` within the panel, with a drag **handle**; pointer
   drag updates its position, **clamped** to the panel viewport; `z-index` above the card's other/future
-  content. The position persists in the per-chat KV (`stripPos: {x,y}`) so re-render-per-injection doesn't
+  content. The position persists in the per-chat KV (`party.stripPos: {x,y}`) so re-render-per-injection doesn't
   reset it. The detail overlay anchors to the strip's current position.
+- **Namespacing:** per the contract, the panel uses prefixed keys in the per-chat KV — `party.members`
+  (string[]) and `party.stripPos` ({x,y}) — so future widgets sharing the chat KV don't collide.
 - **Contrast:** every text element uses a readable foreground (light `--rpt-text`-style with explicit
   fallbacks) against its actual background; audit strip/name/identity/好感度/性格/状态效果.
 
@@ -77,19 +95,19 @@ This is reusable by any card; the party panel is its first consumer.
 ```
 card page:
   getVariables({type:'chat'})  ─▶ host.getChatVars() ─▶ wcv-host-chat-vars-get ─▶ chatCardVars(profileId,chatId)
-     → { partyMembers: string[], stripPos: {x,y} }
-  party = [主角] + partyMembers   (NOT 关系列表-在场)
-  manage +: pick from Object.keys(关系列表) \ partyMembers → setVariables({type:'chat'}, …) → host.setChatVars
-  drag:    update stripPos → host.setChatVars
+     → { "party.members": string[], "party.stripPos": {x,y} }   (namespaced keys per the contract)
+  party = [主角] + party.members   (NOT 关系列表-在场)
+  manage +: pick from Object.keys(关系列表) \ party.members → setVariables({type:'chat'}, …) → host.setChatVars
+  drag:    update party.stripPos → host.setChatVars
   portraits: window.assetUrl(name, '头像'/'立绘', mood)   (unchanged)
 ```
 
 ## Error handling & edge cases
 
 - Per-chat KV missing/corrupt → `{}` (party = just 主角; default strip position). Never throws.
-- An NPC in `partyMembers` no longer in `关系列表` → still shown by name with a placeholder (or skipped if
+- An NPC in `party.members` no longer in `关系列表` → still shown by name with a placeholder (or skipped if
   it has no data — render name + placeholder, don't crash).
-- Drag clamped so the strip can't be dragged out of the panel; a reset is implicit (clear `stripPos`).
+- Drag clamped so the strip can't be dragged out of the panel; a reset is implicit (clear `party.stripPos`).
 - No `window.assetUrl`/`getVariables` (degraded host) → placeholders + empty party, as v1.
 
 ## Testing
@@ -102,12 +120,21 @@ card page:
   persists per-chat; the strip drags + clamps + persists position; contrast is legible. (Bespoke card UI,
   like v1.)
 
+## SDK documentation (deliverable)
+
+Document the new `type:'chat'` per-chat card KV in `docs/sdk/` (its own entry alongside the existing
+variable scopes in `component-inventory.md`) and in `docs/rpt-api.md`, using the **Contract** above:
+scope (per-chat, survives restarts), shape (arbitrary JSON, shared bag → namespace keys), the NOT-stat_data
+distinction, the scope-comparison table, and the read/write API. It must read as a stable, reusable card
+surface — the party panel is named only as the first example. This is a required deliverable, not optional.
+
 ## Decisions (resolved)
 
 - Delivery unchanged (card WCV panel; the added left panel stays). ✔
 - Draggable strip = card-side, in-document, clamped, persisted per-chat. ✔
-- Party = 主角 (always) + manual `partyMembers`; add from `关系列表`; **per-chat**. ✔
-- Per-chat storage = a new app `type:'chat'` KV (not MVU `stat_data`, not per-card script vars). ✔
+- Party = 主角 (always) + manual `party.members`; add from `关系列表`; **per-chat**. ✔
+- Per-chat storage = a new app `type:'chat'` KV (not MVU `stat_data`, not per-card script vars), **a
+  general extensible scope** (arbitrary namespaced JSON), **documented in the SDK** as a stable card surface. ✔
 - Contrast = card CSS fix. ✔
 
 ## Deferred
