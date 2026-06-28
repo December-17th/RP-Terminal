@@ -90,14 +90,14 @@ State of truth is `floor.variables.stat_data` (the MVU tree). Reads come from a 
 inline transport reads the chat store; WCV hydrates via `sendSync` + a `wcv-vars-changed` push); writes go
 through the host bridge as RFC-6902 JSON Patch.
 
-- `getVariables()` → `{ stat_data }` · `Mvu.getMvuData()` / `getMvuVariable(path)` — ✅ (sync)
+- `getVariables()` → `{ stat_data }` (no option = default stat_data scope) · `Mvu.getMvuData()` / `getMvuVariable(path)` — ✅ (sync)
 - `Mvu.setMvuVariable(path, value)` · `insertOrAssignVariables(vars)` · `updateVariablesWith(fn)` — ✅ (→ `applyVariableOps` JSONPatch → persisted)
 - `Mvu.replaceMvuData(d)` / `replaceVariables(vars)` — ✅
 - `insertVariables(vars)` — ✅ insert-if-**absent** (never overwrites an existing key); the no-overwrite sibling of `insertOrAssignVariables`, used to seed initial MVU vars.
 - `injectPrompts(prompts, {once})` / `uninjectPrompts(ids)` — 🟡 **safe no-op** (returns the `{ uninject }` handle). The prompt is assembled in the MAIN process, so a renderer-side injection doesn't reach the build yet; cards that call these per-turn degrade gracefully instead of throwing. Depth-positioned injection into the build is a future bridge.
-- **Script scope** — `getVariables({type:'script'})` / `updateVariablesWith(fn, {type:'script'})` / `replaceVariables(obj, {type:'script'})` — ✅ (sync read) a card-owned KV store (`plugin-storage`, owner `card:<id>`), **per-card across all its chats**, not in-prompt. Backed by `scriptCardVarsService`.
+- **Script scope** — `getVariables({type:'script'})` / `updateVariablesWith(fn, {type:'script'})` — ✅ (sync read) a card-owned KV store (owner `card:<id>`), **per-card across all its chats**, not in-prompt. Backed by `pluginStorageService` (`profiles/<profileId>/plugin-storage/card:<id>.json`).
 - **Chat scope** — `getVariables({type:'chat'})` / `updateVariablesWith(fn, {type:'chat'})` / `replaceVariables(obj, {type:'chat'})` — ✅ (sync read) a per-chat, card-scoped KV store, **general scope for session UI/state** (e.g., the 命定之诗 party panel). Not in-prompt. **Namespace your keys** (e.g. `party.members`) to avoid collisions across multiple widgets in the same chat. **NOT `stat_data`** — use this for UI state, not story variables. Backed by `chatCardVarsService` (`profiles/<profileId>/chat-card-vars.json`), exposed via `Host.getChatVars`/`setChatVars`.
-- **Global scope** — `getVariables({type:'global'})` / `updateVariablesWith(fn, {type:'global'})` / `replaceVariables(obj, {type:'global'})` — ✅ per-profile, shared across all chats. Not in-prompt. Backed by `globalCardVarsService`.
+- **Global vars** — per-profile; accessed via `triggerSlash('/setglobalvar key val')` / `triggerSlash('/getglobalvar key')`. Global vars are STScript infra (`Host.getGlobalVars`/`setGlobalVar`), not a `getVariables` scope — there is no `type` option for globals in `getVariables`.
 - The host folds the model's `<UpdateVariable>` (`_.set` + `<JSONPatch>` incl. `delta`/array-append) natively (`mvuParser`); the runtime does NOT load the full MVU bundle.
 
 ### Chat / messages — 🟡

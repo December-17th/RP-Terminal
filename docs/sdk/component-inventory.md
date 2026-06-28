@@ -76,7 +76,7 @@ transports implement the same surface, so a card behaves identically in either
 
 | Domain                 | Methods                                                                                                                                                | Status  | Notes                                                                                                                                                                                                                                                                                      |
 | ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| **Variables / MVU**    | `getVariables`, `insertOrAssignVariables`, `insertVariables` (no-overwrite), `replaceVariables`, `updateVariablesWith`; `Mvu.*`                        | ✅      | State of truth = `floor.variables.stat_data`. Writes → RFC-6902 JSON-Patch (`applyVariableOps`). Scopes: `type:'message'` (MVU; in-prompt), `type:'script'` (card KV), `type:'chat'` (per-chat card KV), `type:'global'` (profile card KV).                                                                                                                |
+| **Variables / MVU**    | `getVariables`, `insertOrAssignVariables`, `insertVariables` (no-overwrite), `replaceVariables`, `updateVariablesWith`; `Mvu.*`                        | ✅      | State of truth = `floor.variables.stat_data`. Writes → RFC-6902 JSON-Patch (`applyVariableOps`). Scopes: `stat_data` default (MVU; in-prompt), `type:'script'` (per-card KV), `type:'chat'` (per-chat card KV).                                                                                                                |
 | **Prompt injection**   | `injectPrompts`, `uninjectPrompts`                                                                                                                     | 🟡      | Safe **no-op** (returns `{ uninject }`). Prompt is built in main; renderer-side injection can't reach it yet — cards calling these per-turn no longer throw.                                                                                                                               |
 | **Chat read**          | `getChatMessages`, `getCurrentMessageId`, `getLastMessageId` (alias of `getCurrentMessageId`)                                                          | ✅      | `message_id` = compact chat-array index.                                                                                                                                                                                                                                                   |
 | **Chat write**         | `setChatMessages`, `deleteChatMessages`, `saveChat`, `reloadCurrentChat`, `setInput`, `createChatMessages`                                             | ✅ / 🟡 | `createChatMessages` → composer-inject (onboarding); general mid-history insert ⬜ (floor-model decision).                                                                                                                                                                                 |
@@ -91,16 +91,18 @@ transports implement the same surface, so a card behaves identically in either
 | **Audio**              | `audioPlay/Pause/Import/Mode/Enable`                                                                                                                   | 🔁      | Cards play audio natively (`<audio>`/WebAudio) under the card CSP — the real path.                                                                                                                                                                                                         |
 | **World Assets**       | `assetUrl(name, type, mood?)` → `Promise<rptasset://… \| null>`                                                                                       | ✅      | Resolve a portrait (head `头像` / standing `立绘`, mood-aware) from the active world's asset layer. Returns an `rptasset://` URL loadable in card pages. Prerequisite: the World Assets layer ([world-assets-plan.md](../world-assets-plan.md)). Both transports backed by [`Host.assetUrl`](../../src/shared/thRuntime/types.ts). |
 
-#### Variable scopes — `type` parameter
+#### Variable scopes
 
-A card can read/write variables in four scopes, selected by `getVariables({ type: '…' })` / `updateVariablesWith(updater, { type: '…' })` / `replaceVariables(obj, { type: '…' })`:
+A card can read/write variables in three scopes. The default (stat_data) is selected with no option; named scopes use `getVariables({ type: '…' })` / `updateVariablesWith(updater, { type: '…' })`:
 
-##### `type:'message'` / `stat_data` (default scope; in-prompt)
+##### `stat_data` / default scope (in-prompt)
 
 The **MVU state tree**, alive in prompts. Read by the AI, modified by the model's `<UpdateVariable>` tags
 and the card's MVU methods. Persisted in `floor.variables.stat_data`. **In-prompt** (sent to the model).
 **Validated** by the card's `data_schema`. Use this for story/character variables (HP, inventory, quest
 state, relationships) — anything the AI knows about.
+
+- Read: `getVariables()` (no option) → `{ stat_data }`.
 
 ##### `type:'script'` (per-card, all chats)
 
@@ -109,10 +111,9 @@ all its chats** — a script on character A uses the same `type:'script'` storag
 with A. **Not in-prompt** (the AI doesn't see it). Use this for a script's private settings, caches, or
 UI state that must survive the session (e.g., "did the player see this tutorial?").
 
-- Read: `getVariables({ type: 'script' })` → arbitrary JSON object.
+- Read: `getVariables({ type: 'script' })` → arbitrary JSON object (sync).
 - Write (recommended): `updateVariablesWith(prev => ({ ...prev, 'feat.key': v }), { type: 'script' })`.
-- Write (full replace): `replaceVariables(obj, { type: 'script' })`.
-- Backed by `scriptCardVarsService` (`profiles/<profileId>/script-card-vars.json`), exposed via the `Host`.
+- Backed by `pluginStorageService` (`profiles/<profileId>/plugin-storage/card:<id>.json`), exposed via the `Host`.
 
 ##### `type:'chat'` (per-chat, general app state)
 
@@ -130,16 +131,6 @@ panel, but it's open for any card to store session-specific data.
   state.
 - Backed by `chatCardVarsService` (`profiles/<profileId>/chat-card-vars.json`), exposed via the `Host`
   (`getChatVars`/`setChatVars`) and both transports.
-
-##### `type:'global'` (per-profile, all chats and cards)
-
-A global **key/value store** (arbitrary JSON), readable/writable by any card. **Per-profile** — shared
-across all chats and cards. **Not in-prompt**. Use this for profile-level settings or shared data (e.g.,
-"is this feature enabled for this user?").
-
-- Read: `getVariables({ type: 'global' })`.
-- Write: `updateVariablesWith(fn, { type: 'global' })` / `replaceVariables(obj, { type: 'global' })`.
-- Backed by `globalCardVarsService`, exposed via the `Host`.
 
 ---
 
