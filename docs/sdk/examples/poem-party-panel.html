@@ -8,7 +8,9 @@
   updateVariablesWith(updater,{type:'chat'}). Character data: getVariables().stat_data.
   Portraits: window.assetUrl(name, type, mood?) → rptasset:// URL or null.
   Vital bars are a STATIC SHELL — no data binding (companions have no 生命/法力/体力 in MVU).
-  Renders once per regex injection (no event listeners), mirrors poem-combat-sheet.html.
+  Delivered as a DOCKED WCV panel (loaded once, NOT re-injected per message), so it renders
+  on load and then re-renders on stat_data changes via eventOn('mag_variable_updated'/'message_updated')
+  — that's how it catches 主角 being initialised at session start.
   VERIFY rendering + data-read in-app (manual-verify).
 -->
 <div id="poem-pp-root" class="poem-pp">
@@ -972,10 +974,25 @@
       })
     }
 
-    /* Render once per injection. The regex engine re-injects this whole
-       fragment on every message — that IS the re-render. No event
-       listeners (matches poem-combat-sheet.html). */
+    /* Initial render, THEN re-render on stat_data changes. This panel is a DOCKED
+       WCV that loads its HTML ONCE — it is NOT re-injected per message like the
+       inline combat sheet — so without a listener it would render before MVU
+       initialises 主角 at session start and never catch it. The shared runtime
+       re-emits every host var-change as both `mag_variable_updated` (MVU) and
+       `message_updated` (tavern); we coalesce that pair into one refresh per tick.
+       refresh() only READS + renders (it never writes stat_data), so there is no
+       write-back loop. */
     refresh()
+    if (typeof eventOn === 'function') {
+      var pendingRefresh = false
+      var onVarsChanged = function () {
+        if (pendingRefresh) return
+        pendingRefresh = true
+        Promise.resolve().then(function () { pendingRefresh = false; refresh() })
+      }
+      eventOn('mag_variable_updated', onVarsChanged)
+      eventOn('message_updated', onVarsChanged)
+    }
 
   })()
 </script>
