@@ -251,7 +251,11 @@ export function createThRuntime(host: Host): ThGlobals {
     // SYNC getters
     // type:'script' ⇒ the card's own KV store (NOT stat_data); any other scope ⇒ the message vars.
     getVariables: (opt?: any) =>
-      opt && opt.type === 'script' ? host.getScriptVars() : { stat_data: stat },
+      opt && opt.type === 'script'
+        ? host.getScriptVars()
+        : opt && opt.type === 'chat'
+          ? host.getChatVars()
+          : { stat_data: stat },
     getScriptId: () => scriptId,
     getCurrentCharacterName: () => host.charData()?.name ?? '',
     // Button name == event name (identity) — TH cards subscribe via eventOn(getButtonEvent(name), …).
@@ -344,7 +348,11 @@ export function createThRuntime(host: Host): ThGlobals {
         await writeVars(assignVarOps(add))
       }
     },
-    replaceVariables: async (vars: any) => {
+    replaceVariables: async (vars: any, opt?: any) => {
+      if (opt && opt.type === 'chat') {
+        await host.setChatVars(vars && typeof vars === 'object' ? vars : {})
+        return
+      }
       const next = vars?.stat_data && typeof vars.stat_data === 'object' ? vars.stat_data : vars
       const ops = replaceStatDataOps(stat, next)
       stat = clone(next) || {}
@@ -358,6 +366,12 @@ export function createThRuntime(host: Host): ThGlobals {
         const cur = clone(host.getScriptVars()) || {}
         const next = (await updater(cur)) || cur
         await host.setScriptVars(next)
+        return next
+      }
+      if (opt && opt.type === 'chat') {
+        const cur = clone(host.getChatVars()) || {}
+        const next = (await updater(cur)) || cur
+        await host.setChatVars(next)
         return next
       }
       const next = updater(clone(stat))
