@@ -21,7 +21,7 @@
 
 ---
 
-### Task PB1: Per-chat card-vars store service
+### Task 1 (PB1): Per-chat card-vars store service
 
 **Files:**
 - Create: `src/main/services/chatCardVarsService.ts`
@@ -131,7 +131,7 @@ git commit -m "feat(cardvars): per-chat card-scoped KV store (chatCardVarsServic
 
 ---
 
-### Task PB2: Expose `type:'chat'` through the Host seam + runtime
+### Task 2 (PB2): Expose `type:'chat'` through the Host seam + runtime
 
 **Files:**
 - Modify: `src/shared/thRuntime/types.ts` (the `Host` interface, near the `getScriptVars`/`setScriptVars` methods)
@@ -285,7 +285,7 @@ git commit -m "feat(thRuntime): expose per-chat KV via getVariables/updateVariab
 
 ---
 
-### Task PB3: Wire both transports + IPC + preload
+### Task 3 (PB3): Wire both transports + IPC + preload
 
 **Files:**
 - Modify: `src/preload/wcvHost.ts` (WCV transport — add `getChatVars`/`setChatVars`)
@@ -444,7 +444,7 @@ git commit -m "feat(cardvars): wire per-chat KV through both transports + IPC + 
 
 ---
 
-### Task PB4: Document the `type:'chat'` scope in the SDK
+### Task 4 (PB4): Document the `type:'chat'` scope in the SDK
 
 **Files:**
 - Modify: `docs/sdk/component-inventory.md` (add the scope next to the existing variable-scope docs)
@@ -501,7 +501,7 @@ git commit -m "docs(sdk): document the type:'chat' per-chat card KV scope + cont
 
 ---
 
-### Task PB5: Rewrite the party panel (membership + drag + contrast) and re-ship
+### Task 5 (PB5): Rewrite the party panel (membership + drag + contrast) and re-ship
 
 **Files:**
 - Modify: `docs/sdk/examples/poem-party-panel.html`
