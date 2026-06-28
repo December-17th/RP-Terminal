@@ -1,12 +1,15 @@
 <!--
-  命定之诗 — party-avatar panel (BG3-style), standalone panel-area regex SOURCE.
-  Renders a dark, gilded vertical strip of party members (主角 + 在场 companions).
+  命定之诗 — party-avatar panel (BG3-style), standalone panel-area regex SOURCE. v2.
+  Renders a dark, gilded, DRAGGABLE vertical strip of the party = 主角 (always) + a manual
+  member list (NOT everyone 在场). Edit the party via the ＋管理队伍 picker (toggles 关系列表 NPCs).
   Click any portrait → detail overlay (立绘 + identity + 好感度/性格 + 状态效果 + vital shell).
-  Data source: getVariables().stat_data via the TavernHelper page API.
+  Membership + strip position persist PER-CHAT in the type:'chat' card KV
+  (party.members / party.stripPos), read via getVariables({type:'chat'}) and written via
+  updateVariablesWith(updater,{type:'chat'}). Character data: getVariables().stat_data.
   Portraits: window.assetUrl(name, type, mood?) → rptasset:// URL or null.
   Vital bars are a STATIC SHELL — no data binding (companions have no 生命/法力/体力 in MVU).
-  Re-renders on variable-change broadcast, mirrors poem-combat-sheet.html conventions.
-  VERIFY rendering + data-read in-app (manual-verify, PA6).
+  Renders once per regex injection (no event listeners), mirrors poem-combat-sheet.html.
+  VERIFY rendering + data-read in-app (manual-verify).
 -->
 <div id="poem-pp-root" class="poem-pp">
   <div class="poem-pp-strip" id="poem-pp-strip">
@@ -737,12 +740,8 @@
 
     /* ── strip rendering ────────────────────────────────────────── */
     function renderStrip(party) {
-      if (!party.length) {
-        stripEl.innerHTML = '<div class="poem-pp-loading">无队员</div>'
-        // fall through is not used; manage button is appended below in the normal path
-      }
-
-      /* build member elements */
+      /* 主角 is always present, so an empty party still renders the drag handle +
+         ＋管理队伍 button (the entry point for adding the first member). */
       stripEl.innerHTML = ''
 
       /* drag handle + restore saved position */

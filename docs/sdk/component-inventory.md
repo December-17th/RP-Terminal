@@ -127,8 +127,8 @@ panel, but it's open for any card to store session-specific data.
 - **Shared bag — namespace your keys** (e.g. `party.members`, `party.stripPos`) so multiple widgets in
   the same chat don't collide.
 - **NOT MVU `stat_data`:** not AI-authored, not sent to the model, not validated/stripped by the card's
-  `data_schema`. Use `type:'chat'` for UI/session state; use `stat_data` (`type:'message'`) for story
-  state.
+  `data_schema`. Use `type:'chat'` for UI/session state; use `stat_data` (the default scope —
+  `getVariables()` with no option) for story state.
 - Backed by `chatCardVarsService` (`profiles/<profileId>/chat-card-vars.json`), exposed via the `Host`
   (`getChatVars`/`setChatVars`) and both transports.
 
