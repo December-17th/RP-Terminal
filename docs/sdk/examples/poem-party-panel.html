@@ -27,8 +27,14 @@
 </div>
 
 <style>
-  /* ── tokens ──────────────────────────────────────────────────── */
-  .poem-pp {
+  /* ── tokens ──────────────────────────────────────────────────────
+     Defined on BOTH roots: #poem-pp-overlay is a SIBLING of #poem-pp-root
+     (not a descendant), so without this the overlay subtree can't resolve
+     var(--…) — every color falls back to inherited black on the dark sheet
+     (the dark-on-dark bug). The overlay's own later rules keep its
+     position:fixed / display, so listing it here only shares the tokens. */
+  .poem-pp,
+  .poem-pp-overlay {
     --bg:        #18140f;
     --card:      #251c14;
     --border:    #5a412a;
@@ -45,6 +51,8 @@
     --hero-ring: #e8cc6e;
     --comp-ring: #8a9fc8;
     --overlay-bg:#0d0a07ee;
+  }
+  .poem-pp {
     font-family: 'Noto Sans SC', 'Noto Serif SC', serif;
     display: block;
     position: relative;
