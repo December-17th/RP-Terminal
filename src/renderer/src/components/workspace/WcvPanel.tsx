@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react'
 import { useWorkspaceStore } from '../../stores/workspaceStore'
 import { useWorkspaceContext } from './context'
 import { useChatStore } from '../../stores/chatStore'
+import { useCharacterStore } from '../../stores/characterStore'
 
 /**
  * SPIKE — renderer host for an out-of-process `WebContentsView` card-UI panel. The native view
@@ -38,6 +39,7 @@ export function WcvPanel({ slotId, url }: { slotId: string; url: string }): Reac
   const layouts = useWorkspaceStore((s) => s.layouts) // re-measure when the layout changes
   const { profileId } = useWorkspaceContext()
   const chatId = useChatStore((s) => s.activeChatId)
+  const characterId = useCharacterStore((s) => s.activeCharacter?.id ?? '')
 
   useEffect(() => {
     const el = hostRef.current
@@ -46,7 +48,7 @@ export function WcvPanel({ slotId, url }: { slotId: string; url: string }): Reac
       const r = el.getBoundingClientRect()
       return { x: r.left, y: r.top, width: r.width, height: r.height }
     }
-    window.api.wcvEnsure(slotId, rect(), url, { profileId, chatId: chatId || '' })
+    window.api.wcvEnsure(slotId, rect(), url, { profileId, chatId: chatId || '', characterId })
     const onChange = (): void => window.api.wcvSetBounds(slotId, rect())
     const ro = new ResizeObserver(onChange)
     ro.observe(el)
@@ -56,7 +58,7 @@ export function WcvPanel({ slotId, url }: { slotId: string; url: string }): Reac
       window.removeEventListener('resize', onChange)
       window.api.wcvDestroy(slotId)
     }
-  }, [slotId, url, profileId, chatId])
+  }, [slotId, url, profileId, chatId, characterId])
 
   useEffect(() => {
     const el = hostRef.current

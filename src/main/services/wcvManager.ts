@@ -2,6 +2,7 @@ import { WebContentsView, BrowserWindow, session } from 'electron'
 import { is } from '@electron-toolkit/utils'
 import { join } from 'path'
 import { log } from './logService'
+import { serveAssetRequest, ASSET_SCHEME } from './worldAssetProtocol'
 
 // Card UI panels run in their own session partition. jsDelivr serves `/gh/` HTML as text/plain (to
 // stop it being used to host pages), so Chromium shows it as raw text; the card's UI is meant to be
@@ -34,6 +35,7 @@ const ensureSession = (): void => {
       headers: { 'content-type': 'text/html; charset=utf-8', 'content-security-policy': CARD_CSP }
     })
   })
+  ses.protocol.handle(ASSET_SCHEME, (req) => serveAssetRequest(req))
   ses.webRequest.onHeadersReceived({ urls: ['https://*.jsdelivr.net/*'] }, (details, cb) => {
     if (!/\.html(\?|$)/i.test(details.url)) return cb({})
     const headers: Record<string, string[]> = { ...details.responseHeaders }

@@ -61,6 +61,8 @@ export interface Host {
   currentChatId(): string
   // Script-scope variables (TH getVariables({type:'script'}) ) — a card-owned KV store, NOT stat_data.
   getScriptVars(): Record<string, any>
+  // Chat-scope variables (TH getVariables({type:'chat'})) — a per-chat card-owned KV, NOT stat_data.
+  getChatVars(): Record<string, any>
   // Render the script's action buttons (replaceScriptButtons) — the host shows the visible ones in the
   // menu above the input; a click is delivered back as a host event named after the button.
   setButtons(buttons: { name: string; visible: boolean }[]): void
@@ -75,6 +77,8 @@ export interface Host {
   replaceRegexes(regexes: any[], option?: any): Promise<void>
   // Persist the card-scope KV (the full object; mirrors updateVariablesWith({type:'script'}) returning all).
   setScriptVars(vars: Record<string, any>): Promise<void>
+  // Persist the per-chat KV (the full object; mirrors updateVariablesWith({type:'chat'}) returning all).
+  setChatVars(vars: Record<string, any>): Promise<void>
   // Worldbook CRUD/bind (full library — trusted cards). list/chatWorldbookIds are SYNC (called w/o await).
   listWorldbooks(): { id: string; name: string }[]
   chatWorldbookIds(): string[]
@@ -93,6 +97,8 @@ export interface Host {
   // (Local/chat vars use statData + applyVariableOps; the runtime runs the STScript interpreter itself.)
   getGlobalVars(): Promise<Record<string, any>>
   setGlobalVar(key: string, value: any): Promise<void>
+  // Resolve a character portrait to an rptasset:// URL for the calling card's world, or null.
+  assetUrl(name: string, type: string, mood?: string): Promise<string | null>
   // --- events + engine ---
   onVarsChanged(cb: (statData: any) => void): () => void
   onHostEvent(cb: (name: string, payload?: any) => void): () => void

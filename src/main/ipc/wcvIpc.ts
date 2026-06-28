@@ -1,5 +1,6 @@
 import { IpcMain } from 'electron'
 import * as wcvManager from '../services/wcvManager'
+import { getChatCardVars, setChatCardVars } from '../services/chatCardVarsService'
 import * as floorService from '../services/floorService'
 import * as generationService from '../services/generationService'
 import * as lorebookService from '../services/lorebookService'
@@ -10,6 +11,7 @@ import * as regexService from '../services/regexService'
 import * as pluginStorageService from '../services/pluginStorageService'
 import * as pluginService from '../services/pluginService'
 import * as settingsService from '../services/settingsService'
+import * as worldAssetService from '../services/worldAssetService'
 import { getActivePresetId } from '../services/presetService'
 import { log } from '../services/logService'
 import { ArtifactScope } from '../../shared/artifactScope'
@@ -426,6 +428,19 @@ export const registerWcvIpc = (ipcMain: IpcMain): void => {
     return true
   })
 
+  // Chat-scope vars (getVariables({type:'chat'})) — a per-chat card-owned KV, NOT stat_data. SYNC read.
+  ipcMain.on('wcv-host-chat-vars-get-sync', (e) => {
+    const ctx = wcvManager.contextFor(e.sender.id)
+    e.returnValue = ctx ? getChatCardVars(ctx.profileId, ctx.chatId) : {}
+  })
+  // Persist the whole per-chat KV object (replaceVariables / updateVariablesWith with type:'chat').
+  ipcMain.handle('wcv-host-chat-vars-set', (e, vars) => {
+    const ctx = wcvManager.contextFor(e.sender.id)
+    if (!ctx) return false
+    setChatCardVars(ctx.profileId, ctx.chatId, vars && typeof vars === 'object' ? vars : {})
+    return true
+  })
+
   // --- Generation requests (Track C0) — the card REQUESTS; the host runs it (AI key stays in main). ---
   // generate(text) = a normal visible turn (new floor); generateRaw(config) = a one-off completion → text.
   ipcMain.handle('wcv-host-generate', async (e, text) => {
@@ -475,6 +490,16 @@ export const registerWcvIpc = (ipcMain: IpcMain): void => {
     const ctx = wcvManager.contextFor(e.sender.id)
     if (ctx) wcvManager.pushHostReload(ctx.chatId)
     return true
+  })
+
+  // Resolve a World Assets portrait URL for the calling card's world (rptasset://… or null). Mood-aware.
+  ipcMain.handle('wcv-host-asset-url', (e, name, type, mood) => {
+    const ctx = wcvManager.contextFor(e.sender.id)
+    if (!ctx) return null
+    const ids =
+      chatService.getChatLorebookIds(ctx.profileId, ctx.chatId) ??
+      (ctx.characterId ? [ctx.characterId] : [])
+    return worldAssetService.assetUrlForWorld(ctx.profileId, ids, String(name ?? ''), type, mood)
   })
 
   // Raw floor rows for the calling panel's session (the unified TH runtime maps these to TH/ST message

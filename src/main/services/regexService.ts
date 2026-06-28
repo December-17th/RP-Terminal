@@ -235,17 +235,31 @@ export const listScripts = (profileId: string): RegexScriptInfo[] => {
 }
 
 /** Active 'panel'-promoted regex UIs for a context — `{ file, scriptName, url }` — so the renderer can
- *  offer them as selectable WCV panel views. Only those with an extractable loader URL are promotable. */
+ *  offer them as selectable WCV panel views. Loader-based panels use their remote URL; inline-HTML panels
+ *  are served as a `data:text/html` URL so WcvPanel can load the HTML in a bridged WCV. */
 export const listPanelRegexes = (
   profileId: string,
   ctx?: ScopeContext
 ): Array<{ file: string; scriptName: string; url: string }> => {
   const out: Array<{ file: string; scriptName: string; url: string }> = []
   for (const s of listScripts(profileId)) {
-    // `uiUrl` is already computed by listScripts (no second read of the rule file).
-    if (s.renderMode !== 'panel' || s.disabled || !s.uiUrl) continue
+    if (s.renderMode !== 'panel' || s.disabled) continue
     if (ctx && !isScopeActive({ scope: s.scope, owner: s.owner }, ctx)) continue
-    out.push({ file: s.file, scriptName: s.scriptName, url: s.uiUrl })
+    if (s.uiUrl) {
+      // Loader-form panel: use the remote URL as-is.
+      out.push({ file: s.file, scriptName: s.scriptName, url: s.uiUrl })
+    } else {
+      // Inline-HTML panel: read the rule file to get the HTML, serve as data: URL.
+      const rules = rulesInFile(path.join(regexDir(profileId), s.file))
+      const html = rules[0]?.replaceString ?? rules[0]?.replace ?? ''
+      if (html) {
+        out.push({
+          file: s.file,
+          scriptName: s.scriptName,
+          url: `data:text/html;charset=utf-8,${encodeURIComponent(html)}`
+        })
+      }
+    }
   }
   return out
 }
@@ -283,6 +297,13 @@ export const saveRegexScript = (
     'utf-8'
   )
   if (scope !== 'global') setScriptScope(profileId, fileName, scope, owner)
+  // If the first rule declares a renderMode (e.g. 'panel'), persist it to meta so an imported
+  // card regex is immediately panel-promoted without a separate setScriptRenderMode call.
+  const declaredMode = rules[0]?.renderMode
+  const VALID_MODES = new Set<CardRenderMode>(['inline', 'isolated', 'panel'])
+  if (typeof declaredMode === 'string' && VALID_MODES.has(declaredMode as CardRenderMode)) {
+    setRenderMode(regexDir(profileId), fileName, declaredMode as CardRenderMode)
+  }
   return rules[0]?.scriptName || rules[0]?.name || 'Imported regex'
 }
 

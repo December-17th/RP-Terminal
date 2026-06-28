@@ -4,6 +4,7 @@ import {
   setPanelView,
   togglePanelHidden,
   mergeWithDefault,
+  injectLeftPanel,
   type ModeLayouts,
   type NodePath,
   type WsNode
@@ -39,6 +40,7 @@ interface WorkspaceState {
   setView: (mode: string, key: string, view: string) => void
   toggleHidden: (mode: string, key: string) => void
   resetMode: (mode: string) => void
+  ensureLeftPanel: (view: string) => void
 }
 
 export const useWorkspaceStore = create<WorkspaceState>((set, get) => {
@@ -69,6 +71,16 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => {
     setView: (mode, key, view) => apply(mode, (root) => setPanelView(root, key, view)),
     toggleHidden: (mode, key) => apply(mode, (root) => togglePanelHidden(root, key)),
     resetMode: (mode) =>
-      apply(mode, () => JSON.parse(JSON.stringify(defaultLayoutForMode(mode).root)))
+      apply(mode, () => JSON.parse(JSON.stringify(defaultLayoutForMode(mode).root))),
+
+    ensureLeftPanel: (view) => {
+      set((s) => {
+        const layouts = { ...s.layouts }
+        for (const mode of Object.keys(layouts)) {
+          layouts[mode] = { root: injectLeftPanel(layouts[mode].root, view, 'card-left') }
+        }
+        return { layouts }
+      })
+    },
   }
 })

@@ -5,7 +5,7 @@ import { useChatStore } from './stores/chatStore'
 import { useSettingsStore } from './stores/settingsStore'
 import { usePresetStore } from './stores/presetStore'
 import { useLorebookStore } from './stores/lorebookStore'
-import { usePanelRegexStore } from './stores/panelRegexStore'
+import { usePanelRegexStore, VIEW_PREFIX } from './stores/panelRegexStore'
 import { useLogStore } from './stores/logStore'
 import { useRegexStore } from './stores/regexStore'
 import { usePluginsStore } from './stores/pluginsStore'
@@ -153,6 +153,16 @@ export default function App(): React.ReactElement {
       .getState()
       .load(pid, { cardId: activeCharacter?.id, chatId: activeChatId })
   }, [activeProfile?.id, activeCharacter?.id, activeChatId, activePresetId])
+
+  // If the active card declares a left_panel, find its promoted panel by scriptName and auto-dock it.
+  const leftPanelName = activeCharacter?.card?.data?.extensions?.rp_terminal?.left_panel?.name
+  const panelRegexes = usePanelRegexStore((s) => s.panels)
+  useEffect(() => {
+    if (!leftPanelName) return
+    const match = panelRegexes.find((p) => p.scriptName === leftPanelName)
+    if (match) useWorkspaceStore.getState().ensureLeftPanel(`${VIEW_PREFIX}${match.file}`)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [leftPanelName, panelRegexes.map((p) => p.file).join(',')])
 
   // A card script (e.g. the 创意工坊 workshop) wrote a worldbook in its WCV → refresh the lorebook editor
   // so it doesn't show a stale view (reload the open book only if the user has no unsaved edits).

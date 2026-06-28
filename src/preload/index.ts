@@ -324,6 +324,11 @@ const api = {
     ipcRenderer.invoke('asset-open-folder', profileId, lorebookId, category),
   assetImportZipDialog: (profileId: string, lorebookId: string) =>
     ipcRenderer.invoke('asset-import-zip-dialog', profileId, lorebookId),
+  // Per-chat card KV (inline transport): general scope, getVariables({type:'chat'}).
+  chatCardVarsGet: (profileId: string, chatId: string) =>
+    ipcRenderer.invoke('chat-card-vars-get', profileId, chatId),
+  chatCardVarsSet: (profileId: string, chatId: string, vars: Record<string, any>) =>
+    ipcRenderer.invoke('chat-card-vars-set', profileId, chatId, vars),
   // Storage location (app-global; pointer file, not per-profile settings)
   getDataLocation: () => ipcRenderer.invoke('get-data-location'),
   setDataLocationDialog: () => ipcRenderer.invoke('set-data-location-dialog'),

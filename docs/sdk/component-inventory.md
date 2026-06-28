@@ -76,7 +76,7 @@ transports implement the same surface, so a card behaves identically in either
 
 | Domain                 | Methods                                                                                                                                                | Status  | Notes                                                                                                                                                                                                                                                                                      |
 | ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| **Variables / MVU**    | `getVariables`, `insertOrAssignVariables`, `insertVariables` (no-overwrite), `replaceVariables`, `updateVariablesWith`; `Mvu.*`                        | ✅      | State of truth = `floor.variables.stat_data`. Writes → RFC-6902 JSON-Patch (`applyVariableOps`). `type:'script'` → a card KV (`plugin-storage`), separate from `stat_data`.                                                                                                                |
+| **Variables / MVU**    | `getVariables`, `insertOrAssignVariables`, `insertVariables` (no-overwrite), `replaceVariables`, `updateVariablesWith`; `Mvu.*`                        | ✅      | State of truth = `floor.variables.stat_data`. Writes → RFC-6902 JSON-Patch (`applyVariableOps`). Scopes: `stat_data` default (MVU; in-prompt), `type:'script'` (per-card KV), `type:'chat'` (per-chat card KV).                                                                                                                |
 | **Prompt injection**   | `injectPrompts`, `uninjectPrompts`                                                                                                                     | 🟡      | Safe **no-op** (returns `{ uninject }`). Prompt is built in main; renderer-side injection can't reach it yet — cards calling these per-turn no longer throw.                                                                                                                               |
 | **Chat read**          | `getChatMessages`, `getCurrentMessageId`, `getLastMessageId` (alias of `getCurrentMessageId`)                                                          | ✅      | `message_id` = compact chat-array index.                                                                                                                                                                                                                                                   |
 | **Chat write**         | `setChatMessages`, `deleteChatMessages`, `saveChat`, `reloadCurrentChat`, `setInput`, `createChatMessages`                                             | ✅ / 🟡 | `createChatMessages` → composer-inject (onboarding); general mid-history insert ⬜ (floor-model decision).                                                                                                                                                                                 |
@@ -89,6 +89,48 @@ transports implement the same surface, so a card behaves identically in either
 | **EJS**                | `EjsTemplate.*`                                                                                                                                        | ✅      | Backed by the quickjs engine (Layer C of ST-PT).                                                                                                                                                                                                                                           |
 | **Macros**             | `substituteParams`, `substitudeMacros`, `{{get_X_variable}}`/`{{format_X_variable}}`                                                                   | ✅      | `registerMacroLike` ⬜ (cross-process).                                                                                                                                                                                                                                                    |
 | **Audio**              | `audioPlay/Pause/Import/Mode/Enable`                                                                                                                   | 🔁      | Cards play audio natively (`<audio>`/WebAudio) under the card CSP — the real path.                                                                                                                                                                                                         |
+| **World Assets**       | `assetUrl(name, type, mood?)` → `Promise<rptasset://… \| null>`                                                                                       | ✅      | Resolve a portrait (head `头像` / standing `立绘`, mood-aware) from the active world's asset layer. Returns an `rptasset://` URL loadable in card pages. Prerequisite: the World Assets layer ([world-assets-plan.md](../world-assets-plan.md)). Both transports backed by [`Host.assetUrl`](../../src/shared/thRuntime/types.ts). |
+
+#### Variable scopes
+
+A card can read/write variables in three scopes. The default (stat_data) is selected with no option; named scopes use `getVariables({ type: '…' })` / `updateVariablesWith(updater, { type: '…' })`:
+
+##### `stat_data` / default scope (in-prompt)
+
+The **MVU state tree**, alive in prompts. Read by the AI, modified by the model's `<UpdateVariable>` tags
+and the card's MVU methods. Persisted in `floor.variables.stat_data`. **In-prompt** (sent to the model).
+**Validated** by the card's `data_schema`. Use this for story/character variables (HP, inventory, quest
+state, relationships) — anything the AI knows about.
+
+- Read: `getVariables()` (no option) → `{ stat_data }`.
+
+##### `type:'script'` (per-card, all chats)
+
+A card-owned **key/value store** (arbitrary JSON). Survives app restarts and chat swaps. **Per-card across
+all its chats** — a script on character A uses the same `type:'script'` storage across all conversations
+with A. **Not in-prompt** (the AI doesn't see it). Use this for a script's private settings, caches, or
+UI state that must survive the session (e.g., "did the player see this tutorial?").
+
+- Read: `getVariables({ type: 'script' })` → arbitrary JSON object (sync).
+- Write (recommended): `updateVariablesWith(prev => ({ ...prev, 'feat.key': v }), { type: 'script' })`.
+- Backed by `pluginStorageService` (`profiles/<profileId>/plugin-storage/card:<id>.json`), exposed via the `Host`.
+
+##### `type:'chat'` (per-chat, general app state)
+
+A per-**chat/session**, card-scoped **key/value store** (arbitrary JSON). Survives app restarts **for that
+chat**. A **general scope** for any card's per-session UI/state — its first consumer is the 命定之诗 party
+panel, but it's open for any card to store session-specific data.
+
+- Read: `getVariables({ type: 'chat' })` → arbitrary JSON object.
+- Write (recommended, no-clobber): `updateVariablesWith(prev => ({ ...prev, 'feat.key': v }), { type: 'chat' })`.
+- Write (full replace): `replaceVariables(obj, { type: 'chat' })`.
+- **Shared bag — namespace your keys** (e.g. `party.members`, `party.stripPos`) so multiple widgets in
+  the same chat don't collide.
+- **NOT MVU `stat_data`:** not AI-authored, not sent to the model, not validated/stripped by the card's
+  `data_schema`. Use `type:'chat'` for UI/session state; use `stat_data` (the default scope —
+  `getVariables()` with no option) for story state.
+- Backed by `chatCardVarsService` (`profiles/<profileId>/chat-card-vars.json`), exposed via the `Host`
+  (`getChatVars`/`setChatVars`) and both transports.
 
 ---
 
@@ -116,12 +158,16 @@ transports inject the same thing (clean-room mirror of JSR's `createSrcContent`/
 | Scripted card, mode `isolated`, or full-page / `window.top` apps    | **Out-of-process `WebContentsView`** (`WcvMessageFrame`/`wcvManager`)                  | Crash isolation; full-page cards get a real `window.top`. |
 | Passive full doc / non-scripted                                     | Sandboxed `HtmlFrame` (`sandbox="allow-same-origin"`, no scripts)                      | Static, safe.                                             |
 
-Per-card override: a regex `_meta.renderMode` → a `<!--rpt:mode=inline|isolated-->` marker parsed by
+Per-card override: a regex `_meta.renderMode` → a `<!--rpt:mode=inline|isolated|panel-->` marker parsed by
 `splitHtml`. Global default: `settings.cards.renderMode` (`inline`). A third mode **`panel`** PROMOTES a
-loader regex (one whose replacement does `$('body').load('https://…')`) out of the message into a docked WCV
-**panel**: the inline marker is stripped, the page URL is exposed via `regexService.listPanelRegexes`, and it
-becomes a selectable workspace view (`regex-panel:<file>`, rendered by `WcvPanel`). Card scripts themselves
-run app-wide in the invisible session-level **engine** (`CardScriptWcvHost`), not in a panel.
+UI regex out of the message into a docked WCV **panel** (a selectable workspace view `regex-panel:<file>`,
+rendered by `WcvPanel`):
+- A loader regex (replacement does `$('body').load('https://…')`) is promoted as-is: the inline marker is stripped, the page URL is exposed via `regexService.listPanelRegexes`.
+- An **inline-HTML regex** (bare `<div>`/`<table>`) is promoted by serving its content as a `data:text/html` URL (sanitized + CSS-scoped), allowing card-declared panels without remote URLs. Card import preserves the `renderMode:'panel'` declaration.
+
+Card scripts themselves run app-wide in the invisible session-level **engine** (`CardScriptWcvHost`), not in a panel.
+
+**World Assets on WCV cards**: the `rptasset://` scheme resolves portraits from the active world's asset layer. It is registered on the `persist:wcv-cards` session, allowing card pages (both loader-regex and inline-HTML panels) to load mood-aware heads (`头像`) and standing images (`立绘`) via `window.assetUrl` or direct URL references. Prerequisite: [world-assets-plan.md](../world-assets-plan.md).
 
 ---
 
@@ -145,6 +191,7 @@ character_version, character_book` (embedded lorebook). Unknown ST `extensions.*
 | `data_schema`                        | MVU Zod schema **source (JS)**, run sandboxed                                                                                        | ✅                             |
 | `scripts` (`[{name,code,enabled?}]`) | card scripts                                                                                                                         | ✅                             |
 | `game_rules`                         | freeform rules bag                                                                                                                   | ✅                             |
+| `left_panel`                         | `{ name: string }` — a card UI (matched by script `name`) auto-docked left in the workspace when active. Requires `renderMode:'panel'`. | ✅                             |
 | `panel_ui`                           | static card-determined grid (slots → native view or `wcv` entry)                                                                     | ✅ schema                      |
 | **World Card bundle slots**          | `world_card` (version marker), `meta`, `regex[]`, `presets[]`, `lorebooks[]`, `plugins[]`, `agent`, `combat`, `recommended_settings` | ✅ schema; routing 🟡 (see §5) |
 
@@ -166,11 +213,11 @@ best-effort (arbitrary author JS reaching past the supported surface).
 | World-info **EJS** (`<% %>`, `getvar`)                            | entry `content`                              | `templateService` (build) + `renderTemplate` (display) + WCV preload — one engine, one `buildTemplateContext`; `getvar('x')` and `getvar('stat_data.x')` resolve identically in all three (WS-1) | ✅ A–E ([plan](../st-prompt-template-plan.md), [API §EJS](../rpt-api.md))                                                           |
 | Injection **markers/decorators** (`[GENERATE]`, `@INJECT`, `@@…`) | entry `comment`/decorator                    | [`injectMarkers.ts`](../../src/main/parsers/injectMarkers.ts) + `promptBuilder`                                                                                                                  | ✅ build-time; `[RENDER:*]` partial                                                                                                 |
 | `[InitialVariables]`                                              | entry                                        | `mvuSchema.parseInitVars` → floor-0 `stat_data`                                                                                                                                                  | ✅                                                                                                                                  |
-| **Regex scripts** (beautification + state)                        | `extensions.regex_scripts`                   | regex store + `rp_terminal.regex`; per-card render mode                                                                                                                                          | ✅ engine ([`stRegexEngine`](../../src/main/parsers/stRegexEngine.ts), `regexTransform`); 🟡 bundled import routing (World Card S1) |
+| **Regex scripts** (beautification + state)                        | `extensions.regex_scripts`                   | regex store + `rp_terminal.regex`; per-card render mode; `renderMode:'panel'` promotes a UI regex to a docked workspace panel (via [`regexService.listPanelRegexes`](../../src/main/services/regexService.ts)) | ✅ engine ([`stRegexEngine`](../../src/main/parsers/stRegexEngine.ts), `regexTransform`); 🟡 bundled import routing (World Card S1) |
 | **MVU** `<UpdateVariable>` / `stat_data`                          | model output + MVU bundle                    | **native** [`mvuParser`](../../src/main/parsers/mvuParser.ts) (`_.set` + JSON-Patch + `delta`/array-append); thin `Mvu` shim                                                                     | ✅ (no bundle loaded)                                                                                                               |
 | MVU `data_schema` (Zod)                                           | bundle                                       | `rp_terminal.data_schema`, sandboxed                                                                                                                                                             | ✅                                                                                                                                  |
 | **TavernHelper scripts** (JS)                                     | script lib / regex-injected                  | `rp_terminal.scripts` + the `thRuntime` surface at render                                                                                                                                        | 🟡 Tier-1 for the supported API; **Tier 2** for arbitrary DOM / ST internals                                                        |
-| **Frontend cards** (HTML/Vue/React UI)                            | regex `$('body').load(...)` / `<body>` block | dual-mode frame (inline / WCV) + `cardEnv` libs                                                                                                                                                  | ✅ for the supported env; full-page/`window.top` → Isolated                                                                         |
+| **Frontend cards** (HTML/Vue/React UI)                            | regex `$('body').load(...)` / `<body>` block / bare HTML | dual-mode frame (inline / WCV) + `cardEnv` libs; inline-HTML cards can declare `renderMode:'panel'` to become docked WCV panels (served as `data:text/html`) | ✅ for the supported env; full-page/`window.top` → Isolated; ✅ inline-HTML as panels |
 | Chat-completion **preset**                                        | preset JSON                                  | [`stPresetParser`](../../src/main/parsers/stPresetParser.ts) → preset files + `rp_terminal.presets`                                                                                              | ✅ parser; 🟡 bundle import                                                                                                         |
 | Quick replies / STScript                                          | QR sets                                      | `triggerSlash` subset (`shared/stscript`)                                                                                                                                                        | 🟡                                                                                                                                  |
 | Avatar / assets                                                   | PNG image / embedded                         | `avatars/<id>.png` + `rp_terminal.assets`                                                                                                                                                        | ✅ avatar; 🟡 binary asset bundle (PNG cartridge ZIP, §6)                                                                           |

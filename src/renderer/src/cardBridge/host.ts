@@ -64,6 +64,16 @@ export function createInlineHost(ctx: CardCtx): Host {
       scriptVarCache = all || {}
     })
     .catch(() => {})
+  // Chat-scope vars (getVariables({type:'chat'})) — a per-chat card-owned KV. getChatVars must be SYNC, so
+  // back it with a cache hydrated async from the same per-chat store the WCV transport reads.
+  let chatVarCache: Record<string, any> = {}
+  if (ctx.chatId)
+    void window.api
+      .chatCardVarsGet(ctx.profileId, ctx.chatId)
+      .then((all: any) => {
+        chatVarCache = all || {}
+      })
+      .catch(() => {})
   return {
     ctx,
     statData: () => statOf(),
@@ -93,6 +103,7 @@ export function createInlineHost(ctx: CardCtx): Host {
     personaName: () => useSettingsStore.getState().settings?.persona?.name || 'User',
     currentChatId: () => ctx.chatId,
     getScriptVars: () => scriptVarCache,
+    getChatVars: () => chatVarCache,
 
     applyVariableOps: async (ops: VarOp[]) => {
       await useChatStore.getState().applyVariableOps(ctx.profileId, ops as any, floorIndex())
@@ -160,6 +171,15 @@ export function createInlineHost(ctx: CardCtx): Host {
         }
       } catch (e) {
         console.error('[inline setScriptVars]', e)
+      }
+    },
+    setChatVars: async (vars: Record<string, any>) => {
+      const next = vars && typeof vars === 'object' ? vars : {}
+      chatVarCache = next
+      try {
+        if (ctx.chatId) await window.api.chatCardVarsSet(ctx.profileId, ctx.chatId, next)
+      } catch (e) {
+        console.error('[inline setChatVars]', e)
       }
     },
     // Worldbook CRUD/bind — full library via window.api + the lorebook store (sync getters read the store).
@@ -236,6 +256,16 @@ export function createInlineHost(ctx: CardCtx): Host {
         key,
         value
       })
+    },
+    // Resolve a character portrait to an rptasset:// URL for this card's world, or null.
+    assetUrl: async (name: string, type: string, mood?: string) => {
+      try {
+        const own = cardCharacterId()
+        const ids = useLorebookStore.getState().sessionIds ?? (own ? [own] : [])
+        return await window.api.assetUrl(ctx.profileId, ids, 'character', name, type, mood)
+      } catch {
+        return null
+      }
     },
 
     onVarsChanged: (cb) => {
