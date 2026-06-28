@@ -26,16 +26,16 @@
 <style>
   /* ── tokens ──────────────────────────────────────────────────── */
   .poem-pp {
-    --bg:        var(--rpt-bg-deep,      #18140f);
-    --card:      var(--rpt-bg-card,      #251c14);
-    --border:    var(--rpt-border,       #5a412a);
-    --window:    var(--rpt-bg-window,    #130f0a);
-    --gold:      var(--rpt-accent-gold,  #c9a84c);
+    --bg:        #18140f;
+    --card:      #251c14;
+    --border:    #5a412a;
+    --window:    #130f0a;
+    --gold:      #c9a84c;
     --gold-hi:   #e8cc6e;
     --gold-lo:   #7a5e2a;
-    --t1:        var(--rpt-text-primary, #f4e3c8);
-    --t2:        var(--rpt-text-secondary,#c8a87a);
-    --t3:        var(--rpt-text-muted,   #8a6e52);
+    --t1:        #f4e3c8;
+    --t2:        #c8a87a;
+    --t3:        #8a6e52;
     --hp:        #b73a2b;
     --mp:        #2d5aa0;
     --sp:        #3b7f52;
@@ -62,8 +62,35 @@
       inset 0 1px 0 rgba(201,168,76,.18),
       inset 0 -1px 0 rgba(0,0,0,.5),
       0 2px 12px rgba(0,0,0,.6);
-    position: relative;
+    position: fixed;
+    left: 8px;
+    top: 8px;
+    z-index: 50;
   }
+  .poem-pp-drag {
+    width: 100%;
+    height: 14px;
+    margin-bottom: 4px;
+    cursor: grab;
+    border-radius: 4px;
+    background: linear-gradient(90deg, transparent, rgba(201,168,76,.5), transparent);
+    flex-shrink: 0;
+  }
+  .poem-pp-drag:active { cursor: grabbing; }
+  .poem-pp-manage {
+    margin-top: 8px;
+    font-size: 10px;
+    color: #c8a87a;
+    border: 1px solid #5a412a;
+    border-radius: 4px;
+    padding: 3px 4px;
+    text-align: center;
+    cursor: pointer;
+    width: 58px;
+  }
+  .poem-pp-manage:hover { color: #f4e3c8; border-color: #7a5e2a; }
+  .poem-pp-mg-list { display: flex; flex-direction: column; gap: 6px; }
+  .poem-pp-mg-row { display: flex; align-items: center; gap: 8px; color: #f4e3c8; font-size: 13px; cursor: pointer; }
   .poem-pp-strip::before {
     content: '';
     position: absolute;
@@ -712,11 +739,19 @@
     function renderStrip(party) {
       if (!party.length) {
         stripEl.innerHTML = '<div class="poem-pp-loading">无队员</div>'
-        return
+        // fall through is not used; manage button is appended below in the normal path
       }
 
       /* build member elements */
       stripEl.innerHTML = ''
+
+      /* drag handle + restore saved position */
+      var handle = document.createElement('div')
+      handle.className = 'poem-pp-drag'
+      handle.title = '拖动'
+      stripEl.appendChild(handle)
+      applyStripPos()
+      enableDrag(handle)
 
       party.forEach(function (member) {
         var name   = member.name
@@ -792,27 +827,134 @@
           /* no URL → placeholder stays */
         })
       })
+
+      /* manage button at bottom of strip */
+      var mgBtn = document.createElement('div')
+      mgBtn.className = 'poem-pp-manage'
+      mgBtn.textContent = '＋ 管理队伍'
+      mgBtn.title = '从已知角色添加/移除队员'
+      mgBtn.addEventListener('click', showManage)
+      stripEl.appendChild(mgBtn)
+    }
+
+    /* per-chat card KV (getVariables({type:'chat'})) — SYNC in both transports */
+    function chatKV() {
+      try {
+        var v = typeof getVariables === 'function' ? getVariables({ type: 'chat' }) : {}
+        return v && typeof v === 'object' && typeof v.then !== 'function' ? v : {}
+      } catch (_) { return {} }
+    }
+    function partyMembers() {
+      var m = chatKV()['party.members']
+      return Array.isArray(m) ? m : []
     }
 
     /* ── build party from stat_data ─────────────────────────────── */
+    /* party = 主角 (always) + the manual party.members list (NOT 关系列表-在场) */
     function buildParty(SD) {
       var hero = SD['主角'] || null
       var rel  = SD['关系列表'] || {}
       var party = []
       if (hero) {
-        party.push({
-          name: hero['姓名'] || hero['名称'] || '主角',
-          data: hero,
-          isHero: true
-        })
+        party.push({ name: hero['姓名'] || hero['名称'] || '主角', data: hero, isHero: true })
       }
-      Object.entries(rel).forEach(function (entry) {
-        var n = entry[0], c = entry[1]
-        if (c && c['在场'] === true) {
-          party.push({ name: n, data: c, isHero: false })
-        }
+      partyMembers().forEach(function (n) {
+        party.push({ name: n, data: rel[n] || {}, isHero: false })
       })
       return party
+    }
+
+    /* persist a single chat-KV key without clobbering siblings */
+    function setKV(key, value) {
+      try {
+        if (typeof updateVariablesWith === 'function') {
+          return updateVariablesWith(function (prev) {
+            var next = prev && typeof prev === 'object' ? prev : {}
+            next[key] = value
+            return next
+          }, { type: 'chat' })
+        }
+      } catch (_) {}
+      return Promise.resolve()
+    }
+
+    function setParty(members) {
+      return setKV('party.members', members).then(refresh)
+    }
+
+    /* manage overlay: every known NPC (关系列表 keys) with a toggle; checked = in party */
+    function showManage() {
+      gv().then(function (SD) {
+        var rel = SD['关系列表'] || {}
+        var inParty = partyMembers()
+        var names = Object.keys(rel)
+        var rows = names.length
+          ? names.map(function (n) {
+              var on = inParty.indexOf(n) >= 0
+              return (
+                '<label class="poem-pp-mg-row">' +
+                '<input type="checkbox" data-name="' + esc(n) + '"' + (on ? ' checked' : '') + '>' +
+                '<span>' + esc(n) + '</span></label>'
+              )
+            }).join('')
+          : '<div class="poem-pp-empty">暂无已知角色（关系列表为空）</div>'
+        bodyEl.innerHTML =
+          '<div class="poem-pp-ow-sect" style="margin:4px 0 10px">管理队伍</div>' +
+          '<div class="poem-pp-mg-list">' + rows + '</div>'
+        openOverlay()
+        var boxes = bodyEl.querySelectorAll('input[type=checkbox]')
+        Array.prototype.forEach.call(boxes, function (b) {
+          b.addEventListener('change', function () {
+            var cur = partyMembers().slice()
+            var nm = b.getAttribute('data-name')
+            var i = cur.indexOf(nm)
+            if (b.checked && i < 0) cur.push(nm)
+            if (!b.checked && i >= 0) cur.splice(i, 1)
+            setParty(cur)
+          })
+        })
+      })
+    }
+
+    /* ── drag helpers ───────────────────────────────────────────── */
+    function clamp(v, lo, hi) { return v < lo ? lo : v > hi ? hi : v }
+    function applyStripPos() {
+      var p = chatKV()['party.stripPos']
+      var w = stripEl.offsetWidth || 76, h = stripEl.offsetHeight || 120
+      var x = p && typeof p.x === 'number' ? p.x : 8
+      var y = p && typeof p.y === 'number' ? p.y : 8
+      stripEl.style.left = clamp(x, 0, Math.max(0, window.innerWidth - w)) + 'px'
+      stripEl.style.top  = clamp(y, 0, Math.max(0, window.innerHeight - h)) + 'px'
+    }
+    function enableDrag(handle) {
+      var sx = 0, sy = 0, ox = 0, oy = 0, dragging = false
+      function down(e) {
+        dragging = true
+        sx = e.clientX; sy = e.clientY
+        ox = parseInt(stripEl.style.left || '8', 10)
+        oy = parseInt(stripEl.style.top || '8', 10)
+        document.addEventListener('pointermove', move)
+        document.addEventListener('pointerup', up)
+        e.preventDefault()
+      }
+      function move(e) {
+        if (!dragging) return
+        var w = stripEl.offsetWidth, h = stripEl.offsetHeight
+        var nx = clamp(ox + (e.clientX - sx), 0, Math.max(0, window.innerWidth - w))
+        var ny = clamp(oy + (e.clientY - sy), 0, Math.max(0, window.innerHeight - h))
+        stripEl.style.left = nx + 'px'
+        stripEl.style.top = ny + 'px'
+      }
+      function up() {
+        dragging = false
+        document.removeEventListener('pointermove', move)
+        document.removeEventListener('pointerup', up)
+        setKV('party.stripPos', {
+          x: parseInt(stripEl.style.left || '8', 10),
+          y: parseInt(stripEl.style.top || '8', 10)
+        })
+      }
+      handle.addEventListener('pointerdown', down)
     }
 
     /* ── initial render ─────────────────────────────────────────── */
