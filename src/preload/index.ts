@@ -220,6 +220,19 @@ const api = {
     ipcRenderer.invoke('combat-end', profileId, chatId),
   combatClear: (profileId: string, chatId: string) =>
     ipcRenderer.invoke('combat-clear', profileId, chatId),
+  // Interactive STS duel (Track Duel). One active duel per chat.
+  duelGet: (profileId: string, chatId: string) =>
+    ipcRenderer.invoke('duel-get', profileId, chatId),
+  duelStartMock: (profileId: string, chatId: string) =>
+    ipcRenderer.invoke('duel-start-mock', profileId, chatId),
+  duelStart: (profileId: string, chatId: string, characterId: string) =>
+    ipcRenderer.invoke('duel-start', profileId, chatId, characterId),
+  duelPlay: (profileId: string, chatId: string, cardId: string, targetIds: string[]) =>
+    ipcRenderer.invoke('duel-play', profileId, chatId, cardId, targetIds),
+  duelEndTurn: (profileId: string, chatId: string) =>
+    ipcRenderer.invoke('duel-end-turn', profileId, chatId),
+  duelEnd: (profileId: string, chatId: string) =>
+    ipcRenderer.invoke('duel-end', profileId, chatId),
   // Subscribe to incremental generation text. Returns an unsubscribe function.
   onGenerationDelta: (cb: (payload: { chatId: string; delta: string }) => void) => {
     const listener = (_e: IpcRendererEvent, payload: { chatId: string; delta: string }): void =>

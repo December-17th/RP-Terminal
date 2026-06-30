@@ -14,6 +14,7 @@ import { registerStorageIpc } from './storageIpc'
 import { registerCombatIpc } from './combatIpc'
 import { registerChatCardVarsIpc } from './chatCardVarsIpc'
 import { registerDuelPreviewIpc } from './duelPreviewIpc'
+import { registerDuelIpc } from './duelIpc'
 
 /** Register every IPC handler, grouped by domain. Called once after app-ready. */
 export const registerIpc = (ipcMain: IpcMain): void => {
@@ -32,4 +33,5 @@ export const registerIpc = (ipcMain: IpcMain): void => {
   registerCombatIpc(ipcMain)
   registerChatCardVarsIpc()
   registerDuelPreviewIpc()
+  registerDuelIpc(ipcMain)
 }
