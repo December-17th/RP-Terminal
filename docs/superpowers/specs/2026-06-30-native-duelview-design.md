@@ -17,14 +17,19 @@ build-preview design ([2026-06-30-duel-build-preview-tab-design.md](2026-06-30-d
    architecture as the grid `CombatView` (RPT renders; the card supplies ruleset + data). This keeps engine
    control in-process (no per-action IPC to card code) and is generic over any duel card.
 2. **v1 = core fight loop only.** Start a duel, see hand/energy/board/enemy intents, play cards (with targeting
-   where a card needs it), end turn, automated ally + enemy phases, win/lose. Functional, lightly styled.
+   where a card needs it), end turn, automated ally + enemy phases, win/lose. **Polished and theme-customizable**
+   (§5 Theming) — a designed surface, not a debug skeleton.
 3. **Mirror the grid combat stack.** The 4 new units (`duelService` / `duelIpc` / `duelStore` / `DuelView`) parallel
    `combatService` / `combatIpc` / `combatStore` / `CombatView` exactly; no new engine logic is written.
 4. **Debug mock launcher is a v1 deliverable.** A "Start mock duel (debug)" button (mirroring `CombatView`'s
    "Start mock battle (debug)") spins up a hardcoded duel with no card/AI needed — the immediate click-test path.
-5. **Card skin/theme minimal in v1.** Display strings (品质 labels, card names, effect lines) come from the card's
-   ruleset / `CardCombat` (already supplied via the combat bundle). v1 styles natively, reusing `CombatView`'s
-   theme tokens. Card art / deep skinning is deferred.
+5. **Polished + theme-customizable in v1; card *art* deferred.** The UI is a clean, designed surface — proper card
+   components (rarity frame, energy gem, cost, effect lines), a readable board (HP/block/intent), hover/active
+   states, light transitions, a win/lose overlay. **Every color is an RPT theme token** (`var(--rpt-*)` + derived
+   `--rpt-duel-*`), so the DuelView re-colors with the app's themes (dark / carbon / light) by construction (§5).
+   Display strings (品质 labels, card names, effect lines) come from the card's ruleset / `CardCombat`. Deferred:
+   card **art images** and bespoke per-card skins/palettes — theme *customization across RPT's themes* is in v1; a
+   card supplying its own art/skin is not.
 6. **Card-agnostic at the view layer.** `DuelView`/`duelStore`/`duelService` are generic over `DuelState`; the poem
    ruleset supplies content. Consistent with the generic-engine principle (memory `rpt-keep-app-engine-generic`).
 
@@ -68,7 +73,8 @@ grid combat stack wraps the grid engine.
 | `src/main/services/duelService.ts` | [`combatService.ts`](../../../src/main/services/combatService.ts) (`startMockEncounter` :430, `applyPlayerAction`, `endTurn`, `runEnemyTurn`, `getEncounter`, `endEncounter`) | Hold the active `DuelState` per chat; `startMockDuel(chatId)` (hardcoded setup, no card/AI) + `startDuelFromMvu(...)`; apply one engine transition per action; drive automated `allies`+`enemies` phases. |
 | `src/main/ipc/duelIpc.ts` | [`combatIpc.ts`](../../../src/main/ipc/combatIpc.ts) | `duel-start-mock`, `duel-start`, `duel-get`, `duel-play` (cardId, targetId?), `duel-end-turn`, `duel-end`. Keyed by `chatId` (`profileId` for parity). Register in `src/main/ipc/index.ts`. |
 | `src/renderer/src/stores/duelStore.ts` | [`combatStore.ts`](../../../src/renderer/src/stores/combatStore.ts) (`startMock` :107, `runAutomated` pacing, `Selection`, `lastEvents`/`eventSeq`) | zustand mirror: `state: DuelState`, card catalog, `selection` (idle / card-picked / card+target), `busy`; `playCard`/`endTurn`; after end-turn auto-run ally+enemy phases paced for visibility. |
-| `src/renderer/src/components/workspace/DuelView.tsx` | [`CombatView.tsx`](../../../src/renderer/src/components/workspace/CombatView.tsx) (mock button :131) | Render `DuelState`: board (player+party+enemies with HP/block/intents), hand of cards, energy, play-card (target select when needed), end-turn, win/lose overlay; "Start mock duel (debug)" when no active duel. |
+| `src/renderer/src/components/workspace/DuelView.tsx` | [`CombatView.tsx`](../../../src/renderer/src/components/workspace/CombatView.tsx) (mock button :131) | Render `DuelState`: board (player+party+enemies with HP/block/intents), hand of cards, energy, play-card (target select when needed), end-turn, win/lose overlay; "Start mock duel (debug)" when no active duel. **Polished, all colors via `var(--rpt-*)` / `--rpt-duel-*` tokens** (no hardcoded palette). |
+| `src/renderer/src/assets/index.css` (modify) | the `--rpt-combat-*` token block ([:20-24](../../../src/renderer/src/assets/index.css)) | Add a small derived `--rpt-duel-*` token set in `:root` (energy gem, card surface/border, rarity tints, intent), `color-mix` from base theme tokens, so the duel re-colors per theme + stays WCAG-AA legible. Plus the duel component classes. |
 | `src/renderer/src/components/workspace/viewRegistry.tsx` (modify) | the `combat` entry (:72) | Add a `DuelPanel` wrapper + a `duel: { title, Component: DuelPanel, fill: true }` entry — auto-appears in `VIEW_OPTIONS` (:82), so a panel can pick the Duel view. |
 | `src/preload/index.ts` (modify) + the `window.api` types | the `combat*` preload methods | Expose `duelStartMock` / `duelStart` / `duelGet` / `duelPlay` / `duelEndTurn` / `duelEnd`. |
 | `test/combat/duelService.test.ts` (new) | [`combatService.test.ts`](../../../test/combat/combatService.test.ts) | Headless service tests: mock setup → play a card (energy/pile change) → end turn (allies/enemies resolve) → victory/defeat. |
@@ -103,14 +109,23 @@ is today.
 
 ---
 
-## 5. Module boundaries, testing
+## 5. Theming, module boundaries, testing
 
+- **Theming (requirement — polished + customizable).** All DuelView colors are RPT theme tokens (`var(--rpt-*)`),
+  plus a small derived `--rpt-duel-*` set added to `assets/index.css :root` — mirroring the existing
+  `--rpt-combat-*` block ([index.css:20-24](../../../src/renderer/src/assets/index.css)), `color-mix` from base
+  tokens so the duel re-colors automatically when `applyTheme()` ([theme.ts:75](../../../src/renderer/src/theme.ts))
+  swaps themes. **No hardcoded palette.** Per the contrast rule (`theme.ts` header / `docs/ui-rehaul-design.md` §7),
+  every fill token is paired with a text / on-* token and verified legible (WCAG AA) across **all three** themes
+  including light. "Polished" = designed card/board components, hover/active/selected states, light transitions, and
+  a clear win/lose overlay — not card-art images (deferred). The card's ruleset still supplies the display strings.
 - **Engine stays pure** (`shared/combat/deckbuilder/*` — no renderer/main/IPC imports; already true). `duelService` is
   main and may import the shared engine; `duelStore` reaches main only through the typed IPC surface; `DuelView`
   imports no main internals. `npm run check:deps` must stay green.
 - **Tests:** headless `duelService.test.ts` (start→play→end-turn→victory + the mock setup), mirroring
   `combatService.test.ts`; the engine itself is already characterization-tested. The UI is verified manually via the
-  mock-duel button (no UI test harness, consistent with `CombatView`). `npm run typecheck && npm run check:deps && npm run test` is the gate.
+  mock-duel button (no UI test harness, consistent with `CombatView`) — **including a cross-theme legibility pass
+  (dark / carbon / light)**. `npm run typecheck && npm run check:deps && npm run test` is the gate.
 
 ---
 
@@ -118,7 +133,8 @@ is today.
 
 - **No rewards / relic progression / post-duel results screen.** (Fight loop only; results = the win/lose overlay.)
 - **No deck editing / card management UI.**
-- **No card art, animations, or deep card-supplied skinning.** (Display strings from the ruleset; native styling.)
+- **No card *art images*, cinematic animations, or bespoke card-supplied skins/palettes.** (v1 IS polished +
+  themeable via RPT theme tokens across dark/carbon/light; light transitions only; per-card art/skins are later.)
 - **No real AI/narrative duel trigger.** (Debug button + from-MVU only.)
 - **No card-side fork duel UI.** (That was the rejected architecture; the fight is native.)
 
