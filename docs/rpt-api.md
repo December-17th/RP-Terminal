@@ -167,6 +167,10 @@ through the host bridge as RFC-6902 JSON Patch.
 
 - `assetUrl(name, type, mood?)` → `Promise<string | null>` — resolve a character portrait (`type` = `头像`/`立绘`, mood-aware) from the active world's asset layer. Returns an `rptasset://` URL that loads inside card pages (both transports: inline iframes and WCV panels). Prerequisite: the World Assets layer ([world-assets-plan.md](world-assets-plan.md)). Also exposed as `window.assetUrl` and `window.TavernHelper.assetUrl` on card pages.
 
+### Duel / deckbuilder — ✅
+
+- `getDuelPreview()` → `Promise<DuelPreview | null>` — **read-only host method** (RPT-only; no vanilla-ST equivalent). Returns the engine-computed duel build (deck + combatants + resources/relics) for the active chat, produced by the card's combat ruleset over the active build state. The `DuelPreview` contract is generic (field names are neutral; the card's ruleset supplies values + display strings). Shape: `{ config: {energyPerTurn, handSize}, lead: CombatantPreview, party: CombatantPreview[] }`; each combatant has resources, modifiers, conditions, and a `deck[]` of `CardPreview` (rarity/cost/effects/scaling). See [`preview.ts`](../../src/shared/combat/deckbuilder/preview.ts) for the full type. Designed for the 战斗 tab ([duel-build-preview-tab-design.md](../superpowers/specs/2026-06-30-duel-build-preview-tab-design.md) §2) and the authoring guide ([duel-card-authoring.md](sdk/duel-card-authoring.md)).
+
 ### UI / misc — ✅ / 🔁
 
 - `toastr.*` — ✅ · `getTavernHelperVersion()` — ✅ (reports ≥ the card's required minimum) · `waitGlobalInitialized()` — ✅ (resolves true) · `errorCatched(fn)` — ✅
