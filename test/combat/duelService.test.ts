@@ -11,10 +11,12 @@ describe('duelService (mock duel orchestration)', () => {
     expect(Object.keys(rec.catalog).length).toBeGreaterThan(0)
   })
 
-  it('playCardIn plays the lead 普攻 at an enemy: spends energy + moves the card out of hand', () => {
+  it('playCardIn plays a 普攻 at an enemy: spends energy + moves the card out of hand', () => {
     const rec = createMockDuel()
-    const lead = rec.state.lead
-    const cardId = rec.state.piles.hand.find((cid) => rec.state.cards[cid].abilityId === `${lead}/普攻`)!
+    // Any party member's 普攻 in the opening hand works — the deckbuilder's shared draw pile
+    // doesn't guarantee the lead's own basic attack lands in the first 5 cards (seed + larger
+    // skill set can shift it to an ally's 普攻 instead; either is playable on the lead's turn).
+    const cardId = rec.state.piles.hand.find((cid) => rec.state.cards[cid].abilityId.endsWith('/普攻'))!
     expect(cardId).toBeDefined()
     const enemy = rec.state.combatants.find((c) => c.side === 'enemy' && c.block.hp > 0)!
     const energyBefore = rec.state.energy.current
