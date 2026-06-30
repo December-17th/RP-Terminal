@@ -1,23 +1,18 @@
 // src/renderer/src/components/workspace/DuelView.tsx
 //
-// Native interactive STS duel view (v1 core fight loop). Renders DuelState from duelStore: board
-// (party + enemies w/ HP/block/intents), hand of cards, energy, play (with targeting) + end-turn,
-// win/lose. Polished + theme-token-driven (var(--rpt-*) / --rpt-duel-*). Mirrors CombatView's shell.
+// Native interactive STS duel view (core fight loop, juiced). Renders DuelState from duelStore as a
+// Slay-the-Spire-style board: enemies row (top, w/ intents + avatars), party row (bottom-left),
+// energy orb + fanned TCG hand (bottom band), win/lose overlay. Importable card faces / unit avatars /
+// fight background via useDuelAssets, with glyph/gradient fallbacks. Polished + theme-token-driven
+// (var(--rpt-*) / --rpt-duel-*). Mirrors CombatView's shell.
 
 import { FC, useEffect } from 'react'
+import { useAutoAnimate } from '@formkit/auto-animate/react'
 import { useDuelStore } from '../../stores/duelStore'
 import { useChatStore } from '../../stores/chatStore'
 import { useT } from '../../i18n'
-
-const RARITY_VAR: Record<string, string> = {
-  普通: '--rpt-text-secondary',
-  优良: '--rpt-success',
-  稀有: '--rpt-accent',
-  精良: '--rpt-accent',
-  史诗: '--rpt-warning',
-  传说: '--rpt-warning',
-  神: '--rpt-danger'
-}
+import { useDuelAssets } from './useDuelAssets'
+import { DuelCard } from './DuelCard'
 
 export const DuelView: FC<{ profileId: string }> = ({ profileId }) => {
   const t = useT()
@@ -33,6 +28,8 @@ export const DuelView: FC<{ profileId: string }> = ({ profileId }) => {
   const play = useDuelStore((s) => s.play)
   const endTurn = useDuelStore((s) => s.endTurn)
   const end = useDuelStore((s) => s.end)
+  const assets = useDuelAssets(profileId, state)
+  const [handRef] = useAutoAnimate<HTMLDivElement>()
 
   useEffect(() => {
     if (activeChatId) void load(profileId, activeChatId)
@@ -102,92 +99,142 @@ export const DuelView: FC<{ profileId: string }> = ({ profileId }) => {
   return (
     <div className="rpt-duel">
       <div className="rpt-duel-topbar">
+        <span style={{ flex: 1 }} />
+      </div>
+
+      <div
+        className="rpt-duel-stage"
+        style={assets.background ? { backgroundImage: `url("${assets.background}")` } : undefined}
+      >
+        <div className="rpt-duel-scrim" />
         <span className="rpt-duel-round">
           {t('duel.round')} {state.round}
         </span>
-        <span className="rpt-duel-energy" title={t('duel.energy')}>
+
+        {/* enemies row (top) */}
+        <div className="rpt-duel-enemies">
+          {state.combatants
+            .filter((c) => c.side === 'enemy')
+            .map((c) => {
+              const intent = state.intents[c.id]
+              const targetable = selection.mode === 'card' && c.block.hp > 0
+              const ava = assets.avatar(c.name)
+              return (
+                <div key={c.id} className="rpt-duel-enemy">
+                  {intent && (
+                    <span className={`rpt-duel-intent kind-${intent.kind}`}>
+                      {t(`duel.intent.${intent.kind}`)}
+                      {intent.preview != null ? ` ${intent.preview}` : ''}
+                    </span>
+                  )}
+                  <button
+                    className={`rpt-duel-unit foe${targetable ? ' targetable' : ''}`}
+                    disabled={!targetable || busy}
+                    onClick={() => onEnemyClick(c.id)}
+                    data-cid={c.id}
+                  >
+                    <span
+                      className="rpt-duel-ava"
+                      style={ava ? { backgroundImage: `url("${ava}")` } : undefined}
+                    >
+                      {!ava && '👺'}
+                    </span>
+                    <span className="rpt-duel-unit-name">{c.name}</span>
+                    <UnitBars c={c} />
+                  </button>
+                </div>
+              )
+            })}
+        </div>
+
+        {/* party (bottom-left) */}
+        <div className="rpt-duel-party">
+          {state.combatants
+            .filter((c) => c.side === 'party')
+            .map((c) => {
+              const ava = assets.avatar(c.name)
+              return (
+                <div
+                  key={c.id}
+                  className={`rpt-duel-unit ally${c.id === state.lead ? ' is-lead' : ''}`}
+                  data-cid={c.id}
+                >
+                  <span
+                    className="rpt-duel-ava"
+                    style={ava ? { backgroundImage: `url("${ava}")` } : undefined}
+                  >
+                    {!ava && c.name.slice(0, 1)}
+                  </span>
+                  <span className="rpt-duel-unit-name">{c.name}</span>
+                  <UnitBars c={c} />
+                </div>
+              )
+            })}
+        </div>
+
+        {/* bottom band */}
+        <div className="rpt-duel-energy" title={t('duel.energy')}>
           {state.energy.current}/{state.energy.max}
-        </span>
-        <span style={{ flex: 1 }} />
-        <button
-          className="btn-accent"
-          disabled={busy || over}
-          onClick={() => void endTurn(profileId)}
-        >
-          {t('duel.endTurn')}
-        </button>
-        <button className="rpt-duel-secondary" disabled={busy} onClick={() => void end(profileId)}>
-          {t('duel.endDuel')}
-        </button>
-      </div>
-
-      <div className="rpt-duel-board">
-        {state.combatants.map((c) => {
-          const intent = state.intents[c.id]
-          const targetable = selection.mode === 'card' && c.side === 'enemy' && c.block.hp > 0
-          return (
-            <button
-              key={c.id}
-              className={`rpt-duel-unit side-${c.side}${c.id === state.lead ? ' is-lead' : ''}${targetable ? ' targetable' : ''}`}
-              disabled={!targetable || busy}
-              onClick={() => onEnemyClick(c.id)}
-            >
-              <span className="rpt-duel-unit-name">{c.name}</span>
-              <span className="rpt-duel-hpbar">
-                <i
-                  style={{
-                    width: `${c.block.maxHp ? Math.max(0, (c.block.hp / c.block.maxHp) * 100) : 0}%`
-                  }}
-                />
-              </span>
-              <span className="rpt-duel-unit-hp">
-                {c.block.hp} / {c.block.maxHp}
-              </span>
-              {intent && (
-                <span className={`rpt-duel-intent kind-${intent.kind}`}>
-                  {t(`duel.intent.${intent.kind}`)}
-                  {intent.preview != null ? ` ${intent.preview}` : ''}
-                </span>
-              )}
-            </button>
-          )
-        })}
-      </div>
-
-      {selection.mode === 'card' && <div className="rpt-duel-hint">{t('duel.pickTarget')}</div>}
-
-      <div className="rpt-duel-hand">
-        {state.piles.hand.map((cid) => {
-          const { card, ability, ext } = cardOf(cid)
-          const rarity = `var(${RARITY_VAR[ext.品质 ?? '普通'] ?? '--rpt-text-secondary'})`
-          const picked = selection.mode === 'card' && selection.cardId === cid
-          return (
-            <button
-              key={cid}
-              className={`rpt-duel-card${picked ? ' picked' : ''}`}
-              style={{ borderColor: rarity }}
-              disabled={busy || over}
-              onClick={() => onCardClick(cid)}
-            >
-              <span className="rpt-duel-card-cost">{card.energyCost}</span>
-              <span className="rpt-duel-card-name">{ability?.name ?? card.abilityId}</span>
-              <span className="rpt-duel-card-type">{ext.品质 ?? '普通'}</span>
-              {ext.威力 != null && <span className="rpt-duel-card-power">威力 {ext.威力}</span>}
-            </button>
-          )
-        })}
-      </div>
-
-      {over && (
-        <div className="rpt-duel-overlay">
-          <span className={`rpt-duel-result ${state.status === 'party' ? 'win' : 'lose'}`}>
-            {state.status === 'party' ? t('duel.win') : t('duel.lose')}
-          </span>
-          <button className="btn-accent" onClick={() => void end(profileId)}>
+        </div>
+        <div className="rpt-duel-hand" ref={handRef}>
+          {state.piles.hand.map((cid) => {
+            const { card, ability, ext } = cardOf(cid)
+            const cc = (ability?.ext ?? {}) as {
+              消耗?: unknown
+              附加效果?: Array<{ 状态?: string }>
+            }
+            const effect =
+              Array.isArray(cc.附加效果) && cc.附加效果[0]?.状态 ? String(cc.附加效果[0].状态) : undefined
+            return (
+              <DuelCard
+                key={cid}
+                name={ability?.name ?? card.abilityId}
+                品质={ext.品质}
+                威力={ext.威力}
+                关联属性={ext.关联属性}
+                energyCost={card.energyCost}
+                effect={effect}
+                faceUrl={assets.face(card.abilityId)}
+                picked={selection.mode === 'card' && selection.cardId === cid}
+                disabled={busy || over}
+                onClick={() => onCardClick(cid)}
+              />
+            )
+          })}
+        </div>
+        <div className="rpt-duel-band-actions">
+          <button className="btn-accent" disabled={busy || over} onClick={() => void endTurn(profileId)}>
+            {t('duel.endTurn')}
+          </button>
+          <button className="rpt-duel-secondary" disabled={busy} onClick={() => void end(profileId)}>
             {t('duel.endDuel')}
           </button>
         </div>
-      )}
+
+        {over && (
+          <div className="rpt-duel-overlay">
+            <span className={`rpt-duel-result ${state.status === 'party' ? 'win' : 'lose'}`}>
+              {state.status === 'party' ? t('duel.win') : t('duel.lose')}
+            </span>
+            <button className="btn-accent" onClick={() => void end(profileId)}>
+              {t('duel.endDuel')}
+            </button>
+          </div>
+        )}
+      </div>
     </div>
   )
 }
+
+const UnitBars: FC<{ c: { block: { hp: number; maxHp: number } } }> = ({ c }) => (
+  <>
+    <span className="rpt-duel-hpbar">
+      <i
+        style={{ width: `${c.block.maxHp ? Math.max(0, (c.block.hp / c.block.maxHp) * 100) : 0}%` }}
+      />
+    </span>
+    <span className="rpt-duel-unit-hp">
+      {c.block.hp} / {c.block.maxHp}
+    </span>
+  </>
+)
