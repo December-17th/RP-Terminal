@@ -23,17 +23,29 @@
   --rpt-combat-threat: color-mix(in srgb, var(--rpt-danger) 22%, transparent);
   --rpt-combat-grid: var(--rpt-border);
   /* Duel (STS) — derived from base theme tokens so it re-colors per theme. */
-  --rpt-duel-energy: color-mix(in srgb, var(--rpt-warning) 82%, var(--rpt-text-primary));
+  --rpt-duel-energy: color-mix(in srgb, var(--rpt-accent) 70%, #6fd0ff);
   --rpt-duel-on-energy: var(--rpt-bg-primary);
+  --rpt-duel-cost: color-mix(in srgb, var(--rpt-warning) 78%, var(--rpt-text-primary));
+  --rpt-duel-on-cost: var(--rpt-bg-primary);
   --rpt-duel-card-bg: var(--rpt-bg-elevated);
   --rpt-duel-card-border: var(--rpt-border);
-  --rpt-duel-card-hover: color-mix(in srgb, var(--rpt-accent) 14%, var(--rpt-bg-elevated));
   --rpt-duel-selected: var(--rpt-accent);
-  --rpt-duel-hp: color-mix(in srgb, var(--rpt-danger) 80%, var(--rpt-text-primary) 0%);
-  --rpt-duel-block: color-mix(in srgb, var(--rpt-accent) 60%, var(--rpt-text-tertiary));
+  --rpt-duel-hp: color-mix(in srgb, var(--rpt-danger) 82%, #000);
+  --rpt-duel-block: color-mix(in srgb, var(--rpt-accent) 55%, var(--rpt-text-tertiary));
   --rpt-duel-intent-attack: var(--rpt-danger);
   --rpt-duel-intent-defend: var(--rpt-accent);
-  --rpt-duel-target: color-mix(in srgb, var(--rpt-danger) 34%, transparent);
+  --rpt-duel-target: color-mix(in srgb, var(--rpt-danger) 30%, transparent);
+  --rpt-duel-stage: radial-gradient(120% 90% at 50% 0%,
+      color-mix(in srgb, var(--rpt-accent) 14%, var(--rpt-bg-secondary)) 0%,
+      var(--rpt-bg-secondary) 55%, var(--rpt-bg-primary) 100%);
+  --rpt-duel-scrim: color-mix(in srgb, var(--rpt-bg-primary) 45%, transparent);
+  /* rarity frames (decorative — borders/glow, not small text) */
+  --rpt-duel-rarity-common: var(--rpt-text-tertiary);
+  --rpt-duel-rarity-uncommon: var(--rpt-success);
+  --rpt-duel-rarity-rare: var(--rpt-accent);
+  --rpt-duel-rarity-epic: color-mix(in srgb, var(--rpt-accent) 40%, #b072ff);
+  --rpt-duel-rarity-legendary: var(--rpt-warning);
+  --rpt-duel-rarity-mythic: var(--rpt-danger);
 }
 
 /* Floating combat numbers (damage / miss) rise + fade over the target token. */
@@ -2106,3 +2118,10 @@ select {
   padding: 0;
   overflow: visible;
 }
+
+@keyframes rpt-duel-draw { from { transform: translateY(40px) rotate(-6deg); opacity: 0; } to { transform: none; opacity: 1; } }
+@keyframes rpt-duel-shake { 0%,100% { transform: translate(0,0); } 20% { transform: translate(-4px,2px); } 40% { transform: translate(4px,-2px); } 60% { transform: translate(-3px,1px); } 80% { transform: translate(3px,-1px); } }
+@keyframes rpt-duel-hit { 0% { filter: brightness(2.2); } 100% { filter: none; } }
+@keyframes rpt-duel-intent-pulse { 0%,100% { transform: scale(1); opacity: .9; } 50% { transform: scale(1.08); opacity: 1; } }
+@keyframes rpt-duel-flourish { from { transform: scale(.6); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+@keyframes rpt-duel-blockpop { from { transform: scale(0); } to { transform: scale(1); } }
