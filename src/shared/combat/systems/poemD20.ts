@@ -126,7 +126,12 @@ export const parseCardItem = (item: unknown, _kind: ItemKind): CardCombat => {
     else if ((m = t.match(/威力[:：]?\s*(\d+)/))) out.威力 = parseInt(m[1], 10)
     else if ((m = t.match(/攻击[:：]?\s*(\d+)/))) out.攻击 = parseInt(m[1], 10)
     else if ((m = t.match(/防御[:：]?\s*(\d+)/))) out.防御 = parseInt(m[1], 10)
-    else if (/范围|爆发|直线|锥形|单体|自身|环境/.test(t)) {
+    else if (/^(?:群体|群|全体|AOE)$/i.test(t)) {
+      out.目标模式 = '群体'
+    } else if ((m = t.match(/^随机[:：]?\s*(\d+)?/))) {
+      out.目标模式 = '随机'
+      out.随机次数 = m[1] ? parseInt(m[1], 10) : 1
+    } else if (/范围|爆发|直线|锥形|单体|自身|环境/.test(t)) {
       const s = parseShape(t, out.range ?? 1)
       out.shape = s.shape
       if (s.范围目标 != null) out.范围目标 = s.范围目标

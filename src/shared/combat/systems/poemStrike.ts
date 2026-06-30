@@ -42,6 +42,10 @@ export interface CardCombat {
   附加效果?: { 状态: string; 数值?: number; 回合: number }[]
   多段?: number
   需视线?: boolean
+  /** Duel target-selection scope (deckbuilder duel only; grid uses shape/范围目标). Default 单体. */
+  目标模式?: '单体' | '随机' | '群体'
+  /** X for 随机 (default 1 when 目标模式==='随机'). */
+  随机次数?: number
 }
 
 /** The shape buildCombatant writes into `Combatant.ext`. */
