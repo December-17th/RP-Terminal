@@ -48,8 +48,11 @@ export interface CardCombat {
 export interface CombatantExt {
   attrs?: Record<string, number>
   tier?: number
+  level?: number
   mp?: number
+  maxMp?: number
   sp?: number
+  maxSp?: number
   equip?: { 武器攻击?: number; 防御?: number; 命中?: number; 闪避?: number; DR?: number }
   伤害增幅?: number
   治疗增幅?: number
