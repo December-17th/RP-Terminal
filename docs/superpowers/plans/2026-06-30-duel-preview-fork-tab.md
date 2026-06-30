@@ -2,23 +2,47 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Add a new **战斗 tab** to the 命定之诗 status app (the fork) that renders the engine-computed duel build (deck-as-cards + resource/relic panels + a party-member selector) from the RPT `getDuelPreview()` host API.
+**Goal:** Add a new **战斗 tab** to the 命定之诗 status app (the fork) that renders the engine-computed duel build (deck-as-cards + a resource/relic header + a party-member selector) from the RPT `getDuelPreview()` host API.
 
-**Architecture:** A zustand store calls `getDuelPreview()` (with a static fixture fallback for dev), and a `CombatTab` page renders it — a member selector, a resource/relic header (reusing the app's `ResourceBar`/`StatusEffectDisplay`), and a deck grid of `DuelCard`s. Every color is a `--theme-*` token (works across all 8 themes incl. light); the layout reflows wide↔tall via CSS container queries.
+**Architecture:** A zustand+immer store calls the card-page global `getDuelPreview()` (with a static fixture fallback for dev / older RPT), and a `CombatTab` page renders it — a member selector, a resource/relic header (reusing the app's `ResourceBar` + `StatusEffectDisplay`), and a deck grid of `DuelCard`s. Every color is a `--theme-*` token (works across all 8 themes incl. the light default `ivory`); the layout reflows wide↔tall via CSS container queries. Recompute is keyed to the app's existing `mvu-data` refresh plus a local refresh button.
 
-**Tech Stack:** React 19 + TSX + zustand + SCSS, webpack (`npm run build` runs `ts-loader` typecheck), ESLint. **No unit-test harness** — verification is `lint` + `build` + a static `DuelPreview` fixture + a visual check.
+**Tech Stack:** React 19 + TSX + zustand v5 + immer + **SCSS Modules** (`*.module.scss`), webpack (`build` runs `ts-loader` typecheck), ESLint flat config + Prettier. **No unit-test harness** — verification is `lint` + `build` + a static `DuelPreview` fixture + a visual check.
 
-> **Repo:** this plan executes in the **fork** at `E:\Projects\FrontEnd-for-destined-journey-TPR-STS` (NOT the RPT app repo). All paths below are relative to that repo.
-> **Depends on:** [Plan A](2026-06-30-duel-preview-host-api.md) (the `getDuelPreview` API + `DuelPreview` contract). Plan B can be built against the **fixture** before Plan A ships; wire the live API once it's available.
+> **Repo:** this plan executes in the **fork** at `E:\Projects\FrontEnd-for-destined-journey-TPR-STS` (NOT the RPT app repo). All paths below are relative to that repo unless prefixed `RPT:`.
+> **Depends on:** [Plan A](2026-06-30-duel-preview-host-api.md) — **already built & verified** (the `getDuelPreview` host API + `DuelPreview` contract). Plan B can still be built/checked against the **fixture** with no live RPT host; the `typeof getDuelPreview === 'function'` guard picks up the live API automatically when the card runs inside RPT.
+
+---
+
+## Grounding — facts verified against the fork (read these before starting)
+
+These were checked against the actual fork source so the executor doesn't re-derive them. Cited as `file:line`.
+
+- **The fork uses SCSS Modules**, not global stylesheets. Every component does `import styles from './X.module.scss'` and `className={styles.someClass}` (camelCase keys). E.g. [`ResourceBar.tsx:3`](E:/Projects/FrontEnd-for-destined-journey-TPR-STS/src/status/shared/components/ResourceBar/ResourceBar.tsx), [`StatusTab.tsx:28`](E:/Projects/FrontEnd-for-destined-journey-TPR-STS/src/status/pages/status/StatusTab.tsx). **Do not** write global-class SCSS.
+- **Stores are zustand v5 + immer.** Pattern: `create<T>()(immer((set, get) => ({ ... })))`, mutate via `set(state => { state.x = … })`. See [`mvu-data.store.ts:28`](E:/Projects/FrontEnd-for-destined-journey-TPR-STS/src/status/core/stores/mvu-data.store.ts), [`theme.store.ts:32`](E:/Projects/FrontEnd-for-destined-journey-TPR-STS/src/status/core/stores/theme.store.ts).
+- **Theme tokens are emitted as `--theme-<kebab>`** by `applyCssVariables` ([`theme.store.ts:112-121`](E:/Projects/FrontEnd-for-destined-journey-TPR-STS/src/status/core/stores/theme.store.ts)): it walks `ThemeColors` and does `--theme-${key.replace(/([A-Z])/g,'-$1').toLowerCase()}`. So `energyGem → --theme-energy-gem`, `ratingAccent → --theme-rating-accent`, `powerText → --theme-power-text`, `qualityEpic → --theme-quality-epic`, `resourceHp → --theme-resource-hp`, `cardBg → --theme-card-bg`, etc.
+- **There are exactly 8 presets** (`parchment, crimson, indigo, bronze, sakura, obsidian, ivory, misty-lilac`) and **`DefaultTheme = IvoryTheme`** — a **light** theme ([`theme-presets.ts:656-668`](E:/Projects/FrontEnd-for-destined-journey-TPR-STS/src/status/config/theme-presets.ts)). `ivory` + `misty-lilac` are light; the other 6 are dark. Light-legibility is not optional — the default ships light.
+- **`getDuelPreview` is a bare card-page global** (same install path as `getVariables`/`assetUrl`, which the fork already calls bare — [`mvu-data.store.ts:48`](E:/Projects/FrontEnd-for-destined-journey-TPR-STS/src/status/core/stores/mvu-data.store.ts), [`theme.store.ts:42`](E:/Projects/FrontEnd-for-destined-journey-TPR-STS/src/status/core/stores/theme.store.ts)). RPT exposes it at `RPT:src/shared/thRuntime/index.ts:451` beside `assetUrl`. Its return type is **`Promise<DuelPreview | null>`** (per `RPT:docs/rpt-api.md:172`) — it may also be **absent** on older RPT / standalone dev, so it must be guarded with `typeof getDuelPreview === 'function'`.
+- **TH globals are declared in vendored type packs** under `@types/function/*` and `@types/iframe/*` — **do not edit those.** Declare the new global in the **repo-root** [`global.d.ts`](E:/Projects/FrontEnd-for-destined-journey-TPR-STS/global.d.ts) (the project's own ambient file).
+- **`ResourceBar` props** ([`ResourceBar.tsx:5-12`](E:/Projects/FrontEnd-for-destined-journey-TPR-STS/src/status/shared/components/ResourceBar/ResourceBar.tsx)): `{ label, current, max, type: 'hp'|'mp'|'sp'|'exp', icon?, showValues? }`. Reuse directly (it already themes itself).
+- **`StatusEffectDisplay` props** ([`StatusEffectDisplay.tsx:7-27`](E:/Projects/FrontEnd-for-destined-journey-TPR-STS/src/status/shared/components/StatusEffectDisplay/StatusEffectDisplay.tsx)): `effects: Record<string, { 类型?, 效果?, 层数?, 剩余时间?, 来源? }>`, plus `mode='chips'|'full'`, `compact`, `maxVisible`, `showRemainingCount`, `emptyText`. We reuse it in **chips** mode for `conditions` by mapping our neutral `conditions[]` into that record.
+- **`TabItem.id` is `string`** ([`TabBar.tsx:4-10`](E:/Projects/FrontEnd-for-destined-journey-TPR-STS/src/status/layout/TabBar/TabBar.tsx)) — adding `id:'combat'` needs **no** type change. `App.tsx`'s `activeTab` is a `string` and `renderTabContent` is a `switch` ([`App.tsx:32-55`](E:/Projects/FrontEnd-for-destined-journey-TPR-STS/src/status/App.tsx)).
+- **Refresh is manual, not event-driven.** `Window` calls `useMvuDataStore().refresh()` once on mount ([`Window.tsx:14-21`](E:/Projects/FrontEnd-for-destined-journey-TPR-STS/src/status/layout/Window/Window.tsx)); `TitleBar` has a manual refresh button. `refresh()` bumps `lastRefreshTime`. So the combat tab recomputes on **mount + when `lastRefreshTime` changes + a local refresh button** (design §9 Q4 "auto on change + a light refresh button").
+- **FontAwesome is host-provided FA6 *Free*** (the status app runs inside RPT's card iframe; no FA bundled in the fork's `index.html`/`public`). `fa-swords` is **Pro-only** → use a free solid icon. Tabs use plain `fa-solid fa-*` nouns ([`tabs.config.ts`](E:/Projects/FrontEnd-for-destined-journey-TPR-STS/src/status/config/tabs.config.ts)). Use **`fa-solid fa-khanda`** (free; reads as crossed swords); fallback `fa-shield-halved` / `fa-hand-fist`.
+- **`fa-rotate-right`** is used for the refresh button (free; same family the app already uses for chevrons/trash icons).
+- **Types barrel:** `core/types/index.ts` re-exports type modules (`export type * from './mvu-data'`, `'./theme.d'`) — add the new contract here so components import it from `'../../core/types'` like `StatData`.
+
+---
 
 ## Global Constraints
 
-- **Theme tokens only — no hardcoded colors.** Every color is a `--theme-*` CSS variable ([theme.store.ts] `applyCssVariables` emits `--theme-<kebab>` for each `ThemeColors` key). Must be legible on **light** themes (`ivory` is default, `misty-lilac`) and dark.
+- **Theme tokens only — no hardcoded colors.** Every color is a `--theme-*` CSS variable. Must be legible on **light** themes (`ivory` is the default; `misty-lilac`) and the 6 dark ones.
+- **SCSS Modules only.** New styles go in `*.module.scss`, referenced via the imported `styles` object. No global selectors.
 - **Flexible wide AND tall** via CSS **container queries** on the tab root (sizes to the panel, not the viewport). No fixed px widths/heights for layout.
-- **Render-only consumer.** The tab reads `DuelPreview`; it never recomputes the deck/parse/评级 (that's RPT, Plan A). It does not write `stat_data`.
+- **Render-only consumer.** The tab reads `DuelPreview`; it never recomputes the deck/parse/评级 (that's RPT, Plan A) and never writes `stat_data`.
 - **Coexist with the party panel** — this tab's member selector only *views* builds; it does not manage party membership.
-- **Verification gate (each task's last step):** `npm run lint && npm run build` must pass (build = `webpack --mode production`, which runs `ts-loader` typecheck). Plus the per-task **visual check** described in the task.
-- **Follow existing fork patterns:** mirror how existing tabs/pages/stores/components are written (e.g. `pages/status/StatusTab.tsx`, `core/stores/mvu-data.store.ts`, `shared/components/ResourceBar`, `Card`, `StatusEffectDisplay`). Read the component you reuse before wiring its props.
+- **Prettier/ESLint clean:** single quotes, semicolons, trailing commas, 2-space indent (run `npm run format` then `npm run lint:fix` if needed before the gate).
+- **Verification gate (each task's last step):** `npm run lint && npm run build` must pass (`build` = `webpack --mode production`, which runs the `ts-loader` typecheck). Plus the per-task **visual check** where noted.
+- **Follow existing fork patterns:** mirror `pages/status/StatusTab.tsx`, `core/stores/*.store.ts`, `shared/components/*`. Read the component you reuse before wiring its props.
 
 ---
 
@@ -26,15 +50,18 @@
 
 | File | Responsibility |
 | --- | --- |
-| `src/status/core/types/duel-preview.d.ts` (new) | A copy of the `DuelPreview`/`CombatantPreview`/`CardPreview` contract (the shared interface with Plan A). |
+| `src/status/core/types/duel-preview.d.ts` (new) | The `DuelPreview`/`CombatantPreview`/`CardPreview` contract — an exact copy of Plan A's `preview.ts` (the shared interface). |
+| `src/status/core/types/index.ts` (modify) | Re-export the contract from the types barrel. |
 | `global.d.ts` (modify) | Ambient declaration for the `getDuelPreview()` card-page global. |
-| `src/status/core/utils/duel-preview-fixture.ts` (new) | A static `DuelPreview` for dev/visual checks before the live API exists. |
-| `src/status/core/types/theme.d.ts` (modify) | Add the new combat tokens to `ThemeColors`. |
-| `src/status/config/theme-presets.ts` (modify) | Add values for the new tokens to **all 8** presets. |
-| `src/status/core/stores/duel-preview.store.ts` (new) | zustand store: load via `getDuelPreview()` (fixture fallback), hold `DuelPreview` + selected member. |
+| `src/status/core/utils/duel-preview-fixture.ts` (new) | A static `DuelPreview` for dev/visual checks before the live API is present. |
+| `src/status/core/types/theme.d.ts` (modify) | Add `energyGem` / `ratingAccent` / `powerText` to `ThemeColors`. |
+| `src/status/config/theme-presets.ts` (modify) | Add values for the 3 new tokens to **all 8** presets. |
+| `src/status/core/stores/duel-preview.store.ts` (new) | zustand+immer store: `load()` via `getDuelPreview()` (fixture fallback) + `select()`; `selectViewed` selector. |
+| `src/status/core/stores/index.ts` (modify) | Export the new store. |
 | `src/status/pages/combat/DuelCard.tsx` (new) | Render one `CardPreview` as a themed card. |
+| `src/status/pages/combat/DuelCard.module.scss` (new) | Card styling (tokens only). |
 | `src/status/pages/combat/CombatTab.tsx` (new) | The tab: selector + resource/relic header + deck grid; container-responsive. |
-| `src/status/pages/combat/CombatTab.scss` (new) | Container-query layout + card styling (tokens only). |
+| `src/status/pages/combat/CombatTab.module.scss` (new) | Container-query layout (tokens only). |
 | `src/status/pages/combat/index.ts` (new) | Barrel export. |
 | `src/status/config/tabs.config.ts` (modify) | Add the `combat` tab entry. |
 | `src/status/App.tsx` (modify) | Render `<CombatTab/>` for the `combat` tab. |
@@ -42,70 +69,138 @@
 
 ---
 
-## Task 1: Contract type + ambient global + fixture
+## Task 0: Bootstrap the fork toolchain (prerequisite)
+
+The fork has **no `node_modules`** and **pnpm is not installed** on this machine (only `npm` 10.9.3). Nothing lints/builds until deps are installed. This task has no commit; it's a one-time setup.
+
+- [ ] **Step 1: Create a working branch**
+
+```bash
+cd "E:/Projects/FrontEnd-for-destined-journey-TPR-STS"
+git checkout -b feat/combat-build-tab
+```
+
+- [ ] **Step 2: Install dependencies**
+
+The lockfile is `pnpm-lock.yaml`. Prefer pnpm via corepack; fall back to npm if corepack/pnpm is unavailable.
+
+```bash
+# preferred (matches the lockfile):
+corepack enable
+corepack prepare pnpm@latest --activate
+pnpm install --frozen-lockfile
+# fallback if pnpm cannot be provisioned:
+#   npm install
+```
+
+- [ ] **Step 3: Confirm the gate runs on a clean tree**
+
+```bash
+npm run lint && npm run build
+```
+Expected: both succeed on the untouched `main` snapshot (this is the baseline; if `build` fails before any change, stop and report — the toolchain isn't healthy). `npm run <script>` invokes the package.json scripts regardless of which installer populated `node_modules`.
+
+> All later tasks' gate = `npm run lint && npm run build` (equivalently `pnpm lint && pnpm build`).
+
+---
+
+## Task 1: Contract type + barrel + ambient global + fixture
 
 **Files:**
 - Create: `src/status/core/types/duel-preview.d.ts`, `src/status/core/utils/duel-preview-fixture.ts`
-- Modify: `global.d.ts`
+- Modify: `src/status/core/types/index.ts`, `global.d.ts`
 
-- [ ] **Step 1: Copy the contract type**
+**Interfaces:**
+- Produces: `DuelPreview`, `CombatantPreview`, `CardPreview` (the shared contract); `DUEL_PREVIEW_FIXTURE`; the ambient `getDuelPreview()` global.
 
-Create `src/status/core/types/duel-preview.d.ts` with the **exact** contract from Plan A's `preview.ts` (keep the two copies identical — it's the shared interface):
+- [ ] **Step 1: Copy the contract type (exact, from Plan A's `preview.ts`)**
+
+Create `src/status/core/types/duel-preview.d.ts`:
 
 ```ts
+// The generic, card-agnostic duel build-preview contract returned by the RPT host API
+// getDuelPreview(). Keep IDENTICAL to RPT's src/shared/combat/deckbuilder/preview.ts — it is the
+// shared interface (the contract). Neutral field names; the card's ruleset supplies values +
+// display strings, this app applies labels/theming.
+// See docs/superpowers/specs/2026-06-30-duel-build-preview-tab-design.md §2.
+
 export interface DuelPreview {
   config: { energyPerTurn: number; handSize: number };
   lead: CombatantPreview;
   party: CombatantPreview[];
 }
+
 export interface CombatantPreview {
   id: string;
   name: string;
   tier: number;
   level: number;
   resources: { hp: number; maxHp: number; mp: number; maxMp: number; sp: number; maxSp: number };
+  /** aggregated relic/gear/passive modifiers; `label` is the ruleset's display text. */
   modifiers: { key: string; label: string; value: number }[];
   conditions: { id: string; label: string; stacks?: number; turns?: number; kind: 'buff' | 'debuff' }[];
   deck: CardPreview[];
 }
+
 export interface CardPreview {
   id: string;
   name: string;
+  /** stable rarity id mapped to a theme quality token (e.g. 'epic'). */
   rarityKey: string;
+  /** the ruleset's display label for the rarity (e.g. '史诗'). */
   rarityLabel: string;
   kind: 'attack' | 'defend' | 'skill' | 'heal' | 'power';
   energyCost: number;
   resourceCost: { hp?: number; mp?: number; sp?: number };
   scalingAttr?: string;
   power?: number;
+  /** pre-formatted, display-ready effect lines. */
   effectLines: string[];
   ratingEstimate?: number;
   copies: number;
+  /** World Assets '卡面' key; null today (rarity frame), real art when card-import (D6) lands. */
   artKey?: string;
 }
 ```
 
-- [ ] **Step 2: Declare the ambient global**
+- [ ] **Step 2: Re-export from the types barrel**
 
-Read `global.d.ts` to match its existing TH-global declaration style (`getVariables`, `insertOrAssignVariables`, …), then add:
+In `src/status/core/types/index.ts`, add beside the other `export type *` lines:
 
 ```ts
-declare function getDuelPreview(): Promise<import('./src/status/core/types/duel-preview').DuelPreview>;
+export type * from './duel-preview';
 ```
 
-(Adjust the import path to match how `global.d.ts` references `src/` — mirror the existing declarations' style. If the fork declares globals as optional/possibly-undefined, follow that so the dev fixture-fallback typechecks.)
+- [ ] **Step 3: Declare the ambient global**
 
-- [ ] **Step 3: Add the dev fixture**
+Append to the repo-root `global.d.ts` (NOT `@types/*`). It returns `DuelPreview | null` and may be absent at runtime; the `declare function` form lets `typeof getDuelPreview === 'function'` typecheck while the guard protects the call site.
+
+```ts
+/**
+ * RPT-only host method (read-only): the engine-computed duel build preview for the active chat.
+ * Exposed as a card-page global by RPT's createThRuntime (alongside getVariables/assetUrl).
+ * Absent on older RPT / standalone dev — always guard with `typeof getDuelPreview === 'function'`.
+ */
+declare function getDuelPreview(): Promise<
+  import('./src/status/core/types/duel-preview').DuelPreview | null
+>;
+```
+
+- [ ] **Step 4: Add the dev fixture**
 
 Create `src/status/core/utils/duel-preview-fixture.ts`:
 
 ```ts
 import type { DuelPreview } from '../types/duel-preview';
 
+/** Static preview for dev / no-RPT-host builds so the 战斗 tab is buildable + visually checkable. */
 export const DUEL_PREVIEW_FIXTURE: DuelPreview = {
   config: { energyPerTurn: 3, handSize: 5 },
   lead: {
-    id: '主角', name: '主角', tier: 2, level: 8,
+    id: '主角',
+    name: '主角',
+    tier: 2,
+    level: 8,
     resources: { hp: 1820, maxHp: 2340, mp: 320, maxMp: 500, sp: 450, maxSp: 500 },
     modifiers: [
       { key: '武器攻击', label: '攻击', value: 60 },
@@ -127,14 +222,14 @@ export const DUEL_PREVIEW_FIXTURE: DuelPreview = {
 };
 ```
 
-- [ ] **Step 4: Verify build + commit**
+- [ ] **Step 5: Verify build + commit**
 
 Run: `npm run lint && npm run build`
-Expected: PASS (types compile; no lint errors).
+Expected: PASS (types compile; the ambient global resolves; no lint errors).
 
 ```bash
-git add src/status/core/types/duel-preview.d.ts src/status/core/utils/duel-preview-fixture.ts global.d.ts
-git commit -m "feat(combat-tab): DuelPreview contract type, ambient getDuelPreview, dev fixture"
+git add src/status/core/types/duel-preview.d.ts src/status/core/types/index.ts src/status/core/utils/duel-preview-fixture.ts global.d.ts
+git commit -m "feat(combat-tab): DuelPreview contract type, ambient getDuelPreview global, dev fixture"
 ```
 
 ---
@@ -145,11 +240,11 @@ git commit -m "feat(combat-tab): DuelPreview contract type, ambient getDuelPrevi
 - Modify: `src/status/core/types/theme.d.ts`, `src/status/config/theme-presets.ts`
 
 **Interfaces:**
-- Produces: `--theme-energy-gem`, `--theme-rating-accent`, `--theme-power-text` (emitted automatically by `applyCssVariables`).
+- Produces: the `--theme-energy-gem`, `--theme-rating-accent`, `--theme-power-text` CSS vars (emitted automatically by `applyCssVariables`).
 
 - [ ] **Step 1: Extend `ThemeColors`**
 
-In `src/status/core/types/theme.d.ts`, add to the `ThemeColors` interface (after the 货币颜色 block):
+In `src/status/core/types/theme.d.ts`, add after the `// 货币颜色` block (after `currencyCopper`):
 
 ```ts
   // 战斗卡组（combat deck tab）
@@ -163,31 +258,31 @@ In `src/status/core/types/theme.d.ts`, add to the `ThemeColors` interface (after
 
 - [ ] **Step 2: Add values to all 8 presets**
 
-In `src/status/config/theme-presets.ts`, add the three keys to **every** preset's `colors` (parchment, crimson, indigo, bronze, sakura, obsidian, ivory, misty-lilac). Use each theme's own currency/quality palette so they fit. Suggested per theme (tune to taste, but every preset MUST define all three):
+In `src/status/config/theme-presets.ts`, add the three keys to **every** preset's `colors`, right after that preset's `currencyCopper:` line. Values below are drawn from each theme's own currency/quality palette so they fit (light themes use dark values for legibility on light `cardBg`). The `ThemeColors` type now *requires* the keys, so any preset missing them fails the build — add all 8.
 
 ```ts
-// parchment
+// ParchmentTheme (dark)
 energyGem: '#f3c94f', ratingAccent: '#c28b48', powerText: '#e1c067',
-// crimson
+// CrimsonTheme (dark)
 energyGem: '#f2c653', ratingAccent: '#b04a54', powerText: '#e0b35e',
-// indigo
+// IndigoTheme (dark)
 energyGem: '#f1cf6a', ratingAccent: '#5a78c6', powerText: '#e1c36d',
-// bronze
+// BronzeTheme (dark)
 energyGem: '#e6c04a', ratingAccent: '#9a7f2f', powerText: '#e2b858',
-// sakura
+// SakuraTheme (dark)
 energyGem: '#f2c85a', ratingAccent: '#c06a95', powerText: '#e0b56a',
-// obsidian
+// ObsidianTheme (dark)
 energyGem: '#f5c24f', ratingAccent: '#8f9fff', powerText: '#e5c166',
-// ivory (light)
-energyGem: '#9a7514', ratingAccent: '#b08343', powerText: '#8A6813',
-// misty-lilac (light)
-energyGem: '#9D741B', ratingAccent: '#7255A8', powerText: '#8D6A14',
+// IvoryTheme (light — default)
+energyGem: '#9a7514', ratingAccent: '#b08343', powerText: '#8a6813',
+// MistyLilacTheme (light)
+energyGem: '#9d741b', ratingAccent: '#7255a8', powerText: '#8d6a14',
 ```
 
 - [ ] **Step 3: Verify build + commit**
 
 Run: `npm run lint && npm run build`
-Expected: PASS (the `ThemeColors` type now requires the keys; all presets define them → compiles). If the build complains a preset is missing a key, add it.
+Expected: PASS. If `build` reports a preset literal missing a key, that preset wasn't updated — add the three keys there.
 
 ```bash
 git add src/status/core/types/theme.d.ts src/status/config/theme-presets.ts
@@ -196,71 +291,111 @@ git commit -m "feat(combat-tab): combat deck theme tokens across all 8 presets"
 
 ---
 
-## Task 3: The `duel-preview.store`
+## Task 3: The `duel-preview` store
 
 **Files:**
 - Create: `src/status/core/stores/duel-preview.store.ts`
-- Modify: `src/status/core/stores/index.ts` (export it, mirroring the other stores)
+- Modify: `src/status/core/stores/index.ts`
+
+**Interfaces:**
+- Consumes: `DuelPreview`/`CombatantPreview` (Task 1), `DUEL_PREVIEW_FIXTURE` (Task 1), the ambient `getDuelPreview` global (Task 1).
+- Produces: `useDuelPreviewStore` with `{ preview, selectedId, loading, load(), select(id) }`; the `selectViewed(state) => CombatantPreview | null` selector.
 
 - [ ] **Step 1: Write the store**
 
-Read `core/stores/mvu-data.store.ts` + `theme.store.ts` to match the zustand+immer pattern, then:
+Create `src/status/core/stores/duel-preview.store.ts` (mirrors the zustand+immer shape of `mvu-data.store.ts`):
 
 ```ts
-// src/status/core/stores/duel-preview.store.ts
 import { create } from 'zustand';
 import { immer } from 'zustand/middleware/immer';
-import type { DuelPreview } from '../types/duel-preview';
+import type { CombatantPreview, DuelPreview } from '../types/duel-preview';
 import { DUEL_PREVIEW_FIXTURE } from '../utils/duel-preview-fixture';
 
 interface DuelPreviewState {
+  /** 引擎计算出的对战构筑预览 */
   preview: DuelPreview | null;
+  /** 当前查看的成员 id（主角或队友） */
   selectedId: string | null;
+  /** 是否正在加载 */
   loading: boolean;
 }
+
 interface DuelPreviewActions {
+  /** 调用 getDuelPreview() 重新加载（无宿主时回退 fixture） */
   load: () => Promise<void>;
+  /** 切换查看的成员 */
   select: (id: string) => void;
 }
 
-export const useDuelPreviewStore = create<DuelPreviewState & DuelPreviewActions>()(
+type DuelPreviewStore = DuelPreviewState & DuelPreviewActions;
+
+export const useDuelPreviewStore = create<DuelPreviewStore>()(
   immer((set, get) => ({
     preview: null,
     selectedId: null,
     loading: false,
 
     load: async () => {
-      set(s => { s.loading = true; });
-      let preview: DuelPreview | null = null;
-      try {
-        if (typeof getDuelPreview === 'function') preview = await getDuelPreview();
-      } catch (e) {
-        console.error('[StatusBar] getDuelPreview failed:', e);
-      }
-      // Dev / no-RPT-host fallback so the tab is buildable + visually checkable standalone.
-      if (!preview) preview = DUEL_PREVIEW_FIXTURE;
-      set(s => {
-        s.preview = preview;
-        s.loading = false;
-        if (!s.selectedId) s.selectedId = preview!.lead.id;
+      set(state => {
+        state.loading = true;
       });
+
+      let result: DuelPreview | null = null;
+      try {
+        // getDuelPreview 是 RPT 注入的卡面全局；旧版 RPT / 独立开发环境中可能不存在。
+        if (typeof getDuelPreview === 'function') {
+          result = await getDuelPreview();
+        }
+      } catch (error) {
+        console.error('[StatusBar] getDuelPreview 调用失败:', error);
+      }
+
+      // 开发 / 无 RPT 宿主时回退静态 fixture，便于独立构建与视觉检查。
+      const preview: DuelPreview = result ?? DUEL_PREVIEW_FIXTURE;
+
+      set(state => {
+        state.preview = preview;
+        state.loading = false;
+        if (!state.selectedId) {
+          state.selectedId = preview.lead.id;
+        }
+      });
+
+      // 若当前选中的成员已不在新构筑中，回退到主角。
+      const all = [preview.lead, ...preview.party];
+      if (!all.some(c => c.id === get().selectedId)) {
+        set(state => {
+          state.selectedId = preview.lead.id;
+        });
+      }
     },
 
-    select: id => set(s => { s.selectedId = id; }),
+    select: id =>
+      set(state => {
+        state.selectedId = id;
+      }),
   })),
 );
 
-/** The currently-viewed combatant (lead or a party member). */
-export const selectViewed = (s: DuelPreviewState): DuelPreview['lead'] | null => {
-  if (!s.preview) return null;
-  const all = [s.preview.lead, ...s.preview.party];
-  return all.find(c => c.id === s.selectedId) ?? s.preview.lead;
+/** 当前查看的战斗者（主角或队友）；找不到时回退主角。 */
+export const selectViewed = (state: DuelPreviewState): CombatantPreview | null => {
+  if (!state.preview) {
+    return null;
+  }
+  const all = [state.preview.lead, ...state.preview.party];
+  return all.find(c => c.id === state.selectedId) ?? state.preview.lead;
 };
 ```
 
-(`getDuelPreview` is the ambient global from Task 1; the `typeof … === 'function'` guard + fixture fallback makes the tab work before Plan A ships and in standalone dev.)
+- [ ] **Step 2: Export it from the stores barrel**
 
-- [ ] **Step 2: Verify build + commit**
+In `src/status/core/stores/index.ts`, add:
+
+```ts
+export { useDuelPreviewStore, selectViewed } from './duel-preview.store';
+```
+
+- [ ] **Step 3: Verify build + commit**
 
 Run: `npm run lint && npm run build`
 Expected: PASS.
@@ -275,65 +410,197 @@ git commit -m "feat(combat-tab): duel-preview store (host API + fixture fallback
 ## Task 4: The `DuelCard` component
 
 **Files:**
-- Create: `src/status/pages/combat/DuelCard.tsx`
+- Create: `src/status/pages/combat/DuelCard.tsx`, `src/status/pages/combat/DuelCard.module.scss`
 
 **Interfaces:**
 - Consumes: `CardPreview` (Task 1).
-- Produces: `<DuelCard card={CardPreview} onInspect={(c) => void} />`.
+- Produces: `<DuelCard card={CardPreview} onInspect?={(c) => void} />`.
 
 - [ ] **Step 1: Write the component**
 
-Map `rarityKey` → a theme quality CSS var. Read `core/utils/quality.ts` first — if it already maps a rarity to a `--theme-quality-*` var or class, reuse it; otherwise use this local map:
+`rarityKey` maps to a `--theme-quality-*` token (the quality tokens already exist in every preset — verified in `theme.d.ts`). Applied as an inline border/accent color so we don't generate dynamic module classes.
+
+Create `src/status/pages/combat/DuelCard.tsx`:
 
 ```tsx
-// src/status/pages/combat/DuelCard.tsx
 import { FC } from 'react';
-import type { CardPreview } from '../../core/types/duel-preview';
+import type { CardPreview } from '../../core/types';
+import styles from './DuelCard.module.scss';
 
 const QUALITY_VAR: Record<string, string> = {
-  common: '--theme-quality-common', uncommon: '--theme-quality-uncommon', rare: '--theme-quality-rare',
-  epic: '--theme-quality-epic', legendary: '--theme-quality-legendary', mythic: '--theme-quality-mythic',
+  common: '--theme-quality-common',
+  uncommon: '--theme-quality-uncommon',
+  rare: '--theme-quality-rare',
+  epic: '--theme-quality-epic',
+  legendary: '--theme-quality-legendary',
+  mythic: '--theme-quality-mythic',
   unique: '--theme-quality-unique',
 };
 
-export const DuelCard: FC<{ card: CardPreview; onInspect?: (c: CardPreview) => void }> = ({ card, onInspect }) => {
+const KIND_LABEL: Record<CardPreview['kind'], string> = {
+  attack: '攻击',
+  defend: '防御',
+  skill: '技能',
+  heal: '治疗',
+  power: '能力',
+};
+
+const costLabel = (c: CardPreview['resourceCost']): string =>
+  [c.hp != null ? `${c.hp} HP` : '', c.mp != null ? `${c.mp} MP` : '', c.sp != null ? `${c.sp} SP` : '']
+    .filter(Boolean)
+    .join(' ') || '—';
+
+export interface DuelCardProps {
+  card: CardPreview;
+  onInspect?: (card: CardPreview) => void;
+}
+
+export const DuelCard: FC<DuelCardProps> = ({ card, onInspect }) => {
   const rarity = `var(${QUALITY_VAR[card.rarityKey] ?? '--theme-quality-common'})`;
-  const cost = card.resourceCost;
+  const isPower = card.kind === 'power';
+
   return (
-    <button className={`duel-card kind-${card.kind}`} style={{ borderColor: rarity }} onClick={() => onInspect?.(card)}>
-      {card.kind === 'power'
-        ? <span className="dc-copies dc-power">常驻</span>
-        : <span className="dc-copies">×{card.copies}</span>}
-      {card.kind !== 'power' && <span className="dc-energy">{card.energyCost}</span>}
-      <span className="dc-name">{card.name}</span>
-      <span className="dc-type" style={{ color: rarity }}>{kindLabel(card.kind)} · {card.rarityLabel}</span>
-      {(card.power != null || card.scalingAttr) && (
-        <span className="dc-stat">{card.power != null ? `威力 ${card.power}` : ''}{card.scalingAttr ? ` · ${card.scalingAttr}` : ''}</span>
+    <button
+      type="button"
+      className={`${styles.card} ${isPower ? styles.power : ''}`}
+      style={{ borderColor: rarity }}
+      onClick={() => onInspect?.(card)}
+    >
+      {isPower ? (
+        <span className={`${styles.copies} ${styles.copiesPower}`}>常驻</span>
+      ) : (
+        <span className={styles.copies}>×{card.copies}</span>
       )}
-      <span className="dc-eff">{card.effectLines.join(' · ') || (card.kind === 'power' ? '常驻加成 · 不进牌库' : '')}</span>
-      <span className="dc-foot">
-        <span className="dc-cost">{costLabel(cost)}</span>
-        {card.ratingEstimate != null && <span className="dc-rate">评级~{card.ratingEstimate.toFixed(1)}</span>}
+      {!isPower && <span className={styles.energy}>{card.energyCost}</span>}
+      <span className={styles.name}>{card.name}</span>
+      <span className={styles.type} style={{ color: rarity }}>
+        {KIND_LABEL[card.kind]} · {card.rarityLabel}
+      </span>
+      {(card.power != null || card.scalingAttr) && (
+        <span className={styles.stat}>
+          {card.power != null ? `威力 ${card.power}` : ''}
+          {card.scalingAttr ? ` · ${card.scalingAttr}` : ''}
+        </span>
+      )}
+      <span className={styles.eff}>
+        {card.effectLines.join(' · ') || (isPower ? '常驻加成 · 不进牌库' : '')}
+      </span>
+      <span className={styles.foot}>
+        <span className={styles.cost}>{costLabel(card.resourceCost)}</span>
+        {card.ratingEstimate != null && (
+          <span className={styles.rate}>评级~{card.ratingEstimate.toFixed(1)}</span>
+        )}
       </span>
     </button>
   );
 };
-
-const kindLabel = (k: CardPreview['kind']): string =>
-  ({ attack: '攻击', defend: '防御', skill: '技能', heal: '治疗', power: '能力' }[k]);
-
-const costLabel = (c: CardPreview['resourceCost']): string =>
-  [c.hp != null ? `${c.hp} HP` : '', c.mp != null ? `${c.mp} MP` : '', c.sp != null ? `${c.sp} SP` : '']
-    .filter(Boolean).join(' ') || '—';
 ```
 
-- [ ] **Step 2: Verify build + commit**
+- [ ] **Step 2: Write the card SCSS module (tokens only)**
+
+Create `src/status/pages/combat/DuelCard.module.scss`:
+
+```scss
+.card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  min-height: 150px;
+  text-align: left;
+  border-radius: 9px;
+  padding: 6px;
+  cursor: pointer;
+  background: var(--theme-card-bg);
+  border: 2px solid var(--theme-card-border);
+  color: var(--theme-text-primary);
+}
+
+.power {
+  border-style: dashed;
+}
+
+.energy {
+  position: absolute;
+  top: -8px;
+  left: -7px;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+  font-weight: 700;
+  background: var(--theme-energy-gem);
+  color: var(--theme-window-bg);
+}
+
+.copies {
+  position: absolute;
+  top: -7px;
+  right: -6px;
+  font-size: 10px;
+  font-weight: 700;
+  padding: 1px 6px;
+  border-radius: 9px;
+  background: var(--theme-surface-muted);
+  border: 1px solid var(--theme-card-border);
+  color: var(--theme-text-secondary);
+}
+
+.copiesPower {
+  color: var(--theme-rating-accent);
+}
+
+.name {
+  text-align: center;
+  font-size: 13px;
+  font-weight: 700;
+  margin-top: 2px;
+}
+
+.type {
+  text-align: center;
+  font-size: 9px;
+  margin: 1px 0 3px;
+}
+
+.stat {
+  text-align: center;
+  font-size: 10px;
+  color: var(--theme-power-text);
+}
+
+.eff {
+  flex: 1;
+  text-align: center;
+  font-size: 9px;
+  color: var(--theme-text-muted);
+  margin-top: 2px;
+  line-height: 1.35;
+}
+
+.foot {
+  display: flex;
+  justify-content: space-between;
+  font-size: 9px;
+  margin-top: 3px;
+  padding-top: 3px;
+  border-top: 1px solid var(--theme-card-border);
+}
+
+.rate {
+  color: var(--theme-rating-accent);
+}
+```
+
+- [ ] **Step 3: Verify build + commit**
 
 Run: `npm run lint && npm run build`
-Expected: PASS (styling comes in Task 5's SCSS; the component compiles now).
+Expected: PASS.
 
 ```bash
-git add src/status/pages/combat/DuelCard.tsx
+git add src/status/pages/combat/DuelCard.tsx src/status/pages/combat/DuelCard.module.scss
 git commit -m "feat(combat-tab): DuelCard — render a CardPreview with themed rarity frame"
 ```
 
@@ -342,149 +609,308 @@ git commit -m "feat(combat-tab): DuelCard — render a CardPreview with themed r
 ## Task 5: The `CombatTab` page + responsive SCSS
 
 **Files:**
-- Create: `src/status/pages/combat/CombatTab.tsx`, `src/status/pages/combat/CombatTab.scss`, `src/status/pages/combat/index.ts`
+- Create: `src/status/pages/combat/CombatTab.tsx`, `src/status/pages/combat/CombatTab.module.scss`, `src/status/pages/combat/index.ts`
 
 **Interfaces:**
-- Consumes: `useDuelPreviewStore`/`selectViewed` (Task 3), `DuelCard` (Task 4), the existing `ResourceBar` + `StatusEffectDisplay` components.
+- Consumes: `useDuelPreviewStore`/`selectViewed` (Task 3), `useMvuDataStore` (existing), `DuelCard` (Task 4), `ResourceBar` + `StatusEffectDisplay` (existing), `StatusEffectItem` (existing type).
 - Produces: `<CombatTab/>`.
 
 - [ ] **Step 1: Write the page**
 
-Read `shared/components/ResourceBar` + `StatusEffectDisplay` props first, then compose (adjust the reused-component props to their real signatures):
+Notes baked in from the grounding:
+- Reuse `ResourceBar` (`type='hp'|'mp'|'sp'`, same game-icons the StatusTab uses).
+- Reuse `StatusEffectDisplay` in **chips** mode for `conditions`, mapping our neutral `conditions[]` → its `Record<string, StatusEffectItem>` shape.
+- Recompute keyed on `useMvuDataStore().lastRefreshTime` (+ mount + a local refresh button).
+- **All hooks run before the early return** (rules of hooks): the `conditions→effects` map is a plain const computed *after* the guard, not a hook.
+
+Create `src/status/pages/combat/CombatTab.tsx`:
 
 ```tsx
-// src/status/pages/combat/CombatTab.tsx
 import { FC, useEffect } from 'react';
-import './CombatTab.scss';
-import { useDuelPreviewStore, selectViewed } from '../../core/stores/duel-preview.store';
+import { useMvuDataStore } from '../../core/stores';
+import { selectViewed, useDuelPreviewStore } from '../../core/stores';
+import { ResourceBar, StatusEffectDisplay } from '../../shared/components';
+import type { StatusEffectItem } from '../../shared/components/StatusEffectDisplay/StatusEffectDisplay';
 import { DuelCard } from './DuelCard';
+import styles from './CombatTab.module.scss';
 
 export const CombatTab: FC = () => {
-  const { preview, selectedId, load, select } = useDuelPreviewStore();
+  const preview = useDuelPreviewStore(s => s.preview);
+  const selectedId = useDuelPreviewStore(s => s.selectedId);
+  const loading = useDuelPreviewStore(s => s.loading);
+  const load = useDuelPreviewStore(s => s.load);
+  const select = useDuelPreviewStore(s => s.select);
   const viewed = useDuelPreviewStore(selectViewed);
+  const lastRefresh = useMvuDataStore(s => s.lastRefreshTime);
 
-  useEffect(() => { void load(); }, [load]);
+  // 初次加载 + 当底层 stat_data 刷新（全局刷新按钮）时重算预览。
+  useEffect(() => {
+    void load();
+  }, [load, lastRefresh]);
 
-  if (!preview || !viewed) return <div className="combat-empty">战斗预览不可用</div>;
+  if (!preview || !viewed) {
+    return <div className={styles.empty}>{loading ? '加载中…' : '战斗预览不可用'}</div>;
+  }
 
   const members = [preview.lead, ...preview.party];
   const total = viewed.deck.reduce((n, c) => n + c.copies, 0);
 
+  // 将中立的 conditions[] 映射回 StatusEffectDisplay 的 effects 形状，复用主题化的 chips。
+  const conditionEffects: Record<string, StatusEffectItem> = {};
+  for (const c of viewed.conditions) {
+    conditionEffects[c.label] = {
+      类型: c.kind === 'buff' ? '增益' : '减益',
+      层数: c.stacks,
+      剩余时间: c.turns != null ? `${c.turns}回合` : undefined,
+    };
+  }
+
   return (
-    <div className="combat-tab">
-      <div className="ct-selector">
-        <span className="ct-sel-lbl">查看</span>
+    <div className={styles.combatTab}>
+      <div className={styles.selector}>
+        <span className={styles.selectorLabel}>查看</span>
         {members.map(m => (
-          <button key={m.id} className={`ct-chip${m.id === selectedId ? ' active' : ''}`} onClick={() => select(m.id)}>
-            <span className="ct-av">{m.name.slice(0, 1)}</span>
-            <span className="ct-cn">{m.name}</span>
+          <button
+            key={m.id}
+            type="button"
+            className={`${styles.chip} ${m.id === selectedId ? styles.chipActive : ''}`}
+            onClick={() => select(m.id)}
+          >
+            <span className={styles.avatar}>{m.name.slice(0, 1)}</span>
+            <span className={styles.chipName}>{m.name}</span>
           </button>
         ))}
+        <button
+          type="button"
+          className={styles.refreshBtn}
+          onClick={() => void load()}
+          title="刷新战斗预览"
+        >
+          <i className="fa-solid fa-rotate-right" />
+        </button>
       </div>
 
-      <div className="ct-body">
-        <div className="ct-resblock">
-          <div className="ct-rtop"><span className="ct-rname">{viewed.name}</span>
-            <span className="ct-rmeta">第{viewed.tier}层级 · 等级 {viewed.level}</span></div>
-          <Bar label="生命" value={viewed.resources.hp} max={viewed.resources.maxHp} varName="--theme-resource-hp" />
-          <Bar label="法力" value={viewed.resources.mp} max={viewed.resources.maxMp} varName="--theme-resource-mp" />
-          <Bar label="体力" value={viewed.resources.sp} max={viewed.resources.maxSp} varName="--theme-resource-sp" />
+      <div className={styles.body}>
+        <div className={styles.resBlock}>
+          <div className={styles.resTop}>
+            <span className={styles.resName}>{viewed.name}</span>
+            <span className={styles.resMeta}>
+              第{viewed.tier}层级 · 等级 {viewed.level}
+            </span>
+          </div>
+          <ResourceBar label="HP" current={viewed.resources.hp} max={viewed.resources.maxHp} type="hp" icon="game-icons:heart-plus" />
+          <ResourceBar label="MP" current={viewed.resources.mp} max={viewed.resources.maxMp} type="mp" icon="game-icons:water-drop" />
+          <ResourceBar label="SP" current={viewed.resources.sp} max={viewed.resources.maxSp} type="sp" icon="game-icons:focused-lightning" />
           {viewed.conditions.length > 0 && (
-            <div className="ct-pills">{viewed.conditions.map(c => (
-              <span key={c.id} className={`ct-pill ${c.kind}`}>{c.label}{c.turns ? ` ${c.turns}` : ''}</span>
-            ))}</div>
+            <div className={styles.pills}>
+              <StatusEffectDisplay
+                effects={conditionEffects}
+                mode="chips"
+                compact
+                showRemainingCount
+                emptyText="无状态"
+              />
+            </div>
           )}
           {viewed.modifiers.length > 0 && (
-            <div className="ct-relics">{viewed.modifiers.map(m => (
-              <span key={m.key} className="ct-relic">{m.label} {m.value}</span>
-            ))}</div>
+            <div className={styles.relics}>
+              {viewed.modifiers.map(m => (
+                <span key={m.key} className={styles.relic}>
+                  {m.label} {m.value}
+                </span>
+              ))}
+            </div>
           )}
         </div>
 
-        <div className="ct-deck">
-          <div class="ct-deckhead"><span className="ct-dh-title">卡组</span>
-            <span className="ct-dh-meta">{total} 张 · 行动力 {preview.config.energyPerTurn}/回合 · 手牌 {preview.config.handSize}</span></div>
-          <div className="ct-grid">
-            {viewed.deck.map(c => <DuelCard key={c.id} card={c} />)}
+        <div className={styles.deck}>
+          <div className={styles.deckHead}>
+            <span className={styles.deckTitle}>卡组</span>
+            <span className={styles.deckMeta}>
+              {total} 张 · 行动力 {preview.config.energyPerTurn}/回合 · 手牌 {preview.config.handSize}
+            </span>
+          </div>
+          <div className={styles.grid}>
+            {viewed.deck.map(c => (
+              <DuelCard key={c.id} card={c} />
+            ))}
           </div>
         </div>
       </div>
     </div>
   );
 };
-
-const Bar: FC<{ label: string; value: number; max: number; varName: string }> = ({ label, value, max, varName }) => (
-  <div className="ct-bar-row">
-    <span className="ct-bl">{label}</span>
-    <span className="ct-bar"><i style={{ width: `${max ? Math.min(100, (value / max) * 100) : 0}%`, background: `var(${varName})` }} /></span>
-    <span className="ct-bv">{value} / {max}</span>
-  </div>
-);
 ```
 
-(If the app's `ResourceBar`/`StatusEffectDisplay` cover the HP/MP/SP bars + condition pills, prefer them over the local `Bar`/pill markup — read their props and swap them in. The local `Bar` is a token-driven fallback.)
+> If ESLint's import-x flags the two `from '../../core/stores'` lines, merge them into one import:
+> `import { selectViewed, useDuelPreviewStore, useMvuDataStore } from '../../core/stores';`
 
-> NB: fix the one intentional typo if you transcribe verbatim — `class=` → `className=` on `ct-deckhead`. (JSX uses `className`.)
+- [ ] **Step 2: Write the responsive SCSS module (tokens only)**
 
-- [ ] **Step 2: Write the responsive, token-only SCSS**
-
-Create `src/status/pages/combat/CombatTab.scss` — container-query driven (wide → header beside deck; tall → stacked), all colors from `--theme-*`:
+Create `src/status/pages/combat/CombatTab.module.scss` — container-query driven (wide → header beside deck; tall → stacked), all colors from `--theme-*`:
 
 ```scss
-.combat-tab { container-type: inline-size; color: var(--theme-text-primary); font-size: 13px; }
-.ct-selector { display: flex; align-items: center; gap: 10px; overflow-x: auto;
-  padding-bottom: 10px; margin-bottom: 12px; border-bottom: 1px solid var(--theme-card-border); }
-.ct-sel-lbl { font-size: 11px; color: var(--theme-text-muted); white-space: nowrap; }
-.ct-chip { display: flex; flex-direction: column; align-items: center; gap: 3px; background: none; border: none; cursor: pointer; min-width: 46px; }
-.ct-av { width: 38px; height: 38px; border-radius: 50%; display: flex; align-items: center; justify-content: center;
-  font-size: 16px; font-weight: 700; background: var(--theme-surface-muted); border: 2px solid var(--theme-card-border); color: var(--theme-text-secondary); }
-.ct-chip.active .ct-av { border-color: var(--theme-rating-accent); color: var(--theme-text-primary); }
-.ct-cn { font-size: 10px; color: var(--theme-text-secondary); }
-.ct-chip.active .ct-cn { color: var(--theme-text-primary); }
+.combatTab {
+  container-type: inline-size;
+  color: var(--theme-text-primary);
+  font-size: 13px;
+}
 
-.ct-body { display: flex; flex-direction: column; gap: 12px; }
-.ct-resblock { background: var(--theme-surface-muted); border: 1px solid var(--theme-card-border); border-radius: 10px; padding: 11px 13px; }
-.ct-rtop { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 8px; }
-.ct-rname { font-size: 16px; font-weight: 700; }
-.ct-rmeta { font-size: 11px; color: var(--theme-text-muted); }
-.ct-bar-row { display: flex; align-items: center; gap: 8px; font-size: 11px; margin-top: 5px; }
-.ct-bl { width: 30px; color: var(--theme-text-secondary); }
-.ct-bar { flex: 1; height: 9px; border-radius: 5px; background: var(--theme-content-bg); overflow: hidden; }
-.ct-bar > i { display: block; height: 100%; border-radius: 5px; }
-.ct-bv { width: 84px; text-align: right; color: var(--theme-resource-text); }
-.ct-pills, .ct-relics { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 8px; }
-.ct-pill { font-size: 10px; padding: 2px 8px; border-radius: 11px; }
-.ct-pill.buff { background: var(--theme-tag-present); color: var(--theme-tag-present-text); }
-.ct-pill.debuff { background: var(--theme-tag-contract); color: var(--theme-tag-contract-text); }
-.ct-relic { font-size: 10px; padding: 2px 7px; border-radius: 7px; background: var(--theme-card-bg);
-  border: 1px solid var(--theme-card-border); color: var(--theme-text-secondary); }
+.empty {
+  color: var(--theme-text-muted);
+  padding: 16px;
+  text-align: center;
+}
 
-.ct-deckhead { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
-.ct-dh-title { font-size: 13px; color: var(--theme-rating-accent); }
-.ct-dh-meta { font-size: 11px; color: var(--theme-text-muted); }
-.ct-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(108px, 1fr)); gap: 9px; }
+.selector {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  overflow-x: auto;
+  padding-bottom: 10px;
+  margin-bottom: 12px;
+  border-bottom: 1px solid var(--theme-card-border);
+}
 
-.duel-card { position: relative; display: flex; flex-direction: column; min-height: 150px; text-align: left;
-  border-radius: 9px; padding: 6px; cursor: pointer;
-  background: var(--theme-card-bg); border: 2px solid var(--theme-card-border); color: var(--theme-text-primary); }
-.dc-energy { position: absolute; top: -8px; left: -7px; width: 26px; height: 26px; border-radius: 50%;
-  display: flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 700;
-  background: var(--theme-energy-gem); color: var(--theme-window-bg); }
-.dc-copies { position: absolute; top: -7px; right: -6px; font-size: 10px; font-weight: 700; padding: 1px 6px;
-  border-radius: 9px; background: var(--theme-surface-muted); border: 1px solid var(--theme-card-border); color: var(--theme-text-secondary); }
-.dc-name { text-align: center; font-size: 13px; font-weight: 700; margin-top: 2px; }
-.dc-type { text-align: center; font-size: 9px; margin: 1px 0 3px; }
-.dc-stat { text-align: center; font-size: 10px; color: var(--theme-power-text); }
-.dc-eff { flex: 1; text-align: center; font-size: 9px; color: var(--theme-text-muted); margin-top: 2px; line-height: 1.35; }
-.dc-foot { display: flex; justify-content: space-between; font-size: 9px; margin-top: 3px; padding-top: 3px; border-top: 1px solid var(--theme-card-border); }
-.dc-rate { color: var(--theme-rating-accent); }
-.duel-card.kind-power { border-style: dashed; }
-.combat-empty { color: var(--theme-text-muted); padding: 16px; text-align: center; }
+.selectorLabel {
+  font-size: 11px;
+  color: var(--theme-text-muted);
+  white-space: nowrap;
+}
+
+.chip {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  min-width: 46px;
+}
+
+.avatar {
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+  font-weight: 700;
+  background: var(--theme-surface-muted);
+  border: 2px solid var(--theme-card-border);
+  color: var(--theme-text-secondary);
+}
+
+.chipActive .avatar {
+  border-color: var(--theme-rating-accent);
+  color: var(--theme-text-primary);
+}
+
+.chipName {
+  font-size: 10px;
+  color: var(--theme-text-secondary);
+}
+
+.chipActive .chipName {
+  color: var(--theme-text-primary);
+}
+
+.refreshBtn {
+  margin-left: auto;
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--theme-text-muted);
+  font-size: 13px;
+}
+
+.body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.resBlock {
+  background: var(--theme-surface-muted);
+  border: 1px solid var(--theme-card-border);
+  border-radius: 10px;
+  padding: 11px 13px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.resTop {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+}
+
+.resName {
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.resMeta {
+  font-size: 11px;
+  color: var(--theme-text-muted);
+}
+
+.pills,
+.relics {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-top: 2px;
+}
+
+.relic {
+  font-size: 10px;
+  padding: 2px 7px;
+  border-radius: 7px;
+  background: var(--theme-card-bg);
+  border: 1px solid var(--theme-card-border);
+  color: var(--theme-text-secondary);
+}
+
+.deckHead {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.deckTitle {
+  font-size: 13px;
+  color: var(--theme-rating-accent);
+}
+
+.deckMeta {
+  font-size: 11px;
+  color: var(--theme-text-muted);
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(108px, 1fr));
+  gap: 9px;
+}
 
 @container (min-width: 560px) {
-  .ct-body { flex-direction: row; align-items: flex-start; }
-  .ct-resblock { flex: 0 0 240px; }
-  .ct-deck { flex: 1; }
+  .body {
+    flex-direction: row;
+    align-items: flex-start;
+  }
+
+  .resBlock {
+    flex: 0 0 240px;
+  }
+
+  .deck {
+    flex: 1;
+  }
 }
 ```
 
@@ -500,12 +926,13 @@ export { CombatTab } from './CombatTab';
 
 Run: `npm run lint && npm run build`
 Expected: PASS.
-**Visual check:** load the built `dist/status/index.html` (the way you preview the status app) — the `CombatTab` (rendered via Task 6) shows the fixture: member chips, resource bars, relic chips, condition pill, and the deck grid of cards with energy gems + ×N + rarity-colored borders. Confirm it (a) reflows from one column (narrow) to header-beside-deck (wide ≥560px container), and (b) is legible in a **dark** theme (e.g. obsidian) AND the **light** default (ivory) — toggle via the settings theme picker. Fix any unreadable token pairing.
+
+**Visual check:** the page renders only after the tab is registered (Task 6) — defer the live visual check to Task 6's. Here, confirm the build is clean and the SCSS module compiles.
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add src/status/pages/combat/
+git add src/status/pages/combat/CombatTab.tsx src/status/pages/combat/CombatTab.module.scss src/status/pages/combat/index.ts
 git commit -m "feat(combat-tab): CombatTab page + container-responsive, token-only SCSS"
 ```
 
@@ -514,39 +941,60 @@ git commit -m "feat(combat-tab): CombatTab page + container-responsive, token-on
 ## Task 6: Register the tab
 
 **Files:**
-- Modify: `src/status/config/tabs.config.ts`, `src/status/App.tsx`, `src/status/pages/index.ts`
+- Modify: `src/status/config/tabs.config.ts`, `src/status/pages/index.ts`, `src/status/App.tsx`
 
 - [ ] **Step 1: Add the tab config**
 
-In `src/status/config/tabs.config.ts`, add to `TabsConfig` (after `map`):
+In `src/status/config/tabs.config.ts`, add an entry to `TabsConfig` (e.g. after `map`):
 
 ```ts
   {
     id: 'combat',
     label: '战斗',
-    icon: 'fa-solid fa-swords',
+    icon: 'fa-solid fa-khanda',
   },
 ```
 
-- [ ] **Step 2: Export + render the page**
+(`fa-khanda` is free FA6 and reads as crossed swords. If it renders as a blank box in the host, swap to `fa-solid fa-shield-halved` or `fa-solid fa-hand-fist` — all free.)
 
-In `src/status/pages/index.ts`, export `CombatTab` (mirror the other page exports). In `src/status/App.tsx`, import `CombatTab` and add a case to `renderTabContent`:
+- [ ] **Step 2: Export the page**
+
+In `src/status/pages/index.ts`, add (alphabetical-ish, mirroring the others):
+
+```ts
+export { CombatTab } from './combat';
+```
+
+- [ ] **Step 3: Render the page**
+
+In `src/status/App.tsx`, add `CombatTab` to the import from `'./pages'`:
+
+```ts
+import { CombatTab, DestinyTab, ItemsTab, MapTab, NewsTab, QuestsTab, SettingsTab, StatusTab } from './pages';
+```
+
+and add a case in `renderTabContent`'s `switch`:
 
 ```tsx
       case 'combat':
         return <CombatTab />;
 ```
 
-- [ ] **Step 3: Build + visual check**
+- [ ] **Step 4: Build + visual check**
 
 Run: `npm run lint && npm run build`
 Expected: PASS.
-**Visual check:** the `战斗` tab now appears in the tab bar with the sword icon and selecting it renders the `CombatTab`. Switching member chips swaps the viewed build. (If `fa-solid fa-swords` doesn't render, pick an available FontAwesome icon the app already bundles, e.g. `fa-solid fa-khanda` / `fa-shield-halved` — mirror how other tabs' icons resolve.)
 
-- [ ] **Step 4: Commit**
+**Visual check** (preview the built status app the way the fork is normally previewed — e.g. open the webpack output / load it in a card, or the project's single-file preview):
+1. A **战斗** tab appears in the tab bar with the sword icon; selecting it renders `CombatTab` showing the fixture: member chips (主角 / 苏璃), HP/MP/SP bars, the 流血 condition chip, relic chips (攻击 60 / 防御 50 / 命中 1), and the deck grid (普攻 ×4, 格挡 ×4, 乱舞 ×2, 烈焰斩 ×1, 锋锐 常驻) with energy gems + ×N + rarity-colored borders.
+2. Switching member chips swaps the viewed build (苏璃 has an empty deck → an empty grid, no crash).
+3. **Reflow:** narrows to one column; at a container width ≥560px the resource block sits beside the deck.
+4. **Legibility:** readable in a **dark** theme (e.g. obsidian) AND the **light default** (ivory) — toggle via the settings theme picker. Fix any unreadable token pairing.
+
+- [ ] **Step 5: Commit**
 
 ```bash
-git add src/status/config/tabs.config.ts src/status/App.tsx src/status/pages/index.ts
+git add src/status/config/tabs.config.ts src/status/pages/index.ts src/status/App.tsx
 git commit -m "feat(combat-tab): register the 战斗 tab in the status app"
 ```
 
@@ -554,14 +1002,14 @@ git commit -m "feat(combat-tab): register the 战斗 tab in the status app"
 
 ## Self-Review
 
-**Spec coverage:** the contract type (design §2) → Task 1; theming across all 8 themes incl. light, new tokens (§4-theming) → Tasks 2 + 5 (token-only SCSS); the host-API consumer + fixture fallback (§1, §4) → Task 3; deck-as-cards centerpiece with copies + rarity frame + 评级 (§0.3, §4) → Tasks 4 + 5; resource/relic header + member selector (§4 regions) → Task 5; container-responsive wide/tall (§4-responsive) → Task 5 SCSS; tab registration → Task 6; coexist-with-party-panel + render-only (§5) → honored (no membership writes). ✓
+**Spec coverage:** the contract type (design §2) → Task 1; theming across all 8 themes incl. the light default + the 3 new tokens (§4-theming) → Tasks 2 + 4 + 5 (token-only module SCSS); the host-API consumer + fixture fallback (§1, §4) → Task 3; deck-as-cards centerpiece with copies + rarity frame + 评级 + 常驻 powers (§0.3, §4) → Tasks 4 + 5; resource/relic header + member selector (§4 regions) → Task 5 (reuses `ResourceBar` + `StatusEffectDisplay`); container-responsive wide/tall (§4-responsive) → Task 5 SCSS; recompute trigger = auto-on-refresh + button (§9 Q4) → Task 5; tab registration → Task 6; coexist-with-party-panel + render-only (§5) → honored (no membership writes, no `stat_data` writes). Member portraits via World Assets (§4 region 1) are **deferred to a follow-on** — v1 uses name initials (the contract carries no combatant `artKey`); noted, not a regression. ✓
 
-**Placeholder scan:** "read component X first / mirror its props" appear for the fork's reused components (`ResourceBar`, `StatusEffectDisplay`, `quality.ts`, the icon set) and the ambient-global style — these are read-then-mirror integration points in an external repo, each with a working token-driven fallback in the code, not missing logic. The one deliberate `class=`→`className=` note is flagged. ✓
+**Placeholder scan:** no "TBD"/"add error handling"/"similar to Task N". Every code step shows complete code. The two judgement calls (`fa-khanda` icon fallback; merging the two `core/stores` imports if import-x complains) are concrete conditionals with the exact fallback given, not missing logic. ✓
 
-**Type consistency:** `DuelPreview`/`CombatantPreview`/`CardPreview` (Task 1) used unchanged by the store (Task 3), `DuelCard` (Task 4), and `CombatTab` (Task 5). `useDuelPreviewStore`/`selectViewed` (Task 3) consumed by Task 5. `DuelCard` props (Task 4) match its use in Task 5. New theme keys (Task 2) match the `--theme-energy-gem`/`-rating-accent`/`-power-text` vars used in Task 5 SCSS. ✓
+**Type consistency:** `DuelPreview`/`CombatantPreview`/`CardPreview` (Task 1) are used unchanged by the store (Task 3), `DuelCard` (Task 4), and `CombatTab` (Task 5). `useDuelPreviewStore`/`selectViewed` (Task 3, exported from the stores barrel) are consumed in Task 5. `DuelCard` props (Task 4) match its use in Task 5. The new theme keys `energyGem`/`ratingAccent`/`powerText` (Task 2) match the `--theme-energy-gem`/`--theme-rating-accent`/`--theme-power-text` vars used in Tasks 4–5 SCSS. `getDuelPreview(): Promise<DuelPreview | null>` (Task 1 ambient) matches the store's `result ?? FIXTURE` handling (Task 3). `StatusEffectItem` (existing) matches the `conditionEffects` record built in Task 5. ✓
 
 ---
 
 ## Execution
 
-Runs **in the fork repo**. Build against the **fixture** (Task 1) without waiting on Plan A; once Plan A's `getDuelPreview` is live in RPT, the store's `typeof getDuelPreview === 'function'` branch picks it up with no code change. Verification per task = `npm run lint && npm run build` + the described visual check (no unit-test harness in the fork). Execute via subagent-driven development; because there are no unit tests, the reviewer relies on the build/lint result + the implementer's visual-check report (and a screenshot where possible).
+Runs **in the fork repo** on branch `feat/combat-build-tab`. Task 0 bootstraps deps (no `node_modules`/pnpm present). Build against the **fixture** (Task 1) without waiting on Plan A; when the card runs inside RPT, the store's `typeof getDuelPreview === 'function'` branch picks up the live API with no code change. Verification per task = `npm run lint && npm run build` + the described visual check (no unit-test harness in the fork). Execute via subagent-driven development or executing-plans; because there are no unit tests, the reviewer relies on the build/lint result + the implementer's visual-check report (and a screenshot where possible). The owner (December-17th) drives any merge of the fork branch.
