@@ -13,6 +13,7 @@ const RARITY_VAR: Record<string, string> = {
   普通: '--rpt-text-secondary',
   优良: '--rpt-success',
   稀有: '--rpt-accent',
+  精良: '--rpt-accent',
   史诗: '--rpt-warning',
   传说: '--rpt-warning',
   神: '--rpt-danger'
@@ -75,14 +76,27 @@ export const DuelView: FC<{ profileId: string }> = ({ profileId }) => {
     const ext = (ability?.ext ?? {}) as { 品质?: string; 威力?: number; 关联属性?: string }
     return { card, ability, ext }
   }
-  const onCardClick = (cid: string): void =>
-    selection.mode === 'card' && selection.cardId === cid ? clearSelection() : pickCard(cid)
+  // A card needs an enemy target iff it's an attack (ext has a 威力 value) and isn't 格挡 (block
+  // targets self). Heal/self/power cards resolve immediately with no target.
+  // Tracked limitation (v1): heal cards would need ally targeting, which isn't implemented yet —
+  // they currently play with `[]`. The v1 mock deck has no heal cards, so this doesn't surface yet;
+  // full per-card/ally targeting is deferred.
+  const needsEnemyTarget = (cid: string): boolean => {
+    const { ability, ext } = cardOf(cid)
+    return ext.威力 != null && ability?.name !== '格挡'
+  }
+  const onCardClick = (cid: string): void => {
+    if (selection.mode === 'card' && selection.cardId === cid) {
+      clearSelection()
+    } else if (needsEnemyTarget(cid)) {
+      pickCard(cid)
+    } else {
+      pickCard(cid)
+      void play(profileId, [])
+    }
+  }
   const onEnemyClick = (id: string): void => {
     if (selection.mode === 'card') void play(profileId, [id])
-  }
-  // self/AoE cards (no target needed) play immediately; v1 heuristic: 格挡 + non-attack play with [].
-  const playNoTarget = (): void => {
-    if (selection.mode === 'card') void play(profileId, [])
   }
 
   return (
@@ -131,7 +145,7 @@ export const DuelView: FC<{ profileId: string }> = ({ profileId }) => {
               </span>
               {intent && (
                 <span className={`rpt-duel-intent kind-${intent.kind}`}>
-                  {intent.kind}
+                  {t(`duel.intent.${intent.kind}`)}
                   {intent.preview != null ? ` ${intent.preview}` : ''}
                 </span>
               )}
@@ -140,14 +154,7 @@ export const DuelView: FC<{ profileId: string }> = ({ profileId }) => {
         })}
       </div>
 
-      {selection.mode === 'card' && (
-        <div className="rpt-duel-hint">
-          {t('duel.pickTarget')} ·{' '}
-          <button className="rpt-duel-link" onClick={playNoTarget}>
-            ▢
-          </button>
-        </div>
-      )}
+      {selection.mode === 'card' && <div className="rpt-duel-hint">{t('duel.pickTarget')}</div>}
 
       <div className="rpt-duel-hand">
         {state.piles.hand.map((cid) => {
@@ -164,9 +171,7 @@ export const DuelView: FC<{ profileId: string }> = ({ profileId }) => {
             >
               <span className="rpt-duel-card-cost">{card.energyCost}</span>
               <span className="rpt-duel-card-name">{ability?.name ?? card.abilityId}</span>
-              <span className="rpt-duel-card-type" style={{ color: rarity }}>
-                {ext.品质 ?? '普通'}
-              </span>
+              <span className="rpt-duel-card-type">{ext.品质 ?? '普通'}</span>
               {ext.威力 != null && <span className="rpt-duel-card-power">威力 {ext.威力}</span>}
             </button>
           )

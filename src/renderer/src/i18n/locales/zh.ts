@@ -476,7 +476,10 @@ const zh: Record<string, string> = {
   'duel.pickTarget': '选择目标',
   'duel.win': '胜利',
   'duel.lose': '失败',
-  'duel.exhaust': '消耗',
+  'duel.intent.attack': '攻击',
+  'duel.intent.block': '防御',
+  'duel.intent.heal': '治疗',
+  'duel.intent.buff': '增益',
 
   'actions.hide': '隐藏脚本动作',
   'actions.show': '显示脚本动作',

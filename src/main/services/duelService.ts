@@ -152,7 +152,9 @@ export const endDuel = (chatId: string): void => {
 }
 
 /** Start a duel from the active chat's current MVU build (player + 在场 party; AI roster TBD).
- *  Gathers stat_data + the card's combat bundle the same way duelPreviewService does. */
+ *  Gathers stat_data + the card's combat bundle the same way duelPreviewService does.
+ *  v1: builds an enemyless (party-only) encounter — needs an AI-supplied roster of enemies before
+ *  it is usable; no UI invokes this yet. */
 export const startDuelFromMvu = (
   profileId: string, chatId: string, characterId: string
 ): DuelView | null => {

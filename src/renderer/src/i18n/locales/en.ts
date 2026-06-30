@@ -490,7 +490,10 @@ const en: Record<string, string> = {
   'duel.pickTarget': 'Pick a target',
   'duel.win': 'Victory',
   'duel.lose': 'Defeat',
-  'duel.exhaust': 'Exhaust',
+  'duel.intent.attack': 'Attack',
+  'duel.intent.block': 'Defend',
+  'duel.intent.heal': 'Heal',
+  'duel.intent.buff': 'Buff',
 
   'actions.hide': 'Hide script actions',
   'actions.show': 'Show script actions',
