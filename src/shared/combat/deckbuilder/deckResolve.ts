@@ -17,7 +17,6 @@ interface PlayExt {
   护盾?: number
   治疗?: boolean
   治疗量?: number
-  范围目标?: number
   消耗?: { mp?: number; sp?: number; hp?: number }
   目标模式?: '单体' | '随机' | '群体'
   随机次数?: number

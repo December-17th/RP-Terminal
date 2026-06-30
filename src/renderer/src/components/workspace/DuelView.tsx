@@ -153,9 +153,15 @@ export const DuelView: FC<{ profileId: string }> = ({ profileId }) => {
   const onCardClick = (cid: string): void => {
     if (selection.mode === 'card' && selection.cardId === cid) {
       clearSelection()
-    } else if (targetKind(cid) === 'auto') {
+      return
+    }
+    if (targetKind(cid) === 'auto') {
+      if (flyingRef.current) return
+      flyingRef.current = true
       pickCard(cid)
-      void play(profileId, [])
+      void play(profileId, []).finally(() => {
+        flyingRef.current = false
+      })
     } else {
       pickCard(cid) // wait for an enemy/ally click
     }
