@@ -33,6 +33,10 @@ the native view).
 8. **Theming preserved.** Every color stays an RPT theme token (`--rpt-*` / `--rpt-duel-*`), legible across
    dark / carbon / light ([[rpt-polished-themeable-ui]]). The face-over-text fade keeps the bottom strip legible
    regardless of the face image.
+9. **All key visuals are optional imported assets (World Assets), each with a fallback** (§4): the **card face**
+   (卡面, §0.3), the **enemy avatar**, and the **fight background**. Ally avatars reuse the existing World Assets
+   portraits. Nothing requires art — every slot falls back (type glyph / tinted foe unit / gradient battlefield),
+   so the view ships pretty with zero imported art and "lights up" as a world author adds assets.
 
 ---
 
@@ -55,8 +59,11 @@ Extract the in-hand card into its own renderer component (`DuelView` currently i
 
 A single `.rpt-duel-board` stage (relative-positioned regions):
 
-- **Enemies** — a centered row near the top; each enemy unit = avatar/glyph + name + **HP bar** (token tween) +
-  **block** badge (⛊), with its **intent** bubble above (`⚔`+preview / `🛡` / `✨` / `➕`), pulsing.
+- **Stage background** — an optional imported **fight background** image (§4) behind the board; else the gradient
+  "battlefield" (a token-driven radial). A subtle dark scrim keeps units/text readable over any background.
+- **Enemies** — a centered row near the top; each enemy unit = **avatar** (imported §4, else a tinted foe glyph) +
+  name + **HP bar** (token tween) + **block** badge (⛊), with its **intent** bubble above (`⚔`+preview / `🛡` /
+  `✨` / `➕`), pulsing.
 - **Party** — bottom-left cluster; each ally unit (lead **ringed** with `--rpt-duel-selected`), HP bar + block.
 - **Bottom band:** **energy orb** (far left, `current/max`), the **fanned hand** (center; cards arc via per-index
   rotate/translate, lift on hover), **End Turn** button (far right). **Round** counter top-left.
@@ -83,14 +90,24 @@ The `events` returned by `endLeadTurn` already describe what happened (damage/he
 pacing reads them to sequence the enemy-phase animation — **no engine/service change needed**, only the renderer
 consumes the existing `events` more richly (today `duelStore` already carries `lastEvents`/`eventSeq`).
 
-## 4. Card-face image source (World Assets `卡面`)
+## 4. Importable assets (World Assets — all optional, with fallbacks)
 
-The face resolves an image for the ability via the **World Assets** layer (the RPT-native asset store /
-`rptasset://`, same layer the party panel + 战斗 tab use), keyed by the ability's `artKey` (or a `卡面`
-name-convention). v1: render the `<img>` when a URL resolves, else the **glyph fallback** — so it ships working with
-zero art, and a world author "importing" a 卡面 image lights it up. *If a `卡面` asset type/lookup doesn't exist in
-World Assets yet, adding that lookup is a small, bounded part of this work* (the plan grounds it against the asset
-store; the glyph fallback de-risks it).
+Every key visual resolves an image via the **World Assets** layer (the RPT-native asset store / `rptasset://`, the
+same layer the party panel + 战斗 tab use). Each slot is optional and falls back, so the view ships fully working
+with zero art; a world author "importing" an asset lights up that slot.
+
+| Slot | Source key | Fallback |
+| --- | --- | --- |
+| **Card face** (`DuelCard`) | the ability's `artKey` / a `卡面` name-convention | tinted panel + FontAwesome **type glyph** |
+| **Enemy avatar** (board enemy unit) | the enemy's name/template (哥布林, 头目, …) — a portrait/`头像` lookup | tinted circle + a foe glyph (👺 / the type) |
+| **Fight background** (board stage) | a per-world/encounter `战斗背景` key (a sensible default) | the gradient "battlefield" stage (token radial) |
+| **Ally avatar** (board party unit) | the existing World Assets portrait (`头像`) — **reused** | initial / glyph chip (as today) |
+
+Implementation note: the card face, enemy avatar, and fight background may need **new asset types/lookups** in the
+World Assets layer (`卡面`, an enemy-portrait lookup, `战斗背景`). Each is a small, bounded addition grounded against
+the asset store in the plan; the fallbacks de-risk all of them — the view is correct and pretty even before any
+import. Resolution is renderer-side (the native DuelView reads the asset store / `rptasset://` directly; it is not a
+card page, so it does not use the `assetUrl` host method).
 
 ## 5. Theming, boundaries, testing
 
