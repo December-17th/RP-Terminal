@@ -128,23 +128,36 @@ export const DuelView: FC<{ profileId: string }> = ({ profileId }) => {
     const ext = (ability?.ext ?? {}) as { 品质?: string; 威力?: number; 关联属性?: string }
     return { card, ability, ext }
   }
-  // A card needs an enemy target iff it's an attack (ext has a 威力 value) and isn't 格挡 (block
-  // targets self). Heal/self/power cards resolve immediately with no target.
-  // Tracked limitation (v1): heal cards would need ally targeting, which isn't implemented yet —
-  // they currently play with `[]`. The v1 mock deck has no heal cards, so this doesn't surface yet;
-  // full per-card/ally targeting is deferred.
-  const needsEnemyTarget = (cid: string): boolean => {
-    const { ability, ext } = cardOf(cid)
-    return ext.威力 != null && ability?.name !== '格挡'
+  const fullExt = (
+    cid: string
+  ): { 威力?: number; 治疗?: boolean; 治疗量?: number; 格挡?: boolean; 目标模式?: '单体' | '随机' | '群体' } =>
+    (catalog[state.cards[cid]?.abilityId]?.ext ?? {}) as {
+      威力?: number
+      治疗?: boolean
+      治疗量?: number
+      格挡?: boolean
+      目标模式?: '单体' | '随机' | '群体'
+    }
+  const isHealCard = (cid: string): boolean => {
+    const e = fullExt(cid)
+    return !!e.治疗 || (e.治疗量 ?? 0) > 0
   }
+  // What the card needs the player to pick: an enemy, an ally, or nothing (auto-resolve).
+  const targetKind = (cid: string): 'enemy' | 'ally' | 'auto' => {
+    const e = fullExt(cid)
+    if (cardOf(cid).ability?.name === '格挡' || e.格挡) return 'auto' // self
+    if ((e.目标模式 ?? '单体') !== '单体') return 'auto' // 群体/随机 resolve over all/random
+    return isHealCard(cid) ? 'ally' : 'enemy' // 单体: pick enemy (damage) or ally (heal)
+  }
+  const selectedKind = selection.mode === 'card' ? targetKind(selection.cardId) : null
   const onCardClick = (cid: string): void => {
     if (selection.mode === 'card' && selection.cardId === cid) {
       clearSelection()
-    } else if (needsEnemyTarget(cid)) {
-      pickCard(cid)
-    } else {
+    } else if (targetKind(cid) === 'auto') {
       pickCard(cid)
       void play(profileId, [])
+    } else {
+      pickCard(cid) // wait for an enemy/ally click
     }
   }
   // Approximated fly-to-target: spawn a transient ghost that CSS-transitions from the picked card's
@@ -179,10 +192,12 @@ export const DuelView: FC<{ profileId: string }> = ({ profileId }) => {
     }, 230)
   }
   // In-flight guard: flyThenPlay defers `play` by ~230ms while `busy` stays false and the card
-  // selection stays active, so a fast second enemy-click could schedule a second `play` on the same
+  // selection stays active, so a fast second unit-click could schedule a second `play` on the same
   // card before the first resolves (double energy/damage spend). flyingRef closes that window —
   // every path that flips it true (below) resolves it back to false via .finally() once `play` settles.
-  const onEnemyClick = (id: string): void => {
+  // One handler for clicking any targetable unit (enemy for damage, ally for heal). The flyingRef
+  // guard + fly-to-target are unchanged from the v1 fix wave.
+  const onUnitClick = (id: string): void => {
     if (flyingRef.current || selection.mode !== 'card') return
     flyingRef.current = true
     const cardEl = document.querySelector('.rpt-duel-card.picked') as HTMLElement | null
@@ -207,7 +222,7 @@ export const DuelView: FC<{ profileId: string }> = ({ profileId }) => {
             .filter((c) => c.side === 'enemy')
             .map((c) => {
               const intent = state.intents[c.id]
-              const targetable = selection.mode === 'card' && c.block.hp > 0
+              const targetable = selectedKind === 'enemy' && c.block.hp > 0
               const ava = assets.avatar(c.name)
               return (
                 <div key={c.id} className="rpt-duel-enemy">
@@ -220,7 +235,7 @@ export const DuelView: FC<{ profileId: string }> = ({ profileId }) => {
                   <button
                     className={`rpt-duel-unit foe${targetable ? ' targetable' : ''}`}
                     disabled={!targetable || busy}
-                    onClick={() => onEnemyClick(c.id)}
+                    onClick={() => onUnitClick(c.id)}
                     data-cid={c.id}
                   >
                     <span
@@ -243,10 +258,13 @@ export const DuelView: FC<{ profileId: string }> = ({ profileId }) => {
             .filter((c) => c.side === 'party')
             .map((c) => {
               const ava = assets.avatar(c.name)
+              const targetable = selectedKind === 'ally' && c.block.hp > 0
               return (
-                <div
+                <button
                   key={c.id}
-                  className={`rpt-duel-unit ally${c.id === state.lead ? ' is-lead' : ''}`}
+                  className={`rpt-duel-unit ally${c.id === state.lead ? ' is-lead' : ''}${targetable ? ' targetable' : ''}`}
+                  disabled={!targetable || busy}
+                  onClick={() => onUnitClick(c.id)}
                   data-cid={c.id}
                 >
                   <span
@@ -257,7 +275,7 @@ export const DuelView: FC<{ profileId: string }> = ({ profileId }) => {
                   </span>
                   <span className="rpt-duel-unit-name">{c.name}</span>
                   <UnitBars c={c} />
-                </div>
+                </button>
               )
             })}
         </div>
