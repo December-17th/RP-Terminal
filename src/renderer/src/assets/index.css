@@ -22,6 +22,18 @@
   --rpt-combat-aoe-strong: color-mix(in srgb, var(--rpt-warning) 48%, transparent);
   --rpt-combat-threat: color-mix(in srgb, var(--rpt-danger) 22%, transparent);
   --rpt-combat-grid: var(--rpt-border);
+  /* Duel (STS) — derived from base theme tokens so it re-colors per theme. */
+  --rpt-duel-energy: color-mix(in srgb, var(--rpt-warning) 82%, var(--rpt-text-primary));
+  --rpt-duel-on-energy: var(--rpt-bg-primary);
+  --rpt-duel-card-bg: var(--rpt-bg-elevated);
+  --rpt-duel-card-border: var(--rpt-border);
+  --rpt-duel-card-hover: color-mix(in srgb, var(--rpt-accent) 14%, var(--rpt-bg-elevated));
+  --rpt-duel-selected: var(--rpt-accent);
+  --rpt-duel-hp: color-mix(in srgb, var(--rpt-danger) 80%, var(--rpt-text-primary) 0%);
+  --rpt-duel-block: color-mix(in srgb, var(--rpt-accent) 60%, var(--rpt-text-tertiary));
+  --rpt-duel-intent-attack: var(--rpt-danger);
+  --rpt-duel-intent-defend: var(--rpt-accent);
+  --rpt-duel-target: color-mix(in srgb, var(--rpt-danger) 34%, transparent);
 }
 
 /* Floating combat numbers (damage / miss) rise + fade over the target token. */
@@ -38,6 +50,40 @@
 .rpt-combat-float {
   animation: rpt-combat-float 850ms ease-out forwards;
 }
+
+/* Duel (STS) — native interactive duel view (DuelView.tsx). Token-driven; see --rpt-duel-* above. */
+.rpt-duel { display: flex; flex-direction: column; gap: 12px; height: 100%; padding: 10px; color: var(--rpt-text-primary); position: relative; }
+.rpt-duel-topbar { display: flex; align-items: center; gap: 10px; }
+.rpt-duel-round { font-size: 13px; color: var(--rpt-text-secondary); }
+.rpt-duel-energy { display: inline-flex; align-items: center; justify-content: center; min-width: 30px; height: 30px; padding: 0 8px; border-radius: 15px; font-weight: 700; background: var(--rpt-duel-energy); color: var(--rpt-duel-on-energy); }
+.rpt-duel-secondary { background: none; border: 1px solid var(--rpt-border); color: var(--rpt-text-secondary); border-radius: 6px; padding: 4px 10px; cursor: pointer; }
+.rpt-duel-board { display: flex; flex-wrap: wrap; gap: 10px; align-content: flex-start; flex: 1; }
+.rpt-duel-unit { display: flex; flex-direction: column; gap: 4px; min-width: 120px; padding: 8px; border-radius: 10px; text-align: left; cursor: default; background: var(--rpt-bg-secondary); border: 1px solid var(--rpt-border); color: var(--rpt-text-primary); }
+.rpt-duel-unit.side-enemy { border-color: color-mix(in srgb, var(--rpt-danger) 40%, var(--rpt-border)); }
+.rpt-duel-unit.is-lead { box-shadow: 0 0 0 2px var(--rpt-accent); }
+.rpt-duel-unit.targetable { cursor: pointer; background: var(--rpt-duel-target); }
+.rpt-duel-unit-name { font-weight: 700; font-size: 13px; }
+.rpt-duel-hpbar { height: 7px; border-radius: 4px; background: var(--rpt-bg-tertiary); overflow: hidden; }
+.rpt-duel-hpbar > i { display: block; height: 100%; background: var(--rpt-duel-hp); }
+.rpt-duel-unit-hp { font-size: 11px; color: var(--rpt-text-secondary); }
+.rpt-duel-intent { align-self: flex-start; font-size: 10px; padding: 1px 7px; border-radius: 9px; background: var(--rpt-bg-tertiary); }
+.rpt-duel-intent.kind-attack { color: var(--rpt-duel-intent-attack); }
+.rpt-duel-intent.kind-block { color: var(--rpt-duel-intent-defend); }
+.rpt-duel-hint { font-size: 12px; color: var(--rpt-text-secondary); }
+.rpt-duel-link { background: none; border: none; color: var(--rpt-accent); cursor: pointer; }
+.rpt-duel-hand { display: flex; gap: 8px; overflow-x: auto; padding-top: 4px; }
+.rpt-duel-card { position: relative; display: flex; flex-direction: column; gap: 2px; min-width: 96px; min-height: 124px; padding: 8px 6px; border-radius: 9px; text-align: center; cursor: pointer; background: var(--rpt-duel-card-bg); border: 2px solid var(--rpt-duel-card-border); color: var(--rpt-text-primary); transition: transform .08s ease, background .12s ease; }
+.rpt-duel-card:hover:not(:disabled) { background: var(--rpt-duel-card-hover); transform: translateY(-3px); }
+.rpt-duel-card.picked { box-shadow: 0 0 0 2px var(--rpt-duel-selected); transform: translateY(-6px); }
+.rpt-duel-card:disabled { opacity: .5; cursor: default; }
+.rpt-duel-card-cost { position: absolute; top: -7px; left: -6px; width: 24px; height: 24px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 12px; background: var(--rpt-duel-energy); color: var(--rpt-duel-on-energy); }
+.rpt-duel-card-name { font-weight: 700; font-size: 13px; margin-top: 4px; }
+.rpt-duel-card-type { font-size: 10px; }
+.rpt-duel-card-power { font-size: 11px; color: var(--rpt-text-secondary); margin-top: auto; }
+.rpt-duel-overlay { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; background: color-mix(in srgb, var(--rpt-bg-primary) 78%, transparent); }
+.rpt-duel-result { font-size: 30px; font-weight: 800; }
+.rpt-duel-result.win { color: var(--rpt-success); }
+.rpt-duel-result.lose { color: var(--rpt-danger); }
 
 body {
   margin: 0;

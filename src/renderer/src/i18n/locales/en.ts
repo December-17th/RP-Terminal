@@ -481,6 +481,17 @@ const en: Record<string, string> = {
   'combat.noViableParty':
     'No one in the party can fight (their attributes / HP are 0). Check the characters’ stats and try again, or quit combat to continue the fight in chat (AI-narrated).',
 
+  'duel.empty': 'No active duel.',
+  'duel.startMock': 'Start mock duel (debug)',
+  'duel.energy': 'Energy',
+  'duel.endTurn': 'End turn',
+  'duel.endDuel': 'End duel',
+  'duel.round': 'Round',
+  'duel.pickTarget': 'Pick a target',
+  'duel.win': 'Victory',
+  'duel.lose': 'Defeat',
+  'duel.exhaust': 'Exhaust',
+
   'actions.hide': 'Hide script actions',
   'actions.show': 'Show script actions',
   'actions.label': 'Actions',

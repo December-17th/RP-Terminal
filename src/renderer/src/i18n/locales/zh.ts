@@ -467,6 +467,17 @@ const zh: Record<string, string> = {
   'combat.noViableParty':
     '队伍中没有可参战的角色（属性／生命值为 0）。请检查角色属性后重试，或退出战斗在对话中由 AI 演绎继续。',
 
+  'duel.empty': '当前没有进行中的对决。',
+  'duel.startMock': '开始模拟对决（调试）',
+  'duel.energy': '行动力',
+  'duel.endTurn': '结束回合',
+  'duel.endDuel': '结束对决',
+  'duel.round': '回合',
+  'duel.pickTarget': '选择目标',
+  'duel.win': '胜利',
+  'duel.lose': '失败',
+  'duel.exhaust': '消耗',
+
   'actions.hide': '隐藏脚本动作',
   'actions.show': '显示脚本动作',
   'actions.label': '动作',
