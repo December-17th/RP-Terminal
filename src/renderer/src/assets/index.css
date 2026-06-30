@@ -100,7 +100,11 @@
 .rpt-duel-hand { position:absolute; left:50%; bottom:-4px; transform:translateX(-50%); display:flex; z-index:4; }
 .rpt-duel-card { position:relative; width:108px; height:150px; margin:0 -10px; border-radius:11px; border:2px solid var(--rpt-duel-card-border);
   background:var(--rpt-duel-card-bg); color:var(--rpt-text-primary); cursor:pointer; overflow:hidden; display:flex; flex-direction:column;
-  transform-origin:bottom center; transition:transform .12s ease, box-shadow .12s ease; }
+  transform-origin:bottom center; transition:transform .12s ease, box-shadow .12s ease;
+  /* Card-draw stagger: freshly-mounted hand cards animate in. No `forwards` fill so the animation's
+     `transform:none` end state doesn't outlive the animation and fight the nth-child fan rotation
+     below (auto-animate on .rpt-duel-hand drives the reflow/stagger timing). */
+  animation: rpt-duel-draw .26s ease; }
 .rpt-duel-hand .rpt-duel-card:nth-child(1){transform:rotate(-10deg) translateY(10px)} .rpt-duel-hand .rpt-duel-card:nth-child(2){transform:rotate(-4deg) translateY(2px)}
 .rpt-duel-hand .rpt-duel-card:nth-child(3){transform:rotate(4deg) translateY(2px)} .rpt-duel-hand .rpt-duel-card:nth-child(4){transform:rotate(10deg) translateY(10px)}
 .rpt-duel-card:hover:not(:disabled){ transform:translateY(-14px) rotate(0) scale(1.06); z-index:6; box-shadow:0 12px 26px rgba(0,0,0,.55); }
@@ -123,6 +127,19 @@
 .rpt-duel-result.win { color:var(--rpt-success); } .rpt-duel-result.lose { color:var(--rpt-danger); }
 .rpt-duel-shake { animation:rpt-duel-shake .3s ease; }
 .rpt-duel-hit { animation:rpt-duel-hit .3s ease-out; }
+
+/* Floating damage/heal/miss numbers over the hit unit (DuelView.tsx), positioned absolutely within
+   .rpt-duel-stage at the unit's pixel rect; reuses @keyframes rpt-combat-float (rise + fade). */
+.rpt-duel-float { position:absolute; z-index:8; pointer-events:none; font-size:13px; font-weight:800;
+  transform:translateX(-50%); text-shadow:0 1px 3px rgba(0,0,0,.6); }
+.rpt-duel-float.dmg { color:var(--rpt-danger); }
+.rpt-duel-float.heal { color:var(--rpt-success); }
+.rpt-duel-float.miss { color:var(--rpt-text-tertiary); }
+
+/* Approximated fly-to-target ghost: a transient projectile that CSS-transitions from the picked
+   card's rect to the target unit's rect (DuelView.tsx flyThenPlay), then is removed. */
+.rpt-duel-projectile { position:absolute; width:28px; height:40px; border-radius:6px; z-index:8; pointer-events:none;
+  background:var(--rpt-duel-cost); box-shadow:0 0 14px var(--rpt-duel-cost); transition:transform .22s ease-in, opacity .22s ease-in; }
 
 body {
   margin: 0;

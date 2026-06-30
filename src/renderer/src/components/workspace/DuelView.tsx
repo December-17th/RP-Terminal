@@ -6,13 +6,21 @@
 // fight background via useDuelAssets, with glyph/gradient fallbacks. Polished + theme-token-driven
 // (var(--rpt-*) / --rpt-duel-*). Mirrors CombatView's shell.
 
-import { FC, useEffect } from 'react'
+import { FC, useEffect, useRef, useState } from 'react'
 import { useAutoAnimate } from '@formkit/auto-animate/react'
 import { useDuelStore } from '../../stores/duelStore'
 import { useChatStore } from '../../stores/chatStore'
 import { useT } from '../../i18n'
 import { useDuelAssets } from './useDuelAssets'
 import { DuelCard } from './DuelCard'
+
+interface DuelFloat {
+  id: number
+  x: number
+  y: number
+  text: string
+  cls: string
+}
 
 export const DuelView: FC<{ profileId: string }> = ({ profileId }) => {
   const t = useT()
@@ -21,6 +29,8 @@ export const DuelView: FC<{ profileId: string }> = ({ profileId }) => {
   const catalog = useDuelStore((s) => s.catalog)
   const selection = useDuelStore((s) => s.selection)
   const busy = useDuelStore((s) => s.busy)
+  const lastEvents = useDuelStore((s) => s.lastEvents)
+  const eventSeq = useDuelStore((s) => s.eventSeq)
   const load = useDuelStore((s) => s.load)
   const startMock = useDuelStore((s) => s.startMock)
   const pickCard = useDuelStore((s) => s.pickCard)
@@ -30,10 +40,54 @@ export const DuelView: FC<{ profileId: string }> = ({ profileId }) => {
   const end = useDuelStore((s) => s.end)
   const assets = useDuelAssets(profileId, state)
   const [handRef] = useAutoAnimate<HTMLDivElement>()
+  const stageRef = useRef<HTMLDivElement>(null)
+  const [floats, setFloats] = useState<DuelFloat[]>([])
+  const floatIdRef = useRef(0)
 
   useEffect(() => {
     if (activeChatId) void load(profileId, activeChatId)
   }, [profileId, activeChatId, load])
+
+  // Spawn floating damage/heal/miss numbers over the hit unit's DOM node, flash it, and shake the
+  // stage on damage. Mirrors CombatView's float effect (CombatView.tsx:73-112), but positions floats
+  // over the unit's [data-cid] element (pixel rect) instead of a grid cell (cell-index transform),
+  // since the duel board has no grid layer. CombatEvent's target/amount live under `delta`
+  // (shared/combat/types.ts: `delta?: Record<string, unknown>`) — `delta.target` (string),
+  // `delta.damage` (number), `delta.heal` (number) — same fields CombatView reads, no `as any`.
+  useEffect(() => {
+    if (!lastEvents.length || !stageRef.current) return
+    const stage = stageRef.current.getBoundingClientRect()
+    const add: DuelFloat[] = []
+    let shook = false
+    for (const e of lastEvents) {
+      const tid = typeof e.delta?.target === 'string' ? e.delta.target : undefined
+      if (!tid) continue
+      const node = stageRef.current.querySelector(`[data-cid="${CSS.escape(tid)}"]`) as HTMLElement | null
+      if (!node) continue
+      const r = node.getBoundingClientRect()
+      const x = r.left - stage.left + r.width / 2
+      const y = r.top - stage.top + 6
+      if (e.kind === 'damage' && typeof e.delta?.damage === 'number') {
+        add.push({ id: ++floatIdRef.current, x, y, text: `-${e.delta.damage}`, cls: 'dmg' })
+        node.classList.add('rpt-duel-hit')
+        setTimeout(() => node.classList.remove('rpt-duel-hit'), 320)
+        shook = true
+      } else if (e.kind === 'heal' && typeof e.delta?.heal === 'number') {
+        add.push({ id: ++floatIdRef.current, x, y, text: `+${e.delta.heal}`, cls: 'heal' })
+      } else if (e.kind === 'miss') {
+        add.push({ id: ++floatIdRef.current, x, y, text: 'miss', cls: 'miss' })
+      }
+    }
+    if (shook && stageRef.current) {
+      stageRef.current.classList.add('rpt-duel-shake')
+      setTimeout(() => stageRef.current?.classList.remove('rpt-duel-shake'), 300)
+    }
+    if (!add.length) return
+    setFloats((f) => [...f, ...add])
+    const ids = new Set(add.map((a) => a.id))
+    setTimeout(() => setFloats((f) => f.filter((x) => !ids.has(x.id))), 850)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [eventSeq])
 
   if (!activeChatId) return <div style={{ opacity: 0.5, padding: 8 }}>{t('duel.empty')}</div>
 
@@ -92,8 +146,37 @@ export const DuelView: FC<{ profileId: string }> = ({ profileId }) => {
       void play(profileId, [])
     }
   }
+  // Approximated fly-to-target: spawn a transient ghost that CSS-transitions from the picked card's
+  // DOM rect to the target unit's DOM rect, then resolve `play` once the flight completes. Falls back
+  // to playing immediately if either rect can't be resolved (e.g. JSDOM/test envs with zero rects).
+  const flyThenPlay = (cardEl: HTMLElement | null, targetId: string): void => {
+    const stage = stageRef.current
+    const tgt = stage?.querySelector(`[data-cid="${CSS.escape(targetId)}"]`) as HTMLElement | null
+    if (!stage || !cardEl || !tgt) {
+      void play(profileId, [targetId])
+      return
+    }
+    const s = stage.getBoundingClientRect()
+    const a = cardEl.getBoundingClientRect()
+    const b = tgt.getBoundingClientRect()
+    const ghost = document.createElement('div')
+    ghost.className = 'rpt-duel-projectile'
+    ghost.style.left = `${a.left - s.left + a.width / 2 - 14}px`
+    ghost.style.top = `${a.top - s.top}px`
+    stage.appendChild(ghost)
+    requestAnimationFrame(() => {
+      ghost.style.transform = `translate(${b.left - a.left}px, ${b.top - a.top}px) scale(.4)`
+      ghost.style.opacity = '0'
+    })
+    setTimeout(() => {
+      ghost.remove()
+      void play(profileId, [targetId])
+    }, 230)
+  }
   const onEnemyClick = (id: string): void => {
-    if (selection.mode === 'card') void play(profileId, [id])
+    if (selection.mode !== 'card') return
+    const cardEl = document.querySelector('.rpt-duel-card.picked') as HTMLElement | null
+    flyThenPlay(cardEl, id)
   }
 
   return (
@@ -104,6 +187,7 @@ export const DuelView: FC<{ profileId: string }> = ({ profileId }) => {
 
       <div
         className="rpt-duel-stage"
+        ref={stageRef}
         style={assets.background ? { backgroundImage: `url("${assets.background}")` } : undefined}
       >
         <div className="rpt-duel-scrim" />
@@ -221,6 +305,16 @@ export const DuelView: FC<{ profileId: string }> = ({ profileId }) => {
             </button>
           </div>
         )}
+
+        {floats.map((f) => (
+          <span
+            key={f.id}
+            className={`rpt-combat-float rpt-duel-float ${f.cls}`}
+            style={{ left: f.x, top: f.y }}
+          >
+            {f.text}
+          </span>
+        ))}
       </div>
     </div>
   )
