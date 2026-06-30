@@ -37,13 +37,16 @@ export const DuelCard: FC<DuelCardProps> = (p) => {
     <button
       type="button"
       className={`rpt-duel-card${p.picked ? ' picked' : ''}`}
-      style={{ borderColor: rarity, boxShadow: `0 6px 16px rgba(0,0,0,.5), 0 0 12px ${rarity}55` }}
+      style={{
+        borderColor: rarity,
+        boxShadow: `0 6px 16px rgba(0,0,0,.5), 0 0 12px color-mix(in srgb, ${rarity} 33%, transparent)`
+      }}
       disabled={p.disabled}
       onClick={p.onClick}
     >
       <span className="rpt-duel-card-cost">{p.energyCost}</span>
       <span
-        className={`rpt-duel-card-face${p.faceUrl ? ' has-img' : ''}`}
+        className="rpt-duel-card-face"
         style={p.faceUrl ? { backgroundImage: `url("${p.faceUrl}")` } : undefined}
       >
         {!p.faceUrl && <span className="rpt-duel-card-glyph">{typeGlyph(p.name, p)}</span>}

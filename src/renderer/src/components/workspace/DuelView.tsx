@@ -43,6 +43,7 @@ export const DuelView: FC<{ profileId: string }> = ({ profileId }) => {
   const stageRef = useRef<HTMLDivElement>(null)
   const [floats, setFloats] = useState<DuelFloat[]>([])
   const floatIdRef = useRef(0)
+  const flyingRef = useRef(false)
 
   useEffect(() => {
     if (activeChatId) void load(profileId, activeChatId)
@@ -153,7 +154,9 @@ export const DuelView: FC<{ profileId: string }> = ({ profileId }) => {
     const stage = stageRef.current
     const tgt = stage?.querySelector(`[data-cid="${CSS.escape(targetId)}"]`) as HTMLElement | null
     if (!stage || !cardEl || !tgt) {
-      void play(profileId, [targetId])
+      void play(profileId, [targetId]).finally(() => {
+        flyingRef.current = false
+      })
       return
     }
     const s = stage.getBoundingClientRect()
@@ -170,21 +173,24 @@ export const DuelView: FC<{ profileId: string }> = ({ profileId }) => {
     })
     setTimeout(() => {
       ghost.remove()
-      void play(profileId, [targetId])
+      void play(profileId, [targetId]).finally(() => {
+        flyingRef.current = false
+      })
     }, 230)
   }
+  // In-flight guard: flyThenPlay defers `play` by ~230ms while `busy` stays false and the card
+  // selection stays active, so a fast second enemy-click could schedule a second `play` on the same
+  // card before the first resolves (double energy/damage spend). flyingRef closes that window —
+  // every path that flips it true (below) resolves it back to false via .finally() once `play` settles.
   const onEnemyClick = (id: string): void => {
-    if (selection.mode !== 'card') return
+    if (flyingRef.current || selection.mode !== 'card') return
+    flyingRef.current = true
     const cardEl = document.querySelector('.rpt-duel-card.picked') as HTMLElement | null
     flyThenPlay(cardEl, id)
   }
 
   return (
     <div className="rpt-duel">
-      <div className="rpt-duel-topbar">
-        <span style={{ flex: 1 }} />
-      </div>
-
       <div
         className="rpt-duel-stage"
         ref={stageRef}
