@@ -267,6 +267,13 @@ export function createInlineHost(ctx: CardCtx): Host {
         return null
       }
     },
+    getDuelPreview: async () => {
+      try {
+        return await window.api.duelPreview(ctx.profileId, ctx.chatId, cardCharacterId())
+      } catch {
+        return null
+      }
+    },
 
     onVarsChanged: (cb) => {
       let last = ''

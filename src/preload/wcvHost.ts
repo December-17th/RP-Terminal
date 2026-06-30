@@ -136,6 +136,7 @@ export function createWcvHost(deps: Deps): Host {
     setGlobalVar: (key, value) => ipcRenderer.invoke('wcv-host-set-global-var', key, value),
     assetUrl: (name: string, type: string, mood?: string) =>
       ipcRenderer.invoke('wcv-host-asset-url', name, type, mood),
+    getDuelPreview: () => ipcRenderer.invoke('wcv-host-duel-preview'),
 
     onVarsChanged: (cb) => {
       const l = (_e: any, v: any): void => cb(v)

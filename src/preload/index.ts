@@ -318,6 +318,8 @@ const api = {
     type: string,
     mood?: string
   ) => ipcRenderer.invoke('asset-url', profileId, lorebookIds, category, name, type, mood),
+  duelPreview: (profileId: string, chatId: string, characterId: string) =>
+    ipcRenderer.invoke('duel-preview', profileId, chatId, characterId),
   assetRefresh: (profileId: string, lorebookIds: string[]) =>
     ipcRenderer.invoke('asset-refresh', profileId, lorebookIds),
   assetOpenFolder: (profileId: string, lorebookId: string, category: string) =>

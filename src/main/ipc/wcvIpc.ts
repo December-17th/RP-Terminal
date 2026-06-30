@@ -1,5 +1,6 @@
 import { IpcMain } from 'electron'
 import * as wcvManager from '../services/wcvManager'
+import { computeDuelPreview } from '../services/duelPreviewService'
 import { getChatCardVars, setChatCardVars } from '../services/chatCardVarsService'
 import * as floorService from '../services/floorService'
 import * as generationService from '../services/generationService'
@@ -500,6 +501,13 @@ export const registerWcvIpc = (ipcMain: IpcMain): void => {
       chatService.getChatLorebookIds(ctx.profileId, ctx.chatId) ??
       (ctx.characterId ? [ctx.characterId] : [])
     return worldAssetService.assetUrlForWorld(ctx.profileId, ids, String(name ?? ''), type, mood)
+  })
+
+  // Engine-computed duel build preview for the calling panel's active chat (read-only).
+  ipcMain.handle('wcv-host-duel-preview', (e) => {
+    const ctx = wcvManager.contextFor(e.sender.id)
+    if (!ctx) return null
+    return computeDuelPreview(ctx.profileId, ctx.chatId, ctx.characterId)
   })
 
   // Raw floor rows for the calling panel's session (the unified TH runtime maps these to TH/ST message

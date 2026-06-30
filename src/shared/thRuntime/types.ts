@@ -99,6 +99,8 @@ export interface Host {
   setGlobalVar(key: string, value: any): Promise<void>
   // Resolve a character portrait to an rptasset:// URL for the calling card's world, or null.
   assetUrl(name: string, type: string, mood?: string): Promise<string | null>
+  // Engine-computed duel build preview for the active chat (read-only). See the build-preview design.
+  getDuelPreview(): Promise<import('../combat/deckbuilder/preview').DuelPreview | null>
   // --- events + engine ---
   onVarsChanged(cb: (statData: any) => void): () => void
   onHostEvent(cb: (name: string, payload?: any) => void): () => void
