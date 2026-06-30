@@ -145,7 +145,12 @@ transports inject the same thing (clean-room mirror of JSR's `createSrcContent`/
 - **`--TH-viewport-height`** bootstrap + `replaceVhInContent` (rewrites a card's `min-height:NNvh` onto the
   variable) for **fill** mode; **fit** mode (default) auto-sizes to content.
 - **Assumed libs** the card env provides (cards are authored expecting these to be global):
-  - From `cardEnv` (CDN, both transports): **FontAwesome**, **jQuery-UI (+touch-punch)**, **Tailwind** (v3).
+  - From `cardEnv` (CDN, both transports): **FontAwesome**, **jQuery-UI (+touch-punch)**, **Tailwind** (v3),
+    **Motion** (motion.dev, global `window.Motion` — `Motion.animate`/`scroll`/`inView`/…; UMD build via
+    `MOTION_JS_URL` in [`cardEnv.ts`](../../src/shared/cardEnv.ts), injected by both
+    [`cardBridge/cardLibs.ts`](../../src/renderer/src/cardBridge/cardLibs.ts) builders —
+    `buildInlineLibTags`/`buildWcvLibTags`). App-provided for card use only — the native app does not
+    depend on it; an RPT/JSR-env addition cards may opt into for animation.
   - From the transport: **jQuery**, **Vue**, **Pinia**, **VueRouter** (iframe-realm classic builds —
     [`cardBridge/cardLibs.ts`](../../src/renderer/src/cardBridge/cardLibs.ts) inline / `wcvPreload` WCV),
     plus **lodash** (`_`) and **Zod** (`z`, self-referential — `z.z === z` — for MVU `z.z.object(...)` schema bundles; see [`shared/cardZod`](../../src/shared/cardZod.ts)) from the bridge.
