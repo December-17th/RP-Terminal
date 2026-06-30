@@ -18,6 +18,7 @@ import {
   JQUERY_UI_JS_URL,
   JQUERY_UI_THEME_CSS_URL,
   JQUERY_UI_TOUCH_PUNCH_URL,
+  MOTION_JS_URL,
   TAILWIND_CDN_URL
 } from '../../../shared/cardEnv'
 
@@ -40,7 +41,8 @@ export function buildInlineLibTags(): string {
     jsTag(JQUERY_UI_TOUCH_PUNCH_URL),
     jsTag(vueUrl),
     jsTag(vueRouterUrl),
-    jsTag(piniaUrl)
+    jsTag(piniaUrl),
+    jsTag(MOTION_JS_URL)
   ].join('')
 }
 
@@ -57,6 +59,7 @@ export function buildWcvLibTags(): string {
     cssTag(JQUERY_UI_THEME_CSS_URL),
     jsTag(TAILWIND_CDN_URL),
     jsTag(JQUERY_UI_JS_URL),
-    jsTag(JQUERY_UI_TOUCH_PUNCH_URL)
+    jsTag(JQUERY_UI_TOUCH_PUNCH_URL),
+    jsTag(MOTION_JS_URL)
   ].join('')
 }

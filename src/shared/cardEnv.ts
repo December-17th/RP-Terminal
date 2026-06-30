@@ -42,6 +42,9 @@ export const JQUERY_UI_TOUCH_PUNCH_URL = 'https://cdn.jsdelivr.net/npm/jquery-ui
 // WCV cards load Tailwind from the CDN: the WCV page can't reach the renderer-origin vendored ?url asset.
 // Pinned to the same v3 the inline vendored build is.
 export const TAILWIND_CDN_URL = 'https://cdn.tailwindcss.com/3.4.16'
+// Motion (motion.dev) — assumed env lib for card-authored animations (the app does NOT use it; cards opt in).
+// UMD/global build → window.Motion (Motion.animate/scroll/inView/…). Unversioned, like the other CDN libs.
+export const MOTION_JS_URL = 'https://cdn.jsdelivr.net/npm/motion/dist/motion.js'
 
 /**
  * The base CSS reset cards assume. Mirrors SillyTavern/Tavern-Helper's `createSrcContent` (≈ Tailwind
