@@ -19,6 +19,8 @@ interface PlayExt {
   治疗量?: number
   范围目标?: number
   消耗?: { mp?: number; sp?: number; hp?: number }
+  目标模式?: '单体' | '随机' | '群体'
+  随机次数?: number
 }
 
 /**
@@ -49,9 +51,20 @@ export const applyAbilityEffect = (
   }
 
   const isHeal = !!ext.治疗 || (ext.治疗量 ?? 0) > 0
-  let targets = combatants.filter((c) => targetIds.includes(c.id)).filter(isAlive)
-  if (isHeal) targets = targets.filter((t) => t.side === actor.side)
-  if (ext.范围目标 && targets.length > ext.范围目标) targets = targets.slice(0, ext.范围目标)
+  const side = isHeal ? actor.side : actor.side === 'party' ? 'enemy' : 'party'
+  const pool = combatants.filter((c) => c.side === side && isAlive(c))
+  const mode = ext.目标模式 ?? '单体'
+  let targets: Combatant[]
+  if (mode === '群体') {
+    targets = pool
+  } else if (mode === '随机' && pool.length) {
+    const n = Math.max(1, ext.随机次数 ?? 1)
+    targets = Array.from({ length: n }, () => pool[Math.floor(rng() * pool.length)])
+  } else {
+    // 单体 (default): the picked target (must be on the resolved side + alive), else first living
+    const picked = pool.find((c) => targetIds.includes(c.id))
+    targets = picked ? [picked] : pool.length ? [pool[0]] : []
+  }
 
   events.push({
     kind: 'attack',
