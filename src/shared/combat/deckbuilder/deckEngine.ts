@@ -43,6 +43,8 @@ export const swapLeadIfDown = (state: DuelState): DuelState => {
   return next
 }
 
+/** Recompute every non-lead combatant's telegraphed intent. MUTATES `state.intents` in place —
+ *  callers must pass a freshly-constructed or cloned state, never a live/shared one. */
 const telegraph = (state: DuelState, catalog: Record<string, AbilityDef>, derive?: DeriveConfig): void => {
   state.intents = {}
   for (const c of state.combatants)
