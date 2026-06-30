@@ -88,7 +88,7 @@ export const startDuel = (
   let state: DuelState = {
     seed,
     rngCursor: 0,
-    combatants: built.combatants,
+    combatants: clone(built.combatants),
     lead,
     energy: { current: config.energy, max: config.energy },
     piles: { draw: [], hand: [], discard: [], exhaust: [] },
@@ -138,7 +138,7 @@ export const playCard = (
 
 const decayBlock = (state: DuelState): void => {
   for (const c of state.combatants) {
-    const ext = extOf(c) as { shield?: number; blockGained?: number }
+    const ext = extOf(c)
     if (ext.blockGained) {
       ext.shield = Math.max(0, (ext.shield ?? 0) - ext.blockGained)
       ext.blockGained = 0

@@ -41,7 +41,7 @@ export const applyAbilityEffect = (
 
   if (ext.格挡) {
     const gain = ext.护盾 ?? 0
-    const aExt = extOf(actor) as { shield?: number; blockGained?: number }
+    const aExt = extOf(actor)
     aExt.shield = (aExt.shield ?? 0) + gain
     aExt.blockGained = (aExt.blockGained ?? 0) + gain
     events.push({ kind: 'info', text: `${actor.name} 获得护盾 ${gain}。`, delta: { target: actor.id, block: gain } })

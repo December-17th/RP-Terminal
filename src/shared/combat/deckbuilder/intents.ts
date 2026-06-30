@@ -25,6 +25,7 @@ const previewOf = (actor: Combatant, ability: AbilityDef, derive?: DeriveConfig)
   const aExt = extOf(actor)
   const attrV = ext.关联属性 ? aExt.attrs?.[ext.关联属性] ?? 0 : 0
   const coeff = derive?.tier_coefficient?.[String(aExt.tier ?? 1)] ?? 1
+  // Coarse estimate: omits 武器攻击 (and mitigation) on purpose — this is a telegraph, not the resolved number.
   return Math.round(attrV * 10 * coeff + (ext.威力 ?? 0))
 }
 

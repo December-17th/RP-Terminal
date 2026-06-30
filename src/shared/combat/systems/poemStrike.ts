@@ -54,6 +54,8 @@ export interface CombatantExt {
   伤害增幅?: number
   治疗增幅?: number
   shield?: number
+  /** temporary block from 格挡 this round; decayed at round end (deckEngine). */
+  blockGained?: number
   passives?: { name: string; combat: CardCombat }[]
 }
 
