@@ -38,4 +38,18 @@ describe('buildDeck', () => {
       expect(cards[cid].energyCost).toBeGreaterThan(0)
     }
   })
+
+  it('guards against duplicate ability ids in block.abilities', () => {
+    const combatant: Combatant = {
+      id: '主角', side: 'party', name: '主角', pos: [0, 0],
+      block: { hp: 1000, maxHp: 1000, ac: 10, speed: 6, mods: {}, conditions: [], abilities: ['主角/普攻', '主角/普攻'] },
+      ext: { system: 'poemD20', attrs: { 力量: 5, 敏捷: 4, 体质: 6, 智力: 2, 精神: 3 }, tier: 2 }
+    }
+    const { cards, order } = buildDeck(combatant, catalog, DEFAULT_DECK_CONFIG)
+    const byAbility = (id: string) => order.map((cid) => cards[cid]).filter((c) => c.abilityId === id)
+    // 普攻 should still appear exactly once with 4 copies (not 8 from duplicated entry)
+    expect(byAbility('主角/普攻').length).toBe(4)
+    // all card ids must be unique
+    expect(new Set(order).size).toBe(order.length)
+  })
 })

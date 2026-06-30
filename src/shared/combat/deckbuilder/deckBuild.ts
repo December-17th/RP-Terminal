@@ -45,9 +45,12 @@ export const buildDeck = (
     }
   }
 
+  const seen = new Set<string>()
   for (const abilityId of combatant.block.abilities) {
     const ability = catalog[abilityId]
     if (!ability) continue
+    if (seen.has(abilityId)) continue
+    seen.add(abilityId)
     if (isBasicAttack(ability)) add(ability, config.basics.普攻)
     else add(ability, config.copies[qualityOf(ability)] ?? 1)
   }
