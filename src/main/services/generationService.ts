@@ -20,9 +20,7 @@ import {
   ChatMessage
 } from './promptBuilder'
 import { getPromptRules } from './regexService'
-import { selectMemories } from './retrievalService'
 import { maybeCompact } from './compactionService'
-import { notifyMemoryRecalled } from './memoryEvents'
 import { saveGlobals, buildTemplateContext } from './templateService'
 import {
   streamProvider,
@@ -48,6 +46,7 @@ import { log } from './logService'
 import { FloorFile } from '../types/chat'
 import { Lorebook, LorebookEntry, getRpExt } from '../types/character'
 import { buildGenContext } from './generation/genContext'
+import { recallMemory } from './generation/memoryRecall'
 
 /**
  * Combine the FSM mode addendum with a World Card's custom agent prompts (Track S §3).
@@ -170,23 +169,7 @@ export const generate = async (
     `lorebook: ${lorebooks.length} book(s) / ${loreEntryCount} entr${loreEntryCount === 1 ? 'y' : 'ies'} → ${matchedEntries.length} matched · ids=[${lorebookIds.join(', ') || 'none'}]`
   )
 
-  // Episodic memory (docs/episodic-memory-design.md §8): recall relevant past memories into the
-  // ephemeral tail. No-op when memory is disabled; at cache level 0 it just adds tail context.
-  // Fail-open like the writer — a retrieval error must never break a turn; we just skip the block.
-  const memory = await selectMemories(profileId, chatId, scanText, settings).catch((err) => {
-    log('error', `memory: recall failed, continuing without it — ${err?.message || String(err)}`)
-    return { block: '', rows: [] }
-  })
-  if (memory.rows.length) {
-    log('info', `memory: ${memory.rows.length} recalled (${memory.block.length} chars) → tail`)
-  }
-  // Tell the Memory view which memories this turn pulled in (transient "why recalled" highlight).
-  if (settings.memory?.enabled) {
-    notifyMemoryRecalled(
-      chatId,
-      memory.rows.map((r) => r.id)
-    )
-  }
+  const memory = await recallMemory(ctx)
 
   const built = buildPrompt({
     card,
