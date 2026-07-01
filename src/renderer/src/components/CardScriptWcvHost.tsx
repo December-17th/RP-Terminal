@@ -182,12 +182,17 @@ export function CardScriptWcvHost({
           position: 'fixed',
           bottom: 16,
           left: 16,
-          zIndex: 60,
+          // Top z-index band (matches .modal-overlay / .rpt-toast-stack in index.css): this is app
+          // chrome that MUST sit above untrusted card UI, which uses position:fixed + a high z-index
+          // in its own CSS. A small value here let the card's inline UI paint over the prompt, making
+          // it look blank with an unclickable button.
+          zIndex: 2147482000,
           maxWidth: 360,
           padding: 14,
           borderRadius: 10,
           background: 'var(--rpt-surface, #1b1b26)',
           border: '1px solid var(--rpt-border, #34344a)',
+          color: 'var(--rpt-text-primary, #d8d8e0)',
           boxShadow: '0 6px 24px rgba(0,0,0,.4)'
         }}
       >
