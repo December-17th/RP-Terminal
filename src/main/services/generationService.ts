@@ -393,7 +393,11 @@ export const generate = async (
   // floor's vars so the chat can surface an "Enter Combat" affordance. The tag itself is
   // stripped at view time (responseView), never baked into storage.
   const combatCue = parseCombatStart(parsed.text).cue
-  if (combatCue) variables.combat_cue = combatCue
+  if (combatCue) {
+    const bundleMode = (getRpExt(card)?.combat as { mode?: 'grid' | 'duel' } | undefined)?.mode
+    combatCue.mode = bundleMode === 'duel' ? 'duel' : 'grid'
+    variables.combat_cue = combatCue
+  }
 
   saveGlobals(profileId, globals)
 
