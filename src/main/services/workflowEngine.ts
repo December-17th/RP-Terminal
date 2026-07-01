@@ -48,7 +48,7 @@ async function runNodes(
   ctx: RunContext,
   state: ExecState,
   phase: 'pre' | 'post'
-): Promise<{ fatal?: NodeError }> {
+): Promise<{ fatal?: NodeError; aborted?: boolean }> {
   const nodeById = new Map(doc.nodes.map((n) => [n.id, n]))
   const incoming = new Map<string, Edge[]>(doc.nodes.map((n) => [n.id, []]))
   const outgoing = new Map<string, Edge[]>(doc.nodes.map((n) => [n.id, []]))
@@ -58,6 +58,12 @@ async function runNodes(
   }
 
   for (const id of ids) {
+    if (ctx.signal.aborted) {
+      state.skipped.add(id)
+      state.traces.push({ nodeId: id, status: 'skipped', phase })
+      continue
+    }
+
     const node = nodeById.get(id)!
     const impl = registry.get(node.type)!
     const ins = incoming.get(id) ?? []
@@ -114,7 +120,7 @@ async function runNodes(
       }
     }
   }
-  return {}
+  return { aborted: ctx.signal.aborted }
 }
 
 /** Pre-phase = the main-output node and every node that can reach it (its ancestors). Everything
@@ -176,8 +182,15 @@ export async function runWorkflow(
       error: pre.fatal
     }
   }
+  if (pre.aborted) {
+    // mark any post nodes as skipped so the trace is complete, then bail without onResponseReady
+    for (const id of order.filter((id) => postIds.has(id))) {
+      state.traces.push({ nodeId: id, status: 'skipped', phase: 'post' })
+    }
+    return { ok: false, aborted: true, traces: state.traces, outputs: state.outputs }
+  }
   ctx.onResponseReady?.()
-  await runNodes(
+  const post = await runNodes(
     order.filter((id) => postIds.has(id)),
     doc,
     registry,
@@ -186,5 +199,10 @@ export async function runWorkflow(
     'post'
   )
 
-  return { ok: true, aborted: false, traces: state.traces, outputs: state.outputs }
+  return {
+    ok: !post.aborted,
+    aborted: !!post.aborted,
+    traces: state.traces,
+    outputs: state.outputs
+  }
 }
