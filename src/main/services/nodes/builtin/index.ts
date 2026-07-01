@@ -10,9 +10,11 @@ import {
   memoryCompact
 } from './generationNodes'
 import { controlIf, controlSwitch, controlWhen } from './controlNodes'
+import { textTemplate } from './messageNodes'
 
-/** The registry of all built-in node types (Phase 2b-1b task 5, +2b-2 control nodes). Backs the
- *  default graph and any future card/workflow authoring surface — see spec §14 extensibility. */
+/** The registry of all built-in node types (Phase 2b-1b task 5, +2b-2 control/authoring nodes).
+ *  Backs the default graph and any future card/workflow authoring surface — see spec §14
+ *  extensibility. */
 export const builtinRegistry = createRegistry([
   inputContext,
   memoryRecallNode,
@@ -24,5 +26,6 @@ export const builtinRegistry = createRegistry([
   memoryCompact,
   controlIf,
   controlSwitch,
-  controlWhen
+  controlWhen,
+  textTemplate
 ])
