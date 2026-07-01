@@ -14,24 +14,31 @@ export const decodeNodeState = (data: string | null | undefined): unknown => {
   }
 }
 
-/** Read a node's durable per-chat state (workflow spec §11). */
-export const getNodeState = (chatId: string, nodeId: string): unknown => {
+/** Read a node's durable per-(chat, workflow) state (workflow spec §11). */
+export const getNodeState = (chatId: string, workflowId: string, nodeId: string): unknown => {
   const row = getDb()
-    .prepare('SELECT data FROM node_state WHERE chat_id = ? AND node_id = ?')
-    .get(chatId, nodeId) as { data: string | null } | undefined
+    .prepare('SELECT data FROM node_state WHERE chat_id = ? AND workflow_id = ? AND node_id = ?')
+    .get(chatId, workflowId, nodeId) as { data: string | null } | undefined
   return decodeNodeState(row?.data)
 }
 
-/** Write (or clear, with undefined) a node's durable per-chat state. */
-export const setNodeState = (chatId: string, nodeId: string, value: unknown): void => {
+/** Write (or clear, with undefined) a node's durable per-(chat, workflow) state. */
+export const setNodeState = (
+  chatId: string,
+  workflowId: string,
+  nodeId: string,
+  value: unknown
+): void => {
   if (value === undefined) {
-    getDb().prepare('DELETE FROM node_state WHERE chat_id = ? AND node_id = ?').run(chatId, nodeId)
+    getDb()
+      .prepare('DELETE FROM node_state WHERE chat_id = ? AND workflow_id = ? AND node_id = ?')
+      .run(chatId, workflowId, nodeId)
     return
   }
   getDb()
     .prepare(
-      `INSERT INTO node_state (chat_id, node_id, data, updated_at) VALUES (?, ?, ?, ?)
-       ON CONFLICT(chat_id, node_id) DO UPDATE SET data = excluded.data, updated_at = excluded.updated_at`
+      `INSERT INTO node_state (chat_id, workflow_id, node_id, data, updated_at) VALUES (?, ?, ?, ?, ?)
+       ON CONFLICT(chat_id, workflow_id, node_id) DO UPDATE SET data = excluded.data, updated_at = excluded.updated_at`
     )
-    .run(chatId, nodeId, encodeNodeState(value), new Date().toISOString())
+    .run(chatId, workflowId, nodeId, encodeNodeState(value), new Date().toISOString())
 }

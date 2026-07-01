@@ -73,6 +73,8 @@ export const generate = async (
     const ctx = buildTurnContext({
       profileId,
       chatId,
+      // TODO(Task 5): resolve the chat/world/global workflow selection instead of this literal.
+      workflowId: 'default',
       userAction,
       signal: controller.signal,
       onDelta

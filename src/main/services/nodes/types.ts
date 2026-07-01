@@ -35,6 +35,10 @@ export interface RunContext {
   profileId?: string
   /** Turn seed (Phase 2b): the chat this run belongs to. */
   chatId?: string
+  /** Turn seed (Phase 2b-2): the workflow this run belongs to — node_state is keyed
+   *  (chat_id, workflow_id, node_id) so clones of the default graph (same node ids by design)
+   *  don't collide (workflow spec §11). */
+  workflowId?: string
   /** Turn seed (Phase 2b): the raw user action text that started this turn. */
   userAction?: string
   /** The user's Stop signal, given to the LLM call ONLY (so streaming can abort). Distinct from
