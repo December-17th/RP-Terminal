@@ -429,6 +429,12 @@ const zh: Record<string, string> = {
   'variables.refresh': '↻ 刷新',
   'variables.copy': '复制',
   'variables.copied': '已复制到剪贴板',
+  'variables.keyName': '键名',
+  'variables.addKey': '+ 键',
+  'variables.addItem': '+ 项',
+  'variables.delete': '删除',
+  'variables.editFailed': '编辑保存失败',
+  'variables.readOnlyHint': '尚无消息 —— 暂无可编辑内容',
   'status.noState': '（此会话还没有 RPG 状态）',
 
   'prefs.combatNarration': '战斗叙述',

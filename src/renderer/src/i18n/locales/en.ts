@@ -441,6 +441,12 @@ const en: Record<string, string> = {
   'variables.refresh': '↻ Refresh',
   'variables.copy': 'Copy',
   'variables.copied': 'Copied to clipboard',
+  'variables.keyName': 'key',
+  'variables.addKey': '+ key',
+  'variables.addItem': '+ item',
+  'variables.delete': 'Delete',
+  'variables.editFailed': 'Edit failed to save',
+  'variables.readOnlyHint': 'No message yet — nothing to edit',
   'status.noState': '(No RPG state for this session yet)',
 
   'prefs.combatNarration': 'Combat narration',

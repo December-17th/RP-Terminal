@@ -2,26 +2,27 @@ import React from 'react'
 import { useChatStore } from '../../stores/chatStore'
 import { useToastStore } from '../../stores/toastStore'
 import { useT } from '../../i18n'
+import { JsonTreeEditor } from './JsonTreeEditor'
+import type { EditOp } from './jsonTreeEdit'
 
 /**
- * Read-only variable inspector: shows the active chat's live variables for debugging.
- *  - MVU `stat_data` (the latest floor's state),
- *  - the full floor `variables` blob (delta_data / combat_cue / any snapshotted globals),
- *  - the per-chat card KV ("session KV", `chat-card-vars-get`).
- * All chat-scoped, refetched when the active chat changes — a diagnostic for stale-variable /
- * session-switch questions. Pure display; never mutates state.
+ * Variable inspector + editor for the active chat. Three collapsible sections:
+ *  - MVU stat_data (editable → persisted via chatStore.applyVariableOps / applyJsonPatch on the latest floor),
+ *  - the full floor variables blob (read-only; derived snapshot),
+ *  - the per-chat card KV / "session KV" (editable → persisted whole via chat-card-vars-set).
+ * Edits persist immediately. Chat-scoped; refetched when the active chat changes.
  */
 const api = (): any => (window as unknown as { api: any }).api
 
-const Section: React.FC<{ title: string; value: unknown; empty: string }> = ({
-  title,
-  value,
-  empty
-}) => {
+const Section: React.FC<{
+  title: string
+  value: unknown
+  empty: string
+  children: React.ReactNode
+}> = ({ title, value, empty, children }) => {
   const t = useT()
   const isEmpty =
     value == null || (typeof value === 'object' && Object.keys(value as object).length === 0)
-  const json = isEmpty ? '' : JSON.stringify(value, null, 2)
   return (
     <details open style={{ marginBottom: 12 }}>
       <summary
@@ -42,7 +43,7 @@ const Section: React.FC<{ title: string; value: unknown; empty: string }> = ({
             style={{ fontSize: 11, padding: '2px 6px' }}
             onClick={(e) => {
               e.preventDefault()
-              void navigator.clipboard?.writeText(json)
+              void navigator.clipboard?.writeText(JSON.stringify(value, null, 2))
               useToastStore.getState().push(t('variables.copied'))
             }}
           >
@@ -50,28 +51,15 @@ const Section: React.FC<{ title: string; value: unknown; empty: string }> = ({
           </button>
         ) : null}
       </summary>
-      {isEmpty ? (
-        <div style={{ opacity: 0.5, fontSize: 12, padding: '6px 2px' }}>
-          <em>{empty}</em>
-        </div>
-      ) : (
-        <pre
-          style={{
-            margin: '6px 0 0',
-            padding: 10,
-            borderRadius: 6,
-            background: 'var(--rpt-bg-secondary)',
-            border: '1px solid var(--rpt-border)',
-            fontSize: 12,
-            lineHeight: 1.5,
-            overflowX: 'auto',
-            whiteSpace: 'pre-wrap',
-            wordBreak: 'break-word'
-          }}
-        >
-          {json}
-        </pre>
-      )}
+      <div style={{ marginTop: 6 }}>
+        {isEmpty ? (
+          <div style={{ opacity: 0.5, fontSize: 12, padding: '2px' }}>
+            <em>{empty}</em>
+          </div>
+        ) : (
+          children
+        )}
+      </div>
     </details>
   )
 }
@@ -104,6 +92,25 @@ export const VariablesView: React.FC<{ profileId: string }> = ({ profileId }) =>
 
   const latest = floors.length ? floors[floors.length - 1]?.variables : undefined
   const statData = (latest as Record<string, unknown> | undefined)?.stat_data
+  const hasFloor = floors.length > 0
+
+  const onStatEdit = async (_next: unknown, op: EditOp): Promise<void> => {
+    try {
+      await useChatStore.getState().applyVariableOps(profileId, [op])
+    } catch {
+      useToastStore.getState().push(t('variables.editFailed'))
+    }
+  }
+
+  const onKvEdit = async (next: unknown): Promise<void> => {
+    setCardKv(next as Record<string, unknown>)
+    try {
+      await api().chatCardVarsSet(profileId, activeChatId, next)
+    } catch {
+      useToastStore.getState().push(t('variables.editFailed'))
+      void loadKv()
+    }
+  }
 
   return (
     <div>
@@ -127,9 +134,20 @@ export const VariablesView: React.FC<{ profileId: string }> = ({ profileId }) =>
         </button>
       </h3>
       <div style={{ marginTop: 16 }}>
-        <Section title={t('variables.mvuState')} value={statData} empty={t('variables.empty')} />
-        <Section title={t('variables.floorVars')} value={latest} empty={t('variables.empty')} />
-        <Section title={t('variables.sessionKv')} value={cardKv} empty={t('variables.empty')} />
+        <Section title={t('variables.mvuState')} value={statData} empty={t('variables.empty')}>
+          <JsonTreeEditor value={statData ?? {}} onEdit={onStatEdit} readOnly={!hasFloor} />
+          {!hasFloor ? (
+            <div style={{ opacity: 0.5, fontSize: 12 }}>
+              <em>{t('variables.readOnlyHint')}</em>
+            </div>
+          ) : null}
+        </Section>
+        <Section title={t('variables.floorVars')} value={latest} empty={t('variables.empty')}>
+          <JsonTreeEditor value={latest} onEdit={() => {}} readOnly />
+        </Section>
+        <Section title={t('variables.sessionKv')} value={cardKv} empty={t('variables.empty')}>
+          <JsonTreeEditor value={cardKv ?? {}} onEdit={onKvEdit} />
+        </Section>
       </div>
     </div>
   )
