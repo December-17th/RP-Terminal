@@ -1,0 +1,67 @@
+// Pure graph model for the node workflow engine (spec §4). No I/O; safe to import from
+// main, renderer, preload, and tests. See docs/superpowers/specs/2026-07-01-node-workflow-engine-design.md.
+
+export const PORT_TYPES = [
+  'Messages',
+  'Text',
+  'Vars',
+  'Floors',
+  'Context',
+  'Signal',
+  'Error',
+  'Any'
+] as const
+
+export type PortType = (typeof PORT_TYPES)[number]
+
+export interface PortSpec {
+  name: string
+  type: PortType
+}
+
+/** The pure, side-effect-free description of a node type: its ports and metadata.
+ *  Main pairs each descriptor with a `run()` implementation (Phase 2); validation uses only this. */
+export interface NodeDescriptor {
+  type: string
+  title: string
+  inputs: PortSpec[]
+  outputs: PortSpec[]
+  isMainOutputCapable?: boolean
+}
+
+export interface NodeInstance {
+  id: string
+  type: string
+  config?: Record<string, unknown>
+  position?: { x: number; y: number }
+  panel?: { show: boolean; label?: string; collapsed?: boolean }
+  isMainOutput?: boolean
+}
+
+export interface EdgeEnd {
+  node: string
+  port: string
+}
+
+export interface Edge {
+  from: EdgeEnd
+  to: EdgeEnd
+}
+
+export interface WorkflowDoc {
+  id: string
+  name: string
+  version: number
+  schemaVersion: number
+  description?: string
+  nodes: NodeInstance[]
+  edges: Edge[]
+  meta?: Record<string, unknown>
+}
+
+/** Whether an output port of type `from` may connect to an input port of type `to`.
+ *  `Any` is a wildcard both ways; otherwise types must match exactly (spec §4). */
+export function portCompatible(from: PortType, to: PortType): boolean {
+  if (from === 'Any' || to === 'Any') return true
+  return from === to
+}

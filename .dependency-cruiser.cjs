@@ -41,6 +41,14 @@ module.exports = {
       to: { path: '^src/(main|renderer|preload)|node_modules/electron/' }
     },
     {
+      name: 'workflow-engine-pure',
+      comment:
+        'The node workflow engine (src/shared/workflow) must NOT import renderer, main, preload, or electron (spec §15 / CLAUDE.md module boundaries).',
+      severity: 'error',
+      from: { path: '^src/shared/workflow' },
+      to: { path: '^src/(main|renderer|preload)|node_modules/electron/' }
+    },
+    {
       name: 'transports-no-cross-import-inline-to-wcv',
       comment:
         'The card transports never import each other: inline cardBridge must not reach the WCV transport.',
