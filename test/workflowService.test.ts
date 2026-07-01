@@ -1,7 +1,18 @@
-import { describe, it, expect, afterAll } from 'vitest'
+import { describe, it, expect, afterAll, vi, beforeEach } from 'vitest'
 import fs from 'fs'
 import path from 'path'
 import { randomUUID } from 'crypto'
+
+const mockChatService = vi.hoisted(() => ({
+  getChatWorkflowId: vi.fn<(profileId: string, chatId: string) => string | null>(() => null),
+  getChat: vi.fn<(profileId: string, chatId: string) => { character_id: string } | null>(
+    () => null
+  ),
+  setChatWorkflowId: vi.fn(),
+  removeWorkflowIdFromChats: vi.fn()
+}))
+vi.mock('../src/main/services/chatService', () => mockChatService)
+
 import {
   BUILTIN_WORKFLOW_ID,
   listWorkflows,
@@ -11,10 +22,16 @@ import {
   cloneWorkflow,
   deleteWorkflow,
   importWorkflowFromFile,
-  exportWorkflowToFile
+  exportWorkflowToFile,
+  getSelection,
+  setGlobalWorkflow,
+  setWorldWorkflow,
+  resolveWorkflowId,
+  resolveWorkflowDoc
 } from '../src/main/services/workflowService'
 import { getAppDir } from '../src/main/services/storageService'
 import { WorkflowDoc } from '../src/shared/workflow/types'
+import { DEFAULT_GRAPH } from '../src/main/services/nodes/builtin/defaultGraph'
 
 const profileId = `wf-test-${randomUUID()}`
 const profileDir = path.join(getAppDir(), 'profiles', profileId)
@@ -28,6 +45,13 @@ const minimalDoc = (overrides: Partial<WorkflowDoc> = {}): WorkflowDoc => ({
   nodes: [{ id: 'n1', type: 'input.context', isMainOutput: true }],
   edges: [],
   ...overrides
+})
+
+beforeEach(() => {
+  mockChatService.getChatWorkflowId.mockReset().mockReturnValue(null)
+  mockChatService.getChat.mockReset().mockReturnValue(null)
+  mockChatService.setChatWorkflowId.mockReset()
+  mockChatService.removeWorkflowIdFromChats.mockReset()
 })
 
 describe('workflowService', () => {
@@ -189,5 +213,142 @@ describe('workflowService', () => {
     } finally {
       fs.rmSync(tmpDir, { recursive: true, force: true })
     }
+  })
+})
+
+describe('workflowService selection + resolution', () => {
+  const chatId = 'chat-1'
+  const characterId = 'char-1'
+
+  it('setGlobalWorkflow/setWorldWorkflow set + clear (null) round-trip via getSelection', () => {
+    expect(getSelection(profileId)).toEqual({ global: null, worlds: {} })
+
+    const created = createWorkflowFromDoc(profileId, minimalDoc({ name: 'Selection Target' }))
+    expect(created.ok).toBe(true)
+    if (!created.ok) return
+
+    setGlobalWorkflow(profileId, created.id)
+    expect(getSelection(profileId).global).toBe(created.id)
+
+    setWorldWorkflow(profileId, characterId, created.id)
+    expect(getSelection(profileId).worlds[characterId]).toBe(created.id)
+
+    setGlobalWorkflow(profileId, null)
+    expect(getSelection(profileId).global).toBeNull()
+
+    setWorldWorkflow(profileId, characterId, null)
+    expect(getSelection(profileId).worlds[characterId]).toBeUndefined()
+  })
+
+  it('resolution precedence: session wins over world wins over global wins over builtin', () => {
+    const session = createWorkflowFromDoc(profileId, minimalDoc({ name: 'Session Tier' }))
+    const world = createWorkflowFromDoc(profileId, minimalDoc({ name: 'World Tier' }))
+    const global = createWorkflowFromDoc(profileId, minimalDoc({ name: 'Global Tier' }))
+    expect(session.ok && world.ok && global.ok).toBe(true)
+    if (!session.ok || !world.ok || !global.ok) return
+
+    setWorldWorkflow(profileId, characterId, world.id)
+    setGlobalWorkflow(profileId, global.id)
+    mockChatService.getChat.mockReturnValue({ character_id: characterId })
+
+    // global only
+    mockChatService.getChatWorkflowId.mockReturnValue(null)
+    setWorldWorkflow(profileId, characterId, null)
+    expect(resolveWorkflowId(profileId, chatId)).toBe(global.id)
+
+    // world beats global
+    setWorldWorkflow(profileId, characterId, world.id)
+    expect(resolveWorkflowId(profileId, chatId)).toBe(world.id)
+
+    // session beats world + global
+    mockChatService.getChatWorkflowId.mockReturnValue(session.id)
+    expect(resolveWorkflowId(profileId, chatId)).toBe(session.id)
+
+    // cleanup for subsequent tests
+    setWorldWorkflow(profileId, characterId, null)
+    setGlobalWorkflow(profileId, null)
+  })
+
+  it('builtin is the final fallback when nothing is selected', () => {
+    mockChatService.getChatWorkflowId.mockReturnValue(null)
+    mockChatService.getChat.mockReturnValue(null)
+    expect(getSelection(profileId)).toEqual({ global: null, worlds: {} })
+    expect(resolveWorkflowId(profileId, chatId)).toBe(BUILTIN_WORKFLOW_ID)
+  })
+
+  it('resolveWorkflowDoc returns { id: "default", doc: DEFAULT_GRAPH } when nothing is selected', () => {
+    mockChatService.getChatWorkflowId.mockReturnValue(null)
+    mockChatService.getChat.mockReturnValue(null)
+    const result = resolveWorkflowDoc(profileId, chatId)
+    expect(result.id).toBe('default')
+    expect(result.doc).toEqual(DEFAULT_GRAPH)
+  })
+
+  it('dangling id at each tier falls through to the next; all dangling -> default', () => {
+    const world = createWorkflowFromDoc(profileId, minimalDoc({ name: 'World Fallback Target' }))
+    expect(world.ok).toBe(true)
+    if (!world.ok) return
+
+    mockChatService.getChat.mockReturnValue({ character_id: characterId })
+    setWorldWorkflow(profileId, characterId, world.id)
+    setGlobalWorkflow(profileId, 'does-not-exist-global')
+
+    // Session dangling -> falls through to world (which resolves).
+    mockChatService.getChatWorkflowId.mockReturnValue('does-not-exist-session')
+    expect(resolveWorkflowId(profileId, chatId)).toBe(world.id)
+
+    // Session + world dangling -> falls through to global (also dangling) -> builtin.
+    setWorldWorkflow(profileId, characterId, 'does-not-exist-world')
+    expect(resolveWorkflowId(profileId, chatId)).toBe(BUILTIN_WORKFLOW_ID)
+
+    setWorldWorkflow(profileId, characterId, null)
+    setGlobalWorkflow(profileId, null)
+  })
+
+  it('invalid stored doc (hand-corrupted on disk) falls through to the next tier', () => {
+    const dir = path.join(profileDir, 'workflows')
+    fs.mkdirSync(dir, { recursive: true })
+    const corruptId = 'corrupt-doc'
+    fs.writeFileSync(
+      path.join(dir, `${corruptId}.json`),
+      JSON.stringify({
+        id: corruptId,
+        name: 'Hand Corrupted',
+        version: 1,
+        schemaVersion: 99,
+        nodes: [{ id: 'n1', type: 'input.context' }],
+        edges: []
+      })
+    )
+    const world = createWorkflowFromDoc(profileId, minimalDoc({ name: 'World Beneath Corrupt' }))
+    expect(world.ok).toBe(true)
+    if (!world.ok) return
+
+    mockChatService.getChat.mockReturnValue({ character_id: characterId })
+    mockChatService.getChatWorkflowId.mockReturnValue(corruptId)
+    setWorldWorkflow(profileId, characterId, world.id)
+
+    expect(resolveWorkflowId(profileId, chatId)).toBe(world.id)
+
+    setWorldWorkflow(profileId, characterId, null)
+  })
+
+  it('deleteWorkflow clears session (via removeWorkflowIdFromChats), global, and world selection entries', () => {
+    const created = createWorkflowFromDoc(
+      profileId,
+      minimalDoc({ name: 'To Delete With Selection' })
+    )
+    expect(created.ok).toBe(true)
+    if (!created.ok) return
+
+    setGlobalWorkflow(profileId, created.id)
+    setWorldWorkflow(profileId, characterId, created.id)
+
+    expect(deleteWorkflow(profileId, created.id)).toBe(true)
+
+    const selection = getSelection(profileId)
+    expect(selection.global).toBeNull()
+    expect(selection.worlds[characterId]).toBeUndefined()
+    expect(mockChatService.removeWorkflowIdFromChats).toHaveBeenCalledWith(profileId, created.id)
   })
 })

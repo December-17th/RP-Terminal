@@ -14,6 +14,7 @@ import { WorkflowDoc } from '../../shared/workflow/types'
 import { builtinRegistry } from './nodes/builtin'
 import { DEFAULT_GRAPH } from './nodes/builtin/defaultGraph'
 import { log } from './logService'
+import { getChat, getChatWorkflowId, removeWorkflowIdFromChats } from './chatService'
 
 export const BUILTIN_WORKFLOW_ID = 'default'
 
@@ -41,6 +42,8 @@ const workflowsDir = (profileId: string): string =>
   path.join(getAppDir(), 'profiles', profileId, 'workflows')
 const workflowPath = (profileId: string, id: string): string =>
   path.join(workflowsDir(profileId), `${id}.json`)
+const selectionPath = (profileId: string): string =>
+  path.join(workflowsDir(profileId), '_selection.json')
 
 const ensureWorkflowsDir = (profileId: string): string => {
   const dir = workflowsDir(profileId)
@@ -110,7 +113,11 @@ export const cloneWorkflow = (profileId: string, sourceId: string): WorkflowSumm
   }
   const result = validateWorkflowDoc(clone)
   if (!result.ok) {
-    log('error', `cloneWorkflow: source ${sourceId} failed validation, refusing to write`, result.error)
+    log(
+      'error',
+      `cloneWorkflow: source ${sourceId} failed validation, refusing to write`,
+      result.error
+    )
     return null
   }
   ensureWorkflowsDir(profileId)
@@ -118,13 +125,110 @@ export const cloneWorkflow = (profileId: string, sourceId: string): WorkflowSumm
   return { id, name: result.doc.name, description: result.doc.description }
 }
 
+/** Global/world default workflow selection (spec §12). Session override lives on `chats.workflow_id`
+ *  (chatService); this sidecar only holds the global default and per-world (per-character) defaults. */
+export interface WorkflowSelection {
+  global: string | null
+  worlds: Record<string, string>
+}
+
+/** Read the selection sidecar, defaulting to the empty selection when absent/unparseable. */
+export const getSelection = (profileId: string): WorkflowSelection => {
+  ensureWorkflowsDir(profileId)
+  const data = readJsonSync<WorkflowSelection>(selectionPath(profileId))
+  return {
+    global: data?.global ?? null,
+    worlds: data && typeof data.worlds === 'object' && data.worlds ? data.worlds : {}
+  }
+}
+
+const writeSelection = (profileId: string, selection: WorkflowSelection): void => {
+  ensureWorkflowsDir(profileId)
+  writeJsonSyncAtomic(selectionPath(profileId), selection)
+}
+
+/** Set (or clear, with null) the global default workflow. */
+export const setGlobalWorkflow = (profileId: string, id: string | null): void => {
+  const selection = getSelection(profileId)
+  writeSelection(profileId, { ...selection, global: id })
+}
+
+/** Set (or clear, with null) the per-world (per-character) default workflow. */
+export const setWorldWorkflow = (
+  profileId: string,
+  characterId: string,
+  id: string | null
+): void => {
+  const selection = getSelection(profileId)
+  const worlds = { ...selection.worlds }
+  if (id === null) delete worlds[characterId]
+  else worlds[characterId] = id
+  writeSelection(profileId, { ...selection, worlds })
+}
+
+/** Ordered tier candidates for a chat: session override, world default, global default —
+ *  nulls/undefined filtered out. A missing chat just skips the world tier. */
+const tierCandidates = (profileId: string, chatId: string): string[] => {
+  const sessionId = getChatWorkflowId(profileId, chatId)
+  const chat = getChat(profileId, chatId)
+  const selection = getSelection(profileId)
+  const worldId = chat ? (selection.worlds[chat.character_id] ?? null) : null
+  const globalId = selection.global
+  return [sessionId, worldId, globalId].filter((x): x is string => x != null)
+}
+
+/** Resolve the effective workflow for a chat: session -> world -> global -> builtin. A tier whose
+ *  id no longer resolves to a valid, validating doc falls through to the next tier (never-block-
+ *  a-turn) with a `log('error', ...)`. Final fallback is always the built-in default graph. */
+export const resolveWorkflowDoc = (
+  profileId: string,
+  chatId: string
+): { id: string; doc: WorkflowDoc } => {
+  for (const id of tierCandidates(profileId, chatId)) {
+    if (id === BUILTIN_WORKFLOW_ID) return { id: BUILTIN_WORKFLOW_ID, doc: DEFAULT_GRAPH }
+    const raw = getWorkflowById(profileId, id)
+    if (!raw) {
+      log('error', `resolveWorkflowDoc: workflow ${id} not found, falling through`)
+      continue
+    }
+    const result = validateWorkflowDoc(raw)
+    if (!result.ok) {
+      log(
+        'error',
+        `resolveWorkflowDoc: workflow ${id} failed validation, falling through`,
+        result.error
+      )
+      continue
+    }
+    return { id, doc: result.doc }
+  }
+  return { id: BUILTIN_WORKFLOW_ID, doc: DEFAULT_GRAPH }
+}
+
+/** Resolve just the effective workflow id (delegates to resolveWorkflowDoc to share the fall-through). */
+export const resolveWorkflowId = (profileId: string, chatId: string): string =>
+  resolveWorkflowDoc(profileId, chatId).id
+
 /** Unlinks the workflow's file and reports whether it existed. Never touches the builtin.
- *  Selection-sidecar cleanup is added in Task 3. */
+ *  Also clears the id out of every session override + the selection sidecar (global/world). */
 export const deleteWorkflow = (profileId: string, id: string): boolean => {
   if (id === BUILTIN_WORKFLOW_ID) return false
   const p = workflowPath(profileId, id)
   if (!fs.existsSync(p)) return false
   fs.unlinkSync(p)
+  removeWorkflowIdFromChats(profileId, id)
+  const selection = getSelection(profileId)
+  const worlds = { ...selection.worlds }
+  let changed = false
+  if (selection.global === id) changed = true
+  for (const [characterId, workflowId] of Object.entries(worlds)) {
+    if (workflowId === id) {
+      delete worlds[characterId]
+      changed = true
+    }
+  }
+  if (changed)
+    writeSelection(profileId, { global: selection.global === id ? null : selection.global, worlds })
   return true
 }
 

@@ -196,6 +196,28 @@ export const setChatMode = (profileId: string, chatId: string, mode: ChatMode): 
     .run(m, chatId, profileId)
 }
 
+/** The session-tier workflow override for a chat; null = inherit world/global/builtin (spec §12). */
+export const getChatWorkflowId = (profileId: string, chatId: string): string | null => {
+  const row = getDb()
+    .prepare('SELECT workflow_id FROM chats WHERE id = ? AND profile_id = ?')
+    .get(chatId, profileId) as { workflow_id: string | null } | undefined
+  return row?.workflow_id ?? null
+}
+
+/** Set (or clear, with null) the session-tier workflow override for a chat. */
+export const setChatWorkflowId = (profileId: string, chatId: string, id: string | null): void => {
+  getDb()
+    .prepare('UPDATE chats SET workflow_id = ? WHERE id = ? AND profile_id = ?')
+    .run(id, chatId, profileId)
+}
+
+/** Clear a workflow id out of every session that had it selected (called when it's deleted). */
+export const removeWorkflowIdFromChats = (profileId: string, workflowId: string): void => {
+  getDb()
+    .prepare('UPDATE chats SET workflow_id = NULL WHERE profile_id = ? AND workflow_id = ?')
+    .run(profileId, workflowId)
+}
+
 /** Strip a lorebook id out of every session's active set (called when it's deleted). */
 export const removeLorebookIdFromChats = (profileId: string, lorebookId: string): void => {
   const rows = getDb()
@@ -264,7 +286,10 @@ export const truncateFloors = (profileId: string, chatId: string, fromFloor: num
   // rewind the compaction pointer so the regenerated floors get re-compacted later. Cheap no-op
   // when memory is unused (nothing matches, pointer stays -1).
   deleteFromTurn(profileId, chatId, fromFloor)
-  const rewound = rewindCompactionPointer(getMemoryState(profileId, chatId).last_compacted_floor, fromFloor)
+  const rewound = rewindCompactionPointer(
+    getMemoryState(profileId, chatId).last_compacted_floor,
+    fromFloor
+  )
   if (rewound !== null) setMemoryState(profileId, chatId, { last_compacted_floor: rewound })
   touch(chatId)
 }

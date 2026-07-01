@@ -154,6 +154,8 @@ export const getDb = (): Database.Database => {
   addColumnIfMissing(db, 'chats', 'pending_lore', 'pending_lore TEXT')
   // Memory checkpoint bookkeeping per chat: {last_compacted_floor}. See compactionService.
   addColumnIfMissing(db, 'chats', 'memory_state', 'memory_state TEXT')
+  // Session-tier workflow override (node-workflow spec §12); null = inherit world/global/builtin.
+  addColumnIfMissing(db, 'chats', 'workflow_id', 'workflow_id TEXT')
   // Vector recall (brute-force JS cosine): per-memory embedding as a JSON float array.
   addColumnIfMissing(db, 'memory_entries', 'embedding', 'embedding TEXT')
   // TH-2 swipes: alternate responses per floor + the active index.
