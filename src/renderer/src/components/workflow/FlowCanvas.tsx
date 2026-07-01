@@ -3,7 +3,7 @@
 // its own copy of nodes/edges (uncontrolled RF state is not acceptable here). See
 // src/renderer/src/stores/workflowEditorStore.ts and editorModel.ts (EditorNode/EditorEdge) for
 // the source of truth this maps to/from RF's Node<>/Edge<> shapes.
-import React, { useCallback, useMemo, useRef } from 'react'
+import React, { useCallback, useMemo } from 'react'
 import {
   Background,
   Controls,
@@ -62,16 +62,26 @@ function RptNode({ data, selected }: NodeProps<RFNode<RptNodeData>>): React.JSX.
   const title = typeInfo?.title ?? editorNode.type
 
   return (
-    <div className={`rpt-node${selected ? ' selected' : ''}${editorNode.isMainOutput ? ' is-main-output' : ''}`}>
+    <div
+      className={`rpt-node${selected ? ' selected' : ''}${editorNode.isMainOutput ? ' is-main-output' : ''}`}
+    >
       <div className="rpt-node-title-row">
-        {editorNode.isMainOutput && <span className="rpt-node-main-badge" title="Main output">★</span>}
+        {editorNode.isMainOutput && (
+          <span className="rpt-node-main-badge" title="Main output">
+            ★
+          </span>
+        )}
         <span className="rpt-node-title">{title}</span>
         <span className="rpt-node-type-id">{editorNode.type}</span>
       </div>
       <div className="rpt-node-ports">
         <div className="rpt-node-col rpt-node-col-in">
           {inputs.map((port, i) => (
-            <div className="rpt-node-port-row" key={`in-${port.name}`} style={{ top: HANDLE_ROW_TOP_OFFSET + i * HANDLE_ROW_HEIGHT }}>
+            <div
+              className="rpt-node-port-row"
+              key={`in-${port.name}`}
+              style={{ top: HANDLE_ROW_TOP_OFFSET + i * HANDLE_ROW_HEIGHT }}
+            >
               <Handle
                 type="target"
                 position={Position.Left}
@@ -84,7 +94,11 @@ function RptNode({ data, selected }: NodeProps<RFNode<RptNodeData>>): React.JSX.
         </div>
         <div className="rpt-node-col rpt-node-col-out">
           {outputs.map((port, i) => (
-            <div className="rpt-node-port-row rpt-node-port-row-out" key={`out-${port.name}`} style={{ top: HANDLE_ROW_TOP_OFFSET + i * HANDLE_ROW_HEIGHT }}>
+            <div
+              className="rpt-node-port-row rpt-node-port-row-out"
+              key={`out-${port.name}`}
+              style={{ top: HANDLE_ROW_TOP_OFFSET + i * HANDLE_ROW_HEIGHT }}
+            >
               <span className="rpt-node-port-label">{port.name}</span>
               <Handle
                 type="source"
@@ -126,7 +140,6 @@ function FlowCanvasInner({ profileId: _profileId }: FlowCanvasProps): React.JSX.
   const addNode = useWorkflowEditorStore((s) => s.addNode)
 
   const { screenToFlowPosition } = useReactFlow()
-  const wrapperRef = useRef<HTMLDivElement>(null)
 
   const typeInfoMap = useMemo(() => {
     return new Map(nodeTypeList.map((t) => [t.type, t]))
@@ -207,11 +220,14 @@ function FlowCanvasInner({ profileId: _profileId }: FlowCanvasProps): React.JSX.
     select(null)
   }, [select])
 
-  const handleDragOver = useCallback((event: React.DragEvent) => {
-    if (readOnly) return
-    event.preventDefault()
-    event.dataTransfer.dropEffect = 'move'
-  }, [readOnly])
+  const handleDragOver = useCallback(
+    (event: React.DragEvent) => {
+      if (readOnly) return
+      event.preventDefault()
+      event.dataTransfer.dropEffect = 'move'
+    },
+    [readOnly]
+  )
 
   const handleDrop = useCallback(
     (event: React.DragEvent) => {
@@ -226,12 +242,7 @@ function FlowCanvasInner({ profileId: _profileId }: FlowCanvasProps): React.JSX.
   )
 
   return (
-    <div
-      className="rpt-workflow-editor"
-      ref={wrapperRef}
-      onDrop={handleDrop}
-      onDragOver={handleDragOver}
-    >
+    <div className="rpt-workflow-editor" onDrop={handleDrop} onDragOver={handleDragOver}>
       <ReactFlow
         nodes={rfNodes}
         edges={rfEdges}
