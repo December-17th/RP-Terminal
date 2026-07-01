@@ -145,10 +145,21 @@ behavior. Frequent commits.
 
 ---
 
-## Open questions for the owner (before expanding 2b-1a tasks)
+## Resolved decisions (owner, 2026-07-01)
 
-1. **Extraction location:** keep the stage functions inside `generationService.ts` (smaller diff, one file),
-   or split them into a new `src/main/services/generation/` folder (cleaner, but a bigger move)? Draft assumes
-   **in-file** for 2b-1a to minimize parity risk, splitting in 2b-1b when they become node bodies.
-2. **Characterization fidelity:** is a snapshot of `{ sendMessages, writtenFloor }` sufficient as the parity
-   contract, or do you want it to also assert the exact `onDelta` stream chunks and log lines?
+1. **Extraction location:** stage functions move into a **new `src/main/services/generation/` folder, one file
+   per stage** (`genContext.ts`, `worldInfo.ts`, `memoryRecall.ts`, `assemble.ts`, `callModel.ts`,
+   `parseResponse.ts`, `foldState.ts`, `persistFloor.ts`, `compact.ts`, plus a shared `types.ts` for
+   `GenContext`). `generationService.ts` imports them and `generate()` becomes the thin sequence. Each
+   extraction task moves ONE stage and keeps the characterization snapshot byte-identical, so the
+   restructure never rides ahead of the safety net.
+2. **Parity contract:** the characterization test snapshots **`{ sendMessages, writtenFloor }`** only (the
+   provider-bound message array + the persisted `FloorFile`). It does NOT assert `onDelta` chunks or log
+   lines (those churn without being real regressions).
+
+## Next step
+
+Expand the 2b-1a task list above into full bite-sized TDD tasks (complete fixture + extraction code per task).
+Task 1 (the characterization harness) needs the exact shapes of `Settings`, `Preset`, `FloorFile`, `buildPrompt`
+args, and the canned `streamProvider` response read from the real source before its fixtures can be written
+verbatim.
