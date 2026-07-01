@@ -56,9 +56,11 @@ export const registerWriteSignature = (
  * variables) and persist. This is the path by which native/script panel UI MODIFIES state
  * instead of only displaying it (a button, checkbox, or manual edit). Reuses the same
  * `applyJsonPatch` engine as the model's `<UpdateVariable>`, so author/user writes fold in
- * identically and survive a later re-evaluate. Returns the updated floor (or null if the
- * floor is gone / there are no ops / the write was a no-op or a suppressed runaway loop).
- * Targets a specific floor — the caller passes the latest.
+ * identically. NOTE these writes are not re-derivable from response text, so an MVU
+ * re-evaluate (`reevaluateVariables`, which replays model `<UpdateVariable>` blocks only)
+ * DISCARDS them. Returns the updated floor (or null if the floor is gone / there are no
+ * ops / the write was a no-op or a suppressed runaway loop). Targets a specific floor —
+ * the caller passes the latest.
  */
 export const applyVariableOps = (
   profileId: string,

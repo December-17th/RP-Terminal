@@ -114,6 +114,17 @@ describe('mvu.set', () => {
     ])
   })
 
+  it('no value at all (input unwired, config value omitted): skips the write entirely', async () => {
+    // Without this guard the node writes `{ op: 'replace', value: undefined }` — a confusing
+    // key-vanishes-on-persist no-value write (review follow-up on PR #26).
+    getAllFloorsMock.mockReturnValue([{ floor: 0 }])
+    const ctx = makeCtx()
+    const node = meta(mvuSet, 'n1', { path: 'hp' })
+    const res = await mvuSet.run(ctx, {}, node)
+    expect(applyVariableOpsMock).not.toHaveBeenCalled()
+    expect(res).toEqual({ outputs: {} })
+  })
+
   it('no floors: does not call applyVariableOps and returns { outputs: {} } without throwing', async () => {
     getAllFloorsMock.mockReturnValue([])
     const ctx = makeCtx()
