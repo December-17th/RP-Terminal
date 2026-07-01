@@ -11,6 +11,7 @@ import { Preset } from '../../types/preset'
 export interface GenContext {
   profileId: string
   chatId: string
+  userAction: string
   chat: ChatSession
   card: RPTerminalCard
   settings: Settings

@@ -72,6 +72,7 @@ export const buildGenContext = (
   return {
     profileId,
     chatId,
+    userAction,
     chat,
     card,
     settings,
