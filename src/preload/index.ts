@@ -233,6 +233,8 @@ const api = {
     ipcRenderer.invoke('duel-play', profileId, chatId, cardId, targetIds),
   duelEndTurn: (profileId: string, chatId: string) =>
     ipcRenderer.invoke('duel-end-turn', profileId, chatId),
+  duelNarrate: (profileId: string, chatId: string) =>
+    ipcRenderer.invoke('duel-narrate', profileId, chatId),
   duelEnd: (profileId: string, chatId: string) =>
     ipcRenderer.invoke('duel-end', profileId, chatId),
   // Subscribe to incremental generation text. Returns an unsubscribe function.

@@ -23,6 +23,7 @@ interface DuelStore {
   play: (profileId: string, targetIds: string[]) => Promise<void>
   endTurn: (profileId: string) => Promise<void>
   end: (profileId: string) => Promise<void>
+  narrate: (profileId: string) => Promise<void>
 }
 
 export const useDuelStore = create<DuelStore>((set, get) => {
@@ -94,6 +95,18 @@ export const useDuelStore = create<DuelStore>((set, get) => {
       if (!chatId) return
       await api().duelEnd(profileId, chatId)
       set({ state: null, catalog: {}, selection: { mode: 'idle' } })
+    },
+
+    narrate: async (profileId) => {
+      const { chatId } = get()
+      if (!chatId) return
+      set({ busy: true })
+      try {
+        await api().duelNarrate(profileId, chatId)
+      } finally {
+        set({ busy: false })
+        await get().end(profileId) // clear the duel + return to chat after narrating
+      }
     }
   }
 })

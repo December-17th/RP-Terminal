@@ -23,5 +23,13 @@ export const registerDuelIpc = (ipcMain: IpcMain): void => {
     }
   })
   ipcMain.handle('duel-end-turn', (_, _profileId, chatId) => duelService.endDuelTurn(chatId))
+  ipcMain.handle('duel-narrate', async (_, profileId, chatId) => {
+    try {
+      return await duelService.narrate(profileId, chatId)
+    } catch (err: any) {
+      logService.log('error', '✗ duel-narrate failed', err?.message || String(err))
+      throw err
+    }
+  })
   ipcMain.handle('duel-end', (_, _profileId, chatId) => duelService.endDuel(chatId))
 }

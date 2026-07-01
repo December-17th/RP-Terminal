@@ -473,6 +473,7 @@ const zh: Record<string, string> = {
   'duel.energy': '行动力',
   'duel.endTurn': '结束回合',
   'duel.endDuel': '结束对决',
+  'duel.narrate': '战后叙事',
   'duel.round': '回合',
   'duel.pickTarget': '选择目标',
   'duel.win': '胜利',

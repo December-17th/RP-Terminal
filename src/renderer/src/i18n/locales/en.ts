@@ -487,6 +487,7 @@ const en: Record<string, string> = {
   'duel.energy': 'Energy',
   'duel.endTurn': 'End turn',
   'duel.endDuel': 'End duel',
+  'duel.narrate': 'Narrate Outcome',
   'duel.round': 'Round',
   'duel.pickTarget': 'Pick a target',
   'duel.win': 'Victory',

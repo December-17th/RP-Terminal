@@ -6,12 +6,20 @@
 // there is no stepped enemy-turn driver. See docs/superpowers/specs/2026-06-30-native-duelview-design.md.
 
 import { buildEncounterFromMvu, type DeriveConfig, type StatMap } from '../../shared/combat/bundle'
-import { startDuel, playCard, endLeadTurn, type DuelState } from '../../shared/combat/deckbuilder'
+import {
+  startDuel,
+  playCard,
+  endLeadTurn,
+  buildDuelNarrationPrompt,
+  type DuelState
+} from '../../shared/combat/deckbuilder'
 import { poemD20System } from '../../shared/combat/systems'
 import { getCharacter } from './characterService'
 import { getChat } from './chatService'
 import { getRpExt } from '../types/character'
 import { getAllFloors } from './floorService'
+import { generateRaw } from './generationService'
+import { narrationConfig, writeNarrationToChat } from './narrationService'
 import type { AbilityDef, CombatEvent } from '../../shared/combat/types'
 
 export interface DuelRecord {
@@ -171,6 +179,26 @@ export const endDuelTurn = (chatId: string): { state: DuelState; events: CombatE
 
 export const endDuel = (chatId: string): void => {
   duels.delete(chatId)
+}
+
+/** End-of-duel narration: ask the model to narrate the resolved duel (steered by the card/user
+ *  prompt) and land the prose in the chat, folding <UpdateVariable> consequences into stat_data.
+ *  Mirrors combatService.narrate. Returns null if there's no active duel for this chat. */
+export const narrate = async (
+  profileId: string,
+  chatId: string
+): Promise<{ narration: string; mode: 'append' | 'floor' } | null> => {
+  const rec = duels.get(chatId)
+  if (!rec) return null
+  const { extra, mode } = narrationConfig(profileId, chatId)
+  const prose = (
+    await generateRaw(profileId, chatId, {
+      userInput: buildDuelNarrationPrompt(rec.state, extra),
+      maxChatHistory: 6
+    })
+  ).trim()
+  writeNarrationToChat(profileId, chatId, prose)
+  return { narration: prose, mode }
 }
 
 /** Start a duel from the active chat's current MVU build (player + 在场 party; AI roster TBD).
