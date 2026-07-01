@@ -334,7 +334,7 @@ export const DuelView: FC<{ profileId: string }> = ({ profileId }) => {
             <button className="btn-accent" disabled={busy} onClick={() => void narrate(profileId)}>
               {t('duel.narrate')}
             </button>
-            <button className="rpt-duel-secondary" onClick={() => void end(profileId)}>
+            <button className="rpt-duel-secondary" disabled={busy} onClick={() => void end(profileId)}>
               {t('duel.endDuel')}
             </button>
           </div>
