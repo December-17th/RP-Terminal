@@ -24,6 +24,9 @@ interface DuelStore {
   endTurn: (profileId: string) => Promise<void>
   end: (profileId: string) => Promise<void>
   narrate: (profileId: string) => Promise<void>
+  /** Drop the renderer-side duel mirror (no IPC) — used on session switch so a prior chat's
+   *  duel never shows for a newly-selected chat; DuelView.load refetches on mount. */
+  reset: () => void
 }
 
 export const useDuelStore = create<DuelStore>((set, get) => {
@@ -107,6 +110,9 @@ export const useDuelStore = create<DuelStore>((set, get) => {
         set({ busy: false })
         await get().end(profileId) // clear the duel + return to chat after narrating
       }
-    }
+    },
+
+    reset: () =>
+      set({ chatId: null, state: null, catalog: {}, selection: { mode: 'idle' }, lastEvents: [] })
   }
 })

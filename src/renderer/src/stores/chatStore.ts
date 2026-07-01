@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import type { FloorMetrics } from '../../../shared/usageTypes'
 import { useCombatStore } from './combatStore'
+import { useDuelStore } from './duelStore'
 
 export interface FloorIndexEntry {
   floor: number
@@ -149,6 +150,10 @@ export const useChatStore = create<ChatState>((set, get) => {
     },
 
     setActiveChat: async (profileId, chatId) => {
+      // Session-switch hygiene: drop the previous chat's live combat/duel mirror so it never
+      // shows for the newly-selected chat (CombatView/DuelView refetch on mount for the new chat).
+      useCombatStore.getState().reset()
+      useDuelStore.getState().reset()
       set({ activeChatId: chatId, floors: [], error: null })
       const [floors, mode] = await Promise.all([
         window.api.getFloors(profileId, chatId),
