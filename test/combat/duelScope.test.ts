@@ -5,6 +5,22 @@ import { applyAbilityEffect } from '../../src/shared/combat/deckbuilder/deckReso
 import { makeRng } from '../../src/shared/combat/dice'
 import type { AbilityDef, Combatant, CombatEvent } from '../../src/shared/combat/types'
 
+describe('duel-scope grammar tags (lorebook ↔ parser contract)', () => {
+  it('parses 群体 → 目标模式 群体', () => {
+    const c = parseCardItem({ 类型: '主动', 标签: ['力量', '威力: 90', '群体'], 效果: {} }, 'skill')
+    expect(c.目标模式).toBe('群体')
+  })
+  it('parses 随机3 → 目标模式 随机 with 随机次数 3', () => {
+    const c = parseCardItem({ 类型: '主动', 标签: ['敏捷', '威力: 40', '随机3'], 效果: {} }, 'skill')
+    expect(c.目标模式).toBe('随机')
+    expect(c.随机次数).toBe(3)
+  })
+  it('a skill with no scope tag stays single-target (目标模式 undefined → 单体)', () => {
+    const c = parseCardItem({ 类型: '主动', 标签: ['力量', '威力: 90'], 效果: {} }, 'skill')
+    expect(c.目标模式).toBeUndefined()
+  })
+})
+
 describe('duel scope tag parse', () => {
   it('parses 群体 / 随机X / default 单体, leaving grid shape alone', () => {
     const aoe = parseCardItem({ 标签: ['智力', '威力: 100', '群体'] }, '技能')
