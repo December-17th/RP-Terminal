@@ -564,6 +564,27 @@ export const applyVariableOps = (
   return f
 }
 
+/** Pure: return a copy of the floor with stat_data replaced and delta_data cleared (a manual whole-doc
+ *  edit has no AI-turn delta). Other variables + floor fields are preserved. */
+export const withStatData = (floor: FloorFile, statData: unknown): FloorFile => ({
+  ...floor,
+  variables: { ...floor.variables, stat_data: statData, delta_data: [] }
+})
+
+/** Replace a floor's stat_data wholesale (the Variables-view editor's write path) and persist. */
+export const setFloorStatData = (
+  profileId: string,
+  chatId: string,
+  floor: number,
+  statData: unknown
+): FloorFile | null => {
+  const f = getFloor(profileId, chatId, floor)
+  if (!f) return null
+  const updated = withStatData(f, statData)
+  saveFloor(profileId, chatId, updated)
+  return updated
+}
+
 /**
  * Custom one-off generation (TH-4 `generateRaw`). Builds a minimal message array from the
  * config — optional system prompt, optional recent history, and the user input — applies

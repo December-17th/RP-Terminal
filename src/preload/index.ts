@@ -33,6 +33,8 @@ const api = {
     ipcRenderer.invoke('reevaluate-variables', profileId, chatId),
   applyVariableOps: (profileId: string, chatId: string, floor: number, ops: unknown[]) =>
     ipcRenderer.invoke('apply-variable-ops', profileId, chatId, floor, ops),
+  setFloorStatData: (profileId: string, chatId: string, floor: number, statData: unknown) =>
+    ipcRenderer.invoke('variables-set-stat-data', profileId, chatId, floor, statData),
   // WebContentsView card-UI panels (spike): position/lifecycle, fire-and-forget.
   wcvEnsure: (id: string, bounds: unknown, url: string, ctx: unknown) =>
     ipcRenderer.send('wcv-ensure', id, bounds, url, ctx),

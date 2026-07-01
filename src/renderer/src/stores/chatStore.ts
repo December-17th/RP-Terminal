@@ -56,6 +56,8 @@ interface ChatState {
   reevaluateVariables: (profileId: string) => Promise<void>
   /** Apply variable ops (JSONPatch) to a floor's stat_data from panel UI (write-back). */
   applyVariableOps: (profileId: string, ops: VarOp[], floor?: number) => Promise<void>
+  /** Replace the latest floor's stat_data wholesale (the Variables-view editor's write path). */
+  setStatData: (profileId: string, json: unknown) => Promise<void>
   /** Switch the open session's FSM mode (Explore/Dialogue/Combat). */
   setMode: (profileId: string, mode: string) => Promise<void>
   sendAction: (profileId: string, actionText: string) => Promise<void>
@@ -181,6 +183,14 @@ export const useChatStore = create<ChatState>((set, get) => {
       // Default to the latest floor (the "current message" whose variables the UI shows).
       const target = floor ?? floors[floors.length - 1].floor
       const updated = await window.api.applyVariableOps(profileId, activeChatId, target, ops)
+      if (updated) set((s) => ({ floors: s.floors.map((f) => (f.floor === target ? updated : f)) }))
+    },
+
+    setStatData: async (profileId, json) => {
+      const { activeChatId, floors } = get()
+      if (!activeChatId || floors.length === 0) return
+      const target = floors[floors.length - 1].floor
+      const updated = await window.api.setFloorStatData(profileId, activeChatId, target, json)
       if (updated) set((s) => ({ floors: s.floors.map((f) => (f.floor === target ? updated : f)) }))
     },
 
