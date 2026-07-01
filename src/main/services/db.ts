@@ -98,6 +98,15 @@ CREATE TABLE IF NOT EXISTS memory_entries (
   UNIQUE(chat_id, collection, entity_key)
 );
 CREATE INDEX IF NOT EXISTS idx_mem_chat_coll ON memory_entries(chat_id, collection);
+-- Durable per-node scratchpad for workflow nodes, keyed by (chat_id, node_id) — what makes
+-- "changed since last fire" (control.when) expressible. See the node-workflow spec §11.
+CREATE TABLE IF NOT EXISTS node_state (
+  chat_id TEXT NOT NULL REFERENCES chats(id) ON DELETE CASCADE,
+  node_id TEXT NOT NULL,
+  data TEXT,
+  updated_at TEXT,
+  PRIMARY KEY (chat_id, node_id)
+);
 `
 
 // Presets/lorebooks were briefly stored in SQL during early Phase F; they are now
