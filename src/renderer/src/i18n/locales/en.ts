@@ -452,6 +452,7 @@ const en: Record<string, string> = {
   'combat.empty': 'No active combat.',
   'combat.cueDetected': 'A fight is breaking out.',
   'combat.enter': 'Enter Combat',
+  'combat.enterDuel': 'Enter Duel',
   'combat.round': 'Round {{round}}',
   'combat.turnOf': '{{name}}’s turn',
   'combat.victoryParty': 'Victory — the party prevails!',

@@ -438,6 +438,7 @@ const zh: Record<string, string> = {
   'combat.empty': '当前没有进行中的战斗。',
   'combat.cueDetected': '战斗一触即发。',
   'combat.enter': '进入战斗',
+  'combat.enterDuel': '进入对决',
   'combat.round': '第 {{round}} 回合',
   'combat.turnOf': '轮到 {{name}}',
   'combat.victoryParty': '胜利 —— 队伍取得了胜利！',

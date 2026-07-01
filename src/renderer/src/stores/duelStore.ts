@@ -17,6 +17,7 @@ interface DuelStore {
   load: (profileId: string, chatId: string) => Promise<void>
   startMock: (profileId: string, chatId: string) => Promise<void>
   startFromBuild: (profileId: string, chatId: string, characterId: string) => Promise<void>
+  startFromCue: (profileId: string, chatId: string, cue: unknown) => Promise<void>
   pickCard: (cardId: string) => void
   clearSelection: () => void
   play: (profileId: string, targetIds: string[]) => Promise<void>
@@ -55,6 +56,11 @@ export const useDuelStore = create<DuelStore>((set, get) => {
 
     startFromBuild: async (profileId, chatId, characterId) => {
       const res = await api().duelStart(profileId, chatId, characterId)
+      set({ chatId, state: res?.state ?? null, catalog: res?.catalog ?? {}, selection: { mode: 'idle' } })
+    },
+
+    startFromCue: async (profileId, chatId, cue) => {
+      const res = await api().duelStartFromCue(profileId, chatId, cue)
       set({ chatId, state: res?.state ?? null, catalog: res?.catalog ?? {}, selection: { mode: 'idle' } })
     },
 

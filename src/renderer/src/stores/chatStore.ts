@@ -103,7 +103,8 @@ export const useChatStore = create<ChatState>((set, get) => {
   // drop the local combat mirror and leave combat mode if we were in it.
   const stopStaleCombat = (profileId: string): void => {
     useCombatStore.getState().reset()
-    if (get().activeChatMode === 'combat') void get().setMode(profileId, 'explore')
+    if (get().activeChatMode === 'combat' || get().activeChatMode === 'duel')
+      void get().setMode(profileId, 'explore')
   }
 
   return {

@@ -227,6 +227,8 @@ const api = {
     ipcRenderer.invoke('duel-start-mock', profileId, chatId),
   duelStart: (profileId: string, chatId: string, characterId: string) =>
     ipcRenderer.invoke('duel-start', profileId, chatId, characterId),
+  duelStartFromCue: (profileId: string, chatId: string, cue: unknown) =>
+    ipcRenderer.invoke('duel-start-from-cue', profileId, chatId, cue),
   duelPlay: (profileId: string, chatId: string, cardId: string, targetIds: string[]) =>
     ipcRenderer.invoke('duel-play', profileId, chatId, cardId, targetIds),
   duelEndTurn: (profileId: string, chatId: string) =>

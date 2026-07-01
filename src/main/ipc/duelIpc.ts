@@ -11,6 +11,9 @@ export const registerDuelIpc = (ipcMain: IpcMain): void => {
   ipcMain.handle('duel-start', (_, profileId, chatId, characterId) =>
     duelService.startDuelFromMvu(profileId, chatId, characterId)
   )
+  ipcMain.handle('duel-start-from-cue', (_, profileId, chatId, cue) =>
+    duelService.startDuelFromCue(profileId, chatId, cue)
+  )
   ipcMain.handle('duel-play', (_, _profileId, chatId, cardId, targetIds) => {
     try {
       return duelService.playDuelCard(chatId, String(cardId), (targetIds as string[]) ?? [])
