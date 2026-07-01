@@ -91,7 +91,30 @@ async function runNodes(
   }
 }
 
-/** Execute a workflow. Phase 2a runs every node in one topological pass. */
+/** Pre-phase = the main-output node and every node that can reach it (its ancestors). Everything
+ *  else (downstream + independent side branches) is post-phase — async, off the hot path (spec §5). */
+function computePhases(doc: WorkflowDoc): { preIds: Set<string>; postIds: Set<string> } {
+  const main = doc.nodes.find((n) => n.isMainOutput)!.id
+  const revAdj = new Map<string, string[]>(doc.nodes.map((n) => [n.id, []]))
+  for (const e of doc.edges) revAdj.get(e.to.node)?.push(e.from.node)
+
+  const preIds = new Set<string>([main])
+  const stack = [main]
+  while (stack.length) {
+    const cur = stack.pop()!
+    for (const parent of revAdj.get(cur) ?? []) {
+      if (!preIds.has(parent)) {
+        preIds.add(parent)
+        stack.push(parent)
+      }
+    }
+  }
+  const postIds = new Set(doc.nodes.map((n) => n.id).filter((id) => !preIds.has(id)))
+  return { preIds, postIds }
+}
+
+/** Execute a workflow. Runs the main-output node and its ancestors in a pre-response phase,
+ *  fires onResponseReady, then runs the remaining nodes in a post-response phase (spec §5). */
 export async function runWorkflow(
   doc: WorkflowDoc,
   registry: NodeRegistry,
@@ -106,6 +129,27 @@ export async function runWorkflow(
     skipped: new Set(),
     traces: []
   }
-  await runNodes(topoOrder(doc), doc, registry, ctx, state, 'pre')
+
+  const order = topoOrder(doc)
+  const { preIds, postIds } = computePhases(doc)
+
+  await runNodes(
+    order.filter((id) => preIds.has(id)),
+    doc,
+    registry,
+    ctx,
+    state,
+    'pre'
+  )
+  ctx.onResponseReady?.()
+  await runNodes(
+    order.filter((id) => postIds.has(id)),
+    doc,
+    registry,
+    ctx,
+    state,
+    'post'
+  )
+
   return { ok: true, aborted: false, traces: state.traces, outputs: state.outputs }
 }
