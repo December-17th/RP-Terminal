@@ -9,6 +9,7 @@ import { buildEncounterFromMvu, type DeriveConfig, type StatMap } from '../../sh
 import { startDuel, playCard, endLeadTurn, type DuelState } from '../../shared/combat/deckbuilder'
 import { poemD20System } from '../../shared/combat/systems'
 import { getCharacter } from './characterService'
+import { getChat } from './chatService'
 import { getRpExt } from '../types/character'
 import { getAllFloors } from './floorService'
 import type { AbilityDef, CombatEvent } from '../../shared/combat/types'
@@ -103,13 +104,22 @@ const MOCK_ROSTER = [
   }
 ]
 
-export const createMockDuel = (): DuelRecord => {
-  const built = buildEncounterFromMvu(MOCK_STAT_DATA as Record<string, unknown>, MOCK_STAT_MAP, poemD20System, {
-    derive: MOCK_DERIVE, seed: 7, roster: MOCK_ROSTER
-  })
-  const { state, catalog } = startDuel(built, { seed: 7 })
-  return { state, catalog, derive: MOCK_DERIVE }
+/** Build a duel record from an MVU stat_data build + an optional AI enemy roster.
+ *  Shared by the mock, the from-chat build, and the cue-driven start. */
+export const buildDuelRecord = (
+  statData: Record<string, unknown>,
+  statMap: StatMap,
+  derive: DeriveConfig | undefined,
+  roster: Array<Record<string, unknown>> | undefined,
+  seed = 7
+): DuelRecord => {
+  const built = buildEncounterFromMvu(statData, statMap, poemD20System, { derive, seed, roster })
+  const { state, catalog } = startDuel(built, { seed })
+  return { state, catalog, derive }
 }
+
+export const createMockDuel = (): DuelRecord =>
+  buildDuelRecord(MOCK_STAT_DATA as Record<string, unknown>, MOCK_STAT_MAP, MOCK_DERIVE, MOCK_ROSTER)
 
 // --- pure orchestration over a record (unit-testable) ---
 
@@ -177,9 +187,27 @@ export const startDuelFromMvu = (
     | null
     | undefined
   if (!statData || !bundle?.stat_map) return null
-  const built = buildEncounterFromMvu(statData, bundle.stat_map, poemD20System, { derive: bundle.derive, seed: 7 })
-  const { state, catalog } = startDuel(built, { seed: 7 })
-  const rec: DuelRecord = { state, catalog, derive: bundle.derive }
+  const rec = buildDuelRecord(statData, bundle.stat_map, bundle.derive, undefined)
+  duels.set(chatId, rec)
+  return view(rec)
+}
+
+/** Start a duel from the AI's <rpt-combat-start> cue: party from the current stat_data build,
+ *  enemies from the cue roster. Mirrors combatService.startFromCard (chat → card → combat bundle). */
+export const startDuelFromCue = (
+  profileId: string,
+  chatId: string,
+  cue?: { roster?: Array<Record<string, unknown>> } | null
+): DuelView | null => {
+  const statData = getLatestStatData(profileId, chatId)
+  const chat = getChat(profileId, chatId)
+  const character = chat ? getCharacter(profileId, chat.character_id) : null
+  const bundle = (character ? getRpExt(character)?.combat : null) as
+    | { stat_map?: StatMap; derive?: DeriveConfig }
+    | null
+    | undefined
+  if (!statData || !bundle?.stat_map) return null
+  const rec = buildDuelRecord(statData, bundle.stat_map, bundle.derive, cue?.roster)
   duels.set(chatId, rec)
   return view(rec)
 }
