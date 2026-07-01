@@ -1,6 +1,7 @@
 {
   "_about": "Embed this object as data.extensions.rp_terminal.combat in the 命定之诗 card. The party is imported from MVU stat_data via stat_map (no static party templates); the built-in poemD20 system runs the card's 战斗协议. Combat numbers are authored by the AI into 标签/效果/消耗 on each 技能/装备 — no new field. See docs/sdk/component-inventory.md §8a and docs/combat-poem-of-destiny-expansion.md.",
   "ruleset": "poem-d20-v1",
+  "mode": "duel",
   "stat_map": {
     "player": "主角",
     "party": { "from": "关系列表", "filter": { "在场": true } },
