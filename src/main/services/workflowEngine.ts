@@ -72,7 +72,16 @@ async function runNodes(
     // Branch-prune: signal firing is only known after a node runs, so which edges are dead
     // can't be computed upfront — pruning is interleaved with execution in this single forward
     // topo pass, unlike graph.ts's prunedNodes(), which takes a static inactive-edge set.
-    if (ins.length > 0 && ins.every((e) => state.deadEdge.has(edgeKey(e)))) {
+    // Two prune rules (spec §5): every incoming edge dead (nothing can feed the node), OR the
+    // node is signal-GATED — it has incoming Signal-typed edges and none of them fired.
+    const allDead = ins.length > 0 && ins.every((e) => state.deadEdge.has(edgeKey(e)))
+    const signalIns = ins.filter((e) => {
+      const src = nodeById.get(e.from.node)
+      const srcImpl = src && registry.get(src.type)
+      return srcImpl?.outputs.find((p) => p.name === e.from.port)?.type === 'Signal'
+    })
+    const gatedOff = signalIns.length > 0 && signalIns.every((e) => state.deadEdge.has(edgeKey(e)))
+    if (allDead || gatedOff) {
       for (const out of outs) state.deadEdge.add(edgeKey(out))
       state.traces.push({ nodeId: id, status: 'skipped', phase })
       continue
@@ -86,7 +95,10 @@ async function runNodes(
 
     const started = Date.now()
     try {
-      const result = (await impl.run(ctx, inputs)) ?? {}
+      const config = (
+        impl.configSchema ? impl.configSchema.parse(node.config ?? {}) : (node.config ?? {})
+      ) as Record<string, unknown>
+      const result = (await impl.run(ctx, inputs, { id, config })) ?? {}
       state.outputs.set(id, result.outputs ?? {})
       state.traces.push({ nodeId: id, status: 'ran', phase, ms: Date.now() - started })
       const fired = new Set(result.signals ?? [])

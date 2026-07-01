@@ -71,7 +71,9 @@ export const llmSample: NodeImpl = {
   inputs: [
     { name: 'gen', type: 'Context' },
     { name: 'sendMessages', type: 'Messages' },
-    { name: 'params', type: 'Any' }
+    { name: 'params', type: 'Any' },
+    // Optional spec §11 gating port: unwired in the default graph, additive-only.
+    { name: 'when', type: 'Signal' }
   ],
   outputs: [
     { name: 'raw', type: 'Text' },

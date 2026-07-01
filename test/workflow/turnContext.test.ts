@@ -1,5 +1,11 @@
 import { describe, it, expect, vi } from 'vitest'
 import { buildTurnContext } from '../../src/main/services/nodes/turnContext'
+import { getNodeState, setNodeState } from '../../src/main/services/nodeStateService'
+
+vi.mock('../../src/main/services/nodeStateService', () => ({
+  getNodeState: vi.fn(() => ({ last: 'x' })),
+  setNodeState: vi.fn()
+}))
 
 describe('buildTurnContext', () => {
   it('sets the turn seed fields', () => {
@@ -28,7 +34,7 @@ describe('buildTurnContext', () => {
     expect(onDelta).toHaveBeenCalledWith('hi')
   })
 
-  it('getNodeState returns undefined and setNodeState/emitPanel are safe no-ops', () => {
+  it('wires getNodeState/setNodeState to nodeStateService keyed by this chat', () => {
     const ctx = buildTurnContext({
       profileId: 'p1',
       chatId: 'c1',
@@ -36,8 +42,10 @@ describe('buildTurnContext', () => {
       signal: new AbortController().signal,
       onDelta: () => {}
     })
-    expect(ctx.getNodeState('n')).toBeUndefined()
-    expect(() => ctx.setNodeState('n', 1)).not.toThrow()
+    expect(ctx.getNodeState('n9')).toEqual({ last: 'x' })
+    expect(getNodeState).toHaveBeenCalledWith('c1', 'n9')
+    ctx.setNodeState('n9', { last: 'y' })
+    expect(setNodeState).toHaveBeenCalledWith('c1', 'n9', { last: 'y' })
     expect(() => ctx.emitPanel('n', 'x')).not.toThrow()
   })
 })

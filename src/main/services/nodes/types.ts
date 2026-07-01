@@ -1,5 +1,6 @@
 // Runtime types for the node workflow engine (spec §4/§5/§10/§11). The pure port/graph model
 // lives in src/shared/workflow; these types add the side-effectful run() surface (main-side).
+import { ZodType } from 'zod'
 import { NodeDescriptor } from '../../../shared/workflow/types'
 
 /** The error value carried on a node's `error` output port (spec §10). */
@@ -53,12 +54,23 @@ export interface NodeResult {
   signals?: string[]
 }
 
+/** Per-instance info handed to run(): the node's id (node-state key) and its config —
+ *  already parsed through the impl's configSchema when one is declared. */
+export interface NodeMeta {
+  id: string
+  config: Record<string, unknown>
+}
+
 export type NodeRunFn = (
   ctx: RunContext,
-  inputs: Record<string, unknown>
+  inputs: Record<string, unknown>,
+  node: NodeMeta
 ) => NodeResult | Promise<NodeResult>
 
 /** A registered node type: its pure descriptor (ports, from shared) + its run(). */
 export interface NodeImpl extends NodeDescriptor {
   run: NodeRunFn
+  /** Optional zod schema for NodeInstance.config; the engine parses config through it before
+   *  run() — a parse failure follows the normal node-failure path (spec §12/§14). */
+  configSchema?: ZodType
 }

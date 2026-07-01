@@ -1,4 +1,5 @@
 import { DeltaCallback } from '../apiService'
+import { getNodeState, setNodeState } from '../nodeStateService'
 import { RunContext } from './types'
 
 /** Arguments to seed a per-turn RunContext (Phase 2b-1b). */
@@ -13,8 +14,9 @@ export interface BuildTurnContextArgs {
 /** Build the RunContext for one turn's workflow run. `streamMain` forwards each delta to the
  *  same `onDelta` callback `generate()` passes to `callModel`/`streamProvider` today (a plain
  *  `(delta: string) => void`), so the default graph's output node streams to the chat exactly
- *  like the pre-workflow generate() path. Panel emission and node-state persistence are Phase
- *  2b follow-ons — no-op stubs here so this task stays scoped to the seed fields + streaming. */
+ *  like the pre-workflow generate() path. Node-state persistence is now real, delegating to
+ *  nodeStateService keyed by this turn's chatId (Phase 2b-2). Panel emission remains a Phase
+ *  2b follow-on — a no-op stub here. */
 export function buildTurnContext(args: BuildTurnContextArgs): RunContext {
   // Two-signal split: the user's Stop (`args.signal`) aborts the LLM stream only; the engine watches a
   // SEPARATE graph signal that we abort only when there's nothing to persist (abort-with-empty). This
@@ -29,7 +31,7 @@ export function buildTurnContext(args: BuildTurnContextArgs): RunContext {
     abortGraph: () => graphController.abort(),
     streamMain: (delta) => args.onDelta(delta),
     emitPanel: () => {},
-    getNodeState: () => undefined,
-    setNodeState: () => {}
+    getNodeState: (nodeId) => getNodeState(args.chatId, nodeId),
+    setNodeState: (nodeId, value) => setNodeState(args.chatId, nodeId, value)
   }
 }
