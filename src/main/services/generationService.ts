@@ -2,6 +2,7 @@ import { getSettings } from './settingsService'
 import { getActivePreset } from './presetService'
 import { getLorebookById } from './lorebookService'
 import { getChat, getChatLorebookIds, truncateFloors } from './chatService'
+import { getCharacter } from './characterService'
 import { getAllFloors, getFloor, saveFloor } from './floorService'
 import { normalizeSwipes } from './swipeHelpers'
 import { collectRenderMarkers, ChatMessage } from './promptBuilder'
@@ -16,13 +17,11 @@ import { stripThinking } from '../parsers/contentParser'
 import { log } from './logService'
 import { FloorFile } from '../types/chat'
 import { Lorebook } from '../types/character'
-import { buildGenContext } from './generation/genContext'
-import { recallMemory } from './generation/memoryRecall'
-import { matchWorldInfo, assemblePrompt } from './generation/assemble'
-import { callModel } from './generation/callModel'
-import { parseResponse, computeMetrics } from './generation/parseResponse'
-import { foldState, applyEvent } from './generation/foldState'
-import { persistFloor, compactMemory } from './generation/persistFloor'
+import { applyEvent } from './generation/foldState'
+import { buildTurnContext } from './nodes/turnContext'
+import { builtinRegistry } from './nodes/builtin'
+import { DEFAULT_GRAPH } from './nodes/builtin/defaultGraph'
+import { runWorkflow } from './workflowEngine'
 
 // Re-exported so existing consumers/tests (test/generationService.test.ts) keep working; the
 // implementation now lives in generation/assemble.ts (its only real call site).
@@ -52,51 +51,33 @@ export const generate = async (
   userAction: string,
   onDelta: DeltaCallback = () => {}
 ): Promise<FloorFile | null> => {
+  const chat = getChat(profileId, chatId)
+  if (!chat) throw new Error('Chat session not found')
+
+  const _card = getCharacter(profileId, chat.character_id)
+  if (!_card) throw new Error('Character card not found')
+
   // A new model turn legitimately re-fires MVU events; clear the write-back loop streak so a path
   // re-written once per turn never builds a false runaway streak across turns (WS-3).
   resetWriteLoopGuard(chatId)
-  const ctx = buildGenContext(profileId, chatId, userAction)
-
-  const matchedEntries = matchWorldInfo(ctx)
-
-  const memory = await recallMemory(ctx)
-
-  const { sendMessages, params } = assemblePrompt(ctx, matchedEntries, memory.block)
 
   const controller = new AbortController()
   activeControllers.set(chatId, controller)
-  let r: { raw: string; rawUsage: unknown; stopped: boolean } | null
   try {
-    r = await callModel(ctx, sendMessages, params, onDelta, controller.signal)
+    const ctx = buildTurnContext({
+      profileId,
+      chatId,
+      userAction,
+      signal: controller.signal,
+      onDelta
+    })
+    const res = await runWorkflow(DEFAULT_GRAPH, builtinRegistry, ctx)
+    if (!res.ok || res.aborted) return null
+    const floor = res.outputs.get('write')?.floor as FloorFile | undefined
+    return floor ?? null
   } finally {
     activeControllers.delete(chatId)
   }
-  if (!r) return null
-  const { raw, rawUsage } = r
-
-  // Cache meter: compute this turn's metrics (proxy + provider usage) + the cumulative snapshot,
-  // chaining from the previous floor. Persisted on the floor below; both UI surfaces derive from it.
-  const turnMetrics = computeMetrics(ctx, sendMessages, raw, rawUsage)
-
-  // The FULL raw response is stored (lossless) — reasoning/state strips + display regex are
-  // applied at VIEW time (renderer) and history-assembly time, never baked into storage. We
-  // only clean a COPY here to drive state extraction.
-  const { parsed, mvu } = parseResponse(raw)
-
-  // workingVars already holds any template setvar() mutations from this build;
-  // apply this turn's rpt-events + MVU commands/patches + combat cue on top, then persist globals.
-  const variables = foldState(ctx, parsed, mvu, raw)
-
-  const floor = persistFloor(ctx, {
-    userAction,
-    raw,
-    sendMessages,
-    events: parsed.events,
-    variables,
-    metrics: turnMetrics
-  })
-  compactMemory(profileId, chatId)
-  return floor
 }
 
 /** Active render-marker templates ([RENDER:*]) for a session — the renderer evals + wraps each message. */
