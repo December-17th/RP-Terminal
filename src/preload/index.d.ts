@@ -7,7 +7,7 @@ declare global {
       backfillUsageMetrics: (profileId: string, chatId: string) => Promise<unknown[]>
       listWorkflows: (
         profileId: string
-      ) => Promise<{ id: string; name: string; description?: string }[]>
+      ) => Promise<{ id: string; name: string; description?: string; builtin?: boolean }[]>
       getWorkflow: (profileId: string, id: string) => Promise<unknown>
       saveWorkflow: (
         profileId: string,
@@ -17,7 +17,7 @@ declare global {
       cloneWorkflow: (
         profileId: string,
         sourceId: string
-      ) => Promise<{ id: string; name: string; description?: string } | null>
+      ) => Promise<{ id: string; name: string; description?: string; builtin?: boolean } | null>
       deleteWorkflow: (profileId: string, id: string) => Promise<boolean>
       getWorkflowSelection: (
         profileId: string
