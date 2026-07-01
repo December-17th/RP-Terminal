@@ -60,9 +60,11 @@ export const promptAssemble: NodeImpl = {
   }
 }
 
-/** Calls the provider and streams the reply live via `ctx.streamMain`. On abort-with-empty
- *  (`callModel` returns null) this returns no outputs — the engine's abort path skips the
- *  downstream (sync) nodes, matching `generate()`'s early-return null. */
+/** Calls the provider and streams the reply live via `ctx.streamMain`, aborting on the user's
+ *  Stop (`ctx.modelSignal`, not the graph signal). On abort-with-empty (`callModel` returns null)
+ *  this calls `ctx.abortGraph()` so the engine's abort path skips the downstream (sync) nodes,
+ *  matching `generate()`'s early-return null. On abort-with-text the graph is left running so
+ *  parse/apply/write persist the partial floor (Phase 2b-1b abort fix). */
 export const llmSample: NodeImpl = {
   type: 'llm.sample',
   title: 'Sample',
@@ -81,9 +83,15 @@ export const llmSample: NodeImpl = {
       inputs.sendMessages as ChatMessage[],
       inputs.params as PresetParameters,
       ctx.streamMain,
-      ctx.signal
+      ctx.modelSignal ?? ctx.signal
     )
-    if (r === null) return { outputs: {} }
+    // Abort-with-empty (callModel returned null): nothing to persist — abort the GRAPH so the engine
+    // skips parse/apply/write and generate() returns null. Abort-with-text returns {raw,...} here, so
+    // the graph runs on and persists the partial floor (matching the pre-workflow behavior).
+    if (r === null) {
+      ctx.abortGraph?.()
+      return { outputs: {} }
+    }
     return { outputs: { raw: r.raw, rawUsage: r.rawUsage } }
   }
 }

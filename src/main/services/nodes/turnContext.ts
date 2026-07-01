@@ -16,11 +16,17 @@ export interface BuildTurnContextArgs {
  *  like the pre-workflow generate() path. Panel emission and node-state persistence are Phase
  *  2b follow-ons — no-op stubs here so this task stays scoped to the seed fields + streaming. */
 export function buildTurnContext(args: BuildTurnContextArgs): RunContext {
+  // Two-signal split: the user's Stop (`args.signal`) aborts the LLM stream only; the engine watches a
+  // SEPARATE graph signal that we abort only when there's nothing to persist (abort-with-empty). This
+  // keeps the "persist the partial floor on Stop-with-text" behavior of the pre-workflow generate().
+  const graphController = new AbortController()
   return {
     profileId: args.profileId,
     chatId: args.chatId,
     userAction: args.userAction,
-    signal: args.signal,
+    signal: graphController.signal,
+    modelSignal: args.signal,
+    abortGraph: () => graphController.abort(),
     streamMain: (delta) => args.onDelta(delta),
     emitPanel: () => {},
     getNodeState: () => undefined,

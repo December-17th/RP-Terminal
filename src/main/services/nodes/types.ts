@@ -36,6 +36,14 @@ export interface RunContext {
   chatId?: string
   /** Turn seed (Phase 2b): the raw user action text that started this turn. */
   userAction?: string
+  /** The user's Stop signal, given to the LLM call ONLY (so streaming can abort). Distinct from
+   *  `signal` (the graph signal the engine watches): a user Stop must NOT skip the graph's
+   *  parse/apply/write, because today's pipeline persists a partial floor when the model returns
+   *  text after Stop. Falls back to `signal` when unset. */
+  modelSignal?: AbortSignal
+  /** Abort the graph run. `llm.sample` calls this ONLY on abort-with-empty (nothing to persist),
+   *  so the engine skips downstream and `generate()` returns null — matching the old behavior. */
+  abortGraph?: () => void
 }
 
 /** What a node's run() returns: values per output-port name, plus which Signal output ports
