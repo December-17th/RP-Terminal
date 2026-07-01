@@ -1,6 +1,7 @@
 // React wrapper around vanilla-jsoneditor (ISC, https://github.com/josdejong/svelte-jsoneditor).
-// Tree mode, debounced whole-doc onChange, guarded external updates (mirrors JSR's Vue wrapper pattern;
-// no code copied — this uses the public createJSONEditor API). Themed via --jse-*→--rpt-* in index.css.
+// Tree mode, debounced whole-doc onChange; external value changes are pushed via updateProps. Since
+// vanilla-jsoneditor 0.22.0 a programmatic content update does NOT re-fire onChange (changelog #410), so
+// no echo-guard is needed. Uses the public createJSONEditor API (no code copied). Themed via --jse-*→--rpt-*.
 import React from 'react'
 import { createJSONEditor, Mode, type Content } from 'vanilla-jsoneditor'
 
@@ -22,7 +23,6 @@ export interface JsonEditorProps {
 export const JsonEditor: React.FC<JsonEditorProps> = ({ value, onChange, readOnly }) => {
   const targetRef = React.useRef<HTMLDivElement>(null)
   const editorRef = React.useRef<ReturnType<typeof createJSONEditor> | null>(null)
-  const applyingExternal = React.useRef(false)
   const onChangeRef = React.useRef(onChange)
   onChangeRef.current = onChange
   const debounceRef = React.useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -37,7 +37,6 @@ export const JsonEditor: React.FC<JsonEditorProps> = ({ value, onChange, readOnl
         mode: Mode.tree,
         readOnly: !!readOnly,
         onChange: (updated: Content) => {
-          if (applyingExternal.current) return
           const json = 'json' in updated ? updated.json : parseText((updated as { text?: string }).text)
           if (json === undefined) return
           if (debounceRef.current) clearTimeout(debounceRef.current)
@@ -55,16 +54,10 @@ export const JsonEditor: React.FC<JsonEditorProps> = ({ value, onChange, readOnl
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  // Push external value changes into the editor, guarded so the resulting onChange doesn't echo back.
+  // Push external value changes into the editor (the library's documented React pattern). Programmatic
+  // updates don't re-fire onChange (vanilla-jsoneditor ≥0.22.0), so this can't echo back as an edit.
   React.useEffect(() => {
-    const editor = editorRef.current
-    if (!editor) return
-    applyingExternal.current = true
-    void editor.update({ json: value })
-    const id = setTimeout(() => {
-      applyingExternal.current = false
-    }, 0)
-    return () => clearTimeout(id)
+    editorRef.current?.updateProps({ content: { json: value } })
   }, [value])
 
   return <div ref={targetRef} className="rpt-json-editor" />
