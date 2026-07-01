@@ -11,6 +11,7 @@ export { buildDeck, energyCostFor } from './deckBuild'
 export { resolvePlay, applyAbilityEffect } from './deckResolve'
 export { chooseIntent, resolveIntent } from './intents'
 export { startDuel, drawHand, playCard, endLeadTurn, checkDuelVictory, swapLeadIfDown } from './deckEngine'
+export { buildDuelNarrationPrompt, describeDuelState } from './duelNarration'
 
 /**
  * Build a duel encounter from MVU stat_data via the poem CombatSystem: the player + 关系列表 party
