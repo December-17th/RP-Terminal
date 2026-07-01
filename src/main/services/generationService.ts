@@ -8,44 +8,30 @@ import { collectRenderMarkers, ChatMessage } from './promptBuilder'
 import { maybeCompact } from './compactionService'
 import { saveGlobals } from './templateService'
 import { streamProvider, DeltaCallback } from './apiService'
-import { normalizeUsage, buildFloorMetrics } from './promptCacheMetrics'
-import { parseContent, parseCombatStart, stripThinking, RPEvent } from '../parsers/contentParser'
 import {
   parseMvuCommands,
   applyMvuCommands,
   applyJsonPatch,
   JsonPatchOp
 } from '../parsers/mvuParser'
+import { stripThinking } from '../parsers/contentParser'
 import { log } from './logService'
 import { FloorFile } from '../types/chat'
-import { Lorebook, getRpExt } from '../types/character'
+import { Lorebook } from '../types/character'
 import { buildGenContext } from './generation/genContext'
 import { recallMemory } from './generation/memoryRecall'
 import { matchWorldInfo, assemblePrompt } from './generation/assemble'
 import { callModel } from './generation/callModel'
+import { parseResponse, computeMetrics } from './generation/parseResponse'
+import { foldState, applyEvent } from './generation/foldState'
 
 // Re-exported so existing consumers/tests (test/generationService.test.ts) keep working; the
 // implementation now lives in generation/assemble.ts (its only real call site).
 export { composeAddendum } from './generation/assemble'
 
-/** Apply a single rpt-event to a mutable variables object (nested path set/add/remove). */
-export const applyEvent = (vars: Record<string, any>, evt: RPEvent): void => {
-  if (evt.type !== 'state') return
-  const parts = evt.path.split('.')
-  let obj = vars
-  for (let i = 0; i < parts.length - 1; i++) {
-    if (typeof obj[parts[i]] !== 'object' || obj[parts[i]] === null) obj[parts[i]] = {}
-    obj = obj[parts[i]]
-  }
-  const last = parts[parts.length - 1]
-  if (evt.action === 'add') {
-    obj[last] = (typeof obj[last] === 'number' ? obj[last] : 0) + Number(evt.value)
-  } else if (evt.action === 'remove') {
-    obj[last] = (typeof obj[last] === 'number' ? obj[last] : 0) - Number(evt.value)
-  } else {
-    obj[last] = evt.value
-  }
-}
+// Re-exported so existing consumers/tests (test/generationService.test.ts) keep working; the
+// implementation now lives in generation/foldState.ts (folded alongside computeMetrics's data).
+export { applyEvent }
 
 /**
  * Run one full turn: assemble the prompt, call the model, post-process (regex →
@@ -71,7 +57,7 @@ export const generate = async (
   // re-written once per turn never builds a false runaway streak across turns (WS-3).
   resetWriteLoopGuard(chatId)
   const ctx = buildGenContext(profileId, chatId, userAction)
-  const { chat, card, settings, lastFloor, workingVars, globals, cacheLevel, l1Mode } = ctx
+  const { chat, settings, globals } = ctx
 
   const matchedEntries = matchWorldInfo(ctx)
 
@@ -91,64 +77,17 @@ export const generate = async (
   const { raw, rawUsage } = r
 
   // Cache meter: compute this turn's metrics (proxy + provider usage) + the cumulative snapshot,
-  // chaining from the previous floor (its stored `request` is the proxy anchor; its cumulative is
-  // the prior tally). Persisted on the floor below; both UI surfaces derive from it.
-  const turnMetrics = buildFloorMetrics({
-    messages: sendMessages,
-    prevMessages: (lastFloor?.request as ChatMessage[] | undefined) ?? null,
-    usage: normalizeUsage(settings.api.provider, rawUsage),
-    provider: settings.api.provider,
-    model: settings.api.model,
-    cacheLevel,
-    l1Mode,
-    ts: new Date().toISOString(),
-    responseText: raw,
-    prevCumulative: lastFloor?.metrics?.cumulative ?? null
-  })
-  log(
-    'info',
-    `cache — stable prefix ${turnMetrics.turn.proxyTokens}/${turnMetrics.turn.promptTokens} tok (${Math.round(turnMetrics.turn.proxyPct)}%)`
-  )
+  // chaining from the previous floor. Persisted on the floor below; both UI surfaces derive from it.
+  const turnMetrics = computeMetrics(ctx, sendMessages, raw, rawUsage)
 
   // The FULL raw response is stored (lossless) — reasoning/state strips + display regex are
   // applied at VIEW time (renderer) and history-assembly time, never baked into storage. We
-  // only clean a COPY here to drive state extraction (drop <thinking> first so a stray
-  // "<UpdateVariable>" mention in the reasoning can't make the MVU stripper eat the narrative).
-  const cleaned = stripThinking(raw)
-  const parsed = parseContent(cleaned)
-  // MVU (Track R): parse <UpdateVariable> commands into stat_data, recording this turn's
-  // deltas. Reads the cleaned copy for extraction only — the FULL response is what's stored.
-  const mvu = parseMvuCommands(parsed.text)
+  // only clean a COPY here to drive state extraction.
+  const { parsed, mvu } = parseResponse(raw)
 
   // workingVars already holds any template setvar() mutations from this build;
-  // apply this turn's rpt-events on top, then persist global vars.
-  const variables = workingVars
-  for (const evt of parsed.events) applyEvent(variables, evt)
-  if (mvu.commands.length || mvu.patches.length) {
-    if (typeof variables.stat_data !== 'object' || variables.stat_data === null) {
-      variables.stat_data = {}
-    }
-    const sd = variables.stat_data as Record<string, any>
-    // Both MVU dialects target stat_data: classic `_.set(...)` and the `<JSONPatch>` form.
-    const deltas = [
-      ...(mvu.commands.length ? applyMvuCommands(sd, mvu.commands) : []),
-      ...(mvu.patches.length ? applyJsonPatch(sd, mvu.patches) : [])
-    ]
-    variables.delta_data = deltas
-    log(
-      'info',
-      `MVU — ${mvu.commands.length} cmd + ${mvu.patches.length} patch → ${deltas.length} delta(s) on stat_data`
-    )
-  }
-  // Combat (Track Combat / P7): if the model signalled a fight, stash the cue on this
-  // floor's vars so the chat can surface an "Enter Combat" affordance. The tag itself is
-  // stripped at view time (responseView), never baked into storage.
-  const combatCue = parseCombatStart(parsed.text).cue
-  if (combatCue) {
-    const bundleMode = (getRpExt(card)?.combat as { mode?: 'grid' | 'duel' } | undefined)?.mode
-    combatCue.mode = bundleMode === 'duel' ? 'duel' : 'grid'
-    variables.combat_cue = combatCue
-  }
+  // apply this turn's rpt-events + MVU commands/patches + combat cue on top, then persist globals.
+  const variables = foldState(ctx, parsed, mvu, raw)
 
   saveGlobals(profileId, globals)
 
