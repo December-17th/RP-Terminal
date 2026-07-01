@@ -642,7 +642,9 @@ details[open] > .stat-group-title::before {
 /* Right-click context menu */
 .context-menu {
   position: fixed;
-  z-index: 2000;
+  /* App chrome sits in a top z-index band so untrusted inline card UI (position:fixed + high
+     z-index in the card's own CSS) can never paint over it. See .modal-overlay / .rpt-toast-stack. */
+  z-index: 2147481000;
   min-width: 160px;
   background: var(--rpt-bg-secondary);
   border: 1px solid var(--rpt-border);
@@ -950,7 +952,7 @@ details[open] > .stat-group-title::before {
   position: fixed;
   bottom: 8px;
   right: 10px;
-  z-index: 3000;
+  z-index: 2147482000;
   font-family: ui-monospace, Menlo, Consolas, monospace;
   font-size: 12px;
   font-weight: 700;
@@ -1210,7 +1212,7 @@ details[open] > .stat-group-title::before {
   position: fixed;
   bottom: 16px;
   right: 16px;
-  z-index: 4000;
+  z-index: 2147483000;
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -1470,7 +1472,9 @@ select {
   display: flex;
   align-items: center;
   justify-content: center;
-  z-index: 1000;
+  /* Top z-index band (see .context-menu): keeps the settings/modal above untrusted inline card UI
+     that may use position:fixed + a high z-index in its own CSS. */
+  z-index: 2147480000;
 }
 
 .modal-panel {
@@ -2169,3 +2173,28 @@ select {
 @keyframes rpt-duel-hit { 0% { filter: brightness(2.2); } 100% { filter: none; } }
 @keyframes rpt-duel-intent-pulse { 0%,100% { transform: scale(1); opacity: .9; } 50% { transform: scale(1.08); opacity: 1; } }
 @keyframes rpt-duel-flourish { from { transform: scale(.6); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+
+/* vanilla-jsoneditor (Variables view) — map its CSS vars to RPT theme tokens so the editor follows the
+   active theme (dark/carbon/light) with WCAG-AA contrast. See docs/superpowers/specs/2026-07-01-variables-view-jsoneditor-design.md */
+.rpt-json-editor {
+  height: 100%;
+  --jse-theme-color: var(--rpt-bg-secondary);
+  --jse-theme-color-highlight: var(--rpt-bg-tertiary);
+  --jse-background-color: var(--rpt-bg-primary);
+  --jse-panel-background: var(--rpt-bg-secondary);
+  --jse-panel-color: var(--rpt-text-primary);
+  --jse-text-color: var(--rpt-text-primary);
+  --jse-text-color-inactive: var(--rpt-text-secondary);
+  --jse-main-border: 1px solid var(--rpt-border);
+  --jse-key-color: var(--rpt-text-secondary);
+  --jse-value-color: var(--rpt-text-primary);
+  --jse-value-color-string: var(--rpt-accent);
+  --jse-value-color-number: var(--rpt-text-primary);
+  --jse-value-color-boolean: var(--rpt-accent);
+  --jse-value-color-null: var(--rpt-text-tertiary);
+  --jse-delimiter-color: var(--rpt-text-tertiary);
+  --jse-selection-background-color: var(--rpt-bg-tertiary);
+  --jse-context-menu-background: var(--rpt-bg-elevated);
+  --jse-context-menu-color: var(--rpt-text-primary);
+  --jse-font-size: 12px;
+}

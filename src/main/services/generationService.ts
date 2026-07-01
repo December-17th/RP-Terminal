@@ -393,7 +393,11 @@ export const generate = async (
   // floor's vars so the chat can surface an "Enter Combat" affordance. The tag itself is
   // stripped at view time (responseView), never baked into storage.
   const combatCue = parseCombatStart(parsed.text).cue
-  if (combatCue) variables.combat_cue = combatCue
+  if (combatCue) {
+    const bundleMode = (getRpExt(card)?.combat as { mode?: 'grid' | 'duel' } | undefined)?.mode
+    combatCue.mode = bundleMode === 'duel' ? 'duel' : 'grid'
+    variables.combat_cue = combatCue
+  }
 
   saveGlobals(profileId, globals)
 
@@ -558,6 +562,27 @@ export const applyVariableOps = (
       (changed.length < ops.length ? ` (${ops.length - changed.length} no-op)` : '')
   )
   return f
+}
+
+/** Pure: return a copy of the floor with stat_data replaced and delta_data cleared (a manual whole-doc
+ *  edit has no AI-turn delta). Other variables + floor fields are preserved. */
+export const withStatData = (floor: FloorFile, statData: unknown): FloorFile => ({
+  ...floor,
+  variables: { ...floor.variables, stat_data: statData, delta_data: [] }
+})
+
+/** Replace a floor's stat_data wholesale (the Variables-view editor's write path) and persist. */
+export const setFloorStatData = (
+  profileId: string,
+  chatId: string,
+  floor: number,
+  statData: unknown
+): FloorFile | null => {
+  const f = getFloor(profileId, chatId, floor)
+  if (!f) return null
+  const updated = withStatData(f, statData)
+  saveFloor(profileId, chatId, updated)
+  return updated
 }
 
 /**

@@ -9,6 +9,7 @@ import { PanelRouter } from '../PanelRouter'
 import { WcvTestView } from './WcvPanel'
 import { CombatView } from './CombatView'
 import { DuelView } from './DuelView'
+import { VariablesView } from './VariablesView'
 import { useWorkspaceContext } from './context'
 import { UsageView } from '../UsageView'
 import { useT } from '../../i18n'
@@ -47,6 +48,11 @@ const DuelPanel: React.FC = () => {
   return <DuelView profileId={profileId} />
 }
 
+const VariablesPanel: React.FC = () => {
+  const { profileId } = useWorkspaceContext()
+  return <VariablesView profileId={profileId} />
+}
+
 const UsagePanel: React.FC = () => {
   const { profileId } = useWorkspaceContext()
   return <UsageView profileId={profileId} />
@@ -77,6 +83,7 @@ export const ViewRegistry: Record<string, ViewEntry> = {
   status: { title: 'RPG Status', Component: StatusPanel },
   combat: { title: 'Combat', Component: CombatPanel, fill: true },
   duel: { title: 'Duel', Component: DuelPanel, fill: true },
+  variables: { title: 'Variables', Component: VariablesPanel },
   usage: { title: 'Usage', Component: UsagePanel, fill: true },
   'card-scripts': { title: 'Card Scripts', Component: CardScriptsPanel },
   logs: { title: 'Logs', Component: LogsPanel, fill: true },

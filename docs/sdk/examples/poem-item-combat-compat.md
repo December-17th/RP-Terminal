@@ -26,8 +26,29 @@ Paste-in tightening:
 - 装备战斗数值用「攻击: N」「防御: N」；技能消耗用「消耗: 攻击/动作: X MP/SP」；关联属性用五维之一作为独立标签。
 - 战斗类效果优先用规范效果名作为键（命中/闪避/固伤/伤害增幅/减伤增幅/护盾/穿透/暴击倍率/治疗/治疗增幅/附加效果），
   数值写在值里；若沿用风味名（如「充能」），须在值的描述中写明机制（如「提高12%伤害」「获得50点护盾」「额外造成5点伤害」），以便解析。
+- 【决斗目标模式】主动技能可在标签中额外声明卡牌决斗的目标范围：默认「单体」；加「群体」= AOE（打全体敌方 / 治疗全体友方）；
+  加「随机X」= 随机 X 次打击（可重复命中，如「随机3」）。治疗技同理，由效果决定作用于友方。此标签仅用于决斗模式，
+  与网格战斗的「范围: [爆发/直线/锥形]」互不冲突。
 </战斗数据规范>
 ```
+
+## Duel-scope target tags (`群体` / `随机X`)
+
+A duel skill's `标签` may additionally include a **duel-mode target scope**, read by `parseCardItem` into
+`目标模式` / `随机次数`:
+
+- **`群体`** (aliases: `群`, `全体`, `AOE`) — AOE: hits **all** living enemies (or, for a 治疗 skill, all
+  living allies). Sets `目标模式: '群体'`.
+- **`随机X`** (e.g. `随机3`; also `随机:X` or bare `随机` → defaults to 1) — **X random hits**, drawn with
+  replacement from the opposing (or same-side, for heals) roster. Sets `目标模式: '随机'` and
+  `随机次数: X`.
+- No tag ⇒ `目标模式` stays `undefined`, which the deck resolver treats as **单体** (the player-picked
+  single target).
+
+These are **duel-mode only** — they select *which combatants* an ability resolves against in the STS-style
+duel engine (`src/shared/combat/deckbuilder/deckResolve.ts`). They do not collide with the grid-combat
+`范围: [爆发/直线/锥形/单体/范围:X]` shape tags, which describe *cell geometry* for the grid engine and are
+ignored by duel mode.
 
 **Robustness:** the engine's `parseCardItem` reads the structured keys above AND **scans the value prose**
 for the same mechanics (提高X%伤害→伤害增幅, X点护盾→护盾, 额外X点伤害→固伤, 减伤/减少X%→DR, X%穿透→穿透,

@@ -19,8 +19,10 @@ const path = require('path')
 
 const ROOT = path.resolve(__dirname, '../../..')
 const DIR = path.join(ROOT, 'example sillytarvern character card, presets, extensions and scripts')
-const SRC = path.join(DIR, 'v4.2.1.png')
-const OUT = path.join(DIR, 'v4.2.1+combat.png')
+// Source/output default to the canonical example card, but accept overrides so an already-enhanced
+// world (e.g. v4.2.1+combat+party.png) can be re-patched in place:  node patch-poem-card.cjs SRC OUT
+const SRC = process.argv[2] ? path.resolve(process.argv[2]) : path.join(DIR, 'v4.2.1.png')
+const OUT = process.argv[3] ? path.resolve(process.argv[3]) : path.join(DIR, 'v4.2.1+combat.png')
 const combat = JSON.parse(fs.readFileSync(path.join(__dirname, 'poem-combat-bundle.json'), 'utf8'))
 
 const KERNEL = '核心指令: 仅当存在明确敌对双方且将会进入战斗时激活，其余非战斗情境禁止触发'
@@ -43,6 +45,11 @@ const QIDONG = `<战斗启动协议>
 例外：无需数值结算的纯叙事冲突（碾压性处决、过场、不可逆事件）可不触发本协议，按叙事直接处理。
 </战斗启动协议>`
 
+// The duel-scope authoring line — kept separate so an already-patched card's <战斗数据规范> block can
+// be UPGRADED in place (append just this line) rather than skipped. See editCard.
+const DUEL_SCOPE_LINE =
+  '- 【决斗目标模式】主动技能可在标签中额外声明卡牌决斗的目标范围：默认「单体」；加「群体」= AOE（打全体敌方 / 治疗全体友方）；加「随机X」= 随机 X 次打击（可重复命中，如「随机3」）。治疗技同理，由效果决定作用于友方。此标签仅用于决斗模式，与网格战斗的「范围: [爆发/直线/锥形]」互不冲突。'
+
 // item-format tightening, appended to [技能装备道具生成规则] so generated items parse cleanly.
 const SPEC = `
 <战斗数据规范>
@@ -50,6 +57,7 @@ const SPEC = `
 - 每个主动技能/武器必须带「有效距离: X」（格数）；范围技能额外带「范围: [爆发/直线/锥形/单体/范围:X]」。
 - 装备战斗数值用「攻击: N」「防御: N」；技能消耗用「消耗: 攻击/动作: X MP/SP」；关联属性用五维之一作为独立标签。
 - 战斗类效果优先用规范效果名作为键（命中/闪避/固伤/伤害增幅/减伤增幅/护盾/穿透/暴击倍率/治疗/治疗增幅/附加效果），数值写在值里；若沿用风味名（如「充能」），须在值描述中写明机制（如「提高12%伤害」「获得50点护盾」「额外造成5点伤害」），以便系统解析。
+${DUEL_SCOPE_LINE}
 </战斗数据规范>`
 
 const crcTable = (() => {
@@ -110,8 +118,12 @@ const editCard = (card, log) => {
   // 3) append the item-format tightening to [技能装备道具生成规则]
   const gen = find(/技能装备道具生成规则/)
   if (gen && typeof gen.content === 'string') {
-    if (gen.content.includes('战斗数据规范')) log.push('战斗数据规范: already present')
-    else {
+    if (gen.content.includes('决斗目标模式')) log.push('战斗数据规范: already current')
+    else if (gen.content.includes('战斗数据规范')) {
+      // Has the block from an earlier patch but predates the duel-scope line → upgrade in place.
+      gen.content = gen.content.replace('</战斗数据规范>', DUEL_SCOPE_LINE + '\n</战斗数据规范>')
+      log.push('战斗数据规范: upgraded (决斗目标模式 line)')
+    } else {
       gen.content = gen.content.replace(/\s*$/, '') + '\n' + SPEC + '\n'
       log.push('战斗数据规范: appended to 技能装备道具生成规则')
     }

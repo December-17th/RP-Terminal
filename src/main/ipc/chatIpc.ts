@@ -25,6 +25,10 @@ export const registerChatIpc = (ipcMain: IpcMain): void => {
   ipcMain.handle('apply-variable-ops', (_, profileId, chatId, floor, ops) =>
     generationService.applyVariableOps(profileId, chatId, floor, ops)
   )
+  // Variables-view whole-object write: replace a floor's stat_data wholesale (manual JSON edit).
+  ipcMain.handle('variables-set-stat-data', (_, profileId, chatId, floor, statData) =>
+    generationService.setFloorStatData(profileId, chatId, floor, statData)
+  )
   ipcMain.handle('delete-chat', (_, profileId, chatId) => chatService.deleteChat(profileId, chatId))
   ipcMain.handle('edit-floor', (_, profileId, chatId, floorIndex, userContent, responseContent) =>
     chatService.editFloorContent(profileId, chatId, floorIndex, userContent, responseContent)

@@ -38,6 +38,7 @@ export const DuelView: FC<{ profileId: string }> = ({ profileId }) => {
   const play = useDuelStore((s) => s.play)
   const endTurn = useDuelStore((s) => s.endTurn)
   const end = useDuelStore((s) => s.end)
+  const narrate = useDuelStore((s) => s.narrate)
   const assets = useDuelAssets(profileId, state)
   const [handRef] = useAutoAnimate<HTMLDivElement>()
   const stageRef = useRef<HTMLDivElement>(null)
@@ -330,7 +331,10 @@ export const DuelView: FC<{ profileId: string }> = ({ profileId }) => {
             <span className={`rpt-duel-result ${state.status === 'party' ? 'win' : 'lose'}`}>
               {state.status === 'party' ? t('duel.win') : t('duel.lose')}
             </span>
-            <button className="btn-accent" onClick={() => void end(profileId)}>
+            <button className="btn-accent" disabled={busy} onClick={() => void narrate(profileId)}>
+              {t('duel.narrate')}
+            </button>
+            <button className="rpt-duel-secondary" disabled={busy} onClick={() => void end(profileId)}>
               {t('duel.endDuel')}
             </button>
           </div>

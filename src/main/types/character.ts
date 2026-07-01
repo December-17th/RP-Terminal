@@ -115,7 +115,9 @@ export const CombatBundleSchema = z
     /** Where the narration lands in the chat; overrides the user's setting. */
     narration_mode: z.enum(['append', 'floor']).optional(),
     /** Steers the freeform-action / mid-fight-exit adjudication; overrides the user's setting. */
-    improvise_prompt: z.string().optional()
+    improvise_prompt: z.string().optional(),
+    /** Which native combat system this world's fights open: grid tactics (default) or the STS duel. */
+    mode: z.enum(['grid', 'duel']).optional()
   })
   .passthrough()
 

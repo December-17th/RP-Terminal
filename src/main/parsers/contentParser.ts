@@ -69,6 +69,8 @@ export interface CombatStartCue {
   enemies: string
   map: string
   roster?: Array<Record<string, unknown>>
+  /** Which system this fight opens; stamped from the card bundle at generation time (default 'grid'). */
+  mode?: 'grid' | 'duel'
 }
 
 /** Parse the tag body as a JSON roster (array, or a single object → 1-element array). Tolerant of a

@@ -123,6 +123,8 @@ power, not drawn).
 | `单体` | single target | |
 | `多段: N` / `连击: N` | multi-hit ×N (固伤 applied per hit) | default 2 if unspecified |
 | `治疗` (as a 核心功能 tag) | marks a healing ability | 威力 becomes the heal power |
+| `群体` (aliases `群`/`全体`/`AOE`) | **duel-mode** target scope: all living enemies (or all living allies, for a 治疗 skill) | sets `目标模式: '群体'`; duel-only, independent of the grid `范围` shape above |
+| `随机X` (e.g. `随机3`; bare `随机` → 1) | **duel-mode** target scope: X random hits, with replacement | sets `目标模式: '随机'` + `随机次数: X`; duel-only |
 
 ### 4.2 `消耗` (string) — `⚠️ HP PARTIAL`
 
@@ -381,10 +383,22 @@ anything outside `ctx`. Same seed + same plays ⇒ same result, always.
 
 // A passive power — folded in, never drawn (aggregates onto the combatant).
 "锋锐": { "品质": "优良", "类型": "被动", "标签": [], "效果": { "伤害增幅": "12%" } }
+
+// A 群体 (AOE) nuke — INT scaling, hits all living enemies.
+"星陨": { "品质": "史诗", "类型": "主动", "消耗": "动作: 60 MP",
+  "标签": ["智力", "威力: 90", "有效距离: 4", "群体"], "效果": {} }
+
+// A 随机3 striker — DEX scaling, three random hits (with replacement) among enemies.
+"乱刃连闪": { "品质": "精良", "类型": "主动", "消耗": "攻击: 35 SP",
+  "标签": ["敏捷", "威力: 40", "有效距离: 1", "随机3"], "效果": {} }
 ```
 
 > A 血祭 (HP-cost) example is intentionally omitted — HP cost isn't authorable via a `技能` `消耗` string yet
 > (§4.2). It will be authorable through `deck.cards` / a drop-in def (§9, D6).
+
+The AI authors these the same way as any other 技能: an `<UpdateVariable>` block whose `<JSONPatch>` `insert`s
+the new skill object at `/主角/技能/<名>` (e.g. `/主角/技能/星陨`), with `群体` or `随机X` included in the
+`标签` array exactly as above — no separate authoring path for scope tags.
 
 ---
 

@@ -33,6 +33,8 @@ const api = {
     ipcRenderer.invoke('reevaluate-variables', profileId, chatId),
   applyVariableOps: (profileId: string, chatId: string, floor: number, ops: unknown[]) =>
     ipcRenderer.invoke('apply-variable-ops', profileId, chatId, floor, ops),
+  setFloorStatData: (profileId: string, chatId: string, floor: number, statData: unknown) =>
+    ipcRenderer.invoke('variables-set-stat-data', profileId, chatId, floor, statData),
   // WebContentsView card-UI panels (spike): position/lifecycle, fire-and-forget.
   wcvEnsure: (id: string, bounds: unknown, url: string, ctx: unknown) =>
     ipcRenderer.send('wcv-ensure', id, bounds, url, ctx),
@@ -227,10 +229,14 @@ const api = {
     ipcRenderer.invoke('duel-start-mock', profileId, chatId),
   duelStart: (profileId: string, chatId: string, characterId: string) =>
     ipcRenderer.invoke('duel-start', profileId, chatId, characterId),
+  duelStartFromCue: (profileId: string, chatId: string, cue: unknown) =>
+    ipcRenderer.invoke('duel-start-from-cue', profileId, chatId, cue),
   duelPlay: (profileId: string, chatId: string, cardId: string, targetIds: string[]) =>
     ipcRenderer.invoke('duel-play', profileId, chatId, cardId, targetIds),
   duelEndTurn: (profileId: string, chatId: string) =>
     ipcRenderer.invoke('duel-end-turn', profileId, chatId),
+  duelNarrate: (profileId: string, chatId: string) =>
+    ipcRenderer.invoke('duel-narrate', profileId, chatId),
   duelEnd: (profileId: string, chatId: string) =>
     ipcRenderer.invoke('duel-end', profileId, chatId),
   // Subscribe to incremental generation text. Returns an unsubscribe function.

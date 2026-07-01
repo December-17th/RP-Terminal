@@ -17,11 +17,16 @@ interface DuelStore {
   load: (profileId: string, chatId: string) => Promise<void>
   startMock: (profileId: string, chatId: string) => Promise<void>
   startFromBuild: (profileId: string, chatId: string, characterId: string) => Promise<void>
+  startFromCue: (profileId: string, chatId: string, cue: unknown) => Promise<void>
   pickCard: (cardId: string) => void
   clearSelection: () => void
   play: (profileId: string, targetIds: string[]) => Promise<void>
   endTurn: (profileId: string) => Promise<void>
   end: (profileId: string) => Promise<void>
+  narrate: (profileId: string) => Promise<void>
+  /** Drop the renderer-side duel mirror (no IPC) — used on session switch so a prior chat's
+   *  duel never shows for a newly-selected chat; DuelView.load refetches on mount. */
+  reset: () => void
 }
 
 export const useDuelStore = create<DuelStore>((set, get) => {
@@ -58,6 +63,11 @@ export const useDuelStore = create<DuelStore>((set, get) => {
       set({ chatId, state: res?.state ?? null, catalog: res?.catalog ?? {}, selection: { mode: 'idle' } })
     },
 
+    startFromCue: async (profileId, chatId, cue) => {
+      const res = await api().duelStartFromCue(profileId, chatId, cue)
+      set({ chatId, state: res?.state ?? null, catalog: res?.catalog ?? {}, selection: { mode: 'idle' } })
+    },
+
     pickCard: (cardId) => set({ selection: { mode: 'card', cardId } }),
     clearSelection: () => set({ selection: { mode: 'idle' } }),
 
@@ -88,6 +98,21 @@ export const useDuelStore = create<DuelStore>((set, get) => {
       if (!chatId) return
       await api().duelEnd(profileId, chatId)
       set({ state: null, catalog: {}, selection: { mode: 'idle' } })
-    }
+    },
+
+    narrate: async (profileId) => {
+      const { chatId } = get()
+      if (!chatId) return
+      set({ busy: true })
+      try {
+        await api().duelNarrate(profileId, chatId)
+      } finally {
+        set({ busy: false })
+        await get().end(profileId) // clear the duel + return to chat after narrating
+      }
+    },
+
+    reset: () =>
+      set({ chatId: null, state: null, catalog: {}, selection: { mode: 'idle' }, lastEvents: [] })
   }
 })

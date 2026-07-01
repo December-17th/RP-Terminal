@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import type { FloorMetrics } from '../../../shared/usageTypes'
 import { useCombatStore } from './combatStore'
+import { useDuelStore } from './duelStore'
 
 export interface FloorIndexEntry {
   floor: number
@@ -55,6 +56,8 @@ interface ChatState {
   reevaluateVariables: (profileId: string) => Promise<void>
   /** Apply variable ops (JSONPatch) to a floor's stat_data from panel UI (write-back). */
   applyVariableOps: (profileId: string, ops: VarOp[], floor?: number) => Promise<void>
+  /** Replace the latest floor's stat_data wholesale (the Variables-view editor's write path). */
+  setStatData: (profileId: string, json: unknown) => Promise<void>
   /** Switch the open session's FSM mode (Explore/Dialogue/Combat). */
   setMode: (profileId: string, mode: string) => Promise<void>
   sendAction: (profileId: string, actionText: string) => Promise<void>
@@ -103,7 +106,8 @@ export const useChatStore = create<ChatState>((set, get) => {
   // drop the local combat mirror and leave combat mode if we were in it.
   const stopStaleCombat = (profileId: string): void => {
     useCombatStore.getState().reset()
-    if (get().activeChatMode === 'combat') void get().setMode(profileId, 'explore')
+    if (get().activeChatMode === 'combat' || get().activeChatMode === 'duel')
+      void get().setMode(profileId, 'explore')
   }
 
   return {
@@ -135,11 +139,17 @@ export const useChatStore = create<ChatState>((set, get) => {
     },
 
     createChat: async (profileId, characterId) => {
+      // Same session-switch hygiene as setActiveChat: drop the previous chat's live combat/duel
+      // mirror, and clear floors in the SAME set that flips activeChatId — otherwise the new chat
+      // briefly renders the old chat's floors/variables (stale variables on a fresh session).
+      useCombatStore.getState().reset()
+      useDuelStore.getState().reset()
       const newChat = await window.api.createChat(profileId, characterId)
       set((state) => ({
         chats: [newChat, ...state.chats],
         activeChatId: newChat.id,
         activeChatMode: 'explore',
+        floors: [],
         error: null
       }))
       // A freshly created chat may already contain a seeded greeting floor.
@@ -148,6 +158,10 @@ export const useChatStore = create<ChatState>((set, get) => {
     },
 
     setActiveChat: async (profileId, chatId) => {
+      // Session-switch hygiene: drop the previous chat's live combat/duel mirror so it never
+      // shows for the newly-selected chat (CombatView/DuelView refetch on mount for the new chat).
+      useCombatStore.getState().reset()
+      useDuelStore.getState().reset()
       set({ activeChatId: chatId, floors: [], error: null })
       const [floors, mode] = await Promise.all([
         window.api.getFloors(profileId, chatId),
@@ -169,6 +183,14 @@ export const useChatStore = create<ChatState>((set, get) => {
       // Default to the latest floor (the "current message" whose variables the UI shows).
       const target = floor ?? floors[floors.length - 1].floor
       const updated = await window.api.applyVariableOps(profileId, activeChatId, target, ops)
+      if (updated) set((s) => ({ floors: s.floors.map((f) => (f.floor === target ? updated : f)) }))
+    },
+
+    setStatData: async (profileId, json) => {
+      const { activeChatId, floors } = get()
+      if (!activeChatId || floors.length === 0) return
+      const target = floors[floors.length - 1].floor
+      const updated = await window.api.setFloorStatData(profileId, activeChatId, target, json)
       if (updated) set((s) => ({ floors: s.floors.map((f) => (f.floor === target ? updated : f)) }))
     },
 

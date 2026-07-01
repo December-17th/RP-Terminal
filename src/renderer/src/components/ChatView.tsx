@@ -182,17 +182,22 @@ export function ChatView({ profileId }: { profileId: string }): React.ReactEleme
   const latestVars = floors.length ? floors[floors.length - 1]?.variables : undefined
   const combatCue =
     latestVars && typeof latestVars.combat_cue === 'object' && latestVars.combat_cue
-      ? (latestVars.combat_cue as { enemies?: string; map?: string })
+      ? (latestVars.combat_cue as { enemies?: string; map?: string; roster?: unknown; mode?: 'grid' | 'duel' })
       : null
   const enterCombat = async (): Promise<void> => {
     if (!activeChatId) return
     try {
-      await window.api.combatStartFromCard(profileId, activeChatId, combatCue)
-      useChatStore.getState().setMode(profileId, 'combat')
+      if (combatCue?.mode === 'duel') {
+        await window.api.duelStartFromCue(profileId, activeChatId, combatCue)
+        useChatStore.getState().setMode(profileId, 'duel')
+      } else {
+        await window.api.combatStartFromCard(profileId, activeChatId, combatCue)
+        useChatStore.getState().setMode(profileId, 'combat')
+      }
     } catch (e) {
       // A genuine failure (bad roster, build error) shouldn't be silent — surface it so a blank
       // CombatView is diagnosable. (A world with no combat bundle just throws here harmlessly.)
-      console.error('Enter Combat failed:', e)
+      console.error('Enter combat/duel failed:', e)
     }
   }
 
@@ -255,7 +260,7 @@ export function ChatView({ profileId }: { profileId: string }): React.ReactEleme
         )}
       </div>
 
-      {combatCue && activeChatMode !== 'combat' ? (
+      {combatCue && activeChatMode !== 'combat' && activeChatMode !== 'duel' ? (
         <div
           style={{
             display: 'flex',
@@ -272,7 +277,7 @@ export function ChatView({ profileId }: { profileId: string }): React.ReactEleme
         >
           <span>{t('combat.cueDetected')}</span>
           <button className="btn-accent" style={{ fontSize: 12 }} onClick={enterCombat}>
-            ⚔ {t('combat.enter')}
+            ⚔ {combatCue.mode === 'duel' ? t('combat.enterDuel') : t('combat.enter')}
           </button>
         </div>
       ) : null}

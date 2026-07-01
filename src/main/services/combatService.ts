@@ -12,11 +12,11 @@ import { getDb } from './db'
 import { runSandbox } from './sandboxService'
 import { generateRaw } from './generationService'
 import { getCharacter } from './characterService'
-import { appendFloor, getChat } from './chatService'
-import { getAllFloors, saveFloor } from './floorService'
+import { getChat } from './chatService'
+import { getAllFloors } from './floorService'
 import { getSettings } from './settingsService'
-import { parseMvuCommands, applyMvuCommands, applyJsonPatch } from '../parsers/mvuParser'
 import { log } from './logService'
+import { narrationConfig, writeNarrationToChat } from './narrationService'
 import { getRpExt } from '../types/character'
 import {
   buildEncounter,
@@ -541,44 +541,6 @@ export const adjudicate = async (
   return { state: next, events: logAdds, narration, ended: false }
 }
 
-/**
- * End-of-combat narration (the "describe the fight fully" path): ask the model to
- * narrate the recorded log as prose; append it to the combat log and persist. The
- * returned prose is also what a caller can feed to the normal generation flow so it
- * lands as a chat message + folds MVU consequences (via `narrationPrompt`).
- */
-/** Fold a narration response's `<UpdateVariable>` / `<JSONPatch>` consequences into a
- *  floor's `stat_data` (mirrors generate()'s fold), so injuries/deaths/loot persist. */
-const foldNarrationMvu = (variables: Record<string, any>, text: string): void => {
-  const mvu = parseMvuCommands(text)
-  if (!mvu.commands.length && !mvu.patches.length) return
-  if (typeof variables.stat_data !== 'object' || variables.stat_data === null)
-    variables.stat_data = {}
-  const sd = variables.stat_data as Record<string, any>
-  if (mvu.commands.length) applyMvuCommands(sd, mvu.commands)
-  if (mvu.patches.length) applyJsonPatch(sd, mvu.patches)
-}
-
-/** Resolve the narration prompt + placement, honoring (in order) the card's `combat`
- *  bundle (`narration_prompt` / `narration_mode`), the user's `settings.combat`, then the
- *  defaults (a steering prompt is optional; default placement = append). */
-const narrationConfig = (
-  profileId: string,
-  chatId: string
-): { extra: string; mode: 'append' | 'floor' } => {
-  const chat = getChat(profileId, chatId)
-  const card = chat ? getCharacter(profileId, chat.character_id) : null
-  const bundle = (card ? getRpExt(card)?.combat : null) as
-    | (CombatBundle & { narration_prompt?: string; narration_mode?: string })
-    | null
-    | undefined
-  const sCombat = getSettings(profileId).combat
-  const extra = (bundle?.narration_prompt || sCombat?.narrationPrompt || '').trim()
-  const mode: 'append' | 'floor' =
-    (bundle?.narration_mode || sCombat?.narrationMode) === 'floor' ? 'floor' : 'append'
-  return { extra, mode }
-}
-
 /** The improvise/adjudication steering prompt: card `combat.improvise_prompt` > the user's
  *  `settings.combat.improvisePrompt` > none. Lets a world/user shape how freeform actions resolve. */
 const improviseSteer = (profileId: string, chatId: string): string => {
@@ -589,37 +551,6 @@ const improviseSteer = (profileId: string, chatId: string): string => {
     | null
     | undefined
   return (bundle?.improvise_prompt || getSettings(profileId).combat?.improvisePrompt || '').trim()
-}
-
-/** Land combat prose in the chat — appended to the current floor or as a new floor (the
- *  user/card placement setting) — folding any `<UpdateVariable>` consequences into that
- *  floor's stat_data. Shared by end-of-combat narration and the freeform-exit path. */
-const writeNarrationToChat = (profileId: string, chatId: string, prose: string): void => {
-  const chat = getChat(profileId, chatId)
-  if (!prose || !chat) return
-  const { mode } = narrationConfig(profileId, chatId)
-  const floors = getAllFloors(profileId, chatId)
-  const now = new Date().toISOString()
-  if (mode === 'floor' || !floors.length) {
-    const variables = clone(floors[floors.length - 1]?.variables ?? {}) as Record<string, any>
-    foldNarrationMvu(variables, prose)
-    appendFloor(profileId, chatId, {
-      floor: floors.length,
-      chat_id: chatId,
-      timestamp: now,
-      user_message: { content: '', timestamp: now },
-      response: { content: prose, model: '', provider: '' },
-      events: [],
-      variables
-    })
-  } else {
-    const last = floors[floors.length - 1]
-    last.response = { ...last.response, content: `${last.response.content}\n\n${prose}`.trim() }
-    const variables = (last.variables ?? {}) as Record<string, any>
-    foldNarrationMvu(variables, prose)
-    last.variables = variables
-    saveFloor(profileId, chatId, last)
-  }
 }
 
 /**
