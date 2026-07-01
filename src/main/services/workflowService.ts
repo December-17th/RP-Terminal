@@ -13,6 +13,7 @@ import { validateWorkflow } from '../../shared/workflow/validate'
 import { WorkflowDoc } from '../../shared/workflow/types'
 import { builtinRegistry } from './nodes/builtin'
 import { DEFAULT_GRAPH } from './nodes/builtin/defaultGraph'
+import { log } from './logService'
 
 export const BUILTIN_WORKFLOW_ID = 'default'
 
@@ -95,6 +96,9 @@ export const createWorkflowFromDoc = (profileId: string, raw: unknown): Workflow
   return { ok: true, id }
 }
 
+/** Clones a workflow doc under a fresh id. Re-validates the assembled clone before writing —
+ *  a source doc that was hand-corrupted on disk (bypassing our own write paths) must not be
+ *  faithfully re-propagated; invalid docs are NEVER written, clone included. */
 export const cloneWorkflow = (profileId: string, sourceId: string): WorkflowSummary | null => {
   const source = getWorkflowById(profileId, sourceId)
   if (!source) return null
@@ -104,9 +108,14 @@ export const cloneWorkflow = (profileId: string, sourceId: string): WorkflowSumm
     id,
     name: `${source.name} (copy)`
   }
+  const result = validateWorkflowDoc(clone)
+  if (!result.ok) {
+    log('error', `cloneWorkflow: source ${sourceId} failed validation, refusing to write`, result.error)
+    return null
+  }
   ensureWorkflowsDir(profileId)
-  writeJsonSyncAtomic(workflowPath(profileId, id), clone)
-  return { id, name: clone.name, description: clone.description }
+  writeJsonSyncAtomic(workflowPath(profileId, id), result.doc)
+  return { id, name: result.doc.name, description: result.doc.description }
 }
 
 /** Unlinks the workflow's file and reports whether it existed. Never touches the builtin.

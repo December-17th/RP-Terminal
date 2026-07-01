@@ -104,6 +104,31 @@ describe('workflowService', () => {
     expect(doc!.nodes.some((n) => n.id === 'ctx')).toBe(true)
   })
 
+  it('cloneWorkflow re-validates the source doc: a hand-corrupted file on disk (structurally invalid, schemaVersion 99, no isMainOutput node) is not propagated', () => {
+    const dir = path.join(profileDir, 'workflows')
+    fs.mkdirSync(dir, { recursive: true })
+    const badPath = path.join(dir, 'bad-doc.json')
+    fs.writeFileSync(
+      badPath,
+      JSON.stringify({
+        id: 'bad-doc',
+        name: 'Hand Corrupted',
+        version: 1,
+        schemaVersion: 99,
+        nodes: [{ id: 'n1', type: 'input.context' }],
+        edges: []
+      })
+    )
+
+    const filesBefore = fs.readdirSync(dir)
+
+    const result = cloneWorkflow(profileId, 'bad-doc')
+    expect(result).toBeNull()
+
+    const filesAfter = fs.readdirSync(dir)
+    expect(filesAfter).toEqual(filesBefore)
+  })
+
   it('deleteWorkflow removes the file (get returns null after)', () => {
     const created = createWorkflowFromDoc(profileId, minimalDoc({ name: 'To Delete' }))
     expect(created.ok).toBe(true)
