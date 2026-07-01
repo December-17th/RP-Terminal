@@ -420,6 +420,15 @@ const zh: Record<string, string> = {
     '重新应用每条消息中存储的变量更新以重建状态 —— 无需重新生成（例如解析器更新后）。',
   'status.reevaluate': '↻ 重新计算',
   'status.reevaluated': '已根据存储的更新重新计算状态',
+
+  'variables.heading': '变量',
+  'variables.mvuState': 'MVU stat_data',
+  'variables.floorVars': '楼层变量（增量／战斗提示／快照）',
+  'variables.sessionKv': '会话 KV（卡片变量）',
+  'variables.empty': '空',
+  'variables.refresh': '↻ 刷新',
+  'variables.copy': '复制',
+  'variables.copied': '已复制到剪贴板',
   'status.noState': '（此会话还没有 RPG 状态）',
 
   'prefs.combatNarration': '战斗叙述',

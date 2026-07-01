@@ -432,6 +432,15 @@ const en: Record<string, string> = {
     'Re-apply the stored variable updates from every message to rebuild the state — no regeneration (e.g. after a parser update).',
   'status.reevaluate': '↻ Re-evaluate',
   'status.reevaluated': 'State re-evaluated from stored updates',
+
+  'variables.heading': 'Variables',
+  'variables.mvuState': 'MVU stat_data',
+  'variables.floorVars': 'Floor variables (delta / cue / snapshot)',
+  'variables.sessionKv': 'Session KV (card variables)',
+  'variables.empty': 'empty',
+  'variables.refresh': '↻ Refresh',
+  'variables.copy': 'Copy',
+  'variables.copied': 'Copied to clipboard',
   'status.noState': '(No RPG state for this session yet)',
 
   'prefs.combatNarration': 'Combat narration',
