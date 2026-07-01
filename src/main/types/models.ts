@@ -38,6 +38,32 @@ export interface ModeConfig {
   addendum: string
 }
 
+/** One collection in the memory registry (see docs/episodic-memory-design.md §5.3).
+ *  The core ships only the built-in `events` stream collection; entity collections,
+ *  vector ranking, and custom card-defined collections are deferred. */
+export interface MemoryCollection {
+  id: string
+  shape: 'stream' | 'entity'
+  enabled: boolean
+  /** Entity collections only: what identifies one record (e.g. 'character name'). */
+  entityKey?: string
+  write: {
+    trigger: 'checkpoint' | 'every_turn' | 'on_change'
+    /** Extractor instructions — the main per-collection customization knob. */
+    prompt: string
+    maxItemsPerCheckpoint?: number
+  }
+  retrieval: {
+    mode: 'always' | 'keyword' | 'vector' | 'hybrid' | 'llm'
+    /** Slots this collection contributes to the recalled-memory tail. */
+    count: number
+    /** Tail token budget slice for this collection. */
+    tokenBudget: number
+  }
+  /** Tail block heading, e.g. "Relevant earlier events". */
+  inject: { label: string }
+}
+
 export interface Settings {
   // The live/active connection used by generation. Mirrors the selected api_preset.
   api: {
@@ -165,6 +191,26 @@ export interface Settings {
     prewarm: boolean
     /** Reserved: place Anthropic breakpoints at the true stable boundary. */
     breakpoint_optimizer: boolean
+  }
+  /** Long-term memory engine (see docs/episodic-memory-design.md). Disabled by default; the
+   *  core implements only the `events` stream collection + keyword recall, injected into the
+   *  ephemeral tail. Entity collections / vector mode / the rest are deferred. */
+  memory: {
+    enabled: boolean
+    /** Collection registry — built-ins shipped as defaults, user-editable. */
+    collections: MemoryCollection[]
+    /** Total tail token budget across all collections' injected blocks. */
+    max_tokens: number
+    /** Most-recent floors kept verbatim (never compacted) — the compaction lags this far behind. */
+    keep_recent: number
+    /** Fallback write trigger: compact every N turns. */
+    checkpoint_turns: number
+    /** Primary write trigger (share of context window); 0 = disabled (core uses turns only). */
+    checkpoint_tokens: number
+    /** Cheap model for extraction / llm-select ('' = active connection). */
+    utility_api_preset_id: string
+    /** Embedding connection for vector/hybrid modes ('' = disabled → keyword fallback). */
+    embedding_api_preset_id: string
   }
   /** Optional per-model token prices ($ / 1M tokens). Empty ⇒ tokens-only (no cost shown). */
   pricing: Record<string, ModelRates>

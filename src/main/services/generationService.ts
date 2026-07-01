@@ -23,6 +23,9 @@ import {
   ChatMessage
 } from './promptBuilder'
 import { getPromptRules } from './regexService'
+import { selectMemories } from './retrievalService'
+import { maybeCompact } from './compactionService'
+import { notifyMemoryRecalled } from './memoryEvents'
 import { loadGlobals, saveGlobals, buildTemplateContext } from './templateService'
 import {
   streamProvider,
@@ -195,6 +198,24 @@ export const generate = async (
     `lorebook: ${lorebooks.length} book(s) / ${loreEntryCount} entr${loreEntryCount === 1 ? 'y' : 'ies'} → ${matchedEntries.length} matched · ids=[${lorebookIds.join(', ') || 'none'}]`
   )
 
+  // Episodic memory (docs/episodic-memory-design.md §8): recall relevant past memories into the
+  // ephemeral tail. No-op when memory is disabled; at cache level 0 it just adds tail context.
+  // Fail-open like the writer — a retrieval error must never break a turn; we just skip the block.
+  const memory = await selectMemories(profileId, chatId, scanText, settings).catch((err) => {
+    log('error', `memory: recall failed, continuing without it — ${err?.message || String(err)}`)
+    return { block: '', rows: [] }
+  })
+  if (memory.rows.length) {
+    log('info', `memory: ${memory.rows.length} recalled (${memory.block.length} chars) → tail`)
+  }
+  // Tell the Memory view which memories this turn pulled in (transient "why recalled" highlight).
+  if (settings.memory?.enabled) {
+    notifyMemoryRecalled(
+      chatId,
+      memory.rows.map((r) => r.id)
+    )
+  }
+
   const built = buildPrompt({
     card,
     preset,
@@ -218,6 +239,7 @@ export const generate = async (
     cacheLevel,
     l1Mode,
     frozenVars,
+    memoryBlock: memory.block,
     // FSM mode addendum + the World Card's custom agent prompts (system + per-mode).
     modeAddendum: composeAddendum(getRpExt(card)?.agent, mode, fsmEnabled, modeConfig.addendum),
     // Canonical TemplateContext (WS-1) — shared constructor; `workingVars` is the live store (passed by
@@ -417,6 +439,12 @@ export const generate = async (
   }
 
   appendFloor(profileId, chatId, floor)
+  // Episodic memory (docs/episodic-memory-design.md §7): fold aged-out turns into memories. Off
+  // the hot path — the floor is already persisted and returned below. Fail-open; never blocks the
+  // turn (maybeCompact swallows its own errors; the .catch is a belt-and-braces guard).
+  void maybeCompact(profileId, chatId).catch((err) =>
+    log('error', `memory: compaction error — ${err?.message || String(err)}`)
+  )
   return floor
 }
 

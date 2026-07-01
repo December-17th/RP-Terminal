@@ -26,6 +26,7 @@
 **Extends:** Phase G (four-layer cache assembly) and Phase H (per-mode lore freeze).
 **Supersedes:** the deferred "aggressive segment-diff cache stabilization" sketch in `ROADMAP.md` (§590–603).
 **Related:** [agentic-mode-design.md](agentic-mode-design.md), [mvu-support-design.md](mvu-support-design.md), [st-prompt-template-plan.md](st-prompt-template-plan.md).
+**Memory (L3 build-out):** the episodic/multi-collection memory system that fills §6.3–6.4 is specified in [episodic-memory-design.md](episodic-memory-design.md); its §16 cross-references this doc (shared tail, shared compaction checkpoint, checkpoint eviction vs. `fitToBudget`).
 
 ---
 
@@ -230,6 +231,8 @@ it goes to the tail.
 `chatService.ts` (persist the accumulator).
 
 ### 6.3 Compaction checkpoint + episodic memory (L3)
+
+> **Now specified in [episodic-memory-design.md](episodic-memory-design.md)** (generalized to a customizable multi-collection memory engine + vector mode). Key reconciliation (its §16): this `compactionService` and the memory writer are **one shared checkpoint** — memory's "summarize oldest → store" is the same checkpoint step described here; recalled memory lands in the **shared ephemeral tail** beside the live-state block (§6.1); and memory's `keep_recent` window + checkpoint eviction is exactly the "drop-oldest superseded by summarize-at-checkpoint" rule below.
 
 **Trigger.** Token-threshold primary (frontier exceeds a configured share of the model's context
 window), turn-count fallback (every N turns), plus mode/scene transitions when agentic mode is on.

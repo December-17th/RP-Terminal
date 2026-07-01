@@ -19,4 +19,8 @@ export default class Database {
   prepare(): Statement {
     return new Statement()
   }
+  // Mirror better-sqlite3's transaction(fn) → a function that runs fn (immediately, no real tx).
+  transaction<T extends (...args: unknown[]) => unknown>(fn: T): T {
+    return ((...args: unknown[]) => fn(...args)) as T
+  }
 }

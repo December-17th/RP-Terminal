@@ -802,3 +802,57 @@ describe('systemToUser + merge (ST-faithful for Gemini-via-OpenAI)', () => {
     expect(out[2].content).toBe('<info>\n<梅芙_setting>\n</info>')
   })
 })
+
+describe('buildPrompt — recalled memory tail (§16.1)', () => {
+  beforeAll(async () => {
+    await initTemplates()
+  })
+
+  it('injects the memory block as a system message right before the user action', () => {
+    const messages = buildPrompt({
+      card: card(),
+      preset: preset([blk('char_description'), blk('chat_history')]),
+      lorebooks: [],
+      floors: [floor(0, '', 'hi')],
+      userAction: 'go',
+      memoryBlock: '[Earlier events]\n- something happened'
+    })
+    expect(last(messages)).toEqual({ role: 'user', content: 'go' })
+    const penultimate = messages[messages.length - 2]
+    expect(penultimate.role).toBe('system')
+    expect(penultimate.content).toContain('[Earlier events]')
+  })
+
+  it('orders the tail [state][memory][action] when both blocks are present', () => {
+    const messages = buildPrompt({
+      card: card(),
+      preset: preset([blk('char_description'), blk('chat_history')]),
+      lorebooks: [],
+      floors: [],
+      userAction: 'go',
+      cacheLevel: 1,
+      l1Mode: 'partition',
+      frozenVars: {},
+      template: { vars: { stat_data: { 主角: { hp: 5 } } }, globals: {}, constants: {} },
+      memoryBlock: '[Earlier events]\n- recalled'
+    })
+    expect(last(messages)).toEqual({ role: 'user', content: 'go' })
+    const stateIdx = messages.findIndex((m) => m.content.includes('[Current State]'))
+    const memIdx = messages.findIndex((m) => m.content.includes('[Earlier events]'))
+    expect(stateIdx).toBeGreaterThanOrEqual(0)
+    expect(memIdx).toBeGreaterThan(stateIdx) // memory after state…
+    expect(messages.length - 1).toBeGreaterThan(memIdx) // …and the user action stays last
+  })
+
+  it('adds no memory tail when no memoryBlock is given', () => {
+    const messages = buildPrompt({
+      card: card(),
+      preset: preset([blk('char_description'), blk('chat_history')]),
+      lorebooks: [],
+      floors: [floor(0, '', 'hi')],
+      userAction: 'go'
+    })
+    expect(last(messages)).toEqual({ role: 'user', content: 'go' })
+    expect(messages.some((m) => m.content.includes('[Earlier events]'))).toBe(false)
+  })
+})
