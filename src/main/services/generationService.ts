@@ -1,11 +1,9 @@
-import { getSettings, resolveModeConfig } from './settingsService'
+import { getSettings } from './settingsService'
 import { getActivePreset, getActivePresetId } from './presetService'
-import { getCharacter } from './characterService'
 import { getLorebookById, matchAcross } from './lorebookService'
 import {
   getChat,
   getChatLorebookIds,
-  getChatMode,
   getCachedWorldInfo,
   setCachedWorldInfo,
   appendFloor,
@@ -15,7 +13,6 @@ import { getAllFloors, getFloor, saveFloor } from './floorService'
 import { normalizeSwipes } from './swipeHelpers'
 import {
   buildPrompt,
-  buildScanText,
   fitToBudget,
   mergeConsecutiveRoles,
   systemToUser,
@@ -26,7 +23,7 @@ import { getPromptRules } from './regexService'
 import { selectMemories } from './retrievalService'
 import { maybeCompact } from './compactionService'
 import { notifyMemoryRecalled } from './memoryEvents'
-import { loadGlobals, saveGlobals, buildTemplateContext } from './templateService'
+import { saveGlobals, buildTemplateContext } from './templateService'
 import {
   streamProvider,
   orderForProvider,
@@ -42,7 +39,6 @@ import {
   applyJsonPatch,
   JsonPatchOp
 } from '../parsers/mvuParser'
-import { frozenVarsFor } from './cacheLayers'
 import {
   lastMessageIndex,
   lastUserMessageIndex,
@@ -51,6 +47,7 @@ import {
 import { log } from './logService'
 import { FloorFile } from '../types/chat'
 import { Lorebook, LorebookEntry, getRpExt } from '../types/character'
+import { buildGenContext } from './generation/genContext'
 
 /**
  * Combine the FSM mode addendum with a World Card's custom agent prompts (Track S §3).
@@ -114,57 +111,32 @@ export const generate = async (
   userAction: string,
   onDelta: DeltaCallback = () => {}
 ): Promise<FloorFile | null> => {
-  const chat = getChat(profileId, chatId)
-  if (!chat) throw new Error('Chat session not found')
-
   // A new model turn legitimately re-fires MVU events; clear the write-back loop streak so a path
   // re-written once per turn never builds a false runaway streak across turns (WS-3).
   resetWriteLoopGuard(chatId)
-
-  const card = getCharacter(profileId, chat.character_id)
-  if (!card) throw new Error('Character card not found')
-
-  const settings = getSettings(profileId)
-  const preset = getActivePreset(profileId)
-  // The FSM is on in 'manual' and 'agentic' agent modes (agentic adds auto-routing — TBD,
-  // so it behaves like manual for now). It enables per-mode tuning (retrieval breadth,
-  // output ceiling, system addendum) + L2 cache-on-transition. 'off' = classic: ST-style,
-  // no FSM tuning, lore re-matched every turn (fully dynamic keywords).
-  // TODO(agentic): when agent.mode === 'agentic', classify intent here and setChatMode().
-  const fsmEnabled = settings.agent?.mode === 'manual' || settings.agent?.mode === 'agentic'
-  const mode = getChatMode(profileId, chatId)
-  const modeConfig = resolveModeConfig(settings, mode)
-  // A session injects all its selected lorebooks; with none chosen it defaults to
-  // the character's own lorebook (id == characterId), preserving prior behavior.
-  const lorebookIds = getChatLorebookIds(profileId, chatId) ?? [chat.character_id]
-  const lorebooks = lorebookIds
-    .map((id) => getLorebookById(profileId, id))
-    .filter((lb): lb is Lorebook => lb !== null)
-  const floors = getAllFloors(profileId, chatId, chat.floor_count)
-
-  // Seed the working variables from the latest floor; ST-Prompt-Template code in
-  // authored content (getvar/setvar/…) reads and mutates these during the build.
-  const lastFloor = floors[floors.length - 1]
-  const workingVars: Record<string, any> = JSON.parse(JSON.stringify(lastFloor?.variables ?? {}))
-  const globals = loadGlobals(profileId)
-  const userName = settings.persona?.name || 'User'
-
-  // Prompt-cache level (L1 Frozen Core when ≥1). The frozen snapshot is derived from the
-  // FIRST floor's variables — constant across the session — so the frontier render is
-  // byte-stable. 'partition' shows placeholders for state; 'diff' shows the floor-0 values.
-  // ⚠️ STASHED (WS-2, 2026-06-26): the cache system is parked — the UI selector is greyed out and pinned
-  // to `baseline` (no optimization at all, not even provider caching). Frozen Core is reachable only via
-  // the dormant `mode: 'frozen'`. So in production cacheLevel is 0. See the design doc's status note.
-  const cacheLevel = settings.cache?.mode === 'frozen' ? (settings.cache?.level ?? 1) : 0
-  const l1Mode = settings.cache?.l1_mode ?? 'partition'
-  const floor0Vars = floors[0]?.variables ?? {}
-  const frozenVars = cacheLevel >= 1 ? frozenVarsFor(l1Mode, floor0Vars) : {}
-
-  const scanDepth = fsmEnabled
-    ? (modeConfig.scan_depth ?? settings.lorebook?.scan_depth ?? 3)
-    : (settings.lorebook?.scan_depth ?? 3)
-  const maxRecursion = settings.lorebook?.max_recursion ?? 0
-  const scanText = buildScanText(floors, userAction, scanDepth)
+  const ctx = buildGenContext(profileId, chatId, userAction)
+  const {
+    chat,
+    card,
+    settings,
+    preset,
+    fsmEnabled,
+    mode,
+    modeConfig,
+    lorebookIds,
+    lorebooks,
+    floors,
+    lastFloor,
+    workingVars,
+    globals,
+    userName,
+    cacheLevel,
+    l1Mode,
+    frozenVars,
+    scanDepth,
+    maxRecursion,
+    scanText
+  } = ctx
 
   // L2 world-info matching differs by mode:
   //  • Agentic — Phase H inc 2 cache: match once per FSM mode and reuse across turns
@@ -300,7 +272,8 @@ export const generate = async (
   if (settings.generation?.system_as_user && isOpenAiCompatibleProvider(settings.api.provider)) {
     const before = assembled.filter((m) => m.role === 'system').length
     assembled = systemToUser(assembled)
-    if (before) log('info', `system→user: relabeled ${before} system message(s) (OpenAI-compatible path)`)
+    if (before)
+      log('info', `system→user: relabeled ${before} system message(s) (OpenAI-compatible path)`)
   }
   const messages =
     settings.generation?.merge_consecutive_roles !== false
