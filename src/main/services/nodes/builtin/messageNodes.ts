@@ -1,6 +1,8 @@
 import { z } from 'zod'
 import { expandMacros } from '../../../../shared/macros'
 import { evalTemplate, buildTemplateContext } from '../../templateService'
+import { ChatMessage } from '../../promptBuilder'
+import { providerShape } from '../../generation/providerShape'
 import { GenContext } from '../../generation/types'
 import { NodeImpl } from '../types'
 
@@ -80,5 +82,65 @@ export const textTemplate: NodeImpl = {
     const cfg = node.config as z.infer<typeof templateConfig>
     const text = interpolate(cfg.template, slotsOf(inputs), inputs.gen as GenContext | undefined)
     return { outputs: { text } }
+  }
+}
+
+const messagesConfig = z.object({
+  messages: z.array(
+    z.object({
+      role: z.enum(['system', 'user', 'assistant']),
+      content: z.string()
+    })
+  )
+})
+
+/** Authors an ordered role-tagged message list (spec §8 "Message List"): each row's content is
+ *  interpolated (macros/EJS + {{inN}} slots), then the list is provider-shaped when a gen
+ *  Context is wired. A trailing assistant row acts as a prefill (orderForProvider keeps it last). */
+export const promptMessages: NodeImpl = {
+  type: 'prompt.messages',
+  title: 'Message List',
+  inputs: [
+    { name: 'gen', type: 'Context' },
+    { name: 'in1', type: 'Any' },
+    { name: 'in2', type: 'Any' },
+    { name: 'in3', type: 'Any' },
+    { name: 'in4', type: 'Any' },
+    { name: 'when', type: 'Signal' }
+  ],
+  outputs: [{ name: 'messages', type: 'Messages' }],
+  configSchema: messagesConfig,
+  run: (_ctx, inputs, node) => {
+    const cfg = node.config as z.infer<typeof messagesConfig>
+    const gen = inputs.gen as GenContext | undefined
+    const rows: ChatMessage[] = cfg.messages.map((m) => ({
+      role: m.role,
+      content: interpolate(m.content, slotsOf(inputs), gen)
+    }))
+    return { outputs: { messages: gen ? providerShape(gen.settings, rows) : rows } }
+  }
+}
+
+/** Concatenates up to four Messages inputs in port order (a->d, skipping unwired ports — the
+ *  fan-in rule requires DISTINCT ports), provider-shaped when gen is wired so the seam between
+ *  merged lists stays provider-correct. */
+export const mergeMessages: NodeImpl = {
+  type: 'merge.messages',
+  title: 'Merge Messages',
+  inputs: [
+    { name: 'gen', type: 'Context' },
+    { name: 'a', type: 'Messages' },
+    { name: 'b', type: 'Messages' },
+    { name: 'c', type: 'Messages' },
+    { name: 'd', type: 'Messages' },
+    { name: 'when', type: 'Signal' }
+  ],
+  outputs: [{ name: 'messages', type: 'Messages' }],
+  run: (_ctx, inputs) => {
+    const gen = inputs.gen as GenContext | undefined
+    const merged = (['a', 'b', 'c', 'd'] as const).flatMap(
+      (p) => (inputs[p] as ChatMessage[] | undefined) ?? []
+    )
+    return { outputs: { messages: gen ? providerShape(gen.settings, merged) : merged } }
   }
 }

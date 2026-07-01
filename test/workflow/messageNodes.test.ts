@@ -11,10 +11,16 @@ vi.mock('../../src/main/services/templateService', async (importActual) => {
   }
 })
 
-import { textTemplate, interpolate } from '../../src/main/services/nodes/builtin/messageNodes'
+import {
+  textTemplate,
+  interpolate,
+  promptMessages,
+  mergeMessages
+} from '../../src/main/services/nodes/builtin/messageNodes'
 import { evalTemplate } from '../../src/main/services/templateService'
 import { RunContext, NodeImpl } from '../../src/main/services/nodes/types'
 import { GenContext } from '../../src/main/services/generation/types'
+import { ChatMessage } from '../../src/main/services/promptBuilder'
 
 const makeCtx = (): RunContext => ({
   signal: new AbortController().signal,
@@ -41,6 +47,18 @@ const makeGen = (overrides: Partial<GenContext> = {}): GenContext =>
     settings: { templates: { enabled: true } },
     ...overrides
   }) as unknown as GenContext
+
+/** Fake GenContext for the message-list nodes: also carries the api/generation settings fields
+ *  providerShape reads (api.provider, generation.system_as_user, generation.merge_consecutive_roles). */
+const makeGenWithSettings = (settingsOverrides: Record<string, unknown> = {}): GenContext =>
+  makeGen({
+    settings: {
+      templates: { enabled: true },
+      api: { provider: 'anthropic', endpoint: '', api_key: '', model: '' },
+      generation: {},
+      ...settingsOverrides
+    } as unknown as GenContext['settings']
+  })
 
 describe('interpolate', () => {
   it('substitutes slot values: string passes through, object JSON-encodes, missing -> empty', () => {
@@ -123,5 +141,139 @@ describe('text.template', () => {
     const node = meta(textTemplate, 'n1', { template: '{{in1}} / {{in2}}' })
     const res = await textTemplate.run(ctx, { in1: 'a', in2: { b: 2 } }, node)
     expect(res).toEqual({ outputs: { text: 'a / {"b":2}' } })
+  })
+})
+
+describe('prompt.messages', () => {
+  it('descriptor: gen:Context + in1-in4:Any + when:Signal inputs, messages:Messages output', () => {
+    expect(promptMessages.type).toBe('prompt.messages')
+    expect(promptMessages.inputs).toEqual([
+      { name: 'gen', type: 'Context' },
+      { name: 'in1', type: 'Any' },
+      { name: 'in2', type: 'Any' },
+      { name: 'in3', type: 'Any' },
+      { name: 'in4', type: 'Any' },
+      { name: 'when', type: 'Signal' }
+    ])
+    expect(promptMessages.outputs).toEqual([{ name: 'messages', type: 'Messages' }])
+  })
+
+  it('builds role rows from config and interpolates each row (slots + macros)', async () => {
+    const ctx = makeCtx()
+    // Distinct roles (system/user) so provider-shaping (merge/order) is a no-op here — this
+    // case is about row-building + interpolation, not shaping (covered separately below).
+    const gen = makeGenWithSettings()
+    const node = meta(promptMessages, 'n1', {
+      messages: [
+        { role: 'system', content: 'You are {{char}}.' },
+        { role: 'user', content: '{{in1}}' }
+      ]
+    })
+    const res = await promptMessages.run(ctx, { gen, in1: 'hi there' }, node)
+    expect(res).toEqual({
+      outputs: {
+        messages: [
+          { role: 'system', content: 'You are Bob.' },
+          { role: 'user', content: 'hi there' }
+        ]
+      }
+    })
+  })
+
+  it('returns raw interpolated rows (no provider shaping) when gen is unwired', async () => {
+    const ctx = makeCtx()
+    const node = meta(promptMessages, 'n1', {
+      messages: [
+        { role: 'system', content: 'sys' },
+        { role: 'system', content: 'sys2' }
+      ]
+    })
+    const res = await promptMessages.run(ctx, {}, node)
+    // No gen -> no providerShape call -> consecutive system rows stay unmerged.
+    expect(res).toEqual({
+      outputs: {
+        messages: [
+          { role: 'system', content: 'sys' },
+          { role: 'system', content: 'sys2' }
+        ]
+      }
+    })
+  })
+
+  it('provider-shapes the row list when gen is wired (system→user + merge, OpenAI-compatible)', async () => {
+    const ctx = makeCtx()
+    const gen = makeGenWithSettings({
+      api: { provider: 'openai', endpoint: '', api_key: '', model: '' },
+      generation: { system_as_user: true }
+    })
+    const node = meta(promptMessages, 'n1', {
+      messages: [
+        { role: 'system', content: 'sys1' },
+        { role: 'system', content: 'sys2' }
+      ]
+    })
+    const res = await promptMessages.run(ctx, { gen }, node)
+    // system_as_user relabels both rows to 'user', then merge_consecutive_roles (default on)
+    // coalesces them into one message.
+    expect(res).toEqual({ outputs: { messages: [{ role: 'user', content: 'sys1\nsys2' }] } })
+  })
+
+  it('provider-shapes with default settings (anthropic, no system_as_user): merges consecutive roles only', async () => {
+    const ctx = makeCtx()
+    const gen = makeGenWithSettings()
+    const node = meta(promptMessages, 'n1', {
+      messages: [
+        { role: 'user', content: 'a' },
+        { role: 'user', content: 'b' }
+      ]
+    })
+    const res = await promptMessages.run(ctx, { gen }, node)
+    expect(res).toEqual({ outputs: { messages: [{ role: 'user', content: 'a\nb' }] } })
+  })
+})
+
+describe('merge.messages', () => {
+  const msg = (role: ChatMessage['role'], content: string): ChatMessage => ({ role, content })
+
+  it('descriptor: gen:Context + a-d:Messages + when:Signal inputs, messages:Messages output', () => {
+    expect(mergeMessages.type).toBe('merge.messages')
+    expect(mergeMessages.inputs).toEqual([
+      { name: 'gen', type: 'Context' },
+      { name: 'a', type: 'Messages' },
+      { name: 'b', type: 'Messages' },
+      { name: 'c', type: 'Messages' },
+      { name: 'd', type: 'Messages' },
+      { name: 'when', type: 'Signal' }
+    ])
+    expect(mergeMessages.outputs).toEqual([{ name: 'messages', type: 'Messages' }])
+  })
+
+  it('concatenates wired ports a->d in port order, skipping unwired ports, with no gen wired', () => {
+    const ctx = makeCtx()
+    const node = { id: 'n1', config: {} }
+    const a = [msg('system', 's1')]
+    const c = [msg('user', 'u1'), msg('assistant', 'a1')]
+    const res = mergeMessages.run(ctx, { a, c }, node)
+    expect(res).toEqual({
+      outputs: { messages: [msg('system', 's1'), msg('user', 'u1'), msg('assistant', 'a1')] }
+    })
+  })
+
+  it('returns [] when no ports are wired and gen is unwired', () => {
+    const ctx = makeCtx()
+    const node = { id: 'n1', config: {} }
+    const res = mergeMessages.run(ctx, {}, node)
+    expect(res).toEqual({ outputs: { messages: [] } })
+  })
+
+  it('provider-shapes the merged list when gen is wired', () => {
+    const ctx = makeCtx()
+    const gen = makeGenWithSettings()
+    const node = { id: 'n1', config: {} }
+    const a = [msg('user', 'a')]
+    const b = [msg('user', 'b')]
+    const res = mergeMessages.run(ctx, { gen, a, b }, node)
+    // merge_consecutive_roles default-on coalesces the two user rows across the a/b seam.
+    expect(res).toEqual({ outputs: { messages: [msg('user', 'a\nb')] } })
   })
 })
