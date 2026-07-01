@@ -102,6 +102,35 @@ describe('validateWorkflow', () => {
     expect(r.ok === false && r.errors.some((e) => e.code === 'CYCLE')).toBe(false)
   })
 
+  it('rejects multiple edges into the same input port', () => {
+    const withSrc2 = new Map(descriptors)
+    withSrc2.set('src2', {
+      type: 'src2',
+      title: 'Src2',
+      inputs: [],
+      outputs: [{ name: 'out', type: 'Text' }]
+    })
+    const d = doc(
+      [
+        { id: 'a', type: 'src' },
+        { id: 'c', type: 'src2' },
+        { id: 'b', type: 'sink', isMainOutput: true }
+      ],
+      [
+        { from: { node: 'a', port: 'out' }, to: { node: 'b', port: 'in' } },
+        { from: { node: 'c', port: 'out' }, to: { node: 'b', port: 'in' } }
+      ]
+    )
+    const r = validateWorkflow(d, withSrc2)
+    expect(r.ok).toBe(false)
+    expect(r.ok === false && r.errors.some((e) => e.code === 'FANIN')).toBe(true)
+  })
+
+  it('does not flag FANIN for a normal single-edge-per-port graph', () => {
+    const r = validateWorkflow(good(), descriptors)
+    expect(r).toEqual({ ok: true })
+  })
+
   it('rejects a cycle', () => {
     const cyc = new Map(descriptors)
     cyc.set('mid', {

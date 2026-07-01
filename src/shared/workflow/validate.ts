@@ -34,6 +34,7 @@ export function validateWorkflow(
     return { nodeMissing: false, type: spec?.type }
   }
 
+  const fanInCounts = new Map<string, { nodeId: string; port: string; count: number }>()
   for (const e of doc.edges) {
     const out = portOf(e.from.node, e.from.port, 'outputs')
     const inp = portOf(e.to.node, e.to.port, 'inputs')
@@ -58,6 +59,20 @@ export function validateWorkflow(
         message: `${out.type} → ${inp.type} incompatible`,
         nodeId: e.to.node
       })
+
+    const fanInKey = JSON.stringify([e.to.node, e.to.port])
+    const entry = fanInCounts.get(fanInKey)
+    if (entry) entry.count++
+    else fanInCounts.set(fanInKey, { nodeId: e.to.node, port: e.to.port, count: 1 })
+  }
+
+  for (const { nodeId, port, count } of fanInCounts.values()) {
+    if (count < 2) continue
+    errors.push({
+      code: 'FANIN',
+      message: `input port "${port}" on ${nodeId} has multiple incoming edges`,
+      nodeId
+    })
   }
 
   const mains = doc.nodes.filter((n) => n.isMainOutput)

@@ -35,7 +35,6 @@ const edgeKey = (e: Edge): string => `${e.from.node}:${e.from.port}->${e.to.node
 interface ExecState {
   outputs: Map<string, Record<string, unknown>>
   deadEdge: Set<string>
-  skipped: Set<string>
   traces: NodeTrace[]
 }
 
@@ -58,8 +57,10 @@ async function runNodes(
   }
 
   for (const id of ids) {
+    const outs = outgoing.get(id) ?? []
+
     if (ctx.signal.aborted) {
-      state.skipped.add(id)
+      for (const out of outs) state.deadEdge.add(edgeKey(out))
       state.traces.push({ nodeId: id, status: 'skipped', phase })
       continue
     }
@@ -67,10 +68,11 @@ async function runNodes(
     const node = nodeById.get(id)!
     const impl = registry.get(node.type)!
     const ins = incoming.get(id) ?? []
-    const outs = outgoing.get(id) ?? []
 
+    // Branch-prune: signal firing is only known after a node runs, so which edges are dead
+    // can't be computed upfront — pruning is interleaved with execution in this single forward
+    // topo pass, unlike graph.ts's prunedNodes(), which takes a static inactive-edge set.
     if (ins.length > 0 && ins.every((e) => state.deadEdge.has(edgeKey(e)))) {
-      state.skipped.add(id)
       for (const out of outs) state.deadEdge.add(edgeKey(out))
       state.traces.push({ nodeId: id, status: 'skipped', phase })
       continue
@@ -158,7 +160,6 @@ export async function runWorkflow(
   const state: ExecState = {
     outputs: new Map(),
     deadEdge: new Set(),
-    skipped: new Set(),
     traces: []
   }
 
