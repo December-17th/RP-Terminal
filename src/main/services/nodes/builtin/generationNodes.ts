@@ -1,7 +1,12 @@
 import { buildGenContext } from '../../generation/genContext'
 import { recallMemory } from '../../generation/memoryRecall'
 import { matchWorldInfo, assemblePrompt } from '../../generation/assemble'
+import { callModel } from '../../generation/callModel'
+import { parseResponse, computeMetrics } from '../../generation/parseResponse'
+import { foldState } from '../../generation/foldState'
 import { GenContext } from '../../generation/types'
+import { ChatMessage } from '../../promptBuilder'
+import { PresetParameters } from '../../../types/preset'
 import { NodeImpl } from '../types'
 
 /**
@@ -50,5 +55,84 @@ export const promptAssemble: NodeImpl = {
     const matched = matchWorldInfo(gen)
     const { sendMessages, params } = assemblePrompt(gen, matched, inputs.block as string)
     return { outputs: { sendMessages, params } }
+  }
+}
+
+/** Calls the provider and streams the reply live via `ctx.streamMain`. On abort-with-empty
+ *  (`callModel` returns null) this returns no outputs — the engine's abort path skips the
+ *  downstream (sync) nodes, matching `generate()`'s early-return null. */
+export const llmSample: NodeImpl = {
+  type: 'llm.sample',
+  title: 'Sample',
+  inputs: [
+    { name: 'gen', type: 'Context' },
+    { name: 'sendMessages', type: 'Messages' },
+    { name: 'params', type: 'Any' }
+  ],
+  outputs: [
+    { name: 'raw', type: 'Text' },
+    { name: 'rawUsage', type: 'Any' }
+  ],
+  run: async (ctx, inputs) => {
+    const r = await callModel(
+      inputs.gen as GenContext,
+      inputs.sendMessages as ChatMessage[],
+      inputs.params as PresetParameters,
+      ctx.streamMain,
+      ctx.signal
+    )
+    if (r === null) return { outputs: {} }
+    return { outputs: { raw: r.raw, rawUsage: r.rawUsage } }
+  }
+}
+
+/** Cleans + parses the raw response into rpt-events/MVU commands, plus computes this turn's
+ *  cache metrics. */
+export const parseResponseNode: NodeImpl = {
+  type: 'parse.response',
+  title: 'Parse Response',
+  inputs: [
+    { name: 'gen', type: 'Context' },
+    { name: 'raw', type: 'Text' },
+    { name: 'sendMessages', type: 'Messages' },
+    { name: 'rawUsage', type: 'Any' }
+  ],
+  outputs: [
+    { name: 'parsed', type: 'Any' },
+    { name: 'mvu', type: 'Any' },
+    { name: 'metrics', type: 'Any' }
+  ],
+  run: (_ctx, inputs) => {
+    const raw = inputs.raw as string
+    const { parsed, mvu } = parseResponse(raw)
+    const metrics = computeMetrics(
+      inputs.gen as GenContext,
+      inputs.sendMessages as ChatMessage[],
+      raw,
+      inputs.rawUsage
+    )
+    return { outputs: { parsed, mvu, metrics } }
+  }
+}
+
+/** Folds this turn's parsed rpt-events + MVU commands onto the running variables. */
+export const applyState: NodeImpl = {
+  type: 'apply.state',
+  title: 'Apply State',
+  inputs: [
+    { name: 'gen', type: 'Context' },
+    { name: 'parsed', type: 'Any' },
+    { name: 'mvu', type: 'Any' },
+    { name: 'raw', type: 'Text' }
+  ],
+  outputs: [{ name: 'variables', type: 'Vars' }],
+  run: (_ctx, inputs) => {
+    const variables = foldState(
+      inputs.gen as GenContext,
+      inputs.parsed as ReturnType<typeof parseResponse>['parsed'],
+      inputs.mvu as ReturnType<typeof parseResponse>['mvu'],
+      inputs.raw as string
+    )
+    return { outputs: { variables } }
   }
 }
