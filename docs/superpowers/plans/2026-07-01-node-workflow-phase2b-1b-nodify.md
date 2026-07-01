@@ -99,7 +99,7 @@ explicit typed outputs feed the model and floor. Ports use the Phase 1 `PortType
 | `prompt.assemble` | `gen: Context`, `block: Text` → `sendMessages: Messages`, `params: Any` | `matchWorldInfo(gen)` then `assemblePrompt(gen, matched, block)` | pre |
 | `llm.sample` | `gen: Context`, `sendMessages: Messages`, `params: Any` → `raw: Text`, `rawUsage: Any` | `callModel(gen, sendMessages, params, ctx.streamMain, ctx.signal)`; streams live via `ctx.streamMain` | pre |
 | `parse.response` | `gen: Context`, `raw: Text`, `sendMessages: Messages`, `rawUsage: Any` → `parsed: Any`, `mvu: Any`, `metrics: Any` | `parseResponse(raw)` + `computeMetrics(gen, sendMessages, raw, rawUsage)` | pre |
-| `apply.state` | `gen: Context`, `parsed: Any`, `mvu: Any` → `variables: Vars` | `foldState(gen, parsed, mvu, raw)` | pre |
+| `apply.state` | `gen: Context`, `parsed: Any`, `mvu: Any`, `raw: Text` → `variables: Vars` | `foldState(gen, parsed, mvu, raw)` | pre |
 | `output.writeFloor` ★ | `gen: Context`, `raw: Text`, `sendMessages: Messages`, `variables: Vars`, `parsed: Any`, `metrics: Any` → `floor: Any` | `persistFloor(gen, {...})`; **`isMainOutput: true`** | pre (boundary) |
 | `memory.compact` | `gen: Context` → (none) | `compactMemory(ctx.profileId, ctx.chatId)` | **post** |
 
