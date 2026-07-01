@@ -7,7 +7,7 @@ import { normalizeSwipes } from './swipeHelpers'
 import { collectRenderMarkers, ChatMessage } from './promptBuilder'
 import { maybeCompact } from './compactionService'
 import { saveGlobals } from './templateService'
-import { streamProvider, DeltaCallback, UsageCallback } from './apiService'
+import { streamProvider, DeltaCallback } from './apiService'
 import { normalizeUsage, buildFloorMetrics } from './promptCacheMetrics'
 import { parseContent, parseCombatStart, stripThinking, RPEvent } from '../parsers/contentParser'
 import {
@@ -22,6 +22,7 @@ import { Lorebook, getRpExt } from '../types/character'
 import { buildGenContext } from './generation/genContext'
 import { recallMemory } from './generation/memoryRecall'
 import { matchWorldInfo, assemblePrompt } from './generation/assemble'
+import { callModel } from './generation/callModel'
 
 // Re-exported so existing consumers/tests (test/generationService.test.ts) keep working; the
 // implementation now lives in generation/assemble.ts (its only real call site).
@@ -78,36 +79,16 @@ export const generate = async (
 
   const { sendMessages, params } = assemblePrompt(ctx, matchedEntries, memory.block)
 
-  let rawUsage: unknown = null
-  const onUsage: UsageCallback = (u) => {
-    rawUsage = u
-  }
-
   const controller = new AbortController()
   activeControllers.set(chatId, controller)
-
-  let raw: string
+  let r: { raw: string; rawUsage: unknown; stopped: boolean } | null
   try {
-    raw = await streamProvider(settings, sendMessages, params, onDelta, controller.signal, onUsage)
-  } catch (err: any) {
-    if (controller.signal.aborted) {
-      log('info', '⏹ generation stopped by user')
-      return null
-    }
-    log('error', `✗ provider call failed`, err?.message || String(err))
-    throw err
+    r = await callModel(ctx, sendMessages, params, onDelta, controller.signal)
   } finally {
     activeControllers.delete(chatId)
   }
-
-  const stopped = controller.signal.aborted
-  // Stopped with nothing generated: don't persist an empty floor.
-  if (stopped && !raw.trim()) {
-    log('info', '⏹ generation stopped (no text)')
-    return null
-  }
-
-  log('response', `← ${raw.length} chars${stopped ? ' (stopped)' : ''}`, raw)
+  if (!r) return null
+  const { raw, rawUsage } = r
 
   // Cache meter: compute this turn's metrics (proxy + provider usage) + the cumulative snapshot,
   // chaining from the previous floor (its stored `request` is the proxy anchor; its cumulative is
