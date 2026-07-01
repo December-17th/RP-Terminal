@@ -18,7 +18,9 @@ const doc = (nodes: NodeInstance[], edges: Edge[]): WorkflowDoc => ({
 
 describe('topoOrder', () => {
   it('orders a linear chain a->b->c', () => {
-    const order = topoOrder(doc([node('a'), node('b'), node('c')], [edge('a', 'b'), edge('b', 'c')]))
+    const order = topoOrder(
+      doc([node('a'), node('b'), node('c')], [edge('a', 'b'), edge('b', 'c')])
+    )
     expect(order.indexOf('a')).toBeLessThan(order.indexOf('b'))
     expect(order.indexOf('b')).toBeLessThan(order.indexOf('c'))
   })

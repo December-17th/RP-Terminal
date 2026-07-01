@@ -19,8 +19,8 @@ export function validateWorkflow(
   const errors: ValidationError[] = []
   const nodeById = new Map<string, NodeInstance>(doc.nodes.map((n) => [n.id, n]))
 
-  if (nodeById.size !== doc.nodes.length)
-    errors.push({ code: 'DUP_NODE_ID', message: 'duplicate node ids' })
+  const hasDupNodeIds = nodeById.size !== doc.nodes.length
+  if (hasDupNodeIds) errors.push({ code: 'DUP_NODE_ID', message: 'duplicate node ids' })
 
   for (const n of doc.nodes) {
     if (!descriptors.has(n.type))
@@ -67,11 +67,16 @@ export function validateWorkflow(
       message: `expected exactly 1 main-output node, found ${mains.length}`
     })
 
-  try {
-    topoOrder(doc)
-  } catch (err) {
-    if (err instanceof GraphCycleError) errors.push({ code: 'CYCLE', message: 'graph has a cycle' })
-    else throw err
+  // topoOrder's node-id-keyed maps undercount indegree when ids collide, so the cycle check is
+  // unreliable with duplicate ids — the doc is already invalid via DUP_NODE_ID, skip it.
+  if (!hasDupNodeIds) {
+    try {
+      topoOrder(doc)
+    } catch (err) {
+      if (err instanceof GraphCycleError)
+        errors.push({ code: 'CYCLE', message: 'graph has a cycle' })
+      else throw err
+    }
   }
 
   return errors.length ? { ok: false, errors } : { ok: true }

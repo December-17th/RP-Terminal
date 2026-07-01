@@ -80,6 +80,28 @@ describe('validateWorkflow', () => {
     expect(r.ok === false && r.errors.some((e) => e.code === 'MAIN_OUTPUT')).toBe(true)
   })
 
+  it('rejects an edge to a non-existent node', () => {
+    const d = good()
+    d.edges[0].to.node = 'missing'
+    const r = validateWorkflow(d, descriptors)
+    expect(r.ok === false && r.errors.some((e) => e.code === 'EDGE_NODE')).toBe(true)
+  })
+
+  it('flags duplicate node ids without a spurious CYCLE error', () => {
+    const d = doc(
+      [
+        { id: 'a', type: 'src' },
+        { id: 'b', type: 'sink', isMainOutput: true },
+        { id: 'b', type: 'sink' }
+      ],
+      [{ from: { node: 'a', port: 'out' }, to: { node: 'b', port: 'in' } }]
+    )
+    const r = validateWorkflow(d, descriptors)
+    expect(r.ok).toBe(false)
+    expect(r.ok === false && r.errors.some((e) => e.code === 'DUP_NODE_ID')).toBe(true)
+    expect(r.ok === false && r.errors.some((e) => e.code === 'CYCLE')).toBe(false)
+  })
+
   it('rejects a cycle', () => {
     const cyc = new Map(descriptors)
     cyc.set('mid', {

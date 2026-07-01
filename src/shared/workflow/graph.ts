@@ -71,6 +71,7 @@ export function prunedNodes(doc: WorkflowDoc, inactiveEdges: Edge[]): Set<string
             changed = true
           }
         }
+        // Forces one more fixpoint pass; harmless safety margin, not load-bearing.
         changed = true
       }
     }
