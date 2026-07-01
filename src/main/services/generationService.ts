@@ -78,6 +78,11 @@ export const generate = async (
       onDelta
     })
     const res = await runWorkflow(DEFAULT_GRAPH, builtinRegistry, ctx)
+    // A pre-phase node failure (provider error, assembly throw, …) reaches us as a fatal
+    // RESULT, not a rejection — re-surface it (spec §10: unwired + failed ⇒ the turn aborts
+    // with the error surfaced). Without this a hard failure returns null and reads exactly
+    // like a user Stop: no renderer error banner, the action text silently lost.
+    if (res.error) throw new Error(res.error.message)
     if (!res.ok || res.aborted) return null
     const floor = res.outputs.get('write')?.floor as FloorFile | undefined
     return floor ?? null

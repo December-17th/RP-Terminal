@@ -62,8 +62,9 @@ type Scenario = {
   /** What streamProvider does: 'text' streams RAW and returns it normally; 'abort-text' streams
    *  a partial via onDelta, aborts the chat's controller, then RETURNS the partial (mirrors
    *  streamProvider's real "user stopped — keep whatever streamed" behavior); 'abort-empty'
-   *  aborts then returns ''. */
-  mode: 'text' | 'abort-text' | 'abort-empty'
+   *  aborts then returns ''; 'fail' throws (network/auth/429-exhausted — a real provider
+   *  failure, NOT a user stop). */
+  mode: 'text' | 'abort-text' | 'abort-empty' | 'fail'
   raw: string
   lore: LorebookEntry[]
 }
@@ -133,6 +134,9 @@ vi.mock('../../src/main/services/apiService', async (orig) => ({
       abortGeneration('chat1')
       return scenario.raw
     }
+    if (scenario.mode === 'fail') {
+      throw new Error('provider down: 503')
+    }
     // abort-empty
     abortGeneration('chat1')
     return ''
@@ -170,6 +174,20 @@ describe('generate() — expanded parity (abort + lore + combat)', () => {
     scenario = { mode: 'abort-empty', raw: '', lore: [] }
     const floor = await generate('profile1', 'chat1', 'open the door')
     expect(floor).toBeNull()
+    expect(appendFloorCalled).toBe(false)
+    expect(capturedFloor).toBeNull()
+  })
+
+  it('provider failure: generate() REJECTS with the provider error (not a silent null)', async () => {
+    // Pre-workflow behavior: callModel rethrew a non-abort provider error and generate()
+    // propagated it, so the renderer showed its error banner (chatStore catch). The graph
+    // engine converts the throw into a pre-phase fatal RESULT — generate() must re-surface
+    // it as a rejection (spec §10: unwired + failed ⇒ turn aborts with the error surfaced),
+    // or a hard failure reads exactly like a user Stop.
+    scenario = { mode: 'fail', raw: '', lore: [] }
+    await expect(generate('profile1', 'chat1', 'open the door')).rejects.toThrow(
+      'provider down: 503'
+    )
     expect(appendFloorCalled).toBe(false)
     expect(capturedFloor).toBeNull()
   })
