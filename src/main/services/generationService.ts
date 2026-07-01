@@ -1,12 +1,10 @@
 import { getSettings } from './settingsService'
 import { getActivePreset } from './presetService'
 import { getLorebookById } from './lorebookService'
-import { getChat, getChatLorebookIds, appendFloor, truncateFloors } from './chatService'
+import { getChat, getChatLorebookIds, truncateFloors } from './chatService'
 import { getAllFloors, getFloor, saveFloor } from './floorService'
 import { normalizeSwipes } from './swipeHelpers'
 import { collectRenderMarkers, ChatMessage } from './promptBuilder'
-import { maybeCompact } from './compactionService'
-import { saveGlobals } from './templateService'
 import { streamProvider, DeltaCallback } from './apiService'
 import {
   parseMvuCommands,
@@ -24,6 +22,7 @@ import { matchWorldInfo, assemblePrompt } from './generation/assemble'
 import { callModel } from './generation/callModel'
 import { parseResponse, computeMetrics } from './generation/parseResponse'
 import { foldState, applyEvent } from './generation/foldState'
+import { persistFloor, compactMemory } from './generation/persistFloor'
 
 // Re-exported so existing consumers/tests (test/generationService.test.ts) keep working; the
 // implementation now lives in generation/assemble.ts (its only real call site).
@@ -57,7 +56,6 @@ export const generate = async (
   // re-written once per turn never builds a false runaway streak across turns (WS-3).
   resetWriteLoopGuard(chatId)
   const ctx = buildGenContext(profileId, chatId, userAction)
-  const { chat, settings, globals } = ctx
 
   const matchedEntries = matchWorldInfo(ctx)
 
@@ -89,30 +87,15 @@ export const generate = async (
   // apply this turn's rpt-events + MVU commands/patches + combat cue on top, then persist globals.
   const variables = foldState(ctx, parsed, mvu, raw)
 
-  saveGlobals(profileId, globals)
-
-  const now = new Date().toISOString()
-  const floor: FloorFile = {
-    floor: chat.floor_count,
-    chat_id: chatId,
-    timestamp: now,
-    user_message: { content: userAction, timestamp: now },
-    // Lossless: the complete AI output (incl. <thinking>, <UpdateVariable>, etc.) is stored.
-    response: { content: raw, model: settings.api.model, provider: settings.api.provider },
-    // The complete prompt that produced it, for full-fidelity inspection/replay.
-    request: sendMessages,
+  const floor = persistFloor(ctx, {
+    userAction,
+    raw,
+    sendMessages,
     events: parsed.events,
     variables,
     metrics: turnMetrics
-  }
-
-  appendFloor(profileId, chatId, floor)
-  // Episodic memory (docs/episodic-memory-design.md §7): fold aged-out turns into memories. Off
-  // the hot path — the floor is already persisted and returned below. Fail-open; never blocks the
-  // turn (maybeCompact swallows its own errors; the .catch is a belt-and-braces guard).
-  void maybeCompact(profileId, chatId).catch((err) =>
-    log('error', `memory: compaction error — ${err?.message || String(err)}`)
-  )
+  })
+  compactMemory(profileId, chatId)
   return floor
 }
 
