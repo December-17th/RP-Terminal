@@ -16,8 +16,8 @@ import { applyEvent } from './generation/foldState'
 import { resetWriteLoopGuard } from './generation/varsWrite'
 import { buildTurnContext } from './nodes/turnContext'
 import { builtinRegistry } from './nodes/builtin'
-import { DEFAULT_GRAPH } from './nodes/builtin/defaultGraph'
 import { runWorkflow } from './workflowEngine'
+import { resolveWorkflowDoc } from './workflowService'
 
 // Re-exported so existing consumers/tests (test/generationService.test.ts) keep working; the
 // implementation now lives in generation/assemble.ts (its only real call site).
@@ -70,16 +70,16 @@ export const generate = async (
   const controller = new AbortController()
   activeControllers.set(chatId, controller)
   try {
+    const { id: workflowId, doc } = resolveWorkflowDoc(profileId, chatId)
     const ctx = buildTurnContext({
       profileId,
       chatId,
-      // TODO(Task 5): resolve the chat/world/global workflow selection instead of this literal.
-      workflowId: 'default',
       userAction,
+      workflowId,
       signal: controller.signal,
       onDelta
     })
-    const res = await runWorkflow(DEFAULT_GRAPH, builtinRegistry, ctx)
+    const res = await runWorkflow(doc, builtinRegistry, ctx)
     // A pre-phase node failure (provider error, assembly throw, …) reaches us as a fatal
     // RESULT, not a rejection — re-surface it (spec §10: unwired + failed ⇒ the turn aborts
     // with the error surfaced). Without this a hard failure returns null and reads exactly
