@@ -48,7 +48,7 @@ async function runNodes(
   ctx: RunContext,
   state: ExecState,
   phase: 'pre' | 'post'
-): Promise<void> {
+): Promise<{ fatal?: NodeError }> {
   const nodeById = new Map(doc.nodes.map((n) => [n.id, n]))
   const incoming = new Map<string, Edge[]>(doc.nodes.map((n) => [n.id, []]))
   const outgoing = new Map<string, Edge[]>(doc.nodes.map((n) => [n.id, []]))
@@ -61,16 +61,15 @@ async function runNodes(
     const node = nodeById.get(id)!
     const impl = registry.get(node.type)!
     const ins = incoming.get(id) ?? []
+    const outs = outgoing.get(id) ?? []
 
-    // Branch-prune: a node with ≥1 incoming edge, all dead, is skipped; its outgoing edges die too.
     if (ins.length > 0 && ins.every((e) => state.deadEdge.has(edgeKey(e)))) {
       state.skipped.add(id)
-      for (const out of outgoing.get(id) ?? []) state.deadEdge.add(edgeKey(out))
+      for (const out of outs) state.deadEdge.add(edgeKey(out))
       state.traces.push({ nodeId: id, status: 'skipped', phase })
       continue
     }
 
-    // Gather inputs from live incoming edges (last edge into a port wins).
     const inputs: Record<string, unknown> = {}
     for (const e of ins) {
       if (state.deadEdge.has(edgeKey(e))) continue
@@ -78,17 +77,44 @@ async function runNodes(
     }
 
     const started = Date.now()
-    const result = (await impl.run(ctx, inputs)) ?? {}
-    state.outputs.set(id, result.outputs ?? {})
-    state.traces.push({ nodeId: id, status: 'ran', phase, ms: Date.now() - started })
-
-    // Kill edges from Signal output ports that did not fire (branch selection).
-    const fired = new Set(result.signals ?? [])
-    for (const out of outgoing.get(id) ?? []) {
-      const port = impl.outputs.find((p) => p.name === out.from.port)
-      if (port?.type === 'Signal' && !fired.has(out.from.port)) state.deadEdge.add(edgeKey(out))
+    try {
+      const result = (await impl.run(ctx, inputs)) ?? {}
+      state.outputs.set(id, result.outputs ?? {})
+      state.traces.push({ nodeId: id, status: 'ran', phase, ms: Date.now() - started })
+      const fired = new Set(result.signals ?? [])
+      for (const out of outs) {
+        const port = impl.outputs.find((p) => p.name === out.from.port)
+        if (port?.type === 'Signal' && !fired.has(out.from.port)) state.deadEdge.add(edgeKey(out))
+      }
+    } catch (err) {
+      const nodeError: NodeError = {
+        kind: 'A',
+        message: err instanceof Error ? err.message : String(err),
+        nodeId: id,
+        attempts: 1
+      }
+      const errorPort = impl.outputs.find((p) => p.name === 'error' && p.type === 'Error')
+      const errorEdges = outs.filter((o) => o.from.port === 'error')
+      const wired = !!errorPort && errorEdges.length > 0
+      state.traces.push({
+        nodeId: id,
+        status: 'failed',
+        phase,
+        error: nodeError,
+        ms: Date.now() - started
+      })
+      if (wired) {
+        // Deliver the error on the error port; kill the normal (non-error) branch.
+        state.outputs.set(id, { error: nodeError })
+        for (const out of outs) if (out.from.port !== 'error') state.deadEdge.add(edgeKey(out))
+      } else {
+        // Kill all outputs; a pre-phase unwired failure is fatal, a post-phase one fails open.
+        for (const out of outs) state.deadEdge.add(edgeKey(out))
+        if (phase === 'pre') return { fatal: nodeError }
+      }
     }
   }
+  return {}
 }
 
 /** Pre-phase = the main-output node and every node that can reach it (its ancestors). Everything
@@ -133,7 +159,7 @@ export async function runWorkflow(
   const order = topoOrder(doc)
   const { preIds, postIds } = computePhases(doc)
 
-  await runNodes(
+  const pre = await runNodes(
     order.filter((id) => preIds.has(id)),
     doc,
     registry,
@@ -141,6 +167,15 @@ export async function runWorkflow(
     state,
     'pre'
   )
+  if (pre.fatal) {
+    return {
+      ok: false,
+      aborted: false,
+      traces: state.traces,
+      outputs: state.outputs,
+      error: pre.fatal
+    }
+  }
   ctx.onResponseReady?.()
   await runNodes(
     order.filter((id) => postIds.has(id)),
