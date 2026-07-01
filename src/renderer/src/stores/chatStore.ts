@@ -137,11 +137,17 @@ export const useChatStore = create<ChatState>((set, get) => {
     },
 
     createChat: async (profileId, characterId) => {
+      // Same session-switch hygiene as setActiveChat: drop the previous chat's live combat/duel
+      // mirror, and clear floors in the SAME set that flips activeChatId — otherwise the new chat
+      // briefly renders the old chat's floors/variables (stale variables on a fresh session).
+      useCombatStore.getState().reset()
+      useDuelStore.getState().reset()
       const newChat = await window.api.createChat(profileId, characterId)
       set((state) => ({
         chats: [newChat, ...state.chats],
         activeChatId: newChat.id,
         activeChatMode: 'explore',
+        floors: [],
         error: null
       }))
       // A freshly created chat may already contain a seeded greeting floor.
