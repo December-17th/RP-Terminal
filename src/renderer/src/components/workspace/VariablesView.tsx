@@ -19,7 +19,10 @@ const Section: React.FC<{
   value: unknown
   empty: string
   children: React.ReactNode
-}> = ({ title, value, empty, children }) => {
+  /** Render children even when the value is empty — for editable sections, so the tree editor's
+   *  root "+ key" row is reachable to add the FIRST key to an empty stat_data / KV. */
+  alwaysRender?: boolean
+}> = ({ title, value, empty, children, alwaysRender }) => {
   const t = useT()
   const isEmpty =
     value == null || (typeof value === 'object' && Object.keys(value as object).length === 0)
@@ -52,7 +55,7 @@ const Section: React.FC<{
         ) : null}
       </summary>
       <div style={{ marginTop: 6 }}>
-        {isEmpty ? (
+        {isEmpty && !alwaysRender ? (
           <div style={{ opacity: 0.5, fontSize: 12, padding: '2px' }}>
             <em>{empty}</em>
           </div>
@@ -134,7 +137,7 @@ export const VariablesView: React.FC<{ profileId: string }> = ({ profileId }) =>
         </button>
       </h3>
       <div style={{ marginTop: 16 }}>
-        <Section title={t('variables.mvuState')} value={statData} empty={t('variables.empty')}>
+        <Section title={t('variables.mvuState')} value={statData} empty={t('variables.empty')} alwaysRender>
           <JsonTreeEditor value={statData ?? {}} onEdit={onStatEdit} readOnly={!hasFloor} />
           {!hasFloor ? (
             <div style={{ opacity: 0.5, fontSize: 12 }}>
@@ -145,7 +148,7 @@ export const VariablesView: React.FC<{ profileId: string }> = ({ profileId }) =>
         <Section title={t('variables.floorVars')} value={latest} empty={t('variables.empty')}>
           <JsonTreeEditor value={latest} onEdit={() => {}} readOnly />
         </Section>
-        <Section title={t('variables.sessionKv')} value={cardKv} empty={t('variables.empty')}>
+        <Section title={t('variables.sessionKv')} value={cardKv} empty={t('variables.empty')} alwaysRender>
           <JsonTreeEditor value={cardKv ?? {}} onEdit={onKvEdit} />
         </Section>
       </div>
