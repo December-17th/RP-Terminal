@@ -28,6 +28,14 @@ export interface RunContext {
   /** Invoked once, right after the main-output node completes, so the caller can deliver the
    *  response before post-response nodes finish (spec §5 phase boundary). */
   onResponseReady?: () => void
+  /** Turn seed (Phase 2b): the profile driving this run. Optional so Phase 2a bare RunContext
+   *  literals (engine tests) still compile — only default-graph nodes that need domain context
+   *  (via `input.context`) read this. */
+  profileId?: string
+  /** Turn seed (Phase 2b): the chat this run belongs to. */
+  chatId?: string
+  /** Turn seed (Phase 2b): the raw user action text that started this turn. */
+  userAction?: string
 }
 
 /** What a node's run() returns: values per output-port name, plus which Signal output ports
