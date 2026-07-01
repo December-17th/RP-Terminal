@@ -28,6 +28,7 @@ export interface EditorNode {
   type: string
   position: { x: number; y: number }
   config?: Record<string, unknown>
+  panel?: { show: boolean; label?: string; collapsed?: boolean }
   isMainOutput?: boolean
 }
 
@@ -102,6 +103,7 @@ export function docToEditor(doc: WorkflowDoc): { nodes: EditorNode[]; edges: Edi
     type: n.type,
     position: n.position ?? layout.get(n.id) ?? { x: ORIGIN, y: ORIGIN },
     ...(n.config !== undefined ? { config: n.config } : {}),
+    ...(n.panel !== undefined ? { panel: n.panel } : {}),
     ...(n.isMainOutput !== undefined ? { isMainOutput: n.isMainOutput } : {})
   }))
   const edges: EditorEdge[] = doc.edges.map((e) => ({
@@ -126,6 +128,7 @@ export function editorToDoc(
       type: n.type,
       position: n.position,
       ...(hasConfig ? { config: n.config } : {}),
+      ...(n.panel !== undefined ? { panel: n.panel } : {}),
       ...(n.isMainOutput !== undefined ? { isMainOutput: n.isMainOutput } : {})
     }
   })

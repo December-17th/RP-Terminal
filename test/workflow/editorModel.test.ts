@@ -119,6 +119,22 @@ describe('docToEditor / editorToDoc round-trip', () => {
     const rebuilt = editorToDoc(base, editorNodes, [])
     expect(rebuilt.nodes[0].position).toEqual({ x: 12, y: 34 })
   })
+
+  it('preserves node panel config through a docToEditor -> editorToDoc round-trip (alongside config)', () => {
+    const d = doc(
+      [node('a', { panel: { show: true, label: 'Plan' }, config: { template: 'x' } })],
+      []
+    )
+    const { nodes } = docToEditor(d)
+    const a = nodes.find((n) => n.id === 'a')!
+    expect(a.panel).toEqual({ show: true, label: 'Plan' })
+    expect(a.config).toEqual({ template: 'x' })
+
+    const rebuilt = editorToDoc(d, nodes, [])
+    const ra = rebuilt.nodes.find((n) => n.id === 'a')!
+    expect(ra.panel).toEqual({ show: true, label: 'Plan' })
+    expect(ra.config).toEqual({ template: 'x' })
+  })
 })
 
 describe('autoLayout', () => {
