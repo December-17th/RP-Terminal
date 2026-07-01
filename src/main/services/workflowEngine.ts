@@ -86,7 +86,10 @@ async function runNodes(
 
     const started = Date.now()
     try {
-      const result = (await impl.run(ctx, inputs)) ?? {}
+      const config = (
+        impl.configSchema ? impl.configSchema.parse(node.config ?? {}) : (node.config ?? {})
+      ) as Record<string, unknown>
+      const result = (await impl.run(ctx, inputs, { id, config })) ?? {}
       state.outputs.set(id, result.outputs ?? {})
       state.traces.push({ nodeId: id, status: 'ran', phase, ms: Date.now() - started })
       const fired = new Set(result.signals ?? [])
