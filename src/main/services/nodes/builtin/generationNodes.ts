@@ -4,9 +4,11 @@ import { matchWorldInfo, assemblePrompt } from '../../generation/assemble'
 import { callModel } from '../../generation/callModel'
 import { parseResponse, computeMetrics } from '../../generation/parseResponse'
 import { foldState } from '../../generation/foldState'
+import { persistFloor, compactMemory } from '../../generation/persistFloor'
 import { GenContext } from '../../generation/types'
 import { ChatMessage } from '../../promptBuilder'
 import { PresetParameters } from '../../../types/preset'
+import { FloorMetrics } from '../../../../shared/usageTypes'
 import { NodeImpl } from '../types'
 
 /**
@@ -134,5 +136,50 @@ export const applyState: NodeImpl = {
       inputs.raw as string
     )
     return { outputs: { variables } }
+  }
+}
+
+/** Persists this turn's globals + the finished floor. This is the `isMainOutput` (phase-boundary)
+ *  node (spec/plan decision A): the whole synchronous pre-response chain ends here, and the
+ *  engine delivers the turn result once this node completes. */
+export const outputWriteFloor: NodeImpl = {
+  type: 'output.writeFloor',
+  title: 'Write Floor',
+  inputs: [
+    { name: 'gen', type: 'Context' },
+    { name: 'raw', type: 'Text' },
+    { name: 'sendMessages', type: 'Messages' },
+    { name: 'variables', type: 'Vars' },
+    { name: 'parsed', type: 'Any' },
+    { name: 'metrics', type: 'Any' }
+  ],
+  outputs: [{ name: 'floor', type: 'Any' }],
+  isMainOutputCapable: true,
+  run: (_ctx, inputs) => {
+    const gen = inputs.gen as GenContext
+    const parsed = inputs.parsed as ReturnType<typeof parseResponse>['parsed']
+    const floor = persistFloor(gen, {
+      userAction: gen.userAction,
+      raw: inputs.raw as string,
+      sendMessages: inputs.sendMessages as ChatMessage[],
+      events: parsed.events,
+      variables: inputs.variables as Record<string, unknown>,
+      metrics: inputs.metrics as FloorMetrics
+    })
+    return { outputs: { floor } }
+  }
+}
+
+/** Folds aged-out turns into episodic memory. Post-response/off the hot path (spec/plan decision
+ *  A) — fire-and-forget, same as `generate()`'s `compactMemory(profileId, chatId)` call. */
+export const memoryCompact: NodeImpl = {
+  type: 'memory.compact',
+  title: 'Compact Memory',
+  inputs: [{ name: 'gen', type: 'Context' }],
+  outputs: [],
+  run: (_ctx, inputs) => {
+    const gen = inputs.gen as GenContext
+    compactMemory(gen.profileId, gen.chatId)
+    return { outputs: {} }
   }
 }
