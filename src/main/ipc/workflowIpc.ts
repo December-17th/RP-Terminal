@@ -1,8 +1,10 @@
 import { IpcMain, BrowserWindow, dialog } from 'electron'
 import * as workflowService from '../services/workflowService'
 import * as chatService from '../services/chatService'
+import { listNodeTypes } from '../services/nodes/catalog'
 
 export const registerWorkflowIpc = (ipcMain: IpcMain): void => {
+  ipcMain.handle('list-node-types', () => listNodeTypes())
   ipcMain.handle('list-workflows', (_, profileId) => workflowService.listWorkflows(profileId))
   ipcMain.handle('get-workflow', (_, profileId, id) =>
     workflowService.getWorkflowById(profileId, id)

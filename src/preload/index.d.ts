@@ -5,6 +5,16 @@ declare global {
     electron: ElectronAPI
     api: any & {
       backfillUsageMetrics: (profileId: string, chatId: string) => Promise<unknown[]>
+      listNodeTypes: () => Promise<
+        Array<{
+          type: string
+          title: string
+          inputs: { name: string; type: string }[]
+          outputs: { name: string; type: string }[]
+          isMainOutputCapable?: boolean
+          configSchema?: Record<string, unknown>
+        }>
+      >
       listWorkflows: (
         profileId: string
       ) => Promise<{ id: string; name: string; description?: string; builtin?: boolean }[]>
