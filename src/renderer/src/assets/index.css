@@ -642,7 +642,9 @@ details[open] > .stat-group-title::before {
 /* Right-click context menu */
 .context-menu {
   position: fixed;
-  z-index: 2000;
+  /* App chrome sits in a top z-index band so untrusted inline card UI (position:fixed + high
+     z-index in the card's own CSS) can never paint over it. See .modal-overlay / .rpt-toast-stack. */
+  z-index: 2147481000;
   min-width: 160px;
   background: var(--rpt-bg-secondary);
   border: 1px solid var(--rpt-border);
@@ -950,7 +952,7 @@ details[open] > .stat-group-title::before {
   position: fixed;
   bottom: 8px;
   right: 10px;
-  z-index: 3000;
+  z-index: 2147482000;
   font-family: ui-monospace, Menlo, Consolas, monospace;
   font-size: 12px;
   font-weight: 700;
@@ -1210,7 +1212,7 @@ details[open] > .stat-group-title::before {
   position: fixed;
   bottom: 16px;
   right: 16px;
-  z-index: 4000;
+  z-index: 2147483000;
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -1470,7 +1472,9 @@ select {
   display: flex;
   align-items: center;
   justify-content: center;
-  z-index: 1000;
+  /* Top z-index band (see .context-menu): keeps the settings/modal above untrusted inline card UI
+     that may use position:fixed + a high z-index in its own CSS. */
+  z-index: 2147480000;
 }
 
 .modal-panel {
