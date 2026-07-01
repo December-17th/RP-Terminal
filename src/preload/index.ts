@@ -105,6 +105,31 @@ const api = {
   deletePreset: (profileId: string, presetId: string) =>
     ipcRenderer.invoke('delete-preset', profileId, presetId),
   importPresetDialog: (profileId: string) => ipcRenderer.invoke('import-preset-dialog', profileId),
+  // Node-workflow graphs (Phase 3 persistence)
+  listWorkflows: (profileId: string) => ipcRenderer.invoke('list-workflows', profileId),
+  getWorkflow: (profileId: string, id: string) => ipcRenderer.invoke('get-workflow', profileId, id),
+  saveWorkflow: (profileId: string, id: string, doc: unknown) =>
+    ipcRenderer.invoke('save-workflow', profileId, id, doc),
+  cloneWorkflow: (profileId: string, sourceId: string) =>
+    ipcRenderer.invoke('clone-workflow', profileId, sourceId),
+  deleteWorkflow: (profileId: string, id: string) =>
+    ipcRenderer.invoke('delete-workflow', profileId, id),
+  getWorkflowSelection: (profileId: string) =>
+    ipcRenderer.invoke('get-workflow-selection', profileId),
+  setGlobalWorkflow: (profileId: string, id: string | null) =>
+    ipcRenderer.invoke('set-global-workflow', profileId, id),
+  setWorldWorkflow: (profileId: string, characterId: string, id: string | null) =>
+    ipcRenderer.invoke('set-world-workflow', profileId, characterId, id),
+  getChatWorkflow: (profileId: string, chatId: string) =>
+    ipcRenderer.invoke('get-chat-workflow', profileId, chatId),
+  setChatWorkflow: (profileId: string, chatId: string, id: string | null) =>
+    ipcRenderer.invoke('set-chat-workflow', profileId, chatId, id),
+  resolveWorkflowId: (profileId: string, chatId: string) =>
+    ipcRenderer.invoke('resolve-workflow-id', profileId, chatId),
+  importWorkflowDialog: (profileId: string) =>
+    ipcRenderer.invoke('import-workflow-dialog', profileId),
+  exportWorkflowDialog: (profileId: string, id: string, name: string) =>
+    ipcRenderer.invoke('export-workflow-dialog', profileId, id, name),
   // Lorebook library (id-keyed; a character's own lorebook has id == characterId)
   listLorebooks: (profileId: string) => ipcRenderer.invoke('list-lorebooks', profileId),
   getLorebook: (profileId: string, id: string) => ipcRenderer.invoke('get-lorebook', profileId, id),
