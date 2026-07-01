@@ -1,0 +1,114 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`generate() — parity baseline > produces a stable sendMessages array + written floor > sendMessages 1`] = `
+[
+  {
+    "content": "You are an expert roleplay partner and game master. Stay in character as Testchar. Write vivid, immersive prose in response to User. Never break character or mention you are an AI.
+Name: Testchar
+Description: A calm guide.
+Personality: patient
+Scenario: a quiet room",
+    "role": "system",
+  },
+  {
+    "content": "Hello.",
+    "role": "assistant",
+  },
+  {
+    "content": "look around",
+    "role": "user",
+  },
+  {
+    "content": "You see a door.",
+    "role": "assistant",
+  },
+  {
+    "content": "open the door",
+    "role": "user",
+  },
+]
+`;
+
+exports[`generate() — parity baseline > produces a stable sendMessages array + written floor > writtenFloor 1`] = `
+{
+  "chat_id": "chat1",
+  "events": [],
+  "floor": 2,
+  "metrics": {
+    "cumulative": {
+      "avgCacheHitPct": 0,
+      "avgOutputTokens": 23,
+      "avgPromptTokens": 80,
+      "avgProxyPct": 0,
+      "totalOutputTokens": 23,
+      "totalPromptTokens": 80,
+      "totalProxyTokens": 0,
+      "turns": 1,
+      "usage": null,
+      "usageTurns": 0,
+    },
+    "turn": {
+      "cacheLevel": 0,
+      "l1Mode": "partition",
+      "model": "test-model",
+      "outputTokens": 23,
+      "promptTokens": 80,
+      "provider": "openai",
+      "proxyPct": 0,
+      "proxyTokens": 0,
+      "ts": "2020-06-01T12:00:00.000Z",
+      "usage": null,
+    },
+  },
+  "request": [
+    {
+      "content": "You are an expert roleplay partner and game master. Stay in character as Testchar. Write vivid, immersive prose in response to User. Never break character or mention you are an AI.
+Name: Testchar
+Description: A calm guide.
+Personality: patient
+Scenario: a quiet room",
+      "role": "system",
+    },
+    {
+      "content": "Hello.",
+      "role": "assistant",
+    },
+    {
+      "content": "look around",
+      "role": "user",
+    },
+    {
+      "content": "You see a door.",
+      "role": "assistant",
+    },
+    {
+      "content": "open the door",
+      "role": "user",
+    },
+  ],
+  "response": {
+    "content": "<thinking>plan</thinking>You open the door.
+<UpdateVariable>_.set("hp", 9)</UpdateVariable>",
+    "model": "test-model",
+    "provider": "openai",
+  },
+  "timestamp": "2020-06-01T12:00:00.000Z",
+  "user_message": {
+    "content": "open the door",
+    "timestamp": "2020-06-01T12:00:00.000Z",
+  },
+  "variables": {
+    "delta_data": [
+      {
+        "new": 9,
+        "old": 10,
+        "path": "hp",
+        "reason": undefined,
+      },
+    ],
+    "stat_data": {
+      "hp": 9,
+    },
+  },
+}
+`;
