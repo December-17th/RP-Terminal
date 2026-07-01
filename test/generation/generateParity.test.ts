@@ -49,7 +49,8 @@ const floors: FloorFile[] = [
 ]
 
 // a canned model response: reasoning + an MVU update + an rpt-event, so fold/parse run for real
-const RAW = '<thinking>plan</thinking>You open the door.\n<UpdateVariable>_.set("hp", 9)</UpdateVariable>'
+const RAW =
+  '<thinking>plan</thinking>You open the door.\n<UpdateVariable>_.set("hp", 9)</UpdateVariable>'
 
 let capturedSend: unknown = null
 let capturedFloor: FloorFile | null = null
