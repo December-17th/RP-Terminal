@@ -138,6 +138,12 @@ behavior. Frequent commits.
 
 ## Phase 2b-2 — outline (separate plan)
 
+> **STATUS: BUILT 2026-07-01** — see `2026-07-01-node-workflow-phase2b-2-agentic-nodes.md`. Shipped the
+> agentic node set (`prompt.messages`, `merge.messages`, `text.template`, `control.if`/`switch`/`when`,
+> `mvu.set`), plus per-node config delivery (`run(ctx, inputs, node)` + zod `configSchema`), Signal-gating
+> prune (spec §5), and the durable `node_state` store (spec §11). Workflow persistence deferred to its own
+> phase.
+
 - `prompt.messages` (role-tagged message list), `merge.messages` (distinct input ports, per the fan-in rule),
   `text.template`, `control.if`/`switch`/`when` (predicates over Vars via `objectPath`), `mvu.set`.
 - Persistence of authored workflows (`workflows` table/service/IPC) may land here or in its own phase per the
