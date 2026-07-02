@@ -22,6 +22,9 @@ export interface ApiPreset {
   /** Requests-per-minute ceiling for this connection; 0/unset = unlimited. Enforced per
    *  ENDPOINT (presets sharing an endpoint share one budget) by delaying, never dropping. */
   rpm_limit?: number
+  /** Max simultaneous in-flight requests for this connection; 0/unset = unlimited. Same
+   *  per-endpoint keying as rpm_limit — RPM bounds send rate, this bounds parallelism. */
+  max_concurrent?: number
 }
 
 /** How the agentic FSM operates:
@@ -76,6 +79,8 @@ export interface Settings {
     model: string
     /** Mirrors the active preset's rpm_limit (0/unset = unlimited). */
     rpm_limit?: number
+    /** Mirrors the active preset's max_concurrent (0/unset = unlimited). */
+    max_concurrent?: number
   }
   // Saved connection presets the user can switch between.
   api_presets: ApiPreset[]

@@ -103,6 +103,92 @@ export const acquireRpmSlot = (key: string, rpm: number, signal?: AbortSignal): 
   })
 }
 
+// ---------------------------------------------------------------------------
+// Max-concurrent-per-endpoint cap (spec §18's optional RPM adjunct). RPM alone doesn't bound
+// PARALLELISM — a multi-LLM graph can open N simultaneous requests within one window. Same
+// keying/travel rules as RPM: the semaphore is per endpoint, the `max` budget travels with the
+// caller's preset. Unlike RPM (fire-and-forget stamps), a concurrency slot is HELD for the whole
+// request, so acquire resolves to a release function the caller must invoke in a finally.
+// ---------------------------------------------------------------------------
+
+interface SemWaiter {
+  max: number
+  resolve: (release: () => void) => void
+  reject: (e: Error) => void
+  signal?: AbortSignal
+  onAbort?: () => void
+}
+
+interface Semaphore {
+  inFlight: number
+  queue: SemWaiter[]
+}
+
+const semaphores = new Map<string, Semaphore>()
+
+const semDrain = (key: string): void => {
+  const s = semaphores.get(key)
+  if (!s) return
+  while (s.queue.length && s.inFlight < s.queue[0].max) {
+    const w = s.queue.shift()!
+    if (w.signal && w.onAbort) w.signal.removeEventListener('abort', w.onAbort)
+    s.inFlight++
+    w.resolve(makeRelease(key))
+  }
+  if (!s.queue.length && s.inFlight === 0) semaphores.delete(key)
+}
+
+/** One-shot releaser: decrements in-flight and wakes the queue head. Idempotent — a double
+ *  release (e.g. a finally that runs twice through a retry wrapper) must not corrupt the count. */
+const makeRelease = (key: string): (() => void) => {
+  let released = false
+  return () => {
+    if (released) return
+    released = true
+    const s = semaphores.get(key)
+    if (!s) return
+    s.inFlight = Math.max(0, s.inFlight - 1)
+    semDrain(key)
+  }
+}
+
+/**
+ * Acquire an in-flight slot for `key` under a `max` concurrent-requests budget. `max <= 0` =
+ * unlimited (resolves to a no-op release). Resolves to a release function the caller MUST call
+ * when the request settles (finally); rejects with an AbortError if `signal` fires while queued.
+ */
+export const acquireConcurrencySlot = (
+  key: string,
+  max: number,
+  signal?: AbortSignal
+): Promise<() => void> => {
+  if (!max || max <= 0) return Promise.resolve(() => {})
+  if (signal?.aborted) return Promise.reject(abortError())
+
+  let s = semaphores.get(key)
+  if (!s) {
+    s = { inFlight: 0, queue: [] }
+    semaphores.set(key, s)
+  }
+  if (!s.queue.length && s.inFlight < max) {
+    s.inFlight++
+    return Promise.resolve(makeRelease(key))
+  }
+
+  return new Promise<() => void>((resolve, reject) => {
+    const w: SemWaiter = { max, resolve, reject, signal }
+    if (signal) {
+      w.onAbort = (): void => {
+        const idx = s!.queue.indexOf(w)
+        if (idx !== -1) s!.queue.splice(idx, 1)
+        reject(abortError())
+      }
+      signal.addEventListener('abort', w.onAbort, { once: true })
+    }
+    s!.queue.push(w)
+  })
+}
+
 /** Test hook: drop all windows, queues and timers (queued waiters are rejected as aborted). */
 export const resetRpmLimiter = (): void => {
   for (const b of buckets.values()) {
@@ -113,4 +199,11 @@ export const resetRpmLimiter = (): void => {
     }
   }
   buckets.clear()
+  for (const s of semaphores.values()) {
+    for (const w of s.queue) {
+      if (w.signal && w.onAbort) w.signal.removeEventListener('abort', w.onAbort)
+      w.reject(abortError())
+    }
+  }
+  semaphores.clear()
 }

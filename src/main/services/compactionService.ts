@@ -224,7 +224,8 @@ export const utilityComplete = async (
           endpoint: conn.endpoint,
           api_key: conn.api_key,
           model: conn.model,
-          rpm_limit: conn.rpm_limit
+          rpm_limit: conn.rpm_limit,
+          max_concurrent: conn.max_concurrent
         }
       }
     : settings

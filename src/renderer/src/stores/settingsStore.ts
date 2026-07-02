@@ -10,6 +10,8 @@ export interface ApiPreset {
   model: string
   /** Requests-per-minute ceiling; 0/unset = unlimited. Shared per endpoint (mirrors main). */
   rpm_limit?: number
+  /** Max simultaneous in-flight requests; 0/unset = unlimited. Shared per endpoint (mirrors main). */
+  max_concurrent?: number
 }
 
 /** One memory collection (mirrors main `MemoryCollection`). Core ships only `events`. */
@@ -38,6 +40,7 @@ export interface Settings {
     api_key: string
     model: string
     rpm_limit?: number
+    max_concurrent?: number
   }
   api_presets: ApiPreset[]
   active_api_preset_id: string

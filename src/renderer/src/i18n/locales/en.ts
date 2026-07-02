@@ -215,6 +215,9 @@ const en: Record<string, string> = {
   'api.rpmLimit': 'Requests per Minute (RPM)',
   'api.rpmLimitHint':
     '0 = unlimited. Requests over the limit wait in a queue instead of failing; presets sharing an endpoint share one budget.',
+  'api.maxConcurrent': 'Max Concurrent Requests',
+  'api.maxConcurrentHint':
+    '0 = unlimited. Caps how many requests run at the same time (RPM caps the send rate, not parallelism); presets sharing an endpoint share one cap.',
   'api.maxContext': 'Max Context (tokens)',
   'api.maxContextHint':
     'Oldest turns are trimmed to keep the prompt under this estimate. Raise it for large-context models.',

@@ -117,7 +117,7 @@ const correctiveMessages = (
   }
 ]
 
-/** A GenContext whose live connection is the given saved preset (rpm_limit included). */
+/** A GenContext whose live connection is the given saved preset (rpm_limit/max_concurrent included). */
 const withPreset = (gen: GenContext, presetId: string): GenContext | null => {
   const p = gen.settings.api_presets.find((x) => x.id === presetId)
   if (!p) return null
@@ -130,7 +130,8 @@ const withPreset = (gen: GenContext, presetId: string): GenContext | null => {
         endpoint: p.endpoint,
         api_key: p.api_key,
         model: p.model,
-        rpm_limit: p.rpm_limit
+        rpm_limit: p.rpm_limit,
+        max_concurrent: p.max_concurrent
       }
     }
   }
