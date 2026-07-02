@@ -30,7 +30,13 @@ describe('listNodeTypes', () => {
       'memory.write',
       'tool.startCombat',
       'tool.startDuel',
-      'tool.lorebookSearch'
+      'tool.lorebookSearch',
+      'memory.query',
+      'vars.get',
+      'vars.save',
+      'context.history',
+      'context.card',
+      'context.persona'
     ]) {
       expect(byType.has(t)).toBe(true)
     }

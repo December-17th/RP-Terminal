@@ -1,3 +1,4 @@
+import { z } from 'zod'
 import {
   compactionDue,
   extractCompaction,
@@ -7,6 +8,14 @@ import {
   CompactionBatch,
   ParsedCompaction
 } from '../../compactionService'
+import { getEntries } from '../../memoryStore'
+import {
+  selectFromEntries,
+  formatBlock,
+  selectEntitiesInScope,
+  formatEntityBlock
+} from '../../retrievalService'
+import { MemoryCollection } from '../../../types/models'
 import { GenContext } from '../../generation/types'
 import { NodeImpl, NodeRunFailure } from '../types'
 
@@ -116,5 +125,83 @@ export const memoryWrite: NodeImpl = {
     } finally {
       endCompaction(gen.chatId)
     }
+  }
+}
+
+const queryConfig = z.object({
+  count: z.number().int().min(1).max(20).optional(),
+  token_budget: z.number().int().min(50).max(4000).optional(),
+  collections: z.string().optional()
+})
+
+/** Which collections `memory.query` reads: mirrors `selectMemories`'s predicates
+ *  (`retrievalService.ts` ~189-196) — `stream` collections ranked keyword/vector/hybrid (v1
+ *  DOWNGRADES vector/hybrid to keyword ranking here; this node never embeds) and `entity`
+ *  collections with `mode: 'always'`. Anything else (notably `mode: 'llm'`) is skipped
+ *  entirely, exactly like the standard recall. */
+const isQueryable = (c: MemoryCollection): boolean =>
+  (c.shape === 'stream' && ['keyword', 'vector', 'hybrid'].includes(c.retrieval.mode)) ||
+  (c.shape === 'entity' && c.retrieval.mode === 'always')
+
+/** Recalls memories against an ARBITRARY wired query (a planner's question, a side job's
+ *  topic) instead of the current turn's chat scan — the query-driven counterpart to the
+ *  standard per-turn recall (`memory.recall`/`selectMemories`). Deliberately keyword-ranking
+ *  only in v1: no query embedding, so vector/hybrid stream collections are downgraded to
+ *  keyword. Custom-prompt reranking is just another authored branch — wire `rows`/`block` into
+ *  `prompt.messages` → `llm.sample` (components-not-features).
+ *  A blank/whitespace query returns empty outputs WITHOUT touching the store (no `getEntries`
+ *  call) — the same "nothing to recall" contract memory.recall gives an empty scan text.
+ *  `count`/`token_budget` are PER COLLECTION, matching selectMemories' semantics. `collections`
+ *  (comma-separated ids) narrows which collections are read; unset reads every `c.enabled`
+ *  collection (still subject to the mode filter above). */
+export const memoryQuery: NodeImpl = {
+  type: 'memory.query',
+  title: 'Query Memories',
+  inputs: [
+    { name: 'gen', type: 'Context' },
+    { name: 'query', type: 'Text' },
+    { name: 'when', type: 'Signal' }
+  ],
+  outputs: [
+    { name: 'block', type: 'Text' },
+    { name: 'rows', type: 'Any' }
+  ],
+  configSchema: queryConfig,
+  run: (_ctx, inputs, node) => {
+    const cfg = node.config as z.infer<typeof queryConfig>
+    const query = typeof inputs.query === 'string' ? inputs.query : ''
+    if (!query.trim()) return { outputs: { block: '', rows: [] } }
+    const gen = inputs.gen as GenContext
+    const count = cfg.count ?? 5
+    const tokenBudget = cfg.token_budget ?? 600
+    const ids = cfg.collections
+      ? cfg.collections
+          .split(',')
+          .map((s) => s.trim())
+          .filter(Boolean)
+      : null
+    const all = gen.settings.memory?.collections ?? []
+    const selected = (
+      ids ? all.filter((c) => ids.includes(c.id)) : all.filter((c) => c.enabled)
+    ).filter(isQueryable)
+
+    const blocks: string[] = []
+    const rows: unknown[] = []
+    for (const coll of selected) {
+      const entries = getEntries(gen.profileId, gen.chatId, coll.id)
+      let chosen: ReturnType<typeof selectFromEntries>
+      let block: string
+      if (coll.shape === 'entity') {
+        chosen = selectEntitiesInScope(entries, query, count, tokenBudget)
+        block = formatEntityBlock(coll.inject.label, chosen)
+      } else {
+        chosen = selectFromEntries(entries, query, count, tokenBudget)
+        block = formatBlock(coll.inject.label, chosen)
+      }
+      if (!block) continue
+      blocks.push(block)
+      rows.push(...chosen)
+    }
+    return { outputs: { block: blocks.join('\n\n'), rows } }
   }
 }

@@ -582,6 +582,12 @@ const en: Record<string, string> = {
   'workflowEditor.nodeTitle.tool.startCombat': 'Start Combat',
   'workflowEditor.nodeTitle.tool.startDuel': 'Start Duel',
   'workflowEditor.nodeTitle.tool.lorebookSearch': 'Lorebook Search',
+  'workflowEditor.nodeTitle.memory.query': 'Query Memories',
+  'workflowEditor.nodeTitle.vars.get': 'Get Variable',
+  'workflowEditor.nodeTitle.vars.save': 'Save Variable',
+  'workflowEditor.nodeTitle.context.history': 'History',
+  'workflowEditor.nodeTitle.context.card': 'Card Field',
+  'workflowEditor.nodeTitle.context.persona': 'Persona',
   // Node descriptions (what the node does).
   'workflowEditor.nodeDesc.input.context':
     'Builds the turn bundle: session, character card, settings, preset, lorebooks, chat history and working variables. The start of every graph — almost every other node takes its output.',
@@ -610,7 +616,7 @@ const en: Record<string, string> = {
   'workflowEditor.nodeDesc.tool.startDuel':
     'Starts a deckbuilder duel from the party’s MVU build (enemies from a wired cue roster) and switches the session to duel mode. Fails onto its error port when no duel can be built.',
   'workflowEditor.nodeDesc.tool.lorebookSearch':
-    'Keyword-searches the session’s lorebooks with the wired query text (the same matcher prompt assembly uses) and returns matched entry contents as one text block.',
+    'Keyword-searches the session’s lorebooks with the wired query text (the same matcher prompt assembly uses) and returns matched entry contents as one text block. Config can restrict the search to lorebooks whose name matches a filter and cap the returned block’s size — both trade completeness for a smaller, cheaper side call.',
   'workflowEditor.nodeDesc.control.if':
     'Tests a predicate against the input value (optionally drilling in via the configured path) and fires exactly one of its two Signals: then or else. The un-fired branch is pruned.',
   'workflowEditor.nodeDesc.control.switch':
@@ -627,6 +633,18 @@ const en: Record<string, string> = {
     'Writes a value to a stat_data path on the latest floor — the way a side branch commits its result to game state. Intended for post-response branches; the wired value wins over the configured one.',
   'workflowEditor.nodeDesc.util.log':
     'Logs its input to the app log and ends the branch. Wire a node’s error port here to make that failure fail-open-with-a-log instead of aborting the turn.',
+  'workflowEditor.nodeDesc.vars.get':
+    'Reads one variable path from either the latest floor’s variable tree (scope: floor, default — this also sees MVU’s stat_data, read-only) or the per-chat KV store (scope: session), so a side branch pulls only the slice of state it needs instead of the whole Context bundle.',
+  'workflowEditor.nodeDesc.vars.save':
+    'Writes one variable path into the latest floor (scope: floor, default) or the per-chat KV store (scope: session). Floor writes SURVIVE MVU re-evaluate and are readable later via {{getvar}}/EJS, but refuse the stat_data/delta_data roots — those are MVU-managed; use Set Variable (mvu.set) instead. An unwired value is a silent no-op.',
+  'workflowEditor.nodeDesc.context.history':
+    'The last N floors as both a User:/Assistant: transcript block and a role-tagged message list, with thinking stripped from replies. Config can narrow to just the user or assistant side (narrows both outputs).',
+  'workflowEditor.nodeDesc.context.card':
+    'One character-card narrative field (description/personality/scenario/first_mes/name), or all of them as labelled blocks when field is set to all.',
+  'workflowEditor.nodeDesc.context.persona':
+    'The active persona’s name and description — the {{user}} side of the card/persona pair, split out on its own so a side call doesn’t need the full Context.',
+  'workflowEditor.nodeDesc.memory.query':
+    'Recalls memories against an arbitrary WIRED query instead of scanning the current turn’s chat — for side branches like a planner that need memory recall about a specific topic. Keyword-ranking only (vector/hybrid collections are downgraded to keyword); a collection set to mode: llm is skipped entirely, same as the standard recall. Wire the output into an LLM call to add custom-prompt reranking on top.',
   // Port descriptions shared by many nodes (looked up when no per-node entry exists).
   'workflowEditor.portDesc.common.gen':
     'The turn bundle from Context (settings, card, history, variables)',

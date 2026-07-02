@@ -65,8 +65,7 @@ export const toolStartDuel: NodeImpl = {
       gen.chatId,
       (inputs.cue as { roster?: Array<Record<string, unknown>> } | null) ?? null
     )
-    if (!state)
-      throw new NodeRunFailure('B', 'duel could not be built from the MVU state / cue', 1)
+    if (!state) throw new NodeRunFailure('B', 'duel could not be built from the MVU state / cue', 1)
     // Duel mode is renderer-transient by convention (duel state itself is in-memory per session;
     // main's persisted ChatMode has no 'duel'). Broadcast the switch without a DB write — the
     // same net state the chat's own enter-duel affordance produces.
@@ -77,12 +76,22 @@ export const toolStartDuel: NodeImpl = {
 
 const searchConfig = z.object({
   /** Cap on returned entries (default 5). */
-  max_entries: z.number().int().min(1).max(50).optional()
+  max_entries: z.number().int().min(1).max(50).optional(),
+  /** Comma-separated substrings, case-insensitive matched against `lorebook.name`; empty (the
+   *  default) searches every session book. Narrows the search BEFORE matching, so a
+   *  world-progress-style call can skip lorebooks it doesn't need — token savings, not just
+   *  result filtering. */
+  book_filter: z.string().optional(),
+  /** Hard cap on the returned block's length in characters (0/unset = uncapped) — a second
+   *  token-saving knob independent of `max_entries` for oversized individual entries. */
+  max_chars: z.number().int().min(0).max(100000).optional()
 })
 
 /** Keyword-searches the session's lorebooks with an arbitrary query (a planner's question, a
  *  side job's topic) and returns the matched entries as one text block — the same matcher the
- *  prompt assembly uses, but query-driven instead of chat-scan-driven. */
+ *  prompt assembly uses, but query-driven instead of chat-scan-driven. `book_filter` and
+ *  `max_chars` trade completeness for token budget when only a slice of the world's lorebooks
+ *  (or a size-capped block) is needed for the side call. */
 export const toolLorebookSearch: NodeImpl = {
   type: 'tool.lorebookSearch',
   title: 'Lorebook Search',
@@ -97,13 +106,26 @@ export const toolLorebookSearch: NodeImpl = {
     const gen = inputs.gen as GenContext
     const query = typeof inputs.query === 'string' ? inputs.query : ''
     if (!query.trim()) return { outputs: { block: '' } }
-    const max = (node?.config?.max_entries as number | undefined) ?? 5
-    const entries = matchAcross(gen.lorebooks, query, Math.random, gen.maxRecursion)
-    const block = entries
+    const cfg = (node?.config ?? {}) as z.infer<typeof searchConfig>
+    const max = cfg.max_entries ?? 5
+    const bookFilters = cfg.book_filter
+      ? cfg.book_filter
+          .split(',')
+          .map((s) => s.trim().toLowerCase())
+          .filter(Boolean)
+      : null
+    const books = bookFilters
+      ? gen.lorebooks.filter((lb) =>
+          bookFilters.some((f) => (lb.name ?? '').toLowerCase().includes(f))
+        )
+      : gen.lorebooks
+    const entries = matchAcross(books, query, Math.random, gen.maxRecursion)
+    let block = entries
       .slice(0, max)
       .map((e) => e.content)
       .filter(Boolean)
       .join('\n\n')
+    if (cfg.max_chars && block.length > cfg.max_chars) block = block.slice(0, cfg.max_chars)
     return { outputs: { block } }
   }
 }
