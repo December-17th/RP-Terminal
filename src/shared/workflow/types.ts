@@ -57,6 +57,11 @@ export interface WorkflowDoc {
   nodes: NodeInstance[]
   edges: Edge[]
   meta?: Record<string, unknown>
+  /** Absent = 'turn' (a normal generation graph, run by runWorkflow/resolveWorkflowDoc). A
+   *  'subgraph' doc is a reusable sub-graph package (sub-graph nodes v1 plan §1/§2): it's never
+   *  run directly (resolveWorkflowDoc falls through past it) and skips the exactly-one-main-
+   *  output rule — it's invoked only by wrapping it in a `subgraph.call` node. */
+  kind?: 'turn' | 'subgraph'
 }
 
 /** Whether an output port of type `from` may connect to an input port of type `to`.

@@ -135,6 +135,20 @@ describe('docToEditor / editorToDoc round-trip', () => {
     expect(ra.panel).toEqual({ show: true, label: 'Plan' })
     expect(ra.config).toEqual({ template: 'x' })
   })
+
+  it('preserves doc.kind through a docToEditor -> editorToDoc round-trip (plan-QA blocker: editorToDoc is a field-by-field literal that does not spread the base doc)', () => {
+    const d = doc([node('a')], [], { kind: 'subgraph' })
+    const { nodes, edges } = docToEditor(d)
+    const rebuilt = editorToDoc(d, nodes, edges)
+    expect(rebuilt.kind).toBe('subgraph')
+  })
+
+  it('omits kind when the base doc has none (turn doc, the default)', () => {
+    const d = doc([node('a')], [])
+    const { nodes, edges } = docToEditor(d)
+    const rebuilt = editorToDoc(d, nodes, edges)
+    expect(rebuilt.kind).toBeUndefined()
+  })
 })
 
 describe('autoLayout', () => {

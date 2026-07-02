@@ -57,4 +57,11 @@ describe('parseWorkflowDoc', () => {
       parseWorkflowDoc({ ...minimal, nodes: [{ id: '', type: 'x', isMainOutput: true }] }).ok
     ).toBe(false)
   })
+
+  it('accepts an absent kind, "turn", and "subgraph"; rejects any other kind value', () => {
+    expect(parseWorkflowDoc(minimal).ok).toBe(true)
+    expect(parseWorkflowDoc({ ...minimal, kind: 'turn' }).ok).toBe(true)
+    expect(parseWorkflowDoc({ ...minimal, kind: 'subgraph' }).ok).toBe(true)
+    expect(parseWorkflowDoc({ ...minimal, kind: 'bogus' }).ok).toBe(false)
+  })
 })

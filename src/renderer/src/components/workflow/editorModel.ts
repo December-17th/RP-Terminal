@@ -144,7 +144,10 @@ export function editorToDoc(
     ...(base.description !== undefined ? { description: base.description } : {}),
     nodes: outNodes,
     edges: outEdges,
-    ...(base.meta !== undefined ? { meta: base.meta } : {})
+    ...(base.meta !== undefined ? { meta: base.meta } : {}),
+    // Without this, `kind` (turn/subgraph) is silently dropped on every revalidate()/save(),
+    // downgrading a sub-graph doc to a turn doc on its first editor save (plan-QA blocker).
+    ...(base.kind !== undefined ? { kind: base.kind } : {})
   }
 }
 
