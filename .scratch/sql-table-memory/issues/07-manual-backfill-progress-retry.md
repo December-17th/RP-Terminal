@@ -1,6 +1,6 @@
 # 07 — Manual backfill from history + per-table progress + auto-retry
 
-Status: ready-for-agent
+Status: ready-for-human (implemented + reviewed; awaiting owner sign-off/merge)
 
 ## What to build
 
@@ -28,3 +28,15 @@ Let the player fill the tables from PAST chat history on demand, see per-table p
 
 - [05-maintenance-pipeline-and-example-workflow.md](05-maintenance-pipeline-and-example-workflow.md)
 - [06-tables-view-editing-and-template-export.md](06-tables-view-editing-and-template-export.md)
+
+## Comments
+
+**2026-07-02 — implemented + reviewed.** Plan at [07-plan.md](07-plan.md); implemented by an Opus agent as commit `331bd67`; reviewed by the controller with one minor defect fixed in the review commit:
+
+- **Cancel mid-batch misreported `batch-ok`.** A cancel landing inside the corrective-retry loop left the batch unapplied (progress correctly not advanced) but the runner still emitted `batch-ok` for it. `processBatch` now returns whether the batch actually applied; unapplied cancels skip the ok event and the run ends with `cancelled` as before.
+
+Everything else verified: the chat-level `table_progress` store (MAX-upsert advance, explicit rewind clamp in truncateFloors, reset on template reassignment) replaces the gate's node-state pointer cleanly — the gate's due-rule and at-most-once advance are unchanged, only the pointer surface moved, and the `at` discriminator is retired in favor of the explicit clamp; backfill writes go only through lock → applySqlBatch → appendOps at the batch's LAST floor → advanceProgress (floor attribution pinned by the orchestration test: batches of 2 over 4 floors append at floors 1 and 3); API-error retries ride callModelResilient (retries + 2s delay) while SQL-error retries re-call with the failed reply + a corrective zh message, capped, with exhausted retries failing the batch and the run continuing (span stays unprocessed); empty <TableEdit> is a no-op that still advances progress; concurrent backfills per chat rejected; the shipped example workflow's nodes/edges untouched (description-only note; its validation test green). Progress formulas pinned incl. never-processed and empty-chat edges. i18n parity 25 new keys per locale (two stale keys retired from both).
+
+One noted inefficiency (accepted, not fixed): a busy write lock inside a batch is treated as a retryable SQL error, so the corrective path burns one LLM re-call on what is really a timing collision — rare in practice (requires per-turn maintenance racing a manual backfill), semantically harmless since the re-call regenerates against fresh state.
+
+Gate re-run independently post-fix: typecheck PASS, check:deps PASS (351 modules), tests 171 files / **1419** PASS.

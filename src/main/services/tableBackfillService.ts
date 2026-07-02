@@ -246,14 +246,28 @@ const runBatches = async (
       state.span = span
 
       try {
-        await processBatch(profileId, chatId, gen, template, floors, span, allTables, retries, signal)
-        notifyBackfillProgress({
+        const applied = await processBatch(
+          profileId,
           chatId,
-          batchIndex: i,
-          batchCount: spans.length,
+          gen,
+          template,
+          floors,
           span,
-          status: 'batch-ok'
-        })
+          allTables,
+          retries,
+          signal
+        )
+        // A cancel that lands mid-batch (inside the corrective loop) leaves the batch UNAPPLIED —
+        // don't misreport it as ok; the loop's aborted check ends the run and 'cancelled' follows.
+        if (applied) {
+          notifyBackfillProgress({
+            chatId,
+            batchIndex: i,
+            batchCount: spans.length,
+            span,
+            status: 'batch-ok'
+          })
+        }
       } catch (error) {
         const reason = error instanceof Error ? error.message : String(error)
         state.failures.push({ span, reason })
@@ -299,6 +313,8 @@ const runBatches = async (
  * extract `<TableEdit>`, and apply. On a SQL error, run up to `retries` corrective re-calls (the failed
  * reply + the error fed back). Exhausting the budget throws — the caller marks the batch failed (fail-
  * open), and progress is NOT advanced for it. An API give-up bubbles up as a throw too.
+ * Returns true when the batch APPLIED; false only on a mid-batch cancel (batch left unapplied,
+ * progress not advanced — the caller must not report it as ok).
  */
 const processBatch = async (
   profileId: string,
@@ -310,7 +326,7 @@ const processBatch = async (
   allTables: string[],
   retries: number,
   signal: AbortSignal
-): Promise<void> => {
+): Promise<boolean> => {
   // Tables block over ALL template tables, with their CURRENT rows (earlier batches' writes are visible).
   const reads: TableRead[] = readAllTables(profileId, chatId, template)
   const readBySql = new Map(reads.map((r) => [r.sqlName, r]))
@@ -334,10 +350,10 @@ const processBatch = async (
   // SQL-error corrective retries: re-call with the failed reply + the error, up to `retries` attempts.
   let attempt = 0
   for (;;) {
-    if (signal.aborted) return // cancel: leave this batch unapplied (progress not advanced)
+    if (signal.aborted) return false // cancel: leave this batch unapplied (progress not advanced)
     try {
       applyBatch(profileId, chatId, template, sql, span.to, allTables)
-      return
+      return true
     } catch (error) {
       const reason = error instanceof TableSqlError ? error.message : String(error)
       if (attempt >= retries) throw new TableSqlError(reason)
