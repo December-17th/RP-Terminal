@@ -616,6 +616,44 @@ describe('workflowService selection + resolution', () => {
       }
     })
 
+    it('a parent whose subgraph.loop references a sub-graph bundles and remaps on import', () => {
+      const inner = createWorkflowFromDoc(profileId, subgraphDoc('Loop Inner'))
+      expect(inner.ok).toBe(true)
+      if (!inner.ok) return
+      const parent = createWorkflowFromDoc(
+        profileId,
+        minimalDoc({
+          name: 'Loop Parent',
+          nodes: [
+            { id: 'n1', type: 'input.context', isMainOutput: true },
+            { id: 'loop', type: 'subgraph.loop', config: { workflow_id: inner.id } }
+          ]
+        })
+      )
+      expect(parent.ok).toBe(true)
+      if (!parent.ok) return
+
+      const tmpDir = fs.mkdtempSync(path.join(getAppDir(), 'wf-loop-'))
+      try {
+        const p = path.join(tmpDir, 'loop.rptflow')
+        expect(exportWorkflowToFile(profileId, parent.id, p)).toBe(true)
+        const raw = JSON.parse(fs.readFileSync(p, 'utf-8'))
+        expect(raw.format).toBe('rpt-workflow-bundle')
+        expect(raw.subgraphs.map((s: WorkflowDoc) => s.name)).toEqual(['Loop Inner'])
+
+        const imported = importWorkflowFromFile(profileId, p)
+        expect(imported.ok).toBe(true)
+        if (!imported.ok) return
+        const importedParent = getWorkflowById(profileId, imported.id)!
+        const loop = importedParent.nodes.find((n) => n.type === 'subgraph.loop')!
+        const newRef = (loop.config as { workflow_id: string }).workflow_id
+        expect(newRef).not.toBe(inner.id)
+        expect(getWorkflowById(profileId, newRef)?.name).toBe('Loop Inner')
+      } finally {
+        fs.rmSync(tmpDir, { recursive: true, force: true })
+      }
+    })
+
     it('a bundle with one invalid sub-graph is rejected whole (no partial writes)', () => {
       const dir = path.join(profileDir, 'workflows')
       const before = fs.readdirSync(dir).length

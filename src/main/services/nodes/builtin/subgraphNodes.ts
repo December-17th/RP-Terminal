@@ -98,6 +98,68 @@ const subgraphCallConfig = z.object({
   params: z.record(z.string(), z.unknown()).optional()
 })
 
+/** Recursion/depth guards + load + kind check + validation, shared by `subgraph.call` and
+ *  `subgraph.loop` (all failures are class-B NodeRunFailures — routable via the error port). */
+function guardAndLoadSubgraph(
+  ctx: RunContext,
+  workflowId: string
+): { doc: WorkflowDoc; registry: NodeRegistry } {
+  const stack = ctx.subgraphStack ?? []
+  if (stack.length >= MAX_SUBGRAPH_DEPTH)
+    throw new NodeRunFailure(
+      'B',
+      `sub-graph call depth exceeded ${MAX_SUBGRAPH_DEPTH} (possible runaway recursion)`,
+      1,
+      'recursion'
+    )
+  if (stack.includes(workflowId))
+    throw new NodeRunFailure(
+      'B',
+      `sub-graph "${workflowId}" is already on the call stack (recursive reference)`,
+      1,
+      'recursion'
+    )
+
+  const raw = getWorkflowById(ctx.profileId!, workflowId)
+  if (!raw)
+    throw new NodeRunFailure('B', `sub-graph workflow "${workflowId}" not found`, 1, 'bad-subgraph')
+  if (raw.kind !== 'subgraph')
+    throw new NodeRunFailure(
+      'B',
+      `workflow "${workflowId}" is not a sub-graph doc (kind: 'subgraph')`,
+      1,
+      'bad-subgraph'
+    )
+
+  const registry = getBuiltinRegistry()
+  const v = validateWorkflow(raw, registry.descriptors())
+  if (!v.ok)
+    throw new NodeRunFailure(
+      'B',
+      `sub-graph "${workflowId}" failed validation: ${v.errors.map((e) => e.message).join('; ')}`,
+      1,
+      'bad-subgraph'
+    )
+  return { doc: raw, registry }
+}
+
+/** The per-call-site context both wrappers hand to `runSubgraph`: the target id pushed onto the
+ *  recursion stack, and node state/panels prefixed with the WRAPPER's node id so two call sites
+ *  of the same sub-graph never share state (plan §4.7). For `subgraph.loop` the prefix is shared
+ *  across ITERATIONS on purpose — a `control.when('changed')` inside a loop body is expected to
+ *  compare against the previous iteration. */
+function wrapCallCtx(ctx: RunContext, wrapperId: string, workflowId: string): RunContext {
+  return {
+    ...ctx,
+    subgraphStack: [...(ctx.subgraphStack ?? []), workflowId],
+    getNodeState: (id) => ctx.getNodeState(`${wrapperId}/${id}`),
+    setNodeState: (id, value) => ctx.setNodeState(`${wrapperId}/${id}`, value),
+    // Panels get the same per-instance isolation as node state (Opus QA finding): an inner
+    // panel.show node must not collide with a same-id parent-graph node in the chat panels.
+    emitPanel: (id, delta) => ctx.emitPanel(`${wrapperId}/${id}`, delta)
+  }
+}
+
 /** A sub-graph's exposed parameter interface (`WorkflowDoc.meta.promotions`, plan §2/§5): each
  *  entry names a promoted param, the inner node it targets, and the config key on that node to
  *  overwrite. */
@@ -184,50 +246,7 @@ export const subgraphCall: NodeImpl = {
   configSchema: subgraphCallConfig,
   run: async (ctx: RunContext, inputs, node) => {
     const cfg = node.config as z.infer<typeof subgraphCallConfig>
-    const workflowId = cfg.workflow_id
-
-    const stack = ctx.subgraphStack ?? []
-    if (stack.length >= MAX_SUBGRAPH_DEPTH)
-      throw new NodeRunFailure(
-        'B',
-        `sub-graph call depth exceeded ${MAX_SUBGRAPH_DEPTH} (possible runaway recursion)`,
-        1,
-        'recursion'
-      )
-    if (stack.includes(workflowId))
-      throw new NodeRunFailure(
-        'B',
-        `sub-graph "${workflowId}" is already on the call stack (recursive reference)`,
-        1,
-        'recursion'
-      )
-
-    const raw = getWorkflowById(ctx.profileId!, workflowId)
-    if (!raw)
-      throw new NodeRunFailure(
-        'B',
-        `sub-graph workflow "${workflowId}" not found`,
-        1,
-        'bad-subgraph'
-      )
-    if (raw.kind !== 'subgraph')
-      throw new NodeRunFailure(
-        'B',
-        `workflow "${workflowId}" is not a sub-graph doc (kind: 'subgraph')`,
-        1,
-        'bad-subgraph'
-      )
-
-    const registry = getBuiltinRegistry()
-    const v = validateWorkflow(raw, registry.descriptors())
-    if (!v.ok)
-      throw new NodeRunFailure(
-        'B',
-        `sub-graph "${workflowId}" failed validation: ${v.errors.map((e) => e.message).join('; ')}`,
-        1,
-        'bad-subgraph'
-      )
-
+    const { doc: raw, registry } = guardAndLoadSubgraph(ctx, cfg.workflow_id)
     const doc = applyPromotions(raw, cfg.params)
 
     const seeds: Record<string, unknown> = {
@@ -238,16 +257,7 @@ export const subgraphCall: NodeImpl = {
       in4: inputs.in4
     }
 
-    const nextStack = [...stack, workflowId]
-    const wrappedCtx: RunContext = {
-      ...ctx,
-      subgraphStack: nextStack,
-      getNodeState: (id) => ctx.getNodeState(`${node.id}/${id}`),
-      setNodeState: (id, value) => ctx.setNodeState(`${node.id}/${id}`, value),
-      // Panels get the same per-instance isolation as node state (Opus QA finding): an inner
-      // panel.show node must not collide with a same-id parent-graph node in the chat panels.
-      emitPanel: (id, delta) => ctx.emitPanel(`${node.id}/${id}`, delta)
-    }
+    const wrappedCtx = wrapCallCtx(ctx, node.id, cfg.workflow_id)
 
     const result = await runSubgraph(doc, registry, wrappedCtx, seeds)
     if (result.fatal)
@@ -266,5 +276,129 @@ export const subgraphCall: NodeImpl = {
         out4: result.outputs.out4
       }
     }
+  }
+}
+
+const MAX_LOOP_ITERATIONS = 100
+
+const subgraphLoopConfig = z.object({
+  workflow_id: z.string().min(1),
+  /** 'foreach' (default): run once per element of the in1 array. 'until': feed out1 back into
+   *  in1 each iteration and stop when the body reports a truthy out2. */
+  mode: z.enum(['foreach', 'until']).optional(),
+  /** Hard bound on iterations (the spec §18 "bounded-iteration model" — there is no unbounded
+   *  while). foreach additionally stops at the end of the array. */
+  max_iterations: z.number().int().min(1).max(MAX_LOOP_ITERATIONS).optional(),
+  params: z.record(z.string(), z.unknown()).optional()
+})
+
+/** Runs a `kind: 'subgraph'` doc REPEATEDLY inside one wrapper node (the loops/iteration
+ *  fast-follow, spec §18). The parent graph stays a DAG — iteration lives entirely inside this
+ *  node's run(), bounded by `max_iterations` (default 10, hard cap 100).
+ *
+ *  Modes (per-iteration boundary seeding; `gen`/`in3`/`in4` pass through unchanged each time,
+ *  `in2` carries the iteration INDEX — a wire into the wrapper's in2 is ignored):
+ *  - `foreach`: in1 must be an array (null/undefined = empty). Each iteration seeds in1 with one
+ *    element. out1 = the collected array of each iteration's out1; out2 = iterations run;
+ *    out3/out4 = the LAST iteration's values.
+ *  - `until`: iteration 0 seeds in1 from the wire; every later iteration seeds in1 with the
+ *    PREVIOUS iteration's out1 (the carry; unwritten out1 keeps the old carry). Stops when an
+ *    iteration writes a truthy out2, or at max_iterations. out1 = final carry; out2 =
+ *    iterations run; out3/out4 = the last iteration's values.
+ *
+ *  Shares subgraph.call's recursion guards, promotion params, and per-call-site state/panel
+ *  prefixing (the prefix is deliberately iteration-INDEPENDENT — see wrapCallCtx). An inner
+ *  fatal aborts the whole loop as this node's failure (routable via `error` when wired); an
+ *  abort (Stop) returns empty outputs immediately. */
+export const subgraphLoop: NodeImpl = {
+  type: 'subgraph.loop',
+  title: 'Sub-graph Loop',
+  inputs: [
+    { name: 'gen', type: 'Context' },
+    { name: 'in1', type: 'Any' },
+    { name: 'in2', type: 'Any' },
+    { name: 'in3', type: 'Any' },
+    { name: 'in4', type: 'Any' },
+    { name: 'when', type: 'Signal' }
+  ],
+  outputs: [
+    { name: 'out1', type: 'Any' },
+    { name: 'out2', type: 'Any' },
+    { name: 'out3', type: 'Any' },
+    { name: 'out4', type: 'Any' },
+    { name: 'error', type: 'Error' }
+  ],
+  configSchema: subgraphLoopConfig,
+  run: async (ctx: RunContext, inputs, node) => {
+    const cfg = node.config as z.infer<typeof subgraphLoopConfig>
+    const mode = cfg.mode ?? 'foreach'
+    const maxIter = cfg.max_iterations ?? 10
+    const { doc: raw, registry } = guardAndLoadSubgraph(ctx, cfg.workflow_id)
+    const doc = applyPromotions(raw, cfg.params)
+    const wrappedCtx = wrapCallCtx(ctx, node.id, cfg.workflow_id)
+
+    const runIteration = async (
+      i: number,
+      in1: unknown
+    ): Promise<Record<string, unknown> | null> => {
+      const result = await runSubgraph(doc, registry, wrappedCtx, {
+        gen: inputs.gen,
+        in1,
+        in2: i,
+        in3: inputs.in3,
+        in4: inputs.in4
+      })
+      if (result.fatal)
+        throw new NodeRunFailure(
+          result.fatal.kind,
+          `iteration ${i}: ${result.fatal.message}`,
+          result.fatal.attempts,
+          result.fatal.code
+        )
+      return result.aborted ? null : result.outputs
+    }
+
+    if (mode === 'foreach') {
+      const items = inputs.in1 == null ? [] : inputs.in1
+      if (!Array.isArray(items))
+        throw new NodeRunFailure(
+          'B',
+          `subgraph.loop(foreach): in1 must be an array, got ${typeof inputs.in1}`,
+          1,
+          'bad-loop-input'
+        )
+      if (items.length > maxIter)
+        log(
+          'info',
+          `subgraph.loop "${node.id}": foreach input has ${items.length} items, capped at max_iterations=${maxIter}`
+        )
+      const collected: unknown[] = []
+      let last: Record<string, unknown> = {}
+      for (let i = 0; i < items.length && i < maxIter; i++) {
+        if (ctx.signal.aborted) return { outputs: {} }
+        const outputs = await runIteration(i, items[i])
+        if (outputs === null) return { outputs: {} }
+        collected.push(outputs.out1)
+        last = outputs
+      }
+      return {
+        outputs: { out1: collected, out2: collected.length, out3: last.out3, out4: last.out4 }
+      }
+    }
+
+    // mode === 'until'
+    let carry: unknown = inputs.in1
+    let last: Record<string, unknown> = {}
+    let count = 0
+    for (let i = 0; i < maxIter; i++) {
+      if (ctx.signal.aborted) return { outputs: {} }
+      const outputs = await runIteration(i, carry)
+      if (outputs === null) return { outputs: {} }
+      last = outputs
+      count++
+      if ('out1' in outputs) carry = outputs.out1
+      if (outputs.out2) break
+    }
+    return { outputs: { out1: carry, out2: count, out3: last.out3, out4: last.out4 } }
   }
 }

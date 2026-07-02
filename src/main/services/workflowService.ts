@@ -335,23 +335,26 @@ const isBundle = (raw: unknown): raw is WorkflowBundle =>
   Array.isArray((raw as { subgraphs?: unknown }).subgraphs) &&
   typeof (raw as { main?: unknown }).main === 'object'
 
-/** The workflow ids this doc's `subgraph.call` nodes reference (config.workflow_id). */
+/** Node types whose config.workflow_id references another workflow doc. */
+const SUBGRAPH_REF_TYPES = new Set(['subgraph.call', 'subgraph.loop'])
+
+/** The workflow ids this doc's sub-graph wrapper nodes reference (config.workflow_id). */
 const referencedSubgraphIds = (doc: WorkflowDoc): string[] => {
   const ids: string[] = []
   for (const n of doc.nodes) {
-    if (n.type !== 'subgraph.call') continue
+    if (!SUBGRAPH_REF_TYPES.has(n.type)) continue
     const id = (n.config as { workflow_id?: unknown } | undefined)?.workflow_id
     if (typeof id === 'string' && id) ids.push(id)
   }
   return ids
 }
 
-/** A copy of `doc` with every `subgraph.call` workflow_id remapped through `idMap` (ids not in
+/** A copy of `doc` with every wrapper-node workflow_id remapped through `idMap` (ids not in
  *  the map — references outside the bundle — are left as-is, dangling exactly as they were). */
 const remapSubgraphRefs = (doc: WorkflowDoc, idMap: Map<string, string>): WorkflowDoc => {
   const cloned = structuredClone(doc)
   for (const n of cloned.nodes) {
-    if (n.type !== 'subgraph.call') continue
+    if (!SUBGRAPH_REF_TYPES.has(n.type)) continue
     const ref = (n.config as { workflow_id?: unknown } | undefined)?.workflow_id
     const mapped = typeof ref === 'string' ? idMap.get(ref) : undefined
     if (mapped) n.config = { ...(n.config ?? {}), workflow_id: mapped }
