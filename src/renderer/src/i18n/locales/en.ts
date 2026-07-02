@@ -600,6 +600,8 @@ const en: Record<string, string> = {
   'workflowEditor.nodeTitle.context.history': 'History',
   'workflowEditor.nodeTitle.context.card': 'Card Field',
   'workflowEditor.nodeTitle.context.persona': 'Persona',
+  'workflowEditor.nodeTitle.context.action': 'User Action',
+  'workflowEditor.nodeTitle.context.params': 'Preset Params',
   'workflowEditor.nodeTitle.subgraph.call': 'Sub-graph',
   'workflowEditor.nodeTitle.subgraph.loop': 'Sub-graph Loop',
   'workflowEditor.nodeTitle.subgraph.input': 'Sub-graph Input',
@@ -656,9 +658,13 @@ const en: Record<string, string> = {
   'workflowEditor.nodeDesc.context.history':
     'The last N floors as both a User:/Assistant: transcript block and a role-tagged message list, with thinking stripped from replies. Config can narrow to just the user or assistant side (narrows both outputs).',
   'workflowEditor.nodeDesc.context.card':
-    'One character-card narrative field (description/personality/scenario/first_mes/name), or all of them as labelled blocks when field is set to all.',
+    'One character-card narrative field (description/personality/scenario/first_mes/name), or all of them as labelled blocks when field is set to all. Set expand: true to run context macros ({{user}}/{{char}}/{{getvar}}) + EJS over the field text like the assemble path does — needed when the card text is composed into a prompt by hand.',
   'workflowEditor.nodeDesc.context.persona':
-    'The active persona’s name and description — the {{user}} side of the card/persona pair, split out on its own so a side call doesn’t need the full Context.',
+    'The active persona’s name and description — the {{user}} side of the card/persona pair, split out on its own so a side call doesn’t need the full Context. expand: true macro/EJS-expands the description like Card Field.',
+  'workflowEditor.nodeDesc.context.action':
+    'The user’s CURRENT pending action — the message being answered this turn. History nodes only see persisted floors, so a hand-composed main prompt must wire this in as its final user message.',
+  'workflowEditor.nodeDesc.context.params':
+    'The active preset’s sampler parameters, with the same FSM-mode output cap the assemble path applies. Wire into Sample’s params whenever the prompt is composed WITHOUT Assemble Prompt — params must not be left unwired on a main path.',
   'workflowEditor.nodeDesc.memory.query':
     'Recalls memories against an arbitrary WIRED query instead of scanning the current turn’s chat — for side branches like a planner that need memory recall about a specific topic. Keyword-ranking only (vector/hybrid collections are downgraded to keyword); a collection set to mode: llm is skipped entirely, same as the standard recall. Wire the output into an LLM call to add custom-prompt reranking on top.',
   'workflowEditor.nodeDesc.subgraph.call':
@@ -725,6 +731,8 @@ const en: Record<string, string> = {
   'workflowEditor.portDesc.merge.messages.d': 'Fourth message list',
   'workflowEditor.portDesc.merge.messages.messages': 'The concatenated message list',
   'workflowEditor.portDesc.mvu.set.value': 'The value to write (wins over the configured value)',
+  'workflowEditor.portDesc.context.action.text': 'The pending user message text',
+  'workflowEditor.portDesc.context.params.params': 'Sampler parameters for Sample’s params input',
   'workflowEditor.portDesc.subgraph.input.value': 'The boundary value for the configured slot',
   'workflowEditor.portDesc.subgraph.output.value': 'The value reported out on the configured slot',
   'workflowEditor.portDesc.subgraph.call.gen': 'Passed to the sub-graph’s gen-slot boundary input',

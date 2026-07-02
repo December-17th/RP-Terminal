@@ -584,6 +584,8 @@ const zh: Record<string, string> = {
   'workflowEditor.nodeTitle.context.history': '历史记录',
   'workflowEditor.nodeTitle.context.card': '角色卡字段',
   'workflowEditor.nodeTitle.context.persona': '用户人设',
+  'workflowEditor.nodeTitle.context.action': '用户输入',
+  'workflowEditor.nodeTitle.context.params': '预设参数',
   'workflowEditor.nodeTitle.subgraph.call': '子图调用',
   'workflowEditor.nodeTitle.subgraph.loop': '子图循环',
   'workflowEditor.nodeTitle.subgraph.input': '子图输入',
@@ -640,9 +642,13 @@ const zh: Record<string, string> = {
   'workflowEditor.nodeDesc.context.history':
     '最近 N 个楼层，同时输出 User:/Assistant: 格式的文本记录和按角色打标的消息列表，回复已剥离思维链。配置可只保留用户或 AI 一侧（同时收窄两个输出）。',
   'workflowEditor.nodeDesc.context.card':
-    '角色卡的某一叙事字段（description/personality/scenario/first_mes/name），或将 field 设为 all 时把它们合并为带标签的文本块。',
+    '角色卡的某一叙事字段（description/personality/scenario/first_mes/name），或将 field 设为 all 时把它们合并为带标签的文本块。设置 expand: true 会像组装提示词路径一样对字段文本运行上下文宏（{{user}}/{{char}}/{{getvar}}）和 EJS——手工拼装主提示词时需要开启。',
   'workflowEditor.nodeDesc.context.persona':
-    '当前用户人设的名称与描述——即角色卡/人设配对中 {{user}} 一侧，单独拆出以便旁路调用不必接入整个「上下文」。',
+    '当前用户人设的名称与描述——即角色卡/人设配对中 {{user}} 一侧，单独拆出以便旁路调用不必接入整个「上下文」。expand: true 会像「角色卡字段」一样对描述做宏/EJS 展开。',
+  'workflowEditor.nodeDesc.context.action':
+    '用户当前待回应的输入——本回合正在回答的那条消息。历史记录节点只能看到已落库的楼层，因此手工拼装的主提示词必须接入此节点作为最后一条 user 消息。',
+  'workflowEditor.nodeDesc.context.params':
+    '当前预设的采样参数，并应用与组装提示词路径相同的 FSM 模式输出上限。凡是不经过「组装提示词」而手工拼装提示词的主路径，都要把它接入「采样」的 params——params 不能悬空。',
   'workflowEditor.nodeDesc.memory.query':
     '按接入的任意查询文本召回记忆，而不是扫描当前回合的聊天内容——供规划器等旁路分支按特定主题召回记忆。仅做关键词排序（vector/hybrid 集合会被降级为关键词排序）；mode 为 llm 的集合会被整体跳过，与标准召回一致。把输出接入模型调用即可在此基础上叠加自定义重排序提示词。',
   'workflowEditor.nodeDesc.subgraph.call':
@@ -705,6 +711,8 @@ const zh: Record<string, string> = {
   'workflowEditor.portDesc.merge.messages.d': '第四个消息列表',
   'workflowEditor.portDesc.merge.messages.messages': '拼接后的消息列表',
   'workflowEditor.portDesc.mvu.set.value': '要写入的值（优先于配置的值）',
+  'workflowEditor.portDesc.context.action.text': '待回应的用户消息文本',
+  'workflowEditor.portDesc.context.params.params': '接入「采样」params 输入的采样参数',
   'workflowEditor.portDesc.subgraph.input.value': '所配置槽位对应的边界值',
   'workflowEditor.portDesc.subgraph.output.value': '要在所配置槽位上报出的值',
   'workflowEditor.portDesc.subgraph.call.gen': '传给子图 gen 槽位的边界输入',

@@ -16,7 +16,13 @@ import { utilLog } from './utilNodes'
 import { memoryGate, memoryExtract, memoryWrite, memoryQuery } from './memoryNodes'
 import { toolStartCombat, toolStartDuel, toolLorebookSearch } from './toolNodes'
 import { varsGet, varsSave } from './varsNodes'
-import { contextHistory, contextCard, contextPersona } from './contextNodes'
+import {
+  contextHistory,
+  contextCard,
+  contextPersona,
+  contextAction,
+  contextParams
+} from './contextNodes'
 import {
   subgraphInput,
   subgraphOutput,
@@ -57,6 +63,8 @@ export const builtinRegistry = createRegistry([
   contextHistory,
   contextCard,
   contextPersona,
+  contextAction,
+  contextParams,
   subgraphInput,
   subgraphOutput,
   subgraphCall,
