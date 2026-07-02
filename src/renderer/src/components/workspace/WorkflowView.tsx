@@ -1,6 +1,8 @@
 import React from 'react'
 import { useChatStore } from '../../stores/chatStore'
 import { useToastStore } from '../../stores/toastStore'
+import { useUiStore } from '../../stores/uiStore'
+import { useWorkflowEditorStore } from '../../stores/workflowEditorStore'
 import { useT } from '../../i18n'
 
 /**
@@ -68,6 +70,14 @@ export const WorkflowView: React.FC<{ profileId: string }> = ({ profileId }) => 
 
   const onExport = (id: string, name: string): void => {
     void api().exportWorkflowDialog(profileId, id, name)
+  }
+
+  const onEdit = async (id: string): Promise<void> => {
+    // Open the workflow in the editor store first, then raise the full-screen overlay (the
+    // editor is not a panel view — the canvas needs the whole window).
+    await useWorkflowEditorStore.getState().init(profileId)
+    await useWorkflowEditorStore.getState().open(profileId, id)
+    useUiStore.getState().openWorkflowEditor()
   }
 
   const onClone = async (id: string): Promise<void> => {
@@ -164,6 +174,13 @@ export const WorkflowView: React.FC<{ profileId: string }> = ({ profileId }) => 
                 </span>
               )}
             </span>
+            <button
+              className="rpt-duel-secondary"
+              style={{ fontSize: 12, padding: '2px 8px' }}
+              onClick={() => void onEdit(w.id)}
+            >
+              {t('common.edit')}
+            </button>
             <button
               className="rpt-duel-secondary"
               style={{ fontSize: 12, padding: '2px 8px' }}

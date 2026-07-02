@@ -27,6 +27,7 @@ import { applyTheme } from './theme'
 import { useI18nStore } from './i18n'
 import { Launcher } from './components/Launcher'
 import { SettingsModal } from './components/SettingsModal'
+import { WorkflowEditorOverlay } from './components/workflow/WorkflowEditorOverlay'
 
 export default function App(): React.ReactElement {
   const activeProfile = useProfileStore((s) => s.activeProfile)
@@ -225,6 +226,7 @@ export default function App(): React.ReactElement {
 
       {/* App-wide overlays — render over BOTH the launcher and play. */}
       <SettingsModal profileId={activeProfile.id} />
+      <WorkflowEditorOverlay profileId={activeProfile.id} />
       <ToastStack />
     </>
   )
