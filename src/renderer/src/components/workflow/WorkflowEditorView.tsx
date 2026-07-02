@@ -8,7 +8,7 @@
 import React, { useEffect, useState } from 'react'
 import { useWorkflowEditorStore } from '../../stores/workflowEditorStore'
 import { useToastStore } from '../../stores/toastStore'
-import { useT } from '../../i18n'
+import { useOptionalT, useT } from '../../i18n'
 import FlowCanvas from './FlowCanvas'
 import NodeConfigPanel from './NodeConfigPanel'
 
@@ -42,6 +42,7 @@ export default function WorkflowEditorView({
   profileId: string
 }): React.JSX.Element {
   const t = useT()
+  const tOpt = useOptionalT()
   const workflows = useWorkflowEditorStore((s) => s.workflows)
   const currentId = useWorkflowEditorStore((s) => s.currentId)
   const dirty = useWorkflowEditorStore((s) => s.dirty)
@@ -183,20 +184,26 @@ export default function WorkflowEditorView({
           <div style={{ color: 'var(--rpt-text-tertiary)', marginBottom: 4 }}>
             {t('workflowEditor.errors')}
           </div>
-          {errors.map((err, i) => (
-            <div
-              key={i}
-              onClick={() => err.nodeId && select(err.nodeId)}
-              style={{
-                cursor: err.nodeId ? 'pointer' : 'default',
-                color: 'var(--rpt-danger)',
-                padding: '2px 0'
-              }}
-            >
-              {err.message}
-              {err.nodeId ? ` (${err.nodeId})` : ''}
-            </div>
-          ))}
+          {errors.map((err, i) => {
+            // Localized label for the error CODE; the raw message keeps the specifics (port
+            // names etc.) as the detail.
+            const label = tOpt(`workflowEditor.err.${err.code}`)
+            return (
+              <div
+                key={i}
+                onClick={() => err.nodeId && select(err.nodeId)}
+                style={{
+                  cursor: err.nodeId ? 'pointer' : 'default',
+                  color: 'var(--rpt-danger)',
+                  padding: '2px 0'
+                }}
+              >
+                {label ? `${label} — ` : ''}
+                {err.message}
+                {err.nodeId ? ` (${err.nodeId})` : ''}
+              </div>
+            )
+          })}
         </div>
       )}
 
@@ -235,27 +242,47 @@ export default function WorkflowEditorView({
           >
             {t('workflowEditor.palette')}
           </div>
-          {nodeTypes.map((nt) => (
-            <div
-              key={nt.type}
-              draggable
-              onDragStart={(e) => {
-                e.dataTransfer.setData('application/rpt-node-type', nt.type)
-                e.dataTransfer.effectAllowed = 'move'
-              }}
-              style={{
-                border: '1px solid var(--rpt-border)',
-                borderRadius: 6,
-                padding: '5px 8px',
-                marginBottom: 5,
-                cursor: 'grab',
-                background: 'var(--rpt-bg-elevated)'
-              }}
-            >
-              <div style={{ fontSize: 12, color: 'var(--rpt-text-primary)' }}>{nt.title}</div>
-              <div style={{ fontSize: 10, color: 'var(--rpt-text-tertiary)' }}>{nt.type}</div>
-            </div>
-          ))}
+          {nodeTypes.map((nt) => {
+            const title = tOpt(`workflowEditor.nodeTitle.${nt.type}`) || nt.title
+            const desc = tOpt(`workflowEditor.nodeDesc.${nt.type}`)
+            return (
+              <div
+                key={nt.type}
+                draggable
+                title={desc}
+                onDragStart={(e) => {
+                  e.dataTransfer.setData('application/rpt-node-type', nt.type)
+                  e.dataTransfer.effectAllowed = 'move'
+                }}
+                style={{
+                  border: '1px solid var(--rpt-border)',
+                  borderRadius: 6,
+                  padding: '5px 8px',
+                  marginBottom: 5,
+                  cursor: 'grab',
+                  background: 'var(--rpt-bg-elevated)'
+                }}
+              >
+                <div style={{ fontSize: 12, color: 'var(--rpt-text-primary)' }}>{title}</div>
+                <div style={{ fontSize: 10, color: 'var(--rpt-text-tertiary)' }}>{nt.type}</div>
+                {desc && (
+                  <div
+                    style={{
+                      fontSize: 10,
+                      color: 'var(--rpt-text-secondary)',
+                      marginTop: 3,
+                      display: '-webkit-box',
+                      WebkitLineClamp: 2,
+                      WebkitBoxOrient: 'vertical',
+                      overflow: 'hidden'
+                    }}
+                  >
+                    {desc}
+                  </div>
+                )}
+              </div>
+            )
+          })}
         </div>
 
         <div style={{ flex: 1, minWidth: 0 }}>

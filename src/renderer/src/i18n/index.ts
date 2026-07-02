@@ -42,3 +42,14 @@ export function useT(): (key: string, vars?: Record<string, string | number>) =>
   const locale = useI18nStore((s) => s.locale)
   return (key, vars) => translate(locale, key, vars)
 }
+
+/** Hook: like useT but returns '' for a key missing in every locale — for OPTIONAL strings
+ *  (e.g. per-node/per-port documentation) where the caller hides an absent entry instead of
+ *  rendering the raw key. */
+export function useOptionalT(): (key: string) => string {
+  const locale = useI18nStore((s) => s.locale)
+  return (key) => {
+    const s = translate(locale, key)
+    return s === key ? '' : s
+  }
+}

@@ -530,6 +530,117 @@ const en: Record<string, string> = {
   'workflowEditor.connect.occupied': 'Input already connected',
   'workflowEditor.connect.self': 'Cannot connect a node to itself',
   'workflowEditor.connect.missing-port': 'Unknown port',
+  'workflowEditor.close': 'Close',
+  'workflowEditor.description': 'Description',
+  // Validation error codes (validateWorkflow) — shown as a localized label before the raw detail.
+  'workflowEditor.err.MAIN_OUTPUT': 'Exactly one node must be the main output',
+  'workflowEditor.err.CYCLE': 'The graph has a cycle',
+  'workflowEditor.err.FANIN': 'An input port has more than one incoming connection',
+  'workflowEditor.err.PORT_TYPE': 'Connected port types are incompatible',
+  'workflowEditor.err.EDGE_PORT': 'A connection references a port that does not exist',
+  'workflowEditor.err.EDGE_NODE': 'A connection references a missing node',
+  'workflowEditor.err.UNKNOWN_TYPE': 'Unknown node type',
+  'workflowEditor.err.DUP_NODE_ID': 'Duplicate node ids',
+  // Node titles (the catalog ships English titles; these localize them per locale).
+  'workflowEditor.nodeTitle.input.context': 'Context',
+  'workflowEditor.nodeTitle.memory.recall': 'Recall Memory',
+  'workflowEditor.nodeTitle.prompt.assemble': 'Assemble Prompt',
+  'workflowEditor.nodeTitle.llm.sample': 'Sample Model',
+  'workflowEditor.nodeTitle.parse.response': 'Parse Response',
+  'workflowEditor.nodeTitle.apply.state': 'Apply State',
+  'workflowEditor.nodeTitle.output.writeFloor': 'Write Floor',
+  'workflowEditor.nodeTitle.memory.compact': 'Compact Memory',
+  'workflowEditor.nodeTitle.control.if': 'If',
+  'workflowEditor.nodeTitle.control.switch': 'Switch',
+  'workflowEditor.nodeTitle.control.when': 'When',
+  'workflowEditor.nodeTitle.text.template': 'Text Template',
+  'workflowEditor.nodeTitle.prompt.messages': 'Message List',
+  'workflowEditor.nodeTitle.merge.messages': 'Merge Messages',
+  'workflowEditor.nodeTitle.mvu.set': 'Set Variable',
+  // Node descriptions (what the node does).
+  'workflowEditor.nodeDesc.input.context':
+    'Builds the turn bundle: session, character card, settings, preset, lorebooks, chat history and working variables. The start of every graph — almost every other node takes its output.',
+  'workflowEditor.nodeDesc.memory.recall':
+    'Recalls relevant long-term memories for this turn as a text block for the prompt tail. Empty when memory is disabled; failures never block the turn.',
+  'workflowEditor.nodeDesc.prompt.assemble':
+    'Builds the complete provider-ready prompt exactly like the default pipeline: card, preset, matched lorebook entries, chat history, the memory block, and budget trimming.',
+  'workflowEditor.nodeDesc.llm.sample':
+    'Calls the model with a message array. On the main-output path its reply streams to chat; wired behind a Signal it runs as a side-branch call (e.g. a planner or background job).',
+  'workflowEditor.nodeDesc.parse.response':
+    'Post-processes the raw reply: strips thinking, extracts rpt-events and MVU variable commands, and computes this turn’s cache metrics.',
+  'workflowEditor.nodeDesc.apply.state':
+    'Folds this turn’s parsed events and MVU commands onto the working variables (including the combat-start cue).',
+  'workflowEditor.nodeDesc.output.writeFloor':
+    'Persists the finished floor (message pair + variables + metrics). The main-output node in the default graph: everything wired after it runs post-response, off the hot path.',
+  'workflowEditor.nodeDesc.memory.compact':
+    'Folds aged-out turns into long-term memory. Runs post-response and fails open — it can never block a turn.',
+  'workflowEditor.nodeDesc.control.if':
+    'Tests a predicate against the input value (optionally drilling in via the configured path) and fires exactly one of its two Signals: then or else. The un-fired branch is pruned.',
+  'workflowEditor.nodeDesc.control.switch':
+    'Compares the input value against up to four configured case values (deep equality) and fires the first matching case Signal, or default when none match.',
+  'workflowEditor.nodeDesc.control.when':
+    'A single gate: fires its Signal when the predicate holds. The special “changed” operator fires only when the watched value differs from the last time it fired (remembered per chat) — e.g. “once per in-game month”.',
+  'workflowEditor.nodeDesc.text.template':
+    'Renders a text template. Context macros ({{user}}, {{getvar::…}}) and EJS run first (when a Context is wired), then {{in1}}–{{in4}} are replaced with the wired upstream values.',
+  'workflowEditor.nodeDesc.prompt.messages':
+    'Authors an ordered system/user/assistant message list for a model call. Row contents are template-interpolated like Text Template; a trailing assistant row acts as a prefill.',
+  'workflowEditor.nodeDesc.merge.messages':
+    'Concatenates up to four message lists in port order (a → d, unwired ports skipped). Wire a Context to keep the merged list provider-correct.',
+  'workflowEditor.nodeDesc.mvu.set':
+    'Writes a value to a stat_data path on the latest floor — the way a side branch commits its result to game state. Intended for post-response branches; the wired value wins over the configured one.',
+  // Port descriptions shared by many nodes (looked up when no per-node entry exists).
+  'workflowEditor.portDesc.common.gen':
+    'The turn bundle from Context (settings, card, history, variables)',
+  'workflowEditor.portDesc.common.when': 'Optional gate: this node runs only if the Signal fired',
+  'workflowEditor.portDesc.common.in1': 'Upstream value for the {{in1}} placeholder',
+  'workflowEditor.portDesc.common.in2': 'Upstream value for the {{in2}} placeholder',
+  'workflowEditor.portDesc.common.in3': 'Upstream value for the {{in3}} placeholder',
+  'workflowEditor.portDesc.common.in4': 'Upstream value for the {{in4}} placeholder',
+  // Port descriptions, per node.
+  'workflowEditor.portDesc.input.context.gen': 'The turn bundle every downstream node reads',
+  'workflowEditor.portDesc.memory.recall.block': 'Recalled-memories text (empty when none)',
+  'workflowEditor.portDesc.prompt.assemble.block':
+    'Memory text appended to the prompt tail (wire from Recall Memory)',
+  'workflowEditor.portDesc.prompt.assemble.sendMessages': 'The exact provider-ready message array',
+  'workflowEditor.portDesc.prompt.assemble.params': 'Sampler parameters from the active preset',
+  'workflowEditor.portDesc.llm.sample.sendMessages':
+    'Messages to send (from Assemble Prompt, Message List or Merge Messages)',
+  'workflowEditor.portDesc.llm.sample.params': 'Sampler parameters (optional)',
+  'workflowEditor.portDesc.llm.sample.raw': 'The model’s full raw reply text',
+  'workflowEditor.portDesc.llm.sample.rawUsage': 'Provider token-usage report',
+  'workflowEditor.portDesc.parse.response.raw': 'Raw reply text to parse',
+  'workflowEditor.portDesc.parse.response.sendMessages':
+    'The sent messages (used for cache metrics)',
+  'workflowEditor.portDesc.parse.response.rawUsage': 'Provider usage (used for cache metrics)',
+  'workflowEditor.portDesc.parse.response.parsed': 'Cleaned text + extracted rpt-events',
+  'workflowEditor.portDesc.parse.response.mvu': 'Extracted MVU variable commands/patches',
+  'workflowEditor.portDesc.parse.response.metrics': 'This turn’s cache/token metrics',
+  'workflowEditor.portDesc.apply.state.parsed': 'Parsed events (from Parse Response)',
+  'workflowEditor.portDesc.apply.state.mvu': 'MVU commands (from Parse Response)',
+  'workflowEditor.portDesc.apply.state.raw': 'Raw reply (combat-cue detection)',
+  'workflowEditor.portDesc.apply.state.variables': 'The updated working variables',
+  'workflowEditor.portDesc.output.writeFloor.raw': 'The reply text to store on the floor',
+  'workflowEditor.portDesc.output.writeFloor.sendMessages': 'The request to store on the floor',
+  'workflowEditor.portDesc.output.writeFloor.variables': 'The variables to store on the floor',
+  'workflowEditor.portDesc.output.writeFloor.parsed': 'Parsed events to store on the floor',
+  'workflowEditor.portDesc.output.writeFloor.metrics': 'Cache metrics to store on the floor',
+  'workflowEditor.portDesc.output.writeFloor.floor': 'The persisted floor record',
+  'workflowEditor.portDesc.control.if.value':
+    'The value to test (the configured path drills into it)',
+  'workflowEditor.portDesc.control.if.then': 'Fires when the predicate is true',
+  'workflowEditor.portDesc.control.if.else': 'Fires when the predicate is false',
+  'workflowEditor.portDesc.control.switch.value': 'The value matched against the case list',
+  'workflowEditor.portDesc.control.switch.default': 'Fires when no case matched',
+  'workflowEditor.portDesc.control.when.value': 'The value the predicate watches',
+  'workflowEditor.portDesc.control.when.fire': 'Fires when the condition holds / value changed',
+  'workflowEditor.portDesc.text.template.text': 'The rendered text',
+  'workflowEditor.portDesc.prompt.messages.messages': 'The authored role-tagged message list',
+  'workflowEditor.portDesc.merge.messages.a': 'First message list',
+  'workflowEditor.portDesc.merge.messages.b': 'Second message list',
+  'workflowEditor.portDesc.merge.messages.c': 'Third message list',
+  'workflowEditor.portDesc.merge.messages.d': 'Fourth message list',
+  'workflowEditor.portDesc.merge.messages.messages': 'The concatenated message list',
+  'workflowEditor.portDesc.mvu.set.value': 'The value to write (wins over the configured value)',
 
   'prefs.combatNarration': 'Combat narration',
   'prefs.combatNarrationAppend': 'Append to the current message',

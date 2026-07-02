@@ -516,6 +516,113 @@ const zh: Record<string, string> = {
   'workflowEditor.connect.occupied': '输入端口已占用',
   'workflowEditor.connect.self': '不能连接到自身',
   'workflowEditor.connect.missing-port': '未知端口',
+  'workflowEditor.close': '关闭',
+  'workflowEditor.description': '说明',
+  // 校验错误码（validateWorkflow）——本地化标签 + 原始详情。
+  'workflowEditor.err.MAIN_OUTPUT': '必须恰好有一个主输出节点',
+  'workflowEditor.err.CYCLE': '图中存在环',
+  'workflowEditor.err.FANIN': '同一输入端口有多条传入连接',
+  'workflowEditor.err.PORT_TYPE': '连接的端口类型不兼容',
+  'workflowEditor.err.EDGE_PORT': '连接指向不存在的端口',
+  'workflowEditor.err.EDGE_NODE': '连接指向不存在的节点',
+  'workflowEditor.err.UNKNOWN_TYPE': '未知节点类型',
+  'workflowEditor.err.DUP_NODE_ID': '节点 ID 重复',
+  // 节点名称
+  'workflowEditor.nodeTitle.input.context': '上下文',
+  'workflowEditor.nodeTitle.memory.recall': '记忆召回',
+  'workflowEditor.nodeTitle.prompt.assemble': '组装提示词',
+  'workflowEditor.nodeTitle.llm.sample': '模型调用',
+  'workflowEditor.nodeTitle.parse.response': '解析回复',
+  'workflowEditor.nodeTitle.apply.state': '应用状态',
+  'workflowEditor.nodeTitle.output.writeFloor': '写入楼层',
+  'workflowEditor.nodeTitle.memory.compact': '压缩记忆',
+  'workflowEditor.nodeTitle.control.if': '条件分支',
+  'workflowEditor.nodeTitle.control.switch': '多路分支',
+  'workflowEditor.nodeTitle.control.when': '触发器',
+  'workflowEditor.nodeTitle.text.template': '文本模板',
+  'workflowEditor.nodeTitle.prompt.messages': '消息列表',
+  'workflowEditor.nodeTitle.merge.messages': '合并消息',
+  'workflowEditor.nodeTitle.mvu.set': '设置变量',
+  // 节点说明
+  'workflowEditor.nodeDesc.input.context':
+    '构建本回合的上下文包：会话、角色卡、设置、预设、世界书、聊天历史与工作变量。每张图的起点——几乎所有节点都要读取它的输出。',
+  'workflowEditor.nodeDesc.memory.recall':
+    '为本回合召回相关的长期记忆，输出为拼入提示词尾部的文本块。记忆关闭时为空；失败不会阻塞回合。',
+  'workflowEditor.nodeDesc.prompt.assemble':
+    '按默认流水线的方式构建完整的、可直接发给服务商的提示词：角色卡、预设、命中的世界书条目、聊天历史、记忆块与预算裁剪。',
+  'workflowEditor.nodeDesc.llm.sample':
+    '用消息数组调用模型。位于主输出路径时回复实时流入聊天；接在 Signal 之后则作为旁路调用（如规划器或后台任务）。',
+  'workflowEditor.nodeDesc.parse.response':
+    '后处理原始回复：剥离思维链、提取 rpt 事件与 MVU 变量指令，并计算本回合的缓存指标。',
+  'workflowEditor.nodeDesc.apply.state':
+    '把本回合解析出的事件与 MVU 指令合并到工作变量上（含战斗开始信号）。',
+  'workflowEditor.nodeDesc.output.writeFloor':
+    '持久化本回合的楼层（消息对 + 变量 + 指标）。默认图中的主输出节点：接在它之后的节点在回复送达后异步执行。',
+  'workflowEditor.nodeDesc.memory.compact':
+    '把过旧的回合压缩进长期记忆。回复后异步执行、失败不阻塞回合。',
+  'workflowEditor.nodeDesc.control.if':
+    '对输入值执行谓词判断（可用配置的 path 深入取值），恰好触发 then 或 else 之一；未触发的分支被剪掉。',
+  'workflowEditor.nodeDesc.control.switch':
+    '将输入值与最多四个配置的 case 值深度比较，触发第一个匹配的 case 信号；都不匹配则触发 default。',
+  'workflowEditor.nodeDesc.control.when':
+    '单一门控：谓词成立时触发信号。特殊的 “changed” 操作符仅在被监视的值与上次触发时不同才触发（按会话记忆）——例如“每个游戏内月份一次”。',
+  'workflowEditor.nodeDesc.text.template':
+    '渲染文本模板。接入上下文后先执行宏（{{user}}、{{getvar::…}}）与 EJS，再把 {{in1}}–{{in4}} 替换为接入的上游值。',
+  'workflowEditor.nodeDesc.prompt.messages':
+    '为一次模型调用编排 system/user/assistant 消息列表。每行内容按文本模板的方式插值；末尾的 assistant 行作为预填。',
+  'workflowEditor.nodeDesc.merge.messages':
+    '按端口顺序（a → d，未接入的跳过）拼接最多四个消息列表。接入上下文可保持合并结果符合服务商要求。',
+  'workflowEditor.nodeDesc.mvu.set':
+    '把一个值写入最新楼层的 stat_data 路径——旁路分支把结果提交到游戏状态的方式。建议用于回复后分支；接入的值优先于配置的值。',
+  // 通用端口说明（无逐节点条目时回退到这里）
+  'workflowEditor.portDesc.common.gen': '来自“上下文”的回合包（设置、角色卡、历史、变量）',
+  'workflowEditor.portDesc.common.when': '可选门控：信号触发时本节点才运行',
+  'workflowEditor.portDesc.common.in1': '{{in1}} 占位符的上游值',
+  'workflowEditor.portDesc.common.in2': '{{in2}} 占位符的上游值',
+  'workflowEditor.portDesc.common.in3': '{{in3}} 占位符的上游值',
+  'workflowEditor.portDesc.common.in4': '{{in4}} 占位符的上游值',
+  // 逐节点端口说明
+  'workflowEditor.portDesc.input.context.gen': '供所有下游节点读取的回合包',
+  'workflowEditor.portDesc.memory.recall.block': '召回的记忆文本（无则为空）',
+  'workflowEditor.portDesc.prompt.assemble.block': '拼入提示词尾部的记忆文本（接“记忆召回”）',
+  'workflowEditor.portDesc.prompt.assemble.sendMessages': '将发送给服务商的最终消息数组',
+  'workflowEditor.portDesc.prompt.assemble.params': '来自当前预设的采样参数',
+  'workflowEditor.portDesc.llm.sample.sendMessages':
+    '要发送的消息（接“组装提示词”“消息列表”或“合并消息”）',
+  'workflowEditor.portDesc.llm.sample.params': '采样参数（可选）',
+  'workflowEditor.portDesc.llm.sample.raw': '模型的完整原始回复文本',
+  'workflowEditor.portDesc.llm.sample.rawUsage': '服务商的 token 用量报告',
+  'workflowEditor.portDesc.parse.response.raw': '待解析的原始回复文本',
+  'workflowEditor.portDesc.parse.response.sendMessages': '已发送的消息（用于缓存指标）',
+  'workflowEditor.portDesc.parse.response.rawUsage': '服务商用量（用于缓存指标）',
+  'workflowEditor.portDesc.parse.response.parsed': '清理后的文本 + 提取的 rpt 事件',
+  'workflowEditor.portDesc.parse.response.mvu': '提取的 MVU 变量指令/补丁',
+  'workflowEditor.portDesc.parse.response.metrics': '本回合的缓存/token 指标',
+  'workflowEditor.portDesc.apply.state.parsed': '解析出的事件（接“解析回复”）',
+  'workflowEditor.portDesc.apply.state.mvu': 'MVU 指令（接“解析回复”）',
+  'workflowEditor.portDesc.apply.state.raw': '原始回复（用于战斗信号检测）',
+  'workflowEditor.portDesc.apply.state.variables': '更新后的工作变量',
+  'workflowEditor.portDesc.output.writeFloor.raw': '存入楼层的回复文本',
+  'workflowEditor.portDesc.output.writeFloor.sendMessages': '存入楼层的请求消息',
+  'workflowEditor.portDesc.output.writeFloor.variables': '存入楼层的变量',
+  'workflowEditor.portDesc.output.writeFloor.parsed': '存入楼层的解析事件',
+  'workflowEditor.portDesc.output.writeFloor.metrics': '存入楼层的缓存指标',
+  'workflowEditor.portDesc.output.writeFloor.floor': '持久化后的楼层记录',
+  'workflowEditor.portDesc.control.if.value': '待判断的值（配置的 path 可深入取值）',
+  'workflowEditor.portDesc.control.if.then': '谓词为真时触发',
+  'workflowEditor.portDesc.control.if.else': '谓词为假时触发',
+  'workflowEditor.portDesc.control.switch.value': '与 case 列表比较的值',
+  'workflowEditor.portDesc.control.switch.default': '无匹配 case 时触发',
+  'workflowEditor.portDesc.control.when.value': '谓词监视的值',
+  'workflowEditor.portDesc.control.when.fire': '条件成立 / 值变化时触发',
+  'workflowEditor.portDesc.text.template.text': '渲染后的文本',
+  'workflowEditor.portDesc.prompt.messages.messages': '编排好的角色标注消息列表',
+  'workflowEditor.portDesc.merge.messages.a': '第一个消息列表',
+  'workflowEditor.portDesc.merge.messages.b': '第二个消息列表',
+  'workflowEditor.portDesc.merge.messages.c': '第三个消息列表',
+  'workflowEditor.portDesc.merge.messages.d': '第四个消息列表',
+  'workflowEditor.portDesc.merge.messages.messages': '拼接后的消息列表',
+  'workflowEditor.portDesc.mvu.set.value': '要写入的值（优先于配置的值）',
   'status.noState': '（此会话还没有 RPG 状态）',
 
   'prefs.combatNarration': '战斗叙述',

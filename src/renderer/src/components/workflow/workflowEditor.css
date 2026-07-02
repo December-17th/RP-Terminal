@@ -77,23 +77,23 @@
 }
 
 .rpt-workflow-editor .rpt-node-ports {
-  position: relative;
   display: flex;
   justify-content: space-between;
+  align-items: flex-start;
+  padding: 5px 0 7px;
   min-height: 12px;
 }
-.rpt-workflow-editor .rpt-node-spacer {
-  width: 100%;
-}
 .rpt-workflow-editor .rpt-node-col {
-  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
   flex: 1;
   min-width: 0;
 }
+/* Each row anchors its own Handle (absolute, vertically centered) so the dot sits half-over the
+   card edge, aligned with its label — rows themselves are normal flow and size the card. */
 .rpt-workflow-editor .rpt-node-port-row {
-  position: absolute;
-  left: 0;
-  right: 0;
+  position: relative;
   display: flex;
   align-items: center;
   height: 20px;
@@ -113,17 +113,22 @@
 
 /* ---------- Handles ---------- */
 .rpt-workflow-editor .react-flow__handle {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
   width: 10px;
   height: 10px;
   border-radius: 50%;
   border: 1.5px solid var(--rpt-bg-primary);
   background: var(--rpt-text-tertiary);
 }
+/* The port rows are inset by the card padding; -15px (10px padding + half the 10px dot) lands the
+   dot centered ON the card border, not floating outside it. */
 .rpt-workflow-editor .react-flow__handle-left {
-  left: -5px;
+  left: -15px;
 }
 .rpt-workflow-editor .react-flow__handle-right {
-  right: -5px;
+  right: -15px;
 }
 
 /* Port-type color classes, applied to the Handle via className in RptNode. */

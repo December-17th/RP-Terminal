@@ -4,7 +4,7 @@
 // derived from the node type's configSchema via schemaForm.ts's pure fieldsFromSchema walker.
 import React, { useState } from 'react'
 import { useWorkflowEditorStore } from '../../stores/workflowEditorStore'
-import { useT } from '../../i18n'
+import { useOptionalT, useT } from '../../i18n'
 import { fieldsFromSchema, type FieldSpec } from './schemaForm'
 
 interface NodeConfigPanelProps {
@@ -220,6 +220,7 @@ export default function NodeConfigPanel({
   profileId: _profileId
 }: NodeConfigPanelProps): React.JSX.Element {
   const t = useT()
+  const tOpt = useOptionalT()
   const selectedNodeId = useWorkflowEditorStore((s) => s.selectedNodeId)
   const nodes = useWorkflowEditorStore((s) => s.nodes)
   const nodeTypes = useWorkflowEditorStore((s) => s.nodeTypes)
@@ -244,12 +245,33 @@ export default function NodeConfigPanel({
     setNodeConfig(node.id, next)
   }
 
+  // Localized title/description with the catalog's English title as the fallback; per-port
+  // descriptions try the node-specific key first, then the shared `common.<port>` entry.
+  const nodeTitle = tOpt(`workflowEditor.nodeTitle.${node.type}`) || typeInfo?.title || node.type
+  const nodeDesc = tOpt(`workflowEditor.nodeDesc.${node.type}`)
+  const portDesc = (port: string): string =>
+    tOpt(`workflowEditor.portDesc.${node.type}.${port}`) ||
+    tOpt(`workflowEditor.portDesc.common.${port}`)
+
   return (
     <div>
       <div>
-        <strong>{typeInfo?.title ?? node.type}</strong>
+        <strong>{nodeTitle}</strong>
         <div style={{ fontSize: 10.5, color: 'var(--rpt-text-tertiary)' }}>{node.type}</div>
       </div>
+
+      {nodeDesc && (
+        <div
+          style={{
+            fontSize: 11,
+            color: 'var(--rpt-text-secondary)',
+            lineHeight: 1.55,
+            margin: '6px 0'
+          }}
+        >
+          {nodeDesc}
+        </div>
+      )}
 
       {typeInfo?.isMainOutputCapable && (
         <label style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
@@ -290,13 +312,27 @@ export default function NodeConfigPanel({
           {t('workflowEditor.ports')}
         </div>
         {(typeInfo?.inputs ?? []).map((port) => (
-          <div key={`in-${port.name}`} style={{ fontSize: 10.5 }}>
-            in: {port.name} ({port.type})
+          <div key={`in-${port.name}`} style={{ fontSize: 10.5, marginBottom: 3 }}>
+            <span style={{ color: 'var(--rpt-text-primary)' }}>
+              → {port.name} <span style={{ color: 'var(--rpt-text-tertiary)' }}>({port.type})</span>
+            </span>
+            {portDesc(port.name) && (
+              <div style={{ color: 'var(--rpt-text-secondary)', paddingLeft: 14 }}>
+                {portDesc(port.name)}
+              </div>
+            )}
           </div>
         ))}
         {(typeInfo?.outputs ?? []).map((port) => (
-          <div key={`out-${port.name}`} style={{ fontSize: 10.5 }}>
-            out: {port.name} ({port.type})
+          <div key={`out-${port.name}`} style={{ fontSize: 10.5, marginBottom: 3 }}>
+            <span style={{ color: 'var(--rpt-text-primary)' }}>
+              {port.name} → <span style={{ color: 'var(--rpt-text-tertiary)' }}>({port.type})</span>
+            </span>
+            {portDesc(port.name) && (
+              <div style={{ color: 'var(--rpt-text-secondary)', paddingLeft: 14 }}>
+                {portDesc(port.name)}
+              </div>
+            )}
           </div>
         ))}
       </div>

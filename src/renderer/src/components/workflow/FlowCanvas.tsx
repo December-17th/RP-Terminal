@@ -23,15 +23,12 @@ import {
 import '@xyflow/react/dist/style.css'
 import './workflowEditor.css'
 import { useWorkflowEditorStore, type NodeTypeInfo } from '../../stores/workflowEditorStore'
-import { useT } from '../../i18n'
+import { useOptionalT, useT } from '../../i18n'
 import type { EditorNode } from './editorModel'
 
 /** Matches the palette drag payload's mime type (drag source lives in a later task's palette
  *  component; this is the contract both sides must agree on). */
 const DRAG_MIME = 'application/rpt-node-type'
-
-const HANDLE_ROW_HEIGHT = 22
-const HANDLE_ROW_TOP_OFFSET = 44
 
 interface RptNodeData extends Record<string, unknown> {
   editorNode: EditorNode
@@ -58,10 +55,13 @@ function portTypeClass(type: string | undefined): string {
 
 function RptNode({ data, selected }: NodeProps<RFNode<RptNodeData>>): React.JSX.Element {
   const t = useT()
+  const tOpt = useOptionalT()
   const { editorNode, typeInfo } = data
   const inputs = typeInfo?.inputs ?? []
   const outputs = typeInfo?.outputs ?? []
-  const title = typeInfo?.title ?? editorNode.type
+  // Localized node title with the catalog's English title as the fallback.
+  const title =
+    tOpt(`workflowEditor.nodeTitle.${editorNode.type}`) || typeInfo?.title || editorNode.type
 
   return (
     <div
@@ -76,14 +76,13 @@ function RptNode({ data, selected }: NodeProps<RFNode<RptNodeData>>): React.JSX.
         <span className="rpt-node-title">{title}</span>
         <span className="rpt-node-type-id">{editorNode.type}</span>
       </div>
+      {/* Normal-flow port rows: each row positions its own Handle (absolute, vertically centered
+          on the row) so handles always sit on the card's edge next to their label — the previous
+          absolute-offset scheme measured from the wrong origin and pushed rows past the card. */}
       <div className="rpt-node-ports">
         <div className="rpt-node-col rpt-node-col-in">
-          {inputs.map((port, i) => (
-            <div
-              className="rpt-node-port-row"
-              key={`in-${port.name}`}
-              style={{ top: HANDLE_ROW_TOP_OFFSET + i * HANDLE_ROW_HEIGHT }}
-            >
+          {inputs.map((port) => (
+            <div className="rpt-node-port-row" key={`in-${port.name}`}>
               <Handle
                 type="target"
                 position={Position.Left}
@@ -95,12 +94,8 @@ function RptNode({ data, selected }: NodeProps<RFNode<RptNodeData>>): React.JSX.
           ))}
         </div>
         <div className="rpt-node-col rpt-node-col-out">
-          {outputs.map((port, i) => (
-            <div
-              className="rpt-node-port-row rpt-node-port-row-out"
-              key={`out-${port.name}`}
-              style={{ top: HANDLE_ROW_TOP_OFFSET + i * HANDLE_ROW_HEIGHT }}
-            >
+          {outputs.map((port) => (
+            <div className="rpt-node-port-row rpt-node-port-row-out" key={`out-${port.name}`}>
               <span className="rpt-node-port-label">{port.name}</span>
               <Handle
                 type="source"
@@ -112,12 +107,6 @@ function RptNode({ data, selected }: NodeProps<RFNode<RptNodeData>>): React.JSX.
           ))}
         </div>
       </div>
-      {/* Reserve vertical space for the tallest port column (title row height is fixed via CSS;
-          this just keeps the card from clipping handles when one side has more ports). */}
-      <div
-        className="rpt-node-spacer"
-        style={{ height: Math.max(inputs.length, outputs.length, 1) * HANDLE_ROW_HEIGHT }}
-      />
     </div>
   )
 }
@@ -179,7 +168,10 @@ function FlowCanvasInner({ profileId: _profileId }: FlowCanvasProps): React.JSX.
   const handleNodesChange = useCallback(
     (changes: NodeChange<RFNode<RptNodeData>>[]) => {
       for (const change of changes) {
-        if (change.type === 'position' && change.position && change.dragging === false) {
+        // Apply position on EVERY change (not just drag-end): the store is the single source of
+        // truth for RF's controlled nodes, so skipping mid-drag updates froze the node under the
+        // cursor and teleported it on release.
+        if (change.type === 'position' && change.position) {
           moveNode(change.id, change.position)
         } else if (change.type === 'remove') {
           removeNode(change.id)
