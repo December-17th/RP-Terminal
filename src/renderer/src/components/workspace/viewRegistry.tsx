@@ -12,6 +12,7 @@ import { CombatView } from './CombatView'
 import { DuelView } from './DuelView'
 import { VariablesView } from './VariablesView'
 import { WorkflowView } from './WorkflowView'
+import WorkflowEditorView from '../workflow/WorkflowEditorView'
 import { useWorkspaceContext } from './context'
 import { UsageView } from '../UsageView'
 import { useT } from '../../i18n'
@@ -70,6 +71,11 @@ const WorkflowPanel: React.FC = () => {
   return <WorkflowView profileId={profileId} />
 }
 
+const WorkflowEditorPanel: React.FC = () => {
+  const { profileId } = useWorkspaceContext()
+  return <WorkflowEditorView profileId={profileId} />
+}
+
 // The card's scripts now run in the app-wide invisible script engine (CardScriptWcvHost in App.tsx), not in
 // a panel — so this view is just an explanatory note. Visible card UI lives in declared panels (status, …).
 const CardScriptsPanel: React.FC = () => {
@@ -98,6 +104,7 @@ export const ViewRegistry: Record<string, ViewEntry> = {
   duel: { title: 'Duel', Component: DuelPanel, fill: true },
   variables: { title: 'Variables', Component: VariablesPanel },
   workflow: { title: 'Workflows', Component: WorkflowPanel },
+  'workflow-editor': { title: 'Workflow Editor', Component: WorkflowEditorPanel, fill: true },
   usage: { title: 'Usage', Component: UsagePanel, fill: true },
   'card-scripts': { title: 'Card Scripts', Component: CardScriptsPanel },
   logs: { title: 'Logs', Component: LogsPanel, fill: true },

@@ -1,0 +1,209 @@
+/* Token re-skin of React Flow (@xyflow/react) for the node-workflow editor (Phase 4 task 4).
+   Everything is scoped under .rpt-workflow-editor so it can never leak into the rest of the app,
+   and vice versa (RF's base stylesheet is imported once, in FlowCanvas.tsx, ahead of this file).
+   Only --rpt-* tokens are used, with the sole exception of color-mix() blends of token values
+   (e.g. the Error port color) — no hardcoded hex/rgb anywhere in this file. */
+
+.rpt-workflow-editor {
+  width: 100%;
+  height: 100%;
+  background: var(--rpt-bg-primary);
+}
+
+/* ---------- Background (dotted grid) ---------- */
+.rpt-workflow-editor .react-flow__background {
+  background-color: var(--rpt-bg-primary);
+}
+.rpt-workflow-editor .react-flow__background-pattern {
+  fill: var(--rpt-border);
+  color: var(--rpt-border);
+}
+
+/* ---------- Nodes ---------- */
+.rpt-workflow-editor .react-flow__node {
+  padding: 0;
+  border-radius: 8px;
+  background: transparent;
+  width: auto;
+}
+
+.rpt-workflow-editor .rpt-node {
+  min-width: 200px;
+  border-radius: 8px;
+  background: var(--rpt-bg-elevated);
+  border: 1px solid var(--rpt-border);
+  color: var(--rpt-text-primary);
+  box-shadow: 0 2px 8px color-mix(in srgb, var(--rpt-bg-primary) 55%, transparent);
+  font-size: 12.5px;
+  position: relative;
+}
+.rpt-workflow-editor .react-flow__node.selected .rpt-node,
+.rpt-workflow-editor .rpt-node.selected {
+  border-color: var(--rpt-accent);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--rpt-accent) 45%, transparent);
+}
+.rpt-workflow-editor .rpt-node.is-main-output {
+  border-color: var(--rpt-accent);
+}
+
+.rpt-workflow-editor .rpt-node-title-row {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  padding: 7px 10px;
+  border-bottom: 1px solid var(--rpt-border);
+  background: var(--rpt-bg-secondary);
+  border-radius: 8px 8px 0 0;
+  white-space: nowrap;
+}
+.rpt-workflow-editor .rpt-node-title {
+  font-weight: 600;
+  color: var(--rpt-text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.rpt-workflow-editor .rpt-node-type-id {
+  margin-left: auto;
+  font-size: 10px;
+  color: var(--rpt-text-tertiary);
+  font-family: ui-monospace, Menlo, Consolas, monospace;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.rpt-workflow-editor .rpt-node-main-badge {
+  color: var(--rpt-accent);
+  font-size: 11px;
+  flex: 0 0 auto;
+}
+
+.rpt-workflow-editor .rpt-node-ports {
+  position: relative;
+  display: flex;
+  justify-content: space-between;
+  min-height: 12px;
+}
+.rpt-workflow-editor .rpt-node-spacer {
+  width: 100%;
+}
+.rpt-workflow-editor .rpt-node-col {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+}
+.rpt-workflow-editor .rpt-node-port-row {
+  position: absolute;
+  left: 0;
+  right: 0;
+  display: flex;
+  align-items: center;
+  height: 20px;
+  padding: 0 10px;
+}
+.rpt-workflow-editor .rpt-node-col-in .rpt-node-port-row {
+  justify-content: flex-start;
+}
+.rpt-workflow-editor .rpt-node-col-out .rpt-node-port-row {
+  justify-content: flex-end;
+}
+.rpt-workflow-editor .rpt-node-port-label {
+  font-size: 10.5px;
+  color: var(--rpt-text-secondary);
+  white-space: nowrap;
+}
+
+/* ---------- Handles ---------- */
+.rpt-workflow-editor .react-flow__handle {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  border: 1.5px solid var(--rpt-bg-primary);
+  background: var(--rpt-text-tertiary);
+}
+.rpt-workflow-editor .react-flow__handle-left {
+  left: -5px;
+}
+.rpt-workflow-editor .react-flow__handle-right {
+  right: -5px;
+}
+
+/* Port-type color classes, applied to the Handle via className in RptNode. */
+.rpt-workflow-editor .rpt-port-messages {
+  background: var(--rpt-accent);
+}
+.rpt-workflow-editor .rpt-port-text {
+  background: var(--rpt-success);
+}
+.rpt-workflow-editor .rpt-port-vars {
+  background: var(--rpt-warning);
+}
+.rpt-workflow-editor .rpt-port-context {
+  background: var(--rpt-text-secondary);
+}
+.rpt-workflow-editor .rpt-port-signal {
+  background: var(--rpt-danger);
+}
+.rpt-workflow-editor .rpt-port-error {
+  background: color-mix(in srgb, var(--rpt-danger) 60%, var(--rpt-bg-primary));
+}
+.rpt-workflow-editor .rpt-port-any,
+.rpt-workflow-editor .rpt-port-floors {
+  background: var(--rpt-text-tertiary);
+}
+
+/* ---------- Edges ---------- */
+.rpt-workflow-editor .react-flow__edge-path {
+  stroke: var(--rpt-text-tertiary);
+  stroke-width: 1.5;
+}
+.rpt-workflow-editor .react-flow__edge.selected .react-flow__edge-path,
+.rpt-workflow-editor .react-flow__edge:hover .react-flow__edge-path {
+  stroke: var(--rpt-accent);
+}
+.rpt-workflow-editor .react-flow__connection-path {
+  stroke: var(--rpt-accent);
+}
+.rpt-workflow-editor .react-flow__arrowhead path {
+  fill: var(--rpt-text-tertiary);
+}
+
+/* ---------- Controls (zoom in/out/fit) ---------- */
+.rpt-workflow-editor .react-flow__controls {
+  box-shadow: 0 2px 8px color-mix(in srgb, var(--rpt-bg-primary) 55%, transparent);
+  border-radius: 6px;
+  overflow: hidden;
+  border: 1px solid var(--rpt-border);
+}
+.rpt-workflow-editor .react-flow__controls-button {
+  background: var(--rpt-bg-secondary);
+  border-bottom: 1px solid var(--rpt-border);
+  fill: var(--rpt-text-primary);
+  color: var(--rpt-text-primary);
+}
+.rpt-workflow-editor .react-flow__controls-button:hover {
+  background: var(--rpt-bg-tertiary);
+}
+.rpt-workflow-editor .react-flow__controls-button svg {
+  fill: var(--rpt-text-primary);
+}
+
+/* ---------- Minimap (unused today, themed in case a later task enables it) ---------- */
+.rpt-workflow-editor .react-flow__minimap {
+  background: var(--rpt-bg-secondary);
+  border: 1px solid var(--rpt-border);
+}
+
+/* ---------- Selection box ---------- */
+.rpt-workflow-editor .react-flow__selection {
+  background: color-mix(in srgb, var(--rpt-accent) 12%, transparent);
+  border: 1px dashed var(--rpt-accent);
+}
+
+/* ---------- Attribution ---------- */
+/* MIT license requires no attribution; React Flow's own attribution is removable only on a pro
+   plan, so we keep it — just restyled to sit quietly on the token palette. */
+.rpt-workflow-editor .react-flow__attribution {
+  background: transparent;
+}
+.rpt-workflow-editor .react-flow__attribution a {
+  color: var(--rpt-text-tertiary);
+}

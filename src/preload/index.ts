@@ -106,6 +106,7 @@ const api = {
     ipcRenderer.invoke('delete-preset', profileId, presetId),
   importPresetDialog: (profileId: string) => ipcRenderer.invoke('import-preset-dialog', profileId),
   // Node-workflow graphs (Phase 3 persistence)
+  listNodeTypes: () => ipcRenderer.invoke('list-node-types'),
   listWorkflows: (profileId: string) => ipcRenderer.invoke('list-workflows', profileId),
   getWorkflow: (profileId: string, id: string) => ipcRenderer.invoke('get-workflow', profileId, id),
   saveWorkflow: (profileId: string, id: string, doc: unknown) =>
