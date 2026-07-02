@@ -4,8 +4,10 @@ import { startDuelFromCue } from '../../duelService'
 import { setChatMode } from '../../chatService'
 import { notifyChatModeChanged } from '../../chatEvents'
 import { matchAcross } from '../../lorebookService'
+import { Lorebook } from '../../../types/character'
 import { GenContext } from '../../generation/types'
 import { NodeImpl, NodeRunFailure } from '../types'
+import { parseCsvTerms, filterBooksByName } from './lorebookNodes'
 
 /**
  * Tool/action nodes (spec §7 phase-2 / §17.7): first-class app actions a workflow branch can
@@ -98,34 +100,34 @@ export const toolLorebookSearch: NodeImpl = {
   inputs: [
     { name: 'gen', type: 'Context' },
     { name: 'query', type: 'Text' },
+    // Optional `Lore` subset (e.g. from lorebook.select): when wired, search THESE books instead
+    // of gen.lorebooks — applied BEFORE the config `book_filter` narrows further. Additive.
+    { name: 'books', type: 'Lore' },
     { name: 'when', type: 'Signal' }
   ],
-  outputs: [{ name: 'block', type: 'Text' }],
+  outputs: [
+    { name: 'block', type: 'Text' },
+    // The same entries the `block` is built from, as `{ comment, content }` rows (additive).
+    { name: 'entries', type: 'Any' }
+  ],
   configSchema: searchConfig,
   run: (_ctx, inputs, node) => {
     const gen = inputs.gen as GenContext
     const query = typeof inputs.query === 'string' ? inputs.query : ''
-    if (!query.trim()) return { outputs: { block: '' } }
+    if (!query.trim()) return { outputs: { block: '', entries: [] } }
     const cfg = (node?.config ?? {}) as z.infer<typeof searchConfig>
     const max = cfg.max_entries ?? 5
-    const bookFilters = cfg.book_filter
-      ? cfg.book_filter
-          .split(',')
-          .map((s) => s.trim().toLowerCase())
-          .filter(Boolean)
-      : null
-    const books = bookFilters
-      ? gen.lorebooks.filter((lb) =>
-          bookFilters.some((f) => (lb.name ?? '').toLowerCase().includes(f))
-        )
-      : gen.lorebooks
-    const entries = matchAcross(books, query, Math.random, gen.maxRecursion)
-    let block = entries
-      .slice(0, max)
-      .map((e) => e.content)
-      .filter(Boolean)
-      .join('\n\n')
+    // Wired `books` subset wins over gen.lorebooks; the config book_filter narrows either source.
+    const source = (inputs.books as Lorebook[] | undefined) ?? gen.lorebooks
+    const books = filterBooksByName(source, parseCsvTerms(cfg.book_filter))
+    const matched = matchAcross(books, query, Math.random, gen.maxRecursion).slice(0, max)
+    // `entries` mirrors what the `block` is built from: the capped matched entries that actually
+    // contributed content (empty-content entries never reach the block, so they're dropped here too).
+    const rows = matched
+      .filter((e) => Boolean(e.content))
+      .map((e) => ({ comment: e.comment ?? '', content: e.content }))
+    let block = rows.map((r) => r.content).join('\n\n')
     if (cfg.max_chars && block.length > cfg.max_chars) block = block.slice(0, cfg.max_chars)
-    return { outputs: { block } }
+    return { outputs: { block, entries: rows } }
   }
 }

@@ -64,13 +64,15 @@ describe('mvu.set', () => {
     getAllFloorsMock.mockReset()
   })
 
-  it('descriptor: inputs value:Any + when:Signal, outputs []', () => {
+  // context-epochs plan §1: mvu.set gained a `done: Any` ordering-only output (wire it into a
+  // downstream context.refresh's `after` port). It's emitted only on the path that COMPLETED a write.
+  it('descriptor: inputs value:Any + when:Signal, output done:Any', () => {
     expect(mvuSet.type).toBe('mvu.set')
     expect(mvuSet.inputs).toEqual([
       { name: 'value', type: 'Any' },
       { name: 'when', type: 'Signal' }
     ])
-    expect(mvuSet.outputs).toEqual([])
+    expect(mvuSet.outputs).toEqual([{ name: 'done', type: 'Any' }])
   })
 
   it('writes the config value to the latest floor via applyVariableOps', async () => {
@@ -81,7 +83,7 @@ describe('mvu.set', () => {
     expect(applyVariableOpsMock).toHaveBeenCalledWith('p1', 'c1', 1, [
       { op: 'replace', path: '/hp', value: 5 }
     ])
-    expect(res).toEqual({ outputs: {} })
+    expect(res).toEqual({ outputs: { done: true } })
   })
 
   it('wired input value overrides the config value', async () => {
@@ -122,6 +124,7 @@ describe('mvu.set', () => {
     const node = meta(mvuSet, 'n1', { path: 'hp' })
     const res = await mvuSet.run(ctx, {}, node)
     expect(applyVariableOpsMock).not.toHaveBeenCalled()
+    // no-value path writes nothing → emits nothing (dead `done` edge is correct).
     expect(res).toEqual({ outputs: {} })
   })
 
@@ -131,6 +134,7 @@ describe('mvu.set', () => {
     const node = meta(mvuSet, 'n1', { path: 'hp', value: 5 })
     const res = await mvuSet.run(ctx, {}, node)
     expect(applyVariableOpsMock).not.toHaveBeenCalled()
+    // nothing written (no floor) → emits nothing.
     expect(res).toEqual({ outputs: {} })
   })
 })

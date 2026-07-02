@@ -7,6 +7,8 @@ export const PORT_TYPES = [
   'Vars',
   'Floors',
   'Context',
+  // A `Lorebook[]` on the wire (per-call lorebook subsets — context-epochs plan §2).
+  'Lore',
   'Signal',
   'Error',
   'Any'

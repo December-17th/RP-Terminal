@@ -182,6 +182,11 @@
 .rpt-workflow-editor .rpt-port-context {
   background: var(--rpt-text-secondary);
 }
+/* Lore (Lorebook[] on the wire) — a distinct hue derived from existing tokens (accent+warning mix),
+   following the per-type-color convention above. */
+.rpt-workflow-editor .rpt-port-lore {
+  background: color-mix(in srgb, var(--rpt-accent) 55%, var(--rpt-warning));
+}
 .rpt-workflow-editor .rpt-port-signal {
   background: var(--rpt-danger);
 }

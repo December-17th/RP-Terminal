@@ -160,7 +160,8 @@ describe('vars.save', () => {
       { gen, value: 'new note' },
       meta(varsSave, 'n1', { path: 'custom.note' })
     )
-    expect(r).toEqual({ outputs: {} })
+    // context-epochs plan §1: a completed write now emits the `done: Any` ordering output.
+    expect(r).toEqual({ outputs: { done: true } })
     expect(floorSvc.saveFloor).toHaveBeenCalledTimes(1)
     const [profileId, chatId, savedFloor] = floorSvc.saveFloor.mock.calls[0]
     expect(profileId).toBe('p1')
@@ -210,7 +211,7 @@ describe('vars.save', () => {
       { gen, value: 4 },
       meta(varsSave, 'n1', { scope: 'session', path: 'world.month' })
     )
-    expect(r).toEqual({ outputs: {} })
+    expect(r).toEqual({ outputs: { done: true } })
     expect(chatVarsSvc.setChatCardVars).toHaveBeenCalledWith('p1', 'c1', {
       world: { month: 4 },
       other: 'kept'

@@ -167,6 +167,17 @@ export interface BuildPromptArgs {
   /** Recalled-memory tail block (retrievalService). Injected just before the user action,
    *  the same way as the live-state block, so it sits in the volatile tail (§16.1). */
   memoryBlock?: string
+  /** prompt.preset composer (context-epochs plan §3): verbatim history messages to use in the
+   *  chat_history marker + no-marker safety net INSTEAD of the built-from-floors history. They
+   *  arrive pre-processed (no regex/macro passes), each tagged with the history marker so
+   *  fitToBudget still trims them; the pending action is appended after them as the final user
+   *  message. Absent = today's built-from-floors path (parity). */
+  historyOverride?: ChatMessage[]
+  /** prompt.preset composer: replace ONLY the top-level World Info block (the world_info marker +
+   *  its safety net) with this string; the internal keyword scan is skipped (assemblePrompt passes
+   *  `matchedEntries: []`). Depth-positioned + marker entries live only on the scan path. Absent =
+   *  the computed worldInfo string (parity). */
+  worldInfoOverride?: string
 }
 
 /** No-op text transform (used when there are no prompt-time regex rules). */
@@ -476,7 +487,29 @@ export const buildPrompt = (args: BuildPromptArgs): ChatMessage[] => {
       )
     return r.output
   }
-  const worldInfo = topEntries.map(renderLoreEntry).filter(Boolean).join('\n\n')
+  // The top-level World Info block. With a `worldInfoOverride` (prompt.preset composer, plan §3) the
+  // internal scan is skipped upstream (matchedEntries: []) so the computed value is '' — use the
+  // override verbatim. Without one this is exactly the computed string (parity).
+  const worldInfo = args.worldInfoOverride ?? topEntries.map(renderLoreEntry).filter(Boolean).join('\n\n')
+
+  // The conversation history messages. Default: built from floors (regex + macro passes, action
+  // appended, each markHistory-tagged). Override (prompt.preset composer): the caller's verbatim,
+  // pre-processed messages — still markHistory-tagged so fitToBudget trims them — with the pending
+  // action appended as the final user message, preserving L4-last. The action gets the SAME
+  // treatment as the default path's live turn (prompt regex at depth 0, then macros) — only the
+  // PRIOR turns arrive pre-processed.
+  const historyMessages = (): ChatMessage[] => {
+    if (!args.historyOverride) {
+      return buildHistory(floors, userAction, macroBase(personaMacro), applyUser, applyAssistant)
+    }
+    const out = args.historyOverride.map((m) => markHistory({ role: m.role, content: m.content }))
+    if (userAction) {
+      out.push(
+        markHistory({ role: 'user', content: macroOnly(applyUser(userAction, 0), macroBase(personaMacro)) })
+      )
+    }
+    return out
+  }
 
   const messages: ChatMessage[] = []
   const presetDepthItems: DepthItem[] = []
@@ -502,9 +535,7 @@ export const buildPrompt = (args: BuildPromptArgs): ChatMessage[] => {
         break
       }
       case 'chat_history': {
-        messages.push(
-          ...buildHistory(floors, userAction, macroBase(personaMacro), applyUser, applyAssistant)
-        )
+        messages.push(...historyMessages())
         historyEmitted = true
         break
       }
@@ -545,9 +576,7 @@ export const buildPrompt = (args: BuildPromptArgs): ChatMessage[] => {
   // Safety net: a preset with no chat_history marker would otherwise send no
   // conversation at all. Append history + action so generation still works.
   if (!historyEmitted) {
-    messages.push(
-      ...buildHistory(floors, userAction, macroBase(personaMacro), applyUser, applyAssistant)
-    )
+    messages.push(...historyMessages())
   }
 
   // Per-mode system addendum (Phase H): a stable, cache-friendly system block for
