@@ -23,6 +23,7 @@ import {
 import '@xyflow/react/dist/style.css'
 import './workflowEditor.css'
 import { useWorkflowEditorStore, type NodeTypeInfo } from '../../stores/workflowEditorStore'
+import { useT } from '../../i18n'
 import type { EditorNode } from './editorModel'
 
 /** Matches the palette drag payload's mime type (drag source lives in a later task's palette
@@ -56,6 +57,7 @@ function portTypeClass(type: string | undefined): string {
 }
 
 function RptNode({ data, selected }: NodeProps<RFNode<RptNodeData>>): React.JSX.Element {
+  const t = useT()
   const { editorNode, typeInfo } = data
   const inputs = typeInfo?.inputs ?? []
   const outputs = typeInfo?.outputs ?? []
@@ -67,7 +69,7 @@ function RptNode({ data, selected }: NodeProps<RFNode<RptNodeData>>): React.JSX.
     >
       <div className="rpt-node-title-row">
         {editorNode.isMainOutput && (
-          <span className="rpt-node-main-badge" title="Main output">
+          <span className="rpt-node-main-badge" title={t('workflowEditor.mainOutput')}>
             ★
           </span>
         )}

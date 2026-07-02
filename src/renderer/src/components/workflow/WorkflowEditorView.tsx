@@ -7,6 +7,7 @@
 // to intercept), and the `dirty`/`unsaved` chip in the top bar is the guard the user sees instead.
 import React, { useEffect, useState } from 'react'
 import { useWorkflowEditorStore } from '../../stores/workflowEditorStore'
+import { useToastStore } from '../../stores/toastStore'
 import { useT } from '../../i18n'
 import FlowCanvas from './FlowCanvas'
 import NodeConfigPanel from './NodeConfigPanel'
@@ -74,6 +75,10 @@ export default function WorkflowEditorView({
   const onImport = async (): Promise<void> => {
     const result = await window.api.importWorkflowDialog(profileId)
     if (result === null) return
+    if (!result.ok) {
+      useToastStore.getState().push(`${t('workflowEditor.importFailed')}: ${result.error}`)
+      return
+    }
     await init(profileId)
   }
 

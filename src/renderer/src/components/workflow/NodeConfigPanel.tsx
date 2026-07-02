@@ -25,6 +25,7 @@ function FieldControl({
   onChange: (value: unknown) => void
   readOnly: boolean
 }): React.JSX.Element {
+  const t = useT()
   if (field.kind === 'string') {
     return (
       <textarea
@@ -154,13 +155,13 @@ function FieldControl({
                 ↓
               </button>
               <button type="button" disabled={readOnly} onClick={() => removeItem(index)}>
-                remove
+                {t('workflowEditor.remove')}
               </button>
             </div>
           </div>
         ))}
         <button type="button" disabled={readOnly} onClick={addItem}>
-          add
+          {t('workflowEditor.add')}
         </button>
       </div>
     )
@@ -179,8 +180,9 @@ function JsonFieldControl({
   onChange: (value: unknown) => void
   readOnly: boolean
 }): React.JSX.Element {
+  const t = useT()
   const [text, setText] = useState(() => (value === undefined ? '' : JSON.stringify(value)))
-  const [error, setError] = useState<string | null>(null)
+  const [error, setError] = useState<boolean>(false)
 
   return (
     <div>
@@ -191,21 +193,25 @@ function JsonFieldControl({
         onChange={(e) => setText(e.target.value)}
         onBlur={() => {
           if (text.trim() === '') {
-            setError(null)
+            setError(false)
             onChange(undefined)
             return
           }
           try {
             const parsed = JSON.parse(text)
-            setError(null)
+            setError(false)
             onChange(parsed)
           } catch {
-            setError('Invalid JSON')
+            setError(true)
           }
         }}
         style={{ width: '100%', resize: 'vertical' }}
       />
-      {error && <div style={{ color: 'var(--rpt-danger)', fontSize: 10.5 }}>{error}</div>}
+      {error && (
+        <div style={{ color: 'var(--rpt-danger)', fontSize: 10.5 }}>
+          {t('workflowEditor.invalidJson')}
+        </div>
+      )}
     </div>
   )
 }
@@ -262,7 +268,9 @@ export default function NodeConfigPanel({
           {t('workflowEditor.config')}
         </div>
         {fields.map((field) => (
-          <div key={field.key} style={{ marginBottom: 8 }}>
+          // Keyed by node id + field so switching between two nodes of the SAME type remounts the
+          // controls — JsonFieldControl holds local text state that must never leak across nodes.
+          <div key={`${node.id}:${field.key}`} style={{ marginBottom: 8 }}>
             <label style={{ fontSize: 10.5, color: 'var(--rpt-text-secondary)' }}>
               {field.key}
               {field.required ? ' *' : ''}
