@@ -86,3 +86,21 @@ update Y" mapping.
   test in the SAME commit, deliberately — never delete a failing one to go green.
 - One module per change/PR. No multi-file autonomous rewrites; extract behind an interface,
   keep tests green at each step.
+
+## Agent skills
+
+### Issue tracker
+
+Issues and PRDs live as local markdown files under `.scratch/<feature>/` in this repo (no
+external tracker). See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+Five canonical triage states written as a `Status:` line on each issue file, using the default
+strings (`needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`). See
+`docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Single-context: one `CONTEXT.md` + `docs/adr/` at the repo root, created lazily by
+`/domain-modeling`. See `docs/agents/domain.md`.
