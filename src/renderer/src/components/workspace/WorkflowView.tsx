@@ -124,6 +124,7 @@ export const WorkflowView: React.FC<{ profileId: string }> = ({ profileId }) => 
   const activeChatId = useChatStore((s) => s.activeChatId)
   const chats = useChatStore((s) => s.chats)
   const characterId = chats.find((c) => c.id === activeChatId)?.character_id ?? null
+  const editorOpen = useUiStore((s) => s.workflowEditorOpen)
 
   const lastTrace = useWorkflowTraceStore((s) =>
     activeChatId ? s.traces[activeChatId] : undefined
@@ -169,6 +170,13 @@ export const WorkflowView: React.FC<{ profileId: string }> = ({ profileId }) => 
     void reloadAll()
     // eslint-disable-next-line react-hooks/exhaustive-deps -- reloadAll already depends on profileId/activeChatId/characterId
   }, [profileId, activeChatId, characterId])
+
+  // The full-screen editor clones/renames/imports workflows while this view stays mounted —
+  // refresh the list + selectors when it closes, so a fresh clone is immediately selectable.
+  React.useEffect(() => {
+    if (!editorOpen) void reloadAll()
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- refresh on the editor closing only
+  }, [editorOpen])
 
   const onExport = (id: string, name: string): void => {
     void api().exportWorkflowDialog(profileId, id, name)
@@ -354,7 +362,7 @@ export const WorkflowView: React.FC<{ profileId: string }> = ({ profileId }) => 
 
       {activeChatId && resolved && (
         <div style={{ opacity: 0.7 }}>
-          {t('workflow.resolved')} {resolved}
+          {t('workflow.resolved')} {workflows.find((w) => w.id === resolved)?.name ?? resolved}
         </div>
       )}
 

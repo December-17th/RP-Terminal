@@ -45,6 +45,8 @@ export default function WorkflowEditorView({
   const tOpt = useOptionalT()
   const workflows = useWorkflowEditorStore((s) => s.workflows)
   const currentId = useWorkflowEditorStore((s) => s.currentId)
+  const doc = useWorkflowEditorStore((s) => s.doc)
+  const setDocName = useWorkflowEditorStore((s) => s.setDocName)
   const dirty = useWorkflowEditorStore((s) => s.dirty)
   const readOnly = useWorkflowEditorStore((s) => s.readOnly)
   const errors = useWorkflowEditorStore((s) => s.errors)
@@ -112,6 +114,17 @@ export default function WorkflowEditorView({
             </option>
           ))}
         </select>
+
+        {/* Rename the open workflow (doc metadata; persists on Save). Read-only for the builtin. */}
+        <input
+          type="text"
+          value={doc?.name ?? ''}
+          disabled={readOnly}
+          placeholder={t('workflowEditor.namePh')}
+          title={t('workflowEditor.nameTitle')}
+          onChange={(e) => setDocName(e.target.value)}
+          style={{ fontSize: 12.5, width: 170 }}
+        />
 
         <button
           type="button"

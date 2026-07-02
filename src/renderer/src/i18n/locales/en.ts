@@ -531,6 +531,8 @@ const en: Record<string, string> = {
   'workflowEditor.readOnlyBuiltin': 'The built-in workflow is read-only — clone it to edit.',
   'workflowEditor.noSelection': 'Select a node to edit its settings.',
   'workflowEditor.mainOutput': 'Main output',
+  'workflowEditor.namePh': 'Workflow name',
+  'workflowEditor.nameTitle': 'Rename this workflow (saved with the Save button)',
   'workflowEditor.panelShow': 'Show output panel in chat',
   'workflowEditor.panelLabel': 'Panel label',
   'workflowEditor.panelLabelPh': 'e.g. Planner',

@@ -189,11 +189,19 @@ export const outputWriteFloor: NodeImpl = {
 }
 
 /** Folds aged-out turns into episodic memory. Post-response/off the hot path (spec/plan decision
- *  A) — fire-and-forget, same as `generate()`'s `compactMemory(profileId, chatId)` call. */
+ *  A) — fire-and-forget, same as `generate()`'s `compactMemory(profileId, chatId)` call.
+ *
+ *  The `floor` input is an ORDERING dependency, not data: wired from `output.writeFloor` it makes
+ *  the run-after-the-floor-is-persisted contract explicit in the graph (compaction re-reads the
+ *  chat from disk, so it sees the just-written floor; the newest `keep_recent` floors are always
+ *  excluded from the summarized range — see compactionRange). The value itself is unused. */
 export const memoryCompact: NodeImpl = {
   type: 'memory.compact',
   title: 'Compact Memory',
-  inputs: [{ name: 'gen', type: 'Context' }],
+  inputs: [
+    { name: 'gen', type: 'Context' },
+    { name: 'floor', type: 'Any' }
+  ],
   outputs: [],
   run: (_ctx, inputs) => {
     const gen = inputs.gen as GenContext

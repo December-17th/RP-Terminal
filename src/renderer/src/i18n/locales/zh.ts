@@ -516,6 +516,8 @@ const zh: Record<string, string> = {
   'workflowEditor.readOnlyBuiltin': '内置工作流为只读 — 克隆后编辑。',
   'workflowEditor.noSelection': '选择一个节点以编辑其设置。',
   'workflowEditor.mainOutput': '主输出',
+  'workflowEditor.namePh': '工作流名称',
+  'workflowEditor.nameTitle': '重命名此工作流（点击保存后生效）',
   'workflowEditor.panelShow': '在聊天中显示输出面板',
   'workflowEditor.panelLabel': '面板标题',
   'workflowEditor.panelLabelPh': '例如：规划器',

@@ -54,6 +54,11 @@ export const DEFAULT_GRAPH: WorkflowDoc = {
     { from: { node: 'parse', port: 'parsed' }, to: { node: 'write', port: 'parsed' } },
     { from: { node: 'parse', port: 'metrics' }, to: { node: 'write', port: 'metrics' } },
 
-    { from: { node: 'ctx', port: 'gen' }, to: { node: 'compact', port: 'gen' } }
+    { from: { node: 'ctx', port: 'gen' }, to: { node: 'compact', port: 'gen' } },
+    // Ordering edge (owner requirement): compaction runs only AFTER the floor is persisted —
+    // player action → recall → response → write floor → compact. The floor value is unused;
+    // the edge makes the post-floor contract explicit in the graph instead of implicit in the
+    // phase rule. The newest keep_recent floors stay out of the summarized range regardless.
+    { from: { node: 'write', port: 'floor' }, to: { node: 'compact', port: 'floor' } }
   ]
 }

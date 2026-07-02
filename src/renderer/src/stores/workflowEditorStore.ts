@@ -52,6 +52,7 @@ interface WorkflowEditorState {
   setNodeConfig(id: string, config: Record<string, unknown>): void
   setNodePanel(id: string, panel: { show: boolean; label?: string } | undefined): void
   setMainOutput(id: string): void
+  setDocName(name: string): void
   select(id: string | null): void
   save(profileId: string): Promise<void>
   cloneAndEdit(profileId: string): Promise<void>
@@ -205,6 +206,13 @@ export const useWorkflowEditorStore = create<WorkflowEditorState>((set, get) => 
       revalidate()
     },
 
+    setDocName: (name) => {
+      const { readOnly, doc } = get()
+      if (readOnly || !doc) return
+      // Name is doc metadata, not graph structure — no revalidation needed, just dirty.
+      set({ doc: { ...doc, name }, dirty: true })
+    },
+
     setMainOutput: (id) => {
       if (get().readOnly) return
       set({
@@ -227,7 +235,9 @@ export const useWorkflowEditorStore = create<WorkflowEditorState>((set, get) => 
         set({ status: result.error })
         return
       }
-      set({ doc: nextDoc, dirty: false, status: 'saved' })
+      // Refresh the summaries so a rename shows up in the picker immediately.
+      const workflows = await window.api.listWorkflows(profileId)
+      set({ doc: nextDoc, dirty: false, status: 'saved', workflows })
     },
 
     cloneAndEdit: async (profileId) => {
