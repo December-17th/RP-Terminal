@@ -74,10 +74,10 @@ Sheets are ordered by `orderNo`.
 | `sourceData.note`                                  | `note`                                 | Table-definition prompt.                                           |
 | `sourceData.{init,insert,update,delete}Node`       | `{init,insert,update,delete}Node`      | Per-op AI instructions; default `''`.                              |
 | `updateConfig.updateFrequency`                     | `updateFrequency`                      | `-1`/absent → **1** (every turn); positive ints kept.              |
-| `exportConfig.*`                                   | `exportConfig.*`                       | Verbatim (see below); consumed by injection in issue 04.           |
+| `exportConfig.*`                                   | `exportConfig.*`                       | Verbatim (see below); projected into the prompt by `table.export` (issue 04). |
 | `mate.globalInjectionConfig`                       | `TableTemplate.globalInjection`        | `readableEntryPlacement` / `wrapperPlacement`.                     |
 
-### `exportConfig` mapping (stored now, injected in issue 04)
+### `exportConfig` mapping (projected by `table.export`, issue 04)
 
 `enabled`, `splitByRow`, `entryName`, `entryType` (`'constant'|'keyword'`, non-`keyword` → `constant`),
 `keywords`, `injectionTemplate`, `extraIndexEnabled`, `extraIndexEntryName`, `extraIndexColumns`,
@@ -170,7 +170,77 @@ removed compaction-slot pattern) serializes concurrent graph writes for a chat. 
   `bad-sql`; all route on the `error` port and never abort the turn. On success it appends ops at
   `floors.length - 1` (clamped ≥0 — the just-persisted floor).
 
-## Deferred (issues 04–06)
+## Prompt projection (issue 04)
 
-Prompt injection of table exports (04), gate / read / query workflow nodes (05), view editing (06),
+The READ-into-the-prompt half. `table.export` turns a chat's table rows into **real `LorebookEntry`
+objects** per each table's `exportConfig`, then qualifies them through the SAME world-info matcher
+(`lorebookService.matchAcross`) and placement machinery lorebook entries use — no new injection path.
+
+### Nodes / ports
+
+- **`table.export`** (`tableNodes.ts`): inputs `gen: Context`, `when: Signal`; outputs `entries: Any`
+  (the qualified `LorebookEntry[]`), `block: Text` (plain-text rendering of the qualified NULL-depth /
+  top-block entries, `'\n\n'`-joined — for composed prompts that want text), `error: Error`. Config
+  `{ tables?: string (comma-separated sqlNames narrowing which tables project; unset = all),
+  max_rows?: 1..500 (per-table cap on projected DATA rows, keeps the NEWEST-last rows) }`. **No table
+  template assigned → SILENT empty** (`{ entries: [], block: '' }`), NOT an error — export is a read;
+  a chat without table memory simply projects nothing (contrast `table.apply`'s `no-template` class-B
+  failure). It does **not** auto-inject anywhere; projection reaches the prompt only through wiring.
+- **`prompt.assemble` / `prompt.preset`** gain an optional **`entries` input port** (`Any`). Wired
+  `LorebookEntry[]` are **concatenated onto the scanned matches** before assembly. Unwired = empty
+  concat = **byte-identical** to before (the parity gate, `test/generation/generateParity*.test.ts`).
+  On `prompt.preset`, a wired `worldInfo` override still skips the keyword scan (`matched = []`), but
+  wired `entries` are **still appended** — they're explicit author intent, whereas the scan is implicit.
+
+### Wiring recipe
+
+`table.export.gen ← input.context.gen`; `prompt.assemble.entries ← table.export.entries` (or
+`prompt.preset.entries`). The default graph does **not** auto-wire this (issue 05's example workflow
+demonstrates it).
+
+### Synthesis (`src/main/services/tableExportService.ts`, pure)
+
+Per **enabled**-`exportConfig` table (an `enabled: false` table contributes **nothing**, not even an
+index). Rows are **positional in `template.headers` order** (the `readAllTables` contract mirrors the
+DDL column order); column lookup is by DISPLAY name → index into `headers`, **never** by SQL column name.
+
+- **Row / whole-table entries** — `splitByRow: true` → one entry per data row, `content =
+  applyTemplate(injectionTemplate, renderRow(headers, row))`, `comment = <entryName|displayName>#<rowIndex>`.
+  `splitByRow: false` → one whole-table entry over all rows (`renderWholeTable`). `entryType: 'constant'`
+  → `constant: true` (always fires); `'keyword'` → keys derived (below). Zero data rows → no row entries.
+- **Index entry** (`extraIndexEnabled`) → **always-on** (`constant: true`): `content =
+  applyTemplate(extraIndexInjectionTemplate, <one renderIndexLine per row, '\n'-joined>)`. An **empty
+  table emits ONLY this index entry** (empty body); a table without `extraIndexEnabled` emits nothing here.
+- Every synthesized entry has `prevent_recursion: true`.
+
+**Key derivation (keyword entries):** the CELL VALUES of the `keywords` columns (comma-separated
+DISPLAY names) **plus** the cells of `extraIndexColumns` whose mode is `'both'` — trimmed, empties
+dropped, de-duped (first-seen order). Constant entries carry `keys: []`.
+
+**Rendering formats** (deterministic, documented):
+
+- `renderRow` — one `header: value` line per column, in `headers` order; null/short cells → empty value.
+  E.g. `row_id: 1\n姓名: 艾莉亚\n所在位置: 王城`.
+- `renderWholeTable` — a ` | `-joined header line, then one ` | `-joined line per row.
+- `renderIndexLine` — `col: value` pairs (index columns, in config order) joined with ` | `.
+  E.g. `姓名: 艾莉亚 | 所在位置: 王城 | 角色间关系: 盟友`.
+- `applyTemplate` — replaces every `$1` in the wrapper with the body; an empty wrapper yields the body verbatim.
+
+### Placement mapping (compat contract)
+
+`{position, depth, order}` → our `{insertion_depth, insertion_order}` (`entryPlacement` for the row/
+whole-table entry, `extraIndexPlacement` for the index entry):
+
+| `position`                                              | `insertion_depth` | `insertion_order` | Notes                                                     |
+| ------------------------------------------------------- | ----------------- | ----------------- | --------------------------------------------------------- |
+| `at_depth_as_system`                                    | `depth`           | `order`           | Rides the existing depth-splice (system message at depth).|
+| `before_character_definition` / `after_character_definition` | `null` (top block) | `order`      | **Approximation** — our lorebook model has no char-def anchor; the top World Info block is the closest. |
+| `fixedEntryPlacement` / `fixedIndexPlacement` (any `fixed*`) | — | — | **Imported but IGNORED in v1** (not honored).             |
+
+Qualification uses the real matcher: **constant entries always survive; keyword entries fire only on a
+scan hit** against `gen.scanText` (recursion honored via `gen.maxRecursion`).
+
+## Deferred (issues 05–06)
+
+Gate / read / query workflow nodes (05), view editing (06),
 card-embedded templates.

@@ -17,7 +17,7 @@ import { lorebookSelect, lorebookEntries } from './lorebookNodes'
 import { promptPreset } from './presetNodes'
 import { varsGet, varsSave } from './varsNodes'
 import { parseExtract } from './parseNodes'
-import { tableApply } from './tableNodes'
+import { tableApply, tableExport } from './tableNodes'
 import {
   contextHistory,
   contextCard,
@@ -63,6 +63,7 @@ export const builtinRegistry = createRegistry([
   varsSave,
   parseExtract,
   tableApply,
+  tableExport,
   contextHistory,
   contextCard,
   contextPersona,

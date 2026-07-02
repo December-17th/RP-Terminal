@@ -4,6 +4,10 @@ import { getChatTableTemplateId } from '../../chatService'
 import { getTableTemplateById } from '../../tableTemplateService'
 import { applySqlBatch, TableSqlError } from '../../tableSql'
 import { appendOps, tryBeginTableWrite, endTableWrite } from '../../tableOpsService'
+import { readAllTables, TableRead } from '../../tableDbService'
+import { synthesizeEntries } from '../../tableExportService'
+import { matchAcross } from '../../lorebookService'
+import { LorebookEntry } from '../../../types/character'
 import { NodeImpl, NodeRunFailure } from '../types'
 
 /**
@@ -72,5 +76,85 @@ export const tableApply: NodeImpl = {
     } finally {
       endTableWrite(gen.chatId)
     }
+  }
+}
+
+/**
+ * `table.export` — the SQL-table-memory READ-INTO-THE-PROMPT node (issue 04). Projects the chat's
+ * tables into REAL lorebook-style entries per each table's `exportConfig`, then QUALIFIES them through
+ * the real world-info matcher against `gen.scanText`: constant entries always survive, keyword entries
+ * only on a scan hit. The qualified entries feed `prompt.assemble` / `prompt.preset`'s new `entries`
+ * port; the node does NOT auto-inject anywhere — projection reaches the prompt ONLY through wiring.
+ *
+ * No template assigned → SILENT empty output (`{ entries: [], block: '' }`), NOT an error: export is a
+ * READ, and a chat without table memory simply projects nothing (contrast table.apply's no-template
+ * class-B failure — a write with no schema is a real error).
+ */
+const exportConfig = z.object({
+  /** Comma-separated sqlNames narrowing WHICH tables project; unset/empty = all. */
+  tables: z.string().optional(),
+  /** Per-table cap on projected DATA rows (int 1..500); keeps the NEWEST-last rows. Unset = all rows. */
+  max_rows: z.number().int().min(1).max(500).optional()
+})
+
+type ExportConfig = z.infer<typeof exportConfig>
+
+/** The top World Info block text of the qualified entries: null-depth entries' content, joined like
+ *  promptBuilder's top block (blank content dropped, '\n\n'-separated). For composed prompts that want
+ *  a plain text rendering rather than the entry objects. */
+const exportBlock = (entries: LorebookEntry[]): string =>
+  entries
+    .filter((e) => e.insertion_depth == null)
+    .map((e) => e.content)
+    .filter(Boolean)
+    .join('\n\n')
+
+export const tableExport: NodeImpl = {
+  type: 'table.export',
+  title: 'Export Table',
+  inputs: [
+    { name: 'gen', type: 'Context' },
+    { name: 'when', type: 'Signal' }
+  ],
+  outputs: [
+    { name: 'entries', type: 'Any' },
+    { name: 'block', type: 'Text' },
+    { name: 'error', type: 'Error' }
+  ],
+  configSchema: exportConfig,
+  run: (_ctx, inputs, node) => {
+    const gen = inputs.gen as GenContext
+    const cfg = node.config as ExportConfig
+
+    const templateId = getChatTableTemplateId(gen.profileId, gen.chatId)
+    const template = templateId ? getTableTemplateById(gen.profileId, templateId) : null
+    // No table memory on this chat → project nothing (silent; export is a read).
+    if (!template) return { outputs: { entries: [], block: '' } }
+
+    // Optional narrowing to a subset of tables (by sqlName). Empty filter = all tables.
+    const only = (cfg.tables ?? '')
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean)
+    let reads: TableRead[] = readAllTables(gen.profileId, gen.chatId, template)
+    if (only.length) {
+      const set = new Set(only)
+      reads = reads.filter((r) => set.has(r.sqlName))
+    }
+    // Row cap: keep the LAST N rows (newest-last) per table so long tables don't blow the prompt.
+    if (cfg.max_rows != null) {
+      const cap = cfg.max_rows
+      reads = reads.map((r) => (r.rows.length > cap ? { ...r, rows: r.rows.slice(-cap) } : r))
+    }
+
+    const synthesized = synthesizeEntries(template, reads)
+    // QUALIFY through the REAL matcher — constants survive, keyword entries fire only on a scan hit.
+    const qualified = matchAcross(
+      [{ name: 'table-export', entries: synthesized }],
+      gen.scanText,
+      Math.random,
+      gen.maxRecursion
+    )
+    return { outputs: { entries: qualified, block: exportBlock(qualified) } }
   }
 }

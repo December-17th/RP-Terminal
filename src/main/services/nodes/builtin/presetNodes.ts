@@ -3,6 +3,7 @@ import { getPresetById } from '../../presetService'
 import { matchWorldInfo, assemblePrompt, AssembleOverrides } from '../../generation/assemble'
 import { GenContext } from '../../generation/types'
 import { ChatMessage } from '../../promptBuilder'
+import { LorebookEntry } from '../../../types/character'
 import { NodeImpl, NodeRunFailure } from '../types'
 
 /**
@@ -31,6 +32,7 @@ export const promptPreset: NodeImpl = {
     { name: 'worldInfo', type: 'Text' },
     { name: 'memory', type: 'Text' },
     { name: 'action', type: 'Text' },
+    { name: 'entries', type: 'Any' },
     { name: 'when', type: 'Signal' }
   ],
   outputs: [
@@ -59,10 +61,19 @@ export const promptPreset: NodeImpl = {
     // World Info: a wired override replaces the block AND skips the keyword scan; otherwise
     // matchWorldInfo runs exactly as prompt.assemble does.
     const matched = overrides.worldInfo !== undefined ? [] : matchWorldInfo(gen)
+    // Pre-qualified `entries` (issue 04, typically table.export) are appended EVEN WHEN a worldInfo
+    // override skipped the scan — they're explicit author intent (the override only replaces the
+    // top-block TEXT; depth-placed entries still splice), whereas the scan is the implicit path.
+    const extra = Array.isArray(inputs.entries) ? (inputs.entries as LorebookEntry[]) : []
     // Unwired memory = '' (assemble's behavior for an empty memory block — NOT the default graph's
     // recall, which it wires explicitly).
     const memory = (inputs.memory as string | undefined) ?? ''
-    const { sendMessages, params } = assemblePrompt(gen, matched, memory, overrides)
+    const { sendMessages, params } = assemblePrompt(
+      gen,
+      extra.length ? [...matched, ...extra] : matched,
+      memory,
+      overrides
+    )
     return { outputs: { sendMessages, params } }
   }
 }

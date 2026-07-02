@@ -31,9 +31,15 @@ const opsSvc = vi.hoisted(() => ({
 }))
 vi.mock('../../src/main/services/tableOpsService', () => opsSvc)
 
+// table.export reads via tableDbService (mocked — no SQL) but QUALIFIES via the REAL lorebookService
+// matchAcross + REAL tableExportService synthesis (both pure), so the qualification path is exercised end-to-end.
+const dbSvc = vi.hoisted(() => ({ readAllTables: vi.fn() }))
+vi.mock('../../src/main/services/tableDbService', () => dbSvc)
+
 import { parseExtract } from '../../src/main/services/nodes/builtin/parseNodes'
-import { tableApply } from '../../src/main/services/nodes/builtin/tableNodes'
+import { tableApply, tableExport } from '../../src/main/services/nodes/builtin/tableNodes'
 import { NodeRunFailure, RunContext, NodeImpl } from '../../src/main/services/nodes/types'
+import { TableTemplateSchema } from '../../src/main/types/tableTemplate'
 
 const ctx: RunContext = {
   signal: new AbortController().signal,
@@ -210,5 +216,152 @@ describe('table.apply', () => {
     }
     expect(opsSvc.appendOps).not.toHaveBeenCalled()
     expect(opsSvc.endTableWrite).toHaveBeenCalledWith('c1')
+  })
+})
+
+// A minimal two-table template (validated through the schema) for the export node: one keyword table
+// (fires only on a scan hit) + one constant table (always fires). exportConfig fields default via prefault.
+const makeTemplate = () =>
+  TableTemplateSchema.parse({
+    name: 'T',
+    tables: [
+      {
+        uid: 'k',
+        displayName: 'People',
+        sqlName: 'people',
+        ddl: 'CREATE TABLE people (row_id INTEGER, name TEXT);',
+        headers: ['row_id', 'name'],
+        exportConfig: {
+          enabled: true,
+          splitByRow: true,
+          entryType: 'keyword',
+          keywords: 'name',
+          injectionTemplate: '<p>\n$1\n</p>',
+          entryPlacement: { position: 'at_depth_as_system', depth: 5, order: 100 }
+        }
+      },
+      {
+        uid: 'c',
+        displayName: 'Rules',
+        sqlName: 'rules',
+        ddl: 'CREATE TABLE rules (row_id INTEGER, text TEXT);',
+        headers: ['row_id', 'text'],
+        exportConfig: {
+          enabled: true,
+          splitByRow: true,
+          entryType: 'constant',
+          entryPlacement: { position: 'before_character_definition', depth: 0, order: 50 }
+        }
+      }
+    ]
+  })
+
+const readOf = (sqlName: string, headers: string[], rows: unknown[][]) => ({
+  sqlName,
+  displayName: sqlName,
+  columns: headers,
+  rows
+})
+
+describe('table.export', () => {
+  const genExp = { profileId: 'p1', chatId: 'c1', scanText: '', maxRecursion: 0 }
+
+  beforeEach(() => {
+    chatSvc.getChatTableTemplateId.mockReset()
+    templateSvc.getTableTemplateById.mockReset()
+    dbSvc.readAllTables.mockReset()
+  })
+
+  it('no template assigned → SILENT empty (entries: [], block: ""), not an error', () => {
+    chatSvc.getChatTableTemplateId.mockReturnValue(null)
+    const r = tableExport.run(ctx, { gen: genExp }, meta(tableExport, 'n'))
+    expect(r).toEqual({ outputs: { entries: [], block: '' } })
+    expect(dbSvc.readAllTables).not.toHaveBeenCalled()
+  })
+
+  it('constant entries always survive; keyword entries fire only on a scan hit (real matchAcross)', () => {
+    chatSvc.getChatTableTemplateId.mockReturnValue('t1')
+    templateSvc.getTableTemplateById.mockReturnValue(makeTemplate())
+    dbSvc.readAllTables.mockReturnValue([
+      readOf('people', ['row_id', 'name'], [[1, '艾莉亚']]),
+      readOf('rules', ['row_id', 'text'], [[1, 'be kind']])
+    ])
+    // scanText does NOT mention 艾莉亚 → the keyword entry does not qualify; only the constant survives.
+    const r = tableExport.run(ctx, { gen: genExp }, meta(tableExport, 'n'))
+    const entries = r.outputs!.entries as any[]
+    expect(entries).toHaveLength(1)
+    expect(entries[0].constant).toBe(true)
+    expect(entries[0].comment).toBe('Rules#0')
+  })
+
+  it('a scan hit lets the keyword entry through too', () => {
+    chatSvc.getChatTableTemplateId.mockReturnValue('t1')
+    templateSvc.getTableTemplateById.mockReturnValue(makeTemplate())
+    dbSvc.readAllTables.mockReturnValue([
+      readOf('people', ['row_id', 'name'], [[1, '艾莉亚']]),
+      readOf('rules', ['row_id', 'text'], [[1, 'be kind']])
+    ])
+    const r = tableExport.run(
+      ctx,
+      { gen: { ...genExp, scanText: '……艾莉亚走进房间……' } },
+      meta(tableExport, 'n')
+    )
+    const entries = r.outputs!.entries as any[]
+    expect(entries).toHaveLength(2)
+    expect(entries.map((e) => e.comment).sort()).toEqual(['People#0', 'Rules#0'])
+  })
+
+  it('block contains only the NULL-depth (top-block) qualified entries content', () => {
+    chatSvc.getChatTableTemplateId.mockReturnValue('t1')
+    templateSvc.getTableTemplateById.mockReturnValue(makeTemplate())
+    dbSvc.readAllTables.mockReturnValue([
+      readOf('people', ['row_id', 'name'], [[1, '艾莉亚']]),
+      readOf('rules', ['row_id', 'text'], [[1, 'be kind']])
+    ])
+    // scan hit → both qualify; People is at_depth (depth 5), Rules is before_char_def (null depth = top block).
+    const r = tableExport.run(
+      ctx,
+      { gen: { ...genExp, scanText: '艾莉亚' } },
+      meta(tableExport, 'n')
+    )
+    // block should contain the Rules (top-block) content but NOT the depth-placed People entry.
+    expect(r.outputs!.block).toBe('row_id: 1\ntext: be kind')
+  })
+
+  it('tables filter narrows which tables project (by sqlName)', () => {
+    chatSvc.getChatTableTemplateId.mockReturnValue('t1')
+    templateSvc.getTableTemplateById.mockReturnValue(makeTemplate())
+    dbSvc.readAllTables.mockReturnValue([
+      readOf('people', ['row_id', 'name'], [[1, '艾莉亚']]),
+      readOf('rules', ['row_id', 'text'], [[1, 'be kind']])
+    ])
+    // only 'people' — the constant Rules table is excluded before synthesis.
+    const r = tableExport.run(
+      ctx,
+      { gen: { ...genExp, scanText: '艾莉亚' } },
+      meta(tableExport, 'n', { tables: 'people' })
+    )
+    const entries = r.outputs!.entries as any[]
+    expect(entries).toHaveLength(1)
+    expect(entries[0].comment).toBe('People#0')
+  })
+
+  it('max_rows keeps the LAST N data rows per table', () => {
+    chatSvc.getChatTableTemplateId.mockReturnValue('t1')
+    templateSvc.getTableTemplateById.mockReturnValue(makeTemplate())
+    dbSvc.readAllTables.mockReturnValue([
+      readOf('people', ['row_id', 'name'], []),
+      readOf('rules', ['row_id', 'text'], [[1, 'r1'], [2, 'r2'], [3, 'r3']])
+    ])
+    const r = tableExport.run(
+      ctx,
+      { gen: genExp },
+      meta(tableExport, 'n', { max_rows: 2 })
+    )
+    const entries = r.outputs!.entries as any[]
+    // constant table → all survive; capped to last 2 rows (r2, r3)
+    expect(entries.map((e) => e.comment)).toEqual(['Rules#0', 'Rules#1'])
+    expect(entries[0].content).toContain('text: r2')
+    expect(entries[1].content).toContain('text: r3')
   })
 })

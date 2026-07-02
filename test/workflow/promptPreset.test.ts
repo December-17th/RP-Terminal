@@ -113,3 +113,41 @@ describe('prompt.preset — memory port', () => {
     expect(assembleSvc.assemblePrompt.mock.calls[0][2]).toBe('recalled')
   })
 })
+
+// issue 04: the `entries` port on both composers appends pre-qualified LorebookEntry[] onto the
+// scanned matches. Unwired = identical array (parity, covered structurally + by generateParity).
+describe('prompt.assemble / prompt.preset — entries port', () => {
+  it('prompt.assemble appends wired entries after the scanned matches', () => {
+    const extra = [{ comment: 'row' }]
+    promptAssemble.run(ctx, { gen, block: '', entries: extra })
+    // matched = [{comment:'matched'}] from the mock; concatenated with the wired entries.
+    expect(assembleSvc.assemblePrompt).toHaveBeenCalledWith(
+      gen,
+      [{ comment: 'matched' }, { comment: 'row' }],
+      ''
+    )
+  })
+
+  it('prompt.assemble UNWIRED passes the matched array unchanged (parity)', () => {
+    promptAssemble.run(ctx, { gen, block: '' })
+    const passed = assembleSvc.assemblePrompt.mock.calls[0][1]
+    expect(passed).toEqual([{ comment: 'matched' }])
+  })
+
+  it('prompt.preset appends wired entries too', () => {
+    const extra = [{ comment: 'row' }]
+    promptPreset.run(ctx, { gen, entries: extra }, meta(promptPreset, 'n1'))
+    expect(assembleSvc.assemblePrompt.mock.calls[0][1]).toEqual([
+      { comment: 'matched' },
+      { comment: 'row' }
+    ])
+  })
+
+  it('prompt.preset: a worldInfo override skips the scan but STILL appends wired entries', () => {
+    const extra = [{ comment: 'row' }]
+    promptPreset.run(ctx, { gen, worldInfo: 'WI', entries: extra }, meta(promptPreset, 'n1'))
+    expect(assembleSvc.matchWorldInfo).not.toHaveBeenCalled()
+    // matched skipped ([]) but the explicit entries are still appended.
+    expect(assembleSvc.assemblePrompt.mock.calls[0][1]).toEqual([{ comment: 'row' }])
+  })
+})

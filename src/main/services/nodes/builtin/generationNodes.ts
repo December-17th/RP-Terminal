@@ -7,6 +7,7 @@ import { foldState } from '../../generation/foldState'
 import { persistFloor } from '../../generation/persistFloor'
 import { GenContext } from '../../generation/types'
 import { ChatMessage } from '../../promptBuilder'
+import { LorebookEntry } from '../../../types/character'
 import { PresetParameters } from '../../../types/preset'
 import { FloorMetrics } from '../../../../shared/usageTypes'
 import { NodeImpl, NodeRunFailure } from '../types'
@@ -61,13 +62,19 @@ export const contextRefresh: NodeImpl = {
   }
 }
 
-/** Matches world info then assembles the exact message array + sampler params to send. */
+/** Matches world info then assembles the exact message array + sampler params to send.
+ *
+ *  Optional `entries` port (issue 04): pre-qualified LorebookEntry[] (typically from `table.export`)
+ *  CONCATENATED onto the scanned matches before assembly — so table projection rides the exact same
+ *  placement/render machinery as lorebook world info. UNWIRED = empty concat = byte-identical to before
+ *  (the parity gate: `matched` and `[...matched]` produce the same assembled prompt). */
 export const promptAssemble: NodeImpl = {
   type: 'prompt.assemble',
   title: 'Assemble Prompt',
   inputs: [
     { name: 'gen', type: 'Context' },
-    { name: 'block', type: 'Text' }
+    { name: 'block', type: 'Text' },
+    { name: 'entries', type: 'Any' }
   ],
   outputs: [
     { name: 'sendMessages', type: 'Messages' },
@@ -76,7 +83,12 @@ export const promptAssemble: NodeImpl = {
   run: (_ctx, inputs) => {
     const gen = inputs.gen as GenContext
     const matched = matchWorldInfo(gen)
-    const { sendMessages, params } = assemblePrompt(gen, matched, inputs.block as string)
+    const extra = Array.isArray(inputs.entries) ? (inputs.entries as LorebookEntry[]) : []
+    const { sendMessages, params } = assemblePrompt(
+      gen,
+      extra.length ? [...matched, ...extra] : matched,
+      inputs.block as string
+    )
     return { outputs: { sendMessages, params } }
   }
 }
