@@ -68,12 +68,15 @@ config forms).
   - `inputs.value === undefined` → return `{ outputs: {} }` silently (unwired/pruned upstream).
   - `session`: read KV via `getChatCardVars`, `setPath(kv, path, value)`, write back whole object
     via `setChatCardVars(profileId, chatId, kv)` (that service is whole-object by design).
-  - `floor`: **refuse reserved roots** — if the first path segment (split on `.` or `[`) is
-    `stat_data` or `delta_data`, `throw new NodeRunFailure('B', <message pointing at mvu.set>, 1,
-    'reserved-path')`. stat_data writes must go through `mvu.set` (the MVU write-back bridge with
-    delta tracking + runaway-loop guard) — **`applyVariableOps` operates INSIDE stat_data only**
-    (verified: `generation/varsWrite.ts` builds `sd = f.variables.stat_data` and patches that), so
-    this node has its own write path.
+  - `floor`: **refuse reserved roots** — compute the root as `toParts(path)[0]` using
+    `toParts` from `shared/objectPath` (the SAME bracket-aware parser `getPath`/`setPath` use —
+    do NOT hand-roll a split, or `["stat_data"]…` bracket paths bypass the guard while the write
+    still lands in it). If the root is `stat_data` or `delta_data`,
+    `throw new NodeRunFailure('B', <message pointing at mvu.set>, 1, 'reserved-path')`.
+    stat_data writes must go through `mvu.set` (the MVU write-back bridge with delta tracking +
+    runaway-loop guard) — **`applyVariableOps` operates INSIDE stat_data only** (verified:
+    `generation/varsWrite.ts` builds `sd = f.variables.stat_data` and patches that), so this
+    node has its own write path.
   - `floor` write: `getAllFloors` → last floor (none → return `{ outputs: {} }`) → copy
     `variables` (`{ ...last.variables }`), `setPath(variables, path, value)`, assign back,
     `saveFloor(profileId, chatId, last)`.
@@ -116,9 +119,15 @@ config forms).
   (defaults 5 / 600 / '' = all enabled; `collections` = comma-separated collection ids;
   count/budget are PER COLLECTION, matching the standard recall's semantics)
 - Behavior: blank/whitespace query → `{ block: '', rows: [] }` **without** touching the store.
-  Otherwise, for each selected collection from `gen.settings.memory?.collections ?? []`
-  (filter: ids in the csv when given, else `c.enabled`):
-  `entries = getEntries(gen.profileId, gen.chatId, c.id)` (from `../../memoryStore`), then
+  Otherwise select collections from `gen.settings.memory?.collections ?? []` in two steps:
+  1. **id filter:** ids in the csv when given, else `c.enabled`;
+  2. **mode filter (mirrors `selectMemories`'s predicates, `retrievalService.ts` ~189-196):**
+     keep `c.shape === 'stream' && ['keyword','vector','hybrid'].includes(c.retrieval.mode)`
+     (vector/hybrid stream collections are DOWNGRADED to keyword ranking in v1 — this node never
+     embeds) and `c.shape === 'entity' && c.retrieval.mode === 'always'`; anything else —
+     notably `mode: 'llm'` — is **skipped entirely**, exactly like the standard recall.
+  For each kept collection: `entries = getEntries(gen.profileId, gen.chatId, c.id)` (from
+  `../../memoryStore`), then
   - stream shape → `selectFromEntries(entries, query, count, budget)` + `formatBlock(c.inject.label, chosen)`
   - entity shape → `selectEntitiesInScope(entries, query, count, budget)` + `formatEntityBlock(...)`
   (all four from `../../retrievalService`, already exported). Skip empty blocks.
@@ -182,10 +191,15 @@ Required cases (12):
 8. context.history `include: 'user'` narrows both outputs.
 9. context.card single field; `all` contains labelled blocks.
 10. context.persona name + description.
-11. memory.query ranks the wired query; **assert exclusivity with `count: 1`** —
-    `selectFromEntries` BACKFILLS up to `count` with unmatched (recency) entries, so a 2-entry
-    store with default count returns both; this is production recall semantics, not a bug.
+11. memory.query ranking + backfill, TWO sub-cases on a 2-entry store (one entry keyword-matching
+    the query, one not):
+    (a) `count: 1` → ONLY the matching entry returns (`rows` length 1, block excludes the other);
+    (b) default count → BOTH entries return — `selectFromEntries` backfills up to `count` with
+    unmatched recency entries; this is production recall semantics, not a bug.
 12. memory.query blank query → empty outputs, `getEntries` never called.
+13. memory.query mode filter: a collection with `retrieval.mode: 'llm'` is skipped entirely
+    (getEntries not called for it); a stream collection with `mode: 'vector'` still returns
+    keyword-ranked results (v1 downgrade).
 
 ## 6. Boundaries, gate, non-goals
 
