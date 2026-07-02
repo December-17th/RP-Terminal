@@ -98,14 +98,17 @@ CREATE TABLE IF NOT EXISTS memory_entries (
   UNIQUE(chat_id, collection, entity_key)
 );
 CREATE INDEX IF NOT EXISTS idx_mem_chat_coll ON memory_entries(chat_id, collection);
--- Durable per-node scratchpad for workflow nodes, keyed by (chat_id, node_id) — what makes
--- "changed since last fire" (control.when) expressible. See the node-workflow spec §11.
+-- Durable per-node scratchpad for workflow nodes, keyed by (chat_id, workflow_id, node_id) —
+-- what makes "changed since last fire" (control.when) expressible. Workflow id is part of the
+-- key because clones of the default graph keep node ids by design, so (chat_id, node_id) alone
+-- collides across workflows. See the node-workflow spec §11.
 CREATE TABLE IF NOT EXISTS node_state (
   chat_id TEXT NOT NULL REFERENCES chats(id) ON DELETE CASCADE,
+  workflow_id TEXT NOT NULL,
   node_id TEXT NOT NULL,
   data TEXT,
   updated_at TEXT,
-  PRIMARY KEY (chat_id, node_id)
+  PRIMARY KEY (chat_id, workflow_id, node_id)
 );
 `
 
@@ -145,6 +148,13 @@ export const getDb = (): Database.Database => {
   db = new Database(path.join(getAppDir(), 'rpterminal.db'))
   db.pragma('journal_mode = WAL')
   db.pragma('foreign_keys = ON')
+  // node_state pre-migration: the 2-column-PK shape shipped 2026-07-01 and never ran live
+  // (no selection surface existed), so a legacy table is dropped rather than migrated —
+  // CREATE IF NOT EXISTS below rebuilds it keyed (chat_id, workflow_id, node_id).
+  const nodeStateCols = db.prepare(`PRAGMA table_info(node_state)`).all() as Array<{ name: string }>
+  if (nodeStateCols.length > 0 && !nodeStateCols.some((c) => c.name === 'workflow_id')) {
+    db.exec('DROP TABLE node_state')
+  }
   db.exec(SCHEMA)
   db.exec(DROP_LEGACY)
   // Lightweight forward migrations for DBs created before a column existed.
@@ -154,6 +164,8 @@ export const getDb = (): Database.Database => {
   addColumnIfMissing(db, 'chats', 'pending_lore', 'pending_lore TEXT')
   // Memory checkpoint bookkeeping per chat: {last_compacted_floor}. See compactionService.
   addColumnIfMissing(db, 'chats', 'memory_state', 'memory_state TEXT')
+  // Session-tier workflow override (node-workflow spec §12); null = inherit world/global/builtin.
+  addColumnIfMissing(db, 'chats', 'workflow_id', 'workflow_id TEXT')
   // Vector recall (brute-force JS cosine): per-memory embedding as a JSON float array.
   addColumnIfMissing(db, 'memory_entries', 'embedding', 'embedding TEXT')
   // TH-2 swipes: alternate responses per floor + the active index.

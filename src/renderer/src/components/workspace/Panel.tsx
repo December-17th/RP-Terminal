@@ -14,7 +14,8 @@ const VIEW_LABEL_KEY: Record<string, string> = {
   usage: 'view.usage',
   'card-scripts': 'view.cardScripts',
   logs: 'logs.heading',
-  memory: 'view.memory'
+  memory: 'view.memory',
+  workflow: 'workflow.viewTitle'
 }
 
 /**

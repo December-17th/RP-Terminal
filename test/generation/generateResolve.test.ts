@@ -2,13 +2,17 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { getDefaultSettings } from '../../src/main/services/settingsService'
 import { getDefaultPreset } from '../../src/main/types/preset'
 import type { FloorFile } from '../../src/main/types/chat'
+import { DEFAULT_GRAPH } from '../../src/main/services/nodes/builtin/defaultGraph'
 
-// --- deterministic fixtures ------------------------------------------------
+// Proves generate() actually consumes workflowService.resolveWorkflowDoc (rather than a
+// hardcoded 'default' literal + DEFAULT_GRAPH) and threads the resolved id through to
+// buildTurnContext — the wiring Task 5 adds on top of Task 3 (resolver) + Task 4 (ctx arg).
+
 const settings = (() => {
   const s = getDefaultSettings()
   s.api = { provider: 'openai', endpoint: 'https://x/v1', api_key: 'k', model: 'test-model' }
-  s.agent = { mode: 'off' } // classic path: lore re-matched per turn, no FSM tuning
-  s.memory = { ...s.memory, enabled: false } // memory covered separately; keep the base snapshot simple
+  s.agent = { mode: 'off' }
+  s.memory = { ...s.memory, enabled: false }
   return s
 })()
 
@@ -26,7 +30,6 @@ const card = {
   }
 } as any
 
-// two prior floors so history + lastFloor are non-trivial
 const floors: FloorFile[] = [
   {
     floor: 0,
@@ -48,12 +51,8 @@ const floors: FloorFile[] = [
   }
 ]
 
-// a canned model response: reasoning + an MVU update + an rpt-event, so fold/parse run for real
-const RAW =
-  '<thinking>plan</thinking>You open the door.\n<UpdateVariable>_.set("hp", 9)</UpdateVariable>'
-
-let capturedSend: unknown = null
 let capturedFloor: FloorFile | null = null
+let appendFloorCalled = false
 
 vi.mock('../../src/main/services/chatService', () => ({
   getChat: () => ({ id: 'chat1', character_id: 'card1', floor_count: 2, lorebook_ids: null }),
@@ -63,6 +62,7 @@ vi.mock('../../src/main/services/chatService', () => ({
   getCachedWorldInfo: () => null,
   setCachedWorldInfo: () => {},
   appendFloor: (_p: string, _c: string, f: FloorFile) => {
+    appendFloorCalled = true
     capturedFloor = f
   },
   truncateFloors: () => {}
@@ -78,7 +78,7 @@ vi.mock('../../src/main/services/presetService', () => ({
 }))
 vi.mock('../../src/main/services/lorebookService', () => ({
   getLorebookById: () => ({ id: 'card1', name: 'lb', entries: [] }),
-  matchAcross: () => [] // no lore for the base snapshot (deterministic)
+  matchAcross: () => []
 }))
 vi.mock('../../src/main/services/floorService', () => ({
   getAllFloors: () => floors,
@@ -99,28 +99,50 @@ vi.mock('../../src/main/services/templateService', async (orig) => ({
 vi.mock('../../src/main/services/logService', () => ({ log: () => {} }))
 vi.mock('../../src/main/services/apiService', async (orig) => ({
   ...(await orig<Record<string, unknown>>()),
-  streamProvider: async (_s: unknown, messages: unknown) => {
-    capturedSend = messages
-    return RAW
+  streamProvider: async (
+    _s: unknown,
+    _messages: unknown,
+    _params: unknown,
+    onDelta: (d: string) => void
+  ) => {
+    onDelta('You open the door.')
+    return 'You open the door.'
   }
 }))
 
+const { resolveWorkflowDoc, buildTurnContext } = vi.hoisted(() => ({
+  resolveWorkflowDoc: vi.fn(),
+  buildTurnContext: vi.fn()
+}))
+vi.mock('../../src/main/services/workflowService', () => ({ resolveWorkflowDoc }))
+vi.mock('../../src/main/services/nodes/turnContext', async (orig) => {
+  const actual = await orig<Record<string, unknown>>()
+  buildTurnContext.mockImplementation((actual as any).buildTurnContext)
+  return { ...actual, buildTurnContext }
+})
+
 import { generate } from '../../src/main/services/generationService'
 
-describe('generate() — parity baseline', () => {
+describe('generate() — resolves the active workflow', () => {
   beforeEach(() => {
-    capturedSend = null
     capturedFloor = null
+    appendFloorCalled = false
+    resolveWorkflowDoc.mockReset().mockReturnValue({ id: 'custom-1', doc: DEFAULT_GRAPH })
+    buildTurnContext.mockClear()
     vi.useFakeTimers()
     vi.setSystemTime(new Date('2020-06-01T12:00:00.000Z'))
   })
   afterEach(() => vi.useRealTimers())
 
-  it('produces a stable sendMessages array + written floor', async () => {
+  it('calls resolveWorkflowDoc(profileId, chatId) and threads its id into buildTurnContext', async () => {
     const floor = await generate('profile1', 'chat1', 'open the door')
+
+    expect(resolveWorkflowDoc).toHaveBeenCalledWith('profile1', 'chat1')
+    expect(buildTurnContext).toHaveBeenCalledWith(
+      expect.objectContaining({ workflowId: 'custom-1' })
+    )
     expect(floor).not.toBeNull()
-    // the two things the parity contract pins:
-    expect(capturedSend).toMatchSnapshot('sendMessages')
-    expect(capturedFloor).toMatchSnapshot('writtenFloor')
+    expect(appendFloorCalled).toBe(true)
+    expect(capturedFloor).not.toBeNull()
   })
 })

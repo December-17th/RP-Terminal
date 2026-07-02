@@ -12,6 +12,7 @@ describe('buildTurnContext', () => {
     const ctx = buildTurnContext({
       profileId: 'p1',
       chatId: 'c1',
+      workflowId: 'wf9',
       userAction: 'hello',
       signal: new AbortController().signal,
       onDelta: () => {}
@@ -26,6 +27,7 @@ describe('buildTurnContext', () => {
     const ctx = buildTurnContext({
       profileId: 'p1',
       chatId: 'c1',
+      workflowId: 'wf9',
       userAction: 'hello',
       signal: new AbortController().signal,
       onDelta
@@ -34,18 +36,19 @@ describe('buildTurnContext', () => {
     expect(onDelta).toHaveBeenCalledWith('hi')
   })
 
-  it('wires getNodeState/setNodeState to nodeStateService keyed by this chat', () => {
+  it('wires getNodeState/setNodeState to nodeStateService keyed by this chat and workflow', () => {
     const ctx = buildTurnContext({
       profileId: 'p1',
       chatId: 'c1',
+      workflowId: 'wf9',
       userAction: 'hello',
       signal: new AbortController().signal,
       onDelta: () => {}
     })
     expect(ctx.getNodeState('n9')).toEqual({ last: 'x' })
-    expect(getNodeState).toHaveBeenCalledWith('c1', 'n9')
+    expect(getNodeState).toHaveBeenCalledWith('c1', 'wf9', 'n9')
     ctx.setNodeState('n9', { last: 'y' })
-    expect(setNodeState).toHaveBeenCalledWith('c1', 'n9', { last: 'y' })
+    expect(setNodeState).toHaveBeenCalledWith('c1', 'wf9', 'n9', { last: 'y' })
     expect(() => ctx.emitPanel('n', 'x')).not.toThrow()
   })
 })

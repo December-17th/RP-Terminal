@@ -142,7 +142,9 @@ behavior. Frequent commits.
 > agentic node set (`prompt.messages`, `merge.messages`, `text.template`, `control.if`/`switch`/`when`,
 > `mvu.set`), plus per-node config delivery (`run(ctx, inputs, node)` + zod `configSchema`), Signal-gating
 > prune (spec §5), and the durable `node_state` store (spec §11). Workflow persistence deferred to its own
-> phase.
+> phase — **Phase 3 persistence BUILT 2026-07-01**, see
+> `2026-07-01-node-workflow-phase3-persistence.md` (file-based workflow resource + 4-tier
+> selection/resolution driving generate(), node_state re-keyed by workflow, minimal manager view).
 
 - `prompt.messages` (role-tagged message list), `merge.messages` (distinct input ports, per the fan-in rule),
   `text.template`, `control.if`/`switch`/`when` (predicates over Vars via `objectPath`), `mvu.set`.
