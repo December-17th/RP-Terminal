@@ -170,6 +170,12 @@ const api = {
     ipcRenderer.invoke('get-chat-mode', profileId, chatId),
   setChatMode: (profileId: string, chatId: string, mode: string) =>
     ipcRenderer.invoke('set-chat-mode', profileId, chatId, mode),
+  // A chat's FSM mode changed MAIN-side (a workflow tool node started combat/duel) — follow it.
+  onChatModeChanged: (cb: (p: { chatId: string; mode: string }) => void) => {
+    const listener = (_e: IpcRendererEvent, p: any): void => cb(p)
+    ipcRenderer.on('chat-mode-changed', listener)
+    return () => ipcRenderer.removeListener('chat-mode-changed', listener)
+  },
   // TH-2 swipes
   setActiveSwipe: (profileId: string, chatId: string, floorIndex: number, swipeId: number) =>
     ipcRenderer.invoke('set-active-swipe', profileId, chatId, floorIndex, swipeId),

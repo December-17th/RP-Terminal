@@ -255,126 +255,183 @@ const UTILITY_TIMEOUT_MS = 60_000
 // Chats with an in-flight compaction. The writer is fire-and-forget (voided after each turn), so a
 // rapid next turn could fire a second checkpoint that reads the SAME last_compacted_floor and
 // re-summarizes the same range before the first advances the pointer → duplicate memories + a wasted
-// utility call. This guard serializes compaction per chat.
-const compacting = new Set<string>()
+// utility call. This guard serializes compaction per chat. Time-stamped with an expiry so a chain
+// that dies between the decomposed nodes (aborted graph, crash) can't lock a chat out forever.
+const compacting = new Map<string, number>()
+const COMPACTION_GUARD_MS = 120_000 // 2× the utility timeout — a stuck chain self-heals here
+
+/** Claim the per-chat compaction slot; false while another compaction is in flight (unexpired). */
+export const tryBeginCompaction = (chatId: string): boolean => {
+  const started = compacting.get(chatId)
+  if (started !== undefined && Date.now() - started < COMPACTION_GUARD_MS) return false
+  compacting.set(chatId, Date.now())
+  return true
+}
+
+/** Release the per-chat compaction slot (call from the LAST stage — or the failing one). */
+export const endCompaction = (chatId: string): void => {
+  compacting.delete(chatId)
+}
+
+/** Everything one checkpoint processes: the due floor range + the collections extracting from it. */
+export interface CompactionBatch {
+  colls: MemoryCollection[]
+  floors: FloorFile[]
+  range: { start: number; end: number }
+}
+
+/**
+ * GATE stage (workflow spec D5 `memory.gate`): is a checkpoint due for this chat? Returns the
+ * batch (collections + the aged-out floors), or null when memory is off / no collection uses
+ * checkpoints / no full batch has aged past keep_recent. Pure reads; claims nothing.
+ */
+export const compactionDue = (profileId: string, chatId: string): CompactionBatch | null => {
+  const settings = getSettings(profileId)
+  const mem = settings.memory
+  if (!mem?.enabled) return null
+  // All enabled checkpoint collections share one pointer + one structured extraction call:
+  // stream collections (events) append; entity collections (characters/locations) upsert.
+  const colls = mem.collections.filter((c) => c.enabled && c.write.trigger === 'checkpoint')
+  if (!colls.length) return null
+
+  const chat = getChat(profileId, chatId)
+  if (!chat) return null
+  const state = getMemoryState(profileId, chatId)
+  const range = compactionRange(
+    chat.floor_count,
+    state.last_compacted_floor,
+    mem.keep_recent,
+    mem.checkpoint_turns
+  )
+  if (!range) return null
+
+  const floors = getAllFloors(profileId, chatId, chat.floor_count).filter(
+    (f) => f.floor >= range.start && f.floor < range.end
+  )
+  if (!floors.length) return null
+  return { colls, floors, range }
+}
+
+/**
+ * EXTRACT stage (spec D5 `memory.extract`): one structured utility-LLM call over the batch.
+ * Throws on a call failure (the caller decides fail-open vs error-branch); an unparseable reply
+ * comes back as `parsed: false` — a soft failure the caller defers WITHOUT advancing the pointer.
+ */
+export const extractCompaction = async (
+  profileId: string,
+  batch: CompactionBatch
+): Promise<ParsedCompaction> => {
+  const reply = await utilityComplete(profileId, {
+    system: buildExtractionPrompt(batch.colls),
+    user: floorsToTranscript(batch.floors),
+    maxTokens: 1000
+  })
+  return parseCompaction(reply, batch.colls)
+}
+
+/**
+ * WRITE stage (spec D5 `memory.write`): apply the parsed extraction atomically — event appends +
+ * entity upserts + the pointer advance in ONE transaction (a mid-way failure rolls back fully, so
+ * no duplicates on the retry) — then notify + embed. Returns how many updates landed.
+ */
+export const writeCompaction = async (
+  profileId: string,
+  chatId: string,
+  batch: CompactionBatch,
+  parsed: ParsedCompaction
+): Promise<number> => {
+  const { floors } = batch
+  const turnStart = floors[0].floor
+  const turnEnd = floors[floors.length - 1].floor
+  const turnLabel = turnStart === turnEnd ? `${turnStart}` : `${turnStart}-${turnEnd}`
+  const wrote = transact(() => {
+    let n = 0
+
+    // Stream collections (events): append the new memories.
+    for (const [id, memories] of Object.entries(parsed.streams)) {
+      if (!memories.length) continue
+      appendEntries(
+        profileId,
+        chatId,
+        id,
+        memories.map((m) => ({ ...m, turnStart, turnEnd }))
+      )
+      n += memories.length
+    }
+
+    // Entity collections (characters/locations): resolve the canonical key (T1), merge the
+    // delta into the existing sheet (T2), upsert. Re-read existing each time so multiple updates
+    // to one entity in a batch compose correctly.
+    for (const [id, ents] of Object.entries(parsed.entities)) {
+      for (const ent of ents) {
+        const existing = getEntries(profileId, chatId, id).map((e) => ({
+          entityKey: e.entityKey ?? '',
+          aliases: e.entities
+        }))
+        const key = resolveEntityKey(ent.name, ent.aliases, existing)
+        const current = getEntity(profileId, chatId, id, key)
+        const sheet = mergeEntitySheet((current?.payload as EntitySheet | undefined) ?? null, {
+          aliases: [ent.name, ...ent.aliases].filter(
+            (a) => a.trim().toLowerCase() !== key.trim().toLowerCase()
+          ),
+          fields: ent.fields,
+          note: ent.note,
+          turn: turnLabel
+        })
+        upsertEntity(profileId, chatId, id, key, entitySummary(sheet), sheet)
+        n++
+      }
+    }
+
+    // The reply parsed cleanly, so these floors are processed — advance the pointer even when the
+    // model found nothing worth remembering (n === 0). Re-extracting them would just waste calls;
+    // a genuine call/parse failure returned earlier without advancing.
+    setMemoryState(profileId, chatId, { last_compacted_floor: turnEnd })
+    return n
+  })
+
+  if (wrote > 0) {
+    log('info', `memory: compacted floors ${turnLabel} → ${wrote} update(s)`)
+    notifyMemoryChanged(chatId)
+    await embedPending(profileId, chatId)
+  } else {
+    log('info', `memory: floors ${turnLabel} had no extractable updates (pointer advanced)`)
+  }
+  return wrote
+}
 
 /**
  * Compact aged-out floors into `events` memories if a checkpoint is due. Safe to call after every
  * turn — a no-op when memory is off, the collection is absent, no full batch has aged out, or a
  * compaction is already running for this chat. Never throws (fail-open): summarization failures are
- * logged and retried next turn.
+ * logged and retried next turn. Composed from the D5 stages above; the decomposed workflow nodes
+ * (`memory.gate` / `memory.extract` / `memory.write`) call the same stages.
  */
 export const maybeCompact = async (profileId: string, chatId: string): Promise<void> => {
-  if (compacting.has(chatId)) return
-  compacting.add(chatId)
+  if (!tryBeginCompaction(chatId)) return
   try {
-    const settings = getSettings(profileId)
-    const mem = settings.memory
-    if (!mem?.enabled) return
-    // All enabled checkpoint collections share one pointer + one structured extraction call:
-    // stream collections (events) append; entity collections (characters/locations) upsert.
-    const colls = mem.collections.filter((c) => c.enabled && c.write.trigger === 'checkpoint')
-    if (!colls.length) return
+    const batch = compactionDue(profileId, chatId)
+    if (!batch) return
 
-    const chat = getChat(profileId, chatId)
-    if (!chat) return
-    const state = getMemoryState(profileId, chatId)
-    const range = compactionRange(
-      chat.floor_count,
-      state.last_compacted_floor,
-      mem.keep_recent,
-      mem.checkpoint_turns
-    )
-    if (!range) return
-
-    const floors = getAllFloors(profileId, chatId, chat.floor_count).filter(
-      (f) => f.floor >= range.start && f.floor < range.end
-    )
-    if (!floors.length) return
-
-    let reply: string
+    let parsed: ParsedCompaction
     try {
-      reply = await utilityComplete(profileId, {
-        system: buildExtractionPrompt(colls),
-        user: floorsToTranscript(floors),
-        maxTokens: 1000
-      })
+      parsed = await extractCompaction(profileId, batch)
     } catch (err) {
       log('info', `memory: compaction deferred (utility call failed: ${errMsg(err)})`)
       return
     }
-
-    const parsed = parseCompaction(reply, colls)
     if (!parsed.parsed) {
       // Unparseable reply (prose / no JSON body) — a soft failure. Leave the floors verbatim and
       // retry next checkpoint; do NOT advance the pointer (that would silently drop these floors).
       log('info', 'memory: compaction deferred (unparseable reply)')
       return
     }
-    const turnStart = floors[0].floor
-    const turnEnd = floors[floors.length - 1].floor
-    const turnLabel = turnStart === turnEnd ? `${turnStart}` : `${turnStart}-${turnEnd}`
-    // Apply all writes atomically: event appends + entity upserts + the pointer advance in ONE
-    // transaction, so a mid-way failure rolls back fully (no memories written without the pointer
-    // moving → no duplicates on the next retry).
-    const wrote = transact(() => {
-      let n = 0
-
-      // Stream collections (events): append the new memories.
-      for (const [id, memories] of Object.entries(parsed.streams)) {
-        if (!memories.length) continue
-        appendEntries(
-          profileId,
-          chatId,
-          id,
-          memories.map((m) => ({ ...m, turnStart, turnEnd }))
-        )
-        n += memories.length
-      }
-
-      // Entity collections (characters/locations): resolve the canonical key (T1), merge the
-      // delta into the existing sheet (T2), upsert. Re-read existing each time so multiple updates
-      // to one entity in a batch compose correctly.
-      for (const [id, ents] of Object.entries(parsed.entities)) {
-        for (const ent of ents) {
-          const existing = getEntries(profileId, chatId, id).map((e) => ({
-            entityKey: e.entityKey ?? '',
-            aliases: e.entities
-          }))
-          const key = resolveEntityKey(ent.name, ent.aliases, existing)
-          const current = getEntity(profileId, chatId, id, key)
-          const sheet = mergeEntitySheet((current?.payload as EntitySheet | undefined) ?? null, {
-            aliases: [ent.name, ...ent.aliases].filter(
-              (a) => a.trim().toLowerCase() !== key.trim().toLowerCase()
-            ),
-            fields: ent.fields,
-            note: ent.note,
-            turn: turnLabel
-          })
-          upsertEntity(profileId, chatId, id, key, entitySummary(sheet), sheet)
-          n++
-        }
-      }
-
-      // The reply parsed cleanly, so these floors are processed — advance the pointer even when the
-      // model found nothing worth remembering (n === 0). Re-extracting them would just waste calls;
-      // a genuine call/parse failure returned earlier without advancing.
-      setMemoryState(profileId, chatId, { last_compacted_floor: turnEnd })
-      return n
-    })
-
-    if (wrote > 0) {
-      log('info', `memory: compacted floors ${turnLabel} → ${wrote} update(s)`)
-      notifyMemoryChanged(chatId)
-      await embedPending(profileId, chatId)
-    } else {
-      log('info', `memory: floors ${turnLabel} had no extractable updates (pointer advanced)`)
-    }
+    await writeCompaction(profileId, chatId, batch, parsed)
   } catch (err) {
     // Last-resort guard: memory work must never break a turn.
     log('error', `memory: compaction error — ${errMsg(err)}`)
   } finally {
-    compacting.delete(chatId)
+    endCompaction(chatId)
   }
 }
 

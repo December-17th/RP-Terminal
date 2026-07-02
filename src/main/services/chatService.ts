@@ -1,5 +1,6 @@
 import { v4 as uuidv4 } from 'uuid'
 import { getDb } from './db'
+import { notifyChatModeChanged } from './chatEvents'
 import { ChatSession, FloorFile, ChatMode, CHAT_MODES } from '../types/chat'
 import { LorebookEntry } from '../types/character'
 import { getCharacter } from './characterService'
@@ -188,12 +189,14 @@ export const getChatMode = (profileId: string, chatId: string): ChatMode => {
   return CHAT_MODES.includes(row?.mode as ChatMode) ? (row!.mode as ChatMode) : 'explore'
 }
 
-/** Switch a session's FSM mode. Unknown values are coerced to 'explore'. */
+/** Switch a session's FSM mode. Unknown values are coerced to 'explore'. Broadcasts the change
+ *  so the renderer follows a MAIN-initiated switch (e.g. a workflow tool node starting combat). */
 export const setChatMode = (profileId: string, chatId: string, mode: ChatMode): void => {
   const m: ChatMode = CHAT_MODES.includes(mode) ? mode : 'explore'
   getDb()
     .prepare('UPDATE chats SET mode = ? WHERE id = ? AND profile_id = ?')
     .run(m, chatId, profileId)
+  notifyChatModeChanged(chatId, m)
 }
 
 /** The session-tier workflow override for a chat; null = inherit world/global/builtin (spec §12). */

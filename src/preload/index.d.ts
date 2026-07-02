@@ -49,6 +49,7 @@ declare global {
       onWorkflowPanel: (
         cb: (p: { chatId: string; nodeId: string; label?: string; delta: string }) => void
       ) => () => void
+      onChatModeChanged: (cb: (p: { chatId: string; mode: string }) => void) => () => void
     }
   }
 }

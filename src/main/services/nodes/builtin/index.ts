@@ -13,6 +13,8 @@ import { controlIf, controlSwitch, controlWhen } from './controlNodes'
 import { textTemplate, promptMessages, mergeMessages } from './messageNodes'
 import { mvuSet } from './mvuNodes'
 import { utilLog } from './utilNodes'
+import { memoryGate, memoryExtract, memoryWrite } from './memoryNodes'
+import { toolStartCombat, toolStartDuel, toolLorebookSearch } from './toolNodes'
 
 /** The registry of all built-in node types (Phase 2b-1b task 5, +2b-2 control/authoring nodes).
  *  Backs the default graph and any future card/workflow authoring surface — see spec §14
@@ -33,5 +35,11 @@ export const builtinRegistry = createRegistry([
   promptMessages,
   mergeMessages,
   mvuSet,
-  utilLog
+  utilLog,
+  memoryGate,
+  memoryExtract,
+  memoryWrite,
+  toolStartCombat,
+  toolStartDuel,
+  toolLorebookSearch
 ])
