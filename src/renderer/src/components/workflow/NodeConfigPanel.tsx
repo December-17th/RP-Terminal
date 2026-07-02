@@ -253,7 +253,7 @@ export default function NodeConfigPanel({
             disabled={readOnly}
             onChange={() => setMainOutput(node.id)}
           />
-          isMainOutput
+          {t('workflowEditor.mainOutput')}
         </label>
       )}
 
