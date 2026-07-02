@@ -1,6 +1,6 @@
 # 01 — Remove the episodic-memory engine
 
-Status: ready-for-agent
+Status: ready-for-human (implemented + reviewed; awaiting owner sign-off/merge)
 
 ## Parent
 
@@ -27,3 +27,7 @@ This is the prefactor slice: it must land before the table-memory slices so the 
 ## Blocked by
 
 None - can start immediately.
+
+## Comments
+
+**2026-07-02 — implemented + reviewed.** Plan at [01-plan.md](01-plan.md); implemented by an Opus agent as commit `0c0c1b1` on `claude/interesting-banach-1ccfdb`; reviewed by the controller against the plan (all diffs verified, gate re-run independently: typecheck PASS, check:deps PASS (334 modules), tests 160 files / 1224 PASS, leftover-reference grep clean — only the intentional `DROP TABLE IF EXISTS memory_entries` migration remains). All acceptance criteria met. Deviations from plan (accepted): view registration lived in `viewRegistry.tsx` not `Panel.tsx` (both edited); dead memory mocks in the generation parity tests removed; `docs/sdk/README.md` had no memory-node references to adjust. Kept as planned: `prompt.assemble` `block` port, `prompt.preset` `memory` port, `promptBuilder.memoryBlock` tail path (producer-agnostic; table memory reuses it).
