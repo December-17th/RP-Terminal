@@ -23,7 +23,10 @@ import {
 import '@xyflow/react/dist/style.css'
 import './workflowEditor.css'
 import { useWorkflowEditorStore, type NodeTypeInfo } from '../../stores/workflowEditorStore'
+import { useWorkflowTraceStore } from '../../stores/workflowTraceStore'
+import { useChatStore } from '../../stores/chatStore'
 import { useOptionalT, useT } from '../../i18n'
+import type { TraceNode } from '../../../../shared/workflow/trace'
 import type { EditorNode } from './editorModel'
 
 /** Matches the palette drag payload's mime type (drag source lives in a later task's palette
@@ -33,6 +36,8 @@ const DRAG_MIME = 'application/rpt-node-type'
 interface RptNodeData extends Record<string, unknown> {
   editorNode: EditorNode
   typeInfo: NodeTypeInfo | undefined
+  /** This node's outcome in the active chat's LAST run of this workflow (spec §13), if any. */
+  trace?: TraceNode
 }
 
 /** Maps a PortType to the CSS class workflowEditor.css keys its color off. Falls back to `Any`'s
@@ -56,16 +61,19 @@ function portTypeClass(type: string | undefined): string {
 function RptNode({ data, selected }: NodeProps<RFNode<RptNodeData>>): React.JSX.Element {
   const t = useT()
   const tOpt = useOptionalT()
-  const { editorNode, typeInfo } = data
+  const { editorNode, typeInfo, trace } = data
   const inputs = typeInfo?.inputs ?? []
   const outputs = typeInfo?.outputs ?? []
   // Localized node title with the catalog's English title as the fallback.
   const title =
     tOpt(`workflowEditor.nodeTitle.${editorNode.type}`) || typeInfo?.title || editorNode.type
+  const traceTitle = trace
+    ? `${t(`workflow.trace.status.${trace.status}`)}${trace.ms !== undefined ? ` · ${trace.ms}ms` : ''}${trace.error ? ` — ${trace.error.message}` : ''}`
+    : undefined
 
   return (
     <div
-      className={`rpt-node${selected ? ' selected' : ''}${editorNode.isMainOutput ? ' is-main-output' : ''}`}
+      className={`rpt-node${selected ? ' selected' : ''}${editorNode.isMainOutput ? ' is-main-output' : ''}${trace ? ` rpt-node-trace-${trace.status}` : ''}`}
     >
       <div className="rpt-node-title-row">
         {editorNode.isMainOutput && (
@@ -75,6 +83,16 @@ function RptNode({ data, selected }: NodeProps<RFNode<RptNodeData>>): React.JSX.
         )}
         <span className="rpt-node-title">{title}</span>
         <span className="rpt-node-type-id">{editorNode.type}</span>
+        {trace && (
+          <span className={`rpt-node-trace-chip is-${trace.status}`} title={traceTitle}>
+            <span className="rpt-node-trace-dot" aria-hidden />
+            {trace.status === 'failed'
+              ? t('workflow.trace.status.failed')
+              : trace.ms !== undefined
+                ? `${trace.ms}ms`
+                : t(`workflow.trace.status.${trace.status}`)}
+          </span>
+        )}
       </div>
       {/* Normal-flow port rows: each row positions its own Handle (absolute, vertically centered
           on the row) so handles always sit on the card's edge next to their label — the previous
@@ -136,6 +154,19 @@ function FlowCanvasInner({ profileId: _profileId }: FlowCanvasProps): React.JSX.
     return new Map(nodeTypeList.map((t) => [t.type, t]))
   }, [nodeTypeList])
 
+  // Last-run trace overlay (spec §13): shown only when the active chat's latest run executed THE
+  // WORKFLOW OPEN IN THE EDITOR — a trace from a different doc would paint misleading statuses.
+  const currentId = useWorkflowEditorStore((s) => s.currentId)
+  const activeChatId = useChatStore((s) => s.activeChatId)
+  const lastTrace = useWorkflowTraceStore((s) =>
+    activeChatId ? s.traces[activeChatId] : undefined
+  )
+  const traceByNode = useMemo(() => {
+    if (!lastTrace || !currentId || lastTrace.workflowId !== currentId)
+      return new Map<string, TraceNode>()
+    return new Map(lastTrace.nodes.map((n) => [n.nodeId, n]))
+  }, [lastTrace, currentId])
+
   const rfNodes: RFNode<RptNodeData>[] = useMemo(
     () =>
       nodes.map((n) => ({
@@ -146,9 +177,9 @@ function FlowCanvasInner({ profileId: _profileId }: FlowCanvasProps): React.JSX.
         draggable: !readOnly,
         connectable: !readOnly,
         deletable: !readOnly,
-        data: { editorNode: n, typeInfo: typeInfoMap.get(n.type) }
+        data: { editorNode: n, typeInfo: typeInfoMap.get(n.type), trace: traceByNode.get(n.id) }
       })),
-    [nodes, selectedNodeId, readOnly, typeInfoMap]
+    [nodes, selectedNodeId, readOnly, typeInfoMap, traceByNode]
   )
 
   const rfEdges: RFEdge[] = useMemo(

@@ -242,7 +242,7 @@ export async function runWorkflow(
     }
     return { ok: false, aborted: true, traces: state.traces, outputs: state.outputs }
   }
-  ctx.onResponseReady?.()
+  ctx.onResponseReady?.(state.outputs)
   const post = await runNodes(
     order.filter((id) => postIds.has(id)),
     doc,

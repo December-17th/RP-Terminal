@@ -85,26 +85,59 @@ export const generate = async (
       onDelta,
       panelLabels
     })
+    // The turn result comes off the doc's main-output node — by ID FROM THE DOC, not a
+    // hardcoded 'write' (a hand-authored graph names its nodes differently). Validation
+    // guarantees exactly one.
+    const mainId = doc.nodes.find((n) => n.isMainOutput)!.id
+
+    // Deliver at the phase boundary (spec §5/D6): the engine fires onResponseReady right after
+    // the main-output node completes, handing over the outputs so far — the floor returns to the
+    // renderer THEN, and the post-response phase (side jobs, compaction) continues detached,
+    // fail-open. A §11-style background llm.sample can no longer hold the player's turn hostage.
+    let earlyFloor: FloorFile | null = null
+    let ready!: () => void
+    const responseReady = new Promise<void>((resolve) => {
+      ready = resolve
+    })
+    ctx.onResponseReady = (outputs) => {
+      earlyFloor = (outputs?.get(mainId)?.floor as FloorFile | undefined) ?? null
+      ready()
+    }
+
     const startedAt = Date.now()
-    const res = await runWorkflow(doc, builtinRegistry, ctx)
-    // Broadcast the run trace on every outcome — ok, aborted, AND fatal — the trace panel is
-    // most useful when a turn just failed (spec §13). Fire-and-forget; never blocks the turn.
-    notifyWorkflowTrace(
-      summarizeRun(doc, builtinRegistry.descriptors(), res, {
-        chatId,
-        workflowId,
-        startedAt,
-        durationMs: Date.now() - startedAt
-      })
-    )
-    // A pre-phase node failure (provider error, assembly throw, …) reaches us as a fatal
-    // RESULT, not a rejection — re-surface it (spec §10: unwired + failed ⇒ the turn aborts
-    // with the error surfaced). Without this a hard failure returns null and reads exactly
-    // like a user Stop: no renderer error banner, the action text silently lost.
-    if (res.error) throw new Error(res.error.message)
-    if (!res.ok || res.aborted) return null
-    const floor = res.outputs.get('write')?.floor as FloorFile | undefined
-    return floor ?? null
+    const runPromise = runWorkflow(doc, builtinRegistry, ctx)
+    // Broadcast the run trace when the FULL run settles (post phase included) — ok, aborted,
+    // AND fatal — the trace panel is most useful when a turn just failed (spec §13).
+    void runPromise
+      .then((res) =>
+        notifyWorkflowTrace(
+          summarizeRun(doc, builtinRegistry.descriptors(), res, {
+            chatId,
+            workflowId,
+            startedAt,
+            durationMs: Date.now() - startedAt
+          })
+        )
+      )
+      .catch((err) => log('error', `workflow trace failed — ${err?.message || String(err)}`))
+
+    // Race: on the normal path onResponseReady fires first (before the post phase runs) and the
+    // floor returns immediately. Fatal / aborted / validation-rejected runs never fire it — the
+    // settled result arrives instead and is handled exactly as before.
+    const settled = await Promise.race([
+      responseReady.then(() => null),
+      runPromise as Promise<Awaited<typeof runPromise> | null>
+    ])
+    if (settled) {
+      // A pre-phase node failure (provider error, assembly throw, …) reaches us as a fatal
+      // RESULT, not a rejection — re-surface it (spec §10: unwired + failed ⇒ the turn aborts
+      // with the error surfaced). Without this a hard failure returns null and reads exactly
+      // like a user Stop: no renderer error banner, the action text silently lost.
+      if (settled.error) throw new Error(settled.error.message)
+      if (!settled.ok || settled.aborted) return null
+      return (settled.outputs.get(mainId)?.floor as FloorFile | undefined) ?? null
+    }
+    return earlyFloor
   } finally {
     activeControllers.delete(chatId)
   }

@@ -27,7 +27,10 @@ export interface WorkflowSummary {
 
 export type WorkflowWriteResult = { ok: true; id: string } | { ok: false; error: string }
 
-/** Structural (docSchema) + graph (validate.ts) validation gate — spec §12. */
+/** Structural (docSchema) + graph (validate.ts) + per-node CONFIG validation gate — spec §12/§14.
+ *  Config runs through the same zod schema the engine parses at run time, so a bad node config
+ *  (empty mvu.set path, broken validator pattern, wrong types) fails at SAVE/IMPORT with the node
+ *  named, instead of mid-turn. */
 export const validateWorkflowDoc = (
   raw: unknown
 ): { ok: true; doc: WorkflowDoc } | { ok: false; error: string } => {
@@ -35,6 +38,20 @@ export const validateWorkflowDoc = (
   if (!structural.ok) return structural
   const v = validateWorkflow(structural.doc, builtinRegistry.descriptors())
   if (!v.ok) return { ok: false, error: v.errors.map((e) => e.message).join('; ') }
+  const configErrors: string[] = []
+  for (const n of structural.doc.nodes) {
+    const schema = builtinRegistry.get(n.type)?.configSchema
+    if (!schema) continue
+    const r = schema.safeParse(n.config ?? {})
+    if (!r.success) {
+      const details = r.error.issues
+        .map((i) => `${i.path.join('.') || 'config'}: ${i.message}`)
+        .join(', ')
+      configErrors.push(`${n.id} (${n.type}) — ${details}`)
+    }
+  }
+  if (configErrors.length)
+    return { ok: false, error: `invalid node config: ${configErrors.join('; ')}` }
   return { ok: true, doc: structural.doc }
 }
 
