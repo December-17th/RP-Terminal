@@ -137,7 +137,8 @@ export const rebuildSandbox = (
   }
 }
 
-/** Open the freshly-instantiated sandbox and replay ops in one transaction; skip failing ops. */
+/** Open the freshly-instantiated sandbox and replay ops one by one (NOT one transaction — a
+ *  failing op is logged and skipped while the rest still apply, the fail-open contract). */
 const replaySandbox = (
   profileId: string,
   chatId: string,

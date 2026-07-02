@@ -1,6 +1,6 @@
 # 03 — Sandboxed SQL write path + rewind safety
 
-Status: ready-for-agent
+Status: ready-for-human (implemented + reviewed; awaiting owner sign-off/merge)
 
 ## What to build
 
@@ -28,3 +28,15 @@ Demo: a test workflow wires a hand-written SQL string (or a `parse.extract` over
 ## Blocked by
 
 - [02-table-templates-import-and-enablement.md](02-table-templates-import-and-enablement.md)
+
+## Comments
+
+**2026-07-02 — implemented + reviewed.** Plan at [03-plan.md](03-plan.md); implemented by an Opus agent as commit `cbddfce`; reviewed line-by-line by the controller (this is the security-critical slice). Verdict: accepted with one comment fix (replaySandbox docstring claimed one transaction; replay is deliberately per-op so failures can be skipped fail-open).
+
+Security review of the choke points, all sound: the splitter is a real char-scanner (literals with '' escapes, "" identifiers, --/​/* */ comments, CJK-safe, top-level `;` only); the classifier accepts only INSERT/UPDATE/DELETE heads and validates the target against the template registry — schema-qualified names (`main.t`) fall out as unregistered, `WITH`/`EXPLAIN`/`REPLACE` heads are rejected, and better-sqlite3's one-statement-per-prepare is a second net behind the splitter. applySqlBatch validates before touching the DB, runs one transaction with a change cap, closes in finally. The busy path correctly does NOT release a lock it never claimed. Ops are logged from the service's validated statements (not a re-split), so replay matches execution exactly.
+
+Accepted deviations: results carry the executed statements for exact op-logging; rebuildSandbox takes the resolved template as a parameter (avoids a chatService import cycle). FK-cascade finding verified: db.ts sets foreign_keys=ON, so table_ops clears on chat delete; the sandbox file is removed explicitly.
+
+AC adjustment (as planned): the "rebuilt state equals never-rewound reference" criterion cannot be integration-tested — better-sqlite3 is alias-mocked because the native binary can't load under plain Node. Pinned instead via pure replayPlan (+ splitter/classifier/validateBatch exhaustive tests incl. the four documented template SQL shapes) and node run() contracts. Live state-equality belongs to the owner's manual pass.
+
+Gate re-run independently post-fix: typecheck PASS, check:deps PASS (344 modules), tests 166 files / **1318** PASS (60 new).
