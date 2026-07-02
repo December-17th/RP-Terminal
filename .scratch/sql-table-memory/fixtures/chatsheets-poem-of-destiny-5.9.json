@@ -1,0 +1,584 @@
+{
+  "mate": {
+    "type": "chatSheets",
+    "version": 2,
+    "globalInjectionConfig": {
+      "readableEntryPlacement": {
+        "position": "before_character_definition",
+        "depth": 2,
+        "order": 99981
+      },
+      "wrapperPlacement": {
+        "position": "before_character_definition",
+        "depth": 2,
+        "order": 99980
+      }
+    },
+    "updateConfigUiSentinel": -1
+  },
+  "sheet_DpKcVGqg": {
+    "uid": "sheet_DpKcVGqg",
+    "name": "主角信息",
+    "sourceData": {
+      "note": "【表定义】记录主角的核心身份信息。此表有且仅有一行，禁止多行。\n\n【列定义 - 硬约束】\n- 列0: 人物名称 - 主角的名字。禁止为空。\n- 列1: 性别/年龄 - 【格式】:\"[性别]/[年龄]\"（如：\"男/25岁\"）。禁止模糊表述。\n- 列2: 重要日期 - 记录对角色意义重大的周期性重要日期，包括生日、纪念日等。\n【格式】:\\\" [类型]: 具体日期 (周期)\\\"，用分号分隔。角色间关系\n  - 类型：如“生日”、“结婚纪念日”、“晋升日”等\n  - 具体日期：按世界观格式，记录后锁定, 生日若无则依年龄等资讯生成\n  - 周期：提醒间隔，如“每年”、“每月”、“每5年”等。若为一次性（无需周期性提醒），直接忽略该事件。周期是提醒系统的输入参数，用于在外部日程中生成周期性事件。周期本身不因单次经历而改变\n【示例】:\n\\\"[生日]: 复兴纪元15年3月12日 (每年);[晋升骑士纪念日]: 复兴纪元30年6月1日 (每年)\\\"\n- 列3: 初夜状态 - 非女性:\"未经人事/经性事\"。女性:\"阴道：未经人事/经性事；肛门:未经人事/经性事\"。\n【填写规则】：默认未经人事，除非该部位曾与性器交合\n- 列4: 生命周期 - 主角的生育适用周期。\n【格式】:\"[类别]([期别])[期长]，[生育可能]\"，例如\"年幼（未初经）第16年7个月3周又3天，不易受孕\"\n【生命周期规则】：只从以下类别中选择并标明具体期别和期长，以及对应受孕可能\n  - 类型：年幼[未初经、未熟]、月经[增殖期、排卵期、黄体期、生理期]、怀孕[孕早期、孕中期、孕后期]、停经[年长、疾病]、生物[动情期、未动情]、-[男性、雄性、无性征]\n  - 期长：常规格式\"[几年][几个月][几周][几天]\"，年、月、周为0时各不填，天必填，仅年长和-填\"持续\"。类型和期别（仅怀孕进展采累计制）变动时必须重新计数期长，年幼：未初经（14-18年）、未熟（6个月-12年）；月经：增殖期（5-10天）、排卵期（1-4天）、黄体期（12-14天）、生理期（3-7天）；生物：动情期（3天-1个月）、未动情（3-11个月）\n  - 生育可能：依据类型和期别填写，年幼均填\"不易受孕\"；增值期、黄体期填\"被内射可能受孕\"；排卵期、动情期填\"被内射必定受孕\"；生理期、未动情填\"不会受孕\"；怀孕均填\"胎儿发育中\"；停经均填\"不孕\"；男性、雄性填\"具射精能力\"或\"不育\"；无性征填\"无性功能\"\n- 列5: 外貌特征 - 【必含项】发型、发色、身高、身材、肤色、五官外貌。【严禁项】神态描写（如\"嘴角勾起冷笑\"）、服装、姿势、临时状态。此列为低频更新项，仅在发生永久性外貌改变时更新。\n- 列6: 性征 - 【男性/雄性必含项】射精量、阴茎外观。 【女性/雌性必含项】乳房罩杯、耻毛、小穴、子宫状态。【无性征】此列留空。【严禁项】沾染物描写(如\"灌满精液\")、临时状态。此列为低频更新项，仅在发生永久性外貌改变时更新。\n\n【验证规则 - RM检查点】\n1.【生命周期审查】\n扫描对象：列4(生命周期)。\n□逻辑质问：\n□ A.周期验证：生命周期是否填写？\n□ B.期别核对：生命周期的期别是否与本轮剧情（日程、发生事件）相符？\n□ C.进展核对：生命周期的期长是否为该期别的合理范围及格式？\n□ D.强制纠错：如果发现不一致（并非皆是或皆否），立刻补全并更新列4生命周期。\n2.【外貌特征审查】\n□ 列5外貌特征是否包含全部6项必含内容？\n□ 列5是否混入了神态/服装/姿势描写？若是 => 立即删除违规内容\n3.【性征审查】\n□ 列6性征是否包含对应性别必含内容？\n□ 列6性征是否混入了沾染物描写？若是 => 立即删除违规内容\n4.【更新自检与格式审查】\n□ 各列内容是否严格对应列定义？是否存在错位填写？\n\n【二次检查 - 强制执行】填写完成后必须逐列核对，确认无错位填写。",
+      "initNode": "【触发条件】游戏初始化时执行。\n【操作】插入主角的唯一条目。\n【硬约束】所有列必须填写，禁止留空。必须通过所有RM检查点。\n- 列2重要日期：仅根据人设信息推断生日\n- 列4生命周期：根据列1性别/年龄推断",
+      "deleteNode": "禁止删除。",
+      "updateNode": "【触发条件】\n1) 主角状态发生实质性改变时 => 更新对应列\n2) 获得或更新角色的重要日期信息 => 更新列2\n3) 排卵、受孕、停经或日期变动时 => 更新列4生命周期\n【低频更新列】列3初夜状态、列5外貌特征、列6性征\n- 仅在发生永久性改变/换装/破损时更新。\n【更新后检查】必须重新执行RM检查点验证。",
+      "insertNode": "禁止操作。",
+      "ddl": "CREATE TABLE protagonist_info ( -- 主角信息\n  row_id INTEGER PRIMARY KEY, -- 行号\n  name TEXT, -- 人物名称\n  gender_age TEXT, -- 性别/年龄\n  important_dates TEXT, -- 重要日期\n  virginity_status TEXT, -- 初夜状态\n  life_cycle TEXT, -- 生命周期\n  physical_appearance TEXT, -- 外貌特征\n  sexual_characteristics TEXT -- 性征\n);"
+    },
+    "content": [
+      [
+        "row_id",
+        "人物名称",
+        "性别/年龄",
+        "重要日期",
+        "初夜状态",
+        "生命周期",
+        "外貌特征",
+        "性征"
+      ]
+    ],
+    "updateConfig": {
+      "uiSentinel": -1,
+      "contextDepth": -1,
+      "updateFrequency": 3,
+      "batchSize": -1,
+      "skipFloors": -1
+    },
+    "exportConfig": {
+      "enabled": false,
+      "splitByRow": false,
+      "entryName": "主角信息",
+      "entryType": "constant",
+      "keywords": "",
+      "preventRecursion": true,
+      "injectionTemplate": "",
+      "extraIndexEnabled": false,
+      "extraIndexEntryName": "主角信息-索引",
+      "extraIndexColumns": [],
+      "extraIndexColumnModes": {},
+      "extraIndexInjectionTemplate": "",
+      "entryPlacement": {
+        "position": "at_depth_as_system",
+        "depth": 2,
+        "order": 10000
+      },
+      "extraIndexPlacement": {
+        "position": "at_depth_as_system",
+        "depth": 2,
+        "order": 10010
+      },
+      "fixedEntryPlacement": {
+        "position": "at_depth_as_system",
+        "depth": 2,
+        "order": 99990
+      },
+      "fixedIndexPlacement": {
+        "position": "at_depth_as_system",
+        "depth": 2,
+        "order": 99991
+      }
+    },
+    "orderNo": 0
+  },
+  "sheet_NcBlYRH5": {
+    "uid": "sheet_NcBlYRH5",
+    "name": "重要角色表",
+    "sourceData": {
+      "note": "【表定义】记录所有**除主角外**关键NPC的详细信息和动态状态。每个NPC占一行。\n【触发机制】\n- 只有当正文中完整生成\"<char_info>\"标签内容时，才会触发插入新行操作。没有\"<char_info>\"则禁止插入新人物。\n- 禁止为主角插入创建重要角色表\n【列定义 - 硬约束】\n- 列0: 姓名 - NPC的名字。死亡时在名字后标注\"(已死亡)\"。\n- 列1: 性别/年龄 - 【格式】:\"性别/年龄\"。禁止模糊。\n- 列2: 重要日期 - 记录对角色意义重大的周期性重要日期，包括生日、纪念日等。\n【格式】:\\\" [类型]: 具体日期 (周期)\\\"，用分号分隔。角色间关系\n  - 类型：如“生日”、“结婚纪念日”、“晋升日”等\n  - 具体日期：按世界观格式，记录后锁定, 生日若无则依年龄等资讯生成\n  - 周期：提醒间隔，如“每年”、“每月”、“每5年”等。若为一次性（无需周期性提醒），直接忽略该事件。周期是提醒系统的输入参数，用于在外部日程中生成周期性事件。周期本身不因单次经历而改变\n【示例】:\n\\\"[生日]: 复兴纪元15年3月12日 (每年);[晋升骑士纪念日]: 复兴纪元30年6月1日 (每年)\\\"\n- 列3: 初夜状态 - 非女性:\"未经人事/经性事\"。女性:\"阴道：未经人事/经性事；肛门:未经人事/经性事\"。\n【填写规则】：默认未经人事，除非该部位曾与性器交合\n- 列4: 生命周期 - 角色的生育适用周期。\n【格式】:\"[类别]([期别])[期长]，[生育可能]\"，例如\"年幼（未初经）第16年7个月3周又3天，不易受孕\"\n【生命周期规则】：只从以下类别中选择并标明具体期别和期长，以及对应受孕可能\n  - 类型：年幼[未初经、未熟]、月经[增殖期、排卵期、黄体期、生理期]、怀孕[孕早期、孕中期、孕后期]、停经[年长、疾病]、生物[动情期、未动情]、-[男性、雄性、无性征]\n  - 期长：常规格式\"[几年][几个月][几周][几天]\"，年、月、周为0时各不填，天必填，仅年长和-填\"持续\"。类型和期别（仅怀孕进展采累计制）变动时必须重新计数期长，年幼：未初经（14-18年）、未熟（6个月-12年）；月经：增殖期（5-10天）、排卵期（1-4天）、黄体期（12-14天）、生理期（3-7天）；生物：动情期（3天-1个月）、未动情（3-11个月）\n  - 生育可能：依据类型和期别填写，年幼均填\"不易受孕\"；增值期、黄体期填\"被内射可能受孕\"；排卵期、动情期填\"被内射必定受孕\"；生理期、未动情填\"不会受孕\"；怀孕均填\"胎儿发育中\"；停经均填\"不孕\"；男性、雄性填\"具射精能力\"或\"不育\"；无性征填\"无性功能\"\n- 列5: 性征 - 【男性/雄性必含项】射精量、阴茎外观。 【女性/雌性必含项】乳房罩杯、耻毛、小穴、子宫状态。【无性征】此列留空。【严禁项】沾染物描写(如\"灌满精液\")、临时状态。此列为低频更新项，仅在发生永久性外貌改变时更新。\n- 列6: 所在位置 - 角色当前所在位置。【格式】:\"${大陆方位}-${区域}-${势力}-${聚落/地标}-${区位}-${详细位置}\"\n- 列7: 角色间关系 - 记录该角色与主角和其他重要角色的关系。若角色设定里没有写明或者每轮交互正文也没有提及，则留空，不得推测。重要角色之间必须有过接触或者交互才写。\n【填写规则】：从以下类别中选择并标明具体关系(用词应当简练)：\n亲人类(父亲、母亲、哥哥、表妹、表姑、婶婶等)、爱人类、友人类(朋友、兄弟、死党等)、熟人类(同事、上司、酒肉朋友等)、生人类(萍水相逢，初识等)、仇人类、特殊类。格式为\"XX(其他角色的名字)的XX(具体关系)\"，同一角色多种关系用‘/’分割，而不同角色用分号分割，例如\"张三的酒友/同事；李四的同学\"。严禁使用共犯一词\n- 列8: 关键记忆 - 简短记录引发转变的关键记忆。**仅包含对角色来说的重要记忆、经验教训、约定、性格转变等，不包含琐碎的事件，不需要每轮交互都记录**。**不删除已记录的关键记忆**，延续之前的关键记忆并保存依次累加，忠实于记录事件与对角色的转变。分点描述，格式为数字列表1、2、3...，用分号分隔。\n【格式】:\"1.[具体关键事件1→具体获得的转变和关键记忆]\";\"2.[具体关键事件2→具体获得的转变和关键记忆]\"...\n【格式示例】:\"1.[半精灵出身→身份认同困扰与双亲特质继承];2.[公会工作三年→见识冒险却因体质受限];3.[体质限制冒险梦→决心寻找突破之道]\"\n- 列9: 目前经历 - 该NPC遭遇主角后的关键经历。\n**【核心指令】**： \n 你现在是该NPC的\"史官美杜莎\"。你必须**输出完整的、更新后的目前经历文本**。请严格按照以下三步执行：\n**Step 1：【微增量生成 (Micro-Increment)】**\n   - 根据本次交互，生成一段**极短**的最新动态。\n   - **限制**: 每条必须≤20字。\n   - **风格**: 电报风，去形容词。\n   - **格式**: \"[时间@地点]事件\"\n   - *（内存中暂存）*:\"New_Event = '[448年1月2日14:30-15:00@瓦伦蒂亚冒险者公会]为波尔特办理冒险者注册手续。'\"\n**Step 2：【拼接与容量检测 (Append & Check)】**\n   - 读取该列原有的内容 `Old_Text`。\n   - 拼接: \"Full_Text = Old_Text + New_Event\"\n   - **检测经历条目数**: 检查\"Full_Text\"的总经历条目数。\n     - **若 ≤ 5条经历条目**: 跳过 Step 3 直接输出。\n     - **若 > 5条经历条目**: 触发**\"史书压缩算法\"**（见下文）。\n**Step 3：【史书压缩算法 (仅在总经历条目数 > 5时触发)】**\n   - **强制要求**：**绝对禁止**使用\"略(压缩)\"、\"...\"等占位符。\n   - 将全文切分为 **[远古区 (前70%)]** 和 **[近况区 (后30%)]**。\n   - **严禁使用“略(压缩)”等占位符**。压缩后的远古区必须生成具体的概括性文本。\n   - **压缩起点强制指令**：压缩必须从全文的第一条记录开始，不能跳过任何初始记录。\n   - **重写远古区**：必须从全文的第一条记录的时间点开始压缩。将远古区内从第一条记录开始的所有琐碎记录**合并为递进式总结**，覆盖最早记录到远古区结束的时间跨度。\n   - **保留近况区**: 保持最近发生的几件事细节不变（即后30%部分）。\n   - **合并**: \"Final_Output = 压缩后的远古史 + 近况区 + 本次新事件\"\n   - **概括要求**：压缩后的远古史必须是**完整的时间段概括**，例如：\n     - 正确示例：\"[448-449年]瓦伦蒂亚冒险者公会任职柜台文书。\"\n     - 正确示例：\"[448年5月-8月]瓦伦蒂亚冒险者公会处理多项冒险者委托。\"\n     - 正确示例：\"[448年5月2日-4日]瓦伦蒂亚冒险者公会帮冒险者处理下水道巨鼠委托。\"\n     - 正确示例：\"[448年5月2日20:00-3日12:00]迎接新主人克莱恩，与莉娜一起为主人收拾房间。\"\n     - 正确示例：\"[448年5月2日8:00-20:50]宅邸大厅迎接贵客杰克并安排食宿。\"\n     - **禁止示例**：\"略(压缩)\"、\"...等事件\"等模糊表述。\n**【关键要求】**：\n1. 远古区压缩必须从全文第一条记录的时间点开始\n2. 近况区（后30%）保持不变，保留详细记录\n3. 压缩后应形成\"远古压缩概括 + 近期详细记录 + 本次新事件\"的结构\n**【正确压缩示例】**：\n假设全文有5条记录，触发压缩时：\n   - 远古区 = 第1 - 3条记录（按时间最早到第1条）\n   - 近况区 = 第4 - 5条记录\n压缩后结构：\n1. 压缩后的远古史：从第1条记录开始概括，例如\"[时间起点-时间终点]概括性描述期间主要活动\"\n2. 近况区：第4-5条记录保持原样（详细电报体）\n3. 本次新事件：追加的最新事件\n具体示例：\n原远古区有3条详细记录，时间跨度从488年1月1日到488年1月15日。\n✅ **正确压缩**：\n   - \"[488年1月1日-15日]在瓦伦宅邸二楼与陈粉进行多次恶作剧和嬉闹，包括走廊追逐、房间飞入、荧光珍珠争吵等事件。\"\n❌ **错误压缩**：\n   - \"略(压缩)\" 或 \"早期经历已压缩\"\n   - 直接从第4条记录开始压缩（丢失了1 - 3条）\n   - 压缩近况区（应该保留详细记录）\n**【输出示例 (Example)】**\n假设原文本已经很长了...\n❌ **错误示范 (只输出新的一句 -> 导致旧数据丢失)**：\n   - \"[448年@瓦伦蒂亚冒险者公会]为波尔特办理冒险者注册手续。\" \n   *(严重错误！以前的历史全没了！)*\n❌ **错误示范 (追加内容太长)**：\n   - \"...(旧历史)...[448年1月2日14:30-15:00@瓦伦蒂亚冒险者公会]以职业化的冷静为波尔特办理新人注册和任务委托手续，对他感到一丝好奇，给予额外关照。\"\n   *(错误！新增内容超过了20字限制！)*\n✅ **正确示范 (全量输出 + 增量极简 + 历史压缩)**：\n   - \"[448年6月7日17:00-8日12:00]宅邸大厅与艾琳一起等待新主人克莱恩，交流许多关于恶主伤奴的恐怖故事，焦虑难安。[448年6月8日12:00-12:20]宅邸大厅紧张地迎接新主人克莱恩。[448年6月8日12:20-12:30@宅邸大厅]在阴影中躲避新主人克莱恩，不慎踢翻铜盆。[488年6月8日12:30-12:40@宅邸厨房]接到烧水命令，在井边打水并回厨房烧水。\"\n   - \"[448-451年]冒险者公会供职，为杰克办理冒险者手续，与杰克结为情侣。[451年1月-452年3月]利用职务为杰克的冒险委托提供便利。[452年4月2日17:25-18:00@瓦伦蒂亚冒险者公会]辞去工作，追随杰克。[452年4月2日18:00-18:30@瓦伦蒂亚城市驿站]与杰克一起坐上马车，踏上旅途。\"\n   *(完美：从原本的第一条记录的时间开始保留了完整的历史梗概，追加了最新的20字以内短句，形成了 \"远古区+近况区+本次新事件 \"的完美格式)*\n【验证规则 - RM检查点】：\n1.【生命周期审查】\n扫描对象：列4(生命周期)。\n□逻辑质问：\n□ A.周期验证：生命周期是否填写？\n□ B.期别核对：生命周期的期别是否与本轮剧情（日程、发生事件）相符？\n□ C.进展核对：生命周期的期长是否为该期别的合理范围及格式？\n□ D.强制纠错：如果发现不一致（并非皆是或皆否），立刻补全并更新列4生命周期。\n2.【性征审查】\n□ 列5性征是否包含对应性别必含内容？\n□ 列5性征是否混入了沾染物描写？若是 => 立即删除违规内容\n3.【生平履历闭环审查】\n扫描对象：列9(目前经历)。\n□逻辑质问：\n□ A.追加验证：指令是否严格执行了 old_bio + new_event？严禁直接用新文本覆盖旧生平！\n□ B.事实核对：追加的文本内容是否与本轮剧情（时间、地点、发生事件）完全一致？\n□ C.强制纠错：如果发现直接覆盖（丢失了过往历史），立刻改写为追加模式。如果发现经历未更新，立刻补充本轮发生的重大交互事件。\n4.【压缩算法验证要点】：\n□ A.压缩起点验证：如果触发压缩，压缩后的文本是否从全文第一条记录开始？\n□ B.近况区验证：近况区（后30%）是否保持原样未压缩？\n□ C.输出结构验证：最终输出是否为三段式结构：远古压缩概括 + 近况详细记录 + 本次新事件？\n□ D.完整性验证：压缩后是否保留了原文所有关键时间段的概括？\n□ E.压缩质量验证：压缩后的远古区是否包含具体的概括性内容？严禁出现\"略(压缩)\"等占位符。如果发现压缩后的文本中包含\"略(压缩)\"等占位符，**立即重新执行压缩算法**，生成具体的概括性文本。\n□ F.时间段覆盖验证：压缩后的远古区是否明确标注了时间范围（从最早到最晚），如果缺少时间范围标注，**补充时间范围**。\n□ G.如果压缩后的文本过于简略（如少于10个中文字符），**视为压缩失败，重新压缩**。\n5.【更新自检与格式审查】\n□ 列8关键记忆是否仅包含对角色来说重要的转变和关键记忆，不包含琐碎的事件？\n□ 各列是否严格对应列定义？是否存在错位填写？\n□ NPC的状态信息是否严格遵守**【格式示例】**进行了规划更新?\n【二次检查 - 强制执行】填写每行时必须逐列核对列定义，确认无错位。",
+      "initNode": "",
+      "deleteNode": "禁止删除。NPC死亡时在姓名后标注\"(已死亡)\"而非删除。",
+      "updateNode": "【触发条件及对应更新列】\n1) 状态变化 => 更新相关动态列\n2) 死亡 => 列0姓名后加\"(已死亡)\"\n3) 获得或更新角色的重要日期信息 => 更新列2重要日期\n4) 排卵、受孕、停经或日期变动时 => 更新列4\n5) 位置变化 => 更新列6\n6) 角色关系发生明确变化 => 更新列7\n7) 正文剧情中产生NPC关键记忆点 => 增量更新列8\n8) 正文剧情中发生NPC新经历 => 增量更新列9(注意字数上限并确保新事件是追加在原有文本之后而不是覆盖)\n9) 某重要人物列9目前经历总条目数大于5条 => 对该角色的列9目前经历执行\"史书压缩算法\"\n【更新后检查】必须重新执行RM检查点。",
+      "insertNode": "【触发条件】正文中生成完整的 \"<char_info>\"标签内容时，且该角色未在表中记录。\n【判定标准】系统检测到 \"<char_info>\" 标签内的完整角色信息后，自动提取数据插入表格。\n【硬约束】插入时必须完全基于  \"<char_info> \" 中的数据进行转换填充。\n\n【转换规则】\n1.已知列:按照表格格式转化填写所有已知列。**需包含完整的信息，不可遗漏、缩写或省略**\n2.其它未知列：根据初始值填充默认值。\n- 列1性别/年龄：从外貌描述中推断\n- 列2重要日期：仅根据人设信息推断生日\n- 列3初夜状态：根据人设和背景经历推断\n- 列4生命周期：根据列1性别/年龄推断\n- 列5性征：仅根据列1性别/年龄、人设推断\n- 列6所在位置：从当前剧情地点推断\n- 列7角色间关系：根据人设信息与背景故事进行推断，若设定或正文中未提及则留空\n- 列8关键记忆：根据人设信息与背景故事推断\n- 列9目前经历：根据剧情发展填写\n\n【禁止插入场景】\n- 正文中未出现 \"<char_info> \"标签时\n-  \"<char_info> \"内容不完整或格式错误时\n- 该角色已存在于表中时\n- 禁止为主角插入创建重要角色表",
+      "ddl": "CREATE TABLE important_characters ( -- 重要角色表\n  row_id INTEGER PRIMARY KEY, -- 行号\n  name TEXT, -- 姓名\n  gender_age TEXT, -- 性别/年龄\n  important_dates TEXT, -- 重要日期\n  virginity_status TEXT, -- 初夜状态\n  life_cycle TEXT, -- 生命周期\n  sexual_characteristics TEXT, -- 性征\n  location TEXT, -- 所在位置\n  relationships TEXT, -- 角色间关系\n  key_memories TEXT, -- 关键记忆\n  current_experience TEXT -- 目前经历\n);"
+    },
+    "content": [
+      [
+        "row_id",
+        "姓名",
+        "性别/年龄",
+        "重要日期",
+        "初夜状态",
+        "生命周期",
+        "性征",
+        "所在位置",
+        "角色间关系",
+        "关键记忆",
+        "目前经历"
+      ]
+    ],
+    "updateConfig": {
+      "uiSentinel": -1,
+      "contextDepth": -1,
+      "updateFrequency": 3,
+      "batchSize": -1,
+      "skipFloors": -1
+    },
+    "exportConfig": {
+      "enabled": true,
+      "splitByRow": true,
+      "entryName": "重要角色表",
+      "entryType": "keyword",
+      "keywords": "姓名, 角色间关系",
+      "preventRecursion": true,
+      "injectionTemplate": "<角色最新信息>\n$1\n</角色最新信息>",
+      "extraIndexEnabled": true,
+      "extraIndexEntryName": "重要角色表-索引",
+      "extraIndexColumns": [
+        "姓名",
+        "所在位置",
+        "角色间关系"
+      ],
+      "extraIndexColumnModes": {
+        "姓名": "both",
+        "所在位置": "index_only",
+        "角色间关系": "index_only"
+      },
+      "extraIndexInjectionTemplate": "# 以下为已经登场过的角色及其最新信息：\n<已登场角色>\n$1\n</已登场角色>",
+      "entryPlacement": {
+        "position": "after_character_definition",
+        "depth": 10000,
+        "order": 680
+      },
+      "extraIndexPlacement": {
+        "position": "after_character_definition",
+        "depth": 9999,
+        "order": 670
+      },
+      "fixedEntryPlacement": {
+        "position": "at_depth_as_system",
+        "depth": 10000,
+        "order": 99983
+      },
+      "fixedIndexPlacement": {
+        "position": "at_depth_as_system",
+        "depth": 10000,
+        "order": 99984
+      }
+    },
+    "orderNo": 1
+  },
+  "sheet_3NoMc1wI": {
+    "uid": "sheet_3NoMc1wI",
+    "name": "纪要表",
+    "sourceData": {
+      "note": "轮次日志，每轮交互后必须立即插入一条新记录。\n- 列1: 编码索引 - 格式为 AMXXXX，XXXX从0001递增。\n- 列2: 时间跨度 - 从上一轮剧情结束时间到本轮事件结束时间之间的精确时间范围。\n  【参考格式】（按当前世界观调整年号/纪元）：\n  · 「复兴纪元X年X月X日HH:MM - HH:MM」（同日内）\n  · 「复兴纪元X年X月X日HH:MM - X日HH:MM」（跨日）\n  · 「复兴纪元X年X月X日HH:MM - X月X日HH:MM」（跨月）\n  【特例】游戏初始化时无上轮记录则单点时间：「复兴纪元X年X月X日HH:MM」\n- 列3: 地点 - 当前位置~之前位置（如：铁匠铺~广场，无移动则仅填当前位置）。\n- 列4: 纪要 - 以第三方视角客观记录本轮事件，不得加入推测、情绪化语言、负面解读或主观判断。内容必须基于正文明确发生的事实，不得补充未出现的情节，不少于300字，结尾部分禁止进行总结或者升华。\n- 列5: 概览 - 高度精炼的剧情骨架，必须采用结构化句式：「[主语]在[地点][行为]，[结果/影响]」。例：「里恩在铁匠铺购买了铁剑，触发了寻找矿石任务」。字数控制在30-60字。\n- 列6: 参与人员 - 涉及的角色名，若存在[重要角色表]中的角色，应与[重要角色表].name一致，多人用「,」分隔。",
+      "initNode": "故事初始化时，插入一条新记录用于记录初始化剧情。",
+      "deleteNode": "禁止删除。",
+      "updateNode": "禁止操作。",
+      "insertNode": "每轮交互结束后插入一条新记录。\nSQL示例: INSERT INTO chronicle (row_id, code_index, time_span, location, chronicle_text, summary, participants) VALUES ((SELECT MAX(row_id)+1 FROM chronicle), 'AM0002', '2024-03-15 14:00~15:00', '王城·中央广场', '本轮纪要内容...', '一句话概括', '主角名,角色A');",
+      "ddl": "CREATE TABLE chronicle ( -- 纪要表\n  row_id INTEGER PRIMARY KEY, -- 行号\n  code_index TEXT NOT NULL UNIQUE CHECK(code_index GLOB 'AM[0-9][0-9][0-9][0-9]'), -- 编码索引\n  time_span TEXT NOT NULL, -- 时间跨度\n  location TEXT NOT NULL, -- 地点\n  chronicle_text TEXT NOT NULL, -- 纪要\n  summary TEXT CHECK(summary IS NULL OR LENGTH(summary) <= 80), -- 概览\n  participants TEXT -- 参与人员\n);"
+    },
+    "content": [
+      [
+        "row_id",
+        "编码索引",
+        "时间跨度",
+        "地点",
+        "纪要",
+        "概览",
+        "参与人员"
+      ]
+    ],
+    "updateConfig": {
+      "uiSentinel": -1,
+      "contextDepth": -1,
+      "updateFrequency": -1,
+      "batchSize": -1,
+      "skipFloors": -1
+    },
+    "exportConfig": {
+      "enabled": true,
+      "splitByRow": true,
+      "entryName": "纪要",
+      "entryType": "keyword",
+      "keywords": "编码索引",
+      "preventRecursion": true,
+      "injectionTemplate": "<记忆回溯>\n$1\n</记忆回溯>",
+      "extraIndexEnabled": true,
+      "extraIndexEntryName": "纪要索引",
+      "extraIndexColumns": [
+        "概览",
+        "编码索引"
+      ],
+      "extraIndexColumnModes": {
+        "概览": "index_only",
+        "编码索引": "both"
+      },
+      "extraIndexInjectionTemplate": "<已发生的事件概览>\n$1\n</已发生的事件概览>",
+      "entryPlacement": {
+        "position": "at_depth_as_system",
+        "depth": 999,
+        "order": 10000
+      },
+      "extraIndexPlacement": {
+        "position": "at_depth_as_system",
+        "depth": 1000,
+        "order": 10010
+      },
+      "fixedEntryPlacement": {
+        "position": "at_depth_as_system",
+        "depth": 9999,
+        "order": 99987
+      },
+      "fixedIndexPlacement": {
+        "position": "at_depth_as_system",
+        "depth": 9999,
+        "order": 99988
+      }
+    },
+    "orderNo": 2
+  },
+  "sheet_haq4fq9kq": {
+    "uid": "sheet_haq4fq9kq",
+    "name": "角色扮演指南",
+    "sourceData": {
+      "note": "【表定义】每个[重要角色表]中的重要角色占一行。此表是AI扮演该角色的核心指令，禁止敷衍填写。\n【列定义】\n- 列1: character_name 角色姓名（UNIQUE）。必须与[重要角色表].name完全一致。\n- 列2: language_features 语言特征。\n  ❌ 禁止：「冷漠/高冷/温柔/外冷内热」等空泛标签\n  ✅ 必含5要素：①语速节奏（急促/迟缓/思考停顿）②用词偏好（文雅/粗俗/书面体/市井气/专业术语）③标志性口癖（惯用词/反问习惯/语气词）④标点习惯（多省略号/感叹号/破折号）⑤伴随发声习惯（冷哼/轻叹/干笑/鼻音）\n- 列3: dynamic_dialogue 动态对话示例（**3-5条**）。\n  · 格式：「【情境标签】台词内容」，条目间用 ; 分隔\n  · 必含：【日常台词】+ 至少1条【XX情绪台词】（具体情绪如愤怒/悲伤/狂热）\n  · 可选：【NSFW台词】（仅限重要女性角色，须符合剧情逻辑）\n  ❌ 禁止：「你好/知道了/滚/不要」等通用废话；编造在[重要角色表].key_memories和正文中均未体现的性格特质\n  ✅ 必须：情感张力强烈，直接映射角色心理/欲望/个性\n  正确示例（防备心重的佣兵）：「【日常台词】这活儿我接了。但事先声明，如果你在背后搞小动作，这把刀下一个割开的就是你的喉咙。;【应激台词】别用那种眼神看着我！你们这些高高在上的贵族，根本不懂在泥潭里为了半块黑面包杀人的滋味！」\n- 列4: attitude_dict 互动态度字典（结构化条目，**上限20条/角色**）。**禁止自然语言，仅写结构化条目**。\n  【格式】「【REL】目标角色全名||L:x,S:x,B:x；」或「【REL】目标角色全名||L:x,S:x,B:x,T:X；」（每条以全角分号「；」结尾）\n  【字段】\n  · L=内心亲近度(-10~10)：8超好/5交心/2好感/0无感/-2疏离/-5排斥/-8敌意\n  · S=内心看重度(-10~10)：8佩服/5重视/2认可/0平常/-2小瞧/-5菜鸟/-8鄙视\n  · B=表里偏差(-5~5)：5伪装型/2外热内冷/0直球/-2傲娇/-5口是心非\n  · T=关系底色（可空，仅一个值）：R恋慕/F家人/C同伴(L<0转对手)/A敬慕(L<0转利用)\n  【7条核心规则】\n  ①初始值锁定：L/S∈{8,5,2,0,-2,-5,-8}，B∈{5,2,0,-2,-5}\n  ②更新步幅：每次通常仅±1；重大转折（身份暴露/关系破裂/救命）才允许较大跳变\n  ③L/S绝对隔离：S仅限对方展现实力/阶层提升/做出震撼决策才变；日常互动、感情升温绝不涨S\n  ④T仅写稳定主轴：偶发情绪或一次性接触不加T；明确成为恋人/挚友后才写\n  ⑤目标角色名必须为[重要角色表].name完整全名，禁止简称/昵称/代词\n  ⑥每角色最多20条；超出时替换「最疏远/最弱关联/长期无互动」的条目\n  ⑦保留全部旧条目，只新增或替换目标条目，**禁止整列重写**\n  正确示例：「【REL】艾莉森||L:8,S:5,B:-2；【REL】卓恩||L:-5,S:6,B:0,T:C；【REL】索拉莉娅||L:8,S:4,B:-6,T:R；」\n  错误示例：「讨厌卓恩，喜欢艾莉森」（禁止自然语言）；「【REL】卓恩||L:高,S:低」（必须整数）；「【REL】卓恩||L:8,S:5,B:-3,T:R+F；」（T仅一个值）\n【RM检查点 - 每次更新后执行】\n- A：language_features 是否仍是空泛形容词？→ 立即重写为具象描述\n- B：dynamic_dialogue 不足3条或多于5条？→ 补写或删减\n- C：dynamic_dialogue 新增台词是否在正文中有原文依据？无则删除\n- D：attitude_dict 每条是否严格符合「【REL】全名||L:x,S:x,B:x；」格式？→ 不符立即重写\n- E：attitude_dict 中 S 是否随 L 升高而跟着升高？→ 恢复原值（L/S 绝对隔离）",
+      "initNode": "无。随[重要角色表]新增同步创建。",
+      "insertNode": "【触发条件】\n1) [重要角色表]新增角色且性格分明且有展现性格的台词时随之新增\n2) [重要角色表]中已有角色但尚未录入指南时补录\n3) 自检：对照[重要角色表]所有角色名，确认无遗漏\n【硬约束】插入前必须自检 character_name 是否已存在；已存在则禁止 INSERT，改用 UPDATE 更新现有记录。\nSQL示例(使用 OR IGNORE 防重复冲突): INSERT OR IGNORE INTO roleplay_guide (row_id, character_name, language_features, dynamic_dialogue, attitude_dict) VALUES ((SELECT COALESCE(MAX(row_id),0)+1 FROM roleplay_guide), '角色名', '语速急促,用词文雅偏书面,惯用「罢了」,多省略号,常伴轻叹', '【日常台词】\"这事儿……不过如此罢了。\";【愤怒台词】\"你这话……是要我撕了嘴吗？\";【NSFW台词】\"别……别那样看着我……\"', '');",
+      "updateNode": "【触发条件】\n1) language_features：仅在角色性格发生实质性变化时替换，不随日常剧情频繁改动\n2) dynamic_dialogue：仅在角色性格发生实质性蜕变时替换；新增台词必须有正文依据\n3) attitude_dict：与未录入角色发生足够明确的互动后新增条目；已有关系按7条核心规则微调（L/S/B 独立判断，禁止整列重写）\nSQL示例(新增关系条目): UPDATE roleplay_guide SET attitude_dict = COALESCE(attitude_dict,'') || '【REL】目标角色全名||L:5,S:2,B:0,T:C；' WHERE character_name = '角色名';\nSQL示例(微调已有条目): 必须保留其他条目，仅替换目标条目对应段落（参见7条核心规则⑦）",
+      "deleteNode": "角色死亡时 character_name 追加「(已死亡)」，并清空 attitude_dict。\nSQL示例: UPDATE roleplay_guide SET character_name = character_name || '(已死亡)', attitude_dict = '' WHERE character_name = '角色名';",
+      "ddl": "CREATE TABLE roleplay_guide ( -- 角色扮演指南\n  row_id INTEGER PRIMARY KEY, -- 行号\n  character_name TEXT NOT NULL UNIQUE, -- 角色姓名\n  language_features TEXT, -- 语言特征\n  dynamic_dialogue TEXT, -- 动态对话示例\n  attitude_dict TEXT -- 互动态度字典\n);"
+    },
+    "content": [
+      [
+        "row_id",
+        "角色姓名",
+        "语言特征",
+        "动态对话示例",
+        "互动态度字典"
+      ]
+    ],
+    "updateConfig": {
+      "uiSentinel": -1,
+      "contextDepth": -1,
+      "updateFrequency": 3,
+      "batchSize": -1,
+      "skipFloors": -1
+    },
+    "exportConfig": {
+      "enabled": false,
+      "splitByRow": true,
+      "entryName": "角色扮演指南",
+      "entryType": "keyword",
+      "keywords": "",
+      "preventRecursion": true,
+      "injectionTemplate": "",
+      "extraIndexEnabled": true,
+      "extraIndexEntryName": "角色扮演指南-索引",
+      "extraIndexColumns": [
+        "角色姓名"
+      ],
+      "extraIndexColumnModes": {
+        "角色姓名": "both"
+      },
+      "extraIndexInjectionTemplate": "角色扮演指南角色表\n$1",
+      "entryPlacement": {
+        "position": "at_depth_as_system",
+        "depth": 2,
+        "order": 10000
+      },
+      "extraIndexPlacement": {
+        "position": "at_depth_as_system",
+        "depth": 1001,
+        "order": 10000
+      },
+      "fixedEntryPlacement": {
+        "position": "at_depth_as_system",
+        "depth": 2,
+        "order": 99990
+      },
+      "fixedIndexPlacement": {
+        "position": "at_depth_as_system",
+        "depth": 2,
+        "order": 99991
+      },
+      "injectIntoWorldbook": false
+    },
+    "orderNo": 3
+  },
+  "sheet_FBfshOK01": {
+    "uid": "sheet_FBfshOK01",
+    "name": "伏笔表",
+    "sourceData": {
+      "note": "【表定义】记录可能对后续剧情产生影响的伏笔。每条占一行，**上限100条**。\n【列定义】\n- 列1: record_id 档案ID，格式：「FC-AM编码-序号」（如：FC-AM0003-01）。UNIQUE。\n- 列2: related_code 关联编码，必须与[纪要表].index_code一致（格式 AMXXXX）。\n- 列3: topic 伏笔主题（UNIQUE，主键，不可重复）。\n- 列4: details 详细内容，自然语言描述背景、条件、潜在影响。\n- 列5: importance 重要度，取值仅 low/medium/high：\n  · high：与主线直接相关；影响持久的人物/世界转变；核心秘密\n  · medium：影响支线或阶段性剧情\n  · low：细节性伏笔，不影响主线走向\n- 列6: status 状态，仅 未触发/持续中/已触发/已错过；默认「未触发」。\n- 列7: source 信息来源（如：村长口述、亲眼所见、古籍记载、开局设定）。\n【自动清理规则】\n1. 状态变为终态（已触发/已错过）时立即删除该条目\n2. 总数>100时按 importance ASC, row_id ASC 删除多余条目（先 low 后 medium，每类内从最早删起）",
+      "initNode": "根据开局设定录入初始伏笔（若有），related_code 填当轮[纪要表].index_code（初始化通常为AM0001）。",
+      "deleteNode": "禁止手动随意删除。仅以下情况自动执行：\n【规则1 - 终态删除】\nDELETE FROM foreshadow_table WHERE status IN ('已触发','已错过');\n【规则2 - 超容清理】\nDELETE FROM foreshadow_table WHERE row_id IN (SELECT row_id FROM foreshadow_table ORDER BY CASE importance WHEN 'low' THEN 0 WHEN 'medium' THEN 1 WHEN 'high' THEN 2 END ASC, row_id ASC LIMIT (SELECT COUNT(*) - 100 FROM foreshadow_table)) AND (SELECT COUNT(*) FROM foreshadow_table) > 100;",
+      "updateNode": "状态或内容变化时更新；更新为终态后立即执行规则1删除。\nSQL示例(状态推进): UPDATE foreshadow_table SET status = '持续中' WHERE topic = '伏笔主题';\nSQL示例(终态触发): UPDATE foreshadow_table SET status = '已触发' WHERE topic = '伏笔主题';\nDELETE FROM foreshadow_table WHERE status IN ('已触发','已错过');",
+      "insertNode": "可能对后续剧情产生影响的事件/物品出现时。record_id 和 related_code 必须与本轮[纪要表].index_code对应。\n【硬约束】插入前必须自检 record_id 和 topic 是否已存在；已存在则禁止 INSERT，改用 UPDATE。\n【插入后】立即执行超容清理（见 deleteNode 规则2）。\nSQL示例(使用 OR IGNORE 防重复冲突): INSERT OR IGNORE INTO foreshadow_table (row_id, record_id, related_code, topic, details, importance, status, source) VALUES ((SELECT COALESCE(MAX(row_id),0)+1 FROM foreshadow_table), 'FC-AM0003-01', 'AM0003', '伏笔主题', '详细描述背景与潜在影响', 'high', '未触发', '亲眼所见');",
+      "ddl": "CREATE TABLE foreshadow_table ( -- 伏笔表\n  row_id INTEGER PRIMARY KEY, -- 行号\n  record_id TEXT NOT NULL, -- 档案ID\n  related_code TEXT, -- 关联编码\n  topic TEXT NOT NULL, -- 伏笔主题\n  details TEXT, -- 详细内容\n  importance TEXT NOT NULL DEFAULT 'medium' CHECK(importance IN ('low','medium','high')), -- 重要度\n  status TEXT NOT NULL DEFAULT '未触发' CHECK(status IN ('未触发','持续中','已触发','已错过')), -- 状态\n  source TEXT -- 信息来源\n);"
+    },
+    "content": [
+      [
+        "row_id",
+        "档案ID",
+        "关联编码",
+        "伏笔主题",
+        "详细内容",
+        "重要度",
+        "状态",
+        "信息来源"
+      ]
+    ],
+    "updateConfig": {
+      "uiSentinel": -1,
+      "contextDepth": -1,
+      "updateFrequency": -1,
+      "batchSize": -1,
+      "skipFloors": -1
+    },
+    "exportConfig": {
+      "enabled": true,
+      "splitByRow": true,
+      "entryName": "伏笔",
+      "entryType": "constant",
+      "keywords": "",
+      "preventRecursion": true,
+      "injectionTemplate": "<伏笔>\n$1\n</伏笔>",
+      "extraIndexEnabled": false,
+      "extraIndexEntryName": "伏笔表-索引",
+      "extraIndexColumns": [],
+      "extraIndexColumnModes": {},
+      "extraIndexInjectionTemplate": "",
+      "entryPlacement": {
+        "position": "at_depth_as_system",
+        "depth": 1003,
+        "order": 10000
+      },
+      "extraIndexPlacement": {
+        "position": "at_depth_as_system",
+        "depth": 2,
+        "order": 10010
+      },
+      "fixedEntryPlacement": {
+        "position": "at_depth_as_system",
+        "depth": 2,
+        "order": 99990
+      },
+      "fixedIndexPlacement": {
+        "position": "at_depth_as_system",
+        "depth": 2,
+        "order": 99991
+      }
+    },
+    "orderNo": 4
+  },
+  "sheet_CVcvnOK01": {
+    "uid": "sheet_CVcvnOK01",
+    "name": "约定表",
+    "sourceData": {
+      "note": "【表定义】记录角色间的约定、契约、誓约。每条占一行，**上限100条**。\n【列定义】\n- 列1: record_id 档案ID，格式：「CV-AM编码-序号」（如：CV-AM0003-01）。UNIQUE。\n- 列2: related_code 关联编码，必须与[纪要表].index_code一致（格式 AMXXXX）。\n- 列3: topic 约定主题（UNIQUE，主键，不可重复）。\n- 列4: parties 约定双方，格式如「主角与村长」「主角与艾莉森」。角色名须与[重要角色表].name一致。\n- 列5: details 约定内容及条件，自然语言描述。\n- 列6: importance 重要度，取值仅 low/medium/high：\n  · high：主线关键约定；长期持续影响的誓约；涉及人物根本性转变的承诺\n  · medium：阶段性约定，完成后影响支线走向\n  · low：无关紧要的小承诺，不影响主线\n- 列7: status 状态，仅 未履行/进行中/已履行/已毁约；默认「未履行」。\n- 列8: source 信息来源（如：口头约定、契约书、誓言）。\n【自动清理规则】\n1. 状态变为终态（已履行/已毁约）时立即删除该条目\n2. 总数>100时按 importance ASC, row_id ASC 删除多余条目（先 low 后 medium，每类内从最早删起）",
+      "initNode": "根据开局设定录入初始约定（若有），related_code 填当轮[纪要表].index_code（初始化通常为AM0001）。",
+      "deleteNode": "禁止手动随意删除。仅以下情况自动执行：\n【规则1 - 终态删除】\nDELETE FROM covenant_table WHERE status IN ('已履行','已毁约');\n【规则2 - 超容清理】\nDELETE FROM covenant_table WHERE row_id IN (SELECT row_id FROM covenant_table ORDER BY CASE importance WHEN 'low' THEN 0 WHEN 'medium' THEN 1 WHEN 'high' THEN 2 END ASC, row_id ASC LIMIT (SELECT COUNT(*) - 100 FROM covenant_table)) AND (SELECT COUNT(*) FROM covenant_table) > 100;",
+      "updateNode": "状态或条款变化时更新；更新为终态后立即执行规则1删除。\nSQL示例(状态推进): UPDATE covenant_table SET status = '进行中' WHERE topic = '约定主题';\nSQL示例(终态履约): UPDATE covenant_table SET status = '已履行' WHERE topic = '约定主题';\nDELETE FROM covenant_table WHERE status IN ('已履行','已毁约');",
+      "insertNode": "新约定出现时插入。record_id 和 related_code 必须与本轮[纪要表].index_code对应。\n【硬约束】插入前必须自检 record_id 和 topic 是否已存在；已存在则禁止 INSERT，改用 UPDATE。\n【插入后】立即执行超容清理（见 deleteNode 规则2）。\nSQL示例(使用 OR IGNORE 防重复冲突): INSERT OR IGNORE INTO covenant_table (row_id, record_id, related_code, topic, parties, details, importance, status, source) VALUES ((SELECT COALESCE(MAX(row_id),0)+1 FROM covenant_table), 'CV-AM0003-01', 'AM0003', '七日内寻回失物', '主角与艾莉森', '主角承诺七日内寻回失物，否则赔偿百金', 'medium', '未履行', '口头约定');",
+      "ddl": "CREATE TABLE covenant_table ( -- 约定表\n  row_id INTEGER PRIMARY KEY, -- 行号\n  record_id TEXT NOT NULL, -- 档案ID\n  related_code TEXT, -- 关联编码\n  topic TEXT NOT NULL, -- 约定主题\n  parties TEXT, -- 约定双方\n  details TEXT, -- 详细内容\n  importance TEXT NOT NULL DEFAULT 'medium' CHECK(importance IN ('low','medium','high')), -- 重要度\n  status TEXT NOT NULL DEFAULT '未履行' CHECK(status IN ('未履行','进行中','已履行','已毁约')), -- 状态\n  source TEXT -- 信息来源\n);"
+    },
+    "content": [
+      [
+        "row_id",
+        "档案ID",
+        "关联编码",
+        "约定主题",
+        "约定双方",
+        "详细内容",
+        "重要度",
+        "状态",
+        "信息来源"
+      ]
+    ],
+    "updateConfig": {
+      "uiSentinel": -1,
+      "contextDepth": -1,
+      "updateFrequency": -1,
+      "batchSize": -1,
+      "skipFloors": -1
+    },
+    "exportConfig": {
+      "enabled": true,
+      "splitByRow": true,
+      "entryName": "约定",
+      "entryType": "constant",
+      "keywords": "",
+      "preventRecursion": true,
+      "injectionTemplate": "<约定>\n$1\n</约定>",
+      "extraIndexEnabled": false,
+      "extraIndexEntryName": "约定表-索引",
+      "extraIndexColumns": [],
+      "extraIndexColumnModes": {},
+      "extraIndexInjectionTemplate": "",
+      "entryPlacement": {
+        "position": "at_depth_as_system",
+        "depth": 1003,
+        "order": 10001
+      },
+      "extraIndexPlacement": {
+        "position": "at_depth_as_system",
+        "depth": 2,
+        "order": 10010
+      },
+      "fixedEntryPlacement": {
+        "position": "at_depth_as_system",
+        "depth": 2,
+        "order": 99990
+      },
+      "fixedIndexPlacement": {
+        "position": "at_depth_as_system",
+        "depth": 2,
+        "order": 99991
+      }
+    },
+    "orderNo": 5
+  },
+  "sheet_hycjn63gi": {
+    "uid": "sheet_hycjn63gi",
+    "name": "地区表",
+    "sourceData": {
+      "note": "【表定义】记录世界中的大地区、版图分区或功能性区域。每条地区仅允许存在一条记录，--上限25条--。\n【列定义】\n- 列1: 地区名，地区正式名称。（UNIQUE）\n- 列2: 所在地理位置，描述地区在世界中的方位和空间关系。\n  - 使用相对位置描述\n  - 不记录座标\n  - 长度100字以内\n- 列3: 次级地点，记录隶属于该地区的地点。\n【格式】:地点A,地点B,地点C\n  - 必须与[地点表].location_name对应\n  - 地点建立时自动追加\n  - 地点归属变更时自动更新\n- 列4: 描述，用于记录地区整体风貌、文化特色、生态环境、历史背景等长期特征。\n  - 不记录即时剧情\n  - 不记录短期状态\n  - 不记录角色行为\n  - 长度50~300字",
+      "initNode": "故事初始化时，若开局设定中已存在地区，则建立对应记录。",
+      "insertNode": "【触发条件】正文中生成完整的 `\"<scene_info>\"` 标签内容时。\n【判定标准】系统检测到 `<scene_info>` 标签内存在地区信息后，自动提取并转换为地区表字段。\n【硬约束】\n1. 必须依据 <scene_info> 内容转换生成。\n2. 可从正文补全明确描述内容。\n3. 不得补写正文未明确存在的信息。\n4. 同名地区已存在时禁止 INSERT，改用 UPDATE。",
+      "updateNode": "出现以下情况时执行：\n- 地区名称变更\n- 地理位置修正\n- 描述补充\n- 次级地点变更",
+      "deleteNode": "禁止删除。",
+      "ddl": "CREATE TABLE region_table ( -- 地区表\n  row_id INTEGER PRIMARY KEY, -- 行号\n  region_name TEXT NOT NULL UNIQUE, -- 地区名\n  geography_location TEXT NOT NULL, -- 所在地理位置\n  sub_locations TEXT, -- 次级地点\n  description TEXT NOT NULL -- 描述\n);"
+    },
+    "content": [
+      [
+        "row_id",
+        "地区名",
+        "所在地理位置",
+        "次级地点",
+        "描述"
+      ]
+    ],
+    "updateConfig": {
+      "uiSentinel": -1,
+      "contextDepth": -1,
+      "updateFrequency": 3,
+      "batchSize": -1,
+      "skipFloors": -1,
+      "sendLatestRows": -1,
+      "groupId": -1
+    },
+    "exportConfig": {
+      "enabled": true,
+      "splitByRow": true,
+      "entryName": "地区表",
+      "entryType": "keyword",
+      "keywords": "地区名, 次级地点",
+      "preventRecursion": true,
+      "injectionTemplate": "<地区最新信息>\n$1\n</地区最新信息>",
+      "extraIndexEnabled": true,
+      "extraIndexEntryName": "地区表-索引",
+      "extraIndexColumns": [
+        "地区名",
+        "所在地理位置",
+        "次级地点"
+      ],
+      "extraIndexColumnModes": {
+        "地区名": "both",
+        "所在地理位置": "index_only",
+        "次级地点": "index_only"
+      },
+      "extraIndexInjectionTemplate": "# 以下为已经出现过的地区及其最新信息：\n<已出现地区>\n$1\n</已出现地区>",
+      "entryPlacement": {
+        "position": "before_character_definition",
+        "depth": 9996,
+        "order": 270
+      },
+      "extraIndexPlacement": {
+        "position": "before_character_definition",
+        "depth": 9995,
+        "order": 280
+      },
+      "fixedEntryPlacement": {
+        "position": "at_depth_as_system",
+        "depth": 2,
+        "order": 99990
+      },
+      "fixedIndexPlacement": {
+        "position": "at_depth_as_system",
+        "depth": 2,
+        "order": 99991
+      }
+    },
+    "orderNo": 6
+  },
+  "sheet_ft3joi6uv": {
+    "uid": "sheet_ft3joi6uv",
+    "name": "地点表",
+    "sourceData": {
+      "note": "【表定义】记录世界中的具体地点、建筑、场景节点或可交互空间。每条地点仅允许存在一条记录，--上限100条--。\n【列定义】\n- 列1: 地点名，地点正式名称。（UNIQUE）\n- 列2: 地点类型，用于场景分类。（必填，单选）\n【允许值】:城镇, 聚落, 建筑, 神殿, 遗迹, 自然景观, 设施, 商业场所, 住宅, 地下区域, 特殊空间\n- 列3: 上级地区，该地点所属地区。\n  - 必须与[地区表].region_name一致\n  - 一个地点只能属于一个地区\n  - 地区不存在时禁止插入\n- 列4: 描述，记录地点的长期特征，包括，外观、功能、历史、特殊性质、氛围。\n  - 不记录即时剧情\n  - 不记录角色行为\n  - 保持长期有效\n- 列5: 所属角色，记录长期驻留、管理、拥有或经常活动于此的角色\n【格式】:角色A,角色B,角色C\n  - 必须使用全名\n  - 必须与[重要角色表].name一致\n  - 临时角色不得记录\n- 列6: 设施，记录地点内长期存在的重要设施。\n【格式】:设施A,设施B,设施C\n  - 不记录临时建筑\n  - 不记录活动布景\n  - 仅记录长期设施\n- 列7: 交通，描述地点可达性与交通状况。\n  - 记录长期交通条件\n  - 不记录临时封锁状态\n  - 可同时存在多种交通方式\n- 列8: 地点状态，记录地点当前长期状态。\n【允许值】:正常、废弃、封闭、毁坏、重建中\n  - 默认值为“正常”\n  - 长期状态改变时更新\n  - 不记录短期事件影响",
+      "initNode": "故事初始化时，若开局设定中已存在地点，则建立对应记录。",
+      "insertNode": "【触发条件】正文中生成完整的 `\"<scene_info>\"` 标签内容时。\n【判定标准】系统检测到 `<scene_info>` 标签内存在地点信息后，自动提取并转换为地点表字段。\n【硬约束】\n1. 必须依据 <scene_info> 内容转换。\n2. 可从正文补全明确内容。\n3. 不得补写未明确出现的信息。\n4. 同名地点已存在时禁止 INSERT，改用 UPDATE。\n5. 列2必须使用预设类型。\n6. 列3必须能映射到[地区表]。\n7. 列8默认填写“正常”。",
+      "updateNode": "出现以下情况时执行：\n- 地点归属变更\n- 地点描述补充\n- 常驻角色变化\n- 设施变化\n- 交通变化\n- 状态变化",
+      "deleteNode": "禁止删除。",
+      "ddl": "CREATE TABLE location_table ( -- 地点表\n  row_id INTEGER PRIMARY KEY, -- 行号\n  location_name TEXT NOT NULL UNIQUE, -- 地点名\n  location_type TEXT NOT NULL CHECK(location_type IN ('城镇','聚落','建筑','神殿','遗迹','自然景观','设施','商业场所','住宅','地下区域','特殊空间')), -- 地点类型\n  parent_region TEXT NOT NULL, -- 上级地区\n  description TEXT NOT NULL, -- 描述\n  characters TEXT, -- 所属角色\n  facilities TEXT, -- 设施\n  transport TEXT, -- 交通\n  status TEXT NOT NULL DEFAULT '正常' CHECK(status IN ('正常','废弃','封闭','毁坏','重建中')) -- 地点状态\n);"
+    },
+    "content": [
+      [
+        "row_id",
+        "地点名",
+        "地点类型",
+        "上级地区",
+        "描述",
+        "所属角色",
+        "设施",
+        "交通",
+        "地点状态"
+      ]
+    ],
+    "updateConfig": {
+      "uiSentinel": -1,
+      "contextDepth": -1,
+      "updateFrequency": 3,
+      "batchSize": -1,
+      "skipFloors": -1,
+      "sendLatestRows": -1,
+      "groupId": -1
+    },
+    "exportConfig": {
+      "enabled": true,
+      "splitByRow": true,
+      "entryName": "地点表",
+      "entryType": "keyword",
+      "keywords": "地点名",
+      "preventRecursion": true,
+      "injectionTemplate": "<地点最新信息>\n$1\n</地点最新信息>",
+      "extraIndexEnabled": true,
+      "extraIndexEntryName": "地点表-索引",
+      "extraIndexColumns": [
+        "地点名",
+        "上级地区",
+        "所属角色"
+      ],
+      "extraIndexColumnModes": {
+        "地点名": "both",
+        "上级地区": "index_only",
+        "所属角色": "index_only"
+      },
+      "extraIndexInjectionTemplate": "# 以下为已经出现过的地点及其最新信息：\n<已出现地点>\n$1\n</已出现地点>",
+      "entryPlacement": {
+        "position": "before_character_definition",
+        "depth": 9998,
+        "order": 272
+      },
+      "extraIndexPlacement": {
+        "position": "before_character_definition",
+        "depth": 9997,
+        "order": 282
+      },
+      "fixedEntryPlacement": {
+        "position": "at_depth_as_system",
+        "depth": 2,
+        "order": 99990
+      },
+      "fixedIndexPlacement": {
+        "position": "at_depth_as_system",
+        "depth": 2,
+        "order": 99991
+      }
+    },
+    "orderNo": 7
+  }
+}
