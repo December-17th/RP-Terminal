@@ -13,6 +13,7 @@ vi.mock('../../src/main/services/tableTemplateService', () => templateSvc)
 
 const sqlSvc = vi.hoisted(() => ({
   applySqlBatch: vi.fn(),
+  executeReadQuery: vi.fn(),
   TableSqlError: class TableSqlError extends Error {
     index: number
     constructor(message: string, index = -1) {
@@ -23,6 +24,9 @@ const sqlSvc = vi.hoisted(() => ({
   }
 }))
 vi.mock('../../src/main/services/tableSql', () => sqlSvc)
+
+const floorSvc = vi.hoisted(() => ({ getAllFloors: vi.fn() }))
+vi.mock('../../src/main/services/floorService', () => floorSvc)
 
 const opsSvc = vi.hoisted(() => ({
   appendOps: vi.fn(),
@@ -37,7 +41,13 @@ const dbSvc = vi.hoisted(() => ({ readAllTables: vi.fn() }))
 vi.mock('../../src/main/services/tableDbService', () => dbSvc)
 
 import { parseExtract } from '../../src/main/services/nodes/builtin/parseNodes'
-import { tableApply, tableExport } from '../../src/main/services/nodes/builtin/tableNodes'
+import {
+  tableApply,
+  tableExport,
+  tableGate,
+  tableRead,
+  tableQuery
+} from '../../src/main/services/nodes/builtin/tableNodes'
 import { NodeRunFailure, RunContext, NodeImpl } from '../../src/main/services/nodes/types'
 import { TableTemplateSchema } from '../../src/main/types/tableTemplate'
 
@@ -363,5 +373,268 @@ describe('table.export', () => {
     expect(entries.map((e) => e.comment)).toEqual(['Rules#0', 'Rules#1'])
     expect(entries[0].content).toContain('text: r2')
     expect(entries[1].content).toContain('text: r3')
+  })
+})
+
+// ---- Maintenance pipeline (issue 05): table.gate / table.read / table.query ------------------
+
+// A Map-backed ctx so the gate's durable getNodeState/setNodeState round-trips (control.when pattern).
+const makeStatefulCtx = (): RunContext => {
+  const store = new Map<string, unknown>()
+  return {
+    signal: new AbortController().signal,
+    streamMain: () => {},
+    emitPanel: () => {},
+    getNodeState: (id) => store.get(id),
+    setNodeState: (id, v) => {
+      store.set(id, v)
+    }
+  }
+}
+
+// Two tables: 纪要 (every turn, freq 1) and 世界 (freq 3), with rules for the read node.
+const maintTemplate = () =>
+  TableTemplateSchema.parse({
+    name: 'M',
+    tables: [
+      {
+        uid: 'j',
+        displayName: '纪要表',
+        sqlName: 'chronicle',
+        ddl: 'CREATE TABLE chronicle (row_id INTEGER, summary TEXT);',
+        headers: ['row_id', 'summary'],
+        note: '按时间顺序记录事件',
+        insertNode: 'INSERT INTO chronicle …',
+        updateNode: 'UPDATE chronicle …',
+        deleteNode: '',
+        initNode: 'INSERT the first row',
+        updateFrequency: 1
+      },
+      {
+        uid: 'w',
+        displayName: '世界表',
+        sqlName: 'world',
+        ddl: 'CREATE TABLE world (row_id INTEGER, fact TEXT);',
+        headers: ['row_id', 'fact'],
+        note: '世界设定',
+        insertNode: 'INSERT INTO world …',
+        updateFrequency: 3
+      }
+    ]
+  })
+
+describe('table.gate', () => {
+  const gen = { profileId: 'p1', chatId: 'c1', floors: [] }
+
+  beforeEach(() => {
+    chatSvc.getChatTableTemplateId.mockReset()
+    templateSvc.getTableTemplateById.mockReset()
+    floorSvc.getAllFloors.mockReset()
+  })
+
+  it('no template → silent no-op (no floor read)', () => {
+    chatSvc.getChatTableTemplateId.mockReturnValue(null)
+    const r = tableGate.run(makeStatefulCtx(), { gen }, meta(tableGate, 'g'))
+    expect(r).toEqual({ outputs: {} })
+    expect(floorSvc.getAllFloors).not.toHaveBeenCalled()
+  })
+
+  it('first turn: freq-1 fires (last -1); freq-3 not yet (needs 3 floors elapsed)', () => {
+    chatSvc.getChatTableTemplateId.mockReturnValue('t1')
+    templateSvc.getTableTemplateById.mockReturnValue(maintTemplate())
+    floorSvc.getAllFloors.mockReturnValue([{}]) // 1 floor → currentFloor 0
+    const r = tableGate.run(makeStatefulCtx(), { gen }, meta(tableGate, 'g'))
+    expect(r.signals).toEqual(['due'])
+    // world: 0 - (-1) = 1, not >= 3 → not due. Only chronicle (freq 1) is due.
+    expect(r.outputs!.tables).toEqual(['chronicle'])
+    expect(r.outputs!.span).toEqual({ from: 0, to: 0 })
+  })
+
+  it('advances state on fire and does NOT re-fire at the same floor', () => {
+    chatSvc.getChatTableTemplateId.mockReturnValue('t1')
+    templateSvc.getTableTemplateById.mockReturnValue(maintTemplate())
+    floorSvc.getAllFloors.mockReturnValue([{}]) // currentFloor 0
+    const ctxS = makeStatefulCtx()
+    const first = tableGate.run(ctxS, { gen }, meta(tableGate, 'g'))
+    expect(first.signals).toEqual(['due'])
+    // Only the due table (chronicle) advances; world is untouched (missing = still -1).
+    expect(ctxS.getNodeState('g')).toEqual({ last: { chronicle: 0 } })
+    // Same floor again → nothing due (chronicle already at 0; world still 0 - (-1) = 1 < 3).
+    const second = tableGate.run(ctxS, { gen }, meta(tableGate, 'g'))
+    expect(second).toEqual({ outputs: {} })
+  })
+
+  it('cadence: freq-3 table fires once 3 floors have elapsed, alongside the every-turn table', () => {
+    chatSvc.getChatTableTemplateId.mockReturnValue('t1')
+    templateSvc.getTableTemplateById.mockReturnValue(maintTemplate())
+    const ctxS = makeStatefulCtx()
+    // Floor 0: only chronicle due, last.chronicle→0.
+    floorSvc.getAllFloors.mockReturnValue([{}])
+    expect(tableGate.run(ctxS, { gen }, meta(tableGate, 'g')).outputs!.tables).toEqual(['chronicle'])
+    // Floor 1: chronicle due (1 - 0 = 1 >= 1); world 1 - (-1) = 2 < 3 → not yet.
+    floorSvc.getAllFloors.mockReturnValue([{}, {}])
+    const t1 = tableGate.run(ctxS, { gen }, meta(tableGate, 'g'))
+    expect(t1.outputs!.tables).toEqual(['chronicle'])
+    expect(t1.outputs!.span).toEqual({ from: 1, to: 1 }) // chronicle last=0 → from 1
+    // Floor 2: world now due (2 - (-1) = 3 >= 3), plus chronicle (2 - 1 = 1 >= 1).
+    floorSvc.getAllFloors.mockReturnValue([{}, {}, {}])
+    const t2 = tableGate.run(ctxS, { gen }, meta(tableGate, 'g'))
+    expect(t2.outputs!.tables).toEqual(['chronicle', 'world'])
+    // span.from = min(last.chronicle=1, last.world=-1) + 1 = 0.
+    expect(t2.outputs!.span).toEqual({ from: 0, to: 2 })
+  })
+
+  it('config.tables narrows which tables the gate watches', () => {
+    chatSvc.getChatTableTemplateId.mockReturnValue('t1')
+    templateSvc.getTableTemplateById.mockReturnValue(maintTemplate())
+    // Floor 2 → world (freq 3) is due; chronicle is out of scope, so only world fires.
+    floorSvc.getAllFloors.mockReturnValue([{}, {}, {}])
+    const r = tableGate.run(makeStatefulCtx(), { gen }, meta(tableGate, 'g', { tables: 'world' }))
+    expect(r.outputs!.tables).toEqual(['world'])
+  })
+})
+
+describe('table.read', () => {
+  const gen = { profileId: 'p1', chatId: 'c1' }
+
+  beforeEach(() => {
+    chatSvc.getChatTableTemplateId.mockReset()
+    templateSvc.getTableTemplateById.mockReset()
+    dbSvc.readAllTables.mockReset()
+  })
+
+  it('no template → silent empty (read semantics)', () => {
+    chatSvc.getChatTableTemplateId.mockReturnValue(null)
+    const r = tableRead.run(ctx, { gen }, meta(tableRead, 'r'))
+    expect(r).toEqual({ outputs: { block: '', tables: [] } })
+    expect(dbSvc.readAllTables).not.toHaveBeenCalled()
+  })
+
+  it('renders definition + rules + data; init only when the table is empty; tables passthrough', () => {
+    chatSvc.getChatTableTemplateId.mockReturnValue('t1')
+    templateSvc.getTableTemplateById.mockReturnValue(maintTemplate())
+    dbSvc.readAllTables.mockReturnValue([
+      readOf('chronicle', ['row_id', 'summary'], []), // empty → init rule shown
+      readOf('world', ['row_id', 'fact'], [[1, '天空']]) // non-empty → no init rule
+    ])
+    const r = tableRead.run(ctx, { gen, tables: ['chronicle', 'world'] }, meta(tableRead, 'r'))
+    const block = r.outputs!.block as string
+    expect(block).toContain('## 纪要表 (chronicle) — 每 1 轮维护')
+    expect(block).toContain('【表定义】按时间顺序记录事件')
+    expect(block).toContain('【初始化规则】INSERT the first row') // empty table
+    expect(block).toContain('【插入规则】INSERT INTO chronicle …')
+    expect(block).toContain('【当前数据】')
+    expect(block).toContain('## 世界表 (world) — 每 3 轮维护')
+    expect(block).not.toContain('【删除规则】') // deleteNode empty on both
+    // world is non-empty → its init rule is NOT shown (chronicle's init is the only 初始化规则).
+    expect(block.match(/【初始化规则】/g)?.length).toBe(1)
+    expect(r.outputs!.tables).toEqual(['chronicle', 'world'])
+  })
+
+  it('include_rules: false renders only header + data', () => {
+    chatSvc.getChatTableTemplateId.mockReturnValue('t1')
+    templateSvc.getTableTemplateById.mockReturnValue(maintTemplate())
+    dbSvc.readAllTables.mockReturnValue([readOf('chronicle', ['row_id', 'summary'], [])])
+    const r = tableRead.run(
+      ctx,
+      { gen, tables: 'chronicle' },
+      meta(tableRead, 'r', { include_rules: false })
+    )
+    const block = r.outputs!.block as string
+    expect(block).toContain('## 纪要表 (chronicle)')
+    expect(block).toContain('【当前数据】')
+    expect(block).not.toContain('【插入规则】')
+    expect(block).not.toContain('【表定义】')
+  })
+
+  it('accepts a comma-separated string for tables and narrows scope', () => {
+    chatSvc.getChatTableTemplateId.mockReturnValue('t1')
+    templateSvc.getTableTemplateById.mockReturnValue(maintTemplate())
+    dbSvc.readAllTables.mockReturnValue([
+      readOf('chronicle', ['row_id', 'summary'], []),
+      readOf('world', ['row_id', 'fact'], [])
+    ])
+    const r = tableRead.run(ctx, { gen, tables: 'world' }, meta(tableRead, 'r'))
+    expect(r.outputs!.tables).toEqual(['world'])
+    expect(r.outputs!.block as string).not.toContain('chronicle')
+  })
+
+  it('unwired tables → ALL template tables', () => {
+    chatSvc.getChatTableTemplateId.mockReturnValue('t1')
+    templateSvc.getTableTemplateById.mockReturnValue(maintTemplate())
+    dbSvc.readAllTables.mockReturnValue([
+      readOf('chronicle', ['row_id', 'summary'], []),
+      readOf('world', ['row_id', 'fact'], [])
+    ])
+    const r = tableRead.run(ctx, { gen }, meta(tableRead, 'r'))
+    expect(r.outputs!.tables).toEqual(['chronicle', 'world'])
+  })
+
+  it('max_rows keeps the LAST N data rows', () => {
+    chatSvc.getChatTableTemplateId.mockReturnValue('t1')
+    templateSvc.getTableTemplateById.mockReturnValue(maintTemplate())
+    dbSvc.readAllTables.mockReturnValue([
+      readOf('chronicle', ['row_id', 'summary'], [[1, 'a'], [2, 'b'], [3, 'c']])
+    ])
+    const r = tableRead.run(
+      ctx,
+      { gen, tables: 'chronicle' },
+      meta(tableRead, 'r', { max_rows: 2 })
+    )
+    const block = r.outputs!.block as string
+    expect(block).toContain('b')
+    expect(block).toContain('c')
+    expect(block).not.toContain('| a')
+  })
+})
+
+describe('table.query', () => {
+  const gen = { profileId: 'p1', chatId: 'c1' }
+
+  beforeEach(() => {
+    chatSvc.getChatTableTemplateId.mockReset()
+    templateSvc.getTableTemplateById.mockReset()
+    sqlSvc.executeReadQuery.mockReset()
+  })
+
+  it('blank query → silent empty (no template lookup)', () => {
+    const r = tableQuery.run(ctx, { gen, query: '   ' }, meta(tableQuery, 'q'))
+    expect(r).toEqual({ outputs: { rows: [], block: '' } })
+    expect(chatSvc.getChatTableTemplateId).not.toHaveBeenCalled()
+  })
+
+  it('no template → silent empty', () => {
+    chatSvc.getChatTableTemplateId.mockReturnValue(null)
+    const r = tableQuery.run(ctx, { gen, query: 'chronicle' }, meta(tableQuery, 'q'))
+    expect(r).toEqual({ outputs: { rows: [], block: '' } })
+    expect(sqlSvc.executeReadQuery).not.toHaveBeenCalled()
+  })
+
+  it('renders the result block from columns + rows', () => {
+    chatSvc.getChatTableTemplateId.mockReturnValue('t1')
+    templateSvc.getTableTemplateById.mockReturnValue(maintTemplate())
+    sqlSvc.executeReadQuery.mockReturnValue({
+      columns: ['row_id', 'summary'],
+      rows: [[1, '事件一'], [2, '事件二']]
+    })
+    const r = tableQuery.run(ctx, { gen, query: 'chronicle' }, meta(tableQuery, 'q'))
+    expect(r.outputs!.rows).toEqual([[1, '事件一'], [2, '事件二']])
+    expect(r.outputs!.block).toBe('row_id | summary\n1 | 事件一\n2 | 事件二')
+  })
+
+  it('a bad query → class-B bad-query on the error path', () => {
+    chatSvc.getChatTableTemplateId.mockReturnValue('t1')
+    templateSvc.getTableTemplateById.mockReturnValue(maintTemplate())
+    sqlSvc.executeReadQuery.mockImplementation(() => {
+      throw new sqlSvc.TableSqlError('no such table: secrets')
+    })
+    try {
+      tableQuery.run(ctx, { gen, query: 'SELECT * FROM secrets' }, meta(tableQuery, 'q'))
+      throw new Error('should have thrown')
+    } catch (e) {
+      expect((e as NodeRunFailure).kind).toBe('B')
+      expect((e as NodeRunFailure).code).toBe('bad-query')
+      expect((e as Error).message).toContain('no such table')
+    }
   })
 })

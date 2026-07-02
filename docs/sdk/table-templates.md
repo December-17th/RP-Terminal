@@ -240,7 +240,89 @@ whole-table entry, `extraIndexPlacement` for the index entry):
 Qualification uses the real matcher: **constant entries always survive; keyword entries fire only on a
 scan hit** against `gen.scanText` (recursion honored via `gen.maxRecursion`).
 
-## Deferred (issues 05–06)
+## Maintenance pipeline (issue 05)
 
-Gate / read / query workflow nodes (05), view editing (06),
-card-embedded templates.
+The nodes that make **table maintenance an authorable post-response workflow** — a gated side-call
+that reads the due tables, prompts a maintainer LLM, and applies the emitted SQL. All three live in
+`src/main/services/nodes/builtin/tableNodes.ts` and are registered in `builtin/index.ts`.
+
+### `table.gate` — the update-frequency cadence gate
+
+Fires `due` once any watched table's `updateFrequency` window has elapsed. Inputs `gen: Context`,
+`floor: Any` (**ORDERING-ONLY** — wire from `output.writeFloor.floor`; its value is ignored, it
+exists to sequence the gate AFTER the reply floor is persisted). Outputs `due: Signal`, `tables: Any`
+(the due `sqlName[]`), `span: Any` (`{ from, to }`, the aged floor range). Config `{ tables?: string
+(comma-separated sqlNames narrowing which tables to watch; unset = all template tables) }`.
+
+- **Floor source:** the gate re-reads the floor count FROM DISK via `getAllFloors(profileId,
+  chatId).length - 1` (`currentFloor`, clamped ≥0). `gen.floors` is the PRE-turn snapshot
+  `input.context` took, so the just-persisted reply floor is missing from it — the disk read is
+  mandatory for the cadence to advance.
+- **Due rule:** durable node state is `{ last: Record<sqlName, number> }` — the floor up to which each
+  table was last maintained (missing = `-1`). A table is due when `currentFloor - last[t] >=
+  updateFrequency` (freq `1` = every turn). No template / no due tables → `{ outputs: {} }` (no
+  signal; a chat without table memory is a silent no-op).
+- **AT-MOST-ONCE / FAIL-OPEN:** when the gate fires it **advances `last[dueTable] = currentFloor`
+  IMMEDIATELY**, atomically, before any downstream node runs. If the maintainer chain then fails,
+  that span is simply skipped — worst case one missed batch (the same trade the old decomposed memory
+  chain made, but WITHOUT a claim/release lock, since the advance is atomic). `span.from = min(last[t]
+  over due tables) + 1`, `span.to = currentFloor`.
+
+### `table.read` — the maintainer-prompt ingredients
+
+Renders the "here are the tables, here is what you may do" block. Inputs `gen: Context`, `tables: Any`
+(the gate's due `sqlName[]`, or a comma-separated string; **unwired/empty = ALL template tables**),
+`when: Signal`. Outputs `block: Text`, `tables: Any` (passthrough of the rendered scope). Config
+`{ include_rules?: boolean (default true), max_rows?: 1..500 (per-table cap, keeps NEWEST-last rows) }`.
+No template / no selected tables → **SILENT empty** (`{ block: '', tables: [] }`), never an error (the
+`table.export` read precedent). Per-table block format:
+
+```
+## <displayName> (<sqlName>) — 每 N 轮维护
+【表定义】<note>              (with rules)
+【初始化规则】<initNode>       (with rules; ONLY when the table has 0 rows)
+【插入规则】<insertNode>       (with rules)
+【更新规则】<updateNode>       (with rules)
+【删除规则】<deleteNode>       (with rules)
+【当前数据】
+<renderWholeTable(headers, rows)>
+```
+
+Empty rule strings are omitted. `include_rules: false` drops the definition + all rules (the whole
+"ingredients" set), rendering just the `##` header + `【当前数据】` data. Blocks are `'\n\n'`-joined.
+
+### `table.query` — a validated read for planner / 剧情推进 branches
+
+Inputs `gen: Context`, `query: Text`, `when: Signal`. Outputs `rows: Any` (positional row arrays,
+better-sqlite3 `.raw().all()` aligned to the result columns), `block: Text` (`renderWholeTable` of the
+result), `error: Error`. **Validation (pure, exported as `validateReadQuery` in `tableSql.ts`,
+unit-tested):** the query must be EITHER a bare **registered** `sqlName` (→ `SELECT * FROM "t"`) OR a
+**single** statement (`splitSqlStatements` length 1) whose head is `SELECT` (case-insensitive, after
+comment strip). Everything else — **`WITH` (a CTE head hides read-vs-write; out of contract)**, PRAGMA,
+INSERT/UPDATE/DELETE, an unknown bare name, multi-statement text — is a class-B `bad-query`. Execution
+(`executeReadQuery`) opens the sandbox `{ readonly: true }` (defense in depth behind the head check).
+A blank query, no template, or a missing sandbox → **SILENT empty** (`{ rows: [], block: '' }`); a
+SQLite runtime error → class-B `bad-query` carrying SQLite's message.
+
+### Example workflow — `docs/workflows/table-memory-default.rptflow`
+
+A shipped, importable example (the `decomposed-default.rptflow` convention — there is **no in-app
+seeding mechanism**; authors import the file). **Main path:** the builtin default with `table.export`
+wired into `prompt.assemble`'s `entries` port, so a chat's tables project into the prompt. **Post-
+response maintenance:** `table.gate` (gen from `ctx`, floor from `write.floor`) → `table.read`
+(`tables` from `gate.tables`, `when` from `gate.due`) → `prompt.messages` framing a **zh 数据库表格维护**
+prompt from `{{in1}}` = `read.block`, `{{in2}}` = recent transcript (`context.history` count 4),
+`{{in3}}` = the main reply (`llm.raw`, so `<char_info>`/`<scene_info>` tag conventions reach the
+maintainer) → a NON-STREAMING `llm.sample` (`stream: false`, `retries: 1`, **no `api_preset_id`** so
+it runs out-of-the-box on the active connection) → `parse.extract` (tag `TableEdit`) → `table.apply`
+(`sql` from `sql.first`, `when` from `sql.found`). `side.error` and `tableapply.error` route to two
+`util.log` nodes (fail-open). The maintainer prompt instructs **exactly ONE `<TableEdit>` block** with
+all statements (so `sql.first` captures everything), only INSERT/UPDATE/DELETE on the listed tables,
+and an empty tag when nothing changed. Its `description` field documents: assign a template in the
+Tables view (else the branch is a silent no-op), how to point `side` at a cheap model via
+`api_preset_id`, and how to chain a second staged pass (世界推进 before 剧情推进) with an ordering edge
+(first `table.apply.done` → second `gate.floor`). Validated by `test/workflow/tableMemoryExample.test.ts`.
+
+## Deferred (issue 06)
+
+View editing (06), card-embedded templates.

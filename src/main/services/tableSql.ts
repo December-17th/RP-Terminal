@@ -297,3 +297,90 @@ export const replayOneOp = (
   const validated = validateBatch(sql, templateSqlNames(template))
   for (const stmt of validated) db.prepare(stmt.sql).run()
 }
+
+/**
+ * PURE validator for the READ-ONLY `table.query` node (issue 05). A query is accepted as EITHER:
+ *  - a BARE registered sqlName (a single token that IS a known table name) → rewritten to
+ *    `SELECT * FROM "<t>"`, OR
+ *  - a SINGLE statement (`splitSqlStatements` length 1, so no multi-statement injection) whose head
+ *    keyword is `SELECT` (case-insensitive, after leading comments are stripped).
+ *
+ * Everything else is rejected — notably `WITH` (a CTE head hides whether the real body reads or
+ * writes; documented as out-of-contract), PRAGMA, ATTACH, INSERT/UPDATE/DELETE, and any multi-
+ * statement text. Rejection carries the reason for the caller's class-B `bad-query`. A blank/
+ * whitespace/comment-only query yields `{ ok: false, reason: 'empty' }` — the caller treats that as
+ * a SILENT empty (a read, like table.export), NOT an error.
+ *
+ * Note the head check is a DEFENSE-IN-DEPTH gate: the runtime wrapper ALSO opens the sandbox
+ * `{ readonly: true }` so even a SELECT that somehow reached SQLite could not mutate the file.
+ */
+export interface ReadQueryPlan {
+  ok: boolean
+  /** The runnable `SELECT …` SQL (only when `ok`). */
+  sql?: string
+  /** Rejection reason (only when `!ok`); `'empty'` marks the silent no-op case. */
+  reason?: string
+}
+
+export const validateReadQuery = (query: string, registered: Set<string>): ReadQueryPlan => {
+  const trimmed = (query ?? '').trim()
+  if (!trimmed) return { ok: false, reason: 'empty' }
+
+  // A bare registered table name (a single safe identifier that names a known table) → SELECT *.
+  if (isSafeSqlIdentifier(trimmed) && registered.has(trimmed)) {
+    return { ok: true, sql: `SELECT * FROM "${trimmed}"` }
+  }
+
+  const statements = splitSqlStatements(trimmed)
+  if (statements.length === 0) return { ok: false, reason: 'empty' }
+  if (statements.length > 1) {
+    return { ok: false, reason: 'only a single SELECT statement is allowed' }
+  }
+  const head = /^([A-Za-z]+)/.exec(stripLeading(statements[0]))?.[1]?.toUpperCase() ?? '(unknown)'
+  if (head !== 'SELECT') {
+    return { ok: false, reason: `rejected query head "${head}" (only SELECT / a bare table name)` }
+  }
+  return { ok: true, sql: statements[0] }
+}
+
+export interface ReadQueryResult {
+  /** Column names in result order. */
+  columns: string[]
+  /** Result rows as positional arrays (better-sqlite3 `.raw().all()`), aligned to `columns`. */
+  rows: unknown[][]
+}
+
+/**
+ * Runtime wrapper for `table.query` — validate (via `validateReadQuery`) then execute the single
+ * SELECT against a chat's sandbox opened `{ readonly: true }` (defense in depth behind the head
+ * check). Returns column names + positional rows. A missing sandbox file → empty result (the chat
+ * has table memory assigned but never instantiated). A rejected query throws `TableSqlError`. A
+ * SQLite runtime error is rethrown as a `TableSqlError` carrying SQLite's message. The DB handle is
+ * always closed. Not unit-tested (no-op under the vitest alias mock) — same stance as `applySqlBatch`.
+ */
+export const executeReadQuery = (
+  profileId: string,
+  chatId: string,
+  template: TableTemplate,
+  query: string
+): ReadQueryResult => {
+  const plan = validateReadQuery(query, templateSqlNames(template))
+  if (!plan.ok || !plan.sql) {
+    throw new TableSqlError(plan.reason ?? 'invalid query')
+  }
+  const file = sandboxDbPath(profileId, chatId)
+  if (!fs.existsSync(file)) return { columns: [], rows: [] }
+
+  const db = new Database(file, { readonly: true })
+  try {
+    const stmt = db.prepare(plan.sql)
+    const columns = (stmt.columns?.() ?? []).map((c: { name: string }) => c.name)
+    const rows = (stmt.raw?.().all() as unknown[][]) ?? []
+    return { columns, rows }
+  } catch (error) {
+    const msg = error instanceof Error ? error.message : String(error)
+    throw new TableSqlError(msg)
+  } finally {
+    db.close()
+  }
+}

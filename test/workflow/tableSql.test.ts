@@ -3,6 +3,7 @@ import {
   splitSqlStatements,
   classifyStatement,
   validateBatch,
+  validateReadQuery,
   TableSqlError
 } from '../../src/main/services/tableSql'
 
@@ -190,5 +191,59 @@ describe('validateBatch', () => {
     }
     expect((err as TableSqlError).index).toBe(1)
     expect((err as Error).message).toContain('DROP')
+  })
+})
+
+describe('validateReadQuery — the read-only table.query gate (issue 05)', () => {
+  const registered = new Set(['chronicle', 'roleplay_guide'])
+
+  it('rewrites a bare registered table name to SELECT *', () => {
+    expect(validateReadQuery('chronicle', registered)).toEqual({
+      ok: true,
+      sql: 'SELECT * FROM "chronicle"'
+    })
+  })
+
+  it('rejects a bare name that is NOT registered', () => {
+    const r = validateReadQuery('secrets', registered)
+    expect(r.ok).toBe(false)
+    expect(r.reason).not.toBe('empty')
+  })
+
+  it('accepts a single SELECT statement verbatim (case-insensitive head)', () => {
+    expect(validateReadQuery('SELECT row_id, summary FROM chronicle WHERE row_id > 3', registered)).toEqual({
+      ok: true,
+      sql: 'SELECT row_id, summary FROM chronicle WHERE row_id > 3'
+    })
+    expect(validateReadQuery('  select 1', registered).ok).toBe(true)
+  })
+
+  it('reads the head past leading comments', () => {
+    expect(validateReadQuery('/* c */ -- x\nSELECT * FROM chronicle', registered).ok).toBe(true)
+  })
+
+  it('a blank / whitespace / comment-only query is the silent-empty case', () => {
+    expect(validateReadQuery('', registered)).toEqual({ ok: false, reason: 'empty' })
+    expect(validateReadQuery('   ', registered)).toEqual({ ok: false, reason: 'empty' })
+    expect(validateReadQuery('-- just a comment', registered)).toEqual({ ok: false, reason: 'empty' })
+  })
+
+  it('rejects a WITH (CTE) head — documented as out of contract', () => {
+    const r = validateReadQuery('WITH t AS (SELECT 1) SELECT * FROM t', registered)
+    expect(r.ok).toBe(false)
+    expect(r.reason).toContain('WITH')
+  })
+
+  it('rejects write / PRAGMA heads', () => {
+    expect(validateReadQuery('INSERT INTO chronicle VALUES (1)', registered).ok).toBe(false)
+    expect(validateReadQuery('UPDATE chronicle SET x=1', registered).ok).toBe(false)
+    expect(validateReadQuery('DELETE FROM chronicle', registered).ok).toBe(false)
+    expect(validateReadQuery('PRAGMA table_info(chronicle)', registered).ok).toBe(false)
+  })
+
+  it('rejects a multi-statement query (no injection past a SELECT head)', () => {
+    const r = validateReadQuery('SELECT * FROM chronicle; DROP TABLE chronicle', registered)
+    expect(r.ok).toBe(false)
+    expect(r.reason).toContain('single')
   })
 })

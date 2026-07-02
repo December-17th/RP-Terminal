@@ -20,8 +20,10 @@ cards) reads them as the contract. They must track the code.
   cartridge plan (the "container" the inventory points to).
 - **[table-templates.md](table-templates.md)** — SQL-table memory: the chatSheets v2 import surface,
   the sheet→`TableTemplate` mapping, per-chat sandbox-DB enablement, the DDL-safety choke point, and
-  the SQL write path (allowlist + op-log/rewind + the `parse.extract`/`table.apply` nodes), and the
-  prompt-projection path (`table.export` + the `entries` port on `prompt.assemble`/`prompt.preset`).
+  the SQL write path (allowlist + op-log/rewind + the `parse.extract`/`table.apply` nodes), the
+  prompt-projection path (`table.export` + the `entries` port on `prompt.assemble`/`prompt.preset`),
+  and the maintenance pipeline (`table.gate`/`table.read`/`table.query` + the shipped
+  `table-memory-default.rptflow` example workflow).
 - **[../card-script-wcv-surfaces-design.md](../card-script-wcv-surfaces-design.md)** — design (not built):
   run full-page card scripts in a process-isolated WCV and let cards register their own panel/modal surfaces
   (the `创意工坊` case). Touches `thRuntime` + the format when implemented — update this contract then.
