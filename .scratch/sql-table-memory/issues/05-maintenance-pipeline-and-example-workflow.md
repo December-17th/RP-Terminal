@@ -1,6 +1,6 @@
 # 05 — Maintenance pipeline nodes + built-in example workflow
 
-Status: ready-for-agent
+Status: ready-for-human (implemented + reviewed; awaiting owner sign-off/merge)
 
 ## What to build
 
@@ -29,3 +29,13 @@ Demo: assign the 命定之诗 template, select the example workflow, play severa
 
 - [03-sandboxed-sql-write-path-and-rewind.md](03-sandboxed-sql-write-path-and-rewind.md)
 - [04-prompt-projection-table-export.md](04-prompt-projection-table-export.md)
+
+## Comments
+
+**2026-07-02 — implemented + reviewed.** Plan at [05-plan.md](05-plan.md); implemented by an Opus agent as commit `57944c3`; reviewed by the controller with one real defect found and fixed in the review commit:
+
+- **Gate stalled after a rewind.** The gate's durable `last` pointers live in node_state (not floor-keyed), so truncateFloors left them pointing past the cut — `currentFloor - last` went negative and maintenance stalled until the chat re-grew past the old floor. Fix: the state now records `at` (the floor at which it was written); `at > currentFloor` is unambiguous rewind evidence (a same-floor re-run has `at === currentFloor`), and on rewind every pointer clamps to `currentFloor - 1` so cadences resume immediately. Test added covering the rewind + the same-floor non-rewind re-run.
+
+Everything else verified: gate math (freq-1/freq-3 cadences, at-most-once advance, span), table.read block format (note gated by include_rules — accepted deviation; init rules only when empty), validateReadQuery (bare-name/SELECT-only, WITH rejected, readonly open behind it), the example workflow (17 nodes/42 edges; ports checked against real node defs; maintainer prompt mandates ONE <TableEdit> block matching the `sql.first` wiring; ships without api_preset_id so it runs out-of-the-box; sideParams added so the side llm's params are never unwired — accepted deviation). Example validated by test/workflow/tableMemoryExample.test.ts.
+
+Gate re-run independently post-fix: typecheck PASS, check:deps PASS (345 modules), tests 168 files / **1373** PASS.

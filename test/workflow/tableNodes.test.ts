@@ -457,8 +457,9 @@ describe('table.gate', () => {
     const ctxS = makeStatefulCtx()
     const first = tableGate.run(ctxS, { gen }, meta(tableGate, 'g'))
     expect(first.signals).toEqual(['due'])
-    // Only the due table (chronicle) advances; world is untouched (missing = still -1).
-    expect(ctxS.getNodeState('g')).toEqual({ last: { chronicle: 0 } })
+    // Only the due table (chronicle) advances; world is untouched (missing = still -1). `at`
+    // records the write floor (the rewind discriminator).
+    expect(ctxS.getNodeState('g')).toEqual({ last: { chronicle: 0 }, at: 0 })
     // Same floor again → nothing due (chronicle already at 0; world still 0 - (-1) = 1 < 3).
     const second = tableGate.run(ctxS, { gen }, meta(tableGate, 'g'))
     expect(second).toEqual({ outputs: {} })
@@ -491,6 +492,27 @@ describe('table.gate', () => {
     floorSvc.getAllFloors.mockReturnValue([{}, {}, {}])
     const r = tableGate.run(makeStatefulCtx(), { gen }, meta(tableGate, 'g', { tables: 'world' }))
     expect(r.outputs!.tables).toEqual(['world'])
+  })
+
+  it('REWIND CLAMP: a rewound chat (at > currentFloor) resumes maintenance instead of stalling', () => {
+    chatSvc.getChatTableTemplateId.mockReturnValue('t1')
+    templateSvc.getTableTemplateById.mockReturnValue(maintTemplate())
+    const ctxS = makeStatefulCtx()
+    // State says both tables were maintained through floor 9 (written at floor 9), but the chat was
+    // rewound to 3 floors (currentFloor 2) — truncateFloors doesn't touch node_state, so the
+    // pointers overshoot. `at` (9) > currentFloor (2) is the rewind evidence.
+    ctxS.setNodeState('g', { last: { chronicle: 9, world: 9 }, at: 9 })
+    floorSvc.getAllFloors.mockReturnValue([{}, {}, {}]) // currentFloor 2
+    const r = tableGate.run(ctxS, { gen }, meta(tableGate, 'g'))
+    // Clamped last = currentFloor - 1 = 1 → chronicle (freq 1) due: 2 - 1 = 1 >= 1.
+    // world (freq 3): 2 - 1 = 1 < 3 → resumes its cadence rather than firing immediately.
+    expect(r.signals).toEqual(['due'])
+    expect(r.outputs!.tables).toEqual(['chronicle'])
+    expect(r.outputs!.span).toEqual({ from: 2, to: 2 })
+    // The clamped + advanced state is persisted (chronicle fired → 2; world clamped → 1; at → 2).
+    expect(ctxS.getNodeState('g')).toEqual({ last: { chronicle: 2, world: 1 }, at: 2 })
+    // Same-floor re-run is NOT a rewind (at === currentFloor): nothing re-fires.
+    expect(tableGate.run(ctxS, { gen }, meta(tableGate, 'g'))).toEqual({ outputs: {} })
   })
 })
 

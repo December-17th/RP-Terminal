@@ -246,8 +246,21 @@ export const tableGate: NodeImpl = {
     // 0-based index of the last persisted floor (clamped ≥0 for an empty chat).
     const currentFloor = Math.max(0, getAllFloors(gen.profileId, gen.chatId).length - 1)
 
-    const prev = (ctx.getNodeState(node.id) as { last?: Record<string, number> } | undefined) ?? {}
+    const prev =
+      (ctx.getNodeState(node.id) as { last?: Record<string, number>; at?: number } | undefined) ??
+      {}
     const last = { ...(prev.last ?? {}) }
+
+    // REWIND DETECTION: `at` records the floor at which this state was last written. node_state is
+    // not floor-keyed, so after truncateFloors the pointers can point PAST the new floor count —
+    // without a correction, `currentFloor - last` goes negative and maintenance stalls until the
+    // chat re-grows past the old floor. `at > currentFloor` is unambiguous evidence of a rewind
+    // (a same-floor re-run has at === currentFloor); on rewind, clamp every pointer to
+    // currentFloor - 1 ("maintained through the previous floor") so cadences resume immediately.
+    const rewound = prev.at != null && prev.at > currentFloor
+    if (rewound) {
+      for (const key of Object.keys(last)) last[key] = Math.min(last[key], currentFloor - 1)
+    }
 
     const dueTables: string[] = []
     for (const t of tables) {
@@ -262,7 +275,7 @@ export const tableGate: NodeImpl = {
 
     // At-most-once: advance the pointer for every due table NOW, before anything downstream runs.
     for (const t of dueTables) last[t] = currentFloor
-    ctx.setNodeState(node.id, { last })
+    ctx.setNodeState(node.id, { last, at: currentFloor })
 
     return { outputs: { tables: dueTables, span: { from, to: currentFloor } }, signals: ['due'] }
   }
