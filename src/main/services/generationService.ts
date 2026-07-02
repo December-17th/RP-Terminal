@@ -1,12 +1,10 @@
-import { getSettings } from './settingsService'
-import { getActivePreset } from './presetService'
 import { getLorebookById } from './lorebookService'
 import { getChat, getChatLorebookIds, truncateFloors } from './chatService'
 import { getCharacter } from './characterService'
 import { getAllFloors, getFloor, saveFloor } from './floorService'
 import { normalizeSwipes } from './swipeHelpers'
-import { collectRenderMarkers, ChatMessage } from './promptBuilder'
-import { streamProvider, DeltaCallback } from './apiService'
+import { collectRenderMarkers } from './promptBuilder'
+import { DeltaCallback } from './apiService'
 import { parseMvuCommands, applyMvuCommands, applyJsonPatch } from '../parsers/mvuParser'
 import { stripThinking } from '../parsers/contentParser'
 import { log } from './logService'
@@ -39,19 +37,22 @@ export {
   applyVariableOps
 } from './generation/varsWrite'
 
+// The abort surface + generateRaw live in generation/rawGenerate.ts (a LEAF — combat/duel
+// narration imports it without pulling this orchestrator, which would cycle through the node
+// registry's tool nodes). Re-exported so this module's public surface is unchanged.
+export {
+  abortGeneration,
+  generateRaw,
+  activeControllers,
+  type RawGenConfig
+} from './generation/rawGenerate'
+import { activeControllers } from './generation/rawGenerate'
+
 /**
  * Run one full turn: assemble the prompt, call the model, post-process (regex →
  * tag parse), fold state events into the running variables, persist a new floor,
  * and return it. All orchestration lives here so the renderer just calls one IPC.
  */
-// In-flight generations keyed by chat, so the renderer can abort one to stop
-// burning provider tokens.
-const activeControllers = new Map<string, AbortController>()
-
-/** Abort the in-flight generation for a chat (if any). */
-export const abortGeneration = (chatId: string): void => {
-  activeControllers.get(chatId)?.abort()
-}
 
 export const generate = async (
   profileId: string,
@@ -203,67 +204,6 @@ export const setFloorStatData = (
   const updated = withStatData(f, statData)
   saveFloor(profileId, chatId, updated)
   return updated
-}
-
-/**
- * Custom one-off generation (TH-4 `generateRaw`). Builds a minimal message array from the
- * config — optional system prompt, optional recent history, and the user input — applies
- * sampler/max_tokens overrides over the active preset, and returns the raw text WITHOUT
- * persisting a floor. Because it never touches the chat transcript, it can't disturb the
- * L1–L4 prompt-cache layering of the real conversation. Aborts via the same controller map
- * as a normal turn (so `stopGeneration` cancels it too).
- */
-export interface RawGenConfig {
-  userInput?: string
-  prompt?: string
-  systemPrompt?: string
-  /** Include this many most-recent floors as history (default 0 = fully raw). */
-  maxChatHistory?: number
-  maxTokens?: number
-  /** Sampler parameter overrides merged over the active preset (temperature, top_p, …). */
-  overrides?: Record<string, unknown>
-}
-
-export const generateRaw = async (
-  profileId: string,
-  chatId: string,
-  config: RawGenConfig = {},
-  onDelta: DeltaCallback = () => {}
-): Promise<string> => {
-  const settings = getSettings(profileId)
-  const preset = getActivePreset(profileId)
-
-  const messages: ChatMessage[] = []
-  if (config.systemPrompt) messages.push({ role: 'system', content: String(config.systemPrompt) })
-  const histN = Math.max(0, Number(config.maxChatHistory) || 0)
-  if (histN > 0) {
-    const chat = getChat(profileId, chatId)
-    const floors = chat ? getAllFloors(profileId, chatId, chat.floor_count) : []
-    for (const f of floors.slice(-histN)) {
-      if (f.user_message.content) messages.push({ role: 'user', content: f.user_message.content })
-      if (f.response.content) messages.push({ role: 'assistant', content: f.response.content })
-    }
-  }
-  messages.push({ role: 'user', content: String(config.userInput ?? config.prompt ?? '') })
-
-  const params = {
-    ...preset.parameters,
-    ...(config.overrides || {}),
-    ...(config.maxTokens != null ? { max_tokens: config.maxTokens } : {})
-  }
-
-  const controller = new AbortController()
-  activeControllers.set(chatId, controller)
-  log('request', `→ generateRaw · ${messages.length} msg(s)`, messages)
-  try {
-    return await streamProvider(settings, messages, params, onDelta, controller.signal)
-  } catch (err: any) {
-    if (controller.signal.aborted) return ''
-    log('error', '✗ generateRaw failed', err?.message || String(err))
-    throw err
-  } finally {
-    activeControllers.delete(chatId)
-  }
 }
 
 /**

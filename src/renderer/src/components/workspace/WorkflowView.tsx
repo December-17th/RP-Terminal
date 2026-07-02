@@ -5,7 +5,11 @@ import { useUiStore } from '../../stores/uiStore'
 import { useWorkflowEditorStore } from '../../stores/workflowEditorStore'
 import { useWorkflowTraceStore } from '../../stores/workflowTraceStore'
 import { useOptionalT, useT } from '../../i18n'
-import type { TraceNode, WorkflowRunTrace } from '../../../../shared/workflow/trace'
+import {
+  formatTraceSeconds,
+  type TraceNode,
+  type WorkflowRunTrace
+} from '../../../../shared/workflow/trace'
 
 /**
  * Minimal workflow manager: list/import/export/clone/delete built-in + custom node-workflow
@@ -48,7 +52,7 @@ const TracePanel: React.FC<{ trace: WorkflowRunTrace | undefined }> = ({ trace }
         <strong>{t('workflow.trace.heading')}</strong>
         {trace && (
           <span style={{ fontSize: 11, color: 'var(--rpt-text-tertiary)' }}>
-            {t('workflow.trace.total', { ms: trace.durationMs })}
+            {t('workflow.trace.total', { s: formatTraceSeconds(trace.durationMs) })}
           </span>
         )}
       </div>
@@ -104,7 +108,9 @@ const TracePanel: React.FC<{ trace: WorkflowRunTrace | undefined }> = ({ trace }
                 </span>
               )}
               {n.ms !== undefined && (
-                <span style={{ fontSize: 11, color: 'var(--rpt-text-tertiary)' }}>{n.ms}ms</span>
+                <span style={{ fontSize: 11, color: 'var(--rpt-text-tertiary)' }}>
+                  {formatTraceSeconds(n.ms)}
+                </span>
               )}
             </div>
             {n.error && (

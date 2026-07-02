@@ -105,6 +105,13 @@ export default function App(): React.ReactElement {
         useWorkflowPanelStore.getState().clear(state.activeChatId)
       }
     })
+    // A workflow tool node switched the chat's mode main-side (started combat/duel) → the
+    // workspace must follow without a user click.
+    const unsubModeChanged = window.api.onChatModeChanged(({ chatId, mode }) => {
+      if (chatId === useChatStore.getState().activeChatId) {
+        useChatStore.setState({ activeChatMode: mode })
+      }
+    })
     return () => {
       unsubDelta()
       unsubLog()
@@ -116,6 +123,7 @@ export default function App(): React.ReactElement {
       unsubTrace()
       unsubPanel()
       unsubPanelClear()
+      unsubModeChanged()
     }
   }, [])
 

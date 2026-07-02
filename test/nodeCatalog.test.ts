@@ -24,7 +24,13 @@ describe('listNodeTypes', () => {
       'prompt.messages',
       'merge.messages',
       'mvu.set',
-      'util.log'
+      'util.log',
+      'memory.gate',
+      'memory.extract',
+      'memory.write',
+      'tool.startCombat',
+      'tool.startDuel',
+      'tool.lorebookSearch'
     ]) {
       expect(byType.has(t)).toBe(true)
     }

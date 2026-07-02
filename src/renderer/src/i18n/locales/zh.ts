@@ -495,7 +495,7 @@ const zh: Record<string, string> = {
   'workflow.resolved': '当前生效：',
   'workflow.trace.heading': '最近一次运行',
   'workflow.trace.empty': '本次会话还没有运行记录 —— 发送一条消息即可查看。',
-  'workflow.trace.total': '共 {{ms}} ms',
+  'workflow.trace.total': '共 {{s}}',
   'workflow.trace.aborted': '本次运行已中止（停止）',
   'workflow.trace.error': '回合失败：',
   'workflow.trace.postPhase': '响应后',
@@ -561,6 +561,12 @@ const zh: Record<string, string> = {
   'workflowEditor.nodeTitle.merge.messages': '合并消息',
   'workflowEditor.nodeTitle.mvu.set': '设置变量',
   'workflowEditor.nodeTitle.util.log': '日志',
+  'workflowEditor.nodeTitle.memory.gate': '记忆检查点',
+  'workflowEditor.nodeTitle.memory.extract': '提取记忆',
+  'workflowEditor.nodeTitle.memory.write': '写入记忆',
+  'workflowEditor.nodeTitle.tool.startCombat': '开始战斗',
+  'workflowEditor.nodeTitle.tool.startDuel': '开始决斗',
+  'workflowEditor.nodeTitle.tool.lorebookSearch': '世界书检索',
   // 节点说明
   'workflowEditor.nodeDesc.input.context':
     '构建本回合的上下文包：会话、角色卡、设置、预设、世界书、聊天历史与工作变量。每张图的起点——几乎所有节点都要读取它的输出。',
@@ -577,7 +583,19 @@ const zh: Record<string, string> = {
   'workflowEditor.nodeDesc.output.writeFloor':
     '持久化本回合的楼层（消息对 + 变量 + 指标）。默认图中的主输出节点：接在它之后的节点在回复送达后异步执行。',
   'workflowEditor.nodeDesc.memory.compact':
-    '把过旧的回合压缩进长期记忆。回复后异步执行、失败不阻塞回合。',
+    '一步完成过旧回合的记忆压缩（旧版粗粒度节点——默认图已改用「检查点 → 提取 → 写入」链）。回复后异步执行、失败不阻塞回合。',
+  'workflowEditor.nodeDesc.memory.gate':
+    '当足够多的回合滑出「保留最近」窗口、凑满一个检查点批次时触发，并输出该批次。会占用本会话的压缩槽位，避免相邻回合重复概括。',
+  'workflowEditor.nodeDesc.memory.extract':
+    '用概括连接对批次做一次结构化提取。成功时触发 done；失败（调用出错 / 回复无法解析）从 error 端口输出——接到「日志」即可失败不阻塞。',
+  'workflowEditor.nodeDesc.memory.write':
+    '原子地应用提取结果——事件追加、实体合并与指针推进在同一事务内完成——然后释放压缩槽位。',
+  'workflowEditor.nodeDesc.tool.startCombat':
+    '按世界的战斗配置开始一场网格遭遇战（可用接入的 cue 定制），并把会话切到战斗模式。请接在 Signal 之后，确保它是被明确触发的。',
+  'workflowEditor.nodeDesc.tool.startDuel':
+    '用队伍的 MVU 构筑开始一场卡组决斗（敌人来自接入的 cue 名单），并把会话切到决斗模式。无法构建时从 error 端口输出。',
+  'workflowEditor.nodeDesc.tool.lorebookSearch':
+    '用接入的查询文本对会话的世界书做关键词检索（与提示词组装同一套匹配器），把命中的条目内容合并为一段文本输出。',
   'workflowEditor.nodeDesc.control.if':
     '对输入值执行谓词判断（可用配置的 path 深入取值），恰好触发 then 或 else 之一；未触发的分支被剪掉。',
   'workflowEditor.nodeDesc.control.switch':

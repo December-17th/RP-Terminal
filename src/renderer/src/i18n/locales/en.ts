@@ -510,7 +510,7 @@ const en: Record<string, string> = {
   'workflow.resolved': 'Active workflow:',
   'workflow.trace.heading': 'Last run',
   'workflow.trace.empty': 'No run yet this session — send a message to see the trace.',
-  'workflow.trace.total': '{{ms}} ms total',
+  'workflow.trace.total': '{{s}} total',
   'workflow.trace.aborted': 'Run aborted (stopped)',
   'workflow.trace.error': 'Turn failed:',
   'workflow.trace.postPhase': 'post-response',
@@ -576,6 +576,12 @@ const en: Record<string, string> = {
   'workflowEditor.nodeTitle.merge.messages': 'Merge Messages',
   'workflowEditor.nodeTitle.mvu.set': 'Set Variable',
   'workflowEditor.nodeTitle.util.log': 'Log',
+  'workflowEditor.nodeTitle.memory.gate': 'Memory Gate',
+  'workflowEditor.nodeTitle.memory.extract': 'Extract Memories',
+  'workflowEditor.nodeTitle.memory.write': 'Write Memories',
+  'workflowEditor.nodeTitle.tool.startCombat': 'Start Combat',
+  'workflowEditor.nodeTitle.tool.startDuel': 'Start Duel',
+  'workflowEditor.nodeTitle.tool.lorebookSearch': 'Lorebook Search',
   // Node descriptions (what the node does).
   'workflowEditor.nodeDesc.input.context':
     'Builds the turn bundle: session, character card, settings, preset, lorebooks, chat history and working variables. The start of every graph — almost every other node takes its output.',
@@ -592,7 +598,19 @@ const en: Record<string, string> = {
   'workflowEditor.nodeDesc.output.writeFloor':
     'Persists the finished floor (message pair + variables + metrics). The main-output node in the default graph: everything wired after it runs post-response, off the hot path.',
   'workflowEditor.nodeDesc.memory.compact':
-    'Folds aged-out turns into long-term memory. Runs post-response and fails open — it can never block a turn.',
+    'Folds aged-out turns into long-term memory in one step (legacy coarse node — the default graph now uses the Gate → Extract → Write chain). Runs post-response and fails open.',
+  'workflowEditor.nodeDesc.memory.gate':
+    'Fires when a full checkpoint batch of turns has aged past the keep-recent window, emitting the batch. Claims the per-chat compaction slot so overlapping turns can’t double-summarize.',
+  'workflowEditor.nodeDesc.memory.extract':
+    'Summarizes the gated batch with the utility connection (one structured call). Fires done on success; failures (call error / unparseable reply) leave on the error port — wire it to Log to fail open.',
+  'workflowEditor.nodeDesc.memory.write':
+    'Applies the extraction atomically — event appends, entity upserts and the pointer advance in one transaction — then releases the compaction slot.',
+  'workflowEditor.nodeDesc.tool.startCombat':
+    'Starts a grid encounter from the world’s combat bundle (optionally shaped by a wired cue) and switches the session to combat mode. Gate it behind a Signal so it fires deliberately.',
+  'workflowEditor.nodeDesc.tool.startDuel':
+    'Starts a deckbuilder duel from the party’s MVU build (enemies from a wired cue roster) and switches the session to duel mode. Fails onto its error port when no duel can be built.',
+  'workflowEditor.nodeDesc.tool.lorebookSearch':
+    'Keyword-searches the session’s lorebooks with the wired query text (the same matcher prompt assembly uses) and returns matched entry contents as one text block.',
   'workflowEditor.nodeDesc.control.if':
     'Tests a predicate against the input value (optionally drilling in via the configured path) and fires exactly one of its two Signals: then or else. The un-fired branch is pruned.',
   'workflowEditor.nodeDesc.control.switch':

@@ -88,7 +88,14 @@ vi.mock('../../src/main/services/floorService', () => ({
 vi.mock('../../src/main/services/retrievalService', () => ({
   selectMemories: async () => ({ block: '', rows: [] })
 }))
-vi.mock('../../src/main/services/compactionService', () => ({ maybeCompact: async () => {} }))
+vi.mock('../../src/main/services/compactionService', () => ({
+  maybeCompact: async () => {},
+  // The decomposed D5 memory nodes read these stage fns; memory is disabled in these tests,
+  // so the gate never finds a due batch.
+  tryBeginCompaction: () => true,
+  endCompaction: () => {},
+  compactionDue: () => null
+}))
 vi.mock('../../src/main/services/memoryEvents', () => ({ notifyMemoryRecalled: () => {} }))
 vi.mock('../../src/main/services/regexService', () => ({ getPromptRules: () => [] }))
 vi.mock('../../src/main/services/templateService', async (orig) => ({

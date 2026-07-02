@@ -18,7 +18,7 @@ import { getCharacter } from './characterService'
 import { getChat } from './chatService'
 import { getRpExt } from '../types/character'
 import { getAllFloors } from './floorService'
-import { generateRaw } from './generationService'
+import { generateRaw } from './generation/rawGenerate'
 import { narrationConfig, writeNarrationToChat } from './narrationService'
 import type { AbilityDef, CombatEvent } from '../../shared/combat/types'
 

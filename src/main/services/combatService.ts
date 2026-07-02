@@ -10,7 +10,7 @@
 
 import { getDb } from './db'
 import { runSandbox } from './sandboxService'
-import { generateRaw } from './generationService'
+import { generateRaw } from './generation/rawGenerate'
 import { getCharacter } from './characterService'
 import { getChat } from './chatService'
 import { getAllFloors } from './floorService'
