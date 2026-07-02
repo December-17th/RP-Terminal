@@ -142,6 +142,20 @@ describe('workflowEditorStore: addNode', () => {
     const s = useWorkflowEditorStore.getState()
     expect(s.dirty).toBe(true)
   })
+
+  it('addNode(type, position, config) presets the new node’s config', () => {
+    useWorkflowEditorStore
+      .getState()
+      .addNode('subgraph.call', { x: 0, y: 0 }, { workflow_id: 'sub-1' })
+    const node = useWorkflowEditorStore.getState().nodes.find((n) => n.id === 'call-1')!
+    expect(node.config).toEqual({ workflow_id: 'sub-1' })
+  })
+
+  it('existing 2-arg addNode calls are unaffected (no config key at all)', () => {
+    useWorkflowEditorStore.getState().addNode('control.if', { x: 0, y: 0 })
+    const node = useWorkflowEditorStore.getState().nodes.find((n) => n.id === 'if-1')!
+    expect(node.config).toBeUndefined()
+  })
 })
 
 describe('workflowEditorStore: connect', () => {

@@ -296,6 +296,52 @@ export default function WorkflowEditorView({
               </div>
             )
           })}
+
+          {/* Reusable sub-graph packages the author can drop as one subgraph.call node,
+              preconfigured with workflow_id (sub-graph nodes v1 plan §5). Excludes the doc
+              currently open (no self-reference from the palette; the run-time recursion guard
+              would refuse it anyway). */}
+          {workflows.some((w) => w.kind === 'subgraph' && w.id !== currentId) && (
+            <>
+              <div
+                style={{
+                  fontSize: 10.5,
+                  color: 'var(--rpt-text-tertiary)',
+                  margin: '10px 0 6px',
+                  borderTop: '1px solid var(--rpt-border)',
+                  paddingTop: 8
+                }}
+              >
+                {t('workflowEditor.subgraphs')}
+              </div>
+              {workflows
+                .filter((w) => w.kind === 'subgraph' && w.id !== currentId)
+                .map((w) => (
+                  <div
+                    key={w.id}
+                    draggable
+                    onDragStart={(e) => {
+                      e.dataTransfer.setData('application/rpt-node-type', 'subgraph.call')
+                      e.dataTransfer.setData('application/rpt-subgraph-id', w.id)
+                      e.dataTransfer.effectAllowed = 'move'
+                    }}
+                    style={{
+                      border: '1px solid var(--rpt-border)',
+                      borderRadius: 6,
+                      padding: '5px 8px',
+                      marginBottom: 5,
+                      cursor: 'grab',
+                      background: 'var(--rpt-bg-elevated)'
+                    }}
+                  >
+                    <div style={{ fontSize: 12, color: 'var(--rpt-text-primary)' }}>{w.name}</div>
+                    <div style={{ fontSize: 10, color: 'var(--rpt-text-tertiary)' }}>
+                      {t('workflowEditor.nodeTitle.subgraph.call')}
+                    </div>
+                  </div>
+                ))}
+            </>
+          )}
         </div>
 
         <div style={{ flex: 1, minWidth: 0 }}>
