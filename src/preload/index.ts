@@ -40,6 +40,8 @@ const api = {
     ipcRenderer.send('wcv-ensure', id, bounds, url, ctx),
   wcvSetBounds: (id: string, bounds: unknown) => ipcRenderer.send('wcv-set-bounds', id, bounds),
   wcvSetVisible: (id: string, visible: boolean) => ipcRenderer.send('wcv-set-visible', id, visible),
+  // Hide/show every card WCV (native views paint above the DOM — full-screen overlays need this).
+  wcvSetAllVisible: (visible: boolean) => ipcRenderer.send('wcv-set-all-visible', visible),
   wcvDestroy: (id: string) => ipcRenderer.send('wcv-destroy', id),
   // A card-script toolbar button was clicked → deliver it to the chat's card WCVs (the script's eventOn).
   wcvButtonClick: (chatId: string, name: string) =>

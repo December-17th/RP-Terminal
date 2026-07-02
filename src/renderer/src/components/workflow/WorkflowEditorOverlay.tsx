@@ -14,6 +14,22 @@ export function WorkflowEditorOverlay({
   const open = useUiStore((s) => s.workflowEditorOpen)
   const close = useUiStore((s) => s.closeWorkflowEditor)
   const t = useT()
+
+  // Native card views (WCVs — e.g. a 状态栏 regex panel) always paint ABOVE the DOM, so this
+  // full-screen overlay can't cover them — duck them all for the editor's lifetime. Esc closes.
+  React.useEffect(() => {
+    if (!open) return
+    window.api.wcvSetAllVisible(false)
+    const onKey = (e: KeyboardEvent): void => {
+      if (e.key === 'Escape') close()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => {
+      window.removeEventListener('keydown', onKey)
+      window.api.wcvSetAllVisible(true)
+    }
+  }, [open, close])
+
   if (!open) return null
 
   return (
@@ -39,7 +55,15 @@ export function WorkflowEditorOverlay({
       >
         <strong style={{ fontSize: 13 }}>{t('workflowEditor.viewTitle')}</strong>
         <span style={{ flex: 1 }} />
-        <button type="button" onClick={close} style={{ fontSize: 12.5 }}>
+        <button
+          type="button"
+          onClick={close}
+          title={`${t('workflowEditor.close')} (Esc)`}
+          style={{ fontSize: 12.5, display: 'flex', alignItems: 'center', gap: 5 }}
+        >
+          <span aria-hidden style={{ fontSize: 13 }}>
+            ✕
+          </span>
           {t('workflowEditor.close')}
         </button>
       </div>
