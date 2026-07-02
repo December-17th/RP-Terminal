@@ -1,6 +1,8 @@
 # Plan: Sub-Graph Nodes (v1)
 
-**Date:** 2026-07-02 · **Status:** DRAFT (pending Sonnet plan-QA)
+**Date:** 2026-07-02 · **Status:** QA'd (Sonnet plan-QA findings applied — incl. the
+editorToDoc kind-drop BLOCKER, the resolve fall-through branch, FlowCanvas drop plumbing,
+tri-declared summary type, and the `/`-in-id accepted limitation) · READY TO IMPLEMENT
 **Branch:** `claude/workflow-subgraphs` (off main `64978ed`)
 **Process:** plan → Sonnet plan-QA → Sonnet implementation → Opus implementation-QA → gate → PR
 
@@ -24,8 +26,12 @@ fast-follow, not v1. (`Any` ↔ anything is legal per `portCompatible` — `shar
 
 - `WorkflowDoc` gains optional **`kind?: 'turn' | 'subgraph'`** (absent = `'turn'`), in
   `shared/workflow/types.ts` + `docSchema.ts` (`z.enum(['turn','subgraph']).optional()`).
-  `editorModel.editorToDoc` spreads the base doc, so the field survives editing round-trips
-  (verify, don't assume — it spreads `...base` today).
+- **REQUIRED code change (plan-QA blocker): `editorModel.editorToDoc` (editorModel.ts ~119-149)
+  is an explicit field-by-field literal — it does NOT spread the base doc.** Without a change,
+  `kind` is silently dropped on every `revalidate()`/`save()`, downgrading a sub-graph to a turn
+  doc on its first editor save. Add `...(base.kind !== undefined ? { kind: base.kind } : {})`
+  following the existing `description`/`meta` optional-field pattern, and pin it with a
+  round-trip test (see §7.1 — that test MUST fail without this change).
 - `WorkflowDoc.meta` (already `Record<string, unknown>`) carries the sub-graph interface:
   - `meta.promotions?: Array<{ name: string; nodeId: string; configKey: string; label?: string }>`
     — parameters exposed to the wrapper (see §5).
@@ -96,6 +102,11 @@ subgraphStack?: string[]
      + **node-state prefixing**: `getNodeState: (id) => parent.getNodeState(`${node.id}/${id}`)`
      (same for set) — a `control.when('changed')` INSIDE a sub-graph must be per-wrapper-instance,
      and two instances of one sub-graph in a workflow must not share state.
+     **Accepted v1 limitation (plan-QA finding):** a HAND-AUTHORED/imported doc whose top-level
+     node id contains `/` (the editor never generates these) could collide with a prefixed key;
+     `docSchema` keeps `id: min(1)` unchanged in v1 — document the limitation in the
+     `subgraph.call` desc/plan rather than tightening the schema (a schema change would
+     invalidate existing hand-authored docs).
   8. `runSubgraph(...)`; `fatal` → re-throw as `NodeRunFailure(fatal.kind, fatal.message,
      fatal.attempts, fatal.code)`; aborted → return `{ outputs: {} }`;
      else `{ outputs: { out1: …, …, out4: … } }`.
@@ -108,11 +119,22 @@ subgraphStack?: string[]
 
 ## 5. Service/persistence (`workflowService.ts` + renderer surfaces)
 
-- `WorkflowSummary` gains `kind?: 'turn' | 'subgraph'`; `listWorkflows` populates it from the doc.
+- `WorkflowSummary` gains `kind?: 'turn' | 'subgraph'`; `listWorkflows` populates it from each
+  doc. **The summary shape is independently declared in THREE places — update all of them**
+  (plan-QA finding): `workflowService.ts` (~21-26), `workflowEditorStore.ts` (~25-29), and
+  `WorkflowView.tsx` (~22-27).
 - `validateWorkflowDoc` — no signature change; the kind-branching lives in `validateWorkflow`
   (§2). Config validation (existing loop) already covers the new node types via their schemas.
 - `resolveWorkflowDoc` / `resolveWorkflowId`: a tier whose id resolves to a `kind: 'subgraph'`
-  doc **falls through with a log** (a sub-graph must never run as the turn workflow).
+  doc **falls through with a log**. This is its OWN explicit branch
+  (`if (result.doc.kind === 'subgraph') { log('error', …); continue }`) distinct from the
+  existing `!result.ok` branch — a valid sub-graph doc PASSES `validateWorkflowDoc` by design,
+  so relying on validation failure would NOT fall through. **Load-bearing invariant:**
+  `runWorkflow`/`computePhases` must never receive a subgraph-kind doc —
+  `computePhases` non-null-asserts the main-output node (`workflowEngine.ts:183`) and would
+  throw a raw TypeError. This resolve branch is the guard; additionally add a cheap
+  defense-in-depth assertion at the top of `runWorkflow` (`doc.kind === 'subgraph'` → throw a
+  descriptive Error) so any future caller fails loudly, not cryptically.
 - `cloneWorkflow` / import / export: no behavior change needed (kind rides the doc). **Export
   bundling of referenced sub-graphs is explicitly DEFERRED** — v1 shipping story = creator ships
   two `.rptflow` files (parent + sub-graph) or just the sub-graph; document in the PR body.
@@ -129,7 +151,13 @@ subgraphStack?: string[]
   section (i18n `workflowEditor.subgraphs`: en `Sub-graphs` / zh `子图`) listing
   `workflows.filter(w => w.kind === 'subgraph' && w.id !== currentId)`; dragging one inserts a
   `subgraph.call` **preconfigured with `workflow_id`**. `workflowEditorStore.addNode` gains an
-  optional `config` argument (additive; existing calls unchanged).
+  optional third `config` argument (additive; existing calls unchanged).
+  **Drop plumbing (plan-QA finding — three edit sites, not one):** the drag SOURCE
+  (`WorkflowEditorView.tsx` palette item) sets a SECOND payload key,
+  `event.dataTransfer.setData('application/rpt-subgraph-id', w.id)` alongside the existing
+  `application/rpt-node-type` = `'subgraph.call'`; the drop TARGET **`FlowCanvas.tsx`
+  `handleDrop` (~lines 257-267)** additionally reads that key and, when non-empty, calls
+  `addNode(type, position, { workflow_id })`; the store consumes the third arg.
 - **NodeConfigPanel:** for `subgraph.call`, above the schema-driven fields, show the referenced
   sub-graph's NAME (from the workflows list; fallback: the raw id + a warning color when
   unknown) and an "Open sub-graph" button (i18n `workflowEditor.openSubgraph`: en
