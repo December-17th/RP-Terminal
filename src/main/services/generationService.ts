@@ -73,13 +73,17 @@ export const generate = async (
   activeControllers.set(chatId, controller)
   try {
     const { id: workflowId, doc } = resolveWorkflowDoc(profileId, chatId)
+    // Panel headers for opt-in node output panels (spec D4): node id → its doc panel label.
+    const panelLabels: Record<string, string> = {}
+    for (const n of doc.nodes) if (n.panel?.show && n.panel.label) panelLabels[n.id] = n.panel.label
     const ctx = buildTurnContext({
       profileId,
       chatId,
       userAction,
       workflowId,
       signal: controller.signal,
-      onDelta
+      onDelta,
+      panelLabels
     })
     const startedAt = Date.now()
     const res = await runWorkflow(doc, builtinRegistry, ctx)

@@ -9,3 +9,16 @@ import { WorkflowRunTrace } from '../../shared/workflow/trace'
 export const notifyWorkflowTrace = (trace: WorkflowRunTrace): void => {
   for (const w of BrowserWindow.getAllWindows()) w.webContents.send('workflow-trace', trace)
 }
+
+/** One opt-in node output panel delta (spec D4): the renderer appends it to the node's
+ *  collapsible chat panel, keyed by (chatId, nodeId), labeled by the doc's panel.label. */
+export interface WorkflowPanelDelta {
+  chatId: string
+  nodeId: string
+  label?: string
+  delta: string
+}
+
+export const notifyWorkflowPanel = (payload: WorkflowPanelDelta): void => {
+  for (const w of BrowserWindow.getAllWindows()) w.webContents.send('workflow-panel', payload)
+}

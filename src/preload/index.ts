@@ -137,6 +137,14 @@ const api = {
     ipcRenderer.on('workflow-trace', listener)
     return () => ipcRenderer.removeListener('workflow-trace', listener)
   },
+  // Opt-in node output panel deltas (spec D4 collapsible chat panels). Returns an unsubscribe.
+  onWorkflowPanel: (
+    cb: (p: { chatId: string; nodeId: string; label?: string; delta: string }) => void
+  ) => {
+    const listener = (_e: IpcRendererEvent, p: any): void => cb(p)
+    ipcRenderer.on('workflow-panel', listener)
+    return () => ipcRenderer.removeListener('workflow-panel', listener)
+  },
   // Lorebook library (id-keyed; a character's own lorebook has id == characterId)
   listLorebooks: (profileId: string) => ipcRenderer.invoke('list-lorebooks', profileId),
   getLorebook: (profileId: string, id: string) => ipcRenderer.invoke('get-lorebook', profileId, id),

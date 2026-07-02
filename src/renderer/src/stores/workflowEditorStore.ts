@@ -50,6 +50,7 @@ interface WorkflowEditorState {
   removeEdge(edgeId: string): void
   removeNode(id: string): void
   setNodeConfig(id: string, config: Record<string, unknown>): void
+  setNodePanel(id: string, panel: { show: boolean; label?: string } | undefined): void
   setMainOutput(id: string): void
   select(id: string | null): void
   save(profileId: string): Promise<void>
@@ -185,6 +186,21 @@ export const useWorkflowEditorStore = create<WorkflowEditorState>((set, get) => 
       if (get().readOnly) return
       set({
         nodes: get().nodes.map((n) => (n.id === id ? { ...n, config } : n))
+      })
+      revalidate()
+    },
+
+    setNodePanel: (id, panel) => {
+      if (get().readOnly) return
+      set({
+        nodes: get().nodes.map((n) => {
+          if (n.id !== id) return n
+          if (!panel) {
+            const { panel: _dropped, ...rest } = n
+            return rest
+          }
+          return { ...n, panel }
+        })
       })
       revalidate()
     },

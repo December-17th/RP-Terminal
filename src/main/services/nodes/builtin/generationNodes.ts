@@ -1,3 +1,4 @@
+import { z } from 'zod'
 import { buildGenContext } from '../../generation/genContext'
 import { recallMemory } from '../../generation/memoryRecall'
 import { matchWorldInfo, assemblePrompt } from '../../generation/assemble'
@@ -64,7 +65,12 @@ export const promptAssemble: NodeImpl = {
  *  Stop (`ctx.modelSignal`, not the graph signal). On abort-with-empty (`callModel` returns null)
  *  this calls `ctx.abortGraph()` so the engine's abort path skips the downstream (sync) nodes,
  *  matching `generate()`'s early-return null. On abort-with-text the graph is left running so
- *  parse/apply/write persist the partial floor (Phase 2b-1b abort fix). */
+ *  parse/apply/write persist the partial floor (Phase 2b-1b abort fix).
+ *
+ *  `config.stream` (default true) controls whether the reply streams into the CHAT message. A
+ *  side-branch LLM (planner / judge / background job — spec §8/§11) sets stream=false so its
+ *  output never pollutes the player-facing stream; pair it with `panel.show` to surface the
+ *  result in a collapsible chat panel instead (spec D4). */
 export const llmSample: NodeImpl = {
   type: 'llm.sample',
   title: 'Sample',
@@ -79,12 +85,14 @@ export const llmSample: NodeImpl = {
     { name: 'raw', type: 'Text' },
     { name: 'rawUsage', type: 'Any' }
   ],
-  run: async (ctx, inputs) => {
+  configSchema: z.object({ stream: z.boolean().optional() }),
+  run: async (ctx, inputs, node) => {
+    const streamToChat = node?.config?.stream !== false
     const r = await callModel(
       inputs.gen as GenContext,
       inputs.sendMessages as ChatMessage[],
       inputs.params as PresetParameters,
-      ctx.streamMain,
+      streamToChat ? ctx.streamMain : () => {},
       ctx.modelSignal ?? ctx.signal
     )
     // Abort-with-empty (callModel returned null): nothing to persist — abort the GRAPH so the engine

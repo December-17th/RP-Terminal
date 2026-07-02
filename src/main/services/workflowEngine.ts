@@ -1,8 +1,38 @@
-import { WorkflowDoc, Edge } from '../../shared/workflow/types'
+import { WorkflowDoc, Edge, NodeDescriptor } from '../../shared/workflow/types'
 import { validateWorkflow, ValidationError } from '../../shared/workflow/validate'
 import { topoOrder } from '../../shared/workflow/graph'
 import { NodeRegistry } from './nodes/registry'
 import { RunContext, NodeError } from './nodes/types'
+
+/**
+ * The text a node's opt-in output panel shows (spec D4): its Text-typed output ports joined
+ * (the natural payload — a side LLM's reply, a template's render); when the node has none,
+ * a JSON rendering of the first data port (Context and Signal ports carry nothing displayable).
+ * Pure + exported for tests.
+ */
+export const panelTextOf = (
+  outputs: Record<string, unknown>,
+  descriptor: NodeDescriptor
+): string => {
+  const texts: string[] = []
+  for (const port of descriptor.outputs) {
+    if (port.type !== 'Text') continue
+    const v = outputs[port.name]
+    if (typeof v === 'string' && v) texts.push(v)
+  }
+  if (texts.length) return texts.join('\n\n')
+  for (const port of descriptor.outputs) {
+    if (port.type === 'Context' || port.type === 'Signal') continue
+    const v = outputs[port.name]
+    if (v === undefined) continue
+    try {
+      return JSON.stringify(v, null, 2) ?? ''
+    } catch {
+      return ''
+    }
+  }
+  return ''
+}
 
 export class WorkflowValidationError extends Error {
   errors: ValidationError[]
@@ -101,6 +131,12 @@ async function runNodes(
       const result = (await impl.run(ctx, inputs, { id, config })) ?? {}
       state.outputs.set(id, result.outputs ?? {})
       state.traces.push({ nodeId: id, status: 'ran', phase, ms: Date.now() - started })
+      // Opt-in output panel (spec D4): a node with panel.show fills its collapsible chat panel
+      // on completion (only the main output streams live — spec §5).
+      if (node.panel?.show) {
+        const text = panelTextOf(result.outputs ?? {}, impl)
+        if (text) ctx.emitPanel(id, text)
+      }
       const fired = new Set(result.signals ?? [])
       for (const out of outs) {
         const port = impl.outputs.find((p) => p.name === out.from.port)

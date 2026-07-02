@@ -5,6 +5,7 @@ import { useCharacterStore } from '../stores/characterStore'
 import { useSettingsStore } from '../stores/settingsStore'
 import { useRegexStore } from '../stores/regexStore'
 import { StreamingView } from './StreamingView'
+import { NodePanels } from './NodePanels'
 import { FloorBlock, type FloorMenuTarget } from './FloorBlock'
 import { ChatToolbar } from './ChatToolbar'
 import { ScriptActionsBar } from './ScriptActionsBar'
@@ -224,6 +225,9 @@ export function ChatView({ profileId }: { profileId: string }): React.ReactEleme
             />
           ) : (
             <div className="floor-empty">{t('chat.noMessages')}</div>
+          )}
+          {activeChatId && (showStreaming || page === renderedFloors.length - 1) && (
+            <NodePanels chatId={activeChatId} />
           )}
           {error && (
             <div

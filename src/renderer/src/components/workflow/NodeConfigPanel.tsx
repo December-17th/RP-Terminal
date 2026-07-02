@@ -226,6 +226,7 @@ export default function NodeConfigPanel({
   const nodeTypes = useWorkflowEditorStore((s) => s.nodeTypes)
   const readOnly = useWorkflowEditorStore((s) => s.readOnly)
   const setNodeConfig = useWorkflowEditorStore((s) => s.setNodeConfig)
+  const setNodePanel = useWorkflowEditorStore((s) => s.setNodePanel)
   const setMainOutput = useWorkflowEditorStore((s) => s.setMainOutput)
 
   const node = nodes.find((n) => n.id === selectedNodeId)
@@ -283,6 +284,40 @@ export default function NodeConfigPanel({
           />
           {t('workflowEditor.mainOutput')}
         </label>
+      )}
+
+      {/* Opt-in output panel (spec D4): show this node's completed output as a collapsible
+          section in the chat, labeled below. */}
+      <label style={{ display: 'flex', alignItems: 'center', gap: 4, marginTop: 4 }}>
+        <input
+          type="checkbox"
+          checked={node.panel?.show === true}
+          disabled={readOnly}
+          onChange={(e) =>
+            setNodePanel(
+              node.id,
+              e.target.checked ? { show: true, label: node.panel?.label } : undefined
+            )
+          }
+        />
+        {t('workflowEditor.panelShow')}
+      </label>
+      {node.panel?.show && (
+        <div style={{ margin: '4px 0 6px' }}>
+          <label style={{ fontSize: 10.5, color: 'var(--rpt-text-secondary)' }}>
+            {t('workflowEditor.panelLabel')}
+          </label>
+          <input
+            type="text"
+            value={node.panel.label ?? ''}
+            disabled={readOnly}
+            placeholder={t('workflowEditor.panelLabelPh')}
+            onChange={(e) =>
+              setNodePanel(node.id, { show: true, label: e.target.value || undefined })
+            }
+            style={{ width: '100%' }}
+          />
+        </div>
       )}
 
       <div>
