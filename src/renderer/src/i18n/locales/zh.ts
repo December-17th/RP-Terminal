@@ -560,6 +560,7 @@ const zh: Record<string, string> = {
   'workflowEditor.nodeTitle.prompt.messages': '消息列表',
   'workflowEditor.nodeTitle.merge.messages': '合并消息',
   'workflowEditor.nodeTitle.mvu.set': '设置变量',
+  'workflowEditor.nodeTitle.util.log': '日志',
   // 节点说明
   'workflowEditor.nodeDesc.input.context':
     '构建本回合的上下文包：会话、角色卡、设置、预设、世界书、聊天历史与工作变量。每张图的起点——几乎所有节点都要读取它的输出。',
@@ -568,7 +569,7 @@ const zh: Record<string, string> = {
   'workflowEditor.nodeDesc.prompt.assemble':
     '按默认流水线的方式构建完整的、可直接发给服务商的提示词：角色卡、预设、命中的世界书条目、聊天历史、记忆块与预算裁剪。',
   'workflowEditor.nodeDesc.llm.sample':
-    '用消息数组调用模型。位于主输出路径时回复实时流入聊天；接在 Signal 之后则作为旁路调用（如规划器或后台任务）。',
+    '用消息数组调用模型。位于主输出路径时回复实时流入聊天；接在 Signal 之后则作为旁路调用（如规划器或后台任务）。配置可加重试、备用连接与校验器（含纠正性重试）；全部失败后错误从 error 端口输出。',
   'workflowEditor.nodeDesc.parse.response':
     '后处理原始回复：剥离思维链、提取 rpt 事件与 MVU 变量指令，并计算本回合的缓存指标。',
   'workflowEditor.nodeDesc.apply.state':
@@ -591,9 +592,14 @@ const zh: Record<string, string> = {
     '按端口顺序（a → d，未接入的跳过）拼接最多四个消息列表。接入上下文可保持合并结果符合服务商要求。',
   'workflowEditor.nodeDesc.mvu.set':
     '把一个值写入最新楼层的 stat_data 路径——旁路分支把结果提交到游戏状态的方式。建议用于回复后分支；接入的值优先于配置的值。',
+  'workflowEditor.nodeDesc.util.log':
+    '把输入写入应用日志并终止该分支。把某节点的 error 端口接到这里，可让该失败只记日志而不中止回合。',
   // 通用端口说明（无逐节点条目时回退到这里）
   'workflowEditor.portDesc.common.gen': '来自“上下文”的回合包（设置、角色卡、历史、变量）',
   'workflowEditor.portDesc.common.when': '可选门控：信号触发时本节点才运行',
+  'workflowEditor.portDesc.common.error':
+    '节点最终失败时（重试/备用连接/校验器都用尽后）输出：{kind, message, attempts}。接线后执行沿此分支继续；不接线则回复前失败中止回合、回复后失败不阻塞。',
+  'workflowEditor.portDesc.util.log.value': '任意值——原样写入日志（含错误值）',
   'workflowEditor.portDesc.common.in1': '{{in1}} 占位符的上游值',
   'workflowEditor.portDesc.common.in2': '{{in2}} 占位符的上游值',
   'workflowEditor.portDesc.common.in3': '{{in3}} 占位符的上游值',

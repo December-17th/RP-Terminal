@@ -33,17 +33,27 @@ describe('llm.sample', () => {
     const gen = { profileId: 'p1' }
     const sendMessages = [{ role: 'user', content: 'hi' }]
     const params = { max_tokens: 100 }
-    vi.mocked(callModel).mockResolvedValue({
-      raw: 'hello',
-      rawUsage: { tokens: 5 },
-      stopped: false
+    // Since spec §10 the node delegates through callModelResilient, whose delta wrapper forwards
+    // to ctx.streamMain — assert the DELTAS arrive there, not the callback's identity.
+    vi.mocked(callModel).mockImplementation(async (_g, _m, _p, onDelta) => {
+      onDelta('hel')
+      onDelta('lo')
+      return { raw: 'hello', rawUsage: { tokens: 5 }, stopped: false }
     })
 
     const streamMain = vi.fn()
     const ctx: RunContext = { ...baseCtx, streamMain }
     const result = await llmSample.run(ctx, { gen, sendMessages, params })
 
-    expect(callModel).toHaveBeenCalledWith(gen, sendMessages, params, streamMain, ctx.signal)
+    expect(callModel).toHaveBeenCalledTimes(1)
+    const [gotGen, gotMessages, gotParams, , gotSignal] = vi.mocked(callModel).mock.calls[0]
+    expect([gotGen, gotMessages, gotParams, gotSignal]).toEqual([
+      gen,
+      sendMessages,
+      params,
+      ctx.signal
+    ])
+    expect(streamMain.mock.calls.map((c) => c[0])).toEqual(['hel', 'lo'])
     expect(result).toEqual({ outputs: { raw: 'hello', rawUsage: { tokens: 5 } } })
   })
 

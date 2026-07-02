@@ -2,7 +2,7 @@ import { WorkflowDoc, Edge, NodeDescriptor } from '../../shared/workflow/types'
 import { validateWorkflow, ValidationError } from '../../shared/workflow/validate'
 import { topoOrder } from '../../shared/workflow/graph'
 import { NodeRegistry } from './nodes/registry'
-import { RunContext, NodeError } from './nodes/types'
+import { RunContext, NodeError, NodeRunFailure } from './nodes/types'
 
 /**
  * The text a node's opt-in output panel shows (spec D4): its Text-typed output ports joined
@@ -143,11 +143,15 @@ async function runNodes(
         if (port?.type === 'Signal' && !fired.has(out.from.port)) state.deadEdge.add(edgeKey(out))
       }
     } catch (err) {
+      // A NodeRunFailure carries the failure class + attempt count (spec §10); a plain throw
+      // stays the class-A / single-attempt default.
+      const f = err instanceof NodeRunFailure ? err : undefined
       const nodeError: NodeError = {
-        kind: 'A',
+        kind: f?.kind ?? 'A',
         message: err instanceof Error ? err.message : String(err),
+        ...(f?.code !== undefined ? { code: f.code } : {}),
         nodeId: id,
-        attempts: 1
+        attempts: f?.attempts ?? 1
       }
       const errorPort = impl.outputs.find((p) => p.name === 'error' && p.type === 'Error')
       const errorEdges = outs.filter((o) => o.from.port === 'error')

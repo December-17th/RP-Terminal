@@ -23,7 +23,8 @@ describe('listNodeTypes', () => {
       'text.template',
       'prompt.messages',
       'merge.messages',
-      'mvu.set'
+      'mvu.set',
+      'util.log'
     ]) {
       expect(byType.has(t)).toBe(true)
     }
