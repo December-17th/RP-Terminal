@@ -510,7 +510,7 @@ const en: Record<string, string> = {
   'workflow.resolved': 'Active workflow:',
   'workflow.trace.heading': 'Last run',
   'workflow.trace.empty': 'No run yet this session — send a message to see the trace.',
-  'workflow.trace.total': '{{ms}} ms total',
+  'workflow.trace.total': '{{s}} total',
   'workflow.trace.aborted': 'Run aborted (stopped)',
   'workflow.trace.error': 'Turn failed:',
   'workflow.trace.postPhase': 'post-response',

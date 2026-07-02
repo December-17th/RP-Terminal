@@ -495,7 +495,7 @@ const zh: Record<string, string> = {
   'workflow.resolved': '当前生效：',
   'workflow.trace.heading': '最近一次运行',
   'workflow.trace.empty': '本次会话还没有运行记录 —— 发送一条消息即可查看。',
-  'workflow.trace.total': '共 {{ms}} ms',
+  'workflow.trace.total': '共 {{s}}',
   'workflow.trace.aborted': '本次运行已中止（停止）',
   'workflow.trace.error': '回合失败：',
   'workflow.trace.postPhase': '响应后',

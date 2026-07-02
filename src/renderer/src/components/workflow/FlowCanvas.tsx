@@ -26,7 +26,7 @@ import { useWorkflowEditorStore, type NodeTypeInfo } from '../../stores/workflow
 import { useWorkflowTraceStore } from '../../stores/workflowTraceStore'
 import { useChatStore } from '../../stores/chatStore'
 import { useOptionalT, useT } from '../../i18n'
-import type { TraceNode } from '../../../../shared/workflow/trace'
+import { formatTraceSeconds, type TraceNode } from '../../../../shared/workflow/trace'
 import type { EditorNode } from './editorModel'
 
 /** Matches the palette drag payload's mime type (drag source lives in a later task's palette
@@ -68,7 +68,7 @@ function RptNode({ data, selected }: NodeProps<RFNode<RptNodeData>>): React.JSX.
   const title =
     tOpt(`workflowEditor.nodeTitle.${editorNode.type}`) || typeInfo?.title || editorNode.type
   const traceTitle = trace
-    ? `${t(`workflow.trace.status.${trace.status}`)}${trace.ms !== undefined ? ` · ${trace.ms}ms` : ''}${trace.error ? ` — ${trace.error.message}` : ''}`
+    ? `${t(`workflow.trace.status.${trace.status}`)}${trace.ms !== undefined ? ` · ${formatTraceSeconds(trace.ms)}` : ''}${trace.error ? ` — ${trace.error.message}` : ''}`
     : undefined
 
   return (
@@ -89,7 +89,7 @@ function RptNode({ data, selected }: NodeProps<RFNode<RptNodeData>>): React.JSX.
             {trace.status === 'failed'
               ? t('workflow.trace.status.failed')
               : trace.ms !== undefined
-                ? `${trace.ms}ms`
+                ? formatTraceSeconds(trace.ms)
                 : t(`workflow.trace.status.${trace.status}`)}
           </span>
         )}

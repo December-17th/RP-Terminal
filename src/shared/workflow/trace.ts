@@ -53,6 +53,9 @@ interface RunResultLike {
 /** Longest preview kept per output port — enough to see what flowed, not the whole prompt. */
 export const OUTPUT_PREVIEW_MAX = 500
 
+/** Display format for node timings: SECONDS with one decimal (owner preference), e.g. "1.2s". */
+export const formatTraceSeconds = (ms: number): string => `${(ms / 1000).toFixed(1)}s`
+
 const preview = (value: unknown): string => {
   let s: string
   try {
