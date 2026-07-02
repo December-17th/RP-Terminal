@@ -3,7 +3,9 @@ import { useChatStore } from '../../stores/chatStore'
 import { useToastStore } from '../../stores/toastStore'
 import { useUiStore } from '../../stores/uiStore'
 import { useWorkflowEditorStore } from '../../stores/workflowEditorStore'
-import { useT } from '../../i18n'
+import { useWorkflowTraceStore } from '../../stores/workflowTraceStore'
+import { useOptionalT, useT } from '../../i18n'
+import type { TraceNode, WorkflowRunTrace } from '../../../../shared/workflow/trace'
 
 /**
  * Minimal workflow manager: list/import/export/clone/delete built-in + custom node-workflow
@@ -20,12 +22,112 @@ interface WorkflowSummary {
   builtin?: boolean
 }
 
+const STATUS_COLOR: Record<TraceNode['status'], string> = {
+  ran: 'var(--rpt-success)',
+  skipped: 'var(--rpt-text-tertiary)',
+  failed: 'var(--rpt-danger)'
+}
+
+/** Last run's per-node trace for the active chat (spec §13 run/trace panel): status dot,
+ *  localized node title (reuses the editor's nodeTitle keys), phase chip, timing, error. */
+const TracePanel: React.FC<{ trace: WorkflowRunTrace | undefined }> = ({ trace }) => {
+  const t = useT()
+  const tOpt = useOptionalT()
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'baseline',
+          justifyContent: 'space-between',
+          borderBottom: '1px solid var(--rpt-border)',
+          paddingBottom: 6
+        }}
+      >
+        <strong>{t('workflow.trace.heading')}</strong>
+        {trace && (
+          <span style={{ fontSize: 11, color: 'var(--rpt-text-tertiary)' }}>
+            {t('workflow.trace.total', { ms: trace.durationMs })}
+          </span>
+        )}
+      </div>
+
+      {!trace && <div style={{ opacity: 0.6 }}>{t('workflow.trace.empty')}</div>}
+
+      {trace?.aborted && (
+        <div style={{ color: 'var(--rpt-warning)' }}>{t('workflow.trace.aborted')}</div>
+      )}
+      {trace?.error && (
+        <div style={{ color: 'var(--rpt-danger)' }}>
+          {t('workflow.trace.error')} {trace.error.message}
+        </div>
+      )}
+
+      {trace?.nodes.map((n) => {
+        const title = tOpt(`workflowEditor.nodeTitle.${n.nodeType}`) || n.nodeType
+        const tooltip = n.outputs
+          ? Object.entries(n.outputs)
+              .map(([port, v]) => `${port}: ${v}`)
+              .join('\n')
+          : undefined
+        return (
+          <div key={`${n.nodeId}-${n.phase}`} title={tooltip} style={{ padding: '2px 0' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+              <span
+                aria-label={t(`workflow.trace.status.${n.status}`)}
+                style={{
+                  width: 8,
+                  height: 8,
+                  borderRadius: '50%',
+                  flex: '0 0 auto',
+                  background: STATUS_COLOR[n.status]
+                }}
+              />
+              <span style={{ flex: 1, opacity: n.status === 'skipped' ? 0.55 : 1 }}>
+                {title}
+                <span style={{ marginLeft: 6, fontSize: 10.5, color: 'var(--rpt-text-tertiary)' }}>
+                  {n.nodeType}
+                </span>
+              </span>
+              {n.phase === 'post' && (
+                <span
+                  style={{
+                    fontSize: 10,
+                    padding: '0 5px',
+                    borderRadius: 8,
+                    border: '1px solid var(--rpt-border)',
+                    color: 'var(--rpt-text-tertiary)'
+                  }}
+                >
+                  {t('workflow.trace.postPhase')}
+                </span>
+              )}
+              {n.ms !== undefined && (
+                <span style={{ fontSize: 11, color: 'var(--rpt-text-tertiary)' }}>{n.ms}ms</span>
+              )}
+            </div>
+            {n.error && (
+              <div style={{ marginLeft: 15, fontSize: 11.5, color: 'var(--rpt-danger)' }}>
+                {n.error.message}
+              </div>
+            )}
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
 export const WorkflowView: React.FC<{ profileId: string }> = ({ profileId }) => {
   const t = useT()
   const activeChatId = useChatStore((s) => s.activeChatId)
   const chats = useChatStore((s) => s.chats)
   const characterId = chats.find((c) => c.id === activeChatId)?.character_id ?? null
 
+  const lastTrace = useWorkflowTraceStore((s) =>
+    activeChatId ? s.traces[activeChatId] : undefined
+  )
   const [workflows, setWorkflows] = React.useState<WorkflowSummary[]>([])
   const [globalId, setGlobalIdState] = React.useState<string | null>(null)
   const [worldId, setWorldIdState] = React.useState<string | null>(null)
@@ -255,6 +357,8 @@ export const WorkflowView: React.FC<{ profileId: string }> = ({ profileId }) => 
           {t('workflow.resolved')} {resolved}
         </div>
       )}
+
+      {activeChatId && <TracePanel trace={lastTrace} />}
     </div>
   )
 }

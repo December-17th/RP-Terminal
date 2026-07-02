@@ -131,6 +131,12 @@ const api = {
     ipcRenderer.invoke('import-workflow-dialog', profileId),
   exportWorkflowDialog: (profileId: string, id: string, name: string) =>
     ipcRenderer.invoke('export-workflow-dialog', profileId, id, name),
+  // Per-turn workflow run trace (spec §13 run/trace panel). Returns an unsubscribe function.
+  onWorkflowTrace: (cb: (trace: unknown) => void) => {
+    const listener = (_e: IpcRendererEvent, trace: unknown): void => cb(trace)
+    ipcRenderer.on('workflow-trace', listener)
+    return () => ipcRenderer.removeListener('workflow-trace', listener)
+  },
   // Lorebook library (id-keyed; a character's own lorebook has id == characterId)
   listLorebooks: (profileId: string) => ipcRenderer.invoke('list-lorebooks', profileId),
   getLorebook: (profileId: string, id: string) => ipcRenderer.invoke('get-lorebook', profileId, id),
