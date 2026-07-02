@@ -1,6 +1,6 @@
 # 06 — Tables view editing + template export + polish
 
-Status: ready-for-agent
+Status: ready-for-human (implemented + reviewed; awaiting owner sign-off/merge)
 
 ## What to build
 
@@ -27,3 +27,15 @@ Demo: fix a wrong cell the AI wrote, see the fix persist across turns and roll b
 ## Blocked by
 
 - [03-sandboxed-sql-write-path-and-rewind.md](03-sandboxed-sql-write-path-and-rewind.md)
+
+## Comments
+
+**2026-07-02 — implemented + reviewed.** Plan at [06-plan.md](06-plan.md); implemented by an Opus agent as the issue-06 commit; reviewed by the controller. Verdict: accepted as-is, no fix-ups.
+
+Verified: tableEditService builders validate every identifier + rowid and quote every value ('' doubling); applyEdit routes through the SAME lock → applySqlBatch (which re-validates — a second net) → appendOps path as AI writes, never a second write surface; the renderer sends only a column INDEX and main resolves it against the sandbox's real column list; reset is the deliberate op-logged DELETE FROM (replay-consistent, per this issue's AC choice); rowid identity documented as replay-deterministic. Export round-trip AC holds (parse → export → parse deep-equal on the real fixture; uid/order preserved; with-data embedding). Status IPC merges max last-maintained per table across all table.gate node states (main-doc gates only — sub-graph gates noted as a possible follow-on). Display-header unification closes the issue-02 review note. i18n parity: 33 tables.* keys in each locale.
+
+Accepted deviation: globalInjectionConfig is OMITTED (not defaulted to {}) when the template has none — a present-but-empty object would parse back as a defined globalInjection and break the round-trip inverse; verified by test.
+
+Known test-scope limits (established stance, better-sqlite3 alias mock): live rowid replay determinism, constraint-violation toasts, and the export file write land in the owner's manual pass.
+
+Gate re-run independently: typecheck PASS, check:deps PASS (347 modules), tests 170 files / **1405** PASS.
