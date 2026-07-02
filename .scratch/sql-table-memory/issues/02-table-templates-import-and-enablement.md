@@ -1,6 +1,6 @@
 # 02 — Table templates: import, per-chat enablement, read-only Tables view
 
-Status: ready-for-agent
+Status: ready-for-human (implemented + reviewed; awaiting owner sign-off/merge)
 
 ## What to build
 
@@ -28,3 +28,16 @@ Demo: import `SQL-命定之诗Can改5.9`, assign it to a chat, open the Tables v
 ## Blocked by
 
 - [01-remove-episodic-memory-engine.md](01-remove-episodic-memory-engine.md)
+
+## Comments
+
+**2026-07-02 — implemented + reviewed.** Plan at [02-plan.md](02-plan.md); implemented by an Opus agent as commit `07023ae`; reviewed by the controller. Review found and fixed two defects (committed as the review-fix commit on top):
+
+1. **`buildInitialInsert` used display headers as SQL column names** — chatSheets `content[0]` headers are display labels (row_id + Chinese names), not the DDL's column names, so `isSafeSqlIdentifier` dropped every non-ASCII column and any template shipping initial rows silently lost them (latent today — the poem fixture is header-only — but it would poison issue 06's export-with-data round-trip). Rewritten as a purely positional `INSERT INTO "t" VALUES (?, …)` (one placeholder per header column; empty `row_id` cell binds NULL for PK auto-assign); tests re-pinned to the corrected behavior.
+2. **Duplicate `sqlName` across sheets wasn't rejected** — two sheets creating the same table would fail late (SQLite error at chat assignment) instead of at import. The parser now rejects with a clear `Duplicate table name` error; test added.
+
+Everything else verified clean: DDL guard (single-CREATE, multi-statement rejection, name cross-check at instantiation, identifier allowlist), sandbox isolation (`profiles/<id>/table-dbs/<chatId>.sqlite`, never the app DB), chat-column pattern matching `workflow_id`, IPC/preload wiring, TablesView (tokens + t() + confirms on destructive actions), i18n parity (17 `tables.*` keys in each locale), docs/sdk/table-templates.md + README mapping row, real-fixture parse of all 8 tables in order. Gate re-run independently post-fix: typecheck PASS, check:deps PASS (340 modules), tests 163 files / **1258** PASS.
+
+Accepted agent deviations: `log('info')` (no `warn` level exists), zod `.prefault({})` for nested defaults (zod 4 `.default({})` doesn't apply inner defaults), import-error contract `{ summary?, error? }` with i18n-key-or-verbatim-message semantics.
+
+Noted for issue 06 (not fixed here): populated tables display SQL column names (from `stmt.columns()`) while sandbox-missing tables display the template's display headers — unify on display headers when the widths match, as part of the view-editing polish.

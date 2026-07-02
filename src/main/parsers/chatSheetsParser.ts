@@ -180,6 +180,16 @@ export const parseChatSheets = (raw: any, name: string): TableTemplate => {
 
   const tables = ordered.map(({ key, sheet }) => mapSheet(str(sheet.uid, key), sheet))
 
+  // Two sheets creating the same SQL table would collide at instantiation — reject at import
+  // with a clear message instead of a late SQLite error on chat assignment.
+  const seen = new Set<string>()
+  for (const t of tables) {
+    if (seen.has(t.sqlName)) {
+      throw new ChatSheetsParseError(`Duplicate table name "${t.sqlName}" across sheets`)
+    }
+    seen.add(t.sqlName)
+  }
+
   const gi = mate.globalInjectionConfig
   const globalInjection =
     gi && typeof gi === 'object'

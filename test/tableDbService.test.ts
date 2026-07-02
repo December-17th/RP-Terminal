@@ -75,20 +75,21 @@ describe('templateSqlNames', () => {
 })
 
 describe('buildInitialInsert', () => {
-  it('builds a positional parameterized insert over safe header columns', () => {
+  it('builds a purely positional insert — headers are DISPLAY names, never interpolated', () => {
+    // Real chatSheets headers are display labels (row_id + Chinese names), NOT the DDL's column
+    // names — the insert must be positional (`VALUES (?, …)`) or Chinese-header templates would
+    // silently drop every initial row.
     const t = table({
       sqlName: 'chronicle',
       ddl: 'CREATE TABLE chronicle (row_id INT);',
-      headers: ['row_id', 'code_index', 'summary'],
+      headers: ['row_id', '编码索引', '纪要'],
       initialRows: [
         ['1', 'AM0001', 'first'],
         ['2', 'AM0002', 'second']
       ]
     })
     const out = buildInitialInsert(t)!
-    expect(out.sql).toBe(
-      'INSERT INTO "chronicle" ("row_id", "code_index", "summary") VALUES (?, ?, ?)'
-    )
+    expect(out.sql).toBe('INSERT INTO "chronicle" VALUES (?, ?, ?)')
     expect(out.rows).toEqual([
       ['1', 'AM0001', 'first'],
       ['2', 'AM0002', 'second']
@@ -103,6 +104,7 @@ describe('buildInitialInsert', () => {
       initialRows: [['1'], ['1', '2', '3']]
     })
     const out = buildInitialInsert(t)!
+    expect(out.sql).toBe('INSERT INTO "a" VALUES (?, ?)')
     expect(out.rows).toEqual([
       ['1', null],
       ['1', '2']
@@ -119,16 +121,14 @@ describe('buildInitialInsert', () => {
     expect(buildInitialInsert(t)).toBeNull()
   })
 
-  it('drops unsafe header column names (never interpolates them)', () => {
+  it("binds an empty row_id cell as NULL (INTEGER PRIMARY KEY auto-assign), keeps '' elsewhere", () => {
     const t = table({
       sqlName: 'a',
-      ddl: 'CREATE TABLE a (x INT);',
-      headers: ['x', 'bad col', 'y'],
-      initialRows: [['1', '2', '3']]
+      ddl: 'CREATE TABLE a (row_id INTEGER PRIMARY KEY, v TEXT);',
+      headers: ['row_id', 'v'],
+      initialRows: [['', '']]
     })
     const out = buildInitialInsert(t)!
-    expect(out.sql).toBe('INSERT INTO "a" ("x", "y") VALUES (?, ?)')
-    // rows keep ORIGINAL header alignment: x=idx0 → '1', y=idx2 → '3' ('bad col' at idx1 dropped)
-    expect(out.rows).toEqual([['1', '3']])
+    expect(out.rows).toEqual([[null, '']])
   })
 })

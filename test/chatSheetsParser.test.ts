@@ -195,4 +195,19 @@ describe('parseChatSheets — rejection cases', () => {
     expect(() => parseChatSheets(null, 'x')).toThrow(ChatSheetsParseError)
     expect(() => parseChatSheets('nope', 'x')).toThrow(ChatSheetsParseError)
   })
+  it('rejects two sheets creating the same SQL table (would collide at instantiation)', () => {
+    const sheet = (uid: string, orderNo: number): object => ({
+      uid,
+      name: uid,
+      orderNo,
+      content: [['row_id']],
+      sourceData: { ddl: 'CREATE TABLE dup (x INT);' }
+    })
+    const raw = {
+      mate: { type: 'chatSheets', version: 2 },
+      sheet_a: sheet('sheet_a', 0),
+      sheet_b: sheet('sheet_b', 1)
+    }
+    expect(() => parseChatSheets(raw, 'x')).toThrow(/Duplicate table name "dup"/)
+  })
 })

@@ -60,23 +60,28 @@ export const templateSqlNames = (template: TableTemplate): Set<string> =>
   new Set(template.tables.map((t) => t.sqlName))
 
 /**
- * Positional INSERT for a table's initial rows. Returns the parameterized SQL and the row arrays to
- * bind, using only header column names (which come from the template, never user SQL). Rows longer
- * than the header are truncated; shorter rows are left-aligned and the rest bound as NULL.
- * Returns null when there are no initial rows to insert.
+ * Positional INSERT for a table's initial rows: `INSERT INTO "t" VALUES (?, …)` with one
+ * placeholder per header column. chatSheets rows are POSITIONAL — `content[0]` headers are
+ * DISPLAY names (e.g. 人物名称), NOT the DDL's column names, so a name-based insert would misbind
+ * or drop columns wholesale. The row width must therefore match the DDL's column count, which
+ * holds for well-formed templates (the header row mirrors the DDL, `row_id` included); a mismatch
+ * surfaces as a SQLite error at instantiation. Short rows are padded with NULL, long rows
+ * truncated. An empty string in the first position is bound as NULL when that slot follows the
+ * `row_id` convention, letting INTEGER PRIMARY KEY auto-assign (other cells keep '' as-is —
+ * NOT NULL TEXT columns accept '' but reject NULL). Returns null when there are no rows.
  */
 export const buildInitialInsert = (table: TableDef): { sql: string; rows: unknown[][] } | null => {
   if (!table.initialRows.length || !table.headers.length) return null
   if (!isSafeSqlIdentifier(table.sqlName)) return null
-  // Keep the ORIGINAL header index of each safe column so row values stay aligned to their column
-  // even when an unsafe header name is dropped from the middle.
-  const cols = table.headers.map((h, idx) => ({ h, idx })).filter(({ h }) => isSafeSqlIdentifier(h))
-  if (cols.length === 0) return null
-  const placeholders = cols.map(() => '?').join(', ')
-  const colList = cols.map(({ h }) => `"${h}"`).join(', ')
-  const sql = `INSERT INTO "${table.sqlName}" (${colList}) VALUES (${placeholders})`
+  const width = table.headers.length
+  const placeholders = new Array(width).fill('?').join(', ')
+  const sql = `INSERT INTO "${table.sqlName}" VALUES (${placeholders})`
+  const rowIdFirst = table.headers[0] === 'row_id'
   const rows = table.initialRows.map((row) =>
-    cols.map(({ idx }) => (idx < row.length ? row[idx] : null))
+    Array.from({ length: width }, (_, i) => {
+      const v = i < row.length ? row[i] : null
+      return rowIdFirst && i === 0 && v === '' ? null : v
+    })
   )
   return { sql, rows }
 }
