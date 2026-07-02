@@ -243,7 +243,10 @@ export const subgraphCall: NodeImpl = {
       ...ctx,
       subgraphStack: nextStack,
       getNodeState: (id) => ctx.getNodeState(`${node.id}/${id}`),
-      setNodeState: (id, value) => ctx.setNodeState(`${node.id}/${id}`, value)
+      setNodeState: (id, value) => ctx.setNodeState(`${node.id}/${id}`, value),
+      // Panels get the same per-instance isolation as node state (Opus QA finding): an inner
+      // panel.show node must not collide with a same-id parent-graph node in the chat panels.
+      emitPanel: (id, delta) => ctx.emitPanel(`${node.id}/${id}`, delta)
     }
 
     const result = await runSubgraph(doc, registry, wrappedCtx, seeds)
