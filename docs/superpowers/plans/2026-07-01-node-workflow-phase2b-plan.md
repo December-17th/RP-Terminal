@@ -145,6 +145,9 @@ behavior. Frequent commits.
 > phase — **Phase 3 persistence BUILT 2026-07-01**, see
 > `2026-07-01-node-workflow-phase3-persistence.md` (file-based workflow resource + 4-tier
 > selection/resolution driving generate(), node_state re-keyed by workflow, minimal manager view).
+> **Phase 4 editor BUILT 2026-07-01**, see `2026-07-01-node-workflow-phase4-editor.md`
+> (token-themed React Flow canvas + palette + schema-driven config panel + live validation;
+> autosave and run/trace deliberately deferred).
 
 - `prompt.messages` (role-tagged message list), `merge.messages` (distinct input ports, per the fan-in rule),
   `text.template`, `control.if`/`switch`/`when` (predicates over Vars via `objectPath`), `mvu.set`.
