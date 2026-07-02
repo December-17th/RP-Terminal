@@ -8,7 +8,7 @@ import { log } from '../logService'
 
 /**
  * Spec §10 failure-handling primitives around one model call, applied in the spec's order:
- *  1. retry with backoff       — class A (request never went through); honors 429 via the RPM queue
+ *  1. auto-retry (fixed delay) — class A (request never went through); honors 429 via the RPM queue
  *  2. fallback connection      — a second api_preset tried after the primary's attempts exhaust
  *  3. validator + corrective   — class B (bad output); re-asks with the failure injected as a nudge
  * Give-up throws NodeRunFailure carrying the class + burned attempts, which the engine routes on
@@ -18,10 +18,11 @@ import { log } from '../logService'
  * unchanged. An abort (user Stop) is never retried: it returns null immediately, like callModel.
  */
 export interface ResilienceConfig {
-  /** Extra class-A attempts per connection after the first (default 0 = no retry). */
+  /** Max auto-retries per connection after the first attempt (default 0 = off). */
   retries?: number
-  /** Base backoff before a retry, doubling per burned attempt (default 1000ms, capped 30s). */
-  backoff_ms?: number
+  /** Fixed wait before each retry, in SECONDS (owner-specified semantics: "try again after
+   *  X seconds, at most X times"). Default 5s. */
+  retry_delay_s?: number
   /** api_preset id tried (with the same budgets) after the primary connection gives up. */
   fallback_preset_id?: string
   /** Output check; a failure triggers the corrective retry, then a class-B give-up. */
@@ -36,7 +37,7 @@ export interface ResilienceConfig {
 
 type CallResult = { raw: string; rawUsage: unknown; stopped: boolean }
 
-const BACKOFF_CAP_MS = 30_000
+const DEFAULT_RETRY_DELAY_S = 5
 const DEFAULT_NUDGE =
   'Your previous reply failed validation. Reply again and satisfy the required format exactly.'
 
@@ -145,7 +146,7 @@ export const callModelResilient = async (
 ): Promise<CallResult | null> => {
   const maxA = 1 + Math.max(0, cfg.retries ?? 0)
   const vBudget = Math.max(0, cfg.validator_retries ?? 1)
-  const backoffBase = Math.max(0, cfg.backoff_ms ?? 1000)
+  const retryDelayMs = Math.max(0, cfg.retry_delay_s ?? DEFAULT_RETRY_DELAY_S) * 1000
 
   const connections: GenContext[] = [gen]
   if (cfg.fallback_preset_id) {
@@ -170,9 +171,7 @@ export const callModelResilient = async (
 
   for (const conn of connections) {
     for (let a = 0; a < maxA; a++) {
-      if (attempts > 0) {
-        await sleep(Math.min(BACKOFF_CAP_MS, backoffBase * 2 ** (attempts - 1)), signal)
-      }
+      if (attempts > 0) await sleep(retryDelayMs, signal) // fixed X-second wait before each retry
       attempts++
       let result: CallResult | null
       try {

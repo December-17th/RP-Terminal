@@ -72,8 +72,9 @@ export const promptAssemble: NodeImpl = {
  *  output never pollutes the player-facing stream; pair it with `panel.show` to surface the
  *  result in a collapsible chat panel instead (spec D4).
  *
- *  Failure handling (spec §10): the remaining config drives callModelResilient — class-A
- *  retry/backoff, a fallback preset connection, and a validator with corrective retry. Give-up
+ *  Failure handling (spec §10): the remaining config drives callModelResilient — auto-retry on
+ *  API errors (`retries` times, `retry_delay_s` seconds apart), a fallback preset connection,
+ *  and a validator with corrective retry. Give-up
  *  throws a NodeRunFailure the engine routes on the `error` output port when wired; unwired (the
  *  default graph) it surfaces as the turn's failure, exactly like before. Empty config = one
  *  plain call — parity preserved. */
@@ -96,7 +97,7 @@ export const llmSample: NodeImpl = {
   configSchema: z.object({
     stream: z.boolean().optional(),
     retries: z.number().int().min(0).max(5).optional(),
-    backoff_ms: z.number().int().min(0).max(60000).optional(),
+    retry_delay_s: z.number().min(0).max(300).optional(),
     fallback_preset_id: z.string().optional(),
     validator: z.enum(['none', 'non_empty', 'regex', 'json']).optional(),
     validator_pattern: z.string().optional(),

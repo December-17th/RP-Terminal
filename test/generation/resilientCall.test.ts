@@ -1,8 +1,8 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+﻿import { describe, it, expect, vi, beforeEach } from 'vitest'
 
-// Spec §10 failure primitives around callModel: class-A retry/backoff, fallback connection,
-// validator + corrective retry, NodeRunFailure give-up. callModel itself is mocked — these
-// tests pin the orchestration.
+// Spec 10 failure primitives around callModel: class-A auto-retry (fixed delay), fallback
+// connection, validator + corrective retry, NodeRunFailure give-up. callModel itself is
+// mocked -- these tests pin the orchestration.
 
 const { callModel } = vi.hoisted(() => ({ callModel: vi.fn() }))
 vi.mock('../../src/main/services/generation/callModel', () => ({ callModel }))
@@ -43,7 +43,7 @@ const noDelta = (): string[] => []
 
 describe('callModelResilient', () => {
   // Braces matter: mockReset() returns the mock, and a beforeEach RETURN value is treated by
-  // vitest as a teardown hook — it would call the mock with no args after every test.
+  // vitest as a teardown hook -- it would call the mock with no args after every test.
   beforeEach(() => {
     callModel.mockReset()
   })
@@ -77,19 +77,43 @@ describe('callModelResilient', () => {
       {},
       (d) => deltas.push(d),
       signal(),
-      { retries: 1, backoff_ms: 0 }
+      { retries: 1, retry_delay_s: 0 }
     )
     expect(r).toEqual(ok('full reply'))
     expect(callModel).toHaveBeenCalledTimes(2)
-    // The retry does NOT re-stream over the partial text — the floor carries the real reply.
+    // The retry does NOT re-stream over the partial text -- the floor carries the real reply.
     expect(deltas).toEqual(['partial '])
+  })
+
+  it('waits the FIXED retry_delay_s between attempts (no exponential growth)', async () => {
+    vi.useFakeTimers()
+    try {
+      callModel
+        .mockRejectedValueOnce(new Error('boom1'))
+        .mockRejectedValueOnce(new Error('boom2'))
+        .mockResolvedValueOnce(ok('third time lucky'))
+      const p = callModelResilient(gen, [], {}, () => {}, signal(), {
+        retries: 2,
+        retry_delay_s: 7
+      })
+      // attempt 1 fails immediately; each retry waits exactly 7s — not 7s then 14s.
+      await vi.advanceTimersByTimeAsync(6_900)
+      expect(callModel).toHaveBeenCalledTimes(1)
+      await vi.advanceTimersByTimeAsync(200)
+      expect(callModel).toHaveBeenCalledTimes(2)
+      await vi.advanceTimersByTimeAsync(7_100)
+      expect(callModel).toHaveBeenCalledTimes(3)
+      await expect(p).resolves.toEqual(ok('third time lucky'))
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('gives up as class A with the burned attempt count', async () => {
     callModel.mockRejectedValue(new Error('API Error: 500'))
     const err = await callModelResilient(gen, [], {}, () => {}, signal(), {
       retries: 1,
-      backoff_ms: 0
+      retry_delay_s: 0
     }).catch((e) => e)
     expect(err).toBeInstanceOf(NodeRunFailure)
     expect(err.kind).toBe('A')
@@ -97,11 +121,11 @@ describe('callModelResilient', () => {
     expect(err.message).toBe('API Error: 500')
   })
 
-  it('an abort (callModel → null) is returned immediately, never retried', async () => {
+  it('an abort (callModel returning null) is returned immediately, never retried', async () => {
     callModel.mockResolvedValue(null)
     const r = await callModelResilient(gen, [], {}, () => {}, signal(), {
       retries: 3,
-      backoff_ms: 0
+      retry_delay_s: 0
     })
     expect(r).toBeNull()
     expect(callModel).toHaveBeenCalledTimes(1)
@@ -112,7 +136,7 @@ describe('callModelResilient', () => {
       .mockRejectedValueOnce(new Error('auth failed'))
       .mockImplementationOnce(async (g: GenContext) => ok(`via ${g.settings.api.endpoint}`))
     const r = await callModelResilient(gen, [], {}, () => {}, signal(), {
-      backoff_ms: 0,
+      retry_delay_s: 0,
       fallback_preset_id: 'fb1'
     })
     expect(r?.raw).toBe('via https://backup/v1')
@@ -130,7 +154,7 @@ describe('callModelResilient', () => {
   it('a dangling fallback preset id is skipped (primary failure surfaces)', async () => {
     callModel.mockRejectedValue(new Error('boom'))
     const err = await callModelResilient(gen, [], {}, () => {}, signal(), {
-      backoff_ms: 0,
+      retry_delay_s: 0,
       fallback_preset_id: 'missing'
     }).catch((e) => e)
     expect(err.kind).toBe('A')
@@ -156,7 +180,7 @@ describe('callModelResilient', () => {
     const err = await callModelResilient(gen, [], {}, () => {}, signal(), {
       validator: 'json',
       validator_retries: 1,
-      backoff_ms: 0
+      retry_delay_s: 0
     }).catch((e) => e)
     expect(err).toBeInstanceOf(NodeRunFailure)
     expect(err.kind).toBe('B')
@@ -172,7 +196,7 @@ describe('callModelResilient', () => {
     const r = await callModelResilient(gen, [], {}, () => {}, signal(), {
       validator: 'non_empty',
       validator_retries: 1,
-      backoff_ms: 0,
+      retry_delay_s: 0,
       fallback_preset_id: 'fb1'
     })
     expect(r?.raw).toBe('good from m2')
