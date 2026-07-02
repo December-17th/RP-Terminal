@@ -12,6 +12,26 @@ export interface NodeError {
   attempts: number
 }
 
+/**
+ * A node throws this to describe HOW it failed (spec §10): class A = the request never went
+ * through (network / timeout / 429 / 5xx / auth), class B = the output came back but was bad
+ * (empty / refusal / failed the node's validator), plus how many attempts were burned. The
+ * engine folds these fields into the NodeError it routes on the node's `error` port; a plain
+ * thrown Error still works and defaults to kind A / 1 attempt.
+ */
+export class NodeRunFailure extends Error {
+  kind: 'A' | 'B'
+  code?: string
+  attempts: number
+  constructor(kind: 'A' | 'B', message: string, attempts: number, code?: string) {
+    super(message)
+    this.name = 'NodeRunFailure'
+    this.kind = kind
+    this.attempts = attempts
+    this.code = code
+  }
+}
+
 /** Per-turn runtime context threaded to every node's run() (spec §4). Phase 2a includes the
  *  executor-relevant hooks; Phase 2b augments this with domain fields (floors, settings, world,
  *  userAction, scanText, …) without reshaping the executor. */

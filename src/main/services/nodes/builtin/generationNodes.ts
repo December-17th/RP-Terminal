@@ -2,7 +2,7 @@ import { z } from 'zod'
 import { buildGenContext } from '../../generation/genContext'
 import { recallMemory } from '../../generation/memoryRecall'
 import { matchWorldInfo, assemblePrompt } from '../../generation/assemble'
-import { callModel } from '../../generation/callModel'
+import { callModelResilient, ResilienceConfig } from '../../generation/resilientCall'
 import { parseResponse, computeMetrics } from '../../generation/parseResponse'
 import { foldState } from '../../generation/foldState'
 import { persistFloor, compactMemory } from '../../generation/persistFloor'
@@ -70,7 +70,14 @@ export const promptAssemble: NodeImpl = {
  *  `config.stream` (default true) controls whether the reply streams into the CHAT message. A
  *  side-branch LLM (planner / judge / background job — spec §8/§11) sets stream=false so its
  *  output never pollutes the player-facing stream; pair it with `panel.show` to surface the
- *  result in a collapsible chat panel instead (spec D4). */
+ *  result in a collapsible chat panel instead (spec D4).
+ *
+ *  Failure handling (spec §10): the remaining config drives callModelResilient — auto-retry on
+ *  API errors (`retries` times, `retry_delay_s` seconds apart), a fallback preset connection,
+ *  and a validator with corrective retry. Give-up
+ *  throws a NodeRunFailure the engine routes on the `error` output port when wired; unwired (the
+ *  default graph) it surfaces as the turn's failure, exactly like before. Empty config = one
+ *  plain call — parity preserved. */
 export const llmSample: NodeImpl = {
   type: 'llm.sample',
   title: 'Sample',
@@ -83,17 +90,30 @@ export const llmSample: NodeImpl = {
   ],
   outputs: [
     { name: 'raw', type: 'Text' },
-    { name: 'rawUsage', type: 'Any' }
+    { name: 'rawUsage', type: 'Any' },
+    // Spec §10: the give-up value ({kind, message, attempts, …}) for author-wired error branches.
+    { name: 'error', type: 'Error' }
   ],
-  configSchema: z.object({ stream: z.boolean().optional() }),
+  configSchema: z.object({
+    stream: z.boolean().optional(),
+    retries: z.number().int().min(0).max(5).optional(),
+    retry_delay_s: z.number().min(0).max(300).optional(),
+    fallback_preset_id: z.string().optional(),
+    validator: z.enum(['none', 'non_empty', 'regex', 'json']).optional(),
+    validator_pattern: z.string().optional(),
+    validator_retries: z.number().int().min(0).max(3).optional(),
+    corrective_nudge: z.string().optional()
+  }),
   run: async (ctx, inputs, node) => {
-    const streamToChat = node?.config?.stream !== false
-    const r = await callModel(
+    const cfg = (node?.config ?? {}) as ResilienceConfig & { stream?: boolean }
+    const streamToChat = cfg.stream !== false
+    const r = await callModelResilient(
       inputs.gen as GenContext,
       inputs.sendMessages as ChatMessage[],
       inputs.params as PresetParameters,
       streamToChat ? ctx.streamMain : () => {},
-      ctx.modelSignal ?? ctx.signal
+      ctx.modelSignal ?? ctx.signal,
+      cfg
     )
     // Abort-with-empty (callModel returned null): nothing to persist — abort the GRAPH so the engine
     // skips parse/apply/write and generate() returns null. Abort-with-text returns {raw,...} here, so

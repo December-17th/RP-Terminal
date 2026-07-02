@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { runWorkflow } from '../../src/main/services/workflowEngine'
 import { createRegistry } from '../../src/main/services/nodes/registry'
-import { NodeImpl, RunContext } from '../../src/main/services/nodes/types'
+import { NodeImpl, NodeRunFailure, RunContext } from '../../src/main/services/nodes/types'
 import { WorkflowDoc, NodeInstance, Edge } from '../../src/shared/workflow/types'
 
 const ctx = (): RunContext => ({
@@ -50,6 +50,18 @@ const impls: NodeImpl[] = [
     run: () => {
       throw new Error('post failure')
     }
+  },
+  {
+    type: 'classb',
+    title: 'classb',
+    inputs: [],
+    outputs: [
+      { name: 'out', type: 'Text' },
+      { name: 'error', type: 'Error' }
+    ],
+    run: () => {
+      throw new NodeRunFailure('B', 'validator failed: empty', 3, 'validator')
+    }
   }
 ]
 const reg = createRegistry(impls)
@@ -96,6 +108,30 @@ describe('runWorkflow — error routing', () => {
     expect(res.ok).toBe(false)
     expect(res.error?.nodeId).toBe('b')
     expect(res.traces.find((t) => t.nodeId === 'm')?.status).not.toBe('ran')
+  })
+
+  it('carries NodeRunFailure kind/attempts/code onto the routed error value (spec §10)', async () => {
+    const d = doc(
+      [
+        { id: 'v', type: 'classb' },
+        { id: 'h', type: 'handler' },
+        { id: 'm', type: 'main', isMainOutput: true }
+      ],
+      [
+        { from: { node: 'v', port: 'error' }, to: { node: 'h', port: 'err' } },
+        { from: { node: 'h', port: 'out' }, to: { node: 'm', port: 'in' } }
+      ]
+    )
+    const res = await runWorkflow(d, reg, ctx())
+    expect(res.ok).toBe(true)
+    expect(res.outputs.get('v')?.error).toMatchObject({
+      kind: 'B',
+      code: 'validator',
+      attempts: 3,
+      nodeId: 'v',
+      message: 'validator failed: empty'
+    })
+    expect(res.traces.find((t) => t.nodeId === 'v')?.error?.kind).toBe('B')
   })
 
   it('fails open when an unwired post-phase node throws', async () => {

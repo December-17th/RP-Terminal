@@ -575,6 +575,7 @@ const en: Record<string, string> = {
   'workflowEditor.nodeTitle.prompt.messages': 'Message List',
   'workflowEditor.nodeTitle.merge.messages': 'Merge Messages',
   'workflowEditor.nodeTitle.mvu.set': 'Set Variable',
+  'workflowEditor.nodeTitle.util.log': 'Log',
   // Node descriptions (what the node does).
   'workflowEditor.nodeDesc.input.context':
     'Builds the turn bundle: session, character card, settings, preset, lorebooks, chat history and working variables. The start of every graph — almost every other node takes its output.',
@@ -583,7 +584,7 @@ const en: Record<string, string> = {
   'workflowEditor.nodeDesc.prompt.assemble':
     'Builds the complete provider-ready prompt exactly like the default pipeline: card, preset, matched lorebook entries, chat history, the memory block, and budget trimming.',
   'workflowEditor.nodeDesc.llm.sample':
-    'Calls the model with a message array. On the main-output path its reply streams to chat; wired behind a Signal it runs as a side-branch call (e.g. a planner or background job).',
+    'Calls the model with a message array. On the main-output path its reply streams to chat; wired behind a Signal it runs as a side-branch call (e.g. a planner or background job). Config adds retries, a fallback connection and a validator with corrective retry; when all give up, the failure leaves on the error port.',
   'workflowEditor.nodeDesc.parse.response':
     'Post-processes the raw reply: strips thinking, extracts rpt-events and MVU variable commands, and computes this turn’s cache metrics.',
   'workflowEditor.nodeDesc.apply.state':
@@ -606,10 +607,15 @@ const en: Record<string, string> = {
     'Concatenates up to four message lists in port order (a → d, unwired ports skipped). Wire a Context to keep the merged list provider-correct.',
   'workflowEditor.nodeDesc.mvu.set':
     'Writes a value to a stat_data path on the latest floor — the way a side branch commits its result to game state. Intended for post-response branches; the wired value wins over the configured one.',
+  'workflowEditor.nodeDesc.util.log':
+    'Logs its input to the app log and ends the branch. Wire a node’s error port here to make that failure fail-open-with-a-log instead of aborting the turn.',
   // Port descriptions shared by many nodes (looked up when no per-node entry exists).
   'workflowEditor.portDesc.common.gen':
     'The turn bundle from Context (settings, card, history, variables)',
   'workflowEditor.portDesc.common.when': 'Optional gate: this node runs only if the Signal fired',
+  'workflowEditor.portDesc.common.error':
+    'Fires when the node gives up (after retries/fallback/validator): {kind, message, attempts}. Wired: execution follows this branch. Unwired: the failure aborts the turn (pre-response) or fails open (post-response).',
+  'workflowEditor.portDesc.util.log.value': 'Anything — logged as-is (error values included)',
   'workflowEditor.portDesc.common.in1': 'Upstream value for the {{in1}} placeholder',
   'workflowEditor.portDesc.common.in2': 'Upstream value for the {{in2}} placeholder',
   'workflowEditor.portDesc.common.in3': 'Upstream value for the {{in3}} placeholder',
