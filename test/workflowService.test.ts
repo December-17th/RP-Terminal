@@ -517,6 +517,138 @@ describe('workflowService selection + resolution', () => {
     expect(getWorkflowById(profileId, result.id)?.kind).toBe('subgraph')
   })
 
+  describe('sub-graph export bundling', () => {
+    const subgraphDoc = (name: string, callId?: string): WorkflowDoc => ({
+      id: 'placeholder',
+      name,
+      version: 1,
+      schemaVersion: 1,
+      kind: 'subgraph',
+      nodes: [
+        { id: 'bin', type: 'subgraph.input', config: { slot: 'in1' } },
+        { id: 'bout', type: 'subgraph.output', config: { slot: 'out1' } },
+        ...(callId
+          ? [{ id: 'nested', type: 'subgraph.call', config: { workflow_id: callId } }]
+          : [])
+      ],
+      edges: [{ from: { node: 'bin', port: 'value' }, to: { node: 'bout', port: 'value' } }]
+    })
+
+    const parentDoc = (name: string, callId: string): WorkflowDoc =>
+      minimalDoc({
+        name,
+        nodes: [
+          { id: 'n1', type: 'input.context', isMainOutput: true },
+          { id: 'call', type: 'subgraph.call', config: { workflow_id: callId } }
+        ]
+      })
+
+    it('exports a doc with subgraph.call refs as a bundle carrying the sub-graphs (transitively)', () => {
+      const inner = createWorkflowFromDoc(profileId, subgraphDoc('Bundled Inner'))
+      expect(inner.ok).toBe(true)
+      if (!inner.ok) return
+      const outer = createWorkflowFromDoc(profileId, subgraphDoc('Bundled Outer', inner.id))
+      expect(outer.ok).toBe(true)
+      if (!outer.ok) return
+      const parent = createWorkflowFromDoc(profileId, parentDoc('Bundled Parent', outer.id))
+      expect(parent.ok).toBe(true)
+      if (!parent.ok) return
+
+      const tmpDir = fs.mkdtempSync(path.join(getAppDir(), 'wf-bundle-'))
+      try {
+        const p = path.join(tmpDir, 'bundle.rptflow')
+        expect(exportWorkflowToFile(profileId, parent.id, p)).toBe(true)
+        const raw = JSON.parse(fs.readFileSync(p, 'utf-8'))
+        expect(raw.format).toBe('rpt-workflow-bundle')
+        expect(raw.main.name).toBe('Bundled Parent')
+        expect(raw.subgraphs.map((s: WorkflowDoc) => s.name).sort()).toEqual([
+          'Bundled Inner',
+          'Bundled Outer'
+        ])
+      } finally {
+        fs.rmSync(tmpDir, { recursive: true, force: true })
+      }
+    })
+
+    it('exports a doc without subgraph refs as a plain doc (no bundle wrapper)', () => {
+      const plain = createWorkflowFromDoc(profileId, minimalDoc({ name: 'No Refs' }))
+      expect(plain.ok).toBe(true)
+      if (!plain.ok) return
+      const tmpDir = fs.mkdtempSync(path.join(getAppDir(), 'wf-plain-'))
+      try {
+        const p = path.join(tmpDir, 'plain.rptflow')
+        expect(exportWorkflowToFile(profileId, plain.id, p)).toBe(true)
+        const raw = JSON.parse(fs.readFileSync(p, 'utf-8'))
+        expect(raw.format).toBeUndefined()
+        expect(raw.name).toBe('No Refs')
+      } finally {
+        fs.rmSync(tmpDir, { recursive: true, force: true })
+      }
+    })
+
+    it('bundle round-trip: import creates fresh ids and rewrites subgraph.call references', () => {
+      const inner = createWorkflowFromDoc(profileId, subgraphDoc('RT Inner'))
+      expect(inner.ok).toBe(true)
+      if (!inner.ok) return
+      const parent = createWorkflowFromDoc(profileId, parentDoc('RT Parent', inner.id))
+      expect(parent.ok).toBe(true)
+      if (!parent.ok) return
+
+      const tmpDir = fs.mkdtempSync(path.join(getAppDir(), 'wf-rt-'))
+      try {
+        const p = path.join(tmpDir, 'rt.rptflow')
+        expect(exportWorkflowToFile(profileId, parent.id, p)).toBe(true)
+
+        const imported = importWorkflowFromFile(profileId, p)
+        expect(imported.ok).toBe(true)
+        if (!imported.ok) return
+        expect(imported.id).not.toBe(parent.id)
+
+        const importedParent = getWorkflowById(profileId, imported.id)!
+        const call = importedParent.nodes.find((n) => n.type === 'subgraph.call')!
+        const newRef = (call.config as { workflow_id: string }).workflow_id
+        expect(newRef).not.toBe(inner.id)
+        const importedInner = getWorkflowById(profileId, newRef)
+        expect(importedInner?.kind).toBe('subgraph')
+        expect(importedInner?.name).toBe('RT Inner')
+      } finally {
+        fs.rmSync(tmpDir, { recursive: true, force: true })
+      }
+    })
+
+    it('a bundle with one invalid sub-graph is rejected whole (no partial writes)', () => {
+      const dir = path.join(profileDir, 'workflows')
+      const before = fs.readdirSync(dir).length
+      const tmpDir = fs.mkdtempSync(path.join(getAppDir(), 'wf-badbundle-'))
+      try {
+        const p = path.join(tmpDir, 'bad.rptflow')
+        fs.writeFileSync(
+          p,
+          JSON.stringify({
+            format: 'rpt-workflow-bundle',
+            version: 1,
+            main: parentDoc('Bad Bundle Parent', 'sub-1'),
+            subgraphs: [
+              {
+                ...subgraphDoc('Broken Sub'),
+                id: 'sub-1',
+                nodes: [{ id: 'x', type: 'no.such.type' }],
+                edges: []
+              }
+            ]
+          })
+        )
+        const result = importWorkflowFromFile(profileId, p)
+        expect(result.ok).toBe(false)
+        if (result.ok) return
+        expect(result.error).toContain('Broken Sub')
+        expect(fs.readdirSync(dir).length).toBe(before)
+      } finally {
+        fs.rmSync(tmpDir, { recursive: true, force: true })
+      }
+    })
+  })
+
   it('save gate rejects a turn doc (kind absent) containing boundary nodes (BOUNDARY_IN_TURN)', () => {
     const created = createWorkflowFromDoc(profileId, minimalDoc({ name: 'Turn With Boundary' }))
     expect(created.ok).toBe(true)
