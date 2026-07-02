@@ -448,6 +448,28 @@ const en: Record<string, string> = {
   'variables.refresh': '↻ Refresh',
   'variables.editFailed': 'Edit failed to save',
   'variables.readOnlyHint': 'No message yet — nothing to edit',
+
+  // SQL-table memory (数据库/表格) — read-only Tables view + template assignment
+  'tables.heading': 'Memory Tables',
+  'tables.template': 'Table template',
+  'tables.none': 'None (off)',
+  'tables.import': 'Import template',
+  'tables.deleteTemplate': 'Delete template',
+  'tables.refresh': '↻ Refresh',
+  'tables.noneAssigned': 'No template assigned — table memory is off for this session.',
+  'tables.emptyTemplate': 'This template defines no tables.',
+  'tables.noRows': '(no rows)',
+  'tables.confirmAssign':
+    'Assigning a table template recreates this session’s memory tables from scratch. Continue?',
+  'tables.confirmUnassign':
+    'Removing the table template deletes this session’s memory tables. Continue?',
+  'tables.confirmDeleteTemplate':
+    'Delete this table template? Sessions using it will lose their memory tables.',
+  'tables.importFailed': 'Table template import failed',
+  'tables.assignFailed': 'Failed to update the table template',
+  'tables.deleteFailed': 'Failed to delete the table template',
+  'tables.importErrorRead': 'Could not read the selected file as JSON.',
+  'tables.importErrorGeneric': 'Unsupported or malformed table template.',
   'status.noState': '(No RPG state for this session yet)',
 
   'workflow.heading': 'Workflows',

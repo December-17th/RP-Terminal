@@ -8,6 +8,8 @@ import { getLorebookById } from './lorebookService'
 import { buildInitialStatData, mergeDefaults } from './mvuSchema'
 import { extractMvuSchema, schemaDefaults } from './mvuZod'
 import { saveFloor, deleteFloorAndSubsequent, updateFloorFields } from './floorService'
+import { getTableTemplateById } from './tableTemplateService'
+import * as tableDbService from './tableDbService'
 
 interface ChatRow {
   id: string
@@ -186,6 +188,41 @@ export const setChatWorkflowId = (profileId: string, chatId: string, id: string 
     .run(id, chatId, profileId)
 }
 
+/** The assigned table-template id for a chat; null = table memory off (SQL-table-memory issue 02). */
+export const getChatTableTemplateId = (profileId: string, chatId: string): string | null => {
+  const row = getDb()
+    .prepare('SELECT table_template_id FROM chats WHERE id = ? AND profile_id = ?')
+    .get(chatId, profileId) as { table_template_id: string | null } | undefined
+  return row?.table_template_id ?? null
+}
+
+/**
+ * Assign (or clear, with null) a chat's table template. Both are DESTRUCTIVE to the sandbox: a new
+ * id (re)instantiates the per-chat sandbox DB from the template's DDL; null removes the sandbox
+ * file. The renderer confirms before calling either. A missing/invalid template id clears instead.
+ */
+export const setChatTableTemplateId = (
+  profileId: string,
+  chatId: string,
+  id: string | null
+): void => {
+  const template = id ? getTableTemplateById(profileId, id) : null
+  const effectiveId = template ? id : null
+  getDb()
+    .prepare('UPDATE chats SET table_template_id = ? WHERE id = ? AND profile_id = ?')
+    .run(effectiveId, chatId, profileId)
+  if (template) tableDbService.instantiate(profileId, chatId, template)
+  else tableDbService.removeSandbox(profileId, chatId)
+}
+
+/** Strip a table-template id out of every session that had it assigned (called when it's deleted). */
+export const removeTableTemplateIdFromChats = (profileId: string, templateId: string): void => {
+  const rows = getDb()
+    .prepare('SELECT id FROM chats WHERE profile_id = ? AND table_template_id = ?')
+    .all(profileId, templateId) as Array<{ id: string }>
+  for (const row of rows) setChatTableTemplateId(profileId, row.id, null)
+}
+
 /** Clear a workflow id out of every session that had it selected (called when it's deleted). */
 export const removeWorkflowIdFromChats = (profileId: string, workflowId: string): void => {
   getDb()
@@ -260,8 +297,10 @@ export const truncateFloors = (profileId: string, chatId: string, fromFloor: num
   touch(chatId)
 }
 
-export const deleteChat = (_profileId: string, chatId: string): void => {
+export const deleteChat = (profileId: string, chatId: string): void => {
   getDb().prepare('DELETE FROM chats WHERE id = ?').run(chatId)
+  // The chat's per-chat table-memory sandbox is a file outside the app DB — clean it up too.
+  tableDbService.removeSandbox(profileId, chatId)
 }
 
 /** Edit a floor's user message and/or response text, then bump updated_at. */

@@ -10,6 +10,7 @@ import { WcvTestView } from './WcvPanel'
 import { CombatView } from './CombatView'
 import { DuelView } from './DuelView'
 import { VariablesView } from './VariablesView'
+import { TablesView } from './TablesView'
 import { WorkflowView } from './WorkflowView'
 import { useWorkspaceContext } from './context'
 import { UsageView } from '../UsageView'
@@ -54,6 +55,11 @@ const VariablesPanel: React.FC = () => {
   return <VariablesView profileId={profileId} />
 }
 
+const TablesPanel: React.FC = () => {
+  const { profileId } = useWorkspaceContext()
+  return <TablesView profileId={profileId} />
+}
+
 const UsagePanel: React.FC = () => {
   const { profileId } = useWorkspaceContext()
   return <UsageView profileId={profileId} />
@@ -94,6 +100,7 @@ export const ViewRegistry: Record<string, ViewEntry> = {
   combat: { title: 'Combat', Component: CombatPanel, fill: true },
   duel: { title: 'Duel', Component: DuelPanel, fill: true },
   variables: { title: 'Variables', Component: VariablesPanel },
+  tables: { title: 'Tables', Component: TablesPanel },
   workflow: { title: 'Workflows', Component: WorkflowPanel },
   usage: { title: 'Usage', Component: UsagePanel, fill: true },
   'card-scripts': { title: 'Card Scripts', Component: CardScriptsPanel },

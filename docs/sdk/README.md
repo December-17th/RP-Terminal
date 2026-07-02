@@ -18,6 +18,8 @@ cards) reads them as the contract. They must track the code.
   parity.
 - **[../world-card-design.md](../world-card-design.md)** — the bundle format + one-click import + PNG
   cartridge plan (the "container" the inventory points to).
+- **[table-templates.md](table-templates.md)** — SQL-table memory: the chatSheets v2 import surface,
+  the sheet→`TableTemplate` mapping, per-chat sandbox-DB enablement, and the DDL-safety choke point.
 - **[../card-script-wcv-surfaces-design.md](../card-script-wcv-surfaces-design.md)** — design (not built):
   run full-page card scripts in a process-isolated WCV and let cards register their own panel/modal surfaces
   (the `创意工坊` case). Touches `thRuntime` + the format when implemented — update this contract then.
@@ -37,6 +39,7 @@ The card-facing surface is:
 | [`shared/cardEnv.ts`](../../src/shared/cardEnv.ts) / `cardLibs` (rendering env, injected libs)                                 | component-inventory §3              |
 | [`types/character.ts`](../../src/main/types/character.ts) (`RPTerminalExtSchema` — the format / bundle slots)                  | component-inventory §4              |
 | the import / transform pipeline (`stPngParser`, `characterService`, the parsers)                                               | component-inventory §5–6            |
+| [`parsers/chatSheetsParser.ts`](../../src/main/parsers/chatSheetsParser.ts) / [`types/tableTemplate.ts`](../../src/main/types/tableTemplate.ts) / `tableTemplateService` / `tableDbService` (SQL-table memory import + sandbox) | table-templates.md                  |
 
 Keep status markers honest (✅ built / 🟡 partial / 🔁 stub / ⬜ planned) and **cite the file each claim was
 verified against** — per the repo's grounding rule (`CLAUDE.md`), never describe behavior from a name or

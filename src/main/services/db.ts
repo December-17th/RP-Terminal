@@ -143,6 +143,9 @@ export const getDb = (): Database.Database => {
   addColumnIfMissing(db, 'chats', 'pending_lore', 'pending_lore TEXT')
   // Session-tier workflow override (node-workflow spec §12); null = inherit world/global/builtin.
   addColumnIfMissing(db, 'chats', 'workflow_id', 'workflow_id TEXT')
+  // SQL-table-memory: the assigned table-template id (null = table memory off for this chat).
+  // The table DATA lives in a separate per-chat sandbox DB, not here (tableDbService).
+  addColumnIfMissing(db, 'chats', 'table_template_id', 'table_template_id TEXT')
   // TH-2 swipes: alternate responses per floor + the active index.
   addColumnIfMissing(db, 'floors', 'swipes', 'swipes TEXT')
   addColumnIfMissing(db, 'floors', 'swipe_id', 'swipe_id INTEGER')

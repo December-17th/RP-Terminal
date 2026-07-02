@@ -61,6 +61,28 @@ declare global {
         cb: (p: { chatId: string; nodeId: string; label?: string; delta: string }) => void
       ) => () => void
       onChatModeChanged: (cb: (p: { chatId: string; mode: string }) => void) => () => void
+      // SQL-table memory (issue 02)
+      listTableTemplates: (
+        profileId: string
+      ) => Promise<Array<{ id: string; name: string; tableCount: number }>>
+      getTableTemplate: (profileId: string, id: string) => Promise<unknown>
+      deleteTableTemplate: (profileId: string, id: string) => Promise<void>
+      importTableTemplateDialog: (profileId: string) => Promise<
+        | { summary?: { id: string; name: string; tableCount: number }; error?: string }
+        | null
+      >
+      getChatTableTemplate: (profileId: string, chatId: string) => Promise<string | null>
+      setChatTableTemplate: (
+        profileId: string,
+        chatId: string,
+        id: string | null
+      ) => Promise<void>
+      readChatTables: (
+        profileId: string,
+        chatId: string
+      ) => Promise<
+        Array<{ sqlName: string; displayName: string; columns: string[]; rows: unknown[][] }>
+      >
     }
   }
 }

@@ -149,6 +149,21 @@ const api = {
     ipcRenderer.on('workflow-panel', listener)
     return () => ipcRenderer.removeListener('workflow-panel', listener)
   },
+  // SQL-table memory (issue 02): file-based table templates + per-chat assignment + read-only view
+  listTableTemplates: (profileId: string) =>
+    ipcRenderer.invoke('table-templates-list', profileId),
+  getTableTemplate: (profileId: string, id: string) =>
+    ipcRenderer.invoke('table-template-get', profileId, id),
+  deleteTableTemplate: (profileId: string, id: string) =>
+    ipcRenderer.invoke('table-template-delete', profileId, id),
+  importTableTemplateDialog: (profileId: string) =>
+    ipcRenderer.invoke('table-template-import-dialog', profileId),
+  getChatTableTemplate: (profileId: string, chatId: string) =>
+    ipcRenderer.invoke('chat-table-template-get', profileId, chatId),
+  setChatTableTemplate: (profileId: string, chatId: string, id: string | null) =>
+    ipcRenderer.invoke('chat-table-template-set', profileId, chatId, id),
+  readChatTables: (profileId: string, chatId: string) =>
+    ipcRenderer.invoke('chat-tables-read', profileId, chatId),
   // Lorebook library (id-keyed; a character's own lorebook has id == characterId)
   listLorebooks: (profileId: string) => ipcRenderer.invoke('list-lorebooks', profileId),
   getLorebook: (profileId: string, id: string) => ipcRenderer.invoke('get-lorebook', profileId, id),
