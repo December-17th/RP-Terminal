@@ -47,8 +47,10 @@ export interface RunContext {
   /** Durable per-(chat,node) scratchpad write (spec §11). */
   setNodeState: (nodeId: string, value: unknown) => void
   /** Invoked once, right after the main-output node completes, so the caller can deliver the
-   *  response before post-response nodes finish (spec §5 phase boundary). */
-  onResponseReady?: () => void
+   *  response before post-response nodes finish (spec §5 phase boundary). Receives the node
+   *  outputs produced so far (the main-output node's included) so the caller can extract the
+   *  turn result without awaiting the post phase. */
+  onResponseReady?: (outputs?: Map<string, Record<string, unknown>>) => void
   /** Turn seed (Phase 2b): the profile driving this run. Optional so Phase 2a bare RunContext
    *  literals (engine tests) still compile — only default-graph nodes that need domain context
    *  (via `input.context`) read this. */

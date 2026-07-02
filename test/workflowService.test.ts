@@ -214,6 +214,45 @@ describe('workflowService', () => {
       fs.rmSync(tmpDir, { recursive: true, force: true })
     }
   })
+
+  it('save gate rejects an invalid node CONFIG with the node named (edit-time, not run-time)', () => {
+    // mvu.set requires a non-empty path — the canonical "saves fine, fails at run" gap, now closed.
+    const bad = minimalDoc({
+      nodes: [
+        { id: 'n1', type: 'input.context', isMainOutput: true },
+        { id: 'setter', type: 'mvu.set', config: {} }
+      ]
+    })
+    const result = createWorkflowFromDoc(profileId, bad)
+    expect(result.ok).toBe(false)
+    if (result.ok) return
+    expect(result.error).toContain('invalid node config')
+    expect(result.error).toContain('setter (mvu.set)')
+    expect(result.error).toContain('path')
+  })
+
+  it('save gate accepts the same doc once the config is valid', () => {
+    const good = minimalDoc({
+      nodes: [
+        { id: 'n1', type: 'input.context', isMainOutput: true },
+        { id: 'setter', type: 'mvu.set', config: { path: 'world.month', value: 1 } }
+      ]
+    })
+    expect(createWorkflowFromDoc(profileId, good).ok).toBe(true)
+  })
+
+  it('save gate rejects a bad llm.sample failure config (wrong enum/type)', () => {
+    const bad = minimalDoc({
+      nodes: [
+        { id: 'n1', type: 'input.context', isMainOutput: true },
+        { id: 'llm-1', type: 'llm.sample', config: { validator: 'nope', retries: 'many' } }
+      ]
+    })
+    const result = createWorkflowFromDoc(profileId, bad)
+    expect(result.ok).toBe(false)
+    if (result.ok) return
+    expect(result.error).toContain('llm-1 (llm.sample)')
+  })
 })
 
 describe('workflowService selection + resolution', () => {

@@ -87,6 +87,37 @@ describe('runWorkflow — phases', () => {
     expect(res.traces.find((t) => t.nodeId === 'q')?.phase).toBe('post')
   })
 
+  it('hands the outputs-so-far (main node included) to onResponseReady, before post runs', async () => {
+    order.length = 0
+    let readyOutputs: Map<string, Record<string, unknown>> | undefined
+    let postHadRun = false
+    const ctx: RunContext = {
+      signal: new AbortController().signal,
+      streamMain: () => {},
+      emitPanel: () => {},
+      getNodeState: () => undefined,
+      setNodeState: () => {},
+      onResponseReady: (outputs) => {
+        readyOutputs = outputs
+        postHadRun = order.includes('post-node')
+      }
+    }
+    const d = doc(
+      [
+        { id: 'p', type: 'pre' },
+        { id: 'm', type: 'main', isMainOutput: true },
+        { id: 'q', type: 'post' }
+      ],
+      [
+        { from: { node: 'p', port: 'out' }, to: { node: 'm', port: 'in' } },
+        { from: { node: 'm', port: 'out' }, to: { node: 'q', port: 'in' } }
+      ]
+    )
+    await runWorkflow(d, reg, ctx)
+    expect(postHadRun).toBe(false) // the boundary fires before any post node
+    expect(readyOutputs?.get('m')).toBeDefined() // caller can lift the turn result right here
+  })
+
   it('puts an independent side node (no path to main output) in the post phase', async () => {
     order.length = 0
     const ctx: RunContext = {

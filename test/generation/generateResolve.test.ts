@@ -97,18 +97,20 @@ vi.mock('../../src/main/services/templateService', async (orig) => ({
   saveGlobals: () => {}
 }))
 vi.mock('../../src/main/services/logService', () => ({ log: () => {} }))
+const { streamProviderMock } = vi.hoisted(() => ({ streamProviderMock: vi.fn() }))
 vi.mock('../../src/main/services/apiService', async (orig) => ({
   ...(await orig<Record<string, unknown>>()),
-  streamProvider: async (
-    _s: unknown,
-    _messages: unknown,
-    _params: unknown,
-    onDelta: (d: string) => void
-  ) => {
-    onDelta('You open the door.')
-    return 'You open the door.'
-  }
+  streamProvider: streamProviderMock
 }))
+const defaultStream = async (
+  _s: unknown,
+  _messages: unknown,
+  _params: unknown,
+  onDelta: (d: string) => void
+): Promise<string> => {
+  onDelta('You open the door.')
+  return 'You open the door.'
+}
 
 const { resolveWorkflowDoc, buildTurnContext, notifyWorkflowTrace } = vi.hoisted(() => ({
   resolveWorkflowDoc: vi.fn(),
@@ -131,6 +133,7 @@ describe('generate() — resolves the active workflow', () => {
     appendFloorCalled = false
     resolveWorkflowDoc.mockReset().mockReturnValue({ id: 'custom-1', doc: DEFAULT_GRAPH })
     buildTurnContext.mockClear()
+    streamProviderMock.mockReset().mockImplementation(defaultStream)
     vi.useFakeTimers()
     vi.setSystemTime(new Date('2020-06-01T12:00:00.000Z'))
   })
@@ -146,6 +149,57 @@ describe('generate() — resolves the active workflow', () => {
     expect(floor).not.toBeNull()
     expect(appendFloorCalled).toBe(true)
     expect(capturedFloor).not.toBeNull()
+  })
+
+  it('returns the floor from the doc-declared main-output node, not a hardcoded id', async () => {
+    // A hand-authored graph names its nodes freely — rename every default id and re-point edges.
+    const renamed = structuredClone(DEFAULT_GRAPH)
+    const rename = (id: string): string => `${id}-x`
+    renamed.nodes = renamed.nodes.map((n) => ({ ...n, id: rename(n.id) }))
+    renamed.edges = renamed.edges.map((e) => ({
+      from: { ...e.from, node: rename(e.from.node) },
+      to: { ...e.to, node: rename(e.to.node) }
+    }))
+    resolveWorkflowDoc.mockReturnValue({ id: 'custom-2', doc: renamed })
+
+    const floor = await generate('profile1', 'chat1', 'open the door')
+    expect(floor).not.toBeNull()
+    expect(appendFloorCalled).toBe(true)
+  })
+
+  it('delivers the floor at the phase boundary — a slow post-phase LLM never blocks the turn', async () => {
+    vi.useRealTimers() // this test coordinates real promises, not timers
+    // Default graph + a post-phase side LLM (not an ancestor of write → post phase).
+    const doc = structuredClone(DEFAULT_GRAPH)
+    doc.nodes.push({ id: 'llm2', type: 'llm.sample', config: { stream: false } })
+    doc.edges.push(
+      { from: { node: 'ctx', port: 'gen' }, to: { node: 'llm2', port: 'gen' } },
+      { from: { node: 'assemble', port: 'sendMessages' }, to: { node: 'llm2', port: 'sendMessages' } },
+      { from: { node: 'assemble', port: 'params' }, to: { node: 'llm2', port: 'params' } }
+    )
+    resolveWorkflowDoc.mockReturnValue({ id: 'custom-3', doc })
+
+    // Call 1 = the main sample (fast). Call 2 = the side job — held open by the test.
+    let releaseSideJob!: (v: string) => void
+    const sideJob = new Promise<string>((r) => {
+      releaseSideJob = r
+    })
+    streamProviderMock
+      .mockImplementationOnce(defaultStream)
+      .mockImplementationOnce(async () => sideJob)
+    notifyWorkflowTrace.mockClear()
+
+    // The player's floor arrives while the side job is still in flight…
+    const floor = await generate('profile1', 'chat1', 'open the door')
+    expect(floor).not.toBeNull()
+    expect(streamProviderMock).toHaveBeenCalledTimes(2) // side job started…
+    expect(notifyWorkflowTrace).not.toHaveBeenCalled() // …but the run hasn't settled
+
+    // …and the trace lands once the detached post phase completes.
+    releaseSideJob('background job result')
+    await vi.waitFor(() => expect(notifyWorkflowTrace).toHaveBeenCalledTimes(1))
+    const trace = notifyWorkflowTrace.mock.calls[0][0]
+    expect(trace.nodes.find((n: { nodeId: string }) => n.nodeId === 'llm2')?.status).toBe('ran')
   })
 
   it('broadcasts the run trace after the turn (spec §13 run/trace panel)', async () => {

@@ -76,6 +76,44 @@
   flex: 0 0 auto;
 }
 
+/* Last-run trace overlay (spec §13): status chip in the title row + a failed border. Not
+   color-only — the chip carries a dot AND a text label (ms / status word) for every state. */
+.rpt-workflow-editor .rpt-node-trace-chip {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 9.5px;
+  padding: 0 6px;
+  border-radius: 8px;
+  border: 1px solid var(--rpt-border);
+  color: var(--rpt-text-secondary);
+  font-family: ui-monospace, Menlo, Consolas, monospace;
+}
+.rpt-workflow-editor .rpt-node-trace-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--rpt-text-tertiary);
+}
+.rpt-workflow-editor .rpt-node-trace-chip.is-ran .rpt-node-trace-dot {
+  background: var(--rpt-success);
+}
+.rpt-workflow-editor .rpt-node-trace-chip.is-failed {
+  border-color: var(--rpt-danger);
+  color: var(--rpt-danger);
+}
+.rpt-workflow-editor .rpt-node-trace-chip.is-failed .rpt-node-trace-dot {
+  background: var(--rpt-danger);
+}
+.rpt-workflow-editor .rpt-node.rpt-node-trace-skipped {
+  opacity: 0.6;
+}
+.rpt-workflow-editor .rpt-node.rpt-node-trace-failed {
+  border-color: var(--rpt-danger);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--rpt-danger) 35%, transparent);
+}
+
 .rpt-workflow-editor .rpt-node-ports {
   display: flex;
   justify-content: space-between;
