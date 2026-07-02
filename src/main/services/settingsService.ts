@@ -327,7 +327,8 @@ export const normalize = (stored: Partial<Settings>): Settings => {
         provider: api.provider,
         endpoint: api.endpoint,
         api_key: api.api_key,
-        model: api.model
+        model: api.model,
+        rpm_limit: api.rpm_limit
       }
     ]
     active_api_preset_id = id

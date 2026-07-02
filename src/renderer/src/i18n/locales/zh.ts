@@ -205,6 +205,8 @@ const zh: Record<string, string> = {
   'api.fetching': '获取中…',
   'api.fetchModels': '获取模型',
   'api.pickModel': '—— {{count}} 个模型 —— 选择一个 ——',
+  'api.rpmLimit': '每分钟请求数上限（RPM）',
+  'api.rpmLimitHint': '0 = 不限制。超出上限的请求会排队等待而不是报错；共用同一接口地址的预设共享同一配额。',
   'api.maxContext': '最大上下文（Token）',
   'api.maxContextHint': '会裁剪最旧的回合以将提示词保持在此估算值以下。对大上下文模型可调高。',
   'api.noModels': '服务商未返回任何模型',

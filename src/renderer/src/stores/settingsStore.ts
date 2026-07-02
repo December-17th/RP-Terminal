@@ -8,6 +8,8 @@ export interface ApiPreset {
   endpoint: string
   api_key: string
   model: string
+  /** Requests-per-minute ceiling; 0/unset = unlimited. Shared per endpoint (mirrors main). */
+  rpm_limit?: number
 }
 
 /** One memory collection (mirrors main `MemoryCollection`). Core ships only `events`. */
@@ -35,6 +37,7 @@ export interface Settings {
     endpoint: string
     api_key: string
     model: string
+    rpm_limit?: number
   }
   api_presets: ApiPreset[]
   active_api_preset_id: string

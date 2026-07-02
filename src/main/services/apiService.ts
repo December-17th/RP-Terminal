@@ -2,16 +2,31 @@ import { Settings } from '../types/models'
 import { PresetParameters } from '../types/preset'
 import { ChatMessage } from './promptBuilder'
 import { log } from './logService'
+import { acquireRpmSlot } from './rpmLimiter'
 
 export type DeltaCallback = (delta: string) => void
 
 /** Receives the provider's RAW usage object (shape differs per provider) once known. */
 export type UsageCallback = (raw: unknown) => void
 
+/** The endpoint an api block actually sends to (its RPM budget key): the configured endpoint or
+ *  the provider default, trailing slash dropped. Presets sharing an endpoint share one budget. */
+export const rpmEndpointKey = (api: Settings['api']): string => {
+  const fallback =
+    api.provider === 'anthropic'
+      ? 'https://api.anthropic.com/v1'
+      : api.provider === 'google' || api.provider === 'gemini'
+        ? 'https://generativelanguage.googleapis.com/v1beta'
+        : 'https://api.openai.com/v1'
+  return (api.endpoint || fallback).replace(/\/$/, '')
+}
+
 /**
  * Stream a completion from the configured provider. Each text chunk is handed to
  * `onDelta` as it arrives; the full concatenated text is returned when done.
  * Generation parameters come from the active preset (preset wins over defaults).
+ * A connection with `rpm_limit` set waits for an endpoint slot before sending
+ * (delayed, never dropped); a queued call aborted by Stop drops out of the queue.
  */
 export const streamProvider = async (
   settings: Settings,
@@ -21,6 +36,8 @@ export const streamProvider = async (
   signal?: AbortSignal,
   onUsage?: UsageCallback
 ): Promise<string> => {
+  const rpm = settings.api.rpm_limit ?? 0
+  if (rpm > 0) await acquireRpmSlot(rpmEndpointKey(settings.api), rpm, signal)
   if (settings.api.provider === 'anthropic') {
     return streamAnthropic(settings, messages, params, onDelta, signal, onUsage)
   }
