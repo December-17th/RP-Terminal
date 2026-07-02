@@ -18,6 +18,8 @@ import { buildTurnContext } from './nodes/turnContext'
 import { builtinRegistry } from './nodes/builtin'
 import { runWorkflow } from './workflowEngine'
 import { resolveWorkflowDoc } from './workflowService'
+import { summarizeRun } from '../../shared/workflow/trace'
+import { notifyWorkflowTrace } from './workflowEvents'
 
 // Re-exported so existing consumers/tests (test/generationService.test.ts) keep working; the
 // implementation now lives in generation/assemble.ts (its only real call site).
@@ -79,7 +81,18 @@ export const generate = async (
       signal: controller.signal,
       onDelta
     })
+    const startedAt = Date.now()
     const res = await runWorkflow(doc, builtinRegistry, ctx)
+    // Broadcast the run trace on every outcome — ok, aborted, AND fatal — the trace panel is
+    // most useful when a turn just failed (spec §13). Fire-and-forget; never blocks the turn.
+    notifyWorkflowTrace(
+      summarizeRun(doc, builtinRegistry.descriptors(), res, {
+        chatId,
+        workflowId,
+        startedAt,
+        durationMs: Date.now() - startedAt
+      })
+    )
     // A pre-phase node failure (provider error, assembly throw, …) reaches us as a fatal
     // RESULT, not a rejection — re-surface it (spec §10: unwired + failed ⇒ the turn aborts
     // with the error surfaced). Without this a hard failure returns null and reads exactly

@@ -45,6 +45,7 @@ declare global {
         profileId: string
       ) => Promise<{ ok: true; id: string } | { ok: false; error: string } | null>
       exportWorkflowDialog: (profileId: string, id: string, name: string) => Promise<boolean>
+      onWorkflowTrace: (cb: (trace: unknown) => void) => () => void
     }
   }
 }

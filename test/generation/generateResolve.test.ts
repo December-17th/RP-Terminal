@@ -110,11 +110,13 @@ vi.mock('../../src/main/services/apiService', async (orig) => ({
   }
 }))
 
-const { resolveWorkflowDoc, buildTurnContext } = vi.hoisted(() => ({
+const { resolveWorkflowDoc, buildTurnContext, notifyWorkflowTrace } = vi.hoisted(() => ({
   resolveWorkflowDoc: vi.fn(),
-  buildTurnContext: vi.fn()
+  buildTurnContext: vi.fn(),
+  notifyWorkflowTrace: vi.fn()
 }))
 vi.mock('../../src/main/services/workflowService', () => ({ resolveWorkflowDoc }))
+vi.mock('../../src/main/services/workflowEvents', () => ({ notifyWorkflowTrace }))
 vi.mock('../../src/main/services/nodes/turnContext', async (orig) => {
   const actual = await orig<Record<string, unknown>>()
   buildTurnContext.mockImplementation((actual as any).buildTurnContext)
@@ -144,5 +146,20 @@ describe('generate() — resolves the active workflow', () => {
     expect(floor).not.toBeNull()
     expect(appendFloorCalled).toBe(true)
     expect(capturedFloor).not.toBeNull()
+  })
+
+  it('broadcasts the run trace after the turn (spec §13 run/trace panel)', async () => {
+    notifyWorkflowTrace.mockClear()
+    await generate('profile1', 'chat1', 'open the door')
+
+    expect(notifyWorkflowTrace).toHaveBeenCalledTimes(1)
+    const trace = notifyWorkflowTrace.mock.calls[0][0]
+    expect(trace).toMatchObject({ chatId: 'chat1', workflowId: 'custom-1', ok: true })
+    // The default graph's nodes appear with real statuses; the LLM node ran.
+    const llm = trace.nodes.find((n: { nodeType: string }) => n.nodeType === 'llm.sample')
+    expect(llm?.status).toBe('ran')
+    // Output previews never leak the Context bundle.
+    const ctxNode = trace.nodes.find((n: { nodeType: string }) => n.nodeType === 'input.context')
+    expect(ctxNode?.outputs).toBeUndefined()
   })
 })

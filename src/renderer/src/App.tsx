@@ -19,6 +19,8 @@ import { StaticWorkspace } from './components/workspace/StaticWorkspace'
 import { CardScriptWcvHost } from './components/CardScriptWcvHost'
 import { PluginHost } from './components/PluginHost'
 import { useNavStore } from './stores/navStore'
+import { useWorkflowTraceStore } from './stores/workflowTraceStore'
+import type { WorkflowRunTrace } from '../../shared/workflow/trace'
 import { useWorkspaceStore } from './stores/workspaceStore'
 import { useComposerStore } from './stores/composerStore'
 import { initSlash } from './plugin/slash'
@@ -88,6 +90,10 @@ export default function App(): React.ReactElement {
     // Broadcast TavernHelper lifecycle/mutation events to BOTH transports — the compute+fan-out logic
     // lives in initCardEventBridge (cardBridge/hostBroadcast), so the two paths can't drift (WS-7).
     const unsubEvents = initCardEventBridge()
+    // Per-turn workflow run trace → keep the latest per chat for the Workflows trace panel.
+    const unsubTrace = window.api.onWorkflowTrace((trace: unknown) =>
+      useWorkflowTraceStore.getState().put(trace as WorkflowRunTrace)
+    )
     return () => {
       unsubDelta()
       unsubLog()
@@ -96,6 +102,7 @@ export default function App(): React.ReactElement {
       unsubReload()
       unsubFloors()
       unsubEvents()
+      unsubTrace()
     }
   }, [])
 
