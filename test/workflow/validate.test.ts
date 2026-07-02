@@ -16,13 +16,18 @@ const descriptors = new Map<string, NodeDescriptor>([
   ]
 ])
 
-const doc = (nodes: NodeInstance[], edges: Edge[]): WorkflowDoc => ({
+const doc = (
+  nodes: NodeInstance[],
+  edges: Edge[],
+  extra: Partial<WorkflowDoc> = {}
+): WorkflowDoc => ({
   id: 'w',
   name: 'w',
   version: 1,
   schemaVersion: 1,
   nodes,
-  edges
+  edges,
+  ...extra
 })
 
 const good = (): WorkflowDoc =>
@@ -149,6 +154,136 @@ describe('validateWorkflow', () => {
         { from: { node: 'a', port: 'out' }, to: { node: 'b', port: 'in' } },
         { from: { node: 'b', port: 'out' }, to: { node: 'a', port: 'in' } }
       ]
+    )
+    const r = validateWorkflow(d, cyc)
+    expect(r.ok === false && r.errors.some((e) => e.code === 'CYCLE')).toBe(true)
+  })
+})
+
+describe('validateWorkflow — kind branching (sub-graph nodes v1 plan §2)', () => {
+  const boundaryDescriptors = new Map(descriptors)
+  boundaryDescriptors.set('subgraph.input', {
+    type: 'subgraph.input',
+    title: 'Sub-graph Input',
+    inputs: [],
+    outputs: [{ name: 'value', type: 'Any' }]
+  })
+  boundaryDescriptors.set('subgraph.output', {
+    type: 'subgraph.output',
+    title: 'Sub-graph Output',
+    inputs: [{ name: 'value', type: 'Any' }],
+    outputs: []
+  })
+
+  it('a turn doc (kind absent) containing a subgraph.input node -> BOUNDARY_IN_TURN', () => {
+    const d = doc(
+      [
+        { id: 'bin', type: 'subgraph.input', config: { slot: 'in1' } },
+        { id: 'b', type: 'sink', isMainOutput: true }
+      ],
+      []
+    )
+    const r = validateWorkflow(d, boundaryDescriptors)
+    expect(r.ok === false && r.errors.some((e) => e.code === 'BOUNDARY_IN_TURN')).toBe(true)
+  })
+
+  it('a turn doc containing a subgraph.output node -> BOUNDARY_IN_TURN', () => {
+    const d = doc(
+      [
+        { id: 'a', type: 'src' },
+        { id: 'bout', type: 'subgraph.output', config: { slot: 'out1' } },
+        { id: 'b', type: 'sink', isMainOutput: true }
+      ],
+      [{ from: { node: 'a', port: 'out' }, to: { node: 'bout', port: 'value' } }]
+    )
+    const r = validateWorkflow(d, boundaryDescriptors)
+    expect(r.ok === false && r.errors.some((e) => e.code === 'BOUNDARY_IN_TURN')).toBe(true)
+  })
+
+  it('a subgraph doc with no main-output node is ok (the rule is skipped)', () => {
+    const d = doc(
+      [
+        { id: 'bin', type: 'subgraph.input', config: { slot: 'in1' } },
+        { id: 'bout', type: 'subgraph.output', config: { slot: 'out1' } }
+      ],
+      [{ from: { node: 'bin', port: 'value' }, to: { node: 'bout', port: 'value' } }],
+      { kind: 'subgraph' }
+    )
+    const r = validateWorkflow(d, boundaryDescriptors)
+    expect(r).toEqual({ ok: true })
+  })
+
+  it('a subgraph doc does not flag BOUNDARY_IN_TURN for its own boundary nodes', () => {
+    const d = doc(
+      [{ id: 'bin', type: 'subgraph.input', config: { slot: 'in1' } }],
+      [],
+      { kind: 'subgraph' }
+    )
+    const r = validateWorkflow(d, boundaryDescriptors)
+    expect(r.ok === false && r.errors.some((e) => e.code === 'BOUNDARY_IN_TURN')).toBe(false)
+  })
+
+  it('duplicate input boundary slot names -> DUP_BOUNDARY_SLOT', () => {
+    const d = doc(
+      [
+        { id: 'bin1', type: 'subgraph.input', config: { slot: 'in1' } },
+        { id: 'bin2', type: 'subgraph.input', config: { slot: 'in1' } }
+      ],
+      [],
+      { kind: 'subgraph' }
+    )
+    const r = validateWorkflow(d, boundaryDescriptors)
+    expect(r.ok === false && r.errors.some((e) => e.code === 'DUP_BOUNDARY_SLOT')).toBe(true)
+  })
+
+  it('duplicate output boundary slot names -> DUP_BOUNDARY_SLOT', () => {
+    const d = doc(
+      [
+        { id: 'a', type: 'src' },
+        { id: 'bout1', type: 'subgraph.output', config: { slot: 'out1' } },
+        { id: 'bout2', type: 'subgraph.output', config: { slot: 'out1' } }
+      ],
+      [
+        { from: { node: 'a', port: 'out' }, to: { node: 'bout1', port: 'value' } },
+        { from: { node: 'a', port: 'out' }, to: { node: 'bout2', port: 'value' } }
+      ],
+      { kind: 'subgraph' }
+    )
+    const r = validateWorkflow(d, boundaryDescriptors)
+    expect(r.ok === false && r.errors.some((e) => e.code === 'DUP_BOUNDARY_SLOT')).toBe(true)
+  })
+
+  it('different slot names on two input boundary nodes do not collide', () => {
+    const d = doc(
+      [
+        { id: 'bin1', type: 'subgraph.input', config: { slot: 'in1' } },
+        { id: 'bin2', type: 'subgraph.input', config: { slot: 'in2' } }
+      ],
+      [],
+      { kind: 'subgraph' }
+    )
+    const r = validateWorkflow(d, boundaryDescriptors)
+    expect(r).toEqual({ ok: true })
+  })
+
+  it('a subgraph doc still rejects a cycle (normal rules apply otherwise)', () => {
+    const cyc = new Map(boundaryDescriptors)
+    cyc.set('mid', {
+      type: 'mid',
+      title: 'Mid',
+      inputs: [{ name: 'in', type: 'Text' }],
+      outputs: [{ name: 'out', type: 'Text' }]
+    })
+    const d = doc(
+      [
+        { id: 'a', type: 'mid' },
+        { id: 'b', type: 'mid' }
+      ],
+      [
+        { from: { node: 'a', port: 'out' }, to: { node: 'b', port: 'in' } },
+        { from: { node: 'b', port: 'out' }, to: { node: 'a', port: 'in' } }
+      ],
+      { kind: 'subgraph' }
     )
     const r = validateWorkflow(d, cyc)
     expect(r.ok === false && r.errors.some((e) => e.code === 'CYCLE')).toBe(true)

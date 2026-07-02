@@ -26,6 +26,9 @@ export interface WorkflowSummary {
   id: string
   name: string
   builtin?: boolean
+  /** Absent = 'turn'. See workflowService.ts's WorkflowSummary — this is one of three
+   *  independently-declared copies of this shape (sub-graph nodes v1 plan §5). */
+  kind?: 'turn' | 'subgraph'
 }
 
 const BUILTIN_WORKFLOW_ID = 'default'
@@ -44,7 +47,11 @@ interface WorkflowEditorState {
   status: string | null
   init(profileId: string): Promise<void>
   open(profileId: string, id: string): Promise<void>
-  addNode(type: string, position: { x: number; y: number }): void
+  addNode(
+    type: string,
+    position: { x: number; y: number },
+    config?: Record<string, unknown>
+  ): void
   moveNode(id: string, position: { x: number; y: number }): void
   connect(from: { node: string; port: string }, to: { node: string; port: string }): void
   removeEdge(edgeId: string): void
@@ -128,7 +135,7 @@ export const useWorkflowEditorStore = create<WorkflowEditorState>((set, get) => 
       })
     },
 
-    addNode: (type, position) => {
+    addNode: (type, position, config) => {
       if (get().readOnly) return
       const { nodes } = get()
       const base = type.split('.').pop() || type
@@ -136,7 +143,7 @@ export const useWorkflowEditorStore = create<WorkflowEditorState>((set, get) => 
       let n = 1
       while (existingIds.has(`${base}-${n}`)) n++
       const id = `${base}-${n}`
-      const node: EditorNode = { id, type, position }
+      const node: EditorNode = { id, type, position, ...(config ? { config } : {}) }
       set({ nodes: [...nodes, node] })
       revalidate()
     },

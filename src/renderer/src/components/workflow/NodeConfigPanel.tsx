@@ -2,10 +2,96 @@
 // FROM useWorkflowEditorStore (selectedNodeId/nodes/nodeTypes/readOnly) and dispatches back via
 // setNodeConfig/setMainOutput — same store-driven contract as FlowCanvas.tsx. Each control is
 // derived from the node type's configSchema via schemaForm.ts's pure fieldsFromSchema walker.
-import React, { useState } from 'react'
+import React, { useEffect, useState } from 'react'
 import { useWorkflowEditorStore } from '../../stores/workflowEditorStore'
 import { useOptionalT, useT } from '../../i18n'
 import { fieldsFromSchema, type FieldSpec } from './schemaForm'
+
+/** A sub-graph's promoted-parameter hint (`WorkflowDoc.meta.promotions`, plan §5) — shape
+ *  mirrors `subgraphNodes.ts`'s Promotion, read off the referenced doc fetched lazily via
+ *  `window.api.getWorkflow` (best-effort: summaries alone don't carry `meta`). */
+interface PromotionHint {
+  name: string
+  label?: string
+}
+
+/** `subgraph.call`'s special-case panel section (plan §5): the referenced sub-graph's name
+ *  (falling back to the raw id in a warning color when unknown), an "Open sub-graph" button,
+ *  and a best-effort hint list of its promoted params (edited through the JSON `params` field
+ *  below — v1 has no dedicated form UI for them). */
+function SubgraphCallInfo({
+  profileId,
+  workflowId
+}: {
+  profileId: string
+  workflowId: string | undefined
+}): React.JSX.Element {
+  const t = useT()
+  const workflows = useWorkflowEditorStore((s) => s.workflows)
+  const open = useWorkflowEditorStore((s) => s.open)
+  const [promotions, setPromotions] = useState<PromotionHint[]>([])
+
+  const summary = workflows.find((w) => w.id === workflowId)
+
+  useEffect(() => {
+    setPromotions([])
+    if (!workflowId) return
+    let cancelled = false
+    void window.api
+      .getWorkflow(profileId, workflowId)
+      .then((doc: unknown) => {
+        if (cancelled) return
+        const raw = (doc as { meta?: { promotions?: unknown } } | null)?.meta?.promotions
+        if (Array.isArray(raw)) {
+          setPromotions(
+            raw.filter(
+              (p): p is PromotionHint => !!p && typeof p === 'object' && typeof p.name === 'string'
+            )
+          )
+        }
+      })
+      .catch(() => {
+        // best-effort — an unresolvable/deleted sub-graph just shows no promotion hints.
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [profileId, workflowId])
+
+  if (!workflowId) return <div style={{ fontSize: 11, color: 'var(--rpt-warning)' }}>{t('workflowEditor.subgraphNotSet')}</div>
+
+  return (
+    <div style={{ margin: '6px 0 10px' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+        <span
+          style={{
+            fontSize: 12,
+            color: summary ? 'var(--rpt-text-primary)' : 'var(--rpt-warning)'
+          }}
+        >
+          {summary?.name ?? workflowId}
+        </span>
+        <button
+          type="button"
+          onClick={() => void open(profileId, workflowId)}
+          style={{ fontSize: 11, padding: '1px 8px' }}
+        >
+          {t('workflowEditor.openSubgraph')}
+        </button>
+      </div>
+      {promotions.length > 0 && (
+        <div style={{ fontSize: 10.5, color: 'var(--rpt-text-secondary)', marginTop: 4 }}>
+          {t('workflowEditor.promotionsHint')}
+          <ul style={{ margin: '2px 0 0', paddingLeft: 16 }}>
+            {promotions.map((p) => (
+              <li key={p.name}>{p.label ? `${p.name} — ${p.label}` : p.name}</li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </div>
+  )
+}
 
 interface NodeConfigPanelProps {
   profileId: string
@@ -217,7 +303,7 @@ function JsonFieldControl({
 }
 
 export default function NodeConfigPanel({
-  profileId: _profileId
+  profileId
 }: NodeConfigPanelProps): React.JSX.Element {
   const t = useT()
   const tOpt = useOptionalT()
@@ -318,6 +404,13 @@ export default function NodeConfigPanel({
             style={{ width: '100%' }}
           />
         </div>
+      )}
+
+      {node.type === 'subgraph.call' && (
+        <SubgraphCallInfo
+          profileId={profileId}
+          workflowId={typeof config.workflow_id === 'string' ? config.workflow_id : undefined}
+        />
       )}
 
       <div>

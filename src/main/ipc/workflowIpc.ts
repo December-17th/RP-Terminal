@@ -15,6 +15,9 @@ export const registerWorkflowIpc = (ipcMain: IpcMain): void => {
   ipcMain.handle('clone-workflow', (_, profileId, sourceId) =>
     workflowService.cloneWorkflow(profileId, sourceId)
   )
+  ipcMain.handle('create-workflow', (_, profileId, kind) =>
+    workflowService.createWorkflow(profileId, kind)
+  )
   ipcMain.handle('delete-workflow', (_, profileId, id) =>
     workflowService.deleteWorkflow(profileId, id)
   )

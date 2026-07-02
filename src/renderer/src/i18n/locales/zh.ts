@@ -502,6 +502,8 @@ const zh: Record<string, string> = {
   'workflow.trace.status.ran': '已执行',
   'workflow.trace.status.skipped': '已跳过',
   'workflow.trace.status.failed': '失败',
+  'workflow.subgraphBadge': '子图',
+  'workflow.newSubgraph': '+ 新建子图',
 
   'workflowEditor.viewTitle': '工作流编辑器',
   'workflowEditor.palette': '节点',
@@ -535,6 +537,10 @@ const zh: Record<string, string> = {
   'workflowEditor.connect.missing-port': '未知端口',
   'workflowEditor.close': '关闭',
   'workflowEditor.description': '说明',
+  'workflowEditor.subgraphs': '子图',
+  'workflowEditor.openSubgraph': '打开子图',
+  'workflowEditor.subgraphNotSet': '尚未选择子图',
+  'workflowEditor.promotionsHint': '已暴露的参数（可通过下方 params 字段覆盖）：',
   // 校验错误码（validateWorkflow）——本地化标签 + 原始详情。
   'workflowEditor.err.MAIN_OUTPUT': '必须恰好有一个主输出节点',
   'workflowEditor.err.CYCLE': '图中存在环',
@@ -573,6 +579,9 @@ const zh: Record<string, string> = {
   'workflowEditor.nodeTitle.context.history': '历史记录',
   'workflowEditor.nodeTitle.context.card': '角色卡字段',
   'workflowEditor.nodeTitle.context.persona': '用户人设',
+  'workflowEditor.nodeTitle.subgraph.call': '子图调用',
+  'workflowEditor.nodeTitle.subgraph.input': '子图输入',
+  'workflowEditor.nodeTitle.subgraph.output': '子图输出',
   // 节点说明
   'workflowEditor.nodeDesc.input.context':
     '构建本回合的上下文包：会话、角色卡、设置、预设、世界书、聊天历史与工作变量。每张图的起点——几乎所有节点都要读取它的输出。',
@@ -630,6 +639,12 @@ const zh: Record<string, string> = {
     '当前用户人设的名称与描述——即角色卡/人设配对中 {{user}} 一侧，单独拆出以便旁路调用不必接入整个「上下文」。',
   'workflowEditor.nodeDesc.memory.query':
     '按接入的任意查询文本召回记忆，而不是扫描当前回合的聊天内容——供规划器等旁路分支按特定主题召回记忆。仅做关键词排序（vector/hybrid 集合会被降级为关键词排序）；mode 为 llm 的集合会被整体跳过，与标准召回一致。把输出接入模型调用即可在此基础上叠加自定义重排序提示词。',
+  'workflowEditor.nodeDesc.subgraph.call':
+    '把一个可复用的子图文档作为单个节点调用。端口是固定的：gen/in1–in4 输入，out1–out4 输出——具体哪些端口起作用取决于子图自身的「子图输入/输出」节点。配置中的 params 可为本次调用覆盖子图已暴露的参数。子图缺失/类型不对/校验失败，或调用链递归/过深时，从 error 端口触发。v1 的运行轨迹只显示这一个包裹节点（内部步骤不单独展开）——除非子图本身就是主输出路径，否则子图内部的模型节点请设置 stream: false。',
+  'workflowEditor.nodeDesc.subgraph.input':
+    '读取包裹节点的某个边界值（按 slot 选择 gen 或 in1–in4）——只有在子图文档内才有意义；普通回合图会拒绝这种节点类型。',
+  'workflowEditor.nodeDesc.subgraph.output':
+    '把一个值从子图内部报告到某个边界输出槽（out1–out4），由外层「子图」节点对应的输出端口读取——只有在子图文档内才有意义。',
   // 通用端口说明（无逐节点条目时回退到这里）
   'workflowEditor.portDesc.common.gen': '来自“上下文”的回合包（设置、角色卡、历史、变量）',
   'workflowEditor.portDesc.common.when': '可选门控：信号触发时本节点才运行',
@@ -682,6 +697,17 @@ const zh: Record<string, string> = {
   'workflowEditor.portDesc.merge.messages.d': '第四个消息列表',
   'workflowEditor.portDesc.merge.messages.messages': '拼接后的消息列表',
   'workflowEditor.portDesc.mvu.set.value': '要写入的值（优先于配置的值）',
+  'workflowEditor.portDesc.subgraph.input.value': '所配置槽位对应的边界值',
+  'workflowEditor.portDesc.subgraph.output.value': '要在所配置槽位上报出的值',
+  'workflowEditor.portDesc.subgraph.call.gen': '传给子图 gen 槽位的边界输入',
+  'workflowEditor.portDesc.subgraph.call.in1': '传给子图 in1 槽位的边界输入',
+  'workflowEditor.portDesc.subgraph.call.in2': '传给子图 in2 槽位的边界输入',
+  'workflowEditor.portDesc.subgraph.call.in3': '传给子图 in3 槽位的边界输入',
+  'workflowEditor.portDesc.subgraph.call.in4': '传给子图 in4 槽位的边界输入',
+  'workflowEditor.portDesc.subgraph.call.out1': '子图 out1 槽位的边界输出',
+  'workflowEditor.portDesc.subgraph.call.out2': '子图 out2 槽位的边界输出',
+  'workflowEditor.portDesc.subgraph.call.out3': '子图 out3 槽位的边界输出',
+  'workflowEditor.portDesc.subgraph.call.out4': '子图 out4 槽位的边界输出',
   'status.noState': '（此会话还没有 RPG 状态）',
 
   'prefs.combatNarration': '战斗叙述',

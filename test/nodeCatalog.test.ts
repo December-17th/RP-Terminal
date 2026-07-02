@@ -36,7 +36,10 @@ describe('listNodeTypes', () => {
       'vars.save',
       'context.history',
       'context.card',
-      'context.persona'
+      'context.persona',
+      'subgraph.input',
+      'subgraph.output',
+      'subgraph.call'
     ]) {
       expect(byType.has(t)).toBe(true)
     }

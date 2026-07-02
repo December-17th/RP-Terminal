@@ -206,6 +206,15 @@ export async function runWorkflow(
   registry: NodeRegistry,
   ctx: RunContext
 ): Promise<RunResult> {
+  // Defense-in-depth (sub-graph nodes v1 plan §5): resolveWorkflowDoc is the load-bearing guard
+  // that keeps a subgraph-kind doc out of here, but a future/alternate caller reaching runWorkflow
+  // directly with one would otherwise hit computePhases' non-null main-output assertion as a raw,
+  // cryptic TypeError — fail loudly instead.
+  if (doc.kind === 'subgraph')
+    throw new Error(
+      `runWorkflow: doc "${doc.id}" is a sub-graph doc (kind: 'subgraph') and cannot be run directly — invoke it via a subgraph.call node instead`
+    )
+
   const v = validateWorkflow(doc, registry.descriptors())
   if (!v.ok) throw new WorkflowValidationError(v.errors)
 
@@ -257,5 +266,52 @@ export async function runWorkflow(
     aborted: !!post.aborted,
     traces: state.traces,
     outputs: state.outputs
+  }
+}
+
+export interface SubgraphRunResult {
+  outputs: Record<string, unknown>
+  fatal?: NodeError
+  aborted: boolean
+  traces: NodeTrace[]
+}
+
+/** Run a 'subgraph'-kind doc as a self-contained unit inside a `subgraph.call` node's run()
+ *  (sub-graph nodes v1 plan §4) — built on the EXISTING `runNodes` loop (not forked): one single
+ *  pass over the whole doc's topo order with `phase: 'pre'` and a fresh ExecState. `seeds` feeds
+ *  `ctx.subgraphSeeds` (read by `subgraph.input` nodes); outputs are collected via
+ *  `ctx.subgraphCollect` (written by `subgraph.output` nodes) into the returned `outputs` map.
+ *  There is no pre/post phase split and no `onResponseReady` here — a sub-graph run happens
+ *  entirely within its wrapper node's own phase in the PARENT graph, so signal gating, config
+ *  parsing, and error-port routing inside the sub-graph all come free from `runNodes`. */
+export async function runSubgraph(
+  doc: WorkflowDoc,
+  registry: NodeRegistry,
+  parentCtx: RunContext,
+  seeds: Record<string, unknown>
+): Promise<SubgraphRunResult> {
+  const outputs: Record<string, unknown> = {}
+  const ctx: RunContext = {
+    ...parentCtx,
+    subgraphSeeds: seeds,
+    subgraphCollect: (slot, value) => {
+      outputs[slot] = value
+    }
+  }
+
+  const state: ExecState = {
+    outputs: new Map(),
+    deadEdge: new Set(),
+    traces: []
+  }
+
+  const order = topoOrder(doc)
+  const result = await runNodes(order, doc, registry, ctx, state, 'pre')
+
+  return {
+    outputs,
+    ...(result.fatal !== undefined ? { fatal: result.fatal } : {}),
+    aborted: !!result.aborted,
+    traces: state.traces
   }
 }

@@ -71,6 +71,17 @@ export interface RunContext {
   /** Abort the graph run. `llm.sample` calls this ONLY on abort-with-empty (nothing to persist),
    *  so the engine skips downstream and `generate()` returns null — matching the old behavior. */
   abortGraph?: () => void
+  /** Sub-graph nodes v1 (plan §3/§4): the boundary-slot seeds a running sub-graph was invoked
+   *  with — `subgraph.input` reads `subgraphSeeds?.[cfg.slot]`. Set only inside `runSubgraph`'s
+   *  wrapped ctx; absent at the top level (a normal turn run). */
+  subgraphSeeds?: Record<string, unknown>
+  /** Sub-graph nodes v1: how a running sub-graph's `subgraph.output` nodes report their value
+   *  back to the wrapper (`runSubgraph` supplies this, writing into its local outputs record). */
+  subgraphCollect?: (slot: string, value: unknown) => void
+  /** Sub-graph nodes v1: ids of sub-graph docs currently executing up-stack, for the
+   *  `subgraph.call` node's recursion guard (self-reference and indirect A→B→A cycles) + a depth
+   *  cap. Absent/empty at the top level. */
+  subgraphStack?: string[]
 }
 
 /** What a node's run() returns: values per output-port name, plus which Signal output ports

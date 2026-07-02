@@ -30,7 +30,9 @@ export const WorkflowDocSchema = z.object({
     })
   ),
   edges: z.array(z.object({ from: EdgeEndSchema, to: EdgeEndSchema })),
-  meta: z.record(z.string(), z.unknown()).optional()
+  meta: z.record(z.string(), z.unknown()).optional(),
+  // Absent = 'turn' (sub-graph nodes v1 plan §2).
+  kind: z.enum(['turn', 'subgraph']).optional()
 })
 
 /** Structural parse with a single human-readable error string (shown on import/save reject). */

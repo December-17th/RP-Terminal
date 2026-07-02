@@ -32,6 +32,10 @@ import type { EditorNode } from './editorModel'
 /** Matches the palette drag payload's mime type (drag source lives in a later task's palette
  *  component; this is the contract both sides must agree on). */
 const DRAG_MIME = 'application/rpt-node-type'
+/** Second drag payload key, set only when dragging a Sub-graphs palette entry (sub-graph nodes
+ *  v1 plan §5): carries the target sub-graph's workflow id, so the dropped `subgraph.call` node
+ *  arrives preconfigured with `workflow_id` instead of empty. */
+const DRAG_SUBGRAPH_ID_MIME = 'application/rpt-subgraph-id'
 
 interface RptNodeData extends Record<string, unknown> {
   editorNode: EditorNode
@@ -261,7 +265,9 @@ function FlowCanvasInner({ profileId: _profileId }: FlowCanvasProps): React.JSX.
       const type = event.dataTransfer.getData(DRAG_MIME)
       if (!type) return
       const position = screenToFlowPosition({ x: event.clientX, y: event.clientY })
-      addNode(type, position)
+      const subgraphId = event.dataTransfer.getData(DRAG_SUBGRAPH_ID_MIME)
+      if (subgraphId) addNode(type, position, { workflow_id: subgraphId })
+      else addNode(type, position)
     },
     [readOnly, screenToFlowPosition, addNode]
   )

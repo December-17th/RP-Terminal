@@ -24,6 +24,9 @@ interface WorkflowSummary {
   name: string
   description?: string
   builtin?: boolean
+  /** Absent = 'turn'. See workflowService.ts's WorkflowSummary — this is one of three
+   *  independently-declared copies of this shape (sub-graph nodes v1 plan §5). */
+  kind?: 'turn' | 'subgraph'
 }
 
 const STATUS_COLOR: Record<TraceNode['status'], string> = {
@@ -141,6 +144,10 @@ export const WorkflowView: React.FC<{ profileId: string }> = ({ profileId }) => 
   const [chatId, setChatIdState] = React.useState<string | null>(null)
   const [resolved, setResolved] = React.useState<string | null>(null)
 
+  // Sub-graphs are never a turn-run target (resolveWorkflowDoc refuses them) — the three
+  // selection dropdowns below only offer turn workflows (sub-graph nodes v1 plan §5).
+  const selectableWorkflows = workflows.filter((w) => w.kind !== 'subgraph')
+
   const loadList = React.useCallback(async () => {
     setWorkflows(await api().listWorkflows(profileId))
   }, [profileId])
@@ -217,6 +224,16 @@ export const WorkflowView: React.FC<{ profileId: string }> = ({ profileId }) => 
     await loadList()
   }
 
+  // Creates a starter sub-graph doc (one boundary input, one boundary output, no edges) and
+  // opens it in the editor immediately — same flow as the Edit button (sub-graph nodes v1
+  // plan §5).
+  const onNewSubgraph = async (): Promise<void> => {
+    const created = await api().createWorkflow(profileId, 'subgraph')
+    if (!created?.ok) return
+    await loadList()
+    await onEdit(created.id)
+  }
+
   const onGlobalChange = async (value: string): Promise<void> => {
     const id = value === '' ? null : value
     await api().setGlobalWorkflow(profileId, id)
@@ -252,13 +269,22 @@ export const WorkflowView: React.FC<{ profileId: string }> = ({ profileId }) => 
         }}
       >
         <strong>{t('workflow.heading')}</strong>
-        <button
-          className="rpt-duel-secondary"
-          style={{ fontSize: 12, padding: '3px 10px' }}
-          onClick={() => void onImport()}
-        >
-          {t('workflow.import')}
-        </button>
+        <div style={{ display: 'flex', gap: 6 }}>
+          <button
+            className="rpt-duel-secondary"
+            style={{ fontSize: 12, padding: '3px 10px' }}
+            onClick={() => void onNewSubgraph()}
+          >
+            {t('workflow.newSubgraph')}
+          </button>
+          <button
+            className="rpt-duel-secondary"
+            style={{ fontSize: 12, padding: '3px 10px' }}
+            onClick={() => void onImport()}
+          >
+            {t('workflow.import')}
+          </button>
+        </div>
       </div>
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
@@ -287,6 +313,20 @@ export const WorkflowView: React.FC<{ profileId: string }> = ({ profileId }) => 
                   }}
                 >
                   {t('workflow.builtin')}
+                </span>
+              )}
+              {w.kind === 'subgraph' && (
+                <span
+                  style={{
+                    marginLeft: 6,
+                    fontSize: 11,
+                    opacity: 0.6,
+                    border: '1px solid var(--rpt-border)',
+                    borderRadius: 4,
+                    padding: '1px 5px'
+                  }}
+                >
+                  {t('workflow.subgraphBadge')}
                 </span>
               )}
             </span>
@@ -329,7 +369,7 @@ export const WorkflowView: React.FC<{ profileId: string }> = ({ profileId }) => 
           <span style={{ opacity: 0.7 }}>{t('workflow.globalDefault')}</span>
           <select value={globalId ?? ''} onChange={(e) => void onGlobalChange(e.target.value)}>
             <option value="">{t('workflow.inherit')}</option>
-            {workflows.map((w) => (
+            {selectableWorkflows.map((w) => (
               <option key={w.id} value={w.id}>
                 {w.name}
               </option>
@@ -342,7 +382,7 @@ export const WorkflowView: React.FC<{ profileId: string }> = ({ profileId }) => 
             <span style={{ opacity: 0.7 }}>{t('workflow.worldDefault')}</span>
             <select value={worldId ?? ''} onChange={(e) => void onWorldChange(e.target.value)}>
               <option value="">{t('workflow.inherit')}</option>
-              {workflows.map((w) => (
+              {selectableWorkflows.map((w) => (
                 <option key={w.id} value={w.id}>
                   {w.name}
                 </option>
@@ -356,7 +396,7 @@ export const WorkflowView: React.FC<{ profileId: string }> = ({ profileId }) => 
             <span style={{ opacity: 0.7 }}>{t('workflow.sessionOverride')}</span>
             <select value={chatId ?? ''} onChange={(e) => void onChatChange(e.target.value)}>
               <option value="">{t('workflow.inherit')}</option>
-              {workflows.map((w) => (
+              {selectableWorkflows.map((w) => (
                 <option key={w.id} value={w.id}>
                   {w.name}
                 </option>

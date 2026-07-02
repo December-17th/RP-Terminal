@@ -517,6 +517,8 @@ const en: Record<string, string> = {
   'workflow.trace.status.ran': 'ran',
   'workflow.trace.status.skipped': 'skipped',
   'workflow.trace.status.failed': 'failed',
+  'workflow.subgraphBadge': 'Sub-graph',
+  'workflow.newSubgraph': '+ New sub-graph',
 
   'workflowEditor.viewTitle': 'Workflow Editor',
   'workflowEditor.palette': 'Nodes',
@@ -550,6 +552,10 @@ const en: Record<string, string> = {
   'workflowEditor.connect.missing-port': 'Unknown port',
   'workflowEditor.close': 'Close',
   'workflowEditor.description': 'Description',
+  'workflowEditor.subgraphs': 'Sub-graphs',
+  'workflowEditor.openSubgraph': 'Open sub-graph',
+  'workflowEditor.subgraphNotSet': 'No sub-graph selected yet',
+  'workflowEditor.promotionsHint': 'Promoted params (override via the params field below):',
   // Validation error codes (validateWorkflow) — shown as a localized label before the raw detail.
   'workflowEditor.err.MAIN_OUTPUT': 'Exactly one node must be the main output',
   'workflowEditor.err.CYCLE': 'The graph has a cycle',
@@ -588,6 +594,9 @@ const en: Record<string, string> = {
   'workflowEditor.nodeTitle.context.history': 'History',
   'workflowEditor.nodeTitle.context.card': 'Card Field',
   'workflowEditor.nodeTitle.context.persona': 'Persona',
+  'workflowEditor.nodeTitle.subgraph.call': 'Sub-graph',
+  'workflowEditor.nodeTitle.subgraph.input': 'Sub-graph Input',
+  'workflowEditor.nodeTitle.subgraph.output': 'Sub-graph Output',
   // Node descriptions (what the node does).
   'workflowEditor.nodeDesc.input.context':
     'Builds the turn bundle: session, character card, settings, preset, lorebooks, chat history and working variables. The start of every graph — almost every other node takes its output.',
@@ -645,6 +654,12 @@ const en: Record<string, string> = {
     'The active persona’s name and description — the {{user}} side of the card/persona pair, split out on its own so a side call doesn’t need the full Context.',
   'workflowEditor.nodeDesc.memory.query':
     'Recalls memories against an arbitrary WIRED query instead of scanning the current turn’s chat — for side branches like a planner that need memory recall about a specific topic. Keyword-ranking only (vector/hybrid collections are downgraded to keyword); a collection set to mode: llm is skipped entirely, same as the standard recall. Wire the output into an LLM call to add custom-prompt reranking on top.',
+  'workflowEditor.nodeDesc.subgraph.call':
+    'Invokes a reusable sub-graph doc as one node. Static ports: gen/in1–in4 in, out1–out4 out — which slots actually do anything depends on the sub-graph’s own Sub-graph Input/Output nodes. Config’s params overrides the sub-graph’s promoted parameters for this call only. The error port fires on a missing/wrong-kind/invalid sub-graph, or on a recursive/too-deep call chain. v1 traces show only this wrapper node (inner steps are not broken out) — set stream: false on any LLM node inside the sub-graph unless it IS meant to be the main output.',
+  'workflowEditor.nodeDesc.subgraph.input':
+    'Reads one of the wrapper’s boundary values (gen or in1–in4, chosen by slot) — only meaningful inside a sub-graph doc; a plain turn graph rejects this node type.',
+  'workflowEditor.nodeDesc.subgraph.output':
+    'Reports a value out of the sub-graph on one of its boundary slots (out1–out4), read by the enclosing Sub-graph node’s matching output port — only meaningful inside a sub-graph doc.',
   // Port descriptions shared by many nodes (looked up when no per-node entry exists).
   'workflowEditor.portDesc.common.gen':
     'The turn bundle from Context (settings, card, history, variables)',
@@ -701,6 +716,17 @@ const en: Record<string, string> = {
   'workflowEditor.portDesc.merge.messages.d': 'Fourth message list',
   'workflowEditor.portDesc.merge.messages.messages': 'The concatenated message list',
   'workflowEditor.portDesc.mvu.set.value': 'The value to write (wins over the configured value)',
+  'workflowEditor.portDesc.subgraph.input.value': 'The boundary value for the configured slot',
+  'workflowEditor.portDesc.subgraph.output.value': 'The value reported out on the configured slot',
+  'workflowEditor.portDesc.subgraph.call.gen': 'Passed to the sub-graph’s gen-slot boundary input',
+  'workflowEditor.portDesc.subgraph.call.in1': 'Passed to the sub-graph’s in1-slot boundary input',
+  'workflowEditor.portDesc.subgraph.call.in2': 'Passed to the sub-graph’s in2-slot boundary input',
+  'workflowEditor.portDesc.subgraph.call.in3': 'Passed to the sub-graph’s in3-slot boundary input',
+  'workflowEditor.portDesc.subgraph.call.in4': 'Passed to the sub-graph’s in4-slot boundary input',
+  'workflowEditor.portDesc.subgraph.call.out1': 'The sub-graph’s out1-slot boundary output',
+  'workflowEditor.portDesc.subgraph.call.out2': 'The sub-graph’s out2-slot boundary output',
+  'workflowEditor.portDesc.subgraph.call.out3': 'The sub-graph’s out3-slot boundary output',
+  'workflowEditor.portDesc.subgraph.call.out4': 'The sub-graph’s out4-slot boundary output',
 
   'prefs.combatNarration': 'Combat narration',
   'prefs.combatNarrationAppend': 'Append to the current message',

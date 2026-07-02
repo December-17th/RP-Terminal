@@ -115,6 +115,8 @@ const api = {
     ipcRenderer.invoke('save-workflow', profileId, id, doc),
   cloneWorkflow: (profileId: string, sourceId: string) =>
     ipcRenderer.invoke('clone-workflow', profileId, sourceId),
+  createWorkflow: (profileId: string, kind?: 'turn' | 'subgraph') =>
+    ipcRenderer.invoke('create-workflow', profileId, kind),
   deleteWorkflow: (profileId: string, id: string) =>
     ipcRenderer.invoke('delete-workflow', profileId, id),
   getWorkflowSelection: (profileId: string) =>
