@@ -1,6 +1,6 @@
 # 04 — Prompt projection: `table.export`
 
-Status: ready-for-agent
+Status: ready-for-human (implemented + reviewed; awaiting owner sign-off/merge)
 
 ## What to build
 
@@ -26,3 +26,11 @@ Demo: with rows written by slice 03, run a turn and observe (via the run trace /
 ## Blocked by
 
 - [03-sandboxed-sql-write-path-and-rewind.md](03-sandboxed-sql-write-path-and-rewind.md)
+
+## Comments
+
+**2026-07-02 — implemented + reviewed.** Plan at [04-plan.md](04-plan.md); implemented by an Opus agent as commit `da1b314`; reviewed by the controller. Verdict: accepted as-is, no fix-ups.
+
+Verified: pure synthesis honors the locked mapping (at_depth_as_system → insertion_depth/order; before/after_character_definition → top block, documented approximation; fixed* ignored); keys derive from keywords columns + 'both'-mode index columns across positional cells (display-header index, never SQL names); index entries constant with empty-body-when-empty semantics; prevent_recursion on every synthesized entry (so entries can't chain-trigger each other in the matcher); node qualifies via the real matchAcross; no-template is a silent empty (read semantics, contrast table.apply). Parity approach is exact: `extra.length ? [...matched, ...extra] : matched` passes the original array by identity when unwired, and the generateParity suites are untouched and green. One reviewed behavior worth knowing: with a wired worldInfo override on prompt.preset, null-depth projected entries are dropped (the override replaces the top-block text) while depth-placed ones still splice — documented in the node comment.
+
+Gate re-run independently: typecheck PASS, check:deps PASS (345 modules), tests 167 files / **1342** PASS. generateParity*/generateResolve unmodified.
