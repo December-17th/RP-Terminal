@@ -207,6 +207,9 @@ const zh: Record<string, string> = {
   'api.pickModel': '—— {{count}} 个模型 —— 选择一个 ——',
   'api.rpmLimit': '每分钟请求数上限（RPM）',
   'api.rpmLimitHint': '0 = 不限制。超出上限的请求会排队等待而不是报错；共用同一接口地址的预设共享同一配额。',
+  'api.maxConcurrent': '最大并发请求数',
+  'api.maxConcurrentHint':
+    '0 = 不限制。限制同时进行的请求数量（RPM 限制的是发送速率，不限制并发）；共用同一接口地址的预设共享同一上限。',
   'api.maxContext': '最大上下文（Token）',
   'api.maxContextHint': '会裁剪最旧的回合以将提示词保持在此估算值以下。对大上下文模型可调高。',
   'api.noModels': '服务商未返回任何模型',
@@ -504,6 +507,8 @@ const zh: Record<string, string> = {
   'workflow.trace.status.failed': '失败',
   'workflow.subgraphBadge': '子图',
   'workflow.newSubgraph': '+ 新建子图',
+  'workflow.invalidBadge': '无效',
+  'workflow.invalidBadgeTitle': '此工作流未通过校验——若被选用，生成会回退到下一层默认值',
 
   'workflowEditor.viewTitle': '工作流编辑器',
   'workflowEditor.palette': '节点',
@@ -580,6 +585,7 @@ const zh: Record<string, string> = {
   'workflowEditor.nodeTitle.context.card': '角色卡字段',
   'workflowEditor.nodeTitle.context.persona': '用户人设',
   'workflowEditor.nodeTitle.subgraph.call': '子图调用',
+  'workflowEditor.nodeTitle.subgraph.loop': '子图循环',
   'workflowEditor.nodeTitle.subgraph.input': '子图输入',
   'workflowEditor.nodeTitle.subgraph.output': '子图输出',
   // 节点说明
@@ -641,6 +647,8 @@ const zh: Record<string, string> = {
     '按接入的任意查询文本召回记忆，而不是扫描当前回合的聊天内容——供规划器等旁路分支按特定主题召回记忆。仅做关键词排序（vector/hybrid 集合会被降级为关键词排序）；mode 为 llm 的集合会被整体跳过，与标准召回一致。把输出接入模型调用即可在此基础上叠加自定义重排序提示词。',
   'workflowEditor.nodeDesc.subgraph.call':
     '把一个可复用的子图文档作为单个节点调用。端口是固定的：gen/in1–in4 输入，out1–out4 输出——具体哪些端口起作用取决于子图自身的「子图输入/输出」节点。配置中的 params 可为本次调用覆盖子图已暴露的参数。子图缺失/类型不对/校验失败，或调用链递归/过深时，从 error 端口触发。v1 的运行轨迹只显示这一个包裹节点（内部步骤不单独展开）——除非子图本身就是主输出路径，否则子图内部的模型节点请设置 stream: false。',
+  'workflowEditor.nodeDesc.subgraph.loop':
+    '把一个子图反复运行（有界——由 max_iterations 限制，硬上限 100 次）。foreach 模式：in1 必须是数组；每一轮把子图的 in1 槽位喂入其中一个元素（in2 = 索引），out1 把每一轮的 out1 收集成一个数组。until 模式：每一轮把自己的 out1 回喂给下一轮的 in1（即“进位”），当某一轮的 out2 为真时停止循环。out2 = 实际运行的轮数；out3/out4 = 最后一轮的值。与「子图调用」共享递归防护、params 参数和按调用点隔离的节点状态。',
   'workflowEditor.nodeDesc.subgraph.input':
     '读取包裹节点的某个边界值（按 slot 选择 gen 或 in1–in4）——只有在子图文档内才有意义；普通回合图会拒绝这种节点类型。',
   'workflowEditor.nodeDesc.subgraph.output':
@@ -708,6 +716,15 @@ const zh: Record<string, string> = {
   'workflowEditor.portDesc.subgraph.call.out2': '子图 out2 槽位的边界输出',
   'workflowEditor.portDesc.subgraph.call.out3': '子图 out3 槽位的边界输出',
   'workflowEditor.portDesc.subgraph.call.out4': '子图 out4 槽位的边界输出',
+  'workflowEditor.portDesc.subgraph.loop.gen': '传给每一轮 gen 槽位的边界输入',
+  'workflowEditor.portDesc.subgraph.loop.in1': 'foreach：要遍历的数组。until：初始进位值',
+  'workflowEditor.portDesc.subgraph.loop.in2': '被忽略——每一轮的 in2 槽位改为携带迭代索引',
+  'workflowEditor.portDesc.subgraph.loop.in3': '原样传给每一轮的 in3 槽位',
+  'workflowEditor.portDesc.subgraph.loop.in4': '原样传给每一轮的 in4 槽位',
+  'workflowEditor.portDesc.subgraph.loop.out1': 'foreach：每一轮 out1 组成的数组。until：最终进位值',
+  'workflowEditor.portDesc.subgraph.loop.out2': '实际运行了多少轮',
+  'workflowEditor.portDesc.subgraph.loop.out3': '最后一轮的 out3 值',
+  'workflowEditor.portDesc.subgraph.loop.out4': '最后一轮的 out4 值',
   'status.noState': '（此会话还没有 RPG 状态）',
 
   'prefs.combatNarration': '战斗叙述',

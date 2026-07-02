@@ -215,6 +215,9 @@ const en: Record<string, string> = {
   'api.rpmLimit': 'Requests per Minute (RPM)',
   'api.rpmLimitHint':
     '0 = unlimited. Requests over the limit wait in a queue instead of failing; presets sharing an endpoint share one budget.',
+  'api.maxConcurrent': 'Max Concurrent Requests',
+  'api.maxConcurrentHint':
+    '0 = unlimited. Caps how many requests run at the same time (RPM caps the send rate, not parallelism); presets sharing an endpoint share one cap.',
   'api.maxContext': 'Max Context (tokens)',
   'api.maxContextHint':
     'Oldest turns are trimmed to keep the prompt under this estimate. Raise it for large-context models.',
@@ -519,6 +522,9 @@ const en: Record<string, string> = {
   'workflow.trace.status.failed': 'failed',
   'workflow.subgraphBadge': 'Sub-graph',
   'workflow.newSubgraph': '+ New sub-graph',
+  'workflow.invalidBadge': 'Invalid',
+  'workflow.invalidBadgeTitle':
+    'This workflow fails validation — if selected, generation falls back to the next tier',
 
   'workflowEditor.viewTitle': 'Workflow Editor',
   'workflowEditor.palette': 'Nodes',
@@ -595,6 +601,7 @@ const en: Record<string, string> = {
   'workflowEditor.nodeTitle.context.card': 'Card Field',
   'workflowEditor.nodeTitle.context.persona': 'Persona',
   'workflowEditor.nodeTitle.subgraph.call': 'Sub-graph',
+  'workflowEditor.nodeTitle.subgraph.loop': 'Sub-graph Loop',
   'workflowEditor.nodeTitle.subgraph.input': 'Sub-graph Input',
   'workflowEditor.nodeTitle.subgraph.output': 'Sub-graph Output',
   // Node descriptions (what the node does).
@@ -656,6 +663,8 @@ const en: Record<string, string> = {
     'Recalls memories against an arbitrary WIRED query instead of scanning the current turn’s chat — for side branches like a planner that need memory recall about a specific topic. Keyword-ranking only (vector/hybrid collections are downgraded to keyword); a collection set to mode: llm is skipped entirely, same as the standard recall. Wire the output into an LLM call to add custom-prompt reranking on top.',
   'workflowEditor.nodeDesc.subgraph.call':
     'Invokes a reusable sub-graph doc as one node. Static ports: gen/in1–in4 in, out1–out4 out — which slots actually do anything depends on the sub-graph’s own Sub-graph Input/Output nodes. Config’s params overrides the sub-graph’s promoted parameters for this call only. The error port fires on a missing/wrong-kind/invalid sub-graph, or on a recursive/too-deep call chain. v1 traces show only this wrapper node (inner steps are not broken out) — set stream: false on any LLM node inside the sub-graph unless it IS meant to be the main output.',
+  'workflowEditor.nodeDesc.subgraph.loop':
+    'Runs a sub-graph repeatedly (bounded — max_iterations, hard cap 100). foreach mode: in1 must be an array; each pass seeds the sub-graph’s in1 with one element (in2 = the index), and out1 collects every pass’s out1 into an array. until mode: each pass feeds its out1 back into the next pass’s in1 (the carry) and the loop stops when a pass reports a truthy out2. out2 = passes run; out3/out4 = the last pass’s values. Shares Sub-graph’s recursion guards, params and per-call-site state isolation.',
   'workflowEditor.nodeDesc.subgraph.input':
     'Reads one of the wrapper’s boundary values (gen or in1–in4, chosen by slot) — only meaningful inside a sub-graph doc; a plain turn graph rejects this node type.',
   'workflowEditor.nodeDesc.subgraph.output':
@@ -727,6 +736,18 @@ const en: Record<string, string> = {
   'workflowEditor.portDesc.subgraph.call.out2': 'The sub-graph’s out2-slot boundary output',
   'workflowEditor.portDesc.subgraph.call.out3': 'The sub-graph’s out3-slot boundary output',
   'workflowEditor.portDesc.subgraph.call.out4': 'The sub-graph’s out4-slot boundary output',
+  'workflowEditor.portDesc.subgraph.loop.gen': 'Passed to every pass’s gen-slot boundary input',
+  'workflowEditor.portDesc.subgraph.loop.in1':
+    'foreach: the array to iterate. until: the initial carry value',
+  'workflowEditor.portDesc.subgraph.loop.in2':
+    'Ignored — each pass’s in2 slot carries the iteration index instead',
+  'workflowEditor.portDesc.subgraph.loop.in3': 'Passed unchanged to every pass’s in3 slot',
+  'workflowEditor.portDesc.subgraph.loop.in4': 'Passed unchanged to every pass’s in4 slot',
+  'workflowEditor.portDesc.subgraph.loop.out1':
+    'foreach: array of each pass’s out1. until: the final carry',
+  'workflowEditor.portDesc.subgraph.loop.out2': 'How many passes ran',
+  'workflowEditor.portDesc.subgraph.loop.out3': 'The last pass’s out3 value',
+  'workflowEditor.portDesc.subgraph.loop.out4': 'The last pass’s out4 value',
 
   'prefs.combatNarration': 'Combat narration',
   'prefs.combatNarrationAppend': 'Append to the current message',

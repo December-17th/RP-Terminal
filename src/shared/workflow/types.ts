@@ -65,8 +65,11 @@ export interface WorkflowDoc {
 }
 
 /** Whether an output port of type `from` may connect to an input port of type `to`.
- *  `Any` is a wildcard both ways; otherwise types must match exactly (spec §4). */
+ *  `Any` is a wildcard both ways, EXCEPT into a `Signal` input: the engine's gating counts only
+ *  edges whose SOURCE port type is Signal, so an Any→Signal wire would validate yet gate nothing
+ *  — silently useless, so it's rejected. Otherwise types must match exactly (spec §4). */
 export function portCompatible(from: PortType, to: PortType): boolean {
+  if (to === 'Signal') return from === 'Signal'
   if (from === 'Any' || to === 'Any') return true
   return from === to
 }

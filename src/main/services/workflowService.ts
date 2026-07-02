@@ -30,6 +30,9 @@ export interface WorkflowSummary {
    *  (resolveWorkflowDoc/runWorkflow refuse it); the renderer excludes these from the three
    *  turn-workflow selection dropdowns and shows a badge instead (sub-graph nodes v1 plan §5). */
   kind?: 'turn' | 'subgraph'
+  /** The on-disk doc fails validateWorkflowDoc — selectable in the UI but resolution would skip
+   *  it (fall-through). Surfaced so the list can badge it instead of failing silently at run. */
+  invalid?: boolean
 }
 
 export type WorkflowWriteResult = { ok: true; id: string } | { ok: false; error: string }
@@ -87,7 +90,11 @@ export const listWorkflows = (profileId: string): WorkflowSummary[] => {
         id,
         name: data.name || 'Untitled Workflow',
         description: data.description,
-        ...(data.kind !== undefined ? { kind: data.kind } : {})
+        ...(data.kind !== undefined ? { kind: data.kind } : {}),
+        // Full validation per doc on every list is fine at profile scale (a handful of small
+        // JSON files); the badge is the only warning the user gets before resolution silently
+        // falls through past an invalid selection.
+        ...(validateWorkflowDoc(data).ok ? {} : { invalid: true })
       })
   }
   out.sort((a, b) => a.name.localeCompare(b.name))
@@ -163,10 +170,16 @@ export const cloneWorkflow = (profileId: string, sourceId: string): WorkflowSumm
   const source = getWorkflowById(profileId, sourceId)
   if (!source) return null
   const id = randomUUID()
+  // "X (copy)" → "X (copy 2)", never "X (copy) (copy)": strip any existing copy suffix, then
+  // pick the first free numbered name among the current summaries.
+  const base = source.name.replace(/ \(copy(?: \d+)?\)$/, '')
+  const taken = new Set(listWorkflows(profileId).map((w) => w.name))
+  let cloneName = `${base} (copy)`
+  for (let n = 2; taken.has(cloneName); n++) cloneName = `${base} (copy ${n})`
   const clone: WorkflowDoc = {
     ...structuredClone(source),
     id,
-    name: `${source.name} (copy)`
+    name: cloneName
   }
   const result = validateWorkflowDoc(clone)
   if (!result.ok) {
@@ -299,6 +312,82 @@ export const deleteWorkflow = (profileId: string, id: string): boolean => {
   return true
 }
 
+// ---------------------------------------------------------------------------
+// Export / import, with sub-graph bundling (sub-graph nodes v1's deferred shipping story).
+// A doc whose `subgraph.call` nodes reference other workflow docs exports as ONE `.rptflow`
+// bundle carrying every transitively-referenced sub-graph; a plain doc (no references) exports
+// exactly as before. Import accepts both shapes.
+// ---------------------------------------------------------------------------
+
+const BUNDLE_FORMAT = 'rpt-workflow-bundle'
+
+interface WorkflowBundle {
+  format: typeof BUNDLE_FORMAT
+  version: 1
+  main: WorkflowDoc
+  subgraphs: WorkflowDoc[]
+}
+
+const isBundle = (raw: unknown): raw is WorkflowBundle =>
+  !!raw &&
+  typeof raw === 'object' &&
+  (raw as { format?: unknown }).format === BUNDLE_FORMAT &&
+  Array.isArray((raw as { subgraphs?: unknown }).subgraphs) &&
+  typeof (raw as { main?: unknown }).main === 'object'
+
+/** Node types whose config.workflow_id references another workflow doc. */
+const SUBGRAPH_REF_TYPES = new Set(['subgraph.call', 'subgraph.loop'])
+
+/** The workflow ids this doc's sub-graph wrapper nodes reference (config.workflow_id). */
+const referencedSubgraphIds = (doc: WorkflowDoc): string[] => {
+  const ids: string[] = []
+  for (const n of doc.nodes) {
+    if (!SUBGRAPH_REF_TYPES.has(n.type)) continue
+    const id = (n.config as { workflow_id?: unknown } | undefined)?.workflow_id
+    if (typeof id === 'string' && id) ids.push(id)
+  }
+  return ids
+}
+
+/** A copy of `doc` with every wrapper-node workflow_id remapped through `idMap` (ids not in
+ *  the map — references outside the bundle — are left as-is, dangling exactly as they were). */
+const remapSubgraphRefs = (doc: WorkflowDoc, idMap: Map<string, string>): WorkflowDoc => {
+  const cloned = structuredClone(doc)
+  for (const n of cloned.nodes) {
+    if (!SUBGRAPH_REF_TYPES.has(n.type)) continue
+    const ref = (n.config as { workflow_id?: unknown } | undefined)?.workflow_id
+    const mapped = typeof ref === 'string' ? idMap.get(ref) : undefined
+    if (mapped) n.config = { ...(n.config ?? {}), workflow_id: mapped }
+  }
+  return cloned
+}
+
+const importWorkflowBundle = (profileId: string, bundle: WorkflowBundle): WorkflowWriteResult => {
+  // Fresh ids for every bundled sub-graph up front, so references can be rewritten before any
+  // validation or write happens — then validate EVERYTHING, then write everything (no partial
+  // imports: a bundle with one broken sub-graph is rejected whole).
+  const idMap = new Map<string, string>()
+  for (const sub of bundle.subgraphs) {
+    if (sub && typeof sub.id === 'string') idMap.set(sub.id, randomUUID())
+  }
+  const validated: { id: string; doc: WorkflowDoc }[] = []
+  for (const sub of bundle.subgraphs) {
+    const newId = idMap.get(sub?.id)
+    if (!newId) return { ok: false, error: 'bundle contains a sub-graph without an id' }
+    const result = validateWorkflowDoc({ ...remapSubgraphRefs(sub, idMap), id: newId })
+    if (!result.ok) return { ok: false, error: `bundled sub-graph "${sub.name}": ${result.error}` }
+    validated.push({ id: newId, doc: result.doc })
+  }
+  const mainId = randomUUID()
+  const main = validateWorkflowDoc({ ...remapSubgraphRefs(bundle.main, idMap), id: mainId })
+  if (!main.ok) return main
+
+  ensureWorkflowsDir(profileId)
+  for (const { id, doc } of validated) writeJsonSyncAtomic(workflowPath(profileId, id), doc)
+  writeJsonSyncAtomic(workflowPath(profileId, mainId), main.doc)
+  return { ok: true, id: mainId }
+}
+
 export const importWorkflowFromFile = (
   profileId: string,
   filePath: string
@@ -309,12 +398,34 @@ export const importWorkflowFromFile = (
   } catch (error) {
     return { ok: false, error: `invalid JSON: ${(error as Error).message}` }
   }
+  if (isBundle(raw)) return importWorkflowBundle(profileId, raw)
   return createWorkflowFromDoc(profileId, raw)
 }
 
 export const exportWorkflowToFile = (profileId: string, id: string, filePath: string): boolean => {
   const doc = getWorkflowById(profileId, id)
   if (!doc) return false
-  fs.writeFileSync(filePath, JSON.stringify(doc, null, 2), 'utf-8')
+  // Transitively collect referenced sub-graphs (a sub-graph may call further sub-graphs).
+  // Unresolvable references are skipped with a log — the export still works, just as partial
+  // as it would have been before bundling existed.
+  const subgraphs: WorkflowDoc[] = []
+  const visited = new Set<string>([id])
+  const queue = referencedSubgraphIds(doc)
+  while (queue.length) {
+    const refId = queue.shift()!
+    if (visited.has(refId)) continue
+    visited.add(refId)
+    const sub = getWorkflowById(profileId, refId)
+    if (!sub) {
+      log('error', `exportWorkflowToFile: referenced sub-graph ${refId} not found, not bundled`)
+      continue
+    }
+    subgraphs.push(sub)
+    queue.push(...referencedSubgraphIds(sub))
+  }
+  const payload: WorkflowDoc | WorkflowBundle = subgraphs.length
+    ? { format: BUNDLE_FORMAT, version: 1, main: doc, subgraphs }
+    : doc
+  fs.writeFileSync(filePath, JSON.stringify(payload, null, 2), 'utf-8')
   return true
 }

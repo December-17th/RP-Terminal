@@ -1,5 +1,9 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { acquireRpmSlot, resetRpmLimiter } from '../src/main/services/rpmLimiter'
+import {
+  acquireConcurrencySlot,
+  acquireRpmSlot,
+  resetRpmLimiter
+} from '../src/main/services/rpmLimiter'
 
 // Sliding-window RPM limiter (workflow spec §9 / D9): under-limit acquires resolve immediately,
 // over-limit acquires wait FIFO until the window frees, and a queued acquire aborted by Stop
@@ -134,5 +138,123 @@ describe('rpmLimiter', () => {
     await flush()
     expect(first.done()).toBe(true)
     expect(second.done()).toBe(true)
+  })
+})
+
+// Max-concurrent semaphore (spec §18 adjunct): slots are HELD until released, waiters wake FIFO
+// on release, aborts drop out of the queue. No timers involved — purely release-driven.
+describe('concurrency limiter', () => {
+  afterEach(() => {
+    resetRpmLimiter()
+  })
+
+  /** probe() for a promise resolving to the release fn. */
+  const probeSem = (
+    p: Promise<() => void>
+  ): {
+    done: () => boolean
+    rejected: () => boolean
+    err: () => Error | undefined
+    release: () => void
+  } => {
+    let done = false
+    let rejected = false
+    let err: Error | undefined
+    let rel: (() => void) | undefined
+    p.then(
+      (r) => {
+        done = true
+        rel = r
+      },
+      (e) => {
+        rejected = true
+        err = e
+      }
+    )
+    return { done: () => done, rejected: () => rejected, err: () => err, release: () => rel?.() }
+  }
+
+  const flush = async (): Promise<void> => {
+    await Promise.resolve()
+    await Promise.resolve()
+  }
+
+  it('max <= 0 means unlimited (always immediate, no-op release)', async () => {
+    for (let i = 0; i < 20; i++) (await acquireConcurrencySlot('ep', 0))()
+    for (let i = 0; i < 20; i++) (await acquireConcurrencySlot('ep', -1))()
+  })
+
+  it('holds callers over the cap until a slot is released (FIFO)', async () => {
+    const a = probeSem(acquireConcurrencySlot('ep', 2))
+    const b = probeSem(acquireConcurrencySlot('ep', 2))
+    const c = probeSem(acquireConcurrencySlot('ep', 2))
+    const d = probeSem(acquireConcurrencySlot('ep', 2))
+    await flush()
+    expect(a.done() && b.done()).toBe(true)
+    expect(c.done() || d.done()).toBe(false)
+
+    a.release()
+    await flush()
+    expect(c.done()).toBe(true)
+    expect(d.done()).toBe(false)
+
+    c.release()
+    await flush()
+    expect(d.done()).toBe(true)
+  })
+
+  it('release is idempotent — double release frees only one slot', async () => {
+    const a = probeSem(acquireConcurrencySlot('ep', 1))
+    const b = probeSem(acquireConcurrencySlot('ep', 1))
+    const c = probeSem(acquireConcurrencySlot('ep', 1))
+    await flush()
+    expect(a.done()).toBe(true)
+
+    a.release()
+    a.release() // second call must not free b AND c
+    await flush()
+    expect(b.done()).toBe(true)
+    expect(c.done()).toBe(false)
+
+    b.release()
+    await flush()
+    expect(c.done()).toBe(true)
+  })
+
+  it('a queued acquire aborted by its signal rejects; the released slot goes to the next waiter', async () => {
+    const a = probeSem(acquireConcurrencySlot('ep', 1))
+    const ctrl = new AbortController()
+    const queued = probeSem(acquireConcurrencySlot('ep', 1, ctrl.signal))
+    const behind = probeSem(acquireConcurrencySlot('ep', 1))
+    await flush()
+    expect(a.done()).toBe(true)
+
+    ctrl.abort()
+    await flush()
+    expect(queued.rejected()).toBe(true)
+    expect(queued.err()?.name).toBe('AbortError')
+
+    a.release()
+    await flush()
+    expect(behind.done()).toBe(true)
+  })
+
+  it('an already-aborted signal rejects without taking a slot', async () => {
+    const ctrl = new AbortController()
+    ctrl.abort()
+    const p = probeSem(acquireConcurrencySlot('ep', 5, ctrl.signal))
+    await flush()
+    expect(p.rejected()).toBe(true)
+
+    const next = probeSem(acquireConcurrencySlot('ep', 1))
+    await flush()
+    expect(next.done()).toBe(true)
+  })
+
+  it('keys are independent caps', async () => {
+    probeSem(acquireConcurrencySlot('ep-a', 1))
+    const other = probeSem(acquireConcurrencySlot('ep-b', 1))
+    await flush()
+    expect(other.done()).toBe(true)
   })
 })

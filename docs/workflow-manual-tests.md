@@ -93,4 +93,29 @@ Prereqs: a world open in Play, at least one message exchanged, an API preset tha
 3. Break the utility connection → extract fails; the turn itself must still complete
    normally (fail-open); the wired Log node records the extraction error in the app log.
 
+## 9. Loops (subgraph.loop)
+
+Prereq: a trivial counting sub-graph. Workflows view → **New sub-graph** → in the editor,
+wire **Sub-graph Input** (slot `in2`) → **Sub-graph Output** (slot `out1`). Name it
+`Count`, Save. (Its `in2` slot carries the pass index, so it just echoes 0,1,2… per pass.)
+
+1. Edit the workflow selected for the session (clone the builtin first if needed). In the
+   palette's **Sub-graphs** section, the `Count` card now shows TWO draggable chips —
+   *Sub-graph* and *Sub-graph Loop*. Drag the **Sub-graph Loop** chip onto the canvas → the
+   node drops preconfigured with `Count` as its `workflow_id`.
+2. Select the loop node: set `mode: foreach`, `max_iterations: 5`. Wire `ctx.gen` → its gen,
+   and a REAL array into `in1`: drop a **History** node (wire `ctx.gen` → its gen too) and
+   wire its `messages` output (a role-tagged message array) into the loop's `in1`. (A Template node does NOT work here —
+   it outputs a string, and foreach rejects non-arrays with a `bad-loop-input` error.) Wire
+   the loop's `out1` into a **Log** (util.log) node so you can read the result. Save,
+   select, send a message.
+3. After the turn, the trace/canvas overlay should show the loop node ran green with a
+   single timing (inner passes are NOT broken out — same as Sub-graph). The Log entry in the
+   app log should show the collected per-pass indices (`[0,1,…]`, one per history message,
+   capped at 5).
+4. Switch the loop to `mode: until`, `max_iterations: 3`, feed a starting value into `in1`,
+   send again → the loop should stop at `max_iterations` (the `Count` body never reports a
+   truthy `out2`), and the trace still shows just the one wrapper node. Unwire the test nodes
+   when done.
+
 Reset all test settings when done (memory cadence, RPM, retries, key).

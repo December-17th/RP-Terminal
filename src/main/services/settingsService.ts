@@ -328,7 +328,8 @@ export const normalize = (stored: Partial<Settings>): Settings => {
         endpoint: api.endpoint,
         api_key: api.api_key,
         model: api.model,
-        rpm_limit: api.rpm_limit
+        rpm_limit: api.rpm_limit,
+        max_concurrent: api.max_concurrent
       }
     ]
     active_api_preset_id = id

@@ -17,7 +17,13 @@ import { memoryGate, memoryExtract, memoryWrite, memoryQuery } from './memoryNod
 import { toolStartCombat, toolStartDuel, toolLorebookSearch } from './toolNodes'
 import { varsGet, varsSave } from './varsNodes'
 import { contextHistory, contextCard, contextPersona } from './contextNodes'
-import { subgraphInput, subgraphOutput, subgraphCall, setBuiltinRegistry } from './subgraphNodes'
+import {
+  subgraphInput,
+  subgraphOutput,
+  subgraphCall,
+  subgraphLoop,
+  setBuiltinRegistry
+} from './subgraphNodes'
 
 /** The registry of all built-in node types (Phase 2b-1b task 5, +2b-2 control/authoring nodes,
  *  +sub-graph nodes v1). Backs the default graph and any future card/workflow authoring surface
@@ -53,7 +59,8 @@ export const builtinRegistry = createRegistry([
   contextPersona,
   subgraphInput,
   subgraphOutput,
-  subgraphCall
+  subgraphCall,
+  subgraphLoop
 ])
 
 // subgraph.call needs the full registry (to run a nested doc's own node types via runSubgraph),

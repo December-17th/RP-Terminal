@@ -39,8 +39,12 @@ export function WorkflowEditorOverlay({
         zIndex: 90,
         display: 'flex',
         flexDirection: 'column',
-        background: 'var(--rpt-bg-primary)'
-      }}
+        background: 'var(--rpt-bg-primary)',
+        // Electron drag regions ignore z-order: the title bar's app-region:drag stays active
+        // under this overlay, making the top ~48px strip (workflow picker, rename input, Save)
+        // drag the window instead of clicking. no-drag punches the hole.
+        WebkitAppRegion: 'no-drag'
+      } as React.CSSProperties}
     >
       <div
         style={{

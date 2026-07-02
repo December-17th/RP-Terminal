@@ -1,4 +1,4 @@
-import { WorkflowDoc, Edge } from './types'
+import { WorkflowDoc } from './types'
 
 export class GraphCycleError extends Error {
   constructor(message = 'workflow graph has a cycle') {
@@ -40,42 +40,8 @@ export function topoOrder(doc: WorkflowDoc): string[] {
   return order
 }
 
-const edgeKey = (e: Edge): string => `${e.from.node}:${e.from.port}->${e.to.node}:${e.to.port}`
-
-/** Given the edges that did not fire (inactive Signal branches, etc.), compute the nodes that
- *  become unreachable. A node with ≥1 incoming edge is pruned when ALL its incoming edges are
- *  dead; pruning propagates to its outgoing edges. Roots (no incoming) are never pruned. */
-export function prunedNodes(doc: WorkflowDoc, inactiveEdges: Edge[]): Set<string> {
-  const dead = new Set<string>(inactiveEdges.map(edgeKey))
-  const pruned = new Set<string>()
-  const incoming = new Map<string, Edge[]>(doc.nodes.map((n) => [n.id, []]))
-  const outgoing = new Map<string, Edge[]>(doc.nodes.map((n) => [n.id, []]))
-
-  for (const e of doc.edges) {
-    incoming.get(e.to.node)?.push(e)
-    outgoing.get(e.from.node)?.push(e)
-  }
-
-  let changed = true
-  while (changed) {
-    changed = false
-    for (const n of doc.nodes) {
-      if (pruned.has(n.id)) continue
-      const ins = incoming.get(n.id) ?? []
-      if (ins.length === 0) continue // root
-      if (ins.every((e) => dead.has(edgeKey(e)))) {
-        pruned.add(n.id)
-        for (const out of outgoing.get(n.id) ?? []) {
-          if (!dead.has(edgeKey(out))) {
-            dead.add(edgeKey(out))
-            changed = true
-          }
-        }
-        // Forces one more fixpoint pass; harmless safety margin, not load-bearing.
-        changed = true
-      }
-    }
-  }
-
-  return pruned
-}
+// NOTE: an earlier `prunedNodes(doc, inactiveEdges)` helper lived here — a static prune over a
+// precomputed inactive-edge set. It was retired (nothing but its own test used it): pruning
+// depends on which signals FIRE, which is only known during execution, so the engine interleaves
+// pruning with its forward topo pass in workflowEngine.ts's runNodes and a static version would
+// drift from those semantics (it lacked signal-gating).

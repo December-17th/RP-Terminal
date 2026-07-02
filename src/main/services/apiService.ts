@@ -2,7 +2,7 @@ import { Settings } from '../types/models'
 import { PresetParameters } from '../types/preset'
 import { ChatMessage } from './promptBuilder'
 import { log } from './logService'
-import { acquireRpmSlot } from './rpmLimiter'
+import { acquireConcurrencySlot, acquireRpmSlot } from './rpmLimiter'
 
 export type DeltaCallback = (delta: string) => void
 
@@ -27,6 +27,9 @@ export const rpmEndpointKey = (api: Settings['api']): string => {
  * Generation parameters come from the active preset (preset wins over defaults).
  * A connection with `rpm_limit` set waits for an endpoint slot before sending
  * (delayed, never dropped); a queued call aborted by Stop drops out of the queue.
+ * A connection with `max_concurrent` set additionally holds an in-flight slot for the whole
+ * request (RPM bounds send RATE, this bounds PARALLELISM — a multi-LLM graph can otherwise
+ * open N simultaneous requests inside one window).
  */
 export const streamProvider = async (
   settings: Settings,
@@ -36,15 +39,26 @@ export const streamProvider = async (
   signal?: AbortSignal,
   onUsage?: UsageCallback
 ): Promise<string> => {
+  // RPM gate first (marks "permission to send"), then the concurrency slot — the reverse would
+  // hold an in-flight slot while parked in the RPM queue, starving parallel callers for nothing.
   const rpm = settings.api.rpm_limit ?? 0
   if (rpm > 0) await acquireRpmSlot(rpmEndpointKey(settings.api), rpm, signal)
-  if (settings.api.provider === 'anthropic') {
-    return streamAnthropic(settings, messages, params, onDelta, signal, onUsage)
+  const release = await acquireConcurrencySlot(
+    rpmEndpointKey(settings.api),
+    settings.api.max_concurrent ?? 0,
+    signal
+  )
+  try {
+    if (settings.api.provider === 'anthropic') {
+      return await streamAnthropic(settings, messages, params, onDelta, signal, onUsage)
+    }
+    if (settings.api.provider === 'google' || settings.api.provider === 'gemini') {
+      return await streamGemini(settings, messages, params, onDelta, signal, onUsage)
+    }
+    return await streamOpenAICompatible(settings, messages, params, onDelta, signal, onUsage)
+  } finally {
+    release()
   }
-  if (settings.api.provider === 'google' || settings.api.provider === 'gemini') {
-    return streamGemini(settings, messages, params, onDelta, signal, onUsage)
-  }
-  return streamOpenAICompatible(settings, messages, params, onDelta, signal, onUsage)
 }
 
 /**

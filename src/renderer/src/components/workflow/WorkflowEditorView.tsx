@@ -319,24 +319,40 @@ export default function WorkflowEditorView({
                 .map((w) => (
                   <div
                     key={w.id}
-                    draggable
-                    onDragStart={(e) => {
-                      e.dataTransfer.setData('application/rpt-node-type', 'subgraph.call')
-                      e.dataTransfer.setData('application/rpt-subgraph-id', w.id)
-                      e.dataTransfer.effectAllowed = 'move'
-                    }}
                     style={{
                       border: '1px solid var(--rpt-border)',
                       borderRadius: 6,
                       padding: '5px 8px',
                       marginBottom: 5,
-                      cursor: 'grab',
                       background: 'var(--rpt-bg-elevated)'
                     }}
                   >
                     <div style={{ fontSize: 12, color: 'var(--rpt-text-primary)' }}>{w.name}</div>
-                    <div style={{ fontSize: 10, color: 'var(--rpt-text-tertiary)' }}>
-                      {t('workflowEditor.nodeTitle.subgraph.call')}
+                    {/* Two draggable type chips: drop as a plain subgraph.call, or as a
+                        subgraph.loop — both carry the same workflow_id payload. */}
+                    <div style={{ display: 'flex', gap: 4, marginTop: 4 }}>
+                      {(['subgraph.call', 'subgraph.loop'] as const).map((nodeType) => (
+                        <div
+                          key={nodeType}
+                          draggable
+                          onDragStart={(e) => {
+                            e.dataTransfer.setData('application/rpt-node-type', nodeType)
+                            e.dataTransfer.setData('application/rpt-subgraph-id', w.id)
+                            e.dataTransfer.effectAllowed = 'move'
+                          }}
+                          style={{
+                            border: '1px solid var(--rpt-border)',
+                            borderRadius: 4,
+                            padding: '2px 6px',
+                            cursor: 'grab',
+                            fontSize: 10,
+                            color: 'var(--rpt-text-tertiary)',
+                            background: 'var(--rpt-bg-tertiary)'
+                          }}
+                        >
+                          {t(`workflowEditor.nodeTitle.${nodeType}`)}
+                        </div>
+                      ))}
                     </div>
                   </div>
                 ))}

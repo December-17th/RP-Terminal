@@ -101,7 +101,7 @@ async function runNodes(
 
     // Branch-prune: signal firing is only known after a node runs, so which edges are dead
     // can't be computed upfront — pruning is interleaved with execution in this single forward
-    // topo pass, unlike graph.ts's prunedNodes(), which takes a static inactive-edge set.
+    // topo pass (the one true prune; graph.ts's static prunedNodes was retired for drifting).
     // Two prune rules (spec §5): every incoming edge dead (nothing can feed the node), OR the
     // node is signal-GATED — it has incoming Signal-typed edges and none of them fired.
     const allDead = ins.length > 0 && ins.every((e) => state.deadEdge.has(edgeKey(e)))
