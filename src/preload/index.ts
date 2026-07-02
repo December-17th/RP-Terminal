@@ -40,6 +40,8 @@ const api = {
     ipcRenderer.send('wcv-ensure', id, bounds, url, ctx),
   wcvSetBounds: (id: string, bounds: unknown) => ipcRenderer.send('wcv-set-bounds', id, bounds),
   wcvSetVisible: (id: string, visible: boolean) => ipcRenderer.send('wcv-set-visible', id, visible),
+  // Hide/show every card WCV (native views paint above the DOM — full-screen overlays need this).
+  wcvSetAllVisible: (visible: boolean) => ipcRenderer.send('wcv-set-all-visible', visible),
   wcvDestroy: (id: string) => ipcRenderer.send('wcv-destroy', id),
   // A card-script toolbar button was clicked → deliver it to the chat's card WCVs (the script's eventOn).
   wcvButtonClick: (chatId: string, name: string) =>
@@ -136,6 +138,14 @@ const api = {
     const listener = (_e: IpcRendererEvent, trace: unknown): void => cb(trace)
     ipcRenderer.on('workflow-trace', listener)
     return () => ipcRenderer.removeListener('workflow-trace', listener)
+  },
+  // Opt-in node output panel deltas (spec D4 collapsible chat panels). Returns an unsubscribe.
+  onWorkflowPanel: (
+    cb: (p: { chatId: string; nodeId: string; label?: string; delta: string }) => void
+  ) => {
+    const listener = (_e: IpcRendererEvent, p: any): void => cb(p)
+    ipcRenderer.on('workflow-panel', listener)
+    return () => ipcRenderer.removeListener('workflow-panel', listener)
   },
   // Lorebook library (id-keyed; a character's own lorebook has id == characterId)
   listLorebooks: (profileId: string) => ipcRenderer.invoke('list-lorebooks', profileId),

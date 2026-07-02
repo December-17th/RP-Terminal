@@ -150,6 +150,7 @@ export const ensure = (
       html: inlineHtml ?? undefined
     }
     slots.set(id, slot)
+    if (allHidden) view.setVisible(false) // a full-screen overlay is up — don't paint above it
     mainWindow.contentView.addChildView(view)
     view.webContents.loadURL(loadUrl) // html must be on the slot first — the scheme handler reads it
     // Spike: surface the card's console so its missing-API log is visible.
@@ -211,6 +212,16 @@ export const pushCardButtons = (
 /** Hide without destroying (e.g. while a modal is open over it, or its tab is hidden). */
 export const setVisible = (id: string, visible: boolean): void => {
   slots.get(id)?.view.setVisible(visible)
+}
+
+// A full-screen DOM overlay (the workflow editor) can't cover native views — they always paint
+// above the renderer — so the host ducks ALL card WCVs while it's open. Tracked in a flag so a
+// view created WHILE the overlay is open (chat re-render underneath it) starts hidden too.
+// setVisible keeps bounds, so the pages keep running (the engine WCV's overlay detector included).
+let allHidden = false
+export const setAllVisible = (visible: boolean): void => {
+  allHidden = !visible
+  for (const s of slots.values()) s.view.setVisible(visible)
 }
 
 export const destroy = (id: string): void => {

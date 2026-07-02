@@ -20,6 +20,7 @@ import { CardScriptWcvHost } from './components/CardScriptWcvHost'
 import { PluginHost } from './components/PluginHost'
 import { useNavStore } from './stores/navStore'
 import { useWorkflowTraceStore } from './stores/workflowTraceStore'
+import { useWorkflowPanelStore } from './stores/workflowPanelStore'
 import type { WorkflowRunTrace } from '../../shared/workflow/trace'
 import { useWorkspaceStore } from './stores/workspaceStore'
 import { useComposerStore } from './stores/composerStore'
@@ -94,6 +95,16 @@ export default function App(): React.ReactElement {
     const unsubTrace = window.api.onWorkflowTrace((trace: unknown) =>
       useWorkflowTraceStore.getState().put(trace as WorkflowRunTrace)
     )
+    // Opt-in node output panels (spec D4): append deltas; a chat's panels belong to its latest
+    // turn, so clear them on the turn's rising edge (isGenerating false→true).
+    const unsubPanel = window.api.onWorkflowPanel((p) =>
+      useWorkflowPanelStore.getState().append(p)
+    )
+    const unsubPanelClear = useChatStore.subscribe((state, prev) => {
+      if (state.isGenerating && !prev.isGenerating && state.activeChatId) {
+        useWorkflowPanelStore.getState().clear(state.activeChatId)
+      }
+    })
     return () => {
       unsubDelta()
       unsubLog()
@@ -103,6 +114,8 @@ export default function App(): React.ReactElement {
       unsubFloors()
       unsubEvents()
       unsubTrace()
+      unsubPanel()
+      unsubPanelClear()
     }
   }, [])
 

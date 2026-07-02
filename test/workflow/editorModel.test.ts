@@ -138,7 +138,7 @@ describe('docToEditor / editorToDoc round-trip', () => {
 })
 
 describe('autoLayout', () => {
-  it('places DEFAULT_GRAPH nodes by longest-path column (ctx=0, chain deepens, write is deepest pre-node)', () => {
+  it('places DEFAULT_GRAPH nodes by longest-path column (ctx=0, chain deepens, compact past write)', () => {
     const layout = autoLayout(DEFAULT_GRAPH)
 
     const colOf = (id: string): number => {
@@ -154,10 +154,11 @@ describe('autoLayout', () => {
     expect(colOf('apply')).toBeGreaterThan(colOf('parse'))
     expect(colOf('write')).toBeGreaterThan(colOf('apply'))
 
-    // write is the deepest node overall (everything else, including compact, feeds no further
-    // than write's inputs or is a shallow ctx-only branch).
+    // compact sits PAST write — the write.floor → compact ordering edge (compaction only after
+    // the floor is persisted) makes it the deepest node; write is the deepest pre-phase node.
     const maxCol = Math.max(...DEFAULT_GRAPH.nodes.map((n) => colOf(n.id)))
-    expect(colOf('write')).toBe(maxCol)
+    expect(colOf('compact')).toBeGreaterThan(colOf('write'))
+    expect(colOf('compact')).toBe(maxCol)
 
     // x/y spacing formula.
     for (const n of DEFAULT_GRAPH.nodes) {

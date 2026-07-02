@@ -4,6 +4,7 @@
 import React from 'react'
 import { useUiStore } from '../../stores/uiStore'
 import { useT } from '../../i18n'
+import { useWcvSuppression } from '../useWcvSuppression'
 import WorkflowEditorView from './WorkflowEditorView'
 
 export function WorkflowEditorOverlay({
@@ -14,6 +15,20 @@ export function WorkflowEditorOverlay({
   const open = useUiStore((s) => s.workflowEditorOpen)
   const close = useUiStore((s) => s.closeWorkflowEditor)
   const t = useT()
+
+  // Native card views (WCVs — e.g. a 状态栏 regex panel) always paint ABOVE the DOM, so this
+  // full-screen overlay can't cover them — duck them all for the editor's lifetime (refcounted,
+  // shared with Modal so nested overlays don't restore early). Esc closes.
+  useWcvSuppression(open)
+  React.useEffect(() => {
+    if (!open) return
+    const onKey = (e: KeyboardEvent): void => {
+      if (e.key === 'Escape') close()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [open, close])
+
   if (!open) return null
 
   return (
@@ -39,7 +54,15 @@ export function WorkflowEditorOverlay({
       >
         <strong style={{ fontSize: 13 }}>{t('workflowEditor.viewTitle')}</strong>
         <span style={{ flex: 1 }} />
-        <button type="button" onClick={close} style={{ fontSize: 12.5 }}>
+        <button
+          type="button"
+          onClick={close}
+          title={`${t('workflowEditor.close')} (Esc)`}
+          style={{ fontSize: 12.5, display: 'flex', alignItems: 'center', gap: 5 }}
+        >
+          <span aria-hidden style={{ fontSize: 13 }}>
+            ✕
+          </span>
           {t('workflowEditor.close')}
         </button>
       </div>
