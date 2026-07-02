@@ -567,6 +567,12 @@ const zh: Record<string, string> = {
   'workflowEditor.nodeTitle.tool.startCombat': '开始战斗',
   'workflowEditor.nodeTitle.tool.startDuel': '开始决斗',
   'workflowEditor.nodeTitle.tool.lorebookSearch': '世界书检索',
+  'workflowEditor.nodeTitle.memory.query': '记忆查询',
+  'workflowEditor.nodeTitle.vars.get': '读取变量',
+  'workflowEditor.nodeTitle.vars.save': '保存变量',
+  'workflowEditor.nodeTitle.context.history': '历史记录',
+  'workflowEditor.nodeTitle.context.card': '角色卡字段',
+  'workflowEditor.nodeTitle.context.persona': '用户人设',
   // 节点说明
   'workflowEditor.nodeDesc.input.context':
     '构建本回合的上下文包：会话、角色卡、设置、预设、世界书、聊天历史与工作变量。每张图的起点——几乎所有节点都要读取它的输出。',
@@ -595,7 +601,7 @@ const zh: Record<string, string> = {
   'workflowEditor.nodeDesc.tool.startDuel':
     '用队伍的 MVU 构筑开始一场卡组决斗（敌人来自接入的 cue 名单），并把会话切到决斗模式。无法构建时从 error 端口输出。',
   'workflowEditor.nodeDesc.tool.lorebookSearch':
-    '用接入的查询文本对会话的世界书做关键词检索（与提示词组装同一套匹配器），把命中的条目内容合并为一段文本输出。',
+    '用接入的查询文本对会话的世界书做关键词检索（与提示词组装同一套匹配器），把命中的条目内容合并为一段文本输出。配置可按世界书名称过滤只检索一部分世界书，并限制输出文本块的最大长度——两者都用于压低旁路调用的开销。',
   'workflowEditor.nodeDesc.control.if':
     '对输入值执行谓词判断（可用配置的 path 深入取值），恰好触发 then 或 else 之一；未触发的分支被剪掉。',
   'workflowEditor.nodeDesc.control.switch':
@@ -612,6 +618,18 @@ const zh: Record<string, string> = {
     '把一个值写入最新楼层的 stat_data 路径——旁路分支把结果提交到游戏状态的方式。建议用于回复后分支；接入的值优先于配置的值。',
   'workflowEditor.nodeDesc.util.log':
     '把输入写入应用日志并终止该分支。把某节点的 error 端口接到这里，可让该失败只记日志而不中止回合。',
+  'workflowEditor.nodeDesc.vars.get':
+    '读取最新楼层变量树（scope: floor，默认——同时能看到 MVU 的 stat_data，此处只读）或按会话的键值存储（scope: session）中的某一路径，让旁路分支只拉取自己需要的那一小片状态，而不是整个「上下文」包。',
+  'workflowEditor.nodeDesc.vars.save':
+    '把一个路径的值写入最新楼层（scope: floor，默认）或按会话的键值存储（scope: session）。楼层写入能在 MVU 重新演算后存活，之后可通过 {{getvar}}/EJS 读取；但会拒绝 stat_data/delta_data 根路径——这两者由 MVU 管理，请改用「设置变量」（mvu.set）。value 未接线时静默跳过写入。',
+  'workflowEditor.nodeDesc.context.history':
+    '最近 N 个楼层，同时输出 User:/Assistant: 格式的文本记录和按角色打标的消息列表，回复已剥离思维链。配置可只保留用户或 AI 一侧（同时收窄两个输出）。',
+  'workflowEditor.nodeDesc.context.card':
+    '角色卡的某一叙事字段（description/personality/scenario/first_mes/name），或将 field 设为 all 时把它们合并为带标签的文本块。',
+  'workflowEditor.nodeDesc.context.persona':
+    '当前用户人设的名称与描述——即角色卡/人设配对中 {{user}} 一侧，单独拆出以便旁路调用不必接入整个「上下文」。',
+  'workflowEditor.nodeDesc.memory.query':
+    '按接入的任意查询文本召回记忆，而不是扫描当前回合的聊天内容——供规划器等旁路分支按特定主题召回记忆。仅做关键词排序（vector/hybrid 集合会被降级为关键词排序）；mode 为 llm 的集合会被整体跳过，与标准召回一致。把输出接入模型调用即可在此基础上叠加自定义重排序提示词。',
   // 通用端口说明（无逐节点条目时回退到这里）
   'workflowEditor.portDesc.common.gen': '来自“上下文”的回合包（设置、角色卡、历史、变量）',
   'workflowEditor.portDesc.common.when': '可选门控：信号触发时本节点才运行',
