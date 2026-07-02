@@ -99,6 +99,18 @@ CREATE TABLE IF NOT EXISTS table_ops (
   PRIMARY KEY (chat_id, floor, seq)
 );
 CREATE INDEX IF NOT EXISTS idx_table_ops_chat_floor ON table_ops(chat_id, floor);
+
+-- Chat-level per-table maintenance-progress pointer for SQL-table memory (issue 07). last_floor is
+-- the 0-based floor index up to which a table was last processed; the per-turn table.gate cadence AND
+-- the manual backfill both advance it (MAX-semantics upsert), the Tables view reads it, floor
+-- truncation clamps it, and template (re)assignment resets it. REPLACES the gate's per-workflow
+-- node_state pointer. FK cascade (foreign_keys = ON below) clears it on chat deletion.
+CREATE TABLE IF NOT EXISTS table_progress (
+  chat_id TEXT NOT NULL REFERENCES chats(id) ON DELETE CASCADE,
+  sql_name TEXT NOT NULL,
+  last_floor INTEGER NOT NULL,
+  PRIMARY KEY (chat_id, sql_name)
+);
 `
 
 // Presets/lorebooks were briefly stored in SQL during early Phase F; they are now

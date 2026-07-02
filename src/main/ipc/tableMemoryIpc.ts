@@ -5,6 +5,12 @@ import * as chatService from '../services/chatService'
 import { applyEdit, TableEditOp } from '../services/tableEditService'
 import { getTablesStatus } from '../services/tableStatusService'
 import { templateSqlNames } from '../services/tableDbService'
+import {
+  startBackfill,
+  cancelBackfill,
+  getBackfillState,
+  BackfillOpts
+} from '../services/tableBackfillService'
 
 /**
  * IPC for SQL-table memory (issue 02): file-based table templates, per-chat assignment (which
@@ -99,10 +105,64 @@ export const registerTableMemoryIpc = (ipcMain: IpcMain): void => {
     }
   )
 
-  // Last-maintained-floor per table (issue 06): merged from every table.gate node's durable state in
-  // the chat's resolved workflow. Best-effort → `{}` on any failure.
+  // Per-table maintenance progress (issue 07): from the chat-level table_progress store (shared by the
+  // per-turn gate + the manual backfill) joined with the template frequencies + the chat's floor count.
+  // `{ sqlName: { lastFloor, processed, nextExpected, unprocessed } }`. Best-effort → `{}` on failure.
   ipcMain.handle('chat-tables-status', (_, profileId, chatId) =>
     getTablesStatus(profileId, chatId)
+  )
+
+  // Manual backfill (issue 07). Start validates the scope/batch inputs (X ≥ 1 or all, Y ≥ 1, retries
+  // 0–5) and returns `{ ok } | { error }` with the error as a localized `tables.*` key (the established
+  // contract); the actual run is async and streams progress via `table-backfill-progress`.
+  ipcMain.handle(
+    'table-backfill-start',
+    async (
+      _,
+      profileId: string,
+      chatId: string,
+      raw: {
+        lastFloors: number | 'all'
+        batchSize: number
+        apiPresetId?: string | null
+        retries?: number
+      }
+    ) => {
+      const lastFloors: number | 'all' =
+        raw.lastFloors === 'all'
+          ? 'all'
+          : Number.isInteger(raw.lastFloors) && (raw.lastFloors as number) >= 1
+            ? (raw.lastFloors as number)
+            : NaN
+      if (typeof lastFloors === 'number' && Number.isNaN(lastFloors)) {
+        return { error: 'tables.backfillBadScope' }
+      }
+      if (!Number.isInteger(raw.batchSize) || raw.batchSize < 1) {
+        return { error: 'tables.backfillBadBatch' }
+      }
+      const retries = Number.isInteger(raw.retries) ? Math.max(0, Math.min(5, raw.retries!)) : 0
+      const opts: BackfillOpts = {
+        lastFloors,
+        batchSize: raw.batchSize,
+        apiPresetId: raw.apiPresetId || undefined,
+        retries
+      }
+      try {
+        await startBackfill(profileId, chatId, opts)
+        return { ok: true }
+      } catch (error) {
+        const msg = error instanceof Error ? error.message : String(error)
+        return { error: msg.startsWith('tables.') ? msg : msg }
+      }
+    }
+  )
+
+  ipcMain.handle('table-backfill-cancel', (_, profileId: string, chatId: string) => {
+    cancelBackfill(profileId, chatId)
+  })
+
+  ipcMain.handle('table-backfill-state', (_, _profileId: string, chatId: string) =>
+    getBackfillState(chatId)
   )
 
   // Export the chat's (or a stored) template back to chatSheets v2 JSON behind a save dialog (issue

@@ -11,6 +11,7 @@ import { saveFloor, deleteFloorAndSubsequent, updateFloorFields } from './floorS
 import { getTableTemplateById } from './tableTemplateService'
 import * as tableDbService from './tableDbService'
 import * as tableOpsService from './tableOpsService'
+import * as tableProgressService from './tableProgressService'
 
 interface ChatRow {
   id: string
@@ -215,6 +216,9 @@ export const setChatTableTemplateId = (
   // The sandbox is recreated from scratch on (re)assign/unassign, so the chat's SQL op log is stale
   // (it referenced the OLD template's tables) — clear it, or a later rewind would replay dead ops.
   tableOpsService.deleteAllOps(profileId, chatId)
+  // Per-table maintenance progress pointers referenced the OLD template's tables — reset them too
+  // (issue 07), so a reassigned template starts from "never processed" and cadences begin fresh.
+  tableProgressService.resetProgress(profileId, chatId)
   if (template) tableDbService.instantiate(profileId, chatId, template)
   else tableDbService.removeSandbox(profileId, chatId)
 }
@@ -305,6 +309,9 @@ export const truncateFloors = (profileId: string, chatId: string, fromFloor: num
     tableOpsService.deleteOpsFrom(profileId, chatId, fromFloor)
     const template = getTableTemplateById(profileId, templateId)
     tableOpsService.rebuildSandbox(profileId, chatId, template)
+    // Rewind clamp (issue 07): pull every per-table progress pointer at/after the cut back to
+    // fromFloor - 1, so cadences resume immediately instead of stalling on an overshot pointer.
+    tableProgressService.clampProgress(profileId, chatId, fromFloor)
   }
   touch(chatId)
 }

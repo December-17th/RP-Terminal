@@ -29,6 +29,29 @@ interface TableRead {
   rows: unknown[][]
   rowids: number[]
 }
+/** Per-table progress (issue 07): last-processed floor + the three derived display numbers. */
+interface TableStatus {
+  lastFloor: number | null
+  processed: number
+  nextExpected: number
+  unprocessed: number
+}
+interface ApiPresetSummary {
+  id: string
+  name: string
+}
+interface BackfillProgressEvent {
+  chatId: string
+  batchIndex: number
+  batchCount: number
+  span: { from: number; to: number } | null
+  status: 'running' | 'batch-ok' | 'batch-failed' | 'done' | 'cancelled' | 'error'
+  message?: string
+}
+interface BackfillFailure {
+  span: { from: number; to: number }
+  reason: string
+}
 
 export const TablesView: React.FC<{ profileId: string }> = ({ profileId }) => {
   const activeChatId = useChatStore((s) => s.activeChatId)
@@ -38,13 +61,21 @@ export const TablesView: React.FC<{ profileId: string }> = ({ profileId }) => {
   const [templates, setTemplates] = React.useState<TemplateSummary[]>([])
   const [assignedId, setAssignedId] = React.useState<string | null>(null)
   const [tables, setTables] = React.useState<TableRead[]>([])
-  const [status, setStatus] = React.useState<Record<string, number>>({})
+  const [status, setStatus] = React.useState<Record<string, TableStatus>>({})
+  const [apiPresets, setApiPresets] = React.useState<ApiPresetSummary[]>([])
 
   const loadTemplates = React.useCallback(async () => {
     try {
       setTemplates((await api().listTableTemplates(profileId)) ?? [])
     } catch {
       setTemplates([])
+    }
+    try {
+      const settings = await api().getSettings(profileId)
+      const presets = (settings?.api_presets ?? []) as ApiPresetSummary[]
+      setApiPresets(presets.map((p) => ({ id: p.id, name: p.name })))
+    } catch {
+      setApiPresets([])
     }
   }, [profileId])
 
@@ -249,12 +280,21 @@ export const TablesView: React.FC<{ profileId: string }> = ({ profileId }) => {
             <TableGrid
               key={tbl.sqlName}
               table={tbl}
-              lastMaintained={tbl.sqlName in status ? status[tbl.sqlName] : null}
+              status={status[tbl.sqlName] ?? null}
               onEdit={applyEdit}
             />
           ))
         )}
       </div>
+
+      {assignedId && (
+        <BackfillPanel
+          profileId={profileId}
+          chatId={activeChatId}
+          apiPresets={apiPresets}
+          onProgress={() => void loadChat()}
+        />
+      )}
     </div>
   )
 }
@@ -276,9 +316,9 @@ const cellStyle: React.CSSProperties = {
 
 const TableGrid: React.FC<{
   table: TableRead
-  lastMaintained: number | null
+  status: TableStatus | null
   onEdit: EditFn
-}> = ({ table, lastMaintained, onEdit }) => {
+}> = ({ table, status, onEdit }) => {
   const t = useT()
   const width = Math.max(1, table.columns.length)
   // The blank "add row" editor: one input per column, or null when not adding.
@@ -336,9 +376,12 @@ const TableGrid: React.FC<{
         </span>
         <span style={{ opacity: 0.5, fontWeight: 400, fontSize: 11 }}>{table.sqlName}</span>
         <span style={{ opacity: 0.5, fontSize: 11 }}>
-          {lastMaintained == null
-            ? t('tables.neverMaintained')
-            : t('tables.lastMaintained', { n: lastMaintained })}
+          {status == null || status.lastFloor == null
+            ? t('tables.progressNever')
+            : `${t('tables.progressProcessed', { n: status.processed })} · ${t(
+                'tables.progressNext',
+                { n: status.nextExpected }
+              )} · ${t('tables.progressUnprocessed', { n: status.unprocessed })}`}
         </span>
         <span style={{ marginLeft: 'auto', display: 'flex', gap: 6 }}>
           <button
@@ -504,6 +547,260 @@ const TableGrid: React.FC<{
           </tbody>
         </table>
       </div>
+    </div>
+  )
+}
+
+/**
+ * Manual backfill panel (issue 07): collapsed by default. Runs a backfill over a chosen scope (last X
+ * floors or all), in batches of Y floors, optionally against a saved API preset, with an optional
+ * auto-retry count. Progress streams via `onTableBackfillProgress` (filtered by chatId); the parent
+ * refetches its tables + status on every event. State is re-read on mount so a re-mount mid-run
+ * resumes showing progress.
+ */
+const BackfillPanel: React.FC<{
+  profileId: string
+  chatId: string
+  apiPresets: ApiPresetSummary[]
+  onProgress: () => void
+}> = ({ profileId, chatId, apiPresets, onProgress }) => {
+  const t = useT()
+  const [open, setOpen] = React.useState(false)
+  const [allScope, setAllScope] = React.useState(false)
+  const [lastFloors, setLastFloors] = React.useState(20)
+  const [batchSize, setBatchSize] = React.useState(3)
+  const [presetId, setPresetId] = React.useState('')
+  const [retries, setRetries] = React.useState(0)
+
+  const [running, setRunning] = React.useState(false)
+  const [progress, setProgress] = React.useState<BackfillProgressEvent | null>(null)
+  const [failures, setFailures] = React.useState<BackfillFailure[]>([])
+
+  // Re-read the run state on mount / chat change so a re-mounted view reflects an in-flight run.
+  React.useEffect(() => {
+    let cancelled = false
+    void (async () => {
+      try {
+        const state = await api().getTableBackfillState(profileId, chatId)
+        if (cancelled || !state) return
+        setRunning(state.running)
+        setFailures(state.failures ?? [])
+      } catch {
+        /* best-effort */
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [profileId, chatId])
+
+  // Subscribe to progress events (filtered by chatId).
+  React.useEffect(() => {
+    const off = api().onTableBackfillProgress((p: BackfillProgressEvent) => {
+      if (p.chatId !== chatId) return
+      setProgress(p)
+      if (p.status === 'batch-failed' && p.span) {
+        setFailures((prev) => [...prev, { span: p.span!, reason: p.message ?? '' }])
+      }
+      if (p.status === 'done' || p.status === 'cancelled' || p.status === 'error') {
+        setRunning(false)
+      } else {
+        setRunning(true)
+      }
+      onProgress()
+    })
+    return off
+  }, [chatId, onProgress])
+
+  const onStart = async (): Promise<void> => {
+    setFailures([])
+    setProgress(null)
+    setRunning(true)
+    try {
+      const res = await api().startTableBackfill(profileId, chatId, {
+        lastFloors: allScope ? 'all' : lastFloors,
+        batchSize,
+        apiPresetId: presetId || null,
+        retries
+      })
+      if (res && res.error) {
+        const detail = res.error.startsWith('tables.') ? t(res.error) : res.error
+        useToastStore.getState().push(`${t('tables.backfillStartFailed')}: ${detail}`)
+        setRunning(false)
+      }
+    } catch {
+      useToastStore.getState().push(t('tables.backfillStartFailed'))
+      setRunning(false)
+    }
+  }
+
+  const onCancel = async (): Promise<void> => {
+    try {
+      await api().cancelTableBackfill(profileId, chatId)
+    } catch {
+      /* best-effort */
+    }
+  }
+
+  const inputStyle: React.CSSProperties = {
+    fontSize: 12,
+    padding: '2px 6px',
+    width: 64,
+    background: 'var(--rpt-bg-tertiary)',
+    color: 'var(--rpt-text-primary)',
+    border: '1px solid var(--rpt-border)',
+    borderRadius: 4
+  }
+
+  return (
+    <div
+      style={{
+        borderTop: '1px solid var(--rpt-border)',
+        marginTop: 8,
+        paddingTop: 8
+      }}
+    >
+      <button
+        className="rpt-duel-secondary"
+        style={{ fontSize: 12, padding: '3px 10px' }}
+        onClick={() => setOpen((o) => !o)}
+      >
+        {open ? '▾' : '▸'} {t('tables.backfill')}
+      </button>
+
+      {open && (
+        <div
+          style={{
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 8,
+            marginTop: 8,
+            fontSize: 12,
+            color: 'var(--rpt-text-primary)'
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+            <label style={{ opacity: 0.8 }}>{t('tables.backfillScope')}</label>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+              <input
+                type="checkbox"
+                checked={allScope}
+                disabled={running}
+                onChange={(e) => setAllScope(e.target.checked)}
+              />
+              {t('tables.backfillAll')}
+            </label>
+            <label style={{ opacity: 0.8 }}>{t('tables.backfillLastFloors')}</label>
+            <input
+              type="number"
+              min={1}
+              value={lastFloors}
+              disabled={running || allScope}
+              onChange={(e) => setLastFloors(Math.max(1, Number(e.target.value) || 1))}
+              style={inputStyle}
+            />
+          </div>
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+            <label style={{ opacity: 0.8 }}>{t('tables.backfillBatchSize')}</label>
+            <input
+              type="number"
+              min={1}
+              value={batchSize}
+              disabled={running}
+              onChange={(e) => setBatchSize(Math.max(1, Number(e.target.value) || 1))}
+              style={inputStyle}
+            />
+            <label style={{ opacity: 0.8 }}>{t('tables.backfillRetries')}</label>
+            <input
+              type="number"
+              min={0}
+              max={5}
+              value={retries}
+              disabled={running}
+              onChange={(e) => setRetries(Math.max(0, Math.min(5, Number(e.target.value) || 0)))}
+              style={inputStyle}
+            />
+          </div>
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+            <label style={{ opacity: 0.8 }}>{t('tables.backfillPreset')}</label>
+            <select
+              value={presetId}
+              disabled={running}
+              onChange={(e) => setPresetId(e.target.value)}
+              style={{
+                fontSize: 12,
+                padding: '2px 6px',
+                background: 'var(--rpt-bg-tertiary)',
+                color: 'var(--rpt-text-primary)',
+                border: '1px solid var(--rpt-border)',
+                borderRadius: 4
+              }}
+            >
+              <option value="">{t('tables.backfillPresetActive')}</option>
+              {apiPresets.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.name}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button
+              className="rpt-duel-secondary"
+              style={{ fontSize: 12, padding: '3px 10px' }}
+              disabled={running}
+              onClick={() => void onStart()}
+            >
+              {t('tables.backfillStart')}
+            </button>
+            <button
+              className="rpt-duel-secondary"
+              style={{ fontSize: 12, padding: '3px 10px' }}
+              disabled={!running}
+              onClick={() => void onCancel()}
+            >
+              {t('tables.backfillCancel')}
+            </button>
+          </div>
+
+          {progress && (
+            <div style={{ opacity: 0.8 }}>
+              {progress.status === 'done'
+                ? t('tables.backfillDone')
+                : progress.status === 'cancelled'
+                  ? t('tables.backfillCancelled')
+                  : progress.status === 'error'
+                    ? progress.message ?? t('tables.backfillStartFailed')
+                    : progress.span
+                      ? t('tables.backfillRunning', {
+                          i: progress.batchIndex + 1,
+                          n: progress.batchCount,
+                          from: progress.span.from,
+                          to: progress.span.to
+                        })
+                      : ''}
+            </div>
+          )}
+
+          {failures.length > 0 && (
+            <div style={{ color: 'var(--rpt-danger, #c0392b)' }}>
+              <div style={{ fontWeight: 600 }}>{t('tables.backfillFailures')}</div>
+              {failures.map((f, i) => (
+                <div key={i} style={{ opacity: 0.85 }}>
+                  {t('tables.backfillFailureRow', {
+                    from: f.span.from,
+                    to: f.span.to,
+                    reason: f.reason
+                  })}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   )
 }

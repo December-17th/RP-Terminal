@@ -26,6 +26,21 @@ type ExtractConfig = z.infer<typeof extractConfig>
 const escapeRegExp = (s: string): string => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 
 /**
+ * PURE tag extractor (issue 07): every `<tag>…</tag>` inner content in `text` (non-greedy, dotall,
+ * case-insensitive). Shared by the backfill service, which reuses the node's tag-mode logic without
+ * copying it; the node's own `extractMatches` (with regex mode) delegates here for the tag path.
+ * A blank tag or no match → [].
+ */
+export const extractTagAll = (text: string, tag: string): string[] => {
+  const name = tag.trim()
+  if (!name) return []
+  const re = new RegExp(`<${escapeRegExp(name)}>([\\s\\S]*?)</${escapeRegExp(name)}>`, 'gi')
+  const out: string[] = []
+  for (const m of text.matchAll(re)) out.push(m[1] ?? '')
+  return out
+}
+
+/**
  * Pull matches out of `text`. In 'tag' mode: every `<tag>…</tag>` (non-greedy, dotall,
  * case-insensitive), the captured inner content. In 'regex' mode: `new RegExp(pattern, flags)` (the
  * 'g' flag is forced so `matchAll` walks every match); the CAPTURED value is group 1 when the
@@ -33,27 +48,21 @@ const escapeRegExp = (s: string): string => s.replace(/[.*+?^${}()|[\]\\]/g, '\\
  */
 const extractMatches = (text: string, cfg: ExtractConfig): string[] => {
   const mode = cfg.mode ?? 'tag'
+  if (mode === 'tag') return extractTagAll(text, cfg.tag ?? '')
+  const pattern = cfg.pattern ?? ''
+  if (!pattern) return []
+  let flags = cfg.flags ?? 'g'
+  if (!flags.includes('g')) flags += 'g'
   let re: RegExp
-  if (mode === 'tag') {
-    const tag = (cfg.tag ?? '').trim()
-    if (!tag) return []
-    const t = escapeRegExp(tag)
-    re = new RegExp(`<${t}>([\\s\\S]*?)</${t}>`, 'gi')
-  } else {
-    const pattern = cfg.pattern ?? ''
-    if (!pattern) return []
-    let flags = cfg.flags ?? 'g'
-    if (!flags.includes('g')) flags += 'g'
-    try {
-      re = new RegExp(pattern, flags)
-    } catch (error) {
-      throw new NodeRunFailure(
-        'B',
-        `parse.extract: invalid regex — ${error instanceof Error ? error.message : String(error)}`,
-        1,
-        'bad-pattern'
-      )
-    }
+  try {
+    re = new RegExp(pattern, flags)
+  } catch (error) {
+    throw new NodeRunFailure(
+      'B',
+      `parse.extract: invalid regex — ${error instanceof Error ? error.message : String(error)}`,
+      1,
+      'bad-pattern'
+    )
   }
   const out: string[] = []
   for (const m of text.matchAll(re)) {

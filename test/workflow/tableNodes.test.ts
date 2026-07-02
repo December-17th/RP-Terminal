@@ -40,6 +40,10 @@ vi.mock('../../src/main/services/tableOpsService', () => opsSvc)
 const dbSvc = vi.hoisted(() => ({ readAllTables: vi.fn() }))
 vi.mock('../../src/main/services/tableDbService', () => dbSvc)
 
+// The chat-level progress store the gate now reads/advances (issue 07) — replaces its node state.
+const progressSvc = vi.hoisted(() => ({ getProgress: vi.fn(), advanceProgress: vi.fn() }))
+vi.mock('../../src/main/services/tableProgressService', () => progressSvc)
+
 import { parseExtract } from '../../src/main/services/nodes/builtin/parseNodes'
 import {
   tableApply,
@@ -379,20 +383,6 @@ describe('table.export', () => {
 
 // ---- Maintenance pipeline (issue 05): table.gate / table.read / table.query ------------------
 
-// A Map-backed ctx so the gate's durable getNodeState/setNodeState round-trips (control.when pattern).
-const makeStatefulCtx = (): RunContext => {
-  const store = new Map<string, unknown>()
-  return {
-    signal: new AbortController().signal,
-    streamMain: () => {},
-    emitPanel: () => {},
-    getNodeState: (id) => store.get(id),
-    setNodeState: (id, v) => {
-      store.set(id, v)
-    }
-  }
-}
-
 // Two tables: 纪要 (every turn, freq 1) and 世界 (freq 3), with rules for the read node.
 const maintTemplate = () =>
   TableTemplateSchema.parse({
@@ -424,6 +414,10 @@ const maintTemplate = () =>
     ]
   })
 
+// table.gate now reads/advances the CHAT-LEVEL progress store (issue 07), not per-workflow node state.
+// The `at` rewind discriminator is retired — the store is clamped explicitly on truncation (tested as a
+// clampProgress service test). We pin cadence, at-most-once, config filter, and silent no-template
+// against the mocked progress service.
 describe('table.gate', () => {
   const gen = { profileId: 'p1', chatId: 'c1', floors: [] }
 
@@ -431,59 +425,62 @@ describe('table.gate', () => {
     chatSvc.getChatTableTemplateId.mockReset()
     templateSvc.getTableTemplateById.mockReset()
     floorSvc.getAllFloors.mockReset()
+    progressSvc.getProgress.mockReset()
+    progressSvc.advanceProgress.mockReset()
+    progressSvc.getProgress.mockReturnValue({}) // default: nothing processed
   })
 
-  it('no template → silent no-op (no floor read)', () => {
+  it('no template → silent no-op (no floor read, no progress read)', () => {
     chatSvc.getChatTableTemplateId.mockReturnValue(null)
-    const r = tableGate.run(makeStatefulCtx(), { gen }, meta(tableGate, 'g'))
+    const r = tableGate.run(ctx, { gen }, meta(tableGate, 'g'))
     expect(r).toEqual({ outputs: {} })
     expect(floorSvc.getAllFloors).not.toHaveBeenCalled()
+    expect(progressSvc.getProgress).not.toHaveBeenCalled()
   })
 
   it('first turn: freq-1 fires (last -1); freq-3 not yet (needs 3 floors elapsed)', () => {
     chatSvc.getChatTableTemplateId.mockReturnValue('t1')
     templateSvc.getTableTemplateById.mockReturnValue(maintTemplate())
     floorSvc.getAllFloors.mockReturnValue([{}]) // 1 floor → currentFloor 0
-    const r = tableGate.run(makeStatefulCtx(), { gen }, meta(tableGate, 'g'))
+    const r = tableGate.run(ctx, { gen }, meta(tableGate, 'g'))
     expect(r.signals).toEqual(['due'])
     // world: 0 - (-1) = 1, not >= 3 → not due. Only chronicle (freq 1) is due.
     expect(r.outputs!.tables).toEqual(['chronicle'])
     expect(r.outputs!.span).toEqual({ from: 0, to: 0 })
   })
 
-  it('advances state on fire and does NOT re-fire at the same floor', () => {
+  it('advances the store on fire (only the due tables, at currentFloor)', () => {
     chatSvc.getChatTableTemplateId.mockReturnValue('t1')
     templateSvc.getTableTemplateById.mockReturnValue(maintTemplate())
     floorSvc.getAllFloors.mockReturnValue([{}]) // currentFloor 0
-    const ctxS = makeStatefulCtx()
-    const first = tableGate.run(ctxS, { gen }, meta(tableGate, 'g'))
+    const first = tableGate.run(ctx, { gen }, meta(tableGate, 'g'))
     expect(first.signals).toEqual(['due'])
-    // Only the due table (chronicle) advances; world is untouched (missing = still -1). `at`
-    // records the write floor (the rewind discriminator).
-    expect(ctxS.getNodeState('g')).toEqual({ last: { chronicle: 0 }, at: 0 })
-    // Same floor again → nothing due (chronicle already at 0; world still 0 - (-1) = 1 < 3).
-    const second = tableGate.run(ctxS, { gen }, meta(tableGate, 'g'))
-    expect(second).toEqual({ outputs: {} })
+    // Only the due table (chronicle) advances; world is untouched (missing = still -1).
+    expect(progressSvc.advanceProgress).toHaveBeenCalledWith('p1', 'c1', ['chronicle'], 0)
+  })
+
+  it('at-most-once: a table already processed at the current floor is not due again', () => {
+    chatSvc.getChatTableTemplateId.mockReturnValue('t1')
+    templateSvc.getTableTemplateById.mockReturnValue(maintTemplate())
+    floorSvc.getAllFloors.mockReturnValue([{}]) // currentFloor 0
+    // Store says chronicle already processed through floor 0; world still -1 (0 - (-1) = 1 < 3).
+    progressSvc.getProgress.mockReturnValue({ chronicle: 0 })
+    const r = tableGate.run(ctx, { gen }, meta(tableGate, 'g'))
+    expect(r).toEqual({ outputs: {} })
+    expect(progressSvc.advanceProgress).not.toHaveBeenCalled()
   })
 
   it('cadence: freq-3 table fires once 3 floors have elapsed, alongside the every-turn table', () => {
     chatSvc.getChatTableTemplateId.mockReturnValue('t1')
     templateSvc.getTableTemplateById.mockReturnValue(maintTemplate())
-    const ctxS = makeStatefulCtx()
-    // Floor 0: only chronicle due, last.chronicle→0.
-    floorSvc.getAllFloors.mockReturnValue([{}])
-    expect(tableGate.run(ctxS, { gen }, meta(tableGate, 'g')).outputs!.tables).toEqual(['chronicle'])
-    // Floor 1: chronicle due (1 - 0 = 1 >= 1); world 1 - (-1) = 2 < 3 → not yet.
-    floorSvc.getAllFloors.mockReturnValue([{}, {}])
-    const t1 = tableGate.run(ctxS, { gen }, meta(tableGate, 'g'))
-    expect(t1.outputs!.tables).toEqual(['chronicle'])
-    expect(t1.outputs!.span).toEqual({ from: 1, to: 1 }) // chronicle last=0 → from 1
-    // Floor 2: world now due (2 - (-1) = 3 >= 3), plus chronicle (2 - 1 = 1 >= 1).
+    // Floor 2: chronicle last=1, world last=-1. world now due (2 - (-1) = 3 >= 3); chronicle due (2-1>=1).
     floorSvc.getAllFloors.mockReturnValue([{}, {}, {}])
-    const t2 = tableGate.run(ctxS, { gen }, meta(tableGate, 'g'))
+    progressSvc.getProgress.mockReturnValue({ chronicle: 1 })
+    const t2 = tableGate.run(ctx, { gen }, meta(tableGate, 'g'))
     expect(t2.outputs!.tables).toEqual(['chronicle', 'world'])
-    // span.from = min(last.chronicle=1, last.world=-1) + 1 = 0.
+    // span.from = min(chronicle=1, world=-1) + 1 = 0.
     expect(t2.outputs!.span).toEqual({ from: 0, to: 2 })
+    expect(progressSvc.advanceProgress).toHaveBeenCalledWith('p1', 'c1', ['chronicle', 'world'], 2)
   })
 
   it('config.tables narrows which tables the gate watches', () => {
@@ -491,29 +488,8 @@ describe('table.gate', () => {
     templateSvc.getTableTemplateById.mockReturnValue(maintTemplate())
     // Floor 2 → world (freq 3) is due; chronicle is out of scope, so only world fires.
     floorSvc.getAllFloors.mockReturnValue([{}, {}, {}])
-    const r = tableGate.run(makeStatefulCtx(), { gen }, meta(tableGate, 'g', { tables: 'world' }))
+    const r = tableGate.run(ctx, { gen }, meta(tableGate, 'g', { tables: 'world' }))
     expect(r.outputs!.tables).toEqual(['world'])
-  })
-
-  it('REWIND CLAMP: a rewound chat (at > currentFloor) resumes maintenance instead of stalling', () => {
-    chatSvc.getChatTableTemplateId.mockReturnValue('t1')
-    templateSvc.getTableTemplateById.mockReturnValue(maintTemplate())
-    const ctxS = makeStatefulCtx()
-    // State says both tables were maintained through floor 9 (written at floor 9), but the chat was
-    // rewound to 3 floors (currentFloor 2) — truncateFloors doesn't touch node_state, so the
-    // pointers overshoot. `at` (9) > currentFloor (2) is the rewind evidence.
-    ctxS.setNodeState('g', { last: { chronicle: 9, world: 9 }, at: 9 })
-    floorSvc.getAllFloors.mockReturnValue([{}, {}, {}]) // currentFloor 2
-    const r = tableGate.run(ctxS, { gen }, meta(tableGate, 'g'))
-    // Clamped last = currentFloor - 1 = 1 → chronicle (freq 1) due: 2 - 1 = 1 >= 1.
-    // world (freq 3): 2 - 1 = 1 < 3 → resumes its cadence rather than firing immediately.
-    expect(r.signals).toEqual(['due'])
-    expect(r.outputs!.tables).toEqual(['chronicle'])
-    expect(r.outputs!.span).toEqual({ from: 2, to: 2 })
-    // The clamped + advanced state is persisted (chronicle fired → 2; world clamped → 1; at → 2).
-    expect(ctxS.getNodeState('g')).toEqual({ last: { chronicle: 2, world: 1 }, at: 2 })
-    // Same-floor re-run is NOT a rewind (at === currentFloor): nothing re-fires.
-    expect(tableGate.run(ctxS, { gen }, meta(tableGate, 'g'))).toEqual({ outputs: {} })
   })
 })
 

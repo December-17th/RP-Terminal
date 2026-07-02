@@ -105,12 +105,54 @@ declare global {
       readChatTablesStatus: (
         profileId: string,
         chatId: string
-      ) => Promise<Record<string, number>>
+      ) => Promise<
+        Record<
+          string,
+          {
+            lastFloor: number | null
+            processed: number
+            nextExpected: number
+            unprocessed: number
+          }
+        >
+      >
       exportTableTemplateDialog: (
         profileId: string,
         templateId: string,
         chatId?: string | null
       ) => Promise<boolean>
+      // SQL-table memory (issue 07): manual backfill from history + progress events
+      startTableBackfill: (
+        profileId: string,
+        chatId: string,
+        opts: {
+          lastFloors: number | 'all'
+          batchSize: number
+          apiPresetId?: string | null
+          retries?: number
+        }
+      ) => Promise<{ ok: true } | { error: string }>
+      cancelTableBackfill: (profileId: string, chatId: string) => Promise<void>
+      getTableBackfillState: (
+        profileId: string,
+        chatId: string
+      ) => Promise<{
+        running: boolean
+        batchIndex: number
+        batchCount: number
+        span: { from: number; to: number } | null
+        failures: Array<{ span: { from: number; to: number }; reason: string }>
+      } | null>
+      onTableBackfillProgress: (
+        cb: (p: {
+          chatId: string
+          batchIndex: number
+          batchCount: number
+          span: { from: number; to: number } | null
+          status: 'running' | 'batch-ok' | 'batch-failed' | 'done' | 'cancelled' | 'error'
+          message?: string
+        }) => void
+      ) => () => void
     }
   }
 }

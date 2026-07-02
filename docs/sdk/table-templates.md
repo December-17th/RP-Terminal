@@ -268,15 +268,16 @@ exists to sequence the gate AFTER the reply floor is persisted). Outputs `due: S
   chatId).length - 1` (`currentFloor`, clamped ≥0). `gen.floors` is the PRE-turn snapshot
   `input.context` took, so the just-persisted reply floor is missing from it — the disk read is
   mandatory for the cadence to advance.
-- **Due rule:** durable node state is `{ last: Record<sqlName, number> }` — the floor up to which each
-  table was last maintained (missing = `-1`). A table is due when `currentFloor - last[t] >=
-  updateFrequency` (freq `1` = every turn). No template / no due tables → `{ outputs: {} }` (no
-  signal; a chat without table memory is a silent no-op).
-- **AT-MOST-ONCE / FAIL-OPEN:** when the gate fires it **advances `last[dueTable] = currentFloor`
-  IMMEDIATELY**, atomically, before any downstream node runs. If the maintainer chain then fails,
-  that span is simply skipped — worst case one missed batch (the same trade the old decomposed memory
-  chain made, but WITHOUT a claim/release lock, since the advance is atomic). `span.from = min(last[t]
-  over due tables) + 1`, `span.to = currentFloor`.
+- **Due rule:** the last-processed pointer lives in the **chat-level `table_progress` store**
+  (`tableProgressService.getProgress` → `Record<sqlName, lastFloor>`, missing = `-1`), shared with the
+  manual backfill and the Tables display — **NOT per-workflow node state** (issue 07 retired that,
+  including its `at` rewind discriminator). A table is due when `currentFloor - (progress[t] ?? -1) >=
+  updateFrequency` (freq `1` = every turn). No template / no due tables → `{ outputs: {} }` (no signal;
+  a chat without table memory is a silent no-op).
+- **AT-MOST-ONCE / FAIL-OPEN:** when the gate fires it **advances the store for every due table to
+  `currentFloor` IMMEDIATELY** (`advanceProgress`, MAX-semantics upsert), before any downstream node
+  runs. If the maintainer chain then fails, that span is simply skipped — worst case one missed batch.
+  `span.from = min(progress[t] over due tables) + 1`, `span.to = currentFloor`.
 
 ### `table.read` — the maintainer-prompt ingredients
 
@@ -404,15 +405,58 @@ re-parse as a defined `globalInjection` and break the round-trip) + one `sheet_<
   is passed) behind `table-template-export-dialog` (a `showSaveDialog`, mirroring workflowIpc's
   `export-workflow-dialog`).
 
-## Last-maintained indicator (issue 06)
+## Backfill & progress (issue 07)
 
-`chat-tables-status(profileId, chatId)` → `tableStatusService.getTablesStatus`: resolves the chat's
-effective workflow (`workflowService.resolveWorkflowDoc`), reads every `table.gate` node's durable
-state (`nodeStateService.getNodeState`), and merges their `{ last: Record<sqlName, number> }` maps
-taking the **max floor per table** (`mergeLastMaintained`, pure + unit-tested in
-`test/tableStatusService.test.ts`). A table no gate has maintained is absent from the map; the view
-shows `最后维护: 第 N 层 / —` per table header (`src/main/services/tableStatusService.ts`,
-`TablesView.tsx`).
+### The progress store (`table_progress`, chat-level — replaces the gate's node-state pointer)
+
+A single **chat-level** last-processed pointer per `(chat, table)` lives in the app-DB table
+`table_progress (chat_id, sql_name, last_floor)` (`db.ts` SCHEMA; FK-cascade on chat delete), managed
+by `src/main/services/tableProgressService.ts`. `last_floor` is the 0-based floor index a table was
+last processed through. It is:
+
+- **advanced** (`advanceProgress`, MAX-semantics upsert) by `table.gate` on fire AND by every applied
+  backfill batch,
+- **clamped** (`clampProgress` → `last_floor = fromFloor - 1 WHERE last_floor >= fromFloor`) on floor
+  truncation — the **explicit rewind hook** in `chatService.truncateFloors`, right next to the ops
+  clamp (no `at`-discriminator inference; the issue-05 gate node-state pointer + its `at` field are
+  **retired**),
+- **reset** (`resetProgress`, rows deleted) on template (re)assignment/unassignment in
+  `chatService.setChatTableTemplateId`.
+
+The pure `computeTableProgress(lastFloor, updateFrequency, currentFloor)` derives the three display
+numbers (`test/tableProgress.test.ts`): `processed = last + 1`, `nextExpected = last + updateFrequency`
+(0-based floor at which the gate next fires), `unprocessed = max(0, currentFloor - last)` with
+`last = lastFloor ?? -1`. A never-processed table → `processed 0`; freq 1 → `nextExpected 0`, freq 3 →
+`nextExpected 2`.
+
+`chat-tables-status(profileId, chatId)` → `tableStatusService.getTablesStatus` returns
+`Record<sqlName, { lastFloor, processed, nextExpected, unprocessed }>` for every template table (the
+old `mergeLastMaintained` workflow/node-state scan is gone). The **Tables** view header shows
+`已处理 N 层 · 下次维护 第 M 层 · 未处理 K 层` per table (or `尚未处理` when never processed).
+
+### Manual backfill (`tableBackfillService.ts`)
+
+Fill the tables from PAST history on demand: `table-backfill-start(profileId, chatId, { lastFloors:
+number | 'all', batchSize, apiPresetId?, retries })`. Scope = the last X floors (`planBatches` — pure,
+tested), processed in ASCENDING batches of Y floors, each treated as ONE 交互 (纪要表 gains exactly one
+row; other tables maintained normally). Per batch: render the tables block over ALL template tables
+(current data — state advances batch by batch) → build the shared maintainer prompt
+(`tableMaintenance.backfillMaintainerPrompt`, the SAME contract as the example workflow's `frame`
+system prompt + the batch rule) → one non-streaming `callModelResilient` pass → `extractTagAll(raw,
+'TableEdit')` → apply through the **ONE write path** (write lock → `applySqlBatch` → `appendOps` at the
+batch's **LAST floor** → `advanceProgress`). Ops attributed to `to` mean a later rewind past that floor
+rolls the batch back.
+
+- **Auto-retry (optional, `retries` 0–5, default 0):** API errors ride `callModelResilient`'s own retry
+  budget; SQL errors (validation/exec failure, or a busy write lock) re-call the model with the failed
+  reply + the error fed back (a corrective attempt), capped at `retries` per batch. Exhausted retries
+  mark the batch **failed** and the run **CONTINUES** (fail-open) — the failed span stays visible as
+  unprocessed (progress NOT advanced).
+- **Cancellation** (`table-backfill-cancel`) takes effect **between batches**; a batch in flight
+  finishes or fails, applied batches stay applied. One backfill per chat at a time (`table-backfill-
+  state` exposes `{ running, batchIndex, batchCount, span, failures[] }` for view re-mounts).
+- **Events:** `table-backfill-progress` broadcasts to all windows (`tableBackfillEvents.ts`, the
+  `chatEvents` pattern); the renderer filters by `chatId` and refetches tables + status per event.
 
 ## Deferred
 

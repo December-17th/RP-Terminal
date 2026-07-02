@@ -6,6 +6,8 @@ import { applySqlBatch, executeReadQuery, TableSqlError } from '../../tableSql'
 import { appendOps, tryBeginTableWrite, endTableWrite } from '../../tableOpsService'
 import { readAllTables, TableRead } from '../../tableDbService'
 import { synthesizeEntries, renderWholeTable } from '../../tableExportService'
+import { renderTableBlock } from '../../tableMaintenance'
+import { getProgress, advanceProgress } from '../../tableProgressService'
 import { matchAcross } from '../../lorebookService'
 import { getAllFloors } from '../../floorService'
 import { TableTemplate, TableDef } from '../../../types/tableTemplate'
@@ -196,14 +198,15 @@ export const tableExport: NodeImpl = {
  * AFTER the turn is persisted so the disk read sees the new floor (the same contract the removed
  * `memory.gate` carried).
  *
- * AT-MOST-ONCE / FAIL-OPEN: durable node state is `{ last: Record<sqlName, number> }` — the floor
- * up to which each table was last maintained (missing = -1). A table is due when
- * `currentFloor - last[t] >= updateFrequency` (freq 1 = every turn). When the gate fires it ADVANCES
- * `last[dueTable] = currentFloor` IMMEDIATELY (atomically, before any downstream node runs). If the
+ * AT-MOST-ONCE / FAIL-OPEN: the last-processed pointer now lives in the CHAT-LEVEL progress store
+ * (`tableProgressService`), shared with the manual backfill and the Tables view — NOT per-workflow
+ * node state (issue 07 retired that, including its `at` rewind discriminator; the store is clamped
+ * explicitly on truncation). A table is due when `currentFloor - (progress[t] ?? -1) >= updateFrequency`
+ * (freq 1 = every turn). When the gate fires it ADVANCES the store for every due table to
+ * `currentFloor` IMMEDIATELY (max-semantics upsert, before any downstream node runs). If the
  * downstream maintainer chain then fails, that span is simply skipped — worst case one missed
- * maintenance batch (fail-open by design, the same trade the old decomposed memory chain made, but
- * WITHOUT a claim/release lock since the advance is atomic here). No template / no due tables →
- * `{ outputs: {} }` (no signal), so a chat without table memory is a silent no-op.
+ * maintenance batch (fail-open by design). No template / no due tables → `{ outputs: {} }` (no
+ * signal), so a chat without table memory is a silent no-op.
  */
 const gateConfig = z.object({
   /** Comma-separated sqlNames narrowing which tables the gate watches; unset = all template tables. */
@@ -227,7 +230,7 @@ export const tableGate: NodeImpl = {
     { name: 'span', type: 'Any' } // { from, to } floor range aged in since last maintenance
   ],
   configSchema: gateConfig,
-  run: (ctx, inputs, node) => {
+  run: (_ctx, inputs, node) => {
     const gen = inputs.gen as GenContext
     const cfg = node.config as GateConfig
 
@@ -246,36 +249,23 @@ export const tableGate: NodeImpl = {
     // 0-based index of the last persisted floor (clamped ≥0 for an empty chat).
     const currentFloor = Math.max(0, getAllFloors(gen.profileId, gen.chatId).length - 1)
 
-    const prev =
-      (ctx.getNodeState(node.id) as { last?: Record<string, number>; at?: number } | undefined) ??
-      {}
-    const last = { ...(prev.last ?? {}) }
-
-    // REWIND DETECTION: `at` records the floor at which this state was last written. node_state is
-    // not floor-keyed, so after truncateFloors the pointers can point PAST the new floor count —
-    // without a correction, `currentFloor - last` goes negative and maintenance stalls until the
-    // chat re-grows past the old floor. `at > currentFloor` is unambiguous evidence of a rewind
-    // (a same-floor re-run has at === currentFloor); on rewind, clamp every pointer to
-    // currentFloor - 1 ("maintained through the previous floor") so cadences resume immediately.
-    const rewound = prev.at != null && prev.at > currentFloor
-    if (rewound) {
-      for (const key of Object.keys(last)) last[key] = Math.min(last[key], currentFloor - 1)
-    }
+    // Last-processed pointers from the chat-level store (shared with backfill + the display). A
+    // missing table is -1; the store is clamped explicitly on truncation, so no rewind inference here.
+    const progress = getProgress(gen.profileId, gen.chatId)
 
     const dueTables: string[] = []
     for (const t of tables) {
-      const lastFloor = last[t.sqlName] ?? -1
+      const lastFloor = progress[t.sqlName] ?? -1
       if (currentFloor - lastFloor >= t.updateFrequency) dueTables.push(t.sqlName)
     }
     if (!dueTables.length) return { outputs: {} } // nothing due this turn
 
-    // span.from = the OLDEST last-maintained floor + 1 over the due tables (the first floor whose
+    // span.from = the OLDEST last-processed floor + 1 over the due tables (the first floor whose
     // content has not yet been folded into every due table); span.to = the current floor.
-    const from = Math.min(...dueTables.map((t) => (last[t] ?? -1) + 1))
+    const from = Math.min(...dueTables.map((t) => (progress[t] ?? -1) + 1))
 
     // At-most-once: advance the pointer for every due table NOW, before anything downstream runs.
-    for (const t of dueTables) last[t] = currentFloor
-    ctx.setNodeState(node.id, { last, at: currentFloor })
+    advanceProgress(gen.profileId, gen.chatId, dueTables, currentFloor)
 
     return { outputs: { tables: dueTables, span: { from, to: currentFloor } }, signals: ['due'] }
   }
@@ -289,37 +279,6 @@ const readConfig = z.object({
 })
 
 type ReadConfig = z.infer<typeof readConfig>
-
-/**
- * Render one table's maintenance block: its header, definition + the applicable per-op rules, and
- * its current data. `init` rules are included ONLY when the table has 0 rows (the fresh-table case);
- * empty rule strings are omitted. `include_rules: false` renders just the header + data (the
- * definition + rules are all the "ingredients" the maintainer needs and are dropped together).
- *
- * ```
- * ## <displayName> (<sqlName>) — 每 N 轮维护
- * 【表定义】<note>              (with rules)
- * 【初始化规则】<initNode>       (with rules; only when the table has 0 rows)
- * 【插入规则】<insertNode>       (with rules)
- * 【更新规则】<updateNode>       (with rules)
- * 【删除规则】<deleteNode>       (with rules)
- * 【当前数据】
- * <renderWholeTable(headers, rows)>
- * ```
- */
-const renderTableBlock = (table: TableDef, read: TableRead, includeRules: boolean): string => {
-  const lines: string[] = [`## ${table.displayName} (${table.sqlName}) — 每 ${table.updateFrequency} 轮维护`]
-  if (includeRules) {
-    if (table.note.trim()) lines.push(`【表定义】${table.note}`)
-    if (read.rows.length === 0 && table.initNode.trim()) lines.push(`【初始化规则】${table.initNode}`)
-    if (table.insertNode.trim()) lines.push(`【插入规则】${table.insertNode}`)
-    if (table.updateNode.trim()) lines.push(`【更新规则】${table.updateNode}`)
-    if (table.deleteNode.trim()) lines.push(`【删除规则】${table.deleteNode}`)
-  }
-  lines.push('【当前数据】')
-  lines.push(renderWholeTable(table.headers, read.rows))
-  return lines.join('\n')
-}
 
 /**
  * `table.read` — renders the "here are the tables, here is what you may do" block the maintainer

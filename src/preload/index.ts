@@ -181,6 +181,26 @@ const api = {
     ipcRenderer.invoke('chat-tables-status', profileId, chatId),
   exportTableTemplateDialog: (profileId: string, templateId: string, chatId?: string | null) =>
     ipcRenderer.invoke('table-template-export-dialog', profileId, templateId, chatId),
+  // SQL-table memory (issue 07): manual backfill from history + live progress events
+  startTableBackfill: (
+    profileId: string,
+    chatId: string,
+    opts: {
+      lastFloors: number | 'all'
+      batchSize: number
+      apiPresetId?: string | null
+      retries?: number
+    }
+  ) => ipcRenderer.invoke('table-backfill-start', profileId, chatId, opts),
+  cancelTableBackfill: (profileId: string, chatId: string) =>
+    ipcRenderer.invoke('table-backfill-cancel', profileId, chatId),
+  getTableBackfillState: (profileId: string, chatId: string) =>
+    ipcRenderer.invoke('table-backfill-state', profileId, chatId),
+  onTableBackfillProgress: (cb: (p: any) => void) => {
+    const listener = (_e: IpcRendererEvent, p: any): void => cb(p)
+    ipcRenderer.on('table-backfill-progress', listener)
+    return () => ipcRenderer.removeListener('table-backfill-progress', listener)
+  },
   // Lorebook library (id-keyed; a character's own lorebook has id == characterId)
   listLorebooks: (profileId: string) => ipcRenderer.invoke('list-lorebooks', profileId),
   getLorebook: (profileId: string, id: string) => ipcRenderer.invoke('get-lorebook', profileId, id),
