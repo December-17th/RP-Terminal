@@ -1475,6 +1475,9 @@ select {
   /* Top z-index band (see .context-menu): keeps the settings/modal above untrusted inline card UI
      that may use position:fixed + a high z-index in its own CSS. */
   z-index: 2147480000;
+  /* Electron drag regions ignore z-order: the title bar's app-region:drag stays active UNDER a
+     full-screen overlay, swallowing clicks in the top strip. no-drag punches it out. */
+  -webkit-app-region: no-drag;
 }
 
 .modal-panel {

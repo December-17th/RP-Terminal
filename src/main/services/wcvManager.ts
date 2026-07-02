@@ -222,6 +222,9 @@ let allHidden = false
 export const setAllVisible = (visible: boolean): void => {
   allHidden = !visible
   for (const s of slots.values()) s.view.setVisible(visible)
+  // A hidden WebContentsView keeps webContents focus — keystrokes would go to the invisible
+  // card view instead of the overlay's DOM inputs (workflow rename box). Hand focus back.
+  if (!visible) mainWindow?.webContents.focus()
 }
 
 export const destroy = (id: string): void => {
