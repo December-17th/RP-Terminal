@@ -19,6 +19,9 @@ export interface ApiPreset {
   endpoint: string
   api_key: string
   model: string
+  /** Requests-per-minute ceiling for this connection; 0/unset = unlimited. Enforced per
+   *  ENDPOINT (presets sharing an endpoint share one budget) by delaying, never dropping. */
+  rpm_limit?: number
 }
 
 /** How the agentic FSM operates:
@@ -71,6 +74,8 @@ export interface Settings {
     endpoint: string
     api_key: string
     model: string
+    /** Mirrors the active preset's rpm_limit (0/unset = unlimited). */
+    rpm_limit?: number
   }
   // Saved connection presets the user can switch between.
   api_presets: ApiPreset[]

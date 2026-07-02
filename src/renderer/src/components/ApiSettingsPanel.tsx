@@ -11,7 +11,7 @@ const PROVIDERS = [
   { value: 'custom', label: 'Custom (OpenAI Compatible)' }
 ]
 
-const CONNECTION_KEYS = ['provider', 'endpoint', 'api_key', 'model'] as const
+const CONNECTION_KEYS = ['provider', 'endpoint', 'api_key', 'model', 'rpm_limit'] as const
 
 /**
  * API tab — a library of saved connection presets. The selected preset is the live
@@ -65,7 +65,8 @@ export const ApiSettingsPanel: React.FC<{ profileId: string }> = ({ profileId })
     provider: p.provider,
     endpoint: p.endpoint,
     api_key: p.api_key,
-    model: p.model
+    model: p.model,
+    rpm_limit: p.rpm_limit
   })
 
   const selectPreset = (id: string): void => {
@@ -84,7 +85,8 @@ export const ApiSettingsPanel: React.FC<{ profileId: string }> = ({ profileId })
       provider: settings.api.provider,
       endpoint: settings.api.endpoint,
       api_key: '', // a new preset gets its own key (the active one is masked, not a real value)
-      model: settings.api.model
+      model: settings.api.model,
+      rpm_limit: settings.api.rpm_limit // same endpoint by default → same account budget
     }
     updateSettings(profileId, {
       api_presets: [...presets, created],
@@ -228,6 +230,21 @@ export const ApiSettingsPanel: React.FC<{ profileId: string }> = ({ profileId })
             ))}
           </select>
         )}
+
+        <label className="field-label" style={{ marginTop: 16 }}>
+          {t('api.rpmLimit')}
+        </label>
+        <input
+          type="number"
+          min={0}
+          step={1}
+          placeholder="0"
+          value={active.rpm_limit ?? 0}
+          onChange={(e) => editActive({ rpm_limit: Math.max(0, Math.floor(Number(e.target.value)) || 0) })}
+        />
+        <div style={{ fontSize: '0.78em', color: 'var(--rpt-text-secondary)', marginTop: 4 }}>
+          {t('api.rpmLimitHint')}
+        </div>
 
         <label className="field-label" style={{ marginTop: 16 }}>
           {t('api.maxContext')}

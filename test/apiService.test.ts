@@ -3,7 +3,8 @@ import {
   buildGeminiBody,
   thinkAssembler,
   orderForProvider,
-  buildAnthropicCacheLayout
+  buildAnthropicCacheLayout,
+  rpmEndpointKey
 } from '../src/main/services/apiService'
 import { ChatMessage } from '../src/main/services/promptBuilder'
 
@@ -164,5 +165,37 @@ describe('thinkAssembler (inline side-channel reasoning as <think>)', () => {
       a.content('x')
     })
     expect(full).toBe('x')
+  })
+})
+
+describe('rpmEndpointKey (RPM budget keyed per endpoint — workflow spec §9)', () => {
+  const api = (provider: string, endpoint = ''): Parameters<typeof rpmEndpointKey>[0] => ({
+    provider,
+    endpoint,
+    api_key: 'k',
+    model: 'm'
+  })
+
+  it('uses the configured endpoint, trailing slash normalized away', () => {
+    expect(rpmEndpointKey(api('custom', 'https://proxy.example/v1/'))).toBe(
+      'https://proxy.example/v1'
+    )
+    expect(rpmEndpointKey(api('openai', 'https://proxy.example/v1'))).toBe(
+      'https://proxy.example/v1'
+    )
+  })
+
+  it('two presets on the same endpoint share one key regardless of provider label', () => {
+    expect(rpmEndpointKey(api('openai', 'https://proxy.example/v1'))).toBe(
+      rpmEndpointKey(api('custom', 'https://proxy.example/v1/'))
+    )
+  })
+
+  it('falls back to the provider default endpoint when none is configured', () => {
+    expect(rpmEndpointKey(api('anthropic'))).toBe('https://api.anthropic.com/v1')
+    expect(rpmEndpointKey(api('google'))).toBe('https://generativelanguage.googleapis.com/v1beta')
+    expect(rpmEndpointKey(api('gemini'))).toBe('https://generativelanguage.googleapis.com/v1beta')
+    expect(rpmEndpointKey(api('openai'))).toBe('https://api.openai.com/v1')
+    expect(rpmEndpointKey(api('openrouter'))).toBe('https://api.openai.com/v1')
   })
 })
