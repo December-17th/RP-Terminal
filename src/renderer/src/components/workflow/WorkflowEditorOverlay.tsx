@@ -4,6 +4,7 @@
 import React from 'react'
 import { useUiStore } from '../../stores/uiStore'
 import { useT } from '../../i18n'
+import { useWcvSuppression } from '../useWcvSuppression'
 import WorkflowEditorView from './WorkflowEditorView'
 
 export function WorkflowEditorOverlay({
@@ -16,18 +17,16 @@ export function WorkflowEditorOverlay({
   const t = useT()
 
   // Native card views (WCVs — e.g. a 状态栏 regex panel) always paint ABOVE the DOM, so this
-  // full-screen overlay can't cover them — duck them all for the editor's lifetime. Esc closes.
+  // full-screen overlay can't cover them — duck them all for the editor's lifetime (refcounted,
+  // shared with Modal so nested overlays don't restore early). Esc closes.
+  useWcvSuppression(open)
   React.useEffect(() => {
     if (!open) return
-    window.api.wcvSetAllVisible(false)
     const onKey = (e: KeyboardEvent): void => {
       if (e.key === 'Escape') close()
     }
     window.addEventListener('keydown', onKey)
-    return () => {
-      window.removeEventListener('keydown', onKey)
-      window.api.wcvSetAllVisible(true)
-    }
+    return () => window.removeEventListener('keydown', onKey)
   }, [open, close])
 
   if (!open) return null

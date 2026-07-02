@@ -1,4 +1,5 @@
 import React from 'react'
+import { useWcvSuppression } from './useWcvSuppression'
 
 interface ModalProps {
   title: string
@@ -8,6 +9,8 @@ interface ModalProps {
 }
 
 export const Modal: React.FC<ModalProps> = ({ title, onClose, headerActions, children }) => {
+  // Native card WCVs would otherwise paint over the modal (they ignore DOM z-order).
+  useWcvSuppression()
   return (
     <div className="modal-overlay" onClick={onClose}>
       <div className="modal-panel" onClick={(e) => e.stopPropagation()}>
