@@ -1,11 +1,10 @@
 import { z } from 'zod'
 import { buildGenContext } from '../../generation/genContext'
-import { recallMemory } from '../../generation/memoryRecall'
 import { matchWorldInfo, assemblePrompt } from '../../generation/assemble'
 import { callModelResilient, ResilienceConfig, withPreset } from '../../generation/resilientCall'
 import { parseResponse, computeMetrics } from '../../generation/parseResponse'
 import { foldState } from '../../generation/foldState'
-import { persistFloor, compactMemory } from '../../generation/persistFloor'
+import { persistFloor } from '../../generation/persistFloor'
 import { GenContext } from '../../generation/types'
 import { ChatMessage } from '../../promptBuilder'
 import { PresetParameters } from '../../../types/preset'
@@ -38,8 +37,9 @@ export const inputContext: NodeImpl = {
  *  Ports:
  *   - `gen: Context` — the ORIGINAL bundle: provides profileId/chatId/userAction to re-acquire from
  *     (its value is otherwise ignored; the output is a wholly fresh read).
- *   - `after: Any` — an ORDERING-ONLY edge from the write branch (value ignored; precedent:
- *     memory.compact's `floor` input). It MUST be `Any`, NOT `Signal`: portCompatible forbids a
+ *   - `after: Any` — an ORDERING-ONLY edge from the write branch (value ignored; same pattern as
+ *     output.writeFloor's `floor` output used as a sequencing dependency). It MUST be `Any`, NOT
+ *     `Signal`: portCompatible forbids a
  *     non-Signal→Signal wire, but more importantly the engine's prune rule marks a node dead only
  *     when EVERY incoming edge is dead. A `Signal` `after` gated off this turn would SKIP the
  *     refresh; with `Any`, a dead `after` edge still leaves the live `gen` edge feeding the node, so
@@ -58,18 +58,6 @@ export const contextRefresh: NodeImpl = {
     return {
       outputs: { gen: buildGenContext(orig.profileId, orig.chatId, orig.userAction) }
     }
-  }
-}
-
-/** Recalls relevant episodic memory into a text block for the prompt tail. */
-export const memoryRecallNode: NodeImpl = {
-  type: 'memory.recall',
-  title: 'Recall Memory',
-  inputs: [{ name: 'gen', type: 'Context' }],
-  outputs: [{ name: 'block', type: 'Text' }],
-  run: async (_ctx, inputs) => {
-    const r = await recallMemory(inputs.gen as GenContext)
-    return { outputs: { block: r.block } }
   }
 }
 
@@ -256,27 +244,5 @@ export const outputWriteFloor: NodeImpl = {
       metrics: inputs.metrics as FloorMetrics
     })
     return { outputs: { floor } }
-  }
-}
-
-/** Folds aged-out turns into episodic memory. Post-response/off the hot path (spec/plan decision
- *  A) — fire-and-forget, same as `generate()`'s `compactMemory(profileId, chatId)` call.
- *
- *  The `floor` input is an ORDERING dependency, not data: wired from `output.writeFloor` it makes
- *  the run-after-the-floor-is-persisted contract explicit in the graph (compaction re-reads the
- *  chat from disk, so it sees the just-written floor; the newest `keep_recent` floors are always
- *  excluded from the summarized range — see compactionRange). The value itself is unused. */
-export const memoryCompact: NodeImpl = {
-  type: 'memory.compact',
-  title: 'Compact Memory',
-  inputs: [
-    { name: 'gen', type: 'Context' },
-    { name: 'floor', type: 'Any' }
-  ],
-  outputs: [],
-  run: (_ctx, inputs) => {
-    const gen = inputs.gen as GenContext
-    compactMemory(gen.profileId, gen.chatId)
-    return { outputs: {} }
   }
 }

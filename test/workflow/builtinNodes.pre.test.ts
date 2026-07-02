@@ -1,19 +1,14 @@
 import { describe, it, expect, vi } from 'vitest'
 import { buildGenContext } from '../../src/main/services/generation/genContext'
-import { recallMemory } from '../../src/main/services/generation/memoryRecall'
 import { matchWorldInfo, assemblePrompt } from '../../src/main/services/generation/assemble'
 import {
   inputContext,
-  memoryRecallNode,
   promptAssemble
 } from '../../src/main/services/nodes/builtin/generationNodes'
 import { RunContext } from '../../src/main/services/nodes/types'
 
 vi.mock('../../src/main/services/generation/genContext', () => ({
   buildGenContext: vi.fn()
-}))
-vi.mock('../../src/main/services/generation/memoryRecall', () => ({
-  recallMemory: vi.fn()
 }))
 vi.mock('../../src/main/services/generation/assemble', () => ({
   matchWorldInfo: vi.fn(),
@@ -38,18 +33,6 @@ describe('input.context', () => {
 
     expect(buildGenContext).toHaveBeenCalledWith('p1', 'c1', 'hi')
     expect(result).toEqual({ outputs: { gen } })
-  })
-})
-
-describe('memory.recall', () => {
-  it('calls recallMemory with the gen input and returns block on the block port', async () => {
-    const gen = { profileId: 'p1' }
-    vi.mocked(recallMemory).mockResolvedValue({ block: 'recalled text', rows: [] })
-
-    const result = await memoryRecallNode.run(baseCtx, { gen })
-
-    expect(recallMemory).toHaveBeenCalledWith(gen)
-    expect(result).toEqual({ outputs: { block: 'recalled text' } })
   })
 })
 

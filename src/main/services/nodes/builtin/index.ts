@@ -2,19 +2,16 @@ import { createRegistry } from '../registry'
 import {
   inputContext,
   contextRefresh,
-  memoryRecallNode,
   promptAssemble,
   llmSample,
   parseResponseNode,
   applyState,
-  outputWriteFloor,
-  memoryCompact
+  outputWriteFloor
 } from './generationNodes'
 import { controlIf, controlSwitch, controlWhen } from './controlNodes'
 import { textTemplate, promptMessages, mergeMessages, messagesTrim } from './messageNodes'
 import { mvuSet } from './mvuNodes'
 import { utilLog } from './utilNodes'
-import { memoryGate, memoryExtract, memoryWrite, memoryQuery } from './memoryNodes'
 import { toolStartCombat, toolStartDuel, toolLorebookSearch } from './toolNodes'
 import { lorebookSelect, lorebookEntries } from './lorebookNodes'
 import { promptPreset } from './presetNodes'
@@ -40,13 +37,11 @@ import {
 export const builtinRegistry = createRegistry([
   inputContext,
   contextRefresh,
-  memoryRecallNode,
   promptAssemble,
   llmSample,
   parseResponseNode,
   applyState,
   outputWriteFloor,
-  memoryCompact,
   controlIf,
   controlSwitch,
   controlWhen,
@@ -56,10 +51,6 @@ export const builtinRegistry = createRegistry([
   messagesTrim,
   mvuSet,
   utilLog,
-  memoryGate,
-  memoryExtract,
-  memoryWrite,
-  memoryQuery,
   toolStartCombat,
   toolStartDuel,
   toolLorebookSearch,

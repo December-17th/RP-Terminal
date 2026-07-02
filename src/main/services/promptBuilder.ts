@@ -164,8 +164,9 @@ export interface BuildPromptArgs {
   l1Mode?: 'partition' | 'diff'
   /** Floor-0-derived frozen variable snapshot the frontier renders against at level ≥1. */
   frozenVars?: Record<string, any>
-  /** Recalled-memory tail block (retrievalService). Injected just before the user action,
-   *  the same way as the live-state block, so it sits in the volatile tail (§16.1). */
+  /** Optional producer-agnostic tail block (wired from the prompt.assemble `block` port /
+   *  prompt.preset `memory` port). Injected just before the user action, the same way as the
+   *  live-state block, so it sits in the volatile tail. Empty/unwired = no injection. */
   memoryBlock?: string
   /** prompt.preset composer (context-epochs plan §3): verbatim history messages to use in the
    *  chat_history marker + no-marker safety net INSTEAD of the built-from-floors history. They
@@ -629,10 +630,10 @@ export const buildPrompt = (args: BuildPromptArgs): ChatMessage[] => {
   // L1 (experimental/dormant — see WS-2): relocate live state to one tail block before the user action.
   applyCacheTail(messages, cacheLevel, args.template?.vars, userAction !== '')
 
-  // Recalled memory (docs/episodic-memory-design.md §16.1): same tail convention as the state
-  // block — a system message just before the final user action, so on Anthropic it demotes +
-  // merges into the volatile tail, past the cache breakpoint. Inserted AFTER the state block so
-  // the tail order is [state][memory][action]. Works at any cache level (memory ⟂ cache.level).
+  // Optional prompt-tail block (unwired = none): same tail convention as the state block — a
+  // system message just before the final user action, so on Anthropic it demotes + merges into
+  // the volatile tail, past the cache breakpoint. Inserted AFTER the state block so the tail
+  // order is [state][block][action]. Works at any cache level (block ⟂ cache.level).
   if (args.memoryBlock) {
     const insertAt = userAction !== '' ? messages.length - 1 : messages.length
     messages.splice(insertAt, 0, { role: 'system', content: args.memoryBlock })

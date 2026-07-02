@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest'
 import { encodeNodeState, decodeNodeState } from '../src/main/services/nodeStateService'
 
 // The DB layer is a no-op stub under Node (test/mocks/better-sqlite3.ts), so we test the pure
-// JSON codec — the SQL wrappers are exercised at runtime (same pattern as memoryStore).
+// JSON codec here; the SQL wrappers around it are exercised at runtime.
 describe('node-state codec', () => {
   it('round-trips objects, arrays, and primitives', () => {
     for (const v of [{ last: '3月' }, [1, 2], 'x', 42, true, null]) {

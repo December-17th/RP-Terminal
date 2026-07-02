@@ -72,32 +72,6 @@ CREATE TABLE IF NOT EXISTS combat_encounters (
   data TEXT NOT NULL,
   updated_at TEXT
 );
--- Long-term memory engine (docs/episodic-memory-design.md §6). One generic store
--- partitioned by the collection column; entity rows upsert on (chat_id, collection,
--- entity_key) while stream rows (entity_key NULL — distinct under SQLite UNIQUE) coexist.
--- The core writes/reads only the 'events' collection; entity/vector columns are reserved
--- (no second migration). The optional sqlite-vec memory_vec table is NOT created here.
-CREATE TABLE IF NOT EXISTS memory_entries (
-  id TEXT PRIMARY KEY,
-  chat_id TEXT NOT NULL REFERENCES chats(id) ON DELETE CASCADE,
-  collection TEXT NOT NULL,
-  entity_key TEXT,
-  summary TEXT NOT NULL,
-  payload TEXT,
-  keywords TEXT,
-  entities TEXT,
-  salience REAL DEFAULT 1,
-  pinned INTEGER DEFAULT 0,
-  turn_start INTEGER,
-  turn_end INTEGER,
-  superseded_by TEXT,
-  embed_model TEXT,
-  embedding TEXT,
-  updated_at TEXT,
-  created_at TEXT,
-  UNIQUE(chat_id, collection, entity_key)
-);
-CREATE INDEX IF NOT EXISTS idx_mem_chat_coll ON memory_entries(chat_id, collection);
 -- Durable per-node scratchpad for workflow nodes, keyed by (chat_id, workflow_id, node_id) —
 -- what makes "changed since last fire" (control.when) expressible. Workflow id is part of the
 -- key because clones of the default graph keep node ids by design, so (chat_id, node_id) alone
@@ -125,8 +99,13 @@ DROP TABLE IF EXISTS presets;
 DROP TABLE IF EXISTS presets_legacy;
 DROP TABLE IF EXISTS profile_state;
 DROP TABLE IF EXISTS rpg_entities;
--- Superseded by memory_entries (was reserved, never written). See db §memory.
+-- Legacy long-term-memory tables. episodic_memory was reserved, never written; memory_entries
+-- backed the episodic-memory engine removed in the SQL-table-memory overhaul (2026-07-02) — it
+-- never ran live (memory.enabled defaulted off), so its data is dropped rather than migrated. The
+-- stale, unread chats.memory_state column is deliberately left in place (SQLite DROP COLUMN isn't
+-- worth the migration risk; a NULL column is harmless — same call as pending_lore above).
 DROP TABLE IF EXISTS episodic_memory;
+DROP TABLE IF EXISTS memory_entries;
 `
 
 /** Add a column to a table if a pre-existing DB doesn't already have it (idempotent). */
@@ -162,12 +141,8 @@ export const getDb = (): Database.Database => {
   addColumnIfMissing(db, 'chats', 'mode', 'mode TEXT')
   addColumnIfMissing(db, 'chats', 'cached_world_info', 'cached_world_info TEXT')
   addColumnIfMissing(db, 'chats', 'pending_lore', 'pending_lore TEXT')
-  // Memory checkpoint bookkeeping per chat: {last_compacted_floor}. See compactionService.
-  addColumnIfMissing(db, 'chats', 'memory_state', 'memory_state TEXT')
   // Session-tier workflow override (node-workflow spec §12); null = inherit world/global/builtin.
   addColumnIfMissing(db, 'chats', 'workflow_id', 'workflow_id TEXT')
-  // Vector recall (brute-force JS cosine): per-memory embedding as a JSON float array.
-  addColumnIfMissing(db, 'memory_entries', 'embedding', 'embedding TEXT')
   // TH-2 swipes: alternate responses per floor + the active index.
   addColumnIfMissing(db, 'floors', 'swipes', 'swipes TEXT')
   addColumnIfMissing(db, 'floors', 'swipe_id', 'swipe_id INTEGER')

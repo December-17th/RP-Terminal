@@ -289,29 +289,6 @@ const api = {
     ipcRenderer.invoke('duel-narrate', profileId, chatId),
   duelEnd: (profileId: string, chatId: string) =>
     ipcRenderer.invoke('duel-end', profileId, chatId),
-  // Long-term memory data management (the Memory view: browse / edit / pin / delete).
-  memoryList: (profileId: string, chatId: string) =>
-    ipcRenderer.invoke('memory-list', profileId, chatId),
-  memoryUpdate: (profileId: string, chatId: string, id: string, patch: unknown) =>
-    ipcRenderer.invoke('memory-update', profileId, chatId, id, patch),
-  memoryDelete: (profileId: string, chatId: string, id: string) =>
-    ipcRenderer.invoke('memory-delete', profileId, chatId, id),
-  memoryAdd: (profileId: string, chatId: string, summary: string, keywords: string[]) =>
-    ipcRenderer.invoke('memory-add', profileId, chatId, summary, keywords),
-  // Notify the Memory view that a chat's memories changed (e.g. the writer appended a batch).
-  // Returns an unsubscribe function.
-  onMemoryChanged: (cb: (payload: { chatId: string }) => void) => {
-    const listener = (_e: IpcRendererEvent, payload: { chatId: string }): void => cb(payload)
-    ipcRenderer.on('memory-changed', listener)
-    return () => ipcRenderer.removeListener('memory-changed', listener)
-  },
-  // Which memory ids the latest turn recalled (transient "why recalled" highlight).
-  onMemoryRecalled: (cb: (payload: { chatId: string; ids: string[] }) => void) => {
-    const listener = (_e: IpcRendererEvent, payload: { chatId: string; ids: string[] }): void =>
-      cb(payload)
-    ipcRenderer.on('memory-recalled', listener)
-    return () => ipcRenderer.removeListener('memory-recalled', listener)
-  },
   // Subscribe to incremental generation text. Returns an unsubscribe function.
   onGenerationDelta: (cb: (payload: { chatId: string; delta: string }) => void) => {
     const listener = (_e: IpcRendererEvent, payload: { chatId: string; delta: string }): void =>

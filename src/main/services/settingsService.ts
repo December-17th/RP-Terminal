@@ -1,6 +1,6 @@
 import { safeStorage } from 'electron'
 import { getDb } from './db'
-import { Settings, ApiPreset, ModeConfig, AgentMode, MemoryCollection } from '../types/models'
+import { Settings, ApiPreset, ModeConfig, AgentMode } from '../types/models'
 
 // API keys are encrypted at rest via the OS keyring (Electron safeStorage). A
 // stored value is prefixed so encrypted keys are distinguishable from legacy
@@ -157,100 +157,8 @@ export const getDefaultSettings = (): Settings => ({
     prewarm: false,
     breakpoint_optimizer: false
   },
-  // Long-term memory: off by default. The core ships one built-in `events` stream
-  // collection with keyword recall; the extractor prompt asks for narrative events only
-  // (MVU numbers are tracked separately — docs/episodic-memory-design.md §1).
-  memory: {
-    enabled: false,
-    collections: [
-      {
-        id: 'events',
-        shape: 'stream',
-        enabled: true,
-        write: {
-          trigger: 'checkpoint',
-          prompt:
-            'concise, self-contained narrative events — actions, decisions, revelations, promises, emotional beats.'
-        },
-        retrieval: { mode: 'keyword', count: 5, tokenBudget: 600 },
-        inject: { label: 'Relevant earlier events' }
-      },
-      {
-        id: 'characters',
-        shape: 'entity',
-        enabled: true,
-        entityKey: 'character name',
-        write: {
-          trigger: 'checkpoint',
-          prompt:
-            'For each character who appeared or developed in these turns, return their canonical name, any aliases used (nicknames, titles), and only the fields that changed — role, personality, goals, relationships, secrets revealed, current status/whereabouts. Narrative development only; do NOT restate numeric stats.'
-        },
-        retrieval: { mode: 'always', count: 6, tokenBudget: 800 },
-        inject: { label: 'Characters in play' }
-      },
-      {
-        id: 'locations',
-        shape: 'entity',
-        enabled: true,
-        entityKey: 'location name',
-        write: {
-          trigger: 'checkpoint',
-          prompt:
-            'For each place that featured or changed in these turns, return its canonical name, any aliases, and the fields that changed — description, current state, who/what is there, notable events. Narrative only.'
-        },
-        retrieval: { mode: 'always', count: 4, tokenBudget: 500 },
-        inject: { label: 'Places' }
-      },
-      {
-        id: 'relationships',
-        shape: 'entity',
-        enabled: true,
-        entityKey: 'the pair',
-        write: {
-          trigger: 'checkpoint',
-          prompt:
-            'For each relationship between two characters that developed in these turns, return a canonical name for the pair (e.g. "Ayaka & Kael") and BOTH names as aliases, plus the fields that changed — dynamic, trust, tension, what they want from each other, unspoken feelings. Narrative only.'
-        },
-        retrieval: { mode: 'always', count: 4, tokenBudget: 400 },
-        inject: { label: 'Relationships' }
-      }
-    ],
-    max_tokens: 1800,
-    keep_recent: 10,
-    checkpoint_turns: 6,
-    checkpoint_tokens: 0,
-    utility_api_preset_id: '',
-    embedding_api_preset_id: ''
-  },
   pricing: {}
 })
-
-/**
- * Merge stored memory collections over the built-in defaults by id (deep on the
- * write/retrieval/inject sub-objects, so adding a field never wipes one), and keep any
- * stored collection whose id isn't a built-in (forward-compat for custom card collections).
- */
-const mergeCollections = (
-  defaults: MemoryCollection[],
-  stored?: MemoryCollection[]
-): MemoryCollection[] => {
-  if (!Array.isArray(stored)) return defaults
-  const byId = new Map(stored.map((c) => [c.id, c]))
-  const merged = defaults.map((d) => {
-    const s = byId.get(d.id)
-    if (!s) return d
-    return {
-      ...d,
-      ...s,
-      write: { ...d.write, ...(s.write || {}) },
-      retrieval: { ...d.retrieval, ...(s.retrieval || {}) },
-      inject: { ...d.inject, ...(s.inject || {}) }
-    }
-  })
-  const defaultIds = new Set(defaults.map((d) => d.id))
-  for (const s of stored) if (s && s.id && !defaultIds.has(s.id)) merged.push(s)
-  return merged
-}
 
 /**
  * Merge stored settings over the defaults (per-section, so adding a new nested
@@ -289,12 +197,6 @@ export const normalize = (stored: Partial<Settings>): Settings => {
   const cards = { ...d.cards, ...(stored.cards || {}) }
   const combat = { ...d.combat, ...(stored.combat || {}) }
   const pricing = { ...d.pricing, ...(stored.pricing || {}) }
-  const storedMemory = (stored.memory || {}) as Partial<Settings['memory']>
-  const memory = {
-    ...d.memory,
-    ...storedMemory,
-    collections: mergeCollections(d.memory.collections, storedMemory.collections)
-  }
 
   // Agent mode: accept the three-way enum; migrate the legacy boolean `enabled` toggle
   // (true → manual), else default off.
@@ -353,7 +255,6 @@ export const normalize = (stored: Partial<Settings>): Settings => {
     cache,
     cards,
     combat,
-    memory,
     pricing
   }
 }

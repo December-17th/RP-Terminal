@@ -1,14 +1,10 @@
 import { describe, it, expect, vi } from 'vitest'
-import { persistFloor, compactMemory } from '../../src/main/services/generation/persistFloor'
-import {
-  outputWriteFloor,
-  memoryCompact
-} from '../../src/main/services/nodes/builtin/generationNodes'
+import { persistFloor } from '../../src/main/services/generation/persistFloor'
+import { outputWriteFloor } from '../../src/main/services/nodes/builtin/generationNodes'
 import { RunContext } from '../../src/main/services/nodes/types'
 
 vi.mock('../../src/main/services/generation/persistFloor', () => ({
-  persistFloor: vi.fn(),
-  compactMemory: vi.fn()
+  persistFloor: vi.fn()
 }))
 
 const baseCtx: RunContext = {
@@ -51,16 +47,5 @@ describe('output.writeFloor', () => {
 
   it('declares isMainOutputCapable', () => {
     expect(outputWriteFloor.isMainOutputCapable).toBe(true)
-  })
-})
-
-describe('memory.compact', () => {
-  it('calls compactMemory(profileId, chatId) and returns no outputs', () => {
-    const gen = { profileId: 'p1', chatId: 'c1', userAction: 'hi' }
-
-    const result = memoryCompact.run(baseCtx, { gen })
-
-    expect(compactMemory).toHaveBeenCalledWith('p1', 'c1')
-    expect(result).toEqual({ outputs: {} })
   })
 })

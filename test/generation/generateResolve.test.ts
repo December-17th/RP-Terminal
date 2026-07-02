@@ -12,7 +12,6 @@ const settings = (() => {
   const s = getDefaultSettings()
   s.api = { provider: 'openai', endpoint: 'https://x/v1', api_key: 'k', model: 'test-model' }
   s.agent = { mode: 'off' }
-  s.memory = { ...s.memory, enabled: false }
   return s
 })()
 
@@ -85,18 +84,6 @@ vi.mock('../../src/main/services/floorService', () => ({
   getFloor: () => floors[floors.length - 1],
   saveFloor: () => {}
 }))
-vi.mock('../../src/main/services/retrievalService', () => ({
-  selectMemories: async () => ({ block: '', rows: [] })
-}))
-vi.mock('../../src/main/services/compactionService', () => ({
-  maybeCompact: async () => {},
-  // The decomposed D5 memory nodes read these stage fns; memory is disabled in these tests,
-  // so the gate never finds a due batch.
-  tryBeginCompaction: () => true,
-  endCompaction: () => {},
-  compactionDue: () => null
-}))
-vi.mock('../../src/main/services/memoryEvents', () => ({ notifyMemoryRecalled: () => {} }))
 vi.mock('../../src/main/services/regexService', () => ({ getPromptRules: () => [] }))
 vi.mock('../../src/main/services/templateService', async (orig) => ({
   ...(await orig<Record<string, unknown>>()),

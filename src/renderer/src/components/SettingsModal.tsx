@@ -1,7 +1,6 @@
 import { useState } from 'react'
 import { Modal } from './Modal'
 import { SettingsPanel } from './SettingsPanel'
-import { MemoryPanel } from './MemoryPanel'
 import { RegexPanel } from './RegexPanel'
 import { ScriptsPanel } from './ScriptsPanel'
 import { useUiStore } from '../stores/uiStore'
@@ -9,7 +8,7 @@ import { useCharacterStore } from '../stores/characterStore'
 import { useChatStore } from '../stores/chatStore'
 import { useT } from '../i18n'
 
-type Section = 'app' | 'memory' | 'regex' | 'scripts'
+type Section = 'app' | 'regex' | 'scripts'
 
 /**
  * The single Settings popup, VS Code-style: a category rail (App / World) on the LEFT and the
@@ -42,7 +41,6 @@ export function SettingsModal({ profileId }: { profileId: string }): React.React
         <div className="settings-rail">
           <div className="settings-rail-group">{t('settings.groupApp')}</div>
           {railItem('app', t('settings.preferences'))}
-          {railItem('memory', t('settings.memory'))}
           <div className="settings-rail-group">
             {t('settings.groupWorld')}
             {cardName ? ` · ${cardName}` : ''}
@@ -54,10 +52,6 @@ export function SettingsModal({ profileId }: { profileId: string }): React.React
           {section === 'app' ? (
             <div className="settings-modal-content">
               <SettingsPanel profileId={profileId} />
-            </div>
-          ) : section === 'memory' ? (
-            <div className="settings-modal-content">
-              <MemoryPanel profileId={profileId} />
             </div>
           ) : (
             <div className="world-settings">

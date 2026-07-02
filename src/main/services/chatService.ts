@@ -8,7 +8,6 @@ import { getLorebookById } from './lorebookService'
 import { buildInitialStatData, mergeDefaults } from './mvuSchema'
 import { extractMvuSchema, schemaDefaults } from './mvuZod'
 import { saveFloor, deleteFloorAndSubsequent, updateFloorFields } from './floorService'
-import { deleteFromTurn, rewindCompactionPointer } from './memoryStore'
 
 interface ChatRow {
   id: string
@@ -132,33 +131,6 @@ export const setCachedWorldInfo = (
   getDb()
     .prepare('UPDATE chats SET cached_world_info = ? WHERE id = ? AND profile_id = ?')
     .run(value === null ? null : JSON.stringify(value), chatId, profileId)
-}
-
-/** Per-chat episodic-memory checkpoint bookkeeping (compactionService). */
-export interface MemoryState {
-  /** Highest floor index already folded into memory; -1 = nothing compacted yet. */
-  last_compacted_floor: number
-}
-
-export const getMemoryState = (profileId: string, chatId: string): MemoryState => {
-  const row = getDb()
-    .prepare('SELECT memory_state FROM chats WHERE id = ? AND profile_id = ?')
-    .get(chatId, profileId) as { memory_state: string | null } | undefined
-  if (row?.memory_state) {
-    try {
-      const v = JSON.parse(row.memory_state)
-      if (v && typeof v.last_compacted_floor === 'number') return v as MemoryState
-    } catch {
-      // corrupt cache → treat as fresh
-    }
-  }
-  return { last_compacted_floor: -1 }
-}
-
-export const setMemoryState = (profileId: string, chatId: string, value: MemoryState): void => {
-  getDb()
-    .prepare('UPDATE chats SET memory_state = ? WHERE id = ? AND profile_id = ?')
-    .run(JSON.stringify(value), chatId, profileId)
 }
 
 /** Invalidate the cached world-info for every session in a profile — called after a
@@ -285,15 +257,6 @@ export const appendFloor = (profileId: string, chatId: string, floor: FloorFile)
 /** Delete floors >= fromFloor (regenerate / edit) and bump updated_at. */
 export const truncateFloors = (profileId: string, chatId: string, fromFloor: number): void => {
   deleteFloorAndSubsequent(profileId, chatId, fromFloor)
-  // Rewind-safety (episodic memory §11.M): drop memories summarized from the removed floors and
-  // rewind the compaction pointer so the regenerated floors get re-compacted later. Cheap no-op
-  // when memory is unused (nothing matches, pointer stays -1).
-  deleteFromTurn(profileId, chatId, fromFloor)
-  const rewound = rewindCompactionPointer(
-    getMemoryState(profileId, chatId).last_compacted_floor,
-    fromFloor
-  )
-  if (rewound !== null) setMemoryState(profileId, chatId, { last_compacted_floor: rewound })
   touch(chatId)
 }
 
