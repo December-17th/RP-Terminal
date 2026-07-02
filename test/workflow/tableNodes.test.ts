@@ -270,7 +270,8 @@ const readOf = (sqlName: string, headers: string[], rows: unknown[][]) => ({
   sqlName,
   displayName: sqlName,
   columns: headers,
-  rows
+  rows,
+  rowids: rows.map((_, i) => i + 1)
 })
 
 describe('table.export', () => {

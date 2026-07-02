@@ -470,6 +470,26 @@ const en: Record<string, string> = {
   'tables.deleteFailed': 'Failed to delete the table template',
   'tables.importErrorRead': 'Could not read the selected file as JSON.',
   'tables.importErrorGeneric': 'Unsupported or malformed table template.',
+  // Editing (issue 06)
+  'tables.addRow': '+ Add row',
+  'tables.deleteRow': 'Delete row',
+  'tables.resetTable': 'Reset table',
+  'tables.saveRow': 'Add',
+  'tables.cancel': 'Cancel',
+  'tables.confirmDeleteRow': 'Delete this row? This is recorded as an edit on the current floor.',
+  'tables.confirmReset':
+    'Clear every row from this table? This is recorded as an edit on the current floor and can be rolled back by rewinding.',
+  'tables.editFailed': 'Edit failed',
+  'tables.editNoTemplate': 'No table template is assigned to this session.',
+  'tables.editUnknownTable': 'That table is not part of the assigned template.',
+  'tables.editBadColumn': 'That column no longer exists in the table.',
+  // Export (issue 06)
+  'tables.export': 'Export template',
+  'tables.exportWithData': 'Export with current data',
+  'tables.exportFailed': 'Template export failed',
+  // Last-maintained indicator (issue 06)
+  'tables.lastMaintained': 'Last maintained: floor {{n}}',
+  'tables.neverMaintained': 'Last maintained: —',
   'status.noState': '(No RPG state for this session yet)',
 
   'workflow.heading': 'Workflows',

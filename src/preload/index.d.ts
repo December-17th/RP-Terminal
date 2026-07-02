@@ -81,8 +81,36 @@ declare global {
         profileId: string,
         chatId: string
       ) => Promise<
-        Array<{ sqlName: string; displayName: string; columns: string[]; rows: unknown[][] }>
+        Array<{
+          sqlName: string
+          displayName: string
+          columns: string[]
+          rows: unknown[][]
+          rowids: number[]
+        }>
       >
+      // SQL-table memory (issue 06)
+      editChatTable: (
+        profileId: string,
+        chatId: string,
+        edit: {
+          kind: 'cell' | 'insert' | 'delete' | 'reset'
+          table: string
+          rowid?: number
+          columnIndex?: number
+          value?: string
+          values?: (string | null)[]
+        }
+      ) => Promise<{ ok: true; changes: number } | { error: string }>
+      readChatTablesStatus: (
+        profileId: string,
+        chatId: string
+      ) => Promise<Record<string, number>>
+      exportTableTemplateDialog: (
+        profileId: string,
+        templateId: string,
+        chatId?: string | null
+      ) => Promise<boolean>
     }
   }
 }

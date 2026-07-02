@@ -10,7 +10,8 @@ import {
 } from './storageService'
 import { log } from './logService'
 import { TableTemplate, TableTemplateSchema } from '../types/tableTemplate'
-import { parseChatSheets, ChatSheetsParseError } from '../parsers/chatSheetsParser'
+import { parseChatSheets, exportChatSheets, ChatSheetsParseError } from '../parsers/chatSheetsParser'
+import { readAllTables } from './tableDbService'
 
 export interface TableTemplateSummary {
   id: string
@@ -65,6 +66,38 @@ export const saveTableTemplate = (profileId: string, template: TableTemplate): s
 export const deleteTableTemplate = (profileId: string, id: string): void => {
   const p = templatePath(profileId, id)
   if (fs.existsSync(p)) fs.unlinkSync(p)
+}
+
+/**
+ * Export a stored template back to chatSheets v2 JSON on disk (issue 06). When `chatId` is given,
+ * embeds that chat's CURRENT sandbox rows as each table's initial rows ("export with data"): rows are
+ * read via `readAllTables` and stringified (null → `''`) so the exported template ships seeded. Absent
+ * `chatId` → the template's own `initialRows` are written (header-only for a fresh template). Returns
+ * false if the template id is unknown.
+ */
+export const exportTableTemplateToFile = (
+  profileId: string,
+  id: string,
+  filePath: string,
+  chatId?: string | null
+): boolean => {
+  const template = getTableTemplateById(profileId, id)
+  if (!template) return false
+
+  let dataRows: Map<string, string[][]> | undefined
+  if (chatId) {
+    dataRows = new Map()
+    for (const read of readAllTables(profileId, chatId, template)) {
+      dataRows.set(
+        read.sqlName,
+        read.rows.map((row) => row.map((cell) => (cell == null ? '' : String(cell))))
+      )
+    }
+  }
+
+  const payload = exportChatSheets(template, dataRows)
+  fs.writeFileSync(filePath, JSON.stringify(payload, null, 2), 'utf-8')
+  return true
 }
 
 /**

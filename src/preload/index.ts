@@ -164,6 +164,23 @@ const api = {
     ipcRenderer.invoke('chat-table-template-set', profileId, chatId, id),
   readChatTables: (profileId: string, chatId: string) =>
     ipcRenderer.invoke('chat-tables-read', profileId, chatId),
+  // SQL-table memory (issue 06): hand editing, last-maintained status, template export
+  editChatTable: (
+    profileId: string,
+    chatId: string,
+    edit: {
+      kind: 'cell' | 'insert' | 'delete' | 'reset'
+      table: string
+      rowid?: number
+      columnIndex?: number
+      value?: string
+      values?: (string | null)[]
+    }
+  ) => ipcRenderer.invoke('chat-tables-edit', profileId, chatId, edit),
+  readChatTablesStatus: (profileId: string, chatId: string) =>
+    ipcRenderer.invoke('chat-tables-status', profileId, chatId),
+  exportTableTemplateDialog: (profileId: string, templateId: string, chatId?: string | null) =>
+    ipcRenderer.invoke('table-template-export-dialog', profileId, templateId, chatId),
   // Lorebook library (id-keyed; a character's own lorebook has id == characterId)
   listLorebooks: (profileId: string) => ipcRenderer.invoke('list-lorebooks', profileId),
   getLorebook: (profileId: string, id: string) => ipcRenderer.invoke('get-lorebook', profileId, id),

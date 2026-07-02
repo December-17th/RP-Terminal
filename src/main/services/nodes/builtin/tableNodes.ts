@@ -364,7 +364,7 @@ export const tableRead: NodeImpl = {
     const rendered: string[] = []
     for (const table of tables) {
       let read = readsBySql.get(table.sqlName)
-      if (!read) read = { sqlName: table.sqlName, displayName: table.displayName, columns: table.headers, rows: [] }
+      if (!read) read = { sqlName: table.sqlName, displayName: table.displayName, columns: table.headers, rows: [], rowids: [] }
       // Row cap: keep the LAST N rows (newest-last) per table.
       if (cfg.max_rows != null && read.rows.length > cfg.max_rows) {
         read = { ...read, rows: read.rows.slice(-cfg.max_rows) }

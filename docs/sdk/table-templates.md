@@ -1,8 +1,9 @@
 # Table templates — the chatSheets v2 import surface (SQL-table memory)
 
-**Status:** 🟡 partial (issues 02–03: import + per-chat enablement + read-only view + SQL write path
-+ op-log/rewind + the `parse.extract`/`table.apply` nodes built; prompt injection / gate & read &
-query nodes / view editing are issues 04–06, not built).
+**Status:** 🟢 complete (issues 02–06: import + per-chat enablement + the Tables view (read + hand
+editing) + SQL write path + op-log/rewind + prompt projection (`table.export`) + the maintenance
+pipeline (`table.gate` / `table.read` / `table.query`) + template EXPORT (chatSheets v2, round-trip) +
+per-table last-maintained indicator all built). The only deferred item is card-embedded templates.
 
 RP Terminal's memory system is **SQL-table memory** (the 数据库-plugin model): each chat maintains a
 set of relational tables, the LLM edits them via SQL (later issues), and the tables project back into
@@ -99,8 +100,17 @@ ordered tables — `sqlName`s: `protagonist_info`, `important_characters`, `chro
 `table-templates-list`, `table-template-get`, `table-template-delete`, `table-template-import-dialog`
 (returns `{ summary } | { error } | null`); `chat-table-template-get` / `chat-table-template-set`;
 `chat-tables-read` (all tables of the assigned template as
-`[{ sqlName, displayName, columns, rows }]`). The read-only **Tables** view is registered as `tables`
-in `src/renderer/src/components/workspace/viewRegistry.tsx`.
+`[{ sqlName, displayName, columns, rows, rowids }]`); `chat-tables-edit` (hand edit → `{ ok, changes }
+| { error }`); `chat-tables-status` (last-maintained floor per table); `table-template-export-dialog`
+(export to chatSheets v2 JSON) — issue 06. The **Tables** view is registered as `tables` in
+`src/renderer/src/components/workspace/viewRegistry.tsx`.
+
+`chat-tables-read` returns each row's SQLite `rowid` (`rowids[]`, 1:1 with `rows`;
+`tableDbService.readOne` selects `rowid AS __rid, *` and slices the alias off so `rows`/`columns` stay
+data-only + positional — no other `TableRead` consumer changes). Columns are unified onto the
+template's DISPLAY headers when they line up 1:1 with the sandbox's real columns
+(`tableDbService.unifyDisplayColumns`), so both empty and populated tables show e.g. 人物名称 rather
+than the SQL name (`src/main/services/tableDbService.ts`).
 
 ## Write path (issue 03)
 
@@ -323,6 +333,88 @@ Tables view (else the branch is a silent no-op), how to point `side` at a cheap 
 `api_preset_id`, and how to chain a second staged pass (世界推进 before 剧情推进) with an ordering edge
 (first `table.apply.done` → second `gate.floor`). Validated by `test/workflow/tableMemoryExample.test.ts`.
 
-## Deferred (issue 06)
+## Hand editing (issue 06)
 
-View editing (06), card-embedded templates.
+The Tables view is **writable**: edit a cell, add a row, delete a row, reset a table. A hand edit is
+NOT a special case — it becomes LITERAL, replayable SQL routed through the **exact same op-logged
+write path AI writes take**, so it survives turns and rolls back on a swipe past its floor identically.
+
+### Row identity — `rowid`
+
+An edit targets a row by its SQLite `rowid` (`chat-tables-read` returns `rowids[]`). `rowid` is
+**replay-deterministic** here: instantiate + ordered op replay re-assigns the same rowids (SQLite
+max+1 rule, single writer, ordered ops from `tableOpsService`), so a rowid the view captured survives
+a rewind rebuild. Deletes create gaps; replay reproduces the same gaps. Documented where the edit SQL
+is built (`src/main/services/tableEditService.ts`) and on `TableRead.rowids`
+(`src/main/services/tableDbService.ts`).
+
+### The edit path (`src/main/services/tableEditService.ts`)
+
+Pure, exported, unit-tested builders (`test/tableEditService.test.ts`):
+
+- `sqlQuote(v)` — `'…'` with `''` doubling (CJK values survive verbatim).
+- `buildCellUpdate(sqlName, sqlColumn, rowid, value)` → `UPDATE "t" SET "col" = '<quoted>' WHERE
+  rowid = N`. `sqlColumn` is the **real sandbox column name** (never a renderer string — see below),
+  re-validated with `isSafeSqlIdentifier`; `rowid` must be a safe non-negative integer.
+- `buildRowInsert(sqlName, values)` → positional `INSERT INTO "t" VALUES (…)`, `NULL` for null cells
+  (the empty `row_id` slot → INTEGER PRIMARY KEY auto-assign), quoted literals otherwise.
+- `buildRowDelete(sqlName, rowid)` → `DELETE FROM "t" WHERE rowid = N`.
+- `buildTableReset(sqlName)` → `DELETE FROM "t"`.
+
+`applyEdit(profileId, chatId, template, op)` builds the SQL, takes the per-chat write lock
+(`tryBeginTableWrite`; busy → `{ error }`), runs it through **`applySqlBatch`** (the same validate +
+execute-in-one-transaction path as AI writes), then **`appendOps`** at `getAllFloors().length - 1`
+(clamped ≥0 — the just-persisted floor, same attribution `table.apply` uses). Returns
+`{ ok, changes } | { error }`; CHECK / NOT NULL constraint violations surface as the `{ error }`
+message (renderer toast) — never a crash. There is **no second write path and no unlogged write**.
+
+### Column safety (index, not name)
+
+The renderer sends only a column **INDEX** for a cell edit (`chat-tables-edit`), never a column-name
+string. `tableMemoryIpc.ts` maps the index → the real column name off `tableDbService.sandboxColumns`
+(the sandbox's actual DDL columns), validates the target table is in the template registry
+(`templateSqlNames`), and only then calls `applyEdit`, which re-validates the resolved column with
+`isSafeSqlIdentifier` (`src/main/ipc/tableMemoryIpc.ts`, `src/main/services/tableEditService.ts`).
+
+### Reset is op-logged (deliberate)
+
+Reset writes an op-logged `DELETE FROM "t"` (NOT a "clear the log" action). This keeps replay
+consistent: on a rewind rebuild, instantiate re-seeds the template's initial rows and the replayed
+`DELETE` clears them again, so a chat rebuilt at any later floor matches the live state
+(`tableEditService.buildTableReset`). Delete-row and reset both **confirm** in the UI
+(`TablesView.tsx`, i18n keys `tables.confirmDeleteRow` / `tables.confirmReset`).
+
+## Template export (issue 06)
+
+`exportChatSheets(template, dataRows?)` (`src/main/parsers/chatSheetsParser.ts`, next to the parser it
+mirrors) reconstructs a chatSheets v2 object from a `TableTemplate`, writing back exactly the fields
+`parseChatSheets` consumes: `mate.{type,version,globalInjectionConfig}` (the `globalInjectionConfig`
+key is **omitted** when the template has no injection defaults — a present-but-empty object would
+re-parse as a defined `globalInjection` and break the round-trip) + one `sheet_<uid>` per table
+(`uid` preserved, `orderNo` = array index, `content = [headers, …rows]`, `updateConfig.updateFrequency`,
+`sourceData.{ddl,note,*Node}`, `exportConfig`).
+
+- **Round-trip contract (the AC): EQUIVALENCE, not bytes.** `parseChatSheets(exportChatSheets(tpl))`
+  deep-equals `tpl` (`test/chatSheetsParser.test.ts`). A byte match is impossible because the importer
+  normalizes `updateFrequency -1 → 1` and drops UI sentinels / `preventRecursion`; the *model*
+  round-trips exactly.
+- **Export with data:** `dataRows` (a `Map<sqlName, string[][]>`) embeds current rows as `content[1..]`
+  (cells stringified, `null → ''`); absent → the template's own `initialRows`. Orchestrated by
+  `tableTemplateService.exportTableTemplateToFile` (reads live rows via `readAllTables` when a `chatId`
+  is passed) behind `table-template-export-dialog` (a `showSaveDialog`, mirroring workflowIpc's
+  `export-workflow-dialog`).
+
+## Last-maintained indicator (issue 06)
+
+`chat-tables-status(profileId, chatId)` → `tableStatusService.getTablesStatus`: resolves the chat's
+effective workflow (`workflowService.resolveWorkflowDoc`), reads every `table.gate` node's durable
+state (`nodeStateService.getNodeState`), and merges their `{ last: Record<sqlName, number> }` maps
+taking the **max floor per table** (`mergeLastMaintained`, pure + unit-tested in
+`test/tableStatusService.test.ts`). A table no gate has maintained is absent from the map; the view
+shows `最后维护: 第 N 层 / —` per table header (`src/main/services/tableStatusService.ts`,
+`TablesView.tsx`).
+
+## Deferred
+
+Card-embedded templates (a template shipped inside a character card). Everything else in the
+table-memory surface is built.

@@ -3,6 +3,7 @@ import fs from 'fs'
 import path from 'path'
 import {
   parseChatSheets,
+  exportChatSheets,
   extractCreateTableName,
   stripSqlComments,
   isSafeSqlIdentifier,
@@ -146,6 +147,67 @@ describe('parseChatSheets — the real 命定之诗 template', () => {
   it('round-trips through TableTemplateSchema (lossless internal model)', () => {
     const tpl = parseChatSheets(fixture(), 'poem')
     expect(() => TableTemplateSchema.parse(tpl)).not.toThrow()
+  })
+})
+
+describe('exportChatSheets — round-trip equivalence (issue 06 AC)', () => {
+  it('parse → export → parse deep-equals the TableTemplate (the real 命定之诗 template)', () => {
+    // The AC is EQUIVALENCE, not bytes: the importer's `-1 → 1` updateFrequency normalization + UI
+    // sentinel drops mean a byte match is impossible; the model must round-trip exactly.
+    const original = parseChatSheets(fixture(), 'poem')
+    const roundTripped = parseChatSheets(exportChatSheets(original), 'poem')
+    expect(roundTripped).toEqual(original)
+  })
+
+  it('preserves sheet uids and order', () => {
+    const original = parseChatSheets(fixture(), 'poem')
+    const raw = exportChatSheets(original) as Record<string, any>
+    // one sheet_<uid> per table, uid preserved, orderNo = index.
+    original.tables.forEach((t, i) => {
+      const sheet = raw[`sheet_${t.uid}`]
+      expect(sheet).toBeTruthy()
+      expect(sheet.uid).toBe(t.uid)
+      expect(sheet.orderNo).toBe(i)
+    })
+  })
+
+  it('defaults globalInjectionConfig when the template has none', () => {
+    const tpl = TableTemplateSchema.parse({
+      name: 'n',
+      sourceFormat: 'native',
+      tables: [
+        { uid: 'a', displayName: 'A', sqlName: 'a', ddl: 'CREATE TABLE a (row_id INTEGER);', headers: ['row_id'] }
+      ]
+    })
+    const raw = exportChatSheets(tpl) as Record<string, any>
+    expect(raw.mate.type).toBe('chatSheets')
+    expect(raw.mate.version).toBe(2)
+    // No injection defaults → the key is omitted (a present-but-empty object would parse back as a
+    // defined globalInjection, breaking the round-trip); re-parse leaves globalInjection undefined.
+    expect('globalInjectionConfig' in raw.mate).toBe(false)
+    const reparsed = parseChatSheets(raw, 'n')
+    expect(reparsed.globalInjection).toBeUndefined()
+    // sourceFormat flips native → chatSheets-v2 by design (export always yields the chatSheets shape);
+    // everything else round-trips.
+    expect(reparsed.tables).toEqual(tpl.tables)
+  })
+
+  it('export-with-data embeds current rows as content[1..] (null → empty string)', () => {
+    const tpl = TableTemplateSchema.parse({
+      name: 'n',
+      sourceFormat: 'native',
+      tables: [
+        { uid: 'a', displayName: 'A', sqlName: 'chronicle', ddl: 'CREATE TABLE chronicle (row_id INTEGER, v TEXT);', headers: ['row_id', 'v'] }
+      ]
+    })
+    const data = new Map<string, string[][]>([['chronicle', [['1', '事件一'], ['2', '']]]])
+    const raw = exportChatSheets(tpl, data) as Record<string, any>
+    const sheet = raw['sheet_a']
+    expect(sheet.content[0]).toEqual(['row_id', 'v']) // header row
+    expect(sheet.content.slice(1)).toEqual([['1', '事件一'], ['2', '']])
+    // re-import picks the embedded rows up as initialRows.
+    const reimported = parseChatSheets(raw, 'n')
+    expect(reimported.tables[0].initialRows).toEqual([['1', '事件一'], ['2', '']])
   })
 })
 

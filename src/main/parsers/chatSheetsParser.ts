@@ -207,3 +207,57 @@ export const parseChatSheets = (raw: any, name: string): TableTemplate => {
     tables
   })
 }
+
+/**
+ * WRITER (issue 06) — reconstruct a chatSheets v2 object from a native `TableTemplate` so a template
+ * stays portable back to the ST ecosystem. Sits next to the parser it must MIRROR: it writes back
+ * exactly the fields `parseChatSheets` consumes, so the round-trip is LOSSLESS FOR THE MODEL —
+ * `parseChatSheets(exportChatSheets(tpl))` deep-equals `tpl`. It is NOT byte-identical to a
+ * plugin-authored file (the importer normalizes `updateFrequency -1 → 1` and drops UI sentinels /
+ * `preventRecursion`), which is why the AC and its test assert TEMPLATE EQUIVALENCE, not bytes.
+ *
+ * `dataRows` (optional) is "export with data": the current sandbox rows per `sqlName`, embedded as
+ * `content[1..]` (cells already stringified by the caller). Absent → the template's own `initialRows`
+ * are written, so a header-only template re-exports header-only. `uid` and `orderNo` (array index)
+ * are preserved so sheet identity/order round-trip.
+ */
+export const exportChatSheets = (
+  template: TableTemplate,
+  dataRows?: Map<string, string[][]>
+): Record<string, unknown> => {
+  // Only emit `globalInjectionConfig` when the template HAS injection defaults — the parser treats a
+  // present-but-empty object as "has globalInjection" (→ `{readable:undefined, wrapper:undefined}`),
+  // so omitting the key entirely is what makes export the true inverse for a template without them.
+  const gi = template.globalInjection
+  const mate: Record<string, unknown> = { type: 'chatSheets', version: 2 }
+  if (gi) {
+    const globalInjectionConfig: Record<string, unknown> = {}
+    if (gi.readableEntryPlacement) globalInjectionConfig.readableEntryPlacement = gi.readableEntryPlacement
+    if (gi.wrapperPlacement) globalInjectionConfig.wrapperPlacement = gi.wrapperPlacement
+    mate.globalInjectionConfig = globalInjectionConfig
+  }
+
+  const out: Record<string, unknown> = { name: template.name, mate }
+
+  template.tables.forEach((t, index) => {
+    const rows = dataRows?.get(t.sqlName) ?? t.initialRows
+    out[`sheet_${t.uid}`] = {
+      uid: t.uid,
+      name: t.displayName,
+      orderNo: index,
+      content: [t.headers, ...rows],
+      updateConfig: { updateFrequency: t.updateFrequency },
+      sourceData: {
+        ddl: t.ddl,
+        note: t.note,
+        initNode: t.initNode,
+        insertNode: t.insertNode,
+        updateNode: t.updateNode,
+        deleteNode: t.deleteNode
+      },
+      exportConfig: t.exportConfig
+    }
+  })
+
+  return out
+}

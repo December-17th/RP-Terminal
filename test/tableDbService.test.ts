@@ -4,7 +4,8 @@ import {
   sandboxDbPath,
   buildDdlPlan,
   templateSqlNames,
-  buildInitialInsert
+  buildInitialInsert,
+  unifyDisplayColumns
 } from '../src/main/services/tableDbService'
 import { getAppDir } from '../src/main/services/storageService'
 import { TableTemplateSchema, TableTemplate } from '../src/main/types/tableTemplate'
@@ -130,5 +131,17 @@ describe('buildInitialInsert', () => {
     })
     const out = buildInitialInsert(t)!
     expect(out.rows).toEqual([[null, '']])
+  })
+})
+
+describe('unifyDisplayColumns (issue 06 display-header unification)', () => {
+  it('shows DISPLAY headers when their width matches the sandbox column count', () => {
+    expect(unifyDisplayColumns(['row_id', '纪要'], ['row_id', 'summary'])).toEqual(['row_id', '纪要'])
+  })
+  it('falls back to sandbox column names when widths disagree', () => {
+    expect(unifyDisplayColumns(['a'], ['x', 'y'])).toEqual(['x', 'y'])
+  })
+  it('uses headers when there are no sandbox columns (empty read)', () => {
+    expect(unifyDisplayColumns(['a', 'b'], [])).toEqual(['a', 'b'])
   })
 })

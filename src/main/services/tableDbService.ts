@@ -27,9 +27,25 @@ export interface TableRead {
   displayName: string
   columns: string[]
   rows: unknown[][]
+  /**
+   * SQLite `rowid` of each row, aligned 1:1 to `rows` (issue 06). The edit path (`tableEditService`)
+   * targets a row by its rowid — stable within a sandbox and REPLAY-DETERMINISTIC here: instantiate
+   * + ordered op replay re-assigns the same rowids (SQLite max+1, single writer, ordered ops), so a
+   * rowid the view captured survives a rewind rebuild. Empty when there is no sandbox / on read error.
+   */
+  rowids: number[]
 }
 
 // ---- pure helpers (unit-tested) --------------------------------------------------------------
+
+/**
+ * Which column labels the view shows for a table (issue 06 — the "display-header unification" the
+ * 02 review flagged). When the template's DISPLAY headers line up 1:1 with the sandbox's real column
+ * count, show the headers (e.g. 人物名称) for BOTH empty and populated tables; otherwise fall back to
+ * the sandbox column names (`sqlCols`). Pure so every `TableRead` consumer inherits the same choice.
+ */
+export const unifyDisplayColumns = (headers: string[], sqlCols: string[]): string[] =>
+  headers.length && headers.length === sqlCols.length ? headers : sqlCols.length ? sqlCols : headers
 
 /** The sandbox DB file path for a chat. Kept in its own `table-dbs/` dir, apart from the app DB. */
 export const sandboxDbPath = (profileId: string, chatId: string): string =>
@@ -136,24 +152,63 @@ export const readAllTables = (
   }
 }
 
-/** Read one table by name, guarded against the template registry. */
+/**
+ * Read one table by name, guarded against the template registry. Selects `rowid AS __rid, *` so each
+ * data row carries its SQLite rowid (issue 06 edit identity); the `__rid` column is sliced off the
+ * front of every row (and out of `columns`), so `rows`/`columns` stay data-only and POSITIONAL — no
+ * downstream consumer (tableExportService, table.read/query) changes. Columns are unified onto the
+ * template's DISPLAY headers when their width matches the sandbox's (`unifyDisplayColumns`).
+ */
 const readOne = (db: Database.Database | null, table: TableDef): TableRead => {
   const base: TableRead = {
     sqlName: table.sqlName,
     displayName: table.displayName,
     columns: table.headers,
-    rows: []
+    rows: [],
+    rowids: []
   }
   // Guard: never interpolate a name that isn't a safe identifier from the template.
   if (!db || !isSafeSqlIdentifier(table.sqlName)) return base
   try {
-    const stmt = db.prepare(`SELECT * FROM "${table.sqlName}"`)
-    const cols = (stmt.columns?.() ?? []).map((c: { name: string }) => c.name)
-    const rows = (stmt.raw?.().all() as unknown[][]) ?? []
-    return { ...base, columns: cols.length ? cols : table.headers, rows }
+    // `rowid AS __rid` is the FIRST result column; for tables with `row_id INTEGER PRIMARY KEY` it
+    // aliases that key (harmless — we slice it away). `*` then yields the real data columns.
+    const stmt = db.prepare(`SELECT rowid AS __rid, * FROM "${table.sqlName}"`)
+    const allCols = (stmt.columns?.() ?? []).map((c: { name: string }) => c.name)
+    const sqlCols = allCols.slice(1) // drop the __rid column
+    const raw = (stmt.raw?.().all() as unknown[][]) ?? []
+    const rowids = raw.map((r) => Number(r[0]))
+    const rows = raw.map((r) => r.slice(1))
+    return { ...base, columns: unifyDisplayColumns(table.headers, sqlCols), rows, rowids }
   } catch (error) {
     log('info', `Failed to read table "${table.sqlName}" for chat:`, error)
     return base
+  }
+}
+
+/**
+ * The REAL sandbox column names for a table, in DDL order (issue 06 edit path). The Tables view sends
+ * only a column INDEX; the IPC layer maps it to the real column name through THIS list — never a
+ * column-name string the renderer supplied — then hands the resolved name to `tableEditService`,
+ * which re-validates it with `isSafeSqlIdentifier`. `sqlName` must be a registered template table
+ * (the caller validates against the registry); a missing sandbox / read failure yields `[]`.
+ */
+export const sandboxColumns = (
+  profileId: string,
+  chatId: string,
+  sqlName: string
+): string[] => {
+  if (!isSafeSqlIdentifier(sqlName)) return []
+  const file = sandboxDbPath(profileId, chatId)
+  if (!fs.existsSync(file)) return []
+  const db = new Database(file, { readonly: true })
+  try {
+    const stmt = db.prepare(`SELECT * FROM "${sqlName}" LIMIT 0`)
+    return (stmt.columns?.() ?? []).map((c: { name: string }) => c.name)
+  } catch (error) {
+    log('info', `Failed to read columns for table "${sqlName}":`, error)
+    return []
+  } finally {
+    db.close()
   }
 }
 

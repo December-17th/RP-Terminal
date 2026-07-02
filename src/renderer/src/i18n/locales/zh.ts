@@ -454,6 +454,25 @@ const zh: Record<string, string> = {
   'tables.deleteFailed': '删除表格模板失败',
   'tables.importErrorRead': '无法将所选文件读取为 JSON。',
   'tables.importErrorGeneric': '不支持或格式错误的表格模板。',
+  // 编辑（issue 06）
+  'tables.addRow': '+ 新增行',
+  'tables.deleteRow': '删除行',
+  'tables.resetTable': '清空表格',
+  'tables.saveRow': '添加',
+  'tables.cancel': '取消',
+  'tables.confirmDeleteRow': '删除此行？该操作会作为一次编辑记录在当前楼层。',
+  'tables.confirmReset': '清空此表格的所有行？该操作会作为一次编辑记录在当前楼层，可通过回溯撤销。',
+  'tables.editFailed': '编辑失败',
+  'tables.editNoTemplate': '本会话未挂载表格模板。',
+  'tables.editUnknownTable': '该数据表不属于已挂载的模板。',
+  'tables.editBadColumn': '该列在表格中已不存在。',
+  // 导出（issue 06）
+  'tables.export': '导出模板',
+  'tables.exportWithData': '连同当前数据导出',
+  'tables.exportFailed': '表格模板导出失败',
+  // 最后维护指示（issue 06）
+  'tables.lastMaintained': '最后维护：第 {{n}} 层',
+  'tables.neverMaintained': '最后维护：—',
 
   'workflow.heading': '工作流',
   'workflow.viewTitle': '工作流',

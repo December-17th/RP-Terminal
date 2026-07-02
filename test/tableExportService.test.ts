@@ -34,7 +34,7 @@ const table = (sqlName: string): (typeof template.tables)[number] =>
 /** A TableRead whose rows are POSITIONAL in the template's headers order (the readAllTables contract). */
 const readFor = (sqlName: string, rows: unknown[][]): TableRead => {
   const t = table(sqlName)
-  return { sqlName, displayName: t.displayName, columns: t.headers, rows }
+  return { sqlName, displayName: t.displayName, columns: t.headers, rows, rowids: rows.map((_, i) => i + 1) }
 }
 
 describe('render helpers', () => {
