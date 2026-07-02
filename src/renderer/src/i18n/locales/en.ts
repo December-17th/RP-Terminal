@@ -600,6 +600,13 @@ const en: Record<string, string> = {
   'workflowEditor.nodeTitle.context.history': 'History',
   'workflowEditor.nodeTitle.context.card': 'Card Field',
   'workflowEditor.nodeTitle.context.persona': 'Persona',
+  'workflowEditor.nodeTitle.context.action': 'User Action',
+  'workflowEditor.nodeTitle.context.params': 'Preset Params',
+  'workflowEditor.nodeTitle.context.refresh': 'Refresh Context',
+  'workflowEditor.nodeTitle.lorebook.select': 'Select Lorebooks',
+  'workflowEditor.nodeTitle.lorebook.entries': 'Lorebook Entries',
+  'workflowEditor.nodeTitle.prompt.preset': 'Preset Prompt',
+  'workflowEditor.nodeTitle.messages.trim': 'Trim Messages',
   'workflowEditor.nodeTitle.subgraph.call': 'Sub-graph',
   'workflowEditor.nodeTitle.subgraph.loop': 'Sub-graph Loop',
   'workflowEditor.nodeTitle.subgraph.input': 'Sub-graph Input',
@@ -612,7 +619,7 @@ const en: Record<string, string> = {
   'workflowEditor.nodeDesc.prompt.assemble':
     'Builds the complete provider-ready prompt exactly like the default pipeline: card, preset, matched lorebook entries, chat history, the memory block, and budget trimming.',
   'workflowEditor.nodeDesc.llm.sample':
-    'Calls the model with a message array. On the main-output path its reply streams to chat; wired behind a Signal it runs as a side-branch call (e.g. a planner or background job). Config adds retries, a fallback connection and a validator with corrective retry; when all give up, the failure leaves on the error port.',
+    'Calls the model with a message array. On the main-output path its reply streams to chat; wired behind a Signal it runs as a side-branch call (e.g. a planner or background job). Config adds retries, a fallback connection and a validator with corrective retry; when all give up, the failure leaves on the error port. Set api_preset_id to run this call against a chosen saved connection (its own provider/model/rate limits) instead of the turn’s — for a side call that needs its own model.',
   'workflowEditor.nodeDesc.parse.response':
     'Post-processes the raw reply: strips thinking, extracts rpt-events and MVU variable commands, and computes this turn’s cache metrics.',
   'workflowEditor.nodeDesc.apply.state':
@@ -632,7 +639,7 @@ const en: Record<string, string> = {
   'workflowEditor.nodeDesc.tool.startDuel':
     'Starts a deckbuilder duel from the party’s MVU build (enemies from a wired cue roster) and switches the session to duel mode. Fails onto its error port when no duel can be built.',
   'workflowEditor.nodeDesc.tool.lorebookSearch':
-    'Keyword-searches the session’s lorebooks with the wired query text (the same matcher prompt assembly uses) and returns matched entry contents as one text block. Config can restrict the search to lorebooks whose name matches a filter and cap the returned block’s size — both trade completeness for a smaller, cheaper side call.',
+    'Keyword-searches the session’s lorebooks with the wired query text (the same matcher prompt assembly uses) and returns matched entry contents as one text block, plus the matched entries as rows. Wire a Lore subset (e.g. from Select Lorebooks) into books to search only those instead of every session book. Config can further restrict the search to lorebooks whose name matches a filter and cap the returned block’s size — both trade completeness for a smaller, cheaper side call.',
   'workflowEditor.nodeDesc.control.if':
     'Tests a predicate against the input value (optionally drilling in via the configured path) and fires exactly one of its two Signals: then or else. The un-fired branch is pruned.',
   'workflowEditor.nodeDesc.control.switch':
@@ -656,9 +663,23 @@ const en: Record<string, string> = {
   'workflowEditor.nodeDesc.context.history':
     'The last N floors as both a User:/Assistant: transcript block and a role-tagged message list, with thinking stripped from replies. Config can narrow to just the user or assistant side (narrows both outputs).',
   'workflowEditor.nodeDesc.context.card':
-    'One character-card narrative field (description/personality/scenario/first_mes/name), or all of them as labelled blocks when field is set to all.',
+    'One character-card narrative field (description/personality/scenario/first_mes/name), or all of them as labelled blocks when field is set to all. Set expand: true to run context macros ({{user}}/{{char}}/{{getvar}}) + EJS over the field text like the assemble path does — needed when the card text is composed into a prompt by hand.',
   'workflowEditor.nodeDesc.context.persona':
-    'The active persona’s name and description — the {{user}} side of the card/persona pair, split out on its own so a side call doesn’t need the full Context.',
+    'The active persona’s name and description — the {{user}} side of the card/persona pair, split out on its own so a side call doesn’t need the full Context. expand: true macro/EJS-expands the description like Card Field.',
+  'workflowEditor.nodeDesc.context.action':
+    'The user’s CURRENT pending action — the message being answered this turn. History nodes only see persisted floors, so a hand-composed main prompt must wire this in as its final user message.',
+  'workflowEditor.nodeDesc.context.params':
+    'The active preset’s sampler parameters, with the same FSM-mode output cap the assemble path applies. Wire into Sample’s params whenever the prompt is composed WITHOUT Assemble Prompt — params must not be left unwired on a main path.',
+  'workflowEditor.nodeDesc.context.refresh':
+    'Re-reads the turn bundle mid-graph, so a branch that already wrote floor variables (Save Variable / Set Variable) is reflected downstream instead of the stale snapshot from Context. Wire the write node’s done output into after so the fresh read is sequenced after the write lands; the fresh bundle leaves on gen.',
+  'workflowEditor.nodeDesc.lorebook.select':
+    'Picks a subset of the session’s lorebooks (and their entries) as a Lore value — deterministic, no keyword scan. books filters which books by name; entries keeps only entries whose comment matches; exclude_entries drops matching entries after that (e.g. “the setting books, but not the combat rules”). Output books are deep copies — filtering them never touches the session lorebooks.',
+  'workflowEditor.nodeDesc.lorebook.entries':
+    'Fetches entry contents from a Lore subset (or the session lorebooks when books is unwired) as a raw text block plus the matching entry rows — no keyword scan. constant_only keeps only always-on entries; filter narrows by comment; max_chars caps the block. Disabled entries are always skipped.',
+  'workflowEditor.nodeDesc.prompt.preset':
+    'Assemble Prompt with its ingredients exposed as ports: wire history, worldInfo, memory or action to override that piece, or set preset_id to compose against a different saved preset. Anything left unwired uses the default computation, so with nothing wired it matches Assemble Prompt exactly. This is how a side call (world/plot advancement) builds its own main prompt against its own preset and lorebook subset.',
+  'workflowEditor.nodeDesc.messages.trim':
+    'Trims a message list to a token budget with the same trimmer the assemble path uses (drop the oldest turns, keep the system prefix and the final turn). budget_tokens 0/unset uses the session’s max context tokens. Use it after building messages by hand (Message List / Merge Messages) so an over-long side prompt still fits.',
   'workflowEditor.nodeDesc.memory.query':
     'Recalls memories against an arbitrary WIRED query instead of scanning the current turn’s chat — for side branches like a planner that need memory recall about a specific topic. Keyword-ranking only (vector/hybrid collections are downgraded to keyword); a collection set to mode: llm is skipped entirely, same as the standard recall. Wire the output into an LLM call to add custom-prompt reranking on top.',
   'workflowEditor.nodeDesc.subgraph.call':
@@ -725,6 +746,39 @@ const en: Record<string, string> = {
   'workflowEditor.portDesc.merge.messages.d': 'Fourth message list',
   'workflowEditor.portDesc.merge.messages.messages': 'The concatenated message list',
   'workflowEditor.portDesc.mvu.set.value': 'The value to write (wins over the configured value)',
+  'workflowEditor.portDesc.context.action.text': 'The pending user message text',
+  'workflowEditor.portDesc.context.params.params': 'Sampler parameters for Sample’s params input',
+  // Ordering-only outputs on the write nodes (wire into Refresh Context’s after).
+  'workflowEditor.portDesc.vars.save.done':
+    'Fires after the write lands (ordering only) — wire into Refresh Context’s after',
+  'workflowEditor.portDesc.mvu.set.done':
+    'Fires after the write lands (ordering only) — wire into Refresh Context’s after',
+  // context.refresh
+  'workflowEditor.portDesc.context.refresh.after':
+    'Ordering-only: wire a write node’s done here so the refresh runs after the write',
+  'workflowEditor.portDesc.context.refresh.gen': 'The freshly re-read turn bundle',
+  // lorebook.select / lorebook.entries
+  'workflowEditor.portDesc.lorebook.select.books': 'The selected lorebooks (deep-copied subset)',
+  'workflowEditor.portDesc.lorebook.entries.books':
+    'Optional Lore subset to read (unwired = the session lorebooks)',
+  'workflowEditor.portDesc.lorebook.entries.block': 'The entry contents joined into one text block',
+  'workflowEditor.portDesc.lorebook.entries.entries': 'The matching entries as {comment, content} rows',
+  // tool.lorebookSearch additions
+  'workflowEditor.portDesc.tool.lorebookSearch.books':
+    'Optional Lore subset to search (unwired = the session lorebooks)',
+  'workflowEditor.portDesc.tool.lorebookSearch.entries':
+    'The matched entries as {comment, content} rows',
+  // prompt.preset
+  'workflowEditor.portDesc.prompt.preset.history':
+    'Override the chat history (verbatim messages; the action is appended last)',
+  'workflowEditor.portDesc.prompt.preset.worldInfo':
+    'Override the World Info block (skips the keyword scan)',
+  'workflowEditor.portDesc.prompt.preset.memory': 'Memory text appended to the prompt tail (optional)',
+  'workflowEditor.portDesc.prompt.preset.action': 'Override the pending user action (final message)',
+  'workflowEditor.portDesc.prompt.preset.sendMessages': 'The exact provider-ready message array',
+  'workflowEditor.portDesc.prompt.preset.params': 'Sampler parameters from the chosen preset',
+  // messages.trim
+  'workflowEditor.portDesc.messages.trim.messages': 'The message list to trim (and the trimmed result)',
   'workflowEditor.portDesc.subgraph.input.value': 'The boundary value for the configured slot',
   'workflowEditor.portDesc.subgraph.output.value': 'The value reported out on the configured slot',
   'workflowEditor.portDesc.subgraph.call.gen': 'Passed to the sub-graph’s gen-slot boundary input',

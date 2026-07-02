@@ -117,8 +117,10 @@ const correctiveMessages = (
   }
 ]
 
-/** A GenContext whose live connection is the given saved preset (rpm_limit/max_concurrent included). */
-const withPreset = (gen: GenContext, presetId: string): GenContext | null => {
+/** A GenContext whose live connection is the given saved preset (rpm_limit/max_concurrent included).
+ *  Returns null when the id isn't a known api_preset. Exported so llm.sample can swap the connection
+ *  BEFORE the call (api_preset_id config) reusing the SAME substitution the fallback path uses. */
+export const withPreset = (gen: GenContext, presetId: string): GenContext | null => {
   const p = gen.settings.api_presets.find((x) => x.id === presetId)
   if (!p) return null
   return {

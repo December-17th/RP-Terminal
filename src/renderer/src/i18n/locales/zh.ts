@@ -584,6 +584,13 @@ const zh: Record<string, string> = {
   'workflowEditor.nodeTitle.context.history': '历史记录',
   'workflowEditor.nodeTitle.context.card': '角色卡字段',
   'workflowEditor.nodeTitle.context.persona': '用户人设',
+  'workflowEditor.nodeTitle.context.action': '用户输入',
+  'workflowEditor.nodeTitle.context.params': '预设参数',
+  'workflowEditor.nodeTitle.context.refresh': '刷新上下文',
+  'workflowEditor.nodeTitle.lorebook.select': '选择世界书',
+  'workflowEditor.nodeTitle.lorebook.entries': '世界书条目',
+  'workflowEditor.nodeTitle.prompt.preset': '预设提示词',
+  'workflowEditor.nodeTitle.messages.trim': '裁剪消息',
   'workflowEditor.nodeTitle.subgraph.call': '子图调用',
   'workflowEditor.nodeTitle.subgraph.loop': '子图循环',
   'workflowEditor.nodeTitle.subgraph.input': '子图输入',
@@ -596,7 +603,7 @@ const zh: Record<string, string> = {
   'workflowEditor.nodeDesc.prompt.assemble':
     '按默认流水线的方式构建完整的、可直接发给服务商的提示词：角色卡、预设、命中的世界书条目、聊天历史、记忆块与预算裁剪。',
   'workflowEditor.nodeDesc.llm.sample':
-    '用消息数组调用模型。位于主输出路径时回复实时流入聊天；接在 Signal 之后则作为旁路调用（如规划器或后台任务）。配置可加重试、备用连接与校验器（含纠正性重试）；全部失败后错误从 error 端口输出。',
+    '用消息数组调用模型。位于主输出路径时回复实时流入聊天；接在 Signal 之后则作为旁路调用（如规划器或后台任务）。配置可加重试、备用连接与校验器（含纠正性重试）；全部失败后错误从 error 端口输出。设置 api_preset_id 可让本次调用改用某个已保存的连接（其自有的服务商/模型/速率限制）而非本回合的连接——适用于需要专属模型的旁路调用。',
   'workflowEditor.nodeDesc.parse.response':
     '后处理原始回复：剥离思维链、提取 rpt 事件与 MVU 变量指令，并计算本回合的缓存指标。',
   'workflowEditor.nodeDesc.apply.state':
@@ -616,7 +623,7 @@ const zh: Record<string, string> = {
   'workflowEditor.nodeDesc.tool.startDuel':
     '用队伍的 MVU 构筑开始一场卡组决斗（敌人来自接入的 cue 名单），并把会话切到决斗模式。无法构建时从 error 端口输出。',
   'workflowEditor.nodeDesc.tool.lorebookSearch':
-    '用接入的查询文本对会话的世界书做关键词检索（与提示词组装同一套匹配器），把命中的条目内容合并为一段文本输出。配置可按世界书名称过滤只检索一部分世界书，并限制输出文本块的最大长度——两者都用于压低旁路调用的开销。',
+    '用接入的查询文本对会话的世界书做关键词检索（与提示词组装同一套匹配器），把命中的条目内容合并为一段文本输出，并把命中的条目以行的形式输出。把一个世界书子集（如来自「选择世界书」）接入 books，即可只检索这些世界书而非全部会话世界书。配置还可按名称过滤只检索一部分世界书，并限制输出文本块的最大长度——两者都用于压低旁路调用的开销。',
   'workflowEditor.nodeDesc.control.if':
     '对输入值执行谓词判断（可用配置的 path 深入取值），恰好触发 then 或 else 之一；未触发的分支被剪掉。',
   'workflowEditor.nodeDesc.control.switch':
@@ -640,9 +647,23 @@ const zh: Record<string, string> = {
   'workflowEditor.nodeDesc.context.history':
     '最近 N 个楼层，同时输出 User:/Assistant: 格式的文本记录和按角色打标的消息列表，回复已剥离思维链。配置可只保留用户或 AI 一侧（同时收窄两个输出）。',
   'workflowEditor.nodeDesc.context.card':
-    '角色卡的某一叙事字段（description/personality/scenario/first_mes/name），或将 field 设为 all 时把它们合并为带标签的文本块。',
+    '角色卡的某一叙事字段（description/personality/scenario/first_mes/name），或将 field 设为 all 时把它们合并为带标签的文本块。设置 expand: true 会像组装提示词路径一样对字段文本运行上下文宏（{{user}}/{{char}}/{{getvar}}）和 EJS——手工拼装主提示词时需要开启。',
   'workflowEditor.nodeDesc.context.persona':
-    '当前用户人设的名称与描述——即角色卡/人设配对中 {{user}} 一侧，单独拆出以便旁路调用不必接入整个「上下文」。',
+    '当前用户人设的名称与描述——即角色卡/人设配对中 {{user}} 一侧，单独拆出以便旁路调用不必接入整个「上下文」。expand: true 会像「角色卡字段」一样对描述做宏/EJS 展开。',
+  'workflowEditor.nodeDesc.context.action':
+    '用户当前待回应的输入——本回合正在回答的那条消息。历史记录节点只能看到已落库的楼层，因此手工拼装的主提示词必须接入此节点作为最后一条 user 消息。',
+  'workflowEditor.nodeDesc.context.params':
+    '当前预设的采样参数，并应用与组装提示词路径相同的 FSM 模式输出上限。凡是不经过「组装提示词」而手工拼装提示词的主路径，都要把它接入「采样」的 params——params 不能悬空。',
+  'workflowEditor.nodeDesc.context.refresh':
+    '在图中途重新读取上下文包，使已经写入楼层变量（「保存变量」/「设置变量」）的分支能被下游看到，而不是「上下文」拿到的旧快照。把写入节点的 done 输出接到 after，让新的读取排在写入落地之后；新上下文包从 gen 输出。',
+  'workflowEditor.nodeDesc.lorebook.select':
+    '从会话的世界书（及其条目）中挑出一个子集，作为 Lore 值输出——确定性、不做关键词扫描。books 按名称过滤保留哪些世界书；entries 只保留 comment 命中的条目；exclude_entries 在此之后剔除命中的条目（例如“设定类世界书，但不含战斗规则”）。输出的世界书是深拷贝——对其过滤绝不影响会话世界书。',
+  'workflowEditor.nodeDesc.lorebook.entries':
+    '从一个 Lore 子集（books 未接线时为会话世界书）取出条目内容，输出一段原始文本块与命中的条目行——不做关键词扫描。constant_only 只保留常驻条目；filter 按 comment 收窄；max_chars 限制文本块长度。已禁用的条目始终跳过。',
+  'workflowEditor.nodeDesc.prompt.preset':
+    '把「组装提示词」的各个原料暴露为端口：接入 history、worldInfo、memory 或 action 即可覆盖对应部分，或设置 preset_id 改用另一个已保存的预设来组装。任何未接入的部分沿用默认计算，因此什么都不接时与「组装提示词」完全一致。这是旁路调用（世界推进/剧情推进）用自己的预设和世界书子集构建自身主提示词的方式。',
+  'workflowEditor.nodeDesc.messages.trim':
+    '用与组装提示词路径相同的裁剪器把消息列表裁到 token 预算内（丢弃最旧的回合，保留系统前缀与最后一回合）。budget_tokens 为 0/未设时使用会话的最大上下文 token。在手工构建消息（「消息列表」/「合并消息」）之后使用，可让过长的旁路提示词仍能塞下。',
   'workflowEditor.nodeDesc.memory.query':
     '按接入的任意查询文本召回记忆，而不是扫描当前回合的聊天内容——供规划器等旁路分支按特定主题召回记忆。仅做关键词排序（vector/hybrid 集合会被降级为关键词排序）；mode 为 llm 的集合会被整体跳过，与标准召回一致。把输出接入模型调用即可在此基础上叠加自定义重排序提示词。',
   'workflowEditor.nodeDesc.subgraph.call':
@@ -705,6 +726,31 @@ const zh: Record<string, string> = {
   'workflowEditor.portDesc.merge.messages.d': '第四个消息列表',
   'workflowEditor.portDesc.merge.messages.messages': '拼接后的消息列表',
   'workflowEditor.portDesc.mvu.set.value': '要写入的值（优先于配置的值）',
+  'workflowEditor.portDesc.context.action.text': '待回应的用户消息文本',
+  'workflowEditor.portDesc.context.params.params': '接入「采样」params 输入的采样参数',
+  // 写入节点的排序专用输出（接到「刷新上下文」的 after）。
+  'workflowEditor.portDesc.vars.save.done': '写入落地后触发（仅用于排序）——接到「刷新上下文」的 after',
+  'workflowEditor.portDesc.mvu.set.done': '写入落地后触发（仅用于排序）——接到「刷新上下文」的 after',
+  // context.refresh
+  'workflowEditor.portDesc.context.refresh.after': '仅用于排序：把写入节点的 done 接到这里，让刷新排在写入之后',
+  'workflowEditor.portDesc.context.refresh.gen': '重新读取得到的新上下文包',
+  // lorebook.select / lorebook.entries
+  'workflowEditor.portDesc.lorebook.select.books': '选出的世界书（深拷贝子集）',
+  'workflowEditor.portDesc.lorebook.entries.books': '可选：要读取的 Lore 子集（未接线时为会话世界书）',
+  'workflowEditor.portDesc.lorebook.entries.block': '条目内容合并成的一段文本块',
+  'workflowEditor.portDesc.lorebook.entries.entries': '命中的条目，以 {comment, content} 行输出',
+  // tool.lorebookSearch 新增
+  'workflowEditor.portDesc.tool.lorebookSearch.books': '可选：要检索的 Lore 子集（未接线时为会话世界书）',
+  'workflowEditor.portDesc.tool.lorebookSearch.entries': '命中的条目，以 {comment, content} 行输出',
+  // prompt.preset
+  'workflowEditor.portDesc.prompt.preset.history': '覆盖聊天历史（逐条原样使用；action 追加在最后）',
+  'workflowEditor.portDesc.prompt.preset.worldInfo': '覆盖世界信息块（跳过关键词扫描）',
+  'workflowEditor.portDesc.prompt.preset.memory': '拼入提示词尾部的记忆文本（可选）',
+  'workflowEditor.portDesc.prompt.preset.action': '覆盖待回应的用户输入（最后一条消息）',
+  'workflowEditor.portDesc.prompt.preset.sendMessages': '可直接发给服务商的确切消息数组',
+  'workflowEditor.portDesc.prompt.preset.params': '所选预设的采样参数',
+  // messages.trim
+  'workflowEditor.portDesc.messages.trim.messages': '要裁剪的消息列表（也是裁剪后的结果）',
   'workflowEditor.portDesc.subgraph.input.value': '所配置槽位对应的边界值',
   'workflowEditor.portDesc.subgraph.output.value': '要在所配置槽位上报出的值',
   'workflowEditor.portDesc.subgraph.call.gen': '传给子图 gen 槽位的边界输入',

@@ -1,6 +1,7 @@
 import { createRegistry } from '../registry'
 import {
   inputContext,
+  contextRefresh,
   memoryRecallNode,
   promptAssemble,
   llmSample,
@@ -10,13 +11,21 @@ import {
   memoryCompact
 } from './generationNodes'
 import { controlIf, controlSwitch, controlWhen } from './controlNodes'
-import { textTemplate, promptMessages, mergeMessages } from './messageNodes'
+import { textTemplate, promptMessages, mergeMessages, messagesTrim } from './messageNodes'
 import { mvuSet } from './mvuNodes'
 import { utilLog } from './utilNodes'
 import { memoryGate, memoryExtract, memoryWrite, memoryQuery } from './memoryNodes'
 import { toolStartCombat, toolStartDuel, toolLorebookSearch } from './toolNodes'
+import { lorebookSelect, lorebookEntries } from './lorebookNodes'
+import { promptPreset } from './presetNodes'
 import { varsGet, varsSave } from './varsNodes'
-import { contextHistory, contextCard, contextPersona } from './contextNodes'
+import {
+  contextHistory,
+  contextCard,
+  contextPersona,
+  contextAction,
+  contextParams
+} from './contextNodes'
 import {
   subgraphInput,
   subgraphOutput,
@@ -30,6 +39,7 @@ import {
  *  — see spec §14 extensibility. */
 export const builtinRegistry = createRegistry([
   inputContext,
+  contextRefresh,
   memoryRecallNode,
   promptAssemble,
   llmSample,
@@ -43,6 +53,7 @@ export const builtinRegistry = createRegistry([
   textTemplate,
   promptMessages,
   mergeMessages,
+  messagesTrim,
   mvuSet,
   utilLog,
   memoryGate,
@@ -52,11 +63,16 @@ export const builtinRegistry = createRegistry([
   toolStartCombat,
   toolStartDuel,
   toolLorebookSearch,
+  lorebookSelect,
+  lorebookEntries,
+  promptPreset,
   varsGet,
   varsSave,
   contextHistory,
   contextCard,
   contextPersona,
+  contextAction,
+  contextParams,
   subgraphInput,
   subgraphOutput,
   subgraphCall,

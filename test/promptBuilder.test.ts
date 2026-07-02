@@ -856,3 +856,96 @@ describe('buildPrompt — recalled memory tail (§16.1)', () => {
     expect(messages.some((m) => m.content.includes('[Earlier events]'))).toBe(false)
   })
 })
+
+// prompt.preset composer (context-epochs plan §3): the historyOverride / worldInfoOverride args on
+// buildPrompt. These are the ports assemblePrompt threads through; verified at the pure buildPrompt
+// level. (No-override parity is the generateParity*.test.ts gate, left untouched.)
+describe('buildPrompt — historyOverride / worldInfoOverride', () => {
+  beforeAll(async () => {
+    await initTemplates()
+  })
+
+  it('historyOverride lands VERBATIM (no regex/macro pass); the appended ACTION still gets the depth-0 regex pass', () => {
+    const rule = {
+      id: 'r1',
+      scriptName: 'blank-user',
+      source: '^([\\s\\S]*)$',
+      flags: 'g',
+      replace: '<|X|>',
+      placement: [1],
+      disabled: false,
+      markdownOnly: false,
+      promptOnly: true,
+      trimStrings: [],
+      minDepth: null,
+      maxDepth: null
+    }
+    const messages = buildPrompt({
+      card: card(),
+      preset: preset([blk('chat_history')]),
+      lorebooks: [],
+      // floors would normally drive history — the override replaces them entirely.
+      floors: [floor(0, 'ignored', 'ignored reply')],
+      userAction: 'the action',
+      // A user message that WOULD be blanked by the prompt-regex if it ran; verbatim means it doesn't.
+      historyOverride: [
+        { role: 'user', content: 'verbatim user' },
+        { role: 'assistant', content: 'verbatim reply' }
+      ],
+      promptRegex: [rule]
+    })
+    // Override content is present unchanged (not '<|X|>'), floor content is absent.
+    expect(messages.some((m) => m.content === 'verbatim user')).toBe(true)
+    expect(messages.some((m) => m.content === 'verbatim reply')).toBe(true)
+    expect(messages.some((m) => m.content === 'ignored')).toBe(false)
+    // The pending action is the final user message (L4-last) and — unlike the pre-processed prior
+    // turns — is treated exactly like the default path's live turn: prompt regex runs on it at
+    // depth 0 (this rule blanks it), then macros. Review fix: without this, a depth-0 rule
+    // targeting the live input would silently stop working on the composed-prompt path.
+    expect(last(messages)).toEqual({ role: 'user', content: '<|X|>' })
+  })
+
+  it('historyOverride action stays untouched when no prompt regex is configured', () => {
+    const messages = buildPrompt({
+      card: card(),
+      preset: preset([blk('chat_history')]),
+      lorebooks: [],
+      floors: [],
+      userAction: 'the action',
+      historyOverride: [{ role: 'user', content: 'prior turn' }]
+    })
+    expect(last(messages)).toEqual({ role: 'user', content: 'the action' })
+  })
+
+  it('historyOverride turns are markHistory-tagged so fitToBudget trims the oldest ones', () => {
+    const messages = buildPrompt({
+      card: card(),
+      preset: preset([blk('chat_history')]),
+      lorebooks: [],
+      floors: [],
+      userAction: 'latest',
+      historyOverride: [
+        { role: 'user', content: 'O'.repeat(200) },
+        { role: 'assistant', content: 'A'.repeat(200) }
+      ]
+    })
+    const { messages: fit, dropped } = fitToBudget(messages, 5)
+    expect(dropped).toBeGreaterThan(0) // tagged history was trimmable
+    expect(last(fit).content).toBe('latest') // final action always kept
+  })
+
+  it('worldInfoOverride replaces the World Info block; no scan entries needed', () => {
+    const messages = buildPrompt({
+      card: card(),
+      preset: preset([blk('world_info'), blk('chat_history')]),
+      // The override path passes matchedEntries: [] upstream; here matchedEntries: [] emulates that.
+      lorebooks: [book([{ keys: ['dragon'], content: 'SCANNED LORE', constant: true }])],
+      matchedEntries: [],
+      floors: [floor(0, '', 'hi')],
+      userAction: 'go',
+      worldInfoOverride: 'OVERRIDE WORLD INFO'
+    })
+    expect(messages.some((m) => m.content === 'World Info:\nOVERRIDE WORLD INFO')).toBe(true)
+    expect(messages.some((m) => m.content.includes('SCANNED LORE'))).toBe(false)
+  })
+})

@@ -74,7 +74,15 @@ export const varsSave: NodeImpl = {
     { name: 'value', type: 'Any' },
     { name: 'when', type: 'Signal' }
   ],
-  outputs: [{ name: 'error', type: 'Error' }],
+  // `done: Any` is an ordering-only output: wire it into a downstream `context.refresh`'s `after`
+  // port so the fresh read is sequenced AFTER this write lands (context epochs). It is emitted only
+  // on paths that COMPLETED a write — the no-value early return and the no-floors skip emit nothing
+  // (a dead `done` edge is correct there). It's `Any`, not `Signal`, so a dead `done` edge doesn't
+  // gate the refresh off (the refresh's live `gen` edge keeps it running — see context.refresh).
+  outputs: [
+    { name: 'done', type: 'Any' },
+    { name: 'error', type: 'Error' }
+  ],
   configSchema: varsConfig,
   run: (_ctx, inputs, node) => {
     if (inputs.value === undefined) return { outputs: {} }
@@ -85,7 +93,7 @@ export const varsSave: NodeImpl = {
       const kv = getChatCardVars(gen.profileId, gen.chatId)
       setPath(kv, cfg.path, inputs.value)
       setChatCardVars(gen.profileId, gen.chatId, kv)
-      return { outputs: {} }
+      return { outputs: { done: true } }
     }
     const root = toParts(cfg.path)[0]
     if (root === 'stat_data' || root === 'delta_data') {
@@ -103,6 +111,6 @@ export const varsSave: NodeImpl = {
     setPath(variables, cfg.path, inputs.value)
     last.variables = variables
     saveFloor(gen.profileId, gen.chatId, last)
-    return { outputs: {} }
+    return { outputs: { done: true } }
   }
 }

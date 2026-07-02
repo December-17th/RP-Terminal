@@ -26,7 +26,9 @@ import { varsGet, varsSave } from '../../src/main/services/nodes/builtin/varsNod
 import {
   contextHistory,
   contextCard,
-  contextPersona
+  contextPersona,
+  contextAction,
+  contextParams
 } from '../../src/main/services/nodes/builtin/contextNodes'
 import { memoryQuery } from '../../src/main/services/nodes/builtin/memoryNodes'
 import { NodeRunFailure, RunContext, NodeImpl } from '../../src/main/services/nodes/types'
@@ -158,7 +160,8 @@ describe('vars.save', () => {
       { gen, value: 'new note' },
       meta(varsSave, 'n1', { path: 'custom.note' })
     )
-    expect(r).toEqual({ outputs: {} })
+    // context-epochs plan §1: a completed write now emits the `done: Any` ordering output.
+    expect(r).toEqual({ outputs: { done: true } })
     expect(floorSvc.saveFloor).toHaveBeenCalledTimes(1)
     const [profileId, chatId, savedFloor] = floorSvc.saveFloor.mock.calls[0]
     expect(profileId).toBe('p1')
@@ -208,7 +211,7 @@ describe('vars.save', () => {
       { gen, value: 4 },
       meta(varsSave, 'n1', { scope: 'session', path: 'world.month' })
     )
-    expect(r).toEqual({ outputs: {} })
+    expect(r).toEqual({ outputs: { done: true } })
     expect(chatVarsSvc.setChatCardVars).toHaveBeenCalledWith('p1', 'c1', {
       world: { month: 4 },
       other: 'kept'
@@ -273,6 +276,73 @@ describe('context.persona', () => {
   it('case 10: name + description', () => {
     const r = contextPersona.run(ctx, { gen }, meta(contextPersona, 'n1', {}))
     expect(r).toEqual({ outputs: { name: 'Ash', text: 'A wandering trainer.' } })
+  })
+})
+
+// Decomposed-default additions: expand flags + the two new extractors.
+// interpolate() needs globals + userName + card name on gen (messageNodes.test.ts fixture shape).
+const genExpand = {
+  ...gen,
+  userAction: 'Attack the gym!',
+  globals: {},
+  workingVars: { mood: 'stormy' },
+  settings: { ...gen.settings, templates: { enabled: true } },
+  card: {
+    data: { ...gen.card.data, description: '{{char}} sizes up {{user}}. Mood: {{getvar::mood}}.' }
+  },
+  preset: { parameters: { temperature: 0.7, max_tokens: 2000 } },
+  fsmEnabled: false,
+  modeConfig: { max_output_tokens: 500 }
+}
+
+describe('context.card / context.persona expand flag', () => {
+  it('expand: true runs macros over the card field ({{char}}/{{user}}/{{getvar}})', () => {
+    const r = contextCard.run(ctx, { gen: genExpand }, meta(contextCard, 'n1', { expand: true }))
+    expect(r).toEqual({ outputs: { text: 'Misty sizes up Ash. Mood: stormy.' } })
+  })
+
+  it('expand unset leaves the field raw (macros untouched)', () => {
+    const r = contextCard.run(ctx, { gen: genExpand }, meta(contextCard, 'n1', {}))
+    expect(r).toEqual({ outputs: { text: '{{char}} sizes up {{user}}. Mood: {{getvar::mood}}.' } })
+  })
+
+  it('persona expand: true expands the description', () => {
+    const g = {
+      ...genExpand,
+      settings: { ...genExpand.settings, persona: { description: 'Trainer of {{char}}.' } }
+    }
+    const r = contextPersona.run(ctx, { gen: g }, meta(contextPersona, 'n1', { expand: true }))
+    expect(r).toEqual({ outputs: { name: 'Ash', text: 'Trainer of Misty.' } })
+  })
+})
+
+describe('context.action', () => {
+  it('returns the pending user action text', () => {
+    const r = contextAction.run(ctx, { gen: genExpand }, meta(contextAction, 'n1'))
+    expect(r).toEqual({ outputs: { text: 'Attack the gym!' } })
+  })
+})
+
+describe('context.params', () => {
+  it('classic mode: the preset parameters pass through unchanged', () => {
+    const r = contextParams.run(ctx, { gen: genExpand }, meta(contextParams, 'n1'))
+    expect(r).toEqual({ outputs: { params: { temperature: 0.7, max_tokens: 2000 } } })
+  })
+
+  it('FSM mode caps max_tokens at the mode limit, never above the preset', () => {
+    const fsm = { ...genExpand, fsmEnabled: true, modeConfig: { max_output_tokens: 500 } }
+    const r = contextParams.run(ctx, { gen: fsm }, meta(contextParams, 'n1'))
+    expect(r).toEqual({ outputs: { params: { temperature: 0.7, max_tokens: 500 } } })
+
+    // Preset BELOW the mode cap: the preset value wins.
+    const low = { ...fsm, preset: { parameters: { max_tokens: 300 } } }
+    const r2 = contextParams.run(ctx, { gen: low }, meta(contextParams, 'n1'))
+    expect(r2).toEqual({ outputs: { params: { max_tokens: 300 } } })
+
+    // Preset without max_tokens: the mode limit applies.
+    const unset = { ...fsm, preset: { parameters: { temperature: 1 } } }
+    const r3 = contextParams.run(ctx, { gen: unset }, meta(contextParams, 'n1'))
+    expect(r3).toEqual({ outputs: { params: { temperature: 1, max_tokens: 500 } } })
   })
 })
 

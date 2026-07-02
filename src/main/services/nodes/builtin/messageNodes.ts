@@ -1,10 +1,11 @@
 import { z } from 'zod'
 import { expandMacros } from '../../../../shared/macros'
 import { evalTemplate, buildTemplateContext } from '../../templateService'
-import { ChatMessage } from '../../promptBuilder'
+import { ChatMessage, fitToBudget } from '../../promptBuilder'
 import { providerShape } from '../../generation/providerShape'
 import { GenContext } from '../../generation/types'
 import { NodeImpl } from '../types'
+import { log } from '../../logService'
 
 /**
  * Text-authoring built-in nodes (Phase 2b-2 task 5): renders card/workflow-authored templates
@@ -118,6 +119,37 @@ export const promptMessages: NodeImpl = {
       content: interpolate(m.content, slotsOf(inputs), gen)
     }))
     return { outputs: { messages: gen ? providerShape(gen.settings, rows) : rows } }
+  }
+}
+
+const trimConfig = z.object({
+  /** Token budget the message array must fit under. 0/unset → gen.settings.generation
+   *  max_context_tokens (the SAME default assemble.ts:196 uses), falling back to 200000. */
+  budget_tokens: z.number().int().min(0).optional()
+})
+
+/** Trims a Messages array to a token budget via the shared fitToBudget (the same trimmer assemble
+ *  uses). Hand-built arrays (prompt.messages / merge.messages) lack fitToBudget's non-enumerable
+ *  HISTORY_TAG, so trimming falls back to its legacy path — keep the leading system prefix, drop the
+ *  oldest from the first non-system message, always keep the last turn. Messages that came from
+ *  prompt.preset's history path ARE tagged, so those trim on the preferred history-only path. */
+export const messagesTrim: NodeImpl = {
+  type: 'messages.trim',
+  title: 'Trim Messages',
+  inputs: [
+    { name: 'gen', type: 'Context' },
+    { name: 'messages', type: 'Messages' }
+  ],
+  outputs: [{ name: 'messages', type: 'Messages' }],
+  configSchema: trimConfig,
+  run: (_ctx, inputs, node) => {
+    const cfg = (node?.config ?? {}) as z.infer<typeof trimConfig>
+    const gen = inputs.gen as GenContext
+    const messages = (inputs.messages as ChatMessage[] | undefined) ?? []
+    const budget = cfg.budget_tokens || gen.settings.generation?.max_context_tokens || 200000
+    const { messages: trimmed, dropped } = fitToBudget(messages, budget)
+    if (dropped > 0) log('info', `messages.trim: budget ${budget} tok — dropped ${dropped} message(s)`)
+    return { outputs: { messages: trimmed } }
   }
 }
 

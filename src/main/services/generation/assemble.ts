@@ -18,8 +18,26 @@ import {
 } from '../../../shared/thRuntime/shapes'
 import { log } from '../logService'
 import { LorebookEntry, getRpExt } from '../../types/character'
-import { PresetParameters } from '../../types/preset'
+import { PresetParameters, Preset } from '../../types/preset'
 import { GenContext } from './types'
+
+/**
+ * prompt.preset composer overrides (context-epochs plan §3): each field, when present, replaces one
+ * ingredient of the assembled prompt so a workflow can compose a per-call prompt from components.
+ * With NO overrides (the default-graph path) every branch below is byte-identical to before — the
+ * parity gate (test/generation/generateParity*.test.ts).
+ */
+export interface AssembleOverrides {
+  /** Use this preset skeleton + params in place of `ctx.preset` everywhere the preset is read. */
+  preset?: Preset
+  /** Verbatim history messages (pre-processed — no regex/macro passes); the pending action is
+   *  appended after them. */
+  history?: ChatMessage[]
+  /** Replace ONLY the top-level World Info block; the internal keyword scan is skipped. */
+  worldInfo?: string
+  /** The pending user action for L4 placement (flows into buildPrompt's userAction). */
+  action?: string
+}
 
 /**
  * Combine the FSM mode addendum with a World Card's custom agent prompts (Track S §3).
@@ -98,16 +116,15 @@ export const matchWorldInfo = (ctx: GenContext): LorebookEntry[] => {
 export const assemblePrompt = (
   ctx: GenContext,
   matchedEntries: LorebookEntry[],
-  memoryBlock: string
+  memoryBlock: string,
+  overrides?: AssembleOverrides
 ): { sendMessages: ChatMessage[]; params: PresetParameters } => {
   const {
     profileId,
     chatId,
-    userAction,
     chat,
     card,
     settings,
-    preset,
     fsmEnabled,
     mode,
     modeConfig,
@@ -123,6 +140,10 @@ export const assemblePrompt = (
     scanDepth,
     maxRecursion
   } = ctx
+  // Overrides (prompt.preset composer, plan §3): with none present, these resolve to the exact
+  // ctx values used before, so the assembled output stays byte-identical (parity gate).
+  const preset = overrides?.preset ?? ctx.preset
+  const userAction = overrides?.action ?? ctx.userAction
 
   const built = buildPrompt({
     card,
@@ -131,6 +152,8 @@ export const assemblePrompt = (
     floors,
     userAction,
     userName,
+    historyOverride: overrides?.history,
+    worldInfoOverride: overrides?.worldInfo,
     persona: {
       description: settings.persona?.description || '',
       inject: settings.persona?.inject !== false,

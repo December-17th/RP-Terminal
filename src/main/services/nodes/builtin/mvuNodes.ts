@@ -32,7 +32,12 @@ export const mvuSet: NodeImpl = {
     { name: 'value', type: 'Any' },
     { name: 'when', type: 'Signal' }
   ],
-  outputs: [],
+  // `done: Any` is an ordering-only output: wire it into a downstream `context.refresh`'s `after`
+  // port so the fresh read is sequenced AFTER this write lands (context epochs). It is emitted only
+  // on the path that COMPLETED the write — the no-value early return emits nothing (a dead `done`
+  // edge is correct there: nothing was written). It's `Any`, not `Signal`, so a dead `done` edge
+  // doesn't gate the refresh off (the refresh's live `gen` edge keeps it running).
+  outputs: [{ name: 'done', type: 'Any' }],
   configSchema: setConfig,
   run: (ctx, inputs, node) => {
     const cfg = node.config as z.infer<typeof setConfig>
@@ -44,6 +49,7 @@ export const mvuSet: NodeImpl = {
       applyVariableOps(ctx.profileId!, ctx.chatId!, last.floor, [
         { op: 'replace', path: toPointer(cfg.path), value }
       ])
+      return { outputs: { done: true } }
     }
     return { outputs: {} }
   }
