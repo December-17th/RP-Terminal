@@ -19,6 +19,7 @@ import {
   getWorkflowById,
   saveWorkflow,
   createWorkflowFromDoc,
+  createWorkflow,
   cloneWorkflow,
   deleteWorkflow,
   importWorkflowFromFile,
@@ -389,5 +390,115 @@ describe('workflowService selection + resolution', () => {
     expect(selection.global).toBeNull()
     expect(selection.worlds[characterId]).toBeUndefined()
     expect(mockChatService.removeWorkflowIdFromChats).toHaveBeenCalledWith(profileId, created.id)
+  })
+
+  it('resolveWorkflowDoc falls through past a subgraph-kind doc to the next tier (sub-graph nodes v1 plan §5)', () => {
+    const subgraph = createWorkflowFromDoc(profileId, {
+      id: 'placeholder',
+      name: 'A Sub-graph',
+      version: 1,
+      schemaVersion: 1,
+      kind: 'subgraph',
+      nodes: [
+        { id: 'bin', type: 'subgraph.input', config: { slot: 'in1' } },
+        { id: 'bout', type: 'subgraph.output', config: { slot: 'out1' } }
+      ],
+      edges: [{ from: { node: 'bin', port: 'value' }, to: { node: 'bout', port: 'value' } }]
+    })
+    expect(subgraph.ok).toBe(true)
+    if (!subgraph.ok) return
+
+    const fallback = createWorkflowFromDoc(profileId, minimalDoc({ name: 'Fallback Beneath Sub' }))
+    expect(fallback.ok).toBe(true)
+    if (!fallback.ok) return
+
+    mockChatService.getChat.mockReturnValue(null)
+    mockChatService.getChatWorkflowId.mockReturnValue(subgraph.id)
+    setGlobalWorkflow(profileId, fallback.id)
+
+    const result = resolveWorkflowDoc(profileId, chatId)
+    expect(result.id).toBe(fallback.id)
+    expect(result.doc.kind).not.toBe('subgraph')
+
+    setGlobalWorkflow(profileId, null)
+    mockChatService.getChatWorkflowId.mockReturnValue(null)
+  })
+
+  it('listWorkflows carries kind: "subgraph" for a saved sub-graph doc, and omits kind for a normal turn doc', () => {
+    const subgraph = createWorkflowFromDoc(profileId, {
+      id: 'placeholder',
+      name: 'Listed Sub-graph',
+      version: 1,
+      schemaVersion: 1,
+      kind: 'subgraph',
+      nodes: [{ id: 'bin', type: 'subgraph.input', config: { slot: 'in1' } }],
+      edges: []
+    })
+    const turn = createWorkflowFromDoc(profileId, minimalDoc({ name: 'Listed Turn Doc' }))
+    expect(subgraph.ok && turn.ok).toBe(true)
+    if (!subgraph.ok || !turn.ok) return
+
+    const list = listWorkflows(profileId)
+    expect(list.find((w) => w.id === subgraph.id)?.kind).toBe('subgraph')
+    expect(list.find((w) => w.id === turn.id)?.kind).toBeUndefined()
+  })
+
+  it('save gate accepts a valid subgraph doc with no main-output node', () => {
+    const created = createWorkflowFromDoc(profileId, minimalDoc({ name: 'To Become Sub-graph' }))
+    expect(created.ok).toBe(true)
+    if (!created.ok) return
+
+    const subgraphDoc: WorkflowDoc = {
+      id: created.id,
+      name: 'To Become Sub-graph',
+      version: 1,
+      schemaVersion: 1,
+      kind: 'subgraph',
+      nodes: [
+        { id: 'bin', type: 'subgraph.input', config: { slot: 'in1' } },
+        { id: 'bout', type: 'subgraph.output', config: { slot: 'out1' } }
+      ],
+      edges: [{ from: { node: 'bin', port: 'value' }, to: { node: 'bout', port: 'value' } }]
+    }
+    const result = saveWorkflow(profileId, created.id, subgraphDoc)
+    expect(result.ok).toBe(true)
+  })
+
+  it('createWorkflow(kind: "subgraph") saves a valid starter sub-graph doc (one boundary in/out, no edges)', () => {
+    const result = createWorkflow(profileId, 'subgraph')
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    const doc = getWorkflowById(profileId, result.id)
+    expect(doc?.kind).toBe('subgraph')
+    expect(doc?.name).toBe('New Sub-graph')
+    expect(doc?.nodes.map((n) => n.type).sort()).toEqual(['subgraph.input', 'subgraph.output'])
+    expect(doc?.edges).toEqual([])
+  })
+
+  it('createWorkflow defaults to kind "subgraph" when no kind is given', () => {
+    const result = createWorkflow(profileId)
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(getWorkflowById(profileId, result.id)?.kind).toBe('subgraph')
+  })
+
+  it('save gate rejects a turn doc (kind absent) containing boundary nodes (BOUNDARY_IN_TURN)', () => {
+    const created = createWorkflowFromDoc(profileId, minimalDoc({ name: 'Turn With Boundary' }))
+    expect(created.ok).toBe(true)
+    if (!created.ok) return
+
+    const badDoc: WorkflowDoc = {
+      id: created.id,
+      name: 'Turn With Boundary',
+      version: 1,
+      schemaVersion: 1,
+      nodes: [
+        { id: 'n1', type: 'input.context', isMainOutput: true },
+        { id: 'bin', type: 'subgraph.input', config: { slot: 'in1' } }
+      ],
+      edges: []
+    }
+    const result = saveWorkflow(profileId, created.id, badDoc)
+    expect(result.ok).toBe(false)
   })
 })

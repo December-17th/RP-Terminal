@@ -15,9 +15,15 @@ declare global {
           configSchema?: Record<string, unknown>
         }>
       >
-      listWorkflows: (
-        profileId: string
-      ) => Promise<{ id: string; name: string; description?: string; builtin?: boolean }[]>
+      listWorkflows: (profileId: string) => Promise<
+        {
+          id: string
+          name: string
+          description?: string
+          builtin?: boolean
+          kind?: 'turn' | 'subgraph'
+        }[]
+      >
       getWorkflow: (profileId: string, id: string) => Promise<unknown>
       saveWorkflow: (
         profileId: string,
@@ -28,6 +34,10 @@ declare global {
         profileId: string,
         sourceId: string
       ) => Promise<{ id: string; name: string; description?: string; builtin?: boolean } | null>
+      createWorkflow: (
+        profileId: string,
+        kind?: 'turn' | 'subgraph'
+      ) => Promise<{ ok: true; id: string } | { ok: false; error: string }>
       deleteWorkflow: (profileId: string, id: string) => Promise<boolean>
       getWorkflowSelection: (
         profileId: string

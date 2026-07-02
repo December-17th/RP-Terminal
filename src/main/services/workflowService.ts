@@ -15,14 +15,21 @@ import { builtinRegistry } from './nodes/builtin'
 import { DEFAULT_GRAPH } from './nodes/builtin/defaultGraph'
 import { log } from './logService'
 import { getChat, getChatWorkflowId, removeWorkflowIdFromChats } from './chatService'
+// getWorkflowById + BUILTIN_WORKFLOW_ID live in the leaf workflowStore.ts (see its header comment
+// for why) — re-exported here so every existing import of them from workflowService keeps working.
+import { BUILTIN_WORKFLOW_ID, getWorkflowById } from './workflowStore'
 
-export const BUILTIN_WORKFLOW_ID = 'default'
+export { BUILTIN_WORKFLOW_ID, getWorkflowById }
 
 export interface WorkflowSummary {
   id: string
   name: string
   description?: string
   builtin?: boolean
+  /** Absent = 'turn'. A 'subgraph' summary is a reusable sub-graph package — never a run target
+   *  (resolveWorkflowDoc/runWorkflow refuse it); the renderer excludes these from the three
+   *  turn-workflow selection dropdowns and shows a badge instead (sub-graph nodes v1 plan §5). */
+  kind?: 'turn' | 'subgraph'
 }
 
 export type WorkflowWriteResult = { ok: true; id: string } | { ok: false; error: string }
@@ -76,7 +83,12 @@ export const listWorkflows = (profileId: string): WorkflowSummary[] => {
     const id = file.replace(/\.json$/, '')
     const data = readJsonSync<WorkflowDoc>(path.join(dir, file))
     if (data)
-      out.push({ id, name: data.name || 'Untitled Workflow', description: data.description })
+      out.push({
+        id,
+        name: data.name || 'Untitled Workflow',
+        description: data.description,
+        ...(data.kind !== undefined ? { kind: data.kind } : {})
+      })
   }
   out.sort((a, b) => a.name.localeCompare(b.name))
   return [
@@ -88,12 +100,6 @@ export const listWorkflows = (profileId: string): WorkflowSummary[] => {
     },
     ...out
   ]
-}
-
-export const getWorkflowById = (profileId: string, id: string): WorkflowDoc | null => {
-  if (id === BUILTIN_WORKFLOW_ID) return DEFAULT_GRAPH
-  ensureWorkflowsDir(profileId)
-  return readJsonSync<WorkflowDoc>(workflowPath(profileId, id))
 }
 
 export const saveWorkflow = (profileId: string, id: string, raw: unknown): WorkflowWriteResult => {
@@ -114,6 +120,40 @@ export const createWorkflowFromDoc = (profileId: string, raw: unknown): Workflow
   ensureWorkflowsDir(profileId)
   writeJsonSyncAtomic(workflowPath(profileId, id), result.doc)
   return { ok: true, id }
+}
+
+/** Creates a starter doc for the given kind and saves it (sub-graph nodes v1 plan §5). Only
+ *  'subgraph' is exercised today (the editor's "New sub-graph" button) — a starter doc with one
+ *  boundary input (slot: 'gen') and one boundary output (slot: 'out1'), no edges, which already
+ *  passes validateWorkflow for a subgraph-kind doc (no main-output rule to satisfy). 'turn' is
+ *  accepted for API symmetry but is not wired to any UI affordance yet. */
+export const createWorkflow = (
+  profileId: string,
+  kind: 'turn' | 'subgraph' = 'subgraph'
+): WorkflowWriteResult => {
+  const doc =
+    kind === 'subgraph'
+      ? {
+          id: 'placeholder',
+          name: 'New Sub-graph',
+          version: 1,
+          schemaVersion: 1,
+          kind: 'subgraph' as const,
+          nodes: [
+            { id: 'in', type: 'subgraph.input', config: { slot: 'gen' } },
+            { id: 'out', type: 'subgraph.output', config: { slot: 'out1' } }
+          ],
+          edges: []
+        }
+      : {
+          id: 'placeholder',
+          name: 'New Workflow',
+          version: 1,
+          schemaVersion: 1,
+          nodes: [{ id: 'ctx', type: 'input.context', isMainOutput: true }],
+          edges: []
+        }
+  return createWorkflowFromDoc(profileId, doc)
 }
 
 /** Clones a workflow doc under a fresh id. Re-validates the assembled clone before writing —
@@ -196,7 +236,13 @@ const tierCandidates = (profileId: string, chatId: string): string[] => {
 
 /** Resolve the effective workflow for a chat: session -> world -> global -> builtin. A tier whose
  *  id no longer resolves to a valid, validating doc falls through to the next tier (never-block-
- *  a-turn) with a `log('error', ...)`. Final fallback is always the built-in default graph. */
+ *  a-turn) with a `log('error', ...)`. A tier whose id resolves to a `kind: 'subgraph'` doc ALSO
+ *  falls through (sub-graph nodes v1 plan §5) — distinct from the `!result.ok` branch above,
+ *  because a valid sub-graph doc PASSES validateWorkflowDoc by design (it skips the main-output
+ *  rule), so relying on validation failure would never catch it. This is the load-bearing guard
+ *  keeping a subgraph-kind doc out of runWorkflow/computePhases, which non-null-asserts the
+ *  main-output node and would throw a raw TypeError on one. Final fallback is always the
+ *  built-in default graph. */
 export const resolveWorkflowDoc = (
   profileId: string,
   chatId: string
@@ -215,6 +261,10 @@ export const resolveWorkflowDoc = (
         `resolveWorkflowDoc: workflow ${id} failed validation, falling through`,
         result.error
       )
+      continue
+    }
+    if (result.doc.kind === 'subgraph') {
+      log('error', `resolveWorkflowDoc: workflow ${id} is a sub-graph doc, falling through`)
       continue
     }
     return { id, doc: result.doc }
