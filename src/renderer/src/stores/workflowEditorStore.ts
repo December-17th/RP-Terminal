@@ -29,6 +29,8 @@ export interface WorkflowSummary {
   /** Absent = 'turn'. See workflowService.ts's WorkflowSummary — this is one of three
    *  independently-declared copies of this shape (sub-graph nodes v1 plan §5). */
   kind?: 'turn' | 'subgraph'
+  /** On-disk doc fails validation — resolution would skip it (see workflowService). */
+  invalid?: boolean
 }
 
 const BUILTIN_WORKFLOW_ID = 'default'

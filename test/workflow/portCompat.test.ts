@@ -18,4 +18,14 @@ describe('portCompatible', () => {
     expect(portCompatible('Error', 'Any')).toBe(true)
     expect(portCompatible('Any', 'Any')).toBe(true)
   })
+
+  it('only Signal sources may feed a Signal input (gating counts source type)', () => {
+    // An Any→Signal wire would validate yet never gate anything — the engine's signal-gating
+    // looks at the SOURCE port type — so it is rejected instead of being silently useless.
+    expect(portCompatible('Any', 'Signal')).toBe(false)
+    expect(portCompatible('Text', 'Signal')).toBe(false)
+    expect(portCompatible('Signal', 'Signal')).toBe(true)
+    // Signal→Any stays legal ("run util.log when this fires" patterns).
+    expect(portCompatible('Signal', 'Any')).toBe(true)
+  })
 })

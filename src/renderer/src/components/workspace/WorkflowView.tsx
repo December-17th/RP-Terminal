@@ -27,6 +27,8 @@ interface WorkflowSummary {
   /** Absent = 'turn'. See workflowService.ts's WorkflowSummary — this is one of three
    *  independently-declared copies of this shape (sub-graph nodes v1 plan §5). */
   kind?: 'turn' | 'subgraph'
+  /** On-disk doc fails validation — resolution would skip it (see workflowService). */
+  invalid?: boolean
 }
 
 const STATUS_COLOR: Record<TraceNode['status'], string> = {
@@ -327,6 +329,21 @@ export const WorkflowView: React.FC<{ profileId: string }> = ({ profileId }) => 
                   }}
                 >
                   {t('workflow.subgraphBadge')}
+                </span>
+              )}
+              {w.invalid && (
+                <span
+                  title={t('workflow.invalidBadgeTitle')}
+                  style={{
+                    marginLeft: 6,
+                    fontSize: 11,
+                    border: '1px solid var(--rpt-danger)',
+                    color: 'var(--rpt-danger)',
+                    borderRadius: 4,
+                    padding: '1px 5px'
+                  }}
+                >
+                  {t('workflow.invalidBadge')}
                 </span>
               )}
             </span>

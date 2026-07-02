@@ -30,6 +30,9 @@ export interface WorkflowSummary {
    *  (resolveWorkflowDoc/runWorkflow refuse it); the renderer excludes these from the three
    *  turn-workflow selection dropdowns and shows a badge instead (sub-graph nodes v1 plan §5). */
   kind?: 'turn' | 'subgraph'
+  /** The on-disk doc fails validateWorkflowDoc — selectable in the UI but resolution would skip
+   *  it (fall-through). Surfaced so the list can badge it instead of failing silently at run. */
+  invalid?: boolean
 }
 
 export type WorkflowWriteResult = { ok: true; id: string } | { ok: false; error: string }
@@ -87,7 +90,11 @@ export const listWorkflows = (profileId: string): WorkflowSummary[] => {
         id,
         name: data.name || 'Untitled Workflow',
         description: data.description,
-        ...(data.kind !== undefined ? { kind: data.kind } : {})
+        ...(data.kind !== undefined ? { kind: data.kind } : {}),
+        // Full validation per doc on every list is fine at profile scale (a handful of small
+        // JSON files); the badge is the only warning the user gets before resolution silently
+        // falls through past an invalid selection.
+        ...(validateWorkflowDoc(data).ok ? {} : { invalid: true })
       })
   }
   out.sort((a, b) => a.name.localeCompare(b.name))
@@ -163,10 +170,16 @@ export const cloneWorkflow = (profileId: string, sourceId: string): WorkflowSumm
   const source = getWorkflowById(profileId, sourceId)
   if (!source) return null
   const id = randomUUID()
+  // "X (copy)" → "X (copy 2)", never "X (copy) (copy)": strip any existing copy suffix, then
+  // pick the first free numbered name among the current summaries.
+  const base = source.name.replace(/ \(copy(?: \d+)?\)$/, '')
+  const taken = new Set(listWorkflows(profileId).map((w) => w.name))
+  let cloneName = `${base} (copy)`
+  for (let n = 2; taken.has(cloneName); n++) cloneName = `${base} (copy ${n})`
   const clone: WorkflowDoc = {
     ...structuredClone(source),
     id,
-    name: `${source.name} (copy)`
+    name: cloneName
   }
   const result = validateWorkflowDoc(clone)
   if (!result.ok) {

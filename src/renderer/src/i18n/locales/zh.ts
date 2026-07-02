@@ -504,6 +504,8 @@ const zh: Record<string, string> = {
   'workflow.trace.status.failed': '失败',
   'workflow.subgraphBadge': '子图',
   'workflow.newSubgraph': '+ 新建子图',
+  'workflow.invalidBadge': '无效',
+  'workflow.invalidBadgeTitle': '此工作流未通过校验——若被选用，生成会回退到下一层默认值',
 
   'workflowEditor.viewTitle': '工作流编辑器',
   'workflowEditor.palette': '节点',

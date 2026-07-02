@@ -22,6 +22,7 @@ declare global {
           description?: string
           builtin?: boolean
           kind?: 'turn' | 'subgraph'
+          invalid?: boolean
         }[]
       >
       getWorkflow: (profileId: string, id: string) => Promise<unknown>

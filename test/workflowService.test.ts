@@ -129,6 +129,41 @@ describe('workflowService', () => {
     expect(doc!.nodes.some((n) => n.id === 'ctx')).toBe(true)
   })
 
+  it('cloneWorkflow numbers repeat clones instead of compounding "(copy) (copy)"', () => {
+    // The earlier test already created 'Default Generation (copy)'.
+    const second = cloneWorkflow(profileId, BUILTIN_WORKFLOW_ID)
+    expect(second!.name).toBe('Default Generation (copy 2)')
+
+    // Cloning a copy strips the suffix first — never 'X (copy 2) (copy)'.
+    const third = cloneWorkflow(profileId, second!.id)
+    expect(third!.name).toBe('Default Generation (copy 3)')
+  })
+
+  it('listWorkflows flags an on-disk doc that fails validation with invalid: true', () => {
+    const dir = path.join(profileDir, 'workflows')
+    fs.mkdirSync(dir, { recursive: true })
+    const invalidId = 'invalid-listed-doc'
+    fs.writeFileSync(
+      path.join(dir, `${invalidId}.json`),
+      JSON.stringify({
+        id: invalidId,
+        name: 'Invalid Listed',
+        version: 1,
+        schemaVersion: 1,
+        nodes: [{ id: 'n1', type: 'no.such.type', isMainOutput: true }],
+        edges: []
+      })
+    )
+    const valid = createWorkflowFromDoc(profileId, minimalDoc({ name: 'Valid Listed' }))
+    expect(valid.ok).toBe(true)
+    if (!valid.ok) return
+
+    const list = listWorkflows(profileId)
+    expect(list.find((w) => w.id === invalidId)?.invalid).toBe(true)
+    expect(list.find((w) => w.id === valid.id)?.invalid).toBeUndefined()
+    fs.unlinkSync(path.join(dir, `${invalidId}.json`))
+  })
+
   it('cloneWorkflow re-validates the source doc: a hand-corrupted file on disk (structurally invalid, schemaVersion 99, no isMainOutput node) is not propagated', () => {
     const dir = path.join(profileDir, 'workflows')
     fs.mkdirSync(dir, { recursive: true })

@@ -519,6 +519,9 @@ const en: Record<string, string> = {
   'workflow.trace.status.failed': 'failed',
   'workflow.subgraphBadge': 'Sub-graph',
   'workflow.newSubgraph': '+ New sub-graph',
+  'workflow.invalidBadge': 'Invalid',
+  'workflow.invalidBadgeTitle':
+    'This workflow fails validation — if selected, generation falls back to the next tier',
 
   'workflowEditor.viewTitle': 'Workflow Editor',
   'workflowEditor.palette': 'Nodes',
