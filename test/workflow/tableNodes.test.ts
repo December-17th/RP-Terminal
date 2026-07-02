@@ -1,0 +1,214 @@
+import { describe, it, expect, beforeEach, vi } from 'vitest'
+
+// parse.extract (generic extractor) + table.apply (SQL write node) run() contract tests (issue 03).
+// table.apply's service deps are mocked — no real SQL runs (better-sqlite3 is alias-mocked). We pin:
+// silent no-op on blank sql, class-B failures (no-template / busy / bad-sql) on the error path,
+// success → appendOps floor attribution + done, and that the lock is always released.
+
+const chatSvc = vi.hoisted(() => ({ getChatTableTemplateId: vi.fn() }))
+vi.mock('../../src/main/services/chatService', () => chatSvc)
+
+const templateSvc = vi.hoisted(() => ({ getTableTemplateById: vi.fn() }))
+vi.mock('../../src/main/services/tableTemplateService', () => templateSvc)
+
+const sqlSvc = vi.hoisted(() => ({
+  applySqlBatch: vi.fn(),
+  TableSqlError: class TableSqlError extends Error {
+    index: number
+    constructor(message: string, index = -1) {
+      super(message)
+      this.name = 'TableSqlError'
+      this.index = index
+    }
+  }
+}))
+vi.mock('../../src/main/services/tableSql', () => sqlSvc)
+
+const opsSvc = vi.hoisted(() => ({
+  appendOps: vi.fn(),
+  tryBeginTableWrite: vi.fn(),
+  endTableWrite: vi.fn()
+}))
+vi.mock('../../src/main/services/tableOpsService', () => opsSvc)
+
+import { parseExtract } from '../../src/main/services/nodes/builtin/parseNodes'
+import { tableApply } from '../../src/main/services/nodes/builtin/tableNodes'
+import { NodeRunFailure, RunContext, NodeImpl } from '../../src/main/services/nodes/types'
+
+const ctx: RunContext = {
+  signal: new AbortController().signal,
+  streamMain: () => {},
+  emitPanel: () => {},
+  getNodeState: () => undefined,
+  setNodeState: () => {}
+}
+
+const meta = (impl: NodeImpl, id: string, rawConfig: Record<string, unknown> = {}) => ({
+  id,
+  config: impl.configSchema ? (impl.configSchema.parse(rawConfig) as Record<string, unknown>) : {}
+})
+
+describe('parse.extract (tag mode)', () => {
+  it('extracts all <tag>…</tag> occurrences; first + all + found signal', () => {
+    const text = 'x <char_info>Alice</char_info> y <char_info>Bob</char_info> z'
+    const r = parseExtract.run(ctx, { text }, meta(parseExtract, 'n', { tag: 'char_info' }))
+    expect(r).toEqual({
+      outputs: { first: 'Alice', all: ['Alice', 'Bob'] },
+      signals: ['found']
+    })
+  })
+
+  it('is case-insensitive and dotall (matches across newlines)', () => {
+    const text = '<SQL>\nINSERT INTO a\nVALUES (1)\n</sql>'
+    const r = parseExtract.run(ctx, { text }, meta(parseExtract, 'n', { tag: 'sql' }))
+    expect(r.outputs?.first).toBe('\nINSERT INTO a\nVALUES (1)\n')
+    expect(r.signals).toEqual(['found'])
+  })
+
+  it('no match → empty outputs, no found signal', () => {
+    const r = parseExtract.run(ctx, { text: 'nothing here' }, meta(parseExtract, 'n', { tag: 'x' }))
+    expect(r).toEqual({ outputs: { first: '', all: [] } })
+  })
+
+  it('blank/absent input text → empty outputs, no found signal', () => {
+    expect(parseExtract.run(ctx, { text: '' }, meta(parseExtract, 'n', { tag: 'x' }))).toEqual({
+      outputs: { first: '', all: [] }
+    })
+    expect(parseExtract.run(ctx, {}, meta(parseExtract, 'n', { tag: 'x' }))).toEqual({
+      outputs: { first: '', all: [] }
+    })
+  })
+})
+
+describe('parse.extract (regex mode)', () => {
+  it('captures group 1 when present, across all matches', () => {
+    const text = 'a=1 b=2 c=3'
+    const r = parseExtract.run(
+      ctx,
+      { text },
+      meta(parseExtract, 'n', { mode: 'regex', pattern: '(\\d)' })
+    )
+    expect(r.outputs).toEqual({ first: '1', all: ['1', '2', '3'] })
+    expect(r.signals).toEqual(['found'])
+  })
+
+  it('uses the whole match when there is no capture group', () => {
+    const r = parseExtract.run(
+      ctx,
+      { text: 'foo foo' },
+      meta(parseExtract, 'n', { mode: 'regex', pattern: 'foo' })
+    )
+    expect(r.outputs).toEqual({ first: 'foo', all: ['foo', 'foo'] })
+  })
+
+  it('a bad user regex → class-B bad-pattern, never a crash', () => {
+    try {
+      parseExtract.run(ctx, { text: 'x' }, meta(parseExtract, 'n', { mode: 'regex', pattern: '(' }))
+      throw new Error('should have thrown')
+    } catch (e) {
+      expect(e).toBeInstanceOf(NodeRunFailure)
+      expect((e as NodeRunFailure).kind).toBe('B')
+      expect((e as NodeRunFailure).code).toBe('bad-pattern')
+    }
+  })
+})
+
+const gen = {
+  profileId: 'p1',
+  chatId: 'c1',
+  floors: [{ floor: 0 }, { floor: 1 }, { floor: 2 }]
+}
+
+describe('table.apply', () => {
+  beforeEach(() => {
+    chatSvc.getChatTableTemplateId.mockReset()
+    templateSvc.getTableTemplateById.mockReset()
+    sqlSvc.applySqlBatch.mockReset()
+    opsSvc.appendOps.mockReset()
+    opsSvc.tryBeginTableWrite.mockReset()
+    opsSvc.endTableWrite.mockReset()
+  })
+
+  it('blank/whitespace sql → silent no-op (no template lookup, no lock)', () => {
+    const r = tableApply.run(ctx, { gen, sql: '   ' }, meta(tableApply, 'n'))
+    expect(r).toEqual({ outputs: {} })
+    expect(chatSvc.getChatTableTemplateId).not.toHaveBeenCalled()
+    expect(opsSvc.tryBeginTableWrite).not.toHaveBeenCalled()
+  })
+
+  it('no template assigned → class-B no-template', () => {
+    chatSvc.getChatTableTemplateId.mockReturnValue(null)
+    try {
+      tableApply.run(ctx, { gen, sql: 'INSERT INTO a VALUES (1)' }, meta(tableApply, 'n'))
+      throw new Error('should have thrown')
+    } catch (e) {
+      expect((e as NodeRunFailure).kind).toBe('B')
+      expect((e as NodeRunFailure).code).toBe('no-template')
+    }
+    expect(opsSvc.tryBeginTableWrite).not.toHaveBeenCalled()
+  })
+
+  it('lock busy → class-B busy (lock not released — it was never held by us)', () => {
+    chatSvc.getChatTableTemplateId.mockReturnValue('t1')
+    templateSvc.getTableTemplateById.mockReturnValue({ tables: [] })
+    opsSvc.tryBeginTableWrite.mockReturnValue(false)
+    try {
+      tableApply.run(ctx, { gen, sql: 'INSERT INTO a VALUES (1)' }, meta(tableApply, 'n'))
+      throw new Error('should have thrown')
+    } catch (e) {
+      expect((e as NodeRunFailure).code).toBe('busy')
+    }
+    expect(sqlSvc.applySqlBatch).not.toHaveBeenCalled()
+    expect(opsSvc.endTableWrite).not.toHaveBeenCalled()
+  })
+
+  it('success → appendOps at floors.length-1, results + done, lock released', () => {
+    chatSvc.getChatTableTemplateId.mockReturnValue('t1')
+    templateSvc.getTableTemplateById.mockReturnValue({ tables: [] })
+    opsSvc.tryBeginTableWrite.mockReturnValue(true)
+    sqlSvc.applySqlBatch.mockReturnValue({
+      applied: 2,
+      changes: 3,
+      statements: ['INSERT INTO a VALUES (1)', 'UPDATE a SET x=1']
+    })
+    const r = tableApply.run(
+      ctx,
+      { gen, sql: 'INSERT INTO a VALUES (1); UPDATE a SET x=1' },
+      meta(tableApply, 'n')
+    )
+    expect(r).toEqual({ outputs: { results: { applied: 2, changes: 3 }, done: true } })
+    expect(opsSvc.appendOps).toHaveBeenCalledWith('p1', 'c1', 2, [
+      'INSERT INTO a VALUES (1)',
+      'UPDATE a SET x=1'
+    ])
+    expect(opsSvc.endTableWrite).toHaveBeenCalledWith('c1')
+  })
+
+  it('floor attribution clamps to >= 0 when there are no floors', () => {
+    chatSvc.getChatTableTemplateId.mockReturnValue('t1')
+    templateSvc.getTableTemplateById.mockReturnValue({ tables: [] })
+    opsSvc.tryBeginTableWrite.mockReturnValue(true)
+    sqlSvc.applySqlBatch.mockReturnValue({ applied: 1, changes: 1, statements: ['INSERT INTO a VALUES (1)'] })
+    tableApply.run(ctx, { gen: { ...gen, floors: [] }, sql: 'INSERT INTO a VALUES (1)' }, meta(tableApply, 'n'))
+    expect(opsSvc.appendOps).toHaveBeenCalledWith('p1', 'c1', 0, ['INSERT INTO a VALUES (1)'])
+  })
+
+  it('execution failure → class-B bad-sql and the lock IS released', () => {
+    chatSvc.getChatTableTemplateId.mockReturnValue('t1')
+    templateSvc.getTableTemplateById.mockReturnValue({ tables: [] })
+    opsSvc.tryBeginTableWrite.mockReturnValue(true)
+    sqlSvc.applySqlBatch.mockImplementation(() => {
+      throw new sqlSvc.TableSqlError('boom', 0)
+    })
+    try {
+      tableApply.run(ctx, { gen, sql: 'INSERT INTO a VALUES (1)' }, meta(tableApply, 'n'))
+      throw new Error('should have thrown')
+    } catch (e) {
+      expect((e as NodeRunFailure).kind).toBe('B')
+      expect((e as NodeRunFailure).code).toBe('bad-sql')
+      expect((e as Error).message).toContain('boom')
+    }
+    expect(opsSvc.appendOps).not.toHaveBeenCalled()
+    expect(opsSvc.endTableWrite).toHaveBeenCalledWith('c1')
+  })
+})

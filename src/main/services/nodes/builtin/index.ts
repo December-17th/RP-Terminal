@@ -16,6 +16,8 @@ import { toolStartCombat, toolStartDuel, toolLorebookSearch } from './toolNodes'
 import { lorebookSelect, lorebookEntries } from './lorebookNodes'
 import { promptPreset } from './presetNodes'
 import { varsGet, varsSave } from './varsNodes'
+import { parseExtract } from './parseNodes'
+import { tableApply } from './tableNodes'
 import {
   contextHistory,
   contextCard,
@@ -59,6 +61,8 @@ export const builtinRegistry = createRegistry([
   promptPreset,
   varsGet,
   varsSave,
+  parseExtract,
+  tableApply,
   contextHistory,
   contextCard,
   contextPersona,

@@ -10,6 +10,7 @@ import { extractMvuSchema, schemaDefaults } from './mvuZod'
 import { saveFloor, deleteFloorAndSubsequent, updateFloorFields } from './floorService'
 import { getTableTemplateById } from './tableTemplateService'
 import * as tableDbService from './tableDbService'
+import * as tableOpsService from './tableOpsService'
 
 interface ChatRow {
   id: string
@@ -211,6 +212,9 @@ export const setChatTableTemplateId = (
   getDb()
     .prepare('UPDATE chats SET table_template_id = ? WHERE id = ? AND profile_id = ?')
     .run(effectiveId, chatId, profileId)
+  // The sandbox is recreated from scratch on (re)assign/unassign, so the chat's SQL op log is stale
+  // (it referenced the OLD template's tables) — clear it, or a later rewind would replay dead ops.
+  tableOpsService.deleteAllOps(profileId, chatId)
   if (template) tableDbService.instantiate(profileId, chatId, template)
   else tableDbService.removeSandbox(profileId, chatId)
 }
@@ -291,15 +295,25 @@ export const appendFloor = (profileId: string, chatId: string, floor: FloorFile)
   touch(chatId)
 }
 
-/** Delete floors >= fromFloor (regenerate / edit) and bump updated_at. */
+/** Delete floors >= fromFloor (regenerate / edit) and bump updated_at. When table memory is on,
+ *  drop the SQL ops at/after the cut and rebuild the sandbox by ordered replay of the survivors
+ *  (issue 03 rewind hook). Cheap no-op when no template is assigned. */
 export const truncateFloors = (profileId: string, chatId: string, fromFloor: number): void => {
   deleteFloorAndSubsequent(profileId, chatId, fromFloor)
+  const templateId = getChatTableTemplateId(profileId, chatId)
+  if (templateId) {
+    tableOpsService.deleteOpsFrom(profileId, chatId, fromFloor)
+    const template = getTableTemplateById(profileId, templateId)
+    tableOpsService.rebuildSandbox(profileId, chatId, template)
+  }
   touch(chatId)
 }
 
 export const deleteChat = (profileId: string, chatId: string): void => {
   getDb().prepare('DELETE FROM chats WHERE id = ?').run(chatId)
-  // The chat's per-chat table-memory sandbox is a file outside the app DB — clean it up too.
+  // `table_ops` rows go via FK cascade (db.ts sets `foreign_keys = ON`, and table_ops REFERENCES
+  // chats(id) ON DELETE CASCADE — verified). The sandbox DB file lives OUTSIDE the app DB, so it
+  // must be removed explicitly.
   tableDbService.removeSandbox(profileId, chatId)
 }
 

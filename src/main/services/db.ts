@@ -84,6 +84,21 @@ CREATE TABLE IF NOT EXISTS node_state (
   updated_at TEXT,
   PRIMARY KEY (chat_id, workflow_id, node_id)
 );
+
+-- Floor-keyed append-only SQL op log for SQL-table memory (issue 03). Every applied write batch is
+-- logged here (raw SQL) so the per-chat sandbox DB can be REBUILT by ordered replay when floors are
+-- truncated (regenerate/swipe/delete). The table DATA lives in the per-chat sandbox file, NOT here --
+-- this is only the replay journal. FK cascade (foreign_keys = ON below) clears it on chat deletion,
+-- following the floors-table precedent.
+CREATE TABLE IF NOT EXISTS table_ops (
+  chat_id TEXT NOT NULL REFERENCES chats(id) ON DELETE CASCADE,
+  floor INTEGER NOT NULL,
+  seq INTEGER NOT NULL,
+  sql TEXT NOT NULL,
+  created_at TEXT,
+  PRIMARY KEY (chat_id, floor, seq)
+);
+CREATE INDEX IF NOT EXISTS idx_table_ops_chat_floor ON table_ops(chat_id, floor);
 `
 
 // Presets/lorebooks were briefly stored in SQL during early Phase F; they are now

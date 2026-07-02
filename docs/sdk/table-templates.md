@@ -1,7 +1,8 @@
 # Table templates — the chatSheets v2 import surface (SQL-table memory)
 
-**Status:** 🟡 partial (issue 02: import + per-chat enablement + read-only view built; writes /
-op-log / prompt injection / gate & read & query nodes are issues 03–06, not built).
+**Status:** 🟡 partial (issues 02–03: import + per-chat enablement + read-only view + SQL write path
++ op-log/rewind + the `parse.extract`/`table.apply` nodes built; prompt injection / gate & read &
+query nodes / view editing are issues 04–06, not built).
 
 RP Terminal's memory system is **SQL-table memory** (the 数据库-plugin model): each chat maintains a
 set of relational tables, the LLM edits them via SQL (later issues), and the tables project back into
@@ -101,8 +102,75 @@ ordered tables — `sqlName`s: `protagonist_info`, `important_characters`, `chro
 `[{ sqlName, displayName, columns, rows }]`). The read-only **Tables** view is registered as `tables`
 in `src/renderer/src/components/workspace/viewRegistry.tsx`.
 
-## Deferred (issues 03–06)
+## Write path (issue 03)
 
-SQL write path + op log (03), prompt injection of table exports (04), gate / read / query workflow
-nodes (03/05), view editing (06), card-embedded templates. This slice is import + enablement +
-read-only view only.
+LLM-emitted SQL edits the tables. It NEVER touches the app DB — it runs only against the chat's
+per-chat sandbox file, and only after a strict allowlist passes.
+
+### Batch grammar & the allowlist (`src/main/services/tableSql.ts`)
+
+A batch is one-statement-per-`;`. `splitSqlStatements` splits on top-level `;` only, respecting
+`'…'` literals (with `''` escape), `"…"` quoted identifiers, `--` line comments, and `/* … */`
+block comments — so semicolons and CJK text inside literals survive (the templates' SQL carries
+CJK). `classifyStatement` then reads each statement's head keyword (case-insensitive, after leading
+comments/whitespace) and accepts **only**:
+
+- `INSERT [OR …] INTO <table> …`
+- `UPDATE [OR …] <table> …`
+- `DELETE FROM <table> …`
+
+`<table>` may be bare or `"quoted"`, and must pass `isSafeSqlIdentifier`. Every other head is
+rejected with a typed `TableSqlError` naming it: SELECT (top level), CREATE, DROP, ALTER, ATTACH,
+DETACH, PRAGMA, BEGIN/COMMIT/ROLLBACK/SAVEPOINT/RELEASE, VACUUM, REINDEX, WITH (a CTE head hides the
+real verb), EXPLAIN, and REPLACE. Subqueries **inside** an allowed statement are fine — the sandbox
+holds only template tables and ATTACH is blocked at the head, so no other file is reachable. The
+four documented template shapes all pass: `INSERT … VALUES ((SELECT MAX(row_id)+1 FROM t), …)`,
+`INSERT OR IGNORE`, `UPDATE … SET x = COALESCE(x,'') || '…' WHERE …`, and a capacity-cleanup
+`DELETE … WHERE row_id IN (SELECT … ORDER BY … LIMIT …)`.
+
+`validateBatch(text, allowedTables)` runs split + classify + asserts every target table ∈ the
+template's registry. `applySqlBatch` validates first (throws before touching the DB), then runs the
+whole batch in **one transaction**, summing `changes`; exceeding the `max_changes` cap (default 500)
+throws inside the transaction so **everything rolls back**. Any statement failure rolls the batch
+back too. The DB handle is always closed.
+
+### Op log + rewind (`src/main/services/tableOpsService.ts`, `db.ts` `table_ops`)
+
+Every applied batch is appended to `table_ops (chat_id, floor, seq, sql)` in the app DB, keyed by
+the floor it was applied on. On floor truncation (`chatService.truncateFloors` → regenerate / swipe
+/ delete-from), ops at/after the cut floor are dropped (`deleteOpsFrom`) and the sandbox is rebuilt
+(`rebuildSandbox`): instantiate the template DDL, then replay the surviving ops in `(floor, seq)`
+order. Replay is deterministic (single-writer) and **fail-open** — an op that now fails (e.g. a
+template change dropped a column) is logged and skipped, never bricking the chat. `table_ops` rows
+are cleared by FK cascade on chat deletion (`foreign_keys = ON`), and `setChatTableTemplateId`
+clears the whole log on (re)assign/unassign (the sandbox is recreated, so old-template ops must not
+replay). The pure `replayPlan(ops, fromFloor)` (which ops survive a cut, order, floor attribution)
+is unit-tested; live state-equality after a rebuild lands in the owner's manual pass because
+`better-sqlite3` is alias-mocked under vitest.
+
+### Write lock
+
+A per-chat in-module mutex (`tryBeginTableWrite`/`endTableWrite`, 2-minute stale expiry — the
+removed compaction-slot pattern) serializes concurrent graph writes for a chat. `table.apply` and
+`rebuildSandbox` both take it; a busy chat surfaces as class-B `busy` (retry next turn).
+
+### Nodes (`src/main/services/nodes/builtin/`)
+
+- **`parse.extract`** (`parseNodes.ts`, generic — NOT table-specific): tag/regex extractor. Inputs
+  `text: Text`, `when: Signal`; outputs `first: Text`, `all: Any` (string[]), `found: Signal` (fires
+  only on ≥1 match). Config `{ mode: 'tag'|'regex' (default 'tag'), tag?, pattern?, flags? }`. Tag
+  mode matches `<tag>…</tag>` (non-greedy, dotall, case-insensitive); regex mode captures group 1
+  when present else the whole match. A bad user regex → class-B `bad-pattern`; blank input → empty
+  outputs, no `found`.
+- **`table.apply`** (`tableNodes.ts`): the SQL write node. Inputs `gen: Context`, `sql: Text`,
+  `when: Signal`; outputs `results: Any` (`{applied, changes}`), `done: Any` (ordering-only, emitted
+  only on a completed apply — wire into a downstream `context.refresh`'s `after`), `error: Error`.
+  Config `{ max_changes?: 1..5000 }`. It's a POST-response side branch and **fail-open**: blank sql
+  → silent no-op; no template → class-B `no-template`; lock busy → `busy`; validation/exec failure →
+  `bad-sql`; all route on the `error` port and never abort the turn. On success it appends ops at
+  `floors.length - 1` (clamped ≥0 — the just-persisted floor).
+
+## Deferred (issues 04–06)
+
+Prompt injection of table exports (04), gate / read / query workflow nodes (05), view editing (06),
+card-embedded templates.
