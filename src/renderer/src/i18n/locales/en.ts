@@ -978,6 +978,44 @@ const en: Record<string, string> = {
   'agents.preview.title': 'Preview',
   'agents.preview.placeholder':
     'A preview of what each agent will add to your next prompt, section by section, will show up here.',
+  // ── Injection preview pane (agent-packs plan WP3.4) ───────────────────────────────────────────────
+  'preview.title': 'Next prompt',
+  'preview.subtitle': 'Exactly what will be sent, section by section, with where each part comes from.',
+  'preview.refresh': 'Refresh preview',
+  'preview.generatedAt': 'as of {{time}}',
+  'preview.totalTokens': '{{n}} tokens',
+  'preview.totalTokensEst': '~{{n}} tokens (estimated)',
+  'preview.est': 'est.',
+  'preview.expand': 'Show text',
+  'preview.collapse': 'Hide text',
+  // Section-kind labels (preview.section.<id>)
+  'preview.section.system': 'System instructions',
+  'preview.section.persona': 'Your persona',
+  'preview.section.card': 'Character',
+  'preview.section.worldInfo': 'World info',
+  'preview.section.history': 'Conversation',
+  'preview.section.memory': 'Memory',
+  'preview.section.packInject': 'Added by an agent',
+  'preview.section.action': 'Your message',
+  'preview.section.other': 'Other',
+  // Source chips (preview.source.<kind>) — the pack kind uses the pack name directly.
+  'preview.source.narrator': 'Base',
+  'preview.source.lorebook': 'Lorebook',
+  'preview.source.memory': 'Memory',
+  // Omitted group
+  'preview.omittedTitle': 'Not included',
+  'preview.omittedNote':
+    'Lorebook entries that did not match this turn are not listed here — they cannot be known without running the turn.',
+  'preview.omitted.reason.gate': 'turned off',
+  'preview.omitted.reason.empty': 'nothing to add',
+  'preview.omitted.reason.budget': 'over budget',
+  // States
+  'preview.noChatTitle': 'Open a chat first',
+  'preview.noChatBody': 'The prompt preview is built from an active chat. Open one to see it.',
+  'preview.errorTitle': "Couldn't build the preview",
+  'preview.errorBody': 'Something went wrong assembling the next prompt. Try again.',
+  'preview.emptyTitle': 'Nothing to preview yet',
+  'preview.emptyBody': 'The next prompt has no sections. Send a message to build one.',
   // Installed pane
   'agents.installed.introTitle': 'Nothing is running yet',
   'agents.installed.introBody':

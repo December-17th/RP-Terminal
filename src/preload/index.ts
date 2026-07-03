@@ -199,6 +199,11 @@ const api = {
   // forking / writing through.
   getAgentPackFragment: (profileId: string, packId: string) =>
     ipcRenderer.invoke('agent-pack-fragment', profileId, packId),
+  // Next-prompt injection preview (agent-packs plan WP3.4): the assembled prompt broken into per-source
+  // sections + an omitted list. A DRY RUN — zero state writes, zero LLM calls. Fetched on the Preview
+  // pane opening + on the Refresh button; never auto-polled.
+  previewNextPrompt: (profileId: string, chatId: string, userAction?: string) =>
+    ipcRenderer.invoke('agent-pack-preview-prompt', profileId, chatId, userAction),
   // SQL-table memory (issue 02): file-based table templates + per-chat assignment + read-only view
   listTableTemplates: (profileId: string) =>
     ipcRenderer.invoke('table-templates-list', profileId),

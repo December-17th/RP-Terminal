@@ -939,6 +939,43 @@ const zh: Record<string, string> = {
   // 预览占位（WP3.4 实现）
   'agents.preview.title': '预览',
   'agents.preview.placeholder': '这里将逐段预览每个智能体会向你的下一条提示词中添加哪些内容。',
+  // ── 注入预览面板（智能体包计划 WP3.4）───────────────────────────────────────────────
+  'preview.title': '下一条提示词',
+  'preview.subtitle': '将要发送的完整内容，逐段列出，并标注每部分的来源。',
+  'preview.refresh': '刷新预览',
+  'preview.generatedAt': '截至 {{time}}',
+  'preview.totalTokens': '{{n}} 个 token',
+  'preview.totalTokensEst': '约 {{n}} 个 token（估算）',
+  'preview.est': '估算',
+  'preview.expand': '展开全文',
+  'preview.collapse': '收起',
+  // 段落类型标签（preview.section.<id>）
+  'preview.section.system': '系统指令',
+  'preview.section.persona': '你的人设',
+  'preview.section.card': '角色',
+  'preview.section.worldInfo': '世界书',
+  'preview.section.history': '对话历史',
+  'preview.section.memory': '记忆',
+  'preview.section.packInject': '由智能体添加',
+  'preview.section.action': '你的消息',
+  'preview.section.other': '其他',
+  // 来源标签（preview.source.<kind>）——pack 类型直接显示智能体包名称。
+  'preview.source.narrator': '基础',
+  'preview.source.lorebook': '世界书',
+  'preview.source.memory': '记忆',
+  // 未包含分组
+  'preview.omittedTitle': '未包含',
+  'preview.omittedNote': '本回合未命中的世界书条目不在此列出——不实际运行本回合就无法得知它们。',
+  'preview.omitted.reason.gate': '已关闭',
+  'preview.omitted.reason.empty': '无内容可加',
+  'preview.omitted.reason.budget': '超出预算',
+  // 状态
+  'preview.noChatTitle': '请先打开一个对话',
+  'preview.noChatBody': '提示词预览基于当前对话生成。打开一个对话即可查看。',
+  'preview.errorTitle': '无法生成预览',
+  'preview.errorBody': '组装下一条提示词时出错了。请重试。',
+  'preview.emptyTitle': '暂无可预览内容',
+  'preview.emptyBody': '下一条提示词还没有任何段落。发送一条消息以生成。',
   // 已安装
   'agents.installed.introTitle': '当前没有正在运行的智能体',
   'agents.installed.introBody': '智能体包在你开启前保持关闭。在下方开启一个包，即可将它加入本世界。',

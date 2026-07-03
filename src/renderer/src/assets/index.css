@@ -2379,6 +2379,57 @@ select {
   .rpt-runs-entry-main, .rpt-runs-chip { transition:none; }
 }
 
+/* ── Injection preview pane (agent-packs plan WP3.4) ───────────────────────────────────────────────
+   The trust surface: per-section list + source chips + token counts, and a muted omitted group. All
+   colors via --rpt-* / --rpt-agent-* tokens (AA across all three themes). */
+.rpt-preview { display:flex; flex-direction:column; gap:14px; padding:16px; overflow:auto; min-height:0; }
+.rpt-preview-header { display:flex; align-items:flex-start; justify-content:space-between; gap:16px;
+  flex-wrap:wrap; }
+.rpt-preview-heading { min-width:0; }
+.rpt-preview-title { font-size:15px; font-weight:600; color:var(--rpt-text-primary); margin:0 0 2px; }
+.rpt-preview-subtitle { font-size:12px; line-height:1.5; color:var(--rpt-text-secondary); margin:0; max-width:52ch; }
+.rpt-preview-toolbar { display:flex; align-items:center; gap:12px; flex-shrink:0; }
+.rpt-preview-total { font-size:12.5px; font-weight:600; color:var(--rpt-text-primary);
+  font-variant-numeric:tabular-nums; }
+.rpt-preview-time { font-size:11px; color:var(--rpt-text-tertiary); font-variant-numeric:tabular-nums; }
+
+.rpt-preview-list { list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:8px; }
+.rpt-preview-section { border:1px solid var(--rpt-border); border-radius:10px;
+  background:var(--rpt-bg-secondary); overflow:hidden; }
+.rpt-preview-section.open { border-color:var(--rpt-accent); }
+.rpt-preview-section-head { display:flex; align-items:center; gap:10px; width:100%; text-align:left;
+  font:inherit; background:none; border:0; padding:10px 12px; cursor:pointer; color:inherit; }
+.rpt-preview-section-head:hover { background:var(--rpt-bg-tertiary); }
+.rpt-preview-section-head:focus-visible { outline:2px solid var(--rpt-accent); outline-offset:-2px; }
+.rpt-preview-section-label { font-size:13px; font-weight:600; color:var(--rpt-text-primary);
+  flex-shrink:0; }
+.rpt-preview-chip { font-size:11px; padding:2px 8px; border-radius:11px; background:var(--rpt-bg-tertiary);
+  color:var(--rpt-text-secondary); border:1px solid var(--rpt-border); }
+.rpt-preview-chip-pack { background:var(--rpt-agent-headless); color:var(--rpt-agent-headless-text);
+  border:1px solid var(--rpt-agent-headless-text); }
+.rpt-preview-section-tokens { margin-left:auto; font-size:12px; color:var(--rpt-text-secondary);
+  font-variant-numeric:tabular-nums; flex-shrink:0; }
+.rpt-preview-est { font-size:10px; color:var(--rpt-text-tertiary); text-transform:uppercase;
+  letter-spacing:.02em; }
+.rpt-preview-caret { flex-shrink:0; color:var(--rpt-text-tertiary); font-size:11px; }
+.rpt-preview-section-text { margin:0; padding:10px 12px; border-top:1px solid var(--rpt-border);
+  background:var(--rpt-bg-primary); font-family:var(--rpt-font-mono, ui-monospace, monospace);
+  font-size:11.5px; line-height:1.55; color:var(--rpt-text-secondary); white-space:pre-wrap;
+  word-break:break-word; max-height:280px; overflow:auto; }
+
+.rpt-preview-omitted { border:1px dashed var(--rpt-border); border-radius:10px; padding:10px 12px;
+  display:flex; flex-direction:column; gap:6px; }
+.rpt-preview-omitted-head { font-size:11px; font-weight:700; letter-spacing:.04em; text-transform:uppercase;
+  color:var(--rpt-text-tertiary); }
+.rpt-preview-omitted-list { list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:4px; }
+.rpt-preview-omitted-item { display:flex; align-items:baseline; gap:8px; font-size:12.5px; }
+.rpt-preview-omitted-label { color:var(--rpt-text-secondary); }
+.rpt-preview-omitted-reason { color:var(--rpt-text-tertiary); font-size:11.5px; }
+.rpt-preview-omitted-note { font-size:11px; line-height:1.5; color:var(--rpt-text-tertiary); margin:2px 0 0; }
+@media (prefers-reduced-motion: reduce) {
+  .rpt-preview-section-head { transition:none; }
+}
+
 /* ── Pack detail panel — tiered settings with provenance (agent-packs plan WP3.2) ─────────────────
    A side panel next to the list. All colors via --rpt-* tokens (AA across all three themes). */
 .rpt-agentdetail { flex-shrink:0; width:340px; display:flex; flex-direction:column;

@@ -446,6 +446,15 @@ workflows become built-in packs. No new UI beyond what exists.
   read-mostly for edges; the routing + pure appliers exist + are tested). Gate: typecheck +
   check:deps + 1693 tests all green.
 
+- **2026-07-03, after WP3.2–3.3:** override materialization lives in ONE call site
+  (`enabledFragmentsFor`) — both turn and headless paths inherit it; `sys.trigger.<index>.*` ids
+  are stable only while attachment order is stable (documented; future ABI: creator-assigned
+  trigger ids). Runs timeline shipped; **record-shape gaps for WP3.5 explain-why**: (1)
+  `TraceNode` has NO skip-reason field (the "skipped — table writes denied" copy is not derivable;
+  needs a shared/main addition), (2) no floor number on `StoredRunRecord`, (3) no pack-name
+  snapshot (uninstalled packs display as raw ids). WP3.5 should add what explain-why actually
+  needs in shared/main FIRST, then build the surface.
+
 ## Risks and watchpoints
 
 - **WP1.3 is the highest-risk change** (engine failure semantics). It must land behind the

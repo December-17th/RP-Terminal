@@ -39,6 +39,15 @@ import {
   nextBeforeSeq,
   type DetailGroup
 } from './runTimeline'
+import {
+  tokenTotal,
+  sectionLabelKey,
+  sourceChip,
+  omittedReasonKey,
+  type NextPromptPreviewData,
+  type PreviewSectionData,
+  type PreviewOmittedData
+} from './previewDisplay'
 import { AgentPackDetail } from './AgentPackDetail'
 
 // The list-payload shape from listAgentPacks (preload index.d.ts — WP3.1-extended with attachments +
@@ -195,6 +204,8 @@ export const AgentsView: React.FC<{ profileId: string }> = ({ profileId }) => {
             initialRuns={runs}
             initialLoading={loading}
           />
+        ) : rail === 'preview' ? (
+          <PreviewPane profileId={profileId} chatId={activeChatId} />
         ) : (
           <PlaceholderPane rail={rail} />
         )}
@@ -382,7 +393,10 @@ const PackCard: React.FC<{
           </span>
           {pack.builtin && <span className="rpt-agents-badge-builtin">{t('agents.builtin')}</span>}
           {pack.manifest.fork && (
-            <span className="rpt-agents-badge-builtin" title={t('workflowEffective.forkLineageTitle')}>
+            <span
+              className="rpt-agents-badge-builtin"
+              title={t('workflowEffective.forkLineageTitle')}
+            >
               {t('workflowEffective.forkFrom', { base: pack.manifest.fork.base })}
             </span>
           )}
@@ -703,8 +717,7 @@ const RunEntry: React.FC<{ record: StoredRunRecord; packNames: Record<string, st
 
   // Localize a node TYPE to its title (reuses the editor's nodeTitle keys; raw type as fallback —
   // same pattern as WorkflowView's trace panel).
-  const nodeTitle = (type: string): string =>
-    tOpt(`workflowEditor.nodeTitle.${type}`) || type
+  const nodeTitle = (type: string): string => tOpt(`workflowEditor.nodeTitle.${type}`) || type
 
   // The outcome sentence: resolve failedNodeType → localized title, pass as {{node}}, then translate.
   const outcome = translateOutcome(t, nodeTitle, sentence)
@@ -734,7 +747,8 @@ const RunEntry: React.FC<{ record: StoredRunRecord; packNames: Record<string, st
           <span className="rpt-runs-entry-head">
             <span className="rpt-runs-attr">{attribution}</span>
             <span className="rpt-runs-meta">
-              {formatTraceSeconds(record.trace.durationMs)} · {formatRunTime(record.trace.startedAt)}
+              {formatTraceSeconds(record.trace.durationMs)} ·{' '}
+              {formatRunTime(record.trace.startedAt)}
             </span>
           </span>
           <span className="rpt-runs-outcome">{outcome}</span>
@@ -772,9 +786,7 @@ const RunDetail: React.FC<{
       {groups.map((g, gi) => (
         <div key={gi} className="rpt-runs-group">
           <div className="rpt-runs-group-head">
-            {g.packId === null
-              ? t('runs.detail.narratorGroup')
-              : (packNames[g.packId] ?? g.packId)}
+            {g.packId === null ? t('runs.detail.narratorGroup') : (packNames[g.packId] ?? g.packId)}
           </div>
           {g.nodes.map((n, ni) => (
             <div key={ni} className={`rpt-runs-node status-${n.status}`}>
@@ -791,6 +803,220 @@ const RunDetail: React.FC<{
         </div>
       ))}
     </div>
+  )
+}
+
+// ── Injection preview pane (agent-packs plan WP3.4) ──────────────────────────────────────────────────
+//
+// The trust surface: exactly what will enter the next prompt, section by section, attributed per source
+// (ADR 0002). Fetches on mount (the pane mounts when the Preview rail is selected) + on the Refresh
+// button — NEVER auto-polls (the preview builds a GenContext that reads all floors — WP2.2 note). A total-
+// tokens summary at top (estimated — the app has no real tokenizer), each section with a source chip
+// (pack chips reuse the WP3.1 pack-chip look) + right-aligned token count + per-section expand to full
+// text, and a muted "omitted" group with reasons. Skeleton loading, designed no-chat/empty/error states.
+
+const formatPreviewTime = (epochMs: number): string => {
+  const d = new Date(epochMs)
+  const hh = String(d.getHours()).padStart(2, '0')
+  const mm = String(d.getMinutes()).padStart(2, '0')
+  return `${hh}:${mm}`
+}
+
+const PreviewPane: React.FC<{ profileId: string; chatId: string | null }> = ({
+  profileId,
+  chatId
+}) => {
+  const t = useT()
+  const [preview, setPreview] = React.useState<NextPromptPreviewData | null>(null)
+  const [loading, setLoading] = React.useState(true)
+  const [error, setError] = React.useState(false)
+
+  const load = React.useCallback(async () => {
+    if (!chatId) {
+      setPreview(null)
+      setLoading(false)
+      return
+    }
+    setLoading(true)
+    setError(false)
+    try {
+      const p = (await api().previewNextPrompt(profileId, chatId, '')) as NextPromptPreviewData
+      setPreview(p ?? null)
+    } catch {
+      setError(true)
+      setPreview(null)
+    } finally {
+      setLoading(false)
+    }
+  }, [profileId, chatId])
+
+  // Fetch on mount (the content area only renders PreviewPane while the Preview rail is active, so mount
+  // === becoming visible) or when the chat changes. On demand only — never a poll.
+  React.useEffect(() => {
+    void load()
+  }, [load])
+
+  if (!chatId) {
+    return (
+      <div className="rpt-agents-empty">
+        <div className="rpt-agents-placeholder-icon" aria-hidden>
+          ⌦
+        </div>
+        <h2 className="rpt-agents-placeholder-title">{t('preview.noChatTitle')}</h2>
+        <p className="rpt-agents-placeholder-body">{t('preview.noChatBody')}</p>
+      </div>
+    )
+  }
+
+  if (loading && preview === null) {
+    return (
+      <div className="rpt-preview">
+        <div className="rpt-preview-list">
+          {[0, 1, 2].map((i) => (
+            <div key={i} className="rpt-preview-section rpt-agents-skeleton" aria-hidden>
+              <div className="rpt-agents-skel-lines">
+                <div className="rpt-agents-skel-line" />
+                <div className="rpt-agents-skel-line short" />
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    )
+  }
+
+  if (error || (preview && preview.error === 'failed')) {
+    return (
+      <div className="rpt-agents-empty">
+        <p>{t('preview.errorTitle')}</p>
+        <p className="rpt-agents-placeholder-body">{t('preview.errorBody')}</p>
+        <button className="btn-accent" onClick={() => void load()}>
+          {t('agents.retry')}
+        </button>
+      </div>
+    )
+  }
+
+  if (preview && preview.error === 'no-chat') {
+    return (
+      <div className="rpt-agents-empty">
+        <div className="rpt-agents-placeholder-icon" aria-hidden>
+          ⌦
+        </div>
+        <h2 className="rpt-agents-placeholder-title">{t('preview.noChatTitle')}</h2>
+        <p className="rpt-agents-placeholder-body">{t('preview.noChatBody')}</p>
+      </div>
+    )
+  }
+
+  const sections = preview?.sections ?? []
+  const omitted = preview?.omitted ?? []
+  const total = tokenTotal(sections)
+
+  return (
+    <div className="rpt-preview">
+      <div className="rpt-preview-header">
+        <div className="rpt-preview-heading">
+          <h2 className="rpt-preview-title">{t('preview.title')}</h2>
+          <p className="rpt-preview-subtitle">{t('preview.subtitle')}</p>
+        </div>
+        <div className="rpt-preview-toolbar">
+          <span className="rpt-preview-total">
+            {total.estimated
+              ? t('preview.totalTokensEst', { n: total.total })
+              : t('preview.totalTokens', { n: total.total })}
+          </span>
+          {preview && (
+            <span className="rpt-preview-time">
+              {t('preview.generatedAt', { time: formatPreviewTime(preview.generatedAt) })}
+            </span>
+          )}
+          <button className="rpt-agents-settingsbtn" onClick={() => void load()} disabled={loading}>
+            {t('preview.refresh')}
+          </button>
+        </div>
+      </div>
+
+      {sections.length === 0 ? (
+        <div className="rpt-agents-empty">
+          <div className="rpt-agents-placeholder-icon" aria-hidden>
+            ⌦
+          </div>
+          <h2 className="rpt-agents-placeholder-title">{t('preview.emptyTitle')}</h2>
+          <p className="rpt-agents-placeholder-body">{t('preview.emptyBody')}</p>
+        </div>
+      ) : (
+        <ol className="rpt-preview-list">
+          {sections.map((s, i) => (
+            <PreviewSectionRow key={i} section={s} />
+          ))}
+        </ol>
+      )}
+
+      {omitted.length > 0 && (
+        <div className="rpt-preview-omitted">
+          <div className="rpt-preview-omitted-head">{t('preview.omittedTitle')}</div>
+          <ul className="rpt-preview-omitted-list">
+            {omitted.map((o, i) => (
+              <PreviewOmittedRow key={i} item={o} />
+            ))}
+          </ul>
+          <p className="rpt-preview-omitted-note">{t('preview.omittedNote')}</p>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// One preview source chip — a pack chip (reuses the WP3.1 pack-chip look) or a plain kind chip.
+const PreviewSourceChip: React.FC<{ source: PreviewSectionData['source'] }> = ({ source }) => {
+  const t = useT()
+  const chip = sourceChip(source)
+  if (chip.isPack) {
+    return <span className="rpt-agents-chip rpt-preview-chip-pack">{chip.name}</span>
+  }
+  return <span className="rpt-preview-chip">{t(chip.labelKey)}</span>
+}
+
+// One section row: label + source chip on the left, right-aligned token count (with an 'est.' marker),
+// and a per-section expand to the full text (a monospace-ish, height-capped scroll block).
+const PreviewSectionRow: React.FC<{ section: PreviewSectionData }> = ({ section }) => {
+  const t = useT()
+  const [open, setOpen] = React.useState(false)
+  return (
+    <li className={`rpt-preview-section${open ? ' open' : ''}`}>
+      <button
+        className="rpt-preview-section-head"
+        aria-expanded={open}
+        onClick={() => setOpen((v) => !v)}
+      >
+        <span className="rpt-preview-section-label">{t(sectionLabelKey(section.id))}</span>
+        <PreviewSourceChip source={section.source} />
+        <span className="rpt-preview-section-tokens">
+          {section.tokens}
+          {section.estimated && <span className="rpt-preview-est"> {t('preview.est')}</span>}
+        </span>
+        <span className="rpt-preview-caret" aria-hidden>
+          {open ? '▾' : '▸'}
+        </span>
+      </button>
+      {open && (
+        <pre className="rpt-preview-section-text" aria-label={t('preview.expand')}>
+          {section.text}
+        </pre>
+      )}
+    </li>
+  )
+}
+
+// One omitted-group row: a muted chip/label + the reason. A pack source shows the pack name.
+const PreviewOmittedRow: React.FC<{ item: PreviewOmittedData }> = ({ item }) => {
+  const t = useT()
+  return (
+    <li className="rpt-preview-omitted-item">
+      <span className="rpt-preview-omitted-label">{item.label}</span>
+      <span className="rpt-preview-omitted-reason">{t(omittedReasonKey(item.reason))}</span>
+    </li>
   )
 }
 

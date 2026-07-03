@@ -245,6 +245,30 @@ declare global {
         profileId: string,
         packId: string
       ) => Promise<import('../shared/workflow/types').WorkflowDoc | null>
+      // Next-prompt injection preview (agent-packs plan WP3.4): the assembled prompt shaped into
+      // per-source sections + an omitted list. A DRY RUN — zero state writes, zero LLM calls. Shape
+      // inlined (not imported from main) so preload types don't cross the module boundary.
+      previewNextPrompt: (
+        profileId: string,
+        chatId: string,
+        userAction?: string
+      ) => Promise<{
+        sections: {
+          id: string
+          label: string
+          source: { kind: 'narrator' | 'pack' | 'lorebook' | 'memory'; packId?: string; name?: string }
+          tokens: number
+          estimated: boolean
+          text: string
+        }[]
+        omitted: {
+          label: string
+          reason: 'gate' | 'empty' | 'budget'
+          source?: { kind: 'narrator' | 'pack' | 'lorebook' | 'memory'; packId?: string; name?: string }
+        }[]
+        error?: 'no-chat' | 'failed'
+        generatedAt: number
+      }>
       // SQL-table memory (issue 02)
       listTableTemplates: (
         profileId: string

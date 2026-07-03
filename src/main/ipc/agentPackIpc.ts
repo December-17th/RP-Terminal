@@ -2,6 +2,8 @@ import { IpcMain } from 'electron'
 import * as agentPackService from '../services/agentPackService'
 import { OverrideScope } from '../services/agentPackStore'
 import { listRuns } from '../services/runHistoryStore'
+import { previewNextPrompt } from '../services/generation/previewService'
+import { getChat } from '../services/chatService'
 
 /**
  * IPC for the agent-pack library (agent-packs plan WP1.4). Exposes the read side the future
@@ -82,4 +84,16 @@ export const registerAgentPackIpc = (ipcMain: IpcMain): void => {
     const pack = agentPackService.getPackFragment(profileId, packId)
     return pack
   })
+  // Next-prompt injection preview for the Agents workspace Preview pane (agent-packs plan WP3.4). Runs
+  // the effective doc's pre-assemble closure in a dry run (ZERO state writes, ZERO LLM calls) and shapes
+  // the assembled prompt into per-source sections + an omitted list. Resolves the installed-pack
+  // summaries here (world = the chat's card) so previewService stays independent of the pack store.
+  ipcMain.handle(
+    'agent-pack-preview-prompt',
+    async (_, profileId: string, chatId: string, userAction?: string) => {
+      const worldId = getChat(profileId, chatId)?.character_id ?? null
+      const packSummaries = agentPackService.list(profileId, worldId, chatId)
+      return previewNextPrompt({ profileId, chatId, userAction, packSummaries })
+    }
+  )
 }
