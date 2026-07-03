@@ -23,7 +23,8 @@ import {
   contextCard,
   contextPersona,
   contextAction,
-  contextParams
+  contextParams,
+  contextTrimProcessed
 } from './contextNodes'
 import {
   subgraphInput,
@@ -72,6 +73,7 @@ export const builtinRegistry = createRegistry([
   contextPersona,
   contextAction,
   contextParams,
+  contextTrimProcessed,
   subgraphInput,
   subgraphOutput,
   subgraphCall,

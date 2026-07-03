@@ -1,5 +1,6 @@
 import { WorkflowDoc } from '../../../../shared/workflow/types'
 import type { AgentPackRecord } from '../../agentPackStore'
+import { buildAsyncMemoryPack } from './asyncMemoryPack'
 
 // Built-in agent pack: SQL Table Memory (agent-packs plan WP1.6 — the ABI dogfood).
 //
@@ -64,7 +65,7 @@ export const TABLE_MEMORY_FRAGMENT: WorkflowDoc = {
   schemaVersion: 1,
   kind: 'fragment',
   description:
-    'Projects a chat\'s SQL memory tables into the prompt and, after the reply commits, runs a ' +
+    "Projects a chat's SQL memory tables into the prompt and, after the reply commits, runs a " +
     'side LLM call to update those tables. The non-narrator half of the shipped table-memory ' +
     'workflow, re-expressed as an agent pack.',
   nodes: [
@@ -148,18 +149,68 @@ export const TABLE_MEMORY_FRAGMENT: WorkflowDoc = {
   ],
   attachments: [
     // ── context-ready branch entries: one per `ctx.gen → <tablenode>.gen` boundary edge ──────────
-    { kind: 'entry', checkpoint: 'context-ready', mode: 'branch', entryPort: { node: 'export', port: 'gen' } },
-    { kind: 'entry', checkpoint: 'context-ready', mode: 'branch', entryPort: { node: 'gate', port: 'gen' } },
-    { kind: 'entry', checkpoint: 'context-ready', mode: 'branch', entryPort: { node: 'read', port: 'gen' } },
-    { kind: 'entry', checkpoint: 'context-ready', mode: 'branch', entryPort: { node: 'refresh', port: 'gen' } },
-    { kind: 'entry', checkpoint: 'context-ready', mode: 'branch', entryPort: { node: 'sideParams', port: 'gen' } },
-    { kind: 'entry', checkpoint: 'context-ready', mode: 'branch', entryPort: { node: 'frame', port: 'gen' } },
-    { kind: 'entry', checkpoint: 'context-ready', mode: 'branch', entryPort: { node: 'side', port: 'gen' } },
-    { kind: 'entry', checkpoint: 'context-ready', mode: 'branch', entryPort: { node: 'tableapply', port: 'gen' } },
+    {
+      kind: 'entry',
+      checkpoint: 'context-ready',
+      mode: 'branch',
+      entryPort: { node: 'export', port: 'gen' }
+    },
+    {
+      kind: 'entry',
+      checkpoint: 'context-ready',
+      mode: 'branch',
+      entryPort: { node: 'gate', port: 'gen' }
+    },
+    {
+      kind: 'entry',
+      checkpoint: 'context-ready',
+      mode: 'branch',
+      entryPort: { node: 'read', port: 'gen' }
+    },
+    {
+      kind: 'entry',
+      checkpoint: 'context-ready',
+      mode: 'branch',
+      entryPort: { node: 'refresh', port: 'gen' }
+    },
+    {
+      kind: 'entry',
+      checkpoint: 'context-ready',
+      mode: 'branch',
+      entryPort: { node: 'sideParams', port: 'gen' }
+    },
+    {
+      kind: 'entry',
+      checkpoint: 'context-ready',
+      mode: 'branch',
+      entryPort: { node: 'frame', port: 'gen' }
+    },
+    {
+      kind: 'entry',
+      checkpoint: 'context-ready',
+      mode: 'branch',
+      entryPort: { node: 'side', port: 'gen' }
+    },
+    {
+      kind: 'entry',
+      checkpoint: 'context-ready',
+      mode: 'branch',
+      entryPort: { node: 'tableapply', port: 'gen' }
+    },
 
     // ── turn-committed branch entries: the two `write.floor → …` ordering edges ───────────────────
-    { kind: 'entry', checkpoint: 'turn-committed', mode: 'branch', entryPort: { node: 'gate', port: 'floor' } },
-    { kind: 'entry', checkpoint: 'turn-committed', mode: 'branch', entryPort: { node: 'refresh', port: 'after' } },
+    {
+      kind: 'entry',
+      checkpoint: 'turn-committed',
+      mode: 'branch',
+      entryPort: { node: 'gate', port: 'floor' }
+    },
+    {
+      kind: 'entry',
+      checkpoint: 'turn-committed',
+      mode: 'branch',
+      entryPort: { node: 'refresh', port: 'after' }
+    },
 
     // ── prompt-assembly rejoin, `entries` LANE (WP1.6b): the monolith's exact injection edge ──────
     // export.entries (pre-qualified LorebookEntry[]) → assemble.entries, riding the real world-info
@@ -184,11 +235,16 @@ export const buildTableMemoryPack = (): AgentPackRecord => ({
     name: 'SQL Table Memory',
     creator: 'RP Terminal',
     description:
-      'Projects your chat\'s memory tables into the prompt and updates them after each reply via a ' +
+      "Projects your chat's memory tables into the prompt and updates them after each reply via a " +
       'side model call. The built-in table-memory system, packaged as an agent pack.'
   },
   fragment: TABLE_MEMORY_FRAGMENT
 })
 
-/** Every built-in pack the app seeds. One today; the array is the extension point. */
-export const BUILTIN_PACKS: readonly (() => AgentPackRecord)[] = [buildTableMemoryPack]
+/** Every built-in pack the app seeds; the array is the extension point. Today: the every-turn
+ *  `builtin.table-memory` and the flagship headless `builtin.async-memory` (asyncMemoryPack.ts) — both
+ *  DEFAULT OFF, and ALTERNATIVES the user picks between (see each pack's manifest/description). */
+export const BUILTIN_PACKS: readonly (() => AgentPackRecord)[] = [
+  buildTableMemoryPack,
+  buildAsyncMemoryPack
+]

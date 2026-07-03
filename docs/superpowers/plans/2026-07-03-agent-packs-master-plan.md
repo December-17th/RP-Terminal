@@ -388,6 +388,29 @@ workflows become built-in packs. No new UI beyond what exists.
   anchor port (one pack per port until WP1.7's merge work). Minor UX note for the pack-authoring
   wizard: a fragment reading Context in N places needs N entry decls — verbose but correct.
 
+- **2026-07-03, after WP2.1–2.2:** trigger model landed with grounded table stats
+  (unprocessed/processed/nextExpected from TableProgress only) and the MVU bracket-aware vars-path
+  dialect. Controller ruling: multiple triggers on a pack are INDEPENDENT (OR), deduped to one run
+  per pack per boundary. Headless runner: `runSubgraph` could not feed arbitrary entry ports, so
+  fragments run via an ADAPTER (synthetic `subgraph.input` seed nodes, ids `__headless_seed_*` —
+  **WP3.3 must filter these from the timeline display**). Guard split is load-bearing: public
+  `evaluateTriggers` is per-chat-guarded, the chain continues through guard-free `evaluatePass` —
+  do not "simplify" into one guarded function (kills chains). Rapid consecutive turns: a turn
+  landing mid-chain SKIPS evaluation (the chain's own commit re-evaluates); WP2.4 must not assume
+  an immediate dedicated eval per turn. buildGenContext reads all floors per headless Context —
+  fine, not free. Traces broadcast as `headless:<packId>`, unstored (WP2.3's job).
+
+- **2026-07-03, after WP2.4 (flagship complete):** builtin.async-memory landed — inline
+  `context.trimProcessed` (the ONE pre-authorized new node) at context-ready, branch export →
+  entries-lane rejoin, state trigger `table summary.unprocessed gte 6`. End-to-end + fail-soft +
+  never-trim-past-pointer proven through the real engine. **ABI observation for phase 4:** a
+  headless-only sub-chain that needs turn Context must self-seed via its own `input.context` node
+  (an entry attachment would also splice it into turns — WP2.4's first cut double-compacted
+  in-band); a dedicated "headless entry" attachment mode is the cleaner future ABI. **Phase-3
+  settings dependencies (WP3.2):** backlog N + watched-table sqlName (v0 placeholder 'summary' —
+  the top usability blocker) + trimmer scope, all needing override→doc materialization. Both
+  memory packs enabled at once = documented-unsupported (double-summarize + trimmed feed).
+
 ## Risks and watchpoints
 
 - **WP1.3 is the highest-risk change** (engine failure semantics). It must land behind the
