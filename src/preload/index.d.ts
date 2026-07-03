@@ -61,6 +61,44 @@ declare global {
         cb: (p: { chatId: string; nodeId: string; label?: string; delta: string }) => void
       ) => () => void
       onChatModeChanged: (cb: (p: { chatId: string; mode: string }) => void) => () => void
+      // Agent-pack library (agent-packs plan WP1.4). `scope` = 'global' | { world: string } |
+      // { chat: string } (agentPackStore OverrideScope).
+      listAgentPacks: (profileId: string) => Promise<
+        {
+          id: string
+          version: number
+          upstreamId: string | null
+          builtin: boolean
+          manifest: {
+            name: string
+            description?: string
+            creator?: string
+            exposedSettings?: Record<string, unknown>
+          }
+        }[]
+      >
+      setAgentPackGate: (
+        packId: string,
+        worldId: string,
+        chatId: string | null,
+        open: boolean
+      ) => Promise<void>
+      setAgentPackOverride: (
+        packId: string,
+        scope: 'global' | { world: string } | { chat: string },
+        settingId: string,
+        value: unknown
+      ) => Promise<void>
+      clearAgentPackOverride: (
+        packId: string,
+        scope: 'global' | { world: string } | { chat: string },
+        settingId: string
+      ) => Promise<boolean>
+      resolveAgentPackOverrides: (
+        packId: string,
+        worldId: string | null,
+        chatId: string | null
+      ) => Promise<Record<string, unknown>>
       // SQL-table memory (issue 02)
       listTableTemplates: (
         profileId: string

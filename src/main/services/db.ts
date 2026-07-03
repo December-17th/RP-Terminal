@@ -111,6 +111,58 @@ CREATE TABLE IF NOT EXISTS table_progress (
   last_floor INTEGER NOT NULL,
   PRIMARY KEY (chat_id, sql_name)
 );
+
+-- Agent-pack library (agent-packs plan WP1.4; ADR 0005/0006/0009; glossary root CONTEXT.md).
+-- The user-owned INSTALL of a pack, shared by all worlds (the "library"). Fragment docs live HERE,
+-- NOT in the profile workflow dir, so listWorkflows (which only reads that dir) can never surface a
+-- pack fragment in the turn-workflow selection UI. upstream_id records fork lineage (ADR 0006 --
+-- copy-on-edit); builtin marks app-shipped packs (uninstallable). manifest/fragment are JSON blobs
+-- (a Zod schema owns the shape at the service edge, mirroring the cards/settings blob precedent). The
+-- library is profile-global: no chat/world FK here (activation, below, is what scopes a pack).
+CREATE TABLE IF NOT EXISTS agent_packs (
+  id TEXT PRIMARY KEY,
+  profile_id TEXT NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+  version INTEGER NOT NULL,
+  upstream_id TEXT,
+  builtin INTEGER NOT NULL DEFAULT 0,
+  manifest TEXT NOT NULL,
+  fragment TEXT NOT NULL,
+  created_at TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_agent_packs_profile ON agent_packs(profile_id);
+
+-- Per-world (per-chat exception) ACTIVATION of an installed pack (ADR 0005 — activation lives with
+-- the world/chat, never in the pack; ADR 0009 — the gate is per-pack). A row with chat_id NULL is
+-- the WORLD-scope gate for (pack, world); a row with a chat_id is the per-chat EXCEPTION that wins.
+-- world_id is a character/world-card id (a chat's world = its chats.character_id; getChat resolves
+-- it). No row for a (pack, world/chat) = gate CLOSED (packs are opt-in). denial is a JSON array of
+-- closed entry indexes / denied capability ids (semantics arrive in a later WP; stored + threaded
+-- to composition now as closedEntryIndexes). Not FK'd to agent_packs so a builtin seed's activation
+-- can precede any migration reordering; the service prunes orphans on read/uninstall.
+CREATE TABLE IF NOT EXISTS agent_pack_activation (
+  pack_id TEXT NOT NULL,
+  world_id TEXT NOT NULL,
+  chat_id TEXT,
+  gate_open INTEGER NOT NULL DEFAULT 0,
+  denial TEXT,
+  PRIMARY KEY (pack_id, world_id, chat_id)
+);
+CREATE INDEX IF NOT EXISTS idx_agent_pack_activation_pack ON agent_pack_activation(pack_id);
+
+-- Exposed-setting OVERRIDES for an installed pack, layered by scope (ADR 0005 — global default <
+-- per-world < per-chat, nearest wins). scope encodes the tier as a single string: 'global' for the
+-- library-wide default, or a world/chat id for the narrower tiers (the selection sidecar's
+-- global/world encoding, widened with a chat tier — see agentPackStore.ts SCOPE encoding note).
+-- v0: overrides are stored + resolved but NOT yet applied to fragment docs (materialization is a
+-- later WP). value is a JSON blob (any exposed-setting value shape).
+CREATE TABLE IF NOT EXISTS agent_pack_overrides (
+  pack_id TEXT NOT NULL,
+  scope TEXT NOT NULL,
+  setting_id TEXT NOT NULL,
+  value TEXT NOT NULL,
+  PRIMARY KEY (pack_id, scope, setting_id)
+);
+CREATE INDEX IF NOT EXISTS idx_agent_pack_overrides_pack ON agent_pack_overrides(pack_id);
 `
 
 // Presets/lorebooks were briefly stored in SQL during early Phase F; they are now

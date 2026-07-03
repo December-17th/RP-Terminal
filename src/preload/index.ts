@@ -150,6 +150,17 @@ const api = {
     ipcRenderer.on('workflow-panel', listener)
     return () => ipcRenderer.removeListener('workflow-panel', listener)
   },
+  // Agent-pack library (agent-packs plan WP1.4): list + per-world gate + exposed-setting overrides.
+  // `scope` is 'global' | { world } | { chat } (agentPackStore OverrideScope).
+  listAgentPacks: (profileId: string) => ipcRenderer.invoke('agent-packs-list', profileId),
+  setAgentPackGate: (packId: string, worldId: string, chatId: string | null, open: boolean) =>
+    ipcRenderer.invoke('agent-pack-set-gate', packId, worldId, chatId, open),
+  setAgentPackOverride: (packId: string, scope: unknown, settingId: string, value: unknown) =>
+    ipcRenderer.invoke('agent-pack-set-override', packId, scope, settingId, value),
+  clearAgentPackOverride: (packId: string, scope: unknown, settingId: string) =>
+    ipcRenderer.invoke('agent-pack-clear-override', packId, scope, settingId),
+  resolveAgentPackOverrides: (packId: string, worldId: string | null, chatId: string | null) =>
+    ipcRenderer.invoke('agent-pack-resolve-overrides', packId, worldId, chatId),
   // SQL-table memory (issue 02): file-based table templates + per-chat assignment + read-only view
   listTableTemplates: (profileId: string) =>
     ipcRenderer.invoke('table-templates-list', profileId),
