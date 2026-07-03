@@ -54,12 +54,34 @@ import { activeControllers } from './generation/rawGenerate'
  * and return it. All orchestration lives here so the renderer just calls one IPC.
  */
 
+// Chats with a MAIN turn in flight (pre-phase — cleared when the floor is delivered). Deliberately
+// SEPARATE from `activeControllers`: that map is shared with generateRaw (combat/duel narration,
+// one-off TH generateRaw calls), which must stay allowed during a turn — only full-pipeline turns
+// serialize.
+const activeTurns = new Set<string>()
+
 export const generate = async (
   profileId: string,
   chatId: string,
   userAction: string,
   onDelta: DeltaCallback = () => {}
 ): Promise<FloorFile | null> => {
+  // ST-faithful serialization: ONE main turn per chat at a time. SillyTavern refuses a Generate()
+  // while one is in flight, and card scripts calling TH `generate` mid-turn RELY on that refusal —
+  // without it, a script-triggered second turn runs a full concurrent pipeline: two provider calls
+  // at once, two persisted floors racing, interleaved deltas into one streaming bubble ("the story
+  // advances on its own"). The rejected caller gets a plain error, exactly like ST. The guard
+  // covers the pre phase only (cleared at floor delivery); the detached post phase — the table-
+  // maintenance side call — deliberately stays outside it.
+  if (activeTurns.has(chatId)) {
+    const head = userAction.length > 80 ? `${userAction.slice(0, 80)}…` : userAction
+    log(
+      'error',
+      `✗ generate rejected — a turn is already in flight for this chat. Second caller's action: "${head}" (likely a card script calling TH.generate mid-turn; SillyTavern refuses these too)`
+    )
+    throw new Error('Generation already in progress for this chat')
+  }
+
   const chat = getChat(profileId, chatId)
   if (!chat) throw new Error('Chat session not found')
 
@@ -70,6 +92,7 @@ export const generate = async (
   // re-written once per turn never builds a false runaway streak across turns (WS-3).
   resetWriteLoopGuard(chatId)
 
+  activeTurns.add(chatId)
   const controller = new AbortController()
   activeControllers.set(chatId, controller)
   try {
@@ -140,6 +163,7 @@ export const generate = async (
     }
     return earlyFloor
   } finally {
+    activeTurns.delete(chatId)
     activeControllers.delete(chatId)
   }
 }
