@@ -52,7 +52,8 @@ export const MAINTAINER_RULES = `规则：
 1. 只输出 SQL 语句，全部包裹在一个 <TableEdit>…</TableEdit> 标签内。标签内不要写任何解释或注释。
 2. 仅允许对上面列出的表执行 INSERT / UPDATE / DELETE，禁止其它操作。
 3. 严格遵循每个表的【插入规则】【更新规则】【删除规则】（表为空时遵循【初始化规则】）。
-4. 只在确有变化时更新；若本批没有任何需要写入的变化，输出一个空的 <TableEdit></TableEdit>。`
+4. 只在确有变化时更新；若本批没有任何需要写入的变化，输出一个空的 <TableEdit></TableEdit>。
+5. 表格是历史档案，不是创作工具：只记录剧情中已经明确发生的事实。禁止编造、推测、预告或推进任何新剧情、新事件、新对话；禁止把"计划""预测""可能发生的事"写入任何表；没有把握的内容一律不写。`
 
 /**
  * Build the backfill maintainer system prompt for ONE batch (issue 07 §3). Reuses the maintainer

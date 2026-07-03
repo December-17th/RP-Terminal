@@ -215,6 +215,38 @@ describe('context.history', () => {
       { role: 'user', content: 'How are you?' }
     ])
   })
+
+  it('a wired span {from,to} selects EXACTLY that floor range (0-based inclusive), clamped', () => {
+    // gen has 2 floors; span {from:0,to:0} = the first floor only, though count would take both.
+    const r = contextHistory.run(
+      ctx,
+      { gen, span: { from: 0, to: 0 } },
+      meta(contextHistory, 'n1', { count: 50 })
+    )
+    expect((r.outputs as { transcript: string }).transcript).toBe(
+      'User: Hi!\nAssistant: Hello, trainer.'
+    )
+    // An out-of-range `to` clamps to the available floors instead of erroring.
+    const r2 = contextHistory.run(
+      ctx,
+      { gen, span: { from: 1, to: 99 } },
+      meta(contextHistory, 'n1', {})
+    )
+    expect((r2.outputs as { transcript: string }).transcript).toBe(
+      'User: How are you?\nAssistant: I am well.'
+    )
+  })
+
+  it('a malformed/absent span falls back to count (the dead-edge convention)', () => {
+    const r = contextHistory.run(
+      ctx,
+      { gen, span: { from: 'x' } },
+      meta(contextHistory, 'n1', { count: 1 })
+    )
+    expect((r.outputs as { transcript: string }).transcript).toBe(
+      'User: How are you?\nAssistant: I am well.'
+    )
+  })
 })
 
 describe('context.card', () => {

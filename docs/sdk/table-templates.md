@@ -258,11 +258,20 @@ that reads the due tables, prompts a maintainer LLM, and applies the emitted SQL
 
 ### `table.gate` — the update-frequency cadence gate
 
-Fires `due` once any watched table's `updateFrequency` window has elapsed. Inputs `gen: Context`,
-`floor: Any` (**ORDERING-ONLY** — wire from `output.writeFloor.floor`; its value is ignored, it
-exists to sequence the gate AFTER the reply floor is persisted). Outputs `due: Signal`, `tables: Any`
-(the due `sqlName[]`), `span: Any` (`{ from, to }`, the aged floor range). Config `{ tables?: string
-(comma-separated sqlNames narrowing which tables to watch; unset = all template tables) }`.
+Fires `due` once any watched table's effective update-frequency window has elapsed. Inputs `gen:
+Context`, `floor: Any` (**ORDERING-ONLY** — wire from `output.writeFloor.floor`; its value is ignored,
+it exists to sequence the gate AFTER the reply floor is persisted). Outputs `due: Signal`, `tables:
+Any` (the due `sqlName[]`), `span: Any` (`{ from, to }`, the aged floor range). Config `{ tables?:
+string (comma-separated sqlNames narrowing which tables to watch; unset = all template tables),
+every?: 1..500 }`.
+
+- **`every` — the global cadence override** (`tableNodes.ts` gate run(); post-merge cadence fix): when
+  set, EVERY watched table's effective frequency becomes `every`, so the whole maintenance pass runs
+  at most once every N floors. This is the player's knob for imported chatSheets templates whose
+  tables carry `-1` (= every turn — normalized to `1` by the importer), which would otherwise fire the
+  maintainer each round. Unset = the template's per-table frequencies. The Tables view's 下次维护
+  prediction honors the override (`tableStatusService.effectiveFrequencies`, pure + tested — several
+  overriding gates on one table: the lowest `every` wins).
 
 - **Floor source:** the gate re-reads the floor count FROM DISK via `getAllFloors(profileId,
   chatId).length - 1` (`currentFloor`, clamped ≥0). `gen.floors` is the PRE-turn snapshot
@@ -320,19 +329,26 @@ SQLite runtime error → class-B `bad-query` carrying SQLite's message.
 A shipped, importable example (the `decomposed-default.rptflow` convention — there is **no in-app
 seeding mechanism**; authors import the file). **Main path:** the builtin default with `table.export`
 wired into `prompt.assemble`'s `entries` port, so a chat's tables project into the prompt. **Post-
-response maintenance:** `table.gate` (gen from `ctx`, floor from `write.floor`) → `table.read`
-(`tables` from `gate.tables`, `when` from `gate.due`) → `prompt.messages` framing a **zh 数据库表格维护**
-prompt from `{{in1}}` = `read.block`, `{{in2}}` = recent transcript (`context.history` count 4),
-`{{in3}}` = the main reply (`llm.raw`, so `<char_info>`/`<scene_info>` tag conventions reach the
-maintainer) → a NON-STREAMING `llm.sample` (`stream: false`, `retries: 1`, **no `api_preset_id`** so
-it runs out-of-the-box on the active connection) → `parse.extract` (tag `TableEdit`) → `table.apply`
-(`sql` from `sql.first`, `when` from `sql.found`). `side.error` and `tableapply.error` route to two
-`util.log` nodes (fail-open). The maintainer prompt instructs **exactly ONE `<TableEdit>` block** with
-all statements (so `sql.first` captures everything), only INSERT/UPDATE/DELETE on the listed tables,
-and an empty tag when nothing changed. Its `description` field documents: assign a template in the
-Tables view (else the branch is a silent no-op), how to point `side` at a cheap model via
-`api_preset_id`, and how to chain a second staged pass (世界推进 before 剧情推进) with an ordering edge
-(first `table.apply.done` → second `gate.floor`). Validated by `test/workflow/tableMemoryExample.test.ts`.
+response maintenance** (reworked in the cadence fix): `table.gate` (gen from `ctx`, floor from
+`write.floor`, config `{ every: 3 }` — the whole pass runs every 3 floors; edit/delete `every` to
+change the cadence) → `table.read` (`tables` from `gate.tables`, `when` from `gate.due`) →
+`prompt.messages` framing a **zh 数据库表格维护** prompt from `{{in1}}` = `read.block` and `{{in2}}` =
+the EXACT aged-in transcript: a `context.refresh` (ordered after `write.floor`) feeds
+`context.history`, whose `span` input is wired from `gate.span`, so the maintenance covers precisely
+the floors since the last pass — including the just-persisted turn — with no gaps or overlap
+(`count: 6` is only the dead-span fallback) → a NON-STREAMING `llm.sample` (`stream: false`,
+`retries: 1`, **no `api_preset_id`** so it runs out-of-the-box on the active connection) →
+`parse.extract` (tag `TableEdit`) → `table.apply` (`sql` from `sql.first`, `when` from `sql.found`).
+`side.error` and `tableapply.error` route to two `util.log` nodes (fail-open). The maintainer prompt
+instructs **exactly ONE `<TableEdit>` block** with all statements (so `sql.first` captures
+everything), only INSERT/UPDATE/DELETE on the listed tables, the 一次交互 batch rule (纪要表 gains
+exactly ONE row per pass), an empty tag when nothing changed, and the **record-only rule** (tables are
+a historical archive: only facts that explicitly happened; no inventing, predicting, or advancing the
+plot — `tableMaintenance.MAINTAINER_RULES` rule 5, shared with the backfill). Its `description` field
+documents: assign a template in the Tables view (else the branch is a silent no-op), the `every` knob,
+how to point `side` at a cheap model via `api_preset_id`, and how to chain a second staged pass
+(世界推进 before 剧情推进) with an ordering edge (first `table.apply.done` → second `gate.floor`).
+Validated by `test/workflow/tableMemoryExample.test.ts`.
 
 ## Hand editing (issue 06)
 

@@ -3,7 +3,7 @@
   "name": "SQL Table Memory",
   "version": 1,
   "schemaVersion": 1,
-  "description": "The default generation pipeline PLUS SQL-table memory. The main path is the builtin default (Assemble Prompt) with table.export wired into Assemble's 'entries' port, so a chat's table rows project into the prompt through the normal world-info machinery. After the reply is persisted, a post-response maintenance branch runs a SIDE LLM call to update the tables: table.gate fires on each table's update-frequency cadence, table.read renders the due tables' definitions + rules + current data, prompt.messages frames a zh 数据库表格维护 prompt (the table block, the recent transcript, and this turn's reply so <char_info>/<scene_info> tag conventions reach it), a NON-STREAMING llm.sample produces one <TableEdit> block, parse.extract pulls it, and table.apply writes it. Any side-call or apply failure logs (util.log) WITHOUT disturbing the turn (fail-open).\n\nSETUP: assign a table template in the Tables view — WITHOUT one the maintenance branch is a silent no-op (table.gate/read/apply all short-circuit when no template is assigned). The shipped file runs the side LLM on the ACTIVE connection; to point it at a cheaper model, set the 'side' node's api_preset_id to a saved api_preset id. To stage passes (e.g. 世界推进 before 剧情推进), add a SECOND maintenance chain and sequence it after the first with an ordering edge (wire the first table.apply's 'done' output into the second chain's gate 'floor' input, the output.writeFloor→gate pattern), optionally refreshing context between them with context.refresh.\n\nThis 'frame' system prompt is the shared maintainer CONTRACT (issue 07): the manual backfill (tableBackfillService) reuses the same rules block (factored into tableMaintenance.MAINTAINER_RULES) plus a per-batch 一次交互 rule. Keep the two consistent — a contract change here should mirror into tableMaintenance.ts. The gate's per-turn cadence and the backfill share ONE chat-level progress pointer (table_progress); the old per-workflow node-state pointer is retired.",
+  "description": "The default generation pipeline PLUS SQL-table memory. The main path is the builtin default (Assemble Prompt) with table.export wired into Assemble's 'entries' port, so a chat's table rows project into the prompt through the normal world-info machinery. After the reply is persisted, a post-response maintenance branch runs a SIDE LLM call to update the tables: table.gate fires the whole pass EVERY N FLOORS (the gate's 'every' config — default 3 here; it OVERRIDES the template's per-table frequencies, which imported chatSheets templates often mark as every-turn), table.read renders the due tables' definitions + rules + current data, context.refresh + context.history (span-driven from gate.span) build the EXACT aged-in transcript, prompt.messages frames the zh 数据库表格维护 prompt, a NON-STREAMING llm.sample produces one <TableEdit> block, parse.extract pulls it, and table.apply writes it. Any side-call or apply failure logs (util.log) WITHOUT disturbing the turn (fail-open).\n\nSETUP: assign a table template in the Tables view — WITHOUT one the maintenance branch is a silent no-op (table.gate/read/apply all short-circuit when no template is assigned). Change the maintenance cadence by editing the 'gate' node's 'every' config (delete it to fall back to the template's own per-table frequencies). The shipped file runs the side LLM on the ACTIVE connection; to point it at a cheaper model, set the 'side' node's api_preset_id to a saved api_preset id. To stage passes (e.g. 世界推进 before 剧情推进), add a SECOND maintenance chain and sequence it after the first with an ordering edge (wire the first table.apply's 'done' output into the second chain's gate 'floor' input, the output.writeFloor→gate pattern).\n\nThe 'frame' system prompt is the shared maintainer CONTRACT (issue 07): the manual backfill (tableBackfillService) reuses the same rules block (factored into tableMaintenance.MAINTAINER_RULES) plus the same 一次交互 batch rule. Keep the two consistent — a contract change here should mirror into tableMaintenance.ts. The gate's per-turn cadence and the backfill share ONE chat-level progress pointer (table_progress).",
   "nodes": [
     { "id": "ctx", "type": "input.context", "position": { "x": 0, "y": 380 } },
     { "id": "export", "type": "table.export", "position": { "x": 280, "y": 200 } },
@@ -18,12 +18,13 @@
       "position": { "x": 1680, "y": 380 }
     },
 
-    { "id": "gate", "type": "table.gate", "position": { "x": 1960, "y": 380 } },
+    { "id": "gate", "type": "table.gate", "config": { "every": 3 }, "position": { "x": 1960, "y": 380 } },
     { "id": "read", "type": "table.read", "config": { "max_rows": 30 }, "position": { "x": 2240, "y": 300 } },
+    { "id": "refresh", "type": "context.refresh", "position": { "x": 1960, "y": 560 } },
     {
       "id": "recent",
       "type": "context.history",
-      "config": { "count": 4 },
+      "config": { "count": 6 },
       "position": { "x": 2240, "y": 460 }
     },
     { "id": "sideParams", "type": "context.params", "position": { "x": 2240, "y": 600 } },
@@ -34,7 +35,7 @@
         "messages": [
           {
             "role": "system",
-            "content": "You are the 数据库表格维护AI (database-table maintenance AI). Below are the memory tables, each with its definition and the operations you may perform on it, followed by the recent story and this turn's reply. Update the tables to reflect what happened this turn.\n\n【表格与规则】\n{{in1}}\n\n【近期剧情】\n{{in2}}\n\n【本轮回复】\n{{in3}}\n\n规则：\n1. 只输出 SQL 语句，全部包裹在一个 <TableEdit>…</TableEdit> 标签内。标签内不要写任何解释或注释。\n2. 仅允许对上面列出的表执行 INSERT / UPDATE / DELETE，禁止其它操作。\n3. 严格遵循每个表的【插入规则】【更新规则】【删除规则】（表为空时遵循【初始化规则】）。\n4. 只在确有变化时更新；若本轮没有任何需要写入的变化，输出一个空的 <TableEdit></TableEdit>。"
+            "content": "你是数据库表格维护AI（database-table maintenance AI）。下面是记忆表格，每个表附带其定义与可执行的操作，随后是自上次维护以来的剧情。请根据这段剧情更新表格。\n\n将【本批剧情】整体视为一次交互进行维护：纪要表只允许新增恰好一行（概括整批），其余表按各自规则维护。\n\n【表格与规则】\n{{in1}}\n\n【本批剧情】\n{{in2}}\n\n规则：\n1. 只输出 SQL 语句，全部包裹在一个 <TableEdit>…</TableEdit> 标签内。标签内不要写任何解释或注释。\n2. 仅允许对上面列出的表执行 INSERT / UPDATE / DELETE，禁止其它操作。\n3. 严格遵循每个表的【插入规则】【更新规则】【删除规则】（表为空时遵循【初始化规则】）。\n4. 只在确有变化时更新；若本批没有任何需要写入的变化，输出一个空的 <TableEdit></TableEdit>。\n5. 表格是历史档案，不是创作工具：只记录剧情中已经明确发生的事实。禁止编造、推测、预告或推进任何新剧情、新事件、新对话；禁止把\"计划\"\"预测\"\"可能发生的事\"写入任何表；没有把握的内容一律不写。"
           }
         ]
       },
@@ -100,13 +101,15 @@
     { "from": { "node": "gate", "port": "tables" }, "to": { "node": "read", "port": "tables" } },
     { "from": { "node": "gate", "port": "due" }, "to": { "node": "read", "port": "when" } },
 
-    { "from": { "node": "ctx", "port": "gen" }, "to": { "node": "recent", "port": "gen" } },
+    { "from": { "node": "ctx", "port": "gen" }, "to": { "node": "refresh", "port": "gen" } },
+    { "from": { "node": "write", "port": "floor" }, "to": { "node": "refresh", "port": "after" } },
+    { "from": { "node": "refresh", "port": "gen" }, "to": { "node": "recent", "port": "gen" } },
+    { "from": { "node": "gate", "port": "span" }, "to": { "node": "recent", "port": "span" } },
     { "from": { "node": "ctx", "port": "gen" }, "to": { "node": "sideParams", "port": "gen" } },
 
     { "from": { "node": "ctx", "port": "gen" }, "to": { "node": "frame", "port": "gen" } },
     { "from": { "node": "read", "port": "block" }, "to": { "node": "frame", "port": "in1" } },
     { "from": { "node": "recent", "port": "transcript" }, "to": { "node": "frame", "port": "in2" } },
-    { "from": { "node": "llm", "port": "raw" }, "to": { "node": "frame", "port": "in3" } },
 
     { "from": { "node": "ctx", "port": "gen" }, "to": { "node": "side", "port": "gen" } },
     { "from": { "node": "frame", "port": "messages" }, "to": { "node": "side", "port": "sendMessages" } },

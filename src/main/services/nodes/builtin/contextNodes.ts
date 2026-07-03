@@ -29,11 +29,22 @@ const historyConfig = z.object({
 
 /** The last N floors as a transcript text block and a role-tagged message list. Assistant
  *  content has thinking stripped (`stripThinking`); both sides are trimmed and empty strings
- *  are skipped. `include` narrows BOTH outputs to one side. */
+ *  are skipped. `include` narrows BOTH outputs to one side.
+ *
+ *  Optional `span` input (table-maintenance cadence fix): a wired `{ from, to }` (0-based,
+ *  inclusive floor indices — the shape `table.gate` emits) selects EXACTLY that floor range
+ *  instead of the trailing `count`, so a maintenance pass that runs every N floors covers
+ *  precisely the aged-in span with no gaps or overlap. A dead/absent/malformed span falls back
+ *  to `count` (the edge is dead on turns the gate doesn't fire — `Any`, not `Signal`, so it
+ *  never gates this node off; the same convention as context.refresh's `after`). Indices are
+ *  clamped to the available floors. */
 export const contextHistory: NodeImpl = {
   type: 'context.history',
   title: 'History',
-  inputs: [{ name: 'gen', type: 'Context' }],
+  inputs: [
+    { name: 'gen', type: 'Context' },
+    { name: 'span', type: 'Any' }
+  ],
   outputs: [
     { name: 'transcript', type: 'Text' },
     { name: 'messages', type: 'Messages' }
@@ -44,9 +55,18 @@ export const contextHistory: NodeImpl = {
     const gen = inputs.gen as GenContext
     const count = cfg.count ?? 4
     const include = cfg.include ?? 'both'
+    const span = inputs.span as { from?: unknown; to?: unknown } | undefined
+    const hasSpan =
+      span != null && typeof span.from === 'number' && typeof span.to === 'number'
+    const selected = hasSpan
+      ? gen.floors.slice(
+          Math.max(0, Math.trunc(span.from as number)),
+          Math.max(0, Math.trunc(span.to as number)) + 1
+        )
+      : gen.floors.slice(-count)
     const lines: string[] = []
     const messages: ChatMessage[] = []
-    for (const f of gen.floors.slice(-count)) {
+    for (const f of selected) {
       if (include !== 'assistant') {
         const user = (f.user_message?.content ?? '').trim()
         if (user) {

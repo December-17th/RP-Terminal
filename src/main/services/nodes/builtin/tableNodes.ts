@@ -210,7 +210,11 @@ export const tableExport: NodeImpl = {
  */
 const gateConfig = z.object({
   /** Comma-separated sqlNames narrowing which tables the gate watches; unset = all template tables. */
-  tables: z.string().optional()
+  tables: z.string().optional(),
+  /** Run the maintenance only every N floors: OVERRIDES every watched table's own updateFrequency
+   *  (imported chatSheets templates often mark tables `-1` = every turn, which makes the whole pass
+   *  fire each round — this is the player's global cadence knob). Unset = per-table frequencies. */
+  every: z.number().int().min(1).max(500).optional()
 })
 
 type GateConfig = z.infer<typeof gateConfig>
@@ -256,7 +260,11 @@ export const tableGate: NodeImpl = {
     const dueTables: string[] = []
     for (const t of tables) {
       const lastFloor = progress[t.sqlName] ?? -1
-      if (currentFloor - lastFloor >= t.updateFrequency) dueTables.push(t.sqlName)
+      // `every` (when set) is the global cadence override — the whole pass runs at most every N
+      // floors regardless of the template's per-table frequencies (imported chatSheets tables often
+      // carry -1 = every turn, which would fire the maintainer each round).
+      const frequency = cfg.every ?? t.updateFrequency
+      if (currentFloor - lastFloor >= frequency) dueTables.push(t.sqlName)
     }
     if (!dueTables.length) return { outputs: {} } // nothing due this turn
 
