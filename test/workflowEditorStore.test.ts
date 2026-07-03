@@ -63,7 +63,8 @@ beforeEach(() => {
     readOnly: false,
     errors: [],
     selectedNodeId: null,
-    status: null
+    status: null,
+    lockedNodeIds: new Set<string>()
   })
 })
 
@@ -334,5 +335,48 @@ describe('workflowEditorStore: cloneAndEdit', () => {
     await useWorkflowEditorStore.getState().cloneAndEdit(profileId)
     const s = useWorkflowEditorStore.getState()
     expect(s.currentId).toBe('default')
+  })
+})
+
+describe('workflowEditorStore: locked node guard (Effective mode pack nodes — WP3.6a)', () => {
+  it('a locked node is immutable at the MODEL layer (setNodeConfig/removeNode/move are no-ops)', async () => {
+    const store = useWorkflowEditorStore.getState()
+    await store.init(profileId)
+    await store.open(profileId, 'custom-1') // editable custom doc (not the readOnly builtin)
+    // Lock `ctx` (simulating a pack node in Effective mode).
+    useWorkflowEditorStore.getState().setLockedNodeIds(new Set(['ctx']))
+
+    // Every mutating action targeting the locked node is dropped.
+    useWorkflowEditorStore.getState().setNodeConfig('ctx', { foo: 'bar' })
+    useWorkflowEditorStore.getState().moveNode('ctx', { x: 999, y: 999 })
+    useWorkflowEditorStore.getState().setMainOutput('ctx')
+    useWorkflowEditorStore.getState().removeNode('ctx')
+
+    const s = useWorkflowEditorStore.getState()
+    const ctx = s.nodes.find((n) => n.id === 'ctx')!
+    expect(ctx).toBeDefined() // not removed
+    expect(ctx.config).toBeUndefined() // not configured
+    expect(ctx.position).toEqual({ x: 0, y: 0 }) // not moved
+    expect(ctx.isMainOutput).not.toBe(true) // main-output not flipped
+  })
+
+  it('an UNLOCKED node in the same doc stays editable', async () => {
+    const store = useWorkflowEditorStore.getState()
+    await store.init(profileId)
+    await store.open(profileId, 'custom-1')
+    useWorkflowEditorStore.getState().setLockedNodeIds(new Set(['ctx']))
+
+    useWorkflowEditorStore.getState().setNodeConfig('write', { label: 'x' })
+    const write = useWorkflowEditorStore.getState().nodes.find((n) => n.id === 'write')!
+    expect(write.config).toEqual({ label: 'x' })
+  })
+
+  it('opening a doc clears the lock (Normal mode is unaffected)', async () => {
+    const store = useWorkflowEditorStore.getState()
+    await store.init(profileId)
+    await store.open(profileId, 'custom-1')
+    useWorkflowEditorStore.getState().setLockedNodeIds(new Set(['ctx']))
+    await useWorkflowEditorStore.getState().open(profileId, 'custom-1')
+    expect(useWorkflowEditorStore.getState().lockedNodeIds.size).toBe(0)
   })
 })

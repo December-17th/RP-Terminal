@@ -46,4 +46,18 @@ export const registerAgentPackIpc = (ipcMain: IpcMain): void => {
     (_, profileId: string, chatId: string, beforeSeq?: number, limit?: number) =>
       listRuns(profileId, chatId, { beforeSeq, limit })
   )
+  // Effective-graph projection for the Workflow view's Effective mode (agent-packs plan WP3.6a;
+  // ADR 0010). Returns the composed doc + warnings + per-pack grouping (name / node ids / triggerOnly)
+  // — a live projection, never a persisted artifact (ADR 0001). Re-fetched after a gate flip or a
+  // narrator write-through to recompose.
+  ipcMain.handle('agent-pack-effective-graph', (_, profileId: string, chatId: string) =>
+    agentPackService.getEffectiveGraph(profileId, chatId)
+  )
+  // Copy-on-edit fork (ADR 0006; phase-4 machinery pulled forward for ADR 0010). WP3.6a exposes the
+  // operation; WP3.6b routes pack-node edits through it. Repoints only the given world's activation.
+  ipcMain.handle(
+    'agent-pack-fork',
+    (_, profileId: string, packId: string, worldId: string, editedFragment?: unknown) =>
+      agentPackService.forkPack(profileId, packId, worldId, editedFragment as never)
+  )
 }

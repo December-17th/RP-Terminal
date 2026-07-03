@@ -37,7 +37,11 @@ const store = vi.hoisted(() => ({
   listOverrideRows: vi.fn(),
   upsertOverride: vi.fn(),
   deleteOverride: vi.fn(),
-  layerOverrides: vi.fn()
+  layerOverrides: vi.fn(),
+  // Fork wrappers (agent-packs plan WP3.6a).
+  insertActivationRow: vi.fn(),
+  deleteActivationForWorld: vi.fn(),
+  insertOverrideRow: vi.fn()
 }))
 
 vi.mock('../src/main/services/agentPackStore', () => store)
@@ -113,6 +117,14 @@ beforeEach(() => {
   }))
   store.listActivationRows.mockImplementation((id) => state.activation.filter((r) => r.packId === id))
   store.listOverrideRows.mockImplementation((id) => state.overrides.filter((r) => r.packId === id))
+  // Fork wrappers over the in-memory state.
+  store.insertActivationRow.mockImplementation((row: ActivationRow) => state.activation.push({ ...row }))
+  store.deleteActivationForWorld.mockImplementation((packId: string, worldId: string) => {
+    state.activation = state.activation.filter((r) => !(r.packId === packId && r.worldId === worldId))
+  })
+  store.insertOverrideRow.mockImplementation((packId: string, scope: string, settingId: string, value: unknown) =>
+    state.overrides.push({ packId, scope, settingId, value })
+  )
 })
 
 afterEach(() => setEnabledFragmentsProvider()) // restore the zero-packs default provider
@@ -263,6 +275,131 @@ describe('built-in pack seeding (WP1.6)', () => {
   it('list() lazily seeds even without an explicit seedBuiltinPacks call', () => {
     // A fresh profile that was never explicitly seeded — list() must surface the builtin.
     expect(service.list('seed-prof-4').some((p) => p.id === TABLE_MEMORY)).toBe(true)
+  })
+})
+
+describe('fork (ADR 0006; WP3.6a)', () => {
+  it('nextForkId: first free <id>.fork-<n>', () => {
+    expect(service.nextForkId('p1', new Set()).id).toBe('p1.fork-1')
+    expect(service.nextForkId('p1', new Set(['p1.fork-1'])).id).toBe('p1.fork-2')
+    expect(service.nextForkId('p1', new Set(['p1.fork-1', 'p1.fork-2'])).n).toBe(3)
+  })
+
+  it('deriveForkManifest records structured locale-neutral fork provenance', () => {
+    const m = service.deriveForkManifest({ name: 'Memory Keeper', creator: 'me' }, 1)
+    expect(m.fork).toEqual({ base: 'Memory Keeper', n: 1 })
+    expect(m.creator).toBe('me')
+  })
+
+  it('deriveForkManifest flattens the base when forking a fork', () => {
+    // Source is itself a fork (fork.base = the root name) → the new fork keeps the ROOT base.
+    const m = service.deriveForkManifest({ name: 'Memory Keeper (fork 1)', fork: { base: 'Memory Keeper', n: 1 } }, 2)
+    expect(m.fork).toEqual({ base: 'Memory Keeper', n: 2 })
+  })
+
+  it('records lineage, repoints the editing world, leaves other worlds + the source install untouched, carries overrides', () => {
+    state.packs = [pack({ id: 'p1', builtin: true })]
+    // p1 gated open in the editing world w1 (world row + a chat exception) AND in another world w2.
+    state.activation = [
+      { packId: 'p1', worldId: 'w1', chatId: null, gateOpen: true, denial: [] },
+      { packId: 'p1', worldId: 'w1', chatId: 'c1', gateOpen: false, denial: [] },
+      { packId: 'p1', worldId: 'w2', chatId: null, gateOpen: true, denial: [] }
+    ]
+    state.overrides = [{ packId: 'p1', scope: 'world:w1', settingId: 'tone', value: 'warm' }]
+
+    const r = service.forkPack('prof', 'p1', 'w1')
+    expect(r.ok).toBe(true)
+    const forkId = r.pack!.id
+    expect(forkId).toBe('p1.fork-1')
+
+    // Lineage recorded, non-builtin.
+    const fork = state.packs.find((p) => p.id === forkId)!
+    expect(fork.upstreamId).toBe('p1')
+    expect(fork.builtin).toBe(false)
+
+    // World w1 repointed to the fork (both the world row and the chat exception copied), source's w1
+    // rows removed; w2 (other world) untouched on the SOURCE.
+    const forkW1 = state.activation.filter((a) => a.packId === forkId && a.worldId === 'w1')
+    expect(forkW1).toHaveLength(2)
+    expect(state.activation.some((a) => a.packId === 'p1' && a.worldId === 'w1')).toBe(false)
+    expect(state.activation.some((a) => a.packId === 'p1' && a.worldId === 'w2' && a.gateOpen)).toBe(true)
+
+    // Overrides carried over to the fork.
+    expect(state.overrides.some((o) => o.packId === forkId && o.settingId === 'tone' && o.value === 'warm')).toBe(true)
+
+    // The builtin source stays installed.
+    expect(state.packs.some((p) => p.id === 'p1')).toBe(true)
+  })
+
+  it('uses editedFragment when provided, else the source fragment', () => {
+    state.packs = [pack({ id: 'p1' })]
+    const edited = { ...pack().fragment, name: 'Edited' } as WorkflowDoc
+    service.forkPack('prof', 'p1', 'w1', edited)
+    const fork = state.packs.find((p) => p.id === 'p1.fork-1')!
+    expect(fork.fragment.name).toBe('Edited')
+
+    service.forkPack('prof', 'p1', 'w1')
+    const fork2 = state.packs.find((p) => p.id === 'p1.fork-2')!
+    expect(fork2.fragment.name).toBe('F') // the source fragment's name
+  })
+
+  it('forking an unknown pack fails', () => {
+    expect(service.forkPack('prof', 'nope', 'w1').ok).toBe(false)
+  })
+})
+
+describe('getEffectiveGraph projection (WP3.6a)', () => {
+  beforeEach(() => setEnabledFragmentsProvider(service.enabledFragmentsFor))
+
+  it('returns the doc + warnings + per-pack grouping; a spliced pack is NOT triggerOnly', () => {
+    // pack() has a prompt-assembly rejoin on node `blk` — it splices (nodeIds non-empty).
+    state.packs = [pack({ id: 'p1' })]
+    state.activation = [{ packId: 'p1', worldId: 'w1', chatId: null, gateOpen: true, denial: [] }]
+
+    const eff = service.getEffectiveGraph('prof', 'c1')
+    expect(eff.packs).toHaveLength(1)
+    const p = eff.packs[0]
+    expect(p.packId).toBe('p1')
+    expect(p.gateOpen).toBe(true)
+    expect(p.nodeIds).toContain('pack:p1:blk')
+    expect(p.triggerOnly).toBe(false)
+  })
+
+  it('a gate-open pack that splices NO checkpoint attachment is triggerOnly (present-but-detached)', () => {
+    // A trigger-only fragment: its ONLY attachment is a trigger. GROUNDED against compose.ts:250-253:
+    // with NO entry attachments, compose keeps ALL the fragment's nodes (nodeIds non-empty), but wires
+    // none of them to the narrator — no entry/rejoin edge. So triggerOnly = (no spliced attachment),
+    // NOT (empty nodeIds). The node is present-but-detached; the renderer draws it as a detached region.
+    const triggerOnlyPack = pack({
+      id: 'to',
+      fragment: {
+        id: 'tof',
+        name: 'TO',
+        version: 1,
+        schemaVersion: 1,
+        kind: 'fragment',
+        nodes: [{ id: 'n', type: 'text.template' }],
+        edges: [],
+        attachments: [
+          { kind: 'trigger', trigger: 'cadence', everyNFloors: 3 }
+        ]
+      } as WorkflowDoc
+    })
+    state.packs = [triggerOnlyPack]
+    state.activation = [{ packId: 'to', worldId: 'w1', chatId: null, gateOpen: true, denial: [] }]
+
+    const eff = service.getEffectiveGraph('prof', 'c1')
+    expect(eff.packs).toHaveLength(1)
+    expect(eff.packs[0].triggerOnly).toBe(true)
+    // The node IS present in the composed doc (present-but-detached) — the grounded truth.
+    expect(eff.packs[0].nodeIds).toContain('pack:to:n')
+    expect(eff.doc.nodes.some((n) => n.id === 'pack:to:n')).toBe(true)
+  })
+
+  it('no open packs → empty packs list, doc is the narrator', () => {
+    state.packs = []
+    const eff = service.getEffectiveGraph('prof', 'c1')
+    expect(eff.packs).toEqual([])
   })
 })
 

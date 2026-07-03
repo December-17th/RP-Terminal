@@ -770,6 +770,30 @@ const zh: Record<string, string> = {
   'workflowEditor.portDesc.subgraph.loop.out4': '最后一轮的 out4 值',
   'status.noState': '（此会话还没有 RPG 状态）',
 
+  // 生效视图（智能体包计划 WP3.6a；ADR 0010）——可编辑的生效流程投影。
+  'workflowEffective.mode': '视图模式',
+  'workflowEffective.mode.normal': '普通',
+  'workflowEffective.mode.effective': '生效',
+  'workflowEffective.pickerLocked': '生效模式显示当前会话的实时组合——切换到普通模式以选择流程',
+  'workflowEffective.saveNarrator': '保存叙事流程（智能体包节点需通过复刻编辑——即将推出）',
+  'workflowEffective.noChatTitle': '打开一个会话以查看其生效流程',
+  'workflowEffective.noChatBody':
+    '生效模式会渲染当前会话的实时组合——叙事流程加上所有已启用的智能体包。请先打开一个会话。',
+  'workflowEffective.loading': '正在组合生效流程……',
+  'workflowEffective.loadError': '无法加载生效流程。',
+  'workflowEffective.noProjection': '暂无可显示的生效流程。',
+  'workflowEffective.projectionNote': '实时投影 · 已启用 {n} 个智能体包——并非已保存的流程',
+  'workflowEffective.gateOn': '已启用',
+  'workflowEffective.gateOff': '已禁用',
+  'workflowEffective.triggerOnly': '自主运行',
+  'workflowEffective.triggerOnlyDesc': '该包在本回合中没有节点——当其条件满足时会自行运行。',
+  'workflowEffective.packLocked': '属于某个智能体包——通过复刻编辑（即将推出）',
+  'workflowEffective.packNodeTitle': '智能体包节点',
+  'workflowEffective.forkToEdit':
+    '该节点属于一个智能体包。编辑它会将该包复刻到你的库中，从而使你的改动不影响原包。',
+  'workflowEffective.forkButton': '复刻以编辑',
+  'workflowEffective.forkComing': '复刻智能体包以编辑其节点的功能即将推出',
+
   'prefs.combatNarration': '战斗叙述',
   'prefs.combatNarrationAppend': '追加到当前消息',
   'prefs.combatNarrationFloor': '作为新消息添加',

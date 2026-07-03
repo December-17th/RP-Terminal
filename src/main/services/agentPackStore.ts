@@ -32,6 +32,13 @@ export interface PackManifest {
   creator?: string
   /** Stable-id → default value. Overrides layer on top of these (resolveOverrides). */
   exposedSettings?: Record<string, unknown>
+  /** Fork provenance (ADR 0006; agent-packs plan WP3.6a). Present ONLY on fork entries. Stored in
+   *  STRUCTURED, LOCALE-NEUTRAL form so the UI localizes the word "fork": `base` is the source's
+   *  display name (or its own `fork.base` when forking a fork — the chain flattens to the root name),
+   *  and `n` is the fork counter (1-based, per source). The renderer renders e.g. `${base} (${t('fork')} ${n})`
+   *  so no English literal is baked into the stored name. `name` above is still populated (a sensible
+   *  neutral default) but the UI prefers this structured form when present. */
+  fork?: { base: string; n: number }
 }
 
 /** One installed pack (an Install, glossary): the library row. The fragment is a kind:'fragment'
@@ -294,6 +301,53 @@ export const upsertGate = (
        ON CONFLICT(pack_id, world_id, chat_id) DO UPDATE SET gate_open = excluded.gate_open`
     ).run(packId, worldId, chatId, open ? 1 : 0)
   }
+}
+
+// ── Fork support (ADR 0006; agent-packs plan WP3.6a — phase-4 machinery pulled forward) ───────────
+//
+// A fork is a copy-on-edit: a NEW library row with `upstream_id = <source id>`, the editing world's
+// activation REPOINTED to the fork, and the source's overrides COPIED so settings carry over. These
+// wrappers are the SQL side of that operation; the service (agentPackService.forkPack) orchestrates
+// them + the id/manifest derivation. Runtime-validated only under the sqlite mock (like the rest of
+// this store); the id-derivation + repoint LOGIC the service layers on top is unit-tested there.
+
+/** Insert a raw pre-built activation row (used by fork repoint to copy the source's rows to the
+ *  fork id under the same world/chat, preserving gate + denial). */
+export const insertActivationRow = (row: ActivationRow): void => {
+  getDb()
+    .prepare(
+      `INSERT INTO agent_pack_activation (pack_id, world_id, chat_id, gate_open, denial)
+       VALUES (?, ?, ?, ?, ?)
+       ON CONFLICT(pack_id, world_id, chat_id) DO UPDATE SET gate_open = excluded.gate_open, denial = excluded.denial`
+    )
+    .run(
+      row.packId,
+      row.worldId,
+      row.chatId,
+      row.gateOpen ? 1 : 0,
+      row.denial.length ? JSON.stringify(row.denial) : null
+    )
+}
+
+/** Delete every activation row for (pack, world) — both the world-scope row and any per-chat
+ *  exceptions — WITHOUT touching other worlds. Used to close the SOURCE pack's activation in the
+ *  editing world after repointing it to the fork (ADR 0006: other worlds untouched). */
+export const deleteActivationForWorld = (packId: string, worldId: string): void => {
+  getDb()
+    .prepare('DELETE FROM agent_pack_activation WHERE pack_id = ? AND world_id = ?')
+    .run(packId, worldId)
+}
+
+/** Insert a raw pre-encoded override row (used by fork to copy the source's overrides to the fork id
+ *  so settings carry over — ADR 0006). `value` is stored as JSON, matching upsertOverride. */
+export const insertOverrideRow = (packId: string, scope: string, settingId: string, value: unknown): void => {
+  getDb()
+    .prepare(
+      `INSERT INTO agent_pack_overrides (pack_id, scope, setting_id, value)
+       VALUES (?, ?, ?, ?)
+       ON CONFLICT(pack_id, scope, setting_id) DO UPDATE SET value = excluded.value`
+    )
+    .run(packId, scope, settingId, JSON.stringify(value))
 }
 
 /** Every override row for a pack. */

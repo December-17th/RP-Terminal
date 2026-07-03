@@ -5,14 +5,22 @@
 //
 // No beforeunload-style unsaved-changes guard here: panel switching is in-app (no page navigation
 // to intercept), and the `dirty`/`unsaved` chip in the top bar is the guard the user sees instead.
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useMemo, useState } from 'react'
 import { useWorkflowEditorStore } from '../../stores/workflowEditorStore'
+import { useEffectiveGraphStore } from '../../stores/effectiveGraphStore'
+import { useChatStore } from '../../stores/chatStore'
 import { useToastStore } from '../../stores/toastStore'
 import { useOptionalT, useT } from '../../i18n'
+import { describeTrigger } from '../../../../shared/workflow/trace'
+import type { AttachmentDecl } from '../../../../shared/workflow/attachments'
 import FlowCanvas from './FlowCanvas'
+import EffectiveCanvas from './EffectiveCanvas'
 import NodeConfigPanel from './NodeConfigPanel'
+import { ownerOfNodeId, nodeOwnerMap, readComposition } from './effectiveProjection'
 
 const BUILTIN_WORKFLOW_ID = 'default'
+
+type EditorMode = 'normal' | 'effective'
 
 /** Renders `status` translated when it matches a known workflowEditor.* key (including the
  *  connect.* rejection reasons the store writes as `connect.<reason>`); otherwise shows the raw
@@ -57,13 +65,87 @@ export default function WorkflowEditorView({
   const save = useWorkflowEditorStore((s) => s.save)
   const cloneAndEdit = useWorkflowEditorStore((s) => s.cloneAndEdit)
   const select = useWorkflowEditorStore((s) => s.select)
+  const setLockedNodeIds = useWorkflowEditorStore((s) => s.setLockedNodeIds)
 
   const [showErrors, setShowErrors] = useState(false)
+
+  // ── Effective mode (agent-packs plan WP3.6a; ADR 0010) ─────────────────────────────────────────
+  const [mode, setMode] = useState<EditorMode>('normal')
+  const activeChatId = useChatStore((s) => s.activeChatId)
+  const chats = useChatStore((s) => s.chats)
+  const worldId = useMemo(
+    () => chats.find((c) => c.id === activeChatId)?.character_id ?? null,
+    [chats, activeChatId]
+  )
+  const effDoc = useEffectiveGraphStore((s) => s.doc)
+  const effPacks = useEffectiveGraphStore((s) => s.packs)
+  const effLoading = useEffectiveGraphStore((s) => s.loading)
+  const effError = useEffectiveGraphStore((s) => s.error)
+  const fetchEffective = useEffectiveGraphStore((s) => s.fetch)
+  const clearEffective = useEffectiveGraphStore((s) => s.clear)
+
+  // Trigger captions per pack, for detached (trigger-only) region placeholders. Built from each
+  // pack's trigger attachments (listAgentPacks carries them) via the shared describeTrigger.
+  const [triggerCaptions, setTriggerCaptions] = useState<Record<string, string>>({})
 
   useEffect(() => {
     void init(profileId)
     // eslint-disable-next-line react-hooks/exhaustive-deps -- run once per profileId, init is stable
   }, [profileId])
+
+  // Entering Effective mode: (1) load the resolved narrator into the editor store so narrator-node
+  // edits write through the EXISTING save path; (2) fetch the live projection; (3) build trigger
+  // captions. Leaving it clears the projection. Requires an active chat (guarded by the empty state).
+  useEffect(() => {
+    if (mode !== 'effective' || !activeChatId) {
+      if (mode !== 'effective') clearEffective()
+      return
+    }
+    let cancelled = false
+    void (async () => {
+      // Load the narrator doc that the effective graph composes over (the chat's resolved workflow),
+      // so its unprefixed nodes are the editor store's editable draft (write-through target).
+      const narratorId = await window.api.resolveWorkflowId(profileId, activeChatId)
+      if (cancelled) return
+      await open(profileId, narratorId)
+      await fetchEffective(profileId, activeChatId, worldId)
+      // Trigger captions from the pack manifests' attachments.
+      const list = (await window.api.listAgentPacks(profileId, worldId, activeChatId)) as {
+        id: string
+        attachments: AttachmentDecl[]
+      }[]
+      if (cancelled) return
+      const caps: Record<string, string> = {}
+      for (const p of list ?? []) {
+        const trigs = (p.attachments ?? []).filter(
+          (a): a is Extract<AttachmentDecl, { kind: 'trigger' }> => a.kind === 'trigger'
+        )
+        if (trigs.length) caps[p.id] = trigs.map((tr) => describeTrigger(tr)).join(' · ')
+      }
+      setTriggerCaptions(caps)
+    })()
+    return () => {
+      cancelled = true
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- open/fetch stable; re-run on the deps below
+  }, [mode, profileId, activeChatId, worldId])
+
+  // Keep the editor store's PACK-node lock in sync with the current projection (WP3.6a: pack nodes are
+  // locked at the model layer this stage; WP3.6b routes their edits through a fork). Narrator nodes
+  // (unprefixed) stay editable. Cleared when leaving Effective mode.
+  useEffect(() => {
+    if (mode !== 'effective' || !effDoc) {
+      setLockedNodeIds(new Set())
+      return
+    }
+    const owners = nodeOwnerMap(readComposition(effDoc))
+    const locked = new Set<string>()
+    for (const n of effDoc.nodes) {
+      if (owners.has(n.id) || ownerOfNodeId(n.id).kind === 'pack') locked.add(n.id)
+    }
+    setLockedNodeIds(locked)
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- setLockedNodeIds stable
+  }, [mode, effDoc])
 
   useEffect(() => {
     if (!currentId && workflows.length > 0) {
@@ -91,6 +173,16 @@ export default function WorkflowEditorView({
     void window.api.exportWorkflowDialog(profileId, currentId, name)
   }
 
+  // Save the currently-open doc, then (in Effective mode) re-fetch the projection so a narrator
+  // write-through re-composes live (ADR 0010: recompose from sources after every write-through). In
+  // Normal mode this is exactly the existing save — no behavior change.
+  const onSave = async (): Promise<void> => {
+    await save(profileId)
+    if (mode === 'effective' && activeChatId) {
+      await fetchEffective(profileId, activeChatId, worldId)
+    }
+  }
+
   return (
     <div className="rpt-workflow-editor" style={{ display: 'flex', flexDirection: 'column' }}>
       <div
@@ -103,9 +195,29 @@ export default function WorkflowEditorView({
           flex: '0 0 auto'
         }}
       >
+        {/* Normal / Effective mode toggle (agent-packs plan WP3.6a; ADR 0010). Effective renders the
+            live composition (narrator + gate-open packs) for the active chat. */}
+        <div className="rpt-eff-modeswitch" role="tablist" aria-label={t('workflowEffective.mode')}>
+          {(['normal', 'effective'] as EditorMode[]).map((m) => (
+            <button
+              key={m}
+              type="button"
+              role="tab"
+              aria-selected={mode === m}
+              className={`rpt-eff-modeswitch-btn${mode === m ? ' active' : ''}`}
+              onClick={() => setMode(m)}
+              style={{ fontSize: 12 }}
+            >
+              {t(`workflowEffective.mode.${m}`)}
+            </button>
+          ))}
+        </div>
+
         <select
           value={currentId ?? ''}
           onChange={(e) => void open(profileId, e.target.value)}
+          disabled={mode === 'effective'}
+          title={mode === 'effective' ? t('workflowEffective.pickerLocked') : undefined}
           style={{ fontSize: 12.5 }}
         >
           {workflows.map((w) => (
@@ -119,7 +231,7 @@ export default function WorkflowEditorView({
         <input
           type="text"
           value={doc?.name ?? ''}
-          disabled={readOnly}
+          disabled={readOnly || mode === 'effective'}
           placeholder={t('workflowEditor.namePh')}
           title={t('workflowEditor.nameTitle')}
           onChange={(e) => setDocName(e.target.value)}
@@ -129,8 +241,9 @@ export default function WorkflowEditorView({
         <button
           type="button"
           disabled={readOnly || !dirty}
-          onClick={() => void save(profileId)}
+          onClick={() => void onSave()}
           style={{ fontSize: 12.5 }}
+          title={mode === 'effective' ? t('workflowEffective.saveNarrator') : undefined}
         >
           {t('workflowEditor.save')}
         </button>
@@ -236,7 +349,18 @@ export default function WorkflowEditorView({
 
       <StatusLine status={status} />
 
-      <div style={{ display: 'flex', flex: 1, minHeight: 0 }}>
+      {mode === 'effective' ? (
+        <EffectiveBody
+          profileId={profileId}
+          hasChat={!!activeChatId}
+          loading={effLoading}
+          error={effError}
+          doc={effDoc}
+          packCount={effPacks.length}
+          triggerCaptions={triggerCaptions}
+        />
+      ) : (
+        <div style={{ display: 'flex', flex: 1, minHeight: 0 }}>
         <div
           style={{
             width: 180,
@@ -375,6 +499,77 @@ export default function WorkflowEditorView({
         >
           <NodeConfigPanel profileId={profileId} />
         </div>
+      </div>
+      )}
+    </div>
+  )
+}
+
+/** The Effective-mode body (agent-packs plan WP3.6a; ADR 0010): the projection canvas + the config
+ *  panel (narrator nodes editable/write-through; pack nodes read-only with a "fork to edit"
+ *  affordance — handled inside NodeConfigPanel). No node palette (a projection is not authored by
+ *  dragging in new nodes). Designed empty/loading/error states, never a blank div. */
+function EffectiveBody({
+  profileId,
+  hasChat,
+  loading,
+  error,
+  doc,
+  packCount,
+  triggerCaptions
+}: {
+  profileId: string
+  hasChat: boolean
+  loading: boolean
+  error: boolean
+  doc: unknown
+  packCount: number
+  triggerCaptions: Record<string, string>
+}): React.JSX.Element {
+  const t = useT()
+
+  if (!hasChat) {
+    return (
+      <div className="rpt-eff-empty-state">
+        <div className="rpt-eff-empty-icon" aria-hidden>
+          ◎
+        </div>
+        <h2 className="rpt-eff-empty-title">{t('workflowEffective.noChatTitle')}</h2>
+        <p className="rpt-eff-empty-body">{t('workflowEffective.noChatBody')}</p>
+      </div>
+    )
+  }
+
+  return (
+    <div style={{ display: 'flex', flex: 1, minHeight: 0 }}>
+      <div style={{ flex: 1, minWidth: 0, position: 'relative' }}>
+        {error ? (
+          <div className="rpt-eff-empty-state">
+            <p className="rpt-eff-empty-body">{t('workflowEffective.loadError')}</p>
+          </div>
+        ) : loading && !doc ? (
+          <div className="rpt-eff-empty-state">
+            <p className="rpt-eff-empty-body">{t('workflowEffective.loading')}</p>
+          </div>
+        ) : (
+          <EffectiveCanvas profileId={profileId} triggerCaptions={triggerCaptions} />
+        )}
+        {/* A quiet caption so the user knows this is a live projection, not a saved doc (ADR 0001). */}
+        <div className="rpt-eff-projection-note">
+          {t('workflowEffective.projectionNote', { n: packCount })}
+        </div>
+      </div>
+
+      <div
+        style={{
+          width: 280,
+          flex: '0 0 280px',
+          overflowY: 'auto',
+          borderLeft: '1px solid var(--rpt-border)',
+          padding: 8
+        }}
+      >
+        <NodeConfigPanel profileId={profileId} />
       </div>
     </div>
   )

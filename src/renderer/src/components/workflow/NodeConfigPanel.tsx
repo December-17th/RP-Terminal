@@ -310,10 +310,18 @@ export default function NodeConfigPanel({
   const selectedNodeId = useWorkflowEditorStore((s) => s.selectedNodeId)
   const nodes = useWorkflowEditorStore((s) => s.nodes)
   const nodeTypes = useWorkflowEditorStore((s) => s.nodeTypes)
-  const readOnly = useWorkflowEditorStore((s) => s.readOnly)
+  const storeReadOnly = useWorkflowEditorStore((s) => s.readOnly)
+  const lockedNodeIds = useWorkflowEditorStore((s) => s.lockedNodeIds)
   const setNodeConfig = useWorkflowEditorStore((s) => s.setNodeConfig)
   const setNodePanel = useWorkflowEditorStore((s) => s.setNodePanel)
   const setMainOutput = useWorkflowEditorStore((s) => s.setMainOutput)
+
+  // A locked node (Effective mode's pack nodes — agent-packs plan WP3.6a; ADR 0010) is read-only even
+  // when the doc is editable: pack nodes are locked this stage, with a "fork to edit" affordance
+  // (fork routing is WP3.6b). Locking here mirrors the model-layer guard (lockedNodeIds) so the UI
+  // can never present an edit that the store would silently drop.
+  const locked = selectedNodeId != null && lockedNodeIds.has(selectedNodeId)
+  const readOnly = storeReadOnly || locked
 
   const node = nodes.find((n) => n.id === selectedNodeId)
 
@@ -357,6 +365,37 @@ export default function NodeConfigPanel({
           }}
         >
           {nodeDesc}
+        </div>
+      )}
+
+      {/* Pack node lock affordance (agent-packs plan WP3.6a; ADR 0010): this node belongs to a pack;
+          editing it forks the pack (WP3.6b). Config below renders READ-ONLY until then. */}
+      {locked && (
+        <div
+          style={{
+            border: '1px solid var(--rpt-agent-region-border)',
+            background: 'var(--rpt-agent-region)',
+            borderRadius: 8,
+            padding: '8px 10px',
+            margin: '6px 0'
+          }}
+        >
+          <div style={{ fontSize: 11.5, color: 'var(--rpt-agent-region-text)', fontWeight: 600 }}>
+            {t('workflowEffective.packNodeTitle')}
+          </div>
+          <div
+            style={{
+              fontSize: 11,
+              color: 'var(--rpt-text-secondary)',
+              lineHeight: 1.5,
+              margin: '4px 0 8px'
+            }}
+          >
+            {t('workflowEffective.forkToEdit')}
+          </div>
+          <button type="button" disabled title={t('workflowEffective.forkComing')} style={{ fontSize: 12 }}>
+            {t('workflowEffective.forkButton')}
+          </button>
         </div>
       )}
 

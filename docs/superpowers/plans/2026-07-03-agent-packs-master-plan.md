@@ -411,6 +411,16 @@ workflows become built-in packs. No new UI beyond what exists.
   the top usability blocker) + trimmer scope, all needing override→doc materialization. Both
   memory packs enabled at once = documented-unsupported (double-summarize + trimmed feed).
 
+- **2026-07-03, owner request after WP3.1 review:** "editable effective graph inside the Workflow
+  view" — accepted as **ADR 0010** (effective graph = editable projection; edits write through:
+  narrator nodes → narrator doc, pack nodes/wiring → copy-on-edit fork per ADR 0006, region
+  removal → gate). Pulls the pack **fork operation** forward from phase 4 into new WPs:
+  **WP3.6a** (fork service + effective-projection IPC + Effective mode rendering: grouped pack
+  regions, gate chips, narrator write-through; pack nodes locked with "fork to edit" affordance)
+  then **WP3.6b** (pack-edit routing through fork + repoint + live recompose). Owner's WP3.1
+  visibility complaint ("enabling them doesn't show in the workflow") is answered by this plus
+  WP3.3/3.4.
+
 ## Risks and watchpoints
 
 - **WP1.3 is the highest-risk change** (engine failure semantics). It must land behind the

@@ -170,6 +170,19 @@ const api = {
     beforeSeq?: number,
     limit?: number
   ) => ipcRenderer.invoke('agent-pack-list-runs', profileId, chatId, beforeSeq, limit),
+  // Effective-graph projection for the Workflow view's Effective mode (agent-packs plan WP3.6a;
+  // ADR 0010): the composed doc + composition warnings + per-pack grouping. A live projection,
+  // never persisted (ADR 0001) — re-fetch after a gate flip or narrator write-through.
+  getEffectiveGraph: (profileId: string, chatId: string) =>
+    ipcRenderer.invoke('agent-pack-effective-graph', profileId, chatId),
+  // Copy-on-edit fork (ADR 0006). Repoints only `worldId`'s activation to the fork. WP3.6a exposes
+  // it; WP3.6b consumes it for pack-node edit routing.
+  forkAgentPack: (
+    profileId: string,
+    packId: string,
+    worldId: string,
+    editedFragment?: unknown
+  ) => ipcRenderer.invoke('agent-pack-fork', profileId, packId, worldId, editedFragment),
   // SQL-table memory (issue 02): file-based table templates + per-chat assignment + read-only view
   listTableTemplates: (profileId: string) =>
     ipcRenderer.invoke('table-templates-list', profileId),

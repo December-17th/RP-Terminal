@@ -803,6 +803,30 @@ const en: Record<string, string> = {
   'workflowEditor.portDesc.subgraph.loop.out3': 'The last pass’s out3 value',
   'workflowEditor.portDesc.subgraph.loop.out4': 'The last pass’s out4 value',
 
+  // Effective mode (agent-packs plan WP3.6a; ADR 0010) — the editable effective-graph projection.
+  'workflowEffective.mode': 'View mode',
+  'workflowEffective.mode.normal': 'Normal',
+  'workflowEffective.mode.effective': 'Effective',
+  'workflowEffective.pickerLocked': 'Effective mode shows the active chat’s live composition — switch to Normal to pick a workflow',
+  'workflowEffective.saveNarrator': 'Saves the narrator workflow (pack nodes are edited by forking — coming soon)',
+  'workflowEffective.noChatTitle': 'Open a chat to see its effective graph',
+  'workflowEffective.noChatBody':
+    'Effective mode renders the live composition for the active chat — the narrator workflow plus every enabled agent pack. Open a chat first.',
+  'workflowEffective.loading': 'Composing the effective graph…',
+  'workflowEffective.loadError': 'Could not load the effective graph.',
+  'workflowEffective.noProjection': 'No effective graph to show yet.',
+  'workflowEffective.projectionNote': 'Live projection · {n} pack(s) enabled — not a saved workflow',
+  'workflowEffective.gateOn': 'Enabled',
+  'workflowEffective.gateOff': 'Disabled',
+  'workflowEffective.triggerOnly': 'Runs by itself',
+  'workflowEffective.triggerOnlyDesc':
+    'This pack has no nodes in the turn — it runs on its own when its condition is met.',
+  'workflowEffective.packLocked': 'Belongs to a pack — edit by forking (coming soon)',
+  'workflowEffective.packNodeTitle': 'Pack node',
+  'workflowEffective.forkToEdit': 'This node belongs to an agent pack. Editing it forks the pack into your library so your changes don’t affect the original.',
+  'workflowEffective.forkButton': 'Fork to edit',
+  'workflowEffective.forkComing': 'Forking a pack to edit its nodes is coming soon',
+
   'prefs.combatNarration': 'Combat narration',
   'prefs.combatNarrationAppend': 'Append to the current message',
   'prefs.combatNarrationFloor': 'Add as a new message',

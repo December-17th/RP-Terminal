@@ -119,6 +119,43 @@ declare global {
         beforeSeq?: number,
         limit?: number
       ) => Promise<StoredRunRecord[]>
+      // Effective-graph projection for the Workflow view's Effective mode (agent-packs plan WP3.6a;
+      // ADR 0010). The composed doc + composition warnings + per-pack grouping (name / spliced node
+      // ids / triggerOnly). A live projection, never persisted (ADR 0001).
+      getEffectiveGraph: (
+        profileId: string,
+        chatId: string
+      ) => Promise<{
+        doc: import('../shared/workflow/types').WorkflowDoc
+        warnings: import('../shared/workflow/compose').ComposeWarning[]
+        packs: {
+          packId: string
+          name: string
+          gateOpen: boolean
+          nodeIds: string[]
+          triggerOnly: boolean
+        }[]
+      }>
+      // Copy-on-edit fork (ADR 0006). Returns the new pack summary; repoints only `worldId`'s
+      // activation to the fork. WP3.6a exposes it; WP3.6b routes pack-node edits through it.
+      forkAgentPack: (
+        profileId: string,
+        packId: string,
+        worldId: string,
+        editedFragment?: unknown
+      ) => Promise<{
+        ok: boolean
+        pack?: {
+          id: string
+          version: number
+          upstreamId: string | null
+          builtin: boolean
+          manifest: { name: string; description?: string; creator?: string; fork?: { base: string; n: number } }
+          attachments: import('../shared/workflow/attachments').AttachmentDecl[]
+          capabilities: import('../shared/workflow/capabilities').CapabilityId[]
+        }
+        error?: string
+      }>
       // SQL-table memory (issue 02)
       listTableTemplates: (
         profileId: string

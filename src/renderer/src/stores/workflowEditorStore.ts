@@ -47,6 +47,13 @@ interface WorkflowEditorState {
   errors: ValidationError[]
   selectedNodeId: string | null
   status: string | null
+  /** Node ids the editor must NOT mutate even when the doc is otherwise editable (agent-packs plan
+   *  WP3.6a; ADR 0010). Effective mode marks every PACK node id here so pack nodes are locked at the
+   *  MODEL layer — every mutating action (setNodeConfig/setMainOutput/setNodePanel/removeNode/connect
+   *  touching a locked node) is a no-op — not merely hidden in the UI. Empty in Normal mode, so
+   *  Normal-mode editing is completely unaffected. WP3.6b replaces this lock with fork-routing. */
+  lockedNodeIds: Set<string>
+  setLockedNodeIds(ids: Set<string>): void
   init(profileId: string): Promise<void>
   open(profileId: string, id: string): Promise<void>
   addNode(
@@ -98,6 +105,11 @@ export const useWorkflowEditorStore = create<WorkflowEditorState>((set, get) => 
     })
   }
 
+  /** Whether node `id` is locked against mutation (Effective mode's pack nodes — WP3.6a). Empty set
+   *  in Normal mode, so this is always false there. Load-bearing model-layer guard: it makes a locked
+   *  node's edits no-ops regardless of the UI, which the WP3.6a acceptance asserts. */
+  const isLocked = (id: string): boolean => get().lockedNodeIds.has(id)
+
   return {
     nodeTypes: [],
     workflows: [],
@@ -110,6 +122,9 @@ export const useWorkflowEditorStore = create<WorkflowEditorState>((set, get) => 
     errors: [],
     selectedNodeId: null,
     status: null,
+    lockedNodeIds: new Set<string>(),
+
+    setLockedNodeIds: (ids) => set({ lockedNodeIds: ids }),
 
     init: async (profileId) => {
       const [nodeTypes, workflows] = await Promise.all([
@@ -133,7 +148,10 @@ export const useWorkflowEditorStore = create<WorkflowEditorState>((set, get) => 
         dirty: false,
         errors: result.ok ? [] : result.errors,
         selectedNodeId: null,
-        status: null
+        status: null,
+        // Opening a doc in Normal mode clears any Effective-mode pack lock (a fresh doc has no pack
+        // nodes; the lock is set only while Effective mode is active).
+        lockedNodeIds: new Set<string>()
       })
     },
 
@@ -151,7 +169,7 @@ export const useWorkflowEditorStore = create<WorkflowEditorState>((set, get) => 
     },
 
     moveNode: (id, position) => {
-      if (get().readOnly) return
+      if (get().readOnly || isLocked(id)) return
       set({
         nodes: get().nodes.map((n) => (n.id === id ? { ...n, position } : n))
       })
@@ -159,7 +177,7 @@ export const useWorkflowEditorStore = create<WorkflowEditorState>((set, get) => 
     },
 
     connect: (from, to) => {
-      if (get().readOnly) return
+      if (get().readOnly || isLocked(from.node) || isLocked(to.node)) return
       const { nodes, edges, nodeTypes } = get()
       const verdict = canConnect(editorNodeTypeMap(nodeTypes), nodes, edges, from, to)
       if (!verdict.ok) {
@@ -184,7 +202,7 @@ export const useWorkflowEditorStore = create<WorkflowEditorState>((set, get) => 
     },
 
     removeNode: (id) => {
-      if (get().readOnly) return
+      if (get().readOnly || isLocked(id)) return
       set({
         nodes: get().nodes.filter((n) => n.id !== id),
         edges: get().edges.filter((e) => e.source !== id && e.target !== id)
@@ -193,7 +211,7 @@ export const useWorkflowEditorStore = create<WorkflowEditorState>((set, get) => 
     },
 
     setNodeConfig: (id, config) => {
-      if (get().readOnly) return
+      if (get().readOnly || isLocked(id)) return
       set({
         nodes: get().nodes.map((n) => (n.id === id ? { ...n, config } : n))
       })
@@ -201,7 +219,7 @@ export const useWorkflowEditorStore = create<WorkflowEditorState>((set, get) => 
     },
 
     setNodePanel: (id, panel) => {
-      if (get().readOnly) return
+      if (get().readOnly || isLocked(id)) return
       set({
         nodes: get().nodes.map((n) => {
           if (n.id !== id) return n
@@ -223,7 +241,7 @@ export const useWorkflowEditorStore = create<WorkflowEditorState>((set, get) => 
     },
 
     setMainOutput: (id) => {
-      if (get().readOnly) return
+      if (get().readOnly || isLocked(id)) return
       set({
         nodes: get().nodes.map((n) => ({
           ...n,
