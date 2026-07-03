@@ -20,52 +20,15 @@ import { getDb } from './db'
 import { WorkflowDoc } from '../../shared/workflow/types'
 import { AttachmentDecl } from '../../shared/workflow/attachments'
 import { deriveCapabilities, CapabilityId } from '../../shared/workflow/capabilities'
+import type { PackManifest } from '../../shared/workflow/packManifest'
 
 // ── Types ──────────────────────────────────────────────────────────────────────────────────────
 
-/** A creator-exposed setting (agent-packs plan WP3.2; rev-3 spec §Exposed Settings). Each has a
- *  STABLE `id` — the override key that survives pack upgrades (the override boundary rule: anything
- *  with a stable manifest id is override territory, not fork territory). Materialization writes the
- *  resolved override value into `target.nodeId`'s config at `target.path` (a dot/bracket path
- *  RELATIVE to that node's `config` object — e.g. `every` → node.config.every). Shared-safe (crosses
- *  IPC as JSON): plain data, no functions.
- *
- *  `label` is a plain string OR a per-locale map (`{ en, zh }`) — the renderer picks the active
- *  locale (falling back to `en`, then any value). Numeric settings may pin `min`/`max` (materialize
- *  clamps); enum settings pin `options` (the allowed string values). */
-export interface ExposedSetting {
-  id: string
-  label: string | Record<string, string>
-  type: 'number' | 'string' | 'boolean' | 'enum'
-  default: unknown
-  min?: number
-  max?: number
-  /** enum only: the allowed string values (the select's options). */
-  options?: string[]
-  /** Where the resolved value lands: a node id in the fragment + a dot/bracket path INTO that node's
-   *  `config` object (materialize wraps it as `config.<path>`). Unknown node/path → skip + log. */
-  target: { nodeId: string; path: string }
-}
-
-/** Minimal v0 manifest (agent-packs plan WP1.4), extended in WP3.2 with `exposedSettings`. The
- *  list/settings read side + materialization consume it. */
-export interface PackManifest {
-  name: string
-  description?: string
-  creator?: string
-  /** Creator-exposed settings (WP3.2). Each carries its own stable id, type, default, and target
-   *  node/path; materialization applies resolved overrides to the fragment before it runs/composes.
-   *  Absent/empty = the pack exposes no creator settings (its System trigger params are still
-   *  auto-derived from its trigger attachments — see agentPackMaterialize.deriveSystemSettings). */
-  exposedSettings?: ExposedSetting[]
-  /** Fork provenance (ADR 0006; agent-packs plan WP3.6a). Present ONLY on fork entries. Stored in
-   *  STRUCTURED, LOCALE-NEUTRAL form so the UI localizes the word "fork": `base` is the source's
-   *  display name (or its own `fork.base` when forking a fork — the chain flattens to the root name),
-   *  and `n` is the fork counter (1-based, per source). The renderer renders e.g. `${base} (${t('fork')} ${n})`
-   *  so no English literal is baked into the stored name. `name` above is still populated (a sensible
-   *  neutral default) but the UI prefers this structured form when present. */
-  fork?: { base: string; n: number }
-}
+// The manifest types (ExposedSetting, PackManifest) moved to the SHARED layer in WP4.1 so the pack
+// ENVELOPE schema (shared/workflow/packEnvelope.ts) can serialize them without importing main. They
+// are re-exported here so every existing `import { PackManifest } from './agentPackStore'` keeps
+// compiling — the store is still the main-side home of the manifest.
+export type { ExposedSetting, PackManifest } from '../../shared/workflow/packManifest'
 
 /** One installed pack (an Install, glossary): the library row. The fragment is a kind:'fragment'
  *  WorkflowDoc (never run alone; composed into the effective graph). */

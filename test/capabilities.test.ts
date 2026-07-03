@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import {
   deriveCapabilities,
+  deriveCapabilityReport,
   capabilityOfNodeType,
   structuralCapabilities,
   isWriteCapability,
@@ -141,6 +142,72 @@ describe('deriveCapabilities', () => {
       'injects-prompt',
       'runs-headless'
     ])
+  })
+})
+
+describe('deriveCapabilityReport (enforcement-grade; ADR 0007)', () => {
+  // A known-types set standing in for the runtime registry (the soundness test uses the REAL one).
+  const known = new Set<string>([
+    'input.context',
+    'context.history',
+    'table.read',
+    'table.apply',
+    'llm.sample',
+    'util.log',
+    'prompt.messages'
+  ])
+
+  it('reports the same capabilities as deriveCapabilities, in CAPABILITY_IDS order', () => {
+    const d = doc(['table.read', 'table.apply', 'llm.sample'])
+    const report = deriveCapabilityReport(d, known)
+    expect(report.capabilities).toEqual(deriveCapabilities(d))
+    expect(report.capabilities).toEqual(['reads-tables', 'writes-tables', 'calls-llm'])
+  })
+
+  it('maps each capability to the node ids that conferred it (for denial + the import screen)', () => {
+    const d: WorkflowDoc = {
+      id: 'f',
+      name: 'f',
+      version: 1,
+      schemaVersion: 1,
+      kind: 'fragment',
+      nodes: [
+        { id: 'r1', type: 'table.read' },
+        { id: 'r2', type: 'table.read' },
+        { id: 'w1', type: 'table.apply' },
+        { id: 'noise', type: 'util.log' }
+      ],
+      edges: [],
+      attachments: []
+    }
+    const report = deriveCapabilityReport(d, known)
+    expect(report.nodesByCapability['reads-tables']).toEqual(['r1', 'r2'])
+    expect(report.nodesByCapability['writes-tables']).toEqual(['w1'])
+    // An inert known type contributes to no capability bucket.
+    expect(Object.values(report.nodesByCapability).flat()).not.toContain('noise')
+  })
+
+  it('SURFACES an unknown node type — never silently derives zero capabilities (soundness)', () => {
+    const d = doc(['table.read', 'made.up.node', 'another.mystery'])
+    const report = deriveCapabilityReport(d, known)
+    // Sorted + de-duped; the known/mapped types are NOT in the list.
+    expect(report.unknownNodeTypes).toEqual(['another.mystery', 'made.up.node'])
+    expect(report.capabilities).toEqual(['reads-tables'])
+  })
+
+  it('a known-but-unmapped (inert) type is NOT surfaced as unknown', () => {
+    const report = deriveCapabilityReport(doc(['util.log', 'prompt.messages']), known)
+    expect(report.unknownNodeTypes).toEqual([])
+    expect(report.capabilities).toEqual([])
+  })
+
+  it('adds structural capabilities but leaves them out of nodesByCapability (no conferring node)', () => {
+    const report = deriveCapabilityReport(
+      doc(['table.read'], [{ kind: 'trigger', trigger: 'manual' }]),
+      known
+    )
+    expect(report.capabilities).toEqual(['reads-tables', 'runs-headless'])
+    expect(report.nodesByCapability['runs-headless']).toBeUndefined()
   })
 })
 

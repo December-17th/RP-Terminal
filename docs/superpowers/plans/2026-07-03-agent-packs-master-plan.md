@@ -466,6 +466,20 @@ workflows become built-in packs. No new UI beyond what exists.
   selection + trace. Settings popup audited: nothing workflow/agents/memory-scoped hid there.
   Overview checklist retargeted to the Memory rail.
 
+- **2026-07-03, after WP4.1:** `.rptagent` v0 shipped in shared (byte-stable pretty JSON,
+  formatVersion 1, strip-with-warnings for unknown keys, 8 MiB cap, fragment revalidated on
+  parse; bundledTemplates as a structural-subset-with-passthrough of the main TableTemplate,
+  re-validated fully at install). Capability derivation is enforcement-grade:
+  deriveCapabilityReport surfaces unknown node types; a registry-enumeration soundness test
+  forces every future node type to be mapped or explicitly allowlisted-inert. **Two watch
+  items:** (1) `version` is a NUMBER (matches store + ADR 0008 dedupe), diverging from the
+  spec's semver-string sketch — a deliberate phase-5/6 decision if changed; (2)
+  **`subgraph.call`/`subgraph.loop` are capability-inert at the calling level** — nested-doc
+  capabilities are not folded in; WP4.2 import MUST surface subgraph-call nodes in imported
+  fragments as a warning ("references a local sub-graph — behavior not fully derivable"), and
+  full cross-doc reachability is required before denial-gating can claim soundness over
+  subgraph-bearing packs.
+
 ## Risks and watchpoints
 
 - **WP1.3 is the highest-risk change** (engine failure semantics). It must land behind the
