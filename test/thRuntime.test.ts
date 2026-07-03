@@ -282,6 +282,29 @@ describe('createThRuntime', () => {
     expect(m.calls.setGlobalVar).toContainEqual(['coins', 12])
   })
 
+  it('triggerSlash: /setinput fills the input box (the options-scripts inject mode)', async () => {
+    const m: any = mockHost()
+    const g = createThRuntime(m.host)
+    expect(await g.triggerSlash('/setinput 查看四周')).toBe('')
+    expect(m.calls.setInput.at(-1)).toBe('查看四周')
+    expect(m.calls.generate).toHaveLength(0) // inject only — nothing generated
+  })
+
+  it('triggerSlash: /send stages its text and /trigger generates WITH it (行动选项 generate mode)', async () => {
+    const m: any = mockHost()
+    const g = createThRuntime(m.host)
+    // The piped combo the clickable-options scripts emit.
+    expect(await g.triggerSlash('/send 选项一：出发 | /trigger')).toBe('gen:选项一：出发')
+    expect(m.calls.generate).toContain('选项一：出发')
+    // /send mirrored the text into the box; the consuming /trigger cleared the mirror.
+    expect(m.calls.setInput).toEqual(['选项一：出发', ''])
+    // Staging also works across two separate triggerSlash calls.
+    await g.triggerSlash('/send 第二个选项')
+    expect(await g.triggerSlash('/trigger')).toBe('gen:第二个选项')
+    // Consumed: a bare /trigger afterwards is an empty re-trigger, as before.
+    expect(await g.triggerSlash('/trigger')).toBe('gen:')
+  })
+
   it('script-scope vars use the KV store, not stat_data', async () => {
     const m: any = mockHost()
     const g = createThRuntime(m.host)
