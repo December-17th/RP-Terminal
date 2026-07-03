@@ -209,6 +209,19 @@ const api = {
   // pane opening + on the Refresh button; never auto-polled.
   previewNextPrompt: (profileId: string, chatId: string, userAction?: string) =>
     ipcRenderer.invoke('agent-pack-preview-prompt', profileId, chatId, userAction),
+  // Agent-pack SHARING: `.rptagent` export / import (agent-packs plan WP4.2). Export refuses builtins
+  // (a fork of a builtin IS exportable). Import is TWO-PHASE for WP4.3's inspection screen: the dialog
+  // opens + inspects (returns a report incl. a `token`); the renderer then confirms or cancels.
+  previewAgentPackExport: (profileId: string, packId: string) =>
+    ipcRenderer.invoke('agent-pack-preview-export', profileId, packId),
+  exportAgentPackDialog: (profileId: string, packId: string) =>
+    ipcRenderer.invoke('agent-pack-export-dialog', profileId, packId),
+  importAgentPackDialog: (profileId: string) =>
+    ipcRenderer.invoke('agent-pack-import-dialog', profileId),
+  confirmAgentPackImport: (token: string) =>
+    ipcRenderer.invoke('agent-pack-confirm-import', token),
+  cancelAgentPackImport: (token: string) =>
+    ipcRenderer.invoke('agent-pack-cancel-import', token),
   // SQL-table memory (issue 02): file-based table templates + per-chat assignment + read-only view
   listTableTemplates: (profileId: string) =>
     ipcRenderer.invoke('table-templates-list', profileId),

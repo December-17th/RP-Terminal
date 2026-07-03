@@ -1,5 +1,6 @@
-import { IpcMain } from 'electron'
+import { IpcMain, BrowserWindow, dialog } from 'electron'
 import * as agentPackService from '../services/agentPackService'
+import * as transfer from '../services/agentPackTransferService'
 import { OverrideScope } from '../services/agentPackStore'
 import { listRuns } from '../services/runHistoryStore'
 import { explainTriggers } from '../services/headlessRunService'
@@ -106,5 +107,64 @@ export const registerAgentPackIpc = (ipcMain: IpcMain): void => {
       const packSummaries = agentPackService.list(profileId, worldId, chatId)
       return previewNextPrompt({ profileId, chatId, userAction, packSummaries })
     }
+  )
+
+  // ── Agent-pack SHARING: `.rptagent` export / import (agent-packs plan WP4.2) ─────────────────────
+  //
+  // Export refuses builtins (`builtin-not-exportable`); a fork of a builtin IS exportable. The dialog
+  // lives HERE (the service stays dialog-free + testable), mirroring the table-template + workflow
+  // export-dialog precedents (tableMemoryIpc `table-template-export-dialog`, workflowIpc
+  // `export-workflow-dialog`). Import is TWO-PHASE for WP4.3's inspection screen: `import` opens the
+  // dialog + inspects (returns the report, incl. a `token`); the renderer decides to `confirm-import`
+  // or `cancel-import`. `app.getVersion()` (via the service's appVersion accessor) grounds the
+  // minRptVersion gate — read main-side, passed into the pure core.
+
+  // Dry-run export preview for the wizard (WP4.3): what the file WOULD contain — envelope meta,
+  // attachments summary, LOCALLY-derived capability report, bundled template names, warnings — WITHOUT
+  // writing. Returns { ok, preview } | { ok:false, error } (builtin / not-installed).
+  ipcMain.handle('agent-pack-preview-export', (_, profileId: string, packId: string) =>
+    transfer.previewAgentPackExport(profileId, packId)
+  )
+
+  // Export behind a save dialog (default filename `<id>-v<version>.rptagent`). Canceled dialog →
+  // { canceled: true }. Builtin / not-installed → { ok:false, error }. Success → { saved: path }.
+  ipcMain.handle(
+    'agent-pack-export-dialog',
+    async (event, profileId: string, packId: string) => {
+      // Resolve the pack meta first so a builtin/not-installed refusal happens BEFORE the dialog (no
+      // point prompting for a file we can't write). previewAgentPackExport is the cheap read.
+      const preview = transfer.previewAgentPackExport(profileId, packId)
+      if (!preview.ok) return { ok: false as const, error: preview.error }
+      const result = await dialog.showSaveDialog(BrowserWindow.fromWebContents(event.sender)!, {
+        defaultPath: transfer.exportFileName(packId, preview.preview.envelopeMeta.version),
+        filters: [{ name: 'RPT Agent Pack', extensions: ['rptagent'] }]
+      })
+      if (result.canceled || !result.filePath) return { canceled: true as const }
+      const written = transfer.writeAgentPackExport(profileId, packId, result.filePath)
+      if (!written.ok) return { ok: false as const, error: written.error }
+      return { saved: result.filePath }
+    }
+  )
+
+  // Import phase one: open dialog (filter .rptagent) → inspect → return the inspection report the
+  // renderer's screen renders. Canceled dialog → null. The report carries a `token` (present iff the
+  // file parsed) for phase two. app.getVersion() grounds the minRptVersion gate.
+  ipcMain.handle('agent-pack-import-dialog', async (event, profileId: string) => {
+    const result = await dialog.showOpenDialog(BrowserWindow.fromWebContents(event.sender)!, {
+      properties: ['openFile'],
+      filters: [{ name: 'RPT Agent Pack', extensions: ['rptagent', 'json'] }]
+    })
+    if (result.canceled || result.filePaths.length === 0) return null
+    return transfer.inspectAgentPackFile(profileId, result.filePaths[0], transfer.appVersion())
+  })
+
+  // Import phase two: install the inspected pack (+ bundled templates) for a token. Gate stays CLOSED
+  // (ADR 0005 — activation is separate). Re-checks blockers (defense-in-depth). Returns the confirm
+  // result the renderer toasts. `cancel-import` drops a token the user dismissed without confirming.
+  ipcMain.handle('agent-pack-confirm-import', (_, token: string) =>
+    transfer.confirmAgentPackImport(token, transfer.appVersion())
+  )
+  ipcMain.handle('agent-pack-cancel-import', (_, token: string) =>
+    transfer.cancelAgentPackImport(token)
   )
 }

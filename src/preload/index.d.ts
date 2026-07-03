@@ -290,6 +290,99 @@ declare global {
         error?: 'no-chat' | 'failed'
         generatedAt: number
       }>
+      // Agent-pack SHARING: `.rptagent` export / import (agent-packs plan WP4.2). Shapes inlined (not
+      // imported from main) per the established preload convention. `CapabilityId` is the shared shape.
+      // Export refuses builtins; import is two-phase (inspect → confirm) for WP4.3's inspection screen.
+      previewAgentPackExport: (
+        profileId: string,
+        packId: string
+      ) => Promise<
+        | {
+            ok: true
+            preview: {
+              envelopeMeta: { name: string; version: number; creator?: string; sizeBytes: number }
+              attachments: { entries: number; rejoins: number; triggers: number }
+              capabilityReport: {
+                capabilities: import('../shared/workflow/capabilities').CapabilityId[]
+                unknownNodeTypes: string[]
+                nodesByCapability: Partial<
+                  Record<import('../shared/workflow/capabilities').CapabilityId, string[]>
+                >
+              }
+              bundledTemplateNames: string[]
+              noTemplatesBundled: boolean
+              warnings: string[]
+            }
+          }
+        | { ok: false; error: { code: 'builtin-not-exportable' | 'not-installed'; message: string } }
+      >
+      exportAgentPackDialog: (
+        profileId: string,
+        packId: string
+      ) => Promise<
+        | { saved: string }
+        | { canceled: true }
+        | { ok: false; error: { code: 'builtin-not-exportable' | 'not-installed'; message: string } }
+      >
+      importAgentPackDialog: (profileId: string) => Promise<
+        | null
+        | {
+            envelopeMeta?: {
+              id: string
+              name: string
+              version: number
+              creator?: string
+              minRptVersion?: string
+              fork?: { base: string; n: number }
+            }
+            capabilityReport?: {
+              capabilities: import('../shared/workflow/capabilities').CapabilityId[]
+              unknownNodeTypes: string[]
+              nodesByCapability: Partial<
+                Record<import('../shared/workflow/capabilities').CapabilityId, string[]>
+              >
+            }
+            bundledTemplatePlans: { name: string; outcome: 'will-install' | 'will-duplicate' }[]
+            dedupe?: 'new' | 'already-installed'
+            blockers: (
+              | { code: 'unknown-node-types'; nodeTypes: string[] }
+              | { code: 'version-too-old'; minRptVersion: string; appVersion: string }
+              | { code: 'version-conflict'; installedVersion: number }
+            )[]
+            warnings: string[]
+            parseError?: {
+              code:
+                | 'too-large'
+                | 'invalid-json'
+                | 'unsupported-version'
+                | 'invalid-envelope'
+                | 'not-a-fragment'
+                | 'invalid-fragment'
+              errors?: string[]
+              foundVersion?: unknown
+            }
+            token?: string
+          }
+      >
+      confirmAgentPackImport: (token: string) => Promise<
+        | {
+            ok: true
+            installed: 'installed' | 'already-installed'
+            pack: { id: string; version: number; name: string }
+            installedTemplates: { name: string; id: string }[]
+          }
+        | { ok: false; code: 'expired' }
+        | {
+            ok: false
+            code: 'blocked'
+            blockers: (
+              | { code: 'unknown-node-types'; nodeTypes: string[] }
+              | { code: 'version-too-old'; minRptVersion: string; appVersion: string }
+              | { code: 'version-conflict'; installedVersion: number }
+            )[]
+          }
+      >
+      cancelAgentPackImport: (token: string) => Promise<void>
       // SQL-table memory (issue 02)
       listTableTemplates: (
         profileId: string
