@@ -29,6 +29,7 @@ import { broadcastHostEvent, initCardEventBridge } from './cardBridge/hostBroadc
 import { applyTheme } from './theme'
 import { useI18nStore } from './i18n'
 import { Launcher } from './components/Launcher'
+import { StDomCompat } from './components/StDomCompat'
 import { SettingsModal } from './components/SettingsModal'
 import { WorkflowEditorOverlay } from './components/workflow/WorkflowEditorOverlay'
 
@@ -224,6 +225,9 @@ export default function App(): React.ReactElement {
 
   return (
     <>
+      {/* ST DOM-compat shim: hidden #send_textarea / #send_but stand-ins for message scripts
+          that poke SillyTavern's DOM directly (see StDomCompat). */}
+      <StDomCompat />
       {/* Entry funnel: no open session → the World→Session launcher; an open session → play. */}
       {!activeChatId ? (
         <Launcher profileId={activeProfile.id} />
