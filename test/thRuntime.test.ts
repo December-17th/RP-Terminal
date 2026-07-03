@@ -217,6 +217,38 @@ describe('createThRuntime', () => {
     expect(m.calls.applyVariableOps[0]).toEqual([{ op: 'set', path: '/a/b', value: 5 }])
   })
 
+  it('insertOrAssignVariables DEEP-merges a partial nested object, preserving siblings (命定之诗 date bug)', async () => {
+    // Initial stat has a nested `date` game-state object; a partial write to date.log must NOT wipe
+    // date.npcs / date.event or the other date.log fields (real TavernHelper merge, not shallow replace).
+    const m: any = mockHost({
+      statData: () => ({ date: { npcs: { a: 1 }, event: { cache: '' }, log: { deathCount: 0 } } })
+    })
+    const g = createThRuntime(m.host)
+    await g.insertOrAssignVariables({ date: { log: { totalFPGained: 7 } } })
+    // Only the changed leaf is persisted (siblings untouched)...
+    expect(m.calls.applyVariableOps[0]).toEqual([
+      { op: 'set', path: '/date/log/totalFPGained', value: 7 }
+    ])
+    // ...and the optimistic cache is the DEEP merge, not a top-level replace.
+    expect(g.getVariables()).toEqual({
+      stat_data: { date: { npcs: { a: 1 }, event: { cache: '' }, log: { deathCount: 0, totalFPGained: 7 } } }
+    })
+  })
+
+  it('insertVariables DEEP inserts only missing leaves (seeds defaults without overwriting)', async () => {
+    const m: any = mockHost({ statData: () => ({ date: { log: { deathCount: 3 } } }) })
+    const g = createThRuntime(m.host)
+    // Seed the full default structure; existing date.log.deathCount must be kept, missing fields added.
+    await g.insertVariables({ date: { npcs: {}, log: { deathCount: 0, illegalLevelUpId: [] } } })
+    expect(m.calls.applyVariableOps[0]).toEqual([
+      { op: 'set', path: '/date/npcs', value: {} },
+      { op: 'set', path: '/date/log/illegalLevelUpId', value: [] }
+    ])
+    expect(g.getVariables()).toEqual({
+      stat_data: { date: { npcs: {}, log: { deathCount: 3, illegalLevelUpId: [] } } }
+    })
+  })
+
   it('normalizes generate/generateRaw config', async () => {
     const m: any = mockHost()
     const g = createThRuntime(m.host)

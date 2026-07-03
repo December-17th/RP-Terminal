@@ -22,9 +22,86 @@ export function setVarOps(dotPath: string, value: unknown): VarOp[] {
   return [{ op: 'set', path: toPointer(dotPath), value }]
 }
 
-/** "set" ops for each TOP-LEVEL key of `obj` (TavernHelper insert/assign semantics — keys are not paths). */
+/** "set" ops for each TOP-LEVEL key of `obj` (a shallow whole-key replace — keys are not paths). */
 export function assignVarOps(obj: Record<string, unknown>): VarOp[] {
   return Object.entries(obj || {}).map(([k, v]) => ({ op: 'set', path: keyPointer(k), value: v }))
+}
+
+const isPlainObj = (v: unknown): v is Record<string, unknown> =>
+  !!v && typeof v === 'object' && !Array.isArray(v)
+
+/** Resolve a JSON Pointer against a root, returning `undefined` if any segment is missing. */
+function getAtPointer(root: unknown, pointer: string): unknown {
+  const segs = pointer
+    .split('/')
+    .slice(1)
+    .map((s) => s.replace(/~1/g, '/').replace(/~0/g, '~'))
+  let cur: any = root
+  for (const s of segs) {
+    if (cur == null || typeof cur !== 'object') return undefined
+    cur = cur[s]
+  }
+  return cur
+}
+
+/**
+ * Build DEEP leaf-path set ops for the TavernHelper `insertOrAssignVariables` (merge) and
+ * `insertVariables` (insert-if-absent) helpers, given the CURRENT state. Real TavernHelper merges a
+ * nested object into the variables recursively (like `_.merge` / `_.defaultsDeep`), preserving sibling
+ * keys — NOT a shallow whole-top-level-key replace. Emitting a `set` op per LEAF path lets the applier
+ * (`applyJsonPatch`, which auto-vivifies intermediate objects and touches only the addressed leaf) do
+ * the deep merge. A non-empty plain object recurses; a primitive / array / null / EMPTY object is a leaf.
+ *
+ * `insertOnly` (insertVariables): emit a leaf op ONLY when that path is ABSENT in `current` — never
+ * overwrites an existing value (deep defaults). Otherwise (insertOrAssignVariables): overwrite leaves,
+ * but treat an empty-object value as "create only if absent" so `{npcs:{}}` can't wipe an existing map.
+ */
+export function deepVarOps(
+  current: Record<string, unknown> | undefined,
+  obj: Record<string, unknown>,
+  insertOnly: boolean,
+  base = ''
+): VarOp[] {
+  const cur = current || {}
+  const ops: VarOp[] = []
+  for (const [k, v] of Object.entries(obj || {})) {
+    const path = base + '/' + esc(k)
+    if (isPlainObj(v) && Object.keys(v).length > 0) {
+      ops.push(...deepVarOps(cur, v, insertOnly, path))
+      continue
+    }
+    const exists = getAtPointer(cur, path) !== undefined
+    // insertOnly: only fill missing paths. merge + empty-object: only create if absent (don't wipe an
+    // existing object). merge + primitive/array/null: always overwrite the leaf.
+    if (insertOnly || isPlainObj(v)) {
+      if (!exists) ops.push({ op: 'set', path, value: v })
+    } else {
+      ops.push({ op: 'set', path, value: v })
+    }
+  }
+  return ops
+}
+
+/** Apply `set` ops (from deepVarOps / setVarOps) onto `root` in place, auto-vivifying intermediate
+ *  objects — mirrors the main-side `applyJsonPatch` so the runtime's optimistic stat cache stays in
+ *  sync with what gets persisted. Ignores non-`set` ops. Returns `root`. */
+export function applySetOps(root: Record<string, unknown>, ops: VarOp[]): Record<string, unknown> {
+  for (const op of ops) {
+    if (op.op !== 'set') continue
+    const segs = op.path
+      .split('/')
+      .slice(1)
+      .map((s) => s.replace(/~1/g, '/').replace(/~0/g, '~'))
+    if (!segs.length) continue
+    let cur: any = root
+    for (let i = 0; i < segs.length - 1; i++) {
+      const s = segs[i]
+      if (cur[s] == null || typeof cur[s] !== 'object' || Array.isArray(cur[s])) cur[s] = {}
+      cur = cur[s]
+    }
+    cur[segs[segs.length - 1]] = op.value
+  }
+  return root
 }
 
 /** Ops that make stat_data equal `next`: remove top-level keys absent from `next`, then set all of

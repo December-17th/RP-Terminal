@@ -1,7 +1,7 @@
 // src/shared/thRuntime/index.ts
 import type { Host, ThGlobals } from './types'
 import { floorsToThMessages, floorsToStChat, currentMessageId } from './shapes'
-import { setVarOps, assignVarOps, replaceStatDataOps, type VarOp } from './ops'
+import { setVarOps, deepVarOps, applySetOps, replaceStatDataOps, type VarOp } from './ops'
 import { nativeToThEntry, thToNativeEntry } from './worldbookEntry'
 import { expandMacros } from '../macros'
 import { runScript, type StCtx } from '../stscript'
@@ -345,21 +345,29 @@ export function createThRuntime(host: Host): ThGlobals {
     injectPrompts: (_prompts: any, _options?: any) => ({ uninject: () => undefined }),
     uninjectPrompts: (_ids: any) => undefined,
     // ASYNC writes
+    // TH insertOrAssignVariables: DEEP-merge a (possibly nested) object into stat_data, preserving
+    // sibling keys (real TavernHelper is `_.merge`-like, NOT a shallow whole-top-level-key replace — a
+    // shallow replace corrupted cards that write partial nested objects, e.g. 命定之诗's `date` game-state
+    // object whose `event`/`npcs`/`log` sub-keys are written separately). deepVarOps emits a leaf `set`
+    // op per changed path; applySetOps keeps the optimistic cache in sync with what gets persisted.
     insertOrAssignVariables: async (vars: any) => {
       const obj = vars?.stat_data && typeof vars.stat_data === 'object' ? vars.stat_data : vars
-      stat = { ...stat, ...(obj || {}) }
-      await writeVars(assignVarOps(obj || {}))
+      const ops = deepVarOps(stat, obj || {}, false)
+      if (ops.length) {
+        stat = applySetOps(clone(stat) || {}, ops)
+        await writeVars(ops)
+      }
     },
-    // TH insertVariables: insert-if-ABSENT (never overwrites an existing key) — the no-overwrite
-    // sibling of insertOrAssignVariables, used by cards to seed initial MVU vars. Parity with the
-    // inline shim (shims/tavern.ts), which already exposed it; the WCV runtime was missing it.
+    // TH insertVariables: insert-if-ABSENT (never overwrites an existing value) — the no-overwrite
+    // sibling of insertOrAssignVariables, used by cards to seed initial MVU vars (e.g. the full default
+    // `date` structure). DEEP: fills only the leaf paths missing from the current state (`_.defaultsDeep`),
+    // so a partially-present object still gets its missing nested fields.
     insertVariables: async (vars: any) => {
       const obj = vars?.stat_data && typeof vars.stat_data === 'object' ? vars.stat_data : vars
-      const add: Record<string, any> = {}
-      for (const k of Object.keys(obj || {})) if (!(k in stat)) add[k] = obj[k]
-      if (Object.keys(add).length) {
-        stat = { ...stat, ...add }
-        await writeVars(assignVarOps(add))
+      const ops = deepVarOps(stat, obj || {}, true)
+      if (ops.length) {
+        stat = applySetOps(clone(stat) || {}, ops)
+        await writeVars(ops)
       }
     },
     replaceVariables: async (vars: any, opt?: any) => {
