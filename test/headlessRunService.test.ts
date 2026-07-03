@@ -67,6 +67,11 @@ vi.mock('../src/main/services/agentPackTriggerStore', () => mockTriggerStore)
 const mockEvents = vi.hoisted(() => ({ notifyWorkflowTrace: vi.fn(), notifyWorkflowPanel: vi.fn() }))
 vi.mock('../src/main/services/workflowEvents', () => mockEvents)
 
+// Run-history persistence (WP2.3): the store appendRun spy — the sqlite table can't load under Node,
+// so we mock the store and assert the annotated record the runner hands it (origin/packIds/trigger).
+const mockRunHistory = vi.hoisted(() => ({ appendRun: vi.fn(() => undefined) }))
+vi.mock('../src/main/services/runHistoryStore', () => mockRunHistory)
+
 const mockLog = vi.hoisted(() => ({ log: vi.fn() }))
 vi.mock('../src/main/services/logService', () => mockLog)
 
@@ -120,6 +125,8 @@ beforeEach(() => {
   Object.values(mockFloor).forEach((f) => f.mockReset())
   Object.values(mockTableStatus).forEach((f) => f.mockReset())
   Object.values(mockEvents).forEach((f) => f.mockReset())
+  mockRunHistory.appendRun.mockReset()
+  mockRunHistory.appendRun.mockReturnValue(undefined)
   mockLog.log.mockReset()
   mockGenContext.buildGenContext.mockReset()
 
@@ -329,5 +336,76 @@ describe('in-flight reentrancy guard', () => {
     mockAgentPack.enabledFragmentsFor.mockReturnValue([])
     await evaluateTriggers('prof', 'c2', 'turn', 0)
     expect(mockAgentPack.enabledFragmentsFor).toHaveBeenCalledTimes(1)
+  })
+})
+
+// ── 8. Run-history persistence (WP2.3): origin + packId + trigger description ───────────────────────
+describe('run-history persistence', () => {
+  it('a fired headless run persists a record with origin "headless", the pack id, and the trigger desc', async () => {
+    mockFloor.getFloor.mockReturnValue({ floor: 0, variables: { stat_data: { hp: 42 } } })
+    const doc = varsWriteFragment([
+      { kind: 'trigger', trigger: 'state', source: { scope: 'vars', path: 'stat_data.hp' }, op: 'gt', value: 10 }
+    ])
+    mockAgentPack.enabledFragmentsFor.mockReturnValue([frag('p1', doc)])
+
+    await evaluateTriggers('prof', 'c1', 'turn', 0)
+
+    expect(mockRunHistory.appendRun).toHaveBeenCalled()
+    const [profileId, record] = mockRunHistory.appendRun.mock.calls[0] as [string, Record<string, unknown>]
+    expect(profileId).toBe('prof')
+    expect(record.origin).toBe('headless')
+    expect(record.packIds).toEqual(['p1'])
+    expect(record.trigger).toBe('state: stat_data.hp gt 10')
+    expect(typeof record.runId).toBe('string')
+    expect((record.trace as { chatId: string }).chatId).toBe('c1')
+  })
+
+  it('OR-dedupe joins multiple firing trigger descriptions into one record', async () => {
+    mockChat.getChat.mockReturnValue({ character_id: 'w1', floor_count: 5 }) // latest index 4
+    const doc = varsWriteFragment([
+      { kind: 'trigger', trigger: 'cadence', everyNFloors: 1 },
+      { kind: 'trigger', trigger: 'cadence', everyNFloors: 3 }
+    ])
+    mockAgentPack.enabledFragmentsFor.mockReturnValue([frag('p1', doc)])
+
+    await evaluateTriggers('prof', 'c1', 'turn', 0)
+
+    // One run (OR-dedupe), one record — its trigger caption joins both firing triggers.
+    expect(mockRunHistory.appendRun).toHaveBeenCalledTimes(1)
+    const record = mockRunHistory.appendRun.mock.calls[0][1] as { trigger: string }
+    expect(record.trigger).toBe('cadence: every 1 floors | cadence: every 3 floors')
+  })
+
+  it('runManual persists a record with origin "manual" and trigger "manual"', async () => {
+    const doc = varsWriteFragment([{ kind: 'trigger', trigger: 'manual' }])
+    mockAgentPack.enabledFragmentsFor.mockReturnValue([frag('p1', doc)])
+
+    await runManual('prof', 'c1', 'p1')
+
+    expect(mockRunHistory.appendRun).toHaveBeenCalled()
+    const record = mockRunHistory.appendRun.mock.calls[0][1] as {
+      origin: string
+      packIds: string[]
+      trigger: string
+    }
+    expect(record.origin).toBe('manual')
+    expect(record.packIds).toEqual(['p1'])
+    expect(record.trigger).toBe('manual')
+  })
+
+  it('a persistence failure never breaks the headless run (the write still landed)', async () => {
+    mockRunHistory.appendRun.mockImplementation(() => {
+      throw new Error('db down')
+    })
+    mockFloor.getFloor.mockReturnValue({ floor: 0, variables: { stat_data: { hp: 42 } } })
+    const doc = varsWriteFragment([
+      { kind: 'trigger', trigger: 'state', source: { scope: 'vars', path: 'stat_data.hp' }, op: 'gt', value: 10 }
+    ])
+    mockAgentPack.enabledFragmentsFor.mockReturnValue([frag('p1', doc)])
+
+    await expect(evaluateTriggers('prof', 'c1', 'turn', 0)).resolves.toBeUndefined()
+    // The fragment's write still landed; the persist throw was caught + logged.
+    expect(mockFloor.saveFloor).toHaveBeenCalled()
+    expect(mockLog.log).toHaveBeenCalledWith('error', expect.stringContaining('run-history persist'))
   })
 })

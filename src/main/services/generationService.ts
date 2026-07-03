@@ -16,9 +16,12 @@ import { buildTurnContext } from './nodes/turnContext'
 import { builtinRegistry } from './nodes/builtin'
 import { runWorkflow } from './workflowEngine'
 import { resolveEffectiveDoc } from './workflowService'
-import { summarizeRun } from '../../shared/workflow/trace'
+import { summarizeRun, derivePackIds } from '../../shared/workflow/trace'
+import { CompositionMeta } from '../../shared/workflow/compose'
 import { notifyWorkflowTrace } from './workflowEvents'
+import { appendRun } from './runHistoryStore'
 import { evaluateTriggers } from './headlessRunService'
+import { randomUUID } from 'crypto'
 
 // Re-exported so existing consumers/tests (test/generationService.test.ts) keep working; the
 // implementation now lives in generation/assemble.ts (its only real call site).
@@ -168,16 +171,33 @@ export const generate = async (
     // Broadcast the run trace when the FULL run settles (post phase included) — ok, aborted,
     // AND fatal — the trace panel is most useful when a turn just failed (spec §13).
     void runPromise
-      .then((res) =>
-        notifyWorkflowTrace(
-          summarizeRun(doc, builtinRegistry.descriptors(), res, {
-            chatId,
-            workflowId,
-            startedAt,
-            durationMs: Date.now() - startedAt
+      .then((res) => {
+        const trace = summarizeRun(doc, builtinRegistry.descriptors(), res, {
+          chatId,
+          workflowId,
+          startedAt,
+          durationMs: Date.now() - startedAt
+        })
+        // Live debug panel broadcast — UNCHANGED (WP2.3 does not touch this behavior).
+        notifyWorkflowTrace(trace)
+        // Persist the run to durable history for the phase-3 Runs timeline (WP2.3). SAME detached
+        // promise — never the turn's critical path (the floor already returned via onResponseReady).
+        // origin 'turn'; packIds derived from the effective doc's composition meta (which packs
+        // spliced), no trigger (turns aren't triggered). A persistence failure must NEVER break the
+        // run — swallow it (ADR 0003); the .catch below also covers it.
+        try {
+          const composition = (doc.meta?.composition as CompositionMeta | undefined) ?? undefined
+          appendRun(profileId, {
+            runId: randomUUID(),
+            seq: 0, // assigned by the store
+            origin: 'turn',
+            packIds: derivePackIds(trace, composition),
+            trace
           })
-        )
-      )
+        } catch (err) {
+          log('error', `run-history persist (turn) failed — ${(err as Error)?.message || String(err)}`)
+        }
+      })
       .catch((err) => log('error', `workflow trace failed — ${err?.message || String(err)}`))
       // Turn-boundary trigger evaluation (agent-packs plan WP2.2; ADR 0004: a turn commit is one of
       // the two evaluation moments). FIRE-AND-FORGET — chained on the DETACHED trace promise, never

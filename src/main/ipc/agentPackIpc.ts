@@ -1,6 +1,7 @@
 import { IpcMain } from 'electron'
 import * as agentPackService from '../services/agentPackService'
 import { OverrideScope } from '../services/agentPackStore'
+import { listRuns } from '../services/runHistoryStore'
 
 /**
  * IPC for the agent-pack library (agent-packs plan WP1.4). Exposes the read side the future
@@ -33,5 +34,12 @@ export const registerAgentPackIpc = (ipcMain: IpcMain): void => {
     'agent-pack-resolve-overrides',
     (_, packId: string, worldId: string | null, chatId: string | null) =>
       agentPackService.resolveOverrides(packId, worldId, chatId)
+  )
+  // Persisted run history for the phase-3 Runs timeline (agent-packs plan WP2.3). Newest-first,
+  // cursor-paged via `beforeSeq` (pass the smallest seq of the previous page for the next page).
+  ipcMain.handle(
+    'agent-pack-list-runs',
+    (_, profileId: string, chatId: string, beforeSeq?: number, limit?: number) =>
+      listRuns(profileId, chatId, { beforeSeq, limit })
   )
 }

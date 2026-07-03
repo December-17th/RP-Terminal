@@ -1,4 +1,5 @@
 import { ElectronAPI } from '@electron-toolkit/preload'
+import type { StoredRunRecord } from '../shared/workflow/trace'
 
 declare global {
   interface Window {
@@ -99,6 +100,14 @@ declare global {
         worldId: string | null,
         chatId: string | null
       ) => Promise<Record<string, unknown>>
+      // Persisted run history for the Runs timeline (agent-packs plan WP2.3). Newest-first; page
+      // backward via `beforeSeq` (the smallest seq of the previous page).
+      listAgentPackRuns: (
+        profileId: string,
+        chatId: string,
+        beforeSeq?: number,
+        limit?: number
+      ) => Promise<StoredRunRecord[]>
       // SQL-table memory (issue 02)
       listTableTemplates: (
         profileId: string

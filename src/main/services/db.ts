@@ -184,6 +184,34 @@ CREATE TABLE IF NOT EXISTS agent_pack_trigger_state (
   PRIMARY KEY (chat_id, pack_id, trigger_index)
 );
 CREATE INDEX IF NOT EXISTS idx_agent_pack_trigger_state_chat ON agent_pack_trigger_state(chat_id);
+
+-- Persisted workflow run history (agent-packs plan WP2.3; ADR 0003 — the Runs timeline shows every
+-- run, turn + headless/manual, attributed to pack + trigger). The LIVE trace broadcast
+-- (workflowEvents) is ephemeral (renderer keeps only the latest per chat); this is the DURABLE,
+-- ring-capped (last RUN_HISTORY_CAP per chat, pruned on insert — runHistoryStore) log the phase-3
+-- timeline reads. seq is a per-chat monotonic sequence (the newest-first paging cursor). trace is the
+-- FULL WorkflowRunTrace JSON as broadcast, stored FAITHFULLY (headless runs keep their synthetic
+-- __headless_seed_* nodes; display filtering is WP3.3's job). pack_ids is a JSON string[] of the packs
+-- that contributed nodes; trigger is the human-readable describeTrigger caption (headless/manual only,
+-- NULL for turns). ok/aborted/duration_ms/started_at/origin are denormalized off the trace so the
+-- timeline list can render without parsing the (large) trace blob. Chat-keyed only (no FK): run history
+-- is decoupled from chat lifecycle by design (ADR 0003 — headless runs outlive the turn that tripped
+-- them); the store prunes by ring cap, not by cascade.
+CREATE TABLE IF NOT EXISTS workflow_run_history (
+  chat_id TEXT NOT NULL,
+  seq INTEGER NOT NULL,
+  run_id TEXT NOT NULL,
+  started_at INTEGER NOT NULL,
+  origin TEXT NOT NULL,
+  pack_ids TEXT NOT NULL,
+  trigger TEXT,
+  ok INTEGER NOT NULL,
+  aborted INTEGER NOT NULL,
+  duration_ms INTEGER NOT NULL,
+  trace TEXT NOT NULL,
+  PRIMARY KEY (chat_id, seq)
+);
+CREATE INDEX IF NOT EXISTS idx_workflow_run_history_chat ON workflow_run_history(chat_id, seq);
 `
 
 // Presets/lorebooks were briefly stored in SQL during early Phase F; they are now

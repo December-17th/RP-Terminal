@@ -26,11 +26,13 @@
 import { AttachmentDecl, TriggerAttachment } from '../../shared/workflow/attachments'
 import { WorkflowDoc, NodeInstance, Edge } from '../../shared/workflow/types'
 import { getPath } from '../../shared/objectPath'
-import { summarizeRun } from '../../shared/workflow/trace'
+import { summarizeRun, describeTrigger, RunOrigin } from '../../shared/workflow/trace'
 import { runSubgraph } from './workflowEngine'
 import { builtinRegistry } from './nodes/builtin'
 import { RunContext } from './nodes/types'
 import { notifyWorkflowTrace } from './workflowEvents'
+import { appendRun } from './runHistoryStore'
+import { randomUUID } from 'crypto'
 import { enabledFragmentsFor } from './agentPackService'
 import { getChat } from './chatService'
 import { getFloor } from './floorService'
@@ -64,10 +66,13 @@ const evaluatingChats = new Set<string>()
 // ── Trigger evaluation ───────────────────────────────────────────────────────────────────────────
 
 /** A pack whose trigger(s) fired at this boundary, with its fragment doc (deduped per pack — decision
- *  1: multiple firing triggers on one pack run the pack ONCE). */
+ *  1: multiple firing triggers on one pack run the pack ONCE). `firedTriggers` are the descriptions of
+ *  every trigger that fired (OR-dedupe may fire several on one pack — WP2.3 joins them for the run
+ *  record's trigger caption). */
 interface FiredPack {
   packId: string
   doc: WorkflowDoc
+  firedTriggers: string[]
 }
 
 /** The latest committed floor's `variables` tree (incl. MVU stat_data), for a `vars`-scoped trigger.
@@ -239,21 +244,26 @@ const evaluatePass = async (profileId: string, chatId: string, depth: number): P
   const fired: FiredPack[] = []
   for (const frag of fragments) {
     const attachments: AttachmentDecl[] = frag.doc.attachments ?? []
-    let didFire = false
+    const firedTriggers: string[] = []
     attachments.forEach((att, i) => {
       if (att.kind !== 'trigger') return
       // OR-dedupe (decision 1): once a pack has a firing trigger it runs once — but we still
-      // evaluate the rest so their baselines (changedBy/cadence) advance this boundary.
+      // evaluate the rest so their baselines (changedBy/cadence) advance this boundary. Collect each
+      // firing trigger's description for the run record's caption (WP2.3).
       const fires = evaluateOneTrigger(profileId, chatId, frag.packId, i, att)
-      if (fires) didFire = true
+      if (fires) firedTriggers.push(describeTrigger(att))
     })
-    if (didFire) fired.push({ packId: frag.packId, doc: frag.doc })
+    if (firedTriggers.length) fired.push({ packId: frag.packId, doc: frag.doc, firedTriggers })
   }
 
   // Deterministic order: pack id. Sequential — no parallel headless runs in v1.
   fired.sort((a, b) => a.packId.localeCompare(b.packId))
   for (const pack of fired) {
-    await runHeadless(profileId, chatId, pack.packId, pack.doc, depth)
+    // Multiple firing triggers → join their descriptions (OR-dedupe ran the pack once).
+    await runHeadless(profileId, chatId, pack.packId, pack.doc, depth, {
+      origin: 'headless',
+      trigger: pack.firedTriggers.join(' | ')
+    })
   }
 }
 
@@ -295,7 +305,8 @@ export const runHeadless = async (
   chatId: string,
   packId: string,
   fragment: WorkflowDoc,
-  depth: number
+  depth: number,
+  annotation: { origin: RunOrigin; trigger?: string } = { origin: 'headless' }
 ): Promise<void> => {
   const workflowId = `headless:${packId}`
   const startedAt = Date.now()
@@ -360,16 +371,32 @@ export const runHeadless = async (
 
     const result = await runSubgraph(runnable, builtinRegistry, ctx, seeds)
 
-    // Broadcast the trace so the debug trace panel shows the headless run (persisted history is
-    // WP2.3 — we do NOT build trace storage here). summarizeRun accepts the run structurally.
-    notifyWorkflowTrace(
-      summarizeRun(
-        runnable,
-        builtinRegistry.descriptors(),
-        { ok: !result.aborted && !result.fatal, aborted: result.aborted, traces: result.traces, outputs: new Map() },
-        { chatId, workflowId, startedAt, durationMs: Date.now() - startedAt }
-      )
+    // Broadcast the trace so the debug trace panel shows the headless run. summarizeRun accepts the
+    // run structurally. NOTE the trace's node set includes the synthetic `__headless_seed_*` adapter
+    // nodes — we store it FAITHFULLY (WP2.3); filtering them from the timeline DISPLAY is WP3.3's job.
+    const trace = summarizeRun(
+      runnable,
+      builtinRegistry.descriptors(),
+      { ok: !result.aborted && !result.fatal, aborted: result.aborted, traces: result.traces, outputs: new Map() },
+      { chatId, workflowId, startedAt, durationMs: Date.now() - startedAt }
     )
+    notifyWorkflowTrace(trace)
+    // Persist to durable run history for the phase-3 Runs timeline (WP2.3). origin is 'headless' or
+    // 'manual' (threaded from the caller); packIds is the single pack that ran; trigger is the joined
+    // description(s) of the firing trigger(s) ('manual' for a manual run). A persistence failure NEVER
+    // surfaces to any chat flow (ADR 0003) — caught + logged, the run is unaffected.
+    try {
+      appendRun(profileId, {
+        runId: randomUUID(),
+        seq: 0, // assigned by the store
+        origin: annotation.origin,
+        packIds: [packId],
+        ...(annotation.trigger ? { trigger: annotation.trigger } : {}),
+        trace
+      })
+    } catch (err) {
+      log('error', `run-history persist (${annotation.origin}) failed — ${err instanceof Error ? err.message : String(err)}`)
+    }
     if (result.fatal)
       log('error', `headless run "${packId}" failed: ${result.fatal.message} (never surfaced to the chat)`)
   } catch (err) {
@@ -397,5 +424,5 @@ export const runManual = async (profileId: string, chatId: string, packId: strin
     log('error', `runManual: pack "${packId}" is not gate-open for chat ${chatId} — nothing to run`)
     return
   }
-  await runHeadless(profileId, chatId, packId, frag.doc, 0)
+  await runHeadless(profileId, chatId, packId, frag.doc, 0, { origin: 'manual', trigger: 'manual' })
 }

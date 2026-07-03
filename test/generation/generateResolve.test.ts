@@ -124,6 +124,10 @@ vi.mock('../../src/main/services/workflowService', () => ({
   setEnabledFragmentsProvider: () => {}
 }))
 vi.mock('../../src/main/services/workflowEvents', () => ({ notifyWorkflowTrace }))
+// Run-history persistence (WP2.3): the turn path persists on the SAME detached promise as the trace
+// broadcast. Mock the store (its sqlite table can't load under Node) and assert the annotated record.
+const { appendRun } = vi.hoisted(() => ({ appendRun: vi.fn(() => undefined) }))
+vi.mock('../../src/main/services/runHistoryStore', () => ({ appendRun }))
 vi.mock('../../src/main/services/nodes/turnContext', async (orig) => {
   const actual = await orig<Record<string, unknown>>()
   buildTurnContext.mockImplementation((actual as any).buildTurnContext)
@@ -140,6 +144,7 @@ describe('generate() — resolves the active workflow', () => {
       .mockReset()
       .mockReturnValue({ id: 'custom-1', doc: DEFAULT_GRAPH, warnings: [] })
     buildTurnContext.mockClear()
+    appendRun.mockReset().mockReturnValue(undefined)
     streamProviderMock.mockReset().mockImplementation(defaultStream)
     vi.useFakeTimers()
     vi.setSystemTime(new Date('2020-06-01T12:00:00.000Z'))
@@ -277,5 +282,32 @@ describe('generate() — resolves the active workflow', () => {
     // Output previews never leak the Context bundle.
     const ctxNode = trace.nodes.find((n: { nodeType: string }) => n.nodeType === 'input.context')
     expect(ctxNode?.outputs).toBeUndefined()
+  })
+
+  it('persists a run-history record with origin "turn" (WP2.3), packIds [] for a plain narrator', async () => {
+    vi.useRealTimers() // detached persist promise resolves on a microtask, not a timer
+    appendRun.mockClear()
+    await generate('profile1', 'chat1', 'open the door')
+
+    // Persist rides the same DETACHED promise as the trace broadcast — wait for it to settle.
+    await vi.waitFor(() => expect(appendRun).toHaveBeenCalled())
+    const [profileId, record] = appendRun.mock.calls[0] as [string, Record<string, unknown>]
+    expect(profileId).toBe('profile1')
+    expect(record.origin).toBe('turn')
+    // DEFAULT_GRAPH carries no composition meta → no pack nodes → []; no trigger on a turn.
+    expect(record.packIds).toEqual([])
+    expect(record.trigger).toBeUndefined()
+    expect((record.trace as { chatId: string }).chatId).toBe('chat1')
+  })
+
+  it('a run-history persist failure never breaks the turn (WP2.3 fail-safe)', async () => {
+    vi.useRealTimers()
+    appendRun.mockImplementation(() => {
+      throw new Error('db down')
+    })
+    // The floor still returns normally despite the persist throw (caught + logged on the detached path).
+    const floor = await generate('profile1', 'chat1', 'open the door')
+    expect(floor).not.toBeNull()
+    expect(appendFloorCalled).toBe(true)
   })
 })

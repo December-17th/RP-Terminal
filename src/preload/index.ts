@@ -161,6 +161,14 @@ const api = {
     ipcRenderer.invoke('agent-pack-clear-override', packId, scope, settingId),
   resolveAgentPackOverrides: (packId: string, worldId: string | null, chatId: string | null) =>
     ipcRenderer.invoke('agent-pack-resolve-overrides', packId, worldId, chatId),
+  // Persisted workflow run history for the Runs timeline (agent-packs plan WP2.3). Returns records
+  // newest-first; page backward by passing the smallest seq of the previous page as `beforeSeq`.
+  listAgentPackRuns: (
+    profileId: string,
+    chatId: string,
+    beforeSeq?: number,
+    limit?: number
+  ) => ipcRenderer.invoke('agent-pack-list-runs', profileId, chatId, beforeSeq, limit),
   // SQL-table memory (issue 02): file-based table templates + per-chat assignment + read-only view
   listTableTemplates: (profileId: string) =>
     ipcRenderer.invoke('table-templates-list', profileId),
