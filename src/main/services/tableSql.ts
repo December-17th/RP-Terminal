@@ -3,6 +3,13 @@ import fs from 'fs'
 import { TableTemplate } from '../types/tableTemplate'
 import { isSafeSqlIdentifier } from '../parsers/chatSheetsParser'
 import { sandboxDbPath, templateSqlNames } from './tableDbService'
+import { withLock } from './asyncLock'
+
+/** Per-chat table-memory write lock key (agent-packs WP1.5; ADR 0003). The table DATA lives in a
+ *  per-chat sandbox file (`sandboxDbPath(profileId, chatId)`) and the op log is keyed by `chat_id`,
+ *  so a chat is the write-serialization scope — shared by every table writer (`table.apply`, the
+ *  Tables-view hand edit, the manual backfill). */
+export const tableLockKey = (chatId: string): string => `table:${chatId}`
 
 /**
  * SQL WRITE PATH for SQL-table memory (issue 03) — the security-critical slice.
@@ -241,6 +248,52 @@ export interface ApplyResult {
  * `finally`. Not unit-tested (no-op under the alias mock) — same stance as `tableDbService`.
  */
 export const applySqlBatch = (
+  profileId: string,
+  chatId: string,
+  template: TableTemplate,
+  sqlText: string,
+  opts?: { maxChanges?: number }
+): ApplyResult => runApplySqlBatch(profileId, chatId, template, sqlText, opts)
+
+/**
+ * The synchronous batch-apply body, serialized per chat through the table lock (WP1.5 / ADR 0003).
+ * A single writer runs on the lock's fast path SYNCHRONOUSLY, so `applySqlBatch` keeps its synchronous
+ * `ApplyResult` return and every caller (the `table.apply` node, the Tables-view hand edit
+ * `tableEditService.applyEdit`, the manual backfill `tableBackfillService`) is unaffected in the
+ * single-writer case; only genuinely concurrent table writes on the same chat serialize. The result
+ * is captured out of the fast-path closure so it can be returned synchronously; the lock's promise is
+ * not awaited (there is no `await` in the body, so the fast path always completes before we read
+ * `captured`). NOTE the op-log `appendOps` that follows a batch lives in each caller — a headless
+ * runner that must keep batch+append atomic wraps both in `withLock(tableLockKey(chatId), …)`. */
+const runApplySqlBatch = (
+  profileId: string,
+  chatId: string,
+  template: TableTemplate,
+  sqlText: string,
+  opts?: { maxChanges?: number }
+): ApplyResult => {
+  let captured: ApplyResult | undefined
+  let thrown: unknown
+  let didThrow = false
+  void withLock(tableLockKey(chatId), () => {
+    try {
+      captured = applySqlBatchSync(profileId, chatId, template, sqlText, opts)
+    } catch (err) {
+      // Re-surface synchronously below: `withLock` would otherwise fold this into a (voided) rejected
+      // promise and callers depend on a SYNCHRONOUS throw (e.g. tableEditService catches TableSqlError).
+      didThrow = true
+      thrown = err
+    }
+  })
+  // The body is synchronous with no `await`, so the fast path has already run by the time we get here:
+  // either `captured` is set or the body threw and we re-throw it on this same synchronous call.
+  if (didThrow) throw thrown
+  return captured as ApplyResult
+}
+
+/** The un-serialized batch apply — validate then execute in one transaction. Kept private; the lock
+ *  is applied by `runApplySqlBatch`. */
+const applySqlBatchSync = (
   profileId: string,
   chatId: string,
   template: TableTemplate,
