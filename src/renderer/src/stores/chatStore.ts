@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import type { FloorMetrics } from '../../../shared/usageTypes'
+import type { VarsOrigin } from '../../../shared/thRuntime/types'
 import { useCombatStore } from './combatStore'
 import { useDuelStore } from './duelStore'
 
@@ -45,6 +46,11 @@ interface ChatState {
   /** Active FSM mode for the open session (Phase H). */
   activeChatMode: string
   floors: Floor[]
+  /** Origin of the LATEST floors mutation, tagged so the card runtime fires MVU events faithfully
+   *  (only for non-`card-write` origins — a card's own write echoed back must not re-fire its events
+   *  and loop). Read by the inline `cardBridge` onVarsChanged subscription and by App.tsx's WCV
+   *  broadcast; set alongside every floors-mutating `set()`. See shared/thRuntime `VarsOrigin`. */
+  lastVarsOrigin: VarsOrigin
   isGenerating: boolean
   /** Live partial text for the in-flight response (pre-regex), shown while streaming. */
   streamingText: string
@@ -115,6 +121,7 @@ export const useChatStore = create<ChatState>((set, get) => {
     activeChatId: null,
     activeChatMode: 'explore',
     floors: [],
+    lastVarsOrigin: 'model-fold',
     isGenerating: false,
     streamingText: '',
     error: null,
@@ -130,7 +137,9 @@ export const useChatStore = create<ChatState>((set, get) => {
         const floors = state.floors.slice()
         const last = floors[floors.length - 1]
         floors[floors.length - 1] = { ...last, variables }
-        return { floors }
+        // This is the echo of a card panel's own write (onWcvHostVars → here). Tag it card-write so the
+        // card runtime refreshes its cache but does NOT re-fire mag_* events (which would loop).
+        return { floors, lastVarsOrigin: 'card-write' as const }
       }),
 
     loadChats: async (profileId) => {
@@ -150,11 +159,12 @@ export const useChatStore = create<ChatState>((set, get) => {
         activeChatId: newChat.id,
         activeChatMode: 'explore',
         floors: [],
+        lastVarsOrigin: 'external',
         error: null
       }))
       // A freshly created chat may already contain a seeded greeting floor.
       const floors = await window.api.getFloors(profileId, newChat.id)
-      set({ floors })
+      set({ floors, lastVarsOrigin: 'model-fold' })
     },
 
     setActiveChat: async (profileId, chatId) => {
@@ -162,19 +172,19 @@ export const useChatStore = create<ChatState>((set, get) => {
       // shows for the newly-selected chat (CombatView/DuelView refetch on mount for the new chat).
       useCombatStore.getState().reset()
       useDuelStore.getState().reset()
-      set({ activeChatId: chatId, floors: [], error: null })
+      set({ activeChatId: chatId, floors: [], lastVarsOrigin: 'external', error: null })
       const [floors, mode] = await Promise.all([
         window.api.getFloors(profileId, chatId),
         window.api.getChatMode(profileId, chatId)
       ])
-      set({ floors, activeChatMode: mode || 'explore' })
+      set({ floors, activeChatMode: mode || 'explore', lastVarsOrigin: 'external' })
     },
 
     reevaluateVariables: async (profileId) => {
       const { activeChatId } = get()
       if (!activeChatId) return
       const floors = await window.api.reevaluateVariables(profileId, activeChatId)
-      set({ floors })
+      set({ floors, lastVarsOrigin: 'external' })
     },
 
     applyVariableOps: async (profileId, ops, floor) => {
@@ -183,7 +193,12 @@ export const useChatStore = create<ChatState>((set, get) => {
       // Default to the latest floor (the "current message" whose variables the UI shows).
       const target = floor ?? floors[floors.length - 1].floor
       const updated = await window.api.applyVariableOps(profileId, activeChatId, target, ops)
-      if (updated) set((s) => ({ floors: s.floors.map((f) => (f.floor === target ? updated : f)) }))
+      // card-write: a panel/card programmatic write — refresh the cache but don't re-fire MVU events.
+      if (updated)
+        set((s) => ({
+          floors: s.floors.map((f) => (f.floor === target ? updated : f)),
+          lastVarsOrigin: 'card-write'
+        }))
     },
 
     setStatData: async (profileId, json) => {
@@ -191,7 +206,12 @@ export const useChatStore = create<ChatState>((set, get) => {
       if (!activeChatId || floors.length === 0) return
       const target = floors[floors.length - 1].floor
       const updated = await window.api.setFloorStatData(profileId, activeChatId, target, json)
-      if (updated) set((s) => ({ floors: s.floors.map((f) => (f.floor === target ? updated : f)) }))
+      // external: a manual Variables-view edit — SHOULD fire MVU events so panels refresh.
+      if (updated)
+        set((s) => ({
+          floors: s.floors.map((f) => (f.floor === target ? updated : f)),
+          lastVarsOrigin: 'external'
+        }))
     },
 
     setMode: async (profileId, mode) => {
@@ -214,6 +234,7 @@ export const useChatStore = create<ChatState>((set, get) => {
         resetStream()
         set((state) => ({
           floors: newFloor ? [...state.floors, newFloor] : state.floors,
+          lastVarsOrigin: 'model-fold',
           isGenerating: false,
           streamingText: ''
         }))
@@ -233,11 +254,12 @@ export const useChatStore = create<ChatState>((set, get) => {
       set({ isGenerating: true, streamingText: '', error: null })
       try {
         // Optimistically drop the last floor so the UI shows the re-roll in progress.
-        set((state) => ({ floors: state.floors.slice(0, -1) }))
+        set((state) => ({ floors: state.floors.slice(0, -1), lastVarsOrigin: 'model-fold' }))
         const newFloor = await window.api.regenerate(profileId, activeChatId)
         resetStream()
         set((state) => ({
           floors: newFloor ? [...state.floors, newFloor] : state.floors,
+          lastVarsOrigin: 'model-fold',
           isGenerating: false,
           streamingText: ''
         }))
@@ -250,6 +272,7 @@ export const useChatStore = create<ChatState>((set, get) => {
         const restored = await window.api.getFloors(profileId, activeChatId)
         set({
           floors: restored,
+          lastVarsOrigin: 'external',
           isGenerating: false,
           streamingText: '',
           error: err?.message || 'Regeneration failed'
@@ -276,6 +299,7 @@ export const useChatStore = create<ChatState>((set, get) => {
         field === 'response' ? text : null
       )
       set((state) => ({
+        lastVarsOrigin: 'external',
         floors: state.floors.map((f) =>
           f.floor === floorIndex
             ? field === 'user'
@@ -300,6 +324,7 @@ export const useChatStore = create<ChatState>((set, get) => {
       // Apply a server-returned swiped floor to the store (response text + active index).
       const applyUpdated = (updated: any): void =>
         set((state) => ({
+          lastVarsOrigin: 'model-fold',
           floors: state.floors.map((fl) =>
             fl.floor === floorIndex
               ? {
@@ -326,11 +351,13 @@ export const useChatStore = create<ChatState>((set, get) => {
       resetStream()
       set({ isGenerating: true, streamingText: '', error: null })
       try {
-        set((state) => ({ floors: state.floors.slice(0, -1) })) // show the re-roll in progress
+        // show the re-roll in progress
+        set((state) => ({ floors: state.floors.slice(0, -1), lastVarsOrigin: 'model-fold' }))
         const fresh = await window.api.generateSwipe(profileId, activeChatId)
         resetStream()
         set((state) => ({
           floors: fresh ? [...state.floors, fresh] : state.floors,
+          lastVarsOrigin: 'model-fold',
           isGenerating: false,
           streamingText: ''
         }))
@@ -342,6 +369,7 @@ export const useChatStore = create<ChatState>((set, get) => {
         const restored = await window.api.getFloors(profileId, activeChatId)
         set({
           floors: restored,
+          lastVarsOrigin: 'external',
           isGenerating: false,
           streamingText: '',
           error: err?.message || 'Swipe failed'
@@ -356,7 +384,8 @@ export const useChatStore = create<ChatState>((set, get) => {
         return {
           chats: state.chats.filter((c) => c.id !== chatId),
           activeChatId: isActive ? null : state.activeChatId,
-          floors: isActive ? [] : state.floors
+          floors: isActive ? [] : state.floors,
+          lastVarsOrigin: 'external'
         }
       })
     },
@@ -367,6 +396,7 @@ export const useChatStore = create<ChatState>((set, get) => {
         activeChatId: null,
         floors: [],
         activeChatMode: 'explore',
+        lastVarsOrigin: 'external',
         streamingText: '',
         error: null
       })

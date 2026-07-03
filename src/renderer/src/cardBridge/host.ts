@@ -292,7 +292,9 @@ export function createInlineHost(ctx: CardCtx): Host {
         const json = JSON.stringify(sd ?? null)
         if (json !== last) {
           last = json
-          cb(sd)
+          // Tag the origin so the runtime fires MVU events only for non-card-write changes (a card's own
+          // write echoed back must not re-fire its events and loop — the WS-3 fix).
+          cb(sd, { origin: state.lastVarsOrigin })
         }
       })
     },

@@ -3,6 +3,7 @@ import { is } from '@electron-toolkit/utils'
 import { join } from 'path'
 import { log } from './logService'
 import { serveAssetRequest, ASSET_SCHEME } from './worldAssetProtocol'
+import type { VarsOrigin } from '../../shared/thRuntime/types'
 
 // Card UI panels run in their own session partition. jsDelivr serves `/gh/` HTML as text/plain (to
 // stop it being used to host pages), so Chromium shows it as raw text; the card's UI is meant to be
@@ -297,12 +298,16 @@ export const pushHostReload = (chatId: string): void => {
 export const notifyVarsChanged = (
   chatId: string,
   statData: unknown,
-  exceptWebContentsId?: number
+  exceptWebContentsId?: number,
+  origin: VarsOrigin = 'model-fold'
 ): void => {
   for (const s of slots.values()) {
     if (s.chatId !== chatId) continue
     if (exceptWebContentsId != null && s.view.webContents.id === exceptWebContentsId) continue
-    s.view.webContents.send('wcv-vars-changed', statData)
+    // The origin lets the card runtime fire MVU events only for non-card-write changes (a card's own
+    // write echoed back must not re-fire its events and loop — the WS-3 fix). Extra arg is ignored by
+    // consumers that don't read it (the sync EJS mirror hydrate).
+    s.view.webContents.send('wcv-vars-changed', statData, origin)
   }
 }
 

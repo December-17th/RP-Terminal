@@ -6,7 +6,7 @@
 // only here to satisfy the Host interface). The quickjs EJS engine stays in the preload and is injected
 // via deps.evalTemplate / deps.evalTemplateError.
 import { ipcRenderer } from 'electron'
-import type { Host, CardCtx, FloorLike } from '../shared/thRuntime/types'
+import type { Host, CardCtx, FloorLike, VarsOrigin } from '../shared/thRuntime/types'
 import type { VarOp } from '../shared/thRuntime/ops'
 
 type Deps = {
@@ -140,7 +140,11 @@ export function createWcvHost(deps: Deps): Host {
     getDuelPreview: () => ipcRenderer.invoke('wcv-host-duel-preview'),
 
     onVarsChanged: (cb) => {
-      const l = (_e: any, v: any): void => cb(v)
+      // Forward the origin (2nd IPC arg) so the runtime fires MVU events only for non-card-write changes
+      // (a card's own write echoed back must not re-fire its events and loop — the WS-3 fix). Absent ⇒
+      // undefined meta ⇒ the runtime treats it as a fold (events fire) for back-compat.
+      const l = (_e: any, v: any, origin?: VarsOrigin): void =>
+        cb(v, origin ? { origin } : undefined)
       ipcRenderer.on('wcv-vars-changed', l)
       return () => ipcRenderer.removeListener('wcv-vars-changed', l)
     },

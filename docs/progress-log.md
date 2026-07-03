@@ -5,6 +5,34 @@
 
 Running status of the MVU / panel-workspace track. Newest first.
 
+## 2026-07-02
+
+- **WS-3 variable write-back loop — architectural fix LANDED (origin tag).** The self-feedback loop
+  (`docs/structural-cleanup-log-2026-06-26.md` Stage 13/15) is now closed at the source, faithfully to real
+  MVU, retiring the heuristic to a mere backstop. Root cause: `shared/thRuntime` `onVarsChanged` fired
+  `mag_variable_update_*` + `MESSAGE_UPDATED` on **every** `stat_data` change — including a card's own write
+  echoed back — so a card writing a constantly-changing value on its own `mag_variable_update_ended`
+  (命定之诗's remote automation writing a world-clock/`date`) self-looped: write → echo → event → write → …
+  until the `LOOP_MAX=40` guard tripped, **persisting corrupted intermediate values** first (owner saw the
+  panel value churning + `variable write-back — floor N: date` spam).
+  - **Fix:** tag every `stat_data` change with an **origin** (`model-fold` | `card-write` | `external`)
+    end-to-end and fire MVU/`MESSAGE_UPDATED` **only for non-`card-write`** origins; a card-write still
+    refreshes the runtime cache (so `getvar`/EJS see it) but fires no events. Matches MIT MagVarUpdate
+    (events only on the AI fold, never on programmatic writes). Since 命定之诗 loads the **real** MVU/FrontEnd
+    remotely, faithful semantics help it — defusing the prior-revert risk that kept this deferred.
+  - **Threaded through:** `shared/thRuntime/types.ts` (`VarsOrigin` + `onVarsChanged(sd, { origin })`),
+    `shared/thRuntime/index.ts` (branch), `chatStore.lastVarsOrigin` (set at every floors mutation; only
+    `applyVariableOps` + `setLatestFloorVariables` are `card-write`), inline `cardBridge/host.ts`
+    subscription, and the WCV path (`App.tsx` → `preload` → `wcvManager.notifyVarsChanged(origin)` →
+    `wcvIpc` `wcv-broadcast-vars` / `wcv-host-apply-vars` / `-set-vars` → `wcvHost.ts`). The **indirect**
+    echo (host `pushHostVars` → `setLatestFloorVariables` → `wcv-broadcast-vars`) was the actual loop path
+    and is now tagged `card-write`. `LOOP_MAX` + no-op guard retained as backstops (`generation/varsWrite.ts`).
+  - **Tests:** `test/thRuntime.test.ts` adds a card-write-origin case (cache refreshes, no events) + a
+    fold-origin case. **In-app verified (owner, 2026-07-02):** one round on 命定之诗 → `runaway loop` count 0,
+    `date` write-back settled at 2 (distinct fold events) then quiet — vs the old ~40-line spam. Residual to
+    watch: a *sibling* WCV panel now refreshes its cache but won't get `mag_*` for another slot's programmatic
+    write until the next fold (faithful MVU; native host panels still update via `pushHostVars`).
+
 ## 2026-06-26
 
 - **Structural & maintainability review + plan (branch `refactor/structural-cleanup-2026-06-26`).** Whole-

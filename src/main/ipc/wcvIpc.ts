@@ -47,7 +47,8 @@ const cardLoreCtx = (senderId: number): { profileId: string; characterId: string
 const pushVars = (chatId: string, latest: { variables: any } | null): void => {
   if (latest) {
     wcvManager.pushHostVars(chatId, latest.variables)
-    wcvManager.notifyVarsChanged(chatId, latest.variables.stat_data ?? {})
+    // external: a host-side chat edit/delete re-folded <UpdateVariable> — panels SHOULD refresh (fire events).
+    wcvManager.notifyVarsChanged(chatId, latest.variables.stat_data ?? {}, undefined, 'external')
   }
 }
 // After an edit / delete: re-fold <UpdateVariable> into stat_data (via chatWriteService), push it, and
@@ -141,9 +142,11 @@ export const registerWcvIpc = (ipcMain: IpcMain): void => {
     const ctx = wcvManager.contextFor(e.sender.id)
     if (ctx) wcvManager.pushWheel(ctx.slotId, Number(d?.dy) || 0)
   })
-  // Host → card panels: the latest stat_data changed (model turn / edit) — refresh their mirrors.
-  ipcMain.on('wcv-broadcast-vars', (_e, chatId, statData) =>
-    wcvManager.notifyVarsChanged(chatId, statData)
+  // Host → card panels: the latest stat_data changed (model turn / edit / card-write echo) — refresh their
+  // mirrors. Forward the renderer-tagged origin so a card's own write echoed back here doesn't re-fire its
+  // MVU events and loop (WS-3 fix). Undefined origin ⇒ notifyVarsChanged defaults to 'model-fold'.
+  ipcMain.on('wcv-broadcast-vars', (_e, chatId, statData, origin) =>
+    wcvManager.notifyVarsChanged(chatId, statData, undefined, origin)
   )
   // Host → card panels: a TavernHelper lifecycle/mutation event (computed from the chat-store transition).
   ipcMain.on('wcv-broadcast-event', (_e, chatId, name, payload) =>
@@ -195,9 +198,10 @@ export const registerWcvIpc = (ipcMain: IpcMain): void => {
     if (!floor) return latest.variables?.stat_data ?? {}
     const statData = floor.variables?.stat_data ?? {}
     wcvManager.pushHostVars(ctx.chatId, floor.variables)
-    // Don't echo the write back to the card that made it — that would re-fire its own MVU events and
-    // loop if it writes on them. Siblings + the host (native panels) still refresh.
-    wcvManager.notifyVarsChanged(ctx.chatId, statData, e.sender.id)
+    // Don't echo the write back to the card that made it, AND tag the sibling echo card-write so no panel
+    // re-fires MVU events for another panel's programmatic write (faithful MVU + closes the INDIRECT loop:
+    // pushHostVars → host setLatestFloorVariables → wcv-broadcast-vars would otherwise re-fire events).
+    wcvManager.notifyVarsChanged(ctx.chatId, statData, e.sender.id, 'card-write')
     return statData
   })
 
@@ -211,8 +215,9 @@ export const registerWcvIpc = (ipcMain: IpcMain): void => {
     latest.variables = { ...latest.variables, stat_data: statData }
     floorService.saveFloor(ctx.profileId, ctx.chatId, latest)
     wcvManager.pushHostVars(ctx.chatId, latest.variables)
-    // Don't echo back to the writer (see wcv-host-apply-vars) — avoids a self-triggered MVU event loop.
-    wcvManager.notifyVarsChanged(ctx.chatId, statData, e.sender.id)
+    // Don't echo back to the writer, and tag card-write so siblings/host don't re-fire MVU events for this
+    // programmatic replace (see wcv-host-apply-vars) — avoids the self-triggered MVU event loop.
+    wcvManager.notifyVarsChanged(ctx.chatId, statData, e.sender.id, 'card-write')
     return statData
   })
 

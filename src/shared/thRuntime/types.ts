@@ -4,6 +4,16 @@ import type { TavernRegex } from './tavernRegex'
 
 export type CardCtx = { profileId: string; chatId: string; characterId: string }
 
+/**
+ * Origin of a stat_data change, tagged end-to-end so the runtime can fire MVU events faithfully.
+ * Real MVU emits `mag_variable_update_*` only on the AI-message FOLD, never on programmatic card
+ * writes — so `onVarsChanged` still refreshes the runtime cache for a `card-write`, but the runtime
+ * suppresses the MVU/MESSAGE_UPDATED emits for it (that self-echo is what caused the WS-3 write-back
+ * loop). `model-fold` = an AI turn folded new variables; `external` = a host-side edit (Variables view,
+ * chat edit/delete, re-evaluate, load). Absent meta is treated as a fold (events fire) for back-compat.
+ */
+export type VarsOrigin = 'model-fold' | 'card-write' | 'external'
+
 export type ThMessage = {
   message_id: number
   role: 'user' | 'assistant'
@@ -107,7 +117,7 @@ export interface Host {
   // Engine-computed duel build preview for the active chat (read-only). See the build-preview design.
   getDuelPreview(): Promise<import('../combat/deckbuilder/preview').DuelPreview | null>
   // --- events + engine ---
-  onVarsChanged(cb: (statData: any) => void): () => void
+  onVarsChanged(cb: (statData: any, meta?: { origin: VarsOrigin }) => void): () => void
   onHostEvent(cb: (name: string, payload?: any) => void): () => void
   evalTemplate(tmpl: string, data?: any): string
   evalTemplateError(tmpl: string, data?: any): string | null

@@ -235,24 +235,26 @@ Card → host channels (resolved against the calling view's ctx), in
 (`-get-regexes-full` / `-replace-regexes` / `-is-char-regex-enabled`), `-get-chat-id-sync`, the script-scope
 KV channels (`-script-vars-get-sync` / `-script-vars-set`), and the chat-write channels
 (`chat-set-messages` / `-delete-messages` / `-save`). Host → card: `wcv-vars-changed` (mirror refresh) +
-`wcv-event` (lifecycle/mutation/stream). **Write-back loop guard** — a card that re-writes on its own
-`mag_variable_update_ended` / `MESSAGE_UPDATED` would spin forever, because its write loops back to it
-both directly (`notifyVarsChanged`) and indirectly (the host applies the change to the floor, whose
-store update re-broadcasts via `wcv-broadcast-vars` to all slots). **Self-write events are NOT
-suppressed** — cards legitimately chain initialization through their own `mag_variable_update_ended`
-(write a field → react → write the next), and the prompt-side EJS injection reads the resulting vars via
-`getvar`, so muzzling them would stall init and leave those vars empty. Instead the loop is bounded at
-the SOURCE: (1) the **primary** breaker — `generationService.applyVariableOps` tracks the _signature_ of
-each write (its sorted changed-path list) per chat; once the SAME signature is written `LOOP_MAX` times
-rapidly (`LOOP_WINDOW_MS`) it's treated as a runaway feedback loop and dropped (returns `null`, so it's
-never persisted or broadcast → no echo → the loop can't continue). A legit init chain touches DISTINCT
-paths, so its signature changes each write and the streak resets — only a card hammering ONE value (e.g.
-a `date` clock) accumulates the streak. (2) the same function returns `null` for a **no-op write** (every
-op leaves its target unchanged), and otherwise logs the changed `path`s. (3) the direct write handlers
-(`wcv-host-apply-vars` / `-set-vars`) pass `e.sender.id` to `notifyVarsChanged`, which skips the author's
-slot to avoid one redundant echo. The shared runtime's `onVarsChanged` (`thRuntime/index.ts`) fires the
-MVU events on every genuine change (skipping only a byte-identical repeat), so self-chained writes work;
-both transports inherit (1)/(2) since they run in main. To add an API:
+`wcv-event` (lifecycle/mutation/stream). **Write-back loop guard (origin-tagged, WS-3 fix 2026-07-02)** —
+a card that re-writes on its own `mag_variable_update_ended` / `MESSAGE_UPDATED` used to spin forever,
+because its write looped back both directly (`notifyVarsChanged`) and indirectly (the host applies the
+change to the floor, whose store update re-broadcasts via `wcv-broadcast-vars` to all slots). The loop is
+now closed **at the source, faithfully to real MVU**: every `stat_data` change is tagged with an
+**origin** (`model-fold` | `card-write` | `external`) end-to-end — `chatStore.lastVarsOrigin` → the inline
+`cardBridge` subscription / `wcv-broadcast-vars` (→ `notifyVarsChanged(…, origin)`) → the shared runtime's
+`onVarsChanged(sd, { origin })`. The runtime **always refreshes its `stat` cache** (so `getvar` / EJS
+injection see card writes) but fires `mag_variable_update_*` / `MESSAGE_UPDATED` **only for non-`card-write`
+origins**. This matches the MIT MagVarUpdate source, where those events are emitted only on the AI-message
+fold, never on programmatic writes (`setMvuVariable`/`insertOrAssignVariables` are pure helpers) — so a
+card's own write no longer re-triggers its own handler. (Cards that chained init through their own
+update events were relying on RPT's old divergent behavior; on real MVU that init runs on the fold, which
+still fires.) The remaining defenses are **backstops**: (1) `generationService.applyVariableOps` still
+drops a runaway **signature** (the same sorted changed-path list written `LOOP_MAX=40` times consecutively
+between folds; reset per model turn) and returns `null` for a **no-op write**, logging the changed
+`path`s; (2) the direct write handlers (`wcv-host-apply-vars` / `-set-vars`) pass `e.sender.id` +
+`'card-write'` to `notifyVarsChanged`, skipping the author's slot and tagging siblings so no panel
+re-fires events for another panel's programmatic write. Both transports inherit the behavior from the
+shared runtime. To add an API:
 add the runtime method
 ([`thRuntime/index.ts`](../src/shared/thRuntime/index.ts)) + a `Host` method on **both** adapters (sync
 getter → `sendSync` / store read; heavy → `invoke` / `window.api`) + the ctx-scoped IPC handler, and update
