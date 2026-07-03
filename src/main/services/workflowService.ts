@@ -11,6 +11,11 @@ import {
 import { parseWorkflowDoc } from '../../shared/workflow/docSchema'
 import { validateWorkflow } from '../../shared/workflow/validate'
 import { WorkflowDoc } from '../../shared/workflow/types'
+import {
+  composeEffectiveGraph,
+  ComposeFragment,
+  ComposeWarning
+} from '../../shared/workflow/compose'
 import { builtinRegistry } from './nodes/builtin'
 import { DEFAULT_GRAPH } from './nodes/builtin/defaultGraph'
 import { log } from './logService'
@@ -28,8 +33,10 @@ export interface WorkflowSummary {
   builtin?: boolean
   /** Absent = 'turn'. A 'subgraph' summary is a reusable sub-graph package — never a run target
    *  (resolveWorkflowDoc/runWorkflow refuse it); the renderer excludes these from the three
-   *  turn-workflow selection dropdowns and shows a badge instead (sub-graph nodes v1 plan §5). */
-  kind?: 'turn' | 'subgraph'
+   *  turn-workflow selection dropdowns and shows a badge instead (sub-graph nodes v1 plan §5).
+   *  'fragment' = an agent pack's executable part (agent-packs plan WP1.1) — also never a direct
+   *  run target. This union mechanically tracks WorkflowDoc.kind (line 93 spreads data.kind). */
+  kind?: 'turn' | 'subgraph' | 'fragment'
   /** The on-disk doc fails validateWorkflowDoc — selectable in the UI but resolution would skip
    *  it (fall-through). Surfaced so the list can badge it instead of failing silently at run. */
   invalid?: boolean
@@ -288,6 +295,51 @@ export const resolveWorkflowDoc = (
 /** Resolve just the effective workflow id (delegates to resolveWorkflowDoc to share the fall-through). */
 export const resolveWorkflowId = (profileId: string, chatId: string): string =>
   resolveWorkflowDoc(profileId, chatId).id
+
+// ---------------------------------------------------------------------------
+// Effective-graph resolution (agent-packs plan WP1.3): the narrator doc composed with every enabled
+// pack fragment. `generationService` resolves the EFFECTIVE doc for a turn; the engine runs it.
+// ---------------------------------------------------------------------------
+
+/** Source of the enabled pack fragments to compose for a chat. WP1.4's pack store registers the real
+ *  one via setEnabledFragmentsProvider; until then the DEFAULT returns [] so composeEffectiveGraph's
+ *  zero-fragments identity guarantee makes the effective doc === the narrator doc (byte-identical no-
+ *  pack behavior). A module-level settable hook — not a direct import of the pack store — because the
+ *  store (WP1.4) will itself depend on this service's selection/resolution, and importing it back
+ *  here would form an import cycle (the same seam pattern generation/varsWrite uses to break the
+ *  node-registry cycle). */
+export type EnabledFragmentsProvider = (profileId: string, chatId: string) => ComposeFragment[]
+
+const DEFAULT_ENABLED_FRAGMENTS_PROVIDER: EnabledFragmentsProvider = () => []
+
+let enabledFragmentsProvider: EnabledFragmentsProvider = DEFAULT_ENABLED_FRAGMENTS_PROVIDER
+
+/** Register the provider that supplies enabled pack fragments (WP1.4). Passing nothing (or the
+ *  default) restores the zero-packs behavior — used by tests to reset between cases. */
+export const setEnabledFragmentsProvider = (
+  provider: EnabledFragmentsProvider = DEFAULT_ENABLED_FRAGMENTS_PROVIDER
+): void => {
+  enabledFragmentsProvider = provider
+}
+
+/** Resolve the EFFECTIVE workflow doc for a chat: the resolved narrator (resolveWorkflowDoc) composed
+ *  with every enabled pack fragment (via the provider seam). Returns the narrator's id (the effective
+ *  graph has no id of its own — trace/selection keep referring to the narrator) plus the composition
+ *  warnings so the caller can surface them (ADR 0002: attachment failures are visible, never silent).
+ *
+ *  With the default provider (no packs, or WP1.4 not yet wired) the fragment list is empty and
+ *  composeEffectiveGraph returns the narrator doc UNCHANGED (its documented zero-fragments identity),
+ *  so this is byte-identical to resolveWorkflowDoc — the zero-packs guarantee. We do not re-derive
+ *  that identity here; we rely on compose's guarantee. */
+export const resolveEffectiveDoc = (
+  profileId: string,
+  chatId: string
+): { id: string; doc: WorkflowDoc; warnings: ComposeWarning[] } => {
+  const { id, doc: narrator } = resolveWorkflowDoc(profileId, chatId)
+  const fragments = enabledFragmentsProvider(profileId, chatId)
+  const { doc, warnings } = composeEffectiveGraph(narrator, fragments)
+  return { id, doc, warnings }
+}
 
 /** Unlinks the workflow's file and reports whether it existed. Never touches the builtin.
  *  Also clears the id out of every session override + the selection sidecar (global/world). */

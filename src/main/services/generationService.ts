@@ -15,7 +15,7 @@ import { resetWriteLoopGuard } from './generation/varsWrite'
 import { buildTurnContext } from './nodes/turnContext'
 import { builtinRegistry } from './nodes/builtin'
 import { runWorkflow } from './workflowEngine'
-import { resolveWorkflowDoc } from './workflowService'
+import { resolveEffectiveDoc } from './workflowService'
 import { summarizeRun } from '../../shared/workflow/trace'
 import { notifyWorkflowTrace } from './workflowEvents'
 
@@ -121,7 +121,16 @@ export const generate = async (
   const controller = new AbortController()
   activeControllers.set(chatId, controller)
   try {
-    const { id: workflowId, doc } = resolveWorkflowDoc(profileId, chatId)
+    // Effective doc = the resolved narrator composed with every enabled agent pack (WP1.3). With no
+    // packs enabled this is byte-identical to the narrator (compose's zero-fragments identity).
+    const { id: workflowId, doc, warnings } = resolveEffectiveDoc(profileId, chatId)
+    // Compose warnings are visible, never silent (ADR 0002) — log them via the existing log() sink
+    // (no new UI here; the Agents workspace surfaces them later). Each names the pack + checkpoint.
+    for (const w of warnings)
+      log(
+        'error',
+        `agent-pack compose: pack "${w.packId}" attachment skipped — ${w.reason}${w.checkpoint ? ` at checkpoint "${w.checkpoint}"` : ''}`
+      )
     // Panel headers for opt-in node output panels (spec D4): node id → its doc panel label.
     const panelLabels: Record<string, string> = {}
     for (const n of doc.nodes) if (n.panel?.show && n.panel.label) panelLabels[n.id] = n.panel.label

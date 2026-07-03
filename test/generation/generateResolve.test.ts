@@ -4,9 +4,13 @@ import { getDefaultPreset } from '../../src/main/types/preset'
 import type { FloorFile } from '../../src/main/types/chat'
 import { DEFAULT_GRAPH } from '../../src/main/services/nodes/builtin/defaultGraph'
 
-// Proves generate() actually consumes workflowService.resolveWorkflowDoc (rather than a
+// Proves generate() actually consumes workflowService.resolveEffectiveDoc (rather than a
 // hardcoded 'default' literal + DEFAULT_GRAPH) and threads the resolved id through to
 // buildTurnContext — the wiring Task 5 adds on top of Task 3 (resolver) + Task 4 (ctx arg).
+// (agent-packs plan WP1.3: the single doc-resolution call site moved from resolveWorkflowDoc to
+// resolveEffectiveDoc — the narrator composed with enabled packs. With no packs the effective doc
+// IS the narrator, so this test's behavior is unchanged; only the mocked collaborator name +
+// its return shape { id, doc, warnings } changed.)
 
 const settings = (() => {
   const s = getDefaultSettings()
@@ -106,12 +110,12 @@ const defaultStream = async (
   return 'You open the door.'
 }
 
-const { resolveWorkflowDoc, buildTurnContext, notifyWorkflowTrace } = vi.hoisted(() => ({
-  resolveWorkflowDoc: vi.fn(),
+const { resolveEffectiveDoc, buildTurnContext, notifyWorkflowTrace } = vi.hoisted(() => ({
+  resolveEffectiveDoc: vi.fn(),
   buildTurnContext: vi.fn(),
   notifyWorkflowTrace: vi.fn()
 }))
-vi.mock('../../src/main/services/workflowService', () => ({ resolveWorkflowDoc }))
+vi.mock('../../src/main/services/workflowService', () => ({ resolveEffectiveDoc }))
 vi.mock('../../src/main/services/workflowEvents', () => ({ notifyWorkflowTrace }))
 vi.mock('../../src/main/services/nodes/turnContext', async (orig) => {
   const actual = await orig<Record<string, unknown>>()
@@ -125,7 +129,9 @@ describe('generate() — resolves the active workflow', () => {
   beforeEach(() => {
     capturedFloor = null
     appendFloorCalled = false
-    resolveWorkflowDoc.mockReset().mockReturnValue({ id: 'custom-1', doc: DEFAULT_GRAPH })
+    resolveEffectiveDoc
+      .mockReset()
+      .mockReturnValue({ id: 'custom-1', doc: DEFAULT_GRAPH, warnings: [] })
     buildTurnContext.mockClear()
     streamProviderMock.mockReset().mockImplementation(defaultStream)
     vi.useFakeTimers()
@@ -133,10 +139,10 @@ describe('generate() — resolves the active workflow', () => {
   })
   afterEach(() => vi.useRealTimers())
 
-  it('calls resolveWorkflowDoc(profileId, chatId) and threads its id into buildTurnContext', async () => {
+  it('calls resolveEffectiveDoc(profileId, chatId) and threads its id into buildTurnContext', async () => {
     const floor = await generate('profile1', 'chat1', 'open the door')
 
-    expect(resolveWorkflowDoc).toHaveBeenCalledWith('profile1', 'chat1')
+    expect(resolveEffectiveDoc).toHaveBeenCalledWith('profile1', 'chat1')
     expect(buildTurnContext).toHaveBeenCalledWith(
       expect.objectContaining({ workflowId: 'custom-1' })
     )
@@ -154,7 +160,7 @@ describe('generate() — resolves the active workflow', () => {
       from: { ...e.from, node: rename(e.from.node) },
       to: { ...e.to, node: rename(e.to.node) }
     }))
-    resolveWorkflowDoc.mockReturnValue({ id: 'custom-2', doc: renamed })
+    resolveEffectiveDoc.mockReturnValue({ id: 'custom-2', doc: renamed, warnings: [] })
 
     const floor = await generate('profile1', 'chat1', 'open the door')
     expect(floor).not.toBeNull()
@@ -171,7 +177,7 @@ describe('generate() — resolves the active workflow', () => {
       { from: { node: 'assemble', port: 'sendMessages' }, to: { node: 'llm2', port: 'sendMessages' } },
       { from: { node: 'assemble', port: 'params' }, to: { node: 'llm2', port: 'params' } }
     )
-    resolveWorkflowDoc.mockReturnValue({ id: 'custom-3', doc })
+    resolveEffectiveDoc.mockReturnValue({ id: 'custom-3', doc, warnings: [] })
 
     // Call 1 = the main sample (fast). Call 2 = the side job — held open by the test.
     let releaseSideJob!: (v: string) => void

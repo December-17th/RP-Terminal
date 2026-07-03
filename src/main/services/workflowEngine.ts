@@ -1,6 +1,7 @@
 import { WorkflowDoc, Edge, NodeDescriptor } from '../../shared/workflow/types'
 import { validateWorkflow, ValidationError } from '../../shared/workflow/validate'
 import { topoOrder } from '../../shared/workflow/graph'
+import { CompositionMeta } from '../../shared/workflow/compose'
 import { NodeRegistry } from './nodes/registry'
 import { RunContext, NodeError, NodeRunFailure } from './nodes/types'
 
@@ -66,6 +67,31 @@ interface ExecState {
   outputs: Map<string, Record<string, unknown>>
   deadEdge: Set<string>
   traces: NodeTrace[]
+  /** Node ids whose failure must NOT abort the turn even in the pre-phase (agent-packs plan WP1.3;
+   *  ADR 0002: "failure semantics follow attachment mode, per edge — branch fragments fail open even
+   *  before the reply"). Derived from `doc.meta.composition` at run start (see failOpenNodesOf);
+   *  EMPTY when no packs are composed → every node keeps today's semantics exactly (the zero-packs
+   *  guarantee). Consulted only at the unwired-failure point in runNodes. */
+  failOpen: Set<string>
+}
+
+/** The set of pack node ids that fail open (never fatal) — the nodes a composed pack marked mode
+ *  'branch' in ANY pack's `nodeModes` (compose.ts PackComposition). An 'inline' node is load-bearing
+ *  and keeps fatal semantics, so it is NOT in this set; a narrator node is in no pack's nodeModes and
+ *  is likewise absent. A doc without `meta.composition` (the zero-packs case, and every 'turn'/
+ *  'subgraph' doc that never went through composeEffectiveGraph) yields the empty set — additive,
+ *  behavior-preserving. Trace attribution stays intact: ids keep their `pack:<packId>:` prefix
+ *  (compose.ts PACK_PREFIX), which is exactly what this set keys on. */
+function failOpenNodesOf(doc: WorkflowDoc): Set<string> {
+  const set = new Set<string>()
+  const composition = (doc.meta as { composition?: CompositionMeta } | undefined)?.composition
+  if (!composition) return set
+  for (const pack of Object.values(composition.packs)) {
+    for (const [nodeId, mode] of Object.entries(pack.nodeModes)) {
+      if (mode === 'branch') set.add(nodeId)
+    }
+  }
+  return set
 }
 
 /** Run a list of node ids (already in topological order) against the registry, mutating `state`.
@@ -169,8 +195,19 @@ async function runNodes(
         for (const out of outs) if (out.from.port !== 'error') state.deadEdge.add(edgeKey(out))
       } else {
         // Kill all outputs; a pre-phase unwired failure is fatal, a post-phase one fails open.
+        // Killing every outgoing edge here is ALSO what makes a failed branch fragment's rejoin
+        // "absent" for free (agent-packs plan WP1.3; ADR 0002): a spliced rejoin edge is just an
+        // outgoing edge of this node, so it lands in deadEdge; the narrator anchor it fed (e.g.
+        // prompt.assemble's `block`) then reads unwired and runs normally, and downstream pack nodes
+        // whose incoming edges are all dead are pruned to 'skipped' by the existing prune rules
+        // above. No separate rejoin bookkeeping is needed — composition.rejoinEdges is redundant with
+        // this propagation for the engine's purposes.
         for (const out of outs) state.deadEdge.add(edgeKey(out))
-        if (phase === 'pre') return { fatal: nodeError }
+        // Composition-aware fail-open (ADR 0002 consequences; agent-packs plan WP1.3): a branch
+        // fragment node is fail-open even in the pre-phase — trace it 'failed' (done above) and let
+        // the turn continue, exactly like a post-phase unwired failure. `state.failOpen` is empty
+        // whenever no packs are composed, so this reduces to the original `phase === 'pre'` rule.
+        if (phase === 'pre' && !state.failOpen.has(id)) return { fatal: nodeError }
       }
     }
   }
@@ -221,7 +258,8 @@ export async function runWorkflow(
   const state: ExecState = {
     outputs: new Map(),
     deadEdge: new Set(),
-    traces: []
+    traces: [],
+    failOpen: failOpenNodesOf(doc)
   }
 
   const order = topoOrder(doc)
@@ -302,7 +340,11 @@ export async function runSubgraph(
   const state: ExecState = {
     outputs: new Map(),
     deadEdge: new Set(),
-    traces: []
+    traces: [],
+    // A subgraph run is a self-contained unit invoked inside its wrapper node's own phase; it is
+    // never composed with agent-pack fragments, so its fail-open set is always empty (unchanged
+    // subgraph semantics — a subgraph doc carries no meta.composition).
+    failOpen: failOpenNodesOf(doc)
   }
 
   const order = topoOrder(doc)
