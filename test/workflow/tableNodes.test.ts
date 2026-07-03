@@ -491,6 +491,23 @@ describe('table.gate', () => {
     const r = tableGate.run(ctx, { gen }, meta(tableGate, 'g', { tables: 'world' }))
     expect(r.outputs!.tables).toEqual(['world'])
   })
+
+  it('config.every OVERRIDES per-table frequencies — the whole pass runs only every N floors', () => {
+    chatSvc.getChatTableTemplateId.mockReturnValue('t1')
+    templateSvc.getTableTemplateById.mockReturnValue(maintTemplate())
+    // every: 3. Floor 0: 0 - (-1) = 1 < 3 → NOTHING due, even chronicle (template freq 1).
+    floorSvc.getAllFloors.mockReturnValue([{}])
+    expect(tableGate.run(ctx, { gen }, meta(tableGate, 'g', { every: 3 }))).toEqual({
+      outputs: {}
+    })
+    expect(progressSvc.advanceProgress).not.toHaveBeenCalled()
+    // Floor 2: 2 - (-1) = 3 >= 3 → BOTH tables fire together in one pass.
+    floorSvc.getAllFloors.mockReturnValue([{}, {}, {}])
+    const r = tableGate.run(ctx, { gen }, meta(tableGate, 'g', { every: 3 }))
+    expect(r.signals).toEqual(['due'])
+    expect(r.outputs!.tables).toEqual(['chronicle', 'world'])
+    expect(r.outputs!.span).toEqual({ from: 0, to: 2 })
+  })
 })
 
 describe('table.read', () => {
