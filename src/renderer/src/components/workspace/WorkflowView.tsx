@@ -130,7 +130,13 @@ const TracePanel: React.FC<{ trace: WorkflowRunTrace | undefined }> = ({ trace }
   )
 }
 
-export const WorkflowView: React.FC<{ profileId: string }> = ({ profileId }) => {
+export const WorkflowView: React.FC<{
+  profileId: string
+  /** 'stacked' (default) = the original single-column panel layout (list, selectors, trace stacked).
+   *  'split' = the full-window control-center layout: management on the left, trace on the right.
+   *  Same content either way — only the arrangement differs (WP3.7 re-hosting, no logic change). */
+  layout?: 'stacked' | 'split'
+}> = ({ profileId, layout = 'stacked' }) => {
   const t = useT()
   const activeChatId = useChatStore((s) => s.activeChatId)
   const chats = useChatStore((s) => s.chats)
@@ -259,7 +265,9 @@ export const WorkflowView: React.FC<{ profileId: string }> = ({ profileId }) => 
     await loadResolved()
   }
 
-  return (
+  // The management column: heading + import/new, the workflow list, the three selection dropdowns,
+  // and the resolved-id line. Shared between both layouts — only its placement differs.
+  const management = (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12, fontSize: 13 }}>
       <div
         style={{
@@ -428,8 +436,27 @@ export const WorkflowView: React.FC<{ profileId: string }> = ({ profileId }) => 
           {t('workflow.resolved')} {workflows.find((w) => w.id === resolved)?.name ?? resolved}
         </div>
       )}
+    </div>
+  )
 
-      {activeChatId && <TracePanel trace={lastTrace} />}
+  const trace = activeChatId ? <TracePanel trace={lastTrace} /> : null
+
+  // Split layout (control center, full width): management on the left, trace on the right so the
+  // per-node run detail has room to breathe. The columns stack under a narrow width.
+  if (layout === 'split') {
+    return (
+      <div className="rpt-workflowmgr-split">
+        <div className="rpt-workflowmgr-main">{management}</div>
+        {trace && <div className="rpt-workflowmgr-trace">{trace}</div>}
+      </div>
+    )
+  }
+
+  // Stacked layout (the original panel body): management then trace in one column.
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+      {management}
+      {trace}
     </div>
   )
 }

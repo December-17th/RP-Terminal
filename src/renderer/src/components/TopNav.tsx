@@ -70,6 +70,13 @@ export function TopNav({
         {tab('lorebook', t('nav.lorebook'), !hasCharacter)}
         {tab('assets', t('nav.assets'), !hasCharacter)}
         {tab('api', t('nav.api'))}
+        <button
+          className="nav-tab"
+          onClick={() => useUiStore.getState().openControlCenter()}
+          title={t('nav.controlCenterTip')}
+        >
+          {t('nav.controlCenter')}
+        </button>
         <button className="nav-tab" onClick={() => useUiStore.getState().openSettings()}>
           {t('nav.settings')}
         </button>

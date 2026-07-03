@@ -61,8 +61,11 @@ import {
   type ExplainHeadline
 } from './agentExplain'
 import { useUiStore } from '../../stores/uiStore'
+import type { ControlCenterRail } from '../../stores/uiStore'
 import { useWorkspaceStore } from '../../stores/workspaceStore'
 import { AgentPackDetail } from './AgentPackDetail'
+import { WorkflowView } from './WorkflowView'
+import { RAIL_ITEMS, railLabelKey, resolveInitialRail } from './controlCenterRail'
 
 // The list-payload shape from listAgentPacks (preload index.d.ts — WP3.1-extended with attachments +
 // capabilities). Mirrored here so the view is typed against the IPC contract.
@@ -83,11 +86,18 @@ interface PackSummary {
   gateOpen?: boolean
 }
 
-type RailItem = 'overview' | 'installed' | 'runs' | 'preview'
+// The rail item ids now come from the shared control-center rail model (WP3.7). 'workflows' is a
+// new pane (the relocated Workflows management surface); the four original panes are unchanged.
+type RailItem = ControlCenterRail
 
 const api = (): any => (window as unknown as { api: any }).api
 
-export const AgentsView: React.FC<{ profileId: string }> = ({ profileId }) => {
+export const AgentsView: React.FC<{
+  profileId: string
+  /** The rail pane to open on (a deep-link from a launcher / quick link). Defaults to Overview.
+   *  Consumed once for the initial state; the view owns its rail afterward. */
+  initialRail?: ControlCenterRail | null
+}> = ({ profileId, initialRail }) => {
   const t = useT()
   const activeChatId = useChatStore((s) => s.activeChatId)
   // The world = the active chat's world card (its character_id) — the scope the gate is written at,
@@ -99,7 +109,7 @@ export const AgentsView: React.FC<{ profileId: string }> = ({ profileId }) => {
     [chats, activeChatId]
   )
 
-  const [rail, setRail] = React.useState<RailItem>('overview')
+  const [rail, setRail] = React.useState<RailItem>(() => resolveInitialRail(initialRail))
   // The pack whose detail panel is open (agent-packs plan WP3.2), or null. Cleared when the world
   // changes (the settings are world/chat-scoped, so a stale detail would show the wrong scope).
   const [detailPackId, setDetailPackId] = React.useState<string | null>(null)
@@ -183,21 +193,23 @@ export const AgentsView: React.FC<{ profileId: string }> = ({ profileId }) => {
 
   return (
     <div className="rpt-agents">
-      <nav className="rpt-agents-rail" aria-label={t('agents.title')}>
-        {(['overview', 'installed', 'runs', 'preview'] as RailItem[]).map((item) => (
+      <nav className="rpt-agents-rail" aria-label={t('controlCenter.title')}>
+        {RAIL_ITEMS.map((item) => (
           <button
             key={item}
             className={`rpt-agents-rail-item${rail === item ? ' active' : ''}`}
             aria-current={rail === item ? 'page' : undefined}
             onClick={() => setRail(item)}
           >
-            {t(`agents.rail.${item}`)}
+            {t(railLabelKey(item))}
           </button>
         ))}
       </nav>
 
       <div className="rpt-agents-content">
-        {rail === 'installed' ? (
+        {rail === 'workflows' ? (
+          <WorkflowView profileId={profileId} layout="split" />
+        ) : rail === 'installed' ? (
           <InstalledPane
             profileId={profileId}
             chatId={activeChatId}

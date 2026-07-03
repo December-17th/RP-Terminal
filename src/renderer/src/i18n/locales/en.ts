@@ -18,6 +18,8 @@ const en: Record<string, string> = {
   'assets.empty': 'No characters or assets yet. Drop images into the character folder.',
   'assets.hint': 'Files: <name>_头像.jpg / <name>_立绘.jpg (+ optional _mood).',
   'nav.api': 'API',
+  'nav.controlCenter': 'Agents',
+  'nav.controlCenterTip': 'Open Agents & Workflows',
   'nav.settings': 'Settings',
   'nav.logs': 'Logs',
   'nav.backToWorlds': 'Back to worlds',
@@ -964,20 +966,29 @@ const en: Record<string, string> = {
   'agents.retry': 'Try again',
   'agents.builtin': 'Built-in',
   'agents.version': 'v{{v}}',
-  // Overview placeholder (built in WP3.5)
   'agents.overview.title': 'Overview',
-  'agents.overview.placeholder':
-    'A glance at which agents are on, how their last runs went, and anything that needs your attention will live here.',
   'agents.overview.packsExplainer':
     'Agent packs are helpers that work alongside the story — keeping memory, updating tables, running things in the background. Open Installed to turn the built-in packs on.',
-  // Runs placeholder (built in WP3.3)
   'agents.runs.title': 'Runs',
-  'agents.runs.placeholder':
-    'A timeline of what each agent did — every turn and every background run, in plain language — will appear here.',
-  // Preview placeholder (built in WP3.4)
   'agents.preview.title': 'Preview',
-  'agents.preview.placeholder':
-    'A preview of what each agent will add to your next prompt, section by section, will show up here.',
+
+  // Agents & Workflows control center (agent-packs plan WP3.7 — the full-window overlay that
+  // re-hosts the Agents view + the Workflows management surface). The rail seam for WP3.8's Memory
+  // pane: add 'controlCenter.rail.memory' when it lands.
+  'controlCenter.title': 'Agents & Workflows',
+  'controlCenter.close': 'Close',
+  'controlCenter.rail.overview': 'Overview',
+  'controlCenter.rail.installed': 'Installed',
+  'controlCenter.rail.workflows': 'Workflows',
+  'controlCenter.rail.runs': 'Runs',
+  'controlCenter.rail.preview': 'Preview',
+  'controlCenter.launch.open': 'Open',
+  'controlCenter.launch.agentsTitle': 'Agents moved to their own screen',
+  'controlCenter.launch.agentsBody':
+    'Installed packs, runs, and the next-prompt preview now live in the Agents & Workflows control center for more room.',
+  'controlCenter.launch.workflowTitle': 'Workflows moved to their own screen',
+  'controlCenter.launch.workflowBody':
+    'The workflow list, defaults, and the last-run trace now live in the Agents & Workflows control center for more room.',
   // ── Injection preview pane (agent-packs plan WP3.4) ───────────────────────────────────────────────
   'preview.title': 'Next prompt',
   'preview.subtitle': 'Exactly what will be sent, section by section, with where each part comes from.',

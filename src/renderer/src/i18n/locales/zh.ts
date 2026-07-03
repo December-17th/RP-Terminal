@@ -19,6 +19,8 @@ const zh: Record<string, string> = {
   'assets.empty': '暂无角色或素材。请将图片放入 character 文件夹。',
   'assets.hint': '文件名：<名字>_头像.jpg / <名字>_立绘.jpg（可加 _情绪）。',
   'nav.api': 'API',
+  'nav.controlCenter': '智能体',
+  'nav.controlCenterTip': '打开智能体与工作流',
   'nav.settings': '设置',
   'nav.logs': '日志',
   'nav.backToWorlds': '返回世界列表',
@@ -928,17 +930,28 @@ const zh: Record<string, string> = {
   'agents.retry': '重试',
   'agents.builtin': '内置',
   'agents.version': 'v{{v}}',
-  // 概览占位（WP3.5 实现）
   'agents.overview.title': '概览',
-  'agents.overview.placeholder': '这里将概览哪些智能体已开启、上次运行情况，以及需要你关注的事项。',
   'agents.overview.packsExplainer':
     '智能体包是与剧情并行工作的助手——维护记忆、更新表格、在后台运行任务。打开「已安装」即可开启内置的智能体包。',
-  // 运行记录占位（WP3.3 实现）
   'agents.runs.title': '运行记录',
-  'agents.runs.placeholder': '这里将以时间线展示每个智能体做了什么——每一回合与每一次后台运行，用平实的语言呈现。',
-  // 预览占位（WP3.4 实现）
   'agents.preview.title': '预览',
-  'agents.preview.placeholder': '这里将逐段预览每个智能体会向你的下一条提示词中添加哪些内容。',
+
+  // 智能体与工作流控制中心（agent-packs plan WP3.7 — 全窗口覆盖层，承载原智能体视图与工作流管理界面）。
+  // WP3.8 的记忆面板接口：落地时新增 'controlCenter.rail.memory'。
+  'controlCenter.title': '智能体与工作流',
+  'controlCenter.close': '关闭',
+  'controlCenter.rail.overview': '概览',
+  'controlCenter.rail.installed': '已安装',
+  'controlCenter.rail.workflows': '工作流',
+  'controlCenter.rail.runs': '运行记录',
+  'controlCenter.rail.preview': '预览',
+  'controlCenter.launch.open': '打开',
+  'controlCenter.launch.agentsTitle': '智能体已移至独立界面',
+  'controlCenter.launch.agentsBody':
+    '已安装的包、运行记录与下一条提示词预览，现已移入「智能体与工作流」控制中心，空间更充裕。',
+  'controlCenter.launch.workflowTitle': '工作流已移至独立界面',
+  'controlCenter.launch.workflowBody':
+    '工作流列表、默认设置与上次运行轨迹，现已移入「智能体与工作流」控制中心，空间更充裕。',
   // ── 注入预览面板（智能体包计划 WP3.4）───────────────────────────────────────────────
   'preview.title': '下一条提示词',
   'preview.subtitle': '将要发送的完整内容，逐段列出，并标注每部分的来源。',

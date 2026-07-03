@@ -11,11 +11,10 @@ import { CombatView } from './CombatView'
 import { DuelView } from './DuelView'
 import { VariablesView } from './VariablesView'
 import { TablesView } from './TablesView'
-import { AgentsView } from './AgentsView'
-import { WorkflowView } from './WorkflowView'
 import { useWorkspaceContext } from './context'
 import { UsageView } from '../UsageView'
 import { useT } from '../../i18n'
+import { useUiStore } from '../../stores/uiStore'
 
 /**
  * The set of views a workspace panel can host. Each entry is a self-contained component
@@ -61,24 +60,57 @@ const TablesPanel: React.FC = () => {
   return <TablesView profileId={profileId} />
 }
 
-const AgentsPanel: React.FC = () => {
-  const { profileId } = useWorkspaceContext()
-  return <AgentsView profileId={profileId} />
-}
-
 const UsagePanel: React.FC = () => {
   const { profileId } = useWorkspaceContext()
   return <UsageView profileId={profileId} />
 }
 
-const WorkflowPanel: React.FC = () => {
-  const { profileId } = useWorkspaceContext()
-  return <WorkflowView profileId={profileId} />
+// The Agents view AND the Workflows management surface no longer live in workspace panels (owner
+// directive WP3.7 — too much going on for a panel). They moved into the full-window control-center
+// overlay (ControlCenterOverlay, uiStore.openControlCenter). These two panel views are kept as THIN
+// LAUNCHERS so a saved layout referencing view:'agents'/'workflow' still resolves to a designed card
+// (a broken/unknown-view panel otherwise) that opens the control center on the right pane.
+const LauncherCard: React.FC<{
+  titleKey: string
+  bodyKey: string
+  rail: 'overview' | 'workflows'
+}> = ({ titleKey, bodyKey, rail }) => {
+  const t = useT()
+  const openControlCenter = useUiStore((s) => s.openControlCenter)
+  return (
+    <div className="rpt-cc-launch">
+      <div className="rpt-cc-launch-card">
+        <div className="rpt-cc-launch-icon" aria-hidden>
+          ◐
+        </div>
+        <h2 className="rpt-cc-launch-title">{t(titleKey)}</h2>
+        <p className="rpt-cc-launch-body">{t(bodyKey)}</p>
+        <button className="btn-accent rpt-cc-launch-btn" onClick={() => openControlCenter({ rail })}>
+          {t('controlCenter.launch.open')}
+        </button>
+      </div>
+    </div>
+  )
 }
 
+const AgentsPanel: React.FC = () => (
+  <LauncherCard
+    titleKey="controlCenter.launch.agentsTitle"
+    bodyKey="controlCenter.launch.agentsBody"
+    rail="overview"
+  />
+)
+
+const WorkflowPanel: React.FC = () => (
+  <LauncherCard
+    titleKey="controlCenter.launch.workflowTitle"
+    bodyKey="controlCenter.launch.workflowBody"
+    rail="workflows"
+  />
+)
+
 // The workflow EDITOR is deliberately NOT a panel view: the canvas needs the whole window, so it
-// lives in the app-level WorkflowEditorOverlay (uiStore.openWorkflowEditor), opened from the
-// Workflows view's Edit buttons.
+// lives in the app-level WorkflowEditorOverlay (uiStore.openWorkflowEditor).
 
 // The card's scripts now run in the app-wide invisible script engine (CardScriptWcvHost in App.tsx), not in
 // a panel — so this view is just an explanatory note. Visible card UI lives in declared panels (status, …).
@@ -108,7 +140,7 @@ export const ViewRegistry: Record<string, ViewEntry> = {
   variables: { title: 'Variables', Component: VariablesPanel },
   tables: { title: 'Tables', Component: TablesPanel },
   agents: { title: 'Agents', Component: AgentsPanel, fill: true },
-  workflow: { title: 'Workflows', Component: WorkflowPanel },
+  workflow: { title: 'Workflows', Component: WorkflowPanel, fill: true },
   usage: { title: 'Usage', Component: UsagePanel, fill: true },
   'card-scripts': { title: 'Card Scripts', Component: CardScriptsPanel },
   logs: { title: 'Logs', Component: LogsPanel, fill: true },

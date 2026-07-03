@@ -32,6 +32,7 @@ import { Launcher } from './components/Launcher'
 import { StDomCompat } from './components/StDomCompat'
 import { SettingsModal } from './components/SettingsModal'
 import { WorkflowEditorOverlay } from './components/workflow/WorkflowEditorOverlay'
+import { ControlCenterOverlay } from './components/workspace/ControlCenterOverlay'
 
 export default function App(): React.ReactElement {
   const activeProfile = useProfileStore((s) => s.activeProfile)
@@ -267,8 +268,11 @@ export default function App(): React.ReactElement {
         </>
       )}
 
-      {/* App-wide overlays — render over BOTH the launcher and play. */}
+      {/* App-wide overlays — render over BOTH the launcher and play. The control center (Agents &
+          Workflows) and the workflow editor coexist; the editor mounts after (paints above) so a
+          Studio hand-off from the control center leaves it underneath and returns on close. */}
       <SettingsModal profileId={activeProfile.id} />
+      <ControlCenterOverlay profileId={activeProfile.id} />
       <WorkflowEditorOverlay profileId={activeProfile.id} />
       <ToastStack />
     </>
