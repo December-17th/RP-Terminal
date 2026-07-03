@@ -450,7 +450,15 @@ export const registerWcvIpc = (ipcMain: IpcMain): void => {
   ipcMain.handle('wcv-host-generate', async (e, text) => {
     const ctx = wcvManager.contextFor(e.sender.id)
     if (!ctx) return ''
-    const floor = await generationService.generate(ctx.profileId, ctx.chatId, String(text ?? ''))
+    // source 'script': a card-initiated turn — refused while any turn is in flight, and PREEMPTED
+    // by the player's own send if one arrives mid-flight (player priority, generationService).
+    const floor = await generationService.generate(
+      ctx.profileId,
+      ctx.chatId,
+      String(text ?? ''),
+      () => {},
+      'script'
+    )
     wcvManager.pushHostReload(ctx.chatId) // a new floor → refresh the host chat UI + sibling WCVs
     return floor?.response?.content ?? ''
   })

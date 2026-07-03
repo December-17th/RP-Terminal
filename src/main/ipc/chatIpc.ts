@@ -53,10 +53,17 @@ export const registerChatIpc = (ipcMain: IpcMain): void => {
     return true
   })
 
-  ipcMain.handle('generate', async (event, profileId, chatId, userAction) => {
+  ipcMain.handle('generate', async (event, profileId, chatId, userAction, source) => {
     try {
-      return await generationService.generate(profileId, chatId, userAction, (delta) =>
-        event.sender.send('generation-delta', { chatId, delta })
+      // Only 'script' is honored off the wire (the card bridge's TH.generate marks itself);
+      // anything else — including the renderer's own sends — is a player turn, which PREEMPTS an
+      // in-flight script turn (player priority, see generationService.generate).
+      return await generationService.generate(
+        profileId,
+        chatId,
+        userAction,
+        (delta) => event.sender.send('generation-delta', { chatId, delta }),
+        source === 'script' ? 'script' : 'player'
       )
     } catch (err: any) {
       logService.log('error', '✗ generate failed', err?.message || String(err))

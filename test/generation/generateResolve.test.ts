@@ -211,10 +211,10 @@ describe('generate() — resolves the active workflow', () => {
     const first = generate('profile1', 'chat1', 'open the door')
     await new Promise((r) => setTimeout(r, 10)) // let the first run reach the provider
 
-    // The mid-turn caller (a card script's TH.generate) is refused, like SillyTavern refuses it.
-    await expect(generate('profile1', 'chat1', 'script-triggered call')).rejects.toThrow(
-      /already in progress/i
-    )
+    // A SCRIPT caller (a card's TH.generate) mid-PLAYER-turn is refused, like SillyTavern refuses it.
+    await expect(
+      generate('profile1', 'chat1', 'script-triggered call', () => {}, 'script')
+    ).rejects.toThrow(/already in progress/i)
 
     release('You open the door.')
     expect(await first).not.toBeNull()
@@ -222,6 +222,33 @@ describe('generate() — resolves the active workflow', () => {
     // The chat is usable again once the turn delivered.
     streamProviderMock.mockImplementation(defaultStream)
     expect(await generate('profile1', 'chat1', 'again')).not.toBeNull()
+  })
+
+  it('a PLAYER call PREEMPTS an in-flight SCRIPT turn — aborts it and proceeds', async () => {
+    vi.useRealTimers()
+    // The script turn's provider call hangs until aborted (resolving with its partial text —
+    // the abort-with-text path); the player's subsequent calls use the normal fast stream.
+    let scriptAborted = false
+    streamProviderMock
+      .mockImplementationOnce(
+        (_s: unknown, _m: unknown, _p: unknown, _d: unknown, signal: AbortSignal) =>
+          new Promise<string>((resolve) => {
+            signal.addEventListener('abort', () => {
+              scriptAborted = true
+              resolve('interrupted script text')
+            })
+          })
+      )
+      .mockImplementation(defaultStream)
+
+    const scriptTurn = generate('profile1', 'chat1', 'script call', () => {}, 'script')
+    await new Promise((r) => setTimeout(r, 10)) // let the script turn reach the provider
+
+    // The player's send does NOT get refused — it aborts the script turn and runs.
+    const playerFloor = await generate('profile1', 'chat1', 'open the door')
+    expect(scriptAborted).toBe(true)
+    expect(playerFloor).not.toBeNull()
+    await scriptTurn // the preempted turn settles without throwing
   })
 
   it('broadcasts the run trace after the turn (spec §13 run/trace panel)', async () => {

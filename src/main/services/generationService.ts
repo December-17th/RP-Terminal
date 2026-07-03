@@ -46,7 +46,7 @@ export {
   activeControllers,
   type RawGenConfig
 } from './generation/rawGenerate'
-import { activeControllers } from './generation/rawGenerate'
+import { activeControllers, abortGeneration } from './generation/rawGenerate'
 
 /**
  * Run one full turn: assemble the prompt, call the model, post-process (regex →
@@ -54,30 +54,51 @@ import { activeControllers } from './generation/rawGenerate'
  * and return it. All orchestration lives here so the renderer just calls one IPC.
  */
 
+/** Who initiated a main turn: the player's own send (or regenerate/swipe), or a programmatic
+ *  caller — a card script's TH `generate` through the cardBridge/WCV compat surfaces. */
+export type TurnSource = 'player' | 'script'
+
 // Chats with a MAIN turn in flight (pre-phase — cleared when the floor is delivered). Deliberately
 // SEPARATE from `activeControllers`: that map is shared with generateRaw (combat/duel narration,
 // one-off TH generateRaw calls), which must stay allowed during a turn — only full-pipeline turns
-// serialize.
-const activeTurns = new Set<string>()
+// serialize. Each entry knows its SOURCE (so a player turn can preempt a script turn, never the
+// reverse) and exposes a `settled` promise the preemptor awaits before taking the slot.
+const activeTurns = new Map<string, { source: TurnSource; settled: Promise<void> }>()
 
 export const generate = async (
   profileId: string,
   chatId: string,
   userAction: string,
-  onDelta: DeltaCallback = () => {}
+  onDelta: DeltaCallback = () => {},
+  source: TurnSource = 'player'
 ): Promise<FloorFile | null> => {
-  // ST-faithful serialization: ONE main turn per chat at a time. SillyTavern refuses a Generate()
-  // while one is in flight, and card scripts calling TH `generate` mid-turn RELY on that refusal —
-  // without it, a script-triggered second turn runs a full concurrent pipeline: two provider calls
-  // at once, two persisted floors racing, interleaved deltas into one streaming bubble ("the story
-  // advances on its own"). The rejected caller gets a plain error, exactly like ST. The guard
-  // covers the pre phase only (cleared at floor delivery); the detached post phase — the table-
-  // maintenance side call — deliberately stays outside it.
-  if (activeTurns.has(chatId)) {
+  // ST-faithful serialization with PLAYER PRIORITY: one main turn per chat at a time. SillyTavern
+  // refuses a Generate() while one is in flight, and card scripts calling TH `generate` mid-turn
+  // rely on that refusal — without it, a script-triggered second turn runs a full concurrent
+  // pipeline (two provider calls at once, two persisted floors racing, interleaved deltas). But a
+  // blind first-wins refusal loses the RACE the wrong way when the script's call happens to land
+  // first: the PLAYER'S real turn gets refused and the script's story takes over. So:
+  //  - a PLAYER call finding a SCRIPT turn in flight PREEMPTS it — aborts the script turn, waits
+  //    for it to release, and proceeds (the script's promise resolves null, harmless);
+  //  - any other collision (script-during-anything, player-during-player) is refused like ST.
+  // The guard covers the pre phase only (cleared at floor delivery); the detached post phase —
+  // the table-maintenance side call — deliberately stays outside it.
+  for (;;) {
+    const existing = activeTurns.get(chatId)
+    if (!existing) break
+    if (source === 'player' && existing.source === 'script') {
+      log(
+        'info',
+        'player turn preempts an in-flight script-initiated turn — aborting the script turn'
+      )
+      abortGeneration(chatId)
+      await existing.settled
+      continue // re-check: the slot should now be free (or hold a newer entry)
+    }
     const head = userAction.length > 80 ? `${userAction.slice(0, 80)}…` : userAction
     log(
       'error',
-      `✗ generate rejected — a turn is already in flight for this chat. Second caller's action: "${head}" (likely a card script calling TH.generate mid-turn; SillyTavern refuses these too)`
+      `✗ generate rejected — a ${existing.source} turn is already in flight for this chat. Second caller (${source}) action: "${head}" (likely a card script calling TH.generate mid-turn; SillyTavern refuses these too)`
     )
     throw new Error('Generation already in progress for this chat')
   }
@@ -92,7 +113,11 @@ export const generate = async (
   // re-written once per turn never builds a false runaway streak across turns (WS-3).
   resetWriteLoopGuard(chatId)
 
-  activeTurns.add(chatId)
+  let releaseTurn!: () => void
+  const settled = new Promise<void>((resolve) => {
+    releaseTurn = resolve
+  })
+  activeTurns.set(chatId, { source, settled })
   const controller = new AbortController()
   activeControllers.set(chatId, controller)
   try {
@@ -165,6 +190,7 @@ export const generate = async (
   } finally {
     activeTurns.delete(chatId)
     activeControllers.delete(chatId)
+    releaseTurn() // LAST — a waiting preemptor resumes only after the slot is fully cleared
   }
 }
 
