@@ -605,6 +605,13 @@ const zh: Record<string, string> = {
   'workflowEditor.nodeTitle.subgraph.loop': '子图循环',
   'workflowEditor.nodeTitle.subgraph.input': '子图输入',
   'workflowEditor.nodeTitle.subgraph.output': '子图输出',
+  'workflowEditor.nodeTitle.table.apply': '应用表格 SQL',
+  'workflowEditor.nodeTitle.table.export': '导出表格',
+  'workflowEditor.nodeTitle.table.gate': '表格闸门',
+  'workflowEditor.nodeTitle.table.read': '读取表格',
+  'workflowEditor.nodeTitle.table.query': '查询表格',
+  'workflowEditor.nodeTitle.parse.extract': '提取文本',
+  'workflowEditor.nodeTitle.context.trimProcessed': '裁剪已处理历史',
   // 节点说明
   'workflowEditor.nodeDesc.input.context':
     '构建本回合的上下文包：会话、角色卡、设置、预设、世界书、聊天历史与工作变量。每张图的起点——几乎所有节点都要读取它的输出。',
@@ -1000,7 +1007,54 @@ const zh: Record<string, string> = {
   // 高级
   'agents.settings.openStudio': '在工作流工作室中打开',
   'agents.settings.forkNote':
-    '在工作流工作室中编辑包的图会为本世界创建一份副本——原始包保持不变。'
+    '在工作流工作室中编辑包的图会为本世界创建一份副本——原始包保持不变。',
+
+  // ── 运行时间线（WP3.3） ────────────────────────────────────────────────────────────────────────
+  // 来源徽标（字形 + 简短标签）
+  'runs.origin.turn': '回复',
+  'runs.origin.headless': '自动运行',
+  'runs.origin.manual': '手动运行',
+  'runs.origin.turnTitle': '作为回复的一部分运行',
+  'runs.origin.headlessTitle': '智能体自动运行',
+  'runs.origin.manualTitle': '你运行了此智能体',
+  // 归属
+  'runs.narratorTurn': '旁白回合',
+  'runs.packSep': '、',
+  // 触发器说明前缀（record.trigger 已是可读文本）
+  'runs.triggerCaption': '触发器：{{trigger}}',
+  // 一句话结果（插值 {{n}}；{{node}} 为本地化的节点标题）
+  'runs.outcome.failed': '在「{{node}}」处失败。',
+  'runs.outcome.failedGeneric': '出了点问题。',
+  'runs.outcome.branchFailed': '「{{node}}」失败——未影响回复。',
+  'runs.outcome.branchFailedGeneric': '有一个旁支步骤失败——未影响回复。',
+  'runs.outcome.updatedTables': '更新了 {{n}} 张表。',
+  'runs.outcome.updatedTablesMore': '更新了 {{n}} 张表，还做了其它处理。',
+  'runs.outcome.wroteFloors': '写入了 {{n}} 个楼层。',
+  'runs.outcome.wroteFloorsMore': '写入了 {{n}} 个楼层，还做了其它处理。',
+  'runs.outcome.calledModel': '调用了模型 {{n}} 次。',
+  'runs.outcome.calledModelMore': '调用了模型 {{n}} 次，还做了其它处理。',
+  'runs.outcome.skipped': '这次无需处理。',
+  'runs.outcome.ran': '运行了 {{n}} 个步骤。',
+  // 节点详情
+  'runs.detail.narratorGroup': '旁白',
+  'runs.detail.status.ran': '已运行',
+  'runs.detail.status.skipped': '已跳过',
+  'runs.detail.status.failed': '失败',
+  'runs.detail.expand': '显示步骤',
+  'runs.detail.collapse': '隐藏步骤',
+  // 筛选标签
+  'runs.filter.all': '全部',
+  // 刷新
+  'runs.refresh': '刷新',
+  'runs.loadMore': '加载更早的运行',
+  'runs.loadingMore': '加载中…',
+  // 空状态 + 错误 + 加载
+  'runs.emptyTitle': '暂无活动',
+  'runs.emptyBody':
+    '回复之后，以及智能体自动运行时，运行记录会显示在这里。前往「已安装」开启一个智能体即可开始。',
+  'runs.loadError': '无法加载活动记录。',
+  'runs.noWorldTitle': '请先打开聊天',
+  'runs.noWorldBody': '活动记录按聊天单独跟踪。打开一个世界并开始聊天，即可在此查看运行记录。'
 }
 
 export default zh

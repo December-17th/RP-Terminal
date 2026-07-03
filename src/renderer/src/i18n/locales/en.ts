@@ -624,6 +624,13 @@ const en: Record<string, string> = {
   'workflowEditor.nodeTitle.subgraph.loop': 'Sub-graph Loop',
   'workflowEditor.nodeTitle.subgraph.input': 'Sub-graph Input',
   'workflowEditor.nodeTitle.subgraph.output': 'Sub-graph Output',
+  'workflowEditor.nodeTitle.table.apply': 'Apply Table SQL',
+  'workflowEditor.nodeTitle.table.export': 'Export Table',
+  'workflowEditor.nodeTitle.table.gate': 'Table Gate',
+  'workflowEditor.nodeTitle.table.read': 'Read Tables',
+  'workflowEditor.nodeTitle.table.query': 'Query Tables',
+  'workflowEditor.nodeTitle.parse.extract': 'Extract Text',
+  'workflowEditor.nodeTitle.context.trimProcessed': 'Trim Processed History',
   // Node descriptions (what the node does).
   'workflowEditor.nodeDesc.input.context':
     'Builds the turn bundle: session, character card, settings, preset, lorebooks, chat history and working variables. The start of every graph — almost every other node takes its output.',
@@ -1041,7 +1048,54 @@ const en: Record<string, string> = {
   // Advanced
   'agents.settings.openStudio': 'Open in Workflow Studio',
   'agents.settings.forkNote':
-    'Editing a pack’s graph in Workflow Studio makes a copy for this world — the original stays untouched.'
+    'Editing a pack’s graph in Workflow Studio makes a copy for this world — the original stays untouched.',
+
+  // ── Runs timeline (WP3.3) ──────────────────────────────────────────────────────────────────────
+  // Origin badges (glyph + short label)
+  'runs.origin.turn': 'Reply',
+  'runs.origin.headless': 'On its own',
+  'runs.origin.manual': 'Run by you',
+  'runs.origin.turnTitle': 'Ran as part of a reply',
+  'runs.origin.headlessTitle': 'An agent ran on its own',
+  'runs.origin.manualTitle': 'You ran this agent',
+  // Attribution
+  'runs.narratorTurn': 'Narrator turn',
+  'runs.packSep': ', ',
+  // Trigger caption prefix (record.trigger is already human-readable)
+  'runs.triggerCaption': 'Trigger: {{trigger}}',
+  // One-sentence outcomes (interpolate {{n}}; {{node}} is a localized node title)
+  'runs.outcome.failed': 'Failed at {{node}}.',
+  'runs.outcome.failedGeneric': 'Something went wrong.',
+  'runs.outcome.branchFailed': '{{node}} failed — the reply was not affected.',
+  'runs.outcome.branchFailedGeneric': 'A side step failed — the reply was not affected.',
+  'runs.outcome.updatedTables': 'Updated {{n}} table(s).',
+  'runs.outcome.updatedTablesMore': 'Updated {{n}} table(s), and did more.',
+  'runs.outcome.wroteFloors': 'Wrote {{n}} floor(s).',
+  'runs.outcome.wroteFloorsMore': 'Wrote {{n}} floor(s), and did more.',
+  'runs.outcome.calledModel': 'Called the model {{n}} time(s).',
+  'runs.outcome.calledModelMore': 'Called the model {{n}} time(s), and did more.',
+  'runs.outcome.skipped': 'Nothing to do this time.',
+  'runs.outcome.ran': 'Ran {{n}} step(s).',
+  // Node detail
+  'runs.detail.narratorGroup': 'Narrator',
+  'runs.detail.status.ran': 'ran',
+  'runs.detail.status.skipped': 'skipped',
+  'runs.detail.status.failed': 'failed',
+  'runs.detail.expand': 'Show steps',
+  'runs.detail.collapse': 'Hide steps',
+  // Filter chips
+  'runs.filter.all': 'All',
+  // Refresh
+  'runs.refresh': 'Refresh',
+  'runs.loadMore': 'Load older runs',
+  'runs.loadingMore': 'Loading…',
+  // Empty + error + loading
+  'runs.emptyTitle': 'No activity yet',
+  'runs.emptyBody':
+    'Runs show up here after replies, and whenever an agent runs on its own. Turn on an agent under Installed to get started.',
+  'runs.loadError': "Couldn't load the activity feed.",
+  'runs.noWorldTitle': 'Open a chat first',
+  'runs.noWorldBody': 'Activity is tracked per chat. Open a world and start a chat to see runs here.'
 }
 
 export default en

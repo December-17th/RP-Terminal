@@ -2291,12 +2291,14 @@ select {
 .rpt-agents-skel-line { height:12px; border-radius:6px; background:var(--rpt-bg-tertiary); }
 .rpt-agents-skel-line.short { width:45%; }
 .rpt-agents-skeleton .rpt-agents-skel-toggle,
+.rpt-agents-skeleton .rpt-runs-skel-badge,
 .rpt-agents-skeleton .rpt-agents-skel-line { animation:rpt-agents-pulse 1.3s ease-in-out infinite; }
 @keyframes rpt-agents-pulse { 0%,100% { opacity:.5; } 50% { opacity:.9; } }
 
 @media (prefers-reduced-motion: reduce) {
   .rpt-agents-gate, .rpt-agents-gate-knob { transition:none; }
   .rpt-agents-skeleton .rpt-agents-skel-toggle,
+  .rpt-agents-skeleton .rpt-runs-skel-badge,
   .rpt-agents-skeleton .rpt-agents-skel-line { animation:none; }
 }
 
@@ -2308,6 +2310,74 @@ select {
   padding:4px 10px; cursor:pointer; }
 .rpt-agents-settingsbtn:hover { color:var(--rpt-text-primary); }
 .rpt-agents-settingsbtn:focus-visible { outline:2px solid var(--rpt-accent); outline-offset:1px; }
+.rpt-agents-settingsbtn:disabled { opacity:.55; cursor:default; }
+
+/* ── Runs timeline (agent-packs plan WP3.3) ───────────────────────────────────────────────────────
+   The reverse-chronological activity feed. All colors via --rpt-* tokens (AA across all themes). */
+.rpt-runs { display:flex; flex-direction:column; gap:12px; max-width:720px; }
+.rpt-runs-toolbar { display:flex; align-items:center; justify-content:space-between; gap:12px; }
+.rpt-runs-chips { display:flex; flex-wrap:wrap; gap:6px; min-width:0; }
+.rpt-runs-chip { font:inherit; font-size:11.5px; color:var(--rpt-text-secondary);
+  background:var(--rpt-bg-tertiary); border:1px solid var(--rpt-border); border-radius:11px;
+  padding:2px 10px; cursor:pointer; }
+.rpt-runs-chip:hover { color:var(--rpt-text-primary); }
+.rpt-runs-chip.active { background:var(--rpt-accent); border-color:var(--rpt-accent);
+  color:var(--rpt-on-accent); }
+.rpt-runs-chip:focus-visible { outline:2px solid var(--rpt-accent); outline-offset:1px; }
+
+.rpt-runs-list { list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:10px; }
+.rpt-runs-entry { border:1px solid var(--rpt-border); border-radius:12px;
+  background:var(--rpt-bg-secondary); overflow:hidden; }
+.rpt-runs-entry.tone-failed { border-color:var(--rpt-danger); }
+.rpt-runs-entry.tone-branch-failed { border-color:var(--rpt-warning); }
+.rpt-runs-entry-main { display:flex; gap:12px; align-items:flex-start; width:100%; text-align:left;
+  font:inherit; background:none; border:0; padding:12px 14px; cursor:pointer; color:inherit; }
+.rpt-runs-entry-main:hover { background:var(--rpt-bg-tertiary); }
+.rpt-runs-entry-main:focus-visible { outline:2px solid var(--rpt-accent); outline-offset:-2px; }
+
+.rpt-runs-origin { flex-shrink:0; width:28px; height:28px; border-radius:8px; display:flex;
+  align-items:center; justify-content:center; font-size:14px; background:var(--rpt-bg-tertiary);
+  border:1px solid var(--rpt-border); }
+.rpt-runs-origin.headless { background:var(--rpt-agent-headless); color:var(--rpt-agent-headless-text);
+  border-color:var(--rpt-agent-headless-text); }
+.rpt-runs-origin.manual { background:var(--rpt-accent-soft, var(--rpt-bg-tertiary));
+  border-color:var(--rpt-accent); }
+
+.rpt-runs-entry-body { flex:1; min-width:0; display:flex; flex-direction:column; gap:3px; }
+.rpt-runs-entry-head { display:flex; align-items:baseline; justify-content:space-between; gap:10px; }
+.rpt-runs-attr { font-size:13px; font-weight:600; color:var(--rpt-text-primary); min-width:0;
+  overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.rpt-runs-meta { flex-shrink:0; font-size:11px; color:var(--rpt-text-tertiary);
+  font-variant-numeric:tabular-nums; }
+.rpt-runs-outcome { font-size:12.5px; line-height:1.5; color:var(--rpt-text-secondary); }
+.rpt-runs-entry.tone-failed .rpt-runs-outcome { color:var(--rpt-danger); }
+.rpt-runs-trigger { font-size:11px; color:var(--rpt-text-tertiary); }
+.rpt-runs-error { font-size:11.5px; color:var(--rpt-danger); }
+.rpt-runs-caret { flex-shrink:0; color:var(--rpt-text-tertiary); font-size:11px; align-self:center; }
+
+.rpt-runs-detail { padding:0 14px 12px 54px; display:flex; flex-direction:column; gap:10px; }
+.rpt-runs-group { display:flex; flex-direction:column; gap:3px; }
+.rpt-runs-group-head { font-size:10.5px; font-weight:700; letter-spacing:.03em;
+  text-transform:uppercase; color:var(--rpt-text-tertiary); }
+.rpt-runs-node { display:flex; align-items:baseline; gap:8px; font-size:12px;
+  padding:2px 0; flex-wrap:wrap; }
+.rpt-runs-node-status { flex-shrink:0; font-size:10px; font-weight:700; letter-spacing:.02em;
+  text-transform:uppercase; padding:1px 6px; border-radius:5px; background:var(--rpt-bg-tertiary);
+  color:var(--rpt-text-secondary); }
+.rpt-runs-node-status.ran { color:var(--rpt-success); }
+.rpt-runs-node-status.failed { background:var(--rpt-agent-write-bg); color:var(--rpt-agent-write-text); }
+.rpt-runs-node-status.skipped { color:var(--rpt-text-tertiary); }
+.rpt-runs-node-title { color:var(--rpt-text-primary); }
+.rpt-runs-node-ms { color:var(--rpt-text-tertiary); font-size:11px; font-variant-numeric:tabular-nums; }
+.rpt-runs-node-error { flex-basis:100%; color:var(--rpt-danger); font-size:11px; padding-left:2px; }
+
+.rpt-runs-more { display:flex; justify-content:center; }
+.rpt-runs-skel-badge { flex-shrink:0; width:28px; height:28px; border-radius:8px;
+  background:var(--rpt-bg-tertiary); }
+.rpt-runs-entry.rpt-agents-skeleton .rpt-runs-entry-main { pointer-events:none; }
+@media (prefers-reduced-motion: reduce) {
+  .rpt-runs-entry-main, .rpt-runs-chip { transition:none; }
+}
 
 /* ── Pack detail panel — tiered settings with provenance (agent-packs plan WP3.2) ─────────────────
    A side panel next to the list. All colors via --rpt-* tokens (AA across all three themes). */

@@ -17,7 +17,8 @@
 
 import React from 'react'
 import { useChatStore } from '../../stores/chatStore'
-import { useT } from '../../i18n'
+import { useT, useOptionalT } from '../../i18n'
+import { formatTraceSeconds } from '../../../../shared/workflow/trace'
 import type { StoredRunRecord } from '../../../../shared/workflow/trace'
 import type { CapabilityId } from '../../../../shared/workflow/capabilities'
 import { isWriteCapability } from '../../../../shared/workflow/capabilities'
@@ -29,6 +30,15 @@ import {
   type AttachmentBadge,
   type PackHealth
 } from './agentPackDisplay'
+import {
+  detailGroups,
+  runFacts,
+  outcomeSentence,
+  packsWithRuns,
+  filterRuns,
+  nextBeforeSeq,
+  type DetailGroup
+} from './runTimeline'
 import { AgentPackDetail } from './AgentPackDetail'
 
 // The list-payload shape from listAgentPacks (preload index.d.ts — WP3.1-extended with attachments +
@@ -118,6 +128,19 @@ export const AgentsView: React.FC<{ profileId: string }> = ({ profileId }) => {
     [packs, detailPackId]
   )
 
+  // packId → display name, for Runs-timeline attribution (a run's packIds are opaque ids). A fork
+  // shows "<base> (fork N)"; a plain pack shows its manifest name. Ids not in the installed list
+  // (e.g. an uninstalled pack that still has runs) fall back to the raw id.
+  const packNames = React.useMemo(() => {
+    const m: Record<string, string> = {}
+    for (const p of packs ?? []) {
+      m[p.id] = p.manifest.fork
+        ? `${p.manifest.fork.base} (${t('workflowEffective.fork')} ${p.manifest.fork.n})`
+        : p.manifest.name
+    }
+    return m
+  }, [packs, t])
+
   // Optimistic gate flip with rollback on IPC failure. Writes the WORLD scope (chatId null) for the
   // active chat's world. Enabling never confirms; disabling a main-reply-transforming pack is guarded
   // by the cascade popover (handled by the caller before invoking this).
@@ -163,6 +186,14 @@ export const AgentsView: React.FC<{ profileId: string }> = ({ profileId }) => {
             onFlipGate={flipGate}
             selectedPackId={detailPackId}
             onOpenDetail={setDetailPackId}
+          />
+        ) : rail === 'runs' ? (
+          <RunsPane
+            profileId={profileId}
+            chatId={activeChatId}
+            packNames={packNames}
+            initialRuns={runs}
+            initialLoading={loading}
           />
         ) : (
           <PlaceholderPane rail={rail} />
@@ -449,4 +480,328 @@ const Badge: React.FC<{ badge: AttachmentBadge }> = ({ badge }) => {
       {inline ? ` · ${t('agents.badge.inline')}` : ''}
     </span>
   )
+}
+
+// ── Runs timeline (agent-packs plan WP3.3) ─────────────────────────────────────────────────────────
+//
+// The reverse-chronological activity feed. Entries interleave turns / headless / manual runs (they
+// arrive newest-first by seq). Each entry: origin badge, pack attribution, a one-sentence plain-
+// language outcome (runTimeline.outcomeSentence), duration (formatTraceSeconds), start time (HH:mm),
+// a trigger caption for headless/manual, and an expandable per-node detail (synthetic __headless_seed_*
+// nodes filtered). Filter chips (All + one per pack with runs) filter the LOADED window client-side.
+// Paging: "load older" honors the beforeSeq cursor (strictly-less-than; empty page = end). Live-ness:
+// refetch page 1 on mount (the pane mounts when the Runs rail is selected) + a manual Refresh button.
+// Renderer-only, reuses the WP2.3 listAgentPackRuns IPC + trace data as-is.
+
+const PAGE_LIMIT = 50
+
+/** Absolute HH:mm for a run's start (matches the app's absolute-time convention elsewhere). */
+const formatRunTime = (epochMs: number): string => {
+  const d = new Date(epochMs)
+  const hh = String(d.getHours()).padStart(2, '0')
+  const mm = String(d.getMinutes()).padStart(2, '0')
+  return `${hh}:${mm}`
+}
+
+const RunsPane: React.FC<{
+  profileId: string
+  chatId: string | null
+  packNames: Record<string, string>
+  initialRuns: StoredRunRecord[]
+  initialLoading: boolean
+}> = ({ profileId, chatId, packNames, initialRuns, initialLoading }) => {
+  const t = useT()
+  const [records, setRecords] = React.useState<StoredRunRecord[]>(initialRuns)
+  const [loading, setLoading] = React.useState(initialLoading)
+  const [loadingMore, setLoadingMore] = React.useState(false)
+  const [error, setError] = React.useState(false)
+  // null = All; else the packId whose runs are shown (client-side filter over the loaded window).
+  const [filter, setFilter] = React.useState<string | null>(null)
+  // true once a page came back shorter than the limit (or empty) — no more to request.
+  const [atEnd, setAtEnd] = React.useState(false)
+
+  // Fetch page 1 (newest). Called on mount (= pane becomes visible) and by manual Refresh.
+  const refresh = React.useCallback(async () => {
+    if (!chatId) {
+      setRecords([])
+      setAtEnd(true)
+      setLoading(false)
+      return
+    }
+    setLoading(true)
+    setError(false)
+    try {
+      const page = (await api().listAgentPackRuns(
+        profileId,
+        chatId,
+        undefined,
+        PAGE_LIMIT
+      )) as StoredRunRecord[]
+      setRecords(page ?? [])
+      setAtEnd((page ?? []).length < PAGE_LIMIT)
+    } catch {
+      setError(true)
+    } finally {
+      setLoading(false)
+    }
+  }, [profileId, chatId])
+
+  // Refresh when the pane mounts (the content area only renders RunsPane while the Runs rail is
+  // active, so mount === becoming visible) or the chat changes.
+  React.useEffect(() => {
+    void refresh()
+  }, [refresh])
+
+  const loadMore = React.useCallback(async () => {
+    if (!chatId || atEnd || loadingMore) return
+    const cursor = nextBeforeSeq(records)
+    if (cursor === undefined) {
+      setAtEnd(true)
+      return
+    }
+    setLoadingMore(true)
+    try {
+      const page = (await api().listAgentPackRuns(
+        profileId,
+        chatId,
+        cursor,
+        PAGE_LIMIT
+      )) as StoredRunRecord[]
+      const next = page ?? []
+      setRecords((prev) => [...prev, ...next])
+      if (next.length < PAGE_LIMIT) setAtEnd(true)
+    } catch {
+      setError(true)
+    } finally {
+      setLoadingMore(false)
+    }
+  }, [profileId, chatId, records, atEnd, loadingMore])
+
+  const chips = React.useMemo(() => packsWithRuns(records), [records])
+  const shown = React.useMemo(() => filterRuns(records, filter), [records, filter])
+
+  if (!chatId) {
+    return (
+      <div className="rpt-agents-empty">
+        <div className="rpt-agents-placeholder-icon" aria-hidden>
+          💬
+        </div>
+        <h2 className="rpt-agents-placeholder-title">{t('runs.noWorldTitle')}</h2>
+        <p className="rpt-agents-placeholder-body">{t('runs.noWorldBody')}</p>
+      </div>
+    )
+  }
+
+  if (loading && records.length === 0) {
+    return (
+      <div className="rpt-runs">
+        <div className="rpt-runs-list">
+          {[0, 1, 2].map((i) => (
+            <div key={i} className="rpt-runs-entry rpt-agents-skeleton" aria-hidden>
+              <div className="rpt-runs-skel-badge" />
+              <div className="rpt-agents-skel-lines">
+                <div className="rpt-agents-skel-line" />
+                <div className="rpt-agents-skel-line short" />
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    )
+  }
+
+  if (error && records.length === 0) {
+    return (
+      <div className="rpt-agents-empty">
+        <p>{t('runs.loadError')}</p>
+        <button className="btn-accent" onClick={() => void refresh()}>
+          {t('agents.retry')}
+        </button>
+      </div>
+    )
+  }
+
+  return (
+    <div className="rpt-runs">
+      <div className="rpt-runs-toolbar">
+        <div className="rpt-runs-chips" role="group" aria-label={t('agents.rail.runs')}>
+          <button
+            className={`rpt-runs-chip${filter === null ? ' active' : ''}`}
+            aria-pressed={filter === null}
+            onClick={() => setFilter(null)}
+          >
+            {t('runs.filter.all')}
+          </button>
+          {chips.map((packId) => (
+            <button
+              key={packId}
+              className={`rpt-runs-chip${filter === packId ? ' active' : ''}`}
+              aria-pressed={filter === packId}
+              onClick={() => setFilter(packId)}
+            >
+              {packNames[packId] ?? packId}
+            </button>
+          ))}
+        </div>
+        <button
+          className="rpt-agents-settingsbtn"
+          onClick={() => void refresh()}
+          disabled={loading}
+        >
+          {t('runs.refresh')}
+        </button>
+      </div>
+
+      {shown.length === 0 ? (
+        <div className="rpt-agents-empty">
+          <div className="rpt-agents-placeholder-icon" aria-hidden>
+            ↻
+          </div>
+          <h2 className="rpt-agents-placeholder-title">{t('runs.emptyTitle')}</h2>
+          <p className="rpt-agents-placeholder-body">{t('runs.emptyBody')}</p>
+        </div>
+      ) : (
+        <>
+          <ol className="rpt-runs-list">
+            {shown.map((r) => (
+              <RunEntry key={r.runId} record={r} packNames={packNames} />
+            ))}
+          </ol>
+          {/* Load-more honors the beforeSeq cursor. The chip filter narrows only the loaded window,
+              so paging always fetches from the FULL feed (filtering happens after). Hidden at end. */}
+          {filter === null && !atEnd && (
+            <div className="rpt-runs-more">
+              <button
+                className="rpt-agents-settingsbtn"
+                onClick={() => void loadMore()}
+                disabled={loadingMore}
+              >
+                {loadingMore ? t('runs.loadingMore') : t('runs.loadMore')}
+              </button>
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  )
+}
+
+// One timeline entry. Origin badge + attribution + outcome + meta (duration/time), an optional
+// trigger caption (headless/manual), and an expandable node detail. Failed/aborted runs get the
+// danger accent; a failed-branch-in-ok-run is a softer warning accent (the reply was unaffected).
+const RunEntry: React.FC<{ record: StoredRunRecord; packNames: Record<string, string> }> = ({
+  record,
+  packNames
+}) => {
+  const t = useT()
+  const tOpt = useOptionalT()
+  const [open, setOpen] = React.useState(false)
+
+  const facts = React.useMemo(() => runFacts(record.trace), [record.trace])
+  const sentence = React.useMemo(() => outcomeSentence(facts), [facts])
+  const groups = React.useMemo(() => detailGroups(record.trace), [record.trace])
+
+  // Localize a node TYPE to its title (reuses the editor's nodeTitle keys; raw type as fallback —
+  // same pattern as WorkflowView's trace panel).
+  const nodeTitle = (type: string): string =>
+    tOpt(`workflowEditor.nodeTitle.${type}`) || type
+
+  // The outcome sentence: resolve failedNodeType → localized title, pass as {{node}}, then translate.
+  const outcome = translateOutcome(t, nodeTitle, sentence)
+
+  const tone = facts.runFailed ? 'failed' : facts.branchFailedInOkRun ? 'branch-failed' : 'ok'
+  const attribution =
+    record.packIds.length === 0
+      ? t('runs.narratorTurn')
+      : record.packIds.map((id) => packNames[id] ?? id).join(t('runs.packSep'))
+  const originGlyph = record.origin === 'turn' ? '💬' : record.origin === 'headless' ? '◷' : '▶'
+
+  return (
+    <li className={`rpt-runs-entry tone-${tone}`}>
+      <button
+        className="rpt-runs-entry-main"
+        aria-expanded={open}
+        onClick={() => setOpen((v) => !v)}
+      >
+        <span
+          className={`rpt-runs-origin ${record.origin}`}
+          title={t(`runs.origin.${record.origin}Title`)}
+          aria-label={t(`runs.origin.${record.origin}`)}
+        >
+          <span aria-hidden>{originGlyph}</span>
+        </span>
+        <span className="rpt-runs-entry-body">
+          <span className="rpt-runs-entry-head">
+            <span className="rpt-runs-attr">{attribution}</span>
+            <span className="rpt-runs-meta">
+              {formatTraceSeconds(record.trace.durationMs)} · {formatRunTime(record.trace.startedAt)}
+            </span>
+          </span>
+          <span className="rpt-runs-outcome">{outcome}</span>
+          {record.trigger && (
+            <span className="rpt-runs-trigger">
+              {t('runs.triggerCaption', { trigger: record.trigger })}
+            </span>
+          )}
+          {/* The fatal error surfaced on the entry (WorkflowRunTrace.error), for failed/aborted runs. */}
+          {record.trace.error && (
+            <span className="rpt-runs-error">{record.trace.error.message}</span>
+          )}
+        </span>
+        <span className="rpt-runs-caret" aria-hidden>
+          {open ? '▾' : '▸'}
+        </span>
+      </button>
+
+      {open && <RunDetail groups={groups} nodeTitle={nodeTitle} packNames={packNames} />}
+    </li>
+  )
+}
+
+// The expanded per-node detail: narrator group + one group per contributing pack (headless-seed nodes
+// already filtered by detailGroups). Each node shows its localized title, status, per-node ms, and the
+// error message when failed.
+const RunDetail: React.FC<{
+  groups: DetailGroup[]
+  nodeTitle: (type: string) => string
+  packNames: Record<string, string>
+}> = ({ groups, nodeTitle, packNames }) => {
+  const t = useT()
+  return (
+    <div className="rpt-runs-detail">
+      {groups.map((g, gi) => (
+        <div key={gi} className="rpt-runs-group">
+          <div className="rpt-runs-group-head">
+            {g.packId === null
+              ? t('runs.detail.narratorGroup')
+              : (packNames[g.packId] ?? g.packId)}
+          </div>
+          {g.nodes.map((n, ni) => (
+            <div key={ni} className={`rpt-runs-node status-${n.status}`}>
+              <span className={`rpt-runs-node-status ${n.status}`}>
+                {t(`runs.detail.status.${n.status}`)}
+              </span>
+              <span className="rpt-runs-node-title">{nodeTitle(n.nodeType)}</span>
+              {n.ms !== undefined && (
+                <span className="rpt-runs-node-ms">{formatTraceSeconds(n.ms)}</span>
+              )}
+              {n.error && <span className="rpt-runs-node-error">{n.error.message}</span>}
+            </div>
+          ))}
+        </div>
+      ))}
+    </div>
+  )
+}
+
+// Render an OutcomeSentence: when it names a failed node TYPE, localize it to a title and pass it as
+// the {{node}} var, then translate the sentence key. (Kept out of the pure module — it needs t().)
+function translateOutcome(
+  t: (key: string, vars?: Record<string, string | number>) => string,
+  nodeTitle: (type: string) => string,
+  sentence: ReturnType<typeof outcomeSentence>
+): string {
+  const vars = { ...sentence.vars }
+  if (sentence.failedNodeType) vars.node = nodeTitle(sentence.failedNodeType)
+  return t(sentence.key, vars)
 }
