@@ -196,6 +196,34 @@ describe('generate() — resolves the active workflow', () => {
     expect(trace.nodes.find((n: { nodeId: string }) => n.nodeId === 'llm2')?.status).toBe('ran')
   })
 
+  it('rejects a SECOND concurrent generate for the same chat (ST-faithful serialization)', async () => {
+    vi.useRealTimers() // real promise coordination
+    // Hold the first turn's provider call open so it is genuinely in flight.
+    let release!: (v: string) => void
+    const gate = new Promise<string>((r) => {
+      release = r
+    })
+    streamProviderMock.mockImplementation(async (_s, _m, _p, onDelta: (d: string) => void) => {
+      const text = await gate
+      onDelta(text)
+      return text
+    })
+    const first = generate('profile1', 'chat1', 'open the door')
+    await new Promise((r) => setTimeout(r, 10)) // let the first run reach the provider
+
+    // The mid-turn caller (a card script's TH.generate) is refused, like SillyTavern refuses it.
+    await expect(generate('profile1', 'chat1', 'script-triggered call')).rejects.toThrow(
+      /already in progress/i
+    )
+
+    release('You open the door.')
+    expect(await first).not.toBeNull()
+
+    // The chat is usable again once the turn delivered.
+    streamProviderMock.mockImplementation(defaultStream)
+    expect(await generate('profile1', 'chat1', 'again')).not.toBeNull()
+  })
+
   it('broadcasts the run trace after the turn (spec §13 run/trace panel)', async () => {
     notifyWorkflowTrace.mockClear()
     await generate('profile1', 'chat1', 'open the door')
