@@ -421,6 +421,31 @@ workflows become built-in packs. No new UI beyond what exists.
   visibility complaint ("enabling them doesn't show in the workflow") is answered by this plus
   WP3.3/3.4.
 
+- **2026-07-03, WP3.6b implemented (stage B — editable effective graph completed):** pack-node
+  edits in Effective mode now route through copy-on-edit forks (ADR 0006 applied literally: "the
+  edit IS the fork" — no prompt). **Main:** `agentPackService.updatePackFragment` (non-builtin
+  fragment write-through; builtin refused; validated via `validateWorkflowDoc`) + `getPackFragment`
+  read; store `updatePackFragmentRow`; IPC `agent-pack-update-fragment` / `agent-pack-fragment` +
+  preload. **Renderer:** pure `packEditRouting.ts` (un-prefix mapping, `applyFragmentEdit` on a
+  fragment COPY, `ownerPackOfEdit`, `remapEditToFragment`); `effectiveGraphStore.routePackEdit`
+  (first-edit → fork w/ edit applied → repoint → recompose → non-blocking toast; subsequent →
+  write-through to the session-owned fork; per-pack serialized so rapid edits don't double-fork /
+  race; monotonic `reqSeq` guards stale recomposes); `workflowEditorStore` gained a
+  `packEditRouter` — locked pack-node mutations (config/panel/mainOutput/removeNode + pack-INTERNAL
+  connect) route instead of no-op'ing (**position drags are EXEMPT** — projection-programmatic, a
+  drag must not fork); **splice/attachment edges + trigger-only placeholders stay locked** (i18n'd
+  tooltips). Config panel is now LIVE for pack nodes; the "fork to edit" button is real (explicit
+  fork w/o an edit). Region headers + Agents cards localize the fork name + show "from &lt;base&gt;"
+  lineage (EffectivePackInfo gained `fork`/`upstreamId`). **Undo: shipped WITHOUT** — the toast
+  store has no action-button surface and undo would need to restore forkPack's deleted source
+  activation (not returned; not cheap). **"Already a fork owned by this world"** = membership in the
+  session's `forkedPacks` map (only forks THIS session created for THIS world, whose activation is
+  exclusively this world's); anything else (builtin / upstream / a fork we didn't create) forks
+  again — the ADR 0006 safe default (never mutate a possibly-shared artifact). Interactive
+  pack-edge connect/disconnect on the projection canvas is NOT wired this WP (canvas stays
+  read-mostly for edges; the routing + pure appliers exist + are tested). Gate: typecheck +
+  check:deps + 1693 tests all green.
+
 ## Risks and watchpoints
 
 - **WP1.3 is the highest-risk change** (engine failure semantics). It must land behind the

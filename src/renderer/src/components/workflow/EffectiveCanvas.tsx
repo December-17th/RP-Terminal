@@ -122,6 +122,9 @@ interface RegionData extends Record<string, unknown> {
   detached: boolean
   onToggleGate: (open: boolean) => void
   triggerCaption?: string
+  /** Fork provenance (ADR 0006; WP3.6b Part C) — present on forked regions so the header localizes
+   *  "fork" and shows a subtle "from <base>" lineage line. */
+  fork?: { base: string; n: number }
 }
 
 /** A pack REGION frame: a tinted hull with a header band carrying the pack name + a toggleable gate
@@ -129,11 +132,21 @@ interface RegionData extends Record<string, unknown> {
  *  detached region (trigger-only pack) shows a placeholder card + trigger caption instead of members. */
 function RegionNode({ data }: NodeProps<RFNode<RegionData>>): React.JSX.Element {
   const t = useT()
-  const { packName, gateOpen, detached, onToggleGate, triggerCaption } = data
+  const { packName, gateOpen, detached, onToggleGate, triggerCaption, fork } = data
+  // Forked region: localize the "fork" word from the structured marker (name in the store is the
+  // neutral fallback; here we prefer the localized form) + a subtle "from <base>" lineage line.
+  const displayName = fork ? `${fork.base} (${t('workflowEffective.fork')} ${fork.n})` : packName
   return (
-    <div className={`rpt-eff-region${detached ? ' detached' : ''}`}>
+    <div className={`rpt-eff-region${detached ? ' detached' : ''}${fork ? ' forked' : ''}`}>
       <div className="rpt-eff-region-header">
-        <span className="rpt-eff-region-name">{packName}</span>
+        <span className="rpt-eff-region-name">
+          {displayName}
+          {fork && (
+            <span className="rpt-eff-region-lineage" title={t('workflowEffective.forkLineageTitle')}>
+              {t('workflowEffective.forkFrom', { base: fork.base })}
+            </span>
+          )}
+        </span>
         <button
           role="switch"
           aria-checked={gateOpen}
@@ -229,6 +242,7 @@ function EffectiveCanvasInner({
           gateOpen: info?.gateOpen ?? true,
           detached: r.detached,
           triggerCaption: triggerCaptions[r.packId],
+          ...(info?.fork ? { fork: info.fork } : {}),
           onToggleGate: (open: boolean) => void toggleGate(profileId, r.packId, open)
         }
       }

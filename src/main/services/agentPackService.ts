@@ -16,7 +16,7 @@
 
 import { ComposeFragment, CompositionMeta } from '../../shared/workflow/compose'
 import { ComposeWarning } from '../../shared/workflow/compose'
-import { setEnabledFragmentsProvider, resolveEffectiveDoc } from './workflowService'
+import { setEnabledFragmentsProvider, resolveEffectiveDoc, validateWorkflowDoc } from './workflowService'
 import { getChat } from './chatService'
 import { log } from './logService'
 import { BUILTIN_PACKS } from './nodes/builtin/tableMemoryPack'
@@ -42,6 +42,7 @@ import {
   insertActivationRow,
   deleteActivationForWorld,
   insertOverrideRow,
+  updatePackFragmentRow,
   PackManifest
 } from './agentPackStore'
 
@@ -95,6 +96,12 @@ export const list = (
     })
     .sort((a, b) => a.manifest.name.localeCompare(b.manifest.name))
 }
+
+/** The SOURCE fragment doc for an installed pack, or null when it is not installed (agent-packs plan
+ *  WP3.6b). The renderer's Effective-mode edit routing fetches this to apply an edit to a COPY before
+ *  forking / writing through — the fragment blob is otherwise kept out of the list payload. */
+export const getPackFragment = (profileId: string, packId: string): WorkflowDoc | null =>
+  getPackRecord(profileId, packId)?.fragment ?? null
 
 // ── Install / uninstall ─────────────────────────────────────────────────────────────────────────
 
@@ -228,6 +235,50 @@ export const forkPack = (
   return { ok: true, pack: packToSummary(fork) }
 }
 
+// ── Fragment write-through (ADR 0006; agent-packs plan WP3.6b) ────────────────────────────────────
+//
+// The SUBSEQUENT-edit half of "the edit IS the fork" (ADR 0006): once a world already owns a fork,
+// further pack-node edits write through to the fork's fragment doc directly (like narrator
+// write-through), instead of forking again. This replaces a NON-builtin pack's fragment; a BUILTIN
+// pack is REFUSED (builtins are edited by FORKING them, never in place — forking a builtin produces a
+// non-builtin fork, which is the writable target). The doc is validated (structure + graph + node
+// config, and the fragment-kind rule: ≥1 attachment) before the write; an invalid doc is refused with
+// a structured error the renderer can toast (never a partial/corrupt write).
+
+export interface UpdateFragmentResult {
+  ok: boolean
+  /** Present on ok — the refreshed summary (attachments/capabilities re-derived from the new doc). */
+  pack?: AgentPackSummary
+  /** Present on failure. `code` lets the renderer pick the localized toast; `error` is the detail. */
+  code?: 'not-found' | 'builtin' | 'invalid'
+  error?: string
+}
+
+/** Replace a non-builtin pack's fragment doc (fork write-through, ADR 0006). Refuses a builtin
+ *  (edit-via-fork only) and an invalid fragment (validated with validateWorkflowDoc — the same gate
+ *  save/import use, which enforces the fragment-kind ≥1-attachment rule). Returns the refreshed
+ *  summary on success. Does NOT touch activation or overrides — only the fragment blob changes. */
+export const updatePackFragment = (
+  profileId: string,
+  packId: string,
+  fragment: WorkflowDoc
+): UpdateFragmentResult => {
+  const source = getPackRecord(profileId, packId)
+  if (!source) return { ok: false, code: 'not-found', error: `pack ${packId} not installed` }
+  if (source.builtin)
+    return {
+      ok: false,
+      code: 'builtin',
+      error: `pack ${packId} is builtin; edit it by forking (updatePackFragment refuses builtins)`
+    }
+
+  const validated = validateWorkflowDoc(fragment)
+  if (!validated.ok) return { ok: false, code: 'invalid', error: validated.error }
+
+  updatePackFragmentRow(profileId, packId, validated.doc)
+  return { ok: true, pack: packToSummary({ ...source, fragment: validated.doc }) }
+}
+
 // ── Gate (Activation) ─────────────────────────────────────────────────────────────────────────
 
 /** Set the gate for a pack in a world, optionally as a per-chat exception (chatId non-null). */
@@ -326,6 +377,12 @@ export interface EffectivePackInfo {
   packId: string
   /** The pack's display name (from its manifest) for the region label. */
   name: string
+  /** Fork provenance (ADR 0006), present ONLY on fork entries: the structured LOCALE-NEUTRAL marker so
+   *  the region header localizes the word "fork" (WP3.6b, Part C). `base` = the root display name. */
+  fork?: { base: string; n: number }
+  /** Lineage (ADR 0006): the upstream install this was forked from, or null for a root install. The
+   *  region header shows a subtle "from <base>" from `fork.base`; `upstreamId` keeps the id lineage. */
+  upstreamId?: string | null
   /** The resolved gate state (always true here — only gate-open packs are in the projection; kept so
    *  the renderer's gate chip has an explicit value + can flip it). */
   gateOpen: boolean
@@ -371,7 +428,7 @@ export const getEffectiveGraph = (profileId: string, chatId: string): EffectiveG
   // Manifest names for the enabled packs (the composition keys are pack ids). enabledFragmentsFor
   // gives the exact gate-open set for this chat; we join on it so a trigger-only pack (present in
   // composition but with no spliced attachments) is still listed with its correct triggerOnly flag.
-  const nameOf = new Map(listPackRecords(profileId).map((p) => [p.id, p.manifest.name]))
+  const recordOf = new Map(listPackRecords(profileId).map((p) => [p.id, p]))
   const enabledIds = worldId == null ? [] : enabledFragmentsFor(profileId, chatId).map((f) => f.packId)
 
   const packs: EffectivePackInfo[] = enabledIds.map((packId) => {
@@ -379,12 +436,15 @@ export const getEffectiveGraph = (profileId: string, chatId: string): EffectiveG
     const nodeIds = pc?.nodeIds ?? []
     // Spliced a checkpoint attachment iff any entry landed OR any rejoin edge was wired.
     const splicedAny = (pc?.entries.length ?? 0) > 0 || (pc?.rejoinEdges.length ?? 0) > 0
+    const rec = recordOf.get(packId)
     return {
       packId,
-      name: nameOf.get(packId) ?? packId,
+      name: rec?.manifest.name ?? packId,
       gateOpen: true,
       nodeIds,
-      triggerOnly: !splicedAny
+      triggerOnly: !splicedAny,
+      ...(rec?.manifest.fork ? { fork: rec.manifest.fork } : {}),
+      ...(rec?.upstreamId ? { upstreamId: rec.upstreamId } : {})
     }
   })
 

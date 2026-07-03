@@ -54,6 +54,19 @@ interface WorkflowEditorState {
    *  Normal-mode editing is completely unaffected. WP3.6b replaces this lock with fork-routing. */
   lockedNodeIds: Set<string>
   setLockedNodeIds(ids: Set<string>): void
+  /** WP3.6b: the pack-edit router. In Effective mode a mutation on a PACK node is no longer a no-op —
+   *  it is handed to this router (projection node ids, un-remapped), which forks-on-first-edit or
+   *  writes through to the fork (effectiveGraphStore.routePackEdit). Null in Normal mode / when unset,
+   *  so a locked-node edit stays a no-op exactly as WP3.6a (never a stray mutation of the draft). The
+   *  router owns un-prefixing + owner resolution; the store only forwards the raw editor intent. */
+  packEditRouter:
+    | ((edit: import('../components/workflow/packEditRouting').FragmentEdit) => void)
+    | null
+  setPackEditRouter(
+    router:
+      | ((edit: import('../components/workflow/packEditRouting').FragmentEdit) => void)
+      | null
+  ): void
   init(profileId: string): Promise<void>
   open(profileId: string, id: string): Promise<void>
   addNode(
@@ -110,6 +123,19 @@ export const useWorkflowEditorStore = create<WorkflowEditorState>((set, get) => 
    *  node's edits no-ops regardless of the UI, which the WP3.6a acceptance asserts. */
   const isLocked = (id: string): boolean => get().lockedNodeIds.has(id)
 
+  /** Forward a locked-node edit to the pack-edit router (WP3.6b). Returns true when a router consumed
+   *  it (the caller then RETURNS without mutating the draft — the router forks / writes through to the
+   *  fork instead). Returns false when there is no router (Normal mode / unset), so the caller falls
+   *  back to WP3.6a's no-op — a locked node is never mutated in the draft. */
+  const routeLocked = (
+    edit: import('../components/workflow/packEditRouting').FragmentEdit
+  ): boolean => {
+    const router = get().packEditRouter
+    if (!router) return false
+    router(edit)
+    return true
+  }
+
   return {
     nodeTypes: [],
     workflows: [],
@@ -123,8 +149,10 @@ export const useWorkflowEditorStore = create<WorkflowEditorState>((set, get) => 
     selectedNodeId: null,
     status: null,
     lockedNodeIds: new Set<string>(),
+    packEditRouter: null,
 
     setLockedNodeIds: (ids) => set({ lockedNodeIds: ids }),
+    setPackEditRouter: (router) => set({ packEditRouter: router }),
 
     init: async (profileId) => {
       const [nodeTypes, workflows] = await Promise.all([
@@ -169,6 +197,10 @@ export const useWorkflowEditorStore = create<WorkflowEditorState>((set, get) => 
     },
 
     moveNode: (id, position) => {
+      // Pack nodes: position drags are EXEMPT from fork-on-edit (WP3.6b). A drag alone must not fork a
+      // pack, and pack node positions in Effective mode are projection-programmatic (never written to
+      // the fragment) — so a locked-node move stays a silent no-op, not a routed edit. Narrator nodes
+      // in Effective mode are never draggable on the projection canvas anyway (EffectiveCanvas).
       if (get().readOnly || isLocked(id)) return
       set({
         nodes: get().nodes.map((n) => (n.id === id ? { ...n, position } : n))
@@ -177,7 +209,16 @@ export const useWorkflowEditorStore = create<WorkflowEditorState>((set, get) => 
     },
 
     connect: (from, to) => {
-      if (get().readOnly || isLocked(from.node) || isLocked(to.node)) return
+      if (get().readOnly) return
+      // A connection touching a pack node (WP3.6b): a PACK-INTERNAL edge (both ends the same locked
+      // pack) routes through the fork; a splice edge (exactly one end locked — narrator↔pack) stays
+      // locked (attachment wiring is manifest surgery, out of scope this WP) → no-op.
+      const fromLocked = isLocked(from.node)
+      const toLocked = isLocked(to.node)
+      if (fromLocked || toLocked) {
+        if (fromLocked && toLocked) routeLocked({ kind: 'connect', from, to })
+        return
+      }
       const { nodes, edges, nodeTypes } = get()
       const verdict = canConnect(editorNodeTypeMap(nodeTypes), nodes, edges, from, to)
       if (!verdict.ok) {
@@ -202,7 +243,11 @@ export const useWorkflowEditorStore = create<WorkflowEditorState>((set, get) => 
     },
 
     removeNode: (id) => {
-      if (get().readOnly || isLocked(id)) return
+      if (get().readOnly) return
+      if (isLocked(id)) {
+        routeLocked({ kind: 'removeNode', nodeId: id })
+        return
+      }
       set({
         nodes: get().nodes.filter((n) => n.id !== id),
         edges: get().edges.filter((e) => e.source !== id && e.target !== id)
@@ -211,7 +256,11 @@ export const useWorkflowEditorStore = create<WorkflowEditorState>((set, get) => 
     },
 
     setNodeConfig: (id, config) => {
-      if (get().readOnly || isLocked(id)) return
+      if (get().readOnly) return
+      if (isLocked(id)) {
+        routeLocked({ kind: 'config', nodeId: id, config })
+        return
+      }
       set({
         nodes: get().nodes.map((n) => (n.id === id ? { ...n, config } : n))
       })
@@ -219,7 +268,11 @@ export const useWorkflowEditorStore = create<WorkflowEditorState>((set, get) => 
     },
 
     setNodePanel: (id, panel) => {
-      if (get().readOnly || isLocked(id)) return
+      if (get().readOnly) return
+      if (isLocked(id)) {
+        routeLocked({ kind: 'panel', nodeId: id, panel })
+        return
+      }
       set({
         nodes: get().nodes.map((n) => {
           if (n.id !== id) return n
@@ -241,7 +294,11 @@ export const useWorkflowEditorStore = create<WorkflowEditorState>((set, get) => 
     },
 
     setMainOutput: (id) => {
-      if (get().readOnly || isLocked(id)) return
+      if (get().readOnly) return
+      if (isLocked(id)) {
+        routeLocked({ kind: 'mainOutput', nodeId: id })
+        return
+      }
       set({
         nodes: get().nodes.map((n) => ({
           ...n,

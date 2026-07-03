@@ -46,6 +46,15 @@
   text-overflow: ellipsis;
 }
 
+/* Fork lineage — a subtle "from <base>" beside a forked region's name (WP3.6b Part C). Weaker weight
+   + secondary color so the fork name stays primary; kept ≥4.5:1 via the token. */
+.rpt-workflow-editor .rpt-eff-region-lineage {
+  margin-left: 8px;
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--rpt-text-secondary);
+}
+
 /* Gate chip — a compact toggle in the region header (reuses the agents gate semantics). Text label
    pairs with the switch (no color-only signaling — WCAG rule). */
 .rpt-workflow-editor .rpt-eff-gate {

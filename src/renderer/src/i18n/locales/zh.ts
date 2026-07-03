@@ -775,7 +775,7 @@ const zh: Record<string, string> = {
   'workflowEffective.mode.normal': '普通',
   'workflowEffective.mode.effective': '生效',
   'workflowEffective.pickerLocked': '生效模式显示当前会话的实时组合——切换到普通模式以选择流程',
-  'workflowEffective.saveNarrator': '保存叙事流程（智能体包节点需通过复刻编辑——即将推出）',
+  'workflowEffective.saveNarrator': '保存叙事流程（编辑智能体包节点会自动复刻该包）',
   'workflowEffective.noChatTitle': '打开一个会话以查看其生效流程',
   'workflowEffective.noChatBody':
     '生效模式会渲染当前会话的实时组合——叙事流程加上所有已启用的智能体包。请先打开一个会话。',
@@ -787,12 +787,27 @@ const zh: Record<string, string> = {
   'workflowEffective.gateOff': '已禁用',
   'workflowEffective.triggerOnly': '自主运行',
   'workflowEffective.triggerOnlyDesc': '该包在本回合中没有节点——当其条件满足时会自行运行。',
-  'workflowEffective.packLocked': '属于某个智能体包——通过复刻编辑（即将推出）',
+  'workflowEffective.packLocked': '属于某个智能体包——编辑它会将该包复刻到你的库中',
   'workflowEffective.packNodeTitle': '智能体包节点',
   'workflowEffective.forkToEdit':
     '该节点属于一个智能体包。编辑它会将该包复刻到你的库中，从而使你的改动不影响原包。',
   'workflowEffective.forkButton': '复刻以编辑',
   'workflowEffective.forkComing': '复刻智能体包以编辑其节点的功能即将推出',
+  // WP3.6b：智能体包节点编辑经由“写时复刻”路由。
+  'workflowEffective.editForks':
+    '该节点属于一个智能体包。你的第一次编辑会将该包复刻到你的库中，并让当前世界改用你的副本——原包保持不变。',
+  'workflowEffective.editingFork':
+    '你正在编辑当前世界对该包的复刻。改动会直接保存到你的副本；其他世界不受影响。',
+  'workflowEffective.detachedNonEditable':
+    '该包自主运行（本回合无节点）。其接线属于包定义的一部分——将在后续更新中通过复刻编辑。',
+  'workflowEffective.forkButtonTitle': '立即将该包复刻到你的库中，无需先进行编辑',
+  'workflowEffective.forkedToast': '已复刻为 {{name}}——当前世界现在使用你的副本',
+  'workflowEffective.forkWriteInvalid': '该编辑会使包变为无效——改动未保存。',
+  'workflowEffective.forkWriteBuiltin': '内置包无法就地编辑——请先复刻。',
+  'workflowEffective.fork': '复刻',
+  'workflowEffective.forkFrom': '源自 {{base}}',
+  'workflowEffective.forkLineageTitle': '该包是某个已安装包的复刻',
+  'workflowEffective.spliceLocked': '接线属于包定义的一部分——将在后续更新中通过复刻编辑。',
 
   'prefs.combatNarration': '战斗叙述',
   'prefs.combatNarrationAppend': '追加到当前消息',

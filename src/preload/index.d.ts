@@ -134,6 +134,8 @@ declare global {
           gateOpen: boolean
           nodeIds: string[]
           triggerOnly: boolean
+          fork?: { base: string; n: number }
+          upstreamId?: string | null
         }[]
       }>
       // Copy-on-edit fork (ADR 0006). Returns the new pack summary; repoints only `worldId`'s
@@ -156,6 +158,31 @@ declare global {
         }
         error?: string
       }>
+      // Fork write-through (ADR 0006; agent-packs plan WP3.6b): replace a non-builtin pack's
+      // fragment doc (builtin → refused). Returns a structured result the renderer toasts on failure.
+      updateAgentPackFragment: (
+        profileId: string,
+        packId: string,
+        fragment: unknown
+      ) => Promise<{
+        ok: boolean
+        pack?: {
+          id: string
+          version: number
+          upstreamId: string | null
+          builtin: boolean
+          manifest: { name: string; description?: string; creator?: string; fork?: { base: string; n: number } }
+          attachments: import('../shared/workflow/attachments').AttachmentDecl[]
+          capabilities: import('../shared/workflow/capabilities').CapabilityId[]
+        }
+        code?: 'not-found' | 'builtin' | 'invalid'
+        error?: string
+      }>
+      // Read a pack's source fragment doc (WP3.6b) — used to apply an edit to a copy before forking.
+      getAgentPackFragment: (
+        profileId: string,
+        packId: string
+      ) => Promise<import('../shared/workflow/types').WorkflowDoc | null>
       // SQL-table memory (issue 02)
       listTableTemplates: (
         profileId: string

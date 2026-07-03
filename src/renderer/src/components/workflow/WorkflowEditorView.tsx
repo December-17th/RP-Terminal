@@ -17,6 +17,7 @@ import FlowCanvas from './FlowCanvas'
 import EffectiveCanvas from './EffectiveCanvas'
 import NodeConfigPanel from './NodeConfigPanel'
 import { ownerOfNodeId, nodeOwnerMap, readComposition } from './effectiveProjection'
+import { ownerPackOfEdit, type FragmentEdit } from './packEditRouting'
 
 const BUILTIN_WORKFLOW_ID = 'default'
 
@@ -66,6 +67,8 @@ export default function WorkflowEditorView({
   const cloneAndEdit = useWorkflowEditorStore((s) => s.cloneAndEdit)
   const select = useWorkflowEditorStore((s) => s.select)
   const setLockedNodeIds = useWorkflowEditorStore((s) => s.setLockedNodeIds)
+  const setPackEditRouter = useWorkflowEditorStore((s) => s.setPackEditRouter)
+  const routePackEdit = useEffectiveGraphStore((s) => s.routePackEdit)
 
   const [showErrors, setShowErrors] = useState(false)
 
@@ -146,6 +149,35 @@ export default function WorkflowEditorView({
     setLockedNodeIds(locked)
     // eslint-disable-next-line react-hooks/exhaustive-deps -- setLockedNodeIds stable
   }, [mode, effDoc])
+
+  // Install the PACK-EDIT ROUTER (WP3.6b; ADR 0006). In Effective mode a locked pack node's edit is
+  // handed to this router (via the editor store) instead of being dropped: it resolves the edit's
+  // OWNER pack from the current projection composition, then routes it to fork-on-first-edit /
+  // write-through (effectiveGraphStore.routePackEdit). Cleared when leaving Effective mode so Normal
+  // mode never routes (locked-node edits there stay no-ops). The projection is recomposed by
+  // routePackEdit itself, so this router is fire-and-forget from the store's perspective.
+  useEffect(() => {
+    if (mode !== 'effective') {
+      setPackEditRouter(null)
+      return
+    }
+    setPackEditRouter((edit: FragmentEdit) => {
+      // Resolve owner from the live projection (owner map authoritative; id-parse fallback). Read the
+      // freshest doc at call time so a recompose between install and edit is reflected.
+      const currentDoc = useEffectiveGraphStore.getState().doc
+      const owners = nodeOwnerMap(currentDoc ? readComposition(currentDoc) : undefined)
+      const ownerOf = (id: string): string | null => {
+        const mapped = owners.get(id)
+        if (mapped) return mapped
+        const parsed = ownerOfNodeId(id)
+        return parsed.kind === 'pack' ? parsed.packId : null
+      }
+      const packId = ownerPackOfEdit(edit, ownerOf)
+      if (packId) void routePackEdit(packId, edit)
+    })
+    return () => setPackEditRouter(null)
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- setters stable; re-install on mode change
+  }, [mode])
 
   useEffect(() => {
     if (!currentId && workflows.length > 0) {

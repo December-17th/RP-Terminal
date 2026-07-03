@@ -37,7 +37,13 @@ interface PackSummary {
   version: number
   upstreamId: string | null
   builtin: boolean
-  manifest: { name: string; description?: string; creator?: string }
+  manifest: {
+    name: string
+    description?: string
+    creator?: string
+    /** Fork provenance (ADR 0006) — present on fork entries so the card localizes "fork". */
+    fork?: { base: string; n: number }
+  }
   attachments: AttachmentDecl[]
   capabilities: CapabilityId[]
   gateOpen?: boolean
@@ -288,8 +294,17 @@ const PackCard: React.FC<{
 
       <div className="rpt-agents-card-body">
         <div className="rpt-agents-card-head">
-          <span className="rpt-agents-card-name">{pack.manifest.name}</span>
+          <span className="rpt-agents-card-name">
+            {pack.manifest.fork
+              ? `${pack.manifest.fork.base} (${t('workflowEffective.fork')} ${pack.manifest.fork.n})`
+              : pack.manifest.name}
+          </span>
           {pack.builtin && <span className="rpt-agents-badge-builtin">{t('agents.builtin')}</span>}
+          {pack.manifest.fork && (
+            <span className="rpt-agents-badge-builtin" title={t('workflowEffective.forkLineageTitle')}>
+              {t('workflowEffective.forkFrom', { base: pack.manifest.fork.base })}
+            </span>
+          )}
           <span className="rpt-agents-card-meta">
             {pack.manifest.creator ? `${pack.manifest.creator} · ` : ''}
             {t('agents.version', { v: pack.version })}

@@ -808,7 +808,7 @@ const en: Record<string, string> = {
   'workflowEffective.mode.normal': 'Normal',
   'workflowEffective.mode.effective': 'Effective',
   'workflowEffective.pickerLocked': 'Effective mode shows the active chat’s live composition — switch to Normal to pick a workflow',
-  'workflowEffective.saveNarrator': 'Saves the narrator workflow (pack nodes are edited by forking — coming soon)',
+  'workflowEffective.saveNarrator': 'Saves the narrator workflow (editing a pack node forks the pack automatically)',
   'workflowEffective.noChatTitle': 'Open a chat to see its effective graph',
   'workflowEffective.noChatBody':
     'Effective mode renders the live composition for the active chat — the narrator workflow plus every enabled agent pack. Open a chat first.',
@@ -821,11 +821,27 @@ const en: Record<string, string> = {
   'workflowEffective.triggerOnly': 'Runs by itself',
   'workflowEffective.triggerOnlyDesc':
     'This pack has no nodes in the turn — it runs on its own when its condition is met.',
-  'workflowEffective.packLocked': 'Belongs to a pack — edit by forking (coming soon)',
+  'workflowEffective.packLocked': 'Belongs to a pack — editing it forks the pack into your library',
   'workflowEffective.packNodeTitle': 'Pack node',
   'workflowEffective.forkToEdit': 'This node belongs to an agent pack. Editing it forks the pack into your library so your changes don’t affect the original.',
   'workflowEffective.forkButton': 'Fork to edit',
   'workflowEffective.forkComing': 'Forking a pack to edit its nodes is coming soon',
+  // WP3.6b: pack-node edit routing through copy-on-edit forks.
+  'workflowEffective.editForks':
+    'This node belongs to an agent pack. The first edit you make forks the pack into your library and points this world at your copy — the original stays untouched.',
+  'workflowEffective.editingFork':
+    'You’re editing this world’s fork of the pack. Changes save straight to your copy; other worlds are unaffected.',
+  'workflowEffective.detachedNonEditable':
+    'This pack runs on its own (no nodes in the turn). Its wiring is part of the pack definition — edit it by forking in a later update.',
+  'workflowEffective.forkButtonTitle': 'Fork this pack into your library now, without making an edit first',
+  'workflowEffective.forkedToast': 'Forked to {{name}} — this world now uses your copy',
+  'workflowEffective.forkWriteInvalid': 'That edit would make the pack invalid — change not saved.',
+  'workflowEffective.forkWriteBuiltin': 'Built-in packs can’t be edited in place — fork it first.',
+  'workflowEffective.fork': 'fork',
+  'workflowEffective.forkFrom': 'from {{base}}',
+  'workflowEffective.forkLineageTitle': 'This pack is a fork of an installed pack',
+  'workflowEffective.spliceLocked':
+    'Attachment wiring is part of the pack definition — edit it via fork in a later update.',
 
   'prefs.combatNarration': 'Combat narration',
   'prefs.combatNarrationAppend': 'Append to the current message',

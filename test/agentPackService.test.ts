@@ -41,7 +41,9 @@ const store = vi.hoisted(() => ({
   // Fork wrappers (agent-packs plan WP3.6a).
   insertActivationRow: vi.fn(),
   deleteActivationForWorld: vi.fn(),
-  insertOverrideRow: vi.fn()
+  insertOverrideRow: vi.fn(),
+  // Fragment write-through (agent-packs plan WP3.6b).
+  updatePackFragmentRow: vi.fn()
 }))
 
 vi.mock('../src/main/services/agentPackStore', () => store)
@@ -125,6 +127,12 @@ beforeEach(() => {
   store.insertOverrideRow.mockImplementation((packId: string, scope: string, settingId: string, value: unknown) =>
     state.overrides.push({ packId, scope, settingId, value })
   )
+  store.updatePackFragmentRow.mockImplementation((_p: string, packId: string, fragment: WorkflowDoc) => {
+    const target = state.packs.find((x) => x.id === packId)
+    if (!target) return false
+    target.fragment = fragment
+    return true
+  })
 })
 
 afterEach(() => setEnabledFragmentsProvider()) // restore the zero-packs default provider
@@ -345,6 +353,65 @@ describe('fork (ADR 0006; WP3.6a)', () => {
 
   it('forking an unknown pack fails', () => {
     expect(service.forkPack('prof', 'nope', 'w1').ok).toBe(false)
+  })
+})
+
+describe('fragment write-through (updatePackFragment; ADR 0006; WP3.6b)', () => {
+  // A fully-valid fragment (text.template REQUIRES a `template` config — validateWorkflowDoc runs the
+  // per-node config schema). pack()'s fragment omits it, so build the valid one explicitly here.
+  const validFragment = (): WorkflowDoc =>
+    ({
+      id: 'frag',
+      name: 'F',
+      version: 1,
+      schemaVersion: 1,
+      kind: 'fragment',
+      nodes: [{ id: 'blk', type: 'text.template', config: { template: 'x' } }],
+      edges: [],
+      attachments: [
+        { kind: 'rejoin', checkpoint: 'prompt-assembly', rejoinPort: { node: 'blk', port: 'text' } }
+      ]
+    }) as WorkflowDoc
+
+  it('replaces a non-builtin pack fragment and round-trips (returns refreshed summary)', () => {
+    state.packs = [pack({ id: 'fk', builtin: false, fragment: validFragment() })]
+    const edited = { ...validFragment(), name: 'Edited-Fragment' } as WorkflowDoc
+    const r = service.updatePackFragment('prof', 'fk', edited)
+    expect(r.ok).toBe(true)
+    // The stored fragment is replaced (write went through the wrapper).
+    expect(state.packs.find((p) => p.id === 'fk')!.fragment.name).toBe('Edited-Fragment')
+    expect(store.updatePackFragmentRow).toHaveBeenCalled()
+  })
+
+  it('REFUSES a builtin pack (edit-via-fork only) with code builtin — no write', () => {
+    state.packs = [pack({ id: 'bi', builtin: true })]
+    const r = service.updatePackFragment('prof', 'bi', pack().fragment)
+    expect(r.ok).toBe(false)
+    expect(r.code).toBe('builtin')
+    expect(store.updatePackFragmentRow).not.toHaveBeenCalled()
+  })
+
+  it('REFUSES an invalid fragment with code invalid + a detail message — no write', () => {
+    state.packs = [pack({ id: 'fk' })]
+    // A fragment with NO attachments fails the fragment-kind rule (validateWorkflow: ≥1 attachment).
+    const invalid = { ...pack().fragment, attachments: [] } as unknown as WorkflowDoc
+    const r = service.updatePackFragment('prof', 'fk', invalid)
+    expect(r.ok).toBe(false)
+    expect(r.code).toBe('invalid')
+    expect(typeof r.error).toBe('string')
+    expect(store.updatePackFragmentRow).not.toHaveBeenCalled()
+  })
+
+  it('REFUSES an unknown pack with code not-found', () => {
+    const r = service.updatePackFragment('prof', 'nope', pack().fragment)
+    expect(r.ok).toBe(false)
+    expect(r.code).toBe('not-found')
+  })
+
+  it('getPackFragment returns the source fragment, or null when not installed', () => {
+    state.packs = [pack({ id: 'fk' })]
+    expect(service.getPackFragment('prof', 'fk')?.name).toBe('F')
+    expect(service.getPackFragment('prof', 'nope')).toBeNull()
   })
 })
 

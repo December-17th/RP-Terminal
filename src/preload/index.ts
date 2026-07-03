@@ -183,6 +183,14 @@ const api = {
     worldId: string,
     editedFragment?: unknown
   ) => ipcRenderer.invoke('agent-pack-fork', profileId, packId, worldId, editedFragment),
+  // Fork write-through (ADR 0006; WP3.6b): replace a non-builtin pack's fragment doc (builtin →
+  // refused). Returns { ok, code, error } — the renderer toasts on failure.
+  updateAgentPackFragment: (profileId: string, packId: string, fragment: unknown) =>
+    ipcRenderer.invoke('agent-pack-update-fragment', profileId, packId, fragment),
+  // Read a pack's source fragment doc (WP3.6b): the renderer applies an edit to a copy before
+  // forking / writing through.
+  getAgentPackFragment: (profileId: string, packId: string) =>
+    ipcRenderer.invoke('agent-pack-fragment', profileId, packId),
   // SQL-table memory (issue 02): file-based table templates + per-chat assignment + read-only view
   listTableTemplates: (profileId: string) =>
     ipcRenderer.invoke('table-templates-list', profileId),

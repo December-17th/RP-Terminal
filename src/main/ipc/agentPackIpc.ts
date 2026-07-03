@@ -60,4 +60,18 @@ export const registerAgentPackIpc = (ipcMain: IpcMain): void => {
     (_, profileId: string, packId: string, worldId: string, editedFragment?: unknown) =>
       agentPackService.forkPack(profileId, packId, worldId, editedFragment as never)
   )
+  // Fork write-through (ADR 0006; agent-packs plan WP3.6b): replace a NON-builtin pack's fragment doc
+  // (builtin → refused; the fork is the writable target). Validates before writing; returns a
+  // structured { ok, code, error } the renderer toasts on failure.
+  ipcMain.handle(
+    'agent-pack-update-fragment',
+    (_, profileId: string, packId: string, fragment: unknown) =>
+      agentPackService.updatePackFragment(profileId, packId, fragment as never)
+  )
+  // Read a pack's SOURCE fragment doc (agent-packs plan WP3.6b): the renderer needs it to apply an
+  // edit to a COPY before forking / writing through. Scoped read — only the fragment being edited.
+  ipcMain.handle('agent-pack-fragment', (_, profileId: string, packId: string) => {
+    const pack = agentPackService.getPackFragment(profileId, packId)
+    return pack
+  })
 }

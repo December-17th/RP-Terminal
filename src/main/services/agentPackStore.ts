@@ -229,6 +229,20 @@ export const insertPack = (profileId: string, pack: AgentPackRecord): void => {
     )
 }
 
+/** Replace a pack's stored fragment doc (agent-packs plan WP3.6b — fork write-through). Returns
+ *  whether a row was updated (0 = no such pack in this profile). The service layer gates this to
+ *  NON-builtin packs and validates the doc first; this wrapper is the raw SQL update. */
+export const updatePackFragmentRow = (
+  profileId: string,
+  packId: string,
+  fragment: WorkflowDoc
+): boolean => {
+  const info = getDb()
+    .prepare('UPDATE agent_packs SET fragment = ? WHERE profile_id = ? AND id = ?')
+    .run(JSON.stringify(fragment), profileId, packId)
+  return info.changes > 0
+}
+
 /** Delete a pack row + all its activation/override rows (uninstall). Returns whether it existed. */
 export const deletePack = (profileId: string, packId: string): boolean => {
   const info = getDb()

@@ -4,8 +4,10 @@
 // derived from the node type's configSchema via schemaForm.ts's pure fieldsFromSchema walker.
 import React, { useEffect, useState } from 'react'
 import { useWorkflowEditorStore } from '../../stores/workflowEditorStore'
+import { useEffectiveGraphStore } from '../../stores/effectiveGraphStore'
 import { useOptionalT, useT } from '../../i18n'
 import { fieldsFromSchema, type FieldSpec } from './schemaForm'
+import { ownerOfNodeId, nodeOwnerMap, readComposition } from './effectiveProjection'
 
 /** A sub-graph's promoted-parameter hint (`WorkflowDoc.meta.promotions`, plan §5) — shape
  *  mirrors `subgraphNodes.ts`'s Promotion, read off the referenced doc fetched lazily via
@@ -316,12 +318,38 @@ export default function NodeConfigPanel({
   const setNodePanel = useWorkflowEditorStore((s) => s.setNodePanel)
   const setMainOutput = useWorkflowEditorStore((s) => s.setMainOutput)
 
-  // A locked node (Effective mode's pack nodes — agent-packs plan WP3.6a; ADR 0010) is read-only even
-  // when the doc is editable: pack nodes are locked this stage, with a "fork to edit" affordance
-  // (fork routing is WP3.6b). Locking here mirrors the model-layer guard (lockedNodeIds) so the UI
-  // can never present an edit that the store would silently drop.
-  const locked = selectedNodeId != null && lockedNodeIds.has(selectedNodeId)
-  const readOnly = storeReadOnly || locked
+  // A locked node is a PACK node in Effective mode (agent-packs plan WP3.6a; ADR 0010). WP3.6b makes
+  // pack-node config LIVE: editing routes through fork-on-first-edit / write-through (ADR 0006), so a
+  // locked pack node is NOT read-only for config — the store's setNodeConfig/removeNode/etc. route the
+  // edit to the fork instead of mutating the draft. It stays read-only ONLY when the doc itself is
+  // read-only (the builtin narrator) or the pack node is a DETACHED (trigger-only) placeholder — those
+  // stay non-editable this WP (attachment/trigger wiring is manifest surgery; tooltip explains).
+  const isPackNode = selectedNodeId != null && lockedNodeIds.has(selectedNodeId)
+  const effDoc = useEffectiveGraphStore((s) => s.doc)
+  const effPacks = useEffectiveGraphStore((s) => s.packs)
+  const forkedPacks = useEffectiveGraphStore((s) => s.forkedPacks)
+  const forkPackExplicit = useEffectiveGraphStore((s) => s.forkPackExplicit)
+
+  // Resolve this pack node's owner + whether it is detached (trigger-only) and whether its pack is
+  // already forked this world/session (→ write-through, no re-fork; the panel messaging differs).
+  const ownerPackId = React.useMemo(() => {
+    if (!isPackNode || selectedNodeId == null) return null
+    const owners = nodeOwnerMap(effDoc ? readComposition(effDoc) : undefined)
+    const mapped = owners.get(selectedNodeId)
+    if (mapped) return mapped
+    const parsed = ownerOfNodeId(selectedNodeId)
+    return parsed.kind === 'pack' ? parsed.packId : null
+  }, [isPackNode, selectedNodeId, effDoc])
+  const packDetached = React.useMemo(
+    () => (ownerPackId ? (effPacks.find((p) => p.packId === ownerPackId)?.triggerOnly ?? false) : false),
+    [ownerPackId, effPacks]
+  )
+  const alreadyForked = ownerPackId != null && forkedPacks[ownerPackId] != null
+
+  // Detached (trigger-only) placeholder pack nodes stay non-editable this WP (their wiring is
+  // manifest-level). Everything else on a pack node is now editable (routes through the fork).
+  const packNonEditable = isPackNode && packDetached
+  const readOnly = storeReadOnly || packNonEditable
 
   const node = nodes.find((n) => n.id === selectedNodeId)
 
@@ -368,9 +396,11 @@ export default function NodeConfigPanel({
         </div>
       )}
 
-      {/* Pack node lock affordance (agent-packs plan WP3.6a; ADR 0010): this node belongs to a pack;
-          editing it forks the pack (WP3.6b). Config below renders READ-ONLY until then. */}
-      {locked && (
+      {/* Pack node affordance (agent-packs plan WP3.6a/WP3.6b; ADR 0006 + 0010): this node belongs to a
+          pack. Editing its config forks the pack on the FIRST edit (or writes through if this world
+          already forked it). The button forks WITHOUT an edit, for users who want to fork first.
+          A detached (trigger-only) placeholder node is non-editable this WP (wiring is manifest-level). */}
+      {isPackNode && (
         <div
           style={{
             border: '1px solid var(--rpt-agent-region-border)',
@@ -391,11 +421,22 @@ export default function NodeConfigPanel({
               margin: '4px 0 8px'
             }}
           >
-            {t('workflowEffective.forkToEdit')}
+            {packNonEditable
+              ? t('workflowEffective.detachedNonEditable')
+              : alreadyForked
+                ? t('workflowEffective.editingFork')
+                : t('workflowEffective.editForks')}
           </div>
-          <button type="button" disabled title={t('workflowEffective.forkComing')} style={{ fontSize: 12 }}>
-            {t('workflowEffective.forkButton')}
-          </button>
+          {!alreadyForked && !packNonEditable && (
+            <button
+              type="button"
+              onClick={() => ownerPackId && void forkPackExplicit(ownerPackId)}
+              title={t('workflowEffective.forkButtonTitle')}
+              style={{ fontSize: 12 }}
+            >
+              {t('workflowEffective.forkButton')}
+            </button>
+          )}
         </div>
       )}
 
