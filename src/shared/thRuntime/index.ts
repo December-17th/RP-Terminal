@@ -150,8 +150,17 @@ export function createThRuntime(host: Host): ThGlobals {
   // adapters already implement every method it touches). Local/chat vars = the cached stat_data (read +
   // optimistic in-place write, persisted via setVarOps/writeVars exactly like setMvuVariable); globals = the
   // persistent per-profile store (host.getGlobalVars/setGlobalVar); the fallback maps the non-built-in
-  // commands /gen·/genraw·/trigger·/send onto the card-facing generate/setInput.
+  // commands /gen·/genraw·/setinput·/send·/trigger onto the card-facing generate/setInput.
   const genText = (r: any): string => (typeof r === 'string' ? r : (r?.content ?? ''))
+  // ST `/send <text>` appends the text as a USER message (no generation); the ubiquitous card combo
+  // — 行动选项-style clickable options' "generate immediately" mode — is `/send <text> | /trigger` =
+  // "run a turn with this text". We can't append a user-only floor (a floor is a user+response
+  // pair), so /send STAGES its text here and the next /trigger consumes it as the turn's action —
+  // the same net effect ST produces. /send also mirrors the text into the input box so a /send
+  // with no /trigger stays visible; a consuming /trigger clears that mirror. Staging is
+  // runtime-scoped (survives across separate triggerSlash calls, matching scripts that issue
+  // `/send x` and `/trigger` as two calls).
+  let stagedSend: string[] = []
   const runTriggerSlash = async (command: string): Promise<string> => {
     const ctx: StCtx = {
       vars: stat,
@@ -170,9 +179,20 @@ export function createThRuntime(host: Host): ThGlobals {
             return genText(await host.generate(text))
           case 'genraw':
             return host.generateRaw(normRaw({ user_input: text, ...cmd.named }))
-          case 'trigger':
-            return genText(await host.generate(''))
+          case 'trigger': {
+            // Consume any /send-staged text as the turn's user action (the 行动选项 combo);
+            // nothing staged = a bare re-trigger with an empty action, as before.
+            const staged = stagedSend.join('\n')
+            stagedSend = []
+            if (staged) host.setInput('') // clear the /send input-box mirror — the text is being sent
+            return genText(await host.generate(staged))
+          }
           case 'send':
+            stagedSend.push(text)
+            host.setInput(text) // visible fallback when no /trigger follows
+            return ''
+          case 'setinput':
+            // ST /setinput: replace the input-box content (the options' "inject to input" mode).
             host.setInput(text)
             return ''
           default:
