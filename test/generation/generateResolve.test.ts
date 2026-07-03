@@ -115,7 +115,14 @@ const { resolveEffectiveDoc, buildTurnContext, notifyWorkflowTrace } = vi.hoiste
   buildTurnContext: vi.fn(),
   notifyWorkflowTrace: vi.fn()
 }))
-vi.mock('../../src/main/services/workflowService', () => ({ resolveEffectiveDoc }))
+// setEnabledFragmentsProvider is added to the mock only for module-load completeness: generate() now
+// transitively imports headlessRunService → agentPackService (the WP2.2 turn-boundary hook), and
+// agentPackService calls setEnabledFragmentsProvider at import time. generate() itself never calls it;
+// this stub just keeps the partial workflowService mock loadable. No assertion depends on it.
+vi.mock('../../src/main/services/workflowService', () => ({
+  resolveEffectiveDoc,
+  setEnabledFragmentsProvider: () => {}
+}))
 vi.mock('../../src/main/services/workflowEvents', () => ({ notifyWorkflowTrace }))
 vi.mock('../../src/main/services/nodes/turnContext', async (orig) => {
   const actual = await orig<Record<string, unknown>>()

@@ -18,6 +18,7 @@ import { runWorkflow } from './workflowEngine'
 import { resolveEffectiveDoc } from './workflowService'
 import { summarizeRun } from '../../shared/workflow/trace'
 import { notifyWorkflowTrace } from './workflowEvents'
+import { evaluateTriggers } from './headlessRunService'
 
 // Re-exported so existing consumers/tests (test/generationService.test.ts) keep working; the
 // implementation now lives in generation/assemble.ts (its only real call site).
@@ -178,6 +179,14 @@ export const generate = async (
         )
       )
       .catch((err) => log('error', `workflow trace failed — ${err?.message || String(err)}`))
+      // Turn-boundary trigger evaluation (agent-packs plan WP2.2; ADR 0004: a turn commit is one of
+      // the two evaluation moments). FIRE-AND-FORGET — chained on the DETACHED trace promise, never
+      // on the turn's critical path (the floor already returned via the onResponseReady race above),
+      // so a turn NEVER waits on headless work (ADR 0003). depth 0: a turn starts a fresh chain.
+      // evaluateTriggers is internally guarded per chat against reentrancy (a turn landing mid-chain
+      // skips — the chain re-evaluates on its own commit).
+      .then(() => evaluateTriggers(profileId, chatId, 'turn', 0))
+      .catch((err) => log('error', `headless trigger eval failed — ${err?.message || String(err)}`))
 
     // Race: on the normal path onResponseReady fires first (before the post phase runs) and the
     // floor returns immediately. Fatal / aborted / validation-rejected runs never fire it — the

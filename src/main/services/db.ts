@@ -163,6 +163,27 @@ CREATE TABLE IF NOT EXISTS agent_pack_overrides (
   PRIMARY KEY (pack_id, scope, setting_id)
 );
 CREATE INDEX IF NOT EXISTS idx_agent_pack_overrides_pack ON agent_pack_overrides(pack_id);
+
+-- Per-trigger evaluation baselines for the headless runner (agent-packs plan WP2.2; ADR 0004).
+-- A trigger's fire decision at a commit boundary can depend on state RETAINED across boundaries:
+--   * a changedBy state trigger diffs the current numeric source against its value AT THE LAST
+--     EVALUATION (attachments.ts grammar: fire when current - lastValue >= delta), so last_value
+--     holds that prior numeric reading;
+--   * a cadence trigger fires every N floors, so last_fire_floor holds the 0-based floor index at
+--     which it last fired (fire when currentFloorIndex - last_fire_floor >= N; -1 when never).
+-- Keyed per (chat, pack, trigger index) -- baselines are PER CHAT (a pack is evaluated independently
+-- in each chat it is gated open for). trigger_index is the position in the fragment's attachments
+-- array, so re-authoring a pack's attachments correctly re-baselines. Both value columns are
+-- nullable: absent = never evaluated / never fired (the first-evaluation baseline case).
+CREATE TABLE IF NOT EXISTS agent_pack_trigger_state (
+  chat_id TEXT NOT NULL,
+  pack_id TEXT NOT NULL,
+  trigger_index INTEGER NOT NULL,
+  last_value REAL,
+  last_fire_floor INTEGER,
+  PRIMARY KEY (chat_id, pack_id, trigger_index)
+);
+CREATE INDEX IF NOT EXISTS idx_agent_pack_trigger_state_chat ON agent_pack_trigger_state(chat_id);
 `
 
 // Presets/lorebooks were briefly stored in SQL during early Phase F; they are now
