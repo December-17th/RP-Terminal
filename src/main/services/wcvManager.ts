@@ -277,6 +277,11 @@ export const pushHostInput = (chatId: string, text: string): void => {
   mainWindow?.webContents.send('wcv-host-input', { chatId, text })
 }
 
+/** Push a "press the send button" request to the host renderer (a card UI's /trigger). */
+export const pushHostSubmit = (chatId: string): void => {
+  mainWindow?.webContents.send('wcv-host-submit', { chatId })
+}
+
 /** Ask the host renderer to reload a chat's floors (a card UI changed message content via saveChat). */
 export const pushHostReload = (chatId: string): void => {
   mainWindow?.webContents.send('wcv-host-reload', { chatId })

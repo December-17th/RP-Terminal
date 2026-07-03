@@ -10,6 +10,7 @@ function mockHost(over: Partial<Host> = {}): { host: Host; calls: any } {
     generateRaw: [],
     saveWorldbook: [],
     setInput: [],
+    submitInput: [],
     createWorldbook: [],
     deleteWorldbook: [],
     saveWorldbookById: [],
@@ -99,6 +100,7 @@ function mockHost(over: Partial<Host> = {}): { host: Host; calls: any } {
     saveChat: async () => true,
     reloadChat: async () => true,
     setInput: (t) => calls.setInput.push(t),
+    submitInput: () => calls.submitInput.push(true),
     getGlobalVars: async () => globals,
     setGlobalVar: async (key: string, value: any) => {
       globals[key] = value
@@ -290,19 +292,26 @@ describe('createThRuntime', () => {
     expect(m.calls.generate).toHaveLength(0) // inject only — nothing generated
   })
 
-  it('triggerSlash: /send stages its text and /trigger generates WITH it (行动选项 generate mode)', async () => {
+  it('triggerSlash: /trigger PRESSES THE SEND BUTTON — both clickable-options combos submit the box', async () => {
     const m: any = mockHost()
     const g = createThRuntime(m.host)
-    // The piped combo the clickable-options scripts emit.
-    expect(await g.triggerSlash('/send 选项一：出发 | /trigger')).toBe('gen:选项一：出发')
-    expect(m.calls.generate).toContain('选项一：出发')
-    // /send mirrored the text into the box; the consuming /trigger cleared the mirror.
-    expect(m.calls.setInput).toEqual(['选项一：出发', ''])
-    // Staging also works across two separate triggerSlash calls.
-    await g.triggerSlash('/send 第二个选项')
-    expect(await g.triggerSlash('/trigger')).toBe('gen:第二个选项')
-    // Consumed: a bare /trigger afterwards is an empty re-trigger, as before.
+    // `/send x | /trigger` (and equally `/setinput x | /trigger`): x lands in the box, then the
+    // host submits the box through the Composer's normal send path. Fire-and-forget (returns '').
+    expect(await g.triggerSlash('/send 选项一：出发 | /trigger')).toBe('')
+    expect(m.calls.setInput).toEqual(['选项一：出发'])
+    expect(m.calls.submitInput).toHaveLength(1)
+    expect(await g.triggerSlash('/setinput 选项二：等待 | /trigger')).toBe('')
+    expect(m.calls.setInput.at(-1)).toBe('选项二：等待')
+    expect(m.calls.submitInput).toHaveLength(2)
+    // /trigger never calls the generate API directly when the host can submit the box.
+    expect(m.calls.generate).toHaveLength(0)
+  })
+
+  it('triggerSlash: a Host WITHOUT submitInput falls back to the bare empty-action re-trigger', async () => {
+    const m: any = mockHost({ submitInput: undefined })
+    const g = createThRuntime(m.host)
     expect(await g.triggerSlash('/trigger')).toBe('gen:')
+    expect(m.calls.generate).toEqual([''])
   })
 
   it('script-scope vars use the KV store, not stat_data', async () => {
