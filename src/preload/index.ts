@@ -178,6 +178,11 @@ const api = {
     beforeSeq?: number,
     limit?: number
   ) => ipcRenderer.invoke('agent-pack-list-runs', profileId, chatId, beforeSeq, limit),
+  // Read-only "why isn't this pack running?" trigger explanation for the Agents "Why?" popover
+  // (agent-packs plan WP3.5). Evaluates the pack's materialized triggers against committed state
+  // WITHOUT advancing baselines or firing — safe to call on popover open. [] when not gate-open.
+  explainAgentPackTriggers: (profileId: string, chatId: string, packId: string) =>
+    ipcRenderer.invoke('agent-pack-explain-triggers', profileId, chatId, packId),
   // Effective-graph projection for the Workflow view's Effective mode (agent-packs plan WP3.6a;
   // ADR 0010): the composed doc + composition warnings + per-pack grouping. A live projection,
   // never persisted (ADR 0001) — re-fetch after a gate flip or narrator write-through.

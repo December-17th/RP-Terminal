@@ -1,10 +1,13 @@
-// The Agents workspace (agent-packs plan WP3.1) — the design keystone of the Agent Packs feature.
+// The Agents workspace (agent-packs plan WP3.1–3.5) — the design keystone of the Agent Packs feature.
 //
 // A left rail (Overview / Installed / Runs / Preview) + a content area (NOT tabs-in-tabs, per the UX
-// brief IA). Overview / Runs / Preview are DESIGNED-EMPTY placeholders in this WP (they are built in
-// WP3.3–3.5); Installed is the real deliverable: the pack list with the full pack-card treatment —
-// gate toggle (optimistic flip + rollback + cascade confirm), attachment badges, capability chips,
-// and a health dot from run history.
+// brief IA). All four panes are now built:
+//   · Overview (WP3.5, the landing view): active packs at a glance + setup checklist + recent problems
+//     + quick links — "is everything working?" in one glance (OverviewPane).
+//   · Installed (WP3.1/3.2): the pack list with the full pack-card treatment — gate toggle (optimistic
+//     flip + rollback + cascade confirm), attachment badges, capability chips, a health dot, a "Why?"
+//     popover (WP3.5 — plain-language answer assembled from live state + history), and the detail panel.
+//   · Runs (WP3.3): the attributed activity timeline. · Preview (WP3.4): the next-prompt dry run.
 //
 // Grounding: UX brief in docs/superpowers/plans/2026-07-03-agent-packs-master-plan.md; the pack data
 // model in src/main/services/nodes/builtin/{tableMemoryPack,asyncMemoryPack}.ts; the pure display
@@ -48,6 +51,17 @@ import {
   type PreviewSectionData,
   type PreviewOmittedData
 } from './previewDisplay'
+import {
+  explainHeadline,
+  triggerLine,
+  setupChecklist,
+  recentErrors,
+  activePackRow,
+  type TriggerExplain,
+  type ExplainHeadline
+} from './agentExplain'
+import { useUiStore } from '../../stores/uiStore'
+import { useWorkspaceStore } from '../../stores/workspaceStore'
 import { AgentPackDetail } from './AgentPackDetail'
 
 // The list-payload shape from listAgentPacks (preload index.d.ts — WP3.1-extended with attachments +
@@ -185,6 +199,8 @@ export const AgentsView: React.FC<{ profileId: string }> = ({ profileId }) => {
       <div className="rpt-agents-content">
         {rail === 'installed' ? (
           <InstalledPane
+            profileId={profileId}
+            chatId={activeChatId}
             packs={packs}
             runs={runs}
             gates={gates}
@@ -195,6 +211,7 @@ export const AgentsView: React.FC<{ profileId: string }> = ({ profileId }) => {
             onFlipGate={flipGate}
             selectedPackId={detailPackId}
             onOpenDetail={setDetailPackId}
+            onNavigate={setRail}
           />
         ) : rail === 'runs' ? (
           <RunsPane
@@ -207,7 +224,23 @@ export const AgentsView: React.FC<{ profileId: string }> = ({ profileId }) => {
         ) : rail === 'preview' ? (
           <PreviewPane profileId={profileId} chatId={activeChatId} />
         ) : (
-          <PlaceholderPane rail={rail} />
+          <OverviewPane
+            profileId={profileId}
+            chatId={activeChatId}
+            worldId={worldId}
+            packs={packs}
+            gates={gates}
+            runs={runs}
+            packNames={packNames}
+            loading={loading}
+            error={error}
+            onRetry={() => void load()}
+            onNavigate={setRail}
+            onOpenDetail={(id) => {
+              setRail('installed')
+              setDetailPackId(id)
+            }}
+          />
         )}
       </div>
 
@@ -231,27 +264,19 @@ export const AgentsView: React.FC<{ profileId: string }> = ({ profileId }) => {
   )
 }
 
-// ── Placeholder panes (Overview / Runs / Preview) — designed empty states, NOT blank divs. Each
-//    says what will appear there (they are WP3.3–3.5). Overview additionally carries the "what packs
-//    are + point at the built-ins" framing the brief asks for on first run. ─────────────────────────
-const PlaceholderPane: React.FC<{ rail: RailItem }> = ({ rail }) => {
-  const t = useT()
-  return (
-    <div className="rpt-agents-placeholder">
-      <div className="rpt-agents-placeholder-icon" aria-hidden>
-        {rail === 'overview' ? '◎' : rail === 'runs' ? '↻' : '⌦'}
-      </div>
-      <h2 className="rpt-agents-placeholder-title">{t(`agents.${rail}.title`)}</h2>
-      <p className="rpt-agents-placeholder-body">{t(`agents.${rail}.placeholder`)}</p>
-      {rail === 'overview' && (
-        <p className="rpt-agents-placeholder-hint">{t('agents.overview.packsExplainer')}</p>
-      )}
-    </div>
-  )
+// Absolute HH:mm for an epoch — the app's absolute-time convention (shared by Runs / Preview / Why /
+// Overview so every clock reads the same). One place to change the format.
+const formatClockTime = (epochMs: number): string => {
+  const d = new Date(epochMs)
+  const hh = String(d.getHours()).padStart(2, '0')
+  const mm = String(d.getMinutes()).padStart(2, '0')
+  return `${hh}:${mm}`
 }
 
 // ── Installed pane ─────────────────────────────────────────────────────────────────────────────────
 const InstalledPane: React.FC<{
+  profileId: string
+  chatId: string | null
   packs: PackSummary[] | null
   runs: StoredRunRecord[]
   gates: Record<string, boolean>
@@ -262,7 +287,10 @@ const InstalledPane: React.FC<{
   onFlipGate: (pack: PackSummary, next: boolean) => void
   selectedPackId: string | null
   onOpenDetail: (packId: string) => void
+  onNavigate: (rail: RailItem) => void
 }> = ({
+  profileId,
+  chatId,
   packs,
   runs,
   gates,
@@ -272,7 +300,8 @@ const InstalledPane: React.FC<{
   onRetry,
   onFlipGate,
   selectedPackId,
-  onOpenDetail
+  onOpenDetail,
+  onNavigate
 }) => {
   const t = useT()
 
@@ -334,12 +363,16 @@ const InstalledPane: React.FC<{
       {list.map((pack) => (
         <PackCard
           key={pack.id}
+          profileId={profileId}
+          chatId={chatId}
           pack={pack}
           open={gates[pack.id] ?? false}
+          runs={runs}
           health={packHealth(runs, pack.id)}
           onFlipGate={(next) => onFlipGate(pack, next)}
           selected={selectedPackId === pack.id}
           onOpenDetail={() => onOpenDetail(pack.id)}
+          onNavigate={onNavigate}
         />
       ))}
     </div>
@@ -348,17 +381,40 @@ const InstalledPane: React.FC<{
 
 // ── The pack card (the core visual unit) ─────────────────────────────────────────────────────────
 const PackCard: React.FC<{
+  profileId: string
+  chatId: string | null
   pack: PackSummary
   open: boolean
+  runs: StoredRunRecord[]
   health: PackHealth
   onFlipGate: (next: boolean) => void
   selected: boolean
   onOpenDetail: () => void
-}> = ({ pack, open, health, onFlipGate, selected, onOpenDetail }) => {
+  onNavigate: (rail: RailItem) => void
+}> = ({
+  profileId,
+  chatId,
+  pack,
+  open,
+  runs,
+  health,
+  onFlipGate,
+  selected,
+  onOpenDetail,
+  onNavigate
+}) => {
   const t = useT()
   const badges = attachmentBadges(pack.attachments)
   const needsCascade = transformsMainReply(pack.attachments)
   const [confirming, setConfirming] = React.useState(false)
+  const [whyOpen, setWhyOpen] = React.useState(false)
+  // The "Why?" opener — focus returns here when the popover closes (Escape / × / action), so keyboard
+  // focus is never lost into a removed subtree.
+  const whyBtnRef = React.useRef<HTMLButtonElement>(null)
+  const closeWhy = (): void => {
+    setWhyOpen(false)
+    whyBtnRef.current?.focus()
+  }
 
   // Toggle intent: enabling never confirms; disabling a main-reply-transforming pack opens the
   // cascade popover first. Space/Enter on the toggle triggers the same path (native button).
@@ -439,6 +495,37 @@ const PackCard: React.FC<{
           <div className="rpt-agents-health">
             <span className={`rpt-agents-dot ${health}`} aria-hidden />
             <span className="rpt-agents-health-text">{t(`agents.health.${health}`)}</span>
+            {/* "Why?" affordance sits next to the health dot — it answers the question the dot raises. */}
+            <div className="rpt-agents-why-wrap">
+              <button
+                ref={whyBtnRef}
+                type="button"
+                className="rpt-agents-whybtn"
+                aria-expanded={whyOpen}
+                aria-haspopup="dialog"
+                onClick={() => setWhyOpen((v) => !v)}
+              >
+                {t('agents.why.open')}
+              </button>
+              {whyOpen && (
+                <WhyPopover
+                  profileId={profileId}
+                  chatId={chatId}
+                  pack={pack}
+                  open={open}
+                  runs={runs}
+                  onClose={closeWhy}
+                  onEnable={() => {
+                    setWhyOpen(false)
+                    onFlipGate(true)
+                  }}
+                  onViewRun={() => {
+                    setWhyOpen(false)
+                    onNavigate('runs')
+                  }}
+                />
+              )}
+            </div>
           </div>
           <button
             type="button"
@@ -452,7 +539,18 @@ const PackCard: React.FC<{
       </div>
 
       {confirming && (
-        <div className="rpt-agents-popover" role="dialog" aria-modal="false">
+        <div
+          className="rpt-agents-popover"
+          role="dialog"
+          aria-modal="false"
+          aria-label={t('agents.gate.disable', { name: pack.manifest.name })}
+          onKeyDown={(e) => {
+            if (e.key === 'Escape') {
+              e.stopPropagation()
+              setConfirming(false)
+            }
+          }}
+        >
           <p className="rpt-agents-popover-body">{t('agents.cascade.body')}</p>
           <div className="rpt-agents-popover-actions">
             <button className="rpt-duel-secondary" onClick={() => setConfirming(false)} autoFocus>
@@ -496,6 +594,153 @@ const Badge: React.FC<{ badge: AttachmentBadge }> = ({ badge }) => {
   )
 }
 
+// ── "Why?" popover (agent-packs plan WP3.5) ──────────────────────────────────────────────────────
+//
+// Answers the right question for the pack's current state, in plain language — assembled from LIVE
+// state + history (the controller decision: no stored skip-reason). Gate CLOSED → answered instantly
+// from the gate flag (no IPC). Gate OPEN with triggers → fetches the read-only explainAgentPackTriggers
+// (materialized fragments) to show current-vs-required per trigger; otherwise answers from run history.
+// Keyboard: Escape closes + returns focus to the opener; not modal (a lightweight popover), so a click
+// elsewhere leaves it (the parent controls open state via the toggle). AA + no color-only signals.
+const WhyPopover: React.FC<{
+  profileId: string
+  chatId: string | null
+  pack: PackSummary
+  open: boolean
+  runs: StoredRunRecord[]
+  onClose: () => void
+  onEnable: () => void
+  onViewRun: () => void
+}> = ({ profileId, chatId, pack, open, runs, onClose, onEnable, onViewRun }) => {
+  const t = useT()
+  const ref = React.useRef<HTMLDivElement>(null)
+  const [explains, setExplains] = React.useState<TriggerExplain[]>([])
+  const [triggerError, setTriggerError] = React.useState(false)
+  const hasTriggers = pack.attachments.some((a) => a.kind === 'trigger')
+
+  // Fetch the read-only trigger explanation only when it can matter (gate open, has triggers, a chat to
+  // evaluate against). Never mutates state (WP3.5 IPC is read-only).
+  React.useEffect(() => {
+    let alive = true
+    if (open && hasTriggers && chatId) {
+      setTriggerError(false)
+      void (async () => {
+        try {
+          const res = (await api().explainAgentPackTriggers(
+            profileId,
+            chatId,
+            pack.id
+          )) as TriggerExplain[]
+          if (alive) setExplains(res ?? [])
+        } catch {
+          if (alive) setTriggerError(true)
+        }
+      })()
+    } else {
+      setExplains([])
+    }
+    return () => {
+      alive = false
+    }
+  }, [open, hasTriggers, chatId, profileId, pack.id])
+
+  // Focus the popover on mount so Escape + Tab are captured; Escape closes and the parent restores
+  // focus to the toggle (the button re-renders in place, so focus naturally returns on close).
+  React.useEffect(() => {
+    ref.current?.focus()
+  }, [])
+
+  const headline: ExplainHeadline = React.useMemo(
+    () =>
+      explainHeadline({
+        open,
+        attachments: pack.attachments,
+        records: runs,
+        packId: pack.id,
+        triggerExplains: explains
+      }),
+    [open, pack.attachments, pack.id, runs, explains]
+  )
+
+  const lines = React.useMemo(() => explains.map((e) => triggerLine(e)), [explains])
+  const addsToPrompt = pack.attachments.some((a) => a.kind === 'rejoin')
+
+  return (
+    <div
+      ref={ref}
+      className="rpt-agents-why"
+      role="dialog"
+      aria-modal="false"
+      aria-label={t('agents.why.title')}
+      tabIndex={-1}
+      onKeyDown={(e) => {
+        if (e.key === 'Escape') {
+          e.stopPropagation()
+          onClose()
+        }
+      }}
+    >
+      <div className="rpt-agents-why-head">
+        <span className="rpt-agents-why-title">{t('agents.why.title')}</span>
+        <button
+          type="button"
+          className="rpt-agents-why-close"
+          aria-label={t('agents.why.close')}
+          onClick={onClose}
+        >
+          ×
+        </button>
+      </div>
+
+      <p className="rpt-agents-why-headline">
+        {headline.kind === 'disabled'
+          ? t('agents.why.disabled')
+          : headline.kind === 'failed'
+            ? t('agents.why.failed')
+            : headline.kind === 'waiting'
+              ? t('agents.why.waiting')
+              : headline.kind === 'ranOk'
+                ? t('agents.why.ranOk', { time: formatClockTime(headline.ranAt) })
+                : headline.kind === 'background'
+                  ? t('agents.why.background')
+                  : t('agents.why.ready')}
+      </p>
+
+      {/* Per-trigger lines (the scannable numbers) — only in the waiting case. */}
+      {headline.kind === 'waiting' && (
+        <ul className="rpt-agents-why-triggers">
+          {lines.map((l, i) => (
+            <li key={i} className="rpt-agents-why-trigger">
+              {t(l.key, l.vars)}
+            </li>
+          ))}
+        </ul>
+      )}
+
+      {triggerError && hasTriggers && (
+        <p className="rpt-agents-why-note">{t('agents.why.loadError')}</p>
+      )}
+
+      {/* "Doesn't add to prompts" note — relevant when the pack is on, working, and injects nothing. */}
+      {open && !addsToPrompt && headline.kind !== 'background' && headline.kind !== 'waiting' && (
+        <p className="rpt-agents-why-note">{t('agents.why.noPrompt')}</p>
+      )}
+
+      {/* State-specific action: enable shortcut when off; "View run" when the last run failed. */}
+      {headline.kind === 'disabled' && (
+        <button type="button" className="rpt-agents-why-action" onClick={onEnable}>
+          {t('agents.why.enable')}
+        </button>
+      )}
+      {headline.kind === 'failed' && (
+        <button type="button" className="rpt-agents-why-action" onClick={onViewRun}>
+          {t('agents.why.viewRun')}
+        </button>
+      )}
+    </div>
+  )
+}
+
 // ── Runs timeline (agent-packs plan WP3.3) ─────────────────────────────────────────────────────────
 //
 // The reverse-chronological activity feed. Entries interleave turns / headless / manual runs (they
@@ -508,14 +753,6 @@ const Badge: React.FC<{ badge: AttachmentBadge }> = ({ badge }) => {
 // Renderer-only, reuses the WP2.3 listAgentPackRuns IPC + trace data as-is.
 
 const PAGE_LIMIT = 50
-
-/** Absolute HH:mm for a run's start (matches the app's absolute-time convention elsewhere). */
-const formatRunTime = (epochMs: number): string => {
-  const d = new Date(epochMs)
-  const hh = String(d.getHours()).padStart(2, '0')
-  const mm = String(d.getMinutes()).padStart(2, '0')
-  return `${hh}:${mm}`
-}
 
 const RunsPane: React.FC<{
   profileId: string
@@ -748,7 +985,7 @@ const RunEntry: React.FC<{ record: StoredRunRecord; packNames: Record<string, st
             <span className="rpt-runs-attr">{attribution}</span>
             <span className="rpt-runs-meta">
               {formatTraceSeconds(record.trace.durationMs)} ·{' '}
-              {formatRunTime(record.trace.startedAt)}
+              {formatClockTime(record.trace.startedAt)}
             </span>
           </span>
           <span className="rpt-runs-outcome">{outcome}</span>
@@ -814,13 +1051,6 @@ const RunDetail: React.FC<{
 // tokens summary at top (estimated — the app has no real tokenizer), each section with a source chip
 // (pack chips reuse the WP3.1 pack-chip look) + right-aligned token count + per-section expand to full
 // text, and a muted "omitted" group with reasons. Skeleton loading, designed no-chat/empty/error states.
-
-const formatPreviewTime = (epochMs: number): string => {
-  const d = new Date(epochMs)
-  const hh = String(d.getHours()).padStart(2, '0')
-  const mm = String(d.getMinutes()).padStart(2, '0')
-  return `${hh}:${mm}`
-}
 
 const PreviewPane: React.FC<{ profileId: string; chatId: string | null }> = ({
   profileId,
@@ -928,7 +1158,7 @@ const PreviewPane: React.FC<{ profileId: string; chatId: string | null }> = ({
           </span>
           {preview && (
             <span className="rpt-preview-time">
-              {t('preview.generatedAt', { time: formatPreviewTime(preview.generatedAt) })}
+              {t('preview.generatedAt', { time: formatClockTime(preview.generatedAt) })}
             </span>
           )}
           <button className="rpt-agents-settingsbtn" onClick={() => void load()} disabled={loading}>
@@ -1019,6 +1249,277 @@ const PreviewOmittedRow: React.FC<{ item: PreviewOmittedData }> = ({ item }) => 
     </li>
   )
 }
+
+// ── Overview pane (agent-packs plan WP3.5) — the landing view ─────────────────────────────────────
+//
+// "Is everything working?" in one glance. Four blocks (UX brief §Overview): (1) at-a-glance ACTIVE
+// packs (compact rows — name, on/off, health dot, one-line last outcome via the shared sentence
+// builder; click → Installed detail), (2) a SETUP CHECKLIST grounded in real, cheaply-knowable state
+// (has a world? any pack on? memory template assigned when a memory pack is on?), (3) a RECENT ERRORS
+// strip (failed runs, newest few, jump to Runs), (4) QUICK LINKS (Preview, Workflow Studio Effective).
+// All derivations are pure (./agentExplain.ts); this component only fetches the memory-template flag
+// (cheap) + renders. Designed no-chat / all-clear states. Renderer-only.
+const OverviewPane: React.FC<{
+  profileId: string
+  chatId: string | null
+  worldId: string | null
+  packs: PackSummary[] | null
+  gates: Record<string, boolean>
+  runs: StoredRunRecord[]
+  packNames: Record<string, string>
+  loading: boolean
+  error: boolean
+  onRetry: () => void
+  onNavigate: (rail: RailItem) => void
+  onOpenDetail: (packId: string) => void
+}> = ({
+  profileId,
+  chatId,
+  worldId,
+  packs,
+  gates,
+  runs,
+  packNames,
+  loading,
+  error,
+  onRetry,
+  onNavigate,
+  onOpenDetail
+}) => {
+  const t = useT()
+  const tOpt = useOptionalT()
+  const openWorkflowEditor = useUiStore((s) => s.openWorkflowEditor)
+  const nodeTitle = (type: string): string => tOpt(`workflowEditor.nodeTitle.${type}`) || type
+
+  const list = packs ?? []
+  const enabled = React.useMemo(() => list.filter((p) => gates[p.id]), [list, gates])
+  // A "memory pack" writes tables — the one whose usefulness depends on a table template being assigned.
+  const memoryPackEnabled = React.useMemo(
+    () => enabled.some((p) => p.capabilities.includes('writes-tables')),
+    [enabled]
+  )
+
+  // The one piece of state not already in hand: is a table template assigned to this chat (only matters
+  // when a memory pack is on). Cheap read; fetched on mount / when the memory-pack condition changes.
+  const [memoryTemplateAssigned, setMemoryTemplateAssigned] = React.useState(false)
+  React.useEffect(() => {
+    let alive = true
+    if (memoryPackEnabled && chatId) {
+      void (async () => {
+        try {
+          const tmpl = (await api().getChatTableTemplate(profileId, chatId)) as string | null
+          if (alive) setMemoryTemplateAssigned(!!tmpl)
+        } catch {
+          if (alive) setMemoryTemplateAssigned(false)
+        }
+      })()
+    } else {
+      setMemoryTemplateAssigned(false)
+    }
+    return () => {
+      alive = false
+    }
+  }, [memoryPackEnabled, chatId, profileId])
+
+  if (!worldId) {
+    return (
+      <div className="rpt-agents-empty">
+        <div className="rpt-agents-placeholder-icon" aria-hidden>
+          ◎
+        </div>
+        <h2 className="rpt-agents-placeholder-title">{t('agents.overview.noWorldTitle')}</h2>
+        <p className="rpt-agents-placeholder-body">{t('agents.overview.noWorldBody')}</p>
+        <p className="rpt-agents-placeholder-hint">{t('agents.overview.packsExplainer')}</p>
+      </div>
+    )
+  }
+
+  if (loading && packs === null) {
+    return (
+      <div className="rpt-overview">
+        {[0, 1].map((i) => (
+          <div key={i} className="rpt-overview-card rpt-agents-skeleton" aria-hidden>
+            <div className="rpt-agents-skel-lines">
+              <div className="rpt-agents-skel-line" />
+              <div className="rpt-agents-skel-line short" />
+            </div>
+          </div>
+        ))}
+      </div>
+    )
+  }
+
+  if (error) {
+    return (
+      <div className="rpt-agents-empty">
+        <p>{t('agents.overview.loadError')}</p>
+        <button className="btn-accent" onClick={onRetry}>
+          {t('agents.retry')}
+        </button>
+      </div>
+    )
+  }
+
+  const checklist = setupChecklist({
+    hasWorld: !!worldId,
+    anyEnabled: enabled.length > 0,
+    memoryPackEnabled,
+    memoryTemplateAssigned
+  })
+  const errors = recentErrors(runs, 3)
+
+  const checkFix: Record<string, { label: string; go: () => void }> = {
+    'has-world': {
+      label: t('agents.overview.check.hasWorldFix'),
+      go: () => onNavigate('installed')
+    },
+    'any-enabled': {
+      label: t('agents.overview.check.anyEnabledFix'),
+      go: () => onNavigate('installed')
+    },
+    'memory-template': {
+      label: t('agents.overview.check.memoryTemplateFix'),
+      // Make the Tables view available (its assignment control lives there). ensureLeftPanel is the
+      // documented "surface this view" op — the Agents view can't switch the fill panel from here.
+      go: () => useWorkspaceStore.getState().ensureLeftPanel('tables')
+    }
+  }
+
+  return (
+    <div className="rpt-overview">
+      <header className="rpt-overview-header">
+        <h2 className="rpt-overview-heading">{t('agents.overview.heading')}</h2>
+        <p className="rpt-overview-subtitle">{t('agents.overview.subtitle')}</p>
+      </header>
+
+      {/* (1) Active packs — compact rows. */}
+      <section className="rpt-overview-section" aria-labelledby="ov-active">
+        <h3 id="ov-active" className="rpt-overview-sectiontitle">
+          {t('agents.overview.activeTitle')}
+        </h3>
+        {enabled.length === 0 ? (
+          <p className="rpt-overview-empty">{t('agents.overview.activeEmpty')}</p>
+        ) : (
+          <ul className="rpt-overview-active">
+            {enabled.map((pack) => {
+              const row = activePackRow(runs, pack.id)
+              const health = packHealth(runs, pack.id)
+              const name = packNames[pack.id] ?? pack.manifest.name
+              const outcome = row.sentence
+                ? translateOutcome(t, nodeTitle, row.sentence)
+                : t('agents.overview.neverRan')
+              return (
+                <li key={pack.id}>
+                  <button
+                    type="button"
+                    className="rpt-overview-activerow"
+                    onClick={() => onOpenDetail(pack.id)}
+                  >
+                    <span className={`rpt-agents-dot ${health}`} aria-hidden />
+                    <span className="rpt-overview-activename">{name}</span>
+                    <span className="rpt-overview-activeoutcome">{outcome}</span>
+                    <span className="rpt-overview-activehealth">
+                      {t(`agents.health.${health}`)}
+                    </span>
+                  </button>
+                </li>
+              )
+            })}
+          </ul>
+        )}
+      </section>
+
+      {/* (2) Setup checklist — real state; unchecked items are actions. */}
+      <section className="rpt-overview-section" aria-labelledby="ov-check">
+        <h3 id="ov-check" className="rpt-overview-sectiontitle">
+          {t('agents.overview.checklistTitle')}
+        </h3>
+        <ul className="rpt-overview-checklist">
+          {checklist.map((item) => (
+            <li key={item.id} className={`rpt-overview-checkitem${item.done ? ' done' : ''}`}>
+              <span className={`rpt-overview-checkmark ${item.done ? 'done' : 'todo'}`} aria-hidden>
+                {item.done ? '✓' : '○'}
+              </span>
+              <span className="rpt-overview-checklabel">
+                {t(`agents.overview.check.${camel(item.id)}`)}
+              </span>
+              {item.done ? (
+                <span className="rpt-overview-checkstatus">{t('agents.overview.checkDone')}</span>
+              ) : (
+                <button
+                  type="button"
+                  className="rpt-overview-checkfix"
+                  onClick={checkFix[item.id].go}
+                >
+                  {checkFix[item.id].label}
+                </button>
+              )}
+            </li>
+          ))}
+        </ul>
+      </section>
+
+      {/* (3) Recent problems strip. */}
+      <section className="rpt-overview-section" aria-labelledby="ov-errors">
+        <h3 id="ov-errors" className="rpt-overview-sectiontitle">
+          {t('agents.overview.errorsTitle')}
+        </h3>
+        {errors.length === 0 ? (
+          <p className="rpt-overview-empty">{t('agents.overview.errorsAllGood')}</p>
+        ) : (
+          <ul className="rpt-overview-errors">
+            {errors.map((r) => {
+              const attribution =
+                r.packIds.length === 0
+                  ? t('runs.narratorTurn')
+                  : r.packIds.map((id) => packNames[id] ?? id).join(t('runs.packSep'))
+              const sentence = translateOutcome(t, nodeTitle, outcomeSentence(runFacts(r.trace)))
+              return (
+                <li key={r.runId} className="rpt-overview-erroritem">
+                  <span className="rpt-agents-dot failed" aria-hidden />
+                  <span className="rpt-overview-errorattr">{attribution}</span>
+                  <span className="rpt-overview-erroroutcome">
+                    {r.trace.error?.message ?? sentence}
+                  </span>
+                  <button
+                    type="button"
+                    className="rpt-overview-errorview"
+                    onClick={() => onNavigate('runs')}
+                  >
+                    {t('agents.overview.errorsView')}
+                  </button>
+                </li>
+              )
+            })}
+          </ul>
+        )}
+      </section>
+
+      {/* (4) Quick links. */}
+      <section className="rpt-overview-section" aria-labelledby="ov-links">
+        <h3 id="ov-links" className="rpt-overview-sectiontitle">
+          {t('agents.overview.linksTitle')}
+        </h3>
+        <div className="rpt-overview-links">
+          <button type="button" className="rpt-overview-link" onClick={() => onNavigate('preview')}>
+            {t('agents.overview.linkPreview')}
+          </button>
+          <button
+            type="button"
+            className="rpt-overview-link"
+            onClick={() => openWorkflowEditor({ initialMode: 'effective' })}
+          >
+            {t('agents.overview.linkStudio')}
+          </button>
+        </div>
+      </section>
+    </div>
+  )
+}
+
+/** ChecklistItem ids are kebab (has-world); the i18n keys are camel (hasWorld). One tiny mapper keeps
+ *  the pure module's ids stable while the locale keys stay readable. */
+const camel = (id: string): string => id.replace(/-([a-z])/g, (_, c: string) => c.toUpperCase())
 
 // Render an OutcomeSentence: when it names a failed node TYPE, localize it to a title and pass it as
 // the {{node}} var, then translate the sentence key. (Kept out of the pure module — it needs t().)

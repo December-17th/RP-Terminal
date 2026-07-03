@@ -181,6 +181,27 @@ declare global {
         beforeSeq?: number,
         limit?: number
       ) => Promise<StoredRunRecord[]>
+      // Read-only "why isn't this pack running?" trigger explanation for the Agents "Why?" popover
+      // (agent-packs plan WP3.5). Evaluates the pack's MATERIALIZED triggers against committed state
+      // WITHOUT advancing baselines or firing (safe to call on popover open; never mutates). Returns []
+      // when the pack is not gate-open for the chat (the popover answers from gate state then). Shape
+      // inlined (not imported from main) so preload types don't cross the module boundary.
+      explainAgentPackTriggers: (
+        profileId: string,
+        chatId: string,
+        packId: string
+      ) => Promise<
+        {
+          description: string
+          kind: 'state' | 'cadence' | 'manual'
+          met: boolean
+          current?: number | string | boolean
+          required?: number | string | boolean
+          baseline?: number
+          lastFireFloor?: number
+          floorsUntilDue?: number
+        }[]
+      >
       // Effective-graph projection for the Workflow view's Effective mode (agent-packs plan WP3.6a;
       // ADR 0010). The composed doc + composition warnings + per-pack grouping (name / spliced node
       // ids / triggerOnly). A live projection, never persisted (ADR 0001).

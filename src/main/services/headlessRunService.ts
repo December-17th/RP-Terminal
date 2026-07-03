@@ -187,6 +187,132 @@ const evaluateOneTrigger = (
   return comparePoint(att.op, actual, att.value)
 }
 
+// ── READ-ONLY trigger explanation (agent-packs plan WP3.5 — the "why?" popover) ─────────────────────
+//
+// The Agents "Why?" popover answers "why isn't this pack running?" for a gate-open pack whose triggers
+// have not fired. It needs the SAME evaluation `evaluateOneTrigger` does, but as a PURE READ: it must
+// NOT advance any baseline (changedBy lastValue) or fire (cadence lastFireFloor) — calling it twice must
+// leave the trigger store untouched. So it reuses the read-only halves (readSource, latestFloorIndex,
+// getTriggerState, comparePoint) WITHOUT the setters. The controller decision (WP3.3 friction) routes
+// explain-why through LIVE state + history rather than a stored skip-reason; this is the live half.
+//
+// GROUNDING against evaluateOneTrigger (behavior parity, read-only): for each kind we compute the same
+// fire decision it would, but report the numbers that make it scannable instead of mutating:
+//   · cadence  → floorsUntilDue = everyNFloors − (current − lastFire); met when ≤ 0. lastFireFloor is
+//     the persisted floor (null → never fired, treated as −1 like the evaluator).
+//   · changedBy → baseline = getTriggerState.lastValue (null → not yet baselined, never fires this pass);
+//     current = the numeric source; met when (current − baseline) ≥ delta. First-ever (null baseline)
+//     reports met:false with no baseline (matches the evaluator's baseline-on-first-eval, no-fire).
+//   · point ops → current = the source value; met = comparePoint(op, current, value); required = value.
+
+/** One trigger's explanation for the popover (agent-packs plan WP3.5). All fields are READ-ONLY
+ *  derivations against committed state — assembling this NEVER advances a baseline or fires. */
+export interface TriggerExplanation {
+  /** The human-readable trigger description (describeTrigger) — the same caption the timeline shows. */
+  description: string
+  /** state | cadence | manual — lets the renderer pick the right sentence template. */
+  kind: 'state' | 'cadence' | 'manual'
+  /** Whether the trigger WOULD fire against committed state right now (manual → always false). */
+  met: boolean
+  /** The current source reading (state) — a number/string/boolean, or undefined when the path is absent. */
+  current?: number | string | boolean
+  /** The comparison value / everyNFloors the trigger requires (state + cadence). */
+  required?: number | string | boolean
+  /** changedBy only: the retained baseline (valueAtLastEvaluation); absent when not yet baselined. */
+  baseline?: number
+  /** cadence only: the floor this trigger last fired at (from the store); absent when it never fired. */
+  lastFireFloor?: number
+  /** cadence only: how many more floors until it is due (≤ 0 when due now). */
+  floorsUntilDue?: number
+}
+
+/** Explain ONE trigger read-only (agent-packs plan WP3.5): compute the same fire decision
+ *  `evaluateOneTrigger` would, but report the scannable numbers and NEVER mutate the trigger store. */
+const explainOneTrigger = (
+  profileId: string,
+  chatId: string,
+  packId: string,
+  triggerIndex: number,
+  att: TriggerAttachment
+): TriggerExplanation => {
+  const description = describeTrigger(att)
+
+  if (att.trigger === 'manual') {
+    return { description, kind: 'manual', met: false }
+  }
+
+  if (att.trigger === 'cadence') {
+    const current = latestFloorIndex(profileId, chatId)
+    const prior = getTriggerState(chatId, packId, triggerIndex)?.lastFireFloor
+    const lastFire = prior ?? -1
+    // Mirror evaluateOneTrigger: no committed floor yet (current < 0) never fires. floorsUntilDue is
+    // how many more floors before (current − lastFire) >= everyNFloors; ≤ 0 means due now.
+    const met = current >= 0 && current - lastFire >= att.everyNFloors
+    const floorsUntilDue = att.everyNFloors - (current - lastFire)
+    return {
+      description,
+      kind: 'cadence',
+      met,
+      required: att.everyNFloors,
+      ...(prior != null ? { lastFireFloor: prior } : {}),
+      floorsUntilDue
+    }
+  }
+
+  // state trigger
+  const actual = readSource(profileId, chatId, att.source)
+  const currentPrimitive =
+    typeof actual === 'number' || typeof actual === 'string' || typeof actual === 'boolean'
+      ? actual
+      : undefined
+
+  if (att.op === 'changedBy') {
+    const prior = getTriggerState(chatId, packId, triggerIndex)?.lastValue
+    // First-ever evaluation (null baseline) or a non-numeric source → not met (matches the evaluator's
+    // baseline-on-first-eval + numeric-only rule). When baselined, met on (current − baseline) >= delta.
+    const met =
+      typeof actual === 'number' && prior != null && actual - prior >= (att.value as number)
+    return {
+      description,
+      kind: 'state',
+      met,
+      required: att.value,
+      ...(currentPrimitive !== undefined ? { current: currentPrimitive } : {}),
+      ...(prior != null ? { baseline: prior } : {})
+    }
+  }
+
+  return {
+    description,
+    kind: 'state',
+    met: comparePoint(att.op, actual, att.value),
+    required: att.value,
+    ...(currentPrimitive !== undefined ? { current: currentPrimitive } : {})
+  }
+}
+
+/** Explain a gate-open pack's trigger attachments read-only (agent-packs plan WP3.5). Resolves the
+ *  pack's MATERIALIZED fragment (via enabledFragmentsFor — the same override path turns + headless use,
+ *  so an N=10 override is reflected as required:10) and returns one TriggerExplanation per trigger
+ *  attachment. READ-ONLY: it advances no baseline and fires nothing — calling it twice leaves the
+ *  trigger store untouched. Returns [] when the pack is not gate-open for the chat (nothing to explain
+ *  — the popover then answers from gate state instead). */
+export const explainTriggers = (
+  profileId: string,
+  chatId: string,
+  packId: string
+): TriggerExplanation[] => {
+  const frag = enabledFragmentsFor(profileId, chatId).find((f) => f.packId === packId)
+  if (!frag) return []
+  const attachments: AttachmentDecl[] = frag.doc.attachments ?? []
+  const out: TriggerExplanation[] = []
+  attachments.forEach((att, i) => {
+    if (att.kind !== 'trigger') return
+    out.push(explainOneTrigger(profileId, chatId, packId, i, att))
+  })
+  return out
+}
+
 /** Evaluate every gate-open pack's triggers against committed state and run the packs whose triggers
  *  fire — sequentially, in deterministic pack-id order (decision 1: no parallel headless runs in v1;
  *  write-lock pressure + trace clarity — a documented v1 simplification). OR-deduped per pack per
@@ -377,7 +503,12 @@ export const runHeadless = async (
     const trace = summarizeRun(
       runnable,
       builtinRegistry.descriptors(),
-      { ok: !result.aborted && !result.fatal, aborted: result.aborted, traces: result.traces, outputs: new Map() },
+      {
+        ok: !result.aborted && !result.fatal,
+        aborted: result.aborted,
+        traces: result.traces,
+        outputs: new Map()
+      },
       { chatId, workflowId, startedAt, durationMs: Date.now() - startedAt }
     )
     notifyWorkflowTrace(trace)
@@ -395,13 +526,22 @@ export const runHeadless = async (
         trace
       })
     } catch (err) {
-      log('error', `run-history persist (${annotation.origin}) failed — ${err instanceof Error ? err.message : String(err)}`)
+      log(
+        'error',
+        `run-history persist (${annotation.origin}) failed — ${err instanceof Error ? err.message : String(err)}`
+      )
     }
     if (result.fatal)
-      log('error', `headless run "${packId}" failed: ${result.fatal.message} (never surfaced to the chat)`)
+      log(
+        'error',
+        `headless run "${packId}" failed: ${result.fatal.message} (never surfaced to the chat)`
+      )
   } catch (err) {
     // A failure here NEVER surfaces to any chat flow (ADR 0003) — log and move on.
-    log('error', `headless run "${packId}" threw: ${err instanceof Error ? err.message : String(err)}`)
+    log(
+      'error',
+      `headless run "${packId}" threw: ${err instanceof Error ? err.message : String(err)}`
+    )
   }
 
   // The headless COMMIT boundary (ADR 0004): re-evaluate triggers with depth+1 so a deliberate chain
@@ -418,7 +558,11 @@ export const runHeadless = async (
  *  NEVER fire from a boundary — only here). A thin export for the WP3.x "run now" control; it runs
  *  the fragment exactly like a headless run (depth 0 → its commit re-evaluates other packs' triggers
  *  normally). No-op + logs if the pack is not gate-open for the chat. */
-export const runManual = async (profileId: string, chatId: string, packId: string): Promise<void> => {
+export const runManual = async (
+  profileId: string,
+  chatId: string,
+  packId: string
+): Promise<void> => {
   const frag = enabledFragmentsFor(profileId, chatId).find((f) => f.packId === packId)
   if (!frag) {
     log('error', `runManual: pack "${packId}" is not gate-open for chat ${chatId} — nothing to run`)

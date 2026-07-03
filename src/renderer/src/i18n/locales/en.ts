@@ -1133,7 +1133,59 @@ const en: Record<string, string> = {
     'Runs show up here after replies, and whenever an agent runs on its own. Turn on an agent under Installed to get started.',
   'runs.loadError': "Couldn't load the activity feed.",
   'runs.noWorldTitle': 'Open a chat first',
-  'runs.noWorldBody': 'Activity is tracked per chat. Open a world and start a chat to see runs here.'
+  'runs.noWorldBody': 'Activity is tracked per chat. Open a world and start a chat to see runs here.',
+
+  // ── "Why?" popover on pack cards (agent-packs plan WP3.5) ─────────────────────────────────────────
+  'agents.why.open': 'Why?',
+  'agents.why.title': 'Why this pack?',
+  'agents.why.close': 'Close',
+  // Headline answers
+  'agents.why.disabled': 'Turned off for this world.',
+  'agents.why.enable': 'Turn it on',
+  'agents.why.failed': 'Its last run had a problem.',
+  'agents.why.viewRun': 'View run',
+  'agents.why.waiting': 'On, and waiting for its moment to run:',
+  'agents.why.ranOk': 'Working. Last ran {{time}}.',
+  'agents.why.background': 'On. This pack works in the background — it doesn’t add to your prompt.',
+  'agents.why.ready': 'On, and ready. It hasn’t needed to run yet.',
+  'agents.why.noPrompt': 'This pack doesn’t add to your prompt; it works in the background.',
+  // Per-trigger lines (numbers made scannable)
+  'agents.why.trigger.state': 'now {{current}}, runs at {{required}}',
+  'agents.why.trigger.changedBy': 'needs +{{delta}} from {{from}}, now {{now}}',
+  'agents.why.trigger.cadence': 'runs again in {{n}} floor(s)',
+  'agents.why.trigger.manual': 'runs only when you ask it to',
+  'agents.why.trigger.met': 'ready: {{desc}}',
+  'agents.why.loadError': 'Couldn’t check its triggers right now.',
+
+  // ── Overview pane (agent-packs plan WP3.5) — the landing view ─────────────────────────────────────
+  'agents.overview.heading': 'Overview',
+  'agents.overview.subtitle': 'Is everything working? A glance at what’s on and what needs you.',
+  // Active packs section
+  'agents.overview.activeTitle': 'Active agents',
+  'agents.overview.activeEmpty': 'No agents are on for this world yet.',
+  'agents.overview.neverRan': 'Hasn’t run yet.',
+  'agents.overview.openInstalled': 'Manage in Installed',
+  // Setup checklist
+  'agents.overview.checklistTitle': 'Setup',
+  'agents.overview.check.hasWorld': 'Open a chat in a world',
+  'agents.overview.check.hasWorldFix': 'Open a chat',
+  'agents.overview.check.anyEnabled': 'Turn on at least one agent',
+  'agents.overview.check.anyEnabledFix': 'Go to Installed',
+  'agents.overview.check.memoryTemplate': 'Give the memory agent a table set to fill',
+  'agents.overview.check.memoryTemplateFix': 'Assign in Tables',
+  'agents.overview.checkDone': 'Done',
+  // Recent errors strip
+  'agents.overview.errorsTitle': 'Recent problems',
+  'agents.overview.errorsView': 'View',
+  'agents.overview.errorsAllGood': 'No recent problems.',
+  // Quick links
+  'agents.overview.linksTitle': 'Quick links',
+  'agents.overview.linkPreview': 'Preview the next prompt',
+  'agents.overview.linkStudio': 'Open Workflow Studio',
+  // States
+  'agents.overview.noWorldTitle': 'Open a chat first',
+  'agents.overview.noWorldBody': 'Agents run inside a world. Open a chat to see how yours are doing.',
+  'agents.overview.loadError': 'Couldn’t load the overview.'
 }
 
 export default en

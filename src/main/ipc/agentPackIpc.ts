@@ -2,6 +2,7 @@ import { IpcMain } from 'electron'
 import * as agentPackService from '../services/agentPackService'
 import { OverrideScope } from '../services/agentPackStore'
 import { listRuns } from '../services/runHistoryStore'
+import { explainTriggers } from '../services/headlessRunService'
 import { previewNextPrompt } from '../services/generation/previewService'
 import { getChat } from '../services/chatService'
 
@@ -55,6 +56,16 @@ export const registerAgentPackIpc = (ipcMain: IpcMain): void => {
     'agent-pack-list-runs',
     (_, profileId: string, chatId: string, beforeSeq?: number, limit?: number) =>
       listRuns(profileId, chatId, { beforeSeq, limit })
+  )
+  // Read-only "why isn't this pack running?" trigger explanation for the Agents "Why?" popover
+  // (agent-packs plan WP3.5). Evaluates the pack's MATERIALIZED trigger attachments against COMMITTED
+  // state WITHOUT advancing any baseline or firing (calling it never mutates the trigger store). Returns
+  // [] when the pack is not gate-open (the popover answers from gate state then). The controller
+  // decision (WP3.3 friction) routes explain-why through live state, not a stored skip-reason.
+  ipcMain.handle(
+    'agent-pack-explain-triggers',
+    (_, profileId: string, chatId: string, packId: string) =>
+      explainTriggers(profileId, chatId, packId)
   )
   // Effective-graph projection for the Workflow view's Effective mode (agent-packs plan WP3.6a;
   // ADR 0010). Returns the composed doc + warnings + per-pack grouping (name / node ids / triggerOnly)

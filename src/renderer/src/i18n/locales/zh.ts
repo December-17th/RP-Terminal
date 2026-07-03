@@ -1091,7 +1091,59 @@ const zh: Record<string, string> = {
     '回复之后，以及智能体自动运行时，运行记录会显示在这里。前往「已安装」开启一个智能体即可开始。',
   'runs.loadError': '无法加载活动记录。',
   'runs.noWorldTitle': '请先打开聊天',
-  'runs.noWorldBody': '活动记录按聊天单独跟踪。打开一个世界并开始聊天，即可在此查看运行记录。'
+  'runs.noWorldBody': '活动记录按聊天单独跟踪。打开一个世界并开始聊天，即可在此查看运行记录。',
+
+  // ── 智能体卡片上的「为什么？」气泡（智能体包计划 WP3.5）─────────────────────────────────────────
+  'agents.why.open': '为什么？',
+  'agents.why.title': '这个智能体为什么？',
+  'agents.why.close': '关闭',
+  // 主要回答
+  'agents.why.disabled': '在此世界中已关闭。',
+  'agents.why.enable': '开启它',
+  'agents.why.failed': '它上次运行出了问题。',
+  'agents.why.viewRun': '查看运行',
+  'agents.why.waiting': '已开启，正在等待运行时机：',
+  'agents.why.ranOk': '运行正常。上次运行于 {{time}}。',
+  'agents.why.background': '已开启。该智能体在后台运行——不会加入你的提示词。',
+  'agents.why.ready': '已开启，随时就绪。目前尚无需运行。',
+  'agents.why.noPrompt': '该智能体不会加入你的提示词；它在后台运行。',
+  // 各触发器逐条说明（让数字一目了然）
+  'agents.why.trigger.state': '当前 {{current}}，达到 {{required}} 时运行',
+  'agents.why.trigger.changedBy': '需从 {{from}} 增加 +{{delta}}，当前 {{now}}',
+  'agents.why.trigger.cadence': '再过 {{n}} 层后运行',
+  'agents.why.trigger.manual': '仅在你手动请求时运行',
+  'agents.why.trigger.met': '就绪：{{desc}}',
+  'agents.why.loadError': '暂时无法检查它的触发器。',
+
+  // ── 概览面板（智能体包计划 WP3.5）——落地首页 ─────────────────────────────────────────────────
+  'agents.overview.heading': '概览',
+  'agents.overview.subtitle': '一切正常吗？一眼看清哪些已开启、哪些需要你处理。',
+  // 活动中的智能体
+  'agents.overview.activeTitle': '活动中的智能体',
+  'agents.overview.activeEmpty': '此世界尚未开启任何智能体。',
+  'agents.overview.neverRan': '尚未运行。',
+  'agents.overview.openInstalled': '在「已安装」中管理',
+  // 设置清单
+  'agents.overview.checklistTitle': '设置',
+  'agents.overview.check.hasWorld': '在某个世界中打开聊天',
+  'agents.overview.check.hasWorldFix': '打开聊天',
+  'agents.overview.check.anyEnabled': '至少开启一个智能体',
+  'agents.overview.check.anyEnabledFix': '前往「已安装」',
+  'agents.overview.check.memoryTemplate': '为记忆智能体指定要填充的表格集',
+  'agents.overview.check.memoryTemplateFix': '在「表格」中指定',
+  'agents.overview.checkDone': '完成',
+  // 近期问题
+  'agents.overview.errorsTitle': '近期问题',
+  'agents.overview.errorsView': '查看',
+  'agents.overview.errorsAllGood': '近期没有问题。',
+  // 快捷入口
+  'agents.overview.linksTitle': '快捷入口',
+  'agents.overview.linkPreview': '预览下一条提示词',
+  'agents.overview.linkStudio': '打开流程工作室',
+  // 状态
+  'agents.overview.noWorldTitle': '请先打开聊天',
+  'agents.overview.noWorldBody': '智能体在世界中运行。打开一个聊天，即可查看它们的运行情况。',
+  'agents.overview.loadError': '无法加载概览。'
 }
 
 export default zh

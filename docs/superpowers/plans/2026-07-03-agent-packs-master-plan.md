@@ -1,9 +1,10 @@
 # Agent Packs — Master Implementation Plan
 
 Date: 2026-07-03
-Status: planned, not started (owner: plan first, no implementation yet as of 2026-07-03)
+Status: phases 1–3 BUILT 2026-07-03 (WP1.1–1.6b, 2.1–2.4, 3.1–3.6b — see Amendments log); owner
+visual review pending; phases 4–6 not started
 Spec: `docs/superpowers/specs/2026-07-03-agent-pack-workflow-ux-design-revision-3.md`
-Decisions: ADRs 0001–0009 in `docs/adr/`; glossary in root `CONTEXT.md`
+Decisions: ADRs 0001–0010 in `docs/adr/`; glossary in root `CONTEXT.md`
 Executor profile: **Opus 4.8 agents at medium effort** — see "How this plan is cut" below.
 
 ## How this plan is cut (read this before dispatching any WP)
