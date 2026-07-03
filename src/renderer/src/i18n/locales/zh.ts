@@ -438,8 +438,11 @@ const zh: Record<string, string> = {
   'variables.editFailed': '编辑保存失败',
   'variables.readOnlyHint': '尚无消息 —— 暂无可编辑内容',
 
-  // SQL 表格记忆（数据库/表格）—— 只读表格视图 + 模板挂载
+  // SQL 表格记忆（数据库/表格）—— 精简数据网格（配置已移至「记忆」栏，WP3.8）
   'tables.heading': '记忆表格',
+  // 链接到「记忆」栏的头部提示（模板挂载 / 回填已移至该处，WP3.8）。
+  'tables.configHint': '模板与回填设置位于「智能体 → 记忆」。',
+  'tables.openMemory': '前往「记忆」配置',
   'tables.template': '表格模板',
   'tables.none': '无（关闭）',
   'tables.import': '导入表格模板',
@@ -937,12 +940,13 @@ const zh: Record<string, string> = {
   'agents.preview.title': '预览',
 
   // 智能体与工作流控制中心（agent-packs plan WP3.7 — 全窗口覆盖层，承载原智能体视图与工作流管理界面）。
-  // WP3.8 的记忆面板接口：落地时新增 'controlCenter.rail.memory'。
+  // WP3.8 新增了「记忆」栏（'controlCenter.rail.memory'）与下方的 memory.* 面板文案。
   'controlCenter.title': '智能体与工作流',
   'controlCenter.close': '关闭',
   'controlCenter.rail.overview': '概览',
   'controlCenter.rail.installed': '已安装',
   'controlCenter.rail.workflows': '工作流',
+  'controlCenter.rail.memory': '记忆',
   'controlCenter.rail.runs': '运行记录',
   'controlCenter.rail.preview': '预览',
   'controlCenter.launch.open': '打开',
@@ -952,6 +956,23 @@ const zh: Record<string, string> = {
   'controlCenter.launch.workflowTitle': '工作流已移至独立界面',
   'controlCenter.launch.workflowBody':
     '工作流列表、默认设置与上次运行轨迹，现已移入「智能体与工作流」控制中心，空间更充裕。',
+  // ── 记忆面板（智能体包计划 WP3.8 —— 从「表格」视图迁出的记忆配置与维护） ──────────────
+  'memory.heading': '记忆',
+  'memory.subtitle': '为本会话设置并维护智能体填写的记忆表格。',
+  'memory.noChatTitle': '请先打开会话',
+  'memory.noChatBody': '记忆表格属于会话。打开一个会话即可开始设置。',
+  'memory.templateTitle': '模板与挂载',
+  'memory.noTemplateHint': '尚未挂载表格模板 —— 本会话的记忆已关闭。在上方选择一个即可开启。',
+  'memory.maintenanceTitle': '维护与进度',
+  'memory.backlogSummary': '各表格中最多有 {{n}} 层未处理，共 {{m}} 张表。',
+  'memory.caughtUp': '全部 {{m}} 张表均已处理完毕。',
+  'memory.packsTitle': '记忆智能体',
+  'memory.packsLoading': '正在加载智能体……',
+  'memory.packsEmpty': '没有已安装的智能体写入记忆表格。',
+  'memory.packOn': '在本世界已开启',
+  'memory.packOff': '已关闭',
+  'memory.dataTitle': '数据',
+  'memory.browseData': '浏览表格',
   // ── 注入预览面板（智能体包计划 WP3.4）───────────────────────────────────────────────
   'preview.title': '下一条提示词',
   'preview.subtitle': '将要发送的完整内容，逐段列出，并标注每部分的来源。',
@@ -1143,7 +1164,7 @@ const zh: Record<string, string> = {
   'agents.overview.check.anyEnabled': '至少开启一个智能体',
   'agents.overview.check.anyEnabledFix': '前往「已安装」',
   'agents.overview.check.memoryTemplate': '为记忆智能体指定要填充的表格集',
-  'agents.overview.check.memoryTemplateFix': '在「表格」中指定',
+  'agents.overview.check.memoryTemplateFix': '在「记忆」中设置',
   'agents.overview.checkDone': '完成',
   // 近期问题
   'agents.overview.errorsTitle': '近期问题',

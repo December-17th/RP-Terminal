@@ -451,8 +451,11 @@ const en: Record<string, string> = {
   'variables.editFailed': 'Edit failed to save',
   'variables.readOnlyHint': 'No message yet — nothing to edit',
 
-  // SQL-table memory (数据库/表格) — read-only Tables view + template assignment
+  // SQL-table memory (数据库/表格) — the lean data grid (config moved to the Memory rail, WP3.8)
   'tables.heading': 'Memory Tables',
+  // Header hint linking to the Memory rail (template binding / backfill moved there, WP3.8).
+  'tables.configHint': 'Template & backfill settings live in Agents → Memory.',
+  'tables.openMemory': 'Configure in Memory',
   'tables.template': 'Table template',
   'tables.none': 'None (off)',
   'tables.import': 'Import template',
@@ -973,13 +976,14 @@ const en: Record<string, string> = {
   'agents.preview.title': 'Preview',
 
   // Agents & Workflows control center (agent-packs plan WP3.7 — the full-window overlay that
-  // re-hosts the Agents view + the Workflows management surface). The rail seam for WP3.8's Memory
-  // pane: add 'controlCenter.rail.memory' when it lands.
+  // re-hosts the Agents view + the Workflows management surface). WP3.8 added the Memory rail
+  // ('controlCenter.rail.memory') + the memory.* pane strings below.
   'controlCenter.title': 'Agents & Workflows',
   'controlCenter.close': 'Close',
   'controlCenter.rail.overview': 'Overview',
   'controlCenter.rail.installed': 'Installed',
   'controlCenter.rail.workflows': 'Workflows',
+  'controlCenter.rail.memory': 'Memory',
   'controlCenter.rail.runs': 'Runs',
   'controlCenter.rail.preview': 'Preview',
   'controlCenter.launch.open': 'Open',
@@ -989,6 +993,24 @@ const en: Record<string, string> = {
   'controlCenter.launch.workflowTitle': 'Workflows moved to their own screen',
   'controlCenter.launch.workflowBody':
     'The workflow list, defaults, and the last-run trace now live in the Agents & Workflows control center for more room.',
+  // ── Memory pane (agent-packs plan WP3.8 — memory config + maintenance, moved out of the Tables view) ─
+  'memory.heading': 'Memory',
+  'memory.subtitle': 'Set up and maintain the memory tables agents fill in for this session.',
+  'memory.noChatTitle': 'Open a chat first',
+  'memory.noChatBody': 'Memory tables belong to a session. Open a chat to set one up.',
+  'memory.templateTitle': 'Template & binding',
+  'memory.noTemplateHint':
+    'No table template is assigned — memory is off for this session. Pick one above to turn it on.',
+  'memory.maintenanceTitle': 'Maintenance & progress',
+  'memory.backlogSummary': 'Up to {{n}} floor(s) unprocessed across {{m}} table(s).',
+  'memory.caughtUp': 'All {{m}} table(s) are caught up.',
+  'memory.packsTitle': 'Memory agents',
+  'memory.packsLoading': 'Loading agents…',
+  'memory.packsEmpty': 'No installed agents write to memory tables.',
+  'memory.packOn': 'On for this world',
+  'memory.packOff': 'Off',
+  'memory.dataTitle': 'Data',
+  'memory.browseData': 'Browse the tables',
   // ── Injection preview pane (agent-packs plan WP3.4) ───────────────────────────────────────────────
   'preview.title': 'Next prompt',
   'preview.subtitle': 'Exactly what will be sent, section by section, with where each part comes from.',
@@ -1183,7 +1205,7 @@ const en: Record<string, string> = {
   'agents.overview.check.anyEnabled': 'Turn on at least one agent',
   'agents.overview.check.anyEnabledFix': 'Go to Installed',
   'agents.overview.check.memoryTemplate': 'Give the memory agent a table set to fill',
-  'agents.overview.check.memoryTemplateFix': 'Assign in Tables',
+  'agents.overview.check.memoryTemplateFix': 'Set up in Memory',
   'agents.overview.checkDone': 'Done',
   // Recent errors strip
   'agents.overview.errorsTitle': 'Recent problems',

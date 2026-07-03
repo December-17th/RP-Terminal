@@ -456,6 +456,16 @@ workflows become built-in packs. No new UI beyond what exists.
   snapshot (uninstalled packs display as raw ids). WP3.5 should add what explain-why actually
   needs in shared/main FIRST, then build the surface.
 
+- **2026-07-03, after WP3.7–3.8 (owner-directed re-host + centralization):** the Agents/Workflow
+  surfaces left the workspace panels for a full-window **Agents & Workflows control center**
+  overlay (TopNav opener; WCV suppression inherited; Studio stacks above it; the old 'agents'/
+  'workflow' view ids resolve to designed launcher cards so saved layouts survive). Rail:
+  Overview / Installed / **Memory** / Workflows / Runs / Preview. Memory rail = the centralized
+  home for template binding, per-table progress, and backfill (relocated verbatim from
+  TablesView, which is now a lean data grid with a configure-hint); Workflows rail = narrator
+  selection + trace. Settings popup audited: nothing workflow/agents/memory-scoped hid there.
+  Overview checklist retargeted to the Memory rail.
+
 ## Risks and watchpoints
 
 - **WP1.3 is the highest-risk change** (engine failure semantics). It must land behind the

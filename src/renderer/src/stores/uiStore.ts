@@ -1,9 +1,16 @@
 import { create } from 'zustand'
 
 /** The control-center rail panes. 'workflows' hosts the relocated Workflows management surface;
- *  the Agents panes keep their own inner rail ids. A Memory pane (WP3.8) slots in here later —
- *  the rail list lives in components/workspace/controlCenterRail.ts (extensible seam). */
-export type ControlCenterRail = 'overview' | 'installed' | 'workflows' | 'runs' | 'preview'
+ *  'memory' hosts the memory configuration + maintenance surface (WP3.8 — the single home for table
+ *  templates / backfill, moved out of the Tables workspace view). The Agents panes keep their own
+ *  inner rail ids. The rail list lives in components/workspace/controlCenterRail.ts (extensible seam). */
+export type ControlCenterRail =
+  | 'overview'
+  | 'installed'
+  | 'workflows'
+  | 'memory'
+  | 'runs'
+  | 'preview'
 
 /** Transient app-shell UI state (not persisted): the Settings popup, etc. */
 interface UiState {

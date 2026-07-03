@@ -2628,3 +2628,21 @@ select {
 @media (prefers-reduced-motion: reduce) {
   .rpt-overview-activerow, .rpt-overview-link { transition:none; }
 }
+
+/* ── Memory pane (agent-packs plan WP3.8 — the de-scattered memory config + maintenance surface) ─────
+   Reuses the .rpt-overview shell (same full-window pane layout as Overview). These add the template
+   binding row, the per-table maintenance list, and the backfill block. Tokens/AA like the other panes. */
+.rpt-memory-bindingrow { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+.rpt-memory-bindinglabel { font-size:12px; color:var(--rpt-text-secondary); }
+.rpt-memory-select { font-size:12px; padding:4px 8px; background:var(--rpt-bg-tertiary);
+  color:var(--rpt-text-primary); border:1px solid var(--rpt-border); border-radius:6px; }
+.rpt-memory-select:focus-visible { outline:2px solid var(--rpt-accent); outline-offset:1px; }
+.rpt-memory-btn { font-size:12px; padding:4px 10px; }
+
+.rpt-memory-tablelist { list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:4px; }
+.rpt-memory-tablerow { display:flex; align-items:baseline; gap:10px; font-size:12px; padding:6px 10px;
+  border:1px solid var(--rpt-border); border-radius:8px; background:var(--rpt-bg-secondary); flex-wrap:wrap; }
+.rpt-memory-tablename { font-weight:600; color:var(--rpt-text-primary); }
+.rpt-memory-tableprogress { color:var(--rpt-text-secondary); }
+
+.rpt-memory-backfill { border-top:1px solid var(--rpt-border); margin-top:4px; padding-top:8px; }

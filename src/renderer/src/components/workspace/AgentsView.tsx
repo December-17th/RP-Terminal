@@ -62,9 +62,10 @@ import {
 } from './agentExplain'
 import { useUiStore } from '../../stores/uiStore'
 import type { ControlCenterRail } from '../../stores/uiStore'
-import { useWorkspaceStore } from '../../stores/workspaceStore'
 import { AgentPackDetail } from './AgentPackDetail'
 import { WorkflowView } from './WorkflowView'
+import { MemoryPane } from './MemoryPane'
+import type { MemoryPackInput } from './memoryPaneModel'
 import { RAIL_ITEMS, railLabelKey, resolveInitialRail } from './controlCenterRail'
 
 // The list-payload shape from listAgentPacks (preload index.d.ts — WP3.1-extended with attachments +
@@ -161,6 +162,23 @@ export const AgentsView: React.FC<{
     [packs, detailPackId]
   )
 
+  // The pack projection the Memory pane's shortcut strip consumes (WP3.8). Uses the localized display
+  // name (a fork reads "<base> (fork N)") so the strip labels match the Installed cards. Null while the
+  // list is still loading, so the pane can show its own loading line. Reuses the SAME loaded list.
+  const memoryPacks = React.useMemo<MemoryPackInput[] | null>(
+    () =>
+      packs === null
+        ? null
+        : packs.map((p) => ({
+            id: p.id,
+            name: p.manifest.fork
+              ? `${p.manifest.fork.base} (${t('workflowEffective.fork')} ${p.manifest.fork.n})`
+              : p.manifest.name,
+            capabilities: p.capabilities
+          })),
+    [packs, t]
+  )
+
   // packId → display name, for Runs-timeline attribution (a run's packIds are opaque ids). A fork
   // shows "<base> (fork N)"; a plain pack shows its manifest name. Ids not in the installed list
   // (e.g. an uninstalled pack that still has runs) fall back to the raw id.
@@ -209,6 +227,16 @@ export const AgentsView: React.FC<{
       <div className="rpt-agents-content">
         {rail === 'workflows' ? (
           <WorkflowView profileId={profileId} layout="split" />
+        ) : rail === 'memory' ? (
+          <MemoryPane
+            profileId={profileId}
+            packs={memoryPacks}
+            gates={gates}
+            onOpenPackDetail={(id) => {
+              setRail('installed')
+              setDetailPackId(id)
+            }}
+          />
         ) : rail === 'installed' ? (
           <InstalledPane
             profileId={profileId}
@@ -1391,9 +1419,9 @@ const OverviewPane: React.FC<{
     },
     'memory-template': {
       label: t('agents.overview.check.memoryTemplateFix'),
-      // Make the Tables view available (its assignment control lives there). ensureLeftPanel is the
-      // documented "surface this view" op — the Agents view can't switch the fill panel from here.
-      go: () => useWorkspaceStore.getState().ensureLeftPanel('tables')
+      // Template assignment now lives in the Memory rail (WP3.8 de-scatter) — jump straight to it
+      // (we're already inside the control center, so switch the rail rather than re-open the overlay).
+      go: () => onNavigate('memory')
     }
   }
 

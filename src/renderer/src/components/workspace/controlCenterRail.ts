@@ -2,18 +2,18 @@
 // overlay). Pure so it can be unit-tested under Node (no jsdom harness in this repo) and so the
 // rail order / labels live in ONE place both the overlay and any deep-link caller agree on.
 //
-// SEAM for WP3.8 (Memory pane): add its id to RAIL_ITEMS below and give the overlay a case for it.
 // The i18n label key is derived (`controlCenter.rail.<id>`), so a new entry only needs its two
-// locale strings — no other wiring. Keep 'workflows' between 'installed' and 'runs' (the natural
-// "packs → their workflows → what ran → what's next" reading order).
+// locale strings — no other wiring. Reading order: "packs → their workflows → the memory they build
+// → what ran → what's next", so 'memory' sits between 'workflows' and 'runs'.
 
 import type { ControlCenterRail } from '../../stores/uiStore'
 
-/** The rail panes, in display order. Extend here (e.g. add 'memory') to grow the rail. */
+/** The rail panes, in display order. Extend here to grow the rail. */
 export const RAIL_ITEMS: readonly ControlCenterRail[] = [
   'overview',
   'installed',
   'workflows',
+  'memory',
   'runs',
   'preview'
 ] as const

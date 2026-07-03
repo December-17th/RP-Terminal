@@ -9,8 +9,15 @@ import {
 // Workflows overlay). Node-env like the other renderer pure-helper tests (no jsdom harness).
 
 describe('RAIL_ITEMS', () => {
-  it('lists the five panes in reading order, with Workflows between Installed and Runs', () => {
-    expect(RAIL_ITEMS).toEqual(['overview', 'installed', 'workflows', 'runs', 'preview'])
+  it('lists the six panes in reading order, with Memory between Workflows and Runs', () => {
+    expect(RAIL_ITEMS).toEqual([
+      'overview',
+      'installed',
+      'workflows',
+      'memory',
+      'runs',
+      'preview'
+    ])
   })
 })
 
@@ -25,6 +32,7 @@ describe('railLabelKey', () => {
 describe('resolveInitialRail', () => {
   it('passes through a known rail id', () => {
     expect(resolveInitialRail('workflows')).toBe('workflows')
+    expect(resolveInitialRail('memory')).toBe('memory')
     expect(resolveInitialRail('runs')).toBe('runs')
   })
 
@@ -35,7 +43,7 @@ describe('resolveInitialRail', () => {
 
   it('falls back to overview for an unknown rail id (a stale hand-off can never land on a blank pane)', () => {
     // @ts-expect-error — deliberately passing an off-contract value
-    expect(resolveInitialRail('memory')).toBe('overview')
+    expect(resolveInitialRail('bogus')).toBe('overview')
     // @ts-expect-error
     expect(resolveInitialRail('garbage')).toBe('overview')
   })
