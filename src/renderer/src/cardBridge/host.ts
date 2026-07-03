@@ -119,7 +119,9 @@ export function createInlineHost(ctx: CardCtx): Host {
         )
     },
     generate: async (input: string) => {
-      const r: any = await window.api.generate(ctx.profileId, ctx.chatId, input)
+      // 'script': a card-initiated turn — refused while any turn is in flight, and preempted by
+      // the player's own send (player priority in generationService.generate).
+      const r: any = await window.api.generate(ctx.profileId, ctx.chatId, input, 'script')
       if (r && typeof r !== 'string' && ctx.chatId === useChatStore.getState().activeChatId) {
         useChatStore.setState((s) => ({ floors: [...s.floors, r] }))
       }

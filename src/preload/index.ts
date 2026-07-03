@@ -69,8 +69,8 @@ const api = {
     ipcRenderer.send('wcv-broadcast-vars', chatId, statData),
   wcvBroadcastEvent: (chatId: string, name: string, payload: unknown) =>
     ipcRenderer.send('wcv-broadcast-event', chatId, name, payload),
-  generate: (profileId: string, chatId: string, userAction: string) =>
-    ipcRenderer.invoke('generate', profileId, chatId, userAction),
+  generate: (profileId: string, chatId: string, userAction: string, source?: 'player' | 'script') =>
+    ipcRenderer.invoke('generate', profileId, chatId, userAction, source),
   regenerate: (profileId: string, chatId: string) =>
     ipcRenderer.invoke('regenerate', profileId, chatId),
   abortGeneration: (chatId: string) => ipcRenderer.invoke('abort-generation', chatId),
