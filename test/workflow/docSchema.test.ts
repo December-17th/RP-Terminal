@@ -58,10 +58,85 @@ describe('parseWorkflowDoc', () => {
     ).toBe(false)
   })
 
-  it('accepts an absent kind, "turn", and "subgraph"; rejects any other kind value', () => {
+  it('accepts an absent kind, "turn", "subgraph", and "fragment"; rejects any other kind value', () => {
     expect(parseWorkflowDoc(minimal).ok).toBe(true)
     expect(parseWorkflowDoc({ ...minimal, kind: 'turn' }).ok).toBe(true)
     expect(parseWorkflowDoc({ ...minimal, kind: 'subgraph' }).ok).toBe(true)
+    expect(parseWorkflowDoc({ ...minimal, kind: 'fragment' }).ok).toBe(true)
     expect(parseWorkflowDoc({ ...minimal, kind: 'bogus' }).ok).toBe(false)
+  })
+
+  it('round-trips a fragment doc with attachments (entry + rejoin + trigger stub)', () => {
+    const frag = {
+      ...minimal,
+      kind: 'fragment',
+      attachments: [
+        { kind: 'entry', checkpoint: 'context-ready', mode: 'inline' },
+        { kind: 'rejoin', checkpoint: 'prompt-assembly' },
+        { kind: 'trigger' }
+      ]
+    }
+    const r = parseWorkflowDoc(JSON.parse(JSON.stringify(frag)))
+    expect(r.ok).toBe(true)
+    if (r.ok) expect(r.doc.attachments).toHaveLength(3)
+  })
+
+  it('round-trips port designations + anchor selector WITHOUT stripping (WP1.2 ports / WP1.6b anchor)', () => {
+    // zod objects STRIP undeclared keys, so these fields must be declared in the schema or a
+    // fragment doc parsed through the save/import gate would silently lose its splice points.
+    const attachments = [
+      {
+        kind: 'entry',
+        checkpoint: 'context-ready',
+        mode: 'inline',
+        entryPort: { node: 'a', port: 'gen' },
+        outPort: { node: 'a', port: 'gen' }
+      },
+      {
+        kind: 'rejoin',
+        checkpoint: 'prompt-assembly',
+        anchor: 'entries',
+        rejoinPort: { node: 'a', port: 'entries' }
+      }
+    ]
+    const r = parseWorkflowDoc(
+      JSON.parse(JSON.stringify({ ...minimal, kind: 'fragment', attachments }))
+    )
+    expect(r.ok).toBe(true)
+    if (r.ok) expect(r.doc.attachments).toEqual(attachments)
+  })
+
+  it('rejects a malformed port designation and an empty anchor selector', () => {
+    const base = { ...minimal, kind: 'fragment' }
+    expect(
+      parseWorkflowDoc({
+        ...base,
+        attachments: [
+          { kind: 'entry', checkpoint: 'context-ready', mode: 'branch', entryPort: { node: 'a' } }
+        ]
+      }).ok
+    ).toBe(false)
+    expect(
+      parseWorkflowDoc({
+        ...base,
+        attachments: [{ kind: 'rejoin', checkpoint: 'prompt-assembly', anchor: '' }]
+      }).ok
+    ).toBe(false)
+  })
+
+  it('rejects an attachment with a bad checkpoint name or bad entry mode', () => {
+    const base = { ...minimal, kind: 'fragment' }
+    expect(
+      parseWorkflowDoc({
+        ...base,
+        attachments: [{ kind: 'entry', checkpoint: 'nope', mode: 'inline' }]
+      }).ok
+    ).toBe(false)
+    expect(
+      parseWorkflowDoc({
+        ...base,
+        attachments: [{ kind: 'entry', checkpoint: 'context-ready', mode: 'sideways' }]
+      }).ok
+    ).toBe(false)
   })
 })

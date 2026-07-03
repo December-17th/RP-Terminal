@@ -1,5 +1,6 @@
 // Pure graph model for the node workflow engine (spec §4). No I/O; safe to import from
 // main, renderer, preload, and tests. See docs/superpowers/specs/2026-07-01-node-workflow-engine-design.md.
+import type { AttachmentDecl } from './attachments'
 
 export const PORT_TYPES = [
   'Messages',
@@ -62,8 +63,15 @@ export interface WorkflowDoc {
   /** Absent = 'turn' (a normal generation graph, run by runWorkflow/resolveWorkflowDoc). A
    *  'subgraph' doc is a reusable sub-graph package (sub-graph nodes v1 plan §1/§2): it's never
    *  run directly (resolveWorkflowDoc falls through past it) and skips the exactly-one-main-
-   *  output rule — it's invoked only by wrapping it in a `subgraph.call` node. */
-  kind?: 'turn' | 'subgraph'
+   *  output rule — it's invoked only by wrapping it in a `subgraph.call` node. A 'fragment' doc is
+   *  an agent pack's executable part (agent-packs plan WP1.1; spec §Runtime Model; ADR 0002/0009):
+   *  like a subgraph it is never run alone and skips the main-output rule, but it additionally
+   *  declares `attachments` — the checkpoints it enters/rejoins and any headless triggers. */
+  kind?: 'turn' | 'subgraph' | 'fragment'
+  /** Only meaningful when `kind === 'fragment'`: the attachments this fragment declares (≥1
+   *  required for a fragment; ADR 0009 — one pack, one graph, many attachments). Ignored for
+   *  'turn'/'subgraph' docs. See ./attachments.ts for the AttachmentDecl shape. */
+  attachments?: AttachmentDecl[]
 }
 
 /** Whether an output port of type `from` may connect to an input port of type `to`.
