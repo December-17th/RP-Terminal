@@ -26,20 +26,19 @@ export function useComposer({
 }: {
   onSendMessage: (text: string) => void
 }): ComposerApi {
-  const [actionInput, setActionInput] = useState('')
+  // The box text is STORE-owned (composerStore.text) so scripts can inject (`/setinput`, `/send`)
+  // and submit (`/trigger` → requestSubmit) it synchronously; this hook subscribes + edits it.
+  const actionInput = useComposerStore((s) => s.text)
+  const setActionInput = (value: string): void => useComposerStore.getState().setText(value)
   const [slashIndex, setSlashIndex] = useState(0)
   const [slashDismissed, setSlashDismissed] = useState(false)
   const actionRef = useRef<HTMLTextAreaElement>(null)
 
-  // Consume a one-shot injected input (card onboarding "set the starting prompt"), filling the box.
-  const pendingInput = useComposerStore((s) => s.pendingInput)
+  // An injection (card onboarding / /setinput / /send) focuses the box for the player.
+  const focusTick = useComposerStore((s) => s.focusTick)
   useEffect(() => {
-    if (pendingInput != null) {
-      setActionInput(pendingInput)
-      useComposerStore.getState().consumeInput()
-      requestAnimationFrame(() => actionRef.current?.focus())
-    }
-  }, [pendingInput])
+    if (focusTick > 0) requestAnimationFrame(() => actionRef.current?.focus())
+  }, [focusTick])
 
   // While the box holds just "/" + a partial command name (no space yet), show a menu
   // of matching commands above the input.
@@ -73,6 +72,17 @@ export function useComposer({
     onSendMessage(text)
     setActionInput('')
   }
+
+  // A script asked to "press the send button" (`/trigger` → composerStore.requestSubmit): run the
+  // SAME submit as the button/Enter over the current box content. `submitRef` keeps the freshest
+  // closure; store writes are synchronous, so a `/setinput x | /trigger` combo re-rendered this
+  // hook with the injected text BEFORE this effect fires.
+  const submitRef = useRef(submit)
+  submitRef.current = submit
+  const submitTick = useComposerStore((s) => s.submitTick)
+  useEffect(() => {
+    if (submitTick > 0) submitRef.current()
+  }, [submitTick])
 
   // Edit the text + reset the slash menu's transient nav state.
   const onChange = (value: string): void => {

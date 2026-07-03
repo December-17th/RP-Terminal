@@ -23,9 +23,6 @@ export interface SlashCommand {
 const registry = new Map<string, SlashCommand>()
 const builtinNames = new Set<string>()
 
-// /send-staged user text awaiting a /trigger (see the builtin definitions below).
-let stagedSend: string[] = []
-
 const profileId = (): string | null => useProfileStore.getState().activeProfile?.id ?? null
 const chatId = (): string | null => useChatStore.getState().activeChatId
 
@@ -173,25 +170,20 @@ export const initSlash = (): void => {
     return ''
   })
 
-  // ST `/send <text>` appends the text as a user message; the common combo is `/send x | /trigger`
-  // = "run a turn with x" (行动选项-style clickable options). A floor is a user+response pair here,
-  // so /send STAGES the text (mirrored into the input box for visibility) and /trigger consumes it
-  // as the turn's action — the same staging contract as shared/thRuntime's triggerSlash fallback.
-  builtin('send', 'Stage a user message: /send <text> (a following /trigger sends it)', (_args, raw) => {
-    stagedSend.push(raw)
+  // ST `/send <text>` appends the text as a user message; a floor here is a user+response pair, so
+  // the closest faithful mapping is "put it in the box" — the ubiquitous combo `/send x | /trigger`
+  // (行动选项-style clickable options) then works because /trigger IS the send button (below).
+  builtin('send', 'Put text in the action box: /send <text> (a following /trigger sends it)', (_args, raw) => {
     useComposerStore.getState().injectInput(raw)
     return ''
   })
 
-  builtin('trigger', 'Generate: /trigger (uses /send-staged text when present)', async () => {
-    const pid = profileId()
-    if (!pid) return 'no profile'
+  // /trigger = press the send button: the Composer runs its normal submit over the CURRENT box
+  // content (ST's /trigger drives the same Generate flow the send button does). Store writes are
+  // synchronous, so `/setinput x | /trigger` submits the just-injected text; an empty box no-ops.
+  builtin('trigger', 'Press send: /trigger (submits the current action-box content)', () => {
     if (useChatStore.getState().isGenerating) return 'busy'
-    if (!chatId()) return 'no active session'
-    const staged = stagedSend.join('\n')
-    stagedSend = []
-    if (staged) useComposerStore.getState().injectInput('') // consumed — clear the mirror
-    await useChatStore.getState().sendAction(pid, staged)
+    useComposerStore.getState().requestSubmit()
     return ''
   })
 

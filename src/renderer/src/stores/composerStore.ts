@@ -1,18 +1,33 @@
 import { create } from 'zustand'
 
 /**
- * One-shot chat-input injection: a card UI (e.g. the onboarding creation flow's "set the starting
- * prompt") sets `pendingInput`; the Composer consumes it on the next render, filling the action box
- * for the player to send. Decoupled from the Composer's local state so any surface can inject.
+ * The chat-input (action box) state, store-owned so any surface can drive it — the Composer edits
+ * it, and card scripts reach it through two verbs:
+ *  - `injectInput(text)` — replace the box content and focus it (`/setinput`, `/send`, the
+ *    onboarding "set the starting prompt" flow). `focusTick` bumps so the Composer focuses the box.
+ *  - `requestSubmit()` — "press the send button": `submitTick` bumps and the Composer runs its
+ *    normal submit (slash handling, pending-message display, generation) over the CURRENT box
+ *    content. This is what `/trigger` maps to — both writes are synchronous store updates, so a
+ *    `/setinput x | /trigger` combo submits the just-injected text, and a player's manual edit of
+ *    injected text is what actually gets sent.
  */
 interface ComposerState {
-  pendingInput: string | null
+  /** The action box's current content (single source of truth; the Composer subscribes). */
+  text: string
+  /** Bumped by injectInput so the Composer focuses the box after an injection. */
+  focusTick: number
+  /** Bumped by requestSubmit; the Composer consumes it by running its submit(). */
+  submitTick: number
+  setText: (text: string) => void
   injectInput: (text: string) => void
-  consumeInput: () => void
+  requestSubmit: () => void
 }
 
 export const useComposerStore = create<ComposerState>((set) => ({
-  pendingInput: null,
-  injectInput: (text) => set({ pendingInput: text }),
-  consumeInput: () => set({ pendingInput: null })
+  text: '',
+  focusTick: 0,
+  submitTick: 0,
+  setText: (text) => set({ text }),
+  injectInput: (text) => set((s) => ({ text, focusTick: s.focusTick + 1 })),
+  requestSubmit: () => set((s) => ({ submitTick: s.submitTick + 1 }))
 }))

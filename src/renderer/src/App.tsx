@@ -73,6 +73,14 @@ export default function App(): React.ReactElement {
         useComposerStore.getState().injectInput(text)
       }
     })
+    // A card panel asked to "press the send button" (/trigger): the Composer submits the current
+    // box content through its normal path. Refused mid-turn like ST.
+    const unsubSubmit = window.api.onWcvHostSubmit(({ chatId }) => {
+      const st = useChatStore.getState()
+      if (chatId === st.activeChatId && !st.isGenerating) {
+        useComposerStore.getState().requestSubmit()
+      }
+    })
     // A card panel (e.g. home "start game") changed message content via saveChat → reload the floors.
     const unsubReload = window.api.onWcvHostReload(({ chatId }) => {
       const st = useChatStore.getState()
@@ -117,6 +125,7 @@ export default function App(): React.ReactElement {
       unsubLog()
       unsubWcv()
       unsubInput()
+      unsubSubmit()
       unsubReload()
       unsubFloors()
       unsubEvents()

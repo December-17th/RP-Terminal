@@ -93,6 +93,11 @@ export interface Host {
   saveChat(chat: StMessage[]): Promise<boolean>
   reloadChat(): Promise<boolean>
   setInput(text: string): void
+  /** "Press the send button": submit the CURRENT action-box content as the player's turn — what
+   *  `/trigger` maps to (ST's /trigger drives the same Generate flow the send button does).
+   *  Optional so older Host adapters keep compiling; the runtime falls back to an empty-action
+   *  generate when absent. */
+  submitInput?(): void
   // Global (per-profile) variables — the persistent scope for triggerSlash's /setglobalvar / /getglobalvar.
   // (Local/chat vars use statData + applyVariableOps; the runtime runs the STScript interpreter itself.)
   getGlobalVars(): Promise<Record<string, any>>

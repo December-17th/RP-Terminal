@@ -239,6 +239,12 @@ export function createInlineHost(ctx: CardCtx): Host {
       return !!ok
     },
     reloadChat: async () => reloadFloors(),
+    // "Press the send button" (/trigger): the Composer submits the current box content through its
+    // normal path (slash handling, pending-message display, generation). Refused mid-turn like ST.
+    submitInput: () => {
+      if (useChatStore.getState().isGenerating) return
+      useComposerStore.getState().requestSubmit()
+    },
     setInput: (text) => {
       useComposerStore.getState().injectInput(String(text ?? ''))
     },

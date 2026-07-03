@@ -154,6 +154,12 @@ export const registerWcvIpc = (ipcMain: IpcMain): void => {
     const ctx = wcvManager.contextFor(e.sender.id)
     if (ctx) wcvManager.pushHostInput(ctx.chatId, String(text ?? ''))
   })
+  // Card → host: "press the send button" — submit the current input-box content as the player's
+  // turn (the /trigger mapping; see shared/thRuntime's triggerSlash fallback).
+  ipcMain.on('wcv-host-submit-input', (e) => {
+    const ctx = wcvManager.contextFor(e.sender.id)
+    if (ctx) wcvManager.pushHostSubmit(ctx.chatId)
+  })
 
   // Read the latest floor's message variables (stat_data) for the calling panel's session.
   ipcMain.handle('wcv-host-get-vars', (e) => {

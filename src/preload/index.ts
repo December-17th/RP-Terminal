@@ -408,6 +408,12 @@ const api = {
     ipcRenderer.on('wcv-host-input', listener)
     return () => ipcRenderer.removeListener('wcv-host-input', listener)
   },
+  // A card panel asked to "press the send button" (/trigger → submit the current box content).
+  onWcvHostSubmit: (cb: (payload: { chatId: string }) => void) => {
+    const listener = (_e: IpcRendererEvent, payload: { chatId: string }): void => cb(payload)
+    ipcRenderer.on('wcv-host-submit', listener)
+    return () => ipcRenderer.removeListener('wcv-host-submit', listener)
+  },
   // A card panel changed message content via saveChat → reload the active chat's floors.
   onWcvHostReload: (cb: (payload: { chatId: string }) => void) => {
     const listener = (_e: IpcRendererEvent, payload: { chatId: string }): void => cb(payload)
