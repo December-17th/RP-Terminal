@@ -3,7 +3,7 @@
 // so runs main-side). Pure: imports only zod + the shared types, like shared/cardZod.ts.
 import { z } from 'zod'
 import { WorkflowDoc } from './types'
-import { CHECKPOINT_IDS } from './attachments'
+import { CHECKPOINT_IDS, TRIGGER_OPS, TABLE_STATS } from './attachments'
 
 const EdgeEndSchema = z.object({ node: z.string().min(1), port: z.string().min(1) })
 
@@ -14,12 +14,48 @@ const EdgeEndSchema = z.object({ node: z.string().min(1), port: z.string().min(1
 // is a stub until WP2.1 (ADR 0003/0004) — only its `kind` discriminant exists so far.
 //
 // The optional boundary-port designations (entryPort/outPort/rejoinPort — attachments.ts
-// FragmentPortRef) and the WP1.6b anchor-lane selector MUST be declared here: zod objects STRIP
-// unknown keys on parse, so an undeclared field would silently vanish from any fragment doc
-// round-tripped through parseWorkflowDoc, leaving every attachment unspliceable at compose time.
+// FragmentPortRef), the WP1.6b anchor-lane selector, AND the WP2.1 trigger condition fields (source/
+// op/value/everyNFloors) MUST be declared here: zod objects STRIP unknown keys on parse, so an
+// undeclared field would silently vanish from any fragment doc round-tripped through parseWorkflowDoc
+// — leaving an attachment unspliceable, or (for a trigger) turning a real state condition into an
+// empty stub. Everything the model carries is declared below.
 const CheckpointIdSchema = z.enum(CHECKPOINT_IDS)
 const FragmentPortRefSchema = z.object({ node: z.string().min(1), port: z.string().min(1) })
-const AttachmentDeclSchema = z.discriminatedUnion('kind', [
+
+// A trigger's condition value: number | string | boolean (attachments.ts StateTrigger.value; op/type
+// agreement — numeric ops need a number — is validate.ts's TRIGGER_VALUE rule, not structural).
+const TriggerValueSchema = z.union([z.number(), z.string(), z.boolean()])
+
+// A tagged committed-state pointer (attachments.ts TriggerSource). `vars` carries a dot/bracket path
+// (well-formedness is validate.ts's TRIGGER_PATH rule); `table` carries a sqlName + a CLOSED stat.
+const TriggerSourceSchema = z.discriminatedUnion('scope', [
+  z.object({ scope: z.literal('vars'), path: z.string().min(1) }),
+  z.object({ scope: z.literal('table'), table: z.string().min(1), stat: z.enum(TABLE_STATS) })
+])
+
+// The three v1 trigger kinds (attachments.ts TriggerAttachment), discriminated on `trigger`. All
+// share kind:'trigger', so they form a nested union folded into the outer attachment union below.
+const TriggerAttachmentSchema = z.discriminatedUnion('trigger', [
+  z.object({
+    kind: z.literal('trigger'),
+    trigger: z.literal('state'),
+    source: TriggerSourceSchema,
+    op: z.enum(TRIGGER_OPS),
+    value: TriggerValueSchema
+  }),
+  z.object({
+    kind: z.literal('trigger'),
+    trigger: z.literal('cadence'),
+    // Structural floor: integer ≥ 1 (validate.ts re-checks as CADENCE_N for the descriptor path).
+    everyNFloors: z.number().int().min(1)
+  }),
+  z.object({ kind: z.literal('trigger'), trigger: z.literal('manual') })
+])
+
+// The outer attachment union. Entry/rejoin are discriminated cleanly on `kind`; the three trigger
+// shapes all share kind:'trigger', so the union is a plain z.union (not discriminatedUnion('kind'),
+// which forbids duplicate discriminant values) with the trigger sub-union as one arm.
+const AttachmentDeclSchema = z.union([
   z.object({
     kind: z.literal('entry'),
     checkpoint: CheckpointIdSchema,
@@ -34,7 +70,7 @@ const AttachmentDeclSchema = z.discriminatedUnion('kind', [
     // WP1.6b anchor-lane selector; lane-name validity is validate.ts's UNKNOWN_ANCHOR rule.
     anchor: z.string().min(1).optional()
   }),
-  z.object({ kind: z.literal('trigger') })
+  TriggerAttachmentSchema
 ])
 
 export const WorkflowDocSchema = z.object({

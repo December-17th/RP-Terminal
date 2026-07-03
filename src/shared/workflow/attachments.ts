@@ -95,13 +95,145 @@ export interface RejoinAttachment {
   anchor?: string
 }
 
-/** STUB (WP1.1): a trigger attaches the fragment off the main path as a headless run. Its full
- *  condition shape — state condition / cadence / manual — arrives in WP2.1 (`TriggerDecl`). See
- *  ADR 0003 (headless runs and triggers) and ADR 0004; glossary: Trigger, Headless Run. Do NOT add
- *  the condition fields here ad hoc; the grammar is a deliberate later WP. */
-export interface TriggerAttachment {
-  kind: 'trigger'
+// ── Triggers (WP2.1; ADR 0003/0004) ────────────────────────────────────────────────────────────
+//
+// A trigger attaches the fragment OFF the main path as a headless run (glossary: Headless Run): an
+// execution started by a condition rather than a player action. This is the MODEL + VALIDATION half
+// only — the evaluator and the runner are WP2.2. The three v1 trigger kinds (ADR 0004) are:
+//
+//   · state  — a declarative predicate over COMMITTED state (floor variables / table progress).
+//   · cadence — fire every N floors (sugar over a state condition on the floor count; ADR 0004).
+//   · manual  — fired by an explicit user action, no parameters.
+//
+// EVALUATION SEMANTICS (ADR 0004 — this is ABI, not a hint):
+//   · Committed state ONLY. A trigger never sees an in-flight or later-rolled-back write; it reads
+//     whatever is durably committed at the evaluation moment (ADR 0004 consequence 1).
+//   · Commit boundaries ONLY. The runtime evaluates every installed pack's trigger at exactly two
+//     moments — after a turn commits, and after a headless run commits (ADR 0004). There is NO
+//     wall-clock/reactive evaluation. A per-chain DEPTH CAP (a runtime constant, WP2.2 — not
+//     per-pack config) bounds trigger→run→trigger chains so two packs can't ping-pong forever
+//     (ADR 0004 consequence 2).
+//
+// DELIBERATELY EXCLUDED from v1 (each is an additive future ABI change, never a breaking one — a new
+// op, source scope, or trigger kind):
+//   · Wall-clock schedules ("every 10 minutes while open") — rejected by ADR 0004 (local app that is
+//     frequently closed; every motivating example is state-driven).
+//   · Arbitrary expressions / EJS / boolean composition (AND/OR of predicates) — the master plan
+//     (§Risks "The trigger predicate grammar") marks this the #1 scope-creep point: v1 is ONE
+//     comparison op over ONE source, nothing richer. A pack needing conjunction declares two trigger
+//     attachments (ADR 0009 allows several); OR-of-conditions is a future op-level change.
+//   · Path wildcards / globs / array-scans in the vars path (see the path grammar below).
+//
+// STATE-CONDITION PATH GRAMMAR (v1):
+//   A state condition names a `source` — a tagged pointer into committed state — and compares it:
+//
+//   { scope: 'vars', path }   Reads the LATEST committed floor's `variables` tree (floorService
+//     `FloorFile.variables` — src/main/services/floorService.ts:44), which includes MVU's read-only
+//     `stat_data` sub-tree plus any custom floor vars (varsNodes.ts:12-14, 68). `path` is a
+//     DOT/BRACKET path resolved by the shared bracket-aware dialect (shared/objectPath.ts `toParts`/
+//     `getPath` — the SAME parser MVU/stat_data reads use, objectPath.ts:5-21), e.g.
+//     `stat_data.世界.当前时间`, `stat_data.hp`, `flags[0].done`, `date.month`.
+//       Path rules (v1): one or more segments separated by `.`; a segment is either a bare key
+//       (any non-empty run of non-`.`/`[`/`]` chars — CJK keys are real, varsNodes.ts) or a
+//       `[index]` bracket segment (digits or a bare word, per objectPath.ts:24's `\[(\w+)\]`). NO
+//       wildcards, NO `*`, NO trailing/leading/doubled `.`, NO empty `[]`. The path must be
+//       non-empty. Validation checks WELL-FORMEDNESS, not existence (a missing path reads
+//       undefined at eval time — the evaluator's concern, WP2.2).
+//
+//   { scope: 'table', table, stat }   Reads a per-table maintenance stat from the chat-level table
+//     progress store. The stat set is CLOSED to the three numbers the store actually derives —
+//     `TableProgress` in src/main/services/tableProgressService.ts:24-31:
+//       · 'unprocessed' — floors not yet folded into the table (the "unsummarized backlog"; the
+//         motivating trigger for the flagship async-memory pack, WP2.4 — tableProgressService.ts:29,51).
+//       · 'processed'   — floors already folded in (tableProgressService.ts:26,49).
+//       · 'nextExpected'— the floor index at which the table's cadence next fires
+//         (tableProgressService.ts:28,50).
+//     `table` is the template's sqlName (the key `getProgress` returns — tableProgressService.ts:58-64).
+//     These are all NUMBERS, so table sources pair only with numeric comparisons.
+//
+// COMPARISON OPS (closed set — NO arbitrary expressions):
+//   eq, ne, gt, gte, lt, lte  — standard comparisons; `value` is number | string | boolean. Numeric
+//     ops require a numeric source/value at eval time (evaluator's concern); `eq`/`ne` also compare
+//     strings/booleans (e.g. `stat_data.season eq 'winter'`).
+//   changedBy  — a DELTA op, numeric only. It fires when `(currentValue − valueAtLastEvaluation) >=
+//     value`, i.e. the source advanced by at least `value` SINCE THIS TRIGGER WAS LAST EVALUATED.
+//     Well-defined precisely because evaluation happens only at commit boundaries (ADR 0004): the
+//     runner (WP2.2) retains the last-evaluated numeric value per (chat, pack, trigger) and diffs it
+//     on the next boundary. This is the "in-game time advanced >= 1 month" enabler (ADR 0003's
+//     world-sim example). `value` MUST be a number and the source MUST be numeric; first-ever
+//     evaluation has no prior value → the runner treats the baseline as the current value (no fire).
+
+/** The two comparison-op families over a state source. `changedBy` is delta-since-last-evaluation
+ *  (see the grammar block above); the rest are point comparisons. No arbitrary expressions v1. */
+export const TRIGGER_OPS = ['eq', 'ne', 'gt', 'gte', 'lt', 'lte', 'changedBy'] as const
+export type TriggerOp = (typeof TRIGGER_OPS)[number]
+
+/** The closed set of per-table maintenance stats a `table`-scoped source may address. Grounded in
+ *  `TableProgress` (tableProgressService.ts:24-31) — the ONLY derived per-table numbers the store
+ *  exposes. All three are numbers, so a table source pairs only with numeric comparisons. */
+export const TABLE_STATS = ['unprocessed', 'processed', 'nextExpected'] as const
+export type TableStat = (typeof TABLE_STATS)[number]
+
+/** Whether `op` is one of the v1 comparison ops (narrowing to TriggerOp). */
+export function isTriggerOp(op: string): op is TriggerOp {
+  return (TRIGGER_OPS as readonly string[]).includes(op)
 }
+
+/** Whether `stat` is one of the v1 table stats (narrowing to TableStat). */
+export function isTableStat(stat: string): stat is TableStat {
+  return (TABLE_STATS as readonly string[]).includes(stat)
+}
+
+/** Whether `path` is a WELL-FORMED v1 vars path (see the path-grammar block above). Non-empty; one
+ *  or more `.`-separated segments; each segment is a bare key (a non-empty run with no `.`/`[`/`]`)
+ *  optionally followed by one or more `[index]` bracket accessors (digits or a bare word, matching
+ *  objectPath.ts:24's `\[(\w+)\]`). NO wildcards, NO empty segments, NO empty `[]`, NO leading/
+ *  trailing/doubled `.`. This checks SHAPE only — existence is the evaluator's concern (WP2.2). */
+export function isWellFormedVarsPath(path: string): boolean {
+  if (typeof path !== 'string' || path.length === 0) return false
+  // A segment: a bare key (chars other than . [ ] *, so wildcards are rejected) then zero+ [word]
+  // accessors. Anchored, no gaps — so `a..b`, `.a`, `a.`, `a[]`, `a.*.b` all fail.
+  const segment = /^[^.[\]*]+(?:\[\w+\])*$/
+  const parts = path.split('.')
+  return parts.every((p) => segment.test(p))
+}
+
+/** A tagged pointer into committed state (see the path-grammar block above).
+ *  - `vars`: a dot/bracket path into the latest committed floor's `variables` tree (incl. stat_data).
+ *  - `table`: a closed per-table maintenance stat from the table-progress store. */
+export type TriggerSource =
+  | { scope: 'vars'; path: string }
+  | { scope: 'table'; table: string; stat: TableStat }
+
+/** A state-condition trigger: one comparison over one committed-state source. NOT composable in v1
+ *  (a fragment declares several trigger attachments for AND — ADR 0009). */
+export interface StateTrigger {
+  kind: 'trigger'
+  trigger: 'state'
+  source: TriggerSource
+  op: TriggerOp
+  value: number | string | boolean
+}
+
+/** A cadence trigger: fire every N floors (N ≥ 1 integer). Sugar over a floor-count state condition
+ *  (ADR 0004); the exact N is a System trigger param (glossary: System Setting). */
+export interface CadenceTrigger {
+  kind: 'trigger'
+  trigger: 'cadence'
+  everyNFloors: number
+}
+
+/** A manual trigger: fired by an explicit user action; no parameters. */
+export interface ManualTrigger {
+  kind: 'trigger'
+  trigger: 'manual'
+}
+
+/** A trigger attaches the fragment off the main path as a headless run (glossary: Headless Run).
+ *  Discriminated on `trigger` (state | cadence | manual). `kind: 'trigger'` keeps it inside the
+ *  AttachmentDecl union (ADR 0009); the composition layer ignores every trigger regardless of shape
+ *  (compose.ts checks only `att.kind === 'trigger'`). See ADR 0003/0004 and the grammar block above. */
+export type TriggerAttachment = StateTrigger | CadenceTrigger | ManualTrigger
 
 /** One attachment a fragment declares. A fragment may declare several (ADR 0009). */
 export type AttachmentDecl = EntryAttachment | RejoinAttachment | TriggerAttachment

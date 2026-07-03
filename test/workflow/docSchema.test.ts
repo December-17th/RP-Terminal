@@ -66,19 +66,83 @@ describe('parseWorkflowDoc', () => {
     expect(parseWorkflowDoc({ ...minimal, kind: 'bogus' }).ok).toBe(false)
   })
 
-  it('round-trips a fragment doc with attachments (entry + rejoin + trigger stub)', () => {
+  it('round-trips a fragment doc with attachments (entry + rejoin + manual trigger)', () => {
     const frag = {
       ...minimal,
       kind: 'fragment',
       attachments: [
         { kind: 'entry', checkpoint: 'context-ready', mode: 'inline' },
         { kind: 'rejoin', checkpoint: 'prompt-assembly' },
-        { kind: 'trigger' }
+        { kind: 'trigger', trigger: 'manual' }
       ]
     }
     const r = parseWorkflowDoc(JSON.parse(JSON.stringify(frag)))
     expect(r.ok).toBe(true)
     if (r.ok) expect(r.doc.attachments).toHaveLength(3)
+  })
+
+  it('round-trips all three trigger shapes WITHOUT stripping condition fields (WP2.1)', () => {
+    // zod objects strip undeclared keys — the trigger source/op/value/everyNFloors must survive.
+    const attachments = [
+      {
+        kind: 'trigger',
+        trigger: 'state',
+        source: { scope: 'vars', path: 'stat_data.月份' },
+        op: 'changedBy',
+        value: 1
+      },
+      {
+        kind: 'trigger',
+        trigger: 'state',
+        source: { scope: 'table', table: 'events', stat: 'unprocessed' },
+        op: 'gte',
+        value: 10
+      },
+      { kind: 'trigger', trigger: 'cadence', everyNFloors: 3 },
+      { kind: 'trigger', trigger: 'manual' }
+    ]
+    const r = parseWorkflowDoc(
+      JSON.parse(JSON.stringify({ ...minimal, kind: 'fragment', attachments }))
+    )
+    expect(r.ok).toBe(true)
+    if (r.ok) expect(r.doc.attachments).toEqual(attachments)
+  })
+
+  it('rejects structurally-broken triggers (unknown op, unknown stat, bad cadence, no discriminant)', () => {
+    const base = { ...minimal, kind: 'fragment' }
+    // Unknown comparison op.
+    expect(
+      parseWorkflowDoc({
+        ...base,
+        attachments: [
+          { kind: 'trigger', trigger: 'state', source: { scope: 'vars', path: 'x' }, op: 'between', value: 1 }
+        ]
+      }).ok
+    ).toBe(false)
+    // Unknown table stat.
+    expect(
+      parseWorkflowDoc({
+        ...base,
+        attachments: [
+          {
+            kind: 'trigger',
+            trigger: 'state',
+            source: { scope: 'table', table: 'events', stat: 'rowCount' },
+            op: 'gt',
+            value: 1
+          }
+        ]
+      }).ok
+    ).toBe(false)
+    // Cadence below 1.
+    expect(
+      parseWorkflowDoc({
+        ...base,
+        attachments: [{ kind: 'trigger', trigger: 'cadence', everyNFloors: 0 }]
+      }).ok
+    ).toBe(false)
+    // Missing `trigger` discriminant (the old stub shape is no longer valid).
+    expect(parseWorkflowDoc({ ...base, attachments: [{ kind: 'trigger' }] }).ok).toBe(false)
   })
 
   it('round-trips port designations + anchor selector WITHOUT stripping (WP1.2 ports / WP1.6b anchor)', () => {

@@ -1,7 +1,14 @@
 import { WorkflowDoc, NodeDescriptor, NodeInstance, PortType, portCompatible } from './types'
 import { topoOrder, GraphCycleError } from './graph'
 import { CHECKPOINTS, resolveAnchorLane } from './checkpoints'
-import { isCheckpointId, AttachmentDecl } from './attachments'
+import {
+  isCheckpointId,
+  isTriggerOp,
+  isTableStat,
+  isWellFormedVarsPath,
+  AttachmentDecl,
+  TriggerAttachment
+} from './attachments'
 
 export interface ValidationError {
   code: string
@@ -174,7 +181,11 @@ export function validateWorkflow(
  *     value type is enforced at composition time, WP1.2).
  *  4. A rejoin's anchor-lane SELECTOR (WP1.6b), when present, must name one of the checkpoint's
  *     anchor ports (checkpoints.ts CheckpointSpec.anchors — UNKNOWN_ANCHOR otherwise). Absent =
- *     the default lane, always valid. */
+ *     the default lane, always valid.
+ *  5. A TRIGGER attachment (WP2.1; ADR 0003/0004) is validated by `validateTrigger` below —
+ *     state-condition path/op/source, cadence N ≥ 1 integer, manual (no params). Triggers carry no
+ *     checkpoint (they attach OFF the main path), so they skip the checkpoint rules 2–4. A fragment
+ *     with ONLY trigger attachments is valid (a pure headless pack — glossary: Headless Run). */
 function validateFragmentAttachments(
   doc: WorkflowDoc,
   descriptors: Map<string, NodeDescriptor>,
@@ -195,7 +206,10 @@ function validateFragmentAttachments(
     for (const p of descriptors.get(n.type)?.outputs ?? []) producibleTypes.add(p.type)
 
   for (const att of attachments) {
-    if (att.kind === 'trigger') continue // stub; condition shape validated in WP2.1
+    if (att.kind === 'trigger') {
+      validateTrigger(att, errors)
+      continue
+    }
 
     if (!isCheckpointId(att.checkpoint)) {
       errors.push({
@@ -224,4 +238,87 @@ function validateFragmentAttachments(
         })
     }
   }
+}
+
+/** Validate ONE trigger attachment (WP2.1; ADR 0003/0004). Appends to `errors`. The grammar is
+ *  documented in attachments.ts's header; the rules enforced here:
+ *   - `state`: `source` must be a well-formed pointer (a non-empty `vars` path — TRIGGER_PATH; a
+ *     `table` source with a known stat — the discriminated-union type + docSchema already close the
+ *     stat set, so an out-of-set stat can only arrive from a hand-authored/cast doc), `op` must be
+ *     from the closed set (TRIGGER_OP), and `value` must be a primitive of the right kind for the op
+ *     (numeric for gt/gte/lt/lte/changedBy — TRIGGER_VALUE).
+ *   - `cadence`: `everyNFloors` must be an integer ≥ 1 (CADENCE_N).
+ *   - `manual`: no parameters — always valid.
+ *  An unknown `trigger` discriminant (only reachable from a cast/hand-authored doc; the type + zod
+ *  both close it) is UNKNOWN_TRIGGER. */
+function validateTrigger(att: TriggerAttachment, errors: ValidationError[]): void {
+  const kind = (att as { trigger?: unknown }).trigger
+  if (kind === 'manual') return
+
+  if (kind === 'cadence') {
+    const n = (att as { everyNFloors?: unknown }).everyNFloors
+    if (typeof n !== 'number' || !Number.isInteger(n) || n < 1)
+      errors.push({
+        code: 'CADENCE_N',
+        message: `cadence trigger everyNFloors must be an integer ≥ 1, got ${JSON.stringify(n)}`
+      })
+    return
+  }
+
+  if (kind === 'state') {
+    const src = (att as { source?: unknown }).source as
+      | { scope?: unknown; path?: unknown; stat?: unknown }
+      | undefined
+    if (!src || typeof src !== 'object') {
+      errors.push({ code: 'TRIGGER_SOURCE', message: 'state trigger needs a source' })
+    } else if (src.scope === 'vars') {
+      if (typeof src.path !== 'string' || !isWellFormedVarsPath(src.path))
+        errors.push({
+          code: 'TRIGGER_PATH',
+          message: `state trigger vars path is empty or malformed: ${JSON.stringify(src.path)}`
+        })
+    } else if (src.scope === 'table') {
+      // The TableStat set is closed by the type + docSchema; guard the cast/hand-authored path.
+      if (!isTableStat(String(src.stat)))
+        errors.push({
+          code: 'TRIGGER_SOURCE',
+          message: `state trigger table stat is unknown: ${JSON.stringify(src.stat)}`
+        })
+    } else {
+      errors.push({
+        code: 'TRIGGER_SOURCE',
+        message: `state trigger has an unknown source scope: ${JSON.stringify(src.scope)}`
+      })
+    }
+
+    const op = (att as { op?: unknown }).op
+    if (typeof op !== 'string' || !isTriggerOp(op)) {
+      errors.push({
+        code: 'TRIGGER_OP',
+        message: `state trigger op must be one of eq/ne/gt/gte/lt/lte/changedBy, got ${JSON.stringify(op)}`
+      })
+    } else {
+      // Numeric ops (ordered comparisons + the changedBy delta) require a numeric literal value.
+      const numericOp = op === 'gt' || op === 'gte' || op === 'lt' || op === 'lte' || op === 'changedBy'
+      const value = (att as { value?: unknown }).value
+      const valueOk =
+        typeof value === 'number' || typeof value === 'string' || typeof value === 'boolean'
+      if (!valueOk)
+        errors.push({
+          code: 'TRIGGER_VALUE',
+          message: `state trigger value must be a number, string, or boolean, got ${JSON.stringify(value)}`
+        })
+      else if (numericOp && typeof value !== 'number')
+        errors.push({
+          code: 'TRIGGER_VALUE',
+          message: `state trigger op "${op}" needs a numeric value, got ${JSON.stringify(value)}`
+        })
+    }
+    return
+  }
+
+  errors.push({
+    code: 'UNKNOWN_TRIGGER',
+    message: `trigger attachment has an unknown kind: ${JSON.stringify(kind)}`
+  })
 }

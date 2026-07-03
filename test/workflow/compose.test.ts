@@ -296,7 +296,7 @@ describe('composeEffectiveGraph — multi-attachment fragment (ADR 0009)', () =>
         [
           { kind: 'entry', checkpoint: 'context-ready', mode: 'branch', entryPort: { node: 'blk', port: 'gen' } },
           { kind: 'rejoin', checkpoint: 'prompt-assembly', rejoinPort: { node: 'blk', port: 'text' } },
-          { kind: 'trigger' }
+          { kind: 'trigger', trigger: 'manual' }
         ]
       )
     )
@@ -333,7 +333,7 @@ describe('composeEffectiveGraph — denial (closedEntryIndexes)', () => {
         [
           { kind: 'entry', checkpoint: 'context-ready', mode: 'branch', entryPort: { node: 'aIn', port: 'gen' } },
           { kind: 'rejoin', checkpoint: 'prompt-assembly', rejoinPort: { node: 'aOut', port: 'text' } },
-          { kind: 'trigger' },
+          { kind: 'trigger', trigger: 'manual' },
           { kind: 'entry', checkpoint: 'reply-parsed', mode: 'branch', entryPort: { node: 'bIn', port: 'gen' } }
         ]
       ),

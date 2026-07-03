@@ -61,16 +61,224 @@ describe('validateWorkflow — fragment docs (agent-packs plan WP1.1; ADR 0002/0
     expect(r).toEqual({ ok: true })
   })
 
-  it('accepts a valid multi-attachment fragment (entry + rejoin + trigger stub)', () => {
+  it('accepts a valid multi-attachment fragment (entry + rejoin + manual trigger)', () => {
     const r = validateWorkflow(
       fragment([
         { kind: 'entry', checkpoint: 'context-ready', mode: 'branch' },
         { kind: 'rejoin', checkpoint: 'prompt-assembly' },
-        { kind: 'trigger' }
+        { kind: 'trigger', trigger: 'manual' }
       ]),
       descriptors
     )
     expect(r).toEqual({ ok: true })
+  })
+
+  // ── Triggers (WP2.1; ADR 0003/0004) ──────────────────────────────────────────────────────────
+
+  it('accepts a state-condition trigger over a vars path (gt)', () => {
+    const r = validateWorkflow(
+      fragment([
+        {
+          kind: 'trigger',
+          trigger: 'state',
+          source: { scope: 'vars', path: 'stat_data.世界.当前时间' },
+          op: 'gt',
+          value: 10
+        }
+      ]),
+      descriptors
+    )
+    expect(r).toEqual({ ok: true })
+  })
+
+  it('accepts a state-condition trigger over a table stat (unprocessed backlog)', () => {
+    const r = validateWorkflow(
+      fragment([
+        {
+          kind: 'trigger',
+          trigger: 'state',
+          source: { scope: 'table', table: 'events', stat: 'unprocessed' },
+          op: 'gte',
+          value: 10
+        }
+      ]),
+      descriptors
+    )
+    expect(r).toEqual({ ok: true })
+  })
+
+  it('accepts a string-eq state condition and a changedBy delta condition', () => {
+    expect(
+      validateWorkflow(
+        fragment([
+          {
+            kind: 'trigger',
+            trigger: 'state',
+            source: { scope: 'vars', path: 'season' },
+            op: 'eq',
+            value: 'winter'
+          }
+        ]),
+        descriptors
+      )
+    ).toEqual({ ok: true })
+    expect(
+      validateWorkflow(
+        fragment([
+          {
+            kind: 'trigger',
+            trigger: 'state',
+            source: { scope: 'vars', path: 'stat_data.月份' },
+            op: 'changedBy',
+            value: 1
+          }
+        ]),
+        descriptors
+      )
+    ).toEqual({ ok: true })
+  })
+
+  it('accepts a cadence trigger (everyNFloors ≥ 1)', () => {
+    expect(
+      validateWorkflow(fragment([{ kind: 'trigger', trigger: 'cadence', everyNFloors: 3 }]), descriptors)
+    ).toEqual({ ok: true })
+  })
+
+  it('accepts a trigger-ONLY fragment (a pure headless pack)', () => {
+    const r = validateWorkflow(
+      fragment([{ kind: 'trigger', trigger: 'manual' }]),
+      descriptors
+    )
+    expect(r).toEqual({ ok: true })
+  })
+
+  it('accepts the flagship shape: entry + rejoin + headless state trigger', () => {
+    // A branch reader at context-ready (the textNode produces Text, not Context, so inline would
+    // fail INLINE_TYPE — irrelevant here; the point is trigger + entry + rejoin coexisting), a
+    // placement-carrying rejoin, and a headless backlog trigger — the WP2.4-flagship attachment set.
+    const r = validateWorkflow(
+      fragment([
+        { kind: 'entry', checkpoint: 'context-ready', mode: 'branch' },
+        { kind: 'rejoin', checkpoint: 'prompt-assembly', anchor: 'entries' },
+        {
+          kind: 'trigger',
+          trigger: 'state',
+          source: { scope: 'table', table: 'events', stat: 'unprocessed' },
+          op: 'gt',
+          value: 20
+        }
+      ]),
+      descriptors
+    )
+    expect(r).toEqual({ ok: true })
+  })
+
+  it('rejects an unknown comparison op (TRIGGER_OP)', () => {
+    const r = validateWorkflow(
+      fragment([
+        {
+          kind: 'trigger',
+          trigger: 'state',
+          source: { scope: 'vars', path: 'hp' },
+          op: 'between',
+          value: 5
+        } as unknown as AttachmentDecl
+      ]),
+      descriptors
+    )
+    expect(codes(r)).toContain('TRIGGER_OP')
+  })
+
+  it('rejects an empty vars path (TRIGGER_PATH)', () => {
+    const r = validateWorkflow(
+      fragment([
+        {
+          kind: 'trigger',
+          trigger: 'state',
+          source: { scope: 'vars', path: '' },
+          op: 'gt',
+          value: 1
+        } as unknown as AttachmentDecl
+      ]),
+      descriptors
+    )
+    expect(codes(r)).toContain('TRIGGER_PATH')
+  })
+
+  it('rejects a malformed vars path — wildcard, doubled dot, empty bracket (TRIGGER_PATH)', () => {
+    for (const path of ['a.*.b', 'a..b', 'a[]', '.a', 'a.']) {
+      const r = validateWorkflow(
+        fragment([
+          {
+            kind: 'trigger',
+            trigger: 'state',
+            source: { scope: 'vars', path },
+            op: 'gt',
+            value: 1
+          } as unknown as AttachmentDecl
+        ]),
+        descriptors
+      )
+      expect(codes(r), `path ${JSON.stringify(path)}`).toContain('TRIGGER_PATH')
+    }
+  })
+
+  it('rejects an unknown source scope (TRIGGER_SOURCE)', () => {
+    const r = validateWorkflow(
+      fragment([
+        {
+          kind: 'trigger',
+          trigger: 'state',
+          source: { scope: 'lorebook', path: 'x' },
+          op: 'gt',
+          value: 1
+        } as unknown as AttachmentDecl
+      ]),
+      descriptors
+    )
+    expect(codes(r)).toContain('TRIGGER_SOURCE')
+  })
+
+  it('rejects an unknown table stat (TRIGGER_SOURCE)', () => {
+    const r = validateWorkflow(
+      fragment([
+        {
+          kind: 'trigger',
+          trigger: 'state',
+          source: { scope: 'table', table: 'events', stat: 'rowCount' },
+          op: 'gt',
+          value: 1
+        } as unknown as AttachmentDecl
+      ]),
+      descriptors
+    )
+    expect(codes(r)).toContain('TRIGGER_SOURCE')
+  })
+
+  it('rejects a non-numeric value on a numeric op (TRIGGER_VALUE)', () => {
+    const r = validateWorkflow(
+      fragment([
+        {
+          kind: 'trigger',
+          trigger: 'state',
+          source: { scope: 'vars', path: 'hp' },
+          op: 'gte',
+          value: 'lots'
+        } as unknown as AttachmentDecl
+      ]),
+      descriptors
+    )
+    expect(codes(r)).toContain('TRIGGER_VALUE')
+  })
+
+  it('rejects cadence everyNFloors of 0, negative, and non-integer (CADENCE_N)', () => {
+    for (const n of [0, -1, 2.5]) {
+      const r = validateWorkflow(
+        fragment([{ kind: 'trigger', trigger: 'cadence', everyNFloors: n } as unknown as AttachmentDecl]),
+        descriptors
+      )
+      expect(codes(r), `everyNFloors ${n}`).toContain('CADENCE_N')
+    }
   })
 
   it('rejects a fragment with zero attachments (NO_ATTACHMENT)', () => {
