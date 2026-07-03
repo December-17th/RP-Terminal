@@ -162,6 +162,14 @@ const api = {
     ipcRenderer.invoke('agent-pack-clear-override', packId, scope, settingId),
   resolveAgentPackOverrides: (packId: string, worldId: string | null, chatId: string | null) =>
     ipcRenderer.invoke('agent-pack-resolve-overrides', packId, worldId, chatId),
+  // The detail panel's settings model (agent-packs plan WP3.2): creator-exposed + auto-derived System
+  // trigger params, each with its resolved value + provenance. Null when the pack isn't installed.
+  getAgentPackSettings: (
+    profileId: string,
+    packId: string,
+    worldId: string | null,
+    chatId: string | null
+  ) => ipcRenderer.invoke('agent-pack-settings', profileId, packId, worldId, chatId),
   // Persisted workflow run history for the Runs timeline (agent-packs plan WP2.3). Returns records
   // newest-first; page backward by passing the smallest seq of the previous page as `beforeSeq`.
   listAgentPackRuns: (

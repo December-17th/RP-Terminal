@@ -1007,7 +1007,41 @@ const en: Record<string, string> = {
   'agents.cascade.body':
     'This pack shapes how your prompt is built. Turning it off changes how prompts are assembled — your replies keep working, but this pack will no longer trim or shape them.',
   'agents.cascade.cancel': 'Keep it on',
-  'agents.cascade.confirm': 'Turn it off'
+  'agents.cascade.confirm': 'Turn it off',
+  // ── Pack detail panel — tiered settings with provenance (agent-packs plan WP3.2) ─────────────────
+  'agents.settings.open': 'Settings',
+  'agents.settings.close': 'Close settings',
+  'agents.settings.loadError': "Couldn't load this pack's settings.",
+  'agents.settings.notInstalled': 'This pack is no longer installed.',
+  // Scope switcher (writes target this scope)
+  'agents.settings.scopeLabel': 'Apply changes to',
+  'agents.settings.scopeWorld': 'This world',
+  'agents.settings.scopeChat': 'This chat',
+  'agents.settings.scopeChatDisabled': 'Open a chat to set a per-chat value',
+  // Groups
+  'agents.settings.systemGroup': 'System',
+  'agents.settings.packGroup': 'Pack settings',
+  'agents.settings.advancedGroup': 'Advanced',
+  'agents.settings.systemMoreComing':
+    'More system controls (token budget, retries, model preset) are coming — they need engine support that isn’t built yet.',
+  // System trigger-param labels (auto-derived from the pack's triggers)
+  'agents.settings.sys.triggerValue': 'Trigger threshold',
+  'agents.settings.sys.cadence': 'Run every N floors',
+  'agents.settings.sys.watchedTable': 'Watched table',
+  // Provenance chips
+  'agents.settings.prov.default': 'Default',
+  'agents.settings.prov.global': 'All worlds',
+  'agents.settings.prov.world': 'This world',
+  'agents.settings.prov.chat': 'This chat',
+  'agents.settings.provTitle': 'Where this value comes from',
+  // Reset
+  'agents.settings.reset': 'Reset',
+  'agents.settings.resetTitle': 'Clear this override (reveals the next scope down, then the default)',
+  'agents.settings.writeError': "Couldn't save that change.",
+  // Advanced
+  'agents.settings.openStudio': 'Open in Workflow Studio',
+  'agents.settings.forkNote':
+    'Editing a pack’s graph in Workflow Studio makes a copy for this world — the original stays untouched.'
 }
 
 export default en

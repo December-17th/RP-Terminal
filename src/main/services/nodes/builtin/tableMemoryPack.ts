@@ -236,7 +236,27 @@ export const buildTableMemoryPack = (): AgentPackRecord => ({
     creator: 'RP Terminal',
     description:
       "Projects your chat's memory tables into the prompt and updates them after each reply via a " +
-      'side model call. The built-in table-memory system, packaged as an agent pack.'
+      'side model call. The built-in table-memory system, packaged as an agent pack.',
+    // ── Creator-exposed settings (agent-packs plan WP3.2) ────────────────────────────────────────
+    // This pack has NO trigger (it maintains every turn via context-ready/turn-committed entries), so
+    // it auto-exposes no System trigger params. Its one meaningful knob is the maintenance GATE
+    // cadence — how many floors between side-model maintenance passes (table.gate config.every,
+    // grounded at tableNodes.ts; default 3, verbatim from the reference .rptflow). Materialization
+    // writes the resolved value into the `gate` node's config.every.
+    exposedSettings: [
+      {
+        id: 'maintenance.every',
+        label: {
+          en: 'Maintenance cadence (every N floors)',
+          zh: '维护频率（每 N 层）'
+        },
+        type: 'number',
+        default: 3,
+        min: 1,
+        max: 20,
+        target: { nodeId: 'gate', path: 'every' }
+      }
+    ]
   },
   fragment: TABLE_MEMORY_FRAGMENT
 })

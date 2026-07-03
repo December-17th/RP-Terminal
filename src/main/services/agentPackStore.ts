@@ -23,15 +23,41 @@ import { deriveCapabilities, CapabilityId } from '../../shared/workflow/capabili
 
 // ── Types ──────────────────────────────────────────────────────────────────────────────────────
 
-/** Minimal v0 manifest (agent-packs plan WP1.4 — "schema can be a minimal v0 type for now"). The
- *  full exposed-setting schema is a later WP; this pins only what the list/settings read side needs.
- *  `exposedSettings` maps a stable setting id → its default value shape (unknown until Phase 4). */
+/** A creator-exposed setting (agent-packs plan WP3.2; rev-3 spec §Exposed Settings). Each has a
+ *  STABLE `id` — the override key that survives pack upgrades (the override boundary rule: anything
+ *  with a stable manifest id is override territory, not fork territory). Materialization writes the
+ *  resolved override value into `target.nodeId`'s config at `target.path` (a dot/bracket path
+ *  RELATIVE to that node's `config` object — e.g. `every` → node.config.every). Shared-safe (crosses
+ *  IPC as JSON): plain data, no functions.
+ *
+ *  `label` is a plain string OR a per-locale map (`{ en, zh }`) — the renderer picks the active
+ *  locale (falling back to `en`, then any value). Numeric settings may pin `min`/`max` (materialize
+ *  clamps); enum settings pin `options` (the allowed string values). */
+export interface ExposedSetting {
+  id: string
+  label: string | Record<string, string>
+  type: 'number' | 'string' | 'boolean' | 'enum'
+  default: unknown
+  min?: number
+  max?: number
+  /** enum only: the allowed string values (the select's options). */
+  options?: string[]
+  /** Where the resolved value lands: a node id in the fragment + a dot/bracket path INTO that node's
+   *  `config` object (materialize wraps it as `config.<path>`). Unknown node/path → skip + log. */
+  target: { nodeId: string; path: string }
+}
+
+/** Minimal v0 manifest (agent-packs plan WP1.4), extended in WP3.2 with `exposedSettings`. The
+ *  list/settings read side + materialization consume it. */
 export interface PackManifest {
   name: string
   description?: string
   creator?: string
-  /** Stable-id → default value. Overrides layer on top of these (resolveOverrides). */
-  exposedSettings?: Record<string, unknown>
+  /** Creator-exposed settings (WP3.2). Each carries its own stable id, type, default, and target
+   *  node/path; materialization applies resolved overrides to the fragment before it runs/composes.
+   *  Absent/empty = the pack exposes no creator settings (its System trigger params are still
+   *  auto-derived from its trigger attachments — see agentPackMaterialize.deriveSystemSettings). */
+  exposedSettings?: ExposedSetting[]
   /** Fork provenance (ADR 0006; agent-packs plan WP3.6a). Present ONLY on fork entries. Stored in
    *  STRUCTURED, LOCALE-NEUTRAL form so the UI localizes the word "fork": `base` is the source's
    *  display name (or its own `fork.base` when forking a fork — the chain flattens to the root name),
@@ -177,6 +203,69 @@ export const layerOverrides = (
   // Apply in ascending tier order so the nearest scope overwrites last (wins).
   for (const r of [...rows].filter((r) => tier(r.scope) >= 0).sort((a, b) => tier(a.scope) - tier(b.scope))) {
     out[r.settingId] = r.value
+  }
+  return out
+}
+
+/** The scope an override's resolved value came FROM — the provenance chip (agent-packs plan WP3.2;
+ *  mirrors ADR 0005's three tiers). `default` = no override at any applicable tier (the setting's
+ *  built-in default is in effect). */
+export type Provenance = 'default' | 'global' | 'world' | 'chat'
+
+/** One setting's resolved override with its winning scope (nearest-wins), for the settings UI's
+ *  provenance chip + reset-to-default. `value` is undefined + `provenance:'default'` when no override
+ *  applies. `worldValue`/`chatValue` expose the per-scope raw overrides (present only when set) so the
+ *  UI can show "clearing chat reveals world" without re-deriving client-side. */
+export interface ResolvedOverride {
+  value: unknown
+  provenance: Provenance
+  /** The raw override value at global scope, if one exists (undefined otherwise). */
+  globalValue?: unknown
+  /** The raw override value at the world scope, if one exists. */
+  worldValue?: unknown
+  /** The raw override value at the chat scope, if one exists. */
+  chatValue?: unknown
+}
+
+/** Nearest-scope-wins resolution WITH provenance (agent-packs plan WP3.2). Same tier order as
+ *  layerOverrides (global < world < chat) but returns, per setting id, the winning value AND the scope
+ *  it came from, plus each applicable scope's raw value. The UI reads this for the provenance chip and
+ *  to show what a reset-to-default would reveal (clearing chat → world → global → default). Pure. */
+export const layerOverridesWithProvenance = (
+  rows: OverrideRow[],
+  worldId: string | null,
+  chatId: string | null
+): Record<string, ResolvedOverride> => {
+  const out: Record<string, ResolvedOverride> = {}
+  const ensure = (id: string): ResolvedOverride =>
+    (out[id] ??= { value: undefined, provenance: 'default' })
+  for (const r of rows) {
+    if (r.scope === 'global') {
+      const e = ensure(r.settingId)
+      e.globalValue = r.value
+    } else if (worldId != null && r.scope === `world:${worldId}`) {
+      const e = ensure(r.settingId)
+      e.worldValue = r.value
+    } else if (chatId != null && r.scope === `chat:${chatId}`) {
+      const e = ensure(r.settingId)
+      e.chatValue = r.value
+    }
+    // scopes for OTHER worlds/chats are ignored (not in this resolution path).
+  }
+  // Resolve nearest-wins per setting: chat > world > global > default.
+  for (const e of Object.values(out)) {
+    if ('chatValue' in e && e.chatValue !== undefined) {
+      e.value = e.chatValue
+      e.provenance = 'chat'
+    } else if ('worldValue' in e && e.worldValue !== undefined) {
+      e.value = e.worldValue
+      e.provenance = 'world'
+    } else if ('globalValue' in e && e.globalValue !== undefined) {
+      e.value = e.globalValue
+      e.provenance = 'global'
+    } else {
+      e.provenance = 'default'
+    }
   }
   return out
 }

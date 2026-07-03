@@ -20,6 +20,7 @@ import { setEnabledFragmentsProvider, resolveEffectiveDoc, validateWorkflowDoc }
 import { getChat } from './chatService'
 import { log } from './logService'
 import { BUILTIN_PACKS } from './nodes/builtin/tableMemoryPack'
+import { materializeFragment, deriveSystemSettings, SystemSetting } from './agentPackMaterialize'
 import { WorkflowDoc } from '../../shared/workflow/types'
 import {
   AgentPackRecord,
@@ -39,6 +40,8 @@ import {
   upsertOverride,
   deleteOverride,
   layerOverrides,
+  layerOverridesWithProvenance,
+  ResolvedOverride,
   insertActivationRow,
   deleteActivationForWorld,
   insertOverrideRow,
@@ -298,9 +301,11 @@ export const getGate = (
 
 // ── Overrides ─────────────────────────────────────────────────────────────────────────────────
 //
-// v0 NOTE: overrides are stored + resolved here but NOT yet applied to fragment docs. The
-// override → fragment-doc materialization (feeding a resolved value into an exposed-setting node
-// field) is a deliberately-later WP; do not build it here.
+// WP3.2: overrides are stored + resolved here AND applied to fragment docs. The override →
+// fragment-doc materialization (agentPackMaterialize.materializeFragment) runs inside
+// enabledFragmentsFor (the turn + headless composition provider), so a resolved exposed-setting or
+// System trigger param takes real effect. resolveOverridesWithProvenance (below) is the settings-UI
+// read side: it reports not just the resolved value but WHICH scope it came from (the provenance chip).
 
 export const setOverride = (
   packId: string,
@@ -322,6 +327,105 @@ export const resolveOverrides = (
   worldId: string | null,
   chatId: string | null
 ): Record<string, unknown> => layerOverrides(listOverrideRows(packId), worldId, chatId)
+
+/** Resolve overrides WITH provenance (agent-packs plan WP3.2): per setting id, the winning value + the
+ *  scope it came from + each scope's raw value. The detail panel reads this for the provenance chip and
+ *  reset-to-default (clearing chat reveals world). Nearest-scope-wins, same as resolveOverrides. */
+export const resolveOverridesWithProvenance = (
+  packId: string,
+  worldId: string | null,
+  chatId: string | null
+): Record<string, ResolvedOverride> =>
+  layerOverridesWithProvenance(listOverrideRows(packId), worldId, chatId)
+
+// ── Settings schema for the detail panel (agent-packs plan WP3.2) ────────────────────────────────
+//
+// The detail panel needs, per pack: the CREATOR-exposed settings (manifest.exposedSettings), the
+// AUTO-DERIVED System trigger params (deriveSystemSettings over the fragment), and — for the pack
+// being viewed in a (world, chat) — each setting's RESOLVED value + provenance. We assemble it here so
+// the renderer is a pure consumer of typed IPC (never re-derives from the fragment blob, which stays
+// main-side). `hasTriggers` lets the renderer decide whether to show the System group at all.
+
+/** One setting the detail panel renders (schema + resolved state). `kind` splits creator-exposed
+ *  ('pack') from auto-derived System trigger params ('system'); the renderer groups on it. */
+export interface PackSettingView {
+  id: string
+  kind: 'pack' | 'system'
+  /** Creator label (string | per-locale map) for a pack setting; a labelKind token for a system one. */
+  label?: string | Record<string, string>
+  labelKind?: SystemSetting['labelKind']
+  /** The control type. Pack: the ExposedSetting.type; System: derived from the trigger literal. */
+  type: 'number' | 'string' | 'boolean' | 'enum'
+  default: unknown
+  min?: number
+  max?: number
+  options?: string[]
+  /** The currently-resolved value (override or default) + which scope it came from (provenance chip). */
+  resolved: ResolvedOverride
+}
+
+export interface PackSettingsResult {
+  packId: string
+  hasTriggers: boolean
+  /** Creator-exposed settings (rendered in the "Pack settings" group; empty → group hidden). */
+  packSettings: PackSettingView[]
+  /** Auto-derived System trigger params (rendered in the "System" group; only present when the pack
+   *  has non-manual triggers). */
+  systemSettings: PackSettingView[]
+}
+
+/** Assemble the detail panel's settings model for a pack in a (world, chat) — creator-exposed +
+ *  auto-derived System trigger params, each with its resolved value + provenance (agent-packs plan
+ *  WP3.2). Returns null when the pack is not installed. Reads the fragment main-side only. */
+export const getPackSettings = (
+  profileId: string,
+  packId: string,
+  worldId: string | null,
+  chatId: string | null
+): PackSettingsResult | null => {
+  seedBuiltinPacks(profileId)
+  const pack = getPackRecord(profileId, packId)
+  if (!pack) return null
+  const prov = layerOverridesWithProvenance(listOverrideRows(packId), worldId, chatId)
+  const resolvedFor = (id: string, dflt: unknown): ResolvedOverride =>
+    prov[id] ?? { value: dflt, provenance: 'default' }
+
+  const packSettings: PackSettingView[] = (pack.manifest.exposedSettings ?? []).map((s) => {
+    const r = resolvedFor(s.id, s.default)
+    // When no override applies, surface the schema default as the effective value (the control needs it).
+    const resolved: ResolvedOverride =
+      r.provenance === 'default' ? { ...r, value: s.default } : r
+    return {
+      id: s.id,
+      kind: 'pack',
+      label: s.label,
+      type: s.type,
+      default: s.default,
+      ...(s.min != null ? { min: s.min } : {}),
+      ...(s.max != null ? { max: s.max } : {}),
+      ...(s.options ? { options: s.options } : {}),
+      resolved
+    }
+  })
+
+  const system = deriveSystemSettings(pack.fragment)
+  const systemSettings: PackSettingView[] = system.map((s) => {
+    const r = resolvedFor(s.id, s.defaultValue)
+    const resolved: ResolvedOverride =
+      r.provenance === 'default' ? { ...r, value: s.defaultValue } : r
+    return {
+      id: s.id,
+      kind: 'system',
+      labelKind: s.labelKind,
+      type: s.valueType, // number | string | boolean (System params never enum in v1)
+      default: s.defaultValue,
+      ...(s.labelKind === 'trigger-cadence' ? { min: 1 } : {}),
+      resolved
+    }
+  })
+
+  return { packId, hasTriggers: system.length > 0, packSettings, systemSettings }
+}
 
 // ── Enabled fragments (the WP1.3 composition provider) ────────────────────────────────────────
 
@@ -355,9 +459,17 @@ export const enabledFragmentsFor = (profileId: string, chatId: string): ComposeF
     const { open, denial } = resolveGate(listActivationRows(pack.id), worldId, chatId)
     if (!open) continue
     seen.add(pack.id)
+    // MATERIALIZE (agent-packs plan WP3.2): apply this (world, chat)'s resolved overrides to the
+    // fragment BEFORE it enters composition (compose.ts consumes doc as-is) — so exposed-setting
+    // node config + System trigger params take real effect on the turn path. materializeFragment is
+    // pure + deep-clones; with no overrides it deep-equals pack.fragment (zero behavior change).
+    // The HEADLESS path inherits this automatically: evaluatePass/runHeadless/runManual all read the
+    // ComposeFragment.doc this returns, so both call sites route through one materialization.
+    const overrides = layerOverrides(listOverrideRows(pack.id), worldId, chatId)
+    const doc = materializeFragment(pack, overrides)
     fragments.push({
       packId: pack.id,
-      doc: pack.fragment,
+      doc,
       gateOpen: true,
       ...(denial.length ? { closedEntryIndexes: denial } : {})
     })

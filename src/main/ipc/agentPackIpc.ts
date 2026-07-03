@@ -39,6 +39,14 @@ export const registerAgentPackIpc = (ipcMain: IpcMain): void => {
     (_, packId: string, worldId: string | null, chatId: string | null) =>
       agentPackService.resolveOverrides(packId, worldId, chatId)
   )
+  // The detail panel's settings model (agent-packs plan WP3.2): creator-exposed + auto-derived System
+  // trigger params, each with its resolved value + provenance (the chip). Assembled main-side so the
+  // renderer never re-derives from the fragment blob. Null when the pack is not installed.
+  ipcMain.handle(
+    'agent-pack-settings',
+    (_, profileId: string, packId: string, worldId: string | null, chatId: string | null) =>
+      agentPackService.getPackSettings(profileId, packId, worldId, chatId)
+  )
   // Persisted run history for the phase-3 Runs timeline (agent-packs plan WP2.3). Newest-first,
   // cursor-paged via `beforeSeq` (pass the smallest seq of the previous page for the next page).
   ipcMain.handle(

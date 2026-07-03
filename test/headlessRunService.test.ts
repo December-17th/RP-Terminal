@@ -87,6 +87,7 @@ const mockGenContext = vi.hoisted(() => ({
 vi.mock('../src/main/services/generation/genContext', () => mockGenContext)
 
 import { evaluateTriggers, runManual, HEADLESS_DEPTH_CAP } from '../src/main/services/headlessRunService'
+import { materializeFragment, sysTriggerKey } from '../src/main/services/agentPackMaterialize'
 
 // ── Fragment builders ──────────────────────────────────────────────────────────────────────────
 
@@ -174,6 +175,57 @@ describe('state trigger', () => {
     ])
     mockAgentPack.enabledFragmentsFor.mockReturnValue([frag('p1', doc)])
 
+    await evaluateTriggers('prof', 'c1', 'turn', 0)
+    expect(mockFloor.saveFloor).toHaveBeenCalled()
+  })
+})
+
+// ── MATERIALIZATION on the headless path (agent-packs plan WP3.2) ──────────────────────────────────
+// The headless evaluator reads whatever ComposeFragment.doc enabledFragmentsFor returns — which is the
+// MATERIALIZED fragment. So an override to a trigger param changes when a headless run fires. We feed
+// the evaluator a MATERIALIZED doc (built via the real materializeFragment) to prove the two agree.
+describe('materialized trigger param changes firing (WP3.2)', () => {
+  // A table-stat gte trigger with a DEFAULT threshold of 10; the trigger is attachment index 2.
+  const backlog = 8 // committed unprocessed backlog
+  const baseFragment = (): WorkflowDoc =>
+    varsWriteFragment([
+      { kind: 'trigger', trigger: 'state', source: { scope: 'table', table: 'log', stat: 'unprocessed' }, op: 'gte', value: 10 }
+    ])
+
+  beforeEach(() => {
+    mockTableStatus.getTablesStatus.mockReturnValue({ log: { unprocessed: backlog, processed: 0, nextExpected: 0 } })
+  })
+
+  it('with the DEFAULT threshold (10) a backlog of 8 does NOT fire', async () => {
+    // No override → materialize is a no-op; the default 10 stands. 8 >= 10 is false.
+    const doc = materializeFragment({ id: 'p1', manifest: {}, fragment: baseFragment() }, {})
+    mockAgentPack.enabledFragmentsFor.mockReturnValue([frag('p1', doc)])
+    await evaluateTriggers('prof', 'c1', 'turn', 0)
+    expect(mockFloor.saveFloor).not.toHaveBeenCalled()
+  })
+
+  it('a materialized threshold override (→ 5) makes the SAME backlog of 8 fire', async () => {
+    // Override sys.trigger.2.value = 5 → materialize rewrites the trigger value; 8 >= 5 fires.
+    const doc = materializeFragment(
+      { id: 'p1', manifest: {}, fragment: baseFragment() },
+      { [sysTriggerKey(2, 'value')]: 5 }
+    )
+    mockAgentPack.enabledFragmentsFor.mockReturnValue([frag('p1', doc)])
+    await evaluateTriggers('prof', 'c1', 'turn', 0)
+    expect(mockFloor.saveFloor).toHaveBeenCalled()
+  })
+
+  it('a materialized watched-table override re-points which table the trigger reads', async () => {
+    // Rebind the watched table to `chronicle` (which has enough backlog); `log` no longer matters.
+    mockTableStatus.getTablesStatus.mockReturnValue({
+      log: { unprocessed: 0, processed: 0, nextExpected: 0 },
+      chronicle: { unprocessed: 20, processed: 0, nextExpected: 0 }
+    })
+    const doc = materializeFragment(
+      { id: 'p1', manifest: {}, fragment: baseFragment() },
+      { [sysTriggerKey(2, 'table')]: 'chronicle' }
+    )
+    mockAgentPack.enabledFragmentsFor.mockReturnValue([frag('p1', doc)])
     await evaluateTriggers('prof', 'c1', 'turn', 0)
     expect(mockFloor.saveFloor).toHaveBeenCalled()
   })

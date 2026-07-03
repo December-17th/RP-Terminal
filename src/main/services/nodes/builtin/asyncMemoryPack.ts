@@ -72,12 +72,10 @@ export const ASYNC_MEMORY_PACK_VERSION = 1
 
 // ── Trigger threshold (the backlog N) ────────────────────────────────────────────────────────────
 //
-// v0 NOTE — this is a FIXED fragment constant, not yet a settable trigger param. The spec calls for a
-// System trigger-param ("unsummarized backlog > N", rev-3 §Settings — trigger params are System
-// settings on headless packs). But override materialization does not exist yet: agentPackService stores
-// + resolves overrides but does NOT feed resolved values into fragment docs (agentPackService.ts v0
-// NOTE). Until that lands, N is hard-coded here. The phase-3 settings UI (WP3.2) must surface this N as
-// a System trigger-param once materialization exists — see the WP report.
+// This is the DEFAULT for the auto-derived System trigger-param `sys.trigger.3.value` (the backlog N;
+// the trigger is attachment index 3). As of WP3.2 override materialization is LIVE
+// (agentPackMaterialize.materializeFragment runs in enabledFragmentsFor), so a user override for that
+// id replaces this constant on both the turn and headless paths; with no override the constant stands.
 //
 // N = 6 chosen deliberately: the maintenance gate cadence is `every: 3` (below), so a threshold of TWO
 // cadence windows' worth of backlog (2 × 3 = 6) means the compactor runs after roughly two maintenance
@@ -88,10 +86,10 @@ export const ASYNC_MEMORY_BACKLOG_N = 6
 
 // ── Trigger table binding (the watched sqlName) ──────────────────────────────────────────────────
 //
-// v0 NOTE — the `table`-scoped state trigger (attachments.ts TriggerSource) needs a CONCRETE sqlName,
-// but a generic memory pack cannot know a chat's template ahead of time (templates are card/user-
-// supplied — there is no app-wide canonical table). We bind the append-only chronicle table's
-// conventional sqlName here as a placeholder. Consequences + the honest gap:
+// This is the DEFAULT for the auto-derived System trigger-param `sys.trigger.3.table` (the watched
+// table). As of WP3.2 a user can override which table the compactor watches per scope — THE usability
+// blocker from WP2.4 (a generic memory pack can't know a chat's template ahead of time). With no
+// override this conventional 'summary' sqlName stands. Consequences of the default + the honest gap:
 //   · Chats whose template DOES have this table: the trigger fires on its unprocessed backlog.
 //   · Chats without it: the trigger reads `undefined` (readSource → the table is absent from
 //     getTablesStatus), and `undefined gte N` is false → the compactor never fires for that chat. The
@@ -283,7 +281,29 @@ export const buildAsyncMemoryPack = (): AgentPackRecord => ({
       'Runs memory-table maintenance in the background instead of every turn: compacts old exchanges ' +
       'into your memory tables via a headless side model call when the backlog builds up, then trims ' +
       'the prompt to the not-yet-summarized history and injects the tables in place of the old floors. ' +
-      'An alternative to the every-turn “SQL Table Memory” pack — pick one, not both.'
+      'An alternative to the every-turn “SQL Table Memory” pack — pick one, not both.',
+    // ── Creator-exposed settings (agent-packs plan WP3.2) ────────────────────────────────────────
+    // The backlog N (the trigger threshold) + the watched table are AUTO-DERIVED System trigger params
+    // (sys.trigger.3.value / sys.trigger.3.table — the trigger is attachment index 3); they need NO
+    // manifest entry (deriveSystemSettings reads them off the trigger attachment). The ONE genuinely
+    // creator-exposed knob is the inline trimmer's table SCOPE — which table's committed pointer the
+    // prompt trims against. Its DEFAULT is unset in the fragment (config.table absent = the safe min
+    // over all tables), so the default here is '' meaning "all tables". Materialization writes the
+    // resolved value into `trim`'s config.table (contextNodes.trimProcessed reads config.table).
+    // THE WATCHED-TABLE usability blocker from WP2.4 is solved by the auto-derived sys.trigger.3.table,
+    // NOT this — this narrows the TRIM, not the trigger.
+    exposedSettings: [
+      {
+        id: 'trim.tableScope',
+        label: {
+          en: 'History trim scope (table)',
+          zh: '历史裁剪范围（表格）'
+        },
+        type: 'string',
+        default: '',
+        target: { nodeId: 'trim', path: 'table' }
+      }
+    ]
   },
   fragment: ASYNC_MEMORY_FRAGMENT
 })

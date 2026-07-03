@@ -4,6 +4,7 @@ import {
   packToSummary,
   resolveGate,
   layerOverrides,
+  layerOverridesWithProvenance,
   encodeScope,
   ActivationRow,
   OverrideRow,
@@ -153,6 +154,43 @@ describe('layerOverrides (nearest-scope-wins: global < world < chat)', () => {
 
   it('scopes for a different world/chat are ignored', () => {
     expect(layerOverrides(rows, 'otherWorld', 'otherChat')).toEqual({ tone: 'g', budget: 100 })
+  })
+})
+
+// Provenance resolution (agent-packs plan WP3.2) — the settings-UI read side: winning value + the
+// scope it came from + each scope's raw value (for "clearing chat reveals world").
+describe('layerOverridesWithProvenance', () => {
+  const rows: OverrideRow[] = [
+    { packId: 'p', scope: 'global', settingId: 'tone', value: 'g' },
+    { packId: 'p', scope: 'global', settingId: 'budget', value: 100 },
+    { packId: 'p', scope: 'world:w', settingId: 'tone', value: 'w' },
+    { packId: 'p', scope: 'chat:c', settingId: 'tone', value: 'c' }
+  ]
+
+  it('tags the winning scope: chat > world > global', () => {
+    const r = layerOverridesWithProvenance(rows, 'w', 'c')
+    expect(r.tone).toMatchObject({ value: 'c', provenance: 'chat' })
+    // Exposes each scope's raw value so the UI can preview a reset.
+    expect(r.tone).toMatchObject({ globalValue: 'g', worldValue: 'w', chatValue: 'c' })
+  })
+
+  it('a global-only setting has provenance global', () => {
+    const r = layerOverridesWithProvenance(rows, 'w', 'c')
+    expect(r.budget).toMatchObject({ value: 100, provenance: 'global', globalValue: 100 })
+    expect(r.budget.worldValue).toBeUndefined()
+  })
+
+  it('without a chat, world wins and no chatValue is recorded', () => {
+    const r = layerOverridesWithProvenance(rows, 'w', null)
+    expect(r.tone).toMatchObject({ value: 'w', provenance: 'world' })
+    expect(r.tone.chatValue).toBeUndefined()
+  })
+
+  it('a setting with no applicable override is absent from the map (defaults to default upstream)', () => {
+    const r = layerOverridesWithProvenance(rows, 'otherWorld', 'otherChat')
+    // Only global scopes apply for a different world/chat.
+    expect(r.tone).toMatchObject({ value: 'g', provenance: 'global' })
+    expect(r.budget).toMatchObject({ value: 100, provenance: 'global' })
   })
 })
 

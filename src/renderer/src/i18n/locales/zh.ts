@@ -966,7 +966,41 @@ const zh: Record<string, string> = {
   'agents.cascade.body':
     '此包参与构建你的提示词。关闭它会改变提示词的组装方式——你的回复仍能正常生成，但此包将不再对其进行裁剪或调整。',
   'agents.cascade.cancel': '保持开启',
-  'agents.cascade.confirm': '关闭'
+  'agents.cascade.confirm': '关闭',
+  // ── 包详情面板——带来源的分层设置（agent-packs 计划 WP3.2）─────────────────────────────────
+  'agents.settings.open': '设置',
+  'agents.settings.close': '关闭设置',
+  'agents.settings.loadError': '无法加载此包的设置。',
+  'agents.settings.notInstalled': '此包已不再安装。',
+  // 作用域切换（改动写入所选作用域）
+  'agents.settings.scopeLabel': '改动应用于',
+  'agents.settings.scopeWorld': '本世界',
+  'agents.settings.scopeChat': '本对话',
+  'agents.settings.scopeChatDisabled': '打开一个对话以设置对话级取值',
+  // 分组
+  'agents.settings.systemGroup': '系统',
+  'agents.settings.packGroup': '包设置',
+  'agents.settings.advancedGroup': '高级',
+  'agents.settings.systemMoreComing':
+    '更多系统控制（Token 预算、重试、模型预设）即将推出——它们需要尚未构建的引擎支持。',
+  // 系统触发参数标签（由包的触发器自动生成）
+  'agents.settings.sys.triggerValue': '触发阈值',
+  'agents.settings.sys.cadence': '每 N 层运行一次',
+  'agents.settings.sys.watchedTable': '监视的表格',
+  // 来源标签
+  'agents.settings.prov.default': '默认',
+  'agents.settings.prov.global': '所有世界',
+  'agents.settings.prov.world': '本世界',
+  'agents.settings.prov.chat': '本对话',
+  'agents.settings.provTitle': '该取值的来源',
+  // 重置
+  'agents.settings.reset': '重置',
+  'agents.settings.resetTitle': '清除此覆盖（显示下一级作用域，最终显示默认值）',
+  'agents.settings.writeError': '无法保存该改动。',
+  // 高级
+  'agents.settings.openStudio': '在工作流工作室中打开',
+  'agents.settings.forkNote':
+    '在工作流工作室中编辑包的图会为本世界创建一份副本——原始包保持不变。'
 }
 
 export default zh

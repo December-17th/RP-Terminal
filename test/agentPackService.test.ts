@@ -11,7 +11,8 @@ import { AgentPackRecord, ActivationRow, OverrideRow } from '../src/main/service
 const {
   encodeScope: realEncodeScope,
   resolveGate: realResolveGate,
-  layerOverrides: realLayerOverrides
+  layerOverrides: realLayerOverrides,
+  layerOverridesWithProvenance: realLayerOverridesWithProvenance
 } = await vi.importActual<typeof import('../src/main/services/agentPackStore')>(
   '../src/main/services/agentPackStore'
 )
@@ -38,6 +39,7 @@ const store = vi.hoisted(() => ({
   upsertOverride: vi.fn(),
   deleteOverride: vi.fn(),
   layerOverrides: vi.fn(),
+  layerOverridesWithProvenance: vi.fn(),
   // Fork wrappers (agent-packs plan WP3.6a).
   insertActivationRow: vi.fn(),
   deleteActivationForWorld: vi.fn(),
@@ -98,6 +100,7 @@ beforeEach(() => {
   store.encodeScope.mockImplementation(realEncodeScope)
   store.resolveGate.mockImplementation(realResolveGate)
   store.layerOverrides.mockImplementation(realLayerOverrides)
+  store.layerOverridesWithProvenance.mockImplementation(realLayerOverridesWithProvenance)
   store.listPackRecords.mockImplementation(() => state.packs)
   store.getPackIdentity.mockImplementation((_p, id) => {
     const found = state.packs.find((x) => x.id === id)
@@ -249,6 +252,94 @@ describe('enabledFragmentsFor', () => {
     const frags = service.enabledFragmentsFor('prof', 'c1')
     expect(frags).toHaveLength(1)
     expect(mockLog.log).toHaveBeenCalled()
+  })
+
+  // ── MATERIALIZATION on the turn path (agent-packs plan WP3.2) ─────────────────────────────────────
+  // The composition provider must materialize resolved overrides into the fragment BEFORE returning
+  // ComposeFragments. This is the turn call site; the headless evaluator reads the SAME ComposeFragment
+  // (evaluatePass/runHeadless), so covering it here covers both paths.
+  const settablePack = (): AgentPackRecord =>
+    pack({
+      id: 'settable',
+      manifest: {
+        name: 'Settable',
+        exposedSettings: [
+          { id: 'blk.count', label: 'count', type: 'number', default: 3, min: 1, max: 10, target: { nodeId: 'blk', path: 'count' } }
+        ]
+      },
+      fragment: {
+        id: 'sf', name: 'sf', version: 1, schemaVersion: 1, kind: 'fragment',
+        nodes: [{ id: 'blk', type: 'text.template', config: { count: 3 } }],
+        edges: [],
+        attachments: [{ kind: 'rejoin', checkpoint: 'prompt-assembly', rejoinPort: { node: 'blk', port: 'text' } }]
+      } as WorkflowDoc
+    })
+
+  it('materializes a resolved override into the returned fragment doc (world scope wins)', () => {
+    state.packs = [settablePack()]
+    state.activation = [{ packId: 'settable', worldId: 'w1', chatId: null, gateOpen: true, denial: [] }]
+    state.overrides = [{ packId: 'settable', scope: 'world:w1', settingId: 'blk.count', value: 7 }]
+    const [frag] = service.enabledFragmentsFor('prof', 'c1')
+    const node = frag.doc.nodes.find((n) => n.id === 'blk')
+    expect(node?.config?.count).toBe(7)
+  })
+
+  it('with no override the returned fragment keeps the pack default (zero change)', () => {
+    const p = settablePack()
+    state.packs = [p]
+    state.activation = [{ packId: 'settable', worldId: 'w1', chatId: null, gateOpen: true, denial: [] }]
+    const [frag] = service.enabledFragmentsFor('prof', 'c1')
+    expect(frag.doc).toEqual(p.fragment)
+  })
+
+  it('clamps an out-of-range override on the turn path', () => {
+    state.packs = [settablePack()]
+    state.activation = [{ packId: 'settable', worldId: 'w1', chatId: null, gateOpen: true, denial: [] }]
+    state.overrides = [{ packId: 'settable', scope: 'world:w1', settingId: 'blk.count', value: 999 }]
+    const [frag] = service.enabledFragmentsFor('prof', 'c1')
+    expect(frag.doc.nodes.find((n) => n.id === 'blk')?.config?.count).toBe(10)
+  })
+})
+
+describe('getPackSettings (detail-panel model; WP3.2)', () => {
+  it('returns creator-exposed + resolved provenance for an installed pack', () => {
+    const p = pack({
+      id: 'gp',
+      manifest: {
+        name: 'GP',
+        exposedSettings: [
+          { id: 'blk.count', label: { en: 'Count', zh: '数量' }, type: 'number', default: 3, target: { nodeId: 'blk', path: 'count' } }
+        ]
+      }
+    })
+    state.packs = [p]
+    state.overrides = [{ packId: 'gp', scope: 'world:w1', settingId: 'blk.count', value: 5 }]
+    const res = service.getPackSettings('prof', 'gp', 'w1', 'c1')
+    expect(res).not.toBeNull()
+    const s = res!.packSettings.find((x) => x.id === 'blk.count')!
+    expect(s.resolved).toMatchObject({ value: 5, provenance: 'world' })
+    // No trigger → System group empty.
+    expect(res!.hasTriggers).toBe(false)
+  })
+
+  it('a defaulted setting resolves to the schema default with provenance default', () => {
+    const p = pack({
+      id: 'gp2',
+      manifest: {
+        name: 'GP2',
+        exposedSettings: [
+          { id: 'blk.count', label: 'Count', type: 'number', default: 3, target: { nodeId: 'blk', path: 'count' } }
+        ]
+      }
+    })
+    state.packs = [p]
+    const res = service.getPackSettings('prof', 'gp2', 'w1', 'c1')!
+    const s = res.packSettings[0]
+    expect(s.resolved).toMatchObject({ value: 3, provenance: 'default' })
+  })
+
+  it('returns null for a pack that is not installed', () => {
+    expect(service.getPackSettings('prof', 'missing', 'w1', 'c1')).toBeNull()
   })
 })
 

@@ -81,7 +81,18 @@ declare global {
             name: string
             description?: string
             creator?: string
-            exposedSettings?: Record<string, unknown>
+            // Creator-exposed settings (agent-packs plan WP3.2). Mirrors agentPackStore.ExposedSetting
+            // (crosses IPC as JSON) — inlined so preload types don't import main internals.
+            exposedSettings?: {
+              id: string
+              label: string | Record<string, string>
+              type: 'number' | 'string' | 'boolean' | 'enum'
+              default: unknown
+              min?: number
+              max?: number
+              options?: string[]
+              target: { nodeId: string; path: string }
+            }[]
           }
           attachments: import('../shared/workflow/attachments').AttachmentDecl[]
           capabilities: import('../shared/workflow/capabilities').CapabilityId[]
@@ -111,6 +122,57 @@ declare global {
         worldId: string | null,
         chatId: string | null
       ) => Promise<Record<string, unknown>>
+      // The detail panel's settings model (agent-packs plan WP3.2): creator-exposed ('pack') + auto-
+      // derived System trigger params ('system'), each with its resolved value + provenance (the chip).
+      // Assembled main-side (never re-derived from the fragment blob). Null when the pack isn't installed.
+      // PackSettingView per setting: schema + resolved state. `kind` = 'pack' (creator-exposed) |
+      // 'system' (auto-derived trigger param). Inlined (crosses IPC as JSON; mirrors
+      // agentPackService.PackSettingView) so preload types don't import main internals.
+      getAgentPackSettings: (
+        profileId: string,
+        packId: string,
+        worldId: string | null,
+        chatId: string | null
+      ) => Promise<{
+        packId: string
+        hasTriggers: boolean
+        packSettings: {
+          id: string
+          kind: 'pack' | 'system'
+          label?: string | Record<string, string>
+          labelKind?: 'trigger-value' | 'trigger-cadence' | 'trigger-table'
+          type: 'number' | 'string' | 'boolean' | 'enum'
+          default: unknown
+          min?: number
+          max?: number
+          options?: string[]
+          resolved: {
+            value: unknown
+            provenance: 'default' | 'global' | 'world' | 'chat'
+            globalValue?: unknown
+            worldValue?: unknown
+            chatValue?: unknown
+          }
+        }[]
+        systemSettings: {
+          id: string
+          kind: 'pack' | 'system'
+          label?: string | Record<string, string>
+          labelKind?: 'trigger-value' | 'trigger-cadence' | 'trigger-table'
+          type: 'number' | 'string' | 'boolean' | 'enum'
+          default: unknown
+          min?: number
+          max?: number
+          options?: string[]
+          resolved: {
+            value: unknown
+            provenance: 'default' | 'global' | 'world' | 'chat'
+            globalValue?: unknown
+            worldValue?: unknown
+            chatValue?: unknown
+          }
+        }[]
+      } | null>
       // Persisted run history for the Runs timeline (agent-packs plan WP2.3). Newest-first; page
       // backward via `beforeSeq` (the smallest seq of the previous page).
       listAgentPackRuns: (

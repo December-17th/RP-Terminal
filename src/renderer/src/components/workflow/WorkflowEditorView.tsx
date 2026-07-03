@@ -10,6 +10,7 @@ import { useWorkflowEditorStore } from '../../stores/workflowEditorStore'
 import { useEffectiveGraphStore } from '../../stores/effectiveGraphStore'
 import { useChatStore } from '../../stores/chatStore'
 import { useToastStore } from '../../stores/toastStore'
+import { useUiStore } from '../../stores/uiStore'
 import { useOptionalT, useT } from '../../i18n'
 import { describeTrigger } from '../../../../shared/workflow/trace'
 import type { AttachmentDecl } from '../../../../shared/workflow/attachments'
@@ -73,7 +74,15 @@ export default function WorkflowEditorView({
   const [showErrors, setShowErrors] = useState(false)
 
   // ── Effective mode (agent-packs plan WP3.6a; ADR 0010) ─────────────────────────────────────────
-  const [mode, setMode] = useState<EditorMode>('normal')
+  // The Agents "Open in Workflow Studio" hand-off (WP3.2) can request Effective mode via uiStore; we
+  // seed the initial mode from it once, then clear the request so a later manual open starts Normal.
+  const requestedMode = useUiStore((s) => s.workflowEditorInitialMode)
+  const consumeInitialMode = useUiStore((s) => s.consumeWorkflowEditorInitialMode)
+  const [mode, setMode] = useState<EditorMode>(requestedMode === 'effective' ? 'effective' : 'normal')
+  useEffect(() => {
+    if (requestedMode) consumeInitialMode()
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- consume once on mount for the initial request
+  }, [])
   const activeChatId = useChatStore((s) => s.activeChatId)
   const chats = useChatStore((s) => s.chats)
   const worldId = useMemo(

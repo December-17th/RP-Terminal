@@ -2299,3 +2299,64 @@ select {
   .rpt-agents-skeleton .rpt-agents-skel-toggle,
   .rpt-agents-skeleton .rpt-agents-skel-line { animation:none; }
 }
+
+/* Card foot (health + settings button) + selected state (agent-packs plan WP3.2) */
+.rpt-agents-cardfoot { display:flex; align-items:center; justify-content:space-between; gap:10px; }
+.rpt-agents-card.selected { border-color:var(--rpt-accent); box-shadow:0 0 0 1px var(--rpt-accent); }
+.rpt-agents-settingsbtn { font:inherit; font-size:11.5px; color:var(--rpt-text-secondary);
+  background:var(--rpt-bg-tertiary); border:1px solid var(--rpt-border); border-radius:6px;
+  padding:4px 10px; cursor:pointer; }
+.rpt-agents-settingsbtn:hover { color:var(--rpt-text-primary); }
+.rpt-agents-settingsbtn:focus-visible { outline:2px solid var(--rpt-accent); outline-offset:1px; }
+
+/* ── Pack detail panel — tiered settings with provenance (agent-packs plan WP3.2) ─────────────────
+   A side panel next to the list. All colors via --rpt-* tokens (AA across all three themes). */
+.rpt-agentdetail { flex-shrink:0; width:340px; display:flex; flex-direction:column;
+  border-left:1px solid var(--rpt-border); background:var(--rpt-bg-secondary); overflow:hidden; }
+.rpt-agentdetail-head { display:flex; align-items:center; justify-content:space-between; gap:8px;
+  padding:12px 14px; border-bottom:1px solid var(--rpt-border); }
+.rpt-agentdetail-title { font-size:14px; font-weight:600; color:var(--rpt-text-primary); margin:0;
+  overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.rpt-agentdetail-close { font:inherit; font-size:18px; line-height:1; color:var(--rpt-text-secondary);
+  background:none; border:none; border-radius:6px; padding:2px 8px; cursor:pointer; }
+.rpt-agentdetail-close:hover { color:var(--rpt-text-primary); background:var(--rpt-bg-tertiary); }
+.rpt-agentdetail-close:focus-visible { outline:2px solid var(--rpt-accent); outline-offset:1px; }
+
+.rpt-agentdetail-scope { display:flex; gap:4px; padding:8px 14px; border-bottom:1px solid var(--rpt-border); }
+.rpt-agentdetail-scopebtn { font:inherit; font-size:11.5px; color:var(--rpt-text-secondary);
+  background:none; border:1px solid var(--rpt-border); border-radius:6px; padding:3px 10px; cursor:pointer; }
+.rpt-agentdetail-scopebtn.active { background:var(--rpt-bg-tertiary); color:var(--rpt-text-primary);
+  border-color:var(--rpt-accent); }
+.rpt-agentdetail-scopebtn:disabled { opacity:.45; cursor:not-allowed; }
+.rpt-agentdetail-scopebtn:focus-visible { outline:2px solid var(--rpt-accent); outline-offset:1px; }
+
+.rpt-agentdetail-body { flex:1; overflow:auto; padding:12px 14px; display:flex; flex-direction:column; gap:16px; }
+.rpt-agentdetail-skel { display:flex; flex-direction:column; gap:10px; }
+.rpt-agentdetail-error, .rpt-agentdetail-empty { font-size:12.5px; color:var(--rpt-text-secondary); }
+.rpt-agentdetail-group { display:flex; flex-direction:column; gap:10px; }
+.rpt-agentdetail-grouptitle { font-size:11px; font-weight:700; letter-spacing:.04em; text-transform:uppercase;
+  color:var(--rpt-text-tertiary); margin:0; }
+.rpt-agentdetail-note { font-size:11.5px; line-height:1.5; color:var(--rpt-text-tertiary); margin:0; }
+
+.rpt-agentdetail-row { display:flex; flex-direction:column; gap:5px; }
+.rpt-agentdetail-rowhead { display:flex; align-items:center; justify-content:space-between; gap:8px; }
+.rpt-agentdetail-rowlabel { font-size:12.5px; color:var(--rpt-text-primary); }
+.rpt-agentdetail-prov { font-size:10px; font-weight:600; padding:1px 7px; border-radius:9px;
+  background:var(--rpt-bg-tertiary); color:var(--rpt-text-secondary); white-space:nowrap; }
+.rpt-agentdetail-prov.chat, .rpt-agentdetail-prov.world { background:var(--rpt-accent); color:var(--rpt-on-accent); }
+.rpt-agentdetail-control { display:flex; align-items:center; gap:8px; }
+.rpt-agentdetail-control input[type="text"], .rpt-agentdetail-control input[type="number"],
+.rpt-agentdetail-control select { font:inherit; font-size:12.5px; flex:1; min-width:0;
+  color:var(--rpt-text-primary); background:var(--rpt-bg-elevated); border:1px solid var(--rpt-border);
+  border-radius:6px; padding:5px 8px; }
+.rpt-agentdetail-control input:focus-visible, .rpt-agentdetail-control select:focus-visible {
+  outline:2px solid var(--rpt-accent); outline-offset:1px; }
+.rpt-agentdetail-reset { font:inherit; font-size:11px; color:var(--rpt-text-secondary); background:none;
+  border:1px solid var(--rpt-border); border-radius:6px; padding:4px 9px; cursor:pointer; flex-shrink:0; }
+.rpt-agentdetail-reset:hover { color:var(--rpt-text-primary); }
+.rpt-agentdetail-reset:focus-visible { outline:2px solid var(--rpt-accent); outline-offset:1px; }
+.rpt-agentdetail-rowerror { font-size:11px; color:var(--rpt-danger); margin:0; }
+.rpt-agentdetail-studio { font:inherit; font-size:12.5px; color:var(--rpt-on-accent);
+  background:var(--rpt-accent); border:1px solid var(--rpt-accent); border-radius:7px; padding:7px 12px;
+  cursor:pointer; align-self:flex-start; }
+.rpt-agentdetail-studio:focus-visible { outline:2px solid var(--rpt-accent); outline-offset:2px; }

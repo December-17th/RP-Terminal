@@ -29,6 +29,7 @@ import {
   type AttachmentBadge,
   type PackHealth
 } from './agentPackDisplay'
+import { AgentPackDetail } from './AgentPackDetail'
 
 // The list-payload shape from listAgentPacks (preload index.d.ts — WP3.1-extended with attachments +
 // capabilities). Mirrored here so the view is typed against the IPC contract.
@@ -66,6 +67,9 @@ export const AgentsView: React.FC<{ profileId: string }> = ({ profileId }) => {
   )
 
   const [rail, setRail] = React.useState<RailItem>('overview')
+  // The pack whose detail panel is open (agent-packs plan WP3.2), or null. Cleared when the world
+  // changes (the settings are world/chat-scoped, so a stale detail would show the wrong scope).
+  const [detailPackId, setDetailPackId] = React.useState<string | null>(null)
   const [packs, setPacks] = React.useState<PackSummary[] | null>(null)
   const [runs, setRuns] = React.useState<StoredRunRecord[]>([])
   const [error, setError] = React.useState(false)
@@ -103,6 +107,16 @@ export const AgentsView: React.FC<{ profileId: string }> = ({ profileId }) => {
   React.useEffect(() => {
     void load()
   }, [load])
+
+  // Close the detail panel on world change (its settings are world/chat-scoped).
+  React.useEffect(() => {
+    setDetailPackId(null)
+  }, [worldId])
+
+  const detailPack = React.useMemo(
+    () => (packs ?? []).find((p) => p.id === detailPackId) ?? null,
+    [packs, detailPackId]
+  )
 
   // Optimistic gate flip with rollback on IPC failure. Writes the WORLD scope (chatId null) for the
   // active chat's world. Enabling never confirms; disabling a main-reply-transforming pack is guarded
@@ -147,11 +161,30 @@ export const AgentsView: React.FC<{ profileId: string }> = ({ profileId }) => {
             error={error}
             onRetry={() => void load()}
             onFlipGate={flipGate}
+            selectedPackId={detailPackId}
+            onOpenDetail={setDetailPackId}
           />
         ) : (
           <PlaceholderPane rail={rail} />
         )}
       </div>
+
+      {/* The detail panel (agent-packs plan WP3.2) — a side panel next to the list. Requires a world
+          (its settings are world/chat-scoped); it stays closed otherwise. */}
+      {rail === 'installed' && detailPack && worldId && (
+        <AgentPackDetail
+          profileId={profileId}
+          packId={detailPack.id}
+          packName={
+            detailPack.manifest.fork
+              ? `${detailPack.manifest.fork.base} (${t('workflowEffective.fork')} ${detailPack.manifest.fork.n})`
+              : detailPack.manifest.name
+          }
+          worldId={worldId}
+          chatId={activeChatId}
+          onClose={() => setDetailPackId(null)}
+        />
+      )}
     </div>
   )
 }
@@ -185,7 +218,20 @@ const InstalledPane: React.FC<{
   error: boolean
   onRetry: () => void
   onFlipGate: (pack: PackSummary, next: boolean) => void
-}> = ({ packs, runs, gates, worldId, loading, error, onRetry, onFlipGate }) => {
+  selectedPackId: string | null
+  onOpenDetail: (packId: string) => void
+}> = ({
+  packs,
+  runs,
+  gates,
+  worldId,
+  loading,
+  error,
+  onRetry,
+  onFlipGate,
+  selectedPackId,
+  onOpenDetail
+}) => {
   const t = useT()
 
   if (loading && packs === null) {
@@ -250,6 +296,8 @@ const InstalledPane: React.FC<{
           open={gates[pack.id] ?? false}
           health={packHealth(runs, pack.id)}
           onFlipGate={(next) => onFlipGate(pack, next)}
+          selected={selectedPackId === pack.id}
+          onOpenDetail={() => onOpenDetail(pack.id)}
         />
       ))}
     </div>
@@ -262,7 +310,9 @@ const PackCard: React.FC<{
   open: boolean
   health: PackHealth
   onFlipGate: (next: boolean) => void
-}> = ({ pack, open, health, onFlipGate }) => {
+  selected: boolean
+  onOpenDetail: () => void
+}> = ({ pack, open, health, onFlipGate, selected, onOpenDetail }) => {
   const t = useT()
   const badges = attachmentBadges(pack.attachments)
   const needsCascade = transformsMainReply(pack.attachments)
@@ -279,7 +329,7 @@ const PackCard: React.FC<{
   }
 
   return (
-    <div className="rpt-agents-card">
+    <div className={`rpt-agents-card${selected ? ' selected' : ''}`}>
       <button
         role="switch"
         aria-checked={open}
@@ -339,10 +389,20 @@ const PackCard: React.FC<{
         )}
 
         {/* Health dot + text (dot carries color ≥3:1; label is text-secondary ≥4.5:1 — no
-            color-only signaling). */}
-        <div className="rpt-agents-health">
-          <span className={`rpt-agents-dot ${health}`} aria-hidden />
-          <span className="rpt-agents-health-text">{t(`agents.health.${health}`)}</span>
+            color-only signaling) + the Settings button (opens the detail panel — WP3.2). */}
+        <div className="rpt-agents-cardfoot">
+          <div className="rpt-agents-health">
+            <span className={`rpt-agents-dot ${health}`} aria-hidden />
+            <span className="rpt-agents-health-text">{t(`agents.health.${health}`)}</span>
+          </div>
+          <button
+            type="button"
+            className="rpt-agents-settingsbtn"
+            aria-expanded={selected}
+            onClick={onOpenDetail}
+          >
+            {t('agents.settings.open')}
+          </button>
         </div>
       </div>
 
