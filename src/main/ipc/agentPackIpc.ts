@@ -14,7 +14,11 @@ import { listRuns } from '../services/runHistoryStore'
  * gains agent-pack composition simply by registering this IPC group once after app-ready.
  */
 export const registerAgentPackIpc = (ipcMain: IpcMain): void => {
-  ipcMain.handle('agent-packs-list', (_, profileId: string) => agentPackService.list(profileId))
+  ipcMain.handle(
+    'agent-packs-list',
+    (_, profileId: string, worldId?: string | null, chatId?: string | null) =>
+      agentPackService.list(profileId, worldId, chatId)
+  )
   ipcMain.handle(
     'agent-pack-set-gate',
     (_, packId: string, worldId: string, chatId: string | null, open: boolean) =>

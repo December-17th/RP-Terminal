@@ -906,7 +906,68 @@ const en: Record<string, string> = {
   'sessions.selectChar': 'Select a character first.',
   'sessions.empty': 'No sessions yet. Start a new one.',
   'sessions.deleteTitle': 'Delete session',
-  'sessions.confirmDelete': 'Delete this session? This cannot be undone.'
+  'sessions.confirmDelete': 'Delete this session? This cannot be undone.',
+
+  // Agents workspace (agent-packs plan WP3.1)
+  'agents.title': 'Agents',
+  'agents.rail.overview': 'Overview',
+  'agents.rail.installed': 'Installed',
+  'agents.rail.runs': 'Runs',
+  'agents.rail.preview': 'Preview',
+  'agents.retry': 'Try again',
+  'agents.builtin': 'Built-in',
+  'agents.version': 'v{{v}}',
+  // Overview placeholder (built in WP3.5)
+  'agents.overview.title': 'Overview',
+  'agents.overview.placeholder':
+    'A glance at which agents are on, how their last runs went, and anything that needs your attention will live here.',
+  'agents.overview.packsExplainer':
+    'Agent packs are helpers that work alongside the story — keeping memory, updating tables, running things in the background. Open Installed to turn the built-in packs on.',
+  // Runs placeholder (built in WP3.3)
+  'agents.runs.title': 'Runs',
+  'agents.runs.placeholder':
+    'A timeline of what each agent did — every turn and every background run, in plain language — will appear here.',
+  // Preview placeholder (built in WP3.4)
+  'agents.preview.title': 'Preview',
+  'agents.preview.placeholder':
+    'A preview of what each agent will add to your next prompt, section by section, will show up here.',
+  // Installed pane
+  'agents.installed.introTitle': 'Nothing is running yet',
+  'agents.installed.introBody':
+    'Agent packs stay off until you turn them on. Flip a pack on below to add it to this world.',
+  'agents.installed.noWorldTitle': 'Select a world first',
+  'agents.installed.noWorld':
+    'Agents are turned on per world. Open a chat in a world to manage its agents.',
+  'agents.installed.loadError': "Couldn't load your agent packs.",
+  // Gate toggle (accessible labels)
+  'agents.gate.enable': 'Turn on {{name}}',
+  'agents.gate.disable': 'Turn off {{name}}',
+  // Attachment badges (plain-language)
+  'agents.badge.before': 'before reply',
+  'agents.badge.after': 'after reply',
+  'agents.badge.inline': 'shapes the prompt',
+  'agents.badge.headless': 'runs on its own',
+  // Capability chips
+  'agents.cap.reads-tables': 'reads tables',
+  'agents.cap.writes-tables': 'writes tables',
+  'agents.cap.reads-vars': 'reads variables',
+  'agents.cap.writes-vars': 'writes variables',
+  'agents.cap.reads-lorebooks': 'reads lorebooks',
+  'agents.cap.reads-history': 'reads history',
+  'agents.cap.calls-llm': 'calls the model',
+  'agents.cap.writes-floors': 'writes floors',
+  'agents.cap.runs-game-tools': 'runs game tools',
+  'agents.cap.injects-prompt': 'adds to the prompt',
+  'agents.cap.runs-headless': 'runs in the background',
+  // Health dot
+  'agents.health.ok': 'Last run succeeded',
+  'agents.health.failed': 'Last run failed',
+  'agents.health.never': 'Has not run yet',
+  // Cascade confirm popover (disabling an inline pack)
+  'agents.cascade.body':
+    'This pack shapes how your prompt is built. Turning it off changes how prompts are assembled — your replies keep working, but this pack will no longer trim or shape them.',
+  'agents.cascade.cancel': 'Keep it on',
+  'agents.cascade.confirm': 'Turn it off'
 }
 
 export default en

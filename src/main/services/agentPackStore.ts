@@ -18,6 +18,8 @@
 
 import { getDb } from './db'
 import { WorkflowDoc } from '../../shared/workflow/types'
+import { AttachmentDecl } from '../../shared/workflow/attachments'
+import { deriveCapabilities, CapabilityId } from '../../shared/workflow/capabilities'
 
 // ── Types ──────────────────────────────────────────────────────────────────────────────────────
 
@@ -45,13 +47,29 @@ export interface AgentPackRecord {
   fragment: WorkflowDoc
 }
 
-/** A summary for the list side (no fragment blob — cheap for the future settings UI list). */
+/** A summary for the list side (no fragment blob — cheap for the future settings UI list). The
+ *  Agents workspace pack card (agent-packs plan WP3.1) needs a little more than the raw manifest:
+ *  the fragment's ATTACHMENTS (to render the read-only "before reply / after reply / headless"
+ *  badges) and its derived CAPABILITIES (the chip row). Both are DERIVED read-only from the stored
+ *  fragment here (never sent as the whole fragment blob), so the renderer stays a pure consumer of
+ *  the typed IPC surface and never sees pack internals. */
 export interface AgentPackSummary {
   id: string
   version: number
   upstreamId: string | null
   builtin: boolean
   manifest: PackManifest
+  /** The fragment's attachment declarations (entry / rejoin / trigger) — the structure the card's
+   *  badges render from (WP3.1). Read-only display data; a subset of the fragment, not the graph. */
+  attachments: AttachmentDecl[]
+  /** The capabilities derived from the fragment's node types + attachments (ADR 0007 mechanical
+   *  table; shared/workflow/capabilities.deriveCapabilities). The card's capability chips. */
+  capabilities: CapabilityId[]
+  /** The RESOLVED gate state for the (world, chat) the list was requested in, or undefined when the
+   *  list was requested with no world context (WP3.1: the Agents card needs the persisted gate to
+   *  render the toggle on load — there is no separate read-gate endpoint). Nearest-scope-wins
+   *  (chat over world; default CLOSED). Read-only; the toggle still writes via setAgentPackGate. */
+  gateOpen?: boolean
 }
 
 /** An activation row (ADR 0005/0009): the per-(pack, world) gate, with an optional per-chat
@@ -111,7 +129,12 @@ export const packToSummary = (pack: AgentPackRecord): AgentPackSummary => ({
   version: pack.version,
   upstreamId: pack.upstreamId,
   builtin: pack.builtin,
-  manifest: pack.manifest
+  manifest: pack.manifest,
+  // Derive the display extras from the fragment (read-only; the fragment blob itself never leaves
+  // main — see AgentPackSummary). `attachments` on a fragment doc is optional in the type but a
+  // fragment always declares ≥1 (WP1.1 validation); default to [] defensively.
+  attachments: pack.fragment.attachments ?? [],
+  capabilities: deriveCapabilities(pack.fragment)
 })
 
 /** Resolve the gate for a (pack, world, chat): a chat-scope row wins over the world-scope row; with

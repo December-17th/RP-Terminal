@@ -63,8 +63,15 @@ declare global {
       ) => () => void
       onChatModeChanged: (cb: (p: { chatId: string; mode: string }) => void) => () => void
       // Agent-pack library (agent-packs plan WP1.4). `scope` = 'global' | { world: string } |
-      // { chat: string } (agentPackStore OverrideScope).
-      listAgentPacks: (profileId: string) => Promise<
+      // { chat: string } (agentPackStore OverrideScope). WP3.1 extended the list payload (read-only)
+      // with each pack's `attachments` (badge structure) + derived `capabilities` (chip row) — both
+      // derived main-side from the fragment (agentPackStore.packToSummary); the fragment blob itself
+      // never crosses IPC. `AttachmentDecl` / `CapabilityId` are the shared-workflow shapes.
+      listAgentPacks: (
+        profileId: string,
+        worldId?: string | null,
+        chatId?: string | null
+      ) => Promise<
         {
           id: string
           version: number
@@ -76,6 +83,10 @@ declare global {
             creator?: string
             exposedSettings?: Record<string, unknown>
           }
+          attachments: import('../shared/workflow/attachments').AttachmentDecl[]
+          capabilities: import('../shared/workflow/capabilities').CapabilityId[]
+          // Resolved gate for the (worldId, chatId) passed in — undefined when no world context.
+          gateOpen?: boolean
         }[]
       >
       setAgentPackGate: (

@@ -50,15 +50,25 @@ describe('rowToPack / packToSummary', () => {
     expect(pack.builtin).toBe(false)
   })
 
-  it('summary drops the fragment blob but keeps manifest + lineage + builtin', () => {
+  it('summary drops the fragment blob but keeps manifest + lineage + builtin, and derives the WP3.1 display extras', () => {
+    // WP3.1 EXTENDED packToSummary's payload (deliberate behavior change, updated here in the same
+    // change per CLAUDE.md): the summary now also carries the fragment's `attachments` (the card's
+    // badge structure) + derived `capabilities` (its chips) — both read-only-derived from the
+    // fragment, which itself is STILL dropped. The test fragment has a prompt-assembly rejoin
+    // (→ injects-prompt) and a capability-neutral text.template node.
     const s = packToSummary(rowToPack(row))
     expect(s).toEqual({
       id: 'p1',
       version: 2,
       upstreamId: 'p0',
       builtin: true,
-      manifest: { name: 'Memory Keeper', creator: 'me' }
+      manifest: { name: 'Memory Keeper', creator: 'me' },
+      attachments: [
+        { kind: 'rejoin', checkpoint: 'prompt-assembly', rejoinPort: { node: 'blk', port: 'text' } }
+      ],
+      capabilities: ['injects-prompt']
     })
+    // The fragment blob itself is still NOT in the summary (only its derived display extras are).
     expect('fragment' in s).toBe(false)
   })
 })

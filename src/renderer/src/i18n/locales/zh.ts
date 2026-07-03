@@ -871,7 +871,63 @@ const zh: Record<string, string> = {
   'sessions.selectChar': '请先选择一个角色。',
   'sessions.empty': '还没有会话。新建一个吧。',
   'sessions.deleteTitle': '删除会话',
-  'sessions.confirmDelete': '删除此会话？此操作无法撤销。'
+  'sessions.confirmDelete': '删除此会话？此操作无法撤销。',
+
+  // 智能体工作区（agent-packs plan WP3.1）
+  'agents.title': '智能体',
+  'agents.rail.overview': '概览',
+  'agents.rail.installed': '已安装',
+  'agents.rail.runs': '运行记录',
+  'agents.rail.preview': '预览',
+  'agents.retry': '重试',
+  'agents.builtin': '内置',
+  'agents.version': 'v{{v}}',
+  // 概览占位（WP3.5 实现）
+  'agents.overview.title': '概览',
+  'agents.overview.placeholder': '这里将概览哪些智能体已开启、上次运行情况，以及需要你关注的事项。',
+  'agents.overview.packsExplainer':
+    '智能体包是与剧情并行工作的助手——维护记忆、更新表格、在后台运行任务。打开「已安装」即可开启内置的智能体包。',
+  // 运行记录占位（WP3.3 实现）
+  'agents.runs.title': '运行记录',
+  'agents.runs.placeholder': '这里将以时间线展示每个智能体做了什么——每一回合与每一次后台运行，用平实的语言呈现。',
+  // 预览占位（WP3.4 实现）
+  'agents.preview.title': '预览',
+  'agents.preview.placeholder': '这里将逐段预览每个智能体会向你的下一条提示词中添加哪些内容。',
+  // 已安装
+  'agents.installed.introTitle': '当前没有正在运行的智能体',
+  'agents.installed.introBody': '智能体包在你开启前保持关闭。在下方开启一个包，即可将它加入本世界。',
+  'agents.installed.noWorldTitle': '请先选择一个世界',
+  'agents.installed.noWorld': '智能体按世界分别开启。请在某个世界中打开一个会话来管理它的智能体。',
+  'agents.installed.loadError': '无法加载你的智能体包。',
+  // 开关（无障碍标签）
+  'agents.gate.enable': '开启 {{name}}',
+  'agents.gate.disable': '关闭 {{name}}',
+  // 挂载点徽标（平实语言）
+  'agents.badge.before': '回复前',
+  'agents.badge.after': '回复后',
+  'agents.badge.inline': '参与构建提示词',
+  'agents.badge.headless': '后台运行',
+  // 能力标签
+  'agents.cap.reads-tables': '读取表格',
+  'agents.cap.writes-tables': '写入表格',
+  'agents.cap.reads-vars': '读取变量',
+  'agents.cap.writes-vars': '写入变量',
+  'agents.cap.reads-lorebooks': '读取世界书',
+  'agents.cap.reads-history': '读取历史',
+  'agents.cap.calls-llm': '调用模型',
+  'agents.cap.writes-floors': '写入楼层',
+  'agents.cap.runs-game-tools': '运行游戏工具',
+  'agents.cap.injects-prompt': '注入提示词',
+  'agents.cap.runs-headless': '在后台运行',
+  // 健康状态圆点
+  'agents.health.ok': '上次运行成功',
+  'agents.health.failed': '上次运行失败',
+  'agents.health.never': '尚未运行',
+  // 关闭内联包时的级联确认弹窗
+  'agents.cascade.body':
+    '此包参与构建你的提示词。关闭它会改变提示词的组装方式——你的回复仍能正常生成，但此包将不再对其进行裁剪或调整。',
+  'agents.cascade.cancel': '保持开启',
+  'agents.cascade.confirm': '关闭'
 }
 
 export default zh

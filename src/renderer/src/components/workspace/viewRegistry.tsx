@@ -11,6 +11,7 @@ import { CombatView } from './CombatView'
 import { DuelView } from './DuelView'
 import { VariablesView } from './VariablesView'
 import { TablesView } from './TablesView'
+import { AgentsView } from './AgentsView'
 import { WorkflowView } from './WorkflowView'
 import { useWorkspaceContext } from './context'
 import { UsageView } from '../UsageView'
@@ -60,6 +61,11 @@ const TablesPanel: React.FC = () => {
   return <TablesView profileId={profileId} />
 }
 
+const AgentsPanel: React.FC = () => {
+  const { profileId } = useWorkspaceContext()
+  return <AgentsView profileId={profileId} />
+}
+
 const UsagePanel: React.FC = () => {
   const { profileId } = useWorkspaceContext()
   return <UsageView profileId={profileId} />
@@ -101,6 +107,7 @@ export const ViewRegistry: Record<string, ViewEntry> = {
   duel: { title: 'Duel', Component: DuelPanel, fill: true },
   variables: { title: 'Variables', Component: VariablesPanel },
   tables: { title: 'Tables', Component: TablesPanel },
+  agents: { title: 'Agents', Component: AgentsPanel, fill: true },
   workflow: { title: 'Workflows', Component: WorkflowPanel },
   usage: { title: 'Usage', Component: UsagePanel, fill: true },
   'card-scripts': { title: 'Card Scripts', Component: CardScriptsPanel },

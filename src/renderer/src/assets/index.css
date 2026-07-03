@@ -2201,3 +2201,101 @@ select {
   --jse-context-menu-color: var(--rpt-text-primary);
   --jse-font-size: 12px;
 }
+
+/* ── Agents workspace (AgentsView.tsx — agent-packs plan WP3.1) ────────────────────────────────────
+   The pack card = the design keystone. All colors via --rpt-* / --rpt-agent-* tokens (theme.ts, all
+   three themes; AA-verified). Motion: 150–200ms ease-out on the gate flip; reduced-motion respected. */
+.rpt-agents { display:flex; height:100%; color:var(--rpt-text-primary); }
+.rpt-agents-rail { display:flex; flex-direction:column; gap:2px; width:132px; flex-shrink:0;
+  padding:10px 8px; border-right:1px solid var(--rpt-border); background:var(--rpt-bg-secondary); }
+.rpt-agents-rail-item { text-align:left; font:inherit; font-size:13px; color:var(--rpt-text-secondary);
+  background:none; border:none; border-radius:7px; padding:8px 10px; cursor:pointer; }
+.rpt-agents-rail-item:hover { background:var(--rpt-bg-tertiary); color:var(--rpt-text-primary); }
+.rpt-agents-rail-item.active { background:var(--rpt-bg-tertiary); color:var(--rpt-text-primary); font-weight:600; }
+.rpt-agents-rail-item:focus-visible { outline:2px solid var(--rpt-accent); outline-offset:1px; }
+.rpt-agents-content { flex:1; min-width:0; overflow:auto; padding:14px 16px; }
+
+/* Designed empty states (Overview / Runs / Preview placeholders + no-world) */
+.rpt-agents-placeholder, .rpt-agents-empty { display:flex; flex-direction:column; align-items:center;
+  text-align:center; gap:8px; max-width:440px; margin:48px auto 0; color:var(--rpt-text-secondary); }
+.rpt-agents-placeholder-icon { font-size:34px; opacity:.6; }
+.rpt-agents-placeholder-title { font-size:16px; font-weight:600; color:var(--rpt-text-primary); margin:0; }
+.rpt-agents-placeholder-body { font-size:13px; line-height:1.55; margin:0; }
+.rpt-agents-placeholder-hint { font-size:12px; line-height:1.55; margin:6px 0 0; color:var(--rpt-text-tertiary); }
+.rpt-agents-empty .btn-accent { margin-top:6px; }
+
+/* Installed list + first-run intro */
+.rpt-agents-list { display:flex; flex-direction:column; gap:12px; max-width:720px; }
+.rpt-agents-intro { display:flex; flex-direction:column; gap:3px; padding:12px 14px; border-radius:10px;
+  border:1px dashed var(--rpt-border); background:var(--rpt-bg-secondary); font-size:12.5px;
+  line-height:1.5; color:var(--rpt-text-secondary); }
+.rpt-agents-intro strong { color:var(--rpt-text-primary); font-size:13px; }
+
+/* Pack card */
+.rpt-agents-card { position:relative; display:flex; gap:14px; padding:14px; border-radius:12px;
+  border:1px solid var(--rpt-border); background:var(--rpt-bg-elevated); }
+.rpt-agents-card-body { flex:1; min-width:0; display:flex; flex-direction:column; gap:8px; }
+.rpt-agents-card-head { display:flex; align-items:baseline; gap:8px; flex-wrap:wrap; }
+.rpt-agents-card-name { font-size:14px; font-weight:600; color:var(--rpt-text-primary); }
+.rpt-agents-card-meta { font-size:11px; color:var(--rpt-text-tertiary); }
+.rpt-agents-card-desc { font-size:12.5px; line-height:1.5; color:var(--rpt-text-secondary); margin:0; }
+.rpt-agents-badge-builtin { font-size:10px; font-weight:700; letter-spacing:.03em; text-transform:uppercase;
+  padding:1px 6px; border-radius:5px; background:var(--rpt-bg-tertiary); color:var(--rpt-text-secondary); }
+
+/* Gate toggle — large hit target, --rpt-agent-gate-on when on, 180ms ease-out flip */
+.rpt-agents-gate { position:relative; flex-shrink:0; width:46px; height:26px; padding:0; border-radius:14px;
+  border:1px solid var(--rpt-border); background:var(--rpt-bg-tertiary); cursor:pointer;
+  transition:background 180ms ease-out, border-color 180ms ease-out; }
+.rpt-agents-gate.on { background:var(--rpt-agent-gate-on); border-color:var(--rpt-agent-gate-on); }
+.rpt-agents-gate:focus-visible { outline:2px solid var(--rpt-accent); outline-offset:2px; }
+.rpt-agents-gate-knob { position:absolute; top:2px; left:2px; width:20px; height:20px; border-radius:50%;
+  background:var(--rpt-on-accent); box-shadow:0 1px 3px rgba(0,0,0,.4); transition:transform 180ms ease-out; }
+.rpt-agents-gate.on .rpt-agents-gate-knob { transform:translateX(20px); }
+
+/* Attachment badges (read-only structure) */
+.rpt-agents-badges { display:flex; flex-wrap:wrap; gap:6px; }
+.rpt-agents-badge { font-size:11px; padding:2px 8px; border-radius:6px; background:var(--rpt-bg-tertiary);
+  color:var(--rpt-text-secondary); border:1px solid transparent; }
+.rpt-agents-badge.inline { border-color:var(--rpt-border); color:var(--rpt-text-primary); }
+.rpt-agents-badge.headless { background:var(--rpt-agent-headless); color:var(--rpt-agent-headless-text); }
+
+/* Capability chips — write capabilities danger-tinted */
+.rpt-agents-chips { display:flex; flex-wrap:wrap; gap:6px; }
+.rpt-agents-chip { font-size:11px; padding:2px 8px; border-radius:11px; background:var(--rpt-bg-tertiary);
+  color:var(--rpt-text-secondary); }
+.rpt-agents-chip.write { background:var(--rpt-agent-write-bg); color:var(--rpt-agent-write-text); }
+
+/* Health dot + text (dot carries color; label is text-secondary — no color-only signaling) */
+.rpt-agents-health { display:flex; align-items:center; gap:7px; }
+.rpt-agents-dot { width:9px; height:9px; border-radius:50%; flex-shrink:0; }
+.rpt-agents-dot.ok { background:var(--rpt-success); }
+.rpt-agents-dot.failed { background:var(--rpt-danger); }
+.rpt-agents-dot.never { background:var(--rpt-text-tertiary); }
+.rpt-agents-health-text { font-size:11.5px; color:var(--rpt-text-secondary); }
+
+/* Cascade confirm popover (not a modal) */
+.rpt-agents-popover { position:absolute; top:44px; left:14px; z-index:5; width:280px; padding:12px;
+  border-radius:10px; border:1px solid var(--rpt-border); background:var(--rpt-bg-secondary);
+  box-shadow:0 8px 26px rgba(0,0,0,.4); }
+.rpt-agents-popover-body { font-size:12.5px; line-height:1.5; margin:0 0 10px; color:var(--rpt-text-primary); }
+.rpt-agents-popover-actions { display:flex; justify-content:flex-end; gap:8px; }
+.rpt-agents-popover-confirm { font:inherit; font-size:12px; color:var(--rpt-on-accent);
+  background:var(--rpt-danger); border:1px solid var(--rpt-danger); border-radius:6px; padding:5px 12px; cursor:pointer; }
+.rpt-agents-popover-confirm:focus-visible, .rpt-agents-popover-actions .rpt-duel-secondary:focus-visible {
+  outline:2px solid var(--rpt-accent); outline-offset:1px; }
+
+/* Loading skeleton rows (not spinners) */
+.rpt-agents-skeleton { pointer-events:none; }
+.rpt-agents-skel-toggle { flex-shrink:0; width:46px; height:26px; border-radius:14px; background:var(--rpt-bg-tertiary); }
+.rpt-agents-skel-lines { flex:1; display:flex; flex-direction:column; gap:8px; }
+.rpt-agents-skel-line { height:12px; border-radius:6px; background:var(--rpt-bg-tertiary); }
+.rpt-agents-skel-line.short { width:45%; }
+.rpt-agents-skeleton .rpt-agents-skel-toggle,
+.rpt-agents-skeleton .rpt-agents-skel-line { animation:rpt-agents-pulse 1.3s ease-in-out infinite; }
+@keyframes rpt-agents-pulse { 0%,100% { opacity:.5; } 50% { opacity:.9; } }
+
+@media (prefers-reduced-motion: reduce) {
+  .rpt-agents-gate, .rpt-agents-gate-knob { transition:none; }
+  .rpt-agents-skeleton .rpt-agents-skel-toggle,
+  .rpt-agents-skeleton .rpt-agents-skel-line { animation:none; }
+}

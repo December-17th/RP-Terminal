@@ -152,7 +152,8 @@ const api = {
   },
   // Agent-pack library (agent-packs plan WP1.4): list + per-world gate + exposed-setting overrides.
   // `scope` is 'global' | { world } | { chat } (agentPackStore OverrideScope).
-  listAgentPacks: (profileId: string) => ipcRenderer.invoke('agent-packs-list', profileId),
+  listAgentPacks: (profileId: string, worldId?: string | null, chatId?: string | null) =>
+    ipcRenderer.invoke('agent-packs-list', profileId, worldId, chatId),
   setAgentPackGate: (packId: string, worldId: string, chatId: string | null, open: boolean) =>
     ipcRenderer.invoke('agent-pack-set-gate', packId, worldId, chatId, open),
   setAgentPackOverride: (packId: string, scope: unknown, settingId: string, value: unknown) =>

@@ -27,7 +27,15 @@ const dark: ThemeTokens = {
   '--rpt-border': '#333333',
   '--rpt-danger': '#e74c3c',
   '--rpt-success': '#4caf72',
-  '--rpt-warning': '#e0a23c'
+  '--rpt-warning': '#e0a23c',
+  // Agent Packs (agent-packs plan WP3.1): the pack card's derived domain tokens. gate-on = the
+  // toggle's active fill (success-green: "this pack is live"); headless = the accent for a
+  // "runs by itself" badge; write-* = the danger-tinted capability chip (a pack that MUTATES state).
+  '--rpt-agent-gate-on': '#4caf72',
+  '--rpt-agent-headless': '#3a2f14',
+  '--rpt-agent-headless-text': '#e6b455',
+  '--rpt-agent-write-bg': '#3a1c1a',
+  '--rpt-agent-write-text': '#f0968c'
 }
 
 const carbon: ThemeTokens = {
@@ -43,7 +51,13 @@ const carbon: ThemeTokens = {
   '--rpt-border': '#26262c',
   '--rpt-danger': '#f06a62',
   '--rpt-success': '#43c98b',
-  '--rpt-warning': '#e2a93c'
+  '--rpt-warning': '#e2a93c',
+  // Agent Packs (see the dark set above for what each token drives).
+  '--rpt-agent-gate-on': '#43c98b',
+  '--rpt-agent-headless': '#2b2410',
+  '--rpt-agent-headless-text': '#e6b455',
+  '--rpt-agent-write-bg': '#331715',
+  '--rpt-agent-write-text': '#f5978d'
 }
 
 const light: ThemeTokens = {
@@ -59,7 +73,14 @@ const light: ThemeTokens = {
   '--rpt-border': '#d9dce2',
   '--rpt-danger': '#d23b35',
   '--rpt-success': '#1f9e5e',
-  '--rpt-warning': '#b8770a'
+  '--rpt-warning': '#b8770a',
+  // Agent Packs (see the dark set above). Light theme flips to light chip fills with dark-enough
+  // text for AA; gate-on stays the success green (dark enough on the light toggle track).
+  '--rpt-agent-gate-on': '#1f9e5e',
+  '--rpt-agent-headless': '#f5ecd6',
+  '--rpt-agent-headless-text': '#7a5405',
+  '--rpt-agent-write-bg': '#fbe3e0',
+  '--rpt-agent-write-text': '#a3241f'
 }
 
 export const THEMES: Record<string, ThemeDef> = {

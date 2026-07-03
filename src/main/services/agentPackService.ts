@@ -64,11 +64,29 @@ export const seedBuiltinPacks = (profileId: string): void => {
 
 // ── Read side ─────────────────────────────────────────────────────────────────────────────────
 
-/** The installed packs (Library) with manifest summaries — builtin flag + fork lineage. */
-export const list = (profileId: string): AgentPackSummary[] => {
+/** The installed packs (Library) with manifest summaries — builtin flag + fork lineage, plus (WP3.1)
+ *  each fragment's derived attachments + capabilities. When a `worldId` is supplied (the active
+ *  chat's world), each summary also carries the RESOLVED gate state for that (world, chat) so the
+ *  Agents card can render its toggle on load without a separate read endpoint (read-only; the toggle
+ *  still writes via setGate). With no worldId, `gateOpen` is left undefined. */
+export const list = (
+  profileId: string,
+  worldId?: string | null,
+  chatId?: string | null
+): AgentPackSummary[] => {
   seedBuiltinPacks(profileId)
   return listPackRecords(profileId)
-    .map(packToSummary)
+    .map((pack) => {
+      const summary = packToSummary(pack)
+      if (worldId != null) {
+        summary.gateOpen = resolveGate(
+          listActivationRows(pack.id),
+          worldId,
+          chatId ?? null
+        ).open
+      }
+      return summary
+    })
     .sort((a, b) => a.manifest.name.localeCompare(b.manifest.name))
 }
 
