@@ -1,5 +1,6 @@
 import { contextBridge, ipcRenderer, IpcRendererEvent } from 'electron'
 import { electronAPI } from '@electron-toolkit/preload'
+import type { VarsOrigin } from '../shared/thRuntime/types'
 
 // Custom APIs for renderer
 const api = {
@@ -65,8 +66,8 @@ const api = {
     ipcRenderer.on('wcv-card-buttons', l)
     return () => ipcRenderer.removeListener('wcv-card-buttons', l)
   },
-  wcvBroadcastVars: (chatId: string, statData: unknown) =>
-    ipcRenderer.send('wcv-broadcast-vars', chatId, statData),
+  wcvBroadcastVars: (chatId: string, statData: unknown, origin?: VarsOrigin) =>
+    ipcRenderer.send('wcv-broadcast-vars', chatId, statData, origin),
   wcvBroadcastEvent: (chatId: string, name: string, payload: unknown) =>
     ipcRenderer.send('wcv-broadcast-event', chatId, name, payload),
   generate: (profileId: string, chatId: string, userAction: string, source?: 'player' | 'script') =>

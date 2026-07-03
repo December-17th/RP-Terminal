@@ -3,7 +3,11 @@ import { applyJsonPatch, JsonPatchOp } from '../../parsers/mvuParser'
 import { log } from '../logService'
 import { FloorFile } from '../../types/chat'
 
-// Runaway write-back loop breaker (TIMING-INDEPENDENT). A card that writes a constantly-CHANGING value on
+// Runaway write-back loop breaker (TIMING-INDEPENDENT). NOTE (2026-07-02): this is now a BACKSTOP, not the
+// primary defense. The self-feedback loop is fixed at the source — the card runtime (shared/thRuntime
+// `onVarsChanged`) no longer fires `mag_variable_update_*` for `card-write`-origin changes, so a card's own
+// write no longer re-triggers its own update handler (the WS-3 origin-tag fix). This guard is retained to
+// cap any residual/untagged runaway. A card that writes a constantly-CHANGING value on
 // its own update event (e.g. a `date` clock) re-triggers itself forever — every write is a real change, so
 // the no-op guard can't catch it. We detect the runaway *signature*: the SAME set of changed paths written
 // CONSECUTIVELY many times. A legitimate init chain touches DISTINCT paths (the signature changes each

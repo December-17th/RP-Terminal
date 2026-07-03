@@ -54,35 +54,35 @@ export function createThRuntime(host: Host): ThGlobals {
 
   // --- statData cache (authoritative refresh via host.onVarsChanged; optimistic on write) ---
   let stat: any = host.statData() || {}
-  // Fire MVU events for EVERY genuine stat_data change — including the card's OWN writes looping back.
-  // Cards routinely chain initialization through their own `mag_variable_update_ended` (write a field →
-  // react → write the next), and the prompt-side EJS injection reads the resulting vars via getvar; if we
-  // swallowed self-write events the chain would stall after the first write and those vars would never
-  // populate. We only skip a byte-identical repeat (a true no-op echo). A card that writes a constantly-
-  // CHANGING value on its own event (e.g. a `date` clock) would still spin here — that runaway is broken
-  // at the SOURCE instead (`generationService.applyVariableOps` caps rapid same-path writes), which stops
-  // the persist+broadcast so no echo returns, without muzzling legitimate self-chained writes.
-  //
-  // WS-3 SPIKE (2026-06-26): this firing-on-every-change DIVERGES from real MVU. In the MIT MagVarUpdate
-  // source, `mag_variable_update_*` are emitted only by `updateVariables`, called only from the AI-message
-  // FOLD path — NOT from programmatic card writes (setMvuVariable/insertOrAssignVariables are pure helpers).
-  // The faithful fix that also kills the loop at the source: tag each change's origin (model-fold vs
-  // card-write) end-to-end and fire here ONLY for model-fold, then retire the generationService heuristic.
-  // DEFERRED — behavior change on the live pipeline (both transports); a prior suppress-self-write attempt
-  // was reverted (broke cards chaining init through their own events), so it needs in-app verification
-  // against 命定之诗 first. See docs/structural-cleanup-log-2026-06-26.md Stage 13.
+  // Fire MVU events on genuine stat_data changes — but ONLY for model-fold / external origins, never for
+  // the card's OWN programmatic write echoed back (`meta.origin === 'card-write'`). This is the WS-3
+  // architectural fix (landed 2026-07-02) and it is FAITHFUL to real MVU: in the MIT MagVarUpdate source,
+  // `mag_variable_update_*` are emitted only by `updateVariables`, called only from the AI-message FOLD path
+  // — NOT from programmatic writes (setMvuVariable/insertOrAssignVariables are pure helpers). RPT previously
+  // fired on EVERY change, so a card writing a constantly-CHANGING value on its own `mag_variable_update_ended`
+  // (e.g. 命定之诗's date/world-clock) self-looped: write → echo → event → write → … until the
+  // `generation/varsWrite.ts` `LOOP_MAX` guard tripped (after persisting corrupted intermediate values).
+  // Now the echo of a card write refreshes the cache (so getvar reads see it) but fires no events, so the
+  // loop can't start. The origin is tagged end-to-end (chatStore.lastVarsOrigin → inline subscription /
+  // wcv-broadcast-vars → onVarsChanged meta). The `LOOP_MAX` heuristic is RETAINED as a backstop, not the
+  // primary defense. Absent meta ⇒ treated as a fold (events fire) for back-compat with any untagged feeder.
+  // See docs/structural-cleanup-log-2026-06-26.md Stage 13/15 + docs/progress-log.md.
   let lastFiredJson = JSON.stringify(stat ?? null)
-  const offVars = host.onVarsChanged((sd) => {
+  const offVars = host.onVarsChanged((sd, meta) => {
     const json = JSON.stringify(sd ?? null)
     if (json === lastFiredJson) return
     lastFiredJson = json
+    // ALWAYS refresh the runtime cache so getvar / EJS injection see the new value — even for a card write.
+    const before = { stat_data: stat }
+    stat = sd || {}
+    const after = { stat_data: stat }
+    // Faithful MVU: a programmatic card write does NOT fire mag_* / MESSAGE_UPDATED (it would echo back into
+    // the writer and loop). Model-fold / external changes still fire.
+    if (meta?.origin === 'card-write') return
     // MVU event contract (JS-Slash-Runner `exported.mvu.d.ts`): VARIABLE_UPDATE_* handlers receive
     // `(variables: MvuData, variables_before_update: MvuData)` — the WRAPPED `{ stat_data }` object,
     // NOT the bare stat_data. Matches the inline transport (`plugin/mvuEvents.ts`). Emitting bare stat
     // broke cards that read `variables.stat_data` (ZodError + "reading 'stat_data' of undefined").
-    const before = { stat_data: stat }
-    stat = sd || {}
-    const after = { stat_data: stat }
     emit(MVU_EVENTS.VARIABLE_UPDATE_STARTED, after, before)
     emit(MVU_EVENTS.VARIABLE_UPDATED, after, before)
     emit(MVU_EVENTS.VARIABLE_UPDATE_ENDED, after, before)

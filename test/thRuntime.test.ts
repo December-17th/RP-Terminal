@@ -42,7 +42,7 @@ function mockHost(over: Partial<Host> = {}): { host: Host; calls: any } {
       max_depth: null
     }
   ]
-  let varsCb: ((sd: any) => void) | null = null
+  let varsCb: ((sd: any, meta?: { origin: any }) => void) | null = null
   const host: Host = {
     ctx: { profileId: 'p', chatId: 'c', characterId: 'ch' },
     statData: () => ({ hp: 1 }),
@@ -137,7 +137,7 @@ function mockHost(over: Partial<Host> = {}): { host: Host; calls: any } {
   return {
     host,
     calls,
-    fireVars: (sd: any) => varsCb && varsCb(sd),
+    fireVars: (sd: any, meta?: { origin: any }) => varsCb && varsCb(sd, meta),
     fireHostEvent: (n: string, p?: any) => hostCb && hostCb(n, p)
   } as any
 }
@@ -176,15 +176,37 @@ describe('createThRuntime', () => {
     expect(g.SillyTavern.chat[0].name).toBe('Player')
   })
 
-  it('refreshes the cache + emits MVU events on host var change', () => {
+  it('refreshes the cache + emits MVU events on host var change (fold / undefined origin)', () => {
     const m: any = mockHost()
     const g = createThRuntime(m.host)
     const seen: any[] = []
     g.eventOn('mag_variable_updated', (vars: any) => seen.push(vars))
-    m.fireVars({ hp: 99 })
+    m.fireVars({ hp: 99 }) // undefined origin ⇒ treated as a fold (events fire) for back-compat
     expect(g.getVariables()).toEqual({ stat_data: { hp: 99 } })
     // MVU events carry the WRAPPED { stat_data } object (MvuData contract), not bare stat_data.
     expect(seen).toEqual([{ stat_data: { hp: 99 } }])
+    m.fireVars({ hp: 100 }, { origin: 'model-fold' })
+    expect(seen).toEqual([{ stat_data: { hp: 99 } }, { stat_data: { hp: 100 } }])
+  })
+
+  it('WS-3: a card-write origin refreshes the cache but fires NO MVU events (no self-loop)', () => {
+    const m: any = mockHost()
+    const g = createThRuntime(m.host)
+    const seen: any[] = []
+    const msgSeen: any[] = []
+    g.eventOn('mag_variable_updated', (vars: any) => seen.push(vars))
+    g.eventOn('mag_variable_update_ended', (vars: any) => seen.push(vars))
+    g.eventOn('message_updated', (id: any) => msgSeen.push(id))
+    // The card's own programmatic write echoed back — a constantly-changing value would otherwise loop.
+    m.fireVars({ date: 'x1' }, { origin: 'card-write' })
+    // Cache IS refreshed (getvar / EJS injection must see the new value)...
+    expect(g.getVariables()).toEqual({ stat_data: { date: 'x1' } })
+    // ...but NO mag_* / message_updated events fired, so the card's own handler isn't re-triggered.
+    expect(seen).toEqual([])
+    expect(msgSeen).toEqual([])
+    // A subsequent genuine fold on the SAME runtime still fires events (cache carry-over is correct).
+    m.fireVars({ date: 'x2' }, { origin: 'model-fold' })
+    expect(seen).toEqual([{ stat_data: { date: 'x2' } }, { stat_data: { date: 'x2' } }])
   })
 
   it('setMvuVariable persists via applyVariableOps', async () => {

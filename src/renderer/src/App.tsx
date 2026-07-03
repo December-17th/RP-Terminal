@@ -95,7 +95,9 @@ export default function App(): React.ReactElement {
       const sd = state.floors.length
         ? state.floors[state.floors.length - 1]?.variables?.stat_data
         : undefined
-      if (sd) window.api.wcvBroadcastVars(state.activeChatId, sd)
+      // Forward the change origin so a card panel's own write echoed back here doesn't re-fire its MVU
+      // events and loop (the WS-3 fix — see chatStore.lastVarsOrigin / shared/thRuntime VarsOrigin).
+      if (sd) window.api.wcvBroadcastVars(state.activeChatId, sd, state.lastVarsOrigin)
     })
     // Broadcast TavernHelper lifecycle/mutation events to BOTH transports — the compute+fan-out logic
     // lives in initCardEventBridge (cardBridge/hostBroadcast), so the two paths can't drift (WS-7).
