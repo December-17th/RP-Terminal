@@ -1,8 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 
 // Extractor + variable nodes (extractor-nodes plan §2): vars.get/vars.save (floor/session
-// variable read-write), context.history/context.card/context.persona (turn-context slices),
-// and memory.query (query-driven recall, keyword-ranking only in v1).
+// variable read-write), context.history/context.card/context.persona (turn-context slices).
 
 const floorSvc = vi.hoisted(() => ({
   getAllFloors: vi.fn(),
@@ -17,11 +16,6 @@ const chatVarsSvc = vi.hoisted(() => ({
 }))
 vi.mock('../../src/main/services/chatCardVarsService', () => chatVarsSvc)
 
-const memoryStoreSvc = vi.hoisted(() => ({
-  getEntries: vi.fn()
-}))
-vi.mock('../../src/main/services/memoryStore', () => memoryStoreSvc)
-
 import { varsGet, varsSave } from '../../src/main/services/nodes/builtin/varsNodes'
 import {
   contextHistory,
@@ -30,9 +24,7 @@ import {
   contextAction,
   contextParams
 } from '../../src/main/services/nodes/builtin/contextNodes'
-import { memoryQuery } from '../../src/main/services/nodes/builtin/memoryNodes'
 import { NodeRunFailure, RunContext, NodeImpl } from '../../src/main/services/nodes/types'
-import { MemoryEntry } from '../../src/main/services/memoryStore'
 
 const ctx: RunContext = {
   signal: new AbortController().signal,
@@ -49,45 +41,13 @@ const meta = (impl: NodeImpl, id: string, rawConfig: Record<string, unknown> = {
   config: impl.configSchema ? (impl.configSchema.parse(rawConfig) as Record<string, unknown>) : {}
 })
 
-const makeEntry = (over: Partial<MemoryEntry>): MemoryEntry => ({
-  id: 'm1',
-  chatId: 'c1',
-  collection: 'events',
-  entityKey: null,
-  summary: 'default summary',
-  payload: null,
-  keywords: [],
-  entities: [],
-  salience: 1,
-  pinned: false,
-  turnStart: null,
-  turnEnd: null,
-  supersededBy: null,
-  embedModel: null,
-  embedding: null,
-  updatedAt: null,
-  createdAt: null,
-  ...over
-})
-
-// One enabled stream collection (keyword mode) shared by the memory.query fixture.
-const streamCollection = {
-  id: 'events',
-  shape: 'stream' as const,
-  enabled: true,
-  write: { trigger: 'checkpoint' as const, prompt: '' },
-  retrieval: { mode: 'keyword' as const, count: 5, tokenBudget: 600 },
-  inject: { label: 'Relevant earlier events' }
-}
-
 const gen = {
   profileId: 'p1',
   chatId: 'c1',
   userName: 'Ash',
   workingVars: { fallback: true },
   settings: {
-    persona: { description: 'A wandering trainer.' },
-    memory: { collections: [streamCollection] }
+    persona: { description: 'A wandering trainer.' }
   },
   card: {
     data: {
@@ -120,7 +80,6 @@ beforeEach(() => {
   floorSvc.getFloor.mockReset()
   chatVarsSvc.getChatCardVars.mockReset()
   chatVarsSvc.setChatCardVars.mockReset()
-  memoryStoreSvc.getEntries.mockReset()
 })
 
 describe('vars.get', () => {
@@ -343,80 +302,5 @@ describe('context.params', () => {
     const unset = { ...fsm, preset: { parameters: { temperature: 1 } } }
     const r3 = contextParams.run(ctx, { gen: unset }, meta(contextParams, 'n1'))
     expect(r3).toEqual({ outputs: { params: { temperature: 1, max_tokens: 500 } } })
-  })
-})
-
-describe('memory.query', () => {
-  it('case 11a: count: 1 -> ONLY the matching entry returns', () => {
-    const matching = makeEntry({ id: 'a', summary: 'Ash caught a Pikachu', keywords: ['pikachu'] })
-    const other = makeEntry({ id: 'b', summary: 'Misty likes water types', keywords: ['water'] })
-    memoryStoreSvc.getEntries.mockReturnValue([matching, other])
-    const r = memoryQuery.run(ctx, { gen, query: 'pikachu' }, meta(memoryQuery, 'n1', { count: 1 }))
-    const outputs = r.outputs as { block: string; rows: MemoryEntry[] }
-    expect(outputs.rows).toHaveLength(1)
-    expect(outputs.rows[0].id).toBe('a')
-    expect(outputs.block).toContain('Ash caught a Pikachu')
-    expect(outputs.block).not.toContain('Misty likes water types')
-  })
-
-  it('case 11b: default count -> BOTH entries return (backfill with unmatched recency entries)', () => {
-    const matching = makeEntry({ id: 'a', summary: 'Ash caught a Pikachu', keywords: ['pikachu'] })
-    const other = makeEntry({ id: 'b', summary: 'Misty likes water types', keywords: ['water'] })
-    memoryStoreSvc.getEntries.mockReturnValue([matching, other])
-    const r = memoryQuery.run(ctx, { gen, query: 'pikachu' }, meta(memoryQuery, 'n1', {}))
-    const outputs = r.outputs as { block: string; rows: MemoryEntry[] }
-    expect(outputs.rows).toHaveLength(2)
-    expect(outputs.block).toContain('Ash caught a Pikachu')
-    expect(outputs.block).toContain('Misty likes water types')
-  })
-
-  it('case 12: blank query -> empty outputs, getEntries never called', () => {
-    const r = memoryQuery.run(ctx, { gen, query: '   ' }, meta(memoryQuery, 'n1', {}))
-    expect(r).toEqual({ outputs: { block: '', rows: [] } })
-    expect(memoryStoreSvc.getEntries).not.toHaveBeenCalled()
-  })
-
-  it('case 13: mode filter — llm collection skipped, vector stream downgraded to keyword', () => {
-    const llmCollection = {
-      id: 'plans',
-      shape: 'stream' as const,
-      enabled: true,
-      write: { trigger: 'checkpoint' as const, prompt: '' },
-      retrieval: { mode: 'llm' as const, count: 5, tokenBudget: 600 },
-      inject: { label: 'Plans' }
-    }
-    const vectorCollection = {
-      id: 'vec-events',
-      shape: 'stream' as const,
-      enabled: true,
-      write: { trigger: 'checkpoint' as const, prompt: '' },
-      retrieval: { mode: 'vector' as const, count: 5, tokenBudget: 600 },
-      inject: { label: 'Vector events' }
-    }
-    const genWithBoth = {
-      ...gen,
-      settings: {
-        ...gen.settings,
-        memory: { collections: [llmCollection, vectorCollection] }
-      }
-    }
-    const matching = makeEntry({
-      id: 'v1',
-      summary: 'A vector-tagged pikachu sighting',
-      keywords: ['pikachu']
-    })
-    memoryStoreSvc.getEntries.mockReturnValue([matching])
-
-    const r = memoryQuery.run(
-      ctx,
-      { gen: genWithBoth, query: 'pikachu' },
-      meta(memoryQuery, 'n1', {})
-    )
-    const outputs = r.outputs as { block: string; rows: MemoryEntry[] }
-    // getEntries called only once — for the vector collection, never for the llm one.
-    expect(memoryStoreSvc.getEntries).toHaveBeenCalledTimes(1)
-    expect(memoryStoreSvc.getEntries).toHaveBeenCalledWith('p1', 'c1', 'vec-events')
-    expect(outputs.rows).toHaveLength(1)
-    expect(outputs.block).toContain('A vector-tagged pikachu sighting')
   })
 })

@@ -1,6 +1,14 @@
 # Memory System — Design & Plan
 
-**Status:** Design (pre-implementation; actively brainstorming — shape for review)
+> **Superseded 2026-07-02** by the SQL-table memory overhaul — see
+> [.scratch/sql-table-memory/PRD.md](../.scratch/sql-table-memory/PRD.md). The episodic-memory
+> engine described below (the `memory_entries` store, compaction/retrieval/embedding services,
+> the `memory.*` node family, the `memory` settings block, and the Memory view) has been **removed
+> from the codebase** — it never ran live (`memory.enabled` always defaulted off, so no data
+> migration was needed). This document is kept as a point-in-time snapshot of that superseded
+> design; do not treat it as describing current behavior.
+
+**Status:** Superseded (engine removed 2026-07-02) — was: Design (pre-implementation; actively brainstorming — shape for review)
 **Date:** 2026-06-26
 **Revised:** 2026-06-26 — generalized from a single episodic table into a **customizable multi-collection memory engine** (events + character progression + locations + relationships + card-defined kinds) with an optional **vector storage mode**. Episodic "events" is now one collection among several.
 **Extends:** the **L3** tier sketched in [prompt-cache-optimization-design.md](prompt-cache-optimization-design.md) §6.3–6.4 (compaction → episodic memory → retrieval).

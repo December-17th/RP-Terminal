@@ -72,32 +72,6 @@ CREATE TABLE IF NOT EXISTS combat_encounters (
   data TEXT NOT NULL,
   updated_at TEXT
 );
--- Long-term memory engine (docs/episodic-memory-design.md §6). One generic store
--- partitioned by the collection column; entity rows upsert on (chat_id, collection,
--- entity_key) while stream rows (entity_key NULL — distinct under SQLite UNIQUE) coexist.
--- The core writes/reads only the 'events' collection; entity/vector columns are reserved
--- (no second migration). The optional sqlite-vec memory_vec table is NOT created here.
-CREATE TABLE IF NOT EXISTS memory_entries (
-  id TEXT PRIMARY KEY,
-  chat_id TEXT NOT NULL REFERENCES chats(id) ON DELETE CASCADE,
-  collection TEXT NOT NULL,
-  entity_key TEXT,
-  summary TEXT NOT NULL,
-  payload TEXT,
-  keywords TEXT,
-  entities TEXT,
-  salience REAL DEFAULT 1,
-  pinned INTEGER DEFAULT 0,
-  turn_start INTEGER,
-  turn_end INTEGER,
-  superseded_by TEXT,
-  embed_model TEXT,
-  embedding TEXT,
-  updated_at TEXT,
-  created_at TEXT,
-  UNIQUE(chat_id, collection, entity_key)
-);
-CREATE INDEX IF NOT EXISTS idx_mem_chat_coll ON memory_entries(chat_id, collection);
 -- Durable per-node scratchpad for workflow nodes, keyed by (chat_id, workflow_id, node_id) —
 -- what makes "changed since last fire" (control.when) expressible. Workflow id is part of the
 -- key because clones of the default graph keep node ids by design, so (chat_id, node_id) alone
@@ -109,6 +83,33 @@ CREATE TABLE IF NOT EXISTS node_state (
   data TEXT,
   updated_at TEXT,
   PRIMARY KEY (chat_id, workflow_id, node_id)
+);
+
+-- Floor-keyed append-only SQL op log for SQL-table memory (issue 03). Every applied write batch is
+-- logged here (raw SQL) so the per-chat sandbox DB can be REBUILT by ordered replay when floors are
+-- truncated (regenerate/swipe/delete). The table DATA lives in the per-chat sandbox file, NOT here --
+-- this is only the replay journal. FK cascade (foreign_keys = ON below) clears it on chat deletion,
+-- following the floors-table precedent.
+CREATE TABLE IF NOT EXISTS table_ops (
+  chat_id TEXT NOT NULL REFERENCES chats(id) ON DELETE CASCADE,
+  floor INTEGER NOT NULL,
+  seq INTEGER NOT NULL,
+  sql TEXT NOT NULL,
+  created_at TEXT,
+  PRIMARY KEY (chat_id, floor, seq)
+);
+CREATE INDEX IF NOT EXISTS idx_table_ops_chat_floor ON table_ops(chat_id, floor);
+
+-- Chat-level per-table maintenance-progress pointer for SQL-table memory (issue 07). last_floor is
+-- the 0-based floor index up to which a table was last processed; the per-turn table.gate cadence AND
+-- the manual backfill both advance it (MAX-semantics upsert), the Tables view reads it, floor
+-- truncation clamps it, and template (re)assignment resets it. REPLACES the gate's per-workflow
+-- node_state pointer. FK cascade (foreign_keys = ON below) clears it on chat deletion.
+CREATE TABLE IF NOT EXISTS table_progress (
+  chat_id TEXT NOT NULL REFERENCES chats(id) ON DELETE CASCADE,
+  sql_name TEXT NOT NULL,
+  last_floor INTEGER NOT NULL,
+  PRIMARY KEY (chat_id, sql_name)
 );
 `
 
@@ -125,8 +126,13 @@ DROP TABLE IF EXISTS presets;
 DROP TABLE IF EXISTS presets_legacy;
 DROP TABLE IF EXISTS profile_state;
 DROP TABLE IF EXISTS rpg_entities;
--- Superseded by memory_entries (was reserved, never written). See db §memory.
+-- Legacy long-term-memory tables. episodic_memory was reserved, never written; memory_entries
+-- backed the episodic-memory engine removed in the SQL-table-memory overhaul (2026-07-02) — it
+-- never ran live (memory.enabled defaulted off), so its data is dropped rather than migrated. The
+-- stale, unread chats.memory_state column is deliberately left in place (SQLite DROP COLUMN isn't
+-- worth the migration risk; a NULL column is harmless — same call as pending_lore above).
 DROP TABLE IF EXISTS episodic_memory;
+DROP TABLE IF EXISTS memory_entries;
 `
 
 /** Add a column to a table if a pre-existing DB doesn't already have it (idempotent). */
@@ -162,12 +168,11 @@ export const getDb = (): Database.Database => {
   addColumnIfMissing(db, 'chats', 'mode', 'mode TEXT')
   addColumnIfMissing(db, 'chats', 'cached_world_info', 'cached_world_info TEXT')
   addColumnIfMissing(db, 'chats', 'pending_lore', 'pending_lore TEXT')
-  // Memory checkpoint bookkeeping per chat: {last_compacted_floor}. See compactionService.
-  addColumnIfMissing(db, 'chats', 'memory_state', 'memory_state TEXT')
   // Session-tier workflow override (node-workflow spec §12); null = inherit world/global/builtin.
   addColumnIfMissing(db, 'chats', 'workflow_id', 'workflow_id TEXT')
-  // Vector recall (brute-force JS cosine): per-memory embedding as a JSON float array.
-  addColumnIfMissing(db, 'memory_entries', 'embedding', 'embedding TEXT')
+  // SQL-table-memory: the assigned table-template id (null = table memory off for this chat).
+  // The table DATA lives in a separate per-chat sandbox DB, not here (tableDbService).
+  addColumnIfMissing(db, 'chats', 'table_template_id', 'table_template_id TEXT')
   // TH-2 swipes: alternate responses per floor + the active index.
   addColumnIfMissing(db, 'floors', 'swipes', 'swipes TEXT')
   addColumnIfMissing(db, 'floors', 'swipe_id', 'swipe_id INTEGER')

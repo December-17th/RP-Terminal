@@ -4,13 +4,13 @@ import React from 'react'
 import { useNavStore } from '../../stores/navStore'
 import { ChatView } from '../ChatView'
 import { StatusView } from '../StatusView'
-import { MemoryView } from '../MemoryView'
 import { LogsPanel } from '../LogsPanel'
 import { PanelRouter } from '../PanelRouter'
 import { WcvTestView } from './WcvPanel'
 import { CombatView } from './CombatView'
 import { DuelView } from './DuelView'
 import { VariablesView } from './VariablesView'
+import { TablesView } from './TablesView'
 import { WorkflowView } from './WorkflowView'
 import { useWorkspaceContext } from './context'
 import { UsageView } from '../UsageView'
@@ -40,11 +40,6 @@ const StatusPanel: React.FC = () => {
   return <StatusView profileId={profileId} />
 }
 
-const MemoryViewPanel: React.FC = () => {
-  const { profileId } = useWorkspaceContext()
-  return <MemoryView profileId={profileId} />
-}
-
 const CombatPanel: React.FC = () => {
   const { profileId } = useWorkspaceContext()
   return <CombatView profileId={profileId} />
@@ -58,6 +53,11 @@ const DuelPanel: React.FC = () => {
 const VariablesPanel: React.FC = () => {
   const { profileId } = useWorkspaceContext()
   return <VariablesView profileId={profileId} />
+}
+
+const TablesPanel: React.FC = () => {
+  const { profileId } = useWorkspaceContext()
+  return <TablesView profileId={profileId} />
 }
 
 const UsagePanel: React.FC = () => {
@@ -97,10 +97,10 @@ export const ViewRegistry: Record<string, ViewEntry> = {
   navigator: { title: 'Navigator', Component: NavigatorPanel, fill: true },
   chat: { title: 'Chat', Component: ChatPanel, fill: true },
   status: { title: 'RPG Status', Component: StatusPanel },
-  memory: { title: 'Memory', Component: MemoryViewPanel },
   combat: { title: 'Combat', Component: CombatPanel, fill: true },
   duel: { title: 'Duel', Component: DuelPanel, fill: true },
   variables: { title: 'Variables', Component: VariablesPanel },
+  tables: { title: 'Tables', Component: TablesPanel },
   workflow: { title: 'Workflows', Component: WorkflowPanel },
   usage: { title: 'Usage', Component: UsagePanel, fill: true },
   'card-scripts': { title: 'Card Scripts', Component: CardScriptsPanel },

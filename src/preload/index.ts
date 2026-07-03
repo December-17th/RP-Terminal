@@ -149,6 +149,58 @@ const api = {
     ipcRenderer.on('workflow-panel', listener)
     return () => ipcRenderer.removeListener('workflow-panel', listener)
   },
+  // SQL-table memory (issue 02): file-based table templates + per-chat assignment + read-only view
+  listTableTemplates: (profileId: string) =>
+    ipcRenderer.invoke('table-templates-list', profileId),
+  getTableTemplate: (profileId: string, id: string) =>
+    ipcRenderer.invoke('table-template-get', profileId, id),
+  deleteTableTemplate: (profileId: string, id: string) =>
+    ipcRenderer.invoke('table-template-delete', profileId, id),
+  importTableTemplateDialog: (profileId: string) =>
+    ipcRenderer.invoke('table-template-import-dialog', profileId),
+  getChatTableTemplate: (profileId: string, chatId: string) =>
+    ipcRenderer.invoke('chat-table-template-get', profileId, chatId),
+  setChatTableTemplate: (profileId: string, chatId: string, id: string | null) =>
+    ipcRenderer.invoke('chat-table-template-set', profileId, chatId, id),
+  readChatTables: (profileId: string, chatId: string) =>
+    ipcRenderer.invoke('chat-tables-read', profileId, chatId),
+  // SQL-table memory (issue 06): hand editing, last-maintained status, template export
+  editChatTable: (
+    profileId: string,
+    chatId: string,
+    edit: {
+      kind: 'cell' | 'insert' | 'delete' | 'reset'
+      table: string
+      rowid?: number
+      columnIndex?: number
+      value?: string
+      values?: (string | null)[]
+    }
+  ) => ipcRenderer.invoke('chat-tables-edit', profileId, chatId, edit),
+  readChatTablesStatus: (profileId: string, chatId: string) =>
+    ipcRenderer.invoke('chat-tables-status', profileId, chatId),
+  exportTableTemplateDialog: (profileId: string, templateId: string, chatId?: string | null) =>
+    ipcRenderer.invoke('table-template-export-dialog', profileId, templateId, chatId),
+  // SQL-table memory (issue 07): manual backfill from history + live progress events
+  startTableBackfill: (
+    profileId: string,
+    chatId: string,
+    opts: {
+      lastFloors: number | 'all'
+      batchSize: number
+      apiPresetId?: string | null
+      retries?: number
+    }
+  ) => ipcRenderer.invoke('table-backfill-start', profileId, chatId, opts),
+  cancelTableBackfill: (profileId: string, chatId: string) =>
+    ipcRenderer.invoke('table-backfill-cancel', profileId, chatId),
+  getTableBackfillState: (profileId: string, chatId: string) =>
+    ipcRenderer.invoke('table-backfill-state', profileId, chatId),
+  onTableBackfillProgress: (cb: (p: any) => void) => {
+    const listener = (_e: IpcRendererEvent, p: any): void => cb(p)
+    ipcRenderer.on('table-backfill-progress', listener)
+    return () => ipcRenderer.removeListener('table-backfill-progress', listener)
+  },
   // Lorebook library (id-keyed; a character's own lorebook has id == characterId)
   listLorebooks: (profileId: string) => ipcRenderer.invoke('list-lorebooks', profileId),
   getLorebook: (profileId: string, id: string) => ipcRenderer.invoke('get-lorebook', profileId, id),
@@ -289,29 +341,6 @@ const api = {
     ipcRenderer.invoke('duel-narrate', profileId, chatId),
   duelEnd: (profileId: string, chatId: string) =>
     ipcRenderer.invoke('duel-end', profileId, chatId),
-  // Long-term memory data management (the Memory view: browse / edit / pin / delete).
-  memoryList: (profileId: string, chatId: string) =>
-    ipcRenderer.invoke('memory-list', profileId, chatId),
-  memoryUpdate: (profileId: string, chatId: string, id: string, patch: unknown) =>
-    ipcRenderer.invoke('memory-update', profileId, chatId, id, patch),
-  memoryDelete: (profileId: string, chatId: string, id: string) =>
-    ipcRenderer.invoke('memory-delete', profileId, chatId, id),
-  memoryAdd: (profileId: string, chatId: string, summary: string, keywords: string[]) =>
-    ipcRenderer.invoke('memory-add', profileId, chatId, summary, keywords),
-  // Notify the Memory view that a chat's memories changed (e.g. the writer appended a batch).
-  // Returns an unsubscribe function.
-  onMemoryChanged: (cb: (payload: { chatId: string }) => void) => {
-    const listener = (_e: IpcRendererEvent, payload: { chatId: string }): void => cb(payload)
-    ipcRenderer.on('memory-changed', listener)
-    return () => ipcRenderer.removeListener('memory-changed', listener)
-  },
-  // Which memory ids the latest turn recalled (transient "why recalled" highlight).
-  onMemoryRecalled: (cb: (payload: { chatId: string; ids: string[] }) => void) => {
-    const listener = (_e: IpcRendererEvent, payload: { chatId: string; ids: string[] }): void =>
-      cb(payload)
-    ipcRenderer.on('memory-recalled', listener)
-    return () => ipcRenderer.removeListener('memory-recalled', listener)
-  },
   // Subscribe to incremental generation text. Returns an unsubscribe function.
   onGenerationDelta: (cb: (payload: { chatId: string; delta: string }) => void) => {
     const listener = (_e: IpcRendererEvent, payload: { chatId: string; delta: string }): void =>

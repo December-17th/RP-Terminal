@@ -14,25 +14,6 @@ export interface ApiPreset {
   max_concurrent?: number
 }
 
-/** One memory collection (mirrors main `MemoryCollection`). Core ships only `events`. */
-export interface MemoryCollection {
-  id: string
-  shape: 'stream' | 'entity'
-  enabled: boolean
-  entityKey?: string
-  write: {
-    trigger: 'checkpoint' | 'every_turn' | 'on_change'
-    prompt: string
-    maxItemsPerCheckpoint?: number
-  }
-  retrieval: {
-    mode: 'always' | 'keyword' | 'vector' | 'hybrid' | 'llm'
-    count: number
-    tokenBudget: number
-  }
-  inject: { label: string }
-}
-
 export interface Settings {
   api: {
     provider: string
@@ -81,17 +62,6 @@ export interface Settings {
     ttl: '5m' | '1h'
     prewarm: boolean
     breakpoint_optimizer: boolean
-  }
-  /** Long-term memory engine (mirrors main `Settings['memory']`). Disabled by default. */
-  memory: {
-    enabled: boolean
-    collections: MemoryCollection[]
-    max_tokens: number
-    keep_recent: number
-    checkpoint_turns: number
-    checkpoint_tokens: number
-    utility_api_preset_id: string
-    embedding_api_preset_id: string
   }
   agent: {
     mode: 'off' | 'manual' | 'agentic'

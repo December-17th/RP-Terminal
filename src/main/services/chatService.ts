@@ -8,7 +8,10 @@ import { getLorebookById } from './lorebookService'
 import { buildInitialStatData, mergeDefaults } from './mvuSchema'
 import { extractMvuSchema, schemaDefaults } from './mvuZod'
 import { saveFloor, deleteFloorAndSubsequent, updateFloorFields } from './floorService'
-import { deleteFromTurn, rewindCompactionPointer } from './memoryStore'
+import { getTableTemplateById } from './tableTemplateService'
+import * as tableDbService from './tableDbService'
+import * as tableOpsService from './tableOpsService'
+import * as tableProgressService from './tableProgressService'
 
 interface ChatRow {
   id: string
@@ -134,33 +137,6 @@ export const setCachedWorldInfo = (
     .run(value === null ? null : JSON.stringify(value), chatId, profileId)
 }
 
-/** Per-chat episodic-memory checkpoint bookkeeping (compactionService). */
-export interface MemoryState {
-  /** Highest floor index already folded into memory; -1 = nothing compacted yet. */
-  last_compacted_floor: number
-}
-
-export const getMemoryState = (profileId: string, chatId: string): MemoryState => {
-  const row = getDb()
-    .prepare('SELECT memory_state FROM chats WHERE id = ? AND profile_id = ?')
-    .get(chatId, profileId) as { memory_state: string | null } | undefined
-  if (row?.memory_state) {
-    try {
-      const v = JSON.parse(row.memory_state)
-      if (v && typeof v.last_compacted_floor === 'number') return v as MemoryState
-    } catch {
-      // corrupt cache → treat as fresh
-    }
-  }
-  return { last_compacted_floor: -1 }
-}
-
-export const setMemoryState = (profileId: string, chatId: string, value: MemoryState): void => {
-  getDb()
-    .prepare('UPDATE chats SET memory_state = ? WHERE id = ? AND profile_id = ?')
-    .run(JSON.stringify(value), chatId, profileId)
-}
-
 /** Invalidate the cached world-info for every session in a profile — called after a
  * lorebook edit so the next turn re-matches against the updated content (otherwise the
  * stable-within-a-mode cache would hide the edit until the next transition). */
@@ -212,6 +188,47 @@ export const setChatWorkflowId = (profileId: string, chatId: string, id: string 
   getDb()
     .prepare('UPDATE chats SET workflow_id = ? WHERE id = ? AND profile_id = ?')
     .run(id, chatId, profileId)
+}
+
+/** The assigned table-template id for a chat; null = table memory off (SQL-table-memory issue 02). */
+export const getChatTableTemplateId = (profileId: string, chatId: string): string | null => {
+  const row = getDb()
+    .prepare('SELECT table_template_id FROM chats WHERE id = ? AND profile_id = ?')
+    .get(chatId, profileId) as { table_template_id: string | null } | undefined
+  return row?.table_template_id ?? null
+}
+
+/**
+ * Assign (or clear, with null) a chat's table template. Both are DESTRUCTIVE to the sandbox: a new
+ * id (re)instantiates the per-chat sandbox DB from the template's DDL; null removes the sandbox
+ * file. The renderer confirms before calling either. A missing/invalid template id clears instead.
+ */
+export const setChatTableTemplateId = (
+  profileId: string,
+  chatId: string,
+  id: string | null
+): void => {
+  const template = id ? getTableTemplateById(profileId, id) : null
+  const effectiveId = template ? id : null
+  getDb()
+    .prepare('UPDATE chats SET table_template_id = ? WHERE id = ? AND profile_id = ?')
+    .run(effectiveId, chatId, profileId)
+  // The sandbox is recreated from scratch on (re)assign/unassign, so the chat's SQL op log is stale
+  // (it referenced the OLD template's tables) — clear it, or a later rewind would replay dead ops.
+  tableOpsService.deleteAllOps(profileId, chatId)
+  // Per-table maintenance progress pointers referenced the OLD template's tables — reset them too
+  // (issue 07), so a reassigned template starts from "never processed" and cadences begin fresh.
+  tableProgressService.resetProgress(profileId, chatId)
+  if (template) tableDbService.instantiate(profileId, chatId, template)
+  else tableDbService.removeSandbox(profileId, chatId)
+}
+
+/** Strip a table-template id out of every session that had it assigned (called when it's deleted). */
+export const removeTableTemplateIdFromChats = (profileId: string, templateId: string): void => {
+  const rows = getDb()
+    .prepare('SELECT id FROM chats WHERE profile_id = ? AND table_template_id = ?')
+    .all(profileId, templateId) as Array<{ id: string }>
+  for (const row of rows) setChatTableTemplateId(profileId, row.id, null)
 }
 
 /** Clear a workflow id out of every session that had it selected (called when it's deleted). */
@@ -282,23 +299,29 @@ export const appendFloor = (profileId: string, chatId: string, floor: FloorFile)
   touch(chatId)
 }
 
-/** Delete floors >= fromFloor (regenerate / edit) and bump updated_at. */
+/** Delete floors >= fromFloor (regenerate / edit) and bump updated_at. When table memory is on,
+ *  drop the SQL ops at/after the cut and rebuild the sandbox by ordered replay of the survivors
+ *  (issue 03 rewind hook). Cheap no-op when no template is assigned. */
 export const truncateFloors = (profileId: string, chatId: string, fromFloor: number): void => {
   deleteFloorAndSubsequent(profileId, chatId, fromFloor)
-  // Rewind-safety (episodic memory §11.M): drop memories summarized from the removed floors and
-  // rewind the compaction pointer so the regenerated floors get re-compacted later. Cheap no-op
-  // when memory is unused (nothing matches, pointer stays -1).
-  deleteFromTurn(profileId, chatId, fromFloor)
-  const rewound = rewindCompactionPointer(
-    getMemoryState(profileId, chatId).last_compacted_floor,
-    fromFloor
-  )
-  if (rewound !== null) setMemoryState(profileId, chatId, { last_compacted_floor: rewound })
+  const templateId = getChatTableTemplateId(profileId, chatId)
+  if (templateId) {
+    tableOpsService.deleteOpsFrom(profileId, chatId, fromFloor)
+    const template = getTableTemplateById(profileId, templateId)
+    tableOpsService.rebuildSandbox(profileId, chatId, template)
+    // Rewind clamp (issue 07): pull every per-table progress pointer at/after the cut back to
+    // fromFloor - 1, so cadences resume immediately instead of stalling on an overshot pointer.
+    tableProgressService.clampProgress(profileId, chatId, fromFloor)
+  }
   touch(chatId)
 }
 
-export const deleteChat = (_profileId: string, chatId: string): void => {
+export const deleteChat = (profileId: string, chatId: string): void => {
   getDb().prepare('DELETE FROM chats WHERE id = ?').run(chatId)
+  // `table_ops` rows go via FK cascade (db.ts sets `foreign_keys = ON`, and table_ops REFERENCES
+  // chats(id) ON DELETE CASCADE — verified). The sandbox DB file lives OUTSIDE the app DB, so it
+  // must be removed explicitly.
+  tableDbService.removeSandbox(profileId, chatId)
 }
 
 /** Edit a floor's user message and/or response text, then bump updated_at. */

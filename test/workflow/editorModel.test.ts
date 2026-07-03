@@ -152,7 +152,7 @@ describe('docToEditor / editorToDoc round-trip', () => {
 })
 
 describe('autoLayout', () => {
-  it('places DEFAULT_GRAPH nodes by longest-path column (ctx=0, chain deepens, memory chain past write)', () => {
+  it('places DEFAULT_GRAPH nodes by longest-path column (ctx=0, chain deepens to write)', () => {
     const layout = autoLayout(DEFAULT_GRAPH)
 
     const colOf = (id: string): number => {
@@ -161,20 +161,15 @@ describe('autoLayout', () => {
     }
 
     expect(colOf('ctx')).toBe(0)
-    expect(colOf('recall')).toBeGreaterThan(colOf('ctx'))
-    expect(colOf('assemble')).toBeGreaterThan(colOf('recall'))
+    expect(colOf('assemble')).toBeGreaterThan(colOf('ctx'))
     expect(colOf('llm')).toBeGreaterThan(colOf('assemble'))
     expect(colOf('parse')).toBeGreaterThan(colOf('llm'))
     expect(colOf('apply')).toBeGreaterThan(colOf('parse'))
     expect(colOf('write')).toBeGreaterThan(colOf('apply'))
 
-    // The decomposed memory chain sits PAST write (the write.floor → gate ordering edge:
-    // compaction only after the floor is persisted); write is the deepest pre-phase node.
+    // write is now the deepest node (the post-write memory compaction chain was removed).
     const maxCol = Math.max(...DEFAULT_GRAPH.nodes.map((n) => colOf(n.id)))
-    expect(colOf('gate')).toBeGreaterThan(colOf('write'))
-    expect(colOf('extract')).toBeGreaterThan(colOf('gate'))
-    expect(colOf('memwrite')).toBeGreaterThan(colOf('extract'))
-    expect(colOf('log-write')).toBe(maxCol)
+    expect(colOf('write')).toBe(maxCol)
 
     // x/y spacing formula.
     for (const n of DEFAULT_GRAPH.nodes) {

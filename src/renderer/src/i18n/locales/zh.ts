@@ -44,7 +44,6 @@ const zh: Record<string, string> = {
   'settings.groupApp': '应用',
   'settings.groupWorld': '世界',
   'settings.preferences': '偏好设置',
-  'settings.memory': '记忆',
   'settings.regex': '正则',
   'settings.scripts': '脚本',
   'settings.language': '语言',
@@ -86,30 +85,6 @@ const zh: Record<string, string> = {
   'prefs.cacheHint':
     '提示词为命中缓存而构建的方式。基线不做任何优化——连服务商提示词缓存也不用（用作纯参考基准）；服务商模式按原样使用服务商前缀缓存；冻结核心还会在多回合间保持角色/世界书前缀逐字节稳定。该系统暂时封存——锁定为基线。',
   'prefs.cacheDisabledTitle': '缓存优化已封存——暂时锁定为基线',
-  'prefs.memory': '长期记忆',
-  'prefs.memoryEnable': '在整局会话中记住此前发生的事',
-  'prefs.memoryHint':
-    '开启后，较旧的回合在滑出上下文窗口时会被概括存档，并在每次生成时召回相关条目。默认关闭；与任意缓存设置兼容。',
-  'prefs.memoryUtility': '概括所用连接',
-  'prefs.memoryUtilityActive': '当前连接',
-  'prefs.memoryUtilityHint':
-    '由哪个已保存的 API 连接来生成概括——建议用便宜且快速的模型。默认使用当前连接。',
-  'prefs.memoryMode': '召回方式',
-  'prefs.memoryModeKeyword': '关键词（默认，免费）',
-  'prefs.memoryModeHybrid': '混合（关键词 + 向量）',
-  'prefs.memoryModeVector': '仅向量',
-  'prefs.memoryModeHint':
-    '记忆如何被匹配。混合/向量即使没有精确关键词也能找到相关记忆，但需要下方的向量连接，并在每回合调用它。',
-  'prefs.memoryEmbedding': '向量（Embedding）连接',
-  'prefs.memoryEmbeddingNone': '无 —— 回退到关键词',
-  'prefs.memoryEmbeddingHint':
-    '由哪个已保存的连接生成向量（一个 embedding 模型，OpenAI 兼容的 /embeddings 接口）。',
-  'prefs.memoryRecall': '每回合召回的记忆数',
-  'prefs.memoryKeepRecent': '保留多少最近回合不概括',
-  'prefs.memoryKeepRecentHint':
-    '最近的若干回合始终保留原文；当滑出这一数量后，较旧的回合才会被概括。调小可更早开始记忆。',
-  'prefs.memoryCheckpoint': '每 N 回合概括一次',
-  'prefs.memoryCheckpointHint': '较旧回合被折叠进记忆的频率——这是后台步骤，不会阻塞你的当前回合。',
   'prefs.cardRendering': '卡片渲染（默认）',
   'prefs.cardInline': '内联（原生，嵌入消息中）',
   'prefs.cardIsolated': '隔离（抗崩溃的悬浮窗口）',
@@ -447,27 +422,6 @@ const zh: Record<string, string> = {
 
   'status.waiting': '等待会话…',
   'status.heading': 'RPG 状态',
-  'memory.heading': '长期记忆',
-  'memory.waiting': '打开一个会话以查看其记忆。',
-  'memory.count': '已存 {{count}} 条',
-  'memory.refresh': '刷新',
-  'memory.add': '记住这件事',
-  'memory.addSummaryPh': '希望 AI 始终记住什么？',
-  'memory.filterPh': '筛选记忆（概要、关键词、实体）…',
-  'memory.noMatches': '没有符合筛选条件的记忆。',
-  'memory.loading': '加载中…',
-  'memory.empty': '暂无记忆——当较旧的回合被概括后会出现在这里。',
-  'memory.confirmDelete': '删除这条记忆？此操作无法撤销。',
-  'memory.keywordsPh': '关键词，用逗号分隔',
-  'memory.cancel': '取消',
-  'memory.turns': '第 {{a}}–{{b}} 回合',
-  'memory.recalled': '已召回',
-  'memory.recalledTitle': '已被最近一回合调用',
-  'memory.aka': '又称',
-  'memory.history': '变更记录（{{count}}）',
-  'memory.pin': '置顶（始终召回）',
-  'memory.unpin': '取消置顶',
-  'memory.actionFailed': '操作失败',
   'status.reevalTitle':
     '重新应用每条消息中存储的变量更新以重建状态 —— 无需重新生成（例如解析器更新后）。',
   'status.reevaluate': '↻ 重新计算',
@@ -481,6 +435,68 @@ const zh: Record<string, string> = {
   'variables.refresh': '↻ 刷新',
   'variables.editFailed': '编辑保存失败',
   'variables.readOnlyHint': '尚无消息 —— 暂无可编辑内容',
+
+  // SQL 表格记忆（数据库/表格）—— 只读表格视图 + 模板挂载
+  'tables.heading': '记忆表格',
+  'tables.template': '表格模板',
+  'tables.none': '无（关闭）',
+  'tables.import': '导入表格模板',
+  'tables.deleteTemplate': '删除模板',
+  'tables.refresh': '↻ 刷新',
+  'tables.noneAssigned': '未挂载表格模板 —— 本会话的表格记忆已关闭。',
+  'tables.emptyTemplate': '该模板未定义任何数据表。',
+  'tables.noRows': '（无数据）',
+  'tables.confirmAssign': '挂载表格模板会依据模板重建本会话的记忆表格。是否继续？',
+  'tables.confirmUnassign': '移除表格模板会删除本会话的记忆表格。是否继续？',
+  'tables.confirmDeleteTemplate': '删除该表格模板？正在使用它的会话将失去其记忆表格。',
+  'tables.importFailed': '表格模板导入失败',
+  'tables.assignFailed': '更新表格模板失败',
+  'tables.deleteFailed': '删除表格模板失败',
+  'tables.importErrorRead': '无法将所选文件读取为 JSON。',
+  'tables.importErrorGeneric': '不支持或格式错误的表格模板。',
+  // 编辑（issue 06）
+  'tables.addRow': '+ 新增行',
+  'tables.deleteRow': '删除行',
+  'tables.resetTable': '清空表格',
+  'tables.saveRow': '添加',
+  'tables.cancel': '取消',
+  'tables.confirmDeleteRow': '删除此行？该操作会作为一次编辑记录在当前楼层。',
+  'tables.confirmReset': '清空此表格的所有行？该操作会作为一次编辑记录在当前楼层，可通过回溯撤销。',
+  'tables.editFailed': '编辑失败',
+  'tables.editNoTemplate': '本会话未挂载表格模板。',
+  'tables.editUnknownTable': '该数据表不属于已挂载的模板。',
+  'tables.editBadColumn': '该列在表格中已不存在。',
+  // 导出（issue 06）
+  'tables.export': '导出模板',
+  'tables.exportWithData': '连同当前数据导出',
+  'tables.exportFailed': '表格模板导出失败',
+  // 每表进度 + 手动回填（issue 07）—— 取代 issue 06 的"最后维护"行
+  //  （其 tables.lastMaintained / tables.neverMaintained 键已随 node-state 指针一并退役）。
+  'tables.progressProcessed': '已处理 {{n}} 层',
+  'tables.progressNext': '下次维护：第 {{n}} 层',
+  'tables.progressUnprocessed': '未处理 {{n}} 层',
+  'tables.progressNever': '尚未处理',
+  'tables.backfill': '回填',
+  'tables.backfillScope': '范围',
+  'tables.backfillLastFloors': '最近楼层数',
+  'tables.backfillAll': '全部',
+  'tables.backfillBatchSize': '每批楼层数',
+  'tables.backfillPreset': 'API 预设',
+  'tables.backfillPresetActive': '当前连接',
+  'tables.backfillRetries': '自动重试',
+  'tables.backfillStart': '开始回填',
+  'tables.backfillCancel': '取消',
+  'tables.backfillRunning': '第 {{i}}/{{n}} 批 · 第 {{from}}–{{to}} 层',
+  'tables.backfillDone': '回填完成',
+  'tables.backfillCancelled': '已取消回填',
+  'tables.backfillFailures': '失败的批次',
+  'tables.backfillFailureRow': '第 {{from}}–{{to}} 层：{{reason}}',
+  'tables.backfillStartFailed': '无法开始回填',
+  'tables.backfillAlreadyRunning': '本会话已有一个回填正在运行。',
+  'tables.backfillNoTemplate': '请先为本会话挂载表格模板再运行回填。',
+  'tables.backfillBadPreset': '所选的 API 预设已不存在。',
+  'tables.backfillBadScope': '请输入至少为 1 的楼层数，或选择"全部"。',
+  'tables.backfillBadBatch': '每批楼层数至少为 1。',
 
   'workflow.heading': '工作流',
   'workflow.viewTitle': '工作流',
@@ -557,13 +573,11 @@ const zh: Record<string, string> = {
   'workflowEditor.err.DUP_NODE_ID': '节点 ID 重复',
   // 节点名称
   'workflowEditor.nodeTitle.input.context': '上下文',
-  'workflowEditor.nodeTitle.memory.recall': '记忆召回',
   'workflowEditor.nodeTitle.prompt.assemble': '组装提示词',
   'workflowEditor.nodeTitle.llm.sample': '模型调用',
   'workflowEditor.nodeTitle.parse.response': '解析回复',
   'workflowEditor.nodeTitle.apply.state': '应用状态',
   'workflowEditor.nodeTitle.output.writeFloor': '写入楼层',
-  'workflowEditor.nodeTitle.memory.compact': '压缩记忆',
   'workflowEditor.nodeTitle.control.if': '条件分支',
   'workflowEditor.nodeTitle.control.switch': '多路分支',
   'workflowEditor.nodeTitle.control.when': '触发器',
@@ -572,13 +586,9 @@ const zh: Record<string, string> = {
   'workflowEditor.nodeTitle.merge.messages': '合并消息',
   'workflowEditor.nodeTitle.mvu.set': '设置变量',
   'workflowEditor.nodeTitle.util.log': '日志',
-  'workflowEditor.nodeTitle.memory.gate': '记忆检查点',
-  'workflowEditor.nodeTitle.memory.extract': '提取记忆',
-  'workflowEditor.nodeTitle.memory.write': '写入记忆',
   'workflowEditor.nodeTitle.tool.startCombat': '开始战斗',
   'workflowEditor.nodeTitle.tool.startDuel': '开始决斗',
   'workflowEditor.nodeTitle.tool.lorebookSearch': '世界书检索',
-  'workflowEditor.nodeTitle.memory.query': '记忆查询',
   'workflowEditor.nodeTitle.vars.get': '读取变量',
   'workflowEditor.nodeTitle.vars.save': '保存变量',
   'workflowEditor.nodeTitle.context.history': '历史记录',
@@ -598,10 +608,8 @@ const zh: Record<string, string> = {
   // 节点说明
   'workflowEditor.nodeDesc.input.context':
     '构建本回合的上下文包：会话、角色卡、设置、预设、世界书、聊天历史与工作变量。每张图的起点——几乎所有节点都要读取它的输出。',
-  'workflowEditor.nodeDesc.memory.recall':
-    '为本回合召回相关的长期记忆，输出为拼入提示词尾部的文本块。记忆关闭时为空；失败不会阻塞回合。',
   'workflowEditor.nodeDesc.prompt.assemble':
-    '按默认流水线的方式构建完整的、可直接发给服务商的提示词：角色卡、预设、命中的世界书条目、聊天历史、记忆块与预算裁剪。',
+    '按默认流水线的方式构建完整的、可直接发给服务商的提示词：角色卡、预设、命中的世界书条目、聊天历史、可选的提示词尾部文本块与预算裁剪。',
   'workflowEditor.nodeDesc.llm.sample':
     '用消息数组调用模型。位于主输出路径时回复实时流入聊天；接在 Signal 之后则作为旁路调用（如规划器或后台任务）。配置可加重试、备用连接与校验器（含纠正性重试）；全部失败后错误从 error 端口输出。设置 api_preset_id 可让本次调用改用某个已保存的连接（其自有的服务商/模型/速率限制）而非本回合的连接——适用于需要专属模型的旁路调用。',
   'workflowEditor.nodeDesc.parse.response':
@@ -610,14 +618,6 @@ const zh: Record<string, string> = {
     '把本回合解析出的事件与 MVU 指令合并到工作变量上（含战斗开始信号）。',
   'workflowEditor.nodeDesc.output.writeFloor':
     '持久化本回合的楼层（消息对 + 变量 + 指标）。默认图中的主输出节点：接在它之后的节点在回复送达后异步执行。',
-  'workflowEditor.nodeDesc.memory.compact':
-    '一步完成过旧回合的记忆压缩（旧版粗粒度节点——默认图已改用「检查点 → 提取 → 写入」链）。回复后异步执行、失败不阻塞回合。',
-  'workflowEditor.nodeDesc.memory.gate':
-    '当足够多的回合滑出「保留最近」窗口、凑满一个检查点批次时触发，并输出该批次。会占用本会话的压缩槽位，避免相邻回合重复概括。',
-  'workflowEditor.nodeDesc.memory.extract':
-    '用概括连接对批次做一次结构化提取。成功时触发 done；失败（调用出错 / 回复无法解析）从 error 端口输出——接到「日志」即可失败不阻塞。',
-  'workflowEditor.nodeDesc.memory.write':
-    '原子地应用提取结果——事件追加、实体合并与指针推进在同一事务内完成——然后释放压缩槽位。',
   'workflowEditor.nodeDesc.tool.startCombat':
     '按世界的战斗配置开始一场网格遭遇战（可用接入的 cue 定制），并把会话切到战斗模式。请接在 Signal 之后，确保它是被明确触发的。',
   'workflowEditor.nodeDesc.tool.startDuel':
@@ -664,8 +664,6 @@ const zh: Record<string, string> = {
     '把「组装提示词」的各个原料暴露为端口：接入 history、worldInfo、memory 或 action 即可覆盖对应部分，或设置 preset_id 改用另一个已保存的预设来组装。任何未接入的部分沿用默认计算，因此什么都不接时与「组装提示词」完全一致。这是旁路调用（世界推进/剧情推进）用自己的预设和世界书子集构建自身主提示词的方式。',
   'workflowEditor.nodeDesc.messages.trim':
     '用与组装提示词路径相同的裁剪器把消息列表裁到 token 预算内（丢弃最旧的回合，保留系统前缀与最后一回合）。budget_tokens 为 0/未设时使用会话的最大上下文 token。在手工构建消息（「消息列表」/「合并消息」）之后使用，可让过长的旁路提示词仍能塞下。',
-  'workflowEditor.nodeDesc.memory.query':
-    '按接入的任意查询文本召回记忆，而不是扫描当前回合的聊天内容——供规划器等旁路分支按特定主题召回记忆。仅做关键词排序（vector/hybrid 集合会被降级为关键词排序）；mode 为 llm 的集合会被整体跳过，与标准召回一致。把输出接入模型调用即可在此基础上叠加自定义重排序提示词。',
   'workflowEditor.nodeDesc.subgraph.call':
     '把一个可复用的子图文档作为单个节点调用。端口是固定的：gen/in1–in4 输入，out1–out4 输出——具体哪些端口起作用取决于子图自身的「子图输入/输出」节点。配置中的 params 可为本次调用覆盖子图已暴露的参数。子图缺失/类型不对/校验失败，或调用链递归/过深时，从 error 端口触发。v1 的运行轨迹只显示这一个包裹节点（内部步骤不单独展开）——除非子图本身就是主输出路径，否则子图内部的模型节点请设置 stream: false。',
   'workflowEditor.nodeDesc.subgraph.loop':
@@ -686,8 +684,7 @@ const zh: Record<string, string> = {
   'workflowEditor.portDesc.common.in4': '{{in4}} 占位符的上游值',
   // 逐节点端口说明
   'workflowEditor.portDesc.input.context.gen': '供所有下游节点读取的回合包',
-  'workflowEditor.portDesc.memory.recall.block': '召回的记忆文本（无则为空）',
-  'workflowEditor.portDesc.prompt.assemble.block': '拼入提示词尾部的记忆文本（接“记忆召回”）',
+  'workflowEditor.portDesc.prompt.assemble.block': '拼入提示词尾部的可选文本（未接时为空）',
   'workflowEditor.portDesc.prompt.assemble.sendMessages': '将发送给服务商的最终消息数组',
   'workflowEditor.portDesc.prompt.assemble.params': '来自当前预设的采样参数',
   'workflowEditor.portDesc.llm.sample.sendMessages':
@@ -846,7 +843,6 @@ const zh: Record<string, string> = {
   'view.chat': '聊天',
   'view.usage': '用量',
   'view.cardScripts': '卡片脚本',
-  'view.memory': '记忆',
 
   'panel.chooseView': '选择此面板显示的视图',
   'panel.showPanel': '显示面板',

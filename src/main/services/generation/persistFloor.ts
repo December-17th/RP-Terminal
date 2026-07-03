@@ -1,8 +1,6 @@
 import { appendFloor } from '../chatService'
 import { saveGlobals } from '../templateService'
-import { maybeCompact } from '../compactionService'
 import { ChatMessage } from '../promptBuilder'
-import { log } from '../logService'
 import { RPEvent } from '../../parsers/contentParser'
 import { FloorMetrics } from '../../../shared/usageTypes'
 import { FloorFile } from '../../types/chat'
@@ -48,16 +46,4 @@ export const persistFloor = (
 
   appendFloor(ctx.profileId, ctx.chatId, floor)
   return floor
-}
-
-/**
- * Episodic memory (docs/episodic-memory-design.md §7): fold aged-out turns into memories.
- * Off the hot path — the floor is already persisted and returned by `persistFloor`. Fail-open;
- * never blocks the turn (`maybeCompact` swallows its own errors; the `.catch` is a
- * belt-and-braces guard). Moved verbatim out of `generate()` (Phase 2b-1a).
- */
-export const compactMemory = (profileId: string, chatId: string): void => {
-  void maybeCompact(profileId, chatId).catch((err) =>
-    log('error', `memory: compaction error — ${err?.message || String(err)}`)
-  )
 }

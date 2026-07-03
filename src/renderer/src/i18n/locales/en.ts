@@ -43,7 +43,6 @@ const en: Record<string, string> = {
   'settings.groupApp': 'App',
   'settings.groupWorld': 'World',
   'settings.preferences': 'Preferences',
-  'settings.memory': 'Memory',
   'settings.regex': 'Regex',
   'settings.scripts': 'Scripts',
   'settings.language': 'Language',
@@ -85,31 +84,6 @@ const en: Record<string, string> = {
   'prefs.cacheHint':
     'How the prompt is structured for cache reuse. Baseline does NO optimization — not even provider prompt caching (a clean reference). Provider uses provider prefix caching as-is; Frozen Core also keeps the character/lore prefix byte-stable across turns. The system is parked for now — locked to Baseline.',
   'prefs.cacheDisabledTitle': 'Cache optimization is stashed — locked to Baseline for now',
-  'prefs.memory': 'Long-Term Memory',
-  'prefs.memoryEnable': 'Remember earlier events across the session',
-  'prefs.memoryHint':
-    'When on, older turns are summarized as they age out of the window and the relevant ones are recalled into each prompt. Off by default; works at any cache setting.',
-  'prefs.memoryUtility': 'Summarizer connection',
-  'prefs.memoryUtilityActive': 'Active connection',
-  'prefs.memoryUtilityHint':
-    'Which saved API connection writes the summaries — use a cheap, fast model. Defaults to the active connection.',
-  'prefs.memoryMode': 'Recall mode',
-  'prefs.memoryModeKeyword': 'Keyword (default, free)',
-  'prefs.memoryModeHybrid': 'Hybrid (keyword + embeddings)',
-  'prefs.memoryModeVector': 'Embeddings only',
-  'prefs.memoryModeHint':
-    'How memories are matched. Hybrid/Embeddings find related memories even without exact keywords, but need an embedding connection and call it each turn.',
-  'prefs.memoryEmbedding': 'Embedding connection',
-  'prefs.memoryEmbeddingNone': 'None — falls back to keyword',
-  'prefs.memoryEmbeddingHint':
-    'Which saved connection produces embeddings (an embedding model, OpenAI-compatible /embeddings endpoint).',
-  'prefs.memoryRecall': 'Memories recalled per turn',
-  'prefs.memoryKeepRecent': 'Keep recent turns verbatim',
-  'prefs.memoryKeepRecentHint':
-    'The most recent turns always stay in full; older ones are summarized once this many have aged out. Lower it to start remembering sooner.',
-  'prefs.memoryCheckpoint': 'Summarize every N turns',
-  'prefs.memoryCheckpointHint':
-    'How often older turns are folded into memory — a background step that never blocks your turn.',
   'prefs.cardRendering': 'Card rendering (default)',
   'prefs.cardInline': 'Inline (native, embedded in the message)',
   'prefs.cardIsolated': 'Isolated (crash-resistant overlay window)',
@@ -461,27 +435,6 @@ const en: Record<string, string> = {
 
   'status.waiting': 'Waiting for session...',
   'status.heading': 'RPG Status',
-  'memory.heading': 'Long-Term Memory',
-  'memory.waiting': 'Open a session to see its memories.',
-  'memory.count': '{{count}} stored',
-  'memory.refresh': 'Refresh',
-  'memory.add': 'Remember this',
-  'memory.addSummaryPh': 'What should the AI always remember?',
-  'memory.filterPh': 'Filter memories (summary, keyword, entity)…',
-  'memory.noMatches': 'No memories match the filter.',
-  'memory.loading': 'Loading…',
-  'memory.empty': 'No memories yet — they appear as older turns are summarized.',
-  'memory.confirmDelete': 'Delete this memory? This cannot be undone.',
-  'memory.keywordsPh': 'keywords, comma-separated',
-  'memory.cancel': 'Cancel',
-  'memory.turns': 'turns {{a}}–{{b}}',
-  'memory.recalled': 'recalled',
-  'memory.recalledTitle': 'Pulled into the most recent turn',
-  'memory.aka': 'aka',
-  'memory.history': 'history ({{count}})',
-  'memory.pin': 'Pin (always recall this)',
-  'memory.unpin': 'Unpin',
-  'memory.actionFailed': 'Action failed',
   'status.reevalTitle':
     'Re-apply the stored variable updates from every message to rebuild the state — no regeneration (e.g. after a parser update).',
   'status.reevaluate': '↻ Re-evaluate',
@@ -495,6 +448,72 @@ const en: Record<string, string> = {
   'variables.refresh': '↻ Refresh',
   'variables.editFailed': 'Edit failed to save',
   'variables.readOnlyHint': 'No message yet — nothing to edit',
+
+  // SQL-table memory (数据库/表格) — read-only Tables view + template assignment
+  'tables.heading': 'Memory Tables',
+  'tables.template': 'Table template',
+  'tables.none': 'None (off)',
+  'tables.import': 'Import template',
+  'tables.deleteTemplate': 'Delete template',
+  'tables.refresh': '↻ Refresh',
+  'tables.noneAssigned': 'No template assigned — table memory is off for this session.',
+  'tables.emptyTemplate': 'This template defines no tables.',
+  'tables.noRows': '(no rows)',
+  'tables.confirmAssign':
+    'Assigning a table template recreates this session’s memory tables from scratch. Continue?',
+  'tables.confirmUnassign':
+    'Removing the table template deletes this session’s memory tables. Continue?',
+  'tables.confirmDeleteTemplate':
+    'Delete this table template? Sessions using it will lose their memory tables.',
+  'tables.importFailed': 'Table template import failed',
+  'tables.assignFailed': 'Failed to update the table template',
+  'tables.deleteFailed': 'Failed to delete the table template',
+  'tables.importErrorRead': 'Could not read the selected file as JSON.',
+  'tables.importErrorGeneric': 'Unsupported or malformed table template.',
+  // Editing (issue 06)
+  'tables.addRow': '+ Add row',
+  'tables.deleteRow': 'Delete row',
+  'tables.resetTable': 'Reset table',
+  'tables.saveRow': 'Add',
+  'tables.cancel': 'Cancel',
+  'tables.confirmDeleteRow': 'Delete this row? This is recorded as an edit on the current floor.',
+  'tables.confirmReset':
+    'Clear every row from this table? This is recorded as an edit on the current floor and can be rolled back by rewinding.',
+  'tables.editFailed': 'Edit failed',
+  'tables.editNoTemplate': 'No table template is assigned to this session.',
+  'tables.editUnknownTable': 'That table is not part of the assigned template.',
+  'tables.editBadColumn': 'That column no longer exists in the table.',
+  // Export (issue 06)
+  'tables.export': 'Export template',
+  'tables.exportWithData': 'Export with current data',
+  'tables.exportFailed': 'Template export failed',
+  // Per-table progress + manual backfill (issue 07) — supersedes the issue-06 last-maintained line
+  //  (its 'tables.lastMaintained'/'tables.neverMaintained' keys were retired with the node-state pointer).
+  'tables.progressProcessed': 'Processed {{n}} floors',
+  'tables.progressNext': 'Next at floor {{n}}',
+  'tables.progressUnprocessed': '{{n}} unprocessed',
+  'tables.progressNever': 'Never processed',
+  'tables.backfill': 'Backfill',
+  'tables.backfillScope': 'Scope',
+  'tables.backfillLastFloors': 'Last floors',
+  'tables.backfillAll': 'All',
+  'tables.backfillBatchSize': 'Floors per batch',
+  'tables.backfillPreset': 'API preset',
+  'tables.backfillPresetActive': 'Active connection',
+  'tables.backfillRetries': 'Auto-retry',
+  'tables.backfillStart': 'Start backfill',
+  'tables.backfillCancel': 'Cancel',
+  'tables.backfillRunning': 'Batch {{i}}/{{n}} · floors {{from}}–{{to}}',
+  'tables.backfillDone': 'Backfill complete',
+  'tables.backfillCancelled': 'Backfill cancelled',
+  'tables.backfillFailures': 'Failed batches',
+  'tables.backfillFailureRow': 'Floors {{from}}–{{to}}: {{reason}}',
+  'tables.backfillStartFailed': 'Could not start the backfill',
+  'tables.backfillAlreadyRunning': 'A backfill is already running for this session.',
+  'tables.backfillNoTemplate': 'Assign a table template before running a backfill.',
+  'tables.backfillBadPreset': 'The selected API preset no longer exists.',
+  'tables.backfillBadScope': 'Enter a floor count of at least 1, or choose All.',
+  'tables.backfillBadBatch': 'Batch size must be at least 1.',
   'status.noState': '(No RPG state for this session yet)',
 
   'workflow.heading': 'Workflows',
@@ -573,13 +592,11 @@ const en: Record<string, string> = {
   'workflowEditor.err.DUP_NODE_ID': 'Duplicate node ids',
   // Node titles (the catalog ships English titles; these localize them per locale).
   'workflowEditor.nodeTitle.input.context': 'Context',
-  'workflowEditor.nodeTitle.memory.recall': 'Recall Memory',
   'workflowEditor.nodeTitle.prompt.assemble': 'Assemble Prompt',
   'workflowEditor.nodeTitle.llm.sample': 'Sample Model',
   'workflowEditor.nodeTitle.parse.response': 'Parse Response',
   'workflowEditor.nodeTitle.apply.state': 'Apply State',
   'workflowEditor.nodeTitle.output.writeFloor': 'Write Floor',
-  'workflowEditor.nodeTitle.memory.compact': 'Compact Memory',
   'workflowEditor.nodeTitle.control.if': 'If',
   'workflowEditor.nodeTitle.control.switch': 'Switch',
   'workflowEditor.nodeTitle.control.when': 'When',
@@ -588,13 +605,9 @@ const en: Record<string, string> = {
   'workflowEditor.nodeTitle.merge.messages': 'Merge Messages',
   'workflowEditor.nodeTitle.mvu.set': 'Set Variable',
   'workflowEditor.nodeTitle.util.log': 'Log',
-  'workflowEditor.nodeTitle.memory.gate': 'Memory Gate',
-  'workflowEditor.nodeTitle.memory.extract': 'Extract Memories',
-  'workflowEditor.nodeTitle.memory.write': 'Write Memories',
   'workflowEditor.nodeTitle.tool.startCombat': 'Start Combat',
   'workflowEditor.nodeTitle.tool.startDuel': 'Start Duel',
   'workflowEditor.nodeTitle.tool.lorebookSearch': 'Lorebook Search',
-  'workflowEditor.nodeTitle.memory.query': 'Query Memories',
   'workflowEditor.nodeTitle.vars.get': 'Get Variable',
   'workflowEditor.nodeTitle.vars.save': 'Save Variable',
   'workflowEditor.nodeTitle.context.history': 'History',
@@ -614,10 +627,8 @@ const en: Record<string, string> = {
   // Node descriptions (what the node does).
   'workflowEditor.nodeDesc.input.context':
     'Builds the turn bundle: session, character card, settings, preset, lorebooks, chat history and working variables. The start of every graph — almost every other node takes its output.',
-  'workflowEditor.nodeDesc.memory.recall':
-    'Recalls relevant long-term memories for this turn as a text block for the prompt tail. Empty when memory is disabled; failures never block the turn.',
   'workflowEditor.nodeDesc.prompt.assemble':
-    'Builds the complete provider-ready prompt exactly like the default pipeline: card, preset, matched lorebook entries, chat history, the memory block, and budget trimming.',
+    'Builds the complete provider-ready prompt exactly like the default pipeline: card, preset, matched lorebook entries, chat history, an optional prompt-tail block, and budget trimming.',
   'workflowEditor.nodeDesc.llm.sample':
     'Calls the model with a message array. On the main-output path its reply streams to chat; wired behind a Signal it runs as a side-branch call (e.g. a planner or background job). Config adds retries, a fallback connection and a validator with corrective retry; when all give up, the failure leaves on the error port. Set api_preset_id to run this call against a chosen saved connection (its own provider/model/rate limits) instead of the turn’s — for a side call that needs its own model.',
   'workflowEditor.nodeDesc.parse.response':
@@ -626,14 +637,6 @@ const en: Record<string, string> = {
     'Folds this turn’s parsed events and MVU commands onto the working variables (including the combat-start cue).',
   'workflowEditor.nodeDesc.output.writeFloor':
     'Persists the finished floor (message pair + variables + metrics). The main-output node in the default graph: everything wired after it runs post-response, off the hot path.',
-  'workflowEditor.nodeDesc.memory.compact':
-    'Folds aged-out turns into long-term memory in one step (legacy coarse node — the default graph now uses the Gate → Extract → Write chain). Runs post-response and fails open.',
-  'workflowEditor.nodeDesc.memory.gate':
-    'Fires when a full checkpoint batch of turns has aged past the keep-recent window, emitting the batch. Claims the per-chat compaction slot so overlapping turns can’t double-summarize.',
-  'workflowEditor.nodeDesc.memory.extract':
-    'Summarizes the gated batch with the utility connection (one structured call). Fires done on success; failures (call error / unparseable reply) leave on the error port — wire it to Log to fail open.',
-  'workflowEditor.nodeDesc.memory.write':
-    'Applies the extraction atomically — event appends, entity upserts and the pointer advance in one transaction — then releases the compaction slot.',
   'workflowEditor.nodeDesc.tool.startCombat':
     'Starts a grid encounter from the world’s combat bundle (optionally shaped by a wired cue) and switches the session to combat mode. Gate it behind a Signal so it fires deliberately.',
   'workflowEditor.nodeDesc.tool.startDuel':
@@ -680,8 +683,6 @@ const en: Record<string, string> = {
     'Assemble Prompt with its ingredients exposed as ports: wire history, worldInfo, memory or action to override that piece, or set preset_id to compose against a different saved preset. Anything left unwired uses the default computation, so with nothing wired it matches Assemble Prompt exactly. This is how a side call (world/plot advancement) builds its own main prompt against its own preset and lorebook subset.',
   'workflowEditor.nodeDesc.messages.trim':
     'Trims a message list to a token budget with the same trimmer the assemble path uses (drop the oldest turns, keep the system prefix and the final turn). budget_tokens 0/unset uses the session’s max context tokens. Use it after building messages by hand (Message List / Merge Messages) so an over-long side prompt still fits.',
-  'workflowEditor.nodeDesc.memory.query':
-    'Recalls memories against an arbitrary WIRED query instead of scanning the current turn’s chat — for side branches like a planner that need memory recall about a specific topic. Keyword-ranking only (vector/hybrid collections are downgraded to keyword); a collection set to mode: llm is skipped entirely, same as the standard recall. Wire the output into an LLM call to add custom-prompt reranking on top.',
   'workflowEditor.nodeDesc.subgraph.call':
     'Invokes a reusable sub-graph doc as one node. Static ports: gen/in1–in4 in, out1–out4 out — which slots actually do anything depends on the sub-graph’s own Sub-graph Input/Output nodes. Config’s params overrides the sub-graph’s promoted parameters for this call only. The error port fires on a missing/wrong-kind/invalid sub-graph, or on a recursive/too-deep call chain. v1 traces show only this wrapper node (inner steps are not broken out) — set stream: false on any LLM node inside the sub-graph unless it IS meant to be the main output.',
   'workflowEditor.nodeDesc.subgraph.loop':
@@ -703,9 +704,8 @@ const en: Record<string, string> = {
   'workflowEditor.portDesc.common.in4': 'Upstream value for the {{in4}} placeholder',
   // Port descriptions, per node.
   'workflowEditor.portDesc.input.context.gen': 'The turn bundle every downstream node reads',
-  'workflowEditor.portDesc.memory.recall.block': 'Recalled-memories text (empty when none)',
   'workflowEditor.portDesc.prompt.assemble.block':
-    'Memory text appended to the prompt tail (wire from Recall Memory)',
+    'Optional text appended to the prompt tail (empty when unwired)',
   'workflowEditor.portDesc.prompt.assemble.sendMessages': 'The exact provider-ready message array',
   'workflowEditor.portDesc.prompt.assemble.params': 'Sampler parameters from the active preset',
   'workflowEditor.portDesc.llm.sample.sendMessages':
@@ -878,7 +878,6 @@ const en: Record<string, string> = {
   'view.chat': 'Chat',
   'view.usage': 'Usage',
   'view.cardScripts': 'Card Scripts',
-  'view.memory': 'Memory',
 
   'panel.chooseView': 'Choose which view this panel shows',
   'panel.showPanel': 'Show panel',
