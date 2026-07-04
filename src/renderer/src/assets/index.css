@@ -63,9 +63,22 @@
 }
 
 /* Duel (STS) — native interactive duel view (DuelView.tsx). Token-driven; see --rpt-duel-* above. */
-.rpt-duel { display:flex; flex-direction:column; height:100%; color:var(--rpt-text-primary); }
-.rpt-duel-stage { position:relative; flex:1; border-radius:12px; margin:0 8px 8px; overflow:hidden;
+.rpt-duel { display:flex; flex-direction:row; height:100%; min-height:0; color:var(--rpt-text-primary); }
+.rpt-duel-stage { position:relative; flex:1; min-width:0; border-radius:12px; margin:0 8px 8px; overflow:hidden;
   background:var(--rpt-duel-stage); background-size:cover; background-position:center; }
+
+/* Combat log right rail (DuelView.tsx) — event.text lines, oldest→newest, auto-scrolled. */
+.rpt-duel-log { flex:0 0 240px; min-width:0; display:flex; flex-direction:column; margin:0 8px 8px 0;
+  border:1px solid var(--rpt-border); border-radius:12px; background:var(--rpt-bg-secondary); overflow:hidden; }
+.rpt-duel-log-head { flex:0 0 auto; padding:8px 12px; font-size:12px; font-weight:700;
+  color:var(--rpt-text-secondary); border-bottom:1px solid var(--rpt-border); }
+.rpt-duel-log-body { flex:1; min-height:0; overflow-y:auto; padding:8px 12px; display:flex; flex-direction:column; gap:5px; }
+.rpt-duel-log-empty { font-size:11.5px; opacity:.5; }
+.rpt-duel-log-line { font-size:11.5px; line-height:1.4; color:var(--rpt-text-primary); word-break:break-word; }
+.rpt-duel-log-line.kind-damage { color:var(--rpt-danger); }
+.rpt-duel-log-line.kind-heal { color:var(--rpt-success); }
+.rpt-duel-log-line.kind-death { color:var(--rpt-danger); font-weight:700; }
+.rpt-duel-log-line.kind-miss, .rpt-duel-log-line.kind-info, .rpt-duel-log-line.kind-turn { color:var(--rpt-text-secondary); }
 .rpt-duel-scrim { position:absolute; inset:0; background:var(--rpt-duel-scrim); pointer-events:none; }
 .rpt-duel-round { position:absolute; top:8px; left:12px; font-size:11px; color:var(--rpt-text-secondary); z-index:2; }
 .rpt-duel-enemies { position:absolute; top:24px; left:0; right:0; display:flex; justify-content:center; gap:28px; z-index:2; }
@@ -142,6 +155,45 @@
    card's rect to the target unit's rect (DuelView.tsx flyThenPlay), then is removed. */
 .rpt-duel-projectile { position:absolute; width:28px; height:40px; border-radius:6px; z-index:8; pointer-events:none;
   background:var(--rpt-duel-cost); box-shadow:0 0 14px var(--rpt-duel-cost); transition:transform .22s ease-in, opacity .22s ease-in; }
+
+/* Duel popup (DuelPopup.tsx) — the duel board is pixel-positioned and scrambles in a small resizable
+   panel, so it's hosted in a centered, fixed-size modal instead. Reuses .modal-overlay for the
+   backdrop; the panel gives the board a stable canvas independent of window/panel size. */
+.rpt-duel-modal { width:min(1120px, 95vw); height:min(720px, 90vh); background:var(--rpt-bg-secondary);
+  border:1px solid var(--rpt-border); border-radius:12px; display:flex; flex-direction:column;
+  overflow:hidden; box-shadow:0 20px 60px rgba(0,0,0,.5); }
+.rpt-duel-modal-head { flex:0 0 auto; display:flex; align-items:center; justify-content:space-between;
+  padding:8px 14px; border-bottom:1px solid var(--rpt-border); background:var(--rpt-bg-primary); font-size:13px; }
+.rpt-duel-modal-body { flex:1; min-height:0; display:flex; }
+.rpt-duel-modal-body > .rpt-duel { flex:1; min-width:0; }
+
+/* Floors manager (FloorManagerModal) — a scrollable floor list + a delete-tail footer, inside the
+   shared .modal-panel. Deleting marks the picked floor and every floor below it (danger tint). */
+.rpt-floors { display:flex; flex-direction:column; height:100%; gap:10px; }
+.rpt-floors-hint { margin:0; font-size:12px; color:var(--rpt-text-secondary); }
+.rpt-floors-list { flex:1 1 auto; min-height:0; overflow-y:auto; display:flex; flex-direction:column; gap:4px; }
+.rpt-floors-row { display:flex; align-items:flex-start; gap:8px; width:100%; text-align:left; padding:8px 10px;
+  border:1px solid var(--rpt-border); border-radius:8px; background:var(--rpt-bg-secondary);
+  color:var(--rpt-text-primary); cursor:pointer; }
+.rpt-floors-row:hover { border-color:var(--rpt-accent); }
+.rpt-floors-row.marked { background:color-mix(in srgb, var(--rpt-danger) 16%, transparent);
+  border-color:color-mix(in srgb, var(--rpt-danger) 45%, var(--rpt-border)); }
+.rpt-floors-row.cut { box-shadow:inset 2px 0 0 var(--rpt-danger); }
+.rpt-floors-idx { flex:0 0 auto; padding-top:1px; font-size:11px; font-weight:700; color:var(--rpt-text-secondary); font-variant-numeric:tabular-nums; }
+.rpt-floors-prev { flex:1 1 auto; min-width:0; display:flex; flex-direction:column; gap:3px; font-size:12px; line-height:1.45; }
+/* Multi-line previews: clamp both the player prompt and the (thinking-stripped) reply to 3 lines. */
+.rpt-floors-you { color:var(--rpt-text-secondary); overflow:hidden; overflow-wrap:anywhere;
+  display:-webkit-box; -webkit-line-clamp:3; -webkit-box-orient:vertical; }
+.rpt-floors-ai { color:var(--rpt-text-primary); overflow:hidden; overflow-wrap:anywhere;
+  display:-webkit-box; -webkit-line-clamp:3; -webkit-box-orient:vertical; }
+.rpt-floors-actions { flex:0 0 auto; display:flex; align-items:center; gap:10px; padding-top:8px;
+  border-top:1px solid var(--rpt-border); }
+.rpt-floors-summary { flex:1 1 auto; font-size:12px; color:var(--rpt-text-secondary); }
+.rpt-floors-del { border:1px solid color-mix(in srgb, var(--rpt-danger) 55%, var(--rpt-border));
+  background:color-mix(in srgb, var(--rpt-danger) 18%, transparent); color:var(--rpt-danger);
+  border-radius:7px; padding:6px 12px; font-weight:600; cursor:pointer; }
+.rpt-floors-del:hover:not(:disabled) { background:color-mix(in srgb, var(--rpt-danger) 30%, transparent); }
+.rpt-floors-del:disabled { opacity:.5; cursor:default; }
 
 body {
   margin: 0;
@@ -2204,14 +2256,14 @@ select {
 
 /* ── Shared pack-surface styles (survivors of the one-canvas deletion pass, WP6.6) ─────────────────
    The Agents/ControlCenter/Runs/Preview surfaces were deleted; these blocks remain because live
-   editor surfaces reuse them: LauncherCard (viewRegistry) + WorkflowView split, and MemoryPane /
+   editor surfaces reuse them: the duel-view launcher (viewRegistry) + WorkflowView split, and MemoryPane /
    ModuleImportSheet reuse the empty-state + chip + health-dot styles. All colors via --rpt-* tokens. */
 @media (min-width:1100px) {
   .rpt-agentdetail { width:400px; }
 }
 
-/* Launcher cards — the thin panel views the LauncherCard/viewRegistry renders (a saved layout may
-   still reference view:'agents'/'workflow'): two lines + an Open button raising the editor overlay. */
+/* Launcher cards — a thin panel view: an icon + title + body line + an Open button. Used by the
+   duel-view launcher (viewRegistry DuelPanel → opens the duel popup). */
 .rpt-cc-launch { display:flex; align-items:center; justify-content:center; height:100%;
   padding:24px; box-sizing:border-box; }
 .rpt-cc-launch-card { display:flex; flex-direction:column; align-items:center; text-align:center;

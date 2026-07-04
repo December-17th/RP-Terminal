@@ -50,10 +50,29 @@ export function StreamingView({ pendingUserMsg }: { pendingUserMsg: string }): R
   const display = live ? live.text + body.slice(live.atLen) : body
 
   const endRef = useRef<HTMLDivElement>(null)
-  // Keep the latest streamed text in view as it grows (scoped to this node so the
-  // high-frequency updates don't re-render the rest of the chat).
+  const scrollerRef = useRef<HTMLElement | null>(null)
+  // "Stuck to bottom" state: only auto-scroll while the user is already at (or near) the bottom. If
+  // they scroll UP to re-read earlier text mid-stream, don't yank them back down on every new token.
+  // A scroll listener flips this off when the user scrolls away from the bottom and back on when they
+  // return — programmatic scroll-to-bottom (below) also lands within the threshold, so it stays on.
+  const stickRef = useRef(true)
   useEffect(() => {
-    endRef.current?.scrollIntoView({ block: 'end' })
+    const scroller = endRef.current?.closest('.floor-viewport') as HTMLElement | null
+    scrollerRef.current = scroller
+    if (!scroller) return
+    const onScroll = (): void => {
+      stickRef.current = scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight < 40
+    }
+    scroller.addEventListener('scroll', onScroll, { passive: true })
+    return () => scroller.removeEventListener('scroll', onScroll)
+  }, [])
+  // Keep the latest streamed text in view as it grows — but only when stuck to the bottom (scoped to
+  // this node so the high-frequency updates don't re-render the rest of the chat).
+  useEffect(() => {
+    if (!stickRef.current) return
+    const s = scrollerRef.current
+    if (s) s.scrollTop = s.scrollHeight
+    else endRef.current?.scrollIntoView({ block: 'end' })
   }, [streamingText])
   return (
     <div className="floor-block">

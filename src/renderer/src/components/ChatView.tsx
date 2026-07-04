@@ -11,9 +11,11 @@ import { ChatToolbar } from './ChatToolbar'
 import { ScriptActionsBar } from './ScriptActionsBar'
 import { Composer } from './Composer'
 import { ContextMenu } from './ContextMenu'
+import { FloorManagerModal } from './FloorManagerModal'
 import { expandMacros } from '../../../shared/macros'
 import { stripRptEvents, stripThinking, extractThinking } from '../../../shared/responseView'
 import { renderTemplate } from '../plugin/renderTemplate'
+import { useUiStore } from '../stores/uiStore'
 import { useT } from '../i18n'
 
 /**
@@ -49,6 +51,8 @@ export function ChatView({ profileId }: { profileId: string }): React.ReactEleme
   )
   const activeCharacter = useCharacterStore((s) => s.activeCharacter)
   const activeChatMode = useChatStore((s) => s.activeChatMode)
+  const duelPopupOpen = useUiStore((s) => s.duelPopupOpen)
+  const openDuelPopup = useUiStore((s) => s.openDuelPopup)
   const settings = useSettingsStore((s) => s.settings)
   const regexRules = useRegexStore((s) => s.rules)
 
@@ -56,6 +60,7 @@ export function ChatView({ profileId }: { profileId: string }): React.ReactEleme
   const [editing, setEditing] = useState<{ floor: number; field: 'user' | 'response' } | null>(null)
   const [editText, setEditText] = useState('')
   const [menu, setMenu] = useState<FloorMenuTarget | null>(null)
+  const [floorsOpen, setFloorsOpen] = useState(false)
   // Which floor (page) the chat history is showing — one floor at a time.
   const [viewIndex, setViewIndex] = useState(0)
   const viewportRef = useRef<HTMLDivElement>(null)
@@ -196,7 +201,12 @@ export function ChatView({ profileId }: { profileId: string }): React.ReactEleme
     try {
       if (combatCue?.mode === 'duel') {
         await window.api.duelStartFromCue(profileId, activeChatId, combatCue)
-        useChatStore.getState().setMode(profileId, 'duel')
+        // Duel mode is renderer-transient by convention — main's persisted ChatMode has no 'duel'
+        // (types/chat CHAT_MODES), so the persisting setMode → setChatMode would COERCE 'duel' to
+        // 'explore' and its chat-mode-changed broadcast would slam the mode back, closing the popup
+        // a split-second after it opens. Mirror the tool-node path (toolNodes.toolStartDuel): flip
+        // the renderer mode directly, no DB write.
+        useChatStore.setState({ activeChatMode: 'duel' })
       } else {
         await window.api.combatStartFromCard(profileId, activeChatId, combatCue)
         useChatStore.getState().setMode(profileId, 'combat')
@@ -292,11 +302,22 @@ export function ChatView({ profileId }: { profileId: string }): React.ReactEleme
         </div>
       ) : null}
 
+      {/* A duel is live but its popup was dismissed — offer to bring it back (the popup floats over
+          chat, so the underlying chat stays interactive while a duel runs). */}
+      {activeChatMode === 'duel' && !duelPopupOpen ? (
+        <div style={{ display: 'flex', justifyContent: 'center', margin: '6px 0' }}>
+          <button className="btn-accent" style={{ fontSize: 12 }} onClick={() => openDuelPopup()}>
+            ⚔ {t('duel.reopen')}
+          </button>
+        </div>
+      ) : null}
+
       <ChatToolbar
         profileId={profileId}
         fsmEnabled={fsmEnabled}
         canRegenerate={canRegenerate}
         onRegenerate={handleRegenerate}
+        onManageFloors={() => setFloorsOpen(true)}
       />
 
       <ScriptActionsBar />
@@ -318,6 +339,10 @@ export function ChatView({ profileId }: { profileId: string }): React.ReactEleme
             }
           ]}
         />
+      )}
+
+      {floorsOpen && (
+        <FloorManagerModal profileId={profileId} onClose={() => setFloorsOpen(false)} />
       )}
     </>
   )

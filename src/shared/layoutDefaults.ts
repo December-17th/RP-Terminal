@@ -1,9 +1,8 @@
 /**
  * The app's default workspace layout (the seed). App-specific view ids live here, not
- * in the generic model (`workspaceLayout`). Reproduces today's fixed 3-column shell —
- * navigator | chat | (status / card-scripts) — so the foundation ships looking unchanged,
- * then becomes resizable + reconfigurable. Every FSM mode starts from this; the user's
- * per-mode edits diverge from there.
+ * in the generic model (`workspaceLayout`). A resizable + reconfigurable 3-column shell —
+ * navigator | chat | status. Every FSM mode starts from this; the user's per-mode edits
+ * diverge from there.
  */
 import type { LayoutSpec, ModeLayouts, WsNode } from './workspaceLayout'
 
@@ -17,15 +16,7 @@ const defaultRoot: WsNode = {
   children: [
     { type: 'panel', key: 'left', view: 'navigator' },
     { type: 'panel', key: 'center', view: 'chat' },
-    {
-      type: 'split',
-      dir: 'col',
-      sizes: [58, 42],
-      children: [
-        { type: 'panel', key: 'right-top', view: 'status' },
-        { type: 'panel', key: 'right-bottom', view: 'card-scripts' }
-      ]
-    }
+    { type: 'panel', key: 'right', view: 'status' }
   ]
 }
 

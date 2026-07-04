@@ -14,6 +14,9 @@ interface DuelStore {
   busy: boolean
   lastEvents: CombatEvent[]
   eventSeq: number
+  /** Running combat log for the active duel — every resolved event (play, ally/enemy phases),
+   *  oldest→newest, capped. Reset when a new duel loads/starts, cleared when one ends. */
+  log: CombatEvent[]
   load: (profileId: string, chatId: string) => Promise<void>
   startMock: (profileId: string, chatId: string) => Promise<void>
   startFromBuild: (profileId: string, chatId: string, characterId: string) => Promise<void>
@@ -30,15 +33,23 @@ interface DuelStore {
 }
 
 export const useDuelStore = create<DuelStore>((set, get) => {
+  const LOG_CAP = 300
   const apply = (res: { state: DuelState; events?: CombatEvent[] } | null): void => {
     if (!res) return
     set((s) => ({
       state: res.state,
       selection: { mode: 'idle' },
       lastEvents: res.events ?? [],
-      eventSeq: s.eventSeq + 1
+      eventSeq: s.eventSeq + 1,
+      log: [...s.log, ...(res.events ?? [])].slice(-LOG_CAP)
     }))
   }
+  // Adopt a freshly-loaded/started duel: a fresh board clears the selection AND the running log.
+  const loaded = (
+    chatId: string,
+    res: { state?: DuelState | null; catalog?: Record<string, AbilityDef> } | null
+  ): void =>
+    set({ chatId, state: res?.state ?? null, catalog: res?.catalog ?? {}, selection: { mode: 'idle' }, log: [] })
   return {
     chatId: null,
     state: null,
@@ -47,26 +58,18 @@ export const useDuelStore = create<DuelStore>((set, get) => {
     busy: false,
     lastEvents: [],
     eventSeq: 0,
+    log: [],
 
-    load: async (profileId, chatId) => {
-      const res = await api().duelGet(profileId, chatId)
-      set({ chatId, state: res?.state ?? null, catalog: res?.catalog ?? {}, selection: { mode: 'idle' } })
-    },
+    load: async (profileId, chatId) => loaded(chatId, await api().duelGet(profileId, chatId)),
 
-    startMock: async (profileId, chatId) => {
-      const res = await api().duelStartMock(profileId, chatId)
-      set({ chatId, state: res?.state ?? null, catalog: res?.catalog ?? {}, selection: { mode: 'idle' } })
-    },
+    startMock: async (profileId, chatId) =>
+      loaded(chatId, await api().duelStartMock(profileId, chatId)),
 
-    startFromBuild: async (profileId, chatId, characterId) => {
-      const res = await api().duelStart(profileId, chatId, characterId)
-      set({ chatId, state: res?.state ?? null, catalog: res?.catalog ?? {}, selection: { mode: 'idle' } })
-    },
+    startFromBuild: async (profileId, chatId, characterId) =>
+      loaded(chatId, await api().duelStart(profileId, chatId, characterId)),
 
-    startFromCue: async (profileId, chatId, cue) => {
-      const res = await api().duelStartFromCue(profileId, chatId, cue)
-      set({ chatId, state: res?.state ?? null, catalog: res?.catalog ?? {}, selection: { mode: 'idle' } })
-    },
+    startFromCue: async (profileId, chatId, cue) =>
+      loaded(chatId, await api().duelStartFromCue(profileId, chatId, cue)),
 
     pickCard: (cardId) => set({ selection: { mode: 'card', cardId } }),
     clearSelection: () => set({ selection: { mode: 'idle' } }),
@@ -97,7 +100,7 @@ export const useDuelStore = create<DuelStore>((set, get) => {
       const { chatId } = get()
       if (!chatId) return
       await api().duelEnd(profileId, chatId)
-      set({ state: null, catalog: {}, selection: { mode: 'idle' } })
+      set({ state: null, catalog: {}, selection: { mode: 'idle' }, log: [] })
     },
 
     narrate: async (profileId) => {
@@ -113,6 +116,6 @@ export const useDuelStore = create<DuelStore>((set, get) => {
     },
 
     reset: () =>
-      set({ chatId: null, state: null, catalog: {}, selection: { mode: 'idle' }, lastEvents: [] })
+      set({ chatId: null, state: null, catalog: {}, selection: { mode: 'idle' }, lastEvents: [], log: [] })
   }
 })

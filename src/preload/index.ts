@@ -85,6 +85,9 @@ const api = {
     responseContent: string | null
   ) =>
     ipcRenderer.invoke('edit-floor', profileId, chatId, floorIndex, userContent, responseContent),
+  // Delete a consecutive tail of floors (fromFloor..latest); rolls back their memory-table + var writes.
+  deleteFloorsFrom: (profileId: string, chatId: string, fromFloor: number) =>
+    ipcRenderer.invoke('delete-floors-from', profileId, chatId, fromFloor),
   // TavernHelper chat-write (SP3) — the inline card host reaches chatWriteService via these.
   setChatMessages: (profileId: string, chatId: string, messages: unknown) =>
     ipcRenderer.invoke('chat-set-messages', profileId, chatId, messages),

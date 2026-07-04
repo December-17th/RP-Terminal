@@ -415,6 +415,19 @@ const en: Record<string, string> = {
   'chat.nextFloor': 'Next floor',
   'chat.editMessage': '✎ Edit message',
 
+  // Floors manager (view + delete a consecutive tail of floors from the latest)
+  'floors.button': 'Floors',
+  'floors.title': 'Floors',
+  'floors.empty': 'No floors in this session yet.',
+  'floors.hint': 'Select a floor to delete it and every floor below it (down to the latest).',
+  'floors.selectTip': 'Delete from this floor down',
+  'floors.you': 'You',
+  'floors.ai': 'AI',
+  'floors.pickPrompt': 'Select the first floor to delete.',
+  'floors.willDelete': 'Will delete floors {{from}}–{{to}} ({{count}}). Their memory tables roll back too.',
+  'floors.delete': 'Delete…',
+  'floors.confirmDelete': 'Confirm — delete {{count}}',
+
   'usage.heading': 'usage',
   'usage.fields': 'Fields',
   'usage.expand': 'Expand',
@@ -551,7 +564,6 @@ const en: Record<string, string> = {
   'status.noState': '(No RPG state for this session yet)',
 
   'workflow.heading': 'Workflows',
-  'workflow.viewTitle': 'Workflows',
   'workflow.builtin': 'Built-in',
   'workflow.import': 'Import',
   'workflow.export': 'Export',
@@ -957,6 +969,13 @@ const en: Record<string, string> = {
 
   'duel.empty': 'No active duel.',
   'duel.startMock': 'Start mock duel (debug)',
+  'duel.popupTitle': 'Duel',
+  'duel.close': 'Close',
+  'duel.open': 'Open duel',
+  'duel.reopen': 'Reopen duel',
+  'duel.launchBody': 'The interactive duel opens in a popup over the chat.',
+  'duel.log': 'Combat log',
+  'duel.logEmpty': 'No actions yet.',
   'duel.energy': 'Energy',
   'duel.endTurn': 'End turn',
   'duel.endDuel': 'End duel',
@@ -975,13 +994,9 @@ const en: Record<string, string> = {
   'actions.label': 'Actions',
   'actions.empty': 'No script actions — a script can add one with rpt.ui.registerButton()',
 
-  'cardScripts.engineNote':
-    'Card scripts run in the background for this world. Their buttons appear in the Actions menu above the input; card UI appears in its own panels.',
-
   'view.navigator': 'Navigator',
   'view.chat': 'Chat',
   'view.usage': 'Usage',
-  'view.cardScripts': 'Card Scripts',
 
   'panel.chooseView': 'Choose which view this panel shows',
   'panel.showPanel': 'Show panel',
@@ -1012,12 +1027,6 @@ const en: Record<string, string> = {
   'sessions.deleteTitle': 'Delete session',
   'sessions.confirmDelete': 'Delete this session? This cannot be undone.',
 
-  // Agents workspace (agent-packs plan WP3.1)
-  'agents.title': 'Agents',
-  // Launcher card affordance (a saved layout may still reference view:'agents'/'workflow'; the
-  // LauncherCard/viewRegistry renders it and raises the editor overlay).
-  'controlCenter.launch.open': 'Open',
-  'controlCenter.launch.editorBody': 'Workflows and agents live in the editor now.',
   // ── Memory pane (agent-packs plan WP3.8 — memory config + maintenance, moved out of the Tables view) ─
   'memory.heading': 'Memory',
   'memory.subtitle': 'Set up and maintain the memory tables agents fill in for this session.',

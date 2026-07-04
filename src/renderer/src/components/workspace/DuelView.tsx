@@ -31,6 +31,7 @@ export const DuelView: FC<{ profileId: string }> = ({ profileId }) => {
   const busy = useDuelStore((s) => s.busy)
   const lastEvents = useDuelStore((s) => s.lastEvents)
   const eventSeq = useDuelStore((s) => s.eventSeq)
+  const log = useDuelStore((s) => s.log)
   const load = useDuelStore((s) => s.load)
   const startMock = useDuelStore((s) => s.startMock)
   const pickCard = useDuelStore((s) => s.pickCard)
@@ -42,9 +43,16 @@ export const DuelView: FC<{ profileId: string }> = ({ profileId }) => {
   const assets = useDuelAssets(profileId, state)
   const [handRef] = useAutoAnimate<HTMLDivElement>()
   const stageRef = useRef<HTMLDivElement>(null)
+  const logRef = useRef<HTMLDivElement>(null)
   const [floats, setFloats] = useState<DuelFloat[]>([])
   const floatIdRef = useRef(0)
   const flyingRef = useRef(false)
+
+  // Keep the combat log pinned to the newest entry as it grows.
+  useEffect(() => {
+    const el = logRef.current
+    if (el) el.scrollTop = el.scrollHeight
+  }, [log.length])
 
   useEffect(() => {
     if (activeChatId) void load(profileId, activeChatId)
@@ -210,6 +218,25 @@ export const DuelView: FC<{ profileId: string }> = ({ profileId }) => {
     const cardEl = document.querySelector('.rpt-duel-card.picked') as HTMLElement | null
     flyThenPlay(cardEl, id)
   }
+  // Ending / narrating a duel returns to chat: clear the renderer-transient 'duel' mode (set by
+  // ChatView's enter-duel), so DuelPopup's mode-follow effect closes the popup. Guarded so the debug
+  // mock-duel flow (mode was never 'duel') doesn't clobber the real chat mode.
+  const clearDuelMode = (): void => {
+    if (useChatStore.getState().activeChatMode === 'duel')
+      useChatStore.setState({ activeChatMode: 'explore' })
+  }
+  const finishDuel = async (): Promise<void> => {
+    await end(profileId)
+    clearDuelMode()
+  }
+  const narrateThenFinish = async (): Promise<void> => {
+    await narrate(profileId) // narrate() writes the prose to the chat + ends the duel internally
+    // The narration landed in the chat (append / new floor) — reload the session so it's visible
+    // (mirrors CombatView.onNarrate). setActiveChat also reloads mode from DB ('explore'), which
+    // closes the popup; fall back to clearing the transient duel mode if there's somehow no chat.
+    if (activeChatId) await useChatStore.getState().setActiveChat(profileId, activeChatId)
+    else clearDuelMode()
+  }
 
   return (
     <div className="rpt-duel">
@@ -321,7 +348,7 @@ export const DuelView: FC<{ profileId: string }> = ({ profileId }) => {
           <button className="btn-accent" disabled={busy || over} onClick={() => void endTurn(profileId)}>
             {t('duel.endTurn')}
           </button>
-          <button className="rpt-duel-secondary" disabled={busy} onClick={() => void end(profileId)}>
+          <button className="rpt-duel-secondary" disabled={busy} onClick={() => void finishDuel()}>
             {t('duel.endDuel')}
           </button>
         </div>
@@ -331,10 +358,10 @@ export const DuelView: FC<{ profileId: string }> = ({ profileId }) => {
             <span className={`rpt-duel-result ${state.status === 'party' ? 'win' : 'lose'}`}>
               {state.status === 'party' ? t('duel.win') : t('duel.lose')}
             </span>
-            <button className="btn-accent" disabled={busy} onClick={() => void narrate(profileId)}>
+            <button className="btn-accent" disabled={busy} onClick={() => void narrateThenFinish()}>
               {t('duel.narrate')}
             </button>
-            <button className="rpt-duel-secondary" disabled={busy} onClick={() => void end(profileId)}>
+            <button className="rpt-duel-secondary" disabled={busy} onClick={() => void finishDuel()}>
               {t('duel.endDuel')}
             </button>
           </div>
@@ -350,6 +377,22 @@ export const DuelView: FC<{ profileId: string }> = ({ profileId }) => {
           </span>
         ))}
       </div>
+
+      {/* Combat log (right rail): every resolved event's text, oldest→newest, auto-scrolled. */}
+      <aside className="rpt-duel-log">
+        <div className="rpt-duel-log-head">{t('duel.log')}</div>
+        <div className="rpt-duel-log-body" ref={logRef}>
+          {log.length === 0 ? (
+            <div className="rpt-duel-log-empty">{t('duel.logEmpty')}</div>
+          ) : (
+            log.map((e, i) => (
+              <div key={i} className={`rpt-duel-log-line kind-${e.kind}`}>
+                {e.text}
+              </div>
+            ))
+          )}
+        </div>
+      </aside>
     </div>
   )
 }

@@ -60,6 +60,12 @@ export const foldState = (
   // Combat (Track Combat / P7): if the model signalled a fight, stash the cue on this
   // floor's vars so the chat can surface an "Enter Combat" affordance. The tag itself is
   // stripped at view time (responseView), never baked into storage.
+  //
+  // The cue is a PER-TURN signal, not carried state: `workingVars` is a deep clone of the previous
+  // floor's vars (genContext), so a cue set on an earlier turn rides forward forever and the chat's
+  // "Enter Combat/Duel" banner never clears once shown (owner report: kept chatting instead of
+  // fighting → banner stuck). Drop any inherited cue first, then re-stash only if THIS turn emitted one.
+  delete variables.combat_cue
   const combatCue = parseCombatStart(parsed.text).cue
   if (combatCue) {
     const bundleMode = (getRpExt(ctx.card)?.combat as { mode?: 'grid' | 'duel' } | undefined)?.mode

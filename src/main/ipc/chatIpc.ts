@@ -33,6 +33,12 @@ export const registerChatIpc = (ipcMain: IpcMain): void => {
   ipcMain.handle('edit-floor', (_, profileId, chatId, floorIndex, userContent, responseContent) =>
     chatService.editFloorContent(profileId, chatId, floorIndex, userContent, responseContent)
   )
+  // User-initiated "delete floors": drop a consecutive tail (fromFloor..latest, inclusive). Reuses
+  // truncateFloors, so the removed floors' memory-table ops + journaled variable writes are rolled
+  // back and the sandbox is rebuilt from the survivors — same path regenerate/swipe use.
+  ipcMain.handle('delete-floors-from', (_, profileId, chatId, fromFloor) =>
+    chatService.truncateFloors(profileId, chatId, Number(fromFloor))
+  )
 
   // TavernHelper chat-WRITE (SP3) — the same chatWriteService the WCV path uses, reached from the inline
   // card host via window.api (explicit ctx). Each mutation re-folds <UpdateVariable> into stat_data; the

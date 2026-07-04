@@ -85,6 +85,10 @@ interface ChatState {
     field: 'user' | 'response',
     text: string
   ) => Promise<void>
+  /** Delete a consecutive tail of floors (fromFloor..latest, inclusive). Rolls back the removed
+   *  floors' memory-table ops + journaled variable writes (main-side truncateFloors), then reloads
+   *  floors so the UI + native panels reflect the rewound state. */
+  deleteFloorsFrom: (profileId: string, fromFloor: number) => Promise<void>
   /** Navigate or generate a floor's swipe. 'left'/'right' rotate existing alternates;
    * 'right' past the last alternate on the latest floor generates a new one. */
   swipe: (profileId: string, floorIndex: number, dir: 'left' | 'right') => Promise<void>
@@ -231,6 +235,16 @@ export const useChatStore = create<ChatState>((set, get) => {
       if (!activeChatId) return
       set({ activeChatMode: mode }) // optimistic; the write is a simple column update
       await window.api.setChatMode(profileId, activeChatId, mode)
+    },
+
+    deleteFloorsFrom: async (profileId, fromFloor) => {
+      const { activeChatId } = get()
+      if (!activeChatId) return
+      await window.api.deleteFloorsFrom(profileId, activeChatId, fromFloor)
+      // Reload the survivors (their variables now reflect the rolled-back memory tables). 'external'
+      // origin so the native panels (status/tables) re-fire MVU events and refresh to the rewound state.
+      const floors = await window.api.getFloors(profileId, activeChatId)
+      set({ floors, lastVarsOrigin: 'external' })
     },
 
     sendAction: async (profileId, actionText) => {

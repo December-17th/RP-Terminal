@@ -402,6 +402,19 @@ const zh: Record<string, string> = {
   'chat.nextFloor': '下一层',
   'chat.editMessage': '✎ 编辑消息',
 
+  // 楼层管理（查看并从最新楼层起删除连续楼层）
+  'floors.button': '楼层',
+  'floors.title': '楼层',
+  'floors.empty': '本会话暂无楼层。',
+  'floors.hint': '选择一个楼层，将删除它及其后（直到最新）的所有楼层。',
+  'floors.selectTip': '从此楼层起删除',
+  'floors.you': '你',
+  'floors.ai': 'AI',
+  'floors.pickPrompt': '选择要删除的起始楼层。',
+  'floors.willDelete': '将删除楼层 {{from}}–{{to}}（共 {{count}} 层），其记忆表格也会一并回退。',
+  'floors.delete': '删除…',
+  'floors.confirmDelete': '确认删除 {{count}} 层',
+
   'usage.heading': '用量',
   'usage.fields': '字段',
   'usage.expand': '展开',
@@ -532,7 +545,6 @@ const zh: Record<string, string> = {
   'tables.backfillBadBatch': '每批楼层数至少为 1。',
 
   'workflow.heading': '工作流',
-  'workflow.viewTitle': '工作流',
   'workflow.builtin': '内置',
   'workflow.import': '导入',
   'workflow.export': '导出',
@@ -917,6 +929,13 @@ const zh: Record<string, string> = {
 
   'duel.empty': '当前没有进行中的对决。',
   'duel.startMock': '开始模拟对决（调试）',
+  'duel.popupTitle': '对决',
+  'duel.close': '关闭',
+  'duel.open': '打开对决',
+  'duel.reopen': '重新打开对决',
+  'duel.launchBody': '交互式对决会在聊天上方的弹窗中打开。',
+  'duel.log': '战斗日志',
+  'duel.logEmpty': '暂无行动。',
   'duel.energy': '行动力',
   'duel.endTurn': '结束回合',
   'duel.endDuel': '结束对决',
@@ -935,13 +954,9 @@ const zh: Record<string, string> = {
   'actions.label': '动作',
   'actions.empty': '没有脚本动作 —— 脚本可通过 rpt.ui.registerButton() 添加。',
 
-  'cardScripts.engineNote':
-    '本世界的卡片脚本在后台运行。其按钮显示在输入框上方的「动作」菜单中；卡片界面则显示在各自的面板里。',
-
   'view.navigator': '导航',
   'view.chat': '聊天',
   'view.usage': '用量',
-  'view.cardScripts': '卡片脚本',
 
   'panel.chooseView': '选择此面板显示的视图',
   'panel.showPanel': '显示面板',
@@ -972,11 +987,6 @@ const zh: Record<string, string> = {
   'sessions.deleteTitle': '删除会话',
   'sessions.confirmDelete': '删除此会话？此操作无法撤销。',
 
-  // 智能体工作区（agent-packs plan WP3.1）
-  'agents.title': '智能体',
-  // 启动卡入口（保存的布局可能仍引用 view:'agents'/'workflow'；LauncherCard/viewRegistry 渲染并唤起编辑器覆盖层）。
-  'controlCenter.launch.open': '打开',
-  'controlCenter.launch.editorBody': '工作流与智能体现在都在编辑器里。',
   // ── 记忆面板（智能体包计划 WP3.8 —— 从「表格」视图迁出的记忆配置与维护） ──────────────
   'memory.heading': '记忆',
   'memory.subtitle': '为本会话设置并维护智能体填写的记忆表格。',

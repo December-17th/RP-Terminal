@@ -20,12 +20,17 @@ import type { FloorFile } from '../types/chat'
 export function setChatMessages(profileId: string, chatId: string, messages: unknown): number {
   const floors = floorService.getAllFloors(profileId, chatId)
   const map = chatIndexMap(floors)
+  // The opening greeting (first_mes / home-UI placeholder) belongs to floor 0 ONLY. See saveChat.
+  const opening = floors[0]?.response.content
   const touched = new Set<number>()
   for (const m of Array.isArray(messages) ? messages : []) {
     const id = typeof (m as any)?.message_id === 'number' ? (m as any).message_id : -1
     const slot = id >= 0 ? map[id] : undefined
     const text = (m as any)?.message
     if (!slot || typeof text !== 'string') continue
+    // Never let a card write the opening greeting onto a NON-opening floor's response (twin of the
+    // saveChat guard) — a stale card chat echoed back would otherwise clobber a real reply.
+    if (!slot.isUser && slot.floorIdx > 0 && opening && text === opening) continue
     const current = slot.isUser
       ? floors[slot.floorIdx].user_message.content
       : floors[slot.floorIdx].response.content
@@ -69,10 +74,17 @@ export function deleteChatMessages(
 export function saveChat(profileId: string, chatId: string, chat: unknown): boolean {
   if (!Array.isArray(chat)) return false
   const floors = floorService.getAllFloors(profileId, chatId)
+  // The opening greeting (first_mes / home-UI placeholder) belongs to floor 0 ONLY. Capture it so a
+  // STALE `SillyTavern.chat` echoed back here can't clobber a real later response with the placeholder.
+  // (Owner report: after a custom-start, the home UI's regex placeholder bled onto floor 1 — a stale
+  // card chat, still holding the greeting in the assistant[1] slot, was saved over the real reply.)
+  const opening = floors[0]?.response.content
   const assistant = chat.filter((m) => m && !(m as any).is_user)
   assistant.forEach((m: any, i) => {
     const f = floors[i]
     if (!f) return
+    // Skip a non-opening floor whose incoming text IS the opening greeting — never propagate it forward.
+    if (i > 0 && opening && m.mes === opening) return
     if (typeof m.mes === 'string') f.response.content = m.mes
     if (Array.isArray(m.swipes)) f.swipes = m.swipes
     if (typeof m.swipe_id === 'number') f.swipe_id = m.swipe_id

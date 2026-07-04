@@ -39,8 +39,27 @@ describe('workspaceLayout (pure split-tree ops)', () => {
   })
 
   it('resizeSplit resolves a nested path and is a no-op on a bad index', () => {
-    const nested = asSplit(asSplit(resizeSplit(root(), [2], 0, 10)).children[2])
-    expect(nested.sizes).toEqual([68, 32]) // the right column's 58/42
+    // A local nested tree (the default layout is now a flat 3-column row) to exercise nested-path resolution.
+    const nestedRoot: WsNode = {
+      type: 'split',
+      dir: 'row',
+      sizes: [25, 50, 25],
+      children: [
+        { type: 'panel', key: 'left', view: 'navigator' },
+        { type: 'panel', key: 'center', view: 'chat' },
+        {
+          type: 'split',
+          dir: 'col',
+          sizes: [58, 42],
+          children: [
+            { type: 'panel', key: 'a', view: 'status' },
+            { type: 'panel', key: 'b', view: 'logs' }
+          ]
+        }
+      ]
+    }
+    const nested = asSplit(asSplit(resizeSplit(nestedRoot, [2], 0, 10)).children[2])
+    expect(nested.sizes).toEqual([68, 32]) // the nested column's 58/42
     expect(asSplit(resizeSplit(root(), [], 5, 10)).sizes).toEqual([25, 50, 25]) // out of range
   })
 
@@ -57,10 +76,10 @@ describe('workspaceLayout (pure split-tree ops)', () => {
   })
 
   it('togglePanelHidden flips and flips back', () => {
-    const once = togglePanelHidden(root(), 'right-bottom')
-    expect(findPanel(once, 'right-bottom')!.hidden).toBe(true)
-    const twice = togglePanelHidden(once, 'right-bottom')
-    expect(findPanel(twice, 'right-bottom')!.hidden).toBe(false)
+    const once = togglePanelHidden(root(), 'right')
+    expect(findPanel(once, 'right')!.hidden).toBe(true)
+    const twice = togglePanelHidden(once, 'right')
+    expect(findPanel(twice, 'right')!.hidden).toBe(false)
   })
 
   describe('mergeWithDefault', () => {

@@ -227,4 +227,23 @@ describe('generate() — expanded parity (abort + lore + combat)', () => {
     expect((floor!.variables.combat_cue as any).enemies).toBe('Bandit x2')
     expect((floor!.variables.combat_cue as any).map).toBe('road')
   })
+
+  it('combat cue: an inherited cue is CLEARED when this turn emits no <rpt-combat-start> (per-turn, not carried forward)', async () => {
+    // workingVars is a deep clone of the previous floor's vars, so a cue set on an earlier turn
+    // would otherwise ride forward forever (the chat's "Enter Combat/Duel" banner never clears if
+    // the player keeps chatting instead of fighting). foldState drops the inherited cue each turn.
+    const prev = floors[floors.length - 1].variables
+    floors[floors.length - 1].variables = {
+      stat_data: { hp: 10 },
+      combat_cue: { enemies: 'Stale x1', map: 'old' }
+    }
+    try {
+      scenario = { mode: 'text', raw: 'You keep talking; the moment passes, no fight.', lore: [] }
+      const floor = await generate('profile1', 'chat1', 'keep chatting')
+      expect(floor).not.toBeNull()
+      expect(floor!.variables.combat_cue).toBeUndefined()
+    } finally {
+      floors[floors.length - 1].variables = prev
+    }
+  })
 })
