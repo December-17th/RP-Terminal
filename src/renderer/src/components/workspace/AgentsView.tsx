@@ -63,6 +63,9 @@ import {
 import { useUiStore } from '../../stores/uiStore'
 import type { ControlCenterRail } from '../../stores/uiStore'
 import { AgentPackDetail } from './AgentPackDetail'
+import { AgentPackExportWizard } from './AgentPackExportWizard'
+import { AgentPackImportInspector } from './AgentPackImportInspector'
+import type { InspectionReport } from './agentPackTransferDisplay'
 import { WorkflowView } from './WorkflowView'
 import { MemoryPane } from './MemoryPane'
 import type { MemoryPackInput } from './memoryPaneModel'
@@ -295,6 +298,7 @@ export const AgentsView: React.FC<{
               ? `${detailPack.manifest.fork.base} (${t('workflowEffective.fork')} ${detailPack.manifest.fork.n})`
               : detailPack.manifest.name
           }
+          builtin={detailPack.builtin}
           worldId={worldId}
           chatId={activeChatId}
           onClose={() => setDetailPackId(null)}
@@ -344,45 +348,110 @@ const InstalledPane: React.FC<{
   onNavigate
 }) => {
   const t = useT()
+  // The import inspection sheet (WP4.3 — the trust moment). A null report never mounts it (canceled
+  // dialog). `justInstalledId` gives the freshly-imported pack a subtle 'just installed' highlight on
+  // the refreshed list.
+  const [importReport, setImportReport] = React.useState<InspectionReport | null>(null)
+  const [importing, setImporting] = React.useState(false)
+  const [justInstalledId, setJustInstalledId] = React.useState<string | null>(null)
+
+  const openImportDialog = React.useCallback(async () => {
+    setImporting(true)
+    try {
+      // Phase one: native open dialog → inspect. null = the user canceled the OS dialog → silently done.
+      const report = (await api().importAgentPackDialog(profileId)) as InspectionReport | null
+      if (report) setImportReport(report)
+    } catch {
+      // A hard IPC failure — leave the pane as-is (the dialog itself surfaces OS-level errors). No
+      // designed state needed for a rare invoke failure; the button re-enables so the user can retry.
+    } finally {
+      setImporting(false)
+    }
+  }, [profileId])
+
+  const closeInspector = React.useCallback(
+    (installedId?: string) => {
+      setImportReport(null)
+      if (installedId) {
+        setJustInstalledId(installedId)
+        onRetry() // reload the list so the new pack appears (gate-closed — ADR 0005)
+        // Clear the highlight after the 'just installed' emphasis has had a moment.
+        window.setTimeout(() => setJustInstalledId(null), 4000)
+      }
+    },
+    [onRetry]
+  )
+
+  // The header (with the Import button) renders in EVERY state so import is always reachable — even
+  // from the no-world / empty states (import lands in the global library, world-independent).
+  const header = (
+    <div className="rpt-agents-installed-head">
+      <h2 className="rpt-agents-installed-title">{t('agents.rail.installed')}</h2>
+      <button
+        type="button"
+        className="rpt-agents-import-btn"
+        onClick={() => void openImportDialog()}
+        disabled={importing}
+      >
+        {importing ? t('agents.import.opening') : t('agents.import.open')}
+      </button>
+    </div>
+  )
+
+  const inspector = importReport && (
+    <AgentPackImportInspector report={importReport} onClose={closeInspector} />
+  )
 
   if (loading && packs === null) {
     // Loading = skeleton rows, not spinners (UX brief).
     return (
-      <div className="rpt-agents-list">
-        {[0, 1].map((i) => (
-          <div key={i} className="rpt-agents-card rpt-agents-skeleton" aria-hidden>
-            <div className="rpt-agents-skel-toggle" />
-            <div className="rpt-agents-skel-lines">
-              <div className="rpt-agents-skel-line" />
-              <div className="rpt-agents-skel-line short" />
+      <div className="rpt-agents-installed">
+        {header}
+        <div className="rpt-agents-list">
+          {[0, 1].map((i) => (
+            <div key={i} className="rpt-agents-card rpt-agents-skeleton" aria-hidden>
+              <div className="rpt-agents-skel-toggle" />
+              <div className="rpt-agents-skel-lines">
+                <div className="rpt-agents-skel-line" />
+                <div className="rpt-agents-skel-line short" />
+              </div>
             </div>
-          </div>
-        ))}
+          ))}
+        </div>
+        {inspector}
       </div>
     )
   }
 
   if (error) {
     return (
-      <div className="rpt-agents-empty">
-        <p>{t('agents.installed.loadError')}</p>
-        <button className="btn-accent" onClick={onRetry}>
-          {t('agents.retry')}
-        </button>
+      <div className="rpt-agents-installed">
+        {header}
+        <div className="rpt-agents-empty">
+          <p>{t('agents.installed.loadError')}</p>
+          <button className="btn-accent" onClick={onRetry}>
+            {t('agents.retry')}
+          </button>
+        </div>
+        {inspector}
       </div>
     )
   }
 
   if (!worldId) {
     // No active chat/world — the gate has no world to write to. Designed state (brief: legible +
-    // inviting), not a blank div.
+    // inviting), not a blank div. Import is still reachable (it lands in the world-independent library).
     return (
-      <div className="rpt-agents-empty">
-        <div className="rpt-agents-placeholder-icon" aria-hidden>
-          🌍
+      <div className="rpt-agents-installed">
+        {header}
+        <div className="rpt-agents-empty">
+          <div className="rpt-agents-placeholder-icon" aria-hidden>
+            🌍
+          </div>
+          <h2 className="rpt-agents-placeholder-title">{t('agents.installed.noWorldTitle')}</h2>
+          <p className="rpt-agents-placeholder-body">{t('agents.installed.noWorld')}</p>
         </div>
-        <h2 className="rpt-agents-placeholder-title">{t('agents.installed.noWorldTitle')}</h2>
-        <p className="rpt-agents-placeholder-body">{t('agents.installed.noWorld')}</p>
+        {inspector}
       </div>
     )
   }
@@ -391,30 +460,35 @@ const InstalledPane: React.FC<{
   const anyOpen = list.some((p) => gates[p.id])
 
   return (
-    <div className="rpt-agents-list">
-      {/* First-run framing: when every gate is closed (the common first-run state), explain what
-          packs are and point at the built-ins. Cards themselves still render below. */}
-      {!anyOpen && (
-        <div className="rpt-agents-intro">
-          <strong>{t('agents.installed.introTitle')}</strong>
-          <span>{t('agents.installed.introBody')}</span>
-        </div>
-      )}
-      {list.map((pack) => (
-        <PackCard
-          key={pack.id}
-          profileId={profileId}
-          chatId={chatId}
-          pack={pack}
-          open={gates[pack.id] ?? false}
-          runs={runs}
-          health={packHealth(runs, pack.id)}
-          onFlipGate={(next) => onFlipGate(pack, next)}
-          selected={selectedPackId === pack.id}
-          onOpenDetail={() => onOpenDetail(pack.id)}
-          onNavigate={onNavigate}
-        />
-      ))}
+    <div className="rpt-agents-installed">
+      {header}
+      <div className="rpt-agents-list">
+        {/* First-run framing: when every gate is closed (the common first-run state), explain what
+            packs are and point at the built-ins. Cards themselves still render below. */}
+        {!anyOpen && (
+          <div className="rpt-agents-intro">
+            <strong>{t('agents.installed.introTitle')}</strong>
+            <span>{t('agents.installed.introBody')}</span>
+          </div>
+        )}
+        {list.map((pack) => (
+          <PackCard
+            key={pack.id}
+            profileId={profileId}
+            chatId={chatId}
+            pack={pack}
+            open={gates[pack.id] ?? false}
+            runs={runs}
+            health={packHealth(runs, pack.id)}
+            justInstalled={justInstalledId === pack.id}
+            onFlipGate={(next) => onFlipGate(pack, next)}
+            selected={selectedPackId === pack.id}
+            onOpenDetail={() => onOpenDetail(pack.id)}
+            onNavigate={onNavigate}
+          />
+        ))}
+      </div>
+      {inspector}
     </div>
   )
 }
@@ -427,6 +501,8 @@ const PackCard: React.FC<{
   open: boolean
   runs: StoredRunRecord[]
   health: PackHealth
+  /** True for a just-imported pack — a subtle 'just installed' highlight (fades after a moment). */
+  justInstalled?: boolean
   onFlipGate: (next: boolean) => void
   selected: boolean
   onOpenDetail: () => void
@@ -438,6 +514,7 @@ const PackCard: React.FC<{
   open,
   runs,
   health,
+  justInstalled,
   onFlipGate,
   selected,
   onOpenDetail,
@@ -448,6 +525,9 @@ const PackCard: React.FC<{
   const needsCascade = transformsMainReply(pack.attachments)
   const [confirming, setConfirming] = React.useState(false)
   const [whyOpen, setWhyOpen] = React.useState(false)
+  // A compact Export affordance lives on fork cards (the creator path — a fork is the one you tweak
+  // then share). The full teaching wizard mounts over the whole view when opened.
+  const [exporting, setExporting] = React.useState(false)
   // The "Why?" opener — focus returns here when the popover closes (Escape / × / action), so keyboard
   // focus is never lost into a removed subtree.
   const whyBtnRef = React.useRef<HTMLButtonElement>(null)
@@ -467,7 +547,9 @@ const PackCard: React.FC<{
   }
 
   return (
-    <div className={`rpt-agents-card${selected ? ' selected' : ''}`}>
+    <div
+      className={`rpt-agents-card${selected ? ' selected' : ''}${justInstalled ? ' just-installed' : ''}`}
+    >
       <button
         role="switch"
         aria-checked={open}
@@ -567,16 +649,37 @@ const PackCard: React.FC<{
               )}
             </div>
           </div>
-          <button
-            type="button"
-            className="rpt-agents-settingsbtn"
-            aria-expanded={selected}
-            onClick={onOpenDetail}
-          >
-            {t('agents.settings.open')}
-          </button>
+          <div className="rpt-agents-cardfoot-actions">
+            {/* Compact Export on FORK cards — a fork is the tweak-then-share unit (the creator path).
+                The full teaching wizard opens over the view. */}
+            {pack.manifest.fork && (
+              <button
+                type="button"
+                className="rpt-agents-settingsbtn"
+                onClick={() => setExporting(true)}
+              >
+                {t('agents.export.open')}
+              </button>
+            )}
+            <button
+              type="button"
+              className="rpt-agents-settingsbtn"
+              aria-expanded={selected}
+              onClick={onOpenDetail}
+            >
+              {t('agents.settings.open')}
+            </button>
+          </div>
         </div>
       </div>
+
+      {exporting && (
+        <AgentPackExportWizard
+          profileId={profileId}
+          packId={pack.id}
+          onClose={() => setExporting(false)}
+        />
+      )}
 
       {confirming && (
         <div

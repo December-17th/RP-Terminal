@@ -1177,7 +1177,95 @@ const zh: Record<string, string> = {
   // 状态
   'agents.overview.noWorldTitle': '请先打开聊天',
   'agents.overview.noWorldBody': '智能体在世界中运行。打开一个聊天，即可查看它们的运行情况。',
-  'agents.overview.loadError': '无法加载概览。'
+  'agents.overview.loadError': '无法加载概览。',
+
+  // ── 分享：导出向导 + 导入检查（agent-packs 计划 WP4.3）──────────────────────────────────────────
+  // 导出与导入共用的文案。
+  'agents.transfer.nodeCount': '{{n}} 个节点',
+  'agents.transfer.fromStructure': '源自连线结构',
+
+  // 导出向导
+  'agents.export.open': '导出…',
+  'agents.export.title': '导出智能体包',
+  'agents.export.close': '关闭',
+  'agents.export.loadError': '无法准备导出此包。',
+  'agents.export.reviewLede': '这是其他用户在安装前会看到的内容。请先检查，然后保存文件以分享。',
+  'agents.export.fileSize': '文件大小约为 {{size}}。',
+  'agents.export.attachTitle': '接入位置',
+  'agents.export.attachNone': '此包未声明任何接入点。',
+  'agents.export.attachEntries': '在 {{n}} 处进入',
+  'agents.export.attachRejoins': '在 {{n}} 处汇入',
+  'agents.export.attachTriggers': '由 {{n}} 个触发器运行',
+  'agents.export.capTitle': '它能做什么',
+  'agents.export.capNone': '此包自身不读写任何内容。',
+  'agents.export.templateTitle': '记忆模板',
+  'agents.export.templateNone': '未捆绑任何模板——此包在运行时根据聊天所分配的表格集来绑定其表格。',
+  'agents.export.warnTitle': '给导入者的说明',
+  'agents.export.warnLede': '导入者在安装前会看到以下内容：',
+  'agents.export.save': '保存文件…',
+  'agents.export.saving': '正在保存…',
+  'agents.export.cancel': '取消',
+  'agents.export.savedTitle': '已保存',
+  'agents.export.done': '完成',
+  'agents.export.builtinHint': '内置包无法导出。请先复刻此包（在工作流工作室中编辑其图），然后导出你的副本。',
+  'agents.export.error.builtin-not-exportable': '内置包无法导出。',
+  'agents.export.error.not-installed': '此包已不再安装。',
+
+  // 导入检查
+  'agents.import.open': '导入…',
+  'agents.import.opening': '正在打开…',
+  'agents.import.title': '导入智能体包',
+  'agents.import.close': '关闭',
+  'agents.import.lede': '这是该文件的内容，以及安装后会发生的情况。在你稍后启用之前，它不会运行。',
+  'agents.import.forkLineage': '“{{base}}” 的复刻（复刻 {{n}}）。',
+  'agents.import.capTitle': '它能做什么',
+  'agents.import.capNone': '此包自身不读写任何内容。',
+  'agents.import.templateTitle': '捆绑的记忆模板',
+  'agents.import.warnTitle': '说明',
+  'agents.import.blockersTitle': '无法安装',
+  'agents.import.blockersLede': '此文件无法按现状安装：',
+  'agents.import.cancel': '取消',
+  'agents.import.dismiss': '关闭',
+  'agents.import.install': '安装',
+  'agents.import.installing': '正在安装…',
+  'agents.import.installBlocked': '请先解决上述问题再安装。',
+  'agents.import.installedToast': '已安装 “{{name}}”——在某个世界中启用即可使用',
+  'agents.import.alreadyToast': '“{{name}}” 已安装',
+  'agents.import.confirmExpired': '本次导入已超时。请重新打开该文件以导入。',
+  'agents.import.confirmBlocked': '情况已发生变化，此包已无法安装。请重新打开该文件。',
+  // 去重标签
+  'agents.import.dedupe.new': '全新',
+  'agents.import.dedupe.already-installed': '已安装',
+  // 捆绑模板的处理结果
+  'agents.import.templateOutcome.will-install': '将被添加',
+  'agents.import.templateOutcome.will-duplicate': '将作为副本添加（已存在同名模板）',
+  // 阻断原因卡片
+  'agents.import.blocker.unknownNodeTypes.title': '使用了本应用没有的功能',
+  'agents.import.blocker.unknownNodeTypes.body':
+    '此包使用了 {{count}} 种当前版本的 RP Terminal 无法识别的节点类型。它会导致回合出错，因此无法安装。请更新应用后重试。',
+  'agents.import.blocker.versionTooOld.title': '需要更新版本的 RP Terminal',
+  'agents.import.blocker.versionTooOld.body':
+    '此包需要 RP Terminal {{required}} 或更新版本；你当前为 {{app}}。请更新应用后再安装。',
+  'agents.import.blocker.versionConflict.title': '已安装了不同的版本',
+  'agents.import.blocker.versionConflict.body':
+    '你的库中已有此包的版本 {{installed}}。RP Terminal 一次只能保留一个版本的包。',
+  'agents.import.versionConflictRecovery': '要安装此版本，请先移除已安装的版本（在其包卡片上操作），然后重新打开此文件。',
+
+  // 导入解析错误页——每个结构化错误码对应一个精心设计的状态。
+  'agents.import.parseError.too-large.title': '文件过大',
+  'agents.import.parseError.too-large.body':
+    '智能体包文件很小。此文件比预期更大，因此未被读取。请确认你选择了正确的文件。',
+  'agents.import.parseError.invalid-json.title': '无法读取该文件',
+  'agents.import.parseError.invalid-json.body': '这看起来不像有效的智能体包文件——它可能已损坏，或是另一种文件。',
+  'agents.import.parseError.unsupported-version.title': '此文件来自不同的版本',
+  'agents.import.parseError.unsupported-version.body':
+    '此智能体包使用了本应用无法理解的格式（版本 {{found}}）。请尝试更新 RP Terminal。',
+  'agents.import.parseError.invalid-envelope.title': '此文件格式有误',
+  'agents.import.parseError.invalid-envelope.body': '此文件是智能体包，但其部分字段有误，因此无法安装。',
+  'agents.import.parseError.not-a-fragment.title': '这不是可分享的智能体包',
+  'agents.import.parseError.not-a-fragment.body': '其中的工作流不是片段——只有片段工作流才能作为智能体包分享。',
+  'agents.import.parseError.invalid-fragment.title': '此包的工作流已损坏',
+  'agents.import.parseError.invalid-fragment.body': '此包中的工作流未通过其结构检查，因此无法安装。'
 }
 
 export default zh

@@ -480,6 +480,15 @@ workflows become built-in packs. No new UI beyond what exists.
   full cross-doc reachability is required before denial-gating can claim soundness over
   subgraph-bearing packs.
 
+- **2026-07-03, after WP4.2:** transfer services shipped (two-phase inspect/confirm, single-use
+  5-min token, gate-closed install, hard refusals for unknown node types / minRptVersion /
+  version-conflict). Grounded truths: memory packs resolve templates at RUNTIME per chat, so v0
+  exports bundle no templates (machinery built + tested for when a pack pins one);
+  saveTableTemplate mints uuids and never overwrites → bundled collisions duplicate, honestly
+  reported. **Recorded gap:** `minRptVersion` is envelope-only — PackManifest has no field, so
+  exports can't advertise it and imports don't persist it (the import gate still enforces it);
+  fix = a manifest/store field when phase 6 touches upgrade metadata.
+
 ## Risks and watchpoints
 
 - **WP1.3 is the highest-risk change** (engine failure semantics). It must land behind the

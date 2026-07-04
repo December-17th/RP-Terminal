@@ -19,6 +19,7 @@
 import React from 'react'
 import { useT, useI18nStore } from '../../i18n'
 import { useUiStore } from '../../stores/uiStore'
+import { AgentPackExportWizard } from './AgentPackExportWizard'
 import {
   resolveSettingLabel,
   systemLabelKey,
@@ -50,13 +51,17 @@ export const AgentPackDetail: React.FC<{
   profileId: string
   packId: string
   packName: string
+  /** Whether this pack is a built-in (built-ins can't be exported — fork first). */
+  builtin: boolean
   worldId: string
   chatId: string | null
   onClose: () => void
-}> = ({ profileId, packId, packName, worldId, chatId, onClose }) => {
+}> = ({ profileId, packId, packName, builtin, worldId, chatId, onClose }) => {
   const t = useT()
   const locale = useI18nStore((s) => s.locale)
   const openWorkflowEditor = useUiStore((s) => s.openWorkflowEditor)
+  // The export wizard mounts over the whole control center (its own modal overlay) when opened here.
+  const [exporting, setExporting] = React.useState(false)
 
   const [data, setData] = React.useState<PackSettingsPayload | null>(null)
   const [loading, setLoading] = React.useState(true)
@@ -218,7 +223,9 @@ export const AgentPackDetail: React.FC<{
               </section>
             )}
 
-            {/* ADVANCED group — the Workflow Studio hand-off + the fork sentence. */}
+            {/* ADVANCED group — the Workflow Studio hand-off, the fork sentence, and the Export
+                affordance (sharing loop close — WP4.3). Built-ins can't export (fork first); the
+                affordance says so instead of offering a dead button. */}
             <section className="rpt-agentdetail-group">
               <h3 className="rpt-agentdetail-grouptitle">{t('agents.settings.advancedGroup')}</h3>
               <button
@@ -232,10 +239,30 @@ export const AgentPackDetail: React.FC<{
                 {t('agents.settings.openStudio')}
               </button>
               <p className="rpt-agentdetail-note">{t('agents.settings.forkNote')}</p>
+
+              {builtin ? (
+                <p className="rpt-agentdetail-note">{t('agents.export.builtinHint')}</p>
+              ) : (
+                <button
+                  type="button"
+                  className="rpt-agentdetail-studio"
+                  onClick={() => setExporting(true)}
+                >
+                  {t('agents.export.open')}
+                </button>
+              )}
             </section>
           </>
         )}
       </div>
+
+      {exporting && (
+        <AgentPackExportWizard
+          profileId={profileId}
+          packId={packId}
+          onClose={() => setExporting(false)}
+        />
+      )}
     </aside>
   )
 }

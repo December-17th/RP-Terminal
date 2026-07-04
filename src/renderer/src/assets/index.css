@@ -2524,6 +2524,136 @@ select {
   cursor:pointer; align-self:flex-start; }
 .rpt-agentdetail-studio:focus-visible { outline:2px solid var(--rpt-accent); outline-offset:2px; }
 
+/* ── Sharing: export wizard + import inspection sheet (agent-packs plan WP4.3) ──────────────────────
+   Both mount over the whole control center via the shared .modal-overlay backdrop. One panel shell
+   (.rpt-transfer-panel) hosts a scrolling body of teaching/trust sections (.rpt-inspect-*). Capability
+   chips REUSE .rpt-agents-chip (same visual language as the Installed cards). All colors via --rpt-*,
+   AA-safe, 180ms motion. */
+.rpt-transfer-panel { width:560px; max-width:92vw; max-height:84vh; display:flex; flex-direction:column;
+  background:var(--rpt-bg-secondary); border:1px solid var(--rpt-border); border-radius:12px;
+  overflow:hidden; box-shadow:0 20px 60px rgba(0,0,0,.5); animation:rpt-transfer-in 180ms ease-out; }
+@keyframes rpt-transfer-in { from { opacity:0; transform:translateY(8px) scale(.99); } to { opacity:1; transform:none; } }
+.rpt-transfer-head { display:flex; align-items:center; justify-content:space-between; gap:8px;
+  padding:14px 18px; border-bottom:1px solid var(--rpt-border); background:var(--rpt-bg-primary); }
+.rpt-transfer-title { margin:0; font-size:15px; font-weight:600; color:var(--rpt-text-primary); }
+.rpt-transfer-close { font:inherit; font-size:19px; line-height:1; color:var(--rpt-text-secondary);
+  background:none; border:none; border-radius:6px; width:28px; height:28px; cursor:pointer;
+  transition:color 180ms ease-out, background 180ms ease-out; }
+.rpt-transfer-close:hover { color:var(--rpt-text-primary); background:var(--rpt-bg-tertiary); }
+.rpt-transfer-close:focus-visible { outline:2px solid var(--rpt-accent); outline-offset:1px; }
+.rpt-transfer-body { flex:1; overflow-y:auto; padding:16px 18px; display:flex; flex-direction:column; gap:18px; }
+.rpt-transfer-skel { display:flex; flex-direction:column; gap:10px; }
+.rpt-transfer-lede { margin:0; font-size:13px; line-height:1.6; color:var(--rpt-text-secondary); }
+.rpt-transfer-footer { display:flex; justify-content:flex-end; align-items:center; gap:10px;
+  padding:12px 18px; border-top:1px solid var(--rpt-border); background:var(--rpt-bg-primary); }
+.rpt-transfer-inline-error { margin:0; font-size:12px; color:var(--rpt-danger); }
+
+/* Designed non-report states (refusal / load error) + the parse-error sheet share this centered stack. */
+.rpt-transfer-state { display:flex; flex-direction:column; align-items:center; text-align:center;
+  gap:10px; padding:22px 12px; }
+.rpt-transfer-state-icon { font-size:30px; color:var(--rpt-text-tertiary); }
+.rpt-transfer-state-icon.danger { color:var(--rpt-danger); }
+.rpt-transfer-state-title { margin:0; font-size:15px; font-weight:600; color:var(--rpt-text-primary); }
+.rpt-transfer-state-body { margin:0; font-size:13px; line-height:1.6; color:var(--rpt-text-secondary); max-width:400px; }
+.rpt-transfer-errlist { margin:6px 0 0; padding:0; list-style:none; display:flex; flex-direction:column;
+  gap:4px; width:100%; max-width:440px; text-align:left; }
+.rpt-transfer-errline { font-size:11.5px; line-height:1.45; color:var(--rpt-text-tertiary);
+  font-family:var(--rpt-font-mono, ui-monospace, monospace); background:var(--rpt-bg-tertiary); border-radius:5px; padding:5px 8px; }
+
+/* The save-done state (export). */
+.rpt-transfer-done { display:flex; flex-direction:column; align-items:center; text-align:center;
+  gap:12px; padding:24px 12px; }
+.rpt-transfer-done-icon { font-size:34px; color:var(--rpt-success); }
+.rpt-transfer-done-title { margin:0; font-size:16px; font-weight:600; color:var(--rpt-text-primary); }
+.rpt-transfer-done-path { margin:0; font-size:12px; color:var(--rpt-text-secondary); word-break:break-all;
+  max-width:440px; font-family:var(--rpt-font-mono, ui-monospace, monospace); }
+
+/* Sections shared by the wizard + inspector. */
+.rpt-inspect-section { display:flex; flex-direction:column; gap:8px; }
+.rpt-inspect-sectiontitle { margin:0; font-size:11px; font-weight:700; letter-spacing:.04em;
+  text-transform:uppercase; color:var(--rpt-text-tertiary); }
+.rpt-inspect-sectiontitle.danger { color:var(--rpt-danger); }
+.rpt-inspect-identity { display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
+.rpt-inspect-name { font-size:15px; font-weight:600; color:var(--rpt-text-primary); }
+.rpt-inspect-meta { font-size:12px; color:var(--rpt-text-secondary); }
+.rpt-inspect-size { margin:0; font-size:12px; color:var(--rpt-text-tertiary); }
+.rpt-inspect-fork { margin:0; font-size:12px; color:var(--rpt-text-secondary); }
+.rpt-inspect-empty, .rpt-inspect-note { margin:0; font-size:12.5px; line-height:1.6; color:var(--rpt-text-secondary); }
+/* Dedupe chip. */
+.rpt-inspect-dedupe { font-size:10.5px; font-weight:600; padding:2px 9px; border-radius:10px;
+  border:1px solid var(--rpt-border); }
+.rpt-inspect-dedupe.new { background:color-mix(in srgb, var(--rpt-success) 18%, transparent);
+  color:var(--rpt-success); border-color:transparent; }
+.rpt-inspect-dedupe.already-installed { background:var(--rpt-bg-tertiary); color:var(--rpt-text-tertiary); }
+
+/* Capability list — REUSED .rpt-agents-chip + a nodes-per-capability expandable. */
+.rpt-inspect-caplist, .rpt-inspect-templates, .rpt-inspect-warnings, .rpt-inspect-blockers {
+  margin:0; padding:0; list-style:none; display:flex; flex-direction:column; gap:6px; }
+.rpt-inspect-capitem { display:flex; flex-direction:column; gap:4px; }
+.rpt-inspect-caprow { display:flex; align-items:center; gap:8px; font:inherit; background:none;
+  border:none; padding:2px 0; cursor:pointer; text-align:left; }
+.rpt-inspect-caprow:disabled { cursor:default; }
+.rpt-inspect-caprow:focus-visible { outline:2px solid var(--rpt-accent); outline-offset:2px; border-radius:4px; }
+.rpt-inspect-capcount { font-size:11.5px; color:var(--rpt-text-tertiary); }
+.rpt-inspect-capcaret { font-size:10px; color:var(--rpt-text-tertiary); }
+.rpt-inspect-capnodes { margin:0 0 0 8px; padding:0 0 0 10px; list-style:none;
+  border-left:2px solid var(--rpt-border); display:flex; flex-direction:column; gap:2px; }
+.rpt-inspect-capnode { font-size:11px; color:var(--rpt-text-secondary); font-family:var(--rpt-font-mono, ui-monospace, monospace); }
+
+/* Bundled-template rows with per-item outcome. */
+.rpt-inspect-template { display:flex; align-items:center; justify-content:space-between; gap:10px;
+  font-size:12.5px; color:var(--rpt-text-primary); padding:6px 10px; border-radius:7px;
+  background:var(--rpt-bg-tertiary); }
+.rpt-inspect-template-outcome { font-size:11px; color:var(--rpt-text-secondary); }
+.rpt-inspect-template-outcome.will-duplicate { color:var(--rpt-warning); }
+
+/* Warnings — muted but visible, verbatim. */
+.rpt-inspect-warning { font-size:12px; line-height:1.5; color:var(--rpt-text-secondary);
+  padding:6px 10px; border-radius:7px; background:color-mix(in srgb, var(--rpt-warning) 12%, transparent);
+  border-left:3px solid var(--rpt-warning); }
+
+/* Blocker reason-cards — each explains why Install is refused. */
+.rpt-inspect-blocker { display:flex; flex-direction:column; gap:6px; padding:11px 13px; border-radius:9px;
+  background:color-mix(in srgb, var(--rpt-danger) 9%, transparent);
+  border:1px solid color-mix(in srgb, var(--rpt-danger) 34%, transparent); }
+.rpt-inspect-blocker-head { display:flex; align-items:center; gap:8px; }
+.rpt-inspect-blocker-icon { font-size:14px; }
+.rpt-inspect-blocker-title { font-size:13px; font-weight:600; color:var(--rpt-text-primary); }
+.rpt-inspect-blocker-body { margin:0; font-size:12.5px; line-height:1.55; color:var(--rpt-text-secondary); }
+.rpt-inspect-blocker-nodes { margin:0; padding:0 0 0 6px; list-style:none; display:flex; flex-wrap:wrap; gap:5px; }
+.rpt-inspect-blocker-node { font-size:11px; color:var(--rpt-danger); font-family:var(--rpt-font-mono, ui-monospace, monospace);
+  background:var(--rpt-bg-tertiary); border-radius:5px; padding:2px 7px; }
+.rpt-inspect-blocker-recovery { margin:2px 0 0; font-size:12px; line-height:1.55; color:var(--rpt-text-secondary);
+  font-style:italic; }
+
+/* Installed pane header — the Import button lives here (the pane-header idiom). */
+.rpt-agents-installed { display:flex; flex-direction:column; gap:12px; }
+.rpt-agents-installed-head { display:flex; align-items:center; justify-content:space-between; gap:10px;
+  max-width:940px; }
+.rpt-agents-installed-title { margin:0; font-size:14px; font-weight:600; color:var(--rpt-text-primary); }
+.rpt-agents-import-btn { font:inherit; font-size:12px; font-weight:500; color:var(--rpt-text-primary);
+  background:var(--rpt-bg-tertiary); border:1px solid var(--rpt-border); border-radius:7px; padding:6px 13px;
+  cursor:pointer; transition:background 180ms ease-out, border-color 180ms ease-out; }
+.rpt-agents-import-btn:hover { border-color:var(--rpt-accent); }
+.rpt-agents-import-btn:focus-visible { outline:2px solid var(--rpt-accent); outline-offset:1px; }
+.rpt-agents-import-btn:disabled { opacity:.55; cursor:default; }
+
+/* Card footer actions cluster (Export on fork cards + Settings). */
+.rpt-agents-cardfoot-actions { display:flex; align-items:center; gap:6px; }
+
+/* 'Just installed' highlight on a freshly-imported card — a subtle accent ring that fades. */
+.rpt-agents-card.just-installed { animation:rpt-just-installed 4s ease-out; }
+@keyframes rpt-just-installed {
+  0% { box-shadow:0 0 0 2px var(--rpt-accent); }
+  70% { box-shadow:0 0 0 2px var(--rpt-accent); }
+  100% { box-shadow:0 0 0 2px transparent; }
+}
+@media (prefers-reduced-motion:reduce) {
+  .rpt-transfer-panel { animation:none; }
+  .rpt-agents-card.just-installed { animation:none; box-shadow:0 0 0 2px var(--rpt-accent); }
+  .rpt-agents-import-btn { transition:none; }
+}
+
 /* ── "Why?" popover on pack cards (agent-packs plan WP3.5) ─────────────────────────────────────────
    Answers "why isn't this pack running?" in plain language. Anchored under the health row. All colors
    via --rpt-* tokens (AA across all three themes); no color-only signals (health text pairs the dot). */

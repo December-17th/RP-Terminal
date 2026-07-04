@@ -1218,7 +1218,106 @@ const en: Record<string, string> = {
   // States
   'agents.overview.noWorldTitle': 'Open a chat first',
   'agents.overview.noWorldBody': 'Agents run inside a world. Open a chat to see how yours are doing.',
-  'agents.overview.loadError': 'Couldn’t load the overview.'
+  'agents.overview.loadError': 'Couldn’t load the overview.',
+
+  // ── Sharing: export wizard + import inspection (agent-packs plan WP4.3) ──────────────────────────
+  // Shared transfer copy (used by both export + import).
+  'agents.transfer.nodeCount': '{{n}} node(s)',
+  'agents.transfer.fromStructure': 'from how it’s wired',
+
+  // Export wizard
+  'agents.export.open': 'Export…',
+  'agents.export.title': 'Export agent pack',
+  'agents.export.close': 'Close',
+  'agents.export.loadError': 'Couldn’t prepare this pack for export.',
+  'agents.export.reviewLede':
+    'This is what another user will see before installing your pack. Review it, then save the file to share.',
+  'agents.export.fileSize': 'The file will weigh about {{size}}.',
+  'agents.export.attachTitle': 'Where it hooks in',
+  'agents.export.attachNone': 'This pack declares no attachment points.',
+  'agents.export.attachEntries': 'Enters at {{n}} point(s)',
+  'agents.export.attachRejoins': 'Rejoins at {{n}} point(s)',
+  'agents.export.attachTriggers': 'Runs on {{n}} trigger(s)',
+  'agents.export.capTitle': 'What it can do',
+  'agents.export.capNone': 'This pack reads and writes nothing on its own.',
+  'agents.export.templateTitle': 'Memory templates',
+  'agents.export.templateNone':
+    'No templates are bundled — this pack binds its tables at runtime, from whatever table set the chat has assigned.',
+  'agents.export.warnTitle': 'Notes for importers',
+  'agents.export.warnLede': 'Importers will see these before installing:',
+  'agents.export.save': 'Save file…',
+  'agents.export.saving': 'Saving…',
+  'agents.export.cancel': 'Cancel',
+  'agents.export.savedTitle': 'Saved',
+  'agents.export.done': 'Done',
+  'agents.export.builtinHint':
+    'Built-in packs can’t be exported. Fork this pack first (edit its graph in Workflow Studio), then export your copy.',
+  'agents.export.error.builtin-not-exportable': 'Built-in packs can’t be exported.',
+  'agents.export.error.not-installed': 'This pack is no longer installed.',
+
+  // Import inspection
+  'agents.import.open': 'Import…',
+  'agents.import.opening': 'Opening…',
+  'agents.import.title': 'Import agent pack',
+  'agents.import.close': 'Close',
+  'agents.import.lede':
+    'Here’s what’s in this file and what will happen if you install it. Nothing runs until you turn it on later.',
+  'agents.import.forkLineage': 'A fork of “{{base}}” (fork {{n}}).',
+  'agents.import.capTitle': 'What it can do',
+  'agents.import.capNone': 'This pack reads and writes nothing on its own.',
+  'agents.import.templateTitle': 'Bundled memory templates',
+  'agents.import.warnTitle': 'Notes',
+  'agents.import.blockersTitle': 'Can’t install',
+  'agents.import.blockersLede': 'This file can’t be installed as-is:',
+  'agents.import.cancel': 'Cancel',
+  'agents.import.dismiss': 'Close',
+  'agents.import.install': 'Install',
+  'agents.import.installing': 'Installing…',
+  'agents.import.installBlocked': 'Resolve the issues above to install.',
+  'agents.import.installedToast': 'Installed “{{name}}” — turn it on in a world to use it',
+  'agents.import.alreadyToast': '“{{name}}” is already installed',
+  'agents.import.confirmExpired':
+    'This import timed out. Open the file again to import it.',
+  'agents.import.confirmBlocked':
+    'Something changed and this can no longer be installed. Open the file again.',
+  // Dedupe chip
+  'agents.import.dedupe.new': 'New',
+  'agents.import.dedupe.already-installed': 'Already installed',
+  // Bundled-template outcomes
+  'agents.import.templateOutcome.will-install': 'will be added',
+  'agents.import.templateOutcome.will-duplicate': 'will be added as a copy (a template with this name already exists)',
+  // Blocker reason cards
+  'agents.import.blocker.unknownNodeTypes.title': 'Uses features this app doesn’t have',
+  'agents.import.blocker.unknownNodeTypes.body':
+    'This pack was built with {{count}} node type(s) this version of RP Terminal doesn’t recognize. It would produce broken turns, so it can’t be installed. Update the app and try again.',
+  'agents.import.blocker.versionTooOld.title': 'Needs a newer version of RP Terminal',
+  'agents.import.blocker.versionTooOld.body':
+    'This pack needs RP Terminal {{required}} or newer; you’re on {{app}}. Update the app to install it.',
+  'agents.import.blocker.versionConflict.title': 'A different version is already installed',
+  'agents.import.blocker.versionConflict.body':
+    'Version {{installed}} of this pack is already in your library. RP Terminal can only keep one version of a pack at a time.',
+  'agents.import.versionConflictRecovery':
+    'To install this version, remove the installed one first (from its pack card), then open this file again.',
+
+  // Import parse-error sheet — one designed state per structured code.
+  'agents.import.parseError.too-large.title': 'That file is too big',
+  'agents.import.parseError.too-large.body':
+    'Agent pack files are small. This one is larger than expected, so it wasn’t read. Check you picked the right file.',
+  'agents.import.parseError.invalid-json.title': 'Couldn’t read that file',
+  'agents.import.parseError.invalid-json.body':
+    'This doesn’t look like a valid agent pack file — it may be corrupted or a different kind of file.',
+  'agents.import.parseError.unsupported-version.title': 'This file is from a different version',
+  'agents.import.parseError.unsupported-version.body':
+    'This agent pack uses a format (version {{found}}) this app doesn’t understand. Try updating RP Terminal.',
+  'agents.import.parseError.invalid-envelope.title': 'This file is malformed',
+  'agents.import.parseError.invalid-envelope.body':
+    'The file is an agent pack but some of its fields are wrong, so it can’t be installed.',
+  'agents.import.parseError.not-a-fragment.title': 'This isn’t a shareable agent pack',
+  'agents.import.parseError.not-a-fragment.body':
+    'The workflow inside isn’t a fragment — only fragment workflows can be shared as agent packs.',
+  'agents.import.parseError.invalid-fragment.title': 'The pack’s workflow is broken',
+  'agents.import.parseError.invalid-fragment.body':
+    'The workflow inside this pack didn’t pass its structure check, so it can’t be installed.'
 }
 
 export default en
