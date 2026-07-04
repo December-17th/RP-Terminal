@@ -91,9 +91,7 @@ beforeEach(() => {
     selectedNodeId: null,
     selectedNodeIds: [],
     selectedGroupId: null,
-    status: null,
-    lockedNodeIds: new Set<string>(),
-    packEditRouter: null
+    status: null
   })
 })
 
@@ -296,14 +294,6 @@ describe('workflowEditorStore: setNodeDisabled (WP6.4a)', () => {
       useWorkflowEditorStore.getState().nodes.find((n) => n.id === 'ctx')!.disabled
     ).toBeUndefined()
   })
-
-  it('is a no-op on a locked node', () => {
-    useWorkflowEditorStore.getState().setLockedNodeIds(new Set(['ctx']))
-    useWorkflowEditorStore.getState().setNodeDisabled('ctx', true)
-    expect(
-      useWorkflowEditorStore.getState().nodes.find((n) => n.id === 'ctx')!.disabled
-    ).toBeUndefined()
-  })
 })
 
 describe('workflowEditorStore: live validation', () => {
@@ -390,140 +380,6 @@ describe('workflowEditorStore: cloneAndEdit', () => {
     await useWorkflowEditorStore.getState().cloneAndEdit(profileId)
     const s = useWorkflowEditorStore.getState()
     expect(s.currentId).toBe('default')
-  })
-})
-
-describe('workflowEditorStore: locked node guard (Effective mode pack nodes — WP3.6a)', () => {
-  it('a locked node is immutable at the MODEL layer (setNodeConfig/removeNode/move are no-ops)', async () => {
-    const store = useWorkflowEditorStore.getState()
-    await store.init(profileId)
-    await store.open(profileId, 'custom-1') // editable custom doc (not the readOnly builtin)
-    // Lock `ctx` (simulating a pack node in Effective mode).
-    useWorkflowEditorStore.getState().setLockedNodeIds(new Set(['ctx']))
-
-    // Every mutating action targeting the locked node is dropped.
-    useWorkflowEditorStore.getState().setNodeConfig('ctx', { foo: 'bar' })
-    useWorkflowEditorStore.getState().moveNode('ctx', { x: 999, y: 999 })
-    useWorkflowEditorStore.getState().setMainOutput('ctx')
-    useWorkflowEditorStore.getState().removeNode('ctx')
-
-    const s = useWorkflowEditorStore.getState()
-    const ctx = s.nodes.find((n) => n.id === 'ctx')!
-    expect(ctx).toBeDefined() // not removed
-    expect(ctx.config).toBeUndefined() // not configured
-    expect(ctx.position).toEqual({ x: 0, y: 0 }) // not moved
-    expect(ctx.isMainOutput).not.toBe(true) // main-output not flipped
-  })
-
-  it('an UNLOCKED node in the same doc stays editable', async () => {
-    const store = useWorkflowEditorStore.getState()
-    await store.init(profileId)
-    await store.open(profileId, 'custom-1')
-    useWorkflowEditorStore.getState().setLockedNodeIds(new Set(['ctx']))
-
-    useWorkflowEditorStore.getState().setNodeConfig('write', { label: 'x' })
-    const write = useWorkflowEditorStore.getState().nodes.find((n) => n.id === 'write')!
-    expect(write.config).toEqual({ label: 'x' })
-  })
-
-  it('opening a doc clears the lock (Normal mode is unaffected)', async () => {
-    const store = useWorkflowEditorStore.getState()
-    await store.init(profileId)
-    await store.open(profileId, 'custom-1')
-    useWorkflowEditorStore.getState().setLockedNodeIds(new Set(['ctx']))
-    await useWorkflowEditorStore.getState().open(profileId, 'custom-1')
-    expect(useWorkflowEditorStore.getState().lockedNodeIds.size).toBe(0)
-  })
-})
-
-describe('workflowEditorStore: pack-edit routing (Effective mode — WP3.6b)', () => {
-  it('with a router set, a locked-node edit ROUTES (draft untouched) instead of no-op', async () => {
-    const store = useWorkflowEditorStore.getState()
-    await store.init(profileId)
-    await store.open(profileId, 'custom-1')
-    useWorkflowEditorStore.getState().setLockedNodeIds(new Set(['ctx']))
-
-    const routed: unknown[] = []
-    useWorkflowEditorStore.getState().setPackEditRouter((edit) => routed.push(edit))
-
-    useWorkflowEditorStore.getState().setNodeConfig('ctx', { foo: 'bar' })
-    useWorkflowEditorStore.getState().removeNode('ctx')
-    useWorkflowEditorStore.getState().setMainOutput('ctx')
-
-    // The edits were handed to the router (fork/write-through happens there), NOT applied to the draft.
-    expect(routed).toEqual([
-      { kind: 'config', nodeId: 'ctx', config: { foo: 'bar' } },
-      { kind: 'removeNode', nodeId: 'ctx' },
-      { kind: 'mainOutput', nodeId: 'ctx' }
-    ])
-    const s = useWorkflowEditorStore.getState()
-    const ctx = s.nodes.find((n) => n.id === 'ctx')!
-    expect(ctx).toBeDefined()
-    expect(ctx.config).toBeUndefined()
-    expect(ctx.isMainOutput).not.toBe(true)
-  })
-
-  it('a position MOVE on a locked pack node is EXEMPT from routing (no fork, no route)', async () => {
-    const store = useWorkflowEditorStore.getState()
-    await store.init(profileId)
-    await store.open(profileId, 'custom-1')
-    useWorkflowEditorStore.getState().setLockedNodeIds(new Set(['ctx']))
-    const routed: unknown[] = []
-    useWorkflowEditorStore.getState().setPackEditRouter((edit) => routed.push(edit))
-
-    useWorkflowEditorStore.getState().moveNode('ctx', { x: 999, y: 999 })
-    // Not routed AND not moved (positions are projection-programmatic; a drag must not fork).
-    expect(routed).toEqual([])
-    expect(useWorkflowEditorStore.getState().nodes.find((n) => n.id === 'ctx')!.position).toEqual({
-      x: 0,
-      y: 0
-    })
-  })
-
-  it('a splice edge (one end locked) stays locked; a pack-internal edge (both ends locked) routes', async () => {
-    const store = useWorkflowEditorStore.getState()
-    await store.init(profileId)
-    await store.open(profileId, 'custom-1')
-    // Lock BOTH nodes to simulate a pack-internal edge; then unlock one for the splice case.
-    const routed: unknown[] = []
-    useWorkflowEditorStore.getState().setPackEditRouter((edit) => routed.push(edit))
-
-    // Splice case: only `write` locked — connecting ctx→write touches one locked end → NO route.
-    useWorkflowEditorStore.getState().setLockedNodeIds(new Set(['write']))
-    useWorkflowEditorStore
-      .getState()
-      .connect({ node: 'ctx', port: 'gen' }, { node: 'write', port: 'gen' })
-    expect(routed).toHaveLength(0)
-
-    // Internal case: BOTH ends locked → routed as a connect edit.
-    useWorkflowEditorStore.getState().setLockedNodeIds(new Set(['ctx', 'write']))
-    useWorkflowEditorStore
-      .getState()
-      .connect({ node: 'ctx', port: 'gen' }, { node: 'write', port: 'gen' })
-    expect(routed).toEqual([
-      { kind: 'connect', from: { node: 'ctx', port: 'gen' }, to: { node: 'write', port: 'gen' } }
-    ])
-  })
-
-  it('after a fork recompose, the lock set updates: fork nodes editable, other packs stay locked', async () => {
-    // Simulates the WorkflowEditorView lock-sync effect after routePackEdit recomposes: the projection
-    // now presents the fork under its OWN prefix (editable = removed from the lock set for THIS test's
-    // purposes) while a DIFFERENT pack's nodes remain locked. The store's lock set is the single source
-    // of truth the config panel + mutation guards read.
-    const store = useWorkflowEditorStore.getState()
-    await store.init(profileId)
-    await store.open(profileId, 'custom-1')
-
-    // Pre-fork: both packs' nodes locked (stand-ins: ctx = pack A, write = pack B).
-    useWorkflowEditorStore.getState().setLockedNodeIds(new Set(['ctx', 'write']))
-    expect(useWorkflowEditorStore.getState().lockedNodeIds.has('ctx')).toBe(true)
-
-    // Post-fork recompose: pack A (ctx) is now this world's fork → editable (unlocked); pack B (write)
-    // still locked. The effect recomputes the set from the recomposed projection.
-    useWorkflowEditorStore.getState().setLockedNodeIds(new Set(['write']))
-    const locks = useWorkflowEditorStore.getState().lockedNodeIds
-    expect(locks.has('ctx')).toBe(false) // fork's node editable
-    expect(locks.has('write')).toBe(true) // other pack still locked
   })
 })
 
@@ -727,13 +583,6 @@ describe('workflowEditorStore: on-canvas groups (WP6.3)', () => {
     store().groupSelection()
     store().removeNode('if-1')
     expect(groupOf('group-1')?.nodeIds).toEqual(['ctx', 'write'])
-  })
-
-  it('group actions are no-ops when any member is locked', () => {
-    useWorkflowEditorStore.setState({ lockedNodeIds: new Set(['write']) })
-    store().setSelectedNodeIds(['ctx', 'write'])
-    store().groupSelection()
-    expect(store().doc?.groups).toBeUndefined()
   })
 })
 

@@ -1,16 +1,5 @@
 import { create } from 'zustand'
 
-/** The control-center rail panes. WP6.4b retired the control center itself; this type is kept only
- *  so the retired-but-present files (controlCenterRail.ts / AgentsView) still compile until WP6.6
- *  deletes them. No runtime machinery references it anymore. */
-export type ControlCenterRail =
-  | 'overview'
-  | 'installed'
-  | 'workflows'
-  | 'memory'
-  | 'runs'
-  | 'preview'
-
 /** Transient app-shell UI state (not persisted): the Settings popup, etc. */
 interface UiState {
   settingsOpen: boolean

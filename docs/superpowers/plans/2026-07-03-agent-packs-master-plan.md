@@ -1,8 +1,10 @@
 # Agent Packs — Master Implementation Plan
 
 Date: 2026-07-03
-Status: phases 1–3 BUILT 2026-07-03 (WP1.1–1.6b, 2.1–2.4, 3.1–3.6b — see Amendments log); owner
-visual review pending; phases 4–6 not started
+Status: phases 1–5 BUILT (engine + services substrate); the ADR 0011 pivot to a single editor
+canvas SUPERSEDED this plan's UI phases (the control-center / effective-mode / pack-card surfaces).
+The current UI is the one-canvas rebuild — see `2026-07-03-one-canvas-rebuild-plan.md` (WP6.1–6.6,
+BUILT). The control-center renderer cluster was deleted in that plan's WP6.6.
 Spec: `docs/superpowers/specs/2026-07-03-agent-pack-workflow-ux-design-revision-3.md`
 Decisions: ADRs 0001–0010 in `docs/adr/`; glossary in root `CONTEXT.md`
 Executor profile: **Opus 4.8 agents at medium effort** — see "How this plan is cut" below.

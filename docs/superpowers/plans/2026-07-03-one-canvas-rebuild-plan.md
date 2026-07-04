@@ -1,7 +1,8 @@
 # One-Canvas Rebuild Plan (post-ADR 0011)
 
 Date: 2026-07-03
-Status: planned; supersedes the remaining phases of `2026-07-03-agent-packs-master-plan.md`
+Status: BUILT (WP6.1–6.6 all landed; 6.6 = the deletion pass + journey walks, 2026-07-04);
+supersedes the remaining phases of `2026-07-03-agent-packs-master-plan.md`
 (phases 1–5 of that plan are BUILT and their engine/services layer is the substrate here; its
 Amendments log remains the execution record of that era)
 Spec: `docs/superpowers/specs/2026-07-03-agent-pack-workflow-ux-design-revision-4.md`

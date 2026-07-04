@@ -4,14 +4,11 @@
 // derived from the node type's configSchema via schemaForm.ts's pure fieldsFromSchema walker.
 import React, { useEffect, useState } from 'react'
 import { useWorkflowEditorStore } from '../../stores/workflowEditorStore'
-import { useEffectiveGraphStore } from '../../stores/effectiveGraphStore'
-import { useUiStore } from '../../stores/uiStore'
 import { useOptionalT, useT } from '../../i18n'
 import { useChatStore } from '../../stores/chatStore'
 import { useToastStore } from '../../stores/toastStore'
 import { editorToDoc } from './editorModel'
 import { fieldsFromSchema, type FieldSpec } from './schemaForm'
-import { ownerOfNodeId, nodeOwnerMap, readComposition } from './effectiveProjection'
 import { groupOfNode } from './groupModel'
 import {
   tokenTotal,
@@ -674,7 +671,6 @@ export default function NodeConfigPanel({
   const nodeTypes = useWorkflowEditorStore((s) => s.nodeTypes)
   const storeReadOnly = useWorkflowEditorStore((s) => s.readOnly)
   const sessionType = useWorkflowEditorStore((s) => s.sessionType)
-  const lockedNodeIds = useWorkflowEditorStore((s) => s.lockedNodeIds)
   const setNodeConfig = useWorkflowEditorStore((s) => s.setNodeConfig)
   const setNodePanel = useWorkflowEditorStore((s) => s.setNodePanel)
   const setNodeDisabled = useWorkflowEditorStore((s) => s.setNodeDisabled)
@@ -688,39 +684,7 @@ export default function NodeConfigPanel({
   const selectedGroup = selectedGroupId ? groups.find((g) => g.id === selectedGroupId) : undefined
   if (selectedGroup) return <ModulePanel group={selectedGroup} profileId={profileId} />
 
-  // A locked node is a PACK node in Effective mode (agent-packs plan WP3.6a; ADR 0010). WP3.6b makes
-  // pack-node config LIVE: editing routes through fork-on-first-edit / write-through (ADR 0006), so a
-  // locked pack node is NOT read-only for config — the store's setNodeConfig/removeNode/etc. route the
-  // edit to the fork instead of mutating the draft. It stays read-only ONLY when the doc itself is
-  // read-only (the builtin narrator) or the pack node is a DETACHED (trigger-only) placeholder — those
-  // stay non-editable this WP (attachment/trigger wiring is manifest surgery; tooltip explains).
-  const isPackNode = selectedNodeId != null && lockedNodeIds.has(selectedNodeId)
-  const effDoc = useEffectiveGraphStore((s) => s.doc)
-  const effPacks = useEffectiveGraphStore((s) => s.packs)
-  const forkedPacks = useEffectiveGraphStore((s) => s.forkedPacks)
-  const forkPackExplicit = useEffectiveGraphStore((s) => s.forkPackExplicit)
-  const openWorkflowEditor = useUiStore((s) => s.openWorkflowEditor)
-
-  // Resolve this pack node's owner + whether it is detached (trigger-only) and whether its pack is
-  // already forked this world/session (→ write-through, no re-fork; the panel messaging differs).
-  const ownerPackId = React.useMemo(() => {
-    if (!isPackNode || selectedNodeId == null) return null
-    const owners = nodeOwnerMap(effDoc ? readComposition(effDoc) : undefined)
-    const mapped = owners.get(selectedNodeId)
-    if (mapped) return mapped
-    const parsed = ownerOfNodeId(selectedNodeId)
-    return parsed.kind === 'pack' ? parsed.packId : null
-  }, [isPackNode, selectedNodeId, effDoc])
-  const packDetached = React.useMemo(
-    () => (ownerPackId ? (effPacks.find((p) => p.packId === ownerPackId)?.triggerOnly ?? false) : false),
-    [ownerPackId, effPacks]
-  )
-  const alreadyForked = ownerPackId != null && forkedPacks[ownerPackId] != null
-
-  // Detached (trigger-only) placeholder pack nodes stay non-editable this WP (their wiring is
-  // manifest-level). Everything else on a pack node is now editable (routes through the fork).
-  const packNonEditable = isPackNode && packDetached
-  const readOnly = storeReadOnly || packNonEditable
+  const readOnly = storeReadOnly
 
   const node = nodes.find((n) => n.id === selectedNodeId)
 
@@ -790,64 +754,6 @@ export default function NodeConfigPanel({
         />
         {t('workflowEditor.enabled')}
       </label>
-
-      {/* Pack node affordance (agent-packs plan WP3.6a/WP3.6b; ADR 0006 + 0010): this node belongs to a
-          pack. Editing its config forks the pack on the FIRST edit (or writes through if this world
-          already forked it). The button forks WITHOUT an edit, for users who want to fork first.
-          A detached (trigger-only) placeholder node is non-editable this WP (wiring is manifest-level). */}
-      {isPackNode && (
-        <div
-          style={{
-            border: '1px solid var(--rpt-agent-region-border)',
-            background: 'var(--rpt-agent-region)',
-            borderRadius: 8,
-            padding: '8px 10px',
-            margin: '6px 0'
-          }}
-        >
-          <div style={{ fontSize: 11.5, color: 'var(--rpt-agent-region-text)', fontWeight: 600 }}>
-            {t('workflowEffective.packNodeTitle')}
-          </div>
-          <div
-            style={{
-              fontSize: 11,
-              color: 'var(--rpt-text-secondary)',
-              lineHeight: 1.5,
-              margin: '4px 0 8px'
-            }}
-          >
-            {packNonEditable
-              ? t('workflowEffective.detachedNonEditable')
-              : alreadyForked
-                ? t('workflowEffective.editingFork')
-                : t('workflowEffective.editForks')}
-          </div>
-          {!alreadyForked && !packNonEditable && (
-            <button
-              type="button"
-              onClick={() => ownerPackId && void forkPackExplicit(ownerPackId)}
-              title={t('workflowEffective.forkButtonTitle')}
-              style={{ fontSize: 12 }}
-            >
-              {t('workflowEffective.forkButton')}
-            </button>
-          )}
-          {/* Once this world owns a fork, offer full fragment editing (WP4.4): drag/rewire/add-node in a
-              dedicated Studio session, which config-edit-in-projection can't do. Points at the fork id. */}
-          {alreadyForked && ownerPackId && (
-            <button
-              type="button"
-              onClick={() =>
-                openWorkflowEditor({ fragmentPackId: forkedPacks[ownerPackId] ?? ownerPackId })
-              }
-              title={t('workflowEffective.editFragmentTitle')}
-              style={{ fontSize: 12 }}
-            >
-              {t('workflowEffective.editFragment')}
-            </button>
-          )}
-        </div>
-      )}
 
       {/* Main-output marking is a TURN-doc concept: exactly one node produces the assistant reply
           (validate.ts enforces it). A fragment is spliced into a narrator at a checkpoint and never

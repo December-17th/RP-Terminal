@@ -70,17 +70,16 @@ export default function WorkflowEditorView({
   const cloneAndEdit = useWorkflowEditorStore((s) => s.cloneAndEdit)
   const select = useWorkflowEditorStore((s) => s.select)
   // WP6.3: the on-canvas grouping affordance. The toolbar shows "Group into module" when ≥2
-  // unlocked, ungrouped nodes are multi-selected (the store's groupSelection enforces the same rule;
-  // this just gates the button's visibility).
+  // ungrouped nodes are multi-selected (the store's groupSelection enforces the same rule; this
+  // just gates the button's visibility).
   const selectedNodeIds = useWorkflowEditorStore((s) => s.selectedNodeIds)
-  const lockedNodeIds = useWorkflowEditorStore((s) => s.lockedNodeIds)
   const groupSelection = useWorkflowEditorStore((s) => s.groupSelection)
   const insertModule = useWorkflowEditorStore((s) => s.insertModule)
   const canGroup = useMemo(() => {
     if (selectedNodeIds.length < 2) return false
     const grouped = new Set((doc?.groups ?? []).flatMap((g) => g.nodeIds))
-    return !selectedNodeIds.some((id) => grouped.has(id) || lockedNodeIds.has(id))
-  }, [selectedNodeIds, doc, lockedNodeIds])
+    return !selectedNodeIds.some((id) => grouped.has(id))
+  }, [selectedNodeIds, doc])
 
   const [showErrors, setShowErrors] = useState(false)
   // WP6.5: the module-import review sheet. Null when closed; holds the inspection report while open.
