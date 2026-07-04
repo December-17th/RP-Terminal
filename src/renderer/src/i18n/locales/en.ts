@@ -957,6 +957,11 @@ const en: Record<string, string> = {
 
   'duel.empty': 'No active duel.',
   'duel.startMock': 'Start mock duel (debug)',
+  'duel.popupTitle': 'Duel',
+  'duel.close': 'Close',
+  'duel.open': 'Open duel',
+  'duel.reopen': 'Reopen duel',
+  'duel.launchBody': 'The interactive duel opens in a popup over the chat.',
   'duel.energy': 'Energy',
   'duel.endTurn': 'End turn',
   'duel.endDuel': 'End duel',

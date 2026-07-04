@@ -917,6 +917,11 @@ const zh: Record<string, string> = {
 
   'duel.empty': '当前没有进行中的对决。',
   'duel.startMock': '开始模拟对决（调试）',
+  'duel.popupTitle': '对决',
+  'duel.close': '关闭',
+  'duel.open': '打开对决',
+  'duel.reopen': '重新打开对决',
+  'duel.launchBody': '交互式对决会在聊天上方的弹窗中打开。',
   'duel.energy': '行动力',
   'duel.endTurn': '结束回合',
   'duel.endDuel': '结束对决',

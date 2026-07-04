@@ -32,6 +32,7 @@ import { Launcher } from './components/Launcher'
 import { StDomCompat } from './components/StDomCompat'
 import { SettingsModal } from './components/SettingsModal'
 import { WorkflowEditorOverlay } from './components/workflow/WorkflowEditorOverlay'
+import { DuelPopup } from './components/DuelPopup'
 
 export default function App(): React.ReactElement {
   const activeProfile = useProfileStore((s) => s.activeProfile)
@@ -272,6 +273,7 @@ export default function App(): React.ReactElement {
           retired. */}
       <SettingsModal profileId={activeProfile.id} />
       <WorkflowEditorOverlay profileId={activeProfile.id} />
+      <DuelPopup profileId={activeProfile.id} />
       <ToastStack />
     </>
   )

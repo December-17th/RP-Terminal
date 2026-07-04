@@ -8,7 +8,6 @@ import { LogsPanel } from '../LogsPanel'
 import { PanelRouter } from '../PanelRouter'
 import { WcvTestView } from './WcvPanel'
 import { CombatView } from './CombatView'
-import { DuelView } from './DuelView'
 import { VariablesView } from './VariablesView'
 import { TablesView } from './TablesView'
 import { useWorkspaceContext } from './context'
@@ -45,9 +44,26 @@ const CombatPanel: React.FC = () => {
   return <CombatView profileId={profileId} />
 }
 
+// The duel now lives in a centered popup (DuelPopup), not a resizable panel — its pixel-positioned
+// board scrambled at small panel sizes. A saved layout referencing view:'duel' resolves to this thin
+// launcher, which opens the popup (also the debug mock-duel entry when no duel is active).
 const DuelPanel: React.FC = () => {
-  const { profileId } = useWorkspaceContext()
-  return <DuelView profileId={profileId} />
+  const t = useT()
+  const openDuelPopup = useUiStore((s) => s.openDuelPopup)
+  return (
+    <div className="rpt-cc-launch">
+      <div className="rpt-cc-launch-card">
+        <div className="rpt-cc-launch-icon" aria-hidden>
+          ⚔
+        </div>
+        <h2 className="rpt-cc-launch-title">{t('duel.popupTitle')}</h2>
+        <p className="rpt-cc-launch-body">{t('duel.launchBody')}</p>
+        <button className="btn-accent rpt-cc-launch-btn" onClick={() => openDuelPopup()}>
+          {t('duel.open')}
+        </button>
+      </div>
+    </div>
+  )
 }
 
 const VariablesPanel: React.FC = () => {

@@ -23,6 +23,12 @@ interface UiState {
   /** When set, the launcher opens directly to this world's session list (breadcrumb deep-link). */
   launcherWorldId: string | null
   setLauncherWorldId: (id: string | null) => void
+  /** The interactive STS duel popup (DuelPopup). Hosted as a centered modal (not a resizable
+   *  workspace panel — the pixel-positioned board scrambled when the panel was small). Auto-opened
+   *  when a duel becomes active (chat mode → 'duel') and re-openable by button while one is active. */
+  duelPopupOpen: boolean
+  openDuelPopup: () => void
+  closeDuelPopup: () => void
 }
 
 export const useUiStore = create<UiState>((set) => ({
@@ -43,5 +49,8 @@ export const useUiStore = create<UiState>((set) => ({
       workflowEditorFragmentPackId: null
     }),
   launcherWorldId: null,
-  setLauncherWorldId: (launcherWorldId) => set({ launcherWorldId })
+  setLauncherWorldId: (launcherWorldId) => set({ launcherWorldId }),
+  duelPopupOpen: false,
+  openDuelPopup: () => set({ duelPopupOpen: true }),
+  closeDuelPopup: () => set({ duelPopupOpen: false })
 }))

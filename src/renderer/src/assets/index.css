@@ -143,6 +143,17 @@
 .rpt-duel-projectile { position:absolute; width:28px; height:40px; border-radius:6px; z-index:8; pointer-events:none;
   background:var(--rpt-duel-cost); box-shadow:0 0 14px var(--rpt-duel-cost); transition:transform .22s ease-in, opacity .22s ease-in; }
 
+/* Duel popup (DuelPopup.tsx) — the duel board is pixel-positioned and scrambles in a small resizable
+   panel, so it's hosted in a centered, fixed-size modal instead. Reuses .modal-overlay for the
+   backdrop; the panel gives the board a stable canvas independent of window/panel size. */
+.rpt-duel-modal { width:min(960px, 94vw); height:min(620px, 88vh); background:var(--rpt-bg-secondary);
+  border:1px solid var(--rpt-border); border-radius:12px; display:flex; flex-direction:column;
+  overflow:hidden; box-shadow:0 20px 60px rgba(0,0,0,.5); }
+.rpt-duel-modal-head { flex:0 0 auto; display:flex; align-items:center; justify-content:space-between;
+  padding:8px 14px; border-bottom:1px solid var(--rpt-border); background:var(--rpt-bg-primary); font-size:13px; }
+.rpt-duel-modal-body { flex:1; min-height:0; display:flex; }
+.rpt-duel-modal-body > .rpt-duel { flex:1; min-width:0; }
+
 body {
   margin: 0;
   font-family: 'Inter', sans-serif;
