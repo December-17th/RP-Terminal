@@ -5,6 +5,7 @@
 // `replaceTavernRegexes`. Realm-agnostic (no node/electron/DOM) so it lives in shared/thRuntime and is
 // unit-testable. The WCV/inline hosts back the store side with `regexService`; this module only converts.
 import type { RenderRegexRule } from '../regexTypes'
+import { appliesToDisplay, appliesToPrompt } from '../regexTypes'
 
 /** The TavernHelper regex shape (subset we map). See JSR `@types/function/tavern_regex.d.ts`. */
 export type TavernRegex = {
@@ -54,7 +55,7 @@ export const storeRuleToTavernRegex = (r: RenderRegexRule): TavernRegex => {
       slash_command: false,
       world_info: false
     },
-    destination: { display: !r.promptOnly, prompt: !r.markdownOnly },
+    destination: { display: appliesToDisplay(r), prompt: appliesToPrompt(r) },
     run_on_edit: false,
     min_depth: null,
     max_depth: null

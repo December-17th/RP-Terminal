@@ -348,8 +348,8 @@ const en: Record<string, string> = {
     '$1 = capture group · {{match}} = matched text · {{user}}/{{char}} · \\n = newline',
   'regex.trim': 'Trim strings (comma-separated; removed from {{match}})',
   'regex.trimPh': 'e.g. *, _',
-  'regex.markdownOnly': 'Markdown only (display)',
-  'regex.promptOnly': 'Prompt only (not applied to display)',
+  'regex.markdownOnly': 'Display destination',
+  'regex.promptOnly': 'Prompt destination',
 
   'common.untitled': 'Untitled',
 

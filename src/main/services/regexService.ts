@@ -20,7 +20,9 @@ import {
   RenderRegexRule,
   RegexScriptInfo,
   RegexRuleDetail,
-  RegexRulePatch
+  RegexRulePatch,
+  appliesToDisplay,
+  appliesToPrompt
 } from '../../shared/regexTypes'
 import {
   readScopeMeta,
@@ -147,20 +149,21 @@ export const getAllRules = (profileId: string, ctx?: ScopeContext): RenderRegexR
   return out
 }
 
-/** Rules that transform the AI response for *display* (placement 2, not prompt-only). A rule the user
- *  PROMOTED to a panel (renderMode 'panel') still runs inline but STRIPS its match (replace → '') — the UI
- *  moves to a docked panel, so the message shouldn't show its marker or the inline frame. */
+/** Rules that transform the AI response for *display* (placement 2, display destination enabled).
+ *  A rule the user PROMOTED to a panel (renderMode 'panel') still runs inline but STRIPS its match
+ *  (replace → '') — the UI moves to a docked panel, so the message shouldn't show its marker or the
+ *  inline frame. */
 export const getRenderRules = (profileId: string, ctx?: ScopeContext): RenderRegexRule[] =>
   getAllRules(profileId, ctx)
     .filter(
-      (r) => !r.disabled && !r.promptOnly && (r.placement.length === 0 || r.placement.includes(2))
+      (r) => !r.disabled && appliesToDisplay(r) && (r.placement.length === 0 || r.placement.includes(2))
     )
     .map((r) => (r.renderMode === 'panel' ? { ...r, replace: '' } : r))
 
-/** Rules that transform text on its way *into the prompt* (everything not display-only or panel-promoted). */
+/** Rules that transform text on its way *into the prompt* (prompt destination enabled, not panel-promoted). */
 export const getPromptRules = (profileId: string, ctx?: ScopeContext): RenderRegexRule[] =>
   getAllRules(profileId, ctx).filter(
-    (r) => !r.disabled && !r.markdownOnly && r.renderMode !== 'panel'
+    (r) => !r.disabled && appliesToPrompt(r) && r.renderMode !== 'panel'
   )
 
 // A "frontend card" loader regex injects a page via `$('body').load('https://…')`. Pull that URL out so a

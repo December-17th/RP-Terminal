@@ -337,8 +337,8 @@ const zh: Record<string, string> = {
   'regex.replacePh': '$1 = 捕获组 · {{match}} = 匹配的文本 · {{user}}/{{char}} · \\n = 换行',
   'regex.trim': '修剪字符串（逗号分隔；从 {{match}} 中移除）',
   'regex.trimPh': '例如 *, _',
-  'regex.markdownOnly': '仅 Markdown（显示）',
-  'regex.promptOnly': '仅提示词（不应用于显示）',
+  'regex.markdownOnly': '显示目标',
+  'regex.promptOnly': '提示词目标',
 
   'common.untitled': '未命名',
 

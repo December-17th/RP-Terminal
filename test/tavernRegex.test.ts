@@ -63,6 +63,11 @@ describe('storeRuleToTavernRegex', () => {
     expect(tr.destination).toEqual({ display: false, prompt: true })
     expect(tr.enabled).toBe(false)
   })
+
+  it('markdownOnly+promptOnly ⇒ both destinations for ST compatibility', () => {
+    const tr = storeRuleToTavernRegex(rule({ markdownOnly: true, promptOnly: true }))
+    expect(tr.destination).toEqual({ display: true, prompt: true })
+  })
 })
 
 describe('tavernRegexToStoreObject', () => {
@@ -84,6 +89,17 @@ describe('tavernRegexToStoreObject', () => {
     expect(obj.findRegex).toBe('/x/g')
     expect(obj.placement).toEqual([1, 2]) // no source flags ⇒ applies everywhere
     expect(obj.disabled).toBe(false) // enabled defaults truthy
+    expect(obj.markdownOnly).toBe(false)
+    expect(obj.promptOnly).toBe(false)
+  })
+
+  it('maps an explicit display+prompt destination to the normal both-destinations flags', () => {
+    const obj = tavernRegexToStoreObject({
+      find_regex: '/x/g',
+      replace_string: '',
+      source: { ai_output: true },
+      destination: { display: true, prompt: true }
+    })
     expect(obj.markdownOnly).toBe(false)
     expect(obj.promptOnly).toBe(false)
   })

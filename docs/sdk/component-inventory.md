@@ -229,6 +229,13 @@ best-effort (arbitrary author JS reaching past the supported surface).
 | Avatar / assets                                                   | PNG image / embedded                         | `avatars/<id>.png` + `rp_terminal.assets`                                                                                                                                                        | ✅ avatar; 🟡 binary asset bundle (PNG cartridge ZIP, §6)                                                                           |
 | Audio                                                             | TH audio API                                 | native `<audio>`/WebAudio                                                                                                                                                                        | 🔁 (API stubbed)                                                                                                                    |
 
+Regex destination flags mirror ST exports: `markdownOnly` routes to display, `promptOnly` routes to
+prompt, neither routes to both, and cards that set **both** flags are treated as both destinations. This
+is enforced by `appliesToDisplay` / `appliesToPrompt`
+([regexTypes.ts](../../src/shared/regexTypes.ts)) in `getRenderRules` / `getPromptRules`
+([regexService.ts](../../src/main/services/regexService.ts)) and in the TavernHelper shape bridge
+([tavernRegex.ts](../../src/shared/thRuntime/tavernRegex.ts)).
+
 **What does NOT transform cleanly (Tier 2 — set expectations honestly):** cards whose JS reaches past the
 documented surface — full-page apps that read undocumented `window.top` internals, exotic/uncommon
 `tavern_events`, timing/DOM-structure assumptions, or a second variable engine. These run _best-effort_;
