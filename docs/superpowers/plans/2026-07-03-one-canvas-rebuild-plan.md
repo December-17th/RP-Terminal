@@ -315,13 +315,79 @@ imported module lands unwired and the user connects it (one toast line says so).
 versioning/upgrade story. No registry of imported modules (the doc IS the storage). Size:
 ~600 prod + ~250 test lines; stop past that.
 
-## WP6.6 — Deletion + consistency pass [renderer+main]
+## WP6.6 — Deletion pass + journey walks [renderer] — DETAILED SPEC
 
-Remove retired code paths (control center, pack cards/detail, effective projection stores,
-fork routing, scope switchers), prune i18n, update docs/agents-era SDK references, final polish
-+ journey walks: (1) build the memory agent from palette nodes, group it, expose two settings,
-toggle its trigger; (2) import a module file and see it run; (3) read a whole setup at a glance
-on one canvas.
+Controller-grounded 2026-07-04 by mapping the import graph. The dead cluster is rooted at
+ControlCenterOverlay (zero importers). KEEP-ALIVE list — these look pack-era but are load-bearing
+for the editor; touching them is out of scope: runTimeline.ts (RunDrawer), previewDisplay.ts
+(NodeConfigPanel preview), MemoryPane.tsx + memoryPaneModel.ts (the Memory sheet),
+LauncherCard/viewRegistry + `.rpt-cc-launch*` css, `.rpt-agents-chip` css (ModuleImportSheet
+reuses it), `.rpt-agentdetail*` css (Memory sheet), the runs IPC/bindings (drawer), runs.* i18n.
+
+### A. Delete these files + their test files (the deliberate-deletion list)
+src/renderer/src/components/workspace/: ControlCenterOverlay.tsx, AgentsView.tsx,
+AgentPackDetail.tsx, AgentPackExportWizard.tsx, AgentPackImportInspector.tsx,
+RecipeExportWizard.tsx, RecipeImportInspector.tsx, agentPackTransferDisplay.ts,
+recipeTransferDisplay.ts, agentPackSettingsDisplay.ts, agentExplain.ts, agentPackDisplay.ts,
+controlCenterRail.ts.
+src/renderer/src/components/workflow/: EffectiveCanvas.tsx, effectiveProjection.ts,
+packEditRouting.ts, effectiveMode.css (and its import site).
+src/renderer/src/stores/: effectiveGraphStore.ts.
+Tests deleted WITH their subjects (each is a pure-helper suite of a deleted module — list them in
+the commit body): agentPackDisplay, agentExplain, agentPackSettingsDisplay,
+agentPackTransferDisplay, recipeTransferDisplay, controlCenterRail, effectiveProjection,
+packEditRouting test files. memoryPane.test stays (subject kept).
+
+### B. Surgical trims in live files
+- NodeConfigPanel.tsx: remove the effectiveGraphStore/effectiveProjection imports and every
+  branch they fed (the WP3.6-era pack-node read-only/fork affordances — dead since 6.4a because
+  lockedNodeIds is always empty; the ModulePanel/expose/preview features stay).
+- workflowEditorStore.ts: remove lockedNodeIds/setLockedNodeIds/packEditRouter/setPackEditRouter
+  + the isLocked/routeLocked helpers and their call sites (mutations lose the locked branches);
+  delete the corresponding describe blocks in workflowEditorStore.test.ts (deliberate — the
+  Effective mode they pinned is gone; every other store test stays).
+- uiStore.ts: remove the ControlCenterRail type (last importers die in A).
+- index.css: delete selector blocks with ZERO remaining references — candidates: .rpt-agents-*
+  (EXCEPT .rpt-agents-chip and anything the grep proves live), .rpt-overview-* only if unused
+  (MemoryPane uses several — verify per selector), .rpt-preview-*/.rpt-runs-* (previewDisplay/
+  runTimeline consumers moved to workflowEditor.css? ground: RunDrawer/NodeConfigPanel preview
+  use workflowEditor.css classes — then .rpt-preview-*/.rpt-runs-* blocks are AgentsView-only →
+  delete; verify each by grep before deleting). Mechanism: for each candidate block, grep the
+  class name across src/; delete only zero-hit blocks.
+- i18n en.ts + zh.ts: delete keys with zero remaining t()/tOpt() references — prefixes to sweep:
+  agents.* (KEEP agents.cap.* — ModuleImportSheet), recipe.*, controlCenter.* (KEEP
+  controlCenter.launch.editorBody — LauncherCard), workflowEffective.*, nav.controlCenter*.
+  Mechanism: grep per key; parity between locales after.
+
+### C. Docs + status
+- Plan status header of THIS file: mark WP6.1–6.6 built. Master plan
+  (2026-07-03-agent-packs-master-plan.md) status header: note the ADR 0011 pivot superseded its
+  UI phases and point here (2 lines, don't rewrite history).
+- CONTEXT.md needs no change (already post-pivot).
+
+### D. Journey walks (manual narrative in the report — the acceptance)
+1. From an empty doc: drag trigger/history/agent/parser/SQL-ops from the palette, wire them,
+   group into a module, expose the trigger threshold + the agent preset, toggle the trigger off
+   and on from the node card.
+2. Export that module to a file; import it back; confirm it lands collapsed, reminted, unwired,
+   with exposed settings intact.
+3. Open memory-fill-async in a chat: read the whole setup at a glance — narrator chain, agent
+   chain, live trigger caption, disabled dimming when toggled, a run replayed from the drawer.
+Walk these against the real UI code paths (not the app — cite the code path each step exercises
+and any step that CANNOT work as described is a stop-and-report finding).
+
+### DEFERRED (tier-2 cleanup, deliberately NOT this WP — record, don't do)
+Main-side pack machinery stays dormant and tested: agentPackService/Store/Ipc (the module/runs/
+doc-trigger channels live in agentPackIpc.ts), headlessRunService's pack path,
+compose/checkpoints/attachments' pack surface, transfer services (pack+recipe), fragment-session
+machinery (openFragment/updatePackFragment + uiStore field), pack DB tables (data retention:
+nothing deleted). Removing them is real surgery with large deliberate test deletions — schedule
+only if the dormant code starts costing (a one-line note in the plan suffices today).
+
+### NON-GOALS
+No main-process changes. No renames (listAgentPackRuns keeps its name). No fragment-session
+removal. No new features. No touching the KEEP-ALIVE list. Size: net-NEGATIVE diff expected
+(thousands deleted, tens added); additions beyond wiring removals are a red flag.
 
 ## Sequencing notes
 
