@@ -280,6 +280,32 @@ describe('workflowEditorStore: removeNode / removeEdge / setMainOutput', () => {
   })
 })
 
+describe('workflowEditorStore: setNodeDisabled (WP6.4a)', () => {
+  beforeEach(async () => {
+    await useWorkflowEditorStore.getState().init(profileId)
+    await useWorkflowEditorStore.getState().open(profileId, 'custom-1')
+  })
+
+  it('toggles disabled on, then off (flag-free when enabled)', () => {
+    useWorkflowEditorStore.getState().setNodeDisabled('ctx', true)
+    expect(useWorkflowEditorStore.getState().nodes.find((n) => n.id === 'ctx')!.disabled).toBe(true)
+    expect(useWorkflowEditorStore.getState().dirty).toBe(true)
+
+    useWorkflowEditorStore.getState().setNodeDisabled('ctx', false)
+    expect(
+      useWorkflowEditorStore.getState().nodes.find((n) => n.id === 'ctx')!.disabled
+    ).toBeUndefined()
+  })
+
+  it('is a no-op on a locked node', () => {
+    useWorkflowEditorStore.getState().setLockedNodeIds(new Set(['ctx']))
+    useWorkflowEditorStore.getState().setNodeDisabled('ctx', true)
+    expect(
+      useWorkflowEditorStore.getState().nodes.find((n) => n.id === 'ctx')!.disabled
+    ).toBeUndefined()
+  })
+})
+
 describe('workflowEditorStore: live validation', () => {
   it('deleting the main-output node produces a MAIN_OUTPUT error', async () => {
     await useWorkflowEditorStore.getState().init(profileId)

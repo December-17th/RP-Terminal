@@ -217,6 +217,21 @@ declare global {
           floorsUntilDue?: number
         }[]
       >
+      // Live trigger badges for the one-canvas editor (one-canvas rebuild WP6.4a): the ENABLED
+      // trigger.* NODES of the chat's RESOLVED active doc, explained read-only (never mutates the
+      // trigger store). Shape inlined (not imported from main) per the preload convention.
+      explainDocTriggers: (
+        profileId: string,
+        chatId: string
+      ) => Promise<
+        {
+          nodeId: string
+          description: string
+          met: boolean
+          current?: number | string | boolean
+          required?: number | string | boolean
+        }[]
+      >
       // Effective-graph projection for the Workflow view's Effective mode (agent-packs plan WP3.6a;
       // ADR 0010). The composed doc + composition warnings + per-pack grouping (name / spliced node
       // ids / triggerOnly). A live projection, never persisted (ADR 0001).

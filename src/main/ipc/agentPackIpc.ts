@@ -4,7 +4,7 @@ import * as transfer from '../services/agentPackTransferService'
 import * as recipeTransfer from '../services/recipeTransferService'
 import { OverrideScope } from '../services/agentPackStore'
 import { listRuns } from '../services/runHistoryStore'
-import { explainTriggers } from '../services/headlessRunService'
+import { explainTriggers, explainDocTriggers } from '../services/headlessRunService'
 import { previewNextPrompt } from '../services/generation/previewService'
 import { getChat } from '../services/chatService'
 
@@ -91,6 +91,13 @@ export const registerAgentPackIpc = (ipcMain: IpcMain): void => {
     'agent-pack-explain-triggers',
     (_, profileId: string, chatId: string, packId: string) =>
       explainTriggers(profileId, chatId, packId)
+  )
+  // Live trigger badges for the one-canvas editor (one-canvas rebuild WP6.4a). Explains the ENABLED
+  // trigger.* NODES of the chat's RESOLVED active doc read-only (met / current / required per node) —
+  // the doc-path sibling of agent-pack-explain-triggers. READ-ONLY: never advances a baseline or fires,
+  // so the editor can fetch it on open / after save without perturbing the trigger store.
+  ipcMain.handle('workflow-explain-doc-triggers', (_, profileId: string, chatId: string) =>
+    explainDocTriggers(profileId, chatId)
   )
   // Effective-graph projection for the Workflow view's Effective mode (agent-packs plan WP3.6a;
   // ADR 0010). Returns the composed doc + warnings + per-pack grouping (name / node ids / triggerOnly)

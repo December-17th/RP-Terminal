@@ -30,6 +30,9 @@ export interface EditorNode {
   config?: Record<string, unknown>
   panel?: { show: boolean; label?: string; collapsed?: boolean }
   isMainOutput?: boolean
+  /** One-canvas rebuild (WP6.1/6.4a): a disabled node never runs (engine skips it + its exclusive
+   *  downstream); a disabled trigger never fires. The editor's per-node Enabled toggle writes it. */
+  disabled?: boolean
 }
 
 export interface EditorEdge {
@@ -104,7 +107,8 @@ export function docToEditor(doc: WorkflowDoc): { nodes: EditorNode[]; edges: Edi
     position: n.position ?? layout.get(n.id) ?? { x: ORIGIN, y: ORIGIN },
     ...(n.config !== undefined ? { config: n.config } : {}),
     ...(n.panel !== undefined ? { panel: n.panel } : {}),
-    ...(n.isMainOutput !== undefined ? { isMainOutput: n.isMainOutput } : {})
+    ...(n.isMainOutput !== undefined ? { isMainOutput: n.isMainOutput } : {}),
+    ...(n.disabled !== undefined ? { disabled: n.disabled } : {})
   }))
   const edges: EditorEdge[] = doc.edges.map((e) => ({
     id: edgeId(e),
@@ -129,7 +133,10 @@ export function editorToDoc(
       position: n.position,
       ...(hasConfig ? { config: n.config } : {}),
       ...(n.panel !== undefined ? { panel: n.panel } : {}),
-      ...(n.isMainOutput !== undefined ? { isMainOutput: n.isMainOutput } : {})
+      ...(n.isMainOutput !== undefined ? { isMainOutput: n.isMainOutput } : {}),
+      // One-canvas rebuild (WP6.4a): `disabled` is a whitelisted node field — without this line the
+      // editor's Enabled toggle would be silently dropped on the first revalidate()/save() (the trap).
+      ...(n.disabled !== undefined ? { disabled: n.disabled } : {})
     }
   })
   const outEdges: Edge[] = edges.map((e) => ({

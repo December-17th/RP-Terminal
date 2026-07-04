@@ -194,6 +194,12 @@ const api = {
   // WITHOUT advancing baselines or firing — safe to call on popover open. [] when not gate-open.
   explainAgentPackTriggers: (profileId: string, chatId: string, packId: string) =>
     ipcRenderer.invoke('agent-pack-explain-triggers', profileId, chatId, packId),
+  // Live trigger badges for the one-canvas editor (one-canvas rebuild WP6.4a): explains the ENABLED
+  // trigger.* NODES of the chat's RESOLVED active doc read-only ({ nodeId, description, met, current,
+  // required } per node). READ-ONLY — never advances a baseline or fires; safe to fetch on editor open
+  // + after save. The doc-path sibling of explainAgentPackTriggers.
+  explainDocTriggers: (profileId: string, chatId: string) =>
+    ipcRenderer.invoke('workflow-explain-doc-triggers', profileId, chatId),
   // Effective-graph projection for the Workflow view's Effective mode (agent-packs plan WP3.6a;
   // ADR 0010): the composed doc + composition warnings + per-pack grouping. A live projection,
   // never persisted (ADR 0001) — re-fetch after a gate flip or narrator write-through.

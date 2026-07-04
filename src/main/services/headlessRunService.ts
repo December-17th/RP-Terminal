@@ -260,13 +260,17 @@ export interface TriggerExplanation {
   floorsUntilDue?: number
 }
 
+/** Read-only baseline accessor for the explainers — the ONLY difference between the pack path
+ *  (getTriggerState) and the doc path (getDocTriggerState). Keeps the read-only explanation logic ONE
+ *  implementation, parity-identical across both paths (like TriggerBaselineAccessor for evaluation). */
+type BaselineReader = () => { lastValue: number | null; lastFireFloor: number | null } | null
+
 /** Explain ONE trigger read-only (agent-packs plan WP3.5): compute the same fire decision
  *  `evaluateOneTrigger` would, but report the scannable numbers and NEVER mutate the trigger store. */
 const explainOneTrigger = (
   profileId: string,
   chatId: string,
-  packId: string,
-  triggerIndex: number,
+  readBaseline: BaselineReader,
   att: TriggerAttachment
 ): TriggerExplanation => {
   const description = describeTrigger(att)
@@ -277,7 +281,7 @@ const explainOneTrigger = (
 
   if (att.trigger === 'cadence') {
     const current = latestFloorIndex(profileId, chatId)
-    const prior = getTriggerState(chatId, packId, triggerIndex)?.lastFireFloor
+    const prior = readBaseline()?.lastFireFloor
     const lastFire = prior ?? -1
     // Mirror evaluateOneTrigger: no committed floor yet (current < 0) never fires. floorsUntilDue is
     // how many more floors before (current − lastFire) >= everyNFloors; ≤ 0 means due now.
@@ -301,7 +305,7 @@ const explainOneTrigger = (
       : undefined
 
   if (att.op === 'changedBy') {
-    const prior = getTriggerState(chatId, packId, triggerIndex)?.lastValue
+    const prior = readBaseline()?.lastValue
     // First-ever evaluation (null baseline) or a non-numeric source → not met (matches the evaluator's
     // baseline-on-first-eval + numeric-only rule). When baselined, met on (current − baseline) >= delta.
     const met =
@@ -342,7 +346,7 @@ export const explainTriggers = (
   const out: TriggerExplanation[] = []
   attachments.forEach((att, i) => {
     if (att.kind !== 'trigger') return
-    out.push(explainOneTrigger(profileId, chatId, packId, i, att))
+    out.push(explainOneTrigger(profileId, chatId, () => getTriggerState(chatId, packId, i), att))
   })
   return out
 }
@@ -911,4 +915,61 @@ export const runManualDoc = async (
     origin: 'manual',
     trigger: 'manual'
   })
+}
+
+// ── READ-ONLY doc-trigger explanation (one-canvas rebuild WP6.4a — the live trigger badges) ──────────
+//
+// The editor paints a live "now {current} · at {required}" caption + a met dot on each trigger node of
+// the chat's RESOLVED doc. It needs the SAME read-only evaluation the pack "Why?" popover uses
+// (explainTriggers), routed through the DOC baseline store (getDocTriggerState) instead of the pack one.
+// READ-ONLY: it advances no baseline and fires nothing — calling it twice leaves workflow_trigger_state
+// untouched (mirrors the pack-era explainTriggers factoring). Only ENABLED trigger nodes are reported
+// (a disabled trigger is the agent's off-switch — nothing to badge).
+
+/** One doc-trigger's live explanation for the editor badges (WP6.4a). All fields are READ-ONLY
+ *  derivations against committed state; assembling this NEVER advances a baseline or fires. */
+export interface DocTriggerExplanation {
+  /** The trigger NODE's id — the editor keys the badge onto this node. */
+  nodeId: string
+  /** The human-readable trigger description (describeTrigger) — same caption the timeline shows. */
+  description: string
+  /** Whether the trigger WOULD fire against committed state right now (manual → always false). */
+  met: boolean
+  /** The current source reading (state) / floor index (cadence), when derivable. */
+  current?: number | string | boolean
+  /** The comparison value (state) / everyNFloors (cadence) the trigger requires. */
+  required?: number | string | boolean
+}
+
+/** Explain the ENABLED `trigger.*` nodes of the chat's RESOLVED active doc read-only (WP6.4a). Resolves
+ *  the doc via resolveWorkflowDoc (the same doc the doc-headless path scans), reconstitutes each
+ *  trigger node's TriggerAttachment (triggerAttachmentOf) and reuses explainOneTrigger through the DOC
+ *  baseline store. READ-ONLY: advances no baseline, fires nothing — two calls leave
+ *  workflow_trigger_state untouched. Skips disabled + malformed trigger nodes. */
+export const explainDocTriggers = (
+  profileId: string,
+  chatId: string
+): DocTriggerExplanation[] => {
+  const { id: docId, doc } = resolveWorkflowDoc(profileId, chatId)
+  const out: DocTriggerExplanation[] = []
+  for (const node of doc.nodes) {
+    if (!isTriggerNodeType(node.type)) continue
+    if (node.disabled === true) continue
+    const att = triggerAttachmentOf(node)
+    if (!att) continue
+    const exp = explainOneTrigger(
+      profileId,
+      chatId,
+      () => getDocTriggerState(chatId, docId, node.id),
+      att
+    )
+    out.push({
+      nodeId: node.id,
+      description: exp.description,
+      met: exp.met,
+      ...(exp.current !== undefined ? { current: exp.current } : {}),
+      ...(exp.required !== undefined ? { required: exp.required } : {})
+    })
+  }
+  return out
 }

@@ -114,6 +114,9 @@ interface WorkflowEditorState {
   removeEdge(edgeId: string): void
   removeNode(id: string): void
   setNodeConfig(id: string, config: Record<string, unknown>): void
+  /** One-canvas rebuild (WP6.4a): toggle a node's `disabled` flag (the engine skips a disabled node +
+   *  its exclusive downstream; a disabled trigger never fires). readOnly/locked guards like setNodeConfig. */
+  setNodeDisabled(id: string, disabled: boolean): void
   setNodePanel(id: string, panel: { show: boolean; label?: string } | undefined): void
   setMainOutput(id: string): void
   setDocName(name: string): void
@@ -392,6 +395,24 @@ export const useWorkflowEditorStore = create<WorkflowEditorState>((set, get) => 
       }
       set({
         nodes: get().nodes.map((n) => (n.id === id ? { ...n, config } : n))
+      })
+      revalidate()
+    },
+
+    setNodeDisabled: (id, disabled) => {
+      if (get().readOnly) return
+      // Locked (Effective-mode pack) nodes route/ no-op exactly like config; the Effective path dies in
+      // WP6.4 but the guard stays consistent with the other mutators (setNodeConfig).
+      if (isLocked(id)) return
+      set({
+        nodes: get().nodes.map((n) => {
+          if (n.id !== id) return n
+          // Absence = enabled; write the flag only when disabling so an enabled node stays flag-free
+          // (matches the optional-field convention docToEditor/editorToDoc round-trip).
+          if (disabled) return { ...n, disabled: true }
+          const { disabled: _drop, ...rest } = n
+          return rest
+        })
       })
       revalidate()
     },

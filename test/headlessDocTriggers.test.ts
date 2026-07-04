@@ -92,7 +92,8 @@ vi.mock('../src/main/services/workflowService', () => mockWorkflowService)
 
 import {
   evaluateDocTriggers,
-  runManualDoc
+  runManualDoc,
+  explainDocTriggers
 } from '../src/main/services/headlessRunService'
 
 // ── Doc builders ─────────────────────────────────────────────────────────────────────────────────
@@ -367,5 +368,68 @@ describe('manual trigger', () => {
     await runManualDoc('prof', 'c1', 'doc1', 'trg')
     expect(mockFloor.saveFloor).not.toHaveBeenCalled()
     expect(mockLog.log).toHaveBeenCalled()
+  })
+})
+
+// ── Read-only live trigger badges (WP6.4a: explainDocTriggers) ─────────────────────────────────────────
+describe('explainDocTriggers (read-only badges)', () => {
+  it('reports met/unmet + current/required for state triggers and never fires', () => {
+    mockFloor.getFloor.mockReturnValue({ floor: 0, variables: { stat_data: { hp: 42 } } })
+    mockWorkflowService.resolveWorkflowDoc.mockReturnValue({
+      id: 'doc1',
+      doc: docWithAgent('trg', 'trigger.state', stateCfg('stat_data.hp', 'gt', 10))
+    })
+
+    const exp = explainDocTriggers('prof', 'c1')
+    expect(exp).toHaveLength(1)
+    expect(exp[0]).toMatchObject({ nodeId: 'trg', met: true, current: 42, required: 10 })
+    // Read-only: no floor write, no baseline advance.
+    expect(mockFloor.saveFloor).not.toHaveBeenCalled()
+    expect(mockDocTriggerStore.setDocTriggerLastValue).not.toHaveBeenCalled()
+    expect(mockDocTriggerStore.setDocTriggerLastFireFloor).not.toHaveBeenCalled()
+
+    // An unmet comparison reports met:false.
+    mockFloor.getFloor.mockReturnValue({ floor: 0, variables: { stat_data: { hp: 5 } } })
+    expect(explainDocTriggers('prof', 'c1')[0]).toMatchObject({ met: false, current: 5 })
+  })
+
+  it('skips disabled trigger nodes', () => {
+    mockFloor.getFloor.mockReturnValue({ floor: 0, variables: { stat_data: { hp: 42 } } })
+    const doc = docWithAgent('trg', 'trigger.state', stateCfg('stat_data.hp', 'gt', 10))
+    doc.nodes = doc.nodes.map((n) => (n.id === 'trg' ? { ...n, disabled: true } : n))
+    mockWorkflowService.resolveWorkflowDoc.mockReturnValue({ id: 'doc1', doc })
+    expect(explainDocTriggers('prof', 'c1')).toEqual([])
+  })
+
+  it('two calls leave workflow_trigger_state untouched (no writes)', () => {
+    // A changedBy trigger + a cadence trigger — the two STATEFUL kinds. Evaluating them advances
+    // baselines; EXPLAINING them must not. Two calls back-to-back must write nothing.
+    const doc = docWith([
+      ...narratorNodes(),
+      { id: 'chg', type: 'trigger.state', config: stateCfg('stat_data.t', 'changedBy', 10) },
+      { id: 'cad', type: 'trigger.cadence', config: { everyNFloors: 3 } }
+    ], [])
+    mockFloor.getFloor.mockReturnValue({ floor: 0, variables: { stat_data: { t: 20 } } })
+    mockChat.getChat.mockReturnValue({ character_id: 'w1', floor_count: 5 })
+    mockWorkflowService.resolveWorkflowDoc.mockReturnValue({ id: 'doc1', doc })
+
+    explainDocTriggers('prof', 'c1')
+    explainDocTriggers('prof', 'c1')
+
+    expect(mockDocTriggerStore.setDocTriggerLastValue).not.toHaveBeenCalled()
+    expect(mockDocTriggerStore.setDocTriggerLastFireFloor).not.toHaveBeenCalled()
+    // The store is otherwise untouched — no rows written (the in-memory map stays empty).
+    expect(docTriggerState.size).toBe(0)
+  })
+
+  it('cadence reports required = everyNFloors', () => {
+    mockChat.getChat.mockReturnValue({ character_id: 'w1', floor_count: 5 }) // floor index 4
+    const doc = docWith([
+      ...narratorNodes(),
+      { id: 'cad', type: 'trigger.cadence', config: { everyNFloors: 3 } }
+    ], [])
+    mockWorkflowService.resolveWorkflowDoc.mockReturnValue({ id: 'doc1', doc })
+    const exp = explainDocTriggers('prof', 'c1')
+    expect(exp[0]).toMatchObject({ nodeId: 'cad', required: 3, met: true })
   })
 })

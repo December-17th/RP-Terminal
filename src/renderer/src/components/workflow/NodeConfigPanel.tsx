@@ -7,9 +7,17 @@ import { useWorkflowEditorStore } from '../../stores/workflowEditorStore'
 import { useEffectiveGraphStore } from '../../stores/effectiveGraphStore'
 import { useUiStore } from '../../stores/uiStore'
 import { useOptionalT, useT } from '../../i18n'
+import { useChatStore } from '../../stores/chatStore'
 import { fieldsFromSchema, type FieldSpec } from './schemaForm'
 import { ownerOfNodeId, nodeOwnerMap, readComposition } from './effectiveProjection'
 import { groupOfNode } from './groupModel'
+import {
+  tokenTotal,
+  sectionLabelKey,
+  sourceChip,
+  type NextPromptPreviewData,
+  type PreviewSectionData
+} from '../workspace/previewDisplay'
 import { getPath } from '../../../../shared/objectPath'
 import type { EditorNode } from './editorModel'
 import type { GroupDecl } from '../../../../shared/workflow/types'
@@ -476,6 +484,96 @@ function ModulePanel({ group }: { group: GroupDecl }): React.JSX.Element {
   )
 }
 
+/** One preview section row (WP6.4a): source chip + est. tokens + expandable text. Reuses the pure
+ *  previewDisplay.ts helpers (sourceChip / sectionLabelKey) so the labels match the Agents Preview pane. */
+function PreviewSectionRow({ section }: { section: PreviewSectionData }): React.JSX.Element {
+  const t = useT()
+  const [open, setOpen] = useState(false)
+  const chip = sourceChip(section.source)
+  return (
+    <div className="rpt-assemble-preview-section">
+      <div className="rpt-assemble-preview-section-head">
+        <span className="rpt-assemble-preview-label">{t(sectionLabelKey(section.id))}</span>
+        <span className="rpt-assemble-preview-chip">
+          {chip.isPack ? chip.name : t(chip.labelKey)}
+        </span>
+        <span className="rpt-assemble-preview-tokens">
+          {section.estimated ? `~${section.tokens}` : section.tokens}
+        </span>
+        <button
+          type="button"
+          className="rpt-assemble-preview-expand"
+          onClick={() => setOpen((v) => !v)}
+        >
+          {open ? t('preview.collapse') : t('preview.expand')}
+        </button>
+      </div>
+      {open && <pre className="rpt-assemble-preview-text">{section.text}</pre>}
+    </div>
+  )
+}
+
+/** Part E (WP6.4a): the "Preview next prompt" section shown on a `prompt.assemble` node when a chat is
+ *  active. Button → previewNextPrompt IPC → a compact per-section list (label, source chip, est. tokens,
+ *  expandable text) reusing the previewDisplay.ts helpers. Loading/error inline. Hidden with no chat. */
+function AssemblePreview({ profileId }: { profileId: string }): React.JSX.Element | null {
+  const t = useT()
+  const activeChatId = useChatStore((s) => s.activeChatId)
+  const [data, setData] = useState<NextPromptPreviewData | null>(null)
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState(false)
+
+  if (!activeChatId) return null
+
+  const run = async (): Promise<void> => {
+    setLoading(true)
+    setError(false)
+    try {
+      const p = (await window.api.previewNextPrompt(profileId, activeChatId, '')) as NextPromptPreviewData
+      if (p.error) {
+        setError(true)
+        setData(null)
+      } else {
+        setData(p)
+      }
+    } catch {
+      setError(true)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const total = data ? tokenTotal(data.sections) : null
+
+  return (
+    <div className="rpt-assemble-preview">
+      <div style={{ fontSize: 10.5, color: 'var(--rpt-text-tertiary)', marginBottom: 4 }}>
+        {t('workflowEditor.assemblePreview.title')}
+      </div>
+      <button type="button" onClick={() => void run()} disabled={loading} style={{ fontSize: 12 }}>
+        {loading ? t('workflowEditor.assemblePreview.loading') : t('workflowEditor.assemblePreview.button')}
+      </button>
+      {error && (
+        <div style={{ color: 'var(--rpt-danger)', fontSize: 10.5, marginTop: 4 }}>
+          {t('workflowEditor.assemblePreview.error')}
+        </div>
+      )}
+      {data && total && (
+        <>
+          <div style={{ fontSize: 10.5, color: 'var(--rpt-text-secondary)', margin: '6px 0 4px' }}>
+            {total.estimated
+              ? t('preview.totalTokensEst', { n: total.total })
+              : t('preview.totalTokens', { n: total.total })}
+          </div>
+          {data.sections.map((s) => (
+            <PreviewSectionRow key={s.id} section={s} />
+          ))}
+        </>
+      )}
+    </div>
+  )
+}
+
 export default function NodeConfigPanel({
   profileId
 }: NodeConfigPanelProps): React.JSX.Element {
@@ -491,6 +589,7 @@ export default function NodeConfigPanel({
   const lockedNodeIds = useWorkflowEditorStore((s) => s.lockedNodeIds)
   const setNodeConfig = useWorkflowEditorStore((s) => s.setNodeConfig)
   const setNodePanel = useWorkflowEditorStore((s) => s.setNodePanel)
+  const setNodeDisabled = useWorkflowEditorStore((s) => s.setNodeDisabled)
   const setMainOutput = useWorkflowEditorStore((s) => s.setMainOutput)
   const exposeSetting = useWorkflowEditorStore((s) => s.exposeSetting)
   const unexposeSetting = useWorkflowEditorStore((s) => s.unexposeSetting)
@@ -591,6 +690,18 @@ export default function NodeConfigPanel({
           {nodeDesc}
         </div>
       )}
+
+      {/* Enabled toggle (WP6.4a): at the top of every node's panel. A disabled node never runs (the
+          engine skips it + its exclusive downstream); a disabled trigger never fires. */}
+      <label style={{ display: 'flex', alignItems: 'center', gap: 4, margin: '6px 0' }}>
+        <input
+          type="checkbox"
+          checked={node.disabled !== true}
+          disabled={readOnly}
+          onChange={(e) => setNodeDisabled(node.id, !e.target.checked)}
+        />
+        {t('workflowEditor.enabled')}
+      </label>
 
       {/* Pack node affordance (agent-packs plan WP3.6a/WP3.6b; ADR 0006 + 0010): this node belongs to a
           pack. Editing its config forks the pack on the FIRST edit (or writes through if this world
@@ -707,6 +818,8 @@ export default function NodeConfigPanel({
           workflowId={typeof config.workflow_id === 'string' ? config.workflow_id : undefined}
         />
       )}
+
+      {node.type === 'prompt.assemble' && <AssemblePreview profileId={profileId} />}
 
       <div>
         <div style={{ fontSize: 10.5, color: 'var(--rpt-text-tertiary)' }}>

@@ -26,7 +26,11 @@ import { useWorkflowEditorStore, type NodeTypeInfo } from '../../stores/workflow
 import { useWorkflowTraceStore } from '../../stores/workflowTraceStore'
 import { useChatStore } from '../../stores/chatStore'
 import { useOptionalT, useT } from '../../i18n'
-import { formatTraceSeconds, type TraceNode } from '../../../../shared/workflow/trace'
+import {
+  formatTraceSeconds,
+  type TraceNode,
+  type WorkflowRunTrace
+} from '../../../../shared/workflow/trace'
 import type { EditorNode } from './editorModel'
 import type { GroupDecl } from '../../../../shared/workflow/types'
 import { collapsedView, groupBounds, MODULE_PORT } from './groupModel'
@@ -39,11 +43,21 @@ const DRAG_MIME = 'application/rpt-node-type'
  *  arrives preconfigured with `workflow_id` instead of empty. */
 const DRAG_SUBGRAPH_ID_MIME = 'application/rpt-subgraph-id'
 
+/** One trigger node's live explanation (WP6.4a) — from explainDocTriggers, keyed onto the node. */
+export interface DocTriggerBadge {
+  met: boolean
+  current?: number | string | boolean
+  required?: number | string | boolean
+  description: string
+}
+
 interface RptNodeData extends Record<string, unknown> {
   editorNode: EditorNode
   typeInfo: NodeTypeInfo | undefined
   /** This node's outcome in the active chat's LAST run of this workflow (spec §13), if any. */
   trace?: TraceNode
+  /** WP6.4a: the live trigger explanation for a trigger.* node (met / now / at), if fetched. */
+  triggerBadge?: DocTriggerBadge
 }
 
 /** Maps a PortType to the CSS class workflowEditor.css keys its color off. Falls back to `Any`'s
@@ -68,9 +82,14 @@ function portTypeClass(type: string | undefined): string {
 function RptNode({ data, selected }: NodeProps<RFNode<RptNodeData>>): React.JSX.Element {
   const t = useT()
   const tOpt = useOptionalT()
-  const { editorNode, typeInfo, trace } = data
+  const setNodeDisabled = useWorkflowEditorStore((s) => s.setNodeDisabled)
+  const { editorNode, typeInfo, trace, triggerBadge } = data
   const inputs = typeInfo?.inputs ?? []
   const outputs = typeInfo?.outputs ?? []
+  const disabled = editorNode.disabled === true
+  // Renderer-side check for a trigger node. `isTrigger` lives main-side (nodeImpl.isTrigger); this
+  // string-prefix check is the pragmatic renderer mirror — trigger node types are all `trigger.*`.
+  const isTrigger = editorNode.type.startsWith('trigger.')
   // Localized node title with the catalog's English title as the fallback.
   const title =
     tOpt(`workflowEditor.nodeTitle.${editorNode.type}`) || typeInfo?.title || editorNode.type
@@ -80,7 +99,7 @@ function RptNode({ data, selected }: NodeProps<RFNode<RptNodeData>>): React.JSX.
 
   return (
     <div
-      className={`rpt-node${selected ? ' selected' : ''}${editorNode.isMainOutput ? ' is-main-output' : ''}${trace ? ` rpt-node-trace-${trace.status}` : ''}`}
+      className={`rpt-node${selected ? ' selected' : ''}${editorNode.isMainOutput ? ' is-main-output' : ''}${trace ? ` rpt-node-trace-${trace.status}` : ''}${disabled ? ' rpt-node-disabled' : ''}`}
     >
       <div className="rpt-node-title-row">
         {editorNode.isMainOutput && (
@@ -90,6 +109,24 @@ function RptNode({ data, selected }: NodeProps<RFNode<RptNodeData>>): React.JSX.
         )}
         <span className="rpt-node-title">{title}</span>
         <span className="rpt-node-type-id">{editorNode.type}</span>
+        {/* Trigger on/off switch (WP6.4a): a disabled trigger never fires (the agent's off-switch).
+            stopPropagation so toggling doesn't also select the node. */}
+        {isTrigger && (
+          <button
+            type="button"
+            className={`rpt-node-trigger-switch${disabled ? '' : ' on'}`}
+            role="switch"
+            aria-checked={!disabled}
+            aria-label={t('workflowEditor.enabled')}
+            title={t('workflowEditor.enabled')}
+            onClick={(e) => {
+              e.stopPropagation()
+              setNodeDisabled(editorNode.id, !disabled)
+            }}
+          >
+            <span className="rpt-node-trigger-switch-knob" aria-hidden />
+          </button>
+        )}
         {trace && (
           <span className={`rpt-node-trace-chip is-${trace.status}`} title={traceTitle}>
             <span className="rpt-node-trace-dot" aria-hidden />
@@ -101,6 +138,23 @@ function RptNode({ data, selected }: NodeProps<RFNode<RptNodeData>>): React.JSX.
           </span>
         )}
       </div>
+      {/* Live trigger caption (WP6.4a): description + "now {current} · at {required}" + a met dot. */}
+      {triggerBadge && (
+        <div className="rpt-node-trigger-badge" title={triggerBadge.description}>
+          <span
+            className={`rpt-node-trigger-dot${triggerBadge.met ? ' met' : ''}`}
+            aria-hidden
+          />
+          <span className="rpt-node-trigger-caption">
+            {triggerBadge.current !== undefined || triggerBadge.required !== undefined
+              ? t('workflowEditor.trigger.nowAt', {
+                  now: String(triggerBadge.current ?? '—'),
+                  at: String(triggerBadge.required ?? '—')
+                })
+              : triggerBadge.description}
+          </span>
+        </div>
+      )}
       {/* Normal-flow port rows: each row positions its own Handle (absolute, vertically centered
           on the row) so handles always sit on the card's edge next to their label — the previous
           absolute-offset scheme measured from the wrong origin and pushed rows past the card. */}
@@ -222,9 +276,19 @@ const nodeTypes: NodeTypes = {
 
 interface FlowCanvasProps {
   profileId: string
+  /** WP6.4a: when set, REPLACES the live last-run overlay — replay a chosen run's trace onto the
+   *  canvas. Node ids map directly; the workflowId gate is skipped (ids absent from the open doc just
+   *  don't paint). Null → the live overlay behaviour. */
+  traceOverride?: WorkflowRunTrace | null
+  /** WP6.4a: bumped by the parent after a save so the live trigger badges refetch. */
+  triggerRefreshToken?: number
 }
 
-function FlowCanvasInner({ profileId: _profileId }: FlowCanvasProps): React.JSX.Element {
+function FlowCanvasInner({
+  profileId,
+  traceOverride,
+  triggerRefreshToken
+}: FlowCanvasProps): React.JSX.Element {
   const nodes = useWorkflowEditorStore((s) => s.nodes)
   const edges = useWorkflowEditorStore((s) => s.edges)
   const nodeTypeList = useWorkflowEditorStore((s) => s.nodeTypes)
@@ -260,10 +324,50 @@ function FlowCanvasInner({ profileId: _profileId }: FlowCanvasProps): React.JSX.
     activeChatId ? s.traces[activeChatId] : undefined
   )
   const traceByNode = useMemo(() => {
+    // WP6.4a: a replay override REPLACES the live overlay + skips the workflowId gate (node ids map
+    // directly; ids absent from the open doc simply don't paint).
+    if (traceOverride) return new Map(traceOverride.nodes.map((n) => [n.nodeId, n]))
     if (!lastTrace || !currentId || lastTrace.workflowId !== currentId)
       return new Map<string, TraceNode>()
     return new Map(lastTrace.nodes.map((n) => [n.nodeId, n]))
-  }, [lastTrace, currentId])
+  }, [traceOverride, lastTrace, currentId])
+
+  // Live trigger badges (WP6.4a): fetch explainDocTriggers once per (open doc, activeChatId) when the
+  // OPEN doc IS the chat's resolved active doc — reusing the trace-overlay gating idiom (a trigger's
+  // "now/at" only makes sense against the chat whose committed state it evaluates). Refetch on save
+  // (triggerRefreshToken). NO polling.
+  const [triggerBadges, setTriggerBadges] = React.useState<Map<string, DocTriggerBadge>>(new Map())
+  React.useEffect(() => {
+    let cancelled = false
+    setTriggerBadges(new Map())
+    if (!activeChatId || !currentId) return
+    void (async () => {
+      // Only badge when the OPEN doc is the chat's resolved active doc (the same gate the trace overlay
+      // uses: a badge against a different doc's state would mislead).
+      const resolvedId = await window.api.resolveWorkflowId(profileId, activeChatId)
+      if (cancelled || resolvedId !== currentId) return
+      const list = (await window.api.explainDocTriggers(profileId, activeChatId)) as {
+        nodeId: string
+        description: string
+        met: boolean
+        current?: number | string | boolean
+        required?: number | string | boolean
+      }[]
+      if (cancelled) return
+      setTriggerBadges(
+        new Map(
+          (list ?? []).map((e) => [
+            e.nodeId,
+            { met: e.met, current: e.current, required: e.required, description: e.description }
+          ])
+        )
+      )
+    })()
+    return () => {
+      cancelled = true
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- refetch on doc/chat/save; profileId stable
+  }, [activeChatId, currentId, triggerRefreshToken])
 
   // On-canvas modules (WP6.3): project the doc's groups onto the canvas — collapsed groups hide
   // their members behind one module node, expanded groups render a background frame; boundary edges
@@ -322,11 +426,26 @@ function FlowCanvasInner({ profileId: _profileId }: FlowCanvasProps): React.JSX.
         draggable: !readOnly,
         connectable: !readOnly,
         deletable: !readOnly,
-        data: { editorNode: n, typeInfo: typeInfoMap.get(n.type), trace: traceByNode.get(n.id) }
+        data: {
+          editorNode: n,
+          typeInfo: typeInfoMap.get(n.type),
+          trace: traceByNode.get(n.id),
+          triggerBadge: triggerBadges.get(n.id)
+        }
       } as RFNode)
     }
     return out
-  }, [nodes, groups, view, selectedNodeId, selectedGroupId, readOnly, typeInfoMap, traceByNode])
+  }, [
+    nodes,
+    groups,
+    view,
+    selectedNodeId,
+    selectedGroupId,
+    readOnly,
+    typeInfoMap,
+    traceByNode,
+    triggerBadges
+  ])
 
   const rfEdges: RFEdge[] = useMemo(() => {
     const out: RFEdge[] = []

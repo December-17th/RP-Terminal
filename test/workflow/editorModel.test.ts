@@ -190,6 +190,16 @@ describe('docToEditor / editorToDoc round-trip', () => {
     const rebuilt = editorToDoc(d, nodes, edges)
     expect(rebuilt.groups).toBeUndefined()
   })
+
+  it('round-trips a node’s `disabled` flag (WP6.4a: the whitelisted-field trap)', () => {
+    const d = doc([node('a', { disabled: true }), node('b')], [])
+    const { nodes } = docToEditor(d)
+    expect(nodes.find((n) => n.id === 'a')!.disabled).toBe(true)
+    expect(nodes.find((n) => n.id === 'b')!.disabled).toBeUndefined()
+    const rebuilt = editorToDoc(d, nodes, [])
+    expect(rebuilt.nodes.find((n) => n.id === 'a')!.disabled).toBe(true)
+    expect(rebuilt.nodes.find((n) => n.id === 'b')!.disabled).toBeUndefined()
+  })
 })
 
 describe('autoLayout', () => {

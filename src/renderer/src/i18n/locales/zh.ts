@@ -582,6 +582,13 @@ const zh: Record<string, string> = {
   'workflowEditor.module.exposedEmpty': '选择模块内的节点并暴露其设置。',
   'workflowEditor.module.exposedRemove': '从模块移除',
   'workflowEditor.module.exposeToggle': '暴露到模块',
+  // 一体化画布重构 WP6.4a：节点启用开关、实时触发器徽标、组装节点提示词预览。
+  'workflowEditor.enabled': '启用',
+  'workflowEditor.trigger.nowAt': '当前 {{now}} · 目标 {{at}}',
+  'workflowEditor.assemblePreview.title': '提示词预览',
+  'workflowEditor.assemblePreview.button': '预览下一个提示词',
+  'workflowEditor.assemblePreview.loading': '正在生成预览…',
+  'workflowEditor.assemblePreview.error': '无法生成预览。',
   'workflowEditor.err.GROUP_MEMBER_MISSING': '模块引用了图中不存在的节点',
   'workflowEditor.err.GROUP_OVERLAP': '某个节点属于多个模块',
   'workflowEditor.err.GROUP_EXPOSED_NOT_MEMBER': '暴露的设置指向了非成员节点',
@@ -1156,6 +1163,14 @@ const zh: Record<string, string> = {
   'runs.origin.turnTitle': '作为回复的一部分运行',
   'runs.origin.headlessTitle': '智能体自动运行',
   'runs.origin.manualTitle': '你运行了此智能体',
+  // 一体化画布重构 WP6.4a：编辑器运行抽屉。
+  'runDrawer.title': '运行记录',
+  'runDrawer.empty': '暂无运行记录',
+  'runDrawer.noChat': '打开一个对话以查看其运行记录',
+  'runDrawer.loading': '正在加载运行记录…',
+  'runDrawer.refresh': '刷新',
+  'runDrawer.live': '实时',
+  'runDrawer.liveTitle': '清除回放并返回实时叠加',
   // 归属
   'runs.narratorTurn': '旁白回合',
   'runs.packSep': '、',

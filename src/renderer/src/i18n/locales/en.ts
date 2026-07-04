@@ -602,6 +602,13 @@ const en: Record<string, string> = {
   'workflowEditor.module.exposedEmpty': 'Select a node inside and expose its settings.',
   'workflowEditor.module.exposedRemove': 'Remove from module',
   'workflowEditor.module.exposeToggle': 'Expose on module',
+  // One-canvas rebuild WP6.4a: node enable toggle, live trigger badge, assemble-node prompt preview.
+  'workflowEditor.enabled': 'Enabled',
+  'workflowEditor.trigger.nowAt': 'now {{now}} · at {{at}}',
+  'workflowEditor.assemblePreview.title': 'Prompt preview',
+  'workflowEditor.assemblePreview.button': 'Preview next prompt',
+  'workflowEditor.assemblePreview.loading': 'Building preview…',
+  'workflowEditor.assemblePreview.error': 'Could not build the preview.',
   'workflowEditor.err.GROUP_MEMBER_MISSING': 'A module references a node that is not in the graph',
   'workflowEditor.err.GROUP_OVERLAP': 'A node belongs to more than one module',
   'workflowEditor.err.GROUP_EXPOSED_NOT_MEMBER': 'An exposed setting points at a non-member node',
@@ -1204,6 +1211,14 @@ const en: Record<string, string> = {
   'runs.origin.turnTitle': 'Ran as part of a reply',
   'runs.origin.headlessTitle': 'An agent ran on its own',
   'runs.origin.manualTitle': 'You ran this agent',
+  // One-canvas rebuild WP6.4a: the editor's Run drawer.
+  'runDrawer.title': 'Runs',
+  'runDrawer.empty': 'No runs yet',
+  'runDrawer.noChat': 'Open a chat to see its runs',
+  'runDrawer.loading': 'Loading runs…',
+  'runDrawer.refresh': 'Refresh',
+  'runDrawer.live': 'Live',
+  'runDrawer.liveTitle': 'Clear the replay and return to the live overlay',
   // Attribution
   'runs.narratorTurn': 'Narrator turn',
   'runs.packSep': ', ',
