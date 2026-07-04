@@ -1,6 +1,6 @@
 # 02 — reevaluateVariables discards ALL card write-backs on any chat mutation
 
-Status: needs-triage
+Status: ready-for-agent
 
 ## Problem
 
@@ -23,5 +23,13 @@ or snapshot non-model keys and merge them back, or scope the re-fold to floors �
 Each option changes MVU-fidelity semantics; needs owner input + a check against real MVU behavior
 (what does MagVarUpdate do with programmatic `Mvu.setMvuVariable` writes on re-evaluation? —
 unverified).
+
+## Owner decision (2026-07-04)
+
+Option 1 — op-log the card variable writes and replay them after the model blocks during
+`reevaluateVariables` (the `table_ops` rewind pattern). New `vars_ops` app-DB table; logged at
+`applyVariableOps` (patch) + the card whole-replace path (`wcv-host-set-vars`); truncation clamps
+via `chatService.truncateFloors`; the Variables-view debug editor (`setFloorStatData`) stays
+UNLOGGED deliberately (re-derive-from-scratch remains its contract).
 
 ## Comments

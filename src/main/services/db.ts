@@ -100,6 +100,22 @@ CREATE TABLE IF NOT EXISTS table_ops (
 );
 CREATE INDEX IF NOT EXISTS idx_table_ops_chat_floor ON table_ops(chat_id, floor);
 
+-- Floor-keyed append-only journal of CARD/PANEL variable writes (manual-pass issue 02). stat_data is
+-- rebuilt from model <UpdateVariable> blocks on re-evaluate; card writes are not re-derivable from
+-- response text, so they are journaled here and REPLAYED after each floor's model fold. Kind 'patch'
+-- carries JsonPatchOp[] JSON, 'replace' carries a whole stat_data object. FK cascade clears on chat
+-- deletion (foreign_keys = ON below); floor truncation deletes at/after the cut (chatService).
+CREATE TABLE IF NOT EXISTS vars_ops (
+  chat_id TEXT NOT NULL REFERENCES chats(id) ON DELETE CASCADE,
+  floor INTEGER NOT NULL,
+  seq INTEGER NOT NULL,
+  kind TEXT NOT NULL CHECK(kind IN ('patch','replace')),
+  payload TEXT NOT NULL,
+  created_at TEXT,
+  PRIMARY KEY (chat_id, floor, seq)
+);
+CREATE INDEX IF NOT EXISTS idx_vars_ops_chat_floor ON vars_ops(chat_id, floor);
+
 -- Chat-level per-table maintenance-progress pointer for SQL-table memory (issue 07). last_floor is
 -- the 0-based floor index up to which a table was last processed; the per-turn table.gate cadence AND
 -- the manual backfill both advance it (MAX-semantics upsert), the Tables view reads it, floor
