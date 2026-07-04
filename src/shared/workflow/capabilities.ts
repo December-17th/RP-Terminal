@@ -170,6 +170,12 @@ export function deriveCapabilities(doc: WorkflowDoc): CapabilityId[] {
  *                            nodes; at THIS doc's level the call node itself confers none. (Deep
  *                            cross-doc reachability is a later WP; flagged in the WP4.1 report.)
  *   · subgraph.loop        — repeats a nested doc; same reasoning as subgraph.call.
+ *   · trigger.state / trigger.cadence / trigger.manual — agent-chain ROOTS (one-canvas rebuild WP6.1;
+ *                            ADR 0011). A trigger node's run() only fires a Signal; it touches NO
+ *                            durable state. The trigger's condition is EVALUATED by the headless
+ *                            evaluator against committed state, but that is the evaluator's read, not
+ *                            the node's — the node itself is pure plumbing that starts a chain, and the
+ *                            chain's real capabilities come from its downstream nodes (agent/parser/SQL).
  *
  *  NOTE (input.context): it appears in BOTH tables — mapped to `reads-history` in NODE_TYPE_CAPABILITY
  *  (it seeds the turn from chat history) AND could be argued inert. The MAPPING wins (a type in
@@ -198,7 +204,10 @@ export const INERT_NODE_TYPES: ReadonlySet<string> = new Set([
   'subgraph.input',
   'subgraph.output',
   'subgraph.call',
-  'subgraph.loop'
+  'subgraph.loop',
+  'trigger.state',
+  'trigger.cadence',
+  'trigger.manual'
 ])
 
 /** The enforcement-grade capability report for a fragment (ADR 0007). Beyond the display chip list it

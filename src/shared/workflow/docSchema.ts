@@ -93,7 +93,11 @@ export const WorkflowDocSchema = z.object({
           collapsed: z.boolean().optional()
         })
         .optional(),
-      isMainOutput: z.boolean().optional()
+      isMainOutput: z.boolean().optional(),
+      // One-canvas rebuild (WP6.1; ADR 0011): the node-disable flag. MUST be declared here — zod
+      // strips unknown keys on parse, so an undeclared `disabled` would silently vanish from a
+      // round-tripped doc. Absent = enabled.
+      disabled: z.boolean().optional()
     })
   ),
   edges: z.array(z.object({ from: EdgeEndSchema, to: EdgeEndSchema })),

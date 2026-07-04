@@ -20,7 +20,7 @@ import { summarizeRun, derivePackIds } from '../../shared/workflow/trace'
 import { CompositionMeta } from '../../shared/workflow/compose'
 import { notifyWorkflowTrace } from './workflowEvents'
 import { appendRun } from './runHistoryStore'
-import { evaluateTriggers } from './headlessRunService'
+import { evaluateTriggers, evaluateDocTriggers } from './headlessRunService'
 import { randomUUID } from 'crypto'
 
 // Re-exported so existing consumers/tests (test/generationService.test.ts) keep working; the
@@ -207,6 +207,11 @@ export const generate = async (
       // skips — the chain re-evaluates on its own commit).
       .then(() => evaluateTriggers(profileId, chatId, 'turn', 0))
       .catch((err) => log('error', `headless trigger eval failed — ${err?.message || String(err)}`))
+      // One-canvas rebuild (WP6.1; ADR 0011): the DOC-DRIVEN trigger evaluation runs at the SAME turn
+      // commit boundary, alongside the pack path (both coexist until WP6.2/6.5). Also fire-and-forget,
+      // guarded per chat, depth-capped. A doc with no trigger.* nodes evaluates nothing.
+      .then(() => evaluateDocTriggers(profileId, chatId, 'turn', 0))
+      .catch((err) => log('error', `headless doc-trigger eval failed — ${err?.message || String(err)}`))
 
     // Race: on the normal path onResponseReady fires first (before the post phase runs) and the
     // floor returns immediately. Fatal / aborted / validation-rejected runs never fire it — the

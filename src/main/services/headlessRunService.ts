@@ -43,6 +43,13 @@ import {
   setTriggerLastValue,
   setTriggerLastFireFloor
 } from './agentPackTriggerStore'
+import {
+  getDocTriggerState,
+  setDocTriggerLastValue,
+  setDocTriggerLastFireFloor
+} from './workflowTriggerStore'
+import { resolveWorkflowDoc } from './workflowService'
+import { isTriggerNodeType, triggerAttachmentOf } from './nodes/builtin/triggerNodes'
 import { log } from './logService'
 
 /** What started an evaluation pass: a player turn, or a prior headless run's commit (ADR 0004 — the
@@ -135,30 +142,38 @@ const comparePoint = (op: string, actual: unknown, want: number | string | boole
   }
 }
 
-/** Evaluate ONE trigger against committed state; returns whether it fires. Has the SIDE EFFECT of
- *  advancing the persisted baseline for the stateful kinds (changedBy lastValue, cadence
- *  lastFireFloor) — evaluation and baseline-advance are one step, matching the grammar's
- *  "since this trigger was last evaluated" semantics (attachments.ts). Non-stateful point ops and
- *  manual triggers persist nothing. Manual NEVER fires from a boundary (only runManual). */
-const evaluateOneTrigger = (
+/** The per-trigger baseline accessor `evaluateTriggerCore` reads/writes — the ONLY difference between
+ *  the pack path (keyed (chat, pack, trigger index) → agentPackTriggerStore) and the doc path (keyed
+ *  (chat, doc, node id) → workflowTriggerStore). Extracting it keeps the changedBy/cadence evaluation
+ *  logic ONE implementation, characterization-identical across both paths. */
+interface TriggerBaselineAccessor {
+  get: () => { lastValue: number | null; lastFireFloor: number | null } | null
+  setLastValue: (value: number) => void
+  setLastFireFloor: (floor: number) => void
+}
+
+/** The store-agnostic trigger evaluation core (WP2.2 semantics, unchanged — the pack path wraps this
+ *  with the pack store, the WP6.1 doc path with the doc store). Evaluates ONE trigger against committed
+ *  state; returns whether it fires; has the SIDE EFFECT of advancing the stateful baselines
+ *  (changedBy lastValue, cadence lastFireFloor) via `acc`. Manual never fires from a boundary. */
+const evaluateTriggerCore = (
   profileId: string,
   chatId: string,
-  packId: string,
-  triggerIndex: number,
-  att: TriggerAttachment
+  att: TriggerAttachment,
+  acc: TriggerBaselineAccessor
 ): boolean => {
   if (att.trigger === 'manual') return false
 
   if (att.trigger === 'cadence') {
     const current = latestFloorIndex(profileId, chatId)
     if (current < 0) return false // no committed floor yet → nothing to fire on
-    const prior = getTriggerState(chatId, packId, triggerIndex)?.lastFireFloor
+    const prior = acc.get()?.lastFireFloor
     const lastFire = prior ?? -1 // never fired → -1, so N floors from floor 0 fires at index N−1
     // Fire when at least N floors have elapsed since the last fire. With lastFire −1 and N=3 this
     // first fires at floor index 2 (floors 0,1,2), matching computeTableProgress's nextExpected
     // (= last + freq) for a never-processed table.
     if (current - lastFire >= att.everyNFloors) {
-      setTriggerLastFireFloor(chatId, packId, triggerIndex, current)
+      acc.setLastFireFloor(current)
       return true
     }
     return false
@@ -172,13 +187,13 @@ const evaluateOneTrigger = (
     // numeric literal + a numeric source is required at eval time). First-ever evaluation has no
     // prior value → baseline to current, no fire (attachments.ts grammar).
     if (typeof actual !== 'number') return false
-    const prior = getTriggerState(chatId, packId, triggerIndex)?.lastValue
+    const prior = acc.get()?.lastValue
     if (prior == null) {
-      setTriggerLastValue(chatId, packId, triggerIndex, actual)
+      acc.setLastValue(actual)
       return false // baseline-on-first-evaluation, no fire
     }
     if (actual - prior >= (att.value as number)) {
-      setTriggerLastValue(chatId, packId, triggerIndex, actual) // advance the baseline on fire
+      acc.setLastValue(actual) // advance the baseline on fire
       return true
     }
     return false
@@ -186,6 +201,25 @@ const evaluateOneTrigger = (
 
   return comparePoint(att.op, actual, att.value)
 }
+
+/** Evaluate ONE trigger against committed state; returns whether it fires. Has the SIDE EFFECT of
+ *  advancing the persisted baseline for the stateful kinds (changedBy lastValue, cadence
+ *  lastFireFloor) — evaluation and baseline-advance are one step, matching the grammar's
+ *  "since this trigger was last evaluated" semantics (attachments.ts). Non-stateful point ops and
+ *  manual triggers persist nothing. Manual NEVER fires from a boundary (only runManual).
+ *  (Pack path: wraps `evaluateTriggerCore` with the pack-keyed store.) */
+const evaluateOneTrigger = (
+  profileId: string,
+  chatId: string,
+  packId: string,
+  triggerIndex: number,
+  att: TriggerAttachment
+): boolean =>
+  evaluateTriggerCore(profileId, chatId, att, {
+    get: () => getTriggerState(chatId, packId, triggerIndex),
+    setLastValue: (v) => setTriggerLastValue(chatId, packId, triggerIndex, v),
+    setLastFireFloor: (f) => setTriggerLastFireFloor(chatId, packId, triggerIndex, f)
+  })
 
 // ── READ-ONLY trigger explanation (agent-packs plan WP3.5 — the "why?" popover) ─────────────────────
 //
@@ -569,4 +603,312 @@ export const runManual = async (
     return
   }
   await runHeadless(profileId, chatId, packId, frag.doc, 0, { origin: 'manual', trigger: 'manual' })
+}
+
+// ════════════════════════════════════════════════════════════════════════════════════════════════
+// DOC-DRIVEN headless path (one-canvas rebuild WP6.1; ADR 0011)
+// ════════════════════════════════════════════════════════════════════════════════════════════════
+//
+// The pack path above (evaluateTriggers/runHeadless/runManual) stays working UNCHANGED — both paths
+// coexist until WP6.2/6.5. This half reads the chat's ACTIVE workflow doc (resolveWorkflowDoc, NOT the
+// effective/pack path), scans it for `trigger.*` NODES, evaluates their configs against committed
+// state (reusing evaluateTriggerCore — characterization-identical to the pack path), and runs the
+// fired trigger's downstream CLOSURE headlessly. Baselines persist keyed (chat_id, doc_id, node_id) in
+// the sibling workflow_trigger_state table (pack-era rows untouched).
+
+/** Per-chat in-flight guard for the DOC path — the sibling of `evaluatingChats`, kept SEPARATE so the
+ *  two coexisting paths never suppress each other's evaluation (a doc-path pass in flight must not skip
+ *  a pack-path pass, and vice-versa). Reentrancy within the doc path (its own chain continuation) is
+ *  handled by calling evaluateDocPass directly, exactly as the pack path does. */
+const evaluatingDocChats = new Set<string>()
+
+/** The nodes a fired trigger's chain executes headlessly (WP6.1). Computed in two steps:
+ *   1. FORWARD reachability from the trigger — the chain's body (the nodes the trigger's signal drives).
+ *   2. Pull in the INPUT PROVIDERS of that body: the ancestors of the forward set, so a chain node that
+ *      reads context from a root like `input.context` (a graph ROOT — never downstream of the trigger,
+ *      but self-seeds off RunContext) or from any other upstream feeder is present in the runnable doc.
+ *      Ancestor expansion STOPS AT other trigger nodes (they root their OWN agents — a different chain)
+ *      by never crossing into them.
+ *  The result is exactly the agent's chain: its trigger, its body, and the feeders those body nodes
+ *  need. A node shared with the narrator (also a narrator ancestor) lands in here too and is run
+ *  headlessly against committed state — the documented v0 shared-node rule; turn runs are unaffected
+ *  (they exclude the trigger and run the narrator normally). */
+const forwardClosure = (doc: WorkflowDoc, startId: string): Set<string> => {
+  const outAdj = new Map<string, string[]>(doc.nodes.map((n) => [n.id, []]))
+  const inAdj = new Map<string, string[]>(doc.nodes.map((n) => [n.id, []]))
+  for (const e of doc.edges) {
+    outAdj.get(e.from.node)?.push(e.to.node)
+    inAdj.get(e.to.node)?.push(e.from.node)
+  }
+  const isOtherTrigger = (id: string): boolean =>
+    id !== startId && isTriggerNodeType(doc.nodes.find((n) => n.id === id)?.type ?? '')
+
+  // 1. Forward reachability (the body).
+  const closure = new Set<string>([startId])
+  const fwd = [startId]
+  while (fwd.length) {
+    const cur = fwd.pop()!
+    for (const next of outAdj.get(cur) ?? []) {
+      if (!closure.has(next)) {
+        closure.add(next)
+        fwd.push(next)
+      }
+    }
+  }
+
+  // 2. Ancestor input-providers of the body (stopping at other triggers — a different chain).
+  const back = [...closure]
+  while (back.length) {
+    const cur = back.pop()!
+    for (const parent of inAdj.get(cur) ?? []) {
+      if (closure.has(parent) || isOtherTrigger(parent)) continue
+      closure.add(parent)
+      back.push(parent)
+    }
+  }
+  return closure
+}
+
+/** A fired trigger node with its reconstituted attachment (for describeTrigger) and its closure. */
+interface FiredTrigger {
+  nodeId: string
+  att: TriggerAttachment
+  closure: Set<string>
+}
+
+/** Group fired triggers into CHAINS by closure overlap (OR-dedupe per chain — decision: two triggers
+ *  wired into ONE chain run it ONCE). Two fired triggers share a chain iff their forward closures
+ *  intersect (they feed a common downstream node). Returns one group per distinct chain, each carrying
+ *  the UNION closure of its triggers + every trigger's description. A simple union-find over the fired
+ *  set (fired sets are small — a handful of agents per doc). */
+const groupFiredIntoChains = (
+  fired: FiredTrigger[]
+): { closure: Set<string>; triggerNodeIds: string[]; descriptions: string[]; seedNodeIds: string[] }[] => {
+  const groups: FiredTrigger[][] = []
+  for (const f of fired) {
+    // Find an existing group whose union closure overlaps this trigger's closure.
+    const hit = groups.find((g) =>
+      g.some((m) => [...f.closure].some((id) => m.closure.has(id)))
+    )
+    if (hit) hit.push(f)
+    else groups.push([f])
+  }
+  return groups.map((g) => {
+    const closure = new Set<string>()
+    for (const m of g) for (const id of m.closure) closure.add(id)
+    return {
+      closure,
+      triggerNodeIds: g.map((m) => m.nodeId),
+      descriptions: g.map((m) => describeTrigger(m.att)),
+      // The trigger nodes whose signal must be seeded firing for this chain run.
+      seedNodeIds: g.map((m) => m.nodeId)
+    }
+  })
+}
+
+/** Evaluate every enabled `trigger.*` node in the chat's active doc against committed state and run the
+ *  fired triggers' chains headlessly (WP6.1). OR-deduped per CHAIN, depth-capped (shared HEADLESS_DEPTH_CAP
+ *  with the pack path), guarded per-chat against reentrancy. A DISABLED trigger node is skipped entirely
+ *  (never evaluated, never fired — the agent's off-switch). Fire-and-forget from the turn boundary
+ *  (never awaited on the turn's critical path — ADR 0003); a doc-headless commit awaits its own
+ *  re-evaluation so a deliberate chain stays sequential + bounded. */
+export const evaluateDocTriggers = async (
+  profileId: string,
+  chatId: string,
+  cause: EvalCause,
+  depth: number
+): Promise<void> => {
+  if (depth >= HEADLESS_DEPTH_CAP) {
+    log(
+      'info',
+      `headless(doc): depth cap (${HEADLESS_DEPTH_CAP}) reached for chat ${chatId} (cause: ${cause}) — skipping trigger evaluation`
+    )
+    return
+  }
+  if (evaluatingDocChats.has(chatId)) return
+  evaluatingDocChats.add(chatId)
+  try {
+    await evaluateDocPass(profileId, chatId, depth)
+  } finally {
+    evaluatingDocChats.delete(chatId)
+  }
+}
+
+/** The guard-free doc evaluate-and-run pass (called by evaluateDocTriggers under the guard, and by
+ *  runDocHeadless for chain continuation — already inside the guarded region). */
+const evaluateDocPass = async (profileId: string, chatId: string, depth: number): Promise<void> => {
+  if (depth >= HEADLESS_DEPTH_CAP) return
+  const { id: docId, doc } = resolveWorkflowDoc(profileId, chatId)
+
+  const fired: FiredTrigger[] = []
+  for (const node of doc.nodes) {
+    if (!isTriggerNodeType(node.type)) continue
+    if (node.disabled === true) continue // a disabled trigger never fires (the off-switch)
+    const att = triggerAttachmentOf(node)
+    if (!att) continue // malformed config (never validated / hand-authored) → skip
+    // OR-dedupe happens per chain below; here we still EVALUATE every trigger so its baseline advances.
+    const fires = evaluateTriggerCore(profileId, chatId, att, {
+      get: () => getDocTriggerState(chatId, docId, node.id),
+      setLastValue: (v) => setDocTriggerLastValue(chatId, docId, node.id, v),
+      setLastFireFloor: (f) => setDocTriggerLastFireFloor(chatId, docId, node.id, f)
+    })
+    if (fires) fired.push({ nodeId: node.id, att, closure: forwardClosure(doc, node.id) })
+  }
+
+  if (!fired.length) return
+
+  // OR-dedupe per chain, then run each chain once. Deterministic order by the first trigger node id.
+  const chains = groupFiredIntoChains(fired)
+  chains.sort((a, b) => a.triggerNodeIds[0].localeCompare(b.triggerNodeIds[0]))
+  for (const chain of chains) {
+    await runDocHeadless(profileId, chatId, docId, doc, chain, depth)
+  }
+}
+
+/** Execute ONE fired chain's closure headlessly (WP6.1). Builds a runnable subgraph doc containing
+ *  ONLY the chain's closure nodes + edges (nodes reachable from the chain's fired trigger(s)), so
+ *  other triggers' chains and the narrator chain do NOT run — the closure is exactly the reachable set.
+ *  The fired trigger nodes run inside it and fire their signal, un-gating the chain. Context inputs
+ *  inside the chain (e.g. input.context nodes) self-seed via the RunContext (profileId/chatId), exactly
+ *  as the pack path's own input.context does. Failures NEVER surface to any chat flow (ADR 0003).
+ *
+ *  SHARED-NODE decision (a chain node that is also a narrator ancestor): v0 runs it inside the closure
+ *  too — the closure is defined purely by reachability from the fired trigger, and a node reachable
+ *  from the trigger IS part of the agent chain even if the narrator also wires it. Turn runs are
+ *  unaffected (they exclude the trigger + run the narrator normally); the headless closure just runs
+ *  its own copy of the shared node against committed state. Documented as the v0 rule. */
+const runDocHeadless = async (
+  profileId: string,
+  chatId: string,
+  docId: string,
+  doc: WorkflowDoc,
+  chain: { closure: Set<string>; triggerNodeIds: string[]; descriptions: string[]; seedNodeIds: string[] },
+  depth: number,
+  annotation: { origin: RunOrigin; trigger?: string } = {
+    origin: 'headless',
+    trigger: undefined
+  }
+): Promise<void> => {
+  const workflowId = `headless-doc:${docId}`
+  const startedAt = Date.now()
+  const controller = new AbortController()
+  const triggerCaption = annotation.trigger ?? chain.descriptions.join(' | ')
+
+  try {
+    // The runnable closure doc: only the reachable nodes + the edges among them, run as a subgraph
+    // (skips the main-output rule; runSubgraph runs the whole topo order in one pass). Deep-clone so
+    // the stored doc is never mutated. The fired trigger nodes stay in — their run() fires the signal.
+    const closureNodes = doc.nodes.filter((n) => chain.closure.has(n.id))
+    const closureEdges = doc.edges.filter(
+      (e) => chain.closure.has(e.from.node) && chain.closure.has(e.to.node)
+    )
+    const runnable: WorkflowDoc = {
+      ...structuredClone(doc),
+      id: docId,
+      kind: 'subgraph',
+      nodes: structuredClone(closureNodes),
+      edges: structuredClone(closureEdges),
+      // A closure carries no attachments (doc-path triggers are NODES, not attachments).
+      attachments: undefined
+    }
+
+    const ctx: RunContext = {
+      profileId,
+      chatId,
+      workflowId,
+      userAction: '',
+      signal: controller.signal,
+      streamMain: () => {}, // no chat message to stream — headless writes durable state only
+      emitPanel: () => {},
+      getNodeState: () => undefined,
+      setNodeState: () => {}
+    }
+
+    const result = await runSubgraph(runnable, builtinRegistry, ctx, {})
+
+    const trace = summarizeRun(
+      runnable,
+      builtinRegistry.descriptors(),
+      {
+        ok: !result.aborted && !result.fatal,
+        aborted: result.aborted,
+        traces: result.traces,
+        outputs: new Map()
+      },
+      { chatId, workflowId, startedAt, durationMs: Date.now() - startedAt }
+    )
+    notifyWorkflowTrace(trace)
+    // Run history: origin (headless/manual), packIds [] (module attribution arrives with WP6.3), trigger
+    // = the joined firing-trigger descriptions. A persist failure never surfaces to any chat flow.
+    try {
+      appendRun(profileId, {
+        runId: randomUUID(),
+        seq: 0,
+        origin: annotation.origin,
+        packIds: [],
+        ...(triggerCaption ? { trigger: triggerCaption } : {}),
+        trace
+      })
+    } catch (err) {
+      log(
+        'error',
+        `run-history persist (doc ${annotation.origin}) failed — ${err instanceof Error ? err.message : String(err)}`
+      )
+    }
+    if (result.fatal)
+      log(
+        'error',
+        `headless(doc) chain "${chain.triggerNodeIds.join(',')}" failed: ${result.fatal.message} (never surfaced to the chat)`
+      )
+  } catch (err) {
+    log(
+      'error',
+      `headless(doc) chain "${chain.triggerNodeIds.join(',')}" threw: ${err instanceof Error ? err.message : String(err)}`
+    )
+  }
+
+  // The headless COMMIT boundary (ADR 0004): re-evaluate the doc's triggers with depth+1 so a chain can
+  // continue, bounded by the shared depth cap. Called directly (already inside the guarded region).
+  await evaluateDocPass(profileId, chatId, depth + 1)
+}
+
+/** Run ONE `trigger.manual` node's chain on an explicit user action, bypassing evaluation (manual
+ *  triggers never fire from a boundary — only here). The WP6.x "run now" hook for the one-canvas UI.
+ *  No-op + logs if the node is not a manual trigger in the chat's active doc. */
+export const runManualDoc = async (
+  profileId: string,
+  chatId: string,
+  docId: string,
+  triggerNodeId: string
+): Promise<void> => {
+  const { id: activeId, doc } = resolveWorkflowDoc(profileId, chatId)
+  if (activeId !== docId) {
+    log(
+      'error',
+      `runManualDoc: doc "${docId}" is not the active workflow for chat ${chatId} (active: ${activeId}) — nothing to run`
+    )
+    return
+  }
+  const node = doc.nodes.find((n) => n.id === triggerNodeId)
+  if (!node || node.type !== 'trigger.manual') {
+    log(
+      'error',
+      `runManualDoc: node "${triggerNodeId}" is not a manual trigger in doc ${docId} — nothing to run`
+    )
+    return
+  }
+  if (node.disabled === true) {
+    log('error', `runManualDoc: trigger "${triggerNodeId}" is disabled — nothing to run`)
+    return
+  }
+  const chain = {
+    closure: forwardClosure(doc, triggerNodeId),
+    triggerNodeIds: [triggerNodeId],
+    descriptions: ['manual'],
+    seedNodeIds: [triggerNodeId]
+  }
+  await runDocHeadless(profileId, chatId, docId, doc, chain, 0, {
+    origin: 'manual',
+    trigger: 'manual'
+  })
 }

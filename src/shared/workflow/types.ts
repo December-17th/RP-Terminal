@@ -30,6 +30,12 @@ export interface NodeDescriptor {
   inputs: PortSpec[]
   outputs: PortSpec[]
   isMainOutputCapable?: boolean
+  /** One-canvas rebuild (WP6.1; ADR 0011): this node type is a TRIGGER root — it starts an agent
+   *  chain and is EXCLUDED from turn execution (the engine seeds its outgoing edges dead so its
+   *  downstream chain is pruned). Kept a generic descriptor flag (not a hardcoded `trigger.*` list in
+   *  the engine) so the executor stays type-agnostic and any future trigger kind opts in by setting
+   *  it. Trigger nodes fire only headlessly (headlessRunService's doc-driven path). */
+  isTrigger?: boolean
 }
 
 export interface NodeInstance {
@@ -39,6 +45,13 @@ export interface NodeInstance {
   position?: { x: number; y: number }
   panel?: { show: boolean; label?: string; collapsed?: boolean }
   isMainOutput?: boolean
+  /** One-canvas rebuild (WP6.1; ADR 0011): a disabled node never runs — it traces 'skipped' and its
+   *  outgoing edges are dead (existing dead-edge semantics), so its exclusive downstream chain is
+   *  pruned. A disabled TRIGGER additionally never fires headlessly (the agent's off-switch). Absent =
+   *  enabled (every pre-WP6.1 doc). Disabling is always legal at the doc level; the one caller-facing
+   *  consequence is a disabled main-output node — see runWorkflow, which surfaces it as a run failure
+   *  rather than undefined behavior. */
+  disabled?: boolean
 }
 
 export interface EdgeEnd {

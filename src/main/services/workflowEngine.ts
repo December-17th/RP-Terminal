@@ -236,6 +236,41 @@ function computePhases(doc: WorkflowDoc): { preIds: Set<string>; postIds: Set<st
   return { preIds, postIds }
 }
 
+/** The nodes EXCLUDED from a turn run (one-canvas rebuild WP6.1; ADR 0011), by two rules:
+ *  · TRIGGER roots — a node whose descriptor is `isTrigger` never runs in a turn (it's an agent's
+ *    timing marker; it fires only headlessly). Its downstream chain is pruned via the dead-edge seed.
+ *  · DISABLED nodes — a node with `disabled: true` (any node type) never runs; its downstream reads
+ *    unwired (existing dead-edge semantics).
+ *  A doc with NO trigger nodes and NO disabled nodes yields the EMPTY set → the seed below is a no-op
+ *  and turn behavior is byte-identical to pre-WP6.1 (the zero-triggers guarantee). Both rules feed the
+ *  SAME seed (skip-trace + dead outgoing edges), so the engine's existing prune rules (`allDead` /
+ *  `gatedOff` in runNodes) propagate the skip through each excluded node's exclusive downstream. */
+function computeExcluded(doc: WorkflowDoc, registry: NodeRegistry): Set<string> {
+  const excluded = new Set<string>()
+  for (const n of doc.nodes) {
+    if (n.disabled === true) {
+      excluded.add(n.id)
+      continue
+    }
+    if (registry.get(n.type)?.isTrigger) excluded.add(n.id)
+  }
+  return excluded
+}
+
+/** Pre-seed the excluded nodes into `state`: trace each 'skipped' (phase 'pre' — a stable, existing
+ *  status; the UI dims them later per ADR 0011) and mark ALL their outgoing edges dead so the prune
+ *  rules skip their exclusive downstream. Idempotent-safe: a downstream node still reachable from a
+ *  LIVE source (e.g. a chain node shared with the narrator) keeps its live incoming edge and runs —
+ *  exclusion never over-prunes a node that has another live parent. */
+function seedExcluded(doc: WorkflowDoc, excluded: Set<string>, state: ExecState): void {
+  const outgoing = new Map<string, Edge[]>(doc.nodes.map((n) => [n.id, []]))
+  for (const e of doc.edges) outgoing.get(e.from.node)?.push(e)
+  for (const id of excluded) {
+    state.traces.push({ nodeId: id, status: 'skipped', phase: 'pre' })
+    for (const out of outgoing.get(id) ?? []) state.deadEdge.add(edgeKey(out))
+  }
+}
+
 /** Execute a workflow. Runs the main-output node and its ancestors in a pre-response phase,
  *  fires onResponseReady, then runs the remaining nodes in a post-response phase (spec §5). */
 export async function runWorkflow(
@@ -262,7 +297,29 @@ export async function runWorkflow(
     failOpen: failOpenNodesOf(doc)
   }
 
-  const order = topoOrder(doc)
+  // One-canvas rebuild (WP6.1; ADR 0011): trigger roots + disabled nodes are excluded from the turn.
+  const excluded = computeExcluded(doc, registry)
+
+  // A DISABLED main-output node is a DEFINED failure, not undefined behavior: the turn can produce no
+  // reply, so we fail the run loudly (a class-A NodeError) rather than silently skipping the output.
+  // (A trigger node is never main-output — validation's MAIN_OUTPUT rule + the trigger's Signal-only
+  // ports keep isMainOutput off a trigger — so only `disabled` can exclude the main output.)
+  const mainNode = doc.nodes.find((n) => n.isMainOutput)
+  if (mainNode && excluded.has(mainNode.id)) {
+    const error: NodeError = {
+      kind: 'A',
+      message: `main-output node "${mainNode.id}" is disabled — the turn cannot produce a reply`,
+      nodeId: mainNode.id,
+      attempts: 0
+    }
+    return { ok: false, aborted: false, traces: [], outputs: state.outputs, error }
+  }
+
+  // Pre-seed excluded nodes (skip-trace + dead outgoing edges) so the existing prune rules skip their
+  // exclusive downstream. No-op when `excluded` is empty (zero-triggers guarantee).
+  seedExcluded(doc, excluded, state)
+
+  const order = topoOrder(doc).filter((id) => !excluded.has(id))
   const { preIds, postIds } = computePhases(doc)
 
   const pre = await runNodes(
@@ -347,7 +404,15 @@ export async function runSubgraph(
     failOpen: failOpenNodesOf(doc)
   }
 
-  const order = topoOrder(doc)
+  // DISABLED nodes are honored inside a sub-graph / headless closure too (one-canvas rebuild WP6.1):
+  // a disabled node skips + its downstream reads unwired, same as in a turn. We do NOT exclude
+  // `isTrigger` nodes here — a headless closure INTENTIONALLY contains its fired trigger, which must
+  // run to fire its signal + un-gate the chain. Pack-era fragments carry no `disabled` nodes, so this
+  // is a no-op on that path (its zero-guarantee is preserved).
+  const disabled = new Set(doc.nodes.filter((n) => n.disabled === true).map((n) => n.id))
+  seedExcluded(doc, disabled, state)
+
+  const order = topoOrder(doc).filter((id) => !disabled.has(id))
   const result = await runNodes(order, doc, registry, ctx, state, 'pre')
 
   return {

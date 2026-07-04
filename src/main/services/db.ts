@@ -215,6 +215,23 @@ CREATE TABLE IF NOT EXISTS agent_pack_trigger_state (
 );
 CREATE INDEX IF NOT EXISTS idx_agent_pack_trigger_state_chat ON agent_pack_trigger_state(chat_id);
 
+-- Per-trigger evaluation baselines for the DOC-DRIVEN headless path (one-canvas rebuild WP6.1; ADR
+-- 0011). The SIBLING of agent_pack_trigger_state: SAME value columns + semantics (last_value for a
+-- changedBy delta baseline, last_fire_floor for a cadence last-fire), DIFFERENT key. The doc path keys
+-- by (chat_id, doc_id, node_id) — a STABLE STRING node id rather than the pack path's POSITIONAL
+-- integer trigger_index, so re-ordering nodes never re-associates baselines. A separate table because
+-- a string node id cannot go in the pack table's INTEGER trigger_index column, and the pack-era rows
+-- must stay untouched while both paths coexist (WP6.1). Both value columns nullable = never evaluated.
+CREATE TABLE IF NOT EXISTS workflow_trigger_state (
+  chat_id TEXT NOT NULL,
+  doc_id TEXT NOT NULL,
+  node_id TEXT NOT NULL,
+  last_value REAL,
+  last_fire_floor INTEGER,
+  PRIMARY KEY (chat_id, doc_id, node_id)
+);
+CREATE INDEX IF NOT EXISTS idx_workflow_trigger_state_chat ON workflow_trigger_state(chat_id);
+
 -- Persisted workflow run history (agent-packs plan WP2.3; ADR 0003 — the Runs timeline shows every
 -- run, turn + headless/manual, attributed to pack + trigger). The LIVE trace broadcast
 -- (workflowEvents) is ephemeral (renderer keeps only the latest per chat); this is the DURABLE,
