@@ -65,18 +65,16 @@ const UsagePanel: React.FC = () => {
   return <UsageView profileId={profileId} />
 }
 
-// The Agents view AND the Workflows management surface no longer live in workspace panels (owner
-// directive WP3.7 — too much going on for a panel). They moved into the full-window control-center
-// overlay (ControlCenterOverlay, uiStore.openControlCenter). These two panel views are kept as THIN
-// LAUNCHERS so a saved layout referencing view:'agents'/'workflow' still resolves to a designed card
-// (a broken/unknown-view panel otherwise) that opens the control center on the right pane.
+// One-canvas rebuild WP6.4b: the workflow editor IS the surface now — workflows AND agents both live
+// on that one canvas. These two panel views (view:'agents'/'workflow' in saved layouts) are kept as
+// THIN LAUNCHERS so a saved layout still resolves to a designed card (a broken/unknown-view panel
+// otherwise) that opens the editor overlay.
 const LauncherCard: React.FC<{
   titleKey: string
   bodyKey: string
-  rail: 'overview' | 'workflows'
-}> = ({ titleKey, bodyKey, rail }) => {
+}> = ({ titleKey, bodyKey }) => {
   const t = useT()
-  const openControlCenter = useUiStore((s) => s.openControlCenter)
+  const openWorkflowEditor = useUiStore((s) => s.openWorkflowEditor)
   return (
     <div className="rpt-cc-launch">
       <div className="rpt-cc-launch-card">
@@ -85,7 +83,7 @@ const LauncherCard: React.FC<{
         </div>
         <h2 className="rpt-cc-launch-title">{t(titleKey)}</h2>
         <p className="rpt-cc-launch-body">{t(bodyKey)}</p>
-        <button className="btn-accent rpt-cc-launch-btn" onClick={() => openControlCenter({ rail })}>
+        <button className="btn-accent rpt-cc-launch-btn" onClick={() => openWorkflowEditor()}>
           {t('controlCenter.launch.open')}
         </button>
       </div>
@@ -96,16 +94,14 @@ const LauncherCard: React.FC<{
 const AgentsPanel: React.FC = () => (
   <LauncherCard
     titleKey="controlCenter.launch.agentsTitle"
-    bodyKey="controlCenter.launch.agentsBody"
-    rail="overview"
+    bodyKey="controlCenter.launch.editorBody"
   />
 )
 
 const WorkflowPanel: React.FC = () => (
   <LauncherCard
     titleKey="controlCenter.launch.workflowTitle"
-    bodyKey="controlCenter.launch.workflowBody"
-    rail="workflows"
+    bodyKey="controlCenter.launch.editorBody"
   />
 )
 

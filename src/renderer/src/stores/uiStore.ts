@@ -1,9 +1,8 @@
 import { create } from 'zustand'
 
-/** The control-center rail panes. 'workflows' hosts the relocated Workflows management surface;
- *  'memory' hosts the memory configuration + maintenance surface (WP3.8 — the single home for table
- *  templates / backfill, moved out of the Tables workspace view). The Agents panes keep their own
- *  inner rail ids. The rail list lives in components/workspace/controlCenterRail.ts (extensible seam). */
+/** The control-center rail panes. WP6.4b retired the control center itself; this type is kept only
+ *  so the retired-but-present files (controlCenterRail.ts / AgentsView) still compile until WP6.6
+ *  deletes them. No runtime machinery references it anymore. */
 export type ControlCenterRail =
   | 'overview'
   | 'installed'
@@ -17,41 +16,18 @@ interface UiState {
   settingsOpen: boolean
   openSettings: () => void
   closeSettings: () => void
-  /** The full-window Agents & Workflows control-center overlay (owner directive WP3.7: the Agents
-   *  view + the Workflows management surface no longer live in workspace panels — too much going on
-   *  for a panel). App-level overlay like the workflow editor; opened from the title bar or a
-   *  programmatic hand-off. */
-  controlCenterOpen: boolean
-  /** Which rail pane to open on. A hand-off (a launcher card, a quick link) can deep-link a pane;
-   *  consumed once on open, then the overlay owns its own rail state. Null = the default (Overview). */
-  controlCenterRail: ControlCenterRail | null
-  /** Open the control center; pass `rail` to deep-link a specific pane (e.g. the Workflows launcher
-   *  opens straight to 'workflows'). */
-  openControlCenter: (opts?: { rail?: ControlCenterRail }) => void
-  /** Called by the overlay once it has consumed the requested initial rail. */
-  consumeControlCenterRail: () => void
-  closeControlCenter: () => void
-  /** The full-screen workflow editor overlay (the canvas needs the whole window, not a panel). */
+  /** The full-screen workflow editor overlay — the single surface for workflows + agents
+   *  (one-canvas rebuild WP6.4b). Opened from the title bar, the launcher cards, or a programmatic
+   *  hand-off. The retired control center used to sit alongside it; it no longer exists. */
   workflowEditorOpen: boolean
-  /** When the editor is opened from the Agents "Open in Workflow Studio" hand-off (agent-packs plan
-   *  WP3.2), this requests it start in Effective mode (the live composition for the active chat, where
-   *  pack nodes are visible + editing forks). Consumed once by WorkflowEditorView, then cleared. Null =
-   *  the normal open (Normal mode). */
-  workflowEditorInitialMode: 'effective' | null
   /** When the editor is opened to EDIT A PACK FRAGMENT (agent-packs plan WP4.4 — "Edit fragment in
    *  Studio"), this carries the pack id. WorkflowEditorView consumes it once on mount: it loads the
    *  pack's fragment as an editable fragment session (full drag / connect / add-node editing, save →
-   *  updateAgentPackFragment). Null = a normal editor open. Takes precedence over initialMode (a
-   *  fragment session IS Normal-mode-like; the Effective toggle is disabled while editing a fragment). */
+   *  updateAgentPackFragment). Null = a normal editor open. */
   workflowEditorFragmentPackId: string | null
-  /** Open the editor overlay; pass `initialMode:'effective'` for the Agents composition hand-off, or
-   *  `fragmentPackId` to open a pack's fragment as an editable fragment session (WP4.4). */
-  openWorkflowEditor: (opts?: {
-    initialMode?: 'effective' | null
-    fragmentPackId?: string | null
-  }) => void
-  /** Called by WorkflowEditorView once it has consumed the requested initial mode. */
-  consumeWorkflowEditorInitialMode: () => void
+  /** Open the editor overlay; pass `fragmentPackId` to open a pack's fragment as an editable
+   *  fragment session (WP4.4). */
+  openWorkflowEditor: (opts?: { fragmentPackId?: string | null }) => void
   /** Called by WorkflowEditorView once it has consumed (loaded) the requested fragment pack id. */
   consumeWorkflowEditorFragmentPackId: () => void
   closeWorkflowEditor: () => void
@@ -64,27 +40,17 @@ export const useUiStore = create<UiState>((set) => ({
   settingsOpen: false,
   openSettings: () => set({ settingsOpen: true }),
   closeSettings: () => set({ settingsOpen: false }),
-  controlCenterOpen: false,
-  controlCenterRail: null,
-  openControlCenter: (opts) =>
-    set({ controlCenterOpen: true, controlCenterRail: opts?.rail ?? null }),
-  consumeControlCenterRail: () => set({ controlCenterRail: null }),
-  closeControlCenter: () => set({ controlCenterOpen: false, controlCenterRail: null }),
   workflowEditorOpen: false,
-  workflowEditorInitialMode: null,
   workflowEditorFragmentPackId: null,
   openWorkflowEditor: (opts) =>
     set({
       workflowEditorOpen: true,
-      workflowEditorInitialMode: opts?.initialMode ?? null,
       workflowEditorFragmentPackId: opts?.fragmentPackId ?? null
     }),
-  consumeWorkflowEditorInitialMode: () => set({ workflowEditorInitialMode: null }),
   consumeWorkflowEditorFragmentPackId: () => set({ workflowEditorFragmentPackId: null }),
   closeWorkflowEditor: () =>
     set({
       workflowEditorOpen: false,
-      workflowEditorInitialMode: null,
       workflowEditorFragmentPackId: null
     }),
   launcherWorldId: null,

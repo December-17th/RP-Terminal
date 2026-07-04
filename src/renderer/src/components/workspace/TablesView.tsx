@@ -31,7 +31,7 @@ interface TableRead {
 export const TablesView: React.FC<{ profileId: string }> = ({ profileId }) => {
   const activeChatId = useChatStore((s) => s.activeChatId)
   const floors = useChatStore((s) => s.floors)
-  const openControlCenter = useUiStore((s) => s.openControlCenter)
+  const openWorkflowEditor = useUiStore((s) => s.openWorkflowEditor)
   const t = useT()
 
   const [assigned, setAssigned] = React.useState(false)
@@ -115,7 +115,7 @@ export const TablesView: React.FC<{ profileId: string }> = ({ profileId }) => {
         <button
           className="rpt-duel-secondary"
           style={{ fontSize: 12, padding: '3px 10px' }}
-          onClick={() => openControlCenter({ rail: 'memory' })}
+          onClick={() => openWorkflowEditor()}
         >
           {t('tables.openMemory')}
         </button>

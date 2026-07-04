@@ -67,13 +67,17 @@ export interface MemoryPaneProps {
   gates: Record<string, boolean>
   /** Jump to the Installed detail for a pack (AgentsView switches rail + opens the detail panel). */
   onOpenPackDetail: (packId: string) => void
+  /** WP6.4b: when the pane is hosted in the editor's Memory sheet there is no Installed rail to jump
+   *  to, so hide the memory-packs shortcut strip (section 3). Defaults to false (control-center host). */
+  hidePacksStrip?: boolean
 }
 
 export const MemoryPane: React.FC<MemoryPaneProps> = ({
   profileId,
   packs,
   gates,
-  onOpenPackDetail
+  onOpenPackDetail,
+  hidePacksStrip = false
 }) => {
   const t = useT()
   const activeChatId = useChatStore((s) => s.activeChatId)
@@ -317,7 +321,9 @@ export const MemoryPane: React.FC<MemoryPaneProps> = ({
       )}
 
       {/* (3) Memory packs shortcut strip — the installed writes-tables packs + gate state (reuses the
-          Agents gate map; jumps to the Installed detail). No new IPC. */}
+          Agents gate map; jumps to the Installed detail). No new IPC. Hidden in the editor host
+          (WP6.4b) where there is no Installed rail to jump to. */}
+      {!hidePacksStrip && (
       <section className="rpt-overview-section" aria-labelledby="mem-packs">
         <h3 id="mem-packs" className="rpt-overview-sectiontitle">
           {t('memory.packsTitle')}
@@ -347,6 +353,7 @@ export const MemoryPane: React.FC<MemoryPaneProps> = ({
           </ul>
         )}
       </section>
+      )}
 
       {/* (4) Browse the data — the link to the lean Tables workspace view. */}
       <section className="rpt-overview-section" aria-labelledby="mem-data">

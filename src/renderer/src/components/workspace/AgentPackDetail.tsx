@@ -348,7 +348,7 @@ export const AgentPackDetail: React.FC<{
                 className="rpt-agentdetail-studio"
                 onClick={() => {
                   onClose()
-                  openWorkflowEditor({ initialMode: 'effective' })
+                  openWorkflowEditor()
                 }}
               >
                 {t('agents.settings.openStudio')}

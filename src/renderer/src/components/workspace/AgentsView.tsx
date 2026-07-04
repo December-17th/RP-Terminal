@@ -2037,7 +2037,7 @@ const OverviewPane: React.FC<{
           <button
             type="button"
             className="rpt-overview-link"
-            onClick={() => openWorkflowEditor({ initialMode: 'effective' })}
+            onClick={() => openWorkflowEditor()}
           >
             {t('agents.overview.linkStudio')}
           </button>

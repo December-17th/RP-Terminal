@@ -9,17 +9,19 @@
 // Mirrors WorkflowEditorOverlay exactly: fixed full-viewport, WCV suppression (native card views
 // paint above the DOM), Escape to close, no-drag to punch through the title bar's drag region.
 import React from 'react'
-import { useUiStore } from '../../stores/uiStore'
 import { useT } from '../../i18n'
 import { useWcvSuppression } from '../useWcvSuppression'
 import { AgentsView } from './AgentsView'
 import { resolveInitialRail } from './controlCenterRail'
 
 export function ControlCenterOverlay({ profileId }: { profileId: string }): React.JSX.Element | null {
-  const open = useUiStore((s) => s.controlCenterOpen)
-  const requestedRail = useUiStore((s) => s.controlCenterRail)
-  const consumeRail = useUiStore((s) => s.consumeControlCenterRail)
-  const close = useUiStore((s) => s.closeControlCenter)
+  // WP6.4b: the control center is retired — this file is unreferenced (App.tsx no longer mounts it)
+  // and is deleted wholesale in WP6.6. Its uiStore fields are gone, so the open/rail/close wiring is
+  // reduced to inert stand-ins that keep it compiling until then (it never opens: `open` is const false).
+  const open = false
+  const requestedRail = null
+  const consumeRail = (): void => {}
+  const close = (): void => {}
   const t = useT()
 
   // Native card views (WCVs) always paint ABOVE the DOM, so this full-screen overlay can't cover

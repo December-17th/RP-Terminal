@@ -72,10 +72,10 @@ export function TopNav({
         {tab('api', t('nav.api'))}
         <button
           className="nav-tab"
-          onClick={() => useUiStore.getState().openControlCenter()}
-          title={t('nav.controlCenterTip')}
+          onClick={() => useUiStore.getState().openWorkflowEditor()}
+          title={t('nav.flowTip')}
         >
-          {t('nav.controlCenter')}
+          {t('nav.flow')}
         </button>
         <button className="nav-tab" onClick={() => useUiStore.getState().openSettings()}>
           {t('nav.settings')}

@@ -18,8 +18,8 @@ const en: Record<string, string> = {
   'assets.empty': 'No characters or assets yet. Drop images into the character folder.',
   'assets.hint': 'Files: <name>_头像.jpg / <name>_立绘.jpg (+ optional _mood).',
   'nav.api': 'API',
-  'nav.controlCenter': 'Agents',
-  'nav.controlCenterTip': 'Open Agents & Workflows',
+  'nav.flow': 'Workflow',
+  'nav.flowTip': 'Open the workflow editor',
   'nav.settings': 'Settings',
   'nav.logs': 'Logs',
   'nav.backToWorlds': 'Back to worlds',
@@ -453,9 +453,9 @@ const en: Record<string, string> = {
 
   // SQL-table memory (数据库/表格) — the lean data grid (config moved to the Memory rail, WP3.8)
   'tables.heading': 'Memory Tables',
-  // Header hint linking to the Memory rail (template binding / backfill moved there, WP3.8).
-  'tables.configHint': 'Template & backfill settings live in Agents → Memory.',
-  'tables.openMemory': 'Configure in Memory',
+  // Header hint linking to the editor's Memory sheet (template binding / backfill live there, WP6.4b).
+  'tables.configHint': 'Memory settings live in the workflow editor.',
+  'tables.openMemory': 'Open the workflow editor',
   'tables.template': 'Table template',
   'tables.none': 'None (off)',
   'tables.import': 'Import template',
@@ -551,6 +551,8 @@ const en: Record<string, string> = {
     'This workflow fails validation — if selected, generation falls back to the next tier',
 
   'workflowEditor.viewTitle': 'Workflow Editor',
+  'workflowEditor.memory': 'Memory…',
+  'workflowEditor.memoryTip': 'Configure memory tables for this session',
   'workflowEditor.palette': 'Nodes',
   'workflowEditor.save': 'Save',
   'workflowEditor.unsaved': 'Unsaved changes',
@@ -1044,11 +1046,8 @@ const en: Record<string, string> = {
   'controlCenter.rail.preview': 'Preview',
   'controlCenter.launch.open': 'Open',
   'controlCenter.launch.agentsTitle': 'Agents moved to their own screen',
-  'controlCenter.launch.agentsBody':
-    'Installed packs, runs, and the next-prompt preview now live in the Agents & Workflows control center for more room.',
   'controlCenter.launch.workflowTitle': 'Workflows moved to their own screen',
-  'controlCenter.launch.workflowBody':
-    'The workflow list, defaults, and the last-run trace now live in the Agents & Workflows control center for more room.',
+  'controlCenter.launch.editorBody': 'Workflows and agents live in the editor now.',
   // ── Memory pane (agent-packs plan WP3.8 — memory config + maintenance, moved out of the Tables view) ─
   'memory.heading': 'Memory',
   'memory.subtitle': 'Set up and maintain the memory tables agents fill in for this session.',

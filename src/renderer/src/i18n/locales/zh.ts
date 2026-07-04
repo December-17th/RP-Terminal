@@ -19,8 +19,8 @@ const zh: Record<string, string> = {
   'assets.empty': '暂无角色或素材。请将图片放入 character 文件夹。',
   'assets.hint': '文件名：<名字>_头像.jpg / <名字>_立绘.jpg（可加 _情绪）。',
   'nav.api': 'API',
-  'nav.controlCenter': '智能体',
-  'nav.controlCenterTip': '打开智能体与工作流',
+  'nav.flow': '工作流',
+  'nav.flowTip': '打开工作流编辑器',
   'nav.settings': '设置',
   'nav.logs': '日志',
   'nav.backToWorlds': '返回世界列表',
@@ -440,9 +440,9 @@ const zh: Record<string, string> = {
 
   // SQL 表格记忆（数据库/表格）—— 精简数据网格（配置已移至「记忆」栏，WP3.8）
   'tables.heading': '记忆表格',
-  // 链接到「记忆」栏的头部提示（模板挂载 / 回填已移至该处，WP3.8）。
-  'tables.configHint': '模板与回填设置位于「智能体 → 记忆」。',
-  'tables.openMemory': '前往「记忆」配置',
+  // 链接到编辑器「记忆」侧栏的头部提示（模板挂载 / 回填位于该处，WP6.4b）。
+  'tables.configHint': '记忆设置位于工作流编辑器中。',
+  'tables.openMemory': '打开工作流编辑器',
   'tables.template': '表格模板',
   'tables.none': '无（关闭）',
   'tables.import': '导入表格模板',
@@ -532,6 +532,8 @@ const zh: Record<string, string> = {
   'workflow.invalidBadgeTitle': '此工作流未通过校验——若被选用，生成会回退到下一层默认值',
 
   'workflowEditor.viewTitle': '工作流编辑器',
+  'workflowEditor.memory': '记忆…',
+  'workflowEditor.memoryTip': '为本会话配置记忆表格',
   'workflowEditor.palette': '节点',
   'workflowEditor.save': '保存',
   'workflowEditor.unsaved': '未保存更改',
@@ -1002,11 +1004,8 @@ const zh: Record<string, string> = {
   'controlCenter.rail.preview': '预览',
   'controlCenter.launch.open': '打开',
   'controlCenter.launch.agentsTitle': '智能体已移至独立界面',
-  'controlCenter.launch.agentsBody':
-    '已安装的包、运行记录与下一条提示词预览，现已移入「智能体与工作流」控制中心，空间更充裕。',
   'controlCenter.launch.workflowTitle': '工作流已移至独立界面',
-  'controlCenter.launch.workflowBody':
-    '工作流列表、默认设置与上次运行轨迹，现已移入「智能体与工作流」控制中心，空间更充裕。',
+  'controlCenter.launch.editorBody': '工作流与智能体现在都在编辑器里。',
   // ── 记忆面板（智能体包计划 WP3.8 —— 从「表格」视图迁出的记忆配置与维护） ──────────────
   'memory.heading': '记忆',
   'memory.subtitle': '为本会话设置并维护智能体填写的记忆表格。',
