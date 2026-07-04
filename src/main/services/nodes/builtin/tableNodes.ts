@@ -7,7 +7,8 @@ import { appendOps, tryBeginTableWrite, endTableWrite } from '../../tableOpsServ
 import { readAllTables, TableRead } from '../../tableDbService'
 import { synthesizeEntries, renderWholeTable } from '../../tableExportService'
 import { renderTableBlock } from '../../tableMaintenance'
-import { getProgress, advanceProgress } from '../../tableProgressService'
+import { getProgress, advanceProgress, resolveUpdateFrequency } from '../../tableProgressService'
+import { getSettings } from '../../settingsService'
 import { matchAcross } from '../../lorebookService'
 import { getAllFloors } from '../../floorService'
 import { TableTemplate, TableDef } from '../../../types/tableTemplate'
@@ -228,9 +229,11 @@ export const tableExport: NodeImpl = {
 const gateConfig = z.object({
   /** Comma-separated sqlNames narrowing which tables the gate watches; unset = all template tables. */
   tables: z.string().optional(),
-  /** Run the maintenance only every N floors: OVERRIDES every watched table's own updateFrequency
-   *  (imported chatSheets templates often mark tables `-1` = every turn, which makes the whole pass
-   *  fire each round — this is the player's global cadence knob). Unset = per-table frequencies. */
+  /** Run the maintenance only every N floors: OVERRIDES every watched table's own updateFrequency,
+   *  INCLUDING a table authored OFF (updateFrequency 0) — `every` is the workflow author's explicit
+   *  cadence override, so it re-includes an off table (imported chatSheets templates often carry `-1`
+   *  = use-global, which the resolver expands; this is the player's global cadence knob). Unset =
+   *  per-table resolved frequencies (0 = off → the table is never due). */
   every: z.number().int().min(1).max(500).optional()
 })
 
@@ -273,14 +276,17 @@ export const tableGate: NodeImpl = {
     // Last-processed pointers from the chat-level store (shared with backfill + the display). A
     // missing table is -1; the store is clamped explicitly on truncation, so no rewind inference here.
     const progress = getProgress(gen.profileId, gen.chatId)
+    const globalDefault = getSettings(gen.profileId).tables?.default_update_frequency ?? 3
 
     const dueTables: string[] = []
     for (const t of tables) {
       const lastFloor = progress[t.sqlName] ?? -1
-      // `every` (when set) is the global cadence override — the whole pass runs at most every N
-      // floors regardless of the template's per-table frequencies (imported chatSheets tables often
-      // carry -1 = every turn, which would fire the maintainer each round).
-      const frequency = cfg.every ?? t.updateFrequency
+      // `every` (when set) is the global cadence override — it OVERRIDES everything, including an
+      // off table (updateFrequency 0), so the whole pass runs at most every N floors. Unset → the
+      // per-table frequency RESOLVED against the app global default (-1 → global, 0 → null = never
+      // due / skipped, N → N).
+      const frequency = cfg.every ?? resolveUpdateFrequency(t.updateFrequency, globalDefault)
+      if (frequency == null) continue // off table, no `every` override → never due
       if (currentFloor - lastFloor >= frequency) dueTables.push(t.sqlName)
     }
     if (!dueTables.length) return { outputs: {} } // nothing due this turn
@@ -344,6 +350,7 @@ export const tableRead: NodeImpl = {
     const readsBySql = new Map(
       readAllTables(gen.profileId, gen.chatId, template).map((r) => [r.sqlName, r])
     )
+    const globalDefault = getSettings(gen.profileId).tables?.default_update_frequency ?? 3
     const blocks: string[] = []
     const rendered: string[] = []
     for (const table of tables) {
@@ -353,7 +360,10 @@ export const tableRead: NodeImpl = {
       if (cfg.max_rows != null && read.rows.length > cfg.max_rows) {
         read = { ...read, rows: read.rows.slice(-cfg.max_rows) }
       }
-      blocks.push(renderTableBlock(table, read, includeRules))
+      // Header cadence: resolve -1 (global) / 0 (off → 手动维护) / N. An explicit table.read with an
+      // off table still renders it (read semantics); the cadence line just reads 手动维护.
+      const resolvedFreq = resolveUpdateFrequency(table.updateFrequency, globalDefault)
+      blocks.push(renderTableBlock(table, read, includeRules, resolvedFreq))
       rendered.push(table.sqlName)
     }
     return { outputs: { block: blocks.join('\n\n'), tables: rendered } }

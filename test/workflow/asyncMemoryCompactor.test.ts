@@ -73,7 +73,10 @@ const progress = vi.hoisted(() => ({ store: {} as Record<string, number> }))
 const mockProgress = vi.hoisted(() => ({
   getProgress: vi.fn(() => ({})),
   advanceProgress: vi.fn(),
-  computeTableProgress: vi.fn()
+  computeTableProgress: vi.fn(),
+  // Pure resolver (issue 04): the gate/read use it for real — supply the real implementation.
+  resolveUpdateFrequency: (freq: number, globalDefault: number): number | null =>
+    freq === 0 ? null : freq >= 1 ? freq : Math.max(1, Math.floor(globalDefault) || 3)
 }))
 vi.mock('../../src/main/services/tableProgressService', () => mockProgress)
 

@@ -15,8 +15,12 @@ import { renderWholeTable } from './tableExportService'
  * current data. `init` rules are included ONLY when the table has 0 rows (the fresh-table case); empty
  * rule strings are omitted. `include_rules: false` renders just the header + data.
  *
+ * `resolvedFrequency` is the table's cadence AFTER resolving `updateFrequency` against the app global
+ * default (`resolveUpdateFrequency`): a positive N renders `每 N 轮维护`; `null` (an off table, authored
+ * `0`, nonetheless explicitly rendered) renders `— 手动维护`.
+ *
  * ```
- * ## <displayName> (<sqlName>) — 每 N 轮维护
+ * ## <displayName> (<sqlName>) — 每 N 轮维护        (or "— 手动维护" when off)
  * 【表定义】<note>              (with rules)
  * 【初始化规则】<initNode>       (with rules; only when the table has 0 rows)
  * 【插入规则】<insertNode>       (with rules)
@@ -26,10 +30,14 @@ import { renderWholeTable } from './tableExportService'
  * <renderWholeTable(headers, rows)>
  * ```
  */
-export const renderTableBlock = (table: TableDef, read: TableRead, includeRules: boolean): string => {
-  const lines: string[] = [
-    `## ${table.displayName} (${table.sqlName}) — 每 ${table.updateFrequency} 轮维护`
-  ]
+export const renderTableBlock = (
+  table: TableDef,
+  read: TableRead,
+  includeRules: boolean,
+  resolvedFrequency: number | null
+): string => {
+  const cadence = resolvedFrequency == null ? '手动维护' : `每 ${resolvedFrequency} 轮维护`
+  const lines: string[] = [`## ${table.displayName} (${table.sqlName}) — ${cadence}`]
   if (includeRules) {
     if (table.note.trim()) lines.push(`【表定义】${table.note}`)
     if (read.rows.length === 0 && table.initNode.trim()) lines.push(`【初始化规则】${table.initNode}`)

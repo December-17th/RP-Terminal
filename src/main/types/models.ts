@@ -92,6 +92,11 @@ export interface Settings {
     /** Max recursive match passes fed by matched entries' content (0 = off). */
     max_recursion: number
   }
+  /** SQL-table memory (manual-pass issue 04): the global default maintenance cadence a template table
+   *  with `updateFrequency === -1` ("use global") runs at. Mirrors the 数据库-plugin global default. */
+  tables: {
+    default_update_frequency: number
+  }
   /** ST-Prompt-Template EJS engine (`<% %>` template processing) on/off. */
   templates: {
     enabled: boolean

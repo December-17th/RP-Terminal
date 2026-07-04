@@ -376,6 +376,25 @@ export const SettingsPanel: React.FC<{ profileId: string }> = ({ profileId }) =>
               {t('prefs.recursionHint')}
             </div>
 
+            {/* SQL-table memory: the global default cadence a template table with updateFrequency -1
+                ("use global") maintains at (manual-pass issue 04). */}
+            <label className="field-label" style={{ marginTop: 18 }}>
+              {t('settings.tablesDefaultFrequency')}
+            </label>
+            <input
+              type="number"
+              min={1}
+              value={settings.tables?.default_update_frequency ?? 3}
+              onChange={(e) =>
+                updateSettings(profileId, {
+                  tables: {
+                    ...settings.tables,
+                    default_update_frequency: Number(e.target.value) || 3
+                  }
+                })
+              }
+            />
+
             <label className="field-label" style={{ marginTop: 18 }}>
               {t('prefs.cacheOpt')}{' '}
               <span style={{ opacity: 0.5, fontWeight: 'normal' }}>

@@ -6,8 +6,10 @@ pipeline (`table.gate` / `table.read` / `table.query`) + template EXPORT (chatSh
 per-table last-maintained indicator all built). The only deferred item is card-embedded templates.
 
 The **Tables view** now also shows and edits each table's per-table template prompts inline (the five
-per-op prompts, `updateFrequency`, and the injection `exportConfig`) via `table-template-update` —
-structural fields (DDL/headers/rows) stay read-only.
+per-op prompts + the injection `exportConfig`) via `table-template-update` — structural fields
+(DDL/headers/rows) stay read-only. Each table's **`updateFrequency`** is edited from an always-visible
+per-table cadence control in the table header (global / off / custom — manual-pass issue 04), not the
+collapsible prompt panel.
 
 RP Terminal's memory system is **SQL-table memory** (the 数据库-plugin model): each chat maintains a
 set of relational tables, the LLM edits them via SQL (later issues), and the tables project back into
@@ -78,7 +80,7 @@ Sheets are ordered by `orderNo`.
 | `content[1..]`                                     | `initialRows`                          | Usually empty (templates ship header-only).                        |
 | `sourceData.note`                                  | `note`                                 | Table-definition prompt.                                           |
 | `sourceData.{init,insert,update,delete}Node`       | `{init,insert,update,delete}Node`      | Per-op AI instructions; default `''`.                              |
-| `updateConfig.updateFrequency`                     | `updateFrequency`                      | `-1`/absent → **1** (every turn); positive ints kept.              |
+| `updateConfig.updateFrequency`                     | `updateFrequency`                      | `-1`/absent → **`-1` = use the global default** `settings.tables.default_update_frequency` (default 3); `0` = **off** (excluded from auto-maintenance); positive ints kept. `<= -2` clamped to `-1` (issue 04). |
 | `exportConfig.*`                                   | `exportConfig.*`                       | Verbatim (see below); projected into the prompt by `table.export` (issue 04). |
 | `mate.globalInjectionConfig`                       | `TableTemplate.globalInjection`        | `readableEntryPlacement` / `wrapperPlacement`.                     |
 
@@ -96,8 +98,9 @@ Sheets are ordered by `orderNo`.
 `test/fixtures/chatsheets-poem-of-destiny-5.9.json` (the 命定之诗 5.9 template) imports into **8**
 ordered tables — `sqlName`s: `protagonist_info`, `important_characters`, `chronicle`,
 `roleplay_guide`, `foreshadow_table`, `covenant_table`, `region_table`, `location_table`
-(`test/chatSheetsParser.test.ts`). Spot-checked: 纪要表 `updateFrequency -1 → 1` + keyword index;
-重要角色表 `splitByRow` + keyword columns + `extraIndexColumnModes`; 主角信息 export disabled.
+(`test/chatSheetsParser.test.ts`). Spot-checked: 纪要表 `updateFrequency -1` kept verbatim (the
+use-global sentinel — issue 04, no longer normalized to `1`) + keyword index; 重要角色表 `splitByRow`
++ keyword columns + `extraIndexColumnModes`; 主角信息 export disabled.
 
 ## IPC surface (`src/main/ipc/tableMemoryIpc.ts`, preload `src/preload/index.ts`)
 
@@ -115,7 +118,9 @@ patch is `{ name?, tables: [{ uid, note?, initNode?, insertNode?, updateNode?, d
 updateFrequency?, exportConfig? }] }`: only the **five per-op prompts + `updateFrequency` + the
 injection `exportConfig`** (and the template `name`) are editable — structural fields (`sqlName`,
 `ddl`, `headers`, `initialRows`, `displayName`) are IMMUTABLE (DDL only executes at instantiation, so
-editing it without re-instantiating would desync every chat using the template). The merge is the pure
+editing it without re-instantiating would desync every chat using the template). `updateFrequency`
+accepts `-1` (global), `0` (off), or a positive int; `<= -2` is a `templateBadPatch` (issue 04). The
+merge is the pure
 `tableTemplateService.applyTemplatePatch` (unknown table `uid` → `{ error: 'tables.templateUnknownTable' }`;
 malformed patch → `{ error: 'tables.templateBadPatch' }`; missing template → `{ error:
 'tables.templateNotFound' }`), then `saveTableTemplate` overwrites the SAME id. A template is shared:
@@ -282,13 +287,18 @@ Any` (the due `sqlName[]`), `span: Any` (`{ from, to }`, the aged floor range). 
 string (comma-separated sqlNames narrowing which tables to watch; unset = all template tables),
 every?: 1..500 }`.
 
+- **Cadence resolution order (issue 04):** `every` (the gate override) **>** the per-table
+  `updateFrequency` **resolved against the app global default** (`resolveUpdateFrequency` in
+  `tableStatusService.ts`, pure + tested): `-1` → `settings.tables.default_update_frequency` (default 3),
+  `0` → **off** (null; the table is never due and the gate skips it), `N>=1` → `N`.
 - **`every` — the global cadence override** (`tableNodes.ts` gate run(); post-merge cadence fix): when
   set, EVERY watched table's effective frequency becomes `every`, so the whole maintenance pass runs
-  at most once every N floors. This is the player's knob for imported chatSheets templates whose
-  tables carry `-1` (= every turn — normalized to `1` by the importer), which would otherwise fire the
-  maintainer each round. Unset = the template's per-table frequencies. The Tables view's 下次维护
-  prediction honors the override (`tableStatusService.effectiveFrequencies`, pure + tested — several
-  overriding gates on one table: the lowest `every` wins).
+  at most once every N floors. It **overrides everything, including an off (`0`) table** — `every` is the
+  workflow author's explicit knob, so it re-includes an off table. This is also the player's knob for
+  imported chatSheets templates whose tables carry `-1` (= use-global). Unset = the per-table resolved
+  frequencies. The Tables view's 下次维护 prediction honors both the override and the global-default
+  resolution (`tableStatusService.effectiveFrequencies`, pure + tested — several overriding gates on one
+  table: the lowest `every` wins; an off table is omitted unless an override re-includes it).
 
 - **Floor source:** the gate re-reads the floor count FROM DISK via `getAllFloors(profileId,
   chatId).length - 1` (`currentFloor`, clamped ≥0). `gen.floors` is the PRE-turn snapshot
@@ -429,9 +439,9 @@ re-parse as a defined `globalInjection` and break the round-trip) + one `sheet_<
 `sourceData.{ddl,note,*Node}`, `exportConfig`).
 
 - **Round-trip contract (the AC): EQUIVALENCE, not bytes.** `parseChatSheets(exportChatSheets(tpl))`
-  deep-equals `tpl` (`test/chatSheetsParser.test.ts`). A byte match is impossible because the importer
-  normalizes `updateFrequency -1 → 1` and drops UI sentinels / `preventRecursion`; the *model*
-  round-trips exactly.
+  deep-equals `tpl` (`test/chatSheetsParser.test.ts`). `updateFrequency -1` now round-trips **verbatim**
+  (issue 04 — no longer normalized to `1`); a byte match is still impossible because the importer drops
+  UI sentinels / `preventRecursion` (and clamps `<= -2` to `-1`); the *model* round-trips exactly.
 - **Export with data:** `dataRows` (a `Map<sqlName, string[][]>`) embeds current rows as `content[1..]`
   (cells stringified, `null → ''`); absent → the template's own `initialRows`. Orchestrated by
   `tableTemplateService.exportTableTemplateToFile` (reads live rows via `readAllTables` when a `chatId`

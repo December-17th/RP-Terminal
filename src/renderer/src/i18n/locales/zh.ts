@@ -46,6 +46,8 @@ const zh: Record<string, string> = {
   'settings.groupApp': '应用',
   'settings.groupWorld': '世界',
   'settings.preferences': '偏好设置',
+  // SQL 表格记忆全局默认维护频率（manual-pass issue 04）
+  'settings.tablesDefaultFrequency': '默认维护频率（轮）',
   'settings.regex': '正则',
   'settings.scripts': '脚本',
   'settings.language': '语言',
@@ -480,6 +482,11 @@ const zh: Record<string, string> = {
   'tables.promptUpdate': '更新规则',
   'tables.promptDelete': '删除规则',
   'tables.updateFrequency': '维护频率（轮）',
+  // 每表常显的维护频率控件（manual-pass issue 04）
+  'tables.freqGlobal': '全局',
+  'tables.freqOff': '关',
+  'tables.freqCustom': '自定义',
+  'tables.freqEvery': '每 {{n}} 轮',
   'tables.injectionSettings': '注入设置',
   'tables.ddl': '建表 DDL（只读）',
   'tables.savePrompts': '保存',

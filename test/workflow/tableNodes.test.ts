@@ -41,8 +41,19 @@ const dbSvc = vi.hoisted(() => ({ readAllTables: vi.fn() }))
 vi.mock('../../src/main/services/tableDbService', () => dbSvc)
 
 // The chat-level progress store the gate now reads/advances (issue 07) — replaces its node state.
-const progressSvc = vi.hoisted(() => ({ getProgress: vi.fn(), advanceProgress: vi.fn() }))
+// resolveUpdateFrequency is pure and lives here (leaf module); the gate/read use it for real, so the
+// mock supplies the REAL implementation rather than a stub (issue 04).
+const progressSvc = vi.hoisted(() => ({
+  getProgress: vi.fn(),
+  advanceProgress: vi.fn(),
+  resolveUpdateFrequency: (freq: number, globalDefault: number): number | null =>
+    freq === 0 ? null : freq >= 1 ? freq : Math.max(1, Math.floor(globalDefault) || 3)
+}))
 vi.mock('../../src/main/services/tableProgressService', () => progressSvc)
+
+// The gate + table.read resolve per-table -1 (use-global) against the app global default (issue 04).
+const settingsSvc = vi.hoisted(() => ({ getSettings: vi.fn() }))
+vi.mock('../../src/main/services/settingsService', () => settingsSvc)
 
 import { parseExtract } from '../../src/main/services/nodes/builtin/parseNodes'
 import {
@@ -484,7 +495,9 @@ describe('table.gate', () => {
     floorSvc.getAllFloors.mockReset()
     progressSvc.getProgress.mockReset()
     progressSvc.advanceProgress.mockReset()
+    settingsSvc.getSettings.mockReset()
     progressSvc.getProgress.mockReturnValue({}) // default: nothing processed
+    settingsSvc.getSettings.mockReturnValue({ tables: { default_update_frequency: 3 } })
   })
 
   it('no template → silent no-op (no floor read, no progress read)', () => {
@@ -565,6 +578,51 @@ describe('table.gate', () => {
     expect(r.outputs!.tables).toEqual(['chronicle', 'world'])
     expect(r.outputs!.span).toEqual({ from: 0, to: 2 })
   })
+
+  // updateFrequency sentinels (manual-pass issue 04): -1 = use the app global default, 0 = off.
+  const sentinelTemplate = () =>
+    TableTemplateSchema.parse({
+      name: 'S',
+      tables: [
+        { uid: 'g', displayName: '全局', sqlName: 'global_t', ddl: 'CREATE TABLE global_t (t TEXT)', headers: ['t'], updateFrequency: -1 },
+        { uid: 'o', displayName: '关闭', sqlName: 'off_t', ddl: 'CREATE TABLE off_t (t TEXT)', headers: ['t'], updateFrequency: 0 }
+      ]
+    })
+
+  it('updateFrequency -1 uses the global default (3): due only once 3 floors elapse; 0 is never due', () => {
+    chatSvc.getChatTableTemplateId.mockReturnValue('t1')
+    templateSvc.getTableTemplateById.mockReturnValue(sentinelTemplate())
+    settingsSvc.getSettings.mockReturnValue({ tables: { default_update_frequency: 3 } })
+    // Floor 1: global_t 1 - (-1) = 2 < 3 → not due; off_t never due → nothing fires.
+    floorSvc.getAllFloors.mockReturnValue([{}, {}])
+    expect(tableGate.run(ctx, { gen }, meta(tableGate, 'g'))).toEqual({ outputs: {} })
+    // Floor 2: global_t 2 - (-1) = 3 >= 3 → due; off_t still never due.
+    floorSvc.getAllFloors.mockReturnValue([{}, {}, {}])
+    const r = tableGate.run(ctx, { gen }, meta(tableGate, 'g'))
+    expect(r.signals).toEqual(['due'])
+    expect(r.outputs!.tables).toEqual(['global_t'])
+  })
+
+  it('a different global default changes when a -1 table is due', () => {
+    chatSvc.getChatTableTemplateId.mockReturnValue('t1')
+    templateSvc.getTableTemplateById.mockReturnValue(sentinelTemplate())
+    settingsSvc.getSettings.mockReturnValue({ tables: { default_update_frequency: 1 } })
+    // global default 1 → global_t due on floor 0 already (0 - (-1) = 1 >= 1); off_t still off.
+    floorSvc.getAllFloors.mockReturnValue([{}])
+    const r = tableGate.run(ctx, { gen }, meta(tableGate, 'g'))
+    expect(r.outputs!.tables).toEqual(['global_t'])
+  })
+
+  it('config.every OVERRIDES an off table too (explicit author cadence)', () => {
+    chatSvc.getChatTableTemplateId.mockReturnValue('t1')
+    templateSvc.getTableTemplateById.mockReturnValue(sentinelTemplate())
+    settingsSvc.getSettings.mockReturnValue({ tables: { default_update_frequency: 3 } })
+    // every: 1 forces BOTH the -1 table AND the off (0) table to run every floor.
+    floorSvc.getAllFloors.mockReturnValue([{}])
+    const r = tableGate.run(ctx, { gen }, meta(tableGate, 'g', { every: 1 }))
+    expect(r.signals).toEqual(['due'])
+    expect(r.outputs!.tables).toEqual(['global_t', 'off_t'])
+  })
 })
 
 describe('table.read', () => {
@@ -574,6 +632,8 @@ describe('table.read', () => {
     chatSvc.getChatTableTemplateId.mockReset()
     templateSvc.getTableTemplateById.mockReset()
     dbSvc.readAllTables.mockReset()
+    settingsSvc.getSettings.mockReset()
+    settingsSvc.getSettings.mockReturnValue({ tables: { default_update_frequency: 3 } })
   })
 
   it('no template → silent empty (read semantics)', () => {
@@ -602,6 +662,27 @@ describe('table.read', () => {
     // world is non-empty → its init rule is NOT shown (chronicle's init is the only 初始化规则).
     expect(block.match(/【初始化规则】/g)?.length).toBe(1)
     expect(r.outputs!.tables).toEqual(['chronicle', 'world'])
+  })
+
+  it('an off (0) table renders "手动维护"; a -1 table renders the resolved global cadence', () => {
+    const tpl = TableTemplateSchema.parse({
+      name: 'M2',
+      tables: [
+        { uid: 'o', displayName: '手动表', sqlName: 'manual_t', ddl: 'CREATE TABLE manual_t (row_id INTEGER)', headers: ['row_id'], updateFrequency: 0 },
+        { uid: 'g', displayName: '全局表', sqlName: 'global_t', ddl: 'CREATE TABLE global_t (row_id INTEGER)', headers: ['row_id'], updateFrequency: -1 }
+      ]
+    })
+    chatSvc.getChatTableTemplateId.mockReturnValue('t1')
+    templateSvc.getTableTemplateById.mockReturnValue(tpl)
+    settingsSvc.getSettings.mockReturnValue({ tables: { default_update_frequency: 4 } })
+    dbSvc.readAllTables.mockReturnValue([
+      readOf('manual_t', ['row_id'], []),
+      readOf('global_t', ['row_id'], [])
+    ])
+    const r = tableRead.run(ctx, { gen }, meta(tableRead, 'r'))
+    const block = r.outputs!.block as string
+    expect(block).toContain('## 手动表 (manual_t) — 手动维护')
+    expect(block).toContain('## 全局表 (global_t) — 每 4 轮维护')
   })
 
   it('include_rules: false renders only header + data', () => {

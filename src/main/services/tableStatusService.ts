@@ -2,8 +2,19 @@ import { getChatTableTemplateId } from './chatService'
 import { getTableTemplateById } from './tableTemplateService'
 import { getAllFloors } from './floorService'
 import { resolveWorkflowDoc } from './workflowService'
-import { getProgress, computeTableProgress, TableProgress } from './tableProgressService'
+import {
+  getProgress,
+  computeTableProgress,
+  resolveUpdateFrequency,
+  TableProgress
+} from './tableProgressService'
+import { getSettings } from './settingsService'
 import { TableTemplate } from '../types/tableTemplate'
+
+// Re-export the pure resolver so the documented API surface stays on tableStatusService. Its
+// DEFINITION lives in the leaf `tableProgressService` so `table.gate` / `table.read` / backfill can
+// import it without pulling in this module's `workflowService` dep (which would form an import cycle).
+export { resolveUpdateFrequency }
 
 /**
  * Per-table maintenance-progress status for the Tables view (issue 06 → repurposed in issue 07).
@@ -25,6 +36,9 @@ import { TableTemplate } from '../types/tableTemplate'
 export interface TableStatus extends TableProgress {
   /** The last floor index this table was processed through; null = never processed. */
   lastFloor: number | null
+  /** true when the table is EXCLUDED from auto-maintenance (authored updateFrequency 0). When set,
+   *  `nextExpected` is -1 (never) and the gate skips the table. */
+  off?: boolean
 }
 
 /** The gate-config fields the status cares about. */
@@ -34,20 +48,31 @@ export interface GateConfigView {
 }
 
 /**
- * PURE (unit-tested): each table's EFFECTIVE update frequency — the template's own value unless a
+ * PURE (unit-tested): each table's EFFECTIVE update frequency — the template's own value (resolved
+ * against `globalDefault` via `resolveUpdateFrequency`: `-1` → the global default, `0` → OFF) unless a
  * gate's `every` override covers the table (an unfiltered gate covers every table; a `tables`-filtered
  * gate covers only its list). With several overriding gates covering one table, the LOWEST `every`
  * wins (the soonest gate fires first, so it drives "下次维护").
+ *
+ * An OFF table (authored `0`) is OMITTED from the map — no cadence, never due. A gate `every` override
+ * still applies to a watched OFF table (the workflow author's explicit override re-includes it), matching
+ * the `table.gate` `every`-overrides-everything contract.
  */
 export const effectiveFrequencies = (
   template: TableTemplate,
-  gates: GateConfigView[]
+  gates: GateConfigView[],
+  globalDefault: number
 ): Record<string, number> => {
   const out: Record<string, number> = {}
-  for (const t of template.tables) out[t.sqlName] = t.updateFrequency
+  const known = new Set<string>()
+  for (const t of template.tables) {
+    known.add(t.sqlName)
+    const resolved = resolveUpdateFrequency(t.updateFrequency, globalDefault)
+    if (resolved != null) out[t.sqlName] = resolved // null (off) → omitted
+  }
   // Overrides REPLACE the template value (that's the gate's semantics), so they min only among
   // THEMSELVES — min-ing against the template default would let a freq-1 table beat an every-5
-  // override and mispredict 下次维护.
+  // override and mispredict 下次维护. An override can re-include an OFF table (explicit author intent).
   const overrides: Record<string, number> = {}
   for (const gate of gates) {
     if (gate.every == null) continue
@@ -55,7 +80,7 @@ export const effectiveFrequencies = (
       .split(',')
       .map((s) => s.trim())
       .filter(Boolean)
-    const covered = watch.length ? watch.filter((n) => n in out) : Object.keys(out)
+    const covered = watch.length ? watch.filter((n) => known.has(n)) : Array.from(known)
     for (const name of covered) {
       overrides[name] = Math.min(overrides[name] ?? Infinity, gate.every)
     }
@@ -92,18 +117,29 @@ export const getTablesStatus = (
 
     const progress = getProgress(profileId, chatId)
     const currentFloor = getAllFloors(profileId, chatId).length - 1 // -1 for an empty chat
-    const frequencies = effectiveFrequencies(template, gateConfigs(profileId, chatId))
+    const globalDefault = getSettings(profileId).tables?.default_update_frequency ?? 3
+    const frequencies = effectiveFrequencies(template, gateConfigs(profileId, chatId), globalDefault)
 
     const out: Record<string, TableStatus> = {}
     for (const table of template.tables) {
       const last = progress[table.sqlName]
+      const freq = frequencies[table.sqlName]
+      // OFF (authored 0, no gate override re-including it): no cadence, never due. Report the raw
+      // last-processed floor + the already-processed counts, but nextExpected = -1 (never).
+      if (freq == null) {
+        const processed = last == null ? 0 : last + 1
+        out[table.sqlName] = {
+          lastFloor: last ?? null,
+          off: true,
+          processed,
+          nextExpected: -1,
+          unprocessed: Math.max(0, currentFloor - (last ?? -1))
+        }
+        continue
+      }
       out[table.sqlName] = {
         lastFloor: last ?? null,
-        ...computeTableProgress(
-          last,
-          frequencies[table.sqlName] ?? table.updateFrequency,
-          currentFloor
-        )
+        ...computeTableProgress(last, freq, currentFloor)
       }
     }
     return out

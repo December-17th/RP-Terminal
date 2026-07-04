@@ -52,6 +52,23 @@ export const computeTableProgress = (
   }
 }
 
+/**
+ * Resolve a table's authored `updateFrequency` against the app-level global default (manual-pass issue
+ * 04): `-1` → the global default; `0` → `null` (excluded from auto-maintenance); `N>=1` → `N`. Any other
+ * value is treated as `-1` (→ the global default). The global default is itself clamped to a sane
+ * positive int (fallback 3). PURE.
+ *
+ * Lives here (a leaf module) rather than in `tableStatusService` so `table.gate` / `table.read` /
+ * backfill can import it WITHOUT pulling in `tableStatusService`'s `workflowService` dependency (which
+ * would form an import cycle through `nodes/builtin/index`). `tableStatusService` re-exports it so the
+ * documented resolver API surface stays there.
+ */
+export const resolveUpdateFrequency = (freq: number, globalDefault: number): number | null => {
+  if (freq === 0) return null
+  if (freq >= 1) return freq
+  return Math.max(1, Math.floor(globalDefault) || 3)
+}
+
 // ---- store CRUD (app DB) — untestable stance (alias-mocked better-sqlite3) --------------------
 
 /** Every table's last-processed floor for a chat: `Record<sqlName, lastFloor>`. Absent = never. */

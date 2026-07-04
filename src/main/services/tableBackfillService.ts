@@ -5,7 +5,8 @@ import { readAllTables, TableRead } from './tableDbService'
 import { renderTableBlock, backfillMaintainerPrompt } from './tableMaintenance'
 import { applySqlBatch, TableSqlError } from './tableSql'
 import { appendOps, tryBeginTableWrite, endTableWrite } from './tableOpsService'
-import { advanceProgress } from './tableProgressService'
+import { advanceProgress, resolveUpdateFrequency } from './tableProgressService'
+import { getSettings } from './settingsService'
 import { buildGenContext } from './generation/genContext'
 import { callModelResilient, withPreset } from './generation/resilientCall'
 import { stripThinking } from '../parsers/contentParser'
@@ -328,14 +329,17 @@ const processBatch = async (
   signal: AbortSignal
 ): Promise<boolean> => {
   // Tables block over ALL template tables, with their CURRENT rows (earlier batches' writes are visible).
+  // The backfill treats the WHOLE batch as one 交互 and maintains every table regardless of per-table
+  // cadence — the resolved frequency here only shapes the rendered header cadence line (off → 手动维护).
   const reads: TableRead[] = readAllTables(profileId, chatId, template)
   const readBySql = new Map(reads.map((r) => [r.sqlName, r]))
+  const globalDefault = getSettings(profileId).tables?.default_update_frequency ?? 3
   const tablesBlock = template.tables
     .map((t) => {
       const read =
         readBySql.get(t.sqlName) ??
         ({ sqlName: t.sqlName, displayName: t.displayName, columns: t.headers, rows: [], rowids: [] } as TableRead)
-      return renderTableBlock(t, read, true)
+      return renderTableBlock(t, read, true, resolveUpdateFrequency(t.updateFrequency, globalDefault))
     })
     .join('\n\n')
 

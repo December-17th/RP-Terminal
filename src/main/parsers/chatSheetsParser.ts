@@ -74,10 +74,16 @@ export const isSafeSqlIdentifier = (name: string): boolean => /^[A-Za-z_][A-Za-z
 const num = (v: unknown, fallback: number): number =>
   typeof v === 'number' && !Number.isNaN(v) ? v : fallback
 
-/** chatSheets `-1`/absent → default (1 = every turn); positive ints kept as-is. */
+/**
+ * chatSheets `updateFrequency` → the stored value, KEEPING the plugin semantics (manual-pass issue 04):
+ * `-1` = use the app-level global default; `0` = excluded from auto-maintenance; `N>=1` = every N turns.
+ * Absent / non-finite → `-1` (global default); anything `<= -2` is clamped to `-1`.
+ */
 const normalizeUpdateFrequency = (v: unknown): number => {
   const n = num(v, -1)
-  return n > 0 ? Math.trunc(n) : 1
+  const t = Math.trunc(n)
+  if (t < -1) return -1
+  return t
 }
 
 const asPlacement = (raw: unknown): Placement | undefined => {
@@ -213,8 +219,9 @@ export const parseChatSheets = (raw: any, name: string): TableTemplate => {
  * stays portable back to the ST ecosystem. Sits next to the parser it must MIRROR: it writes back
  * exactly the fields `parseChatSheets` consumes, so the round-trip is LOSSLESS FOR THE MODEL —
  * `parseChatSheets(exportChatSheets(tpl))` deep-equals `tpl`. It is NOT byte-identical to a
- * plugin-authored file (the importer normalizes `updateFrequency -1 → 1` and drops UI sentinels /
- * `preventRecursion`), which is why the AC and its test assert TEMPLATE EQUIVALENCE, not bytes.
+ * plugin-authored file (the importer keeps `updateFrequency` verbatim — including the `-1` global-default
+ * sentinel — but clamps `<= -2` to `-1` and drops UI sentinels / `preventRecursion`), which is why the AC
+ * and its test assert TEMPLATE EQUIVALENCE, not bytes.
  *
  * `dataRows` (optional) is "export with data": the current sandbox rows per `sqlName`, embedded as
  * `content[1..]` (cells already stringified by the caller). Absent → the template's own `initialRows`

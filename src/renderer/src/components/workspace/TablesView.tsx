@@ -2,6 +2,7 @@ import React from 'react'
 import { useChatStore } from '../../stores/chatStore'
 import { useToastStore } from '../../stores/toastStore'
 import { useUiStore } from '../../stores/uiStore'
+import { useSettingsStore } from '../../stores/settingsStore'
 import { useT } from '../../i18n'
 
 /**
@@ -76,22 +77,27 @@ interface TableTemplate {
   tables: TableDef[]
 }
 
-/** The editable subset sent back on save (uid + prompts + updateFrequency + full exportConfig). */
+/** The editable subset sent back on save. Every field but `uid` is OPTIONAL — the merge only touches
+ *  provided fields, so the header frequency control sends `{ uid, updateFrequency }` while the prompt
+ *  panel sends `{ uid, note, ..., exportConfig }` (manual-pass issue 04). */
 interface TableDefPatch {
   uid: string
-  note: string
-  initNode: string
-  insertNode: string
-  updateNode: string
-  deleteNode: string
-  updateFrequency: number
-  exportConfig: TableExportConfig
+  note?: string
+  initNode?: string
+  insertNode?: string
+  updateNode?: string
+  deleteNode?: string
+  updateFrequency?: number
+  exportConfig?: TableExportConfig
 }
 
 export const TablesView: React.FC<{ profileId: string }> = ({ profileId }) => {
   const activeChatId = useChatStore((s) => s.activeChatId)
   const floors = useChatStore((s) => s.floors)
   const openWorkflowEditor = useUiStore((s) => s.openWorkflowEditor)
+  // Global default cadence: the "全局 (N)" the header frequency control shows for a -1 (use-global)
+  // table. Older profiles lack the group → default 3 (matches the main-side resolver fallback).
+  const globalFreq = useSettingsStore((s) => s.settings?.tables?.default_update_frequency ?? 3)
   const t = useT()
 
   const [assigned, setAssigned] = React.useState(false)
@@ -251,6 +257,7 @@ export const TablesView: React.FC<{ profileId: string }> = ({ profileId }) => {
               key={tbl.sqlName}
               table={tbl}
               def={findDef(tbl)}
+              globalFreq={globalFreq}
               onEdit={applyEdit}
               onSaveTemplate={onSaveTemplate}
             />
@@ -276,12 +283,79 @@ const cellStyle: React.CSSProperties = {
   verticalAlign: 'top'
 }
 
+/**
+ * Always-visible per-table maintenance-cadence control (manual-pass issue 04). Shows the table's
+ * `updateFrequency` at a glance and commits a single-field `{ uid, updateFrequency }` patch on change.
+ * Semantics mirror the main-side resolver: `-1` = 全局 (global default N), `0` = 关 (off), `N>=1` = 每 N 轮.
+ */
+const FreqControl: React.FC<{
+  freq: number
+  globalFreq: number
+  onChange: (freq: number) => void
+}> = ({ freq, globalFreq, onChange }) => {
+  const t = useT()
+  const mode = freq === -1 ? 'global' : freq === 0 ? 'off' : 'custom'
+  const label =
+    freq === -1
+      ? t('tables.freqGlobal') + ` (${globalFreq})`
+      : freq === 0
+        ? t('tables.freqOff')
+        : t('tables.freqEvery', { n: freq })
+
+  const smallSelect: React.CSSProperties = {
+    fontSize: 11,
+    background: 'var(--rpt-bg-tertiary)',
+    color: 'var(--rpt-text-primary)',
+    border: '1px solid var(--rpt-border)',
+    borderRadius: 3,
+    padding: '1px 4px'
+  }
+
+  return (
+    <span
+      style={{ display: 'inline-flex', gap: 4, alignItems: 'center', fontSize: 11, opacity: 0.75 }}
+      title={t('tables.updateFrequency')}
+    >
+      <span aria-hidden style={{ opacity: 0.8 }}>
+        {label}
+      </span>
+      <select
+        style={smallSelect}
+        value={mode}
+        aria-label={t('tables.updateFrequency')}
+        onChange={(e) => {
+          const m = e.target.value
+          if (m === 'global') onChange(-1)
+          else if (m === 'off') onChange(0)
+          // custom: seed a sensible positive value (keep current if already positive, else 1)
+          else onChange(freq >= 1 ? freq : 1)
+        }}
+      >
+        <option value="global">{t('tables.freqGlobal')}</option>
+        <option value="off">{t('tables.freqOff')}</option>
+        <option value="custom">{t('tables.freqCustom')}</option>
+      </select>
+      {mode === 'custom' && (
+        <input
+          type="number"
+          min={1}
+          step={1}
+          style={{ ...smallSelect, width: 56 }}
+          value={freq >= 1 ? freq : 1}
+          onChange={(e) => onChange(Math.max(1, Math.floor(Number(e.target.value) || 1)))}
+        />
+      )}
+    </span>
+  )
+}
+
 const TableGrid: React.FC<{
   table: TableRead
   def: TableDef | null
+  globalFreq: number
   onEdit: EditFn
   onSaveTemplate: (patch: TableDefPatch) => Promise<void>
-}> = ({ table, def, onEdit, onSaveTemplate }) => {
+}> = ({ table, def, globalFreq, onEdit, onSaveTemplate }) => {
   const t = useT()
   const width = Math.max(1, table.columns.length)
   // The blank "add row" editor: one input per column, or null when not adding.
@@ -340,6 +414,13 @@ const TableGrid: React.FC<{
           {table.displayName}
         </span>
         <span style={{ opacity: 0.5, fontWeight: 400, fontSize: 11 }}>{table.sqlName}</span>
+        {def && (
+          <FreqControl
+            freq={def.updateFrequency}
+            globalFreq={globalFreq}
+            onChange={(v) => void onSaveTemplate({ uid: def.uid, updateFrequency: v })}
+          />
+        )}
         <span style={{ marginLeft: 'auto', display: 'flex', gap: 6 }}>
           {def && (
             <button
@@ -598,7 +679,8 @@ const cloneExportConfig = (c: TableExportConfig): TableExportConfig => ({
   fixedIndexPlacement: { ...c.fixedIndexPlacement }
 })
 
-/** Build the draft (editable subset) from a TableDef. */
+/** Build the draft (editable subset) from a TableDef. `updateFrequency` is NOT part of this panel any
+ *  more — it lives in the always-visible table header control (manual-pass issue 04). */
 const draftFromDef = (
   def: TableDef
 ): {
@@ -607,7 +689,6 @@ const draftFromDef = (
   insertNode: string
   updateNode: string
   deleteNode: string
-  updateFrequency: number
   exportConfig: TableExportConfig
 } => ({
   note: def.note ?? '',
@@ -615,7 +696,6 @@ const draftFromDef = (
   insertNode: def.insertNode ?? '',
   updateNode: def.updateNode ?? '',
   deleteNode: def.deleteNode ?? '',
-  updateFrequency: def.updateFrequency ?? 1,
   exportConfig: cloneExportConfig(def.exportConfig)
 })
 
@@ -644,6 +724,7 @@ const TemplateEditPanel: React.FC<{
 
   const save = (): void => {
     // Sending the full editable set is idempotent — the merge only touches provided fields.
+    // updateFrequency is NOT sent here (the header control owns it via its own single-field patch).
     void onSave({
       uid: def.uid,
       note: draft.note,
@@ -651,7 +732,6 @@ const TemplateEditPanel: React.FC<{
       insertNode: draft.insertNode,
       updateNode: draft.updateNode,
       deleteNode: draft.deleteNode,
-      updateFrequency: draft.updateFrequency,
       exportConfig: cloneExportConfig(draft.exportConfig)
     })
   }
@@ -692,19 +772,7 @@ const TemplateEditPanel: React.FC<{
       {prompt('tables.promptUpdate', 'updateNode', 5)}
       {prompt('tables.promptDelete', 'deleteNode', 5)}
 
-      <div style={fieldGroupStyle}>
-        <label style={labelStyle}>{t('tables.updateFrequency')}</label>
-        <input
-          type="number"
-          min={1}
-          step={1}
-          style={{ ...inputStyle, width: 100 }}
-          value={draft.updateFrequency}
-          onChange={(e) =>
-            setDraft((d) => ({ ...d, updateFrequency: Math.max(1, Math.floor(Number(e.target.value) || 1)) }))
-          }
-        />
-      </div>
+      {/* updateFrequency moved to the always-visible table header control (manual-pass issue 04). */}
 
       {/* Injection settings (exportConfig) — nested collapsible subsection. */}
       <div style={fieldGroupStyle}>

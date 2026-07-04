@@ -38,8 +38,20 @@ const opsSvc = vi.hoisted(() => ({
 }))
 vi.mock('../src/main/services/tableOpsService', () => opsSvc)
 
-const progressSvc = vi.hoisted(() => ({ advanceProgress: vi.fn() }))
+// resolveUpdateFrequency lives on the leaf tableProgressService (issue 04); backfill uses it (pure) to
+// render each table's cadence header — supply the REAL implementation, not a stub.
+const progressSvc = vi.hoisted(() => ({
+  advanceProgress: vi.fn(),
+  resolveUpdateFrequency: (freq: number, globalDefault: number): number | null =>
+    freq === 0 ? null : freq >= 1 ? freq : Math.max(1, Math.floor(globalDefault) || 3)
+}))
 vi.mock('../src/main/services/tableProgressService', () => progressSvc)
+
+// The backfill reads the app global default (issue 04) for the rendered cadence header.
+const settingsSvc = vi.hoisted(() => ({
+  getSettings: vi.fn(() => ({ tables: { default_update_frequency: 3 } }))
+}))
+vi.mock('../src/main/services/settingsService', () => settingsSvc)
 
 const genSvc = vi.hoisted(() => ({ buildGenContext: vi.fn() }))
 vi.mock('../src/main/services/generation/genContext', () => genSvc)
