@@ -62,6 +62,16 @@ describe('setChatMessages', () => {
     expect(floorService.saveFloor).not.toHaveBeenCalled()
   })
 
+  it('does NOT write the opening greeting onto a later floor response (stale card guard)', () => {
+    // map: 0={0,asst} 1={1,user} 2={1,asst}. floor 0 = 'HOME'. A card echoing 'HOME' at id 2 must
+    // not clobber floor 1's real reply. Writing 'HOME' back to id 0 (floor 0) is still allowed.
+    const floors = [mkFloor(0, '', 'HOME'), mkFloor(1, 'u', 'realReply')]
+    vi.mocked(floorService.getAllFloors).mockReturnValue(floors)
+    expect(setChatMessages('p', 'c', [{ message_id: 2, message: 'HOME' }])).toBe(0)
+    expect(floors[1].response.content).toBe('realReply')
+    expect(floorService.saveFloor).not.toHaveBeenCalled()
+  })
+
   it('skips a message whose text is unchanged', () => {
     // A card re-rendering the same text must not count as an edit (no re-fold/reload chain).
     const floors = [mkFloor(0, '', 'greeting')]
@@ -121,6 +131,19 @@ describe('saveChat', () => {
 
   it('returns false on a non-array chat', () => {
     expect(saveChat('p', 'c', null)).toBe(false)
+  })
+
+  it('does NOT propagate the opening greeting onto a later floor (stale chat guard)', () => {
+    // Owner bug: after a custom-start, a stale SillyTavern.chat held the home placeholder in the
+    // assistant[1] slot; saving it clobbered floor 1's real response. floor 0 = 'HOME'.
+    const floors = [mkFloor(0, '', 'HOME'), mkFloor(1, '', 'realReply')]
+    vi.mocked(floorService.getAllFloors).mockReturnValue(floors)
+    saveChat('p', 'c', [
+      { is_user: false, mes: 'HOME' }, // floor 0 (greeting) — unchanged
+      { is_user: false, mes: 'HOME' } // floor 1 — MUST NOT overwrite the real reply
+    ])
+    expect(floors[1].response.content).toBe('realReply')
+    expect(floorService.saveFloor).not.toHaveBeenCalledWith('p', 'c', floors[1])
   })
 })
 
