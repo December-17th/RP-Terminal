@@ -26,6 +26,8 @@ import './workflowEditor.css'
 import './effectiveMode.css'
 import { useEffectiveGraphStore } from '../../stores/effectiveGraphStore'
 import { useWorkflowEditorStore, type NodeTypeInfo } from '../../stores/workflowEditorStore'
+import { useUiStore } from '../../stores/uiStore'
+import { useToastStore } from '../../stores/toastStore'
 import { useOptionalT, useT } from '../../i18n'
 import {
   buildPackRegions,
@@ -125,6 +127,10 @@ interface RegionData extends Record<string, unknown> {
   /** Fork provenance (ADR 0006; WP3.6b Part C) — present on forked regions so the header localizes
    *  "fork" and shows a subtle "from <base>" lineage line. */
   fork?: { base: string; n: number }
+  /** Open this pack's fragment as an editable Studio session (WP4.4). Present ONLY on FORK regions —
+   *  a fork is a non-builtin pack you own, so its fragment is directly editable (drag/rewire/add-node).
+   *  A pristine/builtin pack region has no direct-edit button; editing it forks (config panel path). */
+  onEditFragment?: () => void
 }
 
 /** A pack REGION frame: a tinted hull with a header band carrying the pack name + a toggleable gate
@@ -132,7 +138,7 @@ interface RegionData extends Record<string, unknown> {
  *  detached region (trigger-only pack) shows a placeholder card + trigger caption instead of members. */
 function RegionNode({ data }: NodeProps<RFNode<RegionData>>): React.JSX.Element {
   const t = useT()
-  const { packName, gateOpen, detached, onToggleGate, triggerCaption, fork } = data
+  const { packName, gateOpen, detached, onToggleGate, triggerCaption, fork, onEditFragment } = data
   // Forked region: localize the "fork" word from the structured marker (name in the store is the
   // neutral fallback; here we prefer the localized form) + a subtle "from <base>" lineage line.
   const displayName = fork ? `${fork.base} (${t('workflowEffective.fork')} ${fork.n})` : packName
@@ -147,6 +153,21 @@ function RegionNode({ data }: NodeProps<RFNode<RegionData>>): React.JSX.Element 
             </span>
           )}
         </span>
+        {/* Edit-fragment affordance on FORK regions (WP4.4): opens this fork's fragment as an editable
+            Studio session (drag/rewire — the things this read-only projection can't do). */}
+        {onEditFragment && (
+          <button
+            type="button"
+            className="rpt-eff-region-edit"
+            onClick={(e) => {
+              e.stopPropagation()
+              onEditFragment()
+            }}
+            title={t('workflowEffective.editFragmentTitle')}
+          >
+            {t('workflowEffective.editFragment')}
+          </button>
+        )}
         <button
           role="switch"
           aria-checked={gateOpen}
@@ -194,6 +215,11 @@ function EffectiveCanvasInner({
   const nodeTypeList = useWorkflowEditorStore((s) => s.nodeTypes)
   const selectedNodeId = useWorkflowEditorStore((s) => s.selectedNodeId)
   const select = useWorkflowEditorStore((s) => s.select)
+  const openWorkflowEditor = useUiStore((s) => s.openWorkflowEditor)
+  // A one-time-per-mount hint: the projection is read-only (you can't drag/rewire here). The first time
+  // the user clicks a pack node we surface HOW to rearrange/rewire (edit the pack's fragment) — replacing
+  // the old SILENT drag no-op that produced the WP4.4 bug report. Ref (not state) so it never re-renders.
+  const hintShown = React.useRef(false)
 
   const typeInfoMap = useMemo(
     () => new Map(nodeTypeList.map((nt) => [nt.type, nt])),
@@ -243,6 +269,11 @@ function EffectiveCanvasInner({
           detached: r.detached,
           triggerCaption: triggerCaptions[r.packId],
           ...(info?.fork ? { fork: info.fork } : {}),
+          // Direct-edit only on FORK regions: a fork is a non-builtin pack you own, so its fragment id
+          // IS r.packId and opening it as an editable session is safe. Pristine/builtin regions omit it.
+          ...(info?.fork
+            ? { onEditFragment: () => openWorkflowEditor({ fragmentPackId: r.packId }) }
+            : {}),
           onToggleGate: (open: boolean) => void toggleGate(profileId, r.packId, open)
         }
       }
@@ -289,7 +320,8 @@ function EffectiveCanvasInner({
     selectedNodeId,
     triggerCaptions,
     toggleGate,
-    profileId
+    profileId,
+    openWorkflowEditor
   ])
 
   const rfEdges: RFEdge[] = useMemo(() => {
@@ -322,9 +354,18 @@ function EffectiveCanvasInner({
   const handleNodeClick = useCallback(
     (_e: React.MouseEvent, node: RFNode) => {
       if (node.id.startsWith('region:')) return
+      // One-time hint on the FIRST pack-node click: this projection is read-only, so a user who tries to
+      // drag/rewire a pack node gets nothing (nodesDraggable=false). Rather than a silent dead
+      // interaction (the WP4.4 bug report), tell them HOW to rearrange/rewire — edit the pack's fragment.
+      const parsed = ownerOfNodeId(node.id)
+      const isPackNode = owners.has(node.id) || parsed.kind === 'pack'
+      if (isPackNode && !hintShown.current) {
+        hintShown.current = true
+        useToastStore.getState().push(t('workflowEffective.rearrangeHint'))
+      }
       select(node.id)
     },
-    [select]
+    [select, owners, t]
   )
   const handlePaneClick = useCallback(() => select(null), [select])
 

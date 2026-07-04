@@ -38,10 +38,22 @@ interface UiState {
    *  pack nodes are visible + editing forks). Consumed once by WorkflowEditorView, then cleared. Null =
    *  the normal open (Normal mode). */
   workflowEditorInitialMode: 'effective' | null
-  /** Open the editor overlay; pass `initialMode:'effective'` for the Agents hand-off. */
-  openWorkflowEditor: (opts?: { initialMode?: 'effective' | null }) => void
+  /** When the editor is opened to EDIT A PACK FRAGMENT (agent-packs plan WP4.4 — "Edit fragment in
+   *  Studio"), this carries the pack id. WorkflowEditorView consumes it once on mount: it loads the
+   *  pack's fragment as an editable fragment session (full drag / connect / add-node editing, save →
+   *  updateAgentPackFragment). Null = a normal editor open. Takes precedence over initialMode (a
+   *  fragment session IS Normal-mode-like; the Effective toggle is disabled while editing a fragment). */
+  workflowEditorFragmentPackId: string | null
+  /** Open the editor overlay; pass `initialMode:'effective'` for the Agents composition hand-off, or
+   *  `fragmentPackId` to open a pack's fragment as an editable fragment session (WP4.4). */
+  openWorkflowEditor: (opts?: {
+    initialMode?: 'effective' | null
+    fragmentPackId?: string | null
+  }) => void
   /** Called by WorkflowEditorView once it has consumed the requested initial mode. */
   consumeWorkflowEditorInitialMode: () => void
+  /** Called by WorkflowEditorView once it has consumed (loaded) the requested fragment pack id. */
+  consumeWorkflowEditorFragmentPackId: () => void
   closeWorkflowEditor: () => void
   /** When set, the launcher opens directly to this world's session list (breadcrumb deep-link). */
   launcherWorldId: string | null
@@ -60,10 +72,21 @@ export const useUiStore = create<UiState>((set) => ({
   closeControlCenter: () => set({ controlCenterOpen: false, controlCenterRail: null }),
   workflowEditorOpen: false,
   workflowEditorInitialMode: null,
+  workflowEditorFragmentPackId: null,
   openWorkflowEditor: (opts) =>
-    set({ workflowEditorOpen: true, workflowEditorInitialMode: opts?.initialMode ?? null }),
+    set({
+      workflowEditorOpen: true,
+      workflowEditorInitialMode: opts?.initialMode ?? null,
+      workflowEditorFragmentPackId: opts?.fragmentPackId ?? null
+    }),
   consumeWorkflowEditorInitialMode: () => set({ workflowEditorInitialMode: null }),
-  closeWorkflowEditor: () => set({ workflowEditorOpen: false, workflowEditorInitialMode: null }),
+  consumeWorkflowEditorFragmentPackId: () => set({ workflowEditorFragmentPackId: null }),
+  closeWorkflowEditor: () =>
+    set({
+      workflowEditorOpen: false,
+      workflowEditorInitialMode: null,
+      workflowEditorFragmentPackId: null
+    }),
   launcherWorldId: null,
   setLauncherWorldId: (launcherWorldId) => set({ launcherWorldId })
 }))

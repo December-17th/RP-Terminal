@@ -266,6 +266,14 @@ declare global {
         profileId: string,
         packId: string
       ) => Promise<import('../shared/workflow/types').WorkflowDoc | null>
+      // Is a pack's activation exclusively this world's? (WP4.4; ADR 0006.) True iff every activation
+      // row names `worldId`; no activation rows → false (fork-again, the safe default). The
+      // Effective-mode edit router consults it so config edits on your own fork survive a restart.
+      isAgentPackActivationExclusive: (
+        profileId: string,
+        packId: string,
+        worldId: string
+      ) => Promise<boolean>
       // Next-prompt injection preview (agent-packs plan WP3.4): the assembled prompt shaped into
       // per-source sections + an omitted list. A DRY RUN — zero state writes, zero LLM calls. Shape
       // inlined (not imported from main) so preload types don't cross the module boundary.

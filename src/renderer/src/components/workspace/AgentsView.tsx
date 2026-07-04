@@ -530,6 +530,7 @@ const PackCard: React.FC<{
   onNavigate
 }) => {
   const t = useT()
+  const openWorkflowEditor = useUiStore((s) => s.openWorkflowEditor)
   const badges = attachmentBadges(pack.attachments)
   const needsCascade = transformsMainReply(pack.attachments)
   const [confirming, setConfirming] = React.useState(false)
@@ -659,8 +660,19 @@ const PackCard: React.FC<{
             </div>
           </div>
           <div className="rpt-agents-cardfoot-actions">
-            {/* Compact Export on FORK cards — a fork is the tweak-then-share unit (the creator path).
-                The full teaching wizard opens over the view. */}
+            {/* Compact Edit + Export on FORK cards — a fork is the tweak-then-share unit (the creator
+                path). Edit opens the fork's fragment as an editable session in Studio (WP4.4); Export
+                opens the full teaching wizard over the view. Placed together as the fork's affordances. */}
+            {pack.manifest.fork && (
+              <button
+                type="button"
+                className="rpt-agents-settingsbtn"
+                onClick={() => openWorkflowEditor({ fragmentPackId: pack.id })}
+                title={t('agents.settings.editFragment')}
+              >
+                {t('agents.editFragment.short')}
+              </button>
+            )}
             {pack.manifest.fork && (
               <button
                 type="button"

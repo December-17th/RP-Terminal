@@ -107,6 +107,35 @@ export const list = (
 export const getPackFragment = (profileId: string, packId: string): WorkflowDoc | null =>
   getPackRecord(profileId, packId)?.fragment ?? null
 
+/** Is a pack's activation EXCLUSIVELY this world's? (agent-packs plan WP4.4; ADR 0006.) True iff every
+ *  activation row for the pack names `worldId` — i.e. no OTHER world has this pack gated. Effective-mode
+ *  edit routing consults this to decide whether a config edit on a non-builtin fork can WRITE THROUGH
+ *  (exclusive → the only world running it is the one you're editing in, so a direct fragment write is
+ *  safe) or must FORK AGAIN (not exclusive → another world shares this artifact; mutating it in place
+ *  would silently change that world's behavior — the ADR 0006 copy-on-edit safe default).
+ *
+ *  NO-ACTIVATION-ROWS decision (grounded, stated for the WP report): a pack with ZERO activation rows is
+ *  NOT exclusive → the caller forks again. Rationale: an install with no activation is a LIBRARY pack no
+ *  world currently runs; it could be activated in any world later. Writing through to it now would make
+ *  a future activation silently inherit an in-place edit made "on behalf of" a world that never owned it
+ *  — the same shared-artifact hazard exclusivity guards against. Forking is harmless (it just mints a
+ *  world-owned copy), so the safe default holds. (This governs Effective-mode routing only; a FRAGMENT
+ *  SESSION edits its pack's fragment directly by design — that is the user explicitly editing THAT pack.)
+ *
+ *  Builtins are never exclusive-writable: a builtin has no activation of its own to be exclusive over
+ *  from an edit standpoint, and updatePackFragment refuses builtins regardless — the caller forks. This
+ *  helper answers the raw activation question; the caller combines it with the builtin check. */
+export const isPackActivationExclusiveToWorld = (
+  profileId: string,
+  packId: string,
+  worldId: string
+): boolean => {
+  seedBuiltinPacks(profileId)
+  const rows = listActivationRows(packId)
+  if (rows.length === 0) return false // no world runs it — fork (a later activation must not inherit an in-place edit)
+  return rows.every((r) => r.worldId === worldId)
+}
+
 // ── Install / uninstall ─────────────────────────────────────────────────────────────────────────
 
 export type InstallResult = { installed: boolean; pack: AgentPackSummary }

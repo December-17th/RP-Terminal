@@ -269,6 +269,24 @@ export const AgentPackDetail: React.FC<{
               >
                 {t('agents.settings.openStudio')}
               </button>
+              {/* Direct fragment editing (WP4.4). A NON-builtin pack (a fork, or an imported install)
+                  opens as an EDITABLE fragment session in Studio — full drag / rewire / add-node, save
+                  writes back to this pack. A builtin can't be edited in place (edit by forking): it
+                  keeps only the Effective-mode hand-off above (where the first edit forks). */}
+              {builtin ? (
+                <p className="rpt-agentdetail-note">{t('agents.settings.editFragmentBuiltinHint')}</p>
+              ) : (
+                <button
+                  type="button"
+                  className="rpt-agentdetail-studio"
+                  onClick={() => {
+                    onClose()
+                    openWorkflowEditor({ fragmentPackId: packId })
+                  }}
+                >
+                  {t('agents.settings.editFragment')}
+                </button>
+              )}
               <p className="rpt-agentdetail-note">{t('agents.settings.forkNote')}</p>
 
               {builtin ? (

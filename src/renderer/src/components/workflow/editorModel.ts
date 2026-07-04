@@ -145,9 +145,15 @@ export function editorToDoc(
     nodes: outNodes,
     edges: outEdges,
     ...(base.meta !== undefined ? { meta: base.meta } : {}),
-    // Without this, `kind` (turn/subgraph) is silently dropped on every revalidate()/save(),
+    // Without this, `kind` (turn/subgraph/fragment) is silently dropped on every revalidate()/save(),
     // downgrading a sub-graph doc to a turn doc on its first editor save (plan-QA blocker).
-    ...(base.kind !== undefined ? { kind: base.kind } : {})
+    ...(base.kind !== undefined ? { kind: base.kind } : {}),
+    // Fragment-only doc fields (agent-packs plan WP4.4): a kind:'fragment' pack fragment carries
+    // `attachments` (where it joins the turn) which the editor never edits but MUST round-trip — this
+    // walker rebuilds the doc from a field whitelist, so an un-whitelisted field is dropped on the
+    // first save. Preserving it keeps a fragment-editing session's save from stripping the pack's
+    // attachment declarations (which would fail updatePackFragment's fragment-kind ≥1-attachment rule).
+    ...(base.attachments !== undefined ? { attachments: base.attachments } : {})
   }
 }
 

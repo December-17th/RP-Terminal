@@ -183,6 +183,34 @@ describe('install / dedupe / uninstall', () => {
   })
 })
 
+describe('isPackActivationExclusiveToWorld (WP4.4; ADR 0006)', () => {
+  it('single-world activation → exclusive', () => {
+    state.activation = [
+      { packId: 'p1', worldId: 'w1', chatId: null, gateOpen: true, denial: [] },
+      { packId: 'p1', worldId: 'w1', chatId: 'c1', gateOpen: false, denial: [] }
+    ]
+    expect(service.isPackActivationExclusiveToWorld('prof', 'p1', 'w1')).toBe(true)
+  })
+
+  it('multi-world activation → NOT exclusive (another world shares the pack)', () => {
+    state.activation = [
+      { packId: 'p1', worldId: 'w1', chatId: null, gateOpen: true, denial: [] },
+      { packId: 'p1', worldId: 'w2', chatId: null, gateOpen: true, denial: [] }
+    ]
+    expect(service.isPackActivationExclusiveToWorld('prof', 'p1', 'w1')).toBe(false)
+  })
+
+  it('NO activation rows → NOT exclusive (a library pack could be activated elsewhere later — fork is the safe default)', () => {
+    state.activation = []
+    expect(service.isPackActivationExclusiveToWorld('prof', 'p1', 'w1')).toBe(false)
+  })
+
+  it('activation only in a DIFFERENT world → not exclusive to the asked world', () => {
+    state.activation = [{ packId: 'p1', worldId: 'w2', chatId: null, gateOpen: true, denial: [] }]
+    expect(service.isPackActivationExclusiveToWorld('prof', 'p1', 'w1')).toBe(false)
+  })
+})
+
 describe('gate delegation', () => {
   it('getGate: no rows → closed', () => {
     expect(service.getGate('p1', 'w1', 'c1')).toBe(false)

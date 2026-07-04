@@ -55,6 +55,24 @@
   color: var(--rpt-text-secondary);
 }
 
+/* Edit-fragment button — a compact action on FORK region headers (WP4.4): opens the fork's fragment
+   as an editable Studio session (drag/rewire this read-only projection can't do). Sits between the
+   name and the gate chip; kept subtle so the gate stays the primary control. */
+.rpt-workflow-editor .rpt-eff-region-edit {
+  margin-left: auto;
+  margin-right: 6px;
+  font-size: 11px;
+  padding: 2px 8px;
+  border: 1px solid var(--rpt-border);
+  border-radius: 10px;
+  background: var(--rpt-bg-tertiary);
+  color: var(--rpt-agent-region-text);
+  cursor: pointer;
+}
+.rpt-workflow-editor .rpt-eff-region-edit:hover {
+  background: var(--rpt-bg-elevated);
+}
+
 /* Gate chip — a compact toggle in the region header (reuses the agents gate semantics). Text label
    pairs with the switch (no color-only signaling — WCAG rule). */
 .rpt-workflow-editor .rpt-eff-gate {

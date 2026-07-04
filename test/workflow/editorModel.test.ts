@@ -149,6 +149,24 @@ describe('docToEditor / editorToDoc round-trip', () => {
     const rebuilt = editorToDoc(d, nodes, edges)
     expect(rebuilt.kind).toBeUndefined()
   })
+
+  it('round-trips a fragment doc’s `attachments` (WP4.4: editorToDoc must not drop fragment fields)', () => {
+    const attachments = [
+      { kind: 'entry' as const, checkpoint: 'context-ready' as const, mode: 'branch' as const }
+    ]
+    const d = doc([node('a')], [], { kind: 'fragment', attachments })
+    const { nodes, edges } = docToEditor(d)
+    const rebuilt = editorToDoc(d, nodes, edges)
+    expect(rebuilt.kind).toBe('fragment')
+    expect(rebuilt.attachments).toEqual(attachments)
+  })
+
+  it('omits attachments when the base doc has none (a turn doc never grows a stray field)', () => {
+    const d = doc([node('a')], [])
+    const { nodes, edges } = docToEditor(d)
+    const rebuilt = editorToDoc(d, nodes, edges)
+    expect(rebuilt.attachments).toBeUndefined()
+  })
 })
 
 describe('autoLayout', () => {

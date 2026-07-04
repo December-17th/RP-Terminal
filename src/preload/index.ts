@@ -204,6 +204,11 @@ const api = {
   // forking / writing through.
   getAgentPackFragment: (profileId: string, packId: string) =>
     ipcRenderer.invoke('agent-pack-fragment', profileId, packId),
+  // Is a pack's activation exclusively this world's? (WP4.4; ADR 0006.) The Effective-mode edit router
+  // consults it so a config edit on your OWN non-builtin fork writes through across restarts instead of
+  // minting a fork-of-fork. No activation rows → false (fork-again, the safe default).
+  isAgentPackActivationExclusive: (profileId: string, packId: string, worldId: string) =>
+    ipcRenderer.invoke('agent-pack-activation-exclusive', profileId, packId, worldId),
   // Next-prompt injection preview (agent-packs plan WP3.4): the assembled prompt broken into per-source
   // sections + an omitted list. A DRY RUN — zero state writes, zero LLM calls. Fetched on the Preview
   // pane opening + on the Refresh button; never auto-polled.

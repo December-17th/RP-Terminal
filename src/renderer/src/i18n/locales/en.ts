@@ -561,6 +561,10 @@ const en: Record<string, string> = {
   'workflowEditor.invalid': 'Invalid',
   'workflowEditor.errors': 'Validation errors',
   'workflowEditor.readOnlyBuiltin': 'The built-in workflow is read-only — clone it to edit.',
+  'workflowEditor.fragmentBadge': 'Editing pack fragment: {{name}}',
+  'workflowEditor.fragmentBadgeTitle':
+    "You're editing an agent pack's fragment. Save writes back to the pack.",
+  'workflowEditor.fragmentLoadFailed': 'Could not open that pack fragment for editing.',
   'workflowEditor.noSelection': 'Select a node to edit its settings.',
   'workflowEditor.mainOutput': 'Main output',
   'workflowEditor.namePh': 'Workflow name',
@@ -854,6 +858,12 @@ const en: Record<string, string> = {
   'workflowEffective.forkLineageTitle': 'This pack is a fork of an installed pack',
   'workflowEffective.spliceLocked':
     'Attachment wiring is part of the pack definition — edit it via fork in a later update.',
+  // WP4.4: direct fragment editing + the read-only-projection rearrange hint.
+  'workflowEffective.editFragment': 'Edit fragment',
+  'workflowEffective.editFragmentTitle':
+    'Open this pack’s fragment in Workflow Studio to rearrange and rewire it',
+  'workflowEffective.rearrangeHint':
+    'This is a read-only preview. Rearrange and rewire by editing the pack’s fragment.',
 
   'prefs.combatNarration': 'Combat narration',
   'prefs.combatNarrationAppend': 'Append to the current message',
@@ -1118,6 +1128,11 @@ const en: Record<string, string> = {
   'agents.settings.writeError': "Couldn't save that change.",
   // Advanced
   'agents.settings.openStudio': 'Open in Workflow Studio',
+  // WP4.4: direct fragment editing (non-builtin packs open editable in Studio; builtins fork first).
+  'agents.settings.editFragment': 'Edit fragment in Studio',
+  'agents.settings.editFragmentBuiltinHint':
+    'Built-in packs can’t be edited in place — open the composition above and edit a node to fork it first.',
+  'agents.editFragment.short': 'Edit',
   'agents.settings.forkNote':
     'Editing a pack’s graph in Workflow Studio makes a copy for this world — the original stays untouched.',
   // Uninstall a pack from the library (WP4.3b — destructive, confirm sub-step; builtins disabled).

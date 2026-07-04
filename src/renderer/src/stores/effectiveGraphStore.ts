@@ -180,16 +180,38 @@ export const useEffectiveGraphStore = create<EffectiveGraphState>((set, get) => 
         return
       }
 
-      // ── First edit: the edit IS the fork (ADR 0006) ────────────────────────────────────────────
-      // Exclusivity rule (grounded): we only WRITE THROUGH to a fork we created THIS SESSION for THIS
-      // world (forkPack repoints only this world, so a fresh fork's activation is this world's alone).
-      // For anything else — a builtin, an upstream install, or a fork we did NOT create this session
-      // (which another world might share) — forking AGAIN is the ADR 0006 safe default: it never
-      // mutates a shared artifact. So "already a fork owned by this world" = membership in forkedPacks.
+      // ── First edit (no session-map entry yet) ──────────────────────────────────────────────────
+      // Exclusivity rule (WP4.4, grounded — replaces the old session-map-ONLY rule that silently
+      // re-forked after a restart). The session map (forkedPacks) is the fast path above; when it has no
+      // entry we ask the DURABLE question: is this pack's activation EXCLUSIVELY this world's? If yes and
+      // it is non-builtin, we WRITE THROUGH to it directly (no other world runs it, so an in-place edit
+      // is safe) — this is what makes editing your OWN fork work across a restart instead of minting a
+      // fork-of-fork. If not exclusive (another world shares it, or it has no activation), or it is a
+      // builtin, forking AGAIN is the ADR 0006 safe default: it never mutates a shared/pristine artifact.
       const source = (await api().getAgentPackFragment(profileId, packId)) as WorkflowDoc | null
       if (!source) return
       if (!fragmentEditApplies(source, fragEdit)) return
       const edited = applyFragmentEdit(source, fragEdit)
+
+      const exclusive = await api().isAgentPackActivationExclusive(profileId, packId, worldId)
+      if (exclusive) {
+        // Try a direct write-through. updateAgentPackFragment refuses builtins (code:'builtin') — a
+        // builtin is edited by forking, so on that refusal we fall through to the fork branch below.
+        const res = await api().updateAgentPackFragment(profileId, packId, edited)
+        if (res?.ok) {
+          // Record it so THIS session's subsequent edits keep writing through (and so the recompose,
+          // which re-presents this pack under its own prefix, routes as write-through not a re-fork).
+          set({ forkedPacks: { ...get().forkedPacks, [packId]: packId } })
+          await get().fetch(profileId, chatId, worldId)
+          return
+        }
+        if (res?.code && res.code !== 'builtin') {
+          pushInvalidToast(res.code)
+          return
+        }
+        // builtin (or missing) → fall through to fork.
+      }
+
       const res = await api().forkAgentPack(profileId, packId, worldId, edited)
       if (!res?.ok || !res.pack) {
         pushInvalidToast('invalid')

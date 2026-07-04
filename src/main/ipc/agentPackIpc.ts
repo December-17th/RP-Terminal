@@ -105,6 +105,15 @@ export const registerAgentPackIpc = (ipcMain: IpcMain): void => {
     const pack = agentPackService.getPackFragment(profileId, packId)
     return pack
   })
+  // Is a pack's activation EXCLUSIVELY this world's? (agent-packs plan WP4.4; ADR 0006.) A read-only
+  // check the Effective-mode edit router consults to decide write-through-vs-fork-again for a config
+  // edit on a non-builtin fork, so config edits on your OWN fork persist across restarts (the old
+  // session-map-only rule silently re-forked after a restart). No activation rows → not exclusive.
+  ipcMain.handle(
+    'agent-pack-activation-exclusive',
+    (_, profileId: string, packId: string, worldId: string) =>
+      agentPackService.isPackActivationExclusiveToWorld(profileId, packId, worldId)
+  )
   // Next-prompt injection preview for the Agents workspace Preview pane (agent-packs plan WP3.4). Runs
   // the effective doc's pre-assemble closure in a dry run (ZERO state writes, ZERO LLM calls) and shapes
   // the assembled prompt into per-source sections + an omitted list. Resolves the installed-pack

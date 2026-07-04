@@ -35,6 +35,13 @@ export interface WorkflowSummary {
 
 const BUILTIN_WORKFLOW_ID = 'default'
 
+/** What kind of artifact the editor session is editing (agent-packs plan WP4.4). `'workflow'` is the
+ *  Normal-mode default: `currentId` is a workflow file id, save routes to `saveWorkflow`. `'fragment'`
+ *  is a pack-fragment session: `currentId`/`fragmentPackId` is a pack id, the doc is that pack's stored
+ *  `kind:'fragment'` fragment, and save routes to `updateAgentPackFragment` (NOT the workflow file
+ *  store — a fragment is never a workflow file; agentPackStore keeps it out of the workflow dir). */
+export type EditorSessionType = 'workflow' | 'fragment'
+
 interface WorkflowEditorState {
   nodeTypes: NodeTypeInfo[]
   workflows: WorkflowSummary[]
@@ -44,6 +51,14 @@ interface WorkflowEditorState {
   edges: EditorEdge[]
   dirty: boolean
   readOnly: boolean
+  /** The session kind (WP4.4). Governs the save dispatch + the editor UI's kind-specific gating (a
+   *  fragment session hides the main-output affordance — a fragment is never run alone, so it carries
+   *  no main output; validate.ts skips the exactly-one-main-output rule for kind:'fragment'). */
+  sessionType: EditorSessionType
+  /** The pack id whose fragment this session edits, or null in a workflow session. Save writes back
+   *  to THIS pack via updateAgentPackFragment (builtins are refused main-side — the entry points only
+   *  offer fragment editing on non-builtin forks, so a builtin never reaches this path). */
+  fragmentPackId: string | null
   errors: ValidationError[]
   selectedNodeId: string | null
   status: string | null
@@ -69,6 +84,12 @@ interface WorkflowEditorState {
   ): void
   init(profileId: string): Promise<void>
   open(profileId: string, id: string): Promise<void>
+  /** Open a pack's fragment as an EDITABLE fragment session (agent-packs plan WP4.4). Loads the
+   *  fragment via getAgentPackFragment into the SAME editor store the Normal-mode canvas drives — so
+   *  drag / connect / add-node / config all work as normal — but marks the session `'fragment'` so
+   *  save routes to updateAgentPackFragment. Returns { ok } so the caller can toast a load failure
+   *  (an uninstalled pack / a builtin the entry points shouldn't have offered). */
+  openFragment(profileId: string, packId: string): Promise<{ ok: boolean }>
   addNode(
     type: string,
     position: { x: number; y: number },
@@ -145,6 +166,8 @@ export const useWorkflowEditorStore = create<WorkflowEditorState>((set, get) => 
     edges: [],
     dirty: false,
     readOnly: false,
+    sessionType: 'workflow',
+    fragmentPackId: null,
     errors: [],
     selectedNodeId: null,
     status: null,
@@ -174,6 +197,10 @@ export const useWorkflowEditorStore = create<WorkflowEditorState>((set, get) => 
         edges,
         readOnly,
         dirty: false,
+        // Opening a WORKFLOW file always returns the session to the workflow kind — a prior fragment
+        // session must not leak its save routing onto a workflow doc.
+        sessionType: 'workflow',
+        fragmentPackId: null,
         errors: result.ok ? [] : result.errors,
         selectedNodeId: null,
         status: null,
@@ -181,6 +208,34 @@ export const useWorkflowEditorStore = create<WorkflowEditorState>((set, get) => 
         // nodes; the lock is set only while Effective mode is active).
         lockedNodeIds: new Set<string>()
       })
+    },
+
+    openFragment: async (profileId, packId) => {
+      const doc = (await window.api.getAgentPackFragment(profileId, packId)) as WorkflowDoc | null
+      if (!doc) return { ok: false }
+      const { nodes, edges } = docToEditor(doc)
+      const result = validateWorkflow(doc, descriptorMap(get().nodeTypes))
+      set({
+        // The pack id is the session's identity for save routing; it doubles as `currentId` so the
+        // existing UI (which reads currentId for the picker) has a stable non-null id, but the workflow
+        // PICKER is disabled in a fragment session (see WorkflowEditorView) so this never selects a file.
+        currentId: packId,
+        doc,
+        nodes,
+        edges,
+        // A fragment session is always editable — the entry points only offer it on NON-builtin forks
+        // (updatePackFragment refuses builtins main-side regardless, so this is defense in depth). It is
+        // never the readOnly builtin narrator.
+        readOnly: false,
+        sessionType: 'fragment',
+        fragmentPackId: packId,
+        dirty: false,
+        errors: result.ok ? [] : result.errors,
+        selectedNodeId: null,
+        status: null,
+        lockedNodeIds: new Set<string>()
+      })
+      return { ok: true }
     },
 
     addNode: (type, position, config) => {
@@ -311,9 +366,24 @@ export const useWorkflowEditorStore = create<WorkflowEditorState>((set, get) => 
     select: (id) => set({ selectedNodeId: id }),
 
     save: async (profileId) => {
-      const { readOnly, currentId, doc, nodes, edges } = get()
+      const { readOnly, currentId, doc, nodes, edges, sessionType, fragmentPackId } = get()
       if (readOnly || !currentId || !doc) return
       const nextDoc = editorToDoc(doc, nodes, edges)
+
+      // Fragment session (WP4.4): save routes to the PACK store, not the workflow file store. The
+      // fragment doc round-trips its `kind:'fragment'` + `attachments` (editorToDoc preserves both),
+      // so updatePackFragment's fragment-kind validation (≥1 attachment) passes. A builtin is refused
+      // main-side (code:'builtin'); the entry points don't offer this on builtins, so it's a guard.
+      if (sessionType === 'fragment' && fragmentPackId) {
+        const res = await window.api.updateAgentPackFragment(profileId, fragmentPackId, nextDoc)
+        if (!res?.ok) {
+          set({ status: res?.error ?? 'saveFailed' })
+          return
+        }
+        set({ doc: nextDoc, dirty: false, status: 'saved' })
+        return
+      }
+
       const result = await window.api.saveWorkflow(profileId, currentId, nextDoc)
       if (!result.ok) {
         set({ status: result.error })

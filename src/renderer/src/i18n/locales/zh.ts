@@ -542,6 +542,9 @@ const zh: Record<string, string> = {
   'workflowEditor.invalid': '无效',
   'workflowEditor.errors': '校验错误',
   'workflowEditor.readOnlyBuiltin': '内置工作流为只读 — 克隆后编辑。',
+  'workflowEditor.fragmentBadge': '正在编辑包片段：{{name}}',
+  'workflowEditor.fragmentBadgeTitle': '你正在编辑一个智能体包的片段。保存会写回到该包。',
+  'workflowEditor.fragmentLoadFailed': '无法打开该包片段进行编辑。',
   'workflowEditor.noSelection': '选择一个节点以编辑其设置。',
   'workflowEditor.mainOutput': '主输出',
   'workflowEditor.namePh': '工作流名称',
@@ -820,6 +823,10 @@ const zh: Record<string, string> = {
   'workflowEffective.forkFrom': '源自 {{base}}',
   'workflowEffective.forkLineageTitle': '该包是某个已安装包的复刻',
   'workflowEffective.spliceLocked': '接线属于包定义的一部分——将在后续更新中通过复刻编辑。',
+  // WP4.4：直接编辑片段 + 只读预览的重排提示。
+  'workflowEffective.editFragment': '编辑片段',
+  'workflowEffective.editFragmentTitle': '在工作流工作室中打开该包的片段以重排与重连',
+  'workflowEffective.rearrangeHint': '这是只读预览。若要重排与重连，请编辑该包的片段。',
 
   'prefs.combatNarration': '战斗叙述',
   'prefs.combatNarrationAppend': '追加到当前消息',
@@ -1077,6 +1084,11 @@ const zh: Record<string, string> = {
   'agents.settings.writeError': '无法保存该改动。',
   // 高级
   'agents.settings.openStudio': '在工作流工作室中打开',
+  // WP4.4：直接编辑片段（非内置包可在工作室中打开并编辑；内置包需先复刻）。
+  'agents.settings.editFragment': '在工作室中编辑片段',
+  'agents.settings.editFragmentBuiltinHint':
+    '内置包无法就地编辑——请在上方打开组合图并编辑某个节点以先复刻。',
+  'agents.editFragment.short': '编辑',
   'agents.settings.forkNote':
     '在工作流工作室中编辑包的图会为本世界创建一份副本——原始包保持不变。',
   // 从库中卸载包（WP4.3b——破坏性操作，带确认步骤；内置包禁用）。

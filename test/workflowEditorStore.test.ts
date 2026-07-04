@@ -43,10 +43,34 @@ const setupApi = (): void => {
         return null
       }),
       saveWorkflow: vi.fn().mockResolvedValue({ ok: true, id: 'custom-1' }),
-      cloneWorkflow: vi.fn().mockResolvedValue({ id: 'custom-1-clone', name: 'Custom (copy)' })
+      cloneWorkflow: vi.fn().mockResolvedValue({ id: 'custom-1-clone', name: 'Custom (copy)' }),
+      // Fragment session (WP4.4): the pack fragment read + write-back IPC.
+      getAgentPackFragment: vi.fn(async (_profileId: string, packId: string) => {
+        if (packId === 'my-fork') return fragmentDoc()
+        return null
+      }),
+      updateAgentPackFragment: vi
+        .fn()
+        .mockResolvedValue({ ok: true, pack: { id: 'my-fork', builtin: false } })
     }
   }
 }
+
+/** A kind:'fragment' pack fragment doc (agent-packs plan WP4.4). Carries `attachments` (the fields the
+ *  editor must round-trip) + a fragment-shaped graph (no main-output node — validate skips that rule). */
+const fragmentDoc = (): WorkflowDoc => ({
+  id: 'my-fork',
+  name: 'My Fork',
+  version: 1,
+  schemaVersion: 1,
+  kind: 'fragment',
+  attachments: [{ kind: 'entry', checkpoint: 'context-ready', mode: 'branch' }],
+  nodes: [
+    { id: 'ctx', type: 'input.context', position: { x: 0, y: 0 } },
+    { id: 'tmpl', type: 'text.template', position: { x: 260, y: 0 }, config: { text: 'hi' } }
+  ],
+  edges: [{ from: { node: 'ctx', port: 'gen' }, to: { node: 'tmpl', port: 'gen' } }]
+})
 
 const profileId = 'p1'
 
@@ -61,6 +85,8 @@ beforeEach(() => {
     edges: [],
     dirty: false,
     readOnly: false,
+    sessionType: 'workflow',
+    fragmentPackId: null,
     errors: [],
     selectedNodeId: null,
     status: null,
@@ -470,5 +496,93 @@ describe('workflowEditorStore: pack-edit routing (Effective mode — WP3.6b)', (
     const locks = useWorkflowEditorStore.getState().lockedNodeIds
     expect(locks.has('ctx')).toBe(false) // fork's node editable
     expect(locks.has('write')).toBe(true) // other pack still locked
+  })
+})
+
+describe('workflowEditorStore: fragment editing session (WP4.4)', () => {
+  beforeEach(async () => {
+    await useWorkflowEditorStore.getState().init(profileId)
+  })
+
+  it('openFragment loads the pack fragment as an EDITABLE session (nodes movable, config editable)', async () => {
+    const res = await useWorkflowEditorStore.getState().openFragment(profileId, 'my-fork')
+    expect(res).toEqual({ ok: true })
+    const s = useWorkflowEditorStore.getState()
+    expect(s.sessionType).toBe('fragment')
+    expect(s.fragmentPackId).toBe('my-fork')
+    expect(s.readOnly).toBe(false) // a fragment session is always editable (never the readOnly builtin)
+    expect(s.doc?.kind).toBe('fragment')
+    expect(s.nodes.map((n) => n.id).sort()).toEqual(['ctx', 'tmpl'])
+    // Fragment doc skips the main-output rule — a valid fragment opens with NO validation errors.
+    expect(s.errors).toEqual([])
+
+    // Nodes are movable (not locked — no Effective-mode lock in a fragment session).
+    useWorkflowEditorStore.getState().moveNode('ctx', { x: 111, y: 222 })
+    expect(useWorkflowEditorStore.getState().nodes.find((n) => n.id === 'ctx')!.position).toEqual({
+      x: 111,
+      y: 222
+    })
+    // Config is editable.
+    useWorkflowEditorStore.getState().setNodeConfig('tmpl', { text: 'edited' })
+    expect(useWorkflowEditorStore.getState().nodes.find((n) => n.id === 'tmpl')!.config).toEqual({
+      text: 'edited'
+    })
+  })
+
+  it('openFragment returns { ok:false } for an uninstalled/missing pack (no session change)', async () => {
+    const res = await useWorkflowEditorStore.getState().openFragment(profileId, 'nope')
+    expect(res).toEqual({ ok: false })
+    expect(useWorkflowEditorStore.getState().sessionType).toBe('workflow')
+  })
+
+  it('save routes to updateAgentPackFragment (NOT saveWorkflow) and round-trips attachments + kind', async () => {
+    await useWorkflowEditorStore.getState().openFragment(profileId, 'my-fork')
+    useWorkflowEditorStore.getState().moveNode('ctx', { x: 5, y: 5 }) // make it dirty
+    expect(useWorkflowEditorStore.getState().dirty).toBe(true)
+
+    await useWorkflowEditorStore.getState().save(profileId)
+
+    // Dispatched to the PACK path, never the workflow-file path.
+    expect(window.api.saveWorkflow).not.toHaveBeenCalled()
+    expect(window.api.updateAgentPackFragment).toHaveBeenCalledTimes(1)
+    const [, packId, savedDoc] = (
+      window.api.updateAgentPackFragment as ReturnType<typeof vi.fn>
+    ).mock.calls[0] as [string, string, WorkflowDoc]
+    expect(packId).toBe('my-fork')
+    // The attachments-fix: editorToDoc must NOT drop the fragment's doc-level fields.
+    expect(savedDoc.kind).toBe('fragment')
+    expect(savedDoc.attachments).toEqual([
+      { kind: 'entry', checkpoint: 'context-ready', mode: 'branch' }
+    ])
+    // The dragged position persisted into the saved fragment (drag now saves — the bug this WP fixes).
+    expect(savedDoc.nodes.find((n) => n.id === 'ctx')!.position).toEqual({ x: 5, y: 5 })
+
+    const s = useWorkflowEditorStore.getState()
+    expect(s.dirty).toBe(false)
+    expect(s.status).toBe('saved')
+  })
+
+  it('save surfaces a rejected fragment write (e.g. builtin) as status, keeps dirty', async () => {
+    ;(window.api.updateAgentPackFragment as ReturnType<typeof vi.fn>).mockResolvedValue({
+      ok: false,
+      code: 'builtin',
+      error: 'pack my-fork is builtin'
+    })
+    await useWorkflowEditorStore.getState().openFragment(profileId, 'my-fork')
+    useWorkflowEditorStore.getState().moveNode('ctx', { x: 9, y: 9 })
+
+    await useWorkflowEditorStore.getState().save(profileId)
+    const s = useWorkflowEditorStore.getState()
+    expect(s.status).toBe('pack my-fork is builtin')
+    expect(s.dirty).toBe(true)
+  })
+
+  it('opening a WORKFLOW file after a fragment session resets sessionType to workflow', async () => {
+    await useWorkflowEditorStore.getState().openFragment(profileId, 'my-fork')
+    expect(useWorkflowEditorStore.getState().sessionType).toBe('fragment')
+    await useWorkflowEditorStore.getState().open(profileId, 'custom-1')
+    const s = useWorkflowEditorStore.getState()
+    expect(s.sessionType).toBe('workflow')
+    expect(s.fragmentPackId).toBeNull()
   })
 })

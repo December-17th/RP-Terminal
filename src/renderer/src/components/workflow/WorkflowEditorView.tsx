@@ -59,11 +59,13 @@ export default function WorkflowEditorView({
   const setDocName = useWorkflowEditorStore((s) => s.setDocName)
   const dirty = useWorkflowEditorStore((s) => s.dirty)
   const readOnly = useWorkflowEditorStore((s) => s.readOnly)
+  const sessionType = useWorkflowEditorStore((s) => s.sessionType)
   const errors = useWorkflowEditorStore((s) => s.errors)
   const status = useWorkflowEditorStore((s) => s.status)
   const nodeTypes = useWorkflowEditorStore((s) => s.nodeTypes)
   const init = useWorkflowEditorStore((s) => s.init)
   const open = useWorkflowEditorStore((s) => s.open)
+  const openFragment = useWorkflowEditorStore((s) => s.openFragment)
   const save = useWorkflowEditorStore((s) => s.save)
   const cloneAndEdit = useWorkflowEditorStore((s) => s.cloneAndEdit)
   const select = useWorkflowEditorStore((s) => s.select)
@@ -78,7 +80,15 @@ export default function WorkflowEditorView({
   // seed the initial mode from it once, then clear the request so a later manual open starts Normal.
   const requestedMode = useUiStore((s) => s.workflowEditorInitialMode)
   const consumeInitialMode = useUiStore((s) => s.consumeWorkflowEditorInitialMode)
-  const [mode, setMode] = useState<EditorMode>(requestedMode === 'effective' ? 'effective' : 'normal')
+  // WP4.4: a fragment-editing hand-off ("Edit fragment in Studio"). Read the requested pack id ONCE on
+  // mount (a ref so a later store change can't retrigger the load) — a fragment session is Normal-mode-
+  // like, so it forces Normal mode and takes precedence over an initialMode:'effective' request.
+  const requestedFragmentPackId = useUiStore((s) => s.workflowEditorFragmentPackId)
+  const consumeFragmentPackId = useUiStore((s) => s.consumeWorkflowEditorFragmentPackId)
+  const initialFragmentPackId = React.useRef(requestedFragmentPackId).current
+  const [mode, setMode] = useState<EditorMode>(
+    initialFragmentPackId ? 'normal' : requestedMode === 'effective' ? 'effective' : 'normal'
+  )
   useEffect(() => {
     if (requestedMode) consumeInitialMode()
     // eslint-disable-next-line react-hooks/exhaustive-deps -- consume once on mount for the initial request
@@ -101,8 +111,18 @@ export default function WorkflowEditorView({
   const [triggerCaptions, setTriggerCaptions] = useState<Record<string, string>>({})
 
   useEffect(() => {
-    void init(profileId)
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- run once per profileId, init is stable
+    void (async () => {
+      await init(profileId)
+      // WP4.4: after node types are loaded (openFragment validates against them), load the requested
+      // pack fragment as an editable session. Consume the request so a manual re-open starts normally;
+      // a load failure (uninstalled pack) toasts + falls back to the default workflow open below.
+      if (initialFragmentPackId) {
+        const res = await openFragment(profileId, initialFragmentPackId)
+        consumeFragmentPackId()
+        if (!res.ok) useToastStore.getState().push(t('workflowEditor.fragmentLoadFailed'))
+      }
+    })()
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- run once per profileId; init/openFragment stable
   }, [profileId])
 
   // Entering Effective mode: (1) load the resolved narrator into the editor store so narrator-node
@@ -189,6 +209,9 @@ export default function WorkflowEditorView({
   }, [mode])
 
   useEffect(() => {
+    // Don't auto-open the default workflow when a fragment session was requested — its async load sets
+    // currentId to the pack id; racing a default open would clobber the fragment session (WP4.4).
+    if (initialFragmentPackId) return
     if (!currentId && workflows.length > 0) {
       const fallback = workflows.some((w) => w.id === BUILTIN_WORKFLOW_ID)
         ? BUILTIN_WORKFLOW_ID
@@ -236,48 +259,75 @@ export default function WorkflowEditorView({
           flex: '0 0 auto'
         }}
       >
-        {/* Normal / Effective mode toggle (agent-packs plan WP3.6a; ADR 0010). Effective renders the
-            live composition (narrator + gate-open packs) for the active chat. */}
-        <div className="rpt-eff-modeswitch" role="tablist" aria-label={t('workflowEffective.mode')}>
-          {(['normal', 'effective'] as EditorMode[]).map((m) => (
-            <button
-              key={m}
-              type="button"
-              role="tab"
-              aria-selected={mode === m}
-              className={`rpt-eff-modeswitch-btn${mode === m ? ' active' : ''}`}
-              onClick={() => setMode(m)}
-              style={{ fontSize: 12 }}
+        {/* A fragment-editing session (WP4.4) IS Normal-mode-like: the Effective toggle is disabled
+            (there is no composition to project — you're editing one pack's fragment directly), and the
+            workflow picker is replaced by a "editing pack fragment: <name>" badge so the user knows
+            which artifact they're in. */}
+        {sessionType === 'fragment' ? (
+          <span
+            className="rpt-workflow-fragment-badge"
+            style={{
+              fontSize: 11.5,
+              padding: '2px 9px',
+              borderRadius: 10,
+              border: '1px solid var(--rpt-agent-region-border)',
+              background: 'var(--rpt-agent-region)',
+              color: 'var(--rpt-agent-region-text)'
+            }}
+            title={t('workflowEditor.fragmentBadgeTitle')}
+          >
+            {t('workflowEditor.fragmentBadge', { name: doc?.name ?? currentId ?? '' })}
+          </span>
+        ) : (
+          <>
+            {/* Normal / Effective mode toggle (agent-packs plan WP3.6a; ADR 0010). Effective renders the
+                live composition (narrator + gate-open packs) for the active chat. */}
+            <div
+              className="rpt-eff-modeswitch"
+              role="tablist"
+              aria-label={t('workflowEffective.mode')}
             >
-              {t(`workflowEffective.mode.${m}`)}
-            </button>
-          ))}
-        </div>
+              {(['normal', 'effective'] as EditorMode[]).map((m) => (
+                <button
+                  key={m}
+                  type="button"
+                  role="tab"
+                  aria-selected={mode === m}
+                  className={`rpt-eff-modeswitch-btn${mode === m ? ' active' : ''}`}
+                  onClick={() => setMode(m)}
+                  style={{ fontSize: 12 }}
+                >
+                  {t(`workflowEffective.mode.${m}`)}
+                </button>
+              ))}
+            </div>
 
-        <select
-          value={currentId ?? ''}
-          onChange={(e) => void open(profileId, e.target.value)}
-          disabled={mode === 'effective'}
-          title={mode === 'effective' ? t('workflowEffective.pickerLocked') : undefined}
-          style={{ fontSize: 12.5 }}
-        >
-          {workflows.map((w) => (
-            <option key={w.id} value={w.id}>
-              {w.name}
-            </option>
-          ))}
-        </select>
+            <select
+              value={currentId ?? ''}
+              onChange={(e) => void open(profileId, e.target.value)}
+              disabled={mode === 'effective'}
+              title={mode === 'effective' ? t('workflowEffective.pickerLocked') : undefined}
+              style={{ fontSize: 12.5 }}
+            >
+              {workflows.map((w) => (
+                <option key={w.id} value={w.id}>
+                  {w.name}
+                </option>
+              ))}
+            </select>
 
-        {/* Rename the open workflow (doc metadata; persists on Save). Read-only for the builtin. */}
-        <input
-          type="text"
-          value={doc?.name ?? ''}
-          disabled={readOnly || mode === 'effective'}
-          placeholder={t('workflowEditor.namePh')}
-          title={t('workflowEditor.nameTitle')}
-          onChange={(e) => setDocName(e.target.value)}
-          style={{ fontSize: 12.5, width: 170 }}
-        />
+            {/* Rename the open workflow (doc metadata; persists on Save). Read-only for the builtin. */}
+            <input
+              type="text"
+              value={doc?.name ?? ''}
+              disabled={readOnly || mode === 'effective'}
+              placeholder={t('workflowEditor.namePh')}
+              title={t('workflowEditor.nameTitle')}
+              onChange={(e) => setDocName(e.target.value)}
+              style={{ fontSize: 12.5, width: 170 }}
+            />
+          </>
+        )}
 
         <button
           type="button"
@@ -303,21 +353,28 @@ export default function WorkflowEditorView({
           </span>
         )}
 
-        <button
-          type="button"
-          onClick={() => void cloneAndEdit(profileId)}
-          style={{ fontSize: 12.5 }}
-        >
-          {t('workflowEditor.cloneToEdit')}
-        </button>
+        {/* Clone / import / export are WORKFLOW-FILE operations (they read currentId as a workflow id).
+            In a fragment session currentId is a pack id, so these are hidden — the pack surfaces its own
+            fork/export affordances in the Agents workspace (WP4.3). */}
+        {sessionType !== 'fragment' && (
+          <>
+            <button
+              type="button"
+              onClick={() => void cloneAndEdit(profileId)}
+              style={{ fontSize: 12.5 }}
+            >
+              {t('workflowEditor.cloneToEdit')}
+            </button>
 
-        <button type="button" onClick={() => void onImport()} style={{ fontSize: 12.5 }}>
-          {t('workflowEditor.import')}
-        </button>
+            <button type="button" onClick={() => void onImport()} style={{ fontSize: 12.5 }}>
+              {t('workflowEditor.import')}
+            </button>
 
-        <button type="button" disabled={!currentId} onClick={onExport} style={{ fontSize: 12.5 }}>
-          {t('workflowEditor.export')}
-        </button>
+            <button type="button" disabled={!currentId} onClick={onExport} style={{ fontSize: 12.5 }}>
+              {t('workflowEditor.export')}
+            </button>
+          </>
+        )}
 
         <span style={{ flex: 1 }} />
 

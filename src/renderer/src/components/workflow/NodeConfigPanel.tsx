@@ -5,6 +5,7 @@
 import React, { useEffect, useState } from 'react'
 import { useWorkflowEditorStore } from '../../stores/workflowEditorStore'
 import { useEffectiveGraphStore } from '../../stores/effectiveGraphStore'
+import { useUiStore } from '../../stores/uiStore'
 import { useOptionalT, useT } from '../../i18n'
 import { fieldsFromSchema, type FieldSpec } from './schemaForm'
 import { ownerOfNodeId, nodeOwnerMap, readComposition } from './effectiveProjection'
@@ -313,6 +314,7 @@ export default function NodeConfigPanel({
   const nodes = useWorkflowEditorStore((s) => s.nodes)
   const nodeTypes = useWorkflowEditorStore((s) => s.nodeTypes)
   const storeReadOnly = useWorkflowEditorStore((s) => s.readOnly)
+  const sessionType = useWorkflowEditorStore((s) => s.sessionType)
   const lockedNodeIds = useWorkflowEditorStore((s) => s.lockedNodeIds)
   const setNodeConfig = useWorkflowEditorStore((s) => s.setNodeConfig)
   const setNodePanel = useWorkflowEditorStore((s) => s.setNodePanel)
@@ -329,6 +331,7 @@ export default function NodeConfigPanel({
   const effPacks = useEffectiveGraphStore((s) => s.packs)
   const forkedPacks = useEffectiveGraphStore((s) => s.forkedPacks)
   const forkPackExplicit = useEffectiveGraphStore((s) => s.forkPackExplicit)
+  const openWorkflowEditor = useUiStore((s) => s.openWorkflowEditor)
 
   // Resolve this pack node's owner + whether it is detached (trigger-only) and whether its pack is
   // already forked this world/session (→ write-through, no re-fork; the panel messaging differs).
@@ -437,10 +440,29 @@ export default function NodeConfigPanel({
               {t('workflowEffective.forkButton')}
             </button>
           )}
+          {/* Once this world owns a fork, offer full fragment editing (WP4.4): drag/rewire/add-node in a
+              dedicated Studio session, which config-edit-in-projection can't do. Points at the fork id. */}
+          {alreadyForked && ownerPackId && (
+            <button
+              type="button"
+              onClick={() =>
+                openWorkflowEditor({ fragmentPackId: forkedPacks[ownerPackId] ?? ownerPackId })
+              }
+              title={t('workflowEffective.editFragmentTitle')}
+              style={{ fontSize: 12 }}
+            >
+              {t('workflowEffective.editFragment')}
+            </button>
+          )}
         </div>
       )}
 
-      {typeInfo?.isMainOutputCapable && (
+      {/* Main-output marking is a TURN-doc concept: exactly one node produces the assistant reply
+          (validate.ts enforces it). A fragment is spliced into a narrator at a checkpoint and never
+          run alone, so it carries no main output — validate.ts SKIPS the main-output rule for
+          kind:'fragment'. In a fragment session (WP4.4) we hide the affordance so a user can't mark
+          one (which would be meaningless + could confuse a later run-as-turn of the fork). */}
+      {typeInfo?.isMainOutputCapable && sessionType !== 'fragment' && (
         <label style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
           <input
             type="checkbox"
