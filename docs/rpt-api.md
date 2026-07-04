@@ -153,7 +153,7 @@ through the host bridge as RFC-6902 JSON Patch.
 - **Application order** follows ST's script priority (ST `regex/engine.js` `SCRIPT_TYPES`, "ORDER
   MATTERS"): global → preset → scoped, where our `world`/`session` scopes are the scoped tier
   (global → preset → world → session), file order within a tier — `regexService.getAllRules`. Cards rely
-  on this to run cleanup regexes (global/preset) before beautification (world/character) pastes large HTML.
+  on this to run cleanup regexes (global/preset) before card-owned beautification (world) pastes large HTML.
 - Replacement syntax supports ST-style `$0` for the full match, `$&` for the full match, and `$1`/`$2`...
   capture groups via the shared [`regexTransform`](../src/shared/regexTransform.ts).
 

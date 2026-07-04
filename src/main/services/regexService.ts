@@ -130,8 +130,8 @@ const rulesInFile = (filePath: string): any[] => {
  *  Application order is part of the card contract: cards chain cleanup (global/preset)
  *  BEFORE beautification (character/world), and a cleanup regex re-scanning a
  *  beautification rule's huge HTML paste can stall a render for tens of seconds. */
-const SCOPE_TIER: Record<string, number> = { global: 0, preset: 1, world: 2, session: 3 }
-const scopeTier = (m?: ScopeMeta): number => SCOPE_TIER[m?.scope ?? 'global'] ?? 0
+const SCOPE_TIER: Record<ArtifactScope, number> = { global: 0, preset: 1, world: 2, session: 3 }
+const scopeTier = (m?: ScopeMeta): number => SCOPE_TIER[m?.scope ?? 'global'] ?? 0 // ?? 0: corrupt sidecar scope
 
 /**
  * All normalized rules across the profile's regex files, in ST APPLICATION order:

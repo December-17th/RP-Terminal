@@ -104,9 +104,12 @@ export function ChatView({ profileId }: { profileId: string }): React.ReactEleme
 
   // The settings the transform actually reads, as primitives — the memo deps on these VALUES, not
   // on the `settings.templates` object, whose identity churns on every settings (re)load without
-  // its values changing (each churn would re-run the whole transform).
-  const renderOn =
-    settings?.templates?.enabled !== false && settings?.templates?.render?.enabled !== false
+  // its values changing (each churn would re-run the whole transform). Kept as THREE separate
+  // booleans because renderTemplate treats them differently (master off → strip tags; render-time
+  // off → raw text) — collapsing them into one flag would miss a master toggle while render-time
+  // is off (review finding on PR #60).
+  const templatesOn = settings?.templates?.enabled !== false
+  const renderEnabled = settings?.templates?.render?.enabled !== false
   const finalPassOn = settings?.templates?.render?.final_pass !== false
 
   // The one visible floor (undefined while the streaming page is showing). Extracted so the memo
@@ -138,7 +141,7 @@ export function ChatView({ profileId }: { profileId: string }): React.ReactEleme
     const evaled = renderTemplate(stripRptEvents(f.response.content), f.variables, 'final')
     // [RENDER:*]: wrap with the active render-marker templates (each evaled with this floor's vars).
     const wrap = (tmpls: string[]): string =>
-      renderOn
+      templatesOn && renderEnabled
         ? tmpls
             .map((t) => renderTemplate(t, f.variables, 'final'))
             .filter(Boolean)
@@ -166,9 +169,20 @@ export function ChatView({ profileId }: { profileId: string }): React.ReactEleme
       swipeId: f.swipe_id ?? 0,
       swipeCount: f.swipes?.length ?? 1
     }
-    // `regexRules` is a dep so a rule change re-renders the floor, though it's read via the store.
-    // `finalPassOn` is a dep because renderTemplate('final') reads it internally from the store.
-  }, [visibleFloor, regexRules, personaName, charName, renderOn, finalPassOn, renderMarkers])
+    // `regexRules` and `finalPassOn` are deliberate "extra" deps: the memo body reads the rules
+    // via useRegexStore.getState() and renderTemplate('final') reads final_pass from the settings
+    // store, so a change in either must re-run the transform though neither is referenced directly.
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- store-read inputs, see comment above
+  }, [
+    visibleFloor,
+    regexRules,
+    personaName,
+    charName,
+    templatesOn,
+    renderEnabled,
+    finalPassOn,
+    renderMarkers
+  ])
 
   // Paginated floor view: jump to the newest floor when the floor set changes
   // (new turn, chat switch), and to the in-flight (streaming) page while generating.
