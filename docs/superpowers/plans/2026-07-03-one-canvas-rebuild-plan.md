@@ -150,14 +150,104 @@ new dependencies. No changes to workflowEngine, main services, compose, or the p
 Size expectation: ~9 files touched, roughly +700 lines including tests. If the diff wants to
 grow past that, stop and report instead.
 
-## WP6.4 — The one canvas as THE surface [renderer]
+## WP6.4a — Editor internals: triggers live, runs replay, effective mode dies — DETAILED SPEC
 
-Editor becomes the primary surface: palette left (nodes + agent modules section + import/export +
-memory template binding), settings right (selection-driven), run-status overlay on nodes, live
-trigger state on trigger nodes, disabled dimming, bottom run-history drawer replaying statuses
-onto the canvas, prompt preview attached to the narrator's prompt node. Retires: the Agents
-control center (six rails), Effective mode, launcher cards (workspace 'workflow'/'agents' ids
-point at the editor). The wizard/inspector sheets survive with module framing.
+Controller-grounded against WorkflowEditorView.tsx (composition root; the entire Effective block
+at ~lines 78–130+: EditorMode state, EffectiveCanvas branch, effectiveGraphStore selectors,
+lock/router wiring, triggerCaptions), FlowCanvas (RptNode, traceByNode gating on
+`lastTrace.workflowId === currentId`), NodeConfigPanel, runTimeline.ts + previewDisplay.ts pure
+helpers, StoredRunRecord/listAgentPackRuns, previewNextPrompt IPC, WP6.1's evaluateTriggerCore +
+workflowTriggerStore.
+
+### A. Retire Effective mode from the editor (usage only; file deletion is WP6.6)
+WorkflowEditorView: delete the EditorMode state + toggle UI, the EffectiveCanvas import/render
+branch, all effectiveGraphStore selectors and fetch/clear effects, setLockedNodeIds /
+setPackEditRouter / routePackEdit wiring, triggerCaptions state. uiStore fields and the dead
+modules (EffectiveCanvas, effectiveGraphStore, effectiveProjection, packEditRouting) stay
+untouched-but-unreferenced until 6.4b/6.6. The editor keeps: picker/save/clone/import/export
+top bar, fragment sessions, palette/canvas/config columns, the 6.3 group toolbar button.
+
+### B. Disabled nodes (uses WP6.1's NodeInstance.disabled)
+- editorModel: `EditorNode.disabled?: boolean`; docToEditor copies it; editorToDoc whitelists it
+  (the trap — test).
+- Store: `setNodeDisabled(id: string, disabled: boolean)` → node update through revalidate();
+  readOnly/locked guards like setNodeConfig.
+- FlowCanvas RptNode: `disabled` → class `rpt-node-disabled` (css: opacity .45 + dashed border,
+  tokens only). Trigger nodes (renderer check: `editorNode.type.startsWith('trigger.')` — one
+  comment noting isTrigger lives main-side and this string check is the pragmatic mirror) render
+  an inline on/off switch in the title row (stopPropagation; aria-label; calls setNodeDisabled).
+- NodeConfigPanel: an "Enabled" checkbox row at the top of every node's panel (writes disabled).
+
+### C. Live trigger badges (one small main addition)
+- main: `explainDocTriggers(profileId, chatId)` in headlessRunService → per enabled trigger node
+  of the chat's RESOLVED doc: `{ nodeId, description, met, current?, required? }` — read-only
+  over evaluateTriggerCore + the workflowTriggerStore accessor (NO baseline writes; mirrors the
+  pack-era explainTriggers factoring). IPC `workflow-explain-doc-triggers` + preload binding.
+  Test: two calls leave workflow_trigger_state untouched; met/unmet + current/required shapes.
+- FlowCanvas: fetch once per (open doc, activeChatId) when `currentId` matches the chat's
+  resolved doc id (reuse the trace-overlay gating idiom); render on trigger nodes a caption line:
+  description + "now {current} · at {required}" + a met dot. Refresh after save and via the
+  drawer's refresh. NO polling.
+
+### D. Run drawer (new components/workflow/RunDrawer.tsx)
+- Collapsible strip at the bottom of WorkflowEditorView's body (collapsed by default; header =
+  last run's one-liner + count + expand chevron; ~40vh expanded, own scroll).
+- Data: listAgentPackRuns(profileId, activeChatId) page-1 only + a refresh button (no infinite
+  scroll here — NON-GOAL). Entry row: origin badge (turn/headless/manual), sentence via the
+  IMPORTED runTimeline.ts helpers (runFacts/outcomeSentence — do not duplicate), HH:mm,
+  duration. No per-pack filter chips.
+- Click an entry → replay: WorkflowEditorView holds `replayTrace: WorkflowRunTrace | null`;
+  FlowCanvas gains prop `traceOverride?: WorkflowRunTrace | null` — when set it REPLACES the
+  live lastTrace map and skips the workflowId gate (node ids map directly; ids that don't exist
+  in the open doc simply don't paint). Selected row highlighted; a "live" reset affordance
+  clears replay; doc switch / chat switch clears it.
+- en+zh keys (~10).
+
+### E. Prompt preview on the assemble node
+NodeConfigPanel: when the selected node's type === 'prompt.assemble' and a chat is active, a
+"Preview next prompt" section: button → previewNextPrompt IPC → compact section list (label,
+source chip, est. tokens, expandable text) reusing previewDisplay.ts pure helpers via import.
+Loading/error inline. Hidden with no chat. (~60 lines + css.)
+
+### NON-GOALS (6.4a)
+No control-center/TopNav/launcher/uiStore changes (6.4b). No palette changes, no module palette
+section, no import/export moves (6.5). No file deletions or store-field removals (6.6). No
+polling, no run-history pagination, no per-node run filtering, no new dependencies.
+Size expectation: ~650 prod + ~250 test lines; stop and report past that.
+
+## WP6.4b — Surface promotion: the editor is THE surface [renderer] — DETAILED SPEC
+
+### A. Entry points
+- TopNav: the 'Agents' tab becomes the editor opener: label key nav.flow (en "Workflow", zh
+  「工作流」), calls openWorkflowEditor() (no mode arg — modes are gone). The control-center
+  opener is removed.
+- viewRegistry launcher cards ('agents' and 'workflow' ids): both repoint their Open action to
+  openWorkflowEditor(); copy updated ("Workflows and agents live in the editor now"), en+zh.
+- WorkflowPanel (the legacy workspace 'workflow' view body) stays as-is if it is the launcher
+  (ground: post-WP3.7 both ids render LauncherCard — then only the card copy/action changes).
+
+### B. Retire the control center from the app
+- App.tsx: remove the ControlCenterOverlay mount. uiStore: remove controlCenterOpen/
+  controlCenterRail/openControlCenter/closeControlCenter + workflowEditorInitialMode machinery
+  (Effective mode is gone); FIX every caller: TablesView's "Configure in Memory" button (see C),
+  Overview/AgentPackDetail/AgentsView callers all die with their files' retirement mark — for
+  6.4b they become unreferenced, not deleted (6.6 deletes). ControlCenterOverlay.tsx itself
+  becomes unreferenced.
+- Keep agentPackIpc + stores intact (module import in 6.5 rewires; runs IPC feeds the drawer).
+
+### C. Memory configuration home
+The editor top bar gains a "Memory…" button (i18n'd) opening a right-side sheet (the
+AgentPackDetail side-panel css pattern) hosting the EXISTING MemoryPane component UNCHANGED
+(it is self-contained: template binding, progress, backfill). TablesView's configure hint
+repoints to openWorkflowEditor + a one-line note ("Memory settings live in the workflow
+editor"). MemoryPane's internal jump-to-Installed strip: gate it behind a prop or leave dead
+(installed rail no longer exists) — pass a flag to hide the packs strip; two-line change inside
+MemoryPane guarded by the prop, nothing else inside it.
+
+### NON-GOALS (6.4b)
+No deletion of AgentsView/panes/ControlCenterOverlay files (6.6). No module palette/import
+(6.5). No changes to transfer services/IPC. No editor-internal features beyond the Memory
+button. Size: ~250 prod lines; stop past that.
 
 ## WP6.5 — Module files: import/export [main+renderer]
 
