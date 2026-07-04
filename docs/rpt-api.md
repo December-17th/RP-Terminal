@@ -150,6 +150,10 @@ through the host bridge as RFC-6902 JSON Patch.
 - ST destination flags are normalized as follows: `markdownOnly` means display, `promptOnly` means prompt,
   neither means both, and both checked also means both. The active filters live in
   [`regexService`](../src/main/services/regexService.ts); the TavernHelper shape bridge uses the same rules.
+- **Application order** follows ST's script priority (ST `regex/engine.js` `SCRIPT_TYPES`, "ORDER
+  MATTERS"): global → preset → scoped, where our `world`/`session` scopes are the scoped tier
+  (global → preset → world → session), file order within a tier — `regexService.getAllRules`. Cards rely
+  on this to run cleanup regexes (global/preset) before card-owned beautification (world) pastes large HTML.
 - Replacement syntax supports ST-style `$0` for the full match, `$&` for the full match, and `$1`/`$2`...
   capture groups via the shared [`regexTransform`](../src/shared/regexTransform.ts).
 
