@@ -31,6 +31,7 @@ export const DuelView: FC<{ profileId: string }> = ({ profileId }) => {
   const busy = useDuelStore((s) => s.busy)
   const lastEvents = useDuelStore((s) => s.lastEvents)
   const eventSeq = useDuelStore((s) => s.eventSeq)
+  const log = useDuelStore((s) => s.log)
   const load = useDuelStore((s) => s.load)
   const startMock = useDuelStore((s) => s.startMock)
   const pickCard = useDuelStore((s) => s.pickCard)
@@ -42,9 +43,16 @@ export const DuelView: FC<{ profileId: string }> = ({ profileId }) => {
   const assets = useDuelAssets(profileId, state)
   const [handRef] = useAutoAnimate<HTMLDivElement>()
   const stageRef = useRef<HTMLDivElement>(null)
+  const logRef = useRef<HTMLDivElement>(null)
   const [floats, setFloats] = useState<DuelFloat[]>([])
   const floatIdRef = useRef(0)
   const flyingRef = useRef(false)
+
+  // Keep the combat log pinned to the newest entry as it grows.
+  useEffect(() => {
+    const el = logRef.current
+    if (el) el.scrollTop = el.scrollHeight
+  }, [log.length])
 
   useEffect(() => {
     if (activeChatId) void load(profileId, activeChatId)
@@ -222,8 +230,12 @@ export const DuelView: FC<{ profileId: string }> = ({ profileId }) => {
     clearDuelMode()
   }
   const narrateThenFinish = async (): Promise<void> => {
-    await narrate(profileId) // narrate() ends the duel internally
-    clearDuelMode()
+    await narrate(profileId) // narrate() writes the prose to the chat + ends the duel internally
+    // The narration landed in the chat (append / new floor) — reload the session so it's visible
+    // (mirrors CombatView.onNarrate). setActiveChat also reloads mode from DB ('explore'), which
+    // closes the popup; fall back to clearing the transient duel mode if there's somehow no chat.
+    if (activeChatId) await useChatStore.getState().setActiveChat(profileId, activeChatId)
+    else clearDuelMode()
   }
 
   return (
@@ -365,6 +377,22 @@ export const DuelView: FC<{ profileId: string }> = ({ profileId }) => {
           </span>
         ))}
       </div>
+
+      {/* Combat log (right rail): every resolved event's text, oldest→newest, auto-scrolled. */}
+      <aside className="rpt-duel-log">
+        <div className="rpt-duel-log-head">{t('duel.log')}</div>
+        <div className="rpt-duel-log-body" ref={logRef}>
+          {log.length === 0 ? (
+            <div className="rpt-duel-log-empty">{t('duel.logEmpty')}</div>
+          ) : (
+            log.map((e, i) => (
+              <div key={i} className={`rpt-duel-log-line kind-${e.kind}`}>
+                {e.text}
+              </div>
+            ))
+          )}
+        </div>
+      </aside>
     </div>
   )
 }

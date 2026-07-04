@@ -12,10 +12,7 @@ const VIEW_LABEL_KEY: Record<string, string> = {
   chat: 'view.chat',
   status: 'status.heading',
   usage: 'view.usage',
-  'card-scripts': 'view.cardScripts',
-  logs: 'logs.heading',
-  workflow: 'workflow.viewTitle',
-  agents: 'agents.title'
+  logs: 'logs.heading'
 }
 
 /**
