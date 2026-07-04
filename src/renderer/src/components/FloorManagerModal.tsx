@@ -68,11 +68,11 @@ export const FloorManagerModal: React.FC<{ profileId: string; onClose: () => voi
                     <span className="rpt-floors-prev">
                       {f.user_message.content ? (
                         <span className="rpt-floors-you">
-                          <b>{t('floors.you')}:</b> {preview(f.user_message.content, 40)}
+                          <b>{t('floors.you')}:</b> {preview(f.user_message.content, 300)}
                         </span>
                       ) : null}
                       <span className="rpt-floors-ai">
-                        <b>{t('floors.ai')}:</b> {preview(f.response.content, 70)}
+                        <b>{t('floors.ai')}:</b> {preview(f.response.content, 500)}
                       </span>
                     </span>
                   </button>

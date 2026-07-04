@@ -172,18 +172,20 @@
 .rpt-floors { display:flex; flex-direction:column; height:100%; gap:10px; }
 .rpt-floors-hint { margin:0; font-size:12px; color:var(--rpt-text-secondary); }
 .rpt-floors-list { flex:1 1 auto; min-height:0; overflow-y:auto; display:flex; flex-direction:column; gap:4px; }
-.rpt-floors-row { display:flex; align-items:baseline; gap:8px; width:100%; text-align:left; padding:7px 10px;
+.rpt-floors-row { display:flex; align-items:flex-start; gap:8px; width:100%; text-align:left; padding:8px 10px;
   border:1px solid var(--rpt-border); border-radius:8px; background:var(--rpt-bg-secondary);
   color:var(--rpt-text-primary); cursor:pointer; }
 .rpt-floors-row:hover { border-color:var(--rpt-accent); }
 .rpt-floors-row.marked { background:color-mix(in srgb, var(--rpt-danger) 16%, transparent);
   border-color:color-mix(in srgb, var(--rpt-danger) 45%, var(--rpt-border)); }
 .rpt-floors-row.cut { box-shadow:inset 2px 0 0 var(--rpt-danger); }
-.rpt-floors-idx { flex:0 0 auto; font-size:11px; font-weight:700; color:var(--rpt-text-secondary); font-variant-numeric:tabular-nums; }
-.rpt-floors-prev { flex:1 1 auto; min-width:0; font-size:12px; line-height:1.4; overflow:hidden;
-  text-overflow:ellipsis; white-space:nowrap; }
-.rpt-floors-you { color:var(--rpt-text-secondary); margin-right:8px; }
-.rpt-floors-ai { color:var(--rpt-text-primary); }
+.rpt-floors-idx { flex:0 0 auto; padding-top:1px; font-size:11px; font-weight:700; color:var(--rpt-text-secondary); font-variant-numeric:tabular-nums; }
+.rpt-floors-prev { flex:1 1 auto; min-width:0; display:flex; flex-direction:column; gap:3px; font-size:12px; line-height:1.45; }
+/* Multi-line previews: clamp the player prompt to 2 lines and the (thinking-stripped) reply to 3. */
+.rpt-floors-you { color:var(--rpt-text-secondary); overflow:hidden; overflow-wrap:anywhere;
+  display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; }
+.rpt-floors-ai { color:var(--rpt-text-primary); overflow:hidden; overflow-wrap:anywhere;
+  display:-webkit-box; -webkit-line-clamp:3; -webkit-box-orient:vertical; }
 .rpt-floors-actions { flex:0 0 auto; display:flex; align-items:center; gap:10px; padding-top:8px;
   border-top:1px solid var(--rpt-border); }
 .rpt-floors-summary { flex:1 1 auto; font-size:12px; color:var(--rpt-text-secondary); }
