@@ -61,6 +61,13 @@ export function WorkflowEditorOverlay({
           alignItems: 'center',
           gap: 8,
           padding: '6px 12px',
+          // The native window controls (titleBarOverlay, main/index.ts:43) paint ABOVE the DOM in
+          // the top-right corner; without this reservation the header's right-most buttons sit
+          // under minimize/maximize/close (owner report). With Window Controls Overlay enabled,
+          // env(titlebar-area-*) describes the DOM-usable strip — the controls occupy everything
+          // right of area-x + area-width. Falls back to 0 where env() is unavailable.
+          paddingRight:
+            'calc(12px + (100vw - env(titlebar-area-x, 0px) - env(titlebar-area-width, 100vw)))',
           borderBottom: '1px solid var(--rpt-border)',
           flex: '0 0 auto'
         }}
