@@ -821,6 +821,8 @@ const zh: Record<string, string> = {
   'workflowEffective.forkWriteBuiltin': '内置包无法就地编辑——请先复刻。',
   'workflowEffective.fork': '复刻',
   'workflowEffective.forkFrom': '源自 {{base}}',
+  // WP4.7：复刻血缘现在会标注其复制自的上游版本（若已知）。
+  'workflowEffective.forkFromVersion': '源自 {{base}} 的 v{{v}}',
   'workflowEffective.forkLineageTitle': '该包是某个已安装包的复刻',
   'workflowEffective.spliceLocked': '接线属于包定义的一部分——将在后续更新中通过复刻编辑。',
   // WP4.4：直接编辑片段 + 只读预览的重排提示。
@@ -940,6 +942,21 @@ const zh: Record<string, string> = {
   'agents.retry': '重试',
   'agents.builtin': '内置',
   'agents.version': 'v{{v}}',
+  // ── 版本共存（WP4.7）────────────────────────────────────────────────────────────────────────────
+  'agents.version.installedCount': '已安装 {{n}} 个版本',
+  // 卡片版本切换
+  'agents.version.switchLabel': 'v{{v}} ▾',
+  'agents.version.switchTitle': '选择在本世界中运行的已安装版本',
+  'agents.version.switchNoWorld': '请先选择一个世界——版本仅对你正在游玩的世界生效。',
+  // 版本弹出框
+  'agents.version.popTitle': '本世界使用的版本',
+  'agents.version.popClose': '关闭版本选择器',
+  'agents.version.activeMark': '运行中',
+  'agents.version.popNote': '上方的开关控制是否启用本包；此处选择启用时运行哪个已安装版本。',
+  'agents.version.switchedToast': '本世界现已使用 v{{v}}',
+  // 详情面板切换器 + 说明
+  'agents.version.switchInlineLabel': '运行版本：',
+  'agents.version.settingsNote': '设置对本世界中的该包生效，且跨版本共享——切换版本会保留这些设置。',
   'agents.overview.title': '概览',
   'agents.overview.packsExplainer':
     '智能体包是与剧情并行工作的助手——维护记忆、更新表格、在后台运行任务。打开「已安装」即可开启内置的智能体包。',
@@ -1099,6 +1116,10 @@ const zh: Record<string, string> = {
     '在工作流工作室中编辑包的图会为本世界创建一份副本——原始包保持不变。',
   // 从库中卸载包（WP4.3b——破坏性操作，带确认步骤；内置包禁用）。
   'agents.settings.uninstall': '卸载包',
+  // WP4.7：版本感知卸载——存在共存版本时，标注被移除的版本以及保留的版本。
+  'agents.settings.uninstallVersion': '卸载 v{{v}}——v{{keep}} 仍保留',
+  'agents.settings.uninstallVersionConfirm':
+    '要从你的库中移除“{{name}}”的 v{{v}} 吗？v{{keep}} 仍会保留。任何固定到 v{{v}} 的世界将回退到剩余的最新版本。',
   'agents.settings.uninstallConfirm':
     '要从你的库中移除“{{name}}”吗？它在所有世界中的设置与启用状态都将丢失。你创建的任何分支仍会保留。',
   'agents.settings.uninstallConfirmBtn': '卸载',
@@ -1213,6 +1234,8 @@ const zh: Record<string, string> = {
 
   // 导出向导
   'agents.export.open': '导出…',
+  // WP4.7：导出会打包最新安装的版本（导出 IPC 不接受版本参数）——存在共存版本时说明，避免误以为固定/显示的版本即导出版本。
+  'agents.export.versionNote': '导出会保存最新安装的版本（v{{v}}）。',
   'agents.export.title': '导出智能体包',
   'agents.export.close': '关闭',
   'agents.export.loadError': '无法准备导出此包。',
@@ -1264,6 +1287,9 @@ const zh: Record<string, string> = {
   'agents.import.dedupe.new': '全新',
   'agents.import.dedupe.new-version': '新版本',
   'agents.import.dedupe.already-installed': '已安装',
+  // WP4.7：“新版本”说明——与现有版本并存安装；随后可在各世界中选择运行哪个版本。
+  'agents.import.newVersionNote':
+    '你已安装此包。v{{v}} 将与现有版本并存安装——不会覆盖任何内容。之后你可在每个世界中选择运行哪个版本。',
   // 捆绑模板的处理结果
   'agents.import.templateOutcome.will-install': '将被添加',
   'agents.import.templateOutcome.will-duplicate': '将作为副本添加（已存在同名模板）',

@@ -32,6 +32,10 @@ import {
   packHealth,
   showsForkOnCard,
   canForkNow,
+  groupPacksByLineage,
+  displayActiveVersion,
+  hasMultipleVersions,
+  versionMenuItems,
   type AttachmentBadge,
   type PackHealth
 } from './agentPackDisplay'
@@ -80,6 +84,8 @@ interface PackSummary {
   id: string
   version: number
   upstreamId: string | null
+  /** WP4.6: the source version a fork was copied from (null for a root install / legacy fork). */
+  upstreamVersion: number | null
   builtin: boolean
   manifest: {
     name: string
@@ -91,6 +97,11 @@ interface PackSummary {
   attachments: AttachmentDecl[]
   capabilities: CapabilityId[]
   gateOpen?: boolean
+  /** WP4.6 version coexistence: every installed version of THIS id, ascending. Same on every same-id
+   *  summary; the card groups by id and shows this as the switcher list. */
+  versions: number[]
+  /** The version pinned to run in the (world, chat) — present only with a world + an open gate. */
+  activeVersion?: number
 }
 
 // The rail item ids now come from the shared control-center rail model (WP3.7). 'workflows' is a
@@ -219,6 +230,31 @@ export const AgentsView: React.FC<{
     [worldId, gates]
   )
 
+  // Re-pin which installed version of a pack runs in this world (WP4.7; ADR 0008 — recipes pin
+  // versions). Overrides + trigger state carry over (agentPackService.setActiveVersion), so the
+  // journey "switch version → my settings survived" holds. On success: reload the list (so the card's
+  // activeVersion + representative row update) + a toast naming the now-active version. Requires a
+  // world (the pin targets a world's activation); the switcher is only shown with one.
+  const switchVersion = React.useCallback(
+    async (pack: PackSummary, version: number): Promise<void> => {
+      if (!worldId || version === displayActiveVersion(pack)) return
+      try {
+        const res = (await api().setAgentPackActiveVersion(
+          profileId,
+          pack.id,
+          version,
+          worldId
+        )) as { ok: true } | { ok: false; code: 'not-installed' | 'not-activated' }
+        if (!res?.ok) return
+        await load()
+        pushToast(t('agents.version.switchedToast', { v: version }))
+      } catch {
+        // A hard IPC failure — no designed state for a rare invoke error; the popover closes on its own.
+      }
+    },
+    [worldId, profileId, t, pushToast, load]
+  )
+
   // Explicit fork from the Agents view (WP4.5 — "I can't find the fork button"). Copies the pack,
   // repoints THIS world's activation to the copy (forkAgentPack — IPC 'agent-pack-fork'), then lands
   // the delight moment: a toast (same copy as Effective-mode's forkedToast), a list refresh so the new
@@ -299,6 +335,7 @@ export const AgentsView: React.FC<{
             onRetry={() => void load()}
             onFlipGate={flipGate}
             onFork={(pack) => void forkPack(pack)}
+            onSwitchVersion={(pack, v) => void switchVersion(pack, v)}
             justForkedId={justForkedId}
             selectedPackId={detailPackId}
             onOpenDetail={setDetailPackId}
@@ -347,10 +384,13 @@ export const AgentsView: React.FC<{
               : detailPack.manifest.name
           }
           builtin={detailPack.builtin}
+          activeVersion={displayActiveVersion(detailPack)}
+          versions={detailPack.versions}
           worldId={worldId}
           chatId={activeChatId}
           onClose={() => setDetailPackId(null)}
           onFork={() => void forkPack(detailPack)}
+          onSwitchVersion={(v) => void switchVersion(detailPack, v)}
           onUninstalled={() => {
             // The pack is gone — drop the detail panel and reload the list (WP4.3b).
             setDetailPackId(null)
@@ -386,6 +426,9 @@ const InstalledPane: React.FC<{
   /** Fork this pack for the active world (WP4.5). Parent owns the post-fork flow (toast + highlight +
    *  open detail); the pane only renders the affordance + passes the just-forked highlight down. */
   onFork: (pack: PackSummary) => void
+  /** Re-pin which installed version of a pack runs in this world (WP4.7). Parent owns the IPC + refresh
+   *  + toast; the card only renders the switcher + reports the picked version. */
+  onSwitchVersion: (pack: PackSummary, version: number) => void
   justForkedId: string | null
   selectedPackId: string | null
   onOpenDetail: (packId: string) => void
@@ -402,6 +445,7 @@ const InstalledPane: React.FC<{
   onRetry,
   onFlipGate,
   onFork,
+  onSwitchVersion,
   justForkedId,
   selectedPackId,
   onOpenDetail,
@@ -520,7 +564,11 @@ const InstalledPane: React.FC<{
     )
   }
 
-  const list = packs ?? []
+  // WP4.7: listAgentPacks returns ONE row per (id, version) — coexisting versions are distinct library
+  // rows. The library card is per-ID, so collapse to one representative row per id (the active version's
+  // row). The gate map is keyed by id (a per-ID fact stamped on every same-id summary), so grouping
+  // doesn't disturb it.
+  const list = React.useMemo(() => groupPacksByLineage(packs ?? []), [packs])
   const anyOpen = list.some((p) => gates[p.id])
 
   return (
@@ -548,6 +596,7 @@ const InstalledPane: React.FC<{
             worldId={worldId}
             onFlipGate={(next) => onFlipGate(pack, next)}
             onFork={() => onFork(pack)}
+            onSwitchVersion={(v) => onSwitchVersion(pack, v)}
             selected={selectedPackId === pack.id}
             onOpenDetail={() => onOpenDetail(pack.id)}
             onNavigate={onNavigate}
@@ -575,6 +624,8 @@ const PackCard: React.FC<{
   onFlipGate: (next: boolean) => void
   /** Fork this pack for the active world (WP4.5). Parent owns the post-fork flow. */
   onFork: () => void
+  /** Re-pin which installed version runs in this world (WP4.7). Parent owns the IPC + refresh + toast. */
+  onSwitchVersion: (version: number) => void
   selected: boolean
   onOpenDetail: () => void
   onNavigate: (rail: RailItem) => void
@@ -589,6 +640,7 @@ const PackCard: React.FC<{
   worldId,
   onFlipGate,
   onFork,
+  onSwitchVersion,
   selected,
   onOpenDetail,
   onNavigate
@@ -599,6 +651,16 @@ const PackCard: React.FC<{
   const needsCascade = transformsMainReply(pack.attachments)
   const [confirming, setConfirming] = React.useState(false)
   const [whyOpen, setWhyOpen] = React.useState(false)
+  // The version switcher popover (WP4.7). Only meaningful with multiple installed versions + a world
+  // to pin against. Focus returns to the opener on close.
+  const [versionOpen, setVersionOpen] = React.useState(false)
+  const versionBtnRef = React.useRef<HTMLButtonElement>(null)
+  const multiVersion = hasMultipleVersions(pack)
+  const activeVersion = displayActiveVersion(pack)
+  const closeVersion = (): void => {
+    setVersionOpen(false)
+    versionBtnRef.current?.focus()
+  }
   // A compact Export affordance lives on fork cards (the creator path — a fork is the one you tweak
   // then share). The full teaching wizard mounts over the whole view when opened.
   const [exporting, setExporting] = React.useState(false)
@@ -649,14 +711,55 @@ const PackCard: React.FC<{
               className="rpt-agents-badge-builtin"
               title={t('workflowEffective.forkLineageTitle')}
             >
-              {t('workflowEffective.forkFrom', { base: pack.manifest.fork.base })}
+              {/* WP4.7: the fork lineage line now names the UPSTREAM VERSION it was copied from, when
+                  known (upstreamVersion) — "from v2 of <base>" vs the version-less "from <base>". */}
+              {pack.upstreamVersion != null
+                ? t('workflowEffective.forkFromVersion', {
+                    base: pack.manifest.fork.base,
+                    v: pack.upstreamVersion
+                  })
+                : t('workflowEffective.forkFrom', { base: pack.manifest.fork.base })}
             </span>
           )}
           <span className="rpt-agents-card-meta">
             {pack.manifest.creator ? `${pack.manifest.creator} · ` : ''}
-            {t('agents.version', { v: pack.version })}
+            {/* WP4.7: the ACTIVE version shows prominently; with coexisting versions, "· N versions
+                installed" tells the user there's a choice (the switcher below drives it). */}
+            {t('agents.version', { v: activeVersion })}
+            {multiVersion && ` · ${t('agents.version.installedCount', { n: pack.versions.length })}`}
           </span>
         </div>
+
+        {/* Version switcher (WP4.7) — only with coexisting versions. The chip opens a popover listing
+            installed versions (the active one marked); picking another re-pins which version RUNS. The
+            gate (above) decides whether the pack runs at all; the pin decides which version — the
+            popover copy says exactly that. Disabled without a world (the pin targets a world). */}
+        {multiVersion && (
+          <div className="rpt-agents-version-wrap">
+            <button
+              ref={versionBtnRef}
+              type="button"
+              className="rpt-agents-versionbtn"
+              aria-expanded={versionOpen}
+              aria-haspopup="dialog"
+              disabled={!worldId}
+              title={worldId ? t('agents.version.switchTitle') : t('agents.version.switchNoWorld')}
+              onClick={() => setVersionOpen((v) => !v)}
+            >
+              {t('agents.version.switchLabel', { v: activeVersion })}
+            </button>
+            {versionOpen && worldId && (
+              <VersionPopover
+                pack={pack}
+                onClose={closeVersion}
+                onPick={(v) => {
+                  setVersionOpen(false)
+                  onSwitchVersion(v)
+                }}
+              />
+            )}
+          </div>
+        )}
 
         {pack.manifest.description && (
           <p className="rpt-agents-card-desc">{pack.manifest.description}</p>
@@ -814,6 +917,80 @@ const PackCard: React.FC<{
           </div>
         </div>
       )}
+    </div>
+  )
+}
+
+// ── Version switcher popover (agent-packs plan WP4.7) ────────────────────────────────────────────
+//
+// Lists the installed versions of a pack (newest-first; the active/pinned one marked), so a user can
+// re-pin which version RUNS in this world. Picking a version calls back to the host (setActiveVersion
+// → refresh → toast). A one-line note states the gate/pin split — the GATE decides whether the pack
+// runs; the PIN (this list) decides which version. Escape closes + restores focus to the opener; not
+// modal (a lightweight popover). AA, no color-only signaling (the active row carries a text mark).
+const VersionPopover: React.FC<{
+  pack: PackSummary
+  onClose: () => void
+  onPick: (version: number) => void
+}> = ({ pack, onClose, onPick }) => {
+  const t = useT()
+  const ref = React.useRef<HTMLDivElement>(null)
+  React.useEffect(() => {
+    ref.current?.focus()
+  }, [])
+  const items = versionMenuItems(pack)
+
+  return (
+    <div
+      ref={ref}
+      className="rpt-agents-version-pop"
+      role="dialog"
+      aria-modal="false"
+      aria-label={t('agents.version.popTitle')}
+      tabIndex={-1}
+      onKeyDown={(e) => {
+        if (e.key === 'Escape') {
+          e.stopPropagation()
+          onClose()
+        }
+      }}
+    >
+      <div className="rpt-agents-version-pop-head">
+        <span className="rpt-agents-version-pop-title">{t('agents.version.popTitle')}</span>
+        <button
+          type="button"
+          className="rpt-agents-why-close"
+          aria-label={t('agents.version.popClose')}
+          onClick={onClose}
+        >
+          ×
+        </button>
+      </div>
+      <ul className="rpt-agents-version-list" role="listbox" aria-label={t('agents.version.popTitle')}>
+        {items.map((it) => (
+          <li key={it.version}>
+            <button
+              type="button"
+              role="option"
+              aria-selected={it.active}
+              className={`rpt-agents-version-item${it.active ? ' active' : ''}`}
+              disabled={it.active}
+              onClick={() => onPick(it.version)}
+            >
+              <span className="rpt-agents-version-item-label">
+                {t('agents.version', { v: it.version })}
+              </span>
+              {it.active && (
+                <span className="rpt-agents-version-item-active">
+                  {t('agents.version.activeMark')}
+                </span>
+              )}
+            </button>
+          </li>
+        ))}
+      </ul>
+      {/* The gate/pin split — the true semantics, one honest line. */}
+      <p className="rpt-agents-version-pop-note">{t('agents.version.popNote')}</p>
     </div>
   )
 }

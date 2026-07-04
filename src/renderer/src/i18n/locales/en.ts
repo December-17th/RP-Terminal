@@ -855,6 +855,8 @@ const en: Record<string, string> = {
   'workflowEffective.forkWriteBuiltin': 'Built-in packs can’t be edited in place — fork it first.',
   'workflowEffective.fork': 'fork',
   'workflowEffective.forkFrom': 'from {{base}}',
+  // WP4.7: the fork lineage line names the upstream VERSION it was copied from, when known.
+  'workflowEffective.forkFromVersion': 'from v{{v}} of {{base}}',
   'workflowEffective.forkLineageTitle': 'This pack is a fork of an installed pack',
   'workflowEffective.spliceLocked':
     'Attachment wiring is part of the pack definition — edit it via fork in a later update.',
@@ -979,6 +981,23 @@ const en: Record<string, string> = {
   'agents.retry': 'Try again',
   'agents.builtin': 'Built-in',
   'agents.version': 'v{{v}}',
+  // ── Version coexistence (WP4.7) ──────────────────────────────────────────────────────────────────
+  'agents.version.installedCount': '{{n}} versions installed',
+  // Card version affordance
+  'agents.version.switchLabel': 'v{{v}} ▾',
+  'agents.version.switchTitle': 'Choose which installed version runs in this world',
+  'agents.version.switchNoWorld': 'Select a world first — the version applies to the world you’re playing.',
+  // Version popover
+  'agents.version.popTitle': 'Version in this world',
+  'agents.version.popClose': 'Close version picker',
+  'agents.version.activeMark': 'Running',
+  'agents.version.popNote':
+    'The switch above turns this pack on or off. This picks which installed version runs when it’s on.',
+  'agents.version.switchedToast': 'Now using v{{v}} in this world',
+  // Detail-panel switcher + notes
+  'agents.version.switchInlineLabel': 'Run version:',
+  'agents.version.settingsNote':
+    'Settings apply to this pack in this world across versions — switching versions keeps them.',
   'agents.overview.title': 'Overview',
   'agents.overview.packsExplainer':
     'Agent packs are helpers that work alongside the story — keeping memory, updating tables, running things in the background. Open Installed to turn the built-in packs on.',
@@ -1144,6 +1163,10 @@ const en: Record<string, string> = {
     'Editing a pack’s graph in Workflow Studio makes a copy for this world — the original stays untouched.',
   // Uninstall a pack from the library (WP4.3b — destructive, confirm sub-step; builtins disabled).
   'agents.settings.uninstall': 'Uninstall pack',
+  // WP4.7: version-aware uninstall — with coexisting versions, name the version removed + which stay.
+  'agents.settings.uninstallVersion': 'Uninstall v{{v}} — v{{keep}} stays installed',
+  'agents.settings.uninstallVersionConfirm':
+    'Remove v{{v}} of “{{name}}” from your library? v{{keep}} stays installed. Any world pinned to v{{v}} falls back to the newest remaining version.',
   'agents.settings.uninstallConfirm':
     'Remove “{{name}}” from your library? Its settings and activation in every world will be lost. Any forks you made stay installed.',
   'agents.settings.uninstallConfirmBtn': 'Uninstall',
@@ -1259,6 +1282,9 @@ const en: Record<string, string> = {
 
   // Export wizard
   'agents.export.open': 'Export…',
+  // WP4.7: export ships the highest installed version (the export IPC takes no version) — stated when
+  // multiple versions coexist so the pinned/shown version isn’t assumed to be the exported one.
+  'agents.export.versionNote': 'Export saves the newest installed version (v{{v}}).',
   'agents.export.title': 'Export agent pack',
   'agents.export.close': 'Close',
   'agents.export.loadError': 'Couldn’t prepare this pack for export.',
@@ -1316,6 +1342,9 @@ const en: Record<string, string> = {
   'agents.import.dedupe.new': 'New',
   'agents.import.dedupe.new-version': 'New version',
   'agents.import.dedupe.already-installed': 'Already installed',
+  // WP4.7: the 'new-version' explainer — installs alongside; you pick which runs per world.
+  'agents.import.newVersionNote':
+    'You already have this pack. v{{v}} installs alongside your existing version — nothing is overwritten. You choose which version runs in each world afterward.',
   // Bundled-template outcomes
   'agents.import.templateOutcome.will-install': 'will be added',
   'agents.import.templateOutcome.will-duplicate': 'will be added as a copy (a template with this name already exists)',

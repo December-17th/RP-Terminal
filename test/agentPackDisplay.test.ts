@@ -6,7 +6,12 @@ import {
   packHealth,
   latestRunForPack,
   showsForkOnCard,
-  canForkNow
+  canForkNow,
+  displayActiveVersion,
+  installedVersions,
+  hasMultipleVersions,
+  versionMenuItems,
+  groupPacksByLineage
 } from '../src/renderer/src/components/workspace/agentPackDisplay'
 import { AttachmentDecl } from '../src/shared/workflow/attachments'
 import { StoredRunRecord, WorkflowRunTrace } from '../src/shared/workflow/trace'
@@ -136,5 +141,88 @@ describe('canForkNow (fork disabled without a world)', () => {
 
   it('true with a world', () => {
     expect(canForkNow('world-1')).toBe(true)
+  })
+})
+
+// ── Version coexistence (WP4.7) ────────────────────────────────────────────────────────────────────
+describe('installedVersions (grouped, ascending, de-duped)', () => {
+  it('returns the sorted unique version set', () => {
+    expect(installedVersions({ id: 'p', version: 2, versions: [3, 1, 2] })).toEqual([1, 2, 3])
+  })
+
+  it('degrades to the row’s own version when the grouped set is absent/empty', () => {
+    expect(installedVersions({ id: 'p', version: 4 })).toEqual([4])
+    expect(installedVersions({ id: 'p', version: 4, versions: [] })).toEqual([4])
+  })
+})
+
+describe('displayActiveVersion (pinned else highest)', () => {
+  it('uses the pinned active version when present', () => {
+    expect(displayActiveVersion({ id: 'p', version: 3, versions: [1, 2, 3], activeVersion: 2 })).toBe(2)
+  })
+
+  it('falls back to the HIGHEST installed version when no pin (gate closed / no world)', () => {
+    expect(displayActiveVersion({ id: 'p', version: 1, versions: [1, 2, 3] })).toBe(3)
+  })
+
+  it('degrades to the row’s own version with no grouped set', () => {
+    expect(displayActiveVersion({ id: 'p', version: 5 })).toBe(5)
+  })
+})
+
+describe('hasMultipleVersions', () => {
+  it('true only when >1 version is installed', () => {
+    expect(hasMultipleVersions({ id: 'p', version: 1, versions: [1, 2] })).toBe(true)
+    expect(hasMultipleVersions({ id: 'p', version: 1, versions: [1] })).toBe(false)
+    expect(hasMultipleVersions({ id: 'p', version: 1 })).toBe(false)
+  })
+})
+
+describe('versionMenuItems (newest-first, active marked)', () => {
+  it('lists versions descending, marking the pinned active one', () => {
+    expect(
+      versionMenuItems({ id: 'p', version: 3, versions: [1, 2, 3], activeVersion: 2 })
+    ).toEqual([
+      { version: 3, active: false },
+      { version: 2, active: true },
+      { version: 1, active: false }
+    ])
+  })
+
+  it('with no pin, the highest is marked active (the fallback that composes)', () => {
+    expect(versionMenuItems({ id: 'p', version: 1, versions: [1, 2] })).toEqual([
+      { version: 2, active: true },
+      { version: 1, active: false }
+    ])
+  })
+})
+
+describe('groupPacksByLineage (one card per id)', () => {
+  it('collapses per-(id,version) rows to the active-version representative per id', () => {
+    const rows = [
+      { id: 'a', version: 1, versions: [1, 2], activeVersion: 1, name: 'a@1' },
+      { id: 'a', version: 2, versions: [1, 2], activeVersion: 1, name: 'a@2' },
+      { id: 'b', version: 5, versions: [5], name: 'b@5' }
+    ]
+    const grouped = groupPacksByLineage(rows)
+    expect(grouped.map((g) => `${g.id}@${g.version}`)).toEqual(['a@1', 'b@5'])
+    // The representative for 'a' is the ACTIVE (pinned) version's row — its name follows.
+    expect(grouped[0].name).toBe('a@1')
+  })
+
+  it('with no pin, the representative is the highest-version row', () => {
+    const rows = [
+      { id: 'a', version: 1, versions: [1, 2] },
+      { id: 'a', version: 2, versions: [1, 2] }
+    ]
+    expect(groupPacksByLineage(rows).map((g) => g.version)).toEqual([2])
+  })
+
+  it('preserves first-seen id order', () => {
+    const rows = [
+      { id: 'b', version: 1, versions: [1] },
+      { id: 'a', version: 1, versions: [1] }
+    ]
+    expect(groupPacksByLineage(rows).map((g) => g.id)).toEqual(['b', 'a'])
   })
 })

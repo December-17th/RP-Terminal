@@ -269,6 +269,14 @@ const ReportSheet: React.FC<{
               {t('agents.import.forkLineage', { base: id.fork.base, n: id.fork.n })}
             </p>
           )}
+          {/* WP4.6/4.7: 'new-version' = the same pack id, a DIFFERENT version already installed. It
+              installs ALONGSIDE the existing version(s) — nothing is overwritten; you pick which runs
+              per world afterward. One honest line so the chip isn't cryptic. */}
+          {model.dedupe === 'new-version' && (
+            <p className="rpt-inspect-dedupe-note">
+              {t('agents.import.newVersionNote', { v: id.version })}
+            </p>
+          )}
         </section>
       )}
 

@@ -53,6 +53,12 @@ export const AgentPackDetail: React.FC<{
   packName: string
   /** Whether this pack is a built-in (built-ins can't be exported — fork first). */
   builtin: boolean
+  /** WP4.7: the version this panel is configuring (the pinned active version, else the highest). Shown
+   *  prominently in the header so "which version am I configuring" is never ambiguous. */
+  activeVersion: number
+  /** WP4.7: every installed version of this id, ascending. Drives the header switcher + the multi-
+   *  version note + the version-aware uninstall copy. */
+  versions: number[]
   worldId: string
   chatId: string | null
   onClose: () => void
@@ -60,13 +66,33 @@ export const AgentPackDetail: React.FC<{
    *  highlight + re-open the detail on the new fork). Undefined hides the Advanced-group Fork button
    *  (the host didn't wire it). Fork-a-fork is legitimate, so this is offered for non-builtins too. */
   onFork?: () => void
+  /** WP4.7: re-pin which installed version runs in this world. The host owns the IPC + refresh + toast.
+   *  Undefined (or a single-version pack) hides the header switcher. */
+  onSwitchVersion?: (version: number) => void
   /** Called after the pack was uninstalled (WP4.3b) so the host can refresh the list + drop the detail
    *  panel. Undefined disables the Advanced-group uninstall action (the host didn't wire a refresh). */
   onUninstalled?: () => void
-}> = ({ profileId, packId, packName, builtin, worldId, chatId, onClose, onFork, onUninstalled }) => {
+}> = ({
+  profileId,
+  packId,
+  packName,
+  builtin,
+  activeVersion,
+  versions,
+  worldId,
+  chatId,
+  onClose,
+  onFork,
+  onSwitchVersion,
+  onUninstalled
+}) => {
   const t = useT()
   const locale = useI18nStore((s) => s.locale)
   const openWorkflowEditor = useUiStore((s) => s.openWorkflowEditor)
+  // WP4.7: does this id have coexisting versions? Drives the header switcher, the multi-version note,
+  // and the version-aware uninstall copy. The switcher list is newest-first (latest at top).
+  const multiVersion = versions.length > 1
+  const versionsDesc = React.useMemo(() => [...versions].sort((a, b) => b - a), [versions])
   // The export wizard mounts over the whole control center (its own modal overlay) when opened here.
   const [exporting, setExporting] = React.useState(false)
   // Uninstall (WP4.3b): a destructive Advanced action with an explicit confirm sub-step. Built-ins are
@@ -79,9 +105,14 @@ export const AgentPackDetail: React.FC<{
     setUninstalling(true)
     setUninstallError(false)
     try {
-      const res = (await api().uninstallAgentPack(profileId, packId)) as
-        | { ok: true }
-        | { ok: false; code: 'builtin' | 'not-found' }
+      // WP4.7: with coexisting versions, uninstall ONLY the version being configured (activeVersion);
+      // the others stay installed. A single-version pack omits the version → the store removes it and
+      // cascades the version-agnostic activation/override/trigger rows (the full-removal path).
+      const res = (await api().uninstallAgentPack(
+        profileId,
+        packId,
+        multiVersion ? activeVersion : undefined
+      )) as { ok: true } | { ok: false; code: 'builtin' | 'not-found' }
       if (res.ok || res.code === 'not-found') {
         // Success — or the pack was already gone (treat as done). Refresh the list + close the panel.
         onUninstalled?.()
@@ -96,7 +127,7 @@ export const AgentPackDetail: React.FC<{
       setUninstalling(false)
       setConfirmingUninstall(false)
     }
-  }, [profileId, packId, onUninstalled])
+  }, [profileId, packId, multiVersion, activeVersion, onUninstalled])
 
   const [data, setData] = React.useState<PackSettingsPayload | null>(null)
   const [loading, setLoading] = React.useState(true)
@@ -174,7 +205,20 @@ export const AgentPackDetail: React.FC<{
   return (
     <aside className="rpt-agentdetail" role="dialog" aria-modal="false" aria-label={packName}>
       <header className="rpt-agentdetail-head">
-        <h2 className="rpt-agentdetail-title">{packName}</h2>
+        <div className="rpt-agentdetail-identity">
+          <h2 className="rpt-agentdetail-title">{packName}</h2>
+          {/* WP4.7: the version being configured, prominent — "which version am I configuring" is never
+              ambiguous. getAgentPackSettings resolves the PINNED version's settings, so the header names
+              that same version. With coexisting versions, the switcher lets the user re-pin. */}
+          <div className="rpt-agentdetail-versionrow">
+            <span className="rpt-agentdetail-version">{t('agents.version', { v: activeVersion })}</span>
+            {multiVersion && (
+              <span className="rpt-agentdetail-versioncount">
+                {t('agents.version.installedCount', { n: versions.length })}
+              </span>
+            )}
+          </div>
+        </div>
         <button
           type="button"
           className="rpt-agentdetail-close"
@@ -184,6 +228,34 @@ export const AgentPackDetail: React.FC<{
           ×
         </button>
       </header>
+
+      {/* WP4.7: the version switcher — only with coexisting versions + a wired host callback. Re-pins
+          which version RUNS in this world; the settings below apply across versions (see the note under
+          the groups). Newest-first; the active one is disabled (already pinned). */}
+      {multiVersion && onSwitchVersion && (
+        <div
+          className="rpt-agentdetail-versionswitch"
+          role="radiogroup"
+          aria-label={t('agents.version.popTitle')}
+        >
+          <span className="rpt-agentdetail-versionswitch-label">
+            {t('agents.version.switchInlineLabel')}
+          </span>
+          {versionsDesc.map((v) => (
+            <button
+              key={v}
+              type="button"
+              role="radio"
+              aria-checked={v === activeVersion}
+              disabled={v === activeVersion}
+              className={`rpt-agentdetail-versionchip${v === activeVersion ? ' active' : ''}`}
+              onClick={() => onSwitchVersion(v)}
+            >
+              {t('agents.version', { v })}
+            </button>
+          ))}
+        </div>
+      )}
 
       {/* Scope switcher — subtle; writes target this scope. Chat disabled without an active chat. */}
       <div className="rpt-agentdetail-scope" role="radiogroup" aria-label={t('agents.settings.scopeLabel')}>
@@ -258,6 +330,14 @@ export const AgentPackDetail: React.FC<{
               </section>
             )}
 
+            {/* WP4.7: with coexisting versions, one honest line stating the TRUE override semantics —
+                settings are version-AGNOSTIC (they apply to this pack in this world regardless of which
+                version is pinned), so switching versions never loses them. Only shown when it can
+                confuse (multiple versions installed). */}
+            {multiVersion && (
+              <p className="rpt-agentdetail-versionnote">{t('agents.version.settingsNote')}</p>
+            )}
+
             {/* ADVANCED group — the Workflow Studio hand-off, the fork sentence, and the Export
                 affordance (sharing loop close — WP4.3). Built-ins can't export (fork first); the
                 affordance says so instead of offering a dead button. */}
@@ -312,13 +392,24 @@ export const AgentPackDetail: React.FC<{
               {builtin ? (
                 <p className="rpt-agentdetail-note">{t('agents.export.builtinHint')}</p>
               ) : (
-                <button
-                  type="button"
-                  className="rpt-agentdetail-studio"
-                  onClick={() => setExporting(true)}
-                >
-                  {t('agents.export.open')}
-                </button>
+                <>
+                  <button
+                    type="button"
+                    className="rpt-agentdetail-studio"
+                    onClick={() => setExporting(true)}
+                  >
+                    {t('agents.export.open')}
+                  </button>
+                  {/* WP4.7: export ships the HIGHEST installed version (the export IPC takes no version
+                      — agentPackTransferService.buildExportEnvelope reads getPackRecord with no version,
+                      ORDER BY version DESC). With coexisting versions, say so honestly so the user isn't
+                      surprised the shown/pinned version may differ from what's exported. */}
+                  {multiVersion && (
+                    <p className="rpt-agentdetail-note">
+                      {t('agents.export.versionNote', { v: versionsDesc[0] })}
+                    </p>
+                  )}
+                </>
               )}
 
               {/* Uninstall — the destructive library-removal action (WP4.3b). Built-ins are
@@ -337,7 +428,14 @@ export const AgentPackDetail: React.FC<{
                         setConfirmingUninstall(true)
                       }}
                     >
-                      {t('agents.settings.uninstall')}
+                      {/* WP4.7: with coexisting versions, the action NAMES the version being removed
+                          (the others stay) — otherwise the version-less full-removal copy. */}
+                      {multiVersion
+                        ? t('agents.settings.uninstallVersion', {
+                            v: activeVersion,
+                            keep: versionsDesc.filter((v) => v !== activeVersion).join(', ')
+                          })
+                        : t('agents.settings.uninstall')}
                     </button>
                     {uninstallError && (
                       <p className="rpt-agentdetail-rowerror">{t('agents.settings.uninstallFailed')}</p>
@@ -346,7 +444,13 @@ export const AgentPackDetail: React.FC<{
                 ) : (
                   <div className="rpt-agentdetail-uninstall-confirm">
                     <p className="rpt-agentdetail-note">
-                      {t('agents.settings.uninstallConfirm', { name: packName })}
+                      {multiVersion
+                        ? t('agents.settings.uninstallVersionConfirm', {
+                            name: packName,
+                            v: activeVersion,
+                            keep: versionsDesc.filter((v) => v !== activeVersion).join(', ')
+                          })
+                        : t('agents.settings.uninstallConfirm', { name: packName })}
                     </p>
                     <div className="rpt-agentdetail-uninstall-actions">
                       <button

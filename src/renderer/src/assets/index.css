@@ -2485,6 +2485,23 @@ select {
 .rpt-agentdetail-close:hover { color:var(--rpt-text-primary); background:var(--rpt-bg-tertiary); }
 .rpt-agentdetail-close:focus-visible { outline:2px solid var(--rpt-accent); outline-offset:1px; }
 
+/* Version coexistence (WP4.7): the header identity block + inline switcher + notes. */
+.rpt-agentdetail-identity { display:flex; flex-direction:column; gap:3px; min-width:0; }
+.rpt-agentdetail-versionrow { display:flex; align-items:center; gap:8px; }
+.rpt-agentdetail-version { font-size:11.5px; font-weight:700; color:var(--rpt-accent); }
+.rpt-agentdetail-versioncount { font-size:11px; color:var(--rpt-text-tertiary); }
+.rpt-agentdetail-versionswitch { display:flex; align-items:center; flex-wrap:wrap; gap:6px;
+  padding:8px 14px; border-bottom:1px solid var(--rpt-border); }
+.rpt-agentdetail-versionswitch-label { font-size:11.5px; color:var(--rpt-text-secondary); }
+.rpt-agentdetail-versionchip { font:inherit; font-size:11.5px; font-weight:600; color:var(--rpt-text-secondary);
+  background:none; border:1px solid var(--rpt-border); border-radius:6px; padding:3px 10px; cursor:pointer; }
+.rpt-agentdetail-versionchip:hover:not(:disabled) { color:var(--rpt-text-primary); border-color:var(--rpt-text-tertiary); }
+.rpt-agentdetail-versionchip.active { background:var(--rpt-accent); color:var(--rpt-on-accent);
+  border-color:var(--rpt-accent); cursor:default; }
+.rpt-agentdetail-versionchip:focus-visible { outline:2px solid var(--rpt-accent); outline-offset:1px; }
+.rpt-agentdetail-versionnote { font-size:11.5px; line-height:1.5; color:var(--rpt-text-secondary);
+  margin:0; padding:8px 10px; background:var(--rpt-bg-tertiary); border-radius:8px; }
+
 .rpt-agentdetail-scope { display:flex; gap:4px; padding:8px 14px; border-bottom:1px solid var(--rpt-border); }
 .rpt-agentdetail-scopebtn { font:inherit; font-size:11.5px; color:var(--rpt-text-secondary);
   background:none; border:1px solid var(--rpt-border); border-radius:6px; padding:3px 10px; cursor:pointer; }
@@ -2594,7 +2611,13 @@ select {
   border:1px solid var(--rpt-border); }
 .rpt-inspect-dedupe.new { background:color-mix(in srgb, var(--rpt-success) 18%, transparent);
   color:var(--rpt-success); border-color:transparent; }
+/* WP4.6/4.7: 'new-version' — a distinct accent tint (installs alongside, not a fresh/duplicate). */
+.rpt-inspect-dedupe.new-version { background:color-mix(in srgb, var(--rpt-accent) 18%, transparent);
+  color:var(--rpt-accent); border-color:transparent; }
 .rpt-inspect-dedupe.already-installed { background:var(--rpt-bg-tertiary); color:var(--rpt-text-tertiary); }
+/* The 'new-version' install-alongside explainer beneath the chip (WP4.7). */
+.rpt-inspect-dedupe-note { font-size:11.5px; line-height:1.5; color:var(--rpt-text-secondary);
+  margin:6px 0 0; }
 
 /* Capability list — REUSED .rpt-agents-chip + a nodes-per-capability expandable. */
 .rpt-inspect-caplist, .rpt-inspect-templates, .rpt-inspect-warnings, .rpt-inspect-blockers {
@@ -2711,6 +2734,35 @@ select {
   .rpt-agents-why { animation:none; }
   .rpt-agents-whybtn { transition:none; }
 }
+
+/* ── Version switcher (agent-packs plan WP4.7 — version coexistence) ─────────────────────────────── */
+.rpt-agents-version-wrap { position:relative; display:inline-flex; margin-top:2px; }
+.rpt-agents-versionbtn { font:inherit; font-size:11px; font-weight:600; color:var(--rpt-text-secondary);
+  background:var(--rpt-bg-tertiary); border:1px solid var(--rpt-border); border-radius:6px;
+  padding:2px 9px; cursor:pointer; transition:border-color 120ms, color 120ms; }
+.rpt-agents-versionbtn:hover:not(:disabled) { color:var(--rpt-text-primary); border-color:var(--rpt-text-tertiary); }
+.rpt-agents-versionbtn:disabled { opacity:.5; cursor:not-allowed; }
+.rpt-agents-versionbtn:focus-visible { outline:2px solid var(--rpt-accent); outline-offset:1px; }
+.rpt-agents-version-pop { position:absolute; top:26px; left:0; z-index:6; width:230px; padding:10px;
+  border-radius:10px; border:1px solid var(--rpt-border); background:var(--rpt-bg-secondary);
+  box-shadow:0 8px 26px rgba(0,0,0,.4); animation:rpt-agents-why-in 160ms ease-out; }
+.rpt-agents-version-pop:focus { outline:none; }
+.rpt-agents-version-pop-head { display:flex; align-items:center; justify-content:space-between; gap:8px;
+  margin-bottom:6px; }
+.rpt-agents-version-pop-title { font-size:11px; font-weight:700; letter-spacing:.04em; text-transform:uppercase;
+  color:var(--rpt-text-tertiary); }
+.rpt-agents-version-list { list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:3px; }
+.rpt-agents-version-item { display:flex; align-items:center; justify-content:space-between; gap:8px;
+  width:100%; font:inherit; font-size:12.5px; color:var(--rpt-text-primary); background:none;
+  border:1px solid transparent; border-radius:6px; padding:5px 9px; cursor:pointer; text-align:left; }
+.rpt-agents-version-item:hover:not(:disabled) { background:var(--rpt-bg-tertiary); }
+.rpt-agents-version-item:focus-visible { outline:2px solid var(--rpt-accent); outline-offset:1px; }
+.rpt-agents-version-item.active { background:var(--rpt-bg-tertiary); border-color:var(--rpt-accent);
+  cursor:default; }
+.rpt-agents-version-item-active { font-size:10px; font-weight:700; color:var(--rpt-on-accent);
+  background:var(--rpt-accent); border-radius:9px; padding:1px 7px; white-space:nowrap; }
+.rpt-agents-version-pop-note { font-size:11px; line-height:1.45; color:var(--rpt-text-tertiary); margin:8px 0 0; }
+@media (prefers-reduced-motion: reduce) { .rpt-agents-version-pop { animation:none; } }
 
 /* ── Overview pane (agent-packs plan WP3.5) — the landing view ─────────────────────────────────────
    Active packs + setup checklist + recent problems + quick links. All colors via --rpt-* tokens
