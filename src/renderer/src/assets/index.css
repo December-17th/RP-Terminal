@@ -2476,6 +2476,11 @@ select {
    A side panel next to the list. All colors via --rpt-* tokens (AA across all three themes). */
 .rpt-agentdetail { flex-shrink:0; width:340px; display:flex; flex-direction:column;
   border-left:1px solid var(--rpt-border); background:var(--rpt-bg-secondary); overflow:hidden; }
+/* The Memory sheet in the workflow editor (WP6.4b): MemoryPane was laid out for the control
+   center's wide content area — give it a wider column (clamped for small windows) and lift the
+   overview shell's max-width so nothing clips against the sheet's overflow:hidden. */
+.rpt-memory-sheet { width:min(480px, 92vw); }
+.rpt-memory-sheet .rpt-overview { max-width:none; }
 .rpt-agentdetail-head { display:flex; align-items:center; justify-content:space-between; gap:8px;
   padding:12px 14px; border-bottom:1px solid var(--rpt-border); }
 .rpt-agentdetail-title { font-size:14px; font-weight:600; color:var(--rpt-text-primary); margin:0;

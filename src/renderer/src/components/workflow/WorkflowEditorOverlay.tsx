@@ -61,6 +61,12 @@ export function WorkflowEditorOverlay({
           alignItems: 'center',
           gap: 8,
           padding: '6px 12px',
+          // Match the titleBarOverlay strip height (main/index.ts:43: 48px) so EVERYTHING below
+          // the header — canvas, Memory sheet — starts clear of the native caption zone; without
+          // this the sheet's own head (and its close button) rendered partly under the window
+          // controls (owner report).
+          minHeight: 48,
+          boxSizing: 'border-box',
           // The native window controls (titleBarOverlay, main/index.ts:43) paint ABOVE the DOM in
           // the top-right corner; without this reservation the header's right-most buttons sit
           // under minimize/maximize/close (owner report). With Window Controls Overlay enabled,
@@ -99,7 +105,11 @@ export function WorkflowEditorOverlay({
           <WorkflowEditorView profileId={profileId} />
         </div>
         {memoryOpen && (
-          <div className="rpt-agentdetail" role="dialog" aria-label={t('workflowEditor.memory')}>
+          <div
+            className="rpt-agentdetail rpt-memory-sheet"
+            role="dialog"
+            aria-label={t('workflowEditor.memory')}
+          >
             <div className="rpt-agentdetail-head">
               <h2 className="rpt-agentdetail-title">{t('workflowEditor.memory')}</h2>
               <button
@@ -112,7 +122,7 @@ export function WorkflowEditorOverlay({
                 ✕
               </button>
             </div>
-            <div className="rpt-agentdetail-body" style={{ padding: 0 }}>
+            <div className="rpt-agentdetail-body">
               {/* MemoryPane is self-contained; the editor host has no Installed rail, so pass empty
                   pack inputs + hide the packs strip. */}
               <MemoryPane
