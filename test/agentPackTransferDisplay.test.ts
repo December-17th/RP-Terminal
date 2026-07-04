@@ -270,7 +270,22 @@ describe('i18n coverage — every WP4.3 derived key present in en + zh', () => {
     'agents.import.alreadyToast',
     'agents.import.confirmExpired',
     'agents.import.confirmBlocked',
-    'agents.import.versionConflictRecovery'
+    'agents.import.versionConflictRecovery',
+    // WP4.3b — the wired version-conflict recovery + Task C uninstall.
+    'agents.import.conflictUninstall',
+    'agents.import.conflictConfirm',
+    'agents.import.conflictConfirmBtn',
+    'agents.import.conflictKeep',
+    'agents.import.conflictWorking',
+    'agents.import.conflictBuiltin',
+    'agents.import.conflictUninstallFailed',
+    'agents.settings.uninstall',
+    'agents.settings.uninstallConfirm',
+    'agents.settings.uninstallConfirmBtn',
+    'agents.settings.uninstallKeep',
+    'agents.settings.uninstallWorking',
+    'agents.settings.uninstallBuiltinHint',
+    'agents.settings.uninstallFailed'
   ]
 
   const keys = [...derivedKeys, ...staticKeys]

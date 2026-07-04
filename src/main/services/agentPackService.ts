@@ -21,6 +21,7 @@ import { getChat } from './chatService'
 import { log } from './logService'
 import { BUILTIN_PACKS } from './nodes/builtin/tableMemoryPack'
 import { materializeFragment, deriveSystemSettings, SystemSetting } from './agentPackMaterialize'
+import { deleteTriggerStateForPack } from './agentPackTriggerStore'
 import { WorkflowDoc } from '../../shared/workflow/types'
 import {
   AgentPackRecord,
@@ -130,15 +131,28 @@ export const install = (profileId: string, pack: AgentPackRecord): InstallResult
   return { installed: true, pack: packToSummary(pack) }
 }
 
-/** Uninstall a pack. Builtin packs are UNINSTALLABLE (they ship with the app) — refuse and log. */
-export const uninstall = (profileId: string, packId: string): boolean => {
+/** The structured outcome of an uninstall (agent-packs plan WP4.3b). The renderer branches on `code`:
+ *   · `not-found`     — no such pack in this profile (a stale id; treat as already-gone).
+ *   · `builtin`       — a built-in pack; refused (they ship with the app, uninstallable). Honest — the
+ *     version-conflict recovery must render this when the installed conflicting pack IS a builtin.
+ *   · ok:true         — the library row + its activation/override/trigger-state rows were removed. */
+export type UninstallResult = { ok: true } | { ok: false; code: 'not-found' | 'builtin' }
+
+/** Uninstall a pack (agent-packs plan WP4.3b — now exposed over IPC). Builtin packs are UNINSTALLABLE
+ *  (they ship with the app) — refused + logged. On success, deletePack removes the library row AND its
+ *  activation + override rows (agentPackStore.deletePack); the trigger-state baselines live in a
+ *  SEPARATE store keyed by pack_id, which deletePack cannot reach, so we prune them here too — no row
+ *  from any of the four pack-keyed tables outlives the install. */
+export const uninstall = (profileId: string, packId: string): UninstallResult => {
   const pack = getPackRecord(profileId, packId)
-  if (!pack) return false
+  if (!pack) return { ok: false, code: 'not-found' }
   if (pack.builtin) {
     log('error', `agentPack uninstall: ${packId} is a built-in pack and cannot be uninstalled`)
-    return false
+    return { ok: false, code: 'builtin' }
   }
-  return deletePack(profileId, packId)
+  deletePack(profileId, packId) // drops the library row + activation + override rows
+  deleteTriggerStateForPack(packId) // + the per-(chat, trigger) baselines deletePack can't reach
+  return { ok: true }
 }
 
 // ── Fork (copy-on-edit, ADR 0006; agent-packs plan WP3.6a) ────────────────────────────────────────

@@ -302,6 +302,11 @@ export const AgentsView: React.FC<{
           worldId={worldId}
           chatId={activeChatId}
           onClose={() => setDetailPackId(null)}
+          onUninstalled={() => {
+            // The pack is gone — drop the detail panel and reload the list (WP4.3b).
+            setDetailPackId(null)
+            void load()
+          }}
         />
       )}
     </div>
@@ -399,7 +404,11 @@ const InstalledPane: React.FC<{
   )
 
   const inspector = importReport && (
-    <AgentPackImportInspector report={importReport} onClose={closeInspector} />
+    <AgentPackImportInspector
+      profileId={profileId}
+      report={importReport}
+      onClose={closeInspector}
+    />
   )
 
   if (loading && packs === null) {

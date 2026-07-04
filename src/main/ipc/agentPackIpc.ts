@@ -10,8 +10,10 @@ import { getChat } from '../services/chatService'
 /**
  * IPC for the agent-pack library (agent-packs plan WP1.4). Exposes the read side the future
  * Agents-workspace settings UI needs (listPacks, resolveOverrides) plus the write side for the gate
- * toggle and exposed-setting overrides. Install/uninstall are intentionally NOT exposed yet — packs
- * are seeded/imported by later WPs; this WP wires only the activation + override surface.
+ * toggle and exposed-setting overrides. INSTALL stays main-internal (packs are seeded and imported —
+ * import runs through the two-phase confirm-import flow below, never a bare install); UNINSTALL is now
+ * exposed (WP4.3b) so the renderer can (a) recover from a version-conflict import — uninstall the
+ * installed pack, then re-confirm the SAME import token — and (b) remove a pack from its detail panel.
  *
  * Importing this module also triggers agentPackService's module-init side effect: it registers the
  * enabled-fragments provider on the WP1.3 composition seam (agentPackService.ts bottom). So the app
@@ -22,6 +24,13 @@ export const registerAgentPackIpc = (ipcMain: IpcMain): void => {
     'agent-packs-list',
     (_, profileId: string, worldId?: string | null, chatId?: string | null) =>
       agentPackService.list(profileId, worldId, chatId)
+  )
+  // Uninstall an installed pack (agent-packs plan WP4.3b). Returns the service's structured result:
+  // { ok:true } on removal (library row + activation + override + trigger-state rows all pruned), or
+  // { ok:false, code:'builtin' | 'not-found' } — builtins are uninstallable, so the version-conflict
+  // recovery renders that refusal honestly. Install is NOT exposed (import is the two-phase confirm).
+  ipcMain.handle('agent-pack-uninstall', (_, profileId: string, packId: string) =>
+    agentPackService.uninstall(profileId, packId)
   )
   ipcMain.handle(
     'agent-pack-set-gate',

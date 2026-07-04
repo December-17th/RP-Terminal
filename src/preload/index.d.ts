@@ -383,6 +383,10 @@ declare global {
           }
       >
       cancelAgentPackImport: (token: string) => Promise<void>
+      uninstallAgentPack: (
+        profileId: string,
+        packId: string
+      ) => Promise<{ ok: true } | { ok: false; code: 'builtin' | 'not-found' }>
       // SQL-table memory (issue 02)
       listTableTemplates: (
         profileId: string

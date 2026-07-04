@@ -17,15 +17,15 @@
 //   · So dismiss WITHOUT installing → cancel the token (Escape / backdrop / Cancel).
 //   · Install → confirm(token). On the ok result: toast + refresh the Installed list.
 //   · VERSION-CONFLICT: the store PK can't hold two versions of one id (WP1.4 debt), so a same-id-
-//     different-version file is refused with a version-conflict blocker. The honest recovery is
-//     "uninstall the installed vX, then import" — BUT there is no uninstall IPC binding exposed today
-//     (agentPackService.uninstall exists main-side; agentPackIpc deliberately does NOT expose it —
-//     "Install/uninstall are intentionally NOT exposed yet"). Renderer-only WP4.3 cannot add it. So we
-//     EXPLAIN the conflict + the manual path honestly and keep Install disabled; the destructive
-//     one-click recovery is flagged for the owner (a follow-up main-side WP must expose uninstall).
-//     NOTE for that follow-up: because confirm() re-checks blockers and consumes the token only when
-//     CALLED, the correct sequence is uninstall → confirm(SAME token) directly (no re-inspect) — the
-//     token is still live and the conflict blocker will be gone on the re-check.
+//     different-version file is refused with a version-conflict blocker. WP4.3b exposed the uninstall
+//     IPC (uninstallAgentPack), so the recovery is now WIRED (not just explained): the conflict card
+//     carries a destructive "Uninstall installed vX, then install" action with an explicit confirm
+//     sub-step. GROUNDED sequence — because confirmAgentPackImport(token) re-checks blockers and
+//     consumes the token only when CALLED, the token is STILL LIVE while Install is disabled. So the
+//     recovery is: uninstall the installed pack → confirm(SAME token) DIRECTLY (no re-inspect) — the
+//     version-conflict blocker vanishes on the confirm-time re-check and the install proceeds. Uninstall
+//     failure (a builtin conflict — the incoming id collides with a built-in pack, which is
+//     uninstallable) surfaces inline on the card; the token stays alive and Cancel still works.
 
 import React from 'react'
 import { useT } from '../../i18n'
@@ -53,12 +53,14 @@ type ConfirmResult =
   | { ok: false; code: 'blocked'; blockers: ImportBlocker[] }
 
 export const AgentPackImportInspector: React.FC<{
+  /** The profile the file was inspected for — the uninstall recovery targets this profile's library. */
+  profileId: string
   report: InspectionReport
   /** Called after the sheet has been dealt with (installed, canceled, or dismissed) so the host can
    *  close it. `installedId` is the id of a freshly-installed pack (for the 'just installed' highlight
    *  + list refresh); undefined when nothing installed. */
   onClose: (installedId?: string) => void
-}> = ({ report, onClose }) => {
+}> = ({ profileId, report, onClose }) => {
   const t = useT()
   const pushToast = useToastStore((s) => s.push)
   useWcvSuppression()
@@ -82,9 +84,13 @@ export const AgentPackImportInspector: React.FC<{
     onClose()
   }, [model.token, onClose])
 
-  const doInstall = React.useCallback(async () => {
-    if (!model.token || !model.canInstall) return
-    setInstalling(true)
+  // Confirm the stashed import token → the normal success path (toast + close with the just-installed
+  // id for the highlight/refresh). Shared by the footer Install button AND the version-conflict
+  // recovery (which calls this with the SAME token right after uninstalling the installed pack — the
+  // conflict blocker is gone on confirm's re-check, so this proceeds). Returns whether it succeeded so
+  // the recovery can leave its own error state alone when confirm itself refuses.
+  const confirmToken = React.useCallback(async (): Promise<boolean> => {
+    if (!model.token) return false
     setConfirmError(null)
     try {
       const res = (await api().confirmAgentPackImport(model.token)) as ConfirmResult
@@ -96,15 +102,44 @@ export const AgentPackImportInspector: React.FC<{
             : t('agents.import.alreadyToast', { name })
         )
         onClose(res.pack.id)
-      } else {
-        setConfirmError(res.code)
-        setInstalling(false)
+        return true
       }
+      setConfirmError(res.code)
+      return false
     } catch {
       setConfirmError('expired')
-      setInstalling(false)
+      return false
     }
-  }, [model.token, model.canInstall, onClose, pushToast, t])
+  }, [model.token, onClose, pushToast, t])
+
+  const doInstall = React.useCallback(async () => {
+    if (!model.canInstall) return
+    setInstalling(true)
+    const ok = await confirmToken()
+    if (!ok) setInstalling(false)
+  }, [model.canInstall, confirmToken])
+
+  // Version-conflict recovery (WP4.3b): uninstall the installed conflicting pack, then confirm the
+  // SAME token directly (no re-inspect — the token is still live; the conflict blocker vanishes on the
+  // confirm-time re-check). On uninstall failure (a builtin conflict) the error is rendered on the card
+  // and the token stays alive; Cancel still works.
+  const recoverFromConflict = React.useCallback(async (): Promise<
+    { ok: true } | { ok: false; code: 'builtin' | 'not-found' | 'error' }
+  > => {
+    if (!model.token || model.conflictInstalledVersion === undefined)
+      return { ok: false, code: 'error' }
+    let uninstalled: { ok: true } | { ok: false; code: 'builtin' | 'not-found' }
+    try {
+      uninstalled = (await api().uninstallAgentPack(profileId, report.envelopeMeta!.id)) as typeof uninstalled
+    } catch {
+      return { ok: false, code: 'error' }
+    }
+    if (!uninstalled.ok) return uninstalled
+    // Uninstall succeeded — confirm the same token. A confirmToken failure (expired etc.) surfaces via
+    // its own inline confirmError; we report ok:true here because the destructive step itself worked.
+    await confirmToken()
+    return { ok: true }
+  }, [model.token, model.conflictInstalledVersion, profileId, report.envelopeMeta, confirmToken])
 
   return (
     <div
@@ -139,7 +174,11 @@ export const AgentPackImportInspector: React.FC<{
           {model.kind === 'parse-error' ? (
             <ParseErrorSheet model={model} />
           ) : (
-            <ReportSheet model={model} confirmError={confirmError} />
+            <ReportSheet
+              model={model}
+              confirmError={confirmError}
+              onRecoverConflict={recoverFromConflict}
+            />
           )}
         </div>
 
@@ -199,7 +238,10 @@ const ParseErrorSheet: React.FC<{ model: InspectionModel }> = ({ model }) => {
 const ReportSheet: React.FC<{
   model: InspectionModel
   confirmError: 'expired' | 'blocked' | null
-}> = ({ model, confirmError }) => {
+  /** Run the version-conflict recovery (uninstall the installed pack, then confirm the same token).
+   *  Only the version-conflict blocker card invokes it. */
+  onRecoverConflict: () => Promise<{ ok: true } | { ok: false; code: 'builtin' | 'not-found' | 'error' }>
+}> = ({ model, confirmError, onRecoverConflict }) => {
   const t = useT()
   const id = model.identity
 
@@ -268,7 +310,7 @@ const ReportSheet: React.FC<{
           <p className="rpt-inspect-note">{t('agents.import.blockersLede')}</p>
           <ul className="rpt-inspect-blockers">
             {model.blockers.map((b, i) => (
-              <BlockerCard key={i} blocker={b} />
+              <BlockerCard key={i} blocker={b} onRecoverConflict={onRecoverConflict} />
             ))}
           </ul>
         </section>
@@ -299,9 +341,13 @@ const ReportSheet: React.FC<{
   )
 }
 
-// One blocker reason-card. unknown-node-types lists the types inside; version-conflict explains the
-// honest manual recovery (no wired uninstall action — see the module header's token-semantics note).
-const BlockerCard: React.FC<{ blocker: ImportBlocker }> = ({ blocker }) => {
+// One blocker reason-card. unknown-node-types lists the types inside; version-conflict carries the
+// WIRED destructive recovery (WP4.3b): "Uninstall installed vX, then install" → explicit confirm
+// sub-step (names the pack + version being removed) → uninstall + confirm the same token.
+const BlockerCard: React.FC<{
+  blocker: ImportBlocker
+  onRecoverConflict: () => Promise<{ ok: true } | { ok: false; code: 'builtin' | 'not-found' | 'error' }>
+}> = ({ blocker, onRecoverConflict }) => {
   const t = useT()
   const copy = blockerCopy(blocker)
   return (
@@ -322,10 +368,90 @@ const BlockerCard: React.FC<{ blocker: ImportBlocker }> = ({ blocker }) => {
           ))}
         </ul>
       )}
-      {copy.recoverable && (
-        <p className="rpt-inspect-blocker-recovery">{t('agents.import.versionConflictRecovery')}</p>
+      {blocker.code === 'version-conflict' && (
+        <ConflictRecovery
+          installedVersion={blocker.installedVersion}
+          onRecover={onRecoverConflict}
+        />
       )}
     </li>
+  )
+}
+
+// The version-conflict recovery affordance: a destructive-styled button that reveals an explicit
+// confirm sub-step (naming the installed version being removed) before running uninstall + re-confirm.
+// A builtin conflict (the installed pack is a built-in, uninstallable) surfaces its refusal inline; the
+// import token stays alive and Cancel still closes the sheet.
+const ConflictRecovery: React.FC<{
+  installedVersion: number
+  onRecover: () => Promise<{ ok: true } | { ok: false; code: 'builtin' | 'not-found' | 'error' }>
+}> = ({ installedVersion, onRecover }) => {
+  const t = useT()
+  const [confirming, setConfirming] = React.useState(false)
+  const [busy, setBusy] = React.useState(false)
+  const [error, setError] = React.useState<'builtin' | 'not-found' | 'error' | null>(null)
+
+  const run = React.useCallback(async () => {
+    setBusy(true)
+    setError(null)
+    const res = await onRecover()
+    // On ok the whole sheet closes (success path); we only land here on failure.
+    if (!res.ok) {
+      setError(res.code)
+      setBusy(false)
+      setConfirming(false)
+    }
+  }, [onRecover])
+
+  if (!confirming) {
+    return (
+      <div className="rpt-inspect-blocker-recovery">
+        <button
+          type="button"
+          className="rpt-inspect-blocker-uninstall danger"
+          onClick={() => setConfirming(true)}
+        >
+          {t('agents.import.conflictUninstall', { installed: installedVersion })}
+        </button>
+        {error && (
+          <p className="rpt-inspect-blocker-uninstall-error">
+            {t(
+              error === 'builtin'
+                ? 'agents.import.conflictBuiltin'
+                : 'agents.import.conflictUninstallFailed'
+            )}
+          </p>
+        )}
+      </div>
+    )
+  }
+
+  return (
+    <div className="rpt-inspect-blocker-recovery">
+      <p className="rpt-inspect-blocker-confirm">
+        {t('agents.import.conflictConfirm', { installed: installedVersion })}
+      </p>
+      <div className="rpt-inspect-blocker-confirm-actions">
+        <button
+          type="button"
+          className="rpt-duel-secondary"
+          onClick={() => setConfirming(false)}
+          disabled={busy}
+        >
+          {t('agents.import.conflictKeep')}
+        </button>
+        <button
+          type="button"
+          className="rpt-inspect-blocker-uninstall danger"
+          onClick={() => void run()}
+          disabled={busy}
+        >
+          {busy
+            ? t('agents.import.conflictWorking')
+            : t('agents.import.conflictConfirmBtn')}
+        </button>
+      </div>
+    </div>
   )
 }
 

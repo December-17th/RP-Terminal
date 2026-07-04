@@ -2523,6 +2523,16 @@ select {
   background:var(--rpt-accent); border:1px solid var(--rpt-accent); border-radius:7px; padding:7px 12px;
   cursor:pointer; align-self:flex-start; }
 .rpt-agentdetail-studio:focus-visible { outline:2px solid var(--rpt-accent); outline-offset:2px; }
+/* Uninstall — destructive Advanced action (WP4.3b) + its confirm sub-step. */
+.rpt-agentdetail-uninstall { font:inherit; font-size:12.5px; align-self:flex-start;
+  color:var(--rpt-danger); background:color-mix(in srgb, var(--rpt-danger) 12%, transparent);
+  border:1px solid color-mix(in srgb, var(--rpt-danger) 46%, transparent); border-radius:7px;
+  padding:7px 12px; cursor:pointer; transition:background 160ms ease-out; }
+.rpt-agentdetail-uninstall:hover { background:color-mix(in srgb, var(--rpt-danger) 20%, transparent); }
+.rpt-agentdetail-uninstall:focus-visible { outline:2px solid var(--rpt-danger); outline-offset:2px; }
+.rpt-agentdetail-uninstall:disabled { opacity:.55; cursor:default; }
+.rpt-agentdetail-uninstall-confirm { display:flex; flex-direction:column; gap:8px; }
+.rpt-agentdetail-uninstall-actions { display:flex; gap:8px; }
 
 /* ── Sharing: export wizard + import inspection sheet (agent-packs plan WP4.3) ──────────────────────
    Both mount over the whole control center via the shared .modal-overlay backdrop. One panel shell
@@ -2623,8 +2633,18 @@ select {
 .rpt-inspect-blocker-nodes { margin:0; padding:0 0 0 6px; list-style:none; display:flex; flex-wrap:wrap; gap:5px; }
 .rpt-inspect-blocker-node { font-size:11px; color:var(--rpt-danger); font-family:var(--rpt-font-mono, ui-monospace, monospace);
   background:var(--rpt-bg-tertiary); border-radius:5px; padding:2px 7px; }
-.rpt-inspect-blocker-recovery { margin:2px 0 0; font-size:12px; line-height:1.55; color:var(--rpt-text-secondary);
-  font-style:italic; }
+.rpt-inspect-blocker-recovery { margin:4px 0 0; display:flex; flex-direction:column; gap:6px; }
+/* Version-conflict WIRED recovery (WP4.3b): destructive uninstall-then-install + its confirm sub-step. */
+.rpt-inspect-blocker-uninstall { font:inherit; font-size:12px; font-weight:500; align-self:flex-start;
+  color:var(--rpt-danger); background:color-mix(in srgb, var(--rpt-danger) 12%, transparent);
+  border:1px solid color-mix(in srgb, var(--rpt-danger) 46%, transparent); border-radius:7px;
+  padding:6px 12px; cursor:pointer; transition:background 160ms ease-out; }
+.rpt-inspect-blocker-uninstall:hover { background:color-mix(in srgb, var(--rpt-danger) 20%, transparent); }
+.rpt-inspect-blocker-uninstall:focus-visible { outline:2px solid var(--rpt-danger); outline-offset:1px; }
+.rpt-inspect-blocker-uninstall:disabled { opacity:.55; cursor:default; }
+.rpt-inspect-blocker-uninstall-error { margin:0; font-size:11.5px; color:var(--rpt-danger); }
+.rpt-inspect-blocker-confirm { margin:0; font-size:12px; line-height:1.55; color:var(--rpt-text-primary); font-weight:500; }
+.rpt-inspect-blocker-confirm-actions { display:flex; gap:8px; }
 
 /* Installed pane header — the Import button lives here (the pane-header idiom). */
 .rpt-agents-installed { display:flex; flex-direction:column; gap:12px; }

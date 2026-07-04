@@ -50,6 +50,11 @@ const store = vi.hoisted(() => ({
 
 vi.mock('../src/main/services/agentPackStore', () => store)
 
+// The trigger-state store is a SEPARATE sqlite surface (native binary can't load under Node); the
+// service calls deleteTriggerStateForPack on uninstall (WP4.3b). Mock it so we can assert the prune.
+const triggerStore = vi.hoisted(() => ({ deleteTriggerStateForPack: vi.fn() }))
+vi.mock('../src/main/services/agentPackTriggerStore', () => triggerStore)
+
 const mockChatService = vi.hoisted(() => ({
   getChat: vi.fn<(profileId: string, chatId: string) => { character_id: string } | null>(() => null),
   // workflowService.resolveWorkflowDoc (real) also reads the session-tier workflow override.
@@ -95,6 +100,7 @@ beforeEach(() => {
   mockChatService.getChat.mockReset().mockReturnValue({ character_id: 'w1' })
   mockChatService.getChatWorkflowId.mockReset().mockReturnValue(null)
   mockLog.log.mockReset()
+  triggerStore.deleteTriggerStateForPack.mockReset()
 
   // Wire the mocked store to the in-memory state + real pure helpers.
   store.encodeScope.mockImplementation(realEncodeScope)
@@ -155,21 +161,25 @@ describe('install / dedupe / uninstall', () => {
     expect(r.pack.id).toBe('p1')
   })
 
-  it('uninstall removes a non-builtin pack', () => {
+  it('uninstall removes a non-builtin pack and prunes its trigger-state (WP4.3b)', () => {
     service.install('prof', pack())
-    expect(service.uninstall('prof', 'p1')).toBe(true)
+    expect(service.uninstall('prof', 'p1')).toEqual({ ok: true })
     expect(state.packs).toHaveLength(0)
+    // deletePack drops activation + override rows; the service also prunes the trigger-state store.
+    expect(triggerStore.deleteTriggerStateForPack).toHaveBeenCalledWith('p1')
   })
 
-  it('uninstall REFUSES a builtin pack (uninstallable) and logs', () => {
+  it('uninstall REFUSES a builtin pack (uninstallable) and logs, pruning nothing', () => {
     service.install('prof', pack({ builtin: true }))
-    expect(service.uninstall('prof', 'p1')).toBe(false)
+    expect(service.uninstall('prof', 'p1')).toEqual({ ok: false, code: 'builtin' })
     expect(state.packs).toHaveLength(1)
     expect(mockLog.log).toHaveBeenCalled()
+    expect(triggerStore.deleteTriggerStateForPack).not.toHaveBeenCalled()
   })
 
-  it('uninstall of an unknown pack returns false', () => {
-    expect(service.uninstall('prof', 'nope')).toBe(false)
+  it('uninstall of an unknown pack returns not-found and prunes nothing', () => {
+    expect(service.uninstall('prof', 'nope')).toEqual({ ok: false, code: 'not-found' })
+    expect(triggerStore.deleteTriggerStateForPack).not.toHaveBeenCalled()
   })
 })
 
@@ -366,7 +376,7 @@ describe('built-in pack seeding (WP1.6)', () => {
 
   it('the seeded builtin pack is UNINSTALLABLE (uninstall refused + logged)', () => {
     service.seedBuiltinPacks('seed-prof-3')
-    expect(service.uninstall('seed-prof-3', TABLE_MEMORY)).toBe(false)
+    expect(service.uninstall('seed-prof-3', TABLE_MEMORY)).toEqual({ ok: false, code: 'builtin' })
     expect(service.list('seed-prof-3').some((p) => p.id === TABLE_MEMORY)).toBe(true)
     expect(mockLog.log).toHaveBeenCalled()
   })

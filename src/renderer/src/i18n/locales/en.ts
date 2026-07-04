@@ -1120,6 +1120,16 @@ const en: Record<string, string> = {
   'agents.settings.openStudio': 'Open in Workflow Studio',
   'agents.settings.forkNote':
     'Editing a pack’s graph in Workflow Studio makes a copy for this world — the original stays untouched.',
+  // Uninstall a pack from the library (WP4.3b — destructive, confirm sub-step; builtins disabled).
+  'agents.settings.uninstall': 'Uninstall pack',
+  'agents.settings.uninstallConfirm':
+    'Remove “{{name}}” from your library? Its settings and activation in every world will be lost. Any forks you made stay installed.',
+  'agents.settings.uninstallConfirmBtn': 'Uninstall',
+  'agents.settings.uninstallKeep': 'Keep it',
+  'agents.settings.uninstallWorking': 'Uninstalling…',
+  'agents.settings.uninstallBuiltinHint':
+    'Built-in packs ship with the app and can’t be uninstalled.',
+  'agents.settings.uninstallFailed': 'Couldn’t uninstall that pack. Nothing was changed.',
 
   // ── Runs timeline (WP3.3) ──────────────────────────────────────────────────────────────────────
   // Origin badges (glyph + short label)
@@ -1298,6 +1308,17 @@ const en: Record<string, string> = {
     'Version {{installed}} of this pack is already in your library. RP Terminal can only keep one version of a pack at a time.',
   'agents.import.versionConflictRecovery':
     'To install this version, remove the installed one first (from its pack card), then open this file again.',
+  // Version-conflict WIRED recovery (WP4.3b): uninstall the installed pack, then install this one.
+  'agents.import.conflictUninstall': 'Uninstall installed v{{installed}}, then install',
+  'agents.import.conflictConfirm':
+    'This will permanently remove version {{installed}} of this pack from your library, then install this one. Its settings and activation will be lost.',
+  'agents.import.conflictConfirmBtn': 'Uninstall and install',
+  'agents.import.conflictKeep': 'Keep installed version',
+  'agents.import.conflictWorking': 'Working…',
+  'agents.import.conflictBuiltin':
+    'That pack is built in and can’t be removed, so this version can’t replace it.',
+  'agents.import.conflictUninstallFailed':
+    'Couldn’t remove the installed version. Nothing was changed.',
 
   // Import parse-error sheet — one designed state per structured code.
   'agents.import.parseError.too-large.title': 'That file is too big',

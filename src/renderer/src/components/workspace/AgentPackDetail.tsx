@@ -56,12 +56,43 @@ export const AgentPackDetail: React.FC<{
   worldId: string
   chatId: string | null
   onClose: () => void
-}> = ({ profileId, packId, packName, builtin, worldId, chatId, onClose }) => {
+  /** Called after the pack was uninstalled (WP4.3b) so the host can refresh the list + drop the detail
+   *  panel. Undefined disables the Advanced-group uninstall action (the host didn't wire a refresh). */
+  onUninstalled?: () => void
+}> = ({ profileId, packId, packName, builtin, worldId, chatId, onClose, onUninstalled }) => {
   const t = useT()
   const locale = useI18nStore((s) => s.locale)
   const openWorkflowEditor = useUiStore((s) => s.openWorkflowEditor)
   // The export wizard mounts over the whole control center (its own modal overlay) when opened here.
   const [exporting, setExporting] = React.useState(false)
+  // Uninstall (WP4.3b): a destructive Advanced action with an explicit confirm sub-step. Built-ins are
+  // uninstallable (a note replaces the button). `confirmingUninstall` reveals the confirm row.
+  const [confirmingUninstall, setConfirmingUninstall] = React.useState(false)
+  const [uninstalling, setUninstalling] = React.useState(false)
+  const [uninstallError, setUninstallError] = React.useState(false)
+
+  const doUninstall = React.useCallback(async () => {
+    setUninstalling(true)
+    setUninstallError(false)
+    try {
+      const res = (await api().uninstallAgentPack(profileId, packId)) as
+        | { ok: true }
+        | { ok: false; code: 'builtin' | 'not-found' }
+      if (res.ok || res.code === 'not-found') {
+        // Success — or the pack was already gone (treat as done). Refresh the list + close the panel.
+        onUninstalled?.()
+      } else {
+        // 'builtin' — shouldn't reach here (the button is builtin-disabled), but surface honestly.
+        setUninstallError(true)
+        setUninstalling(false)
+        setConfirmingUninstall(false)
+      }
+    } catch {
+      setUninstallError(true)
+      setUninstalling(false)
+      setConfirmingUninstall(false)
+    }
+  }, [profileId, packId, onUninstalled])
 
   const [data, setData] = React.useState<PackSettingsPayload | null>(null)
   const [loading, setLoading] = React.useState(true)
@@ -251,6 +282,56 @@ export const AgentPackDetail: React.FC<{
                   {t('agents.export.open')}
                 </button>
               )}
+
+              {/* Uninstall — the destructive library-removal action (WP4.3b). Built-ins are
+                  uninstallable, so a note replaces the button. Only offered when the host wired a
+                  refresh (onUninstalled); a confirm sub-step gates the actual removal. */}
+              {onUninstalled &&
+                (builtin ? (
+                  <p className="rpt-agentdetail-note">{t('agents.settings.uninstallBuiltinHint')}</p>
+                ) : !confirmingUninstall ? (
+                  <>
+                    <button
+                      type="button"
+                      className="rpt-agentdetail-uninstall danger"
+                      onClick={() => {
+                        setUninstallError(false)
+                        setConfirmingUninstall(true)
+                      }}
+                    >
+                      {t('agents.settings.uninstall')}
+                    </button>
+                    {uninstallError && (
+                      <p className="rpt-agentdetail-rowerror">{t('agents.settings.uninstallFailed')}</p>
+                    )}
+                  </>
+                ) : (
+                  <div className="rpt-agentdetail-uninstall-confirm">
+                    <p className="rpt-agentdetail-note">
+                      {t('agents.settings.uninstallConfirm', { name: packName })}
+                    </p>
+                    <div className="rpt-agentdetail-uninstall-actions">
+                      <button
+                        type="button"
+                        className="rpt-duel-secondary"
+                        onClick={() => setConfirmingUninstall(false)}
+                        disabled={uninstalling}
+                      >
+                        {t('agents.settings.uninstallKeep')}
+                      </button>
+                      <button
+                        type="button"
+                        className="rpt-agentdetail-uninstall danger"
+                        onClick={() => void doUninstall()}
+                        disabled={uninstalling}
+                      >
+                        {uninstalling
+                          ? t('agents.settings.uninstallWorking')
+                          : t('agents.settings.uninstallConfirmBtn')}
+                      </button>
+                    </div>
+                  </div>
+                ))}
             </section>
           </>
         )}

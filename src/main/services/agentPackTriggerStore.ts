@@ -75,3 +75,12 @@ export const setTriggerLastFireFloor = (
     )
     .run(chatId, packId, triggerIndex, lastFireFloor)
 }
+
+/** Delete EVERY retained trigger baseline for a pack (across all chats). Called on uninstall so a
+ *  pack's per-(chat, trigger) baselines don't outlive its library row (agentPackStore.deletePack
+ *  already prunes the activation + override rows; this is the third table keyed by pack_id, which that
+ *  helper does NOT reach — the store lives in a different module). Idempotent — a no-op when a pack
+ *  never fired a stateful trigger. */
+export const deleteTriggerStateForPack = (packId: string): void => {
+  getDb().prepare('DELETE FROM agent_pack_trigger_state WHERE pack_id = ?').run(packId)
+}

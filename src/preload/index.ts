@@ -222,6 +222,11 @@ const api = {
     ipcRenderer.invoke('agent-pack-confirm-import', token),
   cancelAgentPackImport: (token: string) =>
     ipcRenderer.invoke('agent-pack-cancel-import', token),
+  // Uninstall an installed pack (agent-packs plan WP4.3b). Powers the version-conflict import recovery
+  // (uninstall the installed pack, then re-confirm the SAME token) + the detail panel's remove action.
+  // Structured result: { ok:true } | { ok:false, code:'builtin' | 'not-found' } (builtins are refused).
+  uninstallAgentPack: (profileId: string, packId: string) =>
+    ipcRenderer.invoke('agent-pack-uninstall', profileId, packId),
   // SQL-table memory (issue 02): file-based table templates + per-chat assignment + read-only view
   listTableTemplates: (profileId: string) =>
     ipcRenderer.invoke('table-templates-list', profileId),

@@ -1079,6 +1079,15 @@ const zh: Record<string, string> = {
   'agents.settings.openStudio': '在工作流工作室中打开',
   'agents.settings.forkNote':
     '在工作流工作室中编辑包的图会为本世界创建一份副本——原始包保持不变。',
+  // 从库中卸载包（WP4.3b——破坏性操作，带确认步骤；内置包禁用）。
+  'agents.settings.uninstall': '卸载包',
+  'agents.settings.uninstallConfirm':
+    '要从你的库中移除“{{name}}”吗？它在所有世界中的设置与启用状态都将丢失。你创建的任何分支仍会保留。',
+  'agents.settings.uninstallConfirmBtn': '卸载',
+  'agents.settings.uninstallKeep': '保留',
+  'agents.settings.uninstallWorking': '正在卸载……',
+  'agents.settings.uninstallBuiltinHint': '内置包随应用一同提供，无法卸载。',
+  'agents.settings.uninstallFailed': '无法卸载该包。未做任何更改。',
 
   // ── 运行时间线（WP3.3） ────────────────────────────────────────────────────────────────────────
   // 来源徽标（字形 + 简短标签）
@@ -1250,6 +1259,15 @@ const zh: Record<string, string> = {
   'agents.import.blocker.versionConflict.body':
     '你的库中已有此包的版本 {{installed}}。RP Terminal 一次只能保留一个版本的包。',
   'agents.import.versionConflictRecovery': '要安装此版本，请先移除已安装的版本（在其包卡片上操作），然后重新打开此文件。',
+  // 版本冲突的一键恢复（WP4.3b）：卸载已安装的包，然后安装此包。
+  'agents.import.conflictUninstall': '卸载已安装的 v{{installed}}，然后安装',
+  'agents.import.conflictConfirm':
+    '这将从你的库中永久移除此包的版本 {{installed}}，然后安装此版本。其设置与启用状态将会丢失。',
+  'agents.import.conflictConfirmBtn': '卸载并安装',
+  'agents.import.conflictKeep': '保留已安装的版本',
+  'agents.import.conflictWorking': '处理中……',
+  'agents.import.conflictBuiltin': '该包为内置包，无法移除，因此此版本无法替换它。',
+  'agents.import.conflictUninstallFailed': '无法移除已安装的版本。未做任何更改。',
 
   // 导入解析错误页——每个结构化错误码对应一个精心设计的状态。
   'agents.import.parseError.too-large.title': '文件过大',
