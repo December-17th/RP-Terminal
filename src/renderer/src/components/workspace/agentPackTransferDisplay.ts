@@ -41,6 +41,9 @@ export interface ExportPreview {
 export type ImportBlocker =
   | { code: 'unknown-node-types'; nodeTypes: string[] }
   | { code: 'version-too-old'; minRptVersion: string; appVersion: string }
+  // WP4.6: main NO LONGER emits version-conflict (a version difference installs alongside). The
+  // variant is retained here so the existing inspector's recovery card (AgentPackImportInspector.tsx)
+  // still type-checks — it is dead code now (blockers never contains it), left untouched this WP.
   | { code: 'version-conflict'; installedVersion: number }
 
 export type ParseErrorCode =
@@ -68,7 +71,7 @@ export interface InspectionReport {
   }
   capabilityReport?: CapabilityReportView
   bundledTemplatePlans: { name: string; outcome: 'will-install' | 'will-duplicate' }[]
-  dedupe?: 'new' | 'already-installed'
+  dedupe?: 'new' | 'new-version' | 'already-installed'
   blockers: ImportBlocker[]
   warnings: string[]
   parseError?: ParseError
@@ -192,9 +195,9 @@ export function parseErrorHasDetails(err: ParseError): boolean {
 // Each blocker is rendered as a clear reason card that EXPLAINS why Install is refused. The mapping
 // gives a title key + a body key + the interpolation vars the body needs. unknown-node-types lists the
 // types inside the card (NOT as capability chips — they aren't capabilities, they're unrecognized
-// nodes). version-conflict is the one blocker that (in a full build) offers an uninstall-then-import
-// path; whether that action is OFFERED is a UI-capability question the component answers (it needs the
-// uninstall IPC), so this module only classifies the blocker + supplies the numbers.
+// nodes). WP4.6: the version-conflict blocker is GONE (a version difference installs alongside), so no
+// blocker is recoverable-via-uninstall anymore; `recoverable` stays on the shape (always false today)
+// so the component's reason-card code doesn't churn.
 
 export interface BlockerCopy {
   /** i18n key for the reason-card title. */
@@ -205,7 +208,8 @@ export interface BlockerCopy {
   vars: Record<string, string | number>
   /** The node types to LIST inside the card (unknown-node-types only; [] otherwise). */
   nodeTypes: string[]
-  /** True for version-conflict — the one blocker with a recovery action (uninstall-then-import). */
+  /** Whether the blocker offers an uninstall-then-import recovery. Always false since WP4.6 removed the
+   *  one recoverable blocker (version-conflict); kept so the component's card code is unchanged. */
   recoverable: boolean
 }
 
@@ -228,6 +232,8 @@ export function blockerCopy(blocker: ImportBlocker): BlockerCopy {
         nodeTypes: [],
         recoverable: false
       }
+    // WP4.6: dead branch — main no longer emits version-conflict. Retained so the mapping stays total
+    // over the (backward-compatible) union and the inspector's recovery card keeps compiling.
     case 'version-conflict':
       return {
         titleKey: 'agents.import.blocker.versionConflict.title',
@@ -248,7 +254,7 @@ export function blockerCopy(blocker: ImportBlocker): BlockerCopy {
 // blocker's installed version is surfaced (`conflictInstalledVersion`) so the component can wire the
 // uninstall-then-import recovery when the uninstall capability is available.
 
-export type DedupeState = 'new' | 'already-installed'
+export type DedupeState = 'new' | 'new-version' | 'already-installed'
 
 export interface TemplatePlanView {
   name: string
@@ -275,8 +281,8 @@ export interface InspectionModel {
   blockers: ImportBlocker[]
   /** True iff Install may proceed (no blockers AND the file parsed with a token). */
   canInstall: boolean
-  /** The already-installed version when a version-conflict blocker is present (drives the
-   *  uninstall-then-import recovery), else undefined. */
+  /** WP4.6: always undefined now (main no longer emits version-conflict). Kept so the inspector's
+   *  recovery card compiles unchanged. */
   conflictInstalledVersion?: number
   /** The phase-two token, present iff the file parsed. Absent on a parse failure. */
   token?: string
@@ -298,6 +304,8 @@ export function inspectionModel(report: InspectionReport): InspectionModel {
     }
   }
 
+  // WP4.6: main no longer emits version-conflict, so this find is always undefined now; kept so the
+  // inspector's (dead) recovery card still receives its prop shape and compiles unchanged.
   const conflict = report.blockers.find(
     (b): b is Extract<ImportBlocker, { code: 'version-conflict' }> => b.code === 'version-conflict'
   )
@@ -310,7 +318,8 @@ export function inspectionModel(report: InspectionReport): InspectionModel {
     templatePlans: report.bundledTemplatePlans,
     warnings: report.warnings,
     blockers: report.blockers,
-    // Install proceeds only with a token (parsed) and no blockers.
+    // Install proceeds only with a token (parsed) and no blockers. WP4.6: a 'new-version' dedupe
+    // installs alongside (no blocker), so it is installable — the same as 'new'.
     canInstall: !!report.token && report.blockers.length === 0,
     ...(conflict ? { conflictInstalledVersion: conflict.installedVersion } : {}),
     ...(report.token ? { token: report.token } : {})

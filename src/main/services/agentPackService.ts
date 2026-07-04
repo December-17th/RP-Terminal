@@ -30,12 +30,16 @@ import {
   encodeScope,
   getPackRecord,
   getPackIdentity,
+  listPackVersions,
   insertPack,
-  deletePack,
+  deletePackVersion,
+  deletePackVersionAgnosticRows,
   listPackRecords,
   packToSummary,
+  pickPinnedRecord,
   listActivationRows,
   upsertGate,
+  setActivePinVersion,
   resolveGate,
   listOverrideRows,
   upsertOverride,
@@ -86,26 +90,31 @@ export const list = (
   chatId?: string | null
 ): AgentPackSummary[] => {
   seedBuiltinPacks(profileId)
+  // One summary per (id, version) — coexisting versions are distinct library entries (WP4.6). Each
+  // carries the grouped `versions` set for its id (so the UI can group by lineage) and, with a world
+  // context, the gate + the active (pinned) version. The gate + pin are per-ID facts (resolved from
+  // the id's activation rows), stamped onto every same-id summary so a version switch shows correctly.
   return listPackRecords(profileId)
     .map((pack) => {
       const summary = packToSummary(pack)
       if (worldId != null) {
-        summary.gateOpen = resolveGate(
-          listActivationRows(pack.id),
-          worldId,
-          chatId ?? null
-        ).open
+        const gate = resolveGate(listActivationRows(pack.id), worldId, chatId ?? null)
+        summary.gateOpen = gate.open
+        return withVersions(profileId, summary, gate)
       }
-      return summary
+      return withVersions(profileId, summary)
     })
-    .sort((a, b) => a.manifest.name.localeCompare(b.manifest.name))
+    .sort((a, b) => a.manifest.name.localeCompare(b.manifest.name) || a.version - b.version)
 }
 
 /** The SOURCE fragment doc for an installed pack, or null when it is not installed (agent-packs plan
  *  WP3.6b). The renderer's Effective-mode edit routing fetches this to apply an edit to a COPY before
  *  forking / writing through — the fragment blob is otherwise kept out of the list payload. */
-export const getPackFragment = (profileId: string, packId: string): WorkflowDoc | null =>
-  getPackRecord(profileId, packId)?.fragment ?? null
+export const getPackFragment = (
+  profileId: string,
+  packId: string,
+  version?: number
+): WorkflowDoc | null => getPackRecord(profileId, packId, version)?.fragment ?? null
 
 /** Is a pack's activation EXCLUSIVELY this world's? (agent-packs plan WP4.4; ADR 0006.) True iff every
  *  activation row for the pack names `worldId` — i.e. no OTHER world has this pack gated. Effective-mode
@@ -140,24 +149,43 @@ export const isPackActivationExclusiveToWorld = (
 
 export type InstallResult = { installed: boolean; pack: AgentPackSummary }
 
-/** Install a pack into the library. Dedupe (ADR 0008): if a pack with the SAME id AND version is
- *  already installed, this is a no-op returning the existing row — the recipe-import path lands full
- *  copies that must collapse into the single install, and re-importing the same artifact must not
- *  duplicate it. (A same-id DIFFERENT-version pack is an upgrade — out of this WP's scope; we treat
- *  it as install-refused-as-dup for now rather than silently overwriting, and log it.) */
+/** Install a pack into the library (WP4.6 version coexistence, ADR 0008). Identity is (id, version):
+ *   · SAME id AND version already installed → DEDUPE no-op returning the existing row (a recipe lands
+ *     full copies that collapse to the single install; a re-import must not duplicate).
+ *   · SAME id, DIFFERENT version → INSTALL ALONGSIDE (a distinct library row; the WP4.2 version-
+ *     conflict blocker is gone — recipes pin a version, so two versions coexist and the activation
+ *     pins which one runs). The gate stays CLOSED for the new version (ADR 0005 — install ≠ activate). */
 export const install = (profileId: string, pack: AgentPackRecord): InstallResult => {
-  const existing = getPackIdentity(profileId, pack.id)
+  const existing = getPackIdentity(profileId, pack.id, pack.version)
   if (existing) {
-    if (existing.version !== pack.version)
-      log(
-        'error',
-        `agentPack install: ${pack.id} already installed at v${existing.version}, ignoring v${pack.version} (upgrade is a later WP)`
-      )
-    const current = getPackRecord(profileId, pack.id)!
-    return { installed: false, pack: packToSummary(current) }
+    // Exact (id, version) already present — dedupe no-op returning that exact row.
+    const current = getPackRecord(profileId, pack.id, pack.version)!
+    return { installed: false, pack: withVersions(profileId, packToSummary(current)) }
   }
+  // New (id, version): install alongside any other versions of the id (or a first install).
   insertPack(profileId, pack)
-  return { installed: true, pack: packToSummary(pack) }
+  return { installed: true, pack: withVersions(profileId, packToSummary(pack)) }
+}
+
+/** Fill the grouped-lineage metadata (WP4.6): the full installed-version set for the summary's id, and
+ *  — with a world context — the version pinned to run there (the active version). Additive: leaves the
+ *  base summary untouched otherwise. Reads the store once for the version set. */
+const withVersions = (
+  profileId: string,
+  summary: AgentPackSummary,
+  gate?: { open: boolean; pinVersion: number | null }
+): AgentPackSummary => {
+  summary.versions = listPackVersions(profileId, summary.id)
+  if (gate?.open) {
+    // The active version is the pinned one when installed, else the highest installed (mirrors
+    // pickPinnedRecord's fallback so the UI marks the same version that will actually compose).
+    const pinned =
+      gate.pinVersion != null && summary.versions.includes(gate.pinVersion)
+        ? gate.pinVersion
+        : summary.versions[summary.versions.length - 1]
+    if (pinned != null) summary.activeVersion = pinned
+  }
+  return summary
 }
 
 /** The structured outcome of an uninstall (agent-packs plan WP4.3b). The renderer branches on `code`:
@@ -167,20 +195,33 @@ export const install = (profileId: string, pack: AgentPackRecord): InstallResult
  *   · ok:true         — the library row + its activation/override/trigger-state rows were removed. */
 export type UninstallResult = { ok: true } | { ok: false; code: 'not-found' | 'builtin' }
 
-/** Uninstall a pack (agent-packs plan WP4.3b — now exposed over IPC). Builtin packs are UNINSTALLABLE
- *  (they ship with the app) — refused + logged. On success, deletePack removes the library row AND its
- *  activation + override rows (agentPackStore.deletePack); the trigger-state baselines live in a
- *  SEPARATE store keyed by pack_id, which deletePack cannot reach, so we prune them here too — no row
- *  from any of the four pack-keyed tables outlives the install. */
-export const uninstall = (profileId: string, packId: string): UninstallResult => {
-  const pack = getPackRecord(profileId, packId)
+/** Uninstall ONE version of a pack (WP4.6 version-aware; agent-packs plan WP4.3b). `version` omitted =
+ *  the HIGHEST installed version (the single-version caller's natural target). Builtin packs are
+ *  UNINSTALLABLE (they ship with the app; a builtin is one version) — refused + logged.
+ *
+ *  CASCADE (grounded order): drop the (id, version) library row FIRST; then, iff that was the id's LAST
+ *  version (no versions remain), clean the VERSION-AGNOSTIC rows — activation + overrides
+ *  (deletePackVersionAgnosticRows) + the trigger-state baselines (a separate pack_id-keyed store the
+ *  store helper can't reach). While ANOTHER version of the id remains, the gate/overrides/trigger
+ *  state STAY (they belong to the id, and a version switch keeps them — decisions 3/4). No row from any
+ *  of the four pack-keyed tables outlives the id's LAST install. */
+export const uninstall = (
+  profileId: string,
+  packId: string,
+  version?: number
+): UninstallResult => {
+  const pack = getPackRecord(profileId, packId, version)
   if (!pack) return { ok: false, code: 'not-found' }
   if (pack.builtin) {
     log('error', `agentPack uninstall: ${packId} is a built-in pack and cannot be uninstalled`)
     return { ok: false, code: 'builtin' }
   }
-  deletePack(profileId, packId) // drops the library row + activation + override rows
-  deleteTriggerStateForPack(packId) // + the per-(chat, trigger) baselines deletePack can't reach
+  deletePackVersion(profileId, packId, pack.version) // drop this ONE (id, version) library row
+  if (listPackVersions(profileId, packId).length === 0) {
+    // Last version gone → clean the version-agnostic rows (activation + overrides + trigger state).
+    deletePackVersionAgnosticRows(packId)
+    deleteTriggerStateForPack(packId)
+  }
   return { ok: true }
 }
 
@@ -247,7 +288,15 @@ export const forkPack = (
   worldId: string,
   editedFragment?: WorkflowDoc
 ): ForkResult => {
-  const source = getPackRecord(profileId, packId)
+  // WP4.6: fork the version PINNED in the editing world (that is the version the user is looking at),
+  // falling back to the highest installed version when the world has no pin. This resolves the exact
+  // source (id, version), so the fork's lineage points at the version it actually copied.
+  const sourceActivation = listActivationRows(packId).filter((r) => r.worldId === worldId)
+  const gate = resolveGate(sourceActivation, worldId, null)
+  const source = pickPinnedRecord(
+    listPackRecords(profileId).filter((p) => p.id === packId),
+    gate.pinVersion
+  )
   if (!source) return { ok: false, error: `pack ${packId} not installed` }
 
   const installedIds = new Set(listPackRecords(profileId).map((p) => p.id))
@@ -257,17 +306,18 @@ export const forkPack = (
     id: forkId,
     version: source.version,
     upstreamId: packId,
+    upstreamVersion: source.version, // lineage is (id, version) — the exact source row (WP4.6)
     builtin: false,
     manifest: deriveForkManifest(source.manifest, n),
     fragment: editedFragment ?? source.fragment
   }
   insertPack(profileId, fork)
 
-  // Repoint the EDITING WORLD's activation: copy the source's rows for this world to the fork, then
-  // remove the source's activation in this world. Other worlds' rows on the source are never read.
-  const sourceActivation = listActivationRows(packId).filter((r) => r.worldId === worldId)
+  // Repoint the EDITING WORLD's activation: copy the source's rows for this world to the fork (re-pinned
+  // to the fork's OWN version), then remove the source's activation in this world. Other worlds' rows on
+  // the source are never read.
   for (const row of sourceActivation) {
-    insertActivationRow({ ...row, packId: forkId })
+    insertActivationRow({ ...row, packId: forkId, pinVersion: fork.version })
   }
   deleteActivationForWorld(packId, worldId)
 
@@ -278,7 +328,7 @@ export const forkPack = (
     insertOverrideRow(forkId, ov.scope, ov.settingId, ov.value)
   }
 
-  return { ok: true, pack: packToSummary(fork) }
+  return { ok: true, pack: withVersions(profileId, packToSummary(fork)) }
 }
 
 // ── Fragment write-through (ADR 0006; agent-packs plan WP3.6b) ────────────────────────────────────
@@ -307,9 +357,12 @@ export interface UpdateFragmentResult {
 export const updatePackFragment = (
   profileId: string,
   packId: string,
-  fragment: WorkflowDoc
+  fragment: WorkflowDoc,
+  version?: number
 ): UpdateFragmentResult => {
-  const source = getPackRecord(profileId, packId)
+  // WP4.6: target a specific (id, version). A fork (the write-through target) is a unique id with one
+  // version, so an omitted version resolves the highest (its only) row — unchanged for that caller.
+  const source = getPackRecord(profileId, packId, version)
   if (!source) return { ok: false, code: 'not-found', error: `pack ${packId} not installed` }
   if (source.builtin)
     return {
@@ -321,19 +374,23 @@ export const updatePackFragment = (
   const validated = validateWorkflowDoc(fragment)
   if (!validated.ok) return { ok: false, code: 'invalid', error: validated.error }
 
-  updatePackFragmentRow(profileId, packId, validated.doc)
-  return { ok: true, pack: packToSummary({ ...source, fragment: validated.doc }) }
+  updatePackFragmentRow(profileId, packId, validated.doc, source.version)
+  return { ok: true, pack: withVersions(profileId, packToSummary({ ...source, fragment: validated.doc })) }
 }
 
 // ── Gate (Activation) ─────────────────────────────────────────────────────────────────────────
 
-/** Set the gate for a pack in a world, optionally as a per-chat exception (chatId non-null). */
+/** Set the gate for a pack in a world, optionally as a per-chat exception (chatId non-null). WP4.6:
+ *  `version` pins WHICH coexisting version this activation runs (written on open; a null version leaves
+ *  any existing pin untouched and inserts unpinned — resolution then falls back to the highest
+ *  installed version). The UI passes the version of the summary being toggled. */
 export const setGate = (
   packId: string,
   worldId: string,
   chatId: string | null,
-  open: boolean
-): void => upsertGate(packId, worldId, chatId, open)
+  open: boolean,
+  version: number | null = null
+): void => upsertGate(packId, worldId, chatId, open, version)
 
 /** Resolve the gate for a pack in a (world, chat): chat row wins over world row; default CLOSED. */
 export const getGate = (
@@ -341,6 +398,28 @@ export const getGate = (
   worldId: string,
   chatId: string | null
 ): boolean => resolveGate(listActivationRows(packId), worldId, chatId).open
+
+/** Re-pin which installed version of a pack runs in a world (WP4.6; ADR 0008 — "activate what the
+ *  recipe pinned"). Updates every activation row for (pack, world) — the world-scope row + any chat
+ *  exceptions — so the world switches versions as a unit; overrides + trigger state carry over
+ *  unchanged (decisions 3/4). Refuses when that version is not installed, or when the world has no
+ *  activation to re-pin (open a gate first). The UI edit path arrives in a later WP; this keeps the
+ *  service honest for recipes now. */
+export type SetActiveVersionResult =
+  | { ok: true }
+  | { ok: false; code: 'not-installed' | 'not-activated' }
+
+export const setActiveVersion = (
+  profileId: string,
+  packId: string,
+  version: number,
+  worldId: string
+): SetActiveVersionResult => {
+  if (!listPackVersions(profileId, packId).includes(version))
+    return { ok: false, code: 'not-installed' }
+  const repinned = setActivePinVersion(packId, worldId, version)
+  return repinned > 0 ? { ok: true } : { ok: false, code: 'not-activated' }
+}
 
 // ── Overrides ─────────────────────────────────────────────────────────────────────────────────
 //
@@ -427,7 +506,14 @@ export const getPackSettings = (
   chatId: string | null
 ): PackSettingsResult | null => {
   seedBuiltinPacks(profileId)
-  const pack = getPackRecord(profileId, packId)
+  // WP4.6: resolve the PINNED version for this (world, chat) so the panel's exposed settings + derived
+  // System params reflect the version that actually runs (its exposedSettings/triggers), not an
+  // arbitrary installed version. With no world, fall back to the highest installed version.
+  const pin = worldId == null ? null : resolveGate(listActivationRows(packId), worldId, chatId).pinVersion
+  const pack = pickPinnedRecord(
+    listPackRecords(profileId).filter((p) => p.id === packId),
+    pin
+  )
   if (!pack) return null
   const prov = layerOverridesWithProvenance(listOverrideRows(packId), worldId, chatId)
   const resolvedFor = (id: string, dflt: unknown): ResolvedOverride =>
@@ -492,26 +578,34 @@ export const enabledFragmentsFor = (profileId: string, chatId: string): ComposeF
   const worldId = worldOfChat(profileId, chatId)
   if (worldId == null) return []
 
-  const seen = new Set<string>()
-  const fragments: ComposeFragment[] = []
+  // Group the library by id (WP4.6 version coexistence): coexisting versions of one id share ONE
+  // activation (the gate + the pinned version). Resolve the gate ONCE per id, then compose ONLY the
+  // pinned version's fragment (pickPinnedRecord: the pin if installed, else the highest version).
+  const byId = new Map<string, AgentPackRecord[]>()
   for (const pack of listPackRecords(profileId)) {
-    if (seen.has(pack.id)) {
-      log('error', `agentPack enabledFragmentsFor: duplicate packId ${pack.id} — dropping duplicate`)
-      continue
-    }
-    const { open, denial } = resolveGate(listActivationRows(pack.id), worldId, chatId)
+    const arr = byId.get(pack.id)
+    if (arr) arr.push(pack)
+    else byId.set(pack.id, [pack])
+  }
+
+  const fragments: ComposeFragment[] = []
+  for (const [packId, records] of byId) {
+    const { open, denial, pinVersion } = resolveGate(listActivationRows(packId), worldId, chatId)
     if (!open) continue
-    seen.add(pack.id)
+    const pack = pickPinnedRecord(records, pinVersion)
+    if (!pack) continue
     // MATERIALIZE (agent-packs plan WP3.2): apply this (world, chat)'s resolved overrides to the
     // fragment BEFORE it enters composition (compose.ts consumes doc as-is) — so exposed-setting
-    // node config + System trigger params take real effect on the turn path. materializeFragment is
-    // pure + deep-clones; with no overrides it deep-equals pack.fragment (zero behavior change).
+    // node config + System trigger params take real effect on the turn path. Overrides are
+    // version-AGNOSTIC (keyed by pack id, decision 3): the same set applies whichever version is
+    // pinned; a setting a version doesn't expose is skipped-with-log by materializeFragment.
+    // materializeFragment is pure + deep-clones; with no overrides it deep-equals pack.fragment.
     // The HEADLESS path inherits this automatically: evaluatePass/runHeadless/runManual all read the
     // ComposeFragment.doc this returns, so both call sites route through one materialization.
-    const overrides = layerOverrides(listOverrideRows(pack.id), worldId, chatId)
+    const overrides = layerOverrides(listOverrideRows(packId), worldId, chatId)
     const doc = materializeFragment(pack, overrides)
     fragments.push({
-      packId: pack.id,
+      packId,
       doc,
       gateOpen: true,
       ...(denial.length ? { closedEntryIndexes: denial } : {})
@@ -583,7 +677,20 @@ export const getEffectiveGraph = (profileId: string, chatId: string): EffectiveG
   // Manifest names for the enabled packs (the composition keys are pack ids). enabledFragmentsFor
   // gives the exact gate-open set for this chat; we join on it so a trigger-only pack (present in
   // composition but with no spliced attachments) is still listed with its correct triggerOnly flag.
-  const recordOf = new Map(listPackRecords(profileId).map((p) => [p.id, p]))
+  // WP4.6: with coexisting versions, resolve the PINNED record per id (the one that actually composed)
+  // so the region label + lineage reflect the running version, not an arbitrary last-inserted row.
+  const recordsById = new Map<string, AgentPackRecord[]>()
+  for (const p of listPackRecords(profileId)) {
+    const arr = recordsById.get(p.id)
+    if (arr) arr.push(p)
+    else recordsById.set(p.id, [p])
+  }
+  const recordOf = (packId: string): AgentPackRecord | undefined => {
+    const records = recordsById.get(packId)
+    if (!records) return undefined
+    const pin = worldId == null ? null : resolveGate(listActivationRows(packId), worldId, chatId).pinVersion
+    return pickPinnedRecord(records, pin)
+  }
   const enabledIds = worldId == null ? [] : enabledFragmentsFor(profileId, chatId).map((f) => f.packId)
 
   const packs: EffectivePackInfo[] = enabledIds.map((packId) => {
@@ -591,7 +698,7 @@ export const getEffectiveGraph = (profileId: string, chatId: string): EffectiveG
     const nodeIds = pc?.nodeIds ?? []
     // Spliced a checkpoint attachment iff any entry landed OR any rejoin edge was wired.
     const splicedAny = (pc?.entries.length ?? 0) > 0 || (pc?.rejoinEdges.length ?? 0) > 0
-    const rec = recordOf.get(packId)
+    const rec = recordOf(packId)
     return {
       packId,
       name: rec?.manifest.name ?? packId,

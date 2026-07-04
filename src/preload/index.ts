@@ -154,8 +154,23 @@ const api = {
   // `scope` is 'global' | { world } | { chat } (agentPackStore OverrideScope).
   listAgentPacks: (profileId: string, worldId?: string | null, chatId?: string | null) =>
     ipcRenderer.invoke('agent-packs-list', profileId, worldId, chatId),
-  setAgentPackGate: (packId: string, worldId: string, chatId: string | null, open: boolean) =>
-    ipcRenderer.invoke('agent-pack-set-gate', packId, worldId, chatId, open),
+  // WP4.6: `version` pins which coexisting version this activation runs (written on open; omitted =
+  // leave any existing pin / fall back to the highest installed version at resolve time).
+  setAgentPackGate: (
+    packId: string,
+    worldId: string,
+    chatId: string | null,
+    open: boolean,
+    version?: number | null
+  ) => ipcRenderer.invoke('agent-pack-set-gate', packId, worldId, chatId, open, version),
+  // WP4.6: re-pin which installed version of a pack runs in a world ("activate what the recipe
+  // pinned", ADR 0008). Overrides + trigger state carry over. Returns { ok } | { ok:false, code }.
+  setAgentPackActiveVersion: (
+    profileId: string,
+    packId: string,
+    version: number,
+    worldId: string
+  ) => ipcRenderer.invoke('agent-pack-set-active-version', profileId, packId, version, worldId),
   setAgentPackOverride: (packId: string, scope: unknown, settingId: string, value: unknown) =>
     ipcRenderer.invoke('agent-pack-set-override', packId, scope, settingId, value),
   clearAgentPackOverride: (packId: string, scope: unknown, settingId: string) =>
@@ -230,8 +245,10 @@ const api = {
   // Uninstall an installed pack (agent-packs plan WP4.3b). Powers the version-conflict import recovery
   // (uninstall the installed pack, then re-confirm the SAME token) + the detail panel's remove action.
   // Structured result: { ok:true } | { ok:false, code:'builtin' | 'not-found' } (builtins are refused).
-  uninstallAgentPack: (profileId: string, packId: string) =>
-    ipcRenderer.invoke('agent-pack-uninstall', profileId, packId),
+  // WP4.6: `version` uninstalls ONE version (omitted = the highest installed). The last version's
+  // removal cascades to the version-agnostic activation/override/trigger rows.
+  uninstallAgentPack: (profileId: string, packId: string, version?: number) =>
+    ipcRenderer.invoke('agent-pack-uninstall', profileId, packId, version),
   // SQL-table memory (issue 02): file-based table templates + per-chat assignment + read-only view
   listTableTemplates: (profileId: string) =>
     ipcRenderer.invoke('table-templates-list', profileId),

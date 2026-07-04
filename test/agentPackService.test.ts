@@ -11,6 +11,7 @@ import { AgentPackRecord, ActivationRow, OverrideRow } from '../src/main/service
 const {
   encodeScope: realEncodeScope,
   resolveGate: realResolveGate,
+  pickPinnedRecord: realPickPinnedRecord,
   layerOverrides: realLayerOverrides,
   layerOverridesWithProvenance: realLayerOverridesWithProvenance
 } = await vi.importActual<typeof import('../src/main/services/agentPackStore')>(
@@ -28,12 +29,16 @@ const store = vi.hoisted(() => ({
   encodeScope: vi.fn(),
   getPackIdentity: vi.fn(),
   getPackRecord: vi.fn(),
+  listPackVersions: vi.fn(),
   insertPack: vi.fn(),
-  deletePack: vi.fn(),
+  deletePackVersion: vi.fn(),
+  deletePackVersionAgnosticRows: vi.fn(),
   listPackRecords: vi.fn(),
   packToSummary: vi.fn(),
+  pickPinnedRecord: vi.fn(),
   listActivationRows: vi.fn(),
   upsertGate: vi.fn(),
+  setActivePinVersion: vi.fn(),
   resolveGate: vi.fn(),
   listOverrideRows: vi.fn(),
   upsertOverride: vi.fn(),
@@ -75,6 +80,7 @@ const pack = (over: Partial<AgentPackRecord> = {}): AgentPackRecord => ({
   id: 'p1',
   version: 1,
   upstreamId: null,
+  upstreamVersion: null,
   builtin: false,
   manifest: { name: 'Pack One' },
   fragment: {
@@ -105,27 +111,52 @@ beforeEach(() => {
   // Wire the mocked store to the in-memory state + real pure helpers.
   store.encodeScope.mockImplementation(realEncodeScope)
   store.resolveGate.mockImplementation(realResolveGate)
+  store.pickPinnedRecord.mockImplementation(realPickPinnedRecord)
   store.layerOverrides.mockImplementation(realLayerOverrides)
   store.layerOverridesWithProvenance.mockImplementation(realLayerOverridesWithProvenance)
   store.listPackRecords.mockImplementation(() => state.packs)
-  store.getPackIdentity.mockImplementation((_p, id) => {
-    const found = state.packs.find((x) => x.id === id)
+  // WP4.6: getPackIdentity probes the EXACT (id, version); getPackRecord takes an optional version,
+  // else the highest installed; listPackVersions returns the id's version set ascending.
+  store.getPackIdentity.mockImplementation((_p, id, version) => {
+    const found = state.packs.find((x) => x.id === id && x.version === version)
     return found ? { id: found.id, version: found.version } : null
   })
-  store.getPackRecord.mockImplementation((_p, id) => state.packs.find((x) => x.id === id) ?? null)
+  store.getPackRecord.mockImplementation((_p, id, version) => {
+    const matches = state.packs.filter((x) => x.id === id && (version == null || x.version === version))
+    if (matches.length === 0) return null
+    return [...matches].sort((a, b) => b.version - a.version)[0]
+  })
+  store.listPackVersions.mockImplementation((_p, id) =>
+    state.packs.filter((x) => x.id === id).map((x) => x.version).sort((a, b) => a - b)
+  )
   store.insertPack.mockImplementation((_p, x) => state.packs.push(x))
-  store.deletePack.mockImplementation((_p, id) => {
+  store.deletePackVersion.mockImplementation((_p, id, version) => {
     const before = state.packs.length
-    state.packs = state.packs.filter((x) => x.id !== id)
+    state.packs = state.packs.filter((x) => !(x.id === id && x.version === version))
     return state.packs.length < before
+  })
+  store.deletePackVersionAgnosticRows.mockImplementation((id) => {
+    state.activation = state.activation.filter((r) => r.packId !== id)
+    state.overrides = state.overrides.filter((r) => r.packId !== id)
   })
   store.packToSummary.mockImplementation((x) => ({
     id: x.id,
     version: x.version,
     upstreamId: x.upstreamId,
+    upstreamVersion: x.upstreamVersion,
     builtin: x.builtin,
-    manifest: x.manifest
+    manifest: x.manifest,
+    versions: [x.version]
   }))
+  store.setActivePinVersion.mockImplementation((packId, worldId, version) => {
+    let n = 0
+    for (const r of state.activation)
+      if (r.packId === packId && r.worldId === worldId) {
+        r.pinVersion = version
+        n++
+      }
+    return n
+  })
   store.listActivationRows.mockImplementation((id) => state.activation.filter((r) => r.packId === id))
   store.listOverrideRows.mockImplementation((id) => state.overrides.filter((r) => r.packId === id))
   // Fork wrappers over the in-memory state.
@@ -136,12 +167,14 @@ beforeEach(() => {
   store.insertOverrideRow.mockImplementation((packId: string, scope: string, settingId: string, value: unknown) =>
     state.overrides.push({ packId, scope, settingId, value })
   )
-  store.updatePackFragmentRow.mockImplementation((_p: string, packId: string, fragment: WorkflowDoc) => {
-    const target = state.packs.find((x) => x.id === packId)
-    if (!target) return false
-    target.fragment = fragment
-    return true
-  })
+  store.updatePackFragmentRow.mockImplementation(
+    (_p: string, packId: string, fragment: WorkflowDoc, version: number) => {
+      const target = state.packs.find((x) => x.id === packId && x.version === version)
+      if (!target) return false
+      target.fragment = fragment
+      return true
+    }
+  )
 })
 
 afterEach(() => setEnabledFragmentsProvider()) // restore the zero-packs default provider
@@ -165,7 +198,8 @@ describe('install / dedupe / uninstall', () => {
     service.install('prof', pack())
     expect(service.uninstall('prof', 'p1')).toEqual({ ok: true })
     expect(state.packs).toHaveLength(0)
-    // deletePack drops activation + override rows; the service also prunes the trigger-state store.
+    // Single version = the LAST version: the cascade drops activation + override rows AND the
+    // trigger-state store (WP4.6 last-version cascade; unchanged outcome for a one-version pack).
     expect(triggerStore.deleteTriggerStateForPack).toHaveBeenCalledWith('p1')
   })
 
@@ -180,6 +214,111 @@ describe('install / dedupe / uninstall', () => {
   it('uninstall of an unknown pack returns not-found and prunes nothing', () => {
     expect(service.uninstall('prof', 'nope')).toEqual({ ok: false, code: 'not-found' })
     expect(triggerStore.deleteTriggerStateForPack).not.toHaveBeenCalled()
+  })
+})
+
+// ── Version coexistence (WP4.6; ADR 0008) ──────────────────────────────────────────────────────────
+describe('version coexistence: install alongside / pin / uninstall cascade', () => {
+  const v = (version: number, over: Partial<AgentPackRecord> = {}): AgentPackRecord =>
+    pack({ id: 'coex', version, ...over })
+
+  it('same id, DIFFERENT version → installs ALONGSIDE (two distinct rows); the summary carries both versions', () => {
+    expect(service.install('prof', v(1)).installed).toBe(true)
+    const r = service.install('prof', v(2))
+    expect(r.installed).toBe(true) // NOT a dedupe — installed alongside
+    expect(state.packs.filter((p) => p.id === 'coex')).toHaveLength(2)
+    // The grouped lineage is on the summary (both versions, ascending).
+    expect(r.pack.versions).toEqual([1, 2])
+  })
+
+  it('same id AND version → dedupe no-op (unchanged)', () => {
+    service.install('prof', v(1))
+    const r = service.install('prof', v(1))
+    expect(r.installed).toBe(false)
+    expect(state.packs.filter((p) => p.id === 'coex')).toHaveLength(1)
+  })
+
+  it('list surfaces one summary per (id, version), each with the full versions set + the active version', () => {
+    service.install('prof', v(1))
+    service.install('prof', v(2))
+    // Gate open in w1 pinned to v1.
+    state.activation = [{ packId: 'coex', worldId: 'w1', chatId: null, gateOpen: true, denial: [], pinVersion: 1 }]
+    const listed = service.list('prof', 'w1', 'c1').filter((s) => s.id === 'coex')
+    expect(listed.map((s) => s.version)).toEqual([1, 2])
+    for (const s of listed) {
+      expect(s.versions).toEqual([1, 2])
+      expect(s.gateOpen).toBe(true)
+      expect(s.activeVersion).toBe(1) // the pinned version, on every same-id summary
+    }
+  })
+
+  it('setActiveVersion re-pins an activated world; refuses an uninstalled version + an unactivated world', () => {
+    service.install('prof', v(1))
+    service.install('prof', v(2))
+    state.activation = [
+      { packId: 'coex', worldId: 'w1', chatId: null, gateOpen: true, denial: [], pinVersion: 1 },
+      { packId: 'coex', worldId: 'w1', chatId: 'c1', gateOpen: true, denial: [], pinVersion: 1 }
+    ]
+    // Switch w1 to v2 — both the world row and the chat exception re-pin (switch as a unit).
+    expect(service.setActiveVersion('prof', 'coex', 2, 'w1')).toEqual({ ok: true })
+    expect(state.activation.every((r) => r.pinVersion === 2)).toBe(true)
+    // A version that isn't installed is refused.
+    expect(service.setActiveVersion('prof', 'coex', 9, 'w1')).toEqual({ ok: false, code: 'not-installed' })
+    // A world with no activation to re-pin is refused.
+    expect(service.setActiveVersion('prof', 'coex', 2, 'w-none')).toEqual({ ok: false, code: 'not-activated' })
+  })
+
+  it('override SURVIVES a version switch (overrides are version-agnostic — decision 3)', () => {
+    // A settable pack at two versions; the override is keyed by pack id + scope + setting (no version).
+    const settable = (version: number): AgentPackRecord =>
+      v(version, {
+        manifest: {
+          name: 'Coex',
+          exposedSettings: [
+            { id: 'blk.count', label: 'count', type: 'number', default: 3, min: 1, max: 10, target: { nodeId: 'blk', path: 'count' } }
+          ]
+        },
+        fragment: {
+          id: `sf${version}`, name: `sf${version}`, version, schemaVersion: 1, kind: 'fragment',
+          nodes: [{ id: 'blk', type: 'text.template', config: { count: 3 } }],
+          edges: [],
+          attachments: [{ kind: 'rejoin', checkpoint: 'prompt-assembly', rejoinPort: { node: 'blk', port: 'text' } }]
+        } as WorkflowDoc
+      })
+    state.packs = [settable(1), settable(2)]
+    state.activation = [{ packId: 'coex', worldId: 'w1', chatId: null, gateOpen: true, denial: [], pinVersion: 1 }]
+    state.overrides = [{ packId: 'coex', scope: 'world:w1', settingId: 'blk.count', value: 7 }]
+    // Pinned to v1 → v1's fragment materializes the override.
+    expect(service.enabledFragmentsFor('prof', 'c1')[0].doc.nodes.find((n) => n.id === 'blk')?.config?.count).toBe(7)
+    // Switch to v2 → the SAME override still applies (survives the switch).
+    service.setActiveVersion('prof', 'coex', 2, 'w1')
+    const frag = service.enabledFragmentsFor('prof', 'c1')[0]
+    expect(frag.doc.name).toBe('sf2') // v2's fragment now composes
+    expect(frag.doc.nodes.find((n) => n.id === 'blk')?.config?.count).toBe(7) // override survived
+  })
+
+  it('uninstall of ONE of two versions keeps the other + KEEPS the version-agnostic rows', () => {
+    service.install('prof', v(1))
+    service.install('prof', v(2))
+    state.activation = [{ packId: 'coex', worldId: 'w1', chatId: null, gateOpen: true, denial: [], pinVersion: 2 }]
+    state.overrides = [{ packId: 'coex', scope: 'world:w1', settingId: 'tone', value: 'x' }]
+    expect(service.uninstall('prof', 'coex', 1)).toEqual({ ok: true })
+    // v2 remains; activation + overrides survive (they belong to the id, not the removed version).
+    expect(state.packs.filter((p) => p.id === 'coex').map((p) => p.version)).toEqual([2])
+    expect(state.activation).toHaveLength(1)
+    expect(state.overrides).toHaveLength(1)
+    expect(triggerStore.deleteTriggerStateForPack).not.toHaveBeenCalled() // not the last version
+  })
+
+  it('uninstall of the LAST version cascades: removes the version-agnostic activation/override + trigger state', () => {
+    service.install('prof', v(2))
+    state.activation = [{ packId: 'coex', worldId: 'w1', chatId: null, gateOpen: true, denial: [], pinVersion: 2 }]
+    state.overrides = [{ packId: 'coex', scope: 'world:w1', settingId: 'tone', value: 'x' }]
+    expect(service.uninstall('prof', 'coex', 2)).toEqual({ ok: true })
+    expect(state.packs.filter((p) => p.id === 'coex')).toHaveLength(0)
+    expect(state.activation).toHaveLength(0) // cascaded
+    expect(state.overrides).toHaveLength(0) // cascaded
+    expect(triggerStore.deleteTriggerStateForPack).toHaveBeenCalledWith('coex')
   })
 })
 
@@ -225,9 +364,14 @@ describe('gate delegation', () => {
     expect(service.getGate('p1', 'w1', null)).toBe(true)
   })
 
-  it('setGate delegates to the store upsert', () => {
+  it('setGate delegates to the store upsert (pinVersion null when omitted — WP4.6)', () => {
     service.setGate('p1', 'w1', null, true)
-    expect(store.upsertGate).toHaveBeenCalledWith('p1', 'w1', null, true)
+    expect(store.upsertGate).toHaveBeenCalledWith('p1', 'w1', null, true, null)
+  })
+
+  it('setGate threads the pinned version through to the store (WP4.6)', () => {
+    service.setGate('p1', 'w1', null, true, 3)
+    expect(store.upsertGate).toHaveBeenCalledWith('p1', 'w1', null, true, 3)
   })
 })
 
@@ -283,13 +427,30 @@ describe('enabledFragmentsFor', () => {
     expect('closedEntryIndexes' in frag).toBe(false)
   })
 
-  it('duplicate packId → keeps first, DROPS + LOGS the duplicate', () => {
-    // Two library rows sharing an id (the guard is defensive vs the PK). Both gated open.
-    state.packs = [pack({ id: 'dup' }), pack({ id: 'dup' })]
-    state.activation = [{ packId: 'dup', worldId: 'w1', chatId: null, gateOpen: true, denial: [] }]
+  // WP4.6 (REPLACES the old "duplicate packId → keeps first, DROPS + LOGS" test): two records sharing
+  // an id are no longer a defensive-duplicate case — they are DISTINCT VERSIONS that coexist. The gate
+  // resolves ONCE per id and composes exactly the PINNED version's fragment (one ComposeFragment, no
+  // log). This is the heart of version coexistence on the turn path.
+  it('coexisting versions → one gate, composes the PINNED version (no duplicate log)', () => {
+    const v1 = pack({ id: 'multi', version: 1, fragment: { ...pack().fragment, id: 'f1', name: 'V1' } as WorkflowDoc })
+    const v2 = pack({ id: 'multi', version: 2, fragment: { ...pack().fragment, id: 'f2', name: 'V2' } as WorkflowDoc })
+    state.packs = [v1, v2]
+    // Gate open, pinned to version 1 (the lower — proving it is the PIN, not "highest wins").
+    state.activation = [{ packId: 'multi', worldId: 'w1', chatId: null, gateOpen: true, denial: [], pinVersion: 1 }]
     const frags = service.enabledFragmentsFor('prof', 'c1')
     expect(frags).toHaveLength(1)
-    expect(mockLog.log).toHaveBeenCalled()
+    expect(frags[0].packId).toBe('multi')
+    expect(frags[0].doc.name).toBe('V1') // the pinned version's fragment, not v2
+    expect(mockLog.log).not.toHaveBeenCalled()
+  })
+
+  it('coexisting versions, unpinned gate (legacy row) → composes the HIGHEST version', () => {
+    const v1 = pack({ id: 'multi', version: 1, fragment: { ...pack().fragment, id: 'f1', name: 'V1' } as WorkflowDoc })
+    const v2 = pack({ id: 'multi', version: 2, fragment: { ...pack().fragment, id: 'f2', name: 'V2' } as WorkflowDoc })
+    state.packs = [v1, v2]
+    state.activation = [{ packId: 'multi', worldId: 'w1', chatId: null, gateOpen: true, denial: [], pinVersion: null }]
+    const frags = service.enabledFragmentsFor('prof', 'c1')
+    expect(frags[0].doc.name).toBe('V2')
   })
 
   // ── MATERIALIZATION on the turn path (agent-packs plan WP3.2) ─────────────────────────────────────

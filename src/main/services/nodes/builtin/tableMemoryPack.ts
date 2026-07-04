@@ -230,6 +230,7 @@ export const buildTableMemoryPack = (): AgentPackRecord => ({
   id: TABLE_MEMORY_PACK_ID,
   version: TABLE_MEMORY_PACK_VERSION,
   upstreamId: null,
+  upstreamVersion: null,
   builtin: true,
   manifest: {
     name: 'SQL Table Memory',

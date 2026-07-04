@@ -29,13 +29,21 @@ export const registerAgentPackIpc = (ipcMain: IpcMain): void => {
   // { ok:true } on removal (library row + activation + override + trigger-state rows all pruned), or
   // { ok:false, code:'builtin' | 'not-found' } — builtins are uninstallable, so the version-conflict
   // recovery renders that refusal honestly. Install is NOT exposed (import is the two-phase confirm).
-  ipcMain.handle('agent-pack-uninstall', (_, profileId: string, packId: string) =>
-    agentPackService.uninstall(profileId, packId)
+  // WP4.6: version-aware uninstall (omitted version = highest installed; last version cascades).
+  ipcMain.handle('agent-pack-uninstall', (_, profileId: string, packId: string, version?: number) =>
+    agentPackService.uninstall(profileId, packId, version)
   )
+  // WP4.6: `version` pins which coexisting version this activation runs (written on open).
   ipcMain.handle(
     'agent-pack-set-gate',
-    (_, packId: string, worldId: string, chatId: string | null, open: boolean) =>
-      agentPackService.setGate(packId, worldId, chatId, open)
+    (_, packId: string, worldId: string, chatId: string | null, open: boolean, version?: number | null) =>
+      agentPackService.setGate(packId, worldId, chatId, open, version ?? null)
+  )
+  // WP4.6: re-pin which installed version of a pack runs in a world (ADR 0008 — recipes pin versions).
+  ipcMain.handle(
+    'agent-pack-set-active-version',
+    (_, profileId: string, packId: string, version: number, worldId: string) =>
+      agentPackService.setActiveVersion(profileId, packId, version, worldId)
   )
   ipcMain.handle(
     'agent-pack-set-override',

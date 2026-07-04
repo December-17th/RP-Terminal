@@ -1262,6 +1262,7 @@ const zh: Record<string, string> = {
   'agents.import.confirmBlocked': '情况已发生变化，此包已无法安装。请重新打开该文件。',
   // 去重标签
   'agents.import.dedupe.new': '全新',
+  'agents.import.dedupe.new-version': '新版本',
   'agents.import.dedupe.already-installed': '已安装',
   // 捆绑模板的处理结果
   'agents.import.templateOutcome.will-install': '将被添加',

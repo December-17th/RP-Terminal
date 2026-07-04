@@ -112,22 +112,33 @@ CREATE TABLE IF NOT EXISTS table_progress (
   PRIMARY KEY (chat_id, sql_name)
 );
 
--- Agent-pack library (agent-packs plan WP1.4; ADR 0005/0006/0009; glossary root CONTEXT.md).
+-- Agent-pack library (agent-packs plan WP1.4; ADR 0005/0006/0008/0009; glossary root CONTEXT.md).
 -- The user-owned INSTALL of a pack, shared by all worlds (the "library"). Fragment docs live HERE,
 -- NOT in the profile workflow dir, so listWorkflows (which only reads that dir) can never surface a
 -- pack fragment in the turn-workflow selection UI. upstream_id records fork lineage (ADR 0006 --
 -- copy-on-edit); builtin marks app-shipped packs (uninstallable). manifest/fragment are JSON blobs
 -- (a Zod schema owns the shape at the service edge, mirroring the cards/settings blob precedent). The
 -- library is profile-global: no chat/world FK here (activation, below, is what scopes a pack).
+--
+-- VERSION COEXISTENCE (WP4.6; ADR 0008): library identity is (id, version), so the PK is
+-- (profile_id, id, version). Two installs of one id at DIFFERENT versions are DISTINCT rows that
+-- coexist (recipes pin a version — "install 1.2 alongside 1.4"); a same-id+version reinstall dedupes
+-- to the existing row. See the migration in getDb() that rebuilds a legacy (profile_id, id)-keyed
+-- table into this shape, preserving every row (version becomes the stored version).
 CREATE TABLE IF NOT EXISTS agent_packs (
-  id TEXT PRIMARY KEY,
+  id TEXT NOT NULL,
   profile_id TEXT NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
   version INTEGER NOT NULL,
   upstream_id TEXT,
+  -- WP4.6: the SOURCE version a fork was copied from (ADR 0006 lineage is now (id, version), matching
+  -- library identity). NULL for a root install or a legacy fork (upstream_id alone). upstream-diffing
+  -- can resolve the exact source row from (upstream_id, upstream_version).
+  upstream_version INTEGER,
   builtin INTEGER NOT NULL DEFAULT 0,
   manifest TEXT NOT NULL,
   fragment TEXT NOT NULL,
-  created_at TEXT
+  created_at TEXT,
+  PRIMARY KEY (profile_id, id, version)
 );
 CREATE INDEX IF NOT EXISTS idx_agent_packs_profile ON agent_packs(profile_id);
 
@@ -139,12 +150,20 @@ CREATE INDEX IF NOT EXISTS idx_agent_packs_profile ON agent_packs(profile_id);
 -- closed entry indexes / denied capability ids (semantics arrive in a later WP; stored + threaded
 -- to composition now as closedEntryIndexes). Not FK'd to agent_packs so a builtin seed's activation
 -- can precede any migration reordering; the service prunes orphans on read/uninstall.
+--
+-- VERSION PINNING (WP4.6; ADR 0008 — recipes are reproducible, so "which version runs in this world"
+-- is explicit). pin_version records the pack VERSION this activation runs; enabledFragmentsFor
+-- composes ONLY that version's fragment even when the library holds several. It is a COLUMN, not part
+-- of the PK: a (pack, world[, chat]) runs exactly ONE version at a time, and switching versions is an
+-- UPDATE of pin_version (setActiveVersion), not a second row. Legacy rows (pre-WP4.6, no column) are
+-- backfilled to the version currently installed for that id (the migration in getDb()).
 CREATE TABLE IF NOT EXISTS agent_pack_activation (
   pack_id TEXT NOT NULL,
   world_id TEXT NOT NULL,
   chat_id TEXT,
   gate_open INTEGER NOT NULL DEFAULT 0,
   denial TEXT,
+  pin_version INTEGER,
   PRIMARY KEY (pack_id, world_id, chat_id)
 );
 CREATE INDEX IF NOT EXISTS idx_agent_pack_activation_pack ON agent_pack_activation(pack_id);
@@ -153,8 +172,13 @@ CREATE INDEX IF NOT EXISTS idx_agent_pack_activation_pack ON agent_pack_activati
 -- per-world < per-chat, nearest wins). scope encodes the tier as a single string: 'global' for the
 -- library-wide default, or a world/chat id for the narrower tiers (the selection sidecar's
 -- global/world encoding, widened with a chat tier — see agentPackStore.ts SCOPE encoding note).
--- v0: overrides are stored + resolved but NOT yet applied to fragment docs (materialization is a
--- later WP). value is a JSON blob (any exposed-setting value shape).
+-- Overrides materialize into fragment docs at resolve time (WP3.2). value is a JSON blob.
+--
+-- VERSION-AGNOSTIC (WP4.6; ADR 0005/0006): keyed by (pack_id, scope, setting_id) with NO version.
+-- Overrides survive UPGRADES by being reapplied by STABLE setting id across versions — a version
+-- switch (setActiveVersion) keeps them, and a setting id that a given version doesn't expose is
+-- skipped-with-log at materialization (agentPackMaterialize). This is why coexisting versions of one
+-- id share one override set, and switching which version runs never resets the user's settings.
 CREATE TABLE IF NOT EXISTS agent_pack_overrides (
   pack_id TEXT NOT NULL,
   scope TEXT NOT NULL,
@@ -175,6 +199,12 @@ CREATE INDEX IF NOT EXISTS idx_agent_pack_overrides_pack ON agent_pack_overrides
 -- in each chat it is gated open for). trigger_index is the position in the fragment's attachments
 -- array, so re-authoring a pack's attachments correctly re-baselines. Both value columns are
 -- nullable: absent = never evaluated / never fired (the first-evaluation baseline case).
+--
+-- VERSION-AGNOSTIC (WP4.6; ADR 0004): NO version in the key. changedBy baselines + cadence last-fires
+-- are per-chat facts about the PACK (a running total the chat has seen), not about a version, so a
+-- version switch (setActiveVersion) KEEPS them. The known caveat is unchanged: trigger_index is
+-- positional, so a version whose attachments array reorders/differs re-associates baselines by index
+-- (the documented sys.trigger.* stability caveat — WP2.2/WP3.2).
 CREATE TABLE IF NOT EXISTS agent_pack_trigger_state (
   chat_id TEXT NOT NULL,
   pack_id TEXT NOT NULL,
@@ -249,6 +279,54 @@ const addColumnIfMissing = (
   }
 }
 
+/** WP4.6 version-coexistence migration: rebuild a LEGACY `agent_packs` (PK `id` only, one version per
+ *  id) into the (profile_id, id, version) shape, PRESERVING every row. SQLite cannot ALTER a PRIMARY
+ *  KEY in place, so the only faithful path is create-new / copy / drop / rename — done inside a single
+ *  transaction (all-or-nothing). Detection: the legacy table has a single-column PK (`id`, pk=1) and
+ *  `version` is a non-PK column; the new table has a 3-column composite PK. We detect the legacy shape
+ *  by "`version` has pk-ordinal 0" (not part of the key). Idempotent: a no-op once migrated (version
+ *  is in the PK) or when the table doesn't yet exist (a fresh DB — SCHEMA creates the new shape).
+ *
+ *  agent_pack_activation is migrated in the SAME step: its rows must be backfilled with pin_version =
+ *  the version currently installed for that (profile, pack) — the ONLY version a legacy DB held, so
+ *  the pin is unambiguous. We add the pin_version column (addColumnIfMissing handles the DDL) and
+ *  UPDATE the null pins from the just-migrated agent_packs. Activation is not profile-scoped in its
+ *  own row (pack_id is globally unique in a legacy DB since id was the PK), so the backfill joins on
+ *  pack_id alone — correct for legacy data where a pack_id maps to exactly one version. */
+export const migrateAgentPacksToVersioned = (database: Database.Database): void => {
+  const cols = database
+    .prepare(`PRAGMA table_info(agent_packs)`)
+    .all() as Array<{ name: string; pk: number }>
+  if (cols.length === 0) return // no table yet — SCHEMA will create the new shape
+
+  const versionCol = cols.find((c) => c.name === 'version')
+  const alreadyVersioned = versionCol != null && versionCol.pk > 0
+  if (alreadyVersioned) return // already the (profile_id, id, version) shape — nothing to do
+
+  // Legacy shape: rebuild preserving rows, inside one transaction.
+  database.transaction(() => {
+    database.exec(`
+      CREATE TABLE agent_packs_new (
+        id TEXT NOT NULL,
+        profile_id TEXT NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+        version INTEGER NOT NULL,
+        upstream_id TEXT,
+        upstream_version INTEGER,
+        builtin INTEGER NOT NULL DEFAULT 0,
+        manifest TEXT NOT NULL,
+        fragment TEXT NOT NULL,
+        created_at TEXT,
+        PRIMARY KEY (profile_id, id, version)
+      );
+      INSERT INTO agent_packs_new (id, profile_id, version, upstream_id, builtin, manifest, fragment, created_at)
+        SELECT id, profile_id, version, upstream_id, builtin, manifest, fragment, created_at FROM agent_packs;
+      DROP TABLE agent_packs;
+      ALTER TABLE agent_packs_new RENAME TO agent_packs;
+      CREATE INDEX IF NOT EXISTS idx_agent_packs_profile ON agent_packs(profile_id);
+    `)
+  })()
+}
+
 export const getDb = (): Database.Database => {
   if (db) return db
   ensureDir(getAppDir())
@@ -262,6 +340,10 @@ export const getDb = (): Database.Database => {
   if (nodeStateCols.length > 0 && !nodeStateCols.some((c) => c.name === 'workflow_id')) {
     db.exec('DROP TABLE node_state')
   }
+  // WP4.6: rebuild a legacy (profile_id, id)-keyed agent_packs into (profile_id, id, version) BEFORE
+  // SCHEMA — CREATE TABLE IF NOT EXISTS can't alter an existing table's PK, so the migration must run
+  // first (it preserves every row). A no-op on a fresh DB or an already-migrated one.
+  migrateAgentPacksToVersioned(db)
   db.exec(SCHEMA)
   db.exec(DROP_LEGACY)
   // Lightweight forward migrations for DBs created before a column existed.
@@ -281,6 +363,22 @@ export const getDb = (): Database.Database => {
   addColumnIfMissing(db, 'floors', 'request', 'request TEXT')
   // Per-turn cache/token metrics (turn + cumulative snapshot) — see token-cache-meter-design.md.
   addColumnIfMissing(db, 'floors', 'metrics', 'metrics TEXT')
+  // WP4.6: pin_version records which pack version an activation runs (version-coexistence). Add it to
+  // a pre-WP4.6 activation table, then BACKFILL null pins from the just-migrated agent_packs: a legacy
+  // DB held exactly one version per pack id, so that version is the unambiguous pin for its rows. A
+  // fresh DB gets pin_version from SCHEMA already; a fresh install never has null pins (setGate writes
+  // one). NULL pins that survive (activation for an uninstalled pack) are handled at resolve time.
+  addColumnIfMissing(db, 'agent_pack_activation', 'pin_version', 'pin_version INTEGER')
+  // WP4.6: fork lineage gained the source VERSION (upstream_version). A DB migrated to the versioned
+  // agent_packs shape but predating this column gets it here (the migration's create-new path already
+  // includes it; this covers the already-versioned-but-older case). Null for existing rows.
+  addColumnIfMissing(db, 'agent_packs', 'upstream_version', 'upstream_version INTEGER')
+  db.exec(`
+    UPDATE agent_pack_activation
+       SET pin_version = (SELECT version FROM agent_packs WHERE agent_packs.id = agent_pack_activation.pack_id)
+     WHERE pin_version IS NULL
+       AND EXISTS (SELECT 1 FROM agent_packs WHERE agent_packs.id = agent_pack_activation.pack_id)
+  `)
   return db
 }
 

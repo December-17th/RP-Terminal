@@ -3,6 +3,7 @@ import {
   rowToPack,
   packToSummary,
   resolveGate,
+  pickPinnedRecord,
   layerOverrides,
   layerOverridesWithProvenance,
   encodeScope,
@@ -33,21 +34,23 @@ describe('rowToPack / packToSummary', () => {
     id: 'p1',
     version: 2,
     upstream_id: 'p0',
+    upstream_version: 1,
     builtin: 1,
     manifest: JSON.stringify({ name: 'Memory Keeper', creator: 'me' }),
     fragment: JSON.stringify(fragment)
   }
 
-  it('parses blobs and coerces the builtin flag + upstream lineage', () => {
+  it('parses blobs and coerces the builtin flag + upstream lineage (id + version)', () => {
     const pack = rowToPack(row)
-    expect(pack).toMatchObject({ id: 'p1', version: 2, upstreamId: 'p0', builtin: true })
+    expect(pack).toMatchObject({ id: 'p1', version: 2, upstreamId: 'p0', upstreamVersion: 1, builtin: true })
     expect(pack.manifest.name).toBe('Memory Keeper')
     expect(pack.fragment.kind).toBe('fragment')
   })
 
-  it('null upstream_id → null lineage; builtin 0 → false', () => {
-    const pack = rowToPack({ ...row, upstream_id: null, builtin: 0 })
+  it('null upstream_id/version → null lineage; builtin 0 → false', () => {
+    const pack = rowToPack({ ...row, upstream_id: null, upstream_version: null, builtin: 0 })
     expect(pack.upstreamId).toBeNull()
+    expect(pack.upstreamVersion).toBeNull()
     expect(pack.builtin).toBe(false)
   })
 
@@ -62,12 +65,16 @@ describe('rowToPack / packToSummary', () => {
       id: 'p1',
       version: 2,
       upstreamId: 'p0',
+      upstreamVersion: 1,
       builtin: true,
       manifest: { name: 'Memory Keeper', creator: 'me' },
       attachments: [
         { kind: 'rejoin', checkpoint: 'prompt-assembly', rejoinPort: { node: 'blk', port: 'text' } }
       ],
-      capabilities: ['injects-prompt']
+      capabilities: ['injects-prompt'],
+      // WP4.6: packToSummary defaults the grouped lineage to this record's own version (the service
+      // overrides it with the id's full installed-version set — it sees the whole library list).
+      versions: [2]
     })
     // The fragment blob itself is still NOT in the summary (only its derived display extras are).
     expect('fragment' in s).toBe(false)
@@ -75,23 +82,25 @@ describe('rowToPack / packToSummary', () => {
 })
 
 describe('resolveGate (Activation)', () => {
-  const worldRow = (open: boolean): ActivationRow => ({
+  const worldRow = (open: boolean, pinVersion: number | null = null): ActivationRow => ({
     packId: 'p',
     worldId: 'w',
     chatId: null,
     gateOpen: open,
-    denial: []
+    denial: [],
+    pinVersion
   })
-  const chatRow = (open: boolean, denial: number[] = []): ActivationRow => ({
+  const chatRow = (open: boolean, denial: number[] = [], pinVersion: number | null = null): ActivationRow => ({
     packId: 'p',
     worldId: 'w',
     chatId: 'c',
     gateOpen: open,
-    denial
+    denial,
+    pinVersion
   })
 
-  it('no rows → CLOSED (packs are opt-in)', () => {
-    expect(resolveGate([], 'w', 'c')).toEqual({ open: false, denial: [] })
+  it('no rows → CLOSED (packs are opt-in), pinVersion null', () => {
+    expect(resolveGate([], 'w', 'c')).toEqual({ open: false, denial: [], pinVersion: null })
   })
 
   it('world row open → open when no chat exception', () => {
@@ -115,8 +124,39 @@ describe('resolveGate (Activation)', () => {
   })
 
   it('a row for a different world is ignored', () => {
-    const other: ActivationRow = { packId: 'p', worldId: 'w2', chatId: null, gateOpen: true, denial: [] }
+    const other: ActivationRow = { packId: 'p', worldId: 'w2', chatId: null, gateOpen: true, denial: [], pinVersion: 3 }
     expect(resolveGate([other], 'w', 'c').open).toBe(false)
+  })
+
+  // WP4.6: resolveGate returns the WINNING row's pinned version (chat row wins over world row).
+  it('returns the winning row pinVersion (chat pin wins over world pin)', () => {
+    expect(resolveGate([worldRow(true, 2), chatRow(true, [], 4)], 'w', 'c').pinVersion).toBe(4)
+    // No chat row → the world row's pin governs.
+    expect(resolveGate([worldRow(true, 2)], 'w', 'c').pinVersion).toBe(2)
+  })
+})
+
+// WP4.6: pickPinnedRecord selects which coexisting version composes for a resolved gate.
+describe('pickPinnedRecord (version coexistence)', () => {
+  const rec = (version: number): AgentPackRecord => ({
+    id: 'p', version, upstreamId: null, upstreamVersion: null, builtin: false,
+    manifest: { name: 'P' }, fragment
+  })
+
+  it('picks the pinned version when installed', () => {
+    expect(pickPinnedRecord([rec(1), rec(2), rec(3)], 2)?.version).toBe(2)
+  })
+
+  it('falls back to the HIGHEST installed version when the pin is null (legacy/unpinned row)', () => {
+    expect(pickPinnedRecord([rec(1), rec(4), rec(2)], null)?.version).toBe(4)
+  })
+
+  it('falls back to the highest when the pin points at an UNINSTALLED version', () => {
+    expect(pickPinnedRecord([rec(1), rec(2)], 9)?.version).toBe(2)
+  })
+
+  it('undefined for an empty set', () => {
+    expect(pickPinnedRecord([], 1)).toBeUndefined()
   })
 })
 
@@ -201,6 +241,7 @@ describe('record shape', () => {
       id: 'p',
       version: 1,
       upstreamId: null,
+      upstreamVersion: null,
       builtin: false,
       manifest: { name: 'n' },
       fragment

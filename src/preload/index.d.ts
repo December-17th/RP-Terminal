@@ -76,11 +76,15 @@ declare global {
           id: string
           version: number
           upstreamId: string | null
+          // WP4.6: the source version a fork was copied from (null for a root install / legacy fork).
+          upstreamVersion: number | null
           builtin: boolean
           manifest: {
             name: string
             description?: string
             creator?: string
+            // WP4.6: the minimum RPT version the pack needs (round-trips through export/import).
+            minRptVersion?: string
             // Creator-exposed settings (agent-packs plan WP3.2). Mirrors agentPackStore.ExposedSetting
             // (crosses IPC as JSON) — inlined so preload types don't import main internals.
             exposedSettings?: {
@@ -98,14 +102,29 @@ declare global {
           capabilities: import('../shared/workflow/capabilities').CapabilityId[]
           // Resolved gate for the (worldId, chatId) passed in — undefined when no world context.
           gateOpen?: boolean
+          // WP4.6 version coexistence: every installed version of THIS id, ascending (the lineage the
+          // UI groups by). Same on every same-id summary; additive (existing consumers ignore it).
+          versions: number[]
+          // The version pinned to run in the (world, chat) — present only with a world + an open gate.
+          activeVersion?: number
         }[]
       >
+      // WP4.6: `version` pins which coexisting version this activation runs (written on open).
       setAgentPackGate: (
         packId: string,
         worldId: string,
         chatId: string | null,
-        open: boolean
+        open: boolean,
+        version?: number | null
       ) => Promise<void>
+      // WP4.6: re-pin which installed version of a pack runs in a world (ADR 0008 — recipes pin
+      // versions). Overrides + trigger state carry over. { ok } | { ok:false, code }.
+      setAgentPackActiveVersion: (
+        profileId: string,
+        packId: string,
+        version: number,
+        worldId: string
+      ) => Promise<{ ok: true } | { ok: false; code: 'not-installed' | 'not-activated' }>
       setAgentPackOverride: (
         packId: string,
         scope: 'global' | { world: string } | { chat: string },
@@ -351,7 +370,9 @@ declare global {
               >
             }
             bundledTemplatePlans: { name: string; outcome: 'will-install' | 'will-duplicate' }[]
-            dedupe?: 'new' | 'already-installed'
+            // WP4.6: 'new-version' = same id, a different version installed → installs ALONGSIDE.
+            // version-conflict is no longer a blocker (kept in the union below for the dead recovery UI).
+            dedupe?: 'new' | 'new-version' | 'already-installed'
             blockers: (
               | { code: 'unknown-node-types'; nodeTypes: string[] }
               | { code: 'version-too-old'; minRptVersion: string; appVersion: string }
@@ -391,9 +412,11 @@ declare global {
           }
       >
       cancelAgentPackImport: (token: string) => Promise<void>
+      // WP4.6: `version` uninstalls ONE version (omitted = highest installed; last version cascades).
       uninstallAgentPack: (
         profileId: string,
-        packId: string
+        packId: string,
+        version?: number
       ) => Promise<{ ok: true } | { ok: false; code: 'builtin' | 'not-found' }>
       // SQL-table memory (issue 02)
       listTableTemplates: (

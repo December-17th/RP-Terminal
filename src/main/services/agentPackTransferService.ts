@@ -10,10 +10,10 @@
 //    inspect RE-DERIVES the report locally via deriveCapabilityReport against the real registry.
 //  - ADR 0008 (bundle for transport): the envelope bundles what a pack needs. See the TEMPLATE
 //    BUNDLING RULE below.
-//  - WP1.4 debt / master-plan Amendment (after WP4.1): the store PK is (profile, id) — it CANNOT
-//    hold two versions of one id. So same-id-different-version import is REFUSED honestly with a
-//    structured `version-conflict` result (the UI offers uninstall-then-import). We do NOT rework the
-//    PK here.
+//  - ADR 0008 version coexistence (WP4.6 — the WP1.4 debt PAID): library identity is (id, version),
+//    so same-id-different-version import now INSTALLS ALONGSIDE (dedupe: 'new-version'), never blocks.
+//    Exact (id, version) still dedupes ('already-installed'). The old `version-conflict` blocker is
+//    GONE (recipes pin versions — you install 1.2 beside 1.4 and pin which one runs).
 //
 // ── TEMPLATE BUNDLING RULE (grounded, honest v0) ─────────────────────────────────────────────────
 // A memory pack's table nodes (table.read/apply/export/gate) resolve their TableTemplate at RUNTIME
@@ -48,7 +48,7 @@ import {
 } from '../../shared/workflow/packEnvelope'
 import { deriveCapabilityReport, CapabilityReport } from '../../shared/workflow/capabilities'
 import { WorkflowDoc } from '../../shared/workflow/types'
-import { getPackRecord } from './agentPackStore'
+import { getPackRecord, listPackVersions } from './agentPackStore'
 import { install } from './agentPackService'
 import { listTableTemplates, saveTableTemplate } from './tableTemplateService'
 import { TableTemplate, TableTemplateSchema } from '../types/tableTemplate'
@@ -153,15 +153,14 @@ const buildExportEnvelope = (profileId: string, packId: string): BuildEnvelopeRe
     }
 
   const { templates, names, noTemplatesBundled } = resolveBundledTemplates()
-  // NOTE (store gap, flagged in the WP report): the store's PackManifest carries NO `minRptVersion`
-  // (it's an envelope-only field — packManifest.ts). So an EXPORTED pack cannot advertise a
-  // minRptVersion today: there is no persisted source for it. It round-trips only in a hand-built
-  // envelope. When packs gain a persisted minRptVersion this reads it here and passes it to serialize.
+  // WP4.6: minRptVersion now PERSISTS on the manifest (packManifest.ts), so export advertises it — a
+  // stored pack round-trips its minimum through export→import→re-export. Absent = no minimum declared.
   const text = serializePackEnvelope({
     id: pack.id,
     version: pack.version,
     manifest: pack.manifest,
     fragment: pack.fragment,
+    ...(pack.manifest.minRptVersion ? { minRptVersion: pack.manifest.minRptVersion } : {}),
     ...(templates ? { bundledTemplates: templates } : {})
   })
 
@@ -250,13 +249,14 @@ export interface BundledTemplatePlan {
  *   · `unknown-node-types` — the fragment has node types this build doesn't know (a pack from a newer
  *     RPT); a fragment whose nodes can't run here would produce broken turns. Lists the types.
  *   · `version-too-old`    — the envelope's `minRptVersion` exceeds this app version. Carries both.
- *   · `version-conflict`   — same id, DIFFERENT version already installed; the store PK can't hold two
- *     (WP1.4 debt). Import is refused honestly; the UI offers uninstall-then-import. Carries the
- *     installed version. */
+ *
+ *  WP4.6: `version-conflict` is REMOVED — a same-id different-version import now installs ALONGSIDE
+ *  (dedupe: 'new-version'), so a version difference is never a blocker. The WP4.3b inspector's
+ *  uninstall-then-import recovery keys off `blockers` containing version-conflict, which no longer
+ *  happens; that recovery path is simply unreachable (renderer untouched this WP). */
 export type ImportBlocker =
   | { code: 'unknown-node-types'; nodeTypes: string[] }
   | { code: 'version-too-old'; minRptVersion: string; appVersion: string }
-  | { code: 'version-conflict'; installedVersion: number }
 
 /** The full inspection report WP4.3's screen renders + a `token` for phase two. `dedupe` distinguishes
  *  a same-id+version no-op ('already-installed') from a fresh install ('new'); `blockers` (possibly
@@ -274,9 +274,10 @@ export interface InspectionReport {
   }
   capabilityReport?: CapabilityReport
   bundledTemplatePlans: BundledTemplatePlan[]
-  /** 'new' = installable fresh; 'already-installed' = same id+version present (confirm is a no-op);
-   *  undefined when the file didn't parse. */
-  dedupe?: 'new' | 'already-installed'
+  /** 'new' = a fresh id (no version installed); 'new-version' = same id, a DIFFERENT version installed
+   *  → installs ALONGSIDE (WP4.6, ADR 0008 — recipes pin versions); 'already-installed' = same
+   *  id+version present (confirm is a no-op); undefined when the file didn't parse. */
+  dedupe?: 'new' | 'new-version' | 'already-installed'
   blockers: ImportBlocker[]
   warnings: string[]
   /** Present ONLY on a parse failure (the file was unreadable / not a valid envelope). Mutually
@@ -345,14 +346,15 @@ export const buildInspectionCore = (
   const { pack } = envelope
   const report = deriveCapabilityReport(pack.fragment, knownTypes())
 
-  // Dedupe / version-conflict against the store (WP1.4 debt: the PK is (profile, id)).
-  const existing = getPackRecord(profileId, pack.id)
-  let dedupe: 'new' | 'already-installed' = 'new'
+  // Dedupe against the store (WP4.6 version coexistence, ADR 0008). Exact (id, version) → dedupe
+  // no-op; same id, another version installed → INSTALL ALONGSIDE ('new-version', never a blocker);
+  // no version of the id installed → 'new'. Probe the exact (id, version) AND the id's version set.
+  const exact = getPackRecord(profileId, pack.id, pack.version)
+  const installedVersions = listPackVersions(profileId, pack.id)
+  let dedupe: 'new' | 'new-version' | 'already-installed' = 'new'
+  if (exact) dedupe = 'already-installed'
+  else if (installedVersions.length > 0) dedupe = 'new-version'
   const blockers: ImportBlocker[] = []
-  if (existing) {
-    if (existing.version === pack.version) dedupe = 'already-installed'
-    else blockers.push({ code: 'version-conflict', installedVersion: existing.version })
-  }
 
   // Unknown node types → the fragment can't run here (ADR 0007 soundness). BLOCK.
   if (report.unknownNodeTypes.length > 0)
@@ -435,9 +437,10 @@ export const inspectAgentPackFile = (
 /** The result of a confirmed import. On success: the installed summary + template outcomes. On
  *  failure: a structured code the UI localizes.
  *   · `expired`      — the token is unknown / TTL-swept / already consumed; re-inspect the file.
- *   · `blocked`      — a blocker (unknown-node-types / version-too-old / version-conflict) was present;
- *     carries the blockers so the UI re-explains (defense-in-depth: confirm re-checks, never trusting
- *     that inspect's report was acted on). */
+ *   · `blocked`      — a blocker (unknown-node-types / version-too-old) was present; carries the
+ *     blockers so the UI re-explains (defense-in-depth: confirm re-checks, never trusting that
+ *     inspect's report was acted on). WP4.6: version-conflict is no longer a blocker (installs
+ *     alongside), so a version difference never reaches this branch. */
 export type ConfirmImportResult =
   | {
       ok: true
@@ -493,22 +496,22 @@ export const confirmAgentPackImport = (
     installedTemplates.push({ name: template.name, id })
   }
 
-  // Install the pack (gate CLOSED — ADR 0005). agentPackService.install dedupes id+version (a same-
-  // id+version re-import is a no-op returning the existing row). A same-id DIFFERENT-version pack was
-  // already refused as `version-conflict` above, so install never hits its silent-ignore path here.
-  // NOTE (store gap, flagged in the WP report): the envelope may carry `pack.minRptVersion` but the
-  // store's PackManifest has no field for it (packManifest.ts) — so it is DROPPED on install (a
-  // re-export won't advertise it). The IMPORT gate still honored it (the version-too-old blocker
-  // above), so a too-old pack never reaches here; the value is simply not persisted.
+  // Install the pack (gate CLOSED — ADR 0005). agentPackService.install dedupes exact id+version and
+  // INSTALLS ALONGSIDE a different version (WP4.6, ADR 0008 — no more version-conflict refusal).
+  // WP4.6: minRptVersion now PERSISTS on the manifest, so a too-old-gated pack's minimum round-trips
+  // (import stores it → a re-export re-advertises it). The version-too-old blocker above still refuses
+  // an app that is actually too old, so a stored minRptVersion never gates a machine that can't run it.
   const record: Parameters<typeof install>[1] = {
     id: pack.id,
     version: pack.version,
     upstreamId: null,
+    upstreamVersion: null,
     builtin: false,
     manifest: {
       name: pack.name,
       ...(pack.description ? { description: pack.description } : {}),
       ...(pack.creator ? { creator: pack.creator } : {}),
+      ...(pack.minRptVersion ? { minRptVersion: pack.minRptVersion } : {}),
       ...(pack.exposedSettings ? { exposedSettings: pack.exposedSettings } : {}),
       ...(pack.fork ? { fork: pack.fork } : {})
     },

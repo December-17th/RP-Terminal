@@ -501,6 +501,43 @@ workflows become built-in packs. No new UI beyond what exists.
   ownership is grounded in activation rows (WP4.4), so the session forkedPacks map is a fast
   path only; no reconciliation needed from other fork entry points.
 
+- **2026-07-03, after WP4.6 (version coexistence — the WP1.4 debt PAID + the WP4.2 minRptVersion gap
+  closed):** library identity is now **(id, version)**. `agent_packs` PK → `(profile_id, id, version)`;
+  `agent_pack_activation` gained a **`pin_version` COLUMN** (not part of its PK — a world runs ONE
+  version; switching is an UPDATE, `setActiveVersion`); overrides + trigger state stay
+  **version-agnostic** (survive a version switch, reapplied by stable id — decisions 3/4). Fork lineage
+  gained `upstream_version` (lineage is (id, version)). **Migration mechanism:** the codebase had NO
+  PRAGMA user_version / general migration framework — only `addColumnIfMissing` + drop-and-rebuild
+  (node_state). SQLite can't ALTER a PK in place, so I built a **create-new / copy / drop / rename**
+  step (`migrateAgentPacksToVersioned`, runs BEFORE `db.exec(SCHEMA)` since CREATE IF NOT EXISTS can't
+  reshape a live table) inside one transaction; pin_version is added post-SCHEMA + **backfilled** to the
+  installed version (a legacy DB held one version per id — unambiguous). Proven with a REAL SQL engine
+  (`node:sqlite`, no new dep — the Electron-ABI better-sqlite3 can't load under Node) in
+  `test/agentPackMigration.test.ts`: rows preserved, PK reshaped, activation pinned, idempotent,
+  coexisting inserts now accepted. **Transfer:** the `version-conflict` blocker is GONE — a different
+  version reports `dedupe: 'new-version'` and installs alongside (gate stays closed). **minRptVersion**
+  now persists on `PackManifest` (shared) → export advertises it, import stores it, re-export re-emits
+  it (round-trip tested). **enabledFragmentsFor** groups by id, resolves the gate once, composes only
+  the **pinned** version (`pickPinnedRecord`: pin if installed, else highest). **Grouped list shape**
+  (additive): each summary carries `versions: number[]` + `activeVersion?` + `upstreamVersion`. **New
+  service API:** `setActiveVersion(profileId, packId, version, worldId)`; version params threaded onto
+  `setGate`/`uninstall`/`getPackFragment`/`updatePackFragment`. **Renderer (safe tweak only):** the
+  `new-version` dedupe chip (+ both locales); the old `version-conflict` blocker + `conflictInstalledVersion`
+  are kept as **dead-but-typed** shapes in `agentPackTransferDisplay.ts` so the WP4.3b inspector's
+  uninstall-then-import recovery card still compiles untouched (main never emits version-conflict now,
+  so that card is unreachable). **Test fallout (deliberate):** the old "duplicate packId → drop+log"
+  turn-path test became the coexistence "compose the pinned version" test (that guard is now the NORMAL
+  path); `setGate` assertions gained the pin arg; two transfer version-conflict tests became
+  new-version-alongside tests. **Friction for the WP4.7 UI brief:** (1) the gate toggle IPC carries a
+  single version, but a card showing multiple coexisting versions needs a version PICKER before it can
+  drive `setActiveVersion` / a version-scoped gate — the service is honest, the UI is the open work;
+  (2) `getPackSettings`/`getEffectiveGraph`/detail-panel now resolve the *pinned* version — the UI must
+  make "which version am I configuring" visible or overrides-vs-version confusion returns; (3) trigger
+  index-drift across versions is the unchanged sys.trigger.* caveat, now reachable via a version switch.
+  **Phase 5 (recipes) still lacks:** the recipe importer that lands N pack copies + applies an
+  activation preset pinning each version — the store/service now SUPPORT it (install-alongside +
+  setActiveVersion), but no `.rptrecipe` parse/apply pathway exists yet.
+
 ## Risks and watchpoints
 
 - **WP1.3 is the highest-risk change** (engine failure semantics). It must land behind the

@@ -44,6 +44,16 @@ export interface PackManifest {
   name: string
   description?: string
   creator?: string
+  /** The minimum RPT app version this pack needs (semver-ish `major.minor.patch`; a coarse "is your
+   *  app new enough" advisory, NOT a full semver range). Persisted with the pack (WP4.6) so it
+   *  ROUND-TRIPS: export writes it into the envelope, import stores it back, a re-export re-advertises
+   *  it. The import GATE (agentPackTransferService.isVersionTooOld) enforces it (WP4.2); this field is
+   *  what lets that value survive an install→export cycle. Absent = the pack declares no minimum.
+   *
+   *  NOT part of pack IDENTITY (identity is id+version, ADR 0008) and NOT a versioned/scoped fact — it
+   *  is per-ARTIFACT metadata, so it lives on the manifest beside creator/description, not in the
+   *  activation or override tables. */
+  minRptVersion?: string
   /** Creator-exposed settings (WP3.2). Each carries its own stable id, type, default, and target
    *  node/path; materialization applies resolved overrides to the fragment before it runs/composes.
    *  Absent/empty = the pack exposes no creator settings (its System trigger params are still

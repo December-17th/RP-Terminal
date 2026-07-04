@@ -1314,6 +1314,7 @@ const en: Record<string, string> = {
     'Something changed and this can no longer be installed. Open the file again.',
   // Dedupe chip
   'agents.import.dedupe.new': 'New',
+  'agents.import.dedupe.new-version': 'New version',
   'agents.import.dedupe.already-installed': 'Already installed',
   // Bundled-template outcomes
   'agents.import.templateOutcome.will-install': 'will be added',

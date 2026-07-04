@@ -273,6 +273,7 @@ export const buildAsyncMemoryPack = (): AgentPackRecord => ({
   id: ASYNC_MEMORY_PACK_ID,
   version: ASYNC_MEMORY_PACK_VERSION,
   upstreamId: null,
+  upstreamVersion: null,
   builtin: true,
   manifest: {
     name: 'Async Table Memory',

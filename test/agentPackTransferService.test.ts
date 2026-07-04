@@ -31,12 +31,16 @@ const store = vi.hoisted(() => ({
   encodeScope: vi.fn(),
   getPackIdentity: vi.fn(),
   getPackRecord: vi.fn(),
+  listPackVersions: vi.fn(),
   insertPack: vi.fn(),
-  deletePack: vi.fn(),
+  deletePackVersion: vi.fn(),
+  deletePackVersionAgnosticRows: vi.fn(),
   listPackRecords: vi.fn(),
   packToSummary: vi.fn(),
+  pickPinnedRecord: vi.fn(),
   listActivationRows: vi.fn(),
   upsertGate: vi.fn(),
+  setActivePinVersion: vi.fn(),
   resolveGate: vi.fn(),
   listOverrideRows: vi.fn(),
   upsertOverride: vi.fn(),
@@ -97,6 +101,7 @@ const pack = (over: Partial<AgentPackRecord> = {}): AgentPackRecord => ({
   id: 'pack.memory',
   version: 2,
   upstreamId: 'builtin.table-memory',
+  upstreamVersion: null,
   builtin: false,
   manifest: { name: 'Memory Keeper', creator: 'someone', description: 'keeps memory' },
   fragment: goodFragment(),
@@ -126,20 +131,31 @@ beforeEach(() => {
   store.encodeScope.mockImplementation(realEncodeScope)
   store.resolveGate.mockImplementation(realResolveGate)
   store.listPackRecords.mockImplementation(() => state.packs)
-  store.getPackIdentity.mockImplementation((_p, id) => {
-    const found = state.packs.find((x) => x.id === id)
+  // WP4.6: getPackIdentity probes the EXACT (id, version); getPackRecord takes an optional version
+  // (else the highest); listPackVersions returns the id's version set.
+  store.getPackIdentity.mockImplementation((_p, id, version) => {
+    const found = state.packs.find((x) => x.id === id && x.version === version)
     return found ? { id: found.id, version: found.version } : null
   })
-  store.getPackRecord.mockImplementation((_p, id) => state.packs.find((x) => x.id === id) ?? null)
+  store.getPackRecord.mockImplementation((_p, id, version) => {
+    const matches = state.packs.filter((x) => x.id === id && (version == null || x.version === version))
+    if (matches.length === 0) return null
+    return [...matches].sort((a, b) => b.version - a.version)[0]
+  })
+  store.listPackVersions.mockImplementation((_p, id) =>
+    state.packs.filter((x) => x.id === id).map((x) => x.version).sort((a, b) => a - b)
+  )
   store.insertPack.mockImplementation((_p, x) => state.packs.push(x))
   store.packToSummary.mockImplementation((x) => ({
     id: x.id,
     version: x.version,
     upstreamId: x.upstreamId,
+    upstreamVersion: x.upstreamVersion,
     builtin: x.builtin,
     manifest: x.manifest,
     attachments: x.fragment.attachments ?? [],
-    capabilities: []
+    capabilities: [],
+    versions: [x.version]
   }))
   store.listActivationRows.mockImplementation((id) => state.activation.filter((r) => r.packId === id))
   store.listOverrideRows.mockImplementation((id) => state.overrides.filter((r) => r.packId === id))
@@ -239,12 +255,14 @@ describe('import — inspect', () => {
     expect(report.blockers).toEqual([])
   })
 
-  it('version-conflict: same id DIFFERENT version installed → blocker', () => {
+  // WP4.6 (REPLACES the old version-conflict blocker test): same id, DIFFERENT version installed now
+  // reports dedupe 'new-version' with NO blocker — it installs ALONGSIDE (ADR 0008 version coexistence).
+  it('new-version: same id DIFFERENT version installed → dedupe "new-version", NO blocker', () => {
     state.packs = [pack({ version: 5 })] // installed v5, file is v2
     const report = transfer.inspectAgentPackFile('prof', writeTmp(envelopeText()), '1.0.0')
-    const conflict = report.blockers.find((b) => b.code === 'version-conflict')
-    expect(conflict).toBeDefined()
-    if (conflict?.code === 'version-conflict') expect(conflict.installedVersion).toBe(5)
+    expect(report.dedupe).toBe('new-version')
+    expect(report.blockers.some((b) => b.code === 'version-conflict')).toBe(false)
+    expect(report.blockers).toEqual([]) // installable alongside
   })
 
   it('unknown-node-types: a fake node type in the fragment → blocker listing it', () => {
@@ -306,6 +324,31 @@ describe('import — confirm', () => {
     expect(state.activation).toHaveLength(0) // ADR 0005: install ≠ activate
   })
 
+  // WP4.6: minRptVersion now PERSISTS on the manifest, so it round-trips export → import → re-export.
+  it('minRptVersion round-trips: export writes it, import stores it, a re-export re-advertises it', () => {
+    // A stored pack whose manifest declares a minRptVersion the current app satisfies (1.0.0 >= 0.5.0).
+    state.packs = [pack({ manifest: { name: 'Memory Keeper', minRptVersion: '0.5.0' } })]
+    const p1 = path.join(tmpDir, 'minrpt.rptagent')
+    tmpFiles.push(p1)
+    expect(transfer.writeAgentPackExport('prof', 'pack.memory', p1).ok).toBe(true)
+    // The exported file advertises the minimum.
+    expect(JSON.parse(fs.readFileSync(p1, 'utf-8')).pack.minRptVersion).toBe('0.5.0')
+
+    // Import into a clean store — the minimum is stored on the installed manifest.
+    state.packs = []
+    const report = transfer.inspectAgentPackFile('prof2', p1, '1.0.0')
+    expect(report.envelopeMeta?.minRptVersion).toBe('0.5.0')
+    expect(report.blockers).toEqual([]) // app is new enough
+    expect(transfer.confirmAgentPackImport(report.token!, '1.0.0').ok).toBe(true)
+    expect(state.packs[0].manifest.minRptVersion).toBe('0.5.0')
+
+    // A re-export of the just-imported pack re-advertises it (proves persistence, not a hand-built file).
+    const p2 = path.join(tmpDir, 'minrpt-reexport.rptagent')
+    tmpFiles.push(p2)
+    expect(transfer.writeAgentPackExport('prof2', 'pack.memory', p2).ok).toBe(true)
+    expect(JSON.parse(fs.readFileSync(p2, 'utf-8')).pack.minRptVersion).toBe('0.5.0')
+  })
+
   it('round-trips: export a fork → inspect → confirm on a clean store', () => {
     // Export the fork to a file.
     state.packs = [pack()]
@@ -331,14 +374,18 @@ describe('import — confirm', () => {
     expect(state.packs).toHaveLength(1)
   })
 
-  it('confirm REFUSES a version-conflict (blocked, carries the blocker)', () => {
-    state.packs = [pack({ version: 5 })]
+  // WP4.6 (REPLACES "confirm REFUSES a version-conflict"): a different version now INSTALLS ALONGSIDE
+  // at confirm — two coexisting library rows, the gate untouched (ADR 0005 install ≠ activate).
+  it('confirm INSTALLS a different version ALONGSIDE the installed one (no refusal)', () => {
+    state.packs = [pack({ version: 5 })] // installed v5; the file is v2
     const report = transfer.inspectAgentPackFile('prof', writeTmp(envelopeText()), '1.0.0')
+    expect(report.dedupe).toBe('new-version')
     const res = transfer.confirmAgentPackImport(report.token!, '1.0.0')
-    expect(res.ok).toBe(false)
-    if (!res.ok && res.code === 'blocked')
-      expect(res.blockers.some((b) => b.code === 'version-conflict')).toBe(true)
-    expect(state.packs).toHaveLength(1) // not installed
+    expect(res.ok).toBe(true)
+    if (res.ok) expect(res.installed).toBe('installed')
+    // Both versions now coexist in the library.
+    expect(state.packs.filter((p) => p.id === 'pack.memory').map((p) => p.version).sort()).toEqual([2, 5])
+    expect(state.activation).toHaveLength(0) // gate stays closed
   })
 
   it('confirm REFUSES unknown-node-types', () => {
