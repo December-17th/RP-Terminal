@@ -17,6 +17,7 @@ export function Launcher({ profileId }: { profileId: string }): React.ReactEleme
   const chats = useChatStore((s) => s.chats)
   const createChat = useChatStore((s) => s.createChat)
   const setActiveChat = useChatStore((s) => s.setActiveChat)
+  const deleteChat = useChatStore((s) => s.deleteChat)
   const launcherWorldId = useUiStore((s) => s.launcherWorldId)
   const setLauncherWorldId = useUiStore((s) => s.setLauncherWorldId)
   const t = useT()
@@ -92,18 +93,30 @@ export function Launcher({ profileId }: { profileId: string }): React.ReactEleme
             {worldChats.length === 0 && <div className="lc-empty">{t('launcher.noSessions')}</div>}
             {worldChats.map((c) => {
               const last = c.floor_index?.[c.floor_index.length - 1]
-              const preview = last?.response_preview || t('launcher.emptySession')
+              // Show the latest turn: the player's action (up to 2 lines) then the response (up to 3,
+              // reasoning + state tags already stripped main-side). The greeting floor has no user
+              // action, so that line is omitted. CSS clamps the line counts.
+              const userPrev = last?.user_preview?.trim()
+              const respPrev = last?.response_preview?.trim() || t('launcher.emptySession')
               return (
-                <button
-                  key={c.id}
-                  className="lc-srow"
-                  onClick={() => setActiveChat(profileId, c.id)}
-                >
-                  <span className="lc-sprev">{preview}</span>
-                  <span className="lc-smeta">
-                    {new Date(c.updated_at).toLocaleString()} · {c.floor_count ?? 0} ✦
-                  </span>
-                </button>
+                <div key={c.id} className="lc-srow-wrap">
+                  <button className="lc-srow" onClick={() => setActiveChat(profileId, c.id)}>
+                    {userPrev && <span className="lc-sprev-user">▸ {userPrev}</span>}
+                    <span className="lc-sprev-resp">{respPrev}</span>
+                    <span className="lc-smeta">
+                      {new Date(c.updated_at).toLocaleString()} · {c.floor_count ?? 0} ✦
+                    </span>
+                  </button>
+                  <button
+                    className="btn-ghost danger lc-sdel"
+                    title={t('sessions.deleteTitle')}
+                    onClick={() => {
+                      if (confirm(t('sessions.confirmDelete'))) deleteChat(profileId, c.id)
+                    }}
+                  >
+                    🗑
+                  </button>
+                </div>
               )
             })}
           </div>

@@ -8,6 +8,7 @@ import { getLorebookById } from './lorebookService'
 import { buildInitialStatData, mergeDefaults } from './mvuSchema'
 import { extractMvuSchema, schemaDefaults } from './mvuZod'
 import { saveFloor, deleteFloorAndSubsequent, updateFloorFields } from './floorService'
+import { cleanForHistory } from '../../shared/responseView'
 import { getTableTemplateById } from './tableTemplateService'
 import * as tableDbService from './tableDbService'
 import * as tableOpsService from './tableOpsService'
@@ -40,6 +41,13 @@ const preview = (text: string, len = 80): string =>
     .trim()
     .slice(0, len)
 
+// The response preview drives the session cards in the launcher/sessions list. Strip reasoning +
+// state ops first (cleanForHistory drops <think>, <rpt-event>, the combat cue, and <UpdateVariable>
+// blocks) so the preview is readable PROSE — not the model's thinking or raw variable writes. The
+// lengths give the UI ~2 lines of the player's action and ~3 lines of the response to clamp.
+const USER_PREVIEW_LEN = 160
+const RESPONSE_PREVIEW_LEN = 320
+
 const touch = (chatId: string): void => {
   getDb()
     .prepare('UPDATE chats SET updated_at = ? WHERE id = ?')
@@ -68,8 +76,8 @@ const buildSession = (row: ChatRow): ChatSession => {
           {
             floor: last.floor,
             timestamp: last.timestamp,
-            user_preview: preview(last.user_content),
-            response_preview: preview(last.response_content, 220)
+            user_preview: preview(last.user_content, USER_PREVIEW_LEN),
+            response_preview: preview(cleanForHistory(last.response_content), RESPONSE_PREVIEW_LEN)
           }
         ]
       : []
