@@ -4,7 +4,9 @@ import {
   checkpointPhase,
   transformsMainReply,
   packHealth,
-  latestRunForPack
+  latestRunForPack,
+  showsForkOnCard,
+  canForkNow
 } from '../src/renderer/src/components/workspace/agentPackDisplay'
 import { AttachmentDecl } from '../src/shared/workflow/attachments'
 import { StoredRunRecord, WorkflowRunTrace } from '../src/shared/workflow/trace'
@@ -103,5 +105,36 @@ describe('packHealth + latestRunForPack (newest-first records)', () => {
   it('failed last run → "failed"', () => {
     const recs = [record(4, ['pack.a'], false), record(1, ['pack.a'], true)]
     expect(packHealth(recs, 'pack.a')).toBe('failed')
+  })
+})
+
+// ── Fork affordance visibility (WP4.5) ───────────────────────────────────────────────────────────
+describe('showsForkOnCard (card Fork affordance visibility)', () => {
+  it('built-ins get the card Fork button', () => {
+    expect(showsForkOnCard({ builtin: true, manifest: {} })).toBe(true)
+  })
+
+  it('plain (non-fork) upstream installs get the card Fork button', () => {
+    expect(showsForkOnCard({ builtin: false, manifest: {} })).toBe(true)
+    expect(showsForkOnCard({ builtin: false, manifest: { fork: undefined } })).toBe(true)
+  })
+
+  it('a card that is already a fork does NOT (it shows Edit/Export; forks-a-fork from the detail)', () => {
+    expect(showsForkOnCard({ builtin: false, manifest: { fork: { base: 'X', n: 1 } } })).toBe(false)
+  })
+
+  it('a built-in that is somehow also a fork still shows it (built-in dominates the rule)', () => {
+    // Defensive: the builtin flag alone qualifies, independent of manifest.fork.
+    expect(showsForkOnCard({ builtin: true, manifest: { fork: { base: 'X', n: 1 } } })).toBe(true)
+  })
+})
+
+describe('canForkNow (fork disabled without a world)', () => {
+  it('false without a world (a fork repoints a world’s activation — nothing to write)', () => {
+    expect(canForkNow(null)).toBe(false)
+  })
+
+  it('true with a world', () => {
+    expect(canForkNow('world-1')).toBe(true)
   })
 })

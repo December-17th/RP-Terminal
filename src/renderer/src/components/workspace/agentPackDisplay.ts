@@ -80,6 +80,34 @@ export function transformsMainReply(attachments: readonly AttachmentDecl[]): boo
   return attachments.some((a) => a.kind === 'entry' && a.mode === 'inline')
 }
 
+// ── Fork affordance visibility (agent-packs plan WP4.5) ──────────────────────────────────────────
+//
+// The owner report: "I can't find the fork button." The explicit fork action previously lived ONLY
+// inside Workflow Studio's Effective mode. WP4.5 surfaces it in the Agents view where users look. A
+// fork repoints THIS world's activation to a private copy (forkPack — agentPackService), so it needs a
+// world context; without one the affordance is shown-but-disabled with a tooltip (mirrors the gate
+// toggle, which is inert without a world).
+//
+// The card FOOTER shows a compact "Fork" button on packs the user would fork to tweak: built-ins and
+// non-fork upstream installs. A card that is ALREADY a fork (manifest.fork) shows its Edit + Export
+// affordances instead — the fork is the tweak-then-share unit, so its next step is editing, not
+// re-forking (fork-a-fork stays reachable from the DETAIL panel, where all packs can fork).
+
+/** Whether the pack CARD should show the compact "Fork" affordance in its footer. True for a built-in
+ *  or a plain (non-fork) upstream install — the packs a user forks to get an editable copy. A card
+ *  that is already a fork shows Edit/Export instead (it forks-a-fork only from the detail panel). Pure
+ *  over the summary shape (builtin flag + manifest.fork presence). */
+export function showsForkOnCard(pack: { builtin: boolean; manifest: { fork?: unknown } }): boolean {
+  return pack.builtin || !pack.manifest.fork
+}
+
+/** Whether a fork action is actionable given the current world context. A fork repoints a world's
+ *  activation, so it is disabled without a world (same rule the gate toggle uses — no world, no scope
+ *  to write). Pure: the view pairs `false` with the "select a world first" tooltip. */
+export function canForkNow(worldId: string | null): boolean {
+  return !!worldId
+}
+
 // ── Health dot (from persisted run history) ────────────────────────────────────────────────────────
 //
 // The card's health dot reflects the pack's LAST run for the active chat: ok (success), failed

@@ -30,9 +30,12 @@ import {
   attachmentBadges,
   transformsMainReply,
   packHealth,
+  showsForkOnCard,
+  canForkNow,
   type AttachmentBadge,
   type PackHealth
 } from './agentPackDisplay'
+import { useToastStore } from '../../stores/toastStore'
 import {
   detailGroups,
   runFacts,
@@ -125,6 +128,10 @@ export const AgentsView: React.FC<{
   // resolved `gateOpen` (the list IPC returns the persisted gate for the world/chat passed in), then
   // flipped OPTIMISTICALLY on toggle with rollback on IPC failure (packs are opt-in — default false).
   const [gates, setGates] = React.useState<Record<string, boolean>>({})
+  // The freshly-forked pack id, for the 'just forked' card highlight (reuses the WP4.3 'just installed'
+  // accent ring). Cleared after the emphasis has had a moment. Set by forkPack below.
+  const [justForkedId, setJustForkedId] = React.useState<string | null>(null)
+  const pushToast = useToastStore((s) => s.push)
 
   const load = React.useCallback(async () => {
     setLoading(true)
@@ -212,6 +219,45 @@ export const AgentsView: React.FC<{
     [worldId, gates]
   )
 
+  // Explicit fork from the Agents view (WP4.5 — "I can't find the fork button"). Copies the pack,
+  // repoints THIS world's activation to the copy (forkAgentPack — IPC 'agent-pack-fork'), then lands
+  // the delight moment: a toast (same copy as Effective-mode's forkedToast), a list refresh so the new
+  // fork appears, a 'just forked' highlight on it, and the fork's DETAIL panel opened automatically so
+  // the natural next step (Edit fragment) is one click away. Requires a world (the fork's activation
+  // targets a world) — the callers gate the affordance on that, so this early-returns defensively.
+  // NOTE (forkedPacks): this does NOT go through effectiveGraphStore.forkPackExplicit, so its session
+  // fork map isn't informed. That is harmless: the map is only consulted per-edit in Effective mode,
+  // and when it has no entry WP4.4's durable isAgentPackActivationExclusive fallback covers this fork
+  // (its activation is exclusively this world's → a later Effective-mode edit write-throughs correctly,
+  // never a spurious re-fork). So there is nothing to reconcile.
+  const forkPack = React.useCallback(
+    async (pack: PackSummary): Promise<void> => {
+      if (!worldId) return
+      try {
+        const res = (await api().forkAgentPack(profileId, pack.id, worldId)) as {
+          ok: boolean
+          pack?: { id: string; manifest: { name: string; fork?: { base: string; n: number } } }
+        }
+        if (!res?.ok || !res.pack) return
+        const forked = res.pack
+        const name = forked.manifest.fork
+          ? `${forked.manifest.fork.base} (${t('workflowEffective.fork')} ${forked.manifest.fork.n})`
+          : forked.manifest.name
+        pushToast(t('workflowEffective.forkedToast', { name }))
+        await load()
+        // Highlight the new fork + open its detail panel (the next step: Edit fragment) on the
+        // Installed rail. The list is already refreshed above, so the id resolves.
+        setRail('installed')
+        setDetailPackId(forked.id)
+        setJustForkedId(forked.id)
+        window.setTimeout(() => setJustForkedId(null), 4000)
+      } catch {
+        // A hard IPC failure — no designed state for a rare invoke error; the button re-enables.
+      }
+    },
+    [worldId, profileId, t, pushToast, load]
+  )
+
   return (
     <div className="rpt-agents">
       <nav className="rpt-agents-rail" aria-label={t('controlCenter.title')}>
@@ -252,6 +298,8 @@ export const AgentsView: React.FC<{
             error={error}
             onRetry={() => void load()}
             onFlipGate={flipGate}
+            onFork={(pack) => void forkPack(pack)}
+            justForkedId={justForkedId}
             selectedPackId={detailPackId}
             onOpenDetail={setDetailPackId}
             onNavigate={setRail}
@@ -302,6 +350,7 @@ export const AgentsView: React.FC<{
           worldId={worldId}
           chatId={activeChatId}
           onClose={() => setDetailPackId(null)}
+          onFork={() => void forkPack(detailPack)}
           onUninstalled={() => {
             // The pack is gone — drop the detail panel and reload the list (WP4.3b).
             setDetailPackId(null)
@@ -334,6 +383,10 @@ const InstalledPane: React.FC<{
   error: boolean
   onRetry: () => void
   onFlipGate: (pack: PackSummary, next: boolean) => void
+  /** Fork this pack for the active world (WP4.5). Parent owns the post-fork flow (toast + highlight +
+   *  open detail); the pane only renders the affordance + passes the just-forked highlight down. */
+  onFork: (pack: PackSummary) => void
+  justForkedId: string | null
   selectedPackId: string | null
   onOpenDetail: (packId: string) => void
   onNavigate: (rail: RailItem) => void
@@ -348,6 +401,8 @@ const InstalledPane: React.FC<{
   error,
   onRetry,
   onFlipGate,
+  onFork,
+  justForkedId,
   selectedPackId,
   onOpenDetail,
   onNavigate
@@ -489,8 +544,10 @@ const InstalledPane: React.FC<{
             open={gates[pack.id] ?? false}
             runs={runs}
             health={packHealth(runs, pack.id)}
-            justInstalled={justInstalledId === pack.id}
+            justInstalled={justInstalledId === pack.id || justForkedId === pack.id}
+            worldId={worldId}
             onFlipGate={(next) => onFlipGate(pack, next)}
+            onFork={() => onFork(pack)}
             selected={selectedPackId === pack.id}
             onOpenDetail={() => onOpenDetail(pack.id)}
             onNavigate={onNavigate}
@@ -510,9 +567,14 @@ const PackCard: React.FC<{
   open: boolean
   runs: StoredRunRecord[]
   health: PackHealth
-  /** True for a just-imported pack — a subtle 'just installed' highlight (fades after a moment). */
+  /** True for a just-imported OR just-forked pack — a subtle highlight ring (fades after a moment). */
   justInstalled?: boolean
+  /** The active world (WP4.5) — a fork repoints a world's activation, so the card Fork button is
+   *  disabled (with a tooltip) when null. */
+  worldId: string | null
   onFlipGate: (next: boolean) => void
+  /** Fork this pack for the active world (WP4.5). Parent owns the post-fork flow. */
+  onFork: () => void
   selected: boolean
   onOpenDetail: () => void
   onNavigate: (rail: RailItem) => void
@@ -524,7 +586,9 @@ const PackCard: React.FC<{
   runs,
   health,
   justInstalled,
+  worldId,
   onFlipGate,
+  onFork,
   selected,
   onOpenDetail,
   onNavigate
@@ -680,6 +744,24 @@ const PackCard: React.FC<{
                 onClick={() => setExporting(true)}
               >
                 {t('agents.export.open')}
+              </button>
+            )}
+            {/* Fork (WP4.5 — the missing affordance). Built-ins and plain upstream installs get a
+                compact Fork here (same idiom as Edit/Export on fork cards): it copies the pack, repoints
+                THIS world to the copy, and lands you in the fork's detail panel. A card that is already a
+                fork shows Edit/Export instead (it forks-a-fork from the detail panel). Disabled without a
+                world (a fork targets a world's activation) — the tooltip says so. */}
+            {showsForkOnCard(pack) && (
+              <button
+                type="button"
+                className="rpt-agents-settingsbtn"
+                onClick={onFork}
+                disabled={!canForkNow(worldId)}
+                title={
+                  canForkNow(worldId) ? t('agents.fork.cardTitle') : t('agents.fork.noWorld')
+                }
+              >
+                {t('agents.fork.short')}
               </button>
             )}
             <button

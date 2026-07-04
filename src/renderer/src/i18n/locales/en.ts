@@ -1131,8 +1131,15 @@ const en: Record<string, string> = {
   // WP4.4: direct fragment editing (non-builtin packs open editable in Studio; builtins fork first).
   'agents.settings.editFragment': 'Edit fragment in Studio',
   'agents.settings.editFragmentBuiltinHint':
-    'Built-in packs can’t be edited in place — open the composition above and edit a node to fork it first.',
+    'Built-in packs can’t be edited in place — use “Fork this pack” below to make an editable copy first.',
   'agents.editFragment.short': 'Edit',
+  // Fork affordance (WP4.5 — the fork button the owner couldn’t find, surfaced on cards + here).
+  'agents.fork.short': 'Fork',
+  'agents.fork.cardTitle': 'Make a private copy of this pack for this world — you can then edit it.',
+  'agents.fork.noWorld': 'Select a world first — a fork applies to the world you’re playing.',
+  'agents.fork.detail': 'Fork this pack',
+  'agents.fork.detailTitle':
+    'Make a private copy for this world (the original stays untouched), then edit it.',
   'agents.settings.forkNote':
     'Editing a pack’s graph in Workflow Studio makes a copy for this world — the original stays untouched.',
   // Uninstall a pack from the library (WP4.3b — destructive, confirm sub-step; builtins disabled).
@@ -1276,7 +1283,7 @@ const en: Record<string, string> = {
   'agents.export.savedTitle': 'Saved',
   'agents.export.done': 'Done',
   'agents.export.builtinHint':
-    'Built-in packs can’t be exported. Fork this pack first (edit its graph in Workflow Studio), then export your copy.',
+    'Built-in packs can’t be exported. Use “Fork this pack” above to make a copy, then export it.',
   'agents.export.error.builtin-not-exportable': 'Built-in packs can’t be exported.',
   'agents.export.error.not-installed': 'This pack is no longer installed.',
 

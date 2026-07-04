@@ -56,10 +56,14 @@ export const AgentPackDetail: React.FC<{
   worldId: string
   chatId: string | null
   onClose: () => void
+  /** Fork this pack for the active world (WP4.5). The host owns the post-fork flow (toast + refresh +
+   *  highlight + re-open the detail on the new fork). Undefined hides the Advanced-group Fork button
+   *  (the host didn't wire it). Fork-a-fork is legitimate, so this is offered for non-builtins too. */
+  onFork?: () => void
   /** Called after the pack was uninstalled (WP4.3b) so the host can refresh the list + drop the detail
    *  panel. Undefined disables the Advanced-group uninstall action (the host didn't wire a refresh). */
   onUninstalled?: () => void
-}> = ({ profileId, packId, packName, builtin, worldId, chatId, onClose, onUninstalled }) => {
+}> = ({ profileId, packId, packName, builtin, worldId, chatId, onClose, onFork, onUninstalled }) => {
   const t = useT()
   const locale = useI18nStore((s) => s.locale)
   const openWorkflowEditor = useUiStore((s) => s.openWorkflowEditor)
@@ -271,8 +275,8 @@ export const AgentPackDetail: React.FC<{
               </button>
               {/* Direct fragment editing (WP4.4). A NON-builtin pack (a fork, or an imported install)
                   opens as an EDITABLE fragment session in Studio — full drag / rewire / add-node, save
-                  writes back to this pack. A builtin can't be edited in place (edit by forking): it
-                  keeps only the Effective-mode hand-off above (where the first edit forks). */}
+                  writes back to this pack. A builtin can't be edited in place (edit by forking): the
+                  actionable Fork button below now makes that first step one click (WP4.5). */}
               {builtin ? (
                 <p className="rpt-agentdetail-note">{t('agents.settings.editFragmentBuiltinHint')}</p>
               ) : (
@@ -288,6 +292,22 @@ export const AgentPackDetail: React.FC<{
                 </button>
               )}
               <p className="rpt-agentdetail-note">{t('agents.settings.forkNote')}</p>
+
+              {/* Fork this pack (WP4.5 — the missing button the owner couldn't find). Makes a private
+                  copy for THIS world and repoints it; the host lands the fork's detail panel so the next
+                  step (Edit fragment) is one click. Offered for BUILT-INS (the fork-first path the notes
+                  above/below describe) AND non-builtins (fork-a-fork is legitimate — forkPack flattens
+                  the fork base, WP3.6a). It's safe (never mutates the source), so neutral styling. */}
+              {onFork && (
+                <button
+                  type="button"
+                  className="rpt-agentdetail-studio"
+                  onClick={onFork}
+                  title={t('agents.fork.detailTitle')}
+                >
+                  {t('agents.fork.detail')}
+                </button>
+              )}
 
               {builtin ? (
                 <p className="rpt-agentdetail-note">{t('agents.export.builtinHint')}</p>

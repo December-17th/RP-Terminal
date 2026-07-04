@@ -489,6 +489,18 @@ workflows become built-in packs. No new UI beyond what exists.
   exports can't advertise it and imports don't persist it (the import gate still enforces it);
   fix = a manifest/store field when phase 6 touches upgrade metadata.
 
+- **2026-07-03, after WP4.4–4.5 (two owner reports, one lesson):** both reports were
+  DISCOVERABILITY failures, not logic failures — the machinery existed (fork routing, fragment
+  editability) but wasn't reachable from where the user actually looked (fork lived only inside
+  Effective mode's config panel; fork editing only as a projection). Fixes: fragment sessions in
+  Studio (WP4.4 — also caught editorToDoc's whitelist silently dropping `attachments` on save)
+  and explicit Fork buttons on cards + detail with an auto-opened post-fork detail (WP4.5).
+  **Process rule for every future UI WP: the acceptance list must include walking the primary
+  user journey end-to-end from the surface users start at ("clone table memory and change it",
+  "share my setup") — not just verifying each control in isolation.** Also: write-through
+  ownership is grounded in activation rows (WP4.4), so the session forkedPacks map is a fast
+  path only; no reconciliation needed from other fork entry points.
+
 ## Risks and watchpoints
 
 - **WP1.3 is the highest-risk change** (engine failure semantics). It must land behind the

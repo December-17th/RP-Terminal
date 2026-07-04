@@ -1087,8 +1087,14 @@ const zh: Record<string, string> = {
   // WP4.4：直接编辑片段（非内置包可在工作室中打开并编辑；内置包需先复刻）。
   'agents.settings.editFragment': '在工作室中编辑片段',
   'agents.settings.editFragmentBuiltinHint':
-    '内置包无法就地编辑——请在上方打开组合图并编辑某个节点以先复刻。',
+    '内置包无法就地编辑——请使用下方的“复刻此包”先创建一份可编辑的副本。',
   'agents.editFragment.short': '编辑',
+  // 复刻入口（WP4.5——即用户找不到的复刻按钮，现已出现在卡片与此处）。
+  'agents.fork.short': '复刻',
+  'agents.fork.cardTitle': '为本世界创建此包的私有副本——之后即可编辑。',
+  'agents.fork.noWorld': '请先选择一个世界——复刻作用于你正在游玩的世界。',
+  'agents.fork.detail': '复刻此包',
+  'agents.fork.detailTitle': '为本世界创建一份私有副本（原始包保持不变），然后进行编辑。',
   'agents.settings.forkNote':
     '在工作流工作室中编辑包的图会为本世界创建一份副本——原始包保持不变。',
   // 从库中卸载包（WP4.3b——破坏性操作，带确认步骤；内置包禁用）。
@@ -1228,7 +1234,7 @@ const zh: Record<string, string> = {
   'agents.export.cancel': '取消',
   'agents.export.savedTitle': '已保存',
   'agents.export.done': '完成',
-  'agents.export.builtinHint': '内置包无法导出。请先复刻此包（在工作流工作室中编辑其图），然后导出你的副本。',
+  'agents.export.builtinHint': '内置包无法导出。请使用上方的“复刻此包”创建一份副本，然后再导出。',
   'agents.export.error.builtin-not-exportable': '内置包无法导出。',
   'agents.export.error.not-installed': '此包已不再安装。',
 
