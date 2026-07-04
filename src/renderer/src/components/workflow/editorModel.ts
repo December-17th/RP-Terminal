@@ -30,6 +30,9 @@ export interface EditorNode {
   config?: Record<string, unknown>
   panel?: { show: boolean; label?: string; collapsed?: boolean }
   isMainOutput?: boolean
+  /** One-canvas rebuild (WP6.1/6.4a): a disabled node never runs (engine skips it + its exclusive
+   *  downstream); a disabled trigger never fires. The editor's per-node Enabled toggle writes it. */
+  disabled?: boolean
 }
 
 export interface EditorEdge {
@@ -104,7 +107,8 @@ export function docToEditor(doc: WorkflowDoc): { nodes: EditorNode[]; edges: Edi
     position: n.position ?? layout.get(n.id) ?? { x: ORIGIN, y: ORIGIN },
     ...(n.config !== undefined ? { config: n.config } : {}),
     ...(n.panel !== undefined ? { panel: n.panel } : {}),
-    ...(n.isMainOutput !== undefined ? { isMainOutput: n.isMainOutput } : {})
+    ...(n.isMainOutput !== undefined ? { isMainOutput: n.isMainOutput } : {}),
+    ...(n.disabled !== undefined ? { disabled: n.disabled } : {})
   }))
   const edges: EditorEdge[] = doc.edges.map((e) => ({
     id: edgeId(e),
@@ -129,7 +133,10 @@ export function editorToDoc(
       position: n.position,
       ...(hasConfig ? { config: n.config } : {}),
       ...(n.panel !== undefined ? { panel: n.panel } : {}),
-      ...(n.isMainOutput !== undefined ? { isMainOutput: n.isMainOutput } : {})
+      ...(n.isMainOutput !== undefined ? { isMainOutput: n.isMainOutput } : {}),
+      // One-canvas rebuild (WP6.4a): `disabled` is a whitelisted node field — without this line the
+      // editor's Enabled toggle would be silently dropped on the first revalidate()/save() (the trap).
+      ...(n.disabled !== undefined ? { disabled: n.disabled } : {})
     }
   })
   const outEdges: Edge[] = edges.map((e) => ({
@@ -145,9 +152,20 @@ export function editorToDoc(
     nodes: outNodes,
     edges: outEdges,
     ...(base.meta !== undefined ? { meta: base.meta } : {}),
-    // Without this, `kind` (turn/subgraph) is silently dropped on every revalidate()/save(),
+    // One-canvas rebuild (WP6.3): on-canvas module groupings are doc metadata the editor edits via
+    // the store (doc.groups) but which this walker rebuilds from a field whitelist — an un-whitelisted
+    // field is dropped on the first revalidate()/save(). Without this line, grouping a module then
+    // saving would silently ungroup it.
+    ...(base.groups !== undefined ? { groups: base.groups } : {}),
+    // Without this, `kind` (turn/subgraph/fragment) is silently dropped on every revalidate()/save(),
     // downgrading a sub-graph doc to a turn doc on its first editor save (plan-QA blocker).
-    ...(base.kind !== undefined ? { kind: base.kind } : {})
+    ...(base.kind !== undefined ? { kind: base.kind } : {}),
+    // Fragment-only doc fields (agent-packs plan WP4.4): a kind:'fragment' pack fragment carries
+    // `attachments` (where it joins the turn) which the editor never edits but MUST round-trip — this
+    // walker rebuilds the doc from a field whitelist, so an un-whitelisted field is dropped on the
+    // first save. Preserving it keeps a fragment-editing session's save from stripping the pack's
+    // attachment declarations (which would fail updatePackFragment's fragment-kind ≥1-attachment rule).
+    ...(base.attachments !== undefined ? { attachments: base.attachments } : {})
   }
 }
 

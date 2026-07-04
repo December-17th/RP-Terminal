@@ -1,4 +1,4 @@
-import { describe, it, expect, afterAll, vi, beforeEach } from 'vitest'
+import { describe, it, expect, afterAll, afterEach, vi, beforeEach } from 'vitest'
 import fs from 'fs'
 import path from 'path'
 import { randomUUID } from 'crypto'
@@ -28,10 +28,14 @@ import {
   setGlobalWorkflow,
   setWorldWorkflow,
   resolveWorkflowId,
-  resolveWorkflowDoc
+  resolveWorkflowDoc,
+  resolveEffectiveDoc,
+  setEnabledFragmentsProvider
 } from '../src/main/services/workflowService'
 import { getAppDir } from '../src/main/services/storageService'
 import { WorkflowDoc } from '../src/shared/workflow/types'
+import { AttachmentDecl } from '../src/shared/workflow/attachments'
+import { ComposeFragment } from '../src/shared/workflow/compose'
 import { DEFAULT_GRAPH } from '../src/main/services/nodes/builtin/defaultGraph'
 
 const profileId = `wf-test-${randomUUID()}`
@@ -705,5 +709,55 @@ describe('workflowService selection + resolution', () => {
     }
     const result = saveWorkflow(profileId, created.id, badDoc)
     expect(result.ok).toBe(false)
+  })
+
+  // ── resolveEffectiveDoc + provider seam (agent-packs plan WP1.3, piece B) ──────────────────────
+  describe('resolveEffectiveDoc', () => {
+    afterEach(() => setEnabledFragmentsProvider()) // restore the default [] provider
+
+    it('with the DEFAULT provider returns the narrator doc UNCHANGED (zero-packs identity)', () => {
+      mockChatService.getChatWorkflowId.mockReturnValue(null)
+      mockChatService.getChat.mockReturnValue(null)
+      // Sanity: the narrator resolveWorkflowDoc would hand back.
+      const narrator = resolveWorkflowDoc(profileId, chatId)
+      const eff = resolveEffectiveDoc(profileId, chatId)
+      expect(eff.id).toBe(narrator.id)
+      // compose(narrator, []) returns the SAME object — we lean on that guarantee, not a re-clone.
+      expect(eff.doc).toBe(narrator.doc)
+      expect(eff.warnings).toEqual([])
+    })
+
+    it('composes the narrator with a registered provider fragment and surfaces its warnings', () => {
+      mockChatService.getChatWorkflowId.mockReturnValue(null)
+      mockChatService.getChat.mockReturnValue(null)
+
+      const attachments: AttachmentDecl[] = [
+        { kind: 'rejoin', checkpoint: 'prompt-assembly', rejoinPort: { node: 'blk', port: 'text' } }
+      ]
+      const fragment: ComposeFragment = {
+        packId: 'p',
+        gateOpen: true,
+        doc: {
+          id: 'frag',
+          name: 'frag',
+          version: 1,
+          schemaVersion: 1,
+          kind: 'fragment',
+          nodes: [{ id: 'blk', type: 'text.template' }],
+          edges: [],
+          attachments
+        }
+      }
+      setEnabledFragmentsProvider(() => [fragment])
+
+      const eff = resolveEffectiveDoc(profileId, chatId)
+      // The narrator id is preserved; the effective doc gained the pack's (prefixed) node.
+      expect(eff.id).toBe(BUILTIN_WORKFLOW_ID)
+      expect(eff.doc.nodes.some((n) => n.id === 'pack:p:blk')).toBe(true)
+      // A clean single-pack rejoin composes with no warnings.
+      expect(eff.warnings).toEqual([])
+      // The composition metadata the engine consumes is present.
+      expect((eff.doc.meta as { composition?: unknown }).composition).toBeDefined()
+    })
   })
 })

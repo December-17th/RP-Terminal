@@ -2201,3 +2201,192 @@ select {
   --jse-context-menu-color: var(--rpt-text-primary);
   --jse-font-size: 12px;
 }
+
+/* ── Shared pack-surface styles (survivors of the one-canvas deletion pass, WP6.6) ─────────────────
+   The Agents/ControlCenter/Runs/Preview surfaces were deleted; these blocks remain because live
+   editor surfaces reuse them: LauncherCard (viewRegistry) + WorkflowView split, and MemoryPane /
+   ModuleImportSheet reuse the empty-state + chip + health-dot styles. All colors via --rpt-* tokens. */
+@media (min-width:1100px) {
+  .rpt-agentdetail { width:400px; }
+}
+
+/* Launcher cards — the thin panel views the LauncherCard/viewRegistry renders (a saved layout may
+   still reference view:'agents'/'workflow'): two lines + an Open button raising the editor overlay. */
+.rpt-cc-launch { display:flex; align-items:center; justify-content:center; height:100%;
+  padding:24px; box-sizing:border-box; }
+.rpt-cc-launch-card { display:flex; flex-direction:column; align-items:center; text-align:center;
+  gap:10px; max-width:360px; padding:26px 28px; border-radius:14px; border:1px solid var(--rpt-border);
+  background:var(--rpt-bg-elevated); }
+.rpt-cc-launch-icon { font-size:30px; opacity:.7; color:var(--rpt-accent); }
+.rpt-cc-launch-title { margin:0; font-size:16px; font-weight:600; color:var(--rpt-text-primary); }
+.rpt-cc-launch-body { margin:0; font-size:13px; line-height:1.55; color:var(--rpt-text-secondary); }
+.rpt-cc-launch-btn { margin-top:6px; }
+
+/* Workflows management pane, full-width split (WorkflowView layout="split"): list/selectors left,
+   the last-run trace right. Stacks under a narrow overlay width. */
+.rpt-workflowmgr-split { display:flex; gap:24px; align-items:flex-start; flex-wrap:wrap; }
+.rpt-workflowmgr-main { flex:1 1 420px; min-width:0; max-width:640px; }
+.rpt-workflowmgr-trace { flex:1 1 300px; min-width:0; max-width:460px; font-size:13px;
+  border-left:1px solid var(--rpt-border); padding-left:20px; }
+@media (max-width:820px) {
+  .rpt-workflowmgr-trace { border-left:none; padding-left:0; border-top:1px solid var(--rpt-border);
+    padding-top:14px; flex-basis:100%; max-width:none; }
+}
+
+/* Empty state (MemoryPane no-chat) */
+.rpt-agents-empty { display:flex; flex-direction:column; align-items:center;
+  text-align:center; gap:8px; max-width:440px; margin:48px auto 0; color:var(--rpt-text-secondary); }
+.rpt-agents-placeholder-icon { font-size:34px; opacity:.6; }
+.rpt-agents-placeholder-title { font-size:16px; font-weight:600; color:var(--rpt-text-primary); margin:0; }
+.rpt-agents-placeholder-body { font-size:13px; line-height:1.55; margin:0; }
+
+/* Capability chips (ModuleImportSheet) — write capabilities danger-tinted */
+.rpt-agents-chips { display:flex; flex-wrap:wrap; gap:6px; }
+.rpt-agents-chip { font-size:11px; padding:2px 8px; border-radius:11px; background:var(--rpt-bg-tertiary);
+  color:var(--rpt-text-secondary); }
+.rpt-agents-chip.write { background:var(--rpt-agent-write-bg); color:var(--rpt-agent-write-text); }
+
+/* Health dot (MemoryPane) — dot carries color; label is text-secondary (no color-only signaling) */
+.rpt-agents-dot { width:9px; height:9px; border-radius:50%; flex-shrink:0; }
+.rpt-agents-dot.ok { background:var(--rpt-success); }
+.rpt-agents-dot.failed { background:var(--rpt-danger); }
+.rpt-agents-dot.never { background:var(--rpt-text-tertiary); }
+
+/* ── Pack detail panel — tiered settings with provenance (agent-packs plan WP3.2) ─────────────────
+   A side panel next to the list. All colors via --rpt-* tokens (AA across all three themes). */
+.rpt-agentdetail { flex-shrink:0; width:340px; display:flex; flex-direction:column;
+  border-left:1px solid var(--rpt-border); background:var(--rpt-bg-secondary); overflow:hidden; }
+/* The Memory sheet in the workflow editor (WP6.4b): MemoryPane was laid out for the control
+   center's wide content area — give it a wider column (clamped for small windows) and lift the
+   overview shell's max-width so nothing clips against the sheet's overflow:hidden. */
+.rpt-memory-sheet { width:min(480px, 92vw); }
+.rpt-memory-sheet .rpt-overview { max-width:none; }
+.rpt-agentdetail-head { display:flex; align-items:center; justify-content:space-between; gap:8px;
+  padding:12px 14px; border-bottom:1px solid var(--rpt-border); }
+.rpt-agentdetail-title { font-size:14px; font-weight:600; color:var(--rpt-text-primary); margin:0;
+  overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.rpt-agentdetail-close { font:inherit; font-size:18px; line-height:1; color:var(--rpt-text-secondary);
+  background:none; border:none; border-radius:6px; padding:2px 8px; cursor:pointer; }
+.rpt-agentdetail-close:hover { color:var(--rpt-text-primary); background:var(--rpt-bg-tertiary); }
+.rpt-agentdetail-close:focus-visible { outline:2px solid var(--rpt-accent); outline-offset:1px; }
+
+/* Version coexistence (WP4.7): the header identity block + inline switcher + notes. */
+.rpt-agentdetail-identity { display:flex; flex-direction:column; gap:3px; min-width:0; }
+.rpt-agentdetail-versionrow { display:flex; align-items:center; gap:8px; }
+.rpt-agentdetail-version { font-size:11.5px; font-weight:700; color:var(--rpt-accent); }
+.rpt-agentdetail-versioncount { font-size:11px; color:var(--rpt-text-tertiary); }
+.rpt-agentdetail-versionswitch { display:flex; align-items:center; flex-wrap:wrap; gap:6px;
+  padding:8px 14px; border-bottom:1px solid var(--rpt-border); }
+.rpt-agentdetail-versionswitch-label { font-size:11.5px; color:var(--rpt-text-secondary); }
+.rpt-agentdetail-versionchip { font:inherit; font-size:11.5px; font-weight:600; color:var(--rpt-text-secondary);
+  background:none; border:1px solid var(--rpt-border); border-radius:6px; padding:3px 10px; cursor:pointer; }
+.rpt-agentdetail-versionchip:hover:not(:disabled) { color:var(--rpt-text-primary); border-color:var(--rpt-text-tertiary); }
+.rpt-agentdetail-versionchip.active { background:var(--rpt-accent); color:var(--rpt-on-accent);
+  border-color:var(--rpt-accent); cursor:default; }
+.rpt-agentdetail-versionchip:focus-visible { outline:2px solid var(--rpt-accent); outline-offset:1px; }
+.rpt-agentdetail-versionnote { font-size:11.5px; line-height:1.5; color:var(--rpt-text-secondary);
+  margin:0; padding:8px 10px; background:var(--rpt-bg-tertiary); border-radius:8px; }
+
+.rpt-agentdetail-scope { display:flex; gap:4px; padding:8px 14px; border-bottom:1px solid var(--rpt-border); }
+.rpt-agentdetail-scopebtn { font:inherit; font-size:11.5px; color:var(--rpt-text-secondary);
+  background:none; border:1px solid var(--rpt-border); border-radius:6px; padding:3px 10px; cursor:pointer; }
+.rpt-agentdetail-scopebtn.active { background:var(--rpt-bg-tertiary); color:var(--rpt-text-primary);
+  border-color:var(--rpt-accent); }
+.rpt-agentdetail-scopebtn:disabled { opacity:.45; cursor:not-allowed; }
+.rpt-agentdetail-scopebtn:focus-visible { outline:2px solid var(--rpt-accent); outline-offset:1px; }
+
+.rpt-agentdetail-body { flex:1; overflow:auto; padding:12px 14px; display:flex; flex-direction:column; gap:16px; }
+.rpt-agentdetail-skel { display:flex; flex-direction:column; gap:10px; }
+.rpt-agentdetail-error, .rpt-agentdetail-empty { font-size:12.5px; color:var(--rpt-text-secondary); }
+.rpt-agentdetail-group { display:flex; flex-direction:column; gap:10px; }
+.rpt-agentdetail-grouptitle { font-size:11px; font-weight:700; letter-spacing:.04em; text-transform:uppercase;
+  color:var(--rpt-text-tertiary); margin:0; }
+.rpt-agentdetail-note { font-size:11.5px; line-height:1.5; color:var(--rpt-text-tertiary); margin:0; }
+
+.rpt-agentdetail-row { display:flex; flex-direction:column; gap:5px; }
+.rpt-agentdetail-rowhead { display:flex; align-items:center; justify-content:space-between; gap:8px; }
+.rpt-agentdetail-rowlabel { font-size:12.5px; color:var(--rpt-text-primary); }
+.rpt-agentdetail-prov { font-size:10px; font-weight:600; padding:1px 7px; border-radius:9px;
+  background:var(--rpt-bg-tertiary); color:var(--rpt-text-secondary); white-space:nowrap; }
+.rpt-agentdetail-prov.chat, .rpt-agentdetail-prov.world { background:var(--rpt-accent); color:var(--rpt-on-accent); }
+.rpt-agentdetail-control { display:flex; align-items:center; gap:8px; }
+.rpt-agentdetail-control input[type="text"], .rpt-agentdetail-control input[type="number"],
+.rpt-agentdetail-control select { font:inherit; font-size:12.5px; flex:1; min-width:0;
+  color:var(--rpt-text-primary); background:var(--rpt-bg-elevated); border:1px solid var(--rpt-border);
+  border-radius:6px; padding:5px 8px; }
+.rpt-agentdetail-control input:focus-visible, .rpt-agentdetail-control select:focus-visible {
+  outline:2px solid var(--rpt-accent); outline-offset:1px; }
+.rpt-agentdetail-reset { font:inherit; font-size:11px; color:var(--rpt-text-secondary); background:none;
+  border:1px solid var(--rpt-border); border-radius:6px; padding:4px 9px; cursor:pointer; flex-shrink:0; }
+.rpt-agentdetail-reset:hover { color:var(--rpt-text-primary); }
+.rpt-agentdetail-reset:focus-visible { outline:2px solid var(--rpt-accent); outline-offset:1px; }
+.rpt-agentdetail-rowerror { font-size:11px; color:var(--rpt-danger); margin:0; }
+.rpt-agentdetail-studio { font:inherit; font-size:12.5px; color:var(--rpt-on-accent);
+  background:var(--rpt-accent); border:1px solid var(--rpt-accent); border-radius:7px; padding:7px 12px;
+  cursor:pointer; align-self:flex-start; }
+.rpt-agentdetail-studio:focus-visible { outline:2px solid var(--rpt-accent); outline-offset:2px; }
+/* Uninstall — destructive Advanced action (WP4.3b) + its confirm sub-step. */
+.rpt-agentdetail-uninstall { font:inherit; font-size:12.5px; align-self:flex-start;
+  color:var(--rpt-danger); background:color-mix(in srgb, var(--rpt-danger) 12%, transparent);
+  border:1px solid color-mix(in srgb, var(--rpt-danger) 46%, transparent); border-radius:7px;
+  padding:7px 12px; cursor:pointer; transition:background 160ms ease-out; }
+.rpt-agentdetail-uninstall:hover { background:color-mix(in srgb, var(--rpt-danger) 20%, transparent); }
+.rpt-agentdetail-uninstall:focus-visible { outline:2px solid var(--rpt-danger); outline-offset:2px; }
+.rpt-agentdetail-uninstall:disabled { opacity:.55; cursor:default; }
+.rpt-agentdetail-uninstall-confirm { display:flex; flex-direction:column; gap:8px; }
+.rpt-agentdetail-uninstall-actions { display:flex; gap:8px; }
+
+/* ── Overview pane (agent-packs plan WP3.5) — the landing view ─────────────────────────────────────
+   Active packs + setup checklist + recent problems + quick links. All colors via --rpt-* tokens
+   (AA across all three themes); health dots pair with text (no color-only signaling). */
+.rpt-overview { display:flex; flex-direction:column; gap:20px; max-width:720px; }
+.rpt-overview-header { display:flex; flex-direction:column; gap:3px; }
+.rpt-overview-heading { font-size:16px; font-weight:600; color:var(--rpt-text-primary); margin:0; }
+.rpt-overview-subtitle { font-size:12.5px; line-height:1.5; color:var(--rpt-text-secondary); margin:0; }
+
+.rpt-overview-section { display:flex; flex-direction:column; gap:8px; }
+.rpt-overview-sectiontitle { font-size:11px; font-weight:700; letter-spacing:.04em; text-transform:uppercase;
+  color:var(--rpt-text-tertiary); margin:0; }
+.rpt-overview-empty { font-size:12.5px; line-height:1.5; color:var(--rpt-text-secondary); margin:0; }
+
+/* Active packs — compact rows */
+.rpt-overview-active { list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:6px; }
+.rpt-overview-activerow { display:flex; align-items:center; gap:10px; width:100%; text-align:left;
+  font:inherit; background:var(--rpt-bg-secondary); border:1px solid var(--rpt-border); border-radius:10px;
+  padding:9px 12px; cursor:pointer; color:inherit;
+  transition:background 180ms ease-out, border-color 180ms ease-out; }
+.rpt-overview-activerow:hover { background:var(--rpt-bg-tertiary); }
+.rpt-overview-activerow:focus-visible { outline:2px solid var(--rpt-accent); outline-offset:1px; }
+.rpt-overview-activename { font-size:13px; font-weight:600; color:var(--rpt-text-primary); flex-shrink:0; }
+.rpt-overview-activeoutcome { flex:1; min-width:0; font-size:12px; color:var(--rpt-text-secondary);
+  overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.rpt-overview-activehealth { flex-shrink:0; font-size:11px; color:var(--rpt-text-tertiary); }
+
+/* Quick links */
+.rpt-overview-links { display:flex; flex-wrap:wrap; gap:8px; }
+.rpt-overview-link { font:inherit; font-size:12.5px; color:var(--rpt-text-primary);
+  background:var(--rpt-bg-secondary); border:1px solid var(--rpt-border); border-radius:8px;
+  padding:8px 14px; cursor:pointer; transition:background 180ms ease-out, border-color 180ms ease-out; }
+.rpt-overview-link:hover { background:var(--rpt-bg-tertiary); border-color:var(--rpt-text-tertiary); }
+.rpt-overview-link:focus-visible { outline:2px solid var(--rpt-accent); outline-offset:1px; }
+@media (prefers-reduced-motion: reduce) {
+  .rpt-overview-activerow, .rpt-overview-link { transition:none; }
+}
+
+/* ── Memory pane (agent-packs plan WP3.8 — the de-scattered memory config + maintenance surface) ─────
+   Reuses the .rpt-overview shell (same full-window pane layout as Overview). These add the template
+   binding row, the per-table maintenance list, and the backfill block. Tokens/AA like the other panes. */
+.rpt-memory-bindingrow { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+.rpt-memory-bindinglabel { font-size:12px; color:var(--rpt-text-secondary); }
+.rpt-memory-select { font-size:12px; padding:4px 8px; background:var(--rpt-bg-tertiary);
+  color:var(--rpt-text-primary); border:1px solid var(--rpt-border); border-radius:6px; }
+.rpt-memory-select:focus-visible { outline:2px solid var(--rpt-accent); outline-offset:1px; }
+.rpt-memory-btn { font-size:12px; padding:4px 10px; }
+
+.rpt-memory-tablelist { list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:4px; }
+.rpt-memory-tablerow { display:flex; align-items:baseline; gap:10px; font-size:12px; padding:6px 10px;
+  border:1px solid var(--rpt-border); border-radius:8px; background:var(--rpt-bg-secondary); flex-wrap:wrap; }
+.rpt-memory-tablename { font-weight:600; color:var(--rpt-text-primary); }
+.rpt-memory-tableprogress { color:var(--rpt-text-secondary); }
+
+.rpt-memory-backfill { border-top:1px solid var(--rpt-border); margin-top:4px; padding-top:8px; }

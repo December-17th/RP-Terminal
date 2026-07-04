@@ -11,10 +11,10 @@ import { CombatView } from './CombatView'
 import { DuelView } from './DuelView'
 import { VariablesView } from './VariablesView'
 import { TablesView } from './TablesView'
-import { WorkflowView } from './WorkflowView'
 import { useWorkspaceContext } from './context'
 import { UsageView } from '../UsageView'
 import { useT } from '../../i18n'
+import { useUiStore } from '../../stores/uiStore'
 
 /**
  * The set of views a workspace panel can host. Each entry is a self-contained component
@@ -65,14 +65,48 @@ const UsagePanel: React.FC = () => {
   return <UsageView profileId={profileId} />
 }
 
-const WorkflowPanel: React.FC = () => {
-  const { profileId } = useWorkspaceContext()
-  return <WorkflowView profileId={profileId} />
+// One-canvas rebuild WP6.4b: the workflow editor IS the surface now — workflows AND agents both live
+// on that one canvas. These two panel views (view:'agents'/'workflow' in saved layouts) are kept as
+// THIN LAUNCHERS so a saved layout still resolves to a designed card (a broken/unknown-view panel
+// otherwise) that opens the editor overlay.
+const LauncherCard: React.FC<{
+  titleKey: string
+  bodyKey: string
+}> = ({ titleKey, bodyKey }) => {
+  const t = useT()
+  const openWorkflowEditor = useUiStore((s) => s.openWorkflowEditor)
+  return (
+    <div className="rpt-cc-launch">
+      <div className="rpt-cc-launch-card">
+        <div className="rpt-cc-launch-icon" aria-hidden>
+          ◐
+        </div>
+        <h2 className="rpt-cc-launch-title">{t(titleKey)}</h2>
+        <p className="rpt-cc-launch-body">{t(bodyKey)}</p>
+        <button className="btn-accent rpt-cc-launch-btn" onClick={() => openWorkflowEditor()}>
+          {t('controlCenter.launch.open')}
+        </button>
+      </div>
+    </div>
+  )
 }
 
+const AgentsPanel: React.FC = () => (
+  <LauncherCard
+    titleKey="controlCenter.launch.agentsTitle"
+    bodyKey="controlCenter.launch.editorBody"
+  />
+)
+
+const WorkflowPanel: React.FC = () => (
+  <LauncherCard
+    titleKey="controlCenter.launch.workflowTitle"
+    bodyKey="controlCenter.launch.editorBody"
+  />
+)
+
 // The workflow EDITOR is deliberately NOT a panel view: the canvas needs the whole window, so it
-// lives in the app-level WorkflowEditorOverlay (uiStore.openWorkflowEditor), opened from the
-// Workflows view's Edit buttons.
+// lives in the app-level WorkflowEditorOverlay (uiStore.openWorkflowEditor).
 
 // The card's scripts now run in the app-wide invisible script engine (CardScriptWcvHost in App.tsx), not in
 // a panel — so this view is just an explanatory note. Visible card UI lives in declared panels (status, …).
@@ -101,7 +135,8 @@ export const ViewRegistry: Record<string, ViewEntry> = {
   duel: { title: 'Duel', Component: DuelPanel, fill: true },
   variables: { title: 'Variables', Component: VariablesPanel },
   tables: { title: 'Tables', Component: TablesPanel },
-  workflow: { title: 'Workflows', Component: WorkflowPanel },
+  agents: { title: 'Agents', Component: AgentsPanel, fill: true },
+  workflow: { title: 'Workflows', Component: WorkflowPanel, fill: true },
   usage: { title: 'Usage', Component: UsagePanel, fill: true },
   'card-scripts': { title: 'Card Scripts', Component: CardScriptsPanel },
   logs: { title: 'Logs', Component: LogsPanel, fill: true },

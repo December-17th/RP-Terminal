@@ -149,6 +149,57 @@ describe('docToEditor / editorToDoc round-trip', () => {
     const rebuilt = editorToDoc(d, nodes, edges)
     expect(rebuilt.kind).toBeUndefined()
   })
+
+  it('round-trips a fragment doc’s `attachments` (WP4.4: editorToDoc must not drop fragment fields)', () => {
+    const attachments = [
+      { kind: 'entry' as const, checkpoint: 'context-ready' as const, mode: 'branch' as const }
+    ]
+    const d = doc([node('a')], [], { kind: 'fragment', attachments })
+    const { nodes, edges } = docToEditor(d)
+    const rebuilt = editorToDoc(d, nodes, edges)
+    expect(rebuilt.kind).toBe('fragment')
+    expect(rebuilt.attachments).toEqual(attachments)
+  })
+
+  it('omits attachments when the base doc has none (a turn doc never grows a stray field)', () => {
+    const d = doc([node('a')], [])
+    const { nodes, edges } = docToEditor(d)
+    const rebuilt = editorToDoc(d, nodes, edges)
+    expect(rebuilt.attachments).toBeUndefined()
+  })
+
+  it('preserves doc.groups through a round-trip (WP6.3: the known dropped-field trap)', () => {
+    const groups = [
+      {
+        id: 'group-1',
+        name: 'Module 1',
+        nodeIds: ['a', 'b'],
+        collapsed: true,
+        exposed: [{ node: 'a', path: 'template', label: 'Prompt' }]
+      }
+    ]
+    const d = doc([node('a'), node('b')], [], { groups })
+    const { nodes, edges } = docToEditor(d)
+    const rebuilt = editorToDoc(d, nodes, edges)
+    expect(rebuilt.groups).toEqual(groups)
+  })
+
+  it('omits groups when the base doc has none (no stray field)', () => {
+    const d = doc([node('a')], [])
+    const { nodes, edges } = docToEditor(d)
+    const rebuilt = editorToDoc(d, nodes, edges)
+    expect(rebuilt.groups).toBeUndefined()
+  })
+
+  it('round-trips a node’s `disabled` flag (WP6.4a: the whitelisted-field trap)', () => {
+    const d = doc([node('a', { disabled: true }), node('b')], [])
+    const { nodes } = docToEditor(d)
+    expect(nodes.find((n) => n.id === 'a')!.disabled).toBe(true)
+    expect(nodes.find((n) => n.id === 'b')!.disabled).toBeUndefined()
+    const rebuilt = editorToDoc(d, nodes, [])
+    expect(rebuilt.nodes.find((n) => n.id === 'a')!.disabled).toBe(true)
+    expect(rebuilt.nodes.find((n) => n.id === 'b')!.disabled).toBeUndefined()
+  })
 })
 
 describe('autoLayout', () => {

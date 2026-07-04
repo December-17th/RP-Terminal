@@ -10,7 +10,7 @@ import { ChatMessage } from '../../promptBuilder'
 import { LorebookEntry } from '../../../types/character'
 import { PresetParameters } from '../../../types/preset'
 import { FloorMetrics } from '../../../../shared/usageTypes'
-import { NodeImpl, NodeRunFailure } from '../types'
+import { NodeImpl, NodeRunFailure, RunContext } from '../types'
 
 /**
  * Pre-model built-in nodes (Phase 2b-1b task 2): thin `run()` delegations to the 2b-1a
@@ -116,6 +116,67 @@ export const promptAssemble: NodeImpl = {
  *  own LLM at its own provider/model/budget. Implemented by reusing resilientCall's `withPreset`
  *  (rpm_limit/max_concurrent ride the substituted connection), so `fallback_preset_id` still applies
  *  ON TOP of the substituted primary. Unknown id → class-B NodeRunFailure code `bad-preset`. */
+/** The shared config surface for a model call: streaming + the chosen api_preset + the resilience
+ *  knobs. `llm.sample` and the consolidated `agent.llm` (agentNodes.ts) both drive the SAME core
+ *  (runLlmCall) with this shape, so streaming/abort/preset-swap/retry behavior stays ONE
+ *  implementation across the fine-grained and consolidated nodes (WP6.2 — never duplicate the
+ *  provider call). */
+export type LlmCallConfig = ResilienceConfig & {
+  stream?: boolean
+  api_preset_id?: string
+}
+
+/** The zod schema for LlmCallConfig — llm.sample uses it directly; agent.llm extends it. */
+export const llmCallConfigSchema = z.object({
+  stream: z.boolean().optional(),
+  api_preset_id: z.string().optional(),
+  retries: z.number().int().min(0).max(5).optional(),
+  retry_delay_s: z.number().min(0).max(300).optional(),
+  fallback_preset_id: z.string().optional(),
+  validator: z.enum(['none', 'non_empty', 'regex', 'json']).optional(),
+  validator_pattern: z.string().optional(),
+  validator_retries: z.number().int().min(0).max(3).optional(),
+  corrective_nudge: z.string().optional()
+})
+
+/**
+ * THE one model-call core, factored out of `llm.sample`'s run() so `agent.llm` (agentNodes.ts) shares
+ * it verbatim rather than reimplementing streaming/abort/preset-swap. Given a Context, the messages to
+ * send, the sampler params, and an LlmCallConfig, it:
+ *   · swaps the connection to `api_preset_id` when set (the same withPreset substitution resilientCall's
+ *     fallback path uses; unknown id → class-B `bad-preset`),
+ *   · runs callModelResilient (auto-retry / fallback / validator per the config),
+ *   · streams to the chat ONLY when `stream !== false` (a side/agent call sets stream:false so its
+ *     output never pollutes the player stream),
+ *   · returns `{ raw, rawUsage }`, or `null` on abort-with-empty (the caller decides whether to abort
+ *     the graph — llm.sample does; a headless agent call has no turn to abort).
+ */
+export const runLlmCall = async (
+  ctx: RunContext,
+  gen: GenContext,
+  sendMessages: ChatMessage[],
+  params: PresetParameters,
+  cfg: LlmCallConfig
+): Promise<{ raw: string; rawUsage: unknown } | null> => {
+  const streamToChat = cfg.stream !== false
+  let g = gen
+  if (cfg.api_preset_id) {
+    const swapped = withPreset(g, cfg.api_preset_id)
+    if (!swapped)
+      throw new NodeRunFailure('B', `api preset '${cfg.api_preset_id}' not found`, 1, 'bad-preset')
+    g = swapped
+  }
+  const r = await callModelResilient(
+    g,
+    sendMessages,
+    params,
+    streamToChat ? ctx.streamMain : () => {},
+    ctx.modelSignal ?? ctx.signal,
+    cfg
+  )
+  return r === null ? null : { raw: r.raw, rawUsage: r.rawUsage }
+}
+
 export const llmSample: NodeImpl = {
   type: 'llm.sample',
   title: 'Sample',
@@ -132,38 +193,14 @@ export const llmSample: NodeImpl = {
     // Spec §10: the give-up value ({kind, message, attempts, …}) for author-wired error branches.
     { name: 'error', type: 'Error' }
   ],
-  configSchema: z.object({
-    stream: z.boolean().optional(),
-    api_preset_id: z.string().optional(),
-    retries: z.number().int().min(0).max(5).optional(),
-    retry_delay_s: z.number().min(0).max(300).optional(),
-    fallback_preset_id: z.string().optional(),
-    validator: z.enum(['none', 'non_empty', 'regex', 'json']).optional(),
-    validator_pattern: z.string().optional(),
-    validator_retries: z.number().int().min(0).max(3).optional(),
-    corrective_nudge: z.string().optional()
-  }),
+  configSchema: llmCallConfigSchema,
   run: async (ctx, inputs, node) => {
-    const cfg = (node?.config ?? {}) as ResilienceConfig & {
-      stream?: boolean
-      api_preset_id?: string
-    }
-    const streamToChat = cfg.stream !== false
-    // Swap the connection to a chosen api_preset BEFORE the call (plan §4) — the same substitution
-    // resilientCall's fallback path uses. fallback_preset_id in cfg still applies on top.
-    let gen = inputs.gen as GenContext
-    if (cfg.api_preset_id) {
-      const swapped = withPreset(gen, cfg.api_preset_id)
-      if (!swapped)
-        throw new NodeRunFailure('B', `api preset '${cfg.api_preset_id}' not found`, 1, 'bad-preset')
-      gen = swapped
-    }
-    const r = await callModelResilient(
-      gen,
+    const cfg = (node?.config ?? {}) as LlmCallConfig
+    const r = await runLlmCall(
+      ctx,
+      inputs.gen as GenContext,
       inputs.sendMessages as ChatMessage[],
       inputs.params as PresetParameters,
-      streamToChat ? ctx.streamMain : () => {},
-      ctx.modelSignal ?? ctx.signal,
       cfg
     )
     // Abort-with-empty (callModel returned null): nothing to persist — abort the GRAPH so the engine

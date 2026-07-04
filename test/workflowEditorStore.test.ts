@@ -43,10 +43,34 @@ const setupApi = (): void => {
         return null
       }),
       saveWorkflow: vi.fn().mockResolvedValue({ ok: true, id: 'custom-1' }),
-      cloneWorkflow: vi.fn().mockResolvedValue({ id: 'custom-1-clone', name: 'Custom (copy)' })
+      cloneWorkflow: vi.fn().mockResolvedValue({ id: 'custom-1-clone', name: 'Custom (copy)' }),
+      // Fragment session (WP4.4): the pack fragment read + write-back IPC.
+      getAgentPackFragment: vi.fn(async (_profileId: string, packId: string) => {
+        if (packId === 'my-fork') return fragmentDoc()
+        return null
+      }),
+      updateAgentPackFragment: vi
+        .fn()
+        .mockResolvedValue({ ok: true, pack: { id: 'my-fork', builtin: false } })
     }
   }
 }
+
+/** A kind:'fragment' pack fragment doc (agent-packs plan WP4.4). Carries `attachments` (the fields the
+ *  editor must round-trip) + a fragment-shaped graph (no main-output node — validate skips that rule). */
+const fragmentDoc = (): WorkflowDoc => ({
+  id: 'my-fork',
+  name: 'My Fork',
+  version: 1,
+  schemaVersion: 1,
+  kind: 'fragment',
+  attachments: [{ kind: 'entry', checkpoint: 'context-ready', mode: 'branch' }],
+  nodes: [
+    { id: 'ctx', type: 'input.context', position: { x: 0, y: 0 } },
+    { id: 'tmpl', type: 'text.template', position: { x: 260, y: 0 }, config: { text: 'hi' } }
+  ],
+  edges: [{ from: { node: 'ctx', port: 'gen' }, to: { node: 'tmpl', port: 'gen' } }]
+})
 
 const profileId = 'p1'
 
@@ -61,8 +85,12 @@ beforeEach(() => {
     edges: [],
     dirty: false,
     readOnly: false,
+    sessionType: 'workflow',
+    fragmentPackId: null,
     errors: [],
     selectedNodeId: null,
+    selectedNodeIds: [],
+    selectedGroupId: null,
     status: null
   })
 })
@@ -250,6 +278,24 @@ describe('workflowEditorStore: removeNode / removeEdge / setMainOutput', () => {
   })
 })
 
+describe('workflowEditorStore: setNodeDisabled (WP6.4a)', () => {
+  beforeEach(async () => {
+    await useWorkflowEditorStore.getState().init(profileId)
+    await useWorkflowEditorStore.getState().open(profileId, 'custom-1')
+  })
+
+  it('toggles disabled on, then off (flag-free when enabled)', () => {
+    useWorkflowEditorStore.getState().setNodeDisabled('ctx', true)
+    expect(useWorkflowEditorStore.getState().nodes.find((n) => n.id === 'ctx')!.disabled).toBe(true)
+    expect(useWorkflowEditorStore.getState().dirty).toBe(true)
+
+    useWorkflowEditorStore.getState().setNodeDisabled('ctx', false)
+    expect(
+      useWorkflowEditorStore.getState().nodes.find((n) => n.id === 'ctx')!.disabled
+    ).toBeUndefined()
+  })
+})
+
 describe('workflowEditorStore: live validation', () => {
   it('deleting the main-output node produces a MAIN_OUTPUT error', async () => {
     await useWorkflowEditorStore.getState().init(profileId)
@@ -334,5 +380,264 @@ describe('workflowEditorStore: cloneAndEdit', () => {
     await useWorkflowEditorStore.getState().cloneAndEdit(profileId)
     const s = useWorkflowEditorStore.getState()
     expect(s.currentId).toBe('default')
+  })
+})
+
+describe('workflowEditorStore: fragment editing session (WP4.4)', () => {
+  beforeEach(async () => {
+    await useWorkflowEditorStore.getState().init(profileId)
+  })
+
+  it('openFragment loads the pack fragment as an EDITABLE session (nodes movable, config editable)', async () => {
+    const res = await useWorkflowEditorStore.getState().openFragment(profileId, 'my-fork')
+    expect(res).toEqual({ ok: true })
+    const s = useWorkflowEditorStore.getState()
+    expect(s.sessionType).toBe('fragment')
+    expect(s.fragmentPackId).toBe('my-fork')
+    expect(s.readOnly).toBe(false) // a fragment session is always editable (never the readOnly builtin)
+    expect(s.doc?.kind).toBe('fragment')
+    expect(s.nodes.map((n) => n.id).sort()).toEqual(['ctx', 'tmpl'])
+    // Fragment doc skips the main-output rule — a valid fragment opens with NO validation errors.
+    expect(s.errors).toEqual([])
+
+    // Nodes are movable (not locked — no Effective-mode lock in a fragment session).
+    useWorkflowEditorStore.getState().moveNode('ctx', { x: 111, y: 222 })
+    expect(useWorkflowEditorStore.getState().nodes.find((n) => n.id === 'ctx')!.position).toEqual({
+      x: 111,
+      y: 222
+    })
+    // Config is editable.
+    useWorkflowEditorStore.getState().setNodeConfig('tmpl', { text: 'edited' })
+    expect(useWorkflowEditorStore.getState().nodes.find((n) => n.id === 'tmpl')!.config).toEqual({
+      text: 'edited'
+    })
+  })
+
+  it('openFragment returns { ok:false } for an uninstalled/missing pack (no session change)', async () => {
+    const res = await useWorkflowEditorStore.getState().openFragment(profileId, 'nope')
+    expect(res).toEqual({ ok: false })
+    expect(useWorkflowEditorStore.getState().sessionType).toBe('workflow')
+  })
+
+  it('save routes to updateAgentPackFragment (NOT saveWorkflow) and round-trips attachments + kind', async () => {
+    await useWorkflowEditorStore.getState().openFragment(profileId, 'my-fork')
+    useWorkflowEditorStore.getState().moveNode('ctx', { x: 5, y: 5 }) // make it dirty
+    expect(useWorkflowEditorStore.getState().dirty).toBe(true)
+
+    await useWorkflowEditorStore.getState().save(profileId)
+
+    // Dispatched to the PACK path, never the workflow-file path.
+    expect(window.api.saveWorkflow).not.toHaveBeenCalled()
+    expect(window.api.updateAgentPackFragment).toHaveBeenCalledTimes(1)
+    const [, packId, savedDoc] = (
+      window.api.updateAgentPackFragment as ReturnType<typeof vi.fn>
+    ).mock.calls[0] as [string, string, WorkflowDoc]
+    expect(packId).toBe('my-fork')
+    // The attachments-fix: editorToDoc must NOT drop the fragment's doc-level fields.
+    expect(savedDoc.kind).toBe('fragment')
+    expect(savedDoc.attachments).toEqual([
+      { kind: 'entry', checkpoint: 'context-ready', mode: 'branch' }
+    ])
+    // The dragged position persisted into the saved fragment (drag now saves — the bug this WP fixes).
+    expect(savedDoc.nodes.find((n) => n.id === 'ctx')!.position).toEqual({ x: 5, y: 5 })
+
+    const s = useWorkflowEditorStore.getState()
+    expect(s.dirty).toBe(false)
+    expect(s.status).toBe('saved')
+  })
+
+  it('save surfaces a rejected fragment write (e.g. builtin) as status, keeps dirty', async () => {
+    ;(window.api.updateAgentPackFragment as ReturnType<typeof vi.fn>).mockResolvedValue({
+      ok: false,
+      code: 'builtin',
+      error: 'pack my-fork is builtin'
+    })
+    await useWorkflowEditorStore.getState().openFragment(profileId, 'my-fork')
+    useWorkflowEditorStore.getState().moveNode('ctx', { x: 9, y: 9 })
+
+    await useWorkflowEditorStore.getState().save(profileId)
+    const s = useWorkflowEditorStore.getState()
+    expect(s.status).toBe('pack my-fork is builtin')
+    expect(s.dirty).toBe(true)
+  })
+
+  it('opening a WORKFLOW file after a fragment session resets sessionType to workflow', async () => {
+    await useWorkflowEditorStore.getState().openFragment(profileId, 'my-fork')
+    expect(useWorkflowEditorStore.getState().sessionType).toBe('fragment')
+    await useWorkflowEditorStore.getState().open(profileId, 'custom-1')
+    const s = useWorkflowEditorStore.getState()
+    expect(s.sessionType).toBe('workflow')
+    expect(s.fragmentPackId).toBeNull()
+  })
+})
+
+describe('workflowEditorStore: on-canvas groups (WP6.3)', () => {
+  const store = () => useWorkflowEditorStore.getState()
+  // custom-1 has ctx + write; add a third node so we can form groups of ≥2 and leave one out.
+  beforeEach(async () => {
+    await store().init(profileId)
+    await store().open(profileId, 'custom-1')
+    store().addNode('control.if', { x: 500, y: 0 }) // id if-1
+  })
+
+  const groupOf = (id: string) => (store().doc?.groups ?? []).find((g) => g.id === id)
+
+  it('groupSelection is a no-op with <2 selected', () => {
+    store().setSelectedNodeIds(['ctx'])
+    store().groupSelection()
+    expect(store().doc?.groups).toBeUndefined()
+  })
+
+  it('groupSelection mints a Module over ≥2 selected nodes and selects it', () => {
+    store().setSelectedNodeIds(['ctx', 'write'])
+    store().groupSelection()
+    const groups = store().doc?.groups ?? []
+    expect(groups).toHaveLength(1)
+    expect(groups[0].id).toBe('group-1')
+    expect(groups[0].name).toBe('Module 1')
+    expect(groups[0].nodeIds).toEqual(['ctx', 'write'])
+    expect(store().selectedGroupId).toBe('group-1')
+    expect(store().selectedNodeId).toBeNull()
+  })
+
+  it('groupSelection is a no-op when any selected node is already grouped (overlap)', () => {
+    store().setSelectedNodeIds(['ctx', 'write'])
+    store().groupSelection()
+    // Now try to group write (already in group-1) with if-1 → refused, still one group.
+    store().setSelectedNodeIds(['write', 'if-1'])
+    store().groupSelection()
+    expect(store().doc?.groups).toHaveLength(1)
+  })
+
+  it('ungroup restores (removes the group; nodes stay)', () => {
+    store().setSelectedNodeIds(['ctx', 'write'])
+    store().groupSelection()
+    store().ungroup('group-1')
+    expect(store().doc?.groups).toBeUndefined()
+    expect(store().nodes.map((x) => x.id).sort()).toEqual(['ctx', 'if-1', 'write'])
+    expect(store().selectedGroupId).toBeNull()
+  })
+
+  it('renameGroup updates the name', () => {
+    store().setSelectedNodeIds(['ctx', 'write'])
+    store().groupSelection()
+    store().renameGroup('group-1', 'Memory')
+    expect(groupOf('group-1')?.name).toBe('Memory')
+  })
+
+  it('toggleGroupCollapsed flips the collapsed flag', () => {
+    store().setSelectedNodeIds(['ctx', 'write'])
+    store().groupSelection()
+    expect(groupOf('group-1')?.collapsed).toBeFalsy()
+    store().toggleGroupCollapsed('group-1')
+    expect(groupOf('group-1')?.collapsed).toBe(true)
+    store().toggleGroupCollapsed('group-1')
+    expect(groupOf('group-1')?.collapsed).toBe(false)
+  })
+
+  it('moveGroup shifts every member position by the delta', () => {
+    store().setSelectedNodeIds(['ctx', 'write'])
+    store().groupSelection()
+    const ctxBefore = store().nodes.find((x) => x.id === 'ctx')!.position
+    const writeBefore = store().nodes.find((x) => x.id === 'write')!.position
+    const ifBefore = store().nodes.find((x) => x.id === 'if-1')!.position
+    store().moveGroup('group-1', { dx: 40, dy: -15 })
+    expect(store().nodes.find((x) => x.id === 'ctx')!.position).toEqual({
+      x: ctxBefore.x + 40,
+      y: ctxBefore.y - 15
+    })
+    expect(store().nodes.find((x) => x.id === 'write')!.position).toEqual({
+      x: writeBefore.x + 40,
+      y: writeBefore.y - 15
+    })
+    // A non-member is untouched.
+    expect(store().nodes.find((x) => x.id === 'if-1')!.position).toEqual(ifBefore)
+  })
+
+  it('exposeSetting/unexposeSetting replace-if-same node+path semantics', () => {
+    store().setSelectedNodeIds(['ctx', 'write'])
+    store().groupSelection()
+    store().exposeSetting('group-1', { node: 'ctx', path: 'p', label: 'First' })
+    expect(groupOf('group-1')?.exposed).toEqual([{ node: 'ctx', path: 'p', label: 'First' }])
+    // Re-expose same node+path replaces (updates label), does not duplicate.
+    store().exposeSetting('group-1', { node: 'ctx', path: 'p', label: 'Renamed' })
+    expect(groupOf('group-1')?.exposed).toEqual([{ node: 'ctx', path: 'p', label: 'Renamed' }])
+    // A different path adds a second entry.
+    store().exposeSetting('group-1', { node: 'write', path: 'q', label: 'Second' })
+    expect(groupOf('group-1')?.exposed).toHaveLength(2)
+    // Unexpose removes just that one.
+    store().unexposeSetting('group-1', 'ctx', 'p')
+    expect(groupOf('group-1')?.exposed).toEqual([{ node: 'write', path: 'q', label: 'Second' }])
+  })
+
+  it('removeNode strips membership and dissolves a group that drops below 2 members', () => {
+    store().setSelectedNodeIds(['ctx', 'write'])
+    store().groupSelection()
+    store().removeNode('write') // group-1 now has only ctx → dissolved
+    expect(store().doc?.groups).toBeUndefined()
+    expect(store().selectedGroupId).toBeNull()
+  })
+
+  it('removeNode strips membership but keeps a group still ≥2 members', () => {
+    store().setSelectedNodeIds(['ctx', 'write', 'if-1'])
+    store().groupSelection()
+    store().removeNode('if-1')
+    expect(groupOf('group-1')?.nodeIds).toEqual(['ctx', 'write'])
+  })
+})
+
+describe('workflowEditorStore: insertModule (WP6.5)', () => {
+  const store = () => useWorkflowEditorStore.getState()
+  beforeEach(async () => {
+    await store().init(profileId)
+    await store().open(profileId, 'custom-1') // has ctx (input.context) + write (output.writeFloor)
+  })
+
+  // A module whose authored node ids COLLIDE with the doc's existing ids (ctx), so reminting must
+  // avoid the collision. Two internal edges + one exposed ref to test remap.
+  const module = () => ({
+    name: 'Imported Mem',
+    nodes: [
+      { id: 'ctx', type: 'input.context', position: { x: 0, y: 0 } },
+      { id: 'if', type: 'control.if', position: { x: 200, y: 40 }, config: { path: 'x' } }
+    ],
+    edges: [{ from: { node: 'ctx', port: 'gen' }, to: { node: 'if', port: 'gen' } }],
+    exposed: [{ node: 'if', path: 'path', label: 'Path' }]
+  })
+
+  it('remints colliding ids, remaps edges + exposed, creates a collapsed group, marks dirty', () => {
+    const before = store().nodes.map((n) => n.id)
+    const groupId = store().insertModule(module(), { x: 300, y: 300 })
+    expect(groupId).toBeTruthy()
+
+    const s = store()
+    // The doc already had a `ctx`; the imported input.context must NOT reuse it (collision-safe).
+    const newIds = s.nodes.map((n) => n.id).filter((id) => !before.includes(id))
+    expect(newIds).toHaveLength(2)
+    expect(newIds).not.toContain('ctx')
+    expect(s.dirty).toBe(true)
+
+    // The group was created collapsed over exactly the new ids, and selected.
+    const group = (s.doc?.groups ?? []).find((g) => g.id === groupId)
+    expect(group?.collapsed).toBe(true)
+    expect(group?.nodeIds.sort()).toEqual([...newIds].sort())
+    expect(s.selectedGroupId).toBe(groupId)
+
+    // The internal edge was remapped to the new ids (both ends are new nodes).
+    const importedEdge = s.edges.find((e) => newIds.includes(e.source) && newIds.includes(e.target))
+    expect(importedEdge).toBeTruthy()
+
+    // The exposed ref was remapped to the new `if` node id (not the authored one).
+    const exposed = group?.exposed ?? []
+    expect(exposed).toHaveLength(1)
+    expect(newIds).toContain(exposed[0].node)
+    expect(exposed[0].path).toBe('path')
+  })
+
+  it('returns null on the read-only builtin doc (no insertion)', async () => {
+    await store().open(profileId, 'default')
+    const before = store().nodes.length
+    expect(store().insertModule(module(), { x: 0, y: 0 })).toBeNull()
+    expect(store().nodes).toHaveLength(before)
   })
 })

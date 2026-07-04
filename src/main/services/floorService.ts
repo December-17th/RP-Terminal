@@ -1,6 +1,13 @@
 import { getDb } from './db'
 import { FloorFile } from '../types/chat'
 import { normalizeSwipes, selectSwipe, appendSwipe } from './swipeHelpers'
+import { withLock } from './asyncLock'
+
+/** Per-chat floor-variable write lock key (agent-packs WP1.5; ADR 0003). Floors are keyed by
+ *  `chat_id` in SQLite (PRIMARY KEY (chat_id, floor)), so a chat is the write-serialization scope —
+ *  the same granularity every floor-var writer (vars.save floor scope, the MVU write-back bridge, the
+ *  Variables-view editor, swipe/regenerate) shares. */
+const varsLockKey = (chatId: string): string => `vars:${chatId}`
 
 interface FloorRow {
   floor: number
@@ -59,7 +66,9 @@ export const getAllFloors = (_profileId: string, chatId: string, _count?: number
   return rows.map(rowToFloor)
 }
 
-export const saveFloor = (_profileId: string, chatId: string, floor: FloorFile): void => {
+/** The actual floor INSERT/UPSERT (synchronous). Wrapped by `saveFloor` under the per-chat vars
+ *  lock so concurrent engine runs can't lose a floor-variable write (ADR 0003). */
+const saveFloorRow = (chatId: string, floor: FloorFile): void => {
   getDb()
     .prepare(
       `INSERT INTO floors
@@ -99,6 +108,26 @@ export const saveFloor = (_profileId: string, chatId: string, floor: FloorFile):
       floor.metrics ? JSON.stringify(floor.metrics) : null
     )
 }
+
+/**
+ * Persist ONE floor (insert or upsert). Serialized per chat through the async vars lock (WP1.5 /
+ * ADR 0003): a single writer runs SYNCHRONOUSLY (the lock's fast path — same behavior as before),
+ * so every existing synchronous caller (`setFloorStatData`, `reevaluateVariables`, swipe/regenerate,
+ * the MVU write-back bridge, the Variables-view editor) is unaffected; only genuinely concurrent
+ * writers (a headless run vs. a turn, once WP2.2 lands) are queued in submission order so neither
+ * loses its write. `withLock`'s returned promise is intentionally not awaited here — the row is
+ * written on the synchronous fast path, and this keeps `saveFloor`'s `void` (synchronous) contract
+ * that ~20 call sites rely on. A caller that must serialize a read-modify-write ACROSS an `await`
+ * (the headless runner) wraps its own critical section in `withLock(varsLockKey(chatId), …)`.
+ */
+export const saveFloor = (_profileId: string, chatId: string, floor: FloorFile): void => {
+  void withLock(varsLockKey(chatId), () => saveFloorRow(chatId, floor))
+}
+
+/** The per-chat floor-variable write-lock key, exported so the headless runner (WP2.2) and any other
+ *  async read-modify-write of floor variables can wrap its whole critical section on the SAME key
+ *  `saveFloor` serializes on. */
+export { varsLockKey }
 
 /** Switch a floor's active swipe; keeps response.content in sync. Returns the updated floor. */
 export const setActiveSwipe = (

@@ -289,3 +289,78 @@ describe('validateWorkflow — kind branching (sub-graph nodes v1 plan §2)', ()
     expect(r.ok === false && r.errors.some((e) => e.code === 'CYCLE')).toBe(true)
   })
 })
+
+describe('validateWorkflow — on-canvas groups (WP6.3)', () => {
+  const grouped = (extra: Partial<WorkflowDoc>): WorkflowDoc =>
+    doc(
+      [
+        { id: 'a', type: 'src' },
+        { id: 'b', type: 'sink', isMainOutput: true }
+      ],
+      [{ from: { node: 'a', port: 'out' }, to: { node: 'b', port: 'in' } }],
+      extra
+    )
+
+  it('accepts a well-formed group', () => {
+    const r = validateWorkflow(
+      grouped({ groups: [{ id: 'g1', name: 'M', nodeIds: ['a', 'b'] }] }),
+      descriptors
+    )
+    expect(r).toEqual({ ok: true })
+  })
+
+  it('GROUP_MEMBER_MISSING when a member is not a doc node', () => {
+    const r = validateWorkflow(
+      grouped({ groups: [{ id: 'g1', name: 'M', nodeIds: ['a', 'ghost'] }] }),
+      descriptors
+    )
+    expect(r.ok === false && r.errors.some((e) => e.code === 'GROUP_MEMBER_MISSING')).toBe(true)
+  })
+
+  it('GROUP_OVERLAP when a node is in two groups', () => {
+    const r = validateWorkflow(
+      grouped({
+        groups: [
+          { id: 'g1', name: 'M1', nodeIds: ['a', 'b'] },
+          { id: 'g2', name: 'M2', nodeIds: ['b', 'a'] }
+        ]
+      }),
+      descriptors
+    )
+    expect(r.ok === false && r.errors.some((e) => e.code === 'GROUP_OVERLAP')).toBe(true)
+  })
+
+  it('GROUP_EXPOSED_NOT_MEMBER when an exposed setting points at a non-member', () => {
+    const r = validateWorkflow(
+      grouped({
+        groups: [
+          {
+            id: 'g1',
+            name: 'M',
+            nodeIds: ['a', 'b'],
+            exposed: [{ node: 'ghost', path: 'template', label: 'x' }]
+          }
+        ]
+      }),
+      descriptors
+    )
+    expect(r.ok === false && r.errors.some((e) => e.code === 'GROUP_EXPOSED_NOT_MEMBER')).toBe(true)
+  })
+
+  it('does NOT validate the exposed path validity (a stale path is accepted)', () => {
+    const r = validateWorkflow(
+      grouped({
+        groups: [
+          {
+            id: 'g1',
+            name: 'M',
+            nodeIds: ['a', 'b'],
+            exposed: [{ node: 'a', path: 'nonexistent.field', label: 'x' }]
+          }
+        ]
+      }),
+      descriptors
+    )
+    expect(r).toEqual({ ok: true })
+  })
+})

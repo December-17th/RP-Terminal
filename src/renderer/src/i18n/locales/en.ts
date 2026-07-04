@@ -18,6 +18,8 @@ const en: Record<string, string> = {
   'assets.empty': 'No characters or assets yet. Drop images into the character folder.',
   'assets.hint': 'Files: <name>_头像.jpg / <name>_立绘.jpg (+ optional _mood).',
   'nav.api': 'API',
+  'nav.flow': 'Workflow',
+  'nav.flowTip': 'Open the workflow editor',
   'nav.settings': 'Settings',
   'nav.logs': 'Logs',
   'nav.backToWorlds': 'Back to worlds',
@@ -449,8 +451,11 @@ const en: Record<string, string> = {
   'variables.editFailed': 'Edit failed to save',
   'variables.readOnlyHint': 'No message yet — nothing to edit',
 
-  // SQL-table memory (数据库/表格) — read-only Tables view + template assignment
+  // SQL-table memory (数据库/表格) — the lean data grid (config moved to the Memory rail, WP3.8)
   'tables.heading': 'Memory Tables',
+  // Header hint linking to the editor's Memory sheet (template binding / backfill live there, WP6.4b).
+  'tables.configHint': 'Memory settings live in the workflow editor.',
+  'tables.openMemory': 'Open the workflow editor',
   'tables.template': 'Table template',
   'tables.none': 'None (off)',
   'tables.import': 'Import template',
@@ -546,6 +551,8 @@ const en: Record<string, string> = {
     'This workflow fails validation — if selected, generation falls back to the next tier',
 
   'workflowEditor.viewTitle': 'Workflow Editor',
+  'workflowEditor.memory': 'Memory…',
+  'workflowEditor.memoryTip': 'Configure memory tables for this session',
   'workflowEditor.palette': 'Nodes',
   'workflowEditor.save': 'Save',
   'workflowEditor.unsaved': 'Unsaved changes',
@@ -556,6 +563,10 @@ const en: Record<string, string> = {
   'workflowEditor.invalid': 'Invalid',
   'workflowEditor.errors': 'Validation errors',
   'workflowEditor.readOnlyBuiltin': 'The built-in workflow is read-only — clone it to edit.',
+  'workflowEditor.fragmentBadge': 'Editing pack fragment: {{name}}',
+  'workflowEditor.fragmentBadgeTitle':
+    "You're editing an agent pack's fragment. Save writes back to the pack.",
+  'workflowEditor.fragmentLoadFailed': 'Could not open that pack fragment for editing.',
   'workflowEditor.noSelection': 'Select a node to edit its settings.',
   'workflowEditor.mainOutput': 'Main output',
   'workflowEditor.namePh': 'Workflow name',
@@ -581,6 +592,58 @@ const en: Record<string, string> = {
   'workflowEditor.openSubgraph': 'Open sub-graph',
   'workflowEditor.subgraphNotSet': 'No sub-graph selected yet',
   'workflowEditor.promotionsHint': 'Promoted params (override via the params field below):',
+  // On-canvas module groupings (one-canvas rebuild WP6.3).
+  'workflowEditor.groupSelection': 'Group into module',
+  'workflowEditor.module.title': 'Module',
+  'workflowEditor.module.namePh': 'Module name',
+  'workflowEditor.module.collapse': 'Collapse',
+  'workflowEditor.module.expand': 'Expand',
+  'workflowEditor.module.ungroup': 'Ungroup',
+  'workflowEditor.module.members': '{{n}} nodes',
+  'workflowEditor.module.exposedTitle': 'Exposed settings',
+  'workflowEditor.module.exposedEmpty': 'Select a node inside and expose its settings.',
+  'workflowEditor.module.exposedRemove': 'Remove from module',
+  'workflowEditor.module.exposeToggle': 'Expose on module',
+  // Module files: export from the module panel + import from the palette (one-canvas rebuild WP6.5).
+  'workflowEditor.module.export': 'Export module…',
+  'workflowEditor.module.includeTemplate': 'Include this chat’s table schema',
+  'workflowEditor.module.exportSaved': 'Module saved to {{path}}',
+  'workflowEditor.module.exportFailed': 'Could not export the module.',
+  'workflowEditor.modules': 'Modules',
+  'workflowEditor.importModule': 'Import module…',
+  'workflowEditor.moduleImport.title': 'Import module',
+  'workflowEditor.moduleImport.nodeCount': '{{n}} nodes',
+  'workflowEditor.moduleImport.templates': 'Table templates',
+  'workflowEditor.moduleImport.willInstall': 'will install',
+  'workflowEditor.moduleImport.willDuplicate': 'a template with this name exists — installs a copy',
+  'workflowEditor.moduleImport.blockedUnknown':
+    'This module uses node types this app doesn’t know — it can’t be imported here.',
+  'workflowEditor.moduleImport.landsUnwired':
+    'The module lands unwired — connect it to the rest of your graph after importing.',
+  'workflowEditor.moduleImport.install': 'Install',
+  'workflowEditor.moduleImport.cancel': 'Cancel',
+  'workflowEditor.moduleImport.close': 'Close',
+  'workflowEditor.moduleImport.installed': 'Module inserted — save the workflow to keep it.',
+  'workflowEditor.moduleImport.installFailed': 'Could not install the module.',
+  'workflowEditor.moduleImport.parseFailed': 'This file could not be read as a module.',
+  'workflowEditor.moduleImport.err.too-large': 'The file is too large.',
+  'workflowEditor.moduleImport.err.invalid-json': 'The file is not valid JSON.',
+  'workflowEditor.moduleImport.err.unsupported-version': 'Made with a different version of RP Terminal.',
+  'workflowEditor.moduleImport.err.invalid-envelope': 'The file is not a valid module.',
+  'workflowEditor.moduleImport.err.empty-module': 'A module needs at least two nodes.',
+  'workflowEditor.moduleImport.err.external-edge': 'The module has a connection that leaves it.',
+  'workflowEditor.moduleImport.err.exposed-not-member':
+    'An exposed setting points at a node outside the module.',
+  // One-canvas rebuild WP6.4a: node enable toggle, live trigger badge, assemble-node prompt preview.
+  'workflowEditor.enabled': 'Enabled',
+  'workflowEditor.trigger.nowAt': 'now {{now}} · at {{at}}',
+  'workflowEditor.assemblePreview.title': 'Prompt preview',
+  'workflowEditor.assemblePreview.button': 'Preview next prompt',
+  'workflowEditor.assemblePreview.loading': 'Building preview…',
+  'workflowEditor.assemblePreview.error': 'Could not build the preview.',
+  'workflowEditor.err.GROUP_MEMBER_MISSING': 'A module references a node that is not in the graph',
+  'workflowEditor.err.GROUP_OVERLAP': 'A node belongs to more than one module',
+  'workflowEditor.err.GROUP_EXPOSED_NOT_MEMBER': 'An exposed setting points at a non-member node',
   // Validation error codes (validateWorkflow) — shown as a localized label before the raw detail.
   'workflowEditor.err.MAIN_OUTPUT': 'Exactly one node must be the main output',
   'workflowEditor.err.CYCLE': 'The graph has a cycle',
@@ -624,6 +687,18 @@ const en: Record<string, string> = {
   'workflowEditor.nodeTitle.subgraph.loop': 'Sub-graph Loop',
   'workflowEditor.nodeTitle.subgraph.input': 'Sub-graph Input',
   'workflowEditor.nodeTitle.subgraph.output': 'Sub-graph Output',
+  'workflowEditor.nodeTitle.table.apply': 'Apply Table SQL',
+  'workflowEditor.nodeTitle.table.export': 'Export Table',
+  'workflowEditor.nodeTitle.table.gate': 'Table Gate',
+  'workflowEditor.nodeTitle.table.read': 'Read Tables',
+  'workflowEditor.nodeTitle.table.query': 'Query Tables',
+  'workflowEditor.nodeTitle.parse.extract': 'Extract Text',
+  'workflowEditor.nodeTitle.context.trimProcessed': 'Trim Processed History',
+  'workflowEditor.nodeTitle.trigger.state': 'State Trigger',
+  'workflowEditor.nodeTitle.trigger.cadence': 'Cadence Trigger',
+  'workflowEditor.nodeTitle.trigger.manual': 'Manual Trigger',
+  'workflowEditor.nodeTitle.history.recent': 'Recent History',
+  'workflowEditor.nodeTitle.agent.llm': 'Agent',
   // Node descriptions (what the node does).
   'workflowEditor.nodeDesc.input.context':
     'Builds the turn bundle: session, character card, settings, preset, lorebooks, chat history and working variables. The start of every graph — almost every other node takes its output.',
@@ -906,7 +981,139 @@ const en: Record<string, string> = {
   'sessions.selectChar': 'Select a character first.',
   'sessions.empty': 'No sessions yet. Start a new one.',
   'sessions.deleteTitle': 'Delete session',
-  'sessions.confirmDelete': 'Delete this session? This cannot be undone.'
+  'sessions.confirmDelete': 'Delete this session? This cannot be undone.',
+
+  // Agents workspace (agent-packs plan WP3.1)
+  'agents.title': 'Agents',
+  // Launcher card affordance (a saved layout may still reference view:'agents'/'workflow'; the
+  // LauncherCard/viewRegistry renders it and raises the editor overlay).
+  'controlCenter.launch.open': 'Open',
+  'controlCenter.launch.editorBody': 'Workflows and agents live in the editor now.',
+  // ── Memory pane (agent-packs plan WP3.8 — memory config + maintenance, moved out of the Tables view) ─
+  'memory.heading': 'Memory',
+  'memory.subtitle': 'Set up and maintain the memory tables agents fill in for this session.',
+  'memory.noChatTitle': 'Open a chat first',
+  'memory.noChatBody': 'Memory tables belong to a session. Open a chat to set one up.',
+  'memory.templateTitle': 'Template & binding',
+  'memory.noTemplateHint':
+    'No table template is assigned — memory is off for this session. Pick one above to turn it on.',
+  'memory.maintenanceTitle': 'Maintenance & progress',
+  'memory.backlogSummary': 'Up to {{n}} floor(s) unprocessed across {{m}} table(s).',
+  'memory.caughtUp': 'All {{m}} table(s) are caught up.',
+  'memory.packsTitle': 'Memory agents',
+  'memory.packsLoading': 'Loading agents…',
+  'memory.packsEmpty': 'No installed agents write to memory tables.',
+  'memory.packOn': 'On for this world',
+  'memory.packOff': 'Off',
+  'memory.dataTitle': 'Data',
+  'memory.browseData': 'Browse the tables',
+  // ── Injection preview pane (agent-packs plan WP3.4) ───────────────────────────────────────────────
+  'preview.title': 'Next prompt',
+  'preview.subtitle': 'Exactly what will be sent, section by section, with where each part comes from.',
+  'preview.refresh': 'Refresh preview',
+  'preview.generatedAt': 'as of {{time}}',
+  'preview.totalTokens': '{{n}} tokens',
+  'preview.totalTokensEst': '~{{n}} tokens (estimated)',
+  'preview.est': 'est.',
+  'preview.expand': 'Show text',
+  'preview.collapse': 'Hide text',
+  // Section-kind labels (preview.section.<id>)
+  'preview.section.system': 'System instructions',
+  'preview.section.persona': 'Your persona',
+  'preview.section.card': 'Character',
+  'preview.section.worldInfo': 'World info',
+  'preview.section.history': 'Conversation',
+  'preview.section.memory': 'Memory',
+  'preview.section.packInject': 'Added by an agent',
+  'preview.section.action': 'Your message',
+  'preview.section.other': 'Other',
+  // Source chips (preview.source.<kind>) — the pack kind uses the pack name directly.
+  'preview.source.narrator': 'Base',
+  'preview.source.lorebook': 'Lorebook',
+  'preview.source.memory': 'Memory',
+  // Omitted group
+  'preview.omittedTitle': 'Not included',
+  'preview.omittedNote':
+    'Lorebook entries that did not match this turn are not listed here — they cannot be known without running the turn.',
+  'preview.omitted.reason.gate': 'turned off',
+  'preview.omitted.reason.empty': 'nothing to add',
+  'preview.omitted.reason.budget': 'over budget',
+  // States
+  'preview.noChatTitle': 'Open a chat first',
+  'preview.noChatBody': 'The prompt preview is built from an active chat. Open one to see it.',
+  'preview.errorTitle': "Couldn't build the preview",
+  'preview.errorBody': 'Something went wrong assembling the next prompt. Try again.',
+  'preview.emptyTitle': 'Nothing to preview yet',
+  'preview.emptyBody': 'The next prompt has no sections. Send a message to build one.',
+  // Capability chips (ModuleImportSheet reuses these plain-language capability labels)
+  'agents.cap.reads-tables': 'reads tables',
+  'agents.cap.writes-tables': 'writes tables',
+  'agents.cap.reads-vars': 'reads variables',
+  'agents.cap.writes-vars': 'writes variables',
+  'agents.cap.reads-lorebooks': 'reads lorebooks',
+  'agents.cap.reads-history': 'reads history',
+  'agents.cap.calls-llm': 'calls the model',
+  'agents.cap.writes-floors': 'writes floors',
+  'agents.cap.runs-game-tools': 'runs game tools',
+  'agents.cap.injects-prompt': 'adds to the prompt',
+  'agents.cap.runs-headless': 'runs in the background',
+  // Pack settings (MemoryPane reuses the "Settings" affordance label)
+  'agents.settings.open': 'Settings',
+
+  // ── Runs timeline (WP3.3) ──────────────────────────────────────────────────────────────────────
+  // Origin badges (glyph + short label)
+  'runs.origin.turn': 'Reply',
+  'runs.origin.headless': 'On its own',
+  'runs.origin.manual': 'Run by you',
+  'runs.origin.turnTitle': 'Ran as part of a reply',
+  'runs.origin.headlessTitle': 'An agent ran on its own',
+  'runs.origin.manualTitle': 'You ran this agent',
+  // One-canvas rebuild WP6.4a: the editor's Run drawer.
+  'runDrawer.title': 'Runs',
+  'runDrawer.empty': 'No runs yet',
+  'runDrawer.noChat': 'Open a chat to see its runs',
+  'runDrawer.loading': 'Loading runs…',
+  'runDrawer.refresh': 'Refresh',
+  'runDrawer.live': 'Live',
+  'runDrawer.liveTitle': 'Clear the replay and return to the live overlay',
+  // Attribution
+  'runs.narratorTurn': 'Narrator turn',
+  'runs.packSep': ', ',
+  // Trigger caption prefix (record.trigger is already human-readable)
+  'runs.triggerCaption': 'Trigger: {{trigger}}',
+  // One-sentence outcomes (interpolate {{n}}; {{node}} is a localized node title)
+  'runs.outcome.failed': 'Failed at {{node}}.',
+  'runs.outcome.failedGeneric': 'Something went wrong.',
+  'runs.outcome.branchFailed': '{{node}} failed — the reply was not affected.',
+  'runs.outcome.branchFailedGeneric': 'A side step failed — the reply was not affected.',
+  'runs.outcome.updatedTables': 'Updated {{n}} table(s).',
+  'runs.outcome.updatedTablesMore': 'Updated {{n}} table(s), and did more.',
+  'runs.outcome.wroteFloors': 'Wrote {{n}} floor(s).',
+  'runs.outcome.wroteFloorsMore': 'Wrote {{n}} floor(s), and did more.',
+  'runs.outcome.calledModel': 'Called the model {{n}} time(s).',
+  'runs.outcome.calledModelMore': 'Called the model {{n}} time(s), and did more.',
+  'runs.outcome.skipped': 'Nothing to do this time.',
+  'runs.outcome.ran': 'Ran {{n}} step(s).',
+  // Node detail
+  'runs.detail.narratorGroup': 'Narrator',
+  'runs.detail.status.ran': 'ran',
+  'runs.detail.status.skipped': 'skipped',
+  'runs.detail.status.failed': 'failed',
+  'runs.detail.expand': 'Show steps',
+  'runs.detail.collapse': 'Hide steps',
+  // Filter chips
+  'runs.filter.all': 'All',
+  // Refresh
+  'runs.refresh': 'Refresh',
+  'runs.loadMore': 'Load older runs',
+  'runs.loadingMore': 'Loading…',
+  // Empty + error + loading
+  'runs.emptyTitle': 'No activity yet',
+  'runs.emptyBody':
+    'Runs show up here after replies, and whenever an agent runs on its own. Turn on an agent under Installed to get started.',
+  'runs.loadError': "Couldn't load the activity feed.",
+  'runs.noWorldTitle': 'Open a chat first',
+  'runs.noWorldBody': 'Activity is tracked per chat. Open a world and start a chat to see runs here.'
 }
 
 export default en

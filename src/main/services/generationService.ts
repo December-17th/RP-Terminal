@@ -15,9 +15,13 @@ import { resetWriteLoopGuard } from './generation/varsWrite'
 import { buildTurnContext } from './nodes/turnContext'
 import { builtinRegistry } from './nodes/builtin'
 import { runWorkflow } from './workflowEngine'
-import { resolveWorkflowDoc } from './workflowService'
-import { summarizeRun } from '../../shared/workflow/trace'
+import { resolveEffectiveDoc } from './workflowService'
+import { summarizeRun, derivePackIds } from '../../shared/workflow/trace'
+import { CompositionMeta } from '../../shared/workflow/compose'
 import { notifyWorkflowTrace } from './workflowEvents'
+import { appendRun } from './runHistoryStore'
+import { evaluateTriggers, evaluateDocTriggers } from './headlessRunService'
+import { randomUUID } from 'crypto'
 
 // Re-exported so existing consumers/tests (test/generationService.test.ts) keep working; the
 // implementation now lives in generation/assemble.ts (its only real call site).
@@ -121,7 +125,16 @@ export const generate = async (
   const controller = new AbortController()
   activeControllers.set(chatId, controller)
   try {
-    const { id: workflowId, doc } = resolveWorkflowDoc(profileId, chatId)
+    // Effective doc = the resolved narrator composed with every enabled agent pack (WP1.3). With no
+    // packs enabled this is byte-identical to the narrator (compose's zero-fragments identity).
+    const { id: workflowId, doc, warnings } = resolveEffectiveDoc(profileId, chatId)
+    // Compose warnings are visible, never silent (ADR 0002) — log them via the existing log() sink
+    // (no new UI here; the Agents workspace surfaces them later). Each names the pack + checkpoint.
+    for (const w of warnings)
+      log(
+        'error',
+        `agent-pack compose: pack "${w.packId}" attachment skipped — ${w.reason}${w.checkpoint ? ` at checkpoint "${w.checkpoint}"` : ''}`
+      )
     // Panel headers for opt-in node output panels (spec D4): node id → its doc panel label.
     const panelLabels: Record<string, string> = {}
     for (const n of doc.nodes) if (n.panel?.show && n.panel.label) panelLabels[n.id] = n.panel.label
@@ -158,17 +171,47 @@ export const generate = async (
     // Broadcast the run trace when the FULL run settles (post phase included) — ok, aborted,
     // AND fatal — the trace panel is most useful when a turn just failed (spec §13).
     void runPromise
-      .then((res) =>
-        notifyWorkflowTrace(
-          summarizeRun(doc, builtinRegistry.descriptors(), res, {
-            chatId,
-            workflowId,
-            startedAt,
-            durationMs: Date.now() - startedAt
+      .then((res) => {
+        const trace = summarizeRun(doc, builtinRegistry.descriptors(), res, {
+          chatId,
+          workflowId,
+          startedAt,
+          durationMs: Date.now() - startedAt
+        })
+        // Live debug panel broadcast — UNCHANGED (WP2.3 does not touch this behavior).
+        notifyWorkflowTrace(trace)
+        // Persist the run to durable history for the phase-3 Runs timeline (WP2.3). SAME detached
+        // promise — never the turn's critical path (the floor already returned via onResponseReady).
+        // origin 'turn'; packIds derived from the effective doc's composition meta (which packs
+        // spliced), no trigger (turns aren't triggered). A persistence failure must NEVER break the
+        // run — swallow it (ADR 0003); the .catch below also covers it.
+        try {
+          const composition = (doc.meta?.composition as CompositionMeta | undefined) ?? undefined
+          appendRun(profileId, {
+            runId: randomUUID(),
+            seq: 0, // assigned by the store
+            origin: 'turn',
+            packIds: derivePackIds(trace, composition),
+            trace
           })
-        )
-      )
+        } catch (err) {
+          log('error', `run-history persist (turn) failed — ${(err as Error)?.message || String(err)}`)
+        }
+      })
       .catch((err) => log('error', `workflow trace failed — ${err?.message || String(err)}`))
+      // Turn-boundary trigger evaluation (agent-packs plan WP2.2; ADR 0004: a turn commit is one of
+      // the two evaluation moments). FIRE-AND-FORGET — chained on the DETACHED trace promise, never
+      // on the turn's critical path (the floor already returned via the onResponseReady race above),
+      // so a turn NEVER waits on headless work (ADR 0003). depth 0: a turn starts a fresh chain.
+      // evaluateTriggers is internally guarded per chat against reentrancy (a turn landing mid-chain
+      // skips — the chain re-evaluates on its own commit).
+      .then(() => evaluateTriggers(profileId, chatId, 'turn', 0))
+      .catch((err) => log('error', `headless trigger eval failed — ${err?.message || String(err)}`))
+      // One-canvas rebuild (WP6.1; ADR 0011): the DOC-DRIVEN trigger evaluation runs at the SAME turn
+      // commit boundary, alongside the pack path (both coexist until WP6.2/6.5). Also fire-and-forget,
+      // guarded per chat, depth-capped. A doc with no trigger.* nodes evaluates nothing.
+      .then(() => evaluateDocTriggers(profileId, chatId, 'turn', 0))
+      .catch((err) => log('error', `headless doc-trigger eval failed — ${err?.message || String(err)}`))
 
     // Race: on the normal path onResponseReady fires first (before the post phase runs) and the
     // floor returns immediately. Fatal / aborted / validation-rejected runs never fire it — the

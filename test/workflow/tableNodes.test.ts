@@ -147,6 +147,8 @@ describe('table.apply', () => {
     opsSvc.appendOps.mockReset()
     opsSvc.tryBeginTableWrite.mockReset()
     opsSvc.endTableWrite.mockReset()
+    floorSvc.getAllFloors.mockReset()
+    progressSvc.advanceProgress.mockReset()
   })
 
   it('blank/whitespace sql → silent no-op (no template lookup, no lock)', () => {
@@ -230,6 +232,61 @@ describe('table.apply', () => {
     }
     expect(opsSvc.appendOps).not.toHaveBeenCalled()
     expect(opsSvc.endTableWrite).toHaveBeenCalledWith('c1')
+  })
+
+  // ---- WP6.2b: advance_progress (advance-after-success) ----
+  const twoTableTemplate = () =>
+    TableTemplateSchema.parse({
+      name: 'T',
+      tables: [
+        { uid: 'a', sqlName: 'summary', displayName: '纪要', ddl: 'CREATE TABLE summary (t TEXT)', headers: ['t'] },
+        { uid: 'b', sqlName: 'world', displayName: '世界', ddl: 'CREATE TABLE world (t TEXT)', headers: ['t'] }
+      ]
+    })
+
+  it('advance_progress true + successful batch → advanceProgress with ALL template sqlNames + current floor', () => {
+    chatSvc.getChatTableTemplateId.mockReturnValue('t1')
+    templateSvc.getTableTemplateById.mockReturnValue(twoTableTemplate())
+    opsSvc.tryBeginTableWrite.mockReturnValue(true)
+    sqlSvc.applySqlBatch.mockReturnValue({ applied: 1, changes: 1, statements: ['INSERT INTO summary VALUES (1)'] })
+    floorSvc.getAllFloors.mockReturnValue([{}, {}, {}, {}, {}, {}]) // 6 floors → currentFloor 5 (re-read from disk)
+    tableApply.run(
+      ctx,
+      { gen, sql: 'INSERT INTO summary VALUES (1)' },
+      meta(tableApply, 'n', { advance_progress: true })
+    )
+    expect(progressSvc.advanceProgress).toHaveBeenCalledWith('p1', 'c1', ['summary', 'world'], 5)
+  })
+
+  it('advance_progress true + applySqlBatch FAILS → advanceProgress NOT called (advance-after-success)', () => {
+    chatSvc.getChatTableTemplateId.mockReturnValue('t1')
+    templateSvc.getTableTemplateById.mockReturnValue(twoTableTemplate())
+    opsSvc.tryBeginTableWrite.mockReturnValue(true)
+    sqlSvc.applySqlBatch.mockImplementation(() => {
+      throw new sqlSvc.TableSqlError('boom', 0)
+    })
+    floorSvc.getAllFloors.mockReturnValue([{}, {}, {}, {}, {}, {}])
+    try {
+      tableApply.run(
+        ctx,
+        { gen, sql: 'INSERT INTO summary VALUES (1)' },
+        meta(tableApply, 'n', { advance_progress: true })
+      )
+      throw new Error('should have thrown')
+    } catch (e) {
+      expect((e as NodeRunFailure).code).toBe('bad-sql')
+    }
+    expect(progressSvc.advanceProgress).not.toHaveBeenCalled()
+  })
+
+  it('advance_progress absent → advanceProgress NOT called (compat: pre-WP6.2b behavior)', () => {
+    chatSvc.getChatTableTemplateId.mockReturnValue('t1')
+    templateSvc.getTableTemplateById.mockReturnValue(twoTableTemplate())
+    opsSvc.tryBeginTableWrite.mockReturnValue(true)
+    sqlSvc.applySqlBatch.mockReturnValue({ applied: 1, changes: 1, statements: ['INSERT INTO summary VALUES (1)'] })
+    floorSvc.getAllFloors.mockReturnValue([{}, {}, {}, {}, {}, {}])
+    tableApply.run(ctx, { gen, sql: 'INSERT INTO summary VALUES (1)' }, meta(tableApply, 'n'))
+    expect(progressSvc.advanceProgress).not.toHaveBeenCalled()
   })
 })
 

@@ -4,9 +4,13 @@ import { getDefaultPreset } from '../../src/main/types/preset'
 import type { FloorFile } from '../../src/main/types/chat'
 import { DEFAULT_GRAPH } from '../../src/main/services/nodes/builtin/defaultGraph'
 
-// Proves generate() actually consumes workflowService.resolveWorkflowDoc (rather than a
+// Proves generate() actually consumes workflowService.resolveEffectiveDoc (rather than a
 // hardcoded 'default' literal + DEFAULT_GRAPH) and threads the resolved id through to
 // buildTurnContext — the wiring Task 5 adds on top of Task 3 (resolver) + Task 4 (ctx arg).
+// (agent-packs plan WP1.3: the single doc-resolution call site moved from resolveWorkflowDoc to
+// resolveEffectiveDoc — the narrator composed with enabled packs. With no packs the effective doc
+// IS the narrator, so this test's behavior is unchanged; only the mocked collaborator name +
+// its return shape { id, doc, warnings } changed.)
 
 const settings = (() => {
   const s = getDefaultSettings()
@@ -106,13 +110,24 @@ const defaultStream = async (
   return 'You open the door.'
 }
 
-const { resolveWorkflowDoc, buildTurnContext, notifyWorkflowTrace } = vi.hoisted(() => ({
-  resolveWorkflowDoc: vi.fn(),
+const { resolveEffectiveDoc, buildTurnContext, notifyWorkflowTrace } = vi.hoisted(() => ({
+  resolveEffectiveDoc: vi.fn(),
   buildTurnContext: vi.fn(),
   notifyWorkflowTrace: vi.fn()
 }))
-vi.mock('../../src/main/services/workflowService', () => ({ resolveWorkflowDoc }))
+// setEnabledFragmentsProvider is added to the mock only for module-load completeness: generate() now
+// transitively imports headlessRunService → agentPackService (the WP2.2 turn-boundary hook), and
+// agentPackService calls setEnabledFragmentsProvider at import time. generate() itself never calls it;
+// this stub just keeps the partial workflowService mock loadable. No assertion depends on it.
+vi.mock('../../src/main/services/workflowService', () => ({
+  resolveEffectiveDoc,
+  setEnabledFragmentsProvider: () => {}
+}))
 vi.mock('../../src/main/services/workflowEvents', () => ({ notifyWorkflowTrace }))
+// Run-history persistence (WP2.3): the turn path persists on the SAME detached promise as the trace
+// broadcast. Mock the store (its sqlite table can't load under Node) and assert the annotated record.
+const { appendRun } = vi.hoisted(() => ({ appendRun: vi.fn(() => undefined) }))
+vi.mock('../../src/main/services/runHistoryStore', () => ({ appendRun }))
 vi.mock('../../src/main/services/nodes/turnContext', async (orig) => {
   const actual = await orig<Record<string, unknown>>()
   buildTurnContext.mockImplementation((actual as any).buildTurnContext)
@@ -125,18 +140,21 @@ describe('generate() — resolves the active workflow', () => {
   beforeEach(() => {
     capturedFloor = null
     appendFloorCalled = false
-    resolveWorkflowDoc.mockReset().mockReturnValue({ id: 'custom-1', doc: DEFAULT_GRAPH })
+    resolveEffectiveDoc
+      .mockReset()
+      .mockReturnValue({ id: 'custom-1', doc: DEFAULT_GRAPH, warnings: [] })
     buildTurnContext.mockClear()
+    appendRun.mockReset().mockReturnValue(undefined)
     streamProviderMock.mockReset().mockImplementation(defaultStream)
     vi.useFakeTimers()
     vi.setSystemTime(new Date('2020-06-01T12:00:00.000Z'))
   })
   afterEach(() => vi.useRealTimers())
 
-  it('calls resolveWorkflowDoc(profileId, chatId) and threads its id into buildTurnContext', async () => {
+  it('calls resolveEffectiveDoc(profileId, chatId) and threads its id into buildTurnContext', async () => {
     const floor = await generate('profile1', 'chat1', 'open the door')
 
-    expect(resolveWorkflowDoc).toHaveBeenCalledWith('profile1', 'chat1')
+    expect(resolveEffectiveDoc).toHaveBeenCalledWith('profile1', 'chat1')
     expect(buildTurnContext).toHaveBeenCalledWith(
       expect.objectContaining({ workflowId: 'custom-1' })
     )
@@ -154,7 +172,7 @@ describe('generate() — resolves the active workflow', () => {
       from: { ...e.from, node: rename(e.from.node) },
       to: { ...e.to, node: rename(e.to.node) }
     }))
-    resolveWorkflowDoc.mockReturnValue({ id: 'custom-2', doc: renamed })
+    resolveEffectiveDoc.mockReturnValue({ id: 'custom-2', doc: renamed, warnings: [] })
 
     const floor = await generate('profile1', 'chat1', 'open the door')
     expect(floor).not.toBeNull()
@@ -171,7 +189,7 @@ describe('generate() — resolves the active workflow', () => {
       { from: { node: 'assemble', port: 'sendMessages' }, to: { node: 'llm2', port: 'sendMessages' } },
       { from: { node: 'assemble', port: 'params' }, to: { node: 'llm2', port: 'params' } }
     )
-    resolveWorkflowDoc.mockReturnValue({ id: 'custom-3', doc })
+    resolveEffectiveDoc.mockReturnValue({ id: 'custom-3', doc, warnings: [] })
 
     // Call 1 = the main sample (fast). Call 2 = the side job — held open by the test.
     let releaseSideJob!: (v: string) => void
@@ -264,5 +282,32 @@ describe('generate() — resolves the active workflow', () => {
     // Output previews never leak the Context bundle.
     const ctxNode = trace.nodes.find((n: { nodeType: string }) => n.nodeType === 'input.context')
     expect(ctxNode?.outputs).toBeUndefined()
+  })
+
+  it('persists a run-history record with origin "turn" (WP2.3), packIds [] for a plain narrator', async () => {
+    vi.useRealTimers() // detached persist promise resolves on a microtask, not a timer
+    appendRun.mockClear()
+    await generate('profile1', 'chat1', 'open the door')
+
+    // Persist rides the same DETACHED promise as the trace broadcast — wait for it to settle.
+    await vi.waitFor(() => expect(appendRun).toHaveBeenCalled())
+    const [profileId, record] = appendRun.mock.calls[0] as [string, Record<string, unknown>]
+    expect(profileId).toBe('profile1')
+    expect(record.origin).toBe('turn')
+    // DEFAULT_GRAPH carries no composition meta → no pack nodes → []; no trigger on a turn.
+    expect(record.packIds).toEqual([])
+    expect(record.trigger).toBeUndefined()
+    expect((record.trace as { chatId: string }).chatId).toBe('chat1')
+  })
+
+  it('a run-history persist failure never breaks the turn (WP2.3 fail-safe)', async () => {
+    vi.useRealTimers()
+    appendRun.mockImplementation(() => {
+      throw new Error('db down')
+    })
+    // The floor still returns normally despite the persist throw (caught + logged on the detached path).
+    const floor = await generate('profile1', 'chat1', 'open the door')
+    expect(floor).not.toBeNull()
+    expect(appendFloorCalled).toBe(true)
   })
 })
