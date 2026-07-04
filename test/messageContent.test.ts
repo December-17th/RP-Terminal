@@ -77,6 +77,13 @@ describe('splitHtml (HTML block detection)', () => {
     expect(segs[0].type).toBe('inline-html')
   })
 
+  it('renders top-level styled span/ruby markup inline instead of markdown-escaping it', () => {
+    const card =
+      '<span style="font-size:2.0em;color:#00FF00;text-shadow:0 0 8px #00FF00;"><ruby>ꡁꡏꡙꡚ<rt>强酸喷吐</rt></ruby></span>'
+    const segs = splitHtml(card)
+    expect(segs).toEqual([{ type: 'inline-html', text: card }])
+  })
+
   it('does NOT lift body state tags (<tp>/<gametxt>/<UpdateVariable>) into HTML', () => {
     const segs = splitHtml('<tp>day-1</tp><gametxt>rain</gametxt>')
     expect(segs.every((s) => s.type === 'md')).toBe(true)

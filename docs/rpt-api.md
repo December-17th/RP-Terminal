@@ -37,8 +37,9 @@ services ([`scriptApiService`](../src/main/services/scriptApiService.ts),
 [`lorebookService`](../src/main/services/lorebookService.ts), `chatWriteService`, `generationService`).
 Full-document frontend cards render from `html`-labeled code fences, plain code fences whose payload starts
 with `<!doctype html>`/`<html>`/`<body>`, or bare `<html>`/`<body>` blocks. Bare top-level **non-scripted**
-HTML (a `<div>`/`<table>` item card) renders **inline in the message DOM** (DOMPurify-sanitized,
-CSS-scoped), not in a frame — see [card-custom-ui-design.md](card-custom-ui-design.md).
+HTML (a `<div>`/`<table>` item card, or inline phrasing markup such as styled `<span>` / `<ruby>`) renders
+**inline in the message DOM** (DOMPurify-sanitized, CSS-scoped), not in a frame — see
+[card-custom-ui-design.md](card-custom-ui-design.md).
 
 ### Sync vs async (important)
 

@@ -93,12 +93,12 @@ type Segment = { type: 'md' | 'html' | 'inline-html'; text: string; mode?: CardR
 // the marker anywhere in the md before the block — NOT anchored to the end — and strip it in place.
 const MODE_MARKER = /<!--\s*rpt:mode=(inline|isolated)\s*-->/i
 
-// Bare top-level HTML containers the model may emit inline — an item/status card as a `<div>`, a
-// `<table>`, a `<details>`, etc. — NOT wrapped in <body>/<html> or a ```html fence. A conservative
-// allowlist of structural elements so we never hijack body state tags (<tp>/<gametxt>/
+// Bare top-level HTML the model may emit inline — an item/status card as a `<div>`, a `<table>`,
+// or inline phrasing markup such as styled `<span>` / `<ruby>`. NOT wrapped in <body>/<html> or a
+// ```html fence. A conservative allowlist so we never hijack body state tags (<tp>/<gametxt>/
 // <UpdateVariable>) or content react-markdown already renders from markdown syntax (lists/tables).
 const BARE_HTML_TAGS =
-  'div|section|article|aside|header|footer|main|nav|figure|details|table|center|form'
+  'div|section|article|aside|header|footer|main|nav|figure|details|table|center|form|span|ruby|rt|rp'
 // A region STARTS at a container or a `<style>` sheet; a `<script>` only joins as a SIBLING (a lone
 // bare `<script>` stays markdown rather than auto-running). Used to find + extend an HTML region.
 const REGION_START_RE = new RegExp(`<(?:${BARE_HTML_TAGS}|style)\\b`, 'i')
@@ -257,7 +257,8 @@ const InlineHtml: React.FC<{ html: string }> = ({ html }) => {
     return {
       body: DOMPurify.sanitize(bodyHtml, {
         FORBID_TAGS: INLINE_HTML_FORBID_TAGS,
-        ADD_ATTR: ['target']
+        ADD_TAGS: ['ruby', 'rt', 'rp'],
+        ADD_ATTR: ['target', 'style']
       }),
       css: scopeCss(rawCss, scope)
     }
