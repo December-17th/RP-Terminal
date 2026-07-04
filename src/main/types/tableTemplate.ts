@@ -85,6 +85,26 @@ export const GlobalInjectionSchema = z.object({
 })
 export type GlobalInjection = z.infer<typeof GlobalInjectionSchema>
 
+/** The per-table fields editable from the UI. Structural fields (ddl, sqlName, headers, initialRows)
+ *  are deliberately NOT here — DDL only ever executes at sandbox instantiation, so editing it without
+ *  re-instantiating would desync every chat using the template. */
+export const TableDefPatchSchema = z.object({
+  uid: z.string(),
+  note: z.string().optional(),
+  initNode: z.string().optional(),
+  insertNode: z.string().optional(),
+  updateNode: z.string().optional(),
+  deleteNode: z.string().optional(),
+  updateFrequency: z.number().int().positive().optional(),
+  exportConfig: TableExportConfigSchema.optional()
+})
+export type TableDefPatch = z.infer<typeof TableDefPatchSchema>
+export const TableTemplatePatchSchema = z.object({
+  name: z.string().min(1).optional(),
+  tables: z.array(TableDefPatchSchema).default([])
+})
+export type TableTemplatePatch = z.infer<typeof TableTemplatePatchSchema>
+
 export const TableTemplateSchema = z.object({
   name: z.string().default('Untitled Template'),
   sourceFormat: z.enum(['chatSheets-v2', 'native']).default('native'),

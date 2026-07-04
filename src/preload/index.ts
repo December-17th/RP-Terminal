@@ -282,6 +282,8 @@ const api = {
   listTableTemplates: (profileId: string) => ipcRenderer.invoke('table-templates-list', profileId),
   getTableTemplate: (profileId: string, id: string) =>
     ipcRenderer.invoke('table-template-get', profileId, id),
+  updateTableTemplate: (profileId: string, id: string, patch: unknown) =>
+    ipcRenderer.invoke('table-template-update', profileId, id, patch),
   deleteTableTemplate: (profileId: string, id: string) =>
     ipcRenderer.invoke('table-template-delete', profileId, id),
   importTableTemplateDialog: (profileId: string) =>
