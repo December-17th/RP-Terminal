@@ -249,6 +249,14 @@ describe('createThRuntime', () => {
     })
   })
 
+  it('insertVariables preserves an existing scalar parent instead of forcing it into an object', async () => {
+    const m: any = mockHost({ statData: () => ({ date: 'manual note' }) })
+    const g = createThRuntime(m.host)
+    await g.insertVariables({ date: { npcs: {}, log: { deathCount: 0 } } })
+    expect(m.calls.applyVariableOps).toEqual([])
+    expect(g.getVariables()).toEqual({ stat_data: { date: 'manual note' } })
+  })
+
   it('normalizes generate/generateRaw config', async () => {
     const m: any = mockHost()
     const g = createThRuntime(m.host)

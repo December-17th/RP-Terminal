@@ -1,6 +1,15 @@
-import { describe, it, expect } from 'vitest'
-import { applyRegex } from '../src/main/services/regexService'
+import { afterAll, describe, it, expect } from 'vitest'
+import fs from 'fs'
+import path from 'path'
+import { randomUUID } from 'crypto'
+import {
+  applyRegex,
+  getPromptRules,
+  getRenderRules,
+  saveRegexScript
+} from '../src/main/services/regexService'
 import type { RenderRegexRule } from '../src/main/services/regexService'
+import { getAppDir } from '../src/main/services/storageService'
 
 const rule = (over: Partial<RenderRegexRule>): RenderRegexRule => ({
   id: 'r',
@@ -40,5 +49,29 @@ describe('applyRegex (prompt-time)', () => {
 
   it('skips a rule with an invalid pattern instead of throwing', () => {
     expect(applyRegex('keep', [rule({ source: '(', replace: 'X' })], 1)).toBe('keep')
+  })
+})
+
+describe('regex destination flags', () => {
+  const profileId = `test-${randomUUID()}`
+  const profileDir = path.join(getAppDir(), 'profiles', profileId)
+  afterAll(() => fs.rmSync(profileDir, { recursive: true, force: true }))
+
+  it('treats markdownOnly+promptOnly as both display and prompt destinations', () => {
+    saveRegexScript(profileId, {
+      scriptName: 'cleanup',
+      findRegex: '/<!--[\\s\\S]*?-->/g',
+      replaceString: '',
+      placement: [2],
+      markdownOnly: true,
+      promptOnly: true
+    })
+
+    const renderRules = getRenderRules(profileId)
+    const promptRules = getPromptRules(profileId)
+
+    expect(renderRules).toHaveLength(1)
+    expect(promptRules).toHaveLength(1)
+    expect(applyRegex('A<!-- itemThink:\nplan\n-->B', renderRules, 2)).toBe('AB')
   })
 })

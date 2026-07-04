@@ -70,6 +70,13 @@ describe('deepVarOps (insertOrAssignVariables / insertVariables — deep merge)'
       { op: 'set', path: '/date/log/illegalLevelUpId', value: [] }
     ])
   })
+
+  it('insertOnly: preserves existing scalar/null/array parents like TavernHelper merge defaults', () => {
+    expect(deepVarOps({ date: 'manual' }, { date: { npcs: {} } }, true)).toEqual([])
+    expect(deepVarOps({ date: null }, { date: { npcs: {} } }, true)).toEqual([])
+    expect(deepVarOps({ date: [] }, { date: { npcs: {} } }, true)).toEqual([])
+    expect(deepVarOps({ date: { log: 'manual' } }, { date: { log: { totalFPGained: 7 } } }, true)).toEqual([])
+  })
 })
 
 describe('applySetOps', () => {

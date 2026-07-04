@@ -52,9 +52,10 @@ function getAtPointer(root: unknown, pointer: string): unknown {
  * (`applyJsonPatch`, which auto-vivifies intermediate objects and touches only the addressed leaf) do
  * the deep merge. A non-empty plain object recurses; a primitive / array / null / EMPTY object is a leaf.
  *
- * `insertOnly` (insertVariables): emit a leaf op ONLY when that path is ABSENT in `current` — never
- * overwrites an existing value (deep defaults). Otherwise (insertOrAssignVariables): overwrite leaves,
- * but treat an empty-object value as "create only if absent" so `{npcs:{}}` can't wipe an existing map.
+ * `insertOnly` (insertVariables): mirror TavernHelper's `_.mergeWith({}, defaults, existing, ...)`.
+ * Existing values win, including scalar/null/array parents, so defaults below an existing non-plain parent
+ * are skipped. Otherwise (insertOrAssignVariables): overwrite leaves, but treat an empty-object value as
+ * "create only if absent" so `{npcs:{}}` can't wipe an existing map.
  */
 export function deepVarOps(
   current: Record<string, unknown> | undefined,
@@ -67,6 +68,10 @@ export function deepVarOps(
   for (const [k, v] of Object.entries(obj || {})) {
     const path = base + '/' + esc(k)
     if (isPlainObj(v) && Object.keys(v).length > 0) {
+      if (insertOnly) {
+        const existing = getAtPointer(cur, path)
+        if (existing !== undefined && !isPlainObj(existing)) continue
+      }
       ops.push(...deepVarOps(cur, v, insertOnly, path))
       continue
     }

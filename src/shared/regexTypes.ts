@@ -45,3 +45,14 @@ export interface RegexRulePatch {
   promptOnly?: boolean
   trimStrings?: string[]
 }
+
+/**
+ * ST regex exports use these booleans as destination toggles in practice:
+ * display-only = markdownOnly, prompt-only = promptOnly, both false = both,
+ * and some cards set both true to mean both destinations.
+ */
+export const appliesToDisplay = (r: Pick<RenderRegexRule, 'markdownOnly' | 'promptOnly'>): boolean =>
+  !r.promptOnly || r.markdownOnly
+
+export const appliesToPrompt = (r: Pick<RenderRegexRule, 'markdownOnly' | 'promptOnly'>): boolean =>
+  !r.markdownOnly || r.promptOnly
