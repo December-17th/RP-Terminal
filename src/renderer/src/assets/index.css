@@ -167,6 +167,32 @@
 .rpt-duel-modal-body { flex:1; min-height:0; display:flex; }
 .rpt-duel-modal-body > .rpt-duel { flex:1; min-width:0; }
 
+/* Floors manager (FloorManagerModal) — a scrollable floor list + a delete-tail footer, inside the
+   shared .modal-panel. Deleting marks the picked floor and every floor below it (danger tint). */
+.rpt-floors { display:flex; flex-direction:column; height:100%; gap:10px; }
+.rpt-floors-hint { margin:0; font-size:12px; color:var(--rpt-text-secondary); }
+.rpt-floors-list { flex:1 1 auto; min-height:0; overflow-y:auto; display:flex; flex-direction:column; gap:4px; }
+.rpt-floors-row { display:flex; align-items:baseline; gap:8px; width:100%; text-align:left; padding:7px 10px;
+  border:1px solid var(--rpt-border); border-radius:8px; background:var(--rpt-bg-secondary);
+  color:var(--rpt-text-primary); cursor:pointer; }
+.rpt-floors-row:hover { border-color:var(--rpt-accent); }
+.rpt-floors-row.marked { background:color-mix(in srgb, var(--rpt-danger) 16%, transparent);
+  border-color:color-mix(in srgb, var(--rpt-danger) 45%, var(--rpt-border)); }
+.rpt-floors-row.cut { box-shadow:inset 2px 0 0 var(--rpt-danger); }
+.rpt-floors-idx { flex:0 0 auto; font-size:11px; font-weight:700; color:var(--rpt-text-secondary); font-variant-numeric:tabular-nums; }
+.rpt-floors-prev { flex:1 1 auto; min-width:0; font-size:12px; line-height:1.4; overflow:hidden;
+  text-overflow:ellipsis; white-space:nowrap; }
+.rpt-floors-you { color:var(--rpt-text-secondary); margin-right:8px; }
+.rpt-floors-ai { color:var(--rpt-text-primary); }
+.rpt-floors-actions { flex:0 0 auto; display:flex; align-items:center; gap:10px; padding-top:8px;
+  border-top:1px solid var(--rpt-border); }
+.rpt-floors-summary { flex:1 1 auto; font-size:12px; color:var(--rpt-text-secondary); }
+.rpt-floors-del { border:1px solid color-mix(in srgb, var(--rpt-danger) 55%, var(--rpt-border));
+  background:color-mix(in srgb, var(--rpt-danger) 18%, transparent); color:var(--rpt-danger);
+  border-radius:7px; padding:6px 12px; font-weight:600; cursor:pointer; }
+.rpt-floors-del:hover:not(:disabled) { background:color-mix(in srgb, var(--rpt-danger) 30%, transparent); }
+.rpt-floors-del:disabled { opacity:.5; cursor:default; }
+
 body {
   margin: 0;
   font-family: 'Inter', sans-serif;

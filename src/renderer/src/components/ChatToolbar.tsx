@@ -6,12 +6,14 @@ export function ChatToolbar({
   profileId,
   fsmEnabled,
   canRegenerate,
-  onRegenerate
+  onRegenerate,
+  onManageFloors
 }: {
   profileId: string
   fsmEnabled: boolean
   canRegenerate: boolean
   onRegenerate: () => void
+  onManageFloors?: () => void
 }): React.ReactElement {
   const activeChatMode = useChatStore((s) => s.activeChatMode)
   const isGenerating = useChatStore((s) => s.isGenerating)
@@ -52,6 +54,16 @@ export function ChatToolbar({
           onClick={onRegenerate}
         >
           ↻ {t('chat.regenerate')}
+        </button>
+      )}
+      {onManageFloors && (
+        <button
+          className="btn-ghost"
+          disabled={isGenerating}
+          title={t('floors.title')}
+          onClick={onManageFloors}
+        >
+          ☰ {t('floors.button')}
         </button>
       )}
     </div>

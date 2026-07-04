@@ -11,6 +11,7 @@ import { ChatToolbar } from './ChatToolbar'
 import { ScriptActionsBar } from './ScriptActionsBar'
 import { Composer } from './Composer'
 import { ContextMenu } from './ContextMenu'
+import { FloorManagerModal } from './FloorManagerModal'
 import { expandMacros } from '../../../shared/macros'
 import { stripRptEvents, stripThinking, extractThinking } from '../../../shared/responseView'
 import { renderTemplate } from '../plugin/renderTemplate'
@@ -59,6 +60,7 @@ export function ChatView({ profileId }: { profileId: string }): React.ReactEleme
   const [editing, setEditing] = useState<{ floor: number; field: 'user' | 'response' } | null>(null)
   const [editText, setEditText] = useState('')
   const [menu, setMenu] = useState<FloorMenuTarget | null>(null)
+  const [floorsOpen, setFloorsOpen] = useState(false)
   // Which floor (page) the chat history is showing — one floor at a time.
   const [viewIndex, setViewIndex] = useState(0)
   const viewportRef = useRef<HTMLDivElement>(null)
@@ -309,6 +311,7 @@ export function ChatView({ profileId }: { profileId: string }): React.ReactEleme
         fsmEnabled={fsmEnabled}
         canRegenerate={canRegenerate}
         onRegenerate={handleRegenerate}
+        onManageFloors={() => setFloorsOpen(true)}
       />
 
       <ScriptActionsBar />
@@ -330,6 +333,10 @@ export function ChatView({ profileId }: { profileId: string }): React.ReactEleme
             }
           ]}
         />
+      )}
+
+      {floorsOpen && (
+        <FloorManagerModal profileId={profileId} onClose={() => setFloorsOpen(false)} />
       )}
     </>
   )

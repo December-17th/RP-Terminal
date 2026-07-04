@@ -402,6 +402,19 @@ const zh: Record<string, string> = {
   'chat.nextFloor': '下一层',
   'chat.editMessage': '✎ 编辑消息',
 
+  // 楼层管理（查看并从最新楼层起删除连续楼层）
+  'floors.button': '楼层',
+  'floors.title': '楼层',
+  'floors.empty': '本会话暂无楼层。',
+  'floors.hint': '选择一个楼层，将删除它及其后（直到最新）的所有楼层。',
+  'floors.selectTip': '从此楼层起删除',
+  'floors.you': '你',
+  'floors.ai': 'AI',
+  'floors.pickPrompt': '选择要删除的起始楼层。',
+  'floors.willDelete': '将删除楼层 {{from}}–{{to}}（共 {{count}} 层），其记忆表格也会一并回退。',
+  'floors.delete': '删除…',
+  'floors.confirmDelete': '确认删除 {{count}} 层',
+
   'usage.heading': '用量',
   'usage.fields': '字段',
   'usage.expand': '展开',

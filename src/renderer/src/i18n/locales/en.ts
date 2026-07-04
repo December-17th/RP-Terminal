@@ -415,6 +415,19 @@ const en: Record<string, string> = {
   'chat.nextFloor': 'Next floor',
   'chat.editMessage': '✎ Edit message',
 
+  // Floors manager (view + delete a consecutive tail of floors from the latest)
+  'floors.button': 'Floors',
+  'floors.title': 'Floors',
+  'floors.empty': 'No floors in this session yet.',
+  'floors.hint': 'Select a floor to delete it and every floor below it (down to the latest).',
+  'floors.selectTip': 'Delete from this floor down',
+  'floors.you': 'You',
+  'floors.ai': 'AI',
+  'floors.pickPrompt': 'Select the first floor to delete.',
+  'floors.willDelete': 'Will delete floors {{from}}–{{to}} ({{count}}). Their memory tables roll back too.',
+  'floors.delete': 'Delete…',
+  'floors.confirmDelete': 'Confirm — delete {{count}}',
+
   'usage.heading': 'usage',
   'usage.fields': 'Fields',
   'usage.expand': 'Expand',
