@@ -22,8 +22,20 @@
 
 import { z } from 'zod'
 import { WorkflowDoc } from './types'
-import { WorkflowDocSchema, parseWorkflowDoc } from './docSchema'
 import type { PackManifest, ExposedSetting } from './packManifest'
+import {
+  PackMetaSchema,
+  BundledTemplateSchema,
+  utf8Bytes,
+  collectPackKeyWarnings,
+  PACK_ORDER,
+  revalidatePackFragment,
+  type BundledTemplate
+} from './packPayload'
+
+// BundledTemplate is re-exported for source compatibility (it was declared here in v0; it now lives
+// in packPayload.ts, shared with the recipe envelope). Consumers importing it from packEnvelope keep working.
+export type { BundledTemplate }
 
 /** The one format version this module reads/writes. An envelope with any other `formatVersion` is
  *  reported as `unsupported-version` (carrying the value found) so import UI can say "made with a
@@ -36,79 +48,10 @@ export const PACK_ENVELOPE_FORMAT_VERSION = 1 as const
  *  before zod walks it. Measured on the UTF-8 byte length of the input text. */
 export const MAX_PACK_ENVELOPE_BYTES = 8 * 1024 * 1024
 
-// ── exposedSettings schema (mirrors packManifest.ExposedSetting) ─────────────────────────────────
-//
-// The manifest types are plain TS interfaces (packManifest.ts); the envelope needs a runtime Zod
-// mirror so an untrusted file's manifest is validated, not just cast. These objects STRIP unknown
-// keys (zod's default — the grilled decision: v0 does not preserve unknown keys); the parser reports
-// stripped top-level/pack keys as WARNINGS separately (collectUnknownKeyWarnings), so the import UI
-// still gets its "made with a newer version?" hint without the strictness that would REJECT the file.
-// `label` accepts a plain string OR a locale map; `default` is unconstrained (per-setting type
-// agreement is a materialize-time concern, not structural).
-const ExposedSettingSchema: z.ZodType<ExposedSetting> = z.object({
-  id: z.string().min(1),
-  label: z.union([z.string(), z.record(z.string(), z.string())]),
-  type: z.enum(['number', 'string', 'boolean', 'enum']),
-  default: z.unknown(),
-  min: z.number().optional(),
-  max: z.number().optional(),
-  options: z.array(z.string()).optional(),
-  target: z.object({ nodeId: z.string().min(1), path: z.string().min(1) })
-})
-
-// The pack-meta fields (packManifest.PackManifest minus the fragment, which lives one level up as a
-// full WorkflowDoc, plus the id/version identity from ADR 0008). Unknown pack keys strip + warn (see
-// above). `fork` provenance is carried so an exported fork round-trips its lineage label.
-const PackMetaSchema = z.object({
-  id: z.string().min(1),
-  version: z.number(),
-  name: z.string().min(1),
-  description: z.string().optional(),
-  creator: z.string().optional(),
-  minRptVersion: z.string().optional(),
-  exposedSettings: z.array(ExposedSettingSchema).optional(),
-  fork: z.object({ base: z.string(), n: z.number() }).optional(),
-  // The fragment is a full WorkflowDoc; `kind:'fragment'` is asserted post-parse (not baked into
-  // the schema literal so the error message is a clear 'not-a-fragment', not a zod enum miss).
-  fragment: WorkflowDocSchema
-})
-
-// ── bundledTemplates: a STRUCTURAL SUBSET of the native TableTemplate ───────────────────────────
-//
-// A memory pack's table nodes read a TableTemplate by shape. The authoritative schema
-// (`TableTemplateSchema`, src/main/types/tableTemplate.ts) is a rich Zod object living in MAIN, and
-// `shared/*` cannot import main. It is pure zod (no main deps) so it COULD move, but that is a
-// main-side behavioral surface (heavily imported, disk-serialized via `saveTableTemplate`) out of
-// this WP's scope. So the envelope validates a STRUCTURAL SUBSET here — the fields that identify a
-// template + let import re-materialize it — and treats the rest as opaque pass-through data.
-//
-// Grounding: `saveTableTemplate` (tableTemplateService.ts:59-64) serializes exactly
-// `TableTemplateSchema.parse(template)` to disk — the NATIVE shape (`{ name, sourceFormat,
-// globalInjection?, tables: TableDef[] }`), NOT the chatSheets export shape. `bundledTemplates`
-// mirrors THAT native shape. We pin the load-bearing top-level fields (name, tables[] with the
-// per-table identity + DDL) and `.passthrough()` the deep template internals so a template authored
-// against a newer TableDef still round-trips losslessly; main re-validates against the full
-// TableTemplateSchema when it actually installs the template.
-const BundledTableDefSchema = z
-  .object({
-    uid: z.string(),
-    sqlName: z.string(),
-    ddl: z.string()
-  })
-  .passthrough()
-
-const BundledTemplateSchema = z
-  .object({
-    name: z.string(),
-    sourceFormat: z.enum(['chatSheets-v2', 'native']).optional(),
-    tables: z.array(BundledTableDefSchema)
-  })
-  .passthrough()
-
-/** The structural subset of a native TableTemplate the envelope pins. The full shape (globalInjection,
- *  the rest of each TableDef) rides along via passthrough and is re-validated by main against the
- *  authoritative `TableTemplateSchema` at install time. */
-export type BundledTemplate = z.infer<typeof BundledTemplateSchema>
+// The exposedSettings schema, pack-meta schema, bundledTemplates subset, and the UTF-8 byte counter
+// now live in packPayload.ts (WP5.1 refactor) so the recipe envelope reuses the exact same pack
+// payload validation. See that module's header for the grilled decisions (strip-unknown-keys,
+// bundledTemplates structural-subset-plus-passthrough, main re-validation at install).
 
 // ── The envelope ────────────────────────────────────────────────────────────────────────────────
 
@@ -157,16 +100,7 @@ export interface SerializePackEnvelopeInput {
 // A canonical key order for the top-level + pack objects, so serialize output is byte-stable and
 // diffable regardless of the input object's key insertion order (the grilled "diffable" decision).
 const TOP_LEVEL_ORDER = ['formatVersion', 'kind', 'pack', 'bundledTemplates'] as const
-const PACK_ORDER = [
-  'id',
-  'version',
-  'name',
-  'description',
-  'creator',
-  'minRptVersion',
-  'exposedSettings',
-  'fragment'
-] as const
+// PACK_ORDER lives in packPayload.ts (shared with the recipe envelope).
 
 /** Build the ordered pack-meta object from an input, dropping undefined optionals so the serialized
  *  form is minimal + stable. `fork` is appended only when present (it rides after fragment as
@@ -234,42 +168,19 @@ export type PackEnvelopeParseResult =
   | { ok: true; value: PackEnvelope; warnings: string[] }
   | { ok: false; error: PackEnvelopeParseError }
 
-/** Byte length of a UTF-8 string without pulling in Buffer (shared runs outside Node too). */
-function utf8Bytes(text: string): number {
-  // TextEncoder is available in Node ≥11 and every browser; it counts real UTF-8 bytes.
-  return new TextEncoder().encode(text).length
-}
-
-// Collect unknown-key warnings by diffing the RAW parsed object against the keys the strict schema
-// keeps. We run the schema in a non-strict clone to get the accepted value, then diff — but simpler:
-// walk the known top-level + pack + exposedSetting key sets and report any extra key on the raw
-// object. This surfaces "made with a newer version?" hints without failing the parse.
+// utf8Bytes + KNOWN_PACK_KEYS + collectPackKeyWarnings live in packPayload.ts (shared with recipes).
 const KNOWN_TOP_KEYS = new Set(['formatVersion', 'kind', 'pack', 'bundledTemplates'])
-const KNOWN_PACK_KEYS = new Set([
-  'id',
-  'version',
-  'name',
-  'description',
-  'creator',
-  'minRptVersion',
-  'exposedSettings',
-  'fork',
-  'fragment'
-])
 
 /** Report unknown top-level and pack-level keys on the RAW object as warnings (the fragment's own
  *  unknown keys are handled by docSchema's strip; deep template internals are intentionally opaque
- *  passthrough). Returns human-readable strings for the import UI's "newer version?" hint. */
+ *  passthrough). Returns human-readable strings for the import UI's "newer version?" hint. The pack
+ *  key vocabulary is the shared `collectPackKeyWarnings` (labelled "pack" → `unknown pack key "..."`). */
 function collectUnknownKeyWarnings(raw: unknown): string[] {
   const warnings: string[] = []
   if (raw && typeof raw === 'object' && !Array.isArray(raw)) {
     for (const key of Object.keys(raw as Record<string, unknown>))
       if (!KNOWN_TOP_KEYS.has(key)) warnings.push(`unknown top-level key "${key}"`)
-    const pack = (raw as Record<string, unknown>).pack
-    if (pack && typeof pack === 'object' && !Array.isArray(pack)) {
-      for (const key of Object.keys(pack as Record<string, unknown>))
-        if (!KNOWN_PACK_KEYS.has(key)) warnings.push(`unknown pack key "${key}"`)
-    }
+    warnings.push(...collectPackKeyWarnings((raw as Record<string, unknown>).pack, 'pack'))
   }
   return warnings
 }
@@ -306,20 +217,11 @@ export function parsePackEnvelope(text: string): PackEnvelopeParseResult {
     return { ok: false, error: { code: 'invalid-envelope', errors } }
   }
 
-  // Re-run the fragment through the SAME structural gate the turn-doc path uses. `WorkflowDocSchema`
-  // already accepted it above, but parseWorkflowDoc is the shared authority and, crucially, we assert
-  // kind:'fragment' here — a pack whose graph is a plain 'turn' doc is not a valid pack.
-  const fragmentCheck = parseWorkflowDoc(parsed.data.pack.fragment)
-  if (!fragmentCheck.ok)
-    return { ok: false, error: { code: 'invalid-fragment', errors: [fragmentCheck.error] } }
-  if (fragmentCheck.doc.kind !== 'fragment')
-    return {
-      ok: false,
-      error: {
-        code: 'not-a-fragment',
-        errors: [`fragment.kind is "${fragmentCheck.doc.kind ?? 'turn'}", expected "fragment"`]
-      }
-    }
+  // Re-run the fragment through the SAME structural gate the turn-doc path uses (shared
+  // revalidatePackFragment), asserting kind:'fragment' — a pack whose graph is a plain 'turn' doc is
+  // not a valid pack. WorkflowDocSchema already accepted it above; this is the shared authority.
+  const frag = revalidatePackFragment(parsed.data.pack as PackEnvelope['pack'])
+  if (!frag.ok) return { ok: false, error: { code: frag.code, errors: frag.errors } }
 
   return { ok: true, value: parsed.data as PackEnvelope, warnings }
 }

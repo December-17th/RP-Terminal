@@ -538,6 +538,15 @@ workflows become built-in packs. No new UI beyond what exists.
   activation preset pinning each version — the store/service now SUPPORT it (install-alongside +
   setActiveVersion), but no `.rptrecipe` parse/apply pathway exists yet.
 
+- **2026-07-03, after WP4.7 (version arc complete):** library groups one card per id with a
+  switcher popover; detail is version-explicit; uninstall names versions; export ships the
+  HIGHEST version (grounded — threading a chosen version needs a small service param later).
+  **Residual gaps flagged, not fixed:** (1) Runs / Preview / Effective mode resolve the pinned
+  version but never SAY which version ("· v2" markers need version threading into trace records
+  and projection pack info); (2) Overview's active-pack list doesn't group by id like Installed
+  now does. Both are consistency-pass candidates before or during phase 6 (upgrade UX will touch
+  the same surfaces).
+
 ## Risks and watchpoints
 
 - **WP1.3 is the highest-risk change** (engine failure semantics). It must land behind the
