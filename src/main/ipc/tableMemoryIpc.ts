@@ -25,6 +25,12 @@ export const registerTableMemoryIpc = (ipcMain: IpcMain): void => {
   ipcMain.handle('table-template-get', (_, profileId, id) =>
     tableTemplateService.getTableTemplateById(profileId, id)
   )
+  // Update a template's editable (non-structural) fields — the Tables-view prompt editor (manual-pass
+  // issue 03). Prompt edits take effect on the NEXT maintenance pass (table.read/table.gate re-read the
+  // template); no sandbox rebuild. A template is shared: edits apply to every chat assigned to it.
+  ipcMain.handle('table-template-update', (_, profileId, id, patch) =>
+    tableTemplateService.updateTableTemplate(profileId, id, patch)
+  )
   ipcMain.handle('table-template-delete', (_, profileId, id) => {
     tableTemplateService.deleteTableTemplate(profileId, id)
     // Any chat that had it assigned loses its sandbox too.

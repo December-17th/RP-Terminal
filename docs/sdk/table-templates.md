@@ -5,6 +5,10 @@ editing) + SQL write path + op-log/rewind + prompt projection (`table.export`) +
 pipeline (`table.gate` / `table.read` / `table.query`) + template EXPORT (chatSheets v2, round-trip) +
 per-table last-maintained indicator all built). The only deferred item is card-embedded templates.
 
+The **Tables view** now also shows and edits each table's per-table template prompts inline (the five
+per-op prompts, `updateFrequency`, and the injection `exportConfig`) via `table-template-update` —
+structural fields (DDL/headers/rows) stay read-only.
+
 RP Terminal's memory system is **SQL-table memory** (the 数据库-plugin model): each chat maintains a
 set of relational tables, the LLM edits them via SQL (later issues), and the tables project back into
 the prompt as worldbook-like entries (later issues). The *schema* of those tables is a **table
@@ -97,13 +101,26 @@ ordered tables — `sqlName`s: `protagonist_info`, `important_characters`, `chro
 
 ## IPC surface (`src/main/ipc/tableMemoryIpc.ts`, preload `src/preload/index.ts`)
 
-`table-templates-list`, `table-template-get`, `table-template-delete`, `table-template-import-dialog`
-(returns `{ summary } | { error } | null`); `chat-table-template-get` / `chat-table-template-set`;
+`table-templates-list`, `table-template-get`, `table-template-update`, `table-template-delete`,
+`table-template-import-dialog` (returns `{ summary } | { error } | null`); `chat-table-template-get` /
+`chat-table-template-set`;
 `chat-tables-read` (all tables of the assigned template as
 `[{ sqlName, displayName, columns, rows, rowids }]`); `chat-tables-edit` (hand edit → `{ ok, changes }
 | { error }`); `chat-tables-status` (last-maintained floor per table); `table-template-export-dialog`
 (export to chatSheets v2 JSON) — issue 06. The **Tables** view is registered as `tables` in
 `src/renderer/src/components/workspace/viewRegistry.tsx`.
+
+`table-template-update(profileId, id, patch)` → `{ ok: true } | { error }` (manual-pass issue 03). The
+patch is `{ name?, tables: [{ uid, note?, initNode?, insertNode?, updateNode?, deleteNode?,
+updateFrequency?, exportConfig? }] }`: only the **five per-op prompts + `updateFrequency` + the
+injection `exportConfig`** (and the template `name`) are editable — structural fields (`sqlName`,
+`ddl`, `headers`, `initialRows`, `displayName`) are IMMUTABLE (DDL only executes at instantiation, so
+editing it without re-instantiating would desync every chat using the template). The merge is the pure
+`tableTemplateService.applyTemplatePatch` (unknown table `uid` → `{ error: 'tables.templateUnknownTable' }`;
+malformed patch → `{ error: 'tables.templateBadPatch' }`; missing template → `{ error:
+'tables.templateNotFound' }`), then `saveTableTemplate` overwrites the SAME id. A template is shared:
+edits apply to every chat assigned to it and are **picked up on the next maintenance pass** (`table.gate`
+/ `table.read` re-read the template each pass — no sandbox rebuild).
 
 `chat-tables-read` returns each row's SQLite `rowid` (`rowids[]`, 1:1 with `rows`;
 `tableDbService.readOne` selects `rowid AS __rid, *` and slices the alias off so `rows`/`columns` stay
