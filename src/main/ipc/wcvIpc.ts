@@ -44,17 +44,32 @@ const cardLoreCtx = (senderId: number): { profileId: string; characterId: string
 }
 
 // Push the re-folded latest-floor vars to the host native panels + sibling WCVs (after a card mutation).
-const pushVars = (chatId: string, latest: { variables: any } | null): void => {
+const pushVars = (
+  chatId: string,
+  latest: { variables: any } | null,
+  exceptWebContentsId: number
+): void => {
   if (latest) {
     wcvManager.pushHostVars(chatId, latest.variables)
-    // external: a host-side chat edit/delete re-folded <UpdateVariable> — panels SHOULD refresh (fire events).
-    wcvManager.notifyVarsChanged(chatId, latest.variables.stat_data ?? {}, undefined, 'external')
+    // card-initiated ⇒ card-write: every caller here is a CARD mutation, so exclude the writer and tag the
+    // sibling/host echo card-write. Siblings refresh caches but do NOT re-fire MVU variable events (those
+    // fire only on the model fold — the WS-3 stance; mirrors wcv-host-apply-vars).
+    wcvManager.notifyVarsChanged(
+      chatId,
+      latest.variables.stat_data ?? {},
+      exceptWebContentsId,
+      'card-write'
+    )
   }
 }
 // After an edit / delete: re-fold <UpdateVariable> into stat_data (via chatWriteService), push it, and
 // reload the host chat UI.
-const afterChatMutation = (profileId: string, chatId: string): void => {
-  pushVars(chatId, chatWriteService.afterChatMutation(profileId, chatId))
+const afterChatMutation = (
+  profileId: string,
+  chatId: string,
+  exceptWebContentsId: number
+): void => {
+  pushVars(chatId, chatWriteService.afterChatMutation(profileId, chatId), exceptWebContentsId)
   wcvManager.pushHostReload(chatId)
 }
 
@@ -486,7 +501,7 @@ export const registerWcvIpc = (ipcMain: IpcMain): void => {
     const ctx = wcvManager.contextFor(e.sender.id)
     if (!ctx) return false
     if (!chatWriteService.saveChat(ctx.profileId, ctx.chatId, chat)) return false
-    pushVars(ctx.chatId, chatWriteService.afterChatMutation(ctx.profileId, ctx.chatId))
+    pushVars(ctx.chatId, chatWriteService.afterChatMutation(ctx.profileId, ctx.chatId), e.sender.id)
     log('info', 'wcv saveChat', 'assistant msgs → floors + reevaluated')
     return true
   })
@@ -552,7 +567,7 @@ export const registerWcvIpc = (ipcMain: IpcMain): void => {
     const ctx = wcvManager.contextFor(e.sender.id)
     if (!ctx) return false
     const n = chatWriteService.setChatMessages(ctx.profileId, ctx.chatId, messages)
-    if (n) afterChatMutation(ctx.profileId, ctx.chatId)
+    if (n) afterChatMutation(ctx.profileId, ctx.chatId, e.sender.id)
     log('info', 'wcv setChatMessages', `${n} floor(s) edited`)
     return n > 0
   })
@@ -562,7 +577,7 @@ export const registerWcvIpc = (ipcMain: IpcMain): void => {
     const ctx = wcvManager.contextFor(e.sender.id)
     if (!ctx) return false
     if (!chatWriteService.deleteChatMessages(ctx.profileId, ctx.chatId, messageIds)) return false
-    afterChatMutation(ctx.profileId, ctx.chatId)
+    afterChatMutation(ctx.profileId, ctx.chatId, e.sender.id)
     log('info', 'wcv deleteChatMessages', 'truncated')
     return true
   })

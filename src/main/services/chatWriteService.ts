@@ -11,7 +11,12 @@ import * as generationService from './generationService'
 import { chatIndexMap } from '../../shared/thRuntime/shapes'
 import type { FloorFile } from '../types/chat'
 
-/** Edit message content by chat-array index (TH setChatMessages). Returns the count of floors touched. */
+/**
+ * Edit message content by chat-array index (TH setChatMessages). Returns the count of floors actually
+ * CHANGED — a message whose text is identical to the current content is skipped entirely (a card
+ * re-rendering the same text must not trigger the re-fold/reload chain; see
+ * test/cardChatEditFeedbackLoop.test.ts).
+ */
 export function setChatMessages(profileId: string, chatId: string, messages: unknown): number {
   const floors = floorService.getAllFloors(profileId, chatId)
   const map = chatIndexMap(floors)
@@ -21,6 +26,10 @@ export function setChatMessages(profileId: string, chatId: string, messages: unk
     const slot = id >= 0 ? map[id] : undefined
     const text = (m as any)?.message
     if (!slot || typeof text !== 'string') continue
+    const current = slot.isUser
+      ? floors[slot.floorIdx].user_message.content
+      : floors[slot.floorIdx].response.content
+    if (current === text) continue
     if (slot.isUser) floors[slot.floorIdx].user_message.content = text
     else floors[slot.floorIdx].response.content = text
     touched.add(slot.floorIdx)

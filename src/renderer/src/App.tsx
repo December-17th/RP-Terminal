@@ -86,7 +86,7 @@ export default function App(): React.ReactElement {
     const unsubReload = window.api.onWcvHostReload(({ chatId }) => {
       const st = useChatStore.getState()
       const pid = useProfileStore.getState().activeProfile?.id
-      if (pid && chatId === st.activeChatId) st.setActiveChat(pid, chatId)
+      if (pid && chatId === st.activeChatId) st.refreshFloors(pid, chatId)
     })
     // Broadcast the latest stat_data to any WebContentsView card panel whenever floors change
     // (a model turn / re-evaluate / edit), so the card's own UI reflects model-driven updates live.
