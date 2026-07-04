@@ -28,6 +28,8 @@ import { useChatStore } from '../../stores/chatStore'
 import { useOptionalT, useT } from '../../i18n'
 import { formatTraceSeconds, type TraceNode } from '../../../../shared/workflow/trace'
 import type { EditorNode } from './editorModel'
+import type { GroupDecl } from '../../../../shared/workflow/types'
+import { collapsedView, groupBounds, MODULE_PORT } from './groupModel'
 
 /** Matches the palette drag payload's mime type (drag source lives in a later task's palette
  *  component; this is the contract both sides must agree on). */
@@ -134,7 +136,89 @@ function RptNode({ data, selected }: NodeProps<RFNode<RptNodeData>>): React.JSX.
   )
 }
 
-const nodeTypes: NodeTypes = { rpt: RptNode }
+/** Collapsed-module node data (one-canvas rebuild WP6.3). */
+interface RptModuleData extends Record<string, unknown> {
+  group: GroupDecl
+  memberCount: number
+}
+
+function RptModuleNode({ data, selected }: NodeProps<RFNode<RptModuleData>>): React.JSX.Element {
+  const t = useT()
+  const toggleGroupCollapsed = useWorkflowEditorStore((s) => s.toggleGroupCollapsed)
+  const { group, memberCount } = data
+  const exposedCount = group.exposed?.length ?? 0
+  return (
+    <div className={`rpt-module${selected ? ' selected' : ''}`}>
+      {/* One generic target handle (left) + one source handle (right); both share the 'module' id. */}
+      <Handle type="target" position={Position.Left} id={MODULE_PORT} className="rpt-port-any" />
+      <div className="rpt-module-title-row">
+        <span className="rpt-module-name">{group.name}</span>
+        <button
+          type="button"
+          className="rpt-module-expand"
+          title={t('workflowEditor.module.expand')}
+          onClick={(e) => {
+            e.stopPropagation()
+            toggleGroupCollapsed(group.id)
+          }}
+        >
+          {t('workflowEditor.module.expand')}
+        </button>
+      </div>
+      <div className="rpt-module-meta">
+        <span>{t('workflowEditor.module.members', { n: memberCount })}</span>
+        {exposedCount > 0 && <span>· {exposedCount}</span>}
+      </div>
+      <Handle type="source" position={Position.Right} id={MODULE_PORT} className="rpt-port-any" />
+    </div>
+  )
+}
+
+/** Expanded group frame data (one-canvas rebuild WP6.3): a background rect + header. */
+interface RptGroupFrameData extends Record<string, unknown> {
+  group: GroupDecl
+}
+
+function RptGroupFrameNode({ data }: NodeProps<RFNode<RptGroupFrameData>>): React.JSX.Element {
+  const t = useT()
+  const toggleGroupCollapsed = useWorkflowEditorStore((s) => s.toggleGroupCollapsed)
+  const selectGroup = useWorkflowEditorStore((s) => s.selectGroup)
+  const { group } = data
+  return (
+    <div className="rpt-group-frame">
+      {/* Only the header receives pointer events (the frame body is pass-through, so the member
+          nodes on top of it stay interactive). */}
+      <div className="rpt-group-frame-header">
+        <span
+          className="rpt-group-frame-name"
+          onClick={(e) => {
+            e.stopPropagation()
+            selectGroup(group.id)
+          }}
+        >
+          {group.name}
+        </span>
+        <button
+          type="button"
+          className="rpt-group-frame-collapse"
+          title={t('workflowEditor.module.collapse')}
+          onClick={(e) => {
+            e.stopPropagation()
+            toggleGroupCollapsed(group.id)
+          }}
+        >
+          {t('workflowEditor.module.collapse')}
+        </button>
+      </div>
+    </div>
+  )
+}
+
+const nodeTypes: NodeTypes = {
+  rpt: RptNode,
+  rptModule: RptModuleNode,
+  rptGroupFrame: RptGroupFrameNode
+}
 
 interface FlowCanvasProps {
   profileId: string
@@ -146,12 +230,21 @@ function FlowCanvasInner({ profileId: _profileId }: FlowCanvasProps): React.JSX.
   const nodeTypeList = useWorkflowEditorStore((s) => s.nodeTypes)
   const readOnly = useWorkflowEditorStore((s) => s.readOnly)
   const selectedNodeId = useWorkflowEditorStore((s) => s.selectedNodeId)
+  const selectedGroupId = useWorkflowEditorStore((s) => s.selectedGroupId)
+  const doc = useWorkflowEditorStore((s) => s.doc)
   const moveNode = useWorkflowEditorStore((s) => s.moveNode)
   const removeNode = useWorkflowEditorStore((s) => s.removeNode)
   const removeEdge = useWorkflowEditorStore((s) => s.removeEdge)
   const connect = useWorkflowEditorStore((s) => s.connect)
   const select = useWorkflowEditorStore((s) => s.select)
   const addNode = useWorkflowEditorStore((s) => s.addNode)
+  const groups = useMemo(() => doc?.groups ?? [], [doc])
+  const setSelectedNodeIds = useWorkflowEditorStore((s) => s.setSelectedNodeIds)
+  const selectGroup = useWorkflowEditorStore((s) => s.selectGroup)
+  const moveGroup = useWorkflowEditorStore((s) => s.moveGroup)
+  // Module drag: RF reports absolute positions per change; track each module's last position so a
+  // drag becomes a delta routed to moveGroup (which shifts the hidden members). Keyed by group id.
+  const moduleDragPos = React.useRef<Map<string, { x: number; y: number }>>(new Map())
 
   const { screenToFlowPosition } = useReactFlow()
 
@@ -172,9 +265,56 @@ function FlowCanvasInner({ profileId: _profileId }: FlowCanvasProps): React.JSX.
     return new Map(lastTrace.nodes.map((n) => [n.nodeId, n]))
   }, [lastTrace, currentId])
 
-  const rfNodes: RFNode<RptNodeData>[] = useMemo(
-    () =>
-      nodes.map((n) => ({
+  // On-canvas modules (WP6.3): project the doc's groups onto the canvas — collapsed groups hide
+  // their members behind one module node, expanded groups render a background frame; boundary edges
+  // re-point to synthetic module edges. Ungrouped/expanded members render as normal 'rpt' nodes.
+  const view = useMemo(
+    () => collapsedView(nodes, edges, groups),
+    [nodes, edges, groups]
+  )
+  // Which node ids are hidden behind a collapsed module (so their real edges don't also render).
+  const hiddenNodeIds = useMemo(() => {
+    const hidden = new Set<string>()
+    for (const g of groups) if (g.collapsed) for (const id of g.nodeIds) hidden.add(id)
+    return hidden
+  }, [groups])
+
+  const rfNodes: RFNode[] = useMemo(() => {
+    const out: RFNode[] = []
+    // Expanded group frames first (zIndex -1 so they sit behind their members).
+    for (const g of groups) {
+      if (g.collapsed) continue
+      const b = groupBounds(nodes, new Set(g.nodeIds))
+      out.push({
+        id: `frame:${g.id}`,
+        type: 'rptGroupFrame',
+        position: { x: b.x, y: b.y },
+        width: b.w,
+        height: b.h,
+        selectable: false,
+        draggable: false,
+        deletable: false,
+        connectable: false,
+        zIndex: -1,
+        data: { group: g }
+      } as RFNode)
+    }
+    // Collapsed module nodes.
+    for (const m of view.moduleNodes) {
+      out.push({
+        id: m.group.id,
+        type: 'rptModule',
+        position: m.position,
+        selected: m.group.id === selectedGroupId,
+        draggable: !readOnly,
+        deletable: !readOnly,
+        connectable: false,
+        data: { group: m.group, memberCount: m.memberCount }
+      } as RFNode)
+    }
+    // Visible normal nodes.
+    for (const n of view.visibleNodes) {
+      out.push({
         id: n.id,
         type: 'rpt',
         position: n.position,
@@ -183,13 +323,18 @@ function FlowCanvasInner({ profileId: _profileId }: FlowCanvasProps): React.JSX.
         connectable: !readOnly,
         deletable: !readOnly,
         data: { editorNode: n, typeInfo: typeInfoMap.get(n.type), trace: traceByNode.get(n.id) }
-      })),
-    [nodes, selectedNodeId, readOnly, typeInfoMap, traceByNode]
-  )
+      } as RFNode)
+    }
+    return out
+  }, [nodes, groups, view, selectedNodeId, selectedGroupId, readOnly, typeInfoMap, traceByNode])
 
-  const rfEdges: RFEdge[] = useMemo(
-    () =>
-      edges.map((e) => ({
+  const rfEdges: RFEdge[] = useMemo(() => {
+    const out: RFEdge[] = []
+    for (const e of edges) {
+      // Skip an edge whose either end is hidden behind a collapsed module — the synthetic edge
+      // below carries it instead.
+      if (hiddenNodeIds.has(e.source) || hiddenNodeIds.has(e.target)) continue
+      out.push({
         id: e.id,
         source: e.source,
         sourceHandle: e.sourcePort,
@@ -197,24 +342,74 @@ function FlowCanvasInner({ profileId: _profileId }: FlowCanvasProps): React.JSX.
         targetHandle: e.targetPort,
         deletable: !readOnly,
         selected: false
-      })),
-    [edges, readOnly]
-  )
+      })
+    }
+    for (const s of view.syntheticEdges) {
+      out.push({
+        id: s.id,
+        source: s.source,
+        sourceHandle: s.sourcePort,
+        target: s.target,
+        targetHandle: s.targetPort,
+        deletable: false,
+        selected: false,
+        className: 'rpt-group-edge'
+      })
+    }
+    return out
+  }, [edges, view, hiddenNodeIds, readOnly])
+
+  const moduleIds = useMemo(() => new Set(groups.map((g) => g.id)), [groups])
 
   const handleNodesChange = useCallback(
-    (changes: NodeChange<RFNode<RptNodeData>>[]) => {
+    (changes: NodeChange<RFNode>[]) => {
       for (const change of changes) {
-        // Apply position on EVERY change (not just drag-end): the store is the single source of
-        // truth for RF's controlled nodes, so skipping mid-drag updates froze the node under the
-        // cursor and teleported it on release.
         if (change.type === 'position' && change.position) {
+          // A collapsed MODULE drag: RF reports the module node's absolute position; convert to a
+          // delta against its last-seen position and route to moveGroup (which shifts the hidden
+          // members). Track the position so the next mid-drag change computes the next delta.
+          if (moduleIds.has(change.id)) {
+            const prev = moduleDragPos.current.get(change.id)
+            if (prev) {
+              const dx = change.position.x - prev.x
+              const dy = change.position.y - prev.y
+              if (dx !== 0 || dy !== 0) moveGroup(change.id, { dx, dy })
+            }
+            moduleDragPos.current.set(change.id, { x: change.position.x, y: change.position.y })
+            continue
+          }
+          // Frame nodes are not draggable; ignore any stray position change for them.
+          if (change.id.startsWith('frame:')) continue
+          // Apply position on EVERY change (not just drag-end): the store is the single source of
+          // truth for RF's controlled nodes, so skipping mid-drag updates froze the node under the
+          // cursor and teleported it on release.
           moveNode(change.id, change.position)
         } else if (change.type === 'remove') {
+          // deleteKeyCode guard (WP6.3): a selected module/frame must NOT delete its member nodes.
+          // Drop RF remove changes for module/frame ids entirely (ungroup is the only removal path).
+          if (moduleIds.has(change.id) || change.id.startsWith('frame:')) continue
           removeNode(change.id)
+        } else if (change.type === 'select' && !change.selected) {
+          // A module deselect clears the module drag baseline so the next drag starts fresh.
+          moduleDragPos.current.delete(change.id)
         }
       }
     },
-    [moveNode, removeNode]
+    [moveNode, removeNode, moveGroup, moduleIds]
+  )
+
+  // Multi-select sync (WP6.3): RF reports the selected NODE set (excludes modules/frames) via
+  // onSelectionChange; mirror it into the store so the toolbar's "Group into module" can appear.
+  const handleSelectionChange = useCallback(
+    ({ nodes: selNodes }: { nodes: RFNode[] }) => {
+      const ids = selNodes
+        .filter((n) => n.type === 'rpt')
+        .map((n) => n.id)
+      // Only drive multi-select when ≥2 nodes are selected (a single click is handled by onNodeClick,
+      // which also clears group selection); a 0/1 selection here would fight that path.
+      if (ids.length >= 2) setSelectedNodeIds(ids)
+    },
+    [setSelectedNodeIds]
   )
 
   const handleEdgesChange = useCallback(
@@ -241,9 +436,15 @@ function FlowCanvasInner({ profileId: _profileId }: FlowCanvasProps): React.JSX.
 
   const handleNodeClick = useCallback(
     (_event: React.MouseEvent, node: RFNode) => {
+      // A collapsed module → select the group (its panel). Frames handle their own header click.
+      if (moduleIds.has(node.id)) {
+        selectGroup(node.id)
+        return
+      }
+      if (node.id.startsWith('frame:')) return
       select(node.id)
     },
-    [select]
+    [select, selectGroup, moduleIds]
   )
 
   const handlePaneClick = useCallback(() => {
@@ -283,6 +484,7 @@ function FlowCanvasInner({ profileId: _profileId }: FlowCanvasProps): React.JSX.
         onEdgesChange={handleEdgesChange}
         onConnect={handleConnect}
         onNodeClick={handleNodeClick}
+        onSelectionChange={handleSelectionChange}
         onPaneClick={handlePaneClick}
         nodesDraggable={!readOnly}
         nodesConnectable={!readOnly}

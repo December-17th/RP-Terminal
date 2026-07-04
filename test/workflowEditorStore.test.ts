@@ -89,6 +89,8 @@ beforeEach(() => {
     fragmentPackId: null,
     errors: [],
     selectedNodeId: null,
+    selectedNodeIds: [],
+    selectedGroupId: null,
     status: null,
     lockedNodeIds: new Set<string>(),
     packEditRouter: null
@@ -584,5 +586,127 @@ describe('workflowEditorStore: fragment editing session (WP4.4)', () => {
     const s = useWorkflowEditorStore.getState()
     expect(s.sessionType).toBe('workflow')
     expect(s.fragmentPackId).toBeNull()
+  })
+})
+
+describe('workflowEditorStore: on-canvas groups (WP6.3)', () => {
+  const store = () => useWorkflowEditorStore.getState()
+  // custom-1 has ctx + write; add a third node so we can form groups of ≥2 and leave one out.
+  beforeEach(async () => {
+    await store().init(profileId)
+    await store().open(profileId, 'custom-1')
+    store().addNode('control.if', { x: 500, y: 0 }) // id if-1
+  })
+
+  const groupOf = (id: string) => (store().doc?.groups ?? []).find((g) => g.id === id)
+
+  it('groupSelection is a no-op with <2 selected', () => {
+    store().setSelectedNodeIds(['ctx'])
+    store().groupSelection()
+    expect(store().doc?.groups).toBeUndefined()
+  })
+
+  it('groupSelection mints a Module over ≥2 selected nodes and selects it', () => {
+    store().setSelectedNodeIds(['ctx', 'write'])
+    store().groupSelection()
+    const groups = store().doc?.groups ?? []
+    expect(groups).toHaveLength(1)
+    expect(groups[0].id).toBe('group-1')
+    expect(groups[0].name).toBe('Module 1')
+    expect(groups[0].nodeIds).toEqual(['ctx', 'write'])
+    expect(store().selectedGroupId).toBe('group-1')
+    expect(store().selectedNodeId).toBeNull()
+  })
+
+  it('groupSelection is a no-op when any selected node is already grouped (overlap)', () => {
+    store().setSelectedNodeIds(['ctx', 'write'])
+    store().groupSelection()
+    // Now try to group write (already in group-1) with if-1 → refused, still one group.
+    store().setSelectedNodeIds(['write', 'if-1'])
+    store().groupSelection()
+    expect(store().doc?.groups).toHaveLength(1)
+  })
+
+  it('ungroup restores (removes the group; nodes stay)', () => {
+    store().setSelectedNodeIds(['ctx', 'write'])
+    store().groupSelection()
+    store().ungroup('group-1')
+    expect(store().doc?.groups).toBeUndefined()
+    expect(store().nodes.map((x) => x.id).sort()).toEqual(['ctx', 'if-1', 'write'])
+    expect(store().selectedGroupId).toBeNull()
+  })
+
+  it('renameGroup updates the name', () => {
+    store().setSelectedNodeIds(['ctx', 'write'])
+    store().groupSelection()
+    store().renameGroup('group-1', 'Memory')
+    expect(groupOf('group-1')?.name).toBe('Memory')
+  })
+
+  it('toggleGroupCollapsed flips the collapsed flag', () => {
+    store().setSelectedNodeIds(['ctx', 'write'])
+    store().groupSelection()
+    expect(groupOf('group-1')?.collapsed).toBeFalsy()
+    store().toggleGroupCollapsed('group-1')
+    expect(groupOf('group-1')?.collapsed).toBe(true)
+    store().toggleGroupCollapsed('group-1')
+    expect(groupOf('group-1')?.collapsed).toBe(false)
+  })
+
+  it('moveGroup shifts every member position by the delta', () => {
+    store().setSelectedNodeIds(['ctx', 'write'])
+    store().groupSelection()
+    const ctxBefore = store().nodes.find((x) => x.id === 'ctx')!.position
+    const writeBefore = store().nodes.find((x) => x.id === 'write')!.position
+    const ifBefore = store().nodes.find((x) => x.id === 'if-1')!.position
+    store().moveGroup('group-1', { dx: 40, dy: -15 })
+    expect(store().nodes.find((x) => x.id === 'ctx')!.position).toEqual({
+      x: ctxBefore.x + 40,
+      y: ctxBefore.y - 15
+    })
+    expect(store().nodes.find((x) => x.id === 'write')!.position).toEqual({
+      x: writeBefore.x + 40,
+      y: writeBefore.y - 15
+    })
+    // A non-member is untouched.
+    expect(store().nodes.find((x) => x.id === 'if-1')!.position).toEqual(ifBefore)
+  })
+
+  it('exposeSetting/unexposeSetting replace-if-same node+path semantics', () => {
+    store().setSelectedNodeIds(['ctx', 'write'])
+    store().groupSelection()
+    store().exposeSetting('group-1', { node: 'ctx', path: 'p', label: 'First' })
+    expect(groupOf('group-1')?.exposed).toEqual([{ node: 'ctx', path: 'p', label: 'First' }])
+    // Re-expose same node+path replaces (updates label), does not duplicate.
+    store().exposeSetting('group-1', { node: 'ctx', path: 'p', label: 'Renamed' })
+    expect(groupOf('group-1')?.exposed).toEqual([{ node: 'ctx', path: 'p', label: 'Renamed' }])
+    // A different path adds a second entry.
+    store().exposeSetting('group-1', { node: 'write', path: 'q', label: 'Second' })
+    expect(groupOf('group-1')?.exposed).toHaveLength(2)
+    // Unexpose removes just that one.
+    store().unexposeSetting('group-1', 'ctx', 'p')
+    expect(groupOf('group-1')?.exposed).toEqual([{ node: 'write', path: 'q', label: 'Second' }])
+  })
+
+  it('removeNode strips membership and dissolves a group that drops below 2 members', () => {
+    store().setSelectedNodeIds(['ctx', 'write'])
+    store().groupSelection()
+    store().removeNode('write') // group-1 now has only ctx → dissolved
+    expect(store().doc?.groups).toBeUndefined()
+    expect(store().selectedGroupId).toBeNull()
+  })
+
+  it('removeNode strips membership but keeps a group still ≥2 members', () => {
+    store().setSelectedNodeIds(['ctx', 'write', 'if-1'])
+    store().groupSelection()
+    store().removeNode('if-1')
+    expect(groupOf('group-1')?.nodeIds).toEqual(['ctx', 'write'])
+  })
+
+  it('group actions are no-ops when any member is locked', () => {
+    useWorkflowEditorStore.setState({ lockedNodeIds: new Set(['write']) })
+    store().setSelectedNodeIds(['ctx', 'write'])
+    store().groupSelection()
+    expect(store().doc?.groups).toBeUndefined()
   })
 })

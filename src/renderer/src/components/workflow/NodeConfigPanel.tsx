@@ -9,6 +9,10 @@ import { useUiStore } from '../../stores/uiStore'
 import { useOptionalT, useT } from '../../i18n'
 import { fieldsFromSchema, type FieldSpec } from './schemaForm'
 import { ownerOfNodeId, nodeOwnerMap, readComposition } from './effectiveProjection'
+import { groupOfNode } from './groupModel'
+import { getPath } from '../../../../shared/objectPath'
+import type { EditorNode } from './editorModel'
+import type { GroupDecl } from '../../../../shared/workflow/types'
 
 /** A sub-graph's promoted-parameter hint (`WorkflowDoc.meta.promotions`, plan §5) — shape
  *  mirrors `subgraphNodes.ts`'s Promotion, read off the referenced doc fetched lazily via
@@ -305,12 +309,181 @@ function JsonFieldControl({
   )
 }
 
+/** One row of a module's exposed settings (WP6.3): an inline-editable label + the live control for
+ *  the member's config at that path, plus a remove (unexpose) button. Reuses schemaForm's field
+ *  renderer (FieldControl) when the path resolves to a top-level schema field; otherwise a plain
+ *  text input. Nested paths beyond top-level schema fields are not exposable in v1 (the store only
+ *  ever writes fieldKey paths), so the resolution here is by top-level key. */
+function ExposedSettingRow({
+  entry,
+  nodes,
+  nodeTypes,
+  readOnly,
+  onRelabel,
+  onRemove,
+  onWrite
+}: {
+  entry: { node: string; path: string; label: string }
+  nodes: EditorNode[]
+  nodeTypes: { type: string; configSchema?: Record<string, unknown> }[]
+  readOnly: boolean
+  onRelabel: (label: string) => void
+  onRemove: () => void
+  onWrite: (nodeId: string, config: Record<string, unknown>) => void
+}): React.JSX.Element {
+  const t = useT()
+  const member = nodes.find((n) => n.id === entry.node)
+  const typeInfo = member ? nodeTypes.find((nt) => nt.type === member.type) : undefined
+  const fields = fieldsFromSchema(typeInfo?.configSchema)
+  const field = fields.find((f) => f.key === entry.path)
+  const config = member?.config ?? {}
+  // A stale path (field renamed/removed) resolves to undefined and renders as an empty control —
+  // the documented skip-with-log stance; we never crash on it.
+  const value = getPath(config, entry.path)
+
+  const write = (v: unknown): void => {
+    if (!member) return
+    const next = { ...config }
+    if (v === undefined) delete next[entry.path]
+    else next[entry.path] = v
+    onWrite(member.id, next)
+  }
+
+  return (
+    <div
+      style={{
+        border: '1px solid var(--rpt-border)',
+        borderRadius: 6,
+        padding: 6,
+        marginBottom: 6
+      }}
+    >
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
+        <input
+          type="text"
+          value={entry.label}
+          disabled={readOnly}
+          onChange={(e) => onRelabel(e.target.value)}
+          style={{ flex: 1, fontSize: 11.5 }}
+        />
+        <button
+          type="button"
+          disabled={readOnly}
+          title={t('workflowEditor.module.exposedRemove')}
+          onClick={onRemove}
+          style={{ fontSize: 11 }}
+        >
+          ✕
+        </button>
+      </div>
+      <div style={{ fontSize: 10, color: 'var(--rpt-text-tertiary)' }}>
+        {entry.node}.{entry.path}
+      </div>
+      {field ? (
+        <FieldControl
+          field={field}
+          value={value}
+          onChange={write}
+          readOnly={readOnly || !member}
+        />
+      ) : (
+        <input
+          type="text"
+          value={typeof value === 'string' ? value : value === undefined ? '' : String(value)}
+          disabled={readOnly || !member}
+          onChange={(e) => write(e.target.value === '' ? undefined : e.target.value)}
+          style={{ width: '100%' }}
+        />
+      )}
+    </div>
+  )
+}
+
+/** The MODULE panel (WP6.3), shown when a group is selected: editable name, collapse toggle,
+ *  Ungroup, and the exposed-settings list. */
+function ModulePanel({ group }: { group: GroupDecl }): React.JSX.Element {
+  const t = useT()
+  const nodes = useWorkflowEditorStore((s) => s.nodes)
+  const nodeTypes = useWorkflowEditorStore((s) => s.nodeTypes)
+  const readOnly = useWorkflowEditorStore((s) => s.readOnly)
+  const renameGroup = useWorkflowEditorStore((s) => s.renameGroup)
+  const toggleGroupCollapsed = useWorkflowEditorStore((s) => s.toggleGroupCollapsed)
+  const ungroup = useWorkflowEditorStore((s) => s.ungroup)
+  const exposeSetting = useWorkflowEditorStore((s) => s.exposeSetting)
+  const unexposeSetting = useWorkflowEditorStore((s) => s.unexposeSetting)
+  const setNodeConfig = useWorkflowEditorStore((s) => s.setNodeConfig)
+
+  const exposed = group.exposed ?? []
+
+  return (
+    <div>
+      <div>
+        <strong>{t('workflowEditor.module.title')}</strong>
+      </div>
+      <div style={{ margin: '8px 0' }}>
+        <input
+          type="text"
+          value={group.name}
+          disabled={readOnly}
+          placeholder={t('workflowEditor.module.namePh')}
+          onChange={(e) => renameGroup(group.id, e.target.value)}
+          style={{ width: '100%', fontSize: 12.5 }}
+        />
+      </div>
+      <div style={{ display: 'flex', gap: 6, marginBottom: 10 }}>
+        <button
+          type="button"
+          disabled={readOnly}
+          onClick={() => toggleGroupCollapsed(group.id)}
+          style={{ fontSize: 12 }}
+        >
+          {group.collapsed
+            ? t('workflowEditor.module.expand')
+            : t('workflowEditor.module.collapse')}
+        </button>
+        <button
+          type="button"
+          disabled={readOnly}
+          onClick={() => ungroup(group.id)}
+          style={{ fontSize: 12 }}
+        >
+          {t('workflowEditor.module.ungroup')}
+        </button>
+      </div>
+
+      <div style={{ fontSize: 10.5, color: 'var(--rpt-text-tertiary)', marginBottom: 6 }}>
+        {t('workflowEditor.module.exposedTitle')}
+      </div>
+      {exposed.length === 0 ? (
+        <div style={{ fontSize: 11, color: 'var(--rpt-text-secondary)' }}>
+          {t('workflowEditor.module.exposedEmpty')}
+        </div>
+      ) : (
+        exposed.map((entry) => (
+          <ExposedSettingRow
+            key={`${entry.node}:${entry.path}`}
+            entry={entry}
+            nodes={nodes}
+            nodeTypes={nodeTypes}
+            readOnly={readOnly}
+            onRelabel={(label) => exposeSetting(group.id, { ...entry, label })}
+            onRemove={() => unexposeSetting(group.id, entry.node, entry.path)}
+            onWrite={(nodeId, config) => setNodeConfig(nodeId, config)}
+          />
+        ))
+      )}
+    </div>
+  )
+}
+
 export default function NodeConfigPanel({
   profileId
 }: NodeConfigPanelProps): React.JSX.Element {
   const t = useT()
   const tOpt = useOptionalT()
   const selectedNodeId = useWorkflowEditorStore((s) => s.selectedNodeId)
+  const selectedGroupId = useWorkflowEditorStore((s) => s.selectedGroupId)
+  const doc = useWorkflowEditorStore((s) => s.doc)
   const nodes = useWorkflowEditorStore((s) => s.nodes)
   const nodeTypes = useWorkflowEditorStore((s) => s.nodeTypes)
   const storeReadOnly = useWorkflowEditorStore((s) => s.readOnly)
@@ -319,6 +492,14 @@ export default function NodeConfigPanel({
   const setNodeConfig = useWorkflowEditorStore((s) => s.setNodeConfig)
   const setNodePanel = useWorkflowEditorStore((s) => s.setNodePanel)
   const setMainOutput = useWorkflowEditorStore((s) => s.setMainOutput)
+  const exposeSetting = useWorkflowEditorStore((s) => s.exposeSetting)
+  const unexposeSetting = useWorkflowEditorStore((s) => s.unexposeSetting)
+
+  const groups = doc?.groups ?? []
+  // A group is selected → render the MODULE panel instead of a node panel (selection is mutually
+  // exclusive, so selectedNodeId is null here).
+  const selectedGroup = selectedGroupId ? groups.find((g) => g.id === selectedGroupId) : undefined
+  if (selectedGroup) return <ModulePanel group={selectedGroup} />
 
   // A locked node is a PACK node in Effective mode (agent-packs plan WP3.6a; ADR 0010). WP3.6b makes
   // pack-node config LIVE: editing routes through fork-on-first-edit / write-through (ADR 0006), so a
@@ -363,6 +544,18 @@ export default function NodeConfigPanel({
   const typeInfo = nodeTypes.find((nt) => nt.type === node.type)
   const config = node.config ?? {}
   const fields = fieldsFromSchema(typeInfo?.configSchema)
+
+  // WP6.3: if this node belongs to a group, each config field can be EXPOSED on the group's module
+  // panel. The toggle mirrors whether {node, path: fieldKey} is already in the group's exposed list.
+  const memberGroup = groupOfNode(groups, node.id)
+  const exposedPaths = new Set(
+    (memberGroup?.exposed ?? []).filter((e) => e.node === node.id).map((e) => e.path)
+  )
+  const toggleExpose = (fieldKey: string, on: boolean): void => {
+    if (!memberGroup) return
+    if (on) exposeSetting(memberGroup.id, { node: node.id, path: fieldKey, label: fieldKey })
+    else unexposeSetting(memberGroup.id, node.id, fieldKey)
+  }
 
   const updateField = (key: string, value: unknown): void => {
     const next = { ...config }
@@ -523,10 +716,32 @@ export default function NodeConfigPanel({
           // Keyed by node id + field so switching between two nodes of the SAME type remounts the
           // controls — JsonFieldControl holds local text state that must never leak across nodes.
           <div key={`${node.id}:${field.key}`} style={{ marginBottom: 8 }}>
-            <label style={{ fontSize: 10.5, color: 'var(--rpt-text-secondary)' }}>
-              {field.key}
-              {field.required ? ' *' : ''}
-            </label>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <label style={{ fontSize: 10.5, color: 'var(--rpt-text-secondary)', flex: 1 }}>
+                {field.key}
+                {field.required ? ' *' : ''}
+              </label>
+              {memberGroup && (
+                <label
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 3,
+                    fontSize: 10,
+                    color: 'var(--rpt-text-tertiary)'
+                  }}
+                  title={t('workflowEditor.module.exposeToggle')}
+                >
+                  <input
+                    type="checkbox"
+                    aria-label={t('workflowEditor.module.exposeToggle')}
+                    checked={exposedPaths.has(field.key)}
+                    disabled={readOnly}
+                    onChange={(e) => toggleExpose(field.key, e.target.checked)}
+                  />
+                </label>
+              )}
+            </div>
             <FieldControl
               field={field}
               value={config[field.key]}

@@ -8,7 +8,14 @@ import {
   edgeId,
   editorToDoc
 } from '../components/workflow/editorModel'
-import { NodeDescriptor, PortType, WorkflowDoc } from '../../../shared/workflow/types'
+import {
+  ExposedGroupSetting,
+  GroupDecl,
+  NodeDescriptor,
+  PortType,
+  WorkflowDoc
+} from '../../../shared/workflow/types'
+import { nextGroupId } from '../components/workflow/groupModel'
 import { ValidationError, validateWorkflow } from '../../../shared/workflow/validate'
 
 /** Structurally identical to main's `NodeTypeInfo` (src/main/services/nodes/catalog.ts) —
@@ -61,6 +68,13 @@ interface WorkflowEditorState {
   fragmentPackId: string | null
   errors: ValidationError[]
   selectedNodeId: string | null
+  /** One-canvas rebuild (WP6.3): the multi-selection RF maintains from 'select' changes. The
+   *  existing `selectedNodeId` is kept as the LAST of this list so single-selection consumers are
+   *  unaffected. */
+  selectedNodeIds: string[]
+  /** One-canvas rebuild (WP6.3): the selected group (module), mutually exclusive with node
+   *  selection — selecting a group clears node selection and vice versa. */
+  selectedGroupId: string | null
   status: string | null
   /** Node ids the editor must NOT mutate even when the doc is otherwise editable (agent-packs plan
    *  WP3.6a; ADR 0010). Effective mode marks every PACK node id here so pack nodes are locked at the
@@ -104,6 +118,22 @@ interface WorkflowEditorState {
   setMainOutput(id: string): void
   setDocName(name: string): void
   select(id: string | null): void
+  /** One-canvas rebuild (WP6.3): sync the multi-selection from RF 'select' changes. Clears any
+   *  group selection; `selectedNodeId` becomes the last id (or null). */
+  setSelectedNodeIds(ids: string[]): void
+  /** WP6.3: mint a GroupDecl over `selectedNodeIds`. No-op unless ≥2 are selected, none is already
+   *  grouped, and none is locked. Selects the new group. */
+  groupSelection(): void
+  ungroup(groupId: string): void
+  renameGroup(groupId: string, name: string): void
+  toggleGroupCollapsed(groupId: string): void
+  /** WP6.3: shift every member's position by `delta` (the collapsed-module drag). */
+  moveGroup(groupId: string, delta: { dx: number; dy: number }): void
+  /** WP6.3: promote a member setting onto the module panel (replace-if-same node+path). */
+  exposeSetting(groupId: string, entry: ExposedGroupSetting): void
+  unexposeSetting(groupId: string, node: string, path: string): void
+  /** WP6.3: select a group (module) or clear group selection. Mutually exclusive with node select. */
+  selectGroup(id: string | null): void
   save(profileId: string): Promise<void>
   cloneAndEdit(profileId: string): Promise<void>
 }
@@ -157,6 +187,21 @@ export const useWorkflowEditorStore = create<WorkflowEditorState>((set, get) => 
     return true
   }
 
+  /** WP6.3: the doc's current groups (empty when the doc has none / no doc). */
+  const currentGroups = (): GroupDecl[] => get().doc?.groups ?? []
+
+  /** WP6.3: write `groups` onto the draft doc and revalidate. Empties drop the `groups` key so a
+   *  doc with no modules round-trips group-free (matches the optional-field convention elsewhere). */
+  const setGroups = (groups: GroupDecl[]): void => {
+    const { doc } = get()
+    if (!doc) return
+    const next = { ...doc }
+    if (groups.length > 0) next.groups = groups
+    else delete next.groups
+    set({ doc: next })
+    revalidate()
+  }
+
   return {
     nodeTypes: [],
     workflows: [],
@@ -170,6 +215,8 @@ export const useWorkflowEditorStore = create<WorkflowEditorState>((set, get) => 
     fragmentPackId: null,
     errors: [],
     selectedNodeId: null,
+    selectedNodeIds: [],
+    selectedGroupId: null,
     status: null,
     lockedNodeIds: new Set<string>(),
     packEditRouter: null,
@@ -203,6 +250,8 @@ export const useWorkflowEditorStore = create<WorkflowEditorState>((set, get) => 
         fragmentPackId: null,
         errors: result.ok ? [] : result.errors,
         selectedNodeId: null,
+        selectedNodeIds: [],
+        selectedGroupId: null,
         status: null,
         // Opening a doc in Normal mode clears any Effective-mode pack lock (a fresh doc has no pack
         // nodes; the lock is set only while Effective mode is active).
@@ -232,6 +281,8 @@ export const useWorkflowEditorStore = create<WorkflowEditorState>((set, get) => 
         dirty: false,
         errors: result.ok ? [] : result.errors,
         selectedNodeId: null,
+        selectedNodeIds: [],
+        selectedGroupId: null,
         status: null,
         lockedNodeIds: new Set<string>()
       })
@@ -303,9 +354,32 @@ export const useWorkflowEditorStore = create<WorkflowEditorState>((set, get) => 
         routeLocked({ kind: 'removeNode', nodeId: id })
         return
       }
+      // WP6.3: strip the id from any group, then dissolve a group that drops below 2 members (its
+      // exposures go with it — acceptable). Groups live on doc.groups; rebuild it here.
+      const groups = currentGroups()
+      const nextGroups = groups
+        .map((g) => ({ ...g, nodeIds: g.nodeIds.filter((nid) => nid !== id) }))
+        .filter((g) => g.nodeIds.length >= 2)
+      const nextDoc = get().doc
       set({
         nodes: get().nodes.filter((n) => n.id !== id),
-        edges: get().edges.filter((e) => e.source !== id && e.target !== id)
+        edges: get().edges.filter((e) => e.source !== id && e.target !== id),
+        ...(nextDoc
+          ? {
+              doc:
+                nextGroups.length > 0
+                  ? { ...nextDoc, groups: nextGroups }
+                  : (() => {
+                      const d = { ...nextDoc }
+                      delete d.groups
+                      return d
+                    })()
+            }
+          : {}),
+        // A dissolved / no-longer-existent group must not stay selected.
+        ...(get().selectedGroupId && !nextGroups.some((g) => g.id === get().selectedGroupId)
+          ? { selectedGroupId: null }
+          : {})
       })
       revalidate()
     },
@@ -363,7 +437,105 @@ export const useWorkflowEditorStore = create<WorkflowEditorState>((set, get) => 
       revalidate()
     },
 
-    select: (id) => set({ selectedNodeId: id }),
+    // Selecting a node clears any group selection (mutually exclusive) and keeps the multi-select in
+    // sync (a single-node select is a 1-element list, or empty when clearing).
+    select: (id) =>
+      set({
+        selectedNodeId: id,
+        selectedNodeIds: id ? [id] : [],
+        selectedGroupId: null
+      }),
+
+    setSelectedNodeIds: (ids) =>
+      set({
+        selectedNodeIds: ids,
+        selectedNodeId: ids.length > 0 ? ids[ids.length - 1] : null,
+        selectedGroupId: null
+      }),
+
+    selectGroup: (id) =>
+      set({ selectedGroupId: id, selectedNodeId: null, selectedNodeIds: [] }),
+
+    groupSelection: () => {
+      if (get().readOnly) return
+      const { selectedNodeIds } = get()
+      if (selectedNodeIds.length < 2) return
+      const groups = currentGroups()
+      const grouped = new Set(groups.flatMap((g) => g.nodeIds))
+      // Every selected node must be ungrouped AND unlocked (grouping a locked node is a no-op —
+      // Effective mode's pack nodes; the whole selection is refused so a partial group can't form).
+      if (selectedNodeIds.some((id) => grouped.has(id) || isLocked(id))) return
+      const id = nextGroupId(groups)
+      const name = `Module ${groups.length + 1}`
+      const group: GroupDecl = { id, name, nodeIds: [...selectedNodeIds] }
+      setGroups([...groups, group])
+      set({ selectedGroupId: id, selectedNodeId: null, selectedNodeIds: [] })
+    },
+
+    ungroup: (groupId) => {
+      if (get().readOnly) return
+      setGroups(currentGroups().filter((g) => g.id !== groupId))
+      if (get().selectedGroupId === groupId) set({ selectedGroupId: null })
+    },
+
+    renameGroup: (groupId, name) => {
+      if (get().readOnly) return
+      setGroups(currentGroups().map((g) => (g.id === groupId ? { ...g, name } : g)))
+    },
+
+    toggleGroupCollapsed: (groupId) => {
+      if (get().readOnly) return
+      setGroups(
+        currentGroups().map((g) => (g.id === groupId ? { ...g, collapsed: !g.collapsed } : g))
+      )
+    },
+
+    moveGroup: (groupId, delta) => {
+      if (get().readOnly) return
+      const group = currentGroups().find((g) => g.id === groupId)
+      if (!group) return
+      // A collapsed-module drag shifts every member's position by the delta (the members are hidden;
+      // their real positions still anchor the module + its expanded bounds). Locked members block the
+      // move (their positions are projection-programmatic in Effective mode).
+      if (group.nodeIds.some((id) => isLocked(id))) return
+      const members = new Set(group.nodeIds)
+      set({
+        nodes: get().nodes.map((n) =>
+          members.has(n.id)
+            ? { ...n, position: { x: n.position.x + delta.dx, y: n.position.y + delta.dy } }
+            : n
+        )
+      })
+      revalidate()
+    },
+
+    exposeSetting: (groupId, entry) => {
+      if (get().readOnly) return
+      setGroups(
+        currentGroups().map((g) => {
+          if (g.id !== groupId) return g
+          // Replace-if-same node+path (re-exposing updates the label rather than duplicating).
+          const exposed = (g.exposed ?? []).filter(
+            (e) => !(e.node === entry.node && e.path === entry.path)
+          )
+          return { ...g, exposed: [...exposed, entry] }
+        })
+      )
+    },
+
+    unexposeSetting: (groupId, node, path) => {
+      if (get().readOnly) return
+      setGroups(
+        currentGroups().map((g) => {
+          if (g.id !== groupId) return g
+          const exposed = (g.exposed ?? []).filter((e) => !(e.node === node && e.path === path))
+          return exposed.length > 0 ? { ...g, exposed } : (() => {
+            const { exposed: _drop, ...rest } = g
+            return rest
+          })()
+        })
+      )
+    },
 
     save: async (profileId) => {
       const { readOnly, currentId, doc, nodes, edges, sessionType, fragmentPackId } = get()

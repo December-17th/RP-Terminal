@@ -73,6 +73,23 @@ const AttachmentDeclSchema = z.union([
   TriggerAttachmentSchema
 ])
 
+// One-canvas rebuild (WP6.3): on-canvas module groupings (types.ts GroupDecl/ExposedGroupSetting).
+// Pure doc metadata over in-place nodes. nodeIds needs ≥2 members; exposed entries carry a member
+// node id + a config path + a label, all nonempty. Path VALIDITY (does the field exist) is NOT
+// structural — a stale path renders empty in the panel (validate.ts leaves it alone).
+const ExposedGroupSettingSchema = z.object({
+  node: z.string().min(1),
+  path: z.string().min(1),
+  label: z.string().min(1)
+})
+const GroupDeclSchema = z.object({
+  id: z.string().min(1),
+  name: z.string().min(1),
+  nodeIds: z.array(z.string().min(1)).min(2),
+  collapsed: z.boolean().optional(),
+  exposed: z.array(ExposedGroupSettingSchema).optional()
+})
+
 export const WorkflowDocSchema = z.object({
   id: z.string().min(1),
   name: z.string().min(1),
@@ -101,6 +118,9 @@ export const WorkflowDocSchema = z.object({
     })
   ),
   edges: z.array(z.object({ from: EdgeEndSchema, to: EdgeEndSchema })),
+  // One-canvas rebuild (WP6.3): on-canvas module groupings. Optional so pre-WP6.3 docs are
+  // unaffected; membership/overlap/exposed-member rules are validate.ts's (they need the node set).
+  groups: z.array(GroupDeclSchema).optional(),
   meta: z.record(z.string(), z.unknown()).optional(),
   // Absent = 'turn' (sub-graph nodes v1 plan §2). 'fragment' = an agent pack's executable part
   // (agent-packs plan WP1.1; ADR 0002/0009).

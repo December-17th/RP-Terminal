@@ -188,6 +188,61 @@ describe('parseWorkflowDoc', () => {
     ).toBe(false)
   })
 
+  it('round-trips on-canvas groups (WP6.3) without stripping fields', () => {
+    const groups = [
+      {
+        id: 'group-1',
+        name: 'Memory',
+        nodeIds: ['n1', 'n2'],
+        collapsed: true,
+        exposed: [{ node: 'n1', path: 'template', label: 'Prompt' }]
+      }
+    ]
+    const r = parseWorkflowDoc(
+      JSON.parse(
+        JSON.stringify({
+          ...minimal,
+          nodes: [
+            { id: 'n1', type: 'text.template' },
+            { id: 'n2', type: 'input.context', isMainOutput: true }
+          ],
+          groups
+        })
+      )
+    )
+    expect(r.ok).toBe(true)
+    if (r.ok) expect(r.doc.groups).toEqual(groups)
+  })
+
+  it('rejects a group with <2 members or empty id/name/exposed strings (WP6.3)', () => {
+    const base = {
+      ...minimal,
+      nodes: [
+        { id: 'n1', type: 'text.template' },
+        { id: 'n2', type: 'input.context', isMainOutput: true }
+      ]
+    }
+    expect(
+      parseWorkflowDoc({ ...base, groups: [{ id: 'group-1', name: 'M', nodeIds: ['n1'] }] }).ok
+    ).toBe(false)
+    expect(
+      parseWorkflowDoc({ ...base, groups: [{ id: '', name: 'M', nodeIds: ['n1', 'n2'] }] }).ok
+    ).toBe(false)
+    expect(
+      parseWorkflowDoc({
+        ...base,
+        groups: [
+          {
+            id: 'group-1',
+            name: 'M',
+            nodeIds: ['n1', 'n2'],
+            exposed: [{ node: 'n1', path: '', label: 'x' }]
+          }
+        ]
+      }).ok
+    ).toBe(false)
+  })
+
   it('rejects an attachment with a bad checkpoint name or bad entry mode', () => {
     const base = { ...minimal, kind: 'fragment' }
     expect(

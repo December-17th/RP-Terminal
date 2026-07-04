@@ -145,6 +145,11 @@ export function editorToDoc(
     nodes: outNodes,
     edges: outEdges,
     ...(base.meta !== undefined ? { meta: base.meta } : {}),
+    // One-canvas rebuild (WP6.3): on-canvas module groupings are doc metadata the editor edits via
+    // the store (doc.groups) but which this walker rebuilds from a field whitelist — an un-whitelisted
+    // field is dropped on the first revalidate()/save(). Without this line, grouping a module then
+    // saving would silently ungroup it.
+    ...(base.groups !== undefined ? { groups: base.groups } : {}),
     // Without this, `kind` (turn/subgraph/fragment) is silently dropped on every revalidate()/save(),
     // downgrading a sub-graph doc to a turn doc on its first editor save (plan-QA blocker).
     ...(base.kind !== undefined ? { kind: base.kind } : {}),

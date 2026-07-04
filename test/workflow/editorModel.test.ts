@@ -167,6 +167,29 @@ describe('docToEditor / editorToDoc round-trip', () => {
     const rebuilt = editorToDoc(d, nodes, edges)
     expect(rebuilt.attachments).toBeUndefined()
   })
+
+  it('preserves doc.groups through a round-trip (WP6.3: the known dropped-field trap)', () => {
+    const groups = [
+      {
+        id: 'group-1',
+        name: 'Module 1',
+        nodeIds: ['a', 'b'],
+        collapsed: true,
+        exposed: [{ node: 'a', path: 'template', label: 'Prompt' }]
+      }
+    ]
+    const d = doc([node('a'), node('b')], [], { groups })
+    const { nodes, edges } = docToEditor(d)
+    const rebuilt = editorToDoc(d, nodes, edges)
+    expect(rebuilt.groups).toEqual(groups)
+  })
+
+  it('omits groups when the base doc has none (no stray field)', () => {
+    const d = doc([node('a')], [])
+    const { nodes, edges } = docToEditor(d)
+    const rebuilt = editorToDoc(d, nodes, edges)
+    expect(rebuilt.groups).toBeUndefined()
+  })
 })
 
 describe('autoLayout', () => {

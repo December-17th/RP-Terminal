@@ -152,6 +152,37 @@ export function validateWorkflow(
 
   if (isFragment) validateFragmentAttachments(doc, descriptors, errors)
 
+  // One-canvas rebuild (WP6.3): on-canvas module groupings (types.ts GroupDecl). Doc-metadata only,
+  // so these rules are fragment/turn/subgraph-agnostic — a group is legal in any kind of doc. The
+  // structural gate (docSchema) already enforces nonempty ids + ≥2 members; here we check the
+  // cross-references the node set is needed for. The exposed PATH's validity is deliberately NOT
+  // checked (config shape is schema-loose; a stale path renders empty in the panel).
+  const groupOfNodeId = new Map<string, string>()
+  for (const g of doc.groups ?? []) {
+    const members = new Set(g.nodeIds)
+    for (const id of members) {
+      if (!nodeById.has(id))
+        errors.push({
+          code: 'GROUP_MEMBER_MISSING',
+          message: `group "${g.id}" references a node not in the doc: ${id}`
+        })
+      const prior = groupOfNodeId.get(id)
+      if (prior)
+        errors.push({
+          code: 'GROUP_OVERLAP',
+          message: `node ${id} is in more than one group ("${prior}" and "${g.id}")`
+        })
+      else groupOfNodeId.set(id, g.id)
+    }
+    for (const ex of g.exposed ?? []) {
+      if (!members.has(ex.node))
+        errors.push({
+          code: 'GROUP_EXPOSED_NOT_MEMBER',
+          message: `group "${g.id}" exposes a setting on ${ex.node}, which is not one of its members`
+        })
+    }
+  }
+
   // topoOrder's node-id-keyed maps undercount indegree when ids collide, so the cycle check is
   // unreliable with duplicate ids — the doc is already invalid via DUP_NODE_ID, skip it.
   if (!hasDupNodeIds) {

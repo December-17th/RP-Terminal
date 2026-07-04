@@ -64,6 +64,33 @@ export interface Edge {
   to: EdgeEnd
 }
 
+/** One-canvas rebuild (WP6.3): a single member setting a GroupDecl surfaces on its collapsed
+ *  module panel. `path` is a top-level config field key (v1 exposes only top-level schema fields;
+ *  nested paths are not exposable) resolved with the shared objectPath dialect. A stale path (the
+ *  field renamed/removed) renders empty in the panel — same skip-with-log stance as
+ *  materializeFragment; it is deliberately NOT validated. */
+export interface ExposedGroupSetting {
+  node: string
+  path: string
+  label: string
+}
+
+/** One-canvas rebuild (WP6.3): DOC METADATA grouping in-place nodes into a "module" on the canvas.
+ *  Nothing moves; no subgraph extraction, no new doc kind. A node belongs to at most ONE group;
+ *  groups contain nodes only (no nested groups). `id` is minted `group-<n>` like addNode ids. */
+export interface GroupDecl {
+  id: string
+  name: string
+  /** ≥2 member node ids; each must be a node in doc.nodes (validate: GROUP_MEMBER_MISSING) and in
+   *  no other group (GROUP_OVERLAP). */
+  nodeIds: string[]
+  /** Persisted presentation state: true = shown as a single collapsed module node. */
+  collapsed?: boolean
+  /** Member settings promoted onto the collapsed module panel. Each entry's `node` must be a member
+   *  (validate: GROUP_EXPOSED_NOT_MEMBER). */
+  exposed?: ExposedGroupSetting[]
+}
+
 export interface WorkflowDoc {
   id: string
   name: string
@@ -72,6 +99,9 @@ export interface WorkflowDoc {
   description?: string
   nodes: NodeInstance[]
   edges: Edge[]
+  /** One-canvas rebuild (WP6.3): on-canvas module groupings over in-place nodes. Absent = no
+   *  groups. Pure doc metadata — the engine ignores it entirely. */
+  groups?: GroupDecl[]
   meta?: Record<string, unknown>
   /** Absent = 'turn' (a normal generation graph, run by runWorkflow/resolveWorkflowDoc). A
    *  'subgraph' doc is a reusable sub-graph package (sub-graph nodes v1 plan §1/§2): it's never

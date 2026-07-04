@@ -198,6 +198,103 @@
   background: var(--rpt-text-tertiary);
 }
 
+/* ---------- Module groupings (one-canvas rebuild WP6.3) ---------- */
+/* Collapsed module node: a card standing in for the whole group. */
+.rpt-workflow-editor .rpt-module {
+  min-width: 180px;
+  border-radius: 8px;
+  background: var(--rpt-bg-secondary);
+  border: 1px solid var(--rpt-accent);
+  color: var(--rpt-text-primary);
+  box-shadow: 0 2px 8px color-mix(in srgb, var(--rpt-bg-primary) 55%, transparent);
+  font-size: 12.5px;
+  position: relative;
+}
+.rpt-workflow-editor .react-flow__node.selected .rpt-module,
+.rpt-workflow-editor .rpt-module.selected {
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--rpt-accent) 45%, transparent);
+}
+.rpt-workflow-editor .rpt-module-title-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 10px;
+  border-bottom: 1px solid var(--rpt-border);
+  background: var(--rpt-bg-tertiary);
+  border-radius: 8px 8px 0 0;
+}
+.rpt-workflow-editor .rpt-module-name {
+  font-weight: 600;
+  color: var(--rpt-text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.rpt-workflow-editor .rpt-module-expand {
+  margin-left: auto;
+  font-size: 11px;
+  padding: 1px 7px;
+  border: 1px solid var(--rpt-border);
+  border-radius: 8px;
+  background: var(--rpt-bg-elevated);
+  color: var(--rpt-text-primary);
+  cursor: pointer;
+}
+.rpt-workflow-editor .rpt-module-meta {
+  display: flex;
+  gap: 8px;
+  padding: 6px 10px;
+  font-size: 10.5px;
+  color: var(--rpt-text-secondary);
+}
+
+/* Expanded group frame: a background rect behind its member nodes (zIndex -1 on the RF node). */
+.rpt-workflow-editor .rpt-group-frame {
+  width: 100%;
+  height: 100%;
+  box-sizing: border-box;
+  border: 1px dashed var(--rpt-accent);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--rpt-accent) 8%, transparent);
+  pointer-events: none;
+}
+.rpt-workflow-editor .rpt-group-frame-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 28px;
+  padding: 0 10px;
+  box-sizing: border-box;
+  background: color-mix(in srgb, var(--rpt-accent) 18%, var(--rpt-bg-secondary));
+  border-radius: 11px 11px 0 0;
+  pointer-events: auto;
+}
+.rpt-workflow-editor .rpt-group-frame-name {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--rpt-text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: pointer;
+}
+.rpt-workflow-editor .rpt-group-frame-collapse {
+  margin-left: auto;
+  font-size: 11px;
+  padding: 1px 7px;
+  border: 1px solid var(--rpt-border);
+  border-radius: 8px;
+  background: var(--rpt-bg-elevated);
+  color: var(--rpt-text-primary);
+  cursor: pointer;
+}
+
+/* Synthetic (module boundary) edges — dashed, non-deletable. */
+.rpt-workflow-editor .react-flow__edge.rpt-group-edge .react-flow__edge-path {
+  stroke: var(--rpt-accent);
+  stroke-dasharray: 5 4;
+}
+
 /* ---------- Edges ---------- */
 .rpt-workflow-editor .react-flow__edge-path {
   stroke: var(--rpt-text-tertiary);

@@ -69,6 +69,17 @@ export default function WorkflowEditorView({
   const save = useWorkflowEditorStore((s) => s.save)
   const cloneAndEdit = useWorkflowEditorStore((s) => s.cloneAndEdit)
   const select = useWorkflowEditorStore((s) => s.select)
+  // WP6.3: the on-canvas grouping affordance. The toolbar shows "Group into module" when ≥2
+  // unlocked, ungrouped nodes are multi-selected (the store's groupSelection enforces the same rule;
+  // this just gates the button's visibility).
+  const selectedNodeIds = useWorkflowEditorStore((s) => s.selectedNodeIds)
+  const lockedNodeIds = useWorkflowEditorStore((s) => s.lockedNodeIds)
+  const groupSelection = useWorkflowEditorStore((s) => s.groupSelection)
+  const canGroup = useMemo(() => {
+    if (selectedNodeIds.length < 2) return false
+    const grouped = new Set((doc?.groups ?? []).flatMap((g) => g.nodeIds))
+    return !selectedNodeIds.some((id) => grouped.has(id) || lockedNodeIds.has(id))
+  }, [selectedNodeIds, doc, lockedNodeIds])
   const setLockedNodeIds = useWorkflowEditorStore((s) => s.setLockedNodeIds)
   const setPackEditRouter = useWorkflowEditorStore((s) => s.setPackEditRouter)
   const routePackEdit = useEffectiveGraphStore((s) => s.routePackEdit)
@@ -374,6 +385,14 @@ export default function WorkflowEditorView({
               {t('workflowEditor.export')}
             </button>
           </>
+        )}
+
+        {/* WP6.3: group the current multi-selection into an on-canvas module. Only in a normal
+            (non-effective) editing session with ≥2 unlocked, ungrouped nodes selected. */}
+        {sessionType !== 'fragment' && mode !== 'effective' && canGroup && (
+          <button type="button" onClick={() => groupSelection()} style={{ fontSize: 12.5 }}>
+            {t('workflowEditor.groupSelection')}
+          </button>
         )}
 
         <span style={{ flex: 1 }} />
