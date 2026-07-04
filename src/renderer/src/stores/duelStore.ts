@@ -44,6 +44,12 @@ export const useDuelStore = create<DuelStore>((set, get) => {
       log: [...s.log, ...(res.events ?? [])].slice(-LOG_CAP)
     }))
   }
+  // Adopt a freshly-loaded/started duel: a fresh board clears the selection AND the running log.
+  const loaded = (
+    chatId: string,
+    res: { state?: DuelState | null; catalog?: Record<string, AbilityDef> } | null
+  ): void =>
+    set({ chatId, state: res?.state ?? null, catalog: res?.catalog ?? {}, selection: { mode: 'idle' }, log: [] })
   return {
     chatId: null,
     state: null,
@@ -54,25 +60,16 @@ export const useDuelStore = create<DuelStore>((set, get) => {
     eventSeq: 0,
     log: [],
 
-    load: async (profileId, chatId) => {
-      const res = await api().duelGet(profileId, chatId)
-      set({ chatId, state: res?.state ?? null, catalog: res?.catalog ?? {}, selection: { mode: 'idle' }, log: [] })
-    },
+    load: async (profileId, chatId) => loaded(chatId, await api().duelGet(profileId, chatId)),
 
-    startMock: async (profileId, chatId) => {
-      const res = await api().duelStartMock(profileId, chatId)
-      set({ chatId, state: res?.state ?? null, catalog: res?.catalog ?? {}, selection: { mode: 'idle' }, log: [] })
-    },
+    startMock: async (profileId, chatId) =>
+      loaded(chatId, await api().duelStartMock(profileId, chatId)),
 
-    startFromBuild: async (profileId, chatId, characterId) => {
-      const res = await api().duelStart(profileId, chatId, characterId)
-      set({ chatId, state: res?.state ?? null, catalog: res?.catalog ?? {}, selection: { mode: 'idle' }, log: [] })
-    },
+    startFromBuild: async (profileId, chatId, characterId) =>
+      loaded(chatId, await api().duelStart(profileId, chatId, characterId)),
 
-    startFromCue: async (profileId, chatId, cue) => {
-      const res = await api().duelStartFromCue(profileId, chatId, cue)
-      set({ chatId, state: res?.state ?? null, catalog: res?.catalog ?? {}, selection: { mode: 'idle' }, log: [] })
-    },
+    startFromCue: async (profileId, chatId, cue) =>
+      loaded(chatId, await api().duelStartFromCue(profileId, chatId, cue)),
 
     pickCard: (cardId) => set({ selection: { mode: 'card', cardId } }),
     clearSelection: () => set({ selection: { mode: 'idle' } }),
