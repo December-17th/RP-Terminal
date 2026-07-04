@@ -125,18 +125,29 @@ const rulesInFile = (filePath: string): any[] => {
   return Array.isArray(data) ? data : [data]
 }
 
+/** SillyTavern's regex script priority (regex/engine.js SCRIPT_TYPES — "ORDER MATTERS"):
+ *  GLOBAL → PRESET → SCOPED (character). Our world/session scopes are the SCOPED tier.
+ *  Application order is part of the card contract: cards chain cleanup (global/preset)
+ *  BEFORE beautification (character/world), and a cleanup regex re-scanning a
+ *  beautification rule's huge HTML paste can stall a render for tens of seconds. */
+const SCOPE_TIER: Record<string, number> = { global: 0, preset: 1, world: 2, session: 3 }
+const scopeTier = (m?: ScopeMeta): number => SCOPE_TIER[m?.scope ?? 'global'] ?? 0
+
 /**
- * All normalized rules across the profile's regex files. When `ctx` is given, only
- * scripts whose scope is active for that context (global ⊕ world(card) ⊕ session(chat))
- * are included; with no `ctx` every script is returned (e.g. the manager listing).
+ * All normalized rules across the profile's regex files, in ST APPLICATION order:
+ * scope tier (global → preset → world → session), file order within a tier. When `ctx`
+ * is given, only scripts whose scope is active for that context (global ⊕ world(card) ⊕
+ * session(chat)) are included; with no `ctx` every script is returned (e.g. the manager listing).
  */
 export const getAllRules = (profileId: string, ctx?: ScopeContext): RenderRegexRule[] => {
   const dir = regexDir(profileId)
   if (!fs.existsSync(dir)) return []
   const meta = readMeta(profileId)
   const out: RenderRegexRule[] = []
-  for (const file of listFilesSync(dir)) {
-    if (!file.endsWith('.json') || file.startsWith('_')) continue // _meta.json is the sidecar
+  const files = listFilesSync(dir)
+    .filter((file) => file.endsWith('.json') && !file.startsWith('_')) // _meta.json is the sidecar
+    .sort((a, b) => scopeTier(meta[a]) - scopeTier(meta[b])) // stable: file order within a tier
+  for (const file of files) {
     if (meta[file]?.disabled) continue // a disabled script contributes nothing
     if (ctx && !isScopeActive(meta[file], ctx)) continue
     const mode = meta[file]?.renderMode

@@ -73,10 +73,20 @@ export function ChatView({ profileId }: { profileId: string }): React.ReactEleme
   })
   useEffect(() => {
     if (!activeChatId) return
+    // Bail out when the fetched markers EQUAL the current state (returning prev skips the
+    // re-render): the display-transform memo below deps on this object, and a fresh-but-equal
+    // object would re-run the whole per-floor pipeline (quickjs eval + display regex — seconds
+    // on a heavy beautification card) for nothing on every session load.
+    const same = (a: string[], b: string[]): boolean =>
+      a.length === b.length && a.every((s, i) => s === b[i])
+    const update = (next: { before: string[]; after: string[] }): void =>
+      setRenderMarkers((prev) =>
+        same(prev.before, next.before) && same(prev.after, next.after) ? prev : next
+      )
     window.api
       .getRenderMarkers(profileId, activeChatId)
-      .then(setRenderMarkers)
-      .catch(() => setRenderMarkers({ before: [], after: [] }))
+      .then(update)
+      .catch(() => update({ before: [], after: [] }))
   }, [activeChatId, profileId])
 
   const cardCss = activeCharacter?.card.data.extensions?.rp_terminal?.css as string | undefined
@@ -92,6 +102,17 @@ export function ChatView({ profileId }: { profileId: string }): React.ReactEleme
   const page = Math.min(Math.max(viewIndex, 0), Math.max(pageCount - 1, 0))
   const showStreaming = isGenerating && page >= floors.length
 
+  // The settings the transform actually reads, as primitives — the memo deps on these VALUES, not
+  // on the `settings.templates` object, whose identity churns on every settings (re)load without
+  // its values changing (each churn would re-run the whole transform).
+  const renderOn =
+    settings?.templates?.enabled !== false && settings?.templates?.render?.enabled !== false
+  const finalPassOn = settings?.templates?.render?.final_pass !== false
+
+  // The one visible floor (undefined while the streaming page is showing). Extracted so the memo
+  // deps on THIS floor, not the whole floors array.
+  const visibleFloor = showStreaming ? undefined : floors[page]
+
   // Render-time transform of the VISIBLE floor only: EJS template eval (Phase C final pass, with this
   // floor's vars) → macros (TH-5) → display regex (beautification). The model's raw output stays
   // stored; this is display-only. Transforming just `floors[page]` (not every floor) is the load-perf
@@ -101,9 +122,13 @@ export function ChatView({ profileId }: { profileId: string }): React.ReactEleme
   // unrelated re-renders (typing, opening a menu) don't re-eval, and paging re-evals only the newly
   // visible floor. Regex depth-scoping is disabled on this path (display rules are pre-filtered), so a
   // floor transforms identically in isolation as it did inside the old full-history map.
+  // PERF INVARIANT: the dep list must stay VALUE-stable across a session load — a heavy display
+  // regex (e.g. a workshop beautification pasting ~165KB HTML per match) makes each recompute cost
+  // seconds, so an identity-churning dep multiplies a one-time cost into minutes (manual-pass
+  // finding 05). No object-identity deps except the floor itself, the loaded rule set, and the
+  // (bail-out-guarded) renderMarkers.
   const currentFloor = useMemo<RenderedFloor | undefined>(() => {
-    if (showStreaming) return undefined
-    const f = floors[page]
+    const f = visibleFloor
     if (!f) return undefined
     // Stored content is the FULL raw response. Strip our own state tags; the <thinking> block is
     // kept here only so renderTemplate/macros see the same text — it's removed before the display
@@ -112,8 +137,6 @@ export function ChatView({ profileId }: { profileId: string }): React.ReactEleme
     // nothing is ever truncated in storage.
     const evaled = renderTemplate(stripRptEvents(f.response.content), f.variables, 'final')
     // [RENDER:*]: wrap with the active render-marker templates (each evaled with this floor's vars).
-    const renderOn =
-      settings?.templates?.enabled !== false && settings?.templates?.render?.enabled !== false
     const wrap = (tmpls: string[]): string =>
       renderOn
         ? tmpls
@@ -144,7 +167,8 @@ export function ChatView({ profileId }: { profileId: string }): React.ReactEleme
       swipeCount: f.swipes?.length ?? 1
     }
     // `regexRules` is a dep so a rule change re-renders the floor, though it's read via the store.
-  }, [floors, page, showStreaming, regexRules, personaName, charName, settings?.templates, renderMarkers])
+    // `finalPassOn` is a dep because renderTemplate('final') reads it internally from the store.
+  }, [visibleFloor, regexRules, personaName, charName, renderOn, finalPassOn, renderMarkers])
 
   // Paginated floor view: jump to the newest floor when the floor set changes
   // (new turn, chat switch), and to the in-flight (streaming) page while generating.
