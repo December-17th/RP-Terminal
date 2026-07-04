@@ -1328,7 +1328,149 @@ const zh: Record<string, string> = {
   'agents.import.parseError.not-a-fragment.title': '这不是可分享的智能体包',
   'agents.import.parseError.not-a-fragment.body': '其中的工作流不是片段——只有片段工作流才能作为智能体包分享。',
   'agents.import.parseError.invalid-fragment.title': '此包的工作流已损坏',
-  'agents.import.parseError.invalid-fragment.body': '此包中的工作流未通过其结构检查，因此无法安装。'
+  'agents.import.parseError.invalid-fragment.body': '此包中的工作流未通过其结构检查，因此无法安装。',
+
+  // ── 配方：分享/安装整套世界配置（agent-packs 计划 WP5.3）────────────────────────────────────
+  // 一个配方（.rptrecipe）打包了某个世界的智能体包（固定版本 + 开关状态）、旁白、内存模板，
+  // 以及将它们组合起来的激活配置。这里的界面是「长大成人」的智能体包导出/导入向导——承载
+  // 一整套捆绑内容，并在安装时提供目标世界选择器。
+
+  // 入口。
+  'recipe.export.entry': '导出世界配置…',
+  'recipe.export.entryHint': '分享你在此配置好的包、开关与旁白。',
+  'recipe.import.entry': '导入配方…',
+  'recipe.import.entryOpening': '打开中…',
+
+  // 导出向导外壳。
+  'recipe.export.title': '导出世界配置',
+  'recipe.export.close': '关闭',
+  'recipe.export.loadError': '无法准备此世界的配置。',
+  // 表单步骤。
+  'recipe.export.formLede':
+    '给这套配置起个名字。你分享给的人会把这些包、开关与旁白安装进他们自己的世界。',
+  'recipe.export.nameLabel': '名称',
+  'recipe.export.namePlaceholder': '我的世界配置',
+  'recipe.export.nameRequired': '名称为必填项。',
+  'recipe.export.descriptionLabel': '描述（可选）',
+  'recipe.export.descriptionPlaceholder': '这套配置的用途。',
+  'recipe.export.creatorLabel': '作者（可选）',
+  'recipe.export.creatorPlaceholder': '你的名字或昵称。',
+  'recipe.export.fallbackName': '未命名配置',
+  'recipe.export.next': '查看',
+  // 查看步骤。
+  'recipe.export.reviewLede':
+    '这就是别人将安装的内容。在世界中开启之前，这里的任何内容都不会运行。',
+  'recipe.export.fileSize': '文件大小约为 {{size}}。',
+  'recipe.export.packsTitle': '此配置中的包',
+  'recipe.export.packsSummary': '{{n}} 个包 · {{enabled}} 个已开启',
+  'recipe.export.packsEmpty': '此世界未激活任何包，因此没有可导出的内容。',
+  'recipe.export.packVersion': 'v{{v}}',
+  'recipe.export.packOn': '开',
+  'recipe.export.packOff': '关',
+  'recipe.export.narratorTitle': '旁白',
+  'recipe.export.templateTitle': '内存模板',
+  'recipe.export.templateNone': '未捆绑内存模板——包会在运行时绑定到你的模板。',
+  'recipe.export.warnTitle': '给安装者的提示',
+  'recipe.export.warnLede': '他们在安装前会看到这些：',
+  'recipe.export.back': '返回',
+  'recipe.export.save': '保存文件…',
+  'recipe.export.saving': '保存中…',
+  'recipe.export.cancel': '取消',
+  'recipe.export.savedTitle': '已保存',
+  'recipe.export.done': '完成',
+  // 空态：世界未激活任何内容（服务返回 no-activated-packs）。
+  'recipe.export.error.no-activated-packs':
+    '此世界没有开启任何包，因此暂无可分享的内容。请先在「已安装」中开启一个包。',
+
+  // 旁白行（导出查看 + 导入检视共用）。
+  'recipe.narrator.builtin': '使用你的默认旁白。',
+  'recipe.narrator.custom': '包含你的自定义旁白。',
+  'recipe.narrator.customNodes': '包含你的自定义旁白（{{n}} 个节点）。',
+
+  // 导入检视界面外壳。
+  'recipe.import.title': '安装世界配置',
+  'recipe.import.close': '关闭',
+  'recipe.import.lede': '这是此文件中的整套配置。请选择要安装进的世界，然后安装。',
+  'recipe.import.identityMeta': '作者：{{creator}}',
+  'recipe.import.packsTitle': '包',
+  'recipe.import.packsCount': '{{n}} 个包',
+  'recipe.import.packVersion': 'v{{v}}',
+  'recipe.import.packBlocked': '无法安装',
+  'recipe.import.packUnknownNodes': '使用了 {{n}} 项此应用不具备的功能：',
+  'recipe.import.narratorTitle': '旁白',
+  'recipe.import.templateTitle': '捆绑的内存模板',
+  'recipe.import.warnTitle': '提示',
+  // 配方级阻断横幅——点名问题包。
+  'recipe.import.blockedTitle': '此配方无法安装',
+  'recipe.import.blockedBody':
+    '有一个或多个包使用了此应用不具备的功能，因此整套配置被阻断：{{names}}。',
+  'recipe.import.blockedNarrator': '自定义旁白使用了此应用不具备的功能。',
+  // 去重标记（与包相同的三种状态）。
+  'recipe.import.dedupe.new': '新',
+  'recipe.import.dedupe.new-version': '新版本',
+  'recipe.import.dedupe.already-installed': '已安装',
+  // 模板结果。
+  'recipe.import.templateOutcome.will-install': '将被添加',
+  'recipe.import.templateOutcome.will-duplicate': '将以副本形式添加（已存在同名模板）',
+  // 世界选择器（新颖的确认行——在确认时选择；令牌不保存世界）。
+  'recipe.import.targetLabel': '安装到',
+  'recipe.import.targetPlaceholder': '选择一个世界…',
+  'recipe.import.targetCurrent': '{{name}}（当前）',
+  'recipe.import.targetNoWorlds': '请先导入一个世界——配方会安装进已有的世界。',
+  'recipe.import.targetRequired': '请选择要安装进的世界。',
+  'recipe.import.cancel': '取消',
+  'recipe.import.dismiss': '关闭',
+  'recipe.import.install': '安装到世界',
+  'recipe.import.installing': '安装中…',
+  'recipe.import.installBlocked': '此配方无法按原样安装。',
+  'recipe.import.installedToast': '已安装「{{name}}」——你的世界配置已就绪',
+  'recipe.import.confirmExpired': '此次导入已过期。请重新打开文件以安装。',
+  'recipe.import.confirmBlocked': '此配方无法安装——某个包使用了此应用不具备的功能。',
+  // 解析错误界面（配方在包的错误码基础上增加了四种）。
+  'recipe.import.parseError.too-large.title': '文件过大',
+  'recipe.import.parseError.too-large.body': '此配方文件超出了应用可读取的大小，可能已损坏。',
+  'recipe.import.parseError.invalid-json.title': '无法读取该文件',
+  'recipe.import.parseError.invalid-json.body': '这看起来不像配方文件——应用无法理解它。',
+  'recipe.import.parseError.unsupported-version.title': '此文件来自不同版本',
+  'recipe.import.parseError.unsupported-version.body':
+    '此配方针对此应用不支持的另一种配方格式（{{found}}）制作。',
+  'recipe.import.parseError.invalid-envelope.title': '此文件格式有误',
+  'recipe.import.parseError.invalid-envelope.body': '配方的外层结构未通过检查，因此无法安装。',
+  'recipe.import.parseError.not-a-fragment.title': '这不是可分享的配方',
+  'recipe.import.parseError.not-a-fragment.body': '此文件不包含应用可安装的世界配置。',
+  'recipe.import.parseError.invalid-fragment.title': '某个包的工作流已损坏',
+  'recipe.import.parseError.invalid-fragment.body':
+    '此配方中的某个工作流未通过其结构检查，因此配方无法安装。',
+  'recipe.import.parseError.invalid-narrator.title': '旁白已损坏',
+  'recipe.import.parseError.invalid-narrator.body':
+    '此配方中捆绑的旁白未通过其结构检查，因此配方无法安装。',
+  'recipe.import.parseError.duplicate-pack.title': '此配方存在重复的包',
+  'recipe.import.parseError.duplicate-pack.body': '配方两次列出了同一个包，应用无法干净地安装。',
+  'recipe.import.parseError.activation-refers-unknown-pack.title': '此配方不一致',
+  'recipe.import.parseError.activation-refers-unknown-pack.body':
+    '配方的配置引用了文件中未包含的包，因此无法安装。',
+  'recipe.import.parseError.activation-duplicate-pack.title': '此配方不一致',
+  'recipe.import.parseError.activation-duplicate-pack.body':
+    '配方的配置两次激活了同一个包，应用无法干净地安装。',
+
+  // 已应用行（成功 + 部分面板）——用平白语言说明「落地了什么」。
+  'recipe.applied.templates': '已添加 {{n}} 个内存模板',
+  'recipe.applied.packs': '已安装 {{n}} 个包（{{installed}} 个为新增）',
+  'recipe.applied.narrator': '已设置自定义旁白',
+  'recipe.applied.activation': '已设置开关——{{n}} 个包中已开启 {{enabled}} 个',
+
+  // 部分失败结果面板（配方安装落地了一部分步骤，随后有一步失败）。
+  'recipe.partial.title': '部分安装',
+  'recipe.partial.landedTitle': '已落地',
+  'recipe.partial.failedTitle': '失败项',
+  'recipe.partial.failed.templates': '添加内存模板失败。',
+  'recipe.partial.failed.packs': '安装包失败。',
+  'recipe.partial.failed.narrator': '设置旁白失败。',
+  'recipe.partial.failed.activation': '设置开关失败。',
+  'recipe.partial.failed.unknown': '某一步中途失败。',
+  'recipe.partial.safeToRetry': '可以安全地再次导入此文件——已落地的部分会被复用，不会重复。',
+  'recipe.partial.retry': '再次导入',
+  'recipe.partial.dismiss': '关闭'
 }
 
 export default zh

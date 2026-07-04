@@ -1390,7 +1390,159 @@ const en: Record<string, string> = {
     'The workflow inside isn’t a fragment — only fragment workflows can be shared as agent packs.',
   'agents.import.parseError.invalid-fragment.title': 'The pack’s workflow is broken',
   'agents.import.parseError.invalid-fragment.body':
-    'The workflow inside this pack didn’t pass its structure check, so it can’t be installed.'
+    'The workflow inside this pack didn’t pass its structure check, so it can’t be installed.',
+
+  // ── Recipes: share/install a whole world setup (agent-packs plan WP5.3) ──────────────────────────
+  // A recipe (.rptrecipe) bundles a world's agent packs (pinned versions + gate state), its narrator,
+  // any memory templates, and the activation that composes them. The surfaces here are the pack
+  // export/import wizards grown up to carry a BUNDLE + a target-world picker at install.
+
+  // Entries.
+  'recipe.export.entry': 'Export world setup…',
+  'recipe.export.entryHint': 'Share the packs, gates, and narrator you’ve set up here.',
+  'recipe.import.entry': 'Import recipe…',
+  'recipe.import.entryOpening': 'Opening…',
+
+  // Export wizard shell.
+  'recipe.export.title': 'Export world setup',
+  'recipe.export.close': 'Close',
+  'recipe.export.loadError': 'Couldn’t prepare this world’s setup.',
+  // Form step.
+  'recipe.export.formLede':
+    'Give this setup a name. Anyone you share it with will install these packs, gates, and narrator into a world of their own.',
+  'recipe.export.nameLabel': 'Name',
+  'recipe.export.namePlaceholder': 'My world setup',
+  'recipe.export.nameRequired': 'A name is required.',
+  'recipe.export.descriptionLabel': 'Description (optional)',
+  'recipe.export.descriptionPlaceholder': 'What this setup is for.',
+  'recipe.export.creatorLabel': 'Creator (optional)',
+  'recipe.export.creatorPlaceholder': 'Your name or handle.',
+  'recipe.export.fallbackName': 'Untitled setup',
+  'recipe.export.next': 'Review',
+  // Review step.
+  'recipe.export.reviewLede':
+    'This is what someone will install. Nothing here runs until they turn it on in a world.',
+  'recipe.export.fileSize': 'The file will weigh about {{size}}.',
+  'recipe.export.packsTitle': 'Packs in this setup',
+  'recipe.export.packsSummary': '{{n}} pack(s) · {{enabled}} turned on',
+  'recipe.export.packsEmpty': 'No packs are activated in this world, so there’s nothing to export.',
+  'recipe.export.packVersion': 'v{{v}}',
+  'recipe.export.packOn': 'on',
+  'recipe.export.packOff': 'off',
+  'recipe.export.narratorTitle': 'Narrator',
+  'recipe.export.templateTitle': 'Memory templates',
+  'recipe.export.templateNone': 'No memory templates are bundled — packs bind to yours at runtime.',
+  'recipe.export.warnTitle': 'Notes for whoever installs this',
+  'recipe.export.warnLede': 'They’ll see these before installing:',
+  'recipe.export.back': 'Back',
+  'recipe.export.save': 'Save file…',
+  'recipe.export.saving': 'Saving…',
+  'recipe.export.cancel': 'Cancel',
+  'recipe.export.savedTitle': 'Saved',
+  'recipe.export.done': 'Done',
+  // Empty-ish state: a world with nothing activated (the service returns no-activated-packs).
+  'recipe.export.error.no-activated-packs':
+    'This world has no packs turned on, so there’s nothing to share yet. Turn on a pack in Installed first.',
+
+  // The narrator line (shared by export review + import inspection).
+  'recipe.narrator.builtin': 'Uses your default narrator.',
+  'recipe.narrator.custom': 'Includes your custom narrator.',
+  'recipe.narrator.customNodes': 'Includes your custom narrator ({{n}} nodes).',
+
+  // Import inspection sheet shell.
+  'recipe.import.title': 'Install world setup',
+  'recipe.import.close': 'Close',
+  'recipe.import.lede':
+    'Here’s the whole setup inside this file. Choose a world to install it into, then install.',
+  'recipe.import.identityMeta': 'by {{creator}}',
+  'recipe.import.packsTitle': 'Packs',
+  'recipe.import.packsCount': '{{n}} pack(s)',
+  'recipe.import.packVersion': 'v{{v}}',
+  'recipe.import.packBlocked': 'Can’t install',
+  'recipe.import.packUnknownNodes': 'Uses {{n}} feature(s) this app doesn’t have:',
+  'recipe.import.narratorTitle': 'Narrator',
+  'recipe.import.templateTitle': 'Bundled memory templates',
+  'recipe.import.warnTitle': 'Notes',
+  // Recipe-level blocked banner — names the offenders.
+  'recipe.import.blockedTitle': 'This recipe can’t be installed',
+  'recipe.import.blockedBody':
+    'One or more packs use features this app doesn’t have, so the whole setup is blocked: {{names}}.',
+  'recipe.import.blockedNarrator': 'The custom narrator uses features this app doesn’t have.',
+  // Dedupe chips (same three states as packs).
+  'recipe.import.dedupe.new': 'New',
+  'recipe.import.dedupe.new-version': 'New version',
+  'recipe.import.dedupe.already-installed': 'Already installed',
+  // Template outcomes.
+  'recipe.import.templateOutcome.will-install': 'will be added',
+  'recipe.import.templateOutcome.will-duplicate':
+    'will be added as a copy (a template with this name already exists)',
+  // World picker (the novel confirm row — happens at confirm time; token stores no world).
+  'recipe.import.targetLabel': 'Install into',
+  'recipe.import.targetPlaceholder': 'Choose a world…',
+  'recipe.import.targetCurrent': '{{name}} (current)',
+  'recipe.import.targetNoWorlds': 'Import a world first — a recipe installs into an existing world.',
+  'recipe.import.targetRequired': 'Choose a world to install into.',
+  'recipe.import.cancel': 'Cancel',
+  'recipe.import.dismiss': 'Close',
+  'recipe.import.install': 'Install into world',
+  'recipe.import.installing': 'Installing…',
+  'recipe.import.installBlocked': 'This recipe can’t be installed as-is.',
+  'recipe.import.installedToast': 'Installed “{{name}}” — your world setup is ready',
+  'recipe.import.confirmExpired':
+    'This import expired. Open the file again to install it.',
+  'recipe.import.confirmBlocked':
+    'This recipe can’t be installed — a pack uses features this app doesn’t have.',
+  // Parse-error sheet (recipe adds four codes on top of the pack ones).
+  'recipe.import.parseError.too-large.title': 'That file is too big',
+  'recipe.import.parseError.too-large.body':
+    'This recipe file is larger than the app will read. It may be corrupted.',
+  'recipe.import.parseError.invalid-json.title': 'Couldn’t read that file',
+  'recipe.import.parseError.invalid-json.body':
+    'This doesn’t look like a recipe file — the app couldn’t make sense of it.',
+  'recipe.import.parseError.unsupported-version.title': 'This file is from a different version',
+  'recipe.import.parseError.unsupported-version.body':
+    'This recipe was made for a different recipe format ({{found}}) that this app doesn’t support.',
+  'recipe.import.parseError.invalid-envelope.title': 'This file is malformed',
+  'recipe.import.parseError.invalid-envelope.body':
+    'The recipe’s outer structure didn’t pass its checks, so it can’t be installed.',
+  'recipe.import.parseError.not-a-fragment.title': 'This isn’t a shareable recipe',
+  'recipe.import.parseError.not-a-fragment.body':
+    'This file doesn’t contain a world setup the app can install.',
+  'recipe.import.parseError.invalid-fragment.title': 'A pack’s workflow is broken',
+  'recipe.import.parseError.invalid-fragment.body':
+    'A workflow inside this recipe didn’t pass its structure check, so the recipe can’t be installed.',
+  'recipe.import.parseError.invalid-narrator.title': 'The narrator is broken',
+  'recipe.import.parseError.invalid-narrator.body':
+    'The narrator bundled in this recipe didn’t pass its structure check, so the recipe can’t be installed.',
+  'recipe.import.parseError.duplicate-pack.title': 'This recipe has a duplicate pack',
+  'recipe.import.parseError.duplicate-pack.body':
+    'The recipe lists the same pack twice, which the app can’t install cleanly.',
+  'recipe.import.parseError.activation-refers-unknown-pack.title': 'This recipe is inconsistent',
+  'recipe.import.parseError.activation-refers-unknown-pack.body':
+    'The recipe’s setup refers to a pack that isn’t included in the file, so it can’t be installed.',
+  'recipe.import.parseError.activation-duplicate-pack.title': 'This recipe is inconsistent',
+  'recipe.import.parseError.activation-duplicate-pack.body':
+    'The recipe’s setup activates the same pack twice, which the app can’t install cleanly.',
+
+  // Applied lines (success + partial panels) — plain language "what landed".
+  'recipe.applied.templates': '{{n}} memory template(s) added',
+  'recipe.applied.packs': '{{n}} pack(s) installed ({{installed}} new)',
+  'recipe.applied.narrator': 'Custom narrator set',
+  'recipe.applied.activation': 'Gates set — {{enabled}} of {{n}} pack(s) turned on',
+
+  // Partial-failure result panel (a recipe install that landed some steps, then one failed).
+  'recipe.partial.title': 'Partly installed',
+  'recipe.partial.landedTitle': 'What landed',
+  'recipe.partial.failedTitle': 'What failed',
+  'recipe.partial.failed.templates': 'Adding memory templates failed.',
+  'recipe.partial.failed.packs': 'Installing the packs failed.',
+  'recipe.partial.failed.narrator': 'Setting the narrator failed.',
+  'recipe.partial.failed.activation': 'Setting the gates failed.',
+  'recipe.partial.failed.unknown': 'A step failed partway through.',
+  'recipe.partial.safeToRetry':
+    'It’s safe to import this file again — the parts that already landed will be reused, not duplicated.',
+  'recipe.partial.retry': 'Import again',
+  'recipe.partial.dismiss': 'Close'
 }
 
 export default en

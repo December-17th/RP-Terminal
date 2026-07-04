@@ -20,6 +20,7 @@
 
 import React from 'react'
 import { useChatStore } from '../../stores/chatStore'
+import { useCharacterStore } from '../../stores/characterStore'
 import { useT, useOptionalT } from '../../i18n'
 import { formatTraceSeconds } from '../../../../shared/workflow/trace'
 import type { StoredRunRecord } from '../../../../shared/workflow/trace'
@@ -73,6 +74,9 @@ import { AgentPackDetail } from './AgentPackDetail'
 import { AgentPackExportWizard } from './AgentPackExportWizard'
 import { AgentPackImportInspector } from './AgentPackImportInspector'
 import type { InspectionReport } from './agentPackTransferDisplay'
+import { RecipeExportWizard } from './RecipeExportWizard'
+import { RecipeImportInspector } from './RecipeImportInspector'
+import type { RecipeInspectionReport } from './recipeTransferDisplay'
 import { WorkflowView } from './WorkflowView'
 import { MemoryPane } from './MemoryPane'
 import type { MemoryPackInput } from './memoryPaneModel'
@@ -125,6 +129,18 @@ export const AgentsView: React.FC<{
   const worldId = React.useMemo(
     () => chats.find((c) => c.id === activeChatId)?.character_id ?? null,
     [chats, activeChatId]
+  )
+  // The worlds list for the recipe surfaces (WP5.3): a world is a character card. Names come from the
+  // card's data.name (the RegexPanel/ScriptsPanel idiom). The export wizard needs the CURRENT world's
+  // name to prefill; the import picker needs ALL worlds to choose a target at confirm time.
+  const characters = useCharacterStore((s) => s.characters)
+  const worlds = React.useMemo(
+    () => characters.map((c) => ({ id: c.id, name: c.card?.data?.name || c.id })),
+    [characters]
+  )
+  const worldName = React.useMemo(
+    () => worlds.find((w) => w.id === worldId)?.name ?? '',
+    [worlds, worldId]
   )
 
   const [rail, setRail] = React.useState<RailItem>(() => resolveInitialRail(initialRail))
@@ -330,6 +346,8 @@ export const AgentsView: React.FC<{
             runs={runs}
             gates={gates}
             worldId={worldId}
+            worldName={worldName}
+            worlds={worlds}
             loading={loading}
             error={error}
             onRetry={() => void load()}
@@ -356,6 +374,7 @@ export const AgentsView: React.FC<{
             profileId={profileId}
             chatId={activeChatId}
             worldId={worldId}
+            worldName={worldName}
             packs={packs}
             gates={gates}
             runs={runs}
@@ -419,6 +438,10 @@ const InstalledPane: React.FC<{
   runs: StoredRunRecord[]
   gates: Record<string, boolean>
   worldId: string | null
+  /** The current world's display name (WP5.3) — seeds the recipe export form. */
+  worldName: string
+  /** All worlds ({id,name}) — the recipe import picker's target list (WP5.3). */
+  worlds: { id: string; name: string }[]
   loading: boolean
   error: boolean
   onRetry: () => void
@@ -440,6 +463,8 @@ const InstalledPane: React.FC<{
   runs,
   gates,
   worldId,
+  worldName,
+  worlds,
   loading,
   error,
   onRetry,
@@ -457,7 +482,13 @@ const InstalledPane: React.FC<{
   // the refreshed list.
   const [importReport, setImportReport] = React.useState<InspectionReport | null>(null)
   const [importing, setImporting] = React.useState(false)
-  const [justInstalledId, setJustInstalledId] = React.useState<string | null>(null)
+  // The set of freshly-installed pack ids to highlight — one for a pack import, many for a recipe.
+  const [justInstalledIds, setJustInstalledIds] = React.useState<Set<string>>(() => new Set())
+  // Recipe (WP5.3): the export wizard (opened from the contextual affordance) + the import inspection
+  // sheet (opened from the "Import recipe" button). Both mount over the whole control center.
+  const [exportingRecipe, setExportingRecipe] = React.useState(false)
+  const [recipeReport, setRecipeReport] = React.useState<RecipeInspectionReport | null>(null)
+  const [importingRecipe, setImportingRecipe] = React.useState(false)
 
   const openImportDialog = React.useCallback(async () => {
     setImporting(true)
@@ -473,41 +504,111 @@ const InstalledPane: React.FC<{
     }
   }, [profileId])
 
+  const openRecipeImportDialog = React.useCallback(async () => {
+    setImportingRecipe(true)
+    try {
+      const report = (await api().importRecipeDialog(profileId)) as RecipeInspectionReport | null
+      if (report) setRecipeReport(report)
+    } catch {
+      // Rare invoke failure — the button re-enables so the user can retry.
+    } finally {
+      setImportingRecipe(false)
+    }
+  }, [profileId])
+
+  const highlightInstalled = React.useCallback((ids: string[]) => {
+    setJustInstalledIds(new Set(ids))
+    onRetry()
+    window.setTimeout(() => setJustInstalledIds(new Set()), 4000)
+  }, [onRetry])
+
   const closeInspector = React.useCallback(
     (installedId?: string) => {
       setImportReport(null)
-      if (installedId) {
-        setJustInstalledId(installedId)
-        onRetry() // reload the list so the new pack appears (gate-closed — ADR 0005)
-        // Clear the highlight after the 'just installed' emphasis has had a moment.
-        window.setTimeout(() => setJustInstalledId(null), 4000)
-      }
+      if (installedId) highlightInstalled([installedId])
     },
-    [onRetry]
+    [highlightInstalled]
   )
 
-  // The header (with the Import button) renders in EVERY state so import is always reachable — even
-  // from the no-world / empty states (import lands in the global library, world-independent).
+  const closeRecipeInspector = React.useCallback(
+    (result?: { worldId: string; packIds: string[] }) => {
+      setRecipeReport(null)
+      // On a successful recipe install: refresh + highlight the landed packs, and jump the user to
+      // Installed so they SEE the composed setup. (We're already on the Installed rail here, but the
+      // navigate keeps the journey explicit + future-proofs a recipe import launched from elsewhere.)
+      if (result) {
+        onNavigate('installed')
+        highlightInstalled(result.packIds)
+      }
+    },
+    [highlightInstalled, onNavigate]
+  )
+
+  // A recipe export needs a world (it exports THIS world's setup). The affordance is gated on worldId.
+  const canExportRecipe = !!worldId
+
+  // The header: pack Import + a recipe Import (the split), plus a contextual "Export world setup…"
+  // when a world is open (the creator path — share the setup you've built here). All reachable from
+  // every state so import is never blocked; export shows only with a world.
   const header = (
     <div className="rpt-agents-installed-head">
       <h2 className="rpt-agents-installed-title">{t('agents.rail.installed')}</h2>
-      <button
-        type="button"
-        className="rpt-agents-import-btn"
-        onClick={() => void openImportDialog()}
-        disabled={importing}
-      >
-        {importing ? t('agents.import.opening') : t('agents.import.open')}
-      </button>
+      <div className="rpt-agents-installed-actions">
+        {canExportRecipe && (
+          <button
+            type="button"
+            className="rpt-agents-import-btn"
+            onClick={() => setExportingRecipe(true)}
+          >
+            {t('recipe.export.entry')}
+          </button>
+        )}
+        <button
+          type="button"
+          className="rpt-agents-import-btn"
+          onClick={() => void openImportDialog()}
+          disabled={importing}
+        >
+          {importing ? t('agents.import.opening') : t('agents.import.open')}
+        </button>
+        <button
+          type="button"
+          className="rpt-agents-import-btn"
+          onClick={() => void openRecipeImportDialog()}
+          disabled={importingRecipe}
+        >
+          {importingRecipe ? t('recipe.import.entryOpening') : t('recipe.import.entry')}
+        </button>
+      </div>
     </div>
   )
 
-  const inspector = importReport && (
-    <AgentPackImportInspector
-      profileId={profileId}
-      report={importReport}
-      onClose={closeInspector}
-    />
+  const inspector = (
+    <>
+      {importReport && (
+        <AgentPackImportInspector
+          profileId={profileId}
+          report={importReport}
+          onClose={closeInspector}
+        />
+      )}
+      {recipeReport && (
+        <RecipeImportInspector
+          report={recipeReport}
+          worlds={worlds}
+          currentWorldId={worldId}
+          onClose={closeRecipeInspector}
+        />
+      )}
+      {exportingRecipe && worldId && (
+        <RecipeExportWizard
+          profileId={profileId}
+          worldId={worldId}
+          worldName={worldName}
+          onClose={() => setExportingRecipe(false)}
+        />
+      )}
+    </>
   )
 
   if (loading && packs === null) {
@@ -592,7 +693,7 @@ const InstalledPane: React.FC<{
             open={gates[pack.id] ?? false}
             runs={runs}
             health={packHealth(runs, pack.id)}
-            justInstalled={justInstalledId === pack.id || justForkedId === pack.id}
+            justInstalled={justInstalledIds.has(pack.id) || justForkedId === pack.id}
             worldId={worldId}
             onFlipGate={(next) => onFlipGate(pack, next)}
             onFork={() => onFork(pack)}
@@ -1686,6 +1787,8 @@ const OverviewPane: React.FC<{
   profileId: string
   chatId: string | null
   worldId: string | null
+  /** The current world's display name (WP5.3) — seeds the recipe export form from the quick-link. */
+  worldName: string
   packs: PackSummary[] | null
   gates: Record<string, boolean>
   runs: StoredRunRecord[]
@@ -1699,6 +1802,7 @@ const OverviewPane: React.FC<{
   profileId,
   chatId,
   worldId,
+  worldName,
   packs,
   gates,
   runs,
@@ -1712,6 +1816,9 @@ const OverviewPane: React.FC<{
   const t = useT()
   const tOpt = useOptionalT()
   const openWorkflowEditor = useUiStore((s) => s.openWorkflowEditor)
+  // The recipe export wizard, opened from the Overview quick-link ("share this world's setup"). Mounts
+  // over the whole control center. Requires a world (guaranteed here — the no-world state returns early).
+  const [exportingRecipe, setExportingRecipe] = React.useState(false)
   const nodeTitle = (type: string): string => tOpt(`workflowEditor.nodeTitle.${type}`) || type
 
   const list = packs ?? []
@@ -1934,8 +2041,28 @@ const OverviewPane: React.FC<{
           >
             {t('agents.overview.linkStudio')}
           </button>
+          {/* "Share this world's setup" (WP5.3) — the recipe export entry. Only meaningful with a
+              world (guaranteed here) + something to share; the wizard's Review step handles the
+              honest empty case (no activated packs → a designed panel). */}
+          <button
+            type="button"
+            className="rpt-overview-link"
+            onClick={() => setExportingRecipe(true)}
+            title={t('recipe.export.entryHint')}
+          >
+            {t('recipe.export.entry')}
+          </button>
         </div>
       </section>
+
+      {exportingRecipe && worldId && (
+        <RecipeExportWizard
+          profileId={profileId}
+          worldId={worldId}
+          worldName={worldName}
+          onClose={() => setExportingRecipe(false)}
+        />
+      )}
     </div>
   )
 }

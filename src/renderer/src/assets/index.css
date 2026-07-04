@@ -2697,6 +2697,92 @@ select {
   .rpt-agents-import-btn { transition:none; }
 }
 
+/* ── Recipes: share/install a whole world setup (agent-packs plan WP5.3) ────────────────────────────
+   The recipe export wizard + import inspection sheet reuse the .rpt-transfer-* / .rpt-inspect-* shell
+   (same visual language as the pack surfaces). These are the recipe-only additions: the export form
+   fields, the pack list (export) + pack sub-cards (import), the recipe-level blocked banner, the world
+   picker on the confirm row, and the partial-result panel. All colors via --rpt-* tokens, AA-safe. */
+
+/* Installed header — now holds Export + two imports (pack / recipe). Wraps on narrow widths. */
+.rpt-agents-installed-actions { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+
+/* Export form (step 1). */
+.rpt-recipe-form { display:flex; flex-direction:column; gap:14px; }
+.rpt-recipe-field { display:flex; flex-direction:column; gap:5px; }
+.rpt-recipe-fieldlabel { font-size:12px; font-weight:600; color:var(--rpt-text-secondary); }
+.rpt-recipe-input { font:inherit; font-size:13px; color:var(--rpt-text-primary);
+  background:var(--rpt-bg-primary); border:1px solid var(--rpt-border); border-radius:7px; padding:8px 10px;
+  transition:border-color 160ms ease-out; }
+.rpt-recipe-input::placeholder { color:var(--rpt-text-tertiary); }
+.rpt-recipe-input:focus-visible { outline:none; border-color:var(--rpt-accent); }
+.rpt-recipe-input[aria-invalid="true"] { border-color:var(--rpt-danger); }
+.rpt-recipe-textarea { resize:vertical; min-height:44px; line-height:1.5; }
+.rpt-recipe-fielderror { font-size:11.5px; color:var(--rpt-danger); }
+
+/* Export Review — the pack list (name · version · on/off). */
+.rpt-recipe-packlist { margin:0; padding:0; list-style:none; display:flex; flex-direction:column; gap:6px; }
+.rpt-recipe-packrow { display:flex; align-items:center; gap:10px; padding:7px 10px; border-radius:7px;
+  background:var(--rpt-bg-tertiary); }
+.rpt-recipe-packname { flex:1; font-size:12.5px; font-weight:500; color:var(--rpt-text-primary); }
+.rpt-recipe-packver { font-size:11.5px; color:var(--rpt-text-tertiary);
+  font-family:var(--rpt-font-mono, ui-monospace, monospace); }
+.rpt-recipe-packstate { font-size:10.5px; font-weight:600; padding:2px 9px; border-radius:10px;
+  background:var(--rpt-bg-primary); color:var(--rpt-text-tertiary); border:1px solid var(--rpt-border); }
+.rpt-recipe-packstate.on { background:color-mix(in srgb, var(--rpt-success) 18%, transparent);
+  color:var(--rpt-success); border-color:transparent; }
+
+/* Import — pack sub-cards (compact; a blocked one gets a danger frame). */
+.rpt-recipe-packcount { font-size:11px; font-weight:500; color:var(--rpt-text-tertiary);
+  text-transform:none; letter-spacing:0; }
+.rpt-recipe-packcards { margin:0; padding:0; list-style:none; display:flex; flex-direction:column; gap:8px; }
+.rpt-recipe-packcard { display:flex; flex-direction:column; gap:8px; padding:10px 12px; border-radius:9px;
+  background:var(--rpt-bg-tertiary); border:1px solid var(--rpt-border); }
+.rpt-recipe-packcard.blocked { background:color-mix(in srgb, var(--rpt-danger) 9%, transparent);
+  border-color:color-mix(in srgb, var(--rpt-danger) 34%, transparent); }
+.rpt-recipe-packcard-head { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+.rpt-recipe-packcard-name { flex:1; font-size:13px; font-weight:600; color:var(--rpt-text-primary); }
+.rpt-recipe-packcard-ver { font-size:11.5px; color:var(--rpt-text-tertiary);
+  font-family:var(--rpt-font-mono, ui-monospace, monospace); }
+.rpt-recipe-packcard-blocked { font-size:10.5px; font-weight:600; padding:2px 9px; border-radius:10px;
+  background:color-mix(in srgb, var(--rpt-danger) 18%, transparent); color:var(--rpt-danger); }
+.rpt-recipe-packcard-chips { margin:0; }
+.rpt-recipe-packcard-nodes { display:flex; flex-direction:column; gap:5px; }
+.rpt-recipe-packcard-nodeslede { font-size:11.5px; color:var(--rpt-danger); }
+
+/* Recipe-level blocked banner (any broken member blocks the whole recipe). */
+.rpt-recipe-blocked { display:flex; flex-direction:column; gap:6px; padding:12px 14px; border-radius:9px;
+  background:color-mix(in srgb, var(--rpt-danger) 11%, transparent);
+  border:1px solid color-mix(in srgb, var(--rpt-danger) 40%, transparent); }
+.rpt-recipe-blocked-head { display:flex; align-items:center; gap:8px; }
+.rpt-recipe-blocked-icon { font-size:15px; }
+.rpt-recipe-blocked-title { font-size:13.5px; font-weight:700; color:var(--rpt-text-primary); }
+.rpt-recipe-blocked-body { margin:0; font-size:12.5px; line-height:1.55; color:var(--rpt-text-secondary); }
+
+/* The world picker on the confirm row (the novel piece). Sits left of Cancel/Install; wraps first. */
+.rpt-recipe-target { display:flex; align-items:center; gap:8px; margin-right:auto; flex-wrap:wrap; }
+.rpt-recipe-targetlabel { font-size:12px; font-weight:600; color:var(--rpt-text-secondary); }
+.rpt-recipe-targetselect { font:inherit; font-size:12.5px; color:var(--rpt-text-primary);
+  background:var(--rpt-bg-primary); border:1px solid var(--rpt-border); border-radius:7px; padding:6px 9px;
+  cursor:pointer; transition:border-color 160ms ease-out; max-width:220px; }
+.rpt-recipe-targetselect:focus-visible { outline:none; border-color:var(--rpt-accent); }
+.rpt-recipe-target-none { font-size:12px; color:var(--rpt-text-tertiary); max-width:260px; }
+
+/* Partial-result panel — "these landed, this failed" (recipe-only honesty). */
+.rpt-recipe-partial { display:flex; flex-direction:column; gap:16px; }
+.rpt-recipe-partial-icon { font-size:30px; color:var(--rpt-warning); align-self:center; }
+.rpt-recipe-partial-landed { margin:0; padding:0; list-style:none; display:flex; flex-direction:column; gap:5px; }
+.rpt-recipe-partial-landeditem { display:flex; align-items:flex-start; gap:8px; font-size:12.5px;
+  line-height:1.5; color:var(--rpt-text-primary); }
+.rpt-recipe-partial-check { color:var(--rpt-success); font-weight:700; }
+.rpt-recipe-partial-failed { margin:0; font-size:12.5px; line-height:1.55; color:var(--rpt-text-primary);
+  font-weight:500; }
+.rpt-recipe-partial-error { margin:0; font-size:11.5px; line-height:1.5; color:var(--rpt-danger);
+  font-family:var(--rpt-font-mono, ui-monospace, monospace); background:var(--rpt-bg-tertiary);
+  border-radius:6px; padding:6px 9px; }
+.rpt-recipe-partial-safe { margin:0; font-size:12px; line-height:1.6; color:var(--rpt-text-secondary);
+  padding:9px 12px; border-radius:8px; background:color-mix(in srgb, var(--rpt-accent) 10%, transparent);
+  border-left:3px solid var(--rpt-accent); }
+
 /* ── "Why?" popover on pack cards (agent-packs plan WP3.5) ─────────────────────────────────────────
    Answers "why isn't this pack running?" in plain language. Anchored under the health row. All colors
    via --rpt-* tokens (AA across all three themes); no color-only signals (health text pairs the dot). */
