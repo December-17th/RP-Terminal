@@ -35,8 +35,10 @@ Both transports are built from **one clean-room surface**,
 [compat-comparison.md](compat-comparison.md)); heavy reads/writes are backed by host IPC into the existing
 services ([`scriptApiService`](../src/main/services/scriptApiService.ts),
 [`lorebookService`](../src/main/services/lorebookService.ts), `chatWriteService`, `generationService`).
-Bare top-level **non-scripted** HTML (a `<div>`/`<table>` item card) renders **inline in the message DOM**
-(DOMPurify-sanitized, CSS-scoped), not in a frame — see [card-custom-ui-design.md](card-custom-ui-design.md).
+Full-document frontend cards render from `html`-labeled code fences, plain code fences whose payload starts
+with `<!doctype html>`/`<html>`/`<body>`, or bare `<html>`/`<body>` blocks. Bare top-level **non-scripted**
+HTML (a `<div>`/`<table>` item card) renders **inline in the message DOM** (DOMPurify-sanitized,
+CSS-scoped), not in a frame — see [card-custom-ui-design.md](card-custom-ui-design.md).
 
 ### Sync vs async (important)
 
@@ -145,6 +147,8 @@ through the host bridge as RFC-6902 JSON Patch.
 - ST destination flags are normalized as follows: `markdownOnly` means display, `promptOnly` means prompt,
   neither means both, and both checked also means both. The active filters live in
   [`regexService`](../src/main/services/regexService.ts); the TavernHelper shape bridge uses the same rules.
+- Replacement syntax supports ST-style `$0` for the full match, `$&` for the full match, and `$1`/`$2`...
+  capture groups via the shared [`regexTransform`](../src/shared/regexTransform.ts).
 
 ### Events — ✅
 

@@ -160,7 +160,7 @@ transports inject the same thing (clean-room mirror of JSR's `createSrcContent`/
 | Card shape                                                          | Renders as                                                                             | Why                                                       |
 | ------------------------------------------------------------------- | -------------------------------------------------------------------------------------- | --------------------------------------------------------- |
 | Bare top-level HTML (`<div>`/`<table>`/`<details>`…), no `<script>` | **Inline in the message DOM** (`InlineHtml`: DOMPurify-sanitized + per-card CSS scope) | Blends with prose; no frame.                              |
-| Scripted `<body>`/`html` card, mode `inline` (default)              | **Same-origin `srcdoc` iframe** (`InlineCardFrame`)                                    | Scrolls with chat, auto-sizes.                            |
+| Full document in an `html`-labeled code fence, a plain code fence beginning with `<!doctype html>`/`<html>`/`<body>`, or a bare `<body>`/`html` block; mode `inline` (default) | **Same-origin `srcdoc` iframe** (`InlineCardFrame`)                                    | Scrolls with chat, auto-sizes.                            |
 | Scripted card, mode `isolated`, or full-page / `window.top` apps    | **Out-of-process `WebContentsView`** (`WcvMessageFrame`/`wcvManager`)                  | Crash isolation; full-page cards get a real `window.top`. |
 | Passive full doc / non-scripted                                     | Sandboxed `HtmlFrame` (`sandbox="allow-same-origin"`, no scripts)                      | Static, safe.                                             |
 
@@ -235,6 +235,8 @@ is enforced by `appliesToDisplay` / `appliesToPrompt`
 ([regexTypes.ts](../../src/shared/regexTypes.ts)) in `getRenderRules` / `getPromptRules`
 ([regexService.ts](../../src/main/services/regexService.ts)) and in the TavernHelper shape bridge
 ([tavernRegex.ts](../../src/shared/thRuntime/tavernRegex.ts)).
+Replacement syntax is shared by display and prompt transforms: `$0`/`$&` expand to the full match and
+`$1`/`$2`... expand capture groups (`regexTransform`).
 
 **What does NOT transform cleanly (Tier 2 — set expectations honestly):** cards whose JS reaches past the
 documented surface — full-page apps that read undocumented `window.top` internals, exotic/uncommon

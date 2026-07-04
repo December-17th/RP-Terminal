@@ -22,9 +22,10 @@ interface Props {
   onContextMenu?: (x: number, y: number) => void
 }
 
-// An HTML block is either a ```html fenced document OR a bare <html>/<body> block
-// (the common Tavern-Helper "frontend card" shape, emitted without a code fence).
-const HTML_BLOCK = /```html\s*([\s\S]*?)```|(<(?:html|body)[\s\S]*?<\/(?:html|body)>)/gi
+// An HTML block is a ```html fence, a plain ``` fence whose payload is a full <html>/<body>
+// frontend card, or a bare <html>/<body> block emitted without a code fence.
+const HTML_BLOCK =
+  /```html\s*([\s\S]*?)```|```\s*((?:<!doctype\s+html[^>]*>\s*)?<(?:html|body)[\s\S]*?<\/(?:html|body)>)\s*```|(<(?:html|body)[\s\S]*?<\/(?:html|body)>)/gi
 
 /**
  * Renders an AI message. SillyTavern-style beautification regex emits ```html
@@ -202,7 +203,7 @@ export const splitHtml = (content: string): Segment[] => {
     }
     segs.push({
       type: 'html',
-      text: m[1] !== undefined ? m[1] : m[2],
+      text: m[1] !== undefined ? m[1] : m[2] !== undefined ? m[2] : m[3],
       mode: pendingMode
     })
     pendingMode = undefined

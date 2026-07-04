@@ -38,5 +38,6 @@ describe('splitHtml mode marker', () => {
     const segs = splitHtml('<!--rpt:mode=isolated-->```\n<body>x</body>\n```')
     expect(segs.find((s) => s.type === 'html')!.mode).toBe('isolated')
     expect(segs.some((s) => s.text.includes('rpt:mode'))).toBe(false)
+    expect(segs.some((s) => s.text.includes('```'))).toBe(false)
   })
 })
