@@ -20,6 +20,7 @@ import type { WorkflowRunTrace } from '../../../../shared/workflow/trace'
 import FlowCanvas from './FlowCanvas'
 import NodeConfigPanel from './NodeConfigPanel'
 import RunDrawer from './RunDrawer'
+import ModuleImportSheet, { type ModuleInspectReport } from './ModuleImportSheet'
 
 const BUILTIN_WORKFLOW_ID = 'default'
 
@@ -74,6 +75,7 @@ export default function WorkflowEditorView({
   const selectedNodeIds = useWorkflowEditorStore((s) => s.selectedNodeIds)
   const lockedNodeIds = useWorkflowEditorStore((s) => s.lockedNodeIds)
   const groupSelection = useWorkflowEditorStore((s) => s.groupSelection)
+  const insertModule = useWorkflowEditorStore((s) => s.insertModule)
   const canGroup = useMemo(() => {
     if (selectedNodeIds.length < 2) return false
     const grouped = new Set((doc?.groups ?? []).flatMap((g) => g.nodeIds))
@@ -81,6 +83,8 @@ export default function WorkflowEditorView({
   }, [selectedNodeIds, doc, lockedNodeIds])
 
   const [showErrors, setShowErrors] = useState(false)
+  // WP6.5: the module-import review sheet. Null when closed; holds the inspection report while open.
+  const [moduleReport, setModuleReport] = useState<ModuleInspectReport | null>(null)
 
   // WP4.4: a fragment-editing hand-off ("Edit fragment in Studio"). Read the requested pack id ONCE on
   // mount (a ref so a later store change can't retrigger the load).
@@ -143,6 +147,32 @@ export default function WorkflowEditorView({
     void window.api.exportWorkflowDialog(profileId, currentId, name)
   }
 
+  // WP6.5: open the module-import dialog + inspect, then show the review sheet. Canceled dialog → no-op.
+  const onImportModule = async (): Promise<void> => {
+    const report = await window.api.importModuleDialog(profileId)
+    if (report === null) return
+    setModuleReport(report as ModuleInspectReport)
+  }
+
+  // Install the inspected module: confirm main-side (installs bundled templates + returns the payload),
+  // then insert it into the edited doc at a viewport-center-ish position (best-effort — the editor view
+  // is outside the ReactFlow context). Insertion marks the doc dirty; the user saves it themselves.
+  const onInstallModule = async (token: string): Promise<void> => {
+    setModuleReport(null)
+    const result = await window.api.confirmModuleImport(token)
+    if (!result.ok) {
+      useToastStore.getState().push(t('workflowEditor.moduleImport.installFailed'))
+      return
+    }
+    insertModule(result.module, { x: 220, y: 200 })
+    useToastStore.getState().push(t('workflowEditor.moduleImport.installed'))
+  }
+
+  const onCancelModule = (): void => {
+    if (moduleReport?.token) void window.api.cancelModuleImport(moduleReport.token)
+    setModuleReport(null)
+  }
+
   // Save the currently-open doc, then bump the refresh token so the Run drawer + the live trigger
   // badges refetch (a save can change which triggers exist / are enabled).
   const onSave = async (): Promise<void> => {
@@ -151,7 +181,10 @@ export default function WorkflowEditorView({
   }
 
   return (
-    <div className="rpt-workflow-editor" style={{ display: 'flex', flexDirection: 'column' }}>
+    <div
+      className="rpt-workflow-editor"
+      style={{ display: 'flex', flexDirection: 'column', position: 'relative' }}
+    >
       <div
         style={{
           display: 'flex',
@@ -451,6 +484,29 @@ export default function WorkflowEditorView({
                 ))}
             </>
           )}
+
+          {/* WP6.5: the Modules section — import a `.rptmodule` file into the open doc. A fragment
+              session's currentId is a pack id (not a doc file), but a fragment IS a doc you can splice a
+              module into, so this is offered in both session kinds. */}
+          <div
+            style={{
+              fontSize: 10.5,
+              color: 'var(--rpt-text-tertiary)',
+              margin: '10px 0 6px',
+              borderTop: '1px solid var(--rpt-border)',
+              paddingTop: 8
+            }}
+          >
+            {t('workflowEditor.modules')}
+          </div>
+          <button
+            type="button"
+            disabled={readOnly}
+            onClick={() => void onImportModule()}
+            style={{ fontSize: 12, width: '100%' }}
+          >
+            {t('workflowEditor.importModule')}
+          </button>
         </div>
 
         <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column' }}>
@@ -482,6 +538,15 @@ export default function WorkflowEditorView({
           <NodeConfigPanel profileId={profileId} />
         </div>
       </div>
+
+      {/* WP6.5: the module-import review sheet (centered over the editor). */}
+      {moduleReport && (
+        <ModuleImportSheet
+          report={moduleReport}
+          onInstall={(token) => void onInstallModule(token)}
+          onCancel={onCancelModule}
+        />
+      )}
     </div>
   )
 }

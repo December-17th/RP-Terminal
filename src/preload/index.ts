@@ -238,6 +238,20 @@ const api = {
     ipcRenderer.invoke('agent-pack-import-dialog', profileId),
   confirmAgentPackImport: (token: string) => ipcRenderer.invoke('agent-pack-confirm-import', token),
   cancelAgentPackImport: (token: string) => ipcRenderer.invoke('agent-pack-cancel-import', token),
+  // Module SHARING: `.rptmodule` export / import (one-canvas rebuild WP6.5). Export a GROUP of the
+  // (unsaved) doc being edited as a reusable slab; import one into the open doc. Export is previewless
+  // (the module panel IS the review): pass the doc + groupId + optional whole active template. Import is
+  // TWO-PHASE (inspect → confirm): the sheet renders the report incl. a `token`; the renderer confirms
+  // (templates install main-side, the module payload comes back for graph insertion) or cancels.
+  exportModuleDialog: (
+    profileId: string,
+    doc: unknown,
+    groupId: string,
+    includeTemplate?: unknown
+  ) => ipcRenderer.invoke('module-export-dialog', profileId, doc, groupId, includeTemplate ?? null),
+  importModuleDialog: (profileId: string) => ipcRenderer.invoke('module-import-dialog', profileId),
+  confirmModuleImport: (token: string) => ipcRenderer.invoke('module-confirm-import', token),
+  cancelModuleImport: (token: string) => ipcRenderer.invoke('module-cancel-import', token),
   // Recipe SHARING: `.rptrecipe` export / import (agent-packs plan WP5.2; ADR 0008) — "share this
   // world's setup" (a set of embedded packs + activation preset + narrator choice). Export assembles
   // from the CURRENT world; `opts` = the wizard's name/description/creator. Import is TWO-PHASE: the

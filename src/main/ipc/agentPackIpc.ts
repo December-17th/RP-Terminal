@@ -2,6 +2,9 @@ import { IpcMain, BrowserWindow, dialog } from 'electron'
 import * as agentPackService from '../services/agentPackService'
 import * as transfer from '../services/agentPackTransferService'
 import * as recipeTransfer from '../services/recipeTransferService'
+import * as moduleTransfer from '../services/moduleTransferService'
+import type { WorkflowDoc } from '../../shared/workflow/types'
+import type { TableTemplate } from '../types/tableTemplate'
 import { OverrideScope } from '../services/agentPackStore'
 import { listRuns } from '../services/runHistoryStore'
 import { explainTriggers, explainDocTriggers } from '../services/headlessRunService'
@@ -203,6 +206,88 @@ export const registerAgentPackIpc = (ipcMain: IpcMain): void => {
   )
   ipcMain.handle('agent-pack-cancel-import', (_, token: string) =>
     transfer.cancelAgentPackImport(token)
+  )
+
+  // ── Module SHARING: `.rptmodule` export / import (one-canvas rebuild WP6.5) ───────────────────────
+  //
+  // Export a GROUP of the doc being edited as a reusable module slab; import one into whatever doc is
+  // open. The dialogs live HERE (the service stays dialog-free + testable), mirroring the `.rptagent`
+  // channels above. Export is previewless (the module panel IS the review): the renderer passes the
+  // (unsaved) doc + groupId + optional whole active template; the service builds + writes. Import is
+  // TWO-PHASE (inspect → confirm): the renderer's compact sheet renders the report, then confirms to
+  // install bundled templates main-side + receive the module payload for graph insertion (the doc is
+  // unsaved in the editor store — main never writes it).
+
+  // Preview a module's envelope WITHOUT writing (the sheet-less panel doesn't use this today, but the
+  // channel is here for parity / a future review UI): returns { ok, meta } or a not-found error.
+  ipcMain.handle(
+    'module-preview-export',
+    (
+      _,
+      _profileId: string,
+      doc: WorkflowDoc,
+      groupId: string,
+      includeTemplate?: TableTemplate | null
+    ) => {
+      const built = moduleTransfer.buildModuleEnvelope(doc, groupId, {
+        ...(includeTemplate ? { includeTemplate } : {})
+      })
+      if (!built) return { ok: false as const, error: { code: 'group-not-found' as const } }
+      return {
+        ok: true as const,
+        meta: {
+          name: built.module.name,
+          nodeCount: built.module.nodes.length,
+          bundledTemplate: built.bundledTemplates?.[0]?.name ?? null
+        }
+      }
+    }
+  )
+
+  // Export behind a save dialog (default filename `<name>.rptmodule`). Canceled dialog → { canceled }.
+  // group-not-found → { ok:false, error }. Success → { saved: path }.
+  ipcMain.handle(
+    'module-export-dialog',
+    async (
+      event,
+      _profileId: string,
+      doc: WorkflowDoc,
+      groupId: string,
+      includeTemplate?: TableTemplate | null
+    ) => {
+      const built = moduleTransfer.buildModuleEnvelope(doc, groupId, {
+        ...(includeTemplate ? { includeTemplate } : {})
+      })
+      if (!built) return { ok: false as const, error: { code: 'group-not-found' as const } }
+      const result = await dialog.showSaveDialog(BrowserWindow.fromWebContents(event.sender)!, {
+        defaultPath: moduleTransfer.moduleFileName(built.module.name),
+        filters: [{ name: 'RPT Module', extensions: ['rptmodule'] }]
+      })
+      if (result.canceled || !result.filePath) return { canceled: true as const }
+      moduleTransfer.writeModuleExport(built.module, result.filePath, built.bundledTemplates)
+      return { saved: result.filePath }
+    }
+  )
+
+  // Import phase one: open dialog (filter .rptmodule) → inspect → return the report the sheet renders.
+  // Canceled dialog → null. The report carries a `token` (present iff the file parsed) for phase two.
+  ipcMain.handle('module-import-dialog', async (event, profileId: string) => {
+    const result = await dialog.showOpenDialog(BrowserWindow.fromWebContents(event.sender)!, {
+      properties: ['openFile'],
+      filters: [{ name: 'RPT Module', extensions: ['rptmodule', 'json'] }]
+    })
+    if (result.canceled || result.filePaths.length === 0) return null
+    return moduleTransfer.inspectModuleFile(profileId, result.filePaths[0])
+  })
+
+  // Import phase two: install bundled templates main-side + return the module payload to the renderer
+  // (it inserts the graph into the edited doc). Re-checks blockers (defense-in-depth). `cancel-import`
+  // drops a token the user dismissed without confirming.
+  ipcMain.handle('module-confirm-import', (_, token: string) =>
+    moduleTransfer.confirmModuleImport(token)
+  )
+  ipcMain.handle('module-cancel-import', (_, token: string) =>
+    moduleTransfer.cancelModuleImport(token)
   )
 
   // ── Recipe SHARING: `.rptrecipe` export / import (agent-packs plan WP5.2; ADR 0008) ──────────────

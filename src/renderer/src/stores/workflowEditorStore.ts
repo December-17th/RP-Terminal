@@ -9,9 +9,11 @@ import {
   editorToDoc
 } from '../components/workflow/editorModel'
 import {
+  Edge,
   ExposedGroupSetting,
   GroupDecl,
   NodeDescriptor,
+  NodeInstance,
   PortType,
   WorkflowDoc
 } from '../../../shared/workflow/types'
@@ -48,6 +50,18 @@ const BUILTIN_WORKFLOW_ID = 'default'
  *  `kind:'fragment'` fragment, and save routes to `updateAgentPackFragment` (NOT the workflow file
  *  store — a fragment is never a workflow file; agentPackStore keeps it out of the workflow dir). */
 export type EditorSessionType = 'workflow' | 'fragment'
+
+/** The module payload the import IPC hands back (moduleTransferService.ModulePayload mirror) — the
+ *  members + internal edges + exposed refs `insertModule` splices into the doc. Ids are as-authored;
+ *  insertModule remints them. */
+export interface ImportedModule {
+  name: string
+  description?: string
+  creator?: string
+  nodes: NodeInstance[]
+  edges: Edge[]
+  exposed?: ExposedGroupSetting[]
+}
 
 interface WorkflowEditorState {
   nodeTypes: NodeTypeInfo[]
@@ -137,6 +151,12 @@ interface WorkflowEditorState {
   unexposeSetting(groupId: string, node: string, path: string): void
   /** WP6.3: select a group (module) or clear group selection. Mutually exclusive with node select. */
   selectGroup(id: string | null): void
+  /** WP6.5: insert an imported module into the current doc. Remints EVERY node id (collision-safe,
+   *  the addNode idiom), remaps internal edges + exposed refs to the new ids, lands the members around
+   *  `position`, creates a collapsed GroupDecl over them, selects the group, marks dirty. Returns the
+   *  new group id (or null when there is no doc / the module is empty). Insertion is an EDIT — the user
+   *  saves the doc themselves; this never writes. */
+  insertModule(module: ImportedModule, position: { x: number; y: number }): string | null
   save(profileId: string): Promise<void>
   cloneAndEdit(profileId: string): Promise<void>
 }
@@ -476,6 +496,85 @@ export const useWorkflowEditorStore = create<WorkflowEditorState>((set, get) => 
 
     selectGroup: (id) =>
       set({ selectedGroupId: id, selectedNodeId: null, selectedNodeIds: [] }),
+
+    insertModule: (module, position) => {
+      if (get().readOnly) return null
+      const { doc, nodes, edges } = get()
+      if (!doc || module.nodes.length === 0) return null
+
+      // Remint EVERY node id (the addNode idiom: base = type tail, next free `base-n`), tracking the
+      // ids minted so far so two members of the same type can't collide. `used` seeds with the doc's
+      // existing ids so the module can drop into a doc that already uses the authored ids.
+      const used = new Set(nodes.map((n) => n.id))
+      const idMap = new Map<string, string>()
+      for (const src of module.nodes) {
+        const base = src.type.split('.').pop() || src.type
+        let n = 1
+        while (used.has(`${base}-${n}`)) n++
+        const id = `${base}-${n}`
+        used.add(id)
+        idMap.set(src.id, id)
+      }
+
+      // Land the members around `position`, preserving their relative layout. Anchor on the module's
+      // top-left member so the whole slab shifts to where the user dropped it (a module authored far
+      // from origin doesn't fly off-canvas).
+      const positions = module.nodes.map((s) => s.position ?? { x: 0, y: 0 })
+      const anchorX = Math.min(...positions.map((p) => p.x))
+      const anchorY = Math.min(...positions.map((p) => p.y))
+      const newNodes: EditorNode[] = module.nodes.map((src) => {
+        const pos = src.position ?? { x: 0, y: 0 }
+        return {
+          id: idMap.get(src.id)!,
+          type: src.type,
+          position: { x: position.x + (pos.x - anchorX), y: position.y + (pos.y - anchorY) },
+          ...(src.config !== undefined ? { config: src.config } : {}),
+          ...(src.panel !== undefined ? { panel: src.panel } : {}),
+          // isMainOutput is a TURN-doc concept scoped to the whole doc; a module never carries it in
+          // (a spliced-in slab must not steal main-output). disabled rides along as-authored.
+          ...(src.disabled !== undefined ? { disabled: src.disabled } : {})
+        }
+      })
+
+      // Remap internal edges (every end is a member — the envelope guaranteed it) to the new ids.
+      const newEdges: EditorEdge[] = module.edges.map((e) => {
+        const from = { node: idMap.get(e.from.node)!, port: e.from.port }
+        const to = { node: idMap.get(e.to.node)!, port: e.to.port }
+        return {
+          id: edgeId({ from, to }),
+          source: from.node,
+          sourcePort: from.port,
+          target: to.node,
+          targetPort: to.port
+        }
+      })
+
+      // Remap exposed refs to the new ids (drop any whose node didn't remap — defensive).
+      const newExposed: ExposedGroupSetting[] = (module.exposed ?? [])
+        .filter((x) => idMap.has(x.node))
+        .map((x) => ({ ...x, node: idMap.get(x.node)! }))
+
+      const groups = currentGroups()
+      const groupId = nextGroupId(groups)
+      const group: GroupDecl = {
+        id: groupId,
+        name: module.name,
+        nodeIds: newNodes.map((n) => n.id),
+        collapsed: true,
+        ...(newExposed.length > 0 ? { exposed: newExposed } : {})
+      }
+      const nextDoc = { ...doc, groups: [...groups, group] }
+      set({
+        nodes: [...nodes, ...newNodes],
+        edges: [...edges, ...newEdges],
+        doc: nextDoc,
+        selectedGroupId: groupId,
+        selectedNodeId: null,
+        selectedNodeIds: []
+      })
+      revalidate()
+      return groupId
+    },
 
     groupSelection: () => {
       if (get().readOnly) return

@@ -736,3 +736,59 @@ describe('workflowEditorStore: on-canvas groups (WP6.3)', () => {
     expect(store().doc?.groups).toBeUndefined()
   })
 })
+
+describe('workflowEditorStore: insertModule (WP6.5)', () => {
+  const store = () => useWorkflowEditorStore.getState()
+  beforeEach(async () => {
+    await store().init(profileId)
+    await store().open(profileId, 'custom-1') // has ctx (input.context) + write (output.writeFloor)
+  })
+
+  // A module whose authored node ids COLLIDE with the doc's existing ids (ctx), so reminting must
+  // avoid the collision. Two internal edges + one exposed ref to test remap.
+  const module = () => ({
+    name: 'Imported Mem',
+    nodes: [
+      { id: 'ctx', type: 'input.context', position: { x: 0, y: 0 } },
+      { id: 'if', type: 'control.if', position: { x: 200, y: 40 }, config: { path: 'x' } }
+    ],
+    edges: [{ from: { node: 'ctx', port: 'gen' }, to: { node: 'if', port: 'gen' } }],
+    exposed: [{ node: 'if', path: 'path', label: 'Path' }]
+  })
+
+  it('remints colliding ids, remaps edges + exposed, creates a collapsed group, marks dirty', () => {
+    const before = store().nodes.map((n) => n.id)
+    const groupId = store().insertModule(module(), { x: 300, y: 300 })
+    expect(groupId).toBeTruthy()
+
+    const s = store()
+    // The doc already had a `ctx`; the imported input.context must NOT reuse it (collision-safe).
+    const newIds = s.nodes.map((n) => n.id).filter((id) => !before.includes(id))
+    expect(newIds).toHaveLength(2)
+    expect(newIds).not.toContain('ctx')
+    expect(s.dirty).toBe(true)
+
+    // The group was created collapsed over exactly the new ids, and selected.
+    const group = (s.doc?.groups ?? []).find((g) => g.id === groupId)
+    expect(group?.collapsed).toBe(true)
+    expect(group?.nodeIds.sort()).toEqual([...newIds].sort())
+    expect(s.selectedGroupId).toBe(groupId)
+
+    // The internal edge was remapped to the new ids (both ends are new nodes).
+    const importedEdge = s.edges.find((e) => newIds.includes(e.source) && newIds.includes(e.target))
+    expect(importedEdge).toBeTruthy()
+
+    // The exposed ref was remapped to the new `if` node id (not the authored one).
+    const exposed = group?.exposed ?? []
+    expect(exposed).toHaveLength(1)
+    expect(newIds).toContain(exposed[0].node)
+    expect(exposed[0].path).toBe('path')
+  })
+
+  it('returns null on the read-only builtin doc (no insertion)', async () => {
+    await store().open(profileId, 'default')
+    const before = store().nodes.length
+    expect(store().insertModule(module(), { x: 0, y: 0 })).toBeNull()
+    expect(store().nodes).toHaveLength(before)
+  })
+})

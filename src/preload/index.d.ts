@@ -444,6 +444,62 @@ declare global {
           }
       >
       cancelAgentPackImport: (token: string) => Promise<void>
+      // Module SHARING: `.rptmodule` export / import (one-canvas rebuild WP6.5). Export a GROUP of the
+      // (unsaved) doc; import one into the open doc. Shapes inlined (not imported from main) per the
+      // established preload convention. Export is previewless; import is two-phase (inspect → confirm).
+      exportModuleDialog: (
+        profileId: string,
+        doc: unknown,
+        groupId: string,
+        includeTemplate?: unknown
+      ) => Promise<
+        | { saved: string }
+        | { canceled: true }
+        | { ok: false; error: { code: 'group-not-found' } }
+      >
+      importModuleDialog: (profileId: string) => Promise<null | {
+        meta?: { name: string; nodeCount: number; description?: string; creator?: string }
+        capabilityReport?: {
+          capabilities: import('../shared/workflow/capabilities').CapabilityId[]
+          unknownNodeTypes: string[]
+          nodesByCapability: Partial<
+            Record<import('../shared/workflow/capabilities').CapabilityId, string[]>
+          >
+        }
+        templatePlans: { name: string; outcome: 'will-install' | 'will-duplicate' }[]
+        blockers: { code: 'unknown-node-types'; nodeTypes: string[] }[]
+        warnings: string[]
+        parseError?: {
+          code:
+            | 'too-large'
+            | 'invalid-json'
+            | 'unsupported-version'
+            | 'invalid-envelope'
+            | 'empty-module'
+            | 'external-edge'
+            | 'exposed-not-member'
+          errors?: string[]
+          foundVersion?: unknown
+        }
+        token?: string
+      }>
+      confirmModuleImport: (token: string) => Promise<
+        | {
+            ok: true
+            module: {
+              name: string
+              description?: string
+              creator?: string
+              nodes: import('../shared/workflow/types').NodeInstance[]
+              edges: import('../shared/workflow/types').Edge[]
+              exposed?: import('../shared/workflow/types').ExposedGroupSetting[]
+            }
+            installedTemplates: { name: string; id: string }[]
+          }
+        | { ok: false; code: 'expired' }
+        | { ok: false; code: 'blocked'; blockers: { code: 'unknown-node-types'; nodeTypes: string[] }[] }
+      >
+      cancelModuleImport: (token: string) => Promise<void>
       // Recipe SHARING: `.rptrecipe` export / import (agent-packs plan WP5.2; ADR 0008) — "share this
       // world's setup". Shapes inlined (not imported from main) per the established preload convention.
       // Export assembles from the CURRENT world; `opts` = the wizard's name/description/creator/id.

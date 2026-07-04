@@ -8,6 +8,8 @@ import { useEffectiveGraphStore } from '../../stores/effectiveGraphStore'
 import { useUiStore } from '../../stores/uiStore'
 import { useOptionalT, useT } from '../../i18n'
 import { useChatStore } from '../../stores/chatStore'
+import { useToastStore } from '../../stores/toastStore'
+import { editorToDoc } from './editorModel'
 import { fieldsFromSchema, type FieldSpec } from './schemaForm'
 import { ownerOfNodeId, nodeOwnerMap, readComposition } from './effectiveProjection'
 import { groupOfNode } from './groupModel'
@@ -407,9 +409,93 @@ function ExposedSettingRow({
   )
 }
 
+/** The "Export module…" affordance on the module panel (WP6.5): a previewless direct save (the panel
+ *  IS the review — no wizard). When a chat is active AND has a table template, an "include table schema"
+ *  checkbox lets the author bundle the WHOLE active template (the v0 unit) so the module ships portable.
+ *  The (unsaved) editor doc + this group id go to the export IPC; a toast reports the saved path. */
+function ExportModuleButton({
+  profileId,
+  groupId
+}: {
+  profileId: string
+  groupId: string
+}): React.JSX.Element {
+  const t = useT()
+  const doc = useWorkflowEditorStore((s) => s.doc)
+  const nodes = useWorkflowEditorStore((s) => s.nodes)
+  const edges = useWorkflowEditorStore((s) => s.edges)
+  const activeChatId = useChatStore((s) => s.activeChatId)
+  const [templateId, setTemplateId] = useState<string | null>(null)
+  const [includeTemplate, setIncludeTemplate] = useState(false)
+  const [busy, setBusy] = useState(false)
+
+  // Does the active chat have a table template assigned? Only then offer the checkbox (the WHOLE
+  // active template is the v0 bundle unit — getChatTableTemplate gives the id, we fetch the template
+  // itself at export time so the panel stays cheap).
+  useEffect(() => {
+    let cancelled = false
+    setTemplateId(null)
+    setIncludeTemplate(false)
+    if (!activeChatId) return
+    void window.api
+      .getChatTableTemplate(profileId, activeChatId)
+      .then((id) => {
+        if (!cancelled) setTemplateId((id as string | null) ?? null)
+      })
+      .catch(() => {
+        if (!cancelled) setTemplateId(null)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [profileId, activeChatId])
+
+  const onExport = async (): Promise<void> => {
+    if (!doc || busy) return
+    setBusy(true)
+    try {
+      // Fold the live editor nodes/edges into the doc so the export sees UNSAVED edits (the group
+      // members may have been added/moved since the last save).
+      const liveDoc = editorToDoc(doc, nodes, edges)
+      let template: unknown = null
+      if (includeTemplate && templateId) {
+        template = await window.api.getTableTemplate(profileId, templateId)
+      }
+      const result = await window.api.exportModuleDialog(profileId, liveDoc, groupId, template)
+      if ('saved' in result) {
+        useToastStore.getState().push(t('workflowEditor.module.exportSaved', { path: result.saved }))
+      } else if ('ok' in result && !result.ok) {
+        useToastStore.getState().push(t('workflowEditor.module.exportFailed'))
+      }
+    } catch {
+      useToastStore.getState().push(t('workflowEditor.module.exportFailed'))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <div style={{ margin: '10px 0', borderTop: '1px solid var(--rpt-border)', paddingTop: 8 }}>
+      {templateId && (
+        <label style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, marginBottom: 6 }}>
+          <input
+            type="checkbox"
+            checked={includeTemplate}
+            onChange={(e) => setIncludeTemplate(e.target.checked)}
+          />
+          {t('workflowEditor.module.includeTemplate')}
+        </label>
+      )}
+      <button type="button" onClick={() => void onExport()} disabled={busy} style={{ fontSize: 12 }}>
+        {t('workflowEditor.module.export')}
+      </button>
+    </div>
+  )
+}
+
 /** The MODULE panel (WP6.3), shown when a group is selected: editable name, collapse toggle,
- *  Ungroup, and the exposed-settings list. */
-function ModulePanel({ group }: { group: GroupDecl }): React.JSX.Element {
+ *  Ungroup, the exposed-settings list, and the WP6.5 "Export module…" affordance. */
+function ModulePanel({ group, profileId }: { group: GroupDecl; profileId: string }): React.JSX.Element {
   const t = useT()
   const nodes = useWorkflowEditorStore((s) => s.nodes)
   const nodeTypes = useWorkflowEditorStore((s) => s.nodeTypes)
@@ -480,6 +566,8 @@ function ModulePanel({ group }: { group: GroupDecl }): React.JSX.Element {
           />
         ))
       )}
+
+      {!readOnly && <ExportModuleButton profileId={profileId} groupId={group.id} />}
     </div>
   )
 }
@@ -598,7 +686,7 @@ export default function NodeConfigPanel({
   // A group is selected → render the MODULE panel instead of a node panel (selection is mutually
   // exclusive, so selectedNodeId is null here).
   const selectedGroup = selectedGroupId ? groups.find((g) => g.id === selectedGroupId) : undefined
-  if (selectedGroup) return <ModulePanel group={selectedGroup} />
+  if (selectedGroup) return <ModulePanel group={selectedGroup} profileId={profileId} />
 
   // A locked node is a PACK node in Effective mode (agent-packs plan WP3.6a; ADR 0010). WP3.6b makes
   // pack-node config LIVE: editing routes through fork-on-first-edit / write-through (ADR 0006), so a
