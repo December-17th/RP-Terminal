@@ -58,6 +58,12 @@ interface ChatState {
   loadChats: (profileId: string) => Promise<void>
   createChat: (profileId: string, characterId: string) => Promise<void>
   setActiveChat: (profileId: string, chatId: string) => Promise<void>
+  /** Reload floors after a CARD-initiated chat mutation (saveChat / setChatMessages / delete / regex
+   *  write / reloadCurrentChat — every pushHostReload initiator is a card). Tags the change card-write so
+   *  the App.tsx floor-subscription rebroadcast does not re-fire card MVU events (the setChatMessages twin
+   *  of the WS-3 fix). Deliberately does NOT reset combat/duel stores or refetch mode — this is a floor
+   *  refresh, not a session switch. */
+  refreshFloors: (profileId: string, chatId: string) => Promise<void>
   /** Re-derive stat_data by replaying the stored <UpdateVariable> updates (no regeneration). */
   reevaluateVariables: (profileId: string) => Promise<void>
   /** Apply variable ops (JSONPatch) to a floor's stat_data from panel UI (write-back). */
@@ -178,6 +184,12 @@ export const useChatStore = create<ChatState>((set, get) => {
         window.api.getChatMode(profileId, chatId)
       ])
       set({ floors, activeChatMode: mode || 'explore', lastVarsOrigin: 'external' })
+    },
+
+    refreshFloors: async (profileId, chatId) => {
+      if (get().activeChatId !== chatId) return
+      const floors = await window.api.getFloors(profileId, chatId)
+      set({ floors, lastVarsOrigin: 'card-write' })
     },
 
     reevaluateVariables: async (profileId) => {

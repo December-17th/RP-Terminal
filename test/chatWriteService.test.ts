@@ -61,6 +61,29 @@ describe('setChatMessages', () => {
     ).toBe(0)
     expect(floorService.saveFloor).not.toHaveBeenCalled()
   })
+
+  it('skips a message whose text is unchanged', () => {
+    // A card re-rendering the same text must not count as an edit (no re-fold/reload chain).
+    const floors = [mkFloor(0, '', 'greeting')]
+    vi.mocked(floorService.getAllFloors).mockReturnValue(floors)
+    expect(setChatMessages('p', 'c', [{ message_id: 0, message: 'greeting' }])).toBe(0)
+    expect(floorService.saveFloor).not.toHaveBeenCalled()
+  })
+
+  it('counts only floors that actually changed', () => {
+    // map: 0={0,asst} 1={1,user} 2={1,asst}. Edit id 0 with identical text + id 2 with new text.
+    const floors = [mkFloor(0, '', 'greeting'), mkFloor(1, 'hi', 'hello')]
+    vi.mocked(floorService.getAllFloors).mockReturnValue(floors)
+    expect(
+      setChatMessages('p', 'c', [
+        { message_id: 0, message: 'greeting' }, // unchanged
+        { message_id: 2, message: 'EDITED' } // changed
+      ])
+    ).toBe(1)
+    expect(floors[1].response.content).toBe('EDITED')
+    expect(floorService.saveFloor).toHaveBeenCalledTimes(1)
+    expect(floorService.saveFloor).toHaveBeenCalledWith('p', 'c', floors[1])
+  })
 })
 
 describe('deleteChatMessages', () => {

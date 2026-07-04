@@ -42,11 +42,12 @@ export function createInlineHost(ctx: CardCtx): Host {
       return { entries: [] }
     }
   }
-  // After a chat-write, reload the card's chat floors so the edit/delete/save shows. The inline card is in
-  // the active chat (the renderer IS the host), so a full reload (WCV parity) is fine — these ops are rare.
+  // After a chat-write, reload the card's chat floors so the edit/delete/save shows. Use refreshFloors (a
+  // card-initiated floor refresh tagged card-write) — NOT setActiveChat — so the writing card's own MVU
+  // events don't re-fire via the App.tsx floor rebroadcast, matching the WCV host-reload path.
   const reloadFloors = async (): Promise<boolean> => {
     if (useChatStore.getState().activeChatId === ctx.chatId) {
-      await useChatStore.getState().setActiveChat(ctx.profileId, ctx.chatId)
+      await useChatStore.getState().refreshFloors(ctx.profileId, ctx.chatId)
     }
     return true
   }
