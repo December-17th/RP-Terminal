@@ -187,12 +187,8 @@ const api = {
   ) => ipcRenderer.invoke('agent-pack-settings', profileId, packId, worldId, chatId),
   // Persisted workflow run history for the Runs timeline (agent-packs plan WP2.3). Returns records
   // newest-first; page backward by passing the smallest seq of the previous page as `beforeSeq`.
-  listAgentPackRuns: (
-    profileId: string,
-    chatId: string,
-    beforeSeq?: number,
-    limit?: number
-  ) => ipcRenderer.invoke('agent-pack-list-runs', profileId, chatId, beforeSeq, limit),
+  listAgentPackRuns: (profileId: string, chatId: string, beforeSeq?: number, limit?: number) =>
+    ipcRenderer.invoke('agent-pack-list-runs', profileId, chatId, beforeSeq, limit),
   // Read-only "why isn't this pack running?" trigger explanation for the Agents "Why?" popover
   // (agent-packs plan WP3.5). Evaluates the pack's materialized triggers against committed state
   // WITHOUT advancing baselines or firing — safe to call on popover open. [] when not gate-open.
@@ -205,12 +201,8 @@ const api = {
     ipcRenderer.invoke('agent-pack-effective-graph', profileId, chatId),
   // Copy-on-edit fork (ADR 0006). Repoints only `worldId`'s activation to the fork. WP3.6a exposes
   // it; WP3.6b consumes it for pack-node edit routing.
-  forkAgentPack: (
-    profileId: string,
-    packId: string,
-    worldId: string,
-    editedFragment?: unknown
-  ) => ipcRenderer.invoke('agent-pack-fork', profileId, packId, worldId, editedFragment),
+  forkAgentPack: (profileId: string, packId: string, worldId: string, editedFragment?: unknown) =>
+    ipcRenderer.invoke('agent-pack-fork', profileId, packId, worldId, editedFragment),
   // Fork write-through (ADR 0006; WP3.6b): replace a non-builtin pack's fragment doc (builtin →
   // refused). Returns { ok, code, error } — the renderer toasts on failure.
   updateAgentPackFragment: (profileId: string, packId: string, fragment: unknown) =>
@@ -238,10 +230,27 @@ const api = {
     ipcRenderer.invoke('agent-pack-export-dialog', profileId, packId),
   importAgentPackDialog: (profileId: string) =>
     ipcRenderer.invoke('agent-pack-import-dialog', profileId),
-  confirmAgentPackImport: (token: string) =>
-    ipcRenderer.invoke('agent-pack-confirm-import', token),
-  cancelAgentPackImport: (token: string) =>
-    ipcRenderer.invoke('agent-pack-cancel-import', token),
+  confirmAgentPackImport: (token: string) => ipcRenderer.invoke('agent-pack-confirm-import', token),
+  cancelAgentPackImport: (token: string) => ipcRenderer.invoke('agent-pack-cancel-import', token),
+  // Recipe SHARING: `.rptrecipe` export / import (agent-packs plan WP5.2; ADR 0008) — "share this
+  // world's setup" (a set of embedded packs + activation preset + narrator choice). Export assembles
+  // from the CURRENT world; `opts` = the wizard's name/description/creator. Import is TWO-PHASE: the
+  // dialog inspects (report incl. a `token` + per-pack sub-reports); the renderer confirms with the
+  // TARGET WORLD (chosen at confirm — the recipe file doesn't know it) or cancels.
+  previewRecipeExport: (
+    profileId: string,
+    worldId: string,
+    opts: { name: string; description?: string; creator?: string; id?: string }
+  ) => ipcRenderer.invoke('recipe-preview-export', profileId, worldId, opts),
+  exportRecipeDialog: (
+    profileId: string,
+    worldId: string,
+    opts: { name: string; description?: string; creator?: string; id?: string }
+  ) => ipcRenderer.invoke('recipe-export-dialog', profileId, worldId, opts),
+  importRecipeDialog: (profileId: string) => ipcRenderer.invoke('recipe-import-dialog', profileId),
+  confirmRecipeImport: (token: string, targetWorldId: string) =>
+    ipcRenderer.invoke('recipe-confirm-import', token, targetWorldId),
+  cancelRecipeImport: (token: string) => ipcRenderer.invoke('recipe-cancel-import', token),
   // Uninstall an installed pack (agent-packs plan WP4.3b). Powers the version-conflict import recovery
   // (uninstall the installed pack, then re-confirm the SAME token) + the detail panel's remove action.
   // Structured result: { ok:true } | { ok:false, code:'builtin' | 'not-found' } (builtins are refused).
@@ -250,8 +259,7 @@ const api = {
   uninstallAgentPack: (profileId: string, packId: string, version?: number) =>
     ipcRenderer.invoke('agent-pack-uninstall', profileId, packId, version),
   // SQL-table memory (issue 02): file-based table templates + per-chat assignment + read-only view
-  listTableTemplates: (profileId: string) =>
-    ipcRenderer.invoke('table-templates-list', profileId),
+  listTableTemplates: (profileId: string) => ipcRenderer.invoke('table-templates-list', profileId),
   getTableTemplate: (profileId: string, id: string) =>
     ipcRenderer.invoke('table-template-get', profileId, id),
   deleteTableTemplate: (profileId: string, id: string) =>
@@ -425,8 +433,7 @@ const api = {
   combatClear: (profileId: string, chatId: string) =>
     ipcRenderer.invoke('combat-clear', profileId, chatId),
   // Interactive STS duel (Track Duel). One active duel per chat.
-  duelGet: (profileId: string, chatId: string) =>
-    ipcRenderer.invoke('duel-get', profileId, chatId),
+  duelGet: (profileId: string, chatId: string) => ipcRenderer.invoke('duel-get', profileId, chatId),
   duelStartMock: (profileId: string, chatId: string) =>
     ipcRenderer.invoke('duel-start-mock', profileId, chatId),
   duelStart: (profileId: string, chatId: string, characterId: string) =>
@@ -439,8 +446,7 @@ const api = {
     ipcRenderer.invoke('duel-end-turn', profileId, chatId),
   duelNarrate: (profileId: string, chatId: string) =>
     ipcRenderer.invoke('duel-narrate', profileId, chatId),
-  duelEnd: (profileId: string, chatId: string) =>
-    ipcRenderer.invoke('duel-end', profileId, chatId),
+  duelEnd: (profileId: string, chatId: string) => ipcRenderer.invoke('duel-end', profileId, chatId),
   // Subscribe to incremental generation text. Returns an unsubscribe function.
   onGenerationDelta: (cb: (payload: { chatId: string; delta: string }) => void) => {
     const listener = (_e: IpcRendererEvent, payload: { chatId: string; delta: string }): void =>

@@ -45,11 +45,7 @@ declare global {
         profileId: string
       ) => Promise<{ global: string | null; worlds: Record<string, string> }>
       setGlobalWorkflow: (profileId: string, id: string | null) => Promise<void>
-      setWorldWorkflow: (
-        profileId: string,
-        characterId: string,
-        id: string | null
-      ) => Promise<void>
+      setWorldWorkflow: (profileId: string, characterId: string, id: string | null) => Promise<void>
       getChatWorkflow: (profileId: string, chatId: string) => Promise<string | null>
       setChatWorkflow: (profileId: string, chatId: string, id: string | null) => Promise<void>
       resolveWorkflowId: (profileId: string, chatId: string) => Promise<string>
@@ -254,7 +250,12 @@ declare global {
           version: number
           upstreamId: string | null
           builtin: boolean
-          manifest: { name: string; description?: string; creator?: string; fork?: { base: string; n: number } }
+          manifest: {
+            name: string
+            description?: string
+            creator?: string
+            fork?: { base: string; n: number }
+          }
           attachments: import('../shared/workflow/attachments').AttachmentDecl[]
           capabilities: import('../shared/workflow/capabilities').CapabilityId[]
         }
@@ -273,7 +274,12 @@ declare global {
           version: number
           upstreamId: string | null
           builtin: boolean
-          manifest: { name: string; description?: string; creator?: string; fork?: { base: string; n: number } }
+          manifest: {
+            name: string
+            description?: string
+            creator?: string
+            fork?: { base: string; n: number }
+          }
           attachments: import('../shared/workflow/attachments').AttachmentDecl[]
           capabilities: import('../shared/workflow/capabilities').CapabilityId[]
         }
@@ -304,7 +310,11 @@ declare global {
         sections: {
           id: string
           label: string
-          source: { kind: 'narrator' | 'pack' | 'lorebook' | 'memory'; packId?: string; name?: string }
+          source: {
+            kind: 'narrator' | 'pack' | 'lorebook' | 'memory'
+            packId?: string
+            name?: string
+          }
           tokens: number
           estimated: boolean
           text: string
@@ -312,7 +322,11 @@ declare global {
         omitted: {
           label: string
           reason: 'gate' | 'empty' | 'budget'
-          source?: { kind: 'narrator' | 'pack' | 'lorebook' | 'memory'; packId?: string; name?: string }
+          source?: {
+            kind: 'narrator' | 'pack' | 'lorebook' | 'memory'
+            packId?: string
+            name?: string
+          }
         }[]
         error?: 'no-chat' | 'failed'
         generatedAt: number
@@ -341,7 +355,10 @@ declare global {
               warnings: string[]
             }
           }
-        | { ok: false; error: { code: 'builtin-not-exportable' | 'not-installed'; message: string } }
+        | {
+            ok: false
+            error: { code: 'builtin-not-exportable' | 'not-installed'; message: string }
+          }
       >
       exportAgentPackDialog: (
         profileId: string,
@@ -349,50 +366,50 @@ declare global {
       ) => Promise<
         | { saved: string }
         | { canceled: true }
-        | { ok: false; error: { code: 'builtin-not-exportable' | 'not-installed'; message: string } }
-      >
-      importAgentPackDialog: (profileId: string) => Promise<
-        | null
         | {
-            envelopeMeta?: {
-              id: string
-              name: string
-              version: number
-              creator?: string
-              minRptVersion?: string
-              fork?: { base: string; n: number }
-            }
-            capabilityReport?: {
-              capabilities: import('../shared/workflow/capabilities').CapabilityId[]
-              unknownNodeTypes: string[]
-              nodesByCapability: Partial<
-                Record<import('../shared/workflow/capabilities').CapabilityId, string[]>
-              >
-            }
-            bundledTemplatePlans: { name: string; outcome: 'will-install' | 'will-duplicate' }[]
-            // WP4.6: 'new-version' = same id, a different version installed → installs ALONGSIDE.
-            // version-conflict is no longer a blocker (kept in the union below for the dead recovery UI).
-            dedupe?: 'new' | 'new-version' | 'already-installed'
-            blockers: (
-              | { code: 'unknown-node-types'; nodeTypes: string[] }
-              | { code: 'version-too-old'; minRptVersion: string; appVersion: string }
-              | { code: 'version-conflict'; installedVersion: number }
-            )[]
-            warnings: string[]
-            parseError?: {
-              code:
-                | 'too-large'
-                | 'invalid-json'
-                | 'unsupported-version'
-                | 'invalid-envelope'
-                | 'not-a-fragment'
-                | 'invalid-fragment'
-              errors?: string[]
-              foundVersion?: unknown
-            }
-            token?: string
+            ok: false
+            error: { code: 'builtin-not-exportable' | 'not-installed'; message: string }
           }
       >
+      importAgentPackDialog: (profileId: string) => Promise<null | {
+        envelopeMeta?: {
+          id: string
+          name: string
+          version: number
+          creator?: string
+          minRptVersion?: string
+          fork?: { base: string; n: number }
+        }
+        capabilityReport?: {
+          capabilities: import('../shared/workflow/capabilities').CapabilityId[]
+          unknownNodeTypes: string[]
+          nodesByCapability: Partial<
+            Record<import('../shared/workflow/capabilities').CapabilityId, string[]>
+          >
+        }
+        bundledTemplatePlans: { name: string; outcome: 'will-install' | 'will-duplicate' }[]
+        // WP4.6: 'new-version' = same id, a different version installed → installs ALONGSIDE.
+        // version-conflict is no longer a blocker (kept in the union below for the dead recovery UI).
+        dedupe?: 'new' | 'new-version' | 'already-installed'
+        blockers: (
+          | { code: 'unknown-node-types'; nodeTypes: string[] }
+          | { code: 'version-too-old'; minRptVersion: string; appVersion: string }
+          | { code: 'version-conflict'; installedVersion: number }
+        )[]
+        warnings: string[]
+        parseError?: {
+          code:
+            | 'too-large'
+            | 'invalid-json'
+            | 'unsupported-version'
+            | 'invalid-envelope'
+            | 'not-a-fragment'
+            | 'invalid-fragment'
+          errors?: string[]
+          foundVersion?: unknown
+        }
+        token?: string
+      }>
       confirmAgentPackImport: (token: string) => Promise<
         | {
             ok: true
@@ -412,6 +429,139 @@ declare global {
           }
       >
       cancelAgentPackImport: (token: string) => Promise<void>
+      // Recipe SHARING: `.rptrecipe` export / import (agent-packs plan WP5.2; ADR 0008) — "share this
+      // world's setup". Shapes inlined (not imported from main) per the established preload convention.
+      // Export assembles from the CURRENT world; `opts` = the wizard's name/description/creator/id.
+      // Import is two-phase (inspect → confirm); the TARGET WORLD is chosen at confirm.
+      previewRecipeExport: (
+        profileId: string,
+        worldId: string,
+        opts: { name: string; description?: string; creator?: string; id?: string }
+      ) => Promise<
+        | {
+            ok: true
+            preview: {
+              recipeMeta: {
+                id: string
+                name: string
+                description?: string
+                creator?: string
+                sizeBytes: number
+              }
+              packs: { id: string; version: number; name: string; enabled: boolean }[]
+              narratorKind: 'builtin' | 'embedded'
+              bundledTemplateNames: string[]
+              noTemplatesBundled: boolean
+              warnings: string[]
+            }
+          }
+        | { ok: false; error: { code: 'no-activated-packs'; message: string } }
+      >
+      exportRecipeDialog: (
+        profileId: string,
+        worldId: string,
+        opts: { name: string; description?: string; creator?: string; id?: string }
+      ) => Promise<
+        | { saved: string }
+        | { canceled: true }
+        | { ok: false; error: { code: 'no-activated-packs'; message: string } }
+      >
+      importRecipeDialog: (profileId: string) => Promise<null | {
+        recipeMeta?: { id: string; name: string; description?: string; creator?: string }
+        packs: {
+          id: string
+          version: number
+          name: string
+          dedupe: 'new' | 'new-version' | 'already-installed'
+          capabilityReport: {
+            capabilities: import('../shared/workflow/capabilities').CapabilityId[]
+            unknownNodeTypes: string[]
+            nodesByCapability: Partial<
+              Record<import('../shared/workflow/capabilities').CapabilityId, string[]>
+            >
+          }
+          unknownNodeTypes: string[]
+          warnings: string[]
+        }[]
+        narrator?: {
+          kind: 'builtin' | 'embedded'
+          nodeCount?: number
+          unknownNodeTypes: string[]
+          warnings: string[]
+        }
+        templatePlans: { name: string; outcome: 'will-install' | 'will-duplicate' }[]
+        blocked: boolean
+        warnings: string[]
+        parseError?: {
+          code:
+            | 'too-large'
+            | 'invalid-json'
+            | 'unsupported-version'
+            | 'invalid-envelope'
+            | 'not-a-fragment'
+            | 'invalid-fragment'
+            | 'invalid-narrator'
+            | 'duplicate-pack'
+            | 'activation-refers-unknown-pack'
+            | 'activation-duplicate-pack'
+          errors?: string[]
+          foundVersion?: unknown
+        }
+        token?: string
+      }>
+      confirmRecipeImport: (
+        token: string,
+        targetWorldId: string
+      ) => Promise<
+        | {
+            ok: true
+            applied: {
+              templates: { name: string; id: string }[]
+              packs: { id: string; version: number; installed: boolean }[]
+              narrator?: { kind: 'builtin' | 'embedded'; workflowId: string }
+              activation: { packId: string; version: number; enabled: boolean }[]
+            }
+          }
+        | { ok: false; code: 'expired' }
+        | {
+            ok: false
+            code: 'blocked'
+            packs: {
+              id: string
+              version: number
+              name: string
+              dedupe: 'new' | 'new-version' | 'already-installed'
+              capabilityReport: {
+                capabilities: import('../shared/workflow/capabilities').CapabilityId[]
+                unknownNodeTypes: string[]
+                nodesByCapability: Partial<
+                  Record<import('../shared/workflow/capabilities').CapabilityId, string[]>
+                >
+              }
+              unknownNodeTypes: string[]
+              warnings: string[]
+            }[]
+            narrator?: {
+              kind: 'builtin' | 'embedded'
+              nodeCount?: number
+              unknownNodeTypes: string[]
+              warnings: string[]
+            }
+          }
+        | {
+            ok: false
+            code: 'partial'
+            applied: {
+              templates: { name: string; id: string }[]
+              packs: { id: string; version: number; installed: boolean }[]
+              narrator?: { kind: 'builtin' | 'embedded'; workflowId: string }
+              activation: { packId: string; version: number; enabled: boolean }[]
+            }
+            failedStep: string
+            error: string
+          }
+      >
+      cancelRecipeImport: (token: string) => Promise<void>
       // WP4.6: `version` uninstalls ONE version (omitted = highest installed; last version cascades).
       uninstallAgentPack: (
         profileId: string,
@@ -424,16 +574,12 @@ declare global {
       ) => Promise<Array<{ id: string; name: string; tableCount: number }>>
       getTableTemplate: (profileId: string, id: string) => Promise<unknown>
       deleteTableTemplate: (profileId: string, id: string) => Promise<void>
-      importTableTemplateDialog: (profileId: string) => Promise<
-        | { summary?: { id: string; name: string; tableCount: number }; error?: string }
-        | null
-      >
+      importTableTemplateDialog: (profileId: string) => Promise<{
+        summary?: { id: string; name: string; tableCount: number }
+        error?: string
+      } | null>
       getChatTableTemplate: (profileId: string, chatId: string) => Promise<string | null>
-      setChatTableTemplate: (
-        profileId: string,
-        chatId: string,
-        id: string | null
-      ) => Promise<void>
+      setChatTableTemplate: (profileId: string, chatId: string, id: string | null) => Promise<void>
       readChatTables: (
         profileId: string,
         chatId: string

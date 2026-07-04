@@ -1,6 +1,7 @@
 import { IpcMain, BrowserWindow, dialog } from 'electron'
 import * as agentPackService from '../services/agentPackService'
 import * as transfer from '../services/agentPackTransferService'
+import * as recipeTransfer from '../services/recipeTransferService'
 import { OverrideScope } from '../services/agentPackStore'
 import { listRuns } from '../services/runHistoryStore'
 import { explainTriggers } from '../services/headlessRunService'
@@ -36,8 +37,14 @@ export const registerAgentPackIpc = (ipcMain: IpcMain): void => {
   // WP4.6: `version` pins which coexisting version this activation runs (written on open).
   ipcMain.handle(
     'agent-pack-set-gate',
-    (_, packId: string, worldId: string, chatId: string | null, open: boolean, version?: number | null) =>
-      agentPackService.setGate(packId, worldId, chatId, open, version ?? null)
+    (
+      _,
+      packId: string,
+      worldId: string,
+      chatId: string | null,
+      open: boolean,
+      version?: number | null
+    ) => agentPackService.setGate(packId, worldId, chatId, open, version ?? null)
   )
   // WP4.6: re-pin which installed version of a pack runs in a world (ADR 0008 — recipes pin versions).
   ipcMain.handle(
@@ -154,23 +161,20 @@ export const registerAgentPackIpc = (ipcMain: IpcMain): void => {
 
   // Export behind a save dialog (default filename `<id>-v<version>.rptagent`). Canceled dialog →
   // { canceled: true }. Builtin / not-installed → { ok:false, error }. Success → { saved: path }.
-  ipcMain.handle(
-    'agent-pack-export-dialog',
-    async (event, profileId: string, packId: string) => {
-      // Resolve the pack meta first so a builtin/not-installed refusal happens BEFORE the dialog (no
-      // point prompting for a file we can't write). previewAgentPackExport is the cheap read.
-      const preview = transfer.previewAgentPackExport(profileId, packId)
-      if (!preview.ok) return { ok: false as const, error: preview.error }
-      const result = await dialog.showSaveDialog(BrowserWindow.fromWebContents(event.sender)!, {
-        defaultPath: transfer.exportFileName(packId, preview.preview.envelopeMeta.version),
-        filters: [{ name: 'RPT Agent Pack', extensions: ['rptagent'] }]
-      })
-      if (result.canceled || !result.filePath) return { canceled: true as const }
-      const written = transfer.writeAgentPackExport(profileId, packId, result.filePath)
-      if (!written.ok) return { ok: false as const, error: written.error }
-      return { saved: result.filePath }
-    }
-  )
+  ipcMain.handle('agent-pack-export-dialog', async (event, profileId: string, packId: string) => {
+    // Resolve the pack meta first so a builtin/not-installed refusal happens BEFORE the dialog (no
+    // point prompting for a file we can't write). previewAgentPackExport is the cheap read.
+    const preview = transfer.previewAgentPackExport(profileId, packId)
+    if (!preview.ok) return { ok: false as const, error: preview.error }
+    const result = await dialog.showSaveDialog(BrowserWindow.fromWebContents(event.sender)!, {
+      defaultPath: transfer.exportFileName(packId, preview.preview.envelopeMeta.version),
+      filters: [{ name: 'RPT Agent Pack', extensions: ['rptagent'] }]
+    })
+    if (result.canceled || !result.filePath) return { canceled: true as const }
+    const written = transfer.writeAgentPackExport(profileId, packId, result.filePath)
+    if (!written.ok) return { ok: false as const, error: written.error }
+    return { saved: result.filePath }
+  })
 
   // Import phase one: open dialog (filter .rptagent) → inspect → return the inspection report the
   // renderer's screen renders. Canceled dialog → null. The report carries a `token` (present iff the
@@ -192,5 +196,66 @@ export const registerAgentPackIpc = (ipcMain: IpcMain): void => {
   )
   ipcMain.handle('agent-pack-cancel-import', (_, token: string) =>
     transfer.cancelAgentPackImport(token)
+  )
+
+  // ── Recipe SHARING: `.rptrecipe` export / import (agent-packs plan WP5.2; ADR 0008) ──────────────
+  //
+  // "Share this world's setup" — a set of embedded packs + an activation preset + the narrator choice.
+  // Mirrors the `.rptagent` channels above: the service stays dialog-free + testable, the dialogs live
+  // HERE. Export assembles from the CURRENT world; import is TWO-PHASE (inspect → confirm) with the
+  // TARGET WORLD chosen at CONFIRM (the recipe file doesn't know it — passed as `targetWorldId`).
+
+  // Dry-run export preview for WP5.3's wizard: what the file WOULD contain (recipe meta, pack list with
+  // pinned versions + gate state, narrator kind, bundled template names, size estimate, warnings)
+  // WITHOUT writing. { ok, preview } | { ok:false, error } (no-activated-packs). `opts` carries the
+  // caller-supplied name/description/creator the wizard collects.
+  ipcMain.handle(
+    'recipe-preview-export',
+    (_, profileId: string, worldId: string, opts: recipeTransfer.BuildRecipeOpts) =>
+      recipeTransfer.previewRecipeExport(profileId, worldId, opts)
+  )
+
+  // Export behind a save dialog (default filename `<name>.rptrecipe`). Canceled dialog → { canceled }.
+  // no-activated-packs → { ok:false, error }. Success → { saved: path }.
+  ipcMain.handle(
+    'recipe-export-dialog',
+    async (event, profileId: string, worldId: string, opts: recipeTransfer.BuildRecipeOpts) => {
+      // Assemble first so a no-activated-packs refusal happens BEFORE the dialog (no point prompting for
+      // a file we can't write). previewRecipeExport is the cheap read of the same core.
+      const preview = recipeTransfer.previewRecipeExport(profileId, worldId, opts)
+      if (!preview.ok) return { ok: false as const, error: preview.error }
+      const result = await dialog.showSaveDialog(BrowserWindow.fromWebContents(event.sender)!, {
+        defaultPath: recipeTransfer.recipeFileName(opts.name),
+        filters: [{ name: 'RPT Recipe', extensions: ['rptrecipe'] }]
+      })
+      if (result.canceled || !result.filePath) return { canceled: true as const }
+      const written = recipeTransfer.writeRecipeExport(profileId, worldId, opts, result.filePath)
+      if (!written.ok) return { ok: false as const, error: written.error }
+      return { saved: result.filePath }
+    }
+  )
+
+  // Import phase one: open dialog (filter .rptrecipe) → inspect → return the inspection report the
+  // wizard renders. Canceled dialog → null. The report carries per-pack sub-reports, a narrator report,
+  // template plans, the recipe-level `blocked` verdict, and a `token` (present iff the file parsed) for
+  // phase two.
+  ipcMain.handle('recipe-import-dialog', async (event, profileId: string) => {
+    const result = await dialog.showOpenDialog(BrowserWindow.fromWebContents(event.sender)!, {
+      properties: ['openFile'],
+      filters: [{ name: 'RPT Recipe', extensions: ['rptrecipe', 'json'] }]
+    })
+    if (result.canceled || result.filePaths.length === 0) return null
+    return recipeTransfer.inspectRecipeFile(profileId, result.filePaths[0])
+  })
+
+  // Import phase two: apply the inspected recipe into the TARGET world (chosen NOW — the file doesn't
+  // know it). Installs templates + packs (alongside per WP4.6), applies the narrator to the world's
+  // selection sidecar, and applies the activation preset (gates + pins + world-scope overrides).
+  // Re-checks the recipe-level block (defense-in-depth). Returns ok / expired / blocked / partial.
+  ipcMain.handle('recipe-confirm-import', (_, token: string, targetWorldId: string) =>
+    recipeTransfer.confirmRecipeImport(token, targetWorldId)
+  )
+  ipcMain.handle('recipe-cancel-import', (_, token: string) =>
+    recipeTransfer.cancelRecipeImport(token)
   )
 }
