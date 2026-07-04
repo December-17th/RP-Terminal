@@ -1,6 +1,5 @@
 import { WorkflowDoc } from '../../../../shared/workflow/types'
 import type { AgentPackRecord } from '../../agentPackStore'
-import { buildAsyncMemoryPack } from './asyncMemoryPack'
 
 // Built-in agent pack: SQL Table Memory (agent-packs plan WP1.6 — the ABI dogfood).
 //
@@ -262,10 +261,12 @@ export const buildTableMemoryPack = (): AgentPackRecord => ({
   fragment: TABLE_MEMORY_FRAGMENT
 })
 
-/** Every built-in pack the app seeds; the array is the extension point. Today: the every-turn
- *  `builtin.table-memory` and the flagship headless `builtin.async-memory` (asyncMemoryPack.ts) — both
- *  DEFAULT OFF, and ALTERNATIVES the user picks between (see each pack's manifest/description). */
-export const BUILTIN_PACKS: readonly (() => AgentPackRecord)[] = [
-  buildTableMemoryPack,
-  buildAsyncMemoryPack
-]
+/** Every built-in pack the app SEEDS. Emptied by the one-canvas rebuild WP6.2 (ADR 0011): the two
+ *  memory experiences are re-shipped as visible five-node trigger-rooted chains in example workflow
+ *  docs (docs/workflows/memory-fill*.rptflow) instead of seeded packs, so no builtin pack is installed
+ *  into a fresh library anymore. The pack SYSTEM (store, install/uninstall, materialization,
+ *  composition, transfer) stays live until WP6.5, and the two builder functions + fragments above are
+ *  KEPT — they still back the pack-machinery characterization tests (equivalence / materialization /
+ *  transfer) and existing installed pack rows are untouched. Re-adding an entry here would seed it
+ *  again; the array is still the extension point. */
+export const BUILTIN_PACKS: readonly (() => AgentPackRecord)[] = []

@@ -135,10 +135,11 @@ describe('async-memory pack — builtin record', () => {
     expect(record.version).toBe(1)
   })
 
-  it('is in BUILTIN_PACKS alongside the every-turn table-memory pack (both seeded)', () => {
-    const ids = BUILTIN_PACKS.map((b) => b().id)
-    expect(ids).toContain('builtin.async-memory')
-    expect(ids).toContain('builtin.table-memory')
+  it('is NO LONGER seeded via BUILTIN_PACKS (WP6.2 emptied the seed list; the builder is kept for the pack-machinery tests)', () => {
+    // One-canvas rebuild (ADR 0011): the memory experiences ship as trigger-rooted chains in example
+    // workflow docs, so BUILTIN_PACKS is empty. buildAsyncMemoryPack() still exists (this file exercises
+    // it), it is just no longer auto-seeded into a fresh library.
+    expect(BUILTIN_PACKS).toHaveLength(0)
   })
 
   it('manifest describes it as an alternative to the every-turn pack (not stackable)', () => {

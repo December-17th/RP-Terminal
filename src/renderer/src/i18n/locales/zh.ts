@@ -620,6 +620,11 @@ const zh: Record<string, string> = {
   'workflowEditor.nodeTitle.table.query': '查询表格',
   'workflowEditor.nodeTitle.parse.extract': '提取文本',
   'workflowEditor.nodeTitle.context.trimProcessed': '裁剪已处理历史',
+  'workflowEditor.nodeTitle.trigger.state': '状态触发器',
+  'workflowEditor.nodeTitle.trigger.cadence': '节奏触发器',
+  'workflowEditor.nodeTitle.trigger.manual': '手动触发器',
+  'workflowEditor.nodeTitle.history.recent': '近期历史',
+  'workflowEditor.nodeTitle.agent.llm': '智能体',
   // 节点说明
   'workflowEditor.nodeDesc.input.context':
     '构建本回合的上下文包：会话、角色卡、设置、预设、世界书、聊天历史与工作变量。每张图的起点——几乎所有节点都要读取它的输出。',

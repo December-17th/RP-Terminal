@@ -45,7 +45,14 @@ const chatTemplate = (gen: GenContext): TableTemplate | null => {
 
 const applyConfig = z.object({
   /** Per-batch row-change cap; a batch exceeding it rolls back entirely. Default 500. */
-  max_changes: z.number().int().min(1).max(5000).optional()
+  max_changes: z.number().int().min(1).max(5000).optional(),
+  /** Advance the chat-level table-progress pointer to the current floor AFTER a successful batch.
+   *  Advance-AFTER-success semantics: a failed pass leaves the backlog standing and retries at the
+   *  next commit boundary (one retry per boundary; the depth cap bounds the chain). This replaced
+   *  `table.gate`'s advance-FIRST bookkeeping for the consolidated WP6.2 memory chains, which dropped
+   *  the gate — without it the async trigger's `unprocessed` backlog never clears and
+   *  `context.trimProcessed` is inert. Unset/false = no advance (compat: the pre-WP6.2b behavior). */
+  advance_progress: z.boolean().optional()
 })
 
 type ApplyConfig = z.infer<typeof applyConfig>
@@ -92,6 +99,16 @@ export const tableApply: NodeImpl = {
       if (result.statements.length) {
         const floor = Math.max(0, gen.floors.length - 1)
         appendOps(gen.profileId, gen.chatId, floor, result.statements)
+      }
+      // Advance the shared table-progress pointer ONLY after a successful batch (advance-after-success:
+      // a failed batch throws below and leaves the backlog standing, so the next commit boundary retries
+      // — one retry per boundary, chains bounded by the depth cap). This replaces table.gate's
+      // advance-first bookkeeping for the consolidated WP6.2 chains (which dropped the gate). currentFloor
+      // is re-read FROM DISK at this moment (the table.gate idiom, tableNodes.ts:254), not from gen.floors.
+      if (cfg.advance_progress === true) {
+        const allTemplateTableSqlNames = template.tables.map((t) => t.sqlName)
+        const currentFloor = Math.max(0, getAllFloors(gen.profileId, gen.chatId).length - 1)
+        advanceProgress(gen.profileId, gen.chatId, allTemplateTableSqlNames, currentFloor)
       }
       return { outputs: { results: { applied: result.applied, changes: result.changes }, done: true } }
     } catch (error) {

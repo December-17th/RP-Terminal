@@ -60,8 +60,8 @@ export function isWriteCapability(id: CapabilityId): boolean {
  *    vars.get                                 → reads-vars
  *    vars.save / mvu.set / apply.state        → writes-vars
  *    lorebook.select / lorebook.entries / tool.lorebookSearch → reads-lorebooks
- *    context.history / input.context          → reads-history
- *    llm.sample                               → calls-llm
+ *    context.history / input.context / history.recent → reads-history
+ *    llm.sample / agent.llm                   → calls-llm
  *    output.writeFloor                        → writes-floors
  *    tool.startCombat / tool.startDuel        → runs-game-tools */
 const NODE_TYPE_CAPABILITY: Readonly<Record<string, CapabilityId>> = {
@@ -78,7 +78,12 @@ const NODE_TYPE_CAPABILITY: Readonly<Record<string, CapabilityId>> = {
   'tool.lorebookSearch': 'reads-lorebooks',
   'context.history': 'reads-history',
   'input.context': 'reads-history',
+  // One-canvas rebuild WP6.2 (ADR 0011) consolidated agent nodes:
+  //  · history.recent reads the committed chat history (the consolidated context.history).
+  //  · agent.llm makes one model call (the consolidated llm.sample) — a calls-llm node.
+  'history.recent': 'reads-history',
   'llm.sample': 'calls-llm',
+  'agent.llm': 'calls-llm',
   'output.writeFloor': 'writes-floors',
   'tool.startCombat': 'runs-game-tools',
   'tool.startDuel': 'runs-game-tools'

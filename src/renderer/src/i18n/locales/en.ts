@@ -640,6 +640,11 @@ const en: Record<string, string> = {
   'workflowEditor.nodeTitle.table.query': 'Query Tables',
   'workflowEditor.nodeTitle.parse.extract': 'Extract Text',
   'workflowEditor.nodeTitle.context.trimProcessed': 'Trim Processed History',
+  'workflowEditor.nodeTitle.trigger.state': 'State Trigger',
+  'workflowEditor.nodeTitle.trigger.cadence': 'Cadence Trigger',
+  'workflowEditor.nodeTitle.trigger.manual': 'Manual Trigger',
+  'workflowEditor.nodeTitle.history.recent': 'Recent History',
+  'workflowEditor.nodeTitle.agent.llm': 'Agent',
   // Node descriptions (what the node does).
   'workflowEditor.nodeDesc.input.context':
     'Builds the turn bundle: session, character card, settings, preset, lorebooks, chat history and working variables. The start of every graph — almost every other node takes its output.',

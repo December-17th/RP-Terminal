@@ -542,37 +542,44 @@ describe('getPackSettings (detail-panel model; WP3.2)', () => {
   })
 })
 
-describe('built-in pack seeding (WP1.6)', () => {
-  const TABLE_MEMORY = 'builtin.table-memory'
-
-  it('seedBuiltinPacks installs the table-memory pack as a builtin (idempotent)', () => {
+// Built-in pack seeding + install/uninstall machinery. WP6.2 (one-canvas rebuild; ADR 0011) EMPTIED
+// BUILTIN_PACKS — the two memory experiences ship as trigger-rooted chains in example workflow docs
+// instead of seeded packs — so `seedBuiltinPacks` now installs NOTHING. The pack INSTALL/UNINSTALL
+// machinery (idempotent dedupe, builtin-uninstall refusal, gate-closed default) stays live until WP6.5
+// and is still pinned here against a DIRECTLY-installed builtin record (no longer via the seed list).
+describe('built-in pack seeding + machinery (WP1.6; WP6.2 empties the seed list)', () => {
+  // ── WP6.2 deliberate change: the seed list is empty; seeding installs no builtin packs. ──────────
+  it('seedBuiltinPacks installs NOTHING (BUILTIN_PACKS emptied in WP6.2)', () => {
     service.seedBuiltinPacks('seed-prof-1')
-    const listed = service.list('seed-prof-1')
-    const tm = listed.find((p) => p.id === TABLE_MEMORY)
-    expect(tm).toBeDefined()
-    expect(tm!.builtin).toBe(true)
-
-    // Idempotent: a second seed does not duplicate the row.
+    expect(service.list('seed-prof-1').filter((p) => p.builtin)).toHaveLength(0)
+    // Idempotent no-op: a second call still installs nothing.
     service.seedBuiltinPacks('seed-prof-1')
-    expect(service.list('seed-prof-1').filter((p) => p.id === TABLE_MEMORY)).toHaveLength(1)
+    expect(service.list('seed-prof-1').filter((p) => p.builtin)).toHaveLength(0)
   })
 
-  it('the seeded pack ships gate CLOSED by default (no activation row → closed)', () => {
-    service.seedBuiltinPacks('seed-prof-2')
-    // No activation row seeded → resolveGate default is closed (packs are opt-in).
-    expect(service.getGate(TABLE_MEMORY, 'any-world', 'any-chat')).toBe(false)
+  it('list() on a fresh profile surfaces no builtin packs (nothing seeded)', () => {
+    expect(service.list('seed-prof-4').some((p) => p.builtin)).toBe(false)
   })
 
-  it('the seeded builtin pack is UNINSTALLABLE (uninstall refused + logged)', () => {
-    service.seedBuiltinPacks('seed-prof-3')
-    expect(service.uninstall('seed-prof-3', TABLE_MEMORY)).toEqual({ ok: false, code: 'builtin' })
-    expect(service.list('seed-prof-3').some((p) => p.id === TABLE_MEMORY)).toBe(true)
+  // ── The install/uninstall MACHINERY (unchanged; still live until WP6.5) — pinned against a
+  //    directly-installed builtin record rather than the (now-empty) seed list. ────────────────────
+  it('install dedupes an identical builtin (id, version) — idempotent', () => {
+    service.install('seed-prof-1', pack({ id: 'test.builtin', builtin: true }))
+    service.install('seed-prof-1', pack({ id: 'test.builtin', builtin: true }))
+    expect(service.list('seed-prof-1').filter((p) => p.id === 'test.builtin')).toHaveLength(1)
+  })
+
+  it('an installed builtin ships gate CLOSED by default (no activation row → closed)', () => {
+    service.install('seed-prof-2', pack({ id: 'test.builtin', builtin: true }))
+    // No activation row → resolveGate default is closed (packs are opt-in).
+    expect(service.getGate('test.builtin', 'any-world', 'any-chat')).toBe(false)
+  })
+
+  it('an installed builtin is UNINSTALLABLE (uninstall refused + logged)', () => {
+    service.install('seed-prof-3', pack({ id: 'test.builtin', builtin: true }))
+    expect(service.uninstall('seed-prof-3', 'test.builtin')).toEqual({ ok: false, code: 'builtin' })
+    expect(service.list('seed-prof-3').some((p) => p.id === 'test.builtin')).toBe(true)
     expect(mockLog.log).toHaveBeenCalled()
-  })
-
-  it('list() lazily seeds even without an explicit seedBuiltinPacks call', () => {
-    // A fresh profile that was never explicitly seeded — list() must surface the builtin.
-    expect(service.list('seed-prof-4').some((p) => p.id === TABLE_MEMORY)).toBe(true)
   })
 })
 

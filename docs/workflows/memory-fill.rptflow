@@ -1,0 +1,105 @@
+{
+  "id": "memory-fill-example",
+  "name": "Memory Fill (every few floors)",
+  "version": 1,
+  "schemaVersion": 1,
+  "description": "The default generation pipeline PLUS a trigger-rooted MEMORY-FILL agent, both on ONE canvas (one-canvas rebuild; ADR 0011). The main narrator path is the builtin default (Assemble Prompt) with table.export wired into Assemble's 'entries' port — so a chat's SQL memory rows project into the prompt through the normal world-info machinery every turn (turn-coupled wiring, runs INSIDE the turn).\n\nThe memory-fill AGENT is the consolidated five-node chain the owner's model describes: a CADENCE trigger (every 3 floors) → history.recent (the last few floors as AI-reply + player-action messages) → agent.llm (one side model call over a role-alternating maintenance prompt) → parse.extract (pulls the <TableEdit> SQL block) → table.apply (writes it). The trigger's 'fired' Signal gates history.recent/agent.llm/parse.extract/table.read so the WHOLE chain is EXCLUDED from turn runs (the trigger is excluded, its edges go dead, the chain is pruned) and runs HEADLESSLY when the trigger fires — the reply is never blocked. A supporting table.read (gated the same way, fed by the shared Context) renders the due tables' definitions + rules into agent.llm's 'input' slot; history.recent splices into agent.llm's '{history}' marker.\n\nSETUP: assign a table template in the Tables view — WITHOUT one table.read/table.apply short-circuit (silent no-op) and the agent has nothing to maintain. Change the cadence by editing the 'trigger' node's everyNFloors. The shipped file runs the side LLM on the ACTIVE connection; to point it at a cheaper model, set 'agent's api_preset_id to a saved api_preset id. Disable the whole agent by disabling its trigger (it stays visibly on the canvas, off).\n\nThe agent's system prompt is the shared maintainer CONTRACT (issue 07): the manual backfill (tableBackfillService) reuses the same rules (tableMaintenance.MAINTAINER_RULES). Keep them consistent.",
+  "nodes": [
+    { "id": "ctx", "type": "input.context", "position": { "x": 0, "y": 380 } },
+    { "id": "export", "type": "table.export", "position": { "x": 280, "y": 200 } },
+    { "id": "assemble", "type": "prompt.assemble", "position": { "x": 560, "y": 380 } },
+    { "id": "llm", "type": "llm.sample", "position": { "x": 840, "y": 380 } },
+    { "id": "parse", "type": "parse.response", "position": { "x": 1120, "y": 380 } },
+    { "id": "apply", "type": "apply.state", "position": { "x": 1400, "y": 380 } },
+    {
+      "id": "write",
+      "type": "output.writeFloor",
+      "isMainOutput": true,
+      "position": { "x": 1680, "y": 380 }
+    },
+
+    {
+      "id": "trigger",
+      "type": "trigger.cadence",
+      "config": { "everyNFloors": 3 },
+      "position": { "x": 1960, "y": 700 }
+    },
+    { "id": "history", "type": "history.recent", "config": { "lastNFloors": 6 }, "position": { "x": 2240, "y": 620 } },
+    { "id": "read", "type": "table.read", "config": { "max_rows": 30 }, "position": { "x": 2240, "y": 780 } },
+    {
+      "id": "agent",
+      "type": "agent.llm",
+      "config": {
+        "stream": false,
+        "retries": 1,
+        "messages": [
+          {
+            "role": "system",
+            "content": "你是数据库表格维护AI（database-table maintenance AI）。下面是记忆表格，每个表附带其定义与可执行的操作，随后是自上次维护以来的剧情。请根据这段剧情更新表格。\n\n将【本批剧情】整体视为一次交互进行维护：纪要表只允许新增恰好一行（概括整批），其余表按各自规则维护。\n\n【表格与规则】\n{{input}}\n\n规则：\n1. 只输出 SQL 语句，全部包裹在一个 <TableEdit>…</TableEdit> 标签内。标签内不要写任何解释或注释。\n2. 仅允许对上面列出的表执行 INSERT / UPDATE / DELETE，禁止其它操作。\n3. 严格遵循每个表的【插入规则】【更新规则】【删除规则】（表为空时遵循【初始化规则】）。\n4. 只在确有变化时更新；若本批没有任何需要写入的变化，输出一个空的 <TableEdit></TableEdit>。\n5. 表格是历史档案，不是创作工具：只记录剧情中已经明确发生的事实。禁止编造、推测、预告或推进任何新剧情、新事件、新对话；禁止把\"计划\"\"预测\"\"可能发生的事\"写入任何表；没有把握的内容一律不写。"
+          },
+          { "role": "user", "content": "【本批剧情】" },
+          { "role": "user", "content": "{history}" }
+        ]
+      },
+      "position": { "x": 2520, "y": 700 }
+    },
+    {
+      "id": "sql",
+      "type": "parse.extract",
+      "config": { "mode": "tag", "tag": "TableEdit" },
+      "position": { "x": 2800, "y": 700 }
+    },
+    { "id": "tableapply", "type": "table.apply", "config": { "advance_progress": true }, "position": { "x": 3080, "y": 700 } },
+    {
+      "id": "log-apply",
+      "type": "util.log",
+      "config": { "label": "memory-fill/apply" },
+      "position": { "x": 3360, "y": 860 }
+    }
+  ],
+  "edges": [
+    { "from": { "node": "ctx", "port": "gen" }, "to": { "node": "export", "port": "gen" } },
+
+    { "from": { "node": "ctx", "port": "gen" }, "to": { "node": "assemble", "port": "gen" } },
+    { "from": { "node": "export", "port": "entries" }, "to": { "node": "assemble", "port": "entries" } },
+
+    { "from": { "node": "ctx", "port": "gen" }, "to": { "node": "llm", "port": "gen" } },
+    { "from": { "node": "assemble", "port": "sendMessages" }, "to": { "node": "llm", "port": "sendMessages" } },
+    { "from": { "node": "assemble", "port": "params" }, "to": { "node": "llm", "port": "params" } },
+
+    { "from": { "node": "ctx", "port": "gen" }, "to": { "node": "parse", "port": "gen" } },
+    { "from": { "node": "llm", "port": "raw" }, "to": { "node": "parse", "port": "raw" } },
+    { "from": { "node": "assemble", "port": "sendMessages" }, "to": { "node": "parse", "port": "sendMessages" } },
+    { "from": { "node": "llm", "port": "rawUsage" }, "to": { "node": "parse", "port": "rawUsage" } },
+
+    { "from": { "node": "ctx", "port": "gen" }, "to": { "node": "apply", "port": "gen" } },
+    { "from": { "node": "parse", "port": "parsed" }, "to": { "node": "apply", "port": "parsed" } },
+    { "from": { "node": "parse", "port": "mvu" }, "to": { "node": "apply", "port": "mvu" } },
+    { "from": { "node": "llm", "port": "raw" }, "to": { "node": "apply", "port": "raw" } },
+
+    { "from": { "node": "ctx", "port": "gen" }, "to": { "node": "write", "port": "gen" } },
+    { "from": { "node": "llm", "port": "raw" }, "to": { "node": "write", "port": "raw" } },
+    { "from": { "node": "assemble", "port": "sendMessages" }, "to": { "node": "write", "port": "sendMessages" } },
+    { "from": { "node": "apply", "port": "variables" }, "to": { "node": "write", "port": "variables" } },
+    { "from": { "node": "parse", "port": "parsed" }, "to": { "node": "write", "port": "parsed" } },
+    { "from": { "node": "parse", "port": "metrics" }, "to": { "node": "write", "port": "metrics" } },
+
+    { "from": { "node": "trigger", "port": "fired" }, "to": { "node": "history", "port": "when" } },
+
+    { "from": { "node": "ctx", "port": "gen" }, "to": { "node": "read", "port": "gen" } },
+    { "from": { "node": "trigger", "port": "fired" }, "to": { "node": "read", "port": "when" } },
+
+    { "from": { "node": "trigger", "port": "fired" }, "to": { "node": "agent", "port": "when" } },
+    { "from": { "node": "history", "port": "messages" }, "to": { "node": "agent", "port": "history" } },
+    { "from": { "node": "read", "port": "block" }, "to": { "node": "agent", "port": "input" } },
+
+    { "from": { "node": "agent", "port": "text" }, "to": { "node": "sql", "port": "text" } },
+    { "from": { "node": "trigger", "port": "fired" }, "to": { "node": "sql", "port": "when" } },
+
+    { "from": { "node": "ctx", "port": "gen" }, "to": { "node": "tableapply", "port": "gen" } },
+    { "from": { "node": "sql", "port": "first" }, "to": { "node": "tableapply", "port": "sql" } },
+    { "from": { "node": "sql", "port": "found" }, "to": { "node": "tableapply", "port": "when" } },
+
+    { "from": { "node": "tableapply", "port": "error" }, "to": { "node": "log-apply", "port": "value" } }
+  ]
+}
