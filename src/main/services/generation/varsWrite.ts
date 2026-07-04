@@ -1,6 +1,7 @@
 import { getFloor, saveFloor } from '../floorService'
 import { applyJsonPatch, JsonPatchOp } from '../../parsers/mvuParser'
 import { log } from '../logService'
+import { appendVarsOp } from '../varsOpsService'
 import { FloorFile } from '../../types/chat'
 
 // Runaway write-back loop breaker (TIMING-INDEPENDENT). NOTE (2026-07-02): this is now a BACKSTOP, not the
@@ -60,11 +61,12 @@ export const registerWriteSignature = (
  * variables) and persist. This is the path by which native/script panel UI MODIFIES state
  * instead of only displaying it (a button, checkbox, or manual edit). Reuses the same
  * `applyJsonPatch` engine as the model's `<UpdateVariable>`, so author/user writes fold in
- * identically. NOTE these writes are not re-derivable from response text, so an MVU
- * re-evaluate (`reevaluateVariables`, which replays model `<UpdateVariable>` blocks only)
- * DISCARDS them. Returns the updated floor (or null if the floor is gone / there are no
- * ops / the write was a no-op or a suppressed runaway loop). Targets a specific floor —
- * the caller passes the latest.
+ * identically. These writes are not re-derivable from response text, so on success the applied
+ * `ops` are JOURNALED to `vars_ops` (varsOpsService) and REPLAYED after the floor's model fold by
+ * `reevaluateVariables`, so an MVU re-evaluate no longer discards them. Returns the updated floor
+ * (or null if the floor is gone / there are no ops / the write was a no-op or a suppressed runaway
+ * loop — none of those cases are journaled, they changed nothing). Targets a specific floor — the
+ * caller passes the latest.
  */
 export const applyVariableOps = (
   profileId: string,
@@ -104,10 +106,29 @@ export const applyVariableOps = (
   }
   f.variables = { ...f.variables, stat_data: sd, delta_data: deltas }
   saveFloor(profileId, chatId, f)
+  // Journal the FULL applied ops so re-evaluation can replay this write after the model fold. The
+  // as-authored ops fold identically against the replayed base state (no-op members are harmless).
+  appendVarsOp(chatId, floor, 'patch', ops)
   log(
     'info',
     `variable write-back — floor ${floor}: ${changed.map((d) => d.path).join(', ')}` +
       (changed.length < ops.length ? ` (${ops.length - changed.length} no-op)` : '')
   )
+  return f
+}
+
+/** Card whole-replace of the latest floor's stat_data (TH replaceVariables fast path / Mvu.replaceMvuData
+ *  via wcv-host-set-vars). Persists and journals a 'replace' vars_op so it survives MVU re-evaluation. */
+export const replaceVariablesFromCard = (
+  profileId: string,
+  chatId: string,
+  floor: number,
+  statData: unknown
+): FloorFile | null => {
+  const f = getFloor(profileId, chatId, floor)
+  if (!f) return null
+  f.variables = { ...f.variables, stat_data: statData }
+  saveFloor(profileId, chatId, f)
+  appendVarsOp(chatId, floor, 'replace', statData)
   return f
 }

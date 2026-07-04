@@ -12,6 +12,7 @@ import { getTableTemplateById } from './tableTemplateService'
 import * as tableDbService from './tableDbService'
 import * as tableOpsService from './tableOpsService'
 import * as tableProgressService from './tableProgressService'
+import * as varsOpsService from './varsOpsService'
 
 interface ChatRow {
   id: string
@@ -304,6 +305,9 @@ export const appendFloor = (profileId: string, chatId: string, floor: FloorFile)
  *  (issue 03 rewind hook). Cheap no-op when no template is assigned. */
 export const truncateFloors = (profileId: string, chatId: string, fromFloor: number): void => {
   deleteFloorAndSubsequent(profileId, chatId, fromFloor)
+  // Roll back journaled CARD variable writes at/after the cut (manual-pass issue 02). Unconditional
+  // — vars ops exist regardless of whether table memory is on for this chat.
+  varsOpsService.deleteVarsOpsFrom(chatId, fromFloor)
   const templateId = getChatTableTemplateId(profileId, chatId)
   if (templateId) {
     tableOpsService.deleteOpsFrom(profileId, chatId, fromFloor)
@@ -318,9 +322,9 @@ export const truncateFloors = (profileId: string, chatId: string, fromFloor: num
 
 export const deleteChat = (profileId: string, chatId: string): void => {
   getDb().prepare('DELETE FROM chats WHERE id = ?').run(chatId)
-  // `table_ops` rows go via FK cascade (db.ts sets `foreign_keys = ON`, and table_ops REFERENCES
-  // chats(id) ON DELETE CASCADE — verified). The sandbox DB file lives OUTSIDE the app DB, so it
-  // must be removed explicitly.
+  // `table_ops` AND `vars_ops` rows go via FK cascade (db.ts sets `foreign_keys = ON`, and both
+  // tables REFERENCE chats(id) ON DELETE CASCADE — verified). The sandbox DB file lives OUTSIDE the
+  // app DB, so it must be removed explicitly.
   tableDbService.removeSandbox(profileId, chatId)
 }
 

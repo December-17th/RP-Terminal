@@ -5,13 +5,14 @@ import { getAllFloors, getFloor, saveFloor } from './floorService'
 import { normalizeSwipes } from './swipeHelpers'
 import { collectRenderMarkers } from './promptBuilder'
 import { DeltaCallback } from './apiService'
-import { parseMvuCommands, applyMvuCommands, applyJsonPatch } from '../parsers/mvuParser'
+import { parseMvuCommands, applyMvuCommands, applyJsonPatch, JsonPatchOp } from '../parsers/mvuParser'
 import { stripThinking } from '../parsers/contentParser'
 import { log } from './logService'
 import { FloorFile } from '../types/chat'
 import { Lorebook } from '../types/character'
 import { applyEvent } from './generation/foldState'
 import { resetWriteLoopGuard } from './generation/varsWrite'
+import { listVarsOps, VarsOpRow } from './varsOpsService'
 import { buildTurnContext } from './nodes/turnContext'
 import { builtinRegistry } from './nodes/builtin'
 import { runWorkflow } from './workflowEngine'
@@ -38,7 +39,8 @@ export { applyEvent }
 export {
   resetWriteLoopGuard,
   registerWriteSignature,
-  applyVariableOps
+  applyVariableOps,
+  replaceVariablesFromCard
 } from './generation/varsWrite'
 
 // The abort surface + generateRaw live in generation/rawGenerate.ts (a LEAF — combat/duel
@@ -255,18 +257,41 @@ export const getRenderMarkers = (
  * Re-derive every floor's MVU `stat_data` by replaying its stored `<UpdateVariable>` updates from
  * scratch — enabled by lossless storage. Lets the user re-apply variable updates after a parser
  * change WITHOUT a costly regeneration: no new API call, the narrative is untouched, only the
- * derived state is recomputed. Cumulative (floor N's stat_data = replay of floors 0..N). Returns
- * the updated floors.
+ * derived state is recomputed. Cumulative (floor N's stat_data = replay of floors 0..N). After each
+ * floor's model fold, the floor's journaled CARD writes (`vars_ops` — JSON-Patch + whole-replace)
+ * are REPLAYED in seq order, so card/panel writes that are not re-derivable from response text
+ * survive re-evaluation (manual-pass issue 02). Returns the updated floors.
  */
 export const reevaluateVariables = (profileId: string, chatId: string): FloorFile[] => {
   const floors = getAllFloors(profileId, chatId)
   const stat: Record<string, unknown> = {}
+  const opsByFloor = new Map<number, VarsOpRow[]>()
+  for (const op of listVarsOps(chatId)) {
+    const list = opsByFloor.get(op.floor)
+    if (list) list.push(op)
+    else opsByFloor.set(op.floor, [op])
+  }
+  let cardWrites = 0
   for (const f of floors) {
     const mvu = parseMvuCommands(stripThinking(f.response.content))
-    const deltas = [
+    let deltas = [
       ...(mvu.commands.length ? applyMvuCommands(stat, mvu.commands) : []),
       ...(mvu.patches.length ? applyJsonPatch(stat, mvu.patches) : [])
     ]
+    // Replay journaled card writes after the model fold, in seq order (opsByFloor is (floor, seq)-
+    // ordered from listVarsOps). Mirrors live write behavior: a patch overwrites delta_data with its
+    // own deltas (varsWrite.ts); a replace swaps stat_data whole and leaves delta_data untouched.
+    for (const entry of opsByFloor.get(f.floor) ?? []) {
+      cardWrites++
+      if (entry.kind === 'patch') {
+        const d = applyJsonPatch(stat, entry.payload as JsonPatchOp[])
+        if (d.length) deltas = d
+      } else {
+        const p = entry.payload
+        for (const k of Object.keys(stat)) delete stat[k]
+        if (p && typeof p === 'object') Object.assign(stat, JSON.parse(JSON.stringify(p)))
+      }
+    }
     f.variables = {
       ...f.variables,
       stat_data: JSON.parse(JSON.stringify(stat)),
@@ -274,7 +299,11 @@ export const reevaluateVariables = (profileId: string, chatId: string): FloorFil
     }
     saveFloor(profileId, chatId, f)
   }
-  log('info', `MVU re-evaluate — replayed ${floors.length} floor(s); rebuilt stat_data`)
+  log(
+    'info',
+    `MVU re-evaluate — replayed ${floors.length} floor(s); rebuilt stat_data` +
+      (cardWrites > 0 ? `; replayed ${cardWrites} card write(s)` : '')
+  )
   return floors
 }
 
@@ -285,7 +314,9 @@ export const withStatData = (floor: FloorFile, statData: unknown): FloorFile => 
   variables: { ...floor.variables, stat_data: statData, delta_data: [] }
 })
 
-/** Replace a floor's stat_data wholesale (the Variables-view editor's write path) and persist. */
+/** Replace a floor's stat_data wholesale (the Variables-view editor's write path) and persist.
+ *  Deliberately NOT journaled to `vars_ops` (unlike card writes): the debug editor's contract is
+ *  re-derive-from-scratch, so a subsequent re-evaluate is expected to overwrite it. */
 export const setFloorStatData = (
   profileId: string,
   chatId: string,

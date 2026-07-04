@@ -227,9 +227,14 @@ export const registerWcvIpc = (ipcMain: IpcMain): void => {
     const floors = floorService.getAllFloors(ctx.profileId, ctx.chatId)
     const latest = floors[floors.length - 1]
     if (!latest) return null
-    latest.variables = { ...latest.variables, stat_data: statData }
-    floorService.saveFloor(ctx.profileId, ctx.chatId, latest)
-    wcvManager.pushHostVars(ctx.chatId, latest.variables)
+    const floor = generationService.replaceVariablesFromCard(
+      ctx.profileId,
+      ctx.chatId,
+      latest.floor,
+      statData
+    )
+    if (!floor) return null
+    wcvManager.pushHostVars(ctx.chatId, floor.variables)
     // Don't echo back to the writer, and tag card-write so siblings/host don't re-fire MVU events for this
     // programmatic replace (see wcv-host-apply-vars) — avoids the self-triggered MVU event loop.
     wcvManager.notifyVarsChanged(ctx.chatId, statData, e.sender.id, 'card-write')

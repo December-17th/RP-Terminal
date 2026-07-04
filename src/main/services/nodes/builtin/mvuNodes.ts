@@ -21,10 +21,11 @@ const setConfig = z.object({
  *  bridge card panels use (applyVariableOps), so workflow writes fold in identically (spec §11).
  *  The wired `value` input wins over the config value; with NO value at all (input unwired,
  *  config value omitted) the write is skipped rather than storing `undefined`.
- *  NOTE like all direct floor writes, the value is NOT re-derivable from response text, so a
- *  later MVU re-evaluate (which replays model `<UpdateVariable>` blocks only) discards it.
- *  Intended for POST-response branches: pre-phase it would target the PREVIOUS turn's floor
- *  and be shadowed by the floor this turn is about to write. */
+ *  NOTE the value is NOT re-derivable from response text, but the write goes through
+ *  applyVariableOps, which journals it to `vars_ops`; a later MVU re-evaluate REPLAYS it after the
+ *  floor's model fold, so it survives (manual-pass issue 02). Intended for POST-response branches:
+ *  pre-phase it would target the PREVIOUS turn's floor and be shadowed by the floor this turn is
+ *  about to write. */
 export const mvuSet: NodeImpl = {
   type: 'mvu.set',
   title: 'Set Variable',

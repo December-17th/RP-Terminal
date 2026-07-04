@@ -15,6 +15,13 @@ vi.mock('../src/main/services/floorService', () => ({
   saveFloor: vi.fn()
 }))
 vi.mock('../src/main/services/logService', () => ({ log: vi.fn() }))
+// The real applyVariableOps now journals to varsOpsService (better-sqlite3); stub it so this test
+// stays in-memory (it pins the pre-journal loop behavior, not the journal).
+vi.mock('../src/main/services/varsOpsService', () => ({
+  appendVarsOp: vi.fn(),
+  listVarsOps: vi.fn(() => []),
+  deleteVarsOpsFrom: vi.fn()
+}))
 
 import * as chatWriteService from '../src/main/services/chatWriteService'
 import { applyVariableOps, resetWriteLoopGuard } from '../src/main/services/generationService'
