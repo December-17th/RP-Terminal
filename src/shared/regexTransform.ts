@@ -30,7 +30,7 @@ export const isCardPayload = (s: string): boolean =>
   /```html|<script[\s>]|<style[\s>]|<(?:html|body)[\s>]/i.test(s)
 
 /** Build a rule's replacement for one match: trimStrings stripped from `{{match}}`, the
- * `{{match}}`/`{{user}}`/`{{char}}` macros, `$&`/`$N` capture groups, and (plain text only) `\n`.
+ * `{{match}}`/`{{user}}`/`{{char}}` macros, `$0`/`$&`/`$N` capture groups, and (plain text only) `\n`.
  * Capture substitution mirrors native String.replace: `$N` is left LITERAL when the find-regex has
  * no group N — that's what keeps a card's own `$1` backreference intact instead of blanking it. */
 const buildReplacement = (
@@ -47,7 +47,9 @@ const buildReplacement = (
     .replace(/\{\{char\}\}/gi, ctx.char ?? '')
     .replace(/\$&/g, match)
     .replace(/\$(\d{1,2})/g, (m, n) => {
-      const i = Number(n) - 1
+      const groupNumber = Number(n)
+      if (groupNumber === 0) return match
+      const i = groupNumber - 1
       return i < groups.length ? (groups[i] ?? '') : m
     })
   if (!isCardPayload(rule.replace)) out = out.replace(/\\n/g, '\n')

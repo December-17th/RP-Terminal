@@ -47,6 +47,13 @@ describe('regexStore.apply', () => {
     expect(apply('a|b', [rule({ source: '\\|', replace: '\\n' })])).toBe('a\nb')
   })
 
+  it('substitutes $0 with the full match for ST regex compatibility', () => {
+    const out = apply('<action_info>inner</action_info>', [
+      rule({ source: '<action_info>([\\s\\S]*?)</action_info>', replace: 'full=$0; inner=$1' })
+    ])
+    expect(out).toBe('full=<action_info>inner</action_info>; inner=inner')
+  })
+
   it('does NOT convert \\n inside a code payload (preserves a card script regex literal)', () => {
     // A beautification card whose <script> contains `/[\r\n]/g` must keep the \n literal — turning
     // it into a real newline splits the regex literal across lines (SyntaxError in the card).

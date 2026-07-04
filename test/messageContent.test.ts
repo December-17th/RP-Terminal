@@ -19,6 +19,16 @@ describe('splitHtml (HTML block detection)', () => {
     expect(isInteractiveHtml(html!.text)).toBe(true)
   })
 
+  it('detects a plain fenced full HTML card as one block', () => {
+    const card =
+      '<!DOCTYPE html>\n<html><body><script>renderPanel(`$0`)</script></body></html>'
+    const segs = splitHtml(`before\n\`\`\`\n${card}\n\`\`\`\nafter`)
+    expect(segs.map((s) => s.type)).toEqual(['md', 'html', 'md'])
+    expect(segs[1].text).toBe(card)
+    expect(segs.some((s) => s.text.includes('```'))).toBe(false)
+    expect(isInteractiveHtml(segs[1].text)).toBe(true)
+  })
+
   it('detects a bare <html> document block', () => {
     const segs = splitHtml('<html><body><p>hi</p></body></html>')
     expect(segs.some((s) => s.type === 'html')).toBe(true)
