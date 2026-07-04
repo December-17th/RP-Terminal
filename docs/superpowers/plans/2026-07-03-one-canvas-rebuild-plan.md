@@ -249,15 +249,71 @@ No deletion of AgentsView/panes/ControlCenterOverlay files (6.6). No module pale
 (6.5). No changes to transfer services/IPC. No editor-internal features beyond the Memory
 button. Size: ~250 prod lines; stop past that.
 
-## WP6.5 — Module files: import/export [main+renderer]
+## WP6.5 — Module files: import/export [shared+main+renderer] — DETAILED SPEC
 
-Module export (sub-graph + exposed settings + bundled schema/templates) and inspected import
-(dedupe is per-doc now — importing twice = two module instances; capabilities re-derived locally;
-unknown-node blockers). Reuses packPayload/envelope machinery with a module envelope kind.
-Retires: the pack store/library/activation UI + IPC (data migration: installed non-builtin packs
-offered as module files on first run, or exported to a folder — decide with the code; nothing
-silently deleted). Recipes: the .rptrecipe surfaces are parked (formats/services kept, entries
-removed) pending a doc-sharing rethink.
+Controller-grounded against: GroupDecl/ExposedGroupSetting (WP6.3), docSchema node/edge zod,
+packEnvelope/packPayload idioms (byte-stable serialize, structured parse errors, unknown-key
+warnings, size cap), deriveCapabilityReport, the transfer dialog idiom (agentPackTransferService:
+dialog-free core + dialogs in IPC), saveTableTemplate (uuid-minting, never overwrites), the
+WP6.3 module panel + WP6.4 editor top bar/palette locations, addNode's id-minting idiom.
+
+### A. Shared: src/shared/workflow/moduleEnvelope.ts (+ tests)
+```ts
+{ formatVersion: 1, kind: 'rptmodule',
+  module: { name: string; description?: string; creator?: string;
+            nodes: NodeInstance[];            // the group's members, ids as-authored
+            edges: Edge[];                    // INTERNAL edges only (both ends in nodes)
+            exposed: ExposedGroupSetting[] }, // refs into nodes
+  bundledTemplates?: BundledTemplate[] }      // reuse packPayload's schema
+```
+serializeModuleEnvelope / parseModuleEnvelope with the packEnvelope guarantees: byte-stable
+2-space output (fixed key order), 8 MiB cap, structured errors ('too-large' | 'invalid-json' |
+'unsupported-version' | 'invalid-envelope' | 'external-edge' (an edge end not in nodes) |
+'exposed-not-member' | 'empty-module' (<2 nodes)), unknown-key warnings (reuse the collector
+pattern). Nodes validated with the existing NodeInstance zod (disabled included); NO doc-level
+fields (a module is not a doc).
+
+### B. Main: moduleTransferService.ts + IPC (mirror the pack transfer shape, smaller)
+- `buildModuleEnvelope(doc: WorkflowDoc, groupId, opts { includeTemplate?: TableTemplate })` —
+  pure: members + internal edges (drop boundary edges) + exposed + name; opts.includeTemplate →
+  bundledTemplates=[template].
+- `exportModuleDialog(profileId, payload)` — save dialog (`<name>.rptmodule`), write UTF-8.
+- `inspectModuleFile(path)` → { meta {name, nodeCount, description?, creator?},
+  capabilityReport (deriveCapabilityReport over a synthetic doc of module.nodes/edges vs the
+  real registry — unknown types are a BLOCKER), templatePlans (will-install/will-duplicate —
+  saveTableTemplate semantics), warnings, token } — same 5-min single-use token map pattern
+  (separate map; do NOT unify with the pack/recipe maps).
+- `confirmModuleImport(token)` → { module payload } returned to the RENDERER (templates are
+  installed main-side here; the graph insertion is a renderer/store concern — the doc being
+  edited lives in the editor store, unsaved; main must not write the doc).
+- `cancelModuleImport(token)`. IPC channels module-preview-export/module-export-dialog/
+  module-import-dialog/module-confirm-import/module-cancel-import + preload types.
+- Tests (dialog-free core): build drops boundary edges; external-edge/exposed-not-member/empty
+  rejections; capability blocker on a fake type; template plan duplicate case; token single-use.
+
+### C. Renderer: export from the module panel, import from the palette
+- Module panel (NodeConfigPanel's ModulePanel): an "Export module…" button → optional "include
+  table schema" checkbox (only when the chat has a template — getChatTableTemplate; the WHOLE
+  active template is the v0 unit) → previewless direct save via the IPC (the module panel IS the
+  review; no wizard). Toast with path.
+- Palette: a "Modules" section at the bottom of the left column with one "Import module…"
+  button. Flow: dialog → inspect result rendered in a compact centered sheet (name, node count,
+  capability chips reusing the workflowEditor chip css or 6 new lines, unknown-type blocker
+  list, template plans, warnings) → Install → store action `insertModule(module, position)`:
+  remints EVERY node id via the addNode idiom (collision-safe), remaps internal edges + exposed
+  refs, creates the GroupDecl (collapsed: true) at a viewport-center position, selects the
+  group, marks dirty (the user saves the doc themselves — insertion is an EDIT, not a write).
+  Cancel/dismiss → cancelModuleImport.
+- en+zh (~14 keys). Tests: insertModule reminting/remap/group-creation as store tests; pure
+  sheet view-model if extracted.
+
+### NON-GOALS (6.5)
+No pack-store/IPC deletion (6.6 decides data retention; the pack tables stay). No recipe surface
+changes. No migration machinery for installed pack rows (owner-accepted: nothing silently
+deleted, nothing auto-converted). No boundary-edge carrying or "dangling port hints" — an
+imported module lands unwired and the user connects it (one toast line says so). No module
+versioning/upgrade story. No registry of imported modules (the doc IS the storage). Size:
+~600 prod + ~250 test lines; stop past that.
 
 ## WP6.6 — Deletion + consistency pass [renderer+main]
 
