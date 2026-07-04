@@ -82,6 +82,9 @@ export const getDefaultSettings = (): Settings => ({
     scan_depth: 3,
     max_recursion: 0
   },
+  // SQL-table memory (manual-pass issue 04): the frequency a template table with updateFrequency -1
+  // ("use global") maintains at. Mirrors the 数据库-plugin global default.
+  tables: { default_update_frequency: 3 },
   templates: {
     enabled: true,
     render: {
@@ -171,6 +174,7 @@ export const normalize = (stored: Partial<Settings>): Settings => {
   const persona = { ...d.persona, ...(stored.persona || {}) }
   const generation = { ...d.generation, ...(stored.generation || {}) }
   const lorebook = { ...d.lorebook, ...(stored.lorebook || {}) }
+  const tables = { ...d.tables, ...(stored.tables || {}) }
   const storedTemplates = (stored.templates || {}) as Partial<Settings['templates']>
   const templates = {
     ...d.templates,
@@ -247,6 +251,7 @@ export const normalize = (stored: Partial<Settings>): Settings => {
     persona,
     generation,
     lorebook,
+    tables,
     templates,
     modes,
     agent,

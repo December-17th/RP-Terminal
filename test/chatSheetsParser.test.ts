@@ -104,10 +104,12 @@ describe('parseChatSheets — the real 命定之诗 template', () => {
     expect(tpl.globalInjection?.wrapperPlacement?.order).toBe(99980)
   })
 
-  it('纪要表: updateFrequency -1 → 1 (every turn); keyword index config', () => {
+  it('纪要表: updateFrequency -1 KEPT (use-global sentinel, issue 04); keyword index config', () => {
     const tpl = parseChatSheets(fixture(), 'poem')
     const chronicle = tpl.tables.find((t) => t.sqlName === 'chronicle')!
-    expect(chronicle.updateFrequency).toBe(1)
+    // Deliberate behavior change (manual-pass issue 04): the importer no longer normalizes -1 → 1;
+    // -1 is the "use the app global default" sentinel and round-trips verbatim.
+    expect(chronicle.updateFrequency).toBe(-1)
     expect(chronicle.exportConfig.enabled).toBe(true)
     expect(chronicle.exportConfig.entryType).toBe('keyword')
     expect(chronicle.exportConfig.keywords).toBe('编码索引')
@@ -133,6 +135,30 @@ describe('parseChatSheets — the real 命定之诗 template', () => {
     expect(chars.exportConfig.entryPlacement.position).toBe('after_character_definition')
   })
 
+  // updateFrequency normalization (manual-pass issue 04): -1 kept (use-global), 0 kept (off),
+  // absent → -1, anything <= -2 clamped to -1. Built from a minimal synthetic sheet.
+  const oneSheet = (updateFrequency: unknown): any => ({
+    mate: { type: 'chatSheets', version: 2 },
+    sheet_a: {
+      uid: 'sheet_a',
+      name: 'T',
+      orderNo: 0,
+      content: [['row_id']],
+      updateConfig: updateFrequency === undefined ? {} : { updateFrequency },
+      sourceData: { ddl: 'CREATE TABLE t (row_id INTEGER);' }
+    }
+  })
+  const freqOf = (updateFrequency: unknown): number =>
+    parseChatSheets(oneSheet(updateFrequency), 'x').tables[0].updateFrequency
+
+  it('updateFrequency: -1 kept, 0 kept, absent → -1, <= -2 clamped to -1 (issue 04)', () => {
+    expect(freqOf(-1)).toBe(-1) // use-global sentinel — verbatim
+    expect(freqOf(0)).toBe(0) // off — verbatim
+    expect(freqOf(4)).toBe(4) // positive kept
+    expect(freqOf(undefined)).toBe(-1) // absent → global default sentinel
+    expect(freqOf(-5)).toBe(-1) // <= -2 clamped
+  })
+
   it('主角信息: export disabled, single header, per-op instructions preserved', () => {
     const tpl = parseChatSheets(fixture(), 'poem')
     const prot = tpl.tables.find((t) => t.sqlName === 'protagonist_info')!
@@ -152,8 +178,8 @@ describe('parseChatSheets — the real 命定之诗 template', () => {
 
 describe('exportChatSheets — round-trip equivalence (issue 06 AC)', () => {
   it('parse → export → parse deep-equals the TableTemplate (the real 命定之诗 template)', () => {
-    // The AC is EQUIVALENCE, not bytes: the importer's `-1 → 1` updateFrequency normalization + UI
-    // sentinel drops mean a byte match is impossible; the model must round-trip exactly.
+    // The AC is EQUIVALENCE, not bytes: `updateFrequency -1` now round-trips VERBATIM (issue 04), but
+    // UI sentinel / preventRecursion drops still mean a byte match is impossible; the model round-trips.
     const original = parseChatSheets(fixture(), 'poem')
     const roundTripped = parseChatSheets(exportChatSheets(original), 'poem')
     expect(roundTripped).toEqual(original)

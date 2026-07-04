@@ -72,8 +72,12 @@ export const TableDefSchema = z.object({
   insertNode: z.string().default(''),
   updateNode: z.string().default(''),
   deleteNode: z.string().default(''),
-  /** Run this table's maintenance every N turns; 1 = every turn (chatSheets -1 maps here). */
-  updateFrequency: z.number().int().positive().default(1),
+  /** Maintenance cadence in turns. -1 = use the app-level global default (settings.tables.default_update_frequency);
+   *  0 = this table is EXCLUDED from auto-maintenance; N>=1 = every N turns. Mirrors the chatSheets/数据库
+   *  plugin semantics (manual-pass issue 04). */
+  updateFrequency: z.number().int().refine((v) => v === -1 || v >= 0, {
+    message: 'updateFrequency must be -1 (global default), 0 (off), or a positive integer'
+  }).default(-1),
   exportConfig: TableExportConfigSchema.prefault({})
 })
 export type TableDef = z.infer<typeof TableDefSchema>
@@ -95,7 +99,13 @@ export const TableDefPatchSchema = z.object({
   insertNode: z.string().optional(),
   updateNode: z.string().optional(),
   deleteNode: z.string().optional(),
-  updateFrequency: z.number().int().positive().optional(),
+  updateFrequency: z
+    .number()
+    .int()
+    .refine((v) => v === -1 || v >= 0, {
+      message: 'updateFrequency must be -1 (global default), 0 (off), or a positive integer'
+    })
+    .optional(),
   exportConfig: TableExportConfigSchema.optional()
 })
 export type TableDefPatch = z.infer<typeof TableDefPatchSchema>

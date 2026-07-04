@@ -40,6 +40,12 @@ export interface Settings {
     scan_depth: number
     max_recursion: number
   }
+  /** SQL-table memory global default cadence (manual-pass issue 04); a template table with
+   *  updateFrequency -1 ("use global") maintains at this frequency. Optional — older profiles lack it
+   *  (defaults to 3 at the read site). */
+  tables?: {
+    default_update_frequency: number
+  }
   templates: {
     enabled: boolean
     render: {

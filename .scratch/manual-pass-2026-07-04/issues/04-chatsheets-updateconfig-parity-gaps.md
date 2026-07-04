@@ -1,6 +1,6 @@
 # 04 — chatSheets updateConfig / globalInjection parity gaps vs the 数据库 script
 
-Status: needs-triage
+Status: ready-for-agent
 
 ## Context
 
@@ -36,5 +36,14 @@ Whether RPT's workflow-driven maintenance should honor these per-table scheduler
 onto gate/read behavior), or whether the `every` override + workflow authoring is the intended
 replacement (then: fix only the `-1` mis-normalization + document the contract in
 docs/sdk/table-templates.md).
+
+## Owner decision (2026-07-04, partial)
+
+- Add a GLOBAL default-update-frequency setting; make `-1` mimic shujuku (= use the global
+  default). `0` = off included (completes the mimic).
+- Move the per-table frequency out of the collapsed template panel so ALL tables' frequencies are
+  visible at once in the Tables view.
+- `contextDepth` / `skipFloors` / `batchSize` / `groupId` / `globalInjection` remain OPEN (still
+  needs-triage — this issue stays open for those after the frequency work lands).
 
 ## Comments

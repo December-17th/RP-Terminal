@@ -45,6 +45,8 @@ const en: Record<string, string> = {
   'settings.groupApp': 'App',
   'settings.groupWorld': 'World',
   'settings.preferences': 'Preferences',
+  // SQL-table memory global default cadence (manual-pass issue 04)
+  'settings.tablesDefaultFrequency': 'Default maintenance frequency (turns)',
   'settings.regex': 'Regex',
   'settings.scripts': 'Scripts',
   'settings.language': 'Language',
@@ -498,6 +500,11 @@ const en: Record<string, string> = {
   'tables.promptUpdate': 'Update rules',
   'tables.promptDelete': 'Delete rules',
   'tables.updateFrequency': 'Maintenance frequency (turns)',
+  // Always-visible per-table cadence control (manual-pass issue 04)
+  'tables.freqGlobal': 'Global',
+  'tables.freqOff': 'Off',
+  'tables.freqCustom': 'Custom',
+  'tables.freqEvery': 'Every {{n}} turns',
   'tables.injectionSettings': 'Injection settings',
   'tables.ddl': 'DDL (read-only)',
   'tables.savePrompts': 'Save',

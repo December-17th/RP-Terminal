@@ -138,9 +138,20 @@ describe('applyTemplatePatch', () => {
     expect(tpl).toEqual(before)
   })
 
-  it('rejects a malformed patch (updateFrequency 0)', () => {
+  it('accepts the updateFrequency sentinels -1 (global) and 0 (off) — issue 04', () => {
+    const off = asOk(
+      applyTemplatePatch(makeTemplate(), { tables: [{ uid: 'uid-a', updateFrequency: 0 }] })
+    )
+    expect(off.tables.find((t) => t.uid === 'uid-a')!.updateFrequency).toBe(0)
+    const global = asOk(
+      applyTemplatePatch(makeTemplate(), { tables: [{ uid: 'uid-a', updateFrequency: -1 }] })
+    )
+    expect(global.tables.find((t) => t.uid === 'uid-a')!.updateFrequency).toBe(-1)
+  })
+
+  it('rejects a malformed patch (updateFrequency <= -2)', () => {
     const res = applyTemplatePatch(makeTemplate(), {
-      tables: [{ uid: 'uid-a', updateFrequency: 0 }]
+      tables: [{ uid: 'uid-a', updateFrequency: -2 }]
     })
     expect(res).toEqual({ error: 'tables.templateBadPatch' })
   })
