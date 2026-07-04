@@ -6,7 +6,7 @@ import { useSettingsStore } from '../stores/settingsStore'
 import { useRegexStore } from '../stores/regexStore'
 import { StreamingView } from './StreamingView'
 import { NodePanels } from './NodePanels'
-import { FloorBlock, type FloorMenuTarget } from './FloorBlock'
+import { FloorBlock, type FloorMenuTarget, type RenderedFloor } from './FloorBlock'
 import { ChatToolbar } from './ChatToolbar'
 import { ScriptActionsBar } from './ScriptActionsBar'
 import { Composer } from './Composer'
@@ -80,53 +80,66 @@ export function ChatView({ profileId }: { profileId: string }): React.ReactEleme
   const personaName = settings?.persona?.name || 'User'
   const charName = activeCharacter?.card.data.name || 'Character'
 
-  // Render-time transform of each stored response: EJS template eval (Phase C final pass, with this
+  // The floor stage paginates — exactly ONE floor is visible at a time (or the streaming page while
+  // generating). So derive the page geometry from `floors.length` (the transform below is 1:1 with
+  // floors, so its length always equals floors.length).
+  const pageCount = floors.length + (isGenerating ? 1 : 0)
+  const page = Math.min(Math.max(viewIndex, 0), Math.max(pageCount - 1, 0))
+  const showStreaming = isGenerating && page >= floors.length
+
+  // Render-time transform of the VISIBLE floor only: EJS template eval (Phase C final pass, with this
   // floor's vars) → macros (TH-5) → display regex (beautification). The model's raw output stays
-  // stored; this is display-only.
-  const renderedFloors = useMemo(
-    () =>
-      floors.map((f) => {
-        // Stored content is the FULL raw response. Strip our own state tags; the <thinking> block is
-        // kept here only so renderTemplate/macros see the same text — it's removed before the display
-        // regex (below) and routed to the ReasoningPanel, so a card regex can NEVER rewrite reasoning
-        // into inline UI. The regex still folds the card's <UpdateVariable> blocks in the body, and
-        // nothing is ever truncated in storage.
-        const evaled = renderTemplate(stripRptEvents(f.response.content), f.variables, 'final')
-        // [RENDER:*]: wrap with the active render-marker templates (each evaled with this floor's vars).
-        const renderOn =
-          settings?.templates?.enabled !== false && settings?.templates?.render?.enabled !== false
-        const wrap = (tmpls: string[]): string =>
-          renderOn
-            ? tmpls
-                .map((t) => renderTemplate(t, f.variables, 'final'))
-                .filter(Boolean)
-                .join('\n\n')
-            : ''
-        const body = [wrap(renderMarkers.before), evaled, wrap(renderMarkers.after)]
-          .filter(Boolean)
-          .join('\n\n')
-        const withMacros = expandMacros(body, {
-          user: personaName,
-          char: charName,
-          vars: f.variables
-        })
-        // The display regex applies to the BODY ONLY — reasoning (<thinking>) is owned by the
-        // ReasoningPanel and must never be rewritten into inline UI by a card regex. So strip the
-        // reasoning out before the regex runs and route it to the panel via `thinking`.
-        const applyRegex = (t: string): string =>
-          useRegexStore.getState().apply(t, { user: personaName, char: charName })
-        return {
-          floor: f.floor,
-          user: f.user_message.content,
-          rawResponse: f.response.content,
-          html: applyRegex(stripThinking(withMacros)),
-          thinking: extractThinking(f.response.content),
-          swipeId: f.swipe_id ?? 0,
-          swipeCount: f.swipes?.length ?? 1
-        }
-      }),
-    [floors, regexRules, personaName, charName, settings?.templates, renderMarkers]
-  )
+  // stored; this is display-only. Transforming just `floors[page]` (not every floor) is the load-perf
+  // fix: `renderTemplate` runs a synchronous quickjs eval (~1ms) for any body/[RENDER:*] marker that
+  // contains `<%`, so mapping it over the whole history froze the main thread for seconds when a long
+  // session was opened (cost was O(history)). Per-page it's O(1) in history length; useMemo caches so
+  // unrelated re-renders (typing, opening a menu) don't re-eval, and paging re-evals only the newly
+  // visible floor. Regex depth-scoping is disabled on this path (display rules are pre-filtered), so a
+  // floor transforms identically in isolation as it did inside the old full-history map.
+  const currentFloor = useMemo<RenderedFloor | undefined>(() => {
+    if (showStreaming) return undefined
+    const f = floors[page]
+    if (!f) return undefined
+    // Stored content is the FULL raw response. Strip our own state tags; the <thinking> block is
+    // kept here only so renderTemplate/macros see the same text — it's removed before the display
+    // regex (below) and routed to the ReasoningPanel, so a card regex can NEVER rewrite reasoning
+    // into inline UI. The regex still folds the card's <UpdateVariable> blocks in the body, and
+    // nothing is ever truncated in storage.
+    const evaled = renderTemplate(stripRptEvents(f.response.content), f.variables, 'final')
+    // [RENDER:*]: wrap with the active render-marker templates (each evaled with this floor's vars).
+    const renderOn =
+      settings?.templates?.enabled !== false && settings?.templates?.render?.enabled !== false
+    const wrap = (tmpls: string[]): string =>
+      renderOn
+        ? tmpls
+            .map((t) => renderTemplate(t, f.variables, 'final'))
+            .filter(Boolean)
+            .join('\n\n')
+        : ''
+    const body = [wrap(renderMarkers.before), evaled, wrap(renderMarkers.after)]
+      .filter(Boolean)
+      .join('\n\n')
+    const withMacros = expandMacros(body, {
+      user: personaName,
+      char: charName,
+      vars: f.variables
+    })
+    // The display regex applies to the BODY ONLY — reasoning (<thinking>) is owned by the
+    // ReasoningPanel and must never be rewritten into inline UI by a card regex. So strip the
+    // reasoning out before the regex runs and route it to the panel via `thinking`.
+    const applyRegex = (t: string): string =>
+      useRegexStore.getState().apply(t, { user: personaName, char: charName })
+    return {
+      floor: f.floor,
+      user: f.user_message.content,
+      rawResponse: f.response.content,
+      html: applyRegex(stripThinking(withMacros)),
+      thinking: extractThinking(f.response.content),
+      swipeId: f.swipe_id ?? 0,
+      swipeCount: f.swipes?.length ?? 1
+    }
+    // `regexRules` is a dep so a rule change re-renders the floor, though it's read via the store.
+  }, [floors, page, showStreaming, regexRules, personaName, charName, settings?.templates, renderMarkers])
 
   // Paginated floor view: jump to the newest floor when the floor set changes
   // (new turn, chat switch), and to the in-flight (streaming) page while generating.
@@ -151,13 +164,6 @@ export function ChatView({ profileId }: { profileId: string }): React.ReactEleme
     )
   }
 
-  // One floor per page. While generating, an extra trailing page shows the live
-  // streaming response. `viewIndex` is clamped here so it stays in range as the
-  // floor count changes.
-  const pageCount = renderedFloors.length + (isGenerating ? 1 : 0)
-  const page = Math.min(Math.max(viewIndex, 0), Math.max(pageCount - 1, 0))
-  const showStreaming = isGenerating && page >= renderedFloors.length
-  const currentFloor = showStreaming ? undefined : renderedFloors[page]
   // The FSM scene switcher is active in 'manual'/'agentic' agent modes; 'off' greys it out.
   const fsmEnabled = settings?.agent?.mode === 'manual' || settings?.agent?.mode === 'agentic'
   const canRegenerate = floors.some((f) => f.user_message.content)
@@ -215,7 +221,7 @@ export function ChatView({ profileId }: { profileId: string }): React.ReactEleme
               reasoningTemplate={reasoningTemplate}
               editing={editing}
               editText={editText}
-              isLast={page === renderedFloors.length - 1}
+              isLast={page === floors.length - 1}
               isGenerating={isGenerating}
               onEditTextChange={setEditText}
               onSaveEdit={saveEdit}
@@ -226,7 +232,7 @@ export function ChatView({ profileId }: { profileId: string }): React.ReactEleme
           ) : (
             <div className="floor-empty">{t('chat.noMessages')}</div>
           )}
-          {activeChatId && (showStreaming || page === renderedFloors.length - 1) && (
+          {activeChatId && (showStreaming || page === floors.length - 1) && (
             <NodePanels chatId={activeChatId} />
           )}
           {error && (
