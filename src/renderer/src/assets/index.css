@@ -181,9 +181,9 @@
 .rpt-floors-row.cut { box-shadow:inset 2px 0 0 var(--rpt-danger); }
 .rpt-floors-idx { flex:0 0 auto; padding-top:1px; font-size:11px; font-weight:700; color:var(--rpt-text-secondary); font-variant-numeric:tabular-nums; }
 .rpt-floors-prev { flex:1 1 auto; min-width:0; display:flex; flex-direction:column; gap:3px; font-size:12px; line-height:1.45; }
-/* Multi-line previews: clamp the player prompt to 2 lines and the (thinking-stripped) reply to 3. */
+/* Multi-line previews: clamp both the player prompt and the (thinking-stripped) reply to 3 lines. */
 .rpt-floors-you { color:var(--rpt-text-secondary); overflow:hidden; overflow-wrap:anywhere;
-  display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; }
+  display:-webkit-box; -webkit-line-clamp:3; -webkit-box-orient:vertical; }
 .rpt-floors-ai { color:var(--rpt-text-primary); overflow:hidden; overflow-wrap:anywhere;
   display:-webkit-box; -webkit-line-clamp:3; -webkit-box-orient:vertical; }
 .rpt-floors-actions { flex:0 0 auto; display:flex; align-items:center; gap:10px; padding-top:8px;
