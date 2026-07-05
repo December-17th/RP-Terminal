@@ -1,6 +1,24 @@
 # Poem of Destiny — Play-Area Redesign & Seamless Multi-Panel Spec
 
-**Status:** Design locked 2026-07-05 (interactive mock approved). Not yet built. Point-in-time spec.
+**Status:** Design locked 2026-07-05 (interactive mock approved). Point-in-time spec.
+**Build progress:** **P0 RPT seam primitives BUILT 2026-07-05** — (a) seamless `panel_ui` mode
+(`panel_ui.seamless` + per-slot `chrome`; `StaticWorkspace` / `staticLayout.ts` / `.ws-bare`); (b)
+panel-geometry host API (`window.rptHost.getPanelGeometry()` / `onPanelGeometry` / `rpt:panelgeometry`,
+plumbed `wcvManager` → `wcvIpc` → `wcvPreload`; pure contract in `wcvGeometry.ts`). Slicing verification
+card: `docs/design/seam-slice-demo/`. Open decision §8.2 (geometry feasibility) is **resolved: feasible**
+— the host already knows each slot's window-relative bounds + content size, so §4.2 (recommended) stands,
+no fall back to Alt A. Tests: `staticLayoutChrome`, `wcvGeometry`.
+**P1 SELF surface BUILT 2026-07-05** (card-side) — [`docs/sdk/examples/poem-self-surface.html`](../sdk/examples/poem-self-surface.html):
+portrait band (geometry-sliced) + lean stats (HP/MP/SP/EXP + FP + gold + status chips) + fold drawer
+(属性/持有/登神长阶) + tabs; fold collapses the band, stats slide up, drawer fills the freed zone, tabs
+pinned bottom. The `poemState(stat_data)` adapter is grounded in the **real** 状态栏 schema
+(`FrontEnd-for-destined-journey-TPR-STS/src/data_schema`): FP = top-level `命运点数`; EXP =
+`累计经验值`/`升级所需经验`(`MAX`@Lv25); 登神长阶 rendered as its true gate (要素≤3→权能≤1→法则 + 神位/神国),
+not fake 0–1 bars; 品质 → the 7 rarity tiers. Reads via `getVariables().stat_data`, re-renders on
+`mag_variable_updated`/`message_updated`, portrait via `assetUrl('主角','立绘')`; opens standalone
+(mock fallback) for preview. Wire beside native chat with:
+`{ mode:'static', seamless:true, grid:{cols:12,rows:12}, slots:[ {id:'self',view:'wcv',entry:'…/poem-self-surface.html',rect:[0,0,3,12]}, {id:'story',view:'chat',rect:[3,0,9,12]} ] }`.
+**Next: P2 (STAGE band — the `stage` WCV + `stage:cast-changed`/`self:fold` events).**
 **Branch context:** work sits on `ui-facelift`. The chrome/IA facelift + §6a card themes are already
 committed there (`88af494`); this spec is the *next* body of work and depends on some of it.
 **Reference mock:** [`poem-play-area-mock.html`](./poem-play-area-mock.html) — open it in a browser.

@@ -1,0 +1,496 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>命定之诗 — SELF surface</title>
+<!--
+  命定之诗 — SELF surface (play-area redesign P1). A full-height card WCV page for the panel_ui
+  `self` slot [0,0,3,12], beside the native `chat` (story) slot. See
+  docs/design/poem-play-area-redesign.md §1.2, §4.2, §6.
+
+  Layout (top → bottom):
+    · portrait band — the user's slice of the shared VN stage. Draws a full-viewport background
+      offset by this panel's window-x (window.rptHost.getPanelGeometry / onPanelGeometry — the P0
+      seam-slicing primitive) so it lines up with the STAGE surface to its right. Holds the 立绘 +
+      the destiny-gilt life-tier nameplate.
+    · lean stats — HP / MP / SP / EXP bars, 命运 (FP) + 金钱 (gold), and 状态效果 chips. Only these.
+    · fold drawer — 属性 / 持有 / 登神长阶, hidden until a tab opens.
+    · tabs — opening one COLLAPSES the portrait band (max-height→0), slides the stats up, and expands
+      the drawer into the freed zone; clicking the active tab again reverses it (spec §1.5).
+
+  Data (all keys verified against the real 状态栏 schema,
+  FrontEnd-for-destined-journey-TPR-STS/src/data_schema/{schema,utils}.ts):
+    stat_data.主角 → 生命值/上限, 法力值/上限, 体力值/上限, 累计经验值, 升级所需经验 (number|'MAX'),
+      金钱, 属性{力量,敏捷,体质,智力,精神}, 属性点, 状态效果{name:{类型,效果,层数,剩余时间}},
+      背包{name:{品质,类型,数量}}, 装备{slot:{品质,类型,位置}}, 登神长阶{是否开启,要素,权能,法则,神位,神国},
+      生命层级, 等级(1..25), 冒险者等级
+    stat_data.命运点数 (TOP-LEVEL) → FP. 品质 names 普通/优良/稀有/史诗/传说/神话/唯一 → 7 rarity tiers.
+    The 主角 object has NO name field; the label is the persona ({{user}}) + 生命层级 · Lv · 冒险者评级.
+
+  Reads via getVariables().stat_data; portrait via window.assetUrl(name,'立绘',mood); re-renders on
+  mag_variable_updated / message_updated. Opens standalone in a browser too (mock fallback data).
+  VERIFY rendering + live data in-app (manual-verify).
+-->
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;700&family=Noto+Serif+SC:wght@500;700;900&display=swap');
+
+  :root {
+    /* dusk-gilt — the redesign's locked visual language (spec §1.6) */
+    --night: #14121b; --raise: #1d1a27; --sunken: #100e16; --line: #2e2a3d; --line-soft: #241f30;
+    --gold: #d9b56b; --gold-dim: #8f7a4e; --text: #e9e3d4; --dim: #a89f8c; --faint: #6f6858; --ember: #c8683f;
+    --hp: #cf5a6d; --mp: #6a86d8; --sp: #5fb98a; --fp: #d9b56b; --exp: #a274e0;
+    /* 7 rarity tiers ← 普通/优良/稀有/史诗/传说/神话/唯一 */
+    --q-common: #b8b0a0; --q-uncommon: #6fae72; --q-rare: #5f90d8; --q-epic: #a274e0;
+    --q-legendary: #d9b56b; --q-mythic: #d76b8f; --q-unique: #e0913f;
+    --serif: 'Noto Serif SC', 'Songti SC', Georgia, serif;
+    --sans: 'Noto Sans SC', system-ui, sans-serif;
+    --mono: ui-monospace, 'Cascadia Code', Menlo, monospace;
+    /* seam-sliced band geometry — set by JS from getPanelGeometry(); these are safe fallbacks */
+    --band-h: 34vh; --vw: 100vw; --panel-x: 0px;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; }
+  body {
+    height: 100vh; overflow: hidden; color: var(--text); background: var(--night);
+    font-family: var(--sans); -webkit-font-smoothing: antialiased;
+  }
+  .self { display: flex; flex-direction: column; height: 100vh; overflow: hidden; }
+
+  /* ── portrait band (the user's slice of the shared VN stage) ─────────────────────── */
+  .band {
+    position: relative; flex: 0 0 auto; height: var(--band-h); max-height: var(--band-h);
+    overflow: hidden; transition: max-height .4s cubic-bezier(.4, 0, .2, 1);
+  }
+  .self.open .band { max-height: 0; }        /* fold collapses the portrait into the drawer */
+  /* the shared background, drawn at FULL viewport width then shifted by this panel's x so the
+     slice aligns pixel-for-pixel with the STAGE surface to the right (P0 background slicing) */
+  .scene {
+    position: absolute; inset: 0; z-index: 0;
+    background-color: var(--night);
+    background-image:
+      radial-gradient(70% 90% at 22% 42%, #33436a 0%, transparent 55%),
+      radial-gradient(70% 90% at 88% 30%, #4a3350 0%, transparent 55%),
+      radial-gradient(60% 80% at 40% 128%, rgba(200, 104, 63, .18), transparent 60%),
+      linear-gradient(180deg, #1b1626, #160f1f);
+    background-repeat: no-repeat;
+    background-size: var(--vw) var(--band-h);
+    background-position: calc(-1 * var(--panel-x)) 0;
+  }
+  .scene.has-img { background-image: var(--scene-img); }
+  /* subtle atmosphere + a bottom fade so the band melts into the stats with no hard line */
+  .scene::before {
+    content: ''; position: absolute; inset: 0; opacity: .3;
+    background: repeating-linear-gradient(103deg, transparent 0 26px, rgba(0, 0, 0, .14) 26px 28px);
+  }
+  .scene::after {
+    content: ''; position: absolute; left: 0; right: 0; bottom: 0; height: 96px;
+    background: linear-gradient(180deg, transparent, var(--night));
+  }
+  /* 立绘 (or its initial stand-in) anchored bottom-left, VN-style */
+  .fig {
+    position: absolute; left: 6px; bottom: 0; z-index: 1; max-height: 100%; max-width: 92%;
+    object-fit: contain; object-position: bottom left;
+    filter: drop-shadow(0 12px 42px rgba(0, 0, 0, .55));
+  }
+  .fig-ph {
+    position: absolute; left: 8px; bottom: -8px; z-index: 1; font-family: var(--serif);
+    font-size: min(46vw, calc(var(--band-h) * .78)); font-weight: 900; line-height: .8;
+    color: rgba(233, 227, 212, .9); text-shadow: 0 12px 46px rgba(0, 0, 0, .55);
+  }
+  .nameplate { position: absolute; left: 14px; bottom: 14px; z-index: 3; }
+  /* legibility scrim so the nameplate reads over the light 立绘/glyph behind it */
+  .nameplate::before {
+    content: ''; position: absolute; inset: -10px -16px -10px -8px; z-index: -1;
+    background: radial-gradient(130% 150% at 18% 80%, rgba(16, 14, 22, .88), transparent 72%);
+  }
+  .np-name { display: block; font-family: var(--serif); font-size: 22px; font-weight: 700; text-shadow: 0 2px 12px rgba(0, 0, 0, .8); }
+  .np-tag { font-family: var(--mono); font-size: 11px; letter-spacing: .04em; color: var(--gold); text-shadow: 0 1px 6px rgba(0, 0, 0, .85); }
+  .np-tag .sep { color: var(--gold-dim); margin: 0 5px; }
+
+  /* ── lean stats ──────────────────────────────────────────────────────────────────── */
+  .stats {
+    flex: 0 0 auto; position: relative; z-index: 2; background: var(--night);
+    padding: 13px 16px 14px; display: flex; flex-direction: column; gap: 9px;
+    border-bottom: 1px solid var(--line-soft);
+  }
+  .res { display: grid; grid-template-columns: 30px 1fr auto; align-items: center; gap: 9px; }
+  .res-k { font-family: var(--mono); font-size: 10px; font-weight: 700; letter-spacing: .06em; }
+  .res-k.hp { color: var(--hp); } .res-k.mp { color: var(--mp); } .res-k.sp { color: var(--sp); }
+  .res-k.fp { color: var(--fp); } .res-k.exp { color: var(--exp); }
+  .res-track { height: 7px; border-radius: 4px; background: var(--sunken); overflow: hidden; border: 1px solid var(--line-soft); }
+  .res-track > i { display: block; height: 100%; border-radius: 4px; transition: width .35s ease; }
+  .res-v { font-family: var(--mono); font-size: 11px; color: var(--dim); white-space: nowrap; }
+  .res.scalar .res-track { background: none; border: none; height: 1px; align-self: center; opacity: .35; }
+  .res.scalar .res-track > i { width: 100% !important; }
+
+  .stats-foot { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 1px; }
+  .gold { font-family: var(--mono); font-size: 12px; color: var(--gold); }
+  .gold b { font-weight: 700; }
+  .chips { display: flex; flex-wrap: wrap; gap: 5px; justify-content: flex-end; }
+  .chip {
+    font-size: 11px; padding: 2px 9px; border-radius: 999px; white-space: nowrap;
+    border: 1px solid var(--gold-dim); color: var(--gold);
+    background: color-mix(in srgb, var(--gold) 12%, transparent);
+  }
+  .chip.buff { border-color: var(--sp); color: var(--sp); background: color-mix(in srgb, var(--sp) 12%, transparent); }
+  .chip.debuff { border-color: var(--hp); color: var(--hp); background: color-mix(in srgb, var(--hp) 12%, transparent); }
+  .chip .n { opacity: .7; margin-left: 3px; }
+  .chip.muted { border-color: var(--line); color: var(--faint); background: none; }
+
+  /* ── fold drawer ─────────────────────────────────────────────────────────────────── */
+  /* The drawer ALWAYS flex-fills the space between the stats and the tabs, so the tabs stay
+     pinned to the bottom. Closed → it's empty (the dark "freed zone"); open → the band collapses
+     above and the panel content fades into that same zone. */
+  .drawer {
+    flex: 1 1 auto; min-height: 0; overflow-y: auto; background: var(--night);
+    padding: 0 16px;
+  }
+  .self.open .drawer { padding: 14px 16px 18px; }
+  .panel { opacity: 0; transition: opacity .3s ease .12s; }
+  .self.open .panel { opacity: 1; }
+  .drawer::-webkit-scrollbar { width: 6px; }
+  .drawer::-webkit-scrollbar-thumb { background: var(--line); border-radius: 3px; }
+  .panel { display: none; }
+  .self[data-menu="attrs"] .panel[data-menu="attrs"],
+  .self[data-menu="inv"] .panel[data-menu="inv"],
+  .self[data-menu="asc"] .panel[data-menu="asc"] { display: block; }
+
+  .sect { font-family: var(--mono); font-size: 10px; letter-spacing: .22em; text-transform: uppercase;
+    color: var(--gold-dim); display: flex; align-items: center; gap: 8px; margin: 0 0 9px; }
+  .sect::after { content: ''; flex: 1; height: 1px; background: linear-gradient(90deg, var(--line), transparent); }
+  .sect + .sect { margin-top: 16px; }
+  .empty { color: var(--faint); font-size: 11.5px; font-style: italic; padding: 2px 0; }
+
+  /* 属性 */
+  .attrs { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; }
+  .attr { text-align: center; background: var(--sunken); border: 1px solid var(--line-soft); border-radius: 8px; padding: 10px 2px; }
+  .attr-k { font-size: 11px; color: var(--dim); }
+  .attr-v { font-family: var(--mono); font-size: 18px; font-weight: 700; margin-top: 3px; }
+  .attr-free { margin-top: 10px; font-size: 11.5px; color: var(--gold); }
+  .attr-free b { font-family: var(--mono); }
+
+  /* 持有 */
+  .inv-row { display: flex; align-items: center; gap: 9px; padding: 7px 4px; border-radius: 6px; }
+  .inv-row:hover { background: var(--sunken); }
+  .inv-dot { width: 7px; height: 7px; border-radius: 50%; flex: 0 0 auto; box-shadow: 0 0 6px currentColor; }
+  .inv-name { flex: 1; font-size: 12.5px; }
+  .inv-meta { font-size: 10.5px; color: var(--faint); font-family: var(--mono); }
+
+  /* 登神长阶 — the true ascension gate: 要素(≤3) → 权能(≤1) → 法则, + 神位/神国 */
+  .asc-rungs { display: flex; gap: 8px; }
+  .rung { flex: 1; background: var(--sunken); border: 1px solid var(--line-soft); border-radius: 9px; padding: 10px 8px; }
+  .rung.on { border-color: var(--gold-dim); }
+  .rung-h { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 7px; }
+  .rung-k { font-size: 11px; color: var(--dim); } .rung.on .rung-k { color: var(--gold); }
+  .rung-n { font-family: var(--mono); font-size: 10px; color: var(--faint); }
+  .rung-tag { display: block; font-size: 11px; color: var(--text); padding: 3px 0; border-top: 1px solid var(--line-soft); }
+  .rung-tag:first-of-type { border-top: none; }
+  .rung .empty { font-size: 10.5px; }
+  .asc-crown { margin-top: 10px; font-size: 11.5px; color: var(--dim); }
+  .asc-crown b { color: var(--gold); font-family: var(--serif); }
+
+  /* ── tabs ────────────────────────────────────────────────────────────────────────── */
+  .tabs { flex: 0 0 auto; display: flex; gap: 2px; padding: 8px 12px; border-top: 1px solid var(--line); background: var(--sunken); }
+  .tab { flex: 1; font-family: var(--mono); font-size: 11px; letter-spacing: .04em; background: none;
+    border: none; color: var(--dim); padding: 8px 4px; border-radius: 7px; cursor: pointer; position: relative; }
+  .tab:hover { color: var(--text); background: color-mix(in srgb, var(--text) 6%, transparent); }
+  .tab.active { color: var(--gold); }
+  .tab.active::after { content: ''; position: absolute; left: 14px; right: 14px; bottom: 2px; height: 2px; border-radius: 2px; background: var(--gold); }
+
+  @media (prefers-reduced-motion: reduce) {
+    .band, .drawer, .res-track > i { transition: none; }
+  }
+</style>
+</head>
+<body>
+  <div class="self closed" id="self">
+    <div class="band" id="band">
+      <div class="scene" id="scene"></div>
+      <div class="fig-ph" id="figPh">主</div>
+      <div class="nameplate">
+        <span class="np-name" id="npName">你</span>
+        <span class="np-tag" id="npTag"></span>
+      </div>
+    </div>
+    <div class="stats" id="stats"></div>
+    <div class="drawer" id="drawer">
+      <div class="panel" data-menu="attrs" id="pAttrs"></div>
+      <div class="panel" data-menu="inv" id="pInv"></div>
+      <div class="panel" data-menu="asc" id="pAsc"></div>
+    </div>
+    <div class="tabs">
+      <button class="tab" data-menu="attrs">属性</button>
+      <button class="tab" data-menu="inv">持有</button>
+      <button class="tab" data-menu="asc">登神长阶</button>
+    </div>
+  </div>
+
+<script>
+;(function () {
+  'use strict'
+
+  // ── standalone-preview fallback data (only used when getVariables is absent) ────────
+  var MOCK = {
+    命运点数: 500,
+    主角: {
+      生命层级: '史诗', 等级: 12, 冒险者等级: 'A 级',
+      生命值: 380, 生命值上限: 400, 法力值: 100, 法力值上限: 100, 体力值: 140, 体力值上限: 150,
+      累计经验值: 7200, 升级所需经验: 10000, 金钱: 1250, 属性点: 2,
+      属性: { 力量: 16, 敏捷: 12, 体质: 14, 智力: 10, 精神: 10 },
+      状态效果: { 战斗祝福: { 类型: '增益', 效果: '攻击力提升', 层数: 12, 剩余时间: '3回合' } },
+      装备: { 精钢长剑: { 品质: '稀有', 类型: '武器', 位置: '主手' }, 秘银锁子甲: { 品质: '史诗', 类型: '防具', 位置: '身体' } },
+      背包: { 治疗药水: { 品质: '普通', 类型: '消耗品', 数量: 3 }, 冒险者徽章: { 品质: '传说', 类型: '饰品', 数量: 1 } },
+      登神长阶: { 是否开启: true, 要素: { 烈焰: {}, 星辉: {} }, 权能: {}, 法则: {}, 神位: '', 神国: { 名称: '' } }
+    }
+  }
+
+  // ── tiny helpers ─────────────────────────────────────────────────────────────────
+  function esc(s) {
+    return String(s == null ? '' : s).replace(/[&<>"]/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]
+    })
+  }
+  var num = function (v, d) { var n = Number(v); return isFinite(n) ? n : (d == null ? 0 : d) }
+  var pct = function (cur, max) { return max > 0 ? Math.max(0, Math.min(100, (cur / max) * 100)) : 0 }
+  var firstStr = function (arr) { return Array.isArray(arr) ? arr.filter(Boolean).join(' · ') : (arr || '') }
+
+  // 品质 → rarity class (verified names, FrontEnd .../utils/quality.ts)
+  var QUALITY = { 普通: 'common', 优良: 'uncommon', 稀有: 'rare', 史诗: 'epic', 传说: 'legendary', 神话: 'mythic', 唯一: 'unique' }
+  var QRANK = { 普通: 1, 优良: 2, 稀有: 3, 史诗: 4, 传说: 5, 神话: 6, 唯一: 7 }
+  function rarityColor(q) { var k = QUALITY[q]; return k ? 'var(--q-' + k + ')' : 'var(--q-common)' }
+
+  // ── the ONE typed projection of session state (spec §2). All raw path knowledge lives here, so a
+  //    future state-pipeline change touches only this function. Verified against the real schema. ──
+  function poemState(SD) {
+    SD = SD && typeof SD === 'object' ? SD : {}
+    var P = SD['主角'] && typeof SD['主角'] === 'object' ? SD['主角'] : {}
+    var A = P['属性'] && typeof P['属性'] === 'object' ? P['属性'] : {}
+    var need = P['升级所需经验']
+    var expMax = need === 'MAX' ? null : num(need, 0)
+    return {
+      lifeTier: P['生命层级'] || '',
+      level: num(P['等级'], 1),
+      rank: P['冒险者等级'] || '',
+      identity: firstStr(P['职业']) || firstStr(P['身份']) || '',
+      hp: { v: num(P['生命值']), max: num(P['生命值上限']) },
+      mp: { v: num(P['法力值']), max: num(P['法力值上限']) },
+      sp: { v: num(P['体力值']), max: num(P['体力值上限']) },
+      exp: { v: num(P['累计经验值']), max: expMax, capped: need === 'MAX' },
+      fp: num(SD['命运点数']),               // FP is TOP-LEVEL 命运点数
+      gold: num(P['金钱']),
+      status: P['状态效果'] && typeof P['状态效果'] === 'object' ? P['状态效果'] : {},
+      attrs: { 力量: num(A['力量']), 敏捷: num(A['敏捷']), 体质: num(A['体质']), 智力: num(A['智力']), 精神: num(A['精神']) },
+      freePoints: num(P['属性点']),
+      equip: P['装备'] && typeof P['装备'] === 'object' ? P['装备'] : {},
+      bag: P['背包'] && typeof P['背包'] === 'object' ? P['背包'] : {},
+      asc: P['登神长阶'] && typeof P['登神长阶'] === 'object' ? P['登神长阶'] : {}
+    }
+  }
+
+  // ── renderers ───────────────────────────────────────────────────────────────────
+  function resRow(k, cls, cur, max, color, opts) {
+    opts = opts || {}
+    if (opts.scalar) {
+      return '<div class="res scalar"><span class="res-k ' + cls + '">' + k + '</span>' +
+        '<span class="res-track"><i style="background:' + color + '"></i></span>' +
+        '<span class="res-v">' + esc(opts.text != null ? opts.text : cur) + '</span></div>'
+    }
+    var v = opts.text != null ? opts.text : (cur + ' / ' + max)
+    return '<div class="res"><span class="res-k ' + cls + '">' + k + '</span>' +
+      '<span class="res-track"><i style="width:' + pct(cur, max) + '%;background:' + color + '"></i></span>' +
+      '<span class="res-v">' + esc(v) + '</span></div>'
+  }
+
+  function renderStats(s) {
+    var expText = s.exp.capped ? 'MAX' : (s.exp.v + ' / ' + s.exp.max)
+    var expFill = s.exp.capped ? 100 : pct(s.exp.v, s.exp.max)
+    var chips = statusChips(s.status)
+    document.getElementById('stats').innerHTML =
+      resRow('HP', 'hp', s.hp.v, s.hp.max, 'var(--hp)') +
+      resRow('MP', 'mp', s.mp.v, s.mp.max, 'var(--mp)') +
+      resRow('SP', 'sp', s.sp.v, s.sp.max, 'var(--sp)') +
+      '<div class="res"><span class="res-k exp">EXP</span><span class="res-track"><i style="width:' +
+        expFill + '%;background:var(--exp)"></i></span><span class="res-v">' + esc(expText) + '</span></div>' +
+      resRow('FP', 'fp', s.fp, 0, 'var(--fp)', { scalar: true, text: s.fp }) +
+      '<div class="stats-foot"><span class="gold">⛃ <b>' + esc(s.gold) + '</b> G</span>' +
+      '<span class="chips">' + chips + '</span></div>'
+  }
+
+  function statusChips(status) {
+    var keys = Object.keys(status || {})
+    if (!keys.length) return '<span class="chip muted">无状态</span>'
+    return keys.slice(0, 6).map(function (name) {
+      var e = status[name] || {}
+      var kind = e['类型'] === '减益' ? 'debuff' : e['类型'] === '增益' ? 'buff' : ''
+      var stacks = num(e['层数'], 1)
+      var time = e['剩余时间'] ? ' ' + esc(e['剩余时间']) : ''
+      return '<span class="chip ' + kind + '" title="' + esc(e['效果'] || name) + '">' + esc(name) +
+        (stacks > 1 ? '<span class="n">×' + stacks + '</span>' : '') +
+        (time ? '<span class="n">' + time + '</span>' : '') + '</span>'
+    }).join('')
+  }
+
+  function renderAttrs(s) {
+    var keys = ['力量', '敏捷', '体质', '智力', '精神']
+    var cells = keys.map(function (k) {
+      return '<div class="attr"><div class="attr-k">' + k + '</div><div class="attr-v">' + s.attrs[k] + '</div></div>'
+    }).join('')
+    var free = s.freePoints > 0 ? '<div class="attr-free">可分配属性点 <b>' + s.freePoints + '</b></div>' : ''
+    document.getElementById('pAttrs').innerHTML = '<div class="sect">属性</div><div class="attrs">' + cells + '</div>' + free
+  }
+
+  function itemRow(name, item) {
+    var q = item['品质'] || ''
+    var meta = []
+    if (item['位置']) meta.push(esc(item['位置']))
+    else if (item['类型']) meta.push(esc(item['类型']))
+    if (item['数量'] != null && num(item['数量'], 1) !== 1) meta.push('×' + num(item['数量'], 1))
+    return '<div class="inv-row"><span class="inv-dot" style="color:' + rarityColor(q) + ';background:' + rarityColor(q) + '"></span>' +
+      '<span class="inv-name">' + esc(name) + '</span><span class="inv-meta">' + meta.join(' ') + '</span></div>'
+  }
+  function sortByQuality(obj) {
+    return Object.keys(obj).sort(function (a, b) {
+      var d = (QRANK[obj[b] && obj[b]['品质']] || 0) - (QRANK[obj[a] && obj[a]['品质']] || 0)
+      return d !== 0 ? d : (a < b ? -1 : 1)
+    })
+  }
+  function renderInv(s) {
+    var eq = sortByQuality(s.equip), bag = sortByQuality(s.bag)
+    var html = ''
+    // 装备 is a record keyed by item NAME; each entry's 位置 field is the slot (itemRow shows it)
+    html += '<div class="sect">装备</div>'
+    html += eq.length ? eq.map(function (n) { return itemRow(n, s.equip[n]) }).join('')
+                      : '<div class="empty">暂无装备</div>'
+    html += '<div class="sect">背包</div>'
+    html += bag.length ? bag.map(function (n) { return itemRow(n, s.bag[n]) }).join('')
+                       : '<div class="empty">背包空空如也</div>'
+    document.getElementById('pInv').innerHTML = html
+  }
+
+  function ascRung(label, rec, limit, on) {
+    var keys = Object.keys(rec || {})
+    var tags = keys.length
+      ? keys.map(function (k) { return '<span class="rung-tag">' + esc(k) + '</span>' }).join('')
+      : '<span class="empty">—</span>'
+    return '<div class="rung' + (on ? ' on' : '') + '"><div class="rung-h"><span class="rung-k">' + label +
+      '</span><span class="rung-n">' + keys.length + (limit ? '/' + limit : '') + '</span></div>' + tags + '</div>'
+  }
+  function renderAsc(s) {
+    var a = s.asc
+    if (!a['是否开启']) {
+      document.getElementById('pAsc').innerHTML = '<div class="sect">登神长阶</div><div class="empty">尚未踏上登神长阶。</div>'
+      return
+    }
+    var ele = a['要素'] || {}, pow = a['权能'] || {}, law = a['法则'] || {}
+    var crown = ''
+    if (a['神位']) crown += '神位 <b>' + esc(a['神位']) + '</b>　'
+    if (a['神国'] && a['神国']['名称']) crown += '神国 <b>' + esc(a['神国']['名称']) + '</b>'
+    document.getElementById('pAsc').innerHTML =
+      '<div class="sect">登神长阶</div><div class="asc-rungs">' +
+      ascRung('要素', ele, 3, Object.keys(ele).length > 0) +
+      ascRung('权能', pow, 1, Object.keys(pow).length > 0) +
+      ascRung('法则', law, 0, Object.keys(law).length > 0) +
+      '</div>' + (crown ? '<div class="asc-crown">' + crown + '</div>' : '')
+  }
+
+  function renderNameplate(s) {
+    var bits = []
+    if (s.lifeTier) bits.push(esc(s.lifeTier))
+    bits.push('Lv ' + s.level)
+    if (s.rank && s.rank !== '未评级') bits.push(esc(s.rank))
+    document.getElementById('npName').textContent = personaName()
+    document.getElementById('npTag').innerHTML =
+      '<span>你</span><span class="sep">·</span>' + bits.join('<span class="sep">·</span>')
+    document.getElementById('figPh').textContent = (personaName() || '主').charAt(0)
+  }
+
+  // ── host access ───────────────────────────────────────────────────────────────────
+  function personaName() {
+    try {
+      if (typeof substituteParams === 'function') {
+        var n = String(substituteParams('{{user}}') || '').trim()
+        if (n && n !== '{{user}}') return n
+      }
+    } catch (_) {}
+    return '你'
+  }
+  function statData() {
+    try {
+      if (typeof getVariables !== 'function') return Promise.resolve(MOCK)   // standalone preview
+      var v = getVariables()
+      if (v && typeof v.then === 'function') return v.then(function (r) { return (r || {}).stat_data || {} })
+      return Promise.resolve((v || {}).stat_data || {})
+    } catch (_) { return Promise.resolve(MOCK) }
+  }
+  function loadPortrait() {
+    if (typeof window.assetUrl !== 'function') return
+    try {
+      var r = window.assetUrl('主角', '立绘')
+      Promise.resolve(r).then(function (url) {
+        if (!url) return
+        var img = document.getElementById('selfFig') || document.createElement('img')
+        img.id = 'selfFig'; img.className = 'fig'; img.alt = '主角'
+        img.onload = function () { var ph = document.getElementById('figPh'); if (ph) ph.style.display = 'none' }
+        img.onerror = function () { img.remove() }
+        img.src = url
+        if (!img.parentNode) document.getElementById('band').insertBefore(img, document.getElementById('figPh'))
+      })
+    } catch (_) {}
+  }
+
+  // ── geometry: slice the shared stage background to this panel's window-x (P0 primitive) ──
+  function applyGeometry(g) {
+    if (!g) return
+    var root = document.documentElement.style
+    if (g.viewportWidth) root.setProperty('--vw', g.viewportWidth + 'px')
+    root.setProperty('--panel-x', (g.x || 0) + 'px')
+    // band ≈ the stage band = 4/12 of the play-area height; the self slot is full height, so /3
+    if (g.height) root.setProperty('--band-h', Math.round(g.height / 3) + 'px')
+  }
+
+  // ── render + wire ─────────────────────────────────────────────────────────────────
+  function render() {
+    statData().then(function (SD) {
+      var s = poemState(SD)
+      renderNameplate(s); renderStats(s); renderAttrs(s); renderInv(s); renderAsc(s)
+      loadPortrait()
+    })
+  }
+
+  var selfEl = document.getElementById('self')
+  document.querySelectorAll('.tab').forEach(function (t) {
+    t.addEventListener('click', function () {
+      var m = t.dataset.menu
+      var isOpen = selfEl.classList.contains('open') && selfEl.dataset.menu === m
+      document.querySelectorAll('.tab').forEach(function (x) { x.classList.remove('active') })
+      if (isOpen) {
+        selfEl.classList.remove('open'); selfEl.classList.add('closed'); delete selfEl.dataset.menu
+      } else {
+        selfEl.classList.add('open'); selfEl.classList.remove('closed'); selfEl.dataset.menu = m; t.classList.add('active')
+      }
+    })
+  })
+
+  // geometry: seed + subscribe (WCV only)
+  if (window.rptHost && typeof window.rptHost.getPanelGeometry === 'function') {
+    applyGeometry(window.rptHost.getPanelGeometry())
+    window.rptHost.onPanelGeometry(applyGeometry)
+  }
+
+  render()
+  // re-render on host var changes (docked WCV loads once; the runtime re-emits both events)
+  if (typeof eventOn === 'function') {
+    var pending = false
+    var onChange = function () {
+      if (pending) return
+      pending = true
+      Promise.resolve().then(function () { pending = false; render() })
+    }
+    eventOn('mag_variable_updated', onChange)
+    eventOn('message_updated', onChange)
+  }
+})()
+</script>
+</body>
+</html>
