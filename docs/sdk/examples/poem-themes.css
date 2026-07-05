@@ -1,0 +1,80 @@
+@import url('https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;700&family=Noto+Serif+SC:wght@500;700;900&display=swap');
+
+/*
+  命定之诗 play-area — shared design tokens + palettes (poem-play-area redesign).
+  ONE source for the look, @import'd by poem-self/stage/world-surface.html so a palette is defined once,
+  not copied per page. Switch by setting `document.documentElement.dataset.poemTheme` to a theme id;
+  no attribute → the default (dusk).
+
+  What varies per theme = the CHROME (neutrals, text ramp, the destiny ACCENT, the warm secondary, and
+  FP which tracks the accent). What stays CONSTANT across every theme = the resource colours (HP red /
+  MP blue / SP green / EXP violet) and the 7 item-rarity tiers — those encode DATA, not mood, so an
+  item's rarity dot must read the same whatever skin you pick. Fonts are shared too.
+
+  Contrast: every theme is a dark skin with a near-white text ramp on a very dark base (text/bg well
+  past WCAG-AA); the accent is a light hue on that dark base (AA for labels/small text).
+*/
+
+:root {
+  /* ── shared: fonts ── */
+  --serif: 'Noto Serif SC', 'Songti SC', Georgia, serif;
+  --sans: 'Noto Sans SC', system-ui, sans-serif;
+  --mono: ui-monospace, 'Cascadia Code', Menlo, monospace;
+
+  /* ── shared: resources (HP/MP/SP/EXP constant; FP tracks the accent, set per theme) ── */
+  --hp: #cf5a6d;
+  --mp: #6a86d8;
+  --sp: #5fb98a;
+  --exp: #a274e0;
+
+  /* ── shared: 7 item-rarity tiers (普通/优良/稀有/史诗/传说/神话/唯一) ── */
+  --q-common: #b8b0a0;
+  --q-uncommon: #6fae72;
+  --q-rare: #5f90d8;
+  --q-epic: #a274e0;
+  --q-legendary: #d9b56b;
+  --q-mythic: #d76b8f;
+  --q-unique: #e0913f;
+
+  /* ── default chrome = dusk (黄昏): purple-night + destiny gold ── */
+  --night: #14121b;
+  --raise: #1d1a27;
+  --sunken: #100e16;
+  --line: #2e2a3d;
+  --line-soft: #241f30;
+  --gold: #d9b56b;
+  --gold-dim: #8f7a4e;
+  --text: #e9e3d4;
+  --dim: #a89f8c;
+  --faint: #6f6858;
+  --ember: #c8683f;
+  --fp: #d9b56b;
+}
+
+/* dusk (黄昏) — explicit, for switching back */
+:root[data-poem-theme='dusk'] {
+  --night: #14121b; --raise: #1d1a27; --sunken: #100e16; --line: #2e2a3d; --line-soft: #241f30;
+  --gold: #d9b56b; --gold-dim: #8f7a4e; --text: #e9e3d4; --dim: #a89f8c; --faint: #6f6858;
+  --ember: #c8683f; --fp: #d9b56b;
+}
+
+/* frost (霜垣) — moonlit blue-slate + silver-cyan */
+:root[data-poem-theme='frost'] {
+  --night: #101620; --raise: #18222f; --sunken: #0b0f16; --line: #283644; --line-soft: #1b2531;
+  --gold: #8cc8d8; --gold-dim: #567985; --text: #e3ebf1; --dim: #97a7b4; --faint: #5a6975;
+  --ember: #6fb8c4; --fp: #8cc8d8;
+}
+
+/* ember (烬火) — forge-dark charcoal + molten orange */
+:root[data-poem-theme='ember'] {
+  --night: #17110e; --raise: #241813; --sunken: #120c09; --line: #3a2820; --line-soft: #281a14;
+  --gold: #e08a4c; --gold-dim: #8a5630; --text: #f0e2d2; --dim: #b39a86; --faint: #7a6552;
+  --ember: #d1503a; --fp: #e08a4c;
+}
+
+/* verdant (苍林) — deep-forest twilight + luminous jade */
+:root[data-poem-theme='verdant'] {
+  --night: #0f1613; --raise: #17241d; --sunken: #0a0f0c; --line: #263a30; --line-soft: #1a271f;
+  --gold: #74c69c; --gold-dim: #487a5f; --text: #e4ece2; --dim: #99ab9c; --faint: #5e6d62;
+  --ember: #c98a4a; --fp: #74c69c;
+}

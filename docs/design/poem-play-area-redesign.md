@@ -42,6 +42,14 @@ not fake 0–1 bars; 品质 → the 7 rarity tiers. Reads via `getVariables().st
   `prose-font` (`cardTheme.ts`). Colored 你/name spans stay the card's display-regex job (already
   supported). Tests: `cardTheme` (+2). Full layout now: `self[0,0,3,12]` · `stage[3,0,9,4]` ·
   `story(chat)[3,4,6,8]` · `world[9,4,3,8]`.
+**Play-area palettes BUILT 2026-07-05** — the 3 surfaces are now skinnable across **4 palettes** (dusk
+黄昏 / frost 霜垣 / ember 烬火 / verdant 苍林), extracted into one shared token file
+[`docs/sdk/examples/poem-themes.css`](../sdk/examples/poem-themes.css) `@import`'d by all three (a palette
+is defined once). What varies per theme = chrome (neutrals + text ramp + the destiny accent + ember +
+FP); what's **constant** = resource colours (HP/MP/SP/EXP) and the 7 rarity tiers (they encode data,
+not mood). Switch via `document.documentElement.dataset.poemTheme`; SELF owns a 4-swatch switcher that
+persists to the per-chat KV `poem.theme` and broadcasts `poem:theme` so STAGE/WORLD re-skin live over
+the P2 event channel (standalone: URL `?theme=` / localStorage). Adding a 5th theme = one CSS block.
 **Next: P4 (motion — speaker-swap transition + fold↔stage dim polish), and card-side packaging (the
 `theme` tokens incl. `prose-font`, fonts, assets, and one shared `poemState` module for the 3 pages).**
 **Branch context:** work sits on `ui-facelift`. The chrome/IA facelift + §6a card themes are already

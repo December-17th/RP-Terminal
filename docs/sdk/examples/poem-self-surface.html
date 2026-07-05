@@ -33,19 +33,11 @@
   VERIFY rendering + live data in-app (manual-verify).
 -->
 <style>
-  @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;700&family=Noto+Serif+SC:wght@500;700;900&display=swap');
+  /* Palette + fonts + the 4 themes live in the shared token file (switch via
+     document.documentElement.dataset.poemTheme). */
+  @import url('./poem-themes.css');
 
   :root {
-    /* dusk-gilt — the redesign's locked visual language (spec §1.6) */
-    --night: #14121b; --raise: #1d1a27; --sunken: #100e16; --line: #2e2a3d; --line-soft: #241f30;
-    --gold: #d9b56b; --gold-dim: #8f7a4e; --text: #e9e3d4; --dim: #a89f8c; --faint: #6f6858; --ember: #c8683f;
-    --hp: #cf5a6d; --mp: #6a86d8; --sp: #5fb98a; --fp: #d9b56b; --exp: #a274e0;
-    /* 7 rarity tiers ← 普通/优良/稀有/史诗/传说/神话/唯一 */
-    --q-common: #b8b0a0; --q-uncommon: #6fae72; --q-rare: #5f90d8; --q-epic: #a274e0;
-    --q-legendary: #d9b56b; --q-mythic: #d76b8f; --q-unique: #e0913f;
-    --serif: 'Noto Serif SC', 'Songti SC', Georgia, serif;
-    --sans: 'Noto Sans SC', system-ui, sans-serif;
-    --mono: ui-monospace, 'Cascadia Code', Menlo, monospace;
     /* seam-sliced band geometry — set by JS from getPanelGeometry(); these are safe fallbacks */
     --band-h: 34vh; --vw: 100vw; --panel-x: 0px;
   }
@@ -55,7 +47,17 @@
     height: 100vh; overflow: hidden; color: var(--text); background: var(--night);
     font-family: var(--sans); -webkit-font-smoothing: antialiased;
   }
-  .self { display: flex; flex-direction: column; height: 100vh; overflow: hidden; }
+  .self { position: relative; display: flex; flex-direction: column; height: 100vh; overflow: hidden; }
+
+  /* theme switcher — 4 palette swatches pinned to the top-right, always reachable */
+  .theme-swatches { position: absolute; top: 8px; right: 8px; z-index: 5; display: flex; gap: 6px; }
+  .sw {
+    width: 14px; height: 14px; border-radius: 50%; cursor: pointer;
+    border: 1px solid rgba(0, 0, 0, .45); box-shadow: inset 0 0 0 2px rgba(0, 0, 0, .35);
+    transition: transform .12s ease;
+  }
+  .sw:hover { transform: scale(1.18); }
+  .sw.on { box-shadow: 0 0 0 2px var(--night), 0 0 0 3px currentColor; }
 
   /* ── portrait band (the user's slice of the shared VN stage) ─────────────────────── */
   .band {
@@ -205,6 +207,7 @@
 </head>
 <body>
   <div class="self closed" id="self">
+    <div class="theme-swatches" id="themeSwatches" title="配色"></div>
     <div class="band" id="band">
       <div class="scene" id="scene"></div>
       <div class="fig-ph" id="figPh">主</div>
@@ -229,6 +232,64 @@
 <script>
 ;(function () {
   'use strict'
+
+  // ── play-area theme (4 palettes, defined in poem-themes.css) ───────────────────────
+  // SELF owns the switcher: it persists the choice to the per-chat card KV (poem.theme) and broadcasts
+  // `poem:theme` so the STAGE/WORLD surfaces re-skin live over the P2 event channel.
+  var POEM_THEMES = ['dusk', 'frost', 'ember', 'verdant']
+  var THEME_SWATCH = { dusk: '#d9b56b', frost: '#8cc8d8', ember: '#e08a4c', verdant: '#74c69c' }
+  var THEME_NAME = { dusk: '黄昏', frost: '霜垣', ember: '烬火', verdant: '苍林' }
+  function poemTheme() {
+    try {
+      if (typeof getVariables === 'function') {
+        var kv = getVariables({ type: 'chat' })
+        if (kv && typeof kv.then !== 'function' && POEM_THEMES.indexOf(kv['poem.theme']) >= 0) return kv['poem.theme']
+      }
+    } catch (_) {}
+    try {
+      var u = new URLSearchParams(location.search).get('theme')
+      if (POEM_THEMES.indexOf(u) >= 0) return u
+      var ls = localStorage.getItem('poem.theme')
+      if (POEM_THEMES.indexOf(ls) >= 0) return ls
+    } catch (_) {}
+    return 'dusk'
+  }
+  function applyPoemTheme(id) {
+    document.documentElement.dataset.poemTheme = POEM_THEMES.indexOf(id) >= 0 ? id : 'dusk'
+  }
+  function setPoemTheme(id) {
+    applyPoemTheme(id)
+    try { localStorage.setItem('poem.theme', id) } catch (_) {}
+    try {
+      if (typeof updateVariablesWith === 'function') {
+        updateVariablesWith(function (prev) {
+          var n = prev && typeof prev === 'object' ? prev : {}
+          n['poem.theme'] = id
+          return n
+        }, { type: 'chat' })
+      }
+    } catch (_) {}
+    try {
+      if (window.rptHost && typeof window.rptHost.broadcastEvent === 'function') {
+        window.rptHost.broadcastEvent('poem:theme', { id: id })
+      }
+    } catch (_) {}
+    renderSwatches()
+  }
+  function renderSwatches() {
+    var el = document.getElementById('themeSwatches')
+    if (!el) return
+    var cur = document.documentElement.dataset.poemTheme || 'dusk'
+    el.innerHTML = POEM_THEMES.map(function (id) {
+      return '<span class="sw' + (id === cur ? ' on' : '') + '" data-id="' + id + '" title="' +
+        THEME_NAME[id] + '" style="background:' + THEME_SWATCH[id] + ';color:' + THEME_SWATCH[id] + '"></span>'
+    }).join('')
+    Array.prototype.forEach.call(el.querySelectorAll('.sw'), function (s) {
+      s.addEventListener('click', function () { setPoemTheme(s.dataset.id) })
+    })
+  }
+  applyPoemTheme(poemTheme())
+  renderSwatches()
 
   // ── standalone-preview fallback data (only used when getVariables is absent) ────────
   var MOCK = {
@@ -500,6 +561,7 @@
     }
     eventOn('mag_variable_updated', onChange)
     eventOn('message_updated', onChange)
+    eventOn('poem:theme', function (p) { applyPoemTheme(p && p.id); renderSwatches() })
   }
 })()
 </script>

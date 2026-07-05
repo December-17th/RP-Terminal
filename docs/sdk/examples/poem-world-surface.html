@@ -22,15 +22,8 @@
   VERIFY rendering + live data in-app (manual-verify).
 -->
 <style>
-  @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;700&family=Noto+Serif+SC:wght@500;700&display=swap');
-  :root {
-    --night: #14121b; --raise: #1d1a27; --sunken: #100e16; --line: #2e2a3d; --line-soft: #241f30;
-    --gold: #d9b56b; --gold-dim: #8f7a4e; --text: #e9e3d4; --dim: #a89f8c; --faint: #6f6858;
-    --q-mythic: #d76b8f; --sp: #5fb98a; --ember: #c8683f;
-    --serif: 'Noto Serif SC', 'Songti SC', Georgia, serif;
-    --sans: 'Noto Sans SC', system-ui, sans-serif;
-    --mono: ui-monospace, 'Cascadia Code', Menlo, monospace;
-  }
+  /* Palette + fonts + the 4 themes live in the shared token file. */
+  @import url('./poem-themes.css');
   * { box-sizing: border-box; }
   html, body { margin: 0; height: 100%; }
   body {
@@ -90,6 +83,28 @@
 <script>
 ;(function () {
   'use strict'
+
+  // ── play-area theme (4 palettes in poem-themes.css; SELF owns the switcher, we follow) ──
+  var POEM_THEMES = ['dusk', 'frost', 'ember', 'verdant']
+  function poemTheme() {
+    try {
+      if (typeof getVariables === 'function') {
+        var kv = getVariables({ type: 'chat' })
+        if (kv && typeof kv.then !== 'function' && POEM_THEMES.indexOf(kv['poem.theme']) >= 0) return kv['poem.theme']
+      }
+    } catch (_) {}
+    try {
+      var u = new URLSearchParams(location.search).get('theme')
+      if (POEM_THEMES.indexOf(u) >= 0) return u
+      var ls = localStorage.getItem('poem.theme')
+      if (POEM_THEMES.indexOf(ls) >= 0) return ls
+    } catch (_) {}
+    return 'dusk'
+  }
+  function applyPoemTheme(id) {
+    document.documentElement.dataset.poemTheme = POEM_THEMES.indexOf(id) >= 0 ? id : 'dusk'
+  }
+  applyPoemTheme(poemTheme())
 
   var MOCK = {
     世界: { 时间: '暮 · 戌时', 地点: '艾瑟嘉德' },
@@ -202,6 +217,7 @@
     var refresh = function () { if (pending) return; pending = true; Promise.resolve().then(function () { pending = false; render() }) }
     eventOn('mag_variable_updated', refresh)
     eventOn('message_updated', refresh)
+    eventOn('poem:theme', function (p) { applyPoemTheme(p && p.id) })
   }
 })()
 </script>
