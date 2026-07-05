@@ -67,9 +67,15 @@ page at build time. Assets (立绘/背景) stay external — resolved at runtime
   entries = `data:text/html` URLs) + `theme` (dusk-gilt shell tokens + the `prose-font` serif register);
 - writes `docs/sdk/examples/dist/` (git-ignored — the script is the record, the artifact regenerable):
   `poem-{self,stage,world}.html` + `poem-play-area.rpt.json` (~117 KB).
-- Apply: merge `poem-play-area.rpt.json` into a card's `data.extensions.rp_terminal`. Patching a card
-  PNG in place follows the `patch-poem-card.cjs` chunk-surgery pattern (the card PNG is a local,
-  untracked artifact — not in the repo — so PNG patching isn't wired here yet).
+- Apply: `node build-poem-play-area.cjs --apply [src.png] [out.png]` merges `{ panel_ui, theme }` into
+  the card's `chara`+`ccv3` tEXt chunks (PNG surgery per `patch-poem-card.cjs`). **Never in place** —
+  the 命定之诗 asset folder is shared across worktrees + gitignored, so it always writes a NEW copy and
+  refuses if `out === src`. Default src = `…/命定之诗/v4.2.1+combat+party+duel.png`.
+- **APPLIED 2026-07-05** → `…/命定之诗/v4.2.1+combat+party+duel+playarea.png` (source untouched). Verified
+  the output card's `rp_terminal` keys = `combat, left_panel, panel_ui, theme` — pre-existing `combat` +
+  `left_panel` preserved (Object.assign), `panel_ui` (seamless, 4 slots) + `theme` added. `left_panel`
+  (the legacy docked party panel) is inert while a `mode:'static'` `panel_ui` is active (App.tsx renders
+  StaticWorkspace, not the resizable Workspace) — no conflict, just unused in this layout.
 
 **Known limitations / follow-ons.**
 - The 4-palette switcher reskins the 3 WCV surfaces; the native chat (STORY) + shell use the STATIC

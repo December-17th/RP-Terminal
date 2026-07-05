@@ -101,4 +101,103 @@ console.log(`  poem-self.html   ${kb(pages.self)}`)
 console.log(`  poem-stage.html  ${kb(pages.stage)}`)
 console.log(`  poem-world.html  ${kb(pages.world)}`)
 console.log(`  poem-play-area.rpt.json  ${kb(JSON.stringify(fragment))}  (panel_ui + theme)`)
-console.log('\nApply: merge poem-play-area.rpt.json into a card data.extensions.rp_terminal.')
+
+// ── optional: apply the fragment to a card PNG (`--apply [src] [out]`) ──────────────────
+// Merges { panel_ui, theme } into data.extensions.rp_terminal in the card's chara + ccv3 tEXt chunks
+// (PNG surgery mirrors patch-poem-card.cjs). NEVER in place: the 命定之诗 asset folder is shared across
+// worktrees + gitignored, so this always writes a NEW copy and refuses if out === src.
+const DEFAULT_SRC =
+  'E:/Projects/RP Terminal/example sillytarvern character card, presets, extensions and scripts/命定之诗/v4.2.1+combat+party+duel.png'
+
+const crcTable = (() => {
+  const t = new Uint32Array(256)
+  for (let n = 0; n < 256; n++) {
+    let c = n
+    for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1
+    t[n] = c >>> 0
+  }
+  return t
+})()
+const crc32 = (b) => {
+  let c = 0xffffffff
+  for (let i = 0; i < b.length; i++) c = crcTable[(c ^ b[i]) & 0xff] ^ (c >>> 8)
+  return (c ^ 0xffffffff) >>> 0
+}
+const makeChunk = (type, data) => {
+  const len = Buffer.alloc(4)
+  len.writeUInt32BE(data.length, 0)
+  const tb = Buffer.from(type, 'ascii')
+  const cb = Buffer.alloc(4)
+  cb.writeUInt32BE(crc32(Buffer.concat([tb, data])), 0)
+  return Buffer.concat([len, tb, data, cb])
+}
+const mergeCard = (card) => {
+  const d = card.data || (card.data = {})
+  d.extensions = d.extensions || {}
+  // Preserve everything already under rp_terminal (combat, etc.); overwrite panel_ui + theme.
+  d.extensions.rp_terminal = Object.assign({}, d.extensions.rp_terminal, { panel_ui, theme })
+}
+// Walk chunks; rewrite chara/ccv3 tEXt (base64 card JSON); `mut` mutates the parsed card.
+const eachCardChunk = (buf, mut) => {
+  const out = [buf.slice(0, 8)]
+  let off = 8
+  let n = 0
+  while (off < buf.length) {
+    const length = buf.readUInt32BE(off)
+    const type = buf.toString('ascii', off + 4, off + 8)
+    const total = 12 + length
+    if (type === 'tEXt') {
+      const data = buf.slice(off + 8, off + 8 + length)
+      const z = data.indexOf(0)
+      const keyword = data.slice(0, z).toString('latin1')
+      if (keyword === 'chara' || keyword === 'ccv3') {
+        const card = JSON.parse(
+          Buffer.from(data.slice(z + 1).toString('latin1'), 'base64').toString('utf8')
+        )
+        const result = mut(card, keyword)
+        const nb64 = Buffer.from(JSON.stringify(card), 'utf8').toString('base64')
+        out.push(
+          makeChunk(
+            'tEXt',
+            Buffer.concat([Buffer.from(keyword + '\0', 'latin1'), Buffer.from(nb64, 'latin1')])
+          )
+        )
+        if (result !== false) n++
+        off += total
+        continue
+      }
+    }
+    out.push(buf.slice(off, off + total))
+    if (type === 'IEND') break
+    off += total
+  }
+  return { buf: Buffer.concat(out), n }
+}
+const readFirstCard = (buf) => {
+  let found = null
+  eachCardChunk(buf, (card) => {
+    if (!found) found = card
+    return false
+  })
+  return found
+}
+
+const args = process.argv.slice(2)
+if (args.includes('--apply')) {
+  const rest = args.filter((a) => a !== '--apply')
+  const src = path.resolve(rest[0] || DEFAULT_SRC)
+  const out = path.resolve(rest[1] || src.replace(/\.png$/i, '+playarea.png'))
+  if (src === out) throw new Error('refusing to overwrite the source PNG in place — pick a new output name')
+  const { buf, n } = eachCardChunk(fs.readFileSync(src), mergeCard)
+  fs.writeFileSync(out, buf)
+  // verify: re-read the written PNG and assert the 4-slot panel_ui landed
+  const check = readFirstCard(fs.readFileSync(out))
+  const slots = check && check.data && check.data.extensions && check.data.extensions.rp_terminal &&
+    check.data.extensions.rp_terminal.panel_ui && check.data.extensions.rp_terminal.panel_ui.slots
+  if (!slots || slots.length !== 4) throw new Error('verify failed: panel_ui not present in output')
+  console.log(`\napplied → ${out}`)
+  console.log(`  patched ${n} card chunk(s); panel_ui slots: ${slots.map((s) => s.id).join(', ')}`)
+} else {
+  console.log('\nApply to a card PNG:  node docs/sdk/examples/build-poem-play-area.cjs --apply')
+  console.log('(defaults to the 命定之诗 card, writes a NEW …+playarea.png alongside it)')
+}
