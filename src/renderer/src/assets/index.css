@@ -915,6 +915,13 @@ details[open] > .stat-group-title::before {
   border: 1px solid var(--rpt-border);
   font-size: var(--rpt-chat-font, 16px);
 }
+/* The AI message prose. A card theme MAY set `--rpt-chat-font-family` (token alias `chat-font` /
+   `prose-font`) to give the story a serif register; without it the prose inherits the app body font
+   (unchanged for every existing card). The user action, swipe controls, and card HTML frames are
+   outside this scope. See the poem play-area redesign §5.4. */
+.message-content {
+  font-family: var(--rpt-chat-font-family, inherit);
+}
 
 .floor-empty {
   margin: auto;

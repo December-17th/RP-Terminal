@@ -46,4 +46,26 @@ describe('cardTheme.deriveCardTheme (§6a token path)', () => {
     expect(deriveCardTheme({}, 'dark')).toBeNull()
     expect(deriveCardTheme({ foo: 'bar', size: '12px' }, 'dark')).toBeNull()
   })
+
+  it('passes a prose-font token through as --rpt-chat-font-family (the story serif register)', () => {
+    // A font value is not a color: it bypasses the contrast guards and applies on its own.
+    const out = deriveCardTheme({ 'prose-font': "'Noto Serif SC', serif" }, 'dark')
+    expect(out).not.toBeNull()
+    expect(out!['--rpt-chat-font-family']).toBe("'Noto Serif SC', serif")
+    expect(deriveCardTheme({ 'chat-font': 'Georgia, serif' }, 'dark')!['--rpt-chat-font-family']).toBe(
+      'Georgia, serif'
+    )
+  })
+
+  it('carries the prose font alongside a full palette without disturbing contrast', () => {
+    const out = deriveCardTheme(
+      { 'bg-primary': '#14121b', accent: '#d9b56b', 'prose-font': "'Noto Serif SC', serif" },
+      'dark'
+    )
+    expect(out).not.toBeNull()
+    expect(out!['--rpt-chat-font-family']).toBe("'Noto Serif SC', serif")
+    const tp = parseHex(out!['--rpt-text-primary'])!
+    const bp = parseHex(out!['--rpt-bg-primary'])!
+    expect(contrastRatio(tp, bp)).toBeGreaterThanOrEqual(4.5)
+  })
 })

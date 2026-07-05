@@ -29,7 +29,21 @@ not fake 0–1 bars; 品质 → the 7 rarity tiers. Reads via `getVariables().st
   scene bg via optional `stat_data.stage.background`. Listens `self:fold` (dims the stage while the
   SELF drawer is open) + `stage:cast-changed`/`mag_variable_updated` (refresh). `self.html` now emits
   `self:fold` on toggle. P2 layout: `self[0,0,3,12]` · `stage[3,0,9,4]` · `story(chat)[3,4,9,8]`.
-**Next: P3 (WORLD surface [9,4,3,8] + card theme on the native chat message DOM).**
+**P3 WORLD surface + chat serif register BUILT 2026-07-05:**
+- Card: [`docs/sdk/examples/poem-world-surface.html`](../sdk/examples/poem-world-surface.html) — the right
+  info column: 世界 (`世界.时间/地点`), 同行 (present `关系列表` members + `好感度` bar, mapped −100..100 →
+  0..100, 命定契约 mark, avatar via `assetUrl(name,'头像')`), 委托 (`任务列表` TaskSchema: 目标/状态/进展/奖励,
+  关注度 → left-border accent). Re-renders on `mag_variable_updated`/`message_updated`. (Mock's 记忆 has no
+  schema backing — 事件/新闻 exist but out of scope; noted in the file.)
+- RPT (§8.5 resolved): the card `css` currently reaches only card HTML frames (`HtmlFrame`), NOT the
+  native markdown prose, and §6a applied only colors — so the serif register needed a small extension.
+  Chose the **safe token path** over an arbitrary-CSS escape-hatch (keeps §6a's trust model): new
+  `--rpt-chat-font-family` consumed by `.message-content`, settable via the theme token `chat-font`/
+  `prose-font` (`cardTheme.ts`). Colored 你/name spans stay the card's display-regex job (already
+  supported). Tests: `cardTheme` (+2). Full layout now: `self[0,0,3,12]` · `stage[3,0,9,4]` ·
+  `story(chat)[3,4,6,8]` · `world[9,4,3,8]`.
+**Next: P4 (motion — speaker-swap transition + fold↔stage dim polish), and card-side packaging (the
+`theme` tokens incl. `prose-font`, fonts, assets, and one shared `poemState` module for the 3 pages).**
 **Branch context:** work sits on `ui-facelift`. The chrome/IA facelift + §6a card themes are already
 committed there (`88af494`); this spec is the *next* body of work and depends on some of it.
 **Reference mock:** [`poem-play-area-mock.html`](./poem-play-area-mock.html) — open it in a browser.
