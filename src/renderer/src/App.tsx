@@ -25,7 +25,7 @@ import { useWorkspaceStore } from './stores/workspaceStore'
 import { useComposerStore } from './stores/composerStore'
 import { initSlash } from './plugin/slash'
 import { broadcastHostEvent, initCardEventBridge } from './cardBridge/hostBroadcast'
-import { applyTheme } from './theme'
+import { applyTheme, THEMES, DEFAULT_THEME_ID } from './theme'
 import { deriveCardTheme } from './cardTheme'
 import { useI18nStore } from './i18n'
 import { Launcher } from './components/Launcher'
@@ -228,6 +228,24 @@ export default function App(): React.ReactElement {
     () => (allowCardThemes ? deriveCardTheme(cardThemeRaw, settings?.ui?.theme) : null),
     [allowCardThemes, cardThemeRaw, settings?.ui?.theme]
   )
+
+  // Match the OS window-control overlay (Windows) to what's on screen: the card theme's chrome while a
+  // themed card is in play, else the base app theme. Keeps the controls flush in colour with the top
+  // strip (which uses --rpt-bg-secondary), and restores the base theme when leaving a themed card.
+  useEffect(() => {
+    const src =
+      playTokens ??
+      THEMES[settings?.ui?.theme ?? '']?.tokens ??
+      THEMES[DEFAULT_THEME_ID].tokens
+    try {
+      window.api?.setTitlebarOverlay?.({
+        color: src['--rpt-bg-secondary'],
+        symbolColor: src['--rpt-text-primary']
+      })
+    } catch {
+      /* non-Windows: no overlay */
+    }
+  }, [playTokens, settings?.ui?.theme])
 
   if (!activeProfile) return <ProfilePicker />
 

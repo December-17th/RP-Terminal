@@ -1414,13 +1414,16 @@ details[open] > .stat-group-title::before {
   background-color: var(--rpt-bg-secondary);
   border: 1px solid var(--rpt-border);
   color: var(--rpt-text-primary);
-  padding: 12px;
-  padding-bottom: 52px; /* leave room for the in-box send/stop button */
+  /* right padding clears the in-box send button (no bottom reserve, so it can be one line tall) */
+  padding: 12px 50px 12px 14px;
   border-radius: 8px;
-  resize: vertical;
+  resize: none;
   font-family: inherit;
-  min-height: 10vh;
   line-height: 1.5;
+  /* auto-grows via JS from one line up to ~5 lines, then scrolls */
+  min-height: 46px;
+  max-height: 152px;
+  overflow-y: auto;
 }
 
 /* Tiny circular send/stop button anchored to the bottom-right of the input. */

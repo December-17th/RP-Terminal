@@ -40,7 +40,8 @@ function createWindow(): void {
     ...(process.platform === 'win32'
       ? {
           titleBarStyle: 'hidden' as const,
-          titleBarOverlay: { color: '#1e1e1e', symbolColor: '#e0e0e0', height: 48 }
+          // height matches the renderer top strip (.tstrip: 44px) so the controls sit flush with it
+          titleBarOverlay: { color: '#1e1e1e', symbolColor: '#e0e0e0', height: 44 }
         }
       : {}),
     ...(process.platform === 'linux' ? { icon } : {}),
