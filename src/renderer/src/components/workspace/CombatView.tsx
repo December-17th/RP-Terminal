@@ -200,7 +200,7 @@ export function CombatView({ profileId }: { profileId: string }): React.ReactEle
 
   const onNarrate = async (): Promise<void> => {
     await store.getState().narrate(profileId)
-    // The narration landed in the chat (append / new floor) — reload the floors to show it.
+    // The narration landed in the chat as a new floor — reload the floors to show it.
     if (activeChatId) useChatStore.getState().setActiveChat(profileId, activeChatId)
   }
 

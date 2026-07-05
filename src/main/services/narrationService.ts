@@ -23,23 +23,19 @@ export const foldNarrationMvu = (variables: Record<string, any>, text: string): 
   if (mvu.patches.length) applyJsonPatch(sd, mvu.patches)
 }
 
-/** Resolve the narration prompt + placement, honoring (in order) the card's `combat` bundle
- *  (`narration_prompt` / `narration_mode`), the user's `settings.combat`, then the defaults. */
-export const narrationConfig = (
-  profileId: string,
-  chatId: string
-): { extra: string; mode: 'append' | 'floor' } => {
+/** Resolve the narration steering prompt, honoring (in order) the card's `combat` bundle
+ *  (`narration_prompt`), the user's `settings.combat`, then ''. (Placement is no longer configurable —
+ *  combat narration always lands as a new floor; see writeNarrationToChat.) */
+export const narrationConfig = (profileId: string, chatId: string): { extra: string } => {
   const chat = getChat(profileId, chatId)
   const card = chat ? getCharacter(profileId, chat.character_id) : null
   const bundle = (card ? getRpExt(card)?.combat : null) as
-    | (CombatBundle & { narration_prompt?: string; narration_mode?: string })
+    | (CombatBundle & { narration_prompt?: string })
     | null
     | undefined
   const sCombat = getSettings(profileId).combat
   const extra = (bundle?.narration_prompt || sCombat?.narrationPrompt || '').trim()
-  const mode: 'append' | 'floor' =
-    (bundle?.narration_mode || sCombat?.narrationMode) === 'floor' ? 'floor' : 'append'
-  return { extra, mode }
+  return { extra }
 }
 
 /** Flatten a combat/duel event log to plain lines — the "input" shown on the narration floor. */

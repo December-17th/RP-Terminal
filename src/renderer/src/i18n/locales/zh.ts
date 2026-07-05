@@ -882,10 +882,6 @@ const zh: Record<string, string> = {
   'workflowEditor.portDesc.subgraph.loop.out4': '最后一轮的 out4 值',
   'status.noState': '（此会话还没有 RPG 状态）',
 
-  'prefs.combatNarration': '战斗叙述',
-  'prefs.combatNarrationAppend': '追加到当前消息',
-  'prefs.combatNarrationFloor': '作为新消息添加',
-  'prefs.combatNarrationHint': 'AI“叙述战斗”的内容在聊天中的落点。角色卡可覆盖此设置。',
   'prefs.combatNarrationPrompt': '战斗叙述提示词',
   'prefs.combatNarrationPromptPh': '例如：以简练、冷硬的笔调叙述，着重描写伤势。',
   'prefs.combatNarrationPromptHint':

@@ -192,10 +192,10 @@ export const endDuel = (chatId: string): void => {
 export const narrate = async (
   profileId: string,
   chatId: string
-): Promise<{ narration: string; mode: 'append' | 'floor' } | null> => {
+): Promise<{ narration: string } | null> => {
   const rec = duels.get(chatId)
   if (!rec) return null
-  const { extra, mode } = narrationConfig(profileId, chatId)
+  const { extra } = narrationConfig(profileId, chatId)
   const prose = (
     await generateRaw(profileId, chatId, {
       userInput: buildDuelNarrationPrompt(rec.state, extra),
@@ -204,7 +204,7 @@ export const narrate = async (
     })
   ).trim()
   writeNarrationToChat(profileId, chatId, prose, combatLogText(rec.state.log))
-  return { narration: prose, mode }
+  return { narration: prose }
 }
 
 /** Start a duel from the active chat's current MVU build (player + 在场 party; AI roster TBD).

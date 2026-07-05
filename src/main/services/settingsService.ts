@@ -114,10 +114,9 @@ export const getDefaultSettings = (): Settings => ({
   agent: {
     mode: 'off'
   },
-  // Combat: end-of-combat narration appends to the current floor by default; a card or the
-  // user can switch to a new floor and supply a steering prompt.
+  // Combat: end-of-combat narration always lands as a new floor; a card or the user can supply a
+  // steering prompt.
   combat: {
-    narrationMode: 'append',
     narrationPrompt: '',
     improvisePrompt: ''
   },

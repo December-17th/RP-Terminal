@@ -122,10 +122,9 @@ export interface Settings {
   agent: {
     mode: AgentMode
   }
-  /** Combat (Track Combat): end-of-combat narration placement + an optional steering prompt.
-   *  A card's `combat` bundle (`narration_mode` / `narration_prompt`) overrides these. */
+  /** Combat (Track Combat): an optional steering prompt for end-of-combat narration (which always
+   *  lands as a new floor). A card's `combat` bundle (`narration_prompt`) overrides these. */
   combat?: {
-    narrationMode?: 'append' | 'floor'
     narrationPrompt?: string
     /** Steers the freeform-action / mid-fight-exit adjudication; card overrides it. */
     improvisePrompt?: string
