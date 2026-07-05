@@ -8,7 +8,6 @@ import { useT } from '../../i18n'
 
 /** Maps the built-in view ids to i18n keys; unknown/spike views fall back to their English title. */
 const VIEW_LABEL_KEY: Record<string, string> = {
-  navigator: 'view.navigator',
   chat: 'view.chat',
   status: 'status.heading',
   usage: 'view.usage',

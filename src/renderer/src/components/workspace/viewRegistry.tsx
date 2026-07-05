@@ -1,11 +1,9 @@
 /* eslint-disable react-refresh/only-export-components -- a view registry intentionally
    co-locates its internal wrapper components with the registry/options it exports. */
 import React from 'react'
-import { useNavStore } from '../../stores/navStore'
 import { ChatView } from '../ChatView'
 import { StatusView } from '../StatusView'
 import { LogsPanel } from '../LogsPanel'
-import { PanelRouter } from '../PanelRouter'
 import { CombatView } from './CombatView'
 import { VariablesView } from './VariablesView'
 import { TablesView } from './TablesView'
@@ -20,13 +18,6 @@ import { useUiStore } from '../../stores/uiStore'
  * `ViewRegistry[view].Component` with no props. Adding a view here makes it available in
  * every panel's view-picker. (Phase 2 grows this with richer native MVU views.)
  */
-
-const NavigatorPanel: React.FC = () => {
-  const { profileId } = useWorkspaceContext()
-  const panel = useNavStore((s) => s.panel)
-  const setPanel = useNavStore((s) => s.setPanel)
-  return <PanelRouter panel={panel} profileId={profileId} onSelectPanel={setPanel} />
-}
 
 const ChatPanel: React.FC = () => {
   const { profileId } = useWorkspaceContext()
@@ -93,8 +84,10 @@ export interface ViewEntry {
   fill?: boolean
 }
 
+// Panels host GAME views (chat/status/combat/duel + card panels) and DEBUG views
+// (variables/tables/usage/logs) only — the config/authoring surfaces moved to the Settings hub
+// when the tab nav was retired (the `navigator` view is gone).
 export const ViewRegistry: Record<string, ViewEntry> = {
-  navigator: { title: 'Navigator', Component: NavigatorPanel, fill: true },
   chat: { title: 'Chat', Component: ChatPanel, fill: true },
   status: { title: 'RPG Status', Component: StatusPanel },
   combat: { title: 'Combat', Component: CombatPanel, fill: true },

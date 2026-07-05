@@ -9,7 +9,11 @@ import {
   type NodePath,
   type WsNode
 } from '../../../shared/workspaceLayout'
-import { WORKSPACE_MODES, defaultLayoutForMode } from '../../../shared/layoutDefaults'
+import {
+  WORKSPACE_MODES,
+  defaultLayoutForMode,
+  migrateRetiredViews
+} from '../../../shared/layoutDefaults'
 import { useSettingsStore } from './settingsStore'
 
 /**
@@ -61,7 +65,10 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => {
     load: (profileId, saved) => {
       const layouts: ModeLayouts = {}
       for (const mode of WORKSPACE_MODES) {
-        layouts[mode] = mergeWithDefault(saved?.[mode], defaultLayoutForMode(mode))
+        const merged = mergeWithDefault(saved?.[mode], defaultLayoutForMode(mode))
+        // Rewrite any retired view id (e.g. the removed `navigator`) so an older saved layout
+        // never resolves a panel to the "unknown view" placeholder.
+        layouts[mode] = { root: migrateRetiredViews(merged.root) }
       }
       set({ profileId, layouts })
     },

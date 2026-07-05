@@ -68,7 +68,9 @@ export function Launcher({ profileId }: { profileId: string }): React.ReactEleme
     return (
       <div className="launcher">
         <div className="lc-bar">
-          <span className="lc-brand">RP Terminal</span>
+          <span className="lc-brand">
+            <span className="lc-brand-dot" aria-hidden="true">▮</span> RP Terminal
+          </span>
           <button className="lc-crumb" onClick={() => setSelected(null)}>
             ← {t('launcher.worlds')}
           </button>
@@ -84,8 +86,14 @@ export function Launcher({ profileId }: { profileId: string }): React.ReactEleme
           </button>
         </div>
         <div className="lc-scroll">
-          <div className="lc-h">{t('launcher.sessionsTitle', { name: worldName })}</div>
-          <div className="lc-sub">{t('launcher.sessionsSub')}</div>
+          <div className="lc-hero">
+            <div className="lc-eyebrow">{t('launcher.eyebrowSessions')}</div>
+            <div className="lc-h">
+              {t('launcher.sessionsTitle', { name: worldName })}
+              <span className="lc-caret" aria-hidden="true" />
+            </div>
+            <div className="lc-sub">{t('launcher.sessionsSub')}</div>
+          </div>
           <div className="lc-slist">
             <button className="lc-new" onClick={() => createChat(profileId, selected.id)}>
               {t('launcher.newSession')}
@@ -143,8 +151,14 @@ export function Launcher({ profileId }: { profileId: string }): React.ReactEleme
         </button>
       </div>
       <div className="lc-scroll">
-        <div className="lc-h">{t('launcher.chooseWorld')}</div>
-        <div className="lc-sub">{t('launcher.chooseWorldSub')}</div>
+        <div className="lc-hero">
+          <div className="lc-eyebrow">{t('launcher.eyebrowWorlds')}</div>
+          <div className="lc-h">
+            {t('launcher.chooseWorld')}
+            <span className="lc-caret" aria-hidden="true" />
+          </div>
+          <div className="lc-sub">{t('launcher.chooseWorldSub')}</div>
+        </div>
         {characters.length === 0 ? (
           <div className="lc-empty">{t('launcher.noWorlds')}</div>
         ) : (
@@ -172,6 +186,7 @@ export function Launcher({ profileId }: { profileId: string }): React.ReactEleme
                           : t('launcher.sessionMany', { count })}
                       </span>
                     </span>
+                    <span className="lc-enter" aria-hidden="true">{t('launcher.enter')} ▶</span>
                   </button>
                   <button
                     className="btn-ghost danger lc-wdel"

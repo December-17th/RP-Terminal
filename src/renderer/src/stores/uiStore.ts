@@ -1,9 +1,26 @@
 import { create } from 'zustand'
 
+/** The Settings popup's sections — the app's single config hub (the retired left-nav tabs +
+ *  the world's editable pieces + the workflow entry all live here now). The TopStrip dropdowns
+ *  deep-link into one of these via openSettings(section). */
+export type SettingsSection =
+  | 'app'
+  | 'connection'
+  | 'worlds'
+  | 'preset'
+  | 'lorebook'
+  | 'persona'
+  | 'assets'
+  | 'regex'
+  | 'scripts'
+  | 'workflow'
+
 /** Transient app-shell UI state (not persisted): the Settings popup, etc. */
 interface UiState {
   settingsOpen: boolean
-  openSettings: () => void
+  /** Which Settings section to show when the popup opens (set by openSettings). */
+  settingsSection: SettingsSection
+  openSettings: (section?: SettingsSection) => void
   closeSettings: () => void
   /** The full-screen workflow editor overlay — the single surface for workflows + agents
    *  (one-canvas rebuild WP6.4b). Opened from the title bar, the launcher cards, or a programmatic
@@ -33,7 +50,8 @@ interface UiState {
 
 export const useUiStore = create<UiState>((set) => ({
   settingsOpen: false,
-  openSettings: () => set({ settingsOpen: true }),
+  settingsSection: 'app',
+  openSettings: (section) => set({ settingsOpen: true, settingsSection: section ?? 'app' }),
   closeSettings: () => set({ settingsOpen: false }),
   workflowEditorOpen: false,
   workflowEditorFragmentPackId: null,

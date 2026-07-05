@@ -9,7 +9,7 @@ import {
   type PanelNode,
   type WsNode
 } from '../src/shared/workspaceLayout'
-import { DEFAULT_LAYOUT } from '../src/shared/layoutDefaults'
+import { DEFAULT_LAYOUT, migrateRetiredViews } from '../src/shared/layoutDefaults'
 
 const root = (): WsNode => JSON.parse(JSON.stringify(DEFAULT_LAYOUT.root))
 const asSplit = (n: WsNode): SplitNode => {
@@ -28,18 +28,18 @@ const findPanel = (n: WsNode, key: string): PanelNode | undefined => {
 describe('workspaceLayout (pure split-tree ops)', () => {
   it('resizeSplit trades weight between neighbors and preserves their sum', () => {
     const out = asSplit(resizeSplit(root(), [], 0, 10))
-    expect(out.sizes).toEqual([35, 40, 25]) // 25→35, 50→40, sum 75 preserved
+    expect(out.sizes).toEqual([80, 20]) // 70→80, 30→20, sum 100 preserved
   })
 
   it('resizeSplit clamps both panes to MIN_SIZE', () => {
     const shrunk = asSplit(resizeSplit(root(), [], 0, -100))
-    expect(shrunk.sizes).toEqual([MIN_SIZE, 75 - MIN_SIZE, 25])
+    expect(shrunk.sizes).toEqual([MIN_SIZE, 100 - MIN_SIZE])
     const grown = asSplit(resizeSplit(root(), [], 0, 100))
-    expect(grown.sizes).toEqual([75 - MIN_SIZE, MIN_SIZE, 25])
+    expect(grown.sizes).toEqual([100 - MIN_SIZE, MIN_SIZE])
   })
 
   it('resizeSplit resolves a nested path and is a no-op on a bad index', () => {
-    // A local nested tree (the default layout is now a flat 3-column row) to exercise nested-path resolution.
+    // A local nested tree (the default layout is now a flat 2-column row) to exercise nested-path resolution.
     const nestedRoot: WsNode = {
       type: 'split',
       dir: 'row',
@@ -60,19 +60,19 @@ describe('workspaceLayout (pure split-tree ops)', () => {
     }
     const nested = asSplit(asSplit(resizeSplit(nestedRoot, [2], 0, 10)).children[2])
     expect(nested.sizes).toEqual([68, 32]) // the nested column's 58/42
-    expect(asSplit(resizeSplit(root(), [], 5, 10)).sizes).toEqual([25, 50, 25]) // out of range
+    expect(asSplit(resizeSplit(root(), [], 5, 10)).sizes).toEqual([70, 30]) // out of range
   })
 
   it('resizeSplit does not mutate the input tree', () => {
     const tree = root()
     resizeSplit(tree, [], 0, 10)
-    expect(asSplit(tree).sizes).toEqual([25, 50, 25])
+    expect(asSplit(tree).sizes).toEqual([70, 30])
   })
 
   it('setPanelView retargets only the matching panel', () => {
     const out = setPanelView(root(), 'center', 'logs')
     expect(findPanel(out, 'center')!.view).toBe('logs')
-    expect(findPanel(out, 'left')!.view).toBe('navigator')
+    expect(findPanel(out, 'right')!.view).toBe('status')
   })
 
   it('togglePanelHidden flips and flips back', () => {
@@ -108,6 +108,25 @@ describe('workspaceLayout (pure split-tree ops)', () => {
     it('round-trips a serialized default unchanged', () => {
       const restored = JSON.parse(JSON.stringify(DEFAULT_LAYOUT))
       expect(mergeWithDefault(restored, DEFAULT_LAYOUT)).toEqual(DEFAULT_LAYOUT)
+    })
+  })
+
+  describe('migrateRetiredViews', () => {
+    it('rewrites the retired `navigator` view to `chat` and leaves others untouched', () => {
+      const tree: WsNode = {
+        type: 'split',
+        dir: 'row',
+        sizes: [25, 50, 25],
+        children: [
+          { type: 'panel', key: 'left', view: 'navigator' },
+          { type: 'panel', key: 'center', view: 'chat' },
+          { type: 'panel', key: 'right', view: 'status' }
+        ]
+      }
+      migrateRetiredViews(tree)
+      expect(findPanel(tree, 'left')!.view).toBe('chat')
+      expect(findPanel(tree, 'center')!.view).toBe('chat')
+      expect(findPanel(tree, 'right')!.view).toBe('status')
     })
   })
 })

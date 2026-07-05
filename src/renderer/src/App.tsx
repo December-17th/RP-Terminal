@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useEffect, useMemo } from 'react'
 import { useProfileStore } from './stores/profileStore'
 import { useCharacterStore } from './stores/characterStore'
 import { useChatStore } from './stores/chatStore'
@@ -13,12 +13,11 @@ import { FpsOverlay } from './components/FpsOverlay'
 import { UsageOverlay } from './components/UsageOverlay'
 import { ToastStack } from './components/ToastStack'
 import { ProfilePicker } from './components/ProfilePicker'
-import { TopNav } from './components/TopNav'
+import { TopStrip } from './components/TopStrip'
 import { Workspace } from './components/workspace/Workspace'
 import { StaticWorkspace } from './components/workspace/StaticWorkspace'
 import { CardScriptWcvHost } from './components/CardScriptWcvHost'
 import { PluginHost } from './components/PluginHost'
-import { useNavStore } from './stores/navStore'
 import { useWorkflowTraceStore } from './stores/workflowTraceStore'
 import { useWorkflowPanelStore } from './stores/workflowPanelStore'
 import type { WorkflowRunTrace } from '../../shared/workflow/trace'
@@ -27,6 +26,7 @@ import { useComposerStore } from './stores/composerStore'
 import { initSlash } from './plugin/slash'
 import { broadcastHostEvent, initCardEventBridge } from './cardBridge/hostBroadcast'
 import { applyTheme } from './theme'
+import { deriveCardTheme } from './cardTheme'
 import { useI18nStore } from './i18n'
 import { Launcher } from './components/Launcher'
 import { StDomCompat } from './components/StDomCompat'
@@ -45,9 +45,6 @@ export default function App(): React.ReactElement {
   const loadChats = useChatStore((s) => s.loadChats)
   const activeChatId = useChatStore((s) => s.activeChatId)
   const activePresetId = usePresetStore((s) => s.activeId)
-
-  const panel = useNavStore((s) => s.panel)
-  const setPanel = useNavStore((s) => s.setPanel)
 
   useEffect(() => {
     loadProfiles()
@@ -218,6 +215,20 @@ export default function App(): React.ReactElement {
     })
   }, [activeProfile?.id])
 
+  // Card-bundled theme (docs/ui-rehaul-design.md §6a): the active world may reskin PLAY MODE to its
+  // own palette. We derive the effective token set (deriving readable text/on-* + enforcing AA), and
+  // apply it to the play wrapper only — the launcher and settings stay on the user's theme. Gated by
+  // settings.ui.allow_card_themes (default on); a failing/absent card theme yields null → user theme.
+  const cardThemeRaw = activeCharacter?.card?.data?.extensions?.rp_terminal?.theme as
+    | Record<string, unknown>
+    | undefined
+  const allowCardThemes =
+    (settings?.ui as { allow_card_themes?: boolean } | undefined)?.allow_card_themes !== false
+  const playTokens = useMemo(
+    () => (allowCardThemes ? deriveCardTheme(cardThemeRaw, settings?.ui?.theme) : null),
+    [allowCardThemes, cardThemeRaw, settings?.ui?.theme]
+  )
+
   if (!activeProfile) return <ProfilePicker />
 
   // An RPT-native card can declare its own static, card-determined layout (rp_terminal.panel_ui); else the
@@ -235,8 +246,11 @@ export default function App(): React.ReactElement {
       {!activeChatId ? (
         <Launcher profileId={activeProfile.id} />
       ) : (
-        <>
-          <TopNav panel={panel} profileName={activeProfile.name} onSelectPanel={setPanel} />
+        <div
+          className="play-root"
+          style={playTokens ? (playTokens as unknown as React.CSSProperties) : undefined}
+        >
+          <TopStrip profileId={activeProfile.id} profileName={activeProfile.name} />
 
           {staticLayout ? (
             <StaticWorkspace profileId={activeProfile.id} layout={staticLayout} />
@@ -265,7 +279,7 @@ export default function App(): React.ReactElement {
 
           {settings?.ui?.show_fps && <FpsOverlay />}
           {settings?.ui?.usage_meter?.enabled && <UsageOverlay profileId={activeProfile.id} />}
-        </>
+        </div>
       )}
 
       {/* App-wide overlays — render over BOTH the launcher and play. The workflow editor is now the
