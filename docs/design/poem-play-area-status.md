@@ -77,7 +77,26 @@ page at build time. Assets (立绘/背景) stay external — resolved at runtime
   (the legacy docked party panel) is inert while a `mode:'static'` `panel_ui` is active (App.tsx renders
   StaticWorkspace, not the resizable Workspace) — no conflict, just unused in this layout.
 
-**Known limitations / follow-ons.**
+## In-app pass 1 (2026-07-05) — issues found + status
+
+The card loads and the play area renders (bundle works). Issues surfaced:
+- ✅ **Composer** now auto-grows 1→5 lines then scrolls (`ec6ddb9`).
+- ✅ **Titlebar overlay** height 48→44 (flush with `.tstrip`) + colour tracks the active theme
+  (card theme in play, else base) (`ec6ddb9`).
+- 🔧 **"White background leaks through the message panel."** First attempt (transparent inline card
+  iframe, `ec6ddb9`) did NOT fix it. **Key clue:** switching the APP theme light↔dark flips the leak
+  white↔black → the leak is the BASE-theme `<html>/<body>` background showing through the transparent
+  seamless slots (card theme is only on `.play-root`; behind it is base-themed). Fix = paint the card
+  bg on `.play-root` so transparent slots fall through to the card's dark bg, not the base theme's.
+- 🔧 **Top-strip dropdowns are occluded** by the play area — WCV panels are native overlays that paint
+  above DOM (z-order-blind), so the persona/preset/lorebook popovers open behind them. Fix = duck the
+  WCVs while a strip menu is open (the `useWcvSuppression`/`setAllVisible` pattern used for modals).
+- 🔧 **Readability** — some play-area text is too small / too thin (the 10px mono section labels + the
+  `--faint`/`--dim` tiers). Bump sizes/weights.
+- ⏳ **首页 squeeze on load** — unfixed; content-height measurement limit for a viewport-filling
+  fixed/absolute home (near-zero in-flow height). Needs a delayed re-measure or `fill` sizing.
+
+## Known limitations / follow-ons.
 - The 4-palette switcher reskins the 3 WCV surfaces; the native chat (STORY) + shell use the STATIC
   `theme` (dusk). Syncing the shell to the picked poem palette would need RPT to let a card drive the
   runtime theme (not built) — out of scope for now.

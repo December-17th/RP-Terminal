@@ -325,6 +325,11 @@ body {
   min-height: 0;
   display: flex;
   flex-direction: column;
+  /* Backdrop for the play area. A card theme sets --rpt-bg-primary here (via playTokens), so a
+     transparent seamless panel_ui slot (e.g. the native chat STORY column) falls through to the CARD's
+     background — not the base-theme <body> behind .play-root (which otherwise leaks white in a light app
+     theme / black in a dark one). No card theme → this is just the base bg, unchanged. */
+  background: var(--rpt-bg-primary);
 }
 
 .app-body {
