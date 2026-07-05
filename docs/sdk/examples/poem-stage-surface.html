@@ -119,6 +119,12 @@
 ;(function () {
   'use strict'
 
+  // Dim the present-but-silent members (VN focus on the speaker)? Off for now per owner — everyone on
+  // stage renders at full brightness; only the speaker still gets the glow + nameplate + 正在交谈 tag.
+  // Flip to true to bring the silent-member dim back (the `.fig.dim`/`.fig-ph.dim` CSS is untouched).
+  var DIM_SILENT = false
+  var idleCls = function () { return DIM_SILENT ? ' dim' : '' }
+
   // standalone-preview fallback (only used when getVariables is absent)
   var MOCK = {
     世界: { 时间: '暮 · 戌时', 地点: '艾瑟嘉德' },
@@ -208,7 +214,7 @@
         var wrap = document.createElement('div')
         wrap.style.position = 'absolute'; wrap.style.inset = '0'
         var ph = document.createElement('div')
-        ph.className = 'fig-ph' + (m.speaking ? ' active' : ' dim')
+        ph.className = 'fig-ph' + (m.speaking ? ' active' : idleCls())
         ph.textContent = String(m.name || '?').charAt(0)
         ph.style.left = m._x + '%'
         ph.style.fontSize = m.speaking ? 'min(30vw, 78%)' : 'min(24vw, 62%)'
@@ -233,7 +239,7 @@
       Promise.resolve(window.assetUrl(m.name, '立绘', m.mood)).then(function (url) {
         if (!url) return
         var img = document.createElement('img')
-        img.className = 'fig' + (m.speaking ? ' active' : ' dim')
+        img.className = 'fig' + (m.speaking ? ' active' : idleCls())
         img.alt = m.name; img.style.left = m._x + '%'
         img.onload = function () { ph.style.display = 'none' }
         img.onerror = function () { img.remove() }
