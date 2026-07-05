@@ -373,6 +373,11 @@ const api = {
     ipcRenderer.invoke('plugin-vars', profileId, chatId, action),
   pluginGetVars: (profileId: string, chatId: string) =>
     ipcRenderer.invoke('plugin-get-vars', profileId, chatId),
+  // Whole-object global vars (getVariables/replaceVariables({type:'global'}) + the 全局变量 tab).
+  pluginGlobalsGetSync: (profileId: string) =>
+    ipcRenderer.sendSync('plugin-globals-get-sync', profileId),
+  pluginGlobalsSet: (profileId: string, vars: Record<string, any>) =>
+    ipcRenderer.invoke('plugin-globals-set', profileId, vars),
   pluginGetMessages: (profileId: string, chatId: string) =>
     ipcRenderer.invoke('plugin-get-messages', profileId, chatId),
   pluginSetMessage: (profileId: string, chatId: string, floorIndex: number, patch: any) =>
@@ -430,6 +435,9 @@ const api = {
   pluginsScaffoldExample: () => ipcRenderer.invoke('plugins-scaffold-example'),
   pluginStorage: (profileId: string, owner: string, action: any) =>
     ipcRenderer.invoke('plugin-storage', profileId, owner, action),
+  // SYNC read of an owner's whole KV bag — inline card host seeds getVariables({type:'script'}) at boot.
+  pluginStorageAllSync: (profileId: string, owner: string) =>
+    ipcRenderer.sendSync('plugin-storage-all-sync', profileId, owner),
   pluginNetFetch: (pluginId: string, url: string, opts: any) =>
     ipcRenderer.invoke('plugin-net-fetch', pluginId, url, opts),
   // Local grid combat (Track Combat). One active encounter per chat.
@@ -587,6 +595,9 @@ const api = {
   // Per-chat card KV (inline transport): general scope, getVariables({type:'chat'}).
   chatCardVarsGet: (profileId: string, chatId: string) =>
     ipcRenderer.invoke('chat-card-vars-get', profileId, chatId),
+  // SYNC read for the inline card host — the card reads its saved session KV at boot before it paints.
+  chatCardVarsGetSync: (profileId: string, chatId: string) =>
+    ipcRenderer.sendSync('chat-card-vars-get-sync', profileId, chatId),
   chatCardVarsSet: (profileId: string, chatId: string, vars: Record<string, any>) =>
     ipcRenderer.invoke('chat-card-vars-set', profileId, chatId, vars),
   // Storage location (app-global; pointer file, not per-profile settings)

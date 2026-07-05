@@ -7,12 +7,14 @@ import { JsonEditor } from './JsonEditor'
 /**
  * Variable inspector + editor for the active chat, tabbed by layer:
  *  - MVU stat_data (editable → whole-object persist via chatStore.setStatData),
- *  - Session KV / per-chat card KV (editable → chatCardVarsSet),
+ *  - Session variables / per-chat card KV (会话变量, editable → chatCardVarsSet),
+ *  - Global variables / per-profile template-globals (全局变量, editable → pluginGlobalsSet) — where a
+ *    beautification card keeps its UI settings,
  *  - Floor variables (read-only; derived snapshot).
- * Uses vanilla-jsoneditor (ISC) via the JsonEditor wrapper. Chat-scoped; session KV refetched on chat change.
+ * Uses vanilla-jsoneditor (ISC) via the JsonEditor wrapper. Chat-scoped; KV/globals refetched on change.
  */
 const api = (): any => (window as unknown as { api: any }).api
-type Tab = 'stat' | 'kv' | 'floor'
+type Tab = 'stat' | 'kv' | 'global' | 'floor'
 
 export const VariablesView: React.FC<{ profileId: string }> = ({ profileId }) => {
   const activeChatId = useChatStore((s) => s.activeChatId)
@@ -20,8 +22,15 @@ export const VariablesView: React.FC<{ profileId: string }> = ({ profileId }) =>
   const t = useT()
   const [tab, setTab] = React.useState<Tab>('stat')
   const [cardKv, setCardKv] = React.useState<Record<string, unknown> | null>(null)
+  const [globals, setGlobals] = React.useState<Record<string, unknown> | null>(null)
 
   const loadKv = React.useCallback(async () => {
+    // Global vars are per-profile (not chat-scoped), so they load even before a chat is open.
+    try {
+      setGlobals(api().pluginGlobalsGetSync(profileId) ?? {})
+    } catch {
+      setGlobals({})
+    }
     if (!activeChatId) {
       setCardKv(null)
       return
@@ -36,6 +45,21 @@ export const VariablesView: React.FC<{ profileId: string }> = ({ profileId }) =>
   React.useEffect(() => {
     void loadKv()
   }, [loadKv, floors.length])
+
+  // A card's global-var write (inline host setGlobalVars) emits this once disk is written — re-read so the
+  // panel reflects it immediately, not only after a new floor. Event name mirrors cardBridge/host.ts.
+  React.useEffect(() => {
+    const onRefetch = (e: Event): void => {
+      if ((e as CustomEvent).detail?.profileId !== profileId) return
+      try {
+        setGlobals(api().pluginGlobalsGetSync(profileId) ?? {})
+      } catch {
+        /* ignore */
+      }
+    }
+    window.addEventListener('rpt-globals-refetch', onRefetch)
+    return () => window.removeEventListener('rpt-globals-refetch', onRefetch)
+  }, [profileId])
 
   if (!activeChatId) {
     return <div style={{ opacity: 0.5 }}>{t('status.waiting')}</div>
@@ -60,10 +84,25 @@ export const VariablesView: React.FC<{ profileId: string }> = ({ profileId }) =>
         void loadKv()
       })
   }
+  const onGlobalChange = (json: unknown): void => {
+    setGlobals(json as Record<string, unknown>)
+    void api()
+      .pluginGlobalsSet(profileId, json)
+      .then(() =>
+        // Open cards cache globals in the renderer realm — tell them to drop it and re-read this edit.
+        // Event name mirrors cardBridge/host.ts (GLOBALS_INVALIDATE_EVENT).
+        window.dispatchEvent(new CustomEvent('rpt-globals-invalidate', { detail: { profileId } }))
+      )
+      .catch(() => {
+        useToastStore.getState().push(t('variables.editFailed'))
+        void loadKv()
+      })
+  }
 
   const tabs: Array<{ id: Tab; label: string }> = [
     { id: 'stat', label: t('variables.mvuState') },
-    { id: 'kv', label: t('variables.sessionKv') },
+    { id: 'kv', label: t('variables.sessionVars') },
+    { id: 'global', label: t('variables.globalVars') },
     { id: 'floor', label: t('variables.floorVars') }
   ]
 
@@ -110,6 +149,7 @@ export const VariablesView: React.FC<{ profileId: string }> = ({ profileId }) =>
             </div>
           ))}
         {tab === 'kv' && <JsonEditor value={cardKv ?? {}} onChange={onKvChange} />}
+        {tab === 'global' && <JsonEditor value={globals ?? {}} onChange={onGlobalChange} />}
         {tab === 'floor' && <JsonEditor value={latest ?? {}} readOnly />}
       </div>
     </div>

@@ -263,13 +263,16 @@ export function createThRuntime(host: Host): ThGlobals {
   // --- TavernHelper helpers (bare + namespaced) ---
   const helpers: Record<string, any> = {
     // SYNC getters
-    // type:'script' ⇒ the card's own KV store (NOT stat_data); any other scope ⇒ the message vars.
+    // type:'script' ⇒ the card's own KV; 'chat' ⇒ per-chat KV; 'global' ⇒ per-profile globals (a
+    // beautification's UI settings live here); any other scope ⇒ the message vars (stat_data).
     getVariables: (opt?: any) =>
       opt && opt.type === 'script'
         ? host.getScriptVars()
         : opt && opt.type === 'chat'
           ? host.getChatVars()
-          : { stat_data: stat },
+          : opt && opt.type === 'global'
+            ? host.getGlobalVarsSync()
+            : { stat_data: stat },
     getScriptId: () => scriptId,
     getCurrentCharacterName: () => host.charData()?.name ?? '',
     // Button name == event name (identity) — TH cards subscribe via eventOn(getButtonEvent(name), …).
@@ -375,6 +378,13 @@ export function createThRuntime(host: Host): ThGlobals {
         await host.setChatVars(vars && typeof vars === 'object' ? vars : {})
         return
       }
+      // type:'global' ⇒ whole-object write of the per-profile globals bag (a beautification saves its
+      // UI settings here). Without this, a `{type:'global'}` write fell through to stat_data below —
+      // taking only vars.stat_data and DROPPING the settings keys entirely (the reported bug).
+      if (opt && opt.type === 'global') {
+        await host.setGlobalVars(vars && typeof vars === 'object' ? vars : {})
+        return
+      }
       const next = vars?.stat_data && typeof vars.stat_data === 'object' ? vars.stat_data : vars
       const ops = replaceStatDataOps(stat, next)
       stat = clone(next) || {}
@@ -394,6 +404,12 @@ export function createThRuntime(host: Host): ThGlobals {
         const cur = clone(host.getChatVars()) || {}
         const next = (await updater(cur)) || cur
         await host.setChatVars(next)
+        return next
+      }
+      if (opt && opt.type === 'global') {
+        const cur = clone(host.getGlobalVarsSync()) || {}
+        const next = (await updater(cur)) || cur
+        await host.setGlobalVars(next)
         return next
       }
       const next = updater(clone(stat))

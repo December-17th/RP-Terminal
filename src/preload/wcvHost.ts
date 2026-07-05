@@ -135,6 +135,17 @@ export function createWcvHost(deps: Deps): Host {
     submitInput: () => ipcRenderer.send('wcv-host-submit-input'),
     getGlobalVars: () => ipcRenderer.invoke('wcv-host-get-global-vars'),
     setGlobalVar: (key, value) => ipcRenderer.invoke('wcv-host-set-global-var', key, value),
+    // Whole-object global vars (getVariables/replaceVariables({type:'global'})). SYNC read (blocks
+    // briefly, once) so the card reads its saved settings before its first render — matches the
+    // stat/chat/script sync getters.
+    getGlobalVarsSync: () => {
+      try {
+        return ipcRenderer.sendSync('wcv-host-get-global-vars-sync') || {}
+      } catch {
+        return {}
+      }
+    },
+    setGlobalVars: (vars) => ipcRenderer.invoke('wcv-host-set-global-vars', vars),
     assetUrl: (name: string, type: string, mood?: string) =>
       ipcRenderer.invoke('wcv-host-asset-url', name, type, mood),
     getDuelPreview: () => ipcRenderer.invoke('wcv-host-duel-preview'),
