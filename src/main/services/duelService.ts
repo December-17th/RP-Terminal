@@ -19,7 +19,12 @@ import { getChat } from './chatService'
 import { getRpExt } from '../types/character'
 import { getAllFloors } from './floorService'
 import { generateRaw } from './generation/rawGenerate'
-import { narrationConfig, writeNarrationToChat } from './narrationService'
+import {
+  narrationConfig,
+  narrationSchemaPrompt,
+  writeNarrationToChat,
+  combatLogText
+} from './narrationService'
 import type { AbilityDef, CombatEvent } from '../../shared/combat/types'
 
 export interface DuelRecord {
@@ -194,10 +199,11 @@ export const narrate = async (
   const prose = (
     await generateRaw(profileId, chatId, {
       userInput: buildDuelNarrationPrompt(rec.state, extra),
+      systemPrompt: narrationSchemaPrompt(profileId, chatId),
       maxChatHistory: 6
     })
   ).trim()
-  writeNarrationToChat(profileId, chatId, prose)
+  writeNarrationToChat(profileId, chatId, prose, combatLogText(rec.state.log))
   return { narration: prose, mode }
 }
 

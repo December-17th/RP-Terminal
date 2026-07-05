@@ -3,7 +3,7 @@
 // builders live in shared/combat (pure); THIS module does the model-agnostic chat write + MVU fold.
 
 import { appendFloor, getChat } from './chatService'
-import { getAllFloors, saveFloor } from './floorService'
+import { getAllFloors } from './floorService'
 import { getSettings } from './settingsService'
 import { getCharacter } from './characterService'
 import { getRpExt } from '../types/character'
@@ -42,33 +42,58 @@ export const narrationConfig = (
   return { extra, mode }
 }
 
-/** Land combat/duel prose in the chat — appended to the current floor or as a new floor (the
- *  user/card placement setting) — folding any `<UpdateVariable>` consequences into that floor's
- *  stat_data. */
-export const writeNarrationToChat = (profileId: string, chatId: string, prose: string): void => {
+/** Flatten a combat/duel event log to plain lines — the "input" shown on the narration floor. */
+export const combatLogText = (log: Array<{ text?: string }> | undefined): string =>
+  (log ?? [])
+    .map((e) => e?.text)
+    .filter(Boolean)
+    .join('\n')
+
+/** A system prompt that hands the model the card's OWN MVU `data_schema`, so post-combat
+ *  `<UpdateVariable>` consequences match the declared shapes (an object where the schema wants an
+ *  object, not a bare string). The narration `generateRaw` is otherwise context-free (no lorebooks or
+ *  schema), so the model would guess a format and can emit schema-invalid state (e.g. writing
+ *  `状态效果.昏迷` as a string). Generic: forwards the card's own schema, no field-specific engine
+ *  knowledge. Returns '' when the card ships no schema. */
+export const narrationSchemaPrompt = (profileId: string, chatId: string): string => {
+  const chat = getChat(profileId, chatId)
+  const card = chat ? getCharacter(profileId, chat.character_id) : null
+  const schema = card ? (getRpExt(card)?.data_schema as string | undefined)?.trim() : ''
+  if (!schema) return ''
+  return [
+    "The chat's MVU `stat_data` conforms to the Zod schema below. When you record consequences in an",
+    '<UpdateVariable> block, every value MUST match the shape this schema declares — e.g. where a field',
+    'is an object, write an object (not a bare string).',
+    '',
+    '```ts',
+    schema,
+    '```'
+  ].join('\n')
+}
+
+/** Land combat/duel prose in the chat as a NEW floor whose user-side content is the fight `log` (the
+ *  input that produced the narration) and whose response is the narrated prose — so a resolved fight
+ *  reads as its own beat in the transcript rather than being glued onto the pre-combat floor. Any
+ *  `<UpdateVariable>` consequences fold into the new floor's `stat_data` (cloned from the latest floor). */
+export const writeNarrationToChat = (
+  profileId: string,
+  chatId: string,
+  prose: string,
+  log = ''
+): void => {
   const chat = getChat(profileId, chatId)
   if (!prose || !chat) return
-  const { mode } = narrationConfig(profileId, chatId)
   const floors = getAllFloors(profileId, chatId)
   const now = new Date().toISOString()
-  if (mode === 'floor' || !floors.length) {
-    const variables = clone(floors[floors.length - 1]?.variables ?? {}) as Record<string, any>
-    foldNarrationMvu(variables, prose)
-    appendFloor(profileId, chatId, {
-      floor: floors.length,
-      chat_id: chatId,
-      timestamp: now,
-      user_message: { content: '', timestamp: now },
-      response: { content: prose, model: '', provider: '' },
-      events: [],
-      variables
-    })
-  } else {
-    const last = floors[floors.length - 1]
-    last.response = { ...last.response, content: `${last.response.content}\n\n${prose}`.trim() }
-    const variables = (last.variables ?? {}) as Record<string, any>
-    foldNarrationMvu(variables, prose)
-    last.variables = variables
-    saveFloor(profileId, chatId, last)
-  }
+  const variables = clone(floors[floors.length - 1]?.variables ?? {}) as Record<string, any>
+  foldNarrationMvu(variables, prose)
+  appendFloor(profileId, chatId, {
+    floor: floors.length,
+    chat_id: chatId,
+    timestamp: now,
+    user_message: { content: log, timestamp: now },
+    response: { content: prose, model: '', provider: '' },
+    events: [],
+    variables
+  })
 }

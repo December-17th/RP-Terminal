@@ -16,7 +16,12 @@ import { getChat } from './chatService'
 import { getAllFloors } from './floorService'
 import { getSettings } from './settingsService'
 import { log } from './logService'
-import { narrationConfig, writeNarrationToChat } from './narrationService'
+import {
+  narrationConfig,
+  narrationSchemaPrompt,
+  writeNarrationToChat,
+  combatLogText
+} from './narrationService'
 import { getRpExt } from '../types/character'
 import {
   buildEncounter,
@@ -533,7 +538,7 @@ export const adjudicate = async (
 
   // The freeform action concludes/escapes the fight → send the prose to the chat and exit combat.
   if (end) {
-    writeNarrationToChat(profileId, chatId, narration || prose)
+    writeNarrationToChat(profileId, chatId, narration || prose, combatLogText(next.log))
     clearEncounter(chatId)
     return { state: next, events: logAdds, narration, ended: true }
   }
@@ -569,10 +574,11 @@ export const narrate = async (
   const prose = (
     await generateRaw(profileId, chatId, {
       userInput: buildNarrationPrompt(record.state, extra),
+      systemPrompt: narrationSchemaPrompt(profileId, chatId),
       maxChatHistory: 6
     })
   ).trim()
-  writeNarrationToChat(profileId, chatId, prose)
+  writeNarrationToChat(profileId, chatId, prose, combatLogText(record.state.log))
   return { narration: prose, mode }
 }
 
