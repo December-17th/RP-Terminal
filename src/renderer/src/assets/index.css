@@ -422,6 +422,13 @@ body {
   border: 1px solid var(--rpt-border);
   border-radius: 10px;
 }
+/* Seamless slot: no chrome so adjacent WCV surfaces compose into one continuous stage. The card's
+   page paints its own background edge-to-edge (the seam-slicing case). */
+.ws-panel.ws-bare {
+  background-color: transparent;
+  border: none;
+  border-radius: 0;
+}
 .ws-panel-head {
   flex: 0 0 auto;
   display: flex;

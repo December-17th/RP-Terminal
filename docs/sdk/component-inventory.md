@@ -58,8 +58,17 @@ transports implement the same surface, so a card behaves identically in either
 - **Inline** (default) — `createThRuntime(createInlineHost(ctx))` at
   [createCardBridge.ts:9](../../src/renderer/src/cardBridge/createCardBridge.ts); Host backed by Zustand
   reads + `window.api` ([cardBridge/host.ts](../../src/renderer/src/cardBridge/host.ts)).
-- **Isolated / WCV** — `createThRuntime(...)` at `wcvPreload.ts:161`; Host backed by `ipcRenderer.sendSync`
+- **Isolated / WCV** — `createThRuntime(...)` at `wcvPreload.ts:280`; Host backed by `ipcRenderer.sendSync`
   (sync getters) + `invoke` (async) over the `wcv-host-*` IPC.
+
+**WCV-transport-only host method** (not on the `thRuntime` surface — a WCV is a native overlay with its
+own screen rect, which an inline DOM card doesn't need): `window.rptHost.getPanelGeometry()` →
+`{ x, y, width, height, viewportWidth, viewportHeight }` (the page's slot rect in window-content coords
++ the window content size), with `onPanelGeometry(cb)` for changes and a `rpt:panelgeometry` window
+event. Lets a page draw a full-viewport background offset by its own `x` so adjacent seamless slots
+compose into one continuous stage (the seam-slicing primitive — pairs with `panel_ui.seamless`, §4).
+Seeded synchronously at preload load; refreshed by main on every bounds change. Verify:
+[`wcvPreload.ts:98`](../../src/preload/wcvPreload.ts), [`wcvGeometry.ts`](../../src/main/services/wcvGeometry.ts).
 
 ### Globals exposed to a card
 
@@ -198,7 +207,7 @@ character_version, character_book` (embedded lorebook). Unknown ST `extensions.*
 | `scripts` (`[{name,code,enabled?}]`) | card scripts                                                                                                                         | ✅                             |
 | `game_rules`                         | freeform rules bag                                                                                                                   | ✅                             |
 | `left_panel`                         | `{ name: string }` — a card UI (matched by script `name`) auto-docked left in the workspace when active. Requires `renderMode:'panel'`. | ✅                             |
-| `panel_ui`                           | static card-determined grid (slots → native view or `wcv` entry)                                                                     | ✅ schema                      |
+| `panel_ui`                           | static card-determined grid (slots → native view or `wcv` entry). `seamless:true` drops inter-slot gap/padding + per-slot chrome (border/radius/title) so adjacent WCV surfaces compose into one continuous stage; a slot's `chrome:bool` overrides the layout default. | ✅ schema                      |
 | **World Card bundle slots**          | `world_card` (version marker), `meta`, `regex[]`, `presets[]`, `lorebooks[]`, `plugins[]`, `agent`, `combat`, `recommended_settings` | ✅ schema; routing 🟡 (see §5) |
 
 `world_card` present ⇒ the card is a **World Card** (a complete, one-click-installable world). The schema

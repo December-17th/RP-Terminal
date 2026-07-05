@@ -114,6 +114,12 @@ export const registerWcvIpc = (ipcMain: IpcMain): void => {
   // cover native views, so the renderer hides them for the overlay's lifetime.
   ipcMain.on('wcv-set-all-visible', (_e, visible) => wcvManager.setAllVisible(!!visible))
   ipcMain.on('wcv-destroy', (_e, id) => wcvManager.destroy(id))
+  // A card page's initial panel geometry (its window-x + viewport width, for seam-sliced backgrounds).
+  // SYNC so the page has it BEFORE first paint; subsequent updates arrive via the `wcv-panel-geometry`
+  // push on every bounds change (wcvManager.pushGeometry).
+  ipcMain.on('wcv-get-panel-geometry-sync', (e) => {
+    e.returnValue = wcvManager.geometryFor(e.sender.id)
+  })
   // A card script in a WCV threw / rejected — surface it to the main log (it'd otherwise only show in the
   // WCV devtools). Includes the calling slot for context.
   ipcMain.on('wcv-card-error', (e, msg) => {

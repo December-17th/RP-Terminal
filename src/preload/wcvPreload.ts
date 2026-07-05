@@ -38,6 +38,50 @@ import { createWcvHost } from './wcvHost'
 const w = window as any
 const DEBUG = typeof location !== 'undefined' && /rptdebug/i.test(location.hash + location.search)
 
+// --- panel geometry (seam-slicing primitive) ---
+// This page's slot rect in window-content coords + the window content size, so it can draw a
+// full-viewport background offset by its own x (adjacent stage surfaces then compose into one image).
+// Seeded synchronously at preload load; refreshed by main on every bounds change (wcv-panel-geometry).
+type PanelGeometry = {
+  x: number
+  y: number
+  width: number
+  height: number
+  viewportWidth: number
+  viewportHeight: number
+}
+const ZERO_GEOMETRY: PanelGeometry = {
+  x: 0,
+  y: 0,
+  width: 0,
+  height: 0,
+  viewportWidth: 0,
+  viewportHeight: 0
+}
+let panelGeometry: PanelGeometry = ZERO_GEOMETRY
+try {
+  panelGeometry = ipcRenderer.sendSync('wcv-get-panel-geometry-sync') || ZERO_GEOMETRY
+} catch {
+  panelGeometry = ZERO_GEOMETRY
+}
+const geometryListeners = new Set<(g: PanelGeometry) => void>()
+ipcRenderer.on('wcv-panel-geometry', (_e: any, g: PanelGeometry) => {
+  panelGeometry = g || ZERO_GEOMETRY
+  for (const cb of geometryListeners) {
+    try {
+      cb(panelGeometry)
+    } catch {
+      /* a listener throwing must not break the others */
+    }
+  }
+  // Also surface as a DOM event so a card that doesn't hold the rptHost ref can still react.
+  try {
+    window.dispatchEvent(new CustomEvent('rpt:panelgeometry', { detail: panelGeometry }))
+  } catch {
+    /* ignore */
+  }
+})
+
 // --- host bridge (IPC) ---
 const rptHost = {
   getVariables: (): Promise<any> => ipcRenderer.invoke('wcv-host-get-vars'),
@@ -48,6 +92,13 @@ const rptHost = {
     const l = (_e: any, v: any): void => cb(v)
     ipcRenderer.on('wcv-vars-changed', l)
     return () => ipcRenderer.removeListener('wcv-vars-changed', l)
+  },
+  // The page's current slot geometry (for seam-sliced backgrounds). Synchronous — always the latest
+  // value main pushed. `onPanelGeometry` subscribes to changes and returns an unsubscribe.
+  getPanelGeometry: (): PanelGeometry => panelGeometry,
+  onPanelGeometry: (cb: (g: PanelGeometry) => void) => {
+    geometryListeners.add(cb)
+    return () => geometryListeners.delete(cb)
   }
 }
 w.rptHost = rptHost
