@@ -173,6 +173,14 @@ export const registerWcvIpc = (ipcMain: IpcMain): void => {
   ipcMain.on('wcv-broadcast-event', (_e, chatId, name, payload) =>
     wcvManager.notifyEvent(chatId, name, payload)
   )
+  // Card → sibling card panels: a card-authored coordination event (e.g. the poem stage's
+  // `self:fold` / `stage:cast-changed`). Chat resolved from the sender (a card can't target another
+  // session); the sender is excluded so its own page doesn't receive the event it just broadcast. The
+  // event name is opaque to RPT — cards pick their own, so this stays card-agnostic.
+  ipcMain.on('wcv-host-broadcast-event', (e, name, payload) => {
+    const ctx = wcvManager.contextFor(e.sender.id)
+    if (ctx) wcvManager.notifyEvent(ctx.chatId, String(name ?? ''), payload, e.sender.id)
+  })
   // Card → host: set RP Terminal's chat input box (the onboarding finish's "inject prompt").
   ipcMain.on('wcv-host-set-input', (e, text) => {
     const ctx = wcvManager.contextFor(e.sender.id)

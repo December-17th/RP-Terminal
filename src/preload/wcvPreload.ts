@@ -88,6 +88,11 @@ const rptHost = {
   applyVariableOps: (ops: any[]): Promise<any> => ipcRenderer.invoke('wcv-host-apply-vars', ops),
   setVariables: (sd: any): Promise<any> => ipcRenderer.invoke('wcv-host-set-vars', sd),
   setInput: (text: any) => ipcRenderer.send('wcv-host-set-input', text),
+  // Broadcast a card-authored coordination event to the SIBLING card panels on this chat (not back to
+  // this page). Received there via `eventOn(name, cb)`. The poem stage uses it for `self:fold` /
+  // `stage:cast-changed`; the name is the card's own — RPT doesn't interpret it.
+  broadcastEvent: (name: string, payload?: any) =>
+    ipcRenderer.send('wcv-host-broadcast-event', name, payload),
   onVarsChanged: (cb: (v: any) => void) => {
     const l = (_e: any, v: any): void => cb(v)
     ipcRenderer.on('wcv-vars-changed', l)

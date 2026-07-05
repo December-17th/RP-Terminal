@@ -70,6 +70,14 @@ compose into one continuous stage (the seam-slicing primitive — pairs with `pa
 Seeded synchronously at preload load; refreshed by main on every bounds change. Verify:
 [`wcvPreload.ts:98`](../../src/preload/wcvPreload.ts), [`wcvGeometry.ts`](../../src/main/services/wcvGeometry.ts).
 
+**WCV-transport-only host method** (sibling-panel coordination — only meaningful when a card runs across
+multiple WCV surfaces): `window.rptHost.broadcastEvent(name, payload)` fans a card-authored event out to
+the OTHER card panels on the same chat (not back to the sender); they receive it via `eventOn(name, cb)`.
+The chat is resolved from the sender in main (a card can't target another session) and the name is opaque
+to RPT, so this stays card-agnostic. The poem play-area surfaces use it for `self:fold` /
+`stage:cast-changed` (redesign §5.3). Verify: [`wcvIpc.ts`](../../src/main/ipc/wcvIpc.ts)
+(`wcv-host-broadcast-event`) → [`wcvManager.notifyEvent`](../../src/main/services/wcvManager.ts).
+
 ### Globals exposed to a card
 
 | Global                          | Contents                                                                                                                                         | Status          |

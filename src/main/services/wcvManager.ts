@@ -346,9 +346,18 @@ export const notifyVarsChanged = (
 }
 
 /** Broadcast a TavernHelper lifecycle/mutation event (generation_started, message_received, …) to the
- *  card WCVs on a chat, so their `eventOn(tavern_events.X, …)` listeners fire. */
-export const notifyEvent = (chatId: string, name: string, payload: unknown): void => {
+ *  card WCVs on a chat, so their `eventOn(tavern_events.X, …)` listeners fire. `exceptWebContentsId`
+ *  skips one slot — pass a card's own `e.sender.id` when it broadcasts to siblings so its own page
+ *  doesn't receive the event it just sent (the stage/HUD coordination channel). */
+export const notifyEvent = (
+  chatId: string,
+  name: string,
+  payload: unknown,
+  exceptWebContentsId?: number
+): void => {
   for (const s of slots.values()) {
-    if (s.chatId === chatId) s.view.webContents.send('wcv-event', { name, payload })
+    if (s.chatId !== chatId) continue
+    if (exceptWebContentsId != null && s.view.webContents.id === exceptWebContentsId) continue
+    s.view.webContents.send('wcv-event', { name, payload })
   }
 }

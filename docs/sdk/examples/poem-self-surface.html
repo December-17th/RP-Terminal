@@ -458,6 +458,15 @@
     })
   }
 
+  // broadcast fold state to sibling surfaces (the STAGE dims the user sprite while the SELF fold is open)
+  function emitFold(open, menu) {
+    try {
+      if (window.rptHost && typeof window.rptHost.broadcastEvent === 'function') {
+        window.rptHost.broadcastEvent('self:fold', { open: open, menu: menu || null })
+      }
+    } catch (_) {}
+  }
+
   var selfEl = document.getElementById('self')
   document.querySelectorAll('.tab').forEach(function (t) {
     t.addEventListener('click', function () {
@@ -466,8 +475,10 @@
       document.querySelectorAll('.tab').forEach(function (x) { x.classList.remove('active') })
       if (isOpen) {
         selfEl.classList.remove('open'); selfEl.classList.add('closed'); delete selfEl.dataset.menu
+        emitFold(false, null)
       } else {
         selfEl.classList.add('open'); selfEl.classList.remove('closed'); selfEl.dataset.menu = m; t.classList.add('active')
+        emitFold(true, m)
       }
     })
   })

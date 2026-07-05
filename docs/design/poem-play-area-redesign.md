@@ -18,7 +18,18 @@ not fake 0–1 bars; 品质 → the 7 rarity tiers. Reads via `getVariables().st
 `mag_variable_updated`/`message_updated`, portrait via `assetUrl('主角','立绘')`; opens standalone
 (mock fallback) for preview. Wire beside native chat with:
 `{ mode:'static', seamless:true, grid:{cols:12,rows:12}, slots:[ {id:'self',view:'wcv',entry:'…/poem-self-surface.html',rect:[0,0,3,12]}, {id:'story',view:'chat',rect:[3,0,9,12]} ] }`.
-**Next: P2 (STAGE band — the `stage` WCV + `stage:cast-changed`/`self:fold` events).**
+**P2 STAGE band BUILT 2026-07-05** — RPT-generic sibling-event channel + the card `stage` surface:
+- RPT: `window.rptHost.broadcastEvent(name,payload)` (WCV) fans a card event to sibling panels on the
+  chat (ctx-resolved, excludes sender), received via `eventOn(name,cb)`. Name is opaque → card-agnostic.
+  `wcvIpc` `wcv-host-broadcast-event` → `wcvManager.notifyEvent(…, exceptWebContentsId)`.
+- Card: [`docs/sdk/examples/poem-stage-surface.html`](../sdk/examples/poem-stage-surface.html) — present
+  NPCs over the geometry-sliced background (continuous with SELF's top band), active-speaker bright +
+  nameplate + 正在交谈, silent members dimmed; scene tag (时间·地点). Cast = `关系列表[*].在场===true`
+  (real signal); speaker = card-authored `stat_data.stage.speaking` else highest-好感度 present;
+  scene bg via optional `stat_data.stage.background`. Listens `self:fold` (dims the stage while the
+  SELF drawer is open) + `stage:cast-changed`/`mag_variable_updated` (refresh). `self.html` now emits
+  `self:fold` on toggle. P2 layout: `self[0,0,3,12]` · `stage[3,0,9,4]` · `story(chat)[3,4,9,8]`.
+**Next: P3 (WORLD surface [9,4,3,8] + card theme on the native chat message DOM).**
 **Branch context:** work sits on `ui-facelift`. The chrome/IA facelift + §6a card themes are already
 committed there (`88af494`); this spec is the *next* body of work and depends on some of it.
 **Reference mock:** [`poem-play-area-mock.html`](./poem-play-area-mock.html) — open it in a browser.
