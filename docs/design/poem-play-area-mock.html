@@ -1,0 +1,216 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>命定之诗 — play area v3 (VN stage)</title>
+<style>
+  :root{
+    --night:#14121b;--raise:#1d1a27;--sunken:#100e16;--line:#2e2a3d;--line-soft:#241f30;
+    --gold:#d9b56b;--gold-dim:#8f7a4e;--text:#e9e3d4;--dim:#a89f8c;--faint:#6f6858;--ember:#c8683f;
+    --hp:#cf5a6d;--mp:#6a86d8;--sp:#5fb98a;--fp:#d9b56b;--exp:#a274e0;
+    --q-common:#b8b0a0;--q-uncommon:#6fae72;--q-rare:#5f90d8;--q-epic:#a274e0;--q-legendary:#d9b56b;--q-mythic:#d76b8f;
+    --serif:'Noto Serif SC','Songti SC',Georgia,serif;--sans:'Noto Sans SC',system-ui,sans-serif;--mono:ui-monospace,'Cascadia Code',Menlo,monospace;
+    --band-h:284px;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;height:100vh;overflow:hidden;font-family:var(--sans);color:var(--text);background:var(--night)}
+  .playarea{position:relative;height:100vh}
+  .sect-h{font-family:var(--mono);font-size:10px;letter-spacing:.22em;text-transform:uppercase;color:var(--gold-dim);display:flex;align-items:center;gap:8px;margin:0 0 8px}
+  .sect-h::after{content:'';flex:1;height:1px;background:linear-gradient(90deg,var(--line),transparent)}
+
+  /* ══ shared full-width VN stage background ══ */
+  .vn-bg{position:absolute;top:0;left:0;right:0;height:var(--band-h);z-index:0;overflow:hidden;
+    background:
+      radial-gradient(70% 90% at 18% 40%,#33436a 0%,transparent 55%),
+      radial-gradient(70% 90% at 82% 35%,#4a3350 0%,transparent 55%),
+      radial-gradient(60% 80% at 50% 120%,rgba(200,104,63,.18),transparent 60%),
+      linear-gradient(180deg,#1b1626,#160f1f)}
+  .vn-bg::before{content:'';position:absolute;inset:0;opacity:.35;
+    background:repeating-linear-gradient(103deg,transparent 0 26px,rgba(0,0,0,.14) 26px 28px)}
+  .vn-bg::after{content:'';position:absolute;left:0;right:0;bottom:0;height:120px;background:linear-gradient(180deg,transparent,var(--night))}
+
+  .stage{position:relative;z-index:1;display:grid;grid-template-columns:25% 50% 25%;height:100vh}
+
+  /* a character sprite (立绘 stand-in) */
+  .fig{position:absolute;bottom:0;font-family:var(--serif);line-height:.82;color:rgba(233,227,212,.92);
+    text-shadow:0 12px 46px rgba(0,0,0,.55);transition:opacity .3s,filter .3s,transform .3s}
+  .fig.dim{opacity:.4;filter:saturate(.5) brightness(.7)}
+  .fig.active{filter:drop-shadow(0 0 30px rgba(215,107,143,.35))}
+  .nameplate{position:absolute;bottom:16px;z-index:3}
+  .np-name{font-family:var(--serif);font-size:21px;font-weight:700;display:block;text-shadow:0 2px 12px rgba(0,0,0,.7)}
+  .np-tag{font-family:var(--mono);font-size:11px;letter-spacing:.05em}
+  .np-tag.foe{color:var(--q-mythic)} .np-tag.ally{color:var(--sp)} .np-tag.self{color:var(--gold)}
+  .speaking{position:absolute;top:14px;font-family:var(--mono);font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--dim);background:rgba(16,14,22,.6);padding:3px 9px;border-radius:999px}
+
+  /* ══ LEFT: SELF ══ */
+  .self{position:relative;display:flex;flex-direction:column;height:100vh;overflow:hidden;background:var(--night)}
+  .self.closed{background:transparent}          /* let the shared stage show through the band while collapsed */
+  .band-self{flex:0 0 auto;height:var(--band-h);max-height:var(--band-h);position:relative;
+    transition:max-height .4s cubic-bezier(.4,0,.2,1)}
+  .band-self .fig{left:8px;font-size:150px}
+  .band-self .nameplate{left:14px}
+  .self.open .band-self{max-height:0}
+  .self.open{background:var(--night)}
+
+  .stats{flex:0 0 auto;padding:12px 16px 14px;display:flex;flex-direction:column;gap:10px;border-bottom:1px solid var(--line-soft);background:var(--night);position:relative;z-index:2}
+  .res-row{display:grid;grid-template-columns:26px 1fr auto;align-items:center;gap:9px}
+  .res-k{font-family:var(--mono);font-size:10px;font-weight:700;letter-spacing:.06em}
+  .res-k.hp{color:var(--hp)}.res-k.mp{color:var(--mp)}.res-k.sp{color:var(--sp)}.res-k.fp{color:var(--fp)}.res-k.exp{color:var(--exp)}
+  .res-track{height:7px;border-radius:4px;background:var(--sunken);overflow:hidden;border:1px solid var(--line-soft)}
+  .res-track>i{display:block;height:100%;border-radius:4px}
+  .res-v{font-family:var(--mono);font-size:11px;color:var(--dim)}
+  .stats-foot{display:flex;align-items:center;justify-content:space-between;margin-top:2px}
+  .gold{font-family:var(--mono);font-size:12px;color:var(--gold)}.gold b{font-weight:700}
+  .chip{font-size:11px;padding:3px 10px;border-radius:999px;border:1px solid var(--sp);color:var(--sp);background:color-mix(in srgb,var(--sp) 12%,transparent)}
+
+  .drawer{flex:1 1 auto;min-height:0;overflow-y:auto;padding:0 16px;max-height:0;opacity:0;background:var(--night);
+    transition:max-height .4s cubic-bezier(.4,0,.2,1),opacity .3s,padding .3s}
+  .self.open .drawer{max-height:100%;opacity:1;padding:14px 16px}
+  .drawer::-webkit-scrollbar{width:6px}.drawer::-webkit-scrollbar-thumb{background:var(--line);border-radius:3px}
+  .panel{display:none}
+  .self[data-active="attrs"] .panel[data-menu="attrs"],.self[data-active="inv"] .panel[data-menu="inv"],.self[data-active="ladder"] .panel[data-menu="ladder"]{display:block}
+  .attrs{display:grid;grid-template-columns:repeat(5,1fr);gap:6px}
+  .attr{text-align:center;background:var(--sunken);border:1px solid var(--line-soft);border-radius:8px;padding:10px 2px}
+  .attr-k{font-size:11px;color:var(--dim)}.attr-v{font-family:var(--mono);font-size:18px;font-weight:700;margin-top:3px}
+  .inv-row{display:flex;align-items:center;gap:9px;padding:7px 4px;border-radius:6px}.inv-row:hover{background:var(--sunken)}
+  .inv-dot{width:7px;height:7px;border-radius:50%;flex:0 0 auto}.inv-name{flex:1;font-size:12.5px}.inv-slot,.inv-qty{font-size:10.5px;color:var(--faint);font-family:var(--mono)}
+  .ladder{display:flex;gap:10px}.rung{flex:1;text-align:center;background:var(--sunken);border:1px solid var(--line-soft);border-radius:9px;padding:12px 4px}
+  .rung-glyph{font-size:20px}.rung.elem .rung-glyph{color:var(--mp)}.rung.pow .rung-glyph{color:var(--ember)}.rung.law .rung-glyph{color:var(--q-epic)}
+  .rung-name{font-size:11px;color:var(--dim);margin:7px 0 6px}.rung-bar{height:3px;border-radius:2px;background:var(--line);overflow:hidden}.rung-bar>i{display:block;height:100%}
+  .rung.elem .rung-bar>i{width:62%;background:var(--mp)}.rung.pow .rung-bar>i{width:40%;background:var(--ember)}.rung.law .rung-bar>i{width:18%;background:var(--q-epic)}
+  .tabs{flex:0 0 auto;display:flex;gap:2px;padding:8px 12px;border-top:1px solid var(--line);background:var(--sunken)}
+  .tab{flex:1;font-family:var(--mono);font-size:11px;letter-spacing:.04em;background:none;border:none;color:var(--dim);padding:8px 4px;border-radius:7px;cursor:pointer;position:relative}
+  .tab:hover{color:var(--text);background:color-mix(in srgb,var(--text) 6%,transparent)}.tab.active{color:var(--gold)}
+  .tab.active::after{content:'';position:absolute;left:14px;right:14px;bottom:2px;height:2px;border-radius:2px;background:var(--gold)}
+
+  /* ══ CENTER: STORY (50%) ══ */
+  .story{position:relative;display:flex;flex-direction:column;height:100vh}
+  .band-mid{flex:0 0 auto;height:var(--band-h);position:relative}
+  .band-mid .fig{left:50%;transform:translateX(-50%);font-size:118px}
+  .story-content{flex:1;min-height:0;display:flex;flex-direction:column;background:var(--night);border-top:1px solid var(--line-soft)}
+  .story-head{flex:0 0 auto;padding:12px 40px 0;display:flex;align-items:baseline;gap:12px}
+  .story-chapter{font-family:var(--serif);font-size:15px;color:var(--gold)}.story-when{font-family:var(--mono);font-size:11px;color:var(--faint)}
+  .story-body{flex:1;overflow-y:auto;padding:16px 40px}.story-body::-webkit-scrollbar{width:7px}.story-body::-webkit-scrollbar-thumb{background:var(--line);border-radius:4px}
+  .prose{font-family:var(--serif);font-size:16px;line-height:1.9;color:#ece7db}.prose p{margin:0 0 1em}.prose .you{color:var(--gold);font-weight:600}.prose .name{color:var(--q-rare)}
+  .choices{margin-top:18px;display:flex;flex-direction:column;gap:8px}
+  .choice{display:flex;gap:10px;align-items:baseline;text-align:left;width:100%;cursor:pointer;background:var(--raise);border:1px solid var(--line);border-left:2px solid var(--gold-dim);color:var(--text);border-radius:8px;padding:10px 14px;font-family:var(--sans);font-size:13.5px;transition:border-color .15s,background .15s}
+  .choice:hover{border-color:var(--gold);background:color-mix(in srgb,var(--gold) 7%,var(--raise))}.choice .mark{color:var(--gold)}
+  .story-foot{flex:0 0 auto;padding:10px 40px 20px}.compose{position:relative}
+  .compose textarea{width:100%;min-height:58px;resize:none;box-sizing:border-box;background:var(--sunken);border:1px solid var(--line);border-radius:12px;color:var(--text);font-family:var(--sans);font-size:14px;line-height:1.6;padding:12px 52px 12px 15px}
+  .compose textarea::placeholder{color:var(--faint)}
+  .send{position:absolute;right:10px;bottom:10px;width:34px;height:34px;border-radius:50%;border:none;cursor:pointer;background:var(--gold);color:#17131f;font-size:15px}
+
+  /* ══ RIGHT: WORLD ══ */
+  .world{position:relative;display:flex;flex-direction:column;height:100vh}
+  .band-world{flex:0 0 auto;height:var(--band-h);position:relative}
+  .band-world .fig{right:6px;font-size:158px}
+  .band-world .nameplate{left:14px}
+  .world-body{flex:1;min-height:0;overflow-y:auto;padding:14px 16px;display:flex;flex-direction:column;gap:16px;background:var(--night);border-top:1px solid var(--line-soft)}
+  .world-body::-webkit-scrollbar{width:6px}.world-body::-webkit-scrollbar-thumb{background:var(--line);border-radius:3px}
+  .ws-row{display:flex;justify-content:space-between;font-size:12.5px;padding:2px 0}.ws-k{color:var(--dim)}.ws-v{color:var(--text);font-family:var(--mono);font-size:12px}
+  .npc{display:flex;align-items:center;gap:10px;margin-bottom:8px}
+  .npc-av{width:30px;height:30px;border-radius:50%;flex:0 0 auto;font-family:var(--serif);display:flex;align-items:center;justify-content:center;font-size:13px;background:radial-gradient(120% 100% at 35% 25%,#5a3a52,#201622 70%);border:1px solid var(--line)}
+  .npc-name{font-size:12.5px}.npc-rel{height:3px;border-radius:2px;background:var(--line);margin-top:5px;overflow:hidden}.npc-rel>i{display:block;height:100%;background:var(--q-mythic)}
+  .quest{padding:8px 10px;border:1px solid var(--line-soft);border-radius:8px;background:var(--sunken);margin-bottom:8px}
+  .quest-t{font-size:12.5px}.quest-d{font-size:11px;color:var(--dim);margin-top:3px;line-height:1.5}
+  .mem{font-size:11.5px;color:var(--dim);line-height:1.55;padding-left:12px;position:relative;margin-bottom:8px}
+  .mem::before{content:'';position:absolute;left:0;top:6px;width:5px;height:5px;border-radius:50%;background:var(--gold-dim)}
+</style>
+</head>
+<body>
+  <div class="playarea">
+    <div class="vn-bg"></div>
+
+    <div class="stage">
+
+      <!-- ══ SELF ══ -->
+      <div class="col self closed" id="self">
+        <div class="band-self">
+          <div class="fig">亚</div>
+          <div class="nameplate"><span class="np-name">亚瑟</span><span class="np-tag self">你 · 史诗 · Lv 12</span></div>
+        </div>
+        <div class="stats">
+          <div class="res-row"><span class="res-k hp">HP</span><span class="res-track"><i style="width:95%;background:var(--hp)"></i></span><span class="res-v">380/400</span></div>
+          <div class="res-row"><span class="res-k mp">MP</span><span class="res-track"><i style="width:100%;background:var(--mp)"></i></span><span class="res-v">100/100</span></div>
+          <div class="res-row"><span class="res-k sp">SP</span><span class="res-track"><i style="width:93%;background:var(--sp)"></i></span><span class="res-v">140/150</span></div>
+          <div class="res-row"><span class="res-k fp">FP</span><span class="res-track"><i style="width:50%;background:var(--fp)"></i></span><span class="res-v">500</span></div>
+          <div class="res-row"><span class="res-k exp">EXP</span><span class="res-track"><i style="width:72%;background:var(--exp)"></i></span><span class="res-v">7.2k</span></div>
+          <div class="stats-foot"><span class="gold">⛃ <b>1250</b> G</span><span class="chip">战斗祝福 · 12</span></div>
+        </div>
+        <div class="drawer">
+          <div class="panel" data-menu="attrs"><div class="sect-h">属性</div><div class="attrs">
+            <div class="attr"><div class="attr-k">力</div><div class="attr-v">16</div></div><div class="attr"><div class="attr-k">敏</div><div class="attr-v">12</div></div><div class="attr"><div class="attr-k">体</div><div class="attr-v">14</div></div><div class="attr"><div class="attr-k">智</div><div class="attr-v">10</div></div><div class="attr"><div class="attr-k">精</div><div class="attr-v">10</div></div></div></div>
+          <div class="panel" data-menu="inv"><div class="sect-h">持有</div>
+            <div class="inv-row"><span class="inv-dot" style="background:var(--q-rare)"></span><span class="inv-name">精钢长剑</span><span class="inv-slot">武器</span></div>
+            <div class="inv-row"><span class="inv-dot" style="background:var(--q-epic)"></span><span class="inv-name">秘银锁子甲</span><span class="inv-slot">防具</span></div>
+            <div class="inv-row"><span class="inv-dot" style="background:var(--q-legendary)"></span><span class="inv-name">冒险者徽章</span><span class="inv-slot">饰品</span></div>
+            <div class="inv-row"><span class="inv-dot" style="background:var(--q-common)"></span><span class="inv-name">治疗药水</span><span class="inv-qty">×3</span></div>
+            <div class="inv-row"><span class="inv-dot" style="background:var(--q-uncommon)"></span><span class="inv-name">解毒草</span><span class="inv-qty">×5</span></div></div>
+          <div class="panel" data-menu="ladder"><div class="sect-h">登神长阶</div><div class="ladder">
+            <div class="rung elem"><div class="rung-glyph">❈</div><div class="rung-name">元素</div><div class="rung-bar"><i></i></div></div>
+            <div class="rung pow"><div class="rung-glyph">⚜</div><div class="rung-name">力量</div><div class="rung-bar"><i></i></div></div>
+            <div class="rung law"><div class="rung-glyph">✶</div><div class="rung-name">法则</div><div class="rung-bar"><i></i></div></div></div></div>
+        </div>
+        <div class="tabs">
+          <button class="tab" data-menu="attrs">属性</button><button class="tab" data-menu="inv">持有</button><button class="tab" data-menu="ladder">登神长阶</button>
+        </div>
+      </div>
+
+      <!-- ══ STORY (50%) ══ -->
+      <div class="story">
+        <div class="band-mid"><div class="fig dim">恩</div></div>
+        <div class="story-content">
+          <div class="story-head"><span class="story-chapter">第三章 · 黄昏的抉择</span><span class="story-when">复兴纪元 · 暮 · 艾瑟嘉德</span></div>
+          <div class="story-body">
+            <div class="prose">
+              <p>酒馆的门在铰链上呻吟。木柴与湿羊毛的气味充满了这间低矮的屋子。十几张面孔转向<span class="you">你</span>——随后，认定你无足轻重，又转了回去。</p>
+              <p>只有角落里那个披着灰色斗篷的身影没有移开视线。<span class="name">薇拉</span>的指尖在桌面上轻轻敲击，节奏与你心跳的鼓点渐渐重合。</p>
+              <p>「你来得比我预想的要早，」她说，「命运的丝线，已经开始收紧了。」</p>
+            </div>
+            <div class="choices">
+              <button class="choice"><span class="mark">▸</span> 在她对面坐下，要一杯麦酒。</button>
+              <button class="choice"><span class="mark">▸</span> 按住剑柄，问她如何知道你的名字。</button>
+              <button class="choice"><span class="mark">▸</span> 环顾四周，留意其他的目光。</button>
+            </div>
+          </div>
+          <div class="story-foot"><div class="compose"><textarea placeholder="你要做什么？"></textarea><button class="send">➤</button></div></div>
+        </div>
+      </div>
+
+      <!-- ══ WORLD ══ -->
+      <div class="world">
+        <div class="band-world">
+          <div class="fig active">薇</div>
+          <span class="speaking">正在交谈</span>
+          <div class="nameplate"><span class="np-name">薇拉</span><span class="np-tag foe">灰隐者 · 好感 64</span></div>
+        </div>
+        <div class="world-body">
+          <div><div class="sect-h">世界</div>
+            <div class="ws-row"><span class="ws-k">时辰</span><span class="ws-v">暮 · 戌时</span></div>
+            <div class="ws-row"><span class="ws-k">地点</span><span class="ws-v">艾瑟嘉德</span></div>
+            <div class="ws-row"><span class="ws-k">天候</span><span class="ws-v">大雨</span></div></div>
+          <div><div class="sect-h">同行</div>
+            <div class="npc"><span class="npc-av">薇</span><span style="flex:1"><div class="npc-name">薇拉 · 灰隐者</div><div class="npc-rel"><i style="width:64%"></i></div></span></div>
+            <div class="npc"><span class="npc-av">恩</span><span style="flex:1"><div class="npc-name">恩里克 · 见习骑士</div><div class="npc-rel"><i style="width:38%"></i></div></span></div></div>
+          <div><div class="sect-h">委托</div>
+            <div class="quest"><div class="quest-t">灰烬中的信使</div><div class="quest-d">在宵禁前将薇拉的口信送抵北门守卫。</div></div></div>
+          <div><div class="sect-h">记忆</div>
+            <div class="mem">占卜师拒收了你的钱币，只留下「黄昏属于你」。</div></div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <script>
+    const self=document.getElementById('self');
+    document.querySelectorAll('.tab').forEach(t=>t.addEventListener('click',()=>{
+      const m=t.dataset.menu, open=self.classList.contains('open')&&self.dataset.active===m;
+      document.querySelectorAll('.tab').forEach(x=>x.classList.remove('active'));
+      if(open){self.classList.remove('open');self.classList.add('closed');self.removeAttribute('data-active');}
+      else{self.classList.add('open');self.classList.remove('closed');self.dataset.active=m;t.classList.add('active');}
+    }));
+  </script>
+</body>
+</html>
