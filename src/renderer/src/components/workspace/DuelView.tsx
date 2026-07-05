@@ -231,7 +231,7 @@ export const DuelView: FC<{ profileId: string }> = ({ profileId }) => {
   }
   const narrateThenFinish = async (): Promise<void> => {
     await narrate(profileId) // narrate() writes the prose to the chat + ends the duel internally
-    // The narration landed in the chat (append / new floor) — reload the session so it's visible
+    // The narration landed in the chat as a new floor — reload the session so it's visible
     // (mirrors CombatView.onNarrate). setActiveChat also reloads mode from DB ('explore'), which
     // closes the popup; fall back to clearing the transient duel mode if there's somehow no chat.
     if (activeChatId) await useChatStore.getState().setActiveChat(profileId, activeChatId)

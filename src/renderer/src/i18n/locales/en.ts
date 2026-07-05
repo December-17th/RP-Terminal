@@ -460,7 +460,8 @@ const en: Record<string, string> = {
   'variables.heading': 'Variables',
   'variables.mvuState': 'MVU stat_data',
   'variables.floorVars': 'Floor variables (delta / cue / snapshot)',
-  'variables.sessionKv': 'Session KV (card variables)',
+  'variables.sessionVars': 'Session variables',
+  'variables.globalVars': 'Global variables',
   'variables.empty': 'empty',
   'variables.refresh': '↻ Refresh',
   'variables.editFailed': 'Edit failed to save',
@@ -919,11 +920,6 @@ const en: Record<string, string> = {
   'workflowEditor.portDesc.subgraph.loop.out3': 'The last pass’s out3 value',
   'workflowEditor.portDesc.subgraph.loop.out4': 'The last pass’s out4 value',
 
-  'prefs.combatNarration': 'Combat narration',
-  'prefs.combatNarrationAppend': 'Append to the current message',
-  'prefs.combatNarrationFloor': 'Add as a new message',
-  'prefs.combatNarrationHint':
-    'Where the AI’s “Narrate the fight” account lands in the chat. A world card can override this.',
   'prefs.combatNarrationPrompt': 'Combat narration prompt',
   'prefs.combatNarrationPromptPh': 'e.g. Narrate in a terse, gritty tone; dwell on the wounds.',
   'prefs.combatNarrationPromptHint':

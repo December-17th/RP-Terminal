@@ -57,7 +57,10 @@ transports implement the same surface, so a card behaves identically in either
 
 - **Inline** (default) — `createThRuntime(createInlineHost(ctx))` at
   [createCardBridge.ts:9](../../src/renderer/src/cardBridge/createCardBridge.ts); Host backed by Zustand
-  reads + `window.api` ([cardBridge/host.ts](../../src/renderer/src/cardBridge/host.ts)).
+  reads + `window.api` ([cardBridge/host.ts](../../src/renderer/src/cardBridge/host.ts)). The `type:'script'` /
+  `type:'chat'` getters (`getScriptVars`/`getChatVars`) seed lazily via a blocking `sendSync`
+  (`plugin-storage-all-sync` / `chat-card-vars-get-sync`) on first read, memoized per host — so a card reads
+  its saved KV synchronously at boot (an inline frame gets a fresh host per reload), matching WCV's sync getters.
 - **Isolated / WCV** — `createThRuntime(...)` at `wcvPreload.ts:161`; Host backed by `ipcRenderer.sendSync`
   (sync getters) + `invoke` (async) over the `wcv-host-*` IPC.
 
@@ -132,6 +135,20 @@ panel, but it's open for any card to store session-specific data.
   `getVariables()` with no option) for story state.
 - Backed by `chatCardVarsService` (`profiles/<profileId>/chat-card-vars.json`), exposed via the `Host`
   (`getChatVars`/`setChatVars`) and both transports.
+
+##### `type:'global'` (per-profile, all chats & characters)
+
+A **per-profile** key/value bag shared across every chat and character. Survives app restarts. **Not
+in-prompt.** Use it for app-wide UI preferences a card wants to persist everywhere — e.g. the 艾莉亚
+beautification stores its UI settings here under `dialog_beauty.ui`.
+
+- Read: `getVariables({ type: 'global' })` → arbitrary JSON object (**sync**).
+- Write (full replace): `replaceVariables(obj, { type: 'global' })`.
+- Write (read-modify-write): `updateVariablesWith(prev => ({ ...prev, 'feat.key': v }), { type: 'global' })`.
+- **Shared bag — namespace your keys** so cards don't collide.
+- Backed by the per-profile globals (`profiles/<profileId>/template-globals.json`, `templateService`),
+  exposed via the `Host` (`getGlobalVarsSync`/`setGlobalVars`) and both transports. Editable in the
+  Variables panel's **全局变量 / Global variables** tab (session KV is the **会话变量 / Session variables** tab).
 
 ---
 

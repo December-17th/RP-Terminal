@@ -16,7 +16,12 @@ import { getChat } from './chatService'
 import { getAllFloors } from './floorService'
 import { getSettings } from './settingsService'
 import { log } from './logService'
-import { narrationConfig, writeNarrationToChat } from './narrationService'
+import {
+  narrationConfig,
+  narrationSchemaPrompt,
+  writeNarrationToChat,
+  combatLogText
+} from './narrationService'
 import { getRpExt } from '../types/character'
 import {
   buildEncounter,
@@ -533,7 +538,7 @@ export const adjudicate = async (
 
   // The freeform action concludes/escapes the fight → send the prose to the chat and exit combat.
   if (end) {
-    writeNarrationToChat(profileId, chatId, narration || prose)
+    writeNarrationToChat(profileId, chatId, narration || prose, combatLogText(next.log))
     clearEncounter(chatId)
     return { state: next, events: logAdds, narration, ended: true }
   }
@@ -555,25 +560,25 @@ const improviseSteer = (profileId: string, chatId: string): string => {
 
 /**
  * End-of-combat narration (the "describe the fight fully" path): ask the model to narrate
- * the recorded log (steered by the card/user prompt) and land the prose in the chat — either
- * appended to the current floor or as a new floor (the user/card setting) — folding any
- * `<UpdateVariable>` consequences into that floor's `stat_data`. The renderer reloads floors
- * after this resolves. Returns the prose + the placement used.
+ * the recorded log (steered by the card/user prompt) and land the prose in the chat as a new
+ * floor (its user-side input is the fight log) — folding any `<UpdateVariable>` consequences into
+ * that floor's `stat_data`. The renderer reloads floors after this resolves.
  */
 export const narrate = async (
   profileId: string,
   chatId: string
-): Promise<{ narration: string; mode: 'append' | 'floor' }> => {
+): Promise<{ narration: string }> => {
   const record = requireRecord(chatId)
-  const { extra, mode } = narrationConfig(profileId, chatId)
+  const { extra } = narrationConfig(profileId, chatId)
   const prose = (
     await generateRaw(profileId, chatId, {
       userInput: buildNarrationPrompt(record.state, extra),
+      systemPrompt: narrationSchemaPrompt(profileId, chatId),
       maxChatHistory: 6
     })
   ).trim()
-  writeNarrationToChat(profileId, chatId, prose)
-  return { narration: prose, mode }
+  writeNarrationToChat(profileId, chatId, prose, combatLogText(record.state.log))
+  return { narration: prose }
 }
 
 /** The narration prompt for the current encounter (steered by the card/user prompt), for a

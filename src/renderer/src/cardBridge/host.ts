@@ -13,6 +13,24 @@ import { storeRuleToTavernRegex } from '../../../shared/thRuntime/tavernRegex'
 import type { Host, CardCtx, FloorLike } from '../../../shared/thRuntime/types'
 import type { VarOp } from '../../../shared/thRuntime/ops'
 
+// Global vars are per-PROFILE, so ALL inline card hosts in this renderer realm share ONE cache per profile
+// (each card iframe builds its own createInlineHost, but they all run in the same parent renderer realm).
+// A global-var write in one card is then visible to every OTHER open card immediately — and survives a
+// card iframe reload mid-change — instead of only after a fresh floor re-seeds from disk (the reported lag).
+// Coherence events (window CustomEvents, so nothing crosses a module boundary):
+//   - a card write emits `rpt-globals-refetch` so the Variables panel re-reads (cards share the map below);
+//   - the Variables panel (which writes globals straight to disk) emits `rpt-globals-invalidate` so open
+//     cards drop the cache and re-read disk on next access.
+export const GLOBALS_REFETCH_EVENT = 'rpt-globals-refetch'
+export const GLOBALS_INVALIDATE_EVENT = 'rpt-globals-invalidate'
+const globalVarCaches = new Map<string, Record<string, any>>()
+if (typeof window !== 'undefined')
+  window.addEventListener(GLOBALS_INVALIDATE_EVENT, (e: Event) => {
+    const pid = (e as CustomEvent).detail?.profileId
+    if (pid) globalVarCaches.delete(pid)
+    else globalVarCaches.clear()
+  })
+
 const floorsOf = (): FloorLike[] => useChatStore.getState().floors as any
 const latestVars = (): any => {
   const f = floorsOf()
@@ -55,26 +73,54 @@ export function createInlineHost(ctx: CardCtx): Host {
   // if the UI hasn't opened the lorebook panel. Fire-and-forget; resolveWbId refreshes on a later miss.
   void useLorebookStore.getState().loadLibrary(ctx.profileId)
   if (ctx.chatId) void useLorebookStore.getState().loadSession(ctx.profileId, ctx.chatId)
-  // Script-scope vars (TH getVariables({type:'script'})) — a card-owned KV. getScriptVars must be SYNC, so
-  // back it with a cache hydrated async from the same plugin-storage the WCV transport uses (owner card:<id>).
+  // Script-scope vars (TH getVariables({type:'script'})) — a card-owned KV (owner card:<id>). getScriptVars
+  // must be SYNC *and correct on the FIRST read*: a card paints its settings UI at boot, and an inline frame
+  // gets a brand-new host on every reload, so an async prefetch would return {} until it lands and the card
+  // would render defaults over its saved state (the "settings don't persist" bug). So seed LAZILY with a
+  // blocking sendSync on first access, then memoize — a card that never reads script vars pays nothing, and a
+  // reader pays exactly one sync round-trip, right before it renders. Mirrors the WCV transport's sendSync.
   const scriptVarOwner = (): string => 'card:' + cardCharacterId()
-  let scriptVarCache: Record<string, any> = {}
-  void window.api
-    .pluginStorage(ctx.profileId, scriptVarOwner(), { op: 'all' })
-    .then((all: any) => {
-      scriptVarCache = all || {}
-    })
-    .catch(() => {})
-  // Chat-scope vars (getVariables({type:'chat'})) — a per-chat card-owned KV. getChatVars must be SYNC, so
-  // back it with a cache hydrated async from the same per-chat store the WCV transport reads.
-  let chatVarCache: Record<string, any> = {}
-  if (ctx.chatId)
-    void window.api
-      .chatCardVarsGet(ctx.profileId, ctx.chatId)
-      .then((all: any) => {
-        chatVarCache = all || {}
-      })
-      .catch(() => {})
+  let scriptVarCache: Record<string, any> | undefined
+  const loadScriptVars = (): Record<string, any> => {
+    if (scriptVarCache === undefined) {
+      try {
+        scriptVarCache = window.api.pluginStorageAllSync(ctx.profileId, scriptVarOwner()) || {}
+      } catch {
+        scriptVarCache = {}
+      }
+    }
+    return scriptVarCache ?? {}
+  }
+  // Chat-scope vars (getVariables({type:'chat'})) — a per-chat card-owned KV. Same lazy-sync seed + memoize.
+  let chatVarCache: Record<string, any> | undefined
+  const loadChatVars = (): Record<string, any> => {
+    if (chatVarCache === undefined) {
+      try {
+        chatVarCache =
+          (ctx.chatId ? window.api.chatCardVarsGetSync(ctx.profileId, ctx.chatId) : {}) || {}
+      } catch {
+        chatVarCache = {}
+      }
+    }
+    return chatVarCache ?? {}
+  }
+  // Global-scope vars (getVariables({type:'global'})) — the per-profile template-globals bag, shared across
+  // chats AND across every open card via the module-level `globalVarCaches` map. A beautification card keeps
+  // its UI settings here, so the lazy sync seed is essential (an async prefetch would return {} at boot and
+  // paint defaults over saved settings on every fresh frame), and the shared map is what makes a write in
+  // one floor's card show up in another's without waiting for a new floor.
+  const loadGlobalVars = (): Record<string, any> => {
+    const existing = globalVarCaches.get(ctx.profileId)
+    if (existing !== undefined) return existing
+    let cache: Record<string, any>
+    try {
+      cache = window.api.pluginGlobalsGetSync(ctx.profileId) || {}
+    } catch {
+      cache = {}
+    }
+    globalVarCaches.set(ctx.profileId, cache)
+    return cache
+  }
   return {
     ctx,
     statData: () => statOf(),
@@ -103,8 +149,8 @@ export function createInlineHost(ctx: CardCtx): Host {
     formatRegex: (t) => useRegexStore.getState().apply(t),
     personaName: () => useSettingsStore.getState().settings?.persona?.name || 'User',
     currentChatId: () => ctx.chatId,
-    getScriptVars: () => scriptVarCache,
-    getChatVars: () => chatVarCache,
+    getScriptVars: () => loadScriptVars(),
+    getChatVars: () => loadChatVars(),
 
     applyVariableOps: async (ops: VarOp[]) => {
       await useChatStore.getState().applyVariableOps(ctx.profileId, ops as any, floorIndex())
@@ -158,7 +204,9 @@ export function createInlineHost(ctx: CardCtx): Host {
     setScriptVars: async (vars: Record<string, any>) => {
       const owner = scriptVarOwner()
       const next = vars || {}
-      const prevKeys = Object.keys(scriptVarCache)
+      // Diff against the persisted state (seed it if the card writes before it ever read) so keys the card
+      // dropped are removed, then write-through the memoized cache.
+      const prevKeys = Object.keys(loadScriptVars())
       scriptVarCache = next
       try {
         for (const k of Object.keys(next)) {
@@ -265,6 +313,24 @@ export function createInlineHost(ctx: CardCtx): Host {
         key,
         value
       })
+      // Per-key write bypassed the shared whole-object bag — drop it so the next read re-seeds from disk.
+      globalVarCaches.delete(ctx.profileId)
+    },
+    // Whole-object global vars (getVariables/replaceVariables({type:'global'})). Sync read off the
+    // shared cache; write-through the whole bag to the shared cache (so every open card sees it at once),
+    // persist, then signal the Variables panel to re-read now that disk is written.
+    getGlobalVarsSync: () => loadGlobalVars(),
+    setGlobalVars: async (vars) => {
+      const next = vars && typeof vars === 'object' ? vars : {}
+      globalVarCaches.set(ctx.profileId, next)
+      try {
+        await window.api.pluginGlobalsSet(ctx.profileId, next)
+        window.dispatchEvent(
+          new CustomEvent(GLOBALS_REFETCH_EVENT, { detail: { profileId: ctx.profileId } })
+        )
+      } catch (e) {
+        console.error('[inline setGlobalVars]', e)
+      }
     },
     // Resolve a character portrait to an rptasset:// URL for this card's world, or null.
     assetUrl: async (name: string, type: string, mood?: string) => {

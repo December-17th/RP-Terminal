@@ -426,28 +426,6 @@ export const SettingsPanel: React.FC<{ profileId: string }> = ({ profileId }) =>
             </div>
 
             <label className="field-label" style={{ marginTop: 18 }}>
-              {t('prefs.combatNarration')}
-            </label>
-            <select
-              value={settings.combat?.narrationMode ?? 'append'}
-              onChange={(e) =>
-                updateSettings(profileId, {
-                  combat: {
-                    ...settings.combat,
-                    narrationMode: e.target.value as 'append' | 'floor'
-                  }
-                })
-              }
-              style={{ width: '100%' }}
-            >
-              <option value="append">{t('prefs.combatNarrationAppend')}</option>
-              <option value="floor">{t('prefs.combatNarrationFloor')}</option>
-            </select>
-            <div style={{ fontSize: '0.78em', color: 'var(--rpt-text-secondary)', marginTop: 4 }}>
-              {t('prefs.combatNarrationHint')}
-            </div>
-
-            <label className="field-label" style={{ marginTop: 14 }}>
               {t('prefs.combatNarrationPrompt')}
             </label>
             <textarea

@@ -35,6 +35,26 @@ describe('responseView (lossless storage, view-time transforms)', () => {
     expect(out).toContain('<gametxt>The rain falls.</gametxt>')
   })
 
+  it('a <rpt-combat-start> MENTION inside <think> does not swallow the narrative (tempered strip)', () => {
+    // Real duel bug: the model mentions the tag in its reasoning ("输出<rpt-combat-start>标签"), then
+    // emits the real paired tag + roster later. An un-tempered strip bridged from the mention to the
+    // real close, deleting the whole body (and, with the </think> eaten, the dangling <think> made
+    // stripThinking drop everything) → an empty message showing only the reasoning panel.
+    const dup =
+      '<think>plan: 输出<rpt-combat-start>标签; 再次确认<rpt-combat-start>位于正文之后</think>\n' +
+      '<gametxt>The knight raises her blade.</gametxt>\n' +
+      '<rpt-combat-start map="road">[{"名称":"Bandit"}]</rpt-combat-start>\n' +
+      'Choose: fight or flee.'
+    const out = cleanForDisplay(dup)
+    expect(out).toContain('The knight raises her blade.')
+    expect(out).toContain('Choose: fight or flee.')
+    expect(out).not.toContain('<rpt-combat-start') // both the mention and the real tag are gone
+    expect(out).not.toContain('Bandit') // the roster body is still stripped
+    expect(out).not.toContain('plan:') // reasoning still removed
+    // The committed-floor order (strip combat-start on RAW, then thinking) must ALSO keep the body.
+    expect(stripThinking(stripRptEvents(dup))).toContain('The knight raises her blade.')
+  })
+
   it('is a no-op on already-clean text (legacy floors stay intact)', () => {
     expect(cleanForDisplay('Just narrative.')).toBe('Just narrative.')
     expect(cleanForHistory('Just narrative.')).toBe('Just narrative.')

@@ -15,6 +15,16 @@ export const registerPluginIpc = (ipcMain: IpcMain): void => {
   ipcMain.handle('plugin-get-vars', (_, profileId, chatId) =>
     pluginService.getVars(profileId, chatId)
   )
+  // Global-scope vars (getVariables/replaceVariables({type:'global'})) — the inline card host + the
+  // Variables panel's 全局变量 tab. SYNC read so the card reads its saved settings at boot (mirrors the
+  // chat/script sync getters); whole-object write.
+  ipcMain.on('plugin-globals-get-sync', (e, profileId) => {
+    e.returnValue = pluginService.getGlobalVars(String(profileId))
+  })
+  ipcMain.handle('plugin-globals-set', (_, profileId, vars) => {
+    pluginService.setGlobalVars(String(profileId), vars && typeof vars === 'object' ? vars : {})
+    return true
+  })
   ipcMain.handle('plugin-get-messages', (_, profileId, chatId) =>
     pluginService.getMessages(profileId, chatId)
   )
@@ -112,6 +122,11 @@ export const registerPluginIpc = (ipcMain: IpcMain): void => {
   ipcMain.handle('plugin-storage', (_, profileId, owner, action) =>
     pluginStorageService.storageOp(profileId, owner, action)
   )
+  // SYNC read of the whole owner bag — the inline card host seeds getVariables({type:'script'}) with this at
+  // first read (matching the WCV transport's `wcv-host-script-vars-get-sync`); see cardBridge/host.ts.
+  ipcMain.on('plugin-storage-all-sync', (e, profileId, owner) => {
+    e.returnValue = pluginStorageService.storageOp(profileId, owner, { op: 'all' }) || {}
+  })
   // Opt-in host-mediated fetch (P5). pluginId is host-supplied; allow-list re-read from disk.
   ipcMain.handle('plugin-net-fetch', (_, pluginId, url, opts) =>
     pluginNetService.netFetch(pluginId, url, opts)
