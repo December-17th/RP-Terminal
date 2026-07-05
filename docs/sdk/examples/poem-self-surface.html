@@ -117,7 +117,7 @@
     border-bottom: 1px solid var(--line-soft);
   }
   .res { display: grid; grid-template-columns: 30px 1fr auto; align-items: center; gap: 9px; }
-  .res-k { font-family: var(--mono); font-size: 10px; font-weight: 700; letter-spacing: .06em; }
+  .res-k { font-family: var(--mono); font-size: 11px; font-weight: 700; letter-spacing: .06em; }
   .res-k.hp { color: var(--hp); } .res-k.mp { color: var(--mp); } .res-k.sp { color: var(--sp); }
   .res-k.fp { color: var(--fp); } .res-k.exp { color: var(--exp); }
   .res-track { height: 7px; border-radius: 4px; background: var(--sunken); overflow: hidden; border: 1px solid var(--line-soft); }
@@ -158,8 +158,8 @@
   .self[data-menu="inv"] .panel[data-menu="inv"],
   .self[data-menu="asc"] .panel[data-menu="asc"] { display: block; }
 
-  .sect { font-family: var(--mono); font-size: 10px; letter-spacing: .22em; text-transform: uppercase;
-    color: var(--gold-dim); display: flex; align-items: center; gap: 8px; margin: 0 0 9px; }
+  .sect { font-family: var(--mono); font-size: 11px; letter-spacing: .22em; text-transform: uppercase;
+    color: var(--gold-dim); font-weight: 600; display: flex; align-items: center; gap: 8px; margin: 0 0 9px; }
   .sect::after { content: ''; flex: 1; height: 1px; background: linear-gradient(90deg, var(--line), transparent); }
   .sect + .sect { margin-top: 16px; }
   .empty { color: var(--faint); font-size: 11.5px; font-style: italic; padding: 2px 0; }
@@ -177,7 +177,7 @@
   .inv-row:hover { background: var(--sunken); }
   .inv-dot { width: 7px; height: 7px; border-radius: 50%; flex: 0 0 auto; box-shadow: 0 0 6px currentColor; }
   .inv-name { flex: 1; font-size: 12.5px; }
-  .inv-meta { font-size: 10.5px; color: var(--faint); font-family: var(--mono); }
+  .inv-meta { font-size: 11px; color: var(--faint); font-family: var(--mono); }
 
   /* 登神长阶 — the true ascension gate: 要素(≤3) → 权能(≤1) → 法则, + 神位/神国 */
   .asc-rungs { display: flex; gap: 8px; }
@@ -185,10 +185,10 @@
   .rung.on { border-color: var(--gold-dim); }
   .rung-h { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 7px; }
   .rung-k { font-size: 11px; color: var(--dim); } .rung.on .rung-k { color: var(--gold); }
-  .rung-n { font-family: var(--mono); font-size: 10px; color: var(--faint); }
+  .rung-n { font-family: var(--mono); font-size: 11px; color: var(--faint); }
   .rung-tag { display: block; font-size: 11px; color: var(--text); padding: 3px 0; border-top: 1px solid var(--line-soft); }
   .rung-tag:first-of-type { border-top: none; }
-  .rung .empty { font-size: 10.5px; }
+  .rung .empty { font-size: 11px; }
   .asc-crown { margin-top: 10px; font-size: 11.5px; color: var(--dim); }
   .asc-crown b { color: var(--gold); font-family: var(--serif); }
 
