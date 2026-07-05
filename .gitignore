@@ -15,3 +15,8 @@ example sillytarvern character card, presets, extensions and scripts/
 # Subagent-driven-development runtime scratch (briefs, reports, diffs, ledger)
 /.superpowers/
 .superpowers/
+
+# Local Claude Code tooling and internal planning docs (not part of the app)
+.claude/
+/.scratch/
+/docs/superpowers/
