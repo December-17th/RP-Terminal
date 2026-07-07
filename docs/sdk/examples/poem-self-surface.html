@@ -72,10 +72,10 @@
     position: absolute; inset: 0; z-index: 0;
     background-color: var(--night);
     background-image:
-      radial-gradient(70% 90% at 22% 42%, #33436a 0%, transparent 55%),
-      radial-gradient(70% 90% at 88% 30%, #4a3350 0%, transparent 55%),
-      radial-gradient(60% 80% at 40% 128%, rgba(200, 104, 63, .18), transparent 60%),
-      linear-gradient(180deg, #1b1626, #160f1f);
+      radial-gradient(70% 90% at 22% 42%, var(--scene-a) 0%, transparent 55%),
+      radial-gradient(70% 90% at 88% 30%, var(--scene-b) 0%, transparent 55%),
+      radial-gradient(60% 80% at 40% 128%, var(--scene-glow), transparent 60%),
+      linear-gradient(180deg, color-mix(in srgb, var(--scene-a) 26%, var(--night)), var(--night) 78%);
     background-repeat: no-repeat;
     background-size: var(--vw) var(--band-h);
     background-position: calc(-1 * var(--panel-x)) 0;
