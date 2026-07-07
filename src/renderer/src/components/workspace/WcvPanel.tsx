@@ -3,6 +3,7 @@ import { useWorkspaceStore } from '../../stores/workspaceStore'
 import { useWorkspaceContext } from './context'
 import { useChatStore } from '../../stores/chatStore'
 import { useCharacterStore } from '../../stores/characterStore'
+import { useWcvFreezeStore } from '../../stores/wcvFreezeStore'
 
 /**
  * Renderer host for an out-of-process `WebContentsView` card-UI panel. The native view (in main) is
@@ -22,6 +23,9 @@ export function WcvPanel({ slotId, url }: { slotId: string; url: string }): Reac
   const { profileId } = useWorkspaceContext()
   const chatId = useChatStore((s) => s.activeChatId)
   const characterId = useCharacterStore((s) => s.activeCharacter?.id ?? '')
+  // Freeze-frame bitmap for THIS slot while the native view is ducked under a DOM overlay (PM-A4).
+  // Painted behind the (hidden) native view so the panel stays visually in place; empty otherwise.
+  const freeze = useWcvFreezeStore((s) => s.frames[slotId])
 
   useEffect(() => {
     const el = hostRef.current
@@ -50,8 +54,27 @@ export function WcvPanel({ slotId, url }: { slotId: string; url: string }): Reac
   }, [layouts, slotId])
 
   return (
-    <div ref={hostRef} style={{ width: '100%', height: '100%', minHeight: 80 }}>
-      <div style={{ opacity: 0.5, padding: 12, fontSize: 13 }}>Loading WebContentsView…</div>
+    <div ref={hostRef} style={{ width: '100%', height: '100%', minHeight: 80, position: 'relative' }}>
+      {freeze ? (
+        // The native view is hidden (menu open) — show its last captured frame so the panel doesn't
+        // blank out. `cover` fills the slot (the capture is at the view's exact pixel size, so it
+        // maps 1:1); a stale-by-a-frame bitmap is invisible against a static panel.
+        <img
+          src={freeze}
+          alt=""
+          draggable={false}
+          style={{
+            position: 'absolute',
+            inset: 0,
+            width: '100%',
+            height: '100%',
+            objectFit: 'cover',
+            objectPosition: 'top left'
+          }}
+        />
+      ) : (
+        <div style={{ opacity: 0.5, padding: 12, fontSize: 13 }}>Loading WebContentsView…</div>
+      )}
     </div>
   )
 }

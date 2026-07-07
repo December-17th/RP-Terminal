@@ -23,6 +23,7 @@ import { useWorkflowPanelStore } from './stores/workflowPanelStore'
 import type { WorkflowRunTrace } from '../../shared/workflow/trace'
 import { useWorkspaceStore } from './stores/workspaceStore'
 import { useComposerStore } from './stores/composerStore'
+import { useWcvFreezeStore } from './stores/wcvFreezeStore'
 import { initSlash } from './plugin/slash'
 import { broadcastHostEvent, initCardEventBridge } from './cardBridge/hostBroadcast'
 import { applyTheme, THEMES, DEFAULT_THEME_ID } from './theme'
@@ -86,6 +87,12 @@ export default function App(): React.ReactElement {
       const pid = useProfileStore.getState().activeProfile?.id
       if (pid && chatId === st.activeChatId) st.refreshFloors(pid, chatId)
     })
+    // Freeze-frame bitmaps while WCVs are ducked under a DOM overlay (PM-A4). Main pushes a per-slot
+    // capture to paint behind the hidden native panels; each WcvPanel reads its own frame.
+    const unsubFreeze = window.api.onWcvFreeze((p) => {
+      if ('clear' in p) useWcvFreezeStore.getState().clearFreeze()
+      else useWcvFreezeStore.getState().showFreeze(p.show)
+    })
     // Broadcast the latest stat_data to any WebContentsView card panel whenever floors change
     // (a model turn / re-evaluate / edit), so the card's own UI reflects model-driven updates live.
     const unsubFloors = useChatStore.subscribe((state, prev) => {
@@ -128,6 +135,7 @@ export default function App(): React.ReactElement {
       unsubInput()
       unsubSubmit()
       unsubReload()
+      unsubFreeze()
       unsubFloors()
       unsubEvents()
       unsubTrace()

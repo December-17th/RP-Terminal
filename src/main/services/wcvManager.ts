@@ -4,6 +4,7 @@ import { join } from 'path'
 import { log } from './logService'
 import { serveAssetRequest, ASSET_SCHEME } from './worldAssetProtocol'
 import { makePanelGeometry, PanelGeometry } from './wcvGeometry'
+import { createFreezeController, type FreezeTarget } from './wcvFreezeFrame'
 import type { VarsOrigin } from '../../shared/thRuntime/types'
 
 // Card UI panels run in their own session partition. jsDelivr serves `/gh/` HTML as text/plain (to
@@ -181,7 +182,9 @@ export const ensure = (
       html: inlineHtml ?? undefined
     }
     slots.set(id, slot)
-    if (allHidden) view.setVisible(false) // a full-screen overlay is up — don't paint above it
+    // A full-screen overlay may be up (chat re-render under an open menu) — start hidden so a fresh
+    // view doesn't paint over it. No freeze-frame: it wasn't on screen to capture.
+    freezeController.onTargetCreated(freezeTargetFor(id, slot))
     mainWindow.contentView.addChildView(view)
     view.webContents.loadURL(loadUrl) // html must be on the slot first — the scheme handler reads it
     // Spike: surface the card's console so its missing-API log is visible.
@@ -249,17 +252,49 @@ export const setVisible = (id: string, visible: boolean): void => {
   slots.get(id)?.view.setVisible(visible)
 }
 
-// A full-screen DOM overlay (the workflow editor) can't cover native views — they always paint
-// above the renderer — so the host ducks ALL card WCVs while it's open. Tracked in a flag so a
-// view created WHILE the overlay is open (chat re-render underneath it) starts hidden too.
-// setVisible keeps bounds, so the pages keep running (the engine WCV's overlay detector included).
-let allHidden = false
+// A full-screen DOM overlay (a TopStrip dropdown, the workflow editor) can't cover native views —
+// they always paint above the renderer — so the host ducks ALL card WCVs while it's open. Rather
+// than blanking the panels, we FREEZE-FRAME them: capture each visible view, hide the live view,
+// and paint the bitmap into its DOM placeholder (PM-A4). The controller owns the orchestration
+// (capture → hide → push, with cancel-on-close); this module supplies the Electron effects.
+//
+// A hidden WebContentsView keeps webContents focus — keystrokes would go to the invisible card view
+// instead of the overlay's DOM inputs (workflow rename box) — so hand focus back when hiding.
+const freezeTargetFor = (id: string, slot: Slot): FreezeTarget => ({
+  id,
+  capture: async () => {
+    try {
+      if (slot.view.webContents.isDestroyed()) return null
+      const img = await slot.view.webContents.capturePage()
+      // A view mid-load / zero-size captures empty — no usable freeze-frame, fall back to blank.
+      if (img.isEmpty()) return null
+      const size = img.getSize()
+      if (size.width === 0 || size.height === 0) return null
+      return img.toDataURL()
+    } catch {
+      return null
+    }
+  },
+  setVisible: (visible) => {
+    try {
+      if (!slot.view.webContents.isDestroyed()) slot.view.setVisible(visible)
+    } catch {
+      /* mid-teardown — ignore */
+    }
+    if (!visible) mainWindow?.webContents.focus()
+  }
+})
+
+const freezeController = createFreezeController({
+  visibleTargets: () =>
+    [...slots.entries()].map(([id, slot]) => freezeTargetFor(id, slot)),
+  showFreeze: (frames) => mainWindow?.webContents.send('wcv-freeze-show', frames),
+  clearFreeze: () => mainWindow?.webContents.send('wcv-freeze-clear')
+})
+
 export const setAllVisible = (visible: boolean): void => {
-  allHidden = !visible
-  for (const s of slots.values()) s.view.setVisible(visible)
-  // A hidden WebContentsView keeps webContents focus — keystrokes would go to the invisible
-  // card view instead of the overlay's DOM inputs (workflow rename box). Hand focus back.
-  if (!visible) mainWindow?.webContents.focus()
+  if (visible) freezeController.restore()
+  else freezeController.suppress()
 }
 
 export const destroy = (id: string): void => {

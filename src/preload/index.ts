@@ -43,6 +43,21 @@ const api = {
   wcvSetVisible: (id: string, visible: boolean) => ipcRenderer.send('wcv-set-visible', id, visible),
   // Hide/show every card WCV (native views paint above the DOM — full-screen overlays need this).
   wcvSetAllVisible: (visible: boolean) => ipcRenderer.send('wcv-set-all-visible', visible),
+  // Freeze-frame under a DOM overlay (PM-A4): while WCVs are ducked, main pushes a per-slot bitmap
+  // (data URL) to paint into the slot's DOM placeholder so the panels stay visually in place; a
+  // clear signal drops them on restore. `onWcvFreeze` returns an unsubscribe function.
+  onWcvFreeze: (
+    cb: (p: { show: Record<string, string> } | { clear: true }) => void
+  ) => {
+    const onShow = (_e: unknown, frames: Record<string, string>): void => cb({ show: frames })
+    const onClear = (): void => cb({ clear: true })
+    ipcRenderer.on('wcv-freeze-show', onShow)
+    ipcRenderer.on('wcv-freeze-clear', onClear)
+    return () => {
+      ipcRenderer.removeListener('wcv-freeze-show', onShow)
+      ipcRenderer.removeListener('wcv-freeze-clear', onClear)
+    }
+  },
   wcvDestroy: (id: string) => ipcRenderer.send('wcv-destroy', id),
   // A card-script toolbar button was clicked → deliver it to the chat's card WCVs (the script's eventOn).
   wcvButtonClick: (chatId: string, name: string) =>
