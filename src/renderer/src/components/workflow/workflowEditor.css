@@ -718,3 +718,119 @@
 .rpt-canvas-context-item:hover {
   background: var(--rpt-bg-tertiary);
 }
+
+/* ═══════════ Agent & memory UX (WP-E): universal details panel + prompt editor ═══════════ */
+
+.rpt-details-head {
+  margin-bottom: 8px;
+}
+.rpt-details-tabs {
+  display: flex;
+  gap: 4px;
+  border-bottom: 1px solid var(--rpt-border);
+  margin-bottom: 10px;
+}
+.rpt-details-tab {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 9px;
+  border: none;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  color: var(--rpt-text-secondary);
+  font-size: 11.5px;
+  cursor: pointer;
+}
+.rpt-details-tab:hover {
+  color: var(--rpt-text-primary);
+}
+.rpt-details-tab.active {
+  color: var(--rpt-agent);
+  border-bottom-color: var(--rpt-agent);
+}
+.rpt-details-tab-label {
+  font-size: 11.5px;
+}
+
+/* Prompt editor (WP-E). */
+.rpt-prompt-field {
+  margin-bottom: 12px;
+}
+.rpt-prompt-field-label {
+  font-size: 10.5px;
+  color: var(--rpt-text-tertiary);
+  margin-bottom: 4px;
+}
+.rpt-prompt-row {
+  border: 1px solid var(--rpt-border);
+  border-radius: 6px;
+  padding: 6px;
+  margin-bottom: 6px;
+  background: var(--rpt-bg-secondary);
+}
+.rpt-prompt-row-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 4px;
+}
+.rpt-prompt-drag {
+  cursor: grab;
+  color: var(--rpt-text-tertiary);
+  user-select: none;
+}
+.rpt-prompt-role {
+  font-size: 11px;
+}
+.rpt-prompt-row-remove {
+  margin-left: auto;
+  font-size: 11px;
+  border: 1px solid var(--rpt-border);
+  border-radius: 6px;
+  background: var(--rpt-bg-elevated);
+  color: var(--rpt-text-primary);
+  cursor: pointer;
+}
+.rpt-prompt-textarea {
+  width: 100%;
+  box-sizing: border-box;
+  resize: vertical;
+  font-family: var(--rpt-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  font-size: 11.5px;
+  line-height: 1.4;
+  overflow: hidden;
+}
+.rpt-prompt-chips {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  margin-top: 5px;
+}
+.rpt-prompt-chips-label {
+  font-size: 10px;
+  color: var(--rpt-text-tertiary);
+}
+.rpt-prompt-chip {
+  font-size: 10px;
+  padding: 1px 6px;
+  border: 1px solid var(--rpt-border);
+  border-radius: 10px;
+  background: var(--rpt-bg-tertiary);
+  color: var(--rpt-text-secondary);
+  cursor: pointer;
+}
+.rpt-prompt-chip:hover {
+  color: var(--rpt-text-primary);
+  border-color: var(--rpt-agent);
+}
+.rpt-prompt-add {
+  font-size: 11.5px;
+  padding: 3px 10px;
+  border: 1px dashed var(--rpt-border);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--rpt-text-secondary);
+  cursor: pointer;
+}
