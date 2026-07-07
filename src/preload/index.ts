@@ -203,6 +203,10 @@ const api = {
   // + after save. The doc-path sibling of explainAgentPackTriggers.
   explainDocTriggers: (profileId: string, chatId: string) =>
     ipcRenderer.invoke('workflow-explain-doc-triggers', profileId, chatId),
+  // Fire ONE trigger.manual node's chain on explicit user action (RF-01). Guards (active doc, node
+  // kind, disabled) live main-side in runManualDoc — they log + no-op, never throw.
+  runManualTrigger: (profileId: string, chatId: string, docId: string, triggerNodeId: string) =>
+    ipcRenderer.invoke('workflow-run-manual-trigger', profileId, chatId, docId, triggerNodeId),
   // Effective-graph projection for the Workflow view's Effective mode (agent-packs plan WP3.6a;
   // ADR 0010): the composed doc + composition warnings + per-pack grouping. A live projection,
   // never persisted (ADR 0001) — re-fetch after a gate flip or narrator write-through.

@@ -25,6 +25,7 @@ import './workflowEditor.css'
 import { useWorkflowEditorStore, type NodeTypeInfo } from '../../stores/workflowEditorStore'
 import { useWorkflowTraceStore } from '../../stores/workflowTraceStore'
 import { useChatStore } from '../../stores/chatStore'
+import { useToastStore } from '../../stores/toastStore'
 import { useOptionalT, useT } from '../../i18n'
 import {
   formatTraceSeconds,
@@ -58,6 +59,10 @@ interface RptNodeData extends Record<string, unknown> {
   trace?: TraceNode
   /** WP6.4a: the live trigger explanation for a trigger.* node (met / now / at), if fetched. */
   triggerBadge?: DocTriggerBadge
+  /** RF-01: the "run now" affordance for a `trigger.manual` node. `enabled` folds in docIsActive,
+   *  dirty, and the node's own disabled flag; `disabledReason` is a raw CODE (translated in RptNode,
+   *  where `t` is available). Only populated for `trigger.manual` nodes. */
+  manualRun?: { enabled: boolean; disabledReason: 'saveFirst' | 'inactiveDoc' | null; run: () => Promise<void> }
 }
 
 /** Maps a PortType to the CSS class workflowEditor.css keys its color off. Falls back to `Any`'s
@@ -83,7 +88,9 @@ function RptNode({ data, selected }: NodeProps<RFNode<RptNodeData>>): React.JSX.
   const t = useT()
   const tOpt = useOptionalT()
   const setNodeDisabled = useWorkflowEditorStore((s) => s.setNodeDisabled)
-  const { editorNode, typeInfo, trace, triggerBadge } = data
+  const { editorNode, typeInfo, trace, triggerBadge, manualRun } = data
+  // RF-01: disable the ▶ button while its headless run is in flight (no spinner — just guard).
+  const [running, setRunning] = React.useState(false)
   const inputs = typeInfo?.inputs ?? []
   const outputs = typeInfo?.outputs ?? []
   const disabled = editorNode.disabled === true
@@ -125,6 +132,30 @@ function RptNode({ data, selected }: NodeProps<RFNode<RptNodeData>>): React.JSX.
             }}
           >
             <span className="rpt-node-trigger-switch-knob" aria-hidden />
+          </button>
+        )}
+        {/* RF-01: manual "run now" ▶. Enabled only when the open doc is the chat's active doc, the
+            draft is saved, and the node isn't disabled. stopPropagation so firing doesn't also select. */}
+        {manualRun && (
+          <button
+            type="button"
+            className="rpt-node-run-now"
+            disabled={!manualRun.enabled || running}
+            title={
+              manualRun.disabledReason === 'saveFirst'
+                ? t('workflowEditor.runNowSaveFirst')
+                : manualRun.disabledReason === 'inactiveDoc'
+                  ? t('workflowEditor.runNowInactiveDoc')
+                  : t('workflowEditor.runNow')
+            }
+            aria-label={t('workflowEditor.runNow')}
+            onClick={(e) => {
+              e.stopPropagation()
+              setRunning(true)
+              void manualRun.run().finally(() => setRunning(false))
+            }}
+          >
+            ▶
           </button>
         )}
         {trace && (
@@ -282,13 +313,19 @@ interface FlowCanvasProps {
   traceOverride?: WorkflowRunTrace | null
   /** WP6.4a: bumped by the parent after a save so the live trigger badges refetch. */
   triggerRefreshToken?: number
+  /** RF-01: fired after a manual trigger run completes, so the parent can bump its shared refresh
+   *  token (refetches the RunDrawer + the trigger badges). */
+  onManualRun?: () => void
 }
 
 function FlowCanvasInner({
   profileId,
   traceOverride,
-  triggerRefreshToken
+  triggerRefreshToken,
+  onManualRun
 }: FlowCanvasProps): React.JSX.Element {
+  const t = useT()
+  const pushToast = useToastStore((s) => s.push)
   const nodes = useWorkflowEditorStore((s) => s.nodes)
   const edges = useWorkflowEditorStore((s) => s.edges)
   const nodeTypeList = useWorkflowEditorStore((s) => s.nodeTypes)
@@ -302,6 +339,7 @@ function FlowCanvasInner({
   const connect = useWorkflowEditorStore((s) => s.connect)
   const select = useWorkflowEditorStore((s) => s.select)
   const addNode = useWorkflowEditorStore((s) => s.addNode)
+  const dirty = useWorkflowEditorStore((s) => s.dirty)
   const groups = useMemo(() => doc?.groups ?? [], [doc])
   const setSelectedNodeIds = useWorkflowEditorStore((s) => s.setSelectedNodeIds)
   const selectGroup = useWorkflowEditorStore((s) => s.selectGroup)
@@ -337,15 +375,20 @@ function FlowCanvasInner({
   // "now/at" only makes sense against the chat whose committed state it evaluates). Refetch on save
   // (triggerRefreshToken). NO polling.
   const [triggerBadges, setTriggerBadges] = React.useState<Map<string, DocTriggerBadge>>(new Map())
+  // RF-01: whether the OPEN doc IS the chat's resolved active doc — the gate the manual ▶ needs
+  // (runManualDoc no-ops otherwise). Tracked alongside the badge fetch (same gate), never polled.
+  const [docIsActive, setDocIsActive] = React.useState(false)
   React.useEffect(() => {
     let cancelled = false
     setTriggerBadges(new Map())
+    setDocIsActive(false)
     if (!activeChatId || !currentId) return
     void (async () => {
       // Only badge when the OPEN doc is the chat's resolved active doc (the same gate the trace overlay
       // uses: a badge against a different doc's state would mislead).
       const resolvedId = await window.api.resolveWorkflowId(profileId, activeChatId)
       if (cancelled || resolvedId !== currentId) return
+      setDocIsActive(true)
       const list = (await window.api.explainDocTriggers(profileId, activeChatId)) as {
         nodeId: string
         description: string
@@ -368,6 +411,19 @@ function FlowCanvasInner({
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- refetch on doc/chat/save; profileId stable
   }, [activeChatId, currentId, triggerRefreshToken])
+
+  // RF-01: fire ONE trigger.manual node's chain. Guards (active doc, node kind, disabled) live in
+  // runManualDoc main-side; here we only avoid the call when we have nothing to key it to. On success
+  // toast + bump the parent's shared refresh token (RunDrawer + badges refetch).
+  const runManual = useCallback(
+    async (nodeId: string): Promise<void> => {
+      if (!activeChatId || !currentId) return
+      await window.api.runManualTrigger(profileId, activeChatId, currentId, nodeId)
+      pushToast(t('workflowEditor.runNowDone'))
+      onManualRun?.()
+    },
+    [profileId, activeChatId, currentId, onManualRun, pushToast, t]
+  )
 
   // On-canvas modules (WP6.3): project the doc's groups onto the canvas — collapsed groups hide
   // their members behind one module node, expanded groups render a background frame; boundary edges
@@ -430,7 +486,22 @@ function FlowCanvasInner({
           editorNode: n,
           typeInfo: typeInfoMap.get(n.type),
           trace: traceByNode.get(n.id),
-          triggerBadge: triggerBadges.get(n.id)
+          triggerBadge: triggerBadges.get(n.id),
+          // RF-01: only manual triggers get a ▶. enabled folds in the active-doc gate, the dirty flag,
+          // and the node's own disabled state; the reason CODE drives the tooltip (translated in RptNode).
+          ...(n.type === 'trigger.manual'
+            ? {
+                manualRun: {
+                  enabled: docIsActive && !dirty && n.disabled !== true,
+                  disabledReason: dirty
+                    ? ('saveFirst' as const)
+                    : !docIsActive
+                      ? ('inactiveDoc' as const)
+                      : null,
+                  run: () => runManual(n.id)
+                }
+              }
+            : {})
         }
       } as RFNode)
     }
@@ -444,7 +515,10 @@ function FlowCanvasInner({
     readOnly,
     typeInfoMap,
     traceByNode,
-    triggerBadges
+    triggerBadges,
+    docIsActive,
+    dirty,
+    runManual
   ])
 
   const rfEdges: RFEdge[] = useMemo(() => {

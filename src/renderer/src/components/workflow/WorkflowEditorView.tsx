@@ -514,6 +514,7 @@ export default function WorkflowEditorView({
               profileId={profileId}
               traceOverride={replayTrace}
               triggerRefreshToken={refreshToken}
+              onManualRun={() => setRefreshToken((n) => n + 1)}
             />
           </div>
           {/* WP6.4a: the Run drawer — a collapsible strip along the bottom of the canvas column. */}

@@ -7,7 +7,7 @@ import type { WorkflowDoc } from '../../shared/workflow/types'
 import type { TableTemplate } from '../types/tableTemplate'
 import { OverrideScope } from '../services/agentPackStore'
 import { listRuns } from '../services/runHistoryStore'
-import { explainTriggers, explainDocTriggers } from '../services/headlessRunService'
+import { explainTriggers, explainDocTriggers, runManualDoc } from '../services/headlessRunService'
 import { previewNextPrompt } from '../services/generation/previewService'
 import { getChat } from '../services/chatService'
 
@@ -101,6 +101,13 @@ export const registerAgentPackIpc = (ipcMain: IpcMain): void => {
   // so the editor can fetch it on open / after save without perturbing the trigger store.
   ipcMain.handle('workflow-explain-doc-triggers', (_, profileId: string, chatId: string) =>
     explainDocTriggers(profileId, chatId)
+  )
+  // Fire ONE trigger.manual node's chain on explicit user action (RF-01). All validity guards
+  // (active doc, node kind, disabled) live in runManualDoc itself — they log + no-op, never throw.
+  ipcMain.handle(
+    'workflow-run-manual-trigger',
+    (_, profileId: string, chatId: string, docId: string, triggerNodeId: string) =>
+      runManualDoc(profileId, chatId, docId, triggerNodeId)
   )
   // Effective-graph projection for the Workflow view's Effective mode (agent-packs plan WP3.6a;
   // ADR 0010). Returns the composed doc + warnings + per-pack grouping (name / node ids / triggerOnly)

@@ -675,6 +675,11 @@ const zh: Record<string, string> = {
   'workflowEditor.moduleImport.err.exposed-not-member': '某个暴露设置指向了模块外的节点。',
   // 一体化画布重构 WP6.4a：节点启用开关、实时触发器徽标、组装节点提示词预览。
   'workflowEditor.enabled': '启用',
+  // RF-01：手动触发器"立即运行"按钮及其禁用原因提示。
+  'workflowEditor.runNow': '立即运行',
+  'workflowEditor.runNowDone': '手动运行完成——请查看运行记录',
+  'workflowEditor.runNowSaveFirst': '请先保存工作流再运行',
+  'workflowEditor.runNowInactiveDoc': '此文档不是当前会话激活的工作流',
   'workflowEditor.trigger.nowAt': '当前 {{now}} · 目标 {{at}}',
   'workflowEditor.assemblePreview.title': '提示词预览',
   'workflowEditor.assemblePreview.button': '预览下一个提示词',

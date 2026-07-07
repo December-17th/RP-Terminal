@@ -699,6 +699,11 @@ const en: Record<string, string> = {
     'An exposed setting points at a node outside the module.',
   // One-canvas rebuild WP6.4a: node enable toggle, live trigger badge, assemble-node prompt preview.
   'workflowEditor.enabled': 'Enabled',
+  // RF-01: manual-trigger "run now" button + its disabled-reason tooltips.
+  'workflowEditor.runNow': 'Run now',
+  'workflowEditor.runNowDone': 'Manual run finished — see the run list',
+  'workflowEditor.runNowSaveFirst': 'Save the workflow before running',
+  'workflowEditor.runNowInactiveDoc': 'This doc is not the active workflow for the open chat',
   'workflowEditor.trigger.nowAt': 'now {{now}} · at {{at}}',
   'workflowEditor.assemblePreview.title': 'Prompt preview',
   'workflowEditor.assemblePreview.button': 'Preview next prompt',

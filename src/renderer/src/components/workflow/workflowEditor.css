@@ -392,6 +392,29 @@
   left: 13px;
 }
 
+/* ---------- Manual "run now" ▶ button (title-row, RF-01) ---------- */
+.rpt-node-run-now {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  margin-left: 4px;
+  border: 1px solid var(--rpt-border);
+  border-radius: 4px;
+  background: var(--rpt-bg-tertiary);
+  color: var(--rpt-accent);
+  font-size: 10px;
+  line-height: 1;
+  cursor: pointer;
+  flex: 0 0 auto;
+}
+.rpt-node-run-now:disabled {
+  color: var(--rpt-text-tertiary);
+  cursor: not-allowed;
+}
+
 /* ---------- Live trigger badge caption (WP6.4a) ---------- */
 .rpt-node-trigger-badge {
   display: flex;
