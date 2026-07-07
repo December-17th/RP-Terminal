@@ -23,6 +23,8 @@ const dark: ThemeTokens = {
   '--rpt-text-secondary': '#aaaaaa',
   '--rpt-text-tertiary': '#6f6f78',
   '--rpt-accent': '#5b8def',
+  // Soft accent wash — cue banners / subtle accent-tinted fills (ChatView combat-cue banner).
+  '--rpt-accent-soft': 'rgba(91, 141, 239, 0.12)',
   '--rpt-on-accent': '#ffffff',
   '--rpt-border': '#333333',
   '--rpt-danger': '#e74c3c',
@@ -56,6 +58,8 @@ const carbon: ThemeTokens = {
   '--rpt-text-secondary': '#9a9aa3',
   '--rpt-text-tertiary': '#6a6a73',
   '--rpt-accent': '#2dd4bf',
+  // Soft accent wash — cue banners / subtle accent-tinted fills (ChatView combat-cue banner).
+  '--rpt-accent-soft': 'rgba(45, 212, 191, 0.12)',
   '--rpt-on-accent': '#04221d',
   '--rpt-border': '#26262c',
   '--rpt-danger': '#f06a62',
@@ -84,6 +88,8 @@ const light: ThemeTokens = {
   '--rpt-text-secondary': '#5b606b',
   '--rpt-text-tertiary': '#8a8f99',
   '--rpt-accent': '#2563eb',
+  // Soft accent wash — cue banners / subtle accent-tinted fills (ChatView combat-cue banner).
+  '--rpt-accent-soft': 'rgba(37, 99, 235, 0.10)',
   '--rpt-on-accent': '#ffffff',
   '--rpt-border': '#d9dce2',
   '--rpt-danger': '#d23b35',

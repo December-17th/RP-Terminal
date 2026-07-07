@@ -10,6 +10,8 @@
   --rpt-text-secondary: #aaaaaa;
   --rpt-text-tertiary: #6f6f78;
   --rpt-accent: #5b8def;
+  /* Soft accent wash — cue banners / subtle accent-tinted fills (ChatView combat-cue banner). */
+  --rpt-accent-soft: rgba(91, 141, 239, 0.12);
   --rpt-on-accent: #ffffff;
   --rpt-border: #333333;
   --rpt-danger: #e74c3c;
