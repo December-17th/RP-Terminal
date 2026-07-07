@@ -105,6 +105,50 @@ export const describeTriggerNode = (
   return att ? describeTrigger(att) : node.type
 }
 
+// ── mode gating (owner manual-pass fix: a mode change must be VISIBLE on the graph) ───────────────
+
+/** The trigger nodes that are GATED by a `control.mode` selection: a trigger is mode-gated iff it has
+ *  ≥1 out-edge and ALL its out-edges land on control.mode `when{N}` slots whose option is NOT the
+ *  selected one (slot mapping options[i] ↔ when{i+1}, the WP-B contract — controlNodes.ts:189-196;
+ *  `selected` fail-softs to options[0] exactly like the node's run() does, :226-233). A selected key
+ *  with no wired slot (the seeded doc's 'off') therefore gates every when-wired trigger. Any out-edge
+ *  that escapes the gating — a non-mode target, a non-when port, or a malformed mode config — makes
+ *  the trigger NOT gated (fail-soft: never falsely dim). Doc-wide (grouping-independent); group-level
+ *  callers intersect with membership. This is DISPLAY derivation only — gating semantics stay in the
+ *  engine; nothing here (or in the callers) writes `trigger.disabled`. */
+export const modeGatedTriggerIds = (
+  nodes: EditorNode[],
+  edges: EditorEdge[],
+  types: Map<string, EditorNodeType>
+): Set<string> => {
+  const byId = new Map(nodes.map((n) => [n.id, n]))
+
+  /** Is this edge into a control.mode when-slot that the current selection makes a dead end? */
+  const edgeIsGated = (e: EditorEdge): boolean => {
+    const target = byId.get(e.target)
+    if (!target || target.type !== 'control.mode') return false
+    const m = /^when([1-4])$/.exec(e.targetPort)
+    if (!m) return false
+    const cfg = (target.config ?? {}) as { options?: unknown; selected?: unknown }
+    if (!Array.isArray(cfg.options) || cfg.options.length === 0) return false
+    const keys = cfg.options.map((o) =>
+      o && typeof o === 'object' ? (o as { key?: unknown }).key : undefined
+    )
+    // Mirror the node's fail-soft: an unknown/absent selected key degrades to options[0].
+    const selected = keys.includes(cfg.selected as string) ? (cfg.selected as string) : keys[0]
+    const slotKey = keys[Number(m[1]) - 1]
+    return slotKey !== selected
+  }
+
+  const out = new Set<string>()
+  for (const n of nodes) {
+    if (!isTriggerType(n.type, types)) continue
+    const outs = edges.filter((e) => e.source === n.id)
+    if (outs.length > 0 && outs.every(edgeIsGated)) out.add(n.id)
+  }
+  return out
+}
+
 // ── status sentence (spec §1/§4: "agents report in prose") ────────────────────────────────────────
 
 /** A relative-recency i18n fragment ("{{n}} min ago" …), rendered with its own t() call and passed
@@ -135,9 +179,15 @@ export interface AgentSentence {
 }
 
 export const agentStatusSentence = (input: {
-  /** Per-trigger one-liners (describeTriggerNode output), joined for multi-trigger agents. */
+  /** Per-trigger one-liners (describeTriggerNode output) of the EFFECTIVE triggers — enabled AND not
+   *  mode-gated (owner manual-pass fix: with mode=off the card must not claim "runs every N floors").
+   *  When `allModeGated` is set, callers pass ALL trigger descriptions instead (what the agent WOULD
+   *  do), and the mode-gated variant renders them. */
   descriptions: string[]
   state: AgentEnabledState
+  /** Switch is on but EVERY trigger is gated by a control.mode selection (modeGatedTriggerIds) —
+   *  renders the distinct "Gated by mode · …" variant (user-off keeps the plain off variant). */
+  allModeGated?: boolean
   /** trace.startedAt of the newest run attributed to this agent, if any. */
   lastRunAt?: number
   now: number
@@ -145,6 +195,7 @@ export const agentStatusSentence = (input: {
   const desc = input.descriptions.filter(Boolean).join(' | ')
   if (input.state === 'off') return { key: 'workflowEditor.agent.sentence.off', desc }
   if (input.state === 'mixed') return { key: 'workflowEditor.agent.sentence.mixed', desc }
+  if (input.allModeGated) return { key: 'workflowEditor.agent.sentence.modeGated', desc }
   if (input.lastRunAt != null)
     return {
       key: 'workflowEditor.agent.sentence.onRan',

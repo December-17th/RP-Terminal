@@ -670,6 +670,11 @@ const zh: Record<string, string> = {
   'workflowEditor.agent.sentence.onNever': '{{desc}} · 尚未运行',
   'workflowEditor.agent.sentence.off': '已关闭 · {{desc}}',
   'workflowEditor.agent.sentence.mixed': '部分开启 · {{desc}}',
+  // 手动测试修复：模式门控 ≠ 用户关闭 — 开关为开，但所选模式让所有触发器成为死路；{{desc}} 显示其本来的行为。
+  'workflowEditor.agent.sentence.modeGated': '已被模式门控 · {{desc}}',
+  'workflowEditor.trigger.modeGated': '模式门控',
+  'workflowEditor.trigger.modeGatedTip':
+    '当前所选模式使该触发器成为死路。修改“模式”设置以启用它；开关仍是独立的总开关。',
   'workflowEditor.agent.ago.justNow': '刚刚',
   'workflowEditor.agent.ago.minutes': '{{n}} 分钟前',
   'workflowEditor.agent.ago.hours': '{{n}} 小时前',

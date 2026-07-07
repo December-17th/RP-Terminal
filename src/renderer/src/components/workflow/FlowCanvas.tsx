@@ -43,6 +43,7 @@ import {
   excerptOf,
   isAgentGroup,
   isTriggerType,
+  modeGatedTriggerIds,
   newestRunForGroup,
   promptExcerpt,
   promptTextOfNode,
@@ -73,6 +74,10 @@ interface RptNodeData extends Record<string, unknown> {
   trace?: TraceNode
   /** WP6.4a: the live trigger explanation for a trigger.* node (met / now / at), if fetched. */
   triggerBadge?: DocTriggerBadge
+  /** Owner manual-pass fix: this trigger's every out-edge dead-ends in a non-selected control.mode
+   *  slot (modeGatedTriggerIds) — rendered dimmed + a "gated by mode" chip, visually DISTINCT from
+   *  disabled (user-toggled-off). Display only; the switch stays an independent master toggle. */
+  modeGated?: boolean
 }
 
 /** Maps a PortType to the CSS class workflowEditor.css keys its color off. Falls back to `Any`'s
@@ -98,7 +103,7 @@ function RptNode({ data, selected }: NodeProps<RFNode<RptNodeData>>): React.JSX.
   const t = useT()
   const tOpt = useOptionalT()
   const setNodeDisabled = useWorkflowEditorStore((s) => s.setNodeDisabled)
-  const { editorNode, typeInfo, trace, triggerBadge } = data
+  const { editorNode, typeInfo, trace, triggerBadge, modeGated } = data
   const inputs = typeInfo?.inputs ?? []
   const outputs = typeInfo?.outputs ?? []
   const disabled = editorNode.disabled === true
@@ -120,7 +125,7 @@ function RptNode({ data, selected }: NodeProps<RFNode<RptNodeData>>): React.JSX.
 
   return (
     <div
-      className={`rpt-node${selected ? ' selected' : ''}${editorNode.isMainOutput ? ' is-main-output' : ''}${trace ? ` rpt-node-trace-${trace.status}` : ''}${disabled ? ' rpt-node-disabled' : ''}`}
+      className={`rpt-node${selected ? ' selected' : ''}${editorNode.isMainOutput ? ' is-main-output' : ''}${trace ? ` rpt-node-trace-${trace.status}` : ''}${disabled ? ' rpt-node-disabled' : ''}${modeGated && !disabled ? ' rpt-node-mode-gated' : ''}`}
     >
       <div className="rpt-node-title-row">
         {editorNode.isMainOutput && (
@@ -130,6 +135,14 @@ function RptNode({ data, selected }: NodeProps<RFNode<RptNodeData>>): React.JSX.
         )}
         <span className="rpt-node-title">{title}</span>
         <span className="rpt-node-type-id">{editorNode.type}</span>
+        {/* Owner manual-pass fix: this trigger's chain is dead-ended by the current control.mode
+            selection — dim + chip (distinct from disabled: solid border, warning-tinted chip, and the
+            switch stays interactive: it is an independent master toggle, not what the mode writes). */}
+        {modeGated && !disabled && (
+          <span className="rpt-node-modegated-chip" title={t('workflowEditor.trigger.modeGatedTip')}>
+            {t('workflowEditor.trigger.modeGated')}
+          </span>
+        )}
         {/* Trigger on/off switch (WP6.4a): a disabled trigger never fires (the agent's off-switch).
             stopPropagation so toggling doesn't also select the node. */}
         {isTrigger && (
@@ -221,6 +234,9 @@ function RptNode({ data, selected }: NodeProps<RFNode<RptNodeData>>): React.JSX.
 interface AgentCardData extends Record<string, unknown> {
   state: AgentEnabledState
   sentence: AgentSentence
+  /** Owner manual-pass fix: the switch is on but EVERY trigger is dead-ended by the current
+   *  control.mode selection — the card dims like off (the sentence says "Gated by mode · …"). */
+  allModeGated: boolean
   /** trace.startedAt + outcome of the newest attributed run (fail-soft: old records don't attribute). */
   lastRunAt: number | null
   lastRunOk: boolean | null
@@ -283,7 +299,7 @@ function RptModuleNode({ data, selected }: NodeProps<RFNode<RptModuleData>>): Re
   const exposedCount = group.exposed?.length ?? 0
   return (
     <div
-      className={`rpt-module${agent ? ' rpt-agent-card' : ''}${agent?.state === 'off' ? ' rpt-agent-off' : ''}${selected ? ' selected' : ''}`}
+      className={`rpt-module${agent ? ' rpt-agent-card' : ''}${agent?.state === 'off' || agent?.allModeGated ? ' rpt-agent-off' : ''}${selected ? ' selected' : ''}`}
     >
       {/* One generic target handle (left) + one source handle (right); both share the 'module' id. */}
       <Handle type="target" position={Position.Left} id={MODULE_PORT} className="rpt-port-any" />
@@ -546,6 +562,14 @@ function FlowCanvasInner({
 
   const errors = useWorkflowEditorStore((s) => s.errors)
 
+  // Owner manual-pass fix: the triggers a control.mode selection currently dead-ends (doc-wide,
+  // display-only derivation — never writes trigger.disabled). Flipping the mode dropdown updates
+  // `nodes` (setNodeConfig on the mode node), so everything below re-derives immediately.
+  const modeGatedIds = useMemo(
+    () => modeGatedTriggerIds(nodes, edges, typeInfoMap),
+    [nodes, edges, typeInfoMap]
+  )
+
   // WP-D (spec §1/§4): everything each AGENT group's card/frame renders, derived once over the doc +
   // catalog + live badges + run history + validation. Non-agent groups get no entry (plain module card).
   const agentByGroupId = useMemo(() => {
@@ -555,18 +579,26 @@ function FlowCanvasInner({
     for (const g of groups) {
       if (!isAgentGroup(nodes, g, typeInfoMap)) continue
       const state = agentEnabledState(nodes, g, typeInfoMap)
-      const descriptions = agentTriggers(nodes, g, typeInfoMap).map((tn) =>
+      const triggers = agentTriggers(nodes, g, typeInfoMap)
+      const describe = (tn: (typeof triggers)[number]): string =>
         describeTriggerNode(tn, triggerBadges.get(tn.id)?.description)
-      )
+      // The sentence composes from EFFECTIVE triggers (enabled AND not mode-gated); when the switch
+      // is on but the mode gates everything, the mode-gated variant renders ALL descriptions (what
+      // the agent WOULD do) — owner fix: mode=off must not read as "runs every N floors".
+      const effective = triggers.filter((tn) => tn.disabled !== true && !modeGatedIds.has(tn.id))
+      const allModeGated = state === 'on' && triggers.length > 0 && effective.length === 0
+      const descriptions = (allModeGated || state !== 'on' ? triggers : effective).map(describe)
       const newest = newestRunForGroup(runRecords, new Set(g.nodeIds))
       map.set(g.id, {
         state,
         sentence: agentStatusSentence({
           descriptions,
           state,
+          ...(allModeGated ? { allModeGated: true } : {}),
           ...(newest ? { lastRunAt: newest.trace.startedAt } : {}),
           now
         }),
+        allModeGated,
         lastRunAt: newest ? newest.trace.startedAt : null,
         lastRunOk: newest ? newest.trace.ok : null,
         excerpt: promptExcerpt(nodes, g, typeInfoMap),
@@ -574,7 +606,7 @@ function FlowCanvasInner({
       })
     }
     return map
-  }, [groups, nodes, typeInfoMap, triggerBadges, runRecords, errors])
+  }, [groups, nodes, edges, typeInfoMap, triggerBadges, runRecords, errors, modeGatedIds])
 
   // On-canvas modules (WP6.3): project the doc's groups onto the canvas — collapsed groups hide
   // their members behind one module node, expanded groups render a background frame; boundary edges
@@ -637,7 +669,9 @@ function FlowCanvasInner({
           editorNode: n,
           typeInfo: typeInfoMap.get(n.type),
           trace: traceByNode.get(n.id),
-          triggerBadge: triggerBadges.get(n.id)
+          triggerBadge: triggerBadges.get(n.id),
+          // Owner manual-pass fix: dim + chip a trigger the current mode selection dead-ends.
+          modeGated: modeGatedIds.has(n.id)
         }
       } as RFNode)
     }
@@ -652,7 +686,8 @@ function FlowCanvasInner({
     typeInfoMap,
     traceByNode,
     triggerBadges,
-    agentByGroupId
+    agentByGroupId,
+    modeGatedIds
   ])
 
   const rfEdges: RFEdge[] = useMemo(() => {

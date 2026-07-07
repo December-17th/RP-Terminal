@@ -694,6 +694,12 @@ const en: Record<string, string> = {
   'workflowEditor.agent.sentence.onNever': '{{desc}} · not run yet',
   'workflowEditor.agent.sentence.off': 'Off · {{desc}}',
   'workflowEditor.agent.sentence.mixed': 'Partly on · {{desc}}',
+  // Owner manual-pass fix: mode-gated ≠ user-off — the switch is on but the selected mode dead-ends
+  // every trigger; {{desc}} shows what the agent WOULD do.
+  'workflowEditor.agent.sentence.modeGated': 'Gated by mode · {{desc}}',
+  'workflowEditor.trigger.modeGated': 'Mode-gated',
+  'workflowEditor.trigger.modeGatedTip':
+    'The selected mode dead-ends this trigger. Change the Mode setting to use it; the on/off switch stays an independent master toggle.',
   'workflowEditor.agent.ago.justNow': 'just now',
   'workflowEditor.agent.ago.minutes': '{{n}} min ago',
   'workflowEditor.agent.ago.hours': '{{n}} h ago',

@@ -18,6 +18,7 @@ import {
   agentTriggers,
   describeTriggerNode,
   isAgentGroup,
+  modeGatedTriggerIds,
   newestRunForGroup,
   type AgentSentence
 } from './agentModel'
@@ -112,12 +113,25 @@ function AgentRow({
   const setNodeConfig = useWorkflowEditorStore((s) => s.setNodeConfig)
   const requestPanToGroup = useWorkflowEditorStore((s) => s.requestPanToGroup)
 
+  const edges = useWorkflowEditorStore((s) => s.edges)
+
   const state = agentEnabledState(nodes, group, types)
-  const descriptions = agentTriggers(nodes, group, types).map((tn) => describeTriggerNode(tn))
+  // Owner manual-pass fix: the sentence composes from EFFECTIVE triggers (enabled AND not gated by
+  // the current control.mode selection); when the switch is on but the mode gates every trigger, the
+  // mode-gated variant renders ALL descriptions (what the agent WOULD do). Derives from store
+  // nodes+edges, so flipping the inline mode dropdown below updates this row immediately.
+  const gated = modeGatedTriggerIds(nodes, edges, types)
+  const triggers = agentTriggers(nodes, group, types)
+  const effective = triggers.filter((tn) => tn.disabled !== true && !gated.has(tn.id))
+  const allModeGated = state === 'on' && triggers.length > 0 && effective.length === 0
+  const descriptions = (allModeGated || state !== 'on' ? triggers : effective).map((tn) =>
+    describeTriggerNode(tn)
+  )
   const newest = newestRunForGroup(records, new Set(group.nodeIds))
   const sentence = agentStatusSentence({
     descriptions,
     state,
+    ...(allModeGated ? { allModeGated: true } : {}),
     ...(newest ? { lastRunAt: newest.trace.startedAt } : {}),
     now: Date.now()
   })
@@ -162,7 +176,7 @@ function AgentRow({
           ⌖
         </button>
       </div>
-      <div className={`rpt-agents-row-sentence${state === 'off' ? ' off' : ''}`}>
+      <div className={`rpt-agents-row-sentence${state === 'off' || allModeGated ? ' off' : ''}`}>
         <AgentSentenceText sentence={sentence} />
       </div>
       {enumSettings.map(({ entry, member, config, options }) => {

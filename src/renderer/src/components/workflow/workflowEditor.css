@@ -361,6 +361,22 @@
   border-style: dashed;
 }
 
+/* ---------- Mode-gated trigger (owner manual-pass fix) ----------
+   Visually DISTINCT from disabled: milder dim, SOLID border (the trigger is still enabled — the
+   selected control.mode just dead-ends its chain), and a warning-tinted chip naming the cause. */
+.rpt-node.rpt-node-mode-gated {
+  opacity: 0.6;
+}
+.rpt-node-modegated-chip {
+  font-size: 9px;
+  padding: 0 5px;
+  border-radius: 7px;
+  border: 1px solid var(--rpt-warning);
+  color: var(--rpt-warning);
+  white-space: nowrap;
+  flex: 0 0 auto;
+}
+
 /* ---------- Trigger on/off switch (title-row, WP6.4a) ---------- */
 .rpt-node-trigger-switch {
   width: 26px;

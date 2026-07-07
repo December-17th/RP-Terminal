@@ -6,6 +6,7 @@ import {
   downstreamClosure,
   isAgentGroup,
   isTriggerType,
+  modeGatedTriggerIds,
   newestRunForGroup,
   promptExcerpt,
   promptTextOfNode,
@@ -225,6 +226,102 @@ describe('agentStatusSentence', () => {
     const s = agentStatusSentence({ descriptions: ['x'], state: 'on', now })
     expect(s.key).toBe('workflowEditor.agent.sentence.onNever')
     expect(s.ago).toBeUndefined()
+  })
+  it('on + everything mode-gated → the mode-gated pattern (beats recency; distinct from user-off)', () => {
+    const s = agentStatusSentence({
+      descriptions: ['every 3 floors', 'state: table summary.unprocessed gte 6'],
+      state: 'on',
+      allModeGated: true,
+      lastRunAt: now - 60_000,
+      now
+    })
+    expect(s.key).toBe('workflowEditor.agent.sentence.modeGated')
+    expect(s.desc).toBe('every 3 floors | state: table summary.unprocessed gte 6')
+    expect(s.ago).toBeUndefined()
+    // user-off keeps its own key — the two states must never read the same.
+    expect(
+      agentStatusSentence({ descriptions: ['x'], state: 'off', allModeGated: true, now }).key
+    ).toBe('workflowEditor.agent.sentence.off')
+  })
+})
+
+// ── mode gating (owner manual-pass fix: mode changes must be visible on the graph) ────────────────
+describe('modeGatedTriggerIds', () => {
+  // The seeded-doc shape: cadence → when1, backlog → when2; options every_turn/async/off; 'off' has
+  // no wired slot. A third trigger keeps a NON-mode downstream edge (escapes gating).
+  const modeNode = (selected: string): EditorNode =>
+    node('mode', 'control.mode', {
+      config: {
+        options: [{ key: 'every_turn' }, { key: 'async' }, { key: 'off' }],
+        selected
+      }
+    })
+  const base = (selected: string): { nodes: EditorNode[]; edges: EditorEdge[] } => ({
+    nodes: [
+      node('cad', 'trigger.cadence'),
+      node('bak', 'trigger.state'),
+      node('esc', 'trigger.cadence'),
+      modeNode(selected),
+      node('log', 'history.recent')
+    ],
+    edges: [
+      edge('cad', 'mode', 'fired', 'when1'),
+      edge('bak', 'mode', 'fired', 'when2'),
+      // 'esc' feeds the mode AND a non-mode node — any escaping edge means NOT gated.
+      edge('esc', 'mode', 'fired', 'when2'),
+      edge('esc', 'log', 'fired', 'when')
+    ]
+  })
+
+  it('gates triggers wired only to non-selected slots; the selected slot is not gated', () => {
+    const { nodes: ns, edges: es } = base('every_turn')
+    const gated = modeGatedTriggerIds(ns, es, types)
+    expect(gated.has('cad')).toBe(false) // when1 = every_turn = selected
+    expect(gated.has('bak')).toBe(true) // when2 = async ≠ selected
+  })
+
+  it("mode 'off' (a selected key with no wired slot) gates every when-wired trigger", () => {
+    const { nodes: ns, edges: es } = base('off')
+    const gated = modeGatedTriggerIds(ns, es, types)
+    expect(gated.has('cad')).toBe(true)
+    expect(gated.has('bak')).toBe(true)
+  })
+
+  it('a trigger with a non-mode downstream edge is NOT gated (an edge escapes)', () => {
+    const { nodes: ns, edges: es } = base('off')
+    expect(modeGatedTriggerIds(ns, es, types).has('esc')).toBe(false)
+  })
+
+  it('an edgeless trigger is not gated; gating is independent of disabled', () => {
+    const ns = [node('lone', 'trigger.cadence', { disabled: true }), modeNode('off')]
+    expect(modeGatedTriggerIds(ns, [], types).size).toBe(0)
+    // disabled does not exempt a wired trigger from gating (the two states are orthogonal).
+    const { nodes: base2, edges: es } = base('off')
+    const withDisabled = base2.map((n) => (n.id === 'cad' ? { ...n, disabled: true } : n))
+    expect(modeGatedTriggerIds(withDisabled, es, types).has('cad')).toBe(true)
+  })
+
+  it('fail-soft: a malformed mode config (no options) never gates', () => {
+    const ns = [
+      node('cad', 'trigger.cadence'),
+      node('mode', 'control.mode', { config: { selected: 'x' } })
+    ]
+    const es = [edge('cad', 'mode', 'fired', 'when1')]
+    expect(modeGatedTriggerIds(ns, es, types).size).toBe(0)
+  })
+
+  it('an unknown selected key fail-softs to options[0], mirroring the node run()', () => {
+    const ns = [
+      node('cad', 'trigger.cadence'),
+      node('bak', 'trigger.state'),
+      node('mode', 'control.mode', {
+        config: { options: [{ key: 'a' }, { key: 'b' }], selected: 'ghost' }
+      })
+    ]
+    const es = [edge('cad', 'mode', 'fired', 'when1'), edge('bak', 'mode', 'fired', 'when2')]
+    const gated = modeGatedTriggerIds(ns, es, types)
+    expect(gated.has('cad')).toBe(false) // slot 'a' = effective selection (fallback)
+    expect(gated.has('bak')).toBe(true)
   })
 })
 
