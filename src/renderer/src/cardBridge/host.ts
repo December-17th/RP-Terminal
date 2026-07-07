@@ -10,6 +10,8 @@ import { onCardHostEvent } from './cardHostEvents'
 import { evalTemplate, evalTemplateDetailed } from '../../../shared/templateEngine'
 import { buildRenderContext } from '../plugin/renderTemplate'
 import { storeRuleToTavernRegex } from '../../../shared/thRuntime/tavernRegex'
+import { categoryForType } from '../../../shared/worldAssets/types'
+import type { AssetType } from '../../../shared/worldAssets/types'
 import type { Host, CardCtx, FloorLike } from '../../../shared/thRuntime/types'
 import type { VarOp } from '../../../shared/thRuntime/ops'
 
@@ -266,12 +268,16 @@ export function createInlineHost(ctx: CardCtx): Host {
         value
       })
     },
-    // Resolve a character portrait to an rptasset:// URL for this card's world, or null.
+    // Resolve an asset to an rptasset:// URL for this card's world, or null. The category is inferred
+    // from the asset TYPE (头像/立绘 → character, 背景/全景 → location) via the shared categoryForType,
+    // so location art (背景/全景) resolves too — the card seam carries no category. Unknown types fall
+    // back to character. Kept at parity with the WCV path (worldAssetService.assetUrlForWorld).
     assetUrl: async (name: string, type: string, mood?: string) => {
       try {
         const own = cardCharacterId()
         const ids = useLorebookStore.getState().sessionIds ?? (own ? [own] : [])
-        return await window.api.assetUrl(ctx.profileId, ids, 'character', name, type, mood)
+        const category = categoryForType(type as AssetType)
+        return await window.api.assetUrl(ctx.profileId, ids, category, name, type, mood)
       } catch {
         return null
       }

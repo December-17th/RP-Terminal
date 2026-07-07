@@ -155,7 +155,10 @@ export function resolveAssetFile(
   }
 }
 
-/** Resolve a character portrait to an rptasset:// URL for one world's lorebook ids, or null. */
+/** Resolve an asset to an rptasset:// URL for one world's lorebook ids, or null. The category
+ *  is inferred from the asset TYPE via {@link categoryForType} (头像/立绘 → character, 背景/全景 →
+ *  location), so a card's `window.assetUrl(name, type, mood)` — which carries no category — can reach
+ *  location art, not just character portraits. Unknown types fall back to `character`. */
 export function assetUrlForWorld(
   profileId: string,
   lorebookIds: string[],
@@ -163,7 +166,7 @@ export function assetUrlForWorld(
   type: AssetType,
   mood?: string
 ): string | null {
-  const category: AssetCategory = 'character'
+  const category: AssetCategory = categoryForType(type)
   const hit = resolveAssetFile(profileId, lorebookIds, category, name, type, mood)
   if (!hit) return null
   const file = hit.absPath.split(/[\\/]/).pop() as string

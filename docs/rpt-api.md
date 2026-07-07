@@ -179,7 +179,7 @@ through the host bridge as RFC-6902 JSON Patch.
 
 ### World Assets — ✅
 
-- `assetUrl(name, type, mood?)` → `Promise<string | null>` — resolve a character portrait (`type` = `头像`/`立绘`, mood-aware) from the active world's asset layer. Returns an `rptasset://` URL that loads inside card pages (both transports: inline iframes and WCV panels). Prerequisite: the World Assets layer ([world-assets-plan.md](world-assets-plan.md)). Also exposed as `window.assetUrl` and `window.TavernHelper.assetUrl` on card pages.
+- `assetUrl(name, type, mood?)` → `Promise<string | null>` — resolve an asset (mood-aware) from the active world's asset layer. **The category is inferred from `type`** via [`categoryForType`](../src/shared/worldAssets/types.ts): character portraits `头像`/`立绘` → `character`, location art `背景`/`全景` → `location` (any other value → `character`). So a card can request location art, e.g. `assetUrl('雾港', '全景')`, not just character portraits. Returns an `rptasset://` URL that loads inside card pages (both transports: inline iframes and WCV panels — each fills the inferred category in, so they stay at parity). Prerequisite: the World Assets layer ([world-assets-plan.md](world-assets-plan.md)). Also exposed as `window.assetUrl` and `window.TavernHelper.assetUrl` on card pages.
 
 ### Duel / deckbuilder — ✅
 
