@@ -39,7 +39,7 @@
     border: 1px solid var(--line-soft); border-radius: 12px; padding: 12px 14px; }
 
   .sect { font-family: var(--mono); font-size: 11px; letter-spacing: .22em; text-transform: uppercase;
-    color: var(--gold-dim); font-weight: 600; display: flex; align-items: center; gap: 8px; margin: 0 0 10px; }
+    color: var(--gold); font-weight: 600; display: flex; align-items: center; gap: 8px; margin: 0 0 10px; }  /* PM-B3: gilt header — --gold-dim@11px fails AA (3.1:1 ember), --gold ≥7.2:1 */
   .sect::after { content: ''; flex: 1; height: 1px; background: linear-gradient(90deg, var(--line), transparent); }
   .empty { color: var(--faint); font-size: 11.5px; font-style: italic; }
 
@@ -74,11 +74,11 @@
   .quest.lo { border-left-color: var(--line); }
   .quest-h { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
   .quest-t { font-size: 12.5px; color: var(--text); }
-  .quest-focus { font-family: var(--mono); font-size: 11px; letter-spacing: .1em; text-transform: uppercase; color: var(--gold-dim); flex: 0 0 auto; }
+  .quest-focus { font-family: var(--mono); font-size: 11px; letter-spacing: .1em; text-transform: uppercase; color: var(--gold); flex: 0 0 auto; }  /* PM-B3: --gold-dim@11px on inset fails AA (3.2:1 ember), --gold ≥6.9:1 */
   .quest.hi .quest-focus { color: var(--ember); }
   .quest-goal { font-size: 11px; color: var(--dim); margin-top: 4px; line-height: 1.5; }
   .quest-meta { font-size: 11px; color: var(--faint); margin-top: 5px; display: flex; gap: 10px; flex-wrap: wrap; }
-  .quest-meta b { color: var(--gold-dim); font-weight: 500; }
+  .quest-meta b { color: var(--dim); font-weight: 500; }  /* PM-B3: --gold-dim@11px fails AA (3.2:1 ember); --dim ≥7.4:1 keeps it a muted label (not a gilt accent) */
   @media (prefers-reduced-motion: reduce) { .npc-rel > i { transition: none; } }
 </style>
 </head>

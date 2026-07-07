@@ -116,7 +116,7 @@
   }
   .np-name { display: block; font-family: var(--serif); font-size: 20px; font-weight: 700; line-height: 1.2; }
   .np-tag { font-family: var(--mono); font-size: 11px; letter-spacing: .04em; color: var(--gold); margin-top: 2px; }
-  .np-tag .sep { color: var(--gold-dim); margin: 0 5px; }
+  .np-tag .sep { color: var(--gold); margin: 0 5px; }  /* PM-B3: --gold-dim fails AA at 11px on glass; --gold ≥7.2:1 */
 
   /* ── lean stats (night-glass card — v4 mock .card treatment) ───────────────────────── */
   .stats {
@@ -170,7 +170,7 @@
   }
 
   .sect { font-family: var(--mono); font-size: 11px; letter-spacing: .22em; text-transform: uppercase;
-    color: var(--gold-dim); font-weight: 600; display: flex; align-items: center; gap: 8px; margin: 0 0 9px; }
+    color: var(--gold); font-weight: 600; display: flex; align-items: center; gap: 8px; margin: 0 0 9px; }  /* PM-B3: gilt header — --gold-dim@11px fails AA (3.1:1 ember), --gold ≥7.2:1 */
   .sect::after { content: ''; flex: 1; height: 1px; background: linear-gradient(90deg, var(--line), transparent); }
   .sect + .sect { margin-top: 16px; }
   .empty { color: var(--faint); font-size: 11.5px; font-style: italic; padding: 2px 0; }

@@ -15,6 +15,23 @@
 
   Contrast: every theme is a dark skin with a near-white text ramp on a very dark base (text/bg well
   past WCAG-AA); the accent is a light hue on that dark base (AA for labels/small text).
+
+  ── CONTRAST RULES (PM-B3 audit, 2026-07-07) ──────────────────────────────────────────────────
+  HARD RULE: any text at font-size ≤12px MUST reach WCAG-AA ≥4.5:1 against its REAL backdrop in ALL
+  4 palettes. Backdrops are composited honestly: night-glass cards are `--glass`/`--glass-soft` rgba
+  over `--night` (worst case), and inset boxes (rgba(0,0,0,.30–.35) over a card) darken further.
+
+  Small-text token safety (min ratio across dusk/frost/ember/verdant, on glass; ember is the floor):
+    · --gold   ≥7.2:1  — SAFE for ≤12px text (separators, gilt labels/section headers, .choice .n)
+    · --text   ≥14.7:1 — SAFE
+    · --dim    ≥7.1:1  — SAFE (muted labels/values)
+    · --faint  ≥4.9:1  — SAFE but tight; the muted-est passing token (empty/meta/role text)
+    · --gold-dim  ≈3.1:1 in ember — **FAILS ≤12px as TEXT.** It is a BORDER/DECOR token only
+      (nameplate border, chip border, quest border-left, tab.active border-color, .sect divider
+      gradient). NEVER use --gold-dim for text at ≤12px — use --gold (accent) or --dim (muted) instead.
+  When adding small text, pick from the SAFE list; if a new pair is borderline, re-run the audit
+  (.scratch/poem-ui-modes-2026-07-07 audit script) before shipping.
+  ───────────────────────────────────────────────────────────────────────────────────────────────
 */
 
 :root {
