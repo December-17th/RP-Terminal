@@ -421,6 +421,7 @@ const en: Record<string, string> = {
     'Add "// @import https://…" (or import "https://…") on its own line to load a remote JS library. Remote code is fetched in the main process (cached) only after you allow it for this world.',
 
   'common.cancel': 'Cancel',
+  'common.confirm': 'Confirm',
 
   'chat.rightClickOptions': 'Right-click for options',
   'chat.prevResponse': 'Previous response',

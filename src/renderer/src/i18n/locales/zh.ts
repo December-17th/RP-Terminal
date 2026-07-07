@@ -408,6 +408,7 @@ const zh: Record<string, string> = {
     '在单独一行添加 "// @import https://…"（或 import "https://…"）以加载远程 JS 库。远程代码在主进程中获取（带缓存），且仅在你为此世界授权后。',
 
   'common.cancel': '取消',
+  'common.confirm': '确认',
 
   'chat.rightClickOptions': '右键查看选项',
   'chat.prevResponse': '上一条回复',

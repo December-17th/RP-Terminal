@@ -1021,6 +1021,22 @@ details[open] > .stat-group-title::before {
 .btn-accent:hover {
   filter: brightness(1.1);
 }
+.btn-danger {
+  font: inherit;
+  color: #fff;
+  background: var(--rpt-danger);
+  border: 1px solid var(--rpt-danger);
+  border-radius: 6px;
+  padding: 4px 12px;
+  cursor: pointer;
+}
+.btn-danger:hover {
+  filter: brightness(1.1);
+}
+.btn-danger:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
 
 /* Watchdog: shown when a process-isolated card frame stops responding. */
 .message-card-host {

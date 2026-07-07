@@ -3,6 +3,7 @@ import { useCharacterStore, CharacterCard } from '../stores/characterStore'
 import { useChatStore } from '../stores/chatStore'
 import { useUiStore } from '../stores/uiStore'
 import { useT } from '../i18n'
+import { ConfirmDialog } from './ConfirmDialog'
 
 /**
  * The entry launcher: choose a world (character card) → choose a session → play. Shown by App
@@ -25,6 +26,12 @@ export function Launcher({ profileId }: { profileId: string }): React.ReactEleme
   // null = the world chooser; a card = that world's session list.
   const [selected, setSelected] = useState<CharacterCard | null>(null)
   const [avatars, setAvatars] = useState<Record<string, string | null>>({})
+  // Pending deletion awaiting in-app confirm; null = no dialog.
+  const [confirming, setConfirming] = useState<{
+    kind: 'world' | 'chat'
+    id: string
+    name: string
+  } | null>(null)
 
   // Resolve each world's PNG avatar to a data URL once the list is known.
   useEffect(() => {
@@ -62,10 +69,31 @@ export function Launcher({ profileId }: { profileId: string }): React.ReactEleme
     setSelected(c)
   }
 
+  // Shared across both launcher branches (world list AND session list).
+  const confirmDialog = confirming && (
+    <ConfirmDialog
+      title={confirming.kind === 'world' ? t('world.deleteTitle') : t('sessions.deleteTitle')}
+      body={
+        confirming.kind === 'world'
+          ? t('world.confirmDelete', { name: confirming.name })
+          : t('sessions.confirmDelete')
+      }
+      confirmLabel={t('common.delete')}
+      danger
+      onConfirm={() => {
+        if (confirming.kind === 'world') deleteCharacter(profileId, confirming.id)
+        else deleteChat(profileId, confirming.id)
+        setConfirming(null)
+      }}
+      onCancel={() => setConfirming(null)}
+    />
+  )
+
   if (selected) {
     const worldName = selected.card?.data?.name || t('launcher.untitled')
     const worldChats = chats.filter((c) => c.character_id === selected.id)
     return (
+      <>
       <div className="launcher">
         <div className="lc-bar">
           <span className="lc-brand">
@@ -118,9 +146,7 @@ export function Launcher({ profileId }: { profileId: string }): React.ReactEleme
                   <button
                     className="btn-ghost danger lc-sdel"
                     title={t('sessions.deleteTitle')}
-                    onClick={() => {
-                      if (confirm(t('sessions.confirmDelete'))) deleteChat(profileId, c.id)
-                    }}
+                    onClick={() => setConfirming({ kind: 'chat', id: c.id, name: '' })}
                   >
                     🗑
                   </button>
@@ -130,10 +156,13 @@ export function Launcher({ profileId }: { profileId: string }): React.ReactEleme
           </div>
         </div>
       </div>
+      {confirmDialog}
+      </>
     )
   }
 
   return (
+    <>
     <div className="launcher">
       <div className="lc-bar">
         <span className="lc-brand">RP Terminal</span>
@@ -191,10 +220,7 @@ export function Launcher({ profileId }: { profileId: string }): React.ReactEleme
                   <button
                     className="btn-ghost danger lc-wdel"
                     title={t('world.deleteTitle')}
-                    onClick={() => {
-                      if (confirm(t('world.confirmDelete', { name })))
-                        deleteCharacter(profileId, c.id)
-                    }}
+                    onClick={() => setConfirming({ kind: 'world', id: c.id, name })}
                   >
                     🗑
                   </button>
@@ -205,5 +231,7 @@ export function Launcher({ profileId }: { profileId: string }): React.ReactEleme
         )}
       </div>
     </div>
+    {confirmDialog}
+    </>
   )
 }
