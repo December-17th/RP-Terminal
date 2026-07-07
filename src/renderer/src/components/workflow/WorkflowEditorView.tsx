@@ -21,6 +21,7 @@ import FlowCanvas from './FlowCanvas'
 import NodeConfigPanel from './NodeConfigPanel'
 import RunDrawer from './RunDrawer'
 import ModuleImportSheet, { type ModuleInspectReport } from './ModuleImportSheet'
+import AgentsDropdown from './AgentsDropdown'
 import { isAgentGroup, ungroupedTriggerChains } from './agentModel'
 import type { EditorNodeType } from './editorModel'
 
@@ -331,6 +332,9 @@ export default function WorkflowEditorView({
             {t('workflowEditor.groupAgentChains')}
           </button>
         )}
+
+        {/* WP-F: the Agents ▾ master dropdown (one row per agent; renders null when there are none). */}
+        {sessionType !== 'fragment' && <AgentsDropdown profileId={profileId} />}
 
         <span style={{ flex: 1 }} />
 

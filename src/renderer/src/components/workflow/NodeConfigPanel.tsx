@@ -17,6 +17,7 @@ import {
   isAgentGroup
 } from './agentModel'
 import {
+  dynamicEnumOptions,
   resolveSelection,
   visibleTabs,
   type DetailsTab,
@@ -439,26 +440,6 @@ function ExposedSettingRow({
       )}
     </div>
   )
-}
-
-/** Resolve a `dynamicEnum` hint against a node's config into {key,label} options (plan §0.5): the
- *  options live in a sibling config array, keyed/labelled by the hint's field names. Fail-soft — a
- *  missing/!array options path yields []. */
-function dynamicEnumOptions(
-  config: Record<string, unknown>,
-  hint: { optionsPath: string; keyField: string; labelField: string }
-): { key: string; label: string }[] {
-  const raw = getPath(config, hint.optionsPath)
-  if (!Array.isArray(raw)) return []
-  return raw
-    .map((o) => {
-      const row = (o ?? {}) as Record<string, unknown>
-      const key = row[hint.keyField]
-      if (typeof key !== 'string') return null
-      const label = row[hint.labelField]
-      return { key, label: typeof label === 'string' && label ? label : key }
-    })
-    .filter((o): o is { key: string; label: string } => o !== null)
 }
 
 /** The "Export module…" affordance on the module panel (WP6.5): a previewless direct save (the panel

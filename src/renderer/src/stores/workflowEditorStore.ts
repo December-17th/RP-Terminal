@@ -102,6 +102,10 @@ interface WorkflowEditorState {
   /** One-canvas rebuild (WP6.3): the selected group (module), mutually exclusive with node
    *  selection — selecting a group clears node selection and vice versa. */
   selectedGroupId: string | null
+  /** Agent & memory UX (WP-F; spec §5): the Agents ▾ "locate" request — the FlowCanvas watches the
+   *  token and pans/zooms to `groupId`. Null until the first locate. Bumping the token re-triggers
+   *  even for the same group. */
+  panRequest: { groupId: string; token: number } | null
   status: string | null
   init(profileId: string): Promise<void>
   open(profileId: string, id: string): Promise<void>
@@ -137,6 +141,8 @@ interface WorkflowEditorState {
   ungroup(groupId: string): void
   renameGroup(groupId: string, name: string): void
   toggleGroupCollapsed(groupId: string): void
+  /** WP-F: request the canvas pan/zoom to a group + select it (the Agents ▾ locate button). */
+  requestPanToGroup(groupId: string): void
   /** Agent & memory UX (WP-D; spec §4): one-click grouping — mint a collapsed GroupDecl over the
    *  trigger's downstream closure (agentModel.downstreamClosure: narrator-shared nodes excluded,
    *  sibling triggers absorbed). No-op unless the closure has ≥2 ungrouped members. Returns the new
@@ -231,6 +237,7 @@ export const useWorkflowEditorStore = create<WorkflowEditorState>((set, get) => 
     selectedNodeId: null,
     selectedNodeIds: [],
     selectedGroupId: null,
+    panRequest: null,
     status: null,
 
     init: async (profileId) => {
@@ -511,6 +518,8 @@ export const useWorkflowEditorStore = create<WorkflowEditorState>((set, get) => 
         name: module.name,
         nodeIds: newNodes.map((n) => n.id),
         collapsed: true,
+        // Agent & memory UX (WP-F): stamp provenance so the Agents ▾ dropdown shows an `imported` chip.
+        origin: 'import',
         ...(newExposed.length > 0 ? { exposed: newExposed } : {})
       }
       const nextDoc = { ...doc, groups: [...groups, group] }
@@ -558,6 +567,16 @@ export const useWorkflowEditorStore = create<WorkflowEditorState>((set, get) => 
       setGroups(
         currentGroups().map((g) => (g.id === groupId ? { ...g, collapsed: !g.collapsed } : g))
       )
+    },
+
+    requestPanToGroup: (groupId) => {
+      // Select the group (highlights it + opens its panel) and bump the pan token the canvas watches.
+      set((s) => ({
+        selectedGroupId: groupId,
+        selectedNodeId: null,
+        selectedNodeIds: [],
+        panRequest: { groupId, token: (s.panRequest?.token ?? 0) + 1 }
+      }))
     },
 
     collapseChainIntoModule: (triggerId) => {

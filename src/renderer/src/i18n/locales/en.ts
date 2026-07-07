@@ -708,6 +708,10 @@ const en: Record<string, string> = {
   'workflowEditor.prompt.addRow': 'Add message',
   'workflowEditor.prompt.reorder': 'Drag to reorder',
   'workflowEditor.prompt.insert': 'Insert:',
+  // Agent & memory UX (WP-F): the Agents ▾ master dropdown.
+  'workflowEditor.agents.button': 'Agents ({{n}})',
+  'workflowEditor.agents.imported': 'imported',
+  'workflowEditor.agents.locate': 'Show on canvas',
   // One-canvas rebuild WP6.4a: node enable toggle, live trigger badge, assemble-node prompt preview.
   'workflowEditor.enabled': 'Enabled',
   'workflowEditor.trigger.nowAt': 'now {{now}} · at {{at}}',

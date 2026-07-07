@@ -454,7 +454,18 @@ function FlowCanvasInner({
   // drag becomes a delta routed to moveGroup (which shifts the hidden members). Keyed by group id.
   const moduleDragPos = React.useRef<Map<string, { x: number; y: number }>>(new Map())
 
-  const { screenToFlowPosition } = useReactFlow()
+  const { screenToFlowPosition, setCenter } = useReactFlow()
+
+  // WP-F (spec §5): the Agents ▾ locate button bumps `panRequest`; pan/zoom to the group's bounds.
+  const panRequest = useWorkflowEditorStore((s) => s.panRequest)
+  React.useEffect(() => {
+    if (!panRequest) return
+    const group = groups.find((g) => g.id === panRequest.groupId)
+    if (!group) return
+    const b = groupBounds(nodes, new Set(group.nodeIds))
+    void setCenter(b.x + b.w / 2, b.y + b.h / 2, { zoom: 1, duration: 400 })
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- fire on each locate (token bump), not on graph edits
+  }, [panRequest?.token])
 
   const typeInfoMap = useMemo(() => {
     return new Map(nodeTypeList.map((t) => [t.type, t]))

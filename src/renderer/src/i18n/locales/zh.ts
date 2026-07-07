@@ -684,6 +684,10 @@ const zh: Record<string, string> = {
   'workflowEditor.prompt.addRow': '添加消息',
   'workflowEditor.prompt.reorder': '拖动以重新排序',
   'workflowEditor.prompt.insert': '插入：',
+  // 智能体与记忆 UX（WP-F）：Agents ▾ 主下拉菜单。
+  'workflowEditor.agents.button': '智能体（{{n}}）',
+  'workflowEditor.agents.imported': '已导入',
+  'workflowEditor.agents.locate': '在画布中显示',
   // 一体化画布重构 WP6.4a：节点启用开关、实时触发器徽标、组装节点提示词预览。
   'workflowEditor.enabled': '启用',
   'workflowEditor.trigger.nowAt': '当前 {{now}} · 目标 {{at}}',

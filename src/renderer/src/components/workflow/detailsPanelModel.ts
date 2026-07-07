@@ -1,7 +1,10 @@
 // Pure model for the universal details panel (agent & memory UX WP-E; spec §6). Derives the panel's
 // selection context (agent / non-agent group / single node / nothing) and which tabs are visible for
-// it, plus the prompt-editor row operations (role-message array ↔ rows). NO React imports — vitest-pure
-// like groupModel/agentModel, so the selection + tab logic and the prompt round-trip are unit-tested.
+// it, the prompt-editor row operations (role-message array ↔ rows), and the shared exposed-enum
+// resolver (static enum | dynamicEnum) both the panel and the Agents ▾ dropdown render. NO React
+// imports — vitest-pure like groupModel/agentModel, so all of this logic is unit-tested.
+import { getPath as getConfigPath } from '../../../../shared/objectPath'
+import { fieldsFromSchema } from './schemaForm'
 
 /** What the panel is describing. `group` = a plain (non-agent) group → the legacy ModulePanel with no
  *  tab rail; `agent` = a trigger-rooted group → the tabbed agent context; `node`/`none` per spec §6. */
@@ -94,4 +97,41 @@ export const moveRow = (rows: PromptRow[], from: number, to: number): PromptRow[
 export const insertAtCaret = (content: string, text: string, caret: number | null): string => {
   if (caret == null || caret < 0 || caret > content.length) return content + text
   return content.slice(0, caret) + text + content.slice(caret)
+}
+
+// ── exposed-enum resolution (WP-E/WP-F: the shared Mode-dropdown renderer, spec §1) ────────────────
+
+/** Resolve a `dynamicEnum` hint against a node's config into {key,label} options (plan §0.5): the
+ *  options live in a sibling config array, keyed/labelled by the hint's field names. Fail-soft — a
+ *  missing/!array options path yields []. */
+export const dynamicEnumOptions = (
+  config: Record<string, unknown>,
+  hint: { optionsPath: string; keyField: string; labelField: string }
+): { key: string; label: string }[] => {
+  const raw = getConfigPath(config, hint.optionsPath)
+  if (!Array.isArray(raw)) return []
+  return raw
+    .map((o) => {
+      const row = (o ?? {}) as Record<string, unknown>
+      const key = row[hint.keyField]
+      if (typeof key !== 'string') return null
+      const label = row[hint.labelField]
+      return { key, label: typeof label === 'string' && label ? label : key }
+    })
+    .filter((o): o is { key: string; label: string } => o !== null)
+}
+
+/** The options for an exposed field IF it renders as an enum dropdown, else null (spec §1 "Mode
+ *  dropdown = any exposed enum field"): a static JSON-Schema enum, else a dynamicEnum resolved against
+ *  the node's config. Used by the details panel AND the Agents ▾ dropdown so both share one renderer. */
+export const exposedEnumOptions = (
+  config: Record<string, unknown>,
+  configSchema: Record<string, unknown> | undefined,
+  dynamicEnum: { path: string; optionsPath: string; keyField: string; labelField: string } | undefined,
+  path: string
+): { key: string; label: string }[] | null => {
+  if (dynamicEnum && dynamicEnum.path === path) return dynamicEnumOptions(config, dynamicEnum)
+  const field = fieldsFromSchema(configSchema).find((f) => f.key === path)
+  if (field && field.kind === 'enum') return field.options.map((o) => ({ key: o, label: o }))
+  return null
 }

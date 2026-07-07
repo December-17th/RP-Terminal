@@ -1,6 +1,8 @@
 import { describe, it, expect } from 'vitest'
 import {
   addRow,
+  dynamicEnumOptions,
+  exposedEnumOptions,
   insertAtCaret,
   moveRow,
   normalizeRows,
@@ -100,5 +102,48 @@ describe('insertAtCaret', () => {
   it('appends when caret is null or out of range', () => {
     expect(insertAtCaret('abc', '{{x}}', null)).toBe('abc{{x}}')
     expect(insertAtCaret('abc', '{{x}}', 99)).toBe('abc{{x}}')
+  })
+})
+
+describe('exposed-enum resolution (WP-E/WP-F Mode dropdown)', () => {
+  const dynHint = { path: 'selected', optionsPath: 'options', keyField: 'key', labelField: 'label' }
+  it('dynamicEnumOptions maps a sibling options array by key/label', () => {
+    const config = {
+      selected: 'async',
+      options: [
+        { key: 'every_turn', label: 'Every turn' },
+        { key: 'async', label: 'Async backlog' },
+        { key: 'off' } // no label → key is the label
+      ]
+    }
+    expect(dynamicEnumOptions(config, dynHint)).toEqual([
+      { key: 'every_turn', label: 'Every turn' },
+      { key: 'async', label: 'Async backlog' },
+      { key: 'off', label: 'off' }
+    ])
+  })
+  it('dynamicEnumOptions is fail-soft on a missing/!array options path', () => {
+    expect(dynamicEnumOptions({ selected: 'x' }, dynHint)).toEqual([])
+  })
+  it('exposedEnumOptions resolves a dynamicEnum field', () => {
+    const config = { selected: 'off', options: [{ key: 'off', label: 'Off' }] }
+    expect(exposedEnumOptions(config, undefined, dynHint, 'selected')).toEqual([
+      { key: 'off', label: 'Off' }
+    ])
+  })
+  it('exposedEnumOptions resolves a STATIC enum field from the schema', () => {
+    const schema = {
+      type: 'object',
+      properties: { mode: { type: 'string', enum: ['a', 'b'] } }
+    }
+    expect(exposedEnumOptions({}, schema, undefined, 'mode')).toEqual([
+      { key: 'a', label: 'a' },
+      { key: 'b', label: 'b' }
+    ])
+  })
+  it('exposedEnumOptions returns null for a non-enum field (renders as its normal control)', () => {
+    const schema = { type: 'object', properties: { n: { type: 'number' } } }
+    expect(exposedEnumOptions({}, schema, undefined, 'n')).toBeNull()
+    expect(exposedEnumOptions({}, undefined, undefined, 'whatever')).toBeNull()
   })
 })
