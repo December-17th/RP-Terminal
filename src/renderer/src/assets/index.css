@@ -2576,7 +2576,8 @@ select {
   padding: 8px 10px;
   border-radius: 8px;
 }
-.tmenu-item:hover {
+.tmenu-item:hover,
+.tmenu-item:focus-visible {
   background: color-mix(in srgb, var(--rpt-text-primary) 8%, transparent);
 }
 .tmenu-item .mark {

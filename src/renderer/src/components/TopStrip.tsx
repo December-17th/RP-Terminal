@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useCharacterStore } from '../stores/characterStore'
 import { usePresetStore } from '../stores/presetStore'
 import { useLorebookStore } from '../stores/lorebookStore'
@@ -25,21 +25,72 @@ function StripMenu({
   render: (close: () => void) => React.ReactNode
 }): React.ReactElement {
   const [open, setOpen] = useState(false)
+  const triggerRef = useRef<HTMLButtonElement>(null)
+  const menuRef = useRef<HTMLDivElement>(null)
   const close = (): void => setOpen(false)
+
+  // Focus the first item when the menu opens (after the popover renders).
+  useEffect(() => {
+    if (!open) return
+    const raf = requestAnimationFrame(() => {
+      menuRef.current?.querySelector<HTMLElement>('.tmenu-item')?.focus()
+    })
+    return () => cancelAnimationFrame(raf)
+  }, [open])
+
+  // When the menu closes while focus was still inside it, return focus to the trigger.
+  useEffect(() => {
+    if (open) return
+    if (menuRef.current?.contains(document.activeElement)) triggerRef.current?.focus()
+  }, [open])
+
+  const onMenuKeyDown = (e: React.KeyboardEvent<HTMLDivElement>): void => {
+    const items = Array.from(menuRef.current?.querySelectorAll<HTMLElement>('.tmenu-item') ?? [])
+    if (items.length === 0) return
+    const idx = items.indexOf(document.activeElement as HTMLElement)
+    if (e.key === 'ArrowDown') {
+      e.preventDefault()
+      items[(idx + 1 + items.length) % items.length]?.focus()
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault()
+      items[(idx - 1 + items.length) % items.length]?.focus()
+    } else if (e.key === 'Home') {
+      e.preventDefault()
+      items[0]?.focus()
+    } else if (e.key === 'End') {
+      e.preventDefault()
+      items[items.length - 1]?.focus()
+    } else if (e.key === 'Escape') {
+      e.preventDefault()
+      e.stopPropagation()
+      close()
+      triggerRef.current?.focus()
+    } else if (e.key === 'Tab') {
+      close()
+    }
+  }
+
   return (
     <div className="tmenu-wrap">
       <button
+        ref={triggerRef}
         className={`tmenu-btn ${open ? 'open' : ''}`}
         aria-haspopup="menu"
         aria-expanded={open}
         onClick={() => setOpen((v) => !v)}
+        onKeyDown={(e) => {
+          if (!open && e.key === 'ArrowDown') {
+            e.preventDefault()
+            setOpen(true)
+          }
+        }}
       >
         {label} <span className="caret" aria-hidden="true">▾</span>
       </button>
       {open && (
         <>
           <button className="tmenu-backdrop" aria-hidden="true" tabIndex={-1} onClick={close} />
-          <div className="tmenu" role="menu">
+          <div className="tmenu" role="menu" ref={menuRef} onKeyDown={onMenuKeyDown}>
             {render(close)}
           </div>
         </>
