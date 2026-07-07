@@ -8,7 +8,11 @@ UI modes are LOCKED** — the player chooses per session:
 2. **小说模式 (novel)** = the v4 base layout (§2, this doc) — default.
 3. **剧场模式 (theater)** = Mode B galgame/ADV (§4) — optional, presentation-only.
 v4 does NOT retire v3; the two specs are sibling modes. Remaining §6 items 3–4 resolved by design
-review 2026-07-07 (gilt plate; 26vh band, fade-in beats — see §6). Point-in-time doc.
+review 2026-07-07 (gilt plate; 26vh band, fade-in beats — see §6).
+**Build order (owner, 2026-07-07 rev 3): 群像 (v3) ships FIRST, upgraded with this doc's surface
+language (night-glass cards, gilt nameplates, scene tokens, 地点-driven band art, persona-name
+portraits); 小说 and 剧场 implementation is deferred.** Plan:
+`.scratch/poem-ui-modes-2026-07-07/`. Point-in-time doc.
 **Mock:** [`poem-play-area-mock-v4.html`](./poem-play-area-mock-v4.html) — interactive (fold tabs,
 palette swatches, click a 同行 row to hand the stage to that character). The mock is the source of
 truth for base-layout look; this doc records why + the variants still to mock.
