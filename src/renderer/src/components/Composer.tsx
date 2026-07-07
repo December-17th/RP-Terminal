@@ -90,7 +90,6 @@ export function Composer({
           }
         }}
         placeholder={t('composer.placeholder')}
-        disabled={isGenerating}
       />
       <button
         className={`send-btn ${isGenerating ? 'stop' : ''}`}
