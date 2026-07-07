@@ -131,6 +131,41 @@ its agent detection + on/off switch off the catalog rather than a `trigger.*` na
 is kept only as a fallback for a stale/absent catalog entry —
 `src/renderer/src/components/workflow/FlowCanvas.tsx`).
 
+## `agent.llm` lorebook resolution (WP-H)
+
+`agent.llm` gains an optional `lore: Lore` input and an optional config field
+`lorebook: 'main' | 'custom'` (default `'main'`). Resolution order — **wire wins, then config**
+(`resolveAgentLore`, `src/main/services/nodes/builtin/agentNodes.ts`):
+
+1. **`lore` input WIRED in the doc** (per `wiredInputs` — wired-ness, not liveness) ⇒ the wire's
+   books, flattened with `lorebook.entries` semantics (enabled entries' raw contents, blank-line
+   joined, NO keyword scan — `lorebookNodes.ts`). A wired-but-gated edge yields an EMPTY block (the
+   author's chosen source produced nothing); it does NOT fall back to matching. The Settings-tab
+   Lorebook row shows "wired on canvas" and disables the picker.
+2. **config `custom` with stored picks** ⇒ exactly the picked entries — constant, no keyword scan.
+   Picks are per-WORLD, stored OUTSIDE the doc in the profile's `workflows/_lore-picks.json`, keyed
+   `(worldId = chat.character_id, docId, nodeId)`
+   (`src/main/services/workflowLorePicksStore.ts`) — the doc stays world-portable. **Entry identity
+   is `(book id, entry comment)`**: RPT's lorebook entries carry no `uid`
+   (`src/main/types/character.ts` `LorebookEntrySchema`; `normalizeLorebookData` maps `comment`
+   only), so the plan's documented comment-fallback identity applies — the same identity
+   `lorebook.entries` filters use. A pick whose `(book, comment)` no longer resolves is skipped
+   fail-soft at run time and surfaces as "N missing" in the picker. Duplicate comments within one
+   book resolve together.
+3. **else** (`main`, or `custom` with no picks yet for this world) ⇒ the STANDARD matching the
+   narrator's assemble uses — the same `matchAcross` core over the same active books + recursion cap
+   (`assemble.ts` `matchWorldInfo` = `matchAcross` + an FSM-mode cache; the side call invokes the
+   shared core directly and never reads/poisons that cache) — scanned over the agent's `history`
+   input, falling back to the narrator's own scan window (`gen.scanText`) when no history is
+   wired/live.
+
+**Injection** (spec §7.3): a `{{lore}}` placeholder in any template row is substituted with the
+resolved block (empty block ⇒ empty string, before macro interpolation); with no placeholder, a
+non-empty block is appended as a trailing `system` row. Empty block + no placeholder ⇒ nothing.
+
+`llm.sample` is untouched (the narrator path's lorebook context flows through `prompt.assemble` as
+before — parity-pinned).
+
 ## Round-trip guarantees
 
 - **Doc save/load:** every field above is declared in `docSchema.ts` (groups) or surfaced by

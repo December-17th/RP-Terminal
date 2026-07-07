@@ -918,3 +918,104 @@
   flex: 1;
   font-size: 11px;
 }
+
+/* ═══════════ Agent & memory UX (WP-H): the lorebook entry picker ═══════════ */
+.rpt-lore-picker-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  background: var(--rpt-scrim, rgba(0, 0, 0, 0.45));
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.rpt-lore-picker {
+  width: 380px;
+  max-height: 72vh;
+  display: flex;
+  flex-direction: column;
+  background: var(--rpt-bg-elevated);
+  border: 1px solid var(--rpt-border);
+  border-radius: 10px;
+  padding: 12px;
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.35);
+}
+.rpt-lore-picker-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin-bottom: 8px;
+  font-size: 13px;
+  color: var(--rpt-text-primary);
+}
+.rpt-lore-picker-counts {
+  margin-left: auto;
+  font-size: 10.5px;
+  color: var(--rpt-text-secondary);
+}
+.rpt-lore-picker-missing {
+  color: var(--rpt-warning);
+}
+.rpt-lore-picker-search {
+  width: 100%;
+  box-sizing: border-box;
+  font-size: 11.5px;
+  margin-bottom: 8px;
+}
+.rpt-lore-picker-list {
+  flex: 1;
+  min-height: 120px;
+  overflow-y: auto;
+  border: 1px solid var(--rpt-border);
+  border-radius: 6px;
+  padding: 6px;
+}
+.rpt-lore-picker-empty {
+  font-size: 11px;
+  color: var(--rpt-text-secondary);
+  padding: 8px;
+}
+.rpt-lore-picker-book {
+  margin-bottom: 6px;
+}
+.rpt-lore-picker-book-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.rpt-lore-picker-book-name {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  text-align: left;
+  border: none;
+  background: transparent;
+  color: var(--rpt-text-primary);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 2px 0;
+}
+.rpt-lore-picker-book-count {
+  font-weight: 400;
+  font-size: 10px;
+  color: var(--rpt-text-tertiary);
+}
+.rpt-lore-picker-entry {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 0 2px 22px;
+  font-size: 11.5px;
+  color: var(--rpt-text-secondary);
+  cursor: pointer;
+}
+.rpt-lore-picker-entry:hover {
+  color: var(--rpt-text-primary);
+}
+.rpt-lore-picker-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 10px;
+}

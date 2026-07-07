@@ -262,6 +262,16 @@ const api = {
     ipcRenderer.invoke('get-module-template', profileId, id),
   saveModuleToLibrary: (profileId: string, module: unknown) =>
     ipcRenderer.invoke('save-module-to-library', profileId, module),
+  // Agent & memory UX (WP-H): per-world lorebook entry picks for agent.llm's custom lore mode.
+  getLorePicks: (profileId: string, worldId: string, docId: string, nodeId: string) =>
+    ipcRenderer.invoke('get-lore-picks', profileId, worldId, docId, nodeId),
+  setLorePicks: (
+    profileId: string,
+    worldId: string,
+    docId: string,
+    nodeId: string,
+    picks: unknown[]
+  ) => ipcRenderer.invoke('set-lore-picks', profileId, worldId, docId, nodeId, picks),
   // Recipe SHARING: `.rptrecipe` export / import (agent-packs plan WP5.2; ADR 0008) — "share this
   // world's setup" (a set of embedded packs + activation preset + narrator choice). Export assembles
   // from the CURRENT world; `opts` = the wizard's name/description/creator. Import is TWO-PHASE: the

@@ -5,6 +5,9 @@ import { GenContext } from '../../generation/types'
 import { providerShape } from '../../generation/providerShape'
 import { PresetParameters } from '../../../types/preset'
 import { ChatMessage } from '../../promptBuilder'
+import { Lorebook } from '../../../types/character'
+import { matchAcross, getLorebookById } from '../../lorebookService'
+import { getLorePicks } from '../../workflowLorePicksStore'
 import { NodeImpl } from '../types'
 import { interpolate } from './messageNodes'
 import { runLlmCall, LlmCallConfig, llmCallConfigSchema } from './generationNodes'
@@ -113,7 +116,12 @@ const agentMessageSchema = z.object({
 const agentLlmConfig = llmCallConfigSchema.extend({
   messages: z.array(agentMessageSchema),
   /** Overrides the preset's temperature for THIS call when set (0..2). Unset = the preset's own. */
-  temperature: z.number().min(0).max(2).optional()
+  temperature: z.number().min(0).max(2).optional(),
+  /** Agent & memory UX (WP-H; spec §7): how lore reaches this call WHEN the `lore` input is unwired.
+   *  'main' (default) = the STANDARD worldinfo matching over the agent's history against the world's
+   *  active lorebooks; 'custom' = exactly the per-world picked entries (workflowLorePicksStore),
+   *  falling back to 'main' while no picks exist yet. A wired `lore` input beats either. */
+  lorebook: z.enum(['main', 'custom']).optional()
 })
 
 type AgentLlmConfig = z.infer<typeof agentLlmConfig>
@@ -121,11 +129,81 @@ type AgentLlmConfig = z.infer<typeof agentLlmConfig>
 /** The `{history}` splice marker (a whole-content row REPLACED by the history messages). */
 const HISTORY_MARKER = '{history}'
 
+/** The `{{lore}}` injection placeholder (spec §7.3): substituted with the resolved lore block in any
+ *  template row; when NO row carries it, a non-empty block is appended as a trailing system row. */
+const LORE_MARKER = '{{lore}}'
+
 /** Flatten history Messages into a transcript text block (for an inline `{history}` substitution). */
 const historyText = (history: ChatMessage[]): string =>
   history
     .map((m) => `${m.role === 'assistant' ? 'Assistant' : m.role === 'user' ? 'User' : 'System'}: ${m.content}`)
     .join('\n')
+
+/** Flatten a Lore wire's books into a lore block — `lorebook.entries` semantics (lorebookNodes.ts:
+ *  110-129): enabled entries' raw contents joined by blank lines, NO keyword scan (the wire was
+ *  hand-picked upstream). */
+const loreBlockFromBooks = (books: Lorebook[]): string =>
+  books
+    .flatMap((lb) => lb.entries)
+    .filter((e) => e.enabled !== false)
+    .map((e) => e.content)
+    .filter(Boolean)
+    .join('\n\n')
+
+/** Resolve this call's lore block per the spec §7 order — wire wins, then config:
+ *   1. `lore` input WIRED (per the doc, node.wiredInputs — the WP-B seam) ⇒ the wire's books,
+ *      flattened. A wired-but-dead edge (its feeder gated off this run) yields an EMPTY block —
+ *      the author's chosen source produced nothing; we do NOT silently fall back to matching.
+ *   2. config 'custom' with stored picks for (chat.character_id, docId, nodeId) ⇒ exactly those
+ *      entries, `(book, comment)` identity, missing picks skipped fail-soft (plan §0.4 comment
+ *      fallback — our entries carry no uid).
+ *   3. else ('main', or 'custom' with no picks yet) ⇒ the STANDARD matching the narrator's assemble
+ *      uses — the same `matchAcross` core over the same active books + recursion cap
+ *      (assemble.ts:78-106 matchWorldInfo = matchAcross + an FSM-mode cache; a side call must not
+ *      read/poison that cache, so we call the shared core directly) — scanned over the agent's
+ *      `history` input (spec §7.2), falling back to the narrator's own scan window (gen.scanText)
+ *      when no history is wired/live.
+ *  Exported for tests. */
+export const resolveAgentLore = (
+  gen: GenContext,
+  cfg: { lorebook?: 'main' | 'custom' },
+  history: ChatMessage[],
+  loreInput: { wired: boolean; books: Lorebook[] },
+  ids: { profileId: string; docId: string; nodeId: string }
+): string => {
+  if (loreInput.wired) return loreBlockFromBooks(loreInput.books)
+
+  if (cfg.lorebook === 'custom') {
+    const picks = getLorePicks(ids.profileId, gen.chat.character_id, ids.docId, ids.nodeId)
+    if (picks.length > 0) {
+      // Group picks per book so each book is read once; resolve by (book, comment), skip missing.
+      const byBook = new Map<string, Set<string>>()
+      for (const p of picks) {
+        const set = byBook.get(p.book)
+        if (set) set.add(p.comment)
+        else byBook.set(p.book, new Set([p.comment]))
+      }
+      const contents: string[] = []
+      for (const [bookId, comments] of byBook) {
+        const book = getLorebookById(ids.profileId, bookId)
+        if (!book) continue
+        for (const e of book.entries) {
+          if (e.enabled === false) continue
+          if (comments.has(e.comment ?? '')) contents.push(e.content)
+        }
+      }
+      return contents.filter(Boolean).join('\n\n')
+    }
+    // No picks yet for this world ⇒ fall through to standard matching (spec §7.2 fallback).
+  }
+
+  const scan = history.length > 0 ? historyText(history) : gen.scanText
+  const matched = matchAcross(gen.lorebooks, scan, Math.random, gen.maxRecursion)
+  return matched
+    .map((e) => e.content)
+    .filter(Boolean)
+    .join('\n\n')
+}
 
 export const agentLlm: NodeImpl = {
   type: 'agent.llm',
@@ -137,7 +215,10 @@ export const agentLlm: NodeImpl = {
     { name: 'when', type: 'Signal' },
     { name: 'history', type: 'Messages' },
     // A generic non-chat payload the template can splice via {{input}} (e.g. a table.read block).
-    { name: 'input', type: 'Any' }
+    { name: 'input', type: 'Any' },
+    // WP-H (spec §7): a hand-picked lorebook slice (lorebook.select). Wired, it BEATS the `lorebook`
+    // config — the resolution order is wire > custom picks > standard matching (resolveAgentLore).
+    { name: 'lore', type: 'Lore' }
   ],
   outputs: [
     { name: 'text', type: 'Text' },
@@ -150,8 +231,24 @@ export const agentLlm: NodeImpl = {
     const history = (inputs.history as ChatMessage[] | undefined) ?? []
     const inputPayload = inputs.input
 
+    // WP-H: resolve this call's lore block (wire > per-world picks > standard matching). Wired-ness
+    // comes from the doc (node.wiredInputs, the WP-B seam) so a wired-but-gated lore feeder yields
+    // an empty block instead of silently falling back to matching.
+    const loreBlock = resolveAgentLore(
+      gen,
+      cfg,
+      history,
+      {
+        wired: node.wiredInputs?.includes('lore') ?? false,
+        books: (inputs.lore as Lorebook[] | undefined) ?? []
+      },
+      { profileId: ctx.profileId!, docId: ctx.workflowId ?? '', nodeId: node.id }
+    )
+    const hasLoreMarker = cfg.messages.some((m) => m.content.includes(LORE_MARKER))
+
     // Build the send messages: interpolate each template row (macros/EJS + the {{input}} slot),
-    // splicing the history messages where a row is exactly `{history}`.
+    // splicing the history messages where a row is exactly `{history}`, and substituting `{{lore}}`
+    // (spec §7.3 — an empty block substitutes as '', fail-soft).
     const rows: ChatMessage[] = []
     for (const m of cfg.messages) {
       if (m.content.trim() === HISTORY_MARKER) {
@@ -159,9 +256,13 @@ export const agentLlm: NodeImpl = {
         continue
       }
       // {{input}} rides the standard {{inN}} slot machinery; {history} inline → transcript text.
+      // {{lore}} is substituted BEFORE interpolate so the macro engine never sees the marker.
       const withHistory = m.content.split(HISTORY_MARKER).join(historyText(history))
-      rows.push({ role: m.role, content: interpolate(withHistory, { in1: inputPayload }, gen) })
+      const withLore = withHistory.split(LORE_MARKER).join(loreBlock)
+      rows.push({ role: m.role, content: interpolate(withLore, { in1: inputPayload }, gen) })
     }
+    // No `{{lore}}` row anywhere + a non-empty block ⇒ appended system row (spec §7.3). Empty ⇒ none.
+    if (!hasLoreMarker && loreBlock) rows.push({ role: 'system', content: loreBlock })
     const sendMessages = providerShape(gen.settings, rows)
 
     // Params from the preset (temperature override when configured). No FSM cap here — an agent call

@@ -7,10 +7,23 @@ import {
   listModuleTemplates,
   saveModuleToLibrary
 } from '../services/moduleTemplates'
+import { getLorePicks, setLorePicks, type LorePick } from '../services/workflowLorePicksStore'
 import type { ModulePayload } from '../../shared/workflow/moduleEnvelope'
 
 export const registerWorkflowIpc = (ipcMain: IpcMain): void => {
   ipcMain.handle('list-node-types', () => listNodeTypes())
+  // Agent & memory UX WP-H (spec §7): per-world lorebook picks for agent.llm's custom lore mode.
+  // Keyed (worldId = chat.character_id, docId, nodeId); the store sanitizes what it reads/writes.
+  ipcMain.handle(
+    'get-lore-picks',
+    (_, profileId: string, worldId: string, docId: string, nodeId: string) =>
+      getLorePicks(profileId, worldId, docId, nodeId)
+  )
+  ipcMain.handle(
+    'set-lore-picks',
+    (_, profileId: string, worldId: string, docId: string, nodeId: string, picks: LorePick[]) =>
+      setLorePicks(profileId, worldId, docId, nodeId, picks)
+  )
   // Agent library (agent-memory-ux WP-G; spec §2): the palette's Agent-library section. Templates are
   // ModulePayloads — the renderer inserts them through the SAME insertModule path a `.rptmodule`
   // import uses. save-module-to-library re-validates main-side (never trusts the renderer payload).

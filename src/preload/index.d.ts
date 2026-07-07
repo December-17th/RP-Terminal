@@ -530,6 +530,22 @@ declare global {
         profileId: string,
         module: unknown
       ) => Promise<{ ok: true; id: string } | { ok: false; error: string }>
+      // Agent & memory UX (WP-H; spec §7): per-world lorebook entry picks for agent.llm's custom lore
+      // mode. Keyed (worldId = chat.character_id, docId, nodeId); identity = (book id, entry comment)
+      // — our entries carry no uid (plan §0.4 comment fallback). Empty set on write = clear.
+      getLorePicks: (
+        profileId: string,
+        worldId: string,
+        docId: string,
+        nodeId: string
+      ) => Promise<{ book: string; comment: string }[]>
+      setLorePicks: (
+        profileId: string,
+        worldId: string,
+        docId: string,
+        nodeId: string,
+        picks: { book: string; comment: string }[]
+      ) => Promise<void>
       // Recipe SHARING: `.rptrecipe` export / import (agent-packs plan WP5.2; ADR 0008) — "share this
       // world's setup". Shapes inlined (not imported from main) per the established preload convention.
       // Export assembles from the CURRENT world; `opts` = the wizard's name/description/creator/id.

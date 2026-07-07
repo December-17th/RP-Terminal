@@ -719,6 +719,23 @@ const en: Record<string, string> = {
   'workflowEditor.library.saveFailed': 'Could not save to the library.',
   'workflowEditor.library.insertFailed': 'Could not insert the template.',
   'workflowEditor.moduleImport.saveToLibrary': 'Also save to my library',
+  // Agent & memory UX (WP-H): the agent.llm lorebook row + entry picker.
+  'workflowEditor.lore.rowLabel': 'Lorebook',
+  'workflowEditor.lore.mode.main': 'Standard matching (active lorebooks)',
+  'workflowEditor.lore.mode.custom': 'Custom picks (this world)',
+  'workflowEditor.lore.wiredOnCanvas': 'Wired on canvas — the lore input overrides this setting.',
+  'workflowEditor.lore.choose': 'Choose entries…',
+  'workflowEditor.lore.noPicksHint':
+    'No picks for this world yet — standard matching applies until you choose entries.',
+  'workflowEditor.lore.needsChat': 'Open a chat to pick entries (picks are saved per world).',
+  'workflowEditor.lore.pickerTitle': 'Pick lorebook entries',
+  'workflowEditor.lore.searchPh': 'Search titles…',
+  'workflowEditor.lore.selectedCount': '{{n}} selected',
+  'workflowEditor.lore.missingCount': '{{n}} missing',
+  'workflowEditor.lore.loading': 'Loading…',
+  'workflowEditor.lore.noBooks': 'No lorebooks in this profile.',
+  'workflowEditor.lore.clear': 'Clear',
+  'workflowEditor.lore.done': 'Done',
   // One-canvas rebuild WP6.4a: node enable toggle, live trigger badge, assemble-node prompt preview.
   'workflowEditor.enabled': 'Enabled',
   'workflowEditor.trigger.nowAt': 'now {{now}} · at {{at}}',

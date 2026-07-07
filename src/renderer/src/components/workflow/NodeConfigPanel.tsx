@@ -24,6 +24,7 @@ import {
   type PanelSelection
 } from './detailsPanelModel'
 import PromptEditor, { type PromptFieldSpec } from './PromptEditor'
+import LorebookPickerSheet from './LorebookPickerSheet'
 import { useWorkflowTraceStore } from '../../stores/workflowTraceStore'
 import { formatTraceSeconds, type StoredRunRecord } from '../../../../shared/workflow/trace'
 import type { NodeTypeInfo } from '../../stores/workflowEditorStore'
@@ -723,9 +724,16 @@ function NodeDetailsInner({
   const typeInfo = nodeTypes.find((nt) => nt.type === node.type)
   const config = node.config ?? {}
   const allFields = fieldsFromSchema(typeInfo?.configSchema)
-  // Prompt fields (WP-A hint) leave the settings scroll and render in the Prompt tab's editor instead.
+  // WP-H (spec §7): a node with a `lore: Lore` input AND a `lorebook` config field gets the dedicated
+  // Lorebook row (mode + picker) instead of the generic enum control. Detected structurally — nothing
+  // hardcoded to agent.llm (v1's only such node, but any future one inherits the row).
+  const hasLoreRow =
+    (typeInfo?.inputs ?? []).some((p) => p.name === 'lore' && p.type === 'Lore') &&
+    allFields.some((f) => f.key === 'lorebook')
+  // Prompt fields (WP-A hint) leave the settings scroll and render in the Prompt tab's editor instead;
+  // `lorebook` leaves it for the dedicated row.
   const promptKeys = new Set(typeInfo?.promptFields ?? [])
-  const fields = allFields.filter((f) => !promptKeys.has(f.key))
+  const fields = allFields.filter((f) => !promptKeys.has(f.key) && !(hasLoreRow && f.key === 'lorebook'))
   const promptFieldSpecs: PromptFieldSpec[] = (typeInfo?.promptFields ?? []).map((key) => ({
     key,
     isArray: allFields.find((f) => f.key === key)?.kind === 'objectArray'
@@ -897,6 +905,17 @@ function NodeDetailsInner({
       )}
 
       {node.type === 'prompt.assemble' && <AssemblePreview profileId={profileId} />}
+
+      {/* WP-H (spec §7): the Lorebook row — mode select + the per-world entry picker. */}
+      {hasLoreRow && (
+        <LorebookRow
+          profileId={profileId}
+          node={node}
+          config={config}
+          readOnly={readOnly}
+          onModeChange={(mode) => updateField('lorebook', mode)}
+        />
+      )}
 
       <div>
         <div style={{ fontSize: 10.5, color: 'var(--rpt-text-tertiary)' }}>
@@ -1295,6 +1314,114 @@ function NothingPanel(): React.JSX.Element {
           </div>
         )
       })}
+    </div>
+  )
+}
+
+/** WP-H (spec §7): the Lorebook row on a lore-capable node's Settings tab. Shows the mode select
+ *  ('main' = standard matching over the agent's history; 'custom' = exactly the per-world picks), or
+ *  "wired on canvas" (disabled) when a `lore` edge exists in the doc — the wire beats config. Custom
+ *  mode gets the "Choose entries…" picker (needs an active chat: picks are per-WORLD, and the world
+ *  comes from the active chat's character) plus a no-picks-yet fallback hint. */
+function LorebookRow({
+  profileId,
+  node,
+  config,
+  readOnly,
+  onModeChange
+}: {
+  profileId: string
+  node: EditorNode
+  config: Record<string, unknown>
+  readOnly: boolean
+  onModeChange: (mode: string | undefined) => void
+}): React.JSX.Element {
+  const t = useT()
+  const edges = useWorkflowEditorStore((s) => s.edges)
+  const currentId = useWorkflowEditorStore((s) => s.currentId)
+  const activeChatId = useChatStore((s) => s.activeChatId)
+  const chats = useChatStore((s) => s.chats)
+  const [pickerOpen, setPickerOpen] = useState(false)
+  const [pickCount, setPickCount] = useState<number | null>(null)
+
+  const wired = edges.some((e) => e.target === node.id && e.targetPort === 'lore')
+  const mode = config.lorebook === 'custom' ? 'custom' : 'main'
+  const worldId = activeChatId
+    ? (chats.find((c) => c.id === activeChatId)?.character_id ?? null)
+    : null
+
+  // The stored pick count for the current world (drives the no-picks hint). Refetched when the
+  // picker closes (it may have just saved).
+  useEffect(() => {
+    let cancelled = false
+    setPickCount(null)
+    if (mode !== 'custom' || !worldId || !currentId || pickerOpen) return
+    void (async () => {
+      const picks = await window.api.getLorePicks(profileId, worldId, currentId, node.id)
+      if (!cancelled) setPickCount((picks ?? []).length)
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [profileId, worldId, currentId, node.id, mode, pickerOpen])
+
+  return (
+    <div style={{ margin: '8px 0' }}>
+      <div style={{ fontSize: 10.5, color: 'var(--rpt-text-tertiary)', marginBottom: 3 }}>
+        {t('workflowEditor.lore.rowLabel')}
+      </div>
+      {wired ? (
+        <div style={{ fontSize: 11, color: 'var(--rpt-text-secondary)' }}>
+          {t('workflowEditor.lore.wiredOnCanvas')}
+        </div>
+      ) : (
+        <>
+          <select
+            value={mode}
+            disabled={readOnly}
+            onChange={(e) => onModeChange(e.target.value === 'custom' ? 'custom' : undefined)}
+            style={{ width: '100%', fontSize: 11.5 }}
+          >
+            <option value="main">{t('workflowEditor.lore.mode.main')}</option>
+            <option value="custom">{t('workflowEditor.lore.mode.custom')}</option>
+          </select>
+          {mode === 'custom' && (
+            <div style={{ marginTop: 5 }}>
+              {worldId && currentId ? (
+                <>
+                  <button
+                    type="button"
+                    disabled={readOnly}
+                    onClick={() => setPickerOpen(true)}
+                    style={{ fontSize: 11.5 }}
+                  >
+                    {t('workflowEditor.lore.choose')}
+                    {pickCount != null && pickCount > 0 ? ` (${pickCount})` : ''}
+                  </button>
+                  {pickCount === 0 && (
+                    <div style={{ fontSize: 10.5, color: 'var(--rpt-warning)', marginTop: 3 }}>
+                      {t('workflowEditor.lore.noPicksHint')}
+                    </div>
+                  )}
+                </>
+              ) : (
+                <div style={{ fontSize: 10.5, color: 'var(--rpt-text-secondary)' }}>
+                  {t('workflowEditor.lore.needsChat')}
+                </div>
+              )}
+            </div>
+          )}
+        </>
+      )}
+      {pickerOpen && worldId && currentId && (
+        <LorebookPickerSheet
+          profileId={profileId}
+          worldId={worldId}
+          docId={currentId}
+          nodeId={node.id}
+          onClose={() => setPickerOpen(false)}
+        />
+      )}
     </div>
   )
 }
