@@ -101,27 +101,33 @@
     font-size: min(46vw, calc(var(--band-h) * .78)); font-weight: 900; line-height: .8;
     color: rgba(233, 227, 212, .9); text-shadow: 0 12px 46px rgba(0, 0, 0, .55);
   }
-  .nameplate { position: absolute; left: 14px; bottom: 14px; z-index: 3; }
-  /* legibility scrim so the nameplate reads over the light 立绘/glyph behind it */
-  .nameplate::before {
-    content: ''; position: absolute; inset: -10px -16px -10px -8px; z-index: -1;
-    background: radial-gradient(130% 150% at 18% 80%, rgba(16, 14, 22, .88), transparent 72%);
+  /* solid night-glass backing plate + gilt left bar (v4 mock .nameplate treatment; PM-B7/PM-B3 fix #1
+     — the plate replaces the old radial scrim so the tag reads over a light 立绘/glyph behind it) */
+  .nameplate {
+    position: absolute; left: 14px; bottom: 14px; z-index: 3;
+    background: var(--glass); backdrop-filter: blur(12px); border: 1px solid var(--gold-dim);
+    border-radius: 12px; padding: 9px 16px 9px 22px; box-shadow: 0 8px 30px rgba(0, 0, 0, .45);
   }
-  .np-name { display: block; font-family: var(--serif); font-size: 22px; font-weight: 700; text-shadow: 0 2px 12px rgba(0, 0, 0, .8); }
-  .np-tag { font-family: var(--mono); font-size: 11px; letter-spacing: .04em; color: var(--gold); text-shadow: 0 1px 6px rgba(0, 0, 0, .85); }
+  .nameplate::before {
+    content: ''; position: absolute; left: 10px; top: 9px; bottom: 9px; width: 3px; border-radius: 2px;
+    background: linear-gradient(180deg, var(--gold), transparent);
+  }
+  .np-name { display: block; font-family: var(--serif); font-size: 20px; font-weight: 700; line-height: 1.2; }
+  .np-tag { font-family: var(--mono); font-size: 11px; letter-spacing: .04em; color: var(--gold); margin-top: 2px; }
   .np-tag .sep { color: var(--gold-dim); margin: 0 5px; }
 
-  /* ── lean stats ──────────────────────────────────────────────────────────────────── */
+  /* ── lean stats (night-glass card — v4 mock .card treatment) ───────────────────────── */
   .stats {
-    flex: 0 0 auto; position: relative; z-index: 2; background: var(--night);
-    padding: 13px 16px 14px; display: flex; flex-direction: column; gap: 9px;
-    border-bottom: 1px solid var(--line-soft);
+    flex: 0 0 auto; position: relative; z-index: 2;
+    background: var(--glass); backdrop-filter: blur(12px);
+    border: 1px solid var(--line-soft); border-radius: 12px;
+    margin: 12px 14px; padding: 12px 14px; display: flex; flex-direction: column; gap: 9px;
   }
   .res { display: grid; grid-template-columns: 30px 1fr auto; align-items: center; gap: 9px; }
   .res-k { font-family: var(--mono); font-size: 11px; font-weight: 700; letter-spacing: .06em; }
   .res-k.hp { color: var(--hp); } .res-k.mp { color: var(--mp); } .res-k.sp { color: var(--sp); }
   .res-k.fp { color: var(--fp); } .res-k.exp { color: var(--exp); }
-  .res-track { height: 7px; border-radius: 4px; background: var(--sunken); overflow: hidden; border: 1px solid var(--line-soft); }
+  .res-track { height: 7px; border-radius: 4px; background: rgba(0, 0, 0, .5); overflow: hidden; border: 1px solid var(--line-soft); }
   .res-track > i { display: block; height: 100%; border-radius: 4px; transition: width .35s ease; }
   .res-v { font-family: var(--mono); font-size: 11px; color: var(--dim); white-space: nowrap; }
   .res.scalar .res-track { background: none; border: none; height: 1px; align-self: center; opacity: .35; }
@@ -142,19 +148,24 @@
   .chip.muted { border-color: var(--line); color: var(--faint); background: none; }
 
   /* ── fold drawer ─────────────────────────────────────────────────────────────────── */
-  /* Closed, the drawer collapses so tabs sit under stats; open, it expands into the freed band space. */
+  /* Closed, the drawer collapses so tabs sit under stats; open, it expands into the freed band space.
+     The open menu renders as its own night-glass card (v4 mock .card), so the drawer track itself is
+     transparent — the scene shows between the stats card above and the menu card. */
   .drawer {
-    flex: 1 1 auto; min-height: 0; overflow-y: auto; background: var(--night);
-    padding: 0 16px; max-height: 0; opacity: 0;
+    flex: 1 1 auto; min-height: 0; overflow-y: auto; background: none;
+    padding: 0 14px; max-height: 0; opacity: 0;
     transition: max-height .4s cubic-bezier(.4, 0, .2, 1), opacity .3s ease, padding .3s ease;
   }
-  .self.open .drawer { max-height: 100%; opacity: 1; padding: 14px 16px 18px; }
+  .self.open .drawer { max-height: 100%; opacity: 1; padding: 0 14px 14px; }
   .drawer::-webkit-scrollbar { width: 6px; }
   .drawer::-webkit-scrollbar-thumb { background: var(--line); border-radius: 3px; }
   .panel { display: none; }
   .self[data-menu="attrs"] .panel[data-menu="attrs"],
   .self[data-menu="inv"] .panel[data-menu="inv"],
-  .self[data-menu="asc"] .panel[data-menu="asc"] { display: block; }
+  .self[data-menu="asc"] .panel[data-menu="asc"] {
+    display: block; background: var(--glass); backdrop-filter: blur(12px);
+    border: 1px solid var(--line-soft); border-radius: 12px; padding: 12px 14px;
+  }
 
   .sect { font-family: var(--mono); font-size: 11px; letter-spacing: .22em; text-transform: uppercase;
     color: var(--gold-dim); font-weight: 600; display: flex; align-items: center; gap: 8px; margin: 0 0 9px; }
@@ -164,7 +175,7 @@
 
   /* 属性 */
   .attrs { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; }
-  .attr { text-align: center; background: var(--sunken); border: 1px solid var(--line-soft); border-radius: 8px; padding: 10px 2px; }
+  .attr { text-align: center; background: rgba(0, 0, 0, .35); border: 1px solid var(--line-soft); border-radius: 8px; padding: 10px 2px; }
   .attr-k { font-size: 11px; color: var(--dim); }
   .attr-v { font-family: var(--mono); font-size: 18px; font-weight: 700; margin-top: 3px; }
   .attr-free { margin-top: 10px; font-size: 11.5px; color: var(--gold); }
@@ -172,14 +183,14 @@
 
   /* 持有 */
   .inv-row { display: flex; align-items: center; gap: 9px; padding: 7px 4px; border-radius: 6px; }
-  .inv-row:hover { background: var(--sunken); }
+  .inv-row:hover { background: color-mix(in srgb, var(--text) 6%, transparent); }
   .inv-dot { width: 7px; height: 7px; border-radius: 50%; flex: 0 0 auto; box-shadow: 0 0 6px currentColor; }
   .inv-name { flex: 1; font-size: 12.5px; }
   .inv-meta { font-size: 11px; color: var(--faint); font-family: var(--mono); }
 
   /* 登神长阶 — the true ascension gate: 要素(≤3) → 权能(≤1) → 法则, + 神位/神国 */
   .asc-rungs { display: flex; gap: 8px; }
-  .rung { flex: 1; background: var(--sunken); border: 1px solid var(--line-soft); border-radius: 9px; padding: 10px 8px; }
+  .rung { flex: 1; background: rgba(0, 0, 0, .35); border: 1px solid var(--line-soft); border-radius: 9px; padding: 10px 8px; }
   .rung.on { border-color: var(--gold-dim); }
   .rung-h { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 7px; }
   .rung-k { font-size: 11px; color: var(--dim); } .rung.on .rung-k { color: var(--gold); }
@@ -190,13 +201,13 @@
   .asc-crown { margin-top: 10px; font-size: 11.5px; color: var(--dim); }
   .asc-crown b { color: var(--gold); font-family: var(--serif); }
 
-  /* ── tabs ────────────────────────────────────────────────────────────────────────── */
-  .tabs { flex: 0 0 auto; display: flex; gap: 2px; padding: 8px 12px; border-top: 1px solid var(--line); background: var(--sunken); }
-  .tab { flex: 1; font-family: var(--mono); font-size: 11px; letter-spacing: .04em; background: none;
-    border: none; color: var(--dim); padding: 8px 4px; border-radius: 7px; cursor: pointer; position: relative; }
-  .tab:hover { color: var(--text); background: color-mix(in srgb, var(--text) 6%, transparent); }
-  .tab.active { color: var(--gold); }
-  .tab.active::after { content: ''; position: absolute; left: 14px; right: 14px; bottom: 2px; height: 2px; border-radius: 2px; background: var(--gold); }
+  /* ── tabs (v4 mock .tab: glass-soft pills; active = gilt border + gold text) ───────── */
+  .tabs { flex: 0 0 auto; display: flex; align-items: center; gap: 6px; padding: 6px 14px 12px; }
+  .tab { flex: 1; font-family: var(--mono); font-size: 11px; letter-spacing: .04em;
+    background: var(--glass-soft); backdrop-filter: blur(12px); border: 1px solid var(--line-soft);
+    color: var(--dim); padding: 8px 4px; border-radius: 10px; cursor: pointer; position: relative; }
+  .tab:hover { color: var(--text); border-color: var(--line); }
+  .tab.active { color: var(--gold); border-color: var(--gold-dim); }
 
   @media (prefers-reduced-motion: reduce) {
     .band, .drawer, .res-track > i { transition: none; }
