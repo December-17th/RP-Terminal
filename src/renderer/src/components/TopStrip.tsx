@@ -249,6 +249,14 @@ export function TopStrip({
         {openAction(t('settings.connection'), 'connection')}
 
         <button
+          className="tmenu-btn"
+          onClick={() => useUiStore.getState().openWorkflowEditor()}
+          title={t('nav.workflowTitle')}
+        >
+          {t('nav.workflow')}
+        </button>
+
+        <button
           className="tmenu-btn gear"
           onClick={() => openSettings('app')}
           title={t('nav.settings')}

@@ -26,6 +26,8 @@ const en: Record<string, string> = {
   'nav.switchWorld': 'Switch world',
   'nav.switchSession': 'Switch session',
   'nav.session': 'Session',
+  'nav.workflow': 'Workflow',
+  'nav.workflowTitle': 'Open the workflow & agents editor',
 
   'strip.open': 'Open {{name}}…',
   'strip.activePreset': 'Active preset',

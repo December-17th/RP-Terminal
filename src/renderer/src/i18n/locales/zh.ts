@@ -27,6 +27,8 @@ const zh: Record<string, string> = {
   'nav.switchWorld': '切换世界',
   'nav.switchSession': '切换会话',
   'nav.session': '会话',
+  'nav.workflow': '工作流',
+  'nav.workflowTitle': '打开工作流与代理编辑器',
 
   'strip.open': '打开{{name}}…',
   'strip.activePreset': '当前预设',
