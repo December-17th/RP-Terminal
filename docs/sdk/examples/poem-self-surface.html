@@ -28,8 +28,10 @@
     stat_data.命运点数 (TOP-LEVEL) → FP. 品质 names 普通/优良/稀有/史诗/传说/神话/唯一 → 7 rarity tiers.
     The 主角 object has NO name field; the label is the persona ({{user}}) + 生命层级 · Lv · 冒险者评级.
 
-  Reads via getVariables().stat_data; portrait via window.assetUrl(name,'立绘',mood); re-renders on
-  mag_variable_updated / message_updated. Opens standalone in a browser too (mock fallback data).
+  Reads via getVariables().stat_data; portrait via window.assetUrl(name,'立绘',mood) — resolved by
+  PERSONA NAME (SillyTavern.substituteParams('{{user}}')) first, then the literal '主角' fallback; a total
+  miss keeps the glyph placeholder and logs one console.warn. Re-renders on mag_variable_updated /
+  message_updated. Opens standalone in a browser too (mock data + ?persona=&assets= stub).
   VERIFY rendering + live data in-app (manual-verify).
 -->
 <style>
@@ -315,6 +317,31 @@
     }
   }
 
+  // Standalone-preview stubs — installed ONLY when the real host is absent (no getVariables). In-app the
+  // runtime provides SillyTavern.substituteParams + window.assetUrl; these let the browser preview drive
+  // the persona-name resolution paths. Query params:
+  //   ?persona=<name>  → what {{user}} expands to (default '' → falls back to '主角')
+  //   ?assets=persona  → the persona-named 立绘 exists (persona-hit path)
+  //   ?assets=主角     → only the '主角' 立绘 exists (fallback path)
+  //   ?assets=none     → nothing exists (miss → placeholder + warn)  [default]
+  if (typeof getVariables !== 'function') {
+    var Q = new URLSearchParams(location.search)
+    var STUB_PERSONA = Q.get('persona') || ''
+    var STUB_HAVE = Q.get('assets') || 'none'
+    var STUB_IMG = 'data:image/gif;base64,R0lGODlhAQABAIAAAP///wAAACH5BAEAAAAALAAAAAABAAEAAAICRAEAOw=='
+    if (!window.SillyTavern) window.SillyTavern = {}
+    if (typeof window.SillyTavern.substituteParams !== 'function') {
+      window.SillyTavern.substituteParams = function (t) {
+        return String(t).replace(/\{\{user\}\}/g, STUB_PERSONA)
+      }
+    }
+    if (typeof window.assetUrl !== 'function') {
+      window.assetUrl = function (name, type) {
+        return Promise.resolve(type === '立绘' && name === STUB_HAVE ? STUB_IMG : null)
+      }
+    }
+  }
+
   // ── tiny helpers ─────────────────────────────────────────────────────────────────
   function esc(s) {
     return String(s == null ? '' : s).replace(/[&<>"]/g, function (c) {
@@ -469,21 +496,32 @@
     if (s.lifeTier) bits.push(esc(s.lifeTier))
     bits.push('Lv ' + s.level)
     if (s.rank && s.rank !== '未评级') bits.push(esc(s.rank))
-    document.getElementById('npName').textContent = personaName()
+    var pn = personaName()
+    document.getElementById('npName').textContent = pn || '你'
     document.getElementById('npTag').innerHTML =
       '<span>你</span><span class="sep">·</span>' + bits.join('<span class="sep">·</span>')
-    document.getElementById('figPh').textContent = (personaName() || '主').charAt(0)
+    document.getElementById('figPh').textContent = (pn || '主').charAt(0)
   }
 
   // ── host access ───────────────────────────────────────────────────────────────────
+  // The persona ({{user}}) name, reachable from a WCV surface via SillyTavern.substituteParams —
+  // it expands {{user}} to the host persona name (thRuntime/index.ts:543 → substMacros :115-123,
+  // user: host.personaName()). Returns '' when unresolved so callers can fall back deliberately.
   function personaName() {
     try {
-      if (typeof substituteParams === 'function') {
-        var n = String(substituteParams('{{user}}') || '').trim()
+      var st = window.SillyTavern
+      if (st && typeof st.substituteParams === 'function') {
+        var n = String(st.substituteParams('{{user}}') || '').trim()
         if (n && n !== '{{user}}') return n
       }
     } catch (_) {}
-    return '你'
+    try {
+      if (typeof substituteParams === 'function') {   // bare global fallback (some hosts expose it)
+        var m = String(substituteParams('{{user}}') || '').trim()
+        if (m && m !== '{{user}}') return m
+      }
+    } catch (_) {}
+    return ''
   }
   function statData() {
     try {
@@ -493,20 +531,40 @@
       return Promise.resolve((v || {}).stat_data || {})
     } catch (_) { return Promise.resolve(MOCK) }
   }
+  // Resolve the user 立绘 by PERSONA NAME first, then the literal '主角' as a fallback (an imported
+  // asset is far likelier to be named for the persona than the schema-internal key). On a total miss we
+  // KEEP the glyph placeholder and emit ONE console.warn naming the keys tried — never the old silent
+  // img.onerror removal that hid every lookup failure.
   function loadPortrait() {
     if (typeof window.assetUrl !== 'function') return
-    try {
-      var r = window.assetUrl('主角', '立绘')
-      Promise.resolve(r).then(function (url) {
-        if (!url) return
-        var img = document.getElementById('selfFig') || document.createElement('img')
-        img.id = 'selfFig'; img.className = 'fig'; img.alt = '主角'
-        img.onload = function () { var ph = document.getElementById('figPh'); if (ph) ph.style.display = 'none' }
-        img.onerror = function () { img.remove() }
-        img.src = url
-        if (!img.parentNode) document.getElementById('band').insertBefore(img, document.getElementById('figPh'))
-      })
-    } catch (_) {}
+    var names = []
+    var pn = personaName()
+    if (pn) names.push(pn)
+    names.push('主角')   // schema fallback
+    var i = 0
+    function next() {
+      if (i >= names.length) {
+        console.warn('[poem-self] no 立绘 asset for persona portrait [' +
+          names.map(function (n) { return '立绘:' + n }).join(', ') + '] — keeping the glyph placeholder')
+        return
+      }
+      var nm = names[i++]
+      try {
+        Promise.resolve(window.assetUrl(nm, '立绘')).then(function (url) {
+          if (!url) { next(); return }
+          var img = document.getElementById('selfFig') || document.createElement('img')
+          img.id = 'selfFig'; img.className = 'fig'; img.alt = nm
+          img.onload = function () { var ph = document.getElementById('figPh'); if (ph) ph.style.display = 'none' }
+          img.onerror = function () {
+            img.remove()
+            console.warn('[poem-self] 立绘 asset for "' + nm + '" failed to load: ' + url)
+          }
+          img.src = url
+          if (!img.parentNode) document.getElementById('band').insertBefore(img, document.getElementById('figPh'))
+        }, next)
+      } catch (_) { next() }
+    }
+    next()
   }
 
   // ── geometry: slice the shared stage background to this panel's window-x (P0 primitive) ──

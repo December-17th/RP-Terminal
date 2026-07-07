@@ -23,8 +23,14 @@
     · listens `stage:cast-changed` → refresh (a card agent can push it; we also refresh on
       mag_variable_updated / message_updated so 在场 changes are caught without it).
 
-  Portraits via window.assetUrl(name,'立绘',mood). Opens standalone (mock cast) for preview.
-  VERIFY rendering + live data in-app (manual-verify).
+  Portraits via window.assetUrl(name,'立绘',mood). The panoramic band background resolves with the
+  precedence: card override stat_data.stage.background → 地点 (stat_data.世界.地点) as 全景 then 背景 →
+  themed gradient fallback; re-resolved when 地点 changes. Misses keep the gradient + log one console.warn.
+  Opens standalone (mock cast + ?assets=全景|背景|none stub) for preview.
+  VERIFY rendering + live data in-app (manual-verify). NOTE (PM-B6): the card-facing window.assetUrl seam
+  currently hardcodes the 'character' asset category in BOTH transports (worldAssetService.assetUrlForWorld
+  :166; cardBridge/host.ts:274), so location-category types (背景/全景) cannot resolve in-app yet — the
+  band will fall back to the gradient until that seam infers category from type. See the PM-B6 report.
 -->
 <style>
   /* Palette + fonts + the 4 themes live in the shared token file. */
@@ -161,6 +167,18 @@
     }
   }
 
+  // Standalone-preview asset stub — only installed when the real host is absent (no getVariables). In-app
+  // the runtime provides window.assetUrl; this lets the browser preview exercise the resolution paths.
+  // ?assets= controls what "exists": '全景' (default) → 地点 全景 hit; '背景' → 全景 miss, 背景 hit;
+  // 'none' → total miss (gradient + warn). A 1×1 gif keeps it self-contained.
+  if (typeof getVariables !== 'function' && typeof window.assetUrl !== 'function') {
+    var STUB_HAVE = (new URLSearchParams(location.search).get('assets')) || '全景'
+    var STUB_IMG = 'data:image/gif;base64,R0lGODlhAQABAIAAAP///wAAACH5BAEAAAAALAAAAAABAAEAAAICRAEAOw=='
+    window.assetUrl = function (name, type) {
+      return Promise.resolve(STUB_HAVE !== 'none' && type === STUB_HAVE ? STUB_IMG : null)
+    }
+  }
+
   function esc(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c] }) }
   var num = function (v, d) { var n = Number(v); return isFinite(n) ? n : (d == null ? 0 : d) }
   var firstStr = function (a) { return Array.isArray(a) ? a.filter(Boolean).join(' · ') : (a || '') }
@@ -189,7 +207,11 @@
     })
     return {
       cast: cast,
-      scene: { time: (SD['世界'] || {})['时间'] || '', location: (SD['世界'] || {})['地点'] || '', bg: stage['background'] || '' }
+      scene: {
+        time: (SD['世界'] || {})['时间'] || '',
+        location: (SD['世界'] || {})['地点'] || '',
+        bg: stage['background'] || ''   // card-authored override (takes precedence over 地点)
+      }
     }
   }
 
@@ -213,8 +235,8 @@
       if (s.scene.location) st.push(esc(s.scene.location))
       sceneTagEl.innerHTML = st.join('<span class="sep">·</span>')
       sceneTagEl.style.display = st.length ? '' : 'none'
-      // scene background asset (optional)
-      loadScene(s.scene.bg)
+      // band background: card override → 地点 全景 → 地点 背景 → themed gradient
+      loadScene(s.scene.bg, s.scene.location)
 
       // cast
       if (!s.cast.length) {
@@ -273,15 +295,48 @@
       })
     } catch (_) {}
   }
-  function loadScene(name) {
-    if (!name || typeof window.assetUrl !== 'function') { sceneEl.classList.remove('has-img'); return }
-    try {
-      Promise.resolve(window.assetUrl(name, '背景')).then(function (url) {
-        if (!url) return
-        sceneEl.style.setProperty('--scene-img', 'url("' + url + '")')
-        sceneEl.classList.add('has-img')
-      })
-    } catch (_) {}
+  // Resolve the band background with the documented precedence:
+  //   1. card-authored override (stat_data.stage.background) — as 全景 then 背景
+  //   2. 地点 (stat_data.世界.地点) — as 全景 (panoramic; ensemble mode's showcase) then 背景
+  //   3. themed gradient fallback (the .scene default; no --scene-img / no .has-img)
+  // On a total miss we KEEP the gradient placeholder and emit ONE console.warn naming the keys tried,
+  // instead of silently dropping the image (the old img.onerror-removal bug that hid every miss).
+  var sceneKey = null   // last resolved candidate list — skip redundant re-resolves
+  function loadScene(override, location) {
+    // candidate (name,type) pairs in precedence order; the panoramic band prefers 全景
+    var tries = []
+    if (override) tries.push([override, '全景'], [override, '背景'])
+    if (location) tries.push([location, '全景'], [location, '背景'])
+    var key = tries.map(function (t) { return t[0] + '/' + t[1] }).join('|')
+    if (key === sceneKey) return   // 地点 unchanged → no work
+    sceneKey = key
+
+    if (!tries.length || typeof window.assetUrl !== 'function') {
+      sceneEl.classList.remove('has-img')
+      sceneEl.style.removeProperty('--scene-img')
+      return
+    }
+    // walk the candidates; apply the first that resolves, else warn + fall back to the gradient
+    var i = 0
+    function next() {
+      if (i >= tries.length) {
+        sceneEl.classList.remove('has-img')
+        sceneEl.style.removeProperty('--scene-img')
+        console.warn('[poem-stage] no band background asset for [' +
+          tries.map(function (t) { return t[1] + ':' + t[0] }).join(', ') + '] — using themed gradient')
+        return
+      }
+      var t = tries[i++]
+      try {
+        Promise.resolve(window.assetUrl(t[0], t[1])).then(function (url) {
+          if (url) {
+            sceneEl.style.setProperty('--scene-img', 'url("' + url + '")')
+            sceneEl.classList.add('has-img')
+          } else next()
+        }, next)
+      } catch (_) { next() }
+    }
+    next()
   }
 
   // ── host access ──────────────────────────────────────────────────────────────────
