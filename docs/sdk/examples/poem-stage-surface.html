@@ -5,18 +5,25 @@
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>命定之诗 — STAGE surface</title>
 <!--
-  命定之诗 — STAGE surface (play-area redesign P2). The VN stage band for the panel_ui `stage` slot
-  [3,0,9,4] (center+right top, ~75% × ~33%). Reads as ONE continuous surface with the top of the SELF
-  surface to its left: both draw the SAME full-viewport background offset by their own window-x
-  (window.rptHost.getPanelGeometry — the P0 seam-slicing primitive), so the dusk scene runs unbroken
-  from the user's portrait across to the NPCs. See docs/design/poem-play-area-redesign.md §1.1, §4.2, §4.4.
+  命定之诗 — STAGE surface (play-area redesign P2 + PM-B8 rev 2). The VN stage band for the panel_ui
+  `stage` slot [0,0,9,4] (full-width top band, ~75% × ~33%). The band now spans the full play-area width
+  and carries the USER portrait pinned far-left (was the SELF surface's job pre-PM-B8), then the present
+  NPCs across the rest. Draws the full-viewport background offset by its window-x
+  (window.rptHost.getPanelGeometry — the P0 seam-slicing primitive), so the dusk scene runs unbroken from
+  the user's portrait across to the NPCs. See docs/design/poem-play-area-redesign.md §1.1, §4.2, §4.4.
 
   Cast (who is ON STAGE) is grounded in the real schema
   (FrontEnd-for-destined-journey-TPR-STS/src/data_schema): a partner is present when
-  stat_data.关系列表[name].在场 === true. "Speaking" is the one signal not in the schema — the card's
-  agent MAY write stat_data.stage = { speaking:<name>, background:<asset> } per turn; absent, we fall
+  stat_data.关系列表[name].在场 === true. The USER is always on stage, pinned far-left, visually distinct
+  (a stable 你 anchor) and NEVER the "active speaker". "Speaking" is the one signal not in the schema — the
+  card's agent MAY write stat_data.stage = { speaking:<name>, background:<asset> } per turn; absent, we fall
   back to the highest-好感度 present member. The active speaker is bright + nameplated + tagged 正在交谈;
   silent members are dimmed (opacity .4; saturate .5).
+
+  The USER portrait resolves by PERSONA NAME (SillyTavern.substituteParams('{{user}}')) first, then the
+  literal '主角' fallback; a total miss keeps the ghost-glyph placeholder (first char of the persona name)
+  and logs one console.warn. When the SELF drawer opens (self:fold) the whole stage dims — including the
+  user's own sprite — which matches the v4 mock's focus-shift behavior.
 
   Coordinates via the card event channel (window.rptHost.broadcastEvent / eventOn):
     · listens `self:fold`  → gently dims the stage while the SELF drawer is open (focus shift).
@@ -82,6 +89,16 @@
   }
   .fig.dim, .fig-ph.dim { opacity: .4; filter: saturate(.5) brightness(.7); }
   .fig.active { filter: drop-shadow(0 0 30px rgba(215, 107, 143, .35)); }
+  /* the USER sprite (far-left anchor) reads as the protagonist, not an NPC: a cool gilt rim so it's
+     visually distinct from the warm NPC glow, and it's never the "active speaker" (PM-B8) */
+  .fig.user { filter: drop-shadow(0 8px 26px rgba(0, 0, 0, .5)) drop-shadow(0 0 20px rgba(217, 181, 107, .28)); }
+  .fig-ph.user { color: color-mix(in srgb, var(--gold) 62%, rgba(233, 227, 212, .9)); }
+  /* the 你 anchor pill riding the user's ghost glyph, so the protagonist is legible even before art loads */
+  .user-tag {
+    position: absolute; bottom: 16px; z-index: 3; transform: translateX(-50%);
+    font-family: var(--mono); font-size: 12px; letter-spacing: .14em; color: var(--night);
+    background: var(--gold); padding: 2px 9px; border-radius: 999px;  /* PM-B5: 你 is CJK → ≥12px */
+  }
 
   /* speaker nameplate → solid night-glass backing plate + gilt left bar (v4 mock .nameplate;
      PM-B7/PM-B3 fix #1 — the plate replaces the radial scrim so the tag reads over the light 立绘) */
@@ -167,15 +184,32 @@
     }
   }
 
-  // Standalone-preview asset stub — only installed when the real host is absent (no getVariables). In-app
-  // the runtime provides window.assetUrl; this lets the browser preview exercise the resolution paths.
-  // ?assets= controls what "exists": '全景' (default) → 地点 全景 hit; '背景' → 全景 miss, 背景 hit;
-  // 'none' → total miss (gradient + warn). A 1×1 gif keeps it self-contained.
-  if (typeof getVariables !== 'function' && typeof window.assetUrl !== 'function') {
-    var STUB_HAVE = (new URLSearchParams(location.search).get('assets')) || '全景'
+  // Standalone-preview stubs — only installed when the real host is absent (no getVariables). In-app the
+  // runtime provides SillyTavern.substituteParams + window.assetUrl; these let the browser preview exercise
+  // the resolution paths. Query params:
+  //   ?assets= controls what "exists" for the band background: '全景' (default) → 地点 全景 hit;
+  //            '背景' → 全景 miss, 背景 hit; 'none' → total miss (gradient + warn).
+  //   ?persona=<name> → what {{user}} expands to (default '' → the user portrait falls back to '主角').
+  //   ?userart=persona → the persona-named 立绘 exists; ?userart=主角 → only '主角'; ?userart=none → neither
+  //            (miss → ghost glyph + warn)  [default: 主角].
+  // A 1×1 gif keeps it self-contained.
+  if (typeof getVariables !== 'function') {
+    var Q = new URLSearchParams(location.search)
+    var STUB_HAVE = Q.get('assets') || '全景'
+    var STUB_PERSONA = Q.get('persona') || ''
+    var STUB_USERART = Q.get('userart') || '主角'
     var STUB_IMG = 'data:image/gif;base64,R0lGODlhAQABAIAAAP///wAAACH5BAEAAAAALAAAAAABAAEAAAICRAEAOw=='
-    window.assetUrl = function (name, type) {
-      return Promise.resolve(STUB_HAVE !== 'none' && type === STUB_HAVE ? STUB_IMG : null)
+    if (!window.SillyTavern) window.SillyTavern = {}
+    if (typeof window.SillyTavern.substituteParams !== 'function') {
+      window.SillyTavern.substituteParams = function (t) {
+        return String(t).replace(/\{\{user\}\}/g, STUB_PERSONA)
+      }
+    }
+    if (typeof window.assetUrl !== 'function') {
+      window.assetUrl = function (name, type) {
+        if (type === '立绘') return Promise.resolve(name === STUB_USERART ? STUB_IMG : null)
+        return Promise.resolve(STUB_HAVE !== 'none' && type === STUB_HAVE ? STUB_IMG : null)
+      }
     }
   }
 
@@ -219,10 +253,14 @@
   var sceneEl = document.getElementById('scene')
   var sceneTagEl = document.getElementById('sceneTag')
 
-  // spread N sprites across the width; the speaker sits a touch toward center-right and in front
+  // the USER anchor is pinned far-left; NPCs spread over the remaining width to its right (PM-B8)
+  var USER_X = 8
+
+  // spread N NPC sprites across the band right of the user anchor; the speaker sits toward centre and
+  // in front. lo starts clear of the user so the protagonist keeps its own space.
   function xFor(i, n) {
-    if (n <= 1) return 62
-    var lo = 20, hi = 88
+    if (n <= 1) return 60
+    var lo = 30, hi = 90
     return Math.round(lo + (hi - lo) * (i / (n - 1)))
   }
 
@@ -238,12 +276,17 @@
       // band background: card override → 地点 全景 → 地点 背景 → themed gradient
       loadScene(s.scene.bg, s.scene.location)
 
-      // cast
+      castEl.innerHTML = ''
+      // the USER is always on stage, pinned far-left; render it first so NPCs draw over it if they crowd
+      renderUser()
+
+      // cast (NPCs). No NPCs present → the user still stands; show the '无人在场' note beside it
       if (!s.cast.length) {
-        castEl.innerHTML = '<div class="empty">此刻无人在场</div>'
+        var none = document.createElement('div')
+        none.className = 'empty'; none.textContent = '此刻无人在场'
+        castEl.appendChild(none)
         return
       }
-      castEl.innerHTML = ''
       // even slots across the band, but give the SPEAKER the prominent centre-right slot and let the
       // silent members flank it; then draw silent first, speaker last (on top)
       var n = s.cast.length
@@ -295,6 +338,59 @@
       })
     } catch (_) {}
   }
+
+  // ── the USER (protagonist) — pinned far-left, visually distinct, never the active speaker (PM-B8) ──
+  // Draw the ghost-glyph anchor (first char of the persona name) + the 你 pill, then try to swap in the
+  // 立绘 resolved by PERSONA NAME first, '主角' fallback second; a total miss keeps the glyph + warns.
+  function renderUser() {
+    var pn = personaName()
+    var wrap = document.createElement('div')
+    wrap.style.position = 'absolute'; wrap.style.inset = '0'
+    var ph = document.createElement('div')
+    ph.className = 'fig-ph user'
+    ph.textContent = String(pn || '主').charAt(0)
+    ph.style.left = USER_X + '%'
+    ph.style.fontSize = 'min(24vw, 62vh)'
+    wrap.appendChild(ph)
+    var tag = document.createElement('div')
+    tag.className = 'user-tag'; tag.style.left = USER_X + '%'; tag.textContent = '你'
+    wrap.appendChild(tag)
+    castEl.appendChild(wrap)
+    loadUserFig(wrap, ph, pn)
+  }
+  // Resolve the user 立绘 by PERSONA NAME first, then the literal '主角' fallback (an imported asset is far
+  // likelier to be named for the persona than the schema-internal key). On a total miss KEEP the glyph
+  // and emit ONE console.warn naming the keys tried — never a silent img.onerror removal.
+  function loadUserFig(wrap, ph, pn) {
+    if (typeof window.assetUrl !== 'function') return
+    var names = []
+    if (pn) names.push(pn)
+    names.push('主角')   // schema fallback
+    var i = 0
+    function next() {
+      if (i >= names.length) {
+        console.warn('[poem-stage] no 立绘 asset for user portrait [' +
+          names.map(function (n) { return '立绘:' + n }).join(', ') + '] — keeping the glyph placeholder')
+        return
+      }
+      var nm = names[i++]
+      try {
+        Promise.resolve(window.assetUrl(nm, '立绘')).then(function (url) {
+          if (!url) { next(); return }
+          var img = document.createElement('img')
+          img.className = 'fig user'; img.alt = nm; img.style.left = USER_X + '%'
+          img.onload = function () { ph.style.display = 'none' }
+          img.onerror = function () {
+            img.remove()
+            console.warn('[poem-stage] user 立绘 asset for "' + nm + '" failed to load: ' + url)
+          }
+          img.src = url
+          wrap.insertBefore(img, wrap.firstChild)
+        }, next)
+      } catch (_) { next() }
+    }
+    next()
+  }
   // Resolve the band background with the documented precedence:
   //   1. card-authored override (stat_data.stage.background) — as 全景 then 背景
   //   2. 地点 (stat_data.世界.地点) — as 全景 (panoramic; ensemble mode's showcase) then 背景
@@ -340,6 +436,25 @@
   }
 
   // ── host access ──────────────────────────────────────────────────────────────────
+  // The persona ({{user}}) name, reachable from a WCV surface via SillyTavern.substituteParams — it
+  // expands {{user}} to the host persona name (thRuntime/index.ts:543 → substMacros :115-123,
+  // user: host.personaName()). Returns '' when unresolved so callers can fall back deliberately.
+  function personaName() {
+    try {
+      var st = window.SillyTavern
+      if (st && typeof st.substituteParams === 'function') {
+        var n = String(st.substituteParams('{{user}}') || '').trim()
+        if (n && n !== '{{user}}') return n
+      }
+    } catch (_) {}
+    try {
+      if (typeof substituteParams === 'function') {   // bare global fallback (some hosts expose it)
+        var m = String(substituteParams('{{user}}') || '').trim()
+        if (m && m !== '{{user}}') return m
+      }
+    } catch (_) {}
+    return ''
+  }
   function statData() {
     try {
       if (typeof getVariables !== 'function') return Promise.resolve(MOCK)

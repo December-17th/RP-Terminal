@@ -5,19 +5,17 @@
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>命定之诗 — SELF surface</title>
 <!--
-  命定之诗 — SELF surface (play-area redesign P1). A full-height card WCV page for the panel_ui
-  `self` slot [0,0,3,12], beside the native `chat` (story) slot. See
+  命定之诗 — SELF surface (play-area redesign P1 + PM-B8 rev 2). A card WCV page for the panel_ui
+  `self` slot [0,4,3,8] (lower-left, below the STAGE band). See
   docs/design/poem-play-area-redesign.md §1.2, §4.2, §6.
 
-  Layout (top → bottom):
-    · portrait band — the user's slice of the shared VN stage. Draws a full-viewport background
-      offset by this panel's window-x (window.rptHost.getPanelGeometry / onPanelGeometry — the P0
-      seam-slicing primitive) so it lines up with the STAGE surface to its right. Holds the 立绘 +
-      the destiny-gilt life-tier nameplate.
-    · lean stats — HP / MP / SP / EXP bars, 命运 (FP) + 金钱 (gold), and 状态效果 chips. Only these.
+  PM-B8: the portrait band moved to the STAGE surface (the user now stands in the shared VN band); SELF
+  is stats/items only — no portrait, no geometry slicing. Layout (top → bottom):
+    · idplate card — the destiny-gilt identity plate (persona name + 生命层级 · Lv · 冒险者评级).
+    · lean stats — HP / MP / SP / EXP bars, 命运 (FP) + 金钱 (gold), and 状态效果 chips.
     · fold drawer — 属性 / 持有 / 登神长阶, hidden until a tab opens.
-    · tabs — opening one COLLAPSES the portrait band (max-height→0), slides the stats up, and expands
-      the drawer into the freed zone; clicking the active tab again reverses it (spec §1.5).
+    · tabs — opening one EXPANDS the drawer into the space between stats and tabs (max-height/opacity
+      transition); the stats stay put. Clicking the active tab again collapses it (spec §1.5).
 
   Data (all keys verified against the real 状态栏 schema,
   FrontEnd-for-destined-journey-TPR-STS/src/data_schema/{schema,utils}.ts):
@@ -28,10 +26,10 @@
     stat_data.命运点数 (TOP-LEVEL) → FP. 品质 names 普通/优良/稀有/史诗/传说/神话/唯一 → 7 rarity tiers.
     The 主角 object has NO name field; the label is the persona ({{user}}) + 生命层级 · Lv · 冒险者评级.
 
-  Reads via getVariables().stat_data; portrait via window.assetUrl(name,'立绘',mood) — resolved by
-  PERSONA NAME (SillyTavern.substituteParams('{{user}}')) first, then the literal '主角' fallback; a total
-  miss keeps the glyph placeholder and logs one console.warn. Re-renders on mag_variable_updated /
-  message_updated. Opens standalone in a browser too (mock data + ?persona=&assets= stub).
+  Reads via getVariables().stat_data. The idplate label uses the persona name
+  (SillyTavern.substituteParams('{{user}}')) with a '你' fallback. Re-renders on mag_variable_updated /
+  message_updated. Opens standalone in a browser too (mock data + ?persona= stub). The user portrait
+  itself now lives in the STAGE surface (PM-B8).
   VERIFY rendering + live data in-app (manual-verify).
 -->
 <style>
@@ -39,10 +37,6 @@
      document.documentElement.dataset.poemTheme). */
   @import url('./poem-themes.css');
 
-  :root {
-    /* seam-sliced band geometry — set by JS from getPanelGeometry(); these are safe fallbacks */
-    --band-h: 34vh; --vw: 100vw; --panel-x: 0px;
-  }
   * { box-sizing: border-box; }
   html, body { margin: 0; height: 100%; }
   body {
@@ -62,60 +56,20 @@
   .sw:hover { transform: scale(1.18); }
   .sw.on { box-shadow: 0 0 0 2px var(--sunken), 0 0 0 3px currentColor; }
 
-  /* ── portrait band (the user's slice of the shared VN stage) ─────────────────────── */
-  .band {
-    position: relative; flex: 0 0 auto; height: var(--band-h); max-height: var(--band-h);
-    overflow: hidden; transition: max-height .4s cubic-bezier(.4, 0, .2, 1);
+  /* ── idplate card (v4 mock .idplate inside a night-glass .card; PM-B8: promoted from the old band
+     overlay to a normal card at the top of the stats stack) ──────────────────────────── */
+  .idplate {
+    flex: 0 0 auto; position: relative; z-index: 2;
+    background: var(--glass); backdrop-filter: blur(12px); border: 1px solid var(--line-soft);
+    border-radius: 12px; padding: 11px 14px 11px 20px; margin: 12px 14px 0;
+    display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap;
   }
-  .self.open .band { max-height: 0; }        /* fold collapses the portrait into the drawer */
-  /* the shared background, drawn at FULL viewport width then shifted by this panel's x so the
-     slice aligns pixel-for-pixel with the STAGE surface to the right (P0 background slicing) */
-  .scene {
-    position: absolute; inset: 0; z-index: 0;
-    background-color: var(--night);
-    background-image:
-      radial-gradient(70% 90% at 22% 42%, var(--scene-a) 0%, transparent 55%),
-      radial-gradient(70% 90% at 88% 30%, var(--scene-b) 0%, transparent 55%),
-      radial-gradient(60% 80% at 40% 128%, var(--scene-glow), transparent 60%),
-      linear-gradient(180deg, color-mix(in srgb, var(--scene-a) 26%, var(--night)), var(--night) 78%);
-    background-repeat: no-repeat;
-    background-size: var(--vw) var(--band-h);
-    background-position: calc(-1 * var(--panel-x)) 0;
-  }
-  .scene.has-img { background-image: var(--scene-img); }
-  /* subtle atmosphere + a bottom fade so the band melts into the stats with no hard line */
-  .scene::before {
-    content: ''; position: absolute; inset: 0; opacity: .3;
-    background: repeating-linear-gradient(103deg, transparent 0 26px, rgba(0, 0, 0, .14) 26px 28px);
-  }
-  .scene::after {
-    content: ''; position: absolute; left: 0; right: 0; bottom: 0; height: 96px;
-    background: linear-gradient(180deg, transparent, var(--night));
-  }
-  /* 立绘 (or its initial stand-in) anchored bottom-left, VN-style */
-  .fig {
-    position: absolute; left: 6px; bottom: 0; z-index: 1; max-height: 100%; max-width: 92%;
-    object-fit: contain; object-position: bottom left;
-    filter: drop-shadow(0 12px 42px rgba(0, 0, 0, .55));
-  }
-  .fig-ph {
-    position: absolute; left: 8px; bottom: -8px; z-index: 1; font-family: var(--serif);
-    font-size: min(46vw, calc(var(--band-h) * .78)); font-weight: 900; line-height: .8;
-    color: rgba(233, 227, 212, .9); text-shadow: 0 12px 46px rgba(0, 0, 0, .55);
-  }
-  /* solid night-glass backing plate + gilt left bar (v4 mock .nameplate treatment; PM-B7/PM-B3 fix #1
-     — the plate replaces the old radial scrim so the tag reads over a light 立绘/glyph behind it) */
-  .nameplate {
-    position: absolute; left: 14px; bottom: 14px; z-index: 3;
-    background: var(--glass); backdrop-filter: blur(12px); border: 1px solid var(--gold-dim);
-    border-radius: 12px; padding: 9px 16px 9px 22px; box-shadow: 0 8px 30px rgba(0, 0, 0, .45);
-  }
-  .nameplate::before {
-    content: ''; position: absolute; left: 10px; top: 9px; bottom: 9px; width: 3px; border-radius: 2px;
+  .idplate::before {
+    content: ''; position: absolute; left: 9px; top: 11px; bottom: 11px; width: 3px; border-radius: 2px;
     background: linear-gradient(180deg, var(--gold), transparent);
   }
-  .np-name { display: block; font-family: var(--serif); font-size: 20px; font-weight: 700; line-height: 1.2; }
-  .np-tag { font-family: var(--mono); font-size: 12px; letter-spacing: .04em; color: var(--gold); margin-top: 2px; }  /* PM-B5: CJK-led (你 · 生命层级 · 命定) → ≥12px */
+  .np-name { font-family: var(--serif); font-size: 20px; font-weight: 700; line-height: 1.2; }
+  .np-tag { font-family: var(--mono); font-size: 12px; letter-spacing: .04em; color: var(--gold); }  /* PM-B5: CJK-led (你 · 生命层级 · 命定) → ≥12px */
   .np-tag .sep { color: var(--gold); margin: 0 5px; }  /* PM-B3: --gold-dim fails AA at 11px on glass; --gold ≥7.2:1 */
 
   /* ── lean stats (night-glass card — v4 mock .card treatment) ───────────────────────── */
@@ -123,7 +77,7 @@
     flex: 0 0 auto; position: relative; z-index: 2;
     background: var(--glass); backdrop-filter: blur(12px);
     border: 1px solid var(--line-soft); border-radius: 12px;
-    margin: 12px 14px; padding: 12px 14px; display: flex; flex-direction: column; gap: 9px;
+    margin: 8px 14px 12px; padding: 12px 14px; display: flex; flex-direction: column; gap: 9px;
   }
   .res { display: grid; grid-template-columns: 30px 1fr auto; align-items: center; gap: 9px; }
   .res-k { font-family: var(--mono); font-size: 11px; font-weight: 700; letter-spacing: .06em; }
@@ -150,9 +104,10 @@
   .chip.muted { border-color: var(--line); color: var(--faint); background: none; }
 
   /* ── fold drawer ─────────────────────────────────────────────────────────────────── */
-  /* Closed, the drawer collapses so tabs sit under stats; open, it expands into the freed band space.
-     The open menu renders as its own night-glass card (v4 mock .card), so the drawer track itself is
-     transparent — the scene shows between the stats card above and the menu card. */
+  /* Closed, the drawer collapses so tabs sit right under stats; open, it expands (max-height/opacity
+     transition, from 77b53b3 — PM-B8 keeps the animation) into the space between stats and tabs. The
+     open menu renders as its own night-glass card (v4 mock .card), so the drawer track itself is
+     transparent. Stats stay put; there is no portrait band to collapse anymore (PM-B8). */
   .drawer {
     flex: 1 1 auto; min-height: 0; overflow-y: auto; background: none;
     padding: 0 14px; max-height: 0; opacity: 0;
@@ -212,19 +167,15 @@
   .tab.active { color: var(--gold); border-color: var(--gold-dim); }
 
   @media (prefers-reduced-motion: reduce) {
-    .band, .drawer, .res-track > i { transition: none; }
+    .drawer, .res-track > i { transition: none; }
   }
 </style>
 </head>
 <body>
   <div class="self closed" id="self">
-    <div class="band" id="band">
-      <div class="scene" id="scene"></div>
-      <div class="fig-ph" id="figPh">主</div>
-      <div class="nameplate">
-        <span class="np-name" id="npName">你</span>
-        <span class="np-tag" id="npTag"></span>
-      </div>
+    <div class="idplate">
+      <span class="np-name" id="npName">你</span>
+      <span class="np-tag" id="npTag"></span>
     </div>
     <div class="stats" id="stats"></div>
     <div class="drawer" id="drawer">
@@ -317,27 +268,16 @@
     }
   }
 
-  // Standalone-preview stubs — installed ONLY when the real host is absent (no getVariables). In-app the
-  // runtime provides SillyTavern.substituteParams + window.assetUrl; these let the browser preview drive
-  // the persona-name resolution paths. Query params:
-  //   ?persona=<name>  → what {{user}} expands to (default '' → falls back to '主角')
-  //   ?assets=persona  → the persona-named 立绘 exists (persona-hit path)
-  //   ?assets=主角     → only the '主角' 立绘 exists (fallback path)
-  //   ?assets=none     → nothing exists (miss → placeholder + warn)  [default]
+  // Standalone-preview stub — installed ONLY when the real host is absent (no getVariables). In-app the
+  // runtime provides SillyTavern.substituteParams; this lets the browser preview drive the idplate's
+  // persona-name label. Query param: ?persona=<name> → what {{user}} expands to (default '' → '你').
+  // (The user PORTRAIT now lives in the STAGE surface — SELF no longer resolves assets, PM-B8.)
   if (typeof getVariables !== 'function') {
-    var Q = new URLSearchParams(location.search)
-    var STUB_PERSONA = Q.get('persona') || ''
-    var STUB_HAVE = Q.get('assets') || 'none'
-    var STUB_IMG = 'data:image/gif;base64,R0lGODlhAQABAIAAAP///wAAACH5BAEAAAAALAAAAAABAAEAAAICRAEAOw=='
+    var STUB_PERSONA = new URLSearchParams(location.search).get('persona') || ''
     if (!window.SillyTavern) window.SillyTavern = {}
     if (typeof window.SillyTavern.substituteParams !== 'function') {
       window.SillyTavern.substituteParams = function (t) {
         return String(t).replace(/\{\{user\}\}/g, STUB_PERSONA)
-      }
-    }
-    if (typeof window.assetUrl !== 'function') {
-      window.assetUrl = function (name, type) {
-        return Promise.resolve(type === '立绘' && name === STUB_HAVE ? STUB_IMG : null)
       }
     }
   }
@@ -500,7 +440,6 @@
     document.getElementById('npName').textContent = pn || '你'
     document.getElementById('npTag').innerHTML =
       '<span>你</span><span class="sep">·</span>' + bits.join('<span class="sep">·</span>')
-    document.getElementById('figPh').textContent = (pn || '主').charAt(0)
   }
 
   // ── host access ───────────────────────────────────────────────────────────────────
@@ -531,58 +470,11 @@
       return Promise.resolve((v || {}).stat_data || {})
     } catch (_) { return Promise.resolve(MOCK) }
   }
-  // Resolve the user 立绘 by PERSONA NAME first, then the literal '主角' as a fallback (an imported
-  // asset is far likelier to be named for the persona than the schema-internal key). On a total miss we
-  // KEEP the glyph placeholder and emit ONE console.warn naming the keys tried — never the old silent
-  // img.onerror removal that hid every lookup failure.
-  function loadPortrait() {
-    if (typeof window.assetUrl !== 'function') return
-    var names = []
-    var pn = personaName()
-    if (pn) names.push(pn)
-    names.push('主角')   // schema fallback
-    var i = 0
-    function next() {
-      if (i >= names.length) {
-        console.warn('[poem-self] no 立绘 asset for persona portrait [' +
-          names.map(function (n) { return '立绘:' + n }).join(', ') + '] — keeping the glyph placeholder')
-        return
-      }
-      var nm = names[i++]
-      try {
-        Promise.resolve(window.assetUrl(nm, '立绘')).then(function (url) {
-          if (!url) { next(); return }
-          var img = document.getElementById('selfFig') || document.createElement('img')
-          img.id = 'selfFig'; img.className = 'fig'; img.alt = nm
-          img.onload = function () { var ph = document.getElementById('figPh'); if (ph) ph.style.display = 'none' }
-          img.onerror = function () {
-            img.remove()
-            console.warn('[poem-self] 立绘 asset for "' + nm + '" failed to load: ' + url)
-          }
-          img.src = url
-          if (!img.parentNode) document.getElementById('band').insertBefore(img, document.getElementById('figPh'))
-        }, next)
-      } catch (_) { next() }
-    }
-    next()
-  }
-
-  // ── geometry: slice the shared stage background to this panel's window-x (P0 primitive) ──
-  function applyGeometry(g) {
-    if (!g) return
-    var root = document.documentElement.style
-    if (g.viewportWidth) root.setProperty('--vw', g.viewportWidth + 'px')
-    root.setProperty('--panel-x', (g.x || 0) + 'px')
-    // band ≈ the stage band = 4/12 of the play-area height; the self slot is full height, so /3
-    if (g.height) root.setProperty('--band-h', Math.round(g.height / 3) + 'px')
-  }
-
   // ── render + wire ─────────────────────────────────────────────────────────────────
   function render() {
     statData().then(function (SD) {
       var s = poemState(SD)
       renderNameplate(s); renderStats(s); renderAttrs(s); renderInv(s); renderAsc(s)
-      loadPortrait()
     })
   }
 
@@ -610,12 +502,6 @@
       }
     })
   })
-
-  // geometry: seed + subscribe (WCV only)
-  if (window.rptHost && typeof window.rptHost.getPanelGeometry === 'function') {
-    applyGeometry(window.rptHost.getPanelGeometry())
-    window.rptHost.onPanelGeometry(applyGeometry)
-  }
 
   render()
   // re-render on host var changes (docked WCV loads once; the runtime re-emits both events)

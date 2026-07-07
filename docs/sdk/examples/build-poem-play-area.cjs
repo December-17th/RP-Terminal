@@ -49,17 +49,18 @@ const pages = {
 // A panel_ui WCV entry: the page as a data:text/html URL (decoded + served from the card origin).
 const dataUrl = (html) => 'data:text/html,' + encodeURIComponent(html)
 
-// The seamless 4-slot layout (redesign §4.2): SELF full-height | STAGE top-band | STORY native chat
-// (exactly 50% width) | WORLD lower-right.
+// The seamless 4-slot layout (redesign §4.2 + PM-B8 rev 2): STAGE top-band spans full width above SELF
+// (and now carries the USER portrait far-left) | SELF lean stats/items only (no portrait band) | STORY
+// native chat (exactly 50% width) | WORLD full-height info column on the right.
 const panel_ui = {
   mode: 'static',
   seamless: true,
   grid: { cols: 12, rows: 12 },
   slots: [
-    { id: 'self', view: 'wcv', entry: dataUrl(pages.self), rect: [0, 0, 3, 12] },
-    { id: 'stage', view: 'wcv', entry: dataUrl(pages.stage), rect: [3, 0, 9, 4] },
+    { id: 'stage', view: 'wcv', entry: dataUrl(pages.stage), rect: [0, 0, 9, 4] },
+    { id: 'self', view: 'wcv', entry: dataUrl(pages.self), rect: [0, 4, 3, 8] },
     { id: 'story', view: 'chat', rect: [3, 4, 6, 8], title: '正文' },
-    { id: 'world', view: 'wcv', entry: dataUrl(pages.world), rect: [9, 4, 3, 8] }
+    { id: 'world', view: 'wcv', entry: dataUrl(pages.world), rect: [9, 0, 3, 12] }
   ]
 }
 

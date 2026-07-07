@@ -5,9 +5,11 @@
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>命定之诗 — WORLD surface</title>
 <!--
-  命定之诗 — WORLD surface (play-area redesign P3). The right info column for the panel_ui `world` slot
-  [9,4,3,8] (below the STAGE band). A scrolling column of 世界 / 同行 / 委托 — the world's live state.
-  See docs/design/poem-play-area-redesign.md §1.4, §4.2, §6.
+  命定之诗 — WORLD surface (play-area redesign P3 + PM-B8 rev 2). The right info column for the panel_ui
+  `world` slot [9,0,3,12] (now full play-area height, was [9,4,3,8]). A scrolling column of
+  世界 / 同行 / 委托 — the world's live state. At the taller size the 委托 quest card flexes to fill
+  the extra room so the sections breathe instead of stranding. See
+  docs/design/poem-play-area-redesign.md §1.4, §4.2, §6.
 
   Data (verified against the real 状态栏 schema,
   FrontEnd-for-destined-journey-TPR-STS/src/data_schema):
@@ -35,8 +37,11 @@
   .world::-webkit-scrollbar-thumb { background: var(--line); border-radius: 3px; }
 
   /* each 世界 / 同行 / 委托 section is a night-glass card (v4 mock .card) */
-  .world > div { background: var(--glass); backdrop-filter: blur(12px);
+  .world > div { flex: 0 0 auto; background: var(--glass); backdrop-filter: blur(12px);
     border: 1px solid var(--line-soft); border-radius: 12px; padding: 12px 14px; }
+  /* PM-B8: at the taller full-height slot the 委托 card (last) flexes to fill the extra room so the
+     sections don't strand at the top; its list scrolls inside if the quests overflow */
+  .world > div:last-child { flex: 1 1 auto; min-height: 0; }
 
   .sect { font-family: var(--mono); font-size: 12px; letter-spacing: .22em; text-transform: uppercase;
     color: var(--gold); font-weight: 600; display: flex; align-items: center; gap: 8px; margin: 0 0 10px; }  /* PM-B3: gilt header — --gold-dim@11px fails AA (3.1:1 ember), --gold ≥7.2:1. PM-B5: CJK headers (世界/同行/委托) → ≥12px */
