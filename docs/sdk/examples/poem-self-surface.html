@@ -49,15 +49,16 @@
   }
   .self { position: relative; display: flex; flex-direction: column; height: 100vh; overflow: hidden; }
 
-  /* theme switcher — 4 palette swatches pinned to the top-right, always reachable */
-  .theme-swatches { position: absolute; top: 8px; right: 8px; z-index: 5; display: flex; gap: 6px; }
+  /* theme switcher — 4 palette swatches docked in the always-visible tabs row (right end),
+     so they never collide with the HP row in either fold state */
+  .theme-swatches { flex: 0 0 auto; display: flex; align-items: center; gap: 6px; padding-left: 8px; margin-left: 4px; border-left: 1px solid var(--line); }
   .sw {
     width: 14px; height: 14px; border-radius: 50%; cursor: pointer;
     border: 1px solid rgba(0, 0, 0, .45); box-shadow: inset 0 0 0 2px rgba(0, 0, 0, .35);
     transition: transform .12s ease;
   }
   .sw:hover { transform: scale(1.18); }
-  .sw.on { box-shadow: 0 0 0 2px var(--night), 0 0 0 3px currentColor; }
+  .sw.on { box-shadow: 0 0 0 2px var(--sunken), 0 0 0 3px currentColor; }
 
   /* ── portrait band (the user's slice of the shared VN stage) ─────────────────────── */
   .band {
@@ -116,7 +117,6 @@
     padding: 13px 16px 14px; display: flex; flex-direction: column; gap: 9px;
     border-bottom: 1px solid var(--line-soft);
   }
-  .self.open .stats { padding-top: 30px; }
   .res { display: grid; grid-template-columns: 30px 1fr auto; align-items: center; gap: 9px; }
   .res-k { font-family: var(--mono); font-size: 11px; font-weight: 700; letter-spacing: .06em; }
   .res-k.hp { color: var(--hp); } .res-k.mp { color: var(--mp); } .res-k.sp { color: var(--sp); }
@@ -205,7 +205,6 @@
 </head>
 <body>
   <div class="self closed" id="self">
-    <div class="theme-swatches" id="themeSwatches" title="配色"></div>
     <div class="band" id="band">
       <div class="scene" id="scene"></div>
       <div class="fig-ph" id="figPh">主</div>
@@ -224,6 +223,7 @@
       <button class="tab" data-menu="attrs">属性</button>
       <button class="tab" data-menu="inv">持有</button>
       <button class="tab" data-menu="asc">登神长阶</button>
+      <div class="theme-swatches" id="themeSwatches" title="配色"></div>
     </div>
   </div>
 
