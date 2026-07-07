@@ -155,6 +155,11 @@ export const RPTerminalExtSchema = z
       .object({
         mode: z.literal('static').optional(),
         grid: z.object({ cols: z.number(), rows: z.number() }).default({ cols: 12, rows: 12 }),
+        // Seamless composition (the VN-stage case): drop the inter-slot gap/padding and the per-slot
+        // panel chrome (border, radius, title bar) so adjacent WCV surfaces read as one continuous
+        // surface. Off by default so existing chromed cards are unchanged; a slot can still opt back
+        // into chrome with `chrome:true`. See docs/design/poem-play-area-redesign.md §5.1.
+        seamless: z.boolean().optional(),
         slots: z
           .array(
             z.object({
@@ -162,7 +167,10 @@ export const RPTerminalExtSchema = z
               view: z.string(),
               rect: z.tuple([z.number(), z.number(), z.number(), z.number()]),
               entry: z.string().optional(),
-              title: z.string().optional()
+              title: z.string().optional(),
+              // Per-slot chrome override. Defaults to `!seamless`: chromed in normal layouts, bare in
+              // seamless ones. Set explicitly to force one slot to differ from the layout default.
+              chrome: z.boolean().optional()
             })
           )
           .default([])

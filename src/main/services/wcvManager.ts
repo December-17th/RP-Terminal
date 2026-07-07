@@ -3,6 +3,7 @@ import { is } from '@electron-toolkit/utils'
 import { join } from 'path'
 import { log } from './logService'
 import { serveAssetRequest, ASSET_SCHEME } from './worldAssetProtocol'
+import { makePanelGeometry, PanelGeometry } from './wcvGeometry'
 import type { VarsOrigin } from '../../shared/thRuntime/types'
 
 // Card UI panels run in their own session partition. jsDelivr serves `/gh/` HTML as text/plain (to
@@ -107,6 +108,35 @@ const round = (b: Bounds): Bounds => ({
   height: Math.max(0, Math.round(b.height))
 })
 
+// The window content size (the full stage width a seam-sliced background spans). Falls back to a
+// sane default before the window reports (matches contentRect's fallback).
+const contentSize = (): [number, number] => {
+  const [w, h] = mainWindow?.getContentSize() ?? [1280, 800]
+  return [w, h]
+}
+
+const geometryOf = (slot: Slot): PanelGeometry =>
+  makePanelGeometry(slot.view.getBounds(), contentSize())
+
+// Hand a page its own slot geometry so it can slice a full-viewport background to its x-range. Pushed
+// after every bounds change; the page also does a sync read at preload load for its initial value.
+const pushGeometry = (slot: Slot): void => {
+  try {
+    if (!slot.view.webContents.isDestroyed())
+      slot.view.webContents.send('wcv-panel-geometry', geometryOf(slot))
+  } catch {
+    /* a page mid-teardown can't receive — ignore */
+  }
+}
+
+/** Current geometry for the WCV whose page is `webContentsId` (the sync-read resolver). */
+export const geometryFor = (webContentsId: number): PanelGeometry | null => {
+  for (const s of slots.values()) {
+    if (s.view.webContents.id === webContentsId) return geometryOf(s)
+  }
+  return null
+}
+
 /** Create the view for `id` (once) loading `url` with the locked-down shim preload, bind its
  *  session context, then position it at `bounds`. */
 export const ensure = (
@@ -164,10 +194,14 @@ export const ensure = (
     if (inlineHtml !== null) slot.html = inlineHtml // keep the served doc fresh (no reload here)
   }
   slot.view.setBounds(round(bounds))
+  pushGeometry(slot)
 }
 
 export const setBounds = (id: string, bounds: Bounds): void => {
-  slots.get(id)?.view.setBounds(round(bounds))
+  const slot = slots.get(id)
+  if (!slot) return
+  slot.view.setBounds(round(bounds))
+  pushGeometry(slot)
 }
 
 // The main window's content rect (0,0 → content size) — a full-window modal fills this.
@@ -312,9 +346,18 @@ export const notifyVarsChanged = (
 }
 
 /** Broadcast a TavernHelper lifecycle/mutation event (generation_started, message_received, …) to the
- *  card WCVs on a chat, so their `eventOn(tavern_events.X, …)` listeners fire. */
-export const notifyEvent = (chatId: string, name: string, payload: unknown): void => {
+ *  card WCVs on a chat, so their `eventOn(tavern_events.X, …)` listeners fire. `exceptWebContentsId`
+ *  skips one slot — pass a card's own `e.sender.id` when it broadcasts to siblings so its own page
+ *  doesn't receive the event it just sent (the stage/HUD coordination channel). */
+export const notifyEvent = (
+  chatId: string,
+  name: string,
+  payload: unknown,
+  exceptWebContentsId?: number
+): void => {
   for (const s of slots.values()) {
-    if (s.chatId === chatId) s.view.webContents.send('wcv-event', { name, payload })
+    if (s.chatId !== chatId) continue
+    if (exceptWebContentsId != null && s.view.webContents.id === exceptWebContentsId) continue
+    s.view.webContents.send('wcv-event', { name, payload })
   }
 }

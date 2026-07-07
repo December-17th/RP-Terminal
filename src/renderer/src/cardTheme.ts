@@ -30,7 +30,11 @@ const ALIAS: Record<string, string> = {
   warning: '--rpt-warning',
   'text-primary': '--rpt-text-primary',
   'text-secondary': '--rpt-text-secondary',
-  'text-tertiary': '--rpt-text-tertiary'
+  'text-tertiary': '--rpt-text-tertiary',
+  // Typography: the AI-message prose font (the story's serif register). A font-family value, not a
+  // color, so it bypasses the contrast machinery below and simply passes through.
+  'chat-font': '--rpt-chat-font-family',
+  'prose-font': '--rpt-chat-font-family'
 }
 
 const toVar = (key: string): string | null =>
@@ -120,6 +124,7 @@ export function deriveCardTheme(
   let overrodeText = false
   let overrodeAccent = false
   let overrodeOnAccent = false
+  let overrodeOther = false // a non-color token the app understands (e.g. the prose font)
   for (const [key, value] of Object.entries(rawTokens)) {
     if (key === 'base' || key === 'tokens' || key === 'css') continue
     if (typeof value !== 'string') continue
@@ -127,13 +132,15 @@ export function deriveCardTheme(
     if (!varName) continue
     out[varName] = value
     if (varName === '--rpt-bg-primary') overrodeBg = true
-    if (varName.startsWith('--rpt-text')) overrodeText = true
-    if (varName === '--rpt-accent') overrodeAccent = true
-    if (varName === '--rpt-on-accent') overrodeOnAccent = true
+    else if (varName.startsWith('--rpt-text')) overrodeText = true
+    else if (varName === '--rpt-accent') overrodeAccent = true
+    else if (varName === '--rpt-on-accent') overrodeOnAccent = true
+    else overrodeOther = true
   }
 
   // Nothing the app understands was overridden → treat as "no card theme" so the caller no-ops.
-  if (!overrodeBg && !overrodeText && !overrodeAccent && !overrodeOnAccent) return null
+  if (!overrodeBg && !overrodeText && !overrodeAccent && !overrodeOnAccent && !overrodeOther)
+    return null
 
   // Derive on-accent from the (possibly new) accent unless the card set it explicitly.
   const accent = parseHex(out['--rpt-accent'])

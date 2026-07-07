@@ -84,6 +84,12 @@ slot already exists (`RPTerminalExtSchema.theme` + `css`) — this defines its s
 - **Card supplies FILLS; the app DERIVES the `on-*` text tokens** by luminance (black/white or a tinted
   shade). A card theme is untrusted design input, so we never trust card-supplied text colors — we compute
   readable ones and enforce WCAG AA (§7). An illegible/failing theme falls back to the user's app theme.
+- **Typography token** (`chat-font` / `prose-font` → `--rpt-chat-font-family`): sets the AI-message prose
+  font so a world can give the story a serif register, applied to `.message-content` only (not the user
+  action, swipe controls, or card HTML frames). A font-family value, not a color, so it bypasses the
+  contrast machinery and applies on its own. This is the safe token path for the story-styling ask (poem
+  play-area redesign §5.4) — the colored spans (你 / NPC names) remain the card's display-regex job, and
+  the broader `css` escape hatch stays deferred.
 - **Scope:** reskins **play mode for that world only**. The **launcher and the settings popup stay on the
   user's app theme** — the chrome is always consistent, you can reach settings (to toggle it) in a known
   look, and a broken card theme can't lock you out.

@@ -1,0 +1,100 @@
+<!doctype html>
+<meta charset="utf-8" />
+<title>seam-slice demo</title>
+<!--
+  P0 seam-slicing verification page (docs/design/poem-play-area-redesign.md §4.4).
+
+  Two of these run side-by-side as adjacent seamless WCV slots. Each draws the SAME full-viewport
+  background, offset by its own window-x from window.rptHost.getPanelGeometry(). If the geometry API
+  and the seamless panel_ui mode work, the diagonal stripes + the grid lines + the big "SEAM" arrow
+  cross the boundary between the two panels with NO visible break, gap, or jump on resize.
+
+  Add `?label=LEFT` / `?label=RIGHT` to tag each panel.
+-->
+<style>
+  html,
+  body {
+    margin: 0;
+    height: 100%;
+    background: transparent;
+    overflow: hidden;
+    font-family: ui-monospace, monospace;
+  }
+  /* The shared stage background: a striped + gridded field drawn at FULL viewport width, then shifted
+     left by this panel's window-x so the slice this panel shows lines up with its neighbour's. */
+  #stage {
+    position: fixed;
+    inset: 0;
+    background-color: #14121b;
+    background-image:
+      repeating-linear-gradient(
+        45deg,
+        rgba(217, 181, 107, 0.22) 0 24px,
+        rgba(217, 181, 107, 0) 24px 48px
+      ),
+      linear-gradient(to right, rgba(255, 255, 255, 0.12) 1px, transparent 1px),
+      linear-gradient(to bottom, rgba(255, 255, 255, 0.12) 1px, transparent 1px);
+    background-repeat: no-repeat, repeat, repeat;
+    /* set from JS: --vw = viewport width, --x = this panel's window-x */
+    background-size:
+      var(--vw, 1360px) 100%,
+      64px 64px,
+      64px 64px;
+    background-position:
+      calc(-1 * var(--x, 0px)) 0,
+      calc(-1 * var(--x, 0px)) 0,
+      calc(-1 * var(--x, 0px)) 0;
+  }
+  /* A full-viewport banner drawn in the same shifted coordinate space — its text should read
+     continuously across the seam. */
+  #banner {
+    position: fixed;
+    top: 40%;
+    left: calc(-1 * var(--x, 0px));
+    width: var(--vw, 1360px);
+    text-align: center;
+    color: #d9b56b;
+    font-size: 96px;
+    font-weight: 800;
+    letter-spacing: 0.3em;
+    text-shadow: 0 2px 12px #000;
+  }
+  #tag {
+    position: fixed;
+    left: 8px;
+    top: 8px;
+    color: #e9e3d4;
+    font-size: 12px;
+    background: rgba(0, 0, 0, 0.5);
+    padding: 4px 8px;
+    border-radius: 6px;
+    white-space: pre;
+  }
+</style>
+<div id="stage"></div>
+<div id="banner">◀ ONE CONTINUOUS STAGE ▶</div>
+<div id="tag">…</div>
+<script>
+  const label = new URLSearchParams(location.search).get('label') || 'PANEL'
+  const stage = document.getElementById('stage')
+  const tag = document.getElementById('tag')
+  function apply(g) {
+    if (!g) return
+    stage.style.setProperty('--vw', g.viewportWidth + 'px')
+    stage.style.setProperty('--x', g.x + 'px')
+    document.getElementById('banner').style.setProperty('--vw', g.viewportWidth + 'px')
+    document.getElementById('banner').style.setProperty('--x', g.x + 'px')
+    tag.textContent =
+      label +
+      '\n' +
+      `x=${g.x} w=${g.width} h=${g.height}\n` +
+      `viewport=${g.viewportWidth}x${g.viewportHeight}`
+  }
+  const host = window.rptHost
+  if (host && host.getPanelGeometry) {
+    apply(host.getPanelGeometry())
+    host.onPanelGeometry(apply)
+  } else {
+    tag.textContent = label + '\n(no rptHost — not in a WCV)'
+  }
+</script>

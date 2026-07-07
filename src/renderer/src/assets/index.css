@@ -327,6 +327,11 @@ body {
   min-height: 0;
   display: flex;
   flex-direction: column;
+  /* Backdrop for the play area. A card theme sets --rpt-bg-primary here (via playTokens), so a
+     transparent seamless panel_ui slot (e.g. the native chat STORY column) falls through to the CARD's
+     background — not the base-theme <body> behind .play-root (which otherwise leaks white in a light app
+     theme / black in a dark one). No card theme → this is just the base bg, unchanged. */
+  background: var(--rpt-bg-primary);
 }
 
 .app-body {
@@ -423,6 +428,13 @@ body {
   background-color: var(--rpt-bg-secondary);
   border: 1px solid var(--rpt-border);
   border-radius: 10px;
+}
+/* Seamless slot: no chrome so adjacent WCV surfaces compose into one continuous stage. The card's
+   page paints its own background edge-to-edge (the seam-slicing case). */
+.ws-panel.ws-bare {
+  background-color: transparent;
+  border: none;
+  border-radius: 0;
 }
 .ws-panel-head {
   flex: 0 0 auto;
@@ -909,6 +921,13 @@ details[open] > .stat-group-title::before {
   border-radius: 8px;
   border: 1px solid var(--rpt-border);
   font-size: var(--rpt-chat-font, 16px);
+}
+/* The AI message prose. A card theme MAY set `--rpt-chat-font-family` (token alias `chat-font` /
+   `prose-font`) to give the story a serif register; without it the prose inherits the app body font
+   (unchanged for every existing card). The user action, swipe controls, and card HTML frames are
+   outside this scope. See the poem play-area redesign §5.4. */
+.message-content {
+  font-family: var(--rpt-chat-font-family, inherit);
 }
 
 .floor-empty {
@@ -1441,13 +1460,16 @@ details[open] > .stat-group-title::before {
   background-color: var(--rpt-bg-secondary);
   border: 1px solid var(--rpt-border);
   color: var(--rpt-text-primary);
-  padding: 12px;
-  padding-bottom: 52px; /* leave room for the in-box send/stop button */
+  /* right padding clears the in-box send button (no bottom reserve, so it can be one line tall) */
+  padding: 12px 50px 12px 14px;
   border-radius: 8px;
-  resize: vertical;
+  resize: none;
   font-family: inherit;
-  min-height: 10vh;
   line-height: 1.5;
+  /* auto-grows via JS from one line up to ~5 lines, then scrolls */
+  min-height: 46px;
+  max-height: 152px;
+  overflow-y: auto;
 }
 
 /* Tiny circular send/stop button anchored to the bottom-right of the input. */

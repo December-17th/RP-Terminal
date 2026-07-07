@@ -4,6 +4,7 @@ import { usePresetStore } from '../stores/presetStore'
 import { useLorebookStore } from '../stores/lorebookStore'
 import { useChatStore } from '../stores/chatStore'
 import { useUiStore, type SettingsSection } from '../stores/uiStore'
+import { useWcvSuppression } from './useWcvSuppression'
 import { useT } from '../i18n'
 
 /**
@@ -28,6 +29,10 @@ function StripMenu({
   const triggerRef = useRef<HTMLButtonElement>(null)
   const menuRef = useRef<HTMLDivElement>(null)
   const close = (): void => setOpen(false)
+
+  // A strip dropdown is DOM; the play-area WCV panels are native overlays that paint above the DOM, so
+  // they'd occlude the popover. Duck them while the menu is open (refcounted — same as modals).
+  useWcvSuppression(open)
 
   // Focus the first item when the menu opens (after the popover renders).
   useEffect(() => {

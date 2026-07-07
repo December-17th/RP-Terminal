@@ -1,0 +1,322 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>命定之诗 — STAGE surface</title>
+<!--
+  命定之诗 — STAGE surface (play-area redesign P2). The VN stage band for the panel_ui `stage` slot
+  [3,0,9,4] (center+right top, ~75% × ~33%). Reads as ONE continuous surface with the top of the SELF
+  surface to its left: both draw the SAME full-viewport background offset by their own window-x
+  (window.rptHost.getPanelGeometry — the P0 seam-slicing primitive), so the dusk scene runs unbroken
+  from the user's portrait across to the NPCs. See docs/design/poem-play-area-redesign.md §1.1, §4.2, §4.4.
+
+  Cast (who is ON STAGE) is grounded in the real schema
+  (FrontEnd-for-destined-journey-TPR-STS/src/data_schema): a partner is present when
+  stat_data.关系列表[name].在场 === true. "Speaking" is the one signal not in the schema — the card's
+  agent MAY write stat_data.stage = { speaking:<name>, background:<asset> } per turn; absent, we fall
+  back to the highest-好感度 present member. The active speaker is bright + nameplated + tagged 正在交谈;
+  silent members are dimmed (opacity .4; saturate .5).
+
+  Coordinates via the card event channel (window.rptHost.broadcastEvent / eventOn):
+    · listens `self:fold`  → gently dims the stage while the SELF drawer is open (focus shift).
+    · listens `stage:cast-changed` → refresh (a card agent can push it; we also refresh on
+      mag_variable_updated / message_updated so 在场 changes are caught without it).
+
+  Portraits via window.assetUrl(name,'立绘',mood). Opens standalone (mock cast) for preview.
+  VERIFY rendering + live data in-app (manual-verify).
+-->
+<style>
+  /* Palette + fonts + the 4 themes live in the shared token file. */
+  @import url('./poem-themes.css');
+  :root { --vw: 100vw; --panel-x: 0px; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; }
+  body { height: 100vh; overflow: hidden; color: var(--text); background: var(--night); font-family: var(--sans); }
+
+  .stage { position: relative; width: 100%; height: 100vh; overflow: hidden; }
+  /* the shared background, drawn full-viewport-width and shifted by this panel's window-x so it lines
+     up seamlessly with the SELF band's slice to the left */
+  .scene {
+    position: absolute; inset: 0; z-index: 0; background-color: var(--night);
+    background-image:
+      radial-gradient(70% 90% at 22% 42%, #33436a 0%, transparent 55%),
+      radial-gradient(70% 90% at 88% 30%, #4a3350 0%, transparent 55%),
+      radial-gradient(60% 80% at 40% 128%, rgba(200, 104, 63, .18), transparent 60%),
+      linear-gradient(180deg, #1b1626, #160f1f);
+    background-repeat: no-repeat;
+    background-size: var(--vw) 100%;
+    background-position: calc(-1 * var(--panel-x)) 0;
+    transition: filter .4s ease, opacity .4s ease;
+  }
+  .scene.has-img { background-image: var(--scene-img); }
+  .scene::before {
+    content: ''; position: absolute; inset: 0; opacity: .3;
+    background: repeating-linear-gradient(103deg, transparent 0 26px, rgba(0, 0, 0, .14) 26px 28px);
+  }
+  /* bottom fade so the band melts into the story/world columns below — no hard seam */
+  .scene::after {
+    content: ''; position: absolute; left: 0; right: 0; bottom: 0; height: 30%;
+    background: linear-gradient(180deg, transparent, var(--night));
+  }
+  /* dim the whole stage while the SELF fold is open (focus shifts to the drawer) */
+  .stage.self-folded .scene { filter: brightness(.7) saturate(.85); }
+  .stage.self-folded .cast { opacity: .55; }
+
+  .cast { position: absolute; inset: 0; z-index: 1; transition: opacity .4s ease; }
+  .fig {
+    position: absolute; bottom: 0; transform: translateX(-50%);
+    max-height: 100%; object-fit: contain; object-position: bottom center;
+    transition: opacity .35s ease, filter .35s ease, transform .35s ease;
+  }
+  .fig-ph {
+    position: absolute; bottom: -6px; transform: translateX(-50%); font-family: var(--serif);
+    font-weight: 900; line-height: .8; color: rgba(233, 227, 212, .9);
+    text-shadow: 0 12px 46px rgba(0, 0, 0, .55);
+  }
+  .fig.dim, .fig-ph.dim { opacity: .4; filter: saturate(.5) brightness(.7); }
+  .fig.active { filter: drop-shadow(0 0 30px rgba(215, 107, 143, .35)); }
+
+  .nameplate { position: absolute; bottom: 16px; z-index: 3; transform: translateX(-50%); text-align: center; }
+  .nameplate::before {
+    content: ''; position: absolute; inset: -10px -18px -8px -18px; z-index: -1;
+    background: radial-gradient(120% 150% at 50% 80%, rgba(16, 14, 22, .82), transparent 72%);
+  }
+  .np-name { display: block; font-family: var(--serif); font-size: 21px; font-weight: 700; text-shadow: 0 2px 12px rgba(0, 0, 0, .8); }
+  .np-tag { font-family: var(--mono); font-size: 11px; letter-spacing: .04em; color: var(--q-mythic); text-shadow: 0 1px 6px rgba(0, 0, 0, .85); }
+  .np-tag .sep { color: var(--gold-dim); margin: 0 5px; }
+  .speaking {
+    position: absolute; top: 14px; transform: translateX(-50%); z-index: 3;
+    font-family: var(--mono); font-size: 11px; letter-spacing: .14em; text-transform: uppercase;
+    color: var(--dim); background: rgba(16, 14, 22, .6); padding: 3px 9px; border-radius: 999px;
+  }
+  .scene-tag {
+    position: absolute; top: 12px; right: 16px; z-index: 3; font-family: var(--mono); font-size: 11px;
+    color: var(--dim); background: rgba(16, 14, 22, .5); padding: 4px 10px; border-radius: 8px;
+  }
+  .scene-tag .sep { color: var(--gold-dim); margin: 0 6px; }
+  .empty {
+    position: absolute; inset: 0; z-index: 2; display: flex; align-items: center; justify-content: center;
+    color: var(--gold-dim); font-family: var(--mono); font-size: 12px; letter-spacing: .2em;
+  }
+  @media (prefers-reduced-motion: reduce) { .scene, .cast, .fig, .fig-ph { transition: none; } }
+</style>
+</head>
+<body>
+  <div class="stage" id="stage">
+    <div class="scene" id="scene"></div>
+    <div class="scene-tag" id="sceneTag"></div>
+    <div class="cast" id="cast"></div>
+  </div>
+
+<script>
+;(function () {
+  'use strict'
+
+  // ── play-area theme (4 palettes in poem-themes.css; SELF owns the switcher, we follow) ──
+  var POEM_THEMES = ['dusk', 'frost', 'ember', 'verdant']
+  function poemTheme() {
+    try {
+      if (typeof getVariables === 'function') {
+        var kv = getVariables({ type: 'chat' })
+        if (kv && typeof kv.then !== 'function' && POEM_THEMES.indexOf(kv['poem.theme']) >= 0) return kv['poem.theme']
+      }
+    } catch (_) {}
+    try {
+      var u = new URLSearchParams(location.search).get('theme')
+      if (POEM_THEMES.indexOf(u) >= 0) return u
+      var ls = localStorage.getItem('poem.theme')
+      if (POEM_THEMES.indexOf(ls) >= 0) return ls
+    } catch (_) {}
+    return 'dusk'
+  }
+  function applyPoemTheme(id) {
+    document.documentElement.dataset.poemTheme = POEM_THEMES.indexOf(id) >= 0 ? id : 'dusk'
+  }
+  applyPoemTheme(poemTheme())
+
+  // Dim the present-but-silent members (VN focus on the speaker)? Off for now per owner — everyone on
+  // stage renders at full brightness; only the speaker still gets the glow + nameplate + 正在交谈 tag.
+  // Flip to true to bring the silent-member dim back (the `.fig.dim`/`.fig-ph.dim` CSS is untouched).
+  var DIM_SILENT = false
+  var idleCls = function () { return DIM_SILENT ? ' dim' : '' }
+
+  // standalone-preview fallback (only used when getVariables is absent)
+  var MOCK = {
+    世界: { 时间: '暮 · 戌时', 地点: '艾瑟嘉德' },
+    stage: { speaking: '薇拉' },
+    关系列表: {
+      薇拉: { 在场: true, 职业: ['灰隐者'], 好感度: 64, 命定契约: false },
+      恩里克: { 在场: true, 职业: ['见习骑士'], 好感度: 38 },
+      赛琳: { 在场: false, 职业: ['吟游诗人'], 好感度: 20 }
+    }
+  }
+
+  function esc(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c] }) }
+  var num = function (v, d) { var n = Number(v); return isFinite(n) ? n : (d == null ? 0 : d) }
+  var firstStr = function (a) { return Array.isArray(a) ? a.filter(Boolean).join(' · ') : (a || '') }
+
+  // ── typed projection: cast (who is on stage) + scene — grounded in the real schema ──
+  function stageState(SD) {
+    SD = SD && typeof SD === 'object' ? SD : {}
+    var rel = SD['关系列表'] && typeof SD['关系列表'] === 'object' ? SD['关系列表'] : {}
+    var stage = SD['stage'] && typeof SD['stage'] === 'object' ? SD['stage'] : {}
+    var present = Object.keys(rel).filter(function (n) { return rel[n] && rel[n]['在场'] === true })
+    // speaker: the card-authored signal if present, else the highest-好感度 present member
+    var speaking = stage['speaking'] && present.indexOf(stage['speaking']) >= 0 ? stage['speaking'] : null
+    if (!speaking && present.length) {
+      speaking = present.slice().sort(function (a, b) { return num(rel[b]['好感度']) - num(rel[a]['好感度']) })[0]
+    }
+    var cast = present.map(function (n) {
+      var p = rel[n] || {}
+      return {
+        name: n,
+        tag: [firstStr(p['职业']) || firstStr(p['身份']), p['好感度'] != null ? '好感 ' + num(p['好感度']) : '']
+          .filter(Boolean).join(' · '),
+        mood: p['当前情绪'] || p['心情'] || undefined,
+        contracted: !!p['命定契约'],
+        speaking: n === speaking
+      }
+    })
+    return {
+      cast: cast,
+      scene: { time: (SD['世界'] || {})['时间'] || '', location: (SD['世界'] || {})['地点'] || '', bg: stage['background'] || '' }
+    }
+  }
+
+  var castEl = document.getElementById('cast')
+  var sceneEl = document.getElementById('scene')
+  var sceneTagEl = document.getElementById('sceneTag')
+
+  // spread N sprites across the width; the speaker sits a touch toward center-right and in front
+  function xFor(i, n) {
+    if (n <= 1) return 62
+    var lo = 20, hi = 88
+    return Math.round(lo + (hi - lo) * (i / (n - 1)))
+  }
+
+  function render() {
+    statData().then(function (SD) {
+      var s = stageState(SD)
+      // scene tag (time · location)
+      var st = []
+      if (s.scene.time) st.push(esc(s.scene.time))
+      if (s.scene.location) st.push(esc(s.scene.location))
+      sceneTagEl.innerHTML = st.join('<span class="sep">·</span>')
+      sceneTagEl.style.display = st.length ? '' : 'none'
+      // scene background asset (optional)
+      loadScene(s.scene.bg)
+
+      // cast
+      if (!s.cast.length) {
+        castEl.innerHTML = '<div class="empty">此刻无人在场</div>'
+        return
+      }
+      castEl.innerHTML = ''
+      // even slots across the band, but give the SPEAKER the prominent centre-right slot and let the
+      // silent members flank it; then draw silent first, speaker last (on top)
+      var n = s.cast.length
+      var slots = s.cast.map(function (_m, i) { return xFor(i, n) })
+      var centerIdx = 0
+      slots.forEach(function (x, i) { if (Math.abs(x - 58) < Math.abs(slots[centerIdx] - 58)) centerIdx = i })
+      var rest = slots.slice()
+      var speaker = null
+      s.cast.forEach(function (m) { if (m.speaking) speaker = m })
+      if (speaker) { speaker._x = slots[centerIdx]; rest.splice(centerIdx, 1) }
+      var oi = 0
+      s.cast.forEach(function (m) { if (!m.speaking) m._x = rest[oi++] })
+      var ordered = s.cast.slice().sort(function (a, b) { return (a.speaking ? 1 : 0) - (b.speaking ? 1 : 0) })
+      ordered.forEach(function (m) {
+        var wrap = document.createElement('div')
+        wrap.style.position = 'absolute'; wrap.style.inset = '0'
+        var ph = document.createElement('div')
+        ph.className = 'fig-ph' + (m.speaking ? ' active' : idleCls())
+        ph.textContent = String(m.name || '?').charAt(0)
+        ph.style.left = m._x + '%'
+        ph.style.fontSize = m.speaking ? 'min(30vw, 78%)' : 'min(24vw, 62%)'
+        wrap.appendChild(ph)
+        loadFig(wrap, ph, m)
+        if (m.speaking) {
+          var spk = document.createElement('div'); spk.className = 'speaking'; spk.style.left = m._x + '%'; spk.textContent = '正在交谈'
+          var np = document.createElement('div'); np.className = 'nameplate'; np.style.left = m._x + '%'
+          np.innerHTML = '<span class="np-name">' + esc(m.name) + '</span>' +
+            (m.tag ? '<span class="np-tag">' + m.tag.split(' · ').map(esc).join('<span class="sep">·</span>') +
+              (m.contracted ? '<span class="sep">·</span>命定' : '') + '</span>' : '')
+          wrap.appendChild(spk); wrap.appendChild(np)
+        }
+        castEl.appendChild(wrap)
+      })
+    })
+  }
+
+  function loadFig(wrap, ph, m) {
+    if (typeof window.assetUrl !== 'function') return
+    try {
+      Promise.resolve(window.assetUrl(m.name, '立绘', m.mood)).then(function (url) {
+        if (!url) return
+        var img = document.createElement('img')
+        img.className = 'fig' + (m.speaking ? ' active' : idleCls())
+        img.alt = m.name; img.style.left = m._x + '%'
+        img.onload = function () { ph.style.display = 'none' }
+        img.onerror = function () { img.remove() }
+        img.src = url
+        wrap.insertBefore(img, wrap.firstChild)
+      })
+    } catch (_) {}
+  }
+  function loadScene(name) {
+    if (!name || typeof window.assetUrl !== 'function') { sceneEl.classList.remove('has-img'); return }
+    try {
+      Promise.resolve(window.assetUrl(name, '背景')).then(function (url) {
+        if (!url) return
+        sceneEl.style.setProperty('--scene-img', 'url("' + url + '")')
+        sceneEl.classList.add('has-img')
+      })
+    } catch (_) {}
+  }
+
+  // ── host access ──────────────────────────────────────────────────────────────────
+  function statData() {
+    try {
+      if (typeof getVariables !== 'function') return Promise.resolve(MOCK)
+      var v = getVariables()
+      if (v && typeof v.then === 'function') return v.then(function (r) { return (r || {}).stat_data || {} })
+      return Promise.resolve((v || {}).stat_data || {})
+    } catch (_) { return Promise.resolve(MOCK) }
+  }
+  function applyGeometry(g) {
+    if (!g) return
+    var root = document.documentElement.style
+    if (g.viewportWidth) root.setProperty('--vw', g.viewportWidth + 'px')
+    root.setProperty('--panel-x', (g.x || 0) + 'px')
+  }
+
+  // geometry: seed + subscribe (WCV only)
+  if (window.rptHost && typeof window.rptHost.getPanelGeometry === 'function') {
+    applyGeometry(window.rptHost.getPanelGeometry())
+    window.rptHost.onPanelGeometry(applyGeometry)
+  }
+
+  render()
+
+  // coordination + data-change refresh (coalesced)
+  if (typeof eventOn === 'function') {
+    var pending = false
+    var refresh = function () {
+      if (pending) return
+      pending = true
+      Promise.resolve().then(function () { pending = false; render() })
+    }
+    eventOn('mag_variable_updated', refresh)
+    eventOn('message_updated', refresh)
+    eventOn('stage:cast-changed', refresh)
+    eventOn('poem:theme', function (p) { applyPoemTheme(p && p.id) })
+    // dim the stage while the SELF drawer is open (the fold↔stage focus link)
+    eventOn('self:fold', function (p) {
+      document.getElementById('stage').classList.toggle('self-folded', !!(p && p.open))
+    })
+  }
+})()
+</script>
+</body>
+</html>

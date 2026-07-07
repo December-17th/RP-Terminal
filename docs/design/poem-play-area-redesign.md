@@ -1,6 +1,57 @@
 # Poem of Destiny — Play-Area Redesign & Seamless Multi-Panel Spec
 
-**Status:** Design locked 2026-07-05 (interactive mock approved). Not yet built. Point-in-time spec.
+**Status:** Design locked 2026-07-05 (interactive mock approved). Point-in-time spec.
+**Build progress:** **P0 RPT seam primitives BUILT 2026-07-05** — (a) seamless `panel_ui` mode
+(`panel_ui.seamless` + per-slot `chrome`; `StaticWorkspace` / `staticLayout.ts` / `.ws-bare`); (b)
+panel-geometry host API (`window.rptHost.getPanelGeometry()` / `onPanelGeometry` / `rpt:panelgeometry`,
+plumbed `wcvManager` → `wcvIpc` → `wcvPreload`; pure contract in `wcvGeometry.ts`). Slicing verification
+card: `docs/design/seam-slice-demo/`. Open decision §8.2 (geometry feasibility) is **resolved: feasible**
+— the host already knows each slot's window-relative bounds + content size, so §4.2 (recommended) stands,
+no fall back to Alt A. Tests: `staticLayoutChrome`, `wcvGeometry`.
+**P1 SELF surface BUILT 2026-07-05** (card-side) — [`docs/sdk/examples/poem-self-surface.html`](../sdk/examples/poem-self-surface.html):
+portrait band (geometry-sliced) + lean stats (HP/MP/SP/EXP + FP + gold + status chips) + fold drawer
+(属性/持有/登神长阶) + tabs; fold collapses the band, stats slide up, drawer fills the freed zone, tabs
+pinned bottom. The `poemState(stat_data)` adapter is grounded in the **real** 状态栏 schema
+(`FrontEnd-for-destined-journey-TPR-STS/src/data_schema`): FP = top-level `命运点数`; EXP =
+`累计经验值`/`升级所需经验`(`MAX`@Lv25); 登神长阶 rendered as its true gate (要素≤3→权能≤1→法则 + 神位/神国),
+not fake 0–1 bars; 品质 → the 7 rarity tiers. Reads via `getVariables().stat_data`, re-renders on
+`mag_variable_updated`/`message_updated`, portrait via `assetUrl('主角','立绘')`; opens standalone
+(mock fallback) for preview. Wire beside native chat with:
+`{ mode:'static', seamless:true, grid:{cols:12,rows:12}, slots:[ {id:'self',view:'wcv',entry:'…/poem-self-surface.html',rect:[0,0,3,12]}, {id:'story',view:'chat',rect:[3,0,9,12]} ] }`.
+**P2 STAGE band BUILT 2026-07-05** — RPT-generic sibling-event channel + the card `stage` surface:
+- RPT: `window.rptHost.broadcastEvent(name,payload)` (WCV) fans a card event to sibling panels on the
+  chat (ctx-resolved, excludes sender), received via `eventOn(name,cb)`. Name is opaque → card-agnostic.
+  `wcvIpc` `wcv-host-broadcast-event` → `wcvManager.notifyEvent(…, exceptWebContentsId)`.
+- Card: [`docs/sdk/examples/poem-stage-surface.html`](../sdk/examples/poem-stage-surface.html) — present
+  NPCs over the geometry-sliced background (continuous with SELF's top band), active-speaker bright +
+  nameplate + 正在交谈, silent members dimmed; scene tag (时间·地点). Cast = `关系列表[*].在场===true`
+  (real signal); speaker = card-authored `stat_data.stage.speaking` else highest-好感度 present;
+  scene bg via optional `stat_data.stage.background`. Listens `self:fold` (dims the stage while the
+  SELF drawer is open) + `stage:cast-changed`/`mag_variable_updated` (refresh). `self.html` now emits
+  `self:fold` on toggle. P2 layout: `self[0,0,3,12]` · `stage[3,0,9,4]` · `story(chat)[3,4,9,8]`.
+**P3 WORLD surface + chat serif register BUILT 2026-07-05:**
+- Card: [`docs/sdk/examples/poem-world-surface.html`](../sdk/examples/poem-world-surface.html) — the right
+  info column: 世界 (`世界.时间/地点`), 同行 (present `关系列表` members + `好感度` bar, mapped −100..100 →
+  0..100, 命定契约 mark, avatar via `assetUrl(name,'头像')`), 委托 (`任务列表` TaskSchema: 目标/状态/进展/奖励,
+  关注度 → left-border accent). Re-renders on `mag_variable_updated`/`message_updated`. (Mock's 记忆 has no
+  schema backing — 事件/新闻 exist but out of scope; noted in the file.)
+- RPT (§8.5 resolved): the card `css` currently reaches only card HTML frames (`HtmlFrame`), NOT the
+  native markdown prose, and §6a applied only colors — so the serif register needed a small extension.
+  Chose the **safe token path** over an arbitrary-CSS escape-hatch (keeps §6a's trust model): new
+  `--rpt-chat-font-family` consumed by `.message-content`, settable via the theme token `chat-font`/
+  `prose-font` (`cardTheme.ts`). Colored 你/name spans stay the card's display-regex job (already
+  supported). Tests: `cardTheme` (+2). Full layout now: `self[0,0,3,12]` · `stage[3,0,9,4]` ·
+  `story(chat)[3,4,6,8]` · `world[9,4,3,8]`.
+**Play-area palettes BUILT 2026-07-05** — the 3 surfaces are now skinnable across **4 palettes** (dusk
+黄昏 / frost 霜垣 / ember 烬火 / verdant 苍林), extracted into one shared token file
+[`docs/sdk/examples/poem-themes.css`](../sdk/examples/poem-themes.css) `@import`'d by all three (a palette
+is defined once). What varies per theme = chrome (neutrals + text ramp + the destiny accent + ember +
+FP); what's **constant** = resource colours (HP/MP/SP/EXP) and the 7 rarity tiers (they encode data,
+not mood). Switch via `document.documentElement.dataset.poemTheme`; SELF owns a 4-swatch switcher that
+persists to the per-chat KV `poem.theme` and broadcasts `poem:theme` so STAGE/WORLD re-skin live over
+the P2 event channel (standalone: URL `?theme=` / localStorage). Adding a 5th theme = one CSS block.
+**Next: P4 (motion — speaker-swap transition + fold↔stage dim polish), and card-side packaging (the
+`theme` tokens incl. `prose-font`, fonts, assets, and one shared `poemState` module for the 3 pages).**
 **Branch context:** work sits on `ui-facelift`. The chrome/IA facelift + §6a card themes are already
 committed there (`88af494`); this spec is the *next* body of work and depends on some of it.
 **Reference mock:** [`poem-play-area-mock.html`](./poem-play-area-mock.html) — open it in a browser.
