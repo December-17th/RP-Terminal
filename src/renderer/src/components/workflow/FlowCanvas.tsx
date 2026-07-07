@@ -87,9 +87,10 @@ function RptNode({ data, selected }: NodeProps<RFNode<RptNodeData>>): React.JSX.
   const inputs = typeInfo?.inputs ?? []
   const outputs = typeInfo?.outputs ?? []
   const disabled = editorNode.disabled === true
-  // Renderer-side check for a trigger node. `isTrigger` lives main-side (nodeImpl.isTrigger); this
-  // string-prefix check is the pragmatic renderer mirror — trigger node types are all `trigger.*`.
-  const isTrigger = editorNode.type.startsWith('trigger.')
+  // Trigger detection keys off the catalog's `isTrigger` flag (surfaced through list-node-types in
+  // WP-A), so any node type that opts in — not just `trigger.*` — gets the on/off switch. The name
+  // prefix is kept ONLY as a fallback for a stale/absent catalog entry.
+  const isTrigger = typeInfo?.isTrigger ?? editorNode.type.startsWith('trigger.')
   // Localized node title with the catalog's English title as the fallback.
   const title =
     tOpt(`workflowEditor.nodeTitle.${editorNode.type}`) || typeInfo?.title || editorNode.type

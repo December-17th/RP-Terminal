@@ -130,6 +130,9 @@ const historyText = (history: ChatMessage[]): string =>
 export const agentLlm: NodeImpl = {
   type: 'agent.llm',
   title: 'Agent',
+  // Agent & memory UX (WP-A; spec §1): `messages` is the authored prompt — the editor routes it to the
+  // dedicated Prompt editor (not the generic objectArray control) and derives the on-card excerpt.
+  promptFields: ['messages'],
   inputs: [
     { name: 'when', type: 'Signal' },
     { name: 'history', type: 'Messages' },

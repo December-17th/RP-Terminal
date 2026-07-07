@@ -55,6 +55,28 @@ describe('listNodeTypes', () => {
     expect(byType.get('input.context')!.configSchema).toBeUndefined()
   })
 
+  it('surfaces the `isTrigger` flag for trigger node types (agent-memory-ux WP-A)', () => {
+    // Trigger roots opt in via the descriptor flag; the renderer keys its agent detection off this.
+    expect(byType.get('trigger.cadence')!.isTrigger).toBe(true)
+    expect(byType.get('trigger.state')!.isTrigger).toBe(true)
+    expect(byType.get('trigger.manual')!.isTrigger).toBe(true)
+    // A non-trigger node omits it entirely (undefined, not false).
+    expect(byType.get('input.context')!.isTrigger).toBeUndefined()
+    expect(byType.get('llm.sample')!.isTrigger).toBeUndefined()
+  })
+
+  it('surfaces `promptFields` for the prompt-bearing node types (agent-memory-ux WP-A)', () => {
+    expect(byType.get('agent.llm')!.promptFields).toEqual(['messages'])
+    expect(byType.get('text.template')!.promptFields).toEqual(['template'])
+    // A node with no authored prompt omits it.
+    expect(byType.get('input.context')!.promptFields).toBeUndefined()
+  })
+
+  it('carries `dynamicEnum` only when a node declares it (none in WP-A; control.mode lands in WP-B)', () => {
+    // The catalog SURFACE exists now; no built-in stamps it yet, so it is absent everywhere.
+    expect(catalog.every((n) => n.dynamicEnum === undefined)).toBe(true)
+  })
+
   it('returns plain JSON-serializable data (survives a structured-clone round trip)', () => {
     expect(JSON.parse(JSON.stringify(catalog))).toEqual(catalog)
   })

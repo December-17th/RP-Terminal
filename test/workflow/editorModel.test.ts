@@ -184,6 +184,25 @@ describe('docToEditor / editorToDoc round-trip', () => {
     expect(rebuilt.groups).toEqual(groups)
   })
 
+  it('round-trips a group’s `note` and `origin` through editorToDoc (agent-memory-ux WP-A: groups pass through wholesale, but pin it — the whitelist has bitten three times)', () => {
+    const groups = [
+      {
+        id: 'group-1',
+        name: 'Table memory',
+        nodeIds: ['a', 'b'],
+        collapsed: true,
+        note: 'Needs a bound table template + an API preset.',
+        origin: 'import' as const
+      }
+    ]
+    const d = doc([node('a'), node('b')], [], { groups })
+    const { nodes, edges } = docToEditor(d)
+    const rebuilt = editorToDoc(d, nodes, edges)
+    expect(rebuilt.groups).toEqual(groups)
+    expect(rebuilt.groups?.[0].note).toBe('Needs a bound table template + an API preset.')
+    expect(rebuilt.groups?.[0].origin).toBe('import')
+  })
+
   it('omits groups when the base doc has none (no stray field)', () => {
     const d = doc([node('a')], [])
     const { nodes, edges } = docToEditor(d)

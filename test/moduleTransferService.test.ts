@@ -143,6 +143,21 @@ describe('buildModuleEnvelope', () => {
     expect(parsed.ok).toBe(true)
     if (parsed.ok) expect(parsed.value.module.nodes).toHaveLength(3)
   })
+
+  it('carries the group’s `note` and round-trips it through the envelope (agent-memory-ux WP-A)', () => {
+    const doc = docWithGroup()
+    doc.groups![0].note = 'Needs a bound table template + an API preset.'
+    const built = transfer.buildModuleEnvelope(doc, 'group-1')!
+    expect(built.module.note).toBe('Needs a bound table template + an API preset.')
+    const parsed = parseModuleEnvelope(serializeModuleEnvelope(built.module, built.bundledTemplates))
+    expect(parsed.ok).toBe(true)
+    if (parsed.ok) expect(parsed.value.module.note).toBe('Needs a bound table template + an API preset.')
+  })
+
+  it('omits `note` when the group has none (no stray field)', () => {
+    const built = transfer.buildModuleEnvelope(docWithGroup(), 'group-1')!
+    expect(built.module.note).toBeUndefined()
+  })
 })
 
 // ── inspection core ─────────────────────────────────────────────────────────────────────────────

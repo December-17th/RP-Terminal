@@ -214,6 +214,50 @@ describe('parseWorkflowDoc', () => {
     if (r.ok) expect(r.doc.groups).toEqual(groups)
   })
 
+  it('round-trips a group with `note` and `origin` (agent-memory-ux WP-A) without stripping them', () => {
+    // zod objects strip undeclared keys — the agent contract's note + import provenance must survive.
+    const groups = [
+      {
+        id: 'group-1',
+        name: 'Table memory',
+        nodeIds: ['n1', 'n2'],
+        collapsed: true,
+        note: 'Needs a bound table template + an API preset.',
+        origin: 'import'
+      }
+    ]
+    const r = parseWorkflowDoc(
+      JSON.parse(
+        JSON.stringify({
+          ...minimal,
+          nodes: [
+            { id: 'n1', type: 'text.template' },
+            { id: 'n2', type: 'input.context', isMainOutput: true }
+          ],
+          groups
+        })
+      )
+    )
+    expect(r.ok).toBe(true)
+    if (r.ok) expect(r.doc.groups).toEqual(groups)
+  })
+
+  it('rejects a group whose `origin` is any value other than "import" (agent-memory-ux WP-A)', () => {
+    const base = {
+      ...minimal,
+      nodes: [
+        { id: 'n1', type: 'text.template' },
+        { id: 'n2', type: 'input.context', isMainOutput: true }
+      ]
+    }
+    expect(
+      parseWorkflowDoc({
+        ...base,
+        groups: [{ id: 'group-1', name: 'M', nodeIds: ['n1', 'n2'], origin: 'authored' }]
+      }).ok
+    ).toBe(false)
+  })
+
   it('rejects a group with <2 members or empty id/name/exposed strings (WP6.3)', () => {
     const base = {
       ...minimal,

@@ -27,6 +27,10 @@ cards) reads them as the contract. They must track the code.
   template-export + last-maintained surface (issue 06), and the chat-level progress store +
   manual-backfill engine + auto-retry (issue 07 — `table_progress`, `tableProgressService`,
   `tableBackfillService`; the gate's per-workflow node-state pointer is retired).
+- **[workflow-module-format.md](workflow-module-format.md)** — the workflow **module / agent** format:
+  the agent UI contract (a named group rooted at a trigger ⇒ stock agent UI), the `GroupDecl.note` /
+  `GroupDecl.origin` fields, the node-type descriptor hints (`isTrigger` / `promptFields` /
+  `dynamicEnum`) surfaced through `list-node-types`, and the `.rptmodule` envelope round-trip.
 - **[../card-script-wcv-surfaces-design.md](../card-script-wcv-surfaces-design.md)** — design (not built):
   run full-page card scripts in a process-isolated WCV and let cards register their own panel/modal surfaces
   (the `创意工坊` case). Touches `thRuntime` + the format when implemented — update this contract then.
@@ -47,6 +51,7 @@ The card-facing surface is:
 | [`types/character.ts`](../../src/main/types/character.ts) (`RPTerminalExtSchema` — the format / bundle slots)                  | component-inventory §4              |
 | the import / transform pipeline (`stPngParser`, `characterService`, the parsers)                                               | component-inventory §5–6            |
 | [`parsers/chatSheetsParser.ts`](../../src/main/parsers/chatSheetsParser.ts) / [`types/tableTemplate.ts`](../../src/main/types/tableTemplate.ts) / `tableTemplateService` / `tableDbService` / `tableSql` / `tableOpsService` / `tableExportService` / `tableEditService` / `tableStatusService` / `tableProgressService` / `tableMaintenance` / `tableBackfillService` / `tableBackfillEvents` / `tableMemoryIpc` (SQL-table memory: import + export + sandbox + write path/op-log + hand editing + prompt projection + progress store + manual backfill + status) | table-templates.md                  |
+| [`shared/workflow/types.ts`](../../src/shared/workflow/types.ts) `GroupDecl` / `NodeDescriptor` hints, [`shared/workflow/docSchema.ts`](../../src/shared/workflow/docSchema.ts), [`shared/workflow/moduleEnvelope.ts`](../../src/shared/workflow/moduleEnvelope.ts), [`services/nodes/catalog.ts`](../../src/main/services/nodes/catalog.ts) (workflow module / agent format + `list-node-types` descriptor hints) | workflow-module-format.md           |
 
 Keep status markers honest (✅ built / 🟡 partial / 🔁 stub / ⬜ planned) and **cite the file each claim was
 verified against** — per the repo's grounding rule (`CLAUDE.md`), never describe behavior from a name or

@@ -69,6 +69,9 @@ const templateConfig = z.object({ template: z.string() })
 export const textTemplate: NodeImpl = {
   type: 'text.template',
   title: 'Template',
+  // Agent & memory UX (WP-A; spec §1): `template` is the authored prompt string — routed to the Prompt
+  // editor and used for the on-card excerpt, same contract as agent.llm's `messages`.
+  promptFields: ['template'],
   inputs: [
     { name: 'gen', type: 'Context' },
     { name: 'in1', type: 'Any' },

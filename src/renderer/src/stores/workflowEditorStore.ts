@@ -9,6 +9,7 @@ import {
   editorToDoc
 } from '../components/workflow/editorModel'
 import {
+  DynamicEnumHint,
   Edge,
   ExposedGroupSetting,
   GroupDecl,
@@ -29,6 +30,12 @@ export interface NodeTypeInfo {
   outputs: { name: string; type: string }[]
   isMainOutputCapable?: boolean
   configSchema?: Record<string, unknown>
+  /** Agent & memory UX (WP-A): catalog hints surfaced through `list-node-types`. `isTrigger` drives the
+   *  canvas's agent detection + on/off switch; `promptFields` routes prompt config to the Prompt editor;
+   *  `dynamicEnum` describes an enum field whose options live in a sibling config array. */
+  isTrigger?: boolean
+  promptFields?: string[]
+  dynamicEnum?: DynamicEnumHint
 }
 
 export interface WorkflowSummary {
