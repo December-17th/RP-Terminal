@@ -116,6 +116,7 @@
     padding: 13px 16px 14px; display: flex; flex-direction: column; gap: 9px;
     border-bottom: 1px solid var(--line-soft);
   }
+  .self.open .stats { padding-top: 30px; }
   .res { display: grid; grid-template-columns: 30px 1fr auto; align-items: center; gap: 9px; }
   .res-k { font-family: var(--mono); font-size: 11px; font-weight: 700; letter-spacing: .06em; }
   .res-k.hp { color: var(--hp); } .res-k.mp { color: var(--mp); } .res-k.sp { color: var(--sp); }
@@ -141,16 +142,13 @@
   .chip.muted { border-color: var(--line); color: var(--faint); background: none; }
 
   /* ── fold drawer ─────────────────────────────────────────────────────────────────── */
-  /* The drawer ALWAYS flex-fills the space between the stats and the tabs, so the tabs stay
-     pinned to the bottom. Closed → it's empty (the dark "freed zone"); open → the band collapses
-     above and the panel content fades into that same zone. */
+  /* Closed, the drawer collapses so tabs sit under stats; open, it expands into the freed band space. */
   .drawer {
     flex: 1 1 auto; min-height: 0; overflow-y: auto; background: var(--night);
-    padding: 0 16px;
+    padding: 0 16px; max-height: 0; opacity: 0;
+    transition: max-height .4s cubic-bezier(.4, 0, .2, 1), opacity .3s ease, padding .3s ease;
   }
-  .self.open .drawer { padding: 14px 16px 18px; }
-  .panel { opacity: 0; transition: opacity .3s ease .12s; }
-  .self.open .panel { opacity: 1; }
+  .self.open .drawer { max-height: 100%; opacity: 1; padding: 14px 16px 18px; }
   .drawer::-webkit-scrollbar { width: 6px; }
   .drawer::-webkit-scrollbar-thumb { background: var(--line); border-radius: 3px; }
   .panel { display: none; }

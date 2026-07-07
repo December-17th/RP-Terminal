@@ -233,7 +233,7 @@
         ph.className = 'fig-ph' + (m.speaking ? ' active' : idleCls())
         ph.textContent = String(m.name || '?').charAt(0)
         ph.style.left = m._x + '%'
-        ph.style.fontSize = m.speaking ? 'min(30vw, 78%)' : 'min(24vw, 62%)'
+        ph.style.fontSize = m.speaking ? 'min(30vw, 78vh)' : 'min(24vw, 62vh)'
         wrap.appendChild(ph)
         loadFig(wrap, ph, m)
         if (m.speaking) {
