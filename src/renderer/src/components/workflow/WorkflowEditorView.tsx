@@ -21,6 +21,8 @@ import FlowCanvas from './FlowCanvas'
 import NodeConfigPanel from './NodeConfigPanel'
 import RunDrawer from './RunDrawer'
 import ModuleImportSheet, { type ModuleInspectReport } from './ModuleImportSheet'
+import { isAgentGroup, ungroupedTriggerChains } from './agentModel'
+import type { EditorNodeType } from './editorModel'
 
 const BUILTIN_WORKFLOW_ID = 'default'
 
@@ -80,6 +82,27 @@ export default function WorkflowEditorView({
     const grouped = new Set((doc?.groups ?? []).flatMap((g) => g.nodeIds))
     return !selectedNodeIds.some((id) => grouped.has(id))
   }, [selectedNodeIds, doc])
+  // WP-D (spec §4): the "Collapse all agents / Expand all" toolbar cluster is offered only when the doc
+  // has ≥1 agent group (a named group rooted at a trigger node — the agent UI contract).
+  const editorNodes = useWorkflowEditorStore((s) => s.nodes)
+  const editorEdges = useWorkflowEditorStore((s) => s.edges)
+  const collapseAllAgents = useWorkflowEditorStore((s) => s.collapseAllAgents)
+  const expandAllGroups = useWorkflowEditorStore((s) => s.expandAllGroups)
+  const autoGroupTriggerChains = useWorkflowEditorStore((s) => s.autoGroupTriggerChains)
+  const hasAgentGroups = useMemo(() => {
+    const groups = doc?.groups ?? []
+    if (groups.length === 0) return false
+    const types = new Map<string, EditorNodeType>(nodeTypes.map((n) => [n.type, n]))
+    return groups.some((g) => isAgentGroup(editorNodes, g, types))
+  }, [doc, editorNodes, nodeTypes])
+  // WP-D (spec §4): the auto-group affordance. A `.rptflow` import lands ungrouped and has no review
+  // sheet (a module import already groups via insertModule), so we offer one-click grouping of every
+  // ungrouped trigger chain from the toolbar once such a doc is open in the editor.
+  const hasUngroupedChains = useMemo(() => {
+    const groups = doc?.groups ?? []
+    const types = new Map<string, EditorNodeType>(nodeTypes.map((n) => [n.type, n]))
+    return ungroupedTriggerChains(editorNodes, editorEdges, groups, types).length > 0
+  }, [doc, editorNodes, editorEdges, nodeTypes])
 
   const [showErrors, setShowErrors] = useState(false)
   // WP6.5: the module-import review sheet. Null when closed; holds the inspection report while open.
@@ -287,6 +310,25 @@ export default function WorkflowEditorView({
         {sessionType !== 'fragment' && canGroup && (
           <button type="button" onClick={() => groupSelection()} style={{ fontSize: 12.5 }}>
             {t('workflowEditor.groupSelection')}
+          </button>
+        )}
+
+        {/* WP-D: collapse/expand every agent group on the canvas. */}
+        {sessionType !== 'fragment' && hasAgentGroups && !readOnly && (
+          <>
+            <button type="button" onClick={() => collapseAllAgents()} style={{ fontSize: 12.5 }}>
+              {t('workflowEditor.collapseAllAgents')}
+            </button>
+            <button type="button" onClick={() => expandAllGroups()} style={{ fontSize: 12.5 }}>
+              {t('workflowEditor.expandAll')}
+            </button>
+          </>
+        )}
+
+        {/* WP-D: one-click group every ungrouped trigger chain (the .rptflow-open path). */}
+        {sessionType !== 'fragment' && hasUngroupedChains && !readOnly && (
+          <button type="button" onClick={() => autoGroupTriggerChains()} style={{ fontSize: 12.5 }}>
+            {t('workflowEditor.groupAgentChains')}
           </button>
         )}
 

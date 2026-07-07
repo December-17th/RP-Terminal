@@ -19,6 +19,12 @@ import {
   WorkflowDoc
 } from '../../../shared/workflow/types'
 import { nextGroupId } from '../components/workflow/groupModel'
+import {
+  agentTriggers,
+  downstreamClosure,
+  isAgentGroup,
+  ungroupedTriggerChains
+} from '../components/workflow/agentModel'
 import { ValidationError, validateWorkflow } from '../../../shared/workflow/validate'
 
 /** Structurally identical to main's `NodeTypeInfo` (src/main/services/nodes/catalog.ts) —
@@ -131,6 +137,22 @@ interface WorkflowEditorState {
   ungroup(groupId: string): void
   renameGroup(groupId: string, name: string): void
   toggleGroupCollapsed(groupId: string): void
+  /** Agent & memory UX (WP-D; spec §4): one-click grouping — mint a collapsed GroupDecl over the
+   *  trigger's downstream closure (agentModel.downstreamClosure: narrator-shared nodes excluded,
+   *  sibling triggers absorbed). No-op unless the closure has ≥2 ungrouped members. Returns the new
+   *  group id (null when refused). */
+  collapseChainIntoModule(triggerId: string): string | null
+  /** WP-D: collapse every AGENT group (trigger-rooted); non-agent groups are left alone. */
+  collapseAllAgents(): void
+  /** WP-D: expand every group. */
+  expandAllGroups(): void
+  /** WP-D: the agent card's on/off proxy — write `disabled` on ALL of the group's member triggers
+   *  (mixed state always resolves by writing every member). */
+  setGroupTriggersDisabled(groupId: string, disabled: boolean): void
+  /** WP-D: group every UNGROUPED trigger chain (the .rptflow import auto-group pass — no review
+   *  sheet exists for .rptflow, so this runs right after import-open, leaving the doc dirty for the
+   *  user to save). Returns how many groups were created. */
+  autoGroupTriggerChains(): number
   /** WP6.3: shift every member's position by `delta` (the collapsed-module drag). */
   moveGroup(groupId: string, delta: { dx: number; dy: number }): void
   /** WP6.3: promote a member setting onto the module panel (replace-if-same node+path). */
@@ -536,6 +558,83 @@ export const useWorkflowEditorStore = create<WorkflowEditorState>((set, get) => 
       setGroups(
         currentGroups().map((g) => (g.id === groupId ? { ...g, collapsed: !g.collapsed } : g))
       )
+    },
+
+    collapseChainIntoModule: (triggerId) => {
+      if (get().readOnly) return null
+      const { nodes, edges, nodeTypes } = get()
+      const groups = currentGroups()
+      const grouped = new Set(groups.flatMap((g) => g.nodeIds))
+      if (grouped.has(triggerId)) return null
+      const closure = downstreamClosure(nodes, edges, triggerId, editorNodeTypeMap(nodeTypes))
+      // Only ungrouped members join (a node belongs to at most ONE group); need ≥2 to form a group.
+      const memberIds = [...closure].filter((id) => !grouped.has(id))
+      if (memberIds.length < 2) return null
+      const id = nextGroupId(groups)
+      const group: GroupDecl = {
+        id,
+        name: `Agent ${groups.length + 1}`,
+        nodeIds: memberIds,
+        collapsed: true
+      }
+      setGroups([...groups, group])
+      set({ selectedGroupId: id, selectedNodeId: null, selectedNodeIds: [] })
+      return id
+    },
+
+    collapseAllAgents: () => {
+      if (get().readOnly) return
+      const { nodes, nodeTypes } = get()
+      const types = editorNodeTypeMap(nodeTypes)
+      setGroups(
+        currentGroups().map((g) =>
+          isAgentGroup(nodes, g, types) && !g.collapsed ? { ...g, collapsed: true } : g
+        )
+      )
+    },
+
+    expandAllGroups: () => {
+      if (get().readOnly) return
+      setGroups(currentGroups().map((g) => (g.collapsed ? { ...g, collapsed: false } : g)))
+    },
+
+    setGroupTriggersDisabled: (groupId, disabled) => {
+      if (get().readOnly) return
+      const { nodes, nodeTypes } = get()
+      const group = currentGroups().find((g) => g.id === groupId)
+      if (!group) return
+      const triggerIds = new Set(
+        agentTriggers(nodes, group, editorNodeTypeMap(nodeTypes)).map((n) => n.id)
+      )
+      if (triggerIds.size === 0) return
+      set({
+        nodes: nodes.map((n) => {
+          if (!triggerIds.has(n.id)) return n
+          if (disabled) return { ...n, disabled: true }
+          const { disabled: _drop, ...rest } = n
+          return rest
+        })
+      })
+      revalidate()
+    },
+
+    autoGroupTriggerChains: () => {
+      if (get().readOnly) return 0
+      const { nodes, edges, nodeTypes } = get()
+      const groups = currentGroups()
+      const chains = ungroupedTriggerChains(nodes, edges, groups, editorNodeTypeMap(nodeTypes))
+      if (chains.length === 0) return 0
+      const nextGroups = [...groups]
+      for (const chain of chains) {
+        nextGroups.push({
+          id: nextGroupId(nextGroups),
+          name: `Agent ${nextGroups.length + 1}`,
+          nodeIds: [...chain],
+          collapsed: true
+        })
+      }
+      setGroups(nextGroups)
+      return chains.length
     },
 
     moveGroup: (groupId, delta) => {

@@ -675,6 +675,23 @@ const en: Record<string, string> = {
   'workflowEditor.moduleImport.err.external-edge': 'The module has a connection that leaves it.',
   'workflowEditor.moduleImport.err.exposed-not-member':
     'An exposed setting points at a node outside the module.',
+  // Agent & memory UX (2026-07-07 plan WP-D): agent cards, one-click grouping, prose status sentences.
+  'workflowEditor.collapseAllAgents': 'Collapse all agents',
+  'workflowEditor.expandAll': 'Expand all',
+  'workflowEditor.groupAgentChains': 'Group agent chains',
+  'workflowEditor.agent.collapseChain': 'Collapse chain into module',
+  'workflowEditor.agent.mixedTitle': 'Some triggers are off — toggling enables all',
+  'workflowEditor.agent.renameTitle': 'Double-click to rename',
+  'workflowEditor.agent.invalid': 'A node inside has an error',
+  // Status sentence patterns: {{desc}} = the (localized) trigger description, {{ago}} = a recency phrase.
+  'workflowEditor.agent.sentence.onRan': '{{desc}} · ran {{ago}}',
+  'workflowEditor.agent.sentence.onNever': '{{desc}} · not run yet',
+  'workflowEditor.agent.sentence.off': 'Off · {{desc}}',
+  'workflowEditor.agent.sentence.mixed': 'Partly on · {{desc}}',
+  'workflowEditor.agent.ago.justNow': 'just now',
+  'workflowEditor.agent.ago.minutes': '{{n}} min ago',
+  'workflowEditor.agent.ago.hours': '{{n}} h ago',
+  'workflowEditor.agent.ago.days': '{{n}} d ago',
   // One-canvas rebuild WP6.4a: node enable toggle, live trigger badge, assemble-node prompt preview.
   'workflowEditor.enabled': 'Enabled',
   'workflowEditor.trigger.nowAt': 'now {{now}} · at {{at}}',

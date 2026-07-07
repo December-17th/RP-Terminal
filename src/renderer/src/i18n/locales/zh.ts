@@ -651,6 +651,23 @@ const zh: Record<string, string> = {
   'workflowEditor.moduleImport.err.empty-module': '模块至少需要两个节点。',
   'workflowEditor.moduleImport.err.external-edge': '模块中有一条连线通向模块外部。',
   'workflowEditor.moduleImport.err.exposed-not-member': '某个暴露设置指向了模块外的节点。',
+  // 智能体与记忆 UX（2026-07-07 计划 WP-D）：智能体卡片、一键分组、散文式状态句。
+  'workflowEditor.collapseAllAgents': '折叠所有智能体',
+  'workflowEditor.expandAll': '展开全部',
+  'workflowEditor.groupAgentChains': '将智能体链分组',
+  'workflowEditor.agent.collapseChain': '将链折叠为模块',
+  'workflowEditor.agent.mixedTitle': '部分触发器已关闭 — 切换将全部启用',
+  'workflowEditor.agent.renameTitle': '双击重命名',
+  'workflowEditor.agent.invalid': '内部某个节点存在错误',
+  // 状态句模式：{{desc}} = （已本地化的）触发器描述，{{ago}} = 相对时间短语。
+  'workflowEditor.agent.sentence.onRan': '{{desc}} · {{ago}}运行',
+  'workflowEditor.agent.sentence.onNever': '{{desc}} · 尚未运行',
+  'workflowEditor.agent.sentence.off': '已关闭 · {{desc}}',
+  'workflowEditor.agent.sentence.mixed': '部分开启 · {{desc}}',
+  'workflowEditor.agent.ago.justNow': '刚刚',
+  'workflowEditor.agent.ago.minutes': '{{n}} 分钟前',
+  'workflowEditor.agent.ago.hours': '{{n}} 小时前',
+  'workflowEditor.agent.ago.days': '{{n}} 天前',
   // 一体化画布重构 WP6.4a：节点启用开关、实时触发器徽标、组装节点提示词预览。
   'workflowEditor.enabled': '启用',
   'workflowEditor.trigger.nowAt': '当前 {{now}} · 目标 {{at}}',

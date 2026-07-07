@@ -148,6 +148,11 @@ export interface StoredRunRecord {
    *  a headless run OR-dedupe may have fired several triggers on one pack — they are joined (see the
    *  headless persist point). e.g. "state: stat_data.世界.时间 changedBy 30", "cadence: every 3 floors". */
   trigger?: string
+  /** Agent & memory UX (WP-D; spec §1 run attribution): the DOC node ids of the trigger(s) that fired
+   *  this run (headless/manual doc-path only). The agent card maps these through group membership to
+   *  find "this agent's runs". Additive — records persisted before WP-D lack it and simply don't
+   *  attribute (fail-soft). */
+  triggerNodeIds?: string[]
   /** The full raw run trace (WorkflowRunTrace) — carries chatId, timing, ok/aborted, per-node detail. */
   trace: WorkflowRunTrace
 }

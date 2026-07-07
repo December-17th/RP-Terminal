@@ -588,3 +588,133 @@
   word-break: break-word;
   color: var(--rpt-text-secondary);
 }
+
+/* ═══════════ Agent & memory UX (2026-07-07 plan WP-D): agent cards, frames, one-click grouping ═══════════ */
+
+/* An agent card = a collapsed trigger-rooted group. It leans on the agent accent + reports in prose. */
+.rpt-workflow-editor .rpt-module.rpt-agent-card {
+  min-width: 210px;
+  border-color: color-mix(in srgb, var(--rpt-agent) 60%, var(--rpt-border));
+}
+.rpt-workflow-editor .rpt-module.rpt-agent-off {
+  opacity: 0.55;
+}
+
+/* Status sentence — the agent's prose line (spec design principle "agents report in prose"). */
+.rpt-workflow-editor .rpt-agent-sentence {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 10px 0;
+  font-size: 10.5px;
+  line-height: 1.35;
+  color: var(--rpt-agent);
+}
+.rpt-workflow-editor .rpt-agent-off .rpt-agent-sentence {
+  color: var(--rpt-agent-dim);
+}
+/* In the expanded frame header the sentence rides inline, truncating. */
+.rpt-workflow-editor .rpt-agent-sentence-frame {
+  padding: 0;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Last-run dot on the card (ok = success tint, failed = danger). */
+.rpt-workflow-editor .rpt-agent-run-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex: 0 0 auto;
+  background: var(--rpt-success);
+}
+.rpt-workflow-editor .rpt-agent-run-dot.failed {
+  background: var(--rpt-danger);
+}
+
+/* Validation dot in the meta row — a member node is invalid. */
+.rpt-workflow-editor .rpt-agent-invalid-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--rpt-danger);
+  align-self: center;
+}
+
+/* On-card prompt excerpt (1 line on the agent card, 2 lines on an ungrouped prompt node). */
+.rpt-workflow-editor .rpt-agent-excerpt,
+.rpt-workflow-editor .rpt-node-excerpt {
+  margin: 5px 10px 8px;
+  padding: 4px 6px;
+  background: var(--rpt-bg-primary);
+  border-radius: 4px;
+  font-size: 10px;
+  line-height: 1.35;
+  color: var(--rpt-text-secondary);
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+}
+.rpt-workflow-editor .rpt-agent-excerpt-1 {
+  -webkit-line-clamp: 1;
+}
+.rpt-workflow-editor .rpt-agent-excerpt-2 {
+  -webkit-line-clamp: 2;
+}
+
+/* Mixed-state switch (some triggers on, some off): renders off + a warning dot. */
+.rpt-node-trigger-switch.rpt-agent-switch-mixed {
+  background: color-mix(in srgb, var(--rpt-warning) 40%, transparent);
+  border-color: var(--rpt-warning);
+}
+.rpt-workflow-editor .rpt-agent-mixed-dot {
+  position: absolute;
+  top: -2px;
+  right: -2px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--rpt-warning);
+}
+
+/* Inline group rename (double-click the frame header name). */
+.rpt-workflow-editor .rpt-group-frame-rename {
+  font-size: 12px;
+  font-weight: 600;
+  min-width: 0;
+  flex: 0 1 auto;
+  padding: 1px 4px;
+  border: 1px solid var(--rpt-accent);
+  border-radius: 4px;
+  background: var(--rpt-bg-secondary);
+  color: var(--rpt-text-primary);
+}
+
+/* Right-click "Collapse chain into module" menu on a trigger node. */
+.rpt-canvas-context-menu {
+  position: fixed;
+  z-index: 40;
+  min-width: 180px;
+  padding: 4px;
+  background: var(--rpt-bg-elevated);
+  border: 1px solid var(--rpt-border);
+  border-radius: 8px;
+  box-shadow: 0 8px 24px color-mix(in srgb, var(--rpt-bg-primary) 60%, transparent);
+}
+.rpt-canvas-context-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 6px 10px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--rpt-text-primary);
+  font-size: 12px;
+  cursor: pointer;
+}
+.rpt-canvas-context-item:hover {
+  background: var(--rpt-bg-tertiary);
+}

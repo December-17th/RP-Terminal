@@ -28,12 +28,27 @@ import { useChatStore } from '../../stores/chatStore'
 import { useOptionalT, useT } from '../../i18n'
 import {
   formatTraceSeconds,
+  type StoredRunRecord,
   type TraceNode,
   type WorkflowRunTrace
 } from '../../../../shared/workflow/trace'
 import type { EditorNode } from './editorModel'
 import type { GroupDecl } from '../../../../shared/workflow/types'
 import { collapsedView, groupBounds, MODULE_PORT } from './groupModel'
+import {
+  agentEnabledState,
+  agentStatusSentence,
+  agentTriggers,
+  describeTriggerNode,
+  excerptOf,
+  isAgentGroup,
+  isTriggerType,
+  newestRunForGroup,
+  promptExcerpt,
+  promptTextOfNode,
+  type AgentEnabledState,
+  type AgentSentence
+} from './agentModel'
 
 /** Matches the palette drag payload's mime type (drag source lives in a later task's palette
  *  component; this is the contract both sides must agree on). */
@@ -97,6 +112,11 @@ function RptNode({ data, selected }: NodeProps<RFNode<RptNodeData>>): React.JSX.
   const traceTitle = trace
     ? `${t(`workflow.trace.status.${trace.status}`)}${trace.ms !== undefined ? ` · ${formatTraceSeconds(trace.ms)}` : ''}${trace.error ? ` — ${trace.error.message}` : ''}`
     : undefined
+  // WP-D (spec §4): on-card prompt excerpt for an ungrouped prompt-bearing node (agent.llm etc.) —
+  // the first system row's text, 2 lines. Derived via the WP-A `promptFields` hint.
+  const promptText = typeInfo
+    ? promptTextOfNode(editorNode, new Map([[editorNode.type, typeInfo]]))
+    : null
 
   return (
     <div
@@ -187,27 +207,90 @@ function RptNode({ data, selected }: NodeProps<RFNode<RptNodeData>>): React.JSX.
           ))}
         </div>
       </div>
+      {/* WP-D: prompt excerpt (2 lines) on an ungrouped prompt-bearing node. */}
+      {promptText && (
+        <div className="rpt-node-excerpt rpt-agent-excerpt-2">{excerptOf(promptText, 160)}</div>
+      )}
     </div>
   )
 }
 
-/** Collapsed-module node data (one-canvas rebuild WP6.3). */
+/** Everything the AGENT card/frame renders for one trigger-rooted group (agent-memory-ux WP-D;
+ *  spec §1/§4). Derived in FlowCanvasInner (one memo over doc + badges + runs + errors) and passed
+ *  through node data; absent for non-agent groups, which keep the plain module card. */
+interface AgentCardData extends Record<string, unknown> {
+  state: AgentEnabledState
+  sentence: AgentSentence
+  /** trace.startedAt + outcome of the newest attributed run (fail-soft: old records don't attribute). */
+  lastRunAt: number | null
+  lastRunOk: boolean | null
+  /** One-line prompt excerpt from the first prompt-bearing member (via WP-A promptFields). */
+  excerpt: string | null
+  /** A member node has a validation error (doc errors filtered by membership). */
+  invalid: boolean
+}
+
+/** Render an AgentSentence (i18n key + params — agentModel emits keys, never concatenated text). */
+function AgentSentenceText({ sentence }: { sentence: AgentSentence }): React.JSX.Element {
+  const t = useT()
+  return (
+    <>
+      {t(sentence.key, {
+        desc: sentence.desc,
+        ago: sentence.ago ? t(sentence.ago.key, sentence.ago.params) : ''
+      })}
+    </>
+  )
+}
+
+/** The agent on/off switch shared by the collapsed card and the expanded frame header: proxies ALL
+ *  member triggers' disabled flags (mixed renders off + an indicator dot; toggling writes all). */
+function AgentSwitch({ groupId, state }: { groupId: string; state: AgentEnabledState }): React.JSX.Element {
+  const t = useT()
+  const setGroupTriggersDisabled = useWorkflowEditorStore((s) => s.setGroupTriggersDisabled)
+  const on = state === 'on'
+  return (
+    <button
+      type="button"
+      className={`rpt-node-trigger-switch${on ? ' on' : ''}${state === 'mixed' ? ' rpt-agent-switch-mixed' : ''}`}
+      role="switch"
+      aria-checked={on}
+      aria-label={t('workflowEditor.enabled')}
+      title={state === 'mixed' ? t('workflowEditor.agent.mixedTitle') : t('workflowEditor.enabled')}
+      onClick={(e) => {
+        e.stopPropagation()
+        // Mixed resolves to ON (enable everything); on→off, off→on.
+        setGroupTriggersDisabled(groupId, state === 'on')
+      }}
+    >
+      <span className="rpt-node-trigger-switch-knob" aria-hidden />
+      {state === 'mixed' && <span className="rpt-agent-mixed-dot" aria-hidden />}
+    </button>
+  )
+}
+
+/** Collapsed-module node data (one-canvas rebuild WP6.3; WP-D adds the optional agent payload). */
 interface RptModuleData extends Record<string, unknown> {
   group: GroupDecl
   memberCount: number
+  agent?: AgentCardData
 }
 
 function RptModuleNode({ data, selected }: NodeProps<RFNode<RptModuleData>>): React.JSX.Element {
   const t = useT()
   const toggleGroupCollapsed = useWorkflowEditorStore((s) => s.toggleGroupCollapsed)
-  const { group, memberCount } = data
+  const { group, memberCount, agent } = data
   const exposedCount = group.exposed?.length ?? 0
   return (
-    <div className={`rpt-module${selected ? ' selected' : ''}`}>
+    <div
+      className={`rpt-module${agent ? ' rpt-agent-card' : ''}${agent?.state === 'off' ? ' rpt-agent-off' : ''}${selected ? ' selected' : ''}`}
+    >
       {/* One generic target handle (left) + one source handle (right); both share the 'module' id. */}
       <Handle type="target" position={Position.Left} id={MODULE_PORT} className="rpt-port-any" />
       <div className="rpt-module-title-row">
         <span className="rpt-module-name">{group.name}</span>
+        {/* WP-D: the agent's on/off switch (proxy over ALL member triggers). */}
+        {agent && <AgentSwitch groupId={group.id} state={agent.state} />}
         <button
           type="button"
           className="rpt-module-expand"
@@ -220,39 +303,97 @@ function RptModuleNode({ data, selected }: NodeProps<RFNode<RptModuleData>>): Re
           {t('workflowEditor.module.expand')}
         </button>
       </div>
+      {/* WP-D: the status sentence — the agent reports in prose (spec design principle). */}
+      {agent && (
+        <div className="rpt-agent-sentence">
+          {agent.lastRunAt != null && (
+            <span
+              className={`rpt-agent-run-dot${agent.lastRunOk === false ? ' failed' : ''}`}
+              aria-hidden
+            />
+          )}
+          <AgentSentenceText sentence={agent.sentence} />
+        </div>
+      )}
       <div className="rpt-module-meta">
         <span>{t('workflowEditor.module.members', { n: memberCount })}</span>
         {exposedCount > 0 && <span>· {exposedCount}</span>}
+        {/* WP-D: validation dot — a member node is invalid. */}
+        {agent?.invalid && (
+          <span className="rpt-agent-invalid-dot" title={t('workflowEditor.agent.invalid')} />
+        )}
       </div>
+      {/* WP-D: one-line prompt excerpt (first system row of the first prompt-bearing member). */}
+      {agent?.excerpt && <div className="rpt-agent-excerpt rpt-agent-excerpt-1">{agent.excerpt}</div>}
       <Handle type="source" position={Position.Right} id={MODULE_PORT} className="rpt-port-any" />
     </div>
   )
 }
 
-/** Expanded group frame data (one-canvas rebuild WP6.3): a background rect + header. */
+/** Expanded group frame data (one-canvas rebuild WP6.3; WP-D adds the optional agent payload). */
 interface RptGroupFrameData extends Record<string, unknown> {
   group: GroupDecl
+  agent?: AgentCardData
 }
 
 function RptGroupFrameNode({ data }: NodeProps<RFNode<RptGroupFrameData>>): React.JSX.Element {
   const t = useT()
   const toggleGroupCollapsed = useWorkflowEditorStore((s) => s.toggleGroupCollapsed)
   const selectGroup = useWorkflowEditorStore((s) => s.selectGroup)
-  const { group } = data
+  const renameGroup = useWorkflowEditorStore((s) => s.renameGroup)
+  const readOnly = useWorkflowEditorStore((s) => s.readOnly)
+  const { group, agent } = data
+  // WP-D: inline rename on double-click (frame header). Local draft; commit on Enter/blur, cancel Esc.
+  const [editing, setEditing] = React.useState(false)
+  const [draft, setDraft] = React.useState(group.name)
+  const commit = (): void => {
+    setEditing(false)
+    const name = draft.trim()
+    if (name && name !== group.name) renameGroup(group.id, name)
+  }
   return (
     <div className="rpt-group-frame">
       {/* Only the header receives pointer events (the frame body is pass-through, so the member
           nodes on top of it stay interactive). */}
       <div className="rpt-group-frame-header">
-        <span
-          className="rpt-group-frame-name"
-          onClick={(e) => {
-            e.stopPropagation()
-            selectGroup(group.id)
-          }}
-        >
-          {group.name}
-        </span>
+        {editing ? (
+          <input
+            className="rpt-group-frame-rename"
+            value={draft}
+            autoFocus
+            onChange={(e) => setDraft(e.target.value)}
+            onBlur={commit}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') commit()
+              if (e.key === 'Escape') setEditing(false)
+            }}
+            onClick={(e) => e.stopPropagation()}
+          />
+        ) : (
+          <span
+            className="rpt-group-frame-name"
+            title={readOnly ? undefined : t('workflowEditor.agent.renameTitle')}
+            onClick={(e) => {
+              e.stopPropagation()
+              selectGroup(group.id)
+            }}
+            onDoubleClick={(e) => {
+              e.stopPropagation()
+              if (readOnly) return
+              setDraft(group.name)
+              setEditing(true)
+            }}
+          >
+            {group.name}
+          </span>
+        )}
+        {/* WP-D: same switch + sentence as the collapsed card, in the expanded header. */}
+        {agent && <AgentSwitch groupId={group.id} state={agent.state} />}
+        {agent && (
+          <span className="rpt-agent-sentence rpt-agent-sentence-frame">
+            <AgentSentenceText sentence={agent.sentence} />
+          </span>
+        )}
         <button
           type="button"
           className="rpt-group-frame-collapse"
@@ -290,6 +431,7 @@ function FlowCanvasInner({
   traceOverride,
   triggerRefreshToken
 }: FlowCanvasProps): React.JSX.Element {
+  const t = useT()
   const nodes = useWorkflowEditorStore((s) => s.nodes)
   const edges = useWorkflowEditorStore((s) => s.edges)
   const nodeTypeList = useWorkflowEditorStore((s) => s.nodeTypes)
@@ -307,6 +449,7 @@ function FlowCanvasInner({
   const setSelectedNodeIds = useWorkflowEditorStore((s) => s.setSelectedNodeIds)
   const selectGroup = useWorkflowEditorStore((s) => s.selectGroup)
   const moveGroup = useWorkflowEditorStore((s) => s.moveGroup)
+  const collapseChainIntoModule = useWorkflowEditorStore((s) => s.collapseChainIntoModule)
   // Module drag: RF reports absolute positions per change; track each module's last position so a
   // drag becomes a delta routed to moveGroup (which shifts the hidden members). Keyed by group id.
   const moduleDragPos = React.useRef<Map<string, { x: number; y: number }>>(new Map())
@@ -370,6 +513,58 @@ function FlowCanvasInner({
     // eslint-disable-next-line react-hooks/exhaustive-deps -- refetch on doc/chat/save; profileId stable
   }, [activeChatId, currentId, triggerRefreshToken])
 
+  // Run history (WP-D run attribution): the active chat's recent runs, so an agent card can show its
+  // last-run recency (newestRunForGroup maps StoredRunRecord.triggerNodeIds through membership).
+  // Refetched on chat switch + after a save (triggerRefreshToken) — same cadence as the trigger badges.
+  const [runRecords, setRunRecords] = React.useState<StoredRunRecord[]>([])
+  React.useEffect(() => {
+    let cancelled = false
+    if (!activeChatId) {
+      setRunRecords([])
+      return
+    }
+    void (async () => {
+      const page = (await window.api.listAgentPackRuns(profileId, activeChatId)) as StoredRunRecord[]
+      if (!cancelled) setRunRecords(page ?? [])
+    })()
+    return () => {
+      cancelled = true
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- refetch on chat switch + save; profileId stable
+  }, [activeChatId, triggerRefreshToken])
+
+  const errors = useWorkflowEditorStore((s) => s.errors)
+
+  // WP-D (spec §1/§4): everything each AGENT group's card/frame renders, derived once over the doc +
+  // catalog + live badges + run history + validation. Non-agent groups get no entry (plain module card).
+  const agentByGroupId = useMemo(() => {
+    const now = Date.now()
+    const errorNodeIds = new Set(errors.map((e) => e.nodeId).filter((id): id is string => !!id))
+    const map = new Map<string, AgentCardData>()
+    for (const g of groups) {
+      if (!isAgentGroup(nodes, g, typeInfoMap)) continue
+      const state = agentEnabledState(nodes, g, typeInfoMap)
+      const descriptions = agentTriggers(nodes, g, typeInfoMap).map((tn) =>
+        describeTriggerNode(tn, triggerBadges.get(tn.id)?.description)
+      )
+      const newest = newestRunForGroup(runRecords, new Set(g.nodeIds))
+      map.set(g.id, {
+        state,
+        sentence: agentStatusSentence({
+          descriptions,
+          state,
+          ...(newest ? { lastRunAt: newest.trace.startedAt } : {}),
+          now
+        }),
+        lastRunAt: newest ? newest.trace.startedAt : null,
+        lastRunOk: newest ? newest.trace.ok : null,
+        excerpt: promptExcerpt(nodes, g, typeInfoMap),
+        invalid: g.nodeIds.some((id) => errorNodeIds.has(id))
+      })
+    }
+    return map
+  }, [groups, nodes, typeInfoMap, triggerBadges, runRecords, errors])
+
   // On-canvas modules (WP6.3): project the doc's groups onto the canvas — collapsed groups hide
   // their members behind one module node, expanded groups render a background frame; boundary edges
   // re-point to synthetic module edges. Ungrouped/expanded members render as normal 'rpt' nodes.
@@ -401,7 +596,7 @@ function FlowCanvasInner({
         deletable: false,
         connectable: false,
         zIndex: -1,
-        data: { group: g }
+        data: { group: g, agent: agentByGroupId.get(g.id) }
       } as RFNode)
     }
     // Collapsed module nodes.
@@ -414,7 +609,7 @@ function FlowCanvasInner({
         draggable: !readOnly,
         deletable: !readOnly,
         connectable: false,
-        data: { group: m.group, memberCount: m.memberCount }
+        data: { group: m.group, memberCount: m.memberCount, agent: agentByGroupId.get(m.group.id) }
       } as RFNode)
     }
     // Visible normal nodes.
@@ -445,7 +640,8 @@ function FlowCanvasInner({
     readOnly,
     typeInfoMap,
     traceByNode,
-    triggerBadges
+    triggerBadges,
+    agentByGroupId
   ])
 
   const rfEdges: RFEdge[] = useMemo(() => {
@@ -556,6 +752,7 @@ function FlowCanvasInner({
 
   const handleNodeClick = useCallback(
     (_event: React.MouseEvent, node: RFNode) => {
+      setChainMenu(null)
       // A collapsed module → select the group (its panel). Frames handle their own header click.
       if (moduleIds.has(node.id)) {
         selectGroup(node.id)
@@ -567,8 +764,27 @@ function FlowCanvasInner({
     [select, selectGroup, moduleIds]
   )
 
+  // WP-D one-click grouping (spec §4): right-click a trigger node → "Collapse chain into module".
+  // Only offered on an ungrouped trigger node (the store's collapseChainIntoModule re-checks + no-ops
+  // otherwise). Positioned at the cursor; dismissed on any pane click / action.
+  const [chainMenu, setChainMenu] = React.useState<{ x: number; y: number; triggerId: string } | null>(
+    null
+  )
+  const handleNodeContextMenu = useCallback(
+    (event: React.MouseEvent, node: RFNode) => {
+      if (readOnly || node.type !== 'rpt') return
+      const editorNode = (node.data as RptNodeData).editorNode
+      if (!isTriggerType(editorNode.type, typeInfoMap)) return
+      if (groups.some((g) => g.nodeIds.includes(editorNode.id))) return
+      event.preventDefault()
+      setChainMenu({ x: event.clientX, y: event.clientY, triggerId: editorNode.id })
+    },
+    [readOnly, typeInfoMap, groups]
+  )
+
   const handlePaneClick = useCallback(() => {
     select(null)
+    setChainMenu(null)
   }, [select])
 
   const handleDragOver = useCallback(
@@ -604,6 +820,7 @@ function FlowCanvasInner({
         onEdgesChange={handleEdgesChange}
         onConnect={handleConnect}
         onNodeClick={handleNodeClick}
+        onNodeContextMenu={handleNodeContextMenu}
         onSelectionChange={handleSelectionChange}
         onPaneClick={handlePaneClick}
         nodesDraggable={!readOnly}
@@ -615,6 +832,24 @@ function FlowCanvasInner({
         <Background />
         <Controls showInteractive={false} />
       </ReactFlow>
+      {chainMenu && (
+        <div
+          className="rpt-canvas-context-menu"
+          style={{ left: chainMenu.x, top: chainMenu.y }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          <button
+            type="button"
+            className="rpt-canvas-context-item"
+            onClick={() => {
+              collapseChainIntoModule(chainMenu.triggerId)
+              setChainMenu(null)
+            }}
+          >
+            {t('workflowEditor.agent.collapseChain')}
+          </button>
+        </div>
+      )}
     </div>
   )
 }
