@@ -84,6 +84,34 @@ describe('splitHtml (HTML block detection)', () => {
     expect(segs).toEqual([{ type: 'inline-html', text: card }])
   })
 
+  it('lifts a styled <span> standing alone on its own line, keeping surrounding prose markdown', () => {
+    const card = '<span style="color:#00FF00"><ruby>ꡁꡏ<rt>强酸</rt></ruby></span>'
+    const segs = splitHtml(`咏唱开始：\n${card}\n酸液喷涌而出。`)
+    expect(segs.map((s) => s.type)).toEqual(['md', 'inline-html', 'md'])
+    expect(segs[1].text).toBe(card)
+  })
+
+  it('keeps a mid-sentence styled <span> as markdown (never splits the paragraph)', () => {
+    const md = '他低声吟唱：<span style="color:red">火球术</span>，火焰腾起。'
+    expect(splitHtml(md)).toEqual([{ type: 'md', text: md }])
+  })
+
+  it('keeps a styled <span> inside a GFM list item as markdown (list stays whole)', () => {
+    const md = '- 攻击：<span style="color:red">火球</span>\n- 防御：高'
+    expect(splitHtml(md)).toEqual([{ type: 'md', text: md }])
+  })
+
+  it('does not treat a lone <rt> outside <ruby> as an HTML region', () => {
+    const md = 'note <rt>annotation</rt> text'
+    expect(splitHtml(md)).toEqual([{ type: 'md', text: md }])
+  })
+
+  it('still lifts a structural card after skipping a mid-prose span', () => {
+    const segs = splitHtml('说着<span style="color:red">怒</span>：\n<div class="card">x</div>')
+    expect(segs.map((s) => s.type)).toEqual(['md', 'inline-html'])
+    expect(segs[1].text).toBe('<div class="card">x</div>')
+  })
+
   it('does NOT lift body state tags (<tp>/<gametxt>/<UpdateVariable>) into HTML', () => {
     const segs = splitHtml('<tp>day-1</tp><gametxt>rain</gametxt>')
     expect(segs.every((s) => s.type === 'md')).toBe(true)
