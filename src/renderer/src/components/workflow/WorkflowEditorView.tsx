@@ -23,7 +23,18 @@ import RunDrawer from './RunDrawer'
 import ModuleImportSheet, { type ModuleInspectReport } from './ModuleImportSheet'
 import AgentsDropdown from './AgentsDropdown'
 import { isAgentGroup, ungroupedTriggerChains } from './agentModel'
+import { paletteMatch } from './paletteModel'
 import type { EditorNodeType } from './editorModel'
+
+/** ModuleTemplateSummary mirror (main's moduleTemplates.ts) — redeclared locally per the preload
+ *  convention (the renderer only sees this over IPC and must not import from src/main). */
+interface LibraryEntry {
+  id: string
+  name: string
+  description?: string
+  nodeCount: number
+  source: 'builtin' | 'user'
+}
 
 const BUILTIN_WORKFLOW_ID = 'default'
 
@@ -108,6 +119,21 @@ export default function WorkflowEditorView({
   const [showErrors, setShowErrors] = useState(false)
   // WP6.5: the module-import review sheet. Null when closed; holds the inspection report while open.
   const [moduleReport, setModuleReport] = useState<ModuleInspectReport | null>(null)
+  // WP-G (spec §2): the palette's Agent library (built-in templates + the user library) + the search
+  // box that filters BOTH palette sections.
+  const [libraryEntries, setLibraryEntries] = useState<LibraryEntry[]>([])
+  const [paletteQuery, setPaletteQuery] = useState('')
+  const refreshLibrary = React.useCallback(async (): Promise<void> => {
+    try {
+      const list = (await window.api.listModuleTemplates(profileId)) as LibraryEntry[]
+      setLibraryEntries(list ?? [])
+    } catch {
+      setLibraryEntries([])
+    }
+  }, [profileId])
+  useEffect(() => {
+    void refreshLibrary()
+  }, [refreshLibrary])
 
   // WP4.4: a fragment-editing hand-off ("Edit fragment in Studio"). Read the requested pack id ONCE on
   // mount (a ref so a later store change can't retrigger the load).
@@ -180,15 +206,43 @@ export default function WorkflowEditorView({
   // Install the inspected module: confirm main-side (installs bundled templates + returns the payload),
   // then insert it into the edited doc at a viewport-center-ish position (best-effort — the editor view
   // is outside the ReactFlow context). Insertion marks the doc dirty; the user saves it themselves.
-  const onInstallModule = async (token: string): Promise<void> => {
+  const onInstallModule = async (token: string, saveToLibrary: boolean): Promise<void> => {
     setModuleReport(null)
     const result = await window.api.confirmModuleImport(token)
     if (!result.ok) {
       useToastStore.getState().push(t('workflowEditor.moduleImport.installFailed'))
       return
     }
-    insertModule(result.module, { x: 220, y: 200 })
+    insertModule(result.module, { x: 220, y: 200 }, { origin: 'import' })
     useToastStore.getState().push(t('workflowEditor.moduleImport.installed'))
+    // WP-G (spec §2): "an imported module can be saved into the user library for reuse". Fail-soft —
+    // a library-save failure never blocks the insert (the module is already on the canvas).
+    if (saveToLibrary) {
+      const saved = await window.api.saveModuleToLibrary(profileId, result.module)
+      if (saved.ok) {
+        useToastStore.getState().push(t('workflowEditor.library.saved'))
+        void refreshLibrary()
+      } else {
+        useToastStore.getState().push(t('workflowEditor.library.saveFailed'))
+      }
+    }
+  }
+
+  // WP-G: insert a library template — fetch the payload, land it at a free spot right of the graph
+  // (insertModule remints ids + pre-groups collapsed; no origin stamp — a template is not an import).
+  const onInsertTemplate = async (id: string): Promise<void> => {
+    const payload = await window.api.getModuleTemplate(profileId, id)
+    if (!payload) {
+      useToastStore.getState().push(t('workflowEditor.library.insertFailed'))
+      return
+    }
+    const nodes = useWorkflowEditorStore.getState().nodes
+    const freeSpot = {
+      x: nodes.length > 0 ? Math.max(...nodes.map((n) => n.position.x)) + 320 : 200,
+      y: 200
+    }
+    const groupId = insertModule(payload, freeSpot)
+    if (!groupId) useToastStore.getState().push(t('workflowEditor.library.insertFailed'))
   }
 
   const onCancelModule = (): void => {
@@ -417,16 +471,78 @@ export default function WorkflowEditorView({
             padding: 6
           }}
         >
+          {/* WP-G (spec §2): ONE search box filtering BOTH palette sections (library + node list). */}
+          <input
+            type="search"
+            value={paletteQuery}
+            placeholder={t('workflowEditor.paletteSearch')}
+            onChange={(e) => setPaletteQuery(e.target.value)}
+            style={{ width: '100%', boxSizing: 'border-box', fontSize: 11.5, marginBottom: 8 }}
+          />
+
+          {/* WP-G (spec §2): the Agent library — built-in module templates + the user library, with
+              "Import module…" as the section's last entry. Click inserts pre-grouped/named/collapsed
+              (insertModule remints ids); names/descriptions are module content, shown as-is. */}
+          <div style={{ fontSize: 10.5, color: 'var(--rpt-text-tertiary)', marginBottom: 6 }}>
+            {t('workflowEditor.agentLibrary')}
+          </div>
+          {libraryEntries
+            .filter((entry) => paletteMatch(paletteQuery, [entry.name, entry.description]))
+            .map((entry) => (
+              <div
+                key={entry.id}
+                role="button"
+                title={entry.description}
+                onClick={() => {
+                  if (!readOnly) void onInsertTemplate(entry.id)
+                }}
+                style={{
+                  border: '1px solid var(--rpt-agent-region-border)',
+                  borderRadius: 6,
+                  padding: '5px 8px',
+                  marginBottom: 5,
+                  cursor: readOnly ? 'default' : 'pointer',
+                  opacity: readOnly ? 0.55 : 1,
+                  background: 'var(--rpt-agent-region)'
+                }}
+              >
+                <div style={{ fontSize: 12, color: 'var(--rpt-text-primary)' }}>{entry.name}</div>
+                <div style={{ fontSize: 10, color: 'var(--rpt-text-tertiary)' }}>
+                  {t('workflowEditor.moduleImport.nodeCount', { n: entry.nodeCount })}
+                  {entry.source === 'user' ? ` · ${t('workflowEditor.library.user')}` : ''}
+                </div>
+              </div>
+            ))}
+          <button
+            type="button"
+            disabled={readOnly}
+            onClick={() => void onImportModule()}
+            style={{ fontSize: 11.5, width: '100%', marginBottom: 10 }}
+          >
+            {t('workflowEditor.importModule')}
+          </button>
+
           <div
             style={{
               fontSize: 10.5,
               color: 'var(--rpt-text-tertiary)',
-              marginBottom: 6
+              marginBottom: 6,
+              borderTop: '1px solid var(--rpt-border)',
+              paddingTop: 8
             }}
           >
             {t('workflowEditor.palette')}
           </div>
-          {nodeTypes.map((nt) => {
+          {nodeTypes
+            .filter((nt) =>
+              paletteMatch(paletteQuery, [
+                nt.type,
+                nt.title,
+                tOpt(`workflowEditor.nodeTitle.${nt.type}`),
+                tOpt(`workflowEditor.nodeDesc.${nt.type}`)
+              ])
+            )
+            .map((nt) => {
             const title = tOpt(`workflowEditor.nodeTitle.${nt.type}`) || nt.title
             const desc = tOpt(`workflowEditor.nodeDesc.${nt.type}`)
             return (
@@ -530,28 +646,8 @@ export default function WorkflowEditorView({
             </>
           )}
 
-          {/* WP6.5: the Modules section — import a `.rptmodule` file into the open doc. A fragment
-              session's currentId is a pack id (not a doc file), but a fragment IS a doc you can splice a
-              module into, so this is offered in both session kinds. */}
-          <div
-            style={{
-              fontSize: 10.5,
-              color: 'var(--rpt-text-tertiary)',
-              margin: '10px 0 6px',
-              borderTop: '1px solid var(--rpt-border)',
-              paddingTop: 8
-            }}
-          >
-            {t('workflowEditor.modules')}
-          </div>
-          <button
-            type="button"
-            disabled={readOnly}
-            onClick={() => void onImportModule()}
-            style={{ fontSize: 12, width: '100%' }}
-          >
-            {t('workflowEditor.importModule')}
-          </button>
+          {/* WP-G: the WP6.5 "Modules" import section folded into the Agent library above ("Import
+              module…" is that section's last entry, spec §2). */}
         </div>
 
         <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column' }}>
@@ -588,7 +684,7 @@ export default function WorkflowEditorView({
       {moduleReport && (
         <ModuleImportSheet
           report={moduleReport}
-          onInstall={(token) => void onInstallModule(token)}
+          onInstall={(token, saveToLibrary) => void onInstallModule(token, saveToLibrary)}
           onCancel={onCancelModule}
         />
       )}

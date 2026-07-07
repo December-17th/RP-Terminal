@@ -650,7 +650,6 @@ const en: Record<string, string> = {
   'workflowEditor.module.includeTemplate': 'Include this chat’s table schema',
   'workflowEditor.module.exportSaved': 'Module saved to {{path}}',
   'workflowEditor.module.exportFailed': 'Could not export the module.',
-  'workflowEditor.modules': 'Modules',
   'workflowEditor.importModule': 'Import module…',
   'workflowEditor.moduleImport.title': 'Import module',
   'workflowEditor.moduleImport.nodeCount': '{{n}} nodes',
@@ -712,6 +711,14 @@ const en: Record<string, string> = {
   'workflowEditor.agents.button': 'Agents ({{n}})',
   'workflowEditor.agents.imported': 'imported',
   'workflowEditor.agents.locate': 'Show on canvas',
+  // Agent & memory UX (WP-G): the palette's Agent library.
+  'workflowEditor.agentLibrary': 'Agent library',
+  'workflowEditor.paletteSearch': 'Search…',
+  'workflowEditor.library.user': 'my library',
+  'workflowEditor.library.saved': 'Saved to your library.',
+  'workflowEditor.library.saveFailed': 'Could not save to the library.',
+  'workflowEditor.library.insertFailed': 'Could not insert the template.',
+  'workflowEditor.moduleImport.saveToLibrary': 'Also save to my library',
   // One-canvas rebuild WP6.4a: node enable toggle, live trigger badge, assemble-node prompt preview.
   'workflowEditor.enabled': 'Enabled',
   'workflowEditor.trigger.nowAt': 'now {{now}} · at {{at}}',

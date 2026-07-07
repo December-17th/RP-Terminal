@@ -2,9 +2,25 @@ import { IpcMain, BrowserWindow, dialog } from 'electron'
 import * as workflowService from '../services/workflowService'
 import * as chatService from '../services/chatService'
 import { listNodeTypes } from '../services/nodes/catalog'
+import {
+  getModuleTemplate,
+  listModuleTemplates,
+  saveModuleToLibrary
+} from '../services/moduleTemplates'
+import type { ModulePayload } from '../../shared/workflow/moduleEnvelope'
 
 export const registerWorkflowIpc = (ipcMain: IpcMain): void => {
   ipcMain.handle('list-node-types', () => listNodeTypes())
+  // Agent library (agent-memory-ux WP-G; spec §2): the palette's Agent-library section. Templates are
+  // ModulePayloads — the renderer inserts them through the SAME insertModule path a `.rptmodule`
+  // import uses. save-module-to-library re-validates main-side (never trusts the renderer payload).
+  ipcMain.handle('list-module-templates', (_, profileId: string) => listModuleTemplates(profileId))
+  ipcMain.handle('get-module-template', (_, profileId: string, id: string) =>
+    getModuleTemplate(profileId, id)
+  )
+  ipcMain.handle('save-module-to-library', (_, profileId: string, module: ModulePayload) =>
+    saveModuleToLibrary(profileId, module)
+  )
   ipcMain.handle('list-workflows', (_, profileId) => workflowService.listWorkflows(profileId))
   ipcMain.handle('get-workflow', (_, profileId, id) =>
     workflowService.getWorkflowById(profileId, id)

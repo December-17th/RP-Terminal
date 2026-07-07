@@ -493,6 +493,8 @@ declare global {
               nodes: import('../shared/workflow/types').NodeInstance[]
               edges: import('../shared/workflow/types').Edge[]
               exposed?: import('../shared/workflow/types').ExposedGroupSetting[]
+              // Agent & memory UX (WP-A): the group's author setup guidance, carried by the envelope.
+              note?: string
             }
             installedTemplates: { name: string; id: string }[]
           }
@@ -500,6 +502,34 @@ declare global {
         | { ok: false; code: 'blocked'; blockers: { code: 'unknown-node-types'; nodeTypes: string[] }[] }
       >
       cancelModuleImport: (token: string) => Promise<void>
+      // Agent library (agent-memory-ux WP-G; spec §2): the palette's Agent-library section — built-in
+      // module templates + the per-profile user library. get returns the SAME ModulePayload shape
+      // confirmModuleImport does (the renderer feeds it to insertModule); save re-validates main-side.
+      listModuleTemplates: (profileId: string) => Promise<
+        {
+          id: string
+          name: string
+          description?: string
+          nodeCount: number
+          source: 'builtin' | 'user'
+        }[]
+      >
+      getModuleTemplate: (
+        profileId: string,
+        id: string
+      ) => Promise<null | {
+        name: string
+        description?: string
+        creator?: string
+        nodes: import('../shared/workflow/types').NodeInstance[]
+        edges: import('../shared/workflow/types').Edge[]
+        exposed?: import('../shared/workflow/types').ExposedGroupSetting[]
+        note?: string
+      }>
+      saveModuleToLibrary: (
+        profileId: string,
+        module: unknown
+      ) => Promise<{ ok: true; id: string } | { ok: false; error: string }>
       // Recipe SHARING: `.rptrecipe` export / import (agent-packs plan WP5.2; ADR 0008) — "share this
       // world's setup". Shapes inlined (not imported from main) per the established preload convention.
       // Export assembles from the CURRENT world; `opts` = the wizard's name/description/creator/id.

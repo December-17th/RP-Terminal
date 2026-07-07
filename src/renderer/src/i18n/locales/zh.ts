@@ -629,7 +629,6 @@ const zh: Record<string, string> = {
   'workflowEditor.module.includeTemplate': '包含本对话的表格结构',
   'workflowEditor.module.exportSaved': '模块已保存到 {{path}}',
   'workflowEditor.module.exportFailed': '无法导出模块。',
-  'workflowEditor.modules': '模块',
   'workflowEditor.importModule': '导入模块…',
   'workflowEditor.moduleImport.title': '导入模块',
   'workflowEditor.moduleImport.nodeCount': '{{n}} 个节点',
@@ -688,6 +687,14 @@ const zh: Record<string, string> = {
   'workflowEditor.agents.button': '智能体（{{n}}）',
   'workflowEditor.agents.imported': '已导入',
   'workflowEditor.agents.locate': '在画布中显示',
+  // 智能体与记忆 UX（WP-G）：面板中的智能体库。
+  'workflowEditor.agentLibrary': '智能体库',
+  'workflowEditor.paletteSearch': '搜索…',
+  'workflowEditor.library.user': '我的库',
+  'workflowEditor.library.saved': '已保存到我的库。',
+  'workflowEditor.library.saveFailed': '无法保存到库。',
+  'workflowEditor.library.insertFailed': '无法插入该模板。',
+  'workflowEditor.moduleImport.saveToLibrary': '同时保存到我的库',
   // 一体化画布重构 WP6.4a：节点启用开关、实时触发器徽标、组装节点提示词预览。
   'workflowEditor.enabled': '启用',
   'workflowEditor.trigger.nowAt': '当前 {{now}} · 目标 {{at}}',

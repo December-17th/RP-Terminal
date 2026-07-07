@@ -74,6 +74,9 @@ export interface ImportedModule {
   nodes: NodeInstance[]
   edges: Edge[]
   exposed?: ExposedGroupSetting[]
+  /** Agent & memory UX (WP-A/WP-G): the group's author setup guidance — carried into GroupDecl.note
+   *  at insert so an imported/palette agent keeps its note (previously silently dropped here). */
+  note?: string
 }
 
 interface WorkflowEditorState {
@@ -168,10 +171,16 @@ interface WorkflowEditorState {
   selectGroup(id: string | null): void
   /** WP6.5: insert an imported module into the current doc. Remints EVERY node id (collision-safe,
    *  the addNode idiom), remaps internal edges + exposed refs to the new ids, lands the members around
-   *  `position`, creates a collapsed GroupDecl over them, selects the group, marks dirty. Returns the
-   *  new group id (or null when there is no doc / the module is empty). Insertion is an EDIT — the user
-   *  saves the doc themselves; this never writes. */
-  insertModule(module: ImportedModule, position: { x: number; y: number }): string | null
+   *  `position`, creates a collapsed GroupDecl over them (carrying the module's `note`), selects the
+   *  group, marks dirty. Returns the new group id (or null when there is no doc / the module is empty).
+   *  Insertion is an EDIT — the user saves the doc themselves; this never writes.
+   *  WP-G: `opts.origin: 'import'` stamps GroupDecl.origin (the Agents ▾ `imported` chip) — passed by
+   *  the `.rptmodule` file-import path, NOT by a palette template insert (a built-in isn't "imported"). */
+  insertModule(
+    module: ImportedModule,
+    position: { x: number; y: number },
+    opts?: { origin?: 'import' }
+  ): string | null
   save(profileId: string): Promise<void>
   cloneAndEdit(profileId: string): Promise<void>
 }
@@ -454,7 +463,7 @@ export const useWorkflowEditorStore = create<WorkflowEditorState>((set, get) => 
     selectGroup: (id) =>
       set({ selectedGroupId: id, selectedNodeId: null, selectedNodeIds: [] }),
 
-    insertModule: (module, position) => {
+    insertModule: (module, position, opts) => {
       if (get().readOnly) return null
       const { doc, nodes, edges } = get()
       if (!doc || module.nodes.length === 0) return null
@@ -518,8 +527,11 @@ export const useWorkflowEditorStore = create<WorkflowEditorState>((set, get) => 
         name: module.name,
         nodeIds: newNodes.map((n) => n.id),
         collapsed: true,
-        // Agent & memory UX (WP-F): stamp provenance so the Agents ▾ dropdown shows an `imported` chip.
-        origin: 'import',
+        // Agent & memory UX (WP-F/WP-G): provenance only for a FILE import (the Agents ▾ `imported`
+        // chip); a palette template insert is not "imported". The module's author note rides into the
+        // group so the agent panel shows its setup guidance.
+        ...(opts?.origin === 'import' ? { origin: 'import' as const } : {}),
+        ...(module.note ? { note: module.note } : {}),
         ...(newExposed.length > 0 ? { exposed: newExposed } : {})
       }
       const nextDoc = { ...doc, groups: [...groups, group] }

@@ -255,6 +255,13 @@ const api = {
   importModuleDialog: (profileId: string) => ipcRenderer.invoke('module-import-dialog', profileId),
   confirmModuleImport: (token: string) => ipcRenderer.invoke('module-confirm-import', token),
   cancelModuleImport: (token: string) => ipcRenderer.invoke('module-cancel-import', token),
+  // Agent library (agent-memory-ux WP-G): the palette's built-in + user module templates.
+  listModuleTemplates: (profileId: string) =>
+    ipcRenderer.invoke('list-module-templates', profileId),
+  getModuleTemplate: (profileId: string, id: string) =>
+    ipcRenderer.invoke('get-module-template', profileId, id),
+  saveModuleToLibrary: (profileId: string, module: unknown) =>
+    ipcRenderer.invoke('save-module-to-library', profileId, module),
   // Recipe SHARING: `.rptrecipe` export / import (agent-packs plan WP5.2; ADR 0008) — "share this
   // world's setup" (a set of embedded packs + activation preset + narrator choice). Export assembles
   // from the CURRENT world; `opts` = the wizard's name/description/creator. Import is TWO-PHASE: the
