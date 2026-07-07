@@ -3,16 +3,9 @@ import type { PanelNode } from '../../../../shared/workspaceLayout'
 import { useWorkspaceStore } from '../../stores/workspaceStore'
 import { usePanelRegexStore, VIEW_PREFIX } from '../../stores/panelRegexStore'
 import { ViewRegistry, VIEW_OPTIONS } from './viewRegistry'
+import { VIEW_LABEL_KEY } from './viewLabels'
 import { WcvPanel } from './WcvPanel'
 import { useT } from '../../i18n'
-
-/** Maps the built-in view ids to i18n keys; unknown/spike views fall back to their English title. */
-const VIEW_LABEL_KEY: Record<string, string> = {
-  chat: 'view.chat',
-  status: 'status.heading',
-  usage: 'view.usage',
-  logs: 'logs.heading'
-}
 
 /**
  * One workspace panel: a header (view-picker + hide + reset) over the hosted view's body.

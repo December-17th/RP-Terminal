@@ -11,6 +11,7 @@ import { useWorkspaceContext } from './context'
 import { UsageView } from '../UsageView'
 import { useT } from '../../i18n'
 import { useUiStore } from '../../stores/uiStore'
+import type { BuiltinViewId } from './viewLabels'
 
 /**
  * The set of views a workspace panel can host. Each entry is a self-contained component
@@ -87,7 +88,9 @@ export interface ViewEntry {
 // Panels host GAME views (chat/status/combat/duel + card panels) and DEBUG views
 // (variables/tables/usage/logs) only — the config/authoring surfaces moved to the Settings hub
 // when the tab nav was retired (the `navigator` view is gone).
-export const ViewRegistry: Record<string, ViewEntry> = {
+// Keys are pinned to `BuiltinViewId` (viewLabels.ts) so the registry and the non-React id list the
+// parity test checks against cannot drift — add/remove a view in both places or this stops compiling.
+export const ViewRegistry: Record<BuiltinViewId, ViewEntry> = {
   chat: { title: 'Chat', Component: ChatPanel, fill: true },
   status: { title: 'RPG Status', Component: StatusPanel },
   combat: { title: 'Combat', Component: CombatPanel, fill: true },

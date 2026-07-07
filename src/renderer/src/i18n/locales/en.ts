@@ -1019,6 +1019,10 @@ const en: Record<string, string> = {
   'view.navigator': 'Navigator',
   'view.chat': 'Chat',
   'view.usage': 'Usage',
+  'view.combat': 'Combat',
+  'view.duel': 'Duel',
+  'view.variables': 'Variables',
+  'view.tables': 'Tables',
 
   'panel.chooseView': 'Choose which view this panel shows',
   'panel.showPanel': 'Show panel',

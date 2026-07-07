@@ -979,6 +979,10 @@ const zh: Record<string, string> = {
   'view.navigator': '导航',
   'view.chat': '聊天',
   'view.usage': '用量',
+  'view.combat': '战斗',
+  'view.duel': '决斗',
+  'view.variables': '变量',
+  'view.tables': '表格',
 
   'panel.chooseView': '选择此面板显示的视图',
   'panel.showPanel': '显示面板',
