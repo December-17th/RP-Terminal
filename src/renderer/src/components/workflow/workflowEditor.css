@@ -643,17 +643,23 @@
   align-self: center;
 }
 
-/* On-card prompt excerpt (1 line on the agent card, 2 lines on an ungrouped prompt node). */
+/* On-card prompt excerpt (1 line on the agent card, 2 lines on an ungrouped prompt node).
+   RF nodes shrink-wrap to max-content, so the excerpt must contribute ZERO intrinsic width
+   (width: 0 + min-width stretch) or a long prompt widens the whole card. */
 .rpt-workflow-editor .rpt-agent-excerpt,
 .rpt-workflow-editor .rpt-node-excerpt {
   margin: 5px 10px 8px;
   padding: 4px 6px;
+  width: 0;
+  min-width: calc(100% - 20px);
+  box-sizing: border-box;
   background: var(--rpt-bg-primary);
   border-radius: 4px;
   font-size: 10px;
   line-height: 1.35;
   color: var(--rpt-text-secondary);
   overflow: hidden;
+  overflow-wrap: anywhere;
   display: -webkit-box;
   -webkit-box-orient: vertical;
 }
