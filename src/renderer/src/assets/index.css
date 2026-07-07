@@ -2,6 +2,10 @@
   /* Default theme (dark / Midnight) — the full semantic token set. Alternate themes override these
      via applyTheme() (src/renderer/src/theme.ts). Every fill is paired with a text / on-* token so
      contrast holds across themes; see docs/ui-rehaul-design.md §7. */
+  /* Custom merged title-bar height — single source for every titlebar-derived style (.tstrip /
+     .lc-bar strips, workflow-editor header). PAIRED with TITLEBAR_OVERLAY_HEIGHT
+     (src/main/windowChrome.ts), the main-process window-control overlay height. See theme.ts. */
+  --rpt-titlebar-h: 44px;
   --rpt-bg-primary: #121212;
   --rpt-bg-secondary: #1e1e1e;
   --rpt-bg-tertiary: #2a2a2e;
@@ -1976,7 +1980,8 @@ select {
 }
 .lc-bar {
   flex: 0 0 auto;
-  height: 44px;
+  /* sits flush under the OS window-control overlay (main/index.ts TITLEBAR_OVERLAY_HEIGHT) */
+  height: var(--rpt-titlebar-h);
   display: flex;
   align-items: center;
   gap: 12px;
@@ -2452,7 +2457,8 @@ select {
 /* ---------- Top strip (menu-bar shell; replaces the tab TopNav) ---------- */
 .tstrip {
   flex: 0 0 auto;
-  height: 44px;
+  /* sits flush under the OS window-control overlay (main/index.ts TITLEBAR_OVERLAY_HEIGHT) */
+  height: var(--rpt-titlebar-h);
   display: flex;
   align-items: center;
   gap: 10px;

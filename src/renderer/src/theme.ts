@@ -15,6 +15,12 @@ export interface ThemeDef {
 }
 
 const dark: ThemeTokens = {
+  // Custom merged title-bar height. PAIRED VALUE — keep in sync with TITLEBAR_OVERLAY_HEIGHT
+  // (src/main/windowChrome.ts), the main-process OS window-control overlay height. Every
+  // titlebar-height-derived style (.tstrip / .lc-bar strips, workflow-editor header) consumes
+  // this token; the two definitions can't share across the process boundary, so the test
+  // test/titlebarHeight.test.ts asserts they match. Theme-independent — same value in all themes.
+  '--rpt-titlebar-h': '44px',
   '--rpt-bg-primary': '#121212',
   '--rpt-bg-secondary': '#1e1e1e',
   '--rpt-bg-tertiary': '#2a2a2e',
@@ -50,6 +56,8 @@ const dark: ThemeTokens = {
 }
 
 const carbon: ThemeTokens = {
+  // See the dark set: paired with TITLEBAR_OVERLAY_HEIGHT (src/main/windowChrome.ts).
+  '--rpt-titlebar-h': '44px',
   '--rpt-bg-primary': '#050506',
   '--rpt-bg-secondary': '#0f0f12',
   '--rpt-bg-tertiary': '#1a1a1f',
@@ -80,6 +88,8 @@ const carbon: ThemeTokens = {
 }
 
 const light: ThemeTokens = {
+  // See the dark set: paired with TITLEBAR_OVERLAY_HEIGHT (src/main/windowChrome.ts).
+  '--rpt-titlebar-h': '44px',
   '--rpt-bg-primary': '#f5f6f8',
   '--rpt-bg-secondary': '#ffffff',
   '--rpt-bg-tertiary': '#eceef2',

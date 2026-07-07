@@ -11,6 +11,7 @@ import * as templateService from './services/templateService'
 import * as wcvManager from './services/wcvManager'
 import * as worldAssetProtocol from './services/worldAssetProtocol'
 import { registerIpc } from './ipc'
+import { TITLEBAR_OVERLAY_HEIGHT } from './windowChrome'
 
 // Card UIs (WebContentsView) are served from this scheme instead of a data: URL: a data: URL is an
 // opaque origin where Chromium disables localStorage/sessionStorage/etc., so a storage-using card
@@ -40,8 +41,14 @@ function createWindow(): void {
     ...(process.platform === 'win32'
       ? {
           titleBarStyle: 'hidden' as const,
-          // height matches the renderer top strip (.tstrip: 44px) so the controls sit flush with it
-          titleBarOverlay: { color: '#1e1e1e', symbolColor: '#e0e0e0', height: 44 }
+          // Height matches the renderer top strip (.tstrip / .lc-bar) so the OS window controls sit
+          // flush with it. Single-sourced here as TITLEBAR_OVERLAY_HEIGHT (src/main/windowChrome.ts),
+          // paired with the renderer token --rpt-titlebar-h (src/renderer/src/theme.ts).
+          titleBarOverlay: {
+            color: '#1e1e1e',
+            symbolColor: '#e0e0e0',
+            height: TITLEBAR_OVERLAY_HEIGHT
+          }
         }
       : {}),
     ...(process.platform === 'linux' ? { icon } : {}),

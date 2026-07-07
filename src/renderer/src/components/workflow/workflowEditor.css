@@ -1162,8 +1162,8 @@
   flex-direction: column;
   background: var(--rpt-bg-primary);
   /* Electron drag regions ignore z-order: the title bar's app-region:drag stays active
-     under this overlay, making the top ~48px strip (workflow picker, rename input, Save)
-     drag the window instead of clicking. no-drag punches the hole. */
+     under this overlay, making the top titlebar-height strip (workflow picker, rename input,
+     Save) drag the window instead of clicking. no-drag punches the hole. */
   -webkit-app-region: no-drag;
 }
 .rpt-wfe-overlay-header {
@@ -1171,13 +1171,14 @@
   align-items: center;
   gap: 8px;
   padding: 6px 12px;
-  /* Match the titleBarOverlay strip height (main/index.ts:43: 48px) so EVERYTHING below
-     the header — canvas, Memory sheet — starts clear of the native caption zone; without
-     this the sheet's own head (and its close button) rendered partly under the window
-     controls (owner report). */
-  min-height: 48px;
+  /* Match the titleBarOverlay strip height (--rpt-titlebar-h, paired with
+     TITLEBAR_OVERLAY_HEIGHT in main/index.ts) so EVERYTHING below the header — canvas, Memory
+     sheet — starts clear of the native caption zone; without this the sheet's own head (and its
+     close button) rendered partly under the window controls (owner report). Was a hardcoded 48px
+     that over-reserved by 4px and misaligned the header with the 44px strip. */
+  min-height: var(--rpt-titlebar-h);
   box-sizing: border-box;
-  /* The native window controls (titleBarOverlay, main/index.ts:43) paint ABOVE the DOM in
+  /* The native window controls (titleBarOverlay, main/index.ts) paint ABOVE the DOM in
      the top-right corner; without this reservation the header's right-most buttons sit
      under minimize/maximize/close (owner report). With Window Controls Overlay enabled,
      env(titlebar-area-*) describes the DOM-usable strip — the controls occupy everything
