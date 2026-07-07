@@ -18,6 +18,10 @@ import {
 } from '../../shared/workflow/compose'
 import { builtinRegistry } from './nodes/builtin'
 import { DEFAULT_GRAPH } from './nodes/builtin/defaultGraph'
+import {
+  buildDefaultMemoryDoc,
+  DEFAULT_MEMORY_SEED_MARKER
+} from './nodes/builtin/defaultMemoryTemplate'
 import { log } from './logService'
 import { getChat, getChatWorkflowId, removeWorkflowIdFromChats } from './chatService'
 // getWorkflowById + BUILTIN_WORKFLOW_ID live in the leaf workflowStore.ts (see its header comment
@@ -85,7 +89,97 @@ const ensureWorkflowsDir = (profileId: string): string => {
   return dir
 }
 
+// ── Default-memory seeding (agent & memory UX WP-C; plan §0.3 — the authoritative rule) ───────────
+//
+// The merged default doc ("Default": narrator + the Table memory group) is seeded LAZILY +
+// IDEMPOTENTLY at the listWorkflows read entry point, following the seedBuiltinPacks precedent
+// (agentPackService.ts) — main has no single "profile selected" seam, so the entry point that
+// surfaces workflows is where per-profile ensure-work happens. Covers new profiles and existing
+// profiles the first time they open any workflow UI after update, with no separate migration hook.
+//
+// DELIBERATE DEVIATION from plan §0.3 ("list + resolve"): seeding is NOT hooked into
+// resolveWorkflowDoc. Resolve sits on the turn/headless hot path; seeding there would silently
+// switch the RESOLVED doc out from under a running chat on the first turn after update, and it
+// breaks the parity constraint — the generateParity suite (and a dozen generation suites) run the
+// REAL workflowService against partially-mocked services, and a resolve-time seed would swap
+// DEFAULT_GRAPH for the seeded doc under them ("generateParity suite untouched and green" is a
+// WP-C acceptance bound). The list entry point covers every UI path (workflow view, editor,
+// selection dropdowns); a profile that never opens workflow UI keeps today's builtin behavior
+// until it does — the conservative choice.
+//
+//  · Idempotence marker: the seeded doc carries `meta.seeded = 'default-memory-v1'` — "a doc with
+//    this marker exists" (survives rename/edit; deletion is respected via the tombstone below).
+//  · Seed condition: no doc carries the marker AND no existing user doc contains a `table.apply`
+//    or `agent.llm` node (the memory-writing surface — the spec's "no user-created docs reference
+//    memory" made concrete) AND the marker is not tombstoned.
+//  · Selection: after seeding, `selection.global` is set to the new doc id ONLY if currently
+//    null/unset — never stomps an explicit user choice.
+//  · Deletion tombstone: deleteWorkflow records a deleted doc's `meta.seeded` marker in
+//    `_selection.json` (`seededTombstones`), and the seed condition honors it — so a deliberately
+//    deleted seed never comes back on the next launch.
+
+/** The node types whose presence in a user doc means "this profile already references memory"
+ *  (plan §0.3): the memory-writing surface. */
+const MEMORY_NODE_TYPES = new Set(['table.apply', 'agent.llm'])
+
+/** Per-profile per-process guard (the seededProfiles idiom) — the condition is evaluated once per
+ *  profile per process; the on-disk marker/tombstone carry idempotence across restarts. */
+const memorySeedCheckedProfiles = new Set<string>()
+
+/** Production default: seeding on. Tests that pin PRE-SEED behavior (selection mechanics, builtin
+ *  fallback) disable it explicitly — the setEnabledFragmentsProvider seam precedent. */
+let memorySeedingEnabled = true
+
+/** Enable/disable lazy default-memory seeding (tests only; omit the arg to restore the default). */
+export const setMemorySeedingEnabled = (enabled: boolean = true): void => {
+  memorySeedingEnabled = enabled
+}
+
+/** Reset the per-process seed guard (tests only — lets a test re-evaluate the seed condition for a
+ *  profile, e.g. to assert the deletion tombstone holds "across restarts"). */
+export const resetMemorySeedGuardForTest = (): void => {
+  memorySeedCheckedProfiles.clear()
+}
+
+/** Evaluate the seed condition for a profile and seed the "Default" doc when it holds (lazy,
+ *  idempotent, fail-soft — a seeding failure must never break a list/resolve read). */
+const seedDefaultMemoryWorkflow = (profileId: string): void => {
+  if (!memorySeedingEnabled) return
+  if (memorySeedCheckedProfiles.has(profileId)) return
+  // Mark BEFORE the work: a failed attempt logs and does not retry every read this process.
+  memorySeedCheckedProfiles.add(profileId)
+  try {
+    const dir = ensureWorkflowsDir(profileId)
+    const selection = getSelection(profileId)
+    if (selection.seededTombstones?.includes(DEFAULT_MEMORY_SEED_MARKER)) return
+    for (const file of listFilesSync(dir)) {
+      if (!file.endsWith('.json') || file.startsWith('_')) continue
+      const data = readJsonSync<WorkflowDoc>(path.join(dir, file))
+      if (!data) continue
+      // A doc already carries the marker (renamed/edited seeds included) → nothing to do.
+      if ((data.meta as Record<string, unknown> | undefined)?.seeded === DEFAULT_MEMORY_SEED_MARKER)
+        return
+      // An existing user doc already references memory → this profile opted into its own setup.
+      if (Array.isArray(data.nodes) && data.nodes.some((n) => MEMORY_NODE_TYPES.has(n.type))) return
+    }
+    const result = createWorkflowFromDoc(profileId, buildDefaultMemoryDoc())
+    if (!result.ok) {
+      log('error', `seedDefaultMemoryWorkflow: template failed the save gate — ${result.error}`)
+      return
+    }
+    // Select globally ONLY when nothing is selected — never stomp an explicit user choice.
+    if (getSelection(profileId).global == null) setGlobalWorkflow(profileId, result.id)
+    log('info', `seeded default memory workflow ${result.id} for profile ${profileId}`)
+  } catch (err) {
+    log(
+      'error',
+      `seedDefaultMemoryWorkflow failed for profile ${profileId} — ${err instanceof Error ? err.message : String(err)}`
+    )
+  }
+}
+
 export const listWorkflows = (profileId: string): WorkflowSummary[] => {
+  seedDefaultMemoryWorkflow(profileId)
   const dir = ensureWorkflowsDir(profileId)
   const out: WorkflowSummary[] = []
   for (const file of listFilesSync(dir)) {
@@ -207,6 +301,10 @@ export const cloneWorkflow = (profileId: string, sourceId: string): WorkflowSumm
 export interface WorkflowSelection {
   global: string | null
   worlds: Record<string, string>
+  /** Agent & memory UX (WP-C; plan §0.3): seed markers of DELETED seeded docs. A marker recorded
+   *  here is never re-seeded (deletion is a respected user choice, surviving restarts). Optional +
+   *  additive — pre-WP-C sidecars simply lack it. */
+  seededTombstones?: string[]
 }
 
 /** Read the selection sidecar, defaulting to the empty selection when absent/unparseable. */
@@ -215,7 +313,11 @@ export const getSelection = (profileId: string): WorkflowSelection => {
   const data = readJsonSync<WorkflowSelection>(selectionPath(profileId))
   return {
     global: data?.global ?? null,
-    worlds: data && typeof data.worlds === 'object' && data.worlds ? data.worlds : {}
+    worlds: data && typeof data.worlds === 'object' && data.worlds ? data.worlds : {},
+    // Present only when the sidecar carries it (keeps the pre-WP-C shape for old profiles).
+    ...(Array.isArray(data?.seededTombstones) && data.seededTombstones.length > 0
+      ? { seededTombstones: data.seededTombstones.filter((t): t is string => typeof t === 'string') }
+      : {})
   }
 }
 
@@ -347,6 +449,10 @@ export const deleteWorkflow = (profileId: string, id: string): boolean => {
   if (id === BUILTIN_WORKFLOW_ID) return false
   const p = workflowPath(profileId, id)
   if (!fs.existsSync(p)) return false
+  // Read the seed marker BEFORE unlinking (WP-C; plan §0.3): deleting a seeded doc tombstones its
+  // marker in the selection sidecar so the lazy seeder never re-seeds it on a later launch.
+  const doomed = readJsonSync<WorkflowDoc>(p)
+  const seedMarker = (doomed?.meta as Record<string, unknown> | undefined)?.seeded
   fs.unlinkSync(p)
   removeWorkflowIdFromChats(profileId, id)
   const selection = getSelection(profileId)
@@ -359,8 +465,17 @@ export const deleteWorkflow = (profileId: string, id: string): boolean => {
       changed = true
     }
   }
+  let tombstones = selection.seededTombstones
+  if (typeof seedMarker === 'string' && seedMarker && !tombstones?.includes(seedMarker)) {
+    tombstones = [...(tombstones ?? []), seedMarker]
+    changed = true
+  }
   if (changed)
-    writeSelection(profileId, { global: selection.global === id ? null : selection.global, worlds })
+    writeSelection(profileId, {
+      global: selection.global === id ? null : selection.global,
+      worlds,
+      ...(tombstones && tombstones.length > 0 ? { seededTombstones: tombstones } : {})
+    })
   return true
 }
 

@@ -1,7 +1,8 @@
 # Workflow module format — the agent UI contract
 
 **Status:** ✅ contract surface built (agent & memory UX WP-A); ✅ `control.mode` node + engine
-`wiredInputs` (WP-B). Living doc — edit in place.
+`wiredInputs` (WP-B); ✅ seeded "Default" memory doc + open-slot convention (WP-C). Living doc —
+edit in place.
 
 A workflow **module** is a reusable slab of a workflow graph: a named group of in-place nodes, its
 internal edges, and the settings it exposes. It ships as a `.rptmodule` file
@@ -99,6 +100,29 @@ behind one exposed enum. Lives in `src/main/services/nodes/builtin/controlNodes.
   carries `wiredInputs: string[]` — the input-port names with ≥1 incoming edge, live or dead —
   supplied at the single run call site (`workflowEngine.ts`). This is how a node distinguishes
   "wired but not fired" from "not wired at all". Additive: no other built-in reads it.
+
+## The seeded "Default" doc + the open-slot convention (WP-C)
+
+Every profile is lazily seeded with an ordinary, EDITABLE workflow doc named **"Default"**: the
+narrator spine plus a collapsed **"Table memory"** group (`buildDefaultMemoryDoc`,
+`src/main/services/nodes/builtin/defaultMemoryTemplate.ts`; seeding rule in
+`src/main/services/workflowService.ts` `seedDefaultMemoryWorkflow`). The code builtin
+`DEFAULT_GRAPH` stays untouched as the invisible fallback.
+
+- **Seeding rule** (plan §0.3): lazy at the `listWorkflows` entry point; idempotent via the
+  `meta.seeded = 'default-memory-v1'` marker (survives rename/edit); skipped when any user doc
+  already contains `table.apply` or `agent.llm`; the global selection is set to the seeded doc only
+  when nothing was selected; deleting the seeded doc records the marker in `_selection.json`
+  `seededTombstones` so it never comes back. Ships with mode `off` (safe default — no side LLM
+  calls until the user configures a table template and flips the mode).
+- **The open-slot convention for imported memory systems** (spec §3.2): the seeded doc's
+  `control.mode` uses `when1` (cadence trigger) and `when2` (backlog state trigger); **`when3` and
+  `when4` are deliberately left unwired.** An imported memory/agent module joins the mutual
+  exclusion by (1) wiring its own trigger's `fired` into a free slot and (2) adding a matching
+  option `{ key, label? }` to the mode's `options` — options map to slots in order
+  (`options[i] ↔ when{i+1}`). Pure wiring; no app code. The `off` option deliberately has NO wired
+  slot — selecting it dead-ends the chain (the WP-B firing rule), which is the master memory
+  off-switch.
 
 ### `isTrigger` surfaced through the catalog
 
