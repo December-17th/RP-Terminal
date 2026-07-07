@@ -24,6 +24,15 @@ import ModuleImportSheet, { type ModuleInspectReport } from './ModuleImportSheet
 
 const BUILTIN_WORKFLOW_ID = 'default'
 
+/** RF-03: true when the event target is a text-entry surface, so canvas keyboard shortcuts (undo /
+ *  redo) don't hijack typing in a config field / rename input. */
+const inEditable = (target: EventTarget | null): boolean =>
+  target instanceof HTMLElement &&
+  (target.tagName === 'INPUT' ||
+    target.tagName === 'TEXTAREA' ||
+    target.tagName === 'SELECT' ||
+    target.isContentEditable)
+
 /** Renders `status` translated when it matches a known workflowEditor.* key (including the
  *  connect.* rejection reasons the store writes as `connect.<reason>`); otherwise shows the raw
  *  string as-is (save() writes raw IPC error text into status on failure). */
@@ -75,6 +84,11 @@ export default function WorkflowEditorView({
   const selectedNodeIds = useWorkflowEditorStore((s) => s.selectedNodeIds)
   const groupSelection = useWorkflowEditorStore((s) => s.groupSelection)
   const insertModule = useWorkflowEditorStore((s) => s.insertModule)
+  // RF-03: undo/redo + derived enablement (plain length reads; the store keeps past/future).
+  const undo = useWorkflowEditorStore((s) => s.undo)
+  const redo = useWorkflowEditorStore((s) => s.redo)
+  const canUndo = useWorkflowEditorStore((s) => s.past.length > 0)
+  const canRedo = useWorkflowEditorStore((s) => s.future.length > 0)
   const canGroup = useMemo(() => {
     if (selectedNodeIds.length < 2) return false
     const grouped = new Set((doc?.groups ?? []).flatMap((g) => g.nodeIds))
@@ -179,6 +193,32 @@ export default function WorkflowEditorView({
     setRefreshToken((n) => n + 1)
   }
 
+  // RF-03: canvas keyboard shortcuts (the view only mounts while the overlay is open). Ctrl/Cmd+S
+  // saves (always swallowed so the browser Save dialog never fires); undo/redo fire only when focus
+  // is NOT in a text field (typing an undo-shortcut in a config box must stay text-editing).
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent): void => {
+      if (!(e.ctrlKey || e.metaKey)) return
+      const key = e.key.toLowerCase()
+      if (key === 's') {
+        e.preventDefault()
+        if (!readOnly && dirty) void onSave()
+        return
+      }
+      if (inEditable(e.target)) return
+      if (key === 'z' && !e.shiftKey) {
+        e.preventDefault()
+        undo()
+      } else if ((key === 'z' && e.shiftKey) || key === 'y') {
+        e.preventDefault()
+        redo()
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- onSave is a fresh closure each render; readOnly/dirty/undo/redo are the meaningful deps
+  }, [readOnly, dirty, undo, redo])
+
   return (
     <div
       className="rpt-workflow-editor"
@@ -245,6 +285,29 @@ export default function WorkflowEditorView({
           style={{ fontSize: 12.5 }}
         >
           {t('workflowEditor.save')}
+        </button>
+
+        {/* RF-03: undo / redo. History is session-agnostic, so shown in both workflow and fragment
+            sessions. Disabled off the store's past/future depth; the keyboard shortcuts do the same. */}
+        <button
+          type="button"
+          disabled={!canUndo}
+          onClick={() => undo()}
+          title={`${t('workflowEditor.undo')} (Ctrl+Z)`}
+          aria-label={t('workflowEditor.undo')}
+          style={{ fontSize: 12.5 }}
+        >
+          ↶
+        </button>
+        <button
+          type="button"
+          disabled={!canRedo}
+          onClick={() => redo()}
+          title={`${t('workflowEditor.redo')} (Ctrl+Shift+Z)`}
+          aria-label={t('workflowEditor.redo')}
+          style={{ fontSize: 12.5 }}
+        >
+          ↷
         </button>
 
         {dirty && (

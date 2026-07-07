@@ -3,10 +3,20 @@
 // useUiStore.openWorkflowEditor/closeWorkflowEditor; the editor view inside is unchanged.
 import React from 'react'
 import { useUiStore } from '../../stores/uiStore'
+import { useToastStore } from '../../stores/toastStore'
+import { useWorkflowEditorStore } from '../../stores/workflowEditorStore'
 import { useT } from '../../i18n'
 import { useWcvSuppression } from '../useWcvSuppression'
 import WorkflowEditorView from './WorkflowEditorView'
 import { MemoryPane } from '../workspace/MemoryPane'
+
+/** RF-03: mirrors WorkflowEditorView's editable-target test (Esc must blur a field, not close). */
+const inEditable = (target: EventTarget | null): boolean =>
+  target instanceof HTMLElement &&
+  (target.tagName === 'INPUT' ||
+    target.tagName === 'TEXTAREA' ||
+    target.tagName === 'SELECT' ||
+    target.isContentEditable)
 
 export function WorkflowEditorOverlay({
   profileId
@@ -15,6 +25,7 @@ export function WorkflowEditorOverlay({
 }): React.JSX.Element | null {
   const open = useUiStore((s) => s.workflowEditorOpen)
   const close = useUiStore((s) => s.closeWorkflowEditor)
+  const pushToast = useToastStore((s) => s.push)
   const t = useT()
 
   // WP6.4b: memory configuration home. A right-side sheet (the AgentPackDetail side-panel pattern)
@@ -31,12 +42,24 @@ export function WorkflowEditorOverlay({
   useWcvSuppression(open)
   React.useEffect(() => {
     if (!open) return
+    // RF-03: Esc no longer closes unconditionally. In a text field it blurs (so Esc means "leave
+    // this field", not "slam the editor shut"); with unsaved changes it toasts a save reminder and
+    // stays open; only a clean canvas closes on Esc. The ✕ button remains an unconditional close.
     const onKey = (e: KeyboardEvent): void => {
-      if (e.key === 'Escape') close()
+      if (e.key !== 'Escape') return
+      if (inEditable(e.target)) {
+        ;(e.target as HTMLElement).blur()
+        return
+      }
+      if (useWorkflowEditorStore.getState().dirty) {
+        pushToast(t('workflowEditor.escUnsaved'))
+        return
+      }
+      close()
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [open, close])
+  }, [open, close, pushToast, t])
 
   if (!open) return null
 

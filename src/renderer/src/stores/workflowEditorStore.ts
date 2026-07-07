@@ -44,6 +44,16 @@ export interface WorkflowSummary {
 
 const BUILTIN_WORKFLOW_ID = 'default'
 
+/** One undo/redo checkpoint (RF-03): a snapshot of the editable triple. References are shared
+ *  structurally (a mutation replaces the array/doc, never mutates in place) so a snapshot is cheap. */
+interface HistEntry {
+  nodes: EditorNode[]
+  edges: EditorEdge[]
+  doc: WorkflowDoc | null
+}
+
+const HISTORY_CAP = 50
+
 /** What kind of artifact the editor session is editing (agent-packs plan WP4.4). `'workflow'` is the
  *  Normal-mode default: `currentId` is a workflow file id, save routes to `saveWorkflow`. `'fragment'`
  *  is a pack-fragment session: `currentId`/`fragmentPackId` is a pack id, the doc is that pack's stored
@@ -90,6 +100,19 @@ interface WorkflowEditorState {
    *  selection — selecting a group clears node selection and vice versa. */
   selectedGroupId: string | null
   status: string | null
+  /** RF-03: undo/redo ring. `past` holds prior {nodes,edges,doc} snapshots (oldest dropped past
+   *  HISTORY_CAP), `future` the ones undone-away, `lastHistKey` the coalescing key of the most
+   *  recent push (so per-keystroke / per-drag-tick mutations collapse into one step). */
+  past: HistEntry[]
+  future: HistEntry[]
+  lastHistKey: string | null
+  /** RF-03: restore the previous / next snapshot. No-op when the respective stack is empty. */
+  undo(): void
+  redo(): void
+  /** RF-03: canvas drag hooks. `snapshotForDrag` pushes ONE coalesced 'drag' checkpoint before a
+   *  drag's first position tick; `endDrag` clears the coalescing key so the next drag is a new step. */
+  snapshotForDrag(): void
+  endDrag(): void
   init(profileId: string): Promise<void>
   open(profileId: string, id: string): Promise<void>
   /** Open a pack's fragment as an EDITABLE fragment session (agent-packs plan WP4.4). Loads the
@@ -159,6 +182,18 @@ const editorNodeTypeMap = (nodeTypes: NodeTypeInfo[]): Map<string, EditorNodeTyp
   new Map(nodeTypes.map((t) => [t.type, t]))
 
 export const useWorkflowEditorStore = create<WorkflowEditorState>((set, get) => {
+  /** RF-03: push the CURRENT {nodes,edges,doc} onto `past` BEFORE a mutation runs. A repeated
+   *  non-null `key` coalesces (skip the push) so per-keystroke/per-drag-tick mutations form ONE undo
+   *  step. Any push clears `future` and truncates `past` to HISTORY_CAP (oldest dropped). Not on the
+   *  public interface — the mutating actions call it internally. */
+  const pushHistory = (key?: string): void => {
+    const { past, lastHistKey, nodes, edges, doc } = get()
+    if (key != null && key === lastHistKey) return
+    const next = [...past, { nodes, edges, doc }]
+    if (next.length > HISTORY_CAP) next.splice(0, next.length - HISTORY_CAP)
+    set({ past: next, future: [], lastHistKey: key ?? null })
+  }
+
   /** Recompute `errors` from the current draft doc + set `dirty: true`. The one place every
    *  mutation routes through, so validation and dirty-tracking can never drift apart. */
   const revalidate = (): void => {
@@ -171,6 +206,26 @@ export const useWorkflowEditorStore = create<WorkflowEditorState>((set, get) => 
       dirty: true
     })
   }
+
+  /** RF-03: after an undo/redo restore, drop any selection whose id no longer exists in the
+   *  restored graph (a node/group brought back or removed by the swap). Mirrors the mutating
+   *  actions' own selection-clearing. */
+  const pruneSelection = (): void => {
+    const { nodes, doc, selectedNodeId, selectedNodeIds, selectedGroupId } = get()
+    const nodeIds = new Set(nodes.map((n) => n.id))
+    const groupIds = new Set((doc?.groups ?? []).map((g) => g.id))
+    const patch: Partial<WorkflowEditorState> = {}
+    if (selectedNodeId && !nodeIds.has(selectedNodeId)) patch.selectedNodeId = null
+    const keptIds = selectedNodeIds.filter((id) => nodeIds.has(id))
+    if (keptIds.length !== selectedNodeIds.length) patch.selectedNodeIds = keptIds
+    if (selectedGroupId && !groupIds.has(selectedGroupId)) patch.selectedGroupId = null
+    if (Object.keys(patch).length > 0) set(patch)
+  }
+
+  /** RF-03: recompute `errors` from the restored graph after an undo/redo. Same validation the
+   *  mutating actions run (which live-validate), so `errors` never lags the visible graph. Also
+   *  marks dirty — an undo past a save is itself an unsaved edit. */
+  const restoreValidate = (): void => revalidate()
 
   /** WP6.3: the doc's current groups (empty when the doc has none / no doc). */
   const currentGroups = (): GroupDecl[] => get().doc?.groups ?? []
@@ -203,6 +258,51 @@ export const useWorkflowEditorStore = create<WorkflowEditorState>((set, get) => 
     selectedNodeIds: [],
     selectedGroupId: null,
     status: null,
+    past: [],
+    future: [],
+    lastHistKey: null,
+
+    /** RF-03: swap current {nodes,edges,doc} with the top of `past`; the displaced state goes to
+     *  `future` for redo. Marks dirty (an undo is an edit), clears the coalescing key, drops any
+     *  selection whose id no longer exists, and revalidates so `errors` tracks the restored graph. */
+    undo: () => {
+      const { past, future, nodes, edges, doc } = get()
+      if (past.length === 0) return
+      const prev = past[past.length - 1]
+      set({
+        past: past.slice(0, -1),
+        future: [...future, { nodes, edges, doc }],
+        nodes: prev.nodes,
+        edges: prev.edges,
+        doc: prev.doc,
+        lastHistKey: null
+      })
+      pruneSelection()
+      restoreValidate()
+    },
+
+    redo: () => {
+      const { past, future, nodes, edges, doc } = get()
+      if (future.length === 0) return
+      const nextEntry = future[future.length - 1]
+      set({
+        future: future.slice(0, -1),
+        past: [...past, { nodes, edges, doc }],
+        nodes: nextEntry.nodes,
+        edges: nextEntry.edges,
+        doc: nextEntry.doc,
+        lastHistKey: null
+      })
+      pruneSelection()
+      restoreValidate()
+    },
+
+    snapshotForDrag: () => {
+      if (get().readOnly) return
+      pushHistory('drag')
+    },
+
+    endDrag: () => set({ lastHistKey: null }),
 
     init: async (profileId) => {
       const [nodeTypes, workflows] = await Promise.all([
@@ -232,7 +332,10 @@ export const useWorkflowEditorStore = create<WorkflowEditorState>((set, get) => 
         selectedNodeId: null,
         selectedNodeIds: [],
         selectedGroupId: null,
-        status: null
+        status: null,
+        past: [],
+        future: [],
+        lastHistKey: null
       })
     },
 
@@ -260,13 +363,17 @@ export const useWorkflowEditorStore = create<WorkflowEditorState>((set, get) => 
         selectedNodeId: null,
         selectedNodeIds: [],
         selectedGroupId: null,
-        status: null
+        status: null,
+        past: [],
+        future: [],
+        lastHistKey: null
       })
       return { ok: true }
     },
 
     addNode: (type, position, config) => {
       if (get().readOnly) return
+      pushHistory()
       const { nodes } = get()
       const base = type.split('.').pop() || type
       const existingIds = new Set(nodes.map((n) => n.id))
@@ -294,6 +401,7 @@ export const useWorkflowEditorStore = create<WorkflowEditorState>((set, get) => 
         set({ status: `connect.${verdict.reason}` })
         return
       }
+      pushHistory()
       const newEdge: EditorEdge = {
         id: edgeId({ from, to }),
         source: from.node,
@@ -307,12 +415,14 @@ export const useWorkflowEditorStore = create<WorkflowEditorState>((set, get) => 
 
     removeEdge: (edgeIdToRemove) => {
       if (get().readOnly) return
+      pushHistory()
       set({ edges: get().edges.filter((e) => e.id !== edgeIdToRemove) })
       revalidate()
     },
 
     removeNode: (id) => {
       if (get().readOnly) return
+      pushHistory()
       // WP6.3: strip the id from any group, then dissolve a group that drops below 2 members (its
       // exposures go with it — acceptable). Groups live on doc.groups; rebuild it here.
       const groups = currentGroups()
@@ -345,6 +455,7 @@ export const useWorkflowEditorStore = create<WorkflowEditorState>((set, get) => 
 
     setNodeConfig: (id, config) => {
       if (get().readOnly) return
+      pushHistory('cfg:' + id)
       set({
         nodes: get().nodes.map((n) => (n.id === id ? { ...n, config } : n))
       })
@@ -353,6 +464,7 @@ export const useWorkflowEditorStore = create<WorkflowEditorState>((set, get) => 
 
     setNodeDisabled: (id, disabled) => {
       if (get().readOnly) return
+      pushHistory()
       set({
         nodes: get().nodes.map((n) => {
           if (n.id !== id) return n
@@ -368,6 +480,7 @@ export const useWorkflowEditorStore = create<WorkflowEditorState>((set, get) => 
 
     setNodePanel: (id, panel) => {
       if (get().readOnly) return
+      pushHistory()
       set({
         nodes: get().nodes.map((n) => {
           if (n.id !== id) return n
@@ -384,12 +497,14 @@ export const useWorkflowEditorStore = create<WorkflowEditorState>((set, get) => 
     setDocName: (name) => {
       const { readOnly, doc } = get()
       if (readOnly || !doc) return
+      pushHistory('name')
       // Name is doc metadata, not graph structure — no revalidation needed, just dirty.
       set({ doc: { ...doc, name }, dirty: true })
     },
 
     setMainOutput: (id) => {
       if (get().readOnly) return
+      pushHistory()
       set({
         nodes: get().nodes.map((n) => ({
           ...n,
@@ -422,6 +537,7 @@ export const useWorkflowEditorStore = create<WorkflowEditorState>((set, get) => 
       if (get().readOnly) return null
       const { doc, nodes, edges } = get()
       if (!doc || module.nodes.length === 0) return null
+      pushHistory()
 
       // Remint EVERY node id (the addNode idiom: base = type tail, next free `base-n`), tracking the
       // ids minted so far so two members of the same type can't collide. `used` seeds with the doc's
@@ -506,6 +622,7 @@ export const useWorkflowEditorStore = create<WorkflowEditorState>((set, get) => 
       // Every selected node must be ungrouped (already-grouped nodes refuse the whole selection so a
       // partial group can't form).
       if (selectedNodeIds.some((id) => grouped.has(id))) return
+      pushHistory()
       const id = nextGroupId(groups)
       const name = `Module ${groups.length + 1}`
       const group: GroupDecl = { id, name, nodeIds: [...selectedNodeIds] }
@@ -515,17 +632,20 @@ export const useWorkflowEditorStore = create<WorkflowEditorState>((set, get) => 
 
     ungroup: (groupId) => {
       if (get().readOnly) return
+      pushHistory()
       setGroups(currentGroups().filter((g) => g.id !== groupId))
       if (get().selectedGroupId === groupId) set({ selectedGroupId: null })
     },
 
     renameGroup: (groupId, name) => {
       if (get().readOnly) return
+      pushHistory('grpname:' + groupId)
       setGroups(currentGroups().map((g) => (g.id === groupId ? { ...g, name } : g)))
     },
 
     toggleGroupCollapsed: (groupId) => {
       if (get().readOnly) return
+      pushHistory()
       setGroups(
         currentGroups().map((g) => (g.id === groupId ? { ...g, collapsed: !g.collapsed } : g))
       )
@@ -550,6 +670,7 @@ export const useWorkflowEditorStore = create<WorkflowEditorState>((set, get) => 
 
     exposeSetting: (groupId, entry) => {
       if (get().readOnly) return
+      pushHistory()
       setGroups(
         currentGroups().map((g) => {
           if (g.id !== groupId) return g
@@ -564,6 +685,7 @@ export const useWorkflowEditorStore = create<WorkflowEditorState>((set, get) => 
 
     unexposeSetting: (groupId, node, path) => {
       if (get().readOnly) return
+      pushHistory()
       setGroups(
         currentGroups().map((g) => {
           if (g.id !== groupId) return g

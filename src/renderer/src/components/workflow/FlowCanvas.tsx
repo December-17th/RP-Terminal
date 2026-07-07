@@ -344,6 +344,12 @@ function FlowCanvasInner({
   const setSelectedNodeIds = useWorkflowEditorStore((s) => s.setSelectedNodeIds)
   const selectGroup = useWorkflowEditorStore((s) => s.selectGroup)
   const moveGroup = useWorkflowEditorStore((s) => s.moveGroup)
+  const snapshotForDrag = useWorkflowEditorStore((s) => s.snapshotForDrag)
+  const endDrag = useWorkflowEditorStore((s) => s.endDrag)
+  // RF-03: ids (nodes AND modules) currently mid-drag. A rising edge (id enters the set) pushes
+  // ONE undo checkpoint before the drag's first move; when the set drains, endDrag() closes the
+  // step so the next drag is a separate undo entry.
+  const draggingIds = React.useRef<Set<string>>(new Set())
   // Module drag: RF reports absolute positions per change; track each module's last position so a
   // drag becomes a delta routed to moveGroup (which shifts the hidden members). Keyed by group id.
   const moduleDragPos = React.useRef<Map<string, { x: number; y: number }>>(new Map())
@@ -558,6 +564,19 @@ function FlowCanvasInner({
     (changes: NodeChange<RFNode>[]) => {
       for (const change of changes) {
         if (change.type === 'position' && change.position) {
+          // RF-03: rising-edge undo checkpoint. On the first tick of a drag (dragging === true and
+          // this id not yet tracked) snapshot ONCE; when a drag ends (dragging false/undefined)
+          // untrack the id and, once nothing is dragging, close the undo step. Frame ids never drag.
+          if (!change.id.startsWith('frame:')) {
+            if (change.dragging === true) {
+              if (!draggingIds.current.has(change.id)) {
+                draggingIds.current.add(change.id)
+                snapshotForDrag()
+              }
+            } else if (draggingIds.current.delete(change.id) && draggingIds.current.size === 0) {
+              endDrag()
+            }
+          }
           // A collapsed MODULE drag: RF reports the module node's absolute position; convert to a
           // delta against its last-seen position and route to moveGroup (which shifts the hidden
           // members). Track the position so the next mid-drag change computes the next delta.
@@ -588,7 +607,7 @@ function FlowCanvasInner({
         }
       }
     },
-    [moveNode, removeNode, moveGroup, moduleIds]
+    [moveNode, removeNode, moveGroup, moduleIds, snapshotForDrag, endDrag]
   )
 
   // Multi-select sync (WP6.3): RF reports the selected NODE set (excludes modules/frames) via
