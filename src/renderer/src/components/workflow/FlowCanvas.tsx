@@ -8,6 +8,7 @@ import {
   Background,
   Controls,
   Handle,
+  MiniMap,
   Position,
   ReactFlow,
   ReactFlowProvider,
@@ -316,13 +317,18 @@ interface FlowCanvasProps {
   /** RF-01: fired after a manual trigger run completes, so the parent can bump its shared refresh
    *  token (refetches the RunDrawer + the trigger badges). */
   onManualRun?: () => void
+  /** RF-04: exposes a canvas API to the parent (which sits outside the ReactFlow context). Called once
+   *  on mount; `centerPosition` maps the canvas wrapper's bounding-rect center through
+   *  screenToFlowPosition, so the parent can insert modules/nodes at the viewport center. */
+  onReady?: (api: { centerPosition: () => { x: number; y: number } }) => void
 }
 
 function FlowCanvasInner({
   profileId,
   traceOverride,
   triggerRefreshToken,
-  onManualRun
+  onManualRun,
+  onReady
 }: FlowCanvasProps): React.JSX.Element {
   const t = useT()
   const pushToast = useToastStore((s) => s.push)
@@ -355,6 +361,20 @@ function FlowCanvasInner({
   const moduleDragPos = React.useRef<Map<string, { x: number; y: number }>>(new Map())
 
   const { screenToFlowPosition } = useReactFlow()
+
+  // RF-04: the canvas wrapper, so centerPosition() can map its bounding-rect center to flow coords
+  // for the parent (which lives outside the ReactFlow context and can't call screenToFlowPosition).
+  const wrapperRef = React.useRef<HTMLDivElement>(null)
+  React.useEffect(() => {
+    onReady?.({
+      centerPosition: () => {
+        const rect = wrapperRef.current?.getBoundingClientRect()
+        if (!rect) return { x: 220, y: 200 }
+        return screenToFlowPosition({ x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 })
+      }
+    })
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- register once on mount; screenToFlowPosition/onReady are stable enough for a one-shot handle
+  }, [])
 
   const typeInfoMap = useMemo(() => {
     return new Map(nodeTypeList.map((t) => [t.type, t]))
@@ -687,7 +707,12 @@ function FlowCanvasInner({
   )
 
   return (
-    <div className="rpt-workflow-editor" onDrop={handleDrop} onDragOver={handleDragOver}>
+    <div
+      className="rpt-workflow-editor"
+      ref={wrapperRef}
+      onDrop={handleDrop}
+      onDragOver={handleDragOver}
+    >
       <ReactFlow
         nodes={rfNodes}
         edges={rfEdges}
@@ -706,6 +731,7 @@ function FlowCanvasInner({
       >
         <Background />
         <Controls showInteractive={false} />
+        <MiniMap pannable zoomable className="rpt-wfe-minimap" />
       </ReactFlow>
     </div>
   )

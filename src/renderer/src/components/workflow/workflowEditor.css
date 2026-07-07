@@ -10,6 +10,26 @@
   background: var(--rpt-bg-primary);
 }
 
+/* ---------- Palette search (RF-04) ---------- */
+.rpt-workflow-editor .rpt-wfe-palette-search {
+  width: 100%;
+  box-sizing: border-box;
+  margin-bottom: 6px;
+  padding: 4px 7px;
+  font-size: 12px;
+  color: var(--rpt-text-primary);
+  background: var(--rpt-bg-elevated);
+  border: 1px solid var(--rpt-border);
+  border-radius: 6px;
+}
+.rpt-workflow-editor .rpt-wfe-palette-cat {
+  font-size: 10.5px;
+  color: var(--rpt-text-tertiary);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin: 8px 0 4px;
+}
+
 /* ---------- Background (dotted grid) ---------- */
 .rpt-workflow-editor .react-flow__background {
   background-color: var(--rpt-bg-primary);
@@ -331,10 +351,16 @@
   fill: var(--rpt-text-primary);
 }
 
-/* ---------- Minimap (unused today, themed in case a later task enables it) ---------- */
+/* ---------- Minimap (RF-04): token-driven so it stays legible across all three themes. ---------- */
 .rpt-workflow-editor .react-flow__minimap {
   background: var(--rpt-bg-secondary);
   border: 1px solid var(--rpt-border);
+}
+.rpt-workflow-editor .react-flow__minimap-node {
+  fill: var(--rpt-bg-tertiary);
+}
+.rpt-workflow-editor .react-flow__minimap-mask {
+  fill: rgb(0 0 0 / 0.35);
 }
 
 /* ---------- Selection box ---------- */

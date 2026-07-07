@@ -21,8 +21,16 @@ import FlowCanvas from './FlowCanvas'
 import NodeConfigPanel from './NodeConfigPanel'
 import RunDrawer from './RunDrawer'
 import ModuleImportSheet, { type ModuleInspectReport } from './ModuleImportSheet'
+import { groupPalette } from './paletteModel'
 
 const BUILTIN_WORKFLOW_ID = 'default'
+
+/** RF-04: ±40px random offset so repeated click-to-add doesn't stack nodes exactly on top of one
+ *  another at the viewport center. */
+const jitter = (p: { x: number; y: number }): { x: number; y: number } => ({
+  x: p.x + (Math.random() - 0.5) * 80,
+  y: p.y + (Math.random() - 0.5) * 80
+})
 
 /** RF-03: true when the event target is a text-entry surface, so canvas keyboard shortcuts (undo /
  *  redo) don't hijack typing in a config field / rename input. */
@@ -84,6 +92,7 @@ export default function WorkflowEditorView({
   const selectedNodeIds = useWorkflowEditorStore((s) => s.selectedNodeIds)
   const groupSelection = useWorkflowEditorStore((s) => s.groupSelection)
   const insertModule = useWorkflowEditorStore((s) => s.insertModule)
+  const addNode = useWorkflowEditorStore((s) => s.addNode)
   // RF-03: undo/redo + derived enablement (plain length reads; the store keeps past/future).
   const undo = useWorkflowEditorStore((s) => s.undo)
   const redo = useWorkflowEditorStore((s) => s.redo)
@@ -96,6 +105,13 @@ export default function WorkflowEditorView({
   }, [selectedNodeIds, doc])
 
   const [showErrors, setShowErrors] = useState(false)
+  // RF-04: palette search query (substring over type id + localized title) and the canvas API handle
+  // (set once via FlowCanvas.onReady; lets this out-of-context view insert at the viewport center).
+  const [paletteQuery, setPaletteQuery] = useState('')
+  const canvasApi = React.useRef<{ centerPosition: () => { x: number; y: number } } | null>(null)
+  // A stable place to insert a click-added node: the canvas center when available, else a sane default.
+  const centerPosition = (): { x: number; y: number } =>
+    canvasApi.current?.centerPosition() ?? { x: 220, y: 200 }
   // WP6.5: the module-import review sheet. Null when closed; holds the inspection report while open.
   const [moduleReport, setModuleReport] = useState<ModuleInspectReport | null>(null)
 
@@ -177,7 +193,9 @@ export default function WorkflowEditorView({
       useToastStore.getState().push(t('workflowEditor.moduleImport.installFailed'))
       return
     }
-    insertModule(result.module, { x: 220, y: 200 })
+    // RF-04: insert at the viewport center via the canvas API (closes the parked "module insertion at
+    // viewport center" item); falls back to {x:220,y:200} before the canvas has reported ready.
+    insertModule(result.module, canvasApi.current?.centerPosition() ?? { x: 220, y: 200 })
     useToastStore.getState().push(t('workflowEditor.moduleImport.installed'))
   }
 
@@ -443,47 +461,70 @@ export default function WorkflowEditorView({
           >
             {t('workflowEditor.palette')}
           </div>
-          {nodeTypes.map((nt) => {
-            const title = tOpt(`workflowEditor.nodeTitle.${nt.type}`) || nt.title
-            const desc = tOpt(`workflowEditor.nodeDesc.${nt.type}`)
-            return (
-              <div
-                key={nt.type}
-                draggable
-                title={desc}
-                onDragStart={(e) => {
-                  e.dataTransfer.setData('application/rpt-node-type', nt.type)
-                  e.dataTransfer.effectAllowed = 'move'
-                }}
-                style={{
-                  border: '1px solid var(--rpt-border)',
-                  borderRadius: 6,
-                  padding: '5px 8px',
-                  marginBottom: 5,
-                  cursor: 'grab',
-                  background: 'var(--rpt-bg-elevated)'
-                }}
-              >
-                <div style={{ fontSize: 12, color: 'var(--rpt-text-primary)' }}>{title}</div>
-                <div style={{ fontSize: 10, color: 'var(--rpt-text-tertiary)' }}>{nt.type}</div>
-                {desc && (
+          {/* RF-04: substring search + categorized rendering. Same card markup + drag behavior as
+              before; added click-to-add at the (jittered) viewport center. */}
+          <input
+            type="text"
+            className="rpt-wfe-palette-search"
+            value={paletteQuery}
+            placeholder={t('workflowEditor.paletteSearch')}
+            onChange={(e) => setPaletteQuery(e.target.value)}
+          />
+          {groupPalette(
+            nodeTypes,
+            paletteQuery,
+            (nt) => tOpt(`workflowEditor.nodeTitle.${nt.type}`) || nt.title
+          ).map((group) => (
+            <React.Fragment key={group.prefix}>
+              <div className="rpt-wfe-palette-cat">
+                {tOpt(`workflowEditor.cat.${group.prefix}`) || group.prefix}
+              </div>
+              {group.items.map((nt) => {
+                const title = tOpt(`workflowEditor.nodeTitle.${nt.type}`) || nt.title
+                const desc = tOpt(`workflowEditor.nodeDesc.${nt.type}`)
+                return (
                   <div
+                    key={nt.type}
+                    draggable
+                    title={desc}
+                    onDragStart={(e) => {
+                      e.dataTransfer.setData('application/rpt-node-type', nt.type)
+                      e.dataTransfer.effectAllowed = 'move'
+                    }}
+                    onClick={() => {
+                      if (!readOnly) addNode(nt.type, jitter(centerPosition()))
+                    }}
                     style={{
-                      fontSize: 10,
-                      color: 'var(--rpt-text-secondary)',
-                      marginTop: 3,
-                      display: '-webkit-box',
-                      WebkitLineClamp: 2,
-                      WebkitBoxOrient: 'vertical',
-                      overflow: 'hidden'
+                      border: '1px solid var(--rpt-border)',
+                      borderRadius: 6,
+                      padding: '5px 8px',
+                      marginBottom: 5,
+                      cursor: 'grab',
+                      background: 'var(--rpt-bg-elevated)'
                     }}
                   >
-                    {desc}
+                    <div style={{ fontSize: 12, color: 'var(--rpt-text-primary)' }}>{title}</div>
+                    <div style={{ fontSize: 10, color: 'var(--rpt-text-tertiary)' }}>{nt.type}</div>
+                    {desc && (
+                      <div
+                        style={{
+                          fontSize: 10,
+                          color: 'var(--rpt-text-secondary)',
+                          marginTop: 3,
+                          display: '-webkit-box',
+                          WebkitLineClamp: 2,
+                          WebkitBoxOrient: 'vertical',
+                          overflow: 'hidden'
+                        }}
+                      >
+                        {desc}
+                      </div>
+                    )}
                   </div>
-                )}
-              </div>
-            )
-          })}
+                )
+              })}
+            </React.Fragment>
+          ))}
 
           {/* Reusable sub-graph packages the author can drop as one subgraph.call node,
               preconfigured with workflow_id (sub-graph nodes v1 plan §5). Excludes the doc
@@ -527,6 +568,10 @@ export default function WorkflowEditorView({
                             e.dataTransfer.setData('application/rpt-node-type', nodeType)
                             e.dataTransfer.setData('application/rpt-subgraph-id', w.id)
                             e.dataTransfer.effectAllowed = 'move'
+                          }}
+                          onClick={() => {
+                            // RF-04: click-to-add, mirroring the drop path's { workflow_id } config.
+                            if (!readOnly) addNode(nodeType, jitter(centerPosition()), { workflow_id: w.id })
                           }}
                           style={{
                             border: '1px solid var(--rpt-border)',
@@ -578,6 +623,9 @@ export default function WorkflowEditorView({
               traceOverride={replayTrace}
               triggerRefreshToken={refreshToken}
               onManualRun={() => setRefreshToken((n) => n + 1)}
+              onReady={(api) => {
+                canvasApi.current = api
+              }}
             />
           </div>
           {/* WP6.4a: the Run drawer — a collapsible strip along the bottom of the canvas column. */}
