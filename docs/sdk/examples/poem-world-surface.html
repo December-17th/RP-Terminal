@@ -59,8 +59,13 @@
   .npc-name { font-size: 12.5px; display: flex; align-items: center; gap: 6px; }
   .npc-name .role { color: var(--faint); font-size: 11px; }
   .npc-pact { color: var(--gold); font-size: 11px; font-family: var(--mono); }
+  /* 好感度 center-axis bar (v4 mock .npc-rel): center tick at 50%; positive fills rightward from the
+     axis, negative fills leftward in --ember. width = |好感度|/100 of the half (see affHalfPct). */
   .npc-rel { height: 4px; border-radius: 2px; background: rgba(0, 0, 0, .45); margin-top: 6px; overflow: hidden; position: relative; }
-  .npc-rel > i { display: block; height: 100%; background: var(--q-mythic); transition: width .35s ease; }
+  .npc-rel::before { content: ''; position: absolute; left: 50%; top: -1px; bottom: -1px; width: 1px; background: var(--line); }
+  .npc-rel > i { position: absolute; top: 0; bottom: 0; background: var(--q-mythic); transition: width .35s ease; }
+  .npc-rel > i.pos { left: 50%; }
+  .npc-rel > i.neg { right: 50%; background: var(--ember); }
   .npc-aff { font-family: var(--mono); font-size: 11px; color: var(--dim); margin-left: 6px; }
 
   /* 委托 */
@@ -115,7 +120,8 @@
     关系列表: {
       薇拉: { 在场: true, 职业: ['灰隐者'], 好感度: 64, 命定契约: true },
       恩里克: { 在场: true, 职业: ['见习骑士'], 好感度: 38, 命定契约: false },
-      赛琳: { 在场: false, 职业: ['吟游诗人'], 好感度: 20 }
+      赛琳: { 在场: true, 职业: ['吟游诗人'], 好感度: -46, 命定契约: false },
+      渡鸦: { 在场: true, 职业: ['密探'], 好感度: 0, 命定契约: false }
     },
     任务列表: {
       灰烬中的信使: { 状态: '进行中', 关注度: '高', 目标: '在宵禁前将薇拉的口信送抵北门守卫。', 进展: '已离开酒馆', 奖励: '声望 +10' },
@@ -127,8 +133,13 @@
   var num = function (v, d) { var n = Number(v); return isFinite(n) ? n : (d == null ? 0 : d) }
   var firstStr = function (a) { return Array.isArray(a) ? a.filter(Boolean).join(' · ') : (a || '') }
 
-  // 好感度 is -100..100; map to a 0..100 bar width
-  function affPct(v) { return Math.max(0, Math.min(100, (num(v) + 100) / 2)) }
+  // 好感度 is -100..100; the bar is a center-axis meter (0 = empty at the tick). The fill occupies
+  // |好感度|/100 of ITS HALF of the track, i.e. |v|/100 × 50% of the full width; positive extends
+  // right of the axis, negative extends left. Returns { pct, neg }.
+  function affFill(v) {
+    var n = Math.max(-100, Math.min(100, num(v)))
+    return { pct: Math.abs(n) / 2, neg: n < 0 }
+  }
 
   function worldState(SD) {
     SD = SD && typeof SD === 'object' ? SD : {}
@@ -168,7 +179,7 @@
             (m.role ? '<span class="role">' + esc(m.role) + '</span>' : '') +
             (m.pact ? '<span class="npc-pact">◈ 命定</span>' : '') +
             (m.aff != null ? '<span class="npc-aff">' + m.aff + '</span>' : '') + '</div>' +
-            (m.aff != null ? '<div class="npc-rel"><i style="width:' + affPct(m.aff) + '%"></i></div>' : '') +
+            (m.aff != null ? (function () { var f = affFill(m.aff); return '<div class="npc-rel"><i class="' + (f.neg ? 'neg' : 'pos') + '" style="width:' + f.pct + '%"></i></div>' })() : '') +
             '</span></div>'
         }).join('')
       : '<div class="empty">此刻无人同行</div>'
