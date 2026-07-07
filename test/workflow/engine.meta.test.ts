@@ -56,22 +56,25 @@ describe('runWorkflow — node meta + config', () => {
     seen.length = 0
   })
 
+  // Deliberate WP-B (agent-memory-ux) characterization update: NodeMeta now ALSO carries
+  // `wiredInputs` (the input-port names with ≥1 incoming edge — [] for these inputless nodes).
+  // The id/config behavior these tests pin is unchanged.
   it('passes the node id and raw config to run() when no schema is declared', async () => {
     const d = doc([{ id: 'e1', type: 'echoMeta', config: { a: 1 }, isMainOutput: true }], [])
     await runWorkflow(d, reg, ctx())
-    expect(seen).toEqual([{ id: 'e1', config: { a: 1 } }])
+    expect(seen).toEqual([{ id: 'e1', config: { a: 1 }, wiredInputs: [] }])
   })
 
   it('defaults config to {} when the instance has none', async () => {
     const d = doc([{ id: 'e1', type: 'echoMeta', isMainOutput: true }], [])
     await runWorkflow(d, reg, ctx())
-    expect(seen).toEqual([{ id: 'e1', config: {} }])
+    expect(seen).toEqual([{ id: 'e1', config: {}, wiredInputs: [] }])
   })
 
   it('parses config through configSchema (applying defaults)', async () => {
     const d = doc([{ id: 'n1', type: 'needsNumber', config: {}, isMainOutput: true }], [])
     await runWorkflow(d, reg, ctx())
-    expect(seen).toEqual([{ id: 'n1', config: { n: 7 } }])
+    expect(seen).toEqual([{ id: 'n1', config: { n: 7 }, wiredInputs: [] }])
   })
 
   it('an invalid config fails the node (pre-phase fatal), run() never called', async () => {

@@ -704,6 +704,7 @@ const en: Record<string, string> = {
   'workflowEditor.nodeTitle.control.if': 'If',
   'workflowEditor.nodeTitle.control.switch': 'Switch',
   'workflowEditor.nodeTitle.control.when': 'When',
+  'workflowEditor.nodeTitle.control.mode': 'Mode',
   'workflowEditor.nodeTitle.text.template': 'Text Template',
   'workflowEditor.nodeTitle.prompt.messages': 'Message List',
   'workflowEditor.nodeTitle.merge.messages': 'Merge Messages',
@@ -765,6 +766,8 @@ const en: Record<string, string> = {
     'Compares the input value against up to four configured case values (deep equality) and fires the first matching case Signal, or default when none match.',
   'workflowEditor.nodeDesc.control.when':
     'A single gate: fires its Signal when the predicate holds. The special “changed” operator fires only when the watched value differs from the last time it fired (remembered per chat) — e.g. “once per in-game month”.',
+  'workflowEditor.nodeDesc.control.mode':
+    'A mode selector: each option maps to one when slot in order (the first option to when1, the second to when2, …). fired passes through only the selected option’s slot — the other slots are dead ends, so the modes are mutually exclusive. An option whose slot is left unwired (e.g. “off”) selects nothing-runs; with no when slot wired at all the node fires unconditionally (a standalone config-driven gate). Also emits the selected key as Text.',
   'workflowEditor.nodeDesc.text.template':
     'Renders a text template. Context macros ({{user}}, {{getvar::…}}) and EJS run first (when a Context is wired), then {{in1}}–{{in4}} are replaced with the wired upstream values.',
   'workflowEditor.nodeDesc.prompt.messages':

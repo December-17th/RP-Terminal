@@ -8,7 +8,7 @@ import {
   applyState,
   outputWriteFloor
 } from './generationNodes'
-import { controlIf, controlSwitch, controlWhen } from './controlNodes'
+import { controlIf, controlSwitch, controlWhen, controlMode } from './controlNodes'
 import { textTemplate, promptMessages, mergeMessages, messagesTrim } from './messageNodes'
 import { mvuSet } from './mvuNodes'
 import { utilLog } from './utilNodes'
@@ -50,6 +50,7 @@ export const builtinRegistry = createRegistry([
   controlIf,
   controlSwitch,
   controlWhen,
+  controlMode,
   textTemplate,
   promptMessages,
   mergeMessages,

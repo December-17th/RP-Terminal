@@ -1,6 +1,7 @@
 # Workflow module format — the agent UI contract
 
-**Status:** ✅ contract surface built (agent & memory UX WP-A). Living doc — edit in place.
+**Status:** ✅ contract surface built (agent & memory UX WP-A); ✅ `control.mode` node + engine
+`wiredInputs` (WP-B). Living doc — edit in place.
 
 A workflow **module** is a reusable slab of a workflow graph: a named group of in-place nodes, its
 internal edges, and the settings it exposes. It ships as a `.rptmodule` file
@@ -65,8 +66,39 @@ An imported agent inherits this from its built-in node types — no author work.
 `{ path, optionsPath, keyField, labelField }` (`DynamicEnumHint`, `src/shared/workflow/types.ts`).
 Describes an enum config field whose options are **not** a static zod enum but live in a sibling
 config array. The generic exposed-enum renderer prefers a static JSON-Schema `enum`, falling back to
-resolving this hint against the node instance's current config. The catalog surface exists as of
-WP-A; the first node to stamp it (`control.mode.selected ⇐ options[].key`) lands in WP-B.
+resolving this hint against the node instance's current config. First stamped by `control.mode`
+(WP-B): `{ path: 'selected', optionsPath: 'options', keyField: 'key', labelField: 'label' }`
+(`src/main/services/nodes/builtin/controlNodes.ts`).
+
+## The `control.mode` node (WP-B)
+
+The generic **mode selector** (spec §3.1, plan §0.2) that makes agent chains mutually exclusive
+behind one exposed enum. Lives in `src/main/services/nodes/builtin/controlNodes.ts`; registered in
+`builtin/index.ts`.
+
+- **Config:** `{ options: [{ key, label? }] (1–4), selected: string }`. `label` is optional — the
+  renderer falls back to `key`. A `selected` key not present in `options` **fails soft** to the
+  first option (logged); it never throws.
+- **Ports:** inputs `when1..when4: Signal`; outputs `fired: Signal`, `selected: Text`.
+- **Slot mapping (the contract):** `options[i]` corresponds to `when{i+1}` — the first option to
+  `when1`, the second to `when2`, and so on. Fixed at 4 slots (mirrors `control.switch` `case1–4`).
+  An imported system joins the mutual exclusion by wiring its trigger into a free slot and adding an
+  option — pure wiring, no app code.
+- **Firing rule** (plan §0.2 — a deliberate refinement of the spec's literal text): `fired` fires
+  iff **(the selected option's slot is wired AND that slot's edge was live this run)** OR **(no
+  `whenN` slot is wired at all)**. Consequences:
+  - Non-selected slots are dead ends — structural mutual exclusion.
+  - An option whose slot is unwired (e.g. `off`) selects "nothing runs": in a wired graph an
+    unwired selected slot is a dead end, which is what makes `off` the master off-switch.
+  - Zero wired `when` slots ⇒ fires unconditionally — the node doubles as a standalone
+    config-driven gate.
+- **`selected: Text`** always emits the (fail-soft-resolved) selected key whenever the node runs —
+  it is data, not a gate. Note the node only runs at all if ≥1 wired slot fired or no slot is wired
+  (standard engine Signal gating, `src/main/services/workflowEngine.ts`).
+- **Engine support:** `run()`'s third argument (`NodeMeta`, `src/main/services/nodes/types.ts`)
+  carries `wiredInputs: string[]` — the input-port names with ≥1 incoming edge, live or dead —
+  supplied at the single run call site (`workflowEngine.ts`). This is how a node distinguishes
+  "wired but not fired" from "not wired at all". Additive: no other built-in reads it.
 
 ### `isTrigger` surfaced through the catalog
 

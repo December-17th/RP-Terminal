@@ -164,6 +164,8 @@ export function deriveCapabilities(doc: WorkflowDoc): CapabilityId[] {
  *   · parse.response       — splits an LLM reply into fields; operates on in-memory text.
  *   · parse.extract        — extracts a value from text via a rule; pure.
  *   · control.if / control.switch / control.when — flow control; route Signals, touch no state.
+ *   · control.mode         — mode selector (agent-memory-ux WP-B): routes the selected slot's Signal
+ *                            and emits the selected key as Text; pure flow control, touches no state.
  *   · util.log             — diagnostic logging; no state effect.
  *   · table.gate           — a pure predicate gate over a table read result (routes a Signal); it
  *                            does NOT itself read/write the table — the upstream table.read/query
@@ -204,6 +206,7 @@ export const INERT_NODE_TYPES: ReadonlySet<string> = new Set([
   'control.if',
   'control.switch',
   'control.when',
+  'control.mode',
   'util.log',
   'table.gate',
   'subgraph.input',

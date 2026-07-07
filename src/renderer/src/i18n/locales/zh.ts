@@ -680,6 +680,7 @@ const zh: Record<string, string> = {
   'workflowEditor.nodeTitle.control.if': '条件分支',
   'workflowEditor.nodeTitle.control.switch': '多路分支',
   'workflowEditor.nodeTitle.control.when': '触发器',
+  'workflowEditor.nodeTitle.control.mode': '模式',
   'workflowEditor.nodeTitle.text.template': '文本模板',
   'workflowEditor.nodeTitle.prompt.messages': '消息列表',
   'workflowEditor.nodeTitle.merge.messages': '合并消息',
@@ -741,6 +742,8 @@ const zh: Record<string, string> = {
     '将输入值与最多四个配置的 case 值深度比较，触发第一个匹配的 case 信号；都不匹配则触发 default。',
   'workflowEditor.nodeDesc.control.when':
     '单一门控：谓词成立时触发信号。特殊的 “changed” 操作符仅在被监视的值与上次触发时不同才触发（按会话记忆）——例如“每个游戏内月份一次”。',
+  'workflowEditor.nodeDesc.control.mode':
+    '模式选择器：每个选项按顺序对应一个 when 槽位（第一个选项对应 when1，第二个对应 when2……）。fired 仅放行当前所选选项的槽位——其余槽位是死路，因此各模式在结构上互斥。所选选项的槽位未接线（如 “off”）即表示什么都不运行；当所有 when 槽位都未接线时则无条件触发（可作纯配置门控）。同时把所选的 key 作为文本输出。',
   'workflowEditor.nodeDesc.text.template':
     '渲染文本模板。接入上下文后先执行宏（{{user}}、{{getvar::…}}）与 EJS，再把 {{in1}}–{{in4}} 替换为接入的上游值。',
   'workflowEditor.nodeDesc.prompt.messages':

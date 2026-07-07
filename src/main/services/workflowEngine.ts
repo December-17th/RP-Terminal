@@ -154,7 +154,11 @@ async function runNodes(
       const config = (
         impl.configSchema ? impl.configSchema.parse(node.config ?? {}) : (node.config ?? {})
       ) as Record<string, unknown>
-      const result = (await impl.run(ctx, inputs, { id, config })) ?? {}
+      // WP-B (agent-memory-ux plan §0.2): the input-port names with ≥1 incoming edge, live OR dead —
+      // `inputs` only carries keys for LIVE edges, so without this a node can't tell "wired but not
+      // fired" from "not wired at all" (control.mode's firing rule needs the distinction).
+      const wiredInputs = [...new Set(ins.map((e) => e.to.port))]
+      const result = (await impl.run(ctx, inputs, { id, config, wiredInputs })) ?? {}
       state.outputs.set(id, result.outputs ?? {})
       state.traces.push({ nodeId: id, status: 'ran', phase, ms: Date.now() - started })
       // Opt-in output panel (spec D4): a node with panel.show fills its collapsible chat panel

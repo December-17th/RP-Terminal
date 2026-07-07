@@ -96,6 +96,13 @@ export interface NodeResult {
 export interface NodeMeta {
   id: string
   config: Record<string, unknown>
+  /** Agent & memory UX (WP-B; plan §0.2): the input-port names that have ≥1 incoming edge in the
+   *  doc — REGARDLESS of whether the edge is live or dead this run. Lets a node distinguish
+   *  "wired but not fired" (port named here, key absent from `inputs`) from "not wired at all"
+   *  (absent from both) — the distinction `control.mode`'s firing rule needs. Optional so direct
+   *  run() callers (tests, previews) that predate WP-B still compile; the engine always supplies
+   *  it. No pre-WP-B node reads it, so behavior is unchanged across the registry. */
+  wiredInputs?: string[]
 }
 
 export type NodeRunFn = (

@@ -72,9 +72,18 @@ describe('listNodeTypes', () => {
     expect(byType.get('input.context')!.promptFields).toBeUndefined()
   })
 
-  it('carries `dynamicEnum` only when a node declares it (none in WP-A; control.mode lands in WP-B)', () => {
-    // The catalog SURFACE exists now; no built-in stamps it yet, so it is absent everywhere.
-    expect(catalog.every((n) => n.dynamicEnum === undefined)).toBe(true)
+  it('carries `dynamicEnum` only for the nodes that declare it (control.mode — WP-B)', () => {
+    // Deliberate WP-B update of the WP-A pin ("absent everywhere"): control.mode is the first
+    // stamper — its `selected` options live in the sibling `options` config array.
+    expect(byType.get('control.mode')!.dynamicEnum).toEqual({
+      path: 'selected',
+      optionsPath: 'options',
+      keyField: 'key',
+      labelField: 'label'
+    })
+    expect(catalog.filter((n) => n.dynamicEnum !== undefined).map((n) => n.type)).toEqual([
+      'control.mode'
+    ])
   })
 
   it('returns plain JSON-serializable data (survives a structured-clone round trip)', () => {
