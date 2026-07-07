@@ -955,6 +955,29 @@ details[open] > .stat-group-title::before {
   color: var(--rpt-text-secondary);
   font-variant-numeric: tabular-nums;
   z-index: 2;
+  /* Now a <button> for jump-to-floor: strip default button chrome so it keeps its plain-text look. */
+  padding: 0;
+  border: none;
+  background: none;
+  font-family: inherit;
+  cursor: pointer;
+}
+.floor-pageinfo:hover {
+  color: var(--rpt-text-primary);
+}
+/* Jump-to-floor input: sits where the page indicator was. */
+.floor-pagejump {
+  position: absolute;
+  right: 18px;
+  bottom: 28px;
+  width: 56px;
+  font-size: 0.75em;
+  color: var(--rpt-text-primary);
+  background: var(--rpt-bg-secondary);
+  border: 1px solid var(--rpt-border);
+  border-radius: 4px;
+  padding: 1px 4px;
+  z-index: 2;
 }
 
 /* Swipe (alternate-response) controls under a floor's response (TH-2). */

@@ -438,6 +438,7 @@ const en: Record<string, string> = {
   'chat.errorPrefix': 'Error: ',
   'chat.prevFloor': 'Previous floor',
   'chat.nextFloor': 'Next floor',
+  'chat.jumpToFloor': 'Go to floor…',
   'chat.editMessage': '✎ Edit message',
 
   // Floors manager (view + delete a consecutive tail of floors from the latest)

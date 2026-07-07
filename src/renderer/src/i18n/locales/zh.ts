@@ -425,6 +425,7 @@ const zh: Record<string, string> = {
   'chat.errorPrefix': '错误：',
   'chat.prevFloor': '上一层',
   'chat.nextFloor': '下一层',
+  'chat.jumpToFloor': '跳转至楼层…',
   'chat.editMessage': '✎ 编辑消息',
 
   // 楼层管理（查看并从最新楼层起删除连续楼层）
