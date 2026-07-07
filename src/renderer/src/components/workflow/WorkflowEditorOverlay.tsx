@@ -9,6 +9,7 @@ import { useT } from '../../i18n'
 import { useWcvSuppression } from '../useWcvSuppression'
 import WorkflowEditorView from './WorkflowEditorView'
 import { MemoryPane } from '../workspace/MemoryPane'
+import './workflowEditor.css'
 
 /** RF-03: mirrors WorkflowEditorView's editable-target test (Esc must blur a field, not close). */
 const inEditable = (target: EventTarget | null): boolean =>
@@ -64,50 +65,15 @@ export function WorkflowEditorOverlay({
   if (!open) return null
 
   return (
-    <div
-      style={{
-        position: 'fixed',
-        inset: 0,
-        zIndex: 90,
-        display: 'flex',
-        flexDirection: 'column',
-        background: 'var(--rpt-bg-primary)',
-        // Electron drag regions ignore z-order: the title bar's app-region:drag stays active
-        // under this overlay, making the top ~48px strip (workflow picker, rename input, Save)
-        // drag the window instead of clicking. no-drag punches the hole.
-        WebkitAppRegion: 'no-drag'
-      } as React.CSSProperties}
-    >
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: 8,
-          padding: '6px 12px',
-          // Match the titleBarOverlay strip height (main/index.ts:43: 48px) so EVERYTHING below
-          // the header — canvas, Memory sheet — starts clear of the native caption zone; without
-          // this the sheet's own head (and its close button) rendered partly under the window
-          // controls (owner report).
-          minHeight: 48,
-          boxSizing: 'border-box',
-          // The native window controls (titleBarOverlay, main/index.ts:43) paint ABOVE the DOM in
-          // the top-right corner; without this reservation the header's right-most buttons sit
-          // under minimize/maximize/close (owner report). With Window Controls Overlay enabled,
-          // env(titlebar-area-*) describes the DOM-usable strip — the controls occupy everything
-          // right of area-x + area-width. Falls back to 0 where env() is unavailable.
-          paddingRight:
-            'calc(12px + (100vw - env(titlebar-area-x, 0px) - env(titlebar-area-width, 100vw)))',
-          borderBottom: '1px solid var(--rpt-border)',
-          flex: '0 0 auto'
-        }}
-      >
-        <strong style={{ fontSize: 13 }}>{t('workflowEditor.viewTitle')}</strong>
-        <span style={{ flex: 1 }} />
+    <div className="rpt-wfe-overlay">
+      <div className="rpt-wfe-overlay-header">
+        <strong className="rpt-wfe-overlay-title">{t('workflowEditor.viewTitle')}</strong>
+        <span className="rpt-wfe-spacer" />
         <button
           type="button"
           onClick={() => setMemoryOpen((v) => !v)}
           title={t('workflowEditor.memoryTip')}
-          style={{ fontSize: 12.5 }}
+          className="rpt-wfe-btn-sm"
         >
           {t('workflowEditor.memory')}
         </button>
@@ -115,16 +81,16 @@ export function WorkflowEditorOverlay({
           type="button"
           onClick={close}
           title={`${t('workflowEditor.close')} (Esc)`}
-          style={{ fontSize: 12.5, display: 'flex', alignItems: 'center', gap: 5 }}
+          className="rpt-wfe-overlay-close"
         >
-          <span aria-hidden style={{ fontSize: 13 }}>
+          <span aria-hidden className="rpt-wfe-overlay-close-x">
             ✕
           </span>
           {t('workflowEditor.close')}
         </button>
       </div>
-      <div style={{ flex: 1, minHeight: 0, display: 'flex' }}>
-        <div style={{ flex: 1, minWidth: 0 }}>
+      <div className="rpt-wfe-overlay-body">
+        <div className="rpt-wfe-overlay-view">
           <WorkflowEditorView profileId={profileId} />
         </div>
         {memoryOpen && (

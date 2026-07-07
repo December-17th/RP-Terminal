@@ -20,6 +20,7 @@ import {
 import { getPath } from '../../../../shared/objectPath'
 import type { EditorNode } from './editorModel'
 import type { GroupDecl } from '../../../../shared/workflow/types'
+import './workflowEditor.css'
 
 /** A sub-graph's promoted-parameter hint (`WorkflowDoc.meta.promotions`, plan §5) — shape
  *  mirrors `subgraphNodes.ts`'s Promotion, read off the referenced doc fetched lazily via
@@ -72,31 +73,27 @@ function SubgraphCallInfo({
     }
   }, [profileId, workflowId])
 
-  if (!workflowId) return <div style={{ fontSize: 11, color: 'var(--rpt-warning)' }}>{t('workflowEditor.subgraphNotSet')}</div>
+  if (!workflowId)
+    return <div className="rpt-wfe-subgraph-warn">{t('workflowEditor.subgraphNotSet')}</div>
 
   return (
-    <div style={{ margin: '6px 0 10px' }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-        <span
-          style={{
-            fontSize: 12,
-            color: summary ? 'var(--rpt-text-primary)' : 'var(--rpt-warning)'
-          }}
-        >
+    <div className="rpt-wfe-subgraph-info">
+      <div className="rpt-wfe-subgraph-info-head">
+        <span className={`rpt-wfe-subgraph-name${summary ? '' : ' is-unknown'}`}>
           {summary?.name ?? workflowId}
         </span>
         <button
           type="button"
           onClick={() => void open(profileId, workflowId)}
-          style={{ fontSize: 11, padding: '1px 8px' }}
+          className="rpt-wfe-subgraph-open-btn"
         >
           {t('workflowEditor.openSubgraph')}
         </button>
       </div>
       {promotions.length > 0 && (
-        <div style={{ fontSize: 10.5, color: 'var(--rpt-text-secondary)', marginTop: 4 }}>
+        <div className="rpt-wfe-promotions">
           {t('workflowEditor.promotionsHint')}
-          <ul style={{ margin: '2px 0 0', paddingLeft: 16 }}>
+          <ul className="rpt-wfe-promotions-list">
             {promotions.map((p) => (
               <li key={p.name}>{p.label ? `${p.name} — ${p.label}` : p.name}</li>
             ))}
@@ -133,7 +130,7 @@ function FieldControl({
         value={typeof value === 'string' ? value : ''}
         disabled={readOnly}
         onChange={(e) => onChange(e.target.value)}
-        style={{ width: '100%', resize: 'vertical' }}
+        className="rpt-wfe-field-textarea"
       />
     )
   }
@@ -152,7 +149,7 @@ function FieldControl({
           const n = Number(e.target.value)
           onChange(Number.isNaN(n) ? undefined : n)
         }}
-        style={{ width: '100%' }}
+        className="rpt-wfe-field-control"
       />
     )
   }
@@ -174,7 +171,7 @@ function FieldControl({
         value={typeof value === 'string' ? value : ''}
         disabled={readOnly}
         onChange={(e) => onChange(e.target.value === '' ? undefined : e.target.value)}
-        style={{ width: '100%' }}
+        className="rpt-wfe-field-control"
       >
         {!field.required && <option value="">--</option>}
         {field.options.map((opt) => (
@@ -212,20 +209,10 @@ function FieldControl({
     return (
       <div>
         {items.map((item, index) => (
-          <div
-            key={index}
-            style={{
-              border: '1px solid var(--rpt-border)',
-              borderRadius: 6,
-              padding: 6,
-              marginBottom: 6
-            }}
-          >
+          <div key={index} className="rpt-wfe-array-item">
             {field.itemFields.map((itemField) => (
-              <div key={itemField.key} style={{ marginBottom: 4 }}>
-                <label style={{ fontSize: 10.5, color: 'var(--rpt-text-secondary)' }}>
-                  {itemField.key}
-                </label>
+              <div key={itemField.key} className="rpt-wfe-array-item-field">
+                <label className="rpt-wfe-field-sublabel">{itemField.key}</label>
                 <FieldControl
                   field={itemField}
                   value={item[itemField.key]}
@@ -239,7 +226,7 @@ function FieldControl({
                 />
               </div>
             ))}
-            <div style={{ display: 'flex', gap: 4 }}>
+            <div className="rpt-wfe-array-item-actions">
               <button
                 type="button"
                 disabled={readOnly || index === 0}
@@ -305,13 +292,9 @@ function JsonFieldControl({
             setError(true)
           }
         }}
-        style={{ width: '100%', resize: 'vertical' }}
+        className="rpt-wfe-field-textarea"
       />
-      {error && (
-        <div style={{ color: 'var(--rpt-danger)', fontSize: 10.5 }}>
-          {t('workflowEditor.invalidJson')}
-        </div>
-      )}
+      {error && <div className="rpt-wfe-invalid-json">{t('workflowEditor.invalidJson')}</div>}
     </div>
   )
 }
@@ -357,33 +340,26 @@ function ExposedSettingRow({
   }
 
   return (
-    <div
-      style={{
-        border: '1px solid var(--rpt-border)',
-        borderRadius: 6,
-        padding: 6,
-        marginBottom: 6
-      }}
-    >
-      <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
+    <div className="rpt-wfe-exposed-row">
+      <div className="rpt-wfe-exposed-row-head">
         <input
           type="text"
           value={entry.label}
           disabled={readOnly}
           onChange={(e) => onRelabel(e.target.value)}
-          style={{ flex: 1, fontSize: 11.5 }}
+          className="rpt-wfe-exposed-label-input"
         />
         <button
           type="button"
           disabled={readOnly}
           title={t('workflowEditor.module.exposedRemove')}
           onClick={onRemove}
-          style={{ fontSize: 11 }}
+          className="rpt-wfe-exposed-remove-btn"
         >
           ✕
         </button>
       </div>
-      <div style={{ fontSize: 10, color: 'var(--rpt-text-tertiary)' }}>
+      <div className="rpt-wfe-exposed-path">
         {entry.node}.{entry.path}
       </div>
       {field ? (
@@ -399,7 +375,7 @@ function ExposedSettingRow({
           value={typeof value === 'string' ? value : value === undefined ? '' : String(value)}
           disabled={readOnly || !member}
           onChange={(e) => write(e.target.value === '' ? undefined : e.target.value)}
-          style={{ width: '100%' }}
+          className="rpt-wfe-field-control"
         />
       )}
     </div>
@@ -472,9 +448,9 @@ function ExportModuleButton({
   }
 
   return (
-    <div style={{ margin: '10px 0', borderTop: '1px solid var(--rpt-border)', paddingTop: 8 }}>
+    <div className="rpt-wfe-export-module">
       {templateId && (
-        <label style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, marginBottom: 6 }}>
+        <label className="rpt-wfe-export-check">
           <input
             type="checkbox"
             checked={includeTemplate}
@@ -483,7 +459,7 @@ function ExportModuleButton({
           {t('workflowEditor.module.includeTemplate')}
         </label>
       )}
-      <button type="button" onClick={() => void onExport()} disabled={busy} style={{ fontSize: 12 }}>
+      <button type="button" onClick={() => void onExport()} disabled={busy} className="rpt-wfe-btn-xs">
         {t('workflowEditor.module.export')}
       </button>
     </div>
@@ -511,22 +487,22 @@ function ModulePanel({ group, profileId }: { group: GroupDecl; profileId: string
       <div>
         <strong>{t('workflowEditor.module.title')}</strong>
       </div>
-      <div style={{ margin: '8px 0' }}>
+      <div className="rpt-wfe-module-name-wrap">
         <input
           type="text"
           value={group.name}
           disabled={readOnly}
           placeholder={t('workflowEditor.module.namePh')}
           onChange={(e) => renameGroup(group.id, e.target.value)}
-          style={{ width: '100%', fontSize: 12.5 }}
+          className="rpt-wfe-module-name-input"
         />
       </div>
-      <div style={{ display: 'flex', gap: 6, marginBottom: 10 }}>
+      <div className="rpt-wfe-module-actions">
         <button
           type="button"
           disabled={readOnly}
           onClick={() => toggleGroupCollapsed(group.id)}
-          style={{ fontSize: 12 }}
+          className="rpt-wfe-btn-xs"
         >
           {group.collapsed
             ? t('workflowEditor.module.expand')
@@ -536,19 +512,15 @@ function ModulePanel({ group, profileId }: { group: GroupDecl; profileId: string
           type="button"
           disabled={readOnly}
           onClick={() => ungroup(group.id)}
-          style={{ fontSize: 12 }}
+          className="rpt-wfe-btn-xs"
         >
           {t('workflowEditor.module.ungroup')}
         </button>
       </div>
 
-      <div style={{ fontSize: 10.5, color: 'var(--rpt-text-tertiary)', marginBottom: 6 }}>
-        {t('workflowEditor.module.exposedTitle')}
-      </div>
+      <div className="rpt-wfe-module-exposed-head">{t('workflowEditor.module.exposedTitle')}</div>
       {exposed.length === 0 ? (
-        <div style={{ fontSize: 11, color: 'var(--rpt-text-secondary)' }}>
-          {t('workflowEditor.module.exposedEmpty')}
-        </div>
+        <div className="rpt-wfe-module-exposed-empty">{t('workflowEditor.module.exposedEmpty')}</div>
       ) : (
         exposed.map((entry) => (
           <ExposedSettingRow
@@ -632,20 +604,16 @@ function AssemblePreview({ profileId }: { profileId: string }): React.JSX.Elemen
 
   return (
     <div className="rpt-assemble-preview">
-      <div style={{ fontSize: 10.5, color: 'var(--rpt-text-tertiary)', marginBottom: 4 }}>
-        {t('workflowEditor.assemblePreview.title')}
-      </div>
-      <button type="button" onClick={() => void run()} disabled={loading} style={{ fontSize: 12 }}>
+      <div className="rpt-wfe-assemble-head">{t('workflowEditor.assemblePreview.title')}</div>
+      <button type="button" onClick={() => void run()} disabled={loading} className="rpt-wfe-btn-xs">
         {loading ? t('workflowEditor.assemblePreview.loading') : t('workflowEditor.assemblePreview.button')}
       </button>
       {error && (
-        <div style={{ color: 'var(--rpt-danger)', fontSize: 10.5, marginTop: 4 }}>
-          {t('workflowEditor.assemblePreview.error')}
-        </div>
+        <div className="rpt-wfe-assemble-error">{t('workflowEditor.assemblePreview.error')}</div>
       )}
       {data && total && (
         <>
-          <div style={{ fontSize: 10.5, color: 'var(--rpt-text-secondary)', margin: '6px 0 4px' }}>
+          <div className="rpt-wfe-assemble-total">
             {total.estimated
               ? t('preview.totalTokensEst', { n: total.total })
               : t('preview.totalTokens', { n: total.total })}
@@ -727,25 +695,14 @@ export default function NodeConfigPanel({
     <div>
       <div>
         <strong>{nodeTitle}</strong>
-        <div style={{ fontSize: 10.5, color: 'var(--rpt-text-tertiary)' }}>{node.type}</div>
+        <div className="rpt-wfe-node-type-id">{node.type}</div>
       </div>
 
-      {nodeDesc && (
-        <div
-          style={{
-            fontSize: 11,
-            color: 'var(--rpt-text-secondary)',
-            lineHeight: 1.55,
-            margin: '6px 0'
-          }}
-        >
-          {nodeDesc}
-        </div>
-      )}
+      {nodeDesc && <div className="rpt-wfe-node-desc">{nodeDesc}</div>}
 
       {/* Enabled toggle (WP6.4a): at the top of every node's panel. A disabled node never runs (the
           engine skips it + its exclusive downstream); a disabled trigger never fires. */}
-      <label style={{ display: 'flex', alignItems: 'center', gap: 4, margin: '6px 0' }}>
+      <label className="rpt-wfe-check-row">
         <input
           type="checkbox"
           checked={node.disabled !== true}
@@ -761,7 +718,7 @@ export default function NodeConfigPanel({
           kind:'fragment'. In a fragment session (WP4.4) we hide the affordance so a user can't mark
           one (which would be meaningless + could confuse a later run-as-turn of the fork). */}
       {typeInfo?.isMainOutputCapable && sessionType !== 'fragment' && (
-        <label style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+        <label className="rpt-wfe-check-row-tight">
           <input
             type="checkbox"
             checked={node.isMainOutput === true}
@@ -774,7 +731,7 @@ export default function NodeConfigPanel({
 
       {/* Opt-in output panel (spec D4): show this node's completed output as a collapsible
           section in the chat, labeled below. */}
-      <label style={{ display: 'flex', alignItems: 'center', gap: 4, marginTop: 4 }}>
+      <label className="rpt-wfe-check-row-mt">
         <input
           type="checkbox"
           checked={node.panel?.show === true}
@@ -789,10 +746,8 @@ export default function NodeConfigPanel({
         {t('workflowEditor.panelShow')}
       </label>
       {node.panel?.show && (
-        <div style={{ margin: '4px 0 6px' }}>
-          <label style={{ fontSize: 10.5, color: 'var(--rpt-text-secondary)' }}>
-            {t('workflowEditor.panelLabel')}
-          </label>
+        <div className="rpt-wfe-panel-label-wrap">
+          <label className="rpt-wfe-field-sublabel">{t('workflowEditor.panelLabel')}</label>
           <input
             type="text"
             value={node.panel.label ?? ''}
@@ -801,7 +756,7 @@ export default function NodeConfigPanel({
             onChange={(e) =>
               setNodePanel(node.id, { show: true, label: e.target.value || undefined })
             }
-            style={{ width: '100%' }}
+            className="rpt-wfe-field-control"
           />
         </div>
       )}
@@ -816,27 +771,19 @@ export default function NodeConfigPanel({
       {node.type === 'prompt.assemble' && <AssemblePreview profileId={profileId} />}
 
       <div>
-        <div style={{ fontSize: 10.5, color: 'var(--rpt-text-tertiary)' }}>
-          {t('workflowEditor.config')}
-        </div>
+        <div className="rpt-wfe-muted-label">{t('workflowEditor.config')}</div>
         {fields.map((field) => (
           // Keyed by node id + field so switching between two nodes of the SAME type remounts the
           // controls — JsonFieldControl holds local text state that must never leak across nodes.
-          <div key={`${node.id}:${field.key}`} style={{ marginBottom: 8 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-              <label style={{ fontSize: 10.5, color: 'var(--rpt-text-secondary)', flex: 1 }}>
+          <div key={`${node.id}:${field.key}`} className="rpt-wfe-config-field">
+            <div className="rpt-wfe-config-field-head">
+              <label className="rpt-wfe-config-field-label">
                 {field.key}
                 {field.required ? ' *' : ''}
               </label>
               {memberGroup && (
                 <label
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 3,
-                    fontSize: 10,
-                    color: 'var(--rpt-text-tertiary)'
-                  }}
+                  className="rpt-wfe-expose-toggle"
                   title={t('workflowEditor.module.exposeToggle')}
                 >
                   <input
@@ -860,30 +807,24 @@ export default function NodeConfigPanel({
       </div>
 
       <div>
-        <div style={{ fontSize: 10.5, color: 'var(--rpt-text-tertiary)' }}>
-          {t('workflowEditor.ports')}
-        </div>
+        <div className="rpt-wfe-muted-label">{t('workflowEditor.ports')}</div>
         {(typeInfo?.inputs ?? []).map((port) => (
-          <div key={`in-${port.name}`} style={{ fontSize: 10.5, marginBottom: 3 }}>
-            <span style={{ color: 'var(--rpt-text-primary)' }}>
-              → {port.name} <span style={{ color: 'var(--rpt-text-tertiary)' }}>({port.type})</span>
+          <div key={`in-${port.name}`} className="rpt-wfe-port-row">
+            <span className="rpt-wfe-port-name">
+              → {port.name} <span className="rpt-wfe-port-type">({port.type})</span>
             </span>
             {portDesc(port.name) && (
-              <div style={{ color: 'var(--rpt-text-secondary)', paddingLeft: 14 }}>
-                {portDesc(port.name)}
-              </div>
+              <div className="rpt-wfe-port-desc">{portDesc(port.name)}</div>
             )}
           </div>
         ))}
         {(typeInfo?.outputs ?? []).map((port) => (
-          <div key={`out-${port.name}`} style={{ fontSize: 10.5, marginBottom: 3 }}>
-            <span style={{ color: 'var(--rpt-text-primary)' }}>
-              {port.name} → <span style={{ color: 'var(--rpt-text-tertiary)' }}>({port.type})</span>
+          <div key={`out-${port.name}`} className="rpt-wfe-port-row">
+            <span className="rpt-wfe-port-name">
+              {port.name} → <span className="rpt-wfe-port-type">({port.type})</span>
             </span>
             {portDesc(port.name) && (
-              <div style={{ color: 'var(--rpt-text-secondary)', paddingLeft: 14 }}>
-                {portDesc(port.name)}
-              </div>
+              <div className="rpt-wfe-port-desc">{portDesc(port.name)}</div>
             )}
           </div>
         ))}

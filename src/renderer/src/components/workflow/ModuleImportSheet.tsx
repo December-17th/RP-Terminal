@@ -11,6 +11,7 @@
 import React from 'react'
 import { useT } from '../../i18n'
 import { isWriteCapability, type CapabilityId } from '../../../../shared/workflow/capabilities'
+import './workflowEditor.css'
 
 /** The inspection report the import IPC returns (moduleTransferService.ModuleInspectionReport mirror). */
 export interface ModuleInspectReport {
@@ -44,64 +45,41 @@ export default function ModuleImportSheet({
 
   return (
     <div
-      className="rpt-module-import-overlay"
+      className="rpt-module-import-overlay rpt-wfe-sheet-overlay"
       role="dialog"
       aria-modal="true"
       onClick={onCancel}
-      style={{
-        position: 'absolute',
-        inset: 0,
-        background: 'var(--rpt-scrim, rgba(0,0,0,0.45))',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        zIndex: 20
-      }}
     >
-      <div
-        onClick={(e) => e.stopPropagation()}
-        style={{
-          width: 360,
-          maxHeight: '80%',
-          overflowY: 'auto',
-          background: 'var(--rpt-bg-elevated)',
-          border: '1px solid var(--rpt-border)',
-          borderRadius: 10,
-          padding: 16,
-          boxShadow: '0 8px 30px rgba(0,0,0,0.35)'
-        }}
-      >
+      <div onClick={(e) => e.stopPropagation()} className="rpt-wfe-sheet">
         {report.parseError ? (
           <>
-            <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--rpt-danger)' }}>
+            <div className="rpt-wfe-sheet-parse-fail">
               {t('workflowEditor.moduleImport.parseFailed')}
             </div>
-            <div style={{ fontSize: 11.5, color: 'var(--rpt-text-secondary)', margin: '6px 0 12px' }}>
+            <div className="rpt-wfe-sheet-parse-detail">
               {t(`workflowEditor.moduleImport.err.${report.parseError.code}`)}
             </div>
-            <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
-              <button type="button" onClick={onCancel} style={{ fontSize: 12 }}>
+            <div className="rpt-wfe-sheet-actions-end">
+              <button type="button" onClick={onCancel} className="rpt-wfe-btn-xs">
                 {t('workflowEditor.moduleImport.close')}
               </button>
             </div>
           </>
         ) : (
           <>
-            <div style={{ fontSize: 13.5, fontWeight: 600, color: 'var(--rpt-text-primary)' }}>
+            <div className="rpt-wfe-sheet-title">
               {report.meta?.name ?? t('workflowEditor.moduleImport.title')}
             </div>
-            <div style={{ fontSize: 11.5, color: 'var(--rpt-text-secondary)', marginTop: 2 }}>
+            <div className="rpt-wfe-sheet-subtitle">
               {t('workflowEditor.moduleImport.nodeCount', { n: report.meta?.nodeCount ?? 0 })}
               {report.meta?.creator ? ` · ${report.meta.creator}` : ''}
             </div>
             {report.meta?.description && (
-              <div style={{ fontSize: 11.5, color: 'var(--rpt-text-secondary)', margin: '6px 0' }}>
-                {report.meta.description}
-              </div>
+              <div className="rpt-wfe-sheet-desc">{report.meta.description}</div>
             )}
 
             {report.capabilityReport && report.capabilityReport.capabilities.length > 0 && (
-              <div className="rpt-agents-chips" style={{ margin: '10px 0' }}>
+              <div className="rpt-agents-chips rpt-wfe-sheet-chips">
                 {report.capabilityReport.capabilities.map((cap) => (
                   <span
                     key={cap}
@@ -114,20 +92,13 @@ export default function ModuleImportSheet({
             )}
 
             {blocked && (
-              <div
-                style={{
-                  border: '1px solid var(--rpt-danger)',
-                  borderRadius: 6,
-                  padding: '6px 8px',
-                  margin: '8px 0'
-                }}
-              >
-                <div style={{ fontSize: 11.5, color: 'var(--rpt-danger)', fontWeight: 600 }}>
+              <div className="rpt-wfe-sheet-blocked">
+                <div className="rpt-wfe-sheet-blocked-head">
                   {t('workflowEditor.moduleImport.blockedUnknown')}
                 </div>
-                <ul style={{ margin: '4px 0 0', paddingLeft: 16, fontSize: 11 }}>
+                <ul className="rpt-wfe-sheet-blocked-list">
                   {unknownTypes.map((tp) => (
-                    <li key={tp} style={{ color: 'var(--rpt-text-secondary)' }}>
+                    <li key={tp} className="rpt-wfe-sheet-blocked-item">
                       {tp}
                     </li>
                   ))}
@@ -136,12 +107,12 @@ export default function ModuleImportSheet({
             )}
 
             {report.templatePlans.length > 0 && (
-              <div style={{ margin: '8px 0' }}>
-                <div style={{ fontSize: 10.5, color: 'var(--rpt-text-tertiary)' }}>
+              <div className="rpt-wfe-sheet-templates">
+                <div className="rpt-wfe-sheet-templates-head">
                   {t('workflowEditor.moduleImport.templates')}
                 </div>
                 {report.templatePlans.map((p) => (
-                  <div key={p.name} style={{ fontSize: 11, color: 'var(--rpt-text-secondary)' }}>
+                  <div key={p.name} className="rpt-wfe-sheet-template-row">
                     {p.name} —{' '}
                     {p.outcome === 'will-duplicate'
                       ? t('workflowEditor.moduleImport.willDuplicate')
@@ -152,28 +123,28 @@ export default function ModuleImportSheet({
             )}
 
             {report.warnings.length > 0 && (
-              <ul style={{ margin: '8px 0 0', paddingLeft: 16, fontSize: 10.5 }}>
+              <ul className="rpt-wfe-sheet-warnings">
                 {report.warnings.map((w, i) => (
-                  <li key={i} style={{ color: 'var(--rpt-warning)' }}>
+                  <li key={i} className="rpt-wfe-sheet-warning-item">
                     {w}
                   </li>
                 ))}
               </ul>
             )}
 
-            <div style={{ fontSize: 10.5, color: 'var(--rpt-text-tertiary)', margin: '10px 0 8px' }}>
+            <div className="rpt-wfe-sheet-lands">
               {t('workflowEditor.moduleImport.landsUnwired')}
             </div>
 
-            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
-              <button type="button" onClick={onCancel} style={{ fontSize: 12 }}>
+            <div className="rpt-wfe-sheet-actions">
+              <button type="button" onClick={onCancel} className="rpt-wfe-btn-xs">
                 {t('workflowEditor.moduleImport.cancel')}
               </button>
               <button
                 type="button"
                 disabled={blocked || !report.token}
                 onClick={() => report.token && onInstall(report.token)}
-                style={{ fontSize: 12 }}
+                className="rpt-wfe-btn-xs"
               >
                 {t('workflowEditor.moduleImport.install')}
               </button>
