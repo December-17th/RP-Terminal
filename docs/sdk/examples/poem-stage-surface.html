@@ -95,17 +95,17 @@
     background: linear-gradient(180deg, var(--gold), transparent);
   }
   .np-name { display: block; font-family: var(--serif); font-size: 20px; font-weight: 700; line-height: 1.2; }
-  .np-tag { font-family: var(--mono); font-size: 11px; letter-spacing: .04em; color: var(--gold); margin-top: 2px; }
+  .np-tag { font-family: var(--mono); font-size: 12px; letter-spacing: .04em; color: var(--gold); margin-top: 2px; }  /* PM-B5: CJK-led (职业 · 好感 N · 命定) → ≥12px */
   .np-tag .sep { color: var(--gold); margin: 0 5px; }  /* PM-B3: --gold-dim fails AA at 11px on glass; --gold ≥7.2:1 */
   /* 正在交谈 pill — v4 mock .np-live: gold fill, night text, riding the plate's top-right edge */
   .np-live {
     position: absolute; top: -9px; right: 12px; z-index: 4;
-    font-family: var(--mono); font-size: 10.5px; letter-spacing: .14em;
-    color: var(--night); background: var(--gold); padding: 2px 8px; border-radius: 999px;
+    font-family: var(--mono); font-size: 12px; letter-spacing: .14em;
+    color: var(--night); background: var(--gold); padding: 2px 8px; border-radius: 999px;  /* PM-B5: 正在交谈 is pure CJK → ≥12px */
   }
   /* scene tag → night-glass card (v4 mock .scenetag: glass-soft, blur, --line-soft border) */
   .scene-tag {
-    position: absolute; top: 12px; right: 16px; z-index: 3; font-family: var(--mono); font-size: 11.5px;
+    position: absolute; top: 12px; right: 16px; z-index: 3; font-family: var(--mono); font-size: 12px;  /* PM-B5: 时间 · 地点 CJK → ≥12px */
     color: var(--dim); background: var(--glass-soft); backdrop-filter: blur(10px);
     border: 1px solid var(--line-soft); padding: 5px 11px; border-radius: 9px;
   }

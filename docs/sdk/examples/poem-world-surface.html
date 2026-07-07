@@ -38,10 +38,10 @@
   .world > div { background: var(--glass); backdrop-filter: blur(12px);
     border: 1px solid var(--line-soft); border-radius: 12px; padding: 12px 14px; }
 
-  .sect { font-family: var(--mono); font-size: 11px; letter-spacing: .22em; text-transform: uppercase;
-    color: var(--gold); font-weight: 600; display: flex; align-items: center; gap: 8px; margin: 0 0 10px; }  /* PM-B3: gilt header — --gold-dim@11px fails AA (3.1:1 ember), --gold ≥7.2:1 */
+  .sect { font-family: var(--mono); font-size: 12px; letter-spacing: .22em; text-transform: uppercase;
+    color: var(--gold); font-weight: 600; display: flex; align-items: center; gap: 8px; margin: 0 0 10px; }  /* PM-B3: gilt header — --gold-dim@11px fails AA (3.1:1 ember), --gold ≥7.2:1. PM-B5: CJK headers (世界/同行/委托) → ≥12px */
   .sect::after { content: ''; flex: 1; height: 1px; background: linear-gradient(90deg, var(--line), transparent); }
-  .empty { color: var(--faint); font-size: 11.5px; font-style: italic; }
+  .empty { color: var(--faint); font-size: 12px; font-style: italic; }  /* PM-B5: CJK empty-state prose → ≥12px */
 
   /* 世界 */
   .ws-row { display: flex; justify-content: space-between; align-items: baseline; font-size: 12.5px; padding: 3px 0; }
@@ -57,8 +57,8 @@
   .npc-av img { width: 100%; height: 100%; object-fit: cover; }
   .npc-main { flex: 1; min-width: 0; }
   .npc-name { font-size: 12.5px; display: flex; align-items: center; gap: 6px; }
-  .npc-name .role { color: var(--faint); font-size: 11px; }
-  .npc-pact { color: var(--gold); font-size: 11px; font-family: var(--mono); }
+  .npc-name .role { color: var(--faint); font-size: 12px; }  /* PM-B5: CJK 职业/身份 (灰隐者 …) → ≥12px */
+  .npc-pact { color: var(--gold); font-size: 12px; font-family: var(--mono); }  /* PM-B5: ◈ 命定 CJK → ≥12px */
   /* 好感度 center-axis bar (v4 mock .npc-rel): center tick at 50%; positive fills rightward from the
      axis, negative fills leftward in --ember. width = |好感度|/100 of the half (see affHalfPct). */
   .npc-rel { height: 4px; border-radius: 2px; background: rgba(0, 0, 0, .45); margin-top: 6px; overflow: hidden; position: relative; }
@@ -66,7 +66,7 @@
   .npc-rel > i { position: absolute; top: 0; bottom: 0; background: var(--q-mythic); transition: width .35s ease; }
   .npc-rel > i.pos { left: 50%; }
   .npc-rel > i.neg { right: 50%; background: var(--ember); }
-  .npc-aff { font-family: var(--mono); font-size: 11px; color: var(--dim); margin-left: 6px; }
+  .npc-aff { font-family: var(--mono); font-size: 11px; color: var(--dim); margin-left: 6px; }  /* PM-B5: numeric 好感度 (64, -46) — stays mono */
 
   /* 委托 */
   .quest { padding: 9px 11px; border: 1px solid var(--line-soft); border-radius: 9px; background: rgba(0, 0, 0, .30); margin-bottom: 8px; border-left: 2px solid var(--gold-dim); }
@@ -74,10 +74,10 @@
   .quest.lo { border-left-color: var(--line); }
   .quest-h { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
   .quest-t { font-size: 12.5px; color: var(--text); }
-  .quest-focus { font-family: var(--mono); font-size: 11px; letter-spacing: .1em; text-transform: uppercase; color: var(--gold); flex: 0 0 auto; }  /* PM-B3: --gold-dim@11px on inset fails AA (3.2:1 ember), --gold ≥6.9:1 */
+  .quest-focus { font-family: var(--mono); font-size: 12px; letter-spacing: .1em; text-transform: uppercase; color: var(--gold); flex: 0 0 auto; }  /* PM-B3: --gold-dim@11px on inset fails AA (3.2:1 ember), --gold ≥6.9:1. PM-B5: CJK 关注度 (高/中/低) → ≥12px */
   .quest.hi .quest-focus { color: var(--ember); }
-  .quest-goal { font-size: 11px; color: var(--dim); margin-top: 4px; line-height: 1.5; }
-  .quest-meta { font-size: 11px; color: var(--faint); margin-top: 5px; display: flex; gap: 10px; flex-wrap: wrap; }
+  .quest-goal { font-size: 12px; color: var(--dim); margin-top: 4px; line-height: 1.5; }  /* PM-B5: CJK quest-goal prose → ≥12px */
+  .quest-meta { font-size: 12px; color: var(--faint); margin-top: 5px; display: flex; gap: 10px; flex-wrap: wrap; }  /* PM-B5: CJK labels + values (状态/进展/奖励) → ≥12px */
   .quest-meta b { color: var(--dim); font-weight: 500; }  /* PM-B3: --gold-dim@11px fails AA (3.2:1 ember); --dim ≥7.4:1 keeps it a muted label (not a gilt accent) */
   @media (prefers-reduced-motion: reduce) { .npc-rel > i { transition: none; } }
 </style>

@@ -115,7 +115,7 @@
     background: linear-gradient(180deg, var(--gold), transparent);
   }
   .np-name { display: block; font-family: var(--serif); font-size: 20px; font-weight: 700; line-height: 1.2; }
-  .np-tag { font-family: var(--mono); font-size: 11px; letter-spacing: .04em; color: var(--gold); margin-top: 2px; }
+  .np-tag { font-family: var(--mono); font-size: 12px; letter-spacing: .04em; color: var(--gold); margin-top: 2px; }  /* PM-B5: CJK-led (你 · 生命层级 · 命定) → ≥12px */
   .np-tag .sep { color: var(--gold); margin: 0 5px; }  /* PM-B3: --gold-dim fails AA at 11px on glass; --gold ≥7.2:1 */
 
   /* ── lean stats (night-glass card — v4 mock .card treatment) ───────────────────────── */
@@ -140,7 +140,7 @@
   .gold b { font-weight: 700; }
   .chips { display: flex; flex-wrap: wrap; gap: 5px; justify-content: flex-end; }
   .chip {
-    font-size: 11px; padding: 2px 9px; border-radius: 999px; white-space: nowrap;
+    font-size: 12px; padding: 2px 9px; border-radius: 999px; white-space: nowrap;  /* PM-B5: status-effect names are CJK (战斗祝福 …) → ≥12px */
     border: 1px solid var(--gold-dim); color: var(--gold);
     background: color-mix(in srgb, var(--gold) 12%, transparent);
   }
@@ -169,18 +169,18 @@
     border: 1px solid var(--line-soft); border-radius: 12px; padding: 12px 14px;
   }
 
-  .sect { font-family: var(--mono); font-size: 11px; letter-spacing: .22em; text-transform: uppercase;
-    color: var(--gold); font-weight: 600; display: flex; align-items: center; gap: 8px; margin: 0 0 9px; }  /* PM-B3: gilt header — --gold-dim@11px fails AA (3.1:1 ember), --gold ≥7.2:1 */
+  .sect { font-family: var(--mono); font-size: 12px; letter-spacing: .22em; text-transform: uppercase;
+    color: var(--gold); font-weight: 600; display: flex; align-items: center; gap: 8px; margin: 0 0 9px; }  /* PM-B3: gilt header — --gold-dim@11px fails AA (3.1:1 ember), --gold ≥7.2:1. PM-B5: CJK headers (属性/装备/背包/登神长阶) → ≥12px */
   .sect::after { content: ''; flex: 1; height: 1px; background: linear-gradient(90deg, var(--line), transparent); }
   .sect + .sect { margin-top: 16px; }
-  .empty { color: var(--faint); font-size: 11.5px; font-style: italic; padding: 2px 0; }
+  .empty { color: var(--faint); font-size: 12px; font-style: italic; padding: 2px 0; }  /* PM-B5: CJK empty-state prose → ≥12px */
 
   /* 属性 */
   .attrs { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; }
   .attr { text-align: center; background: rgba(0, 0, 0, .35); border: 1px solid var(--line-soft); border-radius: 8px; padding: 10px 2px; }
-  .attr-k { font-size: 11px; color: var(--dim); }
+  .attr-k { font-size: 12px; color: var(--dim); }  /* PM-B5: CJK attribute labels (力量/敏捷 …) → ≥12px */
   .attr-v { font-family: var(--mono); font-size: 18px; font-weight: 700; margin-top: 3px; }
-  .attr-free { margin-top: 10px; font-size: 11.5px; color: var(--gold); }
+  .attr-free { margin-top: 10px; font-size: 12px; color: var(--gold); }  /* PM-B5: CJK label (可分配属性点) → ≥12px */
   .attr-free b { font-family: var(--mono); }
 
   /* 持有 */
@@ -188,24 +188,24 @@
   .inv-row:hover { background: color-mix(in srgb, var(--text) 6%, transparent); }
   .inv-dot { width: 7px; height: 7px; border-radius: 50%; flex: 0 0 auto; box-shadow: 0 0 6px currentColor; }
   .inv-name { flex: 1; font-size: 12.5px; }
-  .inv-meta { font-size: 11px; color: var(--faint); font-family: var(--mono); }
+  .inv-meta { font-size: 12px; color: var(--faint); font-family: var(--mono); }  /* PM-B5: 位置/类型 are CJK (主手/身体/饰品) → ≥12px */
 
   /* 登神长阶 — the true ascension gate: 要素(≤3) → 权能(≤1) → 法则, + 神位/神国 */
   .asc-rungs { display: flex; gap: 8px; }
   .rung { flex: 1; background: rgba(0, 0, 0, .35); border: 1px solid var(--line-soft); border-radius: 9px; padding: 10px 8px; }
   .rung.on { border-color: var(--gold-dim); }
   .rung-h { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 7px; }
-  .rung-k { font-size: 11px; color: var(--dim); } .rung.on .rung-k { color: var(--gold); }
-  .rung-n { font-family: var(--mono); font-size: 11px; color: var(--faint); }
-  .rung-tag { display: block; font-size: 11px; color: var(--text); padding: 3px 0; border-top: 1px solid var(--line-soft); }
+  .rung-k { font-size: 12px; color: var(--dim); } .rung.on .rung-k { color: var(--gold); }  /* PM-B5: CJK rung labels (要素/权能/法则) → ≥12px */
+  .rung-n { font-family: var(--mono); font-size: 11px; color: var(--faint); }  /* PM-B5: numeric count (2/3, 0/1) — stays mono */
+  .rung-tag { display: block; font-size: 12px; color: var(--text); padding: 3px 0; border-top: 1px solid var(--line-soft); }  /* PM-B5: CJK element names (烈焰/星辉) → ≥12px */
   .rung-tag:first-of-type { border-top: none; }
-  .rung .empty { font-size: 11px; }
-  .asc-crown { margin-top: 10px; font-size: 11.5px; color: var(--dim); }
+  .rung .empty { font-size: 12px; }  /* PM-B5: match bumped .empty cadence */
+  .asc-crown { margin-top: 10px; font-size: 12px; color: var(--dim); }  /* PM-B5: CJK labels (神位/神国) → ≥12px */
   .asc-crown b { color: var(--gold); font-family: var(--serif); }
 
   /* ── tabs (v4 mock .tab: glass-soft pills; active = gilt border + gold text) ───────── */
   .tabs { flex: 0 0 auto; display: flex; align-items: center; gap: 6px; padding: 6px 14px 12px; }
-  .tab { flex: 1; font-family: var(--mono); font-size: 11px; letter-spacing: .04em;
+  .tab { flex: 1; font-family: var(--mono); font-size: 12px; letter-spacing: .04em;  /* PM-B5: CJK tab labels (属性/持有/登神长阶) → ≥12px */
     background: var(--glass-soft); backdrop-filter: blur(12px); border: 1px solid var(--line-soft);
     color: var(--dim); padding: 8px 4px; border-radius: 10px; cursor: pointer; position: relative; }
   .tab:hover { color: var(--text); border-color: var(--line); }
