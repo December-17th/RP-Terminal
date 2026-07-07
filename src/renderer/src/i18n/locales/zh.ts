@@ -522,6 +522,13 @@ const zh: Record<string, string> = {
   'tables.progressNext': '下次维护：第 {{n}} 层',
   'tables.progressUnprocessed': '未处理 {{n}} 层',
   'tables.progressNever': '尚未处理',
+  // 智能体与记忆 UX（WP-I）：共享表格增强 + 分页的记忆侧栏。
+  'tables.pointerLine': '已处理 {{processed}} 层 · 下次维护第 {{next}} 层 · 未处理 {{unprocessed}} 层',
+  'tables.filterPh': '筛选行…',
+  'tables.noFilterMatches': '没有匹配筛选的行。',
+  'memory.tab.setup': '设置',
+  'memory.tab.data': '数据',
+  'memory.tab.maintenance': '维护',
   'tables.backfill': '回填',
   'tables.backfillScope': '范围',
   'tables.backfillLastFloors': '最近楼层数',

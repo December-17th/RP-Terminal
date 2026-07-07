@@ -540,6 +540,13 @@ const en: Record<string, string> = {
   'tables.progressNext': 'Next at floor {{n}}',
   'tables.progressUnprocessed': '{{n}} unprocessed',
   'tables.progressNever': 'Never processed',
+  // Agent & memory UX (WP-I): shared grid polish + the tabbed Memory sheet.
+  'tables.pointerLine': 'Processed {{processed}} floors · next at floor {{next}} · {{unprocessed}} unprocessed',
+  'tables.filterPh': 'Filter rows…',
+  'tables.noFilterMatches': 'No rows match the filter.',
+  'memory.tab.setup': 'Setup',
+  'memory.tab.data': 'Data',
+  'memory.tab.maintenance': 'Maintenance',
   'tables.backfill': 'Backfill',
   'tables.backfillScope': 'Scope',
   'tables.backfillLastFloors': 'Last floors',

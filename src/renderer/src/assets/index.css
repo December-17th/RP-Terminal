@@ -2347,6 +2347,18 @@ select {
    overview shell's max-width so nothing clips against the sheet's overflow:hidden. */
 .rpt-memory-sheet { width:min(480px, 92vw); }
 .rpt-memory-sheet .rpt-overview { max-width:none; }
+/* Agent & memory UX WP-I (spec §8): the Memory sheet's Setup / Data / Maintenance tab strip, and the
+   Data tab hosting the (wider) shared grid. All colors via --rpt-* tokens (AA across the themes). */
+.rpt-memory-sheet-tabs { display:flex; gap:4px; padding:6px 14px 0; border-bottom:1px solid var(--rpt-border); }
+.rpt-memory-sheet-tab { padding:5px 10px; border:none; border-bottom:2px solid transparent;
+  background:transparent; color:var(--rpt-text-secondary); font-size:12px; cursor:pointer; }
+.rpt-memory-sheet-tab:hover { color:var(--rpt-text-primary); }
+.rpt-memory-sheet-tab.active { color:var(--rpt-accent); border-bottom-color:var(--rpt-accent); }
+/* The shared memory-table grid (WP-I): each table scrolls in its own bounded box so its header row
+   can pin (sticky) to the box's top; used by BOTH the Tables view and the Memory sheet's Data tab. */
+.rpt-tablegrid-scroll { overflow:auto; max-height:60vh; border:1px solid var(--rpt-border); border-radius:4px; }
+.rpt-tablegrid-th { position:sticky; top:0; z-index:1; border:1px solid var(--rpt-border);
+  padding:3px 6px; text-align:left; background:var(--rpt-bg-secondary); white-space:nowrap; }
 .rpt-agentdetail-head { display:flex; align-items:center; justify-content:space-between; gap:8px;
   padding:12px 14px; border-bottom:1px solid var(--rpt-border); }
 .rpt-agentdetail-title { font-size:14px; font-weight:600; color:var(--rpt-text-primary); margin:0;
