@@ -30,9 +30,11 @@ const slotsOf = (inputs: Record<string, unknown>): Record<string, unknown> => ({
 /**
  * Interpolate an authored template (spec §8): context macros + EJS run FIRST (only when a
  * `gen` Context is wired — they need vars/globals), then the `{{in1}}`-`{{in4}}` upstream-slot
- * placeholders are substituted LAST, so upstream text is always data, never executable
- * template code (an LLM output containing `{{…}}`/`<%…%>` must not run). `{{inN}}` is not a
- * known macro, so expandMacros leaves the placeholders untouched.
+ * placeholders (plus `{{input}}` when the caller supplies an `input` slot — agent.llm's generic
+ * payload port) are substituted LAST, so upstream text is always data, never executable
+ * template code (an LLM output — or a table block carrying game state — containing `{{…}}`/
+ * `<%…%>` must not run). `{{inN}}`/`{{input}}` are not known macros, so expandMacros leaves the
+ * placeholders untouched.
  */
 export const interpolate = (
   text: string,
@@ -60,6 +62,11 @@ export const interpolate = (
   for (const name of SLOT_NAMES) {
     out = out.split(`{{${name}}}`).join(slotText(slots[name]))
   }
+  // agent.llm's dedicated `{{input}}` placeholder (agentNodes.ts): the generic `input` port payload,
+  // substituted here as DATA — last, same invariant as `{{inN}}` — so an upstream table block or an
+  // LLM output can never inject executable template code. Only substituted when the caller wired an
+  // `input` slot, so the other authoring nodes (text.template / prompt.messages) leave it literal.
+  if ('input' in slots) out = out.split('{{input}}').join(slotText(slots.input))
   return out
 }
 

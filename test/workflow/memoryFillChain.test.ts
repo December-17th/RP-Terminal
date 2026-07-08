@@ -239,6 +239,9 @@ describe('memory-fill chain — headless (evaluateDocTriggers)', () => {
     const joined = sentMessages.map((m) => `${m.role}:${m.content}`).join('\n')
     expect(joined).toContain('ai reply 5')
     expect(joined).toContain('player action 5')
+    // table.read's block reached the model via the `{{input}}` placeholder (read.block → agent.input).
+    // Regression guard for the dropped-block bug: interpolate substitutes {{input}}, not just {{inN}}.
+    expect(joined).toContain('纪要 (summary)')
 
     // parse.extract pulled the TableEdit block and table.apply LANDED it (the rows-land assertion).
     expect(mockSql.applySqlBatch).toHaveBeenCalled()

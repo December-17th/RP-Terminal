@@ -255,11 +255,16 @@ export const agentLlm: NodeImpl = {
         rows.push(...history)
         continue
       }
-      // {{input}} rides the standard {{inN}} slot machinery; {history} inline → transcript text.
-      // {{lore}} is substituted BEFORE interpolate so the macro engine never sees the marker.
+      // {{input}} rides interpolate's dedicated data slot (substituted LAST, like {{inN}}, so a table
+      // block's game-state text can't inject template code); `in1` kept as a back-compat alias for the
+      // same payload. {history} inline → transcript text. {{lore}} is substituted BEFORE interpolate so
+      // the macro engine never sees the marker.
       const withHistory = m.content.split(HISTORY_MARKER).join(historyText(history))
       const withLore = withHistory.split(LORE_MARKER).join(loreBlock)
-      rows.push({ role: m.role, content: interpolate(withLore, { in1: inputPayload }, gen) })
+      rows.push({
+        role: m.role,
+        content: interpolate(withLore, { in1: inputPayload, input: inputPayload }, gen)
+      })
     }
     // No `{{lore}}` row anywhere + a non-empty block ⇒ appended system row (spec §7.3). Empty ⇒ none.
     if (!hasLoreMarker && loreBlock) rows.push({ role: 'system', content: loreBlock })
