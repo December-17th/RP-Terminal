@@ -1,10 +1,12 @@
-import { AssetCategoryIndex } from './types'
+import { AssetCategoryIndex, AssetType } from './types'
 
 export interface CharacterCoverage {
   name: string
   hasAvatar: boolean // 头像 base present
   hasStandee: boolean // 立绘 base present
-  moodVariants: number // total mood variant files across types
+  hasGallery: boolean // 相册 base or any slot present
+  galleryCount: number // 相册 files = base (0/1) + slot variants
+  moodVariants: number // total mood variant files across 头像 + 立绘
   inRoster: boolean
 }
 
@@ -37,12 +39,45 @@ export function computeCoverage(
     .sort((a, b) => a.localeCompare(b))
     .map((name) => {
       const entry = idx[name]
+      const gallery = entry?.['相册']
+      const galleryCount = moodCount(gallery) + (gallery?.base ? 1 : 0)
       return {
         name,
         hasAvatar: !!entry?.['头像']?.base,
         hasStandee: !!entry?.['立绘']?.base,
+        hasGallery: galleryCount > 0,
+        galleryCount,
         moodVariants: moodCount(entry?.['头像']) + moodCount(entry?.['立绘']),
         inRoster: roster.has(name)
       }
+    })
+}
+
+/** One name's per-type coverage: does the type have a base file, and how many variants. */
+export interface NameTypeCoverage {
+  hasBase: boolean
+  variants: number
+}
+export interface NameRow {
+  name: string
+  types: Partial<Record<AssetType, NameTypeCoverage>>
+}
+
+/** Generic, roster-free rollup of a single category index into per-name rows (name-sorted).
+ *  Each row carries only the types that name actually has. Used by the location/CG grids where
+ *  there is no roster concept — {@link computeCoverage} stays the character-specific view. */
+export function nameRows(index: AssetCategoryIndex | undefined): NameRow[] {
+  const idx = index ?? {}
+  return Object.keys(idx)
+    .sort((a, b) => a.localeCompare(b))
+    .map((name) => {
+      const entry = idx[name] ?? {}
+      const types: NameRow['types'] = {}
+      for (const type of Object.keys(entry) as AssetType[]) {
+        const te = entry[type]
+        if (!te) continue
+        types[type] = { hasBase: !!te.base, variants: Object.keys(te.moods).length }
+      }
+      return { name, types }
     })
 }

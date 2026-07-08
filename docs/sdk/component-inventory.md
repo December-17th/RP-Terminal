@@ -61,8 +61,59 @@ transports implement the same surface, so a card behaves identically in either
   `type:'chat'` getters (`getScriptVars`/`getChatVars`) seed lazily via a blocking `sendSync`
   (`plugin-storage-all-sync` / `chat-card-vars-get-sync`) on first read, memoized per host — so a card reads
   its saved KV synchronously at boot (an inline frame gets a fresh host per reload), matching WCV's sync getters.
-- **Isolated / WCV** — `createThRuntime(...)` at `wcvPreload.ts:161`; Host backed by `ipcRenderer.sendSync`
+- **Isolated / WCV** — `createThRuntime(...)` at `wcvPreload.ts:285`; Host backed by `ipcRenderer.sendSync`
   (sync getters) + `invoke` (async) over the `wcv-host-*` IPC.
+
+**WCV-transport-only host method** (not on the `thRuntime` surface — a WCV is a native overlay with its
+own screen rect, which an inline DOM card doesn't need): `window.rptHost.getPanelGeometry()` →
+`{ x, y, width, height, viewportWidth, viewportHeight }` (the page's slot rect in window-content coords
++ the window content size), with `onPanelGeometry(cb)` for changes and a `rpt:panelgeometry` window
+event. Lets a page draw a full-viewport background offset by its own `x` so adjacent seamless slots
+compose into one continuous stage (the seam-slicing primitive — pairs with `panel_ui.seamless`, §4).
+Seeded synchronously at preload load; refreshed by main on every bounds change. Verify:
+[`wcvPreload.ts:98`](../../src/preload/wcvPreload.ts), [`wcvGeometry.ts`](../../src/main/services/wcvGeometry.ts).
+
+**WCV-transport-only host method** (sibling-panel coordination — only meaningful when a card runs across
+multiple WCV surfaces): `window.rptHost.broadcastEvent(name, payload)` fans a card-authored event out to
+the OTHER card panels on the same chat (not back to the sender); they receive it via `eventOn(name, cb)`.
+The chat is resolved from the sender in main (a card can't target another session) and the name is opaque
+to RPT, so this stays card-agnostic. The poem play-area surfaces use it for `self:fold` /
+`stage:cast-changed` (redesign §5.3). Verify: [`wcvIpc.ts`](../../src/main/ipc/wcvIpc.ts)
+(`wcv-host-broadcast-event`) → [`wcvManager.notifyEvent`](../../src/main/services/wcvManager.ts).
+
+**Full-play-area overlay surfaces** (PM-A7): `requestOverlay(id)` / `closeOverlay()` raise / dismiss a
+surface the active card declares in `panel_ui.overlays` (§4). Because a WCV composites above the DOM only
+*inside* its slot rectangle, a card surface can't escape its slot — so the app mounts the named overlay as
+a temporary WCV covering the whole `panel_ui` grid region (a reserved `overlay:<id>` slot, above the
+others, **not** the titlebar / TopStrip) and tears it down on close. One overlay at a time (a new id swaps;
+the same id is a no-op); an undeclared id is rejected + `console.warn`-ed main-side. The overlay WCV is
+transparent (the surface paints its own scrim/sheet) and freeze-frames under TopStrip dropdowns like any
+WCV (PM-A4). No params — context travels via chat KV + `broadcastEvent` (the poem partner sheet reads
+`poem.sheet` KV). Card-agnostic: any card can declare overlays; poem's partner sheet + 地图 are the first
+consumers (the poem status-parity design, §3–§5 — now in the `POD-Frontend-For-RPT` repo under
+`play-area/design/`). Behavior lives once in [`shared/thRuntime`](../../src/shared/thRuntime/index.ts) →
+[`Host.requestOverlay`](../../src/shared/thRuntime/types.ts); both transports inherit. On WCV panel
+surfaces it is also `window.rptHost.requestOverlay` / `.closeOverlay` (alongside `broadcastEvent`). Verify:
+[`wcvIpc.ts`](../../src/main/ipc/wcvIpc.ts) (`wcv-host-request-overlay` / `overlay-request`, id validated
+against `panel_ui.overlays`) → [`wcvManager`](../../src/main/services/wcvManager.ts) +
+[`wcvOverlay.ts`](../../src/main/services/wcvOverlay.ts) → renderer
+[`OverlayHost.tsx`](../../src/renderer/src/components/workspace/OverlayHost.tsx).
+
+**Asset enumeration + card-driven import** (WA-3): `assetList(name, type)` enumerates one entry's files
+(base first as `variant:null`, then variant/slot tokens numeric-aware sorted) as `rptasset://` URLs — the
+read side of a gallery (相册) or CG shelf, a bare global in the same family as `assetUrl` (same category
+inference + lorebook-id precedence; first world carrying the entry wins). `rptHost.requestAssetImport({
+name, type, variant? })` is the **host-privilege write**: main opens the OS image picker (user-mediated),
+copies the pick into the card's **primary** world under the convention filename (overwrite = replace),
+invalidates the index, and returns the new `rptasset://` URL (null on cancel/invalid). Like `requestOverlay`
+it also rides `rptHost` (not just the bare global). Behavior lives once in
+[`shared/thRuntime`](../../src/shared/thRuntime/index.ts) →
+[`Host.assetList`/`Host.requestAssetImport`](../../src/shared/thRuntime/types.ts); both transports inherit.
+Verify: [`worldAssetIpc.ts`](../../src/main/ipc/worldAssetIpc.ts) (`asset-list-for-card` /
+`asset-import-for-card` + the shared `pickAndImportAssetForCard`) + [`wcvIpc.ts`](../../src/main/ipc/wcvIpc.ts)
+(`wcv-host-asset-list` / `wcv-host-request-asset-import`) →
+[`worldAssetService`](../../src/main/services/worldAssetService.ts) (`assetListForWorld` /
+`importAssetForCard`).
 
 ### Globals exposed to a card
 
@@ -92,8 +143,9 @@ transports implement the same surface, so a card behaves identically in either
 | **EJS**                | `EjsTemplate.*`                                                                                                                                        | ✅      | Backed by the quickjs engine (Layer C of ST-PT).                                                                                                                                                                                                                                           |
 | **Macros**             | `substituteParams`, `substitudeMacros`, `{{get_X_variable}}`/`{{format_X_variable}}`                                                                   | ✅      | `registerMacroLike` ⬜ (cross-process).                                                                                                                                                                                                                                                    |
 | **Audio**              | `audioPlay/Pause/Import/Mode/Enable`                                                                                                                   | 🔁      | Cards play audio natively (`<audio>`/WebAudio) under the card CSP — the real path.                                                                                                                                                                                                         |
-| **World Assets**       | `assetUrl(name, type, mood?)` → `Promise<rptasset://… \| null>`                                                                                       | ✅      | Resolve a portrait (head `头像` / standing `立绘`, mood-aware) from the active world's asset layer. Returns an `rptasset://` URL loadable in card pages. Prerequisite: the World Assets layer ([world-assets-plan.md](../world-assets-plan.md)). Both transports backed by [`Host.assetUrl`](../../src/shared/thRuntime/types.ts). |
-| **Duel / deckbuilder**  | `getDuelPreview()` → `Promise<DuelPreview \| null>`                                                                                                    | ✅      | **Read-only host method** (RPT-only). Returns the engine-computed duel build (deck + combatants + resources/relics) for the active chat, produced by the card's combat ruleset. Generic contract: `DuelPreview` = `{ config, lead, party[] }`, each combatant with resources/modifiers/conditions + deck. See [`preview.ts`](../../src/shared/combat/deckbuilder/preview.ts). See design [2026-06-30-duel-build-preview-tab-design.md](../superpowers/specs/2026-06-30-duel-build-preview-tab-design.md) §2 and [duel-card-authoring.md](duel-card-authoring.md). **Consumer (live):** the fork 战斗 tab (`FrontEnd-for-destined-journey-TPR-STS`); `DuelPreview` is mirrored there in `src/status/core/types/duel-preview.d.ts` — two copies, one contract, keep in sync. |
+| **World Assets**       | `assetUrl(name, type, mood?)` → `Promise<rptasset://… \| null>`; `assetList(name, type)` → `Promise<Array<{variant, url}>>`; `rptHost.requestAssetImport({name, type, variant?})` → `Promise<rptasset://… \| null>` | ✅      | Resolve an asset (mood-aware) from the active world's asset layer. Filename convention `<name>_<type>[_<变体>].<ext>`. **The category is inferred from `type`** (via [`categoryForType`](../../src/shared/worldAssets/types.ts), a real lookup over `TYPES_BY_CATEGORY`): `头像`/`立绘`/`相册` → `character`, `背景`/`全景` → `location`, `CG` → `cg`; any UNKNOWN string → `character`. So a card can reach location art (`背景`/`全景`) and cutscene art (`CG`), not just character portraits — the seam carries no category argument. **相册** = a character's photo gallery: `<charName>_相册_<slot>` (e.g. `薇拉_相册_02.png`; base file = cover, the 变体 token is the gallery slot). **CG** = cutscene art keyed by scene id: `<sceneId>_CG[_<variant>]` (e.g. `初遇_CG_雨夜.png`). Returns an `rptasset://` URL loadable in card pages. **`assetList`** (WA-3) enumerates one entry's files — base first (`variant:null`), then variant/slot tokens numeric-aware sorted; same category inference + lorebook-id precedence (first world carrying the entry wins, no cross-world merge); `[]` on a miss. Bare read global (like `assetUrl`). **`rptHost.requestAssetImport`** (WA-3) is the host-privilege write: main opens the OS image picker (user-mediated), copies the pick into the card's primary world (overwrite = replace), invalidates the index, returns the new URL (null on cancel/invalid) — on `rptHost` like `requestOverlay`. Prerequisite: the World Assets layer ([world-assets-plan.md](../world-assets-plan.md)). Both transports backed by [`Host.assetUrl`/`assetList`/`requestAssetImport`](../../src/shared/thRuntime/types.ts) (WCV: `worldAssetService.assetUrlForWorld`/`assetListForWorld`/`importAssetForCard`; inline: `cardBridge/host.ts`), so they stay at parity. |
+| **Duel / deckbuilder**  | `getDuelPreview()` → `Promise<DuelPreview \| null>`                                                                                                    | ✅      | **Read-only host method** (RPT-only). Returns the engine-computed duel build (deck + combatants + resources/relics) for the active chat, produced by the card's combat ruleset. Generic contract: `DuelPreview` = `{ config, lead, party[] }`, each combatant with resources/modifiers/conditions + deck. See [`preview.ts`](../../src/shared/combat/deckbuilder/preview.ts). See design [2026-06-30-duel-build-preview-tab-design.md](../superpowers/specs/2026-06-30-duel-build-preview-tab-design.md) §2 and the poem duel-card authoring guide (now in the `POD-Frontend-For-RPT` repo under `legacy/`). **Consumer (live):** the fork 战斗 tab (`FrontEnd-for-destined-journey-TPR-STS`); `DuelPreview` is mirrored there in `src/status/core/types/duel-preview.d.ts` — two copies, one contract, keep in sync. |
+| **Overlay surfaces**   | `requestOverlay(id)` → `Promise<boolean>`; `closeOverlay()` → `Promise<void>`                                                                          | ✅      | **RPT-only** (PM-A7). Raise / dismiss a full-play-area overlay the active card declares in `panel_ui.overlays` — the app mounts it as a WCV over the whole grid region (a card surface can't escape its slot). One at a time; a new id swaps, the same id no-ops; an undeclared id is rejected + `console.warn`-ed. Transparent WCV (surface paints its own scrim), freeze-frames under menus (PM-A4). Both transports via [`Host.requestOverlay`/`closeOverlay`](../../src/shared/thRuntime/types.ts); WCV also exposes `rptHost.requestOverlay`/`.closeOverlay`. See §2 above + [wcvOverlay.ts](../../src/main/services/wcvOverlay.ts) / [OverlayHost.tsx](../../src/renderer/src/components/workspace/OverlayHost.tsx). |
 
 #### Variable scopes
 
@@ -190,7 +242,7 @@ rendered by `WcvPanel`):
 
 Card scripts themselves run app-wide in the invisible session-level **engine** (`CardScriptWcvHost`), not in a panel.
 
-**World Assets on WCV cards**: the `rptasset://` scheme resolves portraits from the active world's asset layer. It is registered on the `persist:wcv-cards` session, allowing card pages (both loader-regex and inline-HTML panels) to load mood-aware heads (`头像`) and standing images (`立绘`) via `window.assetUrl` or direct URL references. Prerequisite: [world-assets-plan.md](../world-assets-plan.md).
+**World Assets on WCV cards**: the `rptasset://` scheme resolves assets from the active world's asset layer. It is registered on the `persist:wcv-cards` session, allowing card pages (both loader-regex and inline-HTML panels) to load mood-aware heads (`头像`) and standing images (`立绘`) — and location art (backgrounds `背景` / panoramas `全景`) and cutscene art (`CG`) — via `window.assetUrl` or direct URL references. `window.assetUrl(name, type, mood?)` infers the asset category from `type` (`头像`/`立绘`/`相册` → `character`, `背景`/`全景` → `location`, `CG` → `cg`), so location and CG lookups reach their index. WCV cards also get `window.assetList(name, type)` (enumerate a gallery/CG's variants) and `window.rptHost.requestAssetImport({name, type, variant?})` (picker-backed import) at parity with inline (WA-3). Prerequisite: [world-assets-plan.md](../world-assets-plan.md).
 
 ---
 
@@ -215,7 +267,7 @@ character_version, character_book` (embedded lorebook). Unknown ST `extensions.*
 | `scripts` (`[{name,code,enabled?}]`) | card scripts                                                                                                                         | ✅                             |
 | `game_rules`                         | freeform rules bag                                                                                                                   | ✅                             |
 | `left_panel`                         | `{ name: string }` — a card UI (matched by script `name`) auto-docked left in the workspace when active. Requires `renderMode:'panel'`. | ✅                             |
-| `panel_ui`                           | static card-determined grid (slots → native view or `wcv` entry)                                                                     | ✅ schema                      |
+| `panel_ui`                           | static card-determined grid (slots → native view or `wcv` entry). `seamless:true` drops inter-slot gap/padding + per-slot chrome (border/radius/title) so adjacent WCV surfaces compose into one continuous stage; a slot's `chrome:bool` overrides the layout default. `overlays:[{id,entry,title?}]` (PM-A7) declares full-play-area overlay surfaces the card raises at runtime via `requestOverlay(id)`/`closeOverlay()` (§2, same `entry` URL semantics as slots). | ✅ schema                      |
 | **World Card bundle slots**          | `world_card` (version marker), `meta`, `regex[]`, `presets[]`, `lorebooks[]`, `plugins[]`, `agent`, `combat`, `recommended_settings` | ✅ schema; routing 🟡 (see §5) |
 
 `world_card` present ⇒ the card is a **World Card** (a complete, one-click-installable world). The schema
@@ -370,8 +422,10 @@ A world whose stats already live in MVU `stat_data` (e.g. 命定之诗) can buil
 from those variables** instead of `combat.party` templates, and resolve the fight with its **own**
 rules via a **combat system** plugged into the `resolveAction` seam. The card authors combat numbers
 into the MVU fields its schema already preserves (`标签`/`效果`/`消耗`) — **no new field** — and the app
-parses them. See [combat-poem-of-destiny-expansion.md](../combat-poem-of-destiny-expansion.md). Reference
-bundle config: [examples/poem-combat-bundle.json](examples/poem-combat-bundle.json).
+parses them. The 命定之诗 card-side combat expansion doc and its reference bundle config now live in the
+`POD-Frontend-For-RPT` repo under `legacy/` (`combat-poem-of-destiny-expansion.md`,
+`poem-combat-bundle.json`); the bundle is also kept in-repo as an engine-test fixture at
+[test/fixtures/poem-combat-bundle.json](../../test/fixtures/poem-combat-bundle.json).
 
 | Component        | Where / shape                                                                                                                                                               | Notes                                                                                                                                                                                                                                                               |
 | ---------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |

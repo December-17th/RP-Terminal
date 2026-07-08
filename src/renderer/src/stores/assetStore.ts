@@ -1,5 +1,8 @@
 import { create } from 'zustand'
 import type { CharacterCoverage } from '../../../shared/worldAssets/coverage'
+import type { AssetIndex, AssetType } from '../../../shared/worldAssets/types'
+import { ASSET_EXTS } from '../../../shared/worldAssets/types'
+import { buildAssetFilename, parseAssetFilename } from '../../../shared/worldAssets/filename'
 
 /** The active world's lorebook ids: the chat's session ids, else the character's own book. */
 export function lorebookIdsForWorld(
@@ -10,43 +13,180 @@ export function lorebookIdsForWorld(
   return activeCharacterId ? [activeCharacterId] : []
 }
 
+// ── Pure helpers (unit-tested; no store/IPC) ─────────────────────────────────────────────────────
+
+/** A single row in the import wizard: one dropped/picked file bound to a name/type/variant. */
+export interface WizardRow {
+  id: string
+  srcPath: string
+  name: string
+  type: AssetType
+  variant: string
+  ext: string
+}
+
+/** Lowercased extension of a path/basename, or '' when there's no recognizable one. */
+export function extOf(pathOrName: string): string {
+  const dot = pathOrName.lastIndexOf('.')
+  return dot >= 0 ? pathOrName.slice(dot + 1).toLowerCase() : ''
+}
+
+/** basename of an OS path (handles both separators). */
+export function baseName(p: string): string {
+  return p.split(/[\\/]/).pop() ?? p
+}
+
+/** Per-row validity for the wizard: name must be non-empty, extension must be supported. */
+export function validateWizardRow(row: {
+  name: string
+  ext: string
+}): { valid: boolean; error?: 'name' | 'ext' } {
+  if (!row.name.trim()) return { valid: false, error: 'name' }
+  if (!(ASSET_EXTS as readonly string[]).includes(row.ext.toLowerCase()))
+    return { valid: false, error: 'ext' }
+  return { valid: true }
+}
+
+/** The final on-disk filename a wizard row will produce, or '' when the row is invalid. */
+export function filenamePreview(row: {
+  name: string
+  type: AssetType
+  variant: string
+  ext: string
+}): string {
+  const check = validateWizardRow(row)
+  if (!check.valid) return ''
+  const variant = row.variant.trim() || undefined
+  return buildAssetFilename({
+    name: row.name.trim(),
+    type: row.type,
+    mood: variant,
+    ext: row.ext.toLowerCase() as (typeof ASSET_EXTS)[number]
+  })
+}
+
+/** Classify a dropped file: does its basename already parse to the convention (and, if so, what)?
+ *  The view uses this to decide direct-import vs. sending the file to the naming wizard. */
+export function classifyDropped(
+  srcPath: string
+): { name: string; type: AssetType; variant: string; ext: string } | null {
+  const parsed = parseAssetFilename(baseName(srcPath))
+  if (!parsed) return null
+  return { name: parsed.name, type: parsed.type, variant: parsed.mood ?? '', ext: parsed.ext }
+}
+
+// ── Store ────────────────────────────────────────────────────────────────────────────────────────
+
+interface ImportResult {
+  imported: number
+  skipped: number
+  skippedReasons?: string[]
+}
+
 interface AssetState {
-  rows: CharacterCoverage[]
+  /** Merged AssetIndex across the world's lorebook ids (all categories) — the grid's data source. */
+  index: AssetIndex
+  /** Character-category coverage rows (roster union): the 人物 grid + the coverage meter. */
+  coverage: CharacterCoverage[]
   loading: boolean
   load: (profileId: string, lorebookIds: string[], roster: string[]) => Promise<void>
   refresh: (profileId: string, lorebookIds: string[], roster: string[]) => Promise<void>
-  importZip: (
+  importFiles: (
+    profileId: string,
+    lorebookId: string,
+    lorebookIds: string[],
+    roster: string[],
+    items: { srcPath: string; name: string; type: AssetType; variant?: string }[]
+  ) => Promise<ImportResult | null>
+  deleteFile: (
+    profileId: string,
+    lorebookId: string,
+    lorebookIds: string[],
+    roster: string[],
+    category: string,
+    file: string
+  ) => Promise<boolean>
+  renameVariant: (
+    profileId: string,
+    lorebookId: string,
+    lorebookIds: string[],
+    roster: string[],
+    category: string,
+    file: string,
+    newVariant: string
+  ) => Promise<
+    { ok: true; file: string } | { ok: false; error: 'not-found' | 'invalid' | 'collision' | 'failed' }
+  >
+  exportZip: (profileId: string, lorebookId: string) => Promise<{ entries: number } | null>
+}
+
+export const useAssetStore = create<AssetState>((set) => {
+  const reload = async (
     profileId: string,
     lorebookIds: string[],
     roster: string[]
-  ) => Promise<{ imported: number; skipped: number } | null>
-}
-
-export const useAssetStore = create<AssetState>((set) => ({
-  rows: [],
-  loading: false,
-  load: async (profileId, lorebookIds, roster) => {
+  ): Promise<void> => {
     if (!lorebookIds.length) {
-      set({ rows: [] })
+      set({ index: {}, coverage: [], loading: false })
       return
     }
-    set({ loading: true })
     try {
-      const rows = await window.api.assetCoverage(profileId, lorebookIds, 'character', roster)
-      set({ rows, loading: false })
+      const [index, coverage] = await Promise.all([
+        window.api.assetListIndex(profileId, lorebookIds) as Promise<AssetIndex>,
+        window.api.assetCoverage(profileId, lorebookIds, 'character', roster) as Promise<
+          CharacterCoverage[]
+        >
+      ])
+      set({ index: index ?? {}, coverage: coverage ?? [], loading: false })
     } catch {
       set({ loading: false })
     }
-  },
-  refresh: async (profileId, lorebookIds, roster) => {
-    await window.api.assetRefresh(profileId, lorebookIds)
-    await useAssetStore.getState().load(profileId, lorebookIds, roster)
-  },
-  importZip: async (profileId, lorebookIds, roster) => {
-    const target = lorebookIds[0]
-    if (!target) return null
-    const res = await window.api.assetImportZipDialog(profileId, target)
-    if (res) await useAssetStore.getState().load(profileId, lorebookIds, roster)
-    return res
   }
-}))
+
+  return {
+    index: {},
+    coverage: [],
+    loading: false,
+    load: async (profileId, lorebookIds, roster) => {
+      set({ loading: true })
+      await reload(profileId, lorebookIds, roster)
+    },
+    refresh: async (profileId, lorebookIds, roster) => {
+      await window.api.assetRefresh(profileId, lorebookIds)
+      set({ loading: true })
+      await reload(profileId, lorebookIds, roster)
+    },
+    importFiles: async (profileId, lorebookId, lorebookIds, roster, items) => {
+      if (!lorebookId || !items.length) return null
+      const res = (await window.api.assetImportFiles(profileId, lorebookId, items)) as ImportResult
+      await reload(profileId, lorebookIds, roster)
+      return res
+    },
+    deleteFile: async (profileId, lorebookId, lorebookIds, roster, category, file) => {
+      if (!lorebookId) return false
+      const ok = (await window.api.assetDeleteFile(profileId, lorebookId, category, file)) as boolean
+      if (ok) await reload(profileId, lorebookIds, roster)
+      return ok
+    },
+    renameVariant: async (profileId, lorebookId, lorebookIds, roster, category, file, newVariant) => {
+      const res = (await window.api.assetRenameVariant(
+        profileId,
+        lorebookId,
+        category,
+        file,
+        newVariant
+      )) as
+        | { ok: true; file: string }
+        | { ok: false; error: 'not-found' | 'invalid' | 'collision' | 'failed' }
+      if (res.ok) await reload(profileId, lorebookIds, roster)
+      return res
+    },
+    exportZip: async (profileId, lorebookId) => {
+      if (!lorebookId) return null
+      const res = (await window.api.assetExportZipDialog(profileId, lorebookId)) as {
+        entries: number
+      } | null
+      return res
+    }
+  }
+})

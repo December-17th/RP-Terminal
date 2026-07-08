@@ -48,7 +48,7 @@ const getLatestStatData = (profileId: string, chatId: string): Record<string, un
   return sd ?? null
 }
 
-// --- mock setup (inline; canonical stat_map/derive from docs/sdk/examples/poem-combat-bundle.json) ---
+// --- mock setup (inline; canonical stat_map/derive from test/fixtures/poem-combat-bundle.json) ---
 
 const MOCK_STAT_MAP: StatMap = {
   player: '主角',

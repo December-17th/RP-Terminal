@@ -18,6 +18,15 @@ import { renderTemplate } from '../plugin/renderTemplate'
 import { useUiStore } from '../stores/uiStore'
 import { useT } from '../i18n'
 
+// Local copy of the workflow editors' `inEditable` shape (do NOT import across modules): true when
+// focus is inside a text-entry element, so keyboard paging never fires while typing in the composer.
+const inEditable = (target: EventTarget | null): boolean =>
+  target instanceof HTMLElement &&
+  (target.tagName === 'INPUT' ||
+    target.tagName === 'TEXTAREA' ||
+    target.tagName === 'SELECT' ||
+    target.isContentEditable)
+
 /**
  * The center column: the paginated floor stage, the mode/regenerate toolbar, the
  * script-actions menu, and the composer. Owns all chat-scoped UI state (pagination,
@@ -63,6 +72,8 @@ export function ChatView({ profileId }: { profileId: string }): React.ReactEleme
   const [floorsOpen, setFloorsOpen] = useState(false)
   // Which floor (page) the chat history is showing — one floor at a time.
   const [viewIndex, setViewIndex] = useState(0)
+  // Jump-to-floor: when open, the page indicator swaps for a number input.
+  const [jumpOpen, setJumpOpen] = useState(false)
   const viewportRef = useRef<HTMLDivElement>(null)
   const t = useT()
 
@@ -199,6 +210,26 @@ export function ChatView({ profileId }: { profileId: string }): React.ReactEleme
     viewportRef.current?.scrollTo({ top: 0 })
   }, [viewIndex])
 
+  // Keyboard paging: ArrowLeft/ArrowRight page the floor stage, but only when no conflicting UI
+  // state owns the keyboard (inline edit, context menu, floors modal) and focus is not in a
+  // text-entry element (so composer typing never pages). Modifier keys are left to the browser.
+  useEffect(() => {
+    if (pageCount === 0) return
+    const onKeyDown = (e: KeyboardEvent): void => {
+      if (editing || menu || floorsOpen) return
+      if (inEditable(e.target) || e.ctrlKey || e.altKey || e.metaKey) return
+      if (e.key === 'ArrowLeft') {
+        setViewIndex(Math.max(0, page - 1))
+        e.preventDefault()
+      } else if (e.key === 'ArrowRight') {
+        setViewIndex(Math.min(pageCount - 1, page + 1))
+        e.preventDefault()
+      }
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [page, pageCount, editing, menu, floorsOpen])
+
   if (!activeChatId) {
     return (
       <div style={{ margin: 'auto', opacity: 0.5 }}>
@@ -303,9 +334,36 @@ export function ChatView({ profileId }: { profileId: string }): React.ReactEleme
             >
               ↩
             </button>
-            <span className="floor-pageinfo">
-              [{page + 1}/{pageCount}]
-            </span>
+            {jumpOpen ? (
+              <input
+                className="floor-pagejump"
+                type="number"
+                min={1}
+                max={pageCount}
+                autoFocus
+                defaultValue={page + 1}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    const n = Number((e.target as HTMLInputElement).value)
+                    if (Number.isFinite(n)) {
+                      setViewIndex(Math.min(pageCount - 1, Math.max(1, n) - 1))
+                    }
+                    setJumpOpen(false)
+                  } else if (e.key === 'Escape') {
+                    setJumpOpen(false)
+                  }
+                }}
+                onBlur={() => setJumpOpen(false)}
+              />
+            ) : (
+              <button
+                className="floor-pageinfo"
+                title={t('chat.jumpToFloor')}
+                onClick={() => setJumpOpen(true)}
+              >
+                [{page + 1}/{pageCount}]
+              </button>
+            )}
             <button
               className="pager-btn pager-next"
               title={t('chat.nextFloor')}

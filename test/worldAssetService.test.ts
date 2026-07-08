@@ -15,8 +15,14 @@ import * as svc from '../src/main/services/worldAssetService'
 
 const charDir = (lb: string) =>
   path.join(tmp, 'profiles', 'p1', 'lorebooks', `${lb}.assets`, 'character')
+const cgDir = (lb: string) => path.join(tmp, 'profiles', 'p1', 'lorebooks', `${lb}.assets`, 'cg')
 const write = (lb: string, file: string) => {
   const d = charDir(lb)
+  fs.mkdirSync(d, { recursive: true })
+  fs.writeFileSync(path.join(d, file), 'img-bytes')
+}
+const writeCg = (lb: string, file: string) => {
+  const d = cgDir(lb)
   fs.mkdirSync(d, { recursive: true })
   fs.writeFileSync(path.join(d, file), 'img-bytes')
 }
@@ -44,6 +50,16 @@ describe('buildIndex / getIndex', () => {
     })
     expect(idx.character['爱莎']['立绘'].base).toBe('爱莎_立绘.webp')
   })
+  // buildIndex iterates ASSET_CATEGORIES, so the new `cg` category is picked up with no code change.
+  it('indexes the cg category (scene-keyed base + variant)', () => {
+    writeCg('w1', '初遇_CG.png')
+    writeCg('w1', '初遇_CG_雨夜.png')
+    const idx = svc.getIndex('p1', 'w1', { refresh: true })
+    expect(idx.cg['初遇']['CG']).toEqual({
+      base: '初遇_CG.png',
+      moods: { 雨夜: '初遇_CG_雨夜.png' }
+    })
+  })
 })
 
 describe('resolveProtocolPath', () => {
@@ -59,6 +75,12 @@ describe('resolveProtocolPath', () => {
   })
   it('returns null for a missing file', () => {
     expect(svc.resolveProtocolPath('p1', 'w1', 'character', '无.jpg')).toBeNull()
+  })
+  it('accepts the cg category (validated against ASSET_CATEGORIES)', () => {
+    writeCg('w1', '初遇_CG.png')
+    expect(svc.resolveProtocolPath('p1', 'w1', 'cg', '初遇_CG.png')).toBe(
+      path.join(cgDir('w1'), '初遇_CG.png')
+    )
   })
   it('rejects an unknown / traversal category', () => {
     write('w1', '爱莎_头像.jpg')

@@ -16,6 +16,8 @@ const charDir = (lb: string): string =>
   path.join(tmp, 'profiles', 'p1', 'lorebooks', `${lb}.assets`, 'character')
 const locDir = (lb: string): string =>
   path.join(tmp, 'profiles', 'p1', 'lorebooks', `${lb}.assets`, 'location')
+const cgDir = (lb: string): string =>
+  path.join(tmp, 'profiles', 'p1', 'lorebooks', `${lb}.assets`, 'cg')
 
 const makeZip = (entries: Array<[string, string]>): string => {
   const zip = new AdmZip()
@@ -63,6 +65,21 @@ describe('importAssetsZip', () => {
     expect(r.skippedReasons.join(' ')).toMatch(/wrong category for type/)
     // nothing escaped the assets root
     expect(fs.existsSync(path.join(tmp, 'evil.png'))).toBe(false)
+  })
+
+  it('imports the cg category + a 相册 gallery slot, and skips a CG file under character/', () => {
+    const zip = makeZip([
+      ['cg/初遇_CG.png', 'C'], // scene-keyed cutscene art → cg category
+      ['character/薇拉_相册_01.png', 'G'], // 相册 gallery slot → character category
+      ['character/初遇_CG.png', 'x'] // CG type in the wrong folder → skipped
+    ])
+    const r = svc.importAssetsZip('p1', 'w1', zip)
+    expect(r.imported).toBe(2)
+    expect(r.byCategory).toEqual({ cg: 1, character: 1 })
+    expect(fs.readFileSync(path.join(cgDir('w1'), '初遇_CG.png'), 'utf-8')).toBe('C')
+    expect(fs.readFileSync(path.join(charDir('w1'), '薇拉_相册_01.png'), 'utf-8')).toBe('G')
+    expect(r.skipped).toBe(1)
+    expect(r.skippedReasons.join(' ')).toMatch(/wrong category for type/)
   })
 
   it('skips __MACOSX and dotfiles silently (not counted as user errors)', () => {

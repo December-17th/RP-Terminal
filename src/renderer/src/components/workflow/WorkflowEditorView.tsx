@@ -23,8 +23,9 @@ import RunDrawer from './RunDrawer'
 import ModuleImportSheet, { type ModuleInspectReport } from './ModuleImportSheet'
 import AgentsDropdown from './AgentsDropdown'
 import { isAgentGroup, ungroupedTriggerChains } from './agentModel'
-import { paletteMatch } from './paletteModel'
+import { groupPalette, paletteMatch } from './paletteModel'
 import type { EditorNodeType } from './editorModel'
+import './workflowEditor.css'
 
 /** ModuleTemplateSummary mirror (main's moduleTemplates.ts) — redeclared locally per the preload
  *  convention (the renderer only sees this over IPC and must not import from src/main). */
@@ -37,6 +38,22 @@ interface LibraryEntry {
 }
 
 const BUILTIN_WORKFLOW_ID = 'default'
+
+/** RF-04: ±40px random offset so repeated click-to-add doesn't stack nodes exactly on top of one
+ *  another at the viewport center. */
+const jitter = (p: { x: number; y: number }): { x: number; y: number } => ({
+  x: p.x + (Math.random() - 0.5) * 80,
+  y: p.y + (Math.random() - 0.5) * 80
+})
+
+/** RF-03: true when the event target is a text-entry surface, so canvas keyboard shortcuts (undo /
+ *  redo) don't hijack typing in a config field / rename input. */
+const inEditable = (target: EventTarget | null): boolean =>
+  target instanceof HTMLElement &&
+  (target.tagName === 'INPUT' ||
+    target.tagName === 'TEXTAREA' ||
+    target.tagName === 'SELECT' ||
+    target.isContentEditable)
 
 /** Renders `status` translated when it matches a known workflowEditor.* key (including the
  *  connect.* rejection reasons the store writes as `connect.<reason>`); otherwise shows the raw
@@ -53,11 +70,7 @@ function StatusLine({ status }: { status: string | null }): React.JSX.Element | 
     'connect.missing-port'
   ]
   const text = knownKeys.includes(status) ? t(`workflowEditor.${status}`) : status
-  return (
-    <div style={{ fontSize: 11.5, color: 'var(--rpt-text-secondary)', padding: '2px 10px' }}>
-      {text}
-    </div>
-  )
+  return <div className="rpt-wfe-statusline">{text}</div>
 }
 
 export default function WorkflowEditorView({
@@ -89,6 +102,12 @@ export default function WorkflowEditorView({
   const selectedNodeIds = useWorkflowEditorStore((s) => s.selectedNodeIds)
   const groupSelection = useWorkflowEditorStore((s) => s.groupSelection)
   const insertModule = useWorkflowEditorStore((s) => s.insertModule)
+  const addNode = useWorkflowEditorStore((s) => s.addNode)
+  // RF-03: undo/redo + derived enablement (plain length reads; the store keeps past/future).
+  const undo = useWorkflowEditorStore((s) => s.undo)
+  const redo = useWorkflowEditorStore((s) => s.redo)
+  const canUndo = useWorkflowEditorStore((s) => s.past.length > 0)
+  const canRedo = useWorkflowEditorStore((s) => s.future.length > 0)
   const canGroup = useMemo(() => {
     if (selectedNodeIds.length < 2) return false
     const grouped = new Set((doc?.groups ?? []).flatMap((g) => g.nodeIds))
@@ -117,12 +136,18 @@ export default function WorkflowEditorView({
   }, [doc, editorNodes, editorEdges, nodeTypes])
 
   const [showErrors, setShowErrors] = useState(false)
+  // RF-04: palette search query (substring over type id + localized title) and the canvas API handle
+  // (set once via FlowCanvas.onReady; lets this out-of-context view insert at the viewport center).
+  const [paletteQuery, setPaletteQuery] = useState('')
+  const canvasApi = React.useRef<{ centerPosition: () => { x: number; y: number } } | null>(null)
+  // A stable place to insert a click-added node: the canvas center when available, else a sane default.
+  const centerPosition = (): { x: number; y: number } =>
+    canvasApi.current?.centerPosition() ?? { x: 220, y: 200 }
   // WP6.5: the module-import review sheet. Null when closed; holds the inspection report while open.
   const [moduleReport, setModuleReport] = useState<ModuleInspectReport | null>(null)
   // WP-G (spec §2): the palette's Agent library (built-in templates + the user library) + the search
   // box that filters BOTH palette sections.
   const [libraryEntries, setLibraryEntries] = useState<LibraryEntry[]>([])
-  const [paletteQuery, setPaletteQuery] = useState('')
   const refreshLibrary = React.useCallback(async (): Promise<void> => {
     try {
       const list = (await window.api.listModuleTemplates(profileId)) as LibraryEntry[]
@@ -213,7 +238,12 @@ export default function WorkflowEditorView({
       useToastStore.getState().push(t('workflowEditor.moduleImport.installFailed'))
       return
     }
-    insertModule(result.module, { x: 220, y: 200 }, { origin: 'import' })
+    // RF-04: insert at the viewport center via the canvas API (closes the parked "module insertion at
+    // viewport center" item); falls back to {x:220,y:200} before the canvas has reported ready.
+    // WP-G: stamp origin:'import' so the Agents ▾ shows the `imported` chip for a file-imported module.
+    insertModule(result.module, canvasApi.current?.centerPosition() ?? { x: 220, y: 200 }, {
+      origin: 'import'
+    })
     useToastStore.getState().push(t('workflowEditor.moduleImport.installed'))
     // WP-G (spec §2): "an imported module can be saved into the user library for reuse". Fail-soft —
     // a library-save failure never blocks the insert (the module is already on the canvas).
@@ -257,34 +287,40 @@ export default function WorkflowEditorView({
     setRefreshToken((n) => n + 1)
   }
 
+  // RF-03: canvas keyboard shortcuts (the view only mounts while the overlay is open). Ctrl/Cmd+S
+  // saves (always swallowed so the browser Save dialog never fires); undo/redo fire only when focus
+  // is NOT in a text field (typing an undo-shortcut in a config box must stay text-editing).
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent): void => {
+      if (!(e.ctrlKey || e.metaKey)) return
+      const key = e.key.toLowerCase()
+      if (key === 's') {
+        e.preventDefault()
+        if (!readOnly && dirty) void onSave()
+        return
+      }
+      if (inEditable(e.target)) return
+      if (key === 'z' && !e.shiftKey) {
+        e.preventDefault()
+        undo()
+      } else if ((key === 'z' && e.shiftKey) || key === 'y') {
+        e.preventDefault()
+        redo()
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- onSave is a fresh closure each render; readOnly/dirty/undo/redo are the meaningful deps
+  }, [readOnly, dirty, undo, redo])
+
   return (
-    <div
-      className="rpt-workflow-editor"
-      style={{ display: 'flex', flexDirection: 'column', position: 'relative' }}
-    >
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: 8,
-          padding: '6px 10px',
-          borderBottom: '1px solid var(--rpt-border)',
-          flex: '0 0 auto'
-        }}
-      >
+    <div className="rpt-workflow-editor">
+      <div className="rpt-wfe-topbar">
         {/* A fragment-editing session (WP4.4): the workflow picker is replaced by a
             "editing pack fragment: <name>" badge so the user knows which artifact they're in. */}
         {sessionType === 'fragment' ? (
           <span
-            className="rpt-workflow-fragment-badge"
-            style={{
-              fontSize: 11.5,
-              padding: '2px 9px',
-              borderRadius: 10,
-              border: '1px solid var(--rpt-agent-region-border)',
-              background: 'var(--rpt-agent-region)',
-              color: 'var(--rpt-agent-region-text)'
-            }}
+            className="rpt-workflow-fragment-badge rpt-wfe-fragment-badge"
             title={t('workflowEditor.fragmentBadgeTitle')}
           >
             {t('workflowEditor.fragmentBadge', { name: doc?.name ?? currentId ?? '' })}
@@ -294,7 +330,7 @@ export default function WorkflowEditorView({
             <select
               value={currentId ?? ''}
               onChange={(e) => void open(profileId, e.target.value)}
-              style={{ fontSize: 12.5 }}
+              className="rpt-wfe-btn-sm"
             >
               {workflows.map((w) => (
                 <option key={w.id} value={w.id}>
@@ -311,7 +347,7 @@ export default function WorkflowEditorView({
               placeholder={t('workflowEditor.namePh')}
               title={t('workflowEditor.nameTitle')}
               onChange={(e) => setDocName(e.target.value)}
-              style={{ fontSize: 12.5, width: 170 }}
+              className="rpt-wfe-name-input"
             />
           </>
         )}
@@ -320,24 +356,35 @@ export default function WorkflowEditorView({
           type="button"
           disabled={readOnly || !dirty}
           onClick={() => void onSave()}
-          style={{ fontSize: 12.5 }}
+          className="rpt-wfe-btn-sm"
         >
           {t('workflowEditor.save')}
         </button>
 
-        {dirty && (
-          <span
-            style={{
-              fontSize: 11,
-              padding: '1px 8px',
-              borderRadius: 10,
-              border: '1px solid var(--rpt-warning)',
-              color: 'var(--rpt-warning)'
-            }}
-          >
-            {t('workflowEditor.unsaved')}
-          </span>
-        )}
+        {/* RF-03: undo / redo. History is session-agnostic, so shown in both workflow and fragment
+            sessions. Disabled off the store's past/future depth; the keyboard shortcuts do the same. */}
+        <button
+          type="button"
+          disabled={!canUndo}
+          onClick={() => undo()}
+          title={`${t('workflowEditor.undo')} (Ctrl+Z)`}
+          aria-label={t('workflowEditor.undo')}
+          className="rpt-wfe-btn-sm"
+        >
+          ↶
+        </button>
+        <button
+          type="button"
+          disabled={!canRedo}
+          onClick={() => redo()}
+          title={`${t('workflowEditor.redo')} (Ctrl+Shift+Z)`}
+          aria-label={t('workflowEditor.redo')}
+          className="rpt-wfe-btn-sm"
+        >
+          ↷
+        </button>
+
+        {dirty && <span className="rpt-wfe-unsaved">{t('workflowEditor.unsaved')}</span>}
 
         {/* Clone / import / export are WORKFLOW-FILE operations (they read currentId as a workflow id).
             In a fragment session currentId is a pack id, so these are hidden. */}
@@ -346,16 +393,16 @@ export default function WorkflowEditorView({
             <button
               type="button"
               onClick={() => void cloneAndEdit(profileId)}
-              style={{ fontSize: 12.5 }}
+              className="rpt-wfe-btn-sm"
             >
               {t('workflowEditor.cloneToEdit')}
             </button>
 
-            <button type="button" onClick={() => void onImport()} style={{ fontSize: 12.5 }}>
+            <button type="button" onClick={() => void onImport()} className="rpt-wfe-btn-sm">
               {t('workflowEditor.import')}
             </button>
 
-            <button type="button" disabled={!currentId} onClick={onExport} style={{ fontSize: 12.5 }}>
+            <button type="button" disabled={!currentId} onClick={onExport} className="rpt-wfe-btn-sm">
               {t('workflowEditor.export')}
             </button>
           </>
@@ -363,7 +410,7 @@ export default function WorkflowEditorView({
 
         {/* WP6.3: group the current multi-selection into an on-canvas module (≥2 unlocked, ungrouped). */}
         {sessionType !== 'fragment' && canGroup && (
-          <button type="button" onClick={() => groupSelection()} style={{ fontSize: 12.5 }}>
+          <button type="button" onClick={() => groupSelection()} className="rpt-wfe-btn-sm">
             {t('workflowEditor.groupSelection')}
           </button>
         )}
@@ -371,10 +418,14 @@ export default function WorkflowEditorView({
         {/* WP-D: collapse/expand every agent group on the canvas. */}
         {sessionType !== 'fragment' && hasAgentGroups && !readOnly && (
           <>
-            <button type="button" onClick={() => collapseAllAgents()} style={{ fontSize: 12.5 }}>
+            <button
+              type="button"
+              onClick={() => collapseAllAgents()}
+              className="rpt-wfe-btn-sm"
+            >
               {t('workflowEditor.collapseAllAgents')}
             </button>
-            <button type="button" onClick={() => expandAllGroups()} style={{ fontSize: 12.5 }}>
+            <button type="button" onClick={() => expandAllGroups()} className="rpt-wfe-btn-sm">
               {t('workflowEditor.expandAll')}
             </button>
           </>
@@ -382,7 +433,11 @@ export default function WorkflowEditorView({
 
         {/* WP-D: one-click group every ungrouped trigger chain (the .rptflow-open path). */}
         {sessionType !== 'fragment' && hasUngroupedChains && !readOnly && (
-          <button type="button" onClick={() => autoGroupTriggerChains()} style={{ fontSize: 12.5 }}>
+          <button
+            type="button"
+            onClick={() => autoGroupTriggerChains()}
+            className="rpt-wfe-btn-sm"
+          >
             {t('workflowEditor.groupAgentChains')}
           </button>
         )}
@@ -390,19 +445,12 @@ export default function WorkflowEditorView({
         {/* WP-F: the Agents ▾ master dropdown (one row per agent; renders null when there are none). */}
         {sessionType !== 'fragment' && <AgentsDropdown profileId={profileId} />}
 
-        <span style={{ flex: 1 }} />
+        <span className="rpt-wfe-spacer" />
 
         <button
           type="button"
           onClick={() => setShowErrors((v) => !v)}
-          style={{
-            fontSize: 11,
-            padding: '2px 9px',
-            borderRadius: 10,
-            border: `1px solid ${errors.length === 0 ? 'var(--rpt-success)' : 'var(--rpt-danger)'}`,
-            color: errors.length === 0 ? 'var(--rpt-success)' : 'var(--rpt-danger)',
-            background: 'transparent'
-          }}
+          className={`rpt-wfe-validity ${errors.length === 0 ? 'is-valid' : 'is-invalid'}`}
         >
           {errors.length === 0
             ? t('workflowEditor.valid')
@@ -411,17 +459,8 @@ export default function WorkflowEditorView({
       </div>
 
       {showErrors && errors.length > 0 && (
-        <div
-          style={{
-            flex: '0 0 auto',
-            borderBottom: '1px solid var(--rpt-border)',
-            padding: '6px 10px',
-            fontSize: 11.5
-          }}
-        >
-          <div style={{ color: 'var(--rpt-text-tertiary)', marginBottom: 4 }}>
-            {t('workflowEditor.errors')}
-          </div>
+        <div className="rpt-wfe-error-strip">
+          <div className="rpt-wfe-error-strip-head">{t('workflowEditor.errors')}</div>
           {errors.map((err, i) => {
             // Localized label for the error CODE; the raw message keeps the specifics (port
             // names etc.) as the detail.
@@ -430,11 +469,7 @@ export default function WorkflowEditorView({
               <div
                 key={i}
                 onClick={() => err.nodeId && select(err.nodeId)}
-                style={{
-                  cursor: err.nodeId ? 'pointer' : 'default',
-                  color: 'var(--rpt-danger)',
-                  padding: '2px 0'
-                }}
+                className={`rpt-wfe-error-row${err.nodeId ? ' is-clickable' : ''}`}
               >
                 {label ? `${label} — ` : ''}
                 {err.message}
@@ -446,46 +481,28 @@ export default function WorkflowEditorView({
       )}
 
       {readOnly && (
-        <div
-          style={{
-            flex: '0 0 auto',
-            padding: '5px 10px',
-            fontSize: 11.5,
-            color: 'var(--rpt-warning)',
-            borderBottom: '1px solid var(--rpt-border)'
-          }}
-        >
-          {t('workflowEditor.readOnlyBuiltin')}
-        </div>
+        <div className="rpt-wfe-readonly-strip">{t('workflowEditor.readOnlyBuiltin')}</div>
       )}
 
       <StatusLine status={status} />
 
-      <div style={{ display: 'flex', flex: 1, minHeight: 0 }}>
-        <div
-          style={{
-            width: 180,
-            flex: '0 0 180px',
-            overflowY: 'auto',
-            borderRight: '1px solid var(--rpt-border)',
-            padding: 6
-          }}
-        >
-          {/* WP-G (spec §2): ONE search box filtering BOTH palette sections (library + node list). */}
+      <div className="rpt-wfe-body">
+        <div className="rpt-wfe-palette">
+          {/* WP-G (spec §2) + RF-04: ONE search box filters BOTH the Agent library and the
+              categorized node list. Same card markup + drag behavior as before; click-to-add lands
+              at the (jittered) viewport center. */}
           <input
             type="search"
+            className="rpt-wfe-palette-search"
             value={paletteQuery}
             placeholder={t('workflowEditor.paletteSearch')}
             onChange={(e) => setPaletteQuery(e.target.value)}
-            style={{ width: '100%', boxSizing: 'border-box', fontSize: 11.5, marginBottom: 8 }}
           />
 
           {/* WP-G (spec §2): the Agent library — built-in module templates + the user library, with
               "Import module…" as the section's last entry. Click inserts pre-grouped/named/collapsed
               (insertModule remints ids); names/descriptions are module content, shown as-is. */}
-          <div style={{ fontSize: 10.5, color: 'var(--rpt-text-tertiary)', marginBottom: 6 }}>
-            {t('workflowEditor.agentLibrary')}
-          </div>
+          <div className="rpt-wfe-palette-head">{t('workflowEditor.agentLibrary')}</div>
           {libraryEntries
             .filter((entry) => paletteMatch(paletteQuery, [entry.name, entry.description]))
             .map((entry) => (
@@ -517,72 +534,47 @@ export default function WorkflowEditorView({
             type="button"
             disabled={readOnly}
             onClick={() => void onImportModule()}
-            style={{ fontSize: 11.5, width: '100%', marginBottom: 10 }}
+            className="rpt-wfe-import-module-btn"
           >
             {t('workflowEditor.importModule')}
           </button>
 
-          <div
-            style={{
-              fontSize: 10.5,
-              color: 'var(--rpt-text-tertiary)',
-              marginBottom: 6,
-              borderTop: '1px solid var(--rpt-border)',
-              paddingTop: 8
-            }}
-          >
-            {t('workflowEditor.palette')}
-          </div>
-          {nodeTypes
-            .filter((nt) =>
-              paletteMatch(paletteQuery, [
-                nt.type,
-                nt.title,
-                tOpt(`workflowEditor.nodeTitle.${nt.type}`),
-                tOpt(`workflowEditor.nodeDesc.${nt.type}`)
-              ])
-            )
-            .map((nt) => {
-            const title = tOpt(`workflowEditor.nodeTitle.${nt.type}`) || nt.title
-            const desc = tOpt(`workflowEditor.nodeDesc.${nt.type}`)
-            return (
-              <div
-                key={nt.type}
-                draggable
-                title={desc}
-                onDragStart={(e) => {
-                  e.dataTransfer.setData('application/rpt-node-type', nt.type)
-                  e.dataTransfer.effectAllowed = 'move'
-                }}
-                style={{
-                  border: '1px solid var(--rpt-border)',
-                  borderRadius: 6,
-                  padding: '5px 8px',
-                  marginBottom: 5,
-                  cursor: 'grab',
-                  background: 'var(--rpt-bg-elevated)'
-                }}
-              >
-                <div style={{ fontSize: 12, color: 'var(--rpt-text-primary)' }}>{title}</div>
-                <div style={{ fontSize: 10, color: 'var(--rpt-text-tertiary)' }}>{nt.type}</div>
-                {desc && (
-                  <div
-                    style={{
-                      fontSize: 10,
-                      color: 'var(--rpt-text-secondary)',
-                      marginTop: 3,
-                      display: '-webkit-box',
-                      WebkitLineClamp: 2,
-                      WebkitBoxOrient: 'vertical',
-                      overflow: 'hidden'
-                    }}
-                  >
-                    {desc}
-                  </div>
-                )}
+          {/* RF-04: the categorized node palette (groupPalette), search-filtered by the same box. */}
+          <div className="rpt-wfe-palette-section">{t('workflowEditor.palette')}</div>
+          {groupPalette(
+            nodeTypes,
+            paletteQuery,
+            (nt) => tOpt(`workflowEditor.nodeTitle.${nt.type}`) || nt.title
+          ).map((group) => (
+            <React.Fragment key={group.prefix}>
+              <div className="rpt-wfe-palette-cat">
+                {tOpt(`workflowEditor.cat.${group.prefix}`) || group.prefix}
               </div>
-            )
-          })}
+              {group.items.map((nt) => {
+                const title = tOpt(`workflowEditor.nodeTitle.${nt.type}`) || nt.title
+                const desc = tOpt(`workflowEditor.nodeDesc.${nt.type}`)
+                return (
+                  <div
+                    key={nt.type}
+                    draggable
+                    title={desc}
+                    onDragStart={(e) => {
+                      e.dataTransfer.setData('application/rpt-node-type', nt.type)
+                      e.dataTransfer.effectAllowed = 'move'
+                    }}
+                    onClick={() => {
+                      if (!readOnly) addNode(nt.type, jitter(centerPosition()))
+                    }}
+                    className="rpt-wfe-palette-card"
+                  >
+                    <div className="rpt-wfe-palette-card-title">{title}</div>
+                    <div className="rpt-wfe-palette-card-type">{nt.type}</div>
+                    {desc && <div className="rpt-wfe-palette-card-desc">{desc}</div>}
+                  </div>
+                )
+              })}
+            </React.Fragment>
+          ))}
 
           {/* Reusable sub-graph packages the author can drop as one subgraph.call node,
               preconfigured with workflow_id (sub-graph nodes v1 plan §5). Excludes the doc
@@ -590,34 +582,15 @@ export default function WorkflowEditorView({
               would refuse it anyway). */}
           {workflows.some((w) => w.kind === 'subgraph' && w.id !== currentId) && (
             <>
-              <div
-                style={{
-                  fontSize: 10.5,
-                  color: 'var(--rpt-text-tertiary)',
-                  margin: '10px 0 6px',
-                  borderTop: '1px solid var(--rpt-border)',
-                  paddingTop: 8
-                }}
-              >
-                {t('workflowEditor.subgraphs')}
-              </div>
+              <div className="rpt-wfe-palette-section">{t('workflowEditor.subgraphs')}</div>
               {workflows
                 .filter((w) => w.kind === 'subgraph' && w.id !== currentId)
                 .map((w) => (
-                  <div
-                    key={w.id}
-                    style={{
-                      border: '1px solid var(--rpt-border)',
-                      borderRadius: 6,
-                      padding: '5px 8px',
-                      marginBottom: 5,
-                      background: 'var(--rpt-bg-elevated)'
-                    }}
-                  >
-                    <div style={{ fontSize: 12, color: 'var(--rpt-text-primary)' }}>{w.name}</div>
+                  <div key={w.id} className="rpt-wfe-subgraph-card">
+                    <div className="rpt-wfe-palette-card-title">{w.name}</div>
                     {/* Two draggable type chips: drop as a plain subgraph.call, or as a
                         subgraph.loop — both carry the same workflow_id payload. */}
-                    <div style={{ display: 'flex', gap: 4, marginTop: 4 }}>
+                    <div className="rpt-wfe-subgraph-chips">
                       {(['subgraph.call', 'subgraph.loop'] as const).map((nodeType) => (
                         <div
                           key={nodeType}
@@ -627,15 +600,11 @@ export default function WorkflowEditorView({
                             e.dataTransfer.setData('application/rpt-subgraph-id', w.id)
                             e.dataTransfer.effectAllowed = 'move'
                           }}
-                          style={{
-                            border: '1px solid var(--rpt-border)',
-                            borderRadius: 4,
-                            padding: '2px 6px',
-                            cursor: 'grab',
-                            fontSize: 10,
-                            color: 'var(--rpt-text-tertiary)',
-                            background: 'var(--rpt-bg-tertiary)'
+                          onClick={() => {
+                            // RF-04: click-to-add, mirroring the drop path's { workflow_id } config.
+                            if (!readOnly) addNode(nodeType, jitter(centerPosition()), { workflow_id: w.id })
                           }}
+                          className="rpt-wfe-subgraph-chip"
                         >
                           {t(`workflowEditor.nodeTitle.${nodeType}`)}
                         </div>
@@ -646,16 +615,22 @@ export default function WorkflowEditorView({
             </>
           )}
 
-          {/* WP-G: the WP6.5 "Modules" import section folded into the Agent library above ("Import
-              module…" is that section's last entry, spec §2). */}
+          {/* WP-G: the WP6.5 "Modules" import section is folded into the Agent library above
+              ("Import module…" is that section's last entry, spec §2). A fragment session's currentId
+              is a pack id (not a doc file), but a fragment IS a doc you can splice a module into, so the
+              importer is offered in both session kinds. */}
         </div>
 
-        <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column' }}>
-          <div style={{ flex: 1, minHeight: 0 }}>
+        <div className="rpt-wfe-canvas-col">
+          <div className="rpt-wfe-canvas-fill">
             <FlowCanvas
               profileId={profileId}
               traceOverride={replayTrace}
               triggerRefreshToken={refreshToken}
+              onManualRun={() => setRefreshToken((n) => n + 1)}
+              onReady={(api) => {
+                canvasApi.current = api
+              }}
             />
           </div>
           {/* WP6.4a: the Run drawer — a collapsible strip along the bottom of the canvas column. */}
@@ -667,15 +642,7 @@ export default function WorkflowEditorView({
           />
         </div>
 
-        <div
-          style={{
-            width: 420,
-            flex: '0 0 420px',
-            overflowY: 'auto',
-            borderLeft: '1px solid var(--rpt-border)',
-            padding: 8
-          }}
-        >
+        <div className="rpt-wfe-config-col">
           <NodeConfigPanel profileId={profileId} />
         </div>
       </div>

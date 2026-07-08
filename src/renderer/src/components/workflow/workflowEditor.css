@@ -8,6 +8,30 @@
   width: 100%;
   height: 100%;
   background: var(--rpt-bg-primary);
+  /* RF-09: composition-root layout, migrated from WorkflowEditorView's root inline style. */
+  display: flex;
+  flex-direction: column;
+  position: relative;
+}
+
+/* ---------- Palette search (RF-04) ---------- */
+.rpt-workflow-editor .rpt-wfe-palette-search {
+  width: 100%;
+  box-sizing: border-box;
+  margin-bottom: 6px;
+  padding: 4px 7px;
+  font-size: 12px;
+  color: var(--rpt-text-primary);
+  background: var(--rpt-bg-elevated);
+  border: 1px solid var(--rpt-border);
+  border-radius: 6px;
+}
+.rpt-workflow-editor .rpt-wfe-palette-cat {
+  font-size: 10.5px;
+  color: var(--rpt-text-tertiary);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin: 8px 0 4px;
 }
 
 /* ---------- Background (dotted grid) ---------- */
@@ -331,10 +355,16 @@
   fill: var(--rpt-text-primary);
 }
 
-/* ---------- Minimap (unused today, themed in case a later task enables it) ---------- */
+/* ---------- Minimap (RF-04): token-driven so it stays legible across all three themes. ---------- */
 .rpt-workflow-editor .react-flow__minimap {
   background: var(--rpt-bg-secondary);
   border: 1px solid var(--rpt-border);
+}
+.rpt-workflow-editor .react-flow__minimap-node {
+  fill: var(--rpt-bg-tertiary);
+}
+.rpt-workflow-editor .react-flow__minimap-mask {
+  fill: rgb(0 0 0 / 0.35);
 }
 
 /* ---------- Selection box ---------- */
@@ -406,6 +436,29 @@
 }
 .rpt-node-trigger-switch.on .rpt-node-trigger-switch-knob {
   left: 13px;
+}
+
+/* ---------- Manual "run now" ▶ button (title-row, RF-01) ---------- */
+.rpt-node-run-now {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  margin-left: 4px;
+  border: 1px solid var(--rpt-border);
+  border-radius: 4px;
+  background: var(--rpt-bg-tertiary);
+  color: var(--rpt-accent);
+  font-size: 10px;
+  line-height: 1;
+  cursor: pointer;
+  flex: 0 0 auto;
+}
+.rpt-node-run-now:disabled {
+  color: var(--rpt-text-tertiary);
+  cursor: not-allowed;
 }
 
 /* ---------- Live trigger badge caption (WP6.4a) ---------- */
@@ -603,6 +656,574 @@
   white-space: pre-wrap;
   word-break: break-word;
   color: var(--rpt-text-secondary);
+}
+
+/* ═══════════ RF-09: inline-style → class migration (editor chrome) ═══════════
+   Static inline style objects extracted verbatim from WorkflowEditorView,
+   NodeConfigPanel, ModuleImportSheet, and WorkflowEditorOverlay. Pixel-parity
+   migration only — same geometry/typography/colors as the prior inline objects.
+   Shared helpers (font sizes, muted labels) collapse the many near-identical
+   inline copies into one rule each. */
+
+/* ---------- Shared typographic helpers ---------- */
+.rpt-wfe-btn-sm {
+  font-size: 12.5px;
+}
+.rpt-wfe-btn-xs {
+  font-size: 12px;
+}
+/* Muted section label (fontSize:10.5 + tertiary): palette section heads, config
+   section titles, ports/module headings, preview titles. */
+.rpt-wfe-muted-label {
+  font-size: 10.5px;
+  color: var(--rpt-text-tertiary);
+}
+
+/* ---------- WorkflowEditorView: top bar ---------- */
+.rpt-wfe-topbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--rpt-border);
+  flex: 0 0 auto;
+}
+.rpt-wfe-fragment-badge {
+  font-size: 11.5px;
+  padding: 2px 9px;
+  border-radius: 10px;
+  border: 1px solid var(--rpt-agent-region-border);
+  background: var(--rpt-agent-region);
+  color: var(--rpt-agent-region-text);
+}
+.rpt-wfe-name-input {
+  font-size: 12.5px;
+  width: 170px;
+}
+.rpt-wfe-unsaved {
+  font-size: 11px;
+  padding: 1px 8px;
+  border-radius: 10px;
+  border: 1px solid var(--rpt-warning);
+  color: var(--rpt-warning);
+}
+.rpt-wfe-spacer {
+  flex: 1;
+}
+/* Validity chip: modifier classes flip the success/danger border+color. */
+.rpt-wfe-validity {
+  font-size: 11px;
+  padding: 2px 9px;
+  border-radius: 10px;
+  background: transparent;
+}
+.rpt-wfe-validity.is-valid {
+  border: 1px solid var(--rpt-success);
+  color: var(--rpt-success);
+}
+.rpt-wfe-validity.is-invalid {
+  border: 1px solid var(--rpt-danger);
+  color: var(--rpt-danger);
+}
+
+/* ---------- WorkflowEditorView: status line + error/read-only strips ---------- */
+.rpt-wfe-statusline {
+  font-size: 11.5px;
+  color: var(--rpt-text-secondary);
+  padding: 2px 10px;
+}
+.rpt-wfe-error-strip {
+  flex: 0 0 auto;
+  border-bottom: 1px solid var(--rpt-border);
+  padding: 6px 10px;
+  font-size: 11.5px;
+}
+.rpt-wfe-error-strip-head {
+  color: var(--rpt-text-tertiary);
+  margin-bottom: 4px;
+}
+.rpt-wfe-error-row {
+  color: var(--rpt-danger);
+  padding: 2px 0;
+  cursor: default;
+}
+.rpt-wfe-error-row.is-clickable {
+  cursor: pointer;
+}
+.rpt-wfe-readonly-strip {
+  flex: 0 0 auto;
+  padding: 5px 10px;
+  font-size: 11.5px;
+  color: var(--rpt-warning);
+  border-bottom: 1px solid var(--rpt-border);
+}
+
+/* ---------- WorkflowEditorView: body + palette column ---------- */
+.rpt-wfe-body {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+.rpt-wfe-palette {
+  width: 180px;
+  flex: 0 0 180px;
+  overflow-y: auto;
+  border-right: 1px solid var(--rpt-border);
+  padding: 6px;
+}
+.rpt-wfe-palette-head {
+  font-size: 10.5px;
+  color: var(--rpt-text-tertiary);
+  margin-bottom: 6px;
+}
+/* Palette node card + its drag-chip children. */
+.rpt-wfe-palette-card {
+  border: 1px solid var(--rpt-border);
+  border-radius: 6px;
+  padding: 5px 8px;
+  margin-bottom: 5px;
+  cursor: grab;
+  background: var(--rpt-bg-elevated);
+}
+.rpt-wfe-palette-card-title {
+  font-size: 12px;
+  color: var(--rpt-text-primary);
+}
+.rpt-wfe-palette-card-type {
+  font-size: 10px;
+  color: var(--rpt-text-tertiary);
+}
+.rpt-wfe-palette-card-desc {
+  font-size: 10px;
+  color: var(--rpt-text-secondary);
+  margin-top: 3px;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+/* Palette section head with a top rule (Subgraphs / Modules). */
+.rpt-wfe-palette-section {
+  font-size: 10.5px;
+  color: var(--rpt-text-tertiary);
+  margin: 10px 0 6px;
+  border-top: 1px solid var(--rpt-border);
+  padding-top: 8px;
+}
+/* Subgraph palette card (no cursor:grab — the chips inside are the drag handles). */
+.rpt-wfe-subgraph-card {
+  border: 1px solid var(--rpt-border);
+  border-radius: 6px;
+  padding: 5px 8px;
+  margin-bottom: 5px;
+  background: var(--rpt-bg-elevated);
+}
+.rpt-wfe-subgraph-chips {
+  display: flex;
+  gap: 4px;
+  margin-top: 4px;
+}
+.rpt-wfe-subgraph-chip {
+  border: 1px solid var(--rpt-border);
+  border-radius: 4px;
+  padding: 2px 6px;
+  cursor: grab;
+  font-size: 10px;
+  color: var(--rpt-text-tertiary);
+  background: var(--rpt-bg-tertiary);
+}
+.rpt-wfe-import-module-btn {
+  font-size: 12px;
+  width: 100%;
+}
+
+/* ---------- WorkflowEditorView: canvas column + config column ---------- */
+.rpt-wfe-canvas-col {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+.rpt-wfe-canvas-fill {
+  flex: 1;
+  min-height: 0;
+}
+.rpt-wfe-config-col {
+  /* Widened (was 280) for the WP-E details panel + prompt editor + memory.maintain panel. */
+  width: 420px;
+  flex: 0 0 420px;
+  overflow-y: auto;
+  border-left: 1px solid var(--rpt-border);
+  padding: 8px;
+}
+
+/* ---------- NodeConfigPanel ---------- */
+.rpt-wfe-node-type-id {
+  font-size: 10.5px;
+  color: var(--rpt-text-tertiary);
+}
+.rpt-wfe-node-desc {
+  font-size: 11px;
+  color: var(--rpt-text-secondary);
+  line-height: 1.55;
+  margin: 6px 0;
+}
+/* Full-width form control (string/number/enum/json textarea + fallback input). */
+.rpt-wfe-field-control {
+  width: 100%;
+}
+.rpt-wfe-field-textarea {
+  width: 100%;
+  resize: vertical;
+}
+/* Inline checkbox rows (enabled / main-output / panel-show). */
+.rpt-wfe-check-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin: 6px 0;
+}
+.rpt-wfe-check-row-tight {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.rpt-wfe-check-row-mt {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 4px;
+}
+.rpt-wfe-panel-label-wrap {
+  margin: 4px 0 6px;
+}
+.rpt-wfe-field-sublabel {
+  font-size: 10.5px;
+  color: var(--rpt-text-secondary);
+}
+/* objectArray item box + its inner row + move-button row. */
+.rpt-wfe-array-item {
+  border: 1px solid var(--rpt-border);
+  border-radius: 6px;
+  padding: 6px;
+  margin-bottom: 6px;
+}
+.rpt-wfe-array-item-field {
+  margin-bottom: 4px;
+}
+.rpt-wfe-array-item-actions {
+  display: flex;
+  gap: 4px;
+}
+.rpt-wfe-invalid-json {
+  color: var(--rpt-danger);
+  font-size: 10.5px;
+}
+/* Config field wrapper + its label row. */
+.rpt-wfe-config-field {
+  margin-bottom: 8px;
+}
+.rpt-wfe-config-field-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.rpt-wfe-config-field-label {
+  font-size: 10.5px;
+  color: var(--rpt-text-secondary);
+  flex: 1;
+}
+.rpt-wfe-expose-toggle {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 10px;
+  color: var(--rpt-text-tertiary);
+}
+/* Ports list rows. */
+.rpt-wfe-port-row {
+  font-size: 10.5px;
+  margin-bottom: 3px;
+}
+.rpt-wfe-port-name {
+  color: var(--rpt-text-primary);
+}
+.rpt-wfe-port-type {
+  color: var(--rpt-text-tertiary);
+}
+.rpt-wfe-port-desc {
+  color: var(--rpt-text-secondary);
+  padding-left: 14px;
+}
+
+/* NodeConfigPanel: SubgraphCallInfo */
+.rpt-wfe-subgraph-warn {
+  font-size: 11px;
+  color: var(--rpt-warning);
+}
+.rpt-wfe-subgraph-info {
+  margin: 6px 0 10px;
+}
+.rpt-wfe-subgraph-info-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.rpt-wfe-subgraph-name {
+  font-size: 12px;
+  color: var(--rpt-text-primary);
+}
+.rpt-wfe-subgraph-name.is-unknown {
+  color: var(--rpt-warning);
+}
+.rpt-wfe-subgraph-open-btn {
+  font-size: 11px;
+  padding: 1px 8px;
+}
+.rpt-wfe-promotions {
+  font-size: 10.5px;
+  color: var(--rpt-text-secondary);
+  margin-top: 4px;
+}
+.rpt-wfe-promotions-list {
+  margin: 2px 0 0;
+  padding-left: 16px;
+}
+
+/* NodeConfigPanel: ExposedSettingRow (ModulePanel) */
+.rpt-wfe-exposed-row {
+  border: 1px solid var(--rpt-border);
+  border-radius: 6px;
+  padding: 6px;
+  margin-bottom: 6px;
+}
+.rpt-wfe-exposed-row-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 4px;
+}
+.rpt-wfe-exposed-label-input {
+  flex: 1;
+  font-size: 11.5px;
+}
+.rpt-wfe-exposed-remove-btn {
+  font-size: 11px;
+}
+.rpt-wfe-exposed-path {
+  font-size: 10px;
+  color: var(--rpt-text-tertiary);
+}
+
+/* NodeConfigPanel: ExportModuleButton */
+.rpt-wfe-export-module {
+  margin: 10px 0;
+  border-top: 1px solid var(--rpt-border);
+  padding-top: 8px;
+}
+.rpt-wfe-export-check {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  margin-bottom: 6px;
+}
+
+/* NodeConfigPanel: ModulePanel */
+.rpt-wfe-module-name-wrap {
+  margin: 8px 0;
+}
+.rpt-wfe-module-name-input {
+  width: 100%;
+  font-size: 12.5px;
+}
+.rpt-wfe-module-actions {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+.rpt-wfe-module-exposed-head {
+  font-size: 10.5px;
+  color: var(--rpt-text-tertiary);
+  margin-bottom: 6px;
+}
+.rpt-wfe-module-exposed-empty {
+  font-size: 11px;
+  color: var(--rpt-text-secondary);
+}
+
+/* NodeConfigPanel: AssemblePreview */
+.rpt-wfe-assemble-head {
+  font-size: 10.5px;
+  color: var(--rpt-text-tertiary);
+  margin-bottom: 4px;
+}
+.rpt-wfe-assemble-error {
+  color: var(--rpt-danger);
+  font-size: 10.5px;
+  margin-top: 4px;
+}
+.rpt-wfe-assemble-total {
+  font-size: 10.5px;
+  color: var(--rpt-text-secondary);
+  margin: 6px 0 4px;
+}
+
+/* ---------- ModuleImportSheet ---------- */
+.rpt-wfe-sheet-overlay {
+  position: absolute;
+  inset: 0;
+  background: var(--rpt-scrim, rgba(0, 0, 0, 0.45));
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 20;
+}
+.rpt-wfe-sheet {
+  width: 360px;
+  max-height: 80%;
+  overflow-y: auto;
+  background: var(--rpt-bg-elevated);
+  border: 1px solid var(--rpt-border);
+  border-radius: 10px;
+  padding: 16px;
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.35);
+}
+.rpt-wfe-sheet-parse-fail {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--rpt-danger);
+}
+.rpt-wfe-sheet-parse-detail {
+  font-size: 11.5px;
+  color: var(--rpt-text-secondary);
+  margin: 6px 0 12px;
+}
+.rpt-wfe-sheet-actions-end {
+  display: flex;
+  justify-content: flex-end;
+}
+.rpt-wfe-sheet-title {
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--rpt-text-primary);
+}
+.rpt-wfe-sheet-subtitle {
+  font-size: 11.5px;
+  color: var(--rpt-text-secondary);
+  margin-top: 2px;
+}
+.rpt-wfe-sheet-desc {
+  font-size: 11.5px;
+  color: var(--rpt-text-secondary);
+  margin: 6px 0;
+}
+.rpt-wfe-sheet-chips {
+  margin: 10px 0;
+}
+.rpt-wfe-sheet-blocked {
+  border: 1px solid var(--rpt-danger);
+  border-radius: 6px;
+  padding: 6px 8px;
+  margin: 8px 0;
+}
+.rpt-wfe-sheet-blocked-head {
+  font-size: 11.5px;
+  color: var(--rpt-danger);
+  font-weight: 600;
+}
+.rpt-wfe-sheet-blocked-list {
+  margin: 4px 0 0;
+  padding-left: 16px;
+  font-size: 11px;
+}
+.rpt-wfe-sheet-blocked-item {
+  color: var(--rpt-text-secondary);
+}
+.rpt-wfe-sheet-templates {
+  margin: 8px 0;
+}
+.rpt-wfe-sheet-templates-head {
+  font-size: 10.5px;
+  color: var(--rpt-text-tertiary);
+}
+.rpt-wfe-sheet-template-row {
+  font-size: 11px;
+  color: var(--rpt-text-secondary);
+}
+.rpt-wfe-sheet-warnings {
+  margin: 8px 0 0;
+  padding-left: 16px;
+  font-size: 10.5px;
+}
+.rpt-wfe-sheet-warning-item {
+  color: var(--rpt-warning);
+}
+.rpt-wfe-sheet-lands {
+  font-size: 10.5px;
+  color: var(--rpt-text-tertiary);
+  margin: 10px 0 8px;
+}
+.rpt-wfe-sheet-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+/* ---------- WorkflowEditorOverlay ---------- */
+.rpt-wfe-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+  display: flex;
+  flex-direction: column;
+  background: var(--rpt-bg-primary);
+  /* Electron drag regions ignore z-order: the title bar's app-region:drag stays active
+     under this overlay, making the top titlebar-height strip (workflow picker, rename input,
+     Save) drag the window instead of clicking. no-drag punches the hole. */
+  -webkit-app-region: no-drag;
+}
+.rpt-wfe-overlay-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  /* Match the titleBarOverlay strip height (--rpt-titlebar-h, paired with
+     TITLEBAR_OVERLAY_HEIGHT in main/index.ts) so EVERYTHING below the header — canvas, Memory
+     sheet — starts clear of the native caption zone; without this the sheet's own head (and its
+     close button) rendered partly under the window controls (owner report). Was a hardcoded 48px
+     that over-reserved by 4px and misaligned the header with the 44px strip. */
+  min-height: var(--rpt-titlebar-h);
+  box-sizing: border-box;
+  /* The native window controls (titleBarOverlay, main/index.ts) paint ABOVE the DOM in
+     the top-right corner; without this reservation the header's right-most buttons sit
+     under minimize/maximize/close (owner report). With Window Controls Overlay enabled,
+     env(titlebar-area-*) describes the DOM-usable strip — the controls occupy everything
+     right of area-x + area-width. Falls back to 0 where env() is unavailable. */
+  padding-right: calc(12px + (100vw - env(titlebar-area-x, 0px) - env(titlebar-area-width, 100vw)));
+  border-bottom: 1px solid var(--rpt-border);
+  flex: 0 0 auto;
+}
+.rpt-wfe-overlay-title {
+  font-size: 13px;
+}
+.rpt-wfe-overlay-close {
+  font-size: 12.5px;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+.rpt-wfe-overlay-close-x {
+  font-size: 13px;
+}
+.rpt-wfe-overlay-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+}
+.rpt-wfe-overlay-view {
+  flex: 1;
+  min-width: 0;
 }
 
 /* ═══════════ memory.maintain node panel (2026-07-07 plan WP2): per-table rule editor + preview ═══════════ */

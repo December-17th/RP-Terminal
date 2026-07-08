@@ -41,6 +41,7 @@ export const MessageContent: React.FC<Props> = ({ content, css, onContextMenu })
   const globalSizing = useSettingsStore((s) => s.settings?.cards?.sizing) ?? DEFAULT_CARD_SIZING
   return (
     <div
+      className="message-content"
       onContextMenu={
         onContextMenu
           ? (e) => {

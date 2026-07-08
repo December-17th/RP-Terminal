@@ -19,7 +19,9 @@ function mockHost(over: Partial<Host> = {}): { host: Host; calls: any } {
     setGlobalVars: [],
     replaceRegexes: [],
     setScriptVars: [],
-    setButtons: []
+    setButtons: [],
+    requestOverlay: [],
+    closeOverlay: []
   }
   let hostCb: ((name: string, payload?: any) => void) | null = null
   const wbLib = [
@@ -123,6 +125,13 @@ function mockHost(over: Partial<Host> = {}): { host: Host; calls: any } {
     },
     setButtons: (b: any) => {
       calls.setButtons.push(b)
+    },
+    requestOverlay: async (id: string) => {
+      calls.requestOverlay.push(id)
+      return true
+    },
+    closeOverlay: async () => {
+      calls.closeOverlay.push(true)
     },
     onVarsChanged: (cb) => {
       varsCb = cb

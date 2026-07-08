@@ -1,3 +1,4 @@
+import { useEffect } from 'react'
 import { useComposer } from '../hooks/useComposer'
 import { useT } from '../i18n'
 
@@ -28,6 +29,16 @@ export function Composer({
     actionRef
   } = useComposer({ onSendMessage })
   const t = useT()
+
+  // Auto-grow the input: start at one line, grow with the content, cap at ~5 lines (CSS max-height),
+  // then scroll. Re-measured whenever the text changes (incl. the reset to '' after a send).
+  useEffect(() => {
+    const el = actionRef.current
+    if (!el) return
+    el.style.height = 'auto'
+    const max = parseFloat(getComputedStyle(el).maxHeight) || Infinity
+    el.style.height = Math.min(el.scrollHeight, max) + 'px'
+  }, [actionInput, actionRef])
 
   return (
     <div className="action-input-container">
@@ -90,7 +101,6 @@ export function Composer({
           }
         }}
         placeholder={t('composer.placeholder')}
-        disabled={isGenerating}
       />
       <button
         className={`send-btn ${isGenerating ? 'stop' : ''}`}

@@ -1,18 +1,18 @@
 /* eslint-disable react-refresh/only-export-components -- a view registry intentionally
    co-locates its internal wrapper components with the registry/options it exports. */
 import React from 'react'
-import { useNavStore } from '../../stores/navStore'
 import { ChatView } from '../ChatView'
 import { StatusView } from '../StatusView'
 import { LogsPanel } from '../LogsPanel'
-import { PanelRouter } from '../PanelRouter'
 import { CombatView } from './CombatView'
 import { VariablesView } from './VariablesView'
 import { TablesView } from './TablesView'
+import { AssetsView } from './AssetsView'
 import { useWorkspaceContext } from './context'
 import { UsageView } from '../UsageView'
 import { useT } from '../../i18n'
 import { useUiStore } from '../../stores/uiStore'
+import type { BuiltinViewId } from './viewLabels'
 
 /**
  * The set of views a workspace panel can host. Each entry is a self-contained component
@@ -20,13 +20,6 @@ import { useUiStore } from '../../stores/uiStore'
  * `ViewRegistry[view].Component` with no props. Adding a view here makes it available in
  * every panel's view-picker. (Phase 2 grows this with richer native MVU views.)
  */
-
-const NavigatorPanel: React.FC = () => {
-  const { profileId } = useWorkspaceContext()
-  const panel = useNavStore((s) => s.panel)
-  const setPanel = useNavStore((s) => s.setPanel)
-  return <PanelRouter panel={panel} profileId={profileId} onSelectPanel={setPanel} />
-}
 
 const ChatPanel: React.FC = () => {
   const { profileId } = useWorkspaceContext()
@@ -75,6 +68,11 @@ const TablesPanel: React.FC = () => {
   return <TablesView profileId={profileId} />
 }
 
+const AssetsPanel: React.FC = () => {
+  const { profileId } = useWorkspaceContext()
+  return <AssetsView profileId={profileId} />
+}
+
 const UsagePanel: React.FC = () => {
   const { profileId } = useWorkspaceContext()
   return <UsageView profileId={profileId} />
@@ -93,14 +91,19 @@ export interface ViewEntry {
   fill?: boolean
 }
 
-export const ViewRegistry: Record<string, ViewEntry> = {
-  navigator: { title: 'Navigator', Component: NavigatorPanel, fill: true },
+// Panels host GAME views (chat/status/combat/duel + card panels) and DEBUG views
+// (variables/tables/usage/logs) only — the config/authoring surfaces moved to the Settings hub
+// when the tab nav was retired (the `navigator` view is gone).
+// Keys are pinned to `BuiltinViewId` (viewLabels.ts) so the registry and the non-React id list the
+// parity test checks against cannot drift — add/remove a view in both places or this stops compiling.
+export const ViewRegistry: Record<BuiltinViewId, ViewEntry> = {
   chat: { title: 'Chat', Component: ChatPanel, fill: true },
   status: { title: 'RPG Status', Component: StatusPanel },
   combat: { title: 'Combat', Component: CombatPanel, fill: true },
   duel: { title: 'Duel', Component: DuelPanel, fill: true },
   variables: { title: 'Variables', Component: VariablesPanel },
   tables: { title: 'Tables', Component: TablesPanel },
+  assets: { title: 'Assets', Component: AssetsPanel, fill: true },
   usage: { title: 'Usage', Component: UsagePanel, fill: true },
   logs: { title: 'Logs', Component: LogsPanel, fill: true }
   // (The dev-only "Card UI (WCV test)" round-trip panel was retired — card UIs render inline by

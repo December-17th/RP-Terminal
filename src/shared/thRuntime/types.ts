@@ -119,8 +119,28 @@ export interface Host {
   setGlobalVars(vars: Record<string, any>): Promise<void>
   // Resolve a character portrait to an rptasset:// URL for the calling card's world, or null.
   assetUrl(name: string, type: string, mood?: string): Promise<string | null>
+  // Enumerate one entry's files (all variants of a name+type) for the calling card's world (WA-3): the
+  // base first as `variant:null`, then variant tokens naturally sorted. Empty array on a miss. Same
+  // lorebook-id precedence + category inference as `assetUrl`. Backs the bare `assetList` global.
+  assetList(name: string, type: string): Promise<{ variant: string | null; url: string }[]>
+  // Import an image into the calling card's world under the naming convention (WA-3): main opens the OS
+  // image picker (user-mediated, per the security stance), copies the pick in as `<name>_<type>[_<variant>]`,
+  // invalidates the index, and resolves the new rptasset:// URL (null on cancel/invalid). A host-privilege
+  // action — exposed on `rptHost.requestAssetImport` (like requestOverlay), not as a bare read global.
+  requestAssetImport(arg: {
+    name: string
+    type: string
+    variant?: string
+  }): Promise<string | null>
   // Engine-computed duel build preview for the active chat (read-only). See the build-preview design.
   getDuelPreview(): Promise<import('../combat/deckbuilder/preview').DuelPreview | null>
+  // Raise a full-play-area overlay surface declared in the active card's `panel_ui.overlays` (PM-A7):
+  // the app mounts the named surface as a WCV covering the whole panel_ui grid region above the slots.
+  // One overlay at a time — requesting another closes the current one first. Resolves `true` when it
+  // opened, `false` when the id isn't declared by the active card. `closeOverlay` tears down whatever
+  // overlay is open (a no-op when none is). Both transports route to the same app mechanism.
+  requestOverlay(id: string): Promise<boolean>
+  closeOverlay(): Promise<void>
   // --- events + engine ---
   onVarsChanged(cb: (statData: any, meta?: { origin: VarsOrigin }) => void): () => void
   onHostEvent(cb: (name: string, payload?: any) => void): () => void

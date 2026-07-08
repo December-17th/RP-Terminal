@@ -3,6 +3,9 @@ import { is } from '@electron-toolkit/utils'
 import { join } from 'path'
 import { log } from './logService'
 import { serveAssetRequest, ASSET_SCHEME } from './worldAssetProtocol'
+import { makePanelGeometry, PanelGeometry } from './wcvGeometry'
+import { createFreezeController, type FreezeTarget } from './wcvFreezeFrame'
+import { createOverlayController, type OverlayDecl } from './wcvOverlay'
 import type { VarsOrigin } from '../../shared/thRuntime/types'
 
 // Card UI panels run in their own session partition. jsDelivr serves `/gh/` HTML as text/plain (to
@@ -107,6 +110,35 @@ const round = (b: Bounds): Bounds => ({
   height: Math.max(0, Math.round(b.height))
 })
 
+// The window content size (the full stage width a seam-sliced background spans). Falls back to a
+// sane default before the window reports (matches contentRect's fallback).
+const contentSize = (): [number, number] => {
+  const [w, h] = mainWindow?.getContentSize() ?? [1280, 800]
+  return [w, h]
+}
+
+const geometryOf = (slot: Slot): PanelGeometry =>
+  makePanelGeometry(slot.view.getBounds(), contentSize())
+
+// Hand a page its own slot geometry so it can slice a full-viewport background to its x-range. Pushed
+// after every bounds change; the page also does a sync read at preload load for its initial value.
+const pushGeometry = (slot: Slot): void => {
+  try {
+    if (!slot.view.webContents.isDestroyed())
+      slot.view.webContents.send('wcv-panel-geometry', geometryOf(slot))
+  } catch {
+    /* a page mid-teardown can't receive — ignore */
+  }
+}
+
+/** Current geometry for the WCV whose page is `webContentsId` (the sync-read resolver). */
+export const geometryFor = (webContentsId: number): PanelGeometry | null => {
+  for (const s of slots.values()) {
+    if (s.view.webContents.id === webContentsId) return geometryOf(s)
+  }
+  return null
+}
+
 /** Create the view for `id` (once) loading `url` with the locked-down shim preload, bind its
  *  session context, then position it at `bounds`. */
 export const ensure = (
@@ -151,9 +183,18 @@ export const ensure = (
       html: inlineHtml ?? undefined
     }
     slots.set(id, slot)
-    if (allHidden) view.setVisible(false) // a full-screen overlay is up — don't paint above it
+    // A full-screen overlay may be up (chat re-render under an open menu) — start hidden so a fresh
+    // view doesn't paint over it. No freeze-frame: it wasn't on screen to capture.
+    freezeController.onTargetCreated(freezeTargetFor(id, slot))
     mainWindow.contentView.addChildView(view)
     view.webContents.loadURL(loadUrl) // html must be on the slot first — the scheme handler reads it
+    // Pre-cache this view's freeze-frame once it has painted, so the first menu-open can hide it
+    // instantly (freeze-precache). Slight delay lets the initial frame land before capture; the
+    // controller throttles + skips-while-suppressed, so an early/redundant call is cheap.
+    view.webContents.on('did-finish-load', () => {
+      const s = slots.get(id)
+      if (s) setTimeout(() => freezeController.warmTarget(freezeTargetFor(id, s)), 400)
+    })
     // Spike: surface the card's console so its missing-API log is visible.
     if (is.dev) view.webContents.openDevTools({ mode: 'detach' })
     log('info', `wcv: created '${id}'`)
@@ -164,10 +205,14 @@ export const ensure = (
     if (inlineHtml !== null) slot.html = inlineHtml // keep the served doc fresh (no reload here)
   }
   slot.view.setBounds(round(bounds))
+  pushGeometry(slot)
 }
 
 export const setBounds = (id: string, bounds: Bounds): void => {
-  slots.get(id)?.view.setBounds(round(bounds))
+  const slot = slots.get(id)
+  if (!slot) return
+  slot.view.setBounds(round(bounds))
+  pushGeometry(slot)
 }
 
 // The main window's content rect (0,0 → content size) — a full-window modal fills this.
@@ -215,18 +260,80 @@ export const setVisible = (id: string, visible: boolean): void => {
   slots.get(id)?.view.setVisible(visible)
 }
 
-// A full-screen DOM overlay (the workflow editor) can't cover native views — they always paint
-// above the renderer — so the host ducks ALL card WCVs while it's open. Tracked in a flag so a
-// view created WHILE the overlay is open (chat re-render underneath it) starts hidden too.
-// setVisible keeps bounds, so the pages keep running (the engine WCV's overlay detector included).
-let allHidden = false
+// A full-screen DOM overlay (a TopStrip dropdown, the workflow editor) can't cover native views —
+// they always paint above the renderer — so the host ducks ALL card WCVs while it's open. Rather
+// than blanking the panels, we FREEZE-FRAME them: capture each visible view, hide the live view,
+// and paint the bitmap into its DOM placeholder (PM-A4). The controller owns the orchestration
+// (capture → hide → push, with cancel-on-close); this module supplies the Electron effects.
+//
+// A hidden WebContentsView keeps webContents focus — keystrokes would go to the invisible card view
+// instead of the overlay's DOM inputs (workflow rename box) — so hand focus back when hiding.
+const freezeTargetFor = (id: string, slot: Slot): FreezeTarget => ({
+  id,
+  capture: async () => {
+    try {
+      if (slot.view.webContents.isDestroyed()) return null
+      const img = await slot.view.webContents.capturePage()
+      // A view mid-load / zero-size captures empty — no usable freeze-frame, fall back to blank.
+      if (img.isEmpty()) return null
+      const size = img.getSize()
+      if (size.width === 0 || size.height === 0) return null
+      return img.toDataURL()
+    } catch {
+      return null
+    }
+  },
+  setVisible: (visible) => {
+    try {
+      if (!slot.view.webContents.isDestroyed()) slot.view.setVisible(visible)
+    } catch {
+      /* mid-teardown — ignore */
+    }
+    if (!visible) mainWindow?.webContents.focus()
+  }
+})
+
+const freezeController = createFreezeController({
+  visibleTargets: () =>
+    [...slots.entries()].map(([id, slot]) => freezeTargetFor(id, slot)),
+  showFreeze: (frames) => mainWindow?.webContents.send('wcv-freeze-show', frames),
+  clearFreeze: () => mainWindow?.webContents.send('wcv-freeze-clear')
+})
+
 export const setAllVisible = (visible: boolean): void => {
-  allHidden = !visible
-  for (const s of slots.values()) s.view.setVisible(visible)
-  // A hidden WebContentsView keeps webContents focus — keystrokes would go to the invisible
-  // card view instead of the overlay's DOM inputs (workflow rename box). Hand focus back.
-  if (!visible) mainWindow?.webContents.focus()
+  if (visible) freezeController.restore()
+  else freezeController.suppress()
 }
+
+// --- Full-play-area overlay surfaces (PM-A7) ---
+// The overlay is a normal card WCV: the renderer mounts a WcvPanel (slot id `overlay:<id>`) over the
+// play-area container, so it lands in the `slots` map like any other view — freeze-frame and
+// setAllVisible suppression apply to it automatically. This controller only orchestrates the
+// one-at-a-time raise/dismiss + the undeclared-id reject; the caller (wcvIpc) resolves the id against
+// the active card's `panel_ui.overlays` and hands the resolved surface in.
+const overlayController = createOverlayController({
+  open: (overlayId, decl) =>
+    mainWindow?.webContents.send('wcv-open-overlay', {
+      overlayId,
+      entry: decl.entry,
+      title: decl.title
+    }),
+  close: (overlayId) => mainWindow?.webContents.send('wcv-close-overlay', { overlayId }),
+  warn: (overlayId) =>
+    log(
+      'error',
+      'wcv overlay',
+      `rejected overlay '${overlayId}' — not declared in the active card's panel_ui.overlays`
+    )
+})
+
+/** Raise a declared overlay surface (`decl` = the resolved `panel_ui.overlays` entry, null ⇒ undeclared).
+ *  Returns whether an overlay is open for that id afterward. Closes any currently-open overlay first. */
+export const requestOverlay = (overlayId: string, decl: OverlayDecl | null): boolean =>
+  overlayController.request(String(overlayId ?? ''), decl)
+
+/** Close whatever overlay is open (card ✕/Esc, app-side Esc, session/card switch). No-op when none. */
+export const closeOverlay = (): void => overlayController.dismiss()
 
 export const destroy = (id: string): void => {
   const slot = slots.get(id)
@@ -309,12 +416,24 @@ export const notifyVarsChanged = (
     // consumers that don't read it (the sync EJS mirror hydrate).
     s.view.webContents.send('wcv-vars-changed', statData, origin)
   }
+  // Game state moved → refresh the freeze-frame cache (throttled, skipped while suppressed) so the
+  // next menu-open shows a still that reflects the change instead of a stale one (freeze-precache).
+  freezeController.warmVisible()
 }
 
 /** Broadcast a TavernHelper lifecycle/mutation event (generation_started, message_received, …) to the
- *  card WCVs on a chat, so their `eventOn(tavern_events.X, …)` listeners fire. */
-export const notifyEvent = (chatId: string, name: string, payload: unknown): void => {
+ *  card WCVs on a chat, so their `eventOn(tavern_events.X, …)` listeners fire. `exceptWebContentsId`
+ *  skips one slot — pass a card's own `e.sender.id` when it broadcasts to siblings so its own page
+ *  doesn't receive the event it just sent (the stage/HUD coordination channel). */
+export const notifyEvent = (
+  chatId: string,
+  name: string,
+  payload: unknown,
+  exceptWebContentsId?: number
+): void => {
   for (const s of slots.values()) {
-    if (s.chatId === chatId) s.view.webContents.send('wcv-event', { name, payload })
+    if (s.chatId !== chatId) continue
+    if (exceptWebContentsId != null && s.view.webContents.id === exceptWebContentsId) continue
+    s.view.webContents.send('wcv-event', { name, payload })
   }
 }

@@ -245,6 +245,10 @@ export interface CardGrants {
    * the frame can reach the app (incl. API keys) — only for a world whose card you trust.
    * Scoped to the world card's scripts + what they import. */
   trusted?: boolean
+  /** The user has made an EXPLICIT trust decision (via the import-time trust modal or the
+   * legacy run-time prompt). When true the run-time script hosts must NOT re-prompt — a denial
+   * is respected and a grant runs the scripts. The user can still change it from Settings → Scripts. */
+  decided?: boolean
 }
 
 const grantsPath = (profileId: string): string =>

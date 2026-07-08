@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useEffect, useMemo } from 'react'
 import { useProfileStore } from './stores/profileStore'
 import { useCharacterStore } from './stores/characterStore'
 import { useChatStore } from './stores/chatStore'
@@ -13,26 +13,30 @@ import { FpsOverlay } from './components/FpsOverlay'
 import { UsageOverlay } from './components/UsageOverlay'
 import { ToastStack } from './components/ToastStack'
 import { ProfilePicker } from './components/ProfilePicker'
-import { TopNav } from './components/TopNav'
+import { TopStrip } from './components/TopStrip'
 import { Workspace } from './components/workspace/Workspace'
 import { StaticWorkspace } from './components/workspace/StaticWorkspace'
+import { OverlayHost } from './components/workspace/OverlayHost'
 import { CardScriptWcvHost } from './components/CardScriptWcvHost'
 import { PluginHost } from './components/PluginHost'
-import { useNavStore } from './stores/navStore'
 import { useWorkflowTraceStore } from './stores/workflowTraceStore'
 import { useWorkflowPanelStore } from './stores/workflowPanelStore'
 import type { WorkflowRunTrace } from '../../shared/workflow/trace'
 import { useWorkspaceStore } from './stores/workspaceStore'
 import { useComposerStore } from './stores/composerStore'
+import { useWcvFreezeStore } from './stores/wcvFreezeStore'
 import { initSlash } from './plugin/slash'
 import { broadcastHostEvent, initCardEventBridge } from './cardBridge/hostBroadcast'
-import { applyTheme } from './theme'
+import { applyTheme, THEMES, DEFAULT_THEME_ID } from './theme'
+import { deriveCardTheme } from './cardTheme'
 import { useI18nStore } from './i18n'
 import { Launcher } from './components/Launcher'
 import { StDomCompat } from './components/StDomCompat'
 import { SettingsModal } from './components/SettingsModal'
 import { WorkflowEditorOverlay } from './components/workflow/WorkflowEditorOverlay'
 import { DuelPopup } from './components/DuelPopup'
+import { AssetsPopup } from './components/AssetsPopup'
+import { CardTrustPrompt } from './components/CardTrustPrompt'
 
 export default function App(): React.ReactElement {
   const activeProfile = useProfileStore((s) => s.activeProfile)
@@ -45,9 +49,6 @@ export default function App(): React.ReactElement {
   const loadChats = useChatStore((s) => s.loadChats)
   const activeChatId = useChatStore((s) => s.activeChatId)
   const activePresetId = usePresetStore((s) => s.activeId)
-
-  const panel = useNavStore((s) => s.panel)
-  const setPanel = useNavStore((s) => s.setPanel)
 
   useEffect(() => {
     loadProfiles()
@@ -88,6 +89,12 @@ export default function App(): React.ReactElement {
       const st = useChatStore.getState()
       const pid = useProfileStore.getState().activeProfile?.id
       if (pid && chatId === st.activeChatId) st.refreshFloors(pid, chatId)
+    })
+    // Freeze-frame bitmaps while WCVs are ducked under a DOM overlay (PM-A4). Main pushes a per-slot
+    // capture to paint behind the hidden native panels; each WcvPanel reads its own frame.
+    const unsubFreeze = window.api.onWcvFreeze((p) => {
+      if ('clear' in p) useWcvFreezeStore.getState().clearFreeze()
+      else useWcvFreezeStore.getState().showFreeze(p.show)
     })
     // Broadcast the latest stat_data to any WebContentsView card panel whenever floors change
     // (a model turn / re-evaluate / edit), so the card's own UI reflects model-driven updates live.
@@ -131,6 +138,7 @@ export default function App(): React.ReactElement {
       unsubInput()
       unsubSubmit()
       unsubReload()
+      unsubFreeze()
       unsubFloors()
       unsubEvents()
       unsubTrace()
@@ -218,6 +226,38 @@ export default function App(): React.ReactElement {
     })
   }, [activeProfile?.id])
 
+  // Card-bundled theme (docs/ui-rehaul-design.md §6a): the active world may reskin PLAY MODE to its
+  // own palette. We derive the effective token set (deriving readable text/on-* + enforcing AA), and
+  // apply it to the play wrapper only — the launcher and settings stay on the user's theme. Gated by
+  // settings.ui.allow_card_themes (default on); a failing/absent card theme yields null → user theme.
+  const cardThemeRaw = activeCharacter?.card?.data?.extensions?.rp_terminal?.theme as
+    | Record<string, unknown>
+    | undefined
+  const allowCardThemes =
+    (settings?.ui as { allow_card_themes?: boolean } | undefined)?.allow_card_themes !== false
+  const playTokens = useMemo(
+    () => (allowCardThemes ? deriveCardTheme(cardThemeRaw, settings?.ui?.theme) : null),
+    [allowCardThemes, cardThemeRaw, settings?.ui?.theme]
+  )
+
+  // Match the OS window-control overlay (Windows) to what's on screen: the card theme's chrome while a
+  // themed card is in play, else the base app theme. Keeps the controls flush in colour with the top
+  // strip (which uses --rpt-bg-secondary), and restores the base theme when leaving a themed card.
+  useEffect(() => {
+    const src =
+      playTokens ??
+      THEMES[settings?.ui?.theme ?? '']?.tokens ??
+      THEMES[DEFAULT_THEME_ID].tokens
+    try {
+      window.api?.setTitlebarOverlay?.({
+        color: src['--rpt-bg-secondary'],
+        symbolColor: src['--rpt-text-primary']
+      })
+    } catch {
+      /* non-Windows: no overlay */
+    }
+  }, [playTokens, settings?.ui?.theme])
+
   if (!activeProfile) return <ProfilePicker />
 
   // An RPT-native card can declare its own static, card-determined layout (rp_terminal.panel_ui); else the
@@ -235,14 +275,25 @@ export default function App(): React.ReactElement {
       {!activeChatId ? (
         <Launcher profileId={activeProfile.id} />
       ) : (
-        <>
-          <TopNav panel={panel} profileName={activeProfile.name} onSelectPanel={setPanel} />
+        <div
+          className="play-root"
+          style={playTokens ? (playTokens as unknown as React.CSSProperties) : undefined}
+        >
+          <TopStrip profileId={activeProfile.id} profileName={activeProfile.name} />
 
-          {staticLayout ? (
-            <StaticWorkspace profileId={activeProfile.id} layout={staticLayout} />
-          ) : (
-            <Workspace profileId={activeProfile.id} />
-          )}
+          {/* Positioned wrapper so the full-play-area overlay host (PM-A7) can cover exactly the
+              workspace region (below the TopStrip) — its inset:0 rect drives the overlay WCV bounds. */}
+          <div
+            className="ws-overlay-root"
+            style={{ position: 'relative', flex: 1, minWidth: 0, minHeight: 0, display: 'flex' }}
+          >
+            {staticLayout ? (
+              <StaticWorkspace profileId={activeProfile.id} layout={staticLayout} />
+            ) : (
+              <Workspace profileId={activeProfile.id} />
+            )}
+            <OverlayHost />
+          </div>
 
           {/* The invisible card-script engine: runs the active card's scripts (the 创意工坊 workshop +
               background MVU/automation) in a hidden, off-screen WCV — app-wide and independent of the panel
@@ -265,7 +316,7 @@ export default function App(): React.ReactElement {
 
           {settings?.ui?.show_fps && <FpsOverlay />}
           {settings?.ui?.usage_meter?.enabled && <UsageOverlay profileId={activeProfile.id} />}
-        </>
+        </div>
       )}
 
       {/* App-wide overlays — render over BOTH the launcher and play. The workflow editor is now the
@@ -274,6 +325,8 @@ export default function App(): React.ReactElement {
       <SettingsModal profileId={activeProfile.id} />
       <WorkflowEditorOverlay profileId={activeProfile.id} />
       <DuelPopup profileId={activeProfile.id} />
+      <AssetsPopup profileId={activeProfile.id} />
+      <CardTrustPrompt />
       <ToastStack />
     </>
   )

@@ -232,6 +232,14 @@ declare global {
           required?: number | string | boolean
         }[]
       >
+      // Fire ONE trigger.manual node's chain on explicit user action (RF-01). Guards live main-side
+      // (active doc, node kind, disabled) — they log + no-op, never throw.
+      runManualTrigger: (
+        profileId: string,
+        chatId: string,
+        docId: string,
+        triggerNodeId: string
+      ) => Promise<void>
       // Effective-graph projection for the Workflow view's Effective mode (agent-packs plan WP3.6a;
       // ADR 0010). The composed doc + composition warnings + per-pack grouping (name / spliced node
       // ids / triggerOnly). A live projection, never persisted (ADR 0001).

@@ -369,6 +369,27 @@ describe('manual trigger', () => {
     expect(mockFloor.saveFloor).not.toHaveBeenCalled()
     expect(mockLog.log).toHaveBeenCalled()
   })
+
+  it('runManualDoc no-ops (and appends NO run record) when docId is not the chat active doc', async () => {
+    // resolveWorkflowDoc returns the chat's ACTIVE doc, id 'doc1'; the caller passes a STALE id.
+    mockWorkflowService.resolveWorkflowDoc.mockReturnValue({
+      id: 'doc1',
+      doc: docWithAgent('trg', 'trigger.manual', undefined)
+    })
+    await runManualDoc('prof', 'c1', 'staleDoc', 'trg')
+    expect(mockFloor.saveFloor).not.toHaveBeenCalled()
+    expect(mockRunHistory.appendRun).not.toHaveBeenCalled()
+  })
+
+  it('runManualDoc on a disabled manual trigger is a logged no-op', async () => {
+    const doc = docWithAgent('trg', 'trigger.manual', undefined)
+    doc.nodes = doc.nodes.map((n) => (n.id === 'trg' ? { ...n, disabled: true } : n))
+    mockWorkflowService.resolveWorkflowDoc.mockReturnValue({ id: 'doc1', doc })
+    await runManualDoc('prof', 'c1', 'doc1', 'trg')
+    expect(mockFloor.saveFloor).not.toHaveBeenCalled()
+    expect(mockRunHistory.appendRun).not.toHaveBeenCalled()
+    expect(mockLog.log).toHaveBeenCalled()
+  })
 })
 
 // ── Read-only live trigger badges (WP6.4a: explainDocTriggers) ─────────────────────────────────────────

@@ -2,6 +2,10 @@
   /* Default theme (dark / Midnight) — the full semantic token set. Alternate themes override these
      via applyTheme() (src/renderer/src/theme.ts). Every fill is paired with a text / on-* token so
      contrast holds across themes; see docs/ui-rehaul-design.md §7. */
+  /* Custom merged title-bar height — single source for every titlebar-derived style (.tstrip /
+     .lc-bar strips, workflow-editor header). PAIRED with TITLEBAR_OVERLAY_HEIGHT
+     (src/main/windowChrome.ts), the main-process window-control overlay height. See theme.ts. */
+  --rpt-titlebar-h: 44px;
   --rpt-bg-primary: #121212;
   --rpt-bg-secondary: #1e1e1e;
   --rpt-bg-tertiary: #2a2a2e;
@@ -10,11 +14,20 @@
   --rpt-text-secondary: #aaaaaa;
   --rpt-text-tertiary: #6f6f78;
   --rpt-accent: #5b8def;
+  /* Soft accent wash — cue banners / subtle accent-tinted fills (ChatView combat-cue banner). */
+  --rpt-accent-soft: rgba(91, 141, 239, 0.12);
   --rpt-on-accent: #ffffff;
   --rpt-border: #333333;
   --rpt-danger: #e74c3c;
   --rpt-success: #4caf72;
   --rpt-warning: #e0a23c;
+  /* Chrome polish (UI overhaul) — ADDITIVE tokens. New names, not referenced by any pre-existing
+     rule, so themes need not define them and other screens are untouched. The mono face is the
+     app's "terminal" utility voice (brand, eyebrows, tabular metadata); body stays the sans. */
+  --rpt-font-mono: ui-monospace, 'JetBrains Mono', 'Cascadia Code', 'SF Mono', Menlo, Consolas, monospace;
+  --rpt-font-body: 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --rpt-radius-lg: 14px;
+  --rpt-shadow-lift: 0 18px 40px -18px rgba(0, 0, 0, 0.75), 0 2px 8px -4px rgba(0, 0, 0, 0.6);
   /* Combat (Track Combat) — grid highlight washes, color-mix'd off the active theme's
      accent/warning/danger so they follow theming. See docs/combat-system-design.md §15. */
   --rpt-combat-reach: color-mix(in srgb, var(--rpt-accent) 22%, transparent);
@@ -167,6 +180,29 @@
 .rpt-duel-modal-body { flex:1; min-height:0; display:flex; }
 .rpt-duel-modal-body > .rpt-duel { flex:1; min-width:0; }
 
+/* Generic full-window popup host (AssetsPopup.tsx; reusable by future Variables/Tables popups) —
+   a centered, fixed-size window over .modal-overlay's backdrop. Mirrors .rpt-duel-modal so a card
+   that owns the play area (static panel_ui) can't hide these full-workspace surfaces. */
+.rpt-popup-modal { width:min(1120px, 95vw); height:min(760px, 90vh); background:var(--rpt-bg-secondary);
+  border:1px solid var(--rpt-border); border-radius:12px; display:flex; flex-direction:column;
+  overflow:hidden; box-shadow:0 20px 60px rgba(0,0,0,.5); }
+.rpt-popup-modal-head { flex:0 0 auto; display:flex; align-items:center; justify-content:space-between;
+  padding:8px 14px; border-bottom:1px solid var(--rpt-border); background:var(--rpt-bg-primary);
+  color:var(--rpt-text-primary); font-size:13px; }
+.rpt-popup-modal-body { flex:1; min-height:0; display:flex; }
+.rpt-popup-modal-body > .rpt-assets { flex:1; min-width:0; }
+
+/* Import-time card-script trust prompt (CardTrustPrompt.tsx) — a small, message-sized variant of the
+   shared popup: auto height, a padded text column instead of a full-bleed view host. */
+.rpt-popup-modal-trust { width:min(460px, 92vw); height:auto; max-height:90vh; }
+.rpt-popup-modal-trust .rpt-popup-modal-body { flex-direction:column; padding:18px 20px 20px;
+  gap:14px; overflow-y:auto; }
+.rpt-trust-body { margin:0; color:var(--rpt-text-secondary); font-size:13px; line-height:1.6; }
+.rpt-trust-warning { margin:0; padding:10px 12px; border-radius:8px; font-size:12.5px; line-height:1.55;
+  color:var(--rpt-text-primary); background:var(--rpt-warning-bg, rgba(230,170,60,.12));
+  border:1px solid var(--rpt-warning-border, rgba(230,170,60,.4)); }
+.rpt-trust-actions { display:flex; justify-content:flex-end; gap:10px; margin-top:2px; }
+
 /* Floors manager (FloorManagerModal) — a scrollable floor list + a delete-tail footer, inside the
    shared .modal-panel. Deleting marks the picked floor and every floor below it (danger tint). */
 .rpt-floors { display:flex; flex-direction:column; height:100%; gap:10px; }
@@ -224,7 +260,7 @@ body {
   background: transparent;
 }
 
-/* ---------- Top navigation ---------- */
+/* ---------- Top navigation (play-mode shell — boot-terminal language) ---------- */
 .top-nav {
   flex: 0 0 auto;
   height: 48px;
@@ -238,38 +274,61 @@ body {
   -webkit-app-region: drag;
 }
 .nav-brand {
+  font-family: var(--rpt-font-mono);
   font-weight: 700;
-  letter-spacing: 0.02em;
+  font-size: 13.5px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
   color: var(--rpt-text-primary);
   white-space: nowrap;
   background: transparent;
   border: none;
-  padding: 4px 6px;
-  border-radius: 6px;
+  padding: 5px 8px;
+  border-radius: 8px;
   cursor: pointer;
-  font-size: inherit;
 }
 .nav-brand:hover {
-  background: var(--rpt-bg-tertiary);
+  background: color-mix(in srgb, var(--rpt-text-primary) 8%, transparent);
+}
+.nav-brand-dot {
+  color: var(--rpt-accent);
+  margin-right: 6px;
 }
 .nav-tabs {
   display: flex;
-  gap: 4px;
+  gap: 2px;
 }
+/* Tabs: mono utility labels with an accent underline indicator on the active one (quieter than a
+   solid pill, and the underline is a non-color cue so the state reads without relying on hue). */
 .nav-tab {
+  position: relative;
   background: transparent;
   color: var(--rpt-text-secondary);
-  border: 1px solid transparent;
-  padding: 7px 14px;
-  border-radius: 6px;
-  font-size: 0.9em;
+  border: none;
+  padding: 7px 12px 8px;
+  border-radius: 7px;
+  font-family: var(--rpt-font-mono);
+  font-size: 12.5px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  cursor: pointer;
 }
 .nav-tab:hover:not(:disabled) {
   color: var(--rpt-text-primary);
-  background: var(--rpt-bg-primary);
+  background: color-mix(in srgb, var(--rpt-text-primary) 6%, transparent);
 }
 .nav-tab.active {
-  color: var(--rpt-on-accent);
+  color: var(--rpt-text-primary);
+  background: transparent;
+}
+.nav-tab.active::after {
+  content: '';
+  position: absolute;
+  left: 12px;
+  right: 12px;
+  bottom: 2px;
+  height: 2px;
+  border-radius: 2px;
   background: var(--rpt-accent);
 }
 .nav-tab:disabled {
@@ -278,11 +337,28 @@ body {
 }
 .nav-status {
   margin-left: auto;
-  font-size: 0.85em;
-  color: var(--rpt-text-secondary);
+  font-family: var(--rpt-font-mono);
+  font-size: 11.5px;
+  letter-spacing: 0.03em;
+  color: var(--rpt-text-tertiary);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+/* Play-mode wrapper. Fills the shell like the old fragment did, and carries a world's card-bundled
+   theme tokens (§6a) as inline CSS vars so they override :root for the play subtree only — the
+   launcher and the settings popup (rendered outside this wrapper) keep the user's app theme. */
+.play-root {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  /* Backdrop for the play area. A card theme sets --rpt-bg-primary here (via playTokens), so a
+     transparent seamless panel_ui slot (e.g. the native chat STORY column) falls through to the CARD's
+     background — not the base-theme <body> behind .play-root (which otherwise leaks white in a light app
+     theme / black in a dark one). No card theme → this is just the base bg, unchanged. */
+  background: var(--rpt-bg-primary);
 }
 
 .app-body {
@@ -378,25 +454,38 @@ body {
   overflow: hidden;
   background-color: var(--rpt-bg-secondary);
   border: 1px solid var(--rpt-border);
-  border-radius: 6px;
+  border-radius: 10px;
+}
+/* Seamless slot: no chrome so adjacent WCV surfaces compose into one continuous stage. The card's
+   page paints its own background edge-to-edge (the seam-slicing case). */
+.ws-panel.ws-bare {
+  background-color: transparent;
+  border: none;
+  border-radius: 0;
 }
 .ws-panel-head {
   flex: 0 0 auto;
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 4px 6px;
+  padding: 5px 7px;
   border-bottom: 1px solid var(--rpt-border);
-  background-color: var(--rpt-bg-primary);
+  background-color: color-mix(in srgb, var(--rpt-bg-primary) 55%, var(--rpt-bg-secondary));
 }
 .ws-view-pick {
   background-color: var(--rpt-bg-secondary);
-  color: var(--rpt-text-primary);
+  color: var(--rpt-text-secondary);
   border: 1px solid var(--rpt-border);
-  border-radius: 4px;
+  border-radius: 6px;
+  font-family: var(--rpt-font-mono);
   font-size: 12px;
-  padding: 2px 6px;
+  letter-spacing: 0.02em;
+  padding: 3px 7px;
   cursor: pointer;
+}
+.ws-view-pick:hover {
+  color: var(--rpt-text-primary);
+  border-color: color-mix(in srgb, var(--rpt-accent) 45%, var(--rpt-border));
 }
 .ws-panel-spacer {
   flex: 1;
@@ -860,6 +949,13 @@ details[open] > .stat-group-title::before {
   border: 1px solid var(--rpt-border);
   font-size: var(--rpt-chat-font, 16px);
 }
+/* The AI message prose. A card theme MAY set `--rpt-chat-font-family` (token alias `chat-font` /
+   `prose-font`) to give the story a serif register; without it the prose inherits the app body font
+   (unchanged for every existing card). The user action, swipe controls, and card HTML frames are
+   outside this scope. See the poem play-area redesign §5.4. */
+.message-content {
+  font-family: var(--rpt-chat-font-family, inherit);
+}
 
 .floor-empty {
   margin: auto;
@@ -904,6 +1000,29 @@ details[open] > .stat-group-title::before {
   font-size: 0.75em;
   color: var(--rpt-text-secondary);
   font-variant-numeric: tabular-nums;
+  z-index: 2;
+  /* Now a <button> for jump-to-floor: strip default button chrome so it keeps its plain-text look. */
+  padding: 0;
+  border: none;
+  background: none;
+  font-family: inherit;
+  cursor: pointer;
+}
+.floor-pageinfo:hover {
+  color: var(--rpt-text-primary);
+}
+/* Jump-to-floor input: sits where the page indicator was. */
+.floor-pagejump {
+  position: absolute;
+  right: 18px;
+  bottom: 28px;
+  width: 56px;
+  font-size: 0.75em;
+  color: var(--rpt-text-primary);
+  background: var(--rpt-bg-secondary);
+  border: 1px solid var(--rpt-border);
+  border-radius: 4px;
+  padding: 1px 4px;
   z-index: 2;
 }
 
@@ -970,6 +1089,22 @@ details[open] > .stat-group-title::before {
 }
 .btn-accent:hover {
   filter: brightness(1.1);
+}
+.btn-danger {
+  font: inherit;
+  color: #fff;
+  background: var(--rpt-danger);
+  border: 1px solid var(--rpt-danger);
+  border-radius: 6px;
+  padding: 4px 12px;
+  cursor: pointer;
+}
+.btn-danger:hover {
+  filter: brightness(1.1);
+}
+.btn-danger:disabled {
+  opacity: 0.5;
+  cursor: default;
 }
 
 /* Watchdog: shown when a process-isolated card frame stops responding. */
@@ -1352,13 +1487,16 @@ details[open] > .stat-group-title::before {
   background-color: var(--rpt-bg-secondary);
   border: 1px solid var(--rpt-border);
   color: var(--rpt-text-primary);
-  padding: 12px;
-  padding-bottom: 52px; /* leave room for the in-box send/stop button */
+  /* right padding clears the in-box send button (no bottom reserve, so it can be one line tall) */
+  padding: 12px 50px 12px 14px;
   border-radius: 8px;
-  resize: vertical;
+  resize: none;
   font-family: inherit;
-  min-height: 10vh;
   line-height: 1.5;
+  /* auto-grows via JS from one line up to ~5 lines, then scrolls */
+  min-height: 46px;
+  max-height: 152px;
+  overflow-y: auto;
 }
 
 /* Tiny circular send/stop button anchored to the bottom-right of the input. */
@@ -1520,7 +1658,12 @@ select {
 .modal-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.6);
+  /* Frosted-glass curtain: a lighter scrim + backdrop blur so the popup obscures whatever DOM sits
+     behind it (native WCV panels paint ABOVE the DOM, so this only bites once they're suppressed —
+     useWcvSuppression handles that for popups; the blur masks the WCV-hide under the curtain). */
+  background: rgba(0, 0, 0, 0.5);
+  backdrop-filter: blur(12px) saturate(115%);
+  -webkit-backdrop-filter: blur(12px) saturate(115%);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1842,77 +1985,167 @@ select {
   flex-direction: column;
   min-height: 0;
   overflow: hidden;
+  position: relative;
+  /* Boot-console atmosphere: one restrained top glow off the accent, over the primary field.
+     Neutral by design — a world's own theme/css supplies its genre flavor, not the shell. */
+  background:
+    radial-gradient(120% 55% at 50% -8%,
+      color-mix(in srgb, var(--rpt-accent) 9%, transparent), transparent 60%),
+    var(--rpt-bg-primary);
+}
+/* Barely-there scanline texture (the "terminal" motif) — kept under 4% so it never fights content. */
+.launcher::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: repeating-linear-gradient(
+    0deg,
+    transparent 0 3px,
+    color-mix(in srgb, var(--rpt-text-primary) 3%, transparent) 3px 4px
+  );
+  opacity: 0.35;
+  pointer-events: none;
 }
 .lc-bar {
   flex: 0 0 auto;
-  height: 48px;
+  /* sits flush under the OS window-control overlay (main/index.ts TITLEBAR_OVERLAY_HEIGHT) */
+  height: var(--rpt-titlebar-h);
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 0 138px 0 18px;
-  background: var(--rpt-bg-secondary);
-  border-bottom: 1px solid var(--rpt-border);
+  gap: 12px;
+  /* right padding reserves the OS window-control overlay strip (Windows custom title bar) */
+  padding: 0 138px 0 16px;
+  background: color-mix(in srgb, var(--rpt-bg-secondary) 72%, transparent);
+  backdrop-filter: blur(8px);
+  border-bottom: 1px solid color-mix(in srgb, var(--rpt-border) 80%, transparent);
+  position: relative;
+  z-index: 2;
   -webkit-app-region: drag;
 }
 .lc-brand {
+  font-family: var(--rpt-font-mono);
   font-weight: 700;
-  letter-spacing: 0.02em;
+  font-size: 13.5px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--rpt-text-primary);
   white-space: nowrap;
+}
+.lc-brand-dot {
+  color: var(--rpt-accent);
 }
 .lc-crumb {
   background: transparent;
   border: none;
   color: var(--rpt-text-secondary);
   padding: 6px 10px;
-  border-radius: 6px;
+  border-radius: 8px;
   cursor: pointer;
-  font: inherit;
+  font-family: var(--rpt-font-mono);
+  font-size: 12.5px;
+  letter-spacing: 0.04em;
 }
 .lc-crumb:hover {
-  background: var(--rpt-bg-tertiary);
+  background: color-mix(in srgb, var(--rpt-text-primary) 8%, transparent);
   color: var(--rpt-text-primary);
 }
 .lc-crumb-cur {
-  color: var(--rpt-text-primary);
-  font-size: 0.9em;
+  color: var(--rpt-text-secondary);
+  font-family: var(--rpt-font-mono);
+  font-size: 12.5px;
+  letter-spacing: 0.04em;
 }
 .lc-sep {
-  color: var(--rpt-text-secondary);
-  opacity: 0.5;
+  color: var(--rpt-text-tertiary);
 }
 .lc-spacer {
   flex: 1;
 }
 .lc-import {
-  font: inherit;
-  font-size: 0.85em;
-  background: var(--rpt-bg-tertiary);
-  color: var(--rpt-text-primary);
+  font-family: var(--rpt-font-mono);
+  font-size: 12px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  background: transparent;
+  color: var(--rpt-text-secondary);
   border: 1px solid var(--rpt-border);
-  border-radius: 6px;
+  border-radius: 8px;
   padding: 6px 12px;
   cursor: pointer;
+  transition: border-color 0.15s ease, color 0.15s ease;
 }
 .lc-import:hover {
   border-color: var(--rpt-accent);
+  color: var(--rpt-text-primary);
 }
 .lc-scroll {
   flex: 1;
   overflow-y: auto;
-  padding: 22px;
-  max-width: 820px;
+  padding: 40px 24px 48px;
+  align-self: center;
+  max-width: 860px;
   width: 100%;
-  margin: 0 auto;
   box-sizing: border-box;
+  position: relative;
+  z-index: 1;
+}
+.lc-hero {
+  margin-bottom: 28px;
+}
+.lc-eyebrow {
+  font-family: var(--rpt-font-mono);
+  font-size: 12px;
+  letter-spacing: 0.28em;
+  text-transform: uppercase;
+  color: var(--rpt-accent);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+.lc-eyebrow::before {
+  content: '';
+  width: 22px;
+  height: 1px;
+  background: var(--rpt-accent);
+  opacity: 0.7;
 }
 .lc-h {
-  font-size: 1.15em;
-  font-weight: 600;
+  font-size: 34px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  line-height: 1.1;
+  margin: 0;
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+}
+/* Blinking boot-caret — the launcher's one ambient motion. Respects reduced-motion below. */
+.lc-caret {
+  display: inline-block;
+  width: 12px;
+  height: 27px;
+  transform: translateY(3px);
+  background: var(--rpt-accent);
+  border-radius: 1px;
+  animation: rpt-caret-blink 1.15s steps(1) infinite;
+}
+@keyframes rpt-caret-blink {
+  0%,
+  50% {
+    opacity: 1;
+  }
+  51%,
+  100% {
+    opacity: 0;
+  }
 }
 .lc-sub {
   color: var(--rpt-text-secondary);
-  font-size: 0.85em;
-  margin: 4px 0 18px;
+  font-size: 14.5px;
+  line-height: 1.5;
+  margin: 12px 0 0;
+  max-width: 56ch;
 }
 .lc-empty {
   color: var(--rpt-text-secondary);
@@ -1931,54 +2164,104 @@ select {
 }
 .lc-wrow {
   display: flex;
-  gap: 16px;
-  align-items: center;
+  gap: 18px;
+  align-items: stretch;
   text-align: left;
   width: 100%;
-  background: var(--rpt-bg-secondary);
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--rpt-accent) 3%, var(--rpt-bg-secondary)),
+    var(--rpt-bg-secondary)
+  );
   border: 1px solid var(--rpt-border);
-  border-radius: 11px;
-  padding: 14px;
+  border-radius: var(--rpt-radius-lg);
+  padding: 15px;
   cursor: pointer;
   color: inherit;
   font: inherit;
+  position: relative;
+  overflow: hidden;
+  transition: border-color 0.16s ease, transform 0.16s ease, box-shadow 0.16s ease;
+}
+/* Accent spine on the left edge, lit on hover — the "slot is selected" cue. */
+.lc-wrow::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 3px;
+  background: var(--rpt-accent);
+  opacity: 0;
+  transition: opacity 0.16s ease;
 }
 .lc-wrow:hover {
-  border-color: var(--rpt-accent);
+  border-color: color-mix(in srgb, var(--rpt-accent) 55%, var(--rpt-border));
+  transform: translateY(-2px);
+  box-shadow: var(--rpt-shadow-lift);
+}
+.lc-wrow:hover::before {
+  opacity: 1;
+}
+/* "Enter ▶" affordance revealed on row hover (decorative; the whole row is the button). */
+.lc-enter {
+  align-self: center;
+  flex: 0 0 auto;
+  font-family: var(--rpt-font-mono);
+  font-size: 12px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--rpt-accent);
+  white-space: nowrap;
+  padding-right: 4px;
+  opacity: 0;
+  transform: translateX(-4px);
+  transition: opacity 0.16s ease, transform 0.16s ease;
+}
+.lc-wrow:hover .lc-enter {
+  opacity: 1;
+  transform: translateX(0);
 }
 /* Delete button overlaid top-right of a world row (the row itself is a button, so this
    sibling sits over it rather than nesting). Always visible but faint, brightening on hover. */
 .lc-wdel {
   position: absolute;
-  top: 8px;
-  right: 8px;
+  top: 10px;
+  right: 12px;
   line-height: 1;
-  opacity: 0.4;
+  opacity: 0;
+  z-index: 3;
   transition: opacity 0.12s ease;
 }
 .lc-wrow-wrap:hover .lc-wdel,
 .lc-wdel:focus-visible {
-  opacity: 0.75;
+  opacity: 0.6;
 }
 .lc-wdel:hover {
   opacity: 1;
 }
 .lc-av {
-  width: 66px;
-  height: 88px;
+  width: 72px;
+  height: 96px;
   flex: 0 0 auto;
   border-radius: 9px;
   object-fit: cover;
   background: var(--rpt-bg-primary);
+  border: 1px solid color-mix(in srgb, var(--rpt-border) 70%, transparent);
 }
 .lc-av-ph {
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 26px;
-  font-weight: 600;
+  font-size: 28px;
+  font-weight: 700;
+  font-family: var(--rpt-font-mono);
   color: var(--rpt-on-accent);
-  background: var(--rpt-accent);
+  background: linear-gradient(
+    160deg,
+    color-mix(in srgb, var(--rpt-accent) 90%, #fff),
+    color-mix(in srgb, var(--rpt-accent) 65%, #000)
+  );
   text-transform: uppercase;
 }
 .lc-wtext {
@@ -1986,39 +2269,47 @@ select {
   min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 6px;
+  padding: 2px 0;
 }
 .lc-wname {
-  font-weight: 600;
-  font-size: 1.02em;
+  font-weight: 650;
+  font-size: 17px;
+  letter-spacing: -0.01em;
 }
 .lc-wdesc {
   color: var(--rpt-text-secondary);
-  font-size: 0.86em;
-  line-height: 1.45;
+  font-size: 14px;
+  line-height: 1.5;
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
 }
 .lc-wmeta {
-  color: var(--rpt-text-secondary);
-  font-size: 0.78em;
-  opacity: 0.85;
+  margin-top: auto;
+  font-family: var(--rpt-font-mono);
+  font-size: 12px;
+  letter-spacing: 0.03em;
+  color: var(--rpt-text-tertiary);
 }
 .lc-new {
-  font: inherit;
+  font-family: var(--rpt-font-mono);
+  font-size: 13px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
   text-align: left;
   background: transparent;
-  border: 1px dashed var(--rpt-border);
-  color: var(--rpt-text-secondary);
-  border-radius: 9px;
-  padding: 12px 14px;
+  border: 1px dashed color-mix(in srgb, var(--rpt-border) 90%, transparent);
+  color: var(--rpt-text-tertiary);
+  border-radius: var(--rpt-radius-lg);
+  padding: 15px 16px;
   cursor: pointer;
+  transition: border-color 0.15s ease, color 0.15s ease;
 }
 .lc-new:hover {
   border-color: var(--rpt-accent);
-  color: var(--rpt-text-primary);
+  color: var(--rpt-text-secondary);
 }
 .lc-srow-wrap {
   position: relative;
@@ -2026,20 +2317,43 @@ select {
 .lc-srow {
   display: flex;
   flex-direction: column;
-  gap: 5px;
+  gap: 6px;
   text-align: left;
   width: 100%;
-  background: var(--rpt-bg-secondary);
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--rpt-accent) 3%, var(--rpt-bg-secondary)),
+    var(--rpt-bg-secondary)
+  );
   border: 1px solid var(--rpt-border);
-  border-radius: 9px;
+  border-radius: var(--rpt-radius-lg);
   /* extra right padding clears the overlaid delete button */
-  padding: 12px 34px 12px 14px;
+  padding: 13px 36px 13px 15px;
   cursor: pointer;
   color: inherit;
   font: inherit;
+  position: relative;
+  overflow: hidden;
+  transition: border-color 0.16s ease, transform 0.16s ease, box-shadow 0.16s ease;
+}
+.lc-srow::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 3px;
+  background: var(--rpt-accent);
+  opacity: 0;
+  transition: opacity 0.16s ease;
 }
 .lc-srow:hover {
-  border-color: var(--rpt-accent);
+  border-color: color-mix(in srgb, var(--rpt-accent) 55%, var(--rpt-border));
+  transform: translateY(-2px);
+  box-shadow: var(--rpt-shadow-lift);
+}
+.lc-srow:hover::before {
+  opacity: 1;
 }
 /* The latest turn's two previews: the player's action clamped to 2 lines, the response to 3. */
 .lc-sprev-user {
@@ -2060,8 +2374,25 @@ select {
   overflow: hidden;
 }
 .lc-smeta {
-  color: var(--rpt-text-secondary);
-  font-size: 0.76em;
+  font-family: var(--rpt-font-mono);
+  color: var(--rpt-text-tertiary);
+  font-size: 12px;
+  letter-spacing: 0.03em;
+}
+/* Respect reduced-motion: kill the ambient caret blink and the hover lift/reveal transitions. */
+@media (prefers-reduced-motion: reduce) {
+  .lc-caret {
+    animation: none;
+  }
+  .lc-wrow,
+  .lc-srow,
+  .lc-enter {
+    transition: none;
+  }
+  .lc-wrow:hover,
+  .lc-srow:hover {
+    transform: none;
+  }
 }
 /* Delete button overlaid top-right of a session row (the row is a button, so this sibling sits
    over it rather than nesting). Faint until the row is hovered. Mirrors .lc-wdel. */
@@ -2120,19 +2451,22 @@ select {
 .nav-crumb {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: 5px;
   min-width: 0;
   background: transparent;
   border: none;
-  color: var(--rpt-text-primary);
-  font: inherit;
-  font-size: 0.9em;
-  padding: 5px 8px;
-  border-radius: 6px;
+  color: var(--rpt-text-secondary);
+  font-family: var(--rpt-font-mono);
+  font-size: 12.5px;
+  letter-spacing: 0.03em;
+  padding: 5px 9px;
+  border-radius: 7px;
   cursor: pointer;
+  transition: color 0.15s ease, background 0.15s ease;
 }
 .nav-crumb:hover {
-  background: var(--rpt-bg-tertiary);
+  background: color-mix(in srgb, var(--rpt-text-primary) 8%, transparent);
+  color: var(--rpt-text-primary);
 }
 .nav-crumb-label {
   max-width: 180px;
@@ -2141,12 +2475,114 @@ select {
   white-space: nowrap;
 }
 .nav-crumb-caret {
-  opacity: 0.6;
+  opacity: 0.55;
   font-size: 0.85em;
 }
 .nav-crumb-sep {
+  color: var(--rpt-text-tertiary);
+}
+
+/* ---------- Top strip (menu-bar shell; replaces the tab TopNav) ---------- */
+.tstrip {
+  flex: 0 0 auto;
+  /* sits flush under the OS window-control overlay (main/index.ts TITLEBAR_OVERLAY_HEIGHT) */
+  height: var(--rpt-titlebar-h);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  /* right padding reserves the OS window-control overlay strip (Windows custom title bar) */
+  padding: 0 138px 0 14px;
+  background: var(--rpt-bg-secondary);
+  border-bottom: 1px solid var(--rpt-border);
+  -webkit-app-region: drag;
+}
+.tstrip-brand {
+  font-family: var(--rpt-font-mono);
+  font-weight: 700;
+  font-size: 13.5px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--rpt-text-primary);
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 5px 6px;
+  border-radius: 8px;
+  white-space: nowrap;
+}
+.tstrip-brand:hover {
+  background: color-mix(in srgb, var(--rpt-text-primary) 8%, transparent);
+}
+.tstrip-brand .dot {
+  color: var(--rpt-accent);
+  margin-right: 6px;
+}
+.tstrip-crumbs {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+}
+.tstrip-crumb-label {
+  max-width: 200px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tstrip-sep {
+  color: var(--rpt-text-tertiary);
+}
+.tstrip-spacer {
+  flex: 1;
+}
+.tstrip-menus {
+  display: flex;
+  align-items: center;
+  gap: 1px;
+}
+/* Shared button on the strip — the direct settings buttons and the breadcrumb pills. */
+.tmenu-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--rpt-font-mono);
+  font-size: 12.5px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  background: none;
+  border: 1px solid transparent;
   color: var(--rpt-text-secondary);
-  opacity: 0.5;
+  padding: 6px 10px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: color 0.15s ease, background 0.15s ease, border-color 0.15s ease;
+}
+.tmenu-btn .caret {
+  font-size: 10px;
+  opacity: 0.55;
+}
+.tmenu-btn:hover {
+  color: var(--rpt-text-primary);
+  background: color-mix(in srgb, var(--rpt-text-primary) 7%, transparent);
+}
+.tmenu-btn.open {
+  color: var(--rpt-text-primary);
+  border-color: color-mix(in srgb, var(--rpt-accent) 45%, var(--rpt-border));
+  background: color-mix(in srgb, var(--rpt-accent) 8%, transparent);
+}
+.tmenu-btn.crumb {
+  text-transform: none;
+  letter-spacing: 0.02em;
+}
+.tmenu-btn.gear {
+  padding: 6px 9px;
+  font-size: 14px;
+}
+/* Strip interactive children opt out of the window drag region. */
+.tstrip-brand,
+.tstrip .tmenu-btn,
+.tstrip-menus {
+  -webkit-app-region: no-drag;
 }
 
 /* World settings popup — Regex/Scripts tabs hosting the existing managers. */
@@ -2201,43 +2637,68 @@ select {
   padding: 18px;
 }
 .settings-rail {
-  flex: 0 0 178px;
+  flex: 0 0 190px;
   border-right: 1px solid var(--rpt-border);
+  background: color-mix(in srgb, var(--rpt-bg-primary) 45%, var(--rpt-bg-secondary));
   overflow-y: auto;
-  padding: 12px 10px;
+  padding: 10px 10px 14px;
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 1px;
 }
 .settings-rail-group {
-  font-size: 0.72em;
-  font-weight: 600;
-  letter-spacing: 0.07em;
+  font-family: var(--rpt-font-mono);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.18em;
   text-transform: uppercase;
-  color: var(--rpt-text-secondary);
-  padding: 16px 8px 5px;
+  color: var(--rpt-text-tertiary);
+  padding: 16px 10px 6px;
 }
 .settings-rail-group:first-child {
-  padding-top: 2px;
+  padding-top: 4px;
 }
 .settings-rail-item {
+  position: relative;
   text-align: left;
   background: transparent;
   border: none;
-  color: var(--rpt-text-primary);
-  padding: 7px 10px 7px 20px;
-  border-radius: 6px;
+  color: var(--rpt-text-secondary);
+  padding: 8px 10px 8px 18px;
+  border-radius: 8px;
   cursor: pointer;
   font: inherit;
-  font-size: 0.9em;
+  font-size: 0.92em;
+  transition: color 0.15s ease, background 0.15s ease;
 }
 .settings-rail-item:hover {
-  background: var(--rpt-bg-tertiary);
+  background: color-mix(in srgb, var(--rpt-text-primary) 7%, transparent);
   color: var(--rpt-text-primary);
 }
+/* Active = accent spine + a faint accent wash (matches the launcher tiles / strip), not a solid fill. */
 .settings-rail-item.active {
+  background: color-mix(in srgb, var(--rpt-accent) 12%, transparent);
+  color: var(--rpt-text-primary);
+}
+.settings-rail-item.active::before {
+  content: '';
+  position: absolute;
+  left: 6px;
+  top: 7px;
+  bottom: 7px;
+  width: 2.5px;
+  border-radius: 2px;
   background: var(--rpt-accent);
-  color: var(--rpt-on-accent);
+}
+/* Settings popup only: mono title in the shared modal header (scoped via :has so other modals
+   keep their plain title). */
+.modal-panel:has(.settings-shell) .modal-header h3 {
+  font-family: var(--rpt-font-mono);
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--rpt-text-primary);
 }
 /* The hosted managers flow in the modal's own scroll (no nested panel scroll); keep their action
    buttons but drop the redundant title bar (the tab strip already names the section). */
@@ -2255,6 +2716,35 @@ select {
 .world-settings .panel > .panel-body {
   padding: 0;
   overflow: visible;
+}
+/* Empty state for a world-scoped section opened with no world loaded. */
+.settings-empty {
+  color: var(--rpt-text-secondary);
+  font-style: italic;
+  padding: 24px 4px;
+}
+/* Section that just launches a full-window surface (the Workflow editor overlay). */
+.settings-launch {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 8px 4px;
+}
+.settings-launch-icon {
+  font-size: 30px;
+  color: var(--rpt-accent);
+}
+.settings-launch-title {
+  margin: 0;
+  font-size: 1.05em;
+}
+.settings-launch-body {
+  margin: 0 0 6px;
+  color: var(--rpt-text-secondary);
+  font-size: 0.9em;
+  line-height: 1.5;
+  max-width: 52ch;
 }
 
 @keyframes rpt-duel-draw { from { transform: translateY(40px) rotate(-6deg); opacity: 0; } to { transform: none; opacity: 1; } }
@@ -2290,7 +2780,7 @@ select {
 
 /* ── Shared pack-surface styles (survivors of the one-canvas deletion pass, WP6.6) ─────────────────
    The Agents/ControlCenter/Runs/Preview surfaces were deleted; these blocks remain because live
-   editor surfaces reuse them: the duel-view launcher (viewRegistry) + WorkflowView split, and MemoryPane /
+   editor surfaces reuse them: the duel-view launcher (viewRegistry), and MemoryPane /
    ModuleImportSheet reuse the empty-state + chip + health-dot styles. All colors via --rpt-* tokens. */
 @media (min-width:1100px) {
   .rpt-agentdetail { width:400px; }
@@ -2307,17 +2797,6 @@ select {
 .rpt-cc-launch-title { margin:0; font-size:16px; font-weight:600; color:var(--rpt-text-primary); }
 .rpt-cc-launch-body { margin:0; font-size:13px; line-height:1.55; color:var(--rpt-text-secondary); }
 .rpt-cc-launch-btn { margin-top:6px; }
-
-/* Workflows management pane, full-width split (WorkflowView layout="split"): list/selectors left,
-   the last-run trace right. Stacks under a narrow overlay width. */
-.rpt-workflowmgr-split { display:flex; gap:24px; align-items:flex-start; flex-wrap:wrap; }
-.rpt-workflowmgr-main { flex:1 1 420px; min-width:0; max-width:640px; }
-.rpt-workflowmgr-trace { flex:1 1 300px; min-width:0; max-width:460px; font-size:13px;
-  border-left:1px solid var(--rpt-border); padding-left:20px; }
-@media (max-width:820px) {
-  .rpt-workflowmgr-trace { border-left:none; padding-left:0; border-top:1px solid var(--rpt-border);
-    padding-top:14px; flex-basis:100%; max-width:none; }
-}
 
 /* Empty state (MemoryPane no-chat) */
 .rpt-agents-empty { display:flex; flex-direction:column; align-items:center;
@@ -2488,3 +2967,158 @@ select {
 .rpt-memory-tableprogress { color:var(--rpt-text-secondary); }
 
 .rpt-memory-backfill { border-top:1px solid var(--rpt-border); margin-top:4px; padding-top:8px; }
+
+/* ── Assets workspace view (WA-2) ──────────────────────────────────────────────────────────────
+   The visual world-asset manager: header + category rail + grid + detail drawer + import wizard.
+   App chrome — premium-neutral, all colors via --rpt-* tokens (chips/badges via color-mix), AA in
+   dark/carbon/light, keyboard reachable, prefers-reduced-motion respected. */
+:root {
+  --rpt-assets-chip-on: color-mix(in srgb, var(--rpt-success) 20%, transparent);
+  --rpt-assets-chip-on-text: color-mix(in srgb, var(--rpt-success) 72%, var(--rpt-text-primary));
+  --rpt-assets-chip-off: color-mix(in srgb, var(--rpt-text-tertiary) 16%, transparent);
+  --rpt-assets-miss-bg: color-mix(in srgb, var(--rpt-danger) 22%, transparent);
+  --rpt-assets-miss-text: color-mix(in srgb, var(--rpt-danger) 78%, var(--rpt-text-primary));
+  --rpt-assets-drop-ring: color-mix(in srgb, var(--rpt-accent) 55%, transparent);
+}
+.rpt-assets { display:flex; flex-direction:column; height:100%; min-height:0; position:relative;
+  color:var(--rpt-text-primary); }
+.rpt-assets.is-dragover::after { content:''; position:absolute; inset:6px; border-radius:12px;
+  border:2px dashed var(--rpt-assets-drop-ring);
+  background:color-mix(in srgb, var(--rpt-accent) 7%, transparent); pointer-events:none; z-index:5; }
+.rpt-assets-empty-view { padding:24px; color:var(--rpt-text-secondary); font-style:italic; }
+
+.rpt-assets-head { display:flex; align-items:center; gap:10px; padding:8px 10px; flex-wrap:wrap;
+  border-bottom:1px solid var(--rpt-border); }
+.rpt-assets-title { font-weight:600; font-size:13px; display:flex; align-items:baseline; gap:8px; }
+.rpt-assets-world { color:var(--rpt-text-secondary); font-size:12px; font-weight:400; }
+.rpt-assets-search { flex:1; min-width:120px; padding:5px 9px; font-size:12px;
+  background:var(--rpt-bg-secondary); color:var(--rpt-text-primary);
+  border:1px solid var(--rpt-border); border-radius:8px; }
+.rpt-assets-actions { display:flex; gap:6px; flex-wrap:wrap; }
+.rpt-assets-btn { font-size:12px; padding:5px 10px; border-radius:8px; cursor:pointer;
+  background:var(--rpt-bg-tertiary); color:var(--rpt-text-primary); border:1px solid var(--rpt-border); }
+.rpt-assets-btn:hover:not(:disabled) { background:var(--rpt-bg-elevated); }
+.rpt-assets-btn:disabled { opacity:.5; cursor:not-allowed; }
+.rpt-assets-btn.primary { background:var(--rpt-accent); color:var(--rpt-on-accent); border-color:transparent; }
+.rpt-assets-btn:focus-visible, .rpt-assets-search:focus-visible { outline:2px solid var(--rpt-accent);
+  outline-offset:1px; }
+
+.rpt-assets-body { flex:1; min-height:0; display:flex; }
+.rpt-assets-rail { width:170px; flex:0 0 auto; display:flex; flex-direction:column; gap:4px;
+  padding:10px 8px; border-right:1px solid var(--rpt-border); overflow-y:auto; }
+.rpt-assets-tab { display:flex; align-items:center; justify-content:space-between; gap:8px;
+  padding:7px 10px; font-size:12px; border-radius:8px; cursor:pointer; text-align:left;
+  background:transparent; color:var(--rpt-text-secondary); border:1px solid transparent; }
+.rpt-assets-tab:hover { background:var(--rpt-bg-secondary); }
+.rpt-assets-tab.active { background:var(--rpt-accent-soft); color:var(--rpt-text-primary);
+  border-color:color-mix(in srgb, var(--rpt-accent) 40%, transparent); }
+.rpt-assets-tab:focus-visible { outline:2px solid var(--rpt-accent); outline-offset:1px; }
+.rpt-assets-tab-count { font-size:11px; color:var(--rpt-text-tertiary);
+  font-family:var(--rpt-font-mono); }
+.rpt-assets-coverage { margin-top:auto; padding-top:10px; }
+.rpt-assets-coverage-label { font-size:11px; color:var(--rpt-text-secondary); margin-bottom:5px; }
+.rpt-assets-meter { height:6px; border-radius:4px; background:var(--rpt-bg-tertiary); overflow:hidden; }
+.rpt-assets-meter > span { display:block; height:100%; background:var(--rpt-success);
+  transition:width .2s ease; }
+
+.rpt-assets-grid { flex:1; min-width:0; overflow-y:auto; padding:12px;
+  display:grid; grid-template-columns:repeat(auto-fill, minmax(132px, 1fr)); gap:12px;
+  align-content:start; }
+.rpt-assets-card { position:relative; display:flex; flex-direction:column; gap:6px; padding:8px;
+  border-radius:12px; cursor:pointer; text-align:left; background:var(--rpt-bg-secondary);
+  border:1px solid var(--rpt-border); color:var(--rpt-text-primary); }
+.rpt-assets-card.wide { grid-column:span 2; }
+.rpt-assets-card:hover { background:var(--rpt-bg-elevated); }
+.rpt-assets-card.active { border-color:var(--rpt-accent);
+  box-shadow:0 0 0 1px color-mix(in srgb, var(--rpt-accent) 60%, transparent); }
+.rpt-assets-card:focus-visible { outline:2px solid var(--rpt-accent); outline-offset:2px; }
+.rpt-assets-card-thumb { width:100%; border-radius:8px; object-fit:cover; background:var(--rpt-bg-tertiary);
+  display:block; }
+.rpt-assets-card-thumb.portrait { aspect-ratio:3/4; }
+.rpt-assets-card-thumb.scene { aspect-ratio:16/9; }
+.rpt-assets-thumb-fallback { display:grid; place-items:center; color:var(--rpt-text-tertiary);
+  font-size:22px; font-weight:600; }
+.rpt-assets-card-name { font-size:13px; font-weight:500; overflow:hidden; text-overflow:ellipsis;
+  white-space:nowrap; }
+.rpt-assets-chips { display:flex; flex-wrap:wrap; gap:4px; }
+.rpt-assets-chip { font-size:11px; line-height:1.4; padding:1px 6px; border-radius:6px;
+  background:var(--rpt-assets-chip-off); color:var(--rpt-text-secondary); }
+.rpt-assets-chip.on { background:var(--rpt-assets-chip-on); color:var(--rpt-assets-chip-on-text); }
+.rpt-assets-badge-missing { position:absolute; top:6px; right:6px; font-size:10px; padding:1px 6px;
+  border-radius:6px; background:var(--rpt-assets-miss-bg); color:var(--rpt-assets-miss-text); }
+.rpt-assets-badge-extra { position:absolute; top:6px; right:6px; font-size:10px; padding:1px 6px;
+  border-radius:6px; background:var(--rpt-bg-tertiary); color:var(--rpt-text-tertiary); }
+.rpt-assets-add { align-items:center; justify-content:center; border-style:dashed;
+  color:var(--rpt-text-secondary); min-height:120px; }
+.rpt-assets-add-glyph { font-size:26px; color:var(--rpt-accent); }
+.rpt-assets-empty { grid-column:1/-1; padding:22px; border:1px dashed var(--rpt-border);
+  border-radius:12px; color:var(--rpt-text-secondary); font-size:12px; line-height:1.6; }
+
+/* Detail drawer — 360px slide-in from the right. */
+.rpt-assets-drawer { width:360px; flex:0 0 auto; display:flex; flex-direction:column;
+  border-left:1px solid var(--rpt-border); background:var(--rpt-bg-secondary);
+  animation:rpt-assets-drawer-in .16s ease-out; }
+@keyframes rpt-assets-drawer-in { from { transform:translateX(24px); opacity:0; } to { transform:none; opacity:1; } }
+.rpt-assets-drawer:focus { outline:none; }
+.rpt-assets-drawer-head { display:flex; align-items:center; justify-content:space-between; gap:8px;
+  padding:10px 12px; border-bottom:1px solid var(--rpt-border); }
+.rpt-assets-drawer-title { font-weight:600; font-size:14px; }
+.rpt-assets-drawer-hint { padding:8px 12px; font-size:11px; color:var(--rpt-text-tertiary);
+  line-height:1.5; border-bottom:1px solid var(--rpt-border); }
+.rpt-assets-drawer-body { flex:1; min-height:0; overflow-y:auto; padding:12px; display:flex;
+  flex-direction:column; gap:16px; }
+.rpt-assets-section-title { font-size:12px; font-weight:600; color:var(--rpt-text-secondary);
+  margin-bottom:8px; }
+.rpt-assets-tiles { display:flex; flex-wrap:wrap; gap:10px; }
+.rpt-assets-tile { position:relative; width:96px; display:flex; flex-direction:column; gap:4px; }
+.rpt-assets-tile-thumb { width:96px; height:96px; border-radius:8px; object-fit:cover;
+  background:var(--rpt-bg-tertiary); display:block; }
+.rpt-assets-tile-label { font-size:11px; color:var(--rpt-text-secondary); text-align:center;
+  overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.rpt-assets-tile-rename { width:100%; font-size:11px; padding:2px 4px; border-radius:6px;
+  background:var(--rpt-bg-primary); color:var(--rpt-text-primary); border:1px solid var(--rpt-accent); }
+.rpt-assets-tile:focus-visible { outline:2px solid var(--rpt-accent); outline-offset:2px; border-radius:8px; }
+.rpt-assets-tile-actions { position:absolute; inset:0 0 auto 0; height:96px; display:flex; gap:2px;
+  align-items:flex-start; justify-content:flex-end; padding:4px; opacity:0; transition:opacity .12s ease; }
+.rpt-assets-tile:hover .rpt-assets-tile-actions, .rpt-assets-tile:focus-within .rpt-assets-tile-actions { opacity:1; }
+.rpt-assets-tile-actions button { font-size:12px; width:22px; height:22px; border-radius:6px;
+  cursor:pointer; background:color-mix(in srgb, var(--rpt-bg-primary) 78%, transparent);
+  color:var(--rpt-text-primary); border:1px solid var(--rpt-border); }
+.rpt-assets-tile-actions button:hover { background:var(--rpt-bg-elevated); }
+.rpt-assets-tile-actions button:focus-visible { outline:2px solid var(--rpt-accent); outline-offset:1px; }
+.rpt-assets-tile-add { width:96px; height:96px; align-items:center; justify-content:center;
+  border:1px dashed var(--rpt-border); border-radius:8px; background:transparent;
+  color:var(--rpt-accent); font-size:22px; cursor:pointer; }
+
+/* Import wizard modal. */
+.rpt-assets-modal-scrim { position:fixed; inset:0; z-index:60; display:grid; place-items:center;
+  background:color-mix(in srgb, var(--rpt-bg-primary) 55%, transparent); }
+.rpt-assets-modal { width:min(680px, 92vw); max-height:82vh; display:flex; flex-direction:column;
+  background:var(--rpt-bg-secondary); border:1px solid var(--rpt-border); border-radius:14px;
+  box-shadow:var(--rpt-shadow-lift); overflow:hidden; }
+.rpt-assets-modal-head { padding:12px 14px; font-weight:600; border-bottom:1px solid var(--rpt-border); }
+.rpt-assets-wizard-rows { flex:1; min-height:0; overflow-y:auto; padding:10px 14px; display:flex;
+  flex-direction:column; gap:8px; }
+.rpt-assets-wizard-row { display:grid;
+  grid-template-columns:minmax(80px,1fr) minmax(90px,1.2fr) 92px minmax(80px,1fr) minmax(120px,1.4fr) 24px;
+  gap:6px; align-items:center; }
+.rpt-assets-wizard-file { font-size:11px; color:var(--rpt-text-tertiary); overflow:hidden;
+  text-overflow:ellipsis; white-space:nowrap; }
+.rpt-assets-wizard-row input, .rpt-assets-wizard-row select { font-size:12px; padding:4px 6px;
+  border-radius:6px; background:var(--rpt-bg-primary); color:var(--rpt-text-primary);
+  border:1px solid var(--rpt-border); min-width:0; }
+.rpt-assets-wizard-row input:focus-visible, .rpt-assets-wizard-row select:focus-visible {
+  outline:2px solid var(--rpt-accent); outline-offset:1px; }
+.rpt-assets-wizard-preview { font-size:11px; font-family:var(--rpt-font-mono);
+  color:var(--rpt-text-secondary); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.rpt-assets-wizard-preview.bad { color:var(--rpt-danger); }
+.rpt-assets-wizard-remove { width:22px; height:22px; border-radius:6px; cursor:pointer; font-size:11px;
+  background:transparent; color:var(--rpt-text-tertiary); border:1px solid var(--rpt-border); }
+.rpt-assets-modal-foot { display:flex; justify-content:flex-end; gap:8px; padding:10px 14px;
+  border-top:1px solid var(--rpt-border); }
+
+@media (prefers-reduced-motion: reduce) {
+  .rpt-assets-drawer { animation:none; }
+  .rpt-assets-meter > span { transition:none; }
+  .rpt-assets-tile-actions { transition:none; }
+}

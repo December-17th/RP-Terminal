@@ -153,6 +153,11 @@ export const RPTerminalExtSchema = z
       .object({
         mode: z.literal('static').optional(),
         grid: z.object({ cols: z.number(), rows: z.number() }).default({ cols: 12, rows: 12 }),
+        // Seamless composition (the VN-stage case): drop the inter-slot gap/padding and the per-slot
+        // panel chrome (border, radius, title bar) so adjacent WCV surfaces read as one continuous
+        // surface. Off by default so existing chromed cards are unchanged; a slot can still opt back
+        // into chrome with `chrome:true`. See docs/design/poem-play-area-redesign.md §5.1.
+        seamless: z.boolean().optional(),
         slots: z
           .array(
             z.object({
@@ -160,10 +165,28 @@ export const RPTerminalExtSchema = z
               view: z.string(),
               rect: z.tuple([z.number(), z.number(), z.number(), z.number()]),
               entry: z.string().optional(),
+              title: z.string().optional(),
+              // Per-slot chrome override. Defaults to `!seamless`: chromed in normal layouts, bare in
+              // seamless ones. Set explicitly to force one slot to differ from the layout default.
+              chrome: z.boolean().optional()
+            })
+          )
+          .default([]),
+        // Full-play-area overlay surfaces a card can raise at runtime (partner sheet, 地图) — a card
+        // surface can't escape its slot rectangle (WCVs composite above the DOM in their slot), so an
+        // overlay opens as a temporary WCV covering the whole panel_ui grid region above the slots. The
+        // card declares them here (same `entry` URL semantics as slots) and drives them via the runtime
+        // `requestOverlay(id)` / `closeOverlay()` API. One overlay is shown at a time. See PM-A7 +
+        // docs/design/poem-status-parity-design-2026-07-07.md §5.
+        overlays: z
+          .array(
+            z.object({
+              id: z.string(),
+              entry: z.string(),
               title: z.string().optional()
             })
           )
-          .default([])
+          .optional()
       })
       .optional(),
 

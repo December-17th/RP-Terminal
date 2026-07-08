@@ -1,9 +1,26 @@
 import { create } from 'zustand'
 
+/** The Settings popup's sections — the app's single config hub (the retired left-nav tabs +
+ *  the world's editable pieces + the workflow entry all live here now). The TopStrip dropdowns
+ *  deep-link into one of these via openSettings(section). */
+export type SettingsSection =
+  | 'app'
+  | 'connection'
+  | 'worlds'
+  | 'preset'
+  | 'lorebook'
+  | 'persona'
+  | 'assets'
+  | 'regex'
+  | 'scripts'
+  | 'workflow'
+
 /** Transient app-shell UI state (not persisted): the Settings popup, etc. */
 interface UiState {
   settingsOpen: boolean
-  openSettings: () => void
+  /** Which Settings section to show when the popup opens (set by openSettings). */
+  settingsSection: SettingsSection
+  openSettings: (section?: SettingsSection) => void
   closeSettings: () => void
   /** The full-screen workflow editor overlay — the single surface for workflows + agents
    *  (one-canvas rebuild WP6.4b). Opened from the title bar, the launcher cards, or a programmatic
@@ -29,11 +46,25 @@ interface UiState {
   duelPopupOpen: boolean
   openDuelPopup: () => void
   closeDuelPopup: () => void
+  /** The World Assets manager, hosted as a full-window centered popup (AssetsPopup) — mirrors the
+   *  duel popup. It layers above BOTH the reconfigurable Workspace and a card's static panel_ui
+   *  layout, so the Settings "Open Assets view" button reaches it even when a card owns the play
+   *  area (where docking a workspace panel would surface nothing). */
+  assetsPopupOpen: boolean
+  openAssetsPopup: () => void
+  closeAssetsPopup: () => void
+  /** Import-time card-script TRUST consent (CardTrustPrompt). When a freshly imported world ships
+   *  scripts, this carries the pending decision; the modal records trust/deny into the persisted
+   *  grants (+ `decided`) so the run-time hosts never re-prompt. Null = no pending decision. */
+  trustPrompt: { profileId: string; cardId: string; cardName: string } | null
+  openTrustPrompt: (p: { profileId: string; cardId: string; cardName: string }) => void
+  closeTrustPrompt: () => void
 }
 
 export const useUiStore = create<UiState>((set) => ({
   settingsOpen: false,
-  openSettings: () => set({ settingsOpen: true }),
+  settingsSection: 'app',
+  openSettings: (section) => set({ settingsOpen: true, settingsSection: section ?? 'app' }),
   closeSettings: () => set({ settingsOpen: false }),
   workflowEditorOpen: false,
   workflowEditorFragmentPackId: null,
@@ -52,5 +83,11 @@ export const useUiStore = create<UiState>((set) => ({
   setLauncherWorldId: (launcherWorldId) => set({ launcherWorldId }),
   duelPopupOpen: false,
   openDuelPopup: () => set({ duelPopupOpen: true }),
-  closeDuelPopup: () => set({ duelPopupOpen: false })
+  closeDuelPopup: () => set({ duelPopupOpen: false }),
+  assetsPopupOpen: false,
+  openAssetsPopup: () => set({ assetsPopupOpen: true }),
+  closeAssetsPopup: () => set({ assetsPopupOpen: false }),
+  trustPrompt: null,
+  openTrustPrompt: (trustPrompt) => set({ trustPrompt }),
+  closeTrustPrompt: () => set({ trustPrompt: null })
 }))

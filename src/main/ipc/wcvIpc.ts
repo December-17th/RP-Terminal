@@ -1,5 +1,6 @@
-import { IpcMain } from 'electron'
+import { IpcMain, BrowserWindow } from 'electron'
 import * as wcvManager from '../services/wcvManager'
+import { pickAndImportAssetForCard } from './worldAssetIpc'
 import { computeDuelPreview } from '../services/duelPreviewService'
 import { getChatCardVars, setChatCardVars } from '../services/chatCardVarsService'
 import * as floorService from '../services/floorService'
@@ -13,10 +14,26 @@ import * as pluginStorageService from '../services/pluginStorageService'
 import * as pluginService from '../services/pluginService'
 import * as settingsService from '../services/settingsService'
 import * as worldAssetService from '../services/worldAssetService'
+import * as characterService from '../services/characterService'
 import { getActivePresetId } from '../services/presetService'
 import { log } from '../services/logService'
 import { ArtifactScope } from '../../shared/artifactScope'
-import { LorebookEntry, LorebookEntrySchema } from '../types/character'
+import { LorebookEntry, LorebookEntrySchema, getRpExt } from '../types/character'
+import type { OverlayDecl } from '../services/wcvOverlay'
+
+// Resolve an overlay id against a card's declared `panel_ui.overlays` (PM-A7). Returns the surface to
+// mount, or null when the id isn't declared by that card (⇒ the request is rejected + warned, main-side).
+const resolveOverlayDecl = (
+  profileId: string,
+  characterId: string,
+  overlayId: string
+): OverlayDecl | null => {
+  if (!characterId) return null
+  const card = characterService.getCharacter(profileId, characterId)
+  if (!card) return null
+  const ov = getRpExt(card)?.panel_ui?.overlays?.find((o) => o?.id === overlayId)
+  return ov?.entry ? { entry: ov.entry, title: ov.title } : null
+}
 
 // Coerce a TavernHelper-shaped worldbook entry (from getWorldbook, possibly edited or freshly built by a
 // card) back into a valid LorebookEntry. `name` → comment; unknown fields (uid) are dropped by the schema;
@@ -114,6 +131,12 @@ export const registerWcvIpc = (ipcMain: IpcMain): void => {
   // cover native views, so the renderer hides them for the overlay's lifetime.
   ipcMain.on('wcv-set-all-visible', (_e, visible) => wcvManager.setAllVisible(!!visible))
   ipcMain.on('wcv-destroy', (_e, id) => wcvManager.destroy(id))
+  // A card page's initial panel geometry (its window-x + viewport width, for seam-sliced backgrounds).
+  // SYNC so the page has it BEFORE first paint; subsequent updates arrive via the `wcv-panel-geometry`
+  // push on every bounds change (wcvManager.pushGeometry).
+  ipcMain.on('wcv-get-panel-geometry-sync', (e) => {
+    e.returnValue = wcvManager.geometryFor(e.sender.id)
+  })
   // A card script in a WCV threw / rejected — surface it to the main log (it'd otherwise only show in the
   // WCV devtools). Includes the calling slot for context.
   ipcMain.on('wcv-card-error', (e, msg) => {
@@ -167,6 +190,14 @@ export const registerWcvIpc = (ipcMain: IpcMain): void => {
   ipcMain.on('wcv-broadcast-event', (_e, chatId, name, payload) =>
     wcvManager.notifyEvent(chatId, name, payload)
   )
+  // Card → sibling card panels: a card-authored coordination event (e.g. the poem stage's
+  // `self:fold` / `stage:cast-changed`). Chat resolved from the sender (a card can't target another
+  // session); the sender is excluded so its own page doesn't receive the event it just broadcast. The
+  // event name is opaque to RPT — cards pick their own, so this stays card-agnostic.
+  ipcMain.on('wcv-host-broadcast-event', (e, name, payload) => {
+    const ctx = wcvManager.contextFor(e.sender.id)
+    if (ctx) wcvManager.notifyEvent(ctx.chatId, String(name ?? ''), payload, e.sender.id)
+  })
   // Card → host: set RP Terminal's chat input box (the onboarding finish's "inject prompt").
   ipcMain.on('wcv-host-set-input', (e, text) => {
     const ctx = wcvManager.contextFor(e.sender.id)
@@ -177,6 +208,37 @@ export const registerWcvIpc = (ipcMain: IpcMain): void => {
   ipcMain.on('wcv-host-submit-input', (e) => {
     const ctx = wcvManager.contextFor(e.sender.id)
     if (ctx) wcvManager.pushHostSubmit(ctx.chatId)
+  })
+
+  // --- Full-play-area overlay surfaces (PM-A7) ---
+  // WCV transport: the calling card panel requests/closes an overlay; ctx resolves from e.sender. The id
+  // is validated against THAT card's panel_ui.overlays (undeclared ⇒ rejected + warned). Returns whether
+  // the overlay is open afterward.
+  ipcMain.handle('wcv-host-request-overlay', (e, overlayId) => {
+    const ctx = wcvManager.contextFor(e.sender.id)
+    if (!ctx) return false
+    const id = String(overlayId ?? '')
+    return wcvManager.requestOverlay(id, resolveOverlayDecl(ctx.profileId, ctx.characterId, id))
+  })
+  ipcMain.handle('wcv-host-close-overlay', () => {
+    wcvManager.closeOverlay()
+    return true
+  })
+
+  // Inline transport: an inline card (in the renderer, not a WCV) passes its ctx explicitly — main can't
+  // resolve it from e.sender. Same overlay mechanism; the id is validated against the active card's
+  // panel_ui.overlays. The characterId falls back to the chat row (parity with the WCV/inline hosts).
+  ipcMain.handle('overlay-request', (_e, profileId, chatId, characterId, overlayId) => {
+    const cid =
+      String(characterId ?? '') ||
+      chatService.getChat(String(profileId ?? ''), String(chatId ?? ''))?.character_id ||
+      ''
+    const id = String(overlayId ?? '')
+    return wcvManager.requestOverlay(id, resolveOverlayDecl(String(profileId ?? ''), cid, id))
+  })
+  ipcMain.handle('overlay-close', () => {
+    wcvManager.closeOverlay()
+    return true
   })
 
   // Read the latest floor's message variables (stat_data) for the calling panel's session.
@@ -553,6 +615,37 @@ export const registerWcvIpc = (ipcMain: IpcMain): void => {
       chatService.getChatLorebookIds(ctx.profileId, ctx.chatId) ??
       (ctx.characterId ? [ctx.characterId] : [])
     return worldAssetService.assetUrlForWorld(ctx.profileId, ids, String(name ?? ''), type, mood)
+  })
+
+  // Card-facing asset enumeration (WA-3): the calling WCV panel's ctx resolves from e.sender (like
+  // wcv-host-asset-url). Same id precedence + category inference as assetUrl; returns [] on any miss.
+  ipcMain.handle('wcv-host-asset-list', (e, name, type) => {
+    const ctx = wcvManager.contextFor(e.sender.id)
+    if (!ctx) return []
+    const ids =
+      chatService.getChatLorebookIds(ctx.profileId, ctx.chatId) ??
+      (ctx.characterId ? [ctx.characterId] : [])
+    return worldAssetService.assetListForWorld(ctx.profileId, ids, String(name ?? ''), type)
+  })
+
+  // Card-facing picker-backed import (WA-3): main opens the OS image picker, copies into the calling
+  // card's primary world, returns the new rptasset:// URL (null on cancel/invalid). ctx from e.sender; a
+  // WCV's webContents doesn't map to a BrowserWindow, so fall back to the app's window for the dialog.
+  ipcMain.handle('wcv-host-request-asset-import', (e, arg) => {
+    const ctx = wcvManager.contextFor(e.sender.id)
+    if (!ctx) return null
+    const ids =
+      chatService.getChatLorebookIds(ctx.profileId, ctx.chatId) ??
+      (ctx.characterId ? [ctx.characterId] : [])
+    const win = BrowserWindow.fromWebContents(e.sender) ?? BrowserWindow.getAllWindows()[0] ?? null
+    return pickAndImportAssetForCard(
+      win,
+      ctx.profileId,
+      ids,
+      String(arg?.name ?? ''),
+      String(arg?.type ?? ''),
+      arg?.variant != null ? String(arg.variant) : undefined
+    )
   })
 
   // Engine-computed duel build preview for the calling panel's active chat (read-only).

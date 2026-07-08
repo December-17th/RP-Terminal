@@ -187,7 +187,18 @@ export function InlineCardFrame({
       className="card-frame"
       sandbox="allow-scripts allow-same-origin"
       srcDoc={srcDoc}
-      style={{ width: '100%', height, border: 0, display: 'block', margin: '10px 0' }}
+      // Transparent backing (parity with the WCV path's #00000000): an iframe defaults to opaque white,
+      // so a card whose doc doesn't paint its own background would otherwise show a white block over the
+      // dark message area. The card's own bg composites on top; only unpainted areas fall through.
+      style={{
+        width: '100%',
+        height,
+        border: 0,
+        display: 'block',
+        margin: '10px 0',
+        background: 'transparent',
+        colorScheme: 'normal'
+      }}
       title="card content"
     />
   )

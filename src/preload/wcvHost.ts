@@ -148,7 +148,18 @@ export function createWcvHost(deps: Deps): Host {
     setGlobalVars: (vars) => ipcRenderer.invoke('wcv-host-set-global-vars', vars),
     assetUrl: (name: string, type: string, mood?: string) =>
       ipcRenderer.invoke('wcv-host-asset-url', name, type, mood),
+    // WA-3: enumerate one entry's variants; ctx resolves from e.sender main-side (like asset-url).
+    assetList: (name: string, type: string) =>
+      ipcRenderer.invoke('wcv-host-asset-list', name, type),
+    // WA-3: picker-backed import — main opens the OS image picker, copies into the calling card's world,
+    // returns the new rptasset:// URL (null on cancel/invalid). ctx resolves from e.sender.
+    requestAssetImport: (arg: { name: string; type: string; variant?: string }) =>
+      ipcRenderer.invoke('wcv-host-request-asset-import', arg),
     getDuelPreview: () => ipcRenderer.invoke('wcv-host-duel-preview'),
+    // Overlay surfaces (PM-A7): main validates the id against the calling card's panel_ui.overlays
+    // (resolved from e.sender), mounts/closes the overlay WCV, and returns whether it opened.
+    requestOverlay: (id: string) => ipcRenderer.invoke('wcv-host-request-overlay', id),
+    closeOverlay: () => ipcRenderer.invoke('wcv-host-close-overlay'),
 
     onVarsChanged: (cb) => {
       // Forward the origin (2nd IPC arg) so the runtime fires MVU events only for non-card-write changes

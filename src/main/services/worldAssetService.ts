@@ -5,14 +5,17 @@ import { shell } from 'electron'
 import { getAppDir, ensureDir, listFilesSync } from './storageService'
 import { log } from './logService'
 import AdmZip from 'adm-zip'
-import { parseAssetFilename } from '../../shared/worldAssets/filename'
+import { parseAssetFilename, buildAssetFilename } from '../../shared/worldAssets/filename'
 import { resolveAsset } from '../../shared/worldAssets/resolve'
 import { computeCoverage, CharacterCoverage } from '../../shared/worldAssets/coverage'
 import {
   AssetCategory,
+  AssetExt,
   AssetIndex,
   AssetType,
   ASSET_CATEGORIES,
+  ASSET_EXTS,
+  ASSET_TYPES,
   categoryForType
 } from '../../shared/worldAssets/types'
 
@@ -155,7 +158,10 @@ export function resolveAssetFile(
   }
 }
 
-/** Resolve a character portrait to an rptasset:// URL for one world's lorebook ids, or null. */
+/** Resolve an asset to an rptasset:// URL for one world's lorebook ids, or null. The category
+ *  is inferred from the asset TYPE via {@link categoryForType} (头像/立绘 → character, 背景/全景 →
+ *  location), so a card's `window.assetUrl(name, type, mood)` — which carries no category — can reach
+ *  location art, not just character portraits. Unknown types fall back to `character`. */
 export function assetUrlForWorld(
   profileId: string,
   lorebookIds: string[],
@@ -163,7 +169,7 @@ export function assetUrlForWorld(
   type: AssetType,
   mood?: string
 ): string | null {
-  const category: AssetCategory = 'character'
+  const category: AssetCategory = categoryForType(type)
   const hit = resolveAssetFile(profileId, lorebookIds, category, name, type, mood)
   if (!hit) return null
   const file = hit.absPath.split(/[\\/]/).pop() as string
@@ -271,4 +277,248 @@ export function importAssetsZip(
   }
   if (result.imported > 0) invalidateWorldAssets(profileId, lorebookId)
   return result
+}
+
+// ── Manager surface (WA-2) ──────────────────────────────────────────────────────────────────────
+// The `assets` workspace view's read + mutation API. Every write re-validates its destination inside
+// the world's assets root (the same root-escape guard {@link resolveProtocolPath} uses) and
+// invalidates the world's index cache, so the grid re-reads fresh state after any change.
+
+/** Merged AssetIndex across a world's lorebook ids (all categories) — earlier ids win on a name
+ *  collision, mirroring {@link listCoverage}'s merge rule. The `assets` grid's single data source. */
+export function getMergedIndex(profileId: string, lorebookIds: string[]): AssetIndex {
+  const merged: AssetIndex = {}
+  // Reverse so the EARLIEST id is applied last and wins on a name collision (like listCoverage).
+  for (const id of [...lorebookIds].reverse()) {
+    const idx = getIndex(profileId, id)
+    for (const category of ASSET_CATEGORIES) {
+      const cat = idx[category]
+      if (!cat) continue
+      Object.assign((merged[category] ??= {}), cat)
+    }
+  }
+  return merged
+}
+
+export interface ImportFileItem {
+  srcPath: string
+  name: string
+  type: AssetType
+  variant?: string
+}
+export interface ImportFilesResult {
+  imported: number
+  skipped: number
+  skippedReasons: string[]
+}
+
+/** Copy picked source files into a world's asset folders under the naming convention. Each item is
+ *  validated (known type, non-empty name, allowed extension) and its DEST is re-checked inside the
+ *  assets root — a traversal-laden `name`/`variant` is rejected, not written. Overwrites an existing
+ *  convention file (that IS replace). Invalidates the cache when anything landed. */
+export function importAssetFiles(
+  profileId: string,
+  lorebookId: string,
+  items: ImportFileItem[]
+): ImportFilesResult {
+  const result: ImportFilesResult = { imported: 0, skipped: 0, skippedReasons: [] }
+  const base = path.resolve(worldAssetsRoot(profileId, lorebookId)) + path.sep
+  const skip = (reason: string): void => {
+    result.skipped++
+    result.skippedReasons.push(reason)
+  }
+  for (const item of items) {
+    const name = (item.name ?? '').trim()
+    if (!name) {
+      skip('empty name')
+      continue
+    }
+    if (!(ASSET_TYPES as string[]).includes(item.type)) {
+      skip(`unknown type: ${item.type}`)
+      continue
+    }
+    const dot = item.srcPath.lastIndexOf('.')
+    const ext = dot >= 0 ? item.srcPath.slice(dot + 1).toLowerCase() : ''
+    if (!(ASSET_EXTS as readonly string[]).includes(ext)) {
+      skip(`unsupported extension: ${item.srcPath}`)
+      continue
+    }
+    const category = categoryForType(item.type)
+    const variant = item.variant?.trim() || undefined
+    const file = buildAssetFilename({ name, type: item.type, mood: variant, ext: ext as AssetExt })
+    const destDir = assetsDir(profileId, lorebookId, category)
+    const dest = path.resolve(destDir, file)
+    if (!dest.startsWith(base)) {
+      skip(`unsafe destination: ${file}`)
+      continue
+    }
+    try {
+      ensureDir(destDir)
+      fs.copyFileSync(item.srcPath, dest)
+      result.imported++
+    } catch {
+      skip(`copy failed: ${item.srcPath}`)
+    }
+  }
+  if (result.imported > 0) invalidateWorldAssets(profileId, lorebookId)
+  return result
+}
+
+/** Delete one asset file (path re-validated inside the assets root). Returns false when the target
+ *  can't be resolved/removed. Invalidates the cache on success. */
+export function deleteAssetFile(
+  profileId: string,
+  lorebookId: string,
+  category: string,
+  file: string
+): boolean {
+  const abs = resolveProtocolPath(profileId, lorebookId, category, file)
+  if (!abs) return false
+  try {
+    fs.unlinkSync(abs)
+    invalidateWorldAssets(profileId, lorebookId)
+    return true
+  } catch {
+    return false
+  }
+}
+
+export type RenameVariantResult =
+  | { ok: true; file: string }
+  | { ok: false; error: 'not-found' | 'invalid' | 'collision' | 'failed' }
+
+/** Rename an asset by re-tokenizing its variant (mood/slot) segment ONLY — name + type stay locked to
+ *  the entry. Rebuilds the filename with the new variant and renames; rejects a collision with an
+ *  existing file. Invalidates the cache on success. */
+export function renameAssetVariant(
+  profileId: string,
+  lorebookId: string,
+  category: string,
+  file: string,
+  newVariant: string
+): RenameVariantResult {
+  const abs = resolveProtocolPath(profileId, lorebookId, category, file)
+  if (!abs) return { ok: false, error: 'not-found' }
+  const parsed = parseAssetFilename(file)
+  if (!parsed) return { ok: false, error: 'invalid' }
+  const variant = newVariant?.trim() || undefined
+  const newFile = buildAssetFilename({
+    name: parsed.name,
+    type: parsed.type,
+    mood: variant,
+    ext: parsed.ext
+  })
+  if (newFile === file) return { ok: true, file }
+  const base = path.resolve(worldAssetsRoot(profileId, lorebookId)) + path.sep
+  const dest = path.resolve(assetsDir(profileId, lorebookId, category as AssetCategory), newFile)
+  if (!dest.startsWith(base)) return { ok: false, error: 'invalid' }
+  if (fs.existsSync(dest)) return { ok: false, error: 'collision' }
+  try {
+    fs.renameSync(abs, dest)
+    invalidateWorldAssets(profileId, lorebookId)
+    return { ok: true, file: newFile }
+  } catch {
+    return { ok: false, error: 'failed' }
+  }
+}
+
+// ── Card-facing read/import path (WA-3) ──────────────────────────────────────────────────────────
+// The two APIs cards reach through the runtime seam: `assetList` (enumerate one entry's files) and the
+// picker-backed import behind `rptHost.requestAssetImport`. Kept in this service alongside WA-2's manager
+// functions; both honor the same world root + lorebook-id precedence as {@link assetUrlForWorld}.
+
+export interface AssetListItem {
+  /** null for the base (no-variant) file; otherwise the mood/gallery-slot token. */
+  variant: string | null
+  url: string
+}
+
+/** Enumerate one entry's files (all variants of a single name+type) for a card, as `rptasset://` URLs.
+ *  Precedence mirrors {@link assetUrlForWorld}: the FIRST lorebook id that carries this name+type wins —
+ *  entries are NOT merged across worlds. Order: the base file first (`variant:null`), then variant tokens
+ *  naturally sorted (numeric-aware `localeCompare(…, 'zh', {numeric:true})` so `2` precedes `10`). Empty
+ *  array on any miss (unknown name/type, empty name, or an unrecognized type). The category is inferred
+ *  from the asset TYPE via {@link categoryForType}, exactly like `assetUrl`. */
+export function assetListForWorld(
+  profileId: string,
+  lorebookIds: string[],
+  name: string,
+  type: AssetType
+): AssetListItem[] {
+  const trimmed = (name ?? '').trim()
+  if (!trimmed || !(ASSET_TYPES as string[]).includes(type)) return []
+  const category = categoryForType(type)
+  for (const id of lorebookIds) {
+    const entry = getIndex(profileId, id)[category]?.[trimmed]?.[type]
+    if (!entry) continue
+    const urlFor = (file: string): string =>
+      `rptasset://${profileId}/${id}/${category}/${encodeURIComponent(file)}`
+    const out: AssetListItem[] = []
+    if (entry.base) out.push({ variant: null, url: urlFor(entry.base) })
+    const variants = Object.keys(entry.moods).sort((a, b) =>
+      a.localeCompare(b, 'zh', { numeric: true })
+    )
+    for (const v of variants) out.push({ variant: v, url: urlFor(entry.moods[v]) })
+    return out
+  }
+  return []
+}
+
+/** Copy ONE picked source file into a world's assets under the naming convention and return its new
+ *  `rptasset://` URL — the write side of `rptHost.requestAssetImport` (the OS picker itself is opened by
+ *  the IPC layer, consistent with the user-mediated security stance). Delegates the validation + root-escape
+ *  guard + cache invalidation to {@link importAssetFiles}; returns null on any rejection (empty name,
+ *  unknown type, unsupported/traversing path, copy failure). Overwrite = replace, per design §2. */
+export function importAssetForCard(
+  profileId: string,
+  lorebookId: string,
+  srcPath: string,
+  name: string,
+  type: AssetType,
+  variant?: string
+): string | null {
+  const trimmed = (name ?? '').trim()
+  if (!trimmed || !(ASSET_TYPES as string[]).includes(type)) return null
+  const res = importAssetFiles(profileId, lorebookId, [
+    { srcPath, name: trimmed, type, variant }
+  ])
+  if (res.imported < 1) return null
+  const category = categoryForType(type)
+  const dot = srcPath.lastIndexOf('.')
+  const ext = dot >= 0 ? srcPath.slice(dot + 1).toLowerCase() : ''
+  const file = buildAssetFilename({
+    name: trimmed,
+    type,
+    mood: variant?.trim() || undefined,
+    ext: ext as AssetExt
+  })
+  return `rptasset://${profileId}/${lorebookId}/${category}/${encodeURIComponent(file)}`
+}
+
+/** Write a `.assets`-mirroring zip (`<category>/<file>`) of a world's assets — the inverse of
+ *  {@link importAssetsZip}. Only convention-parsing files are included; `_index.json`/dotfiles skip. */
+export function exportAssetsZip(
+  profileId: string,
+  lorebookId: string,
+  destPath: string
+): { ok: boolean; entries: number } {
+  const root = worldAssetsRoot(profileId, lorebookId)
+  const zip = new AdmZip()
+  let entries = 0
+  for (const category of ASSET_CATEGORIES) {
+    const dir = path.join(root, category)
+    for (const file of listFilesSync(dir)) {
+      if (file === '_index.json' || file.startsWith('.')) continue
+      if (!parseAssetFilename(file)) continue
+      zip.addLocalFile(path.join(dir, file), category)
+      entries++
+    }
+  }
+  try {
+    zip.writeZip(destPath)
+    return { ok: true, entries }
+  } catch (e) {
+    log('error', '[world-assets] export zip failed', e)
+    return { ok: false, entries: 0 }
+  }
 }

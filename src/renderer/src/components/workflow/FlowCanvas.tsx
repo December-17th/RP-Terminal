@@ -8,6 +8,7 @@ import {
   Background,
   Controls,
   Handle,
+  MiniMap,
   Position,
   ReactFlow,
   ReactFlowProvider,
@@ -25,6 +26,7 @@ import './workflowEditor.css'
 import { useWorkflowEditorStore, type NodeTypeInfo } from '../../stores/workflowEditorStore'
 import { useWorkflowTraceStore } from '../../stores/workflowTraceStore'
 import { useChatStore } from '../../stores/chatStore'
+import { useToastStore } from '../../stores/toastStore'
 import { useOptionalT, useT } from '../../i18n'
 import {
   formatTraceSeconds,
@@ -74,6 +76,10 @@ interface RptNodeData extends Record<string, unknown> {
   trace?: TraceNode
   /** WP6.4a: the live trigger explanation for a trigger.* node (met / now / at), if fetched. */
   triggerBadge?: DocTriggerBadge
+  /** RF-01: the "run now" affordance for a `trigger.manual` node. `enabled` folds in docIsActive,
+   *  dirty, and the node's own disabled flag; `disabledReason` is a raw CODE (translated in RptNode,
+   *  where `t` is available). Only populated for `trigger.manual` nodes. */
+  manualRun?: { enabled: boolean; disabledReason: 'saveFirst' | 'inactiveDoc' | null; run: () => Promise<void> }
   /** Owner manual-pass fix: this trigger's every out-edge dead-ends in a non-selected control.mode
    *  slot (modeGatedTriggerIds) — rendered dimmed + a "gated by mode" chip, visually DISTINCT from
    *  disabled (user-toggled-off). Display only; the switch stays an independent master toggle. */
@@ -103,7 +109,9 @@ function RptNode({ data, selected }: NodeProps<RFNode<RptNodeData>>): React.JSX.
   const t = useT()
   const tOpt = useOptionalT()
   const setNodeDisabled = useWorkflowEditorStore((s) => s.setNodeDisabled)
-  const { editorNode, typeInfo, trace, triggerBadge, modeGated } = data
+  const { editorNode, typeInfo, trace, triggerBadge, manualRun, modeGated } = data
+  // RF-01: disable the ▶ button while its headless run is in flight (no spinner — just guard).
+  const [running, setRunning] = React.useState(false)
   const inputs = typeInfo?.inputs ?? []
   const outputs = typeInfo?.outputs ?? []
   const disabled = editorNode.disabled === true
@@ -159,6 +167,30 @@ function RptNode({ data, selected }: NodeProps<RFNode<RptNodeData>>): React.JSX.
             }}
           >
             <span className="rpt-node-trigger-switch-knob" aria-hidden />
+          </button>
+        )}
+        {/* RF-01: manual "run now" ▶. Enabled only when the open doc is the chat's active doc, the
+            draft is saved, and the node isn't disabled. stopPropagation so firing doesn't also select. */}
+        {manualRun && (
+          <button
+            type="button"
+            className="rpt-node-run-now"
+            disabled={!manualRun.enabled || running}
+            title={
+              manualRun.disabledReason === 'saveFirst'
+                ? t('workflowEditor.runNowSaveFirst')
+                : manualRun.disabledReason === 'inactiveDoc'
+                  ? t('workflowEditor.runNowInactiveDoc')
+                  : t('workflowEditor.runNow')
+            }
+            aria-label={t('workflowEditor.runNow')}
+            onClick={(e) => {
+              e.stopPropagation()
+              setRunning(true)
+              void manualRun.run().finally(() => setRunning(false))
+            }}
+          >
+            ▶
           </button>
         )}
         {trace && (
@@ -440,14 +472,24 @@ interface FlowCanvasProps {
   traceOverride?: WorkflowRunTrace | null
   /** WP6.4a: bumped by the parent after a save so the live trigger badges refetch. */
   triggerRefreshToken?: number
+  /** RF-01: fired after a manual trigger run completes, so the parent can bump its shared refresh
+   *  token (refetches the RunDrawer + the trigger badges). */
+  onManualRun?: () => void
+  /** RF-04: exposes a canvas API to the parent (which sits outside the ReactFlow context). Called once
+   *  on mount; `centerPosition` maps the canvas wrapper's bounding-rect center through
+   *  screenToFlowPosition, so the parent can insert modules/nodes at the viewport center. */
+  onReady?: (api: { centerPosition: () => { x: number; y: number } }) => void
 }
 
 function FlowCanvasInner({
   profileId,
   traceOverride,
-  triggerRefreshToken
+  triggerRefreshToken,
+  onManualRun,
+  onReady
 }: FlowCanvasProps): React.JSX.Element {
   const t = useT()
+  const pushToast = useToastStore((s) => s.push)
   const nodes = useWorkflowEditorStore((s) => s.nodes)
   const edges = useWorkflowEditorStore((s) => s.edges)
   const nodeTypeList = useWorkflowEditorStore((s) => s.nodeTypes)
@@ -461,11 +503,18 @@ function FlowCanvasInner({
   const connect = useWorkflowEditorStore((s) => s.connect)
   const select = useWorkflowEditorStore((s) => s.select)
   const addNode = useWorkflowEditorStore((s) => s.addNode)
+  const dirty = useWorkflowEditorStore((s) => s.dirty)
   const groups = useMemo(() => doc?.groups ?? [], [doc])
   const setSelectedNodeIds = useWorkflowEditorStore((s) => s.setSelectedNodeIds)
   const selectGroup = useWorkflowEditorStore((s) => s.selectGroup)
   const moveGroup = useWorkflowEditorStore((s) => s.moveGroup)
+  const snapshotForDrag = useWorkflowEditorStore((s) => s.snapshotForDrag)
+  const endDrag = useWorkflowEditorStore((s) => s.endDrag)
   const collapseChainIntoModule = useWorkflowEditorStore((s) => s.collapseChainIntoModule)
+  // RF-03: ids (nodes AND modules) currently mid-drag. A rising edge (id enters the set) pushes
+  // ONE undo checkpoint before the drag's first move; when the set drains, endDrag() closes the
+  // step so the next drag is a separate undo entry.
+  const draggingIds = React.useRef<Set<string>>(new Set())
   // Module drag: RF reports absolute positions per change; track each module's last position so a
   // drag becomes a delta routed to moveGroup (which shifts the hidden members). Keyed by group id.
   const moduleDragPos = React.useRef<Map<string, { x: number; y: number }>>(new Map())
@@ -482,6 +531,20 @@ function FlowCanvasInner({
     void setCenter(b.x + b.w / 2, b.y + b.h / 2, { zoom: 1, duration: 400 })
     // eslint-disable-next-line react-hooks/exhaustive-deps -- fire on each locate (token bump), not on graph edits
   }, [panRequest?.token])
+
+  // RF-04: the canvas wrapper, so centerPosition() can map its bounding-rect center to flow coords
+  // for the parent (which lives outside the ReactFlow context and can't call screenToFlowPosition).
+  const wrapperRef = React.useRef<HTMLDivElement>(null)
+  React.useEffect(() => {
+    onReady?.({
+      centerPosition: () => {
+        const rect = wrapperRef.current?.getBoundingClientRect()
+        if (!rect) return { x: 220, y: 200 }
+        return screenToFlowPosition({ x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 })
+      }
+    })
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- register once on mount; screenToFlowPosition/onReady are stable enough for a one-shot handle
+  }, [])
 
   const typeInfoMap = useMemo(() => {
     return new Map(nodeTypeList.map((t) => [t.type, t]))
@@ -508,15 +571,20 @@ function FlowCanvasInner({
   // "now/at" only makes sense against the chat whose committed state it evaluates). Refetch on save
   // (triggerRefreshToken). NO polling.
   const [triggerBadges, setTriggerBadges] = React.useState<Map<string, DocTriggerBadge>>(new Map())
+  // RF-01: whether the OPEN doc IS the chat's resolved active doc — the gate the manual ▶ needs
+  // (runManualDoc no-ops otherwise). Tracked alongside the badge fetch (same gate), never polled.
+  const [docIsActive, setDocIsActive] = React.useState(false)
   React.useEffect(() => {
     let cancelled = false
     setTriggerBadges(new Map())
+    setDocIsActive(false)
     if (!activeChatId || !currentId) return
     void (async () => {
       // Only badge when the OPEN doc is the chat's resolved active doc (the same gate the trace overlay
       // uses: a badge against a different doc's state would mislead).
       const resolvedId = await window.api.resolveWorkflowId(profileId, activeChatId)
       if (cancelled || resolvedId !== currentId) return
+      setDocIsActive(true)
       const list = (await window.api.explainDocTriggers(profileId, activeChatId)) as {
         nodeId: string
         description: string
@@ -539,6 +607,19 @@ function FlowCanvasInner({
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- refetch on doc/chat/save; profileId stable
   }, [activeChatId, currentId, triggerRefreshToken])
+
+  // RF-01: fire ONE trigger.manual node's chain. Guards (active doc, node kind, disabled) live in
+  // runManualDoc main-side; here we only avoid the call when we have nothing to key it to. On success
+  // toast + bump the parent's shared refresh token (RunDrawer + badges refetch).
+  const runManual = useCallback(
+    async (nodeId: string): Promise<void> => {
+      if (!activeChatId || !currentId) return
+      await window.api.runManualTrigger(profileId, activeChatId, currentId, nodeId)
+      pushToast(t('workflowEditor.runNowDone'))
+      onManualRun?.()
+    },
+    [profileId, activeChatId, currentId, onManualRun, pushToast, t]
+  )
 
   // Run history (WP-D run attribution): the active chat's recent runs, so an agent card can show its
   // last-run recency (newestRunForGroup maps StoredRunRecord.triggerNodeIds through membership).
@@ -671,7 +752,22 @@ function FlowCanvasInner({
           trace: traceByNode.get(n.id),
           triggerBadge: triggerBadges.get(n.id),
           // Owner manual-pass fix: dim + chip a trigger the current mode selection dead-ends.
-          modeGated: modeGatedIds.has(n.id)
+          modeGated: modeGatedIds.has(n.id),
+          // RF-01: only manual triggers get a ▶. enabled folds in the active-doc gate, the dirty flag,
+          // and the node's own disabled state; the reason CODE drives the tooltip (translated in RptNode).
+          ...(n.type === 'trigger.manual'
+            ? {
+                manualRun: {
+                  enabled: docIsActive && !dirty && n.disabled !== true,
+                  disabledReason: dirty
+                    ? ('saveFirst' as const)
+                    : !docIsActive
+                      ? ('inactiveDoc' as const)
+                      : null,
+                  run: () => runManual(n.id)
+                }
+              }
+            : {})
         }
       } as RFNode)
     }
@@ -686,6 +782,9 @@ function FlowCanvasInner({
     typeInfoMap,
     traceByNode,
     triggerBadges,
+    docIsActive,
+    dirty,
+    runManual,
     agentByGroupId,
     modeGatedIds
   ])
@@ -727,6 +826,19 @@ function FlowCanvasInner({
     (changes: NodeChange<RFNode>[]) => {
       for (const change of changes) {
         if (change.type === 'position' && change.position) {
+          // RF-03: rising-edge undo checkpoint. On the first tick of a drag (dragging === true and
+          // this id not yet tracked) snapshot ONCE; when a drag ends (dragging false/undefined)
+          // untrack the id and, once nothing is dragging, close the undo step. Frame ids never drag.
+          if (!change.id.startsWith('frame:')) {
+            if (change.dragging === true) {
+              if (!draggingIds.current.has(change.id)) {
+                draggingIds.current.add(change.id)
+                snapshotForDrag()
+              }
+            } else if (draggingIds.current.delete(change.id) && draggingIds.current.size === 0) {
+              endDrag()
+            }
+          }
           // A collapsed MODULE drag: RF reports the module node's absolute position; convert to a
           // delta against its last-seen position and route to moveGroup (which shifts the hidden
           // members). Track the position so the next mid-drag change computes the next delta.
@@ -757,7 +869,7 @@ function FlowCanvasInner({
         }
       }
     },
-    [moveNode, removeNode, moveGroup, moduleIds]
+    [moveNode, removeNode, moveGroup, moduleIds, snapshotForDrag, endDrag]
   )
 
   // Multi-select sync (WP6.3): RF reports the selected NODE set (excludes modules/frames) via
@@ -857,7 +969,12 @@ function FlowCanvasInner({
   )
 
   return (
-    <div className="rpt-workflow-editor" onDrop={handleDrop} onDragOver={handleDragOver}>
+    <div
+      className="rpt-workflow-editor"
+      ref={wrapperRef}
+      onDrop={handleDrop}
+      onDragOver={handleDragOver}
+    >
       <ReactFlow
         nodes={rfNodes}
         edges={rfEdges}
@@ -877,6 +994,7 @@ function FlowCanvasInner({
       >
         <Background />
         <Controls showInteractive={false} />
+        <MiniMap pannable zoomable className="rpt-wfe-minimap" />
       </ReactFlow>
       {chainMenu && (
         <div

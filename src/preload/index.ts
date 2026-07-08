@@ -1,4 +1,4 @@
-import { contextBridge, ipcRenderer, IpcRendererEvent } from 'electron'
+import { contextBridge, ipcRenderer, IpcRendererEvent, webUtils } from 'electron'
 import { electronAPI } from '@electron-toolkit/preload'
 import type { VarsOrigin } from '../shared/thRuntime/types'
 
@@ -43,7 +43,48 @@ const api = {
   wcvSetVisible: (id: string, visible: boolean) => ipcRenderer.send('wcv-set-visible', id, visible),
   // Hide/show every card WCV (native views paint above the DOM — full-screen overlays need this).
   wcvSetAllVisible: (visible: boolean) => ipcRenderer.send('wcv-set-all-visible', visible),
+  // Freeze-frame under a DOM overlay (PM-A4): while WCVs are ducked, main pushes a per-slot bitmap
+  // (data URL) to paint into the slot's DOM placeholder so the panels stay visually in place; a
+  // clear signal drops them on restore. `onWcvFreeze` returns an unsubscribe function.
+  onWcvFreeze: (
+    cb: (p: { show: Record<string, string> } | { clear: true }) => void
+  ) => {
+    const onShow = (_e: unknown, frames: Record<string, string>): void => cb({ show: frames })
+    const onClear = (): void => cb({ clear: true })
+    ipcRenderer.on('wcv-freeze-show', onShow)
+    ipcRenderer.on('wcv-freeze-clear', onClear)
+    return () => {
+      ipcRenderer.removeListener('wcv-freeze-show', onShow)
+      ipcRenderer.removeListener('wcv-freeze-clear', onClear)
+    }
+  },
   wcvDestroy: (id: string) => ipcRenderer.send('wcv-destroy', id),
+  // Full-play-area overlay surfaces (PM-A7). `requestOverlay`/`closeOverlay` back the INLINE card
+  // transport (it passes its ctx explicitly; the WCV transport uses the ctx-scoped wcv-host-* channels).
+  // `onWcvOverlay` is how the renderer's OverlayHost learns which overlay surface to mount/unmount over
+  // the play area — main drives it (single source of truth); Esc / card-switch just call closeOverlay.
+  requestOverlay: (profileId: string, chatId: string, characterId: string, overlayId: string) =>
+    ipcRenderer.invoke('overlay-request', profileId, chatId, characterId, overlayId),
+  closeOverlay: () => ipcRenderer.invoke('overlay-close'),
+  onWcvOverlay: (
+    cb: (
+      p:
+        | { open: { overlayId: string; entry: string; title?: string } }
+        | { close: { overlayId: string } }
+    ) => void
+  ) => {
+    const onOpen = (
+      _e: unknown,
+      d: { overlayId: string; entry: string; title?: string }
+    ): void => cb({ open: d })
+    const onClose = (_e: unknown, d: { overlayId: string }): void => cb({ close: d })
+    ipcRenderer.on('wcv-open-overlay', onOpen)
+    ipcRenderer.on('wcv-close-overlay', onClose)
+    return () => {
+      ipcRenderer.removeListener('wcv-open-overlay', onOpen)
+      ipcRenderer.removeListener('wcv-close-overlay', onClose)
+    }
+  },
   // A card-script toolbar button was clicked → deliver it to the chat's card WCVs (the script's eventOn).
   wcvButtonClick: (chatId: string, name: string) =>
     ipcRenderer.send('wcv-button-click', chatId, name),
@@ -203,6 +244,10 @@ const api = {
   // + after save. The doc-path sibling of explainAgentPackTriggers.
   explainDocTriggers: (profileId: string, chatId: string) =>
     ipcRenderer.invoke('workflow-explain-doc-triggers', profileId, chatId),
+  // Fire ONE trigger.manual node's chain on explicit user action (RF-01). Guards (active doc, node
+  // kind, disabled) live main-side in runManualDoc — they log + no-op, never throw.
+  runManualTrigger: (profileId: string, chatId: string, docId: string, triggerNodeId: string) =>
+    ipcRenderer.invoke('workflow-run-manual-trigger', profileId, chatId, docId, triggerNodeId),
   // Effective-graph projection for the Workflow view's Effective mode (agent-packs plan WP3.6a;
   // ADR 0010): the composed doc + composition warnings + per-pack grouping. A live projection,
   // never persisted (ADR 0001) — re-fetch after a gate flip or narrator write-through.
@@ -603,6 +648,19 @@ const api = {
     type: string,
     mood?: string
   ) => ipcRenderer.invoke('asset-url', profileId, lorebookIds, category, name, type, mood),
+  // Card-facing (WA-3): enumerate one entry's variants; main applies id precedence + category inference.
+  assetList: (profileId: string, lorebookIds: string[], name: string, type: string) =>
+    ipcRenderer.invoke('asset-list-for-card', profileId, lorebookIds, name, type),
+  // Card-facing (WA-3): open the OS image picker and import into the primary world; returns the new
+  // rptasset:// URL or null (cancel/invalid). Backs rptHost.requestAssetImport on inline cards.
+  assetImportForCard: (
+    profileId: string,
+    lorebookIds: string[],
+    name: string,
+    type: string,
+    variant?: string
+  ) =>
+    ipcRenderer.invoke('asset-import-for-card', profileId, lorebookIds, name, type, variant),
   duelPreview: (profileId: string, chatId: string, characterId: string) =>
     ipcRenderer.invoke('duel-preview', profileId, chatId, characterId),
   assetRefresh: (profileId: string, lorebookIds: string[]) =>
@@ -611,6 +669,28 @@ const api = {
     ipcRenderer.invoke('asset-open-folder', profileId, lorebookId, category),
   assetImportZipDialog: (profileId: string, lorebookId: string) =>
     ipcRenderer.invoke('asset-import-zip-dialog', profileId, lorebookId),
+  // Asset manager surface (WA-2). The `assets` workspace view's read + mutation API.
+  assetListIndex: (profileId: string, lorebookIds: string[]) =>
+    ipcRenderer.invoke('asset-list-index', profileId, lorebookIds),
+  assetImportFiles: (
+    profileId: string,
+    lorebookId: string,
+    items: { srcPath: string; name: string; type: string; variant?: string }[]
+  ) => ipcRenderer.invoke('asset-import-files', profileId, lorebookId, items),
+  assetDeleteFile: (profileId: string, lorebookId: string, category: string, file: string) =>
+    ipcRenderer.invoke('asset-delete-file', profileId, lorebookId, category, file),
+  assetRenameVariant: (
+    profileId: string,
+    lorebookId: string,
+    category: string,
+    file: string,
+    newVariant: string
+  ) => ipcRenderer.invoke('asset-rename-variant', profileId, lorebookId, category, file, newVariant),
+  assetExportZipDialog: (profileId: string, lorebookId: string) =>
+    ipcRenderer.invoke('asset-export-zip', profileId, lorebookId),
+  assetPickImages: (multi: boolean) => ipcRenderer.invoke('asset-pick-images', multi),
+  // Electron 39 removed `File.path`; drag-drop OS paths now come from webUtils.getPathForFile.
+  pathForFile: (file: File) => webUtils.getPathForFile(file),
   // Per-chat card KV (inline transport): general scope, getVariables({type:'chat'}).
   chatCardVarsGet: (profileId: string, chatId: string) =>
     ipcRenderer.invoke('chat-card-vars-get', profileId, chatId),
