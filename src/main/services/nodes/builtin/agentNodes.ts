@@ -1,5 +1,4 @@
 import { z } from 'zod'
-import { stripThinking } from '../../../parsers/contentParser'
 import { buildGenContext } from '../../generation/genContext'
 import { GenContext } from '../../generation/types'
 import { providerShape } from '../../generation/providerShape'
@@ -11,6 +10,7 @@ import { getLorePicks } from '../../workflowLorePicksStore'
 import { NodeImpl } from '../types'
 import { interpolate } from './messageNodes'
 import { runLlmCall, LlmCallConfig, llmCallConfigSchema } from './generationNodes'
+import { recentTranscript } from './memoryCore'
 
 /**
  * Consolidated AGENT nodes (one-canvas rebuild WP6.2; ADR 0011; spec revision 4 §The consolidated
@@ -68,21 +68,12 @@ export const historyRecent: NodeImpl = {
     // Self-seed a fresh committed Context off the RunContext (no pending user action headlessly — a
     // maintenance pass answers no message). Same read input.context does.
     const gen = buildGenContext(ctx.profileId!, ctx.chatId!, '')
-    const count = cfg.lastNFloors ?? 6
-    const include = cfg.include ?? 'both'
-    const selected = gen.floors.slice(-count)
-    const messages: ChatMessage[] = []
-    for (const f of selected) {
-      if (include !== 'assistant') {
-        const user = (f.user_message?.content ?? '').trim()
-        if (user) messages.push({ role: 'user', content: user })
-      }
-      if (include !== 'user') {
-        const assistant = stripThinking(f.response?.content ?? '').trim()
-        if (assistant) messages.push({ role: 'assistant', content: assistant })
+    // The transcript slice is shared with memory.maintain (memoryCore.recentTranscript).
+    return {
+      outputs: {
+        messages: recentTranscript(gen, { lastNFloors: cfg.lastNFloors, include: cfg.include })
       }
     }
-    return { outputs: { messages } }
   }
 }
 
