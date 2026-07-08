@@ -2,17 +2,28 @@ import { describe, it, expect } from 'vitest'
 import { categoryForType, TYPES_BY_CATEGORY } from '../src/shared/worldAssets/types'
 
 describe('categoryForType', () => {
-  it('maps character types', () => {
+  it('maps character types (incl. 相册 gallery)', () => {
     expect(categoryForType('头像')).toBe('character')
     expect(categoryForType('立绘')).toBe('character')
+    expect(categoryForType('相册')).toBe('character')
   })
   it('maps location types', () => {
     expect(categoryForType('背景')).toBe('location')
     expect(categoryForType('全景')).toBe('location')
   })
+  it('maps CG to its own cg category (not the character fallback)', () => {
+    expect(categoryForType('CG')).toBe('cg')
+  })
+  it('is exhaustive over all six known types', () => {
+    const routed = (['头像', '立绘', '相册', '背景', '全景', 'CG'] as const).map((t) =>
+      categoryForType(t)
+    )
+    expect(routed).toEqual(['character', 'character', 'character', 'location', 'location', 'cg'])
+  })
   it("TYPES_BY_CATEGORY lists each category's types", () => {
-    expect(TYPES_BY_CATEGORY.character).toEqual(['头像', '立绘'])
+    expect(TYPES_BY_CATEGORY.character).toEqual(['头像', '立绘', '相册'])
     expect(TYPES_BY_CATEGORY.location).toEqual(['背景', '全景'])
+    expect(TYPES_BY_CATEGORY.cg).toEqual(['CG'])
   })
 
   // PM-A6: both card transports' `assetUrl(name, type, mood)` fill-in points infer the category

@@ -42,6 +42,55 @@ describe('parseAssetFilename', () => {
       ext: 'jpeg'
     })
   })
+  // 相册/CG join ASSET_TYPES with NO parser change — the right-to-left type scan finds them.
+  it('parses a 相册 gallery cover (base) and a numbered slot', () => {
+    expect(parseAssetFilename('薇拉_相册.png')).toEqual({
+      name: '薇拉',
+      type: '相册',
+      mood: undefined,
+      ext: 'png'
+    })
+    expect(parseAssetFilename('薇拉_相册_02.png')).toEqual({
+      name: '薇拉',
+      type: '相册',
+      mood: '02',
+      ext: 'png'
+    })
+  })
+  it('keeps an underscore inside a 相册 slot label (mood token rejoins segments)', () => {
+    expect(parseAssetFilename('薇拉_相册_夏日_01.png')).toEqual({
+      name: '薇拉',
+      type: '相册',
+      mood: '夏日_01',
+      ext: 'png'
+    })
+  })
+  it('parses a CG base and a scene-variant, keyed by scene id', () => {
+    expect(parseAssetFilename('初遇_CG.png')).toEqual({
+      name: '初遇',
+      type: 'CG',
+      mood: undefined,
+      ext: 'png'
+    })
+    expect(parseAssetFilename('初遇_CG_雨夜.png')).toEqual({
+      name: '初遇',
+      type: 'CG',
+      mood: '雨夜',
+      ext: 'png'
+    })
+  })
+  it('keeps an underscore in the scene id before the CG token', () => {
+    expect(parseAssetFilename('初_遇_CG_雨夜.png')).toEqual({
+      name: '初_遇',
+      type: 'CG',
+      mood: '雨夜',
+      ext: 'png'
+    })
+  })
+  it('round-trips a CG variant through buildAssetFilename', () => {
+    const p = { name: '初遇', type: 'CG' as const, mood: '雨夜', ext: 'png' as const }
+    expect(parseAssetFilename(buildAssetFilename(p))).toEqual(p)
+  })
   it('returns null when no known type token is present', () => {
     expect(parseAssetFilename('爱莎_随手图.png')).toBeNull()
   })
