@@ -2,12 +2,16 @@ import { z } from 'zod'
 import { buildGenContext } from '../../generation/genContext'
 import { GenContext } from '../../generation/types'
 import { providerShape } from '../../generation/providerShape'
-import { PresetParameters } from '../../../types/preset'
 import { ChatMessage } from '../../promptBuilder'
 import { TableTemplate } from '../../../types/tableTemplate'
 import { NodeImpl } from '../types'
 import { interpolate } from './messageNodes'
-import { runLlmCall, LlmCallConfig, llmCallConfigSchema } from './generationNodes'
+import {
+  runLlmCall,
+  llmCallConfigSchema,
+  buildLlmCallConfig,
+  presetParamsWithTemperature
+} from './generationNodes'
 import { extractTagAll } from './parseNodes'
 import {
   chatTemplate,
@@ -145,22 +149,10 @@ export const memoryMaintain: NodeImpl = {
     // the model" is inspectable in the Runs tab. Shared shape with agent.llm (composedPromptDebug).
     const promptDebug = composedPromptDebug(sendMessages)
 
-    const params: PresetParameters = {
-      ...gen.preset.parameters,
-      ...(cfg.temperature != null ? { temperature: cfg.temperature } : {})
-    }
-    const callCfg: LlmCallConfig = {
-      // A maintenance reply is a side result, never the player-facing stream.
-      stream: cfg.stream === true,
-      ...(cfg.api_preset_id ? { api_preset_id: cfg.api_preset_id } : {}),
-      ...(cfg.retries != null ? { retries: cfg.retries } : {}),
-      ...(cfg.retry_delay_s != null ? { retry_delay_s: cfg.retry_delay_s } : {}),
-      ...(cfg.fallback_preset_id ? { fallback_preset_id: cfg.fallback_preset_id } : {}),
-      ...(cfg.validator ? { validator: cfg.validator } : {}),
-      ...(cfg.validator_pattern ? { validator_pattern: cfg.validator_pattern } : {}),
-      ...(cfg.validator_retries != null ? { validator_retries: cfg.validator_retries } : {}),
-      ...(cfg.corrective_nudge ? { corrective_nudge: cfg.corrective_nudge } : {})
-    }
+    // Params + call config from the shared side-call builders (generationNodes) — stream defaults to
+    // false (a maintenance reply is a side result, never the player-facing stream).
+    const params = presetParamsWithTemperature(gen, cfg.temperature)
+    const callCfg = buildLlmCallConfig(cfg)
 
     const r = await runLlmCall(ctx, gen, sendMessages, params, callCfg)
     // Abort-with-empty: no reply to parse; the prompt is still traced so the empty result is diagnosable.

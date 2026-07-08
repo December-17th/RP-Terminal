@@ -139,6 +139,34 @@ export const llmCallConfigSchema = z.object({
   corrective_nudge: z.string().optional()
 })
 
+/** Assemble the `LlmCallConfig` from a parsed config carrying the `llmCallConfigSchema` fields — the
+ *  conditional-spread the side-call nodes share. `agent.llm` and `memory.maintain` are side calls, so
+ *  `stream` defaults to false here (a maintenance/agent reply must not pollute the player stream); pass
+ *  a config whose `stream` is `true` to opt into streaming. Factored so the provider-call plumbing is
+ *  built ONE way (both nodes already share `runLlmCall`). */
+export const buildLlmCallConfig = (cfg: z.infer<typeof llmCallConfigSchema>): LlmCallConfig => ({
+  stream: cfg.stream === true,
+  ...(cfg.api_preset_id ? { api_preset_id: cfg.api_preset_id } : {}),
+  ...(cfg.retries != null ? { retries: cfg.retries } : {}),
+  ...(cfg.retry_delay_s != null ? { retry_delay_s: cfg.retry_delay_s } : {}),
+  ...(cfg.fallback_preset_id ? { fallback_preset_id: cfg.fallback_preset_id } : {}),
+  ...(cfg.validator ? { validator: cfg.validator } : {}),
+  ...(cfg.validator_pattern ? { validator_pattern: cfg.validator_pattern } : {}),
+  ...(cfg.validator_retries != null ? { validator_retries: cfg.validator_retries } : {}),
+  ...(cfg.corrective_nudge ? { corrective_nudge: cfg.corrective_nudge } : {})
+})
+
+/** The preset's sampler params with an optional per-call temperature override — the shared params shape
+ *  a side call builds (`agent.llm` / `memory.maintain`). No FSM cap: a side call is budgeted by its own
+ *  preset. */
+export const presetParamsWithTemperature = (
+  gen: GenContext,
+  temperature?: number
+): PresetParameters => ({
+  ...gen.preset.parameters,
+  ...(temperature != null ? { temperature } : {})
+})
+
 /**
  * THE one model-call core, factored out of `llm.sample`'s run() so `agent.llm` (agentNodes.ts) shares
  * it verbatim rather than reimplementing streaming/abort/preset-swap. Given a Context, the messages to
