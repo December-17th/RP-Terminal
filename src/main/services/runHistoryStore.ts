@@ -40,6 +40,8 @@ export interface RunHistoryRow {
   origin: string
   pack_ids: string
   trigger: string | null
+  /** WP-D run attribution: JSON array of firing trigger-node ids; NULL for turns + pre-WP-D rows. */
+  trigger_node_ids: string | null
   ok: number
   aborted: number
   duration_ms: number
@@ -52,12 +54,16 @@ export interface RunHistoryRow {
 export const rowToRecord = (row: RunHistoryRow): StoredRunRecord => {
   const trace = JSON.parse(row.trace) as WorkflowRunTrace
   const packIds = JSON.parse(row.pack_ids) as string[]
+  // WP-D: trigger_node_ids is additive + nullable — a pre-WP-D row (or a turn run) has none.
+  const triggerNodeIds =
+    row.trigger_node_ids != null ? (JSON.parse(row.trigger_node_ids) as string[]) : null
   return {
     runId: row.run_id,
     seq: row.seq,
     origin: row.origin as StoredRunRecord['origin'],
     packIds: Array.isArray(packIds) ? packIds : [],
     ...(row.trigger != null ? { trigger: row.trigger } : {}),
+    ...(Array.isArray(triggerNodeIds) && triggerNodeIds.length > 0 ? { triggerNodeIds } : {}),
     trace
   }
 }
@@ -123,8 +129,8 @@ export const appendRun = (
   const stored: StoredRunRecord = { ...record, seq: nextSeq(chatId) }
   const insert = db.prepare(
     `INSERT INTO workflow_run_history
-       (chat_id, seq, run_id, started_at, origin, pack_ids, trigger, ok, aborted, duration_ms, trace)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+       (chat_id, seq, run_id, started_at, origin, pack_ids, trigger, trigger_node_ids, ok, aborted, duration_ms, trace)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   )
   // Prune: keep only the most recent `cap` — delete rows whose seq is <= (thisSeq - cap). Because seq
   // is per-chat monotonic and dense-ish, "thisSeq - cap" is the largest seq that must be dropped to
@@ -139,6 +145,10 @@ export const appendRun = (
       stored.origin,
       JSON.stringify(stored.packIds),
       stored.trigger ?? null,
+      // WP-D run attribution: NULL when absent/empty so pre-WP-D reads and turn runs stay unchanged.
+      stored.triggerNodeIds && stored.triggerNodeIds.length > 0
+        ? JSON.stringify(stored.triggerNodeIds)
+        : null,
       stored.trace.ok ? 1 : 0,
       stored.trace.aborted ? 1 : 0,
       stored.trace.durationMs,

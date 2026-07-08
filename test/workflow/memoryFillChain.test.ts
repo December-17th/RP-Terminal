@@ -239,6 +239,9 @@ describe('memory-fill chain — headless (evaluateDocTriggers)', () => {
     const joined = sentMessages.map((m) => `${m.role}:${m.content}`).join('\n')
     expect(joined).toContain('ai reply 5')
     expect(joined).toContain('player action 5')
+    // table.read's block reached the model via the `{{input}}` placeholder (read.block → agent.input).
+    // Regression guard for the dropped-block bug: interpolate substitutes {{input}}, not just {{inN}}.
+    expect(joined).toContain('纪要 (summary)')
 
     // parse.extract pulled the TableEdit block and table.apply LANDED it (the rows-land assertion).
     expect(mockSql.applySqlBatch).toHaveBeenCalled()
@@ -252,6 +255,17 @@ describe('memory-fill chain — headless (evaluateDocTriggers)', () => {
     const run = mockRunHistory.appendRun.mock.calls.at(-1)![1] as { origin: string; packIds: string[] }
     expect(run.origin).toBe('headless')
     expect(run.packIds).toEqual([])
+
+    // The composed prompt is inspectable in the run drawer: agent.llm's `debug` reaches the broadcast
+    // trace (runSubgraph.debug → summarizeRun) as the agent node's "prompt (sent)" preview, carrying
+    // the substituted table block + spliced history — end-to-end proof the debug channel works headless.
+    const broadcast = mockEvents.notifyWorkflowTrace.mock.calls.at(-1)![0] as {
+      nodes: { nodeId: string; outputs?: Record<string, string> }[]
+    }
+    const agentNode = broadcast.nodes.find((n) => n.nodeId === 'agent')!
+    const sentPrompt = agentNode.outputs!['prompt (sent)']
+    expect(sentPrompt).toContain('纪要 (summary)')
+    expect(sentPrompt).toContain('ai reply 5')
   })
 
   it('an unsatisfied cadence (not yet due) does NOT run the chain', async () => {

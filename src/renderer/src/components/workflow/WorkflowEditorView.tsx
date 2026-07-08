@@ -21,8 +21,21 @@ import FlowCanvas from './FlowCanvas'
 import NodeConfigPanel from './NodeConfigPanel'
 import RunDrawer from './RunDrawer'
 import ModuleImportSheet, { type ModuleInspectReport } from './ModuleImportSheet'
-import { groupPalette } from './paletteModel'
+import AgentsDropdown from './AgentsDropdown'
+import { isAgentGroup, ungroupedTriggerChains } from './agentModel'
+import { groupPalette, paletteMatch } from './paletteModel'
+import type { EditorNodeType } from './editorModel'
 import './workflowEditor.css'
+
+/** ModuleTemplateSummary mirror (main's moduleTemplates.ts) — redeclared locally per the preload
+ *  convention (the renderer only sees this over IPC and must not import from src/main). */
+interface LibraryEntry {
+  id: string
+  name: string
+  description?: string
+  nodeCount: number
+  source: 'builtin' | 'user'
+}
 
 const BUILTIN_WORKFLOW_ID = 'default'
 
@@ -100,6 +113,27 @@ export default function WorkflowEditorView({
     const grouped = new Set((doc?.groups ?? []).flatMap((g) => g.nodeIds))
     return !selectedNodeIds.some((id) => grouped.has(id))
   }, [selectedNodeIds, doc])
+  // WP-D (spec §4): the "Collapse all agents / Expand all" toolbar cluster is offered only when the doc
+  // has ≥1 agent group (a named group rooted at a trigger node — the agent UI contract).
+  const editorNodes = useWorkflowEditorStore((s) => s.nodes)
+  const editorEdges = useWorkflowEditorStore((s) => s.edges)
+  const collapseAllAgents = useWorkflowEditorStore((s) => s.collapseAllAgents)
+  const expandAllGroups = useWorkflowEditorStore((s) => s.expandAllGroups)
+  const autoGroupTriggerChains = useWorkflowEditorStore((s) => s.autoGroupTriggerChains)
+  const hasAgentGroups = useMemo(() => {
+    const groups = doc?.groups ?? []
+    if (groups.length === 0) return false
+    const types = new Map<string, EditorNodeType>(nodeTypes.map((n) => [n.type, n]))
+    return groups.some((g) => isAgentGroup(editorNodes, g, types))
+  }, [doc, editorNodes, nodeTypes])
+  // WP-D (spec §4): the auto-group affordance. A `.rptflow` import lands ungrouped and has no review
+  // sheet (a module import already groups via insertModule), so we offer one-click grouping of every
+  // ungrouped trigger chain from the toolbar once such a doc is open in the editor.
+  const hasUngroupedChains = useMemo(() => {
+    const groups = doc?.groups ?? []
+    const types = new Map<string, EditorNodeType>(nodeTypes.map((n) => [n.type, n]))
+    return ungroupedTriggerChains(editorNodes, editorEdges, groups, types).length > 0
+  }, [doc, editorNodes, editorEdges, nodeTypes])
 
   const [showErrors, setShowErrors] = useState(false)
   // RF-04: palette search query (substring over type id + localized title) and the canvas API handle
@@ -111,6 +145,20 @@ export default function WorkflowEditorView({
     canvasApi.current?.centerPosition() ?? { x: 220, y: 200 }
   // WP6.5: the module-import review sheet. Null when closed; holds the inspection report while open.
   const [moduleReport, setModuleReport] = useState<ModuleInspectReport | null>(null)
+  // WP-G (spec §2): the palette's Agent library (built-in templates + the user library) + the search
+  // box that filters BOTH palette sections.
+  const [libraryEntries, setLibraryEntries] = useState<LibraryEntry[]>([])
+  const refreshLibrary = React.useCallback(async (): Promise<void> => {
+    try {
+      const list = (await window.api.listModuleTemplates(profileId)) as LibraryEntry[]
+      setLibraryEntries(list ?? [])
+    } catch {
+      setLibraryEntries([])
+    }
+  }, [profileId])
+  useEffect(() => {
+    void refreshLibrary()
+  }, [refreshLibrary])
 
   // WP4.4: a fragment-editing hand-off ("Edit fragment in Studio"). Read the requested pack id ONCE on
   // mount (a ref so a later store change can't retrigger the load).
@@ -183,7 +231,7 @@ export default function WorkflowEditorView({
   // Install the inspected module: confirm main-side (installs bundled templates + returns the payload),
   // then insert it into the edited doc at a viewport-center-ish position (best-effort — the editor view
   // is outside the ReactFlow context). Insertion marks the doc dirty; the user saves it themselves.
-  const onInstallModule = async (token: string): Promise<void> => {
+  const onInstallModule = async (token: string, saveToLibrary: boolean): Promise<void> => {
     setModuleReport(null)
     const result = await window.api.confirmModuleImport(token)
     if (!result.ok) {
@@ -192,8 +240,39 @@ export default function WorkflowEditorView({
     }
     // RF-04: insert at the viewport center via the canvas API (closes the parked "module insertion at
     // viewport center" item); falls back to {x:220,y:200} before the canvas has reported ready.
-    insertModule(result.module, canvasApi.current?.centerPosition() ?? { x: 220, y: 200 })
+    // WP-G: stamp origin:'import' so the Agents ▾ shows the `imported` chip for a file-imported module.
+    insertModule(result.module, canvasApi.current?.centerPosition() ?? { x: 220, y: 200 }, {
+      origin: 'import'
+    })
     useToastStore.getState().push(t('workflowEditor.moduleImport.installed'))
+    // WP-G (spec §2): "an imported module can be saved into the user library for reuse". Fail-soft —
+    // a library-save failure never blocks the insert (the module is already on the canvas).
+    if (saveToLibrary) {
+      const saved = await window.api.saveModuleToLibrary(profileId, result.module)
+      if (saved.ok) {
+        useToastStore.getState().push(t('workflowEditor.library.saved'))
+        void refreshLibrary()
+      } else {
+        useToastStore.getState().push(t('workflowEditor.library.saveFailed'))
+      }
+    }
+  }
+
+  // WP-G: insert a library template — fetch the payload, land it at a free spot right of the graph
+  // (insertModule remints ids + pre-groups collapsed; no origin stamp — a template is not an import).
+  const onInsertTemplate = async (id: string): Promise<void> => {
+    const payload = await window.api.getModuleTemplate(profileId, id)
+    if (!payload) {
+      useToastStore.getState().push(t('workflowEditor.library.insertFailed'))
+      return
+    }
+    const nodes = useWorkflowEditorStore.getState().nodes
+    const freeSpot = {
+      x: nodes.length > 0 ? Math.max(...nodes.map((n) => n.position.x)) + 320 : 200,
+      y: 200
+    }
+    const groupId = insertModule(payload, freeSpot)
+    if (!groupId) useToastStore.getState().push(t('workflowEditor.library.insertFailed'))
   }
 
   const onCancelModule = (): void => {
@@ -336,6 +415,36 @@ export default function WorkflowEditorView({
           </button>
         )}
 
+        {/* WP-D: collapse/expand every agent group on the canvas. */}
+        {sessionType !== 'fragment' && hasAgentGroups && !readOnly && (
+          <>
+            <button
+              type="button"
+              onClick={() => collapseAllAgents()}
+              className="rpt-wfe-btn-sm"
+            >
+              {t('workflowEditor.collapseAllAgents')}
+            </button>
+            <button type="button" onClick={() => expandAllGroups()} className="rpt-wfe-btn-sm">
+              {t('workflowEditor.expandAll')}
+            </button>
+          </>
+        )}
+
+        {/* WP-D: one-click group every ungrouped trigger chain (the .rptflow-open path). */}
+        {sessionType !== 'fragment' && hasUngroupedChains && !readOnly && (
+          <button
+            type="button"
+            onClick={() => autoGroupTriggerChains()}
+            className="rpt-wfe-btn-sm"
+          >
+            {t('workflowEditor.groupAgentChains')}
+          </button>
+        )}
+
+        {/* WP-F: the Agents ▾ master dropdown (one row per agent; renders null when there are none). */}
+        {sessionType !== 'fragment' && <AgentsDropdown profileId={profileId} />}
+
         <span className="rpt-wfe-spacer" />
 
         <button
@@ -379,16 +488,59 @@ export default function WorkflowEditorView({
 
       <div className="rpt-wfe-body">
         <div className="rpt-wfe-palette">
-          <div className="rpt-wfe-palette-head">{t('workflowEditor.palette')}</div>
-          {/* RF-04: substring search + categorized rendering. Same card markup + drag behavior as
-              before; added click-to-add at the (jittered) viewport center. */}
+          {/* WP-G (spec §2) + RF-04: ONE search box filters BOTH the Agent library and the
+              categorized node list. Same card markup + drag behavior as before; click-to-add lands
+              at the (jittered) viewport center. */}
           <input
-            type="text"
+            type="search"
             className="rpt-wfe-palette-search"
             value={paletteQuery}
             placeholder={t('workflowEditor.paletteSearch')}
             onChange={(e) => setPaletteQuery(e.target.value)}
           />
+
+          {/* WP-G (spec §2): the Agent library — built-in module templates + the user library, with
+              "Import module…" as the section's last entry. Click inserts pre-grouped/named/collapsed
+              (insertModule remints ids); names/descriptions are module content, shown as-is. */}
+          <div className="rpt-wfe-palette-head">{t('workflowEditor.agentLibrary')}</div>
+          {libraryEntries
+            .filter((entry) => paletteMatch(paletteQuery, [entry.name, entry.description]))
+            .map((entry) => (
+              <div
+                key={entry.id}
+                role="button"
+                title={entry.description}
+                onClick={() => {
+                  if (!readOnly) void onInsertTemplate(entry.id)
+                }}
+                style={{
+                  border: '1px solid var(--rpt-agent-region-border)',
+                  borderRadius: 6,
+                  padding: '5px 8px',
+                  marginBottom: 5,
+                  cursor: readOnly ? 'default' : 'pointer',
+                  opacity: readOnly ? 0.55 : 1,
+                  background: 'var(--rpt-agent-region)'
+                }}
+              >
+                <div style={{ fontSize: 12, color: 'var(--rpt-text-primary)' }}>{entry.name}</div>
+                <div style={{ fontSize: 10, color: 'var(--rpt-text-tertiary)' }}>
+                  {t('workflowEditor.moduleImport.nodeCount', { n: entry.nodeCount })}
+                  {entry.source === 'user' ? ` · ${t('workflowEditor.library.user')}` : ''}
+                </div>
+              </div>
+            ))}
+          <button
+            type="button"
+            disabled={readOnly}
+            onClick={() => void onImportModule()}
+            className="rpt-wfe-import-module-btn"
+          >
+            {t('workflowEditor.importModule')}
+          </button>
+
+          {/* RF-04: the categorized node palette (groupPalette), search-filtered by the same box. */}
+          <div className="rpt-wfe-palette-section">{t('workflowEditor.palette')}</div>
           {groupPalette(
             nodeTypes,
             paletteQuery,
@@ -463,18 +615,10 @@ export default function WorkflowEditorView({
             </>
           )}
 
-          {/* WP6.5: the Modules section — import a `.rptmodule` file into the open doc. A fragment
-              session's currentId is a pack id (not a doc file), but a fragment IS a doc you can splice a
-              module into, so this is offered in both session kinds. */}
-          <div className="rpt-wfe-palette-section">{t('workflowEditor.modules')}</div>
-          <button
-            type="button"
-            disabled={readOnly}
-            onClick={() => void onImportModule()}
-            className="rpt-wfe-import-module-btn"
-          >
-            {t('workflowEditor.importModule')}
-          </button>
+          {/* WP-G: the WP6.5 "Modules" import section is folded into the Agent library above
+              ("Import module…" is that section's last entry, spec §2). A fragment session's currentId
+              is a pack id (not a doc file), but a fragment IS a doc you can splice a module into, so the
+              importer is offered in both session kinds. */}
         </div>
 
         <div className="rpt-wfe-canvas-col">
@@ -507,7 +651,7 @@ export default function WorkflowEditorView({
       {moduleReport && (
         <ModuleImportSheet
           report={moduleReport}
-          onInstall={(token) => void onInstallModule(token)}
+          onInstall={(token, saveToLibrary) => void onInstallModule(token, saveToLibrary)}
           onCancel={onCancelModule}
         />
       )}

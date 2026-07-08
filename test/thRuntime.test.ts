@@ -16,6 +16,7 @@ function mockHost(over: Partial<Host> = {}): { host: Host; calls: any } {
     saveWorldbookById: [],
     bindWorldbook: [],
     setGlobalVar: [],
+    setGlobalVars: [],
     replaceRegexes: [],
     setScriptVars: [],
     setButtons: [],
@@ -107,6 +108,12 @@ function mockHost(over: Partial<Host> = {}): { host: Host; calls: any } {
     setGlobalVar: async (key: string, value: any) => {
       globals[key] = value
       calls.setGlobalVar.push([key, value])
+    },
+    getGlobalVarsSync: () => globals,
+    setGlobalVars: async (vars: Record<string, any>) => {
+      for (const k of Object.keys(globals)) delete globals[k]
+      Object.assign(globals, vars || {})
+      calls.setGlobalVars.push(vars)
     },
     replaceRegexes: async (regexes: any[], option?: any) => {
       regexFull = regexes
@@ -403,6 +410,31 @@ describe('createThRuntime', () => {
     expect(m.calls.setScriptVars[0]).toEqual({ existing: 1, cache: { a: 1 } })
     expect(m.calls.applyVariableOps).toEqual([]) // stat_data untouched
     expect(g.getVariables({ type: 'script' })).toEqual({ existing: 1, cache: { a: 1 } })
+  })
+
+  it("global scope: getVariables/replaceVariables/updateVariablesWith({type:'global'}) hit the globals bag, not stat_data", async () => {
+    // Regression for the 艾莉亚 beautification: it stores UI settings in {type:'global'} at
+    // 'dialog_beauty.ui'. Before global routing, the read returned stat_data and the write dropped the
+    // settings key → nothing persisted, settings reset every floor.
+    const m: any = mockHost()
+    const g = createThRuntime(m.host)
+    // read: returns the globals bag (seeded { coins: 7 }), NOT { stat_data }
+    expect(g.getVariables({ type: 'global' })).toEqual({ coins: 7 })
+    // replace: whole-object write persists via setGlobalVars and does NOT touch stat_data
+    await g.replaceVariables({ coins: 7, dialog_beauty: { ui: { theme: 'dark' } } }, { type: 'global' })
+    expect(m.calls.setGlobalVars.at(-1)).toEqual({ coins: 7, dialog_beauty: { ui: { theme: 'dark' } } })
+    expect(m.calls.applyVariableOps).toEqual([]) // stat_data untouched
+    expect(g.getVariables({ type: 'global' })).toEqual({ coins: 7, dialog_beauty: { ui: { theme: 'dark' } } })
+    // update: read-modify-write the globals bag
+    const next = await g.updateVariablesWith(
+      (t: any) => {
+        t.dialog_beauty.ui.theme = 'light'
+        return t
+      },
+      { type: 'global' }
+    )
+    expect(next.dialog_beauty.ui.theme).toBe('light')
+    expect(g.getVariables()).toEqual({ stat_data: { hp: 1 } }) // message vars never touched
   })
 
   it('regex: getTavernRegexes reads the host; update/replace write through host.replaceRegexes', async () => {

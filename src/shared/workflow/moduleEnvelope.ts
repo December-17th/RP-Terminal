@@ -72,7 +72,12 @@ const ModuleSchema = z.object({
   creator: z.string().optional(),
   nodes: z.array(NodeInstanceSchema),
   edges: z.array(EdgeSchema),
-  exposed: z.array(ExposedGroupSettingSchema).optional()
+  exposed: z.array(ExposedGroupSettingSchema).optional(),
+  // Agent & memory UX (WP-A; spec §1): the group's author setup guidance (GroupDecl.note) travels WITH
+  // the module so an imported agent keeps its "needs a table template + a preset" note. Additive +
+  // optional — pre-WP-A modules simply omit it. (GroupDecl.origin is NOT carried: import provenance is
+  // stamped by the importer, not read from the file.)
+  note: z.string().optional()
 })
 
 const ModuleEnvelopeSchema = z.object({
@@ -95,6 +100,9 @@ export interface ModulePayload {
   edges: Edge[]
   /** Settings promoted onto the module's panel; each `node` must be a member. */
   exposed?: ExposedGroupSetting[]
+  /** Agent & memory UX (WP-A): the group's author setup guidance (GroupDecl.note), carried so an
+   *  imported agent keeps it. Optional; absent = no note. */
+  note?: string
 }
 
 /** The `.rptmodule` v1 document. */
@@ -110,7 +118,7 @@ export interface ModuleEnvelope {
 // Canonical key orders so serialize output is byte-stable + diffable regardless of input key order
 // (the packEnvelope "diffable" decision).
 const TOP_LEVEL_ORDER = ['formatVersion', 'kind', 'module', 'bundledTemplates'] as const
-const MODULE_ORDER = ['name', 'description', 'creator', 'nodes', 'edges', 'exposed'] as const
+const MODULE_ORDER = ['name', 'description', 'creator', 'note', 'nodes', 'edges', 'exposed'] as const
 
 /** Build the ordered module object from a payload, dropping undefined/empty optionals so the
  *  serialized form is minimal + stable. */
@@ -119,6 +127,7 @@ function orderedModule(module: ModulePayload): Record<string, unknown> {
     name: module.name,
     description: module.description,
     creator: module.creator,
+    note: module.note,
     nodes: module.nodes,
     edges: module.edges,
     exposed: module.exposed && module.exposed.length > 0 ? module.exposed : undefined
@@ -172,7 +181,7 @@ export type ModuleEnvelopeParseResult =
   | { ok: false; error: ModuleEnvelopeParseError }
 
 const KNOWN_TOP_KEYS = new Set(['formatVersion', 'kind', 'module', 'bundledTemplates'])
-const KNOWN_MODULE_KEYS = new Set(['name', 'description', 'creator', 'nodes', 'edges', 'exposed'])
+const KNOWN_MODULE_KEYS = new Set(['name', 'description', 'creator', 'note', 'nodes', 'edges', 'exposed'])
 
 /** Report unknown top-level + module-level keys on the RAW object as warnings (forward-compat hint —
  *  "made with a newer version of RPT?"). v1 strips unknown keys; this surfaces them without rejecting.

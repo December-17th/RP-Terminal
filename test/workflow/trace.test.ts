@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { summarizeRun, OUTPUT_PREVIEW_MAX } from '../../src/shared/workflow/trace'
+import { summarizeRun, OUTPUT_PREVIEW_MAX, DEBUG_PREVIEW_MAX } from '../../src/shared/workflow/trace'
 import { WorkflowDoc, NodeDescriptor } from '../../src/shared/workflow/types'
 
 // Pure trace summary (spec §13): engine RunResult → serializable per-node trace with
@@ -149,6 +149,59 @@ describe('summarizeRun', () => {
       meta
     )
     expect(trace.nodes[0].outputs).toEqual({ text: '(unserializable)' })
+  })
+
+  it('folds NodeResult.debug into a ran node\'s previews, alongside port outputs', () => {
+    const trace = summarizeRun(
+      doc,
+      descriptors,
+      {
+        ok: true,
+        aborted: false,
+        traces: [{ nodeId: 'llm', status: 'ran', phase: 'pre', ms: 1 }],
+        outputs: new Map([['llm', { raw: 'reply' }]]),
+        debug: new Map([['llm', { 'prompt (sent)': '[system]\nyou are…' }]])
+      },
+      meta
+    )
+    // Both the port output AND the debug entry appear as labeled previews in the Runs tab.
+    expect(trace.nodes[0].outputs).toEqual({ raw: 'reply', 'prompt (sent)': '[system]\nyou are…' })
+  })
+
+  it('caps debug previews at DEBUG_PREVIEW_MAX (roomier than port previews)', () => {
+    const long = 'y'.repeat(DEBUG_PREVIEW_MAX + 100)
+    const trace = summarizeRun(
+      doc,
+      descriptors,
+      {
+        ok: true,
+        aborted: false,
+        traces: [{ nodeId: 'llm', status: 'ran', phase: 'pre', ms: 1 }],
+        outputs: new Map(),
+        debug: new Map([['llm', { 'prompt (sent)': long }]])
+      },
+      meta
+    )
+    const p = trace.nodes[0].outputs!['prompt (sent)']
+    expect(DEBUG_PREVIEW_MAX).toBeGreaterThan(OUTPUT_PREVIEW_MAX)
+    expect(p.length).toBe(DEBUG_PREVIEW_MAX + 1) // + the ellipsis
+    expect(p.endsWith('…')).toBe(true)
+  })
+
+  it('ignores debug for a node that did not run (no previews on skipped/failed)', () => {
+    const trace = summarizeRun(
+      doc,
+      descriptors,
+      {
+        ok: true,
+        aborted: false,
+        traces: [{ nodeId: 'side', status: 'skipped', phase: 'post' }],
+        outputs: new Map(),
+        debug: new Map([['side', { 'prompt (sent)': 'never sent' }]])
+      },
+      meta
+    )
+    expect(trace.nodes[0].outputs).toBeUndefined()
   })
 
   it('labels nodes missing from the doc as unknown (defensive)', () => {

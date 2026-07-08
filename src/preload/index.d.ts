@@ -501,6 +501,8 @@ declare global {
               nodes: import('../shared/workflow/types').NodeInstance[]
               edges: import('../shared/workflow/types').Edge[]
               exposed?: import('../shared/workflow/types').ExposedGroupSetting[]
+              // Agent & memory UX (WP-A): the group's author setup guidance, carried by the envelope.
+              note?: string
             }
             installedTemplates: { name: string; id: string }[]
           }
@@ -508,6 +510,50 @@ declare global {
         | { ok: false; code: 'blocked'; blockers: { code: 'unknown-node-types'; nodeTypes: string[] }[] }
       >
       cancelModuleImport: (token: string) => Promise<void>
+      // Agent library (agent-memory-ux WP-G; spec §2): the palette's Agent-library section — built-in
+      // module templates + the per-profile user library. get returns the SAME ModulePayload shape
+      // confirmModuleImport does (the renderer feeds it to insertModule); save re-validates main-side.
+      listModuleTemplates: (profileId: string) => Promise<
+        {
+          id: string
+          name: string
+          description?: string
+          nodeCount: number
+          source: 'builtin' | 'user'
+        }[]
+      >
+      getModuleTemplate: (
+        profileId: string,
+        id: string
+      ) => Promise<null | {
+        name: string
+        description?: string
+        creator?: string
+        nodes: import('../shared/workflow/types').NodeInstance[]
+        edges: import('../shared/workflow/types').Edge[]
+        exposed?: import('../shared/workflow/types').ExposedGroupSetting[]
+        note?: string
+      }>
+      saveModuleToLibrary: (
+        profileId: string,
+        module: unknown
+      ) => Promise<{ ok: true; id: string } | { ok: false; error: string }>
+      // Agent & memory UX (WP-H; spec §7): per-world lorebook entry picks for agent.llm's custom lore
+      // mode. Keyed (worldId = chat.character_id, docId, nodeId); identity = (book id, entry comment)
+      // — our entries carry no uid (plan §0.4 comment fallback). Empty set on write = clear.
+      getLorePicks: (
+        profileId: string,
+        worldId: string,
+        docId: string,
+        nodeId: string
+      ) => Promise<{ book: string; comment: string }[]>
+      setLorePicks: (
+        profileId: string,
+        worldId: string,
+        docId: string,
+        nodeId: string,
+        picks: { book: string; comment: string }[]
+      ) => Promise<void>
       // Recipe SHARING: `.rptrecipe` export / import (agent-packs plan WP5.2; ADR 0008) — "share this
       // world's setup". Shapes inlined (not imported from main) per the established preload convention.
       // Export assembles from the CURRENT world; `opts` = the wizard's name/description/creator/id.
@@ -652,6 +698,7 @@ declare global {
         profileId: string
       ) => Promise<Array<{ id: string; name: string; tableCount: number }>>
       getTableTemplate: (profileId: string, id: string) => Promise<unknown>
+      updateTableTemplate: (profileId: string, id: string, patch: unknown) => Promise<unknown>
       deleteTableTemplate: (profileId: string, id: string) => Promise<void>
       importTableTemplateDialog: (profileId: string) => Promise<{
         summary?: { id: string; name: string; tableCount: number }
@@ -659,6 +706,11 @@ declare global {
       } | null>
       getChatTableTemplate: (profileId: string, chatId: string) => Promise<string | null>
       setChatTableTemplate: (profileId: string, chatId: string, id: string | null) => Promise<void>
+      previewMemoryMaintain: (
+        profileId: string,
+        chatId: string,
+        config: unknown
+      ) => Promise<{ messages?: { role: string; content: string }[]; error?: string }>
       readChatTables: (
         profileId: string,
         chatId: string

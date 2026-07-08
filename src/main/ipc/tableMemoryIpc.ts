@@ -11,6 +11,9 @@ import {
   getBackfillState,
   BackfillOpts
 } from '../services/tableBackfillService'
+import { buildGenContext } from '../services/generation/genContext'
+import { chatTemplate } from '../services/nodes/builtin/memoryCore'
+import { composeMaintainerMessages, memoryMaintainConfig } from '../services/nodes/builtin/memoryNodes'
 
 /**
  * IPC for SQL-table memory (issue 02): file-based table templates, per-chat assignment (which
@@ -53,6 +56,24 @@ export const registerTableMemoryIpc = (ipcMain: IpcMain): void => {
   ipcMain.handle('chat-table-template-set', (_, profileId, chatId, id) =>
     chatService.setChatTableTemplateId(profileId, chatId, id)
   )
+
+  // The memory.maintain node panel preview: compose the EXACT maintainer prompt a run would send for
+  // this chat (composeMaintainerMessages — shared with the node's run(), so no drift), given the node's
+  // current config. `{ error: 'no-template' }` when the chat has no table memory bound; any thrown
+  // failure comes back as `{ error }` (the renderer localizes it) rather than crossing IPC as a throw.
+  ipcMain.handle('memory-maintain-preview', (_, profileId, chatId, config) => {
+    try {
+      const parsed = memoryMaintainConfig.safeParse(config ?? {})
+      if (!parsed.success) return { error: 'bad-config' }
+      const gen = buildGenContext(profileId, chatId, '')
+      const template = chatTemplate(gen)
+      if (!template) return { error: 'no-template' }
+      const messages = composeMaintainerMessages(gen, template, parsed.data)
+      return { messages: messages.map((m) => ({ role: m.role, content: m.content })) }
+    } catch (err) {
+      return { error: err instanceof Error ? err.message : String(err) }
+    }
+  })
 
   // Read: every table of the chat's assigned template, with current rows + per-row rowids (issue 06).
   ipcMain.handle('chat-tables-read', (_, profileId, chatId) => {

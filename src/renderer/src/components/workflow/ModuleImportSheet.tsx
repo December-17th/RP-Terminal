@@ -34,14 +34,17 @@ export default function ModuleImportSheet({
   onCancel
 }: {
   report: ModuleInspectReport
-  /** Called with the token when the user confirms; the caller runs confirmModuleImport + insertModule. */
-  onInstall: (token: string) => void
+  /** Called with the token when the user confirms; the caller runs confirmModuleImport + insertModule.
+   *  WP-G: `saveToLibrary` = the sheet's "save to my library" checkbox (spec §2 — reuse without the file). */
+  onInstall: (token: string, saveToLibrary: boolean) => void
   /** Called when the user dismisses / cancels; the caller runs cancelModuleImport for the token. */
   onCancel: () => void
 }): React.JSX.Element {
   const t = useT()
   const blocked = report.blockers.length > 0
   const unknownTypes = report.blockers.flatMap((b) => b.nodeTypes)
+  // WP-G: opt-in save of the imported module into the user library (unchecked by default).
+  const [saveToLibrary, setSaveToLibrary] = React.useState(false)
 
   return (
     <div
@@ -136,6 +139,18 @@ export default function ModuleImportSheet({
               {t('workflowEditor.moduleImport.landsUnwired')}
             </div>
 
+            {/* WP-G (spec §2): also save the imported module into the palette's user library. */}
+            {!blocked && (
+              <label className="rpt-wfe-export-check">
+                <input
+                  type="checkbox"
+                  checked={saveToLibrary}
+                  onChange={(e) => setSaveToLibrary(e.target.checked)}
+                />
+                {t('workflowEditor.moduleImport.saveToLibrary')}
+              </label>
+            )}
+
             <div className="rpt-wfe-sheet-actions">
               <button type="button" onClick={onCancel} className="rpt-wfe-btn-xs">
                 {t('workflowEditor.moduleImport.cancel')}
@@ -143,7 +158,7 @@ export default function ModuleImportSheet({
               <button
                 type="button"
                 disabled={blocked || !report.token}
-                onClick={() => report.token && onInstall(report.token)}
+                onClick={() => report.token && onInstall(report.token, saveToLibrary)}
                 className="rpt-wfe-btn-xs"
               >
                 {t('workflowEditor.moduleImport.install')}

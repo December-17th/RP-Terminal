@@ -151,6 +151,13 @@ export const getVars = (
   return { local, global: loadGlobals(profileId) }
 }
 
+/** Whole-object read/write of the per-profile global vars (template-globals.json) — the
+ *  TavernHelper getVariables/replaceVariables({type:'global'}) counterpart, shared by both card
+ *  transports and the Variables panel's "全局变量" tab. Per-key ops still go through pluginVars. */
+export const getGlobalVars = (profileId: string): Record<string, any> => loadGlobals(profileId)
+export const setGlobalVars = (profileId: string, vars: Record<string, any>): void =>
+  saveGlobals(profileId, vars && typeof vars === 'object' ? vars : {})
+
 export interface PluginMessage {
   floor: number
   user: string

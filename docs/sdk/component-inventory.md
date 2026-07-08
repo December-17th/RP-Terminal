@@ -57,8 +57,11 @@ transports implement the same surface, so a card behaves identically in either
 
 - **Inline** (default) — `createThRuntime(createInlineHost(ctx))` at
   [createCardBridge.ts:9](../../src/renderer/src/cardBridge/createCardBridge.ts); Host backed by Zustand
-  reads + `window.api` ([cardBridge/host.ts](../../src/renderer/src/cardBridge/host.ts)).
-- **Isolated / WCV** — `createThRuntime(...)` at `wcvPreload.ts:280`; Host backed by `ipcRenderer.sendSync`
+  reads + `window.api` ([cardBridge/host.ts](../../src/renderer/src/cardBridge/host.ts)). The `type:'script'` /
+  `type:'chat'` getters (`getScriptVars`/`getChatVars`) seed lazily via a blocking `sendSync`
+  (`plugin-storage-all-sync` / `chat-card-vars-get-sync`) on first read, memoized per host — so a card reads
+  its saved KV synchronously at boot (an inline frame gets a fresh host per reload), matching WCV's sync getters.
+- **Isolated / WCV** — `createThRuntime(...)` at `wcvPreload.ts:285`; Host backed by `ipcRenderer.sendSync`
   (sync getters) + `invoke` (async) over the `wcv-host-*` IPC.
 
 **WCV-transport-only host method** (not on the `thRuntime` surface — a WCV is a native overlay with its
@@ -185,6 +188,20 @@ panel, but it's open for any card to store session-specific data.
 - Backed by `chatCardVarsService` (`profiles/<profileId>/chat-card-vars.json`), exposed via the `Host`
   (`getChatVars`/`setChatVars`) and both transports.
 
+##### `type:'global'` (per-profile, all chats & characters)
+
+A **per-profile** key/value bag shared across every chat and character. Survives app restarts. **Not
+in-prompt.** Use it for app-wide UI preferences a card wants to persist everywhere — e.g. the 艾莉亚
+beautification stores its UI settings here under `dialog_beauty.ui`.
+
+- Read: `getVariables({ type: 'global' })` → arbitrary JSON object (**sync**).
+- Write (full replace): `replaceVariables(obj, { type: 'global' })`.
+- Write (read-modify-write): `updateVariablesWith(prev => ({ ...prev, 'feat.key': v }), { type: 'global' })`.
+- **Shared bag — namespace your keys** so cards don't collide.
+- Backed by the per-profile globals (`profiles/<profileId>/template-globals.json`, `templateService`),
+  exposed via the `Host` (`getGlobalVarsSync`/`setGlobalVars`) and both transports. Editable in the
+  Variables panel's **全局变量 / Global variables** tab (session KV is the **会话变量 / Session variables** tab).
+
 ---
 
 ## 3. Layer B — Rendering environment (`cardEnv` + transports)
@@ -211,7 +228,7 @@ transports inject the same thing (clean-room mirror of JSR's `createSrcContent`/
 
 | Card shape                                                          | Renders as                                                                             | Why                                                       |
 | ------------------------------------------------------------------- | -------------------------------------------------------------------------------------- | --------------------------------------------------------- |
-| Bare top-level HTML (`<div>`/`<table>`/`<details>`…), no `<script>` | **Inline in the message DOM** (`InlineHtml`: DOMPurify-sanitized + per-card CSS scope) | Blends with prose; no frame.                              |
+| Bare top-level HTML (`<div>`/`<table>`/`<details>`… anywhere; phrasing tags `<span>`/`<ruby>` only when standing alone on their own line), no `<script>` | **Inline in the message DOM** (`InlineHtml`: DOMPurify-sanitized + per-card CSS scope) | Blends with prose; no frame. Mid-sentence spans / GFM lists stay markdown. |
 | Full document in an `html`-labeled code fence, a plain code fence beginning with `<!doctype html>`/`<html>`/`<body>`, or a bare `<body>`/`html` block; mode `inline` (default) | **Same-origin `srcdoc` iframe** (`InlineCardFrame`)                                    | Scrolls with chat, auto-sizes.                            |
 | Scripted card, mode `isolated`, or full-page / `window.top` apps    | **Out-of-process `WebContentsView`** (`WcvMessageFrame`/`wcvManager`)                  | Crash isolation; full-page cards get a real `window.top`. |
 | Passive full doc / non-scripted                                     | Sandboxed `HtmlFrame` (`sandbox="allow-same-origin"`, no scripts)                      | Static, safe.                                             |

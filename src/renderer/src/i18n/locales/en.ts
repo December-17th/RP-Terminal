@@ -535,7 +535,8 @@ const en: Record<string, string> = {
   'variables.heading': 'Variables',
   'variables.mvuState': 'MVU stat_data',
   'variables.floorVars': 'Floor variables (delta / cue / snapshot)',
-  'variables.sessionKv': 'Session KV (card variables)',
+  'variables.sessionVars': 'Session variables',
+  'variables.globalVars': 'Global variables',
   'variables.empty': 'empty',
   'variables.refresh': '↻ Refresh',
   'variables.editFailed': 'Edit failed to save',
@@ -615,6 +616,13 @@ const en: Record<string, string> = {
   'tables.progressNext': 'Next at floor {{n}}',
   'tables.progressUnprocessed': '{{n}} unprocessed',
   'tables.progressNever': 'Never processed',
+  // Agent & memory UX (WP-I): shared grid polish + the tabbed Memory sheet.
+  'tables.pointerLine': 'Processed {{processed}} floors · next at floor {{next}} · {{unprocessed}} unprocessed',
+  'tables.filterPh': 'Filter rows…',
+  'tables.noFilterMatches': 'No rows match the filter.',
+  'memory.tab.setup': 'Setup',
+  'memory.tab.data': 'Data',
+  'memory.tab.maintenance': 'Maintenance',
   'tables.backfill': 'Backfill',
   'tables.backfillScope': 'Scope',
   'tables.backfillLastFloors': 'Last floors',
@@ -646,8 +654,8 @@ const en: Record<string, string> = {
   'workflowEditor.memory': 'Memory…',
   'workflowEditor.memoryTip': 'Configure memory tables for this session',
   'workflowEditor.palette': 'Nodes',
-  // RF-04: palette search + category headers (one per built-in node-type prefix).
-  'workflowEditor.paletteSearch': 'Search nodes…',
+  // RF-04: palette category headers (one per built-in node-type prefix). The palette search box
+  // itself (workflowEditor.paletteSearch) is defined once in the WP-G Agent-library section below.
   'workflowEditor.cat.trigger': 'Triggers',
   'workflowEditor.cat.input': 'Input',
   'workflowEditor.cat.context': 'Context',
@@ -727,7 +735,6 @@ const en: Record<string, string> = {
   'workflowEditor.module.includeTemplate': 'Include this chat’s table schema',
   'workflowEditor.module.exportSaved': 'Module saved to {{path}}',
   'workflowEditor.module.exportFailed': 'Could not export the module.',
-  'workflowEditor.modules': 'Modules',
   'workflowEditor.importModule': 'Import module…',
   'workflowEditor.moduleImport.title': 'Import module',
   'workflowEditor.moduleImport.nodeCount': '{{n}} nodes',
@@ -752,6 +759,74 @@ const en: Record<string, string> = {
   'workflowEditor.moduleImport.err.external-edge': 'The module has a connection that leaves it.',
   'workflowEditor.moduleImport.err.exposed-not-member':
     'An exposed setting points at a node outside the module.',
+  // Agent & memory UX (2026-07-07 plan WP-D): agent cards, one-click grouping, prose status sentences.
+  'workflowEditor.collapseAllAgents': 'Collapse all agents',
+  'workflowEditor.expandAll': 'Expand all',
+  'workflowEditor.groupAgentChains': 'Group agent chains',
+  'workflowEditor.agent.collapseChain': 'Collapse chain into module',
+  'workflowEditor.agent.mixedTitle': 'Some triggers are off — toggling enables all',
+  'workflowEditor.agent.renameTitle': 'Double-click to rename',
+  'workflowEditor.agent.invalid': 'A node inside has an error',
+  // Status sentence patterns: {{desc}} = the (localized) trigger description, {{ago}} = a recency phrase.
+  'workflowEditor.agent.sentence.onRan': '{{desc}} · ran {{ago}}',
+  'workflowEditor.agent.sentence.onNever': '{{desc}} · not run yet',
+  'workflowEditor.agent.sentence.off': 'Off · {{desc}}',
+  'workflowEditor.agent.sentence.mixed': 'Partly on · {{desc}}',
+  // Owner manual-pass fix: mode-gated ≠ user-off — the switch is on but the selected mode dead-ends
+  // every trigger; {{desc}} shows what the agent WOULD do.
+  'workflowEditor.agent.sentence.modeGated': 'Gated by mode · {{desc}}',
+  'workflowEditor.trigger.modeGated': 'Mode-gated',
+  'workflowEditor.trigger.modeGatedTip':
+    'The selected mode dead-ends this trigger. Change the Mode setting to use it; the on/off switch stays an independent master toggle.',
+  'workflowEditor.agent.ago.justNow': 'just now',
+  'workflowEditor.agent.ago.minutes': '{{n}} min ago',
+  'workflowEditor.agent.ago.hours': '{{n}} h ago',
+  'workflowEditor.agent.ago.days': '{{n}} d ago',
+  // Agent & memory UX (WP-E): universal details panel (tabs + prompt editor).
+  'workflowEditor.details.tab.settings': 'Settings',
+  'workflowEditor.details.tab.prompt': 'Prompt',
+  'workflowEditor.details.tab.runs': 'Runs',
+  'workflowEditor.details.tab.docs': 'Docs',
+  'workflowEditor.details.noRuns': 'No runs yet in this chat.',
+  'workflowEditor.details.noPrompt': 'No prompt-bearing node in this agent.',
+  'workflowEditor.details.noTrigger': 'No trigger.',
+  'workflowEditor.details.showOnCanvas': 'Show on canvas',
+  'workflowEditor.prompt.role': 'Role',
+  'workflowEditor.prompt.role.system': 'system',
+  'workflowEditor.prompt.role.user': 'user',
+  'workflowEditor.prompt.role.assistant': 'assistant',
+  'workflowEditor.prompt.addRow': 'Add message',
+  'workflowEditor.prompt.reorder': 'Drag to reorder',
+  'workflowEditor.prompt.insert': 'Insert:',
+  // Agent & memory UX (WP-F): the Agents ▾ master dropdown.
+  'workflowEditor.agents.button': 'Agents ({{n}})',
+  'workflowEditor.agents.imported': 'imported',
+  'workflowEditor.agents.locate': 'Show on canvas',
+  // Agent & memory UX (WP-G): the palette's Agent library.
+  'workflowEditor.agentLibrary': 'Agent library',
+  'workflowEditor.paletteSearch': 'Search…',
+  'workflowEditor.library.user': 'my library',
+  'workflowEditor.library.saved': 'Saved to your library.',
+  'workflowEditor.library.saveFailed': 'Could not save to the library.',
+  'workflowEditor.library.insertFailed': 'Could not insert the template.',
+  'workflowEditor.moduleImport.saveToLibrary': 'Also save to my library',
+  // Agent & memory UX (WP-H): the agent.llm lorebook row + entry picker.
+  'workflowEditor.lore.rowLabel': 'Lorebook',
+  'workflowEditor.lore.mode.main': 'Standard matching (active lorebooks)',
+  'workflowEditor.lore.mode.custom': 'Custom picks (this world)',
+  'workflowEditor.lore.wiredOnCanvas': 'Wired on canvas — the lore input overrides this setting.',
+  'workflowEditor.lore.choose': 'Choose entries…',
+  'workflowEditor.lore.noPicksHint':
+    'No picks for this world yet — standard matching applies until you choose entries.',
+  'workflowEditor.lore.needsChat': 'Open a chat to pick entries (picks are saved per world).',
+  'workflowEditor.lore.pickerTitle': 'Pick lorebook entries',
+  'workflowEditor.lore.searchPh': 'Search titles…',
+  'workflowEditor.lore.selectedCount': '{{n}} selected',
+  'workflowEditor.lore.missingCount': '{{n}} missing',
+  'workflowEditor.lore.loading': 'Loading…',
+  'workflowEditor.lore.noBooks': 'No lorebooks in this profile.',
+  'workflowEditor.lore.clear': 'Clear',
+  'workflowEditor.lore.done': 'Done',
   // One-canvas rebuild WP6.4a: node enable toggle, live trigger badge, assemble-node prompt preview.
   'workflowEditor.enabled': 'Enabled',
   // RF-01: manual-trigger "run now" button + its disabled-reason tooltips.
@@ -764,6 +839,25 @@ const en: Record<string, string> = {
   'workflowEditor.assemblePreview.button': 'Preview next prompt',
   'workflowEditor.assemblePreview.loading': 'Building preview…',
   'workflowEditor.assemblePreview.error': 'Could not build the preview.',
+  'workflowEditor.memoryMaintain.loading': 'Loading memory tables…',
+  'workflowEditor.memoryMaintain.noChat': 'Open a chat to edit its memory tables.',
+  'workflowEditor.memoryMaintain.noTemplate':
+    'This chat has no table template. Bind one in the Tables view to edit its memory rules.',
+  'workflowEditor.memoryMaintain.noTables': 'This template has no tables yet.',
+  'workflowEditor.memoryMaintain.editingTemplate': 'Editing template',
+  'workflowEditor.memoryMaintain.sharedCaveat':
+    'These rules live in the template — changes apply to every chat using it.',
+  'workflowEditor.memoryMaintain.tablesTitle': 'Table rules',
+  'workflowEditor.memoryMaintain.op.note': 'Definition',
+  'workflowEditor.memoryMaintain.op.initNode': 'On first rows',
+  'workflowEditor.memoryMaintain.op.insertNode': 'Insert',
+  'workflowEditor.memoryMaintain.op.updateNode': 'Update',
+  'workflowEditor.memoryMaintain.op.deleteNode': 'Delete',
+  'workflowEditor.memoryMaintain.opPlaceholder': 'No rule set.',
+  'workflowEditor.memoryMaintain.previewTitle': 'Sent prompt',
+  'workflowEditor.memoryMaintain.previewButton': 'Preview sent prompt',
+  'workflowEditor.memoryMaintain.previewLoading': 'Composing…',
+  'workflowEditor.memoryMaintain.previewError': 'Could not compose the prompt.',
   'workflowEditor.err.GROUP_MEMBER_MISSING': 'A module references a node that is not in the graph',
   'workflowEditor.err.GROUP_OVERLAP': 'A node belongs to more than one module',
   'workflowEditor.err.GROUP_EXPOSED_NOT_MEMBER': 'An exposed setting points at a non-member node',
@@ -786,6 +880,7 @@ const en: Record<string, string> = {
   'workflowEditor.nodeTitle.control.if': 'If',
   'workflowEditor.nodeTitle.control.switch': 'Switch',
   'workflowEditor.nodeTitle.control.when': 'When',
+  'workflowEditor.nodeTitle.control.mode': 'Mode',
   'workflowEditor.nodeTitle.text.template': 'Text Template',
   'workflowEditor.nodeTitle.prompt.messages': 'Message List',
   'workflowEditor.nodeTitle.merge.messages': 'Merge Messages',
@@ -847,6 +942,8 @@ const en: Record<string, string> = {
     'Compares the input value against up to four configured case values (deep equality) and fires the first matching case Signal, or default when none match.',
   'workflowEditor.nodeDesc.control.when':
     'A single gate: fires its Signal when the predicate holds. The special “changed” operator fires only when the watched value differs from the last time it fired (remembered per chat) — e.g. “once per in-game month”.',
+  'workflowEditor.nodeDesc.control.mode':
+    'A mode selector: each option maps to one when slot in order (the first option to when1, the second to when2, …). fired passes through only the selected option’s slot — the other slots are dead ends, so the modes are mutually exclusive. An option whose slot is left unwired (e.g. “off”) selects nothing-runs; with no when slot wired at all the node fires unconditionally (a standalone config-driven gate). Also emits the selected key as Text.',
   'workflowEditor.nodeDesc.text.template':
     'Renders a text template. Context macros ({{user}}, {{getvar::…}}) and EJS run first (when a Context is wired), then {{in1}}–{{in4}} are replaced with the wired upstream values.',
   'workflowEditor.nodeDesc.prompt.messages':
@@ -1001,11 +1098,6 @@ const en: Record<string, string> = {
   'workflowEditor.portDesc.subgraph.loop.out3': 'The last pass’s out3 value',
   'workflowEditor.portDesc.subgraph.loop.out4': 'The last pass’s out4 value',
 
-  'prefs.combatNarration': 'Combat narration',
-  'prefs.combatNarrationAppend': 'Append to the current message',
-  'prefs.combatNarrationFloor': 'Add as a new message',
-  'prefs.combatNarrationHint':
-    'Where the AI’s “Narrate the fight” account lands in the chat. A world card can override this.',
   'prefs.combatNarrationPrompt': 'Combat narration prompt',
   'prefs.combatNarrationPromptPh': 'e.g. Narrate in a terse, gritty tone; dwell on the wounds.',
   'prefs.combatNarrationPromptHint':

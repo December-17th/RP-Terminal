@@ -30,12 +30,28 @@ import { useToastStore } from '../../stores/toastStore'
 import { useOptionalT, useT } from '../../i18n'
 import {
   formatTraceSeconds,
+  type StoredRunRecord,
   type TraceNode,
   type WorkflowRunTrace
 } from '../../../../shared/workflow/trace'
 import type { EditorNode } from './editorModel'
 import type { GroupDecl } from '../../../../shared/workflow/types'
 import { collapsedView, groupBounds, MODULE_PORT } from './groupModel'
+import {
+  agentEnabledState,
+  agentStatusSentence,
+  agentTriggers,
+  describeTriggerNode,
+  excerptOf,
+  isAgentGroup,
+  isTriggerType,
+  modeGatedTriggerIds,
+  newestRunForGroup,
+  promptExcerpt,
+  promptTextOfNode,
+  type AgentEnabledState,
+  type AgentSentence
+} from './agentModel'
 
 /** Matches the palette drag payload's mime type (drag source lives in a later task's palette
  *  component; this is the contract both sides must agree on). */
@@ -64,6 +80,10 @@ interface RptNodeData extends Record<string, unknown> {
    *  dirty, and the node's own disabled flag; `disabledReason` is a raw CODE (translated in RptNode,
    *  where `t` is available). Only populated for `trigger.manual` nodes. */
   manualRun?: { enabled: boolean; disabledReason: 'saveFirst' | 'inactiveDoc' | null; run: () => Promise<void> }
+  /** Owner manual-pass fix: this trigger's every out-edge dead-ends in a non-selected control.mode
+   *  slot (modeGatedTriggerIds) — rendered dimmed + a "gated by mode" chip, visually DISTINCT from
+   *  disabled (user-toggled-off). Display only; the switch stays an independent master toggle. */
+  modeGated?: boolean
 }
 
 /** Maps a PortType to the CSS class workflowEditor.css keys its color off. Falls back to `Any`'s
@@ -89,25 +109,31 @@ function RptNode({ data, selected }: NodeProps<RFNode<RptNodeData>>): React.JSX.
   const t = useT()
   const tOpt = useOptionalT()
   const setNodeDisabled = useWorkflowEditorStore((s) => s.setNodeDisabled)
-  const { editorNode, typeInfo, trace, triggerBadge, manualRun } = data
+  const { editorNode, typeInfo, trace, triggerBadge, manualRun, modeGated } = data
   // RF-01: disable the ▶ button while its headless run is in flight (no spinner — just guard).
   const [running, setRunning] = React.useState(false)
   const inputs = typeInfo?.inputs ?? []
   const outputs = typeInfo?.outputs ?? []
   const disabled = editorNode.disabled === true
-  // Renderer-side check for a trigger node. `isTrigger` lives main-side (nodeImpl.isTrigger); this
-  // string-prefix check is the pragmatic renderer mirror — trigger node types are all `trigger.*`.
-  const isTrigger = editorNode.type.startsWith('trigger.')
+  // Trigger detection keys off the catalog's `isTrigger` flag (surfaced through list-node-types in
+  // WP-A), so any node type that opts in — not just `trigger.*` — gets the on/off switch. The name
+  // prefix is kept ONLY as a fallback for a stale/absent catalog entry.
+  const isTrigger = typeInfo?.isTrigger ?? editorNode.type.startsWith('trigger.')
   // Localized node title with the catalog's English title as the fallback.
   const title =
     tOpt(`workflowEditor.nodeTitle.${editorNode.type}`) || typeInfo?.title || editorNode.type
   const traceTitle = trace
     ? `${t(`workflow.trace.status.${trace.status}`)}${trace.ms !== undefined ? ` · ${formatTraceSeconds(trace.ms)}` : ''}${trace.error ? ` — ${trace.error.message}` : ''}`
     : undefined
+  // WP-D (spec §4): on-card prompt excerpt for an ungrouped prompt-bearing node (agent.llm etc.) —
+  // the first system row's text, 2 lines. Derived via the WP-A `promptFields` hint.
+  const promptText = typeInfo
+    ? promptTextOfNode(editorNode, new Map([[editorNode.type, typeInfo]]))
+    : null
 
   return (
     <div
-      className={`rpt-node${selected ? ' selected' : ''}${editorNode.isMainOutput ? ' is-main-output' : ''}${trace ? ` rpt-node-trace-${trace.status}` : ''}${disabled ? ' rpt-node-disabled' : ''}`}
+      className={`rpt-node${selected ? ' selected' : ''}${editorNode.isMainOutput ? ' is-main-output' : ''}${trace ? ` rpt-node-trace-${trace.status}` : ''}${disabled ? ' rpt-node-disabled' : ''}${modeGated && !disabled ? ' rpt-node-mode-gated' : ''}`}
     >
       <div className="rpt-node-title-row">
         {editorNode.isMainOutput && (
@@ -117,6 +143,14 @@ function RptNode({ data, selected }: NodeProps<RFNode<RptNodeData>>): React.JSX.
         )}
         <span className="rpt-node-title">{title}</span>
         <span className="rpt-node-type-id">{editorNode.type}</span>
+        {/* Owner manual-pass fix: this trigger's chain is dead-ended by the current control.mode
+            selection — dim + chip (distinct from disabled: solid border, warning-tinted chip, and the
+            switch stays interactive: it is an independent master toggle, not what the mode writes). */}
+        {modeGated && !disabled && (
+          <span className="rpt-node-modegated-chip" title={t('workflowEditor.trigger.modeGatedTip')}>
+            {t('workflowEditor.trigger.modeGated')}
+          </span>
+        )}
         {/* Trigger on/off switch (WP6.4a): a disabled trigger never fires (the agent's off-switch).
             stopPropagation so toggling doesn't also select the node. */}
         {isTrigger && (
@@ -218,27 +252,93 @@ function RptNode({ data, selected }: NodeProps<RFNode<RptNodeData>>): React.JSX.
           ))}
         </div>
       </div>
+      {/* WP-D: prompt excerpt (2 lines) on an ungrouped prompt-bearing node. */}
+      {promptText && (
+        <div className="rpt-node-excerpt rpt-agent-excerpt-2">{excerptOf(promptText, 160)}</div>
+      )}
     </div>
   )
 }
 
-/** Collapsed-module node data (one-canvas rebuild WP6.3). */
+/** Everything the AGENT card/frame renders for one trigger-rooted group (agent-memory-ux WP-D;
+ *  spec §1/§4). Derived in FlowCanvasInner (one memo over doc + badges + runs + errors) and passed
+ *  through node data; absent for non-agent groups, which keep the plain module card. */
+interface AgentCardData extends Record<string, unknown> {
+  state: AgentEnabledState
+  sentence: AgentSentence
+  /** Owner manual-pass fix: the switch is on but EVERY trigger is dead-ended by the current
+   *  control.mode selection — the card dims like off (the sentence says "Gated by mode · …"). */
+  allModeGated: boolean
+  /** trace.startedAt + outcome of the newest attributed run (fail-soft: old records don't attribute). */
+  lastRunAt: number | null
+  lastRunOk: boolean | null
+  /** One-line prompt excerpt from the first prompt-bearing member (via WP-A promptFields). */
+  excerpt: string | null
+  /** A member node has a validation error (doc errors filtered by membership). */
+  invalid: boolean
+}
+
+/** Render an AgentSentence (i18n key + params — agentModel emits keys, never concatenated text). */
+function AgentSentenceText({ sentence }: { sentence: AgentSentence }): React.JSX.Element {
+  const t = useT()
+  return (
+    <>
+      {t(sentence.key, {
+        desc: sentence.desc,
+        ago: sentence.ago ? t(sentence.ago.key, sentence.ago.params) : ''
+      })}
+    </>
+  )
+}
+
+/** The agent on/off switch shared by the collapsed card and the expanded frame header: proxies ALL
+ *  member triggers' disabled flags (mixed renders off + an indicator dot; toggling writes all). */
+function AgentSwitch({ groupId, state }: { groupId: string; state: AgentEnabledState }): React.JSX.Element {
+  const t = useT()
+  const setGroupTriggersDisabled = useWorkflowEditorStore((s) => s.setGroupTriggersDisabled)
+  const on = state === 'on'
+  return (
+    <button
+      type="button"
+      className={`rpt-node-trigger-switch${on ? ' on' : ''}${state === 'mixed' ? ' rpt-agent-switch-mixed' : ''}`}
+      role="switch"
+      aria-checked={on}
+      aria-label={t('workflowEditor.enabled')}
+      title={state === 'mixed' ? t('workflowEditor.agent.mixedTitle') : t('workflowEditor.enabled')}
+      onClick={(e) => {
+        e.stopPropagation()
+        // Mixed resolves to ON (enable everything); on→off, off→on.
+        setGroupTriggersDisabled(groupId, state === 'on')
+      }}
+    >
+      <span className="rpt-node-trigger-switch-knob" aria-hidden />
+      {state === 'mixed' && <span className="rpt-agent-mixed-dot" aria-hidden />}
+    </button>
+  )
+}
+
+/** Collapsed-module node data (one-canvas rebuild WP6.3; WP-D adds the optional agent payload). */
 interface RptModuleData extends Record<string, unknown> {
   group: GroupDecl
   memberCount: number
+  agent?: AgentCardData
 }
 
 function RptModuleNode({ data, selected }: NodeProps<RFNode<RptModuleData>>): React.JSX.Element {
   const t = useT()
   const toggleGroupCollapsed = useWorkflowEditorStore((s) => s.toggleGroupCollapsed)
-  const { group, memberCount } = data
+  const { group, memberCount, agent } = data
   const exposedCount = group.exposed?.length ?? 0
   return (
-    <div className={`rpt-module${selected ? ' selected' : ''}`}>
+    <div
+      className={`rpt-module${agent ? ' rpt-agent-card' : ''}${agent?.state === 'off' || agent?.allModeGated ? ' rpt-agent-off' : ''}${selected ? ' selected' : ''}`}
+    >
       {/* One generic target handle (left) + one source handle (right); both share the 'module' id. */}
       <Handle type="target" position={Position.Left} id={MODULE_PORT} className="rpt-port-any" />
       <div className="rpt-module-title-row">
         <span className="rpt-module-name">{group.name}</span>
+        {/* WP-D: the agent's on/off switch (proxy over ALL member triggers). */}
+        {agent && <AgentSwitch groupId={group.id} state={agent.state} />}
         <button
           type="button"
           className="rpt-module-expand"
@@ -251,39 +351,97 @@ function RptModuleNode({ data, selected }: NodeProps<RFNode<RptModuleData>>): Re
           {t('workflowEditor.module.expand')}
         </button>
       </div>
+      {/* WP-D: the status sentence — the agent reports in prose (spec design principle). */}
+      {agent && (
+        <div className="rpt-agent-sentence">
+          {agent.lastRunAt != null && (
+            <span
+              className={`rpt-agent-run-dot${agent.lastRunOk === false ? ' failed' : ''}`}
+              aria-hidden
+            />
+          )}
+          <AgentSentenceText sentence={agent.sentence} />
+        </div>
+      )}
       <div className="rpt-module-meta">
         <span>{t('workflowEditor.module.members', { n: memberCount })}</span>
         {exposedCount > 0 && <span>· {exposedCount}</span>}
+        {/* WP-D: validation dot — a member node is invalid. */}
+        {agent?.invalid && (
+          <span className="rpt-agent-invalid-dot" title={t('workflowEditor.agent.invalid')} />
+        )}
       </div>
+      {/* WP-D: one-line prompt excerpt (first system row of the first prompt-bearing member). */}
+      {agent?.excerpt && <div className="rpt-agent-excerpt rpt-agent-excerpt-1">{agent.excerpt}</div>}
       <Handle type="source" position={Position.Right} id={MODULE_PORT} className="rpt-port-any" />
     </div>
   )
 }
 
-/** Expanded group frame data (one-canvas rebuild WP6.3): a background rect + header. */
+/** Expanded group frame data (one-canvas rebuild WP6.3; WP-D adds the optional agent payload). */
 interface RptGroupFrameData extends Record<string, unknown> {
   group: GroupDecl
+  agent?: AgentCardData
 }
 
 function RptGroupFrameNode({ data }: NodeProps<RFNode<RptGroupFrameData>>): React.JSX.Element {
   const t = useT()
   const toggleGroupCollapsed = useWorkflowEditorStore((s) => s.toggleGroupCollapsed)
   const selectGroup = useWorkflowEditorStore((s) => s.selectGroup)
-  const { group } = data
+  const renameGroup = useWorkflowEditorStore((s) => s.renameGroup)
+  const readOnly = useWorkflowEditorStore((s) => s.readOnly)
+  const { group, agent } = data
+  // WP-D: inline rename on double-click (frame header). Local draft; commit on Enter/blur, cancel Esc.
+  const [editing, setEditing] = React.useState(false)
+  const [draft, setDraft] = React.useState(group.name)
+  const commit = (): void => {
+    setEditing(false)
+    const name = draft.trim()
+    if (name && name !== group.name) renameGroup(group.id, name)
+  }
   return (
     <div className="rpt-group-frame">
       {/* Only the header receives pointer events (the frame body is pass-through, so the member
           nodes on top of it stay interactive). */}
       <div className="rpt-group-frame-header">
-        <span
-          className="rpt-group-frame-name"
-          onClick={(e) => {
-            e.stopPropagation()
-            selectGroup(group.id)
-          }}
-        >
-          {group.name}
-        </span>
+        {editing ? (
+          <input
+            className="rpt-group-frame-rename"
+            value={draft}
+            autoFocus
+            onChange={(e) => setDraft(e.target.value)}
+            onBlur={commit}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') commit()
+              if (e.key === 'Escape') setEditing(false)
+            }}
+            onClick={(e) => e.stopPropagation()}
+          />
+        ) : (
+          <span
+            className="rpt-group-frame-name"
+            title={readOnly ? undefined : t('workflowEditor.agent.renameTitle')}
+            onClick={(e) => {
+              e.stopPropagation()
+              selectGroup(group.id)
+            }}
+            onDoubleClick={(e) => {
+              e.stopPropagation()
+              if (readOnly) return
+              setDraft(group.name)
+              setEditing(true)
+            }}
+          >
+            {group.name}
+          </span>
+        )}
+        {/* WP-D: same switch + sentence as the collapsed card, in the expanded header. */}
+        {agent && <AgentSwitch groupId={group.id} state={agent.state} />}
+        {agent && (
+          <span className="rpt-agent-sentence rpt-agent-sentence-frame">
+            <AgentSentenceText sentence={agent.sentence} />
+          </span>
+        )}
         <button
           type="button"
           className="rpt-group-frame-collapse"
@@ -352,6 +510,7 @@ function FlowCanvasInner({
   const moveGroup = useWorkflowEditorStore((s) => s.moveGroup)
   const snapshotForDrag = useWorkflowEditorStore((s) => s.snapshotForDrag)
   const endDrag = useWorkflowEditorStore((s) => s.endDrag)
+  const collapseChainIntoModule = useWorkflowEditorStore((s) => s.collapseChainIntoModule)
   // RF-03: ids (nodes AND modules) currently mid-drag. A rising edge (id enters the set) pushes
   // ONE undo checkpoint before the drag's first move; when the set drains, endDrag() closes the
   // step so the next drag is a separate undo entry.
@@ -360,7 +519,18 @@ function FlowCanvasInner({
   // drag becomes a delta routed to moveGroup (which shifts the hidden members). Keyed by group id.
   const moduleDragPos = React.useRef<Map<string, { x: number; y: number }>>(new Map())
 
-  const { screenToFlowPosition } = useReactFlow()
+  const { screenToFlowPosition, setCenter } = useReactFlow()
+
+  // WP-F (spec §5): the Agents ▾ locate button bumps `panRequest`; pan/zoom to the group's bounds.
+  const panRequest = useWorkflowEditorStore((s) => s.panRequest)
+  React.useEffect(() => {
+    if (!panRequest) return
+    const group = groups.find((g) => g.id === panRequest.groupId)
+    if (!group) return
+    const b = groupBounds(nodes, new Set(group.nodeIds))
+    void setCenter(b.x + b.w / 2, b.y + b.h / 2, { zoom: 1, duration: 400 })
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- fire on each locate (token bump), not on graph edits
+  }, [panRequest?.token])
 
   // RF-04: the canvas wrapper, so centerPosition() can map its bounding-rect center to flow coords
   // for the parent (which lives outside the ReactFlow context and can't call screenToFlowPosition).
@@ -451,6 +621,74 @@ function FlowCanvasInner({
     [profileId, activeChatId, currentId, onManualRun, pushToast, t]
   )
 
+  // Run history (WP-D run attribution): the active chat's recent runs, so an agent card can show its
+  // last-run recency (newestRunForGroup maps StoredRunRecord.triggerNodeIds through membership).
+  // Refetched on chat switch + after a save (triggerRefreshToken) — same cadence as the trigger badges.
+  const [runRecords, setRunRecords] = React.useState<StoredRunRecord[]>([])
+  React.useEffect(() => {
+    let cancelled = false
+    if (!activeChatId) {
+      setRunRecords([])
+      return
+    }
+    void (async () => {
+      const page = (await window.api.listAgentPackRuns(profileId, activeChatId)) as StoredRunRecord[]
+      if (!cancelled) setRunRecords(page ?? [])
+    })()
+    return () => {
+      cancelled = true
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- refetch on chat switch + save; profileId stable
+  }, [activeChatId, triggerRefreshToken])
+
+  const errors = useWorkflowEditorStore((s) => s.errors)
+
+  // Owner manual-pass fix: the triggers a control.mode selection currently dead-ends (doc-wide,
+  // display-only derivation — never writes trigger.disabled). Flipping the mode dropdown updates
+  // `nodes` (setNodeConfig on the mode node), so everything below re-derives immediately.
+  const modeGatedIds = useMemo(
+    () => modeGatedTriggerIds(nodes, edges, typeInfoMap),
+    [nodes, edges, typeInfoMap]
+  )
+
+  // WP-D (spec §1/§4): everything each AGENT group's card/frame renders, derived once over the doc +
+  // catalog + live badges + run history + validation. Non-agent groups get no entry (plain module card).
+  const agentByGroupId = useMemo(() => {
+    const now = Date.now()
+    const errorNodeIds = new Set(errors.map((e) => e.nodeId).filter((id): id is string => !!id))
+    const map = new Map<string, AgentCardData>()
+    for (const g of groups) {
+      if (!isAgentGroup(nodes, g, typeInfoMap)) continue
+      const state = agentEnabledState(nodes, g, typeInfoMap)
+      const triggers = agentTriggers(nodes, g, typeInfoMap)
+      const describe = (tn: (typeof triggers)[number]): string =>
+        describeTriggerNode(tn, triggerBadges.get(tn.id)?.description)
+      // The sentence composes from EFFECTIVE triggers (enabled AND not mode-gated); when the switch
+      // is on but the mode gates everything, the mode-gated variant renders ALL descriptions (what
+      // the agent WOULD do) — owner fix: mode=off must not read as "runs every N floors".
+      const effective = triggers.filter((tn) => tn.disabled !== true && !modeGatedIds.has(tn.id))
+      const allModeGated = state === 'on' && triggers.length > 0 && effective.length === 0
+      const descriptions = (allModeGated || state !== 'on' ? triggers : effective).map(describe)
+      const newest = newestRunForGroup(runRecords, new Set(g.nodeIds))
+      map.set(g.id, {
+        state,
+        sentence: agentStatusSentence({
+          descriptions,
+          state,
+          ...(allModeGated ? { allModeGated: true } : {}),
+          ...(newest ? { lastRunAt: newest.trace.startedAt } : {}),
+          now
+        }),
+        allModeGated,
+        lastRunAt: newest ? newest.trace.startedAt : null,
+        lastRunOk: newest ? newest.trace.ok : null,
+        excerpt: promptExcerpt(nodes, g, typeInfoMap),
+        invalid: g.nodeIds.some((id) => errorNodeIds.has(id))
+      })
+    }
+    return map
+  }, [groups, nodes, edges, typeInfoMap, triggerBadges, runRecords, errors, modeGatedIds])
+
   // On-canvas modules (WP6.3): project the doc's groups onto the canvas — collapsed groups hide
   // their members behind one module node, expanded groups render a background frame; boundary edges
   // re-point to synthetic module edges. Ungrouped/expanded members render as normal 'rpt' nodes.
@@ -482,7 +720,7 @@ function FlowCanvasInner({
         deletable: false,
         connectable: false,
         zIndex: -1,
-        data: { group: g }
+        data: { group: g, agent: agentByGroupId.get(g.id) }
       } as RFNode)
     }
     // Collapsed module nodes.
@@ -495,7 +733,7 @@ function FlowCanvasInner({
         draggable: !readOnly,
         deletable: !readOnly,
         connectable: false,
-        data: { group: m.group, memberCount: m.memberCount }
+        data: { group: m.group, memberCount: m.memberCount, agent: agentByGroupId.get(m.group.id) }
       } as RFNode)
     }
     // Visible normal nodes.
@@ -513,6 +751,8 @@ function FlowCanvasInner({
           typeInfo: typeInfoMap.get(n.type),
           trace: traceByNode.get(n.id),
           triggerBadge: triggerBadges.get(n.id),
+          // Owner manual-pass fix: dim + chip a trigger the current mode selection dead-ends.
+          modeGated: modeGatedIds.has(n.id),
           // RF-01: only manual triggers get a ▶. enabled folds in the active-doc gate, the dirty flag,
           // and the node's own disabled state; the reason CODE drives the tooltip (translated in RptNode).
           ...(n.type === 'trigger.manual'
@@ -544,7 +784,9 @@ function FlowCanvasInner({
     triggerBadges,
     docIsActive,
     dirty,
-    runManual
+    runManual,
+    agentByGroupId,
+    modeGatedIds
   ])
 
   const rfEdges: RFEdge[] = useMemo(() => {
@@ -668,6 +910,7 @@ function FlowCanvasInner({
 
   const handleNodeClick = useCallback(
     (_event: React.MouseEvent, node: RFNode) => {
+      setChainMenu(null)
       // A collapsed module → select the group (its panel). Frames handle their own header click.
       if (moduleIds.has(node.id)) {
         selectGroup(node.id)
@@ -679,8 +922,27 @@ function FlowCanvasInner({
     [select, selectGroup, moduleIds]
   )
 
+  // WP-D one-click grouping (spec §4): right-click a trigger node → "Collapse chain into module".
+  // Only offered on an ungrouped trigger node (the store's collapseChainIntoModule re-checks + no-ops
+  // otherwise). Positioned at the cursor; dismissed on any pane click / action.
+  const [chainMenu, setChainMenu] = React.useState<{ x: number; y: number; triggerId: string } | null>(
+    null
+  )
+  const handleNodeContextMenu = useCallback(
+    (event: React.MouseEvent, node: RFNode) => {
+      if (readOnly || node.type !== 'rpt') return
+      const editorNode = (node.data as RptNodeData).editorNode
+      if (!isTriggerType(editorNode.type, typeInfoMap)) return
+      if (groups.some((g) => g.nodeIds.includes(editorNode.id))) return
+      event.preventDefault()
+      setChainMenu({ x: event.clientX, y: event.clientY, triggerId: editorNode.id })
+    },
+    [readOnly, typeInfoMap, groups]
+  )
+
   const handlePaneClick = useCallback(() => {
     select(null)
+    setChainMenu(null)
   }, [select])
 
   const handleDragOver = useCallback(
@@ -721,6 +983,7 @@ function FlowCanvasInner({
         onEdgesChange={handleEdgesChange}
         onConnect={handleConnect}
         onNodeClick={handleNodeClick}
+        onNodeContextMenu={handleNodeContextMenu}
         onSelectionChange={handleSelectionChange}
         onPaneClick={handlePaneClick}
         nodesDraggable={!readOnly}
@@ -733,6 +996,24 @@ function FlowCanvasInner({
         <Controls showInteractive={false} />
         <MiniMap pannable zoomable className="rpt-wfe-minimap" />
       </ReactFlow>
+      {chainMenu && (
+        <div
+          className="rpt-canvas-context-menu"
+          style={{ left: chainMenu.x, top: chainMenu.y }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          <button
+            type="button"
+            className="rpt-canvas-context-item"
+            onClick={() => {
+              collapseChainIntoModule(chainMenu.triggerId)
+              setChainMenu(null)
+            }}
+          >
+            {t('workflowEditor.agent.collapseChain')}
+          </button>
+        </div>
+      )}
     </div>
   )
 }

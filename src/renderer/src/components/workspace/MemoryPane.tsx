@@ -70,6 +70,10 @@ export interface MemoryPaneProps {
   /** WP6.4b: when the pane is hosted in the editor's Memory sheet there is no Installed rail to jump
    *  to, so hide the memory-packs shortcut strip (section 3). Defaults to false (control-center host). */
   hidePacksStrip?: boolean
+  /** Agent & memory UX WP-I (spec §8): which slice of the pane to render. 'all' (default) = the
+   *  control-center layout, unchanged. The editor Memory sheet's tabs mount 'setup' (template binding
+   *  only) and 'maintenance' (progress + backfill only) — same logic/IPC, sectioned. */
+  section?: 'all' | 'setup' | 'maintenance'
 }
 
 export const MemoryPane: React.FC<MemoryPaneProps> = ({
@@ -77,7 +81,8 @@ export const MemoryPane: React.FC<MemoryPaneProps> = ({
   packs,
   gates,
   onOpenPackDetail,
-  hidePacksStrip = false
+  hidePacksStrip = false,
+  section = 'all'
 }) => {
   const t = useT()
   const activeChatId = useChatStore((s) => s.activeChatId)
@@ -216,12 +221,15 @@ export const MemoryPane: React.FC<MemoryPaneProps> = ({
 
   return (
     <div className="rpt-overview">
-      <header className="rpt-overview-header">
-        <h2 className="rpt-overview-heading">{t('memory.heading')}</h2>
-        <p className="rpt-overview-subtitle">{t('memory.subtitle')}</p>
-      </header>
+      {section === 'all' && (
+        <header className="rpt-overview-header">
+          <h2 className="rpt-overview-heading">{t('memory.heading')}</h2>
+          <p className="rpt-overview-subtitle">{t('memory.subtitle')}</p>
+        </header>
+      )}
 
       {/* (1) Template & binding — the single source for assigning/importing/exporting the template. */}
+      {section !== 'maintenance' && (
       <section className="rpt-overview-section" aria-labelledby="mem-template">
         <h3 id="mem-template" className="rpt-overview-sectiontitle">
           {t('memory.templateTitle')}
@@ -272,9 +280,10 @@ export const MemoryPane: React.FC<MemoryPaneProps> = ({
           <p className="rpt-overview-empty">{t('memory.noTemplateHint')}</p>
         )}
       </section>
+      )}
 
       {/* (2) Maintenance & progress + backfill — only meaningful with a template assigned. */}
-      {mode === 'configured' && activeChatId && (
+      {section !== 'setup' && mode === 'configured' && activeChatId && (
         <section className="rpt-overview-section" aria-labelledby="mem-maint">
           <h3 id="mem-maint" className="rpt-overview-sectiontitle">
             {t('memory.maintenanceTitle')}
@@ -320,10 +329,16 @@ export const MemoryPane: React.FC<MemoryPaneProps> = ({
         </section>
       )}
 
+      {/* WP-I: the maintenance tab with no template yet — say why it's empty instead of rendering
+          nothing (the Setup tab is where the binding happens). */}
+      {section === 'maintenance' && mode !== 'configured' && (
+        <p className="rpt-overview-empty">{t('memory.noTemplateHint')}</p>
+      )}
+
       {/* (3) Memory packs shortcut strip — the installed writes-tables packs + gate state (reuses the
           Agents gate map; jumps to the Installed detail). No new IPC. Hidden in the editor host
           (WP6.4b) where there is no Installed rail to jump to. */}
-      {!hidePacksStrip && (
+      {section === 'all' && !hidePacksStrip && (
       <section className="rpt-overview-section" aria-labelledby="mem-packs">
         <h3 id="mem-packs" className="rpt-overview-sectiontitle">
           {t('memory.packsTitle')}
@@ -355,7 +370,9 @@ export const MemoryPane: React.FC<MemoryPaneProps> = ({
       </section>
       )}
 
-      {/* (4) Browse the data — the link to the lean Tables workspace view. */}
+      {/* (4) Browse the data — the link to the lean Tables workspace view ('all' host only; the
+          editor sheet has its own Data TAB, WP-I). */}
+      {section === 'all' && (
       <section className="rpt-overview-section" aria-labelledby="mem-data">
         <h3 id="mem-data" className="rpt-overview-sectiontitle">
           {t('memory.dataTitle')}
@@ -370,6 +387,7 @@ export const MemoryPane: React.FC<MemoryPaneProps> = ({
           </button>
         </div>
       </section>
+      )}
     </div>
   )
 }

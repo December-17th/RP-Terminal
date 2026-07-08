@@ -72,10 +72,9 @@ export interface Settings {
   agent: {
     mode: 'off' | 'manual' | 'agentic'
   }
-  /** Combat (Track Combat): how the AI's end-of-combat narration lands in the chat, and an
-   *  optional author/user prompt that steers it. A card's `combat` bundle can override both. */
+  /** Combat (Track Combat): an optional author/user prompt that steers the AI's end-of-combat
+   *  narration (which always lands as a new floor). A card's `combat` bundle can override it. */
   combat?: {
-    narrationMode?: 'append' | 'floor'
     narrationPrompt?: string
     improvisePrompt?: string
   }

@@ -36,6 +36,31 @@ export interface NodeDescriptor {
    *  the engine) so the executor stays type-agnostic and any future trigger kind opts in by setting
    *  it. Trigger nodes fire only headlessly (headlessRunService's doc-driven path). */
   isTrigger?: boolean
+  /** Agent & memory UX (WP-A; spec §1): the config field name(s) that hold an authored PROMPT — a
+   *  role-message array (`agent.llm.messages`) or a template string (`text.template.template`). Surfaced
+   *  through `list-node-types` so the editor routes these fields to the dedicated Prompt editor instead
+   *  of the generic schema-form control, and derives the on-card prompt excerpt. Pure UI hint — the
+   *  engine ignores it. An imported agent inherits this from its built-in node types (no author work). */
+  promptFields?: string[]
+  /** Agent & memory UX (WP-A; plan §0.5): describes an enum config field whose options are NOT a
+   *  static zod enum but live in a sibling config array (the `control.mode.selected ⇐ options[].key`
+   *  case, stamped in WP-B). The generic exposed-enum renderer prefers a static JSON-Schema `enum`,
+   *  falling back to resolving this against the node's current config. Pure UI hint. */
+  dynamicEnum?: DynamicEnumHint
+}
+
+/** Agent & memory UX (WP-A; plan §0.5): points the exposed-enum renderer at an enum field whose
+ *  option set is data (a sibling config array) rather than a static schema enum. All four are config
+ *  paths / field names resolved against the node instance's current config. */
+export interface DynamicEnumHint {
+  /** The enum field's config path (e.g. `'selected'`). */
+  path: string
+  /** The config path of the options array (e.g. `'options'`). */
+  optionsPath: string
+  /** The option object's key field — the stored value (e.g. `'key'`). */
+  keyField: string
+  /** The option object's label field — the display text (e.g. `'label'`). */
+  labelField: string
 }
 
 export interface NodeInstance {
@@ -89,6 +114,14 @@ export interface GroupDecl {
   /** Member settings promoted onto the collapsed module panel. Each entry's `node` must be a member
    *  (validate: GROUP_EXPOSED_NOT_MEMBER). */
   exposed?: ExposedGroupSetting[]
+  /** Agent & memory UX (WP-A; spec §1): OPTIONAL author-written setup guidance, rendered verbatim in a
+   *  warning tint on the agent panel (e.g. "needs a bound table template + an API preset"). Plain
+   *  string, never interpreted. Round-trips through the doc AND the `.rptmodule` envelope. */
+  note?: string
+  /** Agent & memory UX (WP-A; spec §5, plan risk 5): OPTIONAL provenance. `'import'` marks a group that
+   *  arrived via a `.rptmodule` import — the Agents ▾ dropdown shows an `imported` chip. Stamped by the
+   *  importer at insert time (WP-F), NOT carried in the module envelope. Absent = authored in place. */
+  origin?: 'import'
 }
 
 export interface WorkflowDoc {

@@ -391,6 +391,22 @@
   border-style: dashed;
 }
 
+/* ---------- Mode-gated trigger (owner manual-pass fix) ----------
+   Visually DISTINCT from disabled: milder dim, SOLID border (the trigger is still enabled — the
+   selected control.mode just dead-ends its chain), and a warning-tinted chip naming the cause. */
+.rpt-node.rpt-node-mode-gated {
+  opacity: 0.6;
+}
+.rpt-node-modegated-chip {
+  font-size: 9px;
+  padding: 0 5px;
+  border-radius: 7px;
+  border: 1px solid var(--rpt-warning);
+  color: var(--rpt-warning);
+  white-space: nowrap;
+  flex: 0 0 auto;
+}
+
 /* ---------- Trigger on/off switch (title-row, WP6.4a) ---------- */
 .rpt-node-trigger-switch {
   width: 26px;
@@ -833,8 +849,9 @@
   min-height: 0;
 }
 .rpt-wfe-config-col {
-  width: 280px;
-  flex: 0 0 280px;
+  /* Widened (was 280) for the WP-E details panel + prompt editor + memory.maintain panel. */
+  width: 420px;
+  flex: 0 0 420px;
   overflow-y: auto;
   border-left: 1px solid var(--rpt-border);
   padding: 8px;
@@ -1207,4 +1224,583 @@
 .rpt-wfe-overlay-view {
   flex: 1;
   min-width: 0;
+}
+
+/* ═══════════ memory.maintain node panel (2026-07-07 plan WP2): per-table rule editor + preview ═══════════ */
+
+.rpt-mm {
+  margin-top: 10px;
+  border-top: 1px solid var(--rpt-border);
+  padding-top: 8px;
+}
+.rpt-mm-note {
+  font-size: 11px;
+  color: var(--rpt-text-secondary);
+  line-height: 1.5;
+  margin: 8px 0;
+}
+.rpt-mm-banner {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 6px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  background: var(--rpt-bg-secondary);
+  border: 1px solid var(--rpt-border);
+}
+.rpt-mm-banner-label {
+  font-size: 10px;
+  color: var(--rpt-text-tertiary);
+}
+.rpt-mm-banner-name {
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--rpt-text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 100%;
+}
+.rpt-mm-banner-caveat {
+  flex-basis: 100%;
+  font-size: 10px;
+  color: var(--rpt-text-tertiary);
+  line-height: 1.4;
+}
+.rpt-mm-section-title {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--rpt-text-tertiary);
+  margin: 10px 0 5px;
+}
+.rpt-mm-table {
+  border: 1px solid var(--rpt-border);
+  border-radius: 6px;
+  margin-bottom: 5px;
+  overflow: hidden;
+}
+.rpt-mm-table-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 6px 8px;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  text-align: left;
+  color: var(--rpt-text-primary);
+}
+.rpt-mm-table-head:hover {
+  background: var(--rpt-bg-secondary);
+}
+.rpt-mm-caret {
+  color: var(--rpt-text-tertiary);
+  font-size: 10px;
+  width: 10px;
+}
+.rpt-mm-table-name {
+  flex: 1;
+  min-width: 0;
+  font-size: 11.5px;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.rpt-mm-table-sql {
+  font-size: 9.5px;
+  padding: 1px 5px;
+  border-radius: 8px;
+  background: var(--rpt-bg-tertiary);
+  color: var(--rpt-text-secondary);
+}
+.rpt-mm-table-body {
+  padding: 4px 8px 8px;
+  border-top: 1px solid var(--rpt-border);
+}
+.rpt-mm-field {
+  display: block;
+  margin-top: 7px;
+}
+.rpt-mm-field-label {
+  display: block;
+  font-size: 10px;
+  color: var(--rpt-text-secondary);
+  margin-bottom: 2px;
+}
+.rpt-mm-textarea {
+  width: 100%;
+  box-sizing: border-box;
+  resize: vertical;
+  font-size: 11px;
+  line-height: 1.5;
+  padding: 5px 6px;
+  border-radius: 4px;
+  border: 1px solid var(--rpt-border);
+  background: var(--rpt-bg-primary);
+  color: var(--rpt-text-primary);
+}
+.rpt-mm-textarea:focus {
+  outline: none;
+  border-color: var(--rpt-accent);
+}
+.rpt-mm-preview {
+  margin-top: 10px;
+}
+.rpt-mm-preview-btn {
+  font-size: 12px;
+}
+.rpt-mm-error {
+  color: var(--rpt-danger);
+  font-size: 10.5px;
+  margin-top: 4px;
+}
+.rpt-mm-preview-msg {
+  margin-top: 6px;
+}
+.rpt-mm-preview-role {
+  font-size: 9.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--rpt-text-tertiary);
+}
+
+/* ═══════════ Agent & memory UX (2026-07-07 plan WP-D): agent cards, frames, one-click grouping ═══════════ */
+
+/* An agent card = a collapsed trigger-rooted group. It leans on the agent accent + reports in prose. */
+.rpt-workflow-editor .rpt-module.rpt-agent-card {
+  min-width: 210px;
+  border-color: color-mix(in srgb, var(--rpt-agent) 60%, var(--rpt-border));
+}
+.rpt-workflow-editor .rpt-module.rpt-agent-off {
+  opacity: 0.55;
+}
+
+/* Status sentence — the agent's prose line (spec design principle "agents report in prose"). */
+.rpt-workflow-editor .rpt-agent-sentence {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 10px 0;
+  font-size: 10.5px;
+  line-height: 1.35;
+  color: var(--rpt-agent);
+}
+.rpt-workflow-editor .rpt-agent-off .rpt-agent-sentence {
+  color: var(--rpt-agent-dim);
+}
+/* In the expanded frame header the sentence rides inline, truncating. */
+.rpt-workflow-editor .rpt-agent-sentence-frame {
+  padding: 0;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Last-run dot on the card (ok = success tint, failed = danger). */
+.rpt-workflow-editor .rpt-agent-run-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex: 0 0 auto;
+  background: var(--rpt-success);
+}
+.rpt-workflow-editor .rpt-agent-run-dot.failed {
+  background: var(--rpt-danger);
+}
+
+/* Validation dot in the meta row — a member node is invalid. */
+.rpt-workflow-editor .rpt-agent-invalid-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--rpt-danger);
+  align-self: center;
+}
+
+/* On-card prompt excerpt (1 line on the agent card, 2 lines on an ungrouped prompt node).
+   RF nodes shrink-wrap to max-content, so the excerpt must contribute ZERO intrinsic width
+   (width: 0 + min-width stretch) or a long prompt widens the whole card. */
+.rpt-workflow-editor .rpt-agent-excerpt,
+.rpt-workflow-editor .rpt-node-excerpt {
+  margin: 5px 10px 8px;
+  padding: 4px 6px;
+  width: 0;
+  min-width: calc(100% - 20px);
+  box-sizing: border-box;
+  background: var(--rpt-bg-primary);
+  border-radius: 4px;
+  font-size: 10px;
+  line-height: 1.35;
+  color: var(--rpt-text-secondary);
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+}
+.rpt-workflow-editor .rpt-agent-excerpt-1 {
+  -webkit-line-clamp: 1;
+}
+.rpt-workflow-editor .rpt-agent-excerpt-2 {
+  -webkit-line-clamp: 2;
+}
+
+/* Mixed-state switch (some triggers on, some off): renders off + a warning dot. */
+.rpt-node-trigger-switch.rpt-agent-switch-mixed {
+  background: color-mix(in srgb, var(--rpt-warning) 40%, transparent);
+  border-color: var(--rpt-warning);
+}
+.rpt-workflow-editor .rpt-agent-mixed-dot {
+  position: absolute;
+  top: -2px;
+  right: -2px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--rpt-warning);
+}
+
+/* Inline group rename (double-click the frame header name). */
+.rpt-workflow-editor .rpt-group-frame-rename {
+  font-size: 12px;
+  font-weight: 600;
+  min-width: 0;
+  flex: 0 1 auto;
+  padding: 1px 4px;
+  border: 1px solid var(--rpt-accent);
+  border-radius: 4px;
+  background: var(--rpt-bg-secondary);
+  color: var(--rpt-text-primary);
+}
+
+/* Right-click "Collapse chain into module" menu on a trigger node. */
+.rpt-canvas-context-menu {
+  position: fixed;
+  z-index: 40;
+  min-width: 180px;
+  padding: 4px;
+  background: var(--rpt-bg-elevated);
+  border: 1px solid var(--rpt-border);
+  border-radius: 8px;
+  box-shadow: 0 8px 24px color-mix(in srgb, var(--rpt-bg-primary) 60%, transparent);
+}
+.rpt-canvas-context-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 6px 10px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--rpt-text-primary);
+  font-size: 12px;
+  cursor: pointer;
+}
+.rpt-canvas-context-item:hover {
+  background: var(--rpt-bg-tertiary);
+}
+
+/* ═══════════ Agent & memory UX (WP-E): universal details panel + prompt editor ═══════════ */
+
+.rpt-details-head {
+  margin-bottom: 8px;
+}
+.rpt-details-tabs {
+  display: flex;
+  gap: 4px;
+  border-bottom: 1px solid var(--rpt-border);
+  margin-bottom: 10px;
+}
+.rpt-details-tab {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 9px;
+  border: none;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  color: var(--rpt-text-secondary);
+  font-size: 11.5px;
+  cursor: pointer;
+}
+.rpt-details-tab:hover {
+  color: var(--rpt-text-primary);
+}
+.rpt-details-tab.active {
+  color: var(--rpt-agent);
+  border-bottom-color: var(--rpt-agent);
+}
+.rpt-details-tab-label {
+  font-size: 11.5px;
+}
+
+/* Prompt editor (WP-E). */
+.rpt-prompt-field {
+  margin-bottom: 12px;
+}
+.rpt-prompt-field-label {
+  font-size: 10.5px;
+  color: var(--rpt-text-tertiary);
+  margin-bottom: 4px;
+}
+.rpt-prompt-row {
+  border: 1px solid var(--rpt-border);
+  border-radius: 6px;
+  padding: 6px;
+  margin-bottom: 6px;
+  background: var(--rpt-bg-secondary);
+}
+.rpt-prompt-row-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 4px;
+}
+.rpt-prompt-drag {
+  cursor: grab;
+  color: var(--rpt-text-tertiary);
+  user-select: none;
+}
+.rpt-prompt-role {
+  font-size: 11px;
+}
+.rpt-prompt-row-remove {
+  margin-left: auto;
+  font-size: 11px;
+  border: 1px solid var(--rpt-border);
+  border-radius: 6px;
+  background: var(--rpt-bg-elevated);
+  color: var(--rpt-text-primary);
+  cursor: pointer;
+}
+.rpt-prompt-textarea {
+  width: 100%;
+  box-sizing: border-box;
+  resize: vertical;
+  font-family: var(--rpt-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  font-size: 11.5px;
+  line-height: 1.4;
+  overflow: hidden;
+}
+.rpt-prompt-chips {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  margin-top: 5px;
+}
+.rpt-prompt-chips-label {
+  font-size: 10px;
+  color: var(--rpt-text-tertiary);
+}
+.rpt-prompt-chip {
+  font-size: 10px;
+  padding: 1px 6px;
+  border: 1px solid var(--rpt-border);
+  border-radius: 10px;
+  background: var(--rpt-bg-tertiary);
+  color: var(--rpt-text-secondary);
+  cursor: pointer;
+}
+.rpt-prompt-chip:hover {
+  color: var(--rpt-text-primary);
+  border-color: var(--rpt-agent);
+}
+.rpt-prompt-add {
+  font-size: 11.5px;
+  padding: 3px 10px;
+  border: 1px dashed var(--rpt-border);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--rpt-text-secondary);
+  cursor: pointer;
+}
+
+/* ═══════════ Agent & memory UX (WP-F): Agents ▾ master dropdown ═══════════ */
+.rpt-agents-dropdown-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 30;
+}
+.rpt-agents-dropdown {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  z-index: 31;
+  width: 320px;
+  max-height: 60vh;
+  overflow-y: auto;
+  padding: 6px;
+  background: var(--rpt-bg-elevated);
+  border: 1px solid var(--rpt-border);
+  border-radius: 8px;
+  box-shadow: 0 8px 30px color-mix(in srgb, var(--rpt-bg-primary) 55%, transparent);
+}
+.rpt-agents-row {
+  padding: 7px;
+  border-radius: 6px;
+  border: 1px solid var(--rpt-border);
+  background: var(--rpt-bg-secondary);
+  margin-bottom: 5px;
+}
+.rpt-agents-row-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.rpt-agents-row-name {
+  font-weight: 600;
+  font-size: 12px;
+  color: var(--rpt-text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+}
+.rpt-agents-row-chip {
+  font-size: 9.5px;
+  padding: 0 6px;
+  border-radius: 8px;
+  border: 1px solid var(--rpt-agent-region-border);
+  color: var(--rpt-agent-region-text);
+  background: var(--rpt-agent-region-header);
+}
+.rpt-agents-row-locate {
+  font-size: 13px;
+  line-height: 1;
+  padding: 2px 6px;
+  border: 1px solid var(--rpt-border);
+  border-radius: 6px;
+  background: var(--rpt-bg-elevated);
+  color: var(--rpt-text-primary);
+  cursor: pointer;
+}
+.rpt-agents-row-sentence {
+  margin-top: 5px;
+  font-size: 10.5px;
+  line-height: 1.4;
+  color: var(--rpt-agent);
+}
+.rpt-agents-row-sentence.off {
+  color: var(--rpt-agent-dim);
+}
+.rpt-agents-row-setting {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 6px;
+  font-size: 11px;
+}
+.rpt-agents-row-setting label {
+  color: var(--rpt-text-secondary);
+  flex: 0 0 auto;
+}
+.rpt-agents-row-setting select {
+  flex: 1;
+  font-size: 11px;
+}
+
+/* ═══════════ Agent & memory UX (WP-H): the lorebook entry picker ═══════════ */
+.rpt-lore-picker-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  background: var(--rpt-scrim, rgba(0, 0, 0, 0.45));
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.rpt-lore-picker {
+  width: 380px;
+  max-height: 72vh;
+  display: flex;
+  flex-direction: column;
+  background: var(--rpt-bg-elevated);
+  border: 1px solid var(--rpt-border);
+  border-radius: 10px;
+  padding: 12px;
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.35);
+}
+.rpt-lore-picker-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin-bottom: 8px;
+  font-size: 13px;
+  color: var(--rpt-text-primary);
+}
+.rpt-lore-picker-counts {
+  margin-left: auto;
+  font-size: 10.5px;
+  color: var(--rpt-text-secondary);
+}
+.rpt-lore-picker-missing {
+  color: var(--rpt-warning);
+}
+.rpt-lore-picker-search {
+  width: 100%;
+  box-sizing: border-box;
+  font-size: 11.5px;
+  margin-bottom: 8px;
+}
+.rpt-lore-picker-list {
+  flex: 1;
+  min-height: 120px;
+  overflow-y: auto;
+  border: 1px solid var(--rpt-border);
+  border-radius: 6px;
+  padding: 6px;
+}
+.rpt-lore-picker-empty {
+  font-size: 11px;
+  color: var(--rpt-text-secondary);
+  padding: 8px;
+}
+.rpt-lore-picker-book {
+  margin-bottom: 6px;
+}
+.rpt-lore-picker-book-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.rpt-lore-picker-book-name {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  text-align: left;
+  border: none;
+  background: transparent;
+  color: var(--rpt-text-primary);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 2px 0;
+}
+.rpt-lore-picker-book-count {
+  font-weight: 400;
+  font-size: 10px;
+  color: var(--rpt-text-tertiary);
+}
+.rpt-lore-picker-entry {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 0 2px 22px;
+  font-size: 11.5px;
+  color: var(--rpt-text-secondary);
+  cursor: pointer;
+}
+.rpt-lore-picker-entry:hover {
+  color: var(--rpt-text-primary);
+}
+.rpt-lore-picker-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 10px;
 }

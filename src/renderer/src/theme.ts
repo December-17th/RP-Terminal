@@ -52,7 +52,12 @@ const dark: ThemeTokens = {
   '--rpt-agent-region-border': 'rgba(91, 141, 239, 0.45)',
   '--rpt-agent-region-header': 'rgba(91, 141, 239, 0.16)',
   '--rpt-agent-region-text': '#c9d8f7',
-  '--rpt-agent-region-detached': 'rgba(230, 180, 85, 0.07)'
+  '--rpt-agent-region-detached': 'rgba(230, 180, 85, 0.07)',
+  // Agent & memory UX (2026-07-07 plan §0.6): the agent card's prose accent — `--rpt-agent` colors the
+  // status sentence + Agents ▾ rows (AA on the card's bg-secondary surface); `--rpt-agent-dim` is the
+  // muted variant for an OFF/mixed agent (still AA). Distinct from the older `--rpt-agent-*` pack family.
+  '--rpt-agent': '#9cc0ff',
+  '--rpt-agent-dim': '#9aa3b5'
 }
 
 const carbon: ThemeTokens = {
@@ -84,7 +89,10 @@ const carbon: ThemeTokens = {
   '--rpt-agent-region-border': 'rgba(45, 212, 191, 0.42)',
   '--rpt-agent-region-header': 'rgba(45, 212, 191, 0.16)',
   '--rpt-agent-region-text': '#bfeee5',
-  '--rpt-agent-region-detached': 'rgba(226, 169, 60, 0.08)'
+  '--rpt-agent-region-detached': 'rgba(226, 169, 60, 0.08)',
+  // Agent & memory UX (see the dark set above). Carbon leans teal to match its accent.
+  '--rpt-agent': '#6fe6d4',
+  '--rpt-agent-dim': '#949bab'
 }
 
 const light: ThemeTokens = {
@@ -118,7 +126,10 @@ const light: ThemeTokens = {
   '--rpt-agent-region-border': 'rgba(37, 99, 235, 0.38)',
   '--rpt-agent-region-header': 'rgba(37, 99, 235, 0.12)',
   '--rpt-agent-region-text': '#1c3d80',
-  '--rpt-agent-region-detached': 'rgba(184, 119, 10, 0.10)'
+  '--rpt-agent-region-detached': 'rgba(184, 119, 10, 0.10)',
+  // Agent & memory UX (see the dark set above). Light theme uses a dark-enough blue for AA on white.
+  '--rpt-agent': '#2456c8',
+  '--rpt-agent-dim': '#5b606b'
 }
 
 export const THEMES: Record<string, ThemeDef> = {

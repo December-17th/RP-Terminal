@@ -1,6 +1,10 @@
-// Pure palette model for the node-workflow editor (RF-04): filter + group the flat NodeTypeInfo[]
-// catalog into ordered categories for the palette UI. No React, no store — a plain function over the
-// catalog so it is unit-testable in isolation (test/workflow/paletteModel.test.ts).
+// Pure palette model for the node-workflow editor. Two independent, React-free helpers used by the
+// palette UI (WorkflowEditorView):
+//   - groupPalette (RF-04): filter + group the flat NodeTypeInfo[] catalog into ordered categories.
+//   - paletteMatch (agent & memory UX WP-G, spec §2): ONE search box filters BOTH palette sections
+//     (the Agent library and the node-type list) via a case-insensitive multi-term match.
+// No React, no store — plain functions over the catalog so they are unit-testable in isolation
+// (test/workflow/paletteModel.test.ts).
 import type { NodeTypeInfo } from '../../stores/workflowEditorStore'
 
 export interface PaletteGroup {
@@ -78,4 +82,17 @@ export function groupPalette(
       return ra !== rb ? ra - rb : a.localeCompare(b)
     })
     .map((prefix) => ({ prefix, items: byPrefix.get(prefix)! }))
+}
+
+/** Case-insensitive multi-term match: every whitespace-separated term of `query` must appear in at
+ *  least one of the entry's `texts` (title, type id, description, …). An empty/blank query matches
+ *  everything (the palette shows all entries until the user types). */
+export const paletteMatch = (query: string, texts: (string | undefined)[]): boolean => {
+  const terms = query.toLowerCase().split(/\s+/).filter(Boolean)
+  if (terms.length === 0) return true
+  const haystack = texts
+    .filter((t): t is string => !!t)
+    .join('\n')
+    .toLowerCase()
+  return terms.every((term) => haystack.includes(term))
 }

@@ -94,12 +94,19 @@ type Segment = { type: 'md' | 'html' | 'inline-html'; text: string; mode?: CardR
 // the marker anywhere in the md before the block — NOT anchored to the end — and strip it in place.
 const MODE_MARKER = /<!--\s*rpt:mode=(inline|isolated)\s*-->/i
 
-// Bare top-level HTML containers the model may emit inline — an item/status card as a `<div>`, a
-// `<table>`, a `<details>`, etc. — NOT wrapped in <body>/<html> or a ```html fence. A conservative
-// allowlist of structural elements so we never hijack body state tags (<tp>/<gametxt>/
-// <UpdateVariable>) or content react-markdown already renders from markdown syntax (lists/tables).
-const BARE_HTML_TAGS =
+// Bare top-level HTML the model may emit inline — an item/status card as a `<div>`, a `<table>`,
+// etc. NOT wrapped in <body>/<html> or a ```html fence. A conservative allowlist of structural
+// elements so we never hijack body state tags (<tp>/<gametxt>/<UpdateVariable>) or content
+// react-markdown already renders from markdown syntax (lists/tables). These lift anywhere.
+const BARE_HTML_STRUCTURAL_TAGS =
   'div|section|article|aside|header|footer|main|nav|figure|details|table|center|form'
+// Phrasing markup (a styled `<span>`, a `<ruby>` annotation) also lifts, but ONLY when the region
+// stands alone on its own line: spans occur constantly inside prose and markdown constructs, and
+// lifting one mid-line would split the sentence — or the surrounding GFM list — into separate
+// blocks. (`<rt>`/`<rp>` need no entry: matchBareElement matches the balanced outer <ruby> whole.)
+const BARE_HTML_PHRASING_TAGS = 'span|ruby'
+const BARE_HTML_TAGS = `${BARE_HTML_STRUCTURAL_TAGS}|${BARE_HTML_PHRASING_TAGS}`
+const PHRASING_START_RE = new RegExp(`^<(?:${BARE_HTML_PHRASING_TAGS})\\b`, 'i')
 // A region STARTS at a container or a `<style>` sheet; a `<script>` only joins as a SIBLING (a lone
 // bare `<script>` stays markdown rather than auto-running). Used to find + extend an HTML region.
 const REGION_START_RE = new RegExp(`<(?:${BARE_HTML_TAGS}|style)\\b`, 'i')
@@ -150,18 +157,26 @@ const matchHtmlElement = (text: string, start: number): number => {
 // `<style>` sheet (the common `<div>…</div><style>…</style>` shape) stay together. The prose around
 // a region stays markdown; the region renders inline ('inline-html', styles scoped to the card)
 // unless it carries a `<script>` (which needs the isolated, sandboxed frame → 'html').
+// True when only whitespace sits between the region [start, end) and its line boundaries.
+const standsAloneOnLine = (md: string, start: number, end: number): boolean => {
+  const lineStart = md.lastIndexOf('\n', start - 1) + 1
+  const lineEnd = md.indexOf('\n', end)
+  return (
+    /^\s*$/.test(md.slice(lineStart, start)) &&
+    /^\s*$/.test(md.slice(end, lineEnd === -1 ? md.length : lineEnd))
+  )
+}
+
 const splitBareHtml = (md: string): Segment[] => {
   const out: Segment[] = []
-  let i = 0
+  let i = 0 // start of the not-yet-emitted markdown
+  let scan = 0 // search cursor — moves past rejected phrasing candidates; `i` does not
   for (;;) {
-    const m = REGION_START_RE.exec(md.slice(i))
-    let end = m ? matchHtmlElement(md, i + m.index) : -1
-    if (!m || end < 0) {
-      const tail = md.slice(i)
-      if (tail) out.push({ type: 'md', text: tail })
-      break
-    }
-    const start = i + m.index
+    const m = REGION_START_RE.exec(md.slice(scan))
+    if (!m) break
+    const start = scan + m.index
+    let end = matchHtmlElement(md, start)
+    if (end < 0) break // unclosed: the rest stays markdown
     // Absorb following sibling HTML/style/script blocks (only whitespace between) into the region.
     for (;;) {
       const ws = /^\s*/.exec(md.slice(end))?.[0].length ?? 0
@@ -171,6 +186,11 @@ const splitBareHtml = (md: string): Segment[] => {
       if (ne < 0) break
       end = ne
     }
+    // A phrasing region embedded in a line of prose (or a list item / table row) stays markdown.
+    if (PHRASING_START_RE.test(md.slice(start)) && !standsAloneOnLine(md, start, end)) {
+      scan = start + 1
+      continue
+    }
     if (start > i) out.push({ type: 'md', text: md.slice(i, start) })
     // Bare regions ALWAYS render inline (CSS scoped, body DOMPurify-sanitized). A stray <script> here
     // is stripped, NOT executed — unfenced model output must never auto-run with app/bridge access.
@@ -178,7 +198,10 @@ const splitBareHtml = (md: string): Segment[] => {
     // (matched by HTML_BLOCK above), so those still reach the frame; only bare HTML changed.
     out.push({ type: 'inline-html', text: md.slice(start, end) })
     i = end
+    scan = end
   }
+  const tail = md.slice(i)
+  if (tail) out.push({ type: 'md', text: tail })
   return out.length ? out : [{ type: 'md', text: md }]
 }
 
@@ -256,6 +279,8 @@ const InlineHtml: React.FC<{ html: string }> = ({ html }) => {
   const { body, css } = useMemo(() => {
     const { html: bodyHtml, css: rawCss } = extractStyleBlocks(html)
     return {
+      // No ADD_TAGS/ADD_ATTR loosening needed for presentational markup: DOMPurify's defaults
+      // already allow phrasing tags (<span>/<ruby>/<rt>/<rp>) and the style attribute.
       body: DOMPurify.sanitize(bodyHtml, {
         FORBID_TAGS: INLINE_HTML_FORBID_TAGS,
         ADD_ATTR: ['target']

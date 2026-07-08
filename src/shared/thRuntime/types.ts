@@ -112,6 +112,11 @@ export interface Host {
   // (Local/chat vars use statData + applyVariableOps; the runtime runs the STScript interpreter itself.)
   getGlobalVars(): Promise<Record<string, any>>
   setGlobalVar(key: string, value: any): Promise<void>
+  // Whole-object global vars — the getVariables/replaceVariables({type:'global'}) scope. getGlobalVarsSync
+  // is SYNC (like getChatVars/getScriptVars) so a card reads its saved settings before its first render;
+  // setGlobalVars persists the whole bag. (A beautification card keeps its UI settings here.)
+  getGlobalVarsSync(): Record<string, any>
+  setGlobalVars(vars: Record<string, any>): Promise<void>
   // Resolve a character portrait to an rptasset:// URL for the calling card's world, or null.
   assetUrl(name: string, type: string, mood?: string): Promise<string | null>
   // Enumerate one entry's files (all variants of a name+type) for the calling card's world (WA-3): the

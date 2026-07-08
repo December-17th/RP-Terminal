@@ -640,4 +640,21 @@ describe('workflowEditorStore: insertModule (WP6.5)', () => {
     expect(store().insertModule(module(), { x: 0, y: 0 })).toBeNull()
     expect(store().nodes).toHaveLength(before)
   })
+
+  // Agent & memory UX WP-G: the module's author `note` rides into GroupDecl.note (it was silently
+  // dropped before), and `origin: 'import'` is stamped ONLY for the file-import path (opts) — a
+  // palette template insert is not "imported".
+  it('carries module.note into the group; origin stamped only with opts.origin', () => {
+    const withNote = { ...module(), note: 'bind a table template first' }
+
+    const paletteGroupId = store().insertModule(withNote, { x: 300, y: 300 })
+    const paletteGroup = (store().doc?.groups ?? []).find((g) => g.id === paletteGroupId)
+    expect(paletteGroup?.note).toBe('bind a table template first')
+    expect(paletteGroup?.origin).toBeUndefined()
+
+    const importGroupId = store().insertModule(withNote, { x: 600, y: 600 }, { origin: 'import' })
+    const importGroup = (store().doc?.groups ?? []).find((g) => g.id === importGroupId)
+    expect(importGroup?.origin).toBe('import')
+    expect(importGroup?.note).toBe('bind a table template first')
+  })
 })

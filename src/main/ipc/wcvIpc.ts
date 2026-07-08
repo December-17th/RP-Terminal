@@ -589,6 +589,16 @@ export const registerWcvIpc = (ipcMain: IpcMain): void => {
         value
       })
   })
+  // Whole-object global vars (getVariables/replaceVariables({type:'global'})) — SYNC read so a card
+  // reads its saved settings before it first renders; parity with the inline transport.
+  ipcMain.on('wcv-host-get-global-vars-sync', (e) => {
+    const ctx = wcvManager.contextFor(e.sender.id)
+    e.returnValue = ctx ? pluginService.getGlobalVars(ctx.profileId) : {}
+  })
+  ipcMain.handle('wcv-host-set-global-vars', (e, vars) => {
+    const ctx = wcvManager.contextFor(e.sender.id)
+    if (ctx) pluginService.setGlobalVars(ctx.profileId, vars && typeof vars === 'object' ? vars : {})
+  })
 
   // Ask the host renderer to reload the active chat's floors (after saveChat changed message content).
   ipcMain.handle('wcv-host-reload-chat', (e) => {

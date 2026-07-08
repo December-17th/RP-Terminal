@@ -13,7 +13,14 @@ const THINK_DANGLING_RE = /<think(?:ing)?\b[^>]*>[\s\S]*$/i
 // Our own self-closing state tag.
 const RPT_EVENT_RE = /<rpt-event\s+[^>]*?\/?>/gi
 // The combat-initiation cue (Track Combat) — surfaced as an "Enter Combat" affordance, hidden in prose.
-const COMBAT_START_RE = /<rpt-combat-start\b[^>]*?\/?>(?:[\s\S]*?<\/rpt-combat-start>)?/gi
+// The paired-body branch is TEMPERED (`(?!<rpt-combat-start\b)`) so it can't bridge across a second
+// opening tag: models routinely MENTION `<rpt-combat-start>` inside their `<think>` reasoning (e.g.
+// "输出<rpt-combat-start>标签"), and an un-tempered `[\s\S]*?</rpt-combat-start>` would run from that
+// bare mention all the way to the REAL closing tag — swallowing the entire narrative in between (and,
+// once its `</think>` was eaten, the dangling `<think>` made stripThinking delete the rest → an empty
+// body). The real roster body never contains a nested opening, so tempering leaves it stripped cleanly.
+const COMBAT_START_RE =
+  /<rpt-combat-start\b[^>]*?\/?>(?:(?:(?!<rpt-combat-start\b)[\s\S])*?<\/rpt-combat-start>)?/gi
 // MVU <UpdateVariable> blocks — tempered so a STRAY unclosed mention can't over-match (keep in
 // sync with mvuParser's blockRe).
 const MVU_BLOCK_RE =

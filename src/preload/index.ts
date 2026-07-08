@@ -300,6 +300,23 @@ const api = {
   importModuleDialog: (profileId: string) => ipcRenderer.invoke('module-import-dialog', profileId),
   confirmModuleImport: (token: string) => ipcRenderer.invoke('module-confirm-import', token),
   cancelModuleImport: (token: string) => ipcRenderer.invoke('module-cancel-import', token),
+  // Agent library (agent-memory-ux WP-G): the palette's built-in + user module templates.
+  listModuleTemplates: (profileId: string) =>
+    ipcRenderer.invoke('list-module-templates', profileId),
+  getModuleTemplate: (profileId: string, id: string) =>
+    ipcRenderer.invoke('get-module-template', profileId, id),
+  saveModuleToLibrary: (profileId: string, module: unknown) =>
+    ipcRenderer.invoke('save-module-to-library', profileId, module),
+  // Agent & memory UX (WP-H): per-world lorebook entry picks for agent.llm's custom lore mode.
+  getLorePicks: (profileId: string, worldId: string, docId: string, nodeId: string) =>
+    ipcRenderer.invoke('get-lore-picks', profileId, worldId, docId, nodeId),
+  setLorePicks: (
+    profileId: string,
+    worldId: string,
+    docId: string,
+    nodeId: string,
+    picks: unknown[]
+  ) => ipcRenderer.invoke('set-lore-picks', profileId, worldId, docId, nodeId, picks),
   // Recipe SHARING: `.rptrecipe` export / import (agent-packs plan WP5.2; ADR 0008) — "share this
   // world's setup" (a set of embedded packs + activation preset + narrator choice). Export assembles
   // from the CURRENT world; `opts` = the wizard's name/description/creator. Import is TWO-PHASE: the
@@ -340,6 +357,8 @@ const api = {
     ipcRenderer.invoke('chat-table-template-get', profileId, chatId),
   setChatTableTemplate: (profileId: string, chatId: string, id: string | null) =>
     ipcRenderer.invoke('chat-table-template-set', profileId, chatId, id),
+  previewMemoryMaintain: (profileId: string, chatId: string, config: unknown) =>
+    ipcRenderer.invoke('memory-maintain-preview', profileId, chatId, config),
   readChatTables: (profileId: string, chatId: string) =>
     ipcRenderer.invoke('chat-tables-read', profileId, chatId),
   // SQL-table memory (issue 06): hand editing, last-maintained status, template export
@@ -418,6 +437,11 @@ const api = {
     ipcRenderer.invoke('plugin-vars', profileId, chatId, action),
   pluginGetVars: (profileId: string, chatId: string) =>
     ipcRenderer.invoke('plugin-get-vars', profileId, chatId),
+  // Whole-object global vars (getVariables/replaceVariables({type:'global'}) + the 全局变量 tab).
+  pluginGlobalsGetSync: (profileId: string) =>
+    ipcRenderer.sendSync('plugin-globals-get-sync', profileId),
+  pluginGlobalsSet: (profileId: string, vars: Record<string, any>) =>
+    ipcRenderer.invoke('plugin-globals-set', profileId, vars),
   pluginGetMessages: (profileId: string, chatId: string) =>
     ipcRenderer.invoke('plugin-get-messages', profileId, chatId),
   pluginSetMessage: (profileId: string, chatId: string, floorIndex: number, patch: any) =>
@@ -475,6 +499,9 @@ const api = {
   pluginsScaffoldExample: () => ipcRenderer.invoke('plugins-scaffold-example'),
   pluginStorage: (profileId: string, owner: string, action: any) =>
     ipcRenderer.invoke('plugin-storage', profileId, owner, action),
+  // SYNC read of an owner's whole KV bag — inline card host seeds getVariables({type:'script'}) at boot.
+  pluginStorageAllSync: (profileId: string, owner: string) =>
+    ipcRenderer.sendSync('plugin-storage-all-sync', profileId, owner),
   pluginNetFetch: (pluginId: string, url: string, opts: any) =>
     ipcRenderer.invoke('plugin-net-fetch', pluginId, url, opts),
   // Local grid combat (Track Combat). One active encounter per chat.
@@ -667,6 +694,9 @@ const api = {
   // Per-chat card KV (inline transport): general scope, getVariables({type:'chat'}).
   chatCardVarsGet: (profileId: string, chatId: string) =>
     ipcRenderer.invoke('chat-card-vars-get', profileId, chatId),
+  // SYNC read for the inline card host — the card reads its saved session KV at boot before it paints.
+  chatCardVarsGetSync: (profileId: string, chatId: string) =>
+    ipcRenderer.sendSync('chat-card-vars-get-sync', profileId, chatId),
   chatCardVarsSet: (profileId: string, chatId: string, vars: Record<string, any>) =>
     ipcRenderer.invoke('chat-card-vars-set', profileId, chatId, vars),
   // Storage location (app-global; pointer file, not per-profile settings)
