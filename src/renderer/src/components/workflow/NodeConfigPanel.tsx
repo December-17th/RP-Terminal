@@ -24,6 +24,7 @@ import {
   type PanelSelection
 } from './detailsPanelModel'
 import PromptEditor, { type PromptFieldSpec } from './PromptEditor'
+import MemoryMaintainPanel from './MemoryMaintainPanel'
 import LorebookPickerSheet from './LorebookPickerSheet'
 import { useWorkflowTraceStore } from '../../stores/workflowTraceStore'
 import { formatTraceSeconds, type StoredRunRecord } from '../../../../shared/workflow/trace'
@@ -776,12 +777,19 @@ function NodeDetailsInner({
       <TabRail tabs={tabs} active={tab} onSelect={setTab} />
 
       {tab === 'prompt' && (
-        <PromptEditor
-          fields={promptFieldSpecs}
-          config={config}
-          readOnly={readOnly}
-          onChange={updateField}
-        />
+        <>
+          <PromptEditor
+            fields={promptFieldSpecs}
+            config={config}
+            readOnly={readOnly}
+            onChange={updateField}
+          />
+          {/* memory.maintain (WP2): under the scaffold prompt, the per-table maintenance-rule editor
+              (writes to the bound template) + the composed-prompt preview. */}
+          {node.type === 'memory.maintain' && (
+            <MemoryMaintainPanel profileId={profileId} config={config} />
+          )}
+        </>
       )}
 
       {tab === 'runs' && <NodeRunsTab nodeId={node.id} />}

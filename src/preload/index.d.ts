@@ -690,6 +690,7 @@ declare global {
         profileId: string
       ) => Promise<Array<{ id: string; name: string; tableCount: number }>>
       getTableTemplate: (profileId: string, id: string) => Promise<unknown>
+      updateTableTemplate: (profileId: string, id: string, patch: unknown) => Promise<unknown>
       deleteTableTemplate: (profileId: string, id: string) => Promise<void>
       importTableTemplateDialog: (profileId: string) => Promise<{
         summary?: { id: string; name: string; tableCount: number }
@@ -697,6 +698,11 @@ declare global {
       } | null>
       getChatTableTemplate: (profileId: string, chatId: string) => Promise<string | null>
       setChatTableTemplate: (profileId: string, chatId: string, id: string | null) => Promise<void>
+      previewMemoryMaintain: (
+        profileId: string,
+        chatId: string,
+        config: unknown
+      ) => Promise<{ messages?: { role: string; content: string }[]; error?: string }>
       readChatTables: (
         profileId: string,
         chatId: string

@@ -47,8 +47,15 @@ export const visibleTabs = (sel: PanelSelection, hasPrompt: boolean): DetailsTab
 export type PromptRole = 'system' | 'user' | 'assistant'
 export const PROMPT_ROLES: readonly PromptRole[] = ['system', 'user', 'assistant']
 
-/** Insertable placeholder chips (spec §6). Sourced from this one constant so the editor + docs agree. */
-export const PROMPT_PLACEHOLDERS: readonly string[] = ['{history}', '{{input}}', '{{user}}', '{{char}}']
+/** Insertable placeholder chips (spec §6). Sourced from this one constant so the editor + docs agree.
+ *  `{{tables}}` is the memory.maintain rendered-tables-block placeholder (alias of `{{input}}`). */
+export const PROMPT_PLACEHOLDERS: readonly string[] = [
+  '{history}',
+  '{{tables}}',
+  '{{input}}',
+  '{{user}}',
+  '{{char}}'
+]
 
 export interface PromptRow {
   role: string

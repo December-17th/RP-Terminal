@@ -4,6 +4,7 @@ import { GenContext } from '../../generation/types'
 import { providerShape } from '../../generation/providerShape'
 import { PresetParameters } from '../../../types/preset'
 import { ChatMessage } from '../../promptBuilder'
+import { TableTemplate } from '../../../types/tableTemplate'
 import { NodeImpl } from '../types'
 import { interpolate } from './messageNodes'
 import { runLlmCall, LlmCallConfig, llmCallConfigSchema } from './generationNodes'
@@ -42,7 +43,7 @@ const memoryMessageSchema = z.object({
   content: z.string()
 })
 
-const memoryMaintainConfig = llmCallConfigSchema.extend({
+export const memoryMaintainConfig = llmCallConfigSchema.extend({
   /** The scaffold/maintainer prompt (role-alternating). Routed to the Prompt editor (promptFields). */
   messages: z.array(memoryMessageSchema),
   /** Trailing floors of transcript to include (1..50). Default 6. */
@@ -70,6 +71,47 @@ const historyText = (history: ChatMessage[]): string =>
     .map((m) => `${m.role === 'assistant' ? 'Assistant' : m.role === 'user' ? 'User' : 'System'}: ${m.content}`)
     .join('\n')
 
+/** The fields of the config the prompt composition reads (a subset — the LLM knobs don't affect it). */
+type ComposeConfig = Pick<
+  z.infer<typeof memoryMaintainConfig>,
+  'messages' | 'lastNFloors' | 'max_rows' | 'include_rules'
+>
+
+/**
+ * Compose the fully-shaped maintainer prompt this node sends: render the tables block, splice the
+ * recent transcript into the scaffold rows, substitute `{{tables}}`/`{{input}}` as DATA (after macros/
+ * EJS), and provider-shape. Shared by the node's `run()` AND the panel preview IPC so the preview shows
+ * EXACTLY what a run would send (no second compose path to drift). Exported for the preview handler +
+ * tests.
+ */
+export const composeMaintainerMessages = (
+  gen: GenContext,
+  template: TableTemplate,
+  cfg: ComposeConfig
+): ChatMessage[] => {
+  const { block: tablesBlock } = renderTablesBlock(gen, template, {
+    maxRows: cfg.max_rows,
+    includeRules: cfg.include_rules
+  })
+  const history = recentTranscript(gen, { lastNFloors: cfg.lastNFloors })
+  const rows: ChatMessage[] = []
+  for (const m of cfg.messages) {
+    if (m.content.trim() === HISTORY_MARKER) {
+      rows.push(...history)
+      continue
+    }
+    const withHistory = m.content.split(HISTORY_MARKER).join(historyText(history))
+    const interpolated = interpolate(withHistory, {}, gen)
+    const withTables = interpolated
+      .split('{{tables}}')
+      .join(tablesBlock)
+      .split('{{input}}')
+      .join(tablesBlock)
+    rows.push({ role: m.role, content: withTables })
+  }
+  return providerShape(gen.settings, rows)
+}
+
 export const memoryMaintain: NodeImpl = {
   type: 'memory.maintain',
   title: 'Memory',
@@ -90,27 +132,9 @@ export const memoryMaintain: NodeImpl = {
     const template = chatTemplate(gen)
     if (!template) return { outputs: {} }
 
-    const { block: tablesBlock } = renderTablesBlock(gen, template, {
-      maxRows: cfg.max_rows,
-      includeRules: cfg.include_rules
-    })
-    const history = recentTranscript(gen, { lastNFloors: cfg.lastNFloors })
-
-    // Compose the send messages: splice {history}, run macros/EJS on the authored scaffold, then
-    // substitute {{tables}}/{{input}} as DATA (last, so a table block's game-state text can't inject
-    // template code — the {{inN}} invariant).
-    const rows: ChatMessage[] = []
-    for (const m of cfg.messages) {
-      if (m.content.trim() === HISTORY_MARKER) {
-        rows.push(...history)
-        continue
-      }
-      const withHistory = m.content.split(HISTORY_MARKER).join(historyText(history))
-      const interpolated = interpolate(withHistory, {}, gen)
-      const withTables = interpolated.split('{{tables}}').join(tablesBlock).split('{{input}}').join(tablesBlock)
-      rows.push({ role: m.role, content: withTables })
-    }
-    const sendMessages = providerShape(gen.settings, rows)
+    // Compose EXACTLY what the panel preview shows (composeMaintainerMessages is shared) — render the
+    // tables block, splice {history}, substitute {{tables}}/{{input}} as DATA, provider-shape.
+    const sendMessages = composeMaintainerMessages(gen, template, cfg)
 
     // Trace-only: the fully composed prompt (b1906ae debug channel) so "did the tables/history reach
     // the model" is inspectable in the Runs tab.

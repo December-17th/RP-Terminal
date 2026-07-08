@@ -605,6 +605,148 @@
   color: var(--rpt-text-secondary);
 }
 
+/* ═══════════ memory.maintain node panel (2026-07-07 plan WP2): per-table rule editor + preview ═══════════ */
+
+.rpt-mm {
+  margin-top: 10px;
+  border-top: 1px solid var(--rpt-border);
+  padding-top: 8px;
+}
+.rpt-mm-note {
+  font-size: 11px;
+  color: var(--rpt-text-secondary);
+  line-height: 1.5;
+  margin: 8px 0;
+}
+.rpt-mm-banner {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 6px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  background: var(--rpt-bg-secondary);
+  border: 1px solid var(--rpt-border);
+}
+.rpt-mm-banner-label {
+  font-size: 10px;
+  color: var(--rpt-text-tertiary);
+}
+.rpt-mm-banner-name {
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--rpt-text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 100%;
+}
+.rpt-mm-banner-caveat {
+  flex-basis: 100%;
+  font-size: 10px;
+  color: var(--rpt-text-tertiary);
+  line-height: 1.4;
+}
+.rpt-mm-section-title {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--rpt-text-tertiary);
+  margin: 10px 0 5px;
+}
+.rpt-mm-table {
+  border: 1px solid var(--rpt-border);
+  border-radius: 6px;
+  margin-bottom: 5px;
+  overflow: hidden;
+}
+.rpt-mm-table-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 6px 8px;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  text-align: left;
+  color: var(--rpt-text-primary);
+}
+.rpt-mm-table-head:hover {
+  background: var(--rpt-bg-secondary);
+}
+.rpt-mm-caret {
+  color: var(--rpt-text-tertiary);
+  font-size: 10px;
+  width: 10px;
+}
+.rpt-mm-table-name {
+  flex: 1;
+  min-width: 0;
+  font-size: 11.5px;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.rpt-mm-table-sql {
+  font-size: 9.5px;
+  padding: 1px 5px;
+  border-radius: 8px;
+  background: var(--rpt-bg-tertiary);
+  color: var(--rpt-text-secondary);
+}
+.rpt-mm-table-body {
+  padding: 4px 8px 8px;
+  border-top: 1px solid var(--rpt-border);
+}
+.rpt-mm-field {
+  display: block;
+  margin-top: 7px;
+}
+.rpt-mm-field-label {
+  display: block;
+  font-size: 10px;
+  color: var(--rpt-text-secondary);
+  margin-bottom: 2px;
+}
+.rpt-mm-textarea {
+  width: 100%;
+  box-sizing: border-box;
+  resize: vertical;
+  font-size: 11px;
+  line-height: 1.5;
+  padding: 5px 6px;
+  border-radius: 4px;
+  border: 1px solid var(--rpt-border);
+  background: var(--rpt-bg-primary);
+  color: var(--rpt-text-primary);
+}
+.rpt-mm-textarea:focus {
+  outline: none;
+  border-color: var(--rpt-accent);
+}
+.rpt-mm-preview {
+  margin-top: 10px;
+}
+.rpt-mm-preview-btn {
+  font-size: 12px;
+}
+.rpt-mm-error {
+  color: var(--rpt-danger);
+  font-size: 10.5px;
+  margin-top: 4px;
+}
+.rpt-mm-preview-msg {
+  margin-top: 6px;
+}
+.rpt-mm-preview-role {
+  font-size: 9.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--rpt-text-tertiary);
+}
+
 /* ═══════════ Agent & memory UX (2026-07-07 plan WP-D): agent cards, frames, one-click grouping ═══════════ */
 
 /* An agent card = a collapsed trigger-rooted group. It leans on the agent accent + reports in prose. */

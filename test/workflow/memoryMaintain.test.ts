@@ -103,7 +103,8 @@ vi.mock('../../src/main/services/presetService', () => ({
   getActivePresetId: () => 'p'
 }))
 
-import { memoryMaintain } from '../../src/main/services/nodes/builtin/memoryNodes'
+import { memoryMaintain, composeMaintainerMessages } from '../../src/main/services/nodes/builtin/memoryNodes'
+import { buildGenContext } from '../../src/main/services/generation/genContext'
 import { RunContext } from '../../src/main/services/nodes/types'
 
 const ctx = (): RunContext => ({
@@ -164,6 +165,22 @@ describe('memory.maintain — end to end', () => {
     // Report emitted + composed prompt traced on debug.
     expect(res.outputs!.report).toContain('applied 1 statement')
     expect((res.debug!['prompt (sent)'] as string)).toContain('纪要 (summary)')
+  })
+
+  it('composeMaintainerMessages (the shared node/preview core): {{tables}} and {{input}} are aliases', () => {
+    const gen = buildGenContext('prof', 'c1', '')
+    const base = { lastNFloors: 6 as const }
+    const withTables = composeMaintainerMessages(gen, TEMPLATE, {
+      ...base,
+      messages: [{ role: 'system', content: '规则\n{{tables}}' }]
+    })
+    const withInput = composeMaintainerMessages(gen, TEMPLATE, {
+      ...base,
+      messages: [{ role: 'system', content: '规则\n{{input}}' }]
+    })
+    expect(withTables[0].content).toContain('纪要 (summary)')
+    // The alias substitutes the identical rendered block.
+    expect(withInput[0].content).toBe(withTables[0].content)
   })
 
   it('no template bound → silent no-op (no model call, no write)', async () => {

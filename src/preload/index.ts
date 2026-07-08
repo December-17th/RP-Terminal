@@ -312,6 +312,8 @@ const api = {
     ipcRenderer.invoke('chat-table-template-get', profileId, chatId),
   setChatTableTemplate: (profileId: string, chatId: string, id: string | null) =>
     ipcRenderer.invoke('chat-table-template-set', profileId, chatId, id),
+  previewMemoryMaintain: (profileId: string, chatId: string, config: unknown) =>
+    ipcRenderer.invoke('memory-maintain-preview', profileId, chatId, config),
   readChatTables: (profileId: string, chatId: string) =>
     ipcRenderer.invoke('chat-tables-read', profileId, chatId),
   // SQL-table memory (issue 06): hand editing, last-maintained status, template export
