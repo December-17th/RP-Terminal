@@ -1,8 +1,8 @@
 # Workflow module format — the agent UI contract
 
 **Status:** ✅ contract surface built (agent & memory UX WP-A); ✅ `control.mode` node + engine
-`wiredInputs` (WP-B); ✅ seeded "Default" memory doc + open-slot convention (WP-C). Living doc —
-edit in place.
+`wiredInputs` (WP-B); ✅ seeded "Default" memory doc + open-slot convention (WP-C); ✅ all-in-one
+`memory.maintain` node + seeded default **v2** (memory.maintain plan). Living doc — edit in place.
 
 A workflow **module** is a reusable slab of a workflow graph: a named group of in-place nodes, its
 internal edges, and the settings it exposes. It ships as a `.rptmodule` file
@@ -58,6 +58,7 @@ fields to the dedicated Prompt editor instead of the generic schema-form control
 on-card prompt excerpt. Set on the built-ins:
 
 - `agent.llm` → `['messages']` (`src/main/services/nodes/builtin/agentNodes.ts`)
+- `memory.maintain` → `['messages']` (`src/main/services/nodes/builtin/memoryNodes.ts`)
 - `text.template` → `['template']` (`src/main/services/nodes/builtin/messageNodes.ts`)
 
 An imported agent inherits this from its built-in node types — no author work.
@@ -101,20 +102,60 @@ behind one exposed enum. Lives in `src/main/services/nodes/builtin/controlNodes.
   supplied at the single run call site (`workflowEngine.ts`). This is how a node distinguishes
   "wired but not fired" from "not wired at all". Additive: no other built-in reads it.
 
-## The seeded "Default" doc + the open-slot convention (WP-C)
+## The `memory.maintain` node (memory.maintain plan)
+
+The **all-in-one SQL-table memory maintenance node** — one self-seeding node that folds the
+five-node chain (`history.recent → table.read → agent.llm → parse.extract(TableEdit) →
+table.apply`) into a single canvas node. Lives in `src/main/services/nodes/builtin/memoryNodes.ts`;
+registered in `builtin/index.ts`; classified `writes-tables` in the ADR-0007 capability map.
+
+- **Ports:** input `when: Signal` (gated by `control.mode.fired` in the seeded doc); outputs
+  `report: Text`, `error: Error` (class-B failures route here — wire to `util.log`).
+- **Config:** `messages` (the scaffold prompt — a role array, `promptFields`-routed to the Prompt
+  editor), plus `lastNFloors` (history window, default 6), `max_rows` (per-table row cap),
+  `include_rules` (default true), `advance_progress` (default **true** — advance the table-progress
+  pointer after a successful apply so the backlog trigger + `context.trimProcessed` clear), and the
+  shared LLM knobs (`api_preset_id`, `temperature`, `retries`, …).
+- **Scaffold placeholders:** `{{tables}}` (canonical) / `{{input}}` (alias, so the proven verbatim
+  maintainer prompt transfers unchanged) → the rendered tables block; `{history}` → the recent
+  transcript (a row whose entire content is `{history}` is replaced by the history messages
+  role-preserving; inline `{history}` → flattened transcript text). Table/history text is substituted
+  as DATA (after macros/EJS run on the authored scaffold), never executed.
+- **Per-table maintenance rules are NOT node config** — each table's `note`/`initNode`/`insertNode`/
+  `updateNode`/`deleteNode` live in the **bound table template** (`docs/sdk/table-templates.md`) and
+  are rendered into the prompt by the shared `renderTablesBlock`. The node's details panel edits them
+  back into the template file via `table-template-update` (per-chat binding — edits are shared across
+  every chat using the template). The node's `messages` is only the maintainer scaffold.
+- **Behavior:** no bound template → silent no-op (no wasted model call); an empty
+  `<TableEdit></TableEdit>` reply → no write, `report: "no changes"`. The fully composed prompt is
+  recorded on the run trace (`debug['prompt (sent)']`) so what was sent is inspectable in the Runs tab.
+
+The fine-grained five nodes stay registered — imported `.rptflow` modules and power-user chains keep
+working; `memory.maintain` is additive.
+
+**Example:** `docs/workflows/memory-maintain.rptflow` (trigger → `control.mode` → `memory.maintain`,
+mirroring the seeded Default v2) — import it, bind a table template, and flip the Mode setting.
+
+## The seeded "Default" doc + the open-slot convention (WP-C; v2 = memory.maintain)
 
 Every profile is lazily seeded with an ordinary, EDITABLE workflow doc named **"Default"**: the
-narrator spine plus a collapsed **"Table memory"** group (`buildDefaultMemoryDoc`,
+narrator spine plus a collapsed **"Table memory"** group (`buildDefaultMemoryDocV2`,
 `src/main/services/nodes/builtin/defaultMemoryTemplate.ts`; seeding rule in
 `src/main/services/workflowService.ts` `seedDefaultMemoryWorkflow`). The code builtin
-`DEFAULT_GRAPH` stays untouched as the invisible fallback.
+`DEFAULT_GRAPH` stays untouched as the invisible fallback. **v2** replaced the original five-node
+maintenance chain with the single `memory.maintain` node (gated by `mode.fired`, `error → util.log`);
+`buildDefaultMemoryDoc` (v1) is retained only as the superseded-doc fixture.
 
-- **Seeding rule** (plan §0.3): lazy at the `listWorkflows` entry point; idempotent via the
-  `meta.seeded = 'default-memory-v1'` marker (survives rename/edit); skipped when any user doc
-  already contains `table.apply` or `agent.llm`; the global selection is set to the seeded doc only
-  when nothing was selected; deleting the seeded doc records the marker in `_selection.json`
-  `seededTombstones` so it never comes back. Ships with mode `off` (safe default — no side LLM
-  calls until the user configures a table template and flips the mode).
+- **Seeding rule** (memory.maintain plan WP3): lazy at the `listWorkflows` entry point; idempotent via
+  the `meta.seeded = 'default-memory-v2'` marker (survives rename/edit); skipped when any user doc
+  already contains a memory node (`table.apply` / `agent.llm` / `memory.maintain`); the global
+  selection is set to the seeded doc only when nothing was selected. Ships with mode `off` (safe
+  default — no side LLM calls until the user configures a table template and flips the mode).
+- **v1 → v2 auto-replace:** a profile that still carries a live `default-memory-v1` doc has it
+  **superseded** — v2 is seeded first (crash-safe), then the v1 doc is deleted (which tombstones its
+  marker and repoints the global selection to v2). Hand-edits to a v1 default are lost. **Tombstones
+  win:** deleting either default (recorded in `_selection.json` `seededTombstones`) blocks reseeding —
+  a v2-tombstoned profile never reseeds, and a deliberately-deleted v1 is not resurrected as v2.
 - **The open-slot convention for imported memory systems** (spec §3.2): the seeded doc's
   `control.mode` uses `when1` (cadence trigger) and `when2` (backlog state trigger); **`when3` and
   `when4` are deliberately left unwired.** An imported memory/agent module joins the mutual
