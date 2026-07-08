@@ -9,7 +9,14 @@ import { NodeImpl } from '../types'
 import { interpolate } from './messageNodes'
 import { runLlmCall, LlmCallConfig, llmCallConfigSchema } from './generationNodes'
 import { extractTagAll } from './parseNodes'
-import { chatTemplate, recentTranscript, renderTablesBlock, applyTableEdit } from './memoryCore'
+import {
+  chatTemplate,
+  recentTranscript,
+  renderTablesBlock,
+  applyTableEdit,
+  historyText,
+  composedPromptDebug
+} from './memoryCore'
 
 /**
  * `memory.maintain` — the ALL-IN-ONE SQL-table memory maintenance node (memory.maintain plan, WP1).
@@ -48,7 +55,8 @@ export const memoryMaintainConfig = llmCallConfigSchema.extend({
   messages: z.array(memoryMessageSchema),
   /** Trailing floors of transcript to include (1..50). Default 6. */
   lastNFloors: z.number().int().min(1).max(50).optional(),
-  /** Per-table row cap in the rendered block (keep the newest N). Unset = no cap. */
+  /** Per-table row cap in the rendered block (keep the newest N). Unset → DEFAULT_MAX_ROWS (30, spec
+   *  §1); an explicit 0 means uncapped. */
   max_rows: z.number().int().min(0).optional(),
   /** Include each table's per-op rules in the block (default true). */
   include_rules: z.boolean().optional(),
@@ -64,12 +72,9 @@ type MemoryMaintainConfig = z.infer<typeof memoryMaintainConfig>
 /** The `{history}` splice marker (a whole-content row REPLACED by the history messages). */
 const HISTORY_MARKER = '{history}'
 
-/** Flatten history Messages into a transcript text block (for an inline `{history}` substitution) —
- *  same shape agent.llm uses; kept local (a pure 3-line formatter, not lockstep behavior). */
-const historyText = (history: ChatMessage[]): string =>
-  history
-    .map((m) => `${m.role === 'assistant' ? 'Assistant' : m.role === 'user' ? 'User' : 'System'}: ${m.content}`)
-    .join('\n')
+/** Per-table row cap applied when the config leaves `max_rows` unset (spec §1: "default 30"). An
+ *  explicit `0` means uncapped. Kept as the ONE default so the node run + the panel preview agree. */
+const DEFAULT_MAX_ROWS = 30
 
 /** The fields of the config the prompt composition reads (a subset — the LLM knobs don't affect it). */
 type ComposeConfig = Pick<
@@ -90,7 +95,7 @@ export const composeMaintainerMessages = (
   cfg: ComposeConfig
 ): ChatMessage[] => {
   const { block: tablesBlock } = renderTablesBlock(gen, template, {
-    maxRows: cfg.max_rows,
+    maxRows: cfg.max_rows ?? DEFAULT_MAX_ROWS,
     includeRules: cfg.include_rules
   })
   const history = recentTranscript(gen, { lastNFloors: cfg.lastNFloors })
@@ -137,10 +142,8 @@ export const memoryMaintain: NodeImpl = {
     const sendMessages = composeMaintainerMessages(gen, template, cfg)
 
     // Trace-only: the fully composed prompt (b1906ae debug channel) so "did the tables/history reach
-    // the model" is inspectable in the Runs tab.
-    const promptDebug = {
-      'prompt (sent)': sendMessages.map((m) => `[${m.role}]\n${m.content}`).join('\n\n')
-    }
+    // the model" is inspectable in the Runs tab. Shared shape with agent.llm (composedPromptDebug).
+    const promptDebug = composedPromptDebug(sendMessages)
 
     const params: PresetParameters = {
       ...gen.preset.parameters,

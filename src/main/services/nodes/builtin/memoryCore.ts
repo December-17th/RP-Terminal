@@ -101,6 +101,19 @@ export const renderTablesBlock = (
   return { block: blocks.join('\n\n'), tables: rendered }
 }
 
+/** Flatten a Messages list into a transcript text block — the inline `{history}` substitution shape.
+ *  Shared by `agent.llm` and `memory.maintain` so the two never drift (WP0 no-drift intent). */
+export const historyText = (history: ChatMessage[]): string =>
+  history
+    .map((m) => `${m.role === 'assistant' ? 'Assistant' : m.role === 'user' ? 'User' : 'System'}: ${m.content}`)
+    .join('\n')
+
+/** The composed send-prompt as the run trace's `debug['prompt (sent)']` value — role-tagged rows joined
+ *  by blank lines. Shared so the agent + memory nodes render the trace identically. */
+export const composedPromptDebug = (messages: ChatMessage[]): Record<string, string> => ({
+  'prompt (sent)': messages.map((m) => `[${m.role}]\n${m.content}`).join('\n\n')
+})
+
 /** What a successful table-edit apply reports (mirrors the applySqlBatch tally). */
 export interface ApplyTableEditResult {
   applied: number

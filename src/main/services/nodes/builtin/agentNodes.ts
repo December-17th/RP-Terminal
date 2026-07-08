@@ -10,7 +10,7 @@ import { getLorePicks } from '../../workflowLorePicksStore'
 import { NodeImpl } from '../types'
 import { interpolate } from './messageNodes'
 import { runLlmCall, LlmCallConfig, llmCallConfigSchema } from './generationNodes'
-import { recentTranscript } from './memoryCore'
+import { recentTranscript, historyText, composedPromptDebug } from './memoryCore'
 
 /**
  * Consolidated AGENT nodes (one-canvas rebuild WP6.2; ADR 0011; spec revision 4 §The consolidated
@@ -123,12 +123,6 @@ const HISTORY_MARKER = '{history}'
 /** The `{{lore}}` injection placeholder (spec §7.3): substituted with the resolved lore block in any
  *  template row; when NO row carries it, a non-empty block is appended as a trailing system row. */
 const LORE_MARKER = '{{lore}}'
-
-/** Flatten history Messages into a transcript text block (for an inline `{history}` substitution). */
-const historyText = (history: ChatMessage[]): string =>
-  history
-    .map((m) => `${m.role === 'assistant' ? 'Assistant' : m.role === 'user' ? 'User' : 'System'}: ${m.content}`)
-    .join('\n')
 
 /** Flatten a Lore wire's books into a lore block — `lorebook.entries` semantics (lorebookNodes.ts:
  *  110-129): enabled entries' raw contents joined by blank lines, NO keyword scan (the wire was
@@ -264,7 +258,7 @@ export const agentLlm: NodeImpl = {
     // Debug (trace-only): the FULLY composed prompt this call actually sends — interpolated rows with
     // {{input}}/{history}/{{lore}} spliced, provider-shaped. Surfaces in the run drawer's Runs tab so
     // "did the table block / history reach the model" is inspectable without adding a graph port.
-    const promptDebug = { 'prompt (sent)': sendMessages.map((m) => `[${m.role}]\n${m.content}`).join('\n\n') }
+    const promptDebug = composedPromptDebug(sendMessages)
 
     // Params from the preset (temperature override when configured). No FSM cap here — an agent call
     // is a side call, budgeted by its own preset.
