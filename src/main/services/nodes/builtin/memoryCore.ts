@@ -5,7 +5,10 @@ import { getChatTableTemplateId } from '../../chatService'
 import { getTableTemplateById } from '../../tableTemplateService'
 import { applySqlBatch, TableSqlError } from '../../tableSql'
 import { appendOps, tryBeginTableWrite, endTableWrite } from '../../tableOpsService'
-import { advanceProgress } from '../../tableProgressService'
+import { advanceProgress, resolveUpdateFrequency } from '../../tableProgressService'
+import { readAllTables, TableRead } from '../../tableDbService'
+import { renderTableBlock } from '../../tableMaintenance'
+import { getSettings } from '../../settingsService'
 import { getAllFloors } from '../../floorService'
 import { TableTemplate } from '../../../types/tableTemplate'
 import { NodeRunFailure } from '../types'
@@ -52,6 +55,50 @@ export const recentTranscript = (
     }
   }
   return messages
+}
+
+/**
+ * Render the "here are the tables, here is what you may do" block a maintainer prompt needs: for the
+ * selected (or all) template tables, each one's `renderTableBlock` (definition + per-op rules + current
+ * data), joined by blank lines, plus the sqlNames actually rendered. The WRITE-node counterpart to
+ * `applyTableEdit`: this is exactly what `table.read` produces (which now wraps it), shared so
+ * `memory.maintain` composes a byte-identical block. Row cap keeps the LAST `maxRows` rows per table;
+ * `only` scopes to specific sqlNames (empty/unset = all). Pure over the chat's sandbox reads + settings.
+ */
+export const renderTablesBlock = (
+  gen: GenContext,
+  template: TableTemplate,
+  opts: { maxRows?: number; includeRules?: boolean; only?: string[] } = {}
+): { block: string; tables: string[] } => {
+  const includeRules = opts.includeRules !== false
+  const onlySet = opts.only && opts.only.length ? new Set(opts.only) : null
+  const tables = onlySet ? template.tables.filter((t) => onlySet.has(t.sqlName)) : template.tables
+  if (!tables.length) return { block: '', tables: [] }
+
+  const readsBySql = new Map(
+    readAllTables(gen.profileId, gen.chatId, template).map((r) => [r.sqlName, r])
+  )
+  const globalDefault = getSettings(gen.profileId).tables?.default_update_frequency ?? 3
+  const blocks: string[] = []
+  const rendered: string[] = []
+  for (const table of tables) {
+    let read: TableRead = readsBySql.get(table.sqlName) ?? {
+      sqlName: table.sqlName,
+      displayName: table.displayName,
+      columns: table.headers,
+      rows: [],
+      rowids: []
+    }
+    // Row cap: keep the LAST N rows (newest-last) per table.
+    if (opts.maxRows != null && read.rows.length > opts.maxRows) {
+      read = { ...read, rows: read.rows.slice(-opts.maxRows) }
+    }
+    // Header cadence: resolve -1 (global) / 0 (off → 手动维护) / N.
+    const resolvedFreq = resolveUpdateFrequency(table.updateFrequency, globalDefault)
+    blocks.push(renderTableBlock(table, read, includeRules, resolvedFreq))
+    rendered.push(table.sqlName)
+  }
+  return { block: blocks.join('\n\n'), tables: rendered }
 }
 
 /** What a successful table-edit apply reports (mirrors the applySqlBatch tally). */

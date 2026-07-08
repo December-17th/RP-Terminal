@@ -5,7 +5,6 @@ import { getTableTemplateById } from '../../tableTemplateService'
 import { executeReadQuery, TableSqlError } from '../../tableSql'
 import { readAllTables, TableRead } from '../../tableDbService'
 import { synthesizeEntries, renderWholeTable } from '../../tableExportService'
-import { renderTableBlock } from '../../tableMaintenance'
 import { getProgress, advanceProgress, resolveUpdateFrequency } from '../../tableProgressService'
 import { getSettings } from '../../settingsService'
 import { matchAcross } from '../../lorebookService'
@@ -13,7 +12,7 @@ import { getAllFloors } from '../../floorService'
 import { TableDef } from '../../../types/tableTemplate'
 import { LorebookEntry } from '../../../types/character'
 import { NodeImpl, NodeRunFailure } from '../types'
-import { chatTemplate, applyTableEdit } from './memoryCore'
+import { chatTemplate, applyTableEdit, renderTablesBlock } from './memoryCore'
 
 /** Parse a comma-separated sqlName list (trimmed, empties dropped). Accepts a string OR a string[]
  *  (the gate emits an array on its `tables` port; a config field is a comma string) — anything else
@@ -308,36 +307,18 @@ export const tableRead: NodeImpl = {
   run: (_ctx, inputs, node) => {
     const gen = inputs.gen as GenContext
     const cfg = node.config as ReadConfig
-    const includeRules = cfg.include_rules !== false
 
     const template = chatTemplate(gen)
     if (!template) return { outputs: { block: '', tables: [] } } // read semantics — silent empty
 
-    const only = parseSqlNameList(inputs.tables)
-    const onlySet = only.length ? new Set(only) : null
-    const tables = onlySet ? template.tables.filter((t) => onlySet.has(t.sqlName)) : template.tables
-    if (!tables.length) return { outputs: { block: '', tables: [] } }
-
-    const readsBySql = new Map(
-      readAllTables(gen.profileId, gen.chatId, template).map((r) => [r.sqlName, r])
-    )
-    const globalDefault = getSettings(gen.profileId).tables?.default_update_frequency ?? 3
-    const blocks: string[] = []
-    const rendered: string[] = []
-    for (const table of tables) {
-      let read = readsBySql.get(table.sqlName)
-      if (!read) read = { sqlName: table.sqlName, displayName: table.displayName, columns: table.headers, rows: [], rowids: [] }
-      // Row cap: keep the LAST N rows (newest-last) per table.
-      if (cfg.max_rows != null && read.rows.length > cfg.max_rows) {
-        read = { ...read, rows: read.rows.slice(-cfg.max_rows) }
-      }
-      // Header cadence: resolve -1 (global) / 0 (off → 手动维护) / N. An explicit table.read with an
-      // off table still renders it (read semantics); the cadence line just reads 手动维护.
-      const resolvedFreq = resolveUpdateFrequency(table.updateFrequency, globalDefault)
-      blocks.push(renderTableBlock(table, read, includeRules, resolvedFreq))
-      rendered.push(table.sqlName)
-    }
-    return { outputs: { block: blocks.join('\n\n'), tables: rendered } }
+    // The block render is shared with memory.maintain (memoryCore.renderTablesBlock) — an empty scope
+    // (no matching tables) still yields the silent-empty output.
+    const { block, tables } = renderTablesBlock(gen, template, {
+      maxRows: cfg.max_rows,
+      includeRules: cfg.include_rules,
+      only: parseSqlNameList(inputs.tables)
+    })
+    return { outputs: { block, tables } }
   }
 }
 

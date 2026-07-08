@@ -56,7 +56,7 @@ export function isWriteCapability(id: CapabilityId): boolean {
  *
  *  Mapping (from the WP3.1 brief + ADR 0007):
  *    table.read / table.query / table.export  → reads-tables
- *    table.apply                              → writes-tables
+ *    table.apply / memory.maintain            → writes-tables
  *    vars.get                                 → reads-vars
  *    vars.save / mvu.set / apply.state        → writes-vars
  *    lorebook.select / lorebook.entries / tool.lorebookSearch → reads-lorebooks
@@ -84,6 +84,10 @@ const NODE_TYPE_CAPABILITY: Readonly<Record<string, CapabilityId>> = {
   'history.recent': 'reads-history',
   'llm.sample': 'calls-llm',
   'agent.llm': 'calls-llm',
+  // memory.maintain folds read-history + read-tables + calls-llm + WRITE-tables into one node; it is
+  // classified by its most consequential (danger-tinted) capability — the table WRITE — matching the
+  // single-capability-per-type model (agent.llm is 'calls-llm' though it self-reads history too).
+  'memory.maintain': 'writes-tables',
   'output.writeFloor': 'writes-floors',
   'tool.startCombat': 'runs-game-tools',
   'tool.startDuel': 'runs-game-tools'
