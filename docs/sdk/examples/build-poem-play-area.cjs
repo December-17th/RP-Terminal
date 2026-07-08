@@ -45,8 +45,9 @@ const pages = {
   stage: inline('poem-stage-surface.html'),
   world: inline('poem-world-surface.html'),
   // Full-viewport OVERLAY surfaces (PM-A7 panel_ui.overlays) — raised by a slot surface via
-  // rptHost.requestOverlay(<id>), not mounted in the grid. PM-G3 adds the partner sheet.
-  partner: inline('poem-partner-sheet.html')
+  // rptHost.requestOverlay(<id>), not mounted in the grid. PM-G3 adds the partner sheet; PM-G5 the 地图.
+  partner: inline('poem-partner-sheet.html'),
+  map: inline('poem-map-overlay.html')
 }
 
 // A panel_ui WCV entry: the page as a data:text/html URL (decoded + served from the card origin).
@@ -66,8 +67,12 @@ const panel_ui = {
     { id: 'world', view: 'wcv', entry: dataUrl(pages.world), rect: [9, 0, 3, 12] }
   ],
   // Full-play-area overlays a slot surface can raise (PM-A7 requestOverlay). WORLD's 命定 tab writes
-  // chat KV poem.sheet={partner} then calls requestOverlay('poem-partner') to open the sheet (PM-G3).
-  overlays: [{ id: 'poem-partner', entry: dataUrl(pages.partner), title: '同行者' }]
+  // chat KV poem.sheet={partner} then calls requestOverlay('poem-partner') to open the sheet (PM-G3);
+  // the pinned 世界 card's 地图 button calls requestOverlay('poem-map') to open the map viewer (PM-G5).
+  overlays: [
+    { id: 'poem-partner', entry: dataUrl(pages.partner), title: '同行者' },
+    { id: 'poem-map', entry: dataUrl(pages.map), title: '地图' }
+  ]
 }
 
 // The card theme reskins the app SHELL + native chat (the STORY slot) to the dusk-gilt palette, and
@@ -101,6 +106,7 @@ fs.writeFileSync(path.join(DIST, 'poem-self.html'), pages.self)
 fs.writeFileSync(path.join(DIST, 'poem-stage.html'), pages.stage)
 fs.writeFileSync(path.join(DIST, 'poem-world.html'), pages.world)
 fs.writeFileSync(path.join(DIST, 'poem-partner.html'), pages.partner)
+fs.writeFileSync(path.join(DIST, 'poem-map.html'), pages.map)
 fs.writeFileSync(path.join(DIST, 'poem-play-area.rpt.json'), JSON.stringify(fragment, null, 2))
 
 const kb = (s) => (Buffer.byteLength(s, 'utf8') / 1024).toFixed(1) + ' KB'
@@ -109,6 +115,7 @@ console.log(`  poem-self.html   ${kb(pages.self)}`)
 console.log(`  poem-stage.html  ${kb(pages.stage)}`)
 console.log(`  poem-world.html  ${kb(pages.world)}`)
 console.log(`  poem-partner.html  ${kb(pages.partner)}  (overlay)`)
+console.log(`  poem-map.html  ${kb(pages.map)}  (overlay)`)
 console.log(`  poem-play-area.rpt.json  ${kb(JSON.stringify(fragment))}  (panel_ui + theme + overlays)`)
 
 // ── optional: apply the fragment to a card PNG (`--apply [src] [out]`) ──────────────────
