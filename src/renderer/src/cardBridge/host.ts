@@ -269,15 +269,44 @@ export function createInlineHost(ctx: CardCtx): Host {
       })
     },
     // Resolve an asset to an rptasset:// URL for this card's world, or null. The category is inferred
-    // from the asset TYPE (头像/立绘 → character, 背景/全景 → location) via the shared categoryForType,
-    // so location art (背景/全景) resolves too — the card seam carries no category. Unknown types fall
-    // back to character. Kept at parity with the WCV path (worldAssetService.assetUrlForWorld).
+    // from the asset TYPE via the shared categoryForType (头像/立绘/相册 → character, 背景/全景 → location,
+    // CG → cg), so location art and cutscene CGs resolve too — the card seam carries no category. Unknown
+    // types fall back to character. Kept at parity with the WCV path (worldAssetService.assetUrlForWorld).
     assetUrl: async (name: string, type: string, mood?: string) => {
       try {
         const own = cardCharacterId()
         const ids = useLorebookStore.getState().sessionIds ?? (own ? [own] : [])
         const category = categoryForType(type as AssetType)
         return await window.api.assetUrl(ctx.profileId, ids, category, name, type, mood)
+      } catch {
+        return null
+      }
+    },
+    // Enumerate one entry's variants for this card's world (WA-3). Resolves the session lorebook ids the
+    // same way assetUrl does; main applies the id precedence + category inference. Empty array on error.
+    assetList: async (name: string, type: string) => {
+      try {
+        const own = cardCharacterId()
+        const ids = useLorebookStore.getState().sessionIds ?? (own ? [own] : [])
+        return await window.api.assetList(ctx.profileId, ids, name, type)
+      } catch {
+        return []
+      }
+    },
+    // Picker-backed import (WA-3): resolves the session lorebook ids like assetUrl/assetList (the write
+    // target is the primary id); main opens the OS image picker, copies the pick into the world, and
+    // returns the new rptasset:// URL (null on cancel/invalid). Kept at parity with the WCV path.
+    requestAssetImport: async (arg: { name: string; type: string; variant?: string }) => {
+      try {
+        const own = cardCharacterId()
+        const ids = useLorebookStore.getState().sessionIds ?? (own ? [own] : [])
+        return await window.api.assetImportForCard(
+          ctx.profileId,
+          ids,
+          arg.name,
+          arg.type,
+          arg.variant
+        )
       } catch {
         return null
       }

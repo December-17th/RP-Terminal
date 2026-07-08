@@ -91,6 +91,27 @@ describe('importAssetFiles', () => {
   })
 })
 
+// WA-3: the write side of rptHost.requestAssetImport (the picker itself lives in the IPC layer). Copies
+// one source under the convention and returns its rptasset:// URL; null on a bad arg / copy failure.
+describe('importAssetForCard', () => {
+  it('copies the pick and returns its rptasset:// URL', () => {
+    const src = srcImage('pic.png')
+    const url = svc.importAssetForCard('p1', 'w1', src, '薇拉', '相册', '02')
+    expect(url).toBe(`rptasset://p1/w1/character/${encodeURIComponent('薇拉_相册_02.png')}`)
+    expect(fs.existsSync(path.join(catDir('w1', 'character'), '薇拉_相册_02.png'))).toBe(true)
+  })
+  it('returns null for an unknown type or an empty name (never writes)', () => {
+    const src = srcImage('pic.png')
+    expect(svc.importAssetForCard('p1', 'w1', src, '薇拉', 'bogus' as any)).toBeNull()
+    expect(svc.importAssetForCard('p1', 'w1', src, '  ', '头像')).toBeNull()
+    expect(fs.existsSync(catDir('w1', 'character'))).toBe(false)
+  })
+  it('returns null when the copy is rejected (unsupported extension)', () => {
+    const src = srcImage('a.txt')
+    expect(svc.importAssetForCard('p1', 'w1', src, '薇拉', '头像')).toBeNull()
+  })
+})
+
 describe('deleteAssetFile', () => {
   it('unlinks an existing file', () => {
     writeFile('w1', 'character', '薇拉_头像.png')

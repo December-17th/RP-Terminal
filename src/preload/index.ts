@@ -621,6 +621,19 @@ const api = {
     type: string,
     mood?: string
   ) => ipcRenderer.invoke('asset-url', profileId, lorebookIds, category, name, type, mood),
+  // Card-facing (WA-3): enumerate one entry's variants; main applies id precedence + category inference.
+  assetList: (profileId: string, lorebookIds: string[], name: string, type: string) =>
+    ipcRenderer.invoke('asset-list-for-card', profileId, lorebookIds, name, type),
+  // Card-facing (WA-3): open the OS image picker and import into the primary world; returns the new
+  // rptasset:// URL or null (cancel/invalid). Backs rptHost.requestAssetImport on inline cards.
+  assetImportForCard: (
+    profileId: string,
+    lorebookIds: string[],
+    name: string,
+    type: string,
+    variant?: string
+  ) =>
+    ipcRenderer.invoke('asset-import-for-card', profileId, lorebookIds, name, type, variant),
   duelPreview: (profileId: string, chatId: string, characterId: string) =>
     ipcRenderer.invoke('duel-preview', profileId, chatId, characterId),
   assetRefresh: (profileId: string, lorebookIds: string[]) =>

@@ -422,6 +422,79 @@ export function renameAssetVariant(
   }
 }
 
+// ── Card-facing read/import path (WA-3) ──────────────────────────────────────────────────────────
+// The two APIs cards reach through the runtime seam: `assetList` (enumerate one entry's files) and the
+// picker-backed import behind `rptHost.requestAssetImport`. Kept in this service alongside WA-2's manager
+// functions; both honor the same world root + lorebook-id precedence as {@link assetUrlForWorld}.
+
+export interface AssetListItem {
+  /** null for the base (no-variant) file; otherwise the mood/gallery-slot token. */
+  variant: string | null
+  url: string
+}
+
+/** Enumerate one entry's files (all variants of a single name+type) for a card, as `rptasset://` URLs.
+ *  Precedence mirrors {@link assetUrlForWorld}: the FIRST lorebook id that carries this name+type wins —
+ *  entries are NOT merged across worlds. Order: the base file first (`variant:null`), then variant tokens
+ *  naturally sorted (numeric-aware `localeCompare(…, 'zh', {numeric:true})` so `2` precedes `10`). Empty
+ *  array on any miss (unknown name/type, empty name, or an unrecognized type). The category is inferred
+ *  from the asset TYPE via {@link categoryForType}, exactly like `assetUrl`. */
+export function assetListForWorld(
+  profileId: string,
+  lorebookIds: string[],
+  name: string,
+  type: AssetType
+): AssetListItem[] {
+  const trimmed = (name ?? '').trim()
+  if (!trimmed || !(ASSET_TYPES as string[]).includes(type)) return []
+  const category = categoryForType(type)
+  for (const id of lorebookIds) {
+    const entry = getIndex(profileId, id)[category]?.[trimmed]?.[type]
+    if (!entry) continue
+    const urlFor = (file: string): string =>
+      `rptasset://${profileId}/${id}/${category}/${encodeURIComponent(file)}`
+    const out: AssetListItem[] = []
+    if (entry.base) out.push({ variant: null, url: urlFor(entry.base) })
+    const variants = Object.keys(entry.moods).sort((a, b) =>
+      a.localeCompare(b, 'zh', { numeric: true })
+    )
+    for (const v of variants) out.push({ variant: v, url: urlFor(entry.moods[v]) })
+    return out
+  }
+  return []
+}
+
+/** Copy ONE picked source file into a world's assets under the naming convention and return its new
+ *  `rptasset://` URL — the write side of `rptHost.requestAssetImport` (the OS picker itself is opened by
+ *  the IPC layer, consistent with the user-mediated security stance). Delegates the validation + root-escape
+ *  guard + cache invalidation to {@link importAssetFiles}; returns null on any rejection (empty name,
+ *  unknown type, unsupported/traversing path, copy failure). Overwrite = replace, per design §2. */
+export function importAssetForCard(
+  profileId: string,
+  lorebookId: string,
+  srcPath: string,
+  name: string,
+  type: AssetType,
+  variant?: string
+): string | null {
+  const trimmed = (name ?? '').trim()
+  if (!trimmed || !(ASSET_TYPES as string[]).includes(type)) return null
+  const res = importAssetFiles(profileId, lorebookId, [
+    { srcPath, name: trimmed, type, variant }
+  ])
+  if (res.imported < 1) return null
+  const category = categoryForType(type)
+  const dot = srcPath.lastIndexOf('.')
+  const ext = dot >= 0 ? srcPath.slice(dot + 1).toLowerCase() : ''
+  const file = buildAssetFilename({
+    name: trimmed,
+    type,
+    mood: variant?.trim() || undefined,
+    ext: ext as AssetExt
+  })
+  return `rptasset://${profileId}/${lorebookId}/${category}/${encodeURIComponent(file)}`
+}
+
 /** Write a `.assets`-mirroring zip (`<category>/<file>`) of a world's assets — the inverse of
  *  {@link importAssetsZip}. Only convention-parsing files are included; `_index.json`/dotfiles skip. */
 export function exportAssetsZip(

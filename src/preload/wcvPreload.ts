@@ -300,6 +300,14 @@ w.TavernHelper = g.TavernHelper
 // ONE place (shared/thRuntime → the WCV Host → the app's overlay mechanism), never forked per transport.
 ;(rptHost as any).requestOverlay = (id: string): Promise<boolean> => g.requestOverlay(id)
 ;(rptHost as any).closeOverlay = (): Promise<void> => g.closeOverlay()
+// WA-3: the picker-backed asset import is a host-privilege write, so (like requestOverlay) it is surfaced
+// on rptHost too, delegating to the shared-runtime facade. The read-only `assetList` stays a bare global
+// (mirrors assetUrl — Object.assign(w, g) above already exposed it), not on rptHost.
+;(rptHost as any).requestAssetImport = (arg: {
+  name: string
+  type: string
+  variant?: string
+}): Promise<string | null> => g.requestAssetImport(arg)
 
 // --- libraries the card bundle externalizes as bare globals (lodash `_`, Zod `z`, jQuery `$`, `toastr`) ---
 // These are transport-level library injection (not part of the TH runtime). The runtime already provides

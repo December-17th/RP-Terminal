@@ -1,5 +1,6 @@
-import { IpcMain } from 'electron'
+import { IpcMain, BrowserWindow } from 'electron'
 import * as wcvManager from '../services/wcvManager'
+import { pickAndImportAssetForCard } from './worldAssetIpc'
 import { computeDuelPreview } from '../services/duelPreviewService'
 import { getChatCardVars, setChatCardVars } from '../services/chatCardVarsService'
 import * as floorService from '../services/floorService'
@@ -604,6 +605,37 @@ export const registerWcvIpc = (ipcMain: IpcMain): void => {
       chatService.getChatLorebookIds(ctx.profileId, ctx.chatId) ??
       (ctx.characterId ? [ctx.characterId] : [])
     return worldAssetService.assetUrlForWorld(ctx.profileId, ids, String(name ?? ''), type, mood)
+  })
+
+  // Card-facing asset enumeration (WA-3): the calling WCV panel's ctx resolves from e.sender (like
+  // wcv-host-asset-url). Same id precedence + category inference as assetUrl; returns [] on any miss.
+  ipcMain.handle('wcv-host-asset-list', (e, name, type) => {
+    const ctx = wcvManager.contextFor(e.sender.id)
+    if (!ctx) return []
+    const ids =
+      chatService.getChatLorebookIds(ctx.profileId, ctx.chatId) ??
+      (ctx.characterId ? [ctx.characterId] : [])
+    return worldAssetService.assetListForWorld(ctx.profileId, ids, String(name ?? ''), type)
+  })
+
+  // Card-facing picker-backed import (WA-3): main opens the OS image picker, copies into the calling
+  // card's primary world, returns the new rptasset:// URL (null on cancel/invalid). ctx from e.sender; a
+  // WCV's webContents doesn't map to a BrowserWindow, so fall back to the app's window for the dialog.
+  ipcMain.handle('wcv-host-request-asset-import', (e, arg) => {
+    const ctx = wcvManager.contextFor(e.sender.id)
+    if (!ctx) return null
+    const ids =
+      chatService.getChatLorebookIds(ctx.profileId, ctx.chatId) ??
+      (ctx.characterId ? [ctx.characterId] : [])
+    const win = BrowserWindow.fromWebContents(e.sender) ?? BrowserWindow.getAllWindows()[0] ?? null
+    return pickAndImportAssetForCard(
+      win,
+      ctx.profileId,
+      ids,
+      String(arg?.name ?? ''),
+      String(arg?.type ?? ''),
+      arg?.variant != null ? String(arg.variant) : undefined
+    )
   })
 
   // Engine-computed duel build preview for the calling panel's active chat (read-only).

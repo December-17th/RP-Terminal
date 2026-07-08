@@ -72,3 +72,48 @@ describe('assetUrlForWorld', () => {
     expect(svc.assetUrlForWorld('p1', ['w1'], '雾港', '全景')).toBeNull()
   })
 })
+
+// WA-3: assetList enumerates one entry's variants for a card. base first (variant:null), then variants
+// naturally sorted; same lorebook-id precedence + category inference as assetUrl; [] on any miss.
+describe('assetListForWorld', () => {
+  it('lists the base first (variant:null) then variants, numeric-aware sorted', () => {
+    write('w1', '薇拉_相册.png') // cover (base, no slot)
+    write('w1', '薇拉_相册_10.png')
+    write('w1', '薇拉_相册_2.png')
+    const list = svc.assetListForWorld('p1', ['w1'], '薇拉', '相册')
+    expect(list).toEqual([
+      { variant: null, url: `rptasset://p1/w1/character/${encodeURIComponent('薇拉_相册.png')}` },
+      // numeric-aware: 2 before 10 (a plain string sort would put "10" first).
+      { variant: '2', url: `rptasset://p1/w1/character/${encodeURIComponent('薇拉_相册_2.png')}` },
+      { variant: '10', url: `rptasset://p1/w1/character/${encodeURIComponent('薇拉_相册_10.png')}` }
+    ])
+  })
+  it('omits the base when only variants exist', () => {
+    write('w1', '爱莎_头像_愤怒.png')
+    const list = svc.assetListForWorld('p1', ['w1'], '爱莎', '头像')
+    expect(list).toEqual([
+      { variant: '愤怒', url: `rptasset://p1/w1/character/${encodeURIComponent('爱莎_头像_愤怒.png')}` }
+    ])
+  })
+  it('returns [] on a miss, an empty name, or an unknown type', () => {
+    write('w1', '爱莎_头像.png')
+    expect(svc.assetListForWorld('p1', ['w1'], '无名', '头像')).toEqual([])
+    expect(svc.assetListForWorld('p1', ['w1'], '  ', '头像')).toEqual([])
+    expect(svc.assetListForWorld('p1', ['w1'], '爱莎', '不存在' as any)).toEqual([])
+  })
+  it('honors lorebook-id precedence: the FIRST id carrying the entry wins (no cross-world merge)', () => {
+    write('w1', '薇拉_相册.png')
+    write('w2', '薇拉_相册_02.png') // later id — must NOT be merged into w1's entry
+    const list = svc.assetListForWorld('p1', ['w1', 'w2'], '薇拉', '相册')
+    expect(list).toEqual([
+      { variant: null, url: `rptasset://p1/w1/character/${encodeURIComponent('薇拉_相册.png')}` }
+    ])
+  })
+  it('resolves from a later id when the earlier one lacks the entry', () => {
+    write('w2', '薇拉_相册_02.png')
+    const list = svc.assetListForWorld('p1', ['w1', 'w2'], '薇拉', '相册')
+    expect(list).toEqual([
+      { variant: '02', url: `rptasset://p1/w2/character/${encodeURIComponent('薇拉_相册_02.png')}` }
+    ])
+  })
+})
