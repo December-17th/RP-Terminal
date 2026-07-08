@@ -180,6 +180,18 @@
 .rpt-duel-modal-body { flex:1; min-height:0; display:flex; }
 .rpt-duel-modal-body > .rpt-duel { flex:1; min-width:0; }
 
+/* Generic full-window popup host (AssetsPopup.tsx; reusable by future Variables/Tables popups) —
+   a centered, fixed-size window over .modal-overlay's backdrop. Mirrors .rpt-duel-modal so a card
+   that owns the play area (static panel_ui) can't hide these full-workspace surfaces. */
+.rpt-popup-modal { width:min(1120px, 95vw); height:min(760px, 90vh); background:var(--rpt-bg-secondary);
+  border:1px solid var(--rpt-border); border-radius:12px; display:flex; flex-direction:column;
+  overflow:hidden; box-shadow:0 20px 60px rgba(0,0,0,.5); }
+.rpt-popup-modal-head { flex:0 0 auto; display:flex; align-items:center; justify-content:space-between;
+  padding:8px 14px; border-bottom:1px solid var(--rpt-border); background:var(--rpt-bg-primary);
+  color:var(--rpt-text-primary); font-size:13px; }
+.rpt-popup-modal-body { flex:1; min-height:0; display:flex; }
+.rpt-popup-modal-body > .rpt-assets { flex:1; min-width:0; }
+
 /* Floors manager (FloorManagerModal) — a scrollable floor list + a delete-tail footer, inside the
    shared .modal-panel. Deleting marks the picked floor and every floor below it (danger tint). */
 .rpt-floors { display:flex; flex-direction:column; height:100%; gap:10px; }

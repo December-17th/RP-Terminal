@@ -11,7 +11,6 @@ import { WorldPanel } from './WorldPanel'
 import { useUiStore, type SettingsSection } from '../stores/uiStore'
 import { useCharacterStore } from '../stores/characterStore'
 import { useChatStore } from '../stores/chatStore'
-import { useWorkspaceStore } from '../stores/workspaceStore'
 import { useT } from '../i18n'
 
 /**
@@ -27,7 +26,7 @@ export function SettingsModal({ profileId }: { profileId: string }): React.React
   const close = useUiStore((s) => s.closeSettings)
   const initialSection = useUiStore((s) => s.settingsSection)
   const openWorkflowEditor = useUiStore((s) => s.openWorkflowEditor)
-  const ensureLeftPanel = useWorkspaceStore((s) => s.ensureLeftPanel)
+  const openAssetsPopup = useUiStore((s) => s.openAssetsPopup)
   const activeCharacter = useCharacterStore((s) => s.activeCharacter)
   const activeChatId = useChatStore((s) => s.activeChatId)
   const [section, setSection] = useState<SettingsSection>(initialSection)
@@ -86,7 +85,7 @@ export function SettingsModal({ profileId }: { profileId: string }): React.React
               disabled={!activeCharacter}
               onClick={() => {
                 close()
-                ensureLeftPanel('assets')
+                openAssetsPopup()
               }}
             >
               {t('settings.assetsOpen')}

@@ -46,6 +46,13 @@ interface UiState {
   duelPopupOpen: boolean
   openDuelPopup: () => void
   closeDuelPopup: () => void
+  /** The World Assets manager, hosted as a full-window centered popup (AssetsPopup) — mirrors the
+   *  duel popup. It layers above BOTH the reconfigurable Workspace and a card's static panel_ui
+   *  layout, so the Settings "Open Assets view" button reaches it even when a card owns the play
+   *  area (where docking a workspace panel would surface nothing). */
+  assetsPopupOpen: boolean
+  openAssetsPopup: () => void
+  closeAssetsPopup: () => void
 }
 
 export const useUiStore = create<UiState>((set) => ({
@@ -70,5 +77,8 @@ export const useUiStore = create<UiState>((set) => ({
   setLauncherWorldId: (launcherWorldId) => set({ launcherWorldId }),
   duelPopupOpen: false,
   openDuelPopup: () => set({ duelPopupOpen: true }),
-  closeDuelPopup: () => set({ duelPopupOpen: false })
+  closeDuelPopup: () => set({ duelPopupOpen: false }),
+  assetsPopupOpen: false,
+  openAssetsPopup: () => set({ assetsPopupOpen: true }),
+  closeAssetsPopup: () => set({ assetsPopupOpen: false })
 }))
