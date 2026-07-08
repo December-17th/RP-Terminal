@@ -1,0 +1,807 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>命定之诗 — 同行者 sheet</title>
+<!--
+  命定之诗 — partner sheet OVERLAY surface (PM-G3, the DestinyTab port, read-only). A full-play-area
+  card surface declared in panel_ui.overlays as `poem-partner` and raised by the WORLD 命定 tab:
+  WORLD writes chat KV poem.sheet={partner:名} then calls rptHost.requestOverlay('poem-partner')
+  (poem-world-surface.html), and the app mounts THIS page as a transparent WCV over the whole grid
+  region (PM-A7). See docs/design/poem-status-parity-design-2026-07-07.md §3 (+ §5 for the mechanism).
+
+  Parity target: FrontEnd-for-destined-journey-TPR-STS/src/status/pages/destiny/DestinyTab.tsx — the
+  partner detail (renderPartnerDetails :1131) with sections overview/status/equipment/skills/inventory/
+  background (相册/gallery is WA-4, out of scope). This sheet ports the SAME information + interactions;
+  the LOOK is ours (night-glass, poem-themes.css). EDITING is OUT of scope (PM-G4/WA-4) — read-only.
+
+  Layout (glass sheet on its own scrim):
+    · left identity column (~40%): 立绘 (assetUrl(name,'立绘',mood) → 头像 fallback → initial glyph,
+      WORLD's .npc-av gradient recipe scaled) + the big 好感度 center-axis bar under it.
+    · right column: gilt idplate (serif name + ◈ 命定) + a mono tag line
+      (种族 · 职业/身份 · 生命层级 · Lv, non-empty joined with ·), then six section tabs:
+        档案 — 性格/喜爱/外貌/着装 prose rows, then the 属性 grid, then 登神长阶 rungs (if 是否开启).
+        状态 — the full 状态效果 list (类型 tint / 效果 / ×层数 / 剩余时间 / 来源) — SELF §1.2 component.
+        装备/技能/背包 — SELF's item rows + tap-detail; a 类型 filter pill row appears when a list has
+          >8 entries (DestinyTab renderPartnerAssetSection filterKey 类型).
+        心语 — 心里话 as an inner-voice quote card + 背景故事 prose. Empty → 她尚未向你敞开心扉。
+
+  Data (verified against the real 状态栏 schema, FrontEnd.../src/data_schema/{schema,utils}.ts):
+    partner = stat_data.关系列表[name] (RelationSchema, schema.ts:80-136) — IdentitySchema fields
+      (等级 1..25, 生命层级, 种族, 身份[], 职业[], 属性{力量/敏捷/体质/智力/精神}, 装备{}, 技能{},
+      登神长阶{是否开启,要素,权能,法则,神位,神国}) + 在场, 性格, 喜爱, 外貌, 着装, 命定契约,
+      好感度(-100..100), 状态效果{}, 背包{}, 心里话, 背景故事. Partners carry NO HP/MP/SP resources,
+      金钱, or 冒险者等级 (those are 主角-only) — the sheet renders only what a partner actually has.
+    The target name arrives via chat KV poem.sheet.partner (written by WORLD before the overlay opens).
+
+  Reads getVariables().stat_data + getVariables({type:'chat'}); re-renders on mag_variable_updated /
+  message_updated / poem:sheet (partner switch while open). Close (✕ / Esc / scrim click) calls
+  rptHost.closeOverlay() behind a typeof-guard — so the page still opens standalone in a browser (MOCK
+  data, one rich + one sparse partner, ?partner= override). Theme via poem:theme + KV (SELF's recipe).
+  VERIFY live open + data in-app (manual-verify).
+
+  CONTRAST (poem-themes.css header): text ≤12px stays on the SAFE token list (--gold/--text/--dim/--faint)
+  in all 4 palettes; CJK-bearing text ≥12px (numeric/mono runs may stay 11px). Accents (border-left,
+  rarity dot, badge tint) ride --gold/--ember/--q-* via color-mix and never carry small text alone.
+-->
+<style>
+  /* Palette + fonts + the 4 themes live in the shared token file (switch via dataset.poemTheme). */
+  @import url('./poem-themes.css');
+
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; }
+  body {
+    height: 100vh; overflow: hidden; color: var(--text);
+    background: transparent;  /* PM-A7 transparent-WCV route: the surface paints its own scrim */
+    font-family: var(--sans); -webkit-font-smoothing: antialiased;
+  }
+
+  /* ── scrim: dims the frozen play area behind the sheet (PM-A7 ships the WCV transparent) ── */
+  .scrim {
+    position: fixed; inset: 0; display: flex; align-items: center; justify-content: center;
+    padding: 24px; background: rgba(0, 0, 0, .55); backdrop-filter: blur(6px);
+    opacity: 0; transition: opacity .24s ease;
+  }
+  .scrim.open { opacity: 1; }
+
+  /* ── the glass sheet ── */
+  .sheet {
+    position: relative; width: min(980px, 94vw); height: 86vh; max-height: 86vh;
+    display: flex; overflow: hidden; border-radius: 16px;
+    background: var(--glass); backdrop-filter: blur(14px); border: 1px solid var(--line-soft);
+    box-shadow: 0 24px 64px rgba(0, 0, 0, .5);
+    transform: translateY(4px); opacity: 0; transition: transform .24s cubic-bezier(.4, 0, .2, 1), opacity .24s ease;
+  }
+  .scrim.open .sheet { transform: translateY(0); opacity: 1; }
+
+  .ps-close {
+    position: absolute; top: 10px; right: 10px; z-index: 5;
+    width: 44px; height: 44px; display: inline-flex; align-items: center; justify-content: center;
+    background: none; border: none; color: var(--dim); font-size: 22px; line-height: 1; cursor: pointer;
+    border-radius: 10px; transition: color .12s ease, background .12s ease;
+  }
+  .ps-close:hover, .ps-close:focus-visible { outline: none; color: var(--gold); background: color-mix(in srgb, var(--text) 8%, transparent); }
+
+  /* ── left identity column (~40%) ── */
+  .ps-left {
+    flex: 0 0 40%; min-width: 0; display: flex; flex-direction: column; gap: 12px;
+    padding: 18px 16px; border-right: 1px solid var(--line-soft);
+    background: linear-gradient(180deg, color-mix(in srgb, var(--scene-b) 22%, transparent), transparent 55%);
+  }
+  .ps-portrait {
+    position: relative; flex: 1 1 auto; min-height: 0; border-radius: 12px; overflow: hidden;
+    border: 1px solid var(--line-soft); background: rgba(0, 0, 0, .35);
+    display: flex; align-items: center; justify-content: center;
+  }
+  .ps-fig { width: 100%; height: 100%; object-fit: cover; display: block; }
+  /* initial-glyph fallback = WORLD's .npc-av gradient, scaled to fill the frame */
+  .ps-glyph {
+    position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+    font-family: var(--serif); font-size: min(38vh, 22vw); color: var(--text); opacity: .85;
+    background: radial-gradient(120% 100% at 35% 25%, var(--scene-b), var(--sunken) 70%);
+  }
+
+  /* 好感度 center-axis bar (WORLD affFill idiom, enlarged; ticks + number) */
+  .ps-aff { flex: 0 0 auto; }
+  .ps-aff-head { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 5px; }
+  .ps-aff-k { font-family: var(--mono); font-size: 12px; letter-spacing: .1em; color: var(--dim); }  /* PM-B5: CJK label 好感度 → ≥12px */
+  .ps-aff-n { font-family: var(--mono); font-size: 15px; font-weight: 700; color: var(--gold); }  /* numeric */
+  .ps-aff-n.neg { color: var(--ember); }
+  .ps-aff-track { position: relative; height: 9px; border-radius: 5px; background: rgba(0, 0, 0, .5); border: 1px solid var(--line-soft); overflow: hidden; }
+  .ps-aff-track::before { content: ''; position: absolute; left: 50%; top: -1px; bottom: -1px; width: 1px; background: var(--line); }
+  .ps-aff-track > i { position: absolute; top: 0; bottom: 0; background: var(--q-mythic); transition: width .35s ease; }
+  .ps-aff-track > i.pos { left: 50%; }
+  .ps-aff-track > i.neg { right: 50%; background: var(--ember); }
+  .ps-aff-ticks { display: flex; justify-content: space-between; font-family: var(--mono); font-size: 11px; color: var(--faint); margin-top: 4px; }  /* numeric ticks — 11px OK */
+
+  /* ── right column ── */
+  .ps-right { flex: 1 1 60%; min-width: 0; display: flex; flex-direction: column; }
+  .ps-head {
+    flex: 0 0 auto; position: relative; padding: 16px 46px 12px 20px; border-bottom: 1px solid var(--line-soft);
+  }
+  .ps-head::before {
+    content: ''; position: absolute; left: 10px; top: 18px; bottom: 14px; width: 3px; border-radius: 2px;
+    background: linear-gradient(180deg, var(--gold), transparent);
+  }
+  .ps-name { font-family: var(--serif); font-size: 24px; font-weight: 700; line-height: 1.2; }
+  .ps-pact { font-family: var(--mono); font-size: 12px; color: var(--gold); margin-left: 8px; }  /* PM-B5: ◈ 命定 CJK → ≥12px */
+  .ps-tag { display: block; margin-top: 4px; font-family: var(--mono); font-size: 12px; letter-spacing: .03em; color: var(--dim); }  /* PM-B5: CJK 种族/职业/生命层级 → ≥12px; --dim ≥7.1:1 */
+  .ps-tag .sep { color: var(--gold-dim); margin: 0 5px; }  /* separator glyph — decor, not text */
+
+  /* section tabs (SELF .tab idiom) */
+  .ps-tabs { flex: 0 0 auto; display: flex; align-items: center; gap: 6px; padding: 10px 16px; border-bottom: 1px solid var(--line-soft); }
+  .tab { flex: 1; min-width: 0; font-family: var(--mono); font-size: 12px; letter-spacing: .04em;  /* PM-B5: CJK tab labels (档案/状态/装备 …) → ≥12px */
+    background: var(--glass-soft); backdrop-filter: blur(12px); border: 1px solid var(--line-soft);
+    color: var(--dim); padding: 8px 3px; border-radius: 10px; cursor: pointer; }
+  .tab:hover { color: var(--text); border-color: var(--line); }
+  .tab.active { color: var(--gold); border-color: var(--gold-dim); }
+
+  /* the ONLY scroller: the active section body */
+  .ps-body { flex: 1 1 auto; min-height: 0; overflow-y: auto; padding: 16px; }
+  .ps-body::-webkit-scrollbar { width: 6px; }
+  .ps-body::-webkit-scrollbar-thumb { background: var(--line); border-radius: 3px; }
+  .ps-panel { display: none; }
+  .sheet-root[data-section="overview"] .ps-panel[data-section="overview"],
+  .sheet-root[data-section="status"] .ps-panel[data-section="status"],
+  .sheet-root[data-section="equip"] .ps-panel[data-section="equip"],
+  .sheet-root[data-section="skills"] .ps-panel[data-section="skills"],
+  .sheet-root[data-section="bag"] .ps-panel[data-section="bag"],
+  .sheet-root[data-section="voice"] .ps-panel[data-section="voice"] { display: block; }
+
+  /* section header + empty state (shared SELF/WORLD idiom) */
+  .sect { font-family: var(--mono); font-size: 12px; letter-spacing: .22em; text-transform: uppercase;
+    color: var(--gold); font-weight: 600; display: flex; align-items: center; gap: 8px; margin: 0 0 10px; }  /* PM-B3: --gold ≥7.2:1. PM-B5: CJK headers → ≥12px */
+  .sect::after { content: ''; flex: 1; height: 1px; background: linear-gradient(90deg, var(--line), transparent); }
+  .sect + .sect { margin-top: 18px; }
+  .empty { color: var(--faint); font-size: 12px; font-style: italic; padding: 2px 0; }  /* PM-B5: CJK empty-state prose → ≥12px */
+
+  /* 档案 — label + prose rows (stacked; prose can be long) */
+  .ps-field { margin-bottom: 12px; }
+  .ps-field-k { font-family: var(--mono); font-size: 12px; letter-spacing: .06em; color: var(--gold); font-weight: 600; margin-bottom: 3px; }  /* PM-B3: gilt key ≥7.2:1. PM-B5: CJK → ≥12px */
+  .ps-field-v { font-size: 13px; color: var(--text); line-height: 1.65; white-space: pre-wrap; }  /* PM-B5: CJK prose → ≥12px */
+
+  /* 属性 grid (SELF .attrs component) */
+  .attrs { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; }
+  .attr { text-align: center; background: rgba(0, 0, 0, .35); border: 1px solid var(--line-soft); border-radius: 8px; padding: 10px 2px; }
+  .attr-k { font-size: 12px; color: var(--dim); }  /* PM-B5: CJK attribute labels → ≥12px */
+  .attr-v { font-family: var(--mono); font-size: 18px; font-weight: 700; margin-top: 3px; }
+
+  /* 登神长阶 rungs (SELF component, verbatim recipe) */
+  .asc-rungs { display: flex; gap: 8px; }
+  .rung { flex: 1; background: rgba(0, 0, 0, .35); border: 1px solid var(--line-soft); border-radius: 9px; padding: 10px 8px; }
+  .rung.on { border-color: var(--gold-dim); }
+  .rung-h { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 7px; }
+  .rung-k { font-size: 12px; color: var(--dim); } .rung.on .rung-k { color: var(--gold); }  /* PM-B5: CJK rung labels → ≥12px */
+  .rung-n { font-family: var(--mono); font-size: 11px; color: var(--faint); }  /* numeric count — 11px OK */
+  .rung-item { border-top: 1px solid var(--line-soft); }
+  .rung-item:first-of-type { border-top: none; }
+  .rung-tag { display: block; width: 100%; text-align: left; font-size: 12px; color: var(--text); padding: 3px 0; }  /* PM-B5: CJK element names → ≥12px */
+  button.rung-tag { background: none; border: none; font: inherit; cursor: pointer; }
+  button.rung-tag::after { content: '＋'; float: right; font-family: var(--mono); color: var(--faint); }  /* decor glyph */
+  .rung-item.open button.rung-tag { color: var(--gold); }
+  .rung-item.open button.rung-tag::after { content: '－'; color: var(--gold); }
+  button.rung-tag:focus-visible { outline: none; color: var(--gold); }
+  .rung-detail { max-height: 0; overflow: hidden; opacity: 0; transition: max-height .2s ease, opacity .2s ease; }
+  .rung-item.open .rung-detail { max-height: 300px; opacity: 1; }
+  .rd-row { padding: 2px 0 3px; }
+  .rd-k { display: block; font-size: 12px; color: var(--gold); font-weight: 600; }  /* PM-B3: gilt key. PM-B5: CJK → ≥12px */
+  .rd-v { display: block; font-size: 12px; color: var(--dim); line-height: 1.5; }  /* PM-B5: CJK prose → ≥12px */
+  .rung .empty { font-size: 12px; }
+  .asc-crown { margin-top: 10px; font-size: 12px; color: var(--dim); }  /* PM-B5: CJK 神位/神国 → ≥12px */
+  .asc-crown b { color: var(--gold); font-family: var(--serif); }
+  .asc-kingdom-desc { margin-top: 5px; font-size: 12px; color: var(--dim); line-height: 1.55; }  /* PM-B5: CJK 神国.描述 → ≥12px */
+
+  /* 状态 list (SELF §1.2 .fx-item component) */
+  .fx-item { border: 1px solid var(--line-soft); border-left: 2px solid var(--gold); border-radius: 9px;
+    background: rgba(0, 0, 0, .30); padding: 9px 11px; margin-bottom: 8px; }
+  .fx-item.buff { border-left-color: var(--sp); }
+  .fx-item.debuff { border-left-color: var(--hp); }
+  .fx-item.special { border-left-color: var(--gold); }
+  .fx-head { display: flex; align-items: baseline; gap: 8px; }
+  .fx-name { flex: 1; font-size: 12.5px; color: var(--text); min-width: 0; }  /* PM-B5: CJK effect name → ≥12px */
+  .fx-type { flex: 0 0 auto; font-size: 12px; padding: 1px 8px; border-radius: 999px;
+    border: 1px solid var(--gold-dim); color: var(--gold); background: color-mix(in srgb, var(--gold) 12%, transparent); }  /* 特殊 = gold */
+  .fx-item.buff .fx-type { border-color: var(--sp); color: var(--sp); background: color-mix(in srgb, var(--sp) 12%, transparent); }
+  .fx-item.debuff .fx-type { border-color: var(--hp); color: var(--hp); background: color-mix(in srgb, var(--hp) 12%, transparent); }
+  .fx-meta { flex: 0 0 auto; font-family: var(--mono); font-size: 11px; color: var(--dim); }  /* numeric ×层数/剩余时间 — 11px OK */
+  .fx-desc { font-size: 12px; color: var(--dim); margin-top: 5px; line-height: 1.55; }  /* PM-B5: CJK 效果 → ≥12px */
+  .fx-src { font-size: 12px; color: var(--faint); margin-top: 4px; }  /* PM-B5: CJK 来源 → ≥12px; --faint ≥4.9:1 */
+
+  /* 类型 filter pills (WORLD .pills idiom; shown when a list has >8 entries) */
+  .pills { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 11px; }
+  .pill { display: inline-flex; align-items: center; gap: 5px; font-size: 12px;  /* PM-B5: CJK 类型 pill labels → ≥12px */
+    background: var(--glass-soft); border: 1px solid var(--line-soft); color: var(--dim);
+    padding: 4px 9px; border-radius: 999px; cursor: pointer; font-family: inherit; }
+  .pill:hover { color: var(--text); border-color: var(--line); }
+  .pill.on { color: var(--gold); border-color: var(--gold-dim); }
+  .pill .n { font-family: var(--mono); font-size: 11px; color: var(--faint); }  /* numeric count — 11px OK */
+  .pill.on .n { color: var(--gold); }
+
+  /* item / skill rows + accordion detail (SELF §1.1 component, verbatim recipe) */
+  .item { border-radius: 6px; }
+  .inv-row { display: flex; align-items: center; gap: 9px; width: 100%; padding: 7px 4px; border-radius: 6px;
+    background: none; border: 1px solid transparent; color: inherit; text-align: left; font: inherit; cursor: pointer; }
+  .inv-row:hover { background: color-mix(in srgb, var(--text) 6%, transparent); }
+  .inv-row:focus-visible { outline: none; border-color: var(--gold-dim); }
+  .item.open > .inv-row { background: color-mix(in srgb, var(--text) 6%, transparent); }
+  .inv-dot { width: 7px; height: 7px; border-radius: 50%; flex: 0 0 auto; box-shadow: 0 0 6px currentColor; }
+  .inv-name { flex: 1; font-size: 12.5px; }  /* PM-B5: CJK item name → ≥12px */
+  .inv-meta { font-size: 12px; color: var(--faint); font-family: var(--mono); }  /* PM-B5: CJK 位置/类型 → ≥12px */
+  .inv-chev { flex: 0 0 auto; font-family: var(--mono); font-size: 11px; color: var(--faint); transition: transform .2s ease; }  /* decor glyph — 11px */
+  .item.open .inv-chev { transform: rotate(90deg); color: var(--gold); }
+  .inv-detail { max-height: 0; overflow: hidden; opacity: 0; transition: max-height .2s ease, opacity .2s ease; }
+  .item.open .inv-detail { max-height: 520px; opacity: 1; }
+  .inv-detail-in { padding: 6px 8px 10px 22px; }
+  .id-q { font-size: 12.5px; font-weight: 700; margin-bottom: 3px; }  /* PM-B5: CJK 品质 name → ≥12px; tint = rarityColor(q) */
+  .id-line { font-size: 12px; color: var(--dim); font-family: var(--mono); margin-bottom: 5px; }  /* PM-B5: CJK 类型/位置 → ≥12px */
+  .id-tags { display: flex; flex-wrap: wrap; gap: 5px; margin-bottom: 6px; }
+  .id-chip { font-size: 12px; padding: 1px 8px; border-radius: 999px; border: 1px solid var(--line); color: var(--dim); }  /* PM-B5: CJK 标签 → ≥12px */
+  .id-fx { margin-bottom: 6px; }
+  .id-fx-row { display: flex; gap: 8px; align-items: baseline; padding: 2px 0; }
+  .id-fx-k { flex: 0 0 auto; font-size: 12px; color: var(--gold); font-weight: 600; }  /* PM-B3: gilt key. PM-B5: CJK → ≥12px */
+  .id-fx-v { font-size: 12px; color: var(--text); line-height: 1.5; }  /* PM-B5: CJK prose → ≥12px */
+  .id-desc { font-size: 12.5px; color: var(--dim); line-height: 1.6; }  /* PM-B5: CJK 描述 → ≥12px */
+
+  /* 心语 — 心里话 quote card + 背景故事 prose */
+  .voice-quote {
+    position: relative; margin: 0 0 16px; padding: 12px 14px 12px 20px; border-radius: 10px;
+    background: rgba(0, 0, 0, .28); border: 1px solid var(--line-soft);
+    font-family: var(--serif); font-style: italic; font-size: 14px; line-height: 1.7; color: var(--text);
+    white-space: pre-wrap;
+  }
+  .voice-quote::before { content: ''; position: absolute; left: 8px; top: 12px; bottom: 12px; width: 3px; border-radius: 2px; background: linear-gradient(180deg, var(--gold), transparent); }
+  .voice-bg { font-size: 13px; color: var(--dim); line-height: 1.7; white-space: pre-wrap; }  /* PM-B5: CJK 背景故事 → ≥12px */
+
+  @media (prefers-reduced-motion: reduce) {
+    .scrim, .sheet, .inv-detail, .rung-detail, .inv-chev, .ps-aff-track > i { transition: none; }
+  }
+</style>
+</head>
+<body>
+  <div class="scrim" id="scrim">
+    <div class="sheet-root sheet" id="sheet" data-section="overview" role="dialog" aria-modal="true" aria-label="同行者详情">
+      <button class="ps-close" id="psClose" type="button" aria-label="关闭" title="关闭">✕</button>
+
+      <div class="ps-left">
+        <div class="ps-portrait" id="psPortrait"><div class="ps-glyph" id="psGlyph">?</div></div>
+        <div class="ps-aff" id="psAff">
+          <div class="ps-aff-head"><span class="ps-aff-k">好感度</span><span class="ps-aff-n" id="psAffN">—</span></div>
+          <div class="ps-aff-track"><i id="psAffFill"></i></div>
+          <div class="ps-aff-ticks"><span>-100</span><span>0</span><span>+100</span></div>
+        </div>
+      </div>
+
+      <div class="ps-right">
+        <div class="ps-head">
+          <span class="ps-name" id="psName">同行者</span><span class="ps-pact" id="psPact"></span>
+          <span class="ps-tag" id="psTag"></span>
+        </div>
+        <div class="ps-tabs" id="psTabs">
+          <button class="tab active" data-section="overview" type="button">档案</button>
+          <button class="tab" data-section="status" type="button">状态</button>
+          <button class="tab" data-section="equip" type="button">装备</button>
+          <button class="tab" data-section="skills" type="button">技能</button>
+          <button class="tab" data-section="bag" type="button">背包</button>
+          <button class="tab" data-section="voice" type="button">心语</button>
+        </div>
+        <div class="ps-body" id="psBody">
+          <div class="ps-panel" data-section="overview" id="pOverview"></div>
+          <div class="ps-panel" data-section="status" id="pStatus"></div>
+          <div class="ps-panel" data-section="equip" id="pEquip"></div>
+          <div class="ps-panel" data-section="skills" id="pSkills"></div>
+          <div class="ps-panel" data-section="bag" id="pBag"></div>
+          <div class="ps-panel" data-section="voice" id="pVoice"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+<script>
+;(function () {
+  'use strict'
+
+  // ── play-area theme (4 palettes in poem-themes.css; SELF owns the switcher, we follow) ──
+  var POEM_THEMES = ['dusk', 'frost', 'ember', 'verdant']
+  function poemTheme() {
+    try {
+      if (typeof getVariables === 'function') {
+        var kv = getVariables({ type: 'chat' })
+        if (kv && typeof kv.then !== 'function' && POEM_THEMES.indexOf(kv['poem.theme']) >= 0) return kv['poem.theme']
+      }
+    } catch (_) {}
+    try {
+      var u = new URLSearchParams(location.search).get('theme')
+      if (POEM_THEMES.indexOf(u) >= 0) return u
+      var ls = localStorage.getItem('poem.theme')
+      if (POEM_THEMES.indexOf(ls) >= 0) return ls
+    } catch (_) {}
+    return 'dusk'
+  }
+  function applyPoemTheme(id) {
+    document.documentElement.dataset.poemTheme = POEM_THEMES.indexOf(id) >= 0 ? id : 'dusk'
+  }
+  applyPoemTheme(poemTheme())
+
+  // ── standalone-preview fallback data (only used when getVariables is absent). One RICH partner + one
+  //    SPARSE one (only 在场 + 好感度 set) to exercise every empty state. ?partner= overrides. ──
+  var MOCK = {
+    关系列表: {
+      薇拉: {
+        在场: true, 命定契约: true, 好感度: 64, 种族: '人族', 职业: ['灰隐者', '符文师'], 身份: ['夜莺团成员'],
+        生命层级: '史诗', 等级: 9,
+        性格: '沉静而克制，话不多，却总在最要紧的时刻挺身而出。',
+        喜爱: '雨后的旧书、无人的钟楼、一杯不加糖的黑咖啡。',
+        外貌: '灰袍覆身，兜帽下是一双近乎透明的浅色眼睛，左眉有一道浅疤。',
+        着装: '洗得发白的灰色长袍，腰间挂着几枚刻着符文的骨牌。',
+        属性: { 力量: 11, 敏捷: 15, 体质: 12, 智力: 16, 精神: 14 },
+        状态效果: {
+          守誓者印记: { 类型: '增益', 效果: '与主角同处一地时，受到的伤害降低 10%。', 层数: 1, 剩余时间: '契约存续期间', 来源: '命定契约' },
+          夜露侵蚀: { 类型: '减益', 效果: '每回合流失少量体力。', 层数: 2, 剩余时间: '2回合' }
+        },
+        装备: {
+          符骨短刃: { 品质: '稀有', 类型: '武器', 位置: '主手', 标签: ['轻', '符文'], 效果: { 攻击: '+18', 隐匿: '+10%' }, 描述: '刃身遍布细密符文，出鞘时几乎无声。' },
+          灰隐斗篷: { 品质: '史诗', 类型: '防具', 位置: '身体', 标签: ['隐匿'], 效果: { 闪避: '+8%' }, 描述: '据说以雾织成，穿上便与暮色融为一体。' }
+        },
+        背包: {
+          止血草: { 品质: '普通', 类型: '消耗品', 数量: 4, 效果: { 治疗: '恢复少量生命' }, 描述: '随处可见的野草，嚼碎敷在伤口上。' },
+          褪色信笺: { 品质: '传说', 类型: '关键物品', 数量: 1, 描述: '字迹几乎褪尽的一封信，署名只剩一个「V」。' }
+        },
+        技能: {
+          隐匿步: { 品质: '稀有', 类型: '主动', 消耗: '15 法力', 标签: ['隐匿'], 效果: { 效果: '数回合内难以被察觉' }, 描述: '踏入阴影，脚步声尽数隐没。' },
+          符文解读: { 品质: '优良', 类型: '被动', 消耗: '—', 描述: '能读懂大多数失传的古代符文。' }
+        },
+        登神长阶: {
+          是否开启: true,
+          要素: { 静默: { 亲和: '暗影亲和 +25%', 领悟: '开始理解「无声」亦是一种力量' } },
+          权能: {}, 法则: {},
+          神位: '', 神国: { 名称: '', 描述: '' }
+        },
+        心里话: '你大概永远不会知道，我留下来，从不只是因为那纸契约。',
+        背景故事: '灰隐者一族世代守望着阿斯塔利亚的边界。薇拉是这一代唯一走出雾墙的人——为了寻找一个名字，也为了逃离一个名字。'
+      },
+      渡鸦: {
+        在场: false, 好感度: -18
+      }
+    }
+  }
+
+  // Standalone stub — only when the real host is absent. Serves a 1×1 gif for 薇拉's 立绘 so the portrait
+  // swap path is exercised in a browser; every other lookup misses (glyph stays).
+  if (typeof getVariables !== 'function') {
+    var STUB_IMG = 'data:image/gif;base64,R0lGODlhAQABAIAAAP///wAAACH5BAEAAAAALAAAAAABAAEAAAICRAEAOw=='
+    if (typeof window.assetUrl !== 'function') {
+      window.assetUrl = function (name, type) {
+        if (name === '薇拉' && type === '立绘') return Promise.resolve(STUB_IMG)
+        return Promise.resolve(null)
+      }
+    }
+  }
+
+  // ── tiny helpers (copy-by-value from SELF; the shared-module refactor is out of scope) ──
+  function esc(s) {
+    return String(s == null ? '' : s).replace(/[&<>"]/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]
+    })
+  }
+  var num = function (v, d) { var n = Number(v); return isFinite(n) ? n : (d == null ? 0 : d) }
+  var firstStr = function (a) { return Array.isArray(a) ? a.filter(Boolean).join(' · ') : (a || '') }
+  // 好感度 -100..100 → center-axis meter { pct, neg } (WORLD affFill)
+  function affFill(v) { var n = Math.max(-100, Math.min(100, num(v))); return { pct: Math.abs(n) / 2, neg: n < 0 } }
+
+  // 品质 → rarity (verified names, FrontEnd .../utils/quality.ts)
+  var QUALITY = { 普通: 'common', 优良: 'uncommon', 稀有: 'rare', 史诗: 'epic', 传说: 'legendary', 神话: 'mythic', 唯一: 'unique' }
+  var QRANK = { 普通: 1, 优良: 2, 稀有: 3, 史诗: 4, 传说: 5, 神话: 6, 唯一: 7 }
+  function rarityColor(q) { var k = QUALITY[q]; return k ? 'var(--q-' + k + ')' : 'var(--q-common)' }
+
+  // ── the ONE typed projection of partner state (spec §2). All raw path knowledge lives here. Returns
+  //    null when the named partner is absent (the sheet then shows a not-found state). ──
+  function partnerState(SD, name) {
+    SD = SD && typeof SD === 'object' ? SD : {}
+    var rel = SD['关系列表'] && typeof SD['关系列表'] === 'object' ? SD['关系列表'] : {}
+    var P = name && rel[name] && typeof rel[name] === 'object' ? rel[name] : null
+    if (!P) return null
+    var A = P['属性'] && typeof P['属性'] === 'object' ? P['属性'] : {}
+    return {
+      name: name,
+      present: P['在场'] === true,
+      pact: !!P['命定契约'],
+      aff: P['好感度'] != null ? num(P['好感度']) : null,
+      race: P['种族'] || '',
+      jobs: firstStr(P['职业']),
+      ids: firstStr(P['身份']),
+      lifeTier: P['生命层级'] || '',
+      level: P['等级'] != null ? num(P['等级'], 1) : null,
+      personality: P['性格'] || '',
+      likes: P['喜爱'] || '',
+      appearance: P['外貌'] || '',
+      outfit: P['着装'] || '',
+      attrs: { 力量: num(A['力量']), 敏捷: num(A['敏捷']), 体质: num(A['体质']), 智力: num(A['智力']), 精神: num(A['精神']) },
+      hasAttrs: Object.keys(A).length > 0,
+      status: P['状态效果'] && typeof P['状态效果'] === 'object' ? P['状态效果'] : {},
+      equip: P['装备'] && typeof P['装备'] === 'object' ? P['装备'] : {},
+      bag: P['背包'] && typeof P['背包'] === 'object' ? P['背包'] : {},
+      skills: P['技能'] && typeof P['技能'] === 'object' ? P['技能'] : {},
+      asc: P['登神长阶'] && typeof P['登神长阶'] === 'object' ? P['登神长阶'] : {},
+      thoughts: P['心里话'] || '',
+      background: P['背景故事'] || '',
+      mood: P['当前情绪'] || P['心情'] || undefined
+    }
+  }
+
+  // ── item / skill disclosure rows (SELF §1.1) — collapsed row + accordion detail, one open at a time ──
+  var openItemKey = null
+  function itemDetailHtml(item, category) {
+    var out = ''
+    var q = item['品质'] || ''
+    if (q) out += '<div class="id-q" style="color:' + rarityColor(q) + '">' + esc(q) + '</div>'
+    var line = []
+    if (item['类型']) line.push(esc(item['类型']))
+    if (category === 'equip' && item['位置']) line.push(esc(item['位置']))
+    if (category === 'skill' && item['消耗']) line.push('消耗 ' + esc(item['消耗']))
+    if (category === 'bag' && item['数量'] != null) line.push('×' + num(item['数量'], 1))
+    if (line.length) out += '<div class="id-line">' + line.join(' · ') + '</div>'
+    var tags = Array.isArray(item['标签']) ? item['标签'].filter(Boolean) : []
+    if (tags.length) out += '<div class="id-tags">' + tags.map(function (t) { return '<span class="id-chip">' + esc(t) + '</span>' }).join('') + '</div>'
+    var fx = item['效果'] && typeof item['效果'] === 'object' ? item['效果'] : {}
+    var fxk = Object.keys(fx)
+    if (fxk.length) out += '<div class="id-fx">' + fxk.map(function (k) {
+      return '<div class="id-fx-row"><span class="id-fx-k">' + esc(k) + '</span><span class="id-fx-v">' + esc(fx[k]) + '</span></div>'
+    }).join('') + '</div>'
+    if (item['描述']) out += '<div class="id-desc">' + esc(item['描述']) + '</div>'
+    return out || '<div class="id-desc empty">暂无详情</div>'
+  }
+  function itemRow(key, name, item, category) {
+    var q = item['品质'] || ''
+    var meta = []
+    if (category === 'equip') { if (item['位置']) meta.push(esc(item['位置'])); else if (item['类型']) meta.push(esc(item['类型'])) }
+    else if (category === 'bag') { if (item['类型']) meta.push(esc(item['类型'])); if (item['数量'] != null && num(item['数量'], 1) !== 1) meta.push('×' + num(item['数量'], 1)) }
+    else if (category === 'skill') { if (item['消耗']) meta.push(esc(item['消耗'])) }
+    var open = openItemKey === key
+    return '<div class="item' + (open ? ' open' : '') + '">' +
+      '<button type="button" class="inv-row" data-item="' + esc(key) + '" aria-expanded="' + (open ? 'true' : 'false') + '">' +
+      '<span class="inv-dot" style="color:' + rarityColor(q) + ';background:' + rarityColor(q) + '"></span>' +
+      '<span class="inv-name">' + esc(name) + '</span><span class="inv-meta">' + meta.join(' ') + '</span>' +
+      '<span class="inv-chev" aria-hidden="true">›</span></button>' +
+      '<div class="inv-detail"><div class="inv-detail-in">' + itemDetailHtml(item, category) + '</div></div></div>'
+  }
+  function sortByQuality(obj) {
+    return Object.keys(obj).sort(function (a, b) {
+      var d = (QRANK[obj[b] && obj[b]['品质']] || 0) - (QRANK[obj[a] && obj[a]['品质']] || 0)
+      return d !== 0 ? d : (a < b ? -1 : 1)
+    })
+  }
+
+  // ── ascension rung tags (SELF §1.1) ──
+  var openRungs = {}
+  function rungTag(section, name, details) {
+    var dk = Object.keys(details || {})
+    if (!dk.length) return '<div class="rung-item"><span class="rung-tag">' + esc(name) + '</span></div>'
+    var key = section + ':' + name
+    var open = !!openRungs[key]
+    var rows = dk.map(function (x) {
+      return '<div class="rd-row"><span class="rd-k">' + esc(x) + '</span><span class="rd-v">' + esc(details[x]) + '</span></div>'
+    }).join('')
+    return '<div class="rung-item' + (open ? ' open' : '') + '">' +
+      '<button type="button" class="rung-tag" data-rung="' + esc(key) + '" aria-expanded="' + (open ? 'true' : 'false') + '">' + esc(name) + '</button>' +
+      '<div class="rung-detail"><div class="rung-detail-in">' + rows + '</div></div></div>'
+  }
+  function ascRung(label, section, rec, limit, on) {
+    var keys = Object.keys(rec || {})
+    var tags = keys.length ? keys.map(function (k) { return rungTag(section, k, rec[k]) }).join('') : '<span class="empty">—</span>'
+    return '<div class="rung' + (on ? ' on' : '') + '"><div class="rung-h"><span class="rung-k">' + label +
+      '</span><span class="rung-n">' + keys.length + (limit ? '/' + limit : '') + '</span></div>' + tags + '</div>'
+  }
+
+  // ── 类型 filter state per item section (reset when the partner changes) ──
+  var filters = { equip: '全部', skills: '全部', bag: '全部' }
+  var SECT_LABEL = { equip: '装备', skills: '技能', bag: '背包' }
+  function distinctTypes(map) {
+    var seen = []
+    Object.keys(map).forEach(function (n) { var t = map[n] && map[n]['类型']; if (t && seen.indexOf(t) < 0) seen.push(t) })
+    return seen
+  }
+
+  // ── DOM handles ──
+  var scrimEl = document.getElementById('scrim')
+  var sheetEl = document.getElementById('sheet')
+  var bodyEl = document.getElementById('psBody')
+
+  // active section (reset to 档案 when the partner switches, like DestinyTab handlePartnerSelect)
+  var SECTIONS = ['overview', 'status', 'equip', 'skills', 'bag', 'voice']
+  var activeSection = 'overview'
+  var currentName = null
+
+  function applySection() {
+    sheetEl.dataset.section = activeSection
+    Array.prototype.forEach.call(document.querySelectorAll('.tab'), function (t) {
+      t.classList.toggle('active', t.dataset.section === activeSection)
+    })
+  }
+
+  // ── renderers (target is the partnerState projection; every section has an empty state) ──
+  function renderHeader(st, name) {
+    document.getElementById('psName').textContent = name || '同行者'
+    document.getElementById('psPact').textContent = st && st.pact ? '◈ 命定' : ''
+    var bits = []
+    if (st) {
+      if (st.race) bits.push(esc(st.race))
+      var role = st.jobs || st.ids
+      if (role) bits.push(esc(role))
+      if (st.lifeTier) bits.push(esc(st.lifeTier))
+      if (st.level != null) bits.push('Lv ' + st.level)
+    }
+    document.getElementById('psTag').innerHTML = bits.join('<span class="sep">·</span>')
+  }
+
+  function renderAffection(st) {
+    var n = document.getElementById('psAffN')
+    var fill = document.getElementById('psAffFill')
+    var wrap = document.getElementById('psAff')
+    if (!st || st.aff == null) { wrap.style.visibility = 'hidden'; return }
+    wrap.style.visibility = 'visible'
+    var f = affFill(st.aff)
+    n.textContent = (st.aff > 0 ? '+' : '') + st.aff
+    n.className = 'ps-aff-n' + (f.neg ? ' neg' : '')
+    fill.className = f.neg ? 'neg' : 'pos'
+    fill.style.width = f.pct + '%'
+  }
+
+  function renderPortrait(st, name) {
+    var glyph = document.getElementById('psGlyph')
+    var frame = document.getElementById('psPortrait')
+    // reset to glyph on every (re)render; the async swap re-hides it on load
+    var old = frame.querySelector('.ps-fig'); if (old) old.remove()
+    glyph.style.display = ''
+    glyph.textContent = String(name || '?').charAt(0)
+    if (typeof window.assetUrl !== 'function') return
+    var tries = [['立绘', st && st.mood], ['头像', undefined]]
+    var i = 0
+    function next() {
+      if (i >= tries.length) return   // total miss → keep the glyph
+      var t = tries[i++]
+      try {
+        Promise.resolve(window.assetUrl(name, t[0], t[1])).then(function (url) {
+          if (!url) { next(); return }
+          if (currentName !== name) return   // partner switched mid-flight
+          var img = new Image()
+          img.className = 'ps-fig'; img.alt = name
+          img.onload = function () {
+            if (currentName !== name) return
+            var g = frame.querySelector('.ps-glyph'); if (g) g.style.display = 'none'
+            frame.appendChild(img)
+          }
+          img.onerror = function () { next() }
+          img.src = url
+        }, next)
+      } catch (_) { next() }
+    }
+    next()
+  }
+
+  function fieldRow(k, v) {
+    if (!v) return ''
+    return '<div class="ps-field"><div class="ps-field-k">' + esc(k) + '</div><div class="ps-field-v">' + esc(v) + '</div></div>'
+  }
+  function renderOverview(st) {
+    var el = document.getElementById('pOverview')
+    var html = ''
+    var profile = fieldRow('性格', st.personality) + fieldRow('喜爱', st.likes) + fieldRow('外貌', st.appearance) + fieldRow('着装', st.outfit)
+    if (profile) html += '<div class="sect">档案</div>' + profile
+
+    if (st.hasAttrs) {
+      var keys = ['力量', '敏捷', '体质', '智力', '精神']
+      var cells = keys.map(function (k) {
+        return '<div class="attr"><div class="attr-k">' + k + '</div><div class="attr-v">' + st.attrs[k] + '</div></div>'
+      }).join('')
+      html += '<div class="sect">属性</div><div class="attrs">' + cells + '</div>'
+    }
+
+    var a = st.asc
+    if (a && a['是否开启']) {
+      var ele = a['要素'] || {}, pow = a['权能'] || {}, law = a['法则'] || {}
+      var king = a['神国'] && typeof a['神国'] === 'object' ? a['神国'] : {}
+      var crown = ''
+      if (a['神位']) crown += '神位 <b>' + esc(a['神位']) + '</b>　'
+      if (king['名称']) crown += '神国 <b>' + esc(king['名称']) + '</b>'
+      var crownHtml = crown ? '<div class="asc-crown">' + crown +
+        (king['描述'] ? '<div class="asc-kingdom-desc">' + esc(king['描述']) + '</div>' : '') + '</div>' : ''
+      html += '<div class="sect">登神长阶</div><div class="asc-rungs">' +
+        ascRung('要素', '要素', ele, 3, Object.keys(ele).length > 0) +
+        ascRung('权能', '权能', pow, 1, Object.keys(pow).length > 0) +
+        ascRung('法则', '法则', law, 0, Object.keys(law).length > 0) +
+        '</div>' + crownHtml
+    }
+
+    el.innerHTML = html || '<div class="empty">暂无档案信息。</div>'
+  }
+
+  function renderStatus(st) {
+    var el = document.getElementById('pStatus')
+    var keys = Object.keys(st.status || {})
+    var html = '<div class="sect">状态效果</div>'
+    if (!keys.length) { el.innerHTML = html + '<div class="empty">暂无状态效果。</div>'; return }
+    html += keys.map(function (name) {
+      var e = st.status[name] || {}
+      var type = e['类型'] || ''
+      var tone = type === '减益' ? 'debuff' : type === '增益' ? 'buff' : 'special'
+      var stacks = num(e['层数'], 1)
+      var meta = []
+      if (stacks > 1) meta.push('×' + stacks)
+      if (e['剩余时间']) meta.push(esc(e['剩余时间']))
+      return '<div class="fx-item ' + tone + '">' +
+        '<div class="fx-head"><span class="fx-name">' + esc(name) + '</span>' +
+        (type ? '<span class="fx-type">' + esc(type) + '</span>' : '') +
+        (meta.length ? '<span class="fx-meta">' + meta.join(' ') + '</span>' : '') + '</div>' +
+        (e['效果'] ? '<div class="fx-desc">' + esc(e['效果']) + '</div>' : '') +
+        (e['来源'] ? '<div class="fx-src">来源 · ' + esc(e['来源']) + '</div>' : '') + '</div>'
+    }).join('')
+    el.innerHTML = html
+  }
+
+  function renderItemSection(elId, map, category) {
+    var el = document.getElementById(elId)
+    var names = sortByQuality(map)
+    var total = names.length
+    var label = SECT_LABEL[category]
+    if (!total) {
+      var empty = category === 'equip' ? '暂无装备' : category === 'skills' ? '暂无技能' : '背包空空如也'
+      el.innerHTML = '<div class="sect">' + label + '</div><div class="empty">' + empty + '</div>'
+      return
+    }
+    var types = distinctTypes(map)
+    var showFilter = total > 8 && types.length > 1
+    var cur = filters[category] || '全部'
+    if (cur !== '全部' && types.indexOf(cur) < 0) { cur = '全部'; filters[category] = '全部' }
+    // itemRow's category param is equip|bag|skill; our filter key uses the tab key (skills). Map it.
+    var rowCat = category === 'skills' ? 'skill' : category
+    var pills = ''
+    if (showFilter) {
+      var opts = ['全部'].concat(types)
+      pills = '<div class="pills">' + opts.map(function (o) {
+        var n = o === '全部' ? total : names.filter(function (nm) { return map[nm]['类型'] === o }).length
+        return '<button type="button" class="pill' + (cur === o ? ' on' : '') + '" data-filter="' + esc(o) + '" data-cat="' + category + '">' +
+          '<span>' + esc(o) + '</span><span class="n">' + n + '</span></button>'
+      }).join('') + '</div>'
+    }
+    var list = cur === '全部' ? names : names.filter(function (nm) { return map[nm]['类型'] === cur })
+    var rows = list.length
+      ? list.map(function (nm) { return itemRow(rowCat + ':' + nm, nm, map[nm], rowCat) }).join('')
+      : '<div class="empty">没有「' + esc(cur) + '」分类的' + label + '</div>'
+    el.innerHTML = '<div class="sect">' + label + '</div>' + pills + rows
+  }
+
+  function renderVoice(st) {
+    var el = document.getElementById('pVoice')
+    var html = ''
+    if (st.thoughts) html += '<div class="sect">心里话</div><div class="voice-quote">“' + esc(st.thoughts) + '”</div>'
+    if (st.background) html += '<div class="sect">背景故事</div><div class="voice-bg">' + esc(st.background) + '</div>'
+    el.innerHTML = html || '<div class="empty">她尚未向你敞开心扉。</div>'
+  }
+
+  function renderNotFound(name) {
+    document.getElementById('psName').textContent = name || '同行者'
+    document.getElementById('psPact').textContent = ''
+    document.getElementById('psTag').innerHTML = ''
+    document.getElementById('psAff').style.visibility = 'hidden'
+    renderPortrait(null, name || '?')
+    document.getElementById('pOverview').innerHTML = '<div class="empty">' + (name ? '找不到「' + esc(name) + '」的档案。' : '未指定同行者。') + '</div>'
+    document.getElementById('pStatus').innerHTML = ''
+    document.getElementById('pEquip').innerHTML = ''
+    document.getElementById('pSkills').innerHTML = ''
+    document.getElementById('pBag').innerHTML = ''
+    document.getElementById('pVoice').innerHTML = ''
+  }
+
+  function renderAll(st, name) {
+    renderHeader(st, name); renderAffection(st); renderPortrait(st, name)
+    renderOverview(st); renderStatus(st)
+    renderItemSection('pEquip', st.equip, 'equip')
+    renderItemSection('pSkills', st.skills, 'skills')
+    renderItemSection('pBag', st.bag, 'bag')
+    renderVoice(st)
+  }
+
+  // ── host access ──
+  function statData() {
+    try {
+      if (typeof getVariables !== 'function') return Promise.resolve(MOCK)
+      var v = getVariables()
+      if (v && typeof v.then === 'function') return v.then(function (r) { return (r || {}).stat_data || {} })
+      return Promise.resolve((v || {}).stat_data || {})
+    } catch (_) { return Promise.resolve(MOCK) }
+  }
+  function chatKV() {
+    try {
+      if (typeof getVariables !== 'function') return Promise.resolve({})
+      var v = getVariables({ type: 'chat' })
+      if (v && typeof v.then === 'function') return v.then(function (r) { return r || {} })
+      return Promise.resolve(v || {})
+    } catch (_) { return Promise.resolve({}) }
+  }
+  function stubPartner() {
+    try { var u = new URLSearchParams(location.search).get('partner'); if (u) return u } catch (_) {}
+    var ks = Object.keys(MOCK['关系列表'] || {}); return ks.length ? ks[0] : null
+  }
+
+  function render() {
+    Promise.all([statData(), chatKV()]).then(function (res) {
+      var SD = res[0], kv = res[1] || {}
+      // theme may travel via chat KV too (SELF owns the switcher; we follow both KV + event)
+      if (POEM_THEMES.indexOf(kv['poem.theme']) >= 0) applyPoemTheme(kv['poem.theme'])
+      var name = (kv['poem.sheet'] && kv['poem.sheet'].partner) || (typeof getVariables !== 'function' ? stubPartner() : null)
+      if (name !== currentName) {
+        currentName = name
+        activeSection = 'overview'; applySection()
+        openItemKey = null; openRungs = {}
+        filters = { equip: '全部', skills: '全部', bag: '全部' }
+      }
+      var st = partnerState(SD, name)
+      if (!st) { renderNotFound(name); return }
+      renderAll(st, name)
+    })
+  }
+
+  // ── close (typeof-guarded overlay API — inert/hide standalone) ──
+  function closeSheet() {
+    try { if (window.rptHost && typeof window.rptHost.closeOverlay === 'function') { window.rptHost.closeOverlay(); return } } catch (_) {}
+    try { if (typeof closeOverlay === 'function') { closeOverlay(); return } } catch (_) {}
+    // standalone preview: fade the scrim out then hide
+    scrimEl.classList.remove('open')
+    setTimeout(function () { scrimEl.style.display = 'none' }, 240)
+  }
+
+  // ── wiring ──
+  applySection()
+  // open animation on next frame (reduced-motion → the transition is a no-op via CSS @media)
+  requestAnimationFrame(function () { scrimEl.classList.add('open') })
+
+  document.getElementById('psClose').addEventListener('click', closeSheet)
+  scrimEl.addEventListener('click', function (ev) { if (ev.target === scrimEl) closeSheet() })
+  document.addEventListener('keydown', function (ev) { if (ev.key === 'Escape') closeSheet() })
+
+  // section tabs
+  document.getElementById('psTabs').addEventListener('click', function (ev) {
+    var tab = ev.target.closest && ev.target.closest('.tab')
+    if (tab && SECTIONS.indexOf(tab.dataset.section) >= 0) { activeSection = tab.dataset.section; applySection() }
+  })
+
+  // delegated body handler (survives re-renders): filter pills, item rows, rung tags
+  bodyEl.addEventListener('click', function (ev) {
+    var pill = ev.target.closest && ev.target.closest('.pill')
+    if (pill && pill.dataset.cat) { filters[pill.dataset.cat] = pill.dataset.filter; render(); return }
+    var row = ev.target.closest && ev.target.closest('.inv-row')
+    if (row) {
+      var key = row.dataset.item
+      openItemKey = openItemKey === key ? null : key
+      Array.prototype.forEach.call(bodyEl.querySelectorAll('.item'), function (it) {
+        var btn = it.querySelector('.inv-row')
+        var open = btn && btn.dataset.item === openItemKey
+        it.classList.toggle('open', !!open)
+        if (btn) btn.setAttribute('aria-expanded', open ? 'true' : 'false')
+      })
+      return
+    }
+    var tag = ev.target.closest && ev.target.closest('button.rung-tag')
+    if (tag) {
+      var rk = tag.dataset.rung
+      openRungs[rk] = !openRungs[rk]
+      var item = tag.closest('.rung-item')
+      if (item) { item.classList.toggle('open', openRungs[rk]); tag.setAttribute('aria-expanded', openRungs[rk] ? 'true' : 'false') }
+      return
+    }
+  })
+
+  render()
+  if (typeof eventOn === 'function') {
+    var pending = false
+    var onChange = function () { if (pending) return; pending = true; Promise.resolve().then(function () { pending = false; render() }) }
+    eventOn('mag_variable_updated', onChange)
+    eventOn('message_updated', onChange)
+    eventOn('poem:sheet', onChange)   // partner switch while the overlay is open (design §3)
+    eventOn('poem:theme', function (p) { applyPoemTheme(p && p.id) })
+  }
+})()
+</script>
+</body>
+</html>

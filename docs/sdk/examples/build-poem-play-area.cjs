@@ -43,7 +43,10 @@ function inline(pageFile) {
 const pages = {
   self: inline('poem-self-surface.html'),
   stage: inline('poem-stage-surface.html'),
-  world: inline('poem-world-surface.html')
+  world: inline('poem-world-surface.html'),
+  // Full-viewport OVERLAY surfaces (PM-A7 panel_ui.overlays) — raised by a slot surface via
+  // rptHost.requestOverlay(<id>), not mounted in the grid. PM-G3 adds the partner sheet.
+  partner: inline('poem-partner-sheet.html')
 }
 
 // A panel_ui WCV entry: the page as a data:text/html URL (decoded + served from the card origin).
@@ -61,7 +64,10 @@ const panel_ui = {
     { id: 'self', view: 'wcv', entry: dataUrl(pages.self), rect: [0, 4, 3, 8] },
     { id: 'story', view: 'chat', rect: [3, 4, 6, 8], title: '正文' },
     { id: 'world', view: 'wcv', entry: dataUrl(pages.world), rect: [9, 0, 3, 12] }
-  ]
+  ],
+  // Full-play-area overlays a slot surface can raise (PM-A7 requestOverlay). WORLD's 命定 tab writes
+  // chat KV poem.sheet={partner} then calls requestOverlay('poem-partner') to open the sheet (PM-G3).
+  overlays: [{ id: 'poem-partner', entry: dataUrl(pages.partner), title: '同行者' }]
 }
 
 // The card theme reskins the app SHELL + native chat (the STORY slot) to the dusk-gilt palette, and
@@ -94,6 +100,7 @@ fs.mkdirSync(DIST, { recursive: true })
 fs.writeFileSync(path.join(DIST, 'poem-self.html'), pages.self)
 fs.writeFileSync(path.join(DIST, 'poem-stage.html'), pages.stage)
 fs.writeFileSync(path.join(DIST, 'poem-world.html'), pages.world)
+fs.writeFileSync(path.join(DIST, 'poem-partner.html'), pages.partner)
 fs.writeFileSync(path.join(DIST, 'poem-play-area.rpt.json'), JSON.stringify(fragment, null, 2))
 
 const kb = (s) => (Buffer.byteLength(s, 'utf8') / 1024).toFixed(1) + ' KB'
@@ -101,7 +108,8 @@ console.log('built poem play-area bundle → docs/sdk/examples/dist/')
 console.log(`  poem-self.html   ${kb(pages.self)}`)
 console.log(`  poem-stage.html  ${kb(pages.stage)}`)
 console.log(`  poem-world.html  ${kb(pages.world)}`)
-console.log(`  poem-play-area.rpt.json  ${kb(JSON.stringify(fragment))}  (panel_ui + theme)`)
+console.log(`  poem-partner.html  ${kb(pages.partner)}  (overlay)`)
+console.log(`  poem-play-area.rpt.json  ${kb(JSON.stringify(fragment))}  (panel_ui + theme + overlays)`)
 
 // ── optional: apply the fragment to a card PNG (`--apply [src] [out]`) ──────────────────
 // Merges { panel_ui, theme } into data.extensions.rp_terminal in the card's chara + ccv3 tEXt chunks
