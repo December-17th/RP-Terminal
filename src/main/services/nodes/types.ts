@@ -89,6 +89,12 @@ export interface RunContext {
 export interface NodeResult {
   outputs?: Record<string, unknown>
   signals?: string[]
+  /** Debug-only detail for the run trace (NOT graph output ports — never wired, never read by
+   *  downstream nodes). The engine folds these into the node's trace so they surface in the run
+   *  drawer's Runs tab, keyed by label. Used by `agent.llm` to expose the COMPOSED prompt it sent
+   *  (the interpolated + spliced messages), so "is it actually being sent" is inspectable — the
+   *  reason the dropped-{{input}} bug was hard to see. Values are stringified + capped in the trace. */
+  debug?: Record<string, unknown>
 }
 
 /** Per-instance info handed to run(): the node's id (node-state key) and its config —

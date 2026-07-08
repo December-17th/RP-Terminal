@@ -270,6 +270,11 @@ export const agentLlm: NodeImpl = {
     if (!hasLoreMarker && loreBlock) rows.push({ role: 'system', content: loreBlock })
     const sendMessages = providerShape(gen.settings, rows)
 
+    // Debug (trace-only): the FULLY composed prompt this call actually sends — interpolated rows with
+    // {{input}}/{history}/{{lore}} spliced, provider-shaped. Surfaces in the run drawer's Runs tab so
+    // "did the table block / history reach the model" is inspectable without adding a graph port.
+    const promptDebug = { 'prompt (sent)': sendMessages.map((m) => `[${m.role}]\n${m.content}`).join('\n\n') }
+
     // Params from the preset (temperature override when configured). No FSM cap here — an agent call
     // is a side call, budgeted by its own preset.
     const params: PresetParameters = {
@@ -292,8 +297,9 @@ export const agentLlm: NodeImpl = {
 
     const r = await runLlmCall(ctx, gen, sendMessages, params, callCfg)
     // Abort-with-empty: nothing to emit; the chain's downstream (parser) sees a dead `text` edge and
-    // is pruned (allDead) — a headless agent has no turn to abort, so we simply produce no text.
-    if (r === null) return { outputs: {} }
-    return { outputs: { text: r.raw } }
+    // is pruned (allDead) — a headless agent has no turn to abort, so we simply produce no text. The
+    // composed prompt is still traced (the call DID go out) so an empty result is diagnosable.
+    if (r === null) return { outputs: {}, debug: promptDebug }
+    return { outputs: { text: r.raw }, debug: promptDebug }
   }
 }

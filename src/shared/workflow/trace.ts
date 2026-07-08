@@ -49,16 +49,25 @@ interface RunResultLike {
   aborted: boolean
   traces: RunNodeTrace[]
   outputs: Map<string, Record<string, unknown>>
+  /** Per-node debug detail (NodeResult.debug) — trace-only, never a graph port. Optional so pre-debug
+   *  callers/tests still satisfy the shape. Folded into TraceNode.outputs below with a roomier cap. */
+  debug?: Map<string, Record<string, unknown>>
   error?: { message: string; nodeId?: string }
 }
 
 /** Longest preview kept per output port — enough to see what flowed, not the whole prompt. */
 export const OUTPUT_PREVIEW_MAX = 500
 
+/** Longest preview kept per DEBUG entry (NodeResult.debug — e.g. agent.llm's composed prompt). Larger
+ *  than OUTPUT_PREVIEW_MAX because the whole point of a debug entry is to READ what was sent (confirm
+ *  the table block / history actually reached the model), while a port preview only needs to show what
+ *  flowed. Still capped so a huge maintainer prompt doesn't bloat the persisted run record. */
+export const DEBUG_PREVIEW_MAX = 4000
+
 /** Display format for node timings: SECONDS with one decimal (owner preference), e.g. "1.2s". */
 export const formatTraceSeconds = (ms: number): string => `${(ms / 1000).toFixed(1)}s`
 
-const preview = (value: unknown): string => {
+const preview = (value: unknown, max = OUTPUT_PREVIEW_MAX): string => {
   let s: string
   try {
     s = typeof value === 'string' ? value : JSON.stringify(value)
@@ -66,7 +75,7 @@ const preview = (value: unknown): string => {
     return '(unserializable)'
   }
   if (s === undefined) return '(undefined)'
-  return s.length > OUTPUT_PREVIEW_MAX ? s.slice(0, OUTPUT_PREVIEW_MAX) + '…' : s
+  return s.length > max ? s.slice(0, max) + '…' : s
 }
 
 /**
@@ -97,6 +106,14 @@ export function summarizeRun(
         if (portType.get(port) === 'Context') continue
         if (value === undefined) continue
         previews[port] = preview(value)
+      }
+      // Fold this node's debug detail (NodeResult.debug) in alongside the port previews — same display
+      // row in the Runs tab — but with the roomier DEBUG cap. A debug key that collides with a port
+      // name would overwrite it; node authors avoid that by labeling debug entries distinctly (e.g.
+      // agent.llm uses "prompt (sent)", not the "text" output port).
+      for (const [label, value] of Object.entries(run.debug?.get(t.nodeId) ?? {})) {
+        if (value === undefined) continue
+        previews[label] = preview(value, DEBUG_PREVIEW_MAX)
       }
       if (Object.keys(previews).length) out.outputs = previews
     }

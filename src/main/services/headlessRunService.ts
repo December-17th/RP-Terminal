@@ -545,7 +545,8 @@ export const runHeadless = async (
         ok: !result.aborted && !result.fatal,
         aborted: result.aborted,
         traces: result.traces,
-        outputs: new Map()
+        outputs: new Map(),
+        debug: result.debug
       },
       { chatId, workflowId, startedAt, durationMs: Date.now() - startedAt }
     )
@@ -837,7 +838,8 @@ const runDocHeadless = async (
         ok: !result.aborted && !result.fatal,
         aborted: result.aborted,
         traces: result.traces,
-        outputs: new Map()
+        outputs: new Map(),
+        debug: result.debug
       },
       { chatId, workflowId, startedAt, durationMs: Date.now() - startedAt }
     )
