@@ -13,15 +13,26 @@
   is stats/items only — no portrait, no geometry slicing. Layout (top → bottom):
     · idplate card — the destiny-gilt identity plate (persona name + 生命层级 · Lv · 冒险者评级).
     · lean stats — HP / MP / SP / EXP bars, 命运 (FP) + 金钱 (gold), and 状态效果 chips.
-    · fold drawer — 属性 / 持有 / 登神长阶, hidden until a tab opens.
+    · fold drawer — 属性 / 持有 / 技能 / 登神 (four tabs), hidden until a tab opens; PLUS a hidden fifth
+      panel 状态 reached from the stats chips (not in the tab row) — PM-G1, design §1.
     · tabs — opening one EXPANDS the drawer into the space between stats and tabs (max-height/opacity
       transition); the stats stay put. Clicking the active tab again collapses it (spec §1.5).
+
+  PM-G1 (design poem-status-parity-2026-07-07 §1) brings SELF to StatusTab/ItemsTab parity, read-only:
+    · 属性 gains a 角色档案 block (种族 / 职业 / 身份) above the attr grid;
+    · 持有 + 技能 rows tap-to-expand a detail (品质/类型/位置|消耗|数量/标签/效果 k:v/描述), one open at a time;
+    · 登神 rung tags expand to their inner k:v description; the crown gains 神国.描述;
+    · the chips row is a button opening the 状态 panel (full 类型/效果/×层数/剩余时间/来源 list).
+    Edit affordances are OUT of scope (PM-G4); no ✎ pill here yet.
 
   Data (all keys verified against the real 状态栏 schema,
   FrontEnd-for-destined-journey-TPR-STS/src/data_schema/{schema,utils}.ts):
     stat_data.主角 → 生命值/上限, 法力值/上限, 体力值/上限, 累计经验值, 升级所需经验 (number|'MAX'),
-      金钱, 属性{力量,敏捷,体质,智力,精神}, 属性点, 状态效果{name:{类型,效果,层数,剩余时间}},
-      背包{name:{品质,类型,数量}}, 装备{slot:{品质,类型,位置}}, 登神长阶{是否开启,要素,权能,法则,神位,神国},
+      金钱, 种族, 职业[], 身份[], 属性{力量,敏捷,体质,智力,精神}, 属性点,
+      状态效果{name:{类型,效果,层数,剩余时间,来源}},
+      背包{name:{品质,类型,数量,标签[],效果{k:v},描述}}, 装备{name:{品质,类型,位置,标签[],效果{k:v},描述}},
+      技能{name:{品质,类型,消耗,标签[],效果{k:v},描述}},
+      登神长阶{是否开启,要素{name:{k:v}},权能,法则,神位,神国{名称,描述}},
       生命层级, 等级(1..25), 冒险者等级
     stat_data.命运点数 (TOP-LEVEL) → FP. 品质 names 普通/优良/稀有/史诗/传说/神话/唯一 → 7 rarity tiers.
     The 主角 object has NO name field; the label is the persona ({{user}}) + 生命层级 · Lv · 冒险者评级.
@@ -93,6 +104,10 @@
   .gold { font-family: var(--mono); font-size: 12px; color: var(--gold); }
   .gold b { font-weight: 700; }
   .chips { display: flex; flex-wrap: wrap; gap: 5px; justify-content: flex-end; }
+  /* PM-G1: the chips row is now a button that opens the hidden 状态 panel (design §1.2). Reset the
+     native button chrome; a gilt ring on hover/focus signals it is tappable (keyboard-reachable). */
+  button.chips { background: none; border: none; font: inherit; color: inherit; cursor: pointer; padding: 2px; margin: -2px; border-radius: 8px; }
+  button.chips:hover, button.chips:focus-visible { outline: none; box-shadow: 0 0 0 1px var(--gold-dim); }
   .chip {
     font-size: 12px; padding: 2px 9px; border-radius: 999px; white-space: nowrap;  /* PM-B5: status-effect names are CJK (战斗祝福 …) → ≥12px */
     border: 1px solid var(--gold-dim); color: var(--gold);
@@ -119,7 +134,9 @@
   .panel { display: none; }
   .self[data-menu="attrs"] .panel[data-menu="attrs"],
   .self[data-menu="inv"] .panel[data-menu="inv"],
-  .self[data-menu="asc"] .panel[data-menu="asc"] {
+  .self[data-menu="skills"] .panel[data-menu="skills"],
+  .self[data-menu="asc"] .panel[data-menu="asc"],
+  .self[data-menu="fx"] .panel[data-menu="fx"] {
     display: block; background: var(--glass); backdrop-filter: blur(12px);
     border: 1px solid var(--line-soft); border-radius: 12px; padding: 12px 14px;
   }
@@ -130,6 +147,12 @@
   .sect + .sect { margin-top: 16px; }
   .empty { color: var(--faint); font-size: 12px; font-style: italic; padding: 2px 0; }  /* PM-B5: CJK empty-state prose → ≥12px */
 
+  /* 角色档案 — 种族 / 职业 / 身份 (PM-G1, reuses the WORLD .ws-row idiom) */
+  .profile { margin-bottom: 4px; }
+  .pf-row { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; font-size: 12.5px; padding: 3px 0; }  /* PM-B5: CJK profile rows → ≥12px */
+  .pf-k { color: var(--dim); flex: 0 0 auto; }  /* PM-B3: --dim ≥7.1:1 muted label */
+  .pf-v { color: var(--text); text-align: right; min-width: 0; }  /* PM-B5: CJK values (人族/剑士 · 符文师) → ≥12px */
+
   /* 属性 */
   .attrs { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; }
   .attr { text-align: center; background: rgba(0, 0, 0, .35); border: 1px solid var(--line-soft); border-radius: 8px; padding: 10px 2px; }
@@ -138,12 +161,32 @@
   .attr-free { margin-top: 10px; font-size: 12px; color: var(--gold); }  /* PM-B5: CJK label (可分配属性点) → ≥12px */
   .attr-free b { font-family: var(--mono); }
 
-  /* 持有 */
-  .inv-row { display: flex; align-items: center; gap: 9px; padding: 7px 4px; border-radius: 6px; }
+  /* 持有 + 技能 — each row is a disclosure button; tapping expands a detail (one open at a time, PM-G1) */
+  .item { border-radius: 6px; }
+  .inv-row { display: flex; align-items: center; gap: 9px; width: 100%; padding: 7px 4px; border-radius: 6px;
+    background: none; border: 1px solid transparent; color: inherit; text-align: left; font: inherit; cursor: pointer; }
   .inv-row:hover { background: color-mix(in srgb, var(--text) 6%, transparent); }
+  .inv-row:focus-visible { outline: none; border-color: var(--gold-dim); }
+  .item.open > .inv-row { background: color-mix(in srgb, var(--text) 6%, transparent); }
   .inv-dot { width: 7px; height: 7px; border-radius: 50%; flex: 0 0 auto; box-shadow: 0 0 6px currentColor; }
   .inv-name { flex: 1; font-size: 12.5px; }
   .inv-meta { font-size: 12px; color: var(--faint); font-family: var(--mono); }  /* PM-B5: 位置/类型 are CJK (主手/身体/饰品) → ≥12px */
+  .inv-chev { flex: 0 0 auto; font-family: var(--mono); font-size: 11px; color: var(--faint); transition: transform .2s ease; }  /* numeric/decor glyph — stays 11px */
+  .item.open .inv-chev { transform: rotate(90deg); color: var(--gold); }
+
+  /* item / skill detail (accordion, 200ms; reduced-motion → instant, see @media below) */
+  .inv-detail { max-height: 0; overflow: hidden; opacity: 0; transition: max-height .2s ease, opacity .2s ease; }
+  .item.open .inv-detail { max-height: 520px; opacity: 1; }
+  .inv-detail-in { padding: 6px 8px 10px 22px; }
+  .id-q { font-size: 12.5px; font-weight: 700; margin-bottom: 3px; }  /* PM-B5: CJK 品质 name (稀有/史诗) → ≥12px. tint = rarityColor(q); the 7 --q-* tokens clear ≥4.5:1 on --glass */
+  .id-line { font-size: 12px; color: var(--dim); font-family: var(--mono); margin-bottom: 5px; }  /* PM-B5: CJK 类型/位置 → ≥12px */
+  .id-tags { display: flex; flex-wrap: wrap; gap: 5px; margin-bottom: 6px; }
+  .id-chip { font-size: 12px; padding: 1px 8px; border-radius: 999px; border: 1px solid var(--line); color: var(--dim); }  /* PM-B5: CJK 标签 → ≥12px; --dim ≥7.1:1 */
+  .id-fx { margin-bottom: 6px; }
+  .id-fx-row { display: flex; gap: 8px; align-items: baseline; padding: 2px 0; }
+  .id-fx-k { flex: 0 0 auto; font-size: 12px; color: var(--gold); font-weight: 600; }  /* PM-B3: gilt flavor-key label; --gold ≥7.2:1. PM-B5: CJK key → ≥12px */
+  .id-fx-v { font-size: 12px; color: var(--text); line-height: 1.5; }  /* PM-B5: CJK prose value → ≥12px */
+  .id-desc { font-size: 12.5px; color: var(--dim); line-height: 1.6; }  /* PM-B5: CJK 描述 prose → ≥12px */
 
   /* 登神长阶 — the true ascension gate: 要素(≤3) → 权能(≤1) → 法则, + 神位/神国 */
   .asc-rungs { display: flex; gap: 8px; }
@@ -152,22 +195,52 @@
   .rung-h { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 7px; }
   .rung-k { font-size: 12px; color: var(--dim); } .rung.on .rung-k { color: var(--gold); }  /* PM-B5: CJK rung labels (要素/权能/法则) → ≥12px */
   .rung-n { font-family: var(--mono); font-size: 11px; color: var(--faint); }  /* PM-B5: numeric count (2/3, 0/1) — stays mono */
-  .rung-tag { display: block; font-size: 12px; color: var(--text); padding: 3px 0; border-top: 1px solid var(--line-soft); }  /* PM-B5: CJK element names (烈焰/星辉) → ≥12px */
-  .rung-tag:first-of-type { border-top: none; }
+  /* PM-G1: a rung tag with inner k:v details becomes a disclosure button; empty details stay plain text */
+  .rung-item { border-top: 1px solid var(--line-soft); }
+  .rung-item:first-of-type { border-top: none; }
+  .rung-tag { display: block; width: 100%; text-align: left; font-size: 12px; color: var(--text); padding: 3px 0; }  /* PM-B5: CJK element names (烈焰/星辉) → ≥12px */
+  button.rung-tag { background: none; border: none; font: inherit; cursor: pointer; }
+  button.rung-tag::after { content: '＋'; float: right; font-family: var(--mono); color: var(--faint); }  /* decor glyph */
+  .rung-item.open button.rung-tag { color: var(--gold); }
+  .rung-item.open button.rung-tag::after { content: '－'; color: var(--gold); }
+  button.rung-tag:focus-visible { outline: none; color: var(--gold); }
+  .rung-detail { max-height: 0; overflow: hidden; opacity: 0; transition: max-height .2s ease, opacity .2s ease; }
+  .rung-item.open .rung-detail { max-height: 300px; opacity: 1; }
+  .rd-row { padding: 2px 0 3px; }
+  .rd-k { display: block; font-size: 12px; color: var(--gold); font-weight: 600; }  /* PM-B3: gilt key; --gold ≥7.2:1. PM-B5: CJK → ≥12px */
+  .rd-v { display: block; font-size: 12px; color: var(--dim); line-height: 1.5; }  /* PM-B5: CJK prose → ≥12px */
   .rung .empty { font-size: 12px; }  /* PM-B5: match bumped .empty cadence */
   .asc-crown { margin-top: 10px; font-size: 12px; color: var(--dim); }  /* PM-B5: CJK labels (神位/神国) → ≥12px */
   .asc-crown b { color: var(--gold); font-family: var(--serif); }
+  .asc-kingdom-desc { margin-top: 5px; font-size: 12px; color: var(--dim); line-height: 1.55; }  /* PM-B5: CJK 神国.描述 prose → ≥12px */
+
+  /* 状态 panel (hidden fifth drawer panel, opened from the chips button — PM-G1 design §1.2) */
+  .fx-item { border: 1px solid var(--line-soft); border-left: 2px solid var(--gold); border-radius: 9px;
+    background: rgba(0, 0, 0, .30); padding: 9px 11px; margin-bottom: 8px; }
+  .fx-item.buff { border-left-color: var(--sp); }
+  .fx-item.debuff { border-left-color: var(--hp); }
+  .fx-item.special { border-left-color: var(--gold); }
+  .fx-head { display: flex; align-items: baseline; gap: 8px; }
+  .fx-name { flex: 1; font-size: 12.5px; color: var(--text); min-width: 0; }  /* PM-B5: CJK effect name → ≥12px */
+  /* 类型 badge — same tinted-pill idiom as the shipped .chip (PM-B3/B5); tint rides border+bg so text passes AA */
+  .fx-type { flex: 0 0 auto; font-size: 12px; padding: 1px 8px; border-radius: 999px;
+    border: 1px solid var(--gold-dim); color: var(--gold); background: color-mix(in srgb, var(--gold) 12%, transparent); }  /* 特殊 = gold */
+  .fx-item.buff .fx-type { border-color: var(--sp); color: var(--sp); background: color-mix(in srgb, var(--sp) 12%, transparent); }
+  .fx-item.debuff .fx-type { border-color: var(--hp); color: var(--hp); background: color-mix(in srgb, var(--hp) 12%, transparent); }
+  .fx-meta { flex: 0 0 auto; font-family: var(--mono); font-size: 11px; color: var(--dim); }  /* numeric ×层数/剩余时间 — stays 11px */
+  .fx-desc { font-size: 12px; color: var(--dim); margin-top: 5px; line-height: 1.55; }  /* PM-B5: CJK 效果 prose → ≥12px */
+  .fx-src { font-size: 12px; color: var(--faint); margin-top: 4px; }  /* PM-B5: CJK 来源 → ≥12px; --faint ≥4.9:1 */
 
   /* ── tabs (v4 mock .tab: glass-soft pills; active = gilt border + gold text) ───────── */
   .tabs { flex: 0 0 auto; display: flex; align-items: center; gap: 6px; padding: 6px 14px 12px; }
-  .tab { flex: 1; font-family: var(--mono); font-size: 12px; letter-spacing: .04em;  /* PM-B5: CJK tab labels (属性/持有/登神长阶) → ≥12px */
+  .tab { flex: 1; min-width: 0; font-family: var(--mono); font-size: 12px; letter-spacing: .04em;  /* PM-B5: CJK tab labels (属性/持有/技能/登神) → ≥12px */
     background: var(--glass-soft); backdrop-filter: blur(12px); border: 1px solid var(--line-soft);
-    color: var(--dim); padding: 8px 4px; border-radius: 10px; cursor: pointer; position: relative; }
+    color: var(--dim); padding: 8px 3px; border-radius: 10px; cursor: pointer; position: relative; }  /* PM-G1: 8px→3px h-padding so 4 tabs + swatches fit at 3-col / ≈300px before touching font size */
   .tab:hover { color: var(--text); border-color: var(--line); }
   .tab.active { color: var(--gold); border-color: var(--gold-dim); }
 
   @media (prefers-reduced-motion: reduce) {
-    .drawer, .res-track > i { transition: none; }
+    .drawer, .res-track > i, .inv-detail, .rung-detail, .inv-chev { transition: none; }
   }
 </style>
 </head>
@@ -181,12 +254,16 @@
     <div class="drawer" id="drawer">
       <div class="panel" data-menu="attrs" id="pAttrs"></div>
       <div class="panel" data-menu="inv" id="pInv"></div>
+      <div class="panel" data-menu="skills" id="pSkills"></div>
       <div class="panel" data-menu="asc" id="pAsc"></div>
+      <div class="panel" data-menu="fx" id="pFx"></div>
     </div>
     <div class="tabs">
-      <button class="tab" data-menu="attrs">属性</button>
-      <button class="tab" data-menu="inv">持有</button>
-      <button class="tab" data-menu="asc">登神长阶</button>
+      <button class="tab" data-menu="attrs" type="button">属性</button>
+      <button class="tab" data-menu="inv" type="button">持有</button>
+      <button class="tab" data-menu="skills" type="button">技能</button>
+      <button class="tab" data-menu="asc" type="button">登神</button>
+      <!-- PM-G4: edit pill docks here -->
       <div class="theme-swatches" id="themeSwatches" title="配色"></div>
     </div>
   </div>
@@ -258,13 +335,32 @@
     命运点数: 500,
     主角: {
       生命层级: '史诗', 等级: 12, 冒险者等级: 'A 级',
+      种族: '人族', 职业: ['剑士', '符文师'], 身份: ['流浪者', '夜莺团成员'],
       生命值: 380, 生命值上限: 400, 法力值: 100, 法力值上限: 100, 体力值: 140, 体力值上限: 150,
       累计经验值: 7200, 升级所需经验: 10000, 金钱: 1250, 属性点: 2,
       属性: { 力量: 16, 敏捷: 12, 体质: 14, 智力: 10, 精神: 10 },
-      状态效果: { 战斗祝福: { 类型: '增益', 效果: '攻击力提升', 层数: 12, 剩余时间: '3回合' } },
-      装备: { 精钢长剑: { 品质: '稀有', 类型: '武器', 位置: '主手' }, 秘银锁子甲: { 品质: '史诗', 类型: '防具', 位置: '身体' } },
-      背包: { 治疗药水: { 品质: '普通', 类型: '消耗品', 数量: 3 }, 冒险者徽章: { 品质: '传说', 类型: '饰品', 数量: 1 } },
-      登神长阶: { 是否开启: true, 要素: { 烈焰: {}, 星辉: {} }, 权能: {}, 法则: {}, 神位: '', 神国: { 名称: '' } }
+      状态效果: {
+        战斗祝福: { 类型: '增益', 效果: '攻击力提升 15%，持续到本场战斗结束。', 层数: 12, 剩余时间: '3回合', 来源: '薇拉的祝祷' },
+        夜露侵蚀: { 类型: '减益', 效果: '每回合流失少量体力。', 层数: 1, 剩余时间: '2回合' }
+      },
+      装备: {
+        精钢长剑: { 品质: '稀有', 类型: '武器', 位置: '主手', 标签: ['锋利', '单手'], 效果: { 攻击: '+24', 暴击: '+5%' }, 描述: '由精钢锻造的长剑，剑脊上刻着一行早已无人能读的古老符文。' },
+        秘银锁子甲: { 品质: '史诗', 类型: '防具', 位置: '身体' }
+      },
+      背包: {
+        治疗药水: { 品质: '普通', 类型: '消耗品', 数量: 3, 效果: { 治疗: '立即恢复 120 点生命值' }, 描述: '常见的红色药剂，入口微苦，回甘。' },
+        冒险者徽章: { 品质: '传说', 类型: '饰品', 数量: 1 }
+      },
+      技能: {
+        烈焰斩: { 品质: '稀有', 类型: '主动', 消耗: '20 法力', 标签: ['火焰', '范围'], 效果: { 伤害: '造成力量 ×1.8 的火焰伤害', 附加: '使命中的目标灼烧 2 回合' }, 描述: '挥剑劈出一道呼啸的烈焰，灼烧身前一线的敌人。' },
+        冷静: { 品质: '普通', 类型: '被动', 消耗: '—' }
+      },
+      登神长阶: {
+        是否开启: true,
+        要素: { 烈焰: { 亲和: '火焰亲和 +30%', 领悟: '初步理解燃烧与湮灭的本质' }, 星辉: { 亲和: '星力亲和 +15%' } },
+        权能: {}, 法则: {},
+        神位: '烬火余晖', 神国: { 名称: '赫菲斯提亚', 描述: '一座燃烧不息、锻炉长明的国度。' }
+      }
     }
   }
 
@@ -309,7 +405,9 @@
       lifeTier: P['生命层级'] || '',
       level: num(P['等级'], 1),
       rank: P['冒险者等级'] || '',
-      identity: firstStr(P['职业']) || firstStr(P['身份']) || '',
+      race: P['种族'] || '',              // 角色档案 rows (PM-G1)
+      jobs: firstStr(P['职业']),          // 职业[] joined ' · '
+      ids: firstStr(P['身份']),           // 身份[] joined ' · '
       hp: { v: num(P['生命值']), max: num(P['生命值上限']) },
       mp: { v: num(P['法力值']), max: num(P['法力值上限']) },
       sp: { v: num(P['体力值']), max: num(P['体力值上限']) },
@@ -321,6 +419,7 @@
       freePoints: num(P['属性点']),
       equip: P['装备'] && typeof P['装备'] === 'object' ? P['装备'] : {},
       bag: P['背包'] && typeof P['背包'] === 'object' ? P['背包'] : {},
+      skills: P['技能'] && typeof P['技能'] === 'object' ? P['技能'] : {},
       asc: P['登神长阶'] && typeof P['登神长阶'] === 'object' ? P['登神长阶'] : {}
     }
   }
@@ -351,7 +450,7 @@
         expFill + '%;background:var(--exp)"></i></span><span class="res-v">' + esc(expText) + '</span></div>' +
       resRow('FP', 'fp', s.fp, 0, 'var(--fp)', { scalar: true, text: s.fp }) +
       '<div class="stats-foot"><span class="gold">⛃ <b>' + esc(s.gold) + '</b> G</span>' +
-      '<span class="chips">' + chips + '</span></div>'
+      '<button type="button" class="chips" id="chipsBtn" aria-expanded="false" aria-label="状态效果" title="状态效果">' + chips + '</button></div>'
   }
 
   function statusChips(status) {
@@ -369,22 +468,59 @@
   }
 
   function renderAttrs(s) {
+    // 角色档案 block (种族 / 职业 / 身份) above the attr grid — empty value → 无
+    var pf = [{ k: '种族', v: s.race }, { k: '职业', v: s.jobs }, { k: '身份', v: s.ids }].map(function (r) {
+      return '<div class="pf-row"><span class="pf-k">' + r.k + '</span><span class="pf-v">' + (r.v ? esc(r.v) : '无') + '</span></div>'
+    }).join('')
     var keys = ['力量', '敏捷', '体质', '智力', '精神']
     var cells = keys.map(function (k) {
       return '<div class="attr"><div class="attr-k">' + k + '</div><div class="attr-v">' + s.attrs[k] + '</div></div>'
     }).join('')
     var free = s.freePoints > 0 ? '<div class="attr-free">可分配属性点 <b>' + s.freePoints + '</b></div>' : ''
-    document.getElementById('pAttrs').innerHTML = '<div class="sect">属性</div><div class="attrs">' + cells + '</div>' + free
+    document.getElementById('pAttrs').innerHTML =
+      '<div class="sect">角色档案</div><div class="profile">' + pf + '</div>' +
+      '<div class="sect">属性</div><div class="attrs">' + cells + '</div>' + free
   }
 
-  function itemRow(name, item) {
+  // ── item / skill disclosure rows (PM-G1) — collapsed row + accordion detail; one open at a time. The
+  //    open row is tracked by a namespaced key ('equip:名' / 'bag:名' / 'skill:名') so a data re-render
+  //    keeps the open row (like WORLD's openQuest). category ∈ equip|bag|skill drives the collapsed meta
+  //    + which detail fields show (位置 for equip, 数量 for bag, 消耗 for skill).
+  var openItemKey = null
+
+  function itemDetailHtml(item, category) {
+    var out = ''
+    var q = item['品质'] || ''
+    if (q) out += '<div class="id-q" style="color:' + rarityColor(q) + '">' + esc(q) + '</div>'
+    var line = []
+    if (item['类型']) line.push(esc(item['类型']))
+    if (category === 'equip' && item['位置']) line.push(esc(item['位置']))
+    if (category === 'skill' && item['消耗']) line.push('消耗 ' + esc(item['消耗']))
+    if (category === 'bag' && item['数量'] != null) line.push('×' + num(item['数量'], 1))
+    if (line.length) out += '<div class="id-line">' + line.join(' · ') + '</div>'
+    var tags = Array.isArray(item['标签']) ? item['标签'].filter(Boolean) : []
+    if (tags.length) out += '<div class="id-tags">' + tags.map(function (t) { return '<span class="id-chip">' + esc(t) + '</span>' }).join('') + '</div>'
+    var fx = item['效果'] && typeof item['效果'] === 'object' ? item['效果'] : {}
+    var fxk = Object.keys(fx)
+    if (fxk.length) out += '<div class="id-fx">' + fxk.map(function (k) {
+      return '<div class="id-fx-row"><span class="id-fx-k">' + esc(k) + '</span><span class="id-fx-v">' + esc(fx[k]) + '</span></div>'
+    }).join('') + '</div>'
+    if (item['描述']) out += '<div class="id-desc">' + esc(item['描述']) + '</div>'
+    return out || '<div class="id-desc empty">暂无详情</div>'
+  }
+  function itemRow(key, name, item, category) {
     var q = item['品质'] || ''
     var meta = []
-    if (item['位置']) meta.push(esc(item['位置']))
-    else if (item['类型']) meta.push(esc(item['类型']))
-    if (item['数量'] != null && num(item['数量'], 1) !== 1) meta.push('×' + num(item['数量'], 1))
-    return '<div class="inv-row"><span class="inv-dot" style="color:' + rarityColor(q) + ';background:' + rarityColor(q) + '"></span>' +
-      '<span class="inv-name">' + esc(name) + '</span><span class="inv-meta">' + meta.join(' ') + '</span></div>'
+    if (category === 'equip') { if (item['位置']) meta.push(esc(item['位置'])); else if (item['类型']) meta.push(esc(item['类型'])) }
+    else if (category === 'bag') { if (item['类型']) meta.push(esc(item['类型'])); if (item['数量'] != null && num(item['数量'], 1) !== 1) meta.push('×' + num(item['数量'], 1)) }
+    else if (category === 'skill') { if (item['消耗']) meta.push(esc(item['消耗'])) }
+    var open = openItemKey === key
+    return '<div class="item' + (open ? ' open' : '') + '">' +
+      '<button type="button" class="inv-row" data-item="' + esc(key) + '" aria-expanded="' + (open ? 'true' : 'false') + '">' +
+      '<span class="inv-dot" style="color:' + rarityColor(q) + ';background:' + rarityColor(q) + '"></span>' +
+      '<span class="inv-name">' + esc(name) + '</span><span class="inv-meta">' + meta.join(' ') + '</span>' +
+      '<span class="inv-chev" aria-hidden="true">›</span></button>' +
+      '<div class="inv-detail"><div class="inv-detail-in">' + itemDetailHtml(item, category) + '</div></div></div>'
   }
   function sortByQuality(obj) {
     return Object.keys(obj).sort(function (a, b) {
@@ -397,18 +533,41 @@
     var html = ''
     // 装备 is a record keyed by item NAME; each entry's 位置 field is the slot (itemRow shows it)
     html += '<div class="sect">装备</div>'
-    html += eq.length ? eq.map(function (n) { return itemRow(n, s.equip[n]) }).join('')
+    html += eq.length ? eq.map(function (n) { return itemRow('equip:' + n, n, s.equip[n], 'equip') }).join('')
                       : '<div class="empty">暂无装备</div>'
     html += '<div class="sect">背包</div>'
-    html += bag.length ? bag.map(function (n) { return itemRow(n, s.bag[n]) }).join('')
+    html += bag.length ? bag.map(function (n) { return itemRow('bag:' + n, n, s.bag[n], 'bag') }).join('')
                        : '<div class="empty">背包空空如也</div>'
     document.getElementById('pInv').innerHTML = html
   }
+  function renderSkills(s) {
+    var sk = sortByQuality(s.skills)
+    var html = '<div class="sect">技能</div>'
+    html += sk.length ? sk.map(function (n) { return itemRow('skill:' + n, n, s.skills[n], 'skill') }).join('')
+                      : '<div class="empty">尚未习得技能</div>'
+    document.getElementById('pSkills').innerHTML = html
+  }
 
-  function ascRung(label, rec, limit, on) {
+  // 要素/权能/法则 entries are `name → record<string,string>`; a tag with inner k:v becomes a
+  //   disclosure button expanding its description rows, else it stays plain text (PM-G1, design §1.1).
+  //   The open tag is tracked in-memory (rungKey = 'section:name'); independent toggles.
+  var openRungs = {}
+  function rungTag(section, name, details) {
+    var dk = Object.keys(details || {})
+    if (!dk.length) return '<div class="rung-item"><span class="rung-tag">' + esc(name) + '</span></div>'
+    var key = section + ':' + name
+    var open = !!openRungs[key]
+    var rows = dk.map(function (x) {
+      return '<div class="rd-row"><span class="rd-k">' + esc(x) + '</span><span class="rd-v">' + esc(details[x]) + '</span></div>'
+    }).join('')
+    return '<div class="rung-item' + (open ? ' open' : '') + '">' +
+      '<button type="button" class="rung-tag" data-rung="' + esc(key) + '" aria-expanded="' + (open ? 'true' : 'false') + '">' + esc(name) + '</button>' +
+      '<div class="rung-detail"><div class="rung-detail-in">' + rows + '</div></div></div>'
+  }
+  function ascRung(label, section, rec, limit, on) {
     var keys = Object.keys(rec || {})
     var tags = keys.length
-      ? keys.map(function (k) { return '<span class="rung-tag">' + esc(k) + '</span>' }).join('')
+      ? keys.map(function (k) { return rungTag(section, k, rec[k]) }).join('')
       : '<span class="empty">—</span>'
     return '<div class="rung' + (on ? ' on' : '') + '"><div class="rung-h"><span class="rung-k">' + label +
       '</span><span class="rung-n">' + keys.length + (limit ? '/' + limit : '') + '</span></div>' + tags + '</div>'
@@ -420,15 +579,42 @@
       return
     }
     var ele = a['要素'] || {}, pow = a['权能'] || {}, law = a['法则'] || {}
+    var king = a['神国'] && typeof a['神国'] === 'object' ? a['神国'] : {}
     var crown = ''
     if (a['神位']) crown += '神位 <b>' + esc(a['神位']) + '</b>　'
-    if (a['神国'] && a['神国']['名称']) crown += '神国 <b>' + esc(a['神国']['名称']) + '</b>'
+    if (king['名称']) crown += '神国 <b>' + esc(king['名称']) + '</b>'
+    var crownHtml = crown ? '<div class="asc-crown">' + crown +
+      (king['描述'] ? '<div class="asc-kingdom-desc">' + esc(king['描述']) + '</div>' : '') + '</div>' : ''
     document.getElementById('pAsc').innerHTML =
       '<div class="sect">登神长阶</div><div class="asc-rungs">' +
-      ascRung('要素', ele, 3, Object.keys(ele).length > 0) +
-      ascRung('权能', pow, 1, Object.keys(pow).length > 0) +
-      ascRung('法则', law, 0, Object.keys(law).length > 0) +
-      '</div>' + (crown ? '<div class="asc-crown">' + crown + '</div>' : '')
+      ascRung('要素', '要素', ele, 3, Object.keys(ele).length > 0) +
+      ascRung('权能', '权能', pow, 1, Object.keys(pow).length > 0) +
+      ascRung('法则', '法则', law, 0, Object.keys(law).length > 0) +
+      '</div>' + crownHtml
+  }
+
+  // 状态 panel — the full status-effect list (StatusEffectDisplay full mode: 类型 tint, 效果, ×层数,
+  //   剩余时间, 来源). Opened from the stats chips button, not the tab row (PM-G1, design §1.2).
+  function renderFx(s) {
+    var keys = Object.keys(s.status || {})
+    var html = '<div class="sect">状态效果</div>'
+    if (!keys.length) { document.getElementById('pFx').innerHTML = html + '<div class="empty">当前没有状态效果。</div>'; return }
+    html += keys.map(function (name) {
+      var e = s.status[name] || {}
+      var type = e['类型'] || ''
+      var tone = type === '减益' ? 'debuff' : type === '增益' ? 'buff' : 'special'
+      var stacks = num(e['层数'], 1)
+      var meta = []
+      if (stacks > 1) meta.push('×' + stacks)
+      if (e['剩余时间']) meta.push(esc(e['剩余时间']))
+      return '<div class="fx-item ' + tone + '">' +
+        '<div class="fx-head"><span class="fx-name">' + esc(name) + '</span>' +
+        (type ? '<span class="fx-type">' + esc(type) + '</span>' : '') +
+        (meta.length ? '<span class="fx-meta">' + meta.join(' ') + '</span>' : '') + '</div>' +
+        (e['效果'] ? '<div class="fx-desc">' + esc(e['效果']) + '</div>' : '') +
+        (e['来源'] ? '<div class="fx-src">来源 · ' + esc(e['来源']) + '</div>' : '') + '</div>'
+    }).join('')
+    document.getElementById('pFx').innerHTML = html
   }
 
   function renderNameplate(s) {
@@ -474,7 +660,10 @@
   function render() {
     statData().then(function (SD) {
       var s = poemState(SD)
-      renderNameplate(s); renderStats(s); renderAttrs(s); renderInv(s); renderAsc(s)
+      renderNameplate(s); renderStats(s); renderAttrs(s); renderInv(s); renderSkills(s); renderAsc(s); renderFx(s)
+      // renderStats rebuilt the chips button — re-sync its aria-expanded to the live 状态 panel state
+      var chipsBtn = document.getElementById('chipsBtn')
+      if (chipsBtn) chipsBtn.setAttribute('aria-expanded', selfEl.dataset.menu === 'fx' ? 'true' : 'false')
     })
   }
 
@@ -488,19 +677,58 @@
   }
 
   var selfEl = document.getElementById('self')
+
+  // Unified drawer opener for both the tab row AND the chips button (which opens the hidden 状态 panel).
+  //   Re-selecting the current menu collapses. Only real tabs (not 'fx') get the .active pill; the chips
+  //   button reflects state via aria-expanded. Opening any menu implicitly closes 状态 (design §1.2).
+  function setMenu(menu) {
+    var isOpen = selfEl.classList.contains('open') && selfEl.dataset.menu === menu
+    document.querySelectorAll('.tab').forEach(function (x) { x.classList.remove('active') })
+    var chipsBtn = document.getElementById('chipsBtn')
+    if (isOpen || !menu) {
+      selfEl.classList.remove('open'); selfEl.classList.add('closed'); delete selfEl.dataset.menu
+      if (chipsBtn) chipsBtn.setAttribute('aria-expanded', 'false')
+      emitFold(false, null)
+    } else {
+      selfEl.classList.add('open'); selfEl.classList.remove('closed'); selfEl.dataset.menu = menu
+      var tab = document.querySelector('.tab[data-menu="' + menu + '"]')
+      if (tab) tab.classList.add('active')
+      if (chipsBtn) chipsBtn.setAttribute('aria-expanded', menu === 'fx' ? 'true' : 'false')
+      emitFold(true, menu)
+    }
+  }
   document.querySelectorAll('.tab').forEach(function (t) {
-    t.addEventListener('click', function () {
-      var m = t.dataset.menu
-      var isOpen = selfEl.classList.contains('open') && selfEl.dataset.menu === m
-      document.querySelectorAll('.tab').forEach(function (x) { x.classList.remove('active') })
-      if (isOpen) {
-        selfEl.classList.remove('open'); selfEl.classList.add('closed'); delete selfEl.dataset.menu
-        emitFold(false, null)
-      } else {
-        selfEl.classList.add('open'); selfEl.classList.remove('closed'); selfEl.dataset.menu = m; t.classList.add('active')
-        emitFold(true, m)
-      }
-    })
+    t.addEventListener('click', function () { setMenu(t.dataset.menu) })
+  })
+
+  // chips button (rebuilt on each render) → open/close the 状态 panel. Delegated on the persistent #stats.
+  document.getElementById('stats').addEventListener('click', function (ev) {
+    if (ev.target.closest && ev.target.closest('.chips')) setMenu('fx')
+  })
+
+  // item / skill row expand + ascension rung-tag expand — delegated on the persistent #drawer so the
+  //   handlers survive full re-renders. Item rows are one-open-at-a-time; rung tags toggle independently.
+  document.getElementById('drawer').addEventListener('click', function (ev) {
+    var row = ev.target.closest && ev.target.closest('.inv-row')
+    if (row) {
+      var key = row.dataset.item
+      openItemKey = openItemKey === key ? null : key
+      document.querySelectorAll('#drawer .item').forEach(function (it) {
+        var btn = it.querySelector('.inv-row')
+        var open = btn && btn.dataset.item === openItemKey
+        it.classList.toggle('open', !!open)
+        if (btn) btn.setAttribute('aria-expanded', open ? 'true' : 'false')
+      })
+      return
+    }
+    var tag = ev.target.closest && ev.target.closest('button.rung-tag')
+    if (tag) {
+      var rk = tag.dataset.rung
+      openRungs[rk] = !openRungs[rk]
+      var item = tag.closest('.rung-item')
+      if (item) { item.classList.toggle('open', openRungs[rk]); tag.setAttribute('aria-expanded', openRungs[rk] ? 'true' : 'false') }
+      return
+    }
   })
 
   render()
