@@ -85,6 +85,20 @@ Two layered findings:
    (`DEBUG_PREVIEW_MAX` 4000). `agent.llm` records the composed `sendMessages` as "prompt (sent)";
    surfaces in the Runs tab (NodeRunsTab, no renderer change) on turn AND headless paths. Gate green
    (2149 tests). Item 2 fully closed.
-3. Spec + plan the `memory.maintain` node per the decisions above; then implement.
+3. ~~Spec + plan + implement the `memory.maintain` node~~ — DONE. Spec
+   `docs/superpowers/specs/2026-07-07-memory-maintain-node-design.md`, plan
+   `.../plans/2026-07-07-memory-maintain-node-plan.md`. Owner decisions: migration = auto-replace v1;
+   per-table editor = in the node panel. Built in 5 WPs, gate green each step (final: 2167 tests):
+   - WP0 `b237b66` — extracted shared cores → `nodes/builtin/memoryCore.ts` (recentTranscript /
+     applyTableEdit / renderTablesBlock / chatTemplate); history.recent/table.apply/table.read wrap them.
+   - WP1 `bdd8951` — `nodes/builtin/memoryNodes.ts` `memory.maintain` (self-seed → renderTablesBlock →
+     compose {{tables}}/{{input}}+{history} → runLlmCall → extractTagAll → applyTableEdit; silent no-op;
+     debug['prompt (sent)']; report/error; registered; writes-tables in capabilities).
+   - WP2 `cd54122` — `MemoryMaintainPanel.tsx` (per-table rule editor → `table-template-update`) +
+     composed-prompt preview (`memory-maintain-preview` IPC, composeMaintainerMessages shared) +
+     {{tables}} chip + en/zh.
+   - WP3 `1c58328` — `buildDefaultMemoryDocV2` + `default-memory-v2`; crash-safe auto-replace v1
+     supersession in seedDefaultMemoryWorkflow (tombstones win); memory.maintain in MEMORY_NODE_TYPES.
+   - WP4 `23844ca` — docs/sdk (workflow-module-format + README) + `docs/workflows/memory-maintain.rptflow`.
 4. Owner manual pass on the whole branch; then push + PR (NOTHING pushed yet; branch is
-   local-only in the worktree).
+   local-only in the worktree `eloquent-feistel-0673e3`).
