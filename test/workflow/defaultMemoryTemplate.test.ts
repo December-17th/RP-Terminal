@@ -177,7 +177,9 @@ import { validateWorkflow } from '../../src/shared/workflow/validate'
 import { DEFAULT_GRAPH } from '../../src/main/services/nodes/builtin/defaultGraph'
 import {
   buildDefaultMemoryDoc,
+  buildDefaultMemoryDocV2,
   DEFAULT_MEMORY_SEED_MARKER,
+  DEFAULT_MEMORY_SEED_MARKER_V2,
   MAINTAINER_SYSTEM_PROMPT
 } from '../../src/main/services/nodes/builtin/defaultMemoryTemplate'
 
@@ -355,6 +357,58 @@ describe('default memory template — shape', () => {
   })
 })
 
+// ── 1b. v2 (memory.maintain single node) shape pins ─────────────────────────────────────────────────
+
+describe('default memory template v2 — memory.maintain single node', () => {
+  const doc = buildDefaultMemoryDocV2()
+
+  it('passes the full save gate (structural + graph rules + per-node config)', () => {
+    const structural = parseWorkflowDoc(JSON.parse(JSON.stringify(doc)))
+    expect(structural.ok).toBe(true)
+    if (!structural.ok) return
+    const v = validateWorkflow(structural.doc, builtinRegistry.descriptors())
+    if (!v.ok) throw new Error(v.errors.map((e) => e.message).join('; '))
+    for (const n of structural.doc.nodes) {
+      const schema = builtinRegistry.get(n.type)?.configSchema
+      if (!schema) continue
+      const r = schema.safeParse(n.config ?? {})
+      if (!r.success) throw new Error(`${n.id} (${n.type}): ${r.error.message}`)
+    }
+  })
+
+  it('carries the v2 marker + the editable name "Default"', () => {
+    expect(doc.name).toBe('Default')
+    expect(doc.meta).toEqual({ seeded: DEFAULT_MEMORY_SEED_MARKER_V2 })
+    expect(DEFAULT_MEMORY_SEED_MARKER_V2).toBe('default-memory-v2')
+  })
+
+  it('replaces the five-node chain with ONE memory.maintain node gated by mode.fired; error → util.log', () => {
+    for (const id of MEMORY_CHAIN_IDS.filter((i) => i !== 'log-apply')) {
+      expect(doc.nodes.find((n) => n.id === id)).toBeUndefined()
+    }
+    const maintain = doc.nodes.find((n) => n.id === 'maintain')!
+    expect(maintain.type).toBe('memory.maintain')
+    expect(doc.edges.find((e) => e.to.node === 'maintain' && e.to.port === 'when')?.from).toEqual({
+      node: 'mode',
+      port: 'fired'
+    })
+    expect(doc.edges.find((e) => e.from.node === 'maintain' && e.from.port === 'error')?.to).toEqual({
+      node: 'log-apply',
+      port: 'value'
+    })
+    // Reuses the verbatim maintainer prompt ({{input}} alias → the rendered tables block).
+    expect((maintain.config as { messages: { content: string }[] }).messages[0].content).toBe(
+      MAINTAINER_SYSTEM_PROMPT
+    )
+  })
+
+  it('groups the memory system with the Memory node api_preset exposed', () => {
+    const g = doc.groups![0]
+    expect(g.nodeIds).toEqual(['trigger-cadence', 'trigger-state', 'mode', 'maintain', 'log-apply'])
+    expect(g.exposed).toContainEqual({ node: 'maintain', path: 'api_preset_id', label: 'API preset' })
+  })
+})
+
 // ── 2. mode=off turn equivalence to DEFAULT_GRAPH ────────────────────────────────────────────────
 
 const turnCtx = (workflowId: string): RunContext => ({
@@ -367,6 +421,16 @@ const turnCtx = (workflowId: string): RunContext => ({
   emitPanel: () => {},
   getNodeState: () => undefined,
   setNodeState: () => {}
+})
+
+describe('default memory template v2 — mode=off TURN skips the memory node (like v1)', () => {
+  it('a turn run skips the whole memory group; the narrator still writes', async () => {
+    const res = await runWorkflow(buildDefaultMemoryDocV2(), builtinRegistry, turnCtx('seeded-v2'))
+    const status = new Map(res.traces.map((t) => [t.nodeId, t.status]))
+    for (const id of ['trigger-cadence', 'trigger-state', 'mode', 'maintain', 'log-apply'])
+      expect(status.get(id)).toBe('skipped')
+    expect(status.get('write')).toBe('ran')
+  })
 })
 
 describe('default memory template — mode=off TURN equivalence to DEFAULT_GRAPH (plan WP-C)', () => {

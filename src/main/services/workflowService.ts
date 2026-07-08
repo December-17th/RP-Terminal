@@ -19,8 +19,9 @@ import {
 import { builtinRegistry } from './nodes/builtin'
 import { DEFAULT_GRAPH } from './nodes/builtin/defaultGraph'
 import {
-  buildDefaultMemoryDoc,
-  DEFAULT_MEMORY_SEED_MARKER
+  buildDefaultMemoryDocV2,
+  DEFAULT_MEMORY_SEED_MARKER,
+  DEFAULT_MEMORY_SEED_MARKER_V2
 } from './nodes/builtin/defaultMemoryTemplate'
 import { log } from './logService'
 import { getChat, getChatWorkflowId, removeWorkflowIdFromChats } from './chatService'
@@ -107,20 +108,24 @@ const ensureWorkflowsDir = (profileId: string): string => {
 // selection dropdowns); a profile that never opens workflow UI keeps today's builtin behavior
 // until it does — the conservative choice.
 //
-//  · Idempotence marker: the seeded doc carries `meta.seeded = 'default-memory-v1'` — "a doc with
-//    this marker exists" (survives rename/edit; deletion is respected via the tombstone below).
-//  · Seed condition: no doc carries the marker AND no existing user doc contains a `table.apply`
-//    or `agent.llm` node (the memory-writing surface — the spec's "no user-created docs reference
-//    memory" made concrete) AND the marker is not tombstoned.
-//  · Selection: after seeding, `selection.global` is set to the new doc id ONLY if currently
-//    null/unset — never stomps an explicit user choice.
-//  · Deletion tombstone: deleteWorkflow records a deleted doc's `meta.seeded` marker in
-//    `_selection.json` (`seededTombstones`), and the seed condition honors it — so a deliberately
-//    deleted seed never comes back on the next launch.
+//  · Idempotence marker: the seeded doc carries `meta.seeded = 'default-memory-v2'` (the memory.maintain
+//    single-node default; v1 was the five-node chain). "A doc with the v2 marker exists" → done.
+//  · v1 → v2 SUPERSESSION (memory.maintain plan WP3; OWNER decision = auto-replace): if a LIVE doc still
+//    carries the v1 marker, it is replaced — seed v2 FIRST (crash-safe: never a window with zero default
+//    doc), then delete the v1 doc (deleteWorkflow tombstones its v1 marker + clears its selection refs).
+//    Hand-edits to a v1 default doc are lost (accepted). Tombstones still WIN: a v2-tombstoned profile is
+//    never reseeded, and a v1-tombstoned profile with no live v1 doc is NOT resurrected as v2.
+//  · Seed condition (fresh): no doc carries a v1/v2 marker AND no user doc contains a memory node
+//    (`MEMORY_NODE_TYPES` — table.apply / agent.llm / memory.maintain, the memory-writing surface) AND
+//    v2 is not tombstoned.
+//  · Selection: after seeding, `selection.global` is set to the new doc id ONLY if currently null/unset
+//    (deleting the superseded v1 clears its global ref, so v2 becomes global when v1 was global).
+//  · Deletion tombstone: deleteWorkflow records a deleted doc's `meta.seeded` marker in `_selection.json`
+//    (`seededTombstones`) — generic over the marker, so v1 and v2 both tombstone on delete.
 
 /** The node types whose presence in a user doc means "this profile already references memory"
  *  (plan §0.3): the memory-writing surface. */
-const MEMORY_NODE_TYPES = new Set(['table.apply', 'agent.llm'])
+const MEMORY_NODE_TYPES = new Set(['table.apply', 'agent.llm', 'memory.maintain'])
 
 /** Per-profile per-process guard (the seededProfiles idiom) — the condition is evaluated once per
  *  profile per process; the on-disk marker/tombstone carry idempotence across restarts. */
@@ -151,25 +156,42 @@ const seedDefaultMemoryWorkflow = (profileId: string): void => {
   try {
     const dir = ensureWorkflowsDir(profileId)
     const selection = getSelection(profileId)
-    if (selection.seededTombstones?.includes(DEFAULT_MEMORY_SEED_MARKER)) return
+    // v2 deleted deliberately → never resurrect.
+    if (selection.seededTombstones?.includes(DEFAULT_MEMORY_SEED_MARKER_V2)) return
+
+    // Scan once: a v2 doc means done; a LIVE v1 doc is superseded; a user's OWN memory doc means skip.
+    let v1DocId: string | null = null
     for (const file of listFilesSync(dir)) {
       if (!file.endsWith('.json') || file.startsWith('_')) continue
       const data = readJsonSync<WorkflowDoc>(path.join(dir, file))
       if (!data) continue
-      // A doc already carries the marker (renamed/edited seeds included) → nothing to do.
-      if ((data.meta as Record<string, unknown> | undefined)?.seeded === DEFAULT_MEMORY_SEED_MARKER)
-        return
-      // An existing user doc already references memory → this profile opted into its own setup.
+      const marker = (data.meta as Record<string, unknown> | undefined)?.seeded
+      // A v2 doc already carries the marker (renamed/edited seeds included) → nothing to do.
+      if (marker === DEFAULT_MEMORY_SEED_MARKER_V2) return
+      // A live v1 seeded doc → remember it to supersede after v2 is safely written.
+      if (marker === DEFAULT_MEMORY_SEED_MARKER) {
+        v1DocId = file.replace(/\.json$/, '')
+        continue
+      }
+      // An existing USER doc references memory (not a seed) → this profile opted into its own setup.
       if (Array.isArray(data.nodes) && data.nodes.some((n) => MEMORY_NODE_TYPES.has(n.type))) return
     }
-    const result = createWorkflowFromDoc(profileId, buildDefaultMemoryDoc())
+
+    // No live v1 doc AND v1 was deleted (tombstoned) → deletion is a respected choice; don't seed v2.
+    if (!v1DocId && selection.seededTombstones?.includes(DEFAULT_MEMORY_SEED_MARKER)) return
+
+    // Seed v2 FIRST (crash-safe: if we die before superseding v1, the profile still has a default doc).
+    const result = createWorkflowFromDoc(profileId, buildDefaultMemoryDocV2())
     if (!result.ok) {
       log('error', `seedDefaultMemoryWorkflow: template failed the save gate — ${result.error}`)
       return
     }
+    // Auto-replace the live v1 doc: deleteWorkflow unlinks it, tombstones its v1 marker, and clears any
+    // selection ref to it (so a v1 that WAS global leaves global null → v2 becomes global just below).
+    if (v1DocId) deleteWorkflow(profileId, v1DocId)
     // Select globally ONLY when nothing is selected — never stomp an explicit user choice.
     if (getSelection(profileId).global == null) setGlobalWorkflow(profileId, result.id)
-    log('info', `seeded default memory workflow ${result.id} for profile ${profileId}`)
+    log('info', `seeded default memory workflow v2 ${result.id} for profile ${profileId}`)
   } catch (err) {
     log(
       'error',

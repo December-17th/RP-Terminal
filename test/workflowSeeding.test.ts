@@ -27,7 +27,11 @@ import {
 } from '../src/main/services/workflowService'
 import { getAppDir } from '../src/main/services/storageService'
 import { WorkflowDoc } from '../src/shared/workflow/types'
-import { DEFAULT_MEMORY_SEED_MARKER } from '../src/main/services/nodes/builtin/defaultMemoryTemplate'
+import {
+  buildDefaultMemoryDoc,
+  DEFAULT_MEMORY_SEED_MARKER,
+  DEFAULT_MEMORY_SEED_MARKER_V2
+} from '../src/main/services/nodes/builtin/defaultMemoryTemplate'
 
 const madeProfiles: string[] = []
 const freshProfile = (): string => {
@@ -47,13 +51,14 @@ beforeEach(() => {
   mockChatService.getChat.mockReset().mockReturnValue(null)
 })
 
-/** The seeded doc's summary in a list, identified by reading the doc's meta marker. */
+/** The seeded doc's summary in a list, identified by reading the doc's meta marker (v2 = the current
+ *  memory.maintain single-node default; the seeder no longer emits v1). */
 const findSeeded = (profileId: string): { id: string; doc: WorkflowDoc } | null => {
   const dir = path.join(getAppDir(), 'profiles', profileId, 'workflows')
   for (const file of fs.readdirSync(dir)) {
     if (!file.endsWith('.json') || file.startsWith('_')) continue
     const doc = JSON.parse(fs.readFileSync(path.join(dir, file), 'utf-8')) as WorkflowDoc
-    if ((doc.meta as Record<string, unknown> | undefined)?.seeded === DEFAULT_MEMORY_SEED_MARKER)
+    if ((doc.meta as Record<string, unknown> | undefined)?.seeded === DEFAULT_MEMORY_SEED_MARKER_V2)
       return { id: file.replace(/\.json$/, ''), doc }
   }
   return null
@@ -129,8 +134,8 @@ describe('default-memory seeding (WP-C, plan §0.3)', () => {
     expect(getSelection(profileId).global).toBe(created.id) // ...but the user's choice stands
   })
 
-  it('does NOT seed a profile whose user docs already reference memory (table.apply / agent.llm)', () => {
-    for (const type of ['table.apply', 'agent.llm']) {
+  it('does NOT seed a profile whose user docs already reference memory (table.apply / agent.llm / memory.maintain)', () => {
+    for (const type of ['table.apply', 'agent.llm', 'memory.maintain']) {
       const profileId = freshProfile()
       setMemorySeedingEnabled(false)
       const created = createWorkflowFromDoc(
@@ -138,7 +143,7 @@ describe('default-memory seeding (WP-C, plan §0.3)', () => {
         minimalDoc({
           nodes: [
             { id: 'n1', type: 'input.context', isMainOutput: true },
-            { id: 'mem', type, config: type === 'agent.llm' ? { messages: [] } : {} }
+            { id: 'mem', type, config: type === 'table.apply' ? {} : { messages: [] } }
           ]
         })
       )
@@ -157,8 +162,8 @@ describe('default-memory seeding (WP-C, plan §0.3)', () => {
     const seeded = findSeeded(profileId)!
 
     expect(deleteWorkflow(profileId, seeded.id)).toBe(true)
-    // Tombstone recorded in the sidecar.
-    expect(getSelection(profileId).seededTombstones).toEqual([DEFAULT_MEMORY_SEED_MARKER])
+    // Tombstone recorded in the sidecar (v2 marker — deleteWorkflow is generic over meta.seeded).
+    expect(getSelection(profileId).seededTombstones).toEqual([DEFAULT_MEMORY_SEED_MARKER_V2])
     // The doc's global selection was cleared by the delete.
     expect(getSelection(profileId).global).toBeNull()
 
@@ -185,7 +190,47 @@ describe('default-memory seeding (WP-C, plan §0.3)', () => {
     deleteWorkflow(profileId, seeded.id)
 
     setGlobalWorkflow(profileId, 'some-other-id')
-    expect(getSelection(profileId).seededTombstones).toEqual([DEFAULT_MEMORY_SEED_MARKER])
+    expect(getSelection(profileId).seededTombstones).toEqual([DEFAULT_MEMORY_SEED_MARKER_V2])
     expect(getSelection(profileId).global).toBe('some-other-id')
+  })
+})
+
+describe('default-memory v1 → v2 supersession (memory.maintain plan WP3, auto-replace)', () => {
+  it('replaces a live v1 default doc with v2: v1 deleted + tombstoned, v2 seeded, global repointed', () => {
+    const profileId = freshProfile()
+    setMemorySeedingEnabled(false) // plant a v1 doc without the seeder firing first
+    const v1 = createWorkflowFromDoc(profileId, buildDefaultMemoryDoc())
+    if (!v1.ok) throw new Error(v1.error)
+    setGlobalWorkflow(profileId, v1.id)
+    setMemorySeedingEnabled(true)
+
+    listWorkflows(profileId)
+
+    // v1 gone, v2 present, exactly one default doc on disk.
+    expect(getWorkflowById(profileId, v1.id)).toBeFalsy()
+    const seeded = findSeeded(profileId)
+    expect(seeded).not.toBeNull()
+    expect(seeded!.id).not.toBe(v1.id)
+    const dir = path.join(getAppDir(), 'profiles', profileId, 'workflows')
+    expect(fs.readdirSync(dir).filter((f) => f.endsWith('.json') && !f.startsWith('_'))).toHaveLength(1)
+    // v1 tombstoned (never re-seeds); global repointed from the deleted v1 to v2.
+    expect(getSelection(profileId).seededTombstones).toContain(DEFAULT_MEMORY_SEED_MARKER)
+    expect(getSelection(profileId).global).toBe(seeded!.id)
+  })
+
+  it('does NOT resurrect a deliberately deleted v1 default as v2 (v1 tombstone wins)', () => {
+    const profileId = freshProfile()
+    setMemorySeedingEnabled(false)
+    const v1 = createWorkflowFromDoc(profileId, buildDefaultMemoryDoc())
+    if (!v1.ok) throw new Error(v1.error)
+    setMemorySeedingEnabled(true)
+    deleteWorkflow(profileId, v1.id) // tombstones default-memory-v1
+
+    resetMemorySeedGuardForTest()
+    listWorkflows(profileId)
+
+    // No default doc reseeded — the deletion is respected across "restarts".
+    expect(findSeeded(profileId)).toBeNull()
+    expect(getSelection(profileId).global).toBeNull()
   })
 })
