@@ -75,9 +75,14 @@ Two layered findings:
 
 ## Remaining TODO (in order)
 
-1. Verify/land the issue-1 fix (background agent may have committed it — check worktree).
-2. Small PR-able core fix: `{{input}}` substitution in `agent.llm` + composed-prompt trace
-   visibility (+ tests; the .rptflow fixtures + seeded doc then start working as designed).
+1. ~~Verify/land the issue-1 fix~~ — DONE: landed as `f564dd9` (mode-gated trigger feedback).
+2. ~~`{{input}}` substitution in `agent.llm` (+ tests)~~ — DONE: landed as `c9b573f`.
+   `interpolate` now substitutes `{{input}}` from an `input` slot (LAST, as data — the `{{inN}}`
+   invariant), so the table.read block reaches the model; the .rptflow fixtures + seeded doc work.
+   Gate green (2146 tests). **STILL OPEN from item 2:** composed-prompt trace visibility — record
+   the composed `sendMessages` in the node trace so the sent prompt is inspectable in the run drawer
+   (crosses main `NodeTrace`/`workflowEvents` → IPC → renderer `RunDrawer`/`workflowTraceStore`;
+   deferred as a separate change, not blocking the fix).
 3. Spec + plan the `memory.maintain` node per the decisions above; then implement.
 4. Owner manual pass on the whole branch; then push + PR (NOTHING pushed yet; branch is
    local-only in the worktree).
