@@ -669,8 +669,8 @@ export default function WorkflowEditorView({
 
         <div
           style={{
-            width: 280,
-            flex: '0 0 280px',
+            width: 420,
+            flex: '0 0 420px',
             overflowY: 'auto',
             borderLeft: '1px solid var(--rpt-border)',
             padding: 8
