@@ -12,7 +12,7 @@ import { createEncounter, playerAction, nextTurn } from '../../src/main/services
 
 // The deliverable bundle config the 命定之诗 card embeds — read so the test pins the real artifact.
 const combat = JSON.parse(
-  readFileSync('docs/sdk/examples/poem-combat-bundle.json', 'utf8')
+  readFileSync('test/fixtures/poem-combat-bundle.json', 'utf8')
 ) as CombatBundle
 const statMap = combat.stat_map as StatMap
 const derive = combat.derive as DeriveConfig
