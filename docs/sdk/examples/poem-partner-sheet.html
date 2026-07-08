@@ -256,6 +256,45 @@
   @media (prefers-reduced-motion: reduce) {
     .scrim, .sheet, .inv-detail, .rung-detail, .inv-chev, .ps-aff-track > i { transition: none; }
   }
+
+  /* ══ edit mode (PM-G4, design §6) — inline-editor chrome + delete-confirm modal. The sheet follows
+        the toggle SELF owns (chat KV poem.edit + poem:edit). ≤12px text SAFE tokens; CJK ≥12px. ══ */
+  [data-edit-on] .ed { border-bottom: 1px dotted var(--gold-dim); cursor: text; }
+  .ed-x { flex: 0 0 auto; display: none; width: 22px; height: 22px; line-height: 20px; text-align: center; padding: 0;
+    margin-left: 6px; border-radius: 6px; border: 1px solid var(--line-soft); background: var(--glass-soft);
+    color: var(--ember); font-size: 12px; cursor: pointer; vertical-align: middle; }
+  [data-edit-on] .ed-x { display: inline-block; }
+  .ed-x:hover { border-color: var(--ember); background: color-mix(in srgb, var(--ember) 16%, transparent); }
+  .ed-in { font: inherit; font-size: 13px; color: var(--text); background: var(--glass-soft);
+    border: 1px solid var(--line-soft); border-radius: 6px; padding: 4px 6px; min-width: 56px; }
+  .ed-in:focus { outline: none; border-color: var(--gold-dim); box-shadow: 0 0 0 2px var(--gold-dim); }
+  textarea.ed-in { width: 100%; resize: none; max-height: 40vh; line-height: 1.65; font-family: var(--serif); }
+  select.ed-in { -webkit-appearance: none; appearance: none; padding-right: 22px; cursor: pointer; }
+  .ed-num { display: inline-flex; align-items: center; gap: 4px; }
+  .ed-num .ed-in { width: 68px; min-width: 0; text-align: center; }
+  .ed-step { width: 28px; height: 30px; flex: 0 0 auto; border-radius: 6px; padding: 0; cursor: pointer;
+    background: var(--glass-soft); border: 1px solid var(--line-soft); color: var(--gold); font-size: 16px; line-height: 1; }
+  .ed-step:hover { border-color: var(--gold-dim); }
+  .ed-tags { display: inline-flex; flex-wrap: wrap; gap: 5px; align-items: center; }
+  .ed-tag { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; padding: 2px 8px; border-radius: 999px;
+    border: 1px solid var(--line); color: var(--dim); }
+  .ed-tag button { background: none; border: none; color: var(--ember); cursor: pointer; font-size: 13px; line-height: 1; padding: 0; }
+  .ed-modal-scrim { position: fixed; inset: 0; z-index: 60; display: none; align-items: center; justify-content: center;
+    padding: 24px; background: rgba(0, 0, 0, .55); backdrop-filter: blur(5px); }
+  .ed-modal-scrim.open { display: flex; }
+  .ed-modal { width: min(340px, 90vw); padding: 18px; border-radius: 14px;
+    background: var(--glass); backdrop-filter: blur(14px); border: 1px solid var(--line-soft); box-shadow: 0 20px 56px rgba(0, 0, 0, .5); }
+  .ed-modal-t { font-family: var(--mono); font-size: 12px; letter-spacing: .18em; text-transform: uppercase; color: var(--gold); margin-bottom: 8px; }
+  .ed-modal-msg { font-size: 13px; color: var(--text); line-height: 1.6; margin-bottom: 16px; }
+  .ed-modal-msg b { color: var(--ember); font-weight: 700; }
+  .ed-modal-row { display: flex; justify-content: flex-end; gap: 8px; }
+  .ed-btn { font: inherit; font-size: 13px; padding: 7px 15px; border-radius: 8px; cursor: pointer;
+    background: var(--glass-soft); border: 1px solid var(--line-soft); color: var(--dim); }
+  .ed-btn:hover { color: var(--text); border-color: var(--line); }
+  .ed-btn:focus-visible { outline: none; box-shadow: 0 0 0 2px var(--gold-dim); }
+  .ed-btn.danger { color: var(--ember); border-color: var(--ember); background: color-mix(in srgb, var(--ember) 20%, transparent); }
+  .ed-btn.danger:hover { background: color-mix(in srgb, var(--ember) 30%, transparent); }
+  @media (prefers-reduced-motion: reduce) { .ed-in, .ed-step, .ed-btn { transition: none; } }
 </style>
 </head>
 <body>
@@ -389,6 +428,24 @@
   // 好感度 -100..100 → center-axis meter { pct, neg } (WORLD affFill)
   function affFill(v) { var n = Math.max(-100, Math.min(100, num(v))); return { pct: Math.abs(n) / 2, neg: n < 0 } }
 
+  // ── edit-layer value helpers (PM-G4). edA → data-* descriptor for an editable VALUE (path = SEGMENT
+  //   ARRAY, never dot-split); edSpan wraps an inline value; edx → a delete ✕. Inert unless edit is on. ──
+  function edA(kind, segs, opts) {
+    opts = opts || {}
+    var a = ' data-ed="' + kind + '" data-path="' + esc(JSON.stringify(segs)) + '"'
+    if (opts.min != null) a += ' data-min="' + opts.min + '"'
+    if (opts.max != null) a += ' data-max="' + opts.max + '"'
+    if (opts.round) a += ' data-round="1"'
+    if (opts.opts) a += ' data-opts="' + esc(JSON.stringify(opts.opts)) + '"'
+    var cur = opts.cur
+    a += ' data-cur="' + esc(cur == null ? '' : (typeof cur === 'object' ? JSON.stringify(cur) : String(cur))) + '"'
+    return a
+  }
+  function edSpan(disp, kind, segs, opts) { return '<span class="ed"' + edA(kind, segs, opts) + '>' + disp + '</span>' }
+  function edx(segs, name) { return '<button type="button" class="ed-x" data-del="' + esc(JSON.stringify(segs)) + '" data-name="' + esc(name == null ? '' : name) + '" title="删除" aria-label="删除">✕</button>' }
+  // the current partner's base segment array (关系列表[name]); set on each render
+  var edBase = null
+
   // 品质 → rarity (verified names, FrontEnd .../utils/quality.ts)
   var QUALITY = { 普通: 'common', 优良: 'uncommon', 稀有: 'rare', 史诗: 'epic', 传说: 'legendary', 神话: 'mythic', 唯一: 'unique' }
   var QRANK = { 普通: 1, 优良: 2, 稀有: 3, 史诗: 4, 传说: 5, 神话: 6, 唯一: 7 }
@@ -409,7 +466,9 @@
       aff: P['好感度'] != null ? num(P['好感度']) : null,
       race: P['种族'] || '',
       jobs: firstStr(P['职业']),
+      jobsArr: Array.isArray(P['职业']) ? P['职业'] : (P['职业'] ? [P['职业']] : []),
       ids: firstStr(P['身份']),
+      idsArr: Array.isArray(P['身份']) ? P['身份'] : (P['身份'] ? [P['身份']] : []),
       lifeTier: P['生命层级'] || '',
       level: P['等级'] != null ? num(P['等级'], 1) : null,
       personality: P['性格'] || '',
@@ -431,27 +490,34 @@
 
   // ── item / skill disclosure rows (SELF §1.1) — collapsed row + accordion detail, one open at a time ──
   var openItemKey = null
-  function itemDetailHtml(item, category) {
+  // base = the item's segment array (e.g. 关系列表[name].装备[itemName]); when set, fields become editable + a ✕ shows.
+  function itemDetailHtml(item, category, base, name) {
     var out = ''
+    var editable = !!base
+    if (editable) out += '<div style="text-align:right;min-height:0">' + edx(base, name) + '</div>'
     var q = item['品质'] || ''
     if (q) out += '<div class="id-q" style="color:' + rarityColor(q) + '">' + esc(q) + '</div>'
     var line = []
     if (item['类型']) line.push(esc(item['类型']))
     if (category === 'equip' && item['位置']) line.push(esc(item['位置']))
     if (category === 'skill' && item['消耗']) line.push('消耗 ' + esc(item['消耗']))
-    if (category === 'bag' && item['数量'] != null) line.push('×' + num(item['数量'], 1))
+    if (category === 'bag' && item['数量'] != null) line.push('×' + (editable ? edSpan(num(item['数量'], 1), 'num', base.concat('数量'), { min: 0, round: true, cur: num(item['数量'], 1) }) : num(item['数量'], 1)))
     if (line.length) out += '<div class="id-line">' + line.join(' · ') + '</div>'
     var tags = Array.isArray(item['标签']) ? item['标签'].filter(Boolean) : []
-    if (tags.length) out += '<div class="id-tags">' + tags.map(function (t) { return '<span class="id-chip">' + esc(t) + '</span>' }).join('') + '</div>'
+    var chips = tags.map(function (t) { return '<span class="id-chip">' + esc(t) + '</span>' }).join('')
+    if (tags.length || (editable && editOn)) out += '<div class="id-tags' + (editable ? ' ed' : '') + '"' + (editable ? edA('tags', base.concat('标签'), { cur: tags }) : '') + '>' + (chips || '<span class="id-chip" style="opacity:.5">标签</span>') + '</div>'
     var fx = item['效果'] && typeof item['效果'] === 'object' ? item['效果'] : {}
     var fxk = Object.keys(fx)
     if (fxk.length) out += '<div class="id-fx">' + fxk.map(function (k) {
-      return '<div class="id-fx-row"><span class="id-fx-k">' + esc(k) + '</span><span class="id-fx-v">' + esc(fx[k]) + '</span></div>'
+      var vHtml = editable ? edSpan(esc(fx[k]), 'area', base.concat(['效果', k]), { cur: fx[k] }) : esc(fx[k])
+      return '<div class="id-fx-row"><span class="id-fx-k">' + esc(k) + '</span><span class="id-fx-v">' + vHtml + '</span></div>'
     }).join('') + '</div>'
-    if (item['描述']) out += '<div class="id-desc">' + esc(item['描述']) + '</div>'
+    if (item['描述'] || (editable && editOn)) out += '<div class="id-desc' + (editable ? ' ed' : '') + '"' + (editable ? edA('area', base.concat('描述'), { cur: item['描述'] || '' }) : '') + '>' + esc(item['描述'] || '（描述）') + '</div>'
     return out || '<div class="id-desc empty">暂无详情</div>'
   }
   function itemRow(key, name, item, category) {
+    // category is the row cat (equip|bag|skill); map to the schema key + build the item's base path
+    var base = edBase ? edBase.concat([({ equip: '装备', bag: '背包', skill: '技能' })[category], name]) : null
     var q = item['品质'] || ''
     var meta = []
     if (category === 'equip') { if (item['位置']) meta.push(esc(item['位置'])); else if (item['类型']) meta.push(esc(item['类型'])) }
@@ -463,7 +529,7 @@
       '<span class="inv-dot" style="color:' + rarityColor(q) + ';background:' + rarityColor(q) + '"></span>' +
       '<span class="inv-name">' + esc(name) + '</span><span class="inv-meta">' + meta.join(' ') + '</span>' +
       '<span class="inv-chev" aria-hidden="true">›</span></button>' +
-      '<div class="inv-detail"><div class="inv-detail-in">' + itemDetailHtml(item, category) + '</div></div></div>'
+      '<div class="inv-detail"><div class="inv-detail-in">' + itemDetailHtml(item, category, base, name) + '</div></div></div>'
   }
   function sortByQuality(obj) {
     return Object.keys(obj).sort(function (a, b) {
@@ -543,6 +609,15 @@
     var f = affFill(st.aff)
     n.textContent = (st.aff > 0 ? '+' : '') + st.aff
     n.className = 'ps-aff-n' + (f.neg ? ' neg' : '')
+    // 好感度 editable −100..100 (PM-G4): decorate the (persistent) number span as an editable value
+    n.removeAttribute('data-ed-live')   // this node is not rebuilt by innerHTML, so clear the in-edit flag
+    if (edBase) {
+      n.className += ' ed'
+      n.setAttribute('data-ed', 'num'); n.setAttribute('data-path', JSON.stringify(edBase.concat('好感度')))
+      n.setAttribute('data-min', '-100'); n.setAttribute('data-max', '100'); n.setAttribute('data-cur', String(st.aff))
+    } else {
+      n.removeAttribute('data-ed')
+    }
     fill.className = f.neg ? 'neg' : 'pos'
     fill.style.width = f.pct + '%'
   }
@@ -579,39 +654,65 @@
     next()
   }
 
-  function fieldRow(k, v) {
-    if (!v) return ''
-    return '<div class="ps-field"><div class="ps-field-k">' + esc(k) + '</div><div class="ps-field-v">' + esc(v) + '</div></div>'
+  // prose field row — editable textarea when a base path is known; shown if it has a value or edit is on.
+  function fieldRow(k, v, seg) {
+    var editable = !!(edBase && seg)
+    if (!v && !(editable && editOn)) return ''
+    var vHtml = editable
+      ? '<div class="ps-field-v ed"' + edA('area', seg, { cur: v }) + '>' + esc(v || ('（' + k + '）')) + '</div>'
+      : '<div class="ps-field-v">' + esc(v) + '</div>'
+    return '<div class="ps-field"><div class="ps-field-k">' + esc(k) + '</div>' + vHtml + '</div>'
   }
   function renderOverview(st) {
     var el = document.getElementById('pOverview')
     var html = ''
-    var profile = fieldRow('性格', st.personality) + fieldRow('喜爱', st.likes) + fieldRow('外貌', st.appearance) + fieldRow('着装', st.outfit)
+    // identity edit block (种族/职业/身份/生命层级/等级 + 在场/命定契约 toggles) — only in edit mode; the
+    //   header tag line carries the same info read-only (PM-G4, design §6).
+    if (edBase && editOn) {
+      var idRows = [
+        '<div class="ps-field"><div class="ps-field-k">种族</div><div class="ps-field-v">' + edSpan(st.race ? esc(st.race) : '（种族）', 'text', edBase.concat('种族'), { cur: st.race }) + '</div></div>',
+        '<div class="ps-field"><div class="ps-field-k">职业</div><div class="ps-field-v">' + edSpan(st.jobs ? esc(st.jobs) : '（职业）', 'tags', edBase.concat('职业'), { cur: st.jobsArr }) + '</div></div>',
+        '<div class="ps-field"><div class="ps-field-k">身份</div><div class="ps-field-v">' + edSpan(st.ids ? esc(st.ids) : '（身份）', 'tags', edBase.concat('身份'), { cur: st.idsArr }) + '</div></div>',
+        '<div class="ps-field"><div class="ps-field-k">生命层级</div><div class="ps-field-v">' + edSpan(st.lifeTier ? esc(st.lifeTier) : '（层级）', 'text', edBase.concat('生命层级'), { cur: st.lifeTier }) + '</div></div>',
+        '<div class="ps-field"><div class="ps-field-k">等级</div><div class="ps-field-v">' + edSpan(st.level != null ? st.level : 1, 'num', edBase.concat('等级'), { min: 1, max: 25, cur: st.level != null ? st.level : 1 }) + '</div></div>',
+        '<div class="ps-field"><div class="ps-field-k">在场</div><div class="ps-field-v">' + edSpan(st.present ? '在场' : '离场', 'tog', edBase.concat('在场'), { cur: !!st.present }) + '</div></div>',
+        '<div class="ps-field"><div class="ps-field-k">命定契约</div><div class="ps-field-v">' + edSpan(st.pact ? '已缔约' : '未缔约', 'tog', edBase.concat('命定契约'), { cur: !!st.pact }) + '</div></div>'
+      ].join('')
+      html += '<div class="sect">身份</div>' + idRows
+    }
+    var profile = fieldRow('性格', st.personality, edBase && edBase.concat('性格')) + fieldRow('喜爱', st.likes, edBase && edBase.concat('喜爱')) +
+      fieldRow('外貌', st.appearance, edBase && edBase.concat('外貌')) + fieldRow('着装', st.outfit, edBase && edBase.concat('着装'))
     if (profile) html += '<div class="sect">档案</div>' + profile
 
-    if (st.hasAttrs) {
+    if (st.hasAttrs || editOn) {
       var keys = ['力量', '敏捷', '体质', '智力', '精神']
       var cells = keys.map(function (k) {
-        return '<div class="attr"><div class="attr-k">' + k + '</div><div class="attr-v">' + st.attrs[k] + '</div></div>'
+        var vHtml = edBase ? edSpan(st.attrs[k], 'num', edBase.concat(['属性', k]), { min: 0, max: 20, cur: st.attrs[k] }) : st.attrs[k]
+        return '<div class="attr"><div class="attr-k">' + k + '</div><div class="attr-v">' + vHtml + '</div></div>'
       }).join('')
       html += '<div class="sect">属性</div><div class="attrs">' + cells + '</div>'
     }
 
     var a = st.asc
+    var ascBase = edBase && edBase.concat('登神长阶')
+    // 登神长阶 — a single header, then (edit mode) the 是否开启 toggle, then the rungs + crown when open.
+    var ascHtml = ''
+    if (edBase && editOn) ascHtml += '<div class="asc-crown" style="margin-top:0;margin-bottom:8px">是否开启 ' + edSpan(a && a['是否开启'] ? '已开启' : '未开启', 'tog', ascBase.concat('是否开启'), { cur: !!(a && a['是否开启']) }) + '</div>'
     if (a && a['是否开启']) {
       var ele = a['要素'] || {}, pow = a['权能'] || {}, law = a['法则'] || {}
       var king = a['神国'] && typeof a['神国'] === 'object' ? a['神国'] : {}
-      var crown = ''
-      if (a['神位']) crown += '神位 <b>' + esc(a['神位']) + '</b>　'
-      if (king['名称']) crown += '神国 <b>' + esc(king['名称']) + '</b>'
-      var crownHtml = crown ? '<div class="asc-crown">' + crown +
-        (king['描述'] ? '<div class="asc-kingdom-desc">' + esc(king['描述']) + '</div>' : '') + '</div>' : ''
-      html += '<div class="sect">登神长阶</div><div class="asc-rungs">' +
+      // 神位 / 神国名称 (text) + 神国描述 (prose) editable in edit mode
+      var crown = '神位 <b>' + edSpan(a['神位'] ? esc(a['神位']) : '—', 'text', ascBase.concat('神位'), { cur: a['神位'] || '' }) + '</b>　' +
+        '神国 <b>' + edSpan(king['名称'] ? esc(king['名称']) : '—', 'text', ascBase.concat(['神国', '名称']), { cur: king['名称'] || '' }) + '</b>'
+      var crownHtml = '<div class="asc-crown">' + crown +
+        ((king['描述'] || editOn) ? '<div class="asc-kingdom-desc ed"' + edA('area', ascBase.concat(['神国', '描述']), { cur: king['描述'] || '' }) + '>' + esc(king['描述'] || '（神国·描述）') + '</div>' : '') + '</div>'
+      ascHtml += '<div class="asc-rungs">' +
         ascRung('要素', '要素', ele, 3, Object.keys(ele).length > 0) +
         ascRung('权能', '权能', pow, 1, Object.keys(pow).length > 0) +
         ascRung('法则', '法则', law, 0, Object.keys(law).length > 0) +
         '</div>' + crownHtml
     }
+    if (ascHtml) html += '<div class="sect">登神长阶</div>' + ascHtml
 
     el.innerHTML = html || '<div class="empty">暂无档案信息。</div>'
   }
@@ -621,22 +722,27 @@
     var keys = Object.keys(st.status || {})
     var html = '<div class="sect">状态效果</div>'
     if (!keys.length) { el.innerHTML = html + '<div class="empty">暂无状态效果。</div>'; return }
-    html += keys.map(function (name) {
-      var e = st.status[name] || {}
-      var type = e['类型'] || ''
-      var tone = type === '减益' ? 'debuff' : type === '增益' ? 'buff' : 'special'
-      var stacks = num(e['层数'], 1)
-      var meta = []
-      if (stacks > 1) meta.push('×' + stacks)
-      if (e['剩余时间']) meta.push(esc(e['剩余时间']))
-      return '<div class="fx-item ' + tone + '">' +
-        '<div class="fx-head"><span class="fx-name">' + esc(name) + '</span>' +
-        (type ? '<span class="fx-type">' + esc(type) + '</span>' : '') +
-        (meta.length ? '<span class="fx-meta">' + meta.join(' ') + '</span>' : '') + '</div>' +
-        (e['效果'] ? '<div class="fx-desc">' + esc(e['效果']) + '</div>' : '') +
-        (e['来源'] ? '<div class="fx-src">来源 · ' + esc(e['来源']) + '</div>' : '') + '</div>'
-    }).join('')
+    html += keys.map(function (name) { return fxItemHtml(edBase ? edBase.concat(['状态效果', name]) : null, name, st.status[name]) }).join('')
     el.innerHTML = html
+  }
+  // 状态效果 row (SELF §1.2). base = the entry path (or null standalone-read). Editable: 类型 (select),
+  //   效果 (textarea), 层数 (num ≥1), 剩余时间 (text), 来源 (text) + delete ✕. Empty fields shown only in edit mode.
+  function fxItemHtml(base, name, e) {
+    e = e || {}
+    var editable = !!base
+    var type = e['类型'] || ''
+    var tone = type === '减益' ? 'debuff' : type === '增益' ? 'buff' : 'special'
+    var stacks = num(e['层数'], 1)
+    var typeHtml = (type || (editable && editOn)) ? '<span class="fx-type">' + (editable ? edSpan(type || '特殊', 'sel', base.concat('类型'), { opts: ['增益', '减益', '特殊'], cur: type || '特殊' }) : esc(type)) + '</span>' : ''
+    var metaBits = []
+    if (stacks > 1 || (editable && editOn)) metaBits.push('×' + (editable ? edSpan(stacks, 'num', base.concat('层数'), { min: 1, cur: stacks }) : stacks))
+    if (e['剩余时间'] || (editable && editOn)) metaBits.push(editable ? edSpan(e['剩余时间'] ? esc(e['剩余时间']) : '时长', 'text', base.concat('剩余时间'), { cur: e['剩余时间'] || '' }) : esc(e['剩余时间']))
+    var metaHtml = metaBits.length ? '<span class="fx-meta">' + metaBits.join(' · ') + '</span>' : ''
+    var descHtml = (e['效果'] || (editable && editOn)) ? '<div class="fx-desc' + (editable ? ' ed' : '') + '"' + (editable ? edA('area', base.concat('效果'), { cur: e['效果'] || '' }) : '') + '>' + esc(e['效果'] || '（效果）') + '</div>' : ''
+    var srcHtml = (e['来源'] || (editable && editOn)) ? '<div class="fx-src">来源 · ' + (editable ? edSpan(e['来源'] ? esc(e['来源']) : '来源', 'text', base.concat('来源'), { cur: e['来源'] || '' }) : esc(e['来源'])) + '</div>' : ''
+    return '<div class="fx-item ' + tone + '">' +
+      '<div class="fx-head"><span class="fx-name">' + esc(name) + '</span>' + typeHtml + metaHtml + (editable ? edx(base, name) : '') + '</div>' +
+      descHtml + srcHtml + '</div>'
   }
 
   function renderItemSection(elId, map, category) {
@@ -674,8 +780,17 @@
   function renderVoice(st) {
     var el = document.getElementById('pVoice')
     var html = ''
-    if (st.thoughts) html += '<div class="sect">心里话</div><div class="voice-quote">“' + esc(st.thoughts) + '”</div>'
-    if (st.background) html += '<div class="sect">背景故事</div><div class="voice-bg">' + esc(st.background) + '</div>'
+    // 心里话 (quote) + 背景故事 (prose) → editable textareas in edit mode (PM-G4, design §3/§6)
+    if (st.thoughts || (edBase && editOn)) {
+      var q = edBase ? '<div class="voice-quote ed"' + edA('area', edBase.concat('心里话'), { cur: st.thoughts }) + '>' + esc(st.thoughts || '（心里话）') + '</div>'
+        : '<div class="voice-quote">“' + esc(st.thoughts) + '”</div>'
+      html += '<div class="sect">心里话</div>' + q
+    }
+    if (st.background || (edBase && editOn)) {
+      var b = edBase ? '<div class="voice-bg ed"' + edA('area', edBase.concat('背景故事'), { cur: st.background }) + '>' + esc(st.background || '（背景故事）') + '</div>'
+        : '<div class="voice-bg">' + esc(st.background) + '</div>'
+      html += '<div class="sect">背景故事</div>' + b
+    }
     el.innerHTML = html || '<div class="empty">她尚未向你敞开心扉。</div>'
   }
 
@@ -736,6 +851,9 @@
         openItemKey = null; openRungs = {}
         filters = { equip: '全部', skills: '全部', bag: '全部' }
       }
+      // edit mode follows SELF's chat KV poem.edit (+ the poem:edit event); edBase = this partner's path
+      if (typeof getVariables === 'function') { editOn = kv['poem.edit'] === true; applyEditAffordance() }
+      edBase = name ? ['关系列表', name] : null
       var st = partnerState(SD, name)
       if (!st) { renderNotFound(name); return }
       renderAll(st, name)
@@ -758,7 +876,14 @@
 
   document.getElementById('psClose').addEventListener('click', closeSheet)
   scrimEl.addEventListener('click', function (ev) { if (ev.target === scrimEl) closeSheet() })
-  document.addEventListener('keydown', function (ev) { if (ev.key === 'Escape') closeSheet() })
+  document.addEventListener('keydown', function (ev) {
+    if (ev.key !== 'Escape') return
+    // let the delete-confirm modal or an open inline editor consume Esc first (PM-G4)
+    if (document.querySelector('.ed-modal-scrim.open')) return
+    var ae = document.activeElement
+    if (ae && ae.closest && ae.closest('.ed')) return
+    closeSheet()
+  })
 
   // section tabs
   document.getElementById('psTabs').addEventListener('click', function (ev) {
@@ -792,6 +917,137 @@
     }
   })
 
+  // ══ EDIT LAYER (PM-G4, design §6) — the sheet follows the toggle SELF owns. Write seam proven by the
+  //    Phase-0 spike (test/poemEditWritePath.test.ts): default-scope updateVariablesWith writes
+  //    message-floor stat_data and journals a vars_op that survives MVU replay. ═══════════════════
+  var EDIT_ROOT = sheetEl
+  var editOn = false
+  function readEditKV() {
+    try { if (typeof getVariables === 'function') { var kv = getVariables({ type: 'chat' }); if (kv && typeof kv.then !== 'function') return kv['poem.edit'] === true } } catch (_) {}
+    try { if (new URLSearchParams(location.search).get('edit') === '1') return true } catch (_) {}
+    try { return localStorage.getItem('poem.edit') === '1' } catch (_) {}
+    return false
+  }
+  function applyEditAffordance() { if (editOn) EDIT_ROOT.setAttribute('data-edit-on', ''); else EDIT_ROOT.removeAttribute('data-edit-on') }
+  function setSeg(root, segs, v) { var o = root; for (var i = 0; i < segs.length - 1; i++) { if (o[segs[i]] == null || typeof o[segs[i]] !== 'object') o[segs[i]] = {}; o = o[segs[i]] } o[segs[segs.length - 1]] = v }
+  function unsetSeg(root, segs) { var o = root; for (var i = 0; i < segs.length - 1; i++) { if (o == null || typeof o[segs[i]] !== 'object') return; o = o[segs[i]] } if (o) delete o[segs[segs.length - 1]] }
+  function commitStat(mutate) {
+    if (typeof updateVariablesWith === 'function' && typeof getVariables === 'function') {
+      try {
+        var p = updateVariablesWith(function (sd) { var n = sd && typeof sd === 'object' ? sd : {}; mutate(n); return n })
+        Promise.resolve(p).then(function () { render() }, function (e) { console.warn('[poem edit] write failed', e); render() })
+      } catch (e) { console.warn('[poem edit] write error', e) }
+      render(); return
+    }
+    try { mutate(MOCK) } catch (_) {}
+    render()
+  }
+  function writeStat(segs, value) { commitStat(function (sd) { setSeg(sd, segs, value) }) }
+  function deleteStat(segs) { commitStat(function (sd) { unsetSeg(sd, segs) }) }
+  function clampNum(v, min, max, round) { var n = Number(v); if (!isFinite(n)) return null; if (round) n = Math.round(n); if (min != null && n < min) n = min; if (max != null && n > max) n = max; return n }
+  function mkStep(sym) { var b = document.createElement('button'); b.type = 'button'; b.className = 'ed-step'; b.textContent = sym; return b }
+  function stepBind(btn, input, dir, min, max) {
+    var timer, delay
+    function bump() { var n = clampNum((Number(input.value) || 0) + dir, min, max, false); if (n != null) input.value = n }
+    btn.addEventListener('mousedown', function (ev) { ev.preventDefault(); bump(); delay = setTimeout(function () { timer = setInterval(bump, 90) }, 350) })
+    function stop() { clearTimeout(delay); clearInterval(timer) }
+    btn.addEventListener('mouseup', stop); btn.addEventListener('mouseleave', stop)
+  }
+  function autoGrow(t) { t.style.height = 'auto'; t.style.height = Math.min(t.scrollHeight, Math.round(window.innerHeight * 0.4)) + 'px' }
+  function openEditor(el) {
+    if (el.getAttribute('data-ed-live')) return
+    var kind = el.getAttribute('data-ed')
+    var segs = JSON.parse(el.getAttribute('data-path') || '[]')
+    var curRaw = el.getAttribute('data-cur')
+    if (kind === 'tog') { writeStat(segs, !(curRaw === 'true')); return }
+    el.setAttribute('data-ed-live', '1')
+    var min = el.hasAttribute('data-min') ? Number(el.getAttribute('data-min')) : null
+    var max = el.hasAttribute('data-max') ? Number(el.getAttribute('data-max')) : null
+    var round = el.hasAttribute('data-round')
+    if (kind === 'tags') return openTagEditor(el, segs, curRaw)
+    if (kind === 'sel') return openSelectEditor(el, segs, curRaw, el.hasAttribute('data-opts') ? JSON.parse(el.getAttribute('data-opts')) : [])
+    var ta = kind === 'area'
+    var input = document.createElement(ta ? 'textarea' : 'input')
+    input.className = 'ed-in'; if (!ta) input.type = 'text'
+    input.value = (kind === 'num' && curRaw === 'MAX') ? '' : (curRaw == null ? '' : curRaw)
+    var mount = input
+    if (kind === 'num') {
+      mount = document.createElement('span'); mount.className = 'ed-num'
+      var dec = mkStep('−'), inc = mkStep('+'); stepBind(dec, input, -1, min, max); stepBind(inc, input, 1, min, max)
+      mount.appendChild(dec); mount.appendChild(input); mount.appendChild(inc)
+    }
+    el.innerHTML = ''; el.appendChild(mount)
+    if (ta) { autoGrow(input); input.addEventListener('input', function () { autoGrow(input) }) }
+    input.focus(); if (input.select) input.select()
+    var done = false
+    function commit() { if (done) return; done = true; if (kind === 'num') { var n = clampNum(input.value, min, max, round); if (n == null) { render(); return } writeStat(segs, n); return } writeStat(segs, input.value) }
+    function cancel() { if (done) return; done = true; render() }
+    input.addEventListener('keydown', function (ev) {
+      if (ev.key === 'Enter' && !(ta && ev.shiftKey)) { ev.preventDefault(); commit() }
+      else if (ev.key === 'Escape') { ev.preventDefault(); ev.stopPropagation(); cancel() }
+    })
+    input.addEventListener('blur', function () { setTimeout(commit, 0) })
+  }
+  function openSelectEditor(el, segs, cur, opts) {
+    var sel = document.createElement('select'); sel.className = 'ed-in'
+    ;(opts || []).forEach(function (o) { var op = document.createElement('option'); op.value = o; op.textContent = o; if (o === cur) op.selected = true; sel.appendChild(op) })
+    el.innerHTML = ''; el.appendChild(sel); sel.focus()
+    var done = false
+    sel.addEventListener('change', function () { if (done) return; done = true; writeStat(segs, sel.value) })
+    sel.addEventListener('keydown', function (ev) { if (ev.key === 'Escape' && !done) { ev.stopPropagation(); done = true; render() } })
+    sel.addEventListener('blur', function () { setTimeout(function () { if (!done) render() }, 0) })
+  }
+  function openTagEditor(el, segs, curRaw) {
+    var arr = []; try { arr = JSON.parse(curRaw || '[]'); if (!Array.isArray(arr)) arr = [] } catch (_) { arr = [] }
+    arr = arr.slice()
+    var box = document.createElement('span'); box.className = 'ed-tags'
+    var input = document.createElement('input'); input.className = 'ed-in'; input.type = 'text'; input.style.minWidth = '46px'; input.placeholder = '+标签'
+    function redraw() {
+      box.innerHTML = ''
+      arr.forEach(function (t, i) {
+        var chip = document.createElement('span'); chip.className = 'ed-tag'; chip.textContent = t
+        var x = document.createElement('button'); x.type = 'button'; x.textContent = '×'
+        x.addEventListener('mousedown', function (ev) { ev.preventDefault(); arr.splice(i, 1); redraw() })
+        chip.appendChild(x); box.appendChild(chip)
+      })
+      box.appendChild(input); input.focus()
+    }
+    el.innerHTML = ''; el.appendChild(box); redraw()
+    var done = false
+    function commit() { if (done) return; done = true; writeStat(segs, arr) }
+    input.addEventListener('keydown', function (ev) {
+      if (ev.key === 'Enter') { ev.preventDefault(); var v = input.value.trim(); if (v && arr.indexOf(v) < 0) { arr.push(v); input.value = ''; redraw() } }
+      else if (ev.key === 'Escape') { ev.preventDefault(); ev.stopPropagation(); if (!done) { done = true; render() } }
+      else if (ev.key === 'Backspace' && !input.value && arr.length) { arr.pop(); redraw() }
+    })
+    box.addEventListener('focusout', function () { setTimeout(function () { if (!box.contains(document.activeElement)) commit() }, 0) })
+  }
+  var delModal = (function () {
+    var scrim = document.createElement('div'); scrim.className = 'ed-modal-scrim'
+    scrim.innerHTML = '<div class="ed-modal" role="dialog" aria-modal="true" aria-label="删除确认">' +
+      '<div class="ed-modal-t">删除确认</div><div class="ed-modal-msg" id="edDelMsg"></div>' +
+      '<div class="ed-modal-row"><button type="button" class="ed-btn" data-x="cancel">取消</button>' +
+      '<button type="button" class="ed-btn danger" data-x="ok">删除</button></div></div>'
+    document.body.appendChild(scrim)
+    var pending = null
+    function close() { scrim.classList.remove('open'); pending = null }
+    scrim.addEventListener('click', function (ev) {
+      if (ev.target === scrim) return close()
+      var b = ev.target.closest && ev.target.closest('[data-x]'); if (!b) return
+      if (b.getAttribute('data-x') === 'ok' && pending) { var segs = pending; close(); deleteStat(segs) } else close()
+    })
+    document.addEventListener('keydown', function (ev) { if (ev.key === 'Escape' && scrim.classList.contains('open')) { ev.stopPropagation(); close() } }, true)
+    return { open: function (segs, name) { pending = segs; scrim.querySelector('#edDelMsg').innerHTML = '删除「<b>' + esc(name || '') + '</b>」？此操作会写回存档。'; scrim.classList.add('open'); var ok = scrim.querySelector('[data-x="ok"]'); if (ok) ok.focus() } }
+  })()
+  EDIT_ROOT.addEventListener('click', function (ev) {
+    if (!editOn) return
+    var x = ev.target.closest && ev.target.closest('.ed-x')
+    if (x && EDIT_ROOT.contains(x)) { ev.preventDefault(); ev.stopPropagation(); delModal.open(JSON.parse(x.getAttribute('data-del') || '[]'), x.getAttribute('data-name')); return }
+    var ed = ev.target.closest && ev.target.closest('.ed')
+    if (ed && EDIT_ROOT.contains(ed) && !ed.getAttribute('data-ed-live')) { ev.preventDefault(); ev.stopPropagation(); openEditor(ed) }
+  }, true)
+  editOn = readEditKV(); applyEditAffordance()
+
   render()
   if (typeof eventOn === 'function') {
     var pending = false
@@ -800,6 +1056,7 @@
     eventOn('message_updated', onChange)
     eventOn('poem:sheet', onChange)   // partner switch while the overlay is open (design §3)
     eventOn('poem:theme', function (p) { applyPoemTheme(p && p.id) })
+    eventOn('poem:edit', function (p) { editOn = !!(p && p.on); applyEditAffordance(); render() })
   }
 })()
 </script>

@@ -146,6 +146,45 @@
   .news-p { font-size: 12px; color: var(--dim); margin-top: 4px; line-height: 1.55; white-space: pre-wrap; }  /* PM-B5: CJK news prose → ≥12px */
 
   @media (prefers-reduced-motion: reduce) { .npc-rel > i, .quest-full { transition: none; } }
+
+  /* ══ edit mode (PM-G4, design §6) — inline-editor chrome + delete-confirm modal (WORLD follows the
+        toggle SELF owns). ≤12px text stays on SAFE tokens; CJK ≥12px; hit targets ≥32px. ══ */
+  [data-edit-on] .ed { border-bottom: 1px dotted var(--gold-dim); cursor: text; }
+  .ed-x { flex: 0 0 auto; display: none; width: 22px; height: 22px; line-height: 20px; text-align: center; padding: 0;
+    margin-left: 6px; border-radius: 6px; border: 1px solid var(--line-soft); background: var(--glass-soft);
+    color: var(--ember); font-size: 12px; cursor: pointer; vertical-align: middle; }
+  [data-edit-on] .ed-x { display: inline-block; }
+  .ed-x:hover { border-color: var(--ember); background: color-mix(in srgb, var(--ember) 16%, transparent); }
+  .ed-in { font: inherit; font-size: 13px; color: var(--text); background: var(--glass-soft);
+    border: 1px solid var(--line-soft); border-radius: 6px; padding: 4px 6px; min-width: 56px; }
+  .ed-in:focus { outline: none; border-color: var(--gold-dim); box-shadow: 0 0 0 2px var(--gold-dim); }
+  textarea.ed-in { width: 100%; resize: none; max-height: 40vh; line-height: 1.55; font-family: var(--serif); }
+  select.ed-in { -webkit-appearance: none; appearance: none; padding-right: 22px; cursor: pointer; }
+  .ed-num { display: inline-flex; align-items: center; gap: 4px; }
+  .ed-num .ed-in { width: 68px; min-width: 0; text-align: center; }
+  .ed-step { width: 28px; height: 30px; flex: 0 0 auto; border-radius: 6px; padding: 0; cursor: pointer;
+    background: var(--glass-soft); border: 1px solid var(--line-soft); color: var(--gold); font-size: 16px; line-height: 1; }
+  .ed-step:hover { border-color: var(--gold-dim); }
+  .ed-tags { display: inline-flex; flex-wrap: wrap; gap: 5px; align-items: center; }
+  .ed-tag { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; padding: 2px 8px; border-radius: 999px;
+    border: 1px solid var(--line); color: var(--dim); }
+  .ed-tag button { background: none; border: none; color: var(--ember); cursor: pointer; font-size: 13px; line-height: 1; padding: 0; }
+  .ed-modal-scrim { position: fixed; inset: 0; z-index: 60; display: none; align-items: center; justify-content: center;
+    padding: 24px; background: rgba(0, 0, 0, .55); backdrop-filter: blur(5px); }
+  .ed-modal-scrim.open { display: flex; }
+  .ed-modal { width: min(340px, 90vw); padding: 18px; border-radius: 14px;
+    background: var(--glass); backdrop-filter: blur(14px); border: 1px solid var(--line-soft); box-shadow: 0 20px 56px rgba(0, 0, 0, .5); }
+  .ed-modal-t { font-family: var(--mono); font-size: 12px; letter-spacing: .18em; text-transform: uppercase; color: var(--gold); margin-bottom: 8px; }
+  .ed-modal-msg { font-size: 13px; color: var(--text); line-height: 1.6; margin-bottom: 16px; }
+  .ed-modal-msg b { color: var(--ember); font-weight: 700; }
+  .ed-modal-row { display: flex; justify-content: flex-end; gap: 8px; }
+  .ed-btn { font: inherit; font-size: 13px; padding: 7px 15px; border-radius: 8px; cursor: pointer;
+    background: var(--glass-soft); border: 1px solid var(--line-soft); color: var(--dim); }
+  .ed-btn:hover { color: var(--text); border-color: var(--line); }
+  .ed-btn:focus-visible { outline: none; box-shadow: 0 0 0 2px var(--gold-dim); }
+  .ed-btn.danger { color: var(--ember); border-color: var(--ember); background: color-mix(in srgb, var(--ember) 20%, transparent); }
+  .ed-btn.danger:hover { background: color-mix(in srgb, var(--ember) 30%, transparent); }
+  @media (prefers-reduced-motion: reduce) { .ed-in, .ed-step, .ed-btn { transition: none; } }
 </style>
 </head>
 <body>
@@ -233,6 +272,22 @@
   function esc(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c] }) }
   var num = function (v, d) { var n = Number(v); return isFinite(n) ? n : (d == null ? 0 : d) }
   var firstStr = function (a) { return Array.isArray(a) ? a.filter(Boolean).join(' · ') : (a || '') }
+
+  // ── edit-layer value helpers (PM-G4). edA → data-* descriptor for an editable VALUE (path = SEGMENT
+  //   ARRAY, never dot-split); edSpan wraps an inline value; edx → a delete ✕. Inert unless edit is on. ──
+  function edA(kind, segs, opts) {
+    opts = opts || {}
+    var a = ' data-ed="' + kind + '" data-path="' + esc(JSON.stringify(segs)) + '"'
+    if (opts.min != null) a += ' data-min="' + opts.min + '"'
+    if (opts.max != null) a += ' data-max="' + opts.max + '"'
+    if (opts.round) a += ' data-round="1"'
+    if (opts.opts) a += ' data-opts="' + esc(JSON.stringify(opts.opts)) + '"'
+    var cur = opts.cur
+    a += ' data-cur="' + esc(cur == null ? '' : (typeof cur === 'object' ? JSON.stringify(cur) : String(cur))) + '"'
+    return a
+  }
+  function edSpan(disp, kind, segs, opts) { return '<span class="ed"' + edA(kind, segs, opts) + '>' + disp + '</span>' }
+  function edx(segs, name) { return '<button type="button" class="ed-x" data-del="' + esc(JSON.stringify(segs)) + '" data-name="' + esc(name == null ? '' : name) + '" title="删除" aria-label="删除">✕</button>' }
 
   // 好感度 is -100..100; the bar is a center-axis meter (0 = empty at the tick). Returns { pct, neg }.
   function affFill(v) {
@@ -366,20 +421,32 @@
     var list = questStatus === '全部' ? s.quests : s.quests.filter(function (q) { return q.status === questStatus })
     var body = list.length
       ? list.map(function (q) {
+          var base = ['任务列表', q.name]
           var cls = q.focus === '高' ? ' hi' : q.focus === '低' ? ' lo' : ''
           if (openQuest === q.name) cls += ' open'
           var meta = []
           if (q.status) meta.push('<b>状态</b> ' + esc(q.status))
           if (q.progress) meta.push('<b>进展</b> ' + esc(q.progress))
           if (q.reward) meta.push('<b>奖励</b> ' + esc(q.reward))
-          var full = [
-            { k: '目标', v: q.goal }, { k: '详情', v: q.detail },
-            { k: '进展', v: q.progress }, { k: '奖励', v: q.reward }
-          ].filter(function (r) { return r.v }).map(function (r) {
-            return '<div class="qf-row"><span class="qf-k">' + esc(r.k) + '</span><span class="qf-v">' + esc(r.v) + '</span></div>'
+          // 关注度 = select (低/中/高); the card gets a ✕ delete (PM-G4, design §2/§6)
+          var focusHtml = edSpan(esc(q.focus), 'sel', base.concat('关注度'), { opts: ['低', '中', '高'], cur: q.focus })
+          // full field breakdown — editable in the expanded state; empty fields hidden unless editing
+          var fields = [
+            { k: '状态', seg: '状态', v: q.status, kind: 'text' },
+            { k: '目标', seg: '目标', v: q.goal, kind: 'area' },
+            { k: '详情', seg: '详情', v: q.detail, kind: 'area' },
+            { k: '进展', seg: '进展', v: q.progress, kind: 'area' },
+            { k: '奖励', seg: '奖励', v: q.reward, kind: 'text' }
+          ]
+          var full = fields.filter(function (r) { return r.v || editOn }).map(function (r) {
+            var seg = base.concat(r.seg)
+            var vHtml = r.kind === 'area'
+              ? '<div class="qf-v ed"' + edA('area', seg, { cur: r.v }) + '>' + esc(r.v || ('（' + r.k + '）')) + '</div>'
+              : '<div class="qf-v">' + edSpan(r.v ? esc(r.v) : ('（' + r.k + '）'), 'text', seg, { cur: r.v }) + '</div>'
+            return '<div class="qf-row"><span class="qf-k">' + esc(r.k) + '</span>' + vHtml + '</div>'
           }).join('') || '<div class="qf-row"><span class="qf-v empty">暂无详情</span></div>'
           return '<div class="quest' + cls + '" data-quest="' + esc(q.name) + '"><div class="quest-h"><span class="quest-t">' + esc(q.name) +
-            '</span><span class="quest-focus">' + esc(q.focus) + '</span></div>' +
+            '</span><span class="quest-focus">' + focusHtml + '</span>' + edx(base, q.name) + '</div>' +
             (q.goal ? '<div class="quest-goal">' + esc(q.goal) + '</div>' : '') +
             (q.detail ? '<div class="quest-detail">' + esc(q.detail) + '</div>' : '') +
             (meta.length ? '<div class="quest-meta">' + meta.join('<span></span>') + '</div>' : '') +
@@ -393,10 +460,11 @@
   function renderNews(s) {
     document.getElementById('pNews').innerHTML = s.news.length
       ? s.news.map(function (e) {
+          // 新闻 prose → editable textarea (PM-G4, design §2); category/title stay read-only
           return '<div class="news" style="border-left-color:' + e.tok + '">' +
             '<span class="news-badge" style="background:color-mix(in srgb,' + e.tok + ' 14%,transparent);border-color:color-mix(in srgb,' + e.tok + ' 40%,transparent)">' + esc(e.cat) + '</span>' +
             '<div class="news-t">' + esc(e.title) + '</div>' +
-            '<div class="news-p">' + esc(e.content) + '</div></div>'
+            '<div class="news-p ed"' + edA('area', ['新闻', e.cat, e.title], { cur: e.content }) + '>' + esc(e.content) + '</div></div>'
         }).join('')
       : '<div class="empty">暂无新闻</div>'
   }
@@ -485,6 +553,137 @@
     })
   }
 
+  // ══ EDIT LAYER (PM-G4, design §6) — WORLD follows the toggle SELF owns. Write seam proven by the
+  //    Phase-0 spike (test/poemEditWritePath.test.ts): default-scope updateVariablesWith writes
+  //    message-floor stat_data and journals a vars_op that survives MVU replay. ═══════════════════
+  var EDIT_ROOT = worldEl
+  var editOn = false
+  function readEditKV() {
+    try { if (typeof getVariables === 'function') { var kv = getVariables({ type: 'chat' }); if (kv && typeof kv.then !== 'function') return kv['poem.edit'] === true } } catch (_) {}
+    try { if (new URLSearchParams(location.search).get('edit') === '1') return true } catch (_) {}
+    try { return localStorage.getItem('poem.edit') === '1' } catch (_) {}
+    return false
+  }
+  function applyEditAffordance() { if (editOn) EDIT_ROOT.setAttribute('data-edit-on', ''); else EDIT_ROOT.removeAttribute('data-edit-on') }
+  function setSeg(root, segs, v) { var o = root; for (var i = 0; i < segs.length - 1; i++) { if (o[segs[i]] == null || typeof o[segs[i]] !== 'object') o[segs[i]] = {}; o = o[segs[i]] } o[segs[segs.length - 1]] = v }
+  function unsetSeg(root, segs) { var o = root; for (var i = 0; i < segs.length - 1; i++) { if (o == null || typeof o[segs[i]] !== 'object') return; o = o[segs[i]] } if (o) delete o[segs[segs.length - 1]] }
+  function commitStat(mutate) {
+    if (typeof updateVariablesWith === 'function' && typeof getVariables === 'function') {
+      try {
+        var p = updateVariablesWith(function (sd) { var n = sd && typeof sd === 'object' ? sd : {}; mutate(n); return n })
+        Promise.resolve(p).then(function () { render() }, function (e) { console.warn('[poem edit] write failed', e); render() })
+      } catch (e) { console.warn('[poem edit] write error', e) }
+      render(); return
+    }
+    try { mutate(MOCK) } catch (_) {}
+    render()
+  }
+  function writeStat(segs, value) { commitStat(function (sd) { setSeg(sd, segs, value) }) }
+  function deleteStat(segs) { commitStat(function (sd) { unsetSeg(sd, segs) }) }
+  function clampNum(v, min, max, round) { var n = Number(v); if (!isFinite(n)) return null; if (round) n = Math.round(n); if (min != null && n < min) n = min; if (max != null && n > max) n = max; return n }
+  function mkStep(sym) { var b = document.createElement('button'); b.type = 'button'; b.className = 'ed-step'; b.textContent = sym; return b }
+  function stepBind(btn, input, dir, min, max) {
+    var timer, delay
+    function bump() { var n = clampNum((Number(input.value) || 0) + dir, min, max, false); if (n != null) input.value = n }
+    btn.addEventListener('mousedown', function (ev) { ev.preventDefault(); bump(); delay = setTimeout(function () { timer = setInterval(bump, 90) }, 350) })
+    function stop() { clearTimeout(delay); clearInterval(timer) }
+    btn.addEventListener('mouseup', stop); btn.addEventListener('mouseleave', stop)
+  }
+  function autoGrow(t) { t.style.height = 'auto'; t.style.height = Math.min(t.scrollHeight, Math.round(window.innerHeight * 0.4)) + 'px' }
+  function openEditor(el) {
+    if (el.getAttribute('data-ed-live')) return
+    var kind = el.getAttribute('data-ed')
+    var segs = JSON.parse(el.getAttribute('data-path') || '[]')
+    var curRaw = el.getAttribute('data-cur')
+    if (kind === 'tog') { writeStat(segs, !(curRaw === 'true')); return }
+    el.setAttribute('data-ed-live', '1')
+    var min = el.hasAttribute('data-min') ? Number(el.getAttribute('data-min')) : null
+    var max = el.hasAttribute('data-max') ? Number(el.getAttribute('data-max')) : null
+    var round = el.hasAttribute('data-round')
+    if (kind === 'tags') return openTagEditor(el, segs, curRaw)
+    if (kind === 'sel') return openSelectEditor(el, segs, curRaw, el.hasAttribute('data-opts') ? JSON.parse(el.getAttribute('data-opts')) : [])
+    var ta = kind === 'area'
+    var input = document.createElement(ta ? 'textarea' : 'input')
+    input.className = 'ed-in'; if (!ta) input.type = 'text'
+    input.value = (kind === 'num' && curRaw === 'MAX') ? '' : (curRaw == null ? '' : curRaw)
+    var mount = input
+    if (kind === 'num') {
+      mount = document.createElement('span'); mount.className = 'ed-num'
+      var dec = mkStep('−'), inc = mkStep('+'); stepBind(dec, input, -1, min, max); stepBind(inc, input, 1, min, max)
+      mount.appendChild(dec); mount.appendChild(input); mount.appendChild(inc)
+    }
+    el.innerHTML = ''; el.appendChild(mount)
+    if (ta) { autoGrow(input); input.addEventListener('input', function () { autoGrow(input) }) }
+    input.focus(); if (input.select) input.select()
+    var done = false
+    function commit() { if (done) return; done = true; if (kind === 'num') { var n = clampNum(input.value, min, max, round); if (n == null) { render(); return } writeStat(segs, n); return } writeStat(segs, input.value) }
+    function cancel() { if (done) return; done = true; render() }
+    input.addEventListener('keydown', function (ev) {
+      if (ev.key === 'Enter' && !(ta && ev.shiftKey)) { ev.preventDefault(); commit() }
+      else if (ev.key === 'Escape') { ev.preventDefault(); cancel() }
+    })
+    input.addEventListener('blur', function () { setTimeout(commit, 0) })
+  }
+  function openSelectEditor(el, segs, cur, opts) {
+    var sel = document.createElement('select'); sel.className = 'ed-in'
+    ;(opts || []).forEach(function (o) { var op = document.createElement('option'); op.value = o; op.textContent = o; if (o === cur) op.selected = true; sel.appendChild(op) })
+    el.innerHTML = ''; el.appendChild(sel); sel.focus()
+    var done = false
+    sel.addEventListener('change', function () { if (done) return; done = true; writeStat(segs, sel.value) })
+    sel.addEventListener('keydown', function (ev) { if (ev.key === 'Escape' && !done) { done = true; render() } })
+    sel.addEventListener('blur', function () { setTimeout(function () { if (!done) render() }, 0) })
+  }
+  function openTagEditor(el, segs, curRaw) {
+    var arr = []; try { arr = JSON.parse(curRaw || '[]'); if (!Array.isArray(arr)) arr = [] } catch (_) { arr = [] }
+    arr = arr.slice()
+    var box = document.createElement('span'); box.className = 'ed-tags'
+    var input = document.createElement('input'); input.className = 'ed-in'; input.type = 'text'; input.style.minWidth = '46px'; input.placeholder = '+标签'
+    function redraw() {
+      box.innerHTML = ''
+      arr.forEach(function (t, i) {
+        var chip = document.createElement('span'); chip.className = 'ed-tag'; chip.textContent = t
+        var x = document.createElement('button'); x.type = 'button'; x.textContent = '×'
+        x.addEventListener('mousedown', function (ev) { ev.preventDefault(); arr.splice(i, 1); redraw() })
+        chip.appendChild(x); box.appendChild(chip)
+      })
+      box.appendChild(input); input.focus()
+    }
+    el.innerHTML = ''; el.appendChild(box); redraw()
+    var done = false
+    function commit() { if (done) return; done = true; writeStat(segs, arr) }
+    input.addEventListener('keydown', function (ev) {
+      if (ev.key === 'Enter') { ev.preventDefault(); var v = input.value.trim(); if (v && arr.indexOf(v) < 0) { arr.push(v); input.value = ''; redraw() } }
+      else if (ev.key === 'Escape') { ev.preventDefault(); if (!done) { done = true; render() } }
+      else if (ev.key === 'Backspace' && !input.value && arr.length) { arr.pop(); redraw() }
+    })
+    box.addEventListener('focusout', function () { setTimeout(function () { if (!box.contains(document.activeElement)) commit() }, 0) })
+  }
+  var delModal = (function () {
+    var scrim = document.createElement('div'); scrim.className = 'ed-modal-scrim'
+    scrim.innerHTML = '<div class="ed-modal" role="dialog" aria-modal="true" aria-label="删除确认">' +
+      '<div class="ed-modal-t">删除确认</div><div class="ed-modal-msg" id="edDelMsg"></div>' +
+      '<div class="ed-modal-row"><button type="button" class="ed-btn" data-x="cancel">取消</button>' +
+      '<button type="button" class="ed-btn danger" data-x="ok">删除</button></div></div>'
+    document.body.appendChild(scrim)
+    var pending = null
+    function close() { scrim.classList.remove('open'); pending = null }
+    scrim.addEventListener('click', function (ev) {
+      if (ev.target === scrim) return close()
+      var b = ev.target.closest && ev.target.closest('[data-x]'); if (!b) return
+      if (b.getAttribute('data-x') === 'ok' && pending) { var segs = pending; close(); deleteStat(segs) } else close()
+    })
+    document.addEventListener('keydown', function (ev) { if (ev.key === 'Escape' && scrim.classList.contains('open')) { ev.stopPropagation(); close() } }, true)
+    return { open: function (segs, name) { pending = segs; scrim.querySelector('#edDelMsg').innerHTML = '删除「<b>' + esc(name || '') + '</b>」？此操作会写回存档。'; scrim.classList.add('open'); var ok = scrim.querySelector('[data-x="ok"]'); if (ok) ok.focus() } }
+  })()
+  EDIT_ROOT.addEventListener('click', function (ev) {
+    if (!editOn) return
+    var x = ev.target.closest && ev.target.closest('.ed-x')
+    if (x && EDIT_ROOT.contains(x)) { ev.preventDefault(); ev.stopPropagation(); delModal.open(JSON.parse(x.getAttribute('data-del') || '[]'), x.getAttribute('data-name')); return }
+    var ed = ev.target.closest && ev.target.closest('.ed')
+    if (ed && EDIT_ROOT.contains(ed) && !ed.getAttribute('data-ed-live')) { ev.preventDefault(); ev.stopPropagation(); openEditor(ed) }
+  }, true)
+  editOn = readEditKV(); applyEditAffordance()
+
   render()
   if (typeof eventOn === 'function') {
     var pending = false
@@ -492,6 +691,7 @@
     eventOn('mag_variable_updated', refresh)
     eventOn('message_updated', refresh)
     eventOn('poem:theme', function (p) { applyPoemTheme(p && p.id) })
+    eventOn('poem:edit', function (p) { editOn = !!(p && p.on); applyEditAffordance(); render() })
   }
 })()
 </script>

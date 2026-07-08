@@ -242,6 +242,57 @@
   @media (prefers-reduced-motion: reduce) {
     .drawer, .res-track > i, .inv-detail, .rung-detail, .inv-chev { transition: none; }
   }
+
+  /* ══ edit mode (PM-G4, design §6) — toggle pill, inline-editor chrome, delete-confirm modal.
+        All ≤12px text stays on the SAFE tokens (--gold/--text/--dim/--ember); CJK ≥12px. Editors are
+        glass-soft with a --gold-dim focus ring; hit targets ≥32px (steppers 30px w/ padding). ══ */
+  .edit-pill { flex: 0 0 auto; width: 32px; height: 32px; display: inline-flex; align-items: center; justify-content: center;
+    margin-left: 4px; border-radius: 9px; cursor: pointer; font-size: 15px;
+    background: var(--glass-soft); border: 1px solid var(--line-soft); color: var(--dim);
+    transition: color .12s ease, border-color .12s ease, background .12s ease; }
+  .edit-pill:hover { color: var(--gold); border-color: var(--gold-dim); }
+  .edit-pill:focus-visible { outline: none; box-shadow: 0 0 0 2px var(--gold-dim); }
+  .edit-pill[aria-pressed="true"] { color: var(--night); background: var(--gold); border-color: var(--gold); }
+  /* affordance rides the VALUE only when edit is on */
+  [data-edit-on] .ed { border-bottom: 1px dotted var(--gold-dim); cursor: text; }
+  .ed-x { flex: 0 0 auto; display: none; width: 22px; height: 22px; line-height: 20px; text-align: center; padding: 0;
+    margin-left: 6px; border-radius: 6px; border: 1px solid var(--line-soft); background: var(--glass-soft);
+    color: var(--ember); font-size: 12px; cursor: pointer; vertical-align: middle; }
+  [data-edit-on] .ed-x { display: inline-block; }
+  .ed-x:hover { border-color: var(--ember); background: color-mix(in srgb, var(--ember) 16%, transparent); }
+  .ed-in { font: inherit; font-size: 13px; color: var(--text); background: var(--glass-soft);
+    border: 1px solid var(--line-soft); border-radius: 6px; padding: 4px 6px; min-width: 56px; }
+  .ed-in:focus { outline: none; border-color: var(--gold-dim); box-shadow: 0 0 0 2px var(--gold-dim); }
+  textarea.ed-in { width: 100%; resize: none; max-height: 40vh; line-height: 1.55; font-family: var(--serif); }
+  select.ed-in { -webkit-appearance: none; appearance: none; padding-right: 22px; cursor: pointer; }
+  .ed-num { display: inline-flex; align-items: center; gap: 4px; }
+  .ed-num .ed-in { width: 68px; min-width: 0; text-align: center; }
+  .ed-step { width: 28px; height: 30px; flex: 0 0 auto; border-radius: 6px; padding: 0; cursor: pointer;
+    background: var(--glass-soft); border: 1px solid var(--line-soft); color: var(--gold); font-size: 16px; line-height: 1; }
+  .ed-step:hover { border-color: var(--gold-dim); }
+  .ed-tags { display: inline-flex; flex-wrap: wrap; gap: 5px; align-items: center; }
+  .ed-tag { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; padding: 2px 8px; border-radius: 999px;
+    border: 1px solid var(--line); color: var(--dim); }  /* PM-B5: CJK tag → ≥12px; --dim ≥7:1 */
+  .ed-tag button { background: none; border: none; color: var(--ember); cursor: pointer; font-size: 13px; line-height: 1; padding: 0; }
+  /* delete-confirm glass modal (appended to body) */
+  .ed-modal-scrim { position: fixed; inset: 0; z-index: 60; display: none; align-items: center; justify-content: center;
+    padding: 24px; background: rgba(0, 0, 0, .55); backdrop-filter: blur(5px); }
+  .ed-modal-scrim.open { display: flex; }
+  .ed-modal { width: min(340px, 90vw); padding: 18px; border-radius: 14px;
+    background: var(--glass); backdrop-filter: blur(14px); border: 1px solid var(--line-soft); box-shadow: 0 20px 56px rgba(0, 0, 0, .5); }
+  .ed-modal-t { font-family: var(--mono); font-size: 12px; letter-spacing: .18em; text-transform: uppercase; color: var(--gold); margin-bottom: 8px; }  /* PM-B5: CJK header → ≥12px */
+  .ed-modal-msg { font-size: 13px; color: var(--text); line-height: 1.6; margin-bottom: 16px; }  /* PM-B5: CJK prose → ≥12px */
+  .ed-modal-msg b { color: var(--ember); font-weight: 700; }
+  .ed-modal-row { display: flex; justify-content: flex-end; gap: 8px; }
+  .ed-btn { font: inherit; font-size: 13px; padding: 7px 15px; border-radius: 8px; cursor: pointer;
+    background: var(--glass-soft); border: 1px solid var(--line-soft); color: var(--dim); }
+  .ed-btn:hover { color: var(--text); border-color: var(--line); }
+  .ed-btn:focus-visible { outline: none; box-shadow: 0 0 0 2px var(--gold-dim); }
+  .ed-btn.danger { color: var(--ember); border-color: var(--ember); background: color-mix(in srgb, var(--ember) 20%, transparent); }
+  .ed-btn.danger:hover { background: color-mix(in srgb, var(--ember) 30%, transparent); }
+  @media (prefers-reduced-motion: reduce) {
+    .edit-pill, .ed-in, .ed-step, .ed-btn { transition: none; }
+  }
 </style>
 </head>
 <body>
@@ -263,7 +314,8 @@
       <button class="tab" data-menu="inv" type="button">持有</button>
       <button class="tab" data-menu="skills" type="button">技能</button>
       <button class="tab" data-menu="asc" type="button">登神</button>
-      <!-- PM-G4: edit pill docks here -->
+      <!-- PM-G4: edit toggle — SELF owns it (persists chat KV poem.edit + broadcasts poem:edit) -->
+      <button class="edit-pill" id="editPill" type="button" aria-pressed="false" aria-label="编辑模式" title="编辑模式">✎</button>
       <div class="theme-swatches" id="themeSwatches" title="配色"></div>
     </div>
   </div>
@@ -388,6 +440,25 @@
   var pct = function (cur, max) { return max > 0 ? Math.max(0, Math.min(100, (cur / max) * 100)) : 0 }
   var firstStr = function (arr) { return Array.isArray(arr) ? arr.filter(Boolean).join(' · ') : (arr || '') }
 
+  // ── edit-layer value helpers (PM-G4). edA → the data-* descriptor for an editable VALUE (path is a
+  //   SEGMENT ARRAY — record keys may contain '.', so we never dot-split); edSpan wraps an inline value;
+  //   edx → a delete ✕ for a record row. Inert until edit mode is on (CSS + the guarded click handler). ──
+  function edA(kind, segs, opts) {
+    opts = opts || {}
+    var a = ' data-ed="' + kind + '" data-path="' + esc(JSON.stringify(segs)) + '"'
+    if (opts.min != null) a += ' data-min="' + opts.min + '"'
+    if (opts.max != null) a += ' data-max="' + opts.max + '"'
+    if (opts.round) a += ' data-round="1"'
+    if (opts.opts) a += ' data-opts="' + esc(JSON.stringify(opts.opts)) + '"'
+    var cur = opts.cur
+    a += ' data-cur="' + esc(cur == null ? '' : (typeof cur === 'object' ? JSON.stringify(cur) : String(cur))) + '"'
+    return a
+  }
+  function edSpan(disp, kind, segs, opts) { return '<span class="ed"' + edA(kind, segs, opts) + '>' + disp + '</span>' }
+  function edx(segs, name) {
+    return '<button type="button" class="ed-x" data-del="' + esc(JSON.stringify(segs)) + '" data-name="' + esc(name == null ? '' : name) + '" title="删除" aria-label="删除">✕</button>'
+  }
+
   // 品质 → rarity class (verified names, FrontEnd .../utils/quality.ts)
   var QUALITY = { 普通: 'common', 优良: 'uncommon', 稀有: 'rare', 史诗: 'epic', 传说: 'legendary', 神话: 'mythic', 唯一: 'unique' }
   var QRANK = { 普通: 1, 优良: 2, 稀有: 3, 史诗: 4, 传说: 5, 神话: 6, 唯一: 7 }
@@ -406,8 +477,11 @@
       level: num(P['等级'], 1),
       rank: P['冒险者等级'] || '',
       race: P['种族'] || '',              // 角色档案 rows (PM-G1)
+      raceRaw: P['种族'] || '',           // raw for the text editor (PM-G4)
       jobs: firstStr(P['职业']),          // 职业[] joined ' · '
+      jobsArr: Array.isArray(P['职业']) ? P['职业'] : (P['职业'] ? [P['职业']] : []),
       ids: firstStr(P['身份']),           // 身份[] joined ' · '
+      idsArr: Array.isArray(P['身份']) ? P['身份'] : (P['身份'] ? [P['身份']] : []),
       hp: { v: num(P['生命值']), max: num(P['生命值上限']) },
       mp: { v: num(P['法力值']), max: num(P['法力值上限']) },
       sp: { v: num(P['体力值']), max: num(P['体力值上限']) },
@@ -428,28 +502,41 @@
   function resRow(k, cls, cur, max, color, opts) {
     opts = opts || {}
     if (opts.scalar) {
+      // scalar value (FP) — editable as a bare number when edSegs given (PM-G4)
+      var sv = opts.edSegs ? edSpan(esc(opts.text != null ? opts.text : cur), 'num', opts.edSegs, { min: opts.min != null ? opts.min : 0, round: opts.round, cur: cur })
+        : esc(opts.text != null ? opts.text : cur)
       return '<div class="res scalar"><span class="res-k ' + cls + '">' + k + '</span>' +
         '<span class="res-track"><i style="background:' + color + '"></i></span>' +
-        '<span class="res-v">' + esc(opts.text != null ? opts.text : cur) + '</span></div>'
+        '<span class="res-v">' + sv + '</span></div>'
     }
-    var v = opts.text != null ? opts.text : (cur + ' / ' + max)
+    // cur / max — each independently editable (PM-G4: resources 0..上限, 上限 ≥0)
+    var vHtml
+    if (opts.edCur || opts.edMax) {
+      var curH = opts.edCur ? edSpan(esc(cur), 'num', opts.edCur, { min: 0, max: max, cur: cur }) : esc(cur)
+      var maxH = opts.edMax ? edSpan(esc(max), 'num', opts.edMax, { min: 0, cur: max }) : esc(max)
+      vHtml = curH + ' / ' + maxH
+    } else {
+      vHtml = esc(opts.text != null ? opts.text : (cur + ' / ' + max))
+    }
     return '<div class="res"><span class="res-k ' + cls + '">' + k + '</span>' +
       '<span class="res-track"><i style="width:' + pct(cur, max) + '%;background:' + color + '"></i></span>' +
-      '<span class="res-v">' + esc(v) + '</span></div>'
+      '<span class="res-v">' + vHtml + '</span></div>'
   }
 
   function renderStats(s) {
     var expText = s.exp.capped ? 'MAX' : (s.exp.v + ' / ' + s.exp.max)
     var expFill = s.exp.capped ? 100 : pct(s.exp.v, s.exp.max)
     var chips = statusChips(s.status)
+    // EXP current value is editable (≥0); the 升级所需经验 max stays display-only ('MAX' is a sentinel)
+    var expV = s.exp.capped ? 'MAX' : edSpan(esc(s.exp.v), 'num', ['主角', '累计经验值'], { min: 0, cur: s.exp.v }) + ' / ' + esc(s.exp.max)
     document.getElementById('stats').innerHTML =
-      resRow('HP', 'hp', s.hp.v, s.hp.max, 'var(--hp)') +
-      resRow('MP', 'mp', s.mp.v, s.mp.max, 'var(--mp)') +
-      resRow('SP', 'sp', s.sp.v, s.sp.max, 'var(--sp)') +
+      resRow('HP', 'hp', s.hp.v, s.hp.max, 'var(--hp)', { edCur: ['主角', '生命值'], edMax: ['主角', '生命值上限'] }) +
+      resRow('MP', 'mp', s.mp.v, s.mp.max, 'var(--mp)', { edCur: ['主角', '法力值'], edMax: ['主角', '法力值上限'] }) +
+      resRow('SP', 'sp', s.sp.v, s.sp.max, 'var(--sp)', { edCur: ['主角', '体力值'], edMax: ['主角', '体力值上限'] }) +
       '<div class="res"><span class="res-k exp">EXP</span><span class="res-track"><i style="width:' +
-        expFill + '%;background:var(--exp)"></i></span><span class="res-v">' + esc(expText) + '</span></div>' +
-      resRow('FP', 'fp', s.fp, 0, 'var(--fp)', { scalar: true, text: s.fp }) +
-      '<div class="stats-foot"><span class="gold">⛃ <b>' + esc(s.gold) + '</b> G</span>' +
+        expFill + '%;background:var(--exp)"></i></span><span class="res-v">' + expV + '</span></div>' +
+      resRow('FP', 'fp', s.fp, 0, 'var(--fp)', { scalar: true, text: s.fp, edSegs: ['命运点数'], min: 0 }) +
+      '<div class="stats-foot"><span class="gold">⛃ <b>' + edSpan(esc(s.gold), 'num', ['主角', '金钱'], { min: 0, round: true, cur: s.gold }) + '</b> G</span>' +
       '<button type="button" class="chips" id="chipsBtn" aria-expanded="false" aria-label="状态效果" title="状态效果">' + chips + '</button></div>'
   }
 
@@ -468,15 +555,25 @@
   }
 
   function renderAttrs(s) {
-    // 角色档案 block (种族 / 职业 / 身份) above the attr grid — empty value → 无
-    var pf = [{ k: '种族', v: s.race }, { k: '职业', v: s.jobs }, { k: '身份', v: s.ids }].map(function (r) {
-      return '<div class="pf-row"><span class="pf-k">' + r.k + '</span><span class="pf-v">' + (r.v ? esc(r.v) : '无') + '</span></div>'
+    // 角色档案 block — 种族 (text), 职业 / 身份 (tag lists, uniq). Empty display value → 无 (still editable).
+    var pf = [
+      { k: '种族', kind: 'text', segs: ['主角', '种族'], raw: s.raceRaw, disp: s.race },
+      { k: '职业', kind: 'tags', segs: ['主角', '职业'], raw: s.jobsArr, disp: s.jobs },
+      { k: '身份', kind: 'tags', segs: ['主角', '身份'], raw: s.idsArr, disp: s.ids }
+    ].map(function (r) {
+      return '<div class="pf-row"><span class="pf-k">' + r.k + '</span>' +
+        edSpan(r.disp ? esc(r.disp) : '无', r.kind, r.segs, { cur: r.raw }) + '</div>'
     }).join('')
     var keys = ['力量', '敏捷', '体质', '智力', '精神']
     var cells = keys.map(function (k) {
-      return '<div class="attr"><div class="attr-k">' + k + '</div><div class="attr-v">' + s.attrs[k] + '</div></div>'
+      // 属性 0..20 (PM-G4 clamp)
+      return '<div class="attr"><div class="attr-k">' + k + '</div><div class="attr-v">' +
+        edSpan(s.attrs[k], 'num', ['主角', '属性', k], { min: 0, max: 20, cur: s.attrs[k] }) + '</div></div>'
     }).join('')
-    var free = s.freePoints > 0 ? '<div class="attr-free">可分配属性点 <b>' + s.freePoints + '</b></div>' : ''
+    // 属性点 ≥0 — shown when non-zero, or always in edit mode so it can be raised from 0 (PM-G4)
+    var free = (s.freePoints > 0 || editOn)
+      ? '<div class="attr-free">可分配属性点 <b>' + edSpan(s.freePoints, 'num', ['主角', '属性点'], { min: 0, cur: s.freePoints }) + '</b></div>'
+      : ''
     document.getElementById('pAttrs').innerHTML =
       '<div class="sect">角色档案</div><div class="profile">' + pf + '</div>' +
       '<div class="sect">属性</div><div class="attrs">' + cells + '</div>' + free
@@ -488,27 +585,35 @@
   //    + which detail fields show (位置 for equip, 数量 for bag, 消耗 for skill).
   var openItemKey = null
 
-  function itemDetailHtml(item, category) {
+  // itemDetailHtml(item, category, base, name): `base` is the segment array of the item
+  //   (e.g. ['主角','背包',name]); when set, item fields become editable + a delete ✕ shows (PM-G4).
+  function itemDetailHtml(item, category, base, name) {
     var out = ''
+    if (base) out += '<div style="text-align:right;min-height:0">' + edx(base, name) + '</div>'
     var q = item['品质'] || ''
     if (q) out += '<div class="id-q" style="color:' + rarityColor(q) + '">' + esc(q) + '</div>'
     var line = []
     if (item['类型']) line.push(esc(item['类型']))
     if (category === 'equip' && item['位置']) line.push(esc(item['位置']))
     if (category === 'skill' && item['消耗']) line.push('消耗 ' + esc(item['消耗']))
-    if (category === 'bag' && item['数量'] != null) line.push('×' + num(item['数量'], 1))
+    // 数量 (bag) is editable ≥0 (PM-G4)
+    if (category === 'bag' && item['数量'] != null) line.push('×' + (base ? edSpan(num(item['数量'], 1), 'num', base.concat('数量'), { min: 0, round: true, cur: num(item['数量'], 1) }) : num(item['数量'], 1)))
     if (line.length) out += '<div class="id-line">' + line.join(' · ') + '</div>'
+    var editable = !!base
     var tags = Array.isArray(item['标签']) ? item['标签'].filter(Boolean) : []
-    if (tags.length) out += '<div class="id-tags">' + tags.map(function (t) { return '<span class="id-chip">' + esc(t) + '</span>' }).join('') + '</div>'
+    var chips = tags.map(function (t) { return '<span class="id-chip">' + esc(t) + '</span>' }).join('')
+    if (tags.length || (editable && editOn)) out += '<div class="id-tags' + (editable ? ' ed' : '') + '"' + (editable ? edA('tags', base.concat('标签'), { cur: tags }) : '') + '>' + (chips || '<span class="id-chip" style="opacity:.5">标签</span>') + '</div>'
     var fx = item['效果'] && typeof item['效果'] === 'object' ? item['效果'] : {}
     var fxk = Object.keys(fx)
     if (fxk.length) out += '<div class="id-fx">' + fxk.map(function (k) {
-      return '<div class="id-fx-row"><span class="id-fx-k">' + esc(k) + '</span><span class="id-fx-v">' + esc(fx[k]) + '</span></div>'
+      var vHtml = editable ? edSpan(esc(fx[k]), 'area', base.concat(['效果', k]), { cur: fx[k] }) : esc(fx[k])
+      return '<div class="id-fx-row"><span class="id-fx-k">' + esc(k) + '</span><span class="id-fx-v">' + vHtml + '</span></div>'
     }).join('') + '</div>'
-    if (item['描述']) out += '<div class="id-desc">' + esc(item['描述']) + '</div>'
+    if (item['描述'] || (editable && editOn)) out += '<div class="id-desc' + (editable ? ' ed' : '') + '"' + (editable ? edA('area', base.concat('描述'), { cur: item['描述'] || '' }) : '') + '>' + esc(item['描述'] || '（描述）') + '</div>'
     return out || '<div class="id-desc empty">暂无详情</div>'
   }
   function itemRow(key, name, item, category) {
+    var base = ['主角', ({ equip: '装备', bag: '背包', skill: '技能' })[category], name]
     var q = item['品质'] || ''
     var meta = []
     if (category === 'equip') { if (item['位置']) meta.push(esc(item['位置'])); else if (item['类型']) meta.push(esc(item['类型'])) }
@@ -520,7 +625,7 @@
       '<span class="inv-dot" style="color:' + rarityColor(q) + ';background:' + rarityColor(q) + '"></span>' +
       '<span class="inv-name">' + esc(name) + '</span><span class="inv-meta">' + meta.join(' ') + '</span>' +
       '<span class="inv-chev" aria-hidden="true">›</span></button>' +
-      '<div class="inv-detail"><div class="inv-detail-in">' + itemDetailHtml(item, category) + '</div></div></div>'
+      '<div class="inv-detail"><div class="inv-detail-in">' + itemDetailHtml(item, category, base, name) + '</div></div></div>'
   }
   function sortByQuality(obj) {
     return Object.keys(obj).sort(function (a, b) {
@@ -574,19 +679,25 @@
   }
   function renderAsc(s) {
     var a = s.asc
+    // 是否开启 gate — a toggle in edit mode (PM-G4). When closed and not editing, keep the empty state.
+    var gate = editOn
+      ? '<div class="asc-crown" style="margin-top:0;margin-bottom:8px">登神长阶 ' +
+        edSpan(a['是否开启'] ? '已开启' : '未开启', 'tog', ['主角', '登神长阶', '是否开启'], { cur: !!a['是否开启'] }) + '</div>'
+      : ''
     if (!a['是否开启']) {
-      document.getElementById('pAsc').innerHTML = '<div class="sect">登神长阶</div><div class="empty">尚未踏上登神长阶。</div>'
+      document.getElementById('pAsc').innerHTML = '<div class="sect">登神长阶</div>' + gate +
+        (editOn ? '' : '<div class="empty">尚未踏上登神长阶。</div>')
       return
     }
     var ele = a['要素'] || {}, pow = a['权能'] || {}, law = a['法则'] || {}
     var king = a['神国'] && typeof a['神国'] === 'object' ? a['神国'] : {}
-    var crown = ''
-    if (a['神位']) crown += '神位 <b>' + esc(a['神位']) + '</b>　'
-    if (king['名称']) crown += '神国 <b>' + esc(king['名称']) + '</b>'
-    var crownHtml = crown ? '<div class="asc-crown">' + crown +
-      (king['描述'] ? '<div class="asc-kingdom-desc">' + esc(king['描述']) + '</div>' : '') + '</div>' : ''
+    // 神位 / 神国名称 (text) + 神国描述 (prose textarea) editable in edit mode
+    var crown = '神位 <b>' + edSpan(a['神位'] ? esc(a['神位']) : '—', 'text', ['主角', '登神长阶', '神位'], { cur: a['神位'] || '' }) + '</b>　' +
+      '神国 <b>' + edSpan(king['名称'] ? esc(king['名称']) : '—', 'text', ['主角', '登神长阶', '神国', '名称'], { cur: king['名称'] || '' }) + '</b>'
+    var crownHtml = '<div class="asc-crown">' + crown +
+      ((king['描述'] || editOn) ? '<div class="asc-kingdom-desc ed"' + edA('area', ['主角', '登神长阶', '神国', '描述'], { cur: king['描述'] || '' }) + '>' + esc(king['描述'] || '（神国·描述）') + '</div>' : '') + '</div>'
     document.getElementById('pAsc').innerHTML =
-      '<div class="sect">登神长阶</div><div class="asc-rungs">' +
+      '<div class="sect">登神长阶</div>' + gate + '<div class="asc-rungs">' +
       ascRung('要素', '要素', ele, 3, Object.keys(ele).length > 0) +
       ascRung('权能', '权能', pow, 1, Object.keys(pow).length > 0) +
       ascRung('法则', '法则', law, 0, Object.keys(law).length > 0) +
@@ -599,29 +710,35 @@
     var keys = Object.keys(s.status || {})
     var html = '<div class="sect">状态效果</div>'
     if (!keys.length) { document.getElementById('pFx').innerHTML = html + '<div class="empty">当前没有状态效果。</div>'; return }
-    html += keys.map(function (name) {
-      var e = s.status[name] || {}
-      var type = e['类型'] || ''
-      var tone = type === '减益' ? 'debuff' : type === '增益' ? 'buff' : 'special'
-      var stacks = num(e['层数'], 1)
-      var meta = []
-      if (stacks > 1) meta.push('×' + stacks)
-      if (e['剩余时间']) meta.push(esc(e['剩余时间']))
-      return '<div class="fx-item ' + tone + '">' +
-        '<div class="fx-head"><span class="fx-name">' + esc(name) + '</span>' +
-        (type ? '<span class="fx-type">' + esc(type) + '</span>' : '') +
-        (meta.length ? '<span class="fx-meta">' + meta.join(' ') + '</span>' : '') + '</div>' +
-        (e['效果'] ? '<div class="fx-desc">' + esc(e['效果']) + '</div>' : '') +
-        (e['来源'] ? '<div class="fx-src">来源 · ' + esc(e['来源']) + '</div>' : '') + '</div>'
-    }).join('')
+    html += keys.map(function (name) { return fxItemHtml(['主角', '状态效果', name], name, s.status[name]) }).join('')
     document.getElementById('pFx').innerHTML = html
+  }
+  // 状态效果 row — shared shape (SELF §1.2). base = the entry's segment array. Editable in edit mode:
+  //   类型 (select 增益/减益/特殊), 效果 (textarea), 层数 (num ≥1), 剩余时间 (text), 来源 (text) + delete ✕.
+  function fxItemHtml(base, name, e) {
+    e = e || {}
+    var type = e['类型'] || ''
+    var tone = type === '减益' ? 'debuff' : type === '增益' ? 'buff' : 'special'
+    var stacks = num(e['层数'], 1)
+    // present values are always shown (edSpan is inert unless editing); empty fields get an editable
+    //   placeholder ONLY in edit mode, so read-mode display is unchanged.
+    var typeHtml = (type || editOn) ? '<span class="fx-type">' + edSpan(type || '特殊', 'sel', base.concat('类型'), { opts: ['增益', '减益', '特殊'], cur: type || '特殊' }) + '</span>' : ''
+    var metaBits = []
+    if (stacks > 1 || editOn) metaBits.push('×' + edSpan(stacks, 'num', base.concat('层数'), { min: 1, cur: stacks }))
+    if (e['剩余时间'] || editOn) metaBits.push(edSpan(e['剩余时间'] ? esc(e['剩余时间']) : '时长', 'text', base.concat('剩余时间'), { cur: e['剩余时间'] || '' }))
+    var metaHtml = metaBits.length ? '<span class="fx-meta">' + metaBits.join(' · ') + '</span>' : ''
+    var descHtml = (e['效果'] || editOn) ? '<div class="fx-desc ed"' + edA('area', base.concat('效果'), { cur: e['效果'] || '' }) + '>' + esc(e['效果'] || '（效果）') + '</div>' : ''
+    var srcHtml = (e['来源'] || editOn) ? '<div class="fx-src">来源 · ' + edSpan(e['来源'] ? esc(e['来源']) : '来源', 'text', base.concat('来源'), { cur: e['来源'] || '' }) + '</div>' : ''
+    return '<div class="fx-item ' + tone + '">' +
+      '<div class="fx-head"><span class="fx-name">' + esc(name) + '</span>' + typeHtml + metaHtml + edx(base, name) + '</div>' +
+      descHtml + srcHtml + '</div>'
   }
 
   function renderNameplate(s) {
     var bits = []
-    if (s.lifeTier) bits.push(esc(s.lifeTier))
-    bits.push('Lv ' + s.level)
-    if (s.rank && s.rank !== '未评级') bits.push(esc(s.rank))
+    if (s.lifeTier || editOn) bits.push(edSpan(s.lifeTier ? esc(s.lifeTier) : '生命层级', 'text', ['主角', '生命层级'], { cur: s.lifeTier || '' }))
+    bits.push('Lv ' + edSpan(s.level, 'num', ['主角', '等级'], { min: 1, max: 25, cur: s.level }))
+    if ((s.rank && s.rank !== '未评级') || editOn) bits.push(edSpan(s.rank ? esc(s.rank) : '评级', 'text', ['主角', '冒险者等级'], { cur: s.rank || '' }))
     var pn = personaName()
     document.getElementById('npName').textContent = pn || '你'
     document.getElementById('npTag').innerHTML =
@@ -731,6 +848,161 @@
     }
   })
 
+  // ══ EDIT LAYER (PM-G4, design §6) ══════════════════════════════════════════════════════════════
+  // Write seam PROVEN by the Phase-0 spike (test/poemEditWritePath.test.ts): the bare
+  // `updateVariablesWith(updater)` global with NO options writes message-floor stat_data and journals a
+  // vars_op that survives MVU re-evaluate/replay. Toggle persists chat KV poem.edit + broadcasts
+  // poem:edit; WORLD + the overlays listen. Editors are in-place; the only modal is delete-confirm.
+  var EDIT_ROOT = selfEl
+  var editOn = false
+  function readEditKV() {
+    try { if (typeof getVariables === 'function') { var kv = getVariables({ type: 'chat' }); if (kv && typeof kv.then !== 'function') return kv['poem.edit'] === true } } catch (_) {}
+    try { if (new URLSearchParams(location.search).get('edit') === '1') return true } catch (_) {}
+    try { return localStorage.getItem('poem.edit') === '1' } catch (_) {}
+    return false
+  }
+  function applyEditAffordance() { if (editOn) EDIT_ROOT.setAttribute('data-edit-on', ''); else EDIT_ROOT.removeAttribute('data-edit-on') }
+
+  // path helpers — SEGMENT ARRAYS (record keys may contain '.', so we never dot-split a path string)
+  function setSeg(root, segs, v) { var o = root; for (var i = 0; i < segs.length - 1; i++) { if (o[segs[i]] == null || typeof o[segs[i]] !== 'object') o[segs[i]] = {}; o = o[segs[i]] } o[segs[segs.length - 1]] = v }
+  function unsetSeg(root, segs) { var o = root; for (var i = 0; i < segs.length - 1; i++) { if (o == null || typeof o[segs[i]] !== 'object') return; o = o[segs[i]] } if (o) delete o[segs[segs.length - 1]] }
+
+  // THE write seam. Optimistic re-render now; on write failure warn + re-render from truth (revert).
+  function commitStat(mutate) {
+    if (typeof updateVariablesWith === 'function' && typeof getVariables === 'function') {
+      try {
+        var p = updateVariablesWith(function (sd) { var n = sd && typeof sd === 'object' ? sd : {}; mutate(n); return n })
+        Promise.resolve(p).then(function () { render() }, function (e) { console.warn('[poem edit] write failed', e); render() })
+      } catch (e) { console.warn('[poem edit] write error', e) }
+      render(); return
+    }
+    try { mutate(MOCK) } catch (_) {}   // standalone preview → mutate the in-memory MOCK
+    render()
+  }
+  function writeStat(segs, value) { commitStat(function (sd) { setSeg(sd, segs, value) }) }
+  function deleteStat(segs) { commitStat(function (sd) { unsetSeg(sd, segs) }) }
+  function clampNum(v, min, max, round) { var n = Number(v); if (!isFinite(n)) return null; if (round) n = Math.round(n); if (min != null && n < min) n = min; if (max != null && n > max) n = max; return n }
+
+  // ── inline editors (text / textarea / number-stepper / tags / select / toggle) ──
+  function mkStep(sym) { var b = document.createElement('button'); b.type = 'button'; b.className = 'ed-step'; b.textContent = sym; return b }
+  function stepBind(btn, input, dir, min, max) {
+    var timer, delay
+    function bump() { var n = clampNum((Number(input.value) || 0) + dir, min, max, false); if (n != null) input.value = n }
+    btn.addEventListener('mousedown', function (ev) { ev.preventDefault(); bump(); delay = setTimeout(function () { timer = setInterval(bump, 90) }, 350) })
+    function stop() { clearTimeout(delay); clearInterval(timer) }
+    btn.addEventListener('mouseup', stop); btn.addEventListener('mouseleave', stop)
+  }
+  function autoGrow(t) { t.style.height = 'auto'; t.style.height = Math.min(t.scrollHeight, Math.round(window.innerHeight * 0.4)) + 'px' }
+  function openEditor(el) {
+    if (el.getAttribute('data-ed-live')) return
+    var kind = el.getAttribute('data-ed')
+    var segs = JSON.parse(el.getAttribute('data-path') || '[]')
+    var curRaw = el.getAttribute('data-cur')
+    if (kind === 'tog') { writeStat(segs, !(curRaw === 'true')); return }
+    el.setAttribute('data-ed-live', '1')
+    var min = el.hasAttribute('data-min') ? Number(el.getAttribute('data-min')) : null
+    var max = el.hasAttribute('data-max') ? Number(el.getAttribute('data-max')) : null
+    var round = el.hasAttribute('data-round')
+    if (kind === 'tags') return openTagEditor(el, segs, curRaw)
+    if (kind === 'sel') return openSelectEditor(el, segs, curRaw, el.hasAttribute('data-opts') ? JSON.parse(el.getAttribute('data-opts')) : [])
+    var ta = kind === 'area'
+    var input = document.createElement(ta ? 'textarea' : 'input')
+    input.className = 'ed-in'; if (!ta) input.type = 'text'
+    input.value = (kind === 'num' && curRaw === 'MAX') ? '' : (curRaw == null ? '' : curRaw)
+    var mount = input
+    if (kind === 'num') {
+      mount = document.createElement('span'); mount.className = 'ed-num'
+      var dec = mkStep('−'), inc = mkStep('+'); stepBind(dec, input, -1, min, max); stepBind(inc, input, 1, min, max)
+      mount.appendChild(dec); mount.appendChild(input); mount.appendChild(inc)
+    }
+    el.innerHTML = ''; el.appendChild(mount)
+    if (ta) { autoGrow(input); input.addEventListener('input', function () { autoGrow(input) }) }
+    input.focus(); if (input.select) input.select()
+    var done = false
+    function commit() { if (done) return; done = true; if (kind === 'num') { var n = clampNum(input.value, min, max, round); if (n == null) { render(); return } writeStat(segs, n); return } writeStat(segs, input.value) }
+    function cancel() { if (done) return; done = true; render() }
+    input.addEventListener('keydown', function (ev) {
+      if (ev.key === 'Enter' && !(ta && ev.shiftKey)) { ev.preventDefault(); commit() }
+      else if (ev.key === 'Escape') { ev.preventDefault(); cancel() }
+    })
+    input.addEventListener('blur', function () { setTimeout(commit, 0) })
+  }
+  function openSelectEditor(el, segs, cur, opts) {
+    var sel = document.createElement('select'); sel.className = 'ed-in'
+    ;(opts || []).forEach(function (o) { var op = document.createElement('option'); op.value = o; op.textContent = o; if (o === cur) op.selected = true; sel.appendChild(op) })
+    el.innerHTML = ''; el.appendChild(sel); sel.focus()
+    var done = false
+    sel.addEventListener('change', function () { if (done) return; done = true; writeStat(segs, sel.value) })
+    sel.addEventListener('keydown', function (ev) { if (ev.key === 'Escape' && !done) { done = true; render() } })
+    sel.addEventListener('blur', function () { setTimeout(function () { if (!done) render() }, 0) })
+  }
+  function openTagEditor(el, segs, curRaw) {
+    var arr = []; try { arr = JSON.parse(curRaw || '[]'); if (!Array.isArray(arr)) arr = [] } catch (_) { arr = [] }
+    arr = arr.slice()
+    var box = document.createElement('span'); box.className = 'ed-tags'
+    var input = document.createElement('input'); input.className = 'ed-in'; input.type = 'text'; input.style.minWidth = '46px'; input.placeholder = '+标签'
+    function redraw() {
+      box.innerHTML = ''
+      arr.forEach(function (t, i) {
+        var chip = document.createElement('span'); chip.className = 'ed-tag'; chip.textContent = t
+        var x = document.createElement('button'); x.type = 'button'; x.textContent = '×'
+        x.addEventListener('mousedown', function (ev) { ev.preventDefault(); arr.splice(i, 1); redraw() })
+        chip.appendChild(x); box.appendChild(chip)
+      })
+      box.appendChild(input); input.focus()
+    }
+    el.innerHTML = ''; el.appendChild(box); redraw()
+    var done = false
+    function commit() { if (done) return; done = true; writeStat(segs, arr) }
+    input.addEventListener('keydown', function (ev) {
+      if (ev.key === 'Enter') { ev.preventDefault(); var v = input.value.trim(); if (v && arr.indexOf(v) < 0) { arr.push(v); input.value = ''; redraw() } }
+      else if (ev.key === 'Escape') { ev.preventDefault(); if (!done) { done = true; render() } }
+      else if (ev.key === 'Backspace' && !input.value && arr.length) { arr.pop(); redraw() }
+    })
+    box.addEventListener('focusout', function () { setTimeout(function () { if (!box.contains(document.activeElement)) commit() }, 0) })
+  }
+
+  // ── delete-confirm glass modal (created once, appended to body) ──
+  var delModal = (function () {
+    var scrim = document.createElement('div'); scrim.className = 'ed-modal-scrim'
+    scrim.innerHTML = '<div class="ed-modal" role="dialog" aria-modal="true" aria-label="删除确认">' +
+      '<div class="ed-modal-t">删除确认</div><div class="ed-modal-msg" id="edDelMsg"></div>' +
+      '<div class="ed-modal-row"><button type="button" class="ed-btn" data-x="cancel">取消</button>' +
+      '<button type="button" class="ed-btn danger" data-x="ok">删除</button></div></div>'
+    document.body.appendChild(scrim)
+    var pending = null
+    function close() { scrim.classList.remove('open'); pending = null }
+    scrim.addEventListener('click', function (ev) {
+      if (ev.target === scrim) return close()
+      var b = ev.target.closest && ev.target.closest('[data-x]'); if (!b) return
+      if (b.getAttribute('data-x') === 'ok' && pending) { var segs = pending; close(); deleteStat(segs) } else close()
+    })
+    document.addEventListener('keydown', function (ev) { if (ev.key === 'Escape' && scrim.classList.contains('open')) { ev.stopPropagation(); close() } }, true)
+    return { open: function (segs, name) { pending = segs; scrim.querySelector('#edDelMsg').innerHTML = '删除「<b>' + esc(name || '') + '</b>」？此操作会写回存档。'; scrim.classList.add('open'); var ok = scrim.querySelector('[data-x="ok"]'); if (ok) ok.focus() } }
+  })()
+
+  // ── guarded click handler: capture-phase so an edit interaction preempts the read-mode toggles ──
+  EDIT_ROOT.addEventListener('click', function (ev) {
+    if (!editOn) return
+    var x = ev.target.closest && ev.target.closest('.ed-x')
+    if (x && EDIT_ROOT.contains(x)) { ev.preventDefault(); ev.stopPropagation(); delModal.open(JSON.parse(x.getAttribute('data-del') || '[]'), x.getAttribute('data-name')); return }
+    var ed = ev.target.closest && ev.target.closest('.ed')
+    if (ed && EDIT_ROOT.contains(ed) && !ed.getAttribute('data-ed-live')) { ev.preventDefault(); ev.stopPropagation(); openEditor(ed) }
+  }, true)
+
+  // ── the ✎ toggle (SELF owns it) ──
+  var editPill = document.getElementById('editPill')
+  function renderEditPill() { if (editPill) editPill.setAttribute('aria-pressed', editOn ? 'true' : 'false') }
+  function toggleEdit() {
+    editOn = !editOn
+    try { if (typeof updateVariablesWith === 'function') updateVariablesWith(function (prev) { var n = prev && typeof prev === 'object' ? prev : {}; n['poem.edit'] = editOn; return n }, { type: 'chat' }) } catch (_) {}
+    try { localStorage.setItem('poem.edit', editOn ? '1' : '0') } catch (_) {}
+    try { if (window.rptHost && typeof window.rptHost.broadcastEvent === 'function') window.rptHost.broadcastEvent('poem:edit', { on: editOn }) } catch (_) {}
+    applyEditAffordance(); renderEditPill(); render()
+  }
+  if (editPill) editPill.addEventListener('click', toggleEdit)
+  editOn = readEditKV(); applyEditAffordance(); renderEditPill()
+
   render()
   // re-render on host var changes (docked WCV loads once; the runtime re-emits both events)
   if (typeof eventOn === 'function') {
@@ -743,6 +1015,7 @@
     eventOn('mag_variable_updated', onChange)
     eventOn('message_updated', onChange)
     eventOn('poem:theme', function (p) { applyPoemTheme(p && p.id); renderSwatches() })
+    eventOn('poem:edit', function (p) { editOn = !!(p && p.on); applyEditAffordance(); renderEditPill(); render() })
   }
 })()
 </script>
