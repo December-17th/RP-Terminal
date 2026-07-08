@@ -61,6 +61,8 @@ interface Grants {
   generate?: boolean
   remoteScripts?: boolean
   trusted?: boolean
+  /** The user already made an explicit trust decision (import-time modal / legacy prompt). */
+  decided?: boolean
 }
 
 /**
@@ -148,7 +150,7 @@ export const CardScriptHost: React.FC<Props> = ({
       // Scripts that load remote ES modules need the remote-loading grant. Auto-prompt at most
       // once per card mount (the first time we see remote scripts); thereafter the user grants
       // via the Scripts panel button — so a later grant/revoke there doesn't re-prompt.
-      if (res?.remoteHosts?.length && !promptedRef.current) {
+      if (res?.remoteHosts?.length && !promptedRef.current && !grantsRef.current.decided) {
         promptedRef.current = true
         const ok =
           !trust &&

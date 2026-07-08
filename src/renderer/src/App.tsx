@@ -36,6 +36,7 @@ import { SettingsModal } from './components/SettingsModal'
 import { WorkflowEditorOverlay } from './components/workflow/WorkflowEditorOverlay'
 import { DuelPopup } from './components/DuelPopup'
 import { AssetsPopup } from './components/AssetsPopup'
+import { CardTrustPrompt } from './components/CardTrustPrompt'
 
 export default function App(): React.ReactElement {
   const activeProfile = useProfileStore((s) => s.activeProfile)
@@ -325,6 +326,7 @@ export default function App(): React.ReactElement {
       <WorkflowEditorOverlay profileId={activeProfile.id} />
       <DuelPopup profileId={activeProfile.id} />
       <AssetsPopup profileId={activeProfile.id} />
+      <CardTrustPrompt />
       <ToastStack />
     </>
   )

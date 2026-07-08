@@ -4,6 +4,7 @@ import { useRegexStore } from './regexStore'
 import { usePresetStore } from './presetStore'
 import { useScriptsStore } from './scriptsStore'
 import { useChatStore } from './chatStore'
+import { useUiStore } from './uiStore'
 
 export interface CharacterCard {
   id: string
@@ -86,6 +87,11 @@ export const useCharacterStore = create<CharacterState>((set) => ({
       // Scripts manager so they show up under the new world.
       if (s.scripts) await useScriptsStore.getState().load(profileId)
       if (s.presets) await usePresetStore.getState().load(profileId)
+      // A world that ships scripts asks for TRUST consent at import time (a proper modal that WCV
+      // panels can't occlude), and the decision persists so the run-time hosts never re-prompt.
+      if (s.scripts > 0) {
+        useUiStore.getState().openTrustPrompt({ profileId, cardId: res.id, cardName: s.name })
+      }
     }
   },
   exportCharacter: async (profileId: string, characterId: string) => {

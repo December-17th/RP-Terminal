@@ -53,6 +53,12 @@ interface UiState {
   assetsPopupOpen: boolean
   openAssetsPopup: () => void
   closeAssetsPopup: () => void
+  /** Import-time card-script TRUST consent (CardTrustPrompt). When a freshly imported world ships
+   *  scripts, this carries the pending decision; the modal records trust/deny into the persisted
+   *  grants (+ `decided`) so the run-time hosts never re-prompt. Null = no pending decision. */
+  trustPrompt: { profileId: string; cardId: string; cardName: string } | null
+  openTrustPrompt: (p: { profileId: string; cardId: string; cardName: string }) => void
+  closeTrustPrompt: () => void
 }
 
 export const useUiStore = create<UiState>((set) => ({
@@ -80,5 +86,8 @@ export const useUiStore = create<UiState>((set) => ({
   closeDuelPopup: () => set({ duelPopupOpen: false }),
   assetsPopupOpen: false,
   openAssetsPopup: () => set({ assetsPopupOpen: true }),
-  closeAssetsPopup: () => set({ assetsPopupOpen: false })
+  closeAssetsPopup: () => set({ assetsPopupOpen: false }),
+  trustPrompt: null,
+  openTrustPrompt: (trustPrompt) => set({ trustPrompt }),
+  closeTrustPrompt: () => set({ trustPrompt: null })
 }))

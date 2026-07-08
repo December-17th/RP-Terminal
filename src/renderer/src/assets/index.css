@@ -192,6 +192,17 @@
 .rpt-popup-modal-body { flex:1; min-height:0; display:flex; }
 .rpt-popup-modal-body > .rpt-assets { flex:1; min-width:0; }
 
+/* Import-time card-script trust prompt (CardTrustPrompt.tsx) — a small, message-sized variant of the
+   shared popup: auto height, a padded text column instead of a full-bleed view host. */
+.rpt-popup-modal-trust { width:min(460px, 92vw); height:auto; max-height:90vh; }
+.rpt-popup-modal-trust .rpt-popup-modal-body { flex-direction:column; padding:18px 20px 20px;
+  gap:14px; overflow-y:auto; }
+.rpt-trust-body { margin:0; color:var(--rpt-text-secondary); font-size:13px; line-height:1.6; }
+.rpt-trust-warning { margin:0; padding:10px 12px; border-radius:8px; font-size:12.5px; line-height:1.55;
+  color:var(--rpt-text-primary); background:var(--rpt-warning-bg, rgba(230,170,60,.12));
+  border:1px solid var(--rpt-warning-border, rgba(230,170,60,.4)); }
+.rpt-trust-actions { display:flex; justify-content:flex-end; gap:10px; margin-top:2px; }
+
 /* Floors manager (FloorManagerModal) — a scrollable floor list + a delete-tail footer, inside the
    shared .modal-panel. Deleting marks the picked floor and every floor below it (danger tint). */
 .rpt-floors { display:flex; flex-direction:column; height:100%; gap:10px; }

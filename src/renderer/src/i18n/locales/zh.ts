@@ -416,6 +416,15 @@ const zh: Record<string, string> = {
   'scripts.grantConfirm':
     '允许「{{name}}」从互联网加载并运行代码？\n\n其脚本将获得对应用功能的完全访问权限（生成、抓取、写入聊天与世界书）。它们仍在各自独立的进程中沙箱运行，无法读取你的 API 密钥或应用内存。请仅对你信任的世界授权。',
   'scripts.revokeConfirm': '撤销「{{name}}」的远程代码权限？',
+
+  // 导入时的卡片脚本信任提示（CardTrustPrompt）。
+  'trust.title': '信任《{{name}}》的脚本？',
+  'trust.body':
+    '该世界附带脚本，它们将在独立的隔离进程中运行，并可访问本会话。请仅运行你信任的世界。',
+  'trust.warning': '不信任可能导致卡片无法正常运行；如果拒绝，你之后仍可在设置中信任它。',
+  'trust.trust': '信任并运行脚本',
+  'trust.deny': '不信任',
+
   'scripts.cardScripts': '卡片脚本',
   'scripts.help':
     '在会话打开时于右侧面板「⚙ 卡片脚本」中运行的沙箱化 JavaScript（通过 rpt API 访问 vars/chat/generate/ui）。可将脚本范围设为全局、世界（当前卡片）或会话（当前对话）。在顶部添加 "// @import https://…" 可拉取远程库 —— 经你许可后获取一次。',

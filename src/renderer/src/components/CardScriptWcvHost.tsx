@@ -66,6 +66,8 @@ interface Grants {
   enabled?: boolean
   remoteScripts?: boolean
   trusted?: boolean
+  /** The user already made an explicit trust decision (import-time modal / legacy prompt). */
+  decided?: boolean
 }
 
 export function CardScriptWcvHost({
@@ -176,6 +178,10 @@ export function CardScriptWcvHost({
 
   // Untrusted world that ships scripts → a small consent prompt (the engine is otherwise invisible).
   if (needsConsent) {
+    // The trust decision is now made at IMPORT time (CardTrustPrompt), and persists. If the user
+    // already decided (grant or deny), never re-prompt here — a denial keeps the scripts off silently.
+    // The inline prompt below only survives as a fallback for legacy cards imported before that flow.
+    if (grantsRef.current.decided) return null
     return (
       <div
         style={{
