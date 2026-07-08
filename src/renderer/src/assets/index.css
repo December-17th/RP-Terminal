@@ -2529,7 +2529,7 @@ select {
   align-items: center;
   gap: 1px;
 }
-/* Trigger button shared by the dropdowns and the breadcrumb pills. */
+/* Shared button on the strip — the direct settings buttons and the breadcrumb pills. */
 .tmenu-btn {
   display: inline-flex;
   align-items: center;
@@ -2567,90 +2567,9 @@ select {
   padding: 6px 9px;
   font-size: 14px;
 }
-/* Dropdown popover. */
-.tmenu-wrap {
-  position: relative;
-}
-/* Invisible full-screen catcher that closes the menu on any outside click. */
-.tmenu-backdrop {
-  position: fixed;
-  inset: 0;
-  z-index: 90;
-  background: transparent;
-  border: none;
-  cursor: default;
-}
-.tmenu {
-  position: absolute;
-  top: calc(100% + 6px);
-  right: 0;
-  z-index: 100;
-  min-width: 232px;
-  padding: 5px;
-  background: var(--rpt-bg-elevated);
-  border: 1px solid color-mix(in srgb, var(--rpt-accent) 22%, var(--rpt-border));
-  border-radius: 12px;
-  box-shadow: var(--rpt-shadow-lift);
-}
-.tmenu-head {
-  font-family: var(--rpt-font-mono);
-  font-size: 10px;
-  letter-spacing: 0.18em;
-  text-transform: uppercase;
-  color: var(--rpt-text-tertiary);
-  padding: 7px 10px 5px;
-}
-.tmenu-empty {
-  color: var(--rpt-text-tertiary);
-  font-size: 0.85em;
-  font-style: italic;
-  padding: 6px 10px;
-}
-.tmenu-item {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  width: 100%;
-  text-align: left;
-  background: none;
-  border: none;
-  color: var(--rpt-text-primary);
-  cursor: pointer;
-  font: inherit;
-  font-size: 13.5px;
-  padding: 8px 10px;
-  border-radius: 8px;
-}
-.tmenu-item:hover,
-.tmenu-item:focus-visible {
-  background: color-mix(in srgb, var(--rpt-text-primary) 8%, transparent);
-}
-.tmenu-item .mark {
-  width: 14px;
-  flex: 0 0 auto;
-  color: var(--rpt-accent);
-}
-.tmenu-item.muted .mark {
-  color: transparent;
-}
-.tmenu-item.action {
-  font-family: var(--rpt-font-mono);
-  font-size: 12px;
-  letter-spacing: 0.03em;
-  color: var(--rpt-text-secondary);
-}
-.tmenu-item.action .mark {
-  color: var(--rpt-text-tertiary);
-}
-.tmenu-sep {
-  height: 1px;
-  margin: 5px 8px;
-  background: var(--rpt-border);
-}
 /* Strip interactive children opt out of the window drag region. */
 .tstrip-brand,
 .tstrip .tmenu-btn,
-.tstrip .tmenu-item,
 .tstrip-menus {
   -webkit-app-region: no-drag;
 }
