@@ -79,10 +79,12 @@ Two layered findings:
 2. ~~`{{input}}` substitution in `agent.llm` (+ tests)~~ — DONE: landed as `c9b573f`.
    `interpolate` now substitutes `{{input}}` from an `input` slot (LAST, as data — the `{{inN}}`
    invariant), so the table.read block reaches the model; the .rptflow fixtures + seeded doc work.
-   Gate green (2146 tests). **STILL OPEN from item 2:** composed-prompt trace visibility — record
-   the composed `sendMessages` in the node trace so the sent prompt is inspectable in the run drawer
-   (crosses main `NodeTrace`/`workflowEvents` → IPC → renderer `RunDrawer`/`workflowTraceStore`;
-   deferred as a separate change, not blocking the fix).
+   ~~Composed-prompt trace visibility~~ — DONE: landed as `b1906ae`. Added a trace-only
+   `NodeResult.debug` channel (not a graph port): engine accumulates it → `RunResult`/
+   `SubgraphRunResult` → `summarizeRun` folds it into `TraceNode.outputs` with a roomier cap
+   (`DEBUG_PREVIEW_MAX` 4000). `agent.llm` records the composed `sendMessages` as "prompt (sent)";
+   surfaces in the Runs tab (NodeRunsTab, no renderer change) on turn AND headless paths. Gate green
+   (2149 tests). Item 2 fully closed.
 3. Spec + plan the `memory.maintain` node per the decisions above; then implement.
 4. Owner manual pass on the whole branch; then push + PR (NOTHING pushed yet; branch is
    local-only in the worktree).
