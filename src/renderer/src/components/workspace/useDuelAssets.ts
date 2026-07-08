@@ -2,8 +2,8 @@
 //
 // Resolve the duel's importable art (card faces / unit avatars / fight background) via the existing
 // World Assets host API, async, keyed by id/name. Returns lookups; a missing asset → undefined (the
-// caller falls back to a glyph/gradient). Renderer-only; reuses the same assetUrl path AssetManagerPanel
-// uses (src/renderer/src/components/AssetManagerPanel.tsx).
+// caller falls back to a glyph/gradient). Renderer-only; reuses the same assetUrl path the assets
+// workspace view uses (src/renderer/src/components/workspace/AssetsView.tsx).
 //
 // Face-key scheme: `face(abilityId)` is keyed by the card's full abilityId (e.g. "主角/火球术"), NOT
 // the trailing display name — this matches CardInstance.abilityId in shared/combat/deckbuilder, so

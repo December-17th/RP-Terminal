@@ -11,6 +11,7 @@ export const BUILTIN_VIEW_IDS = [
   'duel',
   'variables',
   'tables',
+  'assets',
   'usage',
   'logs'
 ] as const
@@ -25,6 +26,7 @@ export const VIEW_LABEL_KEY: Record<string, string> = {
   duel: 'view.duel',
   variables: 'view.variables',
   tables: 'view.tables',
+  assets: 'view.assets',
   usage: 'view.usage',
   logs: 'logs.heading'
 }

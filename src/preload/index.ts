@@ -1,4 +1,4 @@
-import { contextBridge, ipcRenderer, IpcRendererEvent } from 'electron'
+import { contextBridge, ipcRenderer, IpcRendererEvent, webUtils } from 'electron'
 import { electronAPI } from '@electron-toolkit/preload'
 import type { VarsOrigin } from '../shared/thRuntime/types'
 
@@ -629,6 +629,28 @@ const api = {
     ipcRenderer.invoke('asset-open-folder', profileId, lorebookId, category),
   assetImportZipDialog: (profileId: string, lorebookId: string) =>
     ipcRenderer.invoke('asset-import-zip-dialog', profileId, lorebookId),
+  // Asset manager surface (WA-2). The `assets` workspace view's read + mutation API.
+  assetListIndex: (profileId: string, lorebookIds: string[]) =>
+    ipcRenderer.invoke('asset-list-index', profileId, lorebookIds),
+  assetImportFiles: (
+    profileId: string,
+    lorebookId: string,
+    items: { srcPath: string; name: string; type: string; variant?: string }[]
+  ) => ipcRenderer.invoke('asset-import-files', profileId, lorebookId, items),
+  assetDeleteFile: (profileId: string, lorebookId: string, category: string, file: string) =>
+    ipcRenderer.invoke('asset-delete-file', profileId, lorebookId, category, file),
+  assetRenameVariant: (
+    profileId: string,
+    lorebookId: string,
+    category: string,
+    file: string,
+    newVariant: string
+  ) => ipcRenderer.invoke('asset-rename-variant', profileId, lorebookId, category, file, newVariant),
+  assetExportZipDialog: (profileId: string, lorebookId: string) =>
+    ipcRenderer.invoke('asset-export-zip', profileId, lorebookId),
+  assetPickImages: (multi: boolean) => ipcRenderer.invoke('asset-pick-images', multi),
+  // Electron 39 removed `File.path`; drag-drop OS paths now come from webUtils.getPathForFile.
+  pathForFile: (file: File) => webUtils.getPathForFile(file),
   // Per-chat card KV (inline transport): general scope, getVariables({type:'chat'}).
   chatCardVarsGet: (profileId: string, chatId: string) =>
     ipcRenderer.invoke('chat-card-vars-get', profileId, chatId),

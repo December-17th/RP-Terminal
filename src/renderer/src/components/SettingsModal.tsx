@@ -7,11 +7,11 @@ import { ApiSettingsPanel } from './ApiSettingsPanel'
 import { PersonaPanel } from './PersonaPanel'
 import { PresetManager } from './PresetManager'
 import { LorebookManager } from './LorebookManager'
-import { AssetManagerPanel } from './AssetManagerPanel'
 import { WorldPanel } from './WorldPanel'
 import { useUiStore, type SettingsSection } from '../stores/uiStore'
 import { useCharacterStore } from '../stores/characterStore'
 import { useChatStore } from '../stores/chatStore'
+import { useWorkspaceStore } from '../stores/workspaceStore'
 import { useT } from '../i18n'
 
 /**
@@ -27,6 +27,7 @@ export function SettingsModal({ profileId }: { profileId: string }): React.React
   const close = useUiStore((s) => s.closeSettings)
   const initialSection = useUiStore((s) => s.settingsSection)
   const openWorkflowEditor = useUiStore((s) => s.openWorkflowEditor)
+  const ensureLeftPanel = useWorkspaceStore((s) => s.ensureLeftPanel)
   const activeCharacter = useCharacterStore((s) => s.activeCharacter)
   const activeChatId = useChatStore((s) => s.activeChatId)
   const [section, setSection] = useState<SettingsSection>(initialSection)
@@ -73,7 +74,25 @@ export function SettingsModal({ profileId }: { profileId: string }): React.React
       case 'persona':
         return <PersonaPanel profileId={profileId} />
       case 'assets':
-        return <AssetManagerPanel profileId={profileId} />
+        return (
+          <div className="settings-launch">
+            <div className="settings-launch-icon" aria-hidden>
+              🖼
+            </div>
+            <h3 className="settings-launch-title">{t('settings.assetsTitle')}</h3>
+            <p className="settings-launch-body">{t('settings.assetsBody')}</p>
+            <button
+              className="btn-accent"
+              disabled={!activeCharacter}
+              onClick={() => {
+                close()
+                ensureLeftPanel('assets')
+              }}
+            >
+              {t('settings.assetsOpen')}
+            </button>
+          </div>
+        )
       case 'lorebook':
         return activeCharacter ? (
           <LorebookManager

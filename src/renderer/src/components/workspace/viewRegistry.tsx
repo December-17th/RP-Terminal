@@ -7,6 +7,7 @@ import { LogsPanel } from '../LogsPanel'
 import { CombatView } from './CombatView'
 import { VariablesView } from './VariablesView'
 import { TablesView } from './TablesView'
+import { AssetsView } from './AssetsView'
 import { useWorkspaceContext } from './context'
 import { UsageView } from '../UsageView'
 import { useT } from '../../i18n'
@@ -67,6 +68,11 @@ const TablesPanel: React.FC = () => {
   return <TablesView profileId={profileId} />
 }
 
+const AssetsPanel: React.FC = () => {
+  const { profileId } = useWorkspaceContext()
+  return <AssetsView profileId={profileId} />
+}
+
 const UsagePanel: React.FC = () => {
   const { profileId } = useWorkspaceContext()
   return <UsageView profileId={profileId} />
@@ -97,6 +103,7 @@ export const ViewRegistry: Record<BuiltinViewId, ViewEntry> = {
   duel: { title: 'Duel', Component: DuelPanel, fill: true },
   variables: { title: 'Variables', Component: VariablesPanel },
   tables: { title: 'Tables', Component: TablesPanel },
+  assets: { title: 'Assets', Component: AssetsPanel, fill: true },
   usage: { title: 'Usage', Component: UsagePanel, fill: true },
   logs: { title: 'Logs', Component: LogsPanel, fill: true }
   // (The dev-only "Card UI (WCV test)" round-trip panel was retired — card UIs render inline by
