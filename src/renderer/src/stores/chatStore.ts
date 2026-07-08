@@ -241,10 +241,15 @@ export const useChatStore = create<ChatState>((set, get) => {
       const { activeChatId } = get()
       if (!activeChatId) return
       await window.api.deleteFloorsFrom(profileId, activeChatId, fromFloor)
-      // Reload the survivors (their variables now reflect the rolled-back memory tables). 'external'
-      // origin so the native panels (status/tables) re-fire MVU events and refresh to the rewound state.
+      // Reload the survivors (their variables now reflect the rolled-back memory tables). Tag the
+      // broadcast 'card-write', NOT 'external': the native React panels refresh from `floors` either
+      // way, but 'external' RE-FIRES the card's mag_variable_update handler (thRuntime onVarsChanged),
+      // and a card with self-writing automation (e.g. 命定之诗's date/world-clock — see
+      // generation/varsWrite.ts) would then re-inject its stale `date.npcs` onto the now-latest floor,
+      // silently re-adding to floor 0 exactly what the delete just removed. 'card-write' refreshes the
+      // card's cache to the rewound state but fires no events, so it can't write back.
       const floors = await window.api.getFloors(profileId, activeChatId)
-      set({ floors, lastVarsOrigin: 'external' })
+      set({ floors, lastVarsOrigin: 'card-write' })
     },
 
     sendAction: async (profileId, actionText) => {

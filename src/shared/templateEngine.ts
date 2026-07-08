@@ -78,6 +78,16 @@ export const buildTemplateContext = (
 let QJS: QuickJSWASMModule | null = null
 
 /**
+ * Hard wall-clock cap on a single template eval. quickjs `evalCode` is SYNCHRONOUS and, without an
+ * interrupt handler, an unbounded template (`<% while(true){} %>` a card/AI emits, or a pathological
+ * loop over the vars) hangs the thread FOREVER — freezing the renderer on display and the main process
+ * at prompt-build, and re-freezing on every reload of that floor. The interrupt handler below aborts
+ * past this deadline; evalCode then returns an interrupt error and we fall through to the empty-output
+ * error path (fail-safe: a bad template can't brick the app). Generous vs any legit EJS interpolation.
+ */
+const EVAL_DEADLINE_MS = 1000
+
+/**
  * Load the quickjs WASM module via the host-provided `loader` (main passes the default
  * wasmfile variant; the renderer passes a singlefile browser variant so the WASM is
  * embedded — no .wasm fetch under a bundler). Idempotent; each process loads its own.
@@ -332,6 +342,9 @@ export const evalTemplateDetailed = (
 
   const vm = QJS.newContext()
   try {
+    // Deadline interrupt (see EVAL_DEADLINE_MS): a runaway template aborts instead of hanging the thread.
+    const deadline = Date.now() + EVAL_DEADLINE_MS
+    vm.runtime.setInterruptHandler(() => Date.now() > deadline)
     installBridge(vm, ctx)
     const program = `(function(){let __out="";\n${compile(template)}return __out;})()`
     const res = vm.evalCode(program)
