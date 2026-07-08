@@ -188,6 +188,13 @@ export const ensure = (
     freezeController.onTargetCreated(freezeTargetFor(id, slot))
     mainWindow.contentView.addChildView(view)
     view.webContents.loadURL(loadUrl) // html must be on the slot first — the scheme handler reads it
+    // Pre-cache this view's freeze-frame once it has painted, so the first menu-open can hide it
+    // instantly (freeze-precache). Slight delay lets the initial frame land before capture; the
+    // controller throttles + skips-while-suppressed, so an early/redundant call is cheap.
+    view.webContents.on('did-finish-load', () => {
+      const s = slots.get(id)
+      if (s) setTimeout(() => freezeController.warmTarget(freezeTargetFor(id, s)), 400)
+    })
     // Spike: surface the card's console so its missing-API log is visible.
     if (is.dev) view.webContents.openDevTools({ mode: 'detach' })
     log('info', `wcv: created '${id}'`)
@@ -409,6 +416,9 @@ export const notifyVarsChanged = (
     // consumers that don't read it (the sync EJS mirror hydrate).
     s.view.webContents.send('wcv-vars-changed', statData, origin)
   }
+  // Game state moved → refresh the freeze-frame cache (throttled, skipped while suppressed) so the
+  // next menu-open shows a still that reflects the change instead of a stale one (freeze-precache).
+  freezeController.warmVisible()
 }
 
 /** Broadcast a TavernHelper lifecycle/mutation event (generation_started, message_received, …) to the

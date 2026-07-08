@@ -78,24 +78,27 @@ describe('createOverlayController — the one-at-a-time raise/dismiss + reject l
 })
 
 describe('an open overlay participates in freeze-frame like any other WCV slot (PM-A7 × PM-A4)', () => {
-  it('the reserved overlay:<id> slot is enumerated + captured/hidden under a TopStrip dropdown', async () => {
+  it('the reserved overlay:<id> slot is enumerated, pre-cached, then hidden from its cached still under a TopStrip dropdown', async () => {
     // The overlay is a normal WcvPanel under slot id `overlay:<id>`, so it lands in main's slot map and
     // is returned by the freeze controller's visibleTargets enumeration — no overlay-specific freeze code.
+    // Freeze-precache: the still is captured WHILE the overlay is live (warm), and suppress hides
+    // synchronously from that cache — no capture on the menu-open hot path.
     const setVisible = vi.fn()
-    const overlayTarget: FreezeTarget = {
-      id: 'overlay:partner',
-      capture: () => Promise.resolve('data:frame'),
-      setVisible
-    }
+    const capture = vi.fn(() => Promise.resolve('data:frame'))
+    const overlayTarget: FreezeTarget = { id: 'overlay:partner', capture, setVisible }
     const showFreeze = vi.fn()
     const fc = createFreezeController({
       visibleTargets: () => [overlayTarget],
       showFreeze,
       clearFreeze: vi.fn()
     })
-    fc.suppress()
+    fc.warmTarget(overlayTarget) // captured while live + visible
     await new Promise((r) => setTimeout(r, 0))
+    capture.mockClear()
+
+    fc.suppress()
     expect(setVisible).toHaveBeenCalledWith(false)
     expect(showFreeze).toHaveBeenCalledWith({ 'overlay:partner': 'data:frame' })
+    expect(capture).not.toHaveBeenCalled() // no capture on the suppress hot path
   })
 })

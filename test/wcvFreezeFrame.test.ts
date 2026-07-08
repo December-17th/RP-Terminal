@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import {
   createFreezeController,
   type FreezeTarget,
@@ -21,13 +21,16 @@ function deferredCapture(): {
   return { capture: () => p, resolve, reject }
 }
 
-function target(id: string, capture: () => Promise<string | null>): FreezeTarget & {
+type Tgt = FreezeTarget & {
   setVisible: ReturnType<typeof vi.fn>
-} {
-  return { id, capture, setVisible: vi.fn() }
+  capture: ReturnType<typeof vi.fn>
 }
 
-function harness(targets: (FreezeTarget & { setVisible: ReturnType<typeof vi.fn> })[]) {
+function target(id: string, capture: () => Promise<string | null>): Tgt {
+  return { id, capture: vi.fn(capture), setVisible: vi.fn() }
+}
+
+function harness(targets: Tgt[]) {
   const showFreeze = vi.fn()
   const clearFreeze = vi.fn()
   const effects: FreezeEffects = {
@@ -38,25 +41,96 @@ function harness(targets: (FreezeTarget & { setVisible: ReturnType<typeof vi.fn>
   return { effects, showFreeze, clearFreeze }
 }
 
-// Let all pending microtasks (the Promise.all().then chain) flush.
-const flush = (): Promise<void> => new Promise((r) => setTimeout(r, 0))
+// Let all pending microtasks (the capture().then chain) flush.
+const flush = (): Promise<void> => Promise.resolve().then(() => Promise.resolve())
 
-describe('createFreezeController — the capture/restore orchestration', () => {
-  it('captures each visible view, then hides it and pushes the bitmaps', async () => {
+describe('createFreezeController — freeze-precache: suppress hides synchronously from a cached still', () => {
+  it('suppress with a WARM cache hides every view synchronously + shows cached frames (no capture on the hot path)', async () => {
     const a = target('static:self', () => Promise.resolve('data:a'))
     const b = target('static:world', () => Promise.resolve('data:b'))
     const { effects, showFreeze } = harness([a, b])
     const c = createFreezeController(effects)
 
-    c.suppress()
-    expect(c.isSuppressed()).toBe(true)
-    // Views are only hidden AFTER the capture resolves (capture-while-visible).
-    expect(a.setVisible).not.toHaveBeenCalled()
+    // Warm the cache while the views are live + visible.
+    c.warmTarget(a)
+    c.warmTarget(b)
     await flush()
+    a.capture.mockClear()
+    b.capture.mockClear()
 
+    c.suppress()
+    // SYNCHRONOUS: hidden immediately, cached frames pushed, no await needed.
+    expect(c.isSuppressed()).toBe(true)
     expect(a.setVisible).toHaveBeenCalledWith(false)
     expect(b.setVisible).toHaveBeenCalledWith(false)
     expect(showFreeze).toHaveBeenCalledWith({ 'static:self': 'data:a', 'static:world': 'data:b' })
+    // The hot path must NOT capture — that async wait was the removed menu lag.
+    expect(a.capture).not.toHaveBeenCalled()
+    expect(b.capture).not.toHaveBeenCalled()
+  })
+
+  it('suppress with a COLD cache hides synchronously but shows no bitmap (blank fallback)', () => {
+    const a = target('static:self', () => Promise.resolve('data:a'))
+    const { effects, showFreeze } = harness([a])
+    const c = createFreezeController(effects)
+
+    c.suppress() // never warmed
+    expect(a.setVisible).toHaveBeenCalledWith(false)
+    expect(a.capture).not.toHaveBeenCalled()
+    expect(showFreeze).not.toHaveBeenCalled()
+  })
+
+  it('suppress with a PARTIALLY warm cache hides all, shows only the cached frames', async () => {
+    const warm = target('static:self', () => Promise.resolve('data:a'))
+    const cold = target('static:world', () => Promise.resolve('data:b'))
+    const { effects, showFreeze } = harness([warm, cold])
+    const c = createFreezeController(effects)
+
+    c.warmTarget(warm) // only one warmed
+    await flush()
+
+    c.suppress()
+    expect(warm.setVisible).toHaveBeenCalledWith(false)
+    expect(cold.setVisible).toHaveBeenCalledWith(false)
+    expect(showFreeze).toHaveBeenCalledWith({ 'static:self': 'data:a' })
+  })
+
+  it('a failed / empty warm capture leaves the cache empty (that view blanks on suppress)', async () => {
+    const empty = target('static:mid', () => Promise.resolve(null)) // mid-load / zero-size
+    const thrown = target('static:err', () => Promise.reject(new Error('destroyed')))
+    const { effects, showFreeze } = harness([empty, thrown])
+    const c = createFreezeController(effects)
+
+    c.warmTarget(empty)
+    c.warmTarget(thrown)
+    await flush()
+
+    c.suppress()
+    expect(empty.setVisible).toHaveBeenCalledWith(false)
+    expect(thrown.setVisible).toHaveBeenCalledWith(false)
+    expect(showFreeze).not.toHaveBeenCalled()
+  })
+
+  it('a later good warm replaces an earlier empty one in the cache', async () => {
+    vi.useFakeTimers()
+    try {
+      let call = 0
+      const results = [Promise.resolve(null), Promise.resolve('data:good')]
+      const a = target('static:self', () => results[call++])
+      const { effects, showFreeze } = harness([a])
+      const c = createFreezeController(effects)
+
+      c.warmTarget(a) // empty → nothing cached
+      await flush()
+      vi.advanceTimersByTime(2000) // clear the throttle window
+      c.warmTarget(a) // succeeds → cached
+      await flush()
+
+      c.suppress()
+      expect(showFreeze).toHaveBeenCalledWith({ 'static:self': 'data:good' })
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('restore shows the live views again and clears the freeze', async () => {
@@ -64,8 +138,9 @@ describe('createFreezeController — the capture/restore orchestration', () => {
     const { effects, clearFreeze } = harness([a])
     const c = createFreezeController(effects)
 
-    c.suppress()
+    c.warmTarget(a)
     await flush()
+    c.suppress()
     a.setVisible.mockClear()
 
     c.restore()
@@ -73,87 +148,95 @@ describe('createFreezeController — the capture/restore orchestration', () => {
     expect(a.setVisible).toHaveBeenCalledWith(true)
     expect(clearFreeze).toHaveBeenCalledTimes(1)
   })
+})
 
-  it('a capture that fails / comes back empty still hides that view, with no bitmap for it', async () => {
-    const ok = target('static:self', () => Promise.resolve('data:a'))
-    const empty = target('static:mid', () => Promise.resolve(null)) // mid-load / zero-size
-    const thrown = target('static:err', () => Promise.reject(new Error('destroyed')))
-    const { effects, showFreeze } = harness([ok, empty, thrown])
+describe('createFreezeController — cache warming (throttle, after-restore refresh, suppressed guard)', () => {
+  beforeEach(() => vi.useFakeTimers())
+  afterEach(() => vi.useRealTimers())
+
+  it('never captures while suppressed', async () => {
+    const a = target('static:self', () => Promise.resolve('data:a'))
+    const { effects } = harness([a])
     const c = createFreezeController(effects)
 
     c.suppress()
-    await flush()
-
-    // All three hidden (menu must not be occluded)…
-    expect(ok.setVisible).toHaveBeenCalledWith(false)
-    expect(empty.setVisible).toHaveBeenCalledWith(false)
-    expect(thrown.setVisible).toHaveBeenCalledWith(false)
-    // …but only the successful capture becomes a freeze-frame (the others fall back to blank).
-    expect(showFreeze).toHaveBeenCalledWith({ 'static:self': 'data:a' })
+    c.warmTarget(a)
+    c.warmVisible()
+    await Promise.resolve()
+    expect(a.capture).not.toHaveBeenCalled()
   })
 
-  it('if EVERY capture fails, views are hidden but showFreeze is never called (pure blank)', async () => {
-    const a = target('static:self', () => Promise.resolve(null))
-    const b = target('static:world', () => Promise.reject(new Error('x')))
-    const { effects, showFreeze } = harness([a, b])
+  it('throttles repeated warms of the same target to at most once per interval', async () => {
+    const a = target('static:self', () => Promise.resolve('data:a'))
+    const { effects } = harness([a])
     const c = createFreezeController(effects)
 
-    c.suppress()
-    await flush()
+    c.warmTarget(a)
+    c.warmTarget(a) // within the throttle window → skipped
+    expect(a.capture).toHaveBeenCalledTimes(1)
 
-    expect(a.setVisible).toHaveBeenCalledWith(false)
-    expect(b.setVisible).toHaveBeenCalledWith(false)
-    expect(showFreeze).not.toHaveBeenCalled()
+    vi.advanceTimersByTime(1600) // past the throttle window
+    c.warmTarget(a)
+    expect(a.capture).toHaveBeenCalledTimes(2)
   })
 
-  it('rapid open→close before the capture lands: never hides, discards the stale frame', async () => {
+  it('restore schedules a debounced cache refresh of the now-visible views', async () => {
+    const a = target('static:self', () => Promise.resolve('data:a'))
+    const { effects } = harness([a])
+    const c = createFreezeController(effects)
+
+    // Warm once, then suppress/restore. The restore refresh is debounced.
+    c.warmTarget(a)
+    await Promise.resolve()
+    vi.advanceTimersByTime(1600) // clear the throttle so the refresh can capture
+    a.capture.mockClear()
+
+    c.suppress()
+    c.restore()
+    expect(a.capture).not.toHaveBeenCalled() // not synchronously
+    vi.advanceTimersByTime(300) // past the debounce
+    expect(a.capture).toHaveBeenCalledTimes(1)
+  })
+
+  it('warmVisible warms every currently-visible target (throttled per target)', () => {
+    const a = target('static:self', () => Promise.resolve('data:a'))
+    const b = target('static:world', () => Promise.resolve('data:b'))
+    const { effects } = harness([a, b])
+    const c = createFreezeController(effects)
+
+    c.warmVisible()
+    expect(a.capture).toHaveBeenCalledTimes(1)
+    expect(b.capture).toHaveBeenCalledTimes(1)
+    c.warmVisible() // throttled
+    expect(a.capture).toHaveBeenCalledTimes(1)
+    expect(b.capture).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('createFreezeController — episode guard drops stale warm work', () => {
+  it('a warm capture that lands after a suppress/restore transition is NOT written to the cache', async () => {
     const d = deferredCapture()
     const a = target('static:self', d.capture)
     const { effects, showFreeze } = harness([a])
     const c = createFreezeController(effects)
 
-    c.suppress() // capture requested (pending)
-    c.restore() // menu closed BEFORE the capture arrives
+    c.warmTarget(a) // capture pending (episode 0)
+    c.suppress() // episode 1 — hides from the (empty) cache
+    c.restore() // episode 2
+    showFreeze.mockClear()
 
-    // restore() shows the (never-hidden) live view + clears; the pending capture is now stale.
-    expect(a.setVisible).toHaveBeenLastCalledWith(true)
-    a.setVisible.mockClear()
-
-    d.resolve('data:late') // the capture finally lands — must be dropped
+    d.resolve('data:late') // the warm capture finally lands — must be dropped (episode moved on)
     await flush()
 
-    expect(a.setVisible).not.toHaveBeenCalled() // NOT hidden
-    expect(showFreeze).not.toHaveBeenCalled() // stale frame discarded
+    // The stale frame was NOT cached, so a fresh suppress still finds nothing to show.
+    c.suppress()
+    expect(showFreeze).not.toHaveBeenCalled()
   })
 
-  it('close-then-reopen mid-capture: the first episode is dropped, the second runs fresh', async () => {
-    const first = deferredCapture()
-    let call = 0
-    const captures = [first.capture, () => Promise.resolve('data:second')]
-    const a = target('static:self', () => captures[call++]())
-    const { effects, showFreeze } = harness([a])
-    const c = createFreezeController(effects)
-
-    c.suppress() // episode 1 — capture pending
-    c.restore()
-    c.suppress() // episode 2 — a fresh capture (resolves immediately)
-    await flush()
-
-    // Episode 2's frame is shown…
-    expect(showFreeze).toHaveBeenCalledTimes(1)
-    expect(showFreeze).toHaveBeenCalledWith({ 'static:self': 'data:second' })
-
-    // …and episode 1's late capture is ignored (no second showFreeze).
-    first.resolve('data:first')
-    await flush()
-    expect(showFreeze).toHaveBeenCalledTimes(1)
-  })
-
-  it('suppress with no visible views does nothing but flip the flag (no showFreeze)', async () => {
+  it('suppress with no visible views does nothing but flip the flag (no showFreeze)', () => {
     const { effects, showFreeze } = harness([])
     const c = createFreezeController(effects)
     c.suppress()
-    await flush()
     expect(c.isSuppressed()).toBe(true)
     expect(showFreeze).not.toHaveBeenCalled()
   })
@@ -163,9 +246,11 @@ describe('createFreezeController — the capture/restore orchestration', () => {
     const { effects, showFreeze } = harness([a])
     const c = createFreezeController(effects)
 
+    c.warmTarget(a)
+    await flush()
+
     c.suppress()
     c.suppress() // a second suppress while already suppressed is a no-op
-    await flush()
     expect(showFreeze).toHaveBeenCalledTimes(1)
 
     c.restore()
