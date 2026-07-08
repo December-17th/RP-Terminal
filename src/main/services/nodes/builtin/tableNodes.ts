@@ -2,18 +2,17 @@ import { z } from 'zod'
 import { GenContext } from '../../generation/types'
 import { getChatTableTemplateId } from '../../chatService'
 import { getTableTemplateById } from '../../tableTemplateService'
-import { applySqlBatch, executeReadQuery, TableSqlError } from '../../tableSql'
-import { appendOps, tryBeginTableWrite, endTableWrite } from '../../tableOpsService'
+import { executeReadQuery, TableSqlError } from '../../tableSql'
 import { readAllTables, TableRead } from '../../tableDbService'
 import { synthesizeEntries, renderWholeTable } from '../../tableExportService'
-import { renderTableBlock } from '../../tableMaintenance'
 import { getProgress, advanceProgress, resolveUpdateFrequency } from '../../tableProgressService'
 import { getSettings } from '../../settingsService'
 import { matchAcross } from '../../lorebookService'
 import { getAllFloors } from '../../floorService'
-import { TableTemplate, TableDef } from '../../../types/tableTemplate'
+import { TableDef } from '../../../types/tableTemplate'
 import { LorebookEntry } from '../../../types/character'
 import { NodeImpl, NodeRunFailure } from '../types'
+import { chatTemplate, applyTableEdit, renderTablesBlock } from './memoryCore'
 
 /** Parse a comma-separated sqlName list (trimmed, empties dropped). Accepts a string OR a string[]
  *  (the gate emits an array on its `tables` port; a config field is a comma string) — anything else
@@ -27,12 +26,6 @@ const parseSqlNameList = (v: unknown): string[] => {
       .filter(Boolean)
   }
   return []
-}
-
-/** Resolve the assigned template for a chat, or null (no table memory). */
-const chatTemplate = (gen: GenContext): TableTemplate | null => {
-  const templateId = getChatTableTemplateId(gen.profileId, gen.chatId)
-  return templateId ? getTableTemplateById(gen.profileId, templateId) : null
 }
 
 /**
@@ -81,43 +74,20 @@ export const tableApply: NodeImpl = {
     const gen = inputs.gen as GenContext
     const cfg = node.config as ApplyConfig
 
-    const templateId = getChatTableTemplateId(gen.profileId, gen.chatId)
-    const template = templateId ? getTableTemplateById(gen.profileId, templateId) : null
+    // A write with no schema is a real error (contrast table.export's silent read) — kept here so the
+    // blank-sql short-circuit above still wins over the no-template check.
+    const template = chatTemplate(gen)
     if (!template) {
       throw new NodeRunFailure('B', 'table.apply: no table template assigned to this chat', 1, 'no-template')
     }
 
-    if (!tryBeginTableWrite(gen.chatId)) {
-      throw new NodeRunFailure('B', 'table.apply: a table write is already in flight for this chat', 1, 'busy')
-    }
-    try {
-      const result = applySqlBatch(gen.profileId, gen.chatId, template, sql, {
-        maxChanges: cfg.max_changes
-      })
-      // Attribute ops to the just-persisted floor. This node runs POST-response, so the reply floor
-      // is already saved and is the LAST one: floors.length - 1, clamped to >= 0. Log EXACTLY the
-      // statements that ran (from the service), not a re-split, so replay matches execution.
-      if (result.statements.length) {
-        const floor = Math.max(0, gen.floors.length - 1)
-        appendOps(gen.profileId, gen.chatId, floor, result.statements)
-      }
-      // Advance the shared table-progress pointer ONLY after a successful batch (advance-after-success:
-      // a failed batch throws below and leaves the backlog standing, so the next commit boundary retries
-      // — one retry per boundary, chains bounded by the depth cap). This replaces table.gate's
-      // advance-first bookkeeping for the consolidated WP6.2 chains (which dropped the gate). currentFloor
-      // is re-read FROM DISK at this moment (the table.gate idiom, tableNodes.ts:254), not from gen.floors.
-      if (cfg.advance_progress === true) {
-        const allTemplateTableSqlNames = template.tables.map((t) => t.sqlName)
-        const currentFloor = Math.max(0, getAllFloors(gen.profileId, gen.chatId).length - 1)
-        advanceProgress(gen.profileId, gen.chatId, allTemplateTableSqlNames, currentFloor)
-      }
-      return { outputs: { results: { applied: result.applied, changes: result.changes }, done: true } }
-    } catch (error) {
-      const msg = error instanceof TableSqlError ? error.message : String(error)
-      throw new NodeRunFailure('B', `table.apply: ${msg}`, 1, 'bad-sql')
-    } finally {
-      endTableWrite(gen.chatId)
-    }
+    // The write core (busy-guard + applySqlBatch + op-log + advance-after-success) is shared with
+    // memory.maintain (memoryCore.applyTableEdit) — throws class-B on busy/bad-sql, same as before.
+    const r = applyTableEdit(gen, template, sql, {
+      maxChanges: cfg.max_changes,
+      advanceProgress: cfg.advance_progress
+    })
+    return { outputs: { results: { applied: r.applied, changes: r.changes }, done: true } }
   }
 }
 
@@ -337,36 +307,18 @@ export const tableRead: NodeImpl = {
   run: (_ctx, inputs, node) => {
     const gen = inputs.gen as GenContext
     const cfg = node.config as ReadConfig
-    const includeRules = cfg.include_rules !== false
 
     const template = chatTemplate(gen)
     if (!template) return { outputs: { block: '', tables: [] } } // read semantics — silent empty
 
-    const only = parseSqlNameList(inputs.tables)
-    const onlySet = only.length ? new Set(only) : null
-    const tables = onlySet ? template.tables.filter((t) => onlySet.has(t.sqlName)) : template.tables
-    if (!tables.length) return { outputs: { block: '', tables: [] } }
-
-    const readsBySql = new Map(
-      readAllTables(gen.profileId, gen.chatId, template).map((r) => [r.sqlName, r])
-    )
-    const globalDefault = getSettings(gen.profileId).tables?.default_update_frequency ?? 3
-    const blocks: string[] = []
-    const rendered: string[] = []
-    for (const table of tables) {
-      let read = readsBySql.get(table.sqlName)
-      if (!read) read = { sqlName: table.sqlName, displayName: table.displayName, columns: table.headers, rows: [], rowids: [] }
-      // Row cap: keep the LAST N rows (newest-last) per table.
-      if (cfg.max_rows != null && read.rows.length > cfg.max_rows) {
-        read = { ...read, rows: read.rows.slice(-cfg.max_rows) }
-      }
-      // Header cadence: resolve -1 (global) / 0 (off → 手动维护) / N. An explicit table.read with an
-      // off table still renders it (read semantics); the cadence line just reads 手动维护.
-      const resolvedFreq = resolveUpdateFrequency(table.updateFrequency, globalDefault)
-      blocks.push(renderTableBlock(table, read, includeRules, resolvedFreq))
-      rendered.push(table.sqlName)
-    }
-    return { outputs: { block: blocks.join('\n\n'), tables: rendered } }
+    // The block render is shared with memory.maintain (memoryCore.renderTablesBlock) — an empty scope
+    // (no matching tables) still yields the silent-empty output.
+    const { block, tables } = renderTablesBlock(gen, template, {
+      maxRows: cfg.max_rows,
+      includeRules: cfg.include_rules,
+      only: parseSqlNameList(inputs.tables)
+    })
+    return { outputs: { block, tables } }
   }
 }
 

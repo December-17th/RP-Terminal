@@ -255,6 +255,23 @@ const api = {
   importModuleDialog: (profileId: string) => ipcRenderer.invoke('module-import-dialog', profileId),
   confirmModuleImport: (token: string) => ipcRenderer.invoke('module-confirm-import', token),
   cancelModuleImport: (token: string) => ipcRenderer.invoke('module-cancel-import', token),
+  // Agent library (agent-memory-ux WP-G): the palette's built-in + user module templates.
+  listModuleTemplates: (profileId: string) =>
+    ipcRenderer.invoke('list-module-templates', profileId),
+  getModuleTemplate: (profileId: string, id: string) =>
+    ipcRenderer.invoke('get-module-template', profileId, id),
+  saveModuleToLibrary: (profileId: string, module: unknown) =>
+    ipcRenderer.invoke('save-module-to-library', profileId, module),
+  // Agent & memory UX (WP-H): per-world lorebook entry picks for agent.llm's custom lore mode.
+  getLorePicks: (profileId: string, worldId: string, docId: string, nodeId: string) =>
+    ipcRenderer.invoke('get-lore-picks', profileId, worldId, docId, nodeId),
+  setLorePicks: (
+    profileId: string,
+    worldId: string,
+    docId: string,
+    nodeId: string,
+    picks: unknown[]
+  ) => ipcRenderer.invoke('set-lore-picks', profileId, worldId, docId, nodeId, picks),
   // Recipe SHARING: `.rptrecipe` export / import (agent-packs plan WP5.2; ADR 0008) — "share this
   // world's setup" (a set of embedded packs + activation preset + narrator choice). Export assembles
   // from the CURRENT world; `opts` = the wizard's name/description/creator. Import is TWO-PHASE: the
@@ -295,6 +312,8 @@ const api = {
     ipcRenderer.invoke('chat-table-template-get', profileId, chatId),
   setChatTableTemplate: (profileId: string, chatId: string, id: string | null) =>
     ipcRenderer.invoke('chat-table-template-set', profileId, chatId, id),
+  previewMemoryMaintain: (profileId: string, chatId: string, config: unknown) =>
+    ipcRenderer.invoke('memory-maintain-preview', profileId, chatId, config),
   readChatTables: (profileId: string, chatId: string) =>
     ipcRenderer.invoke('chat-tables-read', profileId, chatId),
   // SQL-table memory (issue 06): hand editing, last-maintained status, template export

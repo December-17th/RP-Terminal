@@ -7,6 +7,7 @@ import { useT } from '../../i18n'
 import { useWcvSuppression } from '../useWcvSuppression'
 import WorkflowEditorView from './WorkflowEditorView'
 import { MemoryPane } from '../workspace/MemoryPane'
+import { TablesView } from '../workspace/TablesView'
 
 export function WorkflowEditorOverlay({
   profileId
@@ -17,10 +18,12 @@ export function WorkflowEditorOverlay({
   const close = useUiStore((s) => s.closeWorkflowEditor)
   const t = useT()
 
-  // WP6.4b: memory configuration home. A right-side sheet (the AgentPackDetail side-panel pattern)
-  // hosts the self-contained MemoryPane (template binding, progress, backfill). The packs-shortcut
-  // strip is hidden — there is no Installed rail to jump to from the editor.
+  // WP6.4b: memory configuration home. A right-side sheet (the AgentPackDetail side-panel pattern).
+  // Agent & memory UX WP-I (spec §8): the sheet is TABBED — Setup (template binding, the MemoryPane
+  // 'setup' slice) · Data (the SHARED TableGrid via the embedded TablesView) · Maintenance (progress +
+  // backfill, the 'maintenance' slice) — so memory data, config, and maintenance live in ONE sheet.
   const [memoryOpen, setMemoryOpen] = React.useState(false)
+  const [memoryTab, setMemoryTab] = React.useState<'setup' | 'data' | 'maintenance'>('setup')
   React.useEffect(() => {
     if (!open) setMemoryOpen(false)
   }, [open])
@@ -122,16 +125,47 @@ export function WorkflowEditorOverlay({
                 ✕
               </button>
             </div>
+            {/* WP-I: the sheet's tab strip — Setup / Data / Maintenance. */}
+            <div className="rpt-memory-sheet-tabs" role="tablist">
+              {(['setup', 'data', 'maintenance'] as const).map((tab) => (
+                <button
+                  key={tab}
+                  type="button"
+                  role="tab"
+                  aria-selected={memoryTab === tab}
+                  className={`rpt-memory-sheet-tab${memoryTab === tab ? ' active' : ''}`}
+                  onClick={() => setMemoryTab(tab)}
+                >
+                  {t(`memory.tab.${tab}`)}
+                </button>
+              ))}
+            </div>
             <div className="rpt-agentdetail-body">
               {/* MemoryPane is self-contained; the editor host has no Installed rail, so pass empty
-                  pack inputs + hide the packs strip. */}
-              <MemoryPane
-                profileId={profileId}
-                packs={null}
-                gates={{}}
-                onOpenPackDetail={() => {}}
-                hidePacksStrip
-              />
+                  pack inputs (the packs strip only renders in the 'all' control-center slice). */}
+              {memoryTab === 'setup' && (
+                <MemoryPane
+                  profileId={profileId}
+                  packs={null}
+                  gates={{}}
+                  onOpenPackDetail={() => {}}
+                  hidePacksStrip
+                  section="setup"
+                />
+              )}
+              {/* Data = the SHARED grid (WP-I): the embedded TablesView (config-hint header hidden —
+                  a jump to "configure memory" from inside the Memory sheet would be circular). */}
+              {memoryTab === 'data' && <TablesView profileId={profileId} embedded />}
+              {memoryTab === 'maintenance' && (
+                <MemoryPane
+                  profileId={profileId}
+                  packs={null}
+                  gates={{}}
+                  onOpenPackDetail={() => {}}
+                  hidePacksStrip
+                  section="maintenance"
+                />
+              )}
             </div>
           </div>
         )}

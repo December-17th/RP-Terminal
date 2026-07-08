@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import { getPath } from '../../../../shared/objectPath'
+import { log } from '../../logService'
 import { NodeImpl } from '../types'
 
 /**
@@ -152,5 +153,93 @@ export const controlWhen: NodeImpl = {
 
     const fired = evalPredicate(subject, cfg.op, cfg.value)
     return { signals: fired ? ['fire'] : [] }
+  }
+}
+
+// ── control.mode ─────────────────────────────────────────────────────────────────────────────────
+//
+// Agent & memory UX WP-B (spec §3.1; plan §0.2 — the AUTHORITATIVE firing rule, a deliberate
+// refinement of the spec's literal text). A generic mode selector placed AFTER triggers (triggers
+// are inputless roots): each config option maps to one `when` slot — options[i] ↔ when{i+1} — and
+// `fired` passes through ONLY the selected option's slot, making the modes structurally mutually
+// exclusive (non-selected slots are dead ends). An imported system joins the exclusion by wiring
+// its trigger into a free slot and adding an option (pure wiring; no app code).
+//
+// Firing rule (§0.2): `fired` fires iff
+//   (the selected slot is WIRED and its key is present in `inputs` — the engine only creates a key
+//    for a LIVE edge, so key-presence = "this slot fired")
+//   OR (no whenN slot is wired at all — the true standalone config-driven gate case).
+// An unwired selected slot in a wired graph is a DEAD END — which is exactly what makes an `off`
+// option (a key with no wired slot) the master off-switch. The spec's literal "unwired selected
+// slot fires unconditionally" would break `off` (a firing backlog trigger on another slot would
+// un-gate the node); the refinement confines unconditional firing to the zero-wired-whens case.
+//
+// Engine interplay: when1..4 are Signal inputs, so if ANY slot is wired and NONE fired the engine
+// gates the node off before run() (skipped, downstream dead) — run() only ever sees ≥1 live slot
+// or zero wired slots. `wiredInputs` (NodeMeta, WP-B) supplies the wired-vs-unwired distinction.
+
+/** One selectable mode: `key` is the stored value (`selected`), `label` the display text (the
+ *  exposed-enum renderer falls back to `key` when absent — WP-C's options are key-only). */
+const modeOptionSchema = z.object({
+  key: z.string().min(1),
+  label: z.string().min(1).optional()
+})
+
+const modeConfigSchema = z.object({
+  /** Mode options in SLOT ORDER: options[i] corresponds to input when{i+1} (fixed 4-slot contract,
+   *  matching control.switch's case1–4). An option whose slot is unwired (e.g. `off`) selects
+   *  "nothing runs" — its slot is a dead end. */
+  options: z
+    .array(modeOptionSchema)
+    .min(1)
+    .max(4)
+    .describe('Mode options in slot order: options[i] maps to input when{i+1}. 1–4 options.'),
+  /** The selected option's key. A key not present in `options` fails soft to the first option
+   *  (logged, trace-visible via the node's normal run). */
+  selected: z
+    .string()
+    .min(1)
+    .describe('The selected option key (must match an options[].key; falls back to the first).')
+})
+
+/** Mode selector (spec §3.1): passes through only the selected option's `when` slot; emits the
+ *  selected key as Text whenever it runs. See the header comment for the exact firing rule. */
+export const controlMode: NodeImpl = {
+  type: 'control.mode',
+  title: 'Mode',
+  // WP-A dynamicEnum hint: `selected` is an enum whose options live in the sibling `options`
+  // config array — the exposed-enum renderer resolves it from the node's current config.
+  dynamicEnum: { path: 'selected', optionsPath: 'options', keyField: 'key', labelField: 'label' },
+  inputs: [
+    { name: 'when1', type: 'Signal' },
+    { name: 'when2', type: 'Signal' },
+    { name: 'when3', type: 'Signal' },
+    { name: 'when4', type: 'Signal' }
+  ],
+  outputs: [
+    { name: 'fired', type: 'Signal' },
+    { name: 'selected', type: 'Text' }
+  ],
+  configSchema: modeConfigSchema,
+  run: (_ctx, inputs, node) => {
+    const cfg = node.config as z.infer<typeof modeConfigSchema>
+    let selected = cfg.selected
+    if (!cfg.options.some((o) => o.key === selected)) {
+      // Fail-soft (plan WP-B): a stale selected key degrades to the first option, never a throw.
+      log(
+        'error',
+        `control.mode ${node.id}: selected "${selected}" is not an option key; falling back to "${cfg.options[0].key}"`
+      )
+      selected = cfg.options[0].key
+    }
+    const slot = `when${cfg.options.findIndex((o) => o.key === selected) + 1}`
+    const wired = node.wiredInputs ?? []
+    const anyWhenWired = wired.some((p) => /^when[1-4]$/.test(p))
+    // Key-presence = the slot's edge was LIVE this run (the engine creates the key even though a
+    // Signal carries no value); a dead edge leaves the key absent.
+    const selectedSlotFired = Object.prototype.hasOwnProperty.call(inputs, slot)
+    const fires = (wired.includes(slot) && selectedSlotFired) || !anyWhenWired
+    // `selected` Text is DATA, not a gate — emitted on every run (fail-soft-resolved key included).
+    return { outputs: { selected }, signals: fires ? ['fired'] : [] }
   }
 }

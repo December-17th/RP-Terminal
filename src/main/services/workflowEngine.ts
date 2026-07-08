@@ -57,6 +57,10 @@ export interface RunResult {
   aborted: boolean
   traces: NodeTrace[]
   outputs: Map<string, Record<string, unknown>>
+  /** Per-node debug detail (NodeResult.debug) — folded into the trace by summarizeRun. Distinct from
+   *  `outputs` (graph ports): these are never wired, only displayed. Empty for docs whose nodes emit
+   *  no debug. */
+  debug: Map<string, Record<string, unknown>>
   error?: NodeError
 }
 
@@ -65,6 +69,8 @@ const edgeKey = (e: Edge): string => `${e.from.node}:${e.from.port}->${e.to.node
 /** Mutable state shared across the run passes. */
 interface ExecState {
   outputs: Map<string, Record<string, unknown>>
+  /** Per-node NodeResult.debug, accumulated as nodes run (trace-only; see RunResult.debug). */
+  debug: Map<string, Record<string, unknown>>
   deadEdge: Set<string>
   traces: NodeTrace[]
   /** Node ids whose failure must NOT abort the turn even in the pre-phase (agent-packs plan WP1.3;
@@ -154,8 +160,13 @@ async function runNodes(
       const config = (
         impl.configSchema ? impl.configSchema.parse(node.config ?? {}) : (node.config ?? {})
       ) as Record<string, unknown>
-      const result = (await impl.run(ctx, inputs, { id, config })) ?? {}
+      // WP-B (agent-memory-ux plan §0.2): the input-port names with ≥1 incoming edge, live OR dead —
+      // `inputs` only carries keys for LIVE edges, so without this a node can't tell "wired but not
+      // fired" from "not wired at all" (control.mode's firing rule needs the distinction).
+      const wiredInputs = [...new Set(ins.map((e) => e.to.port))]
+      const result = (await impl.run(ctx, inputs, { id, config, wiredInputs })) ?? {}
       state.outputs.set(id, result.outputs ?? {})
+      if (result.debug) state.debug.set(id, result.debug)
       state.traces.push({ nodeId: id, status: 'ran', phase, ms: Date.now() - started })
       // Opt-in output panel (spec D4): a node with panel.show fills its collapsible chat panel
       // on completion (only the main output streams live — spec §5).
@@ -292,6 +303,7 @@ export async function runWorkflow(
 
   const state: ExecState = {
     outputs: new Map(),
+    debug: new Map(),
     deadEdge: new Set(),
     traces: [],
     failOpen: failOpenNodesOf(doc)
@@ -312,7 +324,7 @@ export async function runWorkflow(
       nodeId: mainNode.id,
       attempts: 0
     }
-    return { ok: false, aborted: false, traces: [], outputs: state.outputs, error }
+    return { ok: false, aborted: false, traces: [], outputs: state.outputs, debug: state.debug, error }
   }
 
   // Pre-seed excluded nodes (skip-trace + dead outgoing edges) so the existing prune rules skip their
@@ -336,6 +348,7 @@ export async function runWorkflow(
       aborted: false,
       traces: state.traces,
       outputs: state.outputs,
+      debug: state.debug,
       error: pre.fatal
     }
   }
@@ -344,7 +357,7 @@ export async function runWorkflow(
     for (const id of order.filter((id) => postIds.has(id))) {
       state.traces.push({ nodeId: id, status: 'skipped', phase: 'post' })
     }
-    return { ok: false, aborted: true, traces: state.traces, outputs: state.outputs }
+    return { ok: false, aborted: true, traces: state.traces, outputs: state.outputs, debug: state.debug }
   }
   ctx.onResponseReady?.(state.outputs)
   const post = await runNodes(
@@ -360,7 +373,8 @@ export async function runWorkflow(
     ok: !post.aborted,
     aborted: !!post.aborted,
     traces: state.traces,
-    outputs: state.outputs
+    outputs: state.outputs,
+    debug: state.debug
   }
 }
 
@@ -369,6 +383,10 @@ export interface SubgraphRunResult {
   fatal?: NodeError
   aborted: boolean
   traces: NodeTrace[]
+  /** Per-node debug detail (NodeResult.debug) — the headless paths pass this to summarizeRun so a
+   *  trigger-run agent's composed prompt surfaces in the run drawer (per-node PORT outputs are not
+   *  exposed here; `outputs` is the boundary-slot map). */
+  debug: Map<string, Record<string, unknown>>
 }
 
 /** Run a 'subgraph'-kind doc as a self-contained unit inside a `subgraph.call` node's run()
@@ -396,6 +414,7 @@ export async function runSubgraph(
 
   const state: ExecState = {
     outputs: new Map(),
+    debug: new Map(),
     deadEdge: new Set(),
     traces: [],
     // A subgraph run is a self-contained unit invoked inside its wrapper node's own phase; it is
@@ -419,6 +438,7 @@ export async function runSubgraph(
     outputs,
     ...(result.fatal !== undefined ? { fatal: result.fatal } : {}),
     aborted: !!result.aborted,
-    traces: state.traces
+    traces: state.traces,
+    debug: state.debug
   }
 }

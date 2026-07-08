@@ -545,7 +545,8 @@ export const runHeadless = async (
         ok: !result.aborted && !result.fatal,
         aborted: result.aborted,
         traces: result.traces,
-        outputs: new Map()
+        outputs: new Map(),
+        debug: result.debug
       },
       { chatId, workflowId, startedAt, durationMs: Date.now() - startedAt }
     )
@@ -837,13 +838,16 @@ const runDocHeadless = async (
         ok: !result.aborted && !result.fatal,
         aborted: result.aborted,
         traces: result.traces,
-        outputs: new Map()
+        outputs: new Map(),
+        debug: result.debug
       },
       { chatId, workflowId, startedAt, durationMs: Date.now() - startedAt }
     )
     notifyWorkflowTrace(trace)
-    // Run history: origin (headless/manual), packIds [] (module attribution arrives with WP6.3), trigger
-    // = the joined firing-trigger descriptions. A persist failure never surfaces to any chat flow.
+    // Run history: origin (headless/manual), packIds [] (doc-path runs are pack-free), trigger = the
+    // joined firing-trigger descriptions, triggerNodeIds = the firing triggers' DOC node ids (WP-D run
+    // attribution — the agent card maps them through group membership). A persist failure never
+    // surfaces to any chat flow.
     try {
       appendRun(profileId, {
         runId: randomUUID(),
@@ -851,6 +855,7 @@ const runDocHeadless = async (
         origin: annotation.origin,
         packIds: [],
         ...(triggerCaption ? { trigger: triggerCaption } : {}),
+        ...(chain.triggerNodeIds.length > 0 ? { triggerNodeIds: chain.triggerNodeIds } : {}),
         trace
       })
     } catch (err) {

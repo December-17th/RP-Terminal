@@ -30,13 +30,20 @@ import {
   resolveWorkflowId,
   resolveWorkflowDoc,
   resolveEffectiveDoc,
-  setEnabledFragmentsProvider
+  setEnabledFragmentsProvider,
+  setMemorySeedingEnabled
 } from '../src/main/services/workflowService'
 import { getAppDir } from '../src/main/services/storageService'
 import { WorkflowDoc } from '../src/shared/workflow/types'
 import { AttachmentDecl } from '../src/shared/workflow/attachments'
 import { ComposeFragment } from '../src/shared/workflow/compose'
 import { DEFAULT_GRAPH } from '../src/main/services/nodes/builtin/defaultGraph'
+
+// Deliberate WP-C (agent-memory-ux) harness choice: this suite characterizes the PRE-SEED
+// list/selection/resolution mechanics ("builtin when nothing selected", empty selection shapes),
+// so the lazy default-memory seeding is disabled here via its test seam. Seeding behavior has its
+// own suite: test/workflowSeeding.test.ts.
+setMemorySeedingEnabled(false)
 
 const profileId = `wf-test-${randomUUID()}`
 const profileDir = path.join(getAppDir(), 'profiles', profileId)

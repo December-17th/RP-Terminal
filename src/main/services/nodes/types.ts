@@ -89,6 +89,12 @@ export interface RunContext {
 export interface NodeResult {
   outputs?: Record<string, unknown>
   signals?: string[]
+  /** Debug-only detail for the run trace (NOT graph output ports — never wired, never read by
+   *  downstream nodes). The engine folds these into the node's trace so they surface in the run
+   *  drawer's Runs tab, keyed by label. Used by `agent.llm` to expose the COMPOSED prompt it sent
+   *  (the interpolated + spliced messages), so "is it actually being sent" is inspectable — the
+   *  reason the dropped-{{input}} bug was hard to see. Values are stringified + capped in the trace. */
+  debug?: Record<string, unknown>
 }
 
 /** Per-instance info handed to run(): the node's id (node-state key) and its config —
@@ -96,6 +102,13 @@ export interface NodeResult {
 export interface NodeMeta {
   id: string
   config: Record<string, unknown>
+  /** Agent & memory UX (WP-B; plan §0.2): the input-port names that have ≥1 incoming edge in the
+   *  doc — REGARDLESS of whether the edge is live or dead this run. Lets a node distinguish
+   *  "wired but not fired" (port named here, key absent from `inputs`) from "not wired at all"
+   *  (absent from both) — the distinction `control.mode`'s firing rule needs. Optional so direct
+   *  run() callers (tests, previews) that predate WP-B still compile; the engine always supplies
+   *  it. No pre-WP-B node reads it, so behavior is unchanged across the registry. */
+  wiredInputs?: string[]
 }
 
 export type NodeRunFn = (

@@ -11,6 +11,25 @@ import { editorToDoc } from './editorModel'
 import { fieldsFromSchema, type FieldSpec } from './schemaForm'
 import { groupOfNode } from './groupModel'
 import {
+  agentEnabledState,
+  agentTriggers,
+  describeTriggerNode,
+  isAgentGroup
+} from './agentModel'
+import {
+  dynamicEnumOptions,
+  resolveSelection,
+  visibleTabs,
+  type DetailsTab,
+  type PanelSelection
+} from './detailsPanelModel'
+import PromptEditor, { type PromptFieldSpec } from './PromptEditor'
+import MemoryMaintainPanel from './MemoryMaintainPanel'
+import LorebookPickerSheet from './LorebookPickerSheet'
+import { useWorkflowTraceStore } from '../../stores/workflowTraceStore'
+import { formatTraceSeconds, type StoredRunRecord } from '../../../../shared/workflow/trace'
+import type { NodeTypeInfo } from '../../stores/workflowEditorStore'
+import {
   tokenTotal,
   sectionLabelKey,
   sourceChip,
@@ -332,7 +351,7 @@ function ExposedSettingRow({
 }: {
   entry: { node: string; path: string; label: string }
   nodes: EditorNode[]
-  nodeTypes: { type: string; configSchema?: Record<string, unknown> }[]
+  nodeTypes: NodeTypeInfo[]
   readOnly: boolean
   onRelabel: (label: string) => void
   onRemove: () => void
@@ -344,6 +363,11 @@ function ExposedSettingRow({
   const fields = fieldsFromSchema(typeInfo?.configSchema)
   const field = fields.find((f) => f.key === entry.path)
   const config = member?.config ?? {}
+  // WP-E (plan §0.5): a dynamicEnum field's options live in a sibling config array, not a static zod
+  // enum — resolve them here so an exposed `control.mode.selected` renders as a real dropdown.
+  const dynEnum =
+    typeInfo?.dynamicEnum && typeInfo.dynamicEnum.path === entry.path ? typeInfo.dynamicEnum : undefined
+  const dynOptions = dynEnum ? dynamicEnumOptions(config, dynEnum) : null
   // A stale path (field renamed/removed) resolves to undefined and renders as an empty control —
   // the documented skip-with-log stance; we never crash on it.
   const value = getPath(config, entry.path)
@@ -386,7 +410,21 @@ function ExposedSettingRow({
       <div style={{ fontSize: 10, color: 'var(--rpt-text-tertiary)' }}>
         {entry.node}.{entry.path}
       </div>
-      {field ? (
+      {dynOptions ? (
+        <select
+          value={typeof value === 'string' ? value : ''}
+          disabled={readOnly || !member}
+          onChange={(e) => write(e.target.value === '' ? undefined : e.target.value)}
+          style={{ width: '100%' }}
+        >
+          {!dynOptions.some((o) => o.key === value) && <option value="">--</option>}
+          {dynOptions.map((o) => (
+            <option key={o.key} value={o.key}>
+              {o.label}
+            </option>
+          ))}
+        </select>
+      ) : field ? (
         <FieldControl
           field={field}
           value={value}
@@ -659,17 +697,21 @@ function AssemblePreview({ profileId }: { profileId: string }): React.JSX.Elemen
   )
 }
 
-export default function NodeConfigPanel({
-  profileId
-}: NodeConfigPanelProps): React.JSX.Element {
+/** WP-E: the SINGLE-NODE details context — a four-tab shell (Settings / Prompt / Runs / Docs, spec §6)
+ *  over one node. Keyed by node id at the call site so the tab + local control state resets on a node
+ *  switch. Prompt fields (node-type `promptFields`) are routed to the Prompt tab, not the settings form. */
+function NodeDetailsInner({
+  profileId,
+  node
+}: {
+  profileId: string
+  node: EditorNode
+}): React.JSX.Element {
   const t = useT()
   const tOpt = useOptionalT()
-  const selectedNodeId = useWorkflowEditorStore((s) => s.selectedNodeId)
-  const selectedGroupId = useWorkflowEditorStore((s) => s.selectedGroupId)
   const doc = useWorkflowEditorStore((s) => s.doc)
-  const nodes = useWorkflowEditorStore((s) => s.nodes)
   const nodeTypes = useWorkflowEditorStore((s) => s.nodeTypes)
-  const storeReadOnly = useWorkflowEditorStore((s) => s.readOnly)
+  const readOnly = useWorkflowEditorStore((s) => s.readOnly)
   const sessionType = useWorkflowEditorStore((s) => s.sessionType)
   const setNodeConfig = useWorkflowEditorStore((s) => s.setNodeConfig)
   const setNodePanel = useWorkflowEditorStore((s) => s.setNodePanel)
@@ -677,24 +719,27 @@ export default function NodeConfigPanel({
   const setMainOutput = useWorkflowEditorStore((s) => s.setMainOutput)
   const exposeSetting = useWorkflowEditorStore((s) => s.exposeSetting)
   const unexposeSetting = useWorkflowEditorStore((s) => s.unexposeSetting)
+  const [tab, setTab] = useState<DetailsTab>('settings')
 
   const groups = doc?.groups ?? []
-  // A group is selected → render the MODULE panel instead of a node panel (selection is mutually
-  // exclusive, so selectedNodeId is null here).
-  const selectedGroup = selectedGroupId ? groups.find((g) => g.id === selectedGroupId) : undefined
-  if (selectedGroup) return <ModulePanel group={selectedGroup} profileId={profileId} />
-
-  const readOnly = storeReadOnly
-
-  const node = nodes.find((n) => n.id === selectedNodeId)
-
-  if (!node) {
-    return <div>{t('workflowEditor.noSelection')}</div>
-  }
-
   const typeInfo = nodeTypes.find((nt) => nt.type === node.type)
   const config = node.config ?? {}
-  const fields = fieldsFromSchema(typeInfo?.configSchema)
+  const allFields = fieldsFromSchema(typeInfo?.configSchema)
+  // WP-H (spec §7): a node with a `lore: Lore` input AND a `lorebook` config field gets the dedicated
+  // Lorebook row (mode + picker) instead of the generic enum control. Detected structurally — nothing
+  // hardcoded to agent.llm (v1's only such node, but any future one inherits the row).
+  const hasLoreRow =
+    (typeInfo?.inputs ?? []).some((p) => p.name === 'lore' && p.type === 'Lore') &&
+    allFields.some((f) => f.key === 'lorebook')
+  // Prompt fields (WP-A hint) leave the settings scroll and render in the Prompt tab's editor instead;
+  // `lorebook` leaves it for the dedicated row.
+  const promptKeys = new Set(typeInfo?.promptFields ?? [])
+  const fields = allFields.filter((f) => !promptKeys.has(f.key) && !(hasLoreRow && f.key === 'lorebook'))
+  const promptFieldSpecs: PromptFieldSpec[] = (typeInfo?.promptFields ?? []).map((key) => ({
+    key,
+    isArray: allFields.find((f) => f.key === key)?.kind === 'objectArray'
+  }))
+  const tabs = visibleTabs({ kind: 'node', nodeId: node.id }, promptFieldSpecs.length > 0)
 
   // WP6.3: if this node belongs to a group, each config field can be EXPOSED on the group's module
   // panel. The toggle mirrors whether {node, path: fieldKey} is already in the group's exposed list.
@@ -724,25 +769,79 @@ export default function NodeConfigPanel({
     tOpt(`workflowEditor.portDesc.common.${port}`)
 
   return (
-    <div>
-      <div>
+    <div className="rpt-details-panel">
+      <div className="rpt-details-head">
         <strong>{nodeTitle}</strong>
         <div style={{ fontSize: 10.5, color: 'var(--rpt-text-tertiary)' }}>{node.type}</div>
       </div>
+      <TabRail tabs={tabs} active={tab} onSelect={setTab} />
 
-      {nodeDesc && (
-        <div
-          style={{
-            fontSize: 11,
-            color: 'var(--rpt-text-secondary)',
-            lineHeight: 1.55,
-            margin: '6px 0'
-          }}
-        >
-          {nodeDesc}
+      {tab === 'prompt' && (
+        <>
+          <PromptEditor
+            fields={promptFieldSpecs}
+            config={config}
+            readOnly={readOnly}
+            onChange={updateField}
+          />
+          {/* memory.maintain (WP2): under the scaffold prompt, the per-table maintenance-rule editor
+              (writes to the bound template) + the composed-prompt preview. */}
+          {node.type === 'memory.maintain' && (
+            <MemoryMaintainPanel profileId={profileId} config={config} />
+          )}
+        </>
+      )}
+
+      {tab === 'runs' && <NodeRunsTab nodeId={node.id} />}
+
+      {tab === 'docs' && (
+        <div>
+          {nodeDesc && (
+            <div
+              style={{
+                fontSize: 11,
+                color: 'var(--rpt-text-secondary)',
+                lineHeight: 1.55,
+                margin: '6px 0'
+              }}
+            >
+              {nodeDesc}
+            </div>
+          )}
+          <div style={{ fontSize: 10.5, color: 'var(--rpt-text-tertiary)' }}>
+            {t('workflowEditor.ports')}
+          </div>
+          {(typeInfo?.inputs ?? []).map((port) => (
+            <div key={`in-${port.name}`} style={{ fontSize: 10.5, marginBottom: 3 }}>
+              <span style={{ color: 'var(--rpt-text-primary)' }}>
+                → {port.name}{' '}
+                <span style={{ color: 'var(--rpt-text-tertiary)' }}>({port.type})</span>
+              </span>
+              {portDesc(port.name) && (
+                <div style={{ color: 'var(--rpt-text-secondary)', paddingLeft: 14 }}>
+                  {portDesc(port.name)}
+                </div>
+              )}
+            </div>
+          ))}
+          {(typeInfo?.outputs ?? []).map((port) => (
+            <div key={`out-${port.name}`} style={{ fontSize: 10.5, marginBottom: 3 }}>
+              <span style={{ color: 'var(--rpt-text-primary)' }}>
+                {port.name} →{' '}
+                <span style={{ color: 'var(--rpt-text-tertiary)' }}>({port.type})</span>
+              </span>
+              {portDesc(port.name) && (
+                <div style={{ color: 'var(--rpt-text-secondary)', paddingLeft: 14 }}>
+                  {portDesc(port.name)}
+                </div>
+              )}
+            </div>
+          ))}
         </div>
       )}
 
+      {tab === 'settings' && (
+        <div>
       {/* Enabled toggle (WP6.4a): at the top of every node's panel. A disabled node never runs (the
           engine skips it + its exclusive downstream); a disabled trigger never fires. */}
       <label style={{ display: 'flex', alignItems: 'center', gap: 4, margin: '6px 0' }}>
@@ -815,6 +914,17 @@ export default function NodeConfigPanel({
 
       {node.type === 'prompt.assemble' && <AssemblePreview profileId={profileId} />}
 
+      {/* WP-H (spec §7): the Lorebook row — mode select + the per-world entry picker. */}
+      {hasLoreRow && (
+        <LorebookRow
+          profileId={profileId}
+          node={node}
+          config={config}
+          readOnly={readOnly}
+          onModeChange={(mode) => updateField('lorebook', mode)}
+        />
+      )}
+
       <div>
         <div style={{ fontSize: 10.5, color: 'var(--rpt-text-tertiary)' }}>
           {t('workflowEditor.config')}
@@ -858,36 +968,497 @@ export default function NodeConfigPanel({
           </div>
         ))}
       </div>
-
-      <div>
-        <div style={{ fontSize: 10.5, color: 'var(--rpt-text-tertiary)' }}>
-          {t('workflowEditor.ports')}
         </div>
-        {(typeInfo?.inputs ?? []).map((port) => (
-          <div key={`in-${port.name}`} style={{ fontSize: 10.5, marginBottom: 3 }}>
-            <span style={{ color: 'var(--rpt-text-primary)' }}>
-              → {port.name} <span style={{ color: 'var(--rpt-text-tertiary)' }}>({port.type})</span>
-            </span>
-            {portDesc(port.name) && (
-              <div style={{ color: 'var(--rpt-text-secondary)', paddingLeft: 14 }}>
-                {portDesc(port.name)}
-              </div>
-            )}
-          </div>
-        ))}
-        {(typeInfo?.outputs ?? []).map((port) => (
-          <div key={`out-${port.name}`} style={{ fontSize: 10.5, marginBottom: 3 }}>
-            <span style={{ color: 'var(--rpt-text-primary)' }}>
-              {port.name} → <span style={{ color: 'var(--rpt-text-tertiary)' }}>({port.type})</span>
-            </span>
-            {portDesc(port.name) && (
-              <div style={{ color: 'var(--rpt-text-secondary)', paddingLeft: 14 }}>
-                {portDesc(port.name)}
-              </div>
-            )}
-          </div>
-        ))}
-      </div>
+      )}
     </div>
   )
+}
+
+/** WP-E: the panel's vertical icon tab rail (spec §6). Renders nothing when there are no tabs (the
+ *  nothing / plain-group contexts). Labels are localized; the short glyph is decorative. */
+const TAB_GLYPH: Record<DetailsTab, string> = {
+  settings: '⚙',
+  prompt: '✎',
+  runs: '▷',
+  docs: 'ℹ'
+}
+function TabRail({
+  tabs,
+  active,
+  onSelect
+}: {
+  tabs: DetailsTab[]
+  active: DetailsTab
+  onSelect: (tab: DetailsTab) => void
+}): React.JSX.Element | null {
+  const t = useT()
+  if (tabs.length === 0) return null
+  return (
+    <div className="rpt-details-tabs" role="tablist">
+      {tabs.map((tab) => (
+        <button
+          key={tab}
+          type="button"
+          role="tab"
+          aria-selected={tab === active}
+          className={`rpt-details-tab${tab === active ? ' active' : ''}`}
+          onClick={() => onSelect(tab)}
+          title={t(`workflowEditor.details.tab.${tab}`)}
+        >
+          <span aria-hidden>{TAB_GLYPH[tab]}</span>
+          <span className="rpt-details-tab-label">{t(`workflowEditor.details.tab.${tab}`)}</span>
+        </button>
+      ))}
+    </div>
+  )
+}
+
+/** WP-E Runs tab: this node's slice of the active chat's last run of THE OPEN doc (status, ms, output
+ *  preview). Reuses the same trace-store + workflowId gate FlowCanvas uses — a trace from another doc
+ *  would mislead. Empty when there's no matching trace. */
+function NodeRunsTab({ nodeId }: { nodeId: string }): React.JSX.Element {
+  const t = useT()
+  const currentId = useWorkflowEditorStore((s) => s.currentId)
+  const activeChatId = useChatStore((s) => s.activeChatId)
+  const trace = useWorkflowTraceStore((s) => (activeChatId ? s.traces[activeChatId] : undefined))
+  const slice =
+    trace && trace.workflowId === currentId ? trace.nodes.find((n) => n.nodeId === nodeId) : undefined
+  if (!slice) {
+    return (
+      <div style={{ fontSize: 11, color: 'var(--rpt-text-secondary)' }}>
+        {t('workflowEditor.details.noRuns')}
+      </div>
+    )
+  }
+  return (
+    <div style={{ fontSize: 11 }}>
+      <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 6 }}>
+        <span className={`rpt-node-trace-chip is-${slice.status}`}>
+          {slice.status === 'failed'
+            ? t('workflow.trace.status.failed')
+            : slice.ms !== undefined
+              ? formatTraceSeconds(slice.ms)
+              : t(`workflow.trace.status.${slice.status}`)}
+        </span>
+      </div>
+      {slice.error && (
+        <div style={{ color: 'var(--rpt-danger)', marginBottom: 6 }}>{slice.error.message}</div>
+      )}
+      {slice.outputs &&
+        Object.entries(slice.outputs).map(([port, preview]) => (
+          <div key={port} style={{ marginBottom: 6 }}>
+            <div style={{ fontSize: 10, color: 'var(--rpt-text-tertiary)' }}>{port}</div>
+            <pre className="rpt-assemble-preview-text">{preview}</pre>
+          </div>
+        ))}
+    </div>
+  )
+}
+
+/** WP-E Runs tab for an AGENT (spec §6): the agent's own runs — the active chat's run history filtered
+ *  to records whose trigger-node ids intersect the group's membership (WP-D attribution). */
+function AgentRunsTab({ profileId, memberIds }: { profileId: string; memberIds: Set<string> }): React.JSX.Element {
+  const t = useT()
+  const activeChatId = useChatStore((s) => s.activeChatId)
+  const [records, setRecords] = useState<StoredRunRecord[]>([])
+  useEffect(() => {
+    let cancelled = false
+    if (!activeChatId) {
+      setRecords([])
+      return
+    }
+    void (async () => {
+      const page = (await window.api.listAgentPackRuns(profileId, activeChatId)) as StoredRunRecord[]
+      if (!cancelled) setRecords(page ?? [])
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [profileId, activeChatId])
+  const mine = records.filter((r) => r.triggerNodeIds?.some((id) => memberIds.has(id)))
+  if (mine.length === 0) {
+    return (
+      <div style={{ fontSize: 11, color: 'var(--rpt-text-secondary)' }}>
+        {t('workflowEditor.details.noRuns')}
+      </div>
+    )
+  }
+  return (
+    <div style={{ fontSize: 11 }}>
+      {mine.slice(0, 10).map((r) => (
+        <div
+          key={r.runId}
+          style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 4 }}
+        >
+          <span className={`rpt-node-trace-chip is-${r.trace.ok ? 'ran' : 'failed'}`}>
+            {r.trace.ok ? formatTraceSeconds(r.trace.durationMs) : t('workflow.trace.status.failed')}
+          </span>
+          {r.trigger && (
+            <span style={{ color: 'var(--rpt-text-secondary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              {r.trigger}
+            </span>
+          )}
+        </div>
+      ))}
+    </div>
+  )
+}
+
+/** WP-E: the AGENT details context (spec §6) — the four-tab shell over a trigger-rooted group. Settings
+ *  = the on/off proxy switch, trigger timing, the author `note`, exposed settings (generic; dynamicEnum
+ *  aware), Show-on-canvas + Export module. Prompt = the first prompt-bearing member's editor. Runs =
+ *  membership-attributed runs. Docs = the member overview. Keyed by group id at the call site. */
+function AgentDetails({ group, profileId }: { group: GroupDecl; profileId: string }): React.JSX.Element {
+  const t = useT()
+  const tOpt = useOptionalT()
+  const nodes = useWorkflowEditorStore((s) => s.nodes)
+  const nodeTypes = useWorkflowEditorStore((s) => s.nodeTypes)
+  const readOnly = useWorkflowEditorStore((s) => s.readOnly)
+  const renameGroup = useWorkflowEditorStore((s) => s.renameGroup)
+  const setGroupTriggersDisabled = useWorkflowEditorStore((s) => s.setGroupTriggersDisabled)
+  const toggleGroupCollapsed = useWorkflowEditorStore((s) => s.toggleGroupCollapsed)
+  const setNodeConfig = useWorkflowEditorStore((s) => s.setNodeConfig)
+  const exposeSetting = useWorkflowEditorStore((s) => s.exposeSetting)
+  const unexposeSetting = useWorkflowEditorStore((s) => s.unexposeSetting)
+  const [tab, setTab] = useState<DetailsTab>('settings')
+
+  const types = new Map<string, NodeTypeInfo>(nodeTypes.map((nt) => [nt.type, nt]))
+  const state = agentEnabledState(nodes, group, types)
+  const triggers = agentTriggers(nodes, group, types)
+  const memberIds = new Set(group.nodeIds)
+  // The first prompt-bearing member routes the Prompt tab (spec §1 card excerpt uses the same member).
+  const promptMember = group.nodeIds
+    .map((id) => nodes.find((n) => n.id === id))
+    .find((n): n is EditorNode => !!n && promptTextOfNodeHasPrompt(n, types))
+  const promptFieldSpecs: PromptFieldSpec[] = promptMember
+    ? (types.get(promptMember.type)?.promptFields ?? []).map((key) => ({
+        key,
+        isArray:
+          fieldsFromSchema(types.get(promptMember.type)?.configSchema).find((f) => f.key === key)
+            ?.kind === 'objectArray'
+      }))
+    : []
+  const tabs = visibleTabs({ kind: 'agent', groupId: group.id }, promptFieldSpecs.length > 0)
+  const exposed = group.exposed ?? []
+
+  return (
+    <div className="rpt-details-panel">
+      <div className="rpt-details-head" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+        <button
+          type="button"
+          className={`rpt-node-trigger-switch${state === 'on' ? ' on' : ''}${state === 'mixed' ? ' rpt-agent-switch-mixed' : ''}`}
+          role="switch"
+          aria-checked={state === 'on'}
+          aria-label={t('workflowEditor.enabled')}
+          disabled={readOnly}
+          onClick={() => setGroupTriggersDisabled(group.id, state === 'on')}
+        >
+          <span className="rpt-node-trigger-switch-knob" aria-hidden />
+        </button>
+        <input
+          type="text"
+          value={group.name}
+          disabled={readOnly}
+          onChange={(e) => renameGroup(group.id, e.target.value)}
+          style={{ flex: 1, fontSize: 12.5, fontWeight: 600 }}
+        />
+      </div>
+      <TabRail tabs={tabs} active={tab} onSelect={setTab} />
+
+      {tab === 'prompt' &&
+        (promptMember ? (
+          <PromptEditor
+            fields={promptFieldSpecs}
+            config={promptMember.config ?? {}}
+            readOnly={readOnly}
+            onChange={(field, value) => {
+              const next = { ...(promptMember.config ?? {}) }
+              if (value === undefined) delete next[field]
+              else next[field] = value
+              setNodeConfig(promptMember.id, next)
+            }}
+          />
+        ) : (
+          <div style={{ fontSize: 11, color: 'var(--rpt-text-secondary)' }}>
+            {t('workflowEditor.details.noPrompt')}
+          </div>
+        ))}
+
+      {tab === 'runs' && <AgentRunsTab profileId={profileId} memberIds={memberIds} />}
+
+      {tab === 'docs' && (
+        <div style={{ fontSize: 11 }}>
+          <div style={{ fontSize: 10.5, color: 'var(--rpt-text-tertiary)', marginBottom: 4 }}>
+            {t('workflowEditor.module.members', { n: group.nodeIds.length })}
+          </div>
+          {group.nodeIds.map((id) => {
+            const member = nodes.find((n) => n.id === id)
+            if (!member) return null
+            const title =
+              tOpt(`workflowEditor.nodeTitle.${member.type}`) ||
+              types.get(member.type)?.title ||
+              member.type
+            return (
+              <div key={id} style={{ marginBottom: 3 }}>
+                <span style={{ color: 'var(--rpt-text-primary)' }}>{title}</span>{' '}
+                <span style={{ color: 'var(--rpt-text-tertiary)' }}>{member.type}</span>
+              </div>
+            )
+          })}
+        </div>
+      )}
+
+      {tab === 'settings' && (
+        <div>
+          {/* Trigger timing (spec §6): the localized/stable per-trigger caption. */}
+          <div style={{ fontSize: 11, color: 'var(--rpt-agent)', margin: '8px 0' }}>
+            {triggers.map((tn) => describeTriggerNode(tn)).join(' | ') || t('workflowEditor.details.noTrigger')}
+          </div>
+
+          {group.note && (
+            <div
+              style={{
+                fontSize: 11,
+                lineHeight: 1.5,
+                color: 'var(--rpt-warning)',
+                border: '1px solid var(--rpt-warning)',
+                borderRadius: 6,
+                padding: '6px 8px',
+                margin: '8px 0'
+              }}
+            >
+              {group.note}
+            </div>
+          )}
+
+          <div style={{ fontSize: 10.5, color: 'var(--rpt-text-tertiary)', marginBottom: 6 }}>
+            {t('workflowEditor.module.exposedTitle')}
+          </div>
+          {exposed.length === 0 ? (
+            <div style={{ fontSize: 11, color: 'var(--rpt-text-secondary)' }}>
+              {t('workflowEditor.module.exposedEmpty')}
+            </div>
+          ) : (
+            exposed.map((entry) => (
+              <ExposedSettingRow
+                key={`${entry.node}:${entry.path}`}
+                entry={entry}
+                nodes={nodes}
+                nodeTypes={nodeTypes}
+                readOnly={readOnly}
+                onRelabel={(label) => exposeSetting(group.id, { ...entry, label })}
+                onRemove={() => unexposeSetting(group.id, entry.node, entry.path)}
+                onWrite={(nodeId, config) => setNodeConfig(nodeId, config)}
+              />
+            ))
+          )}
+
+          <div style={{ display: 'flex', gap: 6, alignItems: 'center', margin: '10px 0' }}>
+            <span style={{ fontSize: 11, color: 'var(--rpt-text-secondary)' }}>
+              {t('workflowEditor.module.members', { n: group.nodeIds.length })}
+            </span>
+            {group.collapsed && !readOnly && (
+              <button
+                type="button"
+                onClick={() => toggleGroupCollapsed(group.id)}
+                style={{ fontSize: 11 }}
+              >
+                {t('workflowEditor.details.showOnCanvas')}
+              </button>
+            )}
+          </div>
+
+          {!readOnly && <ExportModuleButton profileId={profileId} groupId={group.id} />}
+        </div>
+      )}
+    </div>
+  )
+}
+
+/** Small helper: does this node carry any authored prompt text via its type's promptFields? */
+function promptTextOfNodeHasPrompt(node: EditorNode, types: Map<string, NodeTypeInfo>): boolean {
+  const fields = types.get(node.type)?.promptFields
+  return !!fields && fields.length > 0
+}
+
+/** WP-E: the NOTHING-selected context (spec §6): the workflow name/description + the validation error
+ *  list (moved here from the toolbar toggle's popover). */
+function NothingPanel(): React.JSX.Element {
+  const t = useT()
+  const tOpt = useOptionalT()
+  const doc = useWorkflowEditorStore((s) => s.doc)
+  const errors = useWorkflowEditorStore((s) => s.errors)
+  const select = useWorkflowEditorStore((s) => s.select)
+  return (
+    <div className="rpt-details-panel">
+      <div className="rpt-details-head">
+        <strong>{doc?.name ?? t('workflowEditor.noSelection')}</strong>
+      </div>
+      {doc?.description && (
+        <div style={{ fontSize: 11, color: 'var(--rpt-text-secondary)', lineHeight: 1.55, margin: '6px 0' }}>
+          {doc.description}
+        </div>
+      )}
+      <div style={{ fontSize: 10.5, color: 'var(--rpt-text-tertiary)', margin: '8px 0 4px' }}>
+        {errors.length === 0 ? t('workflowEditor.valid') : `${t('workflowEditor.invalid')} (${errors.length})`}
+      </div>
+      {errors.map((err, i) => {
+        // Localized label for the error CODE (tOpt → '' on miss); the raw message keeps the specifics.
+        const label = tOpt(`workflowEditor.err.${err.code}`)
+        return (
+          <div
+            key={i}
+            onClick={() => err.nodeId && select(err.nodeId)}
+            style={{
+              cursor: err.nodeId ? 'pointer' : 'default',
+              fontSize: 11,
+              color: 'var(--rpt-danger)',
+              marginBottom: 3
+            }}
+          >
+            {label ? `${label} — ` : ''}
+            {err.message}
+            {err.nodeId ? ` (${err.nodeId})` : ''}
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
+/** WP-H (spec §7): the Lorebook row on a lore-capable node's Settings tab. Shows the mode select
+ *  ('main' = standard matching over the agent's history; 'custom' = exactly the per-world picks), or
+ *  "wired on canvas" (disabled) when a `lore` edge exists in the doc — the wire beats config. Custom
+ *  mode gets the "Choose entries…" picker (needs an active chat: picks are per-WORLD, and the world
+ *  comes from the active chat's character) plus a no-picks-yet fallback hint. */
+function LorebookRow({
+  profileId,
+  node,
+  config,
+  readOnly,
+  onModeChange
+}: {
+  profileId: string
+  node: EditorNode
+  config: Record<string, unknown>
+  readOnly: boolean
+  onModeChange: (mode: string | undefined) => void
+}): React.JSX.Element {
+  const t = useT()
+  const edges = useWorkflowEditorStore((s) => s.edges)
+  const currentId = useWorkflowEditorStore((s) => s.currentId)
+  const activeChatId = useChatStore((s) => s.activeChatId)
+  const chats = useChatStore((s) => s.chats)
+  const [pickerOpen, setPickerOpen] = useState(false)
+  const [pickCount, setPickCount] = useState<number | null>(null)
+
+  const wired = edges.some((e) => e.target === node.id && e.targetPort === 'lore')
+  const mode = config.lorebook === 'custom' ? 'custom' : 'main'
+  const worldId = activeChatId
+    ? (chats.find((c) => c.id === activeChatId)?.character_id ?? null)
+    : null
+
+  // The stored pick count for the current world (drives the no-picks hint). Refetched when the
+  // picker closes (it may have just saved).
+  useEffect(() => {
+    let cancelled = false
+    setPickCount(null)
+    if (mode !== 'custom' || !worldId || !currentId || pickerOpen) return
+    void (async () => {
+      const picks = await window.api.getLorePicks(profileId, worldId, currentId, node.id)
+      if (!cancelled) setPickCount((picks ?? []).length)
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [profileId, worldId, currentId, node.id, mode, pickerOpen])
+
+  return (
+    <div style={{ margin: '8px 0' }}>
+      <div style={{ fontSize: 10.5, color: 'var(--rpt-text-tertiary)', marginBottom: 3 }}>
+        {t('workflowEditor.lore.rowLabel')}
+      </div>
+      {wired ? (
+        <div style={{ fontSize: 11, color: 'var(--rpt-text-secondary)' }}>
+          {t('workflowEditor.lore.wiredOnCanvas')}
+        </div>
+      ) : (
+        <>
+          <select
+            value={mode}
+            disabled={readOnly}
+            onChange={(e) => onModeChange(e.target.value === 'custom' ? 'custom' : undefined)}
+            style={{ width: '100%', fontSize: 11.5 }}
+          >
+            <option value="main">{t('workflowEditor.lore.mode.main')}</option>
+            <option value="custom">{t('workflowEditor.lore.mode.custom')}</option>
+          </select>
+          {mode === 'custom' && (
+            <div style={{ marginTop: 5 }}>
+              {worldId && currentId ? (
+                <>
+                  <button
+                    type="button"
+                    disabled={readOnly}
+                    onClick={() => setPickerOpen(true)}
+                    style={{ fontSize: 11.5 }}
+                  >
+                    {t('workflowEditor.lore.choose')}
+                    {pickCount != null && pickCount > 0 ? ` (${pickCount})` : ''}
+                  </button>
+                  {pickCount === 0 && (
+                    <div style={{ fontSize: 10.5, color: 'var(--rpt-warning)', marginTop: 3 }}>
+                      {t('workflowEditor.lore.noPicksHint')}
+                    </div>
+                  )}
+                </>
+              ) : (
+                <div style={{ fontSize: 10.5, color: 'var(--rpt-text-secondary)' }}>
+                  {t('workflowEditor.lore.needsChat')}
+                </div>
+              )}
+            </div>
+          )}
+        </>
+      )}
+      {pickerOpen && worldId && currentId && (
+        <LorebookPickerSheet
+          profileId={profileId}
+          worldId={worldId}
+          docId={currentId}
+          nodeId={node.id}
+          onClose={() => setPickerOpen(false)}
+        />
+      )}
+    </div>
+  )
+}
+
+/** WP-E: the universal details panel dispatcher (spec §6). Routes the current selection to the agent /
+ *  node / nothing context; a plain (non-agent) group keeps the legacy ModulePanel. */
+export default function NodeConfigPanel({ profileId }: NodeConfigPanelProps): React.JSX.Element {
+  const selectedNodeId = useWorkflowEditorStore((s) => s.selectedNodeId)
+  const selectedGroupId = useWorkflowEditorStore((s) => s.selectedGroupId)
+  const doc = useWorkflowEditorStore((s) => s.doc)
+  const nodes = useWorkflowEditorStore((s) => s.nodes)
+  const nodeTypes = useWorkflowEditorStore((s) => s.nodeTypes)
+
+  const groups = doc?.groups ?? []
+  const selectedGroup = selectedGroupId ? groups.find((g) => g.id === selectedGroupId) : undefined
+  const types = new Map<string, NodeTypeInfo>(nodeTypes.map((nt) => [nt.type, nt]))
+  const sel: PanelSelection = resolveSelection(
+    selectedGroupId,
+    selectedNodeId,
+    !!selectedGroup && isAgentGroup(nodes, selectedGroup, types)
+  )
+
+  if (sel.kind === 'agent' && selectedGroup)
+    return <AgentDetails key={selectedGroup.id} group={selectedGroup} profileId={profileId} />
+  if (sel.kind === 'group' && selectedGroup)
+    return <ModulePanel group={selectedGroup} profileId={profileId} />
+  if (sel.kind === 'node') {
+    const node = nodes.find((n) => n.id === selectedNodeId)
+    if (node) return <NodeDetailsInner key={node.id} node={node} profileId={profileId} />
+  }
+  return <NothingPanel />
 }

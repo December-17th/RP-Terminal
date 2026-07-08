@@ -56,7 +56,7 @@ export function isWriteCapability(id: CapabilityId): boolean {
  *
  *  Mapping (from the WP3.1 brief + ADR 0007):
  *    table.read / table.query / table.export  → reads-tables
- *    table.apply                              → writes-tables
+ *    table.apply / memory.maintain            → writes-tables
  *    vars.get                                 → reads-vars
  *    vars.save / mvu.set / apply.state        → writes-vars
  *    lorebook.select / lorebook.entries / tool.lorebookSearch → reads-lorebooks
@@ -84,6 +84,10 @@ const NODE_TYPE_CAPABILITY: Readonly<Record<string, CapabilityId>> = {
   'history.recent': 'reads-history',
   'llm.sample': 'calls-llm',
   'agent.llm': 'calls-llm',
+  // memory.maintain folds read-history + read-tables + calls-llm + WRITE-tables into one node; it is
+  // classified by its most consequential (danger-tinted) capability — the table WRITE — matching the
+  // single-capability-per-type model (agent.llm is 'calls-llm' though it self-reads history too).
+  'memory.maintain': 'writes-tables',
   'output.writeFloor': 'writes-floors',
   'tool.startCombat': 'runs-game-tools',
   'tool.startDuel': 'runs-game-tools'
@@ -164,6 +168,8 @@ export function deriveCapabilities(doc: WorkflowDoc): CapabilityId[] {
  *   · parse.response       — splits an LLM reply into fields; operates on in-memory text.
  *   · parse.extract        — extracts a value from text via a rule; pure.
  *   · control.if / control.switch / control.when — flow control; route Signals, touch no state.
+ *   · control.mode         — mode selector (agent-memory-ux WP-B): routes the selected slot's Signal
+ *                            and emits the selected key as Text; pure flow control, touches no state.
  *   · util.log             — diagnostic logging; no state effect.
  *   · table.gate           — a pure predicate gate over a table read result (routes a Signal); it
  *                            does NOT itself read/write the table — the upstream table.read/query
@@ -204,6 +210,7 @@ export const INERT_NODE_TYPES: ReadonlySet<string> = new Set([
   'control.if',
   'control.switch',
   'control.when',
+  'control.mode',
   'util.log',
   'table.gate',
   'subgraph.input',

@@ -77,7 +77,9 @@ export const buildModuleEnvelope = (
     name: group.name,
     nodes,
     edges,
-    ...(group.exposed && group.exposed.length > 0 ? { exposed: group.exposed } : {})
+    ...(group.exposed && group.exposed.length > 0 ? { exposed: group.exposed } : {}),
+    // Agent & memory UX (WP-A): carry the group's author setup guidance so an imported agent keeps it.
+    ...(group.note ? { note: group.note } : {})
   }
   return {
     module,

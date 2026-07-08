@@ -112,6 +112,24 @@ describe('interpolate', () => {
     const out = interpolate('{{user}} <%= ejs %> {{in1}}', { in1: 'hi' })
     expect(out).toBe('{{user}} <%= ejs %> hi')
   })
+
+  it('substitutes {{input}} from the `input` slot (agent.llm payload port): string passes, object JSON-encodes', () => {
+    expect(interpolate('block=[{{input}}]', { input: 'TABLE BLOCK' })).toBe('block=[TABLE BLOCK]')
+    expect(interpolate('block=[{{input}}]', { input: { a: 1 } })).toBe('block=[{"a":1}]')
+  })
+
+  it('leaves {{input}} literal when no `input` slot is wired (text.template / prompt.messages case)', () => {
+    // Only agent.llm supplies an `input` slot; the generic authoring nodes must not eat {{input}}.
+    expect(interpolate('a={{in1}} b={{input}}', { in1: 'x' })).toBe('a=x b={{input}}')
+  })
+
+  it('substitutes {{input}} AFTER macros+EJS, so a table block carrying {{…}}/<%…%> stays literal', () => {
+    const gen = makeGen()
+    const out = interpolate('block=[{{input}}] direct={{user}}', { input: '{{user}} <%= ejs %>' }, gen)
+    // The template's own {{user}} expands, but the input payload's macro/EJS text must NOT run —
+    // {{input}} is data, substituted last (the {{inN}} invariant).
+    expect(out).toBe('block=[{{user}} <%= ejs %>] direct=Alice')
+  })
 })
 
 describe('text.template', () => {

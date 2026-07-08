@@ -9,6 +9,7 @@ import {
   editorToDoc
 } from '../components/workflow/editorModel'
 import {
+  DynamicEnumHint,
   Edge,
   ExposedGroupSetting,
   GroupDecl,
@@ -18,6 +19,12 @@ import {
   WorkflowDoc
 } from '../../../shared/workflow/types'
 import { nextGroupId } from '../components/workflow/groupModel'
+import {
+  agentTriggers,
+  downstreamClosure,
+  isAgentGroup,
+  ungroupedTriggerChains
+} from '../components/workflow/agentModel'
 import { ValidationError, validateWorkflow } from '../../../shared/workflow/validate'
 
 /** Structurally identical to main's `NodeTypeInfo` (src/main/services/nodes/catalog.ts) —
@@ -29,6 +36,12 @@ export interface NodeTypeInfo {
   outputs: { name: string; type: string }[]
   isMainOutputCapable?: boolean
   configSchema?: Record<string, unknown>
+  /** Agent & memory UX (WP-A): catalog hints surfaced through `list-node-types`. `isTrigger` drives the
+   *  canvas's agent detection + on/off switch; `promptFields` routes prompt config to the Prompt editor;
+   *  `dynamicEnum` describes an enum field whose options live in a sibling config array. */
+  isTrigger?: boolean
+  promptFields?: string[]
+  dynamicEnum?: DynamicEnumHint
 }
 
 export interface WorkflowSummary {
@@ -61,6 +74,9 @@ export interface ImportedModule {
   nodes: NodeInstance[]
   edges: Edge[]
   exposed?: ExposedGroupSetting[]
+  /** Agent & memory UX (WP-A/WP-G): the group's author setup guidance — carried into GroupDecl.note
+   *  at insert so an imported/palette agent keeps its note (previously silently dropped here). */
+  note?: string
 }
 
 interface WorkflowEditorState {
@@ -89,6 +105,10 @@ interface WorkflowEditorState {
   /** One-canvas rebuild (WP6.3): the selected group (module), mutually exclusive with node
    *  selection — selecting a group clears node selection and vice versa. */
   selectedGroupId: string | null
+  /** Agent & memory UX (WP-F; spec §5): the Agents ▾ "locate" request — the FlowCanvas watches the
+   *  token and pans/zooms to `groupId`. Null until the first locate. Bumping the token re-triggers
+   *  even for the same group. */
+  panRequest: { groupId: string; token: number } | null
   status: string | null
   init(profileId: string): Promise<void>
   open(profileId: string, id: string): Promise<void>
@@ -124,6 +144,24 @@ interface WorkflowEditorState {
   ungroup(groupId: string): void
   renameGroup(groupId: string, name: string): void
   toggleGroupCollapsed(groupId: string): void
+  /** WP-F: request the canvas pan/zoom to a group + select it (the Agents ▾ locate button). */
+  requestPanToGroup(groupId: string): void
+  /** Agent & memory UX (WP-D; spec §4): one-click grouping — mint a collapsed GroupDecl over the
+   *  trigger's downstream closure (agentModel.downstreamClosure: narrator-shared nodes excluded,
+   *  sibling triggers absorbed). No-op unless the closure has ≥2 ungrouped members. Returns the new
+   *  group id (null when refused). */
+  collapseChainIntoModule(triggerId: string): string | null
+  /** WP-D: collapse every AGENT group (trigger-rooted); non-agent groups are left alone. */
+  collapseAllAgents(): void
+  /** WP-D: expand every group. */
+  expandAllGroups(): void
+  /** WP-D: the agent card's on/off proxy — write `disabled` on ALL of the group's member triggers
+   *  (mixed state always resolves by writing every member). */
+  setGroupTriggersDisabled(groupId: string, disabled: boolean): void
+  /** WP-D: group every UNGROUPED trigger chain (the .rptflow import auto-group pass — no review
+   *  sheet exists for .rptflow, so this runs right after import-open, leaving the doc dirty for the
+   *  user to save). Returns how many groups were created. */
+  autoGroupTriggerChains(): number
   /** WP6.3: shift every member's position by `delta` (the collapsed-module drag). */
   moveGroup(groupId: string, delta: { dx: number; dy: number }): void
   /** WP6.3: promote a member setting onto the module panel (replace-if-same node+path). */
@@ -133,10 +171,16 @@ interface WorkflowEditorState {
   selectGroup(id: string | null): void
   /** WP6.5: insert an imported module into the current doc. Remints EVERY node id (collision-safe,
    *  the addNode idiom), remaps internal edges + exposed refs to the new ids, lands the members around
-   *  `position`, creates a collapsed GroupDecl over them, selects the group, marks dirty. Returns the
-   *  new group id (or null when there is no doc / the module is empty). Insertion is an EDIT — the user
-   *  saves the doc themselves; this never writes. */
-  insertModule(module: ImportedModule, position: { x: number; y: number }): string | null
+   *  `position`, creates a collapsed GroupDecl over them (carrying the module's `note`), selects the
+   *  group, marks dirty. Returns the new group id (or null when there is no doc / the module is empty).
+   *  Insertion is an EDIT — the user saves the doc themselves; this never writes.
+   *  WP-G: `opts.origin: 'import'` stamps GroupDecl.origin (the Agents ▾ `imported` chip) — passed by
+   *  the `.rptmodule` file-import path, NOT by a palette template insert (a built-in isn't "imported"). */
+  insertModule(
+    module: ImportedModule,
+    position: { x: number; y: number },
+    opts?: { origin?: 'import' }
+  ): string | null
   save(profileId: string): Promise<void>
   cloneAndEdit(profileId: string): Promise<void>
 }
@@ -202,6 +246,7 @@ export const useWorkflowEditorStore = create<WorkflowEditorState>((set, get) => 
     selectedNodeId: null,
     selectedNodeIds: [],
     selectedGroupId: null,
+    panRequest: null,
     status: null,
 
     init: async (profileId) => {
@@ -418,7 +463,7 @@ export const useWorkflowEditorStore = create<WorkflowEditorState>((set, get) => 
     selectGroup: (id) =>
       set({ selectedGroupId: id, selectedNodeId: null, selectedNodeIds: [] }),
 
-    insertModule: (module, position) => {
+    insertModule: (module, position, opts) => {
       if (get().readOnly) return null
       const { doc, nodes, edges } = get()
       if (!doc || module.nodes.length === 0) return null
@@ -482,6 +527,11 @@ export const useWorkflowEditorStore = create<WorkflowEditorState>((set, get) => 
         name: module.name,
         nodeIds: newNodes.map((n) => n.id),
         collapsed: true,
+        // Agent & memory UX (WP-F/WP-G): provenance only for a FILE import (the Agents ▾ `imported`
+        // chip); a palette template insert is not "imported". The module's author note rides into the
+        // group so the agent panel shows its setup guidance.
+        ...(opts?.origin === 'import' ? { origin: 'import' as const } : {}),
+        ...(module.note ? { note: module.note } : {}),
         ...(newExposed.length > 0 ? { exposed: newExposed } : {})
       }
       const nextDoc = { ...doc, groups: [...groups, group] }
@@ -529,6 +579,93 @@ export const useWorkflowEditorStore = create<WorkflowEditorState>((set, get) => 
       setGroups(
         currentGroups().map((g) => (g.id === groupId ? { ...g, collapsed: !g.collapsed } : g))
       )
+    },
+
+    requestPanToGroup: (groupId) => {
+      // Select the group (highlights it + opens its panel) and bump the pan token the canvas watches.
+      set((s) => ({
+        selectedGroupId: groupId,
+        selectedNodeId: null,
+        selectedNodeIds: [],
+        panRequest: { groupId, token: (s.panRequest?.token ?? 0) + 1 }
+      }))
+    },
+
+    collapseChainIntoModule: (triggerId) => {
+      if (get().readOnly) return null
+      const { nodes, edges, nodeTypes } = get()
+      const groups = currentGroups()
+      const grouped = new Set(groups.flatMap((g) => g.nodeIds))
+      if (grouped.has(triggerId)) return null
+      const closure = downstreamClosure(nodes, edges, triggerId, editorNodeTypeMap(nodeTypes))
+      // Only ungrouped members join (a node belongs to at most ONE group); need ≥2 to form a group.
+      const memberIds = [...closure].filter((id) => !grouped.has(id))
+      if (memberIds.length < 2) return null
+      const id = nextGroupId(groups)
+      const group: GroupDecl = {
+        id,
+        name: `Agent ${groups.length + 1}`,
+        nodeIds: memberIds,
+        collapsed: true
+      }
+      setGroups([...groups, group])
+      set({ selectedGroupId: id, selectedNodeId: null, selectedNodeIds: [] })
+      return id
+    },
+
+    collapseAllAgents: () => {
+      if (get().readOnly) return
+      const { nodes, nodeTypes } = get()
+      const types = editorNodeTypeMap(nodeTypes)
+      setGroups(
+        currentGroups().map((g) =>
+          isAgentGroup(nodes, g, types) && !g.collapsed ? { ...g, collapsed: true } : g
+        )
+      )
+    },
+
+    expandAllGroups: () => {
+      if (get().readOnly) return
+      setGroups(currentGroups().map((g) => (g.collapsed ? { ...g, collapsed: false } : g)))
+    },
+
+    setGroupTriggersDisabled: (groupId, disabled) => {
+      if (get().readOnly) return
+      const { nodes, nodeTypes } = get()
+      const group = currentGroups().find((g) => g.id === groupId)
+      if (!group) return
+      const triggerIds = new Set(
+        agentTriggers(nodes, group, editorNodeTypeMap(nodeTypes)).map((n) => n.id)
+      )
+      if (triggerIds.size === 0) return
+      set({
+        nodes: nodes.map((n) => {
+          if (!triggerIds.has(n.id)) return n
+          if (disabled) return { ...n, disabled: true }
+          const { disabled: _drop, ...rest } = n
+          return rest
+        })
+      })
+      revalidate()
+    },
+
+    autoGroupTriggerChains: () => {
+      if (get().readOnly) return 0
+      const { nodes, edges, nodeTypes } = get()
+      const groups = currentGroups()
+      const chains = ungroupedTriggerChains(nodes, edges, groups, editorNodeTypeMap(nodeTypes))
+      if (chains.length === 0) return 0
+      const nextGroups = [...groups]
+      for (const chain of chains) {
+        nextGroups.push({
+          id: nextGroupId(nextGroups),
+          name: `Agent ${nextGroups.length + 1}`,
+          nodeIds: [...chain],
+          collapsed: true
+        })
+      }
+      setGroups(nextGroups)
+      return chains.length
     },
 
     moveGroup: (groupId, delta) => {

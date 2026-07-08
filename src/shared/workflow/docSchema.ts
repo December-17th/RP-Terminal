@@ -87,7 +87,12 @@ const GroupDeclSchema = z.object({
   name: z.string().min(1),
   nodeIds: z.array(z.string().min(1)).min(2),
   collapsed: z.boolean().optional(),
-  exposed: z.array(ExposedGroupSettingSchema).optional()
+  exposed: z.array(ExposedGroupSettingSchema).optional(),
+  // Agent & memory UX (WP-A; spec §1). MUST be declared here — zod objects STRIP unknown keys on
+  // parse, so an undeclared `note`/`origin` would silently vanish from a group round-tripped through
+  // parseWorkflowDoc. `note` = author setup guidance (verbatim); `origin` = import provenance.
+  note: z.string().optional(),
+  origin: z.literal('import').optional()
 })
 
 export const WorkflowDocSchema = z.object({

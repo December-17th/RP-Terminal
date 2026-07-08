@@ -268,6 +268,9 @@ CREATE TABLE IF NOT EXISTS workflow_run_history (
   origin TEXT NOT NULL,
   pack_ids TEXT NOT NULL,
   trigger TEXT,
+  -- Agent & memory UX WP-D: JSON array of the DOC trigger-node ids that fired this run (headless/
+  -- manual doc-path only; NULL for turns + pre-WP-D rows) — the agent card's run attribution key.
+  trigger_node_ids TEXT,
   ok INTEGER NOT NULL,
   aborted INTEGER NOT NULL,
   duration_ms INTEGER NOT NULL,
@@ -406,6 +409,9 @@ export const getDb = (): Database.Database => {
   // agent_packs shape but predating this column gets it here (the migration's create-new path already
   // includes it; this covers the already-versioned-but-older case). Null for existing rows.
   addColumnIfMissing(db, 'agent_packs', 'upstream_version', 'upstream_version INTEGER')
+  // Agent & memory UX WP-D: run attribution for agent cards — the firing trigger node ids (JSON).
+  // Pre-WP-D rows keep NULL and simply don't attribute (fail-soft).
+  addColumnIfMissing(db, 'workflow_run_history', 'trigger_node_ids', 'trigger_node_ids TEXT')
   db.exec(`
     UPDATE agent_pack_activation
        SET pin_version = (SELECT version FROM agent_packs WHERE agent_packs.id = agent_pack_activation.pack_id)

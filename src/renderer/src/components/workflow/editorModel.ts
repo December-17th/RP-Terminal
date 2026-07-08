@@ -4,6 +4,7 @@
 // stays vitest-testable and immune to renderer/main boundary drift (CLAUDE.md module
 // boundaries; check:deps enforces `renderer` never importing `src/main`).
 import {
+  DynamicEnumHint,
   Edge,
   EdgeEnd,
   PortType,
@@ -13,7 +14,9 @@ import {
 
 /** Structurally identical to main's `NodeTypeInfo` (src/main/services/nodes/catalog.ts) —
  *  redeclared locally rather than imported, since the renderer only ever sees this data over
- *  IPC and must not import from src/main (renderer boundary; check:deps would flag it). */
+ *  IPC and must not import from src/main (renderer boundary; check:deps would flag it).
+ *  `DynamicEnumHint` IS imported (from shared/workflow, which the renderer may import) to keep the
+ *  hint shape in one place. */
 export interface EditorNodeType {
   type: string
   title: string
@@ -21,6 +24,14 @@ export interface EditorNodeType {
   outputs: { name: string; type: string }[]
   isMainOutputCapable?: boolean
   configSchema?: Record<string, unknown>
+  /** Agent & memory UX (WP-A): trigger flag surfaced by the catalog — the canvas keys its agent
+   *  detection + on/off switch off this instead of a `trigger.*` name prefix (prefix kept as fallback
+   *  for a stale catalog). */
+  isTrigger?: boolean
+  /** Agent & memory UX (WP-A; spec §1): config field(s) holding an authored prompt. */
+  promptFields?: string[]
+  /** Agent & memory UX (WP-A; plan §0.5): an enum field whose options live in a sibling config array. */
+  dynamicEnum?: DynamicEnumHint
 }
 
 export interface EditorNode {
