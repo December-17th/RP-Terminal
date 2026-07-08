@@ -5,6 +5,7 @@ import { log } from './logService'
 import { serveAssetRequest, ASSET_SCHEME } from './worldAssetProtocol'
 import { makePanelGeometry, PanelGeometry } from './wcvGeometry'
 import { createFreezeController, type FreezeTarget } from './wcvFreezeFrame'
+import { createOverlayController, type OverlayDecl } from './wcvOverlay'
 import type { VarsOrigin } from '../../shared/thRuntime/types'
 
 // Card UI panels run in their own session partition. jsDelivr serves `/gh/` HTML as text/plain (to
@@ -296,6 +297,36 @@ export const setAllVisible = (visible: boolean): void => {
   if (visible) freezeController.restore()
   else freezeController.suppress()
 }
+
+// --- Full-play-area overlay surfaces (PM-A7) ---
+// The overlay is a normal card WCV: the renderer mounts a WcvPanel (slot id `overlay:<id>`) over the
+// play-area container, so it lands in the `slots` map like any other view — freeze-frame and
+// setAllVisible suppression apply to it automatically. This controller only orchestrates the
+// one-at-a-time raise/dismiss + the undeclared-id reject; the caller (wcvIpc) resolves the id against
+// the active card's `panel_ui.overlays` and hands the resolved surface in.
+const overlayController = createOverlayController({
+  open: (overlayId, decl) =>
+    mainWindow?.webContents.send('wcv-open-overlay', {
+      overlayId,
+      entry: decl.entry,
+      title: decl.title
+    }),
+  close: (overlayId) => mainWindow?.webContents.send('wcv-close-overlay', { overlayId }),
+  warn: (overlayId) =>
+    log(
+      'error',
+      'wcv overlay',
+      `rejected overlay '${overlayId}' — not declared in the active card's panel_ui.overlays`
+    )
+})
+
+/** Raise a declared overlay surface (`decl` = the resolved `panel_ui.overlays` entry, null ⇒ undeclared).
+ *  Returns whether an overlay is open for that id afterward. Closes any currently-open overlay first. */
+export const requestOverlay = (overlayId: string, decl: OverlayDecl | null): boolean =>
+  overlayController.request(String(overlayId ?? ''), decl)
+
+/** Close whatever overlay is open (card ✕/Esc, app-side Esc, session/card switch). No-op when none. */
+export const closeOverlay = (): void => overlayController.dismiss()
 
 export const destroy = (id: string): void => {
   const slot = slots.get(id)

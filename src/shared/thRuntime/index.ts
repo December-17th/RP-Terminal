@@ -471,6 +471,11 @@ export function createThRuntime(host: Host): ThGlobals {
     triggerSlash: (c: any) => runTriggerSlash(String(c ?? '')),
     assetUrl: (name: string, type: string, mood?: string) => host.assetUrl(name, type, mood),
     getDuelPreview: () => host.getDuelPreview(),
+    // Full-play-area overlay surfaces (PM-A7): raise / dismiss a surface the active card declares in
+    // panel_ui.overlays. Behavior lives here so both transports inherit it; the transport Host just
+    // forwards to the app's overlay mechanism (WCV over the grid region). See docs/rpt-api.md.
+    requestOverlay: (id: string) => host.requestOverlay(String(id ?? '')),
+    closeOverlay: () => host.closeOverlay(),
     replaceTavernRegexes: async (regexes: any, option?: any) =>
       host.replaceRegexes(Array.isArray(regexes) ? regexes : [], option),
     updateTavernRegexesWith: async (updater: any, option?: any) => {

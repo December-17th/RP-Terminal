@@ -173,7 +173,22 @@ export const RPTerminalExtSchema = z
               chrome: z.boolean().optional()
             })
           )
-          .default([])
+          .default([]),
+        // Full-play-area overlay surfaces a card can raise at runtime (partner sheet, 地图) — a card
+        // surface can't escape its slot rectangle (WCVs composite above the DOM in their slot), so an
+        // overlay opens as a temporary WCV covering the whole panel_ui grid region above the slots. The
+        // card declares them here (same `entry` URL semantics as slots) and drives them via the runtime
+        // `requestOverlay(id)` / `closeOverlay()` API. One overlay is shown at a time. See PM-A7 +
+        // docs/design/poem-status-parity-design-2026-07-07.md §5.
+        overlays: z
+          .array(
+            z.object({
+              id: z.string(),
+              entry: z.string(),
+              title: z.string().optional()
+            })
+          )
+          .optional()
       })
       .optional(),
 

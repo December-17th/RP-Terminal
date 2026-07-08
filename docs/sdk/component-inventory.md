@@ -78,6 +78,24 @@ to RPT, so this stays card-agnostic. The poem play-area surfaces use it for `sel
 `stage:cast-changed` (redesign §5.3). Verify: [`wcvIpc.ts`](../../src/main/ipc/wcvIpc.ts)
 (`wcv-host-broadcast-event`) → [`wcvManager.notifyEvent`](../../src/main/services/wcvManager.ts).
 
+**Full-play-area overlay surfaces** (PM-A7): `requestOverlay(id)` / `closeOverlay()` raise / dismiss a
+surface the active card declares in `panel_ui.overlays` (§4). Because a WCV composites above the DOM only
+*inside* its slot rectangle, a card surface can't escape its slot — so the app mounts the named overlay as
+a temporary WCV covering the whole `panel_ui` grid region (a reserved `overlay:<id>` slot, above the
+others, **not** the titlebar / TopStrip) and tears it down on close. One overlay at a time (a new id swaps;
+the same id is a no-op); an undeclared id is rejected + `console.warn`-ed main-side. The overlay WCV is
+transparent (the surface paints its own scrim/sheet) and freeze-frames under TopStrip dropdowns like any
+WCV (PM-A4). No params — context travels via chat KV + `broadcastEvent` (the poem partner sheet reads
+`poem.sheet` KV). Card-agnostic: any card can declare overlays; poem's partner sheet + 地图 are the first
+consumers ([poem-status-parity-design-2026-07-07.md](../design/poem-status-parity-design-2026-07-07.md)
+§3–§5). Behavior lives once in [`shared/thRuntime`](../../src/shared/thRuntime/index.ts) →
+[`Host.requestOverlay`](../../src/shared/thRuntime/types.ts); both transports inherit. On WCV panel
+surfaces it is also `window.rptHost.requestOverlay` / `.closeOverlay` (alongside `broadcastEvent`). Verify:
+[`wcvIpc.ts`](../../src/main/ipc/wcvIpc.ts) (`wcv-host-request-overlay` / `overlay-request`, id validated
+against `panel_ui.overlays`) → [`wcvManager`](../../src/main/services/wcvManager.ts) +
+[`wcvOverlay.ts`](../../src/main/services/wcvOverlay.ts) → renderer
+[`OverlayHost.tsx`](../../src/renderer/src/components/workspace/OverlayHost.tsx).
+
 ### Globals exposed to a card
 
 | Global                          | Contents                                                                                                                                         | Status          |
@@ -108,6 +126,7 @@ to RPT, so this stays card-agnostic. The poem play-area surfaces use it for `sel
 | **Audio**              | `audioPlay/Pause/Import/Mode/Enable`                                                                                                                   | 🔁      | Cards play audio natively (`<audio>`/WebAudio) under the card CSP — the real path.                                                                                                                                                                                                         |
 | **World Assets**       | `assetUrl(name, type, mood?)` → `Promise<rptasset://… \| null>`                                                                                       | ✅      | Resolve an asset (mood-aware) from the active world's asset layer. **The category is inferred from `type`** (via [`categoryForType`](../../src/shared/worldAssets/types.ts): `头像`/`立绘` → `character`, `背景`/`全景` → `location`; any other value → `character`), so a card can reach location art (`背景`/`全景`), not just character portraits — the seam carries no category argument. Returns an `rptasset://` URL loadable in card pages. Prerequisite: the World Assets layer ([world-assets-plan.md](../world-assets-plan.md)). Both transports backed by [`Host.assetUrl`](../../src/shared/thRuntime/types.ts); each fills the category in via `categoryForType` (WCV: `worldAssetService.assetUrlForWorld`; inline: `cardBridge/host.ts`), so they stay at parity. |
 | **Duel / deckbuilder**  | `getDuelPreview()` → `Promise<DuelPreview \| null>`                                                                                                    | ✅      | **Read-only host method** (RPT-only). Returns the engine-computed duel build (deck + combatants + resources/relics) for the active chat, produced by the card's combat ruleset. Generic contract: `DuelPreview` = `{ config, lead, party[] }`, each combatant with resources/modifiers/conditions + deck. See [`preview.ts`](../../src/shared/combat/deckbuilder/preview.ts). See design [2026-06-30-duel-build-preview-tab-design.md](../superpowers/specs/2026-06-30-duel-build-preview-tab-design.md) §2 and [duel-card-authoring.md](duel-card-authoring.md). **Consumer (live):** the fork 战斗 tab (`FrontEnd-for-destined-journey-TPR-STS`); `DuelPreview` is mirrored there in `src/status/core/types/duel-preview.d.ts` — two copies, one contract, keep in sync. |
+| **Overlay surfaces**   | `requestOverlay(id)` → `Promise<boolean>`; `closeOverlay()` → `Promise<void>`                                                                          | ✅      | **RPT-only** (PM-A7). Raise / dismiss a full-play-area overlay the active card declares in `panel_ui.overlays` — the app mounts it as a WCV over the whole grid region (a card surface can't escape its slot). One at a time; a new id swaps, the same id no-ops; an undeclared id is rejected + `console.warn`-ed. Transparent WCV (surface paints its own scrim), freeze-frames under menus (PM-A4). Both transports via [`Host.requestOverlay`/`closeOverlay`](../../src/shared/thRuntime/types.ts); WCV also exposes `rptHost.requestOverlay`/`.closeOverlay`. See §2 above + [wcvOverlay.ts](../../src/main/services/wcvOverlay.ts) / [OverlayHost.tsx](../../src/renderer/src/components/workspace/OverlayHost.tsx). |
 
 #### Variable scopes
 
@@ -215,7 +234,7 @@ character_version, character_book` (embedded lorebook). Unknown ST `extensions.*
 | `scripts` (`[{name,code,enabled?}]`) | card scripts                                                                                                                         | ✅                             |
 | `game_rules`                         | freeform rules bag                                                                                                                   | ✅                             |
 | `left_panel`                         | `{ name: string }` — a card UI (matched by script `name`) auto-docked left in the workspace when active. Requires `renderMode:'panel'`. | ✅                             |
-| `panel_ui`                           | static card-determined grid (slots → native view or `wcv` entry). `seamless:true` drops inter-slot gap/padding + per-slot chrome (border/radius/title) so adjacent WCV surfaces compose into one continuous stage; a slot's `chrome:bool` overrides the layout default. | ✅ schema                      |
+| `panel_ui`                           | static card-determined grid (slots → native view or `wcv` entry). `seamless:true` drops inter-slot gap/padding + per-slot chrome (border/radius/title) so adjacent WCV surfaces compose into one continuous stage; a slot's `chrome:bool` overrides the layout default. `overlays:[{id,entry,title?}]` (PM-A7) declares full-play-area overlay surfaces the card raises at runtime via `requestOverlay(id)`/`closeOverlay()` (§2, same `entry` URL semantics as slots). | ✅ schema                      |
 | **World Card bundle slots**          | `world_card` (version marker), `meta`, `regex[]`, `presets[]`, `lorebooks[]`, `plugins[]`, `agent`, `combat`, `recommended_settings` | ✅ schema; routing 🟡 (see §5) |
 
 `world_card` present ⇒ the card is a **World Card** (a complete, one-click-installable world). The schema

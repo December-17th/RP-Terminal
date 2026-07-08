@@ -16,6 +16,7 @@ import { ProfilePicker } from './components/ProfilePicker'
 import { TopStrip } from './components/TopStrip'
 import { Workspace } from './components/workspace/Workspace'
 import { StaticWorkspace } from './components/workspace/StaticWorkspace'
+import { OverlayHost } from './components/workspace/OverlayHost'
 import { CardScriptWcvHost } from './components/CardScriptWcvHost'
 import { PluginHost } from './components/PluginHost'
 import { useWorkflowTraceStore } from './stores/workflowTraceStore'
@@ -278,11 +279,19 @@ export default function App(): React.ReactElement {
         >
           <TopStrip profileId={activeProfile.id} profileName={activeProfile.name} />
 
-          {staticLayout ? (
-            <StaticWorkspace profileId={activeProfile.id} layout={staticLayout} />
-          ) : (
-            <Workspace profileId={activeProfile.id} />
-          )}
+          {/* Positioned wrapper so the full-play-area overlay host (PM-A7) can cover exactly the
+              workspace region (below the TopStrip) — its inset:0 rect drives the overlay WCV bounds. */}
+          <div
+            className="ws-overlay-root"
+            style={{ position: 'relative', flex: 1, minWidth: 0, minHeight: 0, display: 'flex' }}
+          >
+            {staticLayout ? (
+              <StaticWorkspace profileId={activeProfile.id} layout={staticLayout} />
+            ) : (
+              <Workspace profileId={activeProfile.id} />
+            )}
+            <OverlayHost />
+          </div>
 
           {/* The invisible card-script engine: runs the active card's scripts (the 创意工坊 workshop +
               background MVU/automation) in a hidden, off-screen WCV — app-wide and independent of the panel

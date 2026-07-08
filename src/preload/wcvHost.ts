@@ -138,6 +138,10 @@ export function createWcvHost(deps: Deps): Host {
     assetUrl: (name: string, type: string, mood?: string) =>
       ipcRenderer.invoke('wcv-host-asset-url', name, type, mood),
     getDuelPreview: () => ipcRenderer.invoke('wcv-host-duel-preview'),
+    // Overlay surfaces (PM-A7): main validates the id against the calling card's panel_ui.overlays
+    // (resolved from e.sender), mounts/closes the overlay WCV, and returns whether it opened.
+    requestOverlay: (id: string) => ipcRenderer.invoke('wcv-host-request-overlay', id),
+    closeOverlay: () => ipcRenderer.invoke('wcv-host-close-overlay'),
 
     onVarsChanged: (cb) => {
       // Forward the origin (2nd IPC arg) so the runtime fires MVU events only for non-card-write changes

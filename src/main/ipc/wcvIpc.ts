@@ -13,10 +13,26 @@ import * as pluginStorageService from '../services/pluginStorageService'
 import * as pluginService from '../services/pluginService'
 import * as settingsService from '../services/settingsService'
 import * as worldAssetService from '../services/worldAssetService'
+import * as characterService from '../services/characterService'
 import { getActivePresetId } from '../services/presetService'
 import { log } from '../services/logService'
 import { ArtifactScope } from '../../shared/artifactScope'
-import { LorebookEntry, LorebookEntrySchema } from '../types/character'
+import { LorebookEntry, LorebookEntrySchema, getRpExt } from '../types/character'
+import type { OverlayDecl } from '../services/wcvOverlay'
+
+// Resolve an overlay id against a card's declared `panel_ui.overlays` (PM-A7). Returns the surface to
+// mount, or null when the id isn't declared by that card (⇒ the request is rejected + warned, main-side).
+const resolveOverlayDecl = (
+  profileId: string,
+  characterId: string,
+  overlayId: string
+): OverlayDecl | null => {
+  if (!characterId) return null
+  const card = characterService.getCharacter(profileId, characterId)
+  if (!card) return null
+  const ov = getRpExt(card)?.panel_ui?.overlays?.find((o) => o?.id === overlayId)
+  return ov?.entry ? { entry: ov.entry, title: ov.title } : null
+}
 
 // Coerce a TavernHelper-shaped worldbook entry (from getWorldbook, possibly edited or freshly built by a
 // card) back into a valid LorebookEntry. `name` → comment; unknown fields (uid) are dropped by the schema;
@@ -191,6 +207,37 @@ export const registerWcvIpc = (ipcMain: IpcMain): void => {
   ipcMain.on('wcv-host-submit-input', (e) => {
     const ctx = wcvManager.contextFor(e.sender.id)
     if (ctx) wcvManager.pushHostSubmit(ctx.chatId)
+  })
+
+  // --- Full-play-area overlay surfaces (PM-A7) ---
+  // WCV transport: the calling card panel requests/closes an overlay; ctx resolves from e.sender. The id
+  // is validated against THAT card's panel_ui.overlays (undeclared ⇒ rejected + warned). Returns whether
+  // the overlay is open afterward.
+  ipcMain.handle('wcv-host-request-overlay', (e, overlayId) => {
+    const ctx = wcvManager.contextFor(e.sender.id)
+    if (!ctx) return false
+    const id = String(overlayId ?? '')
+    return wcvManager.requestOverlay(id, resolveOverlayDecl(ctx.profileId, ctx.characterId, id))
+  })
+  ipcMain.handle('wcv-host-close-overlay', () => {
+    wcvManager.closeOverlay()
+    return true
+  })
+
+  // Inline transport: an inline card (in the renderer, not a WCV) passes its ctx explicitly — main can't
+  // resolve it from e.sender. Same overlay mechanism; the id is validated against the active card's
+  // panel_ui.overlays. The characterId falls back to the chat row (parity with the WCV/inline hosts).
+  ipcMain.handle('overlay-request', (_e, profileId, chatId, characterId, overlayId) => {
+    const cid =
+      String(characterId ?? '') ||
+      chatService.getChat(String(profileId ?? ''), String(chatId ?? ''))?.character_id ||
+      ''
+    const id = String(overlayId ?? '')
+    return wcvManager.requestOverlay(id, resolveOverlayDecl(String(profileId ?? ''), cid, id))
+  })
+  ipcMain.handle('overlay-close', () => {
+    wcvManager.closeOverlay()
+    return true
   })
 
   // Read the latest floor's message variables (stat_data) for the calling panel's session.

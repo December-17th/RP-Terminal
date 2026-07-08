@@ -116,6 +116,13 @@ export interface Host {
   assetUrl(name: string, type: string, mood?: string): Promise<string | null>
   // Engine-computed duel build preview for the active chat (read-only). See the build-preview design.
   getDuelPreview(): Promise<import('../combat/deckbuilder/preview').DuelPreview | null>
+  // Raise a full-play-area overlay surface declared in the active card's `panel_ui.overlays` (PM-A7):
+  // the app mounts the named surface as a WCV covering the whole panel_ui grid region above the slots.
+  // One overlay at a time — requesting another closes the current one first. Resolves `true` when it
+  // opened, `false` when the id isn't declared by the active card. `closeOverlay` tears down whatever
+  // overlay is open (a no-op when none is). Both transports route to the same app mechanism.
+  requestOverlay(id: string): Promise<boolean>
+  closeOverlay(): Promise<void>
   // --- events + engine ---
   onVarsChanged(cb: (statData: any, meta?: { origin: VarsOrigin }) => void): () => void
   onHostEvent(cb: (name: string, payload?: any) => void): () => void

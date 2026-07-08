@@ -295,6 +295,11 @@ const g = createThRuntime(
 )
 Object.assign(w, g)
 w.TavernHelper = g.TavernHelper
+// PM-A7: expose the overlay API on rptHost too (the documented entry point card panel surfaces use,
+// alongside rptHost.broadcastEvent). They delegate to the shared-runtime facade so behavior stays in
+// ONE place (shared/thRuntime → the WCV Host → the app's overlay mechanism), never forked per transport.
+;(rptHost as any).requestOverlay = (id: string): Promise<boolean> => g.requestOverlay(id)
+;(rptHost as any).closeOverlay = (): Promise<void> => g.closeOverlay()
 
 // --- libraries the card bundle externalizes as bare globals (lodash `_`, Zod `z`, jQuery `$`, `toastr`) ---
 // These are transport-level library injection (not part of the TH runtime). The runtime already provides

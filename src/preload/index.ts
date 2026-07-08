@@ -59,6 +59,32 @@ const api = {
     }
   },
   wcvDestroy: (id: string) => ipcRenderer.send('wcv-destroy', id),
+  // Full-play-area overlay surfaces (PM-A7). `requestOverlay`/`closeOverlay` back the INLINE card
+  // transport (it passes its ctx explicitly; the WCV transport uses the ctx-scoped wcv-host-* channels).
+  // `onWcvOverlay` is how the renderer's OverlayHost learns which overlay surface to mount/unmount over
+  // the play area — main drives it (single source of truth); Esc / card-switch just call closeOverlay.
+  requestOverlay: (profileId: string, chatId: string, characterId: string, overlayId: string) =>
+    ipcRenderer.invoke('overlay-request', profileId, chatId, characterId, overlayId),
+  closeOverlay: () => ipcRenderer.invoke('overlay-close'),
+  onWcvOverlay: (
+    cb: (
+      p:
+        | { open: { overlayId: string; entry: string; title?: string } }
+        | { close: { overlayId: string } }
+    ) => void
+  ) => {
+    const onOpen = (
+      _e: unknown,
+      d: { overlayId: string; entry: string; title?: string }
+    ): void => cb({ open: d })
+    const onClose = (_e: unknown, d: { overlayId: string }): void => cb({ close: d })
+    ipcRenderer.on('wcv-open-overlay', onOpen)
+    ipcRenderer.on('wcv-close-overlay', onClose)
+    return () => {
+      ipcRenderer.removeListener('wcv-open-overlay', onOpen)
+      ipcRenderer.removeListener('wcv-close-overlay', onClose)
+    }
+  },
   // A card-script toolbar button was clicked → deliver it to the chat's card WCVs (the script's eventOn).
   wcvButtonClick: (chatId: string, name: string) =>
     ipcRenderer.send('wcv-button-click', chatId, name),

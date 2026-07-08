@@ -289,6 +289,23 @@ export function createInlineHost(ctx: CardCtx): Host {
         return null
       }
     },
+    // Overlay surfaces (PM-A7): the same app mechanism as the WCV transport. Inline cards pass their
+    // ctx explicitly (main resolves the WCV transport's ctx from e.sender instead); main validates the
+    // id against the active card's panel_ui.overlays and mounts/closes the overlay WCV over the play area.
+    requestOverlay: async (id: string) => {
+      try {
+        return await window.api.requestOverlay(ctx.profileId, ctx.chatId, cardCharacterId(), id)
+      } catch {
+        return false
+      }
+    },
+    closeOverlay: async () => {
+      try {
+        await window.api.closeOverlay()
+      } catch {
+        /* ignore */
+      }
+    },
 
     onVarsChanged: (cb) => {
       let last = ''
