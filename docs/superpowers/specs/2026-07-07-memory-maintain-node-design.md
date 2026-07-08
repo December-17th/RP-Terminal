@@ -1,10 +1,11 @@
 # Dedicated memory-maintenance node (`memory.maintain`) — design — 2026-07-07
 
-**Status:** point-in-time design spec, drafted for owner sign-off. Supersede with a new dated file;
-don't rewrite. LAYERS ON the agent & memory UX build (`2026-07-07-agent-memory-ux-design.md`, all 9
-WPs shipped on `claude/inspiring-euclid-c951f0`). Owner already approved the high-level shape in the
-2026-07-07 manual-pass review (see `.scratch/memory-node-2026-07-07/design-context.md`); this spec
-formalizes it with grounding and resolves the open sub-decisions.
+**Status:** point-in-time design spec, **owner-reviewed 2026-07-07** (two open decisions resolved in
+session — see Open decisions). Supersede with a new dated file; don't rewrite. LAYERS ON the agent &
+memory UX build (`2026-07-07-agent-memory-ux-design.md`, all 9 WPs shipped on
+`claude/inspiring-euclid-c951f0`). Owner approved the high-level shape in the 2026-07-07 manual-pass
+review (see `.scratch/memory-node-2026-07-07/design-context.md`); this spec formalizes it with
+grounding. Implementation plan: `../plans/2026-07-07-memory-maintain-node-plan.md`.
 
 ## Problem (owner manual-pass finding, issue 2 — the second half)
 
@@ -125,17 +126,22 @@ recall + triggers + `control.mode`) EXCEPT the `{history, read, agent, sql, tabl
 subgraph collapses to ONE `memory.maintain` node gated by `mode.fired`, with `memory.maintain.error →
 util.log`. Group `exposed` keeps Mode/Cadence/Backlog + the node's `api_preset_id`.
 
-**Migration (non-destructive — recommended).** `seedDefaultMemoryWorkflow` seeds v2 for a profile only
-when **neither** the v1 nor the v2 marker is present on disk **and** neither is tombstoned — so:
+**Migration (auto-replace v1 — OWNER-CHOSEN 2026-07-07).** `seedDefaultMemoryWorkflow` **supersedes**
+v1 with v2 for every profile:
 
-- **New profiles** get the v2 (single-node) default.
-- **Existing profiles** keep their already-seeded (possibly hand-edited) v1 doc **untouched** — the
-  five-node chain still works; nothing is clobbered.
-- `memory.maintain` is additive in the palette, so existing users adopt it opt-in.
+- On seed, if a doc carrying `meta.seeded === 'default-memory-v1'` exists, it is deleted and the v2 doc
+  seeded in its place; the v1 marker is recorded in `seededTombstones` so it never re-seeds. **Any
+  hand-edits to the v1 default doc are lost** — accepted by the owner (sole user, single dev tool).
+- A brand-new profile seeds v2 directly.
+- **Tombstones still win**: if the user had DELETED their memory default (v1 already tombstoned, or v2
+  tombstoned), we do NOT resurrect it — supersession only replaces a *live* v1 doc, and a v2 tombstone
+  blocks reseeding entirely (deletion stays a respected choice).
+- Idempotence: once a v2-marked doc exists (or v2 is tombstoned), no reseed.
 
-An auto-upgrade action ("replace the chain with the memory node") is a possible later nicety, out of
-scope here. The **rejected alternative** is tombstoning v1 and seeding v2, which would destroy user
-edits to the existing default doc.
+Safety refinement carried into the plan: perform the delete+reseed atomically enough that a crash
+mid-migration can't leave a profile with zero default doc (seed v2 first, then tombstone+unlink v1).
+The **rejected alternative** was the non-destructive "new profiles only, keep v1 untouched" — declined
+so every profile gets the single-node experience.
 
 ### 4. Backward compatibility & scope guards
 
@@ -146,16 +152,15 @@ edits to the existing default doc.
 - **SDK docs**: `memory.maintain` is a new card-facing node → add it to `docs/sdk/` (node catalog /
   workflow-module-format) in the same change, per `docs/sdk/README.md`.
 
-## Open decisions (owner sign-off)
+## Open decisions
 
-1. **Migration policy** — recommend the non-destructive "new profiles get v2, existing keep v1"
-   above. Confirm, or prefer auto-tombstone-and-reseed (clobbers edits), or ship v2 palette-only with
-   no seeded default change.
-2. **Per-table editor placement** — inside the node's Settings/Prompt panel (this spec) vs. folded into
-   the existing tabbed **Memory sheet** (WP-I `TableGrid`), which already owns Setup/Data/Maintenance.
-   Recommend the node panel for locality to the prompt, cross-linked from the Memory sheet.
-3. **`report`/preview IPC** — add a tiny `memory-maintain-preview` read IPC vs. reuse a `table-read`
-   dry-run. Recommend a dedicated preview call for an exact composed-prompt match.
+1. **Migration policy** — **RESOLVED (owner, 2026-07-07): auto-replace v1.** Tombstone the v1 marker
+   and reseed v2 for all profiles; hand-edits to the existing default doc are lost (accepted). See §3.
+2. **Per-table editor placement** — **RESOLVED (owner, 2026-07-07): in the node panel.** Per-table
+   prompts edit inside `memory.maintain`'s details panel, next to the scaffold prompt and preview;
+   cross-linked from the Memory sheet.
+3. **`report`/preview IPC** (controller default, no owner block) — add a tiny `memory-maintain-preview`
+   read IPC for an exact composed-prompt match, rather than reusing a `table-read` dry-run.
 
 ## Testing strategy (characterization + new)
 
