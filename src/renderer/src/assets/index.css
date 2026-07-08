@@ -1647,7 +1647,12 @@ select {
 .modal-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.6);
+  /* Frosted-glass curtain: a lighter scrim + backdrop blur so the popup obscures whatever DOM sits
+     behind it (native WCV panels paint ABOVE the DOM, so this only bites once they're suppressed —
+     useWcvSuppression handles that for popups; the blur masks the WCV-hide under the curtain). */
+  background: rgba(0, 0, 0, 0.5);
+  backdrop-filter: blur(12px) saturate(115%);
+  -webkit-backdrop-filter: blur(12px) saturate(115%);
   display: flex;
   align-items: center;
   justify-content: center;
