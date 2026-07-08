@@ -97,6 +97,15 @@ describe('templateService TH-3 helpers', () => {
     expect(evalTemplateDetailed('<%= 1 + 1 %>', ctx())).toEqual({ output: '2', error: null })
   })
 
+  it('aborts a runaway (infinite-loop) template at the deadline instead of hanging', () => {
+    // Regression: quickjs evalCode is synchronous and, with no interrupt handler, a `<% while(true) %>`
+    // hung it FOREVER — freezing the renderer on display and the main process at build, and re-freezing
+    // on every reload of that floor. The deadline interrupt aborts it → empty output + a reported error.
+    const r = evalTemplateDetailed('<% while(true){} %>after', ctx())
+    expect(r.output).toBe('') // interrupted → empty (fail-safe), not the literal tail
+    expect(r.error).toBeTruthy() // the interrupt surfaces as an error
+  }, 5000)
+
   it('matchChatMessages / parseJSON / jsonPatch helpers', () => {
     expect(evalTemplate("<%= matchChatMessages('hello') %>", ctx())).toBe('true')
     expect(evalTemplate("<%= matchChatMessages('nope') %>", ctx())).toBe('false')
