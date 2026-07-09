@@ -129,8 +129,8 @@ describe('buildBatchTranscript', () => {
 
 const template = {
   tables: [
-    { sqlName: 'chronicle', displayName: '纪要', headers: ['row_id', 's'], updateFrequency: 1, note: '', initNode: '', insertNode: '', updateNode: '', deleteNode: '' },
-    { sqlName: 'world', displayName: '世界', headers: ['row_id', 'f'], updateFrequency: 3, note: '', initNode: '', insertNode: '', updateNode: '', deleteNode: '' }
+    { sqlName: 'chronicle', displayName: '纪要', ddl: 'CREATE TABLE chronicle (row_id INTEGER, s TEXT)', headers: ['row_id', 's'], updateFrequency: 1, note: '', initNode: '', insertNode: '', updateNode: '', deleteNode: '' },
+    { sqlName: 'world', displayName: '世界', ddl: 'CREATE TABLE world (row_id INTEGER, f TEXT)', headers: ['row_id', 'f'], updateFrequency: 3, note: '', initNode: '', insertNode: '', updateNode: '', deleteNode: '' }
   ]
 }
 

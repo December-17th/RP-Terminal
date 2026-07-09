@@ -52,8 +52,8 @@ export const MAX_RECIPE_ENVELOPE_BYTES = 64 * 1024 * 1024
 //   - 'builtin'  — the app's built-in narrator. The format stores JUST the kind and carries NO doc
 //                  and NO id. WHY no id: the builtin is referenced by a WELL-KNOWN id
 //                  (`BUILTIN_WORKFLOW_ID = 'default'`, src/main/services/workflowStore.ts:15) that is
-//                  the IMPORTING app's builtin, not the exporter's — the exporter's DEFAULT_GRAPH may
-//                  differ version-to-version. Resolving that id is the importer's job; storing it here
+//                  the IMPORTING app's builtin, not the exporter's — the exporter's builtin default doc
+//                  may differ version-to-version. Resolving that id is the importer's job; storing it here
 //                  would be storing a fact about the exporter's machine that the importer must ignore.
 //                  So the format records only "use your builtin narrator" (ADR 0008: "the builtin
 //                  narrator is referenced by well-known id").

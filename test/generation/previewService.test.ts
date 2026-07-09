@@ -131,8 +131,39 @@ vi.mock('../../src/main/services/tableExportService', async (orig) => ({
       : []
 }))
 
+// Pin the narrator to the plain spine fixture so composing the async-memory pack yields a CLEAN
+// export→entries injection. The builtin fallback is now the SQL-table memory doc, which ALREADY feeds
+// assemble.entries from its own export node — the pack's rejoin would then fan-in-conflict and the
+// pack section would never appear. resolveEffectiveDoc is reimplemented over the REAL composeEffectiveGraph
+// (same prefixing/warning semantics), only swapping the narrator source; the provider seam still drives
+// which fragments compose (enable() below sets it).
+const wfHolder = vi.hoisted(() => ({
+  provider: (() => []) as (profileId: string, chatId: string) => unknown[]
+}))
+vi.mock('../../src/main/services/workflowService', async () => {
+  const { composeEffectiveGraph } = await import('../../src/shared/workflow/compose')
+  const { NARRATOR_SPINE_DOC } = await import('../fixtures/narratorSpineDoc')
+  return {
+    BUILTIN_WORKFLOW_ID: 'default',
+    validateWorkflowDoc: (doc: unknown) => ({ ok: true, doc }),
+    setEnabledFragmentsProvider: (
+      p: (profileId: string, chatId: string) => unknown[] = () => []
+    ) => {
+      wfHolder.provider = p
+    },
+    resolveWorkflowDoc: () => ({ id: 'default', doc: structuredClone(NARRATOR_SPINE_DOC) }),
+    resolveEffectiveDoc: (profileId: string, chatId: string) => {
+      const fragments = wfHolder.provider(profileId, chatId)
+      const { doc, warnings } = composeEffectiveGraph(
+        structuredClone(NARRATOR_SPINE_DOC),
+        fragments as never
+      )
+      return { id: 'default', doc, warnings }
+    }
+  }
+})
+
 import { composeEffectiveGraph } from '../../src/shared/workflow/compose'
-import { DEFAULT_GRAPH } from '../../src/main/services/nodes/builtin/defaultGraph'
 import {
   ASYNC_MEMORY_FRAGMENT,
   ASYNC_MEMORY_PACK_ID

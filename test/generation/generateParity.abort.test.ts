@@ -4,8 +4,9 @@ import { getDefaultPreset } from '../../src/main/types/preset'
 import type { FloorFile } from '../../src/main/types/chat'
 import type { LorebookEntry } from '../../src/main/types/character'
 
-// Expanded parity coverage (Phase 2b-1b abort fix): runs the REAL DEFAULT_GRAPH through
-// generate(), with a per-test-configurable streamProvider/matchAcross mock, to assert:
+// Expanded parity coverage (Phase 2b-1b abort fix): runs generate() end-to-end through the REAL
+// workflowService (the builtin fallback doc; a turn run excludes the trigger-rooted memory group, so
+// the narrator behavior is unchanged), with a per-test-configurable streamProvider/matchAcross mock, to assert:
 //  - abort-with-text persists the partial floor (the bug this task fixes)
 //  - abort-with-empty still returns null / doesn't persist (unchanged behavior)
 //  - lore flows through the graph into the assembled prompt
@@ -111,6 +112,18 @@ vi.mock('../../src/main/services/templateService', async (orig) => ({
   saveGlobals: () => {}
 }))
 vi.mock('../../src/main/services/logService', () => ({ log: () => {} }))
+// Pin resolution to the plain narrator spine fixture. The builtin fallback is now the SQL-table memory
+// doc, whose in-turn recall nodes (trim/export) reach for chatService.getChatTableTemplateId and would
+// fire the trigger-rooted memory group on the detached post-turn pass — neither of which this
+// narrator-parity suite mocks. resolveEffectiveDoc returns the narrator directly (no packs here).
+vi.mock('../../src/main/services/workflowService', async () => {
+  const { NARRATOR_SPINE_DOC } = await import('../fixtures/narratorSpineDoc')
+  return {
+    BUILTIN_WORKFLOW_ID: 'default',
+    resolveEffectiveDoc: () => ({ id: 'default', doc: NARRATOR_SPINE_DOC, warnings: [] }),
+    setEnabledFragmentsProvider: () => {}
+  }
+})
 vi.mock('../../src/main/services/apiService', async (orig) => ({
   ...(await orig<Record<string, unknown>>()),
   streamProvider: async (

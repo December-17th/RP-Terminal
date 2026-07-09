@@ -37,8 +37,6 @@ interface LibraryEntry {
   source: 'builtin' | 'user'
 }
 
-const BUILTIN_WORKFLOW_ID = 'default'
-
 /** RF-04: ±40px random offset so repeated click-to-add doesn't stack nodes exactly on top of one
  *  another at the viewport center. */
 const jitter = (p: { x: number; y: number }): { x: number; y: number } => ({
@@ -196,11 +194,10 @@ export default function WorkflowEditorView({
     // Don't auto-open the default workflow when a fragment session was requested — its async load sets
     // currentId to the pack id; racing a default open would clobber the fragment session (WP4.4).
     if (initialFragmentPackId) return
+    // The builtin default doc is no longer a list entry (it's an invisible fallback), so auto-open the
+    // first listed doc — the seeded, editable "Default" once the profile has been seeded.
     if (!currentId && workflows.length > 0) {
-      const fallback = workflows.some((w) => w.id === BUILTIN_WORKFLOW_ID)
-        ? BUILTIN_WORKFLOW_ID
-        : workflows[0].id
-      void open(profileId, fallback)
+      void open(profileId, workflows[0].id)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- open/profileId intentionally excluded to avoid re-triggering on store identity churn
   }, [workflows, currentId])

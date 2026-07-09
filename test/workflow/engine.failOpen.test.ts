@@ -27,8 +27,8 @@ const ctx = (): RunContext => ({
 // ── Registry: a minimal narrator spine + fragment nodes ─────────────────────────────────────────
 // findCheckpointAnchors matches checkpoints by anchor node TYPE, so these MUST be named exactly
 // `input.context` (context-ready, port `gen`) and `prompt.assemble` (prompt-assembly, port `block`).
-// `assemble.block` is left unwired in the narrator, exactly like DEFAULT_GRAPH, so a fragment can
-// rejoin there without a fan-in conflict.
+// `assemble.block` is left unwired in the narrator, exactly like the narrator spine (NARRATOR_SPINE_DOC),
+// so a fragment can rejoin there without a fan-in conflict.
 
 /** Did the narrator's assemble node see a `block` input? Recorded per run so a test can assert the
  *  block was unwired (fail-open) vs wired (rejoin landed). */
@@ -105,7 +105,7 @@ const fragBoomInline: NodeImpl = {
 
 const reg = createRegistry([inputContext, promptAssemble, mainOut, fragBoom, fragOk, fragBoomInline])
 
-/** The narrator spine: ctx → assemble → main. `assemble.block` unwired (DEFAULT_GRAPH shape). */
+/** The narrator spine: ctx → assemble → main. `assemble.block` unwired (NARRATOR_SPINE_DOC shape). */
 const narrator = (): WorkflowDoc => ({
   id: 'nar',
   name: 'nar',

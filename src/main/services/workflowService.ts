@@ -17,7 +17,6 @@ import {
   ComposeWarning
 } from '../../shared/workflow/compose'
 import { builtinRegistry } from './nodes/builtin'
-import { DEFAULT_GRAPH } from './nodes/builtin/defaultGraph'
 import {
   buildDefaultMemoryDocV2,
   DEFAULT_MEMORY_SEED_MARKER,
@@ -25,11 +24,12 @@ import {
 } from './nodes/builtin/defaultMemoryTemplate'
 import { log } from './logService'
 import { getChat, getChatWorkflowId, removeWorkflowIdFromChats } from './chatService'
-// getWorkflowById + BUILTIN_WORKFLOW_ID live in the leaf workflowStore.ts (see its header comment
-// for why) — re-exported here so every existing import of them from workflowService keeps working.
-import { BUILTIN_WORKFLOW_ID, getWorkflowById } from './workflowStore'
+// getWorkflowById + BUILTIN_WORKFLOW_ID + the builtin fallback doc live in the leaf workflowStore.ts
+// (see its header comment for why) — re-exported here so every existing import of them from
+// workflowService keeps working.
+import { BUILTIN_WORKFLOW_ID, BUILTIN_DEFAULT_DOC, getWorkflowById } from './workflowStore'
 
-export { BUILTIN_WORKFLOW_ID, getWorkflowById }
+export { BUILTIN_WORKFLOW_ID, BUILTIN_DEFAULT_DOC, getWorkflowById }
 
 export interface WorkflowSummary {
   id: string
@@ -103,7 +103,7 @@ const ensureWorkflowsDir = (profileId: string): string => {
 // switch the RESOLVED doc out from under a running chat on the first turn after update, and it
 // breaks the parity constraint — the generateParity suite (and a dozen generation suites) run the
 // REAL workflowService against partially-mocked services, and a resolve-time seed would swap
-// DEFAULT_GRAPH for the seeded doc under them ("generateParity suite untouched and green" is a
+// the builtin fallback doc for the seeded doc under them ("generateParity suite untouched and green" is a
 // WP-C acceptance bound). The list entry point covers every UI path (workflow view, editor,
 // selection dropdowns); a profile that never opens workflow UI keeps today's builtin behavior
 // until it does — the conservative choice.
@@ -221,15 +221,11 @@ export const listWorkflows = (profileId: string): WorkflowSummary[] => {
       })
   }
   out.sort((a, b) => a.name.localeCompare(b.name))
-  return [
-    {
-      id: BUILTIN_WORKFLOW_ID,
-      name: DEFAULT_GRAPH.name,
-      description: DEFAULT_GRAPH.description,
-      builtin: true
-    },
-    ...out
-  ]
+  // The list contains only real file docs. The invisible builtin fallback (BUILTIN_DEFAULT_DOC) is
+  // NOT injected here — the sole visible "Default" is the seeded, editable copy (seedDefaultMemoryWorkflow
+  // above). getWorkflowById('default') still resolves the read-only builtin for any chat that stored
+  // workflow_id='default', but it is never a choosable list entry.
+  return out
 }
 
 export const saveWorkflow = (profileId: string, id: string, raw: unknown): WorkflowWriteResult => {
@@ -386,13 +382,13 @@ const tierCandidates = (profileId: string, chatId: string): string[] => {
  *  rule), so relying on validation failure would never catch it. This is the load-bearing guard
  *  keeping a subgraph-kind doc out of runWorkflow/computePhases, which non-null-asserts the
  *  main-output node and would throw a raw TypeError on one. Final fallback is always the
- *  built-in default graph. */
+ *  read-only built-in default doc (the SQL-table memory template; BUILTIN_DEFAULT_DOC). */
 export const resolveWorkflowDoc = (
   profileId: string,
   chatId: string
 ): { id: string; doc: WorkflowDoc } => {
   for (const id of tierCandidates(profileId, chatId)) {
-    if (id === BUILTIN_WORKFLOW_ID) return { id: BUILTIN_WORKFLOW_ID, doc: DEFAULT_GRAPH }
+    if (id === BUILTIN_WORKFLOW_ID) return { id: BUILTIN_WORKFLOW_ID, doc: BUILTIN_DEFAULT_DOC }
     const raw = getWorkflowById(profileId, id)
     if (!raw) {
       log('error', `resolveWorkflowDoc: workflow ${id} not found, falling through`)
@@ -413,7 +409,7 @@ export const resolveWorkflowDoc = (
     }
     return { id, doc: result.doc }
   }
-  return { id: BUILTIN_WORKFLOW_ID, doc: DEFAULT_GRAPH }
+  return { id: BUILTIN_WORKFLOW_ID, doc: BUILTIN_DEFAULT_DOC }
 }
 
 /** Resolve just the effective workflow id (delegates to resolveWorkflowDoc to share the fall-through). */

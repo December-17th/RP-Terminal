@@ -71,6 +71,52 @@ export const extractCreateTableName = (ddl: string): string => {
 /** Whether `name` is a safe SQL identifier we can interpolate into a quoted `"name"` (guard reuse). */
 export const isSafeSqlIdentifier = (name: string): boolean => /^[A-Za-z_][A-Za-z0-9_$]*$/.test(name)
 
+/**
+ * The REAL SQL column names declared by a single `CREATE TABLE` DDL, in declared order (PURE;
+ * exported for unit tests). This is what the maintainer prompt must show the model — its actual
+ * column identifiers (e.g. `name`) — instead of the template's DISPLAY headers (e.g. 人物名称), so
+ * the model writes valid SQL. Comments are stripped first, the parenthesized column body is split at
+ * TOP-LEVEL commas (nested parens — a type's `DECIMAL(10,2)`, a `CHECK(...)` clause — are kept with
+ * their definition), and each column's leading identifier is taken. Table-level constraint clauses
+ * (`PRIMARY KEY` / `FOREIGN KEY` / `UNIQUE` / `CHECK` / `CONSTRAINT`) are skipped; an inline
+ * COLUMN constraint (`row_id INTEGER PRIMARY KEY`) is NOT (its def starts with the column name).
+ * A bare or `"quoted"` identifier is returned unquoted. Returns `[]` when no table body is found.
+ * Conservative (same stance as `stripSqlComments`): does not honor `--`/commas/parens inside string
+ * literals — the table DDLs here don't rely on that.
+ */
+export const parseDdlColumnNames = (ddl: string): string[] => {
+  const stripped = stripSqlComments(ddl)
+  const open = stripped.indexOf('(')
+  const close = stripped.lastIndexOf(')')
+  if (open === -1 || close <= open) return []
+  const body = stripped.slice(open + 1, close)
+
+  // Split into column/constraint definitions at depth-0 commas (nested parens stay intact).
+  const defs: string[] = []
+  let depth = 0
+  let start = 0
+  for (let i = 0; i < body.length; i++) {
+    const ch = body[i]
+    if (ch === '(') depth++
+    else if (ch === ')') depth--
+    else if (ch === ',' && depth === 0) {
+      defs.push(body.slice(start, i))
+      start = i + 1
+    }
+  }
+  defs.push(body.slice(start))
+
+  const cols: string[] = []
+  for (const raw of defs) {
+    const def = raw.trim()
+    if (!def) continue
+    if (/^(?:primary\s+key|foreign\s+key|unique|check|constraint)\b/i.test(def)) continue
+    const m = def.match(/^(?:"([^"]+)"|([A-Za-z_][A-Za-z0-9_$]*))/)
+    if (m) cols.push(m[1] ?? m[2])
+  }
+  return cols
+}
+
 const num = (v: unknown, fallback: number): number =>
   typeof v === 'number' && !Number.isNaN(v) ? v : fallback
 

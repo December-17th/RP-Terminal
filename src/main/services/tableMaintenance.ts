@@ -1,6 +1,7 @@
 import { TableDef } from '../types/tableTemplate'
 import { TableRead } from './tableDbService'
 import { renderWholeTable } from './tableExportService'
+import { parseDdlColumnNames } from '../parsers/chatSheetsParser'
 
 /**
  * Shared maintainer building blocks for SQL-table memory (issue 07). Both the per-turn maintenance
@@ -21,14 +22,21 @@ import { renderWholeTable } from './tableExportService'
  *
  * ```
  * ## <displayName> (<sqlName>) — 每 N 轮维护        (or "— 手动维护" when off)
+ * 【建表语句】<ddl>             (with rules; the CREATE TABLE — real SQL column names + zh mapping)
  * 【表定义】<note>              (with rules)
  * 【初始化规则】<initNode>       (with rules; only when the table has 0 rows)
  * 【插入规则】<insertNode>       (with rules)
  * 【更新规则】<updateNode>       (with rules)
  * 【删除规则】<deleteNode>       (with rules)
  * 【当前数据】
- * <renderWholeTable(headers, rows)>
+ * <renderWholeTable(sqlColumns, rows)>
  * ```
+ *
+ * The 【当前数据】 header line and 【建表语句】 use the DDL's REAL column names (`parseDdlColumnNames`),
+ * NOT `table.headers` (which are the zh DISPLAY labels, e.g. 人物名称) — so the model writes SQL
+ * against the actual columns (e.g. `name`) instead of the display labels, which SQLite rejects. Rows
+ * are positional in DDL order (== the sandbox `SELECT *` order), so the real-name header aligns 1:1.
+ * Falls back to `table.headers` only when the DDL yields no parsable columns.
  */
 export const renderTableBlock = (
   table: TableDef,
@@ -39,6 +47,7 @@ export const renderTableBlock = (
   const cadence = resolvedFrequency == null ? '手动维护' : `每 ${resolvedFrequency} 轮维护`
   const lines: string[] = [`## ${table.displayName} (${table.sqlName}) — ${cadence}`]
   if (includeRules) {
+    if (table.ddl.trim()) lines.push(`【建表语句】\n${table.ddl.trim()}`)
     if (table.note.trim()) lines.push(`【表定义】${table.note}`)
     if (read.rows.length === 0 && table.initNode.trim()) lines.push(`【初始化规则】${table.initNode}`)
     if (table.insertNode.trim()) lines.push(`【插入规则】${table.insertNode}`)
@@ -46,7 +55,8 @@ export const renderTableBlock = (
     if (table.deleteNode.trim()) lines.push(`【删除规则】${table.deleteNode}`)
   }
   lines.push('【当前数据】')
-  lines.push(renderWholeTable(table.headers, read.rows))
+  const sqlCols = parseDdlColumnNames(table.ddl)
+  lines.push(renderWholeTable(sqlCols.length ? sqlCols : table.headers, read.rows))
   return lines.join('\n')
 }
 
@@ -61,7 +71,8 @@ export const MAINTAINER_RULES = `规则：
 2. 仅允许对上面列出的表执行 INSERT / UPDATE / DELETE，禁止其它操作。
 3. 严格遵循每个表的【插入规则】【更新规则】【删除规则】（表为空时遵循【初始化规则】）。
 4. 只在确有变化时更新；若本批没有任何需要写入的变化，输出一个空的 <TableEdit></TableEdit>。
-5. 表格是历史档案，不是创作工具：只记录剧情中已经明确发生的事实。禁止编造、推测、预告或推进任何新剧情、新事件、新对话；禁止把"计划""预测""可能发生的事"写入任何表；没有把握的内容一律不写。`
+5. 表格是历史档案，不是创作工具：只记录剧情中已经明确发生的事实。禁止编造、推测、预告或推进任何新剧情、新事件、新对话；禁止把"计划""预测""可能发生的事"写入任何表；没有把握的内容一律不写。
+6. SQL 只能使用每个表【建表语句】中的真实英文列名（如 name），绝不要使用中文显示表头（如 人物名称）。INSERT 时 row_id 取该表当前最大 row_id + 1；UPDATE / DELETE 必须带 WHERE 条件。`
 
 /**
  * Build the backfill maintainer system prompt for ONE batch (issue 07 §3). Reuses the maintainer

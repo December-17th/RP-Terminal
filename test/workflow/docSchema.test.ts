@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { parseWorkflowDoc } from '../../src/shared/workflow/docSchema'
-import { DEFAULT_GRAPH } from '../../src/main/services/nodes/builtin/defaultGraph'
+import { NARRATOR_SPINE_DOC as DEFAULT_GRAPH } from '../fixtures/narratorSpineDoc'
 
 const minimal = {
   id: 'w1',

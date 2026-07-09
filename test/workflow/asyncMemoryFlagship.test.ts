@@ -157,7 +157,7 @@ vi.mock('../../src/main/services/tableExportService', async (orig) => ({
 import { runWorkflow } from '../../src/main/services/workflowEngine'
 import { builtinRegistry } from '../../src/main/services/nodes/builtin'
 import { composeEffectiveGraph } from '../../src/shared/workflow/compose'
-import { DEFAULT_GRAPH } from '../../src/main/services/nodes/builtin/defaultGraph'
+import { NARRATOR_SPINE_DOC as DEFAULT_GRAPH } from '../fixtures/narratorSpineDoc'
 import {
   ASYNC_MEMORY_FRAGMENT,
   ASYNC_MEMORY_PACK_ID

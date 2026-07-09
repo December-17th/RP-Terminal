@@ -31,13 +31,13 @@ import {
   resolveWorkflowDoc,
   resolveEffectiveDoc,
   setEnabledFragmentsProvider,
-  setMemorySeedingEnabled
+  setMemorySeedingEnabled,
+  BUILTIN_DEFAULT_DOC
 } from '../src/main/services/workflowService'
 import { getAppDir } from '../src/main/services/storageService'
 import { WorkflowDoc } from '../src/shared/workflow/types'
 import { AttachmentDecl } from '../src/shared/workflow/attachments'
 import { ComposeFragment } from '../src/shared/workflow/compose'
-import { DEFAULT_GRAPH } from '../src/main/services/nodes/builtin/defaultGraph'
 
 // Deliberate WP-C (agent-memory-ux) harness choice: this suite characterizes the PRE-SEED
 // list/selection/resolution mechanics ("builtin when nothing selected", empty selection shapes),
@@ -67,9 +67,12 @@ beforeEach(() => {
 })
 
 describe('workflowService', () => {
-  it('listWorkflows has the builtin first even with no user files', () => {
+  it('listWorkflows does NOT inject the builtin (memory-default refactor: pure file list; seeding off here)', () => {
     const list = listWorkflows(profileId)
-    expect(list[0]).toMatchObject({ id: BUILTIN_WORKFLOW_ID, builtin: true })
+    // With seeding disabled and no user files, the list is empty — the builtin default doc is an
+    // invisible fallback, never a list entry.
+    expect(list).toEqual([])
+    expect(list.some((w) => w.id === BUILTIN_WORKFLOW_ID || w.builtin)).toBe(false)
   })
 
   it('create -> get round-trips (doc.id rewritten, content preserved)', () => {
@@ -132,7 +135,8 @@ describe('workflowService', () => {
     const clone = cloneWorkflow(profileId, BUILTIN_WORKFLOW_ID)
     expect(clone).not.toBeNull()
     expect(clone!.id).not.toBe(BUILTIN_WORKFLOW_ID)
-    expect(clone!.name).toBe('Default Generation (copy)')
+    // The builtin default doc is now the memory template ("Default", not "Default Generation").
+    expect(clone!.name).toBe('Default (copy)')
 
     const doc = getWorkflowById(profileId, clone!.id)
     expect(doc).not.toBeNull()
@@ -141,13 +145,13 @@ describe('workflowService', () => {
   })
 
   it('cloneWorkflow numbers repeat clones instead of compounding "(copy) (copy)"', () => {
-    // The earlier test already created 'Default Generation (copy)'.
+    // The earlier test already created 'Default (copy)'.
     const second = cloneWorkflow(profileId, BUILTIN_WORKFLOW_ID)
-    expect(second!.name).toBe('Default Generation (copy 2)')
+    expect(second!.name).toBe('Default (copy 2)')
 
     // Cloning a copy strips the suffix first — never 'X (copy 2) (copy)'.
     const third = cloneWorkflow(profileId, second!.id)
-    expect(third!.name).toBe('Default Generation (copy 3)')
+    expect(third!.name).toBe('Default (copy 3)')
   })
 
   it('listWorkflows flags an on-disk doc that fails validation with invalid: true', () => {
@@ -362,12 +366,14 @@ describe('workflowService selection + resolution', () => {
     expect(resolveWorkflowId(profileId, chatId)).toBe(BUILTIN_WORKFLOW_ID)
   })
 
-  it('resolveWorkflowDoc returns { id: "default", doc: DEFAULT_GRAPH } when nothing is selected', () => {
+  it('resolveWorkflowDoc returns { id: "default", doc: BUILTIN_DEFAULT_DOC } when nothing is selected', () => {
     mockChatService.getChatWorkflowId.mockReturnValue(null)
     mockChatService.getChat.mockReturnValue(null)
     const result = resolveWorkflowDoc(profileId, chatId)
     expect(result.id).toBe('default')
-    expect(result.doc).toEqual(DEFAULT_GRAPH)
+    // The builtin fallback is now the SQL-table memory doc (normalized to id 'default'), not the
+    // old narrator-only DEFAULT_GRAPH.
+    expect(result.doc).toEqual(BUILTIN_DEFAULT_DOC)
   })
 
   it('dangling id at each tier falls through to the next; all dangling -> default', () => {

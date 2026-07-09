@@ -326,17 +326,24 @@ No template / no selected tables → **SILENT empty** (`{ block: '', tables: [] 
 
 ```
 ## <displayName> (<sqlName>) — 每 N 轮维护
+【建表语句】<ddl>             (with rules; the CREATE TABLE — REAL SQL column names + zh mapping in comments)
 【表定义】<note>              (with rules)
 【初始化规则】<initNode>       (with rules; ONLY when the table has 0 rows)
 【插入规则】<insertNode>       (with rules)
 【更新规则】<updateNode>       (with rules)
 【删除规则】<deleteNode>       (with rules)
 【当前数据】
-<renderWholeTable(headers, rows)>
+<renderWholeTable(sqlColumns, rows)>
 ```
 
-Empty rule strings are omitted. `include_rules: false` drops the definition + all rules (the whole
-"ingredients" set), rendering just the `##` header + `【当前数据】` data. Blocks are `'\n\n'`-joined.
+The `【建表语句】` and the `【当前数据】` header line use the DDL's **real** column names
+(`chatSheetsParser.parseDdlColumnNames`), **not** `template.headers` (which are the zh DISPLAY labels,
+e.g. 人物名称) — so the maintainer writes SQL against the actual columns (e.g. `name`) instead of the
+display labels, which SQLite rejects (`table … has no column named 人物名称`). Rows are positional in
+DDL order (== the sandbox `SELECT *` order), so the real-name header aligns 1:1; falls back to
+`template.headers` only when the DDL yields no parsable columns. Empty rule strings are omitted.
+`include_rules: false` drops `【建表语句】` + the definition + all rules (the whole "ingredients" set),
+rendering just the `##` header + `【当前数据】` data. Blocks are `'\n\n'`-joined.
 
 ### `table.query` — a validated read for planner / 剧情推进 branches
 

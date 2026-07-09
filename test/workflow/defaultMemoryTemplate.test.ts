@@ -7,8 +7,9 @@ import { WorkflowDoc } from '../../src/shared/workflow/types'
 //  1. shape pins — the template validates (structural + graph + per-node config, the same three
 //     gates validateWorkflowDoc runs), carries the group/exposed/meta contract, and keeps the
 //     maintainer prompt VERBATIM from the proven fixture;
-//  2. mode=off TURN equivalence to DEFAULT_GRAPH at the trace level (plan WP-C's composed-behavior
-//     test — both fail-soft paths, no bound table template);
+//  2. ship-default (every_turn) TURN equivalence to the narrator spine (NARRATOR_SPINE_DOC) at the
+//     trace level — the memory group is trigger-rooted, so a TURN excludes it regardless of mode
+//     (both fail-soft recall paths, no bound table template);
 //  3. headless mode discrimination through the REAL closure mechanics (evaluateDocTriggers), the
 //     owner-facing acceptance ("flipping selected changes which trigger's run survives").
 // The runtime layers reuse memoryFillChain.test.ts's proven mock harness.
@@ -174,7 +175,7 @@ import { builtinRegistry } from '../../src/main/services/nodes/builtin'
 import { RunContext } from '../../src/main/services/nodes/types'
 import { parseWorkflowDoc } from '../../src/shared/workflow/docSchema'
 import { validateWorkflow } from '../../src/shared/workflow/validate'
-import { DEFAULT_GRAPH } from '../../src/main/services/nodes/builtin/defaultGraph'
+import { NARRATOR_SPINE_DOC as DEFAULT_GRAPH } from '../fixtures/narratorSpineDoc'
 import {
   buildDefaultMemoryDoc,
   buildDefaultMemoryDocV2,
@@ -269,19 +270,27 @@ describe('default memory template — shape', () => {
     expect(DEFAULT_MEMORY_SEED_MARKER).toBe('default-memory-v1')
   })
 
-  it('keeps the maintainer prompt VERBATIM from memory-fill-async.rptflow (the proven zh prompt)', () => {
+  it('keeps the maintainer SYSTEM prompt VERBATIM but ends on an inline-{history} user row', () => {
     const fixture = JSON.parse(
       fs.readFileSync(path.join(__dirname, '../../docs/workflows/memory-fill-async.rptflow'), 'utf-8')
     ) as WorkflowDoc
     const fixtureAgent = fixture.nodes.find((n) => n.id === 'agent')!
     const fixtureMessages = (fixtureAgent.config as { messages: { role: string; content: string }[] })
       .messages
+    // The system prompt stays byte-identical to the proven zh fixture...
     expect(MAINTAINER_SYSTEM_PROMPT).toBe(fixtureMessages[0].content)
+    // ...but the fixture's two user rows (`【本批剧情】` + a standalone `{history}`) are MERGED into one
+    // inline-{history} row so the composed prompt ends on a `user` turn. A standalone `{history}` row
+    // splices the floors role-preserving and ends on the last floor's `assistant` reply, which makes
+    // OpenAI-compatible Gemini endpoints return an empty completion.
     const agent = doc.nodes.find((n) => n.id === 'agent')!
-    expect((agent.config as { messages: unknown }).messages).toEqual(fixtureMessages)
+    expect((agent.config as { messages: unknown }).messages).toEqual([
+      { role: 'system', content: MAINTAINER_SYSTEM_PROMPT },
+      { role: 'user', content: '【本批剧情】\n{history}' }
+    ])
   })
 
-  it('mode contract: three options (off selected), cadence→when1, backlog→when2, when3/when4 unwired', () => {
+  it('mode contract: three options (every_turn selected + "Every X turns" label), cadence→when1, backlog→when2, when3/when4 unwired', () => {
     const mode = doc.nodes.find((n) => n.id === 'mode')!
     expect(mode.type).toBe('control.mode')
     expect((mode.config as { options: { key: string }[] }).options.map((o) => o.key)).toEqual([
@@ -289,7 +298,12 @@ describe('default memory template — shape', () => {
       'async',
       'off'
     ])
-    expect((mode.config as { selected: string }).selected).toBe('off')
+    // Ship default: every_turn, with the renamed display label (doc content, not i18n).
+    expect((mode.config as { options: { key: string; label: string }[] }).options[0]).toEqual({
+      key: 'every_turn',
+      label: 'Every X turns'
+    })
+    expect((mode.config as { selected: string }).selected).toBe('every_turn')
 
     const into = (port: string) =>
       doc.edges.filter((e) => e.to.node === 'mode' && e.to.port === port).map((e) => e.from.node)
@@ -396,10 +410,14 @@ describe('default memory template v2 — memory.maintain single node', () => {
       node: 'log-apply',
       port: 'value'
     })
-    // Reuses the verbatim maintainer prompt ({{input}} alias → the rendered tables block).
-    expect((maintain.config as { messages: { content: string }[] }).messages[0].content).toBe(
-      MAINTAINER_SYSTEM_PROMPT
-    )
+    // Reuses the verbatim maintainer prompt ({{input}} alias → the rendered tables block), and merges
+    // the two user rows into one inline-{history} row so the composed prompt ends on a `user` turn (a
+    // trailing standalone-{history} row ends on the last floor's `assistant` reply → OpenAI-compatible
+    // Gemini returns an empty completion).
+    expect((maintain.config as { messages: { role: string; content: string }[] }).messages).toEqual([
+      { role: 'system', content: MAINTAINER_SYSTEM_PROMPT },
+      { role: 'user', content: '【本批剧情】\n{history}' }
+    ])
   })
 
   it('groups the memory system with the Memory node api_preset exposed', () => {
@@ -409,7 +427,7 @@ describe('default memory template v2 — memory.maintain single node', () => {
   })
 })
 
-// ── 2. mode=off turn equivalence to DEFAULT_GRAPH ────────────────────────────────────────────────
+// ── 2. ship-default (every_turn) turn equivalence to the narrator spine ──────────────────────────
 
 const turnCtx = (workflowId: string): RunContext => ({
   profileId: 'prof',
@@ -423,7 +441,7 @@ const turnCtx = (workflowId: string): RunContext => ({
   setNodeState: () => {}
 })
 
-describe('default memory template v2 — mode=off TURN skips the memory node (like v1)', () => {
+describe('default memory template v2 — ship-default (every_turn) TURN skips the memory node (like v1)', () => {
   it('a turn run skips the whole memory group; the narrator still writes', async () => {
     const res = await runWorkflow(buildDefaultMemoryDocV2(), builtinRegistry, turnCtx('seeded-v2'))
     const status = new Map(res.traces.map((t) => [t.nodeId, t.status]))
@@ -433,7 +451,7 @@ describe('default memory template v2 — mode=off TURN skips the memory node (li
   })
 })
 
-describe('default memory template — mode=off TURN equivalence to DEFAULT_GRAPH (plan WP-C)', () => {
+describe('default memory template — ship-default (every_turn) TURN equivalence to the narrator spine (plan WP-C)', () => {
   it('narrator traces match, memory chain skipped, and the model sees the SAME prompt', async () => {
     // No bound table template (both fail-soft paths: trim no-ops at pointer 0, export is empty).
     const merged = await runWorkflow(buildDefaultMemoryDoc(), builtinRegistry, turnCtx('seeded'))
@@ -508,6 +526,9 @@ describe('default memory template — headless mode flip (evaluateDocTriggers)',
     const sent = mockCallModel.callModel.mock.calls[0][1] as { role: string; content: string }[]
     expect(sent[0].role).toBe('system')
     expect(sent[0].content).toContain('数据库表格维护AI')
+    // The composed prompt ends on a `user` turn (merged inline-{history}), NOT a trailing `assistant`
+    // reply — the OpenAI-compatible-Gemini empty-completion guard.
+    expect(sent[sent.length - 1].role).toBe('user')
     expect(mockSql.applySqlBatch).toHaveBeenCalledTimes(1)
     expect(mockProgress.advanceProgress).toHaveBeenCalledWith('prof', 'c1', ['summary'], 5)
   })

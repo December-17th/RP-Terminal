@@ -7,6 +7,7 @@ import {
   extractCreateTableName,
   stripSqlComments,
   isSafeSqlIdentifier,
+  parseDdlColumnNames,
   ChatSheetsParseError
 } from '../src/main/parsers/chatSheetsParser'
 import { TableTemplateSchema } from '../src/main/types/tableTemplate'
@@ -65,6 +66,40 @@ describe('stripSqlComments / isSafeSqlIdentifier', () => {
     expect(isSafeSqlIdentifier('drop table')).toBe(false)
     expect(isSafeSqlIdentifier('a;b')).toBe(false)
     expect(isSafeSqlIdentifier('')).toBe(false)
+  })
+})
+
+describe('parseDdlColumnNames', () => {
+  it('returns the DDL real column names in declared order (not the zh comments)', () => {
+    const ddl =
+      'CREATE TABLE protagonist_info ( -- 主角信息\n' +
+      '  row_id INTEGER PRIMARY KEY, -- 行号\n' +
+      '  name TEXT, -- 人物名称\n' +
+      '  gender_age TEXT -- 性别/年龄\n);'
+    expect(parseDdlColumnNames(ddl)).toEqual(['row_id', 'name', 'gender_age'])
+  })
+
+  it('skips table-level constraints but keeps inline column constraints and nested parens', () => {
+    const ddl =
+      'CREATE TABLE chronicle (\n' +
+      "  row_id INTEGER PRIMARY KEY,\n" +
+      "  code_index TEXT NOT NULL UNIQUE CHECK(code_index GLOB 'AM[0-9]'),\n" +
+      '  summary TEXT CHECK(summary IS NULL OR LENGTH(summary) <= 80),\n' +
+      '  UNIQUE(row_id)\n);'
+    // row_id/code_index/summary kept (inline constraints); the table-level UNIQUE(...) clause dropped.
+    expect(parseDdlColumnNames(ddl)).toEqual(['row_id', 'code_index', 'summary'])
+  })
+
+  it('handles quoted identifiers and a comma inside a type', () => {
+    expect(parseDdlColumnNames('CREATE TABLE t ("a b" TEXT, amount DECIMAL(10,2));')).toEqual([
+      'a b',
+      'amount'
+    ])
+  })
+
+  it('returns [] when there is no parsable table body', () => {
+    expect(parseDdlColumnNames('')).toEqual([])
+    expect(parseDdlColumnNames('not a ddl')).toEqual([])
   })
 })
 

@@ -4,7 +4,7 @@
 // `.rptmodule` import flow does — the renderer inserts it via the one existing path
 // (workflowEditorStore.insertModule: remint ids, pre-group, name, collapse). No new insert machinery.
 //
-//  · Built-ins are code-built the way DEFAULT_GRAPH is: v1 = "Table memory", EXTRACTED from the WP-C
+//  · Built-ins are code-built (a pure code const): v1 = "Table memory", EXTRACTED from the WP-C
 //    merged-default template via the same buildModuleEnvelope walk the module exporter uses — so the
 //    palette insert is byte-for-byte the group a fresh seed carries (nodes + internal edges + exposed
 //    + note), and it can't drift from the seeded doc (one source of truth: defaultMemoryTemplate.ts).

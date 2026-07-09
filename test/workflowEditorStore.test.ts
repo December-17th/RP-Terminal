@@ -1,13 +1,13 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { useWorkflowEditorStore } from '../src/renderer/src/stores/workflowEditorStore'
 import { WorkflowDoc } from '../src/shared/workflow/types'
-import { DEFAULT_GRAPH } from '../src/main/services/nodes/builtin/defaultGraph'
+import { NARRATOR_SPINE_DOC as DEFAULT_GRAPH } from './fixtures/narratorSpineDoc'
 import { listNodeTypes } from '../src/main/services/nodes/catalog'
 
 // The real builtin catalog (src/main/services/nodes/catalog.ts) — used as-is so the
-// "open the real DEFAULT_GRAPH" test validates cleanly, and it already covers every type
-// the custom-doc fixture below needs (input.context, output.writeFloor, control.if,
-// text.template, etc.), so one catalog serves both.
+// "open the narrator spine fixture (stand-in for the read-only builtin) test validates cleanly, and it
+// already covers every type the custom-doc fixture below needs (input.context, output.writeFloor,
+// control.if, text.template, etc.), so one catalog serves both.
 const NODE_TYPES = listNodeTypes()
 
 const customDoc = (): WorkflowDoc => ({
@@ -27,10 +27,10 @@ const customDoc = (): WorkflowDoc => ({
   edges: [{ from: { node: 'ctx', port: 'gen' }, to: { node: 'write', port: 'gen' } }]
 })
 
-const workflowsList = () => [
-  { id: 'default', name: 'Default Generation', builtin: true },
-  { id: 'custom-1', name: 'Custom' }
-]
+// The memory-default refactor: listWorkflows no longer injects the builtin — the list is only real
+// file docs. getWorkflow('default') still resolves the read-only builtin (opened directly in the
+// read-only tests below), it is just never a list entry.
+const workflowsList = () => [{ id: 'custom-1', name: 'Custom' }]
 
 const setupApi = (): void => {
   ;(globalThis as unknown as { window: unknown }).window = {

@@ -5,8 +5,9 @@ import type { AgentPackRecord } from '../../agentPackStore'
 //
 // This re-expresses the NON-NARRATOR parts of the shipped monolithic table-memory workflow
 // (docs/workflows/table-memory-default.rptflow) as a kind:'fragment' WorkflowDoc plus the
-// attachments that splice it back onto the builtin narrator spine (defaultGraph.ts: the SAME
-// ctx → assemble → llm → parse → apply → write spine the monolith embeds verbatim).
+// attachments that splice it back onto the narrator spine (the SAME
+// ctx → assemble → llm → parse → apply → write spine the monolith embeds verbatim; that spine is now
+// the head of the builtin default doc and survives standalone as the test fixture NARRATOR_SPINE_DOC).
 //
 // Decisions: ADR 0002 (fragments attach at checkpoints; disabling gates the entry edge),
 // ADR 0009 (one pack, one graph, many attachments — the gate is per-pack). Glossary: root
@@ -15,7 +16,7 @@ import type { AgentPackRecord } from '../../agentPackStore'
 //
 // ── How the monolith decomposes (verified edge-by-edge against the .rptflow) ─────────────────────
 // The monolith's 44 edges split into three buckets:
-//  • 18 NARRATOR-INTERNAL edges — byte-identical to DEFAULT_GRAPH (the narrator spine).
+//  • 18 NARRATOR-INTERNAL edges — byte-identical to the narrator spine (NARRATOR_SPINE_DOC).
 //  • 15 FRAGMENT-INTERNAL edges — between two table nodes; they move here UNCHANGED (below).
 //  • 11 BOUNDARY edges (narrator ↔ table node) — re-expressed as the attachments below.
 //

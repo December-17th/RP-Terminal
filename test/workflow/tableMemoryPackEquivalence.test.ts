@@ -6,7 +6,7 @@ import { validateWorkflow } from '../../src/shared/workflow/validate'
 import { topoOrder } from '../../src/shared/workflow/graph'
 import { WorkflowDoc, Edge } from '../../src/shared/workflow/types'
 import { builtinRegistry } from '../../src/main/services/nodes/builtin'
-import { DEFAULT_GRAPH } from '../../src/main/services/nodes/builtin/defaultGraph'
+import { NARRATOR_SPINE_DOC as DEFAULT_GRAPH } from '../fixtures/narratorSpineDoc'
 import {
   TABLE_MEMORY_FRAGMENT,
   TABLE_MEMORY_PACK_ID
@@ -21,10 +21,10 @@ import {
 // CheckpointSpec.anchors + RejoinAttachment.anchor), and the fragment's rejoin now uses the
 // `entries` lane — so the former principled-delta assertions below became exact ones.
 //
-// Composition is exercised against the REAL narrator (DEFAULT_GRAPH from main) exactly as
-// compose.test.ts does — the monolith embeds that spine verbatim, so it is "the ORIGINAL narrator
-// spine" WP1.6 asks for. The monolith's spine nodes/edges are asserted identical to DEFAULT_GRAPH
-// below, closing the loop.
+// Composition is exercised against the narrator spine fixture (NARRATOR_SPINE_DOC, aliased DEFAULT_GRAPH
+// — the exact spine the deleted builtin carried) exactly as compose.test.ts does — the monolith embeds
+// that spine verbatim, so it is "the ORIGINAL narrator spine" WP1.6 asks for. The monolith's spine
+// nodes/edges are asserted identical to the fixture below, closing the loop.
 
 const monolithPath = path.join(__dirname, '../../docs/workflows/table-memory-default.rptflow')
 const monolith = JSON.parse(fs.readFileSync(monolithPath, 'utf-8')) as WorkflowDoc

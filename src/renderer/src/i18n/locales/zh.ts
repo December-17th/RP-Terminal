@@ -1062,6 +1062,9 @@ const zh: Record<string, string> = {
   'prefs.combatImprovisePromptHint':
     '引导自由行动框（独特行动／脱离战斗）的裁定方式。角色卡的 combat.improvise_prompt 会覆盖此设置。',
 
+  'common.dismiss': '关闭',
+  'agent.headlessFailed': '⚠ 记忆代理运行失败：{{reason}}',
+
   'combat.empty': '当前没有进行中的战斗。',
   'combat.cueDetected': '战斗一触即发。',
   'combat.enter': '进入战斗',

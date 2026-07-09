@@ -9,9 +9,10 @@ Prereqs: a world open in Play, at least one message exchanged, an API preset tha
 
 ## 1. Run/trace panel (Workflows view)
 
-1. Open the **Workflows** panel view. Confirm the list shows *Default Generation (built-in)*
-   plus your workflows, three selector dropdowns, and the **Active workflow** line shows a
-   NAME (not a uuid).
+1. Open the **Workflows** panel view. Confirm the list shows the seeded editable *Default*
+   (the SQL-table memory doc) plus your workflows — there is no separate "Default Generation
+   (built-in)" entry anymore — three selector dropdowns, and the **Active workflow** line shows
+   a NAME (not a uuid).
 2. Send a message in chat. After the reply lands, the **Last run** section should list every
    node of the active workflow with green dots and per-node timings; the two memory/post
    nodes carry a *post-response* chip.

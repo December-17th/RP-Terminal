@@ -120,7 +120,11 @@ registered in `builtin/index.ts`; classified `writes-tables` in the ADR-0007 cap
   maintainer prompt transfers unchanged) → the rendered tables block; `{history}` → the recent
   transcript (a row whose entire content is `{history}` is replaced by the history messages
   role-preserving; inline `{history}` → flattened transcript text). Table/history text is substituted
-  as DATA (after macros/EJS run on the authored scaffold), never executed.
+  as DATA (after macros/EJS run on the authored scaffold), never executed. The seeded Default uses an
+  **inline** `{history}` (one `【本批剧情】\n{history}` user row) on purpose: role-preserving splicing
+  ends the prompt on the last floor's `assistant` reply, and OpenAI-compatible Gemini endpoints reject a
+  trailing `assistant` turn with an empty completion — the inline form flattens the transcript so the
+  prompt ends on a `user` turn.
 - **Per-table maintenance rules are NOT node config** — each table's `note`/`initNode`/`insertNode`/
   `updateNode`/`deleteNode` live in the **bound table template** (`docs/sdk/table-templates.md`) and
   are rendered into the prompt by the shared `renderTablesBlock`. The node's details panel edits them
@@ -141,16 +145,23 @@ mirroring the seeded Default v2) — import it, bind a table template, and flip 
 Every profile is lazily seeded with an ordinary, EDITABLE workflow doc named **"Default"**: the
 narrator spine plus a collapsed **"Table memory"** group (`buildDefaultMemoryDocV2`,
 `src/main/services/nodes/builtin/defaultMemoryTemplate.ts`; seeding rule in
-`src/main/services/workflowService.ts` `seedDefaultMemoryWorkflow`). The code builtin
-`DEFAULT_GRAPH` stays untouched as the invisible fallback. **v2** replaced the original five-node
-maintenance chain with the single `memory.maintain` node (gated by `mode.fired`, `error → util.log`);
-`buildDefaultMemoryDoc` (v1) is retained only as the superseded-doc fixture.
+`src/main/services/workflowService.ts` `seedDefaultMemoryWorkflow`). The old narrator-only
+`DEFAULT_GRAPH` builtin has been **deleted**: the invisible read-only fallback is now the SAME memory
+doc, normalized to id `'default'` with its seed marker stripped (`workflowStore.BUILTIN_DEFAULT_DOC`).
+That fallback is **not** a `listWorkflows` entry — the only visible "Default" is the seeded editable
+copy. **v2** replaced the original five-node maintenance chain with the single `memory.maintain` node
+(gated by `mode.fired`, `error → util.log`); `buildDefaultMemoryDoc` (v1) is retained only as the
+superseded-doc fixture. A plain narrator-only spine survives solely as the test fixture
+`test/fixtures/narratorSpineDoc.ts` (`NARRATOR_SPINE_DOC`).
 
 - **Seeding rule** (memory.maintain plan WP3): lazy at the `listWorkflows` entry point; idempotent via
   the `meta.seeded = 'default-memory-v2'` marker (survives rename/edit); skipped when any user doc
   already contains a memory node (`table.apply` / `agent.llm` / `memory.maintain`); the global
-  selection is set to the seeded doc only when nothing was selected. Ships with mode `off` (safe
-  default — no side LLM calls until the user configures a table template and flips the mode).
+  selection is set to the seeded doc only when nothing was selected. Ships with mode **`every_turn`**
+  (memory maintenance runs every N floors out of the box; a bound table template with a `summary`
+  table is still required before anything is written — the exposed Mode setting switches to `async`
+  or `off`). Because the memory group is trigger-rooted, a plain turn still excludes it regardless of
+  mode, so the narrator behavior is unchanged.
 - **v1 → v2 auto-replace:** a profile that still carries a live `default-memory-v1` doc has it
   **superseded** — v2 is seeded first (crash-safe), then the v1 doc is deleted (which tombstones its
   marker and repoints the global selection to v2). Hand-edits to a v1 default are lost. **Tombstones

@@ -7,7 +7,7 @@ import {
 import { validateWorkflow } from '../../src/shared/workflow/validate'
 import { topoOrder } from '../../src/shared/workflow/graph'
 import { builtinRegistry } from '../../src/main/services/nodes/builtin'
-import { DEFAULT_GRAPH } from '../../src/main/services/nodes/builtin/defaultGraph'
+import { NARRATOR_SPINE_DOC as DEFAULT_GRAPH } from '../fixtures/narratorSpineDoc'
 import {
   ASYNC_MEMORY_FRAGMENT,
   ASYNC_MEMORY_PACK_ID,

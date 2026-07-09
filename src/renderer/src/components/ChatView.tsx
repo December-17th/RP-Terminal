@@ -16,6 +16,7 @@ import { expandMacros } from '../../../shared/macros'
 import { stripRptEvents, stripThinking, extractThinking } from '../../../shared/responseView'
 import { renderTemplate } from '../plugin/renderTemplate'
 import { useUiStore } from '../stores/uiStore'
+import { useAgentFailureStore } from '../stores/agentFailureStore'
 import { useT } from '../i18n'
 
 // Local copy of the workflow editors' `inEditable` shape (do NOT import across modules): true when
@@ -64,6 +65,10 @@ export function ChatView({ profileId }: { profileId: string }): React.ReactEleme
   const openDuelPopup = useUiStore((s) => s.openDuelPopup)
   const settings = useSettingsStore((s) => s.settings)
   const regexRules = useRegexStore((s) => s.rules)
+  // Last headless-agent failure for THIS chat (App records it off the workflow-trace flow) — shown as
+  // a dismissible banner above the composer so a silent background-agent failure is never missed.
+  const agentFailure = useAgentFailureStore((s) => (activeChatId ? s.failures[activeChatId] : undefined))
+  const clearAgentFailure = useAgentFailureStore((s) => s.clear)
 
   const [pendingUserMsg, setPendingUserMsg] = useState('')
   const [editing, setEditing] = useState<{ floor: number; field: 'user' | 'response' } | null>(null)
@@ -404,6 +409,48 @@ export function ChatView({ profileId }: { profileId: string }): React.ReactEleme
         <div style={{ display: 'flex', justifyContent: 'center', margin: '6px 0' }}>
           <button className="btn-accent" style={{ fontSize: 12 }} onClick={() => openDuelPopup()}>
             ⚔ {t('duel.reopen')}
+          </button>
+        </div>
+      ) : null}
+
+      {agentFailure && activeChatId ? (
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: 10,
+            padding: '6px 10px',
+            margin: '6px 0',
+            borderRadius: 6,
+            border: '1px solid var(--rpt-danger, #d9534f)',
+            background: 'var(--rpt-danger-soft, rgba(217,83,79,0.12))',
+            fontSize: 13
+          }}
+        >
+          <span>
+            {t('agent.headlessFailed', {
+              reason:
+                agentFailure.reason.length > 200
+                  ? agentFailure.reason.slice(0, 200) + '…'
+                  : agentFailure.reason
+            })}
+          </span>
+          <button
+            title={t('common.dismiss')}
+            style={{
+              flex: '0 0 auto',
+              background: 'none',
+              border: 'none',
+              color: 'inherit',
+              cursor: 'pointer',
+              fontSize: 16,
+              lineHeight: 1,
+              padding: '0 2px'
+            }}
+            onClick={() => clearAgentFailure(activeChatId)}
+          >
+            ×
           </button>
         </div>
       ) : null}

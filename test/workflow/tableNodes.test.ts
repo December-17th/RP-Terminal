@@ -653,6 +653,9 @@ describe('table.read', () => {
     const r = tableRead.run(ctx, { gen, tables: ['chronicle', 'world'] }, meta(tableRead, 'r'))
     const block = r.outputs!.block as string
     expect(block).toContain('## 纪要表 (chronicle) — 每 1 轮维护')
+    // The block carries each table's CREATE TABLE (real SQL column names) so the model writes valid SQL.
+    expect(block).toContain('【建表语句】')
+    expect(block).toContain('CREATE TABLE chronicle (row_id INTEGER, summary TEXT)')
     expect(block).toContain('【表定义】按时间顺序记录事件')
     expect(block).toContain('【初始化规则】INSERT the first row') // empty table
     expect(block).toContain('【插入规则】INSERT INTO chronicle …')
@@ -662,6 +665,39 @@ describe('table.read', () => {
     // world is non-empty → its init rule is NOT shown (chronicle's init is the only 初始化规则).
     expect(block.match(/【初始化规则】/g)?.length).toBe(1)
     expect(r.outputs!.tables).toEqual(['chronicle', 'world'])
+  })
+
+  it('renders 【当前数据】 with the DDL real column names, not the zh display headers', () => {
+    // The regression: display headers (人物名称) leaked into the prompt, so the model wrote
+    // `INSERT INTO protagonist_info (人物名称, …)` → SQLite "no column named 人物名称". The block must
+    // instead show the DDL's real column names (name, …) via 【建表语句】 + the 【当前数据】 header line.
+    const tpl = TableTemplateSchema.parse({
+      name: 'M3',
+      tables: [
+        {
+          uid: 'p',
+          displayName: '主角信息',
+          sqlName: 'protagonist_info',
+          ddl: 'CREATE TABLE protagonist_info (\n  row_id INTEGER PRIMARY KEY, -- 行号\n  name TEXT, -- 人物名称\n  gender_age TEXT -- 性别/年龄\n);',
+          headers: ['行号', '人物名称', '性别/年龄'],
+          updateFrequency: 1
+        }
+      ]
+    })
+    chatSvc.getChatTableTemplateId.mockReturnValue('t1')
+    templateSvc.getTableTemplateById.mockReturnValue(tpl)
+    dbSvc.readAllTables.mockReturnValue([
+      readOf('protagonist_info', ['行号', '人物名称', '性别/年龄'], [[1, '爱莉亚', '女/17']])
+    ])
+    const r = tableRead.run(ctx, { gen }, meta(tableRead, 'r'))
+    const block = r.outputs!.block as string
+    expect(block).toContain('【建表语句】')
+    expect(block).toContain('CREATE TABLE protagonist_info')
+    // 【当前数据】 header line uses the DDL's REAL column names, never the zh display headers.
+    expect(block).toContain('row_id | name | gender_age')
+    expect(block).not.toContain('行号 | 人物名称 | 性别/年龄')
+    // Data row still renders positionally under the real-name header.
+    expect(block).toContain('1 | 爱莉亚 | 女/17')
   })
 
   it('an off (0) table renders "手动维护"; a -1 table renders the resolved global cadence', () => {

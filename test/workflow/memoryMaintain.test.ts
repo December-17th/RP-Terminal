@@ -104,6 +104,7 @@ vi.mock('../../src/main/services/presetService', () => ({
 }))
 
 import { memoryMaintain, composeMaintainerMessages } from '../../src/main/services/nodes/builtin/memoryNodes'
+import { buildDefaultMemoryDocV2 } from '../../src/main/services/nodes/builtin/defaultMemoryTemplate'
 import { buildGenContext } from '../../src/main/services/generation/genContext'
 import { RunContext } from '../../src/main/services/nodes/types'
 
@@ -153,6 +154,9 @@ describe('memory.maintain — end to end', () => {
     const joined = sent.map((m) => `${m.role}:${m.content}`).join('\n')
     // {{tables}} → the rendered table block (renderTableBlock header).
     expect(joined).toContain('纪要 (summary)')
+    // The block now carries the table's CREATE TABLE so the model writes SQL against real columns.
+    expect(joined).toContain('【建表语句】')
+    expect(joined).toContain('CREATE TABLE summary (t TEXT)')
     expect(joined).toContain('【插入规则】每次新增一行概括')
     // {history} row → spliced transcript.
     expect(joined).toContain('ai reply 3')
@@ -181,6 +185,21 @@ describe('memory.maintain — end to end', () => {
     expect(withTables[0].content).toContain('纪要 (summary)')
     // The alias substitutes the identical rendered block.
     expect(withInput[0].content).toBe(withTables[0].content)
+  })
+
+  it('the seeded default (v2) maintain messages compose to end on a `user` turn (not a trailing assistant)', () => {
+    const maintain = buildDefaultMemoryDocV2().nodes.find((n) => n.id === 'maintain')!
+    const cfg = maintain.config as { messages: { role: string; content: string }[] }
+    const gen = buildGenContext('prof', 'c1', '')
+    const composed = composeMaintainerMessages(gen, TEMPLATE, { messages: cfg.messages, lastNFloors: 6 })
+    // A standalone-{history} row would splice the floors role-preserving and end on the last floor's
+    // `assistant` reply → OpenAI-compatible Gemini returns an empty completion. The seeded template's
+    // merged inline-{history} row flattens the transcript into the trailing `user` message instead.
+    expect(composed[composed.length - 1].role).toBe('user')
+    // The transcript still reaches the model (flattened, not spliced).
+    const joined = composed.map((m) => `${m.role}:${m.content}`).join('\n')
+    expect(joined).toContain('ai reply 3')
+    expect(joined).toContain('player action 3')
   })
 
   it('no template bound → silent no-op (no model call, no write)', async () => {

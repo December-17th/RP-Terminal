@@ -10,7 +10,7 @@ import {
   EditorNodeType
 } from '../../src/renderer/src/components/workflow/editorModel'
 import { WorkflowDoc, NodeInstance, Edge } from '../../src/shared/workflow/types'
-import { DEFAULT_GRAPH } from '../../src/main/services/nodes/builtin/defaultGraph'
+import { NARRATOR_SPINE_DOC as DEFAULT_GRAPH } from '../fixtures/narratorSpineDoc'
 
 const node = (id: string, extra: Partial<NodeInstance> = {}): NodeInstance => ({
   id,

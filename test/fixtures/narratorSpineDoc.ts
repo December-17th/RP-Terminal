@@ -1,16 +1,17 @@
-import { WorkflowDoc } from '../../../../shared/workflow/types'
+import { WorkflowDoc } from '../../src/shared/workflow/types'
 
-/** The default generation graph: the built-in nodes wired to reproduce the existing
- *  `generate()` flow (spec §5, plan decision A). `write` (output.writeFloor) is the
- *  phase-boundary / main-output node. `assemble`'s `block` input is left unwired (empty memory
- *  tail); a producer for it is reintroduced by the table-memory system as its own graph. */
-export const DEFAULT_GRAPH: WorkflowDoc = {
+/** The narrator-only generation spine — the exact node graph the deleted builtin `DEFAULT_GRAPH`
+ *  carried (src/main/services/nodes/builtin/defaultGraph.ts, removed in the memory-default refactor).
+ *  Kept as a TEST-ONLY fixture: the product no longer ships a narrator-only builtin (the builtin
+ *  fallback is now the SQL-table memory doc), but many characterization tests still need a plain,
+ *  runnable narrator doc as a compose/trace baseline. Copied VERBATIM so those tests keep pinning the
+ *  same wiring they did against DEFAULT_GRAPH. Not imported by any `src/` code. */
+export const NARRATOR_SPINE_DOC: WorkflowDoc = {
   id: 'default',
   name: 'Default Generation',
   version: 1,
   schemaVersion: 1,
-  description:
-    'Built-in generation pipeline: assemble, sample, parse, apply, write.',
+  description: 'Built-in generation pipeline: assemble, sample, parse, apply, write.',
   nodes: [
     { id: 'ctx', type: 'input.context' },
     { id: 'assemble', type: 'prompt.assemble' },

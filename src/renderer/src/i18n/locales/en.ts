@@ -1108,6 +1108,9 @@ const en: Record<string, string> = {
   'prefs.combatImprovisePromptHint':
     'Steers how the freeform-action box (unique actions / leaving the fight) is adjudicated. A world card’s combat.improvise_prompt overrides this.',
 
+  'common.dismiss': 'Dismiss',
+  'agent.headlessFailed': '⚠ Memory agent failed: {{reason}}',
+
   'combat.empty': 'No active combat.',
   'combat.cueDetected': 'A fight is breaking out.',
   'combat.enter': 'Enter Combat',

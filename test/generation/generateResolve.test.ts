@@ -2,10 +2,10 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { getDefaultSettings } from '../../src/main/services/settingsService'
 import { getDefaultPreset } from '../../src/main/types/preset'
 import type { FloorFile } from '../../src/main/types/chat'
-import { DEFAULT_GRAPH } from '../../src/main/services/nodes/builtin/defaultGraph'
+import { NARRATOR_SPINE_DOC as DEFAULT_GRAPH } from '../fixtures/narratorSpineDoc'
 
 // Proves generate() actually consumes workflowService.resolveEffectiveDoc (rather than a
-// hardcoded 'default' literal + DEFAULT_GRAPH) and threads the resolved id through to
+// hardcoded 'default' literal + a fixed doc) and threads the resolved id through to
 // buildTurnContext — the wiring Task 5 adds on top of Task 3 (resolver) + Task 4 (ctx arg).
 // (agent-packs plan WP1.3: the single doc-resolution call site moved from resolveWorkflowDoc to
 // resolveEffectiveDoc — the narrator composed with enabled packs. With no packs the effective doc

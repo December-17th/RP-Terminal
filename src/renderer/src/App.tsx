@@ -21,6 +21,11 @@ import { CardScriptWcvHost } from './components/CardScriptWcvHost'
 import { PluginHost } from './components/PluginHost'
 import { useWorkflowTraceStore } from './stores/workflowTraceStore'
 import { useWorkflowPanelStore } from './stores/workflowPanelStore'
+import {
+  useAgentFailureStore,
+  isHeadlessTrace,
+  deriveHeadlessFailure
+} from './stores/agentFailureStore'
 import type { WorkflowRunTrace } from '../../shared/workflow/trace'
 import { useWorkspaceStore } from './stores/workspaceStore'
 import { useComposerStore } from './stores/composerStore'
@@ -136,9 +141,18 @@ export default function App(): React.ReactElement {
     // lives in initCardEventBridge (cardBridge/hostBroadcast), so the two paths can't drift (WS-7).
     const unsubEvents = initCardEventBridge()
     // Per-turn workflow run trace → keep the latest per chat for the Workflows trace panel.
-    const unsubTrace = window.api.onWorkflowTrace((trace: unknown) =>
-      useWorkflowTraceStore.getState().put(trace as WorkflowRunTrace)
-    )
+    const unsubTrace = window.api.onWorkflowTrace((trace: unknown) => {
+      const t = trace as WorkflowRunTrace
+      useWorkflowTraceStore.getState().put(t)
+      // Headless agent runs are silent by nature (no chat message). Surface their failures as a
+      // dismissible banner (agentFailureStore → ChatView) so a background agent that fails never
+      // passes unnoticed. A clean headless run retires any earlier banner for that chat.
+      if (isHeadlessTrace(t)) {
+        const failure = deriveHeadlessFailure(t)
+        if (failure) useAgentFailureStore.getState().recordFailure(t.chatId, failure)
+        else useAgentFailureStore.getState().clear(t.chatId)
+      }
+    })
     // Opt-in node output panels (spec D4): append deltas; a chat's panels belong to its latest
     // turn, so clear them on the turn's rising edge (isGenerating false→true).
     const unsubPanel = window.api.onWorkflowPanel((p) =>

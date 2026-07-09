@@ -10,11 +10,11 @@ import { WorkflowDoc } from '../../src/shared/workflow/types'
 import { AttachmentDecl } from '../../src/shared/workflow/attachments'
 import { validateWorkflow } from '../../src/shared/workflow/validate'
 import { builtinRegistry } from '../../src/main/services/nodes/builtin'
-import { DEFAULT_GRAPH } from '../../src/main/services/nodes/builtin/defaultGraph'
+import { NARRATOR_SPINE_DOC as DEFAULT_GRAPH } from '../fixtures/narratorSpineDoc'
 
-// Golden tests compose against the REAL narrator spine (DEFAULT_GRAPH from main). check:deps only
-// scans src/ (package.json: `depcruise src`), and sibling tests already import main from test/
-// (defaultGraph.test.ts), so importing the real doc here is allowed and keeps the golden anchored.
+// Golden tests compose against the narrator spine fixture (NARRATOR_SPINE_DOC, aliased DEFAULT_GRAPH) —
+// the exact node graph the deleted builtin carried, kept under test/fixtures so the golden stays
+// anchored to a stable, plain narrator doc.
 
 /** A fresh clone of the narrator each test so mutations never leak between cases. */
 const narrator = (): WorkflowDoc => structuredClone(DEFAULT_GRAPH)

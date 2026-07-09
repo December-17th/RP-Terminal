@@ -91,6 +91,18 @@ vi.mock('../../src/main/services/templateService', async (orig) => ({
   saveGlobals: () => {}
 }))
 vi.mock('../../src/main/services/logService', () => ({ log: () => {} }))
+// Pin resolution to the plain narrator spine fixture (the parity baseline pins narrator behavior). The
+// builtin fallback is now the SQL-table memory doc, whose in-turn recall nodes (trim/export) reach for
+// chatService.getChatTableTemplateId — not mocked here — and whose memory group would fire on the
+// detached post-turn trigger pass. resolveEffectiveDoc returns the narrator directly (no packs here).
+vi.mock('../../src/main/services/workflowService', async () => {
+  const { NARRATOR_SPINE_DOC } = await import('../fixtures/narratorSpineDoc')
+  return {
+    BUILTIN_WORKFLOW_ID: 'default',
+    resolveEffectiveDoc: () => ({ id: 'default', doc: NARRATOR_SPINE_DOC, warnings: [] }),
+    setEnabledFragmentsProvider: () => {}
+  }
+})
 vi.mock('../../src/main/services/apiService', async (orig) => ({
   ...(await orig<Record<string, unknown>>()),
   streamProvider: async (_s: unknown, messages: unknown) => {

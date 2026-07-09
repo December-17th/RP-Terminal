@@ -2,10 +2,12 @@ import { WorkflowDoc } from '../../../../shared/workflow/types'
 
 /**
  * The merged default doc (agent & memory UX WP-C; spec §3.2–§3.3): the narrator spine PLUS the
- * SQL-table memory system, mode-switchable in place. Code-built like DEFAULT_GRAPH, but NEVER run
- * as a builtin — it is the TEMPLATE for the seeded, EDITABLE "Default" workflow doc that
- * `workflowService.seedDefaultMemoryWorkflow` writes into a profile (plan §0.3). The code builtin
- * `DEFAULT_GRAPH` stays byte-untouched as the invisible fallback (parity-pinned).
+ * SQL-table memory system, mode-switchable in place. This IS the app's default: it is BOTH the
+ * TEMPLATE for the seeded, EDITABLE "Default" workflow doc that `workflowService.seedDefaultMemoryWorkflow`
+ * writes into a profile (plan §0.3), AND — normalized to id 'default' with the seed marker stripped —
+ * the invisible read-only builtin fallback (`workflowStore.BUILTIN_DEFAULT_DOC`). The old narrator-only
+ * `DEFAULT_GRAPH` builtin has been deleted; a plain narrator spine survives only as the test fixture
+ * `test/fixtures/narratorSpineDoc.ts` (NARRATOR_SPINE_DOC).
  *
  * Wiring is grounded in the PROVEN fixtures (the spec's chain list is the design; the .rptflow
  * files are the proven wiring — plan WP-C task 1):
@@ -25,11 +27,12 @@ import { WorkflowDoc } from '../../../../shared/workflow/types'
  *  · when4 is left free so an imported memory system can join the mutual exclusion by wiring its
  *    trigger into it and adding a fourth option (pure wiring; no app code — spec §3.2).
  *
- * Ships with `selected: 'off'`: an unconfigured profile must not burn side LLM calls (the cadence
- * trigger fires regardless of whether a table template is bound, and agent.llm would call the
- * model). The group `note` tells the user what to set up; flipping the exposed Mode enum turns
- * memory on. With mode off (and recall's trim/export fail-soft when no template is bound) a turn
- * run of this doc is trace-equivalent to DEFAULT_GRAPH — pinned by
+ * Ships with `selected: 'every_turn'`: memory maintenance runs every N floors out of the box (a bound
+ * table template with a 'summary' table is still required — until one is bound, recall's trim/export
+ * fail-soft and the maintenance chain has nothing to write). The group `note` tells the user what to
+ * set up; the exposed Mode enum switches to `async` or `off`. Because the memory group is trigger-rooted
+ * (`isTrigger` nodes are excluded from the turn phase), a TURN run of this doc is trace-equivalent to the
+ * narrator spine (NARRATOR_SPINE_DOC) regardless of mode — pinned by
  * test/workflow/defaultMemoryTemplate.test.ts.
  *
  * Doc CONTENT (name, group name, note, exposed labels) is user-editable document data, not app-UI
@@ -97,11 +100,11 @@ export const buildDefaultMemoryDoc = (): WorkflowDoc => ({
       type: 'control.mode',
       config: {
         options: [
-          { key: 'every_turn', label: 'Every turn' },
+          { key: 'every_turn', label: 'Every X turns' },
           { key: 'async', label: 'Async backlog' },
           { key: 'off', label: 'Off' }
         ],
-        selected: 'off'
+        selected: 'every_turn'
       },
       position: { x: 2240, y: 700 }
     },
@@ -118,10 +121,13 @@ export const buildDefaultMemoryDoc = (): WorkflowDoc => ({
       config: {
         stream: false,
         retries: 1,
+        // ONE inline-`{history}` user row (NOT a standalone `{history}` row): the transcript is
+        // flattened into text so the composed prompt ends on a `user` turn. A standalone `{history}`
+        // row splices the floors role-preserving and ends on the last floor's `assistant` reply, which
+        // makes OpenAI-compatible Gemini endpoints return an empty completion (0 tokens).
         messages: [
           { role: 'system', content: MAINTAINER_SYSTEM_PROMPT },
-          { role: 'user', content: '【本批剧情】' },
-          { role: 'user', content: '{history}' }
+          { role: 'user', content: '【本批剧情】\n{history}' }
         ]
       },
       position: { x: 2800, y: 700 }
@@ -240,7 +246,8 @@ export const buildDefaultMemoryDoc = (): WorkflowDoc => ({
  * the node's `messages` is only the scaffold prompt (the same verbatim maintainer prompt, `{{input}}`
  * substituting the rendered tables block).
  *
- * With mode off (the ship default), a turn run stays trace-equivalent to DEFAULT_GRAPH — pinned by
+ * A turn run stays trace-equivalent to the narrator spine (NARRATOR_SPINE_DOC) regardless of mode — the
+ * memory group is trigger-rooted and excluded from the turn phase — pinned by
  * defaultMemoryTemplate.test.ts, same as v1.
  */
 export const buildDefaultMemoryDocV2 = (): WorkflowDoc => ({
@@ -287,11 +294,11 @@ export const buildDefaultMemoryDocV2 = (): WorkflowDoc => ({
       type: 'control.mode',
       config: {
         options: [
-          { key: 'every_turn', label: 'Every turn' },
+          { key: 'every_turn', label: 'Every X turns' },
           { key: 'async', label: 'Async backlog' },
           { key: 'off', label: 'Off' }
         ],
-        selected: 'off'
+        selected: 'every_turn'
       },
       position: { x: 2240, y: 700 }
     },
@@ -304,10 +311,13 @@ export const buildDefaultMemoryDocV2 = (): WorkflowDoc => ({
         advance_progress: true,
         lastNFloors: 6,
         max_rows: 30,
+        // ONE inline-`{history}` user row (NOT a standalone `{history}` row): the transcript is
+        // flattened into text so the composed prompt ends on a `user` turn. A standalone `{history}`
+        // row splices the floors role-preserving and ends on the last floor's `assistant` reply, which
+        // makes OpenAI-compatible Gemini endpoints return an empty completion (0 tokens).
         messages: [
           { role: 'system', content: MAINTAINER_SYSTEM_PROMPT },
-          { role: 'user', content: '【本批剧情】' },
-          { role: 'user', content: '{history}' }
+          { role: 'user', content: '【本批剧情】\n{history}' }
         ]
       },
       position: { x: 2560, y: 700 }

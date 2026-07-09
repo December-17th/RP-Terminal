@@ -41,7 +41,8 @@ export interface CheckpointSpec {
   id: CheckpointId
   /** The DEFAULT lane's value type (== anchors[0].valueType). */
   valueType: PortType
-  /** The builtin-spine node type this checkpoint anchors on (defaultGraph.ts spine). */
+  /** The builtin-spine node type this checkpoint anchors on (the narrator spine — the head of the
+   *  builtin default doc; the standalone spine is test/fixtures/narratorSpineDoc.ts). */
   anchorNode: string
   /** The DEFAULT lane's port on `anchorNode` (== anchors[0].port). */
   anchorPort: string
@@ -63,11 +64,12 @@ export function resolveAnchorLane(
 /**
  * The v1 checkpoint specs, keyed by id. Value types are derived from the builtin spine's REAL
  * port types at each anchor — NOT guessed. Evidence (all in
- * src/main/services/nodes/builtin/generationNodes.ts, wired by defaultGraph.ts):
+ * src/main/services/nodes/builtin/generationNodes.ts, wired by the narrator spine — the head of the
+ * builtin default doc; the standalone spine is test/fixtures/narratorSpineDoc.ts):
  *
  *  - context-ready  → output of `input.context`, port `gen` : `Context`
  *      generationNodes.ts:22-30 (`inputContext.outputs = [{ name: 'gen', type: 'Context' }]`).
- *      Anchors on the `ctx` node's `gen` output in defaultGraph.ts:15.
+ *      Anchors on the `ctx` node's `gen` output.
  *
  *  - prompt-assembly → the injection-accepting inputs of `prompt.assemble` — TWO LANES (WP1.6b):
  *      generationNodes.ts:71-94. `prompt.assemble` has three inputs — `gen` (Context, the main
@@ -81,21 +83,19 @@ export function resolveAnchorLane(
  *          generationNodes.ts:86-89). This is the placement half the spec promised; pinned in
  *          WP1.6b after the table-memory pack (WP1.6) could not reproduce its
  *          `export.entries → assemble.entries` injection through the block-only anchor.
- *      The `assemble` node is defaultGraph.ts:16; BOTH lanes are intentionally left unwired in the
- *      default graph (defaultGraph.ts:6 comment).
+ *      The anchor is the `assemble` node; BOTH lanes are intentionally left unwired on the bare
+ *      narrator spine (a producer for them is supplied by the table-memory system).
  *
  *  - reply-parsed   → output of `parse.response`, port `parsed` : `Any`
  *      generationNodes.ts:182-207. `parse.response` outputs `parsed`/`mvu`/`metrics`, ALL `Any`
  *      (generationNodes.ts:191-195). The spec's "parsed reply + Context" value maps to the primary
  *      `parsed` output; the narrowest existing PortType that matches the parsed structure is `Any`
- *      (there is no dedicated parsed-reply PortType in PORT_TYPES). Anchor: the `parse` node,
- *      defaultGraph.ts:18.
+ *      (there is no dedicated parsed-reply PortType in PORT_TYPES). Anchor: the `parse` node.
  *
  *  - turn-committed → output of `output.writeFloor`, port `floor` : `Any`
  *      generationNodes.ts:234-260. `output.writeFloor` (the isMainOutput node) has a single output
  *      `floor`, typed `Any` (generationNodes.ts:245). The spec's "final floor + Context" value maps
- *      to this `floor` output; narrowest matching PortType is `Any`. Anchor: the `write` node,
- *      defaultGraph.ts:20.
+ *      to this `floor` output; narrowest matching PortType is `Any`. Anchor: the `write` node.
  */
 export const CHECKPOINTS: Readonly<Record<CheckpointId, CheckpointSpec>> = {
   'context-ready': {
