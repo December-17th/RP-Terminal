@@ -97,11 +97,6 @@ interface Slot {
 let mainWindow: BrowserWindow | null = null
 const slots = new Map<string, Slot>()
 
-// The host app's light/dark mode, mirrored to card panels so a card UI can theme itself to match RPT.
-// Driven by the renderer's applyTheme() → main 'set-color-scheme'. Default 'dark' (the app's default
-// theme), used until the first push; a card's preload seeds from `colorSchemeValue()` synchronously.
-let colorScheme: 'light' | 'dark' = 'dark'
-
 export const init = (win: BrowserWindow): void => {
   mainWindow = win
   // Tear every guest view down with the window so we don't leak guest processes.
@@ -400,9 +395,6 @@ export const pushHostReload = (chatId: string): void => {
   mainWindow?.webContents.send('wcv-host-reload', { chatId })
 }
 
-/** The current host light/dark mode — the sync-read resolver for a card preload's initial seed. */
-export const colorSchemeValue = (): 'light' | 'dark' => colorScheme
-
 // --- Runtime play theme (runtime-theme-api-design §5) ---
 // The renderer owns the theme authority (the effective base tokens only exist there). For a WCV card:
 //  - setPlayTheme: main RELAYS the call to the host renderer (which derives + AA-checks + applies) and
@@ -450,20 +442,6 @@ export const resolveSetPlayTheme = (id: number, ok: boolean): void => {
   if (r) {
     playThemePending.delete(id)
     r(!!ok)
-  }
-}
-
-/** Store the host mode and push it to every card panel (each stamps `data-rpt-mode` + fires
- *  `rpt:colorscheme`), so a card re-themes live when the user switches the RPT theme. */
-export const pushColorScheme = (mode: 'light' | 'dark'): void => {
-  colorScheme = mode === 'light' ? 'light' : 'dark'
-  for (const s of slots.values()) {
-    try {
-      if (!s.view.webContents.isDestroyed())
-        s.view.webContents.send('wcv-color-scheme', colorScheme)
-    } catch {
-      /* a page mid-teardown can't receive — ignore */
-    }
   }
 }
 

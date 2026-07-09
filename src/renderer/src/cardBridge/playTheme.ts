@@ -15,8 +15,13 @@ import type { CardCtx } from '../../../shared/thRuntime/types'
 
 /** The host event a card's sibling panels listen for to re-read getPlayTheme() after a runtime change. */
 export const PLAY_THEME_CHANGED = 'PLAY_THEME_CHANGED'
-/** Persisted-store key (namespaced) holding the raw override so it survives reload/remount. */
-const PERSIST_KEY = 'rpt.playTheme'
+/** Persisted-store keys (namespaced) holding the raw override so it survives reload/remount. ONE KEY PER
+ *  TARGET (design §3B) so a persisted shell theme and a persisted message theme survive independently —
+ *  they occupy separate uiStore slots and must not overwrite each other in the chat/global bag. */
+const PERSIST_KEY: Record<'shell' | 'message', string> = {
+  shell: 'rpt.playTheme',
+  message: 'rpt.msgTheme'
+}
 
 export type PlayThemeOpts = { target?: 'shell' | 'message'; persist?: 'session' | 'chat' | 'global' }
 export type PlayThemeSource = 'user' | 'card' | 'runtime'
@@ -68,25 +73,43 @@ const isClear = (theme: unknown): boolean =>
   (typeof theme === 'object' &&
     Object.keys((theme as { tokens?: object }).tokens ?? (theme as object)).length === 0)
 
-/** Persist the raw override (or clear it) in the chat / global store, namespaced. Read-modify-write so
- *  sibling card vars in the same bag are preserved. 'session' persists nothing (uiStore only). */
-function persist(scope: 'session' | 'chat' | 'global', ctx: CardCtx, value: unknown): void {
+/** Persist the raw override (or clear it) in the chat / global store, under the TARGET's namespaced key.
+ *  Read-modify-write so sibling card vars — and the other target's slot — in the same bag are preserved.
+ *  'session' persists nothing (uiStore only). */
+function persist(
+  scope: 'session' | 'chat' | 'global',
+  ctx: CardCtx,
+  target: 'shell' | 'message',
+  value: unknown
+): void {
   if (scope === 'session') return
+  const key = PERSIST_KEY[target]
   try {
     if (scope === 'chat') {
       if (!ctx.chatId) return
       const bag = { ...(window.api.chatCardVarsGetSync(ctx.profileId, ctx.chatId) || {}) }
-      if (value === null) delete bag[PERSIST_KEY]
-      else bag[PERSIST_KEY] = value
+      if (value === null) delete bag[key]
+      else bag[key] = value
       void window.api.chatCardVarsSet(ctx.profileId, ctx.chatId, bag)
     } else {
       const bag = { ...(window.api.pluginGlobalsGetSync(ctx.profileId) || {}) }
-      if (value === null) delete bag[PERSIST_KEY]
-      else bag[PERSIST_KEY] = value
+      if (value === null) delete bag[key]
+      else bag[key] = value
       void window.api.pluginGlobalsSet(ctx.profileId, bag)
     }
   } catch (e) {
     console.error('[playTheme persist]', e)
+  }
+}
+
+/** Push the fresh effective play theme to main so a WCV card's getPlayTheme() is at inline parity right
+ *  after `await setPlayTheme()` — synchronously in the write path, ahead of the relay's boolean reply
+ *  (the React snapshot effect is a backstop). No-op outside Electron (test/SSR). */
+function pushSnapshot(): void {
+  try {
+    window.api?.setPlayThemeCache?.(getEffectivePlayTheme())
+  } catch {
+    /* no api */
   }
 }
 
@@ -117,7 +140,10 @@ export function applyRuntimeTheme(
   }
 
   useUiStore.getState().setRuntimeTheme(next.shell || next.message ? next : null)
-  if (writePersist) persist(scope, ctx, isClear(theme) ? null : { theme, target, persist: scope })
+  if (writePersist) persist(scope, ctx, target, isClear(theme) ? null : { theme, target, persist: scope })
+  // Refresh main's snapshot synchronously (WCV getPlayTheme parity, #3) BEFORE the relay replies, then
+  // broadcast so sibling panels re-read.
+  pushSnapshot()
   broadcastHostEvent(ctx.chatId, PLAY_THEME_CHANGED, getEffectivePlayTheme())
   return true
 }
@@ -133,14 +159,17 @@ export function hydratePlayTheme(profileId: string, chatId: string): void {
   try {
     const chatBag = chatId ? window.api.chatCardVarsGetSync(profileId, chatId) : null
     const globalBag = window.api.pluginGlobalsGetSync(profileId)
-    // Apply global first, then chat, so the more-specific chat scope wins the shared target slot.
+    // Apply global first, then chat, so the more-specific chat scope wins a given target slot. Both the
+    // shell (rpt.playTheme) and message (rpt.msgTheme) slots re-hydrate independently.
     for (const bag of [globalBag, chatBag]) {
-      const rec = bag?.[PERSIST_KEY] as
-        | { theme?: Record<string, unknown>; target?: 'shell' | 'message' }
-        | undefined
-      if (rec && rec.theme) {
-        applyRuntimeTheme(rec.theme, { target: rec.target ?? 'shell' }, ctx, false)
-        found = true
+      for (const target of ['shell', 'message'] as const) {
+        const rec = bag?.[PERSIST_KEY[target]] as
+          | { theme?: Record<string, unknown>; target?: 'shell' | 'message' }
+          | undefined
+        if (rec && rec.theme) {
+          applyRuntimeTheme(rec.theme, { target: rec.target ?? target }, ctx, false)
+          found = true
+        }
       }
     }
   } catch (e) {

@@ -260,7 +260,51 @@ export function resolveRuntimeTheme(
 ): ThemeTokens | null {
   if (!allow) return null
   if (!override || typeof override !== 'object') return null
-  if (target === 'message')
-    return deriveMessageTheme(override, base['--rpt-bg-secondary'] ?? '#1e1e1e')
-  return deriveThemeOverTokens(base, unwrapOverride(override))
+  const raw = unwrapOverride(override)
+  const resolved =
+    target === 'message'
+      ? deriveMessageTheme(override, base['--rpt-bg-secondary'] ?? '#1e1e1e')
+      : deriveThemeOverTokens(base, raw)
+  if (!resolved) return null
+
+  // Message-box legibility guard for EVERY target (not just 'message'): a `--rpt-msg-*` fill can also be
+  // set on the default 'shell' path, where deriveThemeOverTokens checks only the shell text/bg pair — so
+  // an `msg-bg` that clashes with the (inherited) message text/user color would otherwise slip through and
+  // break the AA guarantee the message box advertises (§4). Validate the effective message pairs (using the
+  // exact CSS fallback chain) whenever the override touched a msg COLOR token; reject the whole override on
+  // failure (caller keeps prior tokens). Radius/font-only overrides touch no color pair, so aren't gated.
+  const touched = (v: string): boolean => Object.keys(raw).some((k) => toVar(k) === v)
+  if (
+    !messageContrastOk(
+      { ...base, ...resolved },
+      { bg: touched('--rpt-msg-bg'), text: touched('--rpt-msg-text'), user: touched('--rpt-msg-user') }
+    )
+  )
+    return null
+  return resolved
+}
+
+/**
+ * Validate message-box legibility on the EFFECTIVE token map using the exact CSS fallback chain
+ * (`.message-content` → `--rpt-msg-text` ↓ `--rpt-text-primary`; `.user-action` → `--rpt-msg-user` ↓
+ * `--rpt-accent`; `.floor-block` fill → `--rpt-msg-bg` ↓ `--rpt-bg-secondary`). Only the pairs the override
+ * actually affects are checked (`touched`), so a single-color or radius/font override isn't gated on an
+ * unrelated inherited pair. Non-hex fills can't be measured → pass (as elsewhere in the derivation).
+ */
+export function messageContrastOk(
+  effective: ThemeTokens,
+  touched: { bg: boolean; text: boolean; user: boolean }
+): boolean {
+  if (!touched.bg && !touched.text && !touched.user) return true
+  const bg = parseHex(effective['--rpt-msg-bg'] ?? effective['--rpt-bg-secondary'] ?? '')
+  if (!bg) return true
+  if (touched.bg || touched.text) {
+    const t = parseHex(effective['--rpt-msg-text'] ?? effective['--rpt-text-primary'] ?? '')
+    if (t && contrastRatio(t, bg) < AA_TEXT) return false
+  }
+  if (touched.bg || touched.user) {
+    const u = parseHex(effective['--rpt-msg-user'] ?? effective['--rpt-accent'] ?? '')
+    if (u && contrastRatio(u, bg) < AA_ON_ACCENT) return false
+  }
+  return true
 }

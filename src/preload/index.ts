@@ -17,9 +17,6 @@ const api = {
     ipcRenderer.invoke('get-character-avatar', characterId),
   setTitlebarOverlay: (overlay: { color: string; symbolColor: string }) =>
     ipcRenderer.invoke('set-titlebar-overlay', overlay),
-  // Mirror the app light/dark mode to main so it drives Electron's nativeTheme (embedded card
-  // WebContentsViews then report the matching `prefers-color-scheme`) + notifies card panels.
-  setColorScheme: (mode: 'light' | 'dark') => ipcRenderer.invoke('set-color-scheme', mode),
   saveCharacter: (profileId: string, charId: string, card: any) =>
     ipcRenderer.invoke('save-character', profileId, charId, card),
   importCharacterDialog: (profileId: string) =>

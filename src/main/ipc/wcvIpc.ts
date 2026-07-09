@@ -137,11 +137,6 @@ export const registerWcvIpc = (ipcMain: IpcMain): void => {
   ipcMain.on('wcv-get-panel-geometry-sync', (e) => {
     e.returnValue = wcvManager.geometryFor(e.sender.id)
   })
-  // The host's current light/dark mode, seeded SYNC at preload load (like panel geometry) so the card
-  // page has it before first paint; later changes arrive via the `wcv-color-scheme` push (wcvManager).
-  ipcMain.on('wcv-get-color-scheme-sync', (e) => {
-    e.returnValue = wcvManager.colorSchemeValue()
-  })
   // A card script in a WCV threw / rejected — surface it to the main log (it'd otherwise only show in the
   // WCV devtools). Includes the calling slot for context.
   ipcMain.on('wcv-card-error', (e, msg) => {

@@ -125,4 +125,20 @@ describe('cardTheme runtime message theme (runtime-theme-api-design §3B/§4)', 
     // untouched shell tokens are preserved from the base
     expect(out!['--rpt-bg-primary']).toBe(dark['--rpt-bg-primary'])
   })
+
+  it('rejects a msg-bg set via the SHELL target that clashes with the inherited message text (AA gate)', () => {
+    // A `--rpt-msg-*` fill is accepted on the default shell path too; the message-box contrast guard must
+    // still run there — a light msg-bg under the dark theme's inherited light text is illegible → rejected.
+    expect(resolveRuntimeTheme(true, 'shell', { 'msg-bg': '#dddddd' }, dark)).toBeNull()
+    // A dark msg-bg that keeps the inherited light text legible passes on the same shell path.
+    const ok = resolveRuntimeTheme(true, 'shell', { 'msg-bg': '#050505' }, dark)
+    expect(ok).not.toBeNull()
+    expect(ok!['--rpt-msg-bg']).toBe('#050505')
+  })
+
+  it('does not gate a radius/font-only override on any inherited color pair', () => {
+    const out = resolveRuntimeTheme(true, 'shell', { 'msg-radius': '12px' }, dark)
+    expect(out).not.toBeNull()
+    expect(out!['--rpt-msg-radius']).toBe('12px')
+  })
 })

@@ -82,46 +82,6 @@ ipcRenderer.on('wcv-panel-geometry', (_e: any, g: PanelGeometry) => {
   }
 })
 
-// --- host light/dark mode (RPT app theme → card) ---
-// Seeded SYNC at preload load (like panel geometry); refreshed by main's `wcv-color-scheme` push when the
-// user switches the RPT theme. We STAMP the mode on the card document (`data-rpt-mode` + CSS color-scheme)
-// and fire a `rpt:colorscheme` DOM event, so a card themes via pure CSS (`[data-rpt-mode='dark']`, or
-// `@media (prefers-color-scheme)` which main's nativeTheme keeps in step) with no JS — or reacts in JS.
-type ColorScheme = 'light' | 'dark'
-let colorScheme: ColorScheme = 'dark'
-try {
-  const seeded = ipcRenderer.sendSync('wcv-get-color-scheme-sync')
-  if (seeded === 'light' || seeded === 'dark') colorScheme = seeded
-} catch {
-  colorScheme = 'dark'
-}
-const colorSchemeListeners = new Set<(m: ColorScheme) => void>()
-const applyColorSchemeToDoc = (): void => {
-  try {
-    const el = document.documentElement
-    if (!el) return
-    el.dataset.rptMode = colorScheme
-    el.style.colorScheme = colorScheme
-    window.dispatchEvent(new CustomEvent('rpt:colorscheme', { detail: colorScheme }))
-  } catch {
-    /* DOM not ready yet — re-applied on DOMContentLoaded below */
-  }
-}
-applyColorSchemeToDoc()
-if (typeof document !== 'undefined' && document.readyState === 'loading')
-  window.addEventListener('DOMContentLoaded', applyColorSchemeToDoc)
-ipcRenderer.on('wcv-color-scheme', (_e: unknown, mode: ColorScheme) => {
-  colorScheme = mode === 'light' ? 'light' : 'dark'
-  applyColorSchemeToDoc()
-  for (const cb of colorSchemeListeners) {
-    try {
-      cb(colorScheme)
-    } catch {
-      /* a listener throwing must not break the others */
-    }
-  }
-})
-
 // --- host bridge (IPC) ---
 const rptHost = {
   getVariables: (): Promise<any> => ipcRenderer.invoke('wcv-host-get-vars'),
@@ -144,14 +104,6 @@ const rptHost = {
   onPanelGeometry: (cb: (g: PanelGeometry) => void) => {
     geometryListeners.add(cb)
     return () => geometryListeners.delete(cb)
-  },
-  // The host app's current light/dark mode + a change subscription (returns an unsubscribe). Also stamped
-  // on <html> as `data-rpt-mode` and mirrored to `prefers-color-scheme` (via main's nativeTheme), so most
-  // cards theme in pure CSS without calling these.
-  getColorScheme: (): ColorScheme => colorScheme,
-  onColorSchemeChanged: (cb: (m: ColorScheme) => void) => {
-    colorSchemeListeners.add(cb)
-    return () => colorSchemeListeners.delete(cb)
   }
 }
 w.rptHost = rptHost

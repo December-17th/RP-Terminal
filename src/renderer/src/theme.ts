@@ -148,14 +148,6 @@ export function applyTheme(id: string | undefined): void {
   const root = document.documentElement
   for (const [k, v] of Object.entries(theme.tokens)) root.style.setProperty(k, v)
   root.dataset.rptTheme = theme.id
-  // Mirror light/dark to main → Electron nativeTheme, so embedded card WebContentsViews get the matching
-  // `prefers-color-scheme`, and card panels are told the mode (rptHost.getColorScheme). Only the
-  // light/dark split matters to a card; 'carbon' (OLED) counts as dark. Best-effort (no api → skip).
-  try {
-    window.api?.setColorScheme?.(theme.id === 'light' ? 'light' : 'dark')
-  } catch {
-    /* no api (non-Electron / older preload) */
-  }
   // Keep the Windows window-control overlay (custom title bar) in step with the theme.
   try {
     window.api?.setTitlebarOverlay?.({
