@@ -1,5 +1,12 @@
 import { describe, it, expect } from 'vitest'
-import { deriveCardTheme, contrastRatio, parseHex } from '../src/renderer/src/cardTheme'
+import {
+  deriveCardTheme,
+  deriveMessageTheme,
+  resolveRuntimeTheme,
+  contrastRatio,
+  parseHex
+} from '../src/renderer/src/cardTheme'
+import { THEMES } from '../src/renderer/src/theme'
 
 describe('cardTheme.deriveCardTheme (§6a token path)', () => {
   it('applies an accent override and derives a readable on-accent, keeping base bg/text', () => {
@@ -67,5 +74,55 @@ describe('cardTheme.deriveCardTheme (§6a token path)', () => {
     const tp = parseHex(out!['--rpt-text-primary'])!
     const bp = parseHex(out!['--rpt-bg-primary'])!
     expect(contrastRatio(tp, bp)).toBeGreaterThanOrEqual(4.5)
+  })
+})
+
+describe('cardTheme runtime message theme (runtime-theme-api-design §3B/§4)', () => {
+  const dark = THEMES.dark.tokens
+
+  it('applies a message-scoped override as --rpt-msg-* tokens (aliases resolved)', () => {
+    const out = deriveMessageTheme(
+      { 'msg-bg': '#101018', 'msg-text': '#e8e8f0', 'msg-radius': '14px', 'chat-size': '18px' },
+      dark['--rpt-bg-secondary']
+    )
+    expect(out).not.toBeNull()
+    expect(out!['--rpt-msg-bg']).toBe('#101018')
+    expect(out!['--rpt-msg-text']).toBe('#e8e8f0')
+    expect(out!['--rpt-msg-radius']).toBe('14px')
+    expect(out!['--rpt-chat-font']).toBe('18px')
+  })
+
+  it('ignores non-message keys under the message target (only the msg whitelist survives)', () => {
+    const out = deriveMessageTheme({ 'msg-radius': '10px', accent: '#ff0000', 'bg-primary': '#000' }, dark['--rpt-bg-secondary'])
+    expect(out).toEqual({ '--rpt-msg-radius': '10px' })
+  })
+
+  it('derives a readable prose color when the card sets msg-bg but no msg-text', () => {
+    const out = deriveMessageTheme({ 'msg-bg': '#0b0b12' }, dark['--rpt-bg-secondary'])
+    expect(out).not.toBeNull()
+    const text = parseHex(out!['--rpt-msg-text'])!
+    const bg = parseHex(out!['--rpt-msg-bg'])!
+    expect(contrastRatio(text, bg)).toBeGreaterThanOrEqual(4.5)
+  })
+
+  it('rejects a message theme whose text fails AA against its box background (keeps prior)', () => {
+    expect(deriveMessageTheme({ 'msg-bg': '#111111', 'msg-text': '#222222' }, dark['--rpt-bg-secondary'])).toBeNull()
+  })
+
+  it('resolveRuntimeTheme no-ops (null) when allow_card_themes is off', () => {
+    const override = { 'msg-bg': '#101018', 'msg-text': '#e8e8f0' }
+    // Same override applies when allowed…
+    expect(resolveRuntimeTheme(true, 'message', override, dark)).not.toBeNull()
+    // …but is rejected outright when the user opt-out is off.
+    expect(resolveRuntimeTheme(false, 'message', override, dark)).toBeNull()
+    expect(resolveRuntimeTheme(false, 'shell', { accent: '#c8102e' }, dark)).toBeNull()
+  })
+
+  it('resolveRuntimeTheme shell target layers over the current effective tokens', () => {
+    const out = resolveRuntimeTheme(true, 'shell', { accent: '#22cc88' }, dark)
+    expect(out).not.toBeNull()
+    expect(out!['--rpt-accent']).toBe('#22cc88')
+    // untouched shell tokens are preserved from the base
+    expect(out!['--rpt-bg-primary']).toBe(dark['--rpt-bg-primary'])
   })
 })

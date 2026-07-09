@@ -15,8 +15,22 @@ export type SettingsSection =
   | 'scripts'
   | 'workflow'
 
+/** The ephemeral runtime play-theme override (runtime-theme-api-design §3B). A card's running UI sets it
+ *  via setPlayTheme/setMessageTheme; App.tsx layers these tokens OVER the static card theme on `.play-root`.
+ *  Two independent slots so a `target:'shell'` reskin and a `target:'message'` restyle coexist (and clear
+ *  independently): `shell` is a full derived token map, `message` a `--rpt-msg-*` patch — both already
+ *  AA-checked. Session-scoped: held here only (lost on app restart / world switch); the 'chat'/'global'
+ *  persist scopes ALSO write the raw override to their stores and re-hydrate this slot on load. */
+export interface RuntimeTheme {
+  shell: Record<string, string> | null
+  message: Record<string, string> | null
+}
+
 /** Transient app-shell UI state (not persisted): the Settings popup, etc. */
 interface UiState {
+  /** The runtime play-theme override (session scope). Null = no runtime layer (static card / user theme). */
+  runtimeTheme: RuntimeTheme | null
+  setRuntimeTheme: (theme: RuntimeTheme | null) => void
   settingsOpen: boolean
   /** Which Settings section to show when the popup opens (set by openSettings). */
   settingsSection: SettingsSection
@@ -62,6 +76,8 @@ interface UiState {
 }
 
 export const useUiStore = create<UiState>((set) => ({
+  runtimeTheme: null,
+  setRuntimeTheme: (runtimeTheme) => set({ runtimeTheme }),
   settingsOpen: false,
   settingsSection: 'app',
   openSettings: (section) => set({ settingsOpen: true, settingsSection: section ?? 'app' }),

@@ -942,19 +942,24 @@ details[open] > .stat-group-title::before {
   padding-bottom: 6px;
 }
 
+/* Message-box token namespace (runtime-theme-api-design §3A). Each `--rpt-msg-*` falls back to today's
+   shell token / hardcoded value, so an unset one renders EXACTLY as before — a card only reskins the
+   box distinctly from the shell once it sets them (statically or via the runtime setMessageTheme API). */
 .floor-block {
   padding: 15px;
-  background-color: var(--rpt-bg-secondary);
-  border-radius: 8px;
-  border: 1px solid var(--rpt-border);
+  background-color: var(--rpt-msg-bg, var(--rpt-bg-secondary));
+  border-radius: var(--rpt-msg-radius, 8px);
+  border: 1px solid var(--rpt-msg-border, var(--rpt-border));
   font-size: var(--rpt-chat-font, 16px);
 }
 /* The AI message prose. A card theme MAY set `--rpt-chat-font-family` (token alias `chat-font` /
-   `prose-font`) to give the story a serif register; without it the prose inherits the app body font
-   (unchanged for every existing card). The user action, swipe controls, and card HTML frames are
-   outside this scope. See the poem play-area redesign §5.4. */
+   `prose-font`) to give the story a serif register, and `--rpt-msg-text` (alias `msg-text`) for the
+   prose color; without them the prose inherits the app body font + `--rpt-text-primary` (unchanged for
+   every existing card). The user action, swipe controls, and card HTML frames are outside this scope.
+   See the poem play-area redesign §5.4. */
 .message-content {
   font-family: var(--rpt-chat-font-family, inherit);
+  color: var(--rpt-msg-text, var(--rpt-text-primary));
 }
 
 .floor-empty {
@@ -1426,8 +1431,10 @@ details[open] > .stat-group-title::before {
   }
 }
 
+/* The `> …` user-action line. `--rpt-msg-user` (alias `msg-user`) recolors it for a card that themes
+   the message box; the fallback is the shell accent (today's colour), so existing cards are unchanged. */
 .user-action {
-  color: var(--rpt-accent);
+  color: var(--rpt-msg-user, var(--rpt-accent));
   font-weight: bold;
   margin-bottom: 10px;
   border-bottom: 1px solid var(--rpt-border);

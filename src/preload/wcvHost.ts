@@ -160,6 +160,19 @@ export function createWcvHost(deps: Deps): Host {
     // (resolved from e.sender), mounts/closes the overlay WCV, and returns whether it opened.
     requestOverlay: (id: string) => ipcRenderer.invoke('wcv-host-request-overlay', id),
     closeOverlay: () => ipcRenderer.invoke('wcv-host-close-overlay'),
+    // Runtime theming (runtime-theme-api-design §5). The WCV runs in its own process, so main relays the
+    // set to the host renderer (the theme authority) and returns its derive/AA verdict; the sync getter
+    // reads a snapshot the renderer keeps pushing to main (main can't derive the effective tokens itself).
+    setPlayTheme: (theme, opts) => ipcRenderer.invoke('wcv-host-set-play-theme', theme, opts),
+    getPlayThemeSync: () => {
+      try {
+        return (
+          ipcRenderer.sendSync('wcv-get-play-theme-sync') || { tokens: {}, source: 'user' as const }
+        )
+      } catch {
+        return { tokens: {}, source: 'user' as const }
+      }
+    },
 
     onVarsChanged: (cb) => {
       // Forward the origin (2nd IPC arg) so the runtime fires MVU events only for non-card-write changes

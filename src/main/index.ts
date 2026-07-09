@@ -1,4 +1,4 @@
-import { app, shell, BrowserWindow, ipcMain, protocol } from 'electron'
+import { app, shell, BrowserWindow, ipcMain, protocol, nativeTheme } from 'electron'
 import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
@@ -133,6 +133,17 @@ app.whenReady().then(() => {
     } catch {
       /* overlay not configured / invalid color */
     }
+  })
+
+  // Mirror the app's light/dark mode to Electron's nativeTheme so every embedded card WebContentsView
+  // reports the matching `prefers-color-scheme` (dark + OLED → 'dark', light → 'light'), and push the
+  // mode to the card panels (they stamp `data-rpt-mode` + fire `rpt:colorscheme`). Called by the
+  // renderer's applyTheme(). RPT's own UI is CSS-variable-driven, so nativeTheme doesn't restyle it.
+  ipcMain.handle('set-color-scheme', (_e, mode: 'light' | 'dark') => {
+    const m: 'light' | 'dark' = mode === 'light' ? 'light' : 'dark'
+    nativeTheme.themeSource = m
+    wcvManager.pushColorScheme(m)
+    return m
   })
 
   createWindow()

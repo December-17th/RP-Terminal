@@ -137,6 +137,11 @@ export const registerWcvIpc = (ipcMain: IpcMain): void => {
   ipcMain.on('wcv-get-panel-geometry-sync', (e) => {
     e.returnValue = wcvManager.geometryFor(e.sender.id)
   })
+  // The host's current light/dark mode, seeded SYNC at preload load (like panel geometry) so the card
+  // page has it before first paint; later changes arrive via the `wcv-color-scheme` push (wcvManager).
+  ipcMain.on('wcv-get-color-scheme-sync', (e) => {
+    e.returnValue = wcvManager.colorSchemeValue()
+  })
   // A card script in a WCV threw / rejected — surface it to the main log (it'd otherwise only show in the
   // WCV devtools). Includes the calling slot for context.
   ipcMain.on('wcv-card-error', (e, msg) => {
@@ -224,6 +229,24 @@ export const registerWcvIpc = (ipcMain: IpcMain): void => {
     wcvManager.closeOverlay()
     return true
   })
+
+  // --- Runtime play theme (runtime-theme-api-design §5) ---
+  // WCV transport: main can't derive the effective tokens (they live in the renderer), so it RELAYS the
+  // set to the host renderer and returns the renderer's derive/AA verdict. ctx resolves from e.sender so
+  // a card themes only its own play session. The sync getter returns the renderer-pushed snapshot.
+  ipcMain.handle('wcv-host-set-play-theme', (e, theme, opts) => {
+    const ctx = wcvManager.contextFor(e.sender.id)
+    if (!ctx) return false
+    return wcvManager.requestSetPlayTheme(ctx.chatId, theme, opts)
+  })
+  ipcMain.on('wcv-host-set-play-theme-reply', (_e, id, ok) =>
+    wcvManager.resolveSetPlayTheme(Number(id), !!ok)
+  )
+  ipcMain.on('wcv-get-play-theme-sync', (e) => {
+    e.returnValue = wcvManager.playThemeSnapshotValue()
+  })
+  // The host renderer pushes its current effective play theme so the WCV sync getter can read it.
+  ipcMain.on('set-play-theme-cache', (_e, snap) => wcvManager.setPlayThemeSnapshot(snap))
 
   // Inline transport: an inline card (in the renderer, not a WCV) passes its ctx explicitly — main can't
   // resolve it from e.sender. Same overlay mechanism; the id is validated against the active card's
