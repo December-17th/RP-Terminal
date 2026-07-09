@@ -29,6 +29,13 @@ import { initSlash } from './plugin/slash'
 import { broadcastHostEvent, initCardEventBridge } from './cardBridge/hostBroadcast'
 import { applyTheme, THEMES, DEFAULT_THEME_ID } from './theme'
 import { deriveCardTheme } from './cardTheme'
+import { useUiStore } from './stores/uiStore'
+import {
+  applyRuntimeTheme,
+  getEffectivePlayTheme,
+  mergeRuntimeTokens,
+  hydratePlayTheme
+} from './cardBridge/playTheme'
 import { useI18nStore } from './i18n'
 import { Launcher } from './components/Launcher'
 import { StDomCompat } from './components/StDomCompat'
@@ -49,6 +56,8 @@ export default function App(): React.ReactElement {
   const loadChats = useChatStore((s) => s.loadChats)
   const activeChatId = useChatStore((s) => s.activeChatId)
   const activePresetId = usePresetStore((s) => s.activeId)
+  // The runtime play-theme override (session slot) — layered over the static card theme on `.play-root`.
+  const runtimeTheme = useUiStore((s) => s.runtimeTheme)
 
   useEffect(() => {
     loadProfiles()
@@ -89,6 +98,22 @@ export default function App(): React.ReactElement {
       const st = useChatStore.getState()
       const pid = useProfileStore.getState().activeProfile?.id
       if (pid && chatId === st.activeChatId) st.refreshFloors(pid, chatId)
+    })
+    // A WCV card called setPlayTheme (runtime-theme-api-design §5): the renderer is the theme authority,
+    // so main relayed it here. Apply against the active session, then reply with the derive/AA verdict so
+    // the card's invoke resolves. Scoped to the active chat (a card themes only its own play session).
+    const unsubSetPlayTheme = window.api.onWcvSetPlayTheme(({ id, chatId, theme, opts }) => {
+      const st = useChatStore.getState()
+      const pid = useProfileStore.getState().activeProfile?.id
+      let ok = false
+      if (pid && chatId === st.activeChatId) {
+        ok = applyRuntimeTheme(
+          theme as Record<string, unknown> | null,
+          opts as { target?: 'shell' | 'message'; persist?: 'session' | 'chat' | 'global' },
+          { profileId: pid, chatId, characterId: useCharacterStore.getState().activeCharacter?.id ?? '' }
+        )
+      }
+      window.api.wcvSetPlayThemeReply(id, ok)
     })
     // Freeze-frame bitmaps while WCVs are ducked under a DOM overlay (PM-A4). Main pushes a per-slot
     // capture to paint behind the hidden native panels; each WcvPanel reads its own frame.
@@ -138,6 +163,7 @@ export default function App(): React.ReactElement {
       unsubInput()
       unsubSubmit()
       unsubReload()
+      unsubSetPlayTheme()
       unsubFreeze()
       unsubFloors()
       unsubEvents()
@@ -239,6 +265,31 @@ export default function App(): React.ReactElement {
     () => (allowCardThemes ? deriveCardTheme(cardThemeRaw, settings?.ui?.theme) : null),
     [allowCardThemes, cardThemeRaw, settings?.ui?.theme]
   )
+  // Compose the runtime override (runtime-theme-api-design §3B) OVER the static card theme, then apply
+  // the result on `.play-root`. The runtime layer is a session-scoped override a card set at runtime;
+  // when it's null this is exactly `playTokens` (every existing card unchanged).
+  const effectivePlayTokens = useMemo(
+    () => mergeRuntimeTokens(playTokens, runtimeTheme),
+    [playTokens, runtimeTheme]
+  )
+
+  // Push the resolved effective play theme to main so a WCV card's getPlayTheme() can read it
+  // synchronously (main can't derive it — the base tokens live here). Re-run on any theme input change.
+  useEffect(() => {
+    try {
+      window.api.setPlayThemeCache(getEffectivePlayTheme())
+    } catch {
+      /* no api (test/SSR) */
+    }
+  }, [effectivePlayTokens, allowCardThemes, cardThemeRaw, settings?.ui?.theme])
+
+  // Re-hydrate the runtime override from the persisted stores on session/profile change (and clear the
+  // ephemeral session slot so a runtime theme never leaks across chats). Best-effort; session-scoped
+  // overrides simply reset here.
+  useEffect(() => {
+    if (activeProfile?.id) hydratePlayTheme(activeProfile.id, activeChatId ?? '')
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeProfile?.id, activeChatId])
 
   // Match the OS window-control overlay (Windows) to what's on screen: the card theme's chrome while a
   // themed card is in play, else the base app theme. Keeps the controls flush in colour with the top
@@ -277,7 +328,9 @@ export default function App(): React.ReactElement {
       ) : (
         <div
           className="play-root"
-          style={playTokens ? (playTokens as unknown as React.CSSProperties) : undefined}
+          style={
+            effectivePlayTokens ? (effectivePlayTokens as unknown as React.CSSProperties) : undefined
+          }
         >
           <TopStrip profileId={activeProfile.id} profileName={activeProfile.name} />
 

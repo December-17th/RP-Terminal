@@ -395,6 +395,56 @@ export const pushHostReload = (chatId: string): void => {
   mainWindow?.webContents.send('wcv-host-reload', { chatId })
 }
 
+// --- Runtime play theme (runtime-theme-api-design §5) ---
+// The renderer owns the theme authority (the effective base tokens only exist there). For a WCV card:
+//  - setPlayTheme: main RELAYS the call to the host renderer (which derives + AA-checks + applies) and
+//    resolves the card's invoke with the renderer's boolean verdict via a keyed reply.
+//  - getPlayThemeSync: main returns the last snapshot the renderer pushed (it can't derive it itself).
+let playThemeSnapshot: { tokens: Record<string, string>; source: 'user' | 'card' | 'runtime' } = {
+  tokens: {},
+  source: 'user'
+}
+let playThemeSeq = 0
+const playThemePending = new Map<number, (ok: boolean) => void>()
+
+/** The resolved effective play theme (getPlayTheme's sync-read resolver for a WCV card). */
+export const playThemeSnapshotValue = (): typeof playThemeSnapshot => playThemeSnapshot
+
+/** The renderer pushed its current effective play theme (on any static/runtime/user-theme change). */
+export const setPlayThemeSnapshot = (snap: unknown): void => {
+  const s = snap as { tokens?: Record<string, string>; source?: 'user' | 'card' | 'runtime' } | null
+  if (s && typeof s === 'object')
+    playThemeSnapshot = { tokens: s.tokens || {}, source: s.source || 'user' }
+}
+
+/** Relay a WCV card's setPlayTheme to the host renderer and await its derive/AA verdict (false on
+ *  timeout / no window). The renderer replies via resolveSetPlayTheme with the same id. */
+export const requestSetPlayTheme = (
+  chatId: string,
+  theme: unknown,
+  opts: unknown
+): Promise<boolean> => {
+  if (!mainWindow) return Promise.resolve(false)
+  return new Promise((resolve) => {
+    const id = ++playThemeSeq
+    playThemePending.set(id, resolve)
+    // Guard: a renderer that never replies (mid-teardown) must not leave the card's promise pending.
+    setTimeout(() => {
+      if (playThemePending.delete(id)) resolve(false)
+    }, 3000)
+    mainWindow?.webContents.send('wcv-host-set-play-theme', { id, chatId, theme, opts })
+  })
+}
+
+/** The renderer's verdict for a relayed setPlayTheme (keyed by the request id). */
+export const resolveSetPlayTheme = (id: number, ok: boolean): void => {
+  const r = playThemePending.get(id)
+  if (r) {
+    playThemePending.delete(id)
+    r(!!ok)
+  }
+}
+
 /**
  * Notify sibling WCVs on the same chat that the variables changed. `exceptWebContentsId` skips one
  * slot — pass the writer's `e.sender.id` so a card's OWN write isn't echoed back to it. Without this,

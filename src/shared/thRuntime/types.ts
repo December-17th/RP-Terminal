@@ -141,6 +141,17 @@ export interface Host {
   // overlay is open (a no-op when none is). Both transports route to the same app mechanism.
   requestOverlay(id: string): Promise<boolean>
   closeOverlay(): Promise<void>
+  // Runtime theming (runtime-theme-api-design). A card's running UI restyles the play shell + chat
+  // message box at runtime. `setPlayTheme` derives + AA-checks the override (same trust model as the
+  // static card theme) and applies it, returning false when rejected (contrast fails, or the user's
+  // allow_card_themes opt-out is off). `theme` null/{} clears the runtime layer. Both transports route
+  // to the renderer authority (the effective base tokens live there). `getPlayThemeSync` returns the
+  // fully-resolved effective token map + a source tag. Like requestOverlay, also surfaced on rptHost.
+  setPlayTheme(
+    theme: Record<string, unknown> | null,
+    opts?: { target?: 'shell' | 'message'; persist?: 'session' | 'chat' | 'global' }
+  ): Promise<boolean>
+  getPlayThemeSync(): { tokens: Record<string, string>; source: 'user' | 'card' | 'runtime' }
   // --- events + engine ---
   onVarsChanged(cb: (statData: any, meta?: { origin: VarsOrigin }) => void): () => void
   onHostEvent(cb: (name: string, payload?: any) => void): () => void

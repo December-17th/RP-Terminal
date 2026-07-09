@@ -31,11 +31,33 @@ const ALIAS: Record<string, string> = {
   'text-primary': '--rpt-text-primary',
   'text-secondary': '--rpt-text-secondary',
   'text-tertiary': '--rpt-text-tertiary',
-  // Typography: the AI-message prose font (the story's serif register). A font-family value, not a
-  // color, so it bypasses the contrast machinery below and simply passes through.
+  // Message-box namespace (runtime-theme-api-design §3A): the chat message box's OWN tokens, distinct
+  // from the shell-wide bg/border. Each falls back in CSS to today's shell token, so an unset one is
+  // visually unchanged. `msg-radius` is a length (passes through untouched); the color tokens run the
+  // message-scoped contrast guard in deriveMessageTheme.
+  'msg-bg': '--rpt-msg-bg',
+  'msg-border': '--rpt-msg-border',
+  'msg-radius': '--rpt-msg-radius',
+  'msg-text': '--rpt-msg-text',
+  'msg-user': '--rpt-msg-user',
+  // Typography: the AI-message prose font (the story's serif register) + size. Font values, not
+  // colors, so they bypass the contrast machinery below and simply pass through.
   'chat-font': '--rpt-chat-font-family',
-  'prose-font': '--rpt-chat-font-family'
+  'prose-font': '--rpt-chat-font-family',
+  'chat-size': '--rpt-chat-font'
 }
+
+/** The message-box token whitelist — the only keys that survive a `target:'message'` override
+ *  (runtime-theme-api-design §3B). Other keys are ignored when the runtime target is 'message'. */
+export const MSG_VARS: ReadonlySet<string> = new Set([
+  '--rpt-msg-bg',
+  '--rpt-msg-border',
+  '--rpt-msg-radius',
+  '--rpt-msg-text',
+  '--rpt-msg-user',
+  '--rpt-chat-font',
+  '--rpt-chat-font-family'
+])
 
 const toVar = (key: string): string | null =>
   key.startsWith('--rpt-') ? key : (ALIAS[key] ?? null)
@@ -113,12 +135,26 @@ export function deriveCardTheme(
       : userThemeId && THEMES[userThemeId]
         ? userThemeId
         : DEFAULT_THEME_ID
-  const out: ThemeTokens = { ...THEMES[baseId].tokens }
+  return deriveThemeOverTokens(THEMES[baseId].tokens, unwrapOverride(cardTheme))
+}
 
-  const rawTokens =
-    cardTheme.tokens && typeof cardTheme.tokens === 'object'
-      ? (cardTheme.tokens as Record<string, unknown>)
-      : cardTheme
+/** Unwrap an override that may be `{ base?, tokens: {…} }` (documented shape) or a bare map. Returns
+ *  the flat token map (the `tokens` object when present, else the object itself). */
+export function unwrapOverride(o: Record<string, unknown>): Record<string, unknown> {
+  return o.tokens && typeof o.tokens === 'object' ? (o.tokens as Record<string, unknown>) : o
+}
+
+/**
+ * The derivation + trust core: layer `rawTokens` (a flat, already-unwrapped map) over a BASE token
+ * map (an app-theme set OR the current effective play tokens, for the runtime layer). Derives readable
+ * text / on-accent, enforces WCAG-AA on the load-bearing pairs, and returns the full token map — or
+ * NULL when nothing understood was overridden or a load-bearing pair fails AA (caller keeps prior).
+ */
+export function deriveThemeOverTokens(
+  base: ThemeTokens,
+  rawTokens: Record<string, unknown>
+): ThemeTokens | null {
+  const out: ThemeTokens = { ...base }
 
   let overrodeBg = false
   let overrodeText = false
@@ -163,4 +199,112 @@ export function deriveCardTheme(
   if (accent && oa && contrastRatio(accent, oa) < AA_ON_ACCENT) return null
 
   return out
+}
+
+/**
+ * Derive the message-box token PATCH from a `target:'message'` override (runtime-theme-api-design §3B/§4).
+ * Only the `--rpt-msg-*` / `--rpt-chat-*` whitelist (MSG_VARS) survives; other keys are ignored. Untrusted
+ * like the shell path: when the card sets `msg-bg` but no `msg-text`/`msg-user`, we DERIVE readable ones
+ * from that bg (never trust card text on a new bg); every card-supplied color is CHECKED against the
+ * effective message bg — `--rpt-msg-bg` if set, else the shell's `--rpt-bg-secondary` — and the whole
+ * patch is REJECTED (null) if a load-bearing pair fails AA (caller keeps prior). Returns the patch to
+ * layer over the shell tokens, or null (nothing understood, or a contrast failure).
+ */
+export function deriveMessageTheme(
+  override: Record<string, unknown>,
+  baseBgSecondary: string
+): ThemeTokens | null {
+  const raw = unwrapOverride(override)
+  const out: ThemeTokens = {}
+  for (const [key, value] of Object.entries(raw)) {
+    if (typeof value !== 'string') continue
+    const varName = toVar(key)
+    if (!varName || !MSG_VARS.has(varName)) continue // message whitelist
+    out[varName] = value
+  }
+  if (Object.keys(out).length === 0) return null
+
+  // Effective message background: the card's msg-bg if set, else the shell's bg-secondary (the CSS fallback).
+  const bg = parseHex(out['--rpt-msg-bg'] ?? baseBgSecondary)
+  // Card changed the box fill but left the text/user colors → derive readable ones off the new fill
+  // (a dark fill gets the light ramp, and vice-versa), rather than trusting a stale shell text color.
+  if (out['--rpt-msg-bg'] && bg) {
+    const ramp = relLuminance(bg) < 0.4 ? DARK_TEXT : LIGHT_TEXT
+    if (!out['--rpt-msg-text']) out['--rpt-msg-text'] = ramp.primary
+    if (!out['--rpt-msg-user']) out['--rpt-msg-user'] = ramp.secondary
+  }
+
+  // Contrast guard: prose (`msg-text`) at the body-text bar; the bold user-action line (`msg-user`) at
+  // the 3:1 large/bold bar. A failure rejects the WHOLE message patch (caller keeps prior tokens).
+  const text = out['--rpt-msg-text'] ? parseHex(out['--rpt-msg-text']) : null
+  if (text && bg && contrastRatio(text, bg) < AA_TEXT) return null
+  const user = out['--rpt-msg-user'] ? parseHex(out['--rpt-msg-user']) : null
+  if (user && bg && contrastRatio(user, bg) < AA_ON_ACCENT) return null
+
+  return out
+}
+
+/**
+ * Pure resolver for a runtime theme override (runtime-theme-api-design §3B/§4). Returns the token map to
+ * layer over the current effective play tokens, or NULL when the override is rejected or empty:
+ *  - `allow` false (settings.ui.allow_card_themes) ⇒ null (the user opt-out).
+ *  - `target:'message'` ⇒ deriveMessageTheme (the `--rpt-msg-*` patch, msg-scoped contrast check).
+ *  - `target:'shell'`   ⇒ deriveThemeOverTokens over `base` (full derivation + AA on the shell pairs).
+ * A caller distinguishes a REJECT (null on a non-empty override) from a CLEAR (empty/undefined override).
+ */
+export function resolveRuntimeTheme(
+  allow: boolean,
+  target: 'shell' | 'message',
+  override: Record<string, unknown> | null | undefined,
+  base: ThemeTokens
+): ThemeTokens | null {
+  if (!allow) return null
+  if (!override || typeof override !== 'object') return null
+  const raw = unwrapOverride(override)
+  const resolved =
+    target === 'message'
+      ? deriveMessageTheme(override, base['--rpt-bg-secondary'] ?? '#1e1e1e')
+      : deriveThemeOverTokens(base, raw)
+  if (!resolved) return null
+
+  // Message-box legibility guard for EVERY target (not just 'message'): a `--rpt-msg-*` fill can also be
+  // set on the default 'shell' path, where deriveThemeOverTokens checks only the shell text/bg pair — so
+  // an `msg-bg` that clashes with the (inherited) message text/user color would otherwise slip through and
+  // break the AA guarantee the message box advertises (§4). Validate the effective message pairs (using the
+  // exact CSS fallback chain) whenever the override touched a msg COLOR token; reject the whole override on
+  // failure (caller keeps prior tokens). Radius/font-only overrides touch no color pair, so aren't gated.
+  const touched = (v: string): boolean => Object.keys(raw).some((k) => toVar(k) === v)
+  if (
+    !messageContrastOk(
+      { ...base, ...resolved },
+      { bg: touched('--rpt-msg-bg'), text: touched('--rpt-msg-text'), user: touched('--rpt-msg-user') }
+    )
+  )
+    return null
+  return resolved
+}
+
+/**
+ * Validate message-box legibility on the EFFECTIVE token map using the exact CSS fallback chain
+ * (`.message-content` → `--rpt-msg-text` ↓ `--rpt-text-primary`; `.user-action` → `--rpt-msg-user` ↓
+ * `--rpt-accent`; `.floor-block` fill → `--rpt-msg-bg` ↓ `--rpt-bg-secondary`). Only the pairs the override
+ * actually affects are checked (`touched`), so a single-color or radius/font override isn't gated on an
+ * unrelated inherited pair. Non-hex fills can't be measured → pass (as elsewhere in the derivation).
+ */
+export function messageContrastOk(
+  effective: ThemeTokens,
+  touched: { bg: boolean; text: boolean; user: boolean }
+): boolean {
+  if (!touched.bg && !touched.text && !touched.user) return true
+  const bg = parseHex(effective['--rpt-msg-bg'] ?? effective['--rpt-bg-secondary'] ?? '')
+  if (!bg) return true
+  if (touched.bg || touched.text) {
+    const t = parseHex(effective['--rpt-msg-text'] ?? effective['--rpt-text-primary'] ?? '')
+    if (t && contrastRatio(t, bg) < AA_TEXT) return false
+  }
+  if (touched.bg || touched.user) {
+    const u = parseHex(effective['--rpt-msg-user'] ?? effective['--rpt-accent'] ?? '')
+    if (u && contrastRatio(u, bg) < AA_ON_ACCENT) return false
+  }
+  return true
 }

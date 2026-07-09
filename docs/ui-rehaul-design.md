@@ -99,6 +99,14 @@ slot already exists (`RPTerminalExtSchema.theme` + `css`) — this defines its s
   CSS scoping in `messageHtmlScope`; drop `@import`, bar layout-escaping rules). The token map is the safe,
   primary path.
 - **Portability:** rides in the World Card bundle — exports/imports with the card (pure text).
+- **Runtime API (implemented 2026-07-08):** the static theme is read once at load. A card's *running* UI
+  can also restyle the play shell **and the chat message box** at runtime via `setPlayTheme` /
+  `setMessageTheme` / `getPlayTheme` — same trust model (derive text, enforce AA, reject on failure; honor
+  `allow_card_themes`; ctx-scoped to the card's own play session). The message box gained its own
+  `--rpt-msg-*` token namespace (fill / border / radius / text / user-action color), each with a CSS
+  fallback to today's shell token so existing cards are visually unchanged. Full contract:
+  [runtime-theme-api-design.md](runtime-theme-api-design.md); API surface in [rpt-api.md](rpt-api.md)
+  "Theme / appearance".
 
 ### 7. Contrast safety — hard constraint (owner feedback 2026-06-24)
 

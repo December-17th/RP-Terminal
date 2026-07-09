@@ -7,6 +7,7 @@ import { useSettingsStore } from '../stores/settingsStore'
 import { useComposerStore } from '../stores/composerStore'
 import { useLorebookStore } from '../stores/lorebookStore'
 import { onCardHostEvent } from './cardHostEvents'
+import { applyRuntimeTheme, getEffectivePlayTheme } from './playTheme'
 import { evalTemplate, evalTemplateDetailed } from '../../../shared/templateEngine'
 import { buildRenderContext } from '../plugin/renderTemplate'
 import { storeRuleToTavernRegex } from '../../../shared/thRuntime/tavernRegex'
@@ -401,6 +402,12 @@ export function createInlineHost(ctx: CardCtx): Host {
         /* ignore */
       }
     },
+    // Runtime theming (runtime-theme-api-design). Inline cards run in the renderer, so the Host applies
+    // the override directly against the renderer authority (cardBridge/playTheme) — same code path the
+    // WCV transport reaches via main. Returns the derive/AA verdict; getPlayThemeSync reads the resolved
+    // effective tokens synchronously.
+    setPlayTheme: async (theme, opts) => applyRuntimeTheme(theme, opts, ctx),
+    getPlayThemeSync: () => getEffectivePlayTheme(),
 
     onVarsChanged: (cb) => {
       let last = ''

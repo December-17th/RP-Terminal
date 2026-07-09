@@ -225,6 +225,24 @@ export const registerWcvIpc = (ipcMain: IpcMain): void => {
     return true
   })
 
+  // --- Runtime play theme (runtime-theme-api-design §5) ---
+  // WCV transport: main can't derive the effective tokens (they live in the renderer), so it RELAYS the
+  // set to the host renderer and returns the renderer's derive/AA verdict. ctx resolves from e.sender so
+  // a card themes only its own play session. The sync getter returns the renderer-pushed snapshot.
+  ipcMain.handle('wcv-host-set-play-theme', (e, theme, opts) => {
+    const ctx = wcvManager.contextFor(e.sender.id)
+    if (!ctx) return false
+    return wcvManager.requestSetPlayTheme(ctx.chatId, theme, opts)
+  })
+  ipcMain.on('wcv-host-set-play-theme-reply', (_e, id, ok) =>
+    wcvManager.resolveSetPlayTheme(Number(id), !!ok)
+  )
+  ipcMain.on('wcv-get-play-theme-sync', (e) => {
+    e.returnValue = wcvManager.playThemeSnapshotValue()
+  })
+  // The host renderer pushes its current effective play theme so the WCV sync getter can read it.
+  ipcMain.on('set-play-theme-cache', (_e, snap) => wcvManager.setPlayThemeSnapshot(snap))
+
   // Inline transport: an inline card (in the renderer, not a WCV) passes its ctx explicitly — main can't
   // resolve it from e.sender. Same overlay mechanism; the id is validated against the active card's
   // panel_ui.overlays. The characterId falls back to the chat row (parity with the WCV/inline hosts).

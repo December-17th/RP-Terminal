@@ -308,6 +308,21 @@ w.TavernHelper = g.TavernHelper
   type: string
   variant?: string
 }): Promise<string | null> => g.requestAssetImport(arg)
+// Runtime theming (runtime-theme-api-design §3B): a host-privilege restyle, surfaced on rptHost like
+// requestOverlay/requestAssetImport. Delegates to the shared-runtime facade so behavior stays in ONE
+// place (the renderer authority reached via main). Also available as bare globals + on TavernHelper.
+;(rptHost as any).setPlayTheme = (
+  theme: Record<string, unknown> | null,
+  opts?: { target?: 'shell' | 'message'; persist?: 'session' | 'chat' | 'global' }
+): Promise<boolean> => g.setPlayTheme(theme, opts)
+;(rptHost as any).setMessageTheme = (
+  tokens: Record<string, unknown>,
+  opts?: { persist?: 'session' | 'chat' | 'global' }
+): Promise<boolean> => g.setMessageTheme(tokens, opts)
+;(rptHost as any).getPlayTheme = (): {
+  tokens: Record<string, string>
+  source: 'user' | 'card' | 'runtime'
+} => g.getPlayTheme()
 
 // --- libraries the card bundle externalizes as bare globals (lodash `_`, Zod `z`, jQuery `$`, `toastr`) ---
 // These are transport-level library injection (not part of the TH runtime). The runtime already provides

@@ -504,6 +504,19 @@ export function createThRuntime(host: Host): ThGlobals {
     // forwards to the app's overlay mechanism (WCV over the grid region). See docs/rpt-api.md.
     requestOverlay: (id: string) => host.requestOverlay(String(id ?? '')),
     closeOverlay: () => host.closeOverlay(),
+    // Runtime theming (runtime-theme-api-design §3B). Universal — any card, any scope. Behavior lives in
+    // the renderer authority (cardBridge/playTheme); both transports' Host forwards there. Also surfaced
+    // on rptHost by each transport (like requestOverlay). `setMessageTheme` is sugar for a message-target
+    // setPlayTheme. `getPlayTheme` is SYNC (returns the resolved effective token map + a source tag).
+    setPlayTheme: (
+      theme: Record<string, unknown> | null,
+      opts?: { target?: 'shell' | 'message'; persist?: 'session' | 'chat' | 'global' }
+    ) => host.setPlayTheme(theme ?? null, opts),
+    setMessageTheme: (
+      tokens: Record<string, unknown>,
+      opts?: { persist?: 'session' | 'chat' | 'global' }
+    ) => host.setPlayTheme({ tokens: tokens ?? {} }, { target: 'message', ...(opts || {}) }),
+    getPlayTheme: () => host.getPlayThemeSync(),
     replaceTavernRegexes: async (regexes: any, option?: any) =>
       host.replaceRegexes(Array.isArray(regexes) ? regexes : [], option),
     updateTavernRegexesWith: async (updater: any, option?: any) => {

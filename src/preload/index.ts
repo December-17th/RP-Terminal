@@ -637,6 +637,25 @@ const api = {
     ipcRenderer.on('wcv-host-wheel', listener)
     return () => ipcRenderer.removeListener('wcv-host-wheel', listener)
   },
+  // Runtime play theme (runtime-theme-api-design §5): a WCV card called setPlayTheme → main relays it here
+  // for the renderer to derive/AA-check/apply; the renderer replies with the verdict (keyed by id). The
+  // renderer also pushes its effective play-theme snapshot to main so a WCV's getPlayTheme() can read it.
+  onWcvSetPlayTheme: (
+    cb: (payload: { id: number; chatId: string; theme: unknown; opts: unknown }) => void
+  ) => {
+    const listener = (
+      _e: IpcRendererEvent,
+      payload: { id: number; chatId: string; theme: unknown; opts: unknown }
+    ): void => cb(payload)
+    ipcRenderer.on('wcv-host-set-play-theme', listener)
+    return () => ipcRenderer.removeListener('wcv-host-set-play-theme', listener)
+  },
+  wcvSetPlayThemeReply: (id: number, ok: boolean) =>
+    ipcRenderer.send('wcv-host-set-play-theme-reply', id, ok),
+  setPlayThemeCache: (snapshot: {
+    tokens: Record<string, string>
+    source: 'user' | 'card' | 'runtime'
+  }) => ipcRenderer.send('set-play-theme-cache', snapshot),
   // World Assets (per-world image asset layer)
   assetCoverage: (profileId: string, lorebookIds: string[], category: string, roster: string[]) =>
     ipcRenderer.invoke('asset-coverage', profileId, lorebookIds, category, roster),
