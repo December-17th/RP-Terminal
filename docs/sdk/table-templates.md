@@ -3,11 +3,13 @@
 **Status:** 🟢 complete (issues 02–06: import + per-chat enablement + the Tables view (read + hand
 editing) + SQL write path + op-log/rewind + prompt projection (`table.export`) + the maintenance
 pipeline (`table.gate` / `table.read` / `table.query`) + template EXPORT (chatSheets v2, round-trip) +
-per-table last-maintained indicator all built). The only deferred item is card-embedded templates.
+per-table last-maintained indicator all built). Structural fields (DDL / columns / tables) are now
+editable via `table-structure-apply` with bound-chat migration (Memory-Manager WP4a — backend only;
+the editor UI is WP4b). The only deferred item is card-embedded templates.
 
 The **Tables view** now also shows and edits each table's per-table template prompts inline (the five
 per-op prompts + the injection `exportConfig`) via `table-template-update` — structural fields
-(DDL/headers/rows) stay read-only. Each table's **`updateFrequency`** is edited from an always-visible
+(DDL/headers/rows) change ONLY through `table-structure-apply` (below). Each table's **`updateFrequency`** is edited from an always-visible
 per-table cadence control in the table header (global / off / custom — manual-pass issue 04), not the
 collapsible prompt panel.
 
@@ -110,7 +112,8 @@ use-global sentinel — issue 04, no longer normalized to `1`) + keyword index; 
 `chat-tables-read` (all tables of the assigned template as
 `[{ sqlName, displayName, columns, rows, rowids }]`); `chat-tables-edit` (hand edit → `{ ok, changes }
 | { error }`); `chat-tables-status` (last-maintained floor per table); `table-template-export-dialog`
-(export to chatSheets v2 JSON) — issue 06. The **Tables** view is registered as `tables` in
+(export to chatSheets v2 JSON) — issue 06; `table-structure-apply` (structural edit + bound-chat
+migration — Memory-Manager WP4a, below). The **Tables** view is registered as `tables` in
 `src/renderer/src/components/workspace/viewRegistry.tsx`.
 
 `table-template-update(profileId, id, patch)` → `{ ok: true } | { error }` (manual-pass issue 03). The
@@ -133,6 +136,59 @@ data-only + positional — no other `TableRead` consumer changes). Columns are u
 template's DISPLAY headers when they line up 1:1 with the sandbox's real columns
 (`tableDbService.unifyDisplayColumns`), so both empty and populated tables show e.g. 人物名称 rather
 than the SQL name (`src/main/services/tableDbService.ts`).
+
+## Structural edit + migration (Memory-Manager WP4a — `src/main/services/tableStructureService.ts`)
+
+Structural fields ARE editable, but ONLY through `table-structure-apply(profileId, templateId, ops)`
+→ `{ ok, tablesChanged, columnsChanged, chatsMigrated, failedChats, warnings }` | `{ ok:false, error }`
+(a localizable `tables.structure*` key). This is the ONE path that rewrites `ddl` / `sqlName` /
+`headers` / `initialRows`; `table-template-update` still refuses them. `ops` is an ordered list of
+high-level ops (`addTable` / `dropTable` / `renameTable` / `addColumn` / `renameColumn` /
+`dropColumn`); tables are addressed by their stable `uid`, and `addTable` mints a new one
+(`StructureOp`, exported from the service, mirrored inline in `preload/index.d.ts`).
+
+Algorithm — a **strict ordering** so a mid-way failure can never leave a half-migrated chat:
+
+1. **Validate** the whole batch against the current template (identifier safety, existence /
+   collision); REJECT atomically on any bad op (nothing written).
+2. **Derive the new DDL** from a THROWAWAY `:memory:` DB seeded from the current DDL: run the
+   `ALTER/CREATE/DROP` there and read each canonical `CREATE TABLE` back from `sqlite_master` (so the
+   stored `ddl` is exactly what `instantiate` will re-run). **No real sandbox is touched here** — a
+   derivation failure (or the "produced no DDL" guard) leaves the template AND every sandbox
+   byte-for-byte unchanged.
+3. **`saveTableTemplate` ONCE** (same id), only after derivation succeeds: `headers` regenerate from
+   the new columns (surviving/renamed columns keep their label, new columns default to the column
+   name); `initialRows` remap positionally (surviving values kept, dropped columns removed, added
+   columns filled `''`); `exportConfig` (`keywords` / `extraIndexColumns` / `extraIndexColumnModes`)
+   remaps by the rename map and drops references to dropped columns. Per-op node **prose is NOT
+   rewritten** — a reference to a renamed/dropped column becomes a `warnings[]` advisory.
+4. **Migrate each bound chat, one at a time.** Apply the `ALTER/CREATE/DROP` to its live sandbox in
+   an OPEN transaction, read the migrated rows on that same (uncommitted) handle to build the
+   floor-0 baseline (`DELETE FROM t` + one `INSERT` per row), **rewrite its op log ATOMICALLY** (one
+   app-DB transaction: `deleteAllOps` then `appendOps` — the old ops are never dropped without the
+   new baseline landing), and only THEN commit the sandbox. The baseline is ordinary DELETE/INSERT
+   that passes `validateBatch`, so a later `rebuildSandbox` / rewind reconstructs the MIGRATED rows
+   (the raw `ALTER` is never replayed). rowids are reproduced via the `row_id` PK value (the memory
+   convention) or an explicit `rowid` column otherwise.
+
+**Per-chat failure is recoverable, not half-migrated.** If any step for a chat throws, its sandbox
+rolls back and the op-log rewrite either never ran or rolled back — the chat is left on the PREVIOUS
+schema + its OLD op-log, and appears in `failedChats: [{ chatId, reason }]` (WP4b surfaces it for a
+re-sync/retry). The template + every other chat stay migrated. Because the op-log rewrite commits
+BEFORE the sandbox commit, the one residual (non-data-loss) window is the reverse: op-log written but
+the sandbox commit lost to a crash — a subsequent `rebuildSandbox` (`instantiate(new)` + replay of the
+new baseline) self-heals to the migrated state.
+
+The raw `ALTER/CREATE/DROP` runs on the migration's OWN db handle, bypassing the LLM write-path
+guard (`classifyStatement` rejects `ALTER`) — intended: this is trusted in-process schema evolution,
+not model-emitted SQL. The progress pointer (`tableProgressService`) is left untouched (a structural
+edit doesn't change which floors were processed).
+
+**Residual non-atomic boundary (documented, not closed):** the template is a JSON file and the op
+logs live in SQLite — two different stores, so `saveTableTemplate` (step 3) and the per-chat op-log
+rewrites (step 4) can't be one atomic unit. A crash between them leaves the new template on disk with
+some chats not yet migrated; those chats then behave exactly like a `failedChats` entry (old schema +
+old op-log), and re-running the same ops finishes them.
 
 ## Write path (issue 03)
 

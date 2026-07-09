@@ -2,6 +2,8 @@ import { describe, it, expect } from 'vitest'
 import {
   columnWidthHint,
   filterRowIndices,
+  pageInfo,
+  pageSlice,
   pointerSpec
 } from '../src/renderer/src/components/workspace/tableGridModel'
 
@@ -43,6 +45,39 @@ describe('pointerSpec', () => {
       key: 'tables.pointerLine',
       params: { processed: 10, next: 13, unprocessed: 2 }
     })
+  })
+})
+
+describe('pageInfo', () => {
+  it('reports page count and the 1-based row range for a mid list', () => {
+    // 65 rows, 30/page → 3 pages; page 1 (0-based) shows rows 31–60.
+    expect(pageInfo(65, 1, 30)).toEqual({ page: 1, pageCount: 3, from: 31, to: 60, total: 65 })
+    // Last page is short: rows 61–65.
+    expect(pageInfo(65, 2, 30)).toEqual({ page: 2, pageCount: 3, from: 61, to: 65, total: 65 })
+  })
+  it('clamps an over-range page to the last page (a shrinking filter never strands the view)', () => {
+    expect(pageInfo(10, 9, 30)).toEqual({ page: 0, pageCount: 1, from: 1, to: 10, total: 10 })
+    expect(pageInfo(65, -5, 30).page).toBe(0)
+  })
+  it('empty list → one page, a 0-length range', () => {
+    expect(pageInfo(0, 3, 30)).toEqual({ page: 0, pageCount: 1, from: 0, to: 0, total: 0 })
+  })
+  it('guards a non-positive page size', () => {
+    expect(pageInfo(5, 0, 0)).toEqual({ page: 0, pageCount: 5, from: 1, to: 1, total: 5 })
+  })
+})
+
+describe('pageSlice', () => {
+  const items = Array.from({ length: 65 }, (_, i) => i)
+  it('slices the requested page, agreeing with pageInfo', () => {
+    expect(pageSlice(items, 0, 30)).toEqual(items.slice(0, 30))
+    expect(pageSlice(items, 2, 30)).toEqual(items.slice(60, 65))
+  })
+  it('clamps an over-range page to the last page', () => {
+    expect(pageSlice(items, 99, 30)).toEqual(items.slice(60, 65))
+  })
+  it('empty list → empty slice', () => {
+    expect(pageSlice([], 0, 30)).toEqual([])
   })
 })
 
