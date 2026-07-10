@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useCardScriptsStore } from '../stores/cardScriptsStore'
 import { useToolbarStore } from '../stores/toolbarStore'
+import { CARD_CSP } from '../../../shared/cardCsp'
 
 /**
  * The card **script engine** (Phase 2–4) — a single, invisible, process-isolated `WebContentsView` that runs
@@ -17,14 +18,6 @@ import { useToolbarStore } from '../stores/toolbarStore'
  * modules load natively, `window.open`/`fetch` work, and a full-page card app runs as written. The
  * `wcvPreload` shim provides the canonical `thRuntime` surface (window.TavernHelper/Mvu/SillyTavern/$/_/…).
  */
-
-// Mirrors wcvManager.CARD_CSP (can't import a main module here). Trusted-card policy: https code/styles/
-// media + the eval the card libs need; process isolation is the real boundary.
-const CSP =
-  "default-src 'self' https: 'unsafe-inline' 'unsafe-eval' data: blob:; " +
-  // `rptasset:` explicit (CSP `*` doesn't match custom schemes) so World-Asset portraits load; kept in
-  // parity with wcvManager.CARD_CSP.
-  'img-src * data: blob: rptasset:; media-src * data: blob: rptasset:; connect-src * data: blob:'
 
 // A script uses ES-module syntax (static import/export) ⇒ run it as <script type="module"> so its imports
 // resolve. (Mirrors thRuntime/bridgeShim's MODULE_SYNTAX, inlined to avoid the legacy-stack dependency.)
@@ -48,7 +41,7 @@ const buildScriptDoc = (scripts: RuntimeScript[]): string => {
     .join('\n')
   return (
     `<!doctype html><html><head><meta charset="utf-8">` +
-    `<meta http-equiv="Content-Security-Policy" content="${CSP}">` +
+    `<meta http-equiv="Content-Security-Policy" content="${CARD_CSP}">` +
     `<style>html,body{margin:0;background:transparent;color:#d8d8e0;font-family:system-ui,sans-serif}</style>` +
     // Surface script errors/rejections to the WCV console (forwarded to the main log by wcvPreload).
     `<script>window.addEventListener('error',function(e){console.error('[card-script]',e.message,e.error&&e.error.stack||'')});` +

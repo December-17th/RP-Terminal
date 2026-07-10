@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest'
 import { readFileSync } from 'fs'
 import { resolve } from 'path'
 import { buildCsp } from '../src/renderer/src/plugin/csp'
+import { CARD_CSP } from '../src/shared/cardCsp'
 
 describe('inline-iframe CSP', () => {
   it('allows rptasset: images in the locked (no-remote) policy', () => {
@@ -35,14 +36,13 @@ describe('main-window CSP (index.html)', () => {
 describe('WCV card-surface CSP (CARD_CSP)', () => {
   // The PARTNER overlay / STAGE WCV surfaces render <img src="rptasset://…">. CSP `*` does NOT match
   // custom schemes, so img-src must list rptasset: explicitly or the portraits are blocked (broken-image
-  // icons). This pins the WCV policy so a future edit can't silently drop it. Read as text (not imported)
-  // because wcvManager pulls in electron. WcvMessageFrame / CardScriptWcvHost mirror this string.
-  const cardCsp = readFileSync(resolve(__dirname, '../src/main/services/wcvManager.ts'), 'utf-8')
-
+  // icons). This pins the WCV policy so a future edit can't silently drop it. Imported directly now that
+  // CARD_CSP lives in the electron-free `shared/cardCsp` module (the single source of truth that
+  // wcvManager / WcvMessageFrame / CardScriptWcvHost all import).
   it('allows rptasset: images in img-src', () => {
-    expect(cardCsp).toMatch(/img-src[^;']*\brptasset:/)
+    expect(CARD_CSP).toMatch(/img-src[^;']*\brptasset:/)
   })
   it('allows rptasset: media in media-src (audio/video parity)', () => {
-    expect(cardCsp).toMatch(/media-src[^;']*\brptasset:/)
+    expect(CARD_CSP).toMatch(/media-src[^;']*\brptasset:/)
   })
 })

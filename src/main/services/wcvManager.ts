@@ -17,6 +17,7 @@ import { makePanelGeometry, PanelGeometry } from './wcvGeometry'
 import { createFreezeController, type FreezeTarget } from './wcvFreezeFrame'
 import { createOverlayController, type OverlayDecl } from './wcvOverlay'
 import type { VarsOrigin } from '../../shared/thRuntime/types'
+import { CARD_CSP } from '../../shared/cardCsp'
 
 // Card UI panels run in their own session partition. jsDelivr serves `/gh/` HTML as text/plain (to
 // stop it being used to host pages), so Chromium shows it as raw text; the card's UI is meant to be
@@ -31,13 +32,10 @@ const WCV_PARTITION = 'persist:wcv-cards'
 // each card a real, storage-enabled origin — a data: URL is opaque-origin, where Chromium disables
 // localStorage/etc. and a storage-using card throws. The per-slot HTML is served from `slot.html`.
 export const CARD_SCHEME = 'rpt-card'
-// Shared with the inline-message path (WcvMessageFrame sets the same policy via a <meta> tag).
-export const CARD_CSP =
-  "default-src 'self' https: 'unsafe-inline' 'unsafe-eval' data: blob:; " +
-  // `rptasset:` is listed explicitly: CSP `*` does NOT match custom schemes, so World-Asset portraits
-  // (rptasset://) would otherwise be blocked in WCV card surfaces (PARTNER overlay / STAGE). Mirrors the
-  // main-window img-src (renderer/index.html) + csp.ts. `media-src` gets it too for audio/video parity.
-  'img-src * data: blob: rptasset:; media-src * data: blob: rptasset:; connect-src * data: blob:'
+// The trusted-card WCV CSP is the single source of truth in `shared/cardCsp` — the inline-message path
+// (WcvMessageFrame / CardScriptWcvHost) imports the SAME constant so the policy can't drift. Re-exported
+// for existing `wcvManager.CARD_CSP` import sites.
+export { CARD_CSP }
 let sessionReady = false
 const ensureSession = (): void => {
   if (sessionReady) return
