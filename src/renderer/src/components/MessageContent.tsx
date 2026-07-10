@@ -1,4 +1,4 @@
-import React, { useEffect, useId, useMemo, useRef, useState } from 'react'
+import React, { useEffect, useId, useMemo } from 'react'
 import Markdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import DOMPurify from 'dompurify'
@@ -6,12 +6,13 @@ import { isInteractiveHtml } from '../plugin/bridgeShim'
 import { extractStyleBlocks, scopeCss, scopeClassFor } from './messageHtmlScope'
 import { WcvMessageFrame } from './WcvMessageFrame'
 import { InlineCardFrame } from './InlineCardFrame'
+import { HtmlFrame } from './HtmlFrame'
 import { useSettingsStore } from '../stores/settingsStore'
-import {
-  resolveCardMode,
-  DEFAULT_CARD_RENDER_MODE,
-  DEFAULT_CARD_SIZING
-} from '../../../shared/cardRenderMode'
+import { useProfileStore } from '../stores/profileStore'
+import { useCharacterStore } from '../stores/characterStore'
+import { useCardScriptsStore } from '../stores/cardScriptsStore'
+import { resolveScriptedHtmlRoute } from './messageCardRouting'
+import { DEFAULT_CARD_RENDER_MODE, DEFAULT_CARD_SIZING } from '../../../shared/cardRenderMode'
 import type { CardRenderMode } from '../../../shared/cardRenderMode'
 
 interface Props {
@@ -39,6 +40,33 @@ export const MessageContent: React.FC<Props> = ({ content, css, onContextMenu })
   const globalMode =
     useSettingsStore((s) => s.settings?.cards?.renderMode) ?? DEFAULT_CARD_RENDER_MODE
   const globalSizing = useSettingsStore((s) => s.settings?.cards?.sizing) ?? DEFAULT_CARD_SIZING
+
+  // Trust provenance = the chat's active character card. Scripted HTML executes only under that
+  // card's persisted grants, NOT the render-mode setting alone (card-trust-boundary issue 01).
+  const profileId = useProfileStore((s) => s.activeProfile?.id ?? '')
+  const cardId = useCharacterStore((s) => s.activeCharacter?.id ?? '')
+  const trusted = useCardScriptsStore((s) => (cardId ? s.trustedByCard[cardId] : undefined))
+  const decided = useCardScriptsStore((s) => (cardId ? s.decidedByCard[cardId] : undefined))
+
+  // Cold fallback: a chat opened before any script host mounted has no grants in the store yet, so
+  // `decided` is undefined and the router fails CLOSED (WCV). Read the persisted grants once and
+  // seed the store so a trusted card resolves to inline (and a denied one to static). `decided`
+  // being undefined for the active card is the "not yet resolved" signal.
+  useEffect(() => {
+    if (!profileId || !cardId) return
+    if (useCardScriptsStore.getState().decidedByCard[cardId] !== undefined) return
+    let alive = true
+    window.api.pluginGetGrants(profileId, cardId).then((g) => {
+      if (!alive) return
+      useCardScriptsStore.getState().seed(cardId, g?.enabled !== false)
+      useCardScriptsStore.getState().seedTrust(cardId, g?.trusted === true)
+      useCardScriptsStore.getState().seedDecided(cardId, g?.decided === true)
+    })
+    return () => {
+      alive = false
+    }
+  }, [profileId, cardId])
+
   return (
     <div
       className="message-content"
@@ -53,21 +81,34 @@ export const MessageContent: React.FC<Props> = ({ content, css, onContextMenu })
     >
       {parts.map((p, i) =>
         p.type === 'html' ? (
-          // A scripted html block is the card's regex-injected "frontend card" — run it as-is in an
-          // isolated WebContentsView where the preload shim is the TavernHelper compat layer, so the
-          // card's own code does its (possibly nested) loading. Script-free html stays a light, static,
-          // sanitized inline frame.
+          // A scripted html block is the card's regex-injected "frontend card". Routing is
+          // trust-gated: only a card the user TRUSTED runs same-origin (InlineCardFrame, reaches
+          // window.parent.api). An undecided card is forced into the process-isolated WCV; a denied
+          // card — or scripted HTML with no active card (bare model output) — renders static +
+          // sanitized. Script-free html always stays the static inline frame. (issue 01)
           isInteractiveHtml(p.text) ? (
-            resolveCardMode(p.mode, globalMode) === 'isolated' ? (
-              <WcvMessageFrame key={i} html={p.text} sizing={globalSizing} />
-            ) : (
-              <InlineCardFrame
-                key={i}
-                html={p.text}
-                sizing={globalSizing}
-                onContextMenu={onContextMenu}
-              />
-            )
+            (() => {
+              const route = resolveScriptedHtmlRoute({
+                hasCard: !!cardId,
+                trusted,
+                decided,
+                mode: p.mode,
+                globalMode
+              })
+              return route === 'inline' ? (
+                <InlineCardFrame
+                  key={i}
+                  html={p.text}
+                  sizing={globalSizing}
+                  trusted
+                  onContextMenu={onContextMenu}
+                />
+              ) : route === 'isolated' ? (
+                <WcvMessageFrame key={i} html={p.text} sizing={globalSizing} />
+              ) : (
+                <HtmlFrame key={i} html={p.text} css={css} onContextMenu={onContextMenu} />
+              )
+            })()
           ) : (
             <HtmlFrame key={i} html={p.text} css={css} onContextMenu={onContextMenu} />
           )
@@ -241,14 +282,6 @@ export const splitHtml = (content: string): Segment[] => {
   return segs.flatMap((s) => (s.type === 'md' ? splitBareHtml(s.text) : [s]))
 }
 
-const FRAGMENT_BASE = `
-  :root { color-scheme: dark; }
-  body { margin: 0; color: #e0e0e0; background: transparent;
-         font-family: 'Inter', system-ui, sans-serif; line-height: 1.5; }
-  a { color: #5b8def; }
-  img { max-width: 100%; }
-`
-
 // Tags barred from the card body. Scripts + event handlers + javascript: URLs are stripped by
 // DOMPurify's defaults; we also bar embedders, `<form>` (submission/phishing), and `<base>`/`<meta>`/
 // `<link>`. `<style>` is extracted + scoped BEFORE sanitizing (so it's gone from the body here).
@@ -293,83 +326,5 @@ const InlineHtml: React.FC<{ html: string }> = ({ html }) => {
       {css ? <style>{css}</style> : null}
       <div dangerouslySetInnerHTML={{ __html: body }} />
     </div>
-  )
-}
-
-const HtmlFrame: React.FC<{
-  html: string
-  css?: string
-  onContextMenu?: (x: number, y: number) => void
-}> = ({ html, css, onContextMenu }) => {
-  const ref = useRef<HTMLIFrameElement>(null)
-  const ctxRef = useRef(onContextMenu)
-  ctxRef.current = onContextMenu
-  const [height, setHeight] = useState(80)
-
-  const srcDoc = useMemo(() => {
-    const isFullDoc = /<!doctype|<html[\s>]/i.test(html)
-    const clean = DOMPurify.sanitize(html, {
-      WHOLE_DOCUMENT: isFullDoc,
-      ADD_TAGS: ['style', 'link'],
-      ADD_ATTR: ['target', 'rel', 'href'],
-      FORBID_TAGS: ['script'],
-      FORBID_ATTR: ['onerror', 'onload', 'onclick']
-    })
-    if (isFullDoc) return clean
-    return `<!doctype html><html><head><meta charset="utf-8"><base target="_blank"><style>${FRAGMENT_BASE}${css || ''}</style></head><body>${clean}</body></html>`
-  }, [html, css])
-
-  // Measure content height (same-origin sandbox, no scripts) and keep it synced
-  // as images/fonts load via a ResizeObserver on the frame's document.
-  useEffect(() => {
-    const frame = ref.current
-    if (!frame) return
-    let observer: ResizeObserver | undefined
-    const measure = (): void => {
-      try {
-        const doc = frame.contentDocument
-        if (doc?.documentElement) setHeight(doc.documentElement.scrollHeight + 4)
-      } catch {
-        /* cross-origin guard */
-      }
-    }
-    const onCtx = (e: Event): void => {
-      e.preventDefault()
-      const me = e as MouseEvent
-      const rect = ref.current?.getBoundingClientRect()
-      // Translate iframe-local coords into the parent viewport.
-      ctxRef.current?.((rect?.left ?? 0) + me.clientX, (rect?.top ?? 0) + me.clientY)
-    }
-    const onLoad = (): void => {
-      measure()
-      try {
-        const doc = frame.contentDocument
-        const body = doc?.body
-        if (body && 'ResizeObserver' in window) {
-          observer = new ResizeObserver(measure)
-          observer.observe(body)
-        }
-        // Right-click inside the (script-free, same-origin) card reaches us here.
-        doc?.addEventListener('contextmenu', onCtx)
-      } catch {
-        /* ignore */
-      }
-    }
-    frame.addEventListener('load', onLoad)
-    return () => {
-      frame.removeEventListener('load', onLoad)
-      observer?.disconnect()
-    }
-  }, [srcDoc])
-
-  return (
-    <iframe
-      ref={ref}
-      className="card-frame"
-      sandbox="allow-same-origin"
-      srcDoc={srcDoc}
-      style={{ width: '100%', height, border: 0, display: 'block' }}
-      title="card content"
-    />
   )
 }

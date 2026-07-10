@@ -8,6 +8,7 @@ import { fitInlineCardHeight, capCardHeight } from './cardFrameHeight'
 import { installCardBridge, installCardTopSurface } from '../cardBridge'
 import { buildInlineLibTags } from '../cardBridge/cardLibs'
 import { buildEnvHead, replaceVhInContent } from '../../../shared/cardEnv'
+import { HtmlFrame } from './HtmlFrame'
 import type { CardSizing } from '../../../shared/cardRenderMode'
 
 installCardBridge() // idempotent; ensures window.__rptCardBridge exists before any frame mounts.
@@ -29,10 +30,18 @@ installCardTopSurface()
 export function InlineCardFrame({
   html,
   sizing = 'fit',
+  trusted = false,
   onContextMenu
 }: {
   html: string
   sizing?: CardSizing
+  /**
+   * Defensive trust gate (card-trust-boundary issue 01). This frame is same-origin and reaches
+   * window.parent.api, so it must ONLY mount for a card the user trusted. The router
+   * (MessageContent → resolveScriptedHtmlRoute) never sends an untrusted block here; this belt-and-
+   * braces check renders the static, script-free frame instead if a future call site forgets to.
+   */
+  trusted?: boolean
   onContextMenu?: (x: number, y: number) => void
 }): React.ReactElement {
   const ref = useRef<HTMLIFrameElement>(null)
@@ -179,6 +188,12 @@ export function InlineCardFrame({
       }
     }
   }, [srcDoc, sizing])
+
+  // Defensive trust gate: never mount the same-origin, parent-reachable frame for an untrusted
+  // card. The router already routes untrusted scripted HTML elsewhere; this stops any future call
+  // site from reintroducing the bypass. Static (script-free, sanitized) fallback keeps content
+  // visible. Placed after all hooks so the rules-of-hooks order is stable across renders.
+  if (!trusted) return <HtmlFrame html={html} onContextMenu={onContextMenu} />
 
   // margin: 10px top/bottom breathing room between the card and the surrounding message text.
   return (

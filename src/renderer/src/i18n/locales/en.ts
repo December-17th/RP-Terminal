@@ -434,15 +434,15 @@ const en: Record<string, string> = {
   'scripts.grantTitle':
     'Grant this world permission to load & run remote code — needed for scripts that import from a CDN.',
   'scripts.grantConfirm':
-    'Allow “{{name}}” to load & run code from the internet?\n\nIts scripts gain full access to app features (generate, fetch, write chat & lore). They still run sandboxed in their own process and cannot read your API keys or app memory. Grant ONLY for a world you trust.',
+    'Trust “{{name}}”?\n\nIts scripts will run with full access to this profile’s data — worlds, lorebooks, chats, and variables, including changing or deleting them — can start AI generations using your configured API key, and may load code from the internet. Scripts are the card author’s code; RP Terminal is not responsible for their behavior. Grant ONLY for a world you trust.',
   'scripts.revokeConfirm': 'Revoke remote-code permission for “{{name}}”?',
 
   // Import-time card-script trust prompt (CardTrustPrompt).
   'trust.title': 'Trust {{name}}’s scripts?',
   'trust.body':
-    'This world ships scripts that run in an isolated process with access to this session. Only run worlds you trust.',
+    'This world includes scripts written by its author. If you trust it, they run with full access to this profile’s data — worlds, lorebooks, chats, and variables, including changing or deleting them — and can start AI generations using your configured API key. Scripts are the card author’s code; RP Terminal is not responsible for their behavior.',
   'trust.warning':
-    'Not trusting may cause the card to be defective; you can trust it later in Settings if you deny.',
+    'If you deny, the world stays playable with scripts off and its panels shown as static content. You can change this anytime in Settings → Scripts.',
   'trust.trust': 'Trust & run scripts',
   'trust.deny': 'Don’t trust',
 

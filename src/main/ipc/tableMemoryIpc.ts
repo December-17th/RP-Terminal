@@ -17,6 +17,7 @@ import { buildGenContext } from '../services/generation/genContext'
 import { chatTemplate } from '../services/nodes/builtin/memoryCore'
 import { composeMaintainerMessages, memoryMaintainConfig } from '../services/nodes/builtin/memoryNodes'
 import { maintainNow, resolveMaintainConfig } from '../services/tableMaintainNow'
+import { gate } from './ipcGuards'
 
 /**
  * IPC for SQL-table memory (issue 02): file-based table templates, per-chat assignment (which
@@ -42,14 +43,14 @@ export const registerTableMemoryIpc = (ipcMain: IpcMain): void => {
     // Any chat that had it assigned loses its sandbox too.
     chatService.removeTableTemplateIdFromChats(profileId, id)
   })
-  ipcMain.handle('table-template-import-dialog', async (event, profileId) => {
+  ipcMain.handle('table-template-import-dialog', gate('table-template-import-dialog', async (event, profileId) => {
     const result = await dialog.showOpenDialog(BrowserWindow.fromWebContents(event.sender)!, {
       properties: ['openFile'],
       filters: [{ name: 'Table Template', extensions: ['json'] }]
     })
     if (result.canceled || result.filePaths.length === 0) return null
     return tableTemplateService.importTableTemplateFromFile(profileId, result.filePaths[0])
-  })
+  }))
 
   // Per-chat assignment. Setting a new id (re)instantiates the sandbox; null removes it (both
   // destructive — the renderer confirms first).
@@ -271,7 +272,7 @@ export const registerTableMemoryIpc = (ipcMain: IpcMain): void => {
   // workflow export-dialog precedent (workflowIpc `export-workflow-dialog`).
   ipcMain.handle(
     'table-template-export-dialog',
-    async (event, profileId: string, templateId: string, chatId?: string | null) => {
+    gate('table-template-export-dialog', async (event, profileId: string, templateId: string, chatId?: string | null) => {
       const template = tableTemplateService.getTableTemplateById(profileId, templateId)
       const defaultName = (template?.name || templateId).replace(/[\\/:*?"<>|]/g, '_')
       const result = await dialog.showSaveDialog(BrowserWindow.fromWebContents(event.sender)!, {
@@ -285,6 +286,6 @@ export const registerTableMemoryIpc = (ipcMain: IpcMain): void => {
         result.filePath,
         chatId
       )
-    }
+    })
   )
 }

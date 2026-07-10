@@ -125,6 +125,7 @@ export const CardScriptHost: React.FC<Props> = ({
       grantsRef.current = g || {}
       useCardScriptsStore.getState().seed(cardId, g?.enabled !== false)
       useCardScriptsStore.getState().seedTrust(cardId, g?.trusted === true)
+      useCardScriptsStore.getState().seedDecided(cardId, g?.decided === true)
       setGrantsLoaded(true)
     })
     return () => {

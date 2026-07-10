@@ -6,6 +6,7 @@ import * as pluginStorageService from '../services/pluginStorageService'
 import * as pluginNetService from '../services/pluginNetService'
 import * as logService from '../services/logService'
 import { getActivePresetId } from '../services/presetService'
+import { gate } from './ipcGuards'
 
 export const registerPluginIpc = (ipcMain: IpcMain): void => {
   // Card-script runtime (P1) — permission-checked engine bridge for sandboxed scripts.
@@ -81,8 +82,12 @@ export const registerPluginIpc = (ipcMain: IpcMain): void => {
   ipcMain.handle('plugin-get-grants', (_, profileId, cardId) =>
     pluginService.getGrants(profileId, cardId)
   )
-  ipcMain.handle('plugin-set-grants', (_, profileId, cardId, patch) =>
-    pluginService.setGrants(profileId, cardId, patch)
+  // GATED: grant mutation — a card must not be able to grant itself trust / capabilities.
+  ipcMain.handle(
+    'plugin-set-grants',
+    gate('plugin-set-grants', (_, profileId, cardId, patch) =>
+      pluginService.setGrants(profileId, cardId, patch)
+    )
   )
   // Surface a card script's rpt.log(...) output in the in-app Logs panel.
   ipcMain.handle('plugin-log', (_, label, message) =>
@@ -91,15 +96,16 @@ export const registerPluginIpc = (ipcMain: IpcMain): void => {
 
   // Plugin host/loader (P2) — standalone installable plugins.
   ipcMain.handle('plugins-list', (_, profileId) => pluginHostService.listPlugins(profileId))
-  ipcMain.handle('plugins-install-dialog', async (event) => {
+  // GATED: native picker installing plugin code from an arbitrary host path.
+  ipcMain.handle('plugins-install-dialog', gate('plugins-install-dialog', async (event) => {
     const result = await dialog.showOpenDialog(BrowserWindow.fromWebContents(event.sender)!, {
       title: 'Select a plugin folder (containing manifest.json)',
       properties: ['openDirectory']
     })
     if (result.canceled || result.filePaths.length === 0) return null
     return pluginHostService.installFromFolder(result.filePaths[0])
-  })
-  ipcMain.handle('plugins-install-zip-dialog', async (event) => {
+  }))
+  ipcMain.handle('plugins-install-zip-dialog', gate('plugins-install-zip-dialog', async (event) => {
     const result = await dialog.showOpenDialog(BrowserWindow.fromWebContents(event.sender)!, {
       title: 'Select a plugin .zip',
       properties: ['openFile'],
@@ -107,15 +113,23 @@ export const registerPluginIpc = (ipcMain: IpcMain): void => {
     })
     if (result.canceled || result.filePaths.length === 0) return null
     return pluginHostService.installFromZip(result.filePaths[0])
-  })
+  }))
   ipcMain.handle('plugins-uninstall', (_, profileId, id) =>
     pluginHostService.uninstall(profileId, id)
   )
-  ipcMain.handle('plugins-set-enabled', (_, profileId, id, enabled, grants) =>
-    pluginHostService.setEnabled(profileId, id, enabled, grants)
+  // GATED: enables/disables plugin code and carries a grants payload — privilege escalation vector.
+  ipcMain.handle(
+    'plugins-set-enabled',
+    gate('plugins-set-enabled', (_, profileId, id, enabled, grants) =>
+      pluginHostService.setEnabled(profileId, id, enabled, grants)
+    )
   )
-  ipcMain.handle('plugins-set-grants', (_, profileId, id, grants) =>
-    pluginHostService.setGrants(profileId, id, grants)
+  // GATED: plugin grant mutation — a card must not grant plugin capabilities to itself/others.
+  ipcMain.handle(
+    'plugins-set-grants',
+    gate('plugins-set-grants', (_, profileId, id, grants) =>
+      pluginHostService.setGrants(profileId, id, grants)
+    )
   )
   ipcMain.handle('plugins-scaffold-example', () => pluginHostService.scaffoldExample())
   // Plugin-scoped persistent storage (P5). `owner` is host-supplied, not from the iframe.

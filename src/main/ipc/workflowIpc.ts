@@ -9,6 +9,7 @@ import {
 } from '../services/moduleTemplates'
 import { getLorePicks, setLorePicks, type LorePick } from '../services/workflowLorePicksStore'
 import type { ModulePayload } from '../../shared/workflow/moduleEnvelope'
+import { gate } from './ipcGuards'
 
 export const registerWorkflowIpc = (ipcMain: IpcMain): void => {
   ipcMain.handle('list-node-types', () => listNodeTypes())
@@ -68,7 +69,8 @@ export const registerWorkflowIpc = (ipcMain: IpcMain): void => {
   ipcMain.handle('resolve-workflow-id', (_, profileId, chatId) =>
     workflowService.resolveWorkflowId(profileId, chatId)
   )
-  ipcMain.handle('import-workflow-dialog', async (event, profileId) => {
+  // GATED: native file picker (import from an arbitrary host path).
+  ipcMain.handle('import-workflow-dialog', gate('import-workflow-dialog', async (event, profileId) => {
     const result = await dialog.showOpenDialog(BrowserWindow.fromWebContents(event.sender)!, {
       properties: ['openFile'],
       filters: [{ name: 'RPT Workflow', extensions: ['rptflow', 'json'] }]
@@ -77,13 +79,14 @@ export const registerWorkflowIpc = (ipcMain: IpcMain): void => {
       return workflowService.importWorkflowFromFile(profileId, result.filePaths[0])
     }
     return null
-  })
-  ipcMain.handle('export-workflow-dialog', async (event, profileId, id, name) => {
+  }))
+  // GATED: native save dialog writing to an arbitrary host path.
+  ipcMain.handle('export-workflow-dialog', gate('export-workflow-dialog', async (event, profileId, id, name) => {
     const result = await dialog.showSaveDialog(BrowserWindow.fromWebContents(event.sender)!, {
       defaultPath: `${name || id}.rptflow`,
       filters: [{ name: 'RPT Workflow', extensions: ['rptflow'] }]
     })
     if (result.canceled || !result.filePath) return false
     return workflowService.exportWorkflowToFile(profileId, id, result.filePath)
-  })
+  }))
 }

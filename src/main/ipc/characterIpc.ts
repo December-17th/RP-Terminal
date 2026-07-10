@@ -1,6 +1,7 @@
 import { IpcMain, BrowserWindow, dialog } from 'electron'
 import fs from 'fs'
 import * as characterService from '../services/characterService'
+import { gate } from './ipcGuards'
 
 export const registerCharacterIpc = (ipcMain: IpcMain): void => {
   ipcMain.handle('get-characters', (_, profileId) => characterService.getCharacters(profileId))
@@ -10,11 +11,16 @@ export const registerCharacterIpc = (ipcMain: IpcMain): void => {
   ipcMain.handle('save-character', (_, profileId, charId, card) =>
     characterService.saveCharacter(profileId, charId, card)
   )
-  ipcMain.handle('delete-character', (_, profileId, charId) =>
-    characterService.deleteCharacter(profileId, charId)
+  // GATED: whole-character deletion (conservative default — owner ruled on chats/lorebooks, not worlds).
+  ipcMain.handle(
+    'delete-character',
+    gate('delete-character', (_, profileId, charId) =>
+      characterService.deleteCharacter(profileId, charId)
+    )
   )
 
-  ipcMain.handle('import-character-dialog', async (event, profileId) => {
+  // GATED: native file-picker dialog (import from an arbitrary host path).
+  ipcMain.handle('import-character-dialog', gate('import-character-dialog', async (event, profileId) => {
     const win = BrowserWindow.fromWebContents(event.sender)!
     const result = await dialog.showOpenDialog(win, {
       properties: ['openFile'],
@@ -69,9 +75,10 @@ export const registerCharacterIpc = (ipcMain: IpcMain): void => {
       }
     }
     return characterService.importCharacterFromFile(profileId, filePath, assetZipPath)
-  })
+  }))
 
-  ipcMain.handle('export-character-dialog', async (event, profileId, characterId) => {
+  // GATED: native save dialog writing a card JSON to an arbitrary host path.
+  ipcMain.handle('export-character-dialog', gate('export-character-dialog', async (event, profileId, characterId) => {
     const exported = characterService.exportWorldCard(profileId, characterId)
     if (!exported) return null
     const safeName = exported.name.replace(/[^a-z0-9_-]+/gi, '_') || 'world-card'
@@ -82,5 +89,5 @@ export const registerCharacterIpc = (ipcMain: IpcMain): void => {
     if (result.canceled || !result.filePath) return null
     fs.writeFileSync(result.filePath, JSON.stringify(exported.json, null, 2), 'utf-8')
     return exported.name
-  })
+  }))
 }

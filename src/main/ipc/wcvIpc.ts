@@ -124,7 +124,25 @@ const debouncedRegexReload = (chatId: string): void => {
  * page can only touch its own session's message variables.
  */
 export const registerWcvIpc = (ipcMain: IpcMain): void => {
-  ipcMain.on('wcv-ensure', (_e, id, bounds, url, ctx) => wcvManager.ensure(id, bounds, url, ctx))
+  // Ctx-binding wall (card-trust-boundary issue 03). A WCV card page runs with contextIsolation off, so
+  // page code can capture the preload's `ipcRenderer` and reach ANY channel — main-side ctx binding is the
+  // real boundary, not the preload. Most WCV handlers already resolve the session from `e.sender.id`
+  // (wcvManager.contextFor) and take no caller-supplied ids, so they're inherently bound. The few channels
+  // below are the host RENDERER's (they legitimately target an arbitrary chat and pass ctx explicitly); a
+  // WCV card reaching them via a captured ipcRenderer must NOT act outside its own slot. `slotCtxIf` returns
+  // the sender's bound slot when it IS a WCV page (⇒ override its args), or null when it's the host renderer
+  // (⇒ trust its args). The one real in-app harm the PRD names is CROSS-PROFILE reach; deletes/writes within
+  // the bound profile stay allowed (no capability gating here).
+  const slotCtxIf = (senderId: number): ReturnType<typeof wcvManager.contextFor> =>
+    wcvManager.contextFor(senderId)
+
+  ipcMain.on('wcv-ensure', (e, id, bounds, url, ctx) => {
+    // Creating/(re)binding a slot's (profileId, chatId) is a host-renderer privilege — it's how the bound
+    // identity is SET. A WCV card page must never call it (it would rebind an existing slot to another
+    // profile: the cross-profile hole). The host renderer's webContents is not itself a slot ⇒ allowed.
+    if (slotCtxIf(e.sender.id)) return
+    wcvManager.ensure(id, bounds, url, ctx)
+  })
   ipcMain.on('wcv-set-bounds', (_e, id, bounds) => wcvManager.setBounds(id, bounds))
   ipcMain.on('wcv-set-visible', (_e, id, visible) => wcvManager.setVisible(id, visible))
   // Duck/restore ALL card views at once — a full-screen DOM overlay (workflow editor) can't
@@ -161,8 +179,11 @@ export const registerWcvIpc = (ipcMain: IpcMain): void => {
   })
   // The user clicked a card-script button in the toolbar → deliver it as the button-named event to the
   // chat's card WCVs (the script's eventOn(getButtonEvent(name)) fires).
-  ipcMain.on('wcv-button-click', (_e, chatId, name) => {
-    wcvManager.notifyEvent(String(chatId), String(name), undefined)
+  ipcMain.on('wcv-button-click', (e, chatId, name) => {
+    // Host renderer → card panels. A WCV card reaching this (captured ipcRenderer) may only fire button
+    // events into its OWN chat's panels, so override the target with its bound chatId.
+    const slot = slotCtxIf(e.sender.id)
+    wcvManager.notifyEvent(String(slot ? slot.chatId : chatId), String(name), undefined)
   })
   // A card script's overlay opened/closed (a full-screen inset:0 element appeared/left) → expand the
   // card-script WCV to a full-window modal, or restore it to its panel rect.
@@ -183,13 +204,18 @@ export const registerWcvIpc = (ipcMain: IpcMain): void => {
   // Host → card panels: the latest stat_data changed (model turn / edit / card-write echo) — refresh their
   // mirrors. Forward the renderer-tagged origin so a card's own write echoed back here doesn't re-fire its
   // MVU events and loop (WS-3 fix). Undefined origin ⇒ notifyVarsChanged defaults to 'model-fold'.
-  ipcMain.on('wcv-broadcast-vars', (_e, chatId, statData, origin) =>
-    wcvManager.notifyVarsChanged(chatId, statData, undefined, origin)
-  )
+  ipcMain.on('wcv-broadcast-vars', (e, chatId, statData, origin) => {
+    // Host renderer → card panels. A WCV card reaching this may only push vars into its OWN chat's panels
+    // (which it can already do via wcv-host-apply-vars) — override the target with its bound chatId.
+    const slot = slotCtxIf(e.sender.id)
+    wcvManager.notifyVarsChanged(String(slot ? slot.chatId : chatId), statData, undefined, origin)
+  })
   // Host → card panels: a TavernHelper lifecycle/mutation event (computed from the chat-store transition).
-  ipcMain.on('wcv-broadcast-event', (_e, chatId, name, payload) =>
-    wcvManager.notifyEvent(chatId, name, payload)
-  )
+  ipcMain.on('wcv-broadcast-event', (e, chatId, name, payload) => {
+    // Host renderer → card panels; a WCV card may only broadcast into its own chat (bound chatId).
+    const slot = slotCtxIf(e.sender.id)
+    wcvManager.notifyEvent(String(slot ? slot.chatId : chatId), name, payload)
+  })
   // Card → sibling card panels: a card-authored coordination event (e.g. the poem stage's
   // `self:fold` / `stage:cast-changed`). Chat resolved from the sender (a card can't target another
   // session); the sender is excluded so its own page doesn't receive the event it just broadcast. The
@@ -246,13 +272,19 @@ export const registerWcvIpc = (ipcMain: IpcMain): void => {
   // Inline transport: an inline card (in the renderer, not a WCV) passes its ctx explicitly — main can't
   // resolve it from e.sender. Same overlay mechanism; the id is validated against the active card's
   // panel_ui.overlays. The characterId falls back to the chat row (parity with the WCV/inline hosts).
-  ipcMain.handle('overlay-request', (_e, profileId, chatId, characterId, overlayId) => {
-    const cid =
-      String(characterId ?? '') ||
-      chatService.getChat(String(profileId ?? ''), String(chatId ?? ''))?.character_id ||
-      ''
+  ipcMain.handle('overlay-request', (e, profileId, chatId, characterId, overlayId) => {
+    // Inline cards run in the host renderer and pass ctx explicitly (main can't resolve them from
+    // e.sender). A WCV card page could reach this inline-transport channel via a captured ipcRenderer;
+    // if the sender IS a bound WCV slot, ignore its supplied ids and use the slot's own ctx (so it can't
+    // open an overlay resolved against another profile's card). Renderer senders keep the explicit ctx.
+    const slot = slotCtxIf(e.sender.id)
+    const pid = slot ? slot.profileId : String(profileId ?? '')
+    const chid = slot ? slot.chatId : String(chatId ?? '')
+    const cid = slot
+      ? slot.characterId || chatService.getChat(pid, chid)?.character_id || ''
+      : String(characterId ?? '') || chatService.getChat(pid, chid)?.character_id || ''
     const id = String(overlayId ?? '')
-    return wcvManager.requestOverlay(id, resolveOverlayDecl(String(profileId ?? ''), cid, id))
+    return wcvManager.requestOverlay(id, resolveOverlayDecl(pid, cid, id))
   })
   ipcMain.handle('overlay-close', () => {
     wcvManager.closeOverlay()
