@@ -82,6 +82,49 @@ ipcRenderer.on('wcv-panel-geometry', (_e: any, g: PanelGeometry) => {
   }
 })
 
+// --- app light/dark mode (WCV mode sync) ---
+// RPT's IN-APP theme (not the OS `prefers-color-scheme`) is the mode authority for card surfaces: the
+// renderer pushes its light/dark axis to main, which snapshots it + pushes changes here. We stamp
+// `data-rpt-mode` on <html> at boot and re-stamp + dispatch a `rpt:colorscheme` window event on change,
+// so a card's mode controller follows the app theme. Mirrors the panel-geometry relay above (sync boot
+// read + push channel + DOM event) with the renderer as the source of truth (like the play-theme cache).
+let colorScheme: 'light' | 'dark' = 'dark'
+try {
+  colorScheme = ipcRenderer.sendSync('wcv-get-colorscheme-sync') === 'light' ? 'light' : 'dark'
+} catch {
+  colorScheme = 'dark'
+}
+const colorSchemeListeners = new Set<(s: 'light' | 'dark') => void>()
+// Stamp the current mode on <html> so a controller can resolve it from the attribute. documentElement can
+// be null at preload load (before the page parses — see the jQuery note below), so guard + re-stamp on
+// DOMContentLoaded; the card's mode controller runs well after that.
+const stampMode = (): void => {
+  try {
+    document.documentElement?.setAttribute('data-rpt-mode', colorScheme)
+  } catch {
+    /* documentElement not ready — re-stamped on DOMContentLoaded */
+  }
+}
+stampMode()
+if (document.readyState === 'loading') window.addEventListener('DOMContentLoaded', stampMode)
+ipcRenderer.on('wcv-colorscheme', (_e: any, s: 'light' | 'dark') => {
+  colorScheme = s === 'light' ? 'light' : 'dark'
+  stampMode()
+  for (const cb of colorSchemeListeners) {
+    try {
+      cb(colorScheme)
+    } catch {
+      /* a listener throwing must not break the others */
+    }
+  }
+  // Also surface as a DOM event so a card that doesn't hold the rptHost ref can still re-skin.
+  try {
+    window.dispatchEvent(new CustomEvent('rpt:colorscheme', { detail: colorScheme }))
+  } catch {
+    /* ignore */
+  }
+})
+
 // --- host bridge (IPC) ---
 const rptHost = {
   getVariables: (): Promise<any> => ipcRenderer.invoke('wcv-host-get-vars'),
@@ -104,6 +147,15 @@ const rptHost = {
   onPanelGeometry: (cb: (g: PanelGeometry) => void) => {
     geometryListeners.add(cb)
     return () => geometryListeners.delete(cb)
+  },
+  // The app's IN-APP light/dark axis (WCV mode sync). Synchronous — the latest value main pushed (seeded
+  // at boot); `onColorSchemeChanged` subscribes to changes and returns an unsubscribe. RPT stamps the
+  // same value on <html> as `data-rpt-mode` and dispatches a `rpt:colorscheme` window event, so a card's
+  // mode controller follows the app theme instead of the OS `prefers-color-scheme`.
+  getColorScheme: (): 'light' | 'dark' => colorScheme,
+  onColorSchemeChanged: (cb: (s: 'light' | 'dark') => void) => {
+    colorSchemeListeners.add(cb)
+    return () => colorSchemeListeners.delete(cb)
   }
 }
 w.rptHost = rptHost

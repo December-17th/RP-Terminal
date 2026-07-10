@@ -141,6 +141,22 @@ export const THEMES: Record<string, ThemeDef> = {
 export const THEME_LIST: ThemeDef[] = [THEMES.dark, THEMES.carbon, THEMES.light]
 export const DEFAULT_THEME_ID = 'dark'
 
+/** The light/dark axis a theme sits on, derived from its primary background luminance (so a future
+ *  theme classifies itself with no extra bookkeeping). This is the app's IN-APP mode — WCV card
+ *  surfaces follow THIS (relayed to main → the WCV `data-rpt-mode`), not the OS `prefers-color-scheme`.
+ *  Unknown/undefined id falls back to the default theme. */
+export function colorSchemeOf(id: string | undefined): 'light' | 'dark' {
+  const theme = (id && THEMES[id]) || THEMES[DEFAULT_THEME_ID]
+  const m = /^#?([0-9a-f]{6})$/i.exec((theme.tokens['--rpt-bg-primary'] || '').trim())
+  if (!m) return 'dark'
+  const h = m[1]
+  const r = parseInt(h.slice(0, 2), 16)
+  const g = parseInt(h.slice(2, 4), 16)
+  const b = parseInt(h.slice(4, 6), 16)
+  // Perceived luminance (0..255); a bright background ⇒ a light theme.
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b > 128 ? 'light' : 'dark'
+}
+
 /** Apply a theme by id: set its token vars on <html>. Unknown/undefined id falls back to the default. */
 export function applyTheme(id: string | undefined): void {
   if (typeof document === 'undefined') return

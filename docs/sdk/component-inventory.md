@@ -73,6 +73,21 @@ compose into one continuous stage (the seam-slicing primitive — pairs with `pa
 Seeded synchronously at preload load; refreshed by main on every bounds change. Verify:
 [`wcvPreload.ts:98`](../../src/preload/wcvPreload.ts), [`wcvGeometry.ts`](../../src/main/services/wcvGeometry.ts).
 
+**WCV-transport-only host method** (a WCV runs in its own document/process, so — unlike an inline card — it
+does NOT inherit the app's `<html>` attributes/CSS and would otherwise fall back to the OS scheme):
+`window.rptHost.getColorScheme()` → `'light' | 'dark'` is the app's IN-APP light/dark axis (the mode of
+the user's chosen app theme — `dark`/`carbon` → `dark`, `light` → `light` — NOT the OS
+`prefers-color-scheme`), with `onColorSchemeChanged(cb)` for changes. RPT also stamps the same value on
+the WCV's `<html>` as **`data-rpt-mode="light|dark"`** at boot and re-stamps + dispatches a
+**`rpt:colorscheme`** window `CustomEvent` (`detail` = `'light'|'dark'`) on change, so a card's mode
+controller can resolve the mode from the method, the attribute, or the event and re-skin live when the
+user flips the app theme. The renderer is the authority ([`theme.ts` `colorSchemeOf`](../../src/renderer/src/theme.ts),
+pushed on app-theme change from [`App.tsx`](../../src/renderer/src/App.tsx) via `setColorSchemeCache`);
+main snapshots it and pushes to every WCV, mirroring the play-theme snapshot cache + the geometry push.
+Verify: [`wcvPreload.ts`](../../src/preload/wcvPreload.ts) (`wcv-get-colorscheme-sync` / `wcv-colorscheme`),
+[`wcvIpc.ts`](../../src/main/ipc/wcvIpc.ts) + [`wcvManager.ts`](../../src/main/services/wcvManager.ts)
+(`setColorSchemeSnapshot` / `colorSchemeSnapshotValue`).
+
 **WCV-transport-only host method** (sibling-panel coordination — only meaningful when a card runs across
 multiple WCV surfaces): `window.rptHost.broadcastEvent(name, payload)` fans a card-authored event out to
 the OTHER card panels on the same chat (not back to the sender); they receive it via `eventOn(name, cb)`.

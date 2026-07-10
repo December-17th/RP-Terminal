@@ -32,7 +32,7 @@ import { useComposerStore } from './stores/composerStore'
 import { useWcvFreezeStore } from './stores/wcvFreezeStore'
 import { initSlash } from './plugin/slash'
 import { broadcastHostEvent, initCardEventBridge } from './cardBridge/hostBroadcast'
-import { applyTheme, THEMES, DEFAULT_THEME_ID } from './theme'
+import { applyTheme, colorSchemeOf, THEMES, DEFAULT_THEME_ID } from './theme'
 import { deriveCardTheme } from './cardTheme'
 import { useUiStore } from './stores/uiStore'
 import {
@@ -228,6 +228,18 @@ export default function App(): React.ReactElement {
   // Apply the selected theme's token set whenever it changes (and on first settings load).
   useEffect(() => {
     applyTheme(settings?.ui?.theme)
+  }, [settings?.ui?.theme])
+
+  // Push the app's light/dark axis to main so a WCV card surface follows the IN-APP theme, not the OS
+  // `prefers-color-scheme` (its mode controller reads `rptHost.getColorScheme` / the stamped
+  // `data-rpt-mode`). Keyed on the same app-theme setting the applier above consumes; mirrors the
+  // play-theme snapshot push (setPlayThemeCache). No-op outside Electron (test/SSR).
+  useEffect(() => {
+    try {
+      window.api.setColorSchemeCache(colorSchemeOf(settings?.ui?.theme))
+    } catch {
+      /* no api (test/SSR) */
+    }
   }, [settings?.ui?.theme])
 
   // Sync the UI language from settings (the i18n store re-renders subscribers on change).

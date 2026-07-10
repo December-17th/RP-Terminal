@@ -671,6 +671,11 @@ const api = {
     tokens: Record<string, string>
     source: 'user' | 'card' | 'runtime'
   }) => ipcRenderer.send('set-play-theme-cache', snapshot),
+  // App light/dark mode sync (WCV mode sync): push RPT's IN-APP theme axis so a WCV card surface follows
+  // the app theme, not the OS `prefers-color-scheme`. Mirrors setPlayThemeCache; the renderer calls it on
+  // app-theme change. Main snapshots it (WCV sync read at boot) + pushes the change to every WCV.
+  setColorSchemeCache: (scheme: 'light' | 'dark') =>
+    ipcRenderer.send('set-colorscheme-cache', scheme),
   // World Assets (per-world image asset layer)
   assetCoverage: (profileId: string, lorebookIds: string[], category: string, roster: string[]) =>
     ipcRenderer.invoke('asset-coverage', profileId, lorebookIds, category, roster),

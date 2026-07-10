@@ -540,6 +540,32 @@ export const resolveSetPlayTheme = (id: number, ok: boolean): void => {
   }
 }
 
+// --- App light/dark mode sync (WCV mode sync) ---
+// The renderer owns the app theme; it pushes its light/dark axis here (set-colorscheme-cache) on every
+// app-theme change. A WCV card surface reads this snapshot synchronously at boot (wcv-get-colorscheme-sync
+// → the initial data-rpt-mode stamp / rptHost.getColorScheme) and receives a push (wcv-colorscheme) on
+// change, so its mode controller re-skins live. Mirrors the play-theme snapshot cache (renderer → main)
+// for the sync read + the geometry push (main → WCV) for live updates. Surfaces then follow RPT's in-app
+// theme instead of the OS `prefers-color-scheme`.
+let colorSchemeSnapshot: 'light' | 'dark' = 'dark'
+
+/** The app's current light/dark axis (getColorScheme's sync-read resolver for a WCV card). */
+export const colorSchemeSnapshotValue = (): 'light' | 'dark' => colorSchemeSnapshot
+
+/** The renderer pushed its app theme's light/dark axis. Snapshot it + push the change to every WCV. */
+export const setColorSchemeSnapshot = (scheme: unknown): void => {
+  const s: 'light' | 'dark' = scheme === 'light' ? 'light' : 'dark'
+  if (s === colorSchemeSnapshot) return
+  colorSchemeSnapshot = s
+  for (const slot of slots.values()) {
+    try {
+      if (!slot.view.webContents.isDestroyed()) slot.view.webContents.send('wcv-colorscheme', s)
+    } catch {
+      /* a page mid-teardown can't receive — ignore */
+    }
+  }
+}
+
 /**
  * Notify sibling WCVs on the same chat that the variables changed. `exceptWebContentsId` skips one
  * slot — pass the writer's `e.sender.id` so a card's OWN write isn't echoed back to it. Without this,
