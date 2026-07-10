@@ -346,7 +346,15 @@ export function MemoryManagerView({ profileId }: { profileId: string }): React.J
                         pageSize={30}
                       />
                     ))}
-                  {tab === 'structure' && <ComingSoon titleKey="memoryManager.structureSoon" />}
+                  {tab === 'structure' && (
+                    <StructureTab
+                      profileId={profileId}
+                      templateId={assignedId}
+                      defs={template?.tables ?? []}
+                      reads={tables}
+                      onReload={loadChat}
+                    />
+                  )}
                   {tab === 'maintenance' && (
                     <MaintenanceTab
                       profileId={profileId}
@@ -386,21 +394,6 @@ export function MemoryManagerView({ profileId }: { profileId: string }): React.J
           </>
         )}
       </div>
-    </div>
-  )
-}
-
-/** A small "coming soon" placeholder — Structure (WP4) slots its real content here later; kept tiny so
- *  that WP replaces one call site. */
-const ComingSoon: React.FC<{ titleKey: string }> = ({ titleKey }) => {
-  const t = useT()
-  return (
-    <div className="rpt-mm-soon">
-      <div className="rpt-mm-soon-icon" aria-hidden>
-        🚧
-      </div>
-      <h3 className="rpt-mm-soon-title">{t(titleKey)}</h3>
-      <p className="rpt-mm-soon-body">{t('memoryManager.comingSoon')}</p>
     </div>
   )
 }
@@ -659,6 +652,292 @@ const HistoryTab: React.FC<{
             </li>
           ))}
         </ul>
+      )}
+    </div>
+  )
+}
+
+/** One structural op sent to `applyTableStructure` (subset built by this tab; add-table is deferred —
+ *  a UI-created table's row_id/PK convention for maintenance writes isn't verified yet). */
+type StructOp =
+  | { kind: 'addColumn'; uid: string; name: string; type?: string }
+  | { kind: 'renameColumn'; uid: string; from: string; to: string }
+  | { kind: 'dropColumn'; uid: string; name: string }
+  | { kind: 'renameTable'; uid: string; sqlName: string; displayName?: string }
+  | { kind: 'dropTable'; uid: string }
+
+/**
+ * The Structure tab (WP4b) — the shujuku 结构·参数 parity surface. Edits the ASSIGNED template's shape
+ * (rename/delete tables, add/rename/delete columns) and drives `applyTableStructure`, which migrates
+ * EVERY chat bound to the shared template + re-baselines each op-log (WP4a). Because that fans out to
+ * all bound chats, a prominent warning sits at the top, and any `failedChats` (chats left on the old
+ * schema, needing a re-sync) are surfaced persistently — never buried in a toast. Destructive ops
+ * (delete table/column) gate behind window.confirm (the same pattern the Data grid + History use). The
+ * `row_id` PK is never listed (it is structural, not user-editable). Add-table is intentionally deferred.
+ */
+const StructureTab: React.FC<{
+  profileId: string
+  templateId: string | null
+  defs: TableDef[]
+  reads: TableRead[]
+  onReload: () => Promise<void> | void
+}> = ({ profileId, templateId, defs, reads, onReload }) => {
+  const t = useT()
+  const [busy, setBusy] = React.useState(false)
+  const [failed, setFailed] = React.useState<{ chatId: string; reason: string }[]>([])
+  const [warns, setWarns] = React.useState<string[]>([])
+  const [addCol, setAddCol] = React.useState<Record<string, string>>({})
+  const [editing, setEditing] = React.useState<{ uid: string; col?: string } | null>(null)
+  const [editVal, setEditVal] = React.useState('')
+
+  // Real SQL column names for a table (source of truth for column ops), minus the structural row_id PK.
+  const columnsOf = (d: TableDef): string[] => {
+    const r = reads.find((x) => x.sqlName === d.sqlName)
+    return (r?.columns ?? []).filter((c) => c.toLowerCase() !== 'row_id')
+  }
+
+  const applyOps = async (ops: StructOp[]): Promise<void> => {
+    if (!templateId || ops.length === 0) return
+    setBusy(true)
+    try {
+      const res = await api().applyTableStructure(profileId, templateId, ops)
+      if (!res || res.ok === false) {
+        const raw = res?.error ? String(res.error) : ''
+        const detail = raw.startsWith('tables.') ? t(raw) : raw
+        useToastStore
+          .getState()
+          .push(`${t('memoryManager.structure.failed')}${detail ? ': ' + detail : ''}`)
+        return
+      }
+      setFailed(res.failedChats ?? [])
+      setWarns(res.warnings ?? [])
+      useToastStore.getState().push(
+        t('memoryManager.structure.applied', {
+          tables: res.tablesChanged,
+          cols: res.columnsChanged,
+          chats: res.chatsMigrated
+        })
+      )
+      await onReload()
+    } catch {
+      useToastStore.getState().push(t('memoryManager.structure.failed'))
+    } finally {
+      setBusy(false)
+      setEditing(null)
+    }
+  }
+
+  const startEdit = (uid: string, col: string | undefined, current: string): void => {
+    setEditing({ uid, col })
+    setEditVal(current)
+  }
+  const commitEdit = (op: StructOp): void => {
+    if (!editVal.trim()) {
+      setEditing(null)
+      return
+    }
+    void applyOps([op])
+  }
+  const submitAddCol = (uid: string): void => {
+    const name = (addCol[uid] ?? '').trim()
+    if (!name) return
+    void applyOps([{ kind: 'addColumn', uid, name }])
+    setAddCol((m) => ({ ...m, [uid]: '' }))
+  }
+
+  if (!templateId) {
+    return <p className="rpt-mm-rail-empty">{t('tables.noneAssigned')}</p>
+  }
+
+  return (
+    <div className="rpt-mm-struct">
+      <div className="rpt-mm-struct-warn" role="note">
+        {t('memoryManager.structure.warn')}
+      </div>
+
+      {failed.length > 0 && (
+        <div className="rpt-mm-struct-failed" role="alert">
+          <strong>{t('memoryManager.structure.failedTitle')}</strong>
+          <ul>
+            {failed.map((f) => (
+              <li key={f.chatId}>
+                {t('memoryManager.structure.failedRow', { chat: f.chatId, reason: f.reason })}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+      {warns.length > 0 && (
+        <div className="rpt-mm-struct-warns">
+          <strong>{t('memoryManager.structure.warningsTitle')}</strong>
+          <ul>
+            {warns.map((w, i) => (
+              <li key={i}>{w}</li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {defs.length === 0 ? (
+        <p className="rpt-mm-rail-empty">{t('tables.emptyTemplate')}</p>
+      ) : (
+        defs.map((d) => {
+          const editingTable = editing?.uid === d.uid && !editing.col
+          const cols = columnsOf(d)
+          return (
+            <section key={d.uid} className="rpt-mm-struct-table">
+              <header className="rpt-mm-struct-thead">
+                {editingTable ? (
+                  <span className="rpt-mm-struct-edit">
+                    <input
+                      className="rpt-mm-select"
+                      autoFocus
+                      value={editVal}
+                      disabled={busy}
+                      onChange={(e) => setEditVal(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter')
+                          commitEdit({
+                            kind: 'renameTable',
+                            uid: d.uid,
+                            sqlName: d.sqlName,
+                            displayName: editVal.trim()
+                          })
+                        if (e.key === 'Escape') setEditing(null)
+                      }}
+                    />
+                    <button
+                      className="rpt-duel-secondary"
+                      disabled={busy}
+                      onClick={() =>
+                        commitEdit({
+                          kind: 'renameTable',
+                          uid: d.uid,
+                          sqlName: d.sqlName,
+                          displayName: editVal.trim()
+                        })
+                      }
+                    >
+                      {t('common.save')}
+                    </button>
+                    <button className="btn-ghost" onClick={() => setEditing(null)}>
+                      {t('common.cancel')}
+                    </button>
+                  </span>
+                ) : (
+                  <>
+                    <span className="rpt-mm-struct-tname">{d.displayName}</span>
+                    <span className="rpt-mm-struct-tsql">{d.sqlName}</span>
+                    <span className="rpt-mm-struct-tactions">
+                      <button
+                        className="rpt-duel-secondary"
+                        disabled={busy}
+                        onClick={() => startEdit(d.uid, undefined, d.displayName)}
+                      >
+                        {t('memoryManager.structure.renameTable')}
+                      </button>
+                      <button
+                        className="rpt-duel-secondary rpt-mm-danger"
+                        disabled={busy}
+                        onClick={() => {
+                          if (confirm(t('memoryManager.structure.confirmDropTable', { name: d.displayName })))
+                            void applyOps([{ kind: 'dropTable', uid: d.uid }])
+                        }}
+                      >
+                        {t('memoryManager.structure.deleteTable')}
+                      </button>
+                    </span>
+                  </>
+                )}
+              </header>
+
+              <ul className="rpt-mm-struct-cols">
+                {cols.length === 0 ? (
+                  <li className="rpt-mm-rail-empty">{t('memoryManager.structure.noColumns')}</li>
+                ) : (
+                  cols.map((c) => {
+                    const editingCol = editing?.uid === d.uid && editing.col === c
+                    return (
+                      <li key={c} className="rpt-mm-struct-col">
+                        {editingCol ? (
+                          <span className="rpt-mm-struct-edit">
+                            <input
+                              className="rpt-mm-select"
+                              autoFocus
+                              value={editVal}
+                              disabled={busy}
+                              onChange={(e) => setEditVal(e.target.value)}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter')
+                                  commitEdit({ kind: 'renameColumn', uid: d.uid, from: c, to: editVal.trim() })
+                                if (e.key === 'Escape') setEditing(null)
+                              }}
+                            />
+                            <button
+                              className="rpt-duel-secondary"
+                              disabled={busy}
+                              onClick={() =>
+                                commitEdit({ kind: 'renameColumn', uid: d.uid, from: c, to: editVal.trim() })
+                              }
+                            >
+                              {t('common.save')}
+                            </button>
+                            <button className="btn-ghost" onClick={() => setEditing(null)}>
+                              {t('common.cancel')}
+                            </button>
+                          </span>
+                        ) : (
+                          <>
+                            <span className="rpt-mm-struct-cname">{c}</span>
+                            <span className="rpt-mm-struct-cactions">
+                              <button
+                                className="rpt-duel-secondary"
+                                disabled={busy}
+                                onClick={() => startEdit(d.uid, c, c)}
+                              >
+                                {t('memoryManager.structure.renameColumn')}
+                              </button>
+                              <button
+                                className="rpt-duel-secondary rpt-mm-danger"
+                                disabled={busy}
+                                onClick={() => {
+                                  if (confirm(t('memoryManager.structure.confirmDropColumn', { name: c })))
+                                    void applyOps([{ kind: 'dropColumn', uid: d.uid, name: c }])
+                                }}
+                              >
+                                {t('memoryManager.structure.deleteColumn')}
+                              </button>
+                            </span>
+                          </>
+                        )}
+                      </li>
+                    )
+                  })
+                )}
+              </ul>
+
+              <div className="rpt-mm-struct-addcol">
+                <input
+                  className="rpt-mm-select"
+                  placeholder={t('memoryManager.structure.addColumnPlaceholder')}
+                  value={addCol[d.uid] ?? ''}
+                  disabled={busy}
+                  onChange={(e) => setAddCol((m) => ({ ...m, [d.uid]: e.target.value }))}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') submitAddCol(d.uid)
+                  }}
+                />
+                <button
+                  className="rpt-duel-secondary"
+                  disabled={busy || !(addCol[d.uid] ?? '').trim()}
+                  onClick={() => submitAddCol(d.uid)}
+                >
+                  {t('memoryManager.structure.addColumn')}
+                </button>
+              </div>
+            </section>
+          )
+        })
       )}
     </div>
   )

@@ -619,6 +619,25 @@ const zh: Record<string, string> = {
   'memoryManager.structureSoon': '结构',
   'memoryManager.maintenanceSoon': '维护',
   'memoryManager.comingSoon': '敬请期待。',
+  'memoryManager.structure.warn':
+    '结构修改会更改共享模板，并迁移所有绑定该模板的对话，且无法通过回滚撤销。',
+  'memoryManager.structure.renameTable': '重命名',
+  'memoryManager.structure.deleteTable': '删除表格',
+  'memoryManager.structure.renameColumn': '重命名',
+  'memoryManager.structure.deleteColumn': '删除',
+  'memoryManager.structure.addColumn': '新增列',
+  'memoryManager.structure.addColumnPlaceholder': '新列名',
+  'memoryManager.structure.noColumns': '暂无可编辑的列。',
+  'memoryManager.structure.confirmDropTable':
+    '从模板及所有绑定对话中删除表格“{{name}}”及其全部数据？此操作无法撤销。',
+  'memoryManager.structure.confirmDropColumn':
+    '从所有绑定对话中删除列“{{name}}”及其数据？此操作无法撤销。',
+  'memoryManager.structure.applied':
+    '已应用：{{tables}} 处表格改动，{{cols}} 处列改动，迁移 {{chats}} 个对话。',
+  'memoryManager.structure.failed': '结构修改失败',
+  'memoryManager.structure.failedTitle': '部分对话未能迁移（仍停留在旧结构——请重试）：',
+  'memoryManager.structure.failedRow': '对话 {{chat}}：{{reason}}',
+  'memoryManager.structure.warningsTitle': '警告',
   'memoryManager.footTemplate': '模板：{{name}}',
   'memoryManager.footTable': '表格：{{name}}',
   'memoryManager.footRows': '{{n}} 行',

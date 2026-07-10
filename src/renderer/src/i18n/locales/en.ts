@@ -641,6 +641,26 @@ const en: Record<string, string> = {
   'memoryManager.structureSoon': 'Structure',
   'memoryManager.maintenanceSoon': 'Maintenance',
   'memoryManager.comingSoon': 'Coming soon.',
+  'memoryManager.structure.warn':
+    'Structural edits change the shared template and migrate every chat bound to it. They cannot be reverted by rewind.',
+  'memoryManager.structure.renameTable': 'Rename',
+  'memoryManager.structure.deleteTable': 'Delete table',
+  'memoryManager.structure.renameColumn': 'Rename',
+  'memoryManager.structure.deleteColumn': 'Delete',
+  'memoryManager.structure.addColumn': 'Add column',
+  'memoryManager.structure.addColumnPlaceholder': 'New column name',
+  'memoryManager.structure.noColumns': 'No editable columns.',
+  'memoryManager.structure.confirmDropTable':
+    'Delete table "{{name}}" and all its data from the template and every bound chat? This cannot be undone.',
+  'memoryManager.structure.confirmDropColumn':
+    'Delete column "{{name}}" and its data from every bound chat? This cannot be undone.',
+  'memoryManager.structure.applied':
+    'Applied: {{tables}} table change(s), {{cols}} column change(s), {{chats}} chat(s) migrated.',
+  'memoryManager.structure.failed': 'Structure change failed',
+  'memoryManager.structure.failedTitle':
+    'Some chats were not migrated (left on the previous schema — re-run to retry):',
+  'memoryManager.structure.failedRow': 'Chat {{chat}}: {{reason}}',
+  'memoryManager.structure.warningsTitle': 'Warnings',
   'memoryManager.footTemplate': 'Template: {{name}}',
   'memoryManager.footTable': 'Table: {{name}}',
   'memoryManager.footRows': '{{n}} rows',
