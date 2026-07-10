@@ -512,6 +512,7 @@ const zh: Record<string, string> = {
 
   'chat.thinking': '思考中…',
   'chat.generating': '生成中…',
+  'chat.streamingCard': '交互卡片将在生成完成后渲染…',
 
   'status.waiting': '等待会话…',
   'status.heading': 'RPG 状态',

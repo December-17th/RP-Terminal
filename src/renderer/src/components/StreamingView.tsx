@@ -2,9 +2,12 @@ import { useEffect, useMemo, useRef } from 'react'
 import { useChatStore } from '../stores/chatStore'
 import { useCharacterStore } from '../stores/characterStore'
 import { useSettingsStore } from '../stores/settingsStore'
+import { useRegexStore } from '../stores/regexStore'
 import { splitReasoning } from '../../../shared/responseView'
 import { renderTemplate } from '../plugin/renderTemplate'
+import { buildStreamingHead } from './streamingDisplay'
 import { ReasoningPanel } from './ReasoningPanel'
+import { MessageContent } from './MessageContent'
 import { useT } from '../i18n'
 
 /**
@@ -20,10 +23,14 @@ export function StreamingView({ pendingUserMsg }: { pendingUserMsg: string }): R
   const t = useT()
   const streamingText = useChatStore((s) => s.streamingText)
   const templates = useSettingsStore((s) => s.settings?.templates)
+  const personaName = useSettingsStore((s) => s.settings?.persona?.name) || 'User'
   const activeCharacter = useCharacterStore((s) => s.activeCharacter)
+  const charName = activeCharacter?.card.data.name || 'Character'
   const ext = activeCharacter?.card.data.extensions?.rp_terminal
   const cardCss = ext?.css as string | undefined
   const reasoningTemplate = ext?.reasoning_template as string | undefined
+  // Subscribe so the transform memo re-runs when the display rule set loads/changes (mirrors ChatView).
+  const regexRules = useRegexStore((s) => s.rules)
 
   // Split the in-flight text the SAME way the committed floor will, so the view doesn't flash raw
   // <thinking> and the streaming/settled looks match. `body` is '' until </think> closes.
@@ -35,19 +42,31 @@ export function StreamingView({ pendingUserMsg }: { pendingUserMsg: string }): R
     templates?.render?.live !== false
   const rateChars = Math.max(1, (templates?.render?.rate_tokens || 500) * 4) // ~4 chars per token
 
-  // Live render-time EJS eval (Phase C), RATE-LIMITED: re-eval only when the text crosses another
-  // rate-limit boundary (every rateChars), keyed off `checkpoint` — per-token WASM eval would tank
-  // streaming. `body` is deliberately NOT a dep so the eval doesn't run every frame.
+  // Live display transform, RATE-LIMITED: re-run the (relatively) expensive chain — EJS eval → macros
+  // → display regex (beautification) — only when the text crosses another rate-limit boundary (every
+  // rateChars), keyed off `checkpoint`. Per-token WASM eval + regex would tank streaming, so the tail
+  // arriving after the last checkpoint stays raw plain text (cheap) and flows in per frame. This is the
+  // SAME tail of the chain the settled floor runs (ChatView currentFloor): EJS('live') → expandMacros →
+  // regex; `stripThinking` is unnecessary here because `body` is already reasoning-free (splitReasoning).
+  // `body` is deliberately NOT a dep so the transform doesn't run every frame.
   const checkpoint = Math.floor(body.length / rateChars)
-  const live = useMemo(() => {
-    if (!liveOn || body.length < rateChars || !body.includes('<%')) return null
+  const rendered = useMemo(() => {
     // Pre-turn state: the in-flight floor isn't committed yet, so use the latest committed vars.
     const vars = useChatStore.getState().floors.slice(-1)[0]?.variables || {}
-    return { text: renderTemplate(body, vars, 'live'), atLen: body.length }
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- rate-limited: re-eval only on a new checkpoint
-  }, [checkpoint, liveOn, rateChars])
+    return buildStreamingHead(
+      body,
+      { rateChars, liveOn, vars, user: personaName, char: charName },
+      {
+        renderLive: (text, v) => renderTemplate(text, v, 'live'),
+        applyRegex: (text, ctx) => useRegexStore.getState().apply(text, ctx)
+      }
+    )
+    // regexRules is a deliberate store-read dep: applyRegex reads useRegexStore.getState().rules, so a
+    // rule change must re-run the transform though it isn't referenced directly (mirrors ChatView's memo).
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- rate-limited: re-run only on a new checkpoint
+  }, [checkpoint, liveOn, rateChars, personaName, charName, regexRules])
   // Rendered head (up to the last checkpoint) + the still-raw tail, so the text keeps flowing.
-  const display = live ? live.text + body.slice(live.atLen) : body
+  const rawTail = body.slice(rendered.atLen)
 
   const endRef = useRef<HTMLDivElement>(null)
   const scrollerRef = useRef<HTMLElement | null>(null)
@@ -86,8 +105,15 @@ export function StreamingView({ pendingUserMsg }: { pendingUserMsg: string }): R
           css={cardCss}
         />
       )}
-      {display ? (
-        <div className="streaming-text">{display}</div>
+      {rendered.html || rawTail ? (
+        <>
+          {/* Beautified head (regex + markdown + inline/static HTML cards), re-rendered only at rate
+              checkpoints; the still-arriving tail stays a cheap plain-text node updated per frame. */}
+          {rendered.html ? (
+            <MessageContent content={rendered.html} css={cardCss} streaming />
+          ) : null}
+          {rawTail ? <div className="streaming-text">{rawTail}</div> : null}
+        </>
       ) : state === 'none' ? (
         <em className="generating-pulse">
           {streamingText ? t('chat.thinking') : t('chat.generating')}

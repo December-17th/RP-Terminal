@@ -245,6 +245,13 @@ import time (`CardTrustPrompt`) and editable in Settings → Scripts; the messag
 `InlineCardFrame` self-checks the `trusted` prop and falls back to the static frame if a caller ever
 sends an untrusted block. Script-free blocks are unaffected.
 
+**During streaming**: the in-flight message runs the same display chain as a settled floor — EJS(`live`)
+→ macros → display regex → markdown/inline-HTML beautification — rate-limited to render-checkpoint
+boundaries (`StreamingView` → `MessageContent` with `streaming`, composed by
+[`streamingDisplay.ts`](../../src/renderer/src/components/streamingDisplay.ts)). Static (script-free) HTML
+cards render live at block completion; a **scripted** card is held behind a placeholder and materializes
+once when the floor settles (mounting it mid-stream would run its `<script>` twice, with side effects).
+
 Per-card override: a regex `_meta.renderMode` → a `<!--rpt:mode=inline|isolated|panel-->` marker parsed by
 `splitHtml`. Global default: `settings.cards.renderMode` (`inline`). A third mode **`panel`** PROMOTES a
 UI regex out of the message into a docked WCV **panel** (a selectable workspace view `regex-panel:<file>`,

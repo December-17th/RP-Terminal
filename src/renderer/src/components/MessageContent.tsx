@@ -14,6 +14,7 @@ import { useCardScriptsStore } from '../stores/cardScriptsStore'
 import { resolveScriptedHtmlRoute } from './messageCardRouting'
 import { DEFAULT_CARD_RENDER_MODE, DEFAULT_CARD_SIZING } from '../../../shared/cardRenderMode'
 import type { CardRenderMode } from '../../../shared/cardRenderMode'
+import { useT } from '../i18n'
 
 interface Props {
   content: string
@@ -21,6 +22,14 @@ interface Props {
   css?: string
   /** Right-click anywhere in the message (incl. inside the rendered card); gives viewport coords. */
   onContextMenu?: (x: number, y: number) => void
+  /**
+   * True while the owning message is still streaming. Scripted/interactive HTML cards are held behind a
+   * lightweight placeholder until the message settles: mounting them mid-stream would run the card
+   * `<script>` (host writes / network side effects), and `FloorBlock` re-runs it at settle → double
+   * execution. Static (script-free) HTML cards, inline HTML, and markdown still render live. See
+   * StreamingView.
+   */
+  streaming?: boolean
 }
 
 // An HTML block is a ```html fence, a plain ``` fence whose payload is a full <html>/<body>
@@ -35,7 +44,8 @@ const HTML_BLOCK =
  * <script>, otherwise sanitized + script-free. Everything else renders as
  * GitHub-flavored markdown.
  */
-export const MessageContent: React.FC<Props> = ({ content, css, onContextMenu }) => {
+export const MessageContent: React.FC<Props> = ({ content, css, onContextMenu, streaming }) => {
+  const t = useT()
   const parts = useMemo(() => splitHtml(content), [content])
   const globalMode =
     useSettingsStore((s) => s.settings?.cards?.renderMode) ?? DEFAULT_CARD_RENDER_MODE
@@ -87,28 +97,37 @@ export const MessageContent: React.FC<Props> = ({ content, css, onContextMenu })
           // card — or scripted HTML with no active card (bare model output) — renders static +
           // sanitized. Script-free html always stays the static inline frame. (issue 01)
           isInteractiveHtml(p.text) ? (
-            (() => {
-              const route = resolveScriptedHtmlRoute({
-                hasCard: !!cardId,
-                trusted,
-                decided,
-                mode: p.mode,
-                globalMode
-              })
-              return route === 'inline' ? (
-                <InlineCardFrame
-                  key={i}
-                  html={p.text}
-                  sizing={globalSizing}
-                  trusted
-                  onContextMenu={onContextMenu}
-                />
-              ) : route === 'isolated' ? (
-                <WcvMessageFrame key={i} html={p.text} sizing={globalSizing} />
-              ) : (
-                <HtmlFrame key={i} html={p.text} css={css} onContextMenu={onContextMenu} />
-              )
-            })()
+            // While streaming, hold a scripted card behind a placeholder: mounting the frame now would
+            // run its <script> mid-stream, and FloorBlock re-runs it at settle → double execution with
+            // side effects. It materializes once, when the settled floor renders (no `streaming` prop).
+            streaming ? (
+              <em key={i} className="generating-pulse streaming-card-pending">
+                {t('chat.streamingCard')}
+              </em>
+            ) : (
+              (() => {
+                const route = resolveScriptedHtmlRoute({
+                  hasCard: !!cardId,
+                  trusted,
+                  decided,
+                  mode: p.mode,
+                  globalMode
+                })
+                return route === 'inline' ? (
+                  <InlineCardFrame
+                    key={i}
+                    html={p.text}
+                    sizing={globalSizing}
+                    trusted
+                    onContextMenu={onContextMenu}
+                  />
+                ) : route === 'isolated' ? (
+                  <WcvMessageFrame key={i} html={p.text} sizing={globalSizing} />
+                ) : (
+                  <HtmlFrame key={i} html={p.text} css={css} onContextMenu={onContextMenu} />
+                )
+              })()
+            )
           ) : (
             <HtmlFrame key={i} html={p.text} css={css} onContextMenu={onContextMenu} />
           )
