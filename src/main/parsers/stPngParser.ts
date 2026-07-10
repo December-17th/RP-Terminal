@@ -1,6 +1,11 @@
 import fs from 'fs'
 import zlib from 'zlib'
 
+// Hard cap on a single compressed-iTXt chunk's INFLATED size (A1 hardening). The embedded card JSON is
+// text; a legit card is far under this. Without a cap, `inflateSync` on a crafted chunk is an unbounded
+// decompression-bomb vector. On breach `inflateSync` throws → the chunk is treated as unparseable (null).
+const MAX_ITXT_OUTPUT = 16 * 1024 * 1024
+
 export const parseStPng = (filePath: string): any | null => {
   try {
     const buffer = fs.readFileSync(filePath)
@@ -37,9 +42,12 @@ export const parseStPng = (filePath: string): any | null => {
               if (compressionFlag === 0) {
                 textData = data.slice(i).toString('utf-8')
               } else {
-                // Compressed iTXt (deflate) — supported per world-card-design.md §8 (S5).
+                // Compressed iTXt (deflate) — supported per world-card-design.md §8 (S5). Bounded
+                // output (A1 hardening): a crafted chunk that inflates past the cap throws → null.
                 try {
-                  textData = zlib.inflateSync(data.slice(i)).toString('utf-8')
+                  textData = zlib
+                    .inflateSync(data.slice(i), { maxOutputLength: MAX_ITXT_OUTPUT })
+                    .toString('utf-8')
                 } catch (e) {
                   console.warn('Failed to inflate compressed iTXt chunk:', e)
                   return null

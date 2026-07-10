@@ -146,7 +146,18 @@ export const installCartridgeCode = (
   let installed = 0
   let actualTotal = 0
   for (const { rel, entry } of toWrite) {
-    const data = entry.getData()
+    // A1 hardening: a corrupt/undecompressable entry must fail the import cleanly, not throw out of it.
+    let data: Buffer
+    try {
+      data = entry.getData()
+    } catch {
+      try {
+        fs.rmSync(root, { recursive: true, force: true })
+      } catch {
+        /* best-effort rollback */
+      }
+      return { installed: 0, error: `unreadable entry: ${rootPrefix}${rel}` }
+    }
     if (data.length > MAX_ENTRY_BYTES || (actualTotal += data.length) > MAX_TOTAL_BYTES) {
       try {
         fs.rmSync(root, { recursive: true, force: true })
