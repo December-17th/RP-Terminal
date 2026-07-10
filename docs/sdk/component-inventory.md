@@ -347,15 +347,28 @@ This is already specced as **World Card §8**. Concretely:
 - **Read** — [`stPngParser.ts`](../../src/main/parsers/stPngParser.ts) parses PNG `tEXt`/`iTXt` chunks for
   the `chara`/`ccv3` keyword and base64-decodes the JSON. Because _scripts, regex, preset and per-card
   customizations are all text under `extensions.rp_terminal`_, a PNG whose embedded JSON is a World Card
-  **already carries all of them**. ⚠️ Limitation: **compressed `iTXt` is unsupported** (the parser bails) —
-  fix this to read more real-world cards.
+  **already carries all of them**. ✅ **Compressed `iTXt` (deflate) is now read** (`zlib.inflateSync`,
+  `stPngParser.parseStPng`); the chunk loop stops at `IEND` so an appended cartridge ZIP is never
+  misread as chunk data.
 - **Write/export** — `buildWorldCardExport` produces the `chara_card_v3` JSON (own lorebook →
   `character_book`, world regex → `extensions.regex_scripts`, `world_card` stamped). ⬜ A **PNG writer**
   (embed that JSON into a `tEXt`/`ccv3` chunk over an avatar image) is not yet built — this is the missing
-  piece to make "export a PNG cartridge" real.
-- **Binary / large assets** — text outgrows a base64 chunk, so the plan is an **appended ZIP after `IEND`**
-  (`adm-zip` is already a dependency): manifest + `assets/` + bundled lorebooks/plugins/scripts. ⬜ planned
-  (World Card S5).
+  piece to make "export a PNG cartridge" real. RPT-side export **packing** of the appended ZIP is likewise
+  not built (POD's packager produces the cartridge; see the split-mode plan).
+- **Binary / large assets — appended ZIP after `IEND`.** A PNG may carry a ZIP appended after the `IEND`
+  chunk (`adm-zip`). ✅ **Import side built (A1):** `stPngParser.extractAppendedZip` detects the trailing
+  `PK` bytes and `cardCodeService.installCartridgeCode` validates + extracts the ZIP's `code/` subtree to
+  **`<appDir>/profiles/<profileId>/card-code/<characterId>/`** (keyed by the freshly-minted characterId;
+  removed by the character-delete path). ⬜ **Serving** those bytes over `rpt-card://` per-card origins +
+  the main-side trust gate is **A2** (not yet built).
+  - **Manifest** (ZIP root `rpt-cartridge.json`):
+    `{ "cartridge": 1, "code": { "root": "code/", "entries": ["surfaces/self.html", …] } }`. Card code lives
+    under `code/` (`code.root` overridable); `assets/` + bundled lorebooks/plugins may coexist in the same
+    ZIP. `entries` is the servable allow-list consumed by A2.
+  - **Import hard caps (reject on breach):** appended ZIP ≤ 8 MB, single extracted entry ≤ 8 MB, total
+    extracted ≤ 32 MB (zip-bomb guard), ≤ 2000 entries. Any entry name that is absolute, drive-lettered, or
+    contains a `..` segment rejects the whole cartridge (mirrors `worldAssetService.resolveProtocolPath`).
+    A rejected or absent cartridge never blocks the card import itself.
 
 **Recommendation:** formally adopt **`chara_card_v3` + `extensions.rp_terminal`** as the standard (no new
 spec string → ST stays compatible), and treat the **PNG as the cartridge**: inline JSON for text
