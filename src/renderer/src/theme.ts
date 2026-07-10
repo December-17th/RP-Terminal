@@ -158,7 +158,7 @@ export function colorSchemeOf(id: string | undefined): 'light' | 'dark' {
 }
 
 /**
- * The APP-scoped chrome surface (title strip + message-box background fallback) for an effective
+ * The APP-scoped chrome surface (title strip, message box, chat panel body + header) for an effective
  * light/dark scheme. Distinct from the card token map: a card's `.play-root` inline tokens can shadow
  * every `--rpt-*` it understands, so the chrome must read from tokens the card CANNOT set — these
  * `--rpt-app-*` vars, written on <html> (below). When the effective scheme matches the current theme's
@@ -168,11 +168,14 @@ export function colorSchemeOf(id: string | undefined): 'light' | 'dark' {
 export function chromeTokensFor(
   themeId: string | undefined,
   scheme: 'light' | 'dark'
-): { bg: string; text: string; border: string } {
+): { bg: string; bgPrimary: string; text: string; border: string } {
   const theme = (themeId && THEMES[themeId]) || THEMES[DEFAULT_THEME_ID]
   const src = colorSchemeOf(theme.id) === scheme ? theme.tokens : THEMES[scheme].tokens
   return {
+    // `bg` is the SECONDARY surface (title strip, message box, chat panel body); `bgPrimary` is the
+    // deeper base the chat panel HEADER mixes over so it stays distinct from the body.
     bg: src['--rpt-bg-secondary'],
+    bgPrimary: src['--rpt-bg-primary'],
     text: src['--rpt-text-primary'],
     border: src['--rpt-border']
   }
@@ -180,13 +183,15 @@ export function chromeTokensFor(
 
 /** Write the app-scoped chrome tokens (`--rpt-app-*`) on <html> for a given effective scheme. Called by
  *  applyTheme with the theme's natural axis, and re-applied by App.tsx with the EFFECTIVE axis whenever a
- *  card override is active. Because these live on <html> (not the card's `.play-root`), the title strip
- *  and message-box background follow the app's light/dark by default and can't be shadowed by a card. */
+ *  card override is active. Because these live on <html> (not the card's `.play-root`), the title strip,
+ *  message box, and chat panel background follow the app's light/dark by default and can't be shadowed by
+ *  a card. */
 export function applyChromeScheme(themeId: string | undefined, scheme: 'light' | 'dark'): void {
   if (typeof document === 'undefined') return
   const c = chromeTokensFor(themeId, scheme)
   const root = document.documentElement
   root.style.setProperty('--rpt-app-bg-secondary', c.bg)
+  root.style.setProperty('--rpt-app-bg-primary', c.bgPrimary)
   root.style.setProperty('--rpt-app-text-primary', c.text)
   root.style.setProperty('--rpt-app-border', c.border)
 }

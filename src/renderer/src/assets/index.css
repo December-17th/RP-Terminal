@@ -24,6 +24,7 @@
      `.play-root` tokens can't shadow them — the chrome follows the app's light/dark, not the card. These
      dark defaults are the first-paint values before applyTheme runs. */
   --rpt-app-bg-secondary: #1e1e1e;
+  --rpt-app-bg-primary: #121212;
   --rpt-app-text-primary: #e0e0e0;
   --rpt-app-border: #333333;
   --rpt-danger: #e74c3c;
@@ -479,6 +480,20 @@ body {
   padding: 5px 7px;
   border-bottom: 1px solid var(--rpt-border);
   background-color: color-mix(in srgb, var(--rpt-bg-primary) 55%, var(--rpt-bg-secondary));
+}
+/* Story-chat panel chrome: the panel body + header behind the message list must follow the app's
+   EFFECTIVE light/dark, not the card's `.play-root` palette (which shadows every `--rpt-*` a card
+   understands → a black panel in app light mode). Scoped by `:has(.floor-stage)` so ONLY the chat
+   panel repoints to the app-scoped `--rpt-app-*` tokens (written on <html>, uncard-shadowable) — the
+   other panel views (status/combat/debug) keep the card palette so their card-scoped text stays
+   legible. Mirrors the `.floor-block` / `.tstrip` fix (theme.ts chromeTokensFor / applyChromeScheme). */
+.ws-panel:has(.floor-stage) {
+  background-color: var(--rpt-app-bg-secondary);
+  border-color: var(--rpt-app-border);
+}
+.ws-panel:has(.floor-stage) .ws-panel-head {
+  border-bottom-color: var(--rpt-app-border);
+  background-color: color-mix(in srgb, var(--rpt-app-bg-primary) 55%, var(--rpt-app-bg-secondary));
 }
 .ws-view-pick {
   background-color: var(--rpt-bg-secondary);
@@ -1502,9 +1517,13 @@ details[open] > .stat-group-title::before {
 .action-input {
   width: 100%;
   box-sizing: border-box;
-  background-color: var(--rpt-bg-secondary);
-  border: 1px solid var(--rpt-border);
-  color: var(--rpt-text-primary);
+  /* The composer is chat chrome, not card content: a card `--rpt-msg-*` override wins (opt-in, same
+     as the `.floor-block` bubble), otherwise it follows the app's EFFECTIVE light/dark via the
+     app-scoped tokens — so the input box is no longer black in app light mode when a card ships a
+     dark `.play-root` palette. bg/border/text move together so the box stays a legible pair. */
+  background-color: var(--rpt-msg-bg, var(--rpt-app-bg-secondary));
+  border: 1px solid var(--rpt-msg-border, var(--rpt-app-border));
+  color: var(--rpt-msg-text, var(--rpt-app-text-primary));
   /* right padding clears the in-box send button (no bottom reserve, so it can be one line tall) */
   padding: 12px 50px 12px 14px;
   border-radius: 8px;

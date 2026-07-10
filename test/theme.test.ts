@@ -50,12 +50,20 @@ describe('theme.chromeTokensFor — the app chrome surface for an effective sche
     expect(chromeTokensFor('light', 'dark').bg).toBe(THEMES.dark.tokens['--rpt-bg-secondary'])
   })
 
-  it('returns bg / text / border pulled from the selected source theme', () => {
+  it('returns bg / bgPrimary / text / border pulled from the selected source theme', () => {
     const c = chromeTokensFor('light', 'light')
     expect(c).toEqual({
       bg: THEMES.light.tokens['--rpt-bg-secondary'],
+      bgPrimary: THEMES.light.tokens['--rpt-bg-primary'],
       text: THEMES.light.tokens['--rpt-text-primary'],
       border: THEMES.light.tokens['--rpt-border']
     })
+  })
+
+  it('seeds bgPrimary from the deeper base surface (chat panel header mix)', () => {
+    // `--rpt-app-bg-primary` (the chat panel header's mix base) tracks the source theme's PRIMARY bg,
+    // distinct from `bg` (secondary). A card forcing the opposite axis falls to the canonical theme.
+    expect(chromeTokensFor('dark', 'dark').bgPrimary).toBe(THEMES.dark.tokens['--rpt-bg-primary'])
+    expect(chromeTokensFor('light', 'dark').bgPrimary).toBe(THEMES.dark.tokens['--rpt-bg-primary'])
   })
 })
