@@ -53,6 +53,21 @@ describe('buildStreamingHead', () => {
     expect(out.html).toBe('hello <b>Ava</b>!')
   })
 
+  it('does not mutate the caller vars — streamed {{setvar}}/{{addvar}} are display-only', () => {
+    // The memo re-runs per checkpoint; a live-ref vars object would let {{addvar}} accumulate onto the
+    // last committed floor's stored variables. The transform must leave the caller's object untouched.
+    const vars = { gold: 100, hp: 30 }
+    buildStreamingHead(
+      '{{addvar::gold::-5}} {{setvar::hp::1}} done',
+      opts({ rateChars: 1, vars }),
+      {
+        renderLive: (t) => t,
+        applyRegex: (t) => t
+      }
+    )
+    expect(vars).toEqual({ gold: 100, hp: 30 })
+  })
+
   it('runs the EJS live eval only when enabled AND the body contains a `<%` tag', () => {
     const called = (liveOn: boolean, body: string): boolean => {
       const renderLive = vi.fn((t: string) => t)

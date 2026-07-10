@@ -45,7 +45,15 @@ export const buildStreamingHead = (
 ): StreamingHead => {
   if (body.length < opts.rateChars) return { html: '', atLen: 0 }
   const evaled = opts.liveOn && body.includes('<%') ? deps.renderLive(body, opts.vars) : body
-  const withMacros = expandMacros(evaled, { user: opts.user, char: opts.char, vars: opts.vars })
+  // Shallow-copy vars: this is a DISPLAY transform, so `{{setvar}}`/`{{addvar}}` in the streamed body
+  // must NOT persist into stored floor variables. The memo re-runs once per rate checkpoint, so a live
+  // reference would let `{{addvar}}` accumulate onto (and corrupt) the last committed floor's vars every
+  // checkpoint. Mirrors the EJS live path, which reads through a `buildRenderContext` copy.
+  const withMacros = expandMacros(evaled, {
+    user: opts.user,
+    char: opts.char,
+    vars: { ...opts.vars }
+  })
   const html = deps.applyRegex(withMacros, { user: opts.user, char: opts.char })
   return { html, atLen: body.length }
 }
