@@ -102,6 +102,10 @@ const en: Record<string, string> = {
   'settings.workflowTitle': 'Workflow & agents editor',
   'settings.workflowBody': 'The node canvas needs the whole window. Open it to edit the generation graph, agents, and packs.',
   'settings.workflowOpen': 'Open editor',
+  'settings.memory': 'Memory',
+  'settings.memoryTitle': 'Memory manager',
+  'settings.memoryBody': 'View and edit this session’s memory tables, run maintenance, undo changes, and edit the table structure — in a full-screen manager.',
+  'settings.memoryOpen': 'Open memory manager',
   'settings.assetsTitle': 'World assets',
   'settings.assetsBody':
     "Manage this world's portraits, standees, galleries, scene art, and CG in the Assets view — drag-drop import, rename, and export.",
@@ -579,6 +583,7 @@ const en: Record<string, string> = {
   'tables.editNoTemplate': 'No table template is assigned to this session.',
   'tables.editUnknownTable': 'That table is not part of the assigned template.',
   'tables.editBadColumn': 'That column no longer exists in the table.',
+  'tables.rewindBadFloor': 'Invalid rewind point.',
   // Per-table template prompt editor (manual-pass issue 03)
   'tables.editTemplate': 'Template prompts',
   'tables.templateEditHint':
@@ -623,6 +628,89 @@ const en: Record<string, string> = {
   'memory.tab.setup': 'Setup',
   'memory.tab.data': 'Data',
   'memory.tab.maintenance': 'Maintenance',
+  // ── Full-window Memory Manager (Memory Manager WP1) — the SQL-table memory Visualizer ─────────────
+  'memoryManager.title': 'Memory Manager',
+  'memoryManager.expand': '⛶ Full screen',
+  'memoryManager.expandTip': 'Open the full-window Memory Manager',
+  'memoryManager.sheets': 'Tables',
+  'memoryManager.sheetCount': '{{rows}} rows · {{cols}} cols',
+  'memoryManager.badgeNever': 'New',
+  'memoryManager.badgePending': '{{n}} to process',
+  'memoryManager.badgeOk': 'Caught up',
+  'memoryManager.clean': 'Saved',
+  'memoryManager.tab.data': 'Data',
+  'memoryManager.tab.structure': 'Structure',
+  'memoryManager.tab.maintenance': 'Maintenance',
+  'memoryManager.tab.history': 'History',
+  'memoryManager.structureSoon': 'Structure',
+  'memoryManager.maintenanceSoon': 'Maintenance',
+  'memoryManager.comingSoon': 'Coming soon.',
+  'memoryManager.structure.warn':
+    'Structural edits change the shared template and migrate every chat bound to it. They cannot be reverted by rewind.',
+  'memoryManager.structure.renameTable': 'Rename',
+  'memoryManager.structure.deleteTable': 'Delete table',
+  'memoryManager.structure.renameColumn': 'Rename',
+  'memoryManager.structure.deleteColumn': 'Delete',
+  'memoryManager.structure.addColumn': 'Add column',
+  'memoryManager.structure.addColumnPlaceholder': 'New column name',
+  'memoryManager.structure.noColumns': 'No editable columns.',
+  'memoryManager.structure.confirmDropTable':
+    'Delete table "{{name}}" and all its data from the template and every bound chat? This cannot be undone.',
+  'memoryManager.structure.confirmDropColumn':
+    'Delete column "{{name}}" and its data from every bound chat? This cannot be undone.',
+  'memoryManager.structure.applied':
+    'Applied: {{tables}} table change(s), {{cols}} column change(s), {{chats}} chat(s) migrated.',
+  'memoryManager.structure.failed': 'Structure change failed',
+  'memoryManager.structure.failedTitle':
+    'Some chats were not migrated (left on the previous schema — re-run to retry):',
+  'memoryManager.structure.failedRow': 'Chat {{chat}}: {{reason}}',
+  'memoryManager.structure.warningsTitle': 'Warnings',
+  'memoryManager.data.reset': 'Reset',
+  'memoryManager.data.newRow': 'New row',
+  'memoryManager.footTemplate': 'Template: {{name}}',
+  'memoryManager.footTable': 'Table: {{name}}',
+  'memoryManager.footRows': '{{n}} rows',
+  'memoryManager.rangeLabel': 'Rows {{from}}–{{to}} of {{total}}',
+  'memoryManager.prevPage': 'Previous page',
+  'memoryManager.nextPage': 'Next page',
+  // Maintenance tab (WP2): the run-now workbench + prompt preview + progress/backfill.
+  'memoryManager.maintenance.runTitle': 'Run maintenance now',
+  'memoryManager.maintenance.runIntro':
+    'Run one maintenance pass over the recent floors, filling the tables from the transcript.',
+  'memoryManager.maintenance.lastNFloors': 'Recent floors',
+  'memoryManager.maintenance.extraHint': 'Extra instruction (optional)',
+  'memoryManager.maintenance.extraHintPlaceholder':
+    'e.g. focus on the summary table, ignore combat details…',
+  'memoryManager.maintenance.run': 'Run now',
+  'memoryManager.maintenance.running': 'Running…',
+  'memoryManager.maintenance.resultApplied':
+    'Applied {{applied}} statement(s), {{changes}} change(s).',
+  'memoryManager.maintenance.resultEmpty': 'No changes needed.',
+  'memoryManager.maintenance.noTemplate': 'Assign a table template first (in the left rail).',
+  'memoryManager.maintenance.errorNoNode': 'This session has no memory-maintenance agent to run.',
+  'memoryManager.maintenance.errorAborted': 'The maintenance call was aborted.',
+  'memoryManager.maintenance.errorFailed': 'Maintenance failed: {{message}}',
+  'memoryManager.maintenance.previewTitle': 'Preview prompt',
+  'memoryManager.maintenance.previewShow': 'Show composed prompt',
+  'memoryManager.maintenance.previewHide': 'Hide composed prompt',
+  // History tab (WP3): the table op-log + data-only rewind (undo). Rewind is destructive (drops later
+  // edits); labels use the ST terms 数据库/表格 (tables) and 撤销/回滚 (undo/rewind) in zh.
+  'memoryManager.history.intro':
+    'Every table edit is logged here. Roll the tables back to an earlier point — this drops all later edits.',
+  'memoryManager.history.undoLast': 'Undo last edit',
+  'memoryManager.history.rewindTo': 'Rewind to before this',
+  'memoryManager.history.floor': 'Floor {{n}}',
+  'memoryManager.history.kind.insert': 'Added',
+  'memoryManager.history.kind.update': 'Updated',
+  'memoryManager.history.kind.delete': 'Removed',
+  'memoryManager.history.kind.other': 'Changed',
+  'memoryManager.history.empty': 'No table edits yet.',
+  'memoryManager.history.confirmUndo':
+    'Undo the most recent table edit? This drops it and any edits after it, and cannot be undone.',
+  'memoryManager.history.confirmRewind':
+    'Roll the tables back to before floor {{n}}? This drops every table edit from that point onward and cannot be undone.',
+  'memoryManager.history.rewound': 'Rolled back {{n}} table edit(s).',
+  'memoryManager.history.rewindFailed': 'Rewind failed',
   'tables.backfill': 'Backfill',
   'tables.backfillScope': 'Scope',
   'tables.backfillLastFloors': 'Last floors',

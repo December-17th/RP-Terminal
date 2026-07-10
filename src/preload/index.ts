@@ -349,6 +349,10 @@ const api = {
     ipcRenderer.invoke('table-template-get', profileId, id),
   updateTableTemplate: (profileId: string, id: string, patch: unknown) =>
     ipcRenderer.invoke('table-template-update', profileId, id, patch),
+  // Structural template edit + bound-chat migration (Memory-Manager WP4a). `ops` = ordered
+  // add/rename/drop table|column ops; rejects the whole batch on any invalid op.
+  applyTableStructure: (profileId: string, templateId: string, ops: unknown[]) =>
+    ipcRenderer.invoke('table-structure-apply', profileId, templateId, ops),
   deleteTableTemplate: (profileId: string, id: string) =>
     ipcRenderer.invoke('table-template-delete', profileId, id),
   importTableTemplateDialog: (profileId: string) =>
@@ -359,6 +363,12 @@ const api = {
     ipcRenderer.invoke('chat-table-template-set', profileId, chatId, id),
   previewMemoryMaintain: (profileId: string, chatId: string, config: unknown) =>
     ipcRenderer.invoke('memory-maintain-preview', profileId, chatId, config),
+  // Run ONE maintenance pass on demand (Memory-Manager WP2 workbench). `opts` = { lastNFloors?, extraHint? }.
+  maintainTablesNow: (
+    profileId: string,
+    chatId: string,
+    opts: { lastNFloors?: number; extraHint?: string }
+  ) => ipcRenderer.invoke('chat-tables-maintain-now', profileId, chatId, opts),
   readChatTables: (profileId: string, chatId: string) =>
     ipcRenderer.invoke('chat-tables-read', profileId, chatId),
   // SQL-table memory (issue 06): hand editing, last-maintained status, template export
@@ -376,6 +386,11 @@ const api = {
   ) => ipcRenderer.invoke('chat-tables-edit', profileId, chatId, edit),
   readChatTablesStatus: (profileId: string, chatId: string) =>
     ipcRenderer.invoke('chat-tables-status', profileId, chatId),
+  // SQL-table memory history (Memory-Manager WP3): the op-log projection + a data-only rewind.
+  listChatTableOps: (profileId: string, chatId: string) =>
+    ipcRenderer.invoke('chat-tables-ops-list', profileId, chatId),
+  rewindChatTables: (profileId: string, chatId: string, fromFloor: number) =>
+    ipcRenderer.invoke('chat-tables-rewind', profileId, chatId, fromFloor),
   exportTableTemplateDialog: (profileId: string, templateId: string, chatId?: string | null) =>
     ipcRenderer.invoke('table-template-export-dialog', profileId, templateId, chatId),
   // SQL-table memory (issue 07): manual backfill from history + live progress events

@@ -232,6 +232,18 @@ export const setChatTableTemplateId = (
   else tableDbService.removeSandbox(profileId, chatId)
 }
 
+/**
+ * Every chat currently bound to a table template (SQL-table-memory). Shares the exact SELECT
+ * `removeTableTemplateIdFromChats` uses; the structural-edit migration (`tableStructureService`)
+ * enumerates bound chats through this so it can migrate each one's sandbox + re-baseline its op log.
+ */
+export const listChatIdsForTableTemplate = (profileId: string, templateId: string): string[] =>
+  (
+    getDb()
+      .prepare('SELECT id FROM chats WHERE profile_id = ? AND table_template_id = ?')
+      .all(profileId, templateId) as Array<{ id: string }>
+  ).map((r) => r.id)
+
 /** Strip a table-template id out of every session that had it assigned (called when it's deleted). */
 export const removeTableTemplateIdFromChats = (profileId: string, templateId: string): void => {
   const rows = getDb()

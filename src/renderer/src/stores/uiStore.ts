@@ -14,6 +14,7 @@ export type SettingsSection =
   | 'regex'
   | 'scripts'
   | 'workflow'
+  | 'memory'
 
 /** The ephemeral runtime play-theme override (runtime-theme-api-design §3B). A card's running UI sets it
  *  via setPlayTheme/setMessageTheme; App.tsx layers these tokens OVER the static card theme on `.play-root`.
@@ -67,6 +68,14 @@ interface UiState {
   assetsPopupOpen: boolean
   openAssetsPopup: () => void
   closeAssetsPopup: () => void
+  /** The full-window Memory Manager (MemoryManagerView) — the SQL-table memory feature's rich
+   *  full-screen home (Data / Structure / Maintenance tabs over the active chat's tables). Hosted as a
+   *  centered full-window popup like the Duel/Assets popups so it layers above BOTH the reconfigurable
+   *  Workspace and a card's static panel_ui, and above the workflow editor overlay it's launched from.
+   *  Opened from the editor's Memory side sheet; closed by ✕ / Esc / backdrop. */
+  memoryManagerOpen: boolean
+  openMemoryManager: () => void
+  closeMemoryManager: () => void
   /** Import-time card-script TRUST consent (CardTrustPrompt). When a freshly imported world ships
    *  scripts, this carries the pending decision; the modal records trust/deny into the persisted
    *  grants (+ `decided`) so the run-time hosts never re-prompt. Null = no pending decision. */
@@ -103,6 +112,9 @@ export const useUiStore = create<UiState>((set) => ({
   assetsPopupOpen: false,
   openAssetsPopup: () => set({ assetsPopupOpen: true }),
   closeAssetsPopup: () => set({ assetsPopupOpen: false }),
+  memoryManagerOpen: false,
+  openMemoryManager: () => set({ memoryManagerOpen: true }),
+  closeMemoryManager: () => set({ memoryManagerOpen: false }),
   trustPrompt: null,
   openTrustPrompt: (trustPrompt) => set({ trustPrompt }),
   closeTrustPrompt: () => set({ trustPrompt: null })
