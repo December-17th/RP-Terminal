@@ -21,7 +21,14 @@ import { TITLEBAR_OVERLAY_HEIGHT } from './windowChrome'
 protocol.registerSchemesAsPrivileged([
   {
     scheme: wcvManager.CARD_SCHEME,
-    privileges: { standard: true, secure: true, supportFetchAPI: true, allowServiceWorkers: true }
+    // `stream: true` (mirrors ASSET_SCHEME) so served card-code file bodies stream rather than buffer (A2).
+    privileges: {
+      standard: true,
+      secure: true,
+      supportFetchAPI: true,
+      allowServiceWorkers: true,
+      stream: true
+    }
   },
   {
     scheme: worldAssetProtocol.ASSET_SCHEME,

@@ -73,6 +73,37 @@ compose into one continuous stage (the seam-slicing primitive — pairs with `pa
 Seeded synchronously at preload load; refreshed by main on every bounds change. Verify:
 [`wcvPreload.ts:98`](../../src/preload/wcvPreload.ts), [`wcvGeometry.ts`](../../src/main/services/wcvGeometry.ts).
 
+**WCV-transport-only host method** (a WCV runs in its own document/process, so — unlike an inline card — it
+does NOT inherit the app's `<html>` attributes/CSS and would otherwise fall back to the OS scheme):
+`window.rptHost.getColorScheme()` → `'light' | 'dark'` is the app's IN-APP light/dark axis (the mode of
+the user's chosen app theme — `dark`/`carbon` → `dark`, `light` → `light` — NOT the OS
+`prefers-color-scheme`), with `onColorSchemeChanged(cb)` for changes. RPT also stamps the same value on
+the WCV's `<html>` as **`data-rpt-mode="light|dark"`** at boot and re-stamps + dispatches a
+**`rpt:colorscheme`** window `CustomEvent` (`detail` = `'light'|'dark'`) on change, so a card's mode
+controller can resolve the mode from the method, the attribute, or the event and re-skin live when the
+user flips the app theme. The value reported is the **EFFECTIVE** scheme — a card's `setColorScheme`
+override (below) if set, else `colorSchemeOf(app theme)`. The renderer is the authority
+([`theme.ts` `colorSchemeOf`](../../src/renderer/src/theme.ts), pushed on any theme/override change from
+[`App.tsx`](../../src/renderer/src/App.tsx) via `setColorSchemeCache`); main snapshots it and pushes to every
+WCV, mirroring the play-theme snapshot cache + the geometry push.
+
+**Card→app setter (WCV-transport-only):** `window.rptHost.setColorScheme('light' | 'dark' | 'auto' | null)`
+→ `Promise<boolean>` SETS the app's effective scheme for the card's OWN session (`'auto'`/`null` reverts to
+the app theme). It is the mirror of `getColorScheme`. The override is **session-scoped and ephemeral** — it
+is never persisted and resets on session/profile change, so a card can NOT permanently change the user's app
+theme setting. Main relays the call to the renderer (the effective-scheme authority, resolved from
+`e.sender` so a card sets only its own session); the renderer stores it (`uiStore.cardColorScheme`), which
+drives the app-scoped chrome tokens (`--rpt-app-bg-secondary` / `--rpt-app-text-primary` / `--rpt-app-border`
+on `<html>`, written by [`theme.ts` `applyChromeScheme`](../../src/renderer/src/theme.ts) — these back the
+title strip and the message-box background FALLBACK, and unlike the card's `.play-root` tokens can't be
+shadowed by a card theme), the OS window-control overlay, and the `setColorSchemeCache` push back to every
+WCV — so `getColorScheme` / `data-rpt-mode` / `rpt:colorscheme` all report the new effective scheme.
+Verify: [`wcvPreload.ts`](../../src/preload/wcvPreload.ts) (`wcv-get-colorscheme-sync` / `wcv-colorscheme` /
+`wcv-host-set-colorscheme`), [`wcvIpc.ts`](../../src/main/ipc/wcvIpc.ts) +
+[`wcvManager.ts`](../../src/main/services/wcvManager.ts) (`setColorSchemeSnapshot` / `colorSchemeSnapshotValue`
+/ `requestSetColorScheme`), [`App.tsx`](../../src/renderer/src/App.tsx) (`onWcvSetColorScheme` →
+`uiStore.setCardColorScheme`; the effective-scheme effect).
+
 **WCV-transport-only host method** (sibling-panel coordination — only meaningful when a card runs across
 multiple WCV surfaces): `window.rptHost.broadcastEvent(name, payload)` fans a card-authored event out to
 the OTHER card panels on the same chat (not back to the sender); they receive it via `eventOn(name, cb)`.
@@ -347,15 +378,58 @@ This is already specced as **World Card §8**. Concretely:
 - **Read** — [`stPngParser.ts`](../../src/main/parsers/stPngParser.ts) parses PNG `tEXt`/`iTXt` chunks for
   the `chara`/`ccv3` keyword and base64-decodes the JSON. Because _scripts, regex, preset and per-card
   customizations are all text under `extensions.rp_terminal`_, a PNG whose embedded JSON is a World Card
-  **already carries all of them**. ⚠️ Limitation: **compressed `iTXt` is unsupported** (the parser bails) —
-  fix this to read more real-world cards.
+  **already carries all of them**. ✅ **Compressed `iTXt` (deflate) is now read** (`zlib.inflateSync`,
+  `stPngParser.parseStPng`); the chunk loop stops at `IEND` so an appended cartridge ZIP is never
+  misread as chunk data.
 - **Write/export** — `buildWorldCardExport` produces the `chara_card_v3` JSON (own lorebook →
   `character_book`, world regex → `extensions.regex_scripts`, `world_card` stamped). ⬜ A **PNG writer**
   (embed that JSON into a `tEXt`/`ccv3` chunk over an avatar image) is not yet built — this is the missing
-  piece to make "export a PNG cartridge" real.
-- **Binary / large assets** — text outgrows a base64 chunk, so the plan is an **appended ZIP after `IEND`**
-  (`adm-zip` is already a dependency): manifest + `assets/` + bundled lorebooks/plugins/scripts. ⬜ planned
-  (World Card S5).
+  piece to make "export a PNG cartridge" real. RPT-side export **packing** of the appended ZIP is likewise
+  not built (POD's packager produces the cartridge; see the split-mode plan).
+- **Binary / large assets — appended ZIP after `IEND`.** A PNG may carry a ZIP appended after the `IEND`
+  chunk (`adm-zip`). ✅ **Import side built (A1):** `stPngParser.extractAppendedZip` detects the trailing
+  `PK` bytes and `cardCodeService.installCartridgeCode` validates + extracts the ZIP's `code/` subtree to
+  **`<appDir>/profiles/<profileId>/card-code/<characterId>/`** (keyed by the freshly-minted characterId;
+  removed by the character-delete path). ✅ **Serving side built (A2):** those bytes are served over the
+  `rpt-card://` scheme from per-card origins, main-side trust-gated (`wcvManager` + the pure router
+  [`cardCodeService`/`cardCodeProtocol`](../../src/main/services/cardCodeProtocol.ts)).
+  - **Manifest** (ZIP root `rpt-cartridge.json`):
+    `{ "cartridge": 1, "code": { "root": "code/", "entries": ["surfaces/self.html", …] } }`. Card code lives
+    under `code/` (`code.root` overridable); `assets/` + bundled lorebooks/plugins may coexist in the same
+    ZIP. `entries` is the servable allow-list (the engine's overlay registry source).
+  - **Import hard caps (reject on breach):** appended ZIP ≤ 8 MB, single extracted entry ≤ 8 MB, total
+    extracted ≤ 32 MB (zip-bomb guard), ≤ 2000 entries. Any entry name that is absolute, drive-lettered, or
+    contains a `..` segment rejects the whole cartridge (mirrors `worldAssetService.resolveProtocolPath`).
+    The compressed-`iTXt` inflate is output-bounded (16 MB) as a decompression-bomb guard. A rejected or
+    absent cartridge never blocks the card import itself.
+
+### 6a. Serving card code — `card-code:` entries, per-card origins, trust gate (A2)
+
+- **`card-code:<path>` entry convention (D1).** A cartridge can't know its own `characterId` at package
+  time (RPT mints a fresh id per import), so split-mode `panel_ui` slot / `panel_ui.overlays` entries are
+  written **card-relative** as `card-code:surfaces/self.html`. `wcvManager.ensure` rewrites them to the
+  card's per-card origin `rpt-card://<originToken>/surfaces/self.html` using the slot ctx's `characterId`.
+  `data:` (inline mode — the POD dual-output default) and `https:` entries are untouched.
+- **Per-card origins (D3).** Host **`card`** stays the reserved legacy shared-origin inline path
+  (`rpt-card://card/<slotId>`, byte-for-byte unchanged, **not** trust-gated). Any other host is a **per-card
+  origin token** — the `characterId` when it's DNS-safe (RPT's `randomUUID` ids are), else a stable
+  `c-<sha1>` token — resolved via a `wcvManager` registry (token → `{profileId, characterId, codeDir}`,
+  populated at `ensure()` time, because the protocol handler only sees `req.url`). All of one card's
+  surfaces + overlays share that single origin, so `localStorage` + the `poem:*` `BroadcastChannel` settings
+  recipe keeps working across surfaces.
+  - **localStorage migration (accepted cost).** A card that moves from the old shared `rpt-card://card`
+    origin to its per-card origin **orphans** its old `localStorage`. The poem card is fine (settings
+    re-seed from chat-KV, which is origin-independent). Legacy inline cards that stay on `rpt-card://card`
+    keep their storage. **No automatic migration in v1.**
+- **MIME (§5).** Sub-resources are served with the correct type from the extension table (`.js`/`.mjs` →
+  `text/javascript`, `.css`, `.json`/`.map`, `.svg`, images, fonts, `.wasm`); default
+  `application/octet-stream`, **never** forced `text/html` (that forcing hard-fails ES module loads). HTML
+  documents still get the card CSP. File bodies stream (`net.fetch` + scheme `stream: true`).
+- **Trust gate (main-side, in the handler).** Card code is served only when the card's grant is
+  **`decided ∧ trusted`** (the same `trusted` grant `CardScriptWcvHost` gates script execution on — card
+  code is the same category as remote-script trust); undecided/untrusted → **403**, fail-closed. Read from
+  the main-side grant store (`pluginService.getGrants`), NOT the renderer. The renderer mount gate is
+  defense-in-depth, not the boundary (WCVs run `contextIsolation:false`, so the main-side check is the wall).
 
 **Recommendation:** formally adopt **`chara_card_v3` + `extensions.rp_terminal`** as the standard (no new
 spec string → ST stays compatible), and treat the **PNG as the cartridge**: inline JSON for text

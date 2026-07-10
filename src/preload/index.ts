@@ -667,10 +667,26 @@ const api = {
   },
   wcvSetPlayThemeReply: (id: number, ok: boolean) =>
     ipcRenderer.send('wcv-host-set-play-theme-reply', id, ok),
+  // App light/dark override (WCV mode sync, card→app): a WCV card called rptHost.setColorScheme → main
+  // relays it here for the renderer to apply as a session-scoped override (null = revert to the app theme).
+  // Mirror of onWcvSetPlayTheme but with no derive/AA verdict (the value is just 'light'|'dark'|null).
+  onWcvSetColorScheme: (cb: (payload: { chatId: string; scheme: 'light' | 'dark' | null }) => void) => {
+    const listener = (
+      _e: IpcRendererEvent,
+      payload: { chatId: string; scheme: 'light' | 'dark' | null }
+    ): void => cb(payload)
+    ipcRenderer.on('wcv-set-colorscheme', listener)
+    return () => ipcRenderer.removeListener('wcv-set-colorscheme', listener)
+  },
   setPlayThemeCache: (snapshot: {
     tokens: Record<string, string>
     source: 'user' | 'card' | 'runtime'
   }) => ipcRenderer.send('set-play-theme-cache', snapshot),
+  // App light/dark mode sync (WCV mode sync): push RPT's IN-APP theme axis so a WCV card surface follows
+  // the app theme, not the OS `prefers-color-scheme`. Mirrors setPlayThemeCache; the renderer calls it on
+  // app-theme change. Main snapshots it (WCV sync read at boot) + pushes the change to every WCV.
+  setColorSchemeCache: (scheme: 'light' | 'dark') =>
+    ipcRenderer.send('set-colorscheme-cache', scheme),
   // World Assets (per-world image asset layer)
   assetCoverage: (profileId: string, lorebookIds: string[], category: string, roster: string[]) =>
     ipcRenderer.invoke('asset-coverage', profileId, lorebookIds, category, roster),

@@ -19,4 +19,18 @@ example sillytarvern character card, presets, extensions and scripts/
 # Local Claude Code tooling and internal planning docs (not part of the app)
 .claude/
 /.scratch/
-/docs/superpowers/
+
+# Internal design / plan / spec / review docs — kept LOCAL, not published.
+# The repo publishes only the SDK/API contract docs + example workflow bundles;
+# anything else under docs/ (and the agent-facing top-level docs) stays on-disk only.
+/CLAUDE.md
+/CONTEXT.md
+/AGENTS.md
+/docs/**
+!/docs/sdk/
+!/docs/sdk/**
+!/docs/rpt-api.md
+!/docs/plugin-api.md
+!/docs/compat-comparison.md
+!/docs/workflows/
+!/docs/workflows/**

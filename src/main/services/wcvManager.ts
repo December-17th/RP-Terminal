@@ -1,12 +1,23 @@
-import { WebContentsView, BrowserWindow, session } from 'electron'
+import { WebContentsView, BrowserWindow, session, net } from 'electron'
 import { is } from '@electron-toolkit/utils'
 import { join } from 'path'
+import { pathToFileURL } from 'url'
+import { createHash } from 'crypto'
 import { log } from './logService'
 import { serveAssetRequest, ASSET_SCHEME } from './worldAssetProtocol'
+import { getGrants } from './pluginService'
+import { cardCodeRoot } from './cardCodeService'
+import {
+  serveCardCode,
+  originTokenFor,
+  type CardOrigin,
+  type CardServeDeps
+} from './cardCodeProtocol'
 import { makePanelGeometry, PanelGeometry } from './wcvGeometry'
 import { createFreezeController, type FreezeTarget } from './wcvFreezeFrame'
 import { createOverlayController, type OverlayDecl } from './wcvOverlay'
 import type { VarsOrigin } from '../../shared/thRuntime/types'
+import { CARD_CSP } from '../../shared/cardCsp'
 
 // Card UI panels run in their own session partition. jsDelivr serves `/gh/` HTML as text/plain (to
 // stop it being used to host pages), so Chromium shows it as raw text; the card's UI is meant to be
@@ -21,23 +32,38 @@ const WCV_PARTITION = 'persist:wcv-cards'
 // each card a real, storage-enabled origin — a data: URL is opaque-origin, where Chromium disables
 // localStorage/etc. and a storage-using card throws. The per-slot HTML is served from `slot.html`.
 export const CARD_SCHEME = 'rpt-card'
-// Shared with the inline-message path (WcvMessageFrame sets the same policy via a <meta> tag).
-export const CARD_CSP =
-  "default-src 'self' https: 'unsafe-inline' 'unsafe-eval' data: blob:; " +
-  'img-src * data: blob:; media-src * data: blob:; connect-src * data: blob:'
+// The trusted-card WCV CSP is the single source of truth in `shared/cardCsp` — the inline-message path
+// (WcvMessageFrame / CardScriptWcvHost) imports the SAME constant so the policy can't drift. Re-exported
+// for existing `wcvManager.CARD_CSP` import sites.
+export { CARD_CSP }
 let sessionReady = false
 const ensureSession = (): void => {
   if (sessionReady) return
   sessionReady = true
   const ses = session.fromPartition(WCV_PARTITION)
-  // Serve inline card documents from rpt-card://card/<slotId> so they run on a real (storage-enabled)
-  // origin instead of an opaque data: URL. The HTML is whatever the renderer built for that slot.
-  ses.protocol.handle(CARD_SCHEME, (req) => {
-    const id = decodeURIComponent(new URL(req.url).pathname.replace(/^\/+/, ''))
-    const html = slots.get(id)?.html ?? '<!doctype html><meta charset="utf-8"><title>card</title>'
-    return new Response(html, {
-      headers: { 'content-type': 'text/html; charset=utf-8', 'content-security-policy': CARD_CSP }
-    })
+  // rpt-card:// routing (A2). Host `card` → the legacy shared-origin per-slot inline doc (unchanged);
+  // any other host → a per-card origin token: trust-gated, traversal-guarded file serving from that
+  // card's extracted cartridge code. `serveCardCode` decides; this glue turns the decision into a
+  // Response — file bodies stream via `net.fetch` but with the MIME FORCED to §5 (net.fetch's file
+  // content-type is unreliable, and a wrong type hard-fails ES module loads).
+  ses.protocol.handle(CARD_SCHEME, async (req) => {
+    const r = serveCardCode(req.url, cardServeDeps)
+    if (r.kind === 'inline') {
+      return new Response(r.html, {
+        headers: { 'content-type': r.contentType, 'content-security-policy': r.csp }
+      })
+    }
+    if (r.kind === 'error') return new Response(r.message, { status: r.status })
+    try {
+      const resp = await net.fetch(pathToFileURL(r.absPath).toString())
+      const headers = new Headers()
+      headers.set('content-type', r.contentType)
+      if (r.csp) headers.set('content-security-policy', r.csp)
+      return new Response(resp.body, { status: resp.status, headers })
+    } catch (e) {
+      log('error', '[card-code] serve failed', String(e))
+      return new Response('Error', { status: 500 })
+    }
   })
   ses.protocol.handle(ASSET_SCHEME, (req) => serveAssetRequest(req))
   ses.webRequest.onHeadersReceived({ urls: ['https://*.jsdelivr.net/*'] }, (details, cb) => {
@@ -97,6 +123,67 @@ interface Slot {
 let mainWindow: BrowserWindow | null = null
 const slots = new Map<string, Slot>()
 
+// --- Per-card code-serving origins (A2) ---
+// The rpt-card:// handler receives only `req.url` (NOT the sender webContents), so it cannot read slot
+// ctx directly. This registry maps a per-card origin token → the card's {profileId, characterId,
+// codeDir}, populated at `ensure()` time (where profileId + characterId are known). The token is stable
+// per card so all its surfaces + overlays share one origin (⇒ shared localStorage / BroadcastChannel —
+// the settings recipe). A `card-code:<path>` entry is rewritten to `rpt-card://<token>/<path>`.
+const originRegistry = new Map<string, CardOrigin>()
+
+/** Stable DNS-safe origin token for a characterId (sha1 injected to keep cardCodeProtocol fs/path-only). */
+const originTokenOf = (characterId: string): string =>
+  originTokenFor(characterId, (s) => createHash('sha1').update(s).digest('hex'))
+
+/** Register (idempotently) a card's origin token → code dir, and return the token. */
+const registerCardOrigin = (profileId: string, characterId: string): string => {
+  const token = originTokenOf(characterId)
+  originRegistry.set(token, {
+    profileId,
+    characterId,
+    codeDir: cardCodeRoot(profileId, characterId)
+  })
+  return token
+}
+
+/** Main-side trust gate for card-code serving: served only when the grant is decided ∧ trusted (fail-closed). */
+const cardIsTrusted = (origin: CardOrigin): boolean => {
+  try {
+    const g = getGrants(origin.profileId, origin.characterId)
+    return g.decided === true && g.trusted === true
+  } catch {
+    return false
+  }
+}
+
+const cardServeDeps: CardServeDeps = {
+  cardCsp: CARD_CSP,
+  slotHtml: (id) => slots.get(id)?.html,
+  resolveOrigin: (token) => originRegistry.get(token) ?? null,
+  isTrusted: cardIsTrusted
+}
+
+/** Card-relative split-mode entry prefix (D1): `card-code:surfaces/self.html`. */
+const CODE_ENTRY_PREFIX = 'card-code:'
+
+/** Rewrite a `card-code:<path>` entry to `rpt-card://<token>/<path>` for the given card, or null if the
+ *  entry isn't a card-code entry. Percent-encodes each path segment; the handler decodes it back. */
+const resolveCodeEntry = (url: string, profileId: string, characterId: string): string | null => {
+  if (!url.startsWith(CODE_ENTRY_PREFIX)) return null
+  if (!characterId) {
+    log('error', '[card-code] card-code: entry with no characterId ctx — cannot resolve origin', url)
+    return null
+  }
+  const token = registerCardOrigin(profileId, characterId)
+  const rel = url
+    .slice(CODE_ENTRY_PREFIX.length)
+    .replace(/^\/+/, '')
+    .split('/')
+    .map(encodeURIComponent)
+    .join('/')
+  return `${CARD_SCHEME}://${token}/${rel}`
+}
+
 export const init = (win: BrowserWindow): void => {
   mainWindow = win
   // Tear every guest view down with the window so we don't leak guest processes.
@@ -154,10 +241,19 @@ export const ensure = (
   // Defensive: a fire-and-forget IPC call with a missing/garbled ctx must never crash main.
   if (!ctx || typeof ctx !== 'object') ctx = { profileId: '', chatId: '' }
   ensureSession()
-  // Inline documents arrive as data: URLs (opaque origin → no storage). Stash the HTML and load it from
-  // the storage-enabled rpt-card origin instead; remote (https) card UIs already have a real origin.
-  const inlineHtml = decodeDataHtml(url)
-  const loadUrl = inlineHtml !== null ? `${CARD_SCHEME}://card/${encodeURIComponent(id)}` : url
+  // Entry resolution:
+  //  - `card-code:<path>` (split-mode panel_ui/overlay entry, D1) → the card's per-card origin
+  //    `rpt-card://<token>/<path>` (registers the origin so its sub-resources resolve + trust-gate).
+  //  - a data: URL (inline document, opaque origin → no storage) → the shared `rpt-card://card` origin;
+  //    the HTML is stashed on the slot and served by the scheme handler.
+  //  - anything else (a remote https card UI) already has a real origin → load as-is.
+  const codeUrl = resolveCodeEntry(url, ctx.profileId, ctx.characterId || '')
+  const inlineHtml = codeUrl ? null : decodeDataHtml(url)
+  const loadUrl = codeUrl
+    ? codeUrl
+    : inlineHtml !== null
+      ? `${CARD_SCHEME}://card/${encodeURIComponent(id)}`
+      : url
   let slot = slots.get(id)
   if (!slot) {
     const view = new WebContentsView({
@@ -443,6 +539,43 @@ export const resolveSetPlayTheme = (id: number, ok: boolean): void => {
     playThemePending.delete(id)
     r(!!ok)
   }
+}
+
+// --- App light/dark mode sync (WCV mode sync) ---
+// The renderer owns the app theme; it pushes its light/dark axis here (set-colorscheme-cache) on every
+// app-theme change. A WCV card surface reads this snapshot synchronously at boot (wcv-get-colorscheme-sync
+// → the initial data-rpt-mode stamp / rptHost.getColorScheme) and receives a push (wcv-colorscheme) on
+// change, so its mode controller re-skins live. Mirrors the play-theme snapshot cache (renderer → main)
+// for the sync read + the geometry push (main → WCV) for live updates. Surfaces then follow RPT's in-app
+// theme instead of the OS `prefers-color-scheme`.
+let colorSchemeSnapshot: 'light' | 'dark' = 'dark'
+
+/** The app's current light/dark axis (getColorScheme's sync-read resolver for a WCV card). */
+export const colorSchemeSnapshotValue = (): 'light' | 'dark' => colorSchemeSnapshot
+
+/** The renderer pushed its app theme's light/dark axis. Snapshot it + push the change to every WCV. */
+export const setColorSchemeSnapshot = (scheme: unknown): void => {
+  const s: 'light' | 'dark' = scheme === 'light' ? 'light' : 'dark'
+  if (s === colorSchemeSnapshot) return
+  colorSchemeSnapshot = s
+  for (const slot of slots.values()) {
+    try {
+      if (!slot.view.webContents.isDestroyed()) slot.view.webContents.send('wcv-colorscheme', s)
+    } catch {
+      /* a page mid-teardown can't receive — ignore */
+    }
+  }
+}
+
+/** Relay a WCV card's setColorScheme (card→app) to the host renderer, which owns the effective-scheme
+ *  resolution (override ?? app theme) and applies it as a session-scoped override. `'auto'`/`null`/any
+ *  other value reverts to the app theme. Returns true when a window existed to receive it (false = no
+ *  host window). Unlike setPlayTheme there is no derive/AA verdict — the value is a plain light/dark. */
+export const requestSetColorScheme = (chatId: string, scheme: unknown): boolean => {
+  if (!mainWindow) return false
+  const s: 'light' | 'dark' | null = scheme === 'light' ? 'light' : scheme === 'dark' ? 'dark' : null
+  mainWindow.webContents.send('wcv-set-colorscheme', { chatId, scheme: s })
+  return true
 }
 
 /**

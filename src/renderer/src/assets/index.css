@@ -18,6 +18,15 @@
   --rpt-accent-soft: rgba(91, 141, 239, 0.12);
   --rpt-on-accent: #ffffff;
   --rpt-border: #333333;
+  /* App-scoped chrome surface (title strip + message-box background fallback). Written on <html> by
+     applyTheme/applyChromeScheme (src/renderer/src/theme.ts) to reflect the EFFECTIVE light/dark scheme
+     (app theme, or a card's rptHost.setColorScheme override). Kept OUTSIDE the card token map so a card's
+     `.play-root` tokens can't shadow them — the chrome follows the app's light/dark, not the card. These
+     dark defaults are the first-paint values before applyTheme runs. */
+  --rpt-app-bg-secondary: #1e1e1e;
+  --rpt-app-bg-primary: #121212;
+  --rpt-app-text-primary: #e0e0e0;
+  --rpt-app-border: #333333;
   --rpt-danger: #e74c3c;
   --rpt-success: #4caf72;
   --rpt-warning: #e0a23c;
@@ -471,6 +480,26 @@ body {
   padding: 5px 7px;
   border-bottom: 1px solid var(--rpt-border);
   background-color: color-mix(in srgb, var(--rpt-bg-primary) 55%, var(--rpt-bg-secondary));
+}
+/* Story-chat panel chrome: the panel body + header behind the message list prefer the card's
+   message bg (`--rpt-msg-bg`) when set, else the app's EFFECTIVE light/dark — never the card's
+   `.play-root` palette (which shadows every `--rpt-*` a card understands → a black panel in app light mode). Scoped by `:has(.floor-stage)` so ONLY the chat
+   panel repoints to the app-scoped `--rpt-app-*` tokens (written on <html>, uncard-shadowable) — the
+   other panel views (status/combat/debug) keep the card palette so their card-scoped text stays
+   legible. Mirrors the `.floor-block` / `.tstrip` fix (theme.ts chromeTokensFor / applyChromeScheme). */
+.ws-panel:has(.floor-stage) {
+  /* A card's message background (--rpt-msg-bg, set via setMessageTheme) wins so the whole story
+     surface — panel behind the bubbles included — matches the card; else the app-scoped effective
+     light/dark (parity with .floor-block / .action-input, which already carried the override). */
+  background-color: var(--rpt-msg-bg, var(--rpt-app-bg-secondary));
+  border-color: var(--rpt-msg-border, var(--rpt-app-border));
+}
+.ws-panel:has(.floor-stage) .ws-panel-head {
+  border-bottom-color: var(--rpt-msg-border, var(--rpt-app-border));
+  background-color: var(
+    --rpt-msg-bg,
+    color-mix(in srgb, var(--rpt-app-bg-primary) 55%, var(--rpt-app-bg-secondary))
+  );
 }
 .ws-view-pick {
   background-color: var(--rpt-bg-secondary);
@@ -947,7 +976,10 @@ details[open] > .stat-group-title::before {
    box distinctly from the shell once it sets them (statically or via the runtime setMessageTheme API). */
 .floor-block {
   padding: 15px;
-  background-color: var(--rpt-msg-bg, var(--rpt-bg-secondary));
+  /* Card msg-bg override wins; otherwise the box follows the EFFECTIVE app scheme (`--rpt-app-bg-secondary`)
+     rather than the card's `.play-root` `--rpt-bg-secondary` — so a card that DOESN'T theme its message box
+     no longer inherits the card's dark chrome in app light mode. A card that sets `--rpt-msg-bg` still wins. */
+  background-color: var(--rpt-msg-bg, var(--rpt-app-bg-secondary));
   border-radius: var(--rpt-msg-radius, 8px);
   border: 1px solid var(--rpt-msg-border, var(--rpt-border));
   font-size: var(--rpt-chat-font, 16px);
@@ -1491,9 +1523,13 @@ details[open] > .stat-group-title::before {
 .action-input {
   width: 100%;
   box-sizing: border-box;
-  background-color: var(--rpt-bg-secondary);
-  border: 1px solid var(--rpt-border);
-  color: var(--rpt-text-primary);
+  /* The composer is chat chrome, not card content: a card `--rpt-msg-*` override wins (opt-in, same
+     as the `.floor-block` bubble), otherwise it follows the app's EFFECTIVE light/dark via the
+     app-scoped tokens — so the input box is no longer black in app light mode when a card ships a
+     dark `.play-root` palette. bg/border/text move together so the box stays a legible pair. */
+  background-color: var(--rpt-msg-bg, var(--rpt-app-bg-secondary));
+  border: 1px solid var(--rpt-msg-border, var(--rpt-app-border));
+  color: var(--rpt-msg-text, var(--rpt-app-text-primary));
   /* right padding clears the in-box send button (no bottom reserve, so it can be one line tall) */
   padding: 12px 50px 12px 14px;
   border-radius: 8px;
@@ -2499,8 +2535,10 @@ select {
   gap: 10px;
   /* right padding reserves the OS window-control overlay strip (Windows custom title bar) */
   padding: 0 138px 0 14px;
-  background: var(--rpt-bg-secondary);
-  border-bottom: 1px solid var(--rpt-border);
+  /* App chrome: follows the EFFECTIVE light/dark scheme (app theme / card setColorScheme), NOT the card's
+     `.play-root` tokens — TopStrip renders inside `.play-root` but must track the app's mode. */
+  background: var(--rpt-app-bg-secondary);
+  border-bottom: 1px solid var(--rpt-app-border);
   -webkit-app-region: drag;
 }
 .tstrip-brand {
@@ -2509,7 +2547,7 @@ select {
   font-size: 13.5px;
   letter-spacing: 0.14em;
   text-transform: uppercase;
-  color: var(--rpt-text-primary);
+  color: var(--rpt-app-text-primary);
   background: none;
   border: none;
   cursor: pointer;
@@ -2518,7 +2556,7 @@ select {
   white-space: nowrap;
 }
 .tstrip-brand:hover {
-  background: color-mix(in srgb, var(--rpt-text-primary) 8%, transparent);
+  background: color-mix(in srgb, var(--rpt-app-text-primary) 8%, transparent);
 }
 .tstrip-brand .dot {
   color: var(--rpt-accent);

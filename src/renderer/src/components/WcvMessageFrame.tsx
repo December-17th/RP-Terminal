@@ -7,6 +7,7 @@ import { capCardHeight } from './cardFrameHeight'
 import { buildEnvHead, replaceVhInContent } from '../../../shared/cardEnv'
 import { buildWcvLibTags } from '../cardBridge/cardLibs'
 import type { CardSizing } from '../../../shared/cardRenderMode'
+import { CARD_CSP } from '../../../shared/cardCsp'
 
 /**
  * Renders a card's regex-injected "frontend card" — whatever HTML+script block the card's regex puts
@@ -21,12 +22,6 @@ import type { CardSizing } from '../../../shared/cardRenderMode'
  * it. (Fixed height for now; reporting the card's own content height to auto-size the slot is a follow-up.)
  */
 let seq = 0
-// Mirrors wcvManager.CARD_CSP (can't import a main-process module here). Trusted-card policy: allow
-// https code/styles/fonts/media so the card's own assets (Google Fonts, CDN audio, images) load;
-// process isolation is the real boundary.
-const CSP =
-  "default-src 'self' https: 'unsafe-inline' 'unsafe-eval' data: blob:; " +
-  'img-src * data: blob:; media-src * data: blob:; connect-src * data: blob:'
 
 export function WcvMessageFrame({
   html,
@@ -59,7 +54,7 @@ export function WcvMessageFrame({
         // viewport variable; the overlay's capCardHeight (onWcvSlotSize) windows it either way.
         buildCardDoc(sizing === 'fill' ? replaceVhInContent(html) : html, {
           headInject:
-            `<meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="${CSP}">` +
+            `<meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="${CARD_CSP}">` +
             buildEnvHead({
               libTags: buildWcvLibTags(),
               sizing,

@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react'
 import { useWorkspaceStore } from '../../stores/workspaceStore'
-import { useWorkspaceContext } from './context'
+import { useProfileStore } from '../../stores/profileStore'
 import { useChatStore } from '../../stores/chatStore'
 import { useCharacterStore } from '../../stores/characterStore'
 import { useWcvFreezeStore } from '../../stores/wcvFreezeStore'
@@ -20,7 +20,12 @@ import { useWcvFreezeStore } from '../../stores/wcvFreezeStore'
 export function WcvPanel({ slotId, url }: { slotId: string; url: string }): React.ReactElement {
   const hostRef = useRef<HTMLDivElement>(null)
   const layouts = useWorkspaceStore((s) => s.layouts) // re-measure when the layout changes
-  const { profileId } = useWorkspaceContext()
+  // Bind to the active profile from the GLOBAL store (parity with chatId/characterId below), NOT the
+  // WorkspaceContext. Overlay WcvPanels (OverlayHost) mount OUTSIDE StaticWorkspace's context provider,
+  // so a context read would resolve to the default '' and mis-scope the WCV's chat-vars to
+  // `profiles//chat-card-vars.json` → empty surface. App.tsx only mounts the play area (and thus any
+  // WcvPanel) once activeProfile is non-null, so this id is reliably populated here.
+  const profileId = useProfileStore((s) => s.activeProfile?.id ?? '')
   const chatId = useChatStore((s) => s.activeChatId)
   const characterId = useCharacterStore((s) => s.activeCharacter?.id ?? '')
   // Freeze-frame bitmap for THIS slot while the native view is ducked under a DOM overlay (PM-A4).

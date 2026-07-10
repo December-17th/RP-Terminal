@@ -269,6 +269,23 @@ export const registerWcvIpc = (ipcMain: IpcMain): void => {
   // The host renderer pushes its current effective play theme so the WCV sync getter can read it.
   ipcMain.on('set-play-theme-cache', (_e, snap) => wcvManager.setPlayThemeSnapshot(snap))
 
+  // --- App light/dark mode sync (WCV mode sync) ---
+  // The renderer pushes RPT's IN-APP light/dark axis (set-colorscheme-cache) on every app-theme change;
+  // a WCV card reads it synchronously at boot (wcv-get-colorscheme-sync) and gets pushed changes. Mirrors
+  // the play-theme snapshot relay above, so WCV surfaces follow the app theme, not the OS scheme.
+  ipcMain.on('set-colorscheme-cache', (_e, scheme) => wcvManager.setColorSchemeSnapshot(scheme))
+  ipcMain.on('wcv-get-colorscheme-sync', (e) => {
+    e.returnValue = wcvManager.colorSchemeSnapshotValue()
+  })
+  // Card→app direction: a WCV card called rptHost.setColorScheme. ctx resolves from e.sender so a card
+  // sets the scheme only for ITS OWN play session; main relays it to the renderer (the effective-scheme
+  // authority). Returns true when accepted (bound slot + a host window to receive the relay).
+  ipcMain.handle('wcv-host-set-colorscheme', (e, scheme) => {
+    const ctx = wcvManager.contextFor(e.sender.id)
+    if (!ctx) return false
+    return wcvManager.requestSetColorScheme(ctx.chatId, scheme)
+  })
+
   // Inline transport: an inline card (in the renderer, not a WCV) passes its ctx explicitly — main can't
   // resolve it from e.sender. Same overlay mechanism; the id is validated against the active card's
   // panel_ui.overlays. The characterId falls back to the chat row (parity with the WCV/inline hosts).
