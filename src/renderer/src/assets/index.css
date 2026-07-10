@@ -481,19 +481,25 @@ body {
   border-bottom: 1px solid var(--rpt-border);
   background-color: color-mix(in srgb, var(--rpt-bg-primary) 55%, var(--rpt-bg-secondary));
 }
-/* Story-chat panel chrome: the panel body + header behind the message list must follow the app's
-   EFFECTIVE light/dark, not the card's `.play-root` palette (which shadows every `--rpt-*` a card
-   understands → a black panel in app light mode). Scoped by `:has(.floor-stage)` so ONLY the chat
+/* Story-chat panel chrome: the panel body + header behind the message list prefer the card's
+   message bg (`--rpt-msg-bg`) when set, else the app's EFFECTIVE light/dark — never the card's
+   `.play-root` palette (which shadows every `--rpt-*` a card understands → a black panel in app light mode). Scoped by `:has(.floor-stage)` so ONLY the chat
    panel repoints to the app-scoped `--rpt-app-*` tokens (written on <html>, uncard-shadowable) — the
    other panel views (status/combat/debug) keep the card palette so their card-scoped text stays
    legible. Mirrors the `.floor-block` / `.tstrip` fix (theme.ts chromeTokensFor / applyChromeScheme). */
 .ws-panel:has(.floor-stage) {
-  background-color: var(--rpt-app-bg-secondary);
-  border-color: var(--rpt-app-border);
+  /* A card's message background (--rpt-msg-bg, set via setMessageTheme) wins so the whole story
+     surface — panel behind the bubbles included — matches the card; else the app-scoped effective
+     light/dark (parity with .floor-block / .action-input, which already carried the override). */
+  background-color: var(--rpt-msg-bg, var(--rpt-app-bg-secondary));
+  border-color: var(--rpt-msg-border, var(--rpt-app-border));
 }
 .ws-panel:has(.floor-stage) .ws-panel-head {
-  border-bottom-color: var(--rpt-app-border);
-  background-color: color-mix(in srgb, var(--rpt-app-bg-primary) 55%, var(--rpt-app-bg-secondary));
+  border-bottom-color: var(--rpt-msg-border, var(--rpt-app-border));
+  background-color: var(
+    --rpt-msg-bg,
+    color-mix(in srgb, var(--rpt-app-bg-primary) 55%, var(--rpt-app-bg-secondary))
+  );
 }
 .ws-view-pick {
   background-color: var(--rpt-bg-secondary);
