@@ -102,6 +102,10 @@ const en: Record<string, string> = {
   'settings.workflowTitle': 'Workflow & agents editor',
   'settings.workflowBody': 'The node canvas needs the whole window. Open it to edit the generation graph, agents, and packs.',
   'settings.workflowOpen': 'Open editor',
+  'settings.memory': 'Memory',
+  'settings.memoryTitle': 'Memory manager',
+  'settings.memoryBody': 'View and edit this session’s memory tables, run maintenance, undo changes, and edit the table structure — in a full-screen manager.',
+  'settings.memoryOpen': 'Open memory manager',
   'settings.assetsTitle': 'World assets',
   'settings.assetsBody':
     "Manage this world's portraits, standees, galleries, scene art, and CG in the Assets view — drag-drop import, rename, and export.",

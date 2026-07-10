@@ -367,6 +367,7 @@ export function MemoryManagerView({ profileId }: { profileId: string }): React.J
                         key={active.sqlName}
                         table={active}
                         headers={findDef(active)?.headers}
+                        pageSize={10}
                         onSaveRow={(rowid, changes) => saveRowCells(active.sqlName, rowid, changes)}
                         onInsertRow={(values) => insertRow(active.sqlName, values)}
                         onDeleteRow={(rowid) =>

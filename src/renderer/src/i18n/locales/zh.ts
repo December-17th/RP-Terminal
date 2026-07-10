@@ -100,6 +100,10 @@ const zh: Record<string, string> = {
   'settings.workflowTitle': '工作流与智能体编辑器',
   'settings.workflowBody': '节点画布需要占用整个窗口。打开它来编辑生成图、智能体与扩展包。',
   'settings.workflowOpen': '打开编辑器',
+  'settings.memory': '记忆',
+  'settings.memoryTitle': '记忆管理器',
+  'settings.memoryBody': '在全屏管理器中查看和编辑本会话的记忆表格、执行维护、撤销更改并编辑表格结构。',
+  'settings.memoryOpen': '打开记忆管理器',
   'settings.assetsTitle': '世界素材',
   'settings.assetsBody':
     '在“素材”视图中管理本世界的头像、立绘、相册、场景图与 CG — 支持拖放导入、重命名与导出。',

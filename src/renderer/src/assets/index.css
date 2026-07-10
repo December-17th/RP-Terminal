@@ -2863,7 +2863,7 @@ select {
 /* ── Full-window Memory Manager (MemoryManagerView.tsx, Memory Manager WP1) — a centered full-window
    popup over .modal-overlay's backdrop, mirroring .rpt-popup-modal but with an internal
    rail / main / footer layout (the shujuku Visualizer shape). All colors via --rpt-* tokens. ────── */
-.rpt-mm-modal { width:min(1240px, 96vw); height:min(820px, 92vh); background:var(--rpt-bg-secondary);
+.rpt-mm-modal { width:min(1860px, 96vw); height:min(1230px, 94vh); background:var(--rpt-bg-secondary);
   border:1px solid var(--rpt-border); border-radius:12px; display:flex; flex-direction:column;
   overflow:hidden; box-shadow:0 20px 60px rgba(0,0,0,.5); color:var(--rpt-text-primary); }
 .rpt-mm-head { flex:0 0 auto; display:flex; align-items:center; justify-content:space-between;
