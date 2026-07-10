@@ -277,6 +277,14 @@ export const registerWcvIpc = (ipcMain: IpcMain): void => {
   ipcMain.on('wcv-get-colorscheme-sync', (e) => {
     e.returnValue = wcvManager.colorSchemeSnapshotValue()
   })
+  // Card→app direction: a WCV card called rptHost.setColorScheme. ctx resolves from e.sender so a card
+  // sets the scheme only for ITS OWN play session; main relays it to the renderer (the effective-scheme
+  // authority). Returns true when accepted (bound slot + a host window to receive the relay).
+  ipcMain.handle('wcv-host-set-colorscheme', (e, scheme) => {
+    const ctx = wcvManager.contextFor(e.sender.id)
+    if (!ctx) return false
+    return wcvManager.requestSetColorScheme(ctx.chatId, scheme)
+  })
 
   // Inline transport: an inline card (in the renderer, not a WCV) passes its ctx explicitly — main can't
   // resolve it from e.sender. Same overlay mechanism; the id is validated against the active card's

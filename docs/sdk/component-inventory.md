@@ -81,12 +81,28 @@ the user's chosen app theme — `dark`/`carbon` → `dark`, `light` → `light` 
 the WCV's `<html>` as **`data-rpt-mode="light|dark"`** at boot and re-stamps + dispatches a
 **`rpt:colorscheme`** window `CustomEvent` (`detail` = `'light'|'dark'`) on change, so a card's mode
 controller can resolve the mode from the method, the attribute, or the event and re-skin live when the
-user flips the app theme. The renderer is the authority ([`theme.ts` `colorSchemeOf`](../../src/renderer/src/theme.ts),
-pushed on app-theme change from [`App.tsx`](../../src/renderer/src/App.tsx) via `setColorSchemeCache`);
-main snapshots it and pushes to every WCV, mirroring the play-theme snapshot cache + the geometry push.
-Verify: [`wcvPreload.ts`](../../src/preload/wcvPreload.ts) (`wcv-get-colorscheme-sync` / `wcv-colorscheme`),
-[`wcvIpc.ts`](../../src/main/ipc/wcvIpc.ts) + [`wcvManager.ts`](../../src/main/services/wcvManager.ts)
-(`setColorSchemeSnapshot` / `colorSchemeSnapshotValue`).
+user flips the app theme. The value reported is the **EFFECTIVE** scheme — a card's `setColorScheme`
+override (below) if set, else `colorSchemeOf(app theme)`. The renderer is the authority
+([`theme.ts` `colorSchemeOf`](../../src/renderer/src/theme.ts), pushed on any theme/override change from
+[`App.tsx`](../../src/renderer/src/App.tsx) via `setColorSchemeCache`); main snapshots it and pushes to every
+WCV, mirroring the play-theme snapshot cache + the geometry push.
+
+**Card→app setter (WCV-transport-only):** `window.rptHost.setColorScheme('light' | 'dark' | 'auto' | null)`
+→ `Promise<boolean>` SETS the app's effective scheme for the card's OWN session (`'auto'`/`null` reverts to
+the app theme). It is the mirror of `getColorScheme`. The override is **session-scoped and ephemeral** — it
+is never persisted and resets on session/profile change, so a card can NOT permanently change the user's app
+theme setting. Main relays the call to the renderer (the effective-scheme authority, resolved from
+`e.sender` so a card sets only its own session); the renderer stores it (`uiStore.cardColorScheme`), which
+drives the app-scoped chrome tokens (`--rpt-app-bg-secondary` / `--rpt-app-text-primary` / `--rpt-app-border`
+on `<html>`, written by [`theme.ts` `applyChromeScheme`](../../src/renderer/src/theme.ts) — these back the
+title strip and the message-box background FALLBACK, and unlike the card's `.play-root` tokens can't be
+shadowed by a card theme), the OS window-control overlay, and the `setColorSchemeCache` push back to every
+WCV — so `getColorScheme` / `data-rpt-mode` / `rpt:colorscheme` all report the new effective scheme.
+Verify: [`wcvPreload.ts`](../../src/preload/wcvPreload.ts) (`wcv-get-colorscheme-sync` / `wcv-colorscheme` /
+`wcv-host-set-colorscheme`), [`wcvIpc.ts`](../../src/main/ipc/wcvIpc.ts) +
+[`wcvManager.ts`](../../src/main/services/wcvManager.ts) (`setColorSchemeSnapshot` / `colorSchemeSnapshotValue`
+/ `requestSetColorScheme`), [`App.tsx`](../../src/renderer/src/App.tsx) (`onWcvSetColorScheme` →
+`uiStore.setCardColorScheme`; the effective-scheme effect).
 
 **WCV-transport-only host method** (sibling-panel coordination — only meaningful when a card runs across
 multiple WCV surfaces): `window.rptHost.broadcastEvent(name, payload)` fans a card-authored event out to

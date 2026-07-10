@@ -157,6 +157,40 @@ export function colorSchemeOf(id: string | undefined): 'light' | 'dark' {
   return 0.2126 * r + 0.7152 * g + 0.0722 * b > 128 ? 'light' : 'dark'
 }
 
+/**
+ * The APP-scoped chrome surface (title strip + message-box background fallback) for an effective
+ * light/dark scheme. Distinct from the card token map: a card's `.play-root` inline tokens can shadow
+ * every `--rpt-*` it understands, so the chrome must read from tokens the card CANNOT set — these
+ * `--rpt-app-*` vars, written on <html> (below). When the effective scheme matches the current theme's
+ * own axis we mirror that theme's surface (so Carbon vs Midnight stay distinct); when a card FORCES the
+ * opposite axis (rptHost.setColorScheme) we fall to the canonical built-in theme for that axis.
+ */
+export function chromeTokensFor(
+  themeId: string | undefined,
+  scheme: 'light' | 'dark'
+): { bg: string; text: string; border: string } {
+  const theme = (themeId && THEMES[themeId]) || THEMES[DEFAULT_THEME_ID]
+  const src = colorSchemeOf(theme.id) === scheme ? theme.tokens : THEMES[scheme].tokens
+  return {
+    bg: src['--rpt-bg-secondary'],
+    text: src['--rpt-text-primary'],
+    border: src['--rpt-border']
+  }
+}
+
+/** Write the app-scoped chrome tokens (`--rpt-app-*`) on <html> for a given effective scheme. Called by
+ *  applyTheme with the theme's natural axis, and re-applied by App.tsx with the EFFECTIVE axis whenever a
+ *  card override is active. Because these live on <html> (not the card's `.play-root`), the title strip
+ *  and message-box background follow the app's light/dark by default and can't be shadowed by a card. */
+export function applyChromeScheme(themeId: string | undefined, scheme: 'light' | 'dark'): void {
+  if (typeof document === 'undefined') return
+  const c = chromeTokensFor(themeId, scheme)
+  const root = document.documentElement
+  root.style.setProperty('--rpt-app-bg-secondary', c.bg)
+  root.style.setProperty('--rpt-app-text-primary', c.text)
+  root.style.setProperty('--rpt-app-border', c.border)
+}
+
 /** Apply a theme by id: set its token vars on <html>. Unknown/undefined id falls back to the default. */
 export function applyTheme(id: string | undefined): void {
   if (typeof document === 'undefined') return
@@ -164,6 +198,9 @@ export function applyTheme(id: string | undefined): void {
   const root = document.documentElement
   for (const [k, v] of Object.entries(theme.tokens)) root.style.setProperty(k, v)
   root.dataset.rptTheme = theme.id
+  // Seed the app-scoped chrome tokens to this theme's natural axis. App.tsx re-applies them with the
+  // EFFECTIVE axis (card override ?? natural) so a card that flips the scheme repaints the chrome too.
+  applyChromeScheme(theme.id, colorSchemeOf(theme.id))
   // Keep the Windows window-control overlay (custom title bar) in step with the theme.
   try {
     window.api?.setTitlebarOverlay?.({

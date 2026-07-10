@@ -33,6 +33,13 @@ interface UiState {
   /** The runtime play-theme override (session scope). Null = no runtime layer (static card / user theme). */
   runtimeTheme: RuntimeTheme | null
   setRuntimeTheme: (theme: RuntimeTheme | null) => void
+  /** A card's session-scoped light/dark override (WCV `rptHost.setColorScheme`). Null = follow the app
+   *  theme's natural axis. The EFFECTIVE scheme = this ?? colorSchemeOf(app theme); it drives the app
+   *  chrome tokens, the WCV `data-rpt-mode`/getColorScheme surface, and the OS window-control overlay
+   *  (all in App.tsx). Ephemeral like runtimeTheme: reset on session/profile change (never persisted, so
+   *  a card can't permanently change the user's app setting). */
+  cardColorScheme: 'light' | 'dark' | null
+  setCardColorScheme: (scheme: 'light' | 'dark' | null) => void
   settingsOpen: boolean
   /** Which Settings section to show when the popup opens (set by openSettings). */
   settingsSection: SettingsSection
@@ -88,6 +95,8 @@ interface UiState {
 export const useUiStore = create<UiState>((set) => ({
   runtimeTheme: null,
   setRuntimeTheme: (runtimeTheme) => set({ runtimeTheme }),
+  cardColorScheme: null,
+  setCardColorScheme: (cardColorScheme) => set({ cardColorScheme }),
   settingsOpen: false,
   settingsSection: 'app',
   openSettings: (section) => set({ settingsOpen: true, settingsSection: section ?? 'app' }),

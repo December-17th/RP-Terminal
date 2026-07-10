@@ -156,7 +156,15 @@ const rptHost = {
   onColorSchemeChanged: (cb: (s: 'light' | 'dark') => void) => {
     colorSchemeListeners.add(cb)
     return () => colorSchemeListeners.delete(cb)
-  }
+  },
+  // Card→app: SET the app's effective light/dark scheme for THIS session (the getColorScheme mirror). The
+  // override is SESSION-SCOPED + ephemeral — it never persists and resets on session/profile change, so a
+  // card can't permanently change the user's app theme. Pass 'auto'/null to revert to the app theme. Main
+  // relays to the renderer (the effective-scheme authority), which repaints the chrome AND pushes the
+  // effective axis back here (getColorScheme / the `data-rpt-mode` stamp / rpt:colorscheme event all
+  // report the effective scheme). Resolves true when accepted. Bound to this slot's own session in main.
+  setColorScheme: (scheme: 'light' | 'dark' | 'auto' | null): Promise<boolean> =>
+    ipcRenderer.invoke('wcv-host-set-colorscheme', scheme)
 }
 w.rptHost = rptHost
 

@@ -18,6 +18,14 @@
   --rpt-accent-soft: rgba(91, 141, 239, 0.12);
   --rpt-on-accent: #ffffff;
   --rpt-border: #333333;
+  /* App-scoped chrome surface (title strip + message-box background fallback). Written on <html> by
+     applyTheme/applyChromeScheme (src/renderer/src/theme.ts) to reflect the EFFECTIVE light/dark scheme
+     (app theme, or a card's rptHost.setColorScheme override). Kept OUTSIDE the card token map so a card's
+     `.play-root` tokens can't shadow them — the chrome follows the app's light/dark, not the card. These
+     dark defaults are the first-paint values before applyTheme runs. */
+  --rpt-app-bg-secondary: #1e1e1e;
+  --rpt-app-text-primary: #e0e0e0;
+  --rpt-app-border: #333333;
   --rpt-danger: #e74c3c;
   --rpt-success: #4caf72;
   --rpt-warning: #e0a23c;
@@ -947,7 +955,10 @@ details[open] > .stat-group-title::before {
    box distinctly from the shell once it sets them (statically or via the runtime setMessageTheme API). */
 .floor-block {
   padding: 15px;
-  background-color: var(--rpt-msg-bg, var(--rpt-bg-secondary));
+  /* Card msg-bg override wins; otherwise the box follows the EFFECTIVE app scheme (`--rpt-app-bg-secondary`)
+     rather than the card's `.play-root` `--rpt-bg-secondary` — so a card that DOESN'T theme its message box
+     no longer inherits the card's dark chrome in app light mode. A card that sets `--rpt-msg-bg` still wins. */
+  background-color: var(--rpt-msg-bg, var(--rpt-app-bg-secondary));
   border-radius: var(--rpt-msg-radius, 8px);
   border: 1px solid var(--rpt-msg-border, var(--rpt-border));
   font-size: var(--rpt-chat-font, 16px);
@@ -2499,8 +2510,10 @@ select {
   gap: 10px;
   /* right padding reserves the OS window-control overlay strip (Windows custom title bar) */
   padding: 0 138px 0 14px;
-  background: var(--rpt-bg-secondary);
-  border-bottom: 1px solid var(--rpt-border);
+  /* App chrome: follows the EFFECTIVE light/dark scheme (app theme / card setColorScheme), NOT the card's
+     `.play-root` tokens — TopStrip renders inside `.play-root` but must track the app's mode. */
+  background: var(--rpt-app-bg-secondary);
+  border-bottom: 1px solid var(--rpt-app-border);
   -webkit-app-region: drag;
 }
 .tstrip-brand {
@@ -2509,7 +2522,7 @@ select {
   font-size: 13.5px;
   letter-spacing: 0.14em;
   text-transform: uppercase;
-  color: var(--rpt-text-primary);
+  color: var(--rpt-app-text-primary);
   background: none;
   border: none;
   cursor: pointer;
@@ -2518,7 +2531,7 @@ select {
   white-space: nowrap;
 }
 .tstrip-brand:hover {
-  background: color-mix(in srgb, var(--rpt-text-primary) 8%, transparent);
+  background: color-mix(in srgb, var(--rpt-app-text-primary) 8%, transparent);
 }
 .tstrip-brand .dot {
   color: var(--rpt-accent);

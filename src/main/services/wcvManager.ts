@@ -566,6 +566,17 @@ export const setColorSchemeSnapshot = (scheme: unknown): void => {
   }
 }
 
+/** Relay a WCV card's setColorScheme (card→app) to the host renderer, which owns the effective-scheme
+ *  resolution (override ?? app theme) and applies it as a session-scoped override. `'auto'`/`null`/any
+ *  other value reverts to the app theme. Returns true when a window existed to receive it (false = no
+ *  host window). Unlike setPlayTheme there is no derive/AA verdict — the value is a plain light/dark. */
+export const requestSetColorScheme = (chatId: string, scheme: unknown): boolean => {
+  if (!mainWindow) return false
+  const s: 'light' | 'dark' | null = scheme === 'light' ? 'light' : scheme === 'dark' ? 'dark' : null
+  mainWindow.webContents.send('wcv-set-colorscheme', { chatId, scheme: s })
+  return true
+}
+
 /**
  * Notify sibling WCVs on the same chat that the variables changed. `exceptWebContentsId` skips one
  * slot — pass the writer's `e.sender.id` so a card's OWN write isn't echoed back to it. Without this,
