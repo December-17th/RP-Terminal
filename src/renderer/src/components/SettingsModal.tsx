@@ -3,6 +3,7 @@ import { Modal } from './Modal'
 import { SettingsPanel } from './SettingsPanel'
 import { RegexPanel } from './RegexPanel'
 import { ScriptsPanel } from './ScriptsPanel'
+import { VariablesView } from './workspace/VariablesView'
 import { ApiSettingsPanel } from './ApiSettingsPanel'
 import { PersonaPanel } from './PersonaPanel'
 import { PresetManager } from './PresetManager'
@@ -158,6 +159,17 @@ export function SettingsModal({ profileId }: { profileId: string }): React.React
             </button>
           </div>
         )
+      case 'variables':
+        // The Variables inspector/editor rendered INLINE (not a launcher) so stat_data / session /
+        // global / floor vars stay reachable even when a full-takeover static-layout card replaces the
+        // Workspace (Settings floats above the static card, the workspace view system never mounts).
+        // VariablesView is a fill component (root height:100% → editor flex:1), so give it a bounded
+        // container: `.world-settings` is auto-height and won't resolve the percentage otherwise.
+        return (
+          <div style={{ height: '70vh' }}>
+            <VariablesView profileId={profileId} />
+          </div>
+        )
     }
   }
 
@@ -182,6 +194,7 @@ export function SettingsModal({ profileId }: { profileId: string }): React.React
           <div className="settings-rail-group">{t('settings.groupAutomation')}</div>
           {railItem('workflow', t('settings.workflow'))}
           {railItem('memory', t('settings.memory'))}
+          {railItem('variables', t('settings.variables'))}
         </div>
         <div className="settings-content">
           {section === 'app' ? content() : <div className="world-settings">{content()}</div>}
