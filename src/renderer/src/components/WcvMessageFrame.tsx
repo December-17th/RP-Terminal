@@ -26,7 +26,9 @@ let seq = 0
 // process isolation is the real boundary.
 const CSP =
   "default-src 'self' https: 'unsafe-inline' 'unsafe-eval' data: blob:; " +
-  'img-src * data: blob:; media-src * data: blob:; connect-src * data: blob:'
+  // `rptasset:` explicit (CSP `*` doesn't match custom schemes) so World-Asset portraits load; kept in
+  // parity with wcvManager.CARD_CSP.
+  'img-src * data: blob: rptasset:; media-src * data: blob: rptasset:; connect-src * data: blob:'
 
 export function WcvMessageFrame({
   html,

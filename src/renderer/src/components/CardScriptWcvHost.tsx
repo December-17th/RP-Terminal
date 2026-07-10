@@ -22,7 +22,9 @@ import { useToolbarStore } from '../stores/toolbarStore'
 // media + the eval the card libs need; process isolation is the real boundary.
 const CSP =
   "default-src 'self' https: 'unsafe-inline' 'unsafe-eval' data: blob:; " +
-  'img-src * data: blob:; media-src * data: blob:; connect-src * data: blob:'
+  // `rptasset:` explicit (CSP `*` doesn't match custom schemes) so World-Asset portraits load; kept in
+  // parity with wcvManager.CARD_CSP.
+  'img-src * data: blob: rptasset:; media-src * data: blob: rptasset:; connect-src * data: blob:'
 
 // A script uses ES-module syntax (static import/export) ⇒ run it as <script type="module"> so its imports
 // resolve. (Mirrors thRuntime/bridgeShim's MODULE_SYNTAX, inlined to avoid the legacy-stack dependency.)

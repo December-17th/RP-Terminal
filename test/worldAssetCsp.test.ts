@@ -31,3 +31,18 @@ describe('main-window CSP (index.html)', () => {
     expect(csp).toMatch(/img-src[^;]*\brptasset:/)
   })
 })
+
+describe('WCV card-surface CSP (CARD_CSP)', () => {
+  // The PARTNER overlay / STAGE WCV surfaces render <img src="rptasset://…">. CSP `*` does NOT match
+  // custom schemes, so img-src must list rptasset: explicitly or the portraits are blocked (broken-image
+  // icons). This pins the WCV policy so a future edit can't silently drop it. Read as text (not imported)
+  // because wcvManager pulls in electron. WcvMessageFrame / CardScriptWcvHost mirror this string.
+  const cardCsp = readFileSync(resolve(__dirname, '../src/main/services/wcvManager.ts'), 'utf-8')
+
+  it('allows rptasset: images in img-src', () => {
+    expect(cardCsp).toMatch(/img-src[^;']*\brptasset:/)
+  })
+  it('allows rptasset: media in media-src (audio/video parity)', () => {
+    expect(cardCsp).toMatch(/media-src[^;']*\brptasset:/)
+  })
+})

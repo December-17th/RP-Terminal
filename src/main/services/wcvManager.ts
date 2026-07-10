@@ -34,7 +34,10 @@ export const CARD_SCHEME = 'rpt-card'
 // Shared with the inline-message path (WcvMessageFrame sets the same policy via a <meta> tag).
 export const CARD_CSP =
   "default-src 'self' https: 'unsafe-inline' 'unsafe-eval' data: blob:; " +
-  'img-src * data: blob:; media-src * data: blob:; connect-src * data: blob:'
+  // `rptasset:` is listed explicitly: CSP `*` does NOT match custom schemes, so World-Asset portraits
+  // (rptasset://) would otherwise be blocked in WCV card surfaces (PARTNER overlay / STAGE). Mirrors the
+  // main-window img-src (renderer/index.html) + csp.ts. `media-src` gets it too for audio/video parity.
+  'img-src * data: blob: rptasset:; media-src * data: blob: rptasset:; connect-src * data: blob:'
 let sessionReady = false
 const ensureSession = (): void => {
   if (sessionReady) return
