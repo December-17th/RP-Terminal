@@ -17,12 +17,12 @@
 import React from 'react'
 import { useChatStore } from '../../stores/chatStore'
 import { useUiStore } from '../../stores/uiStore'
-import { useSettingsStore } from '../../stores/settingsStore'
 import { useToastStore } from '../../stores/toastStore'
 import { useT } from '../../i18n'
 import { useWcvSuppression } from '../useWcvSuppression'
-import { TableGrid, type TableDef, type TableDefPatch, type TableRead } from '../workspace/TableGrid'
+import { type TableDef, type TableRead } from '../workspace/TableGrid'
 import type { TableStatusLike } from '../workspace/tableGridModel'
+import { TableCards, type CellChange } from './TableCards'
 import { MemoryPane } from '../workspace/MemoryPane'
 import { MemoryPreview } from '../workflow/MemoryMaintainPanel'
 
@@ -52,7 +52,6 @@ export function MemoryManagerView({ profileId }: { profileId: string }): React.J
   const close = useUiStore((s) => s.closeMemoryManager)
   const activeChatId = useChatStore((s) => s.activeChatId)
   const floors = useChatStore((s) => s.floors)
-  const globalFreq = useSettingsStore((s) => s.settings?.tables?.default_update_frequency ?? 3)
   const t = useT()
 
   const [templates, setTemplates] = React.useState<TemplateSummary[]>([])
@@ -176,19 +175,49 @@ export function MemoryManagerView({ profileId }: { profileId: string }): React.J
     await loadChat()
   }
 
-  const onSaveTemplate = async (tablePatch: TableDefPatch): Promise<void> => {
-    if (!assignedId) return
+  // Card Save commits only the CHANGED cells of one row (batched: N cell edits, then ONE reload) — no
+  // per-keystroke or per-blur write, and no reload between the cells of a single save.
+  const saveRowCells = async (
+    tableName: string,
+    rowid: number,
+    changes: CellChange[]
+  ): Promise<void> => {
+    if (!activeChatId || changes.length === 0) return
     try {
-      const res = await api().updateTableTemplate(profileId, assignedId, { tables: [tablePatch] })
+      for (const ch of changes) {
+        const res = await api().editChatTable(profileId, activeChatId, {
+          kind: 'cell',
+          table: tableName,
+          rowid,
+          columnIndex: ch.colIndex,
+          value: ch.value
+        })
+        if (res && res.error) {
+          toastError(t('tables.editFailed'), res.error)
+          break
+        }
+      }
+    } catch {
+      useToastStore.getState().push(t('tables.editFailed'))
+    }
+    await loadChat()
+  }
+
+  const insertRow = async (tableName: string, values: (string | null)[]): Promise<void> => {
+    if (!activeChatId) return
+    try {
+      const res = await api().editChatTable(profileId, activeChatId, {
+        kind: 'insert',
+        table: tableName,
+        values
+      })
       if (res && res.error) {
-        toastError(t('tables.templateSaveFailed'), res.error)
+        toastError(t('tables.editFailed'), res.error)
         return
       }
     } catch {
-      useToastStore.getState().push(t('tables.templateSaveFailed'))
-      return
+      useToastStore.getState().push(t('tables.editFailed'))
     }
-    useToastStore.getState().push(t('tables.templateSaved'))
     await loadChat()
   }
 
@@ -334,16 +363,15 @@ export function MemoryManagerView({ profileId }: { profileId: string }): React.J
                     ) : !active ? (
                       <p className="rpt-mm-rail-empty">{t('tables.emptyTemplate')}</p>
                     ) : (
-                      <TableGrid
+                      <TableCards
                         key={active.sqlName}
                         table={active}
-                        def={findDef(active)}
-                        globalFreq={globalFreq}
-                        onEdit={applyEdit}
-                        onSaveTemplate={onSaveTemplate}
-                        status={status[active.sqlName] ?? null}
-                        paginate
-                        pageSize={30}
+                        headers={findDef(active)?.headers}
+                        onSaveRow={(rowid, changes) => saveRowCells(active.sqlName, rowid, changes)}
+                        onInsertRow={(values) => insertRow(active.sqlName, values)}
+                        onDeleteRow={(rowid) =>
+                          applyEdit({ kind: 'delete', table: active.sqlName, rowid })
+                        }
                       />
                     ))}
                   {tab === 'structure' && (

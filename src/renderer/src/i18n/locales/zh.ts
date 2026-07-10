@@ -638,6 +638,8 @@ const zh: Record<string, string> = {
   'memoryManager.structure.failedTitle': '部分对话未能迁移（仍停留在旧结构——请重试）：',
   'memoryManager.structure.failedRow': '对话 {{chat}}：{{reason}}',
   'memoryManager.structure.warningsTitle': '警告',
+  'memoryManager.data.reset': '重置',
+  'memoryManager.data.newRow': '新行',
   'memoryManager.footTemplate': '模板：{{name}}',
   'memoryManager.footTable': '表格：{{name}}',
   'memoryManager.footRows': '{{n}} 行',

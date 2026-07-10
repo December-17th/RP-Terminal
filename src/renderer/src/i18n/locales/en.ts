@@ -661,6 +661,8 @@ const en: Record<string, string> = {
     'Some chats were not migrated (left on the previous schema — re-run to retry):',
   'memoryManager.structure.failedRow': 'Chat {{chat}}: {{reason}}',
   'memoryManager.structure.warningsTitle': 'Warnings',
+  'memoryManager.data.reset': 'Reset',
+  'memoryManager.data.newRow': 'New row',
   'memoryManager.footTemplate': 'Template: {{name}}',
   'memoryManager.footTable': 'Table: {{name}}',
   'memoryManager.footRows': '{{n}} rows',
