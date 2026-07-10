@@ -528,6 +528,7 @@ const en: Record<string, string> = {
 
   'chat.thinking': 'Thinking…',
   'chat.generating': 'Generating…',
+  'chat.streamingCard': 'Interactive card renders when generation finishes…',
 
   'status.waiting': 'Waiting for session...',
   'status.heading': 'RPG Status',
