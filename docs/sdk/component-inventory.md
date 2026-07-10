@@ -359,16 +359,46 @@ This is already specced as **World Card §8**. Concretely:
   chunk (`adm-zip`). ✅ **Import side built (A1):** `stPngParser.extractAppendedZip` detects the trailing
   `PK` bytes and `cardCodeService.installCartridgeCode` validates + extracts the ZIP's `code/` subtree to
   **`<appDir>/profiles/<profileId>/card-code/<characterId>/`** (keyed by the freshly-minted characterId;
-  removed by the character-delete path). ⬜ **Serving** those bytes over `rpt-card://` per-card origins +
-  the main-side trust gate is **A2** (not yet built).
+  removed by the character-delete path). ✅ **Serving side built (A2):** those bytes are served over the
+  `rpt-card://` scheme from per-card origins, main-side trust-gated (`wcvManager` + the pure router
+  [`cardCodeService`/`cardCodeProtocol`](../../src/main/services/cardCodeProtocol.ts)).
   - **Manifest** (ZIP root `rpt-cartridge.json`):
     `{ "cartridge": 1, "code": { "root": "code/", "entries": ["surfaces/self.html", …] } }`. Card code lives
     under `code/` (`code.root` overridable); `assets/` + bundled lorebooks/plugins may coexist in the same
-    ZIP. `entries` is the servable allow-list consumed by A2.
+    ZIP. `entries` is the servable allow-list (the engine's overlay registry source).
   - **Import hard caps (reject on breach):** appended ZIP ≤ 8 MB, single extracted entry ≤ 8 MB, total
     extracted ≤ 32 MB (zip-bomb guard), ≤ 2000 entries. Any entry name that is absolute, drive-lettered, or
     contains a `..` segment rejects the whole cartridge (mirrors `worldAssetService.resolveProtocolPath`).
-    A rejected or absent cartridge never blocks the card import itself.
+    The compressed-`iTXt` inflate is output-bounded (16 MB) as a decompression-bomb guard. A rejected or
+    absent cartridge never blocks the card import itself.
+
+### 6a. Serving card code — `card-code:` entries, per-card origins, trust gate (A2)
+
+- **`card-code:<path>` entry convention (D1).** A cartridge can't know its own `characterId` at package
+  time (RPT mints a fresh id per import), so split-mode `panel_ui` slot / `panel_ui.overlays` entries are
+  written **card-relative** as `card-code:surfaces/self.html`. `wcvManager.ensure` rewrites them to the
+  card's per-card origin `rpt-card://<originToken>/surfaces/self.html` using the slot ctx's `characterId`.
+  `data:` (inline mode — the POD dual-output default) and `https:` entries are untouched.
+- **Per-card origins (D3).** Host **`card`** stays the reserved legacy shared-origin inline path
+  (`rpt-card://card/<slotId>`, byte-for-byte unchanged, **not** trust-gated). Any other host is a **per-card
+  origin token** — the `characterId` when it's DNS-safe (RPT's `randomUUID` ids are), else a stable
+  `c-<sha1>` token — resolved via a `wcvManager` registry (token → `{profileId, characterId, codeDir}`,
+  populated at `ensure()` time, because the protocol handler only sees `req.url`). All of one card's
+  surfaces + overlays share that single origin, so `localStorage` + the `poem:*` `BroadcastChannel` settings
+  recipe keeps working across surfaces.
+  - **localStorage migration (accepted cost).** A card that moves from the old shared `rpt-card://card`
+    origin to its per-card origin **orphans** its old `localStorage`. The poem card is fine (settings
+    re-seed from chat-KV, which is origin-independent). Legacy inline cards that stay on `rpt-card://card`
+    keep their storage. **No automatic migration in v1.**
+- **MIME (§5).** Sub-resources are served with the correct type from the extension table (`.js`/`.mjs` →
+  `text/javascript`, `.css`, `.json`/`.map`, `.svg`, images, fonts, `.wasm`); default
+  `application/octet-stream`, **never** forced `text/html` (that forcing hard-fails ES module loads). HTML
+  documents still get the card CSP. File bodies stream (`net.fetch` + scheme `stream: true`).
+- **Trust gate (main-side, in the handler).** Card code is served only when the card's grant is
+  **`decided ∧ trusted`** (the same `trusted` grant `CardScriptWcvHost` gates script execution on — card
+  code is the same category as remote-script trust); undecided/untrusted → **403**, fail-closed. Read from
+  the main-side grant store (`pluginService.getGrants`), NOT the renderer. The renderer mount gate is
+  defense-in-depth, not the boundary (WCVs run `contextIsolation:false`, so the main-side check is the wall).
 
 **Recommendation:** formally adopt **`chara_card_v3` + `extensions.rp_terminal`** as the standard (no new
 spec string → ST stays compatible), and treat the **PNG as the cartridge**: inline JSON for text
