@@ -1,5 +1,6 @@
 import { IpcMain, BrowserWindow, dialog } from 'electron'
 import * as presetService from '../services/presetService'
+import { gate } from './ipcGuards'
 
 export const registerPresetIpc = (ipcMain: IpcMain): void => {
   ipcMain.handle('list-presets', (_, profileId) => presetService.listPresets(profileId))
@@ -22,7 +23,8 @@ export const registerPresetIpc = (ipcMain: IpcMain): void => {
   ipcMain.handle('delete-preset', (_, profileId, presetId) =>
     presetService.deletePreset(profileId, presetId)
   )
-  ipcMain.handle('import-preset-dialog', async (event, profileId) => {
+  // GATED: native file picker (import from an arbitrary host path).
+  ipcMain.handle('import-preset-dialog', gate('import-preset-dialog', async (event, profileId) => {
     const result = await dialog.showOpenDialog(BrowserWindow.fromWebContents(event.sender)!, {
       properties: ['openFile'],
       filters: [{ name: 'SillyTavern Preset', extensions: ['json'] }]
@@ -31,5 +33,5 @@ export const registerPresetIpc = (ipcMain: IpcMain): void => {
       return presetService.importPresetFromFile(profileId, result.filePaths[0])
     }
     return null
-  })
+  }))
 }

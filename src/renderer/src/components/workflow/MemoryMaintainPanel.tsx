@@ -173,8 +173,10 @@ export default function MemoryMaintainPanel({
 }
 
 /** The "what a run would send" preview: composes the maintainer prompt for the active chat via the
- *  same core the node uses (memory-maintain-preview IPC). Mirrors AssemblePreview's on-demand shape. */
-function MemoryPreview({
+ *  same core the node uses (memory-maintain-preview IPC). Mirrors AssemblePreview's on-demand shape.
+ *  Exported so the Memory-Manager Maintenance tab (WP2) reuses it — passing a bare `{ lastNFloors }`
+ *  override there makes the handler resolve the chat's effective memory.maintain config. */
+export function MemoryPreview({
   profileId,
   config
 }: {

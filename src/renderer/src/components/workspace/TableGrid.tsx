@@ -18,6 +18,8 @@ import { useT } from '../../i18n'
 import {
   columnWidthHint,
   filterRowIndices,
+  pageInfo,
+  pageSlice,
   pointerSpec,
   type TableStatusLike
 } from './tableGridModel'
@@ -177,7 +179,12 @@ export const TableGrid: React.FC<{
   /** WP-I: this table's maintenance status (readChatTablesStatus slice) → the pointer marker line.
    *  Omit to hide the line (hosts that don't load status). */
   status?: TableStatusLike | null
-}> = ({ table, def, globalFreq, onEdit, onSaveTemplate, status }) => {
+  /** Memory Manager WP1: OPT-IN pagination. When `paginate` is set (or a positive `pageSize` is given)
+   *  the grid renders one page of `pageSize` rows (default 30) with a prev/next/page-number pager below
+   *  it. UNSET (the default for every other host) = render all rows, unchanged. */
+  paginate?: boolean
+  pageSize?: number
+}> = ({ table, def, globalFreq, onEdit, onSaveTemplate, status, paginate, pageSize }) => {
   const t = useT()
   const width = Math.max(1, table.columns.length)
   // The blank "add row" editor: one input per column, or null when not adding.
@@ -194,6 +201,28 @@ export const TableGrid: React.FC<{
     () => filterRowIndices(table.rows, filter),
     [table.rows, filter]
   )
+
+  // Memory Manager WP1: opt-in pagination. When off, `rendered` === `visibleIndices` and no pager
+  // renders, so every existing host's DOM is byte-for-byte unchanged.
+  const paginated = paginate === true || (pageSize != null && pageSize > 0)
+  const effectivePageSize = pageSize && pageSize > 0 ? Math.floor(pageSize) : 30
+  const [page, setPage] = React.useState(0)
+  // First page whenever the filter or the table identity changes (row set shifts under the pointer).
+  React.useEffect(() => {
+    setPage(0)
+  }, [filter, table.sqlName])
+  const pageState = React.useMemo(
+    () => pageInfo(visibleIndices.length, page, effectivePageSize),
+    [visibleIndices.length, page, effectivePageSize]
+  )
+  const rendered = paginated ? pageSlice(visibleIndices, page, effectivePageSize) : visibleIndices
+  // A small centered window of page buttons (never render one button per page for a huge table).
+  const pageButtons = React.useMemo(() => {
+    const span = 5
+    const end = Math.min(pageState.pageCount, Math.max(pageState.page - Math.floor(span / 2), 0) + span)
+    const start = Math.max(0, end - span)
+    return Array.from({ length: end - start }, (_, i) => start + i)
+  }, [pageState.page, pageState.pageCount])
   // WP-I: column width hints (ch units) — short columns stay narrow, prose columns wrap.
   const widthHints = React.useMemo(
     () => table.columns.map((col, i) => columnWidthHint(col, table.rows, i)),
@@ -341,7 +370,7 @@ export const TableGrid: React.FC<{
                 </td>
               </tr>
             ) : (
-              visibleIndices.map((r) => {
+              rendered.map((r) => {
                 const row = table.rows[r]
                 return (
                   <tr key={table.rowids[r] ?? r}>
@@ -446,6 +475,52 @@ export const TableGrid: React.FC<{
           </tbody>
         </table>
       </div>
+      {/* Memory Manager WP1: opt-in pager. Range label always shows when there are rows; the page
+          buttons appear only once the list spills past one page. */}
+      {paginated && visibleIndices.length > 0 && (
+        <div className="rpt-tablegrid-pager">
+          <span className="rpt-tablegrid-pager-range">
+            {t('memoryManager.rangeLabel', {
+              from: pageState.from,
+              to: pageState.to,
+              total: pageState.total
+            })}
+          </span>
+          {pageState.pageCount > 1 && (
+            <span className="rpt-tablegrid-pager-nav">
+              <button
+                type="button"
+                className="rpt-tablegrid-pager-btn"
+                disabled={pageState.page === 0}
+                aria-label={t('memoryManager.prevPage')}
+                onClick={() => setPage(pageState.page - 1)}
+              >
+                ‹
+              </button>
+              {pageButtons.map((p) => (
+                <button
+                  key={p}
+                  type="button"
+                  className={`rpt-tablegrid-pager-btn${p === pageState.page ? ' active' : ''}`}
+                  aria-current={p === pageState.page}
+                  onClick={() => setPage(p)}
+                >
+                  {p + 1}
+                </button>
+              ))}
+              <button
+                type="button"
+                className="rpt-tablegrid-pager-btn"
+                disabled={pageState.page >= pageState.pageCount - 1}
+                aria-label={t('memoryManager.nextPage')}
+                onClick={() => setPage(pageState.page + 1)}
+              >
+                ›
+              </button>
+            </span>
+          )}
+        </div>
+      )}
     </div>
   )
 }

@@ -2,6 +2,7 @@ import { IpcMain, BrowserWindow, dialog } from 'electron'
 import * as scriptService from '../services/scriptService'
 import * as characterService from '../services/characterService'
 import { getActivePresetId } from '../services/presetService'
+import { gate } from './ipcGuards'
 
 export const registerScriptIpc = (ipcMain: IpcMain): void => {
   ipcMain.handle('list-scripts', (_, profileId) => scriptService.listScripts(profileId))
@@ -21,7 +22,8 @@ export const registerScriptIpc = (ipcMain: IpcMain): void => {
   ipcMain.handle('delete-script', (_, profileId, file) =>
     scriptService.deleteScript(profileId, file)
   )
-  ipcMain.handle('import-script-dialog', async (event, profileId, scope, owner) => {
+  // GATED: native file picker (import from an arbitrary host path).
+  ipcMain.handle('import-script-dialog', gate('import-script-dialog', async (event, profileId, scope, owner) => {
     const result = await dialog.showOpenDialog(BrowserWindow.fromWebContents(event.sender)!, {
       properties: ['openFile', 'multiSelections'],
       filters: [{ name: 'Tavern Helper / RPT Scripts', extensions: ['json'] }]
@@ -32,7 +34,7 @@ export const registerScriptIpc = (ipcMain: IpcMain): void => {
       count += scriptService.importScriptsFromFile(profileId, fp, scope || 'global', owner)
     }
     return count
-  })
+  }))
 
   // The merged runtime script set for a chat: card-embedded (World) + active-scope store
   // scripts (raw — remote `import`s load natively in the sandbox under the remoteScripts

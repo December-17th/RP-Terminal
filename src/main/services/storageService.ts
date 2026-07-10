@@ -2,39 +2,62 @@ import fs from 'fs'
 import path from 'path'
 import { app } from 'electron'
 import { log } from './logService'
-import { readLocationPointer } from './locationPointer'
+import { readLocationPointer, writeLocationPointer } from './locationPointer'
 
 export const DATA_DIR_NAME = 'rp-terminal-data'
 
 /** Resolve the data-root base. Precedence: explicit override → saved pointer → platform default.
  *  override/pointer are used verbatim (the chosen folder IS the data dir); the default appends
- *  DATA_DIR_NAME. Pure — the electron/env reads live in getAppDir. */
+ *  DATA_DIR_NAME. Pure — the electron/env/fs reads live in getAppDir (fs comes in via existsNonEmpty).
+ *
+ *  Packaged default = userDataDir + DATA_DIR_NAME (writable everywhere), EXCEPT back-compat: an
+ *  existing portable install with a non-empty <exeDir>/DATA_DIR_NAME keeps using it. In that case
+ *  persistPointer=true asks getAppDir to save a pointer so the choice is durable + visible in Settings. */
 export function resolveDataBase(opts: {
   override?: string
   pointer?: string
   isDev: boolean
   cwd: string
   exeDir: string
-}): { dir: string; appendName: boolean } {
+  userDataDir: string
+  existsNonEmpty: (dir: string) => boolean
+}): { dir: string; appendName: boolean; persistPointer?: boolean } {
   if (opts.override) return { dir: opts.override, appendName: false }
   if (opts.pointer) return { dir: opts.pointer, appendName: false }
-  return { dir: opts.isDev ? opts.cwd : opts.exeDir, appendName: true }
+  if (opts.isDev) return { dir: opts.cwd, appendName: true }
+  const exeData = path.join(opts.exeDir, DATA_DIR_NAME)
+  if (opts.existsNonEmpty(exeData)) return { dir: exeData, appendName: false, persistPointer: true }
+  return { dir: opts.userDataDir, appendName: true }
+}
+
+/** True iff dir exists and holds at least one entry. Any fs error → false. */
+const dirIsNonEmpty = (dir: string): boolean => {
+  try {
+    return fs.existsSync(dir) && fs.readdirSync(dir).length > 0
+  } catch {
+    return false
+  }
 }
 
 let cachedAppDir: string | null = null
 
-// The data root: RPT_DATA_DIR → saved pointer → platform default (dev=cwd / packaged=exe dir) +
-// DATA_DIR_NAME. Memoized — the location cannot change without an app restart.
+// The data root: RPT_DATA_DIR → saved pointer → platform default (dev=cwd / packaged=userData, with
+// an existing portable <exeDir>/rp-terminal-data honored) + DATA_DIR_NAME. Memoized — the location
+// cannot change without an app restart.
 export const getAppDir = (): string => {
   if (cachedAppDir) return cachedAppDir
-  const { dir, appendName } = resolveDataBase({
+  const { dir, appendName, persistPointer } = resolveDataBase({
     override: process.env.RPT_DATA_DIR,
     pointer: readLocationPointer()?.dataDir,
     isDev: !app.isPackaged, // true in `electron-vite dev`, false in a packaged build
     cwd: process.cwd(),
-    exeDir: path.dirname(app.getPath('exe'))
+    exeDir: path.dirname(app.getPath('exe')),
+    userDataDir: app.getPath('userData'),
+    existsNonEmpty: dirIsNonEmpty
   })
   cachedAppDir = appendName ? path.join(dir, DATA_DIR_NAME) : dir
+  // Back-compat: durably record an adopted portable install so it survives + shows in Settings.
+  if (persistPointer) writeLocationPointer(cachedAppDir)
   return cachedAppDir
 }
 

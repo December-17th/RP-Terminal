@@ -7,6 +7,7 @@ import {
   AssetCategory,
   AssetType
 } from '../../shared/worldAssets/types'
+import { gate } from './ipcGuards'
 
 /** Open the OS image picker and import the pick into the PRIMARY world (`lorebookIds[0]`) under the naming
  *  convention — the shared body of `rptHost.requestAssetImport` (WA-3), reused by both the inline and WCV
@@ -115,14 +116,17 @@ export const registerWorldAssetIpc = (ipcMain: IpcMain): void => {
         variant
       )
   )
+  // GATED: reveals a folder in the OS file manager (shell.openPath — host reach).
   ipcMain.handle(
     'asset-open-folder',
-    (_e, profileId: string, lorebookId: string, category: AssetCategory) =>
+    gate('asset-open-folder', (_e, profileId: string, lorebookId: string, category: AssetCategory) =>
       svc.openAssetsFolder(profileId, lorebookId, category)
+    )
   )
+  // GATED: native picker (import a zip from an arbitrary host path). App Asset-Manager surface.
   ipcMain.handle(
     'asset-import-zip-dialog',
-    async (event, profileId: string, lorebookId: string) => {
+    gate('asset-import-zip-dialog', async (event, profileId: string, lorebookId: string) => {
       const win = BrowserWindow.fromWebContents(event.sender)!
       const pick = await dialog.showOpenDialog(win, {
         properties: ['openFile'],
@@ -130,7 +134,7 @@ export const registerWorldAssetIpc = (ipcMain: IpcMain): void => {
       })
       if (pick.canceled || !pick.filePaths[0]) return null
       return svc.importAssetsZip(profileId, lorebookId, pick.filePaths[0])
-    }
+    })
   )
   // ── Manager surface (WA-2) ──────────────────────────────────────────────────────────────────
   ipcMain.handle('asset-list-index', (_e, profileId: string, lorebookIds: string[]) =>
@@ -159,7 +163,8 @@ export const registerWorldAssetIpc = (ipcMain: IpcMain): void => {
   )
   // Pick image files via the OS dialog → return their absolute paths (fed to asset-import-files).
   // Backs the view's 导入 button + the drawer's 替换/＋ tile actions (drag-drop is the other route).
-  ipcMain.handle('asset-pick-images', async (event, multi: boolean) => {
+  // GATED: native image picker (reads arbitrary host paths). App Asset-Manager surface.
+  ipcMain.handle('asset-pick-images', gate('asset-pick-images', async (event, multi: boolean) => {
     const win = BrowserWindow.fromWebContents(event.sender)!
     const pick = await dialog.showOpenDialog(win, {
       properties: multi ? ['openFile', 'multiSelections'] : ['openFile'],
@@ -167,8 +172,9 @@ export const registerWorldAssetIpc = (ipcMain: IpcMain): void => {
     })
     if (pick.canceled) return []
     return pick.filePaths
-  })
-  ipcMain.handle('asset-export-zip', async (event, profileId: string, lorebookId: string) => {
+  }))
+  // GATED: native save dialog writing a zip to an arbitrary host path.
+  ipcMain.handle('asset-export-zip', gate('asset-export-zip', async (event, profileId: string, lorebookId: string) => {
     const win = BrowserWindow.fromWebContents(event.sender)!
     const pick = await dialog.showSaveDialog(win, {
       defaultPath: `${lorebookId}-assets.zip`,
@@ -176,5 +182,5 @@ export const registerWorldAssetIpc = (ipcMain: IpcMain): void => {
     })
     if (pick.canceled || !pick.filePath) return null
     return svc.exportAssetsZip(profileId, lorebookId, pick.filePath)
-  })
+  }))
 }

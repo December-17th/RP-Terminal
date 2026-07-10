@@ -3,7 +3,7 @@ import fs from 'fs'
 import { getDb } from './db'
 import { log } from './logService'
 import * as tableDbService from './tableDbService'
-import { replayOneOp, validateBatch, TableSqlError } from './tableSql'
+import { replayOneOp, validateBatch, TableSqlError, classifyStatement } from './tableSql'
 import { templateSqlNames, sandboxDbPath } from './tableDbService'
 import { TableTemplate } from '../types/tableTemplate'
 
@@ -58,6 +58,45 @@ export const listOps = (_profileId: string, chatId: string): TableOp[] =>
   getDb()
     .prepare('SELECT floor, seq, sql FROM table_ops WHERE chat_id = ? ORDER BY floor, seq')
     .all(chatId) as TableOp[]
+
+/** One op as shown in the History surface (Memory-Manager WP3). The rewind CUT target is `floor`
+ *  (deleteOpsFrom drops that floor and everything after — floor is the rewind granularity). */
+export interface TableOpView {
+  floor: number
+  seq: number
+  /** Statement kind, derived from the op SQL via the same classifier the write path uses. */
+  kind: 'insert' | 'update' | 'delete' | 'other'
+  /** Target table name, derived from the op SQL (null when the raw SQL no longer classifies). */
+  table: string | null
+  /** ISO timestamp the op was appended (`table_ops.created_at`); null if the row predates it. */
+  createdAt: string | null
+}
+
+/**
+ * Display projection of the op log, NEWEST-FIRST, for the History surface (Memory-Manager WP3).
+ * `table_ops` has no author column, so ops are labelled by STATEMENT (kind + target table) derived
+ * from the stored SQL — NOT by maintenance-vs-hand-edit (that provenance isn't recorded). Read-only;
+ * the rewind cut is keyed to each entry's `floor`.
+ */
+export const listOpsForDisplay = (_profileId: string, chatId: string): TableOpView[] => {
+  const rows = getDb()
+    .prepare(
+      'SELECT floor, seq, sql, created_at FROM table_ops WHERE chat_id = ? ORDER BY floor DESC, seq DESC'
+    )
+    .all(chatId) as Array<{ floor: number; seq: number; sql: string; created_at: string | null }>
+  return rows.map((r) => {
+    let kind: TableOpView['kind'] = 'other'
+    let table: string | null = null
+    try {
+      const info = classifyStatement(r.sql)
+      kind = info.kind
+      table = info.table
+    } catch {
+      // Accepted ops always classify; a stored statement that no longer does → labelled 'other'.
+    }
+    return { floor: r.floor, seq: r.seq, kind, table, createdAt: r.created_at ?? null }
+  })
+}
 
 /** Drop every op at/after `fromFloor` (rewind cut). Returns the number of rows deleted. */
 export const deleteOpsFrom = (_profileId: string, chatId: string, fromFloor: number): number =>
@@ -135,6 +174,28 @@ export const rebuildSandbox = (
   } finally {
     endTableWrite(chatId)
   }
+}
+
+/**
+ * History rewind (Memory-Manager WP3): roll a chat's tables back to BEFORE `fromFloor` by dropping
+ * every op at/after it and rebuilding the sandbox from the survivors. This is the SAME two-step
+ * `truncateFloors` runs for a floor cut (chatService), MINUS the floor deletion — DATA-ONLY: the chat
+ * messages AND the per-table maintenance progress pointer (`tableProgressService`) are untouched, so a
+ * rewound floor is NOT auto-re-maintained by the cadence gate (an accepted v1 gap — the "undo stays
+ * undone" semantic; re-run maintenance/backfill to catch up). `rebuildSandbox` takes the per-chat
+ * write lock ITSELF, so this is serialized against a concurrent rebuild without an outer lock (an outer
+ * `tryBeginTableWrite` here would make rebuildSandbox's own claim fail and silently skip). Returns the
+ * number of ops dropped. Reuses `deleteOpsFrom` + `rebuildSandbox` verbatim — no new rewind logic.
+ */
+export const rewindTables = (
+  profileId: string,
+  chatId: string,
+  fromFloor: number,
+  template: TableTemplate | null
+): number => {
+  const dropped = deleteOpsFrom(profileId, chatId, fromFloor)
+  rebuildSandbox(profileId, chatId, template)
+  return dropped
 }
 
 /** Open the freshly-instantiated sandbox and replay ops one by one (NOT one transaction — a

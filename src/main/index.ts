@@ -11,6 +11,7 @@ import * as templateService from './services/templateService'
 import * as wcvManager from './services/wcvManager'
 import * as worldAssetProtocol from './services/worldAssetProtocol'
 import { registerIpc } from './ipc'
+import { setGuardMainWindow } from './ipc/ipcGuards'
 import { TITLEBAR_OVERLAY_HEIGHT } from './windowChrome'
 
 // Card UIs (WebContentsView) are served from this scheme instead of a data: URL: a data: URL is an
@@ -60,6 +61,10 @@ function createWindow(): void {
 
   // Give the WebContentsView manager the window so it can overlay card-UI panels (spike).
   wcvManager.init(mainWindow)
+
+  // Identify the app's own top frame for the destructive-IPC sender gate (card-trust-boundary
+  // issue 02): gated channels run only when the caller IS this window's main frame.
+  setGuardMainWindow(mainWindow)
 
   mainWindow.on('ready-to-show', () => {
     mainWindow.maximize()

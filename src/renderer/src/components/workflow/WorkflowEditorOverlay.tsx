@@ -27,6 +27,7 @@ export function WorkflowEditorOverlay({
 }): React.JSX.Element | null {
   const open = useUiStore((s) => s.workflowEditorOpen)
   const close = useUiStore((s) => s.closeWorkflowEditor)
+  const openMemoryManager = useUiStore((s) => s.openMemoryManager)
   const pushToast = useToastStore((s) => s.push)
   const t = useT()
 
@@ -104,6 +105,17 @@ export function WorkflowEditorOverlay({
           >
             <div className="rpt-agentdetail-head">
               <h2 className="rpt-agentdetail-title">{t('workflowEditor.memory')}</h2>
+              <span style={{ flex: 1 }} />
+              {/* Memory Manager WP1: jump to the full-window Memory Manager (this side sheet stays). */}
+              <button
+                type="button"
+                className="rpt-duel-secondary"
+                style={{ fontSize: 12, padding: '3px 10px' }}
+                onClick={openMemoryManager}
+                title={t('memoryManager.expandTip')}
+              >
+                {t('memoryManager.expand')}
+              </button>
               <button
                 type="button"
                 className="rpt-agentdetail-close"

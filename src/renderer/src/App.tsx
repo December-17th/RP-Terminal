@@ -48,6 +48,7 @@ import { SettingsModal } from './components/SettingsModal'
 import { WorkflowEditorOverlay } from './components/workflow/WorkflowEditorOverlay'
 import { DuelPopup } from './components/DuelPopup'
 import { AssetsPopup } from './components/AssetsPopup'
+import { MemoryManagerView } from './components/memory/MemoryManagerView'
 import { CardTrustPrompt } from './components/CardTrustPrompt'
 
 export default function App(): React.ReactElement {
@@ -393,6 +394,7 @@ export default function App(): React.ReactElement {
       <WorkflowEditorOverlay profileId={activeProfile.id} />
       <DuelPopup profileId={activeProfile.id} />
       <AssetsPopup profileId={activeProfile.id} />
+      <MemoryManagerView profileId={activeProfile.id} />
       <CardTrustPrompt />
       <ToastStack />
     </>

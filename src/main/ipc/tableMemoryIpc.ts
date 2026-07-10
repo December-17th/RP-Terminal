@@ -1,8 +1,10 @@
 import { IpcMain, BrowserWindow, dialog } from 'electron'
 import * as tableTemplateService from '../services/tableTemplateService'
 import * as tableDbService from '../services/tableDbService'
+import * as tableOpsService from '../services/tableOpsService'
 import * as chatService from '../services/chatService'
 import { applyEdit, TableEditOp } from '../services/tableEditService'
+import { applyStructureOps, StructureOp } from '../services/tableStructureService'
 import { getTablesStatus } from '../services/tableStatusService'
 import { templateSqlNames } from '../services/tableDbService'
 import {
@@ -14,6 +16,8 @@ import {
 import { buildGenContext } from '../services/generation/genContext'
 import { chatTemplate } from '../services/nodes/builtin/memoryCore'
 import { composeMaintainerMessages, memoryMaintainConfig } from '../services/nodes/builtin/memoryNodes'
+import { maintainNow, resolveMaintainConfig } from '../services/tableMaintainNow'
+import { gate } from './ipcGuards'
 
 /**
  * IPC for SQL-table memory (issue 02): file-based table templates, per-chat assignment (which
@@ -39,14 +43,14 @@ export const registerTableMemoryIpc = (ipcMain: IpcMain): void => {
     // Any chat that had it assigned loses its sandbox too.
     chatService.removeTableTemplateIdFromChats(profileId, id)
   })
-  ipcMain.handle('table-template-import-dialog', async (event, profileId) => {
+  ipcMain.handle('table-template-import-dialog', gate('table-template-import-dialog', async (event, profileId) => {
     const result = await dialog.showOpenDialog(BrowserWindow.fromWebContents(event.sender)!, {
       properties: ['openFile'],
       filters: [{ name: 'Table Template', extensions: ['json'] }]
     })
     if (result.canceled || result.filePaths.length === 0) return null
     return tableTemplateService.importTableTemplateFromFile(profileId, result.filePaths[0])
-  })
+  }))
 
   // Per-chat assignment. Setting a new id (re)instantiates the sandbox; null removes it (both
   // destructive — the renderer confirms first).
@@ -58,22 +62,51 @@ export const registerTableMemoryIpc = (ipcMain: IpcMain): void => {
   )
 
   // The memory.maintain node panel preview: compose the EXACT maintainer prompt a run would send for
-  // this chat (composeMaintainerMessages — shared with the node's run(), so no drift), given the node's
-  // current config. `{ error: 'no-template' }` when the chat has no table memory bound; any thrown
-  // failure comes back as `{ error }` (the renderer localizes it) rather than crossing IPC as a throw.
+  // this chat (composeMaintainerMessages — shared with the node's run(), so no drift). `config` carries
+  // the NODE's current config on the workflow-editor path; on the Memory-Manager Maintenance-tab path it
+  // is null / a bare `{ lastNFloors }` override, and we resolve the chat's EFFECTIVE memory.maintain node
+  // config (the SAME core run-now uses) so the preview matches an on-demand run. `{ error: 'no-template' }`
+  // when no table memory is bound; any thrown failure comes back as `{ error }` (the renderer localizes it).
   ipcMain.handle('memory-maintain-preview', (_, profileId, chatId, config) => {
     try {
-      const parsed = memoryMaintainConfig.safeParse(config ?? {})
-      if (!parsed.success) return { error: 'bad-config' }
       const gen = buildGenContext(profileId, chatId, '')
       const template = chatTemplate(gen)
       if (!template) return { error: 'no-template' }
-      const messages = composeMaintainerMessages(gen, template, parsed.data)
+      const parsed = memoryMaintainConfig.safeParse(config ?? {})
+      const cfg = parsed.success
+        ? parsed.data
+        : (() => {
+            const resolved = resolveMaintainConfig(profileId, chatId)
+            if (!resolved) return null
+            const override = (config ?? {}) as { lastNFloors?: number }
+            return typeof override.lastNFloors === 'number'
+              ? { ...resolved, lastNFloors: override.lastNFloors }
+              : resolved
+          })()
+      if (!cfg) return { error: 'bad-config' }
+      const messages = composeMaintainerMessages(gen, template, cfg)
       return { messages: messages.map((m) => ({ role: m.role, content: m.content })) }
     } catch (err) {
       return { error: err instanceof Error ? err.message : String(err) }
     }
   })
+
+  // Run ONE maintenance pass on demand (Memory-Manager WP2 workbench). Reuses the SAME cores automatic
+  // maintenance runs (resolveMaintainConfig → composeMaintainerMessages → runLlmCall → applyTableEdit);
+  // `opts` is `{ lastNFloors?, extraHint? }`. Returns the run-now report shape (never throws across IPC).
+  ipcMain.handle(
+    'chat-tables-maintain-now',
+    (_, profileId: string, chatId: string, opts: { lastNFloors?: number; extraHint?: string }) =>
+      maintainNow(profileId, chatId, {
+        lastNFloors:
+          typeof opts?.lastNFloors === 'number' &&
+          Number.isInteger(opts.lastNFloors) &&
+          opts.lastNFloors >= 1
+            ? opts.lastNFloors
+            : undefined,
+        extraHint: typeof opts?.extraHint === 'string' ? opts.extraHint : undefined
+      })
+  )
 
   // Read: every table of the chat's assigned template, with current rows + per-row rowids (issue 06).
   ipcMain.handle('chat-tables-read', (_, profileId, chatId) => {
@@ -139,6 +172,48 @@ export const registerTableMemoryIpc = (ipcMain: IpcMain): void => {
     getTablesStatus(profileId, chatId)
   )
 
+  // History op-log (Memory-Manager WP3): a display projection of the per-chat table op log, newest-
+  // first. Each entry is keyed to a FLOOR (the rewind cut granularity) and labelled by SQL statement
+  // kind + table — `table_ops` has no author column, so ops are NOT tagged maintenance-vs-hand-edit.
+  // `[]` when no template is bound (nothing to show).
+  ipcMain.handle('chat-tables-ops-list', (_, profileId: string, chatId: string) => {
+    const id = chatService.getChatTableTemplateId(profileId, chatId)
+    if (!id) return []
+    return tableOpsService.listOpsForDisplay(profileId, chatId)
+  })
+
+  // History rewind (Memory-Manager WP3): roll the tables back to BEFORE `fromFloor` by dropping every
+  // op at/after it and rebuilding the sandbox from the survivors — the SAME primitives truncateFloors
+  // runs for a floor cut, minus the floor deletion (DATA-ONLY: chat messages + the maintenance progress
+  // pointer are untouched). `rebuildSandbox` self-serializes on the per-chat write lock. DESTRUCTIVE
+  // (drops later ops); the renderer confirms first. `{ ok, dropped } | { error }` (a localized
+  // `tables.*` key the renderer toasts); the renderer re-reads the table state on success.
+  ipcMain.handle('chat-tables-rewind', (_, profileId: string, chatId: string, fromFloor: number) => {
+    if (!Number.isInteger(fromFloor) || fromFloor < 0) return { error: 'tables.rewindBadFloor' }
+    const id = chatService.getChatTableTemplateId(profileId, chatId)
+    if (!id) return { error: 'tables.editNoTemplate' }
+    const template = tableTemplateService.getTableTemplateById(profileId, id)
+    if (!template) return { error: 'tables.editNoTemplate' }
+    const dropped = tableOpsService.rewindTables(profileId, chatId, fromFloor, template)
+    return { ok: true, dropped }
+  })
+
+  // Structural template edit + bound-chat migration (Memory-Manager WP4a). `ops` is an ordered list
+  // of high-level structural ops (add/rename/drop table or column). Validation rejects the WHOLE batch
+  // on any invalid op WITHOUT touching the template or any sandbox; on success the template is rewritten
+  // and every bound chat's sandbox is ALTERed + its op log re-baselined so a later rewind/rebuild
+  // reproduces the migrated rows. Returns the report or `{ ok:false, error }` (a localizable
+  // `tables.structure*` key the renderer toasts). Never throws across IPC.
+  ipcMain.handle(
+    'table-structure-apply',
+    (
+      _,
+      profileId: string,
+      templateId: string,
+      ops: StructureOp[]
+    ) => applyStructureOps(profileId, templateId, ops)
+  )
+
   // Manual backfill (issue 07). Start validates the scope/batch inputs (X ≥ 1 or all, Y ≥ 1, retries
   // 0–5) and returns `{ ok } | { error }` with the error as a localized `tables.*` key (the established
   // contract); the actual run is async and streams progress via `table-backfill-progress`.
@@ -197,7 +272,7 @@ export const registerTableMemoryIpc = (ipcMain: IpcMain): void => {
   // workflow export-dialog precedent (workflowIpc `export-workflow-dialog`).
   ipcMain.handle(
     'table-template-export-dialog',
-    async (event, profileId: string, templateId: string, chatId?: string | null) => {
+    gate('table-template-export-dialog', async (event, profileId: string, templateId: string, chatId?: string | null) => {
       const template = tableTemplateService.getTableTemplateById(profileId, templateId)
       const defaultName = (template?.name || templateId).replace(/[\\/:*?"<>|]/g, '_')
       const result = await dialog.showSaveDialog(BrowserWindow.fromWebContents(event.sender)!, {
@@ -211,6 +286,6 @@ export const registerTableMemoryIpc = (ipcMain: IpcMain): void => {
         result.filePath,
         chatId
       )
-    }
+    })
   )
 }

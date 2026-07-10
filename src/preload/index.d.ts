@@ -699,6 +699,33 @@ declare global {
       ) => Promise<Array<{ id: string; name: string; tableCount: number }>>
       getTableTemplate: (profileId: string, id: string) => Promise<unknown>
       updateTableTemplate: (profileId: string, id: string, patch: unknown) => Promise<unknown>
+      // Structural template edit + bound-chat migration (Memory-Manager WP4a). `ops` is an ordered
+      // list of add/rename/drop table|column ops (shape mirrors main-side `StructureOp`, inlined per
+      // the preload convention). Rejects the whole batch on any invalid op WITHOUT applying anything.
+      applyTableStructure: (
+        profileId: string,
+        templateId: string,
+        ops: (
+          | { kind: 'addTable'; sqlName: string; displayName?: string; columns: { name: string; type?: string }[] }
+          | { kind: 'dropTable'; uid: string }
+          | { kind: 'renameTable'; uid: string; sqlName: string; displayName?: string }
+          | { kind: 'addColumn'; uid: string; name: string; type?: string }
+          | { kind: 'renameColumn'; uid: string; from: string; to: string }
+          | { kind: 'dropColumn'; uid: string; name: string }
+        )[]
+      ) => Promise<
+        | {
+            ok: true
+            tablesChanged: number
+            columnsChanged: number
+            chatsMigrated: number
+            // Chats whose migration failed + rolled back — left on the PREVIOUS schema + old op-log
+            // (recoverable; needs a re-sync/retry), NOT half-migrated.
+            failedChats: { chatId: string; reason: string }[]
+            warnings: string[]
+          }
+        | { ok: false; error: string }
+      >
       deleteTableTemplate: (profileId: string, id: string) => Promise<void>
       importTableTemplateDialog: (profileId: string) => Promise<{
         summary?: { id: string; name: string; tableCount: number }
@@ -711,6 +738,15 @@ declare global {
         chatId: string,
         config: unknown
       ) => Promise<{ messages?: { role: string; content: string }[]; error?: string }>
+      maintainTablesNow: (
+        profileId: string,
+        chatId: string,
+        opts: { lastNFloors?: number; extraHint?: string }
+      ) => Promise<
+        | { ok: true; applied: number; changes: number; empty?: boolean }
+        | { ok: false; reason: 'no-template' | 'no-node' | 'aborted' }
+        | { ok: false; reason: 'error'; message: string }
+      >
       readChatTables: (
         profileId: string,
         chatId: string
@@ -750,6 +786,26 @@ declare global {
           }
         >
       >
+      // SQL-table memory history (Memory-Manager WP3): the op-log display projection (newest-first;
+      // rewind target = `floor`) + a data-only rewind that drops ops at/after `fromFloor` and rebuilds
+      // the sandbox. Shapes inlined per the preload convention.
+      listChatTableOps: (
+        profileId: string,
+        chatId: string
+      ) => Promise<
+        {
+          floor: number
+          seq: number
+          kind: 'insert' | 'update' | 'delete' | 'other'
+          table: string | null
+          createdAt: string | null
+        }[]
+      >
+      rewindChatTables: (
+        profileId: string,
+        chatId: string,
+        fromFloor: number
+      ) => Promise<{ ok: true; dropped: number } | { error: string }>
       exportTableTemplateDialog: (
         profileId: string,
         templateId: string,

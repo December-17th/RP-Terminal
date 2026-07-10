@@ -1,0 +1,136 @@
+import type { BrowserWindow, IpcMainInvokeEvent, WebContents } from 'electron'
+import { log } from '../services/logService'
+
+/**
+ * Main-side sender gating for the "real-harm" IPC channels (card-trust-boundary issue 02).
+ *
+ * The full preload surface is exposed as `window.api`, so a same-origin card iframe (or any WCV
+ * page that reaches these channels) could invoke handlers that destroy the storage layer, steal
+ * credentials, or reach the host. Trust (a user consenting to run a card's scripts) covers profile
+ * *content* — NOT the data directory, API keys, or the host. Main is the enforcement point: the
+ * gated handlers below run ONLY for the app's own top frame.
+ *
+ * `GATED_CHANNELS` is the single greppable source of truth; `gate(channel, handler)` is applied
+ * per-handler (not a global hook) so the gated surface stays explicit. The per-channel rationale
+ * lives in `.scratch/card-trust-boundary/issues/02-destructive-ipc-sender-gating.md` (## Comments).
+ *
+ * NOT gated (accepted in-profile scope per PRD + owner decision log #1/#4): chat/lorebook/entry
+ * read-write-DELETE, variables, generation, chatCardVars*, asset *reads*, geometry/overlay.
+ */
+export const GATED_CHANNELS = [
+  // data-location pointer + app lifecycle (storageIpc) — storage-location + host reach
+  'set-data-location-dialog',
+  'open-data-location',
+  'reset-data-location',
+  'restart-app',
+  // profile-level destruction + credential-bearing settings write (profileIpc)
+  'wipe-profile',
+  'save-settings',
+  // whole-entity deletion (conservative default) + native card import/export dialogs (characterIpc)
+  'delete-character',
+  'import-character-dialog',
+  'export-character-dialog',
+  // Asset-manager native dialogs + host folder reveal (worldAssetIpc)
+  'asset-pick-images',
+  'asset-import-zip-dialog',
+  'asset-export-zip',
+  'asset-open-folder',
+  // table-template import/export native dialogs (tableMemoryIpc) — host-path read/write
+  'table-template-import-dialog',
+  'table-template-export-dialog',
+  // import/export native dialogs (presetIpc / regexIpc / lorebookIpc / scriptIpc / workflowIpc)
+  'import-preset-dialog',
+  'import-regex-dialog',
+  'import-lorebook-dialog',
+  'export-lorebook-dialog',
+  'import-script-dialog',
+  'import-workflow-dialog',
+  'export-workflow-dialog',
+  // plugin/grant mutation (a card must not grant itself trust) + plugin install dialogs (pluginIpc)
+  'plugin-set-grants',
+  'plugins-set-grants',
+  'plugins-set-enabled',
+  'plugins-install-dialog',
+  'plugins-install-zip-dialog',
+  // agent-pack / module / recipe transfer dialogs (agentPackIpc)
+  'agent-pack-export-dialog',
+  'agent-pack-import-dialog',
+  'module-export-dialog',
+  'module-import-dialog',
+  'recipe-export-dialog',
+  'recipe-import-dialog'
+] as const
+
+export type GatedChannel = (typeof GATED_CHANNELS)[number]
+
+/**
+ * Typed rejection handed back (as a rejected invoke) to a non-top-frame caller. It is returned via
+ * `Promise.reject`, never thrown uncaught — the renderer's `invoke` rejects and the caller fails
+ * soft; main does not crash.
+ */
+export class IpcSenderRejectedError extends Error {
+  readonly code = 'IPC_SENDER_REJECTED' as const
+  constructor(readonly channel: string) {
+    super(`ipc '${channel}': rejected — sender is not the app's top frame`)
+    this.name = 'IpcSenderRejectedError'
+  }
+}
+
+let mainWebContents: WebContents | null = null
+
+/**
+ * Wire the app's main BrowserWindow so the guard can compare senders against it. Mirrors
+ * `wcvManager.init(win)` — called once from `createWindow`. Cleared when that window closes so a
+ * stale, destroyed webContents can never be mistaken for the top frame.
+ */
+export const setGuardMainWindow = (win: BrowserWindow): void => {
+  mainWebContents = win.webContents
+  win.on('closed', () => {
+    if (mainWebContents === win.webContents) mainWebContents = null
+  })
+}
+
+/** Test/introspection seam: the WebContents the guard currently treats as the app top frame. */
+export const guardMainWebContents = (): WebContents | null => mainWebContents
+
+/**
+ * Pure predicate — is this invoke from the app's OWN top frame? True only when the sender IS the
+ * main window's webContents AND the calling frame is that webContents' `mainFrame`. A card iframe
+ * (a sub-frame of the same webContents) fails the frame check; a WCV (a different webContents)
+ * fails the sender check; a destroyed frame (`senderFrame === null`, an Electron caveat) fails.
+ * Exported so the guard can be table-driven in tests with fake events.
+ */
+export const isAppTopFrame = (
+  event: Pick<IpcMainInvokeEvent, 'sender' | 'senderFrame'>,
+  mainWc: WebContents | null
+): boolean => {
+  if (!mainWc) return false
+  const sender = event?.sender
+  if (!sender || sender !== mainWc) return false
+  const frame = event?.senderFrame
+  if (!frame) return false // destroyed frame → reject
+  return frame === sender.mainFrame
+}
+
+/* eslint-disable @typescript-eslint/no-explicit-any */
+type Handler = (event: IpcMainInvokeEvent, ...args: any[]) => unknown
+
+/**
+ * Wrap an `ipcMain.handle` handler so it runs only for the app top frame. Any other sender (card
+ * iframe, WCV page, destroyed frame) gets a logged, typed rejection: the invoke rejects (renderer
+ * fails soft) and main never throws uncaught. `channel` is typed to `GatedChannel`, so every gated
+ * handler is compile-time proven to appear in `GATED_CHANNELS`.
+ */
+export const gate = <T extends Handler>(channel: GatedChannel, handler: T): T =>
+  ((event: IpcMainInvokeEvent, ...args: any[]) => {
+    if (!isAppTopFrame(event, mainWebContents)) {
+      log(
+        'error',
+        `ipc-guard: rejected '${channel}'`,
+        'sender is not the app top frame (card iframe / WCV / destroyed frame)'
+      )
+      return Promise.reject(new IpcSenderRejectedError(channel))
+    }
+    return handler(event, ...args)
+  }) as T
+/* eslint-enable @typescript-eslint/no-explicit-any */

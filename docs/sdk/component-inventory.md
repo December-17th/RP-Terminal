@@ -234,6 +234,17 @@ transports inject the same thing (clean-room mirror of JSR's `createSrcContent`/
 | Scripted card, mode `isolated`, or full-page / `window.top` apps    | **Out-of-process `WebContentsView`** (`WcvMessageFrame`/`wcvManager`)                  | Crash isolation; full-page cards get a real `window.top`. |
 | Passive full doc / non-scripted                                     | Sandboxed `HtmlFrame` (`sandbox="allow-same-origin"`, no scripts)                      | Static, safe.                                             |
 
+**Trust gate (scripted blocks only)** — the render-mode rows above apply to a **scripted** card
+only after the owning card's persisted trust grant is consulted
+([`resolveScriptedHtmlRoute`](../../src/renderer/src/components/messageCardRouting.ts), read from
+`CardGrants.trusted`/`decided`, [pluginService.ts](../../src/main/services/pluginService.ts)):
+`trusted` → the inline/isolated choice above; **decided-but-denied** → static `HtmlFrame` (scripts
+stripped); **undecided** → forced `WcvMessageFrame` (isolated, never inline) regardless of the
+render-mode setting; **no active card** (bare model HTML) → static `HtmlFrame`. Trust is set at
+import time (`CardTrustPrompt`) and editable in Settings → Scripts; the message path never prompts.
+`InlineCardFrame` self-checks the `trusted` prop and falls back to the static frame if a caller ever
+sends an untrusted block. Script-free blocks are unaffected.
+
 Per-card override: a regex `_meta.renderMode` → a `<!--rpt:mode=inline|isolated|panel-->` marker parsed by
 `splitHtml`. Global default: `settings.cards.renderMode` (`inline`). A third mode **`panel`** PROMOTES a
 UI regex out of the message into a docked WCV **panel** (a selectable workspace view `regex-panel:<file>`,

@@ -10,6 +10,7 @@ import { listRuns } from '../services/runHistoryStore'
 import { explainTriggers, explainDocTriggers, runManualDoc } from '../services/headlessRunService'
 import { previewNextPrompt } from '../services/generation/previewService'
 import { getChat } from '../services/chatService'
+import { gate } from './ipcGuards'
 
 /**
  * IPC for the agent-pack library (agent-packs plan WP1.4). Exposes the read side the future
@@ -178,7 +179,8 @@ export const registerAgentPackIpc = (ipcMain: IpcMain): void => {
 
   // Export behind a save dialog (default filename `<id>-v<version>.rptagent`). Canceled dialog →
   // { canceled: true }. Builtin / not-installed → { ok:false, error }. Success → { saved: path }.
-  ipcMain.handle('agent-pack-export-dialog', async (event, profileId: string, packId: string) => {
+  // GATED: native save dialog writing to an arbitrary host path.
+  ipcMain.handle('agent-pack-export-dialog', gate('agent-pack-export-dialog', async (event, profileId: string, packId: string) => {
     // Resolve the pack meta first so a builtin/not-installed refusal happens BEFORE the dialog (no
     // point prompting for a file we can't write). previewAgentPackExport is the cheap read.
     const preview = transfer.previewAgentPackExport(profileId, packId)
@@ -191,19 +193,20 @@ export const registerAgentPackIpc = (ipcMain: IpcMain): void => {
     const written = transfer.writeAgentPackExport(profileId, packId, result.filePath)
     if (!written.ok) return { ok: false as const, error: written.error }
     return { saved: result.filePath }
-  })
+  }))
 
   // Import phase one: open dialog (filter .rptagent) → inspect → return the inspection report the
   // renderer's screen renders. Canceled dialog → null. The report carries a `token` (present iff the
   // file parsed) for phase two. app.getVersion() grounds the minRptVersion gate.
-  ipcMain.handle('agent-pack-import-dialog', async (event, profileId: string) => {
+  // GATED: native file picker (import from an arbitrary host path).
+  ipcMain.handle('agent-pack-import-dialog', gate('agent-pack-import-dialog', async (event, profileId: string) => {
     const result = await dialog.showOpenDialog(BrowserWindow.fromWebContents(event.sender)!, {
       properties: ['openFile'],
       filters: [{ name: 'RPT Agent Pack', extensions: ['rptagent', 'json'] }]
     })
     if (result.canceled || result.filePaths.length === 0) return null
     return transfer.inspectAgentPackFile(profileId, result.filePaths[0], transfer.appVersion())
-  })
+  }))
 
   // Import phase two: install the inspected pack (+ bundled templates) for a token. Gate stays CLOSED
   // (ADR 0005 — activation is separate). Re-checks blockers (defense-in-depth). Returns the confirm
@@ -253,9 +256,10 @@ export const registerAgentPackIpc = (ipcMain: IpcMain): void => {
 
   // Export behind a save dialog (default filename `<name>.rptmodule`). Canceled dialog → { canceled }.
   // group-not-found → { ok:false, error }. Success → { saved: path }.
+  // GATED: native save dialog writing to an arbitrary host path.
   ipcMain.handle(
     'module-export-dialog',
-    async (
+    gate('module-export-dialog', async (
       event,
       _profileId: string,
       doc: WorkflowDoc,
@@ -273,19 +277,20 @@ export const registerAgentPackIpc = (ipcMain: IpcMain): void => {
       if (result.canceled || !result.filePath) return { canceled: true as const }
       moduleTransfer.writeModuleExport(built.module, result.filePath, built.bundledTemplates)
       return { saved: result.filePath }
-    }
+    })
   )
 
   // Import phase one: open dialog (filter .rptmodule) → inspect → return the report the sheet renders.
   // Canceled dialog → null. The report carries a `token` (present iff the file parsed) for phase two.
-  ipcMain.handle('module-import-dialog', async (event, profileId: string) => {
+  // GATED: native file picker (import from an arbitrary host path).
+  ipcMain.handle('module-import-dialog', gate('module-import-dialog', async (event, profileId: string) => {
     const result = await dialog.showOpenDialog(BrowserWindow.fromWebContents(event.sender)!, {
       properties: ['openFile'],
       filters: [{ name: 'RPT Module', extensions: ['rptmodule', 'json'] }]
     })
     if (result.canceled || result.filePaths.length === 0) return null
     return moduleTransfer.inspectModuleFile(profileId, result.filePaths[0])
-  })
+  }))
 
   // Import phase two: install bundled templates main-side + return the module payload to the renderer
   // (it inserts the graph into the edited doc). Re-checks blockers (defense-in-depth). `cancel-import`
@@ -316,9 +321,10 @@ export const registerAgentPackIpc = (ipcMain: IpcMain): void => {
 
   // Export behind a save dialog (default filename `<name>.rptrecipe`). Canceled dialog → { canceled }.
   // no-activated-packs → { ok:false, error }. Success → { saved: path }.
+  // GATED: native save dialog writing to an arbitrary host path.
   ipcMain.handle(
     'recipe-export-dialog',
-    async (event, profileId: string, worldId: string, opts: recipeTransfer.BuildRecipeOpts) => {
+    gate('recipe-export-dialog', async (event, profileId: string, worldId: string, opts: recipeTransfer.BuildRecipeOpts) => {
       // Assemble first so a no-activated-packs refusal happens BEFORE the dialog (no point prompting for
       // a file we can't write). previewRecipeExport is the cheap read of the same core.
       const preview = recipeTransfer.previewRecipeExport(profileId, worldId, opts)
@@ -331,21 +337,22 @@ export const registerAgentPackIpc = (ipcMain: IpcMain): void => {
       const written = recipeTransfer.writeRecipeExport(profileId, worldId, opts, result.filePath)
       if (!written.ok) return { ok: false as const, error: written.error }
       return { saved: result.filePath }
-    }
+    })
   )
 
   // Import phase one: open dialog (filter .rptrecipe) → inspect → return the inspection report the
   // wizard renders. Canceled dialog → null. The report carries per-pack sub-reports, a narrator report,
   // template plans, the recipe-level `blocked` verdict, and a `token` (present iff the file parsed) for
   // phase two.
-  ipcMain.handle('recipe-import-dialog', async (event, profileId: string) => {
+  // GATED: native file picker (import from an arbitrary host path).
+  ipcMain.handle('recipe-import-dialog', gate('recipe-import-dialog', async (event, profileId: string) => {
     const result = await dialog.showOpenDialog(BrowserWindow.fromWebContents(event.sender)!, {
       properties: ['openFile'],
       filters: [{ name: 'RPT Recipe', extensions: ['rptrecipe', 'json'] }]
     })
     if (result.canceled || result.filePaths.length === 0) return null
     return recipeTransfer.inspectRecipeFile(profileId, result.filePaths[0])
-  })
+  }))
 
   // Import phase two: apply the inspected recipe into the TARGET world (chosen NOW — the file doesn't
   // know it). Installs templates + packs (alongside per WP4.6), applies the narrator to the world's

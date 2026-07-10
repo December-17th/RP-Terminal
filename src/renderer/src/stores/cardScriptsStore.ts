@@ -11,9 +11,16 @@ import { create } from 'zustand'
 interface CardScriptsState {
   enabledByCard: Record<string, boolean>
   trustedByCard: Record<string, boolean>
+  /**
+   * Whether the user made an EXPLICIT trust decision for the card (`decided` grant). Tri-state:
+   * a `cardId` missing from the map means "grants not yet resolved" — the trust-gated message
+   * router treats that as undecided (fail-closed to WCV). Seeded alongside `trustedByCard`.
+   */
+  decidedByCard: Record<string, boolean>
   /** Seed from grants already read elsewhere, without another IPC round-trip. */
   seed: (cardId: string, enabled: boolean) => void
   seedTrust: (cardId: string, trusted: boolean) => void
+  seedDecided: (cardId: string, decided: boolean) => void
   load: (profileId: string, cardId: string) => Promise<void>
   setEnabled: (profileId: string, cardId: string, enabled: boolean) => Promise<void>
   setTrusted: (profileId: string, cardId: string, trusted: boolean) => Promise<void>
@@ -22,6 +29,7 @@ interface CardScriptsState {
 export const useCardScriptsStore = create<CardScriptsState>((set) => ({
   enabledByCard: {},
   trustedByCard: {},
+  decidedByCard: {},
 
   seed: (cardId, enabled) =>
     set((s) => ({ enabledByCard: { ...s.enabledByCard, [cardId]: enabled } })),
@@ -29,11 +37,15 @@ export const useCardScriptsStore = create<CardScriptsState>((set) => ({
   seedTrust: (cardId, trusted) =>
     set((s) => ({ trustedByCard: { ...s.trustedByCard, [cardId]: trusted } })),
 
+  seedDecided: (cardId, decided) =>
+    set((s) => ({ decidedByCard: { ...s.decidedByCard, [cardId]: decided } })),
+
   load: async (profileId, cardId) => {
     const g = await window.api.pluginGetGrants(profileId, cardId)
     set((s) => ({
       enabledByCard: { ...s.enabledByCard, [cardId]: g?.enabled !== false },
-      trustedByCard: { ...s.trustedByCard, [cardId]: g?.trusted === true }
+      trustedByCard: { ...s.trustedByCard, [cardId]: g?.trusted === true },
+      decidedByCard: { ...s.decidedByCard, [cardId]: g?.decided === true }
     }))
   },
 

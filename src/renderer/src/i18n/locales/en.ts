@@ -430,15 +430,15 @@ const en: Record<string, string> = {
   'scripts.grantTitle':
     'Grant this world permission to load & run remote code — needed for scripts that import from a CDN.',
   'scripts.grantConfirm':
-    'Allow “{{name}}” to load & run code from the internet?\n\nIts scripts gain full access to app features (generate, fetch, write chat & lore). They still run sandboxed in their own process and cannot read your API keys or app memory. Grant ONLY for a world you trust.',
+    'Trust “{{name}}”?\n\nIts scripts will run with full access to this profile’s data — worlds, lorebooks, chats, and variables, including changing or deleting them — can start AI generations using your configured API key, and may load code from the internet. Scripts are the card author’s code; RP Terminal is not responsible for their behavior. Grant ONLY for a world you trust.',
   'scripts.revokeConfirm': 'Revoke remote-code permission for “{{name}}”?',
 
   // Import-time card-script trust prompt (CardTrustPrompt).
   'trust.title': 'Trust {{name}}’s scripts?',
   'trust.body':
-    'This world ships scripts that run in an isolated process with access to this session. Only run worlds you trust.',
+    'This world includes scripts written by its author. If you trust it, they run with full access to this profile’s data — worlds, lorebooks, chats, and variables, including changing or deleting them — and can start AI generations using your configured API key. Scripts are the card author’s code; RP Terminal is not responsible for their behavior.',
   'trust.warning':
-    'Not trusting may cause the card to be defective; you can trust it later in Settings if you deny.',
+    'If you deny, the world stays playable with scripts off and its panels shown as static content. You can change this anytime in Settings → Scripts.',
   'trust.trust': 'Trust & run scripts',
   'trust.deny': 'Don’t trust',
 
@@ -579,6 +579,7 @@ const en: Record<string, string> = {
   'tables.editNoTemplate': 'No table template is assigned to this session.',
   'tables.editUnknownTable': 'That table is not part of the assigned template.',
   'tables.editBadColumn': 'That column no longer exists in the table.',
+  'tables.rewindBadFloor': 'Invalid rewind point.',
   // Per-table template prompt editor (manual-pass issue 03)
   'tables.editTemplate': 'Template prompts',
   'tables.templateEditHint':
@@ -623,6 +624,67 @@ const en: Record<string, string> = {
   'memory.tab.setup': 'Setup',
   'memory.tab.data': 'Data',
   'memory.tab.maintenance': 'Maintenance',
+  // ── Full-window Memory Manager (Memory Manager WP1) — the SQL-table memory Visualizer ─────────────
+  'memoryManager.title': 'Memory Manager',
+  'memoryManager.expand': '⛶ Full screen',
+  'memoryManager.expandTip': 'Open the full-window Memory Manager',
+  'memoryManager.sheets': 'Tables',
+  'memoryManager.sheetCount': '{{rows}} rows · {{cols}} cols',
+  'memoryManager.badgeNever': 'New',
+  'memoryManager.badgePending': '{{n}} to process',
+  'memoryManager.badgeOk': 'Caught up',
+  'memoryManager.clean': 'Saved',
+  'memoryManager.tab.data': 'Data',
+  'memoryManager.tab.structure': 'Structure',
+  'memoryManager.tab.maintenance': 'Maintenance',
+  'memoryManager.tab.history': 'History',
+  'memoryManager.structureSoon': 'Structure',
+  'memoryManager.maintenanceSoon': 'Maintenance',
+  'memoryManager.comingSoon': 'Coming soon.',
+  'memoryManager.footTemplate': 'Template: {{name}}',
+  'memoryManager.footTable': 'Table: {{name}}',
+  'memoryManager.footRows': '{{n}} rows',
+  'memoryManager.rangeLabel': 'Rows {{from}}–{{to}} of {{total}}',
+  'memoryManager.prevPage': 'Previous page',
+  'memoryManager.nextPage': 'Next page',
+  // Maintenance tab (WP2): the run-now workbench + prompt preview + progress/backfill.
+  'memoryManager.maintenance.runTitle': 'Run maintenance now',
+  'memoryManager.maintenance.runIntro':
+    'Run one maintenance pass over the recent floors, filling the tables from the transcript.',
+  'memoryManager.maintenance.lastNFloors': 'Recent floors',
+  'memoryManager.maintenance.extraHint': 'Extra instruction (optional)',
+  'memoryManager.maintenance.extraHintPlaceholder':
+    'e.g. focus on the summary table, ignore combat details…',
+  'memoryManager.maintenance.run': 'Run now',
+  'memoryManager.maintenance.running': 'Running…',
+  'memoryManager.maintenance.resultApplied':
+    'Applied {{applied}} statement(s), {{changes}} change(s).',
+  'memoryManager.maintenance.resultEmpty': 'No changes needed.',
+  'memoryManager.maintenance.noTemplate': 'Assign a table template first (in the left rail).',
+  'memoryManager.maintenance.errorNoNode': 'This session has no memory-maintenance agent to run.',
+  'memoryManager.maintenance.errorAborted': 'The maintenance call was aborted.',
+  'memoryManager.maintenance.errorFailed': 'Maintenance failed: {{message}}',
+  'memoryManager.maintenance.previewTitle': 'Preview prompt',
+  'memoryManager.maintenance.previewShow': 'Show composed prompt',
+  'memoryManager.maintenance.previewHide': 'Hide composed prompt',
+  // History tab (WP3): the table op-log + data-only rewind (undo). Rewind is destructive (drops later
+  // edits); labels use the ST terms 数据库/表格 (tables) and 撤销/回滚 (undo/rewind) in zh.
+  'memoryManager.history.intro':
+    'Every table edit is logged here. Roll the tables back to an earlier point — this drops all later edits.',
+  'memoryManager.history.undoLast': 'Undo last edit',
+  'memoryManager.history.rewindTo': 'Rewind to before this',
+  'memoryManager.history.floor': 'Floor {{n}}',
+  'memoryManager.history.kind.insert': 'Added',
+  'memoryManager.history.kind.update': 'Updated',
+  'memoryManager.history.kind.delete': 'Removed',
+  'memoryManager.history.kind.other': 'Changed',
+  'memoryManager.history.empty': 'No table edits yet.',
+  'memoryManager.history.confirmUndo':
+    'Undo the most recent table edit? This drops it and any edits after it, and cannot be undone.',
+  'memoryManager.history.confirmRewind':
+    'Roll the tables back to before floor {{n}}? This drops every table edit from that point onward and cannot be undone.',
+  'memoryManager.history.rewound': 'Rolled back {{n}} table edit(s).',
+  'memoryManager.history.rewindFailed': 'Rewind failed',
   'tables.backfill': 'Backfill',
   'tables.backfillScope': 'Scope',
   'tables.backfillLastFloors': 'Last floors',

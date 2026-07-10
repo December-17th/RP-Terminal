@@ -2,6 +2,7 @@ import { IpcMain, BrowserWindow, dialog } from 'electron'
 import * as lorebookService from '../services/lorebookService'
 import * as chatService from '../services/chatService'
 import * as worldAssetService from '../services/worldAssetService'
+import { gate } from './ipcGuards'
 
 export const registerLorebookIpc = (ipcMain: IpcMain): void => {
   ipcMain.handle('list-lorebooks', (_, profileId) => lorebookService.listLorebooks(profileId))
@@ -24,15 +25,18 @@ export const registerLorebookIpc = (ipcMain: IpcMain): void => {
     // Release the cached asset index + fs.watch handle for this world.
     worldAssetService.invalidateWorldAssets(profileId, id)
   })
-  ipcMain.handle('import-lorebook-dialog', async (event, profileId) => {
+  // NOTE: delete-lorebook stays OPEN — owner decision log #4: auto-updating card scripts legitimately
+  // create/modify/DELETE lorebooks within their profile (accepted in-profile scope). Only the native
+  // import/export DIALOGS below are gated (arbitrary host-path read/write).
+  ipcMain.handle('import-lorebook-dialog', gate('import-lorebook-dialog', async (event, profileId) => {
     const result = await dialog.showOpenDialog(BrowserWindow.fromWebContents(event.sender)!, {
       properties: ['openFile'],
       filters: [{ name: 'Lorebook / World Info', extensions: ['json'] }]
     })
     if (result.canceled || result.filePaths.length === 0) return null
     return lorebookService.importLorebookFromFile(profileId, result.filePaths[0])
-  })
-  ipcMain.handle('export-lorebook-dialog', async (event, profileId, id, name) => {
+  }))
+  ipcMain.handle('export-lorebook-dialog', gate('export-lorebook-dialog', async (event, profileId, id, name) => {
     const safeName = String(name || 'lorebook').replace(/[^\w.-]+/g, '_')
     const result = await dialog.showSaveDialog(BrowserWindow.fromWebContents(event.sender)!, {
       defaultPath: `${safeName}.json`,
@@ -40,5 +44,5 @@ export const registerLorebookIpc = (ipcMain: IpcMain): void => {
     })
     if (result.canceled || !result.filePath) return false
     return lorebookService.exportLorebookToFile(profileId, id, result.filePath)
-  })
+  }))
 }

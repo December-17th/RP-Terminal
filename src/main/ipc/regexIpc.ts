@@ -1,6 +1,7 @@
 import { IpcMain, BrowserWindow, dialog } from 'electron'
 import * as regexService from '../services/regexService'
 import { getActivePresetId } from '../services/presetService'
+import { gate } from './ipcGuards'
 
 export const registerRegexIpc = (ipcMain: IpcMain): void => {
   ipcMain.handle('get-render-regex', (_, profileId, ctx) =>
@@ -29,7 +30,8 @@ export const registerRegexIpc = (ipcMain: IpcMain): void => {
   ipcMain.handle('regex-update-rule', (_, profileId, file, index, patch) =>
     regexService.updateRule(profileId, file, index, patch)
   )
-  ipcMain.handle('import-regex-dialog', async (event, profileId) => {
+  // GATED: native file picker (import from an arbitrary host path).
+  ipcMain.handle('import-regex-dialog', gate('import-regex-dialog', async (event, profileId) => {
     const result = await dialog.showOpenDialog(BrowserWindow.fromWebContents(event.sender)!, {
       properties: ['openFile', 'multiSelections'],
       filters: [{ name: 'SillyTavern Regex', extensions: ['json'] }]
@@ -39,5 +41,5 @@ export const registerRegexIpc = (ipcMain: IpcMain): void => {
       .map((p) => regexService.importRegexFromFile(profileId, p))
       .filter(Boolean)
     return names.length
-  })
+  }))
 }
