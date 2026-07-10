@@ -14,6 +14,7 @@ export type SettingsSection =
   | 'regex'
   | 'scripts'
   | 'workflow'
+  | 'memory'
 
 /** The ephemeral runtime play-theme override (runtime-theme-api-design §3B). A card's running UI sets it
  *  via setPlayTheme/setMessageTheme; App.tsx layers these tokens OVER the static card theme on `.play-root`.

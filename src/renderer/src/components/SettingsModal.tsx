@@ -27,6 +27,7 @@ export function SettingsModal({ profileId }: { profileId: string }): React.React
   const initialSection = useUiStore((s) => s.settingsSection)
   const openWorkflowEditor = useUiStore((s) => s.openWorkflowEditor)
   const openAssetsPopup = useUiStore((s) => s.openAssetsPopup)
+  const openMemoryManager = useUiStore((s) => s.openMemoryManager)
   const activeCharacter = useCharacterStore((s) => s.activeCharacter)
   const activeChatId = useChatStore((s) => s.activeChatId)
   const [section, setSection] = useState<SettingsSection>(initialSection)
@@ -137,6 +138,26 @@ export function SettingsModal({ profileId }: { profileId: string }): React.React
             </button>
           </div>
         )
+      case 'memory':
+        return (
+          <div className="settings-launch">
+            <div className="settings-launch-icon" aria-hidden>
+              🗃
+            </div>
+            <h3 className="settings-launch-title">{t('settings.memoryTitle')}</h3>
+            <p className="settings-launch-body">{t('settings.memoryBody')}</p>
+            <button
+              className="btn-accent"
+              disabled={!activeChatId}
+              onClick={() => {
+                close()
+                openMemoryManager()
+              }}
+            >
+              {t('settings.memoryOpen')}
+            </button>
+          </div>
+        )
     }
   }
 
@@ -160,6 +181,7 @@ export function SettingsModal({ profileId }: { profileId: string }): React.React
           {railItem('scripts', t('settings.scripts'))}
           <div className="settings-rail-group">{t('settings.groupAutomation')}</div>
           {railItem('workflow', t('settings.workflow'))}
+          {railItem('memory', t('settings.memory'))}
         </div>
         <div className="settings-content">
           {section === 'app' ? content() : <div className="world-settings">{content()}</div>}

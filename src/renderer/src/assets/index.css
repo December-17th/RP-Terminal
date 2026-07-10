@@ -2863,7 +2863,7 @@ select {
 /* ── Full-window Memory Manager (MemoryManagerView.tsx, Memory Manager WP1) — a centered full-window
    popup over .modal-overlay's backdrop, mirroring .rpt-popup-modal but with an internal
    rail / main / footer layout (the shujuku Visualizer shape). All colors via --rpt-* tokens. ────── */
-.rpt-mm-modal { width:min(1240px, 96vw); height:min(820px, 92vh); background:var(--rpt-bg-secondary);
+.rpt-mm-modal { width:min(1860px, 96vw); height:min(1230px, 94vh); background:var(--rpt-bg-secondary);
   border:1px solid var(--rpt-border); border-radius:12px; display:flex; flex-direction:column;
   overflow:hidden; box-shadow:0 20px 60px rgba(0,0,0,.5); color:var(--rpt-text-primary); }
 .rpt-mm-head { flex:0 0 auto; display:flex; align-items:center; justify-content:space-between;
@@ -2945,6 +2945,71 @@ select {
   text-overflow:ellipsis; white-space:nowrap; }
 .rpt-mm-history-time { font-size:11px; color:var(--rpt-text-secondary); }
 .rpt-mm-history-rewind { flex:0 0 auto; font-size:11.5px; }
+
+/* Memory Manager — Structure tab (WP4b) */
+.rpt-mm-struct { display:flex; flex-direction:column; gap:12px; padding:4px 2px 8px; overflow:auto; }
+.rpt-mm-struct-warn { font-size:12px; line-height:1.5; padding:8px 12px; border-radius:8px;
+  color:var(--rpt-text-primary); background:color-mix(in srgb, var(--rpt-warning) 14%, transparent);
+  border:1px solid color-mix(in srgb, var(--rpt-warning) 45%, var(--rpt-border)); }
+.rpt-mm-struct-failed { font-size:12px; padding:8px 12px; border-radius:8px; color:var(--rpt-text-primary);
+  background:color-mix(in srgb, var(--rpt-danger) 14%, transparent);
+  border:1px solid color-mix(in srgb, var(--rpt-danger) 50%, var(--rpt-border)); }
+.rpt-mm-struct-warns { font-size:12px; padding:8px 12px; border-radius:8px; color:var(--rpt-text-secondary);
+  border:1px solid var(--rpt-border); }
+.rpt-mm-struct-failed ul, .rpt-mm-struct-warns ul { margin:6px 0 0; padding-left:18px;
+  display:flex; flex-direction:column; gap:2px; }
+.rpt-mm-struct-table { border:1px solid var(--rpt-border); border-radius:10px; padding:10px 12px;
+  display:flex; flex-direction:column; gap:8px; }
+.rpt-mm-struct-thead { display:flex; align-items:baseline; gap:8px; flex-wrap:wrap; }
+.rpt-mm-struct-tname { font-weight:700; color:var(--rpt-text-primary); }
+.rpt-mm-struct-tsql { font-size:11px; font-family:var(--rpt-mono, monospace); color:var(--rpt-text-secondary); }
+.rpt-mm-struct-tactions, .rpt-mm-struct-cactions { margin-left:auto; display:flex; gap:6px; }
+.rpt-mm-struct-cols { list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:4px; }
+.rpt-mm-struct-col { display:flex; align-items:center; gap:8px; padding:5px 8px; border-radius:6px;
+  background:color-mix(in srgb, var(--rpt-text-primary) 4%, transparent); }
+.rpt-mm-struct-cname { font-size:12.5px; font-family:var(--rpt-mono, monospace); color:var(--rpt-text-primary); }
+.rpt-mm-struct-addcol { display:flex; gap:6px; align-items:center; }
+.rpt-mm-struct-addcol .rpt-mm-select { flex:1; min-width:0; }
+.rpt-mm-struct-edit { display:flex; gap:6px; align-items:center; flex:1; min-width:0; flex-wrap:wrap; }
+.rpt-mm-struct-edit .rpt-mm-select { flex:1; min-width:120px; }
+.rpt-mm-danger { color:var(--rpt-danger);
+  border-color:color-mix(in srgb, var(--rpt-danger) 45%, var(--rpt-border)); }
+.rpt-mm-danger:hover:not(:disabled) { background:color-mix(in srgb, var(--rpt-danger) 16%, transparent); }
+
+/* Memory Manager — card-based Data view (feedback 2026-07-09) */
+.rpt-mm-cards { display:flex; flex-direction:column; gap:10px; padding:4px 2px 8px; overflow:auto; }
+.rpt-mm-cards-toolbar { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+.rpt-mm-cards-search { flex:0 1 200px; font-size:12px; padding:4px 8px; border-radius:6px;
+  background:var(--rpt-bg-tertiary); color:var(--rpt-text-primary); border:1px solid var(--rpt-border); }
+.rpt-mm-cards-range { font-size:11.5px; color:var(--rpt-text-secondary); margin-right:auto; }
+.rpt-mm-cards-grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(260px, 1fr));
+  gap:10px; align-items:start; }
+.rpt-mm-card { border:1px solid var(--rpt-border); border-radius:10px; padding:8px 10px 10px;
+  background:color-mix(in srgb, var(--rpt-text-primary) 3%, transparent);
+  display:flex; flex-direction:column; gap:6px; }
+.rpt-mm-card.editing { border-color:color-mix(in srgb, var(--rpt-accent) 55%, var(--rpt-border));
+  box-shadow:0 0 0 1px color-mix(in srgb, var(--rpt-accent) 30%, transparent); }
+.rpt-mm-card-head { display:flex; align-items:center; gap:8px; }
+.rpt-mm-card-id { font-size:12px; font-weight:700; font-family:var(--rpt-mono, monospace);
+  color:var(--rpt-text-secondary); }
+.rpt-mm-card-actions { margin-left:auto; display:flex; gap:6px; }
+.rpt-mm-card-actions .rpt-duel-secondary, .rpt-mm-card-actions .btn-ghost { font-size:11px; padding:2px 8px; }
+.rpt-mm-card-fields { margin:0; display:flex; flex-direction:column; gap:5px; }
+.rpt-mm-card-field { display:flex; flex-direction:column; gap:2px; }
+.rpt-mm-card-key { font-size:10.5px; font-weight:600; letter-spacing:.02em;
+  color:var(--rpt-text-secondary); font-family:var(--rpt-mono, monospace); }
+.rpt-mm-card-val { margin:0; }
+.rpt-mm-card-text { font-size:12.5px; line-height:1.45; color:var(--rpt-text-primary);
+  white-space:pre-wrap; word-break:break-word; }
+.rpt-mm-card-input { width:100%; box-sizing:border-box; resize:vertical; min-height:28px; font:inherit;
+  font-size:12.5px; line-height:1.4; padding:4px 6px; border-radius:5px; background:var(--rpt-bg-tertiary);
+  color:var(--rpt-text-primary); border:1px solid var(--rpt-border); }
+.rpt-mm-card-input:focus { outline:none; border-color:var(--rpt-accent); }
+.rpt-mm-cards-pager { display:flex; gap:4px; align-items:center; justify-content:center; flex-wrap:wrap;
+  padding-top:4px; }
+.rpt-mm-cards-pager .rpt-duel-secondary { font-size:11.5px; padding:2px 8px; min-width:28px; }
+.rpt-mm-cards-pager .rpt-duel-secondary.active { border-color:var(--rpt-accent); color:var(--rpt-accent);
+  font-weight:700; }
 .rpt-agentdetail-head { display:flex; align-items:center; justify-content:space-between; gap:8px;
   padding:12px 14px; border-bottom:1px solid var(--rpt-border); }
 .rpt-agentdetail-title { font-size:14px; font-weight:600; color:var(--rpt-text-primary); margin:0;

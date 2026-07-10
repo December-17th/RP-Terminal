@@ -100,6 +100,10 @@ const zh: Record<string, string> = {
   'settings.workflowTitle': '工作流与智能体编辑器',
   'settings.workflowBody': '节点画布需要占用整个窗口。打开它来编辑生成图、智能体与扩展包。',
   'settings.workflowOpen': '打开编辑器',
+  'settings.memory': '记忆',
+  'settings.memoryTitle': '记忆管理器',
+  'settings.memoryBody': '在全屏管理器中查看和编辑本会话的记忆表格、执行维护、撤销更改并编辑表格结构。',
+  'settings.memoryOpen': '打开记忆管理器',
   'settings.assetsTitle': '世界素材',
   'settings.assetsBody':
     '在“素材”视图中管理本世界的头像、立绘、相册、场景图与 CG — 支持拖放导入、重命名与导出。',
@@ -620,6 +624,27 @@ const zh: Record<string, string> = {
   'memoryManager.structureSoon': '结构',
   'memoryManager.maintenanceSoon': '维护',
   'memoryManager.comingSoon': '敬请期待。',
+  'memoryManager.structure.warn':
+    '结构修改会更改共享模板，并迁移所有绑定该模板的对话，且无法通过回滚撤销。',
+  'memoryManager.structure.renameTable': '重命名',
+  'memoryManager.structure.deleteTable': '删除表格',
+  'memoryManager.structure.renameColumn': '重命名',
+  'memoryManager.structure.deleteColumn': '删除',
+  'memoryManager.structure.addColumn': '新增列',
+  'memoryManager.structure.addColumnPlaceholder': '新列名',
+  'memoryManager.structure.noColumns': '暂无可编辑的列。',
+  'memoryManager.structure.confirmDropTable':
+    '从模板及所有绑定对话中删除表格“{{name}}”及其全部数据？此操作无法撤销。',
+  'memoryManager.structure.confirmDropColumn':
+    '从所有绑定对话中删除列“{{name}}”及其数据？此操作无法撤销。',
+  'memoryManager.structure.applied':
+    '已应用：{{tables}} 处表格改动，{{cols}} 处列改动，迁移 {{chats}} 个对话。',
+  'memoryManager.structure.failed': '结构修改失败',
+  'memoryManager.structure.failedTitle': '部分对话未能迁移（仍停留在旧结构——请重试）：',
+  'memoryManager.structure.failedRow': '对话 {{chat}}：{{reason}}',
+  'memoryManager.structure.warningsTitle': '警告',
+  'memoryManager.data.reset': '重置',
+  'memoryManager.data.newRow': '新行',
   'memoryManager.footTemplate': '模板：{{name}}',
   'memoryManager.footTable': '表格：{{name}}',
   'memoryManager.footRows': '{{n}} 行',
