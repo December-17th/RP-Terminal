@@ -186,3 +186,52 @@ export const synthesizeEntries = (
 
   return out
 }
+
+/**
+ * PLOT-RECALL (WP3). Render the catalogue text the recall planner sees: for every ENABLED table with
+ * `extraIndexEnabled`, the SAME body the projected index entry uses (one `renderIndexLine` per row,
+ * joined by newline, wrapped by `extraIndexInjectionTemplate`), one wrapped block per table,
+ * concatenated across tables with a blank line. Pure — takes template + reads, returns a string.
+ *
+ * Gating mirrors `synthesizeEntries`' index path EXACTLY (`enabled && extraIndexEnabled && read`), so
+ * the catalogue lists exactly the rows whose per-row entries `filterEntriesByCodes` can later fetch —
+ * a table with no matching read, disabled, or with the index off contributes nothing. An empty table
+ * still emits its wrapper around an empty body (the "header-only" extraIndex semantics). Narrowing to
+ * a subset of tables (the node's `recall_tables`) is the caller's job — pass a filtered template.
+ */
+export const renderCatalog = (template: TableTemplate, reads: TableRead[]): string => {
+  const readBySql = new Map(reads.map((r) => [r.sqlName, r]))
+  const blocks: string[] = []
+  for (const table of template.tables) {
+    const ec = table.exportConfig
+    if (!ec.enabled || !ec.extraIndexEnabled) continue
+    const read = readBySql.get(table.sqlName)
+    if (!read) continue
+    const body = read.rows
+      .map((row) => renderIndexLine(ec.extraIndexColumns, table.headers, row))
+      .join('\n')
+    blocks.push(applyTemplate(ec.extraIndexInjectionTemplate, body))
+  }
+  return blocks.join('\n\n')
+}
+
+/**
+ * PLOT-RECALL (WP3). Keep the entries whose `keys` EXACTLY contain one of `codes` (Set intersection —
+ * `'MT001'` never matches an entry keyed `'MT0012'`, unlike substring keyword matching), preserving
+ * the input (first-seen) order and capped at `cap`. Constant/index entries carry `keys: []` and so
+ * fall out naturally; invented codes match nothing and drop out. Pure filter over `synthesizeEntries`
+ * output — no SQL is built from the codes.
+ */
+export const filterEntriesByCodes = (
+  entries: LorebookEntry[],
+  codes: Iterable<string>,
+  cap: number
+): LorebookEntry[] => {
+  const codeSet = new Set(codes)
+  const out: LorebookEntry[] = []
+  for (const e of entries) {
+    if (out.length >= cap) break
+    if (e.keys.some((k) => codeSet.has(k))) out.push(e)
+  }
+  return out
+}
