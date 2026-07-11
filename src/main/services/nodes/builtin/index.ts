@@ -37,6 +37,7 @@ import { triggerState, triggerCadence, triggerManual } from './triggerNodes'
 import { historyRecent, agentLlm } from './agentNodes'
 import { memoryMaintain } from './memoryNodes'
 import { memoryRecall } from './recallNodes'
+import { notesMaintain } from './notesNodes'
 
 /** The registry of all built-in node types (Phase 2b-1b task 5, +2b-2 control/authoring nodes,
  *  +sub-graph nodes v1). Backs the default graph and any future card/workflow authoring surface
@@ -89,7 +90,8 @@ export const builtinRegistry = createRegistry([
   historyRecent,
   agentLlm,
   memoryMaintain,
-  memoryRecall
+  memoryRecall,
+  notesMaintain
 ])
 
 // subgraph.call needs the full registry (to run a nested doc's own node types via runSubgraph),
