@@ -14,6 +14,7 @@ import * as tableDbService from './tableDbService'
 import * as tableOpsService from './tableOpsService'
 import * as tableProgressService from './tableProgressService'
 import * as varsOpsService from './varsOpsService'
+import * as notesMemoryService from './notesMemoryService'
 
 interface ChatRow {
   id: string
@@ -346,6 +347,8 @@ export const deleteChat = (profileId: string, chatId: string): void => {
   // tables REFERENCE chats(id) ON DELETE CASCADE — verified). The sandbox DB file lives OUTSIDE the
   // app DB, so it must be removed explicitly.
   tableDbService.removeSandbox(profileId, chatId)
+  // The per-chat notes file (plot-recall memory) also lives OUTSIDE the app DB — remove it explicitly.
+  notesMemoryService.removeNotes(profileId, chatId)
 }
 
 /** Edit a floor's user message and/or response text, then bump updated_at. */
