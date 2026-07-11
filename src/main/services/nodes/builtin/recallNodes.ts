@@ -5,7 +5,7 @@ import { providerShape } from '../../generation/providerShape'
 import { ChatMessage } from '../../promptBuilder'
 import { TableTemplate } from '../../../types/tableTemplate'
 import { LorebookEntry } from '../../../types/character'
-import { NodeImpl } from '../types'
+import { NodeError, NodeImpl, NodeRunFailure } from '../types'
 import { interpolate } from './messageNodes'
 import {
   runLlmCall,
@@ -57,9 +57,17 @@ import { RECALL_PLANNER_MESSAGES, RECALL_DIRECTIVE } from './defaultRecallPrompt
  *      `directive` template; `report` = counts summary.
  *   5. Persist `{floor, questPlan, storyEngine}` for next turn.
  *
- * Failure = FAIL-OPEN (design §Node contract): a side-call error throws a NodeRunFailure the engine
- * routes on the wired `error` port (matching `memory.maintain`); wired as a branch fragment (WP5's
- * example workflow) it fails open even in the pre-phase, so the turn is never blocked by recall.
+ * Failure = FAIL-OPEN, wiring-independent (design §Node contract: "never block the turn"). This node
+ * is a PRE-phase ancestor of the main output when wired ctx → recall → assemble.block, and the
+ * engine's throw path is FATAL for an unwired pre-phase failure (workflowEngine runNodes — the
+ * `phase === 'pre' && !state.failOpen.has(id)` rule; `state.failOpen` only fills from composed-pack
+ * branch modes, so a hand-wired doc gets no fail-open shield). memory.maintain can afford to throw
+ * because it is post-phase; recall must NOT. So a runtime side-call failure is CAUGHT inside run()
+ * and returned as a value: no `block` output (assemble reads its `block` input unwired — the narrator
+ * spine shape), the NodeError-shaped value emitted on the node's OWN `error` output (the engine
+ * delivers node-returned outputs verbatim, so a wired `error` edge receives it and an unwired one is
+ * inert), and the failure kept observable via `report` + the run-trace `debug`. Config/schema errors
+ * keep normal semantics (the engine parses config BEFORE run()).
  */
 
 const recallMessageSchema = z.object({
@@ -241,9 +249,30 @@ export const memoryRecall: NodeImpl = {
     const promptDebug = composedPromptDebug(sendMessages)
 
     // 3. One side call — stream defaults to false (a planner reply is never the player-facing stream).
+    // FAIL-OPEN (see the module header): a runtime side-call failure must never abort the turn, and
+    // this node runs PRE-phase where an uncaught throw with `error` unwired is fatal. So the failure
+    // is caught HERE and returned as a value on the node's own `error` output — a wired error edge
+    // receives it, an unwired one is inert, and the missing `block` output leaves assemble's `block`
+    // input unwired (the narrator-spine shape). The turn always generates.
     const params = presetParamsWithTemperature(gen, cfg.temperature)
     const callCfg = buildLlmCallConfig(cfg)
-    const r = await runLlmCall(ctx, gen, sendMessages, params, callCfg)
+    let r: Awaited<ReturnType<typeof runLlmCall>>
+    try {
+      r = await runLlmCall(ctx, gen, sendMessages, params, callCfg)
+    } catch (err) {
+      const f = err instanceof NodeRunFailure ? err : undefined
+      const nodeError: NodeError = {
+        kind: f?.kind ?? 'A',
+        message: err instanceof Error ? err.message : String(err),
+        ...(f?.code !== undefined ? { code: f.code } : {}),
+        nodeId: node.id,
+        attempts: f?.attempts ?? 1
+      }
+      return {
+        outputs: { report: `recall failed open: ${nodeError.message}`, error: nodeError },
+        debug: { ...promptDebug, 'recall error (failed open)': nodeError.message }
+      }
+    }
     // Abort-with-empty: nothing to plan; still trace the prompt so the empty result is diagnosable.
     if (r === null) return { outputs: {}, debug: promptDebug }
 

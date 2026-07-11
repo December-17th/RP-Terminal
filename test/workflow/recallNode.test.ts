@@ -289,8 +289,30 @@ describe('memory.recall — fail-open', () => {
     expect(res.debug!['prompt (sent)']).toBeTruthy()
   })
 
-  it('a side-call error throws a NodeRunFailure (engine routes it on the error port)', async () => {
+  it('a side-call error NEVER throws (pre-phase turn safety): no block, error emitted as a value', async () => {
+    // recall is a PRE-phase ancestor of the main output; an uncaught throw with `error` unwired would
+    // be FATAL for the turn (workflowEngine's pre-phase rule — state.failOpen is empty for hand-wired
+    // docs). The node must therefore complete normally: no `block` output (assemble reads unwired),
+    // the NodeError-shaped value returned on its OWN `error` output, failure observable via
+    // report/debug.
     mockRun.runLlmCall.mockRejectedValue(new NodeRunFailure('A', 'boom', 1, 'bad-preset'))
-    await expect(runRecall(makeCtx(), makeGen(), config())).rejects.toThrow('boom')
+    const res = await runRecall(makeCtx(), makeGen(), config())
+    expect(res.outputs!.block).toBeUndefined()
+    expect(res.outputs!.error).toMatchObject({
+      kind: 'A',
+      message: 'boom',
+      code: 'bad-preset',
+      nodeId: 'recall',
+      attempts: 1
+    })
+    expect(res.outputs!.report).toContain('failed open')
+    expect(res.debug!['recall error (failed open)']).toBe('boom')
+  })
+
+  it('a plain (non-NodeRunFailure) side-call error also fails open with class-A defaults', async () => {
+    mockRun.runLlmCall.mockRejectedValue(new Error('socket hang up'))
+    const res = await runRecall(makeCtx(), makeGen(), config())
+    expect(res.outputs!.block).toBeUndefined()
+    expect(res.outputs!.error).toMatchObject({ kind: 'A', message: 'socket hang up', attempts: 1 })
   })
 })
