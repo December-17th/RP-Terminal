@@ -32,7 +32,7 @@ import { useComposerStore } from './stores/composerStore'
 import { useWcvFreezeStore } from './stores/wcvFreezeStore'
 import { initSlash } from './plugin/slash'
 import { broadcastHostEvent, initCardEventBridge } from './cardBridge/hostBroadcast'
-import { applyTheme, applyChromeScheme, chromeTokensFor, colorSchemeOf } from './theme'
+import { applyThemeForScheme, colorSchemeOf } from './theme'
 import { deriveCardTheme } from './cardTheme'
 import { useUiStore } from './stores/uiStore'
 import {
@@ -239,31 +239,21 @@ export default function App(): React.ReactElement {
     )
   }, [settings?.ui?.font_size])
 
-  // Apply the selected theme's token set whenever it changes (and on first settings load).
-  useEffect(() => {
-    applyTheme(settings?.ui?.theme)
-  }, [settings?.ui?.theme])
-
   // The single EFFECTIVE light/dark axis for the whole shell: a card's session-scoped override
   // (rptHost.setColorScheme) if set, else the app theme's natural axis. It drives, uniformly:
-  //  (1) the app-scoped chrome tokens on <html> (title strip + message-box background fallback),
-  //  (2) the WCV surface sync (setColorSchemeCache → main → `data-rpt-mode` / getColorScheme), and
-  //  (3) the OS window-control overlay (Windows custom title bar).
-  // So a card that flips the scheme flips the chrome, the card surfaces, and the native buttons together.
+  //  (1) the FULL app token set on <html> — including `--rpt-text-primary`, so generated/story text follows
+  //      the axis (not just the chrome), plus the `--rpt-app-*` chrome tokens and the OS overlay, and
+  //  (2) the WCV surface sync (setColorSchemeCache → main → `data-rpt-mode` / getColorScheme).
+  // So the card's mode toggle and the app theme picker share ONE axis: each flips the app chrome, the app
+  // body text, the card surfaces, and the native buttons together. (Runs on first settings load too.)
   const effectiveScheme = cardColorScheme ?? colorSchemeOf(settings?.ui?.theme)
   useEffect(() => {
-    applyChromeScheme(settings?.ui?.theme, effectiveScheme)
+    applyThemeForScheme(settings?.ui?.theme, effectiveScheme)
     try {
       // Push the EFFECTIVE axis (not the raw app theme) so WCV card surfaces follow it too.
       window.api.setColorSchemeCache(effectiveScheme)
     } catch {
       /* no api (test/SSR) */
-    }
-    const chrome = chromeTokensFor(settings?.ui?.theme, effectiveScheme)
-    try {
-      window.api?.setTitlebarOverlay?.({ color: chrome.bg, symbolColor: chrome.text })
-    } catch {
-      /* non-Windows: no overlay */
     }
   }, [settings?.ui?.theme, effectiveScheme])
 

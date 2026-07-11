@@ -157,6 +157,16 @@ export function colorSchemeOf(id: string | undefined): 'light' | 'dark' {
   return 0.2126 * r + 0.7152 * g + 0.0722 * b > 128 ? 'light' : 'dark'
 }
 
+/** The theme whose token set should paint the app for an EFFECTIVE light/dark scheme: the chosen theme
+ *  when it already sits on that axis (so Carbon vs Midnight stay distinct), else the canonical built-in
+ *  theme for the axis — the case where a card FORCES the opposite scheme (rptHost.setColorScheme) or the
+ *  app theme's own axis differs. Shared by chromeTokensFor (chrome tokens) and applyThemeForScheme (full
+ *  token set) so both follow the SAME light/dark axis. */
+function sourceThemeFor(themeId: string | undefined, scheme: 'light' | 'dark'): ThemeDef {
+  const chosen = (themeId && THEMES[themeId]) || THEMES[DEFAULT_THEME_ID]
+  return colorSchemeOf(chosen.id) === scheme ? chosen : THEMES[scheme]
+}
+
 /**
  * The APP-scoped chrome surface (title strip, message box, chat panel body + header) for an effective
  * light/dark scheme. Distinct from the card token map: a card's `.play-root` inline tokens can shadow
@@ -169,8 +179,7 @@ export function chromeTokensFor(
   themeId: string | undefined,
   scheme: 'light' | 'dark'
 ): { bg: string; bgPrimary: string; text: string; border: string } {
-  const theme = (themeId && THEMES[themeId]) || THEMES[DEFAULT_THEME_ID]
-  const src = colorSchemeOf(theme.id) === scheme ? theme.tokens : THEMES[scheme].tokens
+  const src = sourceThemeFor(themeId, scheme).tokens
   return {
     // `bg` is the SECONDARY surface (title strip, message box, chat panel body); `bgPrimary` is the
     // deeper base the chat panel HEADER mixes over so it stays distinct from the body.
@@ -196,23 +205,35 @@ export function applyChromeScheme(themeId: string | undefined, scheme: 'light' |
   root.style.setProperty('--rpt-app-border', c.border)
 }
 
-/** Apply a theme by id: set its token vars on <html>. Unknown/undefined id falls back to the default. */
-export function applyTheme(id: string | undefined): void {
+/**
+ * Apply the FULL app token set for an EFFECTIVE light/dark scheme (not just the chrome tokens). The whole
+ * UI — including generated/story text via `--rpt-text-primary` — follows the effective axis, so a card that
+ * flips light/dark (rptHost.setColorScheme) repaints the app exactly the way the app theme picker would, and
+ * the app theme picker likewise drives the card: one shared axis. `data-rpt-theme` keeps the CHOSEN theme id
+ * (the user's pick); the tokens + chrome + overlay come from the axis-appropriate source theme.
+ */
+export function applyThemeForScheme(themeId: string | undefined, scheme: 'light' | 'dark'): void {
   if (typeof document === 'undefined') return
-  const theme = (id && THEMES[id]) || THEMES[DEFAULT_THEME_ID]
+  const chosen = (themeId && THEMES[themeId]) || THEMES[DEFAULT_THEME_ID]
+  const src = sourceThemeFor(themeId, scheme)
   const root = document.documentElement
-  for (const [k, v] of Object.entries(theme.tokens)) root.style.setProperty(k, v)
-  root.dataset.rptTheme = theme.id
-  // Seed the app-scoped chrome tokens to this theme's natural axis. App.tsx re-applies them with the
-  // EFFECTIVE axis (card override ?? natural) so a card that flips the scheme repaints the chrome too.
-  applyChromeScheme(theme.id, colorSchemeOf(theme.id))
-  // Keep the Windows window-control overlay (custom title bar) in step with the theme.
+  for (const [k, v] of Object.entries(src.tokens)) root.style.setProperty(k, v)
+  root.dataset.rptTheme = chosen.id
+  // Chrome tokens (`--rpt-app-*`, unshadowable by a card) follow the same effective axis.
+  applyChromeScheme(themeId, scheme)
+  // Keep the Windows window-control overlay (custom title bar) in step with the effective scheme.
   try {
     window.api?.setTitlebarOverlay?.({
-      color: theme.tokens['--rpt-bg-secondary'],
-      symbolColor: theme.tokens['--rpt-text-primary']
+      color: src.tokens['--rpt-bg-secondary'],
+      symbolColor: src.tokens['--rpt-text-primary']
     })
   } catch {
     /* no titlebar overlay (non-Windows) */
   }
+}
+
+/** Apply a theme by id on its NATURAL light/dark axis (the no-card-override case). Thin wrapper over
+ *  applyThemeForScheme. Unknown/undefined id falls back to the default. */
+export function applyTheme(id: string | undefined): void {
+  applyThemeForScheme(id, colorSchemeOf(id))
 }
