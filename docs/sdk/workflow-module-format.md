@@ -140,6 +140,51 @@ working; `memory.maintain` is additive.
 **Example:** `docs/workflows/memory-maintain.rptflow` (trigger → `control.mode` → `memory.maintain`,
 mirroring the seeded Default v2) — import it, bind a table template, and flip the Mode setting.
 
+## The plot-recall nodes — `memory.recall` + `notes.maintain` (plot-recall v1)
+
+Two additional builtin nodes (branch `feat/plot-recall`, 2026-07-11) that add an **LLM-selected
+plot-recall** layer over the existing SQL-table memory + a per-chat prose **notes** corpus. Both are
+registered in `builtin/index.ts`; both are **inert until wired** (no seeding, no settings flag —
+opt-in = wiring). Full design + as-built deviations:
+`docs/plot-recall-memory-design.md` (internal, local-only).
+
+- **`memory.recall`** (`src/main/services/nodes/builtin/recallNodes.ts`) — a **pre-turn planner**
+  (turn-coupled, NOT an agent). Inputs `gen: Context`, `when: Signal`; outputs `block: Text`,
+  `report: Text`, `error: Error`; config extends the shared LLM knobs (`llmCallConfigSchema`) plus
+  `messages` (planner scaffold, `promptFields`-routed to the Prompt editor), `temperature?`,
+  `lastNFloors?` (3), `max_rows?` (24), `max_note_sections?` (6), `max_chars?`, `directive?` (the
+  compose template), `recall_tables?` (csv). Per turn it builds the 纪要索引 **catalogue**
+  (`renderCatalog`, one line per row across `extraIndexEnabled` tables) + the notes TOC, makes **one
+  side LLM call**, parses `<Recall>` MT-codes / `<Query>` note greps / opaque
+  `<QuestPlan>`/`<StoryEngine>`, **fetches the selected chronicle rows deterministically by exact
+  code** (not via the lexical matcher — invented codes drop out) capped at `max_rows`, greps the
+  notes, and composes ONE **tail** system block wired to `prompt.assemble`'s `block` port (volatile
+  tail, cache-correct). No bound catalogue table **and** empty notes → **no-op, zero model calls**
+  (byte-identical prompt). **Fail-open is return-based:** a side-call failure is caught inside `run()`;
+  the node completes with no `block`, a `NodeError`-shaped value on `error`, and a `report`/debug entry
+  — the pre-phase turn is never aborted (so the run trace shows the node as `ran` even on failure).
+  The MT-code convention is RPT-authored; matching is **generic exact-key**, so imported `AM####`
+  cards work unchanged. Default planner scaffold + compose directive live in
+  `src/main/services/nodes/builtin/defaultRecallPrompts.ts` (zh, adapted from the reference stage-3
+  task, `AM`→`MT`, bands scaled to `max_rows` 24).
+- **`notes.maintain`** (`src/main/services/nodes/builtin/notesNodes.ts`) — a **post-turn maintainer**
+  (cadence/state-gated like `memory.maintain`). Input `when: Signal`; outputs `report: Text`,
+  `error: Error`; builds its own gen (`buildGenContext`), reads the recent transcript + current notes,
+  makes one side LLM call, parses `<MemoryNote section="…" mode="append|replace">…</MemoryNote>` (a
+  small attribute-aware tag extractor added beside `extractTagAll` in `parseNodes.ts`), and
+  `mergeNotes` → `writeNotes` the per-chat markdown notes file
+  (`profiles/<id>/chat-notes/<chatId>.md`, `notesMemoryService.ts`; notes IPC surfaced as
+  `window.api.notesGet`/`notesSet` in `src/preload/index.d.ts`). No-op with no transcript **and** no
+  existing notes file. Prose-only discipline (do not restate MVU numbers / duplicate the SQL tables).
+
+**Example:** `docs/workflows/plot-recall.rptflow` — the narrator spine PLUS `memory.recall` wired
+pre-turn (`input.context → memory.recall → prompt.assemble.block`) and the seeded-Default Table-memory
+maintainer group. Bind a chronicle template whose overview + code columns are `extraIndexEnabled`:
+import `docs/workflows/plot-recall-chronicle.chatsheets.json` (an RPT-authored MT-coded 纪要 template)
+or any `AM`/`MT`-coded 纪要 template such as the 命定之诗 Can改 SQL template. The **MT-code badge** on
+the Memory Manager row cards + workspace Tables view is derived from the bound template's export config
+(the `keywords` / extraIndex `both` column, via `src/shared/memory/codeColumn.ts`).
+
 ## The seeded "Default" doc + the open-slot convention (WP-C; v2 = memory.maintain)
 
 Every profile is lazily seeded with an ordinary, EDITABLE workflow doc named **"Default"**: the
