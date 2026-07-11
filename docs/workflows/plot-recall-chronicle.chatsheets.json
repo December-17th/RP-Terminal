@@ -1,0 +1,52 @@
+{
+  "name": "Plot-Recall Chronicle (MT-coded)",
+  "mate": {
+    "type": "chatSheets",
+    "version": 2
+  },
+  "sheet_rptChronicle01": {
+    "uid": "rptChronicle01",
+    "name": "纪要表",
+    "orderNo": 0,
+    "content": [
+      ["row_id", "编码索引", "时间跨度", "地点", "纪要", "概览", "参与人员"]
+    ],
+    "updateConfig": {
+      "updateFrequency": -1
+    },
+    "sourceData": {
+      "ddl": "CREATE TABLE chronicle ( -- 纪要表\n  row_id INTEGER PRIMARY KEY, -- 行号\n  code_index TEXT NOT NULL UNIQUE CHECK(code_index GLOB 'MT[0-9][0-9][0-9][0-9]'), -- 编码索引\n  time_span TEXT NOT NULL, -- 时间跨度\n  location TEXT NOT NULL, -- 地点\n  chronicle_text TEXT NOT NULL, -- 纪要\n  summary TEXT CHECK(summary IS NULL OR LENGTH(summary) <= 80), -- 概览\n  participants TEXT -- 参与人员\n);",
+      "note": "轮次日志，每轮交互后插入一条新记录（本批剧情整体概括为恰好一行）。\n- 列1: 编码索引 - 格式为 MTXXXX，XXXX 从 0001 递增（Memory Table 记忆编码，供剧情召回引用）。同一编码全表唯一。\n- 列2: 时间跨度 - 从上一轮剧情结束时间到本轮事件结束时间之间的精确时间范围。\n  【参考格式】（按当前世界观调整年号 / 纪元）：\n  · 「X年X月X日HH:MM - HH:MM」（同日内）\n  · 「X年X月X日HH:MM - X日HH:MM」（跨日）\n  · 「X年X月X日HH:MM - X月X日HH:MM」（跨月）\n  【特例】初始化时无上轮记录则单点时间：「X年X月X日HH:MM」\n- 列3: 地点 - 当前位置~之前位置（如：铁匠铺~广场；无移动则仅填当前位置）。\n- 列4: 纪要 - 以第三方视角客观记录本轮事件，不得加入推测、情绪化语言、负面解读或主观判断；内容必须基于正文明确发生的事实，不补充未出现的情节，不少于 300 字，结尾禁止总结或升华。\n- 列5: 概览 - 高度精炼的剧情骨架，结构化句式「[主语]在[地点][行为]，[结果 / 影响]」，字数 30-60 字（不超过 80 字）。这一列会进入常驻的〈纪要索引〉目录，是召回规划器挑选 MT 编码的唯一依据，务必写清可辨识的事件骨架。\n- 列6: 参与人员 - 涉及的角色名，若存在于[重要角色表]中应与其 name 一致，多人用「,」分隔。",
+      "initNode": "故事初始化时，插入一条 MT0001 记录用于记录初始化剧情。",
+      "insertNode": "每轮交互结束后插入一条新记录，编码索引取当前最大编号 +1（形如 MT0002）。\nSQL示例: INSERT INTO chronicle (row_id, code_index, time_span, location, chronicle_text, summary, participants) VALUES ((SELECT COALESCE(MAX(row_id),0)+1 FROM chronicle), 'MT0002', '复兴纪元3年3月15日14:00 - 15:00', '王城·中央广场', '本轮纪要内容……', '里恩在中央广场接下了护送委托，触发护送任务', '里恩,守卫队长');",
+      "updateNode": "禁止操作（纪要是历史档案，既有行不可改写）。",
+      "deleteNode": "禁止删除。"
+    },
+    "exportConfig": {
+      "enabled": true,
+      "splitByRow": true,
+      "entryName": "纪要",
+      "entryType": "keyword",
+      "keywords": "编码索引",
+      "injectionTemplate": "<记忆回溯>\n$1\n</记忆回溯>",
+      "extraIndexEnabled": true,
+      "extraIndexEntryName": "纪要索引",
+      "extraIndexColumns": ["概览", "编码索引"],
+      "extraIndexColumnModes": {
+        "概览": "index_only",
+        "编码索引": "both"
+      },
+      "extraIndexInjectionTemplate": "<已发生的事件概览>\n$1\n</已发生的事件概览>",
+      "entryPlacement": {
+        "position": "at_depth_as_system",
+        "depth": 999,
+        "order": 10000
+      },
+      "extraIndexPlacement": {
+        "position": "at_depth_as_system",
+        "depth": 1000,
+        "order": 10010
+      }
+    }
+  }
+}
