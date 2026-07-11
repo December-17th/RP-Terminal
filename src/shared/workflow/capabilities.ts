@@ -88,6 +88,10 @@ const NODE_TYPE_CAPABILITY: Readonly<Record<string, CapabilityId>> = {
   // classified by its most consequential (danger-tinted) capability — the table WRITE — matching the
   // single-capability-per-type model (agent.llm is 'calls-llm' though it self-reads history too).
   'memory.maintain': 'writes-tables',
+  // memory.recall folds read-tables + read-notes + calls-llm into one PRE-turn planner; it WRITES
+  // nothing (its only side effect is per-node plan state + the projected tail block), so its most
+  // consequential capability is the model call — 'calls-llm', matching agent.llm/llm.sample.
+  'memory.recall': 'calls-llm',
   'output.writeFloor': 'writes-floors',
   'tool.startCombat': 'runs-game-tools',
   'tool.startDuel': 'runs-game-tools'
