@@ -641,6 +641,7 @@ const en: Record<string, string> = {
   'memoryManager.badgeOk': 'Caught up',
   'memoryManager.clean': 'Saved',
   'memoryManager.tab.data': 'Data',
+  'memoryManager.tab.notes': 'Notes',
   'memoryManager.tab.structure': 'Structure',
   'memoryManager.tab.maintenance': 'Maintenance',
   'memoryManager.tab.history': 'History',
@@ -669,6 +670,15 @@ const en: Record<string, string> = {
   'memoryManager.structure.warningsTitle': 'Warnings',
   'memoryManager.data.reset': 'Reset',
   'memoryManager.data.newRow': 'New row',
+  // Plot-recall (WP7): the per-row memory-code (MT####) chip + the code-column header marker.
+  'memoryManager.data.codeTip': 'Memory code — recall references this row by this code',
+  'tables.codeColumnTip': 'Memory-code column — rows are recalled by the code in this column',
+  // Notes tab (plot-recall WP7): freeform per-chat markdown notes.
+  'notes.intro': 'Freeform notes for this chat — stored alongside the tables and used by plot recall.',
+  'notes.placeholder': 'Write plot notes, TODOs, or reminders here. Use ## headings to organize sections.',
+  'notes.saving': 'Saving…',
+  'notes.unsaved': 'Unsaved changes',
+  'notes.saveFailed': 'Failed to save notes.',
   'memoryManager.footTemplate': 'Template: {{name}}',
   'memoryManager.footTable': 'Table: {{name}}',
   'memoryManager.footRows': '{{n}} rows',

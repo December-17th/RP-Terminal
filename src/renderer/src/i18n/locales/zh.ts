@@ -620,6 +620,7 @@ const zh: Record<string, string> = {
   'memoryManager.badgeOk': '已跟进',
   'memoryManager.clean': '已保存',
   'memoryManager.tab.data': '数据',
+  'memoryManager.tab.notes': '笔记',
   'memoryManager.tab.structure': '结构',
   'memoryManager.tab.maintenance': '维护',
   'memoryManager.tab.history': '历史',
@@ -647,6 +648,15 @@ const zh: Record<string, string> = {
   'memoryManager.structure.warningsTitle': '警告',
   'memoryManager.data.reset': '重置',
   'memoryManager.data.newRow': '新行',
+  // 剧情召回（WP7）：每行的记忆编码（MT####）标签 + 编码列表头标记。
+  'memoryManager.data.codeTip': '记忆编码 —— 召回通过此编码引用本行',
+  'tables.codeColumnTip': '记忆编码列 —— 召回通过此列中的编码定位行',
+  // 笔记标签页（剧情召回 WP7）：本对话的自由格式 Markdown 笔记。
+  'notes.intro': '本对话的自由格式笔记 —— 与表格一同保存，供剧情召回使用。',
+  'notes.placeholder': '在此记录剧情笔记、待办或提醒。可用 ## 标题划分章节。',
+  'notes.saving': '保存中…',
+  'notes.unsaved': '有未保存的更改',
+  'notes.saveFailed': '笔记保存失败。',
   'memoryManager.footTemplate': '模板：{{name}}',
   'memoryManager.footTable': '表格：{{name}}',
   'memoryManager.footRows': '{{n}} 行',

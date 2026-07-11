@@ -25,6 +25,7 @@ import type { TableStatusLike } from '../workspace/tableGridModel'
 import { TableCards, type CellChange } from './TableCards'
 import { MemoryPane } from '../workspace/MemoryPane'
 import { MemoryPreview } from '../workflow/MemoryMaintainPanel'
+import { codeColumnOf } from '../../../../shared/memory/codeColumn'
 
 const api = (): any => (window as unknown as { api: any }).api
 
@@ -45,7 +46,7 @@ interface TableOpView {
   table: string | null
   createdAt: string | null
 }
-type Tab = 'data' | 'structure' | 'maintenance' | 'history'
+type Tab = 'data' | 'notes' | 'structure' | 'maintenance' | 'history'
 
 export function MemoryManagerView({ profileId }: { profileId: string }): React.JSX.Element | null {
   const open = useUiStore((s) => s.memoryManagerOpen)
@@ -234,6 +235,10 @@ export function MemoryManagerView({ profileId }: { profileId: string }): React.J
 
   const assignedName = templates.find((tpl) => tpl.id === assignedId)?.name ?? null
   const active = tables.find((tb) => tb.sqlName === activeTable) ?? null
+  // Plot-recall (WP7): the active table's memory-code column (RPT's MT#### convention), derived from
+  // its exportConfig via the shared helper — powers the code chip TableCards renders on each row card.
+  const activeDef = active ? findDef(active) : null
+  const codeColumn = activeDef?.exportConfig ? codeColumnOf(activeDef.exportConfig) : null
 
   return (
     <div className="modal-overlay" onClick={close}>
@@ -342,7 +347,7 @@ export function MemoryManagerView({ profileId }: { profileId: string }): React.J
                 </div>
 
                 <div className="rpt-mm-tabs" role="tablist">
-                  {(['data', 'structure', 'maintenance', 'history'] as const).map((tb) => (
+                  {(['data', 'notes', 'structure', 'maintenance', 'history'] as const).map((tb) => (
                     <button
                       key={tb}
                       type="button"
@@ -366,7 +371,8 @@ export function MemoryManagerView({ profileId }: { profileId: string }): React.J
                       <TableCards
                         key={active.sqlName}
                         table={active}
-                        headers={findDef(active)?.headers}
+                        headers={activeDef?.headers}
+                        codeColumn={codeColumn ?? undefined}
                         pageSize={10}
                         onSaveRow={(rowid, changes) => saveRowCells(active.sqlName, rowid, changes)}
                         onInsertRow={(values) => insertRow(active.sqlName, values)}
@@ -375,6 +381,9 @@ export function MemoryManagerView({ profileId }: { profileId: string }): React.J
                         }
                       />
                     ))}
+                  {tab === 'notes' && (
+                    <NotesTab key={activeChatId} profileId={profileId} chatId={activeChatId} />
+                  )}
                   {tab === 'structure' && (
                     <StructureTab
                       profileId={profileId}
@@ -422,6 +431,83 @@ export function MemoryManagerView({ profileId }: { profileId: string }): React.J
             </div>
           </>
         )}
+      </div>
+    </div>
+  )
+}
+
+/**
+ * The Notes tab (plot-recall WP7) — the per-chat freeform markdown notes store (WP2's notesGet/notesSet
+ * preload surface). Notes live independently of any table template (the pane shows even with no template
+ * assigned). Editing is EXPLICIT, matching the Data tab's per-card idiom: a local draft with dirty
+ * tracking + Save / Reset buttons that disable when the draft is clean or a save is in flight. Saving an
+ * empty/whitespace body removes the file main-side (idempotent, per the WP2 contract).
+ */
+const NotesTab: React.FC<{ profileId: string; chatId: string }> = ({ profileId, chatId }) => {
+  const t = useT()
+  // `saved` = the last-persisted body; `draft` = the editable buffer. dirty = they differ.
+  const [saved, setSaved] = React.useState('')
+  const [draft, setDraft] = React.useState('')
+  const [loading, setLoading] = React.useState(true)
+  const [busy, setBusy] = React.useState(false)
+
+  const load = React.useCallback(async () => {
+    setLoading(true)
+    try {
+      const text = (await api().notesGet(profileId, chatId)) ?? ''
+      setSaved(text)
+      setDraft(text)
+    } catch {
+      setSaved('')
+      setDraft('')
+    } finally {
+      setLoading(false)
+    }
+  }, [profileId, chatId])
+
+  React.useEffect(() => {
+    void load()
+  }, [load])
+
+  const dirty = draft !== saved
+  const save = async (): Promise<void> => {
+    setBusy(true)
+    try {
+      await api().notesSet(profileId, chatId, draft)
+      setSaved(draft)
+    } catch {
+      useToastStore.getState().push(t('notes.saveFailed'))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <div className="rpt-mm-notes">
+      <p className="rpt-mm-maint-intro">{t('notes.intro')}</p>
+      <textarea
+        className="rpt-mm-notes-textarea"
+        value={draft}
+        disabled={loading || busy}
+        placeholder={t('notes.placeholder')}
+        onChange={(e) => setDraft(e.target.value)}
+      />
+      <div className="rpt-mm-notes-bar">
+        <button
+          className="rpt-mm-maint-run"
+          disabled={!dirty || busy || loading}
+          onClick={() => void save()}
+        >
+          {busy ? t('notes.saving') : t('common.save')}
+        </button>
+        <button
+          className="btn-ghost"
+          disabled={!dirty || busy || loading}
+          onClick={() => setDraft(saved)}
+        >
+          {t('memoryManager.data.reset')}
+        </button>
+        {dirty && <span className="rpt-mm-notes-dirty">{t('notes.unsaved')}</span>}
       </div>
     </div>
   )
