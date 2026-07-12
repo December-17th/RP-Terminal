@@ -68,4 +68,21 @@ describe('sandbox lodash/faker subset (WS-4)', () => {
   it('console is a no-op (present, does not throw)', () => {
     expect(out('<% console.log("x"); console.warn("y") %>ok')).toBe('ok')
   })
+
+  it('_.chain(...).filter(...).flatMap(...).value() — the 命定之诗 status panel pattern', () => {
+    // Mirrors getVisibleAscensionFieldsForPerson in the 艾莉亚 "variables" lorebook entry, which threw
+    // "_.chain is not a function" (status_current_variables came out empty → stats never reached the AI).
+    const tmpl =
+      "<% var level=15; var out=_.chain([" +
+      "{level:13,fields:['a']},{level:17,fields:['b']},{level:21,fields:['c']},{level:25,fields:['d','e']}" +
+      "]).filter(function(t){return level>=t.level}).flatMap('fields').value() %><%= out.join(',') %>"
+    expect(out(tmpl)).toBe('a')
+    expect(out(tmpl.replace('level=15', 'level=25'))).toBe('a,b,c,d,e')
+    expect(out(tmpl.replace('level=15', 'level=10'))).toBe('')
+  })
+
+  it('_.tap / _.thru pass through and transform', () => {
+    expect(out('<% var seen=0; _.tap([1,2], function(a){seen=a.length}) %><%= seen %>')).toBe('2')
+    expect(out('<%= _.thru(4, function(n){return n*3}) %>')).toBe('12')
+  })
 })
