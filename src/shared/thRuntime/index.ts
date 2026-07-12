@@ -486,6 +486,8 @@ export function createThRuntime(host: Host): ThGlobals {
     },
     triggerSlash: (c: any) => runTriggerSlash(String(c ?? '')),
     assetUrl: (name: string, type: string, mood?: string) => host.assetUrl(name, type, mood),
+    sceneAssetUrl: (location: string, type: '全景' | '背景') =>
+      host.sceneAssetUrl?.(location, type) ?? host.assetUrl(location, type),
     // Enumerate one entry's variants for the card's world (WA-3) — a bare read global in the same family
     // as assetUrl. Behavior lives in the shared runtime so both transports inherit it; the transport Host
     // forwards to the app (WCV: worldAssetService.assetListForWorld; inline: cardBridge/host.ts).

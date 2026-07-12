@@ -39,6 +39,31 @@ describe('createThRuntime exposes assetUrl to the card page', () => {
   })
 })
 
+describe('createThRuntime exposes sceneAssetUrl to the card page', () => {
+  it('forwards to a scene-aware host', async () => {
+    const sceneAssetUrl = vi.fn(async () => 'rptasset://p/w/location/scene.png')
+    const host = fakeHost({ sceneAssetUrl })
+    const g = createThRuntime(host)
+    expect(await g.sceneAssetUrl('内廷-皇家迎宾偏厅', '背景')).toContain('scene.png')
+    expect(sceneAssetUrl).toHaveBeenCalledWith('内廷-皇家迎宾偏厅', '背景')
+  })
+
+  it('falls back to exact assetUrl for an older host', async () => {
+    const host = fakeHost()
+    const g = createThRuntime(host)
+    await g.sceneAssetUrl('内廷-皇家迎宾偏厅', '全景')
+    expect(host.assetUrl).toHaveBeenCalledWith('内廷-皇家迎宾偏厅', '全景')
+  })
+
+  it('also exposes sceneAssetUrl on TavernHelper', async () => {
+    const sceneAssetUrl = vi.fn(async () => 'rptasset://p/w/location/scene.png')
+    const host = fakeHost({ sceneAssetUrl })
+    const g = createThRuntime(host)
+    await g.TavernHelper.sceneAssetUrl('宏伟皇宫-内廷', '背景')
+    expect(sceneAssetUrl).toHaveBeenCalledWith('宏伟皇宫-内廷', '背景')
+  })
+})
+
 // WA-3: assetList + requestAssetImport ride the SAME Host seam, so pinning the shared facade proves both
 // transports (inline cardBridge + WCV wcvPreload) inherit them identically — the parity guarantee.
 describe('createThRuntime exposes assetList to the card page (WA-3)', () => {

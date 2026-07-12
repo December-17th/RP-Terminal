@@ -349,6 +349,15 @@ export function createInlineHost(ctx: CardCtx): Host {
         return null
       }
     },
+    sceneAssetUrl: async (location: string, type: '全景' | '背景') => {
+      try {
+        const own = cardCharacterId()
+        const ids = useLorebookStore.getState().sessionIds ?? (own ? [own] : [])
+        return await window.api.sceneAssetUrl(ctx.profileId, ids, location, type)
+      } catch {
+        return null
+      }
+    },
     // Enumerate one entry's variants for this card's world (WA-3). Resolves the session lorebook ids the
     // same way assetUrl does; main applies the id precedence + category inference. Empty array on error.
     assetList: async (name: string, type: string) => {

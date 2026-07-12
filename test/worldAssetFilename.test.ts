@@ -42,6 +42,14 @@ describe('parseAssetFilename', () => {
       ext: 'jpeg'
     })
   })
+  it('parses a stage portrait variant with the jpe extension', () => {
+    expect(parseAssetFilename('爱莎_立绘_舞台.jpe')).toEqual({
+      name: '爱莎',
+      type: '立绘',
+      mood: '舞台',
+      ext: 'jpe'
+    })
+  })
   // 相册/CG join ASSET_TYPES with NO parser change — the right-to-left type scan finds them.
   it('parses a 相册 gallery cover (base) and a numbered slot', () => {
     expect(parseAssetFilename('薇拉_相册.png')).toEqual({
