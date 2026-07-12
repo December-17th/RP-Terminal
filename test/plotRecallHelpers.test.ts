@@ -12,6 +12,7 @@ import {
   filterEntriesByCodes
 } from '../src/main/services/tableExportService'
 import { codeColumnOf } from '../src/shared/memory/codeColumn'
+import { buildPlotBlock } from '../src/main/services/nodes/builtin/recallNodes'
 
 // WP3 pure recall helpers, tested against the REAL 命定之诗 template's exportConfigs. Rows are
 // hand-built positional TableRead arrays (no SQL runs). We pin: the catalogue rendering + gating +
@@ -145,6 +146,46 @@ describe('filterEntriesByCodes', () => {
   it('cap <= 0 returns nothing', () => {
     const entries = entriesFor(['MT001'])
     expect(filterEntriesByCodes(entries, ['MT001'], 0)).toEqual([])
+  })
+})
+
+describe('buildPlotBlock — beautification-regex contract', () => {
+  // The EXACT `findRegex` of the user-installed 剧情推进美化正则 (profile regex 20de25c7…). The plot
+  // block MUST match this so the renderer's beautifier fires; the render JS then re-parses the tags.
+  const FIND_REGEX =
+    /(^\s*(?:(?:以下|以上)是(?:用户|Participant)的本轮输入|<用户本轮输入>)[\s\S]*$)/m
+  // getTag(raw, tag) as the beautifier's JS defines it: an attribute-tolerant CLOSED-tag extractor.
+  const getTag = (text: string, tag: string): string | null => {
+    const m = new RegExp('<' + tag + '(?=[\\s>])[^>]*>([\\s\\S]*?)<\\/' + tag + '>', 'i').exec(text)
+    return m ? m[1].trim() : null
+  }
+
+  it('output matches findRegex AND embeds the QuestPlan/Recall/StoryEngine tags verbatim', () => {
+    const block = buildPlotBlock({
+      action: '走向黑塔',
+      questPlan: '<QuestPlan>主线：抵达塔顶</QuestPlan>',
+      recall: 'MT0001, MT0003',
+      storyEngine: '节奏：紧张'
+    })
+    // (a) findRegex fires — the block opens with the <用户本轮输入> marker.
+    expect(FIND_REGEX.test(block)).toBe(true)
+    // (b) the render JS can extract each planning family the beautifier reads.
+    expect(getTag(block, '用户本轮输入')).toBe('走向黑塔')
+    // renderQuestPlan uses /<QuestPlan>([\s\S]*?)<\/QuestPlan>/i — present.
+    expect(/<QuestPlan>[\s\S]*?<\/QuestPlan>/i.test(block)).toBe(true)
+    // buildPlotBlock maps MT→AM in the <Recall> body so the beautifier's /AM\d+/ extractor populates.
+    expect(getTag(block, 'Recall')).toBe('AM0001, AM0003')
+    expect(getTag(block, 'StoryEngine')).toBe('节奏：紧张')
+  })
+
+  it('always keeps the <用户本轮输入> marker (so findRegex fires) even with all planning bodies empty', () => {
+    const block = buildPlotBlock({ action: '', questPlan: '', recall: '', storyEngine: '' })
+    expect(FIND_REGEX.test(block)).toBe(true)
+    expect(block).toContain('<用户本轮输入>')
+    // Empty families are dropped — no stray empty tags.
+    expect(block).not.toContain('<QuestPlan>')
+    expect(block).not.toContain('<Recall>')
+    expect(block).not.toContain('<StoryEngine>')
   })
 })
 

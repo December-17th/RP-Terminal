@@ -866,6 +866,28 @@ details[open] > .stat-group-title::before {
   color: var(--rpt-text-secondary);
   animation: rpt-pulse 1.2s ease-in-out infinite;
 }
+/* Post-phase side-agent status chip (agent-activity-indicator): a low-intrusion "Updating memory…"
+   line above the chat toolbar while a post-reply agent's LLM call runs. Non-blocking, quiet. */
+.agent-activity-chip {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  align-self: flex-start;
+  margin: 4px 0;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 12px;
+  color: var(--rpt-text-secondary);
+  background: var(--rpt-surface-2, rgba(127, 127, 127, 0.1));
+  border: 1px solid var(--rpt-border, rgba(127, 127, 127, 0.25));
+}
+.agent-activity-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--rpt-accent, #5b8def);
+  animation: rpt-pulse 1.2s ease-in-out infinite;
+}
 @keyframes rpt-pulse {
   0%,
   100% {
@@ -1522,6 +1544,44 @@ details[open] > .stat-group-title::before {
   white-space: pre-wrap;
   word-break: break-word;
   line-height: 1.5;
+}
+
+/* Plot-recall plot panel — mirrors the reasoning panel's collapsible chrome. The body hosts a card
+   dashboard (its own styling), so keep wrapper chrome minimal and let the frame fill the width. */
+.plot-block {
+  margin: 0 0 12px;
+  border: 1px solid var(--rpt-border);
+  border-radius: 6px;
+  background-color: var(--rpt-bg-secondary);
+  font-size: 0.9em;
+}
+
+.plot-summary {
+  cursor: pointer;
+  padding: 6px 10px;
+  color: var(--rpt-text-secondary);
+  user-select: none;
+  list-style: none;
+}
+
+.plot-summary::-webkit-details-marker {
+  display: none;
+}
+
+.plot-summary::before {
+  content: '▸';
+  display: inline-block;
+  margin-right: 6px;
+  transition: transform 0.15s ease;
+}
+
+.plot-block[open] > .plot-summary::before {
+  transform: rotate(90deg);
+}
+
+.plot-content {
+  padding: 8px 12px;
+  border-top: 1px solid var(--rpt-border);
 }
 
 .action-input-container {

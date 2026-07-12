@@ -95,7 +95,11 @@ export const recallConfig = llmCallConfigSchema.extend({
   /** The composition template for the tail block ({{StoryEngine}}/{{QuestPlan}}/{{recalled}}/{{notes}}). */
   directive: z.string().optional(),
   /** CSV of table sqlNames to catalogue/fetch (narrowing). Empty/unset → every extraIndex table. */
-  recall_tables: z.string().optional()
+  recall_tables: z.string().optional(),
+  /** Emit the display-only `plot_block` directive (plot-recall data layer) on the `plot_block` output.
+   *  Default ON — only OMITTED when explicitly `false`. It is only produced when the planner actually
+   *  ran (a reply exists); an empty corpus or an aborted call never yields a plot_block. */
+  emit_plot_block: z.boolean().optional()
 })
 
 type RecallConfig = z.infer<typeof recallConfig>
@@ -187,6 +191,36 @@ const renderNotesToc = (notes: string): string =>
 const renderPrevPlan = (prev: RecallPlanState | null): string =>
   prev ? [prev.questPlan, prev.storyEngine].filter(Boolean).join('\n\n') : ''
 
+/**
+ * Compose the DISPLAY-ONLY `plot_block` directive (plot-recall data layer) from the planner's output.
+ * This block is NOT part of the model prompt — it is persisted on the floor for a later renderer to
+ * beautify. Its shape is dictated by the user-installed SillyTavern "剧情推进美化正则" (regex
+ * 20de25c7…): its `findRegex` — `/(^\s*(?:(?:以下|以上)是(?:用户|Participant)的本轮输入|<用户本轮输入>)…$/m`
+ * — must MATCH (so the block opens with the `<用户本轮输入>` marker), and its render JS re-parses the
+ * matched text with `getTag(raw, tag)` = `<tag(?=[\s>])[^>]*>(…)</tag>` for `用户本轮输入`/`Recall` and
+ * `renderQuestPlan` = `<QuestPlan>(…)</QuestPlan>`. So each planning family is emitted as a CLOSED tag
+ * verbatim. Pure + total (never throws) so it is unit-testable against the live findRegex. A family with
+ * an empty body is dropped, but the `<用户本轮输入>` marker is ALWAYS present so `findRegex` still fires.
+ */
+export const buildPlotBlock = (parts: {
+  action: string
+  questPlan: string
+  recall: string
+  storyEngine: string
+}): string => {
+  const segments: string[] = [`<用户本轮输入>\n${parts.action.trim()}\n</用户本轮输入>`]
+  const closedTag = (name: string, body: string): void => {
+    const b = body.trim()
+    if (b) segments.push(`<${name}>\n${b}\n</${name}>`)
+  }
+  closedTag('QuestPlan', parts.questPlan)
+  // The beautifier's recalled-rows JS extracts codes via /AM\d+/; this project's chronicle uses MT####,
+  // so map MT→AM in the <Recall> body (owner decision) so the original HTML's recalled-list populates.
+  closedTag('Recall', parts.recall.replace(/MT(\d+)/g, 'AM$1'))
+  closedTag('StoryEngine', parts.storyEngine)
+  return segments.join('\n\n')
+}
+
 interface RecallSlots {
   catalogue: string
   notesToc: string
@@ -242,6 +276,9 @@ export const memoryRecall: NodeImpl = {
   outputs: [
     { name: 'block', type: 'Text' },
     { name: 'report', type: 'Text' },
+    // Display-only directive for the beautification regex (plot-recall data layer). Emitted only when a
+    // planner reply exists AND `emit_plot_block !== false`; otherwise simply absent from `outputs`.
+    { name: 'plot_block', type: 'Text' },
     { name: 'error', type: 'Error' }
   ],
   configSchema: recallConfig,
@@ -386,10 +423,28 @@ export const memoryRecall: NodeImpl = {
       template && codes.length && recalled.length === 0 ? recallShapeIssue(template) : ''
     const debug = shapeIssue ? { ...promptDebug, 'recall shape issue': shapeIssue } : promptDebug
     if (shapeIssue) report += ` — ${shapeIssue}`
+
+    // Display-only plot_block (plot-recall data layer): a planner reply exists here (r is non-null past
+    // the abort gate), so emit unless explicitly suppressed. It carries the user action + the planner's
+    // planning tags VERBATIM for the beautification regex; it is NOT part of any prompt. When suppressed
+    // or unproduced upstream, the port is simply absent (its sole consumer, output.writeFloor, persists
+    // it only when present — undefined-tolerant), so no deadPorts entry is needed.
+    const outputs: Record<string, unknown> = { block, report }
+    if (cfg.emit_plot_block !== false) {
+      outputs.plot_block = buildPlotBlock({
+        action: gen.userAction,
+        questPlan,
+        recall: extractTagAll(r.raw, 'Recall')
+          .map((s) => s.trim())
+          .filter(Boolean)
+          .join('\n'),
+        storyEngine
+      })
+    }
     // SUCCESS: the `error` port produced no value, so declare it DEAD (A2). Without this, a live
     // error edge on a good turn delivers `undefined` — indistinguishable from a fired error branch —
     // so `log-recall` logs "undefined" and any smarter consumer (retry/notify) fires every turn. Now
     // a wired error branch runs EXACTLY when recall fails open, matching the engine's throw path.
-    return { outputs: { block, report }, debug, deadPorts: ['error'] }
+    return { outputs, debug, deadPorts: ['error'] }
   }
 }

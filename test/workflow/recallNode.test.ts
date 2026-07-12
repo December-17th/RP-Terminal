@@ -208,6 +208,51 @@ describe('memory.recall — happy path', () => {
   })
 })
 
+describe('memory.recall — plot_block (data layer)', () => {
+  const FIND_REGEX =
+    /(^\s*(?:(?:以下|以上)是(?:用户|Participant)的本轮输入|<用户本轮输入>)[\s\S]*$)/m
+
+  it('emits plot_block by default when a planner reply exists (matches findRegex + carries tags)', async () => {
+    mockRun.runLlmCall.mockResolvedValue({
+      raw: '<Recall>MT0001</Recall><QuestPlan>QP</QuestPlan><StoryEngine>SE</StoryEngine>',
+      rawUsage: {}
+    })
+    const res = await runRecall(makeCtx(), makeGen(), config())
+    const pb = res.outputs!.plot_block as string
+    expect(pb).toBeTruthy()
+    expect(FIND_REGEX.test(pb)).toBe(true)
+    expect(pb).toContain('<用户本轮输入>')
+    expect(pb).toContain('go to the tower') // the pending action
+    expect(pb).toContain('<QuestPlan>\nQP\n</QuestPlan>')
+    expect(pb).toContain('<Recall>\nAM0001\n</Recall>') // MT→AM mapped for the beautifier's /AM\d+/
+    expect(pb).toContain('<StoryEngine>\nSE\n</StoryEngine>')
+  })
+
+  it('omits plot_block when emit_plot_block: false (block/report/error unchanged)', async () => {
+    mockRun.runLlmCall.mockResolvedValue({
+      raw: '<Recall>MT0001</Recall><QuestPlan>QP</QuestPlan>',
+      rawUsage: {}
+    })
+    const res = await runRecall(makeCtx(), makeGen(), config({ emit_plot_block: false }))
+    expect(res.outputs!.plot_block).toBeUndefined()
+    expect(res.outputs!.block).toBeTruthy() // existing behavior intact
+    expect(res.deadPorts).toEqual(['error'])
+  })
+
+  it('produces NO plot_block on the empty corpus (no planner call)', async () => {
+    mockChat.getChatTableTemplateId.mockReturnValue(null)
+    mockNotes.readNotes.mockReturnValue('')
+    const res = await runRecall(makeCtx(), makeGen(), config())
+    expect(res.outputs!.plot_block).toBeUndefined()
+  })
+
+  it('produces NO plot_block when the planner call aborts empty (runLlmCall → null)', async () => {
+    mockRun.runLlmCall.mockResolvedValue(null)
+    const res = await runRecall(makeCtx(), makeGen(), config())
+    expect(res.outputs!.plot_block).toBeUndefined()
+  })
+})
+
 describe('memory.recall — deterministic fetch', () => {
   it('an invented code is dropped; report says 0 recalled', async () => {
     mockRun.runLlmCall.mockResolvedValue({ raw: '<Recall>MT9999</Recall>', rawUsage: {} })

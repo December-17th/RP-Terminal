@@ -209,6 +209,25 @@ export const SettingsPanel: React.FC<{ profileId: string }> = ({ profileId }) =>
             >
               <input
                 type="checkbox"
+                checked={settings.display?.plotBlock !== false}
+                onChange={(e) =>
+                  updateSettings(profileId, {
+                    display: { ...settings.display, plotBlock: e.target.checked }
+                  })
+                }
+              />
+              {t('prefs.showPlotBlock')}
+            </label>
+            <div style={{ fontSize: '0.78em', color: 'var(--rpt-text-secondary)', marginTop: 4 }}>
+              {t('prefs.showPlotBlockHint')}
+            </div>
+
+            <label
+              className="entry-toggles"
+              style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 14 }}
+            >
+              <input
+                type="checkbox"
                 checked={settings.ui?.usage_meter?.enabled ?? false}
                 onChange={(e) =>
                   updateSettings(profileId, {

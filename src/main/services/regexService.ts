@@ -171,6 +171,22 @@ export const getRenderRules = (profileId: string, ctx?: ScopeContext): RenderReg
     )
     .map((r) => (r.renderMode === 'panel' ? { ...r, replace: '' } : r))
 
+/** Display rules for the plot-recall PLOT BLOCK panel (data layer: `FloorFile.plot_block`). The block
+ *  carries the recall planner's USER-INPUT beautification, whose regex is placement 1 — which
+ *  getRenderRules deliberately drops (it keeps only placement 2 / empty, the AI-output destination).
+ *  So this selector is getRenderRules with placement 1 ALSO admitted: enabled display rules (same
+ *  `appliesToDisplay` filter) whose placement includes 1 OR 2 (empty = applies everywhere). A
+ *  'panel'-promoted rule still strips its match, matching the display path. */
+export const getPlotBlockRules = (profileId: string, ctx?: ScopeContext): RenderRegexRule[] =>
+  getAllRules(profileId, ctx)
+    .filter(
+      (r) =>
+        !r.disabled &&
+        appliesToDisplay(r) &&
+        (r.placement.length === 0 || r.placement.includes(1) || r.placement.includes(2))
+    )
+    .map((r) => (r.renderMode === 'panel' ? { ...r, replace: '' } : r))
+
 /** Rules that transform text on its way *into the prompt* (prompt destination enabled, not panel-promoted). */
 export const getPromptRules = (profileId: string, ctx?: ScopeContext): RenderRegexRule[] =>
   getAllRules(profileId, ctx).filter(

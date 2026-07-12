@@ -29,6 +29,9 @@ export interface Floor {
   swipe_id?: number
   /** Cache/token metrics for this floor (present once it has been through a metered turn). */
   metrics?: FloorMetrics
+  /** Plot-recall (data layer): recall's planner output as a display-only directive block, shown in a
+   *  collapsible plot panel. Present only when the pre-turn recall emitted one. */
+  plot_block?: string
   variables: Record<string, any>
 }
 

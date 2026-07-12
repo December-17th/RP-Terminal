@@ -21,6 +21,8 @@ export const persistFloor = (
     events: RPEvent[]
     variables: Record<string, unknown>
     metrics: FloorMetrics
+    /** Optional display-only plot block (plot-recall data layer); persisted only when present. */
+    plot_block?: string
   }
 ): FloorFile => {
   saveGlobals(ctx.profileId, ctx.globals)
@@ -41,7 +43,9 @@ export const persistFloor = (
     request: args.sendMessages,
     events: args.events,
     variables: args.variables,
-    metrics: args.metrics
+    metrics: args.metrics,
+    // Display-only (plot-recall data layer): stored losslessly only when recall produced one.
+    ...(args.plot_block ? { plot_block: args.plot_block } : {})
   }
 
   appendFloor(ctx.profileId, ctx.chatId, floor)

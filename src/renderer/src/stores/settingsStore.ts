@@ -59,6 +59,12 @@ export interface Settings {
     renderMode: 'inline' | 'isolated'
     sizing: 'fit' | 'fill'
   }
+  /** Display toggles that gate optional chat chrome. Optional — older profiles lack it; each flag
+   *  defaults ON when unset (read as `!== false`). */
+  display?: {
+    /** Plot-recall: show `FloorFile.plot_block` as a collapsible plot panel on the assistant floor. */
+    plotBlock?: boolean
+  }
   /** Prompt-cache optimization dial (mirrors main `Settings['cache']`). STASHED — greyed out, pinned to
    *  `baseline` (no optimization, not even provider caching). See docs/prompt-cache-optimization-design.md. */
   cache: {

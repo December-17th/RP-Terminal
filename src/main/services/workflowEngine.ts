@@ -2,8 +2,39 @@ import { WorkflowDoc, Edge, NodeDescriptor } from '../../shared/workflow/types'
 import { validateWorkflow, ValidationError } from '../../shared/workflow/validate'
 import { topoOrder } from '../../shared/workflow/graph'
 import { CompositionMeta } from '../../shared/workflow/compose'
+import { capabilityOfNodeType } from '../../shared/workflow/capabilities'
 import { NodeRegistry } from './nodes/registry'
 import { RunContext, NodeError, NodeRunFailure } from './nodes/types'
+import { notifyWorkflowActivity } from './workflowEvents'
+
+/** Node types EXCLUDED from the live "agent activity" announcement even though they call the LLM: the
+ *  main narrator streams its own tokens via generation-delta, so re-announcing it would be redundant. */
+const ACTIVITY_EXCLUDE = new Set<string>(['llm.sample'])
+
+/** The announce-set predicate, in ONE place: a node whose LLM call the chat surfaces as live activity
+ *  is exactly a `calls-llm` node (capabilities.ts, the single capability authority) minus the narrator
+ *  (llm.sample). New calls-llm node types are announced automatically; no second list to keep in sync. */
+function announcesActivity(nodeType: string): boolean {
+  return capabilityOfNodeType(nodeType) === 'calls-llm' && !ACTIVITY_EXCLUDE.has(nodeType)
+}
+
+/** Broadcast one side-agent activity edge (start/end) to open renderers. Best-effort and NON-throwing:
+ *  a broadcast failure (e.g. no windows / test env) must never affect the run. No-op without a chatId
+ *  (bare-context engine tests) — the renderer keys everything by chat. */
+function emitActivity(
+  ctx: RunContext,
+  nodeId: string,
+  nodeType: string,
+  phase: 'pre' | 'post',
+  state: 'start' | 'end'
+): void {
+  if (!ctx.chatId) return
+  try {
+    notifyWorkflowActivity({ chatId: ctx.chatId, nodeId, nodeType, phase, state })
+  } catch {
+    /* a live-indicator broadcast must never affect the run */
+  }
+}
 
 /**
  * The text a node's opt-in output panel shows (spec D4): its Text-typed output ports joined
@@ -159,6 +190,12 @@ async function runNodes(
       inputs[e.to.port] = state.outputs.get(e.from.node)?.[e.from.port]
     }
 
+    // Live "side LLM agent is calling the API" edge (agent-activity-indicator): emit a 'start' just
+    // BEFORE awaiting an announced node, and a matching 'end' after it settles (success OR failure — the
+    // finally below). Only the announce-set fires (calls-llm minus llm.sample). Cheap + non-throwing.
+    const announce = announcesActivity(node.type)
+    if (announce) emitActivity(ctx, id, node.type, phase, 'start')
+
     const started = Date.now()
     try {
       const config = (
@@ -240,6 +277,10 @@ async function runNodes(
         // whenever no packs are composed, so this reduces to the original `phase === 'pre'` rule.
         if (phase === 'pre' && !state.failOpen.has(id)) return { fatal: nodeError }
       }
+    } finally {
+      // Matching 'end' — runs on success, on the caught-failure paths, AND on the fatal `return` above
+      // (finally runs on return), so an announced node's activity always clears. Never throws.
+      if (announce) emitActivity(ctx, id, node.type, phase, 'end')
     }
   }
   return { aborted: ctx.signal.aborted }
