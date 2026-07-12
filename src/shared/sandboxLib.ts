@@ -114,5 +114,31 @@ export const SANDBOX_LIB_JS = `
     _.uniqBy = function(c,fn){ var g=__it(fn),seen={},r=[]; (Array.isArray(c)?c:[]).forEach(function(x){ var k=g(x); if(!seen[k]){seen[k]=1;r.push(x);} }); return r; };
     _.concat = function(){ var r=[]; for(var i=0;i<arguments.length;i++){ var a=arguments[i]; if(Array.isArray(a)) r=r.concat(a); else r.push(a); } return r; };
     _.difference = function(a){ var ex=Array.prototype.slice.call(arguments,1).reduce(function(s,x){return s.concat(x);},[]); return (Array.isArray(a)?a:[]).filter(function(x){return ex.indexOf(x)<0;}); };
+    // Explicit lodash chaining: _.chain(v).method(...)....value(). The wrapper proxies every _ method,
+    // threading the wrapped value as the first arg and re-wrapping the result; .value()/.valueOf()/toJSON
+    // unwrap. (Explicit _.chain only — no implicit _() call chaining, which cards here don't use.)
+    _.chain = function(value){
+      function wrap(v){
+        var w = { __wrapped__: v };
+        var names = Object.keys(_);
+        for (var i=0;i<names.length;i++){
+          (function(name){
+            var fn = _[name];
+            if (typeof fn !== 'function') return;
+            w[name] = function(){
+              var args=[w.__wrapped__];
+              for (var j=0;j<arguments.length;j++) args.push(arguments[j]);
+              return wrap(fn.apply(_, args));
+            };
+          })(names[i]);
+        }
+        w.value = function(){ return w.__wrapped__; };
+        w.valueOf = w.value; w.toJSON = w.value;
+        return w;
+      }
+      return wrap(value);
+    };
+    _.tap = function(v, fn){ if (typeof fn==='function') fn(v); return v; };
+    _.thru = function(v, fn){ return typeof fn==='function' ? fn(v) : v; };
     var console = { log: function(){}, info: function(){}, warn: function(){}, error: function(){} };
 `
