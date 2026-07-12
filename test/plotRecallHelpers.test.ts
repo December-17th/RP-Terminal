@@ -173,7 +173,8 @@ describe('buildPlotBlock — beautification-regex contract', () => {
     expect(getTag(block, '用户本轮输入')).toBe('走向黑塔')
     // renderQuestPlan uses /<QuestPlan>([\s\S]*?)<\/QuestPlan>/i — present.
     expect(/<QuestPlan>[\s\S]*?<\/QuestPlan>/i.test(block)).toBe(true)
-    expect(getTag(block, 'Recall')).toBe('MT0001, MT0003')
+    // buildPlotBlock maps MT→AM in the <Recall> body so the beautifier's /AM\d+/ extractor populates.
+    expect(getTag(block, 'Recall')).toBe('AM0001, AM0003')
     expect(getTag(block, 'StoryEngine')).toBe('节奏：紧张')
   })
 

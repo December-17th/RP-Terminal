@@ -214,7 +214,9 @@ export const buildPlotBlock = (parts: {
     if (b) segments.push(`<${name}>\n${b}\n</${name}>`)
   }
   closedTag('QuestPlan', parts.questPlan)
-  closedTag('Recall', parts.recall)
+  // The beautifier's recalled-rows JS extracts codes via /AM\d+/; this project's chronicle uses MT####,
+  // so map MT→AM in the <Recall> body (owner decision) so the original HTML's recalled-list populates.
+  closedTag('Recall', parts.recall.replace(/MT(\d+)/g, 'AM$1'))
   closedTag('StoryEngine', parts.storyEngine)
   return segments.join('\n\n')
 }

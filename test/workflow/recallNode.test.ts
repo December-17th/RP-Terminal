@@ -224,7 +224,7 @@ describe('memory.recall — plot_block (data layer)', () => {
     expect(pb).toContain('<用户本轮输入>')
     expect(pb).toContain('go to the tower') // the pending action
     expect(pb).toContain('<QuestPlan>\nQP\n</QuestPlan>')
-    expect(pb).toContain('<Recall>\nMT0001\n</Recall>')
+    expect(pb).toContain('<Recall>\nAM0001\n</Recall>') // MT→AM mapped for the beautifier's /AM\d+/
     expect(pb).toContain('<StoryEngine>\nSE\n</StoryEngine>')
   })
 
