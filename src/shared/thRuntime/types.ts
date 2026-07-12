@@ -119,6 +119,9 @@ export interface Host {
   setGlobalVars(vars: Record<string, any>): Promise<void>
   // Resolve a character portrait to an rptasset:// URL for the calling card's world, or null.
   assetUrl(name: string, type: string, mood?: string): Promise<string | null>
+  /** Resolve a model-authored hierarchical location. Optional for backward compatibility; the shared
+   *  runtime falls back to exact assetUrl when an older host does not provide it. */
+  sceneAssetUrl?(location: string, type: '全景' | '背景'): Promise<string | null>
   // Enumerate one entry's files (all variants of a name+type) for the calling card's world (WA-3): the
   // base first as `variant:null`, then variant tokens naturally sorted. Empty array on a miss. Same
   // lorebook-id precedence + category inference as `assetUrl`. Backs the bare `assetList` global.

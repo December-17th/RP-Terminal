@@ -84,6 +84,16 @@ export const registerWorldAssetIpc = (ipcMain: IpcMain): void => {
       return assetUrlFor(profileId, hit.lorebookId, category, file)
     }
   )
+  ipcMain.handle(
+    'asset-scene-url',
+    (
+      _e,
+      profileId: string,
+      lorebookIds: string[],
+      location: string,
+      type: '全景' | '背景'
+    ) => svc.sceneAssetUrlForWorld(profileId, lorebookIds, String(location ?? ''), type)
+  )
   ipcMain.handle('asset-refresh', (_e, profileId: string, lorebookIds: string[]) => {
     for (const id of lorebookIds) svc.getIndex(profileId, id, { refresh: true })
   })

@@ -688,6 +688,20 @@ export const registerWcvIpc = (ipcMain: IpcMain): void => {
     return worldAssetService.assetUrlForWorld(ctx.profileId, ids, String(name ?? ''), type, mood)
   })
 
+  ipcMain.handle('wcv-host-scene-asset-url', (e, location, type) => {
+    const ctx = wcvManager.contextFor(e.sender.id)
+    if (!ctx) return null
+    const ids =
+      chatService.getChatLorebookIds(ctx.profileId, ctx.chatId) ??
+      (ctx.characterId ? [ctx.characterId] : [])
+    return worldAssetService.sceneAssetUrlForWorld(
+      ctx.profileId,
+      ids,
+      String(location ?? ''),
+      type
+    )
+  })
+
   // Card-facing asset enumeration (WA-3): the calling WCV panel's ctx resolves from e.sender (like
   // wcv-host-asset-url). Same id precedence + category inference as assetUrl; returns [] on any miss.
   ipcMain.handle('wcv-host-asset-list', (e, name, type) => {

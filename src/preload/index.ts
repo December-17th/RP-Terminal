@@ -727,6 +727,12 @@ const api = {
     type: string,
     mood?: string
   ) => ipcRenderer.invoke('asset-url', profileId, lorebookIds, category, name, type, mood),
+  sceneAssetUrl: (
+    profileId: string,
+    lorebookIds: string[],
+    location: string,
+    type: '全景' | '背景'
+  ) => ipcRenderer.invoke('asset-scene-url', profileId, lorebookIds, location, type),
   // Card-facing (WA-3): enumerate one entry's variants; main applies id precedence + category inference.
   assetList: (profileId: string, lorebookIds: string[], name: string, type: string) =>
     ipcRenderer.invoke('asset-list-for-card', profileId, lorebookIds, name, type),
