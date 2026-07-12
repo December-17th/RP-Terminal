@@ -717,6 +717,16 @@
   border: 1px solid var(--rpt-warning);
   color: var(--rpt-warning);
 }
+/* Active-narrator badge (feat/active-workflow-picker): non-interactive marker shown when the open
+   doc is the active global narrator. Uses the success token so it reads as "this one runs". */
+.rpt-wfe-active-badge {
+  font-size: 11px;
+  padding: 2px 9px;
+  border-radius: 10px;
+  border: 1px solid var(--rpt-success);
+  color: var(--rpt-success);
+  white-space: nowrap;
+}
 .rpt-wfe-spacer {
   flex: 1;
 }
