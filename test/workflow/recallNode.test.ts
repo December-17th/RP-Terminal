@@ -283,6 +283,23 @@ describe('memory.recall — notes <Query> path', () => {
     expect(block).not.toContain('无关内容')
     expect(res.outputs!.report).toBe('recalled 0 of 0 code(s), 1 note section(s)')
   })
+
+  it('dedupes a section hit by two <Query> tags → ONE entry (A5)', async () => {
+    mockChat.getChatTableTemplateId.mockReturnValue(null) // notes-only corpus
+    // One section with two keywords; two queries each hit a different keyword of the SAME section.
+    mockNotes.readNotes.mockReturnValue(
+      '## 黑塔的秘密\n<!-- keywords: 天才, 科学家 -->\n黑塔隐藏着一个身份。\n\n## 别的\n无关内容。'
+    )
+    mockRun.runLlmCall.mockResolvedValue({
+      raw: '<Query>天才</Query><Query>科学家</Query>',
+      rawUsage: {}
+    })
+    const res = await runRecall(makeCtx(), makeGen(), config())
+    const block = res.outputs!.block as string
+    // The section body appears exactly once (not twice), and it consumes ONE section of the budget.
+    expect(block.split('黑塔隐藏着一个身份').length - 1).toBe(1)
+    expect(res.outputs!.report).toBe('recalled 0 of 0 code(s), 1 note section(s)')
+  })
 })
 
 describe('memory.recall — plan persistence', () => {

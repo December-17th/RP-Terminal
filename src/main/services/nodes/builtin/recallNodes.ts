@@ -266,7 +266,10 @@ export const memoryRecall: NodeImpl = {
     const reads: TableRead[] = template ? readAllTables(gen.profileId, gen.chatId, template) : []
 
     // 2. Compose the planner prompt. Previous plan is dropped when rewind-stale (stored floor is ahead
-    //    of the current floor count).
+    //    of the current floor count). NOTE: persistence is FLOOR-COUNT-keyed, not message-anchored — so a
+    //    SAME-LENGTH rewind/regenerate or swipe (floor count unchanged) keeps the previous plan, which is
+    //    only advisory. This deliberately diverges from the reference, which anchors the plan to a specific
+    //    message id and would discard it on any regenerate of that message.
     const storedPlan = ctx.getNodeState(node.id) as RecallPlanState | undefined
     const prevPlan =
       storedPlan && typeof storedPlan.floor === 'number' && storedPlan.floor <= gen.floors.length
@@ -335,10 +338,19 @@ export const memoryRecall: NodeImpl = {
     }
     const recalledText = recalled.map((e) => e.content).join('\n\n')
 
-    // Queries → note sections (CJK-safe grep). Only when the model asked.
+    // Queries → note sections (CJK-safe grep). Only when the model asked. A single section hit by two
+    // <Query> tags would otherwise appear twice AND burn two of the max_note_sections budget, so dedupe
+    // by heading BEFORE formatHits — keeping first-seen order (the first query's hit wins).
     const sections = parseNotesSections(notes)
+    const seenHeadings = new Set<string>()
     const hits: SectionHit[] = []
-    for (const q of queries) hits.push(...grepSections(sections, q))
+    for (const q of queries) {
+      for (const hit of grepSections(sections, q)) {
+        if (seenHeadings.has(hit.section.heading)) continue
+        seenHeadings.add(hit.section.heading)
+        hits.push(hit)
+      }
+    }
     const notesBlock = queries.length
       ? formatHits(hits, {
           maxSections: cfg.max_note_sections ?? DEFAULT_MAX_NOTE_SECTIONS,
@@ -346,7 +358,11 @@ export const memoryRecall: NodeImpl = {
         })
       : ''
 
-    // Compose ONE tail block from the directive template (inert-data slots; empty slots collapse).
+    // Compose ONE tail block from the directive template (inert-data slots; empty slots collapse). NOTE:
+    // recalled rows go INLINE into this single tail block (consumed downstream by prompt.assemble.block),
+    // so a chronicle template's per-row `entryPlacement` (depth/order) has NO effect on recall output —
+    // those fields only govern the SEPARATE lexical table.export → prompt.assemble.entries path. Template
+    // authors copying reference depth/order configs should not expect them to reposition recalled rows.
     const directive = cfg.directive ?? RECALL_DIRECTIVE
     const block = directive
       .split('{{StoryEngine}}')

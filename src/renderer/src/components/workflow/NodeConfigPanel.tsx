@@ -18,6 +18,7 @@ import {
 } from './agentModel'
 import {
   dynamicEnumOptions,
+  isTallConfigField,
   resolveSelection,
   visibleTabs,
   type DetailsTab,
@@ -135,18 +136,21 @@ function FieldControl({
   field,
   value,
   onChange,
-  readOnly
+  readOnly,
+  rows = 3
 }: {
   field: FieldSpec
   value: unknown
   onChange: (value: unknown) => void
   readOnly: boolean
+  /** Textarea height for the string control — bumped for long template-shaped fields (D4). */
+  rows?: number
 }): React.JSX.Element {
   const t = useT()
   if (field.kind === 'string') {
     return (
       <textarea
-        rows={3}
+        rows={rows}
         value={typeof value === 'string' ? value : ''}
         disabled={readOnly}
         onChange={(e) => onChange(e.target.value)}
@@ -933,7 +937,25 @@ function NodeDetailsInner({
               value={config[field.key]}
               onChange={(v) => updateField(field.key, v)}
               readOnly={readOnly}
+              rows={isTallConfigField(node.type, field.key) ? 14 : undefined}
             />
+            {/* Optional per-field help caption (D4): a long template field can explain its slot
+                contract via `configHelp.<type>.<key>`; absent key → no caption. */}
+            {(() => {
+              const help = tOpt(`workflowEditor.configHelp.${node.type}.${field.key}`)
+              return help ? (
+                <div
+                  style={{
+                    fontSize: 10.5,
+                    color: 'var(--rpt-text-tertiary)',
+                    lineHeight: 1.5,
+                    marginTop: 3
+                  }}
+                >
+                  {help}
+                </div>
+              ) : null
+            })()}
           </div>
         ))}
       </div>

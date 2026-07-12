@@ -78,6 +78,21 @@ export const PROMPT_PLACEHOLDERS_BY_TYPE: Readonly<Record<string, readonly strin
 export const placeholdersForType = (type: string | undefined): readonly string[] =>
   (type && PROMPT_PLACEHOLDERS_BY_TYPE[type]) || PROMPT_PLACEHOLDERS
 
+/** Config STRING fields that deserve a tall multiline textarea in the settings form rather than the
+ *  default 3-row control — long, template-shaped strings with their own slot contract that authors
+ *  edit as a block (plot-recall editor-UX D4). Keyed by node `type` → the set of config keys. This is
+ *  the single-string counterpart of promptFields (which routes role-message arrays to the Prompt tab);
+ *  a `directive`-style string is not a role array, so it stays in the settings form but gets room. */
+export const TALL_CONFIG_FIELDS_BY_TYPE: Readonly<Record<string, readonly string[]>> = {
+  // recallNodes `directive`: the recalled-chronicle tail-block template
+  // ({{StoryEngine}}/{{QuestPlan}}/{{recalled}}/{{notes}}) — hundreds of chars, edited whole.
+  'memory.recall': ['directive']
+}
+
+/** Whether a node type's config field should render as a tall multiline textarea (see above). */
+export const isTallConfigField = (type: string | undefined, key: string): boolean =>
+  !!type && (TALL_CONFIG_FIELDS_BY_TYPE[type]?.includes(key) ?? false)
+
 export interface PromptRow {
   role: string
   content: string

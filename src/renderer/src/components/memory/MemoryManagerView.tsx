@@ -437,19 +437,45 @@ export function MemoryManagerView({ profileId }: { profileId: string }): React.J
 }
 
 /**
+ * Pure conflict decision for the Notes save path (B2). `baseline` is the on-disk content this tab last
+ * synced with (load / successful save / reload); `disk` is a FRESH re-read taken at save time; `draft`
+ * is the user's editable buffer. When the file changed under us since we synced (disk !== baseline) AND
+ * the user has local edits (draft !== baseline), a blind whole-file write would silently clobber the
+ * concurrent change (e.g. a notes.maintain pass) — return 'conflict' so the caller warns instead of
+ * writing. Otherwise the disk copy still matches our baseline (or the draft never diverged), so a plain
+ * 'save' is safe. Extracted + exported so the decision is unit-testable without the React tree.
+ */
+export function notesSaveDecision(
+  baseline: string,
+  disk: string,
+  draft: string
+): 'save' | 'conflict' {
+  return disk !== baseline && draft !== baseline ? 'conflict' : 'save'
+}
+
+/**
  * The Notes tab (plot-recall WP7) — the per-chat freeform markdown notes store (WP2's notesGet/notesSet
  * preload surface). Notes live independently of any table template (the pane shows even with no template
  * assigned). Editing is EXPLICIT, matching the Data tab's per-card idiom: a local draft with dirty
  * tracking + Save / Reset buttons that disable when the draft is clean or a save is in flight. Saving an
  * empty/whitespace body removes the file main-side (idempotent, per the WP2 contract).
+ *
+ * B2 conflict guard: because notes.maintain can whole-file-write these same notes between the moment the
+ * tab loads and the moment the user hits Save, a blind Save would clobber that concurrent write (and vice
+ * versa). So `saved` doubles as a BASELINE (the disk content we last synced with), Save re-reads disk and
+ * runs {@link notesSaveDecision} first, and a manual Refresh lets the user pull an external change in.
  */
 const NotesTab: React.FC<{ profileId: string; chatId: string }> = ({ profileId, chatId }) => {
   const t = useT()
-  // `saved` = the last-persisted body; `draft` = the editable buffer. dirty = they differ.
+  // `saved` is BOTH the last-persisted body AND the baseline we diff disk against; `draft` = the
+  // editable buffer. dirty = they differ.
   const [saved, setSaved] = React.useState('')
   const [draft, setDraft] = React.useState('')
   const [loading, setLoading] = React.useState(true)
   const [busy, setBusy] = React.useState(false)
+  // Set when a save-time re-read finds the file changed under an edited draft (B2). Holds the disk copy
+  // so "Reload" can adopt it without a second read; cleared once the user resolves the conflict.
+  const [conflict, setConflict] = React.useState<{ disk: string } | null>(null)
 
   const load = React.useCallback(async () => {
     setLoading(true)
@@ -457,9 +483,11 @@ const NotesTab: React.FC<{ profileId: string; chatId: string }> = ({ profileId, 
       const text = (await api().notesGet(profileId, chatId)) ?? ''
       setSaved(text)
       setDraft(text)
+      setConflict(null)
     } catch {
       setSaved('')
       setDraft('')
+      setConflict(null)
     } finally {
       setLoading(false)
     }
@@ -470,21 +498,96 @@ const NotesTab: React.FC<{ profileId: string; chatId: string }> = ({ profileId, 
   }, [load])
 
   const dirty = draft !== saved
-  const save = async (): Promise<void> => {
-    setBusy(true)
+
+  // Persist the draft unconditionally and re-baseline. Used by the guarded Save path (once the guard
+  // passes) and by the conflict "Overwrite" action.
+  const persist = async (): Promise<void> => {
     try {
       await api().notesSet(profileId, chatId, draft)
       setSaved(draft)
+      setConflict(null)
     } catch {
       useToastStore.getState().push(t('notes.saveFailed'))
+    }
+  }
+
+  const save = async (): Promise<void> => {
+    setBusy(true)
+    try {
+      let disk: string
+      try {
+        disk = (await api().notesGet(profileId, chatId)) ?? ''
+      } catch {
+        // Can't verify on-disk state — fail safe by NOT blind-writing.
+        useToastStore.getState().push(t('notes.saveFailed'))
+        return
+      }
+      if (notesSaveDecision(saved, disk, draft) === 'conflict') {
+        setConflict({ disk })
+        return
+      }
+      await persist()
     } finally {
       setBusy(false)
     }
   }
 
+  const overwrite = async (): Promise<void> => {
+    setBusy(true)
+    try {
+      await persist()
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  // Conflict "Reload": discard the draft, adopt the disk copy we already read. Also the manual Refresh
+  // target (which re-reads disk); Refresh confirms first when there are unsaved edits.
+  const adoptDisk = (): void => {
+    if (!conflict) return
+    setSaved(conflict.disk)
+    setDraft(conflict.disk)
+    setConflict(null)
+  }
+  const refresh = async (): Promise<void> => {
+    if (dirty && !confirm(t('notes.reloadConfirm'))) return
+    await load()
+  }
+
   return (
     <div className="rpt-mm-notes">
       <p className="rpt-mm-maint-intro">{t('notes.intro')}</p>
+      {conflict && (
+        <div
+          role="alert"
+          style={{
+            display: 'flex',
+            flexWrap: 'wrap',
+            alignItems: 'center',
+            gap: 10,
+            padding: '6px 10px',
+            margin: '0 0 8px',
+            borderRadius: 6,
+            border: '1px solid var(--rpt-warning, #d9a441)',
+            background: 'var(--rpt-warning-soft, rgba(217,164,65,0.14))',
+            fontSize: 13
+          }}
+        >
+          <span style={{ flex: '1 1 240px' }}>{t('notes.conflictWarn')}</span>
+          <span style={{ display: 'flex', gap: 8, flex: '0 0 auto' }}>
+            <button className="rpt-duel-secondary" disabled={busy} onClick={() => adoptDisk()}>
+              {t('notes.conflictReload')}
+            </button>
+            <button
+              className="rpt-duel-secondary rpt-mm-danger"
+              disabled={busy}
+              onClick={() => void overwrite()}
+            >
+              {t('notes.conflictOverwrite')}
+            </button>
+          </span>
+        </div>
+      )}
       <textarea
         className="rpt-mm-notes-textarea"
         value={draft}
@@ -506,6 +609,14 @@ const NotesTab: React.FC<{ profileId: string; chatId: string }> = ({ profileId, 
           onClick={() => setDraft(saved)}
         >
           {t('memoryManager.data.reset')}
+        </button>
+        <button
+          className="btn-ghost"
+          disabled={busy || loading}
+          title={t('notes.refreshTip')}
+          onClick={() => void refresh()}
+        >
+          {t('notes.refresh')}
         </button>
         {dirty && <span className="rpt-mm-notes-dirty">{t('notes.unsaved')}</span>}
       </div>

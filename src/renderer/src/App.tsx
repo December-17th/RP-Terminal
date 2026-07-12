@@ -26,6 +26,7 @@ import {
   isHeadlessTrace,
   deriveHeadlessFailure
 } from './stores/agentFailureStore'
+import { useRecallFailOpenStore, recallOutcome } from './stores/recallFailOpenStore'
 import type { WorkflowRunTrace } from '../../shared/workflow/trace'
 import { useWorkspaceStore } from './stores/workspaceStore'
 import { useComposerStore } from './stores/composerStore'
@@ -166,6 +167,11 @@ export default function App(): React.ReactElement {
         if (failure) useAgentFailureStore.getState().recordFailure(t.chatId, failure)
         else useAgentFailureStore.getState().clear(t.chatId)
       }
+      // Plot-recall (A3): tally consecutive PRE-TURN recall fail-opens for this chat. memory.recall
+      // runs inside the player-turn graph, so this is NOT gated on isHeadlessTrace — a turn trace with
+      // a fail-opened recall node bumps the streak; a clean recall resets it. ChatView warns at N.
+      const outcome = recallOutcome(t)
+      if (outcome) useRecallFailOpenStore.getState().record(t.chatId, outcome === 'failed')
     })
     // Opt-in node output panels (spec D4): append deltas; a chat's panels belong to its latest
     // turn, so clear them on the turn's rising edge (isGenerating false→true).

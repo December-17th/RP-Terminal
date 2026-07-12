@@ -131,15 +131,22 @@ export const memoryMaintain: NodeImpl = {
   title: 'Memory',
   // The scaffold prompt is routed to the dedicated Prompt editor + drives the on-card excerpt.
   promptFields: ['messages'],
-  inputs: [{ name: 'when', type: 'Signal' }],
+  inputs: [
+    // Optional Context (mirrors memory.recall's `gen` port). When wired, the upstream bundle is reused;
+    // when unwired it self-seeds — byte-identical to the pre-A6 behaviour.
+    { name: 'gen', type: 'Context' },
+    { name: 'when', type: 'Signal' }
+  ],
   outputs: [
     { name: 'report', type: 'Text' },
     { name: 'error', type: 'Error' }
   ],
   configSchema: memoryMaintainConfig,
-  run: async (ctx, _inputs, node) => {
+  run: async (ctx, inputs, node) => {
     const cfg = node.config as MemoryMaintainConfig
-    const gen: GenContext = buildGenContext(ctx.profileId!, ctx.chatId!, '')
+    // Prefer the upstream input.context bundle; self-seed only when run headless/without it.
+    const gen: GenContext =
+      (inputs.gen as GenContext | undefined) ?? buildGenContext(ctx.profileId!, ctx.chatId!, '')
 
     // No table memory bound → silent no-op (table.read/table.export read-semantics; do NOT burn a
     // model call when there is nothing to maintain).

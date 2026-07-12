@@ -162,15 +162,22 @@ export const notesMaintain: NodeImpl = {
   title: 'Notes',
   // The scaffold prompt is routed to the dedicated Prompt editor + drives the on-card excerpt.
   promptFields: ['messages'],
-  inputs: [{ name: 'when', type: 'Signal' }],
+  inputs: [
+    // Optional Context (mirrors memory.recall's `gen` port). When wired, the upstream bundle is reused;
+    // when unwired it self-seeds — byte-identical to the pre-A6 behaviour.
+    { name: 'gen', type: 'Context' },
+    { name: 'when', type: 'Signal' }
+  ],
   outputs: [
     { name: 'report', type: 'Text' },
     { name: 'error', type: 'Error' }
   ],
   configSchema: notesMaintainConfig,
-  run: async (ctx, _inputs, node) => {
+  run: async (ctx, inputs, node) => {
     const cfg = node.config as NotesMaintainConfig
-    const gen: GenContext = buildGenContext(ctx.profileId!, ctx.chatId!, '')
+    // Prefer the upstream input.context bundle; self-seed only when run headless/without it.
+    const gen: GenContext =
+      (inputs.gen as GenContext | undefined) ?? buildGenContext(ctx.profileId!, ctx.chatId!, '')
 
     // No-op: nothing to summarize AND no existing notes to revise → NO model call (byte-identical to
     // before when the chat is idle / first-turn).

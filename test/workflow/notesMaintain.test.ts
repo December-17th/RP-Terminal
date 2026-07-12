@@ -160,6 +160,22 @@ describe('notes.maintain — end to end', () => {
     expect(written).toContain('发现了一枚徽章。')
     expect(res.outputs!.report).toBe('applied 1 note edit(s)')
   })
+
+  // A6 — memory-trio input symmetry: an OPTIONAL `gen` Context port (mirrors memory.recall) that reuses
+  // an upstream bundle when wired and self-seeds when not.
+  it('declares an optional `gen` Context input (memory-trio symmetry)', () => {
+    const gen = notesMaintain.inputs.find((i) => i.name === 'gen')
+    expect(gen).toEqual({ name: 'gen', type: 'Context' })
+  })
+
+  it('reuses a wired `gen` input instead of self-seeding (transcript still reaches the model)', async () => {
+    mockNotes.readNotes.mockReturnValue('## 已有\n内容')
+    const wired = buildGenContext('prof', 'c1', 'WIRED_ACTION')
+    await notesMaintain.run(ctx(), { gen: wired }, { id: 'n', config: parsedConfig() })
+    const sent = mockCallModel.callModel.mock.calls[0][1] as { role: string; content: string }[]
+    const joined = sent.map((m) => m.content).join('\n')
+    expect(joined).toContain('ai reply 2')
+  })
 })
 
 describe('parseMemoryNotes (the shared edit parser)', () => {
