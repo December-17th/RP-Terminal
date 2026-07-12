@@ -50,4 +50,8 @@ export interface FloorFile {
   /** Cache/token metrics for this floor (this turn's numbers + a cumulative snapshot).
    * Absent on greeting/legacy floors that never went through a metered generation. */
   metrics?: FloorMetrics
+  /** Display-only "plot block" produced by `memory.recall` (plot-recall data layer): the planner's
+   * directive, formatted for the beautification regex to render. Present only when recall emitted one;
+   * it is NOT part of the prompt or the response and never feeds generation. */
+  plot_block?: string
 }

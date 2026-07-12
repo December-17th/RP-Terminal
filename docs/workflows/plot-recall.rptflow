@@ -64,6 +64,7 @@
 
     { "from": { "node": "ctx", "port": "gen" }, "to": { "node": "recall", "port": "gen" } },
     { "from": { "node": "recall", "port": "block" }, "to": { "node": "assemble", "port": "block" } },
+    { "from": { "node": "recall", "port": "plot_block" }, "to": { "node": "write", "port": "plot_block" } },
     { "from": { "node": "recall", "port": "error" }, "to": { "node": "log-recall", "port": "value" } },
 
     { "from": { "node": "trim", "port": "gen" }, "to": { "node": "assemble", "port": "gen" } },
