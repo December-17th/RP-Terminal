@@ -40,6 +40,32 @@ describe('templateService TH-3 helpers', () => {
     expect(c.vars.mp).toBe(50)
   })
 
+  it('TavernHelper read shims: getVariables reads the live stat_data store; getLastMessageId gates', () => {
+    // Mirrors 命定之诗's 艾莉亚 status core: `getLastMessageId() > 0` gate, then read stat_data via
+    // TavernHelper.getVariables({type:'message'}). Before the shim this threw (TavernHelper undefined)
+    // and the whole block was stripped → the current stat values never reached the prompt.
+    const c = ctx({ vars: { stat_data: { 主角: { 生命值: 105, 等级: 10 } } } })
+    const tmpl =
+      "<% if (TavernHelper.getLastMessageId() > 0) { %>" +
+      "HP=<%= _.get(TavernHelper.getVariables({type:'message'}), 'stat_data.主角.生命值') %>" +
+      " LV=<%= _.get(TavernHelper.getVariables({type:'message'}), 'stat_data.主角.等级') %>" +
+      "<% } %>"
+    expect(evalTemplate(tmpl, c)).toBe('HP=105 LV=10')
+  })
+
+  it('TavernHelper.getLastMessageId() is -1 with no history (gate suppresses on the first message)', () => {
+    const c = ctx({ data: { messages: [] } })
+    expect(evalTemplate('<%= TavernHelper.getLastMessageId() %>', c)).toBe('-1')
+    expect(evalTemplate('<% if (TavernHelper.getLastMessageId() > 0) { %>x<% } %>', c)).toBe('')
+  })
+
+  it('TavernHelper write/side-effect APIs are no-ops at build time (present, do not throw or mutate)', () => {
+    const c = ctx({ vars: { n: 1 } })
+    expect(evalTemplate("<% TavernHelper.insertOrAssignVariables({n: 999}) %>ok", c)).toBe('ok')
+    expect(evalTemplate("<% TavernHelper.triggerSlash('/setvar n 999') %>ok", c)).toBe('ok')
+    expect(c.vars.n).toBe(1) // unchanged — writers don't touch the store during a prompt build
+  })
+
   it('getchar() returns the card data, or a field', () => {
     expect(evalTemplate("<%= getchar('name') %>", ctx())).toBe('Mira')
     expect(evalTemplate("<%= getchar('personality') %>", ctx())).toBe('curious')
