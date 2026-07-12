@@ -46,6 +46,24 @@ export interface StatementInfo {
 }
 
 /**
+ * Strip the non-SQL wrappers an LLM (especially a reasoning model) commonly leaves around a batch,
+ * so a valid INSERT/UPDATE/DELETE isn't rejected as head `(unknown)`:
+ *  - `<think>…</think>` reasoning blocks (any that leaked inside the emitted text),
+ *  - a single fenced code block: an opening ```` ```sql ````/```` ``` ```` line + its closing ```` ``` ````.
+ * We only unwrap when the WHOLE (trimmed) batch is one fenced block — a defensive, reversible transform
+ * that leaves already-clean SQL untouched (no fence ⇒ returned as-is). Comment/quote-aware splitting +
+ * the head allowlist still run afterwards, so this widens acceptance without weakening the sandbox.
+ */
+export const sanitizeSqlBatch = (text: string): string => {
+  let s = text.replace(/<think\b[^>]*>[\s\S]*?<\/think>/gi, '')
+  s = s.trim()
+  // Unwrap a leading ```lang fence + trailing ``` (the most common LLM SQL wrapper).
+  const fence = /^```[^\n]*\n([\s\S]*?)\n?```$/.exec(s)
+  if (fence) s = fence[1].trim()
+  return s
+}
+
+/**
  * Split a batch on `;` OUTSIDE string literals / comments. A small char-scanner tracks:
  *  - `'…'` single-quoted string literals with `''` escape,
  *  - `"…"` double-quoted identifiers with `""` escape,
@@ -215,7 +233,7 @@ export interface ValidatedStatement extends StatementInfo {
  * Returns the validated statements in order. A blank/whitespace/comment-only batch → [].
  */
 export const validateBatch = (text: string, allowedTables: Set<string>): ValidatedStatement[] => {
-  const statements = splitSqlStatements(text)
+  const statements = splitSqlStatements(sanitizeSqlBatch(text))
   return statements.map((sql, index) => {
     let info: StatementInfo
     try {

@@ -4,6 +4,7 @@ import {
   classifyStatement,
   validateBatch,
   validateReadQuery,
+  sanitizeSqlBatch,
   TableSqlError
 } from '../../src/main/services/tableSql'
 
@@ -191,6 +192,41 @@ describe('validateBatch', () => {
     }
     expect((err as TableSqlError).index).toBe(1)
     expect((err as Error).message).toContain('DROP')
+  })
+
+  // Regression: a reasoning model wraps its SQL in a ```sql fence and/or a <think> preamble. Before
+  // sanitizeSqlBatch the fence's opening line became the first "statement" and was rejected as head
+  // "(unknown)", dropping the WHOLE maintain cycle (erratic / partial table fills).
+  it('accepts a ```sql-fenced batch (fence unwrapped before splitting)', () => {
+    const batch = "```sql\nINSERT INTO chronicle VALUES (1);\nUPDATE roleplay_guide SET g='x' WHERE row_id=1\n```"
+    const result = validateBatch(batch, allowed)
+    expect(result.map((s) => s.kind)).toEqual(['insert', 'update'])
+  })
+
+  it('strips a <think> reasoning preamble before the SQL', () => {
+    const batch = '<think>I should log the event.</think>\nINSERT INTO chronicle VALUES (1)'
+    const result = validateBatch(batch, allowed)
+    expect(result.map((s) => s.table)).toEqual(['chronicle'])
+  })
+})
+
+describe('sanitizeSqlBatch', () => {
+  it('leaves already-clean SQL untouched', () => {
+    const sql = "INSERT INTO chronicle VALUES (1); UPDATE t SET a='b'"
+    expect(sanitizeSqlBatch(sql)).toBe(sql)
+  })
+
+  it('unwraps a bare ``` fence and drops think blocks', () => {
+    expect(sanitizeSqlBatch('```\nINSERT INTO chronicle VALUES (1)\n```')).toBe(
+      'INSERT INTO chronicle VALUES (1)'
+    )
+    expect(sanitizeSqlBatch('<think>x</think>UPDATE t SET a=1')).toBe('UPDATE t SET a=1')
+  })
+
+  it('does NOT unwrap a fence that only opens mid-text (defensive: whole-batch fence only)', () => {
+    // No closing fence ⇒ not a single fenced block ⇒ returned as-is (still rejected downstream, safely).
+    const s = '```sql\nINSERT INTO chronicle VALUES (1)'
+    expect(sanitizeSqlBatch(s)).toBe(s)
   })
 })
 
