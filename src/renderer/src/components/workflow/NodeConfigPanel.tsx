@@ -25,6 +25,7 @@ import {
 } from './detailsPanelModel'
 import PromptEditor, { type PromptFieldSpec } from './PromptEditor'
 import MemoryMaintainPanel from './MemoryMaintainPanel'
+import PromptPreviewPanel from './PromptPreviewPanel'
 import LorebookPickerSheet from './LorebookPickerSheet'
 import { useWorkflowTraceStore } from '../../stores/workflowTraceStore'
 import { formatTraceSeconds, type StoredRunRecord } from '../../../../shared/workflow/trace'
@@ -751,11 +752,21 @@ function NodeDetailsInner({
             config={config}
             readOnly={readOnly}
             onChange={updateField}
+            nodeType={node.type}
           />
           {/* memory.maintain (WP2): under the scaffold prompt, the per-table maintenance-rule editor
               (writes to the bound template) + the composed-prompt preview. */}
           {node.type === 'memory.maintain' && (
             <MemoryMaintainPanel profileId={profileId} config={config} />
+          )}
+          {/* plot-recall (WP4/WP6): the composed-prompt preview for the recall planner + notes
+              maintainer, mirroring memory.maintain's preview so the planner prompt is visible before
+              a model call is burned. */}
+          {node.type === 'memory.recall' && (
+            <PromptPreviewPanel profileId={profileId} config={config} kind="recall" />
+          )}
+          {node.type === 'notes.maintain' && (
+            <PromptPreviewPanel profileId={profileId} config={config} kind="notes" />
           )}
         </>
       )}
@@ -991,12 +1002,17 @@ function NodeRunsTab({ nodeId }: { nodeId: string }): React.JSX.Element {
   return (
     <div style={{ fontSize: 11 }}>
       <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 6 }}>
-        <span className={`rpt-node-trace-chip is-${slice.status}`}>
+        <span
+          className={`rpt-node-trace-chip is-${slice.status}${slice.failedOpen ? ' is-failed-open' : ''}`}
+          title={slice.failedOpen ? t('workflow.trace.failedOpenTip') : undefined}
+        >
           {slice.status === 'failed'
             ? t('workflow.trace.status.failed')
-            : slice.ms !== undefined
-              ? formatTraceSeconds(slice.ms)
-              : t(`workflow.trace.status.${slice.status}`)}
+            : slice.failedOpen
+              ? t('workflow.trace.status.failedOpen')
+              : slice.ms !== undefined
+                ? formatTraceSeconds(slice.ms)
+                : t(`workflow.trace.status.${slice.status}`)}
         </span>
       </div>
       {slice.error && (
@@ -1135,6 +1151,7 @@ function AgentDetails({ group, profileId }: { group: GroupDecl; profileId: strin
               else next[field] = value
               setNodeConfig(promptMember.id, next)
             }}
+            nodeType={promptMember.type}
           />
         ) : (
           <div style={{ fontSize: 11, color: 'var(--rpt-text-secondary)' }}>

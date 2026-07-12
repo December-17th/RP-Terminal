@@ -38,7 +38,7 @@ import { mergeNotes, NoteEdit, NoteEditMode } from '../../../../shared/memory/no
  *
  * DISJOINTNESS discipline (design §Risks): the default scaffold instructs the model to write NARRATIVE
  * PROSE only — do not restate MVU numbers or duplicate the SQL tables — and to always target a named
- * `##` section (the addressable/mergeable unit; `mergeNotes` drops any preamble before the first
+ * `##` section (the addressable/mergeable unit; `mergeNotes` preserves any preamble before the first
  * heading, and creates a section when the model names one that does not exist yet).
  */
 

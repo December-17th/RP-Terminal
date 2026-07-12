@@ -152,7 +152,9 @@ describe('memory.recall — corpus gate', () => {
     mockChat.getChatTableTemplateId.mockReturnValue(null)
     mockNotes.readNotes.mockReturnValue('')
     const res = await runRecall(makeCtx(), makeGen(), config())
-    expect(res).toEqual({ outputs: {} })
+    // No-op corpus: no outputs, and the `error` port is declared dead so a wired error edge stays
+    // inert rather than delivering `undefined` (A2).
+    expect(res).toEqual({ outputs: {}, deadPorts: ['error'] })
     expect(mockRun.runLlmCall).not.toHaveBeenCalled()
   })
 
@@ -163,7 +165,7 @@ describe('memory.recall — corpus gate', () => {
     })
     mockTemplate.getTableTemplateById.mockReturnValue(noIndex)
     const res = await runRecall(makeCtx(), makeGen(), config())
-    expect(res).toEqual({ outputs: {} })
+    expect(res).toEqual({ outputs: {}, deadPorts: ['error'] })
     expect(mockRun.runLlmCall).not.toHaveBeenCalled()
   })
 })
@@ -184,6 +186,9 @@ describe('memory.recall — happy path', () => {
     expect(block).toContain('SE') // StoryEngine slot
     expect(block).toContain('QP') // QuestPlan slot
     expect(res.outputs!.report).toBe('recalled 1 of 1 code(s), 0 note section(s)')
+    // SUCCESS declares the `error` port dead (A2) and is NOT flagged failed-open.
+    expect(res.deadPorts).toEqual(['error'])
+    expect(res.failedOpen).toBeFalsy()
     // Plan persisted for the next turn.
     expect(setNodeState).toHaveBeenCalledWith('recall', {
       floor: 1,
@@ -230,6 +235,25 @@ describe('memory.recall — deterministic fetch', () => {
     expect(block).toContain('R1')
     expect(block).toContain('R2')
     expect(block).not.toContain('R3')
+  })
+
+  it('splits <Recall> codes on CJK separators （，、；） not just ASCII comma/space', async () => {
+    mockDb.readAllTables.mockReturnValue(
+      readsFor([
+        ['MT0001', 'o1', 'R1'],
+        ['MT0002', 'o2', 'R2'],
+        ['MT0003', 'o3', 'R3']
+      ])
+    )
+    // A zh model emits the ideographic comma / enumeration comma / fullwidth semicolon between codes.
+    mockRun.runLlmCall.mockResolvedValue({ raw: '<Recall>MT0001，MT0002、MT0003；MT9999</Recall>', rawUsage: {} })
+    const res = await runRecall(makeCtx(), makeGen(), config())
+    // All three real codes split out and resolve; the invented one drops.
+    expect(res.outputs!.report).toBe('recalled 3 of 4 code(s), 0 note section(s)')
+    const block = res.outputs!.block as string
+    expect(block).toContain('R1')
+    expect(block).toContain('R2')
+    expect(block).toContain('R3')
   })
 
   it('MT001 does NOT collide with MT0012 (exact-key, not substring)', async () => {
@@ -307,6 +331,10 @@ describe('memory.recall — fail-open', () => {
     })
     expect(res.outputs!.report).toContain('failed open')
     expect(res.debug!['recall error (failed open)']).toBe('boom')
+    // A2/A3: the non-error ports are declared dead (throw-path parity) and the node is flagged
+    // failed-open so the trace can tint it a warning without being a hard 'failed'.
+    expect(res.deadPorts).toEqual(['block', 'report'])
+    expect(res.failedOpen).toBe(true)
   })
 
   it('a plain (non-NodeRunFailure) side-call error also fails open with class-A defaults', async () => {

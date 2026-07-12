@@ -129,7 +129,17 @@ const load = (name: string): WorkflowDoc =>
   JSON.parse(fs.readFileSync(path.join(__dirname, `../../docs/workflows/${name}`), 'utf-8')) as WorkflowDoc
 
 const DOC = load('plot-recall.rptflow')
-const MEMORY_GROUP_IDS = ['trigger-cadence', 'trigger-state', 'mode', 'maintain', 'log-apply']
+// The post-turn maintenance group: the table maintainer AND the notes maintainer share ONE cadence
+// chain (trigger.cadence + trigger.state → control.mode → …when). All are gated off on a plain turn.
+const MEMORY_GROUP_IDS = [
+  'trigger-cadence',
+  'trigger-state',
+  'mode',
+  'maintain',
+  'log-apply',
+  'notes-maintain',
+  'log-notes'
+]
 
 beforeEach(() => {
   progress.store = {}
@@ -195,13 +205,36 @@ describe('plot-recall example — shape', () => {
     expect((recall?.config as { stream?: boolean }).stream).toBe(false)
   })
 
-  it('keeps the headless Table-memory maintainer group gated by mode.fired', () => {
+  it('keeps the headless maintainer group gated by mode.fired', () => {
     const g = DOC.groups![0]
     expect(g.nodeIds).toEqual(MEMORY_GROUP_IDS)
     expect(DOC.edges.find((e) => e.to.node === 'maintain' && e.to.port === 'when')?.from).toEqual({
       node: 'mode',
       port: 'fired'
     })
+  })
+
+  it('joins notes.maintain onto the shared maintenance cadence (mode.fired → notes-maintain.when)', () => {
+    const notes = DOC.nodes.find((n) => n.id === 'notes-maintain')
+    expect(notes?.type).toBe('notes.maintain')
+    expect(
+      DOC.edges.find((e) => e.to.node === 'notes-maintain' && e.to.port === 'when')?.from
+    ).toEqual({ node: 'mode', port: 'fired' })
+    expect(
+      DOC.edges.find((e) => e.from.node === 'notes-maintain' && e.from.port === 'error')?.to
+    ).toEqual({ node: 'log-notes', port: 'value' })
+    // The group exposes an API preset knob for the notes maintainer alongside the table one.
+    expect(DOC.groups![0].exposed?.some((x) => x.node === 'notes-maintain' && x.path === 'api_preset_id')).toBe(true)
+  })
+
+  it('groups turn-coupled recall with a cost note and exposes api_preset_id + max_rows', () => {
+    const g = DOC.groups!.find((x) => x.nodeIds.includes('recall'))
+    expect(g).toBeTruthy()
+    expect(g!.nodeIds).toEqual(['recall', 'log-recall'])
+    const paths = (g!.exposed ?? []).filter((x) => x.node === 'recall').map((x) => x.path)
+    expect(paths).toContain('api_preset_id')
+    expect(paths).toContain('max_rows')
+    expect((g!.note ?? '').length).toBeGreaterThan(0)
   })
 })
 

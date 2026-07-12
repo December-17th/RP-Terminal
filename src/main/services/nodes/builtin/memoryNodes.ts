@@ -109,14 +109,19 @@ export const composeMaintainerMessages = (
       rows.push(...history)
       continue
     }
-    const withHistory = m.content.split(HISTORY_MARKER).join(historyText(history))
-    const interpolated = interpolate(withHistory, {}, gen)
-    const withTables = interpolated
+    // Interpolate the AUTHORED scaffold FIRST (macros/EJS), then substitute every model-derived slot —
+    // {{tables}}/{{input}} and the inline {history} — as INERT DATA (split/join), so chat transcript /
+    // table text can never pass through macro expansion or EJS eval. The composeRecallMessages /
+    // composeNotesMaintainerMessages discipline.
+    const interpolated = interpolate(m.content, {}, gen)
+    const filled = interpolated
       .split('{{tables}}')
       .join(tablesBlock)
       .split('{{input}}')
       .join(tablesBlock)
-    rows.push({ role: m.role, content: withTables })
+      .split(HISTORY_MARKER)
+      .join(historyText(history))
+    rows.push({ role: m.role, content: filled })
   }
   return providerShape(gen.settings, rows)
 }

@@ -720,6 +720,8 @@ const zh: Record<string, string> = {
   'workflow.trace.status.ran': '已执行',
   'workflow.trace.status.skipped': '已跳过',
   'workflow.trace.status.failed': '失败',
+  'workflow.trace.status.failedOpen': '容错继续',
+  'workflow.trace.failedOpenTip': '已执行，但某个内部步骤失败，已被容错处理，未中断本回合。',
 
   'workflowEditor.viewTitle': '工作流编辑器',
   'workflowEditor.memory': '记忆…',
@@ -739,6 +741,8 @@ const zh: Record<string, string> = {
   'workflowEditor.cat.history': '历史',
   'workflowEditor.cat.vars': '变量',
   'workflowEditor.cat.table': '表格',
+  'workflowEditor.cat.memory': '记忆',
+  'workflowEditor.cat.notes': '笔记',
   'workflowEditor.cat.lorebook': '世界书',
   'workflowEditor.cat.mvu': 'MVU',
   'workflowEditor.cat.text': '文本',
@@ -921,6 +925,15 @@ const zh: Record<string, string> = {
   'workflowEditor.memoryMaintain.previewButton': '预览发送的提示词',
   'workflowEditor.memoryMaintain.previewLoading': '正在组合…',
   'workflowEditor.memoryMaintain.previewError': '无法组合提示词。',
+  // 剧情回溯规划节点（memory.recall / notes.maintain）的组合提示词预览。
+  'workflowEditor.recallPreview.title': '发送的提示词',
+  'workflowEditor.recallPreview.button': '预览发送的提示词',
+  'workflowEditor.recallPreview.loading': '正在组合…',
+  'workflowEditor.recallPreview.error': '无法组合提示词。',
+  'workflowEditor.notesPreview.title': '发送的提示词',
+  'workflowEditor.notesPreview.button': '预览发送的提示词',
+  'workflowEditor.notesPreview.loading': '正在组合…',
+  'workflowEditor.notesPreview.error': '无法组合提示词。',
   'workflowEditor.err.GROUP_MEMBER_MISSING': '模块引用了图中不存在的节点',
   'workflowEditor.err.GROUP_OVERLAP': '某个节点属于多个模块',
   'workflowEditor.err.GROUP_EXPOSED_NOT_MEMBER': '暴露的设置指向了非成员节点',
@@ -980,6 +993,9 @@ const zh: Record<string, string> = {
   'workflowEditor.nodeTitle.trigger.manual': '手动触发器',
   'workflowEditor.nodeTitle.history.recent': '近期历史',
   'workflowEditor.nodeTitle.agent.llm': '智能体',
+  'workflowEditor.nodeTitle.memory.maintain': '维护记忆表',
+  'workflowEditor.nodeTitle.memory.recall': '回忆检索',
+  'workflowEditor.nodeTitle.notes.maintain': '维护剧情笔记',
   // 节点说明
   'workflowEditor.nodeDesc.input.context':
     '构建本回合的上下文包：会话、角色卡、设置、预设、世界书、聊天历史与工作变量。每张图的起点——几乎所有节点都要读取它的输出。',
@@ -1049,6 +1065,12 @@ const zh: Record<string, string> = {
     '读取包裹节点的某个边界值（按 slot 选择 gen 或 in1–in4）——只有在子图文档内才有意义；普通回合图会拒绝这种节点类型。',
   'workflowEditor.nodeDesc.subgraph.output':
     '把一个值从子图内部报告到某个边界输出槽（out1–out4），由外层「子图」节点对应的输出端口读取——只有在子图文档内才有意义。',
+  'workflowEditor.nodeDesc.memory.maintain':
+    '回合后的 SQL 记忆表维护者：一次旁路调用读取近期对话（{history}）与当前表格（{{tables}}），产出更新绑定模板各表的编辑指令。请接在 Signal 之后，按节奏在主路径之外运行。',
+  'workflowEditor.nodeDesc.memory.recall':
+    '回合前的剧情回忆规划器：一次旁路调用读取常驻表格目录（{{catalogue}}）、笔记目录（{{notes_toc}}）、待处理输入（{{action}}）与上回合的计划（{{plan}}），再把检索到的编年史行与笔记小节合成一段提示词尾部文本块供「组装提示词」使用。失败即放行——绝不阻塞回合。',
+  'workflowEditor.nodeDesc.notes.maintain':
+    '回合后维护「回忆检索」所检索的人类可读剧情笔记：一次旁路调用读取近期对话（{history}）与当前笔记（{{notes}}），写回 <MemoryNote> 小节编辑——只写叙事散文，与 SQL 表保持互不重复。请接在 Signal 之后按节奏运行。',
   // 通用端口说明（无逐节点条目时回退到这里）
   'workflowEditor.portDesc.common.gen': '来自“上下文”的回合包（设置、角色卡、历史、变量）',
   'workflowEditor.portDesc.common.when': '可选门控：信号触发时本节点才运行',

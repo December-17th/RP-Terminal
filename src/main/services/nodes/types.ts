@@ -89,6 +89,22 @@ export interface RunContext {
 export interface NodeResult {
   outputs?: Record<string, unknown>
   signals?: string[]
+  /** Output port names the engine must treat as NOT produced this run — it prunes their outgoing
+   *  edges (adds them to deadEdge), exactly like the throw path prunes a failed node's non-error
+   *  edges. This is the fail-open node's affordance for matching throw-path error semantics WITHOUT
+   *  throwing (plot-recall finding A2): a node that internally fails-open (e.g. `memory.recall`) can
+   *  emit its `error` value on the `error` port yet declare its NON-error ports dead so downstream
+   *  non-error branches don't fire; and on SUCCESS it declares the `error` port dead so a wired error
+   *  branch — and the "log undefined" consumer — never fires on a good turn. A dead port whose value
+   *  is also present in `outputs` is still delivered to no one (the prune wins). Absent = no ports
+   *  pruned (every pre-A2 node behaves exactly as before). */
+  deadPorts?: string[]
+  /** A node that HANDLED an internal failure without aborting the turn (fail-open — e.g. a caught
+   *  side-call failure in `memory.recall`). The node still traces status 'ran' (it did not throw, so
+   *  it is not a hard 'failed'), but this marker rides onto the trace so the UI can tint it as a
+   *  warning and the failure is not invisible behind a green row (finding A3). Purely advisory —
+   *  the engine does not change control flow on it. Absent = a clean run. */
+  failedOpen?: boolean
   /** Debug-only detail for the run trace (NOT graph output ports — never wired, never read by
    *  downstream nodes). The engine folds these into the node's trace so they surface in the run
    *  drawer's Runs tab, keyed by label. Used by `agent.llm` to expose the COMPOSED prompt it sent

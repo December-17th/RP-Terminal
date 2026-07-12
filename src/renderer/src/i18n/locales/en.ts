@@ -749,6 +749,8 @@ const en: Record<string, string> = {
   'workflow.trace.status.ran': 'ran',
   'workflow.trace.status.skipped': 'skipped',
   'workflow.trace.status.failed': 'failed',
+  'workflow.trace.status.failedOpen': 'failed open',
+  'workflow.trace.failedOpenTip': 'Ran, but an internal step failed and was handled without stopping the turn.',
 
   'workflowEditor.viewTitle': 'Workflow Editor',
   'workflowEditor.memory': 'Memory…',
@@ -768,6 +770,8 @@ const en: Record<string, string> = {
   'workflowEditor.cat.history': 'History',
   'workflowEditor.cat.vars': 'Variables',
   'workflowEditor.cat.table': 'Tables',
+  'workflowEditor.cat.memory': 'Memory',
+  'workflowEditor.cat.notes': 'Notes',
   'workflowEditor.cat.lorebook': 'Lorebook',
   'workflowEditor.cat.mvu': 'MVU',
   'workflowEditor.cat.text': 'Text',
@@ -958,6 +962,15 @@ const en: Record<string, string> = {
   'workflowEditor.memoryMaintain.previewButton': 'Preview sent prompt',
   'workflowEditor.memoryMaintain.previewLoading': 'Composing…',
   'workflowEditor.memoryMaintain.previewError': 'Could not compose the prompt.',
+  // Composed-prompt preview for the plot-recall planner nodes (memory.recall / notes.maintain).
+  'workflowEditor.recallPreview.title': 'Sent prompt',
+  'workflowEditor.recallPreview.button': 'Preview sent prompt',
+  'workflowEditor.recallPreview.loading': 'Composing…',
+  'workflowEditor.recallPreview.error': 'Could not compose the prompt.',
+  'workflowEditor.notesPreview.title': 'Sent prompt',
+  'workflowEditor.notesPreview.button': 'Preview sent prompt',
+  'workflowEditor.notesPreview.loading': 'Composing…',
+  'workflowEditor.notesPreview.error': 'Could not compose the prompt.',
   'workflowEditor.err.GROUP_MEMBER_MISSING': 'A module references a node that is not in the graph',
   'workflowEditor.err.GROUP_OVERLAP': 'A node belongs to more than one module',
   'workflowEditor.err.GROUP_EXPOSED_NOT_MEMBER': 'An exposed setting points at a non-member node',
@@ -1017,6 +1030,9 @@ const en: Record<string, string> = {
   'workflowEditor.nodeTitle.trigger.manual': 'Manual Trigger',
   'workflowEditor.nodeTitle.history.recent': 'Recent History',
   'workflowEditor.nodeTitle.agent.llm': 'Agent',
+  'workflowEditor.nodeTitle.memory.maintain': 'Maintain Memory',
+  'workflowEditor.nodeTitle.memory.recall': 'Recall Memory',
+  'workflowEditor.nodeTitle.notes.maintain': 'Maintain Notes',
   // Node descriptions (what the node does).
   'workflowEditor.nodeDesc.input.context':
     'Builds the turn bundle: session, character card, settings, preset, lorebooks, chat history and working variables. The start of every graph — almost every other node takes its output.',
@@ -1086,6 +1102,12 @@ const en: Record<string, string> = {
     'Reads one of the wrapper’s boundary values (gen or in1–in4, chosen by slot) — only meaningful inside a sub-graph doc; a plain turn graph rejects this node type.',
   'workflowEditor.nodeDesc.subgraph.output':
     'Reports a value out of the sub-graph on one of its boundary slots (out1–out4), read by the enclosing Sub-graph node’s matching output port — only meaningful inside a sub-graph doc.',
+  'workflowEditor.nodeDesc.memory.maintain':
+    'The post-turn maintainer for the SQL memory tables: one side call reads the recent transcript ({history}) and the current tables ({{tables}}) and emits the edits that update the bound template’s tables. Gate it behind a Signal so it runs on a cadence, off the hot path.',
+  'workflowEditor.nodeDesc.memory.recall':
+    'The pre-turn plot-recall planner: one side call reads the always-on table catalogue ({{catalogue}}), the notes table-of-contents ({{notes_toc}}), the pending action ({{action}}) and last turn’s plan ({{plan}}), then composes the recalled chronicle rows + note sections into one prompt-tail block for Assemble. Fails open — never blocks the turn.',
+  'workflowEditor.nodeDesc.notes.maintain':
+    'The post-turn maintainer for the human-readable narrative notes that Recall Memory greps: one side call reads the recent transcript ({history}) and the current notes ({{notes}}) and writes back <MemoryNote> section edits — narrative prose only, kept disjoint from the SQL tables. Gate it behind a Signal to run on a cadence.',
   // Port descriptions shared by many nodes (looked up when no per-node entry exists).
   'workflowEditor.portDesc.common.gen':
     'The turn bundle from Context (settings, card, history, variables)',

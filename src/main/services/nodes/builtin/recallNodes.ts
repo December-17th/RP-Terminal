@@ -3,7 +3,7 @@ import { buildGenContext } from '../../generation/genContext'
 import { GenContext } from '../../generation/types'
 import { providerShape } from '../../generation/providerShape'
 import { ChatMessage } from '../../promptBuilder'
-import { TableTemplate } from '../../../types/tableTemplate'
+import { TableTemplate, TableDef } from '../../../types/tableTemplate'
 import { LorebookEntry } from '../../../types/character'
 import { NodeError, NodeImpl, NodeRunFailure } from '../types'
 import { interpolate } from './messageNodes'
@@ -63,11 +63,14 @@ import { RECALL_PLANNER_MESSAGES, RECALL_DIRECTIVE } from './defaultRecallPrompt
  * `phase === 'pre' && !state.failOpen.has(id)` rule; `state.failOpen` only fills from composed-pack
  * branch modes, so a hand-wired doc gets no fail-open shield). memory.maintain can afford to throw
  * because it is post-phase; recall must NOT. So a runtime side-call failure is CAUGHT inside run()
- * and returned as a value: no `block` output (assemble reads its `block` input unwired — the narrator
- * spine shape), the NodeError-shaped value emitted on the node's OWN `error` output (the engine
- * delivers node-returned outputs verbatim, so a wired `error` edge receives it and an unwired one is
- * inert), and the failure kept observable via `report` + the run-trace `debug`. Config/schema errors
- * keep normal semantics (the engine parses config BEFORE run()).
+ * and returned as a value that MATCHES the engine's throw-path error semantics via the A2 dead-port
+ * affordance (NodeResult.deadPorts / failedOpen): the NodeError is emitted on the node's OWN `error`
+ * output, the NON-error ports (`block`, `report`) are declared DEAD so downstream non-error branches
+ * are pruned (assemble reads its `block` input unwired — the narrator-spine shape), and `failedOpen`
+ * tints the trace so the fail-open is not invisible behind a green row. On SUCCESS the reverse: the
+ * `error` port is declared dead so a wired error branch fires EXACTLY when recall failed (never on a
+ * good turn delivering `undefined`). The failure stays observable via `report` + the run-trace
+ * `debug`. Config/schema errors keep normal semantics (the engine parses config BEFORE run()).
  */
 
 const recallMessageSchema = z.object({
@@ -127,13 +130,42 @@ const narrowTemplate = (template: TableTemplate, csv: string | undefined): Table
 const hasCatalogueTable = (template: TableTemplate): boolean =>
   template.tables.some((t) => t.exportConfig.enabled && t.exportConfig.extraIndexEnabled)
 
+/**
+ * Recall fetches rows by matching the planner's codes against the PER-ROW keyword entries
+ * `synthesizeEntries` emits (`filterEntriesByCodes`). That only bites when a catalogue table is shaped
+ * so each row becomes an individually code-keyed entry: `splitByRow` (one entry per row, not one
+ * whole-table entry), `entryType: 'keyword'` (keyed, not always-on constant — a constant entry carries
+ * `keys: []`), AND at least one keyword-producing column so the code actually lands in `keys` (a
+ * `keywords` column, or an `extraIndex` column in `'both'` mode — the code column). A table can list
+ * rows in the catalogue (`enabled + extraIndexEnabled`, so the planner SEES codes) yet satisfy none of
+ * these, in which case every recalled code silently matches nothing and the report reads "recalled 0 of
+ * N" with no clue why. Returns a DISTINCT reason naming the mis-shaped tables, or '' when at least one
+ * catalogue table is correctly shaped. Cheap + pure over `exportConfig` — no I/O; mirrors
+ * `synthesizeEntries`' keyword-key derivation so the check and the fetch never disagree.
+ */
+const recallShapeIssue = (template: TableTemplate): string => {
+  const catalogue = template.tables.filter(
+    (t) => t.exportConfig.enabled && t.exportConfig.extraIndexEnabled
+  )
+  const codeKeyed = (t: TableDef): boolean => {
+    const ec = t.exportConfig
+    const hasKeyColumn =
+      ec.keywords.split(',').some((c) => c.trim()) ||
+      ec.extraIndexColumns.some((c) => ec.extraIndexColumnModes[c] === 'both')
+    return ec.splitByRow && ec.entryType === 'keyword' && hasKeyColumn
+  }
+  if (catalogue.some(codeKeyed)) return ''
+  const names = catalogue.map((t) => t.sqlName).join(', ')
+  return `table ${names} has no code-keyed per-row entries — recall needs splitByRow + keyword entryType + extraIndex on the code column`
+}
+
 /** Split `<Recall>` bodies into codes: split on commas/whitespace, trim, drop empties, dedupe
  *  (first-seen order). */
 const parseCodes = (bodies: string[]): string[] => {
   const seen = new Set<string>()
   const out: string[] = []
   for (const body of bodies) {
-    for (const tok of body.split(/[\s,]+/)) {
+    for (const tok of body.split(/[\s,，、;；]+/)) {
       const code = tok.trim()
       if (code && !seen.has(code)) {
         seen.add(code)
@@ -226,8 +258,9 @@ export const memoryRecall: NodeImpl = {
     const hasTables = !!template && hasCatalogueTable(template)
     const notes = readNotes(gen.profileId, gen.chatId)
     const hasNotes = notes.trim().length > 0
-    // Both corpora empty → no-op, NO model call (byte-identical when unwired/idle).
-    if (!hasTables && !hasNotes) return { outputs: {} }
+    // Both corpora empty → no-op, NO model call (byte-identical when unwired/idle). Declare `error`
+    // dead (A2) so a wired error edge stays inert rather than delivering `undefined`.
+    if (!hasTables && !hasNotes) return { outputs: {}, deadPorts: ['error'] }
 
     // Rows for both the catalogue AND the deterministic code fetch (one read, reused).
     const reads: TableRead[] = template ? readAllTables(gen.profileId, gen.chatId, template) : []
@@ -268,13 +301,22 @@ export const memoryRecall: NodeImpl = {
         nodeId: node.id,
         attempts: f?.attempts ?? 1
       }
+      // FAIL-OPEN (A2): the side call failed but the turn must NOT abort. Emit the error on the `error`
+      // port and mark the node failed-open (trace warning tint, A3). Declare the NON-error ports dead so
+      // downstream non-error branches don't fire — mirroring the throw path, which kills all non-error
+      // edges — while the turn STILL proceeds (we return a value, never throw). A pruned `block` leaves
+      // assemble's `block` input unwired (the narrator-spine shape) instead of delivering `undefined`.
+      // The failure stays observable via `report` (shown in the trace preview) + the debug entry.
       return {
         outputs: { report: `recall failed open: ${nodeError.message}`, error: nodeError },
-        debug: { ...promptDebug, 'recall error (failed open)': nodeError.message }
+        debug: { ...promptDebug, 'recall error (failed open)': nodeError.message },
+        deadPorts: ['block', 'report'],
+        failedOpen: true
       }
     }
     // Abort-with-empty: nothing to plan; still trace the prompt so the empty result is diagnosable.
-    if (r === null) return { outputs: {}, debug: promptDebug }
+    // `error` port produced no value → declare it dead (A2) so a wired error edge stays inert.
+    if (r === null) return { outputs: {}, debug: promptDebug, deadPorts: ['error'] }
 
     // 4. Parse the reply's tag families.
     const codes = parseCodes(extractTagAll(r.raw, 'Recall'))
@@ -320,7 +362,18 @@ export const memoryRecall: NodeImpl = {
     // 5. Persist the plan for next turn (floor-keyed for rewind-staleness on read).
     ctx.setNodeState(node.id, { floor: gen.floors.length, questPlan, storyEngine })
 
-    const report = `recalled ${recalled.length} of ${codes.length} code(s), ${hits.length} note section(s)`
-    return { outputs: { block, report }, debug: promptDebug }
+    let report = `recalled ${recalled.length} of ${codes.length} code(s), ${hits.length} note section(s)`
+    // Template-shape hint: the planner asked for codes but NONE resolved. If the bound catalogue tables
+    // are not shaped for per-row code fetch, say so DISTINCTLY (report + debug) instead of a bare
+    // "recalled 0 of N". Fail-open — never throws; a mis-configured table just gets an explanation.
+    const shapeIssue =
+      template && codes.length && recalled.length === 0 ? recallShapeIssue(template) : ''
+    const debug = shapeIssue ? { ...promptDebug, 'recall shape issue': shapeIssue } : promptDebug
+    if (shapeIssue) report += ` — ${shapeIssue}`
+    // SUCCESS: the `error` port produced no value, so declare it DEAD (A2). Without this, a live
+    // error edge on a good turn delivers `undefined` — indistinguishable from a fired error branch —
+    // so `log-recall` logs "undefined" and any smarter consumer (retry/notify) fires every turn. Now
+    // a wired error branch runs EXACTLY when recall fails open, matching the engine's throw path.
+    return { outputs: { block, report }, debug, deadPorts: ['error'] }
   }
 }

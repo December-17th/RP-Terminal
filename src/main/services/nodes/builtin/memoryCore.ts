@@ -30,11 +30,52 @@ export const chatTemplate = (gen: GenContext): TableTemplate | null => {
 }
 
 /**
+ * Tag families stripped from an AI reply before a memory agent (maintain / notes / recall) reads it —
+ * the reference planner-transcript strip-list. `<think>` is handled separately by `stripThinking`
+ * (which also folds a dangling open tag); this list covers the model's OTHER non-narrative blocks:
+ * MVU variable ops, status-bar placeholders, JSON patches, and the planner's meta families
+ * (analysis / summary / options / self-critique). Stripping them keeps the recalled transcript to
+ * NARRATIVE PROSE, so a memory pass summarizes the story rather than the model's bookkeeping. Named
+ * families ONLY — legitimate prose is never touched. Single shared list so all three nodes benefit.
+ */
+export const STRIPPED_TAG_FAMILIES = [
+  'UpdateVariable',
+  'update',
+  'updatevariable',
+  'summary',
+  'options',
+  'StatusPlaceHolderImpl',
+  'JSONPatch',
+  'Analysis',
+  'tucao',
+  'review',
+  'refine',
+  'StatusBar',
+  'statusbar'
+] as const
+
+/**
+ * Strip each `STRIPPED_TAG_FAMILIES` block case-insensitively: a paired `<Tag ...>…</Tag>` (tempered so
+ * a stray nested open can't over-match), plus any leftover self-closing `<Tag/>` / bare placeholder
+ * open. Applied AFTER `stripThinking`, mirroring how `<think>` is removed. Pure string transform.
+ */
+const stripTagFamilies = (text: string): string => {
+  let out = text
+  for (const tag of STRIPPED_TAG_FAMILIES) {
+    const paired = new RegExp(`<${tag}\\b[^>]*>(?:(?!<${tag}\\b)[\\s\\S])*?<\\/${tag}\\s*>`, 'gi')
+    const solo = new RegExp(`<${tag}\\b[^>]*?\\/?>`, 'gi')
+    out = out.replace(paired, '').replace(solo, '')
+  }
+  return out
+}
+
+/**
  * The alternating transcript slice a memory agent reads: the last `lastNFloors` floors reduced to the
- * two things it cares about — the player action (`user`) and the AI reply (`assistant`, thinking
- * stripped). `include` narrows to one side; the default 'both' emits the player action THEN the reply
- * per floor (natural summarizer order). Blank sides are skipped. Pure over `gen.floors` (exported so
- * both `history.recent` and `memory.maintain` — and tests — share it).
+ * two things it cares about — the player action (`user`) and the AI reply (`assistant`, with reasoning
+ * AND the model's own state/meta tag families stripped, `stripThinking` + `stripTagFamilies`).
+ * `include` narrows to one side; the default 'both' emits the player action THEN the reply per floor
+ * (natural summarizer order). Blank sides are skipped. Pure over `gen.floors` (exported so both
+ * `history.recent` and `memory.maintain` — and tests — share it).
  */
 export const recentTranscript = (
   gen: GenContext,
@@ -50,7 +91,7 @@ export const recentTranscript = (
       if (user) messages.push({ role: 'user', content: user })
     }
     if (include !== 'user') {
-      const assistant = stripThinking(f.response?.content ?? '').trim()
+      const assistant = stripTagFamilies(stripThinking(f.response?.content ?? '')).trim()
       if (assistant) messages.push({ role: 'assistant', content: assistant })
     }
   }

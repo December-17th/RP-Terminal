@@ -396,6 +396,12 @@ const api = {
     ipcRenderer.invoke('chat-notes-get', profileId, chatId),
   notesSet: (profileId: string, chatId: string, notes: string) =>
     ipcRenderer.invoke('chat-notes-set', profileId, chatId, notes),
+  // Plot-recall composed-prompt previews (mirrors previewMemoryMaintain): compose exactly what the
+  // memory.recall / notes.maintain node would send for this chat, without a model call.
+  previewRecallPlanner: (profileId: string, chatId: string, config: unknown) =>
+    ipcRenderer.invoke('recall-planner-preview', profileId, chatId, config),
+  previewNotesMaintain: (profileId: string, chatId: string, config: unknown) =>
+    ipcRenderer.invoke('notes-maintain-preview', profileId, chatId, config),
   exportTableTemplateDialog: (profileId: string, templateId: string, chatId?: string | null) =>
     ipcRenderer.invoke('table-template-export-dialog', profileId, templateId, chatId),
   // SQL-table memory (issue 07): manual backfill from history + live progress events

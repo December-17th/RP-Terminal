@@ -125,14 +125,24 @@ const contextFor = (re: RegExp, body: string, context: number): string => {
     .join('\n...\n')
 }
 
+/** A parsed notes document: any pre-first-heading `preamble` text plus the addressable `sections`. */
+export interface NotesDocument {
+  /** Verbatim text before the first `##` heading (trailing newlines trimmed). '' when there is none. */
+  preamble: string
+  sections: NotesSection[]
+}
+
 /**
- * Split notes markdown into sections. Text before the first `##` heading is preamble and is dropped
- * from the section list (sections are the addressable/mergeable unit). Each section captures an
- * optional `<!-- keywords: … -->` line (removed from the body) and the trimmed body prose.
+ * Split notes markdown into its preamble (any text before the first `##` heading) and its sections
+ * (the addressable/mergeable unit). Each section captures an optional `<!-- keywords: … -->` line
+ * (removed from the body) and the trimmed body prose. The preamble is preserved verbatim (only trailing
+ * whitespace trimmed) so a hand-written intro survives a parse→serialize round-trip (`mergeNotes`).
  */
-export const parseNotesSections = (notes: string | null | undefined): NotesSection[] => {
+export const parseNotesDocument = (notes: string | null | undefined): NotesDocument => {
   const lines = (notes ?? '').split(/\r?\n/)
   const sections: NotesSection[] = []
+  const preambleLines: string[] = []
+  let sawHeading = false
   let heading: string | null = null
   let bodyLines: string[] = []
 
@@ -156,15 +166,29 @@ export const parseNotesSections = (notes: string | null | undefined): NotesSecti
     const m = HEADING_RE.exec(line)
     if (m) {
       flush()
+      sawHeading = true
       heading = m[1].trim()
       bodyLines = []
     } else if (heading !== null) {
       bodyLines.push(line)
+    } else if (!sawHeading) {
+      preambleLines.push(line)
     }
   }
   flush()
-  return sections
+  // Trailing-whitespace-trimmed so an empty/blank-only preamble round-trips to exactly '' (no drift).
+  const preamble = preambleLines.join('\n').replace(/\s+$/, '')
+  return { preamble, sections }
 }
+
+/**
+ * Split notes markdown into sections. Text before the first `##` heading is preamble and is dropped
+ * from the section list (sections are the addressable/mergeable unit) — use `parseNotesDocument` when
+ * the preamble must be preserved. Each section captures an optional `<!-- keywords: … -->` line
+ * (removed from the body) and the trimmed body prose.
+ */
+export const parseNotesSections = (notes: string | null | undefined): NotesSection[] =>
+  parseNotesDocument(notes).sections
 
 /**
  * Grep `sections` for `query`. A heading- or keyword-match surfaces the whole section; a body-only
@@ -210,8 +234,10 @@ export const formatHits = (hits: SectionHit[], opts: FormatOptions = {}): string
   return out
 }
 
-const serializeSections = (sections: NotesSection[]): string => {
-  if (sections.length === 0) return ''
+const serializeSections = (sections: NotesSection[], preamble = ''): string => {
+  const pre = preamble.trim() ? `${preamble.replace(/\s+$/, '')}\n` : ''
+  // Preamble-only (no sections): preserve the intro verbatim; empty preamble → '' (byte-identical).
+  if (sections.length === 0) return pre
   const blocks = sections.map((s) => {
     const parts = [`## ${s.heading}`]
     if (s.keywords.length) parts.push(`<!-- keywords: ${s.keywords.join(', ')} -->`)
@@ -219,18 +245,20 @@ const serializeSections = (sections: NotesSection[]): string => {
     if (body) parts.push(body)
     return parts.join('\n')
   })
-  return blocks.join('\n\n') + '\n'
+  // A non-empty preamble is separated from the first heading by a blank line.
+  return (pre ? `${pre}\n` : '') + blocks.join('\n\n') + '\n'
 }
 
 /**
  * Upsert sections by case-insensitive heading. `replace` (default) swaps the body; `append` adds to
- * it; an unknown heading creates a new section at the end. Returns the re-serialized markdown.
+ * it; an unknown heading creates a new section at the end. Any pre-first-heading preamble text is
+ * preserved verbatim at the top. Returns the re-serialized markdown.
  */
 export const mergeNotes = (
   existing: string | null | undefined,
   edits: NoteEdit[] | null | undefined
 ): string => {
-  const sections = parseNotesSections(existing)
+  const { preamble, sections } = parseNotesDocument(existing)
   for (const edit of edits ?? []) {
     const heading = edit.heading.trim()
     if (!heading) continue
@@ -248,5 +276,5 @@ export const mergeNotes = (
       mode === 'append' ? [cur.body, incoming].filter(Boolean).join('\n\n') : incoming
     sections[idx] = { ...cur, body, keywords: edit.keywords ?? cur.keywords }
   }
-  return serializeSections(sections)
+  return serializeSections(sections, preamble)
 }

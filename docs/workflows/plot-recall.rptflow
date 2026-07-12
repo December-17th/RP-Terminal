@@ -52,7 +52,10 @@
       },
       "position": { "x": 2560, "y": 700 }
     },
-    { "id": "log-apply", "type": "util.log", "config": { "label": "plot-recall/maintain" }, "position": { "x": 2880, "y": 860 } }
+    { "id": "log-apply", "type": "util.log", "config": { "label": "plot-recall/maintain" }, "position": { "x": 2880, "y": 860 } },
+
+    { "id": "notes-maintain", "type": "notes.maintain", "config": { "stream": false, "retries": 1, "lastNFloors": 6 }, "position": { "x": 2560, "y": 960 } },
+    { "id": "log-notes", "type": "util.log", "config": { "label": "plot-recall/notes" }, "position": { "x": 2880, "y": 1040 } }
   ],
   "edges": [
     { "from": { "node": "ctx", "port": "gen" }, "to": { "node": "trim", "port": "gen" } },
@@ -91,21 +94,36 @@
     { "from": { "node": "trigger-state", "port": "fired" }, "to": { "node": "mode", "port": "when2" } },
 
     { "from": { "node": "mode", "port": "fired" }, "to": { "node": "maintain", "port": "when" } },
-    { "from": { "node": "maintain", "port": "error" }, "to": { "node": "log-apply", "port": "value" } }
+    { "from": { "node": "maintain", "port": "error" }, "to": { "node": "log-apply", "port": "value" } },
+
+    { "from": { "node": "mode", "port": "fired" }, "to": { "node": "notes-maintain", "port": "when" } },
+    { "from": { "node": "notes-maintain", "port": "error" }, "to": { "node": "log-notes", "port": "value" } }
   ],
   "groups": [
     {
       "id": "group-1",
-      "name": "Table memory",
-      "nodeIds": ["trigger-cadence", "trigger-state", "mode", "maintain", "log-apply"],
+      "name": "Memory maintenance",
+      "nodeIds": ["trigger-cadence", "trigger-state", "mode", "maintain", "log-apply", "notes-maintain", "log-notes"],
       "collapsed": true,
       "exposed": [
         { "node": "mode", "path": "selected", "label": "Mode" },
         { "node": "trigger-cadence", "path": "everyNFloors", "label": "Cadence (floors)" },
         { "node": "trigger-state", "path": "value", "label": "Backlog threshold" },
-        { "node": "maintain", "path": "api_preset_id", "label": "API preset" }
+        { "node": "maintain", "path": "api_preset_id", "label": "Table API preset" },
+        { "node": "notes-maintain", "path": "api_preset_id", "label": "Notes API preset" }
       ],
-      "note": "Setup needed before turning memory on: bind a table template with a chronicle ('纪要') table in the Tables view (its 编码索引 column assigns the MT#### codes recall reads; the backlog trigger watches the 'summary'/chronicle unprocessed count). Optionally set an API preset on the Memory node so maintenance runs on a cheaper connection. Modes: every_turn = maintain every N floors; async = maintain when the un-summarized backlog reaches the threshold; off = memory maintenance disabled. Recall itself runs every turn regardless of this Mode."
+      "note": "The post-turn WRITE side. Both maintainers share this cadence chain (trigger.cadence + backlog trigger → Mode). memory.maintain writes the SQL chronicle rows recall reads; notes.maintain grows the human-readable notes prose recall also reads (prose only — it never restates MVU numbers or the SQL tables). Setup before turning memory on: bind a table template with a chronicle ('纪要') table in the Tables view (its 编码索引 column assigns the MT#### codes recall reads; the backlog trigger watches the 'summary'/chronicle unprocessed count). Optionally set a cheaper API preset per maintainer. Modes: every_turn = maintain every N floors; async = maintain when the un-summarized backlog reaches the threshold; off = memory maintenance disabled. Recall itself runs every turn regardless of this Mode. notes.maintain no-ops (zero model calls) until there is a transcript or an existing notes file."
+    },
+    {
+      "id": "group-recall",
+      "name": "Turn-coupled recall",
+      "nodeIds": ["recall", "log-recall"],
+      "collapsed": true,
+      "exposed": [
+        { "node": "recall", "path": "api_preset_id", "label": "API preset" },
+        { "node": "recall", "path": "max_rows", "label": "Max recalled rows" }
+      ],
+      "note": "The pre-turn READ side. memory.recall makes ONE side LLM call on the player's critical path EVERY turn (fail-open: a failure routes to log-recall and the turn still generates). This is the top cost/latency lever in this workflow. Point 'API preset' at a cheap/fast connection to keep recall inexpensive; lower 'Max recalled rows' to cap how many chronicle rows land in the tail block. To run recall less often, gate its 'when' input behind a cadence trigger (it currently runs unconditionally); to turn it off entirely, disable the recall node. With no bound chronicle template AND no notes, recall no-ops (zero model calls)."
     }
   ]
 }

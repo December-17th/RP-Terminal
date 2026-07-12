@@ -47,15 +47,36 @@ export const visibleTabs = (sel: PanelSelection, hasPrompt: boolean): DetailsTab
 export type PromptRole = 'system' | 'user' | 'assistant'
 export const PROMPT_ROLES: readonly PromptRole[] = ['system', 'user', 'assistant']
 
-/** Insertable placeholder chips (spec §6). Sourced from this one constant so the editor + docs agree.
- *  `{{tables}}` is the memory.maintain rendered-tables-block placeholder (alias of `{{input}}`). */
-export const PROMPT_PLACEHOLDERS: readonly string[] = [
-  '{history}',
-  '{{tables}}',
-  '{{input}}',
-  '{{user}}',
-  '{{char}}'
-]
+/** The default insertable placeholder chips (spec §6) — the generic slots any authored prompt sees:
+ *  the `{history}` splice marker plus the persona/char macros. Node types with their OWN prompt slots
+ *  override this via PROMPT_PLACEHOLDERS_BY_TYPE. Sourced from this one module so the editor + docs agree. */
+export const PROMPT_PLACEHOLDERS: readonly string[] = ['{history}', '{{user}}', '{{char}}']
+
+/** Per-node-type placeholder chips: each entry is the EXACT slot set the node's own prompt scaffold
+ *  interpolates (verified against the node's compose* function). Keyed by node `type`; a type absent
+ *  here falls back to PROMPT_PLACEHOLDERS. This makes the Prompt tab's chips node-aware so a node is
+ *  only ever offered the slots it actually fills (plot-recall editor-UX D2). */
+export const PROMPT_PLACEHOLDERS_BY_TYPE: Readonly<Record<string, readonly string[]>> = {
+  // memoryNodes.composeMaintainerMessages: {{tables}} (canonical) / {{input}} (alias) + {history} + macros.
+  'memory.maintain': ['{history}', '{{tables}}', '{{input}}', '{{user}}', '{{char}}'],
+  // recallNodes.composeRecallMessages: {{catalogue}} {{notes_toc}} {{action}} {{plan}} + {history} + macros.
+  'memory.recall': [
+    '{history}',
+    '{{catalogue}}',
+    '{{notes_toc}}',
+    '{{action}}',
+    '{{plan}}',
+    '{{user}}',
+    '{{char}}'
+  ],
+  // notesNodes.composeNotesMaintainerMessages: {{notes}} + {history} + macros.
+  'notes.maintain': ['{history}', '{{notes}}', '{{user}}', '{{char}}']
+}
+
+/** The placeholder chips to offer for a node type — its own slot set if declared, else the generic
+ *  default. `undefined` (no node-type context, e.g. an agent-group prompt member) also gets the default. */
+export const placeholdersForType = (type: string | undefined): readonly string[] =>
+  (type && PROMPT_PLACEHOLDERS_BY_TYPE[type]) || PROMPT_PLACEHOLDERS
 
 export interface PromptRow {
   role: string
