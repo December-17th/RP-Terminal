@@ -30,6 +30,8 @@
   --rpt-danger: #e74c3c;
   --rpt-success: #4caf72;
   --rpt-warning: #e0a23c;
+  /* Soft warning wash — first-paint default (mirrors the dark theme); themes override at runtime. */
+  --rpt-warning-soft: rgba(224, 162, 60, 0.14);
   /* Chrome polish (UI overhaul) — ADDITIVE tokens. New names, not referenced by any pre-existing
      rule, so themes need not define them and other screens are untouched. The mono face is the
      app's "terminal" utility voice (brand, eyebrows, tabular metadata); body stays the sans. */

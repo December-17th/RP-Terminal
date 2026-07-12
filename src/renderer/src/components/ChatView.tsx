@@ -478,8 +478,8 @@ export function ChatView({ profileId }: { profileId: string }): React.ReactEleme
             padding: '6px 10px',
             margin: '6px 0',
             borderRadius: 6,
-            border: '1px solid var(--rpt-warning, #d9a441)',
-            background: 'var(--rpt-warning-soft, rgba(217,164,65,0.14))',
+            border: '1px solid var(--rpt-warning, #e0a23c)',
+            background: 'var(--rpt-warning-soft, rgba(224,162,60,0.14))',
             fontSize: 13
           }}
         >

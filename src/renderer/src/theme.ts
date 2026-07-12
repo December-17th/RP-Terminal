@@ -36,6 +36,9 @@ const dark: ThemeTokens = {
   '--rpt-danger': '#e74c3c',
   '--rpt-success': '#4caf72',
   '--rpt-warning': '#e0a23c',
+  // Soft warning wash — low-alpha warning tint for advisory banner backgrounds (recall fail-open
+  // banner, Notes conflict banner). Sibling of --rpt-warning like --rpt-accent-soft is of --rpt-accent.
+  '--rpt-warning-soft': 'rgba(224, 162, 60, 0.14)',
   // Agent Packs (agent-packs plan WP3.1): the pack card's derived domain tokens. gate-on = the
   // toggle's active fill (success-green: "this pack is live"); headless = the accent for a
   // "runs by itself" badge; write-* = the danger-tinted capability chip (a pack that MUTATES state).
@@ -78,6 +81,8 @@ const carbon: ThemeTokens = {
   '--rpt-danger': '#f06a62',
   '--rpt-success': '#43c98b',
   '--rpt-warning': '#e2a93c',
+  // Soft warning wash (see the dark set above).
+  '--rpt-warning-soft': 'rgba(226, 169, 60, 0.14)',
   // Agent Packs (see the dark set above for what each token drives).
   '--rpt-agent-gate-on': '#43c98b',
   '--rpt-agent-headless': '#2b2410',
@@ -113,6 +118,9 @@ const light: ThemeTokens = {
   '--rpt-danger': '#d23b35',
   '--rpt-success': '#1f9e5e',
   '--rpt-warning': '#b8770a',
+  // Soft warning wash (see the dark set above). Light theme keeps a low alpha so the near-white tint
+  // stays legible under the full-strength warning border/text and the dark inherited banner text.
+  '--rpt-warning-soft': 'rgba(184, 119, 10, 0.13)',
   // Agent Packs (see the dark set above). Light theme flips to light chip fills with dark-enough
   // text for AA; gate-on stays the success green (dark enough on the light toggle track).
   '--rpt-agent-gate-on': '#1f9e5e',
