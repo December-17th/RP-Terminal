@@ -21,13 +21,39 @@ import { SANDBOX_LIB_JS } from './sandboxLib'
 // --- injectable host deps (main wires the real ones; renderer/tests get safe no-ops) ---
 type LogFn = (level: string, msg: string, detail?: string) => void
 type PatchFn = (root: Record<string, any>, ops: any[]) => unknown
+type YamlStringifyFn = (val: any, opts?: any) => string
+type YamlParseFn = (text: string) => any
 let logFn: LogFn = () => {}
 let patchFn: PatchFn = () => {}
+// YAML for the `YAML` sandbox global (world-info/status entries call YAML.stringify/parse). Defaults to a
+// JSON round-trip (JSON is valid YAML, so values still reach the AI) and main overrides with the real
+// `yaml` package for faithful block-style output. Never throw — a bad serialize would strip the entry.
+let yamlStringifyFn: YamlStringifyFn = (val) => {
+  try {
+    return JSON.stringify(val, null, 2)
+  } catch {
+    return ''
+  }
+}
+let yamlParseFn: YamlParseFn = (text) => {
+  try {
+    return JSON.parse(text)
+  } catch {
+    return {}
+  }
+}
 
 /** Wire host-specific deps. Call before `initEngine`. */
-export const setEngineDeps = (deps: { log?: LogFn; applyJsonPatch?: PatchFn }): void => {
+export const setEngineDeps = (deps: {
+  log?: LogFn
+  applyJsonPatch?: PatchFn
+  yamlStringify?: YamlStringifyFn
+  yamlParse?: YamlParseFn
+}): void => {
   if (deps.log) logFn = deps.log
   if (deps.applyJsonPatch) patchFn = deps.applyJsonPatch
+  if (deps.yamlStringify) yamlStringifyFn = deps.yamlStringify
+  if (deps.yamlParse) yamlParseFn = deps.yamlParse
 }
 
 /** Read-only data exposed to the TH-3 template helpers (getchar/getwi/…). */
@@ -287,6 +313,26 @@ const installBridge = (vm: QuickJSContext, ctx: TemplateContext): void => {
     }
     return obj
   })
+  // Backing for the `YAML` sandbox global (see boot prelude). Host-injected serializer; falls back to a
+  // JSON round-trip so it never throws / never returns undefined (which would empty the entry's output).
+  reg('__yamlStringify', (val: any, opts: any) => {
+    try {
+      return yamlStringifyFn(val, opts)
+    } catch {
+      try {
+        return JSON.stringify(val, null, 2)
+      } catch {
+        return ''
+      }
+    }
+  })
+  reg('__yamlParse', (text: any) => {
+    try {
+      return yamlParseFn(String(text ?? ''))
+    } catch {
+      return {}
+    }
+  })
 
   // Read-only constants.
   const setConst = (name: string, val: any): void => {
@@ -338,6 +384,15 @@ const installBridge = (vm: QuickJSContext, ctx: TemplateContext): void => {
       getCurrentMessageId: function(){ return __thGetLastMessageId(); },
       triggerSlash: function(){ return undefined; },
       insertOrAssignVariables: function(){ return undefined; }
+    };
+
+    // YAML — MVU/data_schema/status world-info entries reference a \`YAML\` global (ST provides the yaml
+    // lib). Backed by the host serializer (real \`yaml\` in main; JSON round-trip elsewhere). Without it,
+    // e.g. the 命定之诗 status entry's \`<%= YAML.stringify(cleanData) %>\` throws → the whole entry is
+    // stripped → <status_current_variables> reaches the AI empty.
+    globalThis.YAML = {
+      stringify: function(v, o){ return __str(__yamlStringify(v, o)); },
+      parse: function(s){ return __yamlParse(s); }
     };
 
   ` + SANDBOX_LIB_JS // the clean-room lodash/faker/console subset (extracted — WS-4)
