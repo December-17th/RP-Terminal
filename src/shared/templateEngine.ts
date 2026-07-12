@@ -21,13 +21,39 @@ import { SANDBOX_LIB_JS } from './sandboxLib'
 // --- injectable host deps (main wires the real ones; renderer/tests get safe no-ops) ---
 type LogFn = (level: string, msg: string, detail?: string) => void
 type PatchFn = (root: Record<string, any>, ops: any[]) => unknown
+type YamlStringifyFn = (val: any, opts?: any) => string
+type YamlParseFn = (text: string) => any
 let logFn: LogFn = () => {}
 let patchFn: PatchFn = () => {}
+// YAML for the `YAML` sandbox global (world-info/status entries call YAML.stringify/parse). Defaults to a
+// JSON round-trip (JSON is valid YAML, so values still reach the AI) and main overrides with the real
+// `yaml` package for faithful block-style output. Never throw — a bad serialize would strip the entry.
+let yamlStringifyFn: YamlStringifyFn = (val) => {
+  try {
+    return JSON.stringify(val, null, 2)
+  } catch {
+    return ''
+  }
+}
+let yamlParseFn: YamlParseFn = (text) => {
+  try {
+    return JSON.parse(text)
+  } catch {
+    return {}
+  }
+}
 
 /** Wire host-specific deps. Call before `initEngine`. */
-export const setEngineDeps = (deps: { log?: LogFn; applyJsonPatch?: PatchFn }): void => {
+export const setEngineDeps = (deps: {
+  log?: LogFn
+  applyJsonPatch?: PatchFn
+  yamlStringify?: YamlStringifyFn
+  yamlParse?: YamlParseFn
+}): void => {
   if (deps.log) logFn = deps.log
   if (deps.applyJsonPatch) patchFn = deps.applyJsonPatch
+  if (deps.yamlStringify) yamlStringifyFn = deps.yamlStringify
+  if (deps.yamlParse) yamlParseFn = deps.yamlParse
 }
 
 /** Read-only data exposed to the TH-3 template helpers (getchar/getwi/…). */
@@ -233,6 +259,21 @@ const installBridge = (vm: QuickJSContext, ctx: TemplateContext): void => {
   reg('getWorldInfoActivatedData', () => data.worldInfo || [])
   reg('getMessageHistory', () => data.messages || [])
   reg('getCurrentChatName', () => data.chatName || '')
+  // TavernHelper read shims (feeds the `TavernHelper.*` object defined in the boot prelude). Cards'
+  // status-injection world-info entries read the live variable store + gate on a message id via
+  // TavernHelper (e.g. 命定之诗's 艾莉亚 status core: `getVariables({type:'message'})` +
+  // `getLastMessageId() > 0`). Without these the whole EJS block throws (TavernHelper undefined) and
+  // renderLoreEntry strips it — so the current stat_data never reaches the prompt. READ-only + sync:
+  //  · getVariables({type}) → the store for that scope (global → globals, else the chat/message store,
+  //    which carries `stat_data`), a deep-copied snapshot (jsToHandle) so the card can't mutate the live
+  //    store through it.
+  //  · getLastMessageId() → the 0-based index of the last flat chat message (2 per turn); -1 with no
+  //    history, so the card's `> 0` gate correctly suppresses the panel only on the very first message.
+  reg('__thGetVariables', (opt: any) => (opt && opt.type === 'global' ? ctx.globals : ctx.vars))
+  reg('__thGetLastMessageId', () => {
+    const n = (data.messages || []).length
+    return n > 0 ? n * 2 - 1 : -1
+  })
   // getpreset(name): the CONTENT of the prompt entry named `name` (or matching it as a regex) in the
   // ACTIVE preset — matching ST-Prompt-Template. No name → the preset's name (RPT back-compat).
   reg('getPreset', (name: any) => {
@@ -271,6 +312,26 @@ const installBridge = (vm: QuickJSContext, ctx: TemplateContext): void => {
       /* leave obj as-is on a bad patch */
     }
     return obj
+  })
+  // Backing for the `YAML` sandbox global (see boot prelude). Host-injected serializer; falls back to a
+  // JSON round-trip so it never throws / never returns undefined (which would empty the entry's output).
+  reg('__yamlStringify', (val: any, opts: any) => {
+    try {
+      return yamlStringifyFn(val, opts)
+    } catch {
+      try {
+        return JSON.stringify(val, null, 2)
+      } catch {
+        return ''
+      }
+    }
+  })
+  reg('__yamlParse', (text: any) => {
+    try {
+      return yamlParseFn(String(text ?? ''))
+    } catch {
+      return {}
+    }
   })
 
   // Read-only constants.
@@ -311,6 +372,28 @@ const installBridge = (vm: QuickJSContext, ctx: TemplateContext): void => {
     function setChatVar(k,v,o){return setvar(k,v,Object.assign({scope:'chat'},o||{}));}
     // ST-Prompt-Template define(): register a reusable value/function for the rest of the template.
     function define(n,v){ if(n!=null) globalThis[n]=v; return v; }
+
+    // Minimal sync TavernHelper surface for world-info EJS that gates/reads via TH (see the __th* host
+    // shims above). Reads are live; write/side-effect APIs (triggerSlash runs slash commands,
+    // insertOrAssignVariables mutates state) are NO-OPS here — a prompt build is a READ pass, and running
+    // them would corrupt state. Defined (not omitted) so an entry that calls them keeps its EJS block
+    // instead of throwing and getting stripped whole.
+    globalThis.TavernHelper = {
+      getVariables: function(o){ return __thGetVariables(o||{}); },
+      getLastMessageId: function(){ return __thGetLastMessageId(); },
+      getCurrentMessageId: function(){ return __thGetLastMessageId(); },
+      triggerSlash: function(){ return undefined; },
+      insertOrAssignVariables: function(){ return undefined; }
+    };
+
+    // YAML — MVU/data_schema/status world-info entries reference a \`YAML\` global (ST provides the yaml
+    // lib). Backed by the host serializer (real \`yaml\` in main; JSON round-trip elsewhere). Without it,
+    // e.g. the 命定之诗 status entry's \`<%= YAML.stringify(cleanData) %>\` throws → the whole entry is
+    // stripped → <status_current_variables> reaches the AI empty.
+    globalThis.YAML = {
+      stringify: function(v, o){ return __str(__yamlStringify(v, o)); },
+      parse: function(s){ return __yamlParse(s); }
+    };
 
   ` + SANDBOX_LIB_JS // the clean-room lodash/faker/console subset (extracted — WS-4)
   const r = vm.evalCode(boot)

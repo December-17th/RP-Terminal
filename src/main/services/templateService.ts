@@ -1,6 +1,7 @@
 // Globals are an untyped variable bag (Record<string, any>), matching TemplateContext.globals.
 import path from 'path'
 import { getQuickJS } from 'quickjs-emscripten'
+import { parse as yamlParse, stringify as yamlStringify } from 'yaml'
 import { getAppDir, readJsonSync, writeJsonSyncAtomic } from './storageService'
 import { log } from './logService'
 import { applyJsonPatch } from '../parsers/mvuParser'
@@ -33,7 +34,10 @@ export const initTemplates = async (): Promise<void> => {
   // `log`'s first param is a LogLevel union (not `string`), so adapt it to the engine's LogFn.
   setEngineDeps({
     log: (level, msg, detail) => log(level as Parameters<typeof log>[0], msg, detail),
-    applyJsonPatch
+    applyJsonPatch,
+    // Faithful block-style YAML for the `YAML` sandbox global (status/MVU world-info entries).
+    yamlStringify: (val, opts) => yamlStringify(val, opts),
+    yamlParse: (text) => yamlParse(text)
   })
   // Main runs in Node — the default wasmfile variant loads from node_modules.
   await initEngine(() => getQuickJS())

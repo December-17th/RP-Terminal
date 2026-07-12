@@ -124,6 +124,17 @@ describe('wcv-destroy — native teardown leaves the IPC callback', () => {
     await new Promise<void>((resolve) => setImmediate(resolve))
     expect(h.destroy).toHaveBeenCalledWith('s1')
   })
+
+  it('a re-ensure for the same id before the deferred turn CANCELS the teardown (remount race)', async () => {
+    // React's cleanup→body pair: unmount fires wcv-destroy, the immediate remount fires wcv-ensure for the
+    // same slot. The deferred destroy must NOT close the view the remount just re-bound.
+    call('wcv-destroy', RENDERER_ID, 's1')
+    call('wcv-ensure', RENDERER_ID, 's1', { x: 0 }, 'url', { profileId: 'pA', chatId: 'cA' })
+
+    await new Promise<void>((resolve) => setImmediate(resolve))
+    expect(h.destroy).not.toHaveBeenCalled()
+    expect(h.ensure).toHaveBeenCalledWith('s1', { x: 0 }, 'url', { profileId: 'pA', chatId: 'cA' })
+  })
 })
 
 describe('broadcast/button channels — WCV sender confined to its bound chat', () => {

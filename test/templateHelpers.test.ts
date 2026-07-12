@@ -40,6 +40,32 @@ describe('templateService TH-3 helpers', () => {
     expect(c.vars.mp).toBe(50)
   })
 
+  it('TavernHelper read shims: getVariables reads the live stat_data store; getLastMessageId gates', () => {
+    // Mirrors 命定之诗's 艾莉亚 status core: `getLastMessageId() > 0` gate, then read stat_data via
+    // TavernHelper.getVariables({type:'message'}). Before the shim this threw (TavernHelper undefined)
+    // and the whole block was stripped → the current stat values never reached the prompt.
+    const c = ctx({ vars: { stat_data: { 主角: { 生命值: 105, 等级: 10 } } } })
+    const tmpl =
+      "<% if (TavernHelper.getLastMessageId() > 0) { %>" +
+      "HP=<%= _.get(TavernHelper.getVariables({type:'message'}), 'stat_data.主角.生命值') %>" +
+      " LV=<%= _.get(TavernHelper.getVariables({type:'message'}), 'stat_data.主角.等级') %>" +
+      "<% } %>"
+    expect(evalTemplate(tmpl, c)).toBe('HP=105 LV=10')
+  })
+
+  it('TavernHelper.getLastMessageId() is -1 with no history (gate suppresses on the first message)', () => {
+    const c = ctx({ data: { messages: [] } })
+    expect(evalTemplate('<%= TavernHelper.getLastMessageId() %>', c)).toBe('-1')
+    expect(evalTemplate('<% if (TavernHelper.getLastMessageId() > 0) { %>x<% } %>', c)).toBe('')
+  })
+
+  it('TavernHelper write/side-effect APIs are no-ops at build time (present, do not throw or mutate)', () => {
+    const c = ctx({ vars: { n: 1 } })
+    expect(evalTemplate("<% TavernHelper.insertOrAssignVariables({n: 999}) %>ok", c)).toBe('ok')
+    expect(evalTemplate("<% TavernHelper.triggerSlash('/setvar n 999') %>ok", c)).toBe('ok')
+    expect(c.vars.n).toBe(1) // unchanged — writers don't touch the store during a prompt build
+  })
+
   it('getchar() returns the card data, or a field', () => {
     expect(evalTemplate("<%= getchar('name') %>", ctx())).toBe('Mira')
     expect(evalTemplate("<%= getchar('personality') %>", ctx())).toBe('curious')
@@ -189,6 +215,42 @@ describe('templateService TH-3 helpers', () => {
     it('global scope is NOT affected by the stat_data fallback', () => {
       const c = ctx({ globals: { g: 1 }, vars: { stat_data: { g: 999 } } })
       expect(evalTemplate('<%= getGlobalVar("g") %>', c)).toBe('1')
+    })
+  })
+
+  // The `YAML` sandbox global — world-info/status entries (e.g. 命定之诗 <status_current_variables>) call
+  // YAML.stringify/parse. Absent, the entry throws and its EJS is stripped → the status block reaches the
+  // AI empty. Main wires the real `yaml`; tests use the JSON-passthrough default (JSON is valid YAML).
+  describe('YAML global', () => {
+    it('YAML.stringify serializes nested objects (values, not [object Object])', () => {
+      const out = evalTemplate('<%= YAML.stringify({ hp: 105, lvl: 10, box: { a: [1, 2] } }) %>', ctx())
+      expect(out).toContain('105')
+      expect(out).toContain('10')
+      expect(out).not.toContain('[object Object]')
+    })
+
+    it('YAML.parse round-trips (JSON is valid YAML)', () => {
+      expect(evalTemplate('<%= YAML.parse(\'{"n":7}\').n %>', ctx())).toBe('7')
+    })
+
+    it('the status-panel shape (_.chain + _.omit/_.cloneDeep + YAML.stringify) renders without error', () => {
+      // Mirrors getVisibleAscensionFieldsForPerson + the final YAML.stringify(cleanData) in the real entry.
+      const tmpl =
+        '<status_current_variables>\n<%_ {\n' +
+        "  const data = getMessageVar('stat_data', { defaults: {} });\n" +
+        "  const cleanData = _.omit(_.cloneDeep(data), '事件');\n" +
+        '  const level = 25;\n' +
+        '  const visible = _.chain([{ level: 13, fields: ["要职"] }, { level: 17, fields: ["权柄"] }])\n' +
+        '    .filter(function (t) { return level >= t.level }).flatMap("fields").value();\n' +
+        '  cleanData.__visible = visible;\n' +
+        '_%>\n<%= YAML.stringify(cleanData) _%>\n<%_ } _%>\n</status_current_variables>'
+      const c = ctx({ vars: { stat_data: { 主角: { 生命值: 105, 等级: 10 }, 事件: ['x'] } } })
+      const { output, error } = evalTemplateDetailed(tmpl, c)
+      expect(error).toBeNull()
+      expect(output).toContain('生命值: 105')
+      expect(output).toContain('要职')
+      expect(output).toContain('权柄')
+      expect(output).not.toContain('事件') // omitted before serialize
     })
   })
 })
