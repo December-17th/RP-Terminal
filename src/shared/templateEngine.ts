@@ -233,6 +233,21 @@ const installBridge = (vm: QuickJSContext, ctx: TemplateContext): void => {
   reg('getWorldInfoActivatedData', () => data.worldInfo || [])
   reg('getMessageHistory', () => data.messages || [])
   reg('getCurrentChatName', () => data.chatName || '')
+  // TavernHelper read shims (feeds the `TavernHelper.*` object defined in the boot prelude). Cards'
+  // status-injection world-info entries read the live variable store + gate on a message id via
+  // TavernHelper (e.g. 命定之诗's 艾莉亚 status core: `getVariables({type:'message'})` +
+  // `getLastMessageId() > 0`). Without these the whole EJS block throws (TavernHelper undefined) and
+  // renderLoreEntry strips it — so the current stat_data never reaches the prompt. READ-only + sync:
+  //  · getVariables({type}) → the store for that scope (global → globals, else the chat/message store,
+  //    which carries `stat_data`), a deep-copied snapshot (jsToHandle) so the card can't mutate the live
+  //    store through it.
+  //  · getLastMessageId() → the 0-based index of the last flat chat message (2 per turn); -1 with no
+  //    history, so the card's `> 0` gate correctly suppresses the panel only on the very first message.
+  reg('__thGetVariables', (opt: any) => (opt && opt.type === 'global' ? ctx.globals : ctx.vars))
+  reg('__thGetLastMessageId', () => {
+    const n = (data.messages || []).length
+    return n > 0 ? n * 2 - 1 : -1
+  })
   // getpreset(name): the CONTENT of the prompt entry named `name` (or matching it as a regex) in the
   // ACTIVE preset — matching ST-Prompt-Template. No name → the preset's name (RPT back-compat).
   reg('getPreset', (name: any) => {
@@ -311,6 +326,19 @@ const installBridge = (vm: QuickJSContext, ctx: TemplateContext): void => {
     function setChatVar(k,v,o){return setvar(k,v,Object.assign({scope:'chat'},o||{}));}
     // ST-Prompt-Template define(): register a reusable value/function for the rest of the template.
     function define(n,v){ if(n!=null) globalThis[n]=v; return v; }
+
+    // Minimal sync TavernHelper surface for world-info EJS that gates/reads via TH (see the __th* host
+    // shims above). Reads are live; write/side-effect APIs (triggerSlash runs slash commands,
+    // insertOrAssignVariables mutates state) are NO-OPS here — a prompt build is a READ pass, and running
+    // them would corrupt state. Defined (not omitted) so an entry that calls them keeps its EJS block
+    // instead of throwing and getting stripped whole.
+    globalThis.TavernHelper = {
+      getVariables: function(o){ return __thGetVariables(o||{}); },
+      getLastMessageId: function(){ return __thGetLastMessageId(); },
+      getCurrentMessageId: function(){ return __thGetLastMessageId(); },
+      triggerSlash: function(){ return undefined; },
+      insertOrAssignVariables: function(){ return undefined; }
+    };
 
   ` + SANDBOX_LIB_JS // the clean-room lodash/faker/console subset (extracted — WS-4)
   const r = vm.evalCode(boot)
