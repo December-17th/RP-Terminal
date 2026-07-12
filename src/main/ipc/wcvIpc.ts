@@ -148,7 +148,11 @@ export const registerWcvIpc = (ipcMain: IpcMain): void => {
   // Duck/restore ALL card views at once — a full-screen DOM overlay (workflow editor) can't
   // cover native views, so the renderer hides them for the overlay's lifetime.
   ipcMain.on('wcv-set-all-visible', (_e, visible) => wcvManager.setAllVisible(!!visible))
-  ipcMain.on('wcv-destroy', (_e, id) => wcvManager.destroy(id))
+  // React unmounts every card view synchronously when the user leaves a session. Do not close a
+  // WebContentsView inside that renderer IPC callback: Chromium may still be in a
+  // DisallowJavascriptExecutionScope, and webContents.close() can then fatally re-enter V8. Crossing
+  // one main-loop boundary keeps the native teardown outside the guarded IPC dispatch.
+  ipcMain.on('wcv-destroy', (_e, id) => setImmediate(() => wcvManager.destroy(id)))
   // A card page's initial panel geometry (its window-x + viewport width, for seam-sliced backgrounds).
   // SYNC so the page has it BEFORE first paint; subsequent updates arrive via the `wcv-panel-geometry`
   // push on every bounds change (wcvManager.pushGeometry).
