@@ -88,6 +88,15 @@ const NODE_TYPE_CAPABILITY: Readonly<Record<string, CapabilityId>> = {
   // classified by its most consequential (danger-tinted) capability — the table WRITE — matching the
   // single-capability-per-type model (agent.llm is 'calls-llm' though it self-reads history too).
   'memory.maintain': 'writes-tables',
+  // memory.recall folds read-tables + read-notes + calls-llm into one PRE-turn planner; it WRITES
+  // nothing (its only side effect is per-node plan state + the projected tail block), so its most
+  // consequential capability is the model call — 'calls-llm', matching agent.llm/llm.sample.
+  'memory.recall': 'calls-llm',
+  // notes.maintain folds read-history + read-notes + calls-llm + a WRITE to the per-chat notes FILE into
+  // one POST-turn node. The notes file is a new durable store OUTSIDE the v1 capability taxonomy (which
+  // models table/vars/floor writes only), so per the plan its classified by the modeled capability it
+  // does confer — the model call, 'calls-llm' (matching memory.recall / agent.llm).
+  'notes.maintain': 'calls-llm',
   'output.writeFloor': 'writes-floors',
   'tool.startCombat': 'runs-game-tools',
   'tool.startDuel': 'runs-game-tools'

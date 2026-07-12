@@ -16,6 +16,9 @@ export interface TraceNode {
   phase: 'pre' | 'post'
   ms?: number
   error?: { kind?: string; message: string }
+  /** A2/A3 (plot-recall): the node RAN but fail-opened on an internal failure (status stays 'ran').
+   *  Drives the run drawer's warning tint so a fail-open is not invisible behind a green row. */
+  failedOpen?: boolean
   /** Truncated JSON previews of the node's output ports (debug display only). */
   outputs?: Record<string, string>
 }
@@ -41,6 +44,7 @@ interface RunNodeTrace {
   phase: 'pre' | 'post'
   error?: { kind?: string; message: string }
   ms?: number
+  failedOpen?: boolean
 }
 
 /** Structural mirror of the engine's RunResult — only the fields the summary reads. */
@@ -96,6 +100,7 @@ export function summarizeRun(
     const out: TraceNode = { nodeId: t.nodeId, nodeType, status: t.status, phase: t.phase }
     if (t.ms !== undefined) out.ms = t.ms
     if (t.error) out.error = { kind: t.error.kind, message: t.error.message }
+    if (t.failedOpen) out.failedOpen = true
 
     if (t.status === 'ran') {
       const produced = run.outputs.get(t.nodeId)
