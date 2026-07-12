@@ -806,6 +806,21 @@ declare global {
         chatId: string,
         fromFloor: number
       ) => Promise<{ ok: true; dropped: number } | { error: string }>
+      // Plot-recall notes memory (WP2): the per-chat markdown notes file. `notesGet` → '' when none;
+      // `notesSet` with empty/whitespace-only content removes the file (idempotent).
+      notesGet: (profileId: string, chatId: string) => Promise<string>
+      notesSet: (profileId: string, chatId: string, notes: string) => Promise<void>
+      // Plot-recall composed-prompt previews (mirror previewMemoryMaintain).
+      previewRecallPlanner: (
+        profileId: string,
+        chatId: string,
+        config: unknown
+      ) => Promise<{ messages?: { role: string; content: string }[]; error?: string }>
+      previewNotesMaintain: (
+        profileId: string,
+        chatId: string,
+        config: unknown
+      ) => Promise<{ messages?: { role: string; content: string }[]; error?: string }>
       exportTableTemplateDialog: (
         profileId: string,
         templateId: string,

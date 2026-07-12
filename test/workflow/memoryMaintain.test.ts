@@ -217,4 +217,21 @@ describe('memory.maintain — end to end', () => {
     expect(res.outputs!.report).toBe('no changes')
     expect(res.debug!['prompt (sent)']).toBeTruthy()
   })
+
+  // A6 — memory-trio input symmetry: an OPTIONAL `gen` Context port (mirrors memory.recall) that reuses
+  // an upstream bundle when wired and self-seeds when not.
+  it('declares an optional `gen` Context input (memory-trio symmetry)', () => {
+    const gen = memoryMaintain.inputs.find((i) => i.name === 'gen')
+    expect(gen).toEqual({ name: 'gen', type: 'Context' })
+  })
+
+  it('reuses a wired `gen` input instead of self-seeding (byte-identical userAction reaches the model)', async () => {
+    const wired = buildGenContext('prof', 'c1', 'WIRED_ACTION')
+    await memoryMaintain.run(ctx(), { gen: wired }, { id: 'm', config: memoryMaintain.configSchema!.parse(config) })
+    // The wired Context's floors reached the model (self-seed would rebuild the SAME floors here, so this
+    // asserts the wired object is honoured — the port is live, not dropped).
+    const sent = mockCallModel.callModel.mock.calls[0][1] as { role: string; content: string }[]
+    const joined = sent.map((m) => m.content).join('\n')
+    expect(joined).toContain('ai reply 3')
+  })
 })

@@ -17,6 +17,10 @@ import { stripRptEvents, stripThinking, extractThinking } from '../../../shared/
 import { renderTemplate } from '../plugin/renderTemplate'
 import { useUiStore } from '../stores/uiStore'
 import { useAgentFailureStore } from '../stores/agentFailureStore'
+import {
+  useRecallFailOpenStore,
+  shouldShowRecallBanner
+} from '../stores/recallFailOpenStore'
 import { useT } from '../i18n'
 
 // Local copy of the workflow editors' `inEditable` shape (do NOT import across modules): true when
@@ -69,6 +73,14 @@ export function ChatView({ profileId }: { profileId: string }): React.ReactEleme
   // a dismissible banner above the composer so a silent background-agent failure is never missed.
   const agentFailure = useAgentFailureStore((s) => (activeChatId ? s.failures[activeChatId] : undefined))
   const clearAgentFailure = useAgentFailureStore((s) => s.clear)
+  // Plot-recall (A3): consecutive pre-turn recall fail-opens for THIS chat (App tallies them off the
+  // workflow-trace flow). After the threshold, warn that turns are silently running without memory.
+  const recallStreak = useRecallFailOpenStore((s) => (activeChatId ? s.counts[activeChatId] ?? 0 : 0))
+  const recallDismissed = useRecallFailOpenStore((s) =>
+    activeChatId ? !!s.dismissed[activeChatId] : false
+  )
+  const dismissRecall = useRecallFailOpenStore((s) => s.dismiss)
+  const showRecallBanner = !!activeChatId && shouldShowRecallBanner(recallStreak, recallDismissed)
 
   const [pendingUserMsg, setPendingUserMsg] = useState('')
   const [editing, setEditing] = useState<{ floor: number; field: 'user' | 'response' } | null>(null)
@@ -449,6 +461,42 @@ export function ChatView({ profileId }: { profileId: string }): React.ReactEleme
               padding: '0 2px'
             }}
             onClick={() => clearAgentFailure(activeChatId)}
+          >
+            ×
+          </button>
+        </div>
+      ) : null}
+
+      {showRecallBanner && activeChatId ? (
+        <div
+          role="alert"
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: 10,
+            padding: '6px 10px',
+            margin: '6px 0',
+            borderRadius: 6,
+            border: '1px solid var(--rpt-warning, #e0a23c)',
+            background: 'var(--rpt-warning-soft, rgba(224,162,60,0.14))',
+            fontSize: 13
+          }}
+        >
+          <span>{t('recall.failOpenBanner', { n: recallStreak })}</span>
+          <button
+            title={t('common.dismiss')}
+            style={{
+              flex: '0 0 auto',
+              background: 'none',
+              border: 'none',
+              color: 'inherit',
+              cursor: 'pointer',
+              fontSize: 16,
+              lineHeight: 1,
+              padding: '0 2px'
+            }}
+            onClick={() => dismissRecall(activeChatId)}
           >
             ×
           </button>

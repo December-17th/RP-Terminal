@@ -14,7 +14,7 @@ export interface PaletteGroup {
 
 /** Preferred category order — every prefix registered in the built-in catalog
  *  (`src/main/services/nodes/builtin/index.ts`), grouped by the dot-prefix of each node's `type`:
- *  triggers first, then the generation/prompt pipeline, then data (vars/table/lorebook/mvu), then
+ *  triggers first, then the generation/prompt pipeline, then data (vars/table/memory/notes/lorebook/mvu), then
  *  composition (text/messages/merge), then tool/subgraph/control/util. Prefixes not listed here
  *  append alphabetically after these (see groupPalette). A type with no '.' groups under 'other'. */
 export const PALETTE_ORDER: string[] = [
@@ -30,6 +30,8 @@ export const PALETTE_ORDER: string[] = [
   'history',
   'vars',
   'table',
+  'memory',
+  'notes',
   'lorebook',
   'mvu',
   'text',

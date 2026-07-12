@@ -15,6 +15,7 @@
 // deviation; the pointer marker covers the "which floors are folded in" need at table granularity).
 import React from 'react'
 import { useT } from '../../i18n'
+import { codeColumnOf } from '../../../../shared/memory/codeColumn'
 import {
   columnWidthHint,
   filterRowIndices,
@@ -229,6 +230,14 @@ export const TableGrid: React.FC<{
     [table.columns, table.rows]
   )
   const pointer = pointerSpec(status)
+  // Plot-recall (WP7): the memory-code column (MT#### convention), derived from this table's def via the
+  // shared helper. Its header cell gets a light accent + an MT tag. Matches either the SQL column name or
+  // its display header (codeColumnOf returns a DISPLAY name). null / absent def → no marking.
+  const codeColumn = def?.exportConfig ? codeColumnOf(def.exportConfig) : null
+  const colDisplay = (i: number): string =>
+    def && def.headers.length === table.columns.length ? def.headers[i] : table.columns[i]
+  const isCodeCol = (i: number): boolean =>
+    codeColumn != null && (table.columns[i] === codeColumn || colDisplay(i) === codeColumn)
 
   const commitCell = (rowIndex: number, colIndex: number, value: string): void => {
     setEditing(null)
@@ -353,10 +362,12 @@ export const TableGrid: React.FC<{
               {table.columns.map((col, i) => (
                 <th
                   key={i}
-                  className="rpt-tablegrid-th"
+                  className={`rpt-tablegrid-th${isCodeCol(i) ? ' rpt-tablegrid-th-code' : ''}`}
                   style={{ minWidth: `${Math.min(widthHints[i], 16)}ch`, maxWidth: `${widthHints[i]}ch` }}
+                  title={isCodeCol(i) ? t('tables.codeColumnTip') : undefined}
                 >
                   {col}
+                  {isCodeCol(i) && <span className="rpt-tablegrid-code-tag">MT</span>}
                 </th>
               ))}
               <th className="rpt-tablegrid-th" style={{ width: 1 }} />

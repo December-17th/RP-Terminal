@@ -123,7 +123,7 @@ function RptNode({ data, selected }: NodeProps<RFNode<RptNodeData>>): React.JSX.
   const title =
     tOpt(`workflowEditor.nodeTitle.${editorNode.type}`) || typeInfo?.title || editorNode.type
   const traceTitle = trace
-    ? `${t(`workflow.trace.status.${trace.status}`)}${trace.ms !== undefined ? ` · ${formatTraceSeconds(trace.ms)}` : ''}${trace.error ? ` — ${trace.error.message}` : ''}`
+    ? `${trace.failedOpen ? t('workflow.trace.status.failedOpen') : t(`workflow.trace.status.${trace.status}`)}${trace.ms !== undefined ? ` · ${formatTraceSeconds(trace.ms)}` : ''}${trace.error ? ` — ${trace.error.message}` : ''}${trace.failedOpen ? ` — ${t('workflow.trace.failedOpenTip')}` : ''}`
     : undefined
   // WP-D (spec §4): on-card prompt excerpt for an ungrouped prompt-bearing node (agent.llm etc.) —
   // the first system row's text, 2 lines. Derived via the WP-A `promptFields` hint.
@@ -194,13 +194,18 @@ function RptNode({ data, selected }: NodeProps<RFNode<RptNodeData>>): React.JSX.
           </button>
         )}
         {trace && (
-          <span className={`rpt-node-trace-chip is-${trace.status}`} title={traceTitle}>
+          <span
+            className={`rpt-node-trace-chip is-${trace.status}${trace.failedOpen ? ' is-failed-open' : ''}`}
+            title={traceTitle}
+          >
             <span className="rpt-node-trace-dot" aria-hidden />
             {trace.status === 'failed'
               ? t('workflow.trace.status.failed')
-              : trace.ms !== undefined
-                ? formatTraceSeconds(trace.ms)
-                : t(`workflow.trace.status.${trace.status}`)}
+              : trace.failedOpen
+                ? t('workflow.trace.status.failedOpen')
+                : trace.ms !== undefined
+                  ? formatTraceSeconds(trace.ms)
+                  : t(`workflow.trace.status.${trace.status}`)}
           </span>
         )}
       </div>
