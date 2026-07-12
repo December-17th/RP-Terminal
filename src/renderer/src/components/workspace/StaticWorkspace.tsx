@@ -38,9 +38,10 @@ export function StaticWorkspace({
 }): React.ReactElement {
   const ctx = useMemo(() => ({ profileId }), [profileId])
   const { cols, rows } = layout.grid
-  // Seamless layouts drop the grid gap/padding so slots abut with no visible line (each slot's own
-  // chrome is dropped per-slot below); chromed layouts keep the 6px inset that separates panels.
-  const inset = layout.seamless ? 0 : 6
+  // Seamless layouts drop the grid gap/padding so slots abut with no visible line (each slot's own chrome
+  // is dropped per-slot below); chromed layouts keep the 6px inset that separates panels.
+  const gap = layout.seamless ? 0 : 6
+  const pad = layout.seamless ? 0 : 6
   return (
     <WorkspaceContext.Provider value={ctx}>
       <div
@@ -52,8 +53,8 @@ export function StaticWorkspace({
           display: 'grid',
           gridTemplateColumns: `repeat(${cols}, 1fr)`,
           gridTemplateRows: `repeat(${rows}, 1fr)`,
-          gap: inset,
-          padding: inset
+          gap,
+          padding: pad
         }}
       >
         {layout.slots.map((slot) => {

@@ -969,6 +969,9 @@ details[open] > .stat-group-title::before {
   gap: 20px;
   padding-right: 10px;
   padding-bottom: 6px;
+  /* Top breathing room so the first message box isn't flush against the panel edge (looked cut off in a
+     seamless card layout with no title bar). Pairs with the .floor-block bezel below. */
+  padding-top: 6px;
 }
 
 /* Message-box token namespace (runtime-theme-api-design §3A). Each `--rpt-msg-*` falls back to today's
@@ -982,6 +985,10 @@ details[open] > .stat-group-title::before {
   background-color: var(--rpt-msg-bg, var(--rpt-app-bg-secondary));
   border-radius: var(--rpt-msg-radius, 8px);
   border: 1px solid var(--rpt-msg-border, var(--rpt-border));
+  /* ~5px bezel around the message box (owner) — a FIXED shape (this ring, regardless of card UI theme);
+     only its COLOUR tracks the card's `--rpt-msg-border` (which the card re-pushes per identity + light/dark).
+     Inset so it rides inside the 1px border; the 15px padding keeps prose clear of it. */
+  box-shadow: inset 0 0 0 4px color-mix(in srgb, var(--rpt-msg-border, var(--rpt-border)) 24%, transparent);
   font-size: var(--rpt-chat-font, 16px);
 }
 /* The AI message prose. A card theme MAY set `--rpt-chat-font-family` (token alias `chat-font` /
