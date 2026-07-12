@@ -162,6 +162,9 @@ const en: Record<string, string> = {
   'prefs.sizeFit': "Fit (size to the card's content)",
   'prefs.sizeFill': 'Fill (cards sized to the viewport fill the frame)',
   'prefs.showFps': 'Show FPS counter (bottom-right)',
+  'prefs.showPlotBlock': 'Show plot panel (recall planning on the assistant floor)',
+  'prefs.showPlotBlockHint':
+    "Renders the pre-turn recall's plot directive as a collapsible panel, styled by your beautification regex.",
   'prefs.showUsageMeter': 'Show token / cache meter (floating overlay)',
   'prefs.templateEngine': 'ST-Prompt-Template engine (<% %> templates in cards/presets/lorebook)',
   'prefs.renderEval': 'Render-time eval (apply templates to AI output on display)',
@@ -485,6 +488,7 @@ const en: Record<string, string> = {
   'chat.generateNew': 'Generate a new response',
   'chat.editHint': 'Ctrl+Enter to save · Esc to cancel',
   'chat.reasoning': '💭 Reasoning',
+  'chat.plotBlock': '📖 Plot',
   'chat.nodePanel': 'Node output',
   'chat.selectSession': 'Select or create a session.',
   'chat.selectCharacter': 'Select a character.',

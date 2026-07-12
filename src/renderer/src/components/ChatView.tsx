@@ -203,6 +203,9 @@ export function ChatView({ profileId }: { profileId: string }): React.ReactEleme
       rawResponse: f.response.content,
       html: applyRegex(stripThinking(withMacros)),
       thinking: extractThinking(f.response.content),
+      // Plot-recall: pass the STORED plot_block through verbatim (display-only; PlotPanel applies the
+      // placement-1 beautification regex + routes the html itself). Not derived from response.content.
+      plotBlock: f.plot_block,
       swipeId: f.swipe_id ?? 0,
       swipeCount: f.swipes?.length ?? 1
     }

@@ -19,6 +19,9 @@ export type { RenderRegexRule, RegexScriptInfo, RegexRuleDetail, RegexRulePatch 
 
 interface RegexState {
   rules: RenderRegexRule[]
+  /** Plot-recall (plot-block panel): display rules that ALSO admit placement 1 (user-input
+   *  beautification), which `rules` (placement 2 / empty) drops. Applied to `FloorFile.plot_block`. */
+  plotRules: RenderRegexRule[]
   scripts: RegexScriptInfo[]
   /** Display rules resolved for the active world/session (global ⊕ world ⊕ session). */
   load: (profileId: string, ctx?: ScopeContext) => Promise<void>
@@ -40,6 +43,8 @@ interface RegexState {
   ) => Promise<void>
   /** Apply all enabled display rules to an AI response, returning transformed text. */
   apply: (content: string, ctx?: RegexApplyContext) => string
+  /** Apply the plot-block display rules (placement 1 admitted) to a `plot_block` string. */
+  applyPlot: (content: string, ctx?: RegexApplyContext) => string
 }
 
 // Compiled-RegExp cache so we don't recompile every render.
@@ -63,12 +68,18 @@ let lastCtx: ScopeContext | undefined
 
 export const useRegexStore = create<RegexState>((set, get) => ({
   rules: [],
+  plotRules: [],
   scripts: [],
 
   load: async (profileId, ctx) => {
     if (ctx !== undefined) lastCtx = ctx
-    const rules = await window.api.getRenderRegex(profileId, lastCtx)
-    set({ rules: rules || [] })
+    // Resolve the display rules AND the plot-block rules (placement 1 admitted) for the same context
+    // in one pass, so the plot-block panel refreshes alongside the chat on scope/preset changes.
+    const [rules, plotRules] = await Promise.all([
+      window.api.getRenderRegex(profileId, lastCtx),
+      window.api.getPlotBlockRegex(profileId, lastCtx)
+    ])
+    set({ rules: rules || [], plotRules: plotRules || [] })
   },
 
   loadScripts: async (profileId) => {
@@ -118,5 +129,10 @@ export const useRegexStore = create<RegexState>((set, get) => ({
   // Display rules are pre-filtered (placement 2) by getRenderRegex, so no placement
   // filter here; pass the compiled-RegExp cache. Transform shared with the main path.
   apply: (content, ctx) =>
-    applyRegexRules(content, get().rules, ctx ?? {}, { compile: getRe, marker: modeMarker })
+    applyRegexRules(content, get().rules, ctx ?? {}, { compile: getRe, marker: modeMarker }),
+
+  // Plot-block rules are pre-filtered (placement 1 ⊕ 2) by getPlotBlockRegex; same transform/marker
+  // as the display path so a beautification card payload emits its render-mode marker identically.
+  applyPlot: (content, ctx) =>
+    applyRegexRules(content, get().plotRules, ctx ?? {}, { compile: getRe, marker: modeMarker })
 }))

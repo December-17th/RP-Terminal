@@ -598,6 +598,9 @@ const api = {
   // Regex
   getRenderRegex: (profileId: string, ctx?: { cardId?: string | null; chatId?: string | null }) =>
     ipcRenderer.invoke('get-render-regex', profileId, ctx),
+  // Plot-recall plot-block panel display rules (placement 1 admitted).
+  getPlotBlockRegex: (profileId: string, ctx?: { cardId?: string | null; chatId?: string | null }) =>
+    ipcRenderer.invoke('get-plot-block-regex', profileId, ctx),
   listRegex: (profileId: string) => ipcRenderer.invoke('list-regex', profileId),
   listPanelRegex: (profileId: string, ctx?: { cardId?: string | null; chatId?: string | null }) =>
     ipcRenderer.invoke('list-panel-regex', profileId, ctx),

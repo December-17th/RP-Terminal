@@ -1539,6 +1539,44 @@ details[open] > .stat-group-title::before {
   line-height: 1.5;
 }
 
+/* Plot-recall plot panel — mirrors the reasoning panel's collapsible chrome. The body hosts a card
+   dashboard (its own styling), so keep wrapper chrome minimal and let the frame fill the width. */
+.plot-block {
+  margin: 0 0 12px;
+  border: 1px solid var(--rpt-border);
+  border-radius: 6px;
+  background-color: var(--rpt-bg-secondary);
+  font-size: 0.9em;
+}
+
+.plot-summary {
+  cursor: pointer;
+  padding: 6px 10px;
+  color: var(--rpt-text-secondary);
+  user-select: none;
+  list-style: none;
+}
+
+.plot-summary::-webkit-details-marker {
+  display: none;
+}
+
+.plot-summary::before {
+  content: '▸';
+  display: inline-block;
+  margin-right: 6px;
+  transition: transform 0.15s ease;
+}
+
+.plot-block[open] > .plot-summary::before {
+  transform: rotate(90deg);
+}
+
+.plot-content {
+  padding: 8px 12px;
+  border-top: 1px solid var(--rpt-border);
+}
+
 .action-input-container {
   margin-top: 16px;
   position: relative;

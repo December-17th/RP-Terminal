@@ -9,6 +9,11 @@ export const registerRegexIpc = (ipcMain: IpcMain): void => {
     // without the renderer having to know about preset scope.
     regexService.getRenderRules(profileId, { ...ctx, presetId: getActivePresetId(profileId) })
   )
+  // Plot-recall plot-block panel: display rules that ALSO admit placement 1 (user-input beautification),
+  // which get-render-regex drops. Same preset injection as the display path.
+  ipcMain.handle('get-plot-block-regex', (_, profileId, ctx) =>
+    regexService.getPlotBlockRules(profileId, { ...ctx, presetId: getActivePresetId(profileId) })
+  )
   ipcMain.handle('list-regex', (_, profileId) => regexService.listScripts(profileId))
   // 'panel'-promoted regex UIs (with their loader URL) for the active context → selectable workspace panels.
   ipcMain.handle('list-panel-regex', (_, profileId, ctx) =>
