@@ -255,8 +255,6 @@ export function ChatView({ profileId }: { profileId: string }): React.ReactEleme
     )
   }
 
-  // The FSM scene switcher is active in 'manual'/'agentic' agent modes; 'off' greys it out.
-  const fsmEnabled = settings?.agent?.mode === 'manual' || settings?.agent?.mode === 'agentic'
   const canRegenerate = floors.some((f) => f.user_message.content)
 
   const saveEdit = (): void => {
@@ -504,8 +502,6 @@ export function ChatView({ profileId }: { profileId: string }): React.ReactEleme
       ) : null}
 
       <ChatToolbar
-        profileId={profileId}
-        fsmEnabled={fsmEnabled}
         canRegenerate={canRegenerate}
         onRegenerate={handleRegenerate}
         onManageFloors={() => setFloorsOpen(true)}
