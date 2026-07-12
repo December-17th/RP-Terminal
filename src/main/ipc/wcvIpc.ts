@@ -136,11 +136,18 @@ export const registerWcvIpc = (ipcMain: IpcMain): void => {
   const slotCtxIf = (senderId: number): ReturnType<typeof wcvManager.contextFor> =>
     wcvManager.contextFor(senderId)
 
+  // Slots whose teardown is deferred but not yet run (see `wcv-destroy`). A re-`ensure` for the same id
+  // (React runs a cleanup→body pair on every dep change: dataUrl settling after mount, session switch,
+  // StrictMode double-mount) must CANCEL the pending destroy — otherwise the deferred close fires a turn
+  // later and kills the freshly (re)bound view, blanking the card.
+  const pendingDestroy = new Set<string>()
+
   ipcMain.on('wcv-ensure', (e, id, bounds, url, ctx) => {
     // Creating/(re)binding a slot's (profileId, chatId) is a host-renderer privilege — it's how the bound
     // identity is SET. A WCV card page must never call it (it would rebind an existing slot to another
     // profile: the cross-profile hole). The host renderer's webContents is not itself a slot ⇒ allowed.
     if (slotCtxIf(e.sender.id)) return
+    pendingDestroy.delete(id) // this slot is being reused — abort any queued teardown
     wcvManager.ensure(id, bounds, url, ctx)
   })
   ipcMain.on('wcv-set-bounds', (_e, id, bounds) => wcvManager.setBounds(id, bounds))
@@ -151,8 +158,16 @@ export const registerWcvIpc = (ipcMain: IpcMain): void => {
   // React unmounts every card view synchronously when the user leaves a session. Do not close a
   // WebContentsView inside that renderer IPC callback: Chromium may still be in a
   // DisallowJavascriptExecutionScope, and webContents.close() can then fatally re-enter V8. Crossing
-  // one main-loop boundary keeps the native teardown outside the guarded IPC dispatch.
-  ipcMain.on('wcv-destroy', (_e, id) => setImmediate(() => wcvManager.destroy(id)))
+  // one main-loop boundary keeps the native teardown outside the guarded IPC dispatch. The pending-set
+  // guard makes the deferral safe against a same-tick re-`ensure` (remount): if the slot was re-bound in
+  // the meantime, `wcv-ensure` cleared the flag and we skip the stale close.
+  ipcMain.on('wcv-destroy', (_e, id) => {
+    pendingDestroy.add(id)
+    setImmediate(() => {
+      if (!pendingDestroy.delete(id)) return // re-ensured before this ran → keep the live view
+      wcvManager.destroy(id)
+    })
+  })
   // A card page's initial panel geometry (its window-x + viewport width, for seam-sliced backgrounds).
   // SYNC so the page has it BEFORE first paint; subsequent updates arrive via the `wcv-panel-geometry`
   // push on every bounds change (wcvManager.pushGeometry).
