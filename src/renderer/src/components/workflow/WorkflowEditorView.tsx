@@ -93,6 +93,11 @@ export default function WorkflowEditorView({
   const openFragment = useWorkflowEditorStore((s) => s.openFragment)
   const save = useWorkflowEditorStore((s) => s.save)
   const cloneAndEdit = useWorkflowEditorStore((s) => s.cloneAndEdit)
+  // Active narrator (feat/active-workflow-picker): the id of the global narrator that runs at
+  // generation (workflowService resolves `selection.worlds[world] ?? selection.global`). The header
+  // shows a badge when the open doc IS it, else a "set as active" button; the picker marks it too.
+  const activeGlobalId = useWorkflowEditorStore((s) => s.activeGlobalId)
+  const setActiveGlobal = useWorkflowEditorStore((s) => s.setActiveGlobal)
   const select = useWorkflowEditorStore((s) => s.select)
   // WP6.3: the on-canvas grouping affordance. The toolbar shows "Group into module" when ≥2
   // ungrouped nodes are multi-selected (the store's groupSelection enforces the same rule; this
@@ -132,6 +137,14 @@ export default function WorkflowEditorView({
     const types = new Map<string, EditorNodeType>(nodeTypes.map((n) => [n.type, n]))
     return ungroupedTriggerChains(editorNodes, editorEdges, groups, types).length > 0
   }, [doc, editorNodes, editorEdges, nodeTypes])
+
+  // feat/active-workflow-picker: only a runnable NARRATOR (turn) doc can be the active global narrator.
+  // A fragment session edits a pack fragment (never a workflow file); a sub-graph doc is a callable
+  // package that resolveWorkflowDoc refuses — both are excluded from the set-active control. The
+  // picker's summary carries `kind` ('subgraph' vs turn/undefined).
+  const openIsSubgraph = workflows.find((w) => w.id === currentId)?.kind === 'subgraph'
+  const canSetActive = sessionType !== 'fragment' && !openIsSubgraph && !!currentId
+  const openIsActiveNarrator = !!currentId && currentId === activeGlobalId
 
   const [showErrors, setShowErrors] = useState(false)
   // RF-04: palette search query (substring over type id + localized title) and the canvas API handle
@@ -331,7 +344,9 @@ export default function WorkflowEditorView({
             >
               {workflows.map((w) => (
                 <option key={w.id} value={w.id}>
-                  {w.name}
+                  {/* Mark the active global narrator so it's discoverable which doc runs (option
+                      markup can't be styled, so it's a text marker). */}
+                  {w.id === activeGlobalId ? `● ${w.name}` : w.name}
                 </option>
               ))}
             </select>
@@ -382,6 +397,26 @@ export default function WorkflowEditorView({
         </button>
 
         {dirty && <span className="rpt-wfe-unsaved">{t('workflowEditor.unsaved')}</span>}
+
+        {/* feat/active-workflow-picker: the active-global-narrator affordance for the open doc.
+            Hidden in a fragment/sub-graph session (canSetActive) — only a runnable turn doc can be
+            the active narrator. Badge when this doc is already active, else a set-active button that
+            flips the badge via the store. */}
+        {canSetActive &&
+          (openIsActiveNarrator ? (
+            <span className="rpt-wfe-active-badge" title={t('workflowEditor.activeNarratorTitle')}>
+              {t('workflowEditor.activeNarrator')}
+            </span>
+          ) : (
+            <button
+              type="button"
+              onClick={() => currentId && void setActiveGlobal(profileId, currentId)}
+              title={t('workflowEditor.setActiveNarratorTitle')}
+              className="rpt-wfe-btn-sm"
+            >
+              {t('workflowEditor.setActiveNarrator')}
+            </button>
+          ))}
 
         {/* Clone / import / export are WORKFLOW-FILE operations (they read currentId as a workflow id).
             In a fragment session currentId is a pack id, so these are hidden. */}
