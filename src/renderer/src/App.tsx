@@ -27,6 +27,7 @@ import {
   deriveHeadlessFailure
 } from './stores/agentFailureStore'
 import { useRecallFailOpenStore, recallOutcome } from './stores/recallFailOpenStore'
+import { useAgentActivityStore } from './stores/agentActivityStore'
 import type { WorkflowRunTrace } from '../../shared/workflow/trace'
 import { useWorkspaceStore } from './stores/workspaceStore'
 import { useComposerStore } from './stores/composerStore'
@@ -173,6 +174,14 @@ export default function App(): React.ReactElement {
       const outcome = recallOutcome(t)
       if (outcome) useRecallFailOpenStore.getState().record(t.chatId, outcome === 'failed')
     })
+    // Live side-agent activity (agent-activity-indicator): a calls-llm node OTHER than the narrator
+    // started/finished its API request → fold into agentActivityStore so ChatView shows a pre-phase
+    // "Recalling memories…" ghost or a post-phase "Updating memory…" chip. Keyed by chat.
+    const unsubActivity = window.api.onWorkflowActivity((a) => {
+      if (a.state === 'start')
+        useAgentActivityStore.getState().start(a.chatId, a.nodeId, a.nodeType, a.phase)
+      else useAgentActivityStore.getState().end(a.chatId, a.nodeId)
+    })
     // Opt-in node output panels (spec D4): append deltas; a chat's panels belong to its latest
     // turn, so clear them on the turn's rising edge (isGenerating false→true).
     const unsubPanel = window.api.onWorkflowPanel((p) =>
@@ -203,6 +212,7 @@ export default function App(): React.ReactElement {
       unsubFloors()
       unsubEvents()
       unsubTrace()
+      unsubActivity()
       unsubPanel()
       unsubPanelClear()
       unsubModeChanged()

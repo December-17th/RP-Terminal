@@ -21,6 +21,10 @@ import {
   useRecallFailOpenStore,
   shouldShowRecallBanner
 } from '../stores/recallFailOpenStore'
+import {
+  useAgentActivityStore,
+  currentActivityLabelKey
+} from '../stores/agentActivityStore'
 import { useT } from '../i18n'
 
 // Local copy of the workflow editors' `inEditable` shape (do NOT import across modules): true when
@@ -81,6 +85,11 @@ export function ChatView({ profileId }: { profileId: string }): React.ReactEleme
   )
   const dismissRecall = useRecallFailOpenStore((s) => s.dismiss)
   const showRecallBanner = !!activeChatId && shouldShowRecallBanner(recallStreak, recallDismissed)
+  // Post-phase side-agent (memory.maintain / notes.maintain / agent.llm): background LLM work that runs
+  // AFTER the reply is already shown, so a quieter status chip (above the toolbar) — not a blocking ghost.
+  const postActivityKey = useAgentActivityStore((s) =>
+    activeChatId ? currentActivityLabelKey(s.active, activeChatId, 'post') : null
+  )
 
   const [pendingUserMsg, setPendingUserMsg] = useState('')
   const [editing, setEditing] = useState<{ floor: number; field: 'user' | 'response' } | null>(null)
@@ -498,6 +507,13 @@ export function ChatView({ profileId }: { profileId: string }): React.ReactEleme
           >
             ×
           </button>
+        </div>
+      ) : null}
+
+      {postActivityKey ? (
+        <div className="agent-activity-chip" role="status">
+          <span className="agent-activity-dot" aria-hidden="true" />
+          {t(postActivityKey)}
         </div>
       ) : null}
 

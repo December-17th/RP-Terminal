@@ -514,6 +514,11 @@ const zh: Record<string, string> = {
   'chat.thinking': '思考中…',
   'chat.generating': '生成中…',
   'chat.streamingCard': '交互卡片将在生成完成后渲染…',
+  // 实时侧位智能体活动指示（agent-activity-indicator）：某个侧位 LLM 节点正在调用 API。
+  'chat.activity.recall': '正在召回记忆…',
+  'chat.activity.memoryMaintain': '正在更新记忆…',
+  'chat.activity.notesMaintain': '正在更新笔记…',
+  'chat.activity.agent': '智能体运行中…',
 
   'status.waiting': '等待会话…',
   'status.heading': 'RPG 状态',

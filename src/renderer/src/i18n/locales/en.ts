@@ -530,6 +530,11 @@ const en: Record<string, string> = {
   'chat.thinking': 'Thinking…',
   'chat.generating': 'Generating…',
   'chat.streamingCard': 'Interactive card renders when generation finishes…',
+  // Live side-agent activity indicator (agent-activity-indicator): a SIDE LLM node is calling the API.
+  'chat.activity.recall': 'Recalling memories…',
+  'chat.activity.memoryMaintain': 'Updating memory…',
+  'chat.activity.notesMaintain': 'Updating notes…',
+  'chat.activity.agent': 'Running agent…',
 
   'status.waiting': 'Waiting for session...',
   'status.heading': 'RPG Status',

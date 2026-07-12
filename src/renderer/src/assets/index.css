@@ -866,6 +866,28 @@ details[open] > .stat-group-title::before {
   color: var(--rpt-text-secondary);
   animation: rpt-pulse 1.2s ease-in-out infinite;
 }
+/* Post-phase side-agent status chip (agent-activity-indicator): a low-intrusion "Updating memory…"
+   line above the chat toolbar while a post-reply agent's LLM call runs. Non-blocking, quiet. */
+.agent-activity-chip {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  align-self: flex-start;
+  margin: 4px 0;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 12px;
+  color: var(--rpt-text-secondary);
+  background: var(--rpt-surface-2, rgba(127, 127, 127, 0.1));
+  border: 1px solid var(--rpt-border, rgba(127, 127, 127, 0.25));
+}
+.agent-activity-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--rpt-accent, #5b8def);
+  animation: rpt-pulse 1.2s ease-in-out infinite;
+}
 @keyframes rpt-pulse {
   0%,
   100% {

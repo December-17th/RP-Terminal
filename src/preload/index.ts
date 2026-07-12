@@ -186,6 +186,21 @@ const api = {
     ipcRenderer.on('workflow-trace', listener)
     return () => ipcRenderer.removeListener('workflow-trace', listener)
   },
+  // Live side-agent activity (agent-activity-indicator): a calls-llm node OTHER than the narrator
+  // started/finished its API request. Returns an unsubscribe function.
+  onWorkflowActivity: (
+    cb: (p: {
+      chatId: string
+      nodeId: string
+      nodeType: string
+      phase: 'pre' | 'post'
+      state: 'start' | 'end'
+    }) => void
+  ) => {
+    const listener = (_e: IpcRendererEvent, p: any): void => cb(p)
+    ipcRenderer.on('workflow-activity', listener)
+    return () => ipcRenderer.removeListener('workflow-activity', listener)
+  },
   // Opt-in node output panel deltas (spec D4 collapsible chat panels). Returns an unsubscribe.
   onWorkflowPanel: (
     cb: (p: { chatId: string; nodeId: string; label?: string; delta: string }) => void

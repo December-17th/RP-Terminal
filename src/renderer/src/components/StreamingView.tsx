@@ -8,6 +8,10 @@ import { renderTemplate } from '../plugin/renderTemplate'
 import { buildStreamingHead } from './streamingDisplay'
 import { ReasoningPanel } from './ReasoningPanel'
 import { MessageContent } from './MessageContent'
+import {
+  useAgentActivityStore,
+  currentActivityLabelKey
+} from '../stores/agentActivityStore'
 import { useT } from '../i18n'
 
 /**
@@ -31,6 +35,13 @@ export function StreamingView({ pendingUserMsg }: { pendingUserMsg: string }): R
   const reasoningTemplate = ext?.reasoning_template as string | undefined
   // Subscribe so the transform memo re-runs when the display rule set loads/changes (mirrors ChatView).
   const regexRules = useRegexStore((s) => s.rules)
+  // Pre-phase side-agent (memory.recall): the blocking pre-reply LLM call the user is waiting on. While
+  // it runs, the reply hasn't started, so show its label in this ghost line INSTEAD of the generic
+  // "Generating…" pulse — that unexplained wait is exactly the problem this indicator solves.
+  const activeChatId = useChatStore((s) => s.activeChatId)
+  const preLabelKey = useAgentActivityStore((s) =>
+    activeChatId ? currentActivityLabelKey(s.active, activeChatId, 'pre') : null
+  )
 
   // Split the in-flight text the SAME way the committed floor will, so the view doesn't flash raw
   // <thinking> and the streaming/settled looks match. `body` is '' until </think> closes.
@@ -116,7 +127,7 @@ export function StreamingView({ pendingUserMsg }: { pendingUserMsg: string }): R
         </>
       ) : state === 'none' ? (
         <em className="generating-pulse">
-          {streamingText ? t('chat.thinking') : t('chat.generating')}
+          {preLabelKey ? t(preLabelKey) : streamingText ? t('chat.thinking') : t('chat.generating')}
         </em>
       ) : null}
       <div ref={endRef} />
