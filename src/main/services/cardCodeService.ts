@@ -20,11 +20,16 @@ import { log } from './logService'
 export const cardCodeRoot = (profileId: string, characterId: string): string =>
   path.join(getAppDir(), 'profiles', profileId, 'card-code', characterId)
 
-// Import-side hard caps (WP0 spec §5 — reject on breach).
-const MAX_ZIP_BYTES = 8 * 1024 * 1024 // appended ZIP ≤ 8 MB
-const MAX_ENTRY_BYTES = 8 * 1024 * 1024 // single extracted entry ≤ 8 MB
-const MAX_TOTAL_BYTES = 32 * 1024 * 1024 // total extracted ≤ 32 MB (decompression headroom + zip-bomb guard)
-const MAX_ENTRIES = 2000 // ≤ 2000 entries
+// Import-side hard caps (WP0 spec §5 — reject on breach). Exported so tests size fixtures off the real
+// caps rather than hardcoding a number that drifts when these change. Raised from the original 8/8/32 MB
+// (that ceiling tracked Discord's old 8 MB upload limit) while keeping the extraction ceiling bounded as
+// a zip-bomb guard. The appended ZIP is the INTENDED home for binary assets (vs base64 inlined into the
+// card JSON), so its blob cap is the roomiest — kept ≥ the iTXt card-JSON cap (MAX_ITXT_OUTPUT, 64 MB in
+// stPngParser) so the correct container is never the tighter path.
+export const MAX_ZIP_BYTES = 64 * 1024 * 1024 // appended ZIP ≤ 64 MB (compressed blob; ≥ the iTXt cap)
+export const MAX_ENTRY_BYTES = 32 * 1024 * 1024 // single extracted entry ≤ 32 MB (decompressed)
+export const MAX_TOTAL_BYTES = 128 * 1024 * 1024 // total extracted ≤ 128 MB (decompression headroom + zip-bomb guard)
+export const MAX_ENTRIES = 4000 // ≤ 4000 entries
 
 export interface CartridgeManifest {
   cartridge: number

@@ -13,6 +13,7 @@ vi.mock('../src/main/services/storageService', async () => {
 })
 
 import * as svc from '../src/main/services/cardCodeService'
+import { MAX_ZIP_BYTES, MAX_ENTRY_BYTES } from '../src/main/services/cardCodeService'
 
 const MANIFEST = { cartridge: 1, code: { root: 'code/', entries: ['surfaces/self.html'] } }
 
@@ -106,9 +107,9 @@ describe('installCartridgeCode', () => {
     expect(drive.error).toMatch(/unsafe entry name/i)
   })
 
-  it('rejects an appended ZIP larger than the 8 MB cap', () => {
-    // Random (incompressible) bytes so the ZIP buffer itself exceeds 8 MB.
-    const big = require('crypto').randomBytes(9 * 1024 * 1024)
+  it('rejects an appended ZIP larger than the blob cap', () => {
+    // Random (incompressible) bytes so the ZIP buffer itself exceeds MAX_ZIP_BYTES.
+    const big = require('crypto').randomBytes(MAX_ZIP_BYTES + 1024 * 1024)
     const zip = buildZip({ 'code/big.bin': big })
     const res = svc.installCartridgeCode('p1', 'c1', zip)
     expect(res.installed).toBe(0)
@@ -116,11 +117,11 @@ describe('installCartridgeCode', () => {
     expect(fs.existsSync(codeDir())).toBe(false)
   })
 
-  it('rejects a single entry larger than the 8 MB cap', () => {
+  it('rejects a single entry larger than the entry cap', () => {
     // Highly compressible: the ZIP stays small, but the declared uncompressed size trips the entry cap.
-    const big = Buffer.alloc(9 * 1024 * 1024, 0)
+    const big = Buffer.alloc(MAX_ENTRY_BYTES + 1024 * 1024, 0)
     const zip = buildZip({ 'code/big.bin': big })
-    expect(zip.length).toBeLessThan(8 * 1024 * 1024) // compresses well; not caught by the ZIP-size cap
+    expect(zip.length).toBeLessThan(MAX_ZIP_BYTES) // compresses well; not caught by the ZIP-size cap
     const res = svc.installCartridgeCode('p1', 'c1', zip)
     expect(res.installed).toBe(0)
     expect(res.error).toMatch(/entry exceeds/i)

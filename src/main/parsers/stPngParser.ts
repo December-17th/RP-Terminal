@@ -4,7 +4,9 @@ import zlib from 'zlib'
 // Hard cap on a single compressed-iTXt chunk's INFLATED size (A1 hardening). The embedded card JSON is
 // text; a legit card is far under this. Without a cap, `inflateSync` on a crafted chunk is an unbounded
 // decompression-bomb vector. On breach `inflateSync` throws → the chunk is treated as unparseable (null).
-const MAX_ITXT_OUTPUT = 16 * 1024 * 1024
+// Raised to 64 MB alongside the cartridge caps so cards that inline large base64 assets in the JSON still
+// parse; the bound is retained purely as the decompression-bomb guard.
+const MAX_ITXT_OUTPUT = 64 * 1024 * 1024
 
 export const parseStPng = (filePath: string): any | null => {
   try {

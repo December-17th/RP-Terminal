@@ -399,10 +399,10 @@ This is already specced as **World Card §8**. Concretely:
     `{ "cartridge": 1, "code": { "root": "code/", "entries": ["surfaces/self.html", …] } }`. Card code lives
     under `code/` (`code.root` overridable); `assets/` + bundled lorebooks/plugins may coexist in the same
     ZIP. `entries` is the servable allow-list (the engine's overlay registry source).
-  - **Import hard caps (reject on breach):** appended ZIP ≤ 8 MB, single extracted entry ≤ 8 MB, total
-    extracted ≤ 32 MB (zip-bomb guard), ≤ 2000 entries. Any entry name that is absolute, drive-lettered, or
+  - **Import hard caps (reject on breach):** appended ZIP ≤ 64 MB, single extracted entry ≤ 32 MB, total
+    extracted ≤ 128 MB (zip-bomb guard), ≤ 4000 entries. Any entry name that is absolute, drive-lettered, or
     contains a `..` segment rejects the whole cartridge (mirrors `worldAssetService.resolveProtocolPath`).
-    The compressed-`iTXt` inflate is output-bounded (16 MB) as a decompression-bomb guard. A rejected or
+    The compressed-`iTXt` inflate is output-bounded (64 MB) as a decompression-bomb guard. A rejected or
     absent cartridge never blocks the card import itself.
 
 ### 6a. Serving card code — `card-code:` entries, per-card origins, trust gate (A2)
