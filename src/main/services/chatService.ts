@@ -235,6 +235,13 @@ export const setChatTableTemplateId = (
     // Per-table maintenance progress pointers referenced the OLD template's tables — reset them too
     // (issue 07), so a reassigned template starts from "never processed" and cadences begin fresh.
     tableProgressService.resetProgress(profileId, chatId)
+    // An INTERRUPTED refill leaves a persisted `table_refill_progress` row + a shadow file. Both refer
+    // to the OLD template's tables/floors; if they survive, the workbench would offer Resume against the
+    // NEW template using the stale `completedUntil`, skipping floors whose ops we just cleared. Drop the
+    // progress row inline (chatService must NOT import tableRefillService — refill imports chatService,
+    // so calling its resetProgress would create a cycle) and remove the shadow via tableDbService.
+    getDb().prepare('DELETE FROM table_refill_progress WHERE chat_id = ?').run(chatId)
+    tableDbService.removeShadow(profileId, chatId)
     if (template) tableDbService.instantiate(profileId, chatId, template)
     else tableDbService.removeSandbox(profileId, chatId)
   } finally {
