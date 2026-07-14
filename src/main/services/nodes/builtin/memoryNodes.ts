@@ -18,9 +18,14 @@ import {
   recentTranscript,
   renderTablesBlock,
   applyTableEdit,
+  dueTables,
   historyText,
   composedPromptDebug
 } from './memoryCore'
+import { getProgress, advanceProgress } from '../../tableProgressService'
+import { getAllFloors, transcriptEpoch } from '../../floorService'
+import { getSettings } from '../../settingsService'
+import { writeScopeDirective } from '../../tableMaintenance'
 
 /**
  * `memory.maintain` — the ALL-IN-ONE SQL-table memory maintenance node (memory.maintain plan, WP1).
@@ -96,7 +101,8 @@ type ComposeConfig = Pick<
 export const composeMaintainerMessages = (
   gen: GenContext,
   template: TableTemplate,
-  cfg: ComposeConfig
+  cfg: ComposeConfig,
+  opts: { scopeDirective?: string } = {}
 ): ChatMessage[] => {
   const { block: tablesBlock } = renderTablesBlock(gen, template, {
     maxRows: cfg.max_rows ?? DEFAULT_MAX_ROWS,
@@ -104,6 +110,12 @@ export const composeMaintainerMessages = (
   })
   const history = recentTranscript(gen, { lastNFloors: cfg.lastNFloors })
   const rows: ChatMessage[] = []
+  // WS3: the auto pass prepends the shared write-scope directive so the model knows which tables it may
+  // write this turn (the due set). Pre-`providerShape` so it participates in shaping like any system row;
+  // absent (e.g. the preview IPC) → unchanged composition.
+  if (opts.scopeDirective?.trim()) {
+    rows.push({ role: 'system', content: opts.scopeDirective.trim() })
+  }
   for (const m of cfg.messages) {
     if (m.content.trim() === HISTORY_MARKER) {
       rows.push(...history)
@@ -153,9 +165,31 @@ export const memoryMaintain: NodeImpl = {
     const template = chatTemplate(gen)
     if (!template) return { outputs: {} }
 
+    // WS3 — auto due-set gating (D9): compute the DUE tables BEFORE the model call. The node runs every
+    // turn (the cadence gate) but only pays for a model call when at least one table is due; an empty due
+    // set SKIPS the LLM entirely. currentFloor is re-read from disk to match the pointer semantics.
+    const currentFloor = Math.max(0, getAllFloors(gen.profileId, gen.chatId).length - 1)
+    const globalDefault = getSettings(gen.profileId).tables?.default_update_frequency ?? 3
+    const due = dueTables(template, getProgress(gen.profileId, gen.chatId), currentFloor, globalDefault)
+    if (!due.length) return { outputs: { report: 'no tables due' } }
+
+    // Staleness fence (owner pass 2026-07-14): capture the transcript epoch in the SAME sync block
+    // that composes from the floors. If a regenerate/edit/swipe lands while the model call below is
+    // in flight, the epoch moves and applyTableEdit drops the batch — otherwise the discarded reply's
+    // facts would fill the tables AND re-advance the pointers truncateFloors just clamped.
+    const composedEpoch = transcriptEpoch(gen.chatId)
+
+    // The due tables' display names drive the shared write-scope directive (WS2/WS3 parity). All tables
+    // still RENDER in the block (full context, D5); only the due ones may be written this turn.
+    const dueSet = new Set(due)
+    const dueDisplay = template.tables.filter((t) => dueSet.has(t.sqlName)).map((t) => t.displayName)
+
     // Compose EXACTLY what the panel preview shows (composeMaintainerMessages is shared) — render the
-    // tables block, splice {history}, substitute {{tables}}/{{input}} as DATA, provider-shape.
-    const sendMessages = composeMaintainerMessages(gen, template, cfg)
+    // tables block, splice {history}, substitute {{tables}}/{{input}} as DATA, provider-shape — plus the
+    // due-set write-scope directive prepended.
+    const sendMessages = composeMaintainerMessages(gen, template, cfg, {
+      scopeDirective: writeScopeDirective(dueDisplay)
+    })
 
     // Trace-only: the fully composed prompt (b1906ae debug channel) so "did the tables/history reach
     // the model" is inspectable in the Runs tab. Shared shape with agent.llm (composedPromptDebug).
@@ -164,24 +198,64 @@ export const memoryMaintain: NodeImpl = {
     // Params + call config from the shared side-call builders (generationNodes) — stream defaults to
     // false (a maintenance reply is a side result, never the player-facing stream).
     const params = presetParamsWithTemperature(gen, cfg.temperature)
-    const callCfg = buildLlmCallConfig(cfg)
+    // Node-level retry default (owner directive 2026-07-14): a maintain pass whose config doesn't pin
+    // `retries` gets the FULL budget (5) — memory fills are side calls prone to transient empty
+    // streams, and a dropped pass silently loses whole cadence cycles. An authored value still wins.
+    const callCfg = buildLlmCallConfig({ ...cfg, retries: cfg.retries ?? 5 })
 
     const r = await runLlmCall(ctx, gen, sendMessages, params, callCfg)
     // Abort-with-empty: no reply to parse; the prompt is still traced so the empty result is diagnosable.
     if (r === null) return { outputs: {}, debug: promptDebug }
 
-    // Pull the SQL batch out of the <TableEdit> tag (rule 4: no changes ⇒ an empty tag ⇒ blank sql).
-    const sql = extractTagAll(r.raw, 'TableEdit')[0] ?? ''
-    if (!sql.trim()) return { outputs: { report: 'no changes' }, debug: promptDebug }
+    // Pull the SQL batch out of the <TableEdit> tag. extractTagAll returns [] when NO tag is present
+    // and [''] for an explicit empty `<TableEdit></TableEdit>` — a distinction that matters here:
+    //  - NO tag → malformed reply. Do NOT advance the due pointers (advancing would silently skip this
+    //    turn's content forever); report and no-op so the next commit boundary retries the same floors.
+    //  - EMPTY tag → a COMPLIANT "no changes" reply (maintainer rule 4). It MUST advance the due pointers
+    //    or the due tables stay due and burn a model call EVERY turn until the model happens to write.
+    const tags = extractTagAll(r.raw, 'TableEdit')
+    if (!tags.length) {
+      return { outputs: { report: 'no TableEdit tag in reply' }, debug: promptDebug }
+    }
+    const sql = tags[0] ?? ''
+    if (!sql.trim()) {
+      // Advance-on-empty bypasses applyTableEdit, so it must re-run the staleness fence itself: if a
+      // regenerate/edit/swipe landed mid-call the epoch moved, and advancing here would re-advance the
+      // pointers truncateFloors just clamped. Only advance when the transcript is still the one read.
+      if (cfg.advance_progress !== false) {
+        if (transcriptEpoch(gen.chatId) !== composedEpoch) {
+          return { outputs: { report: 'stale transcript, skipped' }, debug: promptDebug }
+        }
+        advanceProgress(gen.profileId, gen.chatId, due, currentFloor)
+      }
+      return { outputs: { report: 'no changes' }, debug: promptDebug }
+    }
 
     // Apply via the shared write-core (busy-guard + applySqlBatch + op-log + advance-after-success);
-    // a bad batch throws class-B and routes on the `error` port.
+    // a bad batch throws class-B and routes on the `error` port. WS3: the write scope + advance set are
+    // the DUE tables — out-of-scope statements the model emitted anyway are dropped, and only the due
+    // pointers advance (the non-due tables' backlog stands for their own cadence turn).
     const applied = applyTableEdit(gen, template, sql, {
       advanceProgress: cfg.advance_progress !== false,
-      label: 'memory.maintain'
+      writeScope: due,
+      advanceTables: due,
+      label: 'memory.maintain',
+      expectTranscriptEpoch: composedEpoch,
+      // Advance to the floor the model actually READ, not a disk re-read — a floor appended while
+      // the call was in flight must stay in the backlog for its own maintenance pass.
+      advanceTo: currentFloor
     })
+    if (applied.stale) {
+      // Regenerate/edit/swipe landed mid-call: the batch was composed from floors that no longer
+      // exist as read. Dropped without applying or advancing — the next commit boundary re-runs
+      // against the NEW content (truncateFloors already clamped the pointers).
+      return { outputs: { report: 'stale transcript, skipped' }, debug: promptDebug }
+    }
+    const dropped = applied.dropped ? `, dropped ${applied.dropped} out-of-scope` : ''
     return {
-      outputs: { report: `applied ${applied.applied} statement(s), ${applied.changes} change(s)` },
+      outputs: {
+        report: `applied ${applied.applied} statement(s), ${applied.changes} change(s)${dropped}`
+      },
       debug: promptDebug
     }
   }

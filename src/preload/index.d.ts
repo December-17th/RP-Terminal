@@ -735,27 +735,81 @@ declare global {
           }
         | { ok: false; error: string }
       >
-      deleteTableTemplate: (profileId: string, id: string) => Promise<void>
+      // Fan-out preview for the Structure tab's apply confirm (WS6 Phase C): bound-chat count.
+      boundChatsForTemplate: (profileId: string, templateId: string) => Promise<number>
+      deleteTableTemplate: (
+        profileId: string,
+        id: string
+      ) => Promise<{ ok: true } | { error: string }>
       importTableTemplateDialog: (profileId: string) => Promise<{
         summary?: { id: string; name: string; tableCount: number }
         error?: string
       } | null>
       getChatTableTemplate: (profileId: string, chatId: string) => Promise<string | null>
-      setChatTableTemplate: (profileId: string, chatId: string, id: string | null) => Promise<void>
+      setChatTableTemplate: (
+        profileId: string,
+        chatId: string,
+        id: string | null
+      ) => Promise<{ ok: true } | { error: string }>
       previewMemoryMaintain: (
         profileId: string,
         chatId: string,
         config: unknown
       ) => Promise<{ messages?: { role: string; content: string }[]; error?: string }>
-      maintainTablesNow: (
+      // Chunk-committed REFILL (table-refill WS2) — replaces the old append maintainTablesNow. Async +
+      // resumable; validation returns `{ ok } | { error }` (a `tables.*` key) and the run streams via
+      // onTableBackfillProgress (kind:'refill').
+      startTableRefill: (
         profileId: string,
         chatId: string,
-        opts: { lastNFloors?: number; extraHint?: string }
-      ) => Promise<
-        | { ok: true; applied: number; changes: number; empty?: boolean }
-        | { ok: false; reason: 'no-template' | 'no-node' | 'aborted' }
-        | { ok: false; reason: 'error'; message: string }
-      >
+        opts: {
+          tables?: string[]
+          fromFloor?: number
+          extraHint?: string
+          apiPresetId?: string | null
+          retries?: number
+          batchSize?: number
+        }
+      ) => Promise<{ ok: true } | { error: string }>
+      cancelTableRefill: (profileId: string, chatId: string) => Promise<void>
+      // The effective (widened) refill cutpoint the confirm dialog previews — the engine widens a
+      // requested cut DOWN onto a stored multi-floor batch boundary, so the dialog reads this to state
+      // the true range. Mirrors the engine's `effectiveRefillFrom`; falls back to the clamped request.
+      getTableRefillEffectiveFrom: (
+        profileId: string,
+        chatId: string,
+        tables: string[],
+        fromFloor: number | null
+      ) => Promise<number>
+      getTableRefillState: (
+        profileId: string,
+        chatId: string
+      ) => Promise<{
+        run: {
+          running: boolean
+          batchIndex: number
+          batchCount: number
+          span: { from: number; to: number } | null
+          completedUntil: number
+          droppedOutOfScope: number
+          failures: Array<{ span: { from: number; to: number }; reason: string }>
+        } | null
+        persisted: {
+          selected: string[]
+          fromFloor: number
+          completedUntil: number
+          status: string
+        } | null
+      }>
+      resumeTableRefill: (
+        profileId: string,
+        chatId: string,
+        extra: { apiPresetId?: string | null; retries?: number; extraHint?: string; batchSize?: number }
+      ) => Promise<{ ok: true } | { error: string }>
+      discardTableRefill: (
+        profileId: string,
+        chatId: string
+      ) => Promise<{ ok: true } | { error: string }>
       readChatTables: (
         profileId: string,
         chatId: string
@@ -808,6 +862,8 @@ declare global {
           kind: 'insert' | 'update' | 'delete' | 'other'
           table: string | null
           createdAt: string | null
+          // Write-path provenance (WS1 `table_ops.source`); null for legacy rows.
+          source: 'maintain' | 'backfill' | 'edit' | 'baseline' | 'refill' | null
         }[]
       >
       rewindChatTables: (
@@ -860,11 +916,14 @@ declare global {
       onTableBackfillProgress: (
         cb: (p: {
           chatId: string
+          // table-refill WS2: which manual-fill engine emitted this. Absent ⇒ 'backfill'.
+          kind?: 'backfill' | 'refill'
           batchIndex: number
           batchCount: number
           span: { from: number; to: number } | null
           status: 'running' | 'batch-ok' | 'batch-failed' | 'done' | 'cancelled' | 'error'
           message?: string
+          completedUntil?: number
         }) => void
       ) => () => void
     }

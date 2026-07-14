@@ -20,7 +20,7 @@ vi.mock('../../src/main/services/db', async () => {
   const { default: Adapter } = await import('../mocks/betterSqlite3Node')
   const appDb = new Adapter(':memory:')
   appDb.exec(
-    'CREATE TABLE table_ops (chat_id TEXT NOT NULL, floor INTEGER NOT NULL, seq INTEGER NOT NULL, sql TEXT NOT NULL, created_at TEXT, PRIMARY KEY (chat_id, floor, seq))'
+    'CREATE TABLE table_ops (chat_id TEXT NOT NULL, floor INTEGER NOT NULL, seq INTEGER NOT NULL, sql TEXT NOT NULL, created_at TEXT, target_table TEXT, source TEXT, from_floor INTEGER, PRIMARY KEY (chat_id, floor, seq))'
   )
   return { getDb: () => appDb }
 })
@@ -43,7 +43,13 @@ import {
 } from '../../src/main/services/tableTemplateService'
 import { instantiate, readAllTables, sandboxDbPath } from '../../src/main/services/tableDbService'
 import { applySqlBatch } from '../../src/main/services/tableSql'
-import { rebuildSandbox, appendOps, listOps } from '../../src/main/services/tableOpsService'
+import {
+  rebuildSandbox,
+  appendOps,
+  listOps,
+  beginTableWrite,
+  endTableWrite
+} from '../../src/main/services/tableOpsService'
 import { getDb } from '../../src/main/services/db'
 import RealDatabase from '../mocks/betterSqlite3Node'
 
@@ -361,6 +367,36 @@ describe('tableStructureService — structural edit + migration', () => {
       [1, '序章', '起点'],
       [2, '第一章', '城']
     ])
+    expect(listOps(P, 'chatB')).toEqual(chatBOpsBefore)
+  })
+
+  it('BUSY-REJECT: a live write on ANY bound chat throws before mutating the template or any chat', () => {
+    hoisted.boundChats = ['chatA', 'chatB']
+    seedChatWithRows('chatA', baseTemplate())
+    seedChatWithRows('chatB', baseTemplate())
+    const templateBefore = getTableTemplateById(P, T)
+    const chatABytesBefore = fs.readFileSync(sandboxDbPath(P, 'chatA'))
+    const chatBBytesBefore = fs.readFileSync(sandboxDbPath(P, 'chatB'))
+    const chatAOpsBefore = listOps(P, 'chatA')
+    const chatBOpsBefore = listOps(P, 'chatB')
+
+    // A long refill owns chatB's write guard (chatA is idle). The structure apply must refuse the WHOLE
+    // batch up-front — nothing migrated, not even the idle chatA.
+    const token = beginTableWrite('chatB')
+    expect(token).not.toBeNull()
+    try {
+      expect(() =>
+        applyStructureOps(P, T, [{ kind: 'addColumn', uid: 'uid-chronicle', name: 'mood' }])
+      ).toThrow('tables.memoryWriteBusy')
+    } finally {
+      endTableWrite('chatB', token!)
+    }
+
+    // Template untouched (never re-saved), both sandboxes byte-for-byte identical, both op-logs intact.
+    expect(getTableTemplateById(P, T)).toEqual(templateBefore)
+    expect(fs.readFileSync(sandboxDbPath(P, 'chatA')).equals(chatABytesBefore)).toBe(true)
+    expect(fs.readFileSync(sandboxDbPath(P, 'chatB')).equals(chatBBytesBefore)).toBe(true)
+    expect(listOps(P, 'chatA')).toEqual(chatAOpsBefore)
     expect(listOps(P, 'chatB')).toEqual(chatBOpsBefore)
   })
 

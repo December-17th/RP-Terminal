@@ -141,7 +141,8 @@ export const applyEdit = (
     const result = applySqlBatch(profileId, chatId, template, sql)
     if (result.statements.length) {
       const floor = Math.max(0, getAllFloors(profileId, chatId).length - 1)
-      appendOps(profileId, chatId, floor, result.statements)
+      // Hand edit is single-floor: its span start IS its own floor (from_floor = floor).
+      appendOps(profileId, chatId, floor, result.statements, 'edit', floor)
     }
     return { ok: true, changes: result.changes }
   } catch (error) {

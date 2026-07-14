@@ -9,7 +9,7 @@ import {
 } from '../types/tableTemplate'
 import { getTableTemplateById, saveTableTemplate } from './tableTemplateService'
 import { sandboxDbPath, instantiate } from './tableDbService'
-import { deleteAllOps, appendOps } from './tableOpsService'
+import { deleteAllOps, appendOps, isTableWriteBusy } from './tableOpsService'
 import { getDb } from './db'
 import { listChatIdsForTableTemplate } from './chatService'
 import { isSafeSqlIdentifier, parseDdlColumnNames } from '../parsers/chatSheetsParser'
@@ -382,7 +382,8 @@ const buildNewTableDef = (work: WorkTable, newDdl: string): TableDef => ({
   updateNode: '',
   deleteNode: '',
   updateFrequency: -1,
-  exportConfig: TableExportConfigSchema.parse({})
+  exportConfig: TableExportConfigSchema.parse({}),
+  injectionPolicy: { mode: 'recent' }
 })
 
 // ---- sandbox helpers (runtime wrappers; real SQLite) -----------------------------------------
@@ -459,7 +460,7 @@ const buildBaselineOps = (db: Database.Database, newTemplate: TableTemplate): st
 const rewriteOpLog = (profileId: string, chatId: string, baseline: string[]): void => {
   getDb().transaction(() => {
     deleteAllOps(profileId, chatId)
-    if (baseline.length) appendOps(profileId, chatId, 0, baseline)
+    if (baseline.length) appendOps(profileId, chatId, 0, baseline, 'baseline', 0)
   })()
 }
 
@@ -537,6 +538,19 @@ export const applyStructureOps = (
   ]
 
   const chatIds = listChatIdsForTableTemplate(profileId, templateId)
+
+  // 0) Busy-reject atomically BEFORE any mutation. The migration rewrites each bound chat's sandbox +
+  //    op log WITHOUT the per-chat write guard, so a run overlapping a live refill would republish the
+  //    refill's stale-schema shadow over the migrated sandbox — and `rewriteOpLog`'s `deleteAllOps`
+  //    lowers the op-log watermark, so the refill's rowid-INCREASE interleave check can't catch it.
+  //    Prevention here is the fix: if a live refill (or any writer) owns ANY bound chat's guard, throw
+  //    `tables.memoryWriteBusy` and touch nothing — the SAME atomic refusal `removeTableTemplateIdFromChats`
+  //    uses. This whole function is SYNCHRONOUS (no awaits between the check and the mutations), so on the
+  //    single-threaded main process the probe is airtight: no writer can claim a chat between here and the
+  //    mutations, so no per-chat token claim/hold is needed — the up-front `isTableWriteBusy` scan suffices.
+  for (const chatId of chatIds) {
+    if (isTableWriteBusy(chatId)) throw new Error('tables.memoryWriteBusy')
+  }
 
   // 1) Derive new canonical DDL from a THROWAWAY in-memory DB (seeded from the current DDL) — ALWAYS,
   //    whether or not chats are bound. No real sandbox is touched here, so a derivation failure /

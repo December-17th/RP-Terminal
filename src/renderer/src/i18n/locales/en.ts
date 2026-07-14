@@ -61,6 +61,10 @@ const en: Record<string, string> = {
   'nav.switchSession': 'Switch session',
   'nav.session': 'Session',
   'nav.workflow': 'Workflow',
+  // WS6 Phase B: the top-strip memory chip (opens the Memory Manager; count = backlog floors).
+  'nav.memory': 'Memory',
+  'nav.memoryTitle': 'Memory tables — open the Memory Manager',
+  'nav.memoryTitleBacklog': '{{n}} floor(s) awaiting maintenance — open the Memory Manager',
   'nav.workflowTitle': 'Open the workflow & agents editor',
 
   'strip.open': 'Open {{name}}…',
@@ -114,6 +118,7 @@ const en: Record<string, string> = {
   'settings.selectWorldFirst': 'Select a world first.',
   // SQL-table memory global default cadence (manual-pass issue 04)
   'settings.tablesDefaultFrequency': 'Default maintenance frequency (turns)',
+  'settings.tablesInjectionMaxRows': 'Table injection row cap ("recent N rows" default)',
   'settings.regex': 'Regex',
   'settings.scripts': 'Scripts',
   'settings.language': 'Language',
@@ -560,8 +565,8 @@ const en: Record<string, string> = {
   // SQL-table memory (数据库/表格) — the lean data grid (config moved to the Memory rail, WP3.8)
   'tables.heading': 'Memory Tables',
   // Header hint linking to the editor's Memory sheet (template binding / backfill live there, WP6.4b).
-  'tables.configHint': 'Memory settings live in the workflow editor.',
-  'tables.openMemory': 'Open the workflow editor',
+  'tables.configHint': 'Memory templates and refill live in the Memory Manager.',
+  'tables.openMemory': 'Open the Memory Manager',
   'tables.template': 'Table template',
   'tables.none': 'None (off)',
   'tables.import': 'Import template',
@@ -595,6 +600,8 @@ const en: Record<string, string> = {
   'tables.editUnknownTable': 'That table is not part of the assigned template.',
   'tables.editBadColumn': 'That column no longer exists in the table.',
   'tables.rewindBadFloor': 'Invalid rewind point.',
+  'tables.memoryWriteBusy':
+    'Table memory is busy (a refill is running for this session). Cancel or let it finish, then try again.',
   // Per-table template prompt editor (manual-pass issue 03)
   'tables.editTemplate': 'Template prompts',
   'tables.templateEditHint':
@@ -609,8 +616,17 @@ const en: Record<string, string> = {
   'tables.freqGlobal': 'Global',
   'tables.freqOff': 'Off',
   'tables.freqCustom': 'Custom',
-  'tables.freqEvery': 'Every {{n}} turns',
   'tables.injectionSettings': 'Injection settings',
+  // WS4 main-prompt injection policy (owner pass 2026-07-14): how the table's CURRENT rows enter the
+  // narrator's prompt each turn. Distinct from the lorebook-style "Injection settings" above.
+  'tables.injectionPolicy': 'Prompt injection',
+  'tables.injectionPolicyHint':
+    "How this table's current rows enter the main prompt each turn (the maintainer side-call always sees the full table).",
+  'tables.injectionPolicyRecent': 'Recent N rows',
+  'tables.injectionPolicyFull': 'All rows',
+  'tables.injectionPolicyNone': 'Not injected',
+  'tables.injectionPolicyRows': 'Rows',
+  'tables.injectionPolicyRowsPh': 'global {{n}}',
   'tables.ddl': 'DDL (read-only)',
   'tables.savePrompts': 'Save',
   'tables.templateSaved': 'Template saved',
@@ -641,6 +657,7 @@ const en: Record<string, string> = {
   'memory.tab.maintenance': 'Maintenance',
   // ── Full-window Memory Manager (Memory Manager WP1) — the SQL-table memory Visualizer ─────────────
   'memoryManager.title': 'Memory Manager',
+  'memoryManager.templateMenu': 'Template actions',
   'memoryManager.expand': '⛶ Full screen',
   'memoryManager.expandTip': 'Open the full-window Memory Manager',
   'memoryManager.sheets': 'Tables',
@@ -666,10 +683,18 @@ const en: Record<string, string> = {
   'memoryManager.structure.addColumn': 'Add column',
   'memoryManager.structure.addColumnPlaceholder': 'New column name',
   'memoryManager.structure.noColumns': 'No editable columns.',
-  'memoryManager.structure.confirmDropTable':
-    'Delete table "{{name}}" and all its data from the template and every bound chat? This cannot be undone.',
-  'memoryManager.structure.confirmDropColumn':
-    'Delete column "{{name}}" and its data from every bound chat? This cannot be undone.',
+  'memoryManager.structure.stagedTitle': 'Staged changes ({{n}})',
+  'memoryManager.structure.apply': 'Apply migration',
+  'memoryManager.structure.applyTitle': 'Apply structure migration',
+  'memoryManager.structure.applyBody':
+    'Apply {{ops}} structural change(s) and migrate {{chats}} bound session(s)? Migration rebuilds the table history of every bound session as a baseline — afterwards the affected tables only support a FULL refill. This cannot be undone.',
+  'memoryManager.structure.undoOp': 'Undo',
+  'memoryManager.structure.undoAll': 'Undo all',
+  'memoryManager.structure.staged.renameTable': 'Rename table {{from}} → {{to}}',
+  'memoryManager.structure.staged.dropTable': 'Delete table {{name}}',
+  'memoryManager.structure.staged.addColumn': 'Add column {{table}}.{{name}}',
+  'memoryManager.structure.staged.renameColumn': 'Rename column {{table}}.{{from}} → {{to}}',
+  'memoryManager.structure.staged.dropColumn': 'Delete column {{table}}.{{name}}',
   'memoryManager.structure.applied':
     'Applied: {{tables}} table change(s), {{cols}} column change(s), {{chats}} chat(s) migrated.',
   'memoryManager.structure.failed': 'Structure change failed',
@@ -678,6 +703,8 @@ const en: Record<string, string> = {
   'memoryManager.structure.failedRow': 'Chat {{chat}}: {{reason}}',
   'memoryManager.structure.warningsTitle': 'Warnings',
   'memoryManager.data.reset': 'Reset',
+  // The active table's template-config disclosure (shared TemplateEditPanel, owner pass 2026-07-14).
+  'memoryManager.data.templateConfig': 'Template config (prompts & injection)',
   'memoryManager.data.newRow': 'New row',
   // Plot-recall (WP7): the per-row memory-code (MT####) chip + the code-column header marker.
   'memoryManager.data.codeTip': 'Memory code — recall references this row by this code',
@@ -703,26 +730,64 @@ const en: Record<string, string> = {
   'memoryManager.rangeLabel': 'Rows {{from}}–{{to}} of {{total}}',
   'memoryManager.prevPage': 'Previous page',
   'memoryManager.nextPage': 'Next page',
-  // Maintenance tab (WP2): the run-now workbench + prompt preview + progress/backfill.
-  'memoryManager.maintenance.runTitle': 'Run maintenance now',
-  'memoryManager.maintenance.runIntro':
-    'Run one maintenance pass over the recent floors, filling the tables from the transcript.',
-  'memoryManager.maintenance.lastNFloors': 'Recent floors',
+  // Maintenance tab (table-refill WS6 Phase A): the Refill workbench + prompt preview.
   'memoryManager.maintenance.extraHint': 'Extra instruction (optional)',
   'memoryManager.maintenance.extraHintPlaceholder':
     'e.g. focus on the summary table, ignore combat details…',
-  'memoryManager.maintenance.run': 'Run now',
-  'memoryManager.maintenance.running': 'Running…',
-  'memoryManager.maintenance.resultApplied':
-    'Applied {{applied}} statement(s), {{changes}} change(s).',
-  'memoryManager.maintenance.resultEmpty': 'No changes needed.',
   'memoryManager.maintenance.noTemplate': 'Assign a table template first (in the left rail).',
-  'memoryManager.maintenance.errorNoNode': 'This session has no memory-maintenance agent to run.',
-  'memoryManager.maintenance.errorAborted': 'The maintenance call was aborted.',
   'memoryManager.maintenance.errorFailed': 'Maintenance failed: {{message}}',
   'memoryManager.maintenance.previewTitle': 'Preview prompt',
   'memoryManager.maintenance.previewShow': 'Show composed prompt',
   'memoryManager.maintenance.previewHide': 'Hide composed prompt',
+  'memoryManager.maintenance.refillTitle': 'Refill tables',
+  'memoryManager.maintenance.refillIntro':
+    'Regenerate the tables from the transcript, rolling back the un-maintained tail and rebuilding it — no double-counting. Commits in chunks and can resume.',
+  'memoryManager.maintenance.fullRefill': 'Full refill (from floor 0)',
+  'memoryManager.maintenance.refillRun': 'Refill now',
+  'memoryManager.maintenance.refillRunning': 'Refilling…',
+  'memoryManager.maintenance.refillDone': 'Refill complete.',
+  'memoryManager.maintenance.refillCancelled': 'Refill cancelled (committed chunks kept).',
+  // Refill workbench pieces (WS6 Phase A): picker, range/consequence, run rail, resume banner.
+  'memoryManager.refill.tablesTitle': 'Tables to refill',
+  'memoryManager.refill.tablesAll': 'All tables',
+  // The picker header's global-cadence editor (owner pass 2026-07-14) — the same
+  // settings.tables.default_update_frequency the App Settings field edits.
+  'memoryManager.refill.globalFreq': 'Global cadence',
+  'memoryManager.refill.globalFreqTip':
+    'Tables set to "global" are maintained every N turns (the app-wide default)',
+  'memoryManager.refill.injectionCap': 'Injection rows',
+  'memoryManager.refill.injectionCapTip':
+    'Global row cap for the "recent N rows" prompt-injection policy (per-table override in the Data tab’s template config)',
+  'memoryManager.refill.fromLabel': 'Start floor',
+  'memoryManager.refill.consequence':
+    'Will regenerate floors {{from}}–{{to}} ({{n}} floors · ~{{m}} batches).',
+  'memoryManager.refill.consequenceFirst': 'Will fill all {{n}} floors from the beginning.',
+  'memoryManager.refill.noSelection': 'Select at least one table (and the session needs floors).',
+  'memoryManager.refill.advanced': 'Advanced options',
+  'memoryManager.refill.confirmTitle': 'Confirm refill',
+  'memoryManager.refill.confirmBody':
+    ' The selected {{k}} table(s) will have their records in this range rewritten.',
+  'memoryManager.refill.editWarning':
+    ' This range contains {{n}} manual edit(s); they will be lost and not regenerated.',
+  'memoryManager.refill.confirmWidened':
+    ' A saved multi-floor batch spans your start floor, so the range was widened down from floor {{requested}} to floor {{widened}} to regenerate that whole batch.',
+  'memoryManager.refill.railTitle': 'Refill progress',
+  'memoryManager.refill.statusRunning': 'Running',
+  'memoryManager.refill.statusDone': 'Complete',
+  'memoryManager.refill.statusCancelled': 'Cancelled',
+  'memoryManager.refill.statusError': 'Stopped',
+  'memoryManager.refill.batchOf': '{{i}}/{{n}} batches committed',
+  'memoryManager.refill.completedUntil': 'committed through floor {{n}}',
+  'memoryManager.refill.cancelRun': 'Cancel (stops after the current batch)',
+  'memoryManager.refill.resume': 'Resume',
+  'memoryManager.refill.discard': 'Discard',
+  'memoryManager.refill.discardTip':
+    'Clears the resume record; the committed chunks are kept as valid history.',
+  'memoryManager.refill.resumeBanner': 'A refill is unfinished — committed through floor {{n}}.',
+  'memoryManager.refill.resumeBannerFresh': 'A refill is unfinished — no chunks committed yet.',
+  'memoryManager.refill.baselineSwitch': 'Switch to full refill',
+  'memoryManager.refill.progressAria': 'Refill batch progress',
+  'memoryManager.refill.failedSpan': 'Floors {{from}}–{{to}} failed: {{reason}}',
   // History tab (WP3): the table op-log + data-only rewind (undo). Rewind is destructive (drops later
   // edits); labels use the ST terms 数据库/表格 (tables) and 撤销/回滚 (undo/rewind) in zh.
   'memoryManager.history.intro':
@@ -735,10 +800,15 @@ const en: Record<string, string> = {
   'memoryManager.history.kind.delete': 'Removed',
   'memoryManager.history.kind.other': 'Changed',
   'memoryManager.history.empty': 'No table edits yet.',
-  'memoryManager.history.confirmUndo':
-    'Undo the most recent table edit? This drops it and any edits after it, and cannot be undone.',
+  'memoryManager.history.confirmTitle': 'Rewind tables',
   'memoryManager.history.confirmRewind':
-    'Roll the tables back to before floor {{n}}? This drops every table edit from that point onward and cannot be undone.',
+    'Roll the tables back to before floor {{n}}? This cannot be undone.',
+  'memoryManager.history.consequence': ' This drops {{n}} edit(s) across {{m}} floor(s).',
+  'memoryManager.history.source.maintain': 'auto',
+  'memoryManager.history.source.edit': 'manual edit',
+  'memoryManager.history.source.backfill': 'backfill',
+  'memoryManager.history.source.refill': 'refill',
+  'memoryManager.history.source.baseline': 'baseline',
   'memoryManager.history.rewound': 'Rolled back {{n}} table edit(s).',
   'memoryManager.history.rewindFailed': 'Rewind failed',
   'tables.backfill': 'Backfill',
@@ -762,6 +832,20 @@ const en: Record<string, string> = {
   'tables.backfillBadPreset': 'The selected API preset no longer exists.',
   'tables.backfillBadScope': 'Enter a floor count of at least 1, or choose All.',
   'tables.backfillBadBatch': 'Batch size must be at least 1.',
+  // Refill engine (table-refill WS2) error keys — surfaced from the async refill run.
+  'tables.refillNoTemplate': 'Assign a table template before running a refill.',
+  'tables.refillNoTables': 'No valid tables selected to refill.',
+  'tables.refillNoFloors': 'This session has no floors to refill from yet.',
+  'tables.refillNeedsFull':
+    'This table was structurally migrated — a partial refill would duplicate rows. Run a full refill (from floor 0).',
+  'tables.refillBusy': 'A table write is already in flight for this session — try again shortly.',
+  'tables.refillAlreadyRunning': 'A refill is already running for this session.',
+  'tables.refillGuardLost': 'The refill lost its write lock and stopped — resume to continue.',
+  'tables.refillInterleaved': 'Another table write landed mid-refill; the run stopped to avoid a conflict.',
+  'tables.refillTranscriptChanged':
+    'The floors changed mid-refill (regenerate / edit / delete) — the run stopped. Resume to continue against the new content.',
+  'tables.refillRunning': 'A refill is currently running for this session.',
+  'tables.refillNothingToResume': 'There is no interrupted refill to resume.',
   'status.noState': '(No RPG state for this session yet)',
 
   'workflow.trace.status.ran': 'ran',

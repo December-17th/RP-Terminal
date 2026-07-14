@@ -1,56 +1,12 @@
 import { describe, it, expect } from 'vitest'
 import {
-  MEMORY_CAPABILITY,
-  isMemoryPack,
-  memoryPackRows,
-  memoryPaneMode,
   maintenanceSummary,
-  type MemoryPackInput,
   type TableStatusLike
 } from '../src/renderer/src/components/workspace/memoryPaneModel'
 
-// Pure derivations for the control-center Memory pane (agent-packs plan WP3.8). No IPC, no React.
-
-describe('isMemoryPack', () => {
-  it('is true only when the pack has the writes-tables capability', () => {
-    expect(isMemoryPack(['writes-tables'])).toBe(true)
-    expect(isMemoryPack([MEMORY_CAPABILITY, 'reads-lore'])).toBe(true)
-    expect(isMemoryPack(['reads-lore'])).toBe(false)
-    expect(isMemoryPack([])).toBe(false)
-  })
-})
-
-describe('memoryPackRows', () => {
-  const packs: MemoryPackInput[] = [
-    { id: 'mem', name: 'Memory', capabilities: ['writes-tables'] },
-    { id: 'lore', name: 'Lore', capabilities: ['reads-lore'] },
-    { id: 'mem2', name: 'Memory 2', capabilities: ['writes-tables'] }
-  ]
-
-  it('keeps only memory packs, preserving input order', () => {
-    const rows = memoryPackRows(packs, {})
-    expect(rows.map((r) => r.id)).toEqual(['mem', 'mem2'])
-  })
-
-  it('resolves the gate state from the gate map (missing = closed)', () => {
-    const rows = memoryPackRows(packs, { mem: true })
-    expect(rows.find((r) => r.id === 'mem')?.enabled).toBe(true)
-    expect(rows.find((r) => r.id === 'mem2')?.enabled).toBe(false)
-  })
-})
-
-describe('memoryPaneMode', () => {
-  it('no chat → no-chat (regardless of template)', () => {
-    expect(memoryPaneMode({ hasChat: false, hasTemplate: false })).toBe('no-chat')
-    expect(memoryPaneMode({ hasChat: false, hasTemplate: true })).toBe('no-chat')
-  })
-  it('chat but no template → no-template', () => {
-    expect(memoryPaneMode({ hasChat: true, hasTemplate: false })).toBe('no-template')
-  })
-  it('chat with template → configured', () => {
-    expect(memoryPaneMode({ hasChat: true, hasTemplate: true })).toBe('configured')
-  })
-})
+// The maintenance-summary roll-up (memoryPaneModel — trimmed in table-refill WS6 Phase B: the
+// MemoryPane it once modelled is deleted; the pane-mode + memory-pack-strip derivations went with it.
+// This aggregate survives as the TopStrip memory chip's (记忆 · N) backlog source). Pure, no IPC.
 
 describe('maintenanceSummary', () => {
   const st = (unprocessed: number): TableStatusLike => ({

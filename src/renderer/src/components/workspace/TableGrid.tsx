@@ -15,6 +15,8 @@
 // deviation; the pointer marker covers the "which floors are folded in" need at table granularity).
 import React from 'react'
 import { useT } from '../../i18n'
+import { useSettingsStore } from '../../stores/settingsStore'
+import { ConfirmDialog } from '../ConfirmDialog'
 import { codeColumnOf } from '../../../../shared/memory/codeColumn'
 import {
   columnWidthHint,
@@ -74,6 +76,10 @@ export interface TableDef {
   deleteNode: string
   updateFrequency: number
   exportConfig: TableExportConfig
+  /** WS4 — how the table's CURRENT rows enter the MAIN prompt each turn (RPT-native; the maintainer
+   *  side-call is unaffected). 'recent' keeps the last `rows` (else the global
+   *  settings.tables.injection_max_rows); mirrors main's TableInjectionPolicySchema. */
+  injectionPolicy?: { mode?: 'recent' | 'full' | 'none'; rows?: number }
 }
 
 /** The editable subset sent back on save. Every field but `uid` is OPTIONAL — the merge only touches
@@ -88,6 +94,7 @@ export interface TableDefPatch {
   deleteNode?: string
   updateFrequency?: number
   exportConfig?: TableExportConfig
+  injectionPolicy?: { mode: 'recent' | 'full' | 'none'; rows?: number }
 }
 
 export type EditFn = (edit: {
@@ -109,20 +116,17 @@ const cellStyle: React.CSSProperties = {
  * Always-visible per-table maintenance-cadence control (manual-pass issue 04). Shows the table's
  * `updateFrequency` at a glance and commits a single-field `{ uid, updateFrequency }` patch on change.
  * Semantics mirror the main-side resolver: `-1` = 全局 (global default N), `0` = 关 (off), `N>=1` = 每 N 轮.
+ * Exported: the Memory Manager's refill picker reuses it (ONE cadence control, no drift) — imported
+ * templates carry per-table cadence, and the manager is the only table surface a `static`-layout card
+ * can reach.
  */
-const FreqControl: React.FC<{
+export const FreqControl: React.FC<{
   freq: number
   globalFreq: number
   onChange: (freq: number) => void
 }> = ({ freq, globalFreq, onChange }) => {
   const t = useT()
   const mode = freq === -1 ? 'global' : freq === 0 ? 'off' : 'custom'
-  const label =
-    freq === -1
-      ? t('tables.freqGlobal') + ` (${globalFreq})`
-      : freq === 0
-        ? t('tables.freqOff')
-        : t('tables.freqEvery', { n: freq })
 
   const smallSelect: React.CSSProperties = {
     fontSize: 11,
@@ -138,9 +142,6 @@ const FreqControl: React.FC<{
       style={{ display: 'inline-flex', gap: 4, alignItems: 'center', fontSize: 11, opacity: 0.75 }}
       title={t('tables.updateFrequency')}
     >
-      <span aria-hidden style={{ opacity: 0.8 }}>
-        {label}
-      </span>
       <select
         style={smallSelect}
         value={mode}
@@ -157,16 +158,18 @@ const FreqControl: React.FC<{
         <option value="off">{t('tables.freqOff')}</option>
         <option value="custom">{t('tables.freqCustom')}</option>
       </select>
-      {mode === 'custom' && (
-        <input
-          type="number"
-          min={1}
-          step={1}
-          style={{ ...smallSelect, width: 56 }}
-          value={freq >= 1 ? freq : 1}
-          onChange={(e) => onChange(Math.max(1, Math.floor(Number(e.target.value) || 1)))}
-        />
-      )}
+      {/* ALWAYS rendered so rows line up (owner pass 2026-07-14 — the appear/disappear input broke
+          column alignment in the refill picker). Not custom → disabled, showing the EFFECTIVE value:
+          the global default under 全局, blank under 关 (no auto-maintenance). */}
+      <input
+        type="number"
+        min={1}
+        step={1}
+        style={{ ...smallSelect, width: 56, ...(mode !== 'custom' ? { opacity: 0.55 } : {}) }}
+        disabled={mode !== 'custom'}
+        value={mode === 'custom' ? (freq >= 1 ? freq : 1) : mode === 'global' ? globalFreq : ''}
+        onChange={(e) => onChange(Math.max(1, Math.floor(Number(e.target.value) || 1)))}
+      />
     </span>
   )
 }
@@ -196,6 +199,10 @@ export const TableGrid: React.FC<{
   const [editingTemplate, setEditingTemplate] = React.useState(false)
   // WP-I: the per-table row filter. Index-based so edits keep targeting the original rowids.
   const [filter, setFilter] = React.useState('')
+  // Pending destructive edit awaiting the themed confirm (WS6 Phase C — no window.confirm).
+  const [pendingEdit, setPendingEdit] = React.useState<
+    { kind: 'delete'; rowid: number } | { kind: 'reset' } | null
+  >(null)
 
   const rowIdConvention = table.columns[0] === 'row_id'
   const visibleIndices = React.useMemo(
@@ -259,20 +266,40 @@ export const TableGrid: React.FC<{
     void onEdit({ kind: 'insert', table: table.sqlName, values })
   }
 
+  // Destructive edits confirm through the app dialog (WS6 Phase C), never window.confirm.
   const onDeleteRow = (rowIndex: number): void => {
     const rowid = table.rowids[rowIndex]
     if (rowid == null) return
-    if (!confirm(t('tables.confirmDeleteRow'))) return
-    void onEdit({ kind: 'delete', table: table.sqlName, rowid })
+    setPendingEdit({ kind: 'delete', rowid })
   }
 
   const onReset = (): void => {
-    if (!confirm(t('tables.confirmReset'))) return
-    void onEdit({ kind: 'reset', table: table.sqlName })
+    setPendingEdit({ kind: 'reset' })
   }
 
   return (
     <div style={{ marginBottom: 16 }}>
+      {pendingEdit && (
+        <ConfirmDialog
+          title={pendingEdit.kind === 'delete' ? t('tables.deleteRow') : t('tables.resetTable')}
+          body={
+            pendingEdit.kind === 'delete'
+              ? t('tables.confirmDeleteRow')
+              : t('tables.confirmReset')
+          }
+          danger
+          onConfirm={() => {
+            const p = pendingEdit
+            setPendingEdit(null)
+            if (p.kind === 'delete') {
+              void onEdit({ kind: 'delete', table: table.sqlName, rowid: p.rowid })
+            } else {
+              void onEdit({ kind: 'reset', table: table.sqlName })
+            }
+          }}
+          onCancel={() => setPendingEdit(null)}
+        />
+      )}
       <div
         style={{
           display: 'flex',
@@ -624,16 +651,26 @@ const draftFromDef = (
   updateNode: string
   deleteNode: string
   exportConfig: TableExportConfig
+  ipMode: 'recent' | 'full' | 'none'
+  /** null = unset → the global settings.tables.injection_max_rows cap applies. */
+  ipRows: number | null
 } => ({
   note: def.note ?? '',
   initNode: def.initNode ?? '',
   insertNode: def.insertNode ?? '',
   updateNode: def.updateNode ?? '',
   deleteNode: def.deleteNode ?? '',
-  exportConfig: cloneExportConfig(def.exportConfig)
+  exportConfig: cloneExportConfig(def.exportConfig),
+  ipMode: def.injectionPolicy?.mode ?? 'recent',
+  ipRows: def.injectionPolicy?.rows ?? null
 })
 
-const TemplateEditPanel: React.FC<{
+/**
+ * Exported (owner pass 2026-07-14): the Memory Manager's Data tab hosts this SAME panel — per-table
+ * prompts + injection settings were otherwise reachable only through the workspace Tables view, which
+ * a card's `static` layout hides entirely (the FreqControl precedent: one control, no drift).
+ */
+export const TemplateEditPanel: React.FC<{
   def: TableDef
   onSave: (patch: TableDefPatch) => Promise<void>
   onClose: () => void
@@ -641,6 +678,10 @@ const TemplateEditPanel: React.FC<{
   const t = useT()
   const [draft, setDraft] = React.useState(() => draftFromDef(def))
   const [showInjection, setShowInjection] = React.useState(false)
+  // The global recent-N cap an unset per-table `rows` falls back to (the rows placeholder).
+  const globalInjectionCap = useSettingsStore(
+    (s) => s.settings?.tables?.injection_max_rows ?? 20
+  )
 
   // Re-seed the draft whenever the underlying def identity changes (e.g. after a save refetch).
   React.useEffect(() => {
@@ -666,7 +707,10 @@ const TemplateEditPanel: React.FC<{
       insertNode: draft.insertNode,
       updateNode: draft.updateNode,
       deleteNode: draft.deleteNode,
-      exportConfig: cloneExportConfig(draft.exportConfig)
+      exportConfig: cloneExportConfig(draft.exportConfig),
+      // WS4 main-prompt injection policy: rows only when the user pinned a per-table override
+      // (unset → the global cap; sending an explicit field keeps the schema default semantics).
+      injectionPolicy: { mode: draft.ipMode, ...(draft.ipRows != null ? { rows: draft.ipRows } : {}) }
     })
   }
 
@@ -707,6 +751,49 @@ const TemplateEditPanel: React.FC<{
       {prompt('tables.promptDelete', 'deleteNode', 5)}
 
       {/* updateFrequency moved to the always-visible table header control (manual-pass issue 04). */}
+
+      {/* WS4 main-prompt injection policy (owner pass 2026-07-14: the field was patchable but had no
+          UI anywhere). Distinct from the lorebook-style exportConfig subsection below — this governs
+          the capped memory block the NARRATOR reads each turn. */}
+      <div style={fieldGroupStyle}>
+        <label style={labelStyle}>{t('tables.injectionPolicy')}</label>
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+          <select
+            style={{ ...inputStyle, width: 160 }}
+            value={draft.ipMode}
+            onChange={(e) =>
+              setDraft((d) => ({ ...d, ipMode: e.target.value as 'recent' | 'full' | 'none' }))
+            }
+          >
+            <option value="recent">{t('tables.injectionPolicyRecent')}</option>
+            <option value="full">{t('tables.injectionPolicyFull')}</option>
+            <option value="none">{t('tables.injectionPolicyNone')}</option>
+          </select>
+          {draft.ipMode === 'recent' && (
+            <>
+              <span style={{ fontSize: 11, opacity: 0.75 }}>{t('tables.injectionPolicyRows')}</span>
+              <input
+                type="number"
+                min={0}
+                step={1}
+                style={{ ...inputStyle, width: 90 }}
+                value={draft.ipRows ?? ''}
+                placeholder={t('tables.injectionPolicyRowsPh', { n: globalInjectionCap })}
+                onChange={(e) => {
+                  const raw = e.target.value.trim()
+                  setDraft((d) => ({
+                    ...d,
+                    ipRows: raw === '' ? null : Math.max(0, Math.floor(Number(raw) || 0))
+                  }))
+                }}
+              />
+            </>
+          )}
+        </div>
+        <div style={{ fontSize: 11, opacity: 0.65, marginTop: 3 }}>
+          {t('tables.injectionPolicyHint')}
+        </div>
+      </div>
 
       {/* Injection settings (exportConfig) — nested collapsible subsection. */}
       <div style={fieldGroupStyle}>

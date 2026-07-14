@@ -96,6 +96,9 @@ export interface Settings {
    *  with `updateFrequency === -1` ("use global") runs at. Mirrors the 数据库-plugin global default. */
   tables: {
     default_update_frequency: number
+    /** WS4: global default row cap for the per-table memory block injected into the MAIN narrative
+     *  prompt (the 'recent' policy). A per-table `injectionPolicy.rows` overrides it. Default 20. */
+    injection_max_rows: number
   }
   /** ST-Prompt-Template EJS engine (`<% %>` template processing) on/off. */
   templates: {

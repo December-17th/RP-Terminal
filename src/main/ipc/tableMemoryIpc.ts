@@ -13,10 +13,19 @@ import {
   getBackfillState,
   BackfillOpts
 } from '../services/tableBackfillService'
+import {
+  startRefill,
+  cancelRefill,
+  getRefillState,
+  resumeRefill,
+  discardRefill,
+  effectiveRefillFrom,
+  RefillOpts
+} from '../services/tableRefillService'
 import { buildGenContext } from '../services/generation/genContext'
 import { chatTemplate } from '../services/nodes/builtin/memoryCore'
 import { composeMaintainerMessages, memoryMaintainConfig } from '../services/nodes/builtin/memoryNodes'
-import { maintainNow, resolveMaintainConfig } from '../services/tableMaintainNow'
+import { resolveMaintainConfig } from '../services/tableMaintainNow'
 import { gate } from './ipcGuards'
 
 /**
@@ -39,9 +48,16 @@ export const registerTableMemoryIpc = (ipcMain: IpcMain): void => {
     tableTemplateService.updateTableTemplate(profileId, id, patch)
   )
   ipcMain.handle('table-template-delete', (_, profileId, id) => {
-    tableTemplateService.deleteTableTemplate(profileId, id)
-    // Any chat that had it assigned loses its sandbox too.
-    chatService.removeTableTemplateIdFromChats(profileId, id)
+    try {
+      // Unbind every session first: this pre-checks their write guards and throws BEFORE any mutation
+      // if a live refill holds one, so a busy chat refuses the whole delete atomically (a busy-reject the
+      // renderer localizes). Only then delete the template file. `{ ok } | { error }` — never throws.
+      chatService.removeTableTemplateIdFromChats(profileId, id)
+      tableTemplateService.deleteTableTemplate(profileId, id)
+      return { ok: true }
+    } catch (error) {
+      return { error: error instanceof Error ? error.message : String(error) }
+    }
   })
   ipcMain.handle('table-template-import-dialog', gate('table-template-import-dialog', async (event, profileId) => {
     const result = await dialog.showOpenDialog(BrowserWindow.fromWebContents(event.sender)!, {
@@ -57,9 +73,15 @@ export const registerTableMemoryIpc = (ipcMain: IpcMain): void => {
   ipcMain.handle('chat-table-template-get', (_, profileId, chatId) =>
     chatService.getChatTableTemplateId(profileId, chatId)
   )
-  ipcMain.handle('chat-table-template-set', (_, profileId, chatId, id) =>
-    chatService.setChatTableTemplateId(profileId, chatId, id)
-  )
+  ipcMain.handle('chat-table-template-set', (_, profileId, chatId, id) => {
+    try {
+      chatService.setChatTableTemplateId(profileId, chatId, id)
+      return { ok: true }
+    } catch (error) {
+      // A (re)assign mid-refill is refused (`tables.memoryWriteBusy`); surface as a localizable error.
+      return { error: error instanceof Error ? error.message : String(error) }
+    }
+  })
 
   // The memory.maintain node panel preview: compose the EXACT maintainer prompt a run would send for
   // this chat (composeMaintainerMessages — shared with the node's run(), so no drift). `config` carries
@@ -91,22 +113,120 @@ export const registerTableMemoryIpc = (ipcMain: IpcMain): void => {
     }
   })
 
-  // Run ONE maintenance pass on demand (Memory-Manager WP2 workbench). Reuses the SAME cores automatic
-  // maintenance runs (resolveMaintainConfig → composeMaintainerMessages → runLlmCall → applyTableEdit);
-  // `opts` is `{ lastNFloors?, extraHint? }`. Returns the run-now report shape (never throws across IPC).
+  // Chunk-committed REFILL (table-refill WS2) — the fix for the duplicate-rows bug, replacing the old
+  // append "maintain now" path. Rolls the selected tables (or all) back to a cutpoint and REGENERATES
+  // the tail from the transcript, committing per chunk. Async + resumable: validation returns
+  // `{ ok } | { error }` (a localized `tables.*` key); the run streams via `table-backfill-progress`
+  // (`kind:'refill'`). `fromFloor` unset = the clamped earliest-un-maintained default.
   ipcMain.handle(
-    'chat-tables-maintain-now',
-    (_, profileId: string, chatId: string, opts: { lastNFloors?: number; extraHint?: string }) =>
-      maintainNow(profileId, chatId, {
-        lastNFloors:
-          typeof opts?.lastNFloors === 'number' &&
-          Number.isInteger(opts.lastNFloors) &&
-          opts.lastNFloors >= 1
-            ? opts.lastNFloors
+    'chat-tables-refill',
+    async (
+      _,
+      profileId: string,
+      chatId: string,
+      raw: {
+        tables?: string[]
+        fromFloor?: number
+        extraHint?: string
+        apiPresetId?: string | null
+        retries?: number
+        batchSize?: number
+      }
+    ) => {
+      const opts: RefillOpts = {
+        tables: Array.isArray(raw?.tables) ? raw.tables.filter((t) => typeof t === 'string') : undefined,
+        fromFloor:
+          typeof raw?.fromFloor === 'number' && Number.isInteger(raw.fromFloor) && raw.fromFloor >= 0
+            ? raw.fromFloor
             : undefined,
-        extraHint: typeof opts?.extraHint === 'string' ? opts.extraHint : undefined
-      })
+        extraHint: typeof raw?.extraHint === 'string' ? raw.extraHint : undefined,
+        apiPresetId: raw?.apiPresetId || undefined,
+        retries: Number.isInteger(raw?.retries) ? Math.max(0, Math.min(5, raw!.retries!)) : undefined,
+        batchSize:
+          Number.isInteger(raw?.batchSize) && (raw!.batchSize as number) >= 1 ? raw!.batchSize : undefined
+      }
+      try {
+        await startRefill(profileId, chatId, opts)
+        return { ok: true }
+      } catch (error) {
+        return { error: error instanceof Error ? error.message : String(error) }
+      }
+    }
   )
+
+  ipcMain.handle('chat-tables-refill-cancel', (_, _profileId: string, chatId: string) => {
+    cancelRefill(chatId)
+  })
+
+  // The EFFECTIVE (widened) cutpoint a refill would use for the given tables + requested floor — the
+  // confirm dialog reads this before it opens so the range it states matches what the engine will do
+  // (the engine widens a requested cut DOWN onto a stored multi-floor batch boundary; commit 6723f87).
+  // Uses the SAME `effectiveRefillFrom` the engine's startRefill does (no drift). Best-effort: an
+  // unknown/absent template or invalid inputs fall back to the clamped requested floor (the dialog
+  // then just loses the widen preview; the engine still widens authoritatively). Returns a bare floor.
+  ipcMain.handle(
+    'chat-tables-refill-effective-from',
+    (_, profileId: string, chatId: string, tables: string[], fromFloor: number | null): number => {
+      const requested =
+        typeof fromFloor === 'number' && Number.isInteger(fromFloor) && fromFloor >= 0
+          ? fromFloor
+          : undefined
+      const templateId = chatService.getChatTableTemplateId(profileId, chatId)
+      if (!templateId) return requested ?? 0
+      const template = tableTemplateService.getTableTemplateById(profileId, templateId)
+      if (!template) return requested ?? 0
+      const allNames = template.tables.map((t) => t.sqlName)
+      const requestedTables =
+        Array.isArray(tables) && tables.length
+          ? new Set(tables.filter((n) => typeof n === 'string'))
+          : null
+      // Mirror startRefill's selection resolution so the preview scopes widening identically.
+      const selected = requestedTables ? allNames.filter((n) => requestedTables.has(n)) : allNames
+      return effectiveRefillFrom(profileId, chatId, selected, requested)
+    }
+  )
+
+  // The live run state + the persisted resume row (the Maintenance-tab keep-alive + resume banner read
+  // this on mount). `{ run, persisted }`; `persisted` non-null with status 'in_progress' ⇒ offer Resume.
+  ipcMain.handle('chat-tables-refill-state', (_, _profileId: string, chatId: string) =>
+    getRefillState(chatId)
+  )
+
+  // Resume an interrupted refill from `completed_until + 1` for the same tables. `{ ok } | { error }`.
+  ipcMain.handle(
+    'chat-tables-refill-resume',
+    async (
+      _,
+      profileId: string,
+      chatId: string,
+      extra: { apiPresetId?: string | null; retries?: number; extraHint?: string; batchSize?: number }
+    ) => {
+      try {
+        await resumeRefill(profileId, chatId, {
+          apiPresetId: extra?.apiPresetId || undefined,
+          retries: Number.isInteger(extra?.retries) ? Math.max(0, Math.min(5, extra!.retries!)) : undefined,
+          extraHint: typeof extra?.extraHint === 'string' ? extra.extraHint : undefined,
+          batchSize:
+            Number.isInteger(extra?.batchSize) && (extra!.batchSize as number) >= 1
+              ? extra!.batchSize
+              : undefined
+        })
+        return { ok: true }
+      } catch (error) {
+        return { error: error instanceof Error ? error.message : String(error) }
+      }
+    }
+  )
+
+  // Discard an interrupted refill's resume record + shadow (committed chunks stay). `{ ok } | { error }`.
+  ipcMain.handle('chat-tables-refill-discard', (_, profileId: string, chatId: string) => {
+    try {
+      discardRefill(profileId, chatId)
+      return { ok: true }
+    } catch (error) {
+      return { error: error instanceof Error ? error.message : String(error) }
+    }
+  })
 
   // Read: every table of the chat's assigned template, with current rows + per-row rowids (issue 06).
   ipcMain.handle('chat-tables-read', (_, profileId, chatId) => {
@@ -194,8 +314,14 @@ export const registerTableMemoryIpc = (ipcMain: IpcMain): void => {
     if (!id) return { error: 'tables.editNoTemplate' }
     const template = tableTemplateService.getTableTemplateById(profileId, id)
     if (!template) return { error: 'tables.editNoTemplate' }
-    const dropped = tableOpsService.rewindTables(profileId, chatId, fromFloor, template)
-    return { ok: true, dropped }
+    try {
+      const dropped = tableOpsService.rewindTables(profileId, chatId, fromFloor, template)
+      return { ok: true, dropped }
+    } catch (error) {
+      // A rewind mid-refill is refused (`tables.memoryWriteBusy`) rather than dropping ops the refill's
+      // stale shadow would then republish; surface as a localizable error the renderer toasts.
+      return { error: error instanceof Error ? error.message : String(error) }
+    }
   })
 
   // Structural template edit + bound-chat migration (Memory-Manager WP4a). `ops` is an ordered list
@@ -203,7 +329,10 @@ export const registerTableMemoryIpc = (ipcMain: IpcMain): void => {
   // on any invalid op WITHOUT touching the template or any sandbox; on success the template is rewritten
   // and every bound chat's sandbox is ALTERed + its op log re-baselined so a later rewind/rebuild
   // reproduces the migrated rows. Returns the report or `{ ok:false, error }` (a localizable
-  // `tables.structure*` key the renderer toasts). Never throws across IPC.
+  // `tables.structure*` key the renderer toasts). A busy-reject (a live refill owns a bound chat's write
+  // guard) THROWS `tables.memoryWriteBusy` before any mutation — caught here and surfaced in the same
+  // `{ ok:false, error }` shape (the renderer's `res.ok === false` branch localizes it). Never throws
+  // across IPC.
   ipcMain.handle(
     'table-structure-apply',
     (
@@ -211,8 +340,24 @@ export const registerTableMemoryIpc = (ipcMain: IpcMain): void => {
       profileId: string,
       templateId: string,
       ops: StructureOp[]
-    ) => applyStructureOps(profileId, templateId, ops)
+    ) => {
+      try {
+        return applyStructureOps(profileId, templateId, ops)
+      } catch (error) {
+        return { ok: false as const, error: error instanceof Error ? error.message : String(error) }
+      }
+    }
   )
+
+  // How many chats are bound to a template — the Structure tab's apply-confirm fan-out preview
+  // ("migrates N bound sessions", WS6 Phase C). Read-only; best-effort 0 on failure.
+  ipcMain.handle('table-template-bound-chats', (_, profileId: string, templateId: string) => {
+    try {
+      return chatService.listChatIdsForTableTemplate(profileId, templateId).length
+    } catch {
+      return 0
+    }
+  })
 
   // Manual backfill (issue 07). Start validates the scope/batch inputs (X ≥ 1 or all, Y ≥ 1, retries
   // 0–5) and returns `{ ok } | { error }` with the error as a localized `tables.*` key (the established

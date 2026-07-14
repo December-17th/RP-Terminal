@@ -17,6 +17,9 @@ export type BackfillStatus =
 
 export interface BackfillProgress {
   chatId: string
+  /** Which manual-fill engine emitted this — the append BACKFILL or the chunk-committed REFILL
+   *  (table-refill WS2). Absent ⇒ 'backfill' (legacy callers). The renderer routes on it. */
+  kind?: 'backfill' | 'refill'
   /** 0-based index of the batch just processed (or about to be); -1 before the first batch. */
   batchIndex: number
   /** Total number of batches in the run. */
@@ -26,6 +29,8 @@ export interface BackfillProgress {
   status: BackfillStatus
   /** Optional human-readable detail (a failure reason, or the run-level error). */
   message?: string
+  /** Refill only: the last floor committed so far (the resumable frontier). */
+  completedUntil?: number
 }
 
 export const notifyBackfillProgress = (p: BackfillProgress): void => {

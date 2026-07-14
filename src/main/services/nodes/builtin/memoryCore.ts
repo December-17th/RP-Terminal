@@ -3,13 +3,13 @@ import { ChatMessage } from '../../promptBuilder'
 import { stripThinking } from '../../../parsers/contentParser'
 import { getChatTableTemplateId } from '../../chatService'
 import { getTableTemplateById } from '../../tableTemplateService'
-import { applySqlBatch, TableSqlError } from '../../tableSql'
+import { applySqlBatch, validateBatch, partitionBySelected, TableSqlError } from '../../tableSql'
 import { appendOps, tryBeginTableWrite, endTableWrite } from '../../tableOpsService'
-import { advanceProgress, resolveUpdateFrequency } from '../../tableProgressService'
+import { advanceProgress, getProgress, resolveUpdateFrequency } from '../../tableProgressService'
 import { readAllTables, TableRead } from '../../tableDbService'
 import { renderTableBlock } from '../../tableMaintenance'
 import { getSettings } from '../../settingsService'
-import { getAllFloors } from '../../floorService'
+import { getAllFloors, transcriptEpoch } from '../../floorService'
 import { TableTemplate } from '../../../types/tableTemplate'
 import { NodeRunFailure } from '../types'
 
@@ -142,6 +142,34 @@ export const renderTablesBlock = (
   return { block: blocks.join('\n\n'), tables: rendered }
 }
 
+/**
+ * The set of tables DUE for AUTOMATIC maintenance this turn (WS3 / D9 due-set gating). PURE.
+ *
+ * A table is due when its resolved cadence is not `null` (an authored `0` → 手动维护, never auto) AND at
+ * least `resolvedFreq` floors have elapsed since its last-processed pointer:
+ * `currentFloor - (last ?? -1) >= resolvedFreq`. A never-processed table (`last = -1`, absent from
+ * `progress`) is due once `currentFloor + 1 >= resolvedFreq` (e.g. freq 1 fires at floor 0; freq 3 at
+ * floor 2). `currentFloor` is the last floor's 0-based index (`getAllFloors().length - 1`); an empty
+ * chat (`-1`) yields none. The result is the DUE `sqlName`s in template order — the write scope + the
+ * advance set for the auto pass, so all tables still RENDER for context (D5) but only due tables are
+ * written and advanced.
+ */
+export const dueTables = (
+  template: TableTemplate,
+  progress: Record<string, number>,
+  currentFloor: number,
+  globalDefault: number
+): string[] => {
+  const due: string[] = []
+  for (const table of template.tables) {
+    const freq = resolveUpdateFrequency(table.updateFrequency, globalDefault)
+    if (freq == null) continue // authored 0 → 手动维护, excluded from auto-maintenance
+    const last = progress[table.sqlName] ?? -1
+    if (currentFloor - last >= freq) due.push(table.sqlName)
+  }
+  return due
+}
+
 /** Flatten a Messages list into a transcript text block — the inline `{history}` substitution shape.
  *  Shared by `agent.llm` and `memory.maintain` so the two never drift (WP0 no-drift intent). */
 export const historyText = (history: ChatMessage[]): string =>
@@ -159,6 +187,12 @@ export const composedPromptDebug = (messages: ChatMessage[]): Record<string, str
 export interface ApplyTableEditResult {
   applied: number
   changes: number
+  /** Staleness fence (owner pass 2026-07-14): the transcript changed between compose and apply
+   *  (regenerate/edit/swipe mid-call) — NOTHING was applied and NO pointer advanced. Present only
+   *  when the caller passed `expectTranscriptEpoch` and the check failed. */
+  stale?: true
+  /** WS3: statements dropped by the write-scope filter (present ONLY when `writeScope` was passed). */
+  dropped?: number
 }
 
 /**
@@ -173,34 +207,97 @@ export interface ApplyTableEditResult {
  * from disk, the table.gate idiom) AFTER success only, so a failed batch leaves the backlog standing
  * for the next commit boundary to retry. `label` prefixes the thrown NodeRunFailure messages so each
  * caller's errors read naturally (defaults to `table.apply` — the pre-extraction wording).
+ *
+ * WS3 due-set gating (opt-in; the `table.apply` node and any caller that omits these keep today's
+ * behavior byte-for-byte): `writeScope` restricts WRITES to statements targeting those tables — the
+ * batch is validated + partitioned through the shared `partitionBySelected` filter and out-of-scope
+ * statements are DROPPED before apply (counted in `dropped`), so the model may SEE every table for
+ * context but only writes the in-scope ones. `advanceTables` overrides which pointers advance (default:
+ * all template tables), so the auto pass advances only the due tables it maintained.
  */
 export const applyTableEdit = (
   gen: GenContext,
   template: TableTemplate,
   sql: string,
-  opts: { maxChanges?: number; advanceProgress?: boolean; label?: string } = {}
+  opts: {
+    maxChanges?: number
+    advanceProgress?: boolean
+    label?: string
+    writeScope?: string[]
+    advanceTables?: string[]
+    /** Staleness fence: the `transcriptEpoch(chatId)` captured when the batch was COMPOSED. When the
+     *  epoch moved by apply time (regenerate/edit/swipe mid-call), the batch is DROPPED — no apply,
+     *  no op-log rows, no pointer advance — and `{ stale: true }` is returned. The backlog stands
+     *  (truncateFloors already clamped the pointers), so the next commit boundary re-maintains the
+     *  NEW content instead of filling tables from a discarded reply. */
+    expectTranscriptEpoch?: number
+    /** Advance pointers to THIS floor (the floor the model actually saw) instead of re-reading the
+     *  disk floor count — so a floor appended mid-call is never credited as processed. */
+    advanceTo?: number
+  } = {}
 ): ApplyTableEditResult => {
   const label = opts.label ?? 'table.apply'
   if (!tryBeginTableWrite(gen.chatId)) {
     throw new NodeRunFailure('B', `${label}: a table write is already in flight for this chat`, 1, 'busy')
   }
   try {
-    const result = applySqlBatch(gen.profileId, gen.chatId, template, sql, { maxChanges: opts.maxChanges })
-    // Attribute ops to the just-persisted floor (this runs POST-response, so the reply floor is the
-    // last one). Log EXACTLY the statements that ran (from the service), not a re-split, so replay
-    // matches execution.
-    if (result.statements.length) {
-      const floor = Math.max(0, gen.floors.length - 1)
-      appendOps(gen.profileId, gen.chatId, floor, result.statements)
+    // Staleness fence (checked INSIDE the write guard so the decision can't race a concurrent write).
+    if (
+      opts.expectTranscriptEpoch !== undefined &&
+      transcriptEpoch(gen.chatId) !== opts.expectTranscriptEpoch
+    ) {
+      return { applied: 0, changes: 0, stale: true }
+    }
+    // WS3 write-scope: drop statements targeting out-of-scope tables before apply (the model saw all
+    // tables for context but may only WRITE the due/selected ones). Validate through the shared filter
+    // so a bad batch throws TableSqlError → the class-B bad-sql path below, exactly like applySqlBatch.
+    let batchSql = sql
+    let dropped: number | undefined
+    if (opts.writeScope) {
+      const allowed = new Set(template.tables.map((t) => t.sqlName))
+      const { kept, dropped: out } = partitionBySelected(validateBatch(sql, allowed), new Set(opts.writeScope))
+      dropped = out.length
+      batchSql = kept.join(';\n')
+    }
+
+    // Apply only when something survives the scope (an all-dropped batch still advances the due pointers
+    // below — the pass ran for them, the model just chose not to write in-scope changes).
+    let applied = 0
+    let changes = 0
+    if (batchSql.trim()) {
+      const result = applySqlBatch(gen.profileId, gen.chatId, template, batchSql, { maxChanges: opts.maxChanges })
+      applied = result.applied
+      changes = result.changes
+      // Attribute ops to the just-persisted floor (this runs POST-response, so the reply floor is the
+      // last one). Log EXACTLY the statements that ran (from the service), not a re-split, so replay
+      // matches execution.
+      if (result.statements.length) {
+        const floor = Math.max(0, gen.floors.length - 1)
+        // Batch-wide SPAN START (from_floor): this maintain batch summarizes each maintained table's
+        // floors (last-pointer + 1)..floor, so the conservative earliest source floor is the MIN over
+        // the scope tables of (progress[t] ?? -1) + 1, clamped to [0, floor]. Recording it lets a later
+        // refill widen its cut onto the span boundary instead of bisecting this batch. Conservative (may
+        // sit slightly earlier than strictly needed) is safe — it only widens a refill, never narrows.
+        const scopeTables = opts.writeScope ?? opts.advanceTables ?? template.tables.map((t) => t.sqlName)
+        const progress = getProgress(gen.profileId, gen.chatId)
+        let fromFloor = floor
+        for (const t of scopeTables) {
+          const cand = (progress[t] ?? -1) + 1
+          if (cand < fromFloor) fromFloor = cand
+        }
+        appendOps(gen.profileId, gen.chatId, floor, result.statements, 'maintain', Math.max(0, fromFloor))
+      }
     }
     // Advance the shared pointer ONLY after a successful batch (advance-after-success). currentFloor is
-    // re-read FROM DISK here (the table.gate idiom), not from gen.floors.
+    // re-read FROM DISK here (the table.gate idiom), not from gen.floors. `advanceTables` scopes WHICH
+    // pointers move (default: all template tables — the pre-WS3 behavior).
     if (opts.advanceProgress === true) {
-      const names = template.tables.map((t) => t.sqlName)
-      const currentFloor = Math.max(0, getAllFloors(gen.profileId, gen.chatId).length - 1)
+      const names = opts.advanceTables ?? template.tables.map((t) => t.sqlName)
+      const currentFloor =
+        opts.advanceTo ?? Math.max(0, getAllFloors(gen.profileId, gen.chatId).length - 1)
       advanceProgress(gen.profileId, gen.chatId, names, currentFloor)
     }
-    return { applied: result.applied, changes: result.changes }
+    return dropped === undefined ? { applied, changes } : { applied, changes, dropped }
   } catch (error) {
     const msg = error instanceof TableSqlError ? error.message : String(error)
     throw new NodeRunFailure('B', `${label}: ${msg}`, 1, 'bad-sql')

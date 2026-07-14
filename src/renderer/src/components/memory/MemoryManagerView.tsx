@@ -20,11 +20,25 @@ import { useUiStore } from '../../stores/uiStore'
 import { useToastStore } from '../../stores/toastStore'
 import { useT } from '../../i18n'
 import { useWcvSuppression } from '../useWcvSuppression'
-import { type TableDef, type TableRead } from '../workspace/TableGrid'
+import {
+  TemplateEditPanel,
+  type TableDef,
+  type TableDefPatch,
+  type TableRead
+} from '../workspace/TableGrid'
 import type { TableStatusLike } from '../workspace/tableGridModel'
 import { TableCards, type CellChange } from './TableCards'
-import { MemoryPane } from '../workspace/MemoryPane'
+import { RefillWorkbench } from './RefillWorkbench'
+import { ConfirmDialog } from '../ConfirmDialog'
 import { MemoryPreview } from '../workflow/MemoryMaintainPanel'
+import { groupOpsByFloor, rewindConsequence, type HistoryOp } from './historyModel'
+import {
+  describeStagedOp,
+  droppedTableUids,
+  droppedColumns,
+  canStage,
+  type StructOp
+} from './structureStaging'
 import { codeColumnOf } from '../../../../shared/memory/codeColumn'
 
 const api = (): any => (window as unknown as { api: any }).api
@@ -37,14 +51,6 @@ interface TemplateSummary {
 interface TableTemplate {
   name: string
   tables: TableDef[]
-}
-/** One table op as projected by `chat-tables-ops-list` (Memory-Manager WP3 History surface). */
-interface TableOpView {
-  floor: number
-  seq: number
-  kind: 'insert' | 'update' | 'delete' | 'other'
-  table: string | null
-  createdAt: string | null
 }
 type Tab = 'data' | 'notes' | 'structure' | 'maintenance' | 'history'
 
@@ -62,6 +68,13 @@ export function MemoryManagerView({ profileId }: { profileId: string }): React.J
   const [status, setStatus] = React.useState<Record<string, TableStatusLike>>({})
   const [activeTable, setActiveTable] = React.useState<string | null>(null)
   const [tab, setTab] = React.useState<Tab>('data')
+  // Template file-ops (WS6 Phase B): the rail's ⋯ overflow menu + the themed delete confirm.
+  const [templateMenuOpen, setTemplateMenuOpen] = React.useState(false)
+  const [confirmDeleteTpl, setConfirmDeleteTpl] = React.useState(false)
+  // Template (un)assignment confirm (WS6 Phase C — the last window.confirm in the rail is gone).
+  const [pendingAssign, setPendingAssign] = React.useState<{ id: string | null } | null>(null)
+  // Data tab: the active table's template-config disclosure (shared TemplateEditPanel).
+  const [configOpen, setConfigOpen] = React.useState(false)
 
   // Native card WCVs paint above the DOM (ignore z-order); duck them while the popup is up.
   useWcvSuppression(open)
@@ -73,6 +86,19 @@ export function MemoryManagerView({ profileId }: { profileId: string }): React.J
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
   }, [open, close])
+  // While the template ⋯ menu is up, Escape closes the MENU, not the manager: a capture-phase
+  // listener runs before the manager's bubble-phase one and stops propagation.
+  React.useEffect(() => {
+    if (!templateMenuOpen) return
+    const onKey = (e: KeyboardEvent): void => {
+      if (e.key === 'Escape') {
+        e.stopPropagation()
+        setTemplateMenuOpen(false)
+      }
+    }
+    window.addEventListener('keydown', onKey, true)
+    return () => window.removeEventListener('keydown', onKey, true)
+  }, [templateMenuOpen])
 
   const loadTemplates = React.useCallback(async () => {
     try {
@@ -139,19 +165,65 @@ export function MemoryManagerView({ profileId }: { profileId: string }): React.J
     [t]
   )
 
-  const onAssign = async (value: string): Promise<void> => {
+  // (Un)assignment is destructive ((re)instantiates / removes the sandbox) — themed confirm, not
+  // window.confirm. Cancel re-reads the chat so the <select> snaps back to the persisted binding.
+  const onAssign = (value: string): void => {
     if (!activeChatId) return
-    const id = value === '' ? null : value
-    const message = id ? t('tables.confirmAssign') : t('tables.confirmUnassign')
-    if (!confirm(message)) {
-      void loadChat()
-      return
-    }
+    setPendingAssign({ id: value === '' ? null : value })
+  }
+
+  const doAssign = async (id: string | null): Promise<void> => {
+    if (!activeChatId) return
     try {
-      await api().setChatTableTemplate(profileId, activeChatId, id)
+      const res = await api().setChatTableTemplate(profileId, activeChatId, id)
+      if (res && res.error) {
+        const detail = String(res.error).startsWith('tables.') ? t(res.error) : String(res.error)
+        useToastStore.getState().push(`${t('tables.assignFailed')}: ${detail}`)
+        return
+      }
     } catch {
       useToastStore.getState().push(t('tables.assignFailed'))
+      return
     }
+    await loadChat()
+  }
+
+  // Template file operations (WS6 Phase B) — absorbed from the deleted MemoryPane (same IPC, same
+  // error contract: parser errors come back as localizable `{ error }`, never a throw across IPC).
+  const onImport = async (): Promise<void> => {
+    const result = await api().importTableTemplateDialog(profileId)
+    if (result === null) return
+    if (result.error) {
+      const detail = result.error.startsWith('tables.') ? t(result.error) : result.error
+      useToastStore.getState().push(`${t('tables.importFailed')}: ${detail}`)
+      return
+    }
+    await loadTemplates()
+  }
+
+  const onExport = async (withData: boolean): Promise<void> => {
+    if (!assignedId || !activeChatId) return
+    try {
+      await api().exportTableTemplateDialog(profileId, assignedId, withData ? activeChatId : null)
+    } catch {
+      useToastStore.getState().push(t('tables.exportFailed'))
+    }
+  }
+
+  const onDeleteTemplate = async (): Promise<void> => {
+    if (!assignedId) return
+    try {
+      const res = await api().deleteTableTemplate(profileId, assignedId)
+      if (res && res.error) {
+        const detail = String(res.error).startsWith('tables.') ? t(res.error) : String(res.error)
+        useToastStore.getState().push(`${t('tables.deleteFailed')}: ${detail}`)
+        return
+      }
+    } catch {
+      useToastStore.getState().push(t('tables.deleteFailed'))
+      return
+    }
+    await loadTemplates()
     await loadChat()
   }
 
@@ -222,6 +294,26 @@ export function MemoryManagerView({ profileId }: { profileId: string }): React.J
     await loadChat()
   }
 
+  // Per-table template config (owner pass 2026-07-14): imported templates carry per-table cadence,
+  // prompts, and injection settings, but every control lived in the workspace TablesView —
+  // unreachable from `static`-layout cards and invisible here. The refill picker hosts the shared
+  // FreqControl and the Data tab hosts the shared TemplateEditPanel; both persist through this ONE
+  // patch path (same call shape as TablesView.onSaveTemplate).
+  const saveTemplatePatch = async (patch: TableDefPatch): Promise<void> => {
+    if (!assignedId) return
+    try {
+      const res = await api().updateTableTemplate(profileId, assignedId, { tables: [patch] })
+      if (res && res.error) {
+        toastError(t('tables.templateSaveFailed'), res.error)
+        return
+      }
+    } catch {
+      useToastStore.getState().push(t('tables.templateSaveFailed'))
+      return
+    }
+    await loadChat()
+  }
+
   const findDef = (tbl: TableRead): TableDef | null => {
     if (!template) return null
     return (
@@ -273,19 +365,89 @@ export function MemoryManagerView({ profileId }: { profileId: string }): React.J
                   <label className="rpt-mm-binding-label" htmlFor="mm-template-select">
                     {t('tables.template')}
                   </label>
-                  <select
-                    id="mm-template-select"
-                    className="rpt-mm-select"
-                    value={assignedId ?? ''}
-                    onChange={(e) => void onAssign(e.target.value)}
-                  >
-                    <option value="">{t('tables.none')}</option>
-                    {templates.map((tpl) => (
-                      <option key={tpl.id} value={tpl.id}>
-                        {tpl.name} ({tpl.tableCount})
-                      </option>
-                    ))}
-                  </select>
+                  <div className="rpt-mm-binding-row">
+                    <select
+                      id="mm-template-select"
+                      className="rpt-mm-select"
+                      value={assignedId ?? ''}
+                      onChange={(e) => void onAssign(e.target.value)}
+                    >
+                      <option value="">{t('tables.none')}</option>
+                      {templates.map((tpl) => (
+                        <option key={tpl.id} value={tpl.id}>
+                          {tpl.name} ({tpl.tableCount})
+                        </option>
+                      ))}
+                    </select>
+                    {/* Template file operations (WS6 Phase B): the ⋯ overflow menu — the ONE home for
+                        import / export / delete now that MemoryPane (their old host) is gone. */}
+                    <div className="rpt-mm-menuwrap">
+                      <button
+                        type="button"
+                        className="rpt-duel-secondary rpt-mm-menubtn"
+                        aria-haspopup="menu"
+                        aria-expanded={templateMenuOpen}
+                        title={t('memoryManager.templateMenu')}
+                        onClick={() => setTemplateMenuOpen((s) => !s)}
+                      >
+                        ⋯
+                      </button>
+                      {templateMenuOpen && (
+                        <>
+                          <div
+                            className="rpt-mm-menu-backdrop"
+                            onClick={() => setTemplateMenuOpen(false)}
+                          />
+                          <div className="rpt-mm-menu" role="menu">
+                            <button
+                              role="menuitem"
+                              className="rpt-mm-menu-item"
+                              onClick={() => {
+                                setTemplateMenuOpen(false)
+                                void onImport()
+                              }}
+                            >
+                              {t('tables.import')}
+                            </button>
+                            <button
+                              role="menuitem"
+                              className="rpt-mm-menu-item"
+                              disabled={!assignedId}
+                              onClick={() => {
+                                setTemplateMenuOpen(false)
+                                void onExport(false)
+                              }}
+                            >
+                              {t('tables.export')}
+                            </button>
+                            <button
+                              role="menuitem"
+                              className="rpt-mm-menu-item"
+                              disabled={!assignedId}
+                              onClick={() => {
+                                setTemplateMenuOpen(false)
+                                void onExport(true)
+                              }}
+                            >
+                              {t('tables.exportWithData')}
+                            </button>
+                            <button
+                              role="menuitem"
+                              className="rpt-mm-menu-item danger"
+                              disabled={!assignedId}
+                              onClick={() => {
+                                setTemplateMenuOpen(false)
+                                setConfirmDeleteTpl(true)
+                              }}
+                            >
+                              <span className="rpt-mm-refill-dot error" aria-hidden />
+                              {t('tables.deleteTemplate')}
+                            </button>
+                          </div>
+                        </>
+                      )}
+                    </div>
+                  </div>
                 </div>
 
                 <div className="rpt-mm-sheets" role="listbox" aria-label={t('memoryManager.sheets')}>
@@ -368,18 +530,43 @@ export function MemoryManagerView({ profileId }: { profileId: string }): React.J
                     ) : !active ? (
                       <p className="rpt-mm-rail-empty">{t('tables.emptyTemplate')}</p>
                     ) : (
-                      <TableCards
-                        key={active.sqlName}
-                        table={active}
-                        headers={activeDef?.headers}
-                        codeColumn={codeColumn ?? undefined}
-                        pageSize={10}
-                        onSaveRow={(rowid, changes) => saveRowCells(active.sqlName, rowid, changes)}
-                        onInsertRow={(values) => insertRow(active.sqlName, values)}
-                        onDeleteRow={(rowid) =>
-                          applyEdit({ kind: 'delete', table: active.sqlName, rowid })
-                        }
-                      />
+                      <>
+                        {/* Per-table template config (prompts + injection) — the SHARED
+                            TemplateEditPanel, previously reachable only via the workspace Tables
+                            view (owner pass 2026-07-14). */}
+                        {activeDef && (
+                          <div className="rpt-mm-data-config">
+                            <button
+                              className="rpt-duel-secondary"
+                              aria-expanded={configOpen}
+                              onClick={() => setConfigOpen((s) => !s)}
+                            >
+                              {configOpen ? '▾ ' : '▸ '}
+                              {t('memoryManager.data.templateConfig')}
+                            </button>
+                            {configOpen && (
+                              <TemplateEditPanel
+                                key={activeDef.uid}
+                                def={activeDef}
+                                onSave={saveTemplatePatch}
+                                onClose={() => setConfigOpen(false)}
+                              />
+                            )}
+                          </div>
+                        )}
+                        <TableCards
+                          key={active.sqlName}
+                          table={active}
+                          headers={activeDef?.headers}
+                          codeColumn={codeColumn ?? undefined}
+                          pageSize={10}
+                          onSaveRow={(rowid, changes) => saveRowCells(active.sqlName, rowid, changes)}
+                          onInsertRow={(values) => insertRow(active.sqlName, values)}
+                          onDeleteRow={(rowid) =>
+                            applyEdit({ kind: 'delete', table: active.sqlName, rowid })
+                          }
+                        />
+                      </>
                     ))}
                   {tab === 'notes' && (
                     <NotesTab key={activeChatId} profileId={profileId} chatId={activeChatId} />
@@ -395,14 +582,23 @@ export function MemoryManagerView({ profileId }: { profileId: string }): React.J
                   )}
                   {tab === 'maintenance' && (
                     <MaintenanceTab
+                      key={`${activeChatId}:${assignedId ?? 'none'}`}
                       profileId={profileId}
                       chatId={activeChatId}
                       hasTemplate={!!assignedId}
+                      tables={tables}
+                      defs={template?.tables ?? []}
+                      status={status}
+                      floorsCount={floors.length}
                       onReload={loadChat}
+                      onSetFrequency={(uid, updateFrequency) =>
+                        saveTemplatePatch({ uid, updateFrequency })
+                      }
                     />
                   )}
                   {tab === 'history' && (
                     <HistoryTab
+                      key={`${activeChatId}:${assignedId ?? 'none'}`}
                       profileId={profileId}
                       chatId={activeChatId}
                       hasTemplate={!!assignedId}
@@ -430,6 +626,39 @@ export function MemoryManagerView({ profileId }: { profileId: string }): React.J
               )}
             </div>
           </>
+        )}
+
+        {/* Template (un)assignment confirm (WS6 Phase C) — destructive: (re)builds the sandbox. */}
+        {pendingAssign && (
+          <ConfirmDialog
+            title={t('tables.template')}
+            body={pendingAssign.id ? t('tables.confirmAssign') : t('tables.confirmUnassign')}
+            danger
+            onConfirm={() => {
+              const id = pendingAssign.id
+              setPendingAssign(null)
+              void doAssign(id)
+            }}
+            onCancel={() => {
+              setPendingAssign(null)
+              void loadChat()
+            }}
+          />
+        )}
+
+        {/* Delete-template confirm (WS6 Phase B) — the app's own dialog, never window.confirm. */}
+        {confirmDeleteTpl && (
+          <ConfirmDialog
+            title={t('tables.deleteTemplate')}
+            body={t('tables.confirmDeleteTemplate')}
+            confirmLabel={t('tables.deleteTemplate')}
+            danger
+            onConfirm={() => {
+              setConfirmDeleteTpl(false)
+              void onDeleteTemplate()
+            }}
+            onCancel={() => setConfirmDeleteTpl(false)}
+          />
         )}
       </div>
     </div>
@@ -476,6 +705,8 @@ const NotesTab: React.FC<{ profileId: string; chatId: string }> = ({ profileId, 
   // Set when a save-time re-read finds the file changed under an edited draft (B2). Holds the disk copy
   // so "Reload" can adopt it without a second read; cleared once the user resolves the conflict.
   const [conflict, setConflict] = React.useState<{ disk: string } | null>(null)
+  // Manual-Refresh-with-unsaved-edits confirm (WS6 Phase C — themed, not window.confirm).
+  const [confirmReload, setConfirmReload] = React.useState(false)
 
   const load = React.useCallback(async () => {
     setLoading(true)
@@ -542,39 +773,25 @@ const NotesTab: React.FC<{ profileId: string; chatId: string }> = ({ profileId, 
   }
 
   // Conflict "Reload": discard the draft, adopt the disk copy we already read. Also the manual Refresh
-  // target (which re-reads disk); Refresh confirms first when there are unsaved edits.
+  // target (which re-reads disk); Refresh confirms first (themed dialog) when there are unsaved edits.
   const adoptDisk = (): void => {
     if (!conflict) return
     setSaved(conflict.disk)
     setDraft(conflict.disk)
     setConflict(null)
   }
-  const refresh = async (): Promise<void> => {
-    if (dirty && !confirm(t('notes.reloadConfirm'))) return
-    await load()
+  const refresh = (): void => {
+    if (dirty) setConfirmReload(true)
+    else void load()
   }
 
   return (
     <div className="rpt-mm-notes">
       <p className="rpt-mm-maint-intro">{t('notes.intro')}</p>
       {conflict && (
-        <div
-          role="alert"
-          style={{
-            display: 'flex',
-            flexWrap: 'wrap',
-            alignItems: 'center',
-            gap: 10,
-            padding: '6px 10px',
-            margin: '0 0 8px',
-            borderRadius: 6,
-            border: '1px solid var(--rpt-warning, #e0a23c)',
-            background: 'var(--rpt-warning-soft, rgba(224,162,60,0.14))',
-            fontSize: 13
-          }}
-        >
-          <span style={{ flex: '1 1 240px' }}>{t('notes.conflictWarn')}</span>
-          <span style={{ display: 'flex', gap: 8, flex: '0 0 auto' }}>
+        <div className="rpt-mm-notes-conflict" role="alert">
+          <span className="rpt-mm-notes-conflict-text">{t('notes.conflictWarn')}</span>
+          <span className="rpt-mm-notes-conflict-actions">
             <button className="rpt-duel-secondary" disabled={busy} onClick={() => adoptDisk()}>
               {t('notes.conflictReload')}
             </button>
@@ -587,6 +804,18 @@ const NotesTab: React.FC<{ profileId: string; chatId: string }> = ({ profileId, 
             </button>
           </span>
         </div>
+      )}
+      {confirmReload && (
+        <ConfirmDialog
+          title={t('notes.refresh')}
+          body={t('notes.reloadConfirm')}
+          danger
+          onConfirm={() => {
+            setConfirmReload(false)
+            void load()
+          }}
+          onCancel={() => setConfirmReload(false)}
+        />
       )}
       <textarea
         className="rpt-mm-notes-textarea"
@@ -625,156 +854,69 @@ const NotesTab: React.FC<{ profileId: string; chatId: string }> = ({ profileId, 
 }
 
 /**
- * The Maintenance tab (WP2) — the shujuku 填表工作台 parity surface. Three stacked sections:
- *  1) a "Run maintenance now" workbench (lastNFloors + an optional extra hint + a Run button) that fires
- *     ONE on-demand maintenance pass through the SAME cores automatic maintenance runs
- *     (chat-tables-maintain-now → maintainNow); on success it refreshes the manager (onReload) + remounts
- *     the embedded progress pane, and routes failures through the toast store.
- *  2) a collapsible "Preview prompt" that reuses the workflow editor's MemoryPreview (passing a bare
- *     `{ lastNFloors }` override so main resolves the chat's effective memory.maintain config).
- *  3) the shared MemoryPane in `section="maintenance"` mode = the per-table progress list + the manual
- *     BackfillPanel (no reimplementation). Its own no-template hint covers the unassigned case.
+ * The Maintenance tab (table-refill WS6 Phase A) — hosts the Refill workbench (the ONE manual-fill
+ * surface: table multi-select + range + live consequence line + run rail + resume banner;
+ * RefillWorkbench.tsx) plus the collapsible composed-prompt preview. The legacy run-now section and
+ * the MemoryPane embed (per-table progress + the append BackfillPanel) are RETIRED here — the picker
+ * rows carry the progress badges now, and the refill engine replaced both append paths (the
+ * duplicate-rows fix, plan D7 / design brief ws6-design-brief-2026-07-13.md).
  */
 const MaintenanceTab: React.FC<{
   profileId: string
   chatId: string
   hasTemplate: boolean
+  tables: TableRead[]
+  defs: TableDef[]
+  status: Record<string, TableStatusLike>
+  floorsCount: number
   onReload: () => Promise<void> | void
-}> = ({ profileId, chatId, hasTemplate, onReload }) => {
+  onSetFrequency: (uid: string, updateFrequency: number) => Promise<void> | void
+}> = ({ profileId, chatId, hasTemplate, tables, defs, status, floorsCount, onReload, onSetFrequency }) => {
   const t = useT()
-  const [lastNFloors, setLastNFloors] = React.useState(6)
-  const [extraHint, setExtraHint] = React.useState('')
-  const [running, setRunning] = React.useState(false)
-  const [result, setResult] = React.useState<{ text: string; error: boolean } | null>(null)
   const [showPreview, setShowPreview] = React.useState(false)
-  // Bumped after a successful run to remount MemoryPane so its progress + backfill state re-read.
-  const [reloadNonce, setReloadNonce] = React.useState(0)
 
-  const onRun = async (): Promise<void> => {
-    setRunning(true)
-    setResult(null)
-    try {
-      const res = await api().maintainTablesNow(profileId, chatId, {
-        lastNFloors,
-        extraHint: extraHint.trim() || undefined
-      })
-      if (res && res.ok) {
-        setResult({
-          text: res.empty
-            ? t('memoryManager.maintenance.resultEmpty')
-            : t('memoryManager.maintenance.resultApplied', {
-                applied: res.applied,
-                changes: res.changes
-              }),
-          error: false
-        })
-        await onReload()
-        setReloadNonce((n) => n + 1)
-      } else {
-        const reason = res?.reason
-        const msg =
-          reason === 'no-template'
-            ? t('memoryManager.maintenance.noTemplate')
-            : reason === 'no-node'
-              ? t('memoryManager.maintenance.errorNoNode')
-              : reason === 'aborted'
-                ? t('memoryManager.maintenance.errorAborted')
-                : t('memoryManager.maintenance.errorFailed', { message: res?.message ?? '' })
-        setResult({ text: msg, error: true })
-        useToastStore.getState().push(msg)
-      }
-    } catch (err) {
-      const msg = t('memoryManager.maintenance.errorFailed', {
-        message: err instanceof Error ? err.message : String(err)
-      })
-      setResult({ text: msg, error: true })
-      useToastStore.getState().push(msg)
-    } finally {
-      setRunning(false)
-    }
+  if (!hasTemplate) {
+    return <p className="rpt-mm-rail-empty">{t('memoryManager.maintenance.noTemplate')}</p>
   }
 
   return (
     <div className="rpt-mm-maint">
-      {hasTemplate && (
-        <>
-          <section className="rpt-mm-maint-section">
-            <h3 className="rpt-mm-maint-title">{t('memoryManager.maintenance.runTitle')}</h3>
-            <p className="rpt-mm-maint-intro">{t('memoryManager.maintenance.runIntro')}</p>
-            <div className="rpt-mm-maint-row">
-              <label className="rpt-mm-maint-label" htmlFor="mm-maint-floors">
-                {t('memoryManager.maintenance.lastNFloors')}
-              </label>
-              <input
-                id="mm-maint-floors"
-                className="rpt-mm-maint-num"
-                type="number"
-                min={1}
-                max={50}
-                value={lastNFloors}
-                disabled={running}
-                onChange={(e) =>
-                  setLastNFloors(Math.max(1, Math.min(50, Number(e.target.value) || 1)))
-                }
-              />
-            </div>
-            <label className="rpt-mm-maint-label" htmlFor="mm-maint-hint">
-              {t('memoryManager.maintenance.extraHint')}
-            </label>
-            <textarea
-              id="mm-maint-hint"
-              className="rpt-mm-maint-textarea"
-              value={extraHint}
-              disabled={running}
-              placeholder={t('memoryManager.maintenance.extraHintPlaceholder')}
-              onChange={(e) => setExtraHint(e.target.value)}
-            />
-            <button className="rpt-mm-maint-run" disabled={running} onClick={() => void onRun()}>
-              {running
-                ? t('memoryManager.maintenance.running')
-                : t('memoryManager.maintenance.run')}
-            </button>
-            {result && (
-              <p className={`rpt-mm-maint-result${result.error ? ' error' : ''}`}>{result.text}</p>
-            )}
-          </section>
-
-          <section className="rpt-mm-maint-section">
-            <button
-              className="rpt-duel-secondary"
-              aria-expanded={showPreview}
-              onClick={() => setShowPreview((s) => !s)}
-            >
-              {showPreview ? '▾' : '▸'}{' '}
-              {showPreview
-                ? t('memoryManager.maintenance.previewHide')
-                : t('memoryManager.maintenance.previewShow')}
-            </button>
-            {showPreview && <MemoryPreview profileId={profileId} config={{ lastNFloors }} />}
-          </section>
-        </>
-      )}
-
-      {/* Progress + manual backfill — the shared pane (no reimplementation); handles no-template itself. */}
-      <MemoryPane
-        key={reloadNonce}
+      <RefillWorkbench
         profileId={profileId}
-        packs={null}
-        gates={{}}
-        onOpenPackDetail={() => {}}
-        hidePacksStrip
-        section="maintenance"
+        chatId={chatId}
+        tables={tables}
+        defs={defs}
+        status={status}
+        floorsCount={floorsCount}
+        onReload={onReload}
+        onSetFrequency={onSetFrequency}
       />
+
+      <section className="rpt-mm-maint-section">
+        <button
+          className="rpt-duel-secondary"
+          aria-expanded={showPreview}
+          onClick={() => setShowPreview((s) => !s)}
+        >
+          {showPreview ? '▾' : '▸'}{' '}
+          {showPreview
+            ? t('memoryManager.maintenance.previewHide')
+            : t('memoryManager.maintenance.previewShow')}
+        </button>
+        {showPreview && <MemoryPreview profileId={profileId} config={{}} />}
+      </section>
     </div>
   )
 }
 
 /**
- * The History tab (WP3) — exposes the per-chat table op-log (chat-tables-ops-list) newest-first and
- * lets the user roll the tables back to an earlier point (chat-tables-rewind). Rewind is DATA-ONLY (it
- * drops later table ops + rebuilds the sandbox; chat messages + the maintenance progress pointer are
- * untouched) and DESTRUCTIVE — both actions gate behind window.confirm (the same pattern TableGrid's
- * delete-row / reset use). On success it re-reads the manager (onReload) + the op-log, and toasts.
+ * The History tab (WS6 Phase C) — the per-chat op-log as a FLOOR-GROUPED timeline (the design brief's
+ * Linear-activity-feed shape): one group per floor (newest first, `chat-tables-ops-list` order), each
+ * op labelled by kind + table + a `source` provenance chip (WS1 column — 维护/手改/回填/重填/基线;
+ * legacy NULL renders "—"; baseline is warning-tinted, the structural-migration marker). Rewind lives
+ * on the floor GROUP and confirms through the app dialog with its real consequence ("drops N ops
+ * across M floors" — `rewindConsequence`), never window.confirm. Rewind semantics unchanged:
+ * DATA-ONLY, drops ops at/after the floor and rebuilds the sandbox.
  */
 const HistoryTab: React.FC<{
   profileId: string
@@ -783,8 +925,9 @@ const HistoryTab: React.FC<{
   onReload: () => Promise<void> | void
 }> = ({ profileId, chatId, hasTemplate, onReload }) => {
   const t = useT()
-  const [ops, setOps] = React.useState<TableOpView[]>([])
+  const [ops, setOps] = React.useState<HistoryOp[]>([])
   const [busy, setBusy] = React.useState(false)
+  const [pendingRewind, setPendingRewind] = React.useState<number | null>(null)
 
   const loadOps = React.useCallback(async () => {
     if (!hasTemplate) {
@@ -792,7 +935,7 @@ const HistoryTab: React.FC<{
       return
     }
     try {
-      setOps(((await api().listChatTableOps(profileId, chatId)) as TableOpView[]) ?? [])
+      setOps(((await api().listChatTableOps(profileId, chatId)) as HistoryOp[]) ?? [])
     } catch {
       setOps([])
     }
@@ -802,8 +945,7 @@ const HistoryTab: React.FC<{
     void loadOps()
   }, [loadOps])
 
-  const rewind = async (fromFloor: number, confirmMsg: string): Promise<void> => {
-    if (!confirm(confirmMsg)) return
+  const rewind = async (fromFloor: number): Promise<void> => {
     setBusy(true)
     try {
       const res = await api().rewindChatTables(profileId, chatId, fromFloor)
@@ -828,9 +970,20 @@ const HistoryTab: React.FC<{
     return Number.isNaN(d.getTime()) ? '—' : d.toLocaleString()
   }
 
+  const sourceChip = (source: HistoryOp['source']): { cls: string; text: string } =>
+    source == null
+      ? { cls: '', text: '—' }
+      : {
+          cls: source === 'baseline' ? 'baseline' : '',
+          text: t(`memoryManager.history.source.${source}`)
+        }
+
   if (!hasTemplate) {
     return <p className="rpt-mm-rail-empty">{t('tables.noneAssigned')}</p>
   }
+
+  const groups = groupOpsByFloor(ops)
+  const consequence = pendingRewind != null ? rewindConsequence(ops, pendingRewind) : null
 
   return (
     <div className="rpt-mm-history">
@@ -839,7 +992,7 @@ const HistoryTab: React.FC<{
         <button
           className="rpt-duel-secondary rpt-mm-history-undo"
           disabled={busy || ops.length === 0}
-          onClick={() => void rewind(ops[0].floor, t('memoryManager.history.confirmUndo'))}
+          onClick={() => setPendingRewind(ops[0].floor)}
         >
           {t('memoryManager.history.undoLast')}
         </button>
@@ -853,53 +1006,75 @@ const HistoryTab: React.FC<{
           <p className="rpt-mm-empty-body">{t('memoryManager.history.empty')}</p>
         </div>
       ) : (
-        <ul className="rpt-mm-history-list">
-          {ops.map((op) => (
-            <li key={`${op.floor}-${op.seq}`} className="rpt-mm-history-row">
-              <div className="rpt-mm-history-meta">
-                <span className="rpt-mm-history-floor">
-                  {t('memoryManager.history.floor', { n: op.floor })}
+        <div className="rpt-mm-hist-timeline">
+          {groups.map((g) => (
+            <section key={g.floor} className="rpt-mm-hist-group">
+              <header className="rpt-mm-hist-ghead">
+                <span className="rpt-mm-hist-floor">
+                  {t('memoryManager.history.floor', { n: g.floor })}
                 </span>
-                <span className="rpt-mm-history-label">
-                  {t(`memoryManager.history.kind.${op.kind}`)}
-                  {op.table ? ` · ${op.table}` : ''}
-                </span>
-                <span className="rpt-mm-history-time">{fmtTime(op.createdAt)}</span>
-              </div>
-              <button
-                className="rpt-duel-secondary rpt-mm-history-rewind"
-                disabled={busy}
-                onClick={() =>
-                  void rewind(op.floor, t('memoryManager.history.confirmRewind', { n: op.floor }))
-                }
-              >
-                {t('memoryManager.history.rewindTo')}
-              </button>
-            </li>
+                <span className="rpt-mm-hist-time">{fmtTime(g.time)}</span>
+                <button
+                  className="rpt-duel-secondary rpt-mm-hist-rewind"
+                  disabled={busy}
+                  onClick={() => setPendingRewind(g.floor)}
+                >
+                  {t('memoryManager.history.rewindTo')}
+                </button>
+              </header>
+              <ul className="rpt-mm-hist-ops">
+                {g.ops.map((op) => {
+                  const chip = sourceChip(op.source)
+                  return (
+                    <li key={`${op.floor}-${op.seq}`} className="rpt-mm-hist-op">
+                      <span className="rpt-mm-hist-oplabel">
+                        {t(`memoryManager.history.kind.${op.kind}`)}
+                        {op.table ? ` · ${op.table}` : ''}
+                      </span>
+                      <span className={`rpt-mm-hist-chip ${chip.cls}`}>{chip.text}</span>
+                    </li>
+                  )
+                })}
+              </ul>
+            </section>
           ))}
-        </ul>
+        </div>
+      )}
+
+      {pendingRewind != null && consequence && (
+        <ConfirmDialog
+          title={t('memoryManager.history.confirmTitle')}
+          body={
+            t('memoryManager.history.confirmRewind', { n: pendingRewind }) +
+            t('memoryManager.history.consequence', {
+              n: consequence.opsDropped,
+              m: consequence.floorsAffected
+            })
+          }
+          confirmLabel={t('memoryManager.history.rewindTo')}
+          danger
+          onConfirm={() => {
+            const floor = pendingRewind
+            setPendingRewind(null)
+            void rewind(floor)
+          }}
+          onCancel={() => setPendingRewind(null)}
+        />
       )}
     </div>
   )
 }
 
-/** One structural op sent to `applyTableStructure` (subset built by this tab; add-table is deferred —
- *  a UI-created table's row_id/PK convention for maintenance writes isn't verified yet). */
-type StructOp =
-  | { kind: 'addColumn'; uid: string; name: string; type?: string }
-  | { kind: 'renameColumn'; uid: string; from: string; to: string }
-  | { kind: 'dropColumn'; uid: string; name: string }
-  | { kind: 'renameTable'; uid: string; sqlName: string; displayName?: string }
-  | { kind: 'dropTable'; uid: string }
-
 /**
- * The Structure tab (WP4b) — the shujuku 结构·参数 parity surface. Edits the ASSIGNED template's shape
- * (rename/delete tables, add/rename/delete columns) and drives `applyTableStructure`, which migrates
- * EVERY chat bound to the shared template + re-baselines each op-log (WP4a). Because that fans out to
- * all bound chats, a prominent warning sits at the top, and any `failedChats` (chats left on the old
- * schema, needing a re-sync) are surfaced persistently — never buried in a toast. Destructive ops
- * (delete table/column) gate behind window.confirm (the same pattern the Data grid + History use). The
- * `row_id` PK is never listed (it is structural, not user-editable). Add-table is intentionally deferred.
+ * The Structure tab (WS6 Phase C) — STAGED structural editing (the design brief's VS Code
+ * Source-Control shape). Rename/drop/add ops STAGE locally with per-op undo; ONE 「应用迁移」 commits
+ * the whole ordered batch through `applyTableStructure` (which validates all-or-nothing, migrates
+ * EVERY bound chat, and re-baselines each op-log — after which the affected tables only support a
+ * FULL refill, plan §0b-3). The apply confirm states the real fan-out (staged-op count + bound-chat
+ * count via `boundChatsForTemplate`) and the re-baseline consequence — staging replaced the old
+ * per-op window.confirm entirely. Rows staged for drop render struck-through with actions disabled
+ * (`droppedTableUids`/`droppedColumns`); `failedChats` stay surfaced persistently, never toast-only.
+ * The `row_id` PK is never listed; add-table stays deferred (row_id/PK convention unverified).
  */
 const StructureTab: React.FC<{
   profileId: string
@@ -915,6 +1090,33 @@ const StructureTab: React.FC<{
   const [addCol, setAddCol] = React.useState<Record<string, string>>({})
   const [editing, setEditing] = React.useState<{ uid: string; col?: string } | null>(null)
   const [editVal, setEditVal] = React.useState('')
+  // The staged batch (WS6 Phase C) + the apply confirm's fan-out preview.
+  const [staged, setStaged] = React.useState<StructOp[]>([])
+  const [confirmApply, setConfirmApply] = React.useState(false)
+  const [boundChats, setBoundChats] = React.useState<number | null>(null)
+
+  // Reset the stage when the template changes (uids would dangle), and load the fan-out count.
+  React.useEffect(() => {
+    setStaged([])
+    setFailed([])
+    setWarns([])
+    if (!templateId) {
+      setBoundChats(null)
+      return
+    }
+    let cancelled = false
+    void (async () => {
+      try {
+        const n = await api().boundChatsForTemplate(profileId, templateId)
+        if (!cancelled) setBoundChats(typeof n === 'number' ? n : null)
+      } catch {
+        if (!cancelled) setBoundChats(null)
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [profileId, templateId])
 
   // Real SQL column names for a table (source of truth for column ops), minus the structural row_id PK.
   const columnsOf = (d: TableDef): string[] => {
@@ -922,12 +1124,19 @@ const StructureTab: React.FC<{
     return (r?.columns ?? []).filter((c) => c.toLowerCase() !== 'row_id')
   }
 
-  const applyOps = async (ops: StructOp[]): Promise<void> => {
-    if (!templateId || ops.length === 0) return
+  const stage = (op: StructOp): void => {
+    if (!canStage(staged, op)) return
+    setStaged((s) => [...s, op])
+    setEditing(null)
+  }
+
+  const applyStaged = async (): Promise<void> => {
+    if (!templateId || staged.length === 0) return
     setBusy(true)
     try {
-      const res = await api().applyTableStructure(profileId, templateId, ops)
+      const res = await api().applyTableStructure(profileId, templateId, staged)
       if (!res || res.ok === false) {
+        // Whole-batch rejection: NOTHING applied — keep the stage so the user can fix and retry.
         const raw = res?.error ? String(res.error) : ''
         const detail = raw.startsWith('tables.') ? t(raw) : raw
         useToastStore
@@ -935,6 +1144,7 @@ const StructureTab: React.FC<{
           .push(`${t('memoryManager.structure.failed')}${detail ? ': ' + detail : ''}`)
         return
       }
+      setStaged([])
       setFailed(res.failedChats ?? [])
       setWarns(res.warnings ?? [])
       useToastStore.getState().push(
@@ -962,14 +1172,18 @@ const StructureTab: React.FC<{
       setEditing(null)
       return
     }
-    void applyOps([op])
+    stage(op)
   }
   const submitAddCol = (uid: string): void => {
     const name = (addCol[uid] ?? '').trim()
     if (!name) return
-    void applyOps([{ kind: 'addColumn', uid, name }])
+    stage({ kind: 'addColumn', uid, name })
     setAddCol((m) => ({ ...m, [uid]: '' }))
   }
+
+  const displayNameOf = (uid: string): string =>
+    defs.find((d) => d.uid === uid)?.displayName ?? uid
+  const droppedTables = droppedTableUids(staged)
 
   if (!templateId) {
     return <p className="rpt-mm-rail-empty">{t('tables.noneAssigned')}</p>
@@ -980,6 +1194,44 @@ const StructureTab: React.FC<{
       <div className="rpt-mm-struct-warn" role="note">
         {t('memoryManager.structure.warn')}
       </div>
+
+      {/* The staged batch (VS Code SCM shape): pending ops with per-op undo + ONE apply. */}
+      {staged.length > 0 && (
+        <section className="rpt-mm-struct-staged">
+          <header className="rpt-mm-struct-staged-head">
+            <strong>{t('memoryManager.structure.stagedTitle', { n: staged.length })}</strong>
+            <span className="rpt-mm-struct-staged-actions">
+              <button className="btn-ghost" disabled={busy} onClick={() => setStaged([])}>
+                {t('memoryManager.structure.undoAll')}
+              </button>
+              <button
+                className="rpt-mm-maint-run"
+                disabled={busy}
+                onClick={() => setConfirmApply(true)}
+              >
+                {t('memoryManager.structure.apply')}
+              </button>
+            </span>
+          </header>
+          <ul className="rpt-mm-struct-staged-list">
+            {staged.map((op, i) => {
+              const d = describeStagedOp(op, displayNameOf(op.uid))
+              return (
+                <li key={i} className="rpt-mm-struct-staged-item">
+                  <span className="rpt-mm-struct-staged-label">{t(d.key, d.params)}</span>
+                  <button
+                    className="btn-ghost"
+                    disabled={busy}
+                    onClick={() => setStaged((s) => s.filter((_, j) => j !== i))}
+                  >
+                    {t('memoryManager.structure.undoOp')}
+                  </button>
+                </li>
+              )
+            })}
+          </ul>
+        </section>
+      )}
 
       {failed.length > 0 && (
         <div className="rpt-mm-struct-failed" role="alert">
@@ -1052,23 +1304,24 @@ const StructureTab: React.FC<{
                   </span>
                 ) : (
                   <>
-                    <span className="rpt-mm-struct-tname">{d.displayName}</span>
+                    <span
+                      className={`rpt-mm-struct-tname${droppedTables.has(d.uid) ? ' staged-drop' : ''}`}
+                    >
+                      {d.displayName}
+                    </span>
                     <span className="rpt-mm-struct-tsql">{d.sqlName}</span>
                     <span className="rpt-mm-struct-tactions">
                       <button
                         className="rpt-duel-secondary"
-                        disabled={busy}
+                        disabled={busy || droppedTables.has(d.uid)}
                         onClick={() => startEdit(d.uid, undefined, d.displayName)}
                       >
                         {t('memoryManager.structure.renameTable')}
                       </button>
                       <button
                         className="rpt-duel-secondary rpt-mm-danger"
-                        disabled={busy}
-                        onClick={() => {
-                          if (confirm(t('memoryManager.structure.confirmDropTable', { name: d.displayName })))
-                            void applyOps([{ kind: 'dropTable', uid: d.uid }])
-                        }}
+                        disabled={busy || droppedTables.has(d.uid)}
+                        onClick={() => stage({ kind: 'dropTable', uid: d.uid })}
                       >
                         {t('memoryManager.structure.deleteTable')}
                       </button>
@@ -1114,22 +1367,35 @@ const StructureTab: React.FC<{
                           </span>
                         ) : (
                           <>
-                            <span className="rpt-mm-struct-cname">{c}</span>
+                            <span
+                              className={`rpt-mm-struct-cname${
+                                droppedTables.has(d.uid) || droppedColumns(staged, d.uid).has(c)
+                                  ? ' staged-drop'
+                                  : ''
+                              }`}
+                            >
+                              {c}
+                            </span>
                             <span className="rpt-mm-struct-cactions">
                               <button
                                 className="rpt-duel-secondary"
-                                disabled={busy}
+                                disabled={
+                                  busy ||
+                                  droppedTables.has(d.uid) ||
+                                  droppedColumns(staged, d.uid).has(c)
+                                }
                                 onClick={() => startEdit(d.uid, c, c)}
                               >
                                 {t('memoryManager.structure.renameColumn')}
                               </button>
                               <button
                                 className="rpt-duel-secondary rpt-mm-danger"
-                                disabled={busy}
-                                onClick={() => {
-                                  if (confirm(t('memoryManager.structure.confirmDropColumn', { name: c })))
-                                    void applyOps([{ kind: 'dropColumn', uid: d.uid, name: c }])
-                                }}
+                                disabled={
+                                  busy ||
+                                  droppedTables.has(d.uid) ||
+                                  droppedColumns(staged, d.uid).has(c)
+                                }
+                                onClick={() => stage({ kind: 'dropColumn', uid: d.uid, name: c })}
                               >
                                 {t('memoryManager.structure.deleteColumn')}
                               </button>
@@ -1147,7 +1413,7 @@ const StructureTab: React.FC<{
                   className="rpt-mm-select"
                   placeholder={t('memoryManager.structure.addColumnPlaceholder')}
                   value={addCol[d.uid] ?? ''}
-                  disabled={busy}
+                  disabled={busy || droppedTables.has(d.uid)}
                   onChange={(e) => setAddCol((m) => ({ ...m, [d.uid]: e.target.value }))}
                   onKeyDown={(e) => {
                     if (e.key === 'Enter') submitAddCol(d.uid)
@@ -1155,7 +1421,7 @@ const StructureTab: React.FC<{
                 />
                 <button
                   className="rpt-duel-secondary"
-                  disabled={busy || !(addCol[d.uid] ?? '').trim()}
+                  disabled={busy || droppedTables.has(d.uid) || !(addCol[d.uid] ?? '').trim()}
                   onClick={() => submitAddCol(d.uid)}
                 >
                   {t('memoryManager.structure.addColumn')}
@@ -1164,6 +1430,25 @@ const StructureTab: React.FC<{
             </section>
           )
         })
+      )}
+
+      {/* The ONE confirm of the tab (staging replaced the per-op confirms): the real fan-out +
+          the re-baseline consequence — partial refill is disabled for the affected tables. */}
+      {confirmApply && (
+        <ConfirmDialog
+          title={t('memoryManager.structure.applyTitle')}
+          body={t('memoryManager.structure.applyBody', {
+            ops: staged.length,
+            chats: boundChats ?? '?'
+          })}
+          confirmLabel={t('memoryManager.structure.apply')}
+          danger
+          onConfirm={() => {
+            setConfirmApply(false)
+            void applyStaged()
+          }}
+          onCancel={() => setConfirmApply(false)}
+        />
       )}
     </div>
   )

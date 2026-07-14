@@ -414,6 +414,26 @@ export const SettingsPanel: React.FC<{ profileId: string }> = ({ profileId }) =>
               }
             />
 
+            {/* WS4 main-prompt injection: the global recent-N row cap a table without a per-table
+                override falls back to (owner pass 2026-07-14 — previously main-side only, no UI). */}
+            <label className="field-label" style={{ marginTop: 18 }}>
+              {t('settings.tablesInjectionMaxRows')}
+            </label>
+            <input
+              type="number"
+              min={1}
+              value={settings.tables?.injection_max_rows ?? 20}
+              onChange={(e) =>
+                updateSettings(profileId, {
+                  tables: {
+                    default_update_frequency: settings.tables?.default_update_frequency ?? 3,
+                    ...settings.tables,
+                    injection_max_rows: Number(e.target.value) || 20
+                  }
+                })
+              }
+            />
+
             <label className="field-label" style={{ marginTop: 18 }}>
               {t('prefs.cacheOpt')}{' '}
               <span style={{ opacity: 0.5, fontWeight: 'normal' }}>

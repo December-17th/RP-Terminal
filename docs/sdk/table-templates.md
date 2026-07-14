@@ -95,6 +95,44 @@ Sheets are ordered by `orderNo`.
 `extraIndexPlacement`, `fixedEntryPlacement`, `fixedIndexPlacement`. Missing placements default to
 `{ position:'at_depth_as_system', depth:0, order:0 }` (`PlacementSchema`).
 
+## Main-prompt memory injection — `injectionPolicy` (WS4 / D10)
+
+Each table carries a **native** `injectionPolicy` (`src/main/types/tableTemplate.ts`
+`TableInjectionPolicySchema`) that controls how its **current rows** are injected into the **main
+narrative prompt** each turn — the block the storyteller model reads, distinct from the maintainer
+side-call. This is the **simple capped block**; the rich `exportConfig` above stays **UNCONSUMED for
+injection** (a deliberate reconciliation — exportConfig-driven worldbook-style injection is a later item
+gated on the vector/summary engine).
+
+| field  | values | meaning |
+| ------ | ------ | ------- |
+| `mode` | `'recent'` (default) \| `'full'` \| `'none'` | `recent` = keep the **last N** rows; `full` = all rows; `none` = never injected into the main prompt. |
+| `rows` | optional int ≥ 0 | Per-table row cap for `recent`, **overriding** the global cap. Unset = global cap. |
+
+- **Global cap:** `settings.tables.injection_max_rows` (default **20**), mirroring the
+  `default_update_frequency` pattern. A per-table `rows` beats it; a zero/negative/non-finite cap clamps
+  to `0` (a `recent` table then shows nothing — the opt-out).
+- **Rendering** (`tableMaintenance.ts` `renderInjectionBlock` — PURE, `test/tableInject.test.ts`): for
+  each non-`none` table **with rows**, a compact section `## <displayName>（<sqlName>）` + the rows (DDL
+  real column names, LAST-N for `recent`). When `recent` truncated older rows it emits the marker
+  **`…（省略 N 行较早记录）`**. An empty table / a `none` table / a 0-cap table emits **no section**; when
+  no section survives, **no block at all** (not an empty header). Every contributing table is joined
+  under one `【记忆表格】…` intro.
+- **`'summary'` is DEFERRED** (LLM-condensed rows): it needs the future vector/summary engine and is
+  **not a valid mode yet**. The truncation marker is the reserved seam that will carry it — nothing else
+  is reserved.
+- **Injection seam:** the block is folded into the **same memory tail** as recall / pack blocks
+  (`buildPrompt`'s `memoryBlock` splice), computed at assembly time by
+  `tablesInjectionService.renderChatTablesInjectionBlock` (called from `generation/assemble.ts`), so it
+  reaches every workflow **without** consuming the `prompt-assembly` checkpoint's `block`/`entries`
+  anchor lanes (those stay free for pack rejoin). FAIL-OPEN: no template / nothing to inject / any read
+  error → `''` (prompt unchanged).
+- **Round-trip:** `injectionPolicy` is **RPT-native** — it has no chatSheets analogue, so it is **NOT**
+  written by `exportChatSheets` and an import re-applies the schema default (`{ mode:'recent' }`). That
+  keeps `parseChatSheets(exportChatSheets(tpl))` lossless-for-the-model (the reader never emits a
+  non-default value), so the round-trip test stays honest (`test/chatSheetsParser.test.ts`). It is
+  editable via the same `table-template-update` patch (`injectionPolicy?`); the editing **UI is WS6+**.
+
 ## Verified against the real template
 
 `test/fixtures/chatsheets-poem-of-destiny-5.9.json` (the 命定之诗 5.9 template) imports into **8**
@@ -118,8 +156,9 @@ migration — Memory-Manager WP4a, below). The **Tables** view is registered as 
 
 `table-template-update(profileId, id, patch)` → `{ ok: true } | { error }` (manual-pass issue 03). The
 patch is `{ name?, tables: [{ uid, note?, initNode?, insertNode?, updateNode?, deleteNode?,
-updateFrequency?, exportConfig? }] }`: only the **five per-op prompts + `updateFrequency` + the
-injection `exportConfig`** (and the template `name`) are editable — structural fields (`sqlName`,
+updateFrequency?, exportConfig?, injectionPolicy? }] }`: only the **five per-op prompts +
+`updateFrequency` + the injection `exportConfig` + the main-prompt `injectionPolicy`** (and the template
+`name`) are editable — structural fields (`sqlName`,
 `ddl`, `headers`, `initialRows`, `displayName`) are IMMUTABLE (DDL only executes at instantiation, so
 editing it without re-instantiating would desync every chat using the template). `updateFrequency`
 accepts `-1` (global), `0` (off), or a positive int; `<= -2` is a `templateBadPatch` (issue 04). The
@@ -224,23 +263,165 @@ back too. The DB handle is always closed.
 
 ### Op log + rewind (`src/main/services/tableOpsService.ts`, `db.ts` `table_ops`)
 
-Every applied batch is appended to `table_ops (chat_id, floor, seq, sql)` in the app DB, keyed by
-the floor it was applied on. On floor truncation (`chatService.truncateFloors` → regenerate / swipe
-/ delete-from), ops at/after the cut floor are dropped (`deleteOpsFrom`) and the sandbox is rebuilt
-(`rebuildSandbox`): instantiate the template DDL, then replay the surviving ops in `(floor, seq)`
-order. Replay is deterministic (single-writer) and **fail-open** — an op that now fails (e.g. a
-template change dropped a column) is logged and skipped, never bricking the chat. `table_ops` rows
-are cleared by FK cascade on chat deletion (`foreign_keys = ON`), and `setChatTableTemplateId`
-clears the whole log on (re)assign/unassign (the sandbox is recreated, so old-template ops must not
-replay). The pure `replayPlan(ops, fromFloor)` (which ops survive a cut, order, floor attribution)
-is unit-tested; live state-equality after a rebuild lands in the owner's manual pass because
-`better-sqlite3` is alias-mocked under vitest.
+Every applied batch is appended to `table_ops (chat_id, floor, seq, sql, created_at, target_table,
+source, from_floor)` in the app DB, keyed by the floor it was applied on. On floor truncation
+(`chatService.truncateFloors` → regenerate / swipe / delete-from), ops at/after the cut floor are
+dropped (`deleteOpsFrom`) and the sandbox is rebuilt (`rebuildSandbox`): instantiate the template
+DDL, then replay the surviving ops in `(floor, seq)` order. Replay is deterministic (single-writer)
+and **fail-open** — an op that now fails (e.g. a template change dropped a column) is logged and
+skipped, never bricking the chat. `table_ops` rows are cleared by FK cascade on chat deletion
+(`foreign_keys = ON`), and `setChatTableTemplateId` clears the whole log on (re)assign/unassign (the
+sandbox is recreated, so old-template ops must not replay). The pure `replayPlan(ops, fromFloor)`
+(which ops survive a cut, order, floor attribution) is unit-tested; live state-equality after a
+rebuild lands in the owner's manual pass because `better-sqlite3` is alias-mocked under vitest.
 
-### Write lock
+**Op attribution (WS1 — `target_table` + `source`).** Two columns, added by forward migration in
+`db.ts` `getDb()` (`addColumnIfMissing` + index `idx_table_ops_chat_table_floor(chat_id,
+target_table, floor)`):
 
-A per-chat in-module mutex (`tryBeginTableWrite`/`endTableWrite`, 2-minute stale expiry — the
-removed compaction-slot pattern) serializes concurrent graph writes for a chat. `table.apply` and
-`rebuildSandbox` both take it; a busy chat surfaces as class-B `busy` (retry next turn).
+- **`target_table`** — the single table a statement writes, classified at append time by
+  `appendOps` via the pure `opTargetTable(sql)` (same single-table INSERT/UPDATE/DELETE classifier as
+  the write path). Deterministic because every logged statement was already `validateBatch`-gated;
+  `'*'` is the defensive fallback for a statement that no longer classifies. A one-time backfill
+  (`migrateTableOpsTargetTable`, idempotent — scoped to `target_table IS NULL`) classifies legacy
+  rows. Enables the table-scoped cut `deleteOpsFor(profileId, chatId, tables, fromFloor)` (drops ops
+  at/after `fromFloor` whose `target_table ∈ tables`); **`'*'` rows are never matched by the IN-list,
+  so they always survive** (do not pass `'*'` in `tables`).
+- **`source`** — write-path provenance, one of `maintain` (auto `memory.maintain`), `backfill`
+  (`tableBackfillService`), `edit` (`tableEditService` hand edits), `baseline` (structural
+  re-baseline, `tableStructureService.rewriteOpLog`), `refill` (the WS2 refill engine), or **NULL for
+  legacy rows** (provenance is not reconstructable). `appendOps` takes an optional trailing
+  `source?: TableOpSource`; `hasBaselineOps(profileId, chatId, tables)` probes for `source='baseline'`
+  ops (the refill partial-refill gate reads it).
+
+  **Residual risk (legacy NULL source):** a structural re-baseline written before WS1 has
+  `source=NULL`, indistinguishable from organic floor-0 ops, so `hasBaselineOps` cannot detect it —
+  a partial refill of such a chat could still re-duplicate. New re-baselines (post-WS1) are stamped
+  `'baseline'` and gated correctly.
+
+- **`from_floor`** (P1 — span provenance) — the START floor of the maintainer batch that produced an
+  op. Ops are keyed to the batch's **LAST** floor (`floor`), so a multi-floor batch's span start would
+  otherwise be lost; without it a refill whose cutpoint lands INSIDE a batch's span would delete the op
+  but only regenerate from the cutpoint, losing the span's earlier floors' contribution. Writers stamp
+  it: refill (`appendOpsAt`) records each batch's `span.from`; backfill passes `span.from`; the baseline
+  re-write passes `0`; auto-maintain passes a conservative batch-wide `max(0, min(progress[t]+1 over the
+  scope tables))`; hand edits pass their own floor. **Nullable — legacy rows stay NULL**, which the
+  refill widener COALESCEs to the op's own `floor` (= single-floor op, no widening below the request).
+  `earliestSpanStart(chatId, tables, fromFloor)` returns `MIN(COALESCE(from_floor, floor))` over the
+  selected tables' ops ending at/after `fromFloor`; the refill uses it to WIDEN its cutpoint down onto a
+  span boundary (`widenedRefillFrom`, before the baseline gate) so a cut can never bisect a stored span.
+
+`listOpsForDisplay` surfaces `source` (nullable) alongside the SQL-derived `kind`/`table` for the
+History surface.
+
+### Write lock (token-owned)
+
+A per-chat in-module mutex serializes concurrent table writes for a chat (the removed compaction-slot
+pattern). It is **token-owned** so a long refill can't have its slot silently handed to a concurrent
+auto-maintain by the stale expiry:
+
+- `beginTableWrite(chatId): token|null` — claim the slot, returning a unique token (null while another
+  writer holds an unexpired claim, `WRITE_GUARD_MS = 120_000`).
+- `renewTableWrite(chatId, token): boolean` — refresh the expiry **iff** the token still owns the slot
+  (false when the 120s window lapsed and another writer reclaimed it). The refill engine calls this at
+  the top of every batch **and on a ~45s heartbeat interval** (`startGuardHeartbeat`, < `WRITE_GUARD_MS`/2)
+  for the whole run, so the lease can never lapse across a single batch's model call — which can exceed
+  120s once retries + SQL-corrective re-asks stack up. A `false` (from the heartbeat or the loop top)
+  stops the run before its next commit.
+- `endTableWrite(chatId, token?)` — release; with a `token`, release only if it still owns the slot
+  (never frees a successor's claim). Without a token, the legacy unconditional release.
+- `isTableWriteBusy(chatId): boolean` — a non-claiming **pre-flight probe** (held && unexpired) for
+  destructive callers that must REFUSE rather than silently skip. Used by the structure migration
+  (`applyStructureOps` — a single synchronous pass, so it busy-rejects up front instead of holding a
+  lease) and the template delete/assign paths (`removeTableTemplateIdFromChats`, which scans every bound
+  chat before unbinding any). The refill heartbeat above is what lets these probes trust the busy
+  reading even while a long refill sits inside a >120s model await.
+- `tryBeginTableWrite(chatId): boolean` / `endTableWrite(chatId)` — thin wrappers for the three
+  SHORT-HOLD callers (`memory.maintain`/`table.apply` via `applyTableEdit`, backfill, hand-edit) that
+  complete well inside 120s. `table.apply` and `rebuildSandbox` take it; a busy chat surfaces as class-B
+  `busy` (retry next turn).
+
+### Refill engine (`tableRefillService.ts` — the chunk-committed regenerate)
+
+`startRefill(profileId, chatId, { tables?, fromFloor?, extraHint?, apiPresetId?, retries?, batchSize? })`
+(IPC `chat-tables-refill`) FIXES the duplicate-rows bug that both the append `memory.maintain (run now)`
+path (now retired) and the manual backfill exhibit on overlapping floors. Instead of APPENDING onto the
+current tables, it ROLLS the selected tables (or all) back to a cutpoint and REGENERATES the tail from
+the transcript, built as a **generalized backfill** (per-BATCH attribution: each batch's statements keyed
+to its `span.to` via `appendOpsAt`, and carrying its `span.from` as `from_floor` provenance, not a collapse
+to one floor) on a temp **shadow sandbox**:
+
+1. **Guard + gates.** Claim the token-owned write guard; capture the op-log watermark (`opsWatermark` =
+   `MAX(rowid)` for the chat). A partial refill (`from > 0`) of a table carrying a `source='baseline'`
+   op (a structural re-baseline) is REJECTED with `tables.refillNeedsFull` (`refillBaselineBlocked`) —
+   it would re-duplicate; a from-0 full refill is always clean. Default `from` when unset =
+   `defaultRefillFrom` (min earliest-un-maintained across selected, **clamped to `latest`** so run-now
+   stays meaningful when pointers are current). The requested cutpoint is then WIDENED DOWN onto a stored
+   span boundary (`widenedRefillFrom` over `earliestSpanStart`, BEFORE the baseline gate) so it can never
+   bisect a multi-floor batch — widening to 0 correctly turns a would-be baseline-blocked partial into an
+   allowed full refill. (The pre-confirm range shown in the UI does not yet reflect this widening — a
+   known UI follow-up; the engine widens authoritatively.)
+2. **Shadow build.** `instantiateAt(refillShadowPath, template)` + `replayOpsInto` every op EXCEPT the
+   selected tables' tail (`shouldReplayIntoShadow`: drops `selected ∧ floor ≥ from`; `'*'`/NULL and
+   unselected always replay). The live sandbox is untouched.
+3. **Regenerate in chunks (chunk = 1 batch).** Per batch: render the tables block FROM THE SHADOW,
+   prompt the maintainer (`refillMaintainerPrompt` — the backfill framing + an "only update:
+   <selected>" directive + optional `extraHint`), apply the reply to the shadow FILTERED to the
+   selected tables (`partitionBySelected` drops + counts out-of-scope statements), record the executed
+   statements against `span.to` (with `span.from` as their `from_floor`), and `renewTableWrite` the guard.
+   The lease is ALSO renewed on a ~45s heartbeat (`startGuardHeartbeat`) DURING each batch's model call,
+   so it never lapses across a >120s await and the pre-flight probes above can trust `isTableWriteBusy`
+   the whole time; if the heartbeat ever reports a lost slot, the run stops before that chunk's commit
+   (`tables.refillGuardLost`). The lease is treated as lost if it ever provably lapsed — a renewal gap
+   ≥ the guard window (`WRITE_GUARD_MS`), which under event-loop starvation lets a probe see the slot
+   free while the run's identity-owned token would still renew fine — not only when it was reclaimed.
+4. **Commit + publish per chunk.** One app-DB transaction = { first COMMITTED chunk only:
+   `deleteOpsFor(selected, from)`; insert the chunk's ops via `appendOpsAt(chatId, floorOps, 'refill')`;
+   advance the `table_refill_progress` row }, guarded by a re-check of the watermark (`watermarkMoved` —
+   a foreign INSERT that raised `MAX(rowid)` ABORTS the commit). Then **publish** the shadow over the
+   live sandbox by file snapshot (`publishShadow` — WAL-checkpoint + copy), **never** `rebuildSandbox`
+   (which self-claims the held guard and silently skips); `rebuildSandboxUnguarded` is the
+   publish-failure fallback.
+5. **Finalize / resume — STOP-AND-RESUME failure semantics** (`refillRunOutcome`). A batch that
+   exhausts its retries TERMINATES the run (a `batch-failed` event, then a terminal `error`) — NOT
+   backfill's continue-on-failure: the tail is already cut, so skipping a failed span would let later
+   chunks advance `completedUntil` past it and finalize would advance the pointers over a permanent,
+   non-resumable hole. On failure/cancel: committed chunks STAY, the `in_progress` row stays
+   (`completedUntil` = the last GOOD chunk), pointers are NOT advanced, the shadow is dropped;
+   **Resume** (`resumeRefill`, IPC `chat-tables-refill-resume`) starts a fresh refill from
+   `resumeRefillFrom(fromFloor, completedUntil) = max(from, completedUntil+1)` — retrying exactly the
+   failed span (the op-log composes exactly). Only a CLEAN full run finalizes:
+   `advanceProgress(selected, latest)` + delete the progress row + shadow. `discardRefill` (IPC
+   `chat-tables-refill-discard`) drops the resume record + shadow, keeping committed chunks.
+   `getRefillState` (IPC `chat-tables-refill-state`) returns `{ run, persisted }`.
+6. **Transcript-staleness fence** (the regenerate-mid-refill race, 2026-07-14). The run captures
+   `floorService.transcriptEpoch(chatId)` in the same sync block that snapshots the floors; the epoch
+   is bumped by truncation (`deleteFloorAndSubsequent`), in-place floor edits, and swipe
+   switch/append (NOT by appends or variable-only saves). Each chunk commit re-checks it inside the
+   transaction and throws `tables.refillTranscriptChanged` on a mismatch; a moved epoch after the
+   loop also blocks FINALIZE (pointers would overshoot the clamp `truncateFloors` applied). On
+   unwind with a moved epoch the run rebuilds the live sandbox via `rebuildSandboxUnguarded` before
+   releasing the guard — `truncateFloors`' own guarded rebuild self-skipped while the refill held it.
+   Proactively, `truncateFloors` → `floorService.onTranscriptCut` listeners → the engine ABORTS a
+   live run immediately and fixes the resume row per `refillProgressAfterCut(row, cutFloor)`: cut ≤
+   `fromFloor` ⇒ row deleted; cut inside the committed range ⇒ `completedUntil` clamped to
+   `cutFloor - 1`; cut above ⇒ kept. An in-place floor EDIT / swipe switch (indices survive, content
+   stale) fires the sibling `floorService.onTranscriptEdited` seam → the engine ABORTS the live run and
+   clamps the resume row per `refillProgressAfterEdit(row, editFloor)`: edit inside the committed range ⇒
+   `completedUntil` clamped to `editFloor - 1` (Resume then regenerates the edited floor — its cut drops
+   the stale committed ops, and `startRefill`'s widener pulls the cut down further if the edit bisects a
+   stored span); edit below `fromFloor` or above `completedUntil` ⇒ kept; NEVER deleted (an edit
+   invalidates content, not floor indices). (`memory.maintain` uses the same epoch via `applyTableEdit`'s
+   `expectTranscriptEpoch` — a stale single-call batch is dropped with report
+   `stale transcript, skipped`.)
+
+**Progress table.** `table_refill_progress(chat_id PK REFERENCES chats(id) ON DELETE CASCADE,
+selected_json, from_floor, completed_until, status, updated_at)` — one in-flight refill per chat, the
+shujuku `manualRefillProgress` analogue. **Events** ride the backfill channel `table-backfill-progress`
+with `kind:'refill'` (+ `completedUntil`). Pure decision helpers (unit-tested):
+`shouldReplayIntoShadow`, `partitionBySelected`, `defaultRefillFrom`, `refillBaselineBlocked`,
+`watermarkMoved`, `resumeRefillFrom`, `planChunkCommit`, `refillRunOutcome`, `refillProgressAfterCut`,
+`refillProgressAfterEdit`.
 
 ### Nodes (`src/main/services/nodes/builtin/`)
 
@@ -370,6 +551,30 @@ every?: 1..500 }`.
   `currentFloor` IMMEDIATELY** (`advanceProgress`, MAX-semantics upsert), before any downstream node
   runs. If the maintainer chain then fails, that span is simply skipped — worst case one missed batch.
   `span.from = min(progress[t] over due tables) + 1`, `span.to = currentFloor`.
+
+### Auto due-set gating in the consolidated `memory.maintain` node (WS3)
+
+The all-in-one `memory.maintain` node (which folds gate → read → apply into one self-seeding node)
+applies the **same per-table due rule internally**, so an automatic pass only maintains the tables that
+are DUE this turn instead of all-every-turn:
+
+- **Due set (pure `dueTables` in `nodes/builtin/memoryCore.ts`):** a table is due when its resolved
+  cadence is not `null` **and** `currentFloor - (progress[t] ?? -1) >= resolvedFreq` (`>=`, so exactly
+  at the threshold is due). `updateFrequency 0 → null → 手动维护`, never auto-due; `-1 →` the global
+  default. `currentFloor` is re-read from disk (`getAllFloors().length - 1`), matching `table.gate`.
+- **Empty due set ⇒ NO model call.** The node runs every turn (the cadence gate), but returns
+  `report: 'no tables due'` **without** an LLM call when nothing is due — the pass only pays for a model
+  call when at least one table is due.
+- **Full-context render, scoped writes (D5).** When it DOES run, **all** template tables still render in
+  the maintainer prompt (deliberate — the model sees the whole state for context), and the shared
+  write-scope directive (`tableMaintenance.writeScopeDirective`, the SAME `【本次只更新以下表】…` block the
+  refill prompt uses) names only the due tables. Statements the model emits against non-due tables are
+  **dropped** by the shared filter (`tableSql.partitionBySelected`, re-exported by `tableRefillService`
+  so auto + manual refill share ONE filter) and counted in the report (`dropped N out-of-scope`).
+- **Advance only the due tables.** `applyTableEdit`'s `advanceProgress` advances **only** the due
+  pointers (`advanceTables` opt); a non-due table's backlog stands until its own cadence turn. Callers
+  that pass neither `writeScope` nor `advanceTables` (the `table.apply` node, hand edits) keep the
+  pre-WS3 behavior byte-for-byte (write anything registered, advance all template tables).
 
 ### `table.read` — the maintainer-prompt ingredients
 

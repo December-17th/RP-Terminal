@@ -107,6 +107,7 @@ export const applyTemplatePatch = (
     if (tp.deleteNode !== undefined) next.deleteNode = tp.deleteNode
     if (tp.updateFrequency !== undefined) next.updateFrequency = tp.updateFrequency
     if (tp.exportConfig !== undefined) next.exportConfig = tp.exportConfig
+    if (tp.injectionPolicy !== undefined) next.injectionPolicy = tp.injectionPolicy
     return next
   })
 

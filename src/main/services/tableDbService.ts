@@ -52,6 +52,15 @@ export const sandboxDbPath = (profileId: string, chatId: string): string =>
   path.join(getAppDir(), 'profiles', profileId, 'table-dbs', `${chatId}.sqlite`)
 
 /**
+ * The SHADOW sandbox path for a chat's in-flight refill (table-refill WS2): a sibling temp file next to
+ * the live sandbox. The refill builds "state as of fromFloor-1 for selected tables" here, regenerates
+ * into it, and PUBLISHES it over the live file per committed chunk — the live sandbox is never mutated
+ * in place mid-refill. A distinct suffix so it can't collide with a real `${chatId}.sqlite`.
+ */
+export const refillShadowPath = (profileId: string, chatId: string): string =>
+  path.join(getAppDir(), 'profiles', profileId, 'table-dbs', `${chatId}.refill.sqlite`)
+
+/**
  * Build the ordered, validated instantiation plan from a template: for each table, its sqlName
  * (re-extracted from the DDL and cross-checked against the stored `sqlName`) plus the DDL to run.
  * Throws if a table's DDL is not a single CREATE TABLE, or its parsed name disagrees with the
@@ -110,8 +119,16 @@ export const buildInitialInsert = (table: TableDef): { sql: string; rows: unknow
  * (re)assignment) confirms first. Silent-safe: a template with no tables just yields an empty DB.
  */
 export const instantiate = (profileId: string, chatId: string, template: TableTemplate): void => {
+  instantiateAt(sandboxDbPath(profileId, chatId), template, chatId)
+}
+
+/**
+ * Instantiate a sandbox at an ARBITRARY file path (table-refill WS2): the same DDL + initial-row seed as
+ * `instantiate`, parameterized so the refill engine can build its temp SHADOW file at `refillShadowPath`
+ * without touching the live sandbox. `label` is only for the log line.
+ */
+export const instantiateAt = (file: string, template: TableTemplate, label = ''): void => {
   const plan = buildDdlPlan(template) // throws before we touch the filesystem if the template is bad
-  const file = sandboxDbPath(profileId, chatId)
   ensureDir(path.dirname(file))
   if (fs.existsSync(file)) fs.rmSync(file, { force: true })
 
@@ -133,7 +150,7 @@ export const instantiate = (profileId: string, chatId: string, template: TableTe
   } finally {
     db.close()
   }
-  log('info', `Instantiated table sandbox for chat ${chatId} (${plan.length} tables)`)
+  log('info', `Instantiated table sandbox at ${label || file} (${plan.length} tables)`)
 }
 
 /** Read every table of the assigned template (read-only view). Missing sandbox → empty rows. */
@@ -141,8 +158,14 @@ export const readAllTables = (
   profileId: string,
   chatId: string,
   template: TableTemplate
-): TableRead[] => {
-  const file = sandboxDbPath(profileId, chatId)
+): TableRead[] => readAllTablesAt(sandboxDbPath(profileId, chatId), template)
+
+/**
+ * Read every table of `template` from the sandbox at an ARBITRARY `file` (table-refill WS2): the refill
+ * maintainer renders its tables block from the SHADOW file, not the live one, so the read path is
+ * parameterized. A missing file → all-empty rows (same as the live reader).
+ */
+export const readAllTablesAt = (file: string, template: TableTemplate): TableRead[] => {
   const exists = fs.existsSync(file)
   const db = exists ? new Database(file, { readonly: true }) : null
   try {
@@ -212,17 +235,58 @@ export const sandboxColumns = (
   }
 }
 
+/** Remove a sandbox DB file + its WAL sidecars (idempotent, best-effort). */
+const removeDbFile = (file: string): void => {
+  if (fs.existsSync(file)) fs.rmSync(file, { force: true })
+  for (const ext of ['-wal', '-shm']) {
+    const side = `${file}${ext}`
+    if (fs.existsSync(side)) fs.rmSync(side, { force: true })
+  }
+}
+
 /** Close/remove the sandbox DB file for a chat (unassign / chat deletion). Idempotent. */
 export const removeSandbox = (profileId: string, chatId: string): void => {
-  const file = sandboxDbPath(profileId, chatId)
   try {
-    if (fs.existsSync(file)) fs.rmSync(file, { force: true })
-    // WAL sidecar files.
-    for (const ext of ['-wal', '-shm']) {
-      const side = `${file}${ext}`
-      if (fs.existsSync(side)) fs.rmSync(side, { force: true })
-    }
+    removeDbFile(sandboxDbPath(profileId, chatId))
   } catch (error) {
     log('info', `Failed to remove table sandbox for chat ${chatId}:`, error)
   }
+}
+
+/** Remove a chat's refill SHADOW file + sidecars (idempotent). Called on refill finalize/abort/discard,
+ *  and defensively before a shadow build to clear a stale temp from a crashed run. */
+export const removeShadow = (profileId: string, chatId: string): void => {
+  try {
+    removeDbFile(refillShadowPath(profileId, chatId))
+  } catch (error) {
+    log('info', `Failed to remove refill shadow for chat ${chatId}:`, error)
+  }
+}
+
+/**
+ * PUBLISH a refill chunk (table-refill WS2 §0b-1): snapshot the SHADOW sandbox over the chat's LIVE
+ * sandbox file so the committed live state is BYTE-IDENTICAL to what the model validated. NOT
+ * `rebuildSandbox` — that self-claims the write guard the refill already holds and would silently skip.
+ * Checkpoints the shadow's WAL into its main file (so a plain file copy is a consistent snapshot), then
+ * replaces the live file + clears the live WAL sidecars. Throws on failure so the caller can fall back
+ * to an unguarded op-log rebuild. The shadow file is left intact for the next chunk.
+ */
+export const publishShadow = (profileId: string, chatId: string): void => {
+  const shadow = refillShadowPath(profileId, chatId)
+  const live = sandboxDbPath(profileId, chatId)
+  if (!fs.existsSync(shadow)) throw new Error('refill shadow file missing')
+  // Fold the shadow WAL into its main file so copying just the .sqlite is a consistent snapshot.
+  const db = new Database(shadow)
+  try {
+    db.pragma('wal_checkpoint(TRUNCATE)')
+  } finally {
+    db.close()
+  }
+  ensureDir(path.dirname(live))
+  // Clear the live sidecars first (a stale live -wal would otherwise shadow the freshly copied file).
+  for (const ext of ['-wal', '-shm']) {
+    const side = `${live}${ext}`
+    if (fs.existsSync(side)) fs.rmSync(side, { force: true })
+  }
+  fs.copyFileSync(shadow, live)
 }

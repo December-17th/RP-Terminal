@@ -21,7 +21,9 @@ cards) reads them as the contract. They must track the code.
 - **[table-templates.md](table-templates.md)** — SQL-table memory: the chatSheets v2 import surface,
   the sheet→`TableTemplate` mapping, per-chat sandbox-DB enablement, the DDL-safety choke point, and
   the SQL write path (allowlist + op-log/rewind + the `parse.extract`/`table.apply` nodes), the
-  prompt-projection path (`table.export` + the `entries` port on `prompt.assemble`/`prompt.preset`),
+  prompt-projection path (`table.export` + the `entries` port on `prompt.assemble`/`prompt.preset`), the
+  main-prompt memory injection (`injectionPolicy` + `settings.tables.injection_max_rows`, folded into the
+  `memoryBlock` tail by `tablesInjectionService` — WS4),
   the maintenance pipeline (`table.gate`/`table.read`/`table.query` + the shipped
   `table-memory-default.rptflow` example workflow), the Tables-view hand-editing +
   template-export + last-maintained surface (issue 06), and the chat-level progress store +

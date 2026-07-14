@@ -249,6 +249,26 @@ export const validateBatch = (text: string, allowedTables: Set<string>): Validat
   })
 }
 
+/**
+ * Split a validated batch by write scope: statements whose target table is in `selected` are KEPT
+ * (applied + recorded), the rest are DROPPED (counted + logged — out-of-scope writes the model emitted
+ * despite the "only update: <selected>" directive). Preserves order within each partition. PURE.
+ *
+ * The ONE shared write-scope filter: the manual REFILL engine (`tableRefillService`, which re-exports
+ * this) and the AUTOMATIC due-set gate (`memory.maintain` via `applyTableEdit`) both partition through
+ * it, so auto/manual never drift (table-refill WS2/WS3 plan requirement). Lives here — next to
+ * `validateBatch`/`ValidatedStatement` it consumes — so both callers import a leaf, not each other.
+ */
+export const partitionBySelected = (
+  validated: ValidatedStatement[],
+  selected: Set<string>
+): { kept: string[]; dropped: string[] } => {
+  const kept: string[] = []
+  const dropped: string[] = []
+  for (const v of validated) (selected.has(v.table) ? kept : dropped).push(v.sql)
+  return { kept, dropped }
+}
+
 export interface ApplyResult {
   applied: number
   changes: number
@@ -309,6 +329,21 @@ const runApplySqlBatch = (
   return captured as ApplyResult
 }
 
+/**
+ * Apply a batch against an ARBITRARY sandbox file (table-refill WS2): the same validate-then-execute-in-
+ * one-transaction body as `applySqlBatch`, but keyed to a file PATH (the refill engine applies to its
+ * temp SHADOW file) and WITHOUT the per-chat lock — the shadow is private to one sequential refill run,
+ * so there is no concurrent writer to serialize against. Throws `TableSqlError` on a validation/exec
+ * failure (so the refill's SQL-error corrective loop can re-ask). The live-path `applySqlBatch` is
+ * unchanged.
+ */
+export const applySqlBatchAt = (
+  file: string,
+  template: TableTemplate,
+  sqlText: string,
+  opts?: { maxChanges?: number }
+): ApplyResult => applySqlBatchToFile(file, template, sqlText, opts)
+
 /** The un-serialized batch apply — validate then execute in one transaction. Kept private; the lock
  *  is applied by `runApplySqlBatch`. */
 const applySqlBatchSync = (
@@ -317,12 +352,20 @@ const applySqlBatchSync = (
   template: TableTemplate,
   sqlText: string,
   opts?: { maxChanges?: number }
+): ApplyResult => applySqlBatchToFile(sandboxDbPath(profileId, chatId), template, sqlText, opts)
+
+/** Validate + execute a batch against `file` in one transaction (the shared body of the live and
+ *  shadow apply paths). No lock — the caller owns serialization. */
+const applySqlBatchToFile = (
+  file: string,
+  template: TableTemplate,
+  sqlText: string,
+  opts?: { maxChanges?: number }
 ): ApplyResult => {
   const maxChanges = opts?.maxChanges ?? 500
   const validated = validateBatch(sqlText, templateSqlNames(template))
   if (validated.length === 0) return { applied: 0, changes: 0, statements: [] }
 
-  const file = sandboxDbPath(profileId, chatId)
   if (!fs.existsSync(file)) {
     throw new TableSqlError('Table sandbox not instantiated for this chat')
   }

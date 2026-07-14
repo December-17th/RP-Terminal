@@ -120,7 +120,9 @@ export const buildDefaultMemoryDoc = (): WorkflowDoc => ({
       type: 'agent.llm',
       config: {
         stream: false,
-        retries: 1,
+        // Memory fills are side calls prone to transient empty streams (Gemini) — default a full
+        // retry budget (owner directive 2026-07-14: memory fill/refill default = 5).
+        retries: 5,
         // ONE inline-`{history}` user row (NOT a standalone `{history}` row): the transcript is
         // flattened into text so the composed prompt ends on a `user` turn. A standalone `{history}`
         // row splices the floors role-preserving and ends on the last floor's `assistant` reply, which
@@ -307,7 +309,8 @@ export const buildDefaultMemoryDocV2 = (): WorkflowDoc => ({
       type: 'memory.maintain',
       config: {
         stream: false,
-        retries: 1,
+        // Same full retry budget as the fill agent above (owner directive 2026-07-14: default 5).
+        retries: 5,
         advance_progress: true,
         lastNFloors: 6,
         max_rows: 30,

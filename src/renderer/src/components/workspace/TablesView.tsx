@@ -8,11 +8,10 @@ import { TableGrid, type TableDef, type TableDefPatch, type TableRead } from './
 import type { TableStatusLike } from './tableGridModel'
 
 /**
- * Tables view for SQL-table memory — the lean DATA surface (agent-packs plan WP3.8 de-scatter). Per
- * active chat: one section per assigned table (display name + an EDITABLE grid). Memory CONFIGURATION
- * + MAINTENANCE (template binding / import / export / delete, per-table progress, and the manual
- * backfill) moved to the control-center Memory rail (MemoryPane) so this view stays about browsing +
- * hand-editing the data. A small header hint links to that rail ("configure in Agents → Memory").
+ * Tables view for SQL-table memory — the lean DATA surface. Per active chat: one section per
+ * assigned table (display name + an EDITABLE grid). Memory CONFIGURATION + MAINTENANCE (template
+ * binding / import / export / delete, per-table progress, and the refill workbench) live in the
+ * full-window Memory Manager (table-refill WS6); the header hint links there.
  *
  * Agent & memory UX WP-I (spec §8): the grid itself is now the SHARED `TableGrid` component (also
  * hosted by the editor's Memory sheet Data tab), and this view additionally loads the per-table
@@ -39,7 +38,8 @@ export const TablesView: React.FC<{ profileId: string; embedded?: boolean }> = (
 }) => {
   const activeChatId = useChatStore((s) => s.activeChatId)
   const floors = useChatStore((s) => s.floors)
-  const openWorkflowEditor = useUiStore((s) => s.openWorkflowEditor)
+  // WS6 Phase B: the config home is the full-window Memory Manager (was: the workflow editor's sheet).
+  const openMemoryManager = useUiStore((s) => s.openMemoryManager)
   // Global default cadence: the "全局 (N)" the header frequency control shows for a -1 (use-global)
   // table. Older profiles lack the group → default 3 (matches the main-side resolver fallback).
   const globalFreq = useSettingsStore((s) => s.settings?.tables?.default_update_frequency ?? 3)
@@ -183,7 +183,7 @@ export const TablesView: React.FC<{ profileId: string; embedded?: boolean }> = (
             <button
               className="rpt-duel-secondary"
               style={{ fontSize: 12, padding: '3px 10px' }}
-              onClick={() => openWorkflowEditor()}
+              onClick={() => openMemoryManager()}
             >
               {t('tables.openMemory')}
             </button>

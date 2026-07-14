@@ -25,7 +25,9 @@ vi.mock('../../src/main/services/chatService', () => mockChat)
 const mockFloor = vi.hoisted(() => ({
   getFloor: vi.fn(() => floors[floors.length - 1]),
   getAllFloors: vi.fn(() => floors),
-  saveFloor: vi.fn()
+  saveFloor: vi.fn(),
+  // Staleness fence (owner pass 2026-07-14): stable epoch by default (compose == apply, no skip).
+  transcriptEpoch: vi.fn(() => 0)
 }))
 vi.mock('../../src/main/services/floorService', () => mockFloor)
 
@@ -50,6 +52,21 @@ vi.mock('../../src/main/services/tableTemplateService', () => mockTemplate)
 const mockSql = vi.hoisted(() => ({
   applySqlBatch: vi.fn(() => ({ applied: 1, changes: 1, statements: ['INSERT INTO summary VALUES (1)'] })),
   executeReadQuery: vi.fn(),
+  // WS3: the auto pass now runs its batch through the shared write-scope filter (validateBatch +
+  // partitionBySelected, re-homed to tableSql). Classify by the target table named in the statement.
+  validateBatch: vi.fn((sql: string) => {
+    const table = /\b(?:INTO|UPDATE|FROM)\s+(\w+)/i.exec(sql)?.[1] ?? 'summary'
+    return [{ kind: 'insert', table, sql }]
+  }),
+  partitionBySelected: (
+    validated: Array<{ table: string; sql: string }>,
+    selected: Set<string>
+  ): { kept: string[]; dropped: string[] } => {
+    const kept: string[] = []
+    const dropped: string[] = []
+    for (const v of validated) (selected.has(v.table) ? kept : dropped).push(v.sql)
+    return { kept, dropped }
+  },
   TableSqlError: class extends Error {}
 }))
 vi.mock('../../src/main/services/tableSql', () => mockSql)
@@ -139,6 +156,8 @@ beforeEach(() => {
   mockOps.tryBeginTableWrite.mockReset().mockReturnValue(true)
   mockOps.endTableWrite.mockReset()
   mockProgress.advanceProgress.mockReset()
+  mockProgress.getProgress.mockReset().mockReturnValue({}) // WS3: default = nothing processed → all due
+  mockFloor.transcriptEpoch.mockReset().mockReturnValue(0)
   mockCallModel.callModel
     .mockReset()
     .mockResolvedValue({ raw: '<TableEdit>INSERT INTO summary VALUES (1)</TableEdit>', rawUsage: {} })
@@ -162,7 +181,10 @@ describe('memory.maintain — end to end', () => {
     expect(joined).toContain('ai reply 3')
     expect(joined).toContain('player action 3')
 
-    // The <TableEdit> SQL was applied + the pointer advanced for the template's tables.
+    // The <TableEdit> SQL was applied + the pointer advanced. WS3: the advance set is now the DUE tables
+    // (summary, freq 1, never processed → due at floor 3), not unconditionally "all template tables". The
+    // pre-WS3 characterization pinned advance-all-every-turn; the due-set plan changes that on purpose
+    // (here the sole table is due, so the concrete call is unchanged).
     expect(mockSql.applySqlBatch).toHaveBeenCalled()
     expect(mockProgress.advanceProgress).toHaveBeenCalledWith('prof', 'c1', ['summary'], 3)
 
@@ -202,6 +224,35 @@ describe('memory.maintain — end to end', () => {
     expect(joined).toContain('player action 3')
   })
 
+  // WS3 — auto due-set gating: the node runs every turn but SKIPS the model call when no table is due
+  // this turn (the cadence gate). This deliberately changes the pre-WS3 "maintain every turn" behavior.
+  it('no table due this turn → skips the model call, reports "no tables due", no write/advance', async () => {
+    // summary has updateFrequency 1; mark it already processed through the current floor (3) → not due.
+    mockProgress.getProgress.mockReturnValue({ summary: 3 })
+    const res = await memoryMaintain.run(ctx(), {}, { id: 'm', config: memoryMaintain.configSchema!.parse(config) })
+    expect(res.outputs!.report).toBe('no tables due')
+    expect(mockCallModel.callModel).not.toHaveBeenCalled()
+    expect(mockSql.applySqlBatch).not.toHaveBeenCalled()
+    expect(mockProgress.advanceProgress).not.toHaveBeenCalled()
+  })
+
+  // Staleness fence (owner pass 2026-07-14): a regenerate/edit/swipe that lands while the maintain
+  // LLM call is in flight bumps the transcript epoch; the apply must then DROP the batch — otherwise
+  // the discarded reply's facts fill the tables and the pointer re-advances over the clamp
+  // truncateFloors just applied ("old memory filled while the table thinks it's up to date").
+  it('transcript changed mid-call (regenerate) → batch dropped: no write, no ops, no advance', async () => {
+    // Epoch 0 at compose; the regenerate bumps it before the (mocked) model reply is applied.
+    mockFloor.transcriptEpoch.mockReturnValueOnce(0).mockReturnValue(1)
+    const res = await memoryMaintain.run(ctx(), {}, { id: 'm', config: memoryMaintain.configSchema!.parse(config) })
+    expect(res.outputs!.report).toBe('stale transcript, skipped')
+    expect(mockCallModel.callModel).toHaveBeenCalled() // the call was already in flight
+    expect(mockSql.applySqlBatch).not.toHaveBeenCalled()
+    expect(mockOps.appendOps).not.toHaveBeenCalled()
+    expect(mockProgress.advanceProgress).not.toHaveBeenCalled()
+    // The guard was still released (acquire/release pair) so the chat isn't bricked.
+    expect(mockOps.endTableWrite).toHaveBeenCalled()
+  })
+
   it('no template bound → silent no-op (no model call, no write)', async () => {
     mockChat.getChatTableTemplateId.mockReturnValue(null)
     const res = await memoryMaintain.run(ctx(), {}, { id: 'm', config: memoryMaintain.configSchema!.parse(config) })
@@ -210,12 +261,40 @@ describe('memory.maintain — end to end', () => {
     expect(mockSql.applySqlBatch).not.toHaveBeenCalled()
   })
 
-  it('an empty <TableEdit></TableEdit> reply → no write, reports "no changes", still traces the prompt', async () => {
+  // A COMPLIANT empty <TableEdit></TableEdit> (maintainer rule 4: "no changes ⇒ an empty tag") is a
+  // real "nothing to record this turn" answer — it must ADVANCE the due pointers, or the due tables stay
+  // due and burn a model call EVERY turn until the model happens to emit a write. No SQL is applied.
+  it('an empty <TableEdit></TableEdit> reply → no write, advances the due pointer, reports "no changes"', async () => {
     mockCallModel.callModel.mockResolvedValue({ raw: 'ok <TableEdit></TableEdit>', rawUsage: {} })
     const res = await memoryMaintain.run(ctx(), {}, { id: 'm', config: memoryMaintain.configSchema!.parse(config) })
     expect(mockSql.applySqlBatch).not.toHaveBeenCalled()
+    expect(mockProgress.advanceProgress).toHaveBeenCalledWith('prof', 'c1', ['summary'], 3)
     expect(res.outputs!.report).toBe('no changes')
     expect(res.debug!['prompt (sent)']).toBeTruthy()
+  })
+
+  // A reply with NO <TableEdit> tag AT ALL is malformed, NOT a compliant "no changes" — advancing on it
+  // would silently skip this turn's content forever. It must report and no-op WITHOUT advancing so the
+  // next commit boundary retries the same floors.
+  it('a reply with no <TableEdit> tag → no write, does NOT advance, reports the missing tag', async () => {
+    mockCallModel.callModel.mockResolvedValue({ raw: 'sorry, I could not comply', rawUsage: {} })
+    const res = await memoryMaintain.run(ctx(), {}, { id: 'm', config: memoryMaintain.configSchema!.parse(config) })
+    expect(mockSql.applySqlBatch).not.toHaveBeenCalled()
+    expect(mockProgress.advanceProgress).not.toHaveBeenCalled()
+    expect(res.outputs!.report).toBe('no TableEdit tag in reply')
+    expect(res.debug!['prompt (sent)']).toBeTruthy()
+  })
+
+  // The advance-on-empty path bypasses applyTableEdit's own staleness fence, so it re-runs the epoch
+  // check itself: a regenerate/edit/swipe that lands mid-call moves the epoch and must PREVENT the
+  // advance (advancing would re-cover the clamp truncateFloors just applied).
+  it('an empty <TableEdit> reply with a transcript changed mid-call → no advance, reports stale skip', async () => {
+    mockCallModel.callModel.mockResolvedValue({ raw: 'ok <TableEdit></TableEdit>', rawUsage: {} })
+    mockFloor.transcriptEpoch.mockReturnValueOnce(0).mockReturnValue(1)
+    const res = await memoryMaintain.run(ctx(), {}, { id: 'm', config: memoryMaintain.configSchema!.parse(config) })
+    expect(mockSql.applySqlBatch).not.toHaveBeenCalled()
+    expect(mockProgress.advanceProgress).not.toHaveBeenCalled()
+    expect(res.outputs!.report).toBe('stale transcript, skipped')
   })
 
   // A6 — memory-trio input symmetry: an OPTIONAL `gen` Context port (mirrors memory.recall) that reuses
