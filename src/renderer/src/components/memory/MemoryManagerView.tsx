@@ -23,7 +23,7 @@ import { useWcvSuppression } from '../useWcvSuppression'
 import { type TableDef, type TableRead } from '../workspace/TableGrid'
 import type { TableStatusLike } from '../workspace/tableGridModel'
 import { TableCards, type CellChange } from './TableCards'
-import { MemoryPane } from '../workspace/MemoryPane'
+import { RefillWorkbench } from './RefillWorkbench'
 import { MemoryPreview } from '../workflow/MemoryMaintainPanel'
 import { codeColumnOf } from '../../../../shared/memory/codeColumn'
 
@@ -398,6 +398,9 @@ export function MemoryManagerView({ profileId }: { profileId: string }): React.J
                       profileId={profileId}
                       chatId={activeChatId}
                       hasTemplate={!!assignedId}
+                      tables={tables}
+                      status={status}
+                      floorsCount={floors.length}
                       onReload={loadChat}
                     />
                   )}
@@ -625,171 +628,53 @@ const NotesTab: React.FC<{ profileId: string; chatId: string }> = ({ profileId, 
 }
 
 /**
- * The Maintenance tab — the shujuku 填表工作台 parity surface. Since table-refill WS2 the "run now"
- * workbench fires a chunk-committed REFILL (not the retired append pass that caused the duplicate-rows
- * bug): it rolls the tables back to a cutpoint and REGENERATES the tail. The run is async + resumable;
- * this MINIMAL keep-alive re-points the Run button at `startTableRefill` and subscribes to the shared
- * progress events (kind:'refill'), mirroring BackfillPanel's subscription. A "full refill (from floor 0)"
- * toggle switches between the default clamped cutpoint and a clean from-0 regenerate. The richer
- * multi-select / resume-banner workbench is WS6. The shared MemoryPane (per-table progress + the manual
- * BackfillPanel, untouched) stays mounted below.
+ * The Maintenance tab (table-refill WS6 Phase A) — hosts the Refill workbench (the ONE manual-fill
+ * surface: table multi-select + range + live consequence line + run rail + resume banner;
+ * RefillWorkbench.tsx) plus the collapsible composed-prompt preview. The legacy run-now section and
+ * the MemoryPane embed (per-table progress + the append BackfillPanel) are RETIRED here — the picker
+ * rows carry the progress badges now, and the refill engine replaced both append paths (the
+ * duplicate-rows fix, plan D7 / design brief ws6-design-brief-2026-07-13.md).
  */
 const MaintenanceTab: React.FC<{
   profileId: string
   chatId: string
   hasTemplate: boolean
+  tables: TableRead[]
+  status: Record<string, TableStatusLike>
+  floorsCount: number
   onReload: () => Promise<void> | void
-}> = ({ profileId, chatId, hasTemplate, onReload }) => {
+}> = ({ profileId, chatId, hasTemplate, tables, status, floorsCount, onReload }) => {
   const t = useT()
-  const [extraHint, setExtraHint] = React.useState('')
-  const [fullRefill, setFullRefill] = React.useState(false)
-  const [running, setRunning] = React.useState(false)
-  const [result, setResult] = React.useState<{ text: string; error: boolean } | null>(null)
   const [showPreview, setShowPreview] = React.useState(false)
-  // Bumped after a run completes to remount MemoryPane so its progress + backfill state re-read.
-  const [reloadNonce, setReloadNonce] = React.useState(0)
 
-  // Reflect an in-flight refill on mount (a run started elsewhere / survived a re-mount).
-  React.useEffect(() => {
-    let cancelled = false
-    void (async () => {
-      try {
-        const state = await api().getTableRefillState(profileId, chatId)
-        if (!cancelled && state?.run?.running) setRunning(true)
-      } catch {
-        /* best-effort */
-      }
-    })()
-    return () => {
-      cancelled = true
-    }
-  }, [profileId, chatId])
-
-  // Subscribe to refill progress (kind:'refill'); refresh the manager + remount the pane on completion.
-  React.useEffect(() => {
-    const off = api().onTableBackfillProgress((p) => {
-      if (p.chatId !== chatId || p.kind !== 'refill') return
-      if (p.status === 'done' || p.status === 'cancelled' || p.status === 'error') {
-        setRunning(false)
-        setResult({
-          text:
-            p.status === 'done'
-              ? t('memoryManager.maintenance.refillDone')
-              : p.status === 'cancelled'
-                ? t('memoryManager.maintenance.refillCancelled')
-                : t('memoryManager.maintenance.errorFailed', { message: p.message ?? '' }),
-          error: p.status === 'error'
-        })
-        void onReload()
-        setReloadNonce((n) => n + 1)
-      } else {
-        setRunning(true)
-        if (p.status === 'batch-ok' && p.span) {
-          setResult({
-            text: t('memoryManager.maintenance.refillProgress', {
-              from: p.span.from,
-              to: p.span.to
-            }),
-            error: false
-          })
-        }
-      }
-    })
-    return off
-  }, [chatId, onReload, t])
-
-  const onRun = async (): Promise<void> => {
-    setRunning(true)
-    setResult(null)
-    try {
-      const res = await api().startTableRefill(profileId, chatId, {
-        fromFloor: fullRefill ? 0 : undefined,
-        extraHint: extraHint.trim() || undefined
-      })
-      if (res && 'error' in res && res.error) {
-        const msg = res.error.startsWith('tables.')
-          ? t(res.error)
-          : t('memoryManager.maintenance.errorFailed', { message: res.error })
-        setResult({ text: msg, error: true })
-        useToastStore.getState().push(msg)
-        setRunning(false)
-      }
-      // On { ok } the progress subscription drives the rest.
-    } catch (err) {
-      const msg = t('memoryManager.maintenance.errorFailed', {
-        message: err instanceof Error ? err.message : String(err)
-      })
-      setResult({ text: msg, error: true })
-      useToastStore.getState().push(msg)
-      setRunning(false)
-    }
+  if (!hasTemplate) {
+    return <p className="rpt-mm-rail-empty">{t('memoryManager.maintenance.noTemplate')}</p>
   }
 
   return (
     <div className="rpt-mm-maint">
-      {hasTemplate && (
-        <>
-          <section className="rpt-mm-maint-section">
-            <h3 className="rpt-mm-maint-title">{t('memoryManager.maintenance.refillTitle')}</h3>
-            <p className="rpt-mm-maint-intro">{t('memoryManager.maintenance.refillIntro')}</p>
-            <div className="rpt-mm-maint-row">
-              <label className="rpt-mm-maint-label" style={{ display: 'flex', gap: 6 }}>
-                <input
-                  type="checkbox"
-                  checked={fullRefill}
-                  disabled={running}
-                  onChange={(e) => setFullRefill(e.target.checked)}
-                />
-                {t('memoryManager.maintenance.fullRefill')}
-              </label>
-            </div>
-            <label className="rpt-mm-maint-label" htmlFor="mm-maint-hint">
-              {t('memoryManager.maintenance.extraHint')}
-            </label>
-            <textarea
-              id="mm-maint-hint"
-              className="rpt-mm-maint-textarea"
-              value={extraHint}
-              disabled={running}
-              placeholder={t('memoryManager.maintenance.extraHintPlaceholder')}
-              onChange={(e) => setExtraHint(e.target.value)}
-            />
-            <button className="rpt-mm-maint-run" disabled={running} onClick={() => void onRun()}>
-              {running
-                ? t('memoryManager.maintenance.refillRunning')
-                : t('memoryManager.maintenance.refillRun')}
-            </button>
-            {result && (
-              <p className={`rpt-mm-maint-result${result.error ? ' error' : ''}`}>{result.text}</p>
-            )}
-          </section>
-
-          <section className="rpt-mm-maint-section">
-            <button
-              className="rpt-duel-secondary"
-              aria-expanded={showPreview}
-              onClick={() => setShowPreview((s) => !s)}
-            >
-              {showPreview ? '▾' : '▸'}{' '}
-              {showPreview
-                ? t('memoryManager.maintenance.previewHide')
-                : t('memoryManager.maintenance.previewShow')}
-            </button>
-            {showPreview && <MemoryPreview profileId={profileId} config={{}} />}
-          </section>
-        </>
-      )}
-
-      {/* Progress + manual backfill — the shared pane (no reimplementation); handles no-template itself. */}
-      <MemoryPane
-        key={reloadNonce}
+      <RefillWorkbench
         profileId={profileId}
-        packs={null}
-        gates={{}}
-        onOpenPackDetail={() => {}}
-        hidePacksStrip
-        section="maintenance"
+        chatId={chatId}
+        tables={tables}
+        status={status}
+        floorsCount={floorsCount}
+        onReload={onReload}
       />
+
+      <section className="rpt-mm-maint-section">
+        <button
+          className="rpt-duel-secondary"
+          aria-expanded={showPreview}
+          onClick={() => setShowPreview((s) => !s)}
+        >
+          {showPreview ? '▾' : '▸'}{' '}
+          {showPreview
+            ? t('memoryManager.maintenance.previewHide')
+            : t('memoryManager.maintenance.previewShow')}
+        </button>
+        {showPreview && <MemoryPreview profileId={profileId} config={{}} />}
+      </section>
     </div>
   )
 }

@@ -3042,6 +3042,87 @@ select {
 .rpt-mm-maint-run:focus-visible { outline:2px solid var(--rpt-accent); outline-offset:2px; }
 .rpt-mm-maint-result { margin:0; font-size:12px; color:var(--rpt-text-primary); }
 .rpt-mm-maint-result.error { color:var(--rpt-danger); }
+
+/* ── Refill workbench (table-refill WS6 Phase A; design brief ws6-design-brief-2026-07-13.md) ──────
+   One vertical column (~640px measure), Restrained: tokens only, accent = action/progress, warning =
+   advisories, danger = failure/destructive. The run rail is the merge-box-style state-machine card. */
+.rpt-mm-maint { max-width:680px; }
+.rpt-mm-refill { display:flex; flex-direction:column; gap:18px; }
+.rpt-mm-refill-bench { gap:12px; }
+/* Resume banner — an interrupted refill; warning-soft band, FULL border (no side-stripe). */
+.rpt-mm-refill-banner { display:flex; align-items:center; gap:10px; flex-wrap:wrap;
+  padding:9px 12px; border-radius:8px; border:1px solid var(--rpt-warning);
+  background:var(--rpt-warning-soft); font-size:12.5px; color:var(--rpt-text-primary); }
+.rpt-mm-refill-banner-text { flex:1 1 240px; }
+.rpt-mm-refill-banner-actions { display:flex; gap:8px; flex:0 0 auto; }
+/* Table picker — checkbox rows with the sheet rail's badge vocabulary. */
+.rpt-mm-refill-picker { display:flex; flex-direction:column; border:1px solid var(--rpt-border);
+  border-radius:8px; overflow:hidden; }
+.rpt-mm-refill-pickall,
+.rpt-mm-refill-pickrow { display:flex; align-items:center; gap:9px; padding:7px 11px;
+  font-size:12.5px; color:var(--rpt-text-primary); cursor:pointer; }
+.rpt-mm-refill-pickall { border-bottom:1px solid var(--rpt-border); background:var(--rpt-bg-primary);
+  font-weight:600; font-size:12px; }
+.rpt-mm-refill-pickrow + .rpt-mm-refill-pickrow { border-top:1px solid var(--rpt-border); }
+.rpt-mm-refill-pickrow:hover { background:var(--rpt-bg-tertiary); }
+.rpt-mm-refill-pickname { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.rpt-mm-refill-pickcount { font-size:11px; color:var(--rpt-text-secondary); }
+.rpt-mm-refill-fulltoggle { display:flex; align-items:center; gap:6px; cursor:pointer; }
+/* The consequence line — the honesty mechanism; slightly emphasized, never gray-washed. */
+.rpt-mm-refill-consequence { margin:0; font-size:12.5px; font-weight:500; color:var(--rpt-text-primary); }
+.rpt-mm-refill-advtoggle { align-self:flex-start; font:inherit; font-size:12px; padding:2px 0;
+  border:none; background:transparent; color:var(--rpt-text-secondary); cursor:pointer; }
+.rpt-mm-refill-advtoggle:hover { color:var(--rpt-text-primary); }
+.rpt-mm-refill-advbody { display:flex; flex-direction:column; gap:8px; padding-top:6px; }
+.rpt-mm-refill-preset { width:auto; min-width:140px; }
+.rpt-mm-refill-benchfoot { display:flex; justify-content:flex-end; padding-top:2px; }
+/* Run rail — the merge-box card: header + segments + meta + terminal line + footer action.
+   bg-primary (not elevated): the danger-text pairings (failures / terminal error / error chip) hold
+   AA on bg-primary in all three themes (the .rpt-mm-maint-result.error precedent) but drop to ~4.3
+   on dark's bg-elevated — verified numerically in the WS6 Phase A harness pass. */
+.rpt-mm-refill-rail { display:flex; flex-direction:column; gap:10px; padding:14px;
+  border:1px solid var(--rpt-border); border-radius:10px; background:var(--rpt-bg-primary); }
+.rpt-mm-refill-railhead { display:flex; align-items:center; justify-content:space-between; gap:10px; }
+/* Status chip + terminal lines follow the house "dot carries color; label is text-secondary/primary"
+   idiom (the rpt-agents-dot precedent): colored TEXT at these sizes fails AA on the light theme
+   (success 3.18 / warning 3.42 on bg-primary — measured), a dot + neutral label passes everywhere. */
+.rpt-mm-refill-chip { display:inline-flex; align-items:center; gap:5px; font-size:10.5px;
+  padding:1px 8px; border-radius:999px; border:1px solid var(--rpt-border);
+  color:var(--rpt-text-secondary); }
+.rpt-mm-refill-dot { width:7px; height:7px; border-radius:50%; flex:0 0 auto; }
+.rpt-mm-refill-dot.running { background:var(--rpt-accent); }
+.rpt-mm-refill-dot.done { background:var(--rpt-success); }
+.rpt-mm-refill-dot.cancelled { background:var(--rpt-text-tertiary); }
+.rpt-mm-refill-dot.error { background:var(--rpt-danger); }
+/* Inline notice: baseline gate (warning) / start error (danger) — inside the rail, never a bare toast. */
+.rpt-mm-refill-notice { display:flex; align-items:center; gap:10px; flex-wrap:wrap; padding:8px 11px;
+  border-radius:8px; border:1px solid var(--rpt-danger); font-size:12px; color:var(--rpt-text-primary); }
+.rpt-mm-refill-notice.baseline { border-color:var(--rpt-warning); background:var(--rpt-warning-soft); }
+.rpt-mm-refill-notice > span { flex:1 1 220px; }
+/* Segmented per-batch track; >60 batches degrades to one continuous fill bar. */
+.rpt-mm-refill-track { display:flex; gap:2px; height:10px; }
+.rpt-mm-refill-seg { flex:1; min-width:3px; border-radius:2px; background:var(--rpt-bg-tertiary);
+  transition:background-color .2s cubic-bezier(0.22,1,0.36,1); }
+.rpt-mm-refill-seg.running { background:var(--rpt-accent); animation:rpt-refill-pulse 1.1s ease-in-out infinite; }
+.rpt-mm-refill-seg.ok { background:var(--rpt-accent); }
+.rpt-mm-refill-seg.failed { background:var(--rpt-danger); }
+.rpt-mm-refill-bar { flex:1; border-radius:5px; background:var(--rpt-bg-tertiary); overflow:hidden; }
+.rpt-mm-refill-barfill { display:block; height:100%; background:var(--rpt-accent);
+  transition:width .25s cubic-bezier(0.22,1,0.36,1); }
+@keyframes rpt-refill-pulse { 0%,100% { opacity:1; } 50% { opacity:.45; } }
+.rpt-mm-refill-meta { margin:0; font-size:11.5px; color:var(--rpt-text-secondary); }
+/* Failure rows + terminal lines: neutral text (AA in all themes); the failed segment, error dot, and
+   status chip carry the color signal. */
+.rpt-mm-refill-failures { margin:0; padding:0; list-style:none; display:flex; flex-direction:column;
+  gap:3px; font-size:12px; color:var(--rpt-text-secondary); }
+.rpt-mm-refill-terminal { display:flex; align-items:center; gap:7px; margin:0; font-size:12.5px;
+  color:var(--rpt-text-primary); }
+.rpt-mm-refill-railfoot { display:flex; justify-content:flex-end; gap:8px; }
+@media (prefers-reduced-motion: reduce) {
+  .rpt-mm-refill-seg, .rpt-mm-refill-barfill { transition:none; }
+  .rpt-mm-refill-seg.running { animation:none; opacity:1; }
+}
+
 /* Notes tab (plot-recall WP7): freeform per-chat markdown notes with explicit Save / Reset. */
 .rpt-mm-notes { display:flex; flex-direction:column; gap:10px; }
 .rpt-mm-notes-textarea { width:100%; min-height:320px; resize:vertical; font:inherit; font-size:12.5px;

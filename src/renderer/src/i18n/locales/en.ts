@@ -703,36 +703,54 @@ const en: Record<string, string> = {
   'memoryManager.rangeLabel': 'Rows {{from}}–{{to}} of {{total}}',
   'memoryManager.prevPage': 'Previous page',
   'memoryManager.nextPage': 'Next page',
-  // Maintenance tab (WP2): the run-now workbench + prompt preview + progress/backfill.
-  'memoryManager.maintenance.runTitle': 'Run maintenance now',
-  'memoryManager.maintenance.runIntro':
-    'Run one maintenance pass over the recent floors, filling the tables from the transcript.',
-  'memoryManager.maintenance.lastNFloors': 'Recent floors',
+  // Maintenance tab (table-refill WS6 Phase A): the Refill workbench + prompt preview.
   'memoryManager.maintenance.extraHint': 'Extra instruction (optional)',
   'memoryManager.maintenance.extraHintPlaceholder':
     'e.g. focus on the summary table, ignore combat details…',
-  'memoryManager.maintenance.run': 'Run now',
-  'memoryManager.maintenance.running': 'Running…',
-  'memoryManager.maintenance.resultApplied':
-    'Applied {{applied}} statement(s), {{changes}} change(s).',
-  'memoryManager.maintenance.resultEmpty': 'No changes needed.',
   'memoryManager.maintenance.noTemplate': 'Assign a table template first (in the left rail).',
-  'memoryManager.maintenance.errorNoNode': 'This session has no memory-maintenance agent to run.',
-  'memoryManager.maintenance.errorAborted': 'The maintenance call was aborted.',
   'memoryManager.maintenance.errorFailed': 'Maintenance failed: {{message}}',
   'memoryManager.maintenance.previewTitle': 'Preview prompt',
   'memoryManager.maintenance.previewShow': 'Show composed prompt',
   'memoryManager.maintenance.previewHide': 'Hide composed prompt',
-  // Refill workbench (table-refill WS2): the chunk-committed regenerate that replaced the append pass.
   'memoryManager.maintenance.refillTitle': 'Refill tables',
   'memoryManager.maintenance.refillIntro':
     'Regenerate the tables from the transcript, rolling back the un-maintained tail and rebuilding it — no double-counting. Commits in chunks and can resume.',
   'memoryManager.maintenance.fullRefill': 'Full refill (from floor 0)',
   'memoryManager.maintenance.refillRun': 'Refill now',
   'memoryManager.maintenance.refillRunning': 'Refilling…',
-  'memoryManager.maintenance.refillProgress': 'Refilled floors {{from}}–{{to}}…',
   'memoryManager.maintenance.refillDone': 'Refill complete.',
   'memoryManager.maintenance.refillCancelled': 'Refill cancelled (committed chunks kept).',
+  // Refill workbench pieces (WS6 Phase A): picker, range/consequence, run rail, resume banner.
+  'memoryManager.refill.tablesTitle': 'Tables to refill',
+  'memoryManager.refill.tablesAll': 'All tables',
+  'memoryManager.refill.fromLabel': 'Start floor',
+  'memoryManager.refill.consequence':
+    'Will regenerate floors {{from}}–{{to}} ({{n}} floors · ~{{m}} batches).',
+  'memoryManager.refill.consequenceFirst': 'Will fill all {{n}} floors from the beginning.',
+  'memoryManager.refill.noSelection': 'Select at least one table (and the session needs floors).',
+  'memoryManager.refill.advanced': 'Advanced options',
+  'memoryManager.refill.confirmTitle': 'Confirm refill',
+  'memoryManager.refill.confirmBody':
+    ' The selected {{k}} table(s) will have their records in this range rewritten.',
+  'memoryManager.refill.editWarning':
+    ' This range contains {{n}} manual edit(s); they will be lost and not regenerated.',
+  'memoryManager.refill.railTitle': 'Refill progress',
+  'memoryManager.refill.statusRunning': 'Running',
+  'memoryManager.refill.statusDone': 'Complete',
+  'memoryManager.refill.statusCancelled': 'Cancelled',
+  'memoryManager.refill.statusError': 'Stopped',
+  'memoryManager.refill.batchOf': '{{i}}/{{n}} batches committed',
+  'memoryManager.refill.completedUntil': 'committed through floor {{n}}',
+  'memoryManager.refill.cancelRun': 'Cancel (stops after the current batch)',
+  'memoryManager.refill.resume': 'Resume',
+  'memoryManager.refill.discard': 'Discard',
+  'memoryManager.refill.discardTip':
+    'Clears the resume record; the committed chunks are kept as valid history.',
+  'memoryManager.refill.resumeBanner': 'A refill is unfinished — committed through floor {{n}}.',
+  'memoryManager.refill.resumeBannerFresh': 'A refill is unfinished — no chunks committed yet.',
+  'memoryManager.refill.baselineSwitch': 'Switch to full refill',
+  'memoryManager.refill.progressAria': 'Refill batch progress',
+  'memoryManager.refill.failedSpan': 'Floors {{from}}–{{to}} failed: {{reason}}',
   // History tab (WP3): the table op-log + data-only rewind (undo). Rewind is destructive (drops later
   // edits); labels use the ST terms 数据库/表格 (tables) and 撤销/回滚 (undo/rewind) in zh.
   'memoryManager.history.intro':
