@@ -17,6 +17,7 @@ import {
   lastCharMessageIndex
 } from '../../../shared/thRuntime/shapes'
 import { log } from '../logService'
+import { renderChatTablesInjectionBlock } from '../tablesInjectionService'
 import { LorebookEntry, getRpExt } from '../../types/character'
 import { PresetParameters, Preset } from '../../types/preset'
 import { GenContext } from './types'
@@ -145,6 +146,14 @@ export const assemblePrompt = (
   const preset = overrides?.preset ?? ctx.preset
   const userAction = overrides?.action ?? ctx.userAction
 
+  // WS4 (D10): fold the capped per-table memory block into the SAME memory tail as the recall / pack
+  // block (`memoryBlock` → buildPrompt's tail splice). Computed here (not via a node) so it rides the
+  // existing splice for EVERY workflow without consuming the `prompt-assembly` checkpoint's `block`
+  // anchor lane (which is reserved for pack rejoin). Empty when no template is bound / nothing to inject
+  // → the block is unchanged (parity). Ordered [recall/pack block][tables block] in the tail.
+  const tablesBlock = renderChatTablesInjectionBlock(profileId, chatId)
+  const memoryTail = [memoryBlock, tablesBlock].filter((s) => s && s.trim()).join('\n\n')
+
   const built = buildPrompt({
     card,
     preset,
@@ -170,7 +179,7 @@ export const assemblePrompt = (
     cacheLevel,
     l1Mode,
     frozenVars,
-    memoryBlock,
+    memoryBlock: memoryTail,
     // FSM mode addendum + the World Card's custom agent prompts (system + per-mode).
     modeAddendum: composeAddendum(getRpExt(card)?.agent, mode, fsmEnabled, modeConfig.addendum),
     // Canonical TemplateContext (WS-1) — shared constructor; `workingVars` is the live store (passed by

@@ -197,7 +197,9 @@ const mapSheet = (uid: string, sheet: any): TableDef => {
     updateNode: str(sourceData.updateNode),
     deleteNode: str(sourceData.deleteNode),
     updateFrequency: normalizeUpdateFrequency(sheet?.updateConfig?.updateFrequency),
-    exportConfig
+    exportConfig,
+    // WS4 injection policy is RPT-native (no chatSheets analogue) — an import always gets the default.
+    injectionPolicy: { mode: 'recent' as const }
   }
 }
 

@@ -1,4 +1,4 @@
-import { TableDef, TableTemplate } from '../types/tableTemplate'
+import { TableDef, TableTemplate, TableInjectionPolicy } from '../types/tableTemplate'
 import { TableRead } from './tableDbService'
 import { renderWholeTable } from './tableExportService'
 import { parseDdlColumnNames } from '../parsers/chatSheetsParser'
@@ -165,3 +165,101 @@ ${tablesBlock}
 ${transcript}
 
 ${MAINTAINER_RULES}`
+
+// ---- WS4: capped per-table injection into the MAIN narrative prompt (D10) --------------------
+// The narrator never reads the maintainer blocks above (rules + cadence header). WS4 renders a SEPARATE,
+// compact block of the CURRENT table rows, capped per table, and injects it into the main prompt. All
+// DECISIONS here are pure + unit-tested (`test/tableInject.test.ts`); the node (`table.inject`) only does
+// the sandbox read + settings lookup.
+
+export type InjectionMode = TableInjectionPolicy['mode']
+
+export interface ResolvedInjection {
+  mode: InjectionMode
+  /** Effective row cap for 'recent' (clamped to a non-negative integer). Ignored for 'full' / 'none'. */
+  cap: number
+}
+
+/**
+ * Resolve a table's injection policy against the app-global cap (D10). A per-table `rows` OVERRIDES the
+ * global cap; a missing policy defaults to `{ mode: 'recent' }` at the global cap. A non-finite / negative
+ * / zero cap clamps to 0 (a 0-cap 'recent' table shows nothing — the opt-out). PURE.
+ */
+export const resolveInjectionPolicy = (
+  policy: TableInjectionPolicy | undefined,
+  globalCap: number
+): ResolvedInjection => {
+  const mode = policy?.mode ?? 'recent'
+  const rawCap = policy?.rows ?? globalCap
+  const cap = Number.isFinite(rawCap) && rawCap > 0 ? Math.floor(rawCap) : 0
+  return { mode, cap }
+}
+
+/**
+ * Apply a resolved policy to a row list: which rows survive + how many OLDER rows were dropped. 'full'
+ * keeps everything (never truncates); 'none' keeps nothing; 'recent' keeps the LAST `cap` rows (newest
+ * last) and reports the count omitted off the front. A `cap <= 0` in 'recent' mode keeps nothing (guards
+ * the `slice(-0)` whole-array trap). PURE.
+ */
+export const capInjectionRows = (
+  rows: unknown[][],
+  resolved: ResolvedInjection
+): { rows: unknown[][]; omitted: number } => {
+  if (resolved.mode === 'none') return { rows: [], omitted: 0 }
+  if (resolved.mode === 'full') return { rows, omitted: 0 }
+  const cap = resolved.cap
+  if (cap <= 0) return { rows: [], omitted: rows.length }
+  if (rows.length <= cap) return { rows, omitted: 0 }
+  return { rows: rows.slice(-cap), omitted: rows.length - cap }
+}
+
+/**
+ * Render ONE table's injection section (no per-op rules, no cadence header — narrator-facing):
+ *
+ * ```
+ * ## <displayName>（<sqlName>）
+ * <renderWholeTable(cols, shownRows)>
+ * …（省略 N 行较早记录）        (only when 'recent' truncated older rows)
+ * ```
+ *
+ * Returns `null` when the table contributes nothing (mode 'none', no rows, or a 0-cap that shows nothing)
+ * so the caller emits NO empty header. Columns use the DDL's REAL names (as the maintainer block does),
+ * falling back to display headers. PURE.
+ */
+export const renderInjectionTable = (
+  table: TableDef,
+  read: TableRead | undefined,
+  globalCap: number
+): string | null => {
+  const resolved = resolveInjectionPolicy(table.injectionPolicy, globalCap)
+  if (resolved.mode === 'none') return null
+  const allRows = read?.rows ?? []
+  if (!allRows.length) return null
+  const { rows, omitted } = capInjectionRows(allRows, resolved)
+  if (!rows.length) return null
+  const sqlCols = parseDdlColumnNames(table.ddl)
+  const cols = sqlCols.length ? sqlCols : table.headers
+  const lines = [`## ${table.displayName}（${table.sqlName}）`, renderWholeTable(cols, rows)]
+  if (omitted > 0) lines.push(`…（省略 ${omitted} 行较早记录）`)
+  return lines.join('\n')
+}
+
+/**
+ * Compose the whole capped memory block injected into the MAIN prompt each turn (D10). Every non-'none'
+ * table with rows renders via `renderInjectionTable`, joined by blank lines under one intro header.
+ * Returns `''` when NO table contributes (empty tables / all 'none' / no rows) so the caller injects
+ * nothing at all (not an empty header). PURE over the passed reads + policies — the node supplies the
+ * live sandbox reads and the global cap.
+ */
+export const renderInjectionBlock = (
+  template: TableTemplate,
+  reads: TableRead[],
+  globalCap: number
+): string => {
+  const readBySql = new Map(reads.map((r) => [r.sqlName, r]))
+  const sections = template.tables
+    .map((t) => renderInjectionTable(t, readBySql.get(t.sqlName), globalCap))
+    .filter((s): s is string => s !== null)
+  if (!sections.length) return ''
+  return `【记忆表格】以下是长期记忆表格的当前内容，供参考：\n\n${sections.join('\n\n')}`
+}

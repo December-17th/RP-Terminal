@@ -382,7 +382,8 @@ const buildNewTableDef = (work: WorkTable, newDdl: string): TableDef => ({
   updateNode: '',
   deleteNode: '',
   updateFrequency: -1,
-  exportConfig: TableExportConfigSchema.parse({})
+  exportConfig: TableExportConfigSchema.parse({}),
+  injectionPolicy: { mode: 'recent' }
 })
 
 // ---- sandbox helpers (runtime wrappers; real SQLite) -----------------------------------------

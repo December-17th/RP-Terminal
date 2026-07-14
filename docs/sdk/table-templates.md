@@ -95,6 +95,44 @@ Sheets are ordered by `orderNo`.
 `extraIndexPlacement`, `fixedEntryPlacement`, `fixedIndexPlacement`. Missing placements default to
 `{ position:'at_depth_as_system', depth:0, order:0 }` (`PlacementSchema`).
 
+## Main-prompt memory injection — `injectionPolicy` (WS4 / D10)
+
+Each table carries a **native** `injectionPolicy` (`src/main/types/tableTemplate.ts`
+`TableInjectionPolicySchema`) that controls how its **current rows** are injected into the **main
+narrative prompt** each turn — the block the storyteller model reads, distinct from the maintainer
+side-call. This is the **simple capped block**; the rich `exportConfig` above stays **UNCONSUMED for
+injection** (a deliberate reconciliation — exportConfig-driven worldbook-style injection is a later item
+gated on the vector/summary engine).
+
+| field  | values | meaning |
+| ------ | ------ | ------- |
+| `mode` | `'recent'` (default) \| `'full'` \| `'none'` | `recent` = keep the **last N** rows; `full` = all rows; `none` = never injected into the main prompt. |
+| `rows` | optional int ≥ 0 | Per-table row cap for `recent`, **overriding** the global cap. Unset = global cap. |
+
+- **Global cap:** `settings.tables.injection_max_rows` (default **20**), mirroring the
+  `default_update_frequency` pattern. A per-table `rows` beats it; a zero/negative/non-finite cap clamps
+  to `0` (a `recent` table then shows nothing — the opt-out).
+- **Rendering** (`tableMaintenance.ts` `renderInjectionBlock` — PURE, `test/tableInject.test.ts`): for
+  each non-`none` table **with rows**, a compact section `## <displayName>（<sqlName>）` + the rows (DDL
+  real column names, LAST-N for `recent`). When `recent` truncated older rows it emits the marker
+  **`…（省略 N 行较早记录）`**. An empty table / a `none` table / a 0-cap table emits **no section**; when
+  no section survives, **no block at all** (not an empty header). Every contributing table is joined
+  under one `【记忆表格】…` intro.
+- **`'summary'` is DEFERRED** (LLM-condensed rows): it needs the future vector/summary engine and is
+  **not a valid mode yet**. The truncation marker is the reserved seam that will carry it — nothing else
+  is reserved.
+- **Injection seam:** the block is folded into the **same memory tail** as recall / pack blocks
+  (`buildPrompt`'s `memoryBlock` splice), computed at assembly time by
+  `tablesInjectionService.renderChatTablesInjectionBlock` (called from `generation/assemble.ts`), so it
+  reaches every workflow **without** consuming the `prompt-assembly` checkpoint's `block`/`entries`
+  anchor lanes (those stay free for pack rejoin). FAIL-OPEN: no template / nothing to inject / any read
+  error → `''` (prompt unchanged).
+- **Round-trip:** `injectionPolicy` is **RPT-native** — it has no chatSheets analogue, so it is **NOT**
+  written by `exportChatSheets` and an import re-applies the schema default (`{ mode:'recent' }`). That
+  keeps `parseChatSheets(exportChatSheets(tpl))` lossless-for-the-model (the reader never emits a
+  non-default value), so the round-trip test stays honest (`test/chatSheetsParser.test.ts`). It is
+  editable via the same `table-template-update` patch (`injectionPolicy?`); the editing **UI is WS6+**.
+
 ## Verified against the real template
 
 `test/fixtures/chatsheets-poem-of-destiny-5.9.json` (the 命定之诗 5.9 template) imports into **8**
@@ -118,8 +156,9 @@ migration — Memory-Manager WP4a, below). The **Tables** view is registered as 
 
 `table-template-update(profileId, id, patch)` → `{ ok: true } | { error }` (manual-pass issue 03). The
 patch is `{ name?, tables: [{ uid, note?, initNode?, insertNode?, updateNode?, deleteNode?,
-updateFrequency?, exportConfig? }] }`: only the **five per-op prompts + `updateFrequency` + the
-injection `exportConfig`** (and the template `name`) are editable — structural fields (`sqlName`,
+updateFrequency?, exportConfig?, injectionPolicy? }] }`: only the **five per-op prompts +
+`updateFrequency` + the injection `exportConfig` + the main-prompt `injectionPolicy`** (and the template
+`name`) are editable — structural fields (`sqlName`,
 `ddl`, `headers`, `initialRows`, `displayName`) are IMMUTABLE (DDL only executes at instantiation, so
 editing it without re-instantiating would desync every chat using the template). `updateFrequency`
 accepts `-1` (global), `0` (off), or a positive int; `<= -2` is a `templateBadPatch` (issue 04). The

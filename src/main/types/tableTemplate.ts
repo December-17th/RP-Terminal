@@ -51,6 +51,26 @@ export const TableExportConfigSchema = z.object({
 })
 export type TableExportConfig = z.infer<typeof TableExportConfigSchema>
 
+/**
+ * WS4 — how a table's CURRENT rows are injected into the MAIN narrative prompt (the capped per-table
+ * memory block the narrator reads each turn, NOT the maintainer side-call). This is RPT-NATIVE: it has
+ * no chatSheets analogue, so it is deliberately NOT round-tripped through `exportChatSheets` — an
+ * imported/exported template simply carries the schema default (`{ mode: 'recent' }`), which keeps the
+ * chatSheets round-trip lossless-for-the-model (the reader never emits a non-default value). The rich
+ * `exportConfig` above stays UNCONSUMED for prompt injection (see `docs/sdk/table-templates.md`).
+ *
+ * `'summary'` (LLM-condensed rows) is DEFERRED to the future vector/summary engine and is NOT a valid
+ * mode yet; the truncation marker (`…（省略 N 行较早记录）`) is the seam that will carry it.
+ */
+export const TableInjectionPolicySchema = z.object({
+  /** 'recent' = keep the LAST N rows (N = `rows`, else the global cap); 'full' = all rows; 'none' =
+   *  never injected into the main prompt. */
+  mode: z.enum(['recent', 'full', 'none']).default('recent'),
+  /** Per-table row cap for 'recent', overriding `settings.tables.injection_max_rows`. Unset = global cap. */
+  rows: z.number().int().min(0).optional()
+})
+export type TableInjectionPolicy = z.infer<typeof TableInjectionPolicySchema>
+
 /** One table's full design-time definition. */
 export const TableDefSchema = z.object({
   /** Stable identity carried over from the source sheet `uid`. */
@@ -78,7 +98,9 @@ export const TableDefSchema = z.object({
   updateFrequency: z.number().int().refine((v) => v === -1 || v >= 0, {
     message: 'updateFrequency must be -1 (global default), 0 (off), or a positive integer'
   }).default(-1),
-  exportConfig: TableExportConfigSchema.prefault({})
+  exportConfig: TableExportConfigSchema.prefault({}),
+  /** WS4 — per-table main-prompt injection policy (RPT-native; defaults to recent-N at the global cap). */
+  injectionPolicy: TableInjectionPolicySchema.prefault({})
 })
 export type TableDef = z.infer<typeof TableDefSchema>
 
@@ -106,7 +128,9 @@ export const TableDefPatchSchema = z.object({
       message: 'updateFrequency must be -1 (global default), 0 (off), or a positive integer'
     })
     .optional(),
-  exportConfig: TableExportConfigSchema.optional()
+  exportConfig: TableExportConfigSchema.optional(),
+  /** WS4 — editable main-prompt injection policy (UI is WS6+; the field is patchable now). */
+  injectionPolicy: TableInjectionPolicySchema.optional()
 })
 export type TableDefPatch = z.infer<typeof TableDefPatchSchema>
 export const TableTemplatePatchSchema = z.object({
