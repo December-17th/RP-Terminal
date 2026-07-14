@@ -696,6 +696,16 @@ const zh: Record<string, string> = {
   'memoryManager.maintenance.previewTitle': '预览提示词',
   'memoryManager.maintenance.previewShow': '显示合成的提示词',
   'memoryManager.maintenance.previewHide': '隐藏合成的提示词',
+  // 重填工作台（table-refill WS2）：分块提交的重新填表，取代了会重复计数的追加式维护。
+  'memoryManager.maintenance.refillTitle': '重填表格',
+  'memoryManager.maintenance.refillIntro':
+    '根据对话重新填写表格：先回滚未维护的尾部再重建，不会重复计数。分块提交，可断点续填。',
+  'memoryManager.maintenance.fullRefill': '完整重填（从第 0 层开始）',
+  'memoryManager.maintenance.refillRun': '立即重填',
+  'memoryManager.maintenance.refillRunning': '重填中…',
+  'memoryManager.maintenance.refillProgress': '已重填第 {{from}}–{{to}} 层…',
+  'memoryManager.maintenance.refillDone': '重填完成。',
+  'memoryManager.maintenance.refillCancelled': '已取消重填（已提交的分块保留）。',
   // 历史标签页（WP3）：表格操作日志 + 仅数据回滚（撤销）。回滚为破坏性操作（会丢弃之后的改动）。
   'memoryManager.history.intro': '此处记录每一次表格改动。可将表格回滚到较早的时间点——这会丢弃之后的所有改动。',
   'memoryManager.history.undoLast': '撤销上次编辑',
@@ -732,6 +742,17 @@ const zh: Record<string, string> = {
   'tables.backfillBadPreset': '所选的 API 预设已不存在。',
   'tables.backfillBadScope': '请输入至少为 1 的楼层数，或选择"全部"。',
   'tables.backfillBadBatch': '每批楼层数至少为 1。',
+  // 重填引擎（table-refill WS2）错误提示 —— 由异步重填运行抛出。
+  'tables.refillNoTemplate': '请先为该会话指定表格模板，再运行重填。',
+  'tables.refillNoTables': '没有可重填的有效表格。',
+  'tables.refillNoFloors': '该会话还没有可供重填的楼层。',
+  'tables.refillNeedsFull': '该表格经过结构迁移——部分重填会产生重复行。请执行完整重填（从第 0 层开始）。',
+  'tables.refillBusy': '该会话已有一次表格写入进行中——请稍后重试。',
+  'tables.refillAlreadyRunning': '该会话已有一次重填在进行中。',
+  'tables.refillGuardLost': '重填丢失了写锁并已停止——可续填以继续。',
+  'tables.refillInterleaved': '重填过程中有其它表格写入落入，为避免冲突已停止。',
+  'tables.refillRunning': '该会话正在进行重填。',
+  'tables.refillNothingToResume': '没有可续填的中断重填。',
 
   'workflow.trace.status.ran': '已执行',
   'workflow.trace.status.skipped': '已跳过',

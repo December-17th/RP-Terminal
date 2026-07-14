@@ -378,12 +378,33 @@ const api = {
     ipcRenderer.invoke('chat-table-template-set', profileId, chatId, id),
   previewMemoryMaintain: (profileId: string, chatId: string, config: unknown) =>
     ipcRenderer.invoke('memory-maintain-preview', profileId, chatId, config),
-  // Run ONE maintenance pass on demand (Memory-Manager WP2 workbench). `opts` = { lastNFloors?, extraHint? }.
-  maintainTablesNow: (
+  // Chunk-committed REFILL (table-refill WS2) — replaces the old append "maintain now". Rolls the
+  // selected tables (or all) back to a cutpoint and regenerates the tail; async + resumable. Progress
+  // streams via onTableBackfillProgress (kind:'refill'). `opts` = { tables?, fromFloor?, extraHint?,
+  // apiPresetId?, retries?, batchSize? }.
+  startTableRefill: (
     profileId: string,
     chatId: string,
-    opts: { lastNFloors?: number; extraHint?: string }
-  ) => ipcRenderer.invoke('chat-tables-maintain-now', profileId, chatId, opts),
+    opts: {
+      tables?: string[]
+      fromFloor?: number
+      extraHint?: string
+      apiPresetId?: string | null
+      retries?: number
+      batchSize?: number
+    }
+  ) => ipcRenderer.invoke('chat-tables-refill', profileId, chatId, opts),
+  cancelTableRefill: (profileId: string, chatId: string) =>
+    ipcRenderer.invoke('chat-tables-refill-cancel', profileId, chatId),
+  getTableRefillState: (profileId: string, chatId: string) =>
+    ipcRenderer.invoke('chat-tables-refill-state', profileId, chatId),
+  resumeTableRefill: (
+    profileId: string,
+    chatId: string,
+    extra: { apiPresetId?: string | null; retries?: number; extraHint?: string; batchSize?: number }
+  ) => ipcRenderer.invoke('chat-tables-refill-resume', profileId, chatId, extra),
+  discardTableRefill: (profileId: string, chatId: string) =>
+    ipcRenderer.invoke('chat-tables-refill-discard', profileId, chatId),
   readChatTables: (profileId: string, chatId: string) =>
     ipcRenderer.invoke('chat-tables-read', profileId, chatId),
   // SQL-table memory (issue 06): hand editing, last-maintained status, template export

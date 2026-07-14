@@ -13,10 +13,18 @@ import {
   getBackfillState,
   BackfillOpts
 } from '../services/tableBackfillService'
+import {
+  startRefill,
+  cancelRefill,
+  getRefillState,
+  resumeRefill,
+  discardRefill,
+  RefillOpts
+} from '../services/tableRefillService'
 import { buildGenContext } from '../services/generation/genContext'
 import { chatTemplate } from '../services/nodes/builtin/memoryCore'
 import { composeMaintainerMessages, memoryMaintainConfig } from '../services/nodes/builtin/memoryNodes'
-import { maintainNow, resolveMaintainConfig } from '../services/tableMaintainNow'
+import { resolveMaintainConfig } from '../services/tableMaintainNow'
 import { gate } from './ipcGuards'
 
 /**
@@ -91,22 +99,92 @@ export const registerTableMemoryIpc = (ipcMain: IpcMain): void => {
     }
   })
 
-  // Run ONE maintenance pass on demand (Memory-Manager WP2 workbench). Reuses the SAME cores automatic
-  // maintenance runs (resolveMaintainConfig → composeMaintainerMessages → runLlmCall → applyTableEdit);
-  // `opts` is `{ lastNFloors?, extraHint? }`. Returns the run-now report shape (never throws across IPC).
+  // Chunk-committed REFILL (table-refill WS2) — the fix for the duplicate-rows bug, replacing the old
+  // append "maintain now" path. Rolls the selected tables (or all) back to a cutpoint and REGENERATES
+  // the tail from the transcript, committing per chunk. Async + resumable: validation returns
+  // `{ ok } | { error }` (a localized `tables.*` key); the run streams via `table-backfill-progress`
+  // (`kind:'refill'`). `fromFloor` unset = the clamped earliest-un-maintained default.
   ipcMain.handle(
-    'chat-tables-maintain-now',
-    (_, profileId: string, chatId: string, opts: { lastNFloors?: number; extraHint?: string }) =>
-      maintainNow(profileId, chatId, {
-        lastNFloors:
-          typeof opts?.lastNFloors === 'number' &&
-          Number.isInteger(opts.lastNFloors) &&
-          opts.lastNFloors >= 1
-            ? opts.lastNFloors
+    'chat-tables-refill',
+    async (
+      _,
+      profileId: string,
+      chatId: string,
+      raw: {
+        tables?: string[]
+        fromFloor?: number
+        extraHint?: string
+        apiPresetId?: string | null
+        retries?: number
+        batchSize?: number
+      }
+    ) => {
+      const opts: RefillOpts = {
+        tables: Array.isArray(raw?.tables) ? raw.tables.filter((t) => typeof t === 'string') : undefined,
+        fromFloor:
+          typeof raw?.fromFloor === 'number' && Number.isInteger(raw.fromFloor) && raw.fromFloor >= 0
+            ? raw.fromFloor
             : undefined,
-        extraHint: typeof opts?.extraHint === 'string' ? opts.extraHint : undefined
-      })
+        extraHint: typeof raw?.extraHint === 'string' ? raw.extraHint : undefined,
+        apiPresetId: raw?.apiPresetId || undefined,
+        retries: Number.isInteger(raw?.retries) ? Math.max(0, Math.min(5, raw!.retries!)) : undefined,
+        batchSize:
+          Number.isInteger(raw?.batchSize) && (raw!.batchSize as number) >= 1 ? raw!.batchSize : undefined
+      }
+      try {
+        await startRefill(profileId, chatId, opts)
+        return { ok: true }
+      } catch (error) {
+        return { error: error instanceof Error ? error.message : String(error) }
+      }
+    }
   )
+
+  ipcMain.handle('chat-tables-refill-cancel', (_, _profileId: string, chatId: string) => {
+    cancelRefill(chatId)
+  })
+
+  // The live run state + the persisted resume row (the Maintenance-tab keep-alive + resume banner read
+  // this on mount). `{ run, persisted }`; `persisted` non-null with status 'in_progress' ⇒ offer Resume.
+  ipcMain.handle('chat-tables-refill-state', (_, _profileId: string, chatId: string) =>
+    getRefillState(chatId)
+  )
+
+  // Resume an interrupted refill from `completed_until + 1` for the same tables. `{ ok } | { error }`.
+  ipcMain.handle(
+    'chat-tables-refill-resume',
+    async (
+      _,
+      profileId: string,
+      chatId: string,
+      extra: { apiPresetId?: string | null; retries?: number; extraHint?: string; batchSize?: number }
+    ) => {
+      try {
+        await resumeRefill(profileId, chatId, {
+          apiPresetId: extra?.apiPresetId || undefined,
+          retries: Number.isInteger(extra?.retries) ? Math.max(0, Math.min(5, extra!.retries!)) : undefined,
+          extraHint: typeof extra?.extraHint === 'string' ? extra.extraHint : undefined,
+          batchSize:
+            Number.isInteger(extra?.batchSize) && (extra!.batchSize as number) >= 1
+              ? extra!.batchSize
+              : undefined
+        })
+        return { ok: true }
+      } catch (error) {
+        return { error: error instanceof Error ? error.message : String(error) }
+      }
+    }
+  )
+
+  // Discard an interrupted refill's resume record + shadow (committed chunks stay). `{ ok } | { error }`.
+  ipcMain.handle('chat-tables-refill-discard', (_, profileId: string, chatId: string) => {
+    try {
+      discardRefill(profileId, chatId)
+      return { ok: true }
+    } catch (error) {
+      return { error: error instanceof Error ? error.message : String(error) }
+    }
+  })
 
   // Read: every table of the chat's assigned template, with current rows + per-row rowids (issue 06).
   ipcMain.handle('chat-tables-read', (_, profileId, chatId) => {

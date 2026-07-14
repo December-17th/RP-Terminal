@@ -263,11 +263,67 @@ target_table, floor)`):
 `listOpsForDisplay` surfaces `source` (nullable) alongside the SQL-derived `kind`/`table` for the
 History surface.
 
-### Write lock
+### Write lock (token-owned)
 
-A per-chat in-module mutex (`tryBeginTableWrite`/`endTableWrite`, 2-minute stale expiry — the
-removed compaction-slot pattern) serializes concurrent graph writes for a chat. `table.apply` and
-`rebuildSandbox` both take it; a busy chat surfaces as class-B `busy` (retry next turn).
+A per-chat in-module mutex serializes concurrent table writes for a chat (the removed compaction-slot
+pattern). It is **token-owned** so a long refill can't have its slot silently handed to a concurrent
+auto-maintain by the stale expiry:
+
+- `beginTableWrite(chatId): token|null` — claim the slot, returning a unique token (null while another
+  writer holds an unexpired claim, `WRITE_GUARD_MS = 120_000`).
+- `renewTableWrite(chatId, token): boolean` — refresh the expiry **iff** the token still owns the slot
+  (false when the 120s window lapsed and another writer reclaimed it). The refill engine calls this
+  after every batch; a `false` stops the run before the next commit.
+- `endTableWrite(chatId, token?)` — release; with a `token`, release only if it still owns the slot
+  (never frees a successor's claim). Without a token, the legacy unconditional release.
+- `tryBeginTableWrite(chatId): boolean` / `endTableWrite(chatId)` — thin wrappers for the four
+  SHORT-HOLD callers (`memory.maintain`/`table.apply` via `applyTableEdit`, backfill, hand-edit,
+  structural re-baseline) that complete well inside 120s. `table.apply` and `rebuildSandbox` take it;
+  a busy chat surfaces as class-B `busy` (retry next turn).
+
+### Refill engine (`tableRefillService.ts` — the chunk-committed regenerate)
+
+`startRefill(profileId, chatId, { tables?, fromFloor?, extraHint?, apiPresetId?, retries?, batchSize? })`
+(IPC `chat-tables-refill`) FIXES the duplicate-rows bug that both the append `memory.maintain (run now)`
+path (now retired) and the manual backfill exhibit on overlapping floors. Instead of APPENDING onto the
+current tables, it ROLLS the selected tables (or all) back to a cutpoint and REGENERATES the tail from
+the transcript, built as a **generalized backfill** (per-floor attribution at each batch's `span.to` via
+`appendOpsAt`, not a collapse to one floor) on a temp **shadow sandbox**:
+
+1. **Guard + gates.** Claim the token-owned write guard; capture the op-log watermark (`opsWatermark` =
+   `MAX(rowid)` for the chat). A partial refill (`from > 0`) of a table carrying a `source='baseline'`
+   op (a structural re-baseline) is REJECTED with `tables.refillNeedsFull` (`refillBaselineBlocked`) —
+   it would re-duplicate; a from-0 full refill is always clean. Default `from` when unset =
+   `defaultRefillFrom` (min earliest-un-maintained across selected, **clamped to `latest`** so run-now
+   stays meaningful when pointers are current).
+2. **Shadow build.** `instantiateAt(refillShadowPath, template)` + `replayOpsInto` every op EXCEPT the
+   selected tables' tail (`shouldReplayIntoShadow`: drops `selected ∧ floor ≥ from`; `'*'`/NULL and
+   unselected always replay). The live sandbox is untouched.
+3. **Regenerate in chunks (chunk = 1 batch).** Per batch: render the tables block FROM THE SHADOW,
+   prompt the maintainer (`refillMaintainerPrompt` — the backfill framing + an "only update:
+   <selected>" directive + optional `extraHint`), apply the reply to the shadow FILTERED to the
+   selected tables (`partitionBySelected` drops + counts out-of-scope statements), record the executed
+   statements against `span.to`, and `renewTableWrite` the guard.
+4. **Commit + publish per chunk.** One app-DB transaction = { first COMMITTED chunk only:
+   `deleteOpsFor(selected, from)`; insert the chunk's ops via `appendOpsAt(chatId, floorOps, 'refill')`;
+   advance the `table_refill_progress` row }, guarded by a re-check of the watermark (`watermarkMoved` —
+   a foreign INSERT that raised `MAX(rowid)` ABORTS the commit). Then **publish** the shadow over the
+   live sandbox by file snapshot (`publishShadow` — WAL-checkpoint + copy), **never** `rebuildSandbox`
+   (which self-claims the held guard and silently skips); `rebuildSandboxUnguarded` is the
+   publish-failure fallback.
+5. **Finalize / resume.** Clean finish: `advanceProgress(selected, latest)`, delete the progress row +
+   shadow. On failure/cancel: committed chunks STAY, the `in_progress` row stays, the shadow is dropped;
+   **Resume** (`resumeRefill`, IPC `chat-tables-refill-resume`) starts a fresh refill from
+   `resumeRefillFrom(fromFloor, completedUntil) = max(from, completedUntil+1)` (the op-log composes
+   exactly). `discardRefill` (IPC `chat-tables-refill-discard`) drops the resume record + shadow, keeping
+   committed chunks. `getRefillState` (IPC `chat-tables-refill-state`) returns `{ run, persisted }`.
+
+**Progress table.** `table_refill_progress(chat_id PK REFERENCES chats(id) ON DELETE CASCADE,
+selected_json, from_floor, completed_until, status, updated_at)` — one in-flight refill per chat, the
+shujuku `manualRefillProgress` analogue. **Events** ride the backfill channel `table-backfill-progress`
+with `kind:'refill'` (+ `completedUntil`). Pure decision helpers (unit-tested):
+`shouldReplayIntoShadow`, `partitionBySelected`, `defaultRefillFrom`, `refillBaselineBlocked`,
+`watermarkMoved`, `resumeRefillFrom`, `planChunkCommit`.
 
 ### Nodes (`src/main/services/nodes/builtin/`)
 

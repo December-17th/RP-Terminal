@@ -723,6 +723,16 @@ const en: Record<string, string> = {
   'memoryManager.maintenance.previewTitle': 'Preview prompt',
   'memoryManager.maintenance.previewShow': 'Show composed prompt',
   'memoryManager.maintenance.previewHide': 'Hide composed prompt',
+  // Refill workbench (table-refill WS2): the chunk-committed regenerate that replaced the append pass.
+  'memoryManager.maintenance.refillTitle': 'Refill tables',
+  'memoryManager.maintenance.refillIntro':
+    'Regenerate the tables from the transcript, rolling back the un-maintained tail and rebuilding it — no double-counting. Commits in chunks and can resume.',
+  'memoryManager.maintenance.fullRefill': 'Full refill (from floor 0)',
+  'memoryManager.maintenance.refillRun': 'Refill now',
+  'memoryManager.maintenance.refillRunning': 'Refilling…',
+  'memoryManager.maintenance.refillProgress': 'Refilled floors {{from}}–{{to}}…',
+  'memoryManager.maintenance.refillDone': 'Refill complete.',
+  'memoryManager.maintenance.refillCancelled': 'Refill cancelled (committed chunks kept).',
   // History tab (WP3): the table op-log + data-only rewind (undo). Rewind is destructive (drops later
   // edits); labels use the ST terms 数据库/表格 (tables) and 撤销/回滚 (undo/rewind) in zh.
   'memoryManager.history.intro':
@@ -762,6 +772,18 @@ const en: Record<string, string> = {
   'tables.backfillBadPreset': 'The selected API preset no longer exists.',
   'tables.backfillBadScope': 'Enter a floor count of at least 1, or choose All.',
   'tables.backfillBadBatch': 'Batch size must be at least 1.',
+  // Refill engine (table-refill WS2) error keys — surfaced from the async refill run.
+  'tables.refillNoTemplate': 'Assign a table template before running a refill.',
+  'tables.refillNoTables': 'No valid tables selected to refill.',
+  'tables.refillNoFloors': 'This session has no floors to refill from yet.',
+  'tables.refillNeedsFull':
+    'This table was structurally migrated — a partial refill would duplicate rows. Run a full refill (from floor 0).',
+  'tables.refillBusy': 'A table write is already in flight for this session — try again shortly.',
+  'tables.refillAlreadyRunning': 'A refill is already running for this session.',
+  'tables.refillGuardLost': 'The refill lost its write lock and stopped — resume to continue.',
+  'tables.refillInterleaved': 'Another table write landed mid-refill; the run stopped to avoid a conflict.',
+  'tables.refillRunning': 'A refill is currently running for this session.',
+  'tables.refillNothingToResume': 'There is no interrupted refill to resume.',
   'status.noState': '(No RPG state for this session yet)',
 
   'workflow.trace.status.ran': 'ran',

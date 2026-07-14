@@ -625,15 +625,14 @@ const NotesTab: React.FC<{ profileId: string; chatId: string }> = ({ profileId, 
 }
 
 /**
- * The Maintenance tab (WP2) — the shujuku 填表工作台 parity surface. Three stacked sections:
- *  1) a "Run maintenance now" workbench (lastNFloors + an optional extra hint + a Run button) that fires
- *     ONE on-demand maintenance pass through the SAME cores automatic maintenance runs
- *     (chat-tables-maintain-now → maintainNow); on success it refreshes the manager (onReload) + remounts
- *     the embedded progress pane, and routes failures through the toast store.
- *  2) a collapsible "Preview prompt" that reuses the workflow editor's MemoryPreview (passing a bare
- *     `{ lastNFloors }` override so main resolves the chat's effective memory.maintain config).
- *  3) the shared MemoryPane in `section="maintenance"` mode = the per-table progress list + the manual
- *     BackfillPanel (no reimplementation). Its own no-template hint covers the unassigned case.
+ * The Maintenance tab — the shujuku 填表工作台 parity surface. Since table-refill WS2 the "run now"
+ * workbench fires a chunk-committed REFILL (not the retired append pass that caused the duplicate-rows
+ * bug): it rolls the tables back to a cutpoint and REGENERATES the tail. The run is async + resumable;
+ * this MINIMAL keep-alive re-points the Run button at `startTableRefill` and subscribes to the shared
+ * progress events (kind:'refill'), mirroring BackfillPanel's subscription. A "full refill (from floor 0)"
+ * toggle switches between the default clamped cutpoint and a clean from-0 regenerate. The richer
+ * multi-select / resume-banner workbench is WS6. The shared MemoryPane (per-table progress + the manual
+ * BackfillPanel, untouched) stays mounted below.
  */
 const MaintenanceTab: React.FC<{
   profileId: string
@@ -642,54 +641,86 @@ const MaintenanceTab: React.FC<{
   onReload: () => Promise<void> | void
 }> = ({ profileId, chatId, hasTemplate, onReload }) => {
   const t = useT()
-  const [lastNFloors, setLastNFloors] = React.useState(6)
   const [extraHint, setExtraHint] = React.useState('')
+  const [fullRefill, setFullRefill] = React.useState(false)
   const [running, setRunning] = React.useState(false)
   const [result, setResult] = React.useState<{ text: string; error: boolean } | null>(null)
   const [showPreview, setShowPreview] = React.useState(false)
-  // Bumped after a successful run to remount MemoryPane so its progress + backfill state re-read.
+  // Bumped after a run completes to remount MemoryPane so its progress + backfill state re-read.
   const [reloadNonce, setReloadNonce] = React.useState(0)
+
+  // Reflect an in-flight refill on mount (a run started elsewhere / survived a re-mount).
+  React.useEffect(() => {
+    let cancelled = false
+    void (async () => {
+      try {
+        const state = await api().getTableRefillState(profileId, chatId)
+        if (!cancelled && state?.run?.running) setRunning(true)
+      } catch {
+        /* best-effort */
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [profileId, chatId])
+
+  // Subscribe to refill progress (kind:'refill'); refresh the manager + remount the pane on completion.
+  React.useEffect(() => {
+    const off = api().onTableBackfillProgress((p) => {
+      if (p.chatId !== chatId || p.kind !== 'refill') return
+      if (p.status === 'done' || p.status === 'cancelled' || p.status === 'error') {
+        setRunning(false)
+        setResult({
+          text:
+            p.status === 'done'
+              ? t('memoryManager.maintenance.refillDone')
+              : p.status === 'cancelled'
+                ? t('memoryManager.maintenance.refillCancelled')
+                : t('memoryManager.maintenance.errorFailed', { message: p.message ?? '' }),
+          error: p.status === 'error'
+        })
+        void onReload()
+        setReloadNonce((n) => n + 1)
+      } else {
+        setRunning(true)
+        if (p.status === 'batch-ok' && p.span) {
+          setResult({
+            text: t('memoryManager.maintenance.refillProgress', {
+              from: p.span.from,
+              to: p.span.to
+            }),
+            error: false
+          })
+        }
+      }
+    })
+    return off
+  }, [chatId, onReload, t])
 
   const onRun = async (): Promise<void> => {
     setRunning(true)
     setResult(null)
     try {
-      const res = await api().maintainTablesNow(profileId, chatId, {
-        lastNFloors,
+      const res = await api().startTableRefill(profileId, chatId, {
+        fromFloor: fullRefill ? 0 : undefined,
         extraHint: extraHint.trim() || undefined
       })
-      if (res && res.ok) {
-        setResult({
-          text: res.empty
-            ? t('memoryManager.maintenance.resultEmpty')
-            : t('memoryManager.maintenance.resultApplied', {
-                applied: res.applied,
-                changes: res.changes
-              }),
-          error: false
-        })
-        await onReload()
-        setReloadNonce((n) => n + 1)
-      } else {
-        const reason = res?.reason
-        const msg =
-          reason === 'no-template'
-            ? t('memoryManager.maintenance.noTemplate')
-            : reason === 'no-node'
-              ? t('memoryManager.maintenance.errorNoNode')
-              : reason === 'aborted'
-                ? t('memoryManager.maintenance.errorAborted')
-                : t('memoryManager.maintenance.errorFailed', { message: res?.message ?? '' })
+      if (res && 'error' in res && res.error) {
+        const msg = res.error.startsWith('tables.')
+          ? t(res.error)
+          : t('memoryManager.maintenance.errorFailed', { message: res.error })
         setResult({ text: msg, error: true })
         useToastStore.getState().push(msg)
+        setRunning(false)
       }
+      // On { ok } the progress subscription drives the rest.
     } catch (err) {
       const msg = t('memoryManager.maintenance.errorFailed', {
         message: err instanceof Error ? err.message : String(err)
       })
       setResult({ text: msg, error: true })
       useToastStore.getState().push(msg)
-    } finally {
       setRunning(false)
     }
   }
@@ -699,24 +730,18 @@ const MaintenanceTab: React.FC<{
       {hasTemplate && (
         <>
           <section className="rpt-mm-maint-section">
-            <h3 className="rpt-mm-maint-title">{t('memoryManager.maintenance.runTitle')}</h3>
-            <p className="rpt-mm-maint-intro">{t('memoryManager.maintenance.runIntro')}</p>
+            <h3 className="rpt-mm-maint-title">{t('memoryManager.maintenance.refillTitle')}</h3>
+            <p className="rpt-mm-maint-intro">{t('memoryManager.maintenance.refillIntro')}</p>
             <div className="rpt-mm-maint-row">
-              <label className="rpt-mm-maint-label" htmlFor="mm-maint-floors">
-                {t('memoryManager.maintenance.lastNFloors')}
+              <label className="rpt-mm-maint-label" style={{ display: 'flex', gap: 6 }}>
+                <input
+                  type="checkbox"
+                  checked={fullRefill}
+                  disabled={running}
+                  onChange={(e) => setFullRefill(e.target.checked)}
+                />
+                {t('memoryManager.maintenance.fullRefill')}
               </label>
-              <input
-                id="mm-maint-floors"
-                className="rpt-mm-maint-num"
-                type="number"
-                min={1}
-                max={50}
-                value={lastNFloors}
-                disabled={running}
-                onChange={(e) =>
-                  setLastNFloors(Math.max(1, Math.min(50, Number(e.target.value) || 1)))
-                }
-              />
             </div>
             <label className="rpt-mm-maint-label" htmlFor="mm-maint-hint">
               {t('memoryManager.maintenance.extraHint')}
@@ -731,8 +756,8 @@ const MaintenanceTab: React.FC<{
             />
             <button className="rpt-mm-maint-run" disabled={running} onClick={() => void onRun()}>
               {running
-                ? t('memoryManager.maintenance.running')
-                : t('memoryManager.maintenance.run')}
+                ? t('memoryManager.maintenance.refillRunning')
+                : t('memoryManager.maintenance.refillRun')}
             </button>
             {result && (
               <p className={`rpt-mm-maint-result${result.error ? ' error' : ''}`}>{result.text}</p>
@@ -750,7 +775,7 @@ const MaintenanceTab: React.FC<{
                 ? t('memoryManager.maintenance.previewHide')
                 : t('memoryManager.maintenance.previewShow')}
             </button>
-            {showPreview && <MemoryPreview profileId={profileId} config={{ lastNFloors }} />}
+            {showPreview && <MemoryPreview profileId={profileId} config={{}} />}
           </section>
         </>
       )}
