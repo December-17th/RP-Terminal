@@ -1,7 +1,14 @@
 // src/shared/thRuntime/index.ts
 import type { Host, ThGlobals } from './types'
 import { floorsToThMessages, floorsToStChat, currentMessageId } from './shapes'
-import { setVarOps, deepVarOps, applySetOps, replaceStatDataOps, type VarOp } from './ops'
+import {
+  setVarOps,
+  deepVarOps,
+  diffSetOps,
+  applySetOps,
+  replaceStatDataOps,
+  type VarOp
+} from './ops'
 import { nativeToThEntry, thToNativeEntry } from './worldbookEntry'
 import { expandMacros } from '../macros'
 import { runScript, type StCtx } from '../stscript'
@@ -86,6 +93,25 @@ export function createThRuntime(host: Host): ThGlobals {
     emit(MVU_EVENTS.VARIABLE_UPDATE_STARTED, after, before)
     emit(MVU_EVENTS.VARIABLE_UPDATED, after, before)
     emit(MVU_EVENTS.VARIABLE_UPDATE_ENDED, after, before)
+    // MVU write-back — FAITHFUL to MagVarUpdate. A card's variable-update handler persists derived state
+    // by MUTATING the passed `variables.stat_data` (typically REPLACING it with a normalized clone) and
+    // relies on the framework to save the result; it never calls a write for those fields. (命定之诗's
+    // automation script derives `主角.升级所需经验` from `等级` on VARIABLE_UPDATE_ENDED exactly this way —
+    // without the write-back the level shows but XP-to-next stays blank.) We emitted a snapshot, so persist
+    // whatever the handlers left on `after.stat_data`. `mutated !== stat` ⇒ a handler replaced the object
+    // (the clone idiom); an untouched fold is skipped. `diffSetOps` writes only changed/new leaves (so a
+    // card's separately-written siblings, e.g. its `date.*` insertOrAssign calls, are never clobbered), and
+    // it goes through the normal card-write path — origin-tagged, so it does NOT re-fire these events and
+    // loop (the WS-3 invariant holds).
+    const mutated = after.stat_data
+    if (mutated && mutated !== stat) {
+      const ops = diffSetOps(stat, mutated as Record<string, unknown>)
+      if (ops.length) {
+        stat = applySetOps(clone(stat) || {}, ops)
+        lastFiredJson = JSON.stringify(stat)
+        void writeVars(ops)
+      }
+    }
     // `tavern_events.MESSAGE_UPDATED` carries the updated message id (`event.d.ts`), never nothing —
     // a card reading the id (or a field off it) otherwise throws on `undefined`.
     emit(TAVERN_EVENTS.MESSAGE_UPDATED, currentMessageId(host.floors()))

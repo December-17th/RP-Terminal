@@ -241,6 +241,37 @@ describe('createThRuntime', () => {
     expect(m.calls.applyVariableOps[0]).toEqual([{ op: 'set', path: '/a/b', value: 5 }])
   })
 
+  it('MVU write-back: persists a handler that MUTATES after.stat_data in place (MagVarUpdate idiom)', async () => {
+    // Faithful to MagVarUpdate: a variable-update handler derives state by replacing/mutating the passed
+    // variables.stat_data and never calls a write (命定之诗's XP script sets 主角.升级所需经验 this way).
+    const m: any = mockHost()
+    const g = createThRuntime(m.host)
+    g.eventOn('mag_variable_update_ended', (vars: any) => {
+      // The card replaces stat_data with a normalized clone that adds the derived field.
+      vars.stat_data = { 主角: { ...(vars.stat_data.主角 || {}), 升级所需经验: 120 } }
+    })
+    m.fireVars({ 主角: { 等级: 1, 累计经验值: 0 } }) // model fold
+    await Promise.resolve()
+    // ONLY the derived leaf is written back (unchanged 等级/累计经验值 are not), via the card-write path.
+    expect(m.calls.applyVariableOps).toContainEqual([
+      { op: 'set', path: '/主角/升级所需经验', value: 120 }
+    ])
+    // The runtime cache reflects it too (getvar / EJS injection see the derived value).
+    expect(g.getVariables()).toEqual({
+      stat_data: { 主角: { 等级: 1, 累计经验值: 0, 升级所需经验: 120 } }
+    })
+  })
+
+  it('MVU write-back: an untouched fold writes nothing (no spurious card-write, no loop)', () => {
+    const m: any = mockHost()
+    const g = createThRuntime(m.host)
+    g.eventOn('mag_variable_update_ended', () => {
+      /* reads only — does not mutate after.stat_data */
+    })
+    m.fireVars({ hp: 7 }, { origin: 'model-fold' })
+    expect(m.calls.applyVariableOps).toEqual([])
+  })
+
   it('insertOrAssignVariables DEEP-merges a partial nested object, preserving siblings (命定之诗 date bug)', async () => {
     // Initial stat has a nested `date` game-state object; a partial write to date.log must NOT wipe
     // date.npcs / date.event or the other date.log fields (real TavernHelper merge, not shallow replace).
