@@ -60,13 +60,19 @@ export const opTargetTable = (sql: string): string => {
  * Each statement is classified internally to stamp `target_table` (the write scope was just
  * `validateBatch`-gated, so this is deterministic; `'*'` fallback). `source` records the write path
  * that produced the batch (`undefined` ⇒ stored NULL — kept for callers that don't attribute).
+ *
+ * `fromFloor` is the batch-wide SPAN START — the earliest floor whose content this batch summarizes
+ * (ops are keyed to the batch's LAST floor via `floor`, so a multi-floor span's start would otherwise
+ * be lost, and a refill cut that lands inside the span could bisect it). `undefined` ⇒ stored NULL =
+ * "single-floor op" (`earliestSpanStart` COALESCEs NULL → `floor`, so legacy rows never widen a cut).
  */
 export const appendOps = (
   _profileId: string,
   chatId: string,
   floor: number,
   sqls: string[],
-  source?: TableOpSource
+  source?: TableOpSource,
+  fromFloor?: number
 ): void => {
   if (!sqls.length) return
   const db = getDb()
@@ -76,10 +82,11 @@ export const appendOps = (
   let seq = (row?.maxSeq ?? -1) + 1
   const now = new Date().toISOString()
   const stmt = db.prepare(
-    'INSERT INTO table_ops (chat_id, floor, seq, sql, created_at, target_table, source) VALUES (?, ?, ?, ?, ?, ?, ?)'
+    'INSERT INTO table_ops (chat_id, floor, seq, sql, created_at, target_table, source, from_floor) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
   )
   const insertAll = db.transaction(() => {
-    for (const sql of sqls) stmt.run(chatId, floor, seq++, sql, now, opTargetTable(sql), source ?? null)
+    for (const sql of sqls)
+      stmt.run(chatId, floor, seq++, sql, now, opTargetTable(sql), source ?? null, fromFloor ?? null)
   })
   insertAll()
 }
@@ -92,14 +99,19 @@ export const appendOps = (
 export interface FloorOp {
   floor: number
   sql: string
+  /** The SPAN START of the batch that produced this op (its earliest source floor). Stamped into
+   *  `from_floor` so a later refill can widen its cutpoint down and never bisect this span. */
+  fromFloor: number
 }
 
 /**
  * Insert refill-produced ops, each at its OWN floor, continuing the per-(chat,floor) `seq` counter and
- * stamping `target_table` (classified per statement) + `source` (the refill provenance). All rows land
- * in one transaction. A no-op when `floorOps` is empty. The floor-distributed counterpart to `appendOps`
- * (the FIX for the collapse-to-one-floor bug — see the plan's §0-FIX): a later partial refill from a
- * middle cutpoint drops exactly the tail, never a whole collapsed batch.
+ * stamping `target_table` (classified per statement), `source` (the refill provenance), and `from_floor`
+ * (the batch's SPAN START, so a later refill widens its cut down and never bisects the span). All rows
+ * land in one transaction. A no-op when `floorOps` is empty. The floor-distributed counterpart to
+ * `appendOps`: attribution is per BATCH (all of a batch's statements share the batch's `span.to` floor
+ * and `span.from` start), so a later partial refill from a middle cutpoint widens onto a span boundary
+ * and drops exactly the tail, never bisecting a collapsed batch.
  */
 export const appendOpsAt = (chatId: string, floorOps: FloorOp[], source: TableOpSource): void => {
   if (!floorOps.length) return
@@ -107,17 +119,17 @@ export const appendOpsAt = (chatId: string, floorOps: FloorOp[], source: TableOp
   const now = new Date().toISOString()
   const seqStmt = db.prepare('SELECT MAX(seq) AS maxSeq FROM table_ops WHERE chat_id = ? AND floor = ?')
   const insStmt = db.prepare(
-    'INSERT INTO table_ops (chat_id, floor, seq, sql, created_at, target_table, source) VALUES (?, ?, ?, ?, ?, ?, ?)'
+    'INSERT INTO table_ops (chat_id, floor, seq, sql, created_at, target_table, source, from_floor) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
   )
   const nextSeq = new Map<number, number>()
   const insertAll = db.transaction(() => {
-    for (const { floor, sql } of floorOps) {
+    for (const { floor, sql, fromFloor } of floorOps) {
       let seq = nextSeq.get(floor)
       if (seq === undefined) {
         const row = seqStmt.get(chatId, floor) as { maxSeq: number | null } | undefined
         seq = (row?.maxSeq ?? -1) + 1
       }
-      insStmt.run(chatId, floor, seq, sql, now, opTargetTable(sql), source)
+      insStmt.run(chatId, floor, seq, sql, now, opTargetTable(sql), source, fromFloor)
       nextSeq.set(floor, seq + 1)
     }
   })
@@ -260,6 +272,30 @@ export const hasBaselineOps = (_profileId: string, chatId: string, tables: strin
     )
     .get(chatId, ...tables)
   return row !== undefined
+}
+
+/**
+ * The earliest SPAN START among the chat's ops that touch `tables` and end at/after `fromFloor`:
+ * `MIN(COALESCE(from_floor, floor))` over `floor >= fromFloor AND target_table IN tables`. Null when no
+ * such op exists. A refill uses this to WIDEN its requested cutpoint down onto a span boundary so it can
+ * never bisect a stored multi-floor batch (deleting the op but only regenerating from the mid-span cut,
+ * losing the span's earlier floors). Legacy NULL-`from_floor` rows COALESCE to their own `floor` (which
+ * is ≥ `fromFloor` here), so they never widen the cut below the requested point. A no-op ⇒ null when
+ * `tables` empty. `'*'` rows are never in `tables`, so they're excluded (they always replay anyway).
+ */
+export const earliestSpanStart = (
+  chatId: string,
+  tables: string[],
+  fromFloor: number
+): number | null => {
+  if (!tables.length) return null
+  const placeholders = tables.map(() => '?').join(', ')
+  const row = getDb()
+    .prepare(
+      `SELECT MIN(COALESCE(from_floor, floor)) AS m FROM table_ops WHERE chat_id = ? AND floor >= ? AND target_table IN (${placeholders})`
+    )
+    .get(chatId, fromFloor, ...tables) as { m: number | null } | undefined
+  return row?.m ?? null
 }
 
 // ---- pure replay helper (unit-tested) --------------------------------------------------------

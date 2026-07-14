@@ -17,6 +17,7 @@ import {
   opsWatermark,
   appendOpsAt,
   deleteOpsFor,
+  earliestSpanStart,
   hasBaselineOps,
   replayOpsInto,
   rebuildSandboxUnguarded,
@@ -134,20 +135,36 @@ export const resumeRefillFrom = (fromFloor: number, completedUntil: number): num
   Math.max(fromFloor, completedUntil + 1)
 
 /**
- * Assemble a chunk's commit plan (PURE): the recorded statements attributed to the batch's LAST floor
- * (`toFloor` = `span.to` — the per-floor attribution FIX), plus the tail cut — present ONLY on the first
- * COMMITTED chunk (`cutDone` false), which deletes the selected tables' ops at/after `fromFloor` so the
- * mid-refill state is base + regenerated-so-far (never a stale/new mix). Later chunks carry no cut.
+ * Widen a requested refill cutpoint DOWN onto a stored span boundary (PURE). `earliest` is the earliest
+ * span start among the selected tables' ops that end at/after the request (`earliestSpanStart`, or null
+ * when none). A multi-floor maintainer batch summarizes floors [span.from, span.to]; if the request
+ * lands INSIDE that span, cutting there would delete the op but only regenerate from the request, losing
+ * the span's earlier floors — so pull the cut down to the span start. `null` (no overlapping span) ⇒
+ * unchanged; otherwise `min(requested, earliest)` (already ≤ requested, but min guards a legacy row whose
+ * COALESCEd floor could sit above the request). Widening to 0 turns a baseline-blocked partial into an
+ * allowed full refill — which is why the caller widens BEFORE the baseline gate.
+ */
+export const widenedRefillFrom = (requested: number, earliest: number | null): number =>
+  earliest == null ? requested : Math.min(requested, earliest)
+
+/**
+ * Assemble a chunk's commit plan (PURE): the recorded statements attributed to the batch (keyed to its
+ * LAST floor `toFloor` = `span.to`, and carrying the batch's SPAN START `batchFrom` = `span.from` as
+ * `from_floor` provenance so a later refill can widen its cut onto the span boundary instead of bisecting
+ * it), plus the tail cut — present ONLY on the first COMMITTED chunk (`cutDone` false), which deletes the
+ * selected tables' ops at/after the run cutpoint `fromFloor` so the mid-refill state is base +
+ * regenerated-so-far (never a stale/new mix). Later chunks carry no cut.
  */
 export const planChunkCommit = (
   cutDone: boolean,
   selected: string[],
   fromFloor: number,
   recorded: string[],
-  toFloor: number
+  toFloor: number,
+  batchFrom: number
 ): { cut: { tables: string[]; fromFloor: number } | null; floorOps: FloorOp[] } => ({
   cut: cutDone ? null : { tables: selected, fromFloor },
-  floorOps: recorded.map((sql) => ({ floor: toFloor, sql }))
+  floorOps: recorded.map((sql) => ({ floor: toFloor, fromFloor: batchFrom, sql }))
 })
 
 /** How a refill run ends, decided from what happened during the batch loop. */
@@ -376,7 +393,19 @@ export const startRefill = async (
     typeof opts.fromFloor === 'number'
       ? opts.fromFloor
       : defaultRefillFrom(getProgress(profileId, chatId), selected, latest)
-  const from = Math.max(0, Math.min(requested, latest))
+  const requestedFrom = Math.max(0, Math.min(requested, latest))
+
+  // Widen the cutpoint DOWN onto a stored span boundary so it can never bisect a multi-floor maintainer
+  // batch (which would delete the op but only regenerate from the mid-span cut, losing the span's earlier
+  // floors). Done BEFORE the baseline gate + progress-row write: widening to 0 correctly turns a
+  // baseline-blocked partial into an allowed full refill.
+  const from = widenedRefillFrom(
+    requestedFrom,
+    earliestSpanStart(chatId, selected, requestedFrom)
+  )
+  if (from < requestedFrom) {
+    log('info', `refill widened cutpoint ${requestedFrom} → ${from} (chat ${chatId}) — a stored span crossed the cut`)
+  }
 
   if (refillBaselineBlocked(from, hasBaselineOps(profileId, chatId, selected))) {
     throw new Error('tables.refillNeedsFull')
@@ -584,7 +613,7 @@ const runRefill = async (
       if (!applied) break // cancelled mid-batch: leave uncommitted
 
       // COMMIT this chunk (= this batch) + PUBLISH the shadow over the live sandbox.
-      const plan = planChunkCommit(cutDone, selected, from, recorded, span.to)
+      const plan = planChunkCommit(cutDone, selected, from, recorded, span.to, span.from)
       lastKnownMax = Math.max(
         lastKnownMax,
         commitChunk(

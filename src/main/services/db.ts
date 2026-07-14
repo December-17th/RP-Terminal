@@ -466,6 +466,11 @@ export const getDb = (): Database.Database => {
   // `target_table`, so it must be created after the column exists (SCHEMA runs before this block).
   addColumnIfMissing(db, 'table_ops', 'target_table', 'target_table TEXT')
   addColumnIfMissing(db, 'table_ops', 'source', 'source TEXT')
+  // Table-refill P1: `from_floor` = the START floor of the maintainer batch that produced an op (ops are
+  // attributed to the batch's LAST floor via `floor`, so a multi-floor span's start was previously lost).
+  // A refill widens its cutpoint down to `MIN(COALESCE(from_floor, floor))` so it can never bisect a
+  // stored span. Nullable; legacy rows stay NULL = "treat as a single-floor op" (COALESCE → `floor`).
+  addColumnIfMissing(db, 'table_ops', 'from_floor', 'from_floor INTEGER')
   db.exec(
     'CREATE INDEX IF NOT EXISTS idx_table_ops_chat_table_floor ON table_ops(chat_id, target_table, floor)'
   )

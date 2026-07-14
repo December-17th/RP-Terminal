@@ -37,6 +37,8 @@ vi.mock('../../src/main/services/tableOpsService', () => mockOps)
 
 const mockProgress = vi.hoisted(() => ({
   advanceProgress: vi.fn(),
+  // P1 span-provenance: applyTableEdit reads per-table progress to compute a batch-wide from_floor.
+  getProgress: vi.fn(() => ({}) as Record<string, number>),
   // dueTables resolves each table's cadence through the real semantics (-1 → global, 0 → null/never, N).
   resolveUpdateFrequency: (freq: number, globalDefault: number): number | null =>
     freq === 0 ? null : freq >= 1 ? freq : Math.max(1, Math.floor(globalDefault) || 3)
@@ -73,6 +75,7 @@ beforeEach(() => {
   mockOps.tryBeginTableWrite.mockReset().mockReturnValue(true)
   mockOps.endTableWrite.mockReset()
   mockProgress.advanceProgress.mockReset()
+  mockProgress.getProgress.mockReset().mockReturnValue({}) // no prior progress → from_floor clamps to 0
   mockFloor.getAllFloors.mockReset().mockReturnValue([{}, {}, {}]) // 3 floors on disk → currentFloor 2
 })
 
@@ -125,7 +128,8 @@ describe('applyTableEdit', () => {
     const gen = genWith([{}, {}]) // gen.floors.length 2 → op floor 1
     const r = applyTableEdit(gen, template(['summary']), '<sql>', {})
     expect(r).toEqual({ applied: 2, changes: 3 })
-    expect(mockOps.appendOps).toHaveBeenCalledWith('p', 'c', 1, ['INSERT 1', 'INSERT 2'], 'maintain')
+    // 6th arg = the batch-wide span start: no prior progress ({}) → min(-1+1)=0 clamped to 0.
+    expect(mockOps.appendOps).toHaveBeenCalledWith('p', 'c', 1, ['INSERT 1', 'INSERT 2'], 'maintain', 0)
     expect(mockProgress.advanceProgress).not.toHaveBeenCalled() // advanceProgress not requested
     expect(mockOps.endTableWrite).toHaveBeenCalledWith('c')
   })

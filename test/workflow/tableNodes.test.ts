@@ -160,6 +160,8 @@ describe('table.apply', () => {
     opsSvc.endTableWrite.mockReset()
     floorSvc.getAllFloors.mockReset()
     progressSvc.advanceProgress.mockReset()
+    // P1 span-provenance: applyTableEdit reads per-table progress to compute a batch-wide from_floor.
+    progressSvc.getProgress.mockReset().mockReturnValue({})
   })
 
   it('blank/whitespace sql → silent no-op (no template lookup, no lock)', () => {
@@ -210,10 +212,12 @@ describe('table.apply', () => {
       meta(tableApply, 'n')
     )
     expect(r).toEqual({ outputs: { results: { applied: 2, changes: 3 }, done: true } })
+    // 6th arg = the batch-wide span start: no scope tables (empty template) → from_floor stays the op
+    // floor (2).
     expect(opsSvc.appendOps).toHaveBeenCalledWith('p1', 'c1', 2, [
       'INSERT INTO a VALUES (1)',
       'UPDATE a SET x=1'
-    ], 'maintain')
+    ], 'maintain', 2)
     expect(opsSvc.endTableWrite).toHaveBeenCalledWith('c1')
   })
 
@@ -223,7 +227,7 @@ describe('table.apply', () => {
     opsSvc.tryBeginTableWrite.mockReturnValue(true)
     sqlSvc.applySqlBatch.mockReturnValue({ applied: 1, changes: 1, statements: ['INSERT INTO a VALUES (1)'] })
     tableApply.run(ctx, { gen: { ...gen, floors: [] }, sql: 'INSERT INTO a VALUES (1)' }, meta(tableApply, 'n'))
-    expect(opsSvc.appendOps).toHaveBeenCalledWith('p1', 'c1', 0, ['INSERT INTO a VALUES (1)'], 'maintain')
+    expect(opsSvc.appendOps).toHaveBeenCalledWith('p1', 'c1', 0, ['INSERT INTO a VALUES (1)'], 'maintain', 0)
   })
 
   it('execution failure → class-B bad-sql and the lock IS released', () => {

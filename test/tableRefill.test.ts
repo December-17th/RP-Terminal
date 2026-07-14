@@ -13,6 +13,7 @@ import {
   refillBaselineBlocked,
   watermarkMoved,
   resumeRefillFrom,
+  widenedRefillFrom,
   planChunkCommit,
   refillRunOutcome,
   refillProgressAfterCut
@@ -102,23 +103,44 @@ describe('resumeRefillFrom — where a resumed refill restarts', () => {
 })
 
 describe('planChunkCommit — chunk op-set assembly + first-chunk-only cut', () => {
-  it('the first COMMITTED chunk carries the tail cut; ops attributed to span.to', () => {
-    const plan = planChunkCommit(false, ['characters', 'world'], 3, ['INS1', 'INS2'], 6)
+  it('the first COMMITTED chunk carries the tail cut; ops carry the batch span (from..to)', () => {
+    // First batch of a refill from 3: span [3,6] → ops keyed to span.to (6) carrying span.from (3).
+    const plan = planChunkCommit(false, ['characters', 'world'], 3, ['INS1', 'INS2'], 6, 3)
     expect(plan.cut).toEqual({ tables: ['characters', 'world'], fromFloor: 3 })
     expect(plan.floorOps).toEqual([
-      { floor: 6, sql: 'INS1' },
-      { floor: 6, sql: 'INS2' }
+      { floor: 6, fromFloor: 3, sql: 'INS1' },
+      { floor: 6, fromFloor: 3, sql: 'INS2' }
     ])
   })
-  it('later chunks carry NO cut', () => {
-    const plan = planChunkCommit(true, ['characters'], 3, ['INS3'], 8)
+  it('later chunks carry NO cut; ops carry their own batch span start', () => {
+    // A later batch [7,8]: no cut, ops keyed to span.to (8) carrying span.from (7).
+    const plan = planChunkCommit(true, ['characters'], 3, ['INS3'], 8, 7)
     expect(plan.cut).toBeNull()
-    expect(plan.floorOps).toEqual([{ floor: 8, sql: 'INS3' }])
+    expect(plan.floorOps).toEqual([{ floor: 8, fromFloor: 7, sql: 'INS3' }])
   })
   it('an empty batch still carries the cut on the first chunk (drops the stale tail)', () => {
-    const plan = planChunkCommit(false, ['characters'], 0, [], 2)
+    const plan = planChunkCommit(false, ['characters'], 0, [], 2, 0)
     expect(plan.cut).toEqual({ tables: ['characters'], fromFloor: 0 })
     expect(plan.floorOps).toEqual([])
+  })
+})
+
+describe('widenedRefillFrom — a cutpoint can never bisect a stored span', () => {
+  it('no overlapping span (null earliest) ⇒ the cutpoint is unchanged', () => {
+    expect(widenedRefillFrom(5, null)).toBe(5)
+  })
+  it('a span starting BELOW the cut widens the cutpoint down to that span start', () => {
+    // A maintainer batch summarized floors [2,6]; a refill requested at 5 would bisect it → widen to 2.
+    expect(widenedRefillFrom(5, 2)).toBe(2)
+  })
+  it('a legacy NULL-from_floor row (earliest COALESCEs to its own floor ≥ cut) never widens below', () => {
+    expect(widenedRefillFrom(5, 7)).toBe(5)
+    expect(widenedRefillFrom(5, 5)).toBe(5)
+  })
+  it('resume-aligned: committed ops all sit below resume-from, so earliest is null ⇒ unchanged', () => {
+    // A resume restarts at completedUntil+1; every committed refill op is keyed to a floor ≤ completedUntil
+    // < resume-from, so earliestSpanStart finds none (null) and the resume cutpoint stays batch-aligned.
+    expect(widenedRefillFrom(7, null)).toBe(7)
   })
 })
 

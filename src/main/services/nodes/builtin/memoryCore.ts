@@ -5,7 +5,7 @@ import { getChatTableTemplateId } from '../../chatService'
 import { getTableTemplateById } from '../../tableTemplateService'
 import { applySqlBatch, validateBatch, partitionBySelected, TableSqlError } from '../../tableSql'
 import { appendOps, tryBeginTableWrite, endTableWrite } from '../../tableOpsService'
-import { advanceProgress, resolveUpdateFrequency } from '../../tableProgressService'
+import { advanceProgress, getProgress, resolveUpdateFrequency } from '../../tableProgressService'
 import { readAllTables, TableRead } from '../../tableDbService'
 import { renderTableBlock } from '../../tableMaintenance'
 import { getSettings } from '../../settingsService'
@@ -273,7 +273,19 @@ export const applyTableEdit = (
       // matches execution.
       if (result.statements.length) {
         const floor = Math.max(0, gen.floors.length - 1)
-        appendOps(gen.profileId, gen.chatId, floor, result.statements, 'maintain')
+        // Batch-wide SPAN START (from_floor): this maintain batch summarizes each maintained table's
+        // floors (last-pointer + 1)..floor, so the conservative earliest source floor is the MIN over
+        // the scope tables of (progress[t] ?? -1) + 1, clamped to [0, floor]. Recording it lets a later
+        // refill widen its cut onto the span boundary instead of bisecting this batch. Conservative (may
+        // sit slightly earlier than strictly needed) is safe — it only widens a refill, never narrows.
+        const scopeTables = opts.writeScope ?? opts.advanceTables ?? template.tables.map((t) => t.sqlName)
+        const progress = getProgress(gen.profileId, gen.chatId)
+        let fromFloor = floor
+        for (const t of scopeTables) {
+          const cand = (progress[t] ?? -1) + 1
+          if (cand < fromFloor) fromFloor = cand
+        }
+        appendOps(gen.profileId, gen.chatId, floor, result.statements, 'maintain', Math.max(0, fromFloor))
       }
     }
     // Advance the shared pointer ONLY after a successful batch (advance-after-success). currentFloor is

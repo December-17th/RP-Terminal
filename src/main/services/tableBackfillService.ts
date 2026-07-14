@@ -117,15 +117,18 @@ export const cancelBackfill = (_profileId: string, chatId: string): void => {
 
 /**
  * Apply a batch's `<TableEdit>` SQL through the shared write path, attributed to the batch's LAST
- * floor. Returns true on apply (or an empty no-op), throws `TableSqlError` on a validation/exec failure
- * (so the caller can run the SQL-error corrective retry), and treats a busy write lock as a retryable
- * failure (throws a `TableSqlError` the corrective loop re-attempts).
+ * floor (`toFloor`) and carrying the batch's SPAN START (`fromFloor` = `span.from`) as `from_floor`
+ * provenance so a later refill widens its cut onto the span boundary rather than bisecting it. Returns
+ * true on apply (or an empty no-op), throws `TableSqlError` on a validation/exec failure (so the caller
+ * can run the SQL-error corrective retry), and treats a busy write lock as a retryable failure (throws a
+ * `TableSqlError` the corrective loop re-attempts).
  */
 const applyBatch = (
   profileId: string,
   chatId: string,
   template: NonNullable<ReturnType<typeof getTableTemplateById>>,
   sql: string,
+  fromFloor: number,
   toFloor: number,
   allTables: string[]
 ): void => {
@@ -139,7 +142,8 @@ const applyBatch = (
   }
   try {
     const result = applySqlBatch(profileId, chatId, template, sql)
-    if (result.statements.length) appendOps(profileId, chatId, toFloor, result.statements, 'backfill')
+    if (result.statements.length)
+      appendOps(profileId, chatId, toFloor, result.statements, 'backfill', fromFloor)
     advanceProgress(profileId, chatId, allTables, toFloor)
   } finally {
     endTableWrite(chatId)
@@ -315,6 +319,6 @@ const processBatch = async (
   // Model call + SQL-error corrective retries (shared with the refill engine). The apply step writes
   // the live sandbox + advances progress at the batch's LAST floor.
   return runMaintainerBatch(gen, messages, retries, signal, (sql) =>
-    applyBatch(profileId, chatId, template, sql, span.to, allTables)
+    applyBatch(profileId, chatId, template, sql, span.from, span.to, allTables)
   )
 }
