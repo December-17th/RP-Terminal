@@ -48,7 +48,10 @@ export const TAVERN_SHIM = `
   // Slice a transcript by a TH range: number (one), "a-b" string, or {start,end}.
   function sliceRange(all, range) {
     if (range == null) return all;
-    if (typeof range === 'number') return all.slice(range, range + 1);
+    if (typeof range === 'number') {
+      var index = range < 0 ? all.length + range : range;
+      return index >= 0 && index < all.length ? all.slice(index, index + 1) : [];
+    }
     if (typeof range === 'string') {
       var p = range.split('-'), a = parseInt(p[0], 10) || 0;
       var b = p.length > 1 ? parseInt(p[1], 10) : a;

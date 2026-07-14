@@ -5,6 +5,7 @@ import {
   buildMessageHtmlDoc,
   isInteractiveHtml
 } from '../src/renderer/src/plugin/bridgeShim'
+import { TAVERN_SHIM } from '../src/renderer/src/plugin/shims/tavern'
 
 describe('isModuleScript', () => {
   it('detects static import/export forms, not dynamic import() or strings', () => {
@@ -78,6 +79,24 @@ describe('buildScriptSrcDoc', () => {
       doc.indexOf('</script>', doc.indexOf('<script type="module">'))
     )
     expect(moduleTag).not.toContain('registerButton')
+  })
+})
+
+describe('Tavern Helper iframe shim', () => {
+  it('selects the latest message for a -1 numeric range', async () => {
+    const frame = {} as {
+      getChatMessages: (range?: number) => Promise<Array<{ message_id: number }>>
+    }
+    const rpt = {
+      chat: {
+        getMessages: () => Promise.resolve([{ message_id: 0 }, { message_id: 1 }])
+      }
+    }
+
+    Function('window', 'rpt', TAVERN_SHIM)(frame, rpt)
+
+    await expect(frame.getChatMessages(-1)).resolves.toEqual([{ message_id: 1 }])
+    await expect(frame.getChatMessages(-3)).resolves.toEqual([])
   })
 })
 
