@@ -323,14 +323,23 @@ auto-maintain by the stale expiry:
 - `beginTableWrite(chatId): token|null` — claim the slot, returning a unique token (null while another
   writer holds an unexpired claim, `WRITE_GUARD_MS = 120_000`).
 - `renewTableWrite(chatId, token): boolean` — refresh the expiry **iff** the token still owns the slot
-  (false when the 120s window lapsed and another writer reclaimed it). The refill engine calls this
-  after every batch; a `false` stops the run before the next commit.
+  (false when the 120s window lapsed and another writer reclaimed it). The refill engine calls this at
+  the top of every batch **and on a ~45s heartbeat interval** (`startGuardHeartbeat`, < `WRITE_GUARD_MS`/2)
+  for the whole run, so the lease can never lapse across a single batch's model call — which can exceed
+  120s once retries + SQL-corrective re-asks stack up. A `false` (from the heartbeat or the loop top)
+  stops the run before its next commit.
 - `endTableWrite(chatId, token?)` — release; with a `token`, release only if it still owns the slot
   (never frees a successor's claim). Without a token, the legacy unconditional release.
-- `tryBeginTableWrite(chatId): boolean` / `endTableWrite(chatId)` — thin wrappers for the four
-  SHORT-HOLD callers (`memory.maintain`/`table.apply` via `applyTableEdit`, backfill, hand-edit,
-  structural re-baseline) that complete well inside 120s. `table.apply` and `rebuildSandbox` take it;
-  a busy chat surfaces as class-B `busy` (retry next turn).
+- `isTableWriteBusy(chatId): boolean` — a non-claiming **pre-flight probe** (held && unexpired) for
+  destructive callers that must REFUSE rather than silently skip. Used by the structure migration
+  (`applyStructureOps` — a single synchronous pass, so it busy-rejects up front instead of holding a
+  lease) and the template delete/assign paths (`removeTableTemplateIdFromChats`, which scans every bound
+  chat before unbinding any). The refill heartbeat above is what lets these probes trust the busy
+  reading even while a long refill sits inside a >120s model await.
+- `tryBeginTableWrite(chatId): boolean` / `endTableWrite(chatId)` — thin wrappers for the three
+  SHORT-HOLD callers (`memory.maintain`/`table.apply` via `applyTableEdit`, backfill, hand-edit) that
+  complete well inside 120s. `table.apply` and `rebuildSandbox` take it; a busy chat surfaces as class-B
+  `busy` (retry next turn).
 
 ### Refill engine (`tableRefillService.ts` — the chunk-committed regenerate)
 
@@ -360,6 +369,10 @@ to one floor) on a temp **shadow sandbox**:
    <selected>" directive + optional `extraHint`), apply the reply to the shadow FILTERED to the
    selected tables (`partitionBySelected` drops + counts out-of-scope statements), record the executed
    statements against `span.to` (with `span.from` as their `from_floor`), and `renewTableWrite` the guard.
+   The lease is ALSO renewed on a ~45s heartbeat (`startGuardHeartbeat`) DURING each batch's model call,
+   so it never lapses across a >120s await and the pre-flight probes above can trust `isTableWriteBusy`
+   the whole time; if the heartbeat ever reports a lost slot, the run stops before that chunk's commit
+   (`tables.refillGuardLost`).
 4. **Commit + publish per chunk.** One app-DB transaction = { first COMMITTED chunk only:
    `deleteOpsFor(selected, from)`; insert the chunk's ops via `appendOpsAt(chatId, floorOps, 'refill')`;
    advance the `table_refill_progress` row }, guarded by a re-check of the watermark (`watermarkMoved` —

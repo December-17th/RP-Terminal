@@ -59,7 +59,8 @@ import { GenContext } from './generation/types'
  * "state as of fromFloor-1 for selected tables, latest for the rest", regenerated forward, and PUBLISHED
  * over the live file per committed chunk. Three correctness traps this encodes (see the plan §0b):
  *  1. never `rebuildSandbox` under the held guard (it self-claims + silently skips) — publish by file copy,
- *  2. a token-owned write guard renewed per batch (the 120s stale-expiry would silently drop the lock),
+ *  2. a token-owned write guard renewed per batch AND on a heartbeat interval (the 120s stale-expiry
+ *     would otherwise silently drop the lock across a single >120s batch model call),
  *  3. a partial refill of a structurally re-baselined table is BLOCKED (would re-duplicate) → full refill.
  *
  * Per the house testing stance, every DECISION is a PURE exported helper (unit-tested); the SQLite/fs
@@ -243,6 +244,33 @@ export const refillProgressAfterEdit = (
   editFloor >= row.fromFloor && editFloor <= row.completedUntil
     ? { completedUntil: editFloor - 1 }
     : 'keep'
+
+// ---- guard-lease heartbeat (extracted so the interval logic is fake-timer testable) -----------
+
+/**
+ * How often the refill renews its write lease. < `WRITE_GUARD_MS`/2 (= 60s) so two beats always fall
+ * inside one 120s window — the lease can never lapse across a single pending model call.
+ */
+export const REFILL_HEARTBEAT_MS = 45_000
+
+/**
+ * The guard-lease heartbeat wiring, extracted PURE over an injected `renew` fn so the interval logic is
+ * unit-testable with fake timers (the async `runRefill` body it lives in is alias-mock-untestable). Renews
+ * the token-owned write lease every `REFILL_HEARTBEAT_MS` while the run is alive so a single batch's model
+ * call — up to `retries` API re-tries + SQL-corrective re-asks, routinely > `WRITE_GUARD_MS` — can't let
+ * the lease expire mid-await (which would read `isTableWriteBusy` false and hand the slot to a probe, or
+ * let the run's own now-expired-but-identity-owned token renew fine and publish stale schema). A `renew()`
+ * returning false (the lease expired + was reclaimed) LATCHES `lost()` true so the run stops before its
+ * next commit. `stop()` clears the interval. Crash-safety is unaffected — the guard map is in-memory and
+ * dies with the process; a hung run stays visible + cancellable in the rail (cancel's finally releases).
+ */
+export const startGuardHeartbeat = (renew: () => boolean): { stop: () => void; lost: () => boolean } => {
+  let guardLost = false
+  const handle = setInterval(() => {
+    if (!renew()) guardLost = true
+  }, REFILL_HEARTBEAT_MS)
+  return { stop: () => clearInterval(handle), lost: () => guardLost }
+}
 
 // ---- refill-progress store (app DB) — untestable stance (alias-mocked better-sqlite3) ---------
 
@@ -637,6 +665,16 @@ const runRefill = async (
   // past a failed span would finalize over a permanent hole. See `refillRunOutcome`.
   let failedReason: string | null = null
 
+  // Guard-lease HEARTBEAT (§0b-2, the >120s-batch hole). The token-owned write lease must NOT lapse
+  // mid-batch: one batch's `await runMaintainerBatch` can span up to `retries` API re-tries PLUS
+  // SQL-corrective re-asks — routinely longer than WRITE_GUARD_MS (120s) — and the per-batch renew at
+  // the loop top fires BEFORE that await. Without a heartbeat the lease expires mid-await, `isTableWriteBusy`
+  // reads false, and a destructive PROBE (the structure migration's pre-check, a template delete/assign)
+  // could hand the slot away — or, if nobody reclaims it, the run's OWN expired token still renews fine
+  // afterward (`renewTableWrite` checks token IDENTITY, not expiry) and the run publishes over stale
+  // schema. `startGuardHeartbeat` renews on an interval well under half of WRITE_GUARD_MS; see its doc.
+  const heartbeat = startGuardHeartbeat(() => renewTableWrite(chatId, token))
+
   try {
     // SHADOW BUILD — instantiate the temp file + replay every op EXCEPT the selected tables' tail.
     removeShadow(profileId, chatId)
@@ -702,6 +740,12 @@ const runRefill = async (
         break
       }
       if (!applied) break // cancelled mid-batch: leave uncommitted
+
+      // Commit-ordering backstop: if the heartbeat EVER reported a lost slot during the await above
+      // (near-impossible once the heartbeat exists, but reachable under event-loop starvation or a
+      // future bug), STOP before writing — this iteration's commitChunk would otherwise run before the
+      // next loop-top renew check could catch it. Reuses the localized guard-lost key.
+      if (heartbeat.lost()) throw new Error('tables.refillGuardLost')
 
       // COMMIT this chunk (= this batch) + PUBLISH the shadow over the live sandbox.
       const plan = planChunkCommit(cutDone, selected, from, recorded, span.to, span.from)
@@ -796,6 +840,7 @@ const runRefill = async (
       completedUntil: state.completedUntil
     })
   } finally {
+    heartbeat.stop() // stop the guard heartbeat before the token release below.
     // The refill race: floors were truncated mid-run → truncateFloors' own guarded rebuild SELF-SKIPPED
     // (we held the guard), leaving the live sandbox at the last published shadow while the op log was
     // already cut. Rebuild from the (truncated) op log while we STILL hold the guard, then release.

@@ -30,7 +30,9 @@ import {
   refillRunOutcome,
   refillProgressAfterCut,
   refillProgressAfterEdit,
-  effectiveRefillFrom
+  effectiveRefillFrom,
+  startGuardHeartbeat,
+  REFILL_HEARTBEAT_MS
 } from '../src/main/services/tableRefillService'
 import {
   beginTableWrite,
@@ -240,6 +242,47 @@ describe('refillProgressAfterEdit — the resume row after an in-place floor edi
     expect(refillProgressAfterEdit(row, 9)).toBe('keep')
     // Nothing committed yet (completedUntil = -1): any edit is above the committed range ⇒ keep.
     expect(refillProgressAfterEdit({ fromFloor: 3, completedUntil: -1 }, 4)).toBe('keep')
+  })
+})
+
+describe('startGuardHeartbeat — the guard-lease heartbeat (the >120s-batch hole)', () => {
+  afterEach(() => vi.useRealTimers())
+
+  it('renews on an interval while alive so the lease never lapses across a >120s await', () => {
+    vi.useFakeTimers()
+    const renew = vi.fn().mockReturnValue(true)
+    const hb = startGuardHeartbeat(renew)
+    expect(hb.lost()).toBe(false)
+    // A single batch await spanning ~150s (past WRITE_GUARD_MS 120s): the interval fires meanwhile.
+    vi.advanceTimersByTime(150_000)
+    // At least two beats inside a 120s window (REFILL_HEARTBEAT_MS < 60s) → lease stayed owned.
+    expect(renew.mock.calls.length).toBeGreaterThanOrEqual(3)
+    expect(hb.lost()).toBe(false)
+    hb.stop()
+  })
+
+  it('latches lost() true when a renew reports the slot was reclaimed, and stays lost', () => {
+    vi.useFakeTimers()
+    const renew = vi.fn().mockReturnValueOnce(true).mockReturnValue(false)
+    const hb = startGuardHeartbeat(renew)
+    vi.advanceTimersByTime(REFILL_HEARTBEAT_MS) // beat 1 — still owned
+    expect(hb.lost()).toBe(false)
+    vi.advanceTimersByTime(REFILL_HEARTBEAT_MS) // beat 2 — reclaimed → latch
+    expect(hb.lost()).toBe(true)
+    vi.advanceTimersByTime(REFILL_HEARTBEAT_MS * 3) // stays lost regardless of later beats
+    expect(hb.lost()).toBe(true)
+    hb.stop()
+  })
+
+  it('stop() clears the interval — no further renews fire', () => {
+    vi.useFakeTimers()
+    const renew = vi.fn().mockReturnValue(true)
+    const hb = startGuardHeartbeat(renew)
+    vi.advanceTimersByTime(REFILL_HEARTBEAT_MS)
+    const after = renew.mock.calls.length
+    hb.stop()
+    vi.advanceTimersByTime(REFILL_HEARTBEAT_MS * 5)
+    expect(renew.mock.calls.length).toBe(after)
   })
 })
 
