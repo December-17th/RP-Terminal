@@ -149,8 +149,9 @@ through the host bridge as RFC-6902 JSON Patch.
   string) / `isCharacterTavernRegexesEnabled()` — ✅ (sync). Shapes map via
   [`shared/thRuntime/tavernRegex`](../src/shared/thRuntime/tavernRegex.ts).
 - `replaceTavernRegexes(regexes, option)` / `updateTavernRegexesWith(fn, option)` — ✅ **write** (full replace
-  of the scope's bucket), backed by the existing `regexService` CRUD; the chat re-render is **debounced** so a
-  card can't thrash it. (WCV transport; the inline transport is a documented no-op — see `cardBridge/host.ts`.)
+  of the scope's bucket), backed by the existing `regexService` CRUD; the active renderer's regex cache and
+  chat are reloaded together, **debounced** so a card can't thrash them. (WCV transport; the inline transport
+  is a documented no-op — see `cardBridge/host.ts`.)
 - ST destination flags are normalized as follows: `markdownOnly` means display, `promptOnly` means prompt,
   neither means both, and both checked also means both. The active filters live in
   [`regexService`](../src/main/services/regexService.ts); the TavernHelper shape bridge uses the same rules.

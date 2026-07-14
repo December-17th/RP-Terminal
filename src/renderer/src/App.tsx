@@ -52,6 +52,7 @@ import { DuelPopup } from './components/DuelPopup'
 import { AssetsPopup } from './components/AssetsPopup'
 import { MemoryManagerView } from './components/memory/MemoryManagerView'
 import { CardTrustPrompt } from './components/CardTrustPrompt'
+import { refreshWcvHostState } from './cardBridge/hostReload'
 
 export default function App(): React.ReactElement {
   const activeProfile = useProfileStore((s) => s.activeProfile)
@@ -103,11 +104,9 @@ export default function App(): React.ReactElement {
         useComposerStore.getState().requestSubmit()
       }
     })
-    // A card panel (e.g. home "start game") changed message content via saveChat → reload the floors.
+    // Card-side chat and regex writes share this signal; refresh both renderer caches.
     const unsubReload = window.api.onWcvHostReload(({ chatId }) => {
-      const st = useChatStore.getState()
-      const pid = useProfileStore.getState().activeProfile?.id
-      if (pid && chatId === st.activeChatId) st.refreshFloors(pid, chatId)
+      void refreshWcvHostState(chatId)
     })
     // A WCV card called setPlayTheme (runtime-theme-api-design §5): the renderer is the theme authority,
     // so main relayed it here. Apply against the active session, then reply with the derive/AA verdict so
