@@ -3123,6 +3123,32 @@ select {
   .rpt-mm-refill-seg.running { animation:none; opacity:1; }
 }
 
+/* ── WS6 Phase B: template ⋯ overflow menu (manager rail) + the TopStrip memory chip ──────────────
+   The menu replaces MemoryPane's button row (the shujuku-clutter anti-reference). It sits in the
+   rail's binding block — spatially inside the modal, so the absolute placement can't clip. */
+.rpt-mm-binding-row { display:flex; align-items:center; gap:6px; }
+.rpt-mm-binding-row .rpt-mm-select { flex:1; min-width:0; }
+.rpt-mm-menuwrap { position:relative; flex:0 0 auto; }
+.rpt-mm-menubtn { padding:3px 9px; font-size:13px; line-height:1; }
+.rpt-mm-menu-backdrop { position:fixed; inset:0; z-index:5; }
+.rpt-mm-menu { position:absolute; top:calc(100% + 4px); right:0; z-index:6; min-width:170px;
+  display:flex; flex-direction:column; padding:4px; border-radius:8px;
+  border:1px solid var(--rpt-border); background:var(--rpt-bg-elevated);
+  box-shadow:0 8px 24px rgba(0,0,0,.35); }
+.rpt-mm-menu-item { display:flex; align-items:center; gap:7px; font:inherit; font-size:12.5px;
+  text-align:left; padding:6px 10px; border:none; border-radius:5px; background:transparent;
+  color:var(--rpt-text-primary); cursor:pointer; }
+.rpt-mm-menu-item:hover:not(:disabled) { background:var(--rpt-bg-tertiary); }
+.rpt-mm-menu-item:disabled { color:var(--rpt-text-tertiary); cursor:default; }
+/* Destructive item: dot carries the danger color, label stays neutral (AA in all themes —
+   danger TEXT at this size fails on light/elevated; the Phase A finding). */
+.rpt-mm-menu-item.danger:disabled .rpt-mm-refill-dot { opacity:.35; }
+/* Memory chip count pill: warning tint carried by BG + border, text stays primary (AA all themes —
+   colored small text fails on light; the Phase A harness finding). */
+.rpt-memchip-count { margin-left:5px; padding:0 6px; border-radius:999px; font-size:10.5px;
+  background:var(--rpt-warning-soft); border:1px solid var(--rpt-warning);
+  color:var(--rpt-text-primary); }
+
 /* Notes tab (plot-recall WP7): freeform per-chat markdown notes with explicit Save / Reset. */
 .rpt-mm-notes { display:flex; flex-direction:column; gap:10px; }
 .rpt-mm-notes-textarea { width:100%; min-height:320px; resize:vertical; font:inherit; font-size:12.5px;

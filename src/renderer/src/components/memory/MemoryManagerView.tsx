@@ -24,6 +24,7 @@ import { type TableDef, type TableRead } from '../workspace/TableGrid'
 import type { TableStatusLike } from '../workspace/tableGridModel'
 import { TableCards, type CellChange } from './TableCards'
 import { RefillWorkbench } from './RefillWorkbench'
+import { ConfirmDialog } from '../ConfirmDialog'
 import { MemoryPreview } from '../workflow/MemoryMaintainPanel'
 import { codeColumnOf } from '../../../../shared/memory/codeColumn'
 
@@ -62,6 +63,9 @@ export function MemoryManagerView({ profileId }: { profileId: string }): React.J
   const [status, setStatus] = React.useState<Record<string, TableStatusLike>>({})
   const [activeTable, setActiveTable] = React.useState<string | null>(null)
   const [tab, setTab] = React.useState<Tab>('data')
+  // Template file-ops (WS6 Phase B): the rail's ⋯ overflow menu + the themed delete confirm.
+  const [templateMenuOpen, setTemplateMenuOpen] = React.useState(false)
+  const [confirmDeleteTpl, setConfirmDeleteTpl] = React.useState(false)
 
   // Native card WCVs paint above the DOM (ignore z-order); duck them while the popup is up.
   useWcvSuppression(open)
@@ -73,6 +77,19 @@ export function MemoryManagerView({ profileId }: { profileId: string }): React.J
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
   }, [open, close])
+  // While the template ⋯ menu is up, Escape closes the MENU, not the manager: a capture-phase
+  // listener runs before the manager's bubble-phase one and stops propagation.
+  React.useEffect(() => {
+    if (!templateMenuOpen) return
+    const onKey = (e: KeyboardEvent): void => {
+      if (e.key === 'Escape') {
+        e.stopPropagation()
+        setTemplateMenuOpen(false)
+      }
+    }
+    window.addEventListener('keydown', onKey, true)
+    return () => window.removeEventListener('keydown', onKey, true)
+  }, [templateMenuOpen])
 
   const loadTemplates = React.useCallback(async () => {
     try {
@@ -152,6 +169,39 @@ export function MemoryManagerView({ profileId }: { profileId: string }): React.J
     } catch {
       useToastStore.getState().push(t('tables.assignFailed'))
     }
+    await loadChat()
+  }
+
+  // Template file operations (WS6 Phase B) — absorbed from the deleted MemoryPane (same IPC, same
+  // error contract: parser errors come back as localizable `{ error }`, never a throw across IPC).
+  const onImport = async (): Promise<void> => {
+    const result = await api().importTableTemplateDialog(profileId)
+    if (result === null) return
+    if (result.error) {
+      const detail = result.error.startsWith('tables.') ? t(result.error) : result.error
+      useToastStore.getState().push(`${t('tables.importFailed')}: ${detail}`)
+      return
+    }
+    await loadTemplates()
+  }
+
+  const onExport = async (withData: boolean): Promise<void> => {
+    if (!assignedId || !activeChatId) return
+    try {
+      await api().exportTableTemplateDialog(profileId, assignedId, withData ? activeChatId : null)
+    } catch {
+      useToastStore.getState().push(t('tables.exportFailed'))
+    }
+  }
+
+  const onDeleteTemplate = async (): Promise<void> => {
+    if (!assignedId) return
+    try {
+      await api().deleteTableTemplate(profileId, assignedId)
+    } catch {
+      useToastStore.getState().push(t('tables.deleteFailed'))
+    }
+    await loadTemplates()
     await loadChat()
   }
 
@@ -273,19 +323,89 @@ export function MemoryManagerView({ profileId }: { profileId: string }): React.J
                   <label className="rpt-mm-binding-label" htmlFor="mm-template-select">
                     {t('tables.template')}
                   </label>
-                  <select
-                    id="mm-template-select"
-                    className="rpt-mm-select"
-                    value={assignedId ?? ''}
-                    onChange={(e) => void onAssign(e.target.value)}
-                  >
-                    <option value="">{t('tables.none')}</option>
-                    {templates.map((tpl) => (
-                      <option key={tpl.id} value={tpl.id}>
-                        {tpl.name} ({tpl.tableCount})
-                      </option>
-                    ))}
-                  </select>
+                  <div className="rpt-mm-binding-row">
+                    <select
+                      id="mm-template-select"
+                      className="rpt-mm-select"
+                      value={assignedId ?? ''}
+                      onChange={(e) => void onAssign(e.target.value)}
+                    >
+                      <option value="">{t('tables.none')}</option>
+                      {templates.map((tpl) => (
+                        <option key={tpl.id} value={tpl.id}>
+                          {tpl.name} ({tpl.tableCount})
+                        </option>
+                      ))}
+                    </select>
+                    {/* Template file operations (WS6 Phase B): the ⋯ overflow menu — the ONE home for
+                        import / export / delete now that MemoryPane (their old host) is gone. */}
+                    <div className="rpt-mm-menuwrap">
+                      <button
+                        type="button"
+                        className="rpt-duel-secondary rpt-mm-menubtn"
+                        aria-haspopup="menu"
+                        aria-expanded={templateMenuOpen}
+                        title={t('memoryManager.templateMenu')}
+                        onClick={() => setTemplateMenuOpen((s) => !s)}
+                      >
+                        ⋯
+                      </button>
+                      {templateMenuOpen && (
+                        <>
+                          <div
+                            className="rpt-mm-menu-backdrop"
+                            onClick={() => setTemplateMenuOpen(false)}
+                          />
+                          <div className="rpt-mm-menu" role="menu">
+                            <button
+                              role="menuitem"
+                              className="rpt-mm-menu-item"
+                              onClick={() => {
+                                setTemplateMenuOpen(false)
+                                void onImport()
+                              }}
+                            >
+                              {t('tables.import')}
+                            </button>
+                            <button
+                              role="menuitem"
+                              className="rpt-mm-menu-item"
+                              disabled={!assignedId}
+                              onClick={() => {
+                                setTemplateMenuOpen(false)
+                                void onExport(false)
+                              }}
+                            >
+                              {t('tables.export')}
+                            </button>
+                            <button
+                              role="menuitem"
+                              className="rpt-mm-menu-item"
+                              disabled={!assignedId}
+                              onClick={() => {
+                                setTemplateMenuOpen(false)
+                                void onExport(true)
+                              }}
+                            >
+                              {t('tables.exportWithData')}
+                            </button>
+                            <button
+                              role="menuitem"
+                              className="rpt-mm-menu-item danger"
+                              disabled={!assignedId}
+                              onClick={() => {
+                                setTemplateMenuOpen(false)
+                                setConfirmDeleteTpl(true)
+                              }}
+                            >
+                              <span className="rpt-mm-refill-dot error" aria-hidden />
+                              {t('tables.deleteTemplate')}
+                            </button>
+                          </div>
+                        </>
+                      )}
+                    </div>
+                  </div>
                 </div>
 
                 <div className="rpt-mm-sheets" role="listbox" aria-label={t('memoryManager.sheets')}>
@@ -433,6 +553,21 @@ export function MemoryManagerView({ profileId }: { profileId: string }): React.J
               )}
             </div>
           </>
+        )}
+
+        {/* Delete-template confirm (WS6 Phase B) — the app's own dialog, never window.confirm. */}
+        {confirmDeleteTpl && (
+          <ConfirmDialog
+            title={t('tables.deleteTemplate')}
+            body={t('tables.confirmDeleteTemplate')}
+            confirmLabel={t('tables.deleteTemplate')}
+            danger
+            onConfirm={() => {
+              setConfirmDeleteTpl(false)
+              void onDeleteTemplate()
+            }}
+            onCancel={() => setConfirmDeleteTpl(false)}
+          />
         )}
       </div>
     </div>

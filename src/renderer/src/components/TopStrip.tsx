@@ -1,8 +1,62 @@
+import React from 'react'
 import { useCharacterStore } from '../stores/characterStore'
 import { usePresetStore } from '../stores/presetStore'
 import { useChatStore } from '../stores/chatStore'
 import { useUiStore, type SettingsSection } from '../stores/uiStore'
 import { useT } from '../i18n'
+import { maintenanceSummary, type TableStatusLike } from './workspace/memoryPaneModel'
+
+const api = (): any => (window as unknown as { api: any }).api
+
+/**
+ * The memory entry chip (table-refill WS6 Phase B): 「记忆 · N」 in the top strip, N = the max
+ * unprocessed backlog across the active chat's tables (the maintenanceSummary roll-up). Opens the
+ * full-window Memory Manager directly — the manager was previously reachable ONLY through Settings,
+ * and this chip is also the table-data route for card `static` layouts that hide the workspace
+ * views (the Assets-popup precedent). Quiet by design: a plain strip button; the count pill is
+ * warning-TINTED (soft bg + border), its text stays --rpt-text-primary so the pairing holds AA in
+ * all three themes (colored small text would fail on light — the Phase A harness finding).
+ */
+const MemoryChip: React.FC<{ profileId: string }> = ({ profileId }) => {
+  const t = useT()
+  const activeChatId = useChatStore((s) => s.activeChatId)
+  const floors = useChatStore((s) => s.floors)
+  const [backlog, setBacklog] = React.useState(0)
+
+  React.useEffect(() => {
+    if (!activeChatId) {
+      setBacklog(0)
+      return
+    }
+    let cancelled = false
+    void (async () => {
+      try {
+        const status = ((await api().readChatTablesStatus(profileId, activeChatId)) ??
+          {}) as Record<string, TableStatusLike>
+        if (!cancelled) setBacklog(maintenanceSummary(status).maxUnprocessed)
+      } catch {
+        if (!cancelled) setBacklog(0)
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [profileId, activeChatId, floors.length])
+
+  if (!activeChatId) return null
+  return (
+    <button
+      className="tmenu-btn"
+      onClick={() => useUiStore.getState().openMemoryManager()}
+      title={
+        backlog > 0 ? t('nav.memoryTitleBacklog', { n: backlog }) : t('nav.memoryTitle')
+      }
+    >
+      {t('nav.memory')}
+      {backlog > 0 && <span className="rpt-memchip-count">{backlog}</span>}
+    </button>
+  )
+}
 
 /**
  * The play-mode top strip — a menu-bar shell that REPLACES the old tab TopNav. The tab nav was
@@ -16,6 +70,7 @@ import { useT } from '../i18n'
  */
 
 export function TopStrip({
+  profileId,
   profileName
 }: {
   profileId: string
@@ -121,6 +176,8 @@ export function TopStrip({
         >
           {t('nav.workflow')}
         </button>
+
+        <MemoryChip profileId={profileId} />
 
         <button
           className="tmenu-btn gear"

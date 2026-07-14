@@ -61,6 +61,10 @@ const en: Record<string, string> = {
   'nav.switchSession': 'Switch session',
   'nav.session': 'Session',
   'nav.workflow': 'Workflow',
+  // WS6 Phase B: the top-strip memory chip (opens the Memory Manager; count = backlog floors).
+  'nav.memory': 'Memory',
+  'nav.memoryTitle': 'Memory tables — open the Memory Manager',
+  'nav.memoryTitleBacklog': '{{n}} floor(s) awaiting maintenance — open the Memory Manager',
   'nav.workflowTitle': 'Open the workflow & agents editor',
 
   'strip.open': 'Open {{name}}…',
@@ -560,8 +564,8 @@ const en: Record<string, string> = {
   // SQL-table memory (数据库/表格) — the lean data grid (config moved to the Memory rail, WP3.8)
   'tables.heading': 'Memory Tables',
   // Header hint linking to the editor's Memory sheet (template binding / backfill live there, WP6.4b).
-  'tables.configHint': 'Memory settings live in the workflow editor.',
-  'tables.openMemory': 'Open the workflow editor',
+  'tables.configHint': 'Memory templates and refill live in the Memory Manager.',
+  'tables.openMemory': 'Open the Memory Manager',
   'tables.template': 'Table template',
   'tables.none': 'None (off)',
   'tables.import': 'Import template',
@@ -641,6 +645,7 @@ const en: Record<string, string> = {
   'memory.tab.maintenance': 'Maintenance',
   // ── Full-window Memory Manager (Memory Manager WP1) — the SQL-table memory Visualizer ─────────────
   'memoryManager.title': 'Memory Manager',
+  'memoryManager.templateMenu': 'Template actions',
   'memoryManager.expand': '⛶ Full screen',
   'memoryManager.expandTip': 'Open the full-window Memory Manager',
   'memoryManager.sheets': 'Tables',

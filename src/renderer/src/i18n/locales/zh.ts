@@ -59,6 +59,10 @@ const zh: Record<string, string> = {
   'nav.switchSession': '切换会话',
   'nav.session': '会话',
   'nav.workflow': '工作流',
+  // WS6 Phase B：顶栏记忆入口（打开记忆管理器；数字为待整理楼层数）。
+  'nav.memory': '记忆',
+  'nav.memoryTitle': '记忆表格 · 打开记忆管理器',
+  'nav.memoryTitleBacklog': '{{n}} 层待整理 · 打开记忆管理器',
   'nav.workflowTitle': '打开工作流与代理编辑器',
 
   'strip.open': '打开{{name}}…',
@@ -543,8 +547,8 @@ const zh: Record<string, string> = {
   // SQL 表格记忆（数据库/表格）—— 精简数据网格（配置已移至「记忆」栏，WP3.8）
   'tables.heading': '记忆表格',
   // 链接到编辑器「记忆」侧栏的头部提示（模板挂载 / 回填位于该处，WP6.4b）。
-  'tables.configHint': '记忆设置位于工作流编辑器中。',
-  'tables.openMemory': '打开工作流编辑器',
+  'tables.configHint': '记忆模板与重填位于记忆管理器中。',
+  'tables.openMemory': '打开记忆管理器',
   'tables.template': '表格模板',
   'tables.none': '无（关闭）',
   'tables.import': '导入表格模板',
@@ -619,6 +623,7 @@ const zh: Record<string, string> = {
   'memory.tab.maintenance': '维护',
   // ── 全屏记忆管理器（Memory Manager WP1）—— SQL 表格记忆的可视化台 ────────────────────────
   'memoryManager.title': '记忆管理器',
+  'memoryManager.templateMenu': '模板操作',
   'memoryManager.expand': '⛶ 全屏',
   'memoryManager.expandTip': '打开全屏记忆管理器',
   'memoryManager.sheets': '表格',
