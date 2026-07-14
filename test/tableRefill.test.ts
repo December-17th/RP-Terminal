@@ -6,6 +6,18 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 // is unit-tested here). Plus the token-owned write guard (pure Map logic in tableOpsService). electron +
 // better-sqlite3 are globally aliased to stubs (vitest.config), so both real modules import cleanly.
 
+// `effectiveRefillFrom` is impure (reads floors + op-log), so its ONE non-pure decision — iterating the
+// widen step to a fixed point across CHAINED spans — is exercised by partial-mocking the two seams it
+// reads (`getAllFloors`, `earliestSpanStart`) while keeping the real guard/pure exports intact.
+vi.mock('../src/main/services/floorService', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../src/main/services/floorService')>()
+  return { ...actual, getAllFloors: vi.fn() }
+})
+vi.mock('../src/main/services/tableOpsService', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../src/main/services/tableOpsService')>()
+  return { ...actual, earliestSpanStart: vi.fn() }
+})
+
 import {
   shouldReplayIntoShadow,
   partitionBySelected,
@@ -17,14 +29,17 @@ import {
   planChunkCommit,
   refillRunOutcome,
   refillProgressAfterCut,
-  refillProgressAfterEdit
+  refillProgressAfterEdit,
+  effectiveRefillFrom
 } from '../src/main/services/tableRefillService'
 import {
   beginTableWrite,
   renewTableWrite,
   endTableWrite,
-  tryBeginTableWrite
+  tryBeginTableWrite,
+  earliestSpanStart
 } from '../src/main/services/tableOpsService'
+import { getAllFloors } from '../src/main/services/floorService'
 
 describe('shouldReplayIntoShadow — the shadow rollback predicate', () => {
   const selected = new Set(['characters'])
@@ -142,6 +157,30 @@ describe('widenedRefillFrom — a cutpoint can never bisect a stored span', () =
     // A resume restarts at completedUntil+1; every committed refill op is keyed to a floor ≤ completedUntil
     // < resume-from, so earliestSpanStart finds none (null) and the resume cutpoint stays batch-aligned.
     expect(widenedRefillFrom(7, null)).toBe(7)
+  })
+})
+
+describe('effectiveRefillFrom — widening iterates to a fixed point across CHAINED spans', () => {
+  beforeEach(() => {
+    vi.mocked(getAllFloors).mockReset()
+    vi.mocked(earliestSpanStart).mockReset()
+    // 6 floors ⇒ latest 5, so a request of 3 is in-range and never clamped.
+    vi.mocked(getAllFloors).mockReturnValue(new Array(6).fill({}) as never)
+  })
+
+  it('chains the widen step 3 → 2 → 0 to the transitively-closed cutpoint', () => {
+    // op A spans [0,2] (start 0, keyed at floor 2), op B spans [2,4] (start 2, keyed at floor 4).
+    // Request 3 overlaps B ⇒ widen to 2; the cut at 2 still straddles A ⇒ widen again to 0; 0 is stable.
+    const spanByFrom: Record<number, number | null> = { 3: 2, 2: 0, 0: 0 }
+    vi.mocked(earliestSpanStart).mockImplementation((_c, _t, from) => spanByFrom[from] ?? null)
+    expect(effectiveRefillFrom('p', 'c', ['characters', 'world'], 3)).toBe(0)
+    expect(vi.mocked(earliestSpanStart)).toHaveBeenCalledTimes(3)
+  })
+
+  it('no overlapping span ⇒ one query settles it (the common case stays a single probe)', () => {
+    vi.mocked(earliestSpanStart).mockReturnValue(null)
+    expect(effectiveRefillFrom('p', 'c', ['characters'], 3)).toBe(3)
+    expect(vi.mocked(earliestSpanStart)).toHaveBeenCalledTimes(1)
   })
 })
 

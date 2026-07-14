@@ -146,6 +146,9 @@ export const resumeRefillFrom = (fromFloor: number, completedUntil: number): num
  */
 export const widenedRefillFrom = (requested: number, earliest: number | null): number =>
   earliest == null ? requested : Math.min(requested, earliest)
+// ↑ SINGLE step: widens onto the ONE span overlapping `requested`. Spans can CHAIN (a batch at [2,4]
+// whose start floor 2 is the end of a batch at [0,2]), so one step is NOT transitively closed — the
+// caller (`effectiveRefillFrom`) iterates this step to a fixed point.
 
 /**
  * Assemble a chunk's commit plan (PURE): the recorded statements attributed to the batch (keyed to its
@@ -409,7 +412,9 @@ export interface RefillOpts {
  * clamp → widen-onto-a-stored-span-boundary pipeline, resolved from the live floors / progress /
  * op log. `requestedFrom` unset ⇒ the clamped `defaultRefillFrom`; a number ⇒ clamped to
  * `[0, latest]`; either way the result is WIDENED DOWN via `earliestSpanStart` so it never bisects a
- * multi-floor maintainer batch. This is the ONE place the requested→effective mapping lives so the
+ * multi-floor maintainer batch. Widening is ITERATED to a fixed point (spans can chain, e.g. [0,2]→[2,4],
+ * and one widen step only clears the span overlapping its argument), so the result is transitively closed:
+ * no stored span among `selected` straddles it. This is the ONE place the requested→effective mapping lives so the
  * engine (`startRefill`) and the confirm-dialog preview (`chat-tables-refill-effective-from` IPC)
  * can never drift. NOT pure (reads floors/progress/ops); the pure pieces it composes
  * (`defaultRefillFrom`, `widenedRefillFrom`) are unit-tested. An empty chat (`latest < 0`) ⇒ 0.
@@ -428,7 +433,17 @@ export const effectiveRefillFrom = (
       ? requestedFrom
       : defaultRefillFrom(getProgress(profileId, chatId), selected, latest)
   const clamped = Math.max(0, Math.min(requested, latest))
-  return widenedRefillFrom(clamped, earliestSpanStart(chatId, selected, clamped))
+  // Iterate the pure widen step to a FIXED POINT. `widenedRefillFrom` only widens onto the span that
+  // overlaps its argument, but spans CHAIN (op A [0,2] at floor 2, op B [2,4] at floor 4): a request of
+  // 3 widens to 2, but the cut at 2 would delete op A while regeneration starts at 2, losing floors 0-1.
+  // Re-widening from 2 pulls the cut to 0. Each iteration strictly decreases (widen only ever lowers) and
+  // is bounded below by 0, so it terminates. Result is transitively closed: no stored span straddles it.
+  let cur = clamped
+  for (;;) {
+    const next = widenedRefillFrom(cur, earliestSpanStart(chatId, selected, cur))
+    if (next === cur) return cur
+    cur = next
+  }
 }
 
 // ---- orchestrator --------------------------------------------------------------------------
