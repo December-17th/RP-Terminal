@@ -772,6 +772,15 @@ declare global {
         }
       ) => Promise<{ ok: true } | { error: string }>
       cancelTableRefill: (profileId: string, chatId: string) => Promise<void>
+      // The effective (widened) refill cutpoint the confirm dialog previews — the engine widens a
+      // requested cut DOWN onto a stored multi-floor batch boundary, so the dialog reads this to state
+      // the true range. Mirrors the engine's `effectiveRefillFrom`; falls back to the clamped request.
+      getTableRefillEffectiveFrom: (
+        profileId: string,
+        chatId: string,
+        tables: string[],
+        fromFloor: number | null
+      ) => Promise<number>
       getTableRefillState: (
         profileId: string,
         chatId: string

@@ -399,6 +399,14 @@ const api = {
   ) => ipcRenderer.invoke('chat-tables-refill', profileId, chatId, opts),
   cancelTableRefill: (profileId: string, chatId: string) =>
     ipcRenderer.invoke('chat-tables-refill-cancel', profileId, chatId),
+  // The effective (widened) refill cutpoint for the confirm dialog — mirrors the engine's own
+  // requested→effective mapping so the dialog never understates what a run regenerates.
+  getTableRefillEffectiveFrom: (
+    profileId: string,
+    chatId: string,
+    tables: string[],
+    fromFloor: number | null
+  ) => ipcRenderer.invoke('chat-tables-refill-effective-from', profileId, chatId, tables, fromFloor),
   getTableRefillState: (profileId: string, chatId: string) =>
     ipcRenderer.invoke('chat-tables-refill-state', profileId, chatId),
   resumeTableRefill: (

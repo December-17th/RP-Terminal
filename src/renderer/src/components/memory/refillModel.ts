@@ -67,6 +67,24 @@ export const computeRange = (
   }
 }
 
+/**
+ * Rebuild a `RefillRange` at a WIDENED (lower) cutpoint the engine reported (via
+ * `getTableRefillEffectiveFrom`), keeping the batch math consistent with `computeRange`
+ * (`floors = to - from + 1`, `batches = ceil(floors / batchSize)`). `firstFill` is preserved —
+ * widening never changes whether any selected table was ever maintained. `widenedFrom` is clamped
+ * into `[0, to]` (a defensive guard; the engine's value is already ≤ the requested `from`).
+ */
+export const widenRefillRange = (
+  range: RefillRange,
+  widenedFrom: number,
+  batchSize: number
+): RefillRange => {
+  const from = Math.max(0, Math.min(widenedFrom, range.to))
+  const floors = range.to - from + 1
+  const size = Math.max(1, Math.floor(batchSize) || 1)
+  return { ...range, from, floors, batches: Math.ceil(floors / size) }
+}
+
 /** One op row as `listChatTableOps` projects it (only the fields the edit-warning check reads). */
 export interface OpLike {
   floor: number

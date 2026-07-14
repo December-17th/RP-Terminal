@@ -769,6 +769,8 @@ const en: Record<string, string> = {
     ' The selected {{k}} table(s) will have their records in this range rewritten.',
   'memoryManager.refill.editWarning':
     ' This range contains {{n}} manual edit(s); they will be lost and not regenerated.',
+  'memoryManager.refill.confirmWidened':
+    ' A saved multi-floor batch spans your start floor, so the range was widened down from floor {{requested}} to floor {{widened}} to regenerate that whole batch.',
   'memoryManager.refill.railTitle': 'Refill progress',
   'memoryManager.refill.statusRunning': 'Running',
   'memoryManager.refill.statusDone': 'Complete',

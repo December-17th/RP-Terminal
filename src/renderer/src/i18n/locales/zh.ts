@@ -738,6 +738,8 @@ const zh: Record<string, string> = {
   'memoryManager.refill.confirmTitle': '确认重填',
   'memoryManager.refill.confirmBody': '所选 {{k}} 张表在此范围内的记录将被重写。',
   'memoryManager.refill.editWarning': '范围内包含 {{n}} 条手动修改，重填后将丢失且不会重新生成。',
+  'memoryManager.refill.confirmWidened':
+    '已保存的跨层批次覆盖了起始楼层，因此范围已从第 {{requested}} 层下移至第 {{widened}} 层，以重新生成整个批次。',
   'memoryManager.refill.railTitle': '重填进度',
   'memoryManager.refill.statusRunning': '进行中',
   'memoryManager.refill.statusDone': '已完成',

@@ -18,6 +18,7 @@ import { FreqControl, type TableDef, type TableRead } from '../workspace/TableGr
 import type { TableStatusLike } from '../workspace/tableGridModel'
 import {
   computeRange,
+  widenRefillRange,
   countEditOpsInRange,
   idleRail,
   applyRailEvent,
@@ -99,7 +100,14 @@ export const RefillWorkbench: React.FC<{
   const [persisted, setPersisted] = React.useState<PersistedRefill | null>(null)
   // The rail slot's inline notice: the baseline gate (with its full-refill escape) or a start error.
   const [notice, setNotice] = React.useState<{ kind: 'baseline' | 'error'; text: string } | null>(null)
-  const [confirm, setConfirm] = React.useState<{ range: RefillRange; editCount: number } | null>(null)
+  const [confirm, setConfirm] = React.useState<{
+    range: RefillRange
+    editCount: number
+    /** The pre-widening requested floor when the engine widened the cut DOWN onto a stored span
+     *  boundary (else null — no widen, or the effective-from lookup failed). Drives the explanatory
+     *  line so the user understands why the range grew past what the picker showed. */
+    originalFrom: number | null
+  } | null>(null)
 
   const running = starting || rail.phase === 'running'
 
@@ -172,14 +180,29 @@ export const RefillWorkbench: React.FC<{
   // ── run flow: click → edit-loss check → ConfirmDialog → start ───────────────────────────────
   const onRunClick = async (): Promise<void> => {
     if (!range) return
+    // Ask the engine for the EFFECTIVE cutpoint: it widens a requested cut DOWN onto a stored multi-
+    // floor batch boundary, so the picker's range can understate what a run regenerates. On failure we
+    // fall back to the unwidened range — the engine still widens authoritatively; the dialog just loses
+    // the preview (do NOT block the run).
+    let effectiveRange = range
+    let originalFrom: number | null = null
+    try {
+      const eff = await api().getTableRefillEffectiveFrom(profileId, chatId, [...selected], range.from)
+      if (typeof eff === 'number' && eff >= 0 && eff < range.from) {
+        effectiveRange = widenRefillRange(range, eff, batchSize)
+        originalFrom = range.from
+      }
+    } catch {
+      // effective-from lookup failed — keep the unwidened range.
+    }
     let editCount = 0
     try {
       const ops = (await api().listChatTableOps(profileId, chatId)) ?? []
-      editCount = countEditOpsInRange(ops, selected, range.from)
+      editCount = countEditOpsInRange(ops, selected, effectiveRange.from)
     } catch {
       // Op-log read failed — proceed without the edit-loss count (the confirm still states the range).
     }
-    setConfirm({ range, editCount })
+    setConfirm({ range: effectiveRange, editCount, originalFrom })
   }
 
   const start = async (opts: { fromFloor: number; resume?: boolean }): Promise<void> => {
@@ -654,6 +677,12 @@ export const RefillWorkbench: React.FC<{
                   m: confirm.range.batches
                 })) +
             t('memoryManager.refill.confirmBody', { k: selected.size }) +
+            (confirm.originalFrom != null
+              ? t('memoryManager.refill.confirmWidened', {
+                  requested: confirm.originalFrom,
+                  widened: confirm.range.from
+                })
+              : '') +
             (confirm.editCount > 0
               ? t('memoryManager.refill.editWarning', { n: confirm.editCount })
               : '')

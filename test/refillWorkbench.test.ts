@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest'
 import {
   defaultRefillFrom,
   computeRange,
+  widenRefillRange,
   countEditOpsInRange,
   idleRail,
   applyRailEvent,
@@ -60,6 +61,40 @@ describe('computeRange', () => {
   it('null when there is nothing to run', () => {
     expect(computeRange(status({}), [], 10, { fullRefill: false, fromOverride: null, batchSize: 3 })).toBeNull()
     expect(computeRange(status({ a: 1 }), ['a'], -1, { fullRefill: false, fromOverride: null, batchSize: 3 })).toBeNull()
+  })
+})
+
+describe('widenRefillRange', () => {
+  // The engine widens a requested cut DOWN onto a stored batch boundary; the confirm dialog recomputes
+  // the range at that widened floor with the SAME batch math computeRange uses.
+  const base = computeRange(status({ a: 3 }), ['a'], 10, {
+    fullRefill: false,
+    fromOverride: null,
+    batchSize: 3
+  })!
+  it('recomputes floors + batches at the widened cutpoint, matching computeRange', () => {
+    // base is from 4 (floors 4–10). Widen down to floor 2.
+    const w = widenRefillRange(base, 2, 3)
+    expect(w).toEqual({ from: 2, to: 10, floors: 9, batches: 3, firstFill: false })
+    // Consistent with computing the range directly at that override floor.
+    const direct = computeRange(status({ a: 3 }), ['a'], 10, {
+      fullRefill: false,
+      fromOverride: 2,
+      batchSize: 3
+    })
+    expect(w).toEqual(direct)
+  })
+  it('preserves firstFill and clamps the widened floor into [0, to]', () => {
+    const first = computeRange(status({ a: null }), ['a'], 4, {
+      fullRefill: false,
+      fromOverride: 3,
+      batchSize: 2
+    })!
+    const w = widenRefillRange(first, -5, 2)
+    expect(w.from).toBe(0)
+    expect(w.firstFill).toBe(true)
+    expect(w.floors).toBe(5)
+    expect(w.batches).toBe(3)
   })
 })
 

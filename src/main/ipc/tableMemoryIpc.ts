@@ -19,6 +19,7 @@ import {
   getRefillState,
   resumeRefill,
   discardRefill,
+  effectiveRefillFrom,
   RefillOpts
 } from '../services/tableRefillService'
 import { buildGenContext } from '../services/generation/genContext'
@@ -156,6 +157,34 @@ export const registerTableMemoryIpc = (ipcMain: IpcMain): void => {
   ipcMain.handle('chat-tables-refill-cancel', (_, _profileId: string, chatId: string) => {
     cancelRefill(chatId)
   })
+
+  // The EFFECTIVE (widened) cutpoint a refill would use for the given tables + requested floor — the
+  // confirm dialog reads this before it opens so the range it states matches what the engine will do
+  // (the engine widens a requested cut DOWN onto a stored multi-floor batch boundary; commit 6723f87).
+  // Uses the SAME `effectiveRefillFrom` the engine's startRefill does (no drift). Best-effort: an
+  // unknown/absent template or invalid inputs fall back to the clamped requested floor (the dialog
+  // then just loses the widen preview; the engine still widens authoritatively). Returns a bare floor.
+  ipcMain.handle(
+    'chat-tables-refill-effective-from',
+    (_, profileId: string, chatId: string, tables: string[], fromFloor: number | null): number => {
+      const requested =
+        typeof fromFloor === 'number' && Number.isInteger(fromFloor) && fromFloor >= 0
+          ? fromFloor
+          : undefined
+      const templateId = chatService.getChatTableTemplateId(profileId, chatId)
+      if (!templateId) return requested ?? 0
+      const template = tableTemplateService.getTableTemplateById(profileId, templateId)
+      if (!template) return requested ?? 0
+      const allNames = template.tables.map((t) => t.sqlName)
+      const requestedTables =
+        Array.isArray(tables) && tables.length
+          ? new Set(tables.filter((n) => typeof n === 'string'))
+          : null
+      // Mirror startRefill's selection resolution so the preview scopes widening identically.
+      const selected = requestedTables ? allNames.filter((n) => requestedTables.has(n)) : allNames
+      return effectiveRefillFrom(profileId, chatId, selected, requested)
+    }
+  )
 
   // The live run state + the persisted resume row (the Maintenance-tab keep-alive + resume banner read
   // this on mount). `{ run, persisted }`; `persisted` non-null with status 'in_progress' ⇒ offer Resume.

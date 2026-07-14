@@ -402,6 +402,35 @@ export interface RefillOpts {
   batchSize?: number
 }
 
+// ---- effective cutpoint (shared engine ↔ UI) ------------------------------------------------
+
+/**
+ * The cutpoint a refill would ACTUALLY use for `(selected, requestedFrom)`: the default fill →
+ * clamp → widen-onto-a-stored-span-boundary pipeline, resolved from the live floors / progress /
+ * op log. `requestedFrom` unset ⇒ the clamped `defaultRefillFrom`; a number ⇒ clamped to
+ * `[0, latest]`; either way the result is WIDENED DOWN via `earliestSpanStart` so it never bisects a
+ * multi-floor maintainer batch. This is the ONE place the requested→effective mapping lives so the
+ * engine (`startRefill`) and the confirm-dialog preview (`chat-tables-refill-effective-from` IPC)
+ * can never drift. NOT pure (reads floors/progress/ops); the pure pieces it composes
+ * (`defaultRefillFrom`, `widenedRefillFrom`) are unit-tested. An empty chat (`latest < 0`) ⇒ 0.
+ * The baseline gate stays in `startRefill` — this computes only the cutpoint.
+ */
+export const effectiveRefillFrom = (
+  profileId: string,
+  chatId: string,
+  selected: string[],
+  requestedFrom: number | undefined
+): number => {
+  const latest = getAllFloors(profileId, chatId).length - 1
+  if (latest < 0) return 0
+  const requested =
+    typeof requestedFrom === 'number'
+      ? requestedFrom
+      : defaultRefillFrom(getProgress(profileId, chatId), selected, latest)
+  const clamped = Math.max(0, Math.min(requested, latest))
+  return widenedRefillFrom(clamped, earliestSpanStart(chatId, selected, clamped))
+}
+
 // ---- orchestrator --------------------------------------------------------------------------
 
 /**
@@ -435,19 +464,20 @@ export const startRefill = async (
   // only points a truncate/edit/swipe can interleave.
   const epoch0 = transcriptEpoch(chatId)
 
-  const requested =
-    typeof opts.fromFloor === 'number'
-      ? opts.fromFloor
-      : defaultRefillFrom(getProgress(profileId, chatId), selected, latest)
-  const requestedFrom = Math.max(0, Math.min(requested, latest))
-
-  // Widen the cutpoint DOWN onto a stored span boundary so it can never bisect a multi-floor maintainer
-  // batch (which would delete the op but only regenerate from the mid-span cut, losing the span's earlier
-  // floors). Done BEFORE the baseline gate + progress-row write: widening to 0 correctly turns a
+  // The requested→effective cutpoint (default → clamp → widen onto a stored span boundary) is ONE
+  // shared helper so the confirm-dialog preview (chat-tables-refill-effective-from) and this engine
+  // never drift. Widening happens BEFORE the baseline gate + progress-row write: widening to 0 turns a
   // baseline-blocked partial into an allowed full refill.
-  const from = widenedRefillFrom(
-    requestedFrom,
-    earliestSpanStart(chatId, selected, requestedFrom)
+  const from = effectiveRefillFrom(profileId, chatId, selected, opts.fromFloor)
+  // Diagnostic: note when the cut widened DOWN off the naive requested floor onto a span boundary.
+  const requestedFrom = Math.max(
+    0,
+    Math.min(
+      typeof opts.fromFloor === 'number'
+        ? opts.fromFloor
+        : defaultRefillFrom(getProgress(profileId, chatId), selected, latest),
+      latest
+    )
   )
   if (from < requestedFrom) {
     log('info', `refill widened cutpoint ${requestedFrom} → ${from} (chat ${chatId}) — a stored span crossed the cut`)
