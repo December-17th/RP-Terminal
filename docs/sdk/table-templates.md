@@ -264,7 +264,7 @@ back too. The DB handle is always closed.
 ### Op log + rewind (`src/main/services/tableOpsService.ts`, `db.ts` `table_ops`)
 
 Every applied batch is appended to `table_ops (chat_id, floor, seq, sql, created_at, target_table,
-source)` in the app DB, keyed by the floor it was applied on. On floor truncation
+source, from_floor)` in the app DB, keyed by the floor it was applied on. On floor truncation
 (`chatService.truncateFloors` → regenerate / swipe / delete-from), ops at/after the cut floor are
 dropped (`deleteOpsFrom`) and the sandbox is rebuilt (`rebuildSandbox`): instantiate the template
 DDL, then replay the surviving ops in `(floor, seq)` order. Replay is deterministic (single-writer)
@@ -299,6 +299,18 @@ target_table, floor)`):
   a partial refill of such a chat could still re-duplicate. New re-baselines (post-WS1) are stamped
   `'baseline'` and gated correctly.
 
+- **`from_floor`** (P1 — span provenance) — the START floor of the maintainer batch that produced an
+  op. Ops are keyed to the batch's **LAST** floor (`floor`), so a multi-floor batch's span start would
+  otherwise be lost; without it a refill whose cutpoint lands INSIDE a batch's span would delete the op
+  but only regenerate from the cutpoint, losing the span's earlier floors' contribution. Writers stamp
+  it: refill (`appendOpsAt`) records each batch's `span.from`; backfill passes `span.from`; the baseline
+  re-write passes `0`; auto-maintain passes a conservative batch-wide `max(0, min(progress[t]+1 over the
+  scope tables))`; hand edits pass their own floor. **Nullable — legacy rows stay NULL**, which the
+  refill widener COALESCEs to the op's own `floor` (= single-floor op, no widening below the request).
+  `earliestSpanStart(chatId, tables, fromFloor)` returns `MIN(COALESCE(from_floor, floor))` over the
+  selected tables' ops ending at/after `fromFloor`; the refill uses it to WIDEN its cutpoint down onto a
+  span boundary (`widenedRefillFrom`, before the baseline gate) so a cut can never bisect a stored span.
+
 `listOpsForDisplay` surfaces `source` (nullable) alongside the SQL-derived `kind`/`table` for the
 History surface.
 
@@ -326,15 +338,20 @@ auto-maintain by the stale expiry:
 (IPC `chat-tables-refill`) FIXES the duplicate-rows bug that both the append `memory.maintain (run now)`
 path (now retired) and the manual backfill exhibit on overlapping floors. Instead of APPENDING onto the
 current tables, it ROLLS the selected tables (or all) back to a cutpoint and REGENERATES the tail from
-the transcript, built as a **generalized backfill** (per-floor attribution at each batch's `span.to` via
-`appendOpsAt`, not a collapse to one floor) on a temp **shadow sandbox**:
+the transcript, built as a **generalized backfill** (per-BATCH attribution: each batch's statements keyed
+to its `span.to` via `appendOpsAt`, and carrying its `span.from` as `from_floor` provenance, not a collapse
+to one floor) on a temp **shadow sandbox**:
 
 1. **Guard + gates.** Claim the token-owned write guard; capture the op-log watermark (`opsWatermark` =
    `MAX(rowid)` for the chat). A partial refill (`from > 0`) of a table carrying a `source='baseline'`
    op (a structural re-baseline) is REJECTED with `tables.refillNeedsFull` (`refillBaselineBlocked`) —
    it would re-duplicate; a from-0 full refill is always clean. Default `from` when unset =
    `defaultRefillFrom` (min earliest-un-maintained across selected, **clamped to `latest`** so run-now
-   stays meaningful when pointers are current).
+   stays meaningful when pointers are current). The requested cutpoint is then WIDENED DOWN onto a stored
+   span boundary (`widenedRefillFrom` over `earliestSpanStart`, BEFORE the baseline gate) so it can never
+   bisect a multi-floor batch — widening to 0 correctly turns a would-be baseline-blocked partial into an
+   allowed full refill. (The pre-confirm range shown in the UI does not yet reflect this widening — a
+   known UI follow-up; the engine widens authoritatively.)
 2. **Shadow build.** `instantiateAt(refillShadowPath, template)` + `replayOpsInto` every op EXCEPT the
    selected tables' tail (`shouldReplayIntoShadow`: drops `selected ∧ floor ≥ from`; `'*'`/NULL and
    unselected always replay). The live sandbox is untouched.
@@ -342,7 +359,7 @@ the transcript, built as a **generalized backfill** (per-floor attribution at ea
    prompt the maintainer (`refillMaintainerPrompt` — the backfill framing + an "only update:
    <selected>" directive + optional `extraHint`), apply the reply to the shadow FILTERED to the
    selected tables (`partitionBySelected` drops + counts out-of-scope statements), record the executed
-   statements against `span.to`, and `renewTableWrite` the guard.
+   statements against `span.to` (with `span.from` as their `from_floor`), and `renewTableWrite` the guard.
 4. **Commit + publish per chunk.** One app-DB transaction = { first COMMITTED chunk only:
    `deleteOpsFor(selected, from)`; insert the chunk's ops via `appendOpsAt(chatId, floorOps, 'refill')`;
    advance the `table_refill_progress` row }, guarded by a re-check of the watermark (`watermarkMoved` —
