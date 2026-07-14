@@ -110,8 +110,11 @@ const cellStyle: React.CSSProperties = {
  * Always-visible per-table maintenance-cadence control (manual-pass issue 04). Shows the table's
  * `updateFrequency` at a glance and commits a single-field `{ uid, updateFrequency }` patch on change.
  * Semantics mirror the main-side resolver: `-1` = 全局 (global default N), `0` = 关 (off), `N>=1` = 每 N 轮.
+ * Exported: the Memory Manager's refill picker reuses it (ONE cadence control, no drift) — imported
+ * templates carry per-table cadence, and the manager is the only table surface a `static`-layout card
+ * can reach.
  */
-const FreqControl: React.FC<{
+export const FreqControl: React.FC<{
   freq: number
   globalFreq: number
   onChange: (freq: number) => void

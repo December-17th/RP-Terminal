@@ -11,9 +11,10 @@
 // the progress events (`kind:'refill'`) drive everything — no polling, no remount nonces.
 import React from 'react'
 import { useToastStore } from '../../stores/toastStore'
+import { useSettingsStore } from '../../stores/settingsStore'
 import { useT } from '../../i18n'
 import { ConfirmDialog } from '../ConfirmDialog'
-import type { TableRead } from '../workspace/TableGrid'
+import { FreqControl, type TableDef, type TableRead } from '../workspace/TableGrid'
 import type { TableStatusLike } from '../workspace/tableGridModel'
 import {
   computeRange,
@@ -47,13 +48,20 @@ export const RefillWorkbench: React.FC<{
   profileId: string
   chatId: string
   tables: TableRead[]
+  /** The template's table defs — the picker shows each table's maintenance CADENCE (updateFrequency,
+   *  imported templates carry per-table values) via the shared FreqControl. Empty = no controls. */
+  defs: TableDef[]
   status: Record<string, TableStatusLike>
   /** The chat's floor COUNT (latest floor index = count - 1). */
   floorsCount: number
   onReload: () => Promise<void> | void
-}> = ({ profileId, chatId, tables, status, floorsCount, onReload }) => {
+  /** Persist a `{ uid, updateFrequency }` template patch (the manager owns the IPC + error toast). */
+  onSetFrequency: (uid: string, updateFrequency: number) => Promise<void> | void
+}> = ({ profileId, chatId, tables, defs, status, floorsCount, onReload, onSetFrequency }) => {
   const t = useT()
   const latest = floorsCount - 1
+  // The app-level default cadence a `-1` ("use global") table resolves to — same source TablesView uses.
+  const globalFreq = useSettingsStore((s) => s.settings?.tables?.default_update_frequency ?? 3)
 
   // ── picker + range state ─────────────────────────────────────────────────────────────────────
   const [selected, setSelected] = React.useState<Set<string>>(() => new Set(tables.map((tb) => tb.sqlName)))
@@ -300,27 +308,42 @@ export const RefillWorkbench: React.FC<{
           </label>
           {tables.map((tb) => {
             const b = badge(tb.sqlName)
+            // The def match mirrors MemoryManagerView.findDef (sqlName first, displayName fallback).
+            const def =
+              defs.find((d) => d.sqlName === tb.sqlName) ??
+              defs.find((d) => d.displayName === tb.displayName)
             return (
-              <label key={tb.sqlName} className="rpt-mm-refill-pickrow">
-                <input
-                  type="checkbox"
-                  checked={selected.has(tb.sqlName)}
-                  disabled={running}
-                  onChange={(e) =>
-                    setSelected((prev) => {
-                      const next = new Set(prev)
-                      if (e.target.checked) next.add(tb.sqlName)
-                      else next.delete(tb.sqlName)
-                      return next
-                    })
-                  }
-                />
-                <span className="rpt-mm-refill-pickname">{tb.displayName}</span>
+              <div key={tb.sqlName} className="rpt-mm-refill-pickrow">
+                <label className="rpt-mm-refill-picklabel">
+                  <input
+                    type="checkbox"
+                    checked={selected.has(tb.sqlName)}
+                    disabled={running}
+                    onChange={(e) =>
+                      setSelected((prev) => {
+                        const next = new Set(prev)
+                        if (e.target.checked) next.add(tb.sqlName)
+                        else next.delete(tb.sqlName)
+                        return next
+                      })
+                    }
+                  />
+                  <span className="rpt-mm-refill-pickname">{tb.displayName}</span>
+                </label>
                 <span className="rpt-mm-refill-pickcount">
                   {t('memoryManager.sheetCount', { rows: tb.rows.length, cols: tb.columns.length })}
                 </span>
+                {/* Per-table maintenance cadence (imported templates carry distinct values) — the
+                    SHARED FreqControl, so this and the workspace TablesView never drift. */}
+                {def && (
+                  <FreqControl
+                    freq={def.updateFrequency}
+                    globalFreq={globalFreq}
+                    onChange={(v) => void onSetFrequency(def.uid, v)}
+                  />
+                )}
                 <span className={`rpt-mm-badge ${b.cls}`}>{b.text}</span>
-              </label>
+              </div>
             )
           })}
         </div>

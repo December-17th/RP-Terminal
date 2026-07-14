@@ -186,7 +186,14 @@ function sourceThemeFor(themeId: string | undefined, scheme: 'light' | 'dark'): 
 export function chromeTokensFor(
   themeId: string | undefined,
   scheme: 'light' | 'dark'
-): { bg: string; bgPrimary: string; text: string; border: string } {
+): {
+  bg: string
+  bgPrimary: string
+  text: string
+  border: string
+  warning: string
+  warningSoft: string
+} {
   const src = sourceThemeFor(themeId, scheme).tokens
   return {
     // `bg` is the SECONDARY surface (title strip, message box, chat panel body); `bgPrimary` is the
@@ -194,7 +201,12 @@ export function chromeTokensFor(
     bg: src['--rpt-bg-secondary'],
     bgPrimary: src['--rpt-bg-primary'],
     text: src['--rpt-text-primary'],
-    border: src['--rpt-border']
+    border: src['--rpt-border'],
+    // Chrome-level status tint (the top-strip memory chip's backlog pill): the play-root
+    // `--rpt-warning*` can be shadowed by a card palette, which would strand a card-colored pill on
+    // the app-colored strip — chrome elements must read the app-scoped pair instead.
+    warning: src['--rpt-warning'],
+    warningSoft: src['--rpt-warning-soft']
   }
 }
 
@@ -211,6 +223,8 @@ export function applyChromeScheme(themeId: string | undefined, scheme: 'light' |
   root.style.setProperty('--rpt-app-bg-primary', c.bgPrimary)
   root.style.setProperty('--rpt-app-text-primary', c.text)
   root.style.setProperty('--rpt-app-border', c.border)
+  root.style.setProperty('--rpt-app-warning', c.warning)
+  root.style.setProperty('--rpt-app-warning-soft', c.warningSoft)
 }
 
 /**

@@ -275,6 +275,28 @@ export function MemoryManagerView({ profileId }: { profileId: string }): React.J
     await loadChat()
   }
 
+  // Per-table maintenance cadence (owner pass 2026-07-14): imported templates carry distinct
+  // per-table updateFrequency values, but the manager had no control for them — the only one lived in
+  // the workspace TablesView header, unreachable from `static`-layout cards. The refill picker now
+  // hosts the shared FreqControl; this persists its `{ uid, updateFrequency }` patch (same call shape
+  // as TablesView.onSaveTemplate).
+  const saveTableFrequency = async (uid: string, updateFrequency: number): Promise<void> => {
+    if (!assignedId) return
+    try {
+      const res = await api().updateTableTemplate(profileId, assignedId, {
+        tables: [{ uid, updateFrequency }]
+      })
+      if (res && res.error) {
+        toastError(t('tables.templateSaveFailed'), res.error)
+        return
+      }
+    } catch {
+      useToastStore.getState().push(t('tables.templateSaveFailed'))
+      return
+    }
+    await loadChat()
+  }
+
   const findDef = (tbl: TableRead): TableDef | null => {
     if (!template) return null
     return (
@@ -522,9 +544,11 @@ export function MemoryManagerView({ profileId }: { profileId: string }): React.J
                       chatId={activeChatId}
                       hasTemplate={!!assignedId}
                       tables={tables}
+                      defs={template?.tables ?? []}
                       status={status}
                       floorsCount={floors.length}
                       onReload={loadChat}
+                      onSetFrequency={saveTableFrequency}
                     />
                   )}
                   {tab === 'history' && (
@@ -796,10 +820,12 @@ const MaintenanceTab: React.FC<{
   chatId: string
   hasTemplate: boolean
   tables: TableRead[]
+  defs: TableDef[]
   status: Record<string, TableStatusLike>
   floorsCount: number
   onReload: () => Promise<void> | void
-}> = ({ profileId, chatId, hasTemplate, tables, status, floorsCount, onReload }) => {
+  onSetFrequency: (uid: string, updateFrequency: number) => Promise<void> | void
+}> = ({ profileId, chatId, hasTemplate, tables, defs, status, floorsCount, onReload, onSetFrequency }) => {
   const t = useT()
   const [showPreview, setShowPreview] = React.useState(false)
 
@@ -813,9 +839,11 @@ const MaintenanceTab: React.FC<{
         profileId={profileId}
         chatId={chatId}
         tables={tables}
+        defs={defs}
         status={status}
         floorsCount={floorsCount}
         onReload={onReload}
+        onSetFrequency={onSetFrequency}
       />
 
       <section className="rpt-mm-maint-section">
