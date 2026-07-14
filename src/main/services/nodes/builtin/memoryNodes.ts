@@ -198,7 +198,10 @@ export const memoryMaintain: NodeImpl = {
     // Params + call config from the shared side-call builders (generationNodes) — stream defaults to
     // false (a maintenance reply is a side result, never the player-facing stream).
     const params = presetParamsWithTemperature(gen, cfg.temperature)
-    const callCfg = buildLlmCallConfig(cfg)
+    // Node-level retry default (owner directive 2026-07-14): a maintain pass whose config doesn't pin
+    // `retries` gets the FULL budget (5) — memory fills are side calls prone to transient empty
+    // streams, and a dropped pass silently loses whole cadence cycles. An authored value still wins.
+    const callCfg = buildLlmCallConfig({ ...cfg, retries: cfg.retries ?? 5 })
 
     const r = await runLlmCall(ctx, gen, sendMessages, params, callCfg)
     // Abort-with-empty: no reply to parse; the prompt is still traced so the empty result is diagnosable.

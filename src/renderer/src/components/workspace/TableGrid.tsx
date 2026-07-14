@@ -127,12 +127,6 @@ export const FreqControl: React.FC<{
 }> = ({ freq, globalFreq, onChange }) => {
   const t = useT()
   const mode = freq === -1 ? 'global' : freq === 0 ? 'off' : 'custom'
-  const label =
-    freq === -1
-      ? t('tables.freqGlobal') + ` (${globalFreq})`
-      : freq === 0
-        ? t('tables.freqOff')
-        : t('tables.freqEvery', { n: freq })
 
   const smallSelect: React.CSSProperties = {
     fontSize: 11,
@@ -148,9 +142,6 @@ export const FreqControl: React.FC<{
       style={{ display: 'inline-flex', gap: 4, alignItems: 'center', fontSize: 11, opacity: 0.75 }}
       title={t('tables.updateFrequency')}
     >
-      <span aria-hidden style={{ opacity: 0.8 }}>
-        {label}
-      </span>
       <select
         style={smallSelect}
         value={mode}
@@ -167,16 +158,18 @@ export const FreqControl: React.FC<{
         <option value="off">{t('tables.freqOff')}</option>
         <option value="custom">{t('tables.freqCustom')}</option>
       </select>
-      {mode === 'custom' && (
-        <input
-          type="number"
-          min={1}
-          step={1}
-          style={{ ...smallSelect, width: 56 }}
-          value={freq >= 1 ? freq : 1}
-          onChange={(e) => onChange(Math.max(1, Math.floor(Number(e.target.value) || 1)))}
-        />
-      )}
+      {/* ALWAYS rendered so rows line up (owner pass 2026-07-14 — the appear/disappear input broke
+          column alignment in the refill picker). Not custom → disabled, showing the EFFECTIVE value:
+          the global default under 全局, blank under 关 (no auto-maintenance). */}
+      <input
+        type="number"
+        min={1}
+        step={1}
+        style={{ ...smallSelect, width: 56, ...(mode !== 'custom' ? { opacity: 0.55 } : {}) }}
+        disabled={mode !== 'custom'}
+        value={mode === 'custom' ? (freq >= 1 ? freq : 1) : mode === 'global' ? globalFreq : ''}
+        onChange={(e) => onChange(Math.max(1, Math.floor(Number(e.target.value) || 1)))}
+      />
     </span>
   )
 }

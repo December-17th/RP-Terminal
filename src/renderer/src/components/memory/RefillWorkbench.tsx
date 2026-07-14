@@ -89,7 +89,8 @@ export const RefillWorkbench: React.FC<{
   const [advancedOpen, setAdvancedOpen] = React.useState(false)
   const [extraHint, setExtraHint] = React.useState('')
   const [presetId, setPresetId] = React.useState('')
-  const [retries, setRetries] = React.useState(0)
+  // Default retry budget 5 (owner directive 2026-07-14) — matches the engine's own default.
+  const [retries, setRetries] = React.useState(5)
   const [batchSize, setBatchSize] = React.useState(3)
   const [apiPresets, setApiPresets] = React.useState<ApiPresetSummary[]>([])
   // ── run rail + flow state ────────────────────────────────────────────────────────────────────

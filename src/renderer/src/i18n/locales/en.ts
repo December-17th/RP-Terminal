@@ -614,7 +614,6 @@ const en: Record<string, string> = {
   'tables.freqGlobal': 'Global',
   'tables.freqOff': 'Off',
   'tables.freqCustom': 'Custom',
-  'tables.freqEvery': 'Every {{n}} turns',
   'tables.injectionSettings': 'Injection settings',
   // WS4 main-prompt injection policy (owner pass 2026-07-14): how the table's CURRENT rows enter the
   // narrator's prompt each turn. Distinct from the lorebook-style "Injection settings" above.

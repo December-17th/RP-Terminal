@@ -411,7 +411,9 @@ export const startRefill = async (
     }
 
     const batchSize = Math.max(1, Math.floor(opts.batchSize ?? 3))
-    const retries = Math.max(0, Math.min(5, opts.retries ?? 0))
+    // Default retry budget = 5 (owner directive 2026-07-14) — refill batches are side calls where a
+    // transient failure otherwise stops the whole run (stop-and-resume semantics).
+    const retries = Math.max(0, Math.min(5, opts.retries ?? 5))
     const spans = planBatches(latest + 1, latest - from + 1, batchSize)
     entry.state.batchCount = spans.length
 

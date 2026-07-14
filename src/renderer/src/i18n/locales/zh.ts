@@ -592,7 +592,6 @@ const zh: Record<string, string> = {
   'tables.freqGlobal': '全局',
   'tables.freqOff': '关',
   'tables.freqCustom': '自定义',
-  'tables.freqEvery': '每 {{n}} 轮',
   'tables.injectionSettings': '注入设置',
   // WS4 正文注入策略（owner pass 2026-07-14）：表格当前行每回合如何进入正文提示词。
   // 与上方世界书式的「注入设置」不同。
