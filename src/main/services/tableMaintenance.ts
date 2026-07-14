@@ -1,7 +1,8 @@
-import { TableDef } from '../types/tableTemplate'
+import { TableDef, TableTemplate } from '../types/tableTemplate'
 import { TableRead } from './tableDbService'
 import { renderWholeTable } from './tableExportService'
 import { parseDdlColumnNames } from '../parsers/chatSheetsParser'
+import { resolveUpdateFrequency } from './tableProgressService'
 
 /**
  * Shared maintainer building blocks for SQL-table memory (issue 07). Both the per-turn maintenance
@@ -58,6 +59,63 @@ export const renderTableBlock = (
   const sqlCols = parseDdlColumnNames(table.ddl)
   lines.push(renderWholeTable(sqlCols.length ? sqlCols : table.headers, read.rows))
   return lines.join('\n')
+}
+
+/**
+ * Compose the whole "here are the tables + rules + current data" block for a maintainer pass: every
+ * template table rendered via `renderTableBlock` (with rules, cadence header) over its `TableRead`,
+ * joined by blank lines. Factored so the manual BACKFILL (reads the live sandbox) and the REFILL engine
+ * (reads its temp shadow sandbox) build a byte-identical block from whatever reads they pass — no
+ * copy-paste of the compose loop. A table with no matching read renders as empty (headers, no rows).
+ */
+export const composeTablesBlock = (
+  template: TableTemplate,
+  reads: TableRead[],
+  globalDefault: number
+): string => {
+  const readBySql = new Map(reads.map((r) => [r.sqlName, r]))
+  return template.tables
+    .map((t) => {
+      const read =
+        readBySql.get(t.sqlName) ??
+        ({ sqlName: t.sqlName, displayName: t.displayName, columns: t.headers, rows: [], rowids: [] } as TableRead)
+      return renderTableBlock(t, read, true, resolveUpdateFrequency(t.updateFrequency, globalDefault))
+    })
+    .join('\n\n')
+}
+
+/**
+ * The REFILL maintainer system prompt for one batch (table-refill WS2 / plan D8): reuses the backfill
+ * framing (tables block + a `{from}..{to}` batch treated as one 交互) and ADDS a write-scope directive —
+ * only the SELECTED tables (`selectedDisplay`) may be written this run; the others are shown for context
+ * only. An optional `extraHint` is folded in as a trailing instruction. Out-of-scope statements the
+ * model emits anyway are dropped by the engine's write-scope filter, but the directive keeps the model
+ * on task. `from`/`to` are 0-based floor indices.
+ */
+export const refillMaintainerPrompt = (
+  tablesBlock: string,
+  transcript: string,
+  from: number,
+  to: number,
+  selectedDisplay: string[],
+  extraHint?: string
+): string => {
+  const scope = selectedDisplay.length ? selectedDisplay.join('、') : '（无）'
+  const hint = extraHint?.trim() ? `\n\n【额外要求】${extraHint.trim()}` : ''
+  return `你是数据库表格维护AI（database-table maintenance AI）。下面是记忆表格，每个表附带其定义与可执行的操作，随后是这一批的剧情。请根据本批剧情重新填写表格。
+
+以下【本批剧情】包含第 ${from}–${to} 层的多轮对话；将其视为一次交互进行维护：纪要表只允许新增恰好一行（概括整批），其余表按各自规则维护。
+
+【本次只更新以下表】${scope}
+其它表格仅供参考，禁止对其执行任何 INSERT / UPDATE / DELETE。${hint}
+
+【表格与规则】
+${tablesBlock}
+
+【本批剧情】
+${transcript}
+
+${MAINTAINER_RULES}`
 }
 
 /**

@@ -84,11 +84,81 @@ export const appendOps = (
   insertAll()
 }
 
+/**
+ * A single op at a specific floor, for the refill engine's floor-distributed attribution. Unlike
+ * `appendOps` (one floor, a batch of statements), refill records each regenerated batch's statements
+ * against that batch's `span.to` floor, so it inserts ops spanning MANY floors in one call.
+ */
+export interface FloorOp {
+  floor: number
+  sql: string
+}
+
+/**
+ * Insert refill-produced ops, each at its OWN floor, continuing the per-(chat,floor) `seq` counter and
+ * stamping `target_table` (classified per statement) + `source` (the refill provenance). All rows land
+ * in one transaction. A no-op when `floorOps` is empty. The floor-distributed counterpart to `appendOps`
+ * (the FIX for the collapse-to-one-floor bug — see the plan's §0-FIX): a later partial refill from a
+ * middle cutpoint drops exactly the tail, never a whole collapsed batch.
+ */
+export const appendOpsAt = (chatId: string, floorOps: FloorOp[], source: TableOpSource): void => {
+  if (!floorOps.length) return
+  const db = getDb()
+  const now = new Date().toISOString()
+  const seqStmt = db.prepare('SELECT MAX(seq) AS maxSeq FROM table_ops WHERE chat_id = ? AND floor = ?')
+  const insStmt = db.prepare(
+    'INSERT INTO table_ops (chat_id, floor, seq, sql, created_at, target_table, source) VALUES (?, ?, ?, ?, ?, ?, ?)'
+  )
+  const nextSeq = new Map<number, number>()
+  const insertAll = db.transaction(() => {
+    for (const { floor, sql } of floorOps) {
+      let seq = nextSeq.get(floor)
+      if (seq === undefined) {
+        const row = seqStmt.get(chatId, floor) as { maxSeq: number | null } | undefined
+        seq = (row?.maxSeq ?? -1) + 1
+      }
+      insStmt.run(chatId, floor, seq, sql, now, opTargetTable(sql), source)
+      nextSeq.set(floor, seq + 1)
+    }
+  })
+  insertAll()
+}
+
 /** All ops for a chat, ordered by (floor, seq) — the replay order. */
 export const listOps = (_profileId: string, chatId: string): TableOp[] =>
   getDb()
     .prepare('SELECT floor, seq, sql FROM table_ops WHERE chat_id = ? ORDER BY floor, seq')
     .all(chatId) as TableOp[]
+
+/** An op carrying its stored `target_table`, for the refill shadow-replay filter (needs the attribution
+ *  to decide which ops to roll back). Ordered by (floor, seq) — the replay order. */
+export interface TableOpWithTarget extends TableOp {
+  targetTable: string | null
+}
+
+/** All ops for a chat with their `target_table`, ordered by (floor, seq) — the refill shadow builder's
+ *  input (it filters out the selected-tables tail, then replays the survivors into the shadow). */
+export const listOpsForReplay = (chatId: string): TableOpWithTarget[] =>
+  getDb()
+    .prepare(
+      'SELECT floor, seq, sql, target_table AS targetTable FROM table_ops WHERE chat_id = ? ORDER BY floor, seq'
+    )
+    .all(chatId) as TableOpWithTarget[]
+
+/**
+ * The chat's op-log high-water mark: `MAX(rowid)` over its `table_ops` rows (0 when the chat has none).
+ * Since SQLite assigns each new row a rowid above the WHOLE table's current max, a foreign INSERT for
+ * this chat (a concurrent auto-maintain that slipped past the guard) pushes this ABOVE a refill's own
+ * last-observed value — the refill's per-chunk interleave check (`watermarkMoved`) reads it to abort a
+ * commit rather than silently merge. Our own tail DELETEs only lower it, so the check treats only an
+ * INCREASE as foreign.
+ */
+export const opsWatermark = (chatId: string): number => {
+  const row = getDb()
+    .prepare('SELECT MAX(rowid) AS m FROM table_ops WHERE chat_id = ?')
+    .get(chatId) as { m: number | null } | undefined
+  return row?.m ?? 0
+}
 
 /** One op as shown in the History surface (Memory-Manager WP3). The rewind CUT target is `floor`
  *  (deleteOpsFrom drops that floor and everything after — floor is the rewind granularity). */
@@ -208,20 +278,57 @@ export const replayPlan = (ops: TableOp[], fromFloor: number): TableOp[] =>
 
 // Chats with an in-flight table write. The sandbox is single-writer; a rapid second graph write for
 // the same chat must serialize. Time-stamped with a stale expiry so a chain that dies mid-write
-// (aborted graph / crash) can't lock a chat out forever.
-const writing = new Map<string, number>()
+// (aborted graph / crash) can't lock a chat out forever. The slot is TOKEN-OWNED (table-refill §0b-2):
+// a claim returns a unique token; release/renew are checked against it so a long refill can't have its
+// slot silently handed to a concurrent auto-maintain by the 120s expiry, and a short-hold caller's
+// `finally` can't free a DIFFERENT owner's claim.
+const writing = new Map<string, { token: string; ts: number }>()
 const WRITE_GUARD_MS = 120_000
+let tokenSeq = 0
 
-/** Claim the per-chat write slot; false while another write is in flight (unexpired). */
-export const tryBeginTableWrite = (chatId: string): boolean => {
-  const started = writing.get(chatId)
-  if (started !== undefined && Date.now() - started < WRITE_GUARD_MS) return false
-  writing.set(chatId, Date.now())
+/**
+ * Claim the per-chat write slot with a TOKEN-OWNED lease. Returns a fresh token string, or null while
+ * another write holds an UNEXPIRED claim. The refill engine keeps the token, `renewTableWrite`s it after
+ * every batch (so the 120s expiry never silently frees it mid-run), and releases it by token in a
+ * `finally`. Short-hold callers use the `tryBeginTableWrite`/`endTableWrite(chatId)` wrappers below.
+ */
+export const beginTableWrite = (chatId: string): string | null => {
+  const held = writing.get(chatId)
+  if (held !== undefined && Date.now() - held.ts < WRITE_GUARD_MS) return null
+  const token = `${Date.now()}-${++tokenSeq}`
+  writing.set(chatId, { token, ts: Date.now() })
+  return token
+}
+
+/**
+ * Refresh a held claim's expiry IFF `token` still owns the slot. Returns false when the token no longer
+ * owns it (the 120s expiry lapsed and another writer claimed it) — the caller must STOP before its next
+ * commit rather than race a concurrent writer. A heartbeat the refill engine calls after every batch.
+ */
+export const renewTableWrite = (chatId: string, token: string): boolean => {
+  const held = writing.get(chatId)
+  if (!held || held.token !== token) return false
+  held.ts = Date.now()
   return true
 }
 
-/** Release the per-chat write slot (from the completing OR failing path — always via finally). */
-export const endTableWrite = (chatId: string): void => {
+/**
+ * Claim the per-chat write slot; false while another write is in flight (unexpired). Legacy wrapper over
+ * `beginTableWrite` for the four SHORT-HOLD callers (memoryCore / backfill / edit / structure) that
+ * complete well inside the 120s window and release unconditionally in a `finally`.
+ */
+export const tryBeginTableWrite = (chatId: string): boolean => beginTableWrite(chatId) !== null
+
+/**
+ * Release the per-chat write slot. With a `token`, release IFF that token still owns the slot (the
+ * refill engine's ownership-checked release — never frees a successor's claim). Without a token, the
+ * legacy unconditional release the short-hold wrappers use from their `finally`.
+ */
+export const endTableWrite = (chatId: string, token?: string): void => {
+  if (token !== undefined) {
+    const held = writing.get(chatId)
+    if (!held || held.token !== token) return
+  }
   writing.delete(chatId)
 }
 
@@ -250,13 +357,28 @@ export const rebuildSandbox = (
     return
   }
   try {
-    tableDbService.instantiate(profileId, chatId, template)
-    const ops = listOps(profileId, chatId)
-    if (!ops.length) return
-    replaySandbox(profileId, chatId, template, ops)
+    rebuildSandboxUnguarded(profileId, chatId, template)
   } finally {
     endTableWrite(chatId)
   }
+}
+
+/**
+ * Rebuild a chat's LIVE sandbox from the op log WITHOUT taking the per-chat write guard. This is the
+ * refill engine's publish-FAILURE fallback ONLY: refill already holds the guard by token, so the guarded
+ * `rebuildSandbox` would self-claim it and SILENTLY SKIP (the trap `rewindTables` documents). After a
+ * chunk's ops are committed, the op-log replay equals the shadow state, so a failed shadow file-publish
+ * can fall back to this. Never call it from an unguarded context — use `rebuildSandbox`.
+ */
+export const rebuildSandboxUnguarded = (
+  profileId: string,
+  chatId: string,
+  template: TableTemplate
+): void => {
+  tableDbService.instantiate(profileId, chatId, template)
+  const ops = listOps(profileId, chatId)
+  if (!ops.length) return
+  replaySandbox(profileId, chatId, template, ops)
 }
 
 /**
@@ -289,7 +411,20 @@ const replaySandbox = (
   template: TableTemplate,
   ops: TableOp[]
 ): void => {
-  const file = sandboxDbPath(profileId, chatId)
+  replayOpsInto(sandboxDbPath(profileId, chatId), template, ops)
+}
+
+/**
+ * Replay an ordered op list into the sandbox file at `file` (already instantiated), one by one,
+ * FAIL-OPEN: an op that no longer validates/executes (a template change, say) is logged and skipped
+ * while the rest apply — never bricking the rebuild. Shared by the rewind rebuild (live path) and the
+ * refill shadow build (temp path). A missing file is a no-op. `sql` is all the caller needs from each op.
+ */
+export const replayOpsInto = (
+  file: string,
+  template: TableTemplate,
+  ops: Array<{ sql: string; floor?: number; seq?: number }>
+): void => {
   if (!fs.existsSync(file)) return
   // Pre-validate against the (possibly changed) template registry; keep only replayable ops.
   const allowed = templateSqlNames(template)
@@ -301,7 +436,7 @@ const replaySandbox = (
         replayOneOp(db, template, op.sql)
       } catch (error) {
         const reason = error instanceof TableSqlError ? error.message : String(error)
-        log('info', `Skipped replay op (chat ${chatId}, floor ${op.floor}, seq ${op.seq}): ${reason}`)
+        log('info', `Skipped replay op (file ${file}, floor ${op.floor}, seq ${op.seq}): ${reason}`)
       }
     }
   } finally {

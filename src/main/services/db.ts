@@ -129,6 +129,21 @@ CREATE TABLE IF NOT EXISTS table_progress (
   PRIMARY KEY (chat_id, sql_name)
 );
 
+-- Resumable manual-refill progress for SQL-table memory (table-refill WS2; shujuku manualRefillProgress
+-- analogue). ONE in-flight refill per chat: selected_json = JSON string[] of the sqlNames being
+-- regenerated, from_floor = the pinned start cutpoint, completed_until = the last floor committed so far
+-- (-1 before the first chunk), status = 'in_progress'. Written at refill start, advanced per committed
+-- chunk, DELETED on clean finalize. An 'in_progress' row surviving a crash/abort ⇒ offer Resume (a new
+-- refill from completed_until + 1). FK cascade clears it on chat deletion.
+CREATE TABLE IF NOT EXISTS table_refill_progress (
+  chat_id TEXT PRIMARY KEY REFERENCES chats(id) ON DELETE CASCADE,
+  selected_json TEXT NOT NULL,
+  from_floor INTEGER NOT NULL,
+  completed_until INTEGER NOT NULL,
+  status TEXT NOT NULL,
+  updated_at TEXT
+);
+
 -- Agent-pack library (agent-packs plan WP1.4; ADR 0005/0006/0008/0009; glossary root CONTEXT.md).
 -- The user-owned INSTALL of a pack, shared by all worlds (the "library"). Fragment docs live HERE,
 -- NOT in the profile workflow dir, so listWorkflows (which only reads that dir) can never surface a

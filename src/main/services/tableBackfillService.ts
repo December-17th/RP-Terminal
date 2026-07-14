@@ -1,16 +1,16 @@
 import { getChatTableTemplateId } from './chatService'
 import { getTableTemplateById } from './tableTemplateService'
 import { getAllFloors } from './floorService'
-import { readAllTables, TableRead } from './tableDbService'
-import { renderTableBlock, backfillMaintainerPrompt } from './tableMaintenance'
+import { readAllTables } from './tableDbService'
+import { composeTablesBlock, backfillMaintainerPrompt } from './tableMaintenance'
 import { applySqlBatch, TableSqlError } from './tableSql'
 import { appendOps, tryBeginTableWrite, endTableWrite } from './tableOpsService'
-import { advanceProgress, resolveUpdateFrequency } from './tableProgressService'
+import { advanceProgress } from './tableProgressService'
 import { getSettings } from './settingsService'
 import { buildGenContext } from './generation/genContext'
-import { callModelResilient, withPreset } from './generation/resilientCall'
+import { withPreset } from './generation/resilientCall'
+import { runMaintainerBatch } from './tableMaintainerLoop'
 import { stripThinking } from '../parsers/contentParser'
-import { extractTagAll } from './nodes/builtin/parseNodes'
 import { notifyBackfillProgress } from './tableBackfillEvents'
 import { log } from './logService'
 import { ChatMessage } from './promptBuilder'
@@ -113,32 +113,6 @@ export const getBackfillState = (chatId: string): BackfillState | null =>
 /** Cancel a running backfill (between-batch effect; the batch in flight finishes/fails). */
 export const cancelBackfill = (_profileId: string, chatId: string): void => {
   runs.get(chatId)?.controller.abort()
-}
-
-/** The corrective user message fed back on an SQL error, so the model can fix its output. */
-const correctiveMessage = (error: string): ChatMessage => ({
-  role: 'user',
-  content: `你上次输出的 SQL 执行失败：${error}。请修正后重新只输出一个 <TableEdit> 块，不要包含任何解释。`
-})
-
-/**
- * Run ONE maintainer LLM pass for a batch and return the raw reply, or throw (API give-up bubbles as a
- * NodeRunFailure from callModelResilient). `messages` is the full message list; the API retry budget
- * rides `callModelResilient` (retries + a fixed 2s delay).
- */
-const callMaintainer = async (
-  gen: GenContext,
-  messages: ChatMessage[],
-  retries: number,
-  signal: AbortSignal
-): Promise<string> => {
-  const presetMax = gen.preset.parameters.max_tokens
-  const params = { ...gen.preset.parameters, max_tokens: presetMax }
-  const r = await callModelResilient(gen, messages, params, () => {}, signal, {
-    retries,
-    retry_delay_s: 2
-  })
-  return r?.raw ?? ''
 }
 
 /**
@@ -331,44 +305,16 @@ const processBatch = async (
   // Tables block over ALL template tables, with their CURRENT rows (earlier batches' writes are visible).
   // The backfill treats the WHOLE batch as one 交互 and maintains every table regardless of per-table
   // cadence — the resolved frequency here only shapes the rendered header cadence line (off → 手动维护).
-  const reads: TableRead[] = readAllTables(profileId, chatId, template)
-  const readBySql = new Map(reads.map((r) => [r.sqlName, r]))
   const globalDefault = getSettings(profileId).tables?.default_update_frequency ?? 3
-  const tablesBlock = template.tables
-    .map((t) => {
-      const read =
-        readBySql.get(t.sqlName) ??
-        ({ sqlName: t.sqlName, displayName: t.displayName, columns: t.headers, rows: [], rowids: [] } as TableRead)
-      return renderTableBlock(t, read, true, resolveUpdateFrequency(t.updateFrequency, globalDefault))
-    })
-    .join('\n\n')
+  const tablesBlock = composeTablesBlock(template, readAllTables(profileId, chatId, template), globalDefault)
 
   const transcript = buildBatchTranscript(floors, span.from, span.to)
   const system = backfillMaintainerPrompt(tablesBlock, transcript, span.from, span.to)
   const messages: ChatMessage[] = [{ role: 'system', content: system }]
 
-  // First pass (API retry rides callModelResilient).
-  let raw = await callMaintainer(gen, messages, retries, signal)
-  let sql = extractTagAll(raw, 'TableEdit').join('\n').trim()
-
-  // SQL-error corrective retries: re-call with the failed reply + the error, up to `retries` attempts.
-  let attempt = 0
-  for (;;) {
-    if (signal.aborted) return false // cancel: leave this batch unapplied (progress not advanced)
-    try {
-      applyBatch(profileId, chatId, template, sql, span.to, allTables)
-      return true
-    } catch (error) {
-      const reason = error instanceof TableSqlError ? error.message : String(error)
-      if (attempt >= retries) throw new TableSqlError(reason)
-      attempt++
-      const corrective: ChatMessage[] = [
-        ...messages,
-        { role: 'assistant', content: raw },
-        correctiveMessage(reason)
-      ]
-      raw = await callMaintainer(gen, corrective, retries, signal)
-      sql = extractTagAll(raw, 'TableEdit').join('\n').trim()
-    }
-  }
+  // Model call + SQL-error corrective retries (shared with the refill engine). The apply step writes
+  // the live sandbox + advances progress at the batch's LAST floor.
+  return runMaintainerBatch(gen, messages, retries, signal, (sql) =>
+    applyBatch(profileId, chatId, template, sql, span.to, allTables)
+  )
 }
