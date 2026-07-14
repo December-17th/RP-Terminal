@@ -3165,18 +3165,49 @@ select {
 .rpt-mm-history-undo { flex:0 0 auto; font-size:12px; }
 .rpt-mm-history-empty { display:flex; flex-direction:column; align-items:center; justify-content:center;
   gap:8px; text-align:center; padding:28px 24px; color:var(--rpt-text-secondary); }
-.rpt-mm-history-list { list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:6px; }
-.rpt-mm-history-row { display:flex; align-items:center; gap:10px; padding:8px 12px;
-  border:1px solid var(--rpt-border); border-radius:8px; background:var(--rpt-bg-primary); }
-.rpt-mm-history-meta { flex:1; min-width:0; display:flex; align-items:baseline; flex-wrap:wrap; gap:4px 10px; }
-.rpt-mm-history-floor { font-size:12.5px; font-weight:600; color:var(--rpt-text-primary); }
-.rpt-mm-history-label { font-size:12px; color:var(--rpt-text-primary); overflow:hidden;
-  text-overflow:ellipsis; white-space:nowrap; }
-.rpt-mm-history-time { font-size:11px; color:var(--rpt-text-secondary); }
-.rpt-mm-history-rewind { flex:0 0 auto; font-size:11.5px; }
+/* WS6 Phase C: the floor-grouped timeline (replaced the flat per-op list). One bordered group per
+   floor; ops beneath with kind/table + a neutral SOURCE chip — baseline (structural re-baseline)
+   gets the warning tint; all chip text stays text-secondary (AA in all themes, the dot/tint rule). */
+.rpt-mm-hist-timeline { display:flex; flex-direction:column; gap:8px; }
+.rpt-mm-hist-group { border:1px solid var(--rpt-border); border-radius:8px;
+  background:var(--rpt-bg-primary); overflow:hidden; }
+.rpt-mm-hist-ghead { display:flex; align-items:center; gap:10px; padding:7px 12px;
+  border-bottom:1px solid var(--rpt-border); }
+.rpt-mm-hist-floor { font-size:12.5px; font-weight:600; color:var(--rpt-text-primary); }
+.rpt-mm-hist-time { flex:1; min-width:0; font-size:11px; color:var(--rpt-text-secondary); }
+.rpt-mm-hist-rewind { flex:0 0 auto; font-size:11.5px; }
+.rpt-mm-hist-ops { list-style:none; margin:0; padding:4px 0; display:flex; flex-direction:column; }
+.rpt-mm-hist-op { display:flex; align-items:center; gap:10px; padding:4px 12px; }
+.rpt-mm-hist-oplabel { flex:1; min-width:0; font-size:12px; color:var(--rpt-text-primary);
+  overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.rpt-mm-hist-chip { flex:0 0 auto; font-size:10.5px; padding:1px 8px; border-radius:999px;
+  background:var(--rpt-bg-tertiary); color:var(--rpt-text-secondary); }
+.rpt-mm-hist-chip.baseline { background:var(--rpt-warning-soft); border:1px solid var(--rpt-warning);
+  color:var(--rpt-text-primary); }
 
-/* Memory Manager — Structure tab (WP4b) */
+/* Memory Manager — Structure tab (WP4b; staged batch WS6 Phase C) */
 .rpt-mm-struct { display:flex; flex-direction:column; gap:12px; padding:4px 2px 8px; overflow:auto; }
+/* The staged batch (VS Code SCM shape): pending ops, per-op undo, one Apply. */
+.rpt-mm-struct-staged { border:1px solid var(--rpt-accent); border-radius:8px;
+  background:var(--rpt-accent-soft); overflow:hidden; }
+.rpt-mm-struct-staged-head { display:flex; align-items:center; justify-content:space-between;
+  gap:10px; padding:8px 12px; font-size:12.5px; color:var(--rpt-text-primary); }
+.rpt-mm-struct-staged-actions { display:flex; gap:8px; align-items:center; }
+.rpt-mm-struct-staged-list { list-style:none; margin:0; padding:2px 0 6px; display:flex;
+  flex-direction:column; }
+.rpt-mm-struct-staged-item { display:flex; align-items:center; gap:10px; padding:3px 12px; }
+.rpt-mm-struct-staged-label { flex:1; min-width:0; font-size:12px; color:var(--rpt-text-primary);
+  overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+/* A table/column staged for drop: struck through, actions disabled. text-secondary (not tertiary):
+   the line-through carries the "pending delete" signal, the label itself stays AA-readable. */
+.rpt-mm-struct-tname.staged-drop, .rpt-mm-struct-cname.staged-drop {
+  text-decoration:line-through; color:var(--rpt-text-secondary); }
+/* Notes conflict banner (tokenized in WS6 Phase C — was inline styles with hex fallbacks). */
+.rpt-mm-notes-conflict { display:flex; flex-wrap:wrap; align-items:center; gap:10px;
+  padding:6px 10px; margin:0 0 8px; border-radius:6px; border:1px solid var(--rpt-warning);
+  background:var(--rpt-warning-soft); font-size:13px; color:var(--rpt-text-primary); }
+.rpt-mm-notes-conflict-text { flex:1 1 240px; }
+.rpt-mm-notes-conflict-actions { display:flex; gap:8px; flex:0 0 auto; }
 .rpt-mm-struct-warn { font-size:12px; line-height:1.5; padding:8px 12px; border-radius:8px;
   color:var(--rpt-text-primary); background:color-mix(in srgb, var(--rpt-warning) 14%, transparent);
   border:1px solid color-mix(in srgb, var(--rpt-warning) 45%, var(--rpt-border)); }

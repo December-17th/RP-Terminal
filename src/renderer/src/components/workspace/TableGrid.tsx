@@ -15,6 +15,7 @@
 // deviation; the pointer marker covers the "which floors are folded in" need at table granularity).
 import React from 'react'
 import { useT } from '../../i18n'
+import { ConfirmDialog } from '../ConfirmDialog'
 import { codeColumnOf } from '../../../../shared/memory/codeColumn'
 import {
   columnWidthHint,
@@ -196,6 +197,10 @@ export const TableGrid: React.FC<{
   const [editingTemplate, setEditingTemplate] = React.useState(false)
   // WP-I: the per-table row filter. Index-based so edits keep targeting the original rowids.
   const [filter, setFilter] = React.useState('')
+  // Pending destructive edit awaiting the themed confirm (WS6 Phase C — no window.confirm).
+  const [pendingEdit, setPendingEdit] = React.useState<
+    { kind: 'delete'; rowid: number } | { kind: 'reset' } | null
+  >(null)
 
   const rowIdConvention = table.columns[0] === 'row_id'
   const visibleIndices = React.useMemo(
@@ -259,20 +264,40 @@ export const TableGrid: React.FC<{
     void onEdit({ kind: 'insert', table: table.sqlName, values })
   }
 
+  // Destructive edits confirm through the app dialog (WS6 Phase C), never window.confirm.
   const onDeleteRow = (rowIndex: number): void => {
     const rowid = table.rowids[rowIndex]
     if (rowid == null) return
-    if (!confirm(t('tables.confirmDeleteRow'))) return
-    void onEdit({ kind: 'delete', table: table.sqlName, rowid })
+    setPendingEdit({ kind: 'delete', rowid })
   }
 
   const onReset = (): void => {
-    if (!confirm(t('tables.confirmReset'))) return
-    void onEdit({ kind: 'reset', table: table.sqlName })
+    setPendingEdit({ kind: 'reset' })
   }
 
   return (
     <div style={{ marginBottom: 16 }}>
+      {pendingEdit && (
+        <ConfirmDialog
+          title={pendingEdit.kind === 'delete' ? t('tables.deleteRow') : t('tables.resetTable')}
+          body={
+            pendingEdit.kind === 'delete'
+              ? t('tables.confirmDeleteRow')
+              : t('tables.confirmReset')
+          }
+          danger
+          onConfirm={() => {
+            const p = pendingEdit
+            setPendingEdit(null)
+            if (p.kind === 'delete') {
+              void onEdit({ kind: 'delete', table: table.sqlName, rowid: p.rowid })
+            } else {
+              void onEdit({ kind: 'reset', table: table.sqlName })
+            }
+          }}
+          onCancel={() => setPendingEdit(null)}
+        />
+      )}
       <div
         style={{
           display: 'flex',

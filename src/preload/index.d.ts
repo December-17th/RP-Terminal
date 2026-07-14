@@ -735,6 +735,8 @@ declare global {
           }
         | { ok: false; error: string }
       >
+      // Fan-out preview for the Structure tab's apply confirm (WS6 Phase C): bound-chat count.
+      boundChatsForTemplate: (profileId: string, templateId: string) => Promise<number>
       deleteTableTemplate: (profileId: string, id: string) => Promise<void>
       importTableTemplateDialog: (profileId: string) => Promise<{
         summary?: { id: string; name: string; tableCount: number }
@@ -844,6 +846,8 @@ declare global {
           kind: 'insert' | 'update' | 'delete' | 'other'
           table: string | null
           createdAt: string | null
+          // Write-path provenance (WS1 `table_ops.source`); null for legacy rows.
+          source: 'maintain' | 'backfill' | 'edit' | 'baseline' | 'refill' | null
         }[]
       >
       rewindChatTables: (

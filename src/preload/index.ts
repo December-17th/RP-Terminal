@@ -368,6 +368,9 @@ const api = {
   // add/rename/drop table|column ops; rejects the whole batch on any invalid op.
   applyTableStructure: (profileId: string, templateId: string, ops: unknown[]) =>
     ipcRenderer.invoke('table-structure-apply', profileId, templateId, ops),
+  // Fan-out preview for the Structure tab's apply confirm (WS6 Phase C): bound-chat count.
+  boundChatsForTemplate: (profileId: string, templateId: string) =>
+    ipcRenderer.invoke('table-template-bound-chats', profileId, templateId),
   deleteTableTemplate: (profileId: string, id: string) =>
     ipcRenderer.invoke('table-template-delete', profileId, id),
   importTableTemplateDialog: (profileId: string) =>

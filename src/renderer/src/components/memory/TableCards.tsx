@@ -8,6 +8,7 @@
 // page identically. The row_id PK column is shown only as the card's #id (never an editable field).
 import React from 'react'
 import { useT } from '../../i18n'
+import { ConfirmDialog } from '../ConfirmDialog'
 import { filterRowIndices, pageInfo, pageSlice } from '../workspace/tableGridModel'
 import type { TableRead } from '../workspace/TableGrid'
 
@@ -184,6 +185,8 @@ const RowCard: React.FC<{
   const t = useT()
   const [editing, setEditing] = React.useState(false)
   const [busy, setBusy] = React.useState(false)
+  // Row-delete confirm (WS6 Phase C — themed, not window.confirm).
+  const [confirmDelete, setConfirmDelete] = React.useState(false)
   const orig = React.useMemo(
     () => columns.map((_, c) => (values[c] == null ? '' : String(values[c]))),
     [values, columns]
@@ -251,7 +254,7 @@ const RowCard: React.FC<{
               className="rpt-duel-secondary rpt-mm-danger"
               title={t('tables.deleteRow')}
               onClick={() => {
-                if (rowid != null && confirm(t('tables.confirmDeleteRow'))) void onDelete(rowid)
+                if (rowid != null) setConfirmDelete(true)
               }}
             >
               ✕
@@ -259,6 +262,19 @@ const RowCard: React.FC<{
           </span>
         )}
       </div>
+      {/* Row-delete confirm (WS6 Phase C) — the app's own dialog, never window.confirm. */}
+      {confirmDelete && (
+        <ConfirmDialog
+          title={t('tables.deleteRow')}
+          body={t('tables.confirmDeleteRow')}
+          danger
+          onConfirm={() => {
+            setConfirmDelete(false)
+            if (rowid != null) void onDelete(rowid)
+          }}
+          onCancel={() => setConfirmDelete(false)}
+        />
+      )}
       <dl className="rpt-mm-card-fields">
         {columns.map((_, c) => {
           if (c === rowIdIdx) return null

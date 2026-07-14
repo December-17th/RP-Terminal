@@ -671,10 +671,18 @@ const en: Record<string, string> = {
   'memoryManager.structure.addColumn': 'Add column',
   'memoryManager.structure.addColumnPlaceholder': 'New column name',
   'memoryManager.structure.noColumns': 'No editable columns.',
-  'memoryManager.structure.confirmDropTable':
-    'Delete table "{{name}}" and all its data from the template and every bound chat? This cannot be undone.',
-  'memoryManager.structure.confirmDropColumn':
-    'Delete column "{{name}}" and its data from every bound chat? This cannot be undone.',
+  'memoryManager.structure.stagedTitle': 'Staged changes ({{n}})',
+  'memoryManager.structure.apply': 'Apply migration',
+  'memoryManager.structure.applyTitle': 'Apply structure migration',
+  'memoryManager.structure.applyBody':
+    'Apply {{ops}} structural change(s) and migrate {{chats}} bound session(s)? Migration rebuilds the table history of every bound session as a baseline — afterwards the affected tables only support a FULL refill. This cannot be undone.',
+  'memoryManager.structure.undoOp': 'Undo',
+  'memoryManager.structure.undoAll': 'Undo all',
+  'memoryManager.structure.staged.renameTable': 'Rename table {{from}} → {{to}}',
+  'memoryManager.structure.staged.dropTable': 'Delete table {{name}}',
+  'memoryManager.structure.staged.addColumn': 'Add column {{table}}.{{name}}',
+  'memoryManager.structure.staged.renameColumn': 'Rename column {{table}}.{{from}} → {{to}}',
+  'memoryManager.structure.staged.dropColumn': 'Delete column {{table}}.{{name}}',
   'memoryManager.structure.applied':
     'Applied: {{tables}} table change(s), {{cols}} column change(s), {{chats}} chat(s) migrated.',
   'memoryManager.structure.failed': 'Structure change failed',
@@ -768,10 +776,15 @@ const en: Record<string, string> = {
   'memoryManager.history.kind.delete': 'Removed',
   'memoryManager.history.kind.other': 'Changed',
   'memoryManager.history.empty': 'No table edits yet.',
-  'memoryManager.history.confirmUndo':
-    'Undo the most recent table edit? This drops it and any edits after it, and cannot be undone.',
+  'memoryManager.history.confirmTitle': 'Rewind tables',
   'memoryManager.history.confirmRewind':
-    'Roll the tables back to before floor {{n}}? This drops every table edit from that point onward and cannot be undone.',
+    'Roll the tables back to before floor {{n}}? This cannot be undone.',
+  'memoryManager.history.consequence': ' This drops {{n}} edit(s) across {{m}} floor(s).',
+  'memoryManager.history.source.maintain': 'auto',
+  'memoryManager.history.source.edit': 'manual edit',
+  'memoryManager.history.source.backfill': 'backfill',
+  'memoryManager.history.source.refill': 'refill',
+  'memoryManager.history.source.baseline': 'baseline',
   'memoryManager.history.rewound': 'Rolled back {{n}} table edit(s).',
   'memoryManager.history.rewindFailed': 'Rewind failed',
   'tables.backfill': 'Backfill',

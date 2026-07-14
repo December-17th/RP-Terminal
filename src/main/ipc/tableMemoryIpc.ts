@@ -292,6 +292,16 @@ export const registerTableMemoryIpc = (ipcMain: IpcMain): void => {
     ) => applyStructureOps(profileId, templateId, ops)
   )
 
+  // How many chats are bound to a template — the Structure tab's apply-confirm fan-out preview
+  // ("migrates N bound sessions", WS6 Phase C). Read-only; best-effort 0 on failure.
+  ipcMain.handle('table-template-bound-chats', (_, profileId: string, templateId: string) => {
+    try {
+      return chatService.listChatIdsForTableTemplate(profileId, templateId).length
+    } catch {
+      return 0
+    }
+  })
+
   // Manual backfill (issue 07). Start validates the scope/batch inputs (X ≥ 1 or all, Y ≥ 1, retries
   // 0–5) and returns `{ ok } | { error }` with the error as a localized `tables.*` key (the established
   // contract); the actual run is async and streams progress via `table-backfill-progress`.
