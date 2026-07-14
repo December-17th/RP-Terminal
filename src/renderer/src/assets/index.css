@@ -3164,6 +3164,10 @@ select {
   background:var(--rpt-app-warning-soft); border:1px solid var(--rpt-app-warning);
   color:var(--rpt-app-text-primary); }
 
+/* Data tab: the active table's template-config disclosure (shared TemplateEditPanel host). */
+.rpt-mm-data-config { display:flex; flex-direction:column; gap:8px; margin-bottom:10px; }
+.rpt-mm-data-config > button { align-self:flex-start; font-size:11px; padding:2px 8px; }
+
 /* Notes tab (plot-recall WP7): freeform per-chat markdown notes with explicit Save / Reset. */
 .rpt-mm-notes { display:flex; flex-direction:column; gap:10px; }
 .rpt-mm-notes-textarea { width:100%; min-height:320px; resize:vertical; font:inherit; font-size:12.5px;

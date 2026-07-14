@@ -65,13 +65,21 @@ export const RefillWorkbench: React.FC<{
   // Editable here too (owner pass 2026-07-14): the only other control is buried in App Settings,
   // nowhere near the per-table cadences that reference it. Same optimistic updateSettings path as
   // SettingsPanel — the FreqControl 「全局 (N)」 labels re-render live off the store.
-  const setGlobalFreq = (n: number): void => {
+  const patchTablesSettings = (
+    patch: Partial<{ default_update_frequency: number; injection_max_rows: number }>
+  ): void => {
     const store = useSettingsStore.getState()
     if (!store.settings) return
     void store.updateSettings(profileId, {
-      tables: { ...store.settings.tables, default_update_frequency: n }
+      // The explicit default only matters for a pre-`tables` profile (the spread then provides nothing).
+      tables: { default_update_frequency: 3, ...store.settings.tables, ...patch }
     })
   }
+  const setGlobalFreq = (n: number): void => patchTablesSettings({ default_update_frequency: n })
+  // The global recent-N injection cap (WS4) — same burial as the cadence: main-side only until the
+  // owner pass. Editable here and in App Settings (one setting, two views).
+  const injectionCap = useSettingsStore((s) => s.settings?.tables?.injection_max_rows ?? 20)
+  const setInjectionCap = (n: number): void => patchTablesSettings({ injection_max_rows: n })
 
   // ── picker + range state ─────────────────────────────────────────────────────────────────────
   const [selected, setSelected] = React.useState<Set<string>>(() => new Set(tables.map((tb) => tb.sqlName)))
@@ -317,7 +325,7 @@ export const RefillWorkbench: React.FC<{
               />
               <span>{t('memoryManager.refill.tablesAll')}</span>
             </label>
-            {/* The GLOBAL default cadence 「全局」 tables resolve to — editable where it's referenced. */}
+            {/* The GLOBAL defaults tables resolve to — editable where they're referenced. */}
             <span className="rpt-mm-refill-globalfreq" title={t('memoryManager.refill.globalFreqTip')}>
               {t('memoryManager.refill.globalFreq')}
               <input
@@ -328,6 +336,22 @@ export const RefillWorkbench: React.FC<{
                 aria-label={t('memoryManager.refill.globalFreqTip')}
                 onChange={(e) =>
                   setGlobalFreq(Math.max(1, Math.floor(Number(e.target.value) || 3)))
+                }
+              />
+            </span>
+            <span
+              className="rpt-mm-refill-globalfreq"
+              title={t('memoryManager.refill.injectionCapTip')}
+            >
+              {t('memoryManager.refill.injectionCap')}
+              <input
+                type="number"
+                min={1}
+                step={1}
+                value={injectionCap}
+                aria-label={t('memoryManager.refill.injectionCapTip')}
+                onChange={(e) =>
+                  setInjectionCap(Math.max(1, Math.floor(Number(e.target.value) || 20)))
                 }
               />
             </span>

@@ -45,6 +45,9 @@ export interface Settings {
    *  (defaults to 3 at the read site). */
   tables?: {
     default_update_frequency: number
+    /** WS4 main-prompt injection: rows kept per table under the 'recent' policy when the table sets
+     *  no per-table override. Optional — defaults to 20 at the read site (mirrors main). */
+    injection_max_rows?: number
   }
   templates: {
     enabled: boolean

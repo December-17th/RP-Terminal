@@ -20,7 +20,12 @@ import { useUiStore } from '../../stores/uiStore'
 import { useToastStore } from '../../stores/toastStore'
 import { useT } from '../../i18n'
 import { useWcvSuppression } from '../useWcvSuppression'
-import { type TableDef, type TableRead } from '../workspace/TableGrid'
+import {
+  TemplateEditPanel,
+  type TableDef,
+  type TableDefPatch,
+  type TableRead
+} from '../workspace/TableGrid'
 import type { TableStatusLike } from '../workspace/tableGridModel'
 import { TableCards, type CellChange } from './TableCards'
 import { RefillWorkbench } from './RefillWorkbench'
@@ -68,6 +73,8 @@ export function MemoryManagerView({ profileId }: { profileId: string }): React.J
   const [confirmDeleteTpl, setConfirmDeleteTpl] = React.useState(false)
   // Template (un)assignment confirm (WS6 Phase C — the last window.confirm in the rail is gone).
   const [pendingAssign, setPendingAssign] = React.useState<{ id: string | null } | null>(null)
+  // Data tab: the active table's template-config disclosure (shared TemplateEditPanel).
+  const [configOpen, setConfigOpen] = React.useState(false)
 
   // Native card WCVs paint above the DOM (ignore z-order); duck them while the popup is up.
   useWcvSuppression(open)
@@ -275,17 +282,15 @@ export function MemoryManagerView({ profileId }: { profileId: string }): React.J
     await loadChat()
   }
 
-  // Per-table maintenance cadence (owner pass 2026-07-14): imported templates carry distinct
-  // per-table updateFrequency values, but the manager had no control for them — the only one lived in
-  // the workspace TablesView header, unreachable from `static`-layout cards. The refill picker now
-  // hosts the shared FreqControl; this persists its `{ uid, updateFrequency }` patch (same call shape
-  // as TablesView.onSaveTemplate).
-  const saveTableFrequency = async (uid: string, updateFrequency: number): Promise<void> => {
+  // Per-table template config (owner pass 2026-07-14): imported templates carry per-table cadence,
+  // prompts, and injection settings, but every control lived in the workspace TablesView —
+  // unreachable from `static`-layout cards and invisible here. The refill picker hosts the shared
+  // FreqControl and the Data tab hosts the shared TemplateEditPanel; both persist through this ONE
+  // patch path (same call shape as TablesView.onSaveTemplate).
+  const saveTemplatePatch = async (patch: TableDefPatch): Promise<void> => {
     if (!assignedId) return
     try {
-      const res = await api().updateTableTemplate(profileId, assignedId, {
-        tables: [{ uid, updateFrequency }]
-      })
+      const res = await api().updateTableTemplate(profileId, assignedId, { tables: [patch] })
       if (res && res.error) {
         toastError(t('tables.templateSaveFailed'), res.error)
         return
@@ -513,18 +518,43 @@ export function MemoryManagerView({ profileId }: { profileId: string }): React.J
                     ) : !active ? (
                       <p className="rpt-mm-rail-empty">{t('tables.emptyTemplate')}</p>
                     ) : (
-                      <TableCards
-                        key={active.sqlName}
-                        table={active}
-                        headers={activeDef?.headers}
-                        codeColumn={codeColumn ?? undefined}
-                        pageSize={10}
-                        onSaveRow={(rowid, changes) => saveRowCells(active.sqlName, rowid, changes)}
-                        onInsertRow={(values) => insertRow(active.sqlName, values)}
-                        onDeleteRow={(rowid) =>
-                          applyEdit({ kind: 'delete', table: active.sqlName, rowid })
-                        }
-                      />
+                      <>
+                        {/* Per-table template config (prompts + injection) — the SHARED
+                            TemplateEditPanel, previously reachable only via the workspace Tables
+                            view (owner pass 2026-07-14). */}
+                        {activeDef && (
+                          <div className="rpt-mm-data-config">
+                            <button
+                              className="rpt-duel-secondary"
+                              aria-expanded={configOpen}
+                              onClick={() => setConfigOpen((s) => !s)}
+                            >
+                              {configOpen ? '▾ ' : '▸ '}
+                              {t('memoryManager.data.templateConfig')}
+                            </button>
+                            {configOpen && (
+                              <TemplateEditPanel
+                                key={activeDef.uid}
+                                def={activeDef}
+                                onSave={saveTemplatePatch}
+                                onClose={() => setConfigOpen(false)}
+                              />
+                            )}
+                          </div>
+                        )}
+                        <TableCards
+                          key={active.sqlName}
+                          table={active}
+                          headers={activeDef?.headers}
+                          codeColumn={codeColumn ?? undefined}
+                          pageSize={10}
+                          onSaveRow={(rowid, changes) => saveRowCells(active.sqlName, rowid, changes)}
+                          onInsertRow={(values) => insertRow(active.sqlName, values)}
+                          onDeleteRow={(rowid) =>
+                            applyEdit({ kind: 'delete', table: active.sqlName, rowid })
+                          }
+                        />
+                      </>
                     ))}
                   {tab === 'notes' && (
                     <NotesTab key={activeChatId} profileId={profileId} chatId={activeChatId} />
@@ -548,7 +578,9 @@ export function MemoryManagerView({ profileId }: { profileId: string }): React.J
                       status={status}
                       floorsCount={floors.length}
                       onReload={loadChat}
-                      onSetFrequency={saveTableFrequency}
+                      onSetFrequency={(uid, updateFrequency) =>
+                        saveTemplatePatch({ uid, updateFrequency })
+                      }
                     />
                   )}
                   {tab === 'history' && (

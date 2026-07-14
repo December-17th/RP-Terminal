@@ -118,6 +118,7 @@ const en: Record<string, string> = {
   'settings.selectWorldFirst': 'Select a world first.',
   // SQL-table memory global default cadence (manual-pass issue 04)
   'settings.tablesDefaultFrequency': 'Default maintenance frequency (turns)',
+  'settings.tablesInjectionMaxRows': 'Table injection row cap ("recent N rows" default)',
   'settings.regex': 'Regex',
   'settings.scripts': 'Scripts',
   'settings.language': 'Language',
@@ -615,6 +616,16 @@ const en: Record<string, string> = {
   'tables.freqCustom': 'Custom',
   'tables.freqEvery': 'Every {{n}} turns',
   'tables.injectionSettings': 'Injection settings',
+  // WS4 main-prompt injection policy (owner pass 2026-07-14): how the table's CURRENT rows enter the
+  // narrator's prompt each turn. Distinct from the lorebook-style "Injection settings" above.
+  'tables.injectionPolicy': 'Prompt injection',
+  'tables.injectionPolicyHint':
+    "How this table's current rows enter the main prompt each turn (the maintainer side-call always sees the full table).",
+  'tables.injectionPolicyRecent': 'Recent N rows',
+  'tables.injectionPolicyFull': 'All rows',
+  'tables.injectionPolicyNone': 'Not injected',
+  'tables.injectionPolicyRows': 'Rows',
+  'tables.injectionPolicyRowsPh': 'global {{n}}',
   'tables.ddl': 'DDL (read-only)',
   'tables.savePrompts': 'Save',
   'tables.templateSaved': 'Template saved',
@@ -691,6 +702,8 @@ const en: Record<string, string> = {
   'memoryManager.structure.failedRow': 'Chat {{chat}}: {{reason}}',
   'memoryManager.structure.warningsTitle': 'Warnings',
   'memoryManager.data.reset': 'Reset',
+  // The active table's template-config disclosure (shared TemplateEditPanel, owner pass 2026-07-14).
+  'memoryManager.data.templateConfig': 'Template config (prompts & injection)',
   'memoryManager.data.newRow': 'New row',
   // Plot-recall (WP7): the per-row memory-code (MT####) chip + the code-column header marker.
   'memoryManager.data.codeTip': 'Memory code — recall references this row by this code',
@@ -741,6 +754,9 @@ const en: Record<string, string> = {
   'memoryManager.refill.globalFreq': 'Global cadence',
   'memoryManager.refill.globalFreqTip':
     'Tables set to "global" are maintained every N turns (the app-wide default)',
+  'memoryManager.refill.injectionCap': 'Injection rows',
+  'memoryManager.refill.injectionCapTip':
+    'Global row cap for the "recent N rows" prompt-injection policy (per-table override in the Data tab’s template config)',
   'memoryManager.refill.fromLabel': 'Start floor',
   'memoryManager.refill.consequence':
     'Will regenerate floors {{from}}–{{to}} ({{n}} floors · ~{{m}} batches).',

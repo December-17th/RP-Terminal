@@ -116,6 +116,7 @@ const zh: Record<string, string> = {
   'settings.selectWorldFirst': '请先选择一个世界。',
   // SQL 表格记忆全局默认维护频率（manual-pass issue 04）
   'settings.tablesDefaultFrequency': '默认维护频率（轮）',
+  'settings.tablesInjectionMaxRows': '表格注入行数上限（「最近 N 行」默认值）',
   'settings.regex': '正则',
   'settings.scripts': '脚本',
   'settings.language': '语言',
@@ -593,6 +594,15 @@ const zh: Record<string, string> = {
   'tables.freqCustom': '自定义',
   'tables.freqEvery': '每 {{n}} 轮',
   'tables.injectionSettings': '注入设置',
+  // WS4 正文注入策略（owner pass 2026-07-14）：表格当前行每回合如何进入正文提示词。
+  // 与上方世界书式的「注入设置」不同。
+  'tables.injectionPolicy': '正文注入',
+  'tables.injectionPolicyHint': '此表当前行每回合如何进入正文提示词（维护侧调用始终可见完整表格）。',
+  'tables.injectionPolicyRecent': '最近 N 行',
+  'tables.injectionPolicyFull': '全部行',
+  'tables.injectionPolicyNone': '不注入',
+  'tables.injectionPolicyRows': '行数',
+  'tables.injectionPolicyRowsPh': '全局 {{n}}',
   'tables.ddl': '建表 DDL（只读）',
   'tables.savePrompts': '保存',
   'tables.templateSaved': '模板已保存',
@@ -668,6 +678,8 @@ const zh: Record<string, string> = {
   'memoryManager.structure.failedRow': '对话 {{chat}}：{{reason}}',
   'memoryManager.structure.warningsTitle': '警告',
   'memoryManager.data.reset': '重置',
+  // 当前表的模板配置折叠区（复用 TemplateEditPanel，owner pass 2026-07-14）。
+  'memoryManager.data.templateConfig': '模板配置（提示词与注入）',
   'memoryManager.data.newRow': '新行',
   // 剧情召回（WP7）：每行的记忆编码（MT####）标签 + 编码列表头标记。
   'memoryManager.data.codeTip': '记忆编码 —— 召回通过此编码引用本行',
@@ -715,6 +727,9 @@ const zh: Record<string, string> = {
   // settings.tables.default_update_frequency 为同一项。
   'memoryManager.refill.globalFreq': '全局频率',
   'memoryManager.refill.globalFreqTip': '设为「全局」的表按此频率维护（每 N 轮，应用级默认值）',
+  'memoryManager.refill.injectionCap': '注入行数',
+  'memoryManager.refill.injectionCapTip':
+    '「最近 N 行」正文注入策略的全局行数上限（每表可在数据页的模板配置中覆盖）',
   'memoryManager.refill.fromLabel': '起始楼层',
   'memoryManager.refill.consequence': '将重新生成第 {{from}}–{{to}} 层（{{n}} 层 · 约 {{m}} 批）。',
   'memoryManager.refill.consequenceFirst': '将从头填充全部 {{n}} 层。',
