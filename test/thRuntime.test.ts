@@ -181,6 +181,14 @@ describe('createThRuntime', () => {
       { message_id: 0, role: 'user', message: 'u' },
       { message_id: 1, role: 'assistant', message: 'a' }
     ])
+    // Numeric ranges select one compact chat-array message; negative indexes count from the end.
+    // 自动正则 depends on -1 to scan the latest assistant message after each received event.
+    expect(g.getChatMessages(-1)).toEqual([
+      { message_id: 1, role: 'assistant', message: 'a' }
+    ])
+    expect(g.getChatMessages(0)).toEqual([{ message_id: 0, role: 'user', message: 'u' }])
+    expect(g.getChatMessages(-3)).toEqual([])
+    expect(g.getChatMessages(2)).toEqual([])
     expect(g.getCurrentMessageId()).toBe(1)
     expect(g.getCharData()).toEqual({ name: 'Ellia' })
     expect(g.formatAsTavernRegexedString('hi')).toBe('HI')
