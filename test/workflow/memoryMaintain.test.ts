@@ -261,12 +261,40 @@ describe('memory.maintain — end to end', () => {
     expect(mockSql.applySqlBatch).not.toHaveBeenCalled()
   })
 
-  it('an empty <TableEdit></TableEdit> reply → no write, reports "no changes", still traces the prompt', async () => {
+  // A COMPLIANT empty <TableEdit></TableEdit> (maintainer rule 4: "no changes ⇒ an empty tag") is a
+  // real "nothing to record this turn" answer — it must ADVANCE the due pointers, or the due tables stay
+  // due and burn a model call EVERY turn until the model happens to emit a write. No SQL is applied.
+  it('an empty <TableEdit></TableEdit> reply → no write, advances the due pointer, reports "no changes"', async () => {
     mockCallModel.callModel.mockResolvedValue({ raw: 'ok <TableEdit></TableEdit>', rawUsage: {} })
     const res = await memoryMaintain.run(ctx(), {}, { id: 'm', config: memoryMaintain.configSchema!.parse(config) })
     expect(mockSql.applySqlBatch).not.toHaveBeenCalled()
+    expect(mockProgress.advanceProgress).toHaveBeenCalledWith('prof', 'c1', ['summary'], 3)
     expect(res.outputs!.report).toBe('no changes')
     expect(res.debug!['prompt (sent)']).toBeTruthy()
+  })
+
+  // A reply with NO <TableEdit> tag AT ALL is malformed, NOT a compliant "no changes" — advancing on it
+  // would silently skip this turn's content forever. It must report and no-op WITHOUT advancing so the
+  // next commit boundary retries the same floors.
+  it('a reply with no <TableEdit> tag → no write, does NOT advance, reports the missing tag', async () => {
+    mockCallModel.callModel.mockResolvedValue({ raw: 'sorry, I could not comply', rawUsage: {} })
+    const res = await memoryMaintain.run(ctx(), {}, { id: 'm', config: memoryMaintain.configSchema!.parse(config) })
+    expect(mockSql.applySqlBatch).not.toHaveBeenCalled()
+    expect(mockProgress.advanceProgress).not.toHaveBeenCalled()
+    expect(res.outputs!.report).toBe('no TableEdit tag in reply')
+    expect(res.debug!['prompt (sent)']).toBeTruthy()
+  })
+
+  // The advance-on-empty path bypasses applyTableEdit's own staleness fence, so it re-runs the epoch
+  // check itself: a regenerate/edit/swipe that lands mid-call moves the epoch and must PREVENT the
+  // advance (advancing would re-cover the clamp truncateFloors just applied).
+  it('an empty <TableEdit> reply with a transcript changed mid-call → no advance, reports stale skip', async () => {
+    mockCallModel.callModel.mockResolvedValue({ raw: 'ok <TableEdit></TableEdit>', rawUsage: {} })
+    mockFloor.transcriptEpoch.mockReturnValueOnce(0).mockReturnValue(1)
+    const res = await memoryMaintain.run(ctx(), {}, { id: 'm', config: memoryMaintain.configSchema!.parse(config) })
+    expect(mockSql.applySqlBatch).not.toHaveBeenCalled()
+    expect(mockProgress.advanceProgress).not.toHaveBeenCalled()
+    expect(res.outputs!.report).toBe('stale transcript, skipped')
   })
 
   // A6 — memory-trio input symmetry: an OPTIONAL `gen` Context port (mirrors memory.recall) that reuses

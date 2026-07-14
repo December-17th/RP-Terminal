@@ -22,7 +22,7 @@ import {
   historyText,
   composedPromptDebug
 } from './memoryCore'
-import { getProgress } from '../../tableProgressService'
+import { getProgress, advanceProgress } from '../../tableProgressService'
 import { getAllFloors, transcriptEpoch } from '../../floorService'
 import { getSettings } from '../../settingsService'
 import { writeScopeDirective } from '../../tableMaintenance'
@@ -207,9 +207,29 @@ export const memoryMaintain: NodeImpl = {
     // Abort-with-empty: no reply to parse; the prompt is still traced so the empty result is diagnosable.
     if (r === null) return { outputs: {}, debug: promptDebug }
 
-    // Pull the SQL batch out of the <TableEdit> tag (rule 4: no changes ⇒ an empty tag ⇒ blank sql).
-    const sql = extractTagAll(r.raw, 'TableEdit')[0] ?? ''
-    if (!sql.trim()) return { outputs: { report: 'no changes' }, debug: promptDebug }
+    // Pull the SQL batch out of the <TableEdit> tag. extractTagAll returns [] when NO tag is present
+    // and [''] for an explicit empty `<TableEdit></TableEdit>` — a distinction that matters here:
+    //  - NO tag → malformed reply. Do NOT advance the due pointers (advancing would silently skip this
+    //    turn's content forever); report and no-op so the next commit boundary retries the same floors.
+    //  - EMPTY tag → a COMPLIANT "no changes" reply (maintainer rule 4). It MUST advance the due pointers
+    //    or the due tables stay due and burn a model call EVERY turn until the model happens to write.
+    const tags = extractTagAll(r.raw, 'TableEdit')
+    if (!tags.length) {
+      return { outputs: { report: 'no TableEdit tag in reply' }, debug: promptDebug }
+    }
+    const sql = tags[0] ?? ''
+    if (!sql.trim()) {
+      // Advance-on-empty bypasses applyTableEdit, so it must re-run the staleness fence itself: if a
+      // regenerate/edit/swipe landed mid-call the epoch moved, and advancing here would re-advance the
+      // pointers truncateFloors just clamped. Only advance when the transcript is still the one read.
+      if (cfg.advance_progress !== false) {
+        if (transcriptEpoch(gen.chatId) !== composedEpoch) {
+          return { outputs: { report: 'stale transcript, skipped' }, debug: promptDebug }
+        }
+        advanceProgress(gen.profileId, gen.chatId, due, currentFloor)
+      }
+      return { outputs: { report: 'no changes' }, debug: promptDebug }
+    }
 
     // Apply via the shared write-core (busy-guard + applySqlBatch + op-log + advance-after-success);
     // a bad batch throws class-B and routes on the `error` port. WS3: the write scope + advance set are
