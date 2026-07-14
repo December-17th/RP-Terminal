@@ -62,6 +62,16 @@ export const RefillWorkbench: React.FC<{
   const latest = floorsCount - 1
   // The app-level default cadence a `-1` ("use global") table resolves to — same source TablesView uses.
   const globalFreq = useSettingsStore((s) => s.settings?.tables?.default_update_frequency ?? 3)
+  // Editable here too (owner pass 2026-07-14): the only other control is buried in App Settings,
+  // nowhere near the per-table cadences that reference it. Same optimistic updateSettings path as
+  // SettingsPanel — the FreqControl 「全局 (N)」 labels re-render live off the store.
+  const setGlobalFreq = (n: number): void => {
+    const store = useSettingsStore.getState()
+    if (!store.settings) return
+    void store.updateSettings(profileId, {
+      tables: { ...store.settings.tables, default_update_frequency: n }
+    })
+  }
 
   // ── picker + range state ─────────────────────────────────────────────────────────────────────
   const [selected, setSelected] = React.useState<Set<string>>(() => new Set(tables.map((tb) => tb.sqlName)))
@@ -295,17 +305,33 @@ export const RefillWorkbench: React.FC<{
 
         {/* Table picker — the sheet rail's badge vocabulary, checkbox rows, select-all header. */}
         <div className="rpt-mm-refill-picker" role="group" aria-label={t('memoryManager.refill.tablesTitle')}>
-          <label className="rpt-mm-refill-pickall">
-            <input
-              type="checkbox"
-              checked={allSelected}
-              disabled={running || tables.length === 0}
-              onChange={(e) =>
-                setSelected(e.target.checked ? new Set(tables.map((tb) => tb.sqlName)) : new Set())
-              }
-            />
-            <span>{t('memoryManager.refill.tablesAll')}</span>
-          </label>
+          <div className="rpt-mm-refill-pickall">
+            <label className="rpt-mm-refill-picklabel">
+              <input
+                type="checkbox"
+                checked={allSelected}
+                disabled={running || tables.length === 0}
+                onChange={(e) =>
+                  setSelected(e.target.checked ? new Set(tables.map((tb) => tb.sqlName)) : new Set())
+                }
+              />
+              <span>{t('memoryManager.refill.tablesAll')}</span>
+            </label>
+            {/* The GLOBAL default cadence 「全局」 tables resolve to — editable where it's referenced. */}
+            <span className="rpt-mm-refill-globalfreq" title={t('memoryManager.refill.globalFreqTip')}>
+              {t('memoryManager.refill.globalFreq')}
+              <input
+                type="number"
+                min={1}
+                step={1}
+                value={globalFreq}
+                aria-label={t('memoryManager.refill.globalFreqTip')}
+                onChange={(e) =>
+                  setGlobalFreq(Math.max(1, Math.floor(Number(e.target.value) || 3)))
+                }
+              />
+            </span>
+          </div>
           {tables.map((tb) => {
             const b = badge(tb.sqlName)
             // The def match mirrors MemoryManagerView.findDef (sqlName first, displayName fallback).

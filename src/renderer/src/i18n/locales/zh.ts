@@ -711,6 +711,10 @@ const zh: Record<string, string> = {
   // 重填工作台组件（WS6 Phase A）：表格多选、范围/后果说明、运行轨道、续填横幅。
   'memoryManager.refill.tablesTitle': '选择要重填的表格',
   'memoryManager.refill.tablesAll': '全部表格',
+  // 选择器表头的全局频率编辑（owner pass 2026-07-14）——与应用设置中的
+  // settings.tables.default_update_frequency 为同一项。
+  'memoryManager.refill.globalFreq': '全局频率',
+  'memoryManager.refill.globalFreqTip': '设为「全局」的表按此频率维护（每 N 轮，应用级默认值）',
   'memoryManager.refill.fromLabel': '起始楼层',
   'memoryManager.refill.consequence': '将重新生成第 {{from}}–{{to}} 层（{{n}} 层 · 约 {{m}} 批）。',
   'memoryManager.refill.consequenceFirst': '将从头填充全部 {{n}} 层。',

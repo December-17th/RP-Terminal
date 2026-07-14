@@ -736,6 +736,11 @@ const en: Record<string, string> = {
   // Refill workbench pieces (WS6 Phase A): picker, range/consequence, run rail, resume banner.
   'memoryManager.refill.tablesTitle': 'Tables to refill',
   'memoryManager.refill.tablesAll': 'All tables',
+  // The picker header's global-cadence editor (owner pass 2026-07-14) — the same
+  // settings.tables.default_update_frequency the App Settings field edits.
+  'memoryManager.refill.globalFreq': 'Global cadence',
+  'memoryManager.refill.globalFreqTip':
+    'Tables set to "global" are maintained every N turns (the app-wide default)',
   'memoryManager.refill.fromLabel': 'Start floor',
   'memoryManager.refill.consequence':
     'Will regenerate floors {{from}}–{{to}} ({{n}} floors · ~{{m}} batches).',
