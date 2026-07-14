@@ -298,7 +298,12 @@ export function createThRuntime(host: Host): ThGlobals {
       pushButtons()
       return scriptButtons
     },
-    getChatMessages: () => floorsToThMessages(host.floors()),
+    getChatMessages: (range?: any) => {
+      const messages = floorsToThMessages(host.floors())
+      if (typeof range !== 'number' || !Number.isInteger(range)) return messages
+      const index = range < 0 ? messages.length + range : range
+      return index >= 0 && index < messages.length ? [messages[index]] : []
+    },
     getCurrentMessageId: () => currentMessageId(host.floors()),
     // TH alias: getCurrentMessageId IS getLastMessageId (both = the last message's id). The inline
     // shim already aliases them (shims/tavern.ts); the WCV runtime was missing the alias, so MVU/status
