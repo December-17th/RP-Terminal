@@ -35,8 +35,11 @@
   /* Chrome polish (UI overhaul) — ADDITIVE tokens. New names, not referenced by any pre-existing
      rule, so themes need not define them and other screens are untouched. The mono face is the
      app's "terminal" utility voice (brand, eyebrows, tabular metadata); body stays the sans. */
-  --rpt-font-mono: ui-monospace, 'JetBrains Mono', 'Cascadia Code', 'SF Mono', Menlo, Consolas, monospace;
-  --rpt-font-body: 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  /* 'Noto Sans SC' (loaded from Google Fonts in index.html) sits after the Latin faces:
+     per-glyph fallback keeps Latin on Inter / the mono faces while CJK resolves to Noto
+     Sans SC. Offline it degrades to the system CJK font (e.g. 微软雅黑). */
+  --rpt-font-mono: ui-monospace, 'JetBrains Mono', 'Cascadia Code', 'SF Mono', Menlo, Consolas, 'Noto Sans SC', monospace;
+  --rpt-font-body: 'Inter', 'Noto Sans SC', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
   --rpt-radius-lg: 14px;
   --rpt-shadow-lift: 0 18px 40px -18px rgba(0, 0, 0, 0.75), 0 2px 8px -4px rgba(0, 0, 0, 0.6);
   /* Combat (Track Combat) — grid highlight washes, color-mix'd off the active theme's
@@ -244,7 +247,7 @@
 
 body {
   margin: 0;
-  font-family: 'Inter', sans-serif;
+  font-family: var(--rpt-font-body);
   background-color: var(--rpt-bg-primary);
   color: var(--rpt-text-primary);
   height: 100vh;

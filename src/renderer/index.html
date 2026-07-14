@@ -36,6 +36,16 @@
       http-equiv="Content-Security-Policy"
       content="default-src 'self'; script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval' data: blob: https:; style-src 'self' 'unsafe-inline' https:; font-src 'self' data: https:; img-src 'self' data: blob: rptasset: https:; connect-src 'self' data: blob: https:; media-src 'self' data: blob: https:"
     />
+    <!-- Noto Sans SC (Simplified Chinese) for the app UI. Latin stays Inter via the
+         font-family stacks in index.css; this supplies the CJK glyphs so 中文 renders in
+         Noto Sans SC everywhere (chrome + message prose). Loaded from Google Fonts over the
+         CSP-allowed https: origins; offline it falls back to the system CJK font (e.g. 微软雅黑). -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;600;700;800;900&display=swap"
+    />
   </head>
 
   <body>
