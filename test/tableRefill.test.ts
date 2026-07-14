@@ -16,7 +16,8 @@ import {
   widenedRefillFrom,
   planChunkCommit,
   refillRunOutcome,
-  refillProgressAfterCut
+  refillProgressAfterCut,
+  refillProgressAfterEdit
 } from '../src/main/services/tableRefillService'
 import {
   beginTableWrite,
@@ -179,6 +180,27 @@ describe('refillProgressAfterCut — the resume row after a transcript cut (the 
   it('cut above the committed range ⇒ keep (the committed part is untouched)', () => {
     expect(refillProgressAfterCut(row, 9)).toBe('keep')
     expect(refillProgressAfterCut({ fromFloor: 3, completedUntil: -1 }, 5)).toBe('keep')
+  })
+})
+
+describe('refillProgressAfterEdit — the resume row after an in-place floor edit / swipe (the refill race)', () => {
+  const row = { fromFloor: 3, completedUntil: 8 }
+  it('edit inside the committed range ⇒ clamp completedUntil to editFloor - 1 (the edited floor regenerates on resume)', () => {
+    expect(refillProgressAfterEdit(row, 6)).toEqual({ completedUntil: 5 })
+  })
+  it('edit at completedUntil (upper boundary) ⇒ clamp to editFloor - 1', () => {
+    expect(refillProgressAfterEdit(row, 8)).toEqual({ completedUntil: 7 })
+  })
+  it('edit at fromFloor (lower boundary) ⇒ clamp to fromFloor - 1 (resume re-runs the full range)', () => {
+    expect(refillProgressAfterEdit(row, 3)).toEqual({ completedUntil: 2 })
+  })
+  it('edit below fromFloor ⇒ keep (frozen base state — maintain\'s domain, and the floor still exists)', () => {
+    expect(refillProgressAfterEdit(row, 2)).toBe('keep')
+  })
+  it('edit above completedUntil ⇒ keep (nothing committed there; the epoch fence covers a live chunk)', () => {
+    expect(refillProgressAfterEdit(row, 9)).toBe('keep')
+    // Nothing committed yet (completedUntil = -1): any edit is above the committed range ⇒ keep.
+    expect(refillProgressAfterEdit({ fromFloor: 3, completedUntil: -1 }, 4)).toBe('keep')
   })
 })
 

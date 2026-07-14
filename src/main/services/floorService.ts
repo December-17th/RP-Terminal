@@ -22,6 +22,10 @@ const varsLockKey = (chatId: string): string => `vars:${chatId}`
  * read (e.g. regenerate mid-call), so the batch is dropped instead of filling tables from a
  * discarded reply while advancing the pointers `truncateFloors` just clamped.
  * In-memory only: an epoch lost to an app restart can only skip one maintain, never corrupt.
+ *
+ * Two floor-carrying listener seams sit alongside this counter for the refill engine (which needs the
+ * FLOOR, not just an epoch bump, to fix its resume row): `onTranscriptCut` (floors removed — indices
+ * invalidated) and `onTranscriptEdited` (content changed in place — indices survive). See each below.
  */
 const transcriptEpochs = new Map<string, number>()
 export const transcriptEpoch = (chatId: string): number => transcriptEpochs.get(chatId) ?? 0
@@ -41,6 +45,31 @@ type TranscriptCutListener = (profileId: string, chatId: string, fromFloor: numb
 const transcriptCutListeners: TranscriptCutListener[] = []
 export const onTranscriptCut = (fn: TranscriptCutListener): void => {
   transcriptCutListeners.push(fn)
+}
+
+/**
+ * Transcript-EDIT listeners (the refill race, part 2 — owner pass 2026-07-14): fired when existing floor
+ * CONTENT changes but the floor INDICES survive — an in-place text edit (`updateFloorFields`) or a swipe
+ * switch/append (`setActiveSwipe`/`addSwipe`). Unlike a CUT, no floor is removed, so a live refill's
+ * `completedUntil` still points at real floors; but the committed memory for the edited floor is now stale.
+ * The refill engine registers here to abort a live run and clamp its resume row back to just before the
+ * edited floor (so Resume regenerates it). Fired with the edited FLOOR (not a from-index) since a single
+ * floor changed. A separate registry from the cut seam keeps the two signals' semantics distinct. Listener
+ * errors are swallowed — a broken listener must never break a floor edit.
+ */
+type TranscriptEditListener = (profileId: string, chatId: string, floor: number) => void
+const transcriptEditListeners: TranscriptEditListener[] = []
+export const onTranscriptEdited = (fn: TranscriptEditListener): void => {
+  transcriptEditListeners.push(fn)
+}
+const fireTranscriptEdited = (profileId: string, chatId: string, floor: number): void => {
+  for (const fn of transcriptEditListeners) {
+    try {
+      fn(profileId, chatId, floor)
+    } catch {
+      /* a listener must never break the edit */
+    }
+  }
 }
 
 interface FloorRow {
@@ -185,6 +214,7 @@ export const setActiveSwipe = (
   floor.response.content = content
   saveFloor(profileId, chatId, floor)
   bumpTranscriptEpoch(chatId) // active response text changed
+  fireTranscriptEdited(profileId, chatId, floorIndex)
   return floor
 }
 
@@ -206,12 +236,13 @@ export const addSwipe = (
   floor.response.content = content
   saveFloor(profileId, chatId, floor)
   bumpTranscriptEpoch(chatId) // active response text changed
+  fireTranscriptEdited(profileId, chatId, floorIndex)
   return floor
 }
 
 /** Edit a stored floor's text in place (user message and/or AI response). */
 export const updateFloorFields = (
-  _profileId: string,
+  profileId: string,
   chatId: string,
   floorIndex: number,
   userContent: string | null,
@@ -232,7 +263,10 @@ export const updateFloorFields = (
       floorIndex
     )
   }
-  if (userContent !== null || responseContent !== null) bumpTranscriptEpoch(chatId)
+  if (userContent !== null || responseContent !== null) {
+    bumpTranscriptEpoch(chatId)
+    fireTranscriptEdited(profileId, chatId, floorIndex) // fire once even when both fields changed
+  }
 }
 
 export const deleteFloorAndSubsequent = (

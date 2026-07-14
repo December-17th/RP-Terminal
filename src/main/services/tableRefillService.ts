@@ -1,6 +1,6 @@
 import { getChatTableTemplateId } from './chatService'
 import { getTableTemplateById } from './tableTemplateService'
-import { getAllFloors, transcriptEpoch, onTranscriptCut } from './floorService'
+import { getAllFloors, transcriptEpoch, onTranscriptCut, onTranscriptEdited } from './floorService'
 import {
   refillShadowPath,
   instantiateAt,
@@ -215,6 +215,32 @@ export const refillProgressAfterCut = (
       ? { completedUntil: cutFloor - 1 }
       : 'keep'
 
+/**
+ * What an in-place transcript EDIT at `editFloor` (a floor's text changed, or a swipe switch/append) does
+ * to a persisted refill resume row (PURE — the refill race, part 2, owner pass 2026-07-14). Unlike a CUT,
+ * the floor still EXISTS — only its content is now stale — so this NEVER deletes the row (an edit
+ * invalidates content, not floor indices). Three branches, keyed on where the edit lands:
+ *  - edit INSIDE the committed range (`fromFloor <= editFloor <= completedUntil`) → clamp `completedUntil`
+ *    to `editFloor - 1`. Resume then restarts at `editFloor` (via `resumeRefillFrom = max(fromFloor,
+ *    completedUntil + 1)`, which yields `editFloor` here, or the full range when `editFloor == fromFloor`),
+ *    and Resume's own cut deletes the now-stale committed ops at/after `editFloor` before regenerating —
+ *    so the edited floor's memory is rebuilt from the new text.
+ *  - edit BELOW `fromFloor` → 'keep'. Those floors are the refill's frozen BASE state (below the cut);
+ *    their staleness is memory.maintain's domain, not this refill's — and unlike a cut, they still exist,
+ *    so nothing here is invalidated by INDEX.
+ *  - edit ABOVE `completedUntil` → 'keep'. Nothing is committed there yet; a still-live chunk that read
+ *    the old text is caught by the epoch fence in `commitChunk`/finalize.
+ * This composes with the cut-widening in `startRefill`: the clamped resume goes back through `startRefill`,
+ * which widens the cutpoint further DOWN if `editFloor` bisects a committed batch's stored span.
+ */
+export const refillProgressAfterEdit = (
+  row: { fromFloor: number; completedUntil: number },
+  editFloor: number
+): 'keep' | { completedUntil: number } =>
+  editFloor >= row.fromFloor && editFloor <= row.completedUntil
+    ? { completedUntil: editFloor - 1 }
+    : 'keep'
+
 // ---- refill-progress store (app DB) — untestable stance (alias-mocked better-sqlite3) ---------
 
 export interface RefillProgressRow {
@@ -335,6 +361,26 @@ onTranscriptCut((profileId, chatId, cutFloor) => {
     // The live run still needs its shadow to unwind; with no run, the orphan file can go now.
     if (!live?.state.running) removeShadow(profileId, chatId)
   } else if (next !== 'keep') {
+    upsertRefillProgress(chatId, row.selected, row.fromFloor, next.completedUntil, row.status)
+  }
+})
+
+// The refill race, part 2 (owner pass 2026-07-14): an existing floor's TEXT edited / a swipe switched
+// while a refill is live or interrupted. The floor indices survive (no delete), but the committed memory
+// for the edited floor is now stale. Proactive layer — abort the live run NOW (stop paying for a batch the
+// epoch fence would drop) and clamp the persisted resume row back to just before the edited floor per
+// `refillProgressAfterEdit` so a later Resume regenerates it (its cut drops the stale committed ops, then
+// startRefill's widener pulls the cut further down if the edit bisects a stored span). Never delete the row
+// and never remove the shadow (an edit invalidates content, not indices; the live run still needs the
+// shadow to unwind). The epoch fence in `commitChunk`/finalize is the correctness backstop if this signal
+// loses the race. Registered via floorService's edit-listener seam (no import cycle).
+onTranscriptEdited((_profileId, chatId, editFloor) => {
+  const live = runs.get(chatId)
+  if (live?.state.running) live.controller.abort()
+  const row = getRefillProgress(chatId)
+  if (!row || row.status !== 'in_progress') return
+  const next = refillProgressAfterEdit(row, editFloor)
+  if (next !== 'keep') {
     upsertRefillProgress(chatId, row.selected, row.fromFloor, next.completedUntil, row.status)
   }
 })

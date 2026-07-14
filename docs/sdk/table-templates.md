@@ -390,7 +390,13 @@ to one floor) on a temp **shadow sandbox**:
    Proactively, `truncateFloors` → `floorService.onTranscriptCut` listeners → the engine ABORTS a
    live run immediately and fixes the resume row per `refillProgressAfterCut(row, cutFloor)`: cut ≤
    `fromFloor` ⇒ row deleted; cut inside the committed range ⇒ `completedUntil` clamped to
-   `cutFloor - 1`; cut above ⇒ kept. (`memory.maintain` uses the same epoch via `applyTableEdit`'s
+   `cutFloor - 1`; cut above ⇒ kept. An in-place floor EDIT / swipe switch (indices survive, content
+   stale) fires the sibling `floorService.onTranscriptEdited` seam → the engine ABORTS the live run and
+   clamps the resume row per `refillProgressAfterEdit(row, editFloor)`: edit inside the committed range ⇒
+   `completedUntil` clamped to `editFloor - 1` (Resume then regenerates the edited floor — its cut drops
+   the stale committed ops, and `startRefill`'s widener pulls the cut down further if the edit bisects a
+   stored span); edit below `fromFloor` or above `completedUntil` ⇒ kept; NEVER deleted (an edit
+   invalidates content, not floor indices). (`memory.maintain` uses the same epoch via `applyTableEdit`'s
    `expectTranscriptEpoch` — a stale single-call batch is dropped with report
    `stale transcript, skipped`.)
 
@@ -399,7 +405,8 @@ selected_json, from_floor, completed_until, status, updated_at)` — one in-flig
 shujuku `manualRefillProgress` analogue. **Events** ride the backfill channel `table-backfill-progress`
 with `kind:'refill'` (+ `completedUntil`). Pure decision helpers (unit-tested):
 `shouldReplayIntoShadow`, `partitionBySelected`, `defaultRefillFrom`, `refillBaselineBlocked`,
-`watermarkMoved`, `resumeRefillFrom`, `planChunkCommit`, `refillRunOutcome`, `refillProgressAfterCut`.
+`watermarkMoved`, `resumeRefillFrom`, `planChunkCommit`, `refillRunOutcome`, `refillProgressAfterCut`,
+`refillProgressAfterEdit`.
 
 ### Nodes (`src/main/services/nodes/builtin/`)
 
