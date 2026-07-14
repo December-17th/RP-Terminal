@@ -102,7 +102,7 @@ describe('applyTableEdit', () => {
     const gen = genWith([{}, {}]) // gen.floors.length 2 → op floor 1
     const r = applyTableEdit(gen, template(['summary']), '<sql>', {})
     expect(r).toEqual({ applied: 2, changes: 3 })
-    expect(mockOps.appendOps).toHaveBeenCalledWith('p', 'c', 1, ['INSERT 1', 'INSERT 2'])
+    expect(mockOps.appendOps).toHaveBeenCalledWith('p', 'c', 1, ['INSERT 1', 'INSERT 2'], 'maintain')
     expect(mockProgress.advanceProgress).not.toHaveBeenCalled() // advanceProgress not requested
     expect(mockOps.endTableWrite).toHaveBeenCalledWith('c')
   })

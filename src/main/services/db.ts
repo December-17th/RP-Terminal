@@ -1,6 +1,7 @@
 import Database from 'better-sqlite3'
 import path from 'path'
 import { getAppDir, ensureDir } from './storageService'
+import { classifyStatement } from './tableSql'
 
 let db: Database.Database | null = null
 
@@ -363,6 +364,35 @@ export const migrateAgentPacksToVersioned = (database: Database.Database): void 
   })()
 }
 
+/**
+ * One-time backfill for the `table_ops.target_table` column (WS1). Rows logged before the column
+ * existed carry NULL; classify each with the write-path classifier and store the target table, or
+ * `'*'` when the raw SQL no longer classifies (the always-replay defensive tail). Since only
+ * `validateBatch`-gated statements were ever logged, practically every row resolves. Idempotent —
+ * scoped to `target_table IS NULL`, so a second run is a no-op. `source` is deliberately left NULL for
+ * legacy rows: provenance is not reconstructable (a pre-WS1 structural re-baseline is indistinguishable
+ * from organic floor-0 ops — documented residual risk behind the refill baseline gate).
+ */
+export const migrateTableOpsTargetTable = (database: Database.Database): void => {
+  const rows = database
+    .prepare('SELECT rowid AS rid, sql FROM table_ops WHERE target_table IS NULL')
+    .all() as Array<{ rid: number; sql: string }>
+  if (!rows.length) return
+  const upd = database.prepare('UPDATE table_ops SET target_table = ? WHERE rowid = ?')
+  const run = database.transaction((batch: Array<{ rid: number; sql: string }>) => {
+    for (const r of batch) {
+      let table = '*'
+      try {
+        table = classifyStatement(r.sql).table
+      } catch {
+        table = '*'
+      }
+      upd.run(table, r.rid)
+    }
+  })
+  run(rows)
+}
+
 export const getDb = (): Database.Database => {
   if (db) return db
   ensureDir(getAppDir())
@@ -414,6 +444,17 @@ export const getDb = (): Database.Database => {
   // Agent & memory UX WP-D: run attribution for agent cards — the firing trigger node ids (JSON).
   // Pre-WP-D rows keep NULL and simply don't attribute (fail-soft).
   addColumnIfMissing(db, 'workflow_run_history', 'trigger_node_ids', 'trigger_node_ids TEXT')
+  // Table-refill WS1: op-log attribution. `target_table` = the single table a statement writes (the
+  // filtered-cut key; `'*'` = unclassifiable/always-replay). `source` = write-path provenance
+  // (maintain/backfill/edit/baseline/refill; NULL for legacy rows). Both are added here (fresh or
+  // legacy DB), THEN the target-table index and the backfill are run — the index references
+  // `target_table`, so it must be created after the column exists (SCHEMA runs before this block).
+  addColumnIfMissing(db, 'table_ops', 'target_table', 'target_table TEXT')
+  addColumnIfMissing(db, 'table_ops', 'source', 'source TEXT')
+  db.exec(
+    'CREATE INDEX IF NOT EXISTS idx_table_ops_chat_table_floor ON table_ops(chat_id, target_table, floor)'
+  )
+  migrateTableOpsTargetTable(db)
   db.exec(`
     UPDATE agent_pack_activation
        SET pin_version = (SELECT version FROM agent_packs WHERE agent_packs.id = agent_pack_activation.pack_id)

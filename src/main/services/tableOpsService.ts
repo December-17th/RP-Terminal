@@ -28,14 +28,45 @@ export interface TableOp {
   sql: string
 }
 
+/**
+ * Provenance label stored in `table_ops.source`, identifying which write path produced an op.
+ * Legacy rows (logged before this column existed) carry NULL — provenance is not reconstructable.
+ * `'baseline'` marks a structural re-baseline (see `tableStructureService.rewriteOpLog`), which the
+ * refill baseline-gate reads via `hasBaselineOps`.
+ */
+export type TableOpSource = 'maintain' | 'backfill' | 'edit' | 'baseline' | 'refill'
+
+// ---- pure classification helper (unit-tested) ------------------------------------------------
+
+/**
+ * The target table an op writes to, for `target_table` attribution — the same single-table classifier
+ * the write path validates against. Every logged statement was `validateBatch`-gated, so this is
+ * deterministic in practice; `'*'` is the defensive fallback for a statement that no longer classifies
+ * (e.g. a raw op predating the column). `'*'` rows are the always-replay tail: they are NEVER dropped
+ * by the table-scoped `deleteOpsFor` cut.
+ */
+export const opTargetTable = (sql: string): string => {
+  try {
+    return classifyStatement(sql).table
+  } catch {
+    return '*'
+  }
+}
+
 // ---- op-log CRUD (app DB) --------------------------------------------------------------------
 
-/** Append a batch of statements as ops at `floor`, continuing the per-(chat,floor) `seq` counter. */
+/**
+ * Append a batch of statements as ops at `floor`, continuing the per-(chat,floor) `seq` counter.
+ * Each statement is classified internally to stamp `target_table` (the write scope was just
+ * `validateBatch`-gated, so this is deterministic; `'*'` fallback). `source` records the write path
+ * that produced the batch (`undefined` ⇒ stored NULL — kept for callers that don't attribute).
+ */
 export const appendOps = (
   _profileId: string,
   chatId: string,
   floor: number,
-  sqls: string[]
+  sqls: string[],
+  source?: TableOpSource
 ): void => {
   if (!sqls.length) return
   const db = getDb()
@@ -45,10 +76,10 @@ export const appendOps = (
   let seq = (row?.maxSeq ?? -1) + 1
   const now = new Date().toISOString()
   const stmt = db.prepare(
-    'INSERT INTO table_ops (chat_id, floor, seq, sql, created_at) VALUES (?, ?, ?, ?, ?)'
+    'INSERT INTO table_ops (chat_id, floor, seq, sql, created_at, target_table, source) VALUES (?, ?, ?, ?, ?, ?, ?)'
   )
   const insertAll = db.transaction(() => {
-    for (const sql of sqls) stmt.run(chatId, floor, seq++, sql, now)
+    for (const sql of sqls) stmt.run(chatId, floor, seq++, sql, now, opTargetTable(sql), source ?? null)
   })
   insertAll()
 }
@@ -70,6 +101,8 @@ export interface TableOpView {
   table: string | null
   /** ISO timestamp the op was appended (`table_ops.created_at`); null if the row predates it. */
   createdAt: string | null
+  /** Write-path provenance (`table_ops.source`); null for legacy rows logged before the column. */
+  source: TableOpSource | null
 }
 
 /**
@@ -81,9 +114,15 @@ export interface TableOpView {
 export const listOpsForDisplay = (_profileId: string, chatId: string): TableOpView[] => {
   const rows = getDb()
     .prepare(
-      'SELECT floor, seq, sql, created_at FROM table_ops WHERE chat_id = ? ORDER BY floor DESC, seq DESC'
+      'SELECT floor, seq, sql, created_at, source FROM table_ops WHERE chat_id = ? ORDER BY floor DESC, seq DESC'
     )
-    .all(chatId) as Array<{ floor: number; seq: number; sql: string; created_at: string | null }>
+    .all(chatId) as Array<{
+    floor: number
+    seq: number
+    sql: string
+    created_at: string | null
+    source: TableOpSource | null
+  }>
   return rows.map((r) => {
     let kind: TableOpView['kind'] = 'other'
     let table: string | null = null
@@ -94,7 +133,14 @@ export const listOpsForDisplay = (_profileId: string, chatId: string): TableOpVi
     } catch {
       // Accepted ops always classify; a stored statement that no longer does → labelled 'other'.
     }
-    return { floor: r.floor, seq: r.seq, kind, table, createdAt: r.created_at ?? null }
+    return {
+      floor: r.floor,
+      seq: r.seq,
+      kind,
+      table,
+      createdAt: r.created_at ?? null,
+      source: r.source ?? null
+    }
   })
 }
 
@@ -107,6 +153,43 @@ export const deleteOpsFrom = (_profileId: string, chatId: string, fromFloor: num
 /** Drop the chat's entire op log (template (re)assignment — stale ops must never replay). */
 export const deleteAllOps = (_profileId: string, chatId: string): void => {
   getDb().prepare('DELETE FROM table_ops WHERE chat_id = ?').run(chatId)
+}
+
+/**
+ * Drop ops at/after `fromFloor` whose `target_table` is in `tables` (the refill tail cut, scoped to the
+ * regenerated tables). `'*'` rows (unclassifiable / always-replay) are NEVER matched by the IN-list, so
+ * they survive — do not pass `'*'` in `tables`. A no-op when `tables` is empty. Returns rows deleted.
+ */
+export const deleteOpsFor = (
+  _profileId: string,
+  chatId: string,
+  tables: string[],
+  fromFloor: number
+): number => {
+  if (!tables.length) return 0
+  const placeholders = tables.map(() => '?').join(', ')
+  return getDb()
+    .prepare(
+      `DELETE FROM table_ops WHERE chat_id = ? AND floor >= ? AND target_table IN (${placeholders})`
+    )
+    .run(chatId, fromFloor, ...tables).changes
+}
+
+/**
+ * True when any of `tables` carries a structural re-baseline op (`source='baseline'`, floor-0 full-data
+ * INSERTs written by `tableStructureService.rewriteOpLog`). A partial refill of such a table would
+ * re-duplicate content, so the refill engine (WS2) gates on this. A no-op ⇒ false when `tables` empty.
+ * Legacy NULL-source baselines (logged before the `source` column) are undetectable — documented risk.
+ */
+export const hasBaselineOps = (_profileId: string, chatId: string, tables: string[]): boolean => {
+  if (!tables.length) return false
+  const placeholders = tables.map(() => '?').join(', ')
+  const row = getDb()
+    .prepare(
+      `SELECT 1 FROM table_ops WHERE chat_id = ? AND source = 'baseline' AND target_table IN (${placeholders}) LIMIT 1`
+    )
+    .get(chatId, ...tables)
+  return row !== undefined
 }
 
 // ---- pure replay helper (unit-tested) --------------------------------------------------------

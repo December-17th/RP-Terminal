@@ -157,8 +157,8 @@ describe('backfill orchestration', () => {
     // 4 floors, all, batch 2 → [0-1], [2-3].
     await startBackfill('p1', 'c1', { lastFloors: 'all', batchSize: 2, retries: 0 })
     await flush()
-    expect(opsSvc.appendOps).toHaveBeenNthCalledWith(1, 'p1', 'c1', 1, ['INSERT INTO chronicle VALUES (1)'])
-    expect(opsSvc.appendOps).toHaveBeenNthCalledWith(2, 'p1', 'c1', 3, ['INSERT INTO chronicle VALUES (1)'])
+    expect(opsSvc.appendOps).toHaveBeenNthCalledWith(1, 'p1', 'c1', 1, ['INSERT INTO chronicle VALUES (1)'], 'backfill')
+    expect(opsSvc.appendOps).toHaveBeenNthCalledWith(2, 'p1', 'c1', 3, ['INSERT INTO chronicle VALUES (1)'], 'backfill')
     expect(progressSvc.advanceProgress).toHaveBeenCalledWith('p1', 'c1', ['chronicle', 'world'], 1)
     expect(progressSvc.advanceProgress).toHaveBeenCalledWith('p1', 'c1', ['chronicle', 'world'], 3)
     expect(getBackfillState('c1')?.running).toBe(false)
@@ -189,7 +189,7 @@ describe('backfill orchestration', () => {
     const correctiveMessages = resilientSvc.callModelResilient.mock.calls[1][1] as Array<{ role: string; content: string }>
     expect(correctiveMessages.some((m) => m.role === 'assistant' && m.content.includes('BAD'))).toBe(true)
     expect(correctiveMessages.some((m) => m.content.includes('syntax error'))).toBe(true)
-    expect(opsSvc.appendOps).toHaveBeenCalledWith('p1', 'c1', 3, ['INSERT INTO chronicle VALUES (1)'])
+    expect(opsSvc.appendOps).toHaveBeenCalledWith('p1', 'c1', 3, ['INSERT INTO chronicle VALUES (1)'], 'backfill')
   })
 
   it('exhausted SQL retries mark the batch failed and the run CONTINUES', async () => {

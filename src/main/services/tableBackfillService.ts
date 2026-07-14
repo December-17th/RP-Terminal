@@ -165,7 +165,7 @@ const applyBatch = (
   }
   try {
     const result = applySqlBatch(profileId, chatId, template, sql)
-    if (result.statements.length) appendOps(profileId, chatId, toFloor, result.statements)
+    if (result.statements.length) appendOps(profileId, chatId, toFloor, result.statements, 'backfill')
     advanceProgress(profileId, chatId, allTables, toFloor)
   } finally {
     endTableWrite(chatId)

@@ -132,7 +132,7 @@ describe('applyEdit', () => {
     // applySqlBatch received the exact built statement.
     expect(sqlSvc.applySqlBatch).toHaveBeenCalledWith('p', 'c', expect.anything(), `DELETE FROM "t" WHERE rowid = 5`)
     // ops logged at floor 2 (length-1) with the statements the service reported.
-    expect(opsSvc.appendOps).toHaveBeenCalledWith('p', 'c', 2, [`DELETE FROM "t" WHERE rowid = 5`])
+    expect(opsSvc.appendOps).toHaveBeenCalledWith('p', 'c', 2, [`DELETE FROM "t" WHERE rowid = 5`], 'edit')
     expect(opsSvc.endTableWrite).toHaveBeenCalledWith('c')
   })
 
@@ -140,7 +140,7 @@ describe('applyEdit', () => {
     floorSvc.getAllFloors.mockReturnValue([])
     sqlSvc.applySqlBatch.mockReturnValue({ applied: 1, changes: 1, statements: ['DELETE FROM "t"'] })
     applyEdit('p', 'c', template(), { kind: 'reset', table: 't' })
-    expect(opsSvc.appendOps).toHaveBeenCalledWith('p', 'c', 0, ['DELETE FROM "t"'])
+    expect(opsSvc.appendOps).toHaveBeenCalledWith('p', 'c', 0, ['DELETE FROM "t"'], 'edit')
   })
 
   it('returns an error result (no throw) when the lock is busy — and does not run sql', () => {

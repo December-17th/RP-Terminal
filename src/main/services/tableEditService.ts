@@ -141,7 +141,7 @@ export const applyEdit = (
     const result = applySqlBatch(profileId, chatId, template, sql)
     if (result.statements.length) {
       const floor = Math.max(0, getAllFloors(profileId, chatId).length - 1)
-      appendOps(profileId, chatId, floor, result.statements)
+      appendOps(profileId, chatId, floor, result.statements, 'edit')
     }
     return { ok: true, changes: result.changes }
   } catch (error) {

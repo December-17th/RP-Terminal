@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import {
   replayPlan,
+  opTargetTable,
   tryBeginTableWrite,
   endTableWrite,
   TableOp
@@ -45,6 +46,30 @@ describe('replayPlan', () => {
     const input = [...ops]
     replayPlan(input, 2)
     expect(input).toEqual(ops)
+  })
+})
+
+describe('opTargetTable (WS1 target_table attribution)', () => {
+  it('classifies INSERT / UPDATE / DELETE to their target table', () => {
+    expect(opTargetTable("INSERT INTO characters (name) VALUES ('a')")).toBe('characters')
+    expect(opTargetTable("UPDATE inventory SET qty = 2 WHERE id = 1")).toBe('inventory')
+    expect(opTargetTable('DELETE FROM events WHERE id = 3')).toBe('events')
+  })
+
+  it('unquotes a "quoted" target identifier', () => {
+    expect(opTargetTable('INSERT INTO "relationships" (a) VALUES (1)')).toBe('relationships')
+  })
+
+  it('tolerates an OR-conflict clause and leading whitespace', () => {
+    expect(opTargetTable('  INSERT OR REPLACE INTO stats (k) VALUES (1)')).toBe('stats')
+    expect(opTargetTable('UPDATE OR IGNORE stats SET k = 1')).toBe('stats')
+  })
+
+  it("falls back to '*' for a statement that does not classify", () => {
+    expect(opTargetTable('SELECT * FROM secrets')).toBe('*')
+    expect(opTargetTable('DROP TABLE characters')).toBe('*')
+    expect(opTargetTable('')).toBe('*')
+    expect(opTargetTable('   not sql at all')).toBe('*')
   })
 })
 

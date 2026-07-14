@@ -459,7 +459,7 @@ const buildBaselineOps = (db: Database.Database, newTemplate: TableTemplate): st
 const rewriteOpLog = (profileId: string, chatId: string, baseline: string[]): void => {
   getDb().transaction(() => {
     deleteAllOps(profileId, chatId)
-    if (baseline.length) appendOps(profileId, chatId, 0, baseline)
+    if (baseline.length) appendOps(profileId, chatId, 0, baseline, 'baseline')
   })()
 }
 

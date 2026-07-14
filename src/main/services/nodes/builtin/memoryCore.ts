@@ -191,7 +191,7 @@ export const applyTableEdit = (
     // matches execution.
     if (result.statements.length) {
       const floor = Math.max(0, gen.floors.length - 1)
-      appendOps(gen.profileId, gen.chatId, floor, result.statements)
+      appendOps(gen.profileId, gen.chatId, floor, result.statements, 'maintain')
     }
     // Advance the shared pointer ONLY after a successful batch (advance-after-success). currentFloor is
     // re-read FROM DISK here (the table.gate idiom), not from gen.floors.

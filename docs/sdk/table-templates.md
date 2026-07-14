@@ -224,17 +224,44 @@ back too. The DB handle is always closed.
 
 ### Op log + rewind (`src/main/services/tableOpsService.ts`, `db.ts` `table_ops`)
 
-Every applied batch is appended to `table_ops (chat_id, floor, seq, sql)` in the app DB, keyed by
-the floor it was applied on. On floor truncation (`chatService.truncateFloors` → regenerate / swipe
-/ delete-from), ops at/after the cut floor are dropped (`deleteOpsFrom`) and the sandbox is rebuilt
-(`rebuildSandbox`): instantiate the template DDL, then replay the surviving ops in `(floor, seq)`
-order. Replay is deterministic (single-writer) and **fail-open** — an op that now fails (e.g. a
-template change dropped a column) is logged and skipped, never bricking the chat. `table_ops` rows
-are cleared by FK cascade on chat deletion (`foreign_keys = ON`), and `setChatTableTemplateId`
-clears the whole log on (re)assign/unassign (the sandbox is recreated, so old-template ops must not
-replay). The pure `replayPlan(ops, fromFloor)` (which ops survive a cut, order, floor attribution)
-is unit-tested; live state-equality after a rebuild lands in the owner's manual pass because
-`better-sqlite3` is alias-mocked under vitest.
+Every applied batch is appended to `table_ops (chat_id, floor, seq, sql, created_at, target_table,
+source)` in the app DB, keyed by the floor it was applied on. On floor truncation
+(`chatService.truncateFloors` → regenerate / swipe / delete-from), ops at/after the cut floor are
+dropped (`deleteOpsFrom`) and the sandbox is rebuilt (`rebuildSandbox`): instantiate the template
+DDL, then replay the surviving ops in `(floor, seq)` order. Replay is deterministic (single-writer)
+and **fail-open** — an op that now fails (e.g. a template change dropped a column) is logged and
+skipped, never bricking the chat. `table_ops` rows are cleared by FK cascade on chat deletion
+(`foreign_keys = ON`), and `setChatTableTemplateId` clears the whole log on (re)assign/unassign (the
+sandbox is recreated, so old-template ops must not replay). The pure `replayPlan(ops, fromFloor)`
+(which ops survive a cut, order, floor attribution) is unit-tested; live state-equality after a
+rebuild lands in the owner's manual pass because `better-sqlite3` is alias-mocked under vitest.
+
+**Op attribution (WS1 — `target_table` + `source`).** Two columns, added by forward migration in
+`db.ts` `getDb()` (`addColumnIfMissing` + index `idx_table_ops_chat_table_floor(chat_id,
+target_table, floor)`):
+
+- **`target_table`** — the single table a statement writes, classified at append time by
+  `appendOps` via the pure `opTargetTable(sql)` (same single-table INSERT/UPDATE/DELETE classifier as
+  the write path). Deterministic because every logged statement was already `validateBatch`-gated;
+  `'*'` is the defensive fallback for a statement that no longer classifies. A one-time backfill
+  (`migrateTableOpsTargetTable`, idempotent — scoped to `target_table IS NULL`) classifies legacy
+  rows. Enables the table-scoped cut `deleteOpsFor(profileId, chatId, tables, fromFloor)` (drops ops
+  at/after `fromFloor` whose `target_table ∈ tables`); **`'*'` rows are never matched by the IN-list,
+  so they always survive** (do not pass `'*'` in `tables`).
+- **`source`** — write-path provenance, one of `maintain` (auto `memory.maintain`), `backfill`
+  (`tableBackfillService`), `edit` (`tableEditService` hand edits), `baseline` (structural
+  re-baseline, `tableStructureService.rewriteOpLog`), `refill` (the WS2 refill engine), or **NULL for
+  legacy rows** (provenance is not reconstructable). `appendOps` takes an optional trailing
+  `source?: TableOpSource`; `hasBaselineOps(profileId, chatId, tables)` probes for `source='baseline'`
+  ops (the refill partial-refill gate reads it).
+
+  **Residual risk (legacy NULL source):** a structural re-baseline written before WS1 has
+  `source=NULL`, indistinguishable from organic floor-0 ops, so `hasBaselineOps` cannot detect it —
+  a partial refill of such a chat could still re-duplicate. New re-baselines (post-WS1) are stamped
+  `'baseline'` and gated correctly.
+
+`listOpsForDisplay` surfaces `source` (nullable) alongside the SQL-derived `kind`/`table` for the
+History surface.
 
 ### Write lock
 

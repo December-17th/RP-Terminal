@@ -20,7 +20,7 @@ vi.mock('../../src/main/services/db', async () => {
   const { default: Adapter } = await import('../mocks/betterSqlite3Node')
   const appDb = new Adapter(':memory:')
   appDb.exec(
-    'CREATE TABLE table_ops (chat_id TEXT NOT NULL, floor INTEGER NOT NULL, seq INTEGER NOT NULL, sql TEXT NOT NULL, created_at TEXT, PRIMARY KEY (chat_id, floor, seq))'
+    'CREATE TABLE table_ops (chat_id TEXT NOT NULL, floor INTEGER NOT NULL, seq INTEGER NOT NULL, sql TEXT NOT NULL, created_at TEXT, target_table TEXT, source TEXT, PRIMARY KEY (chat_id, floor, seq))'
   )
   return { getDb: () => appDb }
 })

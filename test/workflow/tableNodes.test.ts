@@ -213,7 +213,7 @@ describe('table.apply', () => {
     expect(opsSvc.appendOps).toHaveBeenCalledWith('p1', 'c1', 2, [
       'INSERT INTO a VALUES (1)',
       'UPDATE a SET x=1'
-    ])
+    ], 'maintain')
     expect(opsSvc.endTableWrite).toHaveBeenCalledWith('c1')
   })
 
@@ -223,7 +223,7 @@ describe('table.apply', () => {
     opsSvc.tryBeginTableWrite.mockReturnValue(true)
     sqlSvc.applySqlBatch.mockReturnValue({ applied: 1, changes: 1, statements: ['INSERT INTO a VALUES (1)'] })
     tableApply.run(ctx, { gen: { ...gen, floors: [] }, sql: 'INSERT INTO a VALUES (1)' }, meta(tableApply, 'n'))
-    expect(opsSvc.appendOps).toHaveBeenCalledWith('p1', 'c1', 0, ['INSERT INTO a VALUES (1)'])
+    expect(opsSvc.appendOps).toHaveBeenCalledWith('p1', 'c1', 0, ['INSERT INTO a VALUES (1)'], 'maintain')
   })
 
   it('execution failure → class-B bad-sql and the lock IS released', () => {
