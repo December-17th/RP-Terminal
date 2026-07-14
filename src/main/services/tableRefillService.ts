@@ -1,6 +1,6 @@
 import { getChatTableTemplateId } from './chatService'
 import { getTableTemplateById } from './tableTemplateService'
-import { getAllFloors } from './floorService'
+import { getAllFloors, transcriptEpoch, onTranscriptCut } from './floorService'
 import {
   refillShadowPath,
   instantiateAt,
@@ -177,6 +177,27 @@ export const refillRunOutcome = (aborted: boolean, failedReason: string | null):
       ? { status: 'cancelled', finalize: false }
       : { status: 'done', finalize: true }
 
+/**
+ * What a transcript CUT at `cutFloor` (regenerate / floor delete) does to a persisted refill resume
+ * row (PURE — the refill race, owner pass 2026-07-14). `truncateFloors` deletes ops at/after the cut,
+ * so committed refill work at those floors is GONE from the log:
+ *  - cut at/below the run's cutpoint → the whole plan is void ('delete' the row; nothing committed
+ *    survives — every committed floor is ≥ fromFloor ≥ cut),
+ *  - cut inside the committed range → clamp `completedUntil` to `cutFloor - 1` (the surviving part;
+ *    Resume re-reads the floors fresh, so continuing against the NEW tail is sound),
+ *  - cut above the committed range → 'keep' (the committed part is untouched; the un-run tail is
+ *    recomposed from disk at resume time anyway).
+ */
+export const refillProgressAfterCut = (
+  row: { fromFloor: number; completedUntil: number },
+  cutFloor: number
+): 'delete' | 'keep' | { completedUntil: number } =>
+  cutFloor <= row.fromFloor
+    ? 'delete'
+    : row.completedUntil >= cutFloor
+      ? { completedUntil: cutFloor - 1 }
+      : 'keep'
+
 // ---- refill-progress store (app DB) — untestable stance (alias-mocked better-sqlite3) ---------
 
 export interface RefillProgressRow {
@@ -279,6 +300,28 @@ export const discardRefill = (profileId: string, chatId: string): void => {
   removeShadow(profileId, chatId)
 }
 
+// The refill race (owner pass 2026-07-14): floors truncated (regenerate / delete) while a refill is
+// live or interrupted. Proactive layer — abort the live run NOW (its in-flight LLM call stops instead
+// of paying for a batch the epoch fence would drop) and fix the persisted resume row per
+// `refillProgressAfterCut` so a later Resume never claims floors beyond the cut. The epoch fence in
+// `commitChunk`/finalize is the correctness backstop if this signal loses the race; the run's own
+// unwind rebuilds the live sandbox (truncateFloors' guarded rebuild self-skips while we hold the
+// guard) and removes the shadow. Registered via floorService's listener seam (no import cycle).
+onTranscriptCut((profileId, chatId, cutFloor) => {
+  const live = runs.get(chatId)
+  if (live?.state.running) live.controller.abort()
+  const row = getRefillProgress(chatId)
+  if (!row || row.status !== 'in_progress') return
+  const next = refillProgressAfterCut(row, cutFloor)
+  if (next === 'delete') {
+    deleteRefillProgress(chatId)
+    // The live run still needs its shadow to unwind; with no run, the orphan file can go now.
+    if (!live?.state.running) removeShadow(profileId, chatId)
+  } else if (next !== 'keep') {
+    upsertRefillProgress(chatId, row.selected, row.fromFloor, next.completedUntil, row.status)
+  }
+})
+
 // ---- options -------------------------------------------------------------------------------
 
 export interface RefillOpts {
@@ -324,6 +367,10 @@ export const startRefill = async (
   const floors = getAllFloors(profileId, chatId)
   const latest = floors.length - 1
   if (latest < 0) throw new Error('tables.refillNoFloors')
+  // Staleness fence: the epoch of the floors snapshot the WHOLE run composes from (same sync block as
+  // the read). Checked at every chunk commit + finalize — the awaits on the batch LLM calls are the
+  // only points a truncate/edit/swipe can interleave.
+  const epoch0 = transcriptEpoch(chatId)
 
   const requested =
     typeof opts.fromFloor === 'number'
@@ -387,7 +434,8 @@ export const startRefill = async (
       opts.extraHint,
       token,
       entry.state,
-      controller.signal
+      controller.signal,
+      epoch0
     )
   } catch (error) {
     endTableWrite(chatId, token) // never leak the guard on a start-time failure
@@ -406,9 +454,14 @@ const commitChunk = (
   selected: string[],
   fromFloor: number,
   toFloor: number,
-  lastKnownMax: number
+  lastKnownMax: number,
+  expectEpoch: number
 ): number => {
   transact(() => {
+    // Staleness fence (the refill race): the batch just awaited its LLM call — the one point a
+    // truncate/edit/swipe can interleave. A moved epoch means the transcript this chunk was composed
+    // from no longer exists as read → drop the chunk instead of committing ops for dead floors.
+    if (transcriptEpoch(chatId) !== expectEpoch) throw new Error('tables.refillTranscriptChanged')
     const observed = opsWatermark(chatId)
     if (watermarkMoved(observed, lastKnownMax)) throw new Error('tables.refillInterleaved')
     if (cut) deleteOpsFor(profileId, chatId, cut.tables, cut.fromFloor)
@@ -443,7 +496,8 @@ const runRefill = async (
   extraHint: string | undefined,
   token: string,
   state: RefillRunState,
-  signal: AbortSignal
+  signal: AbortSignal,
+  epoch0: number
 ): Promise<void> => {
   const selectedSet = new Set(selected)
   const shadow = refillShadowPath(profileId, chatId)
@@ -531,7 +585,17 @@ const runRefill = async (
       const plan = planChunkCommit(cutDone, selected, from, recorded, span.to)
       lastKnownMax = Math.max(
         lastKnownMax,
-        commitChunk(profileId, chatId, plan.cut, plan.floorOps, selected, from, span.to, lastKnownMax)
+        commitChunk(
+          profileId,
+          chatId,
+          plan.cut,
+          plan.floorOps,
+          selected,
+          from,
+          span.to,
+          lastKnownMax,
+          epoch0
+        )
       )
       if (plan.cut) cutDone = true
       state.completedUntil = span.to
@@ -556,6 +620,13 @@ const runRefill = async (
     }
 
     state.running = false
+    // Finalize guard (the refill race): a cut/edit that landed AFTER the last commit but before this
+    // point (or aborted the run via the onTranscriptCut hook) must not finalize — advancing pointers
+    // to the STALE `latest` would overshoot the clamp truncateFloors just applied. Routed as a
+    // failure so the rail states the reason; the (already-clamped) resume row makes Resume sound.
+    if (failedReason == null && transcriptEpoch(chatId) !== epoch0) {
+      failedReason = 'tables.refillTranscriptChanged'
+    }
     const outcome = refillRunOutcome(signal.aborted, failedReason)
     if (!outcome.finalize) {
       // Failed batch or cancel: committed chunks + the 'in_progress' progress row STAY (completedUntil
@@ -603,6 +674,16 @@ const runRefill = async (
       completedUntil: state.completedUntil
     })
   } finally {
+    // The refill race: floors were truncated mid-run → truncateFloors' own guarded rebuild SELF-SKIPPED
+    // (we held the guard), leaving the live sandbox at the last published shadow while the op log was
+    // already cut. Rebuild from the (truncated) op log while we STILL hold the guard, then release.
+    if (transcriptEpoch(chatId) !== epoch0) {
+      try {
+        rebuildSandboxUnguarded(profileId, chatId, template)
+      } catch (rebuildErr) {
+        log('info', `refill post-cut sandbox rebuild failed (chat ${chatId}): ${rebuildErr}`)
+      }
+    }
     endTableWrite(chatId, token) // token-checked release — never frees a successor's claim
   }
 }

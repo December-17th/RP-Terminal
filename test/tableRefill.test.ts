@@ -14,7 +14,8 @@ import {
   watermarkMoved,
   resumeRefillFrom,
   planChunkCommit,
-  refillRunOutcome
+  refillRunOutcome,
+  refillProgressAfterCut
 } from '../src/main/services/tableRefillService'
 import {
   beginTableWrite,
@@ -139,6 +140,23 @@ describe('refillRunOutcome — stop-on-failure terminal branch (review fix F1)',
   })
   it('a clean full run ⇒ done + finalize (advance pointers, delete the progress row)', () => {
     expect(refillRunOutcome(false, null)).toEqual({ status: 'done', finalize: true })
+  })
+})
+
+describe('refillProgressAfterCut — the resume row after a transcript cut (the refill race)', () => {
+  const row = { fromFloor: 3, completedUntil: 8 }
+  it('cut at/below the cutpoint ⇒ delete (nothing committed survives — all refill ops were ≥ fromFloor)', () => {
+    expect(refillProgressAfterCut(row, 3)).toBe('delete')
+    expect(refillProgressAfterCut(row, 0)).toBe('delete')
+  })
+  it('cut inside the committed range ⇒ clamp completedUntil to cutFloor - 1 (the surviving part)', () => {
+    expect(refillProgressAfterCut(row, 6)).toEqual({ completedUntil: 5 })
+    // Cut right after the cutpoint: committed part shrinks to nothing usable beyond fromFloor..3.
+    expect(refillProgressAfterCut(row, 4)).toEqual({ completedUntil: 3 })
+  })
+  it('cut above the committed range ⇒ keep (the committed part is untouched)', () => {
+    expect(refillProgressAfterCut(row, 9)).toBe('keep')
+    expect(refillProgressAfterCut({ fromFloor: 3, completedUntil: -1 }, 5)).toBe('keep')
   })
 })
 

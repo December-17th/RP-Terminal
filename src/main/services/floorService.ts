@@ -29,6 +29,20 @@ const bumpTranscriptEpoch = (chatId: string): void => {
   transcriptEpochs.set(chatId, (transcriptEpochs.get(chatId) ?? 0) + 1)
 }
 
+/**
+ * Transcript-CUT listeners (the refill race, owner pass 2026-07-14): fired when floors are truncated
+ * (regenerate / delete), i.e. the one transcript mutation that also invalidates floor INDICES. The
+ * refill engine registers here to abort a live run immediately and clamp its resume row — a listener
+ * registry (instead of the engine importing us... it already does; instead of US importing the engine)
+ * keeps floorService a leaf module (no dependency cycle). Listener errors are swallowed: a broken
+ * listener must never break floor deletion itself.
+ */
+type TranscriptCutListener = (profileId: string, chatId: string, fromFloor: number) => void
+const transcriptCutListeners: TranscriptCutListener[] = []
+export const onTranscriptCut = (fn: TranscriptCutListener): void => {
+  transcriptCutListeners.push(fn)
+}
+
 interface FloorRow {
   floor: number
   chat_id: string
@@ -222,12 +236,19 @@ export const updateFloorFields = (
 }
 
 export const deleteFloorAndSubsequent = (
-  _profileId: string,
+  profileId: string,
   chatId: string,
   fromFloorIndex: number
 ): void => {
   getDb().prepare('DELETE FROM floors WHERE chat_id = ? AND floor >= ?').run(chatId, fromFloorIndex)
   bumpTranscriptEpoch(chatId) // truncation (regenerate / floor delete)
+  for (const fn of transcriptCutListeners) {
+    try {
+      fn(profileId, chatId, fromFloorIndex)
+    } catch {
+      /* a listener must never break the deletion */
+    }
+  }
 }
 
 const safeJson = <T>(s: string, fallback: T): T => {

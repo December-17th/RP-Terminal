@@ -362,13 +362,27 @@ the transcript, built as a **generalized backfill** (per-floor attribution at ea
    `advanceProgress(selected, latest)` + delete the progress row + shadow. `discardRefill` (IPC
    `chat-tables-refill-discard`) drops the resume record + shadow, keeping committed chunks.
    `getRefillState` (IPC `chat-tables-refill-state`) returns `{ run, persisted }`.
+6. **Transcript-staleness fence** (the regenerate-mid-refill race, 2026-07-14). The run captures
+   `floorService.transcriptEpoch(chatId)` in the same sync block that snapshots the floors; the epoch
+   is bumped by truncation (`deleteFloorAndSubsequent`), in-place floor edits, and swipe
+   switch/append (NOT by appends or variable-only saves). Each chunk commit re-checks it inside the
+   transaction and throws `tables.refillTranscriptChanged` on a mismatch; a moved epoch after the
+   loop also blocks FINALIZE (pointers would overshoot the clamp `truncateFloors` applied). On
+   unwind with a moved epoch the run rebuilds the live sandbox via `rebuildSandboxUnguarded` before
+   releasing the guard — `truncateFloors`' own guarded rebuild self-skipped while the refill held it.
+   Proactively, `truncateFloors` → `floorService.onTranscriptCut` listeners → the engine ABORTS a
+   live run immediately and fixes the resume row per `refillProgressAfterCut(row, cutFloor)`: cut ≤
+   `fromFloor` ⇒ row deleted; cut inside the committed range ⇒ `completedUntil` clamped to
+   `cutFloor - 1`; cut above ⇒ kept. (`memory.maintain` uses the same epoch via `applyTableEdit`'s
+   `expectTranscriptEpoch` — a stale single-call batch is dropped with report
+   `stale transcript, skipped`.)
 
 **Progress table.** `table_refill_progress(chat_id PK REFERENCES chats(id) ON DELETE CASCADE,
 selected_json, from_floor, completed_until, status, updated_at)` — one in-flight refill per chat, the
 shujuku `manualRefillProgress` analogue. **Events** ride the backfill channel `table-backfill-progress`
 with `kind:'refill'` (+ `completedUntil`). Pure decision helpers (unit-tested):
 `shouldReplayIntoShadow`, `partitionBySelected`, `defaultRefillFrom`, `refillBaselineBlocked`,
-`watermarkMoved`, `resumeRefillFrom`, `planChunkCommit`, `refillRunOutcome`.
+`watermarkMoved`, `resumeRefillFrom`, `planChunkCommit`, `refillRunOutcome`, `refillProgressAfterCut`.
 
 ### Nodes (`src/main/services/nodes/builtin/`)
 

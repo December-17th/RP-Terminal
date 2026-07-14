@@ -839,6 +839,8 @@ const en: Record<string, string> = {
   'tables.refillAlreadyRunning': 'A refill is already running for this session.',
   'tables.refillGuardLost': 'The refill lost its write lock and stopped — resume to continue.',
   'tables.refillInterleaved': 'Another table write landed mid-refill; the run stopped to avoid a conflict.',
+  'tables.refillTranscriptChanged':
+    'The floors changed mid-refill (regenerate / edit / delete) — the run stopped. Resume to continue against the new content.',
   'tables.refillRunning': 'A refill is currently running for this session.',
   'tables.refillNothingToResume': 'There is no interrupted refill to resume.',
   'status.noState': '(No RPG state for this session yet)',

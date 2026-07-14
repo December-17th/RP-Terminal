@@ -804,6 +804,7 @@ const zh: Record<string, string> = {
   'tables.refillAlreadyRunning': '该会话已有一次重填在进行中。',
   'tables.refillGuardLost': '重填丢失了写锁并已停止——可续填以继续。',
   'tables.refillInterleaved': '重填过程中有其它表格写入落入，为避免冲突已停止。',
+  'tables.refillTranscriptChanged': '重填期间楼层发生变更（重新生成/编辑/删除），已停止；可续填以按新内容继续。',
   'tables.refillRunning': '该会话正在进行重填。',
   'tables.refillNothingToResume': '没有可续填的中断重填。',
 
