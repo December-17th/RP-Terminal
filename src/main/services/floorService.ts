@@ -9,6 +9,26 @@ import { withLock } from './asyncLock'
  *  Variables-view editor, swipe/regenerate) shares. */
 const varsLockKey = (chatId: string): string => `vars:${chatId}`
 
+/**
+ * Per-chat TRANSCRIPT epoch (memory-maintain staleness fence, owner pass 2026-07-14): a monotonic
+ * counter bumped by every mutation that CHANGES existing transcript content — truncation
+ * (regenerate/delete), in-place text edits, and swipe switches/appends (they change the active
+ * response). Deliberately NOT bumped by `saveFloor` itself: that path also carries new-floor appends
+ * and variable-only rewrites (MVU write-back, setFloorStatData), which don't invalidate text a
+ * side-call already read — bumping there would make in-flight maintains skip constantly.
+ *
+ * Consumers (memory.maintain via `applyTableEdit`) capture the epoch when they COMPOSE from the
+ * transcript and re-check at APPLY: a mismatch means the floors the model read no longer exist as
+ * read (e.g. regenerate mid-call), so the batch is dropped instead of filling tables from a
+ * discarded reply while advancing the pointers `truncateFloors` just clamped.
+ * In-memory only: an epoch lost to an app restart can only skip one maintain, never corrupt.
+ */
+const transcriptEpochs = new Map<string, number>()
+export const transcriptEpoch = (chatId: string): number => transcriptEpochs.get(chatId) ?? 0
+const bumpTranscriptEpoch = (chatId: string): void => {
+  transcriptEpochs.set(chatId, (transcriptEpochs.get(chatId) ?? 0) + 1)
+}
+
 interface FloorRow {
   floor: number
   chat_id: string
@@ -150,6 +170,7 @@ export const setActiveSwipe = (
   floor.swipe_id = swipe_id
   floor.response.content = content
   saveFloor(profileId, chatId, floor)
+  bumpTranscriptEpoch(chatId) // active response text changed
   return floor
 }
 
@@ -170,6 +191,7 @@ export const addSwipe = (
   floor.swipe_id = state.swipe_id
   floor.response.content = content
   saveFloor(profileId, chatId, floor)
+  bumpTranscriptEpoch(chatId) // active response text changed
   return floor
 }
 
@@ -196,6 +218,7 @@ export const updateFloorFields = (
       floorIndex
     )
   }
+  if (userContent !== null || responseContent !== null) bumpTranscriptEpoch(chatId)
 }
 
 export const deleteFloorAndSubsequent = (
@@ -204,6 +227,7 @@ export const deleteFloorAndSubsequent = (
   fromFloorIndex: number
 ): void => {
   getDb().prepare('DELETE FROM floors WHERE chat_id = ? AND floor >= ?').run(chatId, fromFloorIndex)
+  bumpTranscriptEpoch(chatId) // truncation (regenerate / floor delete)
 }
 
 const safeJson = <T>(s: string, fallback: T): T => {

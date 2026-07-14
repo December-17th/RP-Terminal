@@ -23,7 +23,7 @@ import {
   composedPromptDebug
 } from './memoryCore'
 import { getProgress } from '../../tableProgressService'
-import { getAllFloors } from '../../floorService'
+import { getAllFloors, transcriptEpoch } from '../../floorService'
 import { getSettings } from '../../settingsService'
 import { writeScopeDirective } from '../../tableMaintenance'
 
@@ -173,6 +173,12 @@ export const memoryMaintain: NodeImpl = {
     const due = dueTables(template, getProgress(gen.profileId, gen.chatId), currentFloor, globalDefault)
     if (!due.length) return { outputs: { report: 'no tables due' } }
 
+    // Staleness fence (owner pass 2026-07-14): capture the transcript epoch in the SAME sync block
+    // that composes from the floors. If a regenerate/edit/swipe lands while the model call below is
+    // in flight, the epoch moves and applyTableEdit drops the batch — otherwise the discarded reply's
+    // facts would fill the tables AND re-advance the pointers truncateFloors just clamped.
+    const composedEpoch = transcriptEpoch(gen.chatId)
+
     // The due tables' display names drive the shared write-scope directive (WS2/WS3 parity). All tables
     // still RENDER in the block (full context, D5); only the due ones may be written this turn.
     const dueSet = new Set(due)
@@ -210,8 +216,18 @@ export const memoryMaintain: NodeImpl = {
       advanceProgress: cfg.advance_progress !== false,
       writeScope: due,
       advanceTables: due,
-      label: 'memory.maintain'
+      label: 'memory.maintain',
+      expectTranscriptEpoch: composedEpoch,
+      // Advance to the floor the model actually READ, not a disk re-read — a floor appended while
+      // the call was in flight must stay in the backlog for its own maintenance pass.
+      advanceTo: currentFloor
     })
+    if (applied.stale) {
+      // Regenerate/edit/swipe landed mid-call: the batch was composed from floors that no longer
+      // exist as read. Dropped without applying or advancing — the next commit boundary re-runs
+      // against the NEW content (truncateFloors already clamped the pointers).
+      return { outputs: { report: 'stale transcript, skipped' }, debug: promptDebug }
+    }
     const dropped = applied.dropped ? `, dropped ${applied.dropped} out-of-scope` : ''
     return {
       outputs: {

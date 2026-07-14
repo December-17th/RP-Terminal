@@ -25,7 +25,9 @@ vi.mock('../../src/main/services/chatService', () => mockChat)
 const mockFloor = vi.hoisted(() => ({
   getFloor: vi.fn(() => floors[floors.length - 1]),
   getAllFloors: vi.fn(() => floors),
-  saveFloor: vi.fn()
+  saveFloor: vi.fn(),
+  // Staleness fence (owner pass 2026-07-14): stable epoch by default (compose == apply, no skip).
+  transcriptEpoch: vi.fn(() => 0)
 }))
 vi.mock('../../src/main/services/floorService', () => mockFloor)
 
@@ -155,6 +157,7 @@ beforeEach(() => {
   mockOps.endTableWrite.mockReset()
   mockProgress.advanceProgress.mockReset()
   mockProgress.getProgress.mockReset().mockReturnValue({}) // WS3: default = nothing processed → all due
+  mockFloor.transcriptEpoch.mockReset().mockReturnValue(0)
   mockCallModel.callModel
     .mockReset()
     .mockResolvedValue({ raw: '<TableEdit>INSERT INTO summary VALUES (1)</TableEdit>', rawUsage: {} })
@@ -231,6 +234,23 @@ describe('memory.maintain — end to end', () => {
     expect(mockCallModel.callModel).not.toHaveBeenCalled()
     expect(mockSql.applySqlBatch).not.toHaveBeenCalled()
     expect(mockProgress.advanceProgress).not.toHaveBeenCalled()
+  })
+
+  // Staleness fence (owner pass 2026-07-14): a regenerate/edit/swipe that lands while the maintain
+  // LLM call is in flight bumps the transcript epoch; the apply must then DROP the batch — otherwise
+  // the discarded reply's facts fill the tables and the pointer re-advances over the clamp
+  // truncateFloors just applied ("old memory filled while the table thinks it's up to date").
+  it('transcript changed mid-call (regenerate) → batch dropped: no write, no ops, no advance', async () => {
+    // Epoch 0 at compose; the regenerate bumps it before the (mocked) model reply is applied.
+    mockFloor.transcriptEpoch.mockReturnValueOnce(0).mockReturnValue(1)
+    const res = await memoryMaintain.run(ctx(), {}, { id: 'm', config: memoryMaintain.configSchema!.parse(config) })
+    expect(res.outputs!.report).toBe('stale transcript, skipped')
+    expect(mockCallModel.callModel).toHaveBeenCalled() // the call was already in flight
+    expect(mockSql.applySqlBatch).not.toHaveBeenCalled()
+    expect(mockOps.appendOps).not.toHaveBeenCalled()
+    expect(mockProgress.advanceProgress).not.toHaveBeenCalled()
+    // The guard was still released (acquire/release pair) so the chat isn't bricked.
+    expect(mockOps.endTableWrite).toHaveBeenCalled()
   })
 
   it('no template bound → silent no-op (no model call, no write)', async () => {

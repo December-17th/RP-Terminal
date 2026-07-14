@@ -9,7 +9,7 @@ import { advanceProgress, resolveUpdateFrequency } from '../../tableProgressServ
 import { readAllTables, TableRead } from '../../tableDbService'
 import { renderTableBlock } from '../../tableMaintenance'
 import { getSettings } from '../../settingsService'
-import { getAllFloors } from '../../floorService'
+import { getAllFloors, transcriptEpoch } from '../../floorService'
 import { TableTemplate } from '../../../types/tableTemplate'
 import { NodeRunFailure } from '../types'
 
@@ -187,6 +187,10 @@ export const composedPromptDebug = (messages: ChatMessage[]): Record<string, str
 export interface ApplyTableEditResult {
   applied: number
   changes: number
+  /** Staleness fence (owner pass 2026-07-14): the transcript changed between compose and apply
+   *  (regenerate/edit/swipe mid-call) — NOTHING was applied and NO pointer advanced. Present only
+   *  when the caller passed `expectTranscriptEpoch` and the check failed. */
+  stale?: true
   /** WS3: statements dropped by the write-scope filter (present ONLY when `writeScope` was passed). */
   dropped?: number
 }
@@ -221,6 +225,15 @@ export const applyTableEdit = (
     label?: string
     writeScope?: string[]
     advanceTables?: string[]
+    /** Staleness fence: the `transcriptEpoch(chatId)` captured when the batch was COMPOSED. When the
+     *  epoch moved by apply time (regenerate/edit/swipe mid-call), the batch is DROPPED — no apply,
+     *  no op-log rows, no pointer advance — and `{ stale: true }` is returned. The backlog stands
+     *  (truncateFloors already clamped the pointers), so the next commit boundary re-maintains the
+     *  NEW content instead of filling tables from a discarded reply. */
+    expectTranscriptEpoch?: number
+    /** Advance pointers to THIS floor (the floor the model actually saw) instead of re-reading the
+     *  disk floor count — so a floor appended mid-call is never credited as processed. */
+    advanceTo?: number
   } = {}
 ): ApplyTableEditResult => {
   const label = opts.label ?? 'table.apply'
@@ -228,6 +241,13 @@ export const applyTableEdit = (
     throw new NodeRunFailure('B', `${label}: a table write is already in flight for this chat`, 1, 'busy')
   }
   try {
+    // Staleness fence (checked INSIDE the write guard so the decision can't race a concurrent write).
+    if (
+      opts.expectTranscriptEpoch !== undefined &&
+      transcriptEpoch(gen.chatId) !== opts.expectTranscriptEpoch
+    ) {
+      return { applied: 0, changes: 0, stale: true }
+    }
     // WS3 write-scope: drop statements targeting out-of-scope tables before apply (the model saw all
     // tables for context but may only WRITE the due/selected ones). Validate through the shared filter
     // so a bad batch throws TableSqlError → the class-B bad-sql path below, exactly like applySqlBatch.
@@ -261,7 +281,8 @@ export const applyTableEdit = (
     // pointers move (default: all template tables — the pre-WS3 behavior).
     if (opts.advanceProgress === true) {
       const names = opts.advanceTables ?? template.tables.map((t) => t.sqlName)
-      const currentFloor = Math.max(0, getAllFloors(gen.profileId, gen.chatId).length - 1)
+      const currentFloor =
+        opts.advanceTo ?? Math.max(0, getAllFloors(gen.profileId, gen.chatId).length - 1)
       advanceProgress(gen.profileId, gen.chatId, names, currentFloor)
     }
     return dropped === undefined ? { applied, changes } : { applied, changes, dropped }
