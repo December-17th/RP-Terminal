@@ -175,9 +175,15 @@ export function MemoryManagerView({ profileId }: { profileId: string }): React.J
   const doAssign = async (id: string | null): Promise<void> => {
     if (!activeChatId) return
     try {
-      await api().setChatTableTemplate(profileId, activeChatId, id)
+      const res = await api().setChatTableTemplate(profileId, activeChatId, id)
+      if (res && res.error) {
+        const detail = String(res.error).startsWith('tables.') ? t(res.error) : String(res.error)
+        useToastStore.getState().push(`${t('tables.assignFailed')}: ${detail}`)
+        return
+      }
     } catch {
       useToastStore.getState().push(t('tables.assignFailed'))
+      return
     }
     await loadChat()
   }
@@ -207,9 +213,15 @@ export function MemoryManagerView({ profileId }: { profileId: string }): React.J
   const onDeleteTemplate = async (): Promise<void> => {
     if (!assignedId) return
     try {
-      await api().deleteTableTemplate(profileId, assignedId)
+      const res = await api().deleteTableTemplate(profileId, assignedId)
+      if (res && res.error) {
+        const detail = String(res.error).startsWith('tables.') ? t(res.error) : String(res.error)
+        useToastStore.getState().push(`${t('tables.deleteFailed')}: ${detail}`)
+        return
+      }
     } catch {
       useToastStore.getState().push(t('tables.deleteFailed'))
+      return
     }
     await loadTemplates()
     await loadChat()

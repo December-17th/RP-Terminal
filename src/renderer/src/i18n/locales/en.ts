@@ -600,6 +600,8 @@ const en: Record<string, string> = {
   'tables.editUnknownTable': 'That table is not part of the assigned template.',
   'tables.editBadColumn': 'That column no longer exists in the table.',
   'tables.rewindBadFloor': 'Invalid rewind point.',
+  'tables.memoryWriteBusy':
+    'Table memory is busy (a refill is running for this session). Cancel or let it finish, then try again.',
   // Per-table template prompt editor (manual-pass issue 03)
   'tables.editTemplate': 'Template prompts',
   'tables.templateEditHint':

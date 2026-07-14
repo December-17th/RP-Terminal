@@ -220,17 +220,26 @@ export const setChatTableTemplateId = (
 ): void => {
   const template = id ? getTableTemplateById(profileId, id) : null
   const effectiveId = template ? id : null
-  getDb()
-    .prepare('UPDATE chats SET table_template_id = ? WHERE id = ? AND profile_id = ?')
-    .run(effectiveId, chatId, profileId)
-  // The sandbox is recreated from scratch on (re)assign/unassign, so the chat's SQL op log is stale
-  // (it referenced the OLD template's tables) — clear it, or a later rewind would replay dead ops.
-  tableOpsService.deleteAllOps(profileId, chatId)
-  // Per-table maintenance progress pointers referenced the OLD template's tables — reset them too
-  // (issue 07), so a reassigned template starts from "never processed" and cadences begin fresh.
-  tableProgressService.resetProgress(profileId, chatId)
-  if (template) tableDbService.instantiate(profileId, chatId, template)
-  else tableDbService.removeSandbox(profileId, chatId)
+  // (Re)assignment wipes the op log + progress and re-instantiates the sandbox — destructive to the
+  // same per-chat state a live refill owns. Claim the write guard by token so an assign mid-refill is
+  // REFUSED (throws `tables.memoryWriteBusy`) instead of corrupting the op log under the refill's feet.
+  const token = tableOpsService.beginTableWrite(chatId)
+  if (token === null) throw new Error('tables.memoryWriteBusy')
+  try {
+    getDb()
+      .prepare('UPDATE chats SET table_template_id = ? WHERE id = ? AND profile_id = ?')
+      .run(effectiveId, chatId, profileId)
+    // The sandbox is recreated from scratch on (re)assign/unassign, so the chat's SQL op log is stale
+    // (it referenced the OLD template's tables) — clear it, or a later rewind would replay dead ops.
+    tableOpsService.deleteAllOps(profileId, chatId)
+    // Per-table maintenance progress pointers referenced the OLD template's tables — reset them too
+    // (issue 07), so a reassigned template starts from "never processed" and cadences begin fresh.
+    tableProgressService.resetProgress(profileId, chatId)
+    if (template) tableDbService.instantiate(profileId, chatId, template)
+    else tableDbService.removeSandbox(profileId, chatId)
+  } finally {
+    tableOpsService.endTableWrite(chatId, token)
+  }
 }
 
 /**
@@ -245,11 +254,17 @@ export const listChatIdsForTableTemplate = (profileId: string, templateId: strin
       .all(profileId, templateId) as Array<{ id: string }>
   ).map((r) => r.id)
 
-/** Strip a table-template id out of every session that had it assigned (called when it's deleted). */
+/** Strip a table-template id out of every session that had it assigned (called when it's deleted).
+ *  Pre-checks EVERY bound chat's write guard before unbinding any: if a live refill owns one, throws
+ *  `tables.memoryWriteBusy` so the template delete is refused atomically (nothing unbound) rather than
+ *  half-unbinding and then failing mid-loop when `setChatTableTemplateId` hits the busy chat. */
 export const removeTableTemplateIdFromChats = (profileId: string, templateId: string): void => {
   const rows = getDb()
     .prepare('SELECT id FROM chats WHERE profile_id = ? AND table_template_id = ?')
     .all(profileId, templateId) as Array<{ id: string }>
+  for (const row of rows) {
+    if (tableOpsService.isTableWriteBusy(row.id)) throw new Error('tables.memoryWriteBusy')
+  }
   for (const row of rows) setChatTableTemplateId(profileId, row.id, null)
 }
 

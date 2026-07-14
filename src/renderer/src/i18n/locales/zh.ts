@@ -579,6 +579,7 @@ const zh: Record<string, string> = {
   'tables.editUnknownTable': '该数据表不属于已挂载的模板。',
   'tables.editBadColumn': '该列在表格中已不存在。',
   'tables.rewindBadFloor': '回滚点无效。',
+  'tables.memoryWriteBusy': '表格记忆正忙（该会话正在进行重填）。请取消或等待完成后再试。',
   // 每表模板提示词编辑器（manual-pass issue 03）
   'tables.editTemplate': '模板提示词',
   'tables.templateEditHint': '编辑对所有使用该模板的会话生效，将在下次表格维护时生效。',

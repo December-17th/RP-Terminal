@@ -47,9 +47,16 @@ export const registerTableMemoryIpc = (ipcMain: IpcMain): void => {
     tableTemplateService.updateTableTemplate(profileId, id, patch)
   )
   ipcMain.handle('table-template-delete', (_, profileId, id) => {
-    tableTemplateService.deleteTableTemplate(profileId, id)
-    // Any chat that had it assigned loses its sandbox too.
-    chatService.removeTableTemplateIdFromChats(profileId, id)
+    try {
+      // Unbind every session first: this pre-checks their write guards and throws BEFORE any mutation
+      // if a live refill holds one, so a busy chat refuses the whole delete atomically (a busy-reject the
+      // renderer localizes). Only then delete the template file. `{ ok } | { error }` — never throws.
+      chatService.removeTableTemplateIdFromChats(profileId, id)
+      tableTemplateService.deleteTableTemplate(profileId, id)
+      return { ok: true }
+    } catch (error) {
+      return { error: error instanceof Error ? error.message : String(error) }
+    }
   })
   ipcMain.handle('table-template-import-dialog', gate('table-template-import-dialog', async (event, profileId) => {
     const result = await dialog.showOpenDialog(BrowserWindow.fromWebContents(event.sender)!, {
@@ -65,9 +72,15 @@ export const registerTableMemoryIpc = (ipcMain: IpcMain): void => {
   ipcMain.handle('chat-table-template-get', (_, profileId, chatId) =>
     chatService.getChatTableTemplateId(profileId, chatId)
   )
-  ipcMain.handle('chat-table-template-set', (_, profileId, chatId, id) =>
-    chatService.setChatTableTemplateId(profileId, chatId, id)
-  )
+  ipcMain.handle('chat-table-template-set', (_, profileId, chatId, id) => {
+    try {
+      chatService.setChatTableTemplateId(profileId, chatId, id)
+      return { ok: true }
+    } catch (error) {
+      // A (re)assign mid-refill is refused (`tables.memoryWriteBusy`); surface as a localizable error.
+      return { error: error instanceof Error ? error.message : String(error) }
+    }
+  })
 
   // The memory.maintain node panel preview: compose the EXACT maintainer prompt a run would send for
   // this chat (composeMaintainerMessages — shared with the node's run(), so no drift). `config` carries
@@ -272,8 +285,14 @@ export const registerTableMemoryIpc = (ipcMain: IpcMain): void => {
     if (!id) return { error: 'tables.editNoTemplate' }
     const template = tableTemplateService.getTableTemplateById(profileId, id)
     if (!template) return { error: 'tables.editNoTemplate' }
-    const dropped = tableOpsService.rewindTables(profileId, chatId, fromFloor, template)
-    return { ok: true, dropped }
+    try {
+      const dropped = tableOpsService.rewindTables(profileId, chatId, fromFloor, template)
+      return { ok: true, dropped }
+    } catch (error) {
+      // A rewind mid-refill is refused (`tables.memoryWriteBusy`) rather than dropping ops the refill's
+      // stale shadow would then republish; surface as a localizable error the renderer toasts.
+      return { error: error instanceof Error ? error.message : String(error) }
+    }
   })
 
   // Structural template edit + bound-chat migration (Memory-Manager WP4a). `ops` is an ordered list

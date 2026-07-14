@@ -737,13 +737,20 @@ declare global {
       >
       // Fan-out preview for the Structure tab's apply confirm (WS6 Phase C): bound-chat count.
       boundChatsForTemplate: (profileId: string, templateId: string) => Promise<number>
-      deleteTableTemplate: (profileId: string, id: string) => Promise<void>
+      deleteTableTemplate: (
+        profileId: string,
+        id: string
+      ) => Promise<{ ok: true } | { error: string }>
       importTableTemplateDialog: (profileId: string) => Promise<{
         summary?: { id: string; name: string; tableCount: number }
         error?: string
       } | null>
       getChatTableTemplate: (profileId: string, chatId: string) => Promise<string | null>
-      setChatTableTemplate: (profileId: string, chatId: string, id: string | null) => Promise<void>
+      setChatTableTemplate: (
+        profileId: string,
+        chatId: string,
+        id: string | null
+      ) => Promise<{ ok: true } | { error: string }>
       previewMemoryMaintain: (
         profileId: string,
         chatId: string,

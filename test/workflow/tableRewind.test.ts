@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest'
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 
 // History-rewind op-log tests (Memory-Manager WP3). better-sqlite3 is alias-mocked to a no-op (the
 // native binary can't load under plain Node), so the REAL sandbox rows aren't observable — the same
@@ -95,13 +95,28 @@ const dbMock = vi.hoisted(() => {
 
 vi.mock('../../src/main/services/db', () => ({ getDb: dbMock.getDb }))
 
+// The sandbox side of a rebuild can't run under the better-sqlite3 alias mock; stub tableDbService so the
+// guard-claim/release behaviour of rewindTables is observable without touching a real sandbox file. The
+// template=null rewind path (removeSandbox) is enough to exercise claim → body → release.
+vi.mock('../../src/main/services/tableDbService', () => ({
+  instantiate: vi.fn(),
+  removeSandbox: vi.fn(),
+  sandboxDbPath: vi.fn(() => '/nonexistent'),
+  templateSqlNames: vi.fn(() => new Set<string>())
+}))
+
 import {
   appendOps,
   listOps,
   listOpsForDisplay,
   deleteOpsFrom,
-  replayPlan
+  replayPlan,
+  rewindTables,
+  beginTableWrite,
+  renewTableWrite,
+  endTableWrite
 } from '../../src/main/services/tableOpsService'
+import * as tableDbService from '../../src/main/services/tableDbService'
 
 const P = 'prof'
 const C = 'chatX'
@@ -166,5 +181,58 @@ describe('table history op-log + rewind', () => {
     expect(view[0]).toMatchObject({ kind: 'update', table: 'roleplay_guide' })
     expect(view[1]).toMatchObject({ kind: 'insert', table: 'chronicle' })
     expect(typeof view[0].createdAt).toBe('string')
+  })
+})
+
+// rewindTables now CLAIMS the per-chat write guard itself (P1 fix): a rewind mid-refill must busy-reject
+// instead of deleting ops that the refill's guarded rebuild would then skip (leaving a stale shadow).
+describe('rewindTables write-guard fencing', () => {
+  const GC = 'guardChat'
+  beforeEach(() => {
+    dbMock.reset()
+  })
+  afterEach(() => {
+    // Release any slot a test left held so the module-level guard Map doesn't leak across tests.
+    endTableWrite(GC)
+  })
+
+  it('busy-rejects (throws tables.memoryWriteBusy) while another token holds the guard, dropping no ops', () => {
+    const holder = beginTableWrite(GC) // stand in for a live refill owning the slot
+    expect(holder).not.toBeNull()
+    appendOps(P, GC, 0, ['INSERT INTO t VALUES (1)'])
+    appendOps(P, GC, 1, ['INSERT INTO t VALUES (2)'])
+
+    expect(() => rewindTables(P, GC, 1, null)).toThrow('tables.memoryWriteBusy')
+    // The ops survive — the reject fired before any deleteOpsFrom.
+    expect(listOps(P, GC).map((o) => o.floor)).toEqual([0, 1])
+    // The refill's claim was neither stolen nor freed by the rejected rewind.
+    expect(renewTableWrite(GC, holder!)).toBe(true)
+    endTableWrite(GC, holder!)
+  })
+
+  it('releases its own claim on success (a later claim then succeeds)', () => {
+    appendOps(P, GC, 0, ['INSERT INTO t VALUES (1)'])
+    appendOps(P, GC, 1, ['INSERT INTO t VALUES (2)'])
+
+    const dropped = rewindTables(P, GC, 1, null)
+    expect(dropped).toBe(1)
+    expect(tableDbService.removeSandbox).toHaveBeenCalled() // null template ⇒ removeSandbox path
+    // Guard released: the slot is free again.
+    const tok = beginTableWrite(GC)
+    expect(tok).not.toBeNull()
+    endTableWrite(GC, tok!)
+  })
+
+  it('releases its own claim even when the rebuild throws', () => {
+    vi.mocked(tableDbService.removeSandbox).mockImplementationOnce(() => {
+      throw new Error('boom')
+    })
+    appendOps(P, GC, 0, ['INSERT INTO t VALUES (1)'])
+
+    expect(() => rewindTables(P, GC, 0, null)).toThrow('boom')
+    // The failing rebuild still freed the slot via the finally, so a fresh claim works.
+    const tok = beginTableWrite(GC)
+    expect(tok).not.toBeNull()
+    endTableWrite(GC, tok!)
   })
 })

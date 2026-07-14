@@ -320,6 +320,17 @@ export const renewTableWrite = (chatId: string, token: string): boolean => {
 export const tryBeginTableWrite = (chatId: string): boolean => beginTableWrite(chatId) !== null
 
 /**
+ * True while a write claim is held and UNEXPIRED for `chatId`. A pre-flight probe for destructive
+ * callers that must REFUSE (rather than silently skip like the guarded `rebuildSandbox`) when a long
+ * refill owns the slot — used by `removeTableTemplateIdFromChats` to reject a template delete atomically
+ * before unbinding any bound chat. Mirrors `beginTableWrite`'s expiry test without claiming the slot.
+ */
+export const isTableWriteBusy = (chatId: string): boolean => {
+  const held = writing.get(chatId)
+  return held !== undefined && Date.now() - held.ts < WRITE_GUARD_MS
+}
+
+/**
  * Release the per-chat write slot. With a `token`, release IFF that token still owns the slot (the
  * refill engine's ownership-checked release — never frees a successor's claim). Without a token, the
  * legacy unconditional release the short-hold wrappers use from their `finally`.
@@ -364,11 +375,12 @@ export const rebuildSandbox = (
 }
 
 /**
- * Rebuild a chat's LIVE sandbox from the op log WITHOUT taking the per-chat write guard. This is the
- * refill engine's publish-FAILURE fallback ONLY: refill already holds the guard by token, so the guarded
- * `rebuildSandbox` would self-claim it and SILENTLY SKIP (the trap `rewindTables` documents). After a
- * chunk's ops are committed, the op-log replay equals the shadow state, so a failed shadow file-publish
- * can fall back to this. Never call it from an unguarded context — use `rebuildSandbox`.
+ * Rebuild a chat's LIVE sandbox from the op log WITHOUT taking the per-chat write guard. Two legitimate
+ * callers, both of which ALREADY hold the guard by token so the self-claiming `rebuildSandbox` would
+ * SILENTLY SKIP: (1) the refill engine's publish-FAILURE fallback — after a chunk's ops are committed the
+ * op-log replay equals the shadow state, so a failed shadow file-publish falls back to this; and (2)
+ * `rewindTables`, which claims the guard itself, deletes the tail ops, then rebuilds from the survivors.
+ * Never call it from an UNGUARDED context — take the guard (or use `rebuildSandbox`).
  */
 export const rebuildSandboxUnguarded = (
   profileId: string,
@@ -387,10 +399,16 @@ export const rebuildSandboxUnguarded = (
  * `truncateFloors` runs for a floor cut (chatService), MINUS the floor deletion — DATA-ONLY: the chat
  * messages AND the per-table maintenance progress pointer (`tableProgressService`) are untouched, so a
  * rewound floor is NOT auto-re-maintained by the cadence gate (an accepted v1 gap — the "undo stays
- * undone" semantic; re-run maintenance/backfill to catch up). `rebuildSandbox` takes the per-chat
- * write lock ITSELF, so this is serialized against a concurrent rebuild without an outer lock (an outer
- * `tryBeginTableWrite` here would make rebuildSandbox's own claim fail and silently skip). Returns the
- * number of ops dropped. Reuses `deleteOpsFrom` + `rebuildSandbox` verbatim — no new rewind logic.
+ * undone" semantic; re-run maintenance/backfill to catch up).
+ *
+ * This CLAIMS the per-chat write guard by token for the whole delete+rebuild, so it is serialized
+ * against a concurrent write (auto-maintain / refill) as an ATOMIC unit: the earlier design ran
+ * `deleteOpsFrom` unguarded and then let `rebuildSandbox` self-claim the guard — but a refill holding
+ * the guard makes that rebuild SILENTLY SKIP, so the ops vanished while the sandbox kept the refill's
+ * stale shadow. Now, if a refill owns the guard, we throw `tables.memoryWriteBusy` and touch nothing.
+ * With the guard held we rebuild via the UNGUARDED path (mirroring what guarded `rebuildSandbox` does:
+ * replay survivors when a template is bound, else remove the sandbox). Releases by token in `finally`.
+ * Returns the number of ops dropped.
  */
 export const rewindTables = (
   profileId: string,
@@ -398,9 +416,16 @@ export const rewindTables = (
   fromFloor: number,
   template: TableTemplate | null
 ): number => {
-  const dropped = deleteOpsFrom(profileId, chatId, fromFloor)
-  rebuildSandbox(profileId, chatId, template)
-  return dropped
+  const token = beginTableWrite(chatId)
+  if (token === null) throw new Error('tables.memoryWriteBusy')
+  try {
+    const dropped = deleteOpsFrom(profileId, chatId, fromFloor)
+    if (template) rebuildSandboxUnguarded(profileId, chatId, template)
+    else tableDbService.removeSandbox(profileId, chatId)
+    return dropped
+  } finally {
+    endTableWrite(chatId, token)
+  }
 }
 
 /** Open the freshly-instantiated sandbox and replay ops one by one (NOT one transaction — a
