@@ -214,17 +214,43 @@ State is split deliberately between a relational store and portable files (`src/
 **Prerequisites:** a recent Node.js LTS. No `engines` field is pinned; the project is developed and
 tested on **Node 22**.
 
-```bash
-npm install
-npm run dev        # launch the app in development (electron-vite)
-```
-
-**Build a distributable:**
+### Run a portable clone
 
 ```bash
-npm run build                       # typecheck + electron-vite build
-npm run build:win  # or :mac / :linux — package installers via electron-builder
+git clone <your-repository-url> rp-terminal
+cd rp-terminal
+npm ci
+npm run build
+npm run start
 ```
+
+This is the supported distribution path for early users: it does not install the app or open DevTools
+automatically. With no configured data-location override, the app stores its data in the clone's
+`rp-terminal-data/` directory, which is ignored by Git. Back up that directory before replacing or
+deleting the clone.
+
+On Windows, users can instead double-click `Launch-RP-Terminal.bat` in the clone. It runs `npm install`,
+builds the app, and starts the production preview. Node.js 22 or later must be installed first.
+
+### Update a portable clone
+
+Stop the app first, then update and rebuild it from its clone.
+
+```bash
+git pull --ff-only
+npm ci
+npm run build
+npm run start
+```
+
+### Development launch
+
+```bash
+npm run dev
+```
+
+The portable-clone distribution has no installer or auto-update channel. Developers can inspect an
+isolated card panel with `RPT_OPEN_WCV_DEVTOOLS=1`; this is intentionally off by default.
 
 ### Verification gate
 

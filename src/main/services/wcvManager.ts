@@ -1,5 +1,4 @@
 import { WebContentsView, BrowserWindow, session, net } from 'electron'
-import { is } from '@electron-toolkit/utils'
 import { join } from 'path'
 import { pathToFileURL } from 'url'
 import { createHash } from 'crypto'
@@ -16,6 +15,7 @@ import {
 import { makePanelGeometry, PanelGeometry } from './wcvGeometry'
 import { createFreezeController, type FreezeTarget } from './wcvFreezeFrame'
 import { createOverlayController, type OverlayDecl } from './wcvOverlay'
+import { shouldOpenWcvDevTools } from './wcvDevTools'
 import type { VarsOrigin } from '../../shared/thRuntime/types'
 import { CARD_CSP } from '../../shared/cardCsp'
 
@@ -291,8 +291,9 @@ export const ensure = (
       const s = slots.get(id)
       if (s) setTimeout(() => freezeController.warmTarget(freezeTargetFor(id, s)), 400)
     })
-    // Spike: surface the card's console so its missing-API log is visible.
-    if (is.dev) view.webContents.openDevTools({ mode: 'detach' })
+    // Each isolated card gets its own WebContentsView. Keep DevTools opt-in so
+    // opening several panels never creates a stack of detached console windows.
+    if (shouldOpenWcvDevTools(process.env)) view.webContents.openDevTools({ mode: 'detach' })
     log('info', `wcv: created '${id}'`)
   } else {
     slot.profileId = ctx.profileId
