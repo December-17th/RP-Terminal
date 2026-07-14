@@ -454,6 +454,30 @@ every?: 1..500 }`.
   runs. If the maintainer chain then fails, that span is simply skipped — worst case one missed batch.
   `span.from = min(progress[t] over due tables) + 1`, `span.to = currentFloor`.
 
+### Auto due-set gating in the consolidated `memory.maintain` node (WS3)
+
+The all-in-one `memory.maintain` node (which folds gate → read → apply into one self-seeding node)
+applies the **same per-table due rule internally**, so an automatic pass only maintains the tables that
+are DUE this turn instead of all-every-turn:
+
+- **Due set (pure `dueTables` in `nodes/builtin/memoryCore.ts`):** a table is due when its resolved
+  cadence is not `null` **and** `currentFloor - (progress[t] ?? -1) >= resolvedFreq` (`>=`, so exactly
+  at the threshold is due). `updateFrequency 0 → null → 手动维护`, never auto-due; `-1 →` the global
+  default. `currentFloor` is re-read from disk (`getAllFloors().length - 1`), matching `table.gate`.
+- **Empty due set ⇒ NO model call.** The node runs every turn (the cadence gate), but returns
+  `report: 'no tables due'` **without** an LLM call when nothing is due — the pass only pays for a model
+  call when at least one table is due.
+- **Full-context render, scoped writes (D5).** When it DOES run, **all** template tables still render in
+  the maintainer prompt (deliberate — the model sees the whole state for context), and the shared
+  write-scope directive (`tableMaintenance.writeScopeDirective`, the SAME `【本次只更新以下表】…` block the
+  refill prompt uses) names only the due tables. Statements the model emits against non-due tables are
+  **dropped** by the shared filter (`tableSql.partitionBySelected`, re-exported by `tableRefillService`
+  so auto + manual refill share ONE filter) and counted in the report (`dropped N out-of-scope`).
+- **Advance only the due tables.** `applyTableEdit`'s `advanceProgress` advances **only** the due
+  pointers (`advanceTables` opt); a non-due table's backlog stands until its own cadence turn. Callers
+  that pass neither `writeScope` nor `advanceTables` (the `table.apply` node, hand edits) keep the
+  pre-WS3 behavior byte-for-byte (write anything registered, advance all template tables).
+
 ### `table.read` — the maintainer-prompt ingredients
 
 Renders the "here are the tables, here is what you may do" block. Inputs `gen: Context`, `tables: Any`

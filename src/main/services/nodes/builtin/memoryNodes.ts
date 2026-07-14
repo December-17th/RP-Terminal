@@ -18,9 +18,14 @@ import {
   recentTranscript,
   renderTablesBlock,
   applyTableEdit,
+  dueTables,
   historyText,
   composedPromptDebug
 } from './memoryCore'
+import { getProgress } from '../../tableProgressService'
+import { getAllFloors } from '../../floorService'
+import { getSettings } from '../../settingsService'
+import { writeScopeDirective } from '../../tableMaintenance'
 
 /**
  * `memory.maintain` — the ALL-IN-ONE SQL-table memory maintenance node (memory.maintain plan, WP1).
@@ -96,7 +101,8 @@ type ComposeConfig = Pick<
 export const composeMaintainerMessages = (
   gen: GenContext,
   template: TableTemplate,
-  cfg: ComposeConfig
+  cfg: ComposeConfig,
+  opts: { scopeDirective?: string } = {}
 ): ChatMessage[] => {
   const { block: tablesBlock } = renderTablesBlock(gen, template, {
     maxRows: cfg.max_rows ?? DEFAULT_MAX_ROWS,
@@ -104,6 +110,12 @@ export const composeMaintainerMessages = (
   })
   const history = recentTranscript(gen, { lastNFloors: cfg.lastNFloors })
   const rows: ChatMessage[] = []
+  // WS3: the auto pass prepends the shared write-scope directive so the model knows which tables it may
+  // write this turn (the due set). Pre-`providerShape` so it participates in shaping like any system row;
+  // absent (e.g. the preview IPC) → unchanged composition.
+  if (opts.scopeDirective?.trim()) {
+    rows.push({ role: 'system', content: opts.scopeDirective.trim() })
+  }
   for (const m of cfg.messages) {
     if (m.content.trim() === HISTORY_MARKER) {
       rows.push(...history)
@@ -153,9 +165,25 @@ export const memoryMaintain: NodeImpl = {
     const template = chatTemplate(gen)
     if (!template) return { outputs: {} }
 
+    // WS3 — auto due-set gating (D9): compute the DUE tables BEFORE the model call. The node runs every
+    // turn (the cadence gate) but only pays for a model call when at least one table is due; an empty due
+    // set SKIPS the LLM entirely. currentFloor is re-read from disk to match the pointer semantics.
+    const currentFloor = Math.max(0, getAllFloors(gen.profileId, gen.chatId).length - 1)
+    const globalDefault = getSettings(gen.profileId).tables?.default_update_frequency ?? 3
+    const due = dueTables(template, getProgress(gen.profileId, gen.chatId), currentFloor, globalDefault)
+    if (!due.length) return { outputs: { report: 'no tables due' } }
+
+    // The due tables' display names drive the shared write-scope directive (WS2/WS3 parity). All tables
+    // still RENDER in the block (full context, D5); only the due ones may be written this turn.
+    const dueSet = new Set(due)
+    const dueDisplay = template.tables.filter((t) => dueSet.has(t.sqlName)).map((t) => t.displayName)
+
     // Compose EXACTLY what the panel preview shows (composeMaintainerMessages is shared) — render the
-    // tables block, splice {history}, substitute {{tables}}/{{input}} as DATA, provider-shape.
-    const sendMessages = composeMaintainerMessages(gen, template, cfg)
+    // tables block, splice {history}, substitute {{tables}}/{{input}} as DATA, provider-shape — plus the
+    // due-set write-scope directive prepended.
+    const sendMessages = composeMaintainerMessages(gen, template, cfg, {
+      scopeDirective: writeScopeDirective(dueDisplay)
+    })
 
     // Trace-only: the fully composed prompt (b1906ae debug channel) so "did the tables/history reach
     // the model" is inspectable in the Runs tab. Shared shape with agent.llm (composedPromptDebug).
@@ -175,13 +203,20 @@ export const memoryMaintain: NodeImpl = {
     if (!sql.trim()) return { outputs: { report: 'no changes' }, debug: promptDebug }
 
     // Apply via the shared write-core (busy-guard + applySqlBatch + op-log + advance-after-success);
-    // a bad batch throws class-B and routes on the `error` port.
+    // a bad batch throws class-B and routes on the `error` port. WS3: the write scope + advance set are
+    // the DUE tables — out-of-scope statements the model emitted anyway are dropped, and only the due
+    // pointers advance (the non-due tables' backlog stands for their own cadence turn).
     const applied = applyTableEdit(gen, template, sql, {
       advanceProgress: cfg.advance_progress !== false,
+      writeScope: due,
+      advanceTables: due,
       label: 'memory.maintain'
     })
+    const dropped = applied.dropped ? `, dropped ${applied.dropped} out-of-scope` : ''
     return {
-      outputs: { report: `applied ${applied.applied} statement(s), ${applied.changes} change(s)` },
+      outputs: {
+        report: `applied ${applied.applied} statement(s), ${applied.changes} change(s)${dropped}`
+      },
       debug: promptDebug
     }
   }

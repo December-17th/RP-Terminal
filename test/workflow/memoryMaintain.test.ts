@@ -50,6 +50,21 @@ vi.mock('../../src/main/services/tableTemplateService', () => mockTemplate)
 const mockSql = vi.hoisted(() => ({
   applySqlBatch: vi.fn(() => ({ applied: 1, changes: 1, statements: ['INSERT INTO summary VALUES (1)'] })),
   executeReadQuery: vi.fn(),
+  // WS3: the auto pass now runs its batch through the shared write-scope filter (validateBatch +
+  // partitionBySelected, re-homed to tableSql). Classify by the target table named in the statement.
+  validateBatch: vi.fn((sql: string) => {
+    const table = /\b(?:INTO|UPDATE|FROM)\s+(\w+)/i.exec(sql)?.[1] ?? 'summary'
+    return [{ kind: 'insert', table, sql }]
+  }),
+  partitionBySelected: (
+    validated: Array<{ table: string; sql: string }>,
+    selected: Set<string>
+  ): { kept: string[]; dropped: string[] } => {
+    const kept: string[] = []
+    const dropped: string[] = []
+    for (const v of validated) (selected.has(v.table) ? kept : dropped).push(v.sql)
+    return { kept, dropped }
+  },
   TableSqlError: class extends Error {}
 }))
 vi.mock('../../src/main/services/tableSql', () => mockSql)
@@ -139,6 +154,7 @@ beforeEach(() => {
   mockOps.tryBeginTableWrite.mockReset().mockReturnValue(true)
   mockOps.endTableWrite.mockReset()
   mockProgress.advanceProgress.mockReset()
+  mockProgress.getProgress.mockReset().mockReturnValue({}) // WS3: default = nothing processed → all due
   mockCallModel.callModel
     .mockReset()
     .mockResolvedValue({ raw: '<TableEdit>INSERT INTO summary VALUES (1)</TableEdit>', rawUsage: {} })
@@ -162,7 +178,10 @@ describe('memory.maintain — end to end', () => {
     expect(joined).toContain('ai reply 3')
     expect(joined).toContain('player action 3')
 
-    // The <TableEdit> SQL was applied + the pointer advanced for the template's tables.
+    // The <TableEdit> SQL was applied + the pointer advanced. WS3: the advance set is now the DUE tables
+    // (summary, freq 1, never processed → due at floor 3), not unconditionally "all template tables". The
+    // pre-WS3 characterization pinned advance-all-every-turn; the due-set plan changes that on purpose
+    // (here the sole table is due, so the concrete call is unchanged).
     expect(mockSql.applySqlBatch).toHaveBeenCalled()
     expect(mockProgress.advanceProgress).toHaveBeenCalledWith('prof', 'c1', ['summary'], 3)
 
@@ -200,6 +219,18 @@ describe('memory.maintain — end to end', () => {
     const joined = composed.map((m) => `${m.role}:${m.content}`).join('\n')
     expect(joined).toContain('ai reply 3')
     expect(joined).toContain('player action 3')
+  })
+
+  // WS3 — auto due-set gating: the node runs every turn but SKIPS the model call when no table is due
+  // this turn (the cadence gate). This deliberately changes the pre-WS3 "maintain every turn" behavior.
+  it('no table due this turn → skips the model call, reports "no tables due", no write/advance', async () => {
+    // summary has updateFrequency 1; mark it already processed through the current floor (3) → not due.
+    mockProgress.getProgress.mockReturnValue({ summary: 3 })
+    const res = await memoryMaintain.run(ctx(), {}, { id: 'm', config: memoryMaintain.configSchema!.parse(config) })
+    expect(res.outputs!.report).toBe('no tables due')
+    expect(mockCallModel.callModel).not.toHaveBeenCalled()
+    expect(mockSql.applySqlBatch).not.toHaveBeenCalled()
+    expect(mockProgress.advanceProgress).not.toHaveBeenCalled()
   })
 
   it('no template bound → silent no-op (no model call, no write)', async () => {

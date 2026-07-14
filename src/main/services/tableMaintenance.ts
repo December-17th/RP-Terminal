@@ -85,12 +85,24 @@ export const composeTablesBlock = (
 }
 
 /**
+ * The write-scope directive: "only the listed tables may be written this run; the rest are shown for
+ * context only." Shared by the REFILL maintainer prompt (WS2) and the AUTOMATIC due-set maintainer pass
+ * (WS3, `memory.maintain`), so the two callers never drift. `scopeDisplay` is the SELECTED/DUE tables'
+ * display names; an empty list renders `（无）`. Out-of-scope statements the model emits anyway are
+ * dropped by the shared write-scope filter (`partitionBySelected`), but the directive keeps it on task.
+ */
+export const writeScopeDirective = (scopeDisplay: string[]): string => {
+  const scope = scopeDisplay.length ? scopeDisplay.join('、') : '（无）'
+  return `【本次只更新以下表】${scope}
+其它表格仅供参考，禁止对其执行任何 INSERT / UPDATE / DELETE。`
+}
+
+/**
  * The REFILL maintainer system prompt for one batch (table-refill WS2 / plan D8): reuses the backfill
- * framing (tables block + a `{from}..{to}` batch treated as one 交互) and ADDS a write-scope directive —
- * only the SELECTED tables (`selectedDisplay`) may be written this run; the others are shown for context
- * only. An optional `extraHint` is folded in as a trailing instruction. Out-of-scope statements the
- * model emits anyway are dropped by the engine's write-scope filter, but the directive keeps the model
- * on task. `from`/`to` are 0-based floor indices.
+ * framing (tables block + a `{from}..{to}` batch treated as one 交互) and ADDS the shared write-scope
+ * directive (`writeScopeDirective`) — only the SELECTED tables (`selectedDisplay`) may be written this
+ * run. An optional `extraHint` is folded in as a trailing instruction. `from`/`to` are 0-based floor
+ * indices.
  */
 export const refillMaintainerPrompt = (
   tablesBlock: string,
@@ -100,14 +112,12 @@ export const refillMaintainerPrompt = (
   selectedDisplay: string[],
   extraHint?: string
 ): string => {
-  const scope = selectedDisplay.length ? selectedDisplay.join('、') : '（无）'
   const hint = extraHint?.trim() ? `\n\n【额外要求】${extraHint.trim()}` : ''
   return `你是数据库表格维护AI（database-table maintenance AI）。下面是记忆表格，每个表附带其定义与可执行的操作，随后是这一批的剧情。请根据本批剧情重新填写表格。
 
 以下【本批剧情】包含第 ${from}–${to} 层的多轮对话；将其视为一次交互进行维护：纪要表只允许新增恰好一行（概括整批），其余表按各自规则维护。
 
-【本次只更新以下表】${scope}
-其它表格仅供参考，禁止对其执行任何 INSERT / UPDATE / DELETE。${hint}
+${writeScopeDirective(selectedDisplay)}${hint}
 
 【表格与规则】
 ${tablesBlock}

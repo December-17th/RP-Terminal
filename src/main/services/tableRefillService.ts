@@ -23,7 +23,7 @@ import {
   FloorOp,
   TableOpWithTarget
 } from './tableOpsService'
-import { validateBatch, applySqlBatchAt, ValidatedStatement } from './tableSql'
+import { validateBatch, applySqlBatchAt, partitionBySelected } from './tableSql'
 import { getProgress, advanceProgress } from './tableProgressService'
 import { composeTablesBlock, refillMaintainerPrompt } from './tableMaintenance'
 import { planBatches, buildBatchTranscript, BatchSpan } from './tableBackfillService'
@@ -74,19 +74,12 @@ export const shouldReplayIntoShadow = (
 ): boolean => !(op.targetTable != null && selected.has(op.targetTable) && op.floor >= fromFloor)
 
 /**
- * Split a validated batch by write scope: statements whose target table is SELECTED are KEPT (applied to
- * the shadow + recorded as ops); the rest are DROPPED (counted + logged — out-of-scope writes the model
- * emitted despite the "only update: <selected>" directive). Preserves order within each partition.
+ * The write-scope filter (kept/dropped by selected table) now lives in `tableSql` next to the
+ * `ValidatedStatement` it consumes, so the AUTO due-set gate (`memory.maintain`) and this manual REFILL
+ * engine share ONE filter without importing each other (table-refill WS3). Re-exported here so the
+ * engine's public surface is unchanged.
  */
-export const partitionBySelected = (
-  validated: ValidatedStatement[],
-  selected: Set<string>
-): { kept: string[]; dropped: string[] } => {
-  const kept: string[] = []
-  const dropped: string[] = []
-  for (const v of validated) (selected.has(v.table) ? kept : dropped).push(v.sql)
-  return { kept, dropped }
-}
+export { partitionBySelected } from './tableSql'
 
 /**
  * The default refill cutpoint when the caller doesn't pin one: the earliest un-maintained floor across

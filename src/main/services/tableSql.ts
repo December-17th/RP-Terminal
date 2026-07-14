@@ -249,6 +249,26 @@ export const validateBatch = (text: string, allowedTables: Set<string>): Validat
   })
 }
 
+/**
+ * Split a validated batch by write scope: statements whose target table is in `selected` are KEPT
+ * (applied + recorded), the rest are DROPPED (counted + logged — out-of-scope writes the model emitted
+ * despite the "only update: <selected>" directive). Preserves order within each partition. PURE.
+ *
+ * The ONE shared write-scope filter: the manual REFILL engine (`tableRefillService`, which re-exports
+ * this) and the AUTOMATIC due-set gate (`memory.maintain` via `applyTableEdit`) both partition through
+ * it, so auto/manual never drift (table-refill WS2/WS3 plan requirement). Lives here — next to
+ * `validateBatch`/`ValidatedStatement` it consumes — so both callers import a leaf, not each other.
+ */
+export const partitionBySelected = (
+  validated: ValidatedStatement[],
+  selected: Set<string>
+): { kept: string[]; dropped: string[] } => {
+  const kept: string[] = []
+  const dropped: string[] = []
+  for (const v of validated) (selected.has(v.table) ? kept : dropped).push(v.sql)
+  return { kept, dropped }
+}
+
 export interface ApplyResult {
   applied: number
   changes: number
