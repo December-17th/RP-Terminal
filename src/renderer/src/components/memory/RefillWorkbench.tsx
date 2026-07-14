@@ -219,7 +219,9 @@ export const RefillWorkbench: React.FC<{
             n: range.floors,
             m: range.batches
           })
-  const showBanner = persisted?.status === 'in_progress' && rail.phase !== 'running' && !starting
+  // Only on a FRESH open (rail idle): after a cancelled/failed run the rail footer already carries
+  // Resume + Discard — showing the banner too would offer the same actions twice.
+  const showBanner = persisted?.status === 'in_progress' && rail.phase === 'idle' && !starting
   const showRail = rail.phase !== 'idle' || starting || notice !== null
   const okCount = rail.segs.filter((s) => s === 'ok').length
 
@@ -543,12 +545,21 @@ export const RefillWorkbench: React.FC<{
                 </button>
               )}
               {(rail.phase === 'cancelled' || rail.phase === 'error') && persisted && (
-                <button
-                  className="rpt-mm-maint-run"
-                  onClick={() => void start({ fromFloor: 0, resume: true })}
-                >
-                  {t('memoryManager.refill.resume')}
-                </button>
+                <>
+                  <button
+                    className="rpt-mm-maint-run"
+                    onClick={() => void start({ fromFloor: 0, resume: true })}
+                  >
+                    {t('memoryManager.refill.resume')}
+                  </button>
+                  <button
+                    className="btn-ghost"
+                    title={t('memoryManager.refill.discardTip')}
+                    onClick={() => void onDiscard()}
+                  >
+                    {t('memoryManager.refill.discard')}
+                  </button>
+                </>
               )}
             </div>
           )}
