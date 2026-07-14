@@ -329,7 +329,10 @@ export const registerTableMemoryIpc = (ipcMain: IpcMain): void => {
   // on any invalid op WITHOUT touching the template or any sandbox; on success the template is rewritten
   // and every bound chat's sandbox is ALTERed + its op log re-baselined so a later rewind/rebuild
   // reproduces the migrated rows. Returns the report or `{ ok:false, error }` (a localizable
-  // `tables.structure*` key the renderer toasts). Never throws across IPC.
+  // `tables.structure*` key the renderer toasts). A busy-reject (a live refill owns a bound chat's write
+  // guard) THROWS `tables.memoryWriteBusy` before any mutation — caught here and surfaced in the same
+  // `{ ok:false, error }` shape (the renderer's `res.ok === false` branch localizes it). Never throws
+  // across IPC.
   ipcMain.handle(
     'table-structure-apply',
     (
@@ -337,7 +340,13 @@ export const registerTableMemoryIpc = (ipcMain: IpcMain): void => {
       profileId: string,
       templateId: string,
       ops: StructureOp[]
-    ) => applyStructureOps(profileId, templateId, ops)
+    ) => {
+      try {
+        return applyStructureOps(profileId, templateId, ops)
+      } catch (error) {
+        return { ok: false as const, error: error instanceof Error ? error.message : String(error) }
+      }
+    }
   )
 
   // How many chats are bound to a template — the Structure tab's apply-confirm fan-out preview

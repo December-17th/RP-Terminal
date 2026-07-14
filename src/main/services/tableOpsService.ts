@@ -350,8 +350,10 @@ export const renewTableWrite = (chatId: string, token: string): boolean => {
 
 /**
  * Claim the per-chat write slot; false while another write is in flight (unexpired). Legacy wrapper over
- * `beginTableWrite` for the four SHORT-HOLD callers (memoryCore / backfill / edit / structure) that
- * complete well inside the 120s window and release unconditionally in a `finally`.
+ * `beginTableWrite` for the SHORT-HOLD callers (memoryCore / backfill / edit) that complete well inside
+ * the 120s window and release unconditionally in a `finally`. NOTE: the structural migration
+ * (`tableStructureService.applyStructureOps`) does NOT claim the slot — it is a single synchronous pass,
+ * so it uses `isTableWriteBusy` as an up-front atomic pre-check (busy-reject) instead of holding a lease.
  */
 export const tryBeginTableWrite = (chatId: string): boolean => beginTableWrite(chatId) !== null
 
