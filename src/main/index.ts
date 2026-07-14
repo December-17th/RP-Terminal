@@ -21,7 +21,14 @@ import { TITLEBAR_OVERLAY_HEIGHT } from './windowChrome'
 protocol.registerSchemesAsPrivileged([
   {
     scheme: wcvManager.CARD_SCHEME,
-    privileges: { standard: true, secure: true, supportFetchAPI: true, allowServiceWorkers: true }
+    // `stream: true` (mirrors ASSET_SCHEME) so served card-code file bodies stream rather than buffer (A2).
+    privileges: {
+      standard: true,
+      secure: true,
+      supportFetchAPI: true,
+      allowServiceWorkers: true,
+      stream: true
+    }
   },
   {
     scheme: worldAssetProtocol.ASSET_SCHEME,
@@ -95,7 +102,7 @@ function createWindow(): void {
 // Some APIs can only be used after this event occurs.
 app.whenReady().then(() => {
   // Set app user model id for windows
-  electronApp.setAppUserModelId('com.electron')
+  electronApp.setAppUserModelId('com.december17th.rpterminal')
 
   // Default open or close DevTools by F12 in development
   // and ignore CommandOrControl + R in production.

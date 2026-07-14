@@ -36,6 +36,9 @@ const dark: ThemeTokens = {
   '--rpt-danger': '#e74c3c',
   '--rpt-success': '#4caf72',
   '--rpt-warning': '#e0a23c',
+  // Soft warning wash — low-alpha warning tint for advisory banner backgrounds (recall fail-open
+  // banner, Notes conflict banner). Sibling of --rpt-warning like --rpt-accent-soft is of --rpt-accent.
+  '--rpt-warning-soft': 'rgba(224, 162, 60, 0.14)',
   // Agent Packs (agent-packs plan WP3.1): the pack card's derived domain tokens. gate-on = the
   // toggle's active fill (success-green: "this pack is live"); headless = the accent for a
   // "runs by itself" badge; write-* = the danger-tinted capability chip (a pack that MUTATES state).
@@ -78,6 +81,8 @@ const carbon: ThemeTokens = {
   '--rpt-danger': '#f06a62',
   '--rpt-success': '#43c98b',
   '--rpt-warning': '#e2a93c',
+  // Soft warning wash (see the dark set above).
+  '--rpt-warning-soft': 'rgba(226, 169, 60, 0.14)',
   // Agent Packs (see the dark set above for what each token drives).
   '--rpt-agent-gate-on': '#43c98b',
   '--rpt-agent-headless': '#2b2410',
@@ -113,6 +118,9 @@ const light: ThemeTokens = {
   '--rpt-danger': '#d23b35',
   '--rpt-success': '#1f9e5e',
   '--rpt-warning': '#b8770a',
+  // Soft warning wash (see the dark set above). Light theme keeps a low alpha so the near-white tint
+  // stays legible under the full-strength warning border/text and the dark inherited banner text.
+  '--rpt-warning-soft': 'rgba(184, 119, 10, 0.13)',
   // Agent Packs (see the dark set above). Light theme flips to light chip fills with dark-enough
   // text for AA; gate-on stays the success green (dark enough on the light toggle track).
   '--rpt-agent-gate-on': '#1f9e5e',
@@ -141,20 +149,99 @@ export const THEMES: Record<string, ThemeDef> = {
 export const THEME_LIST: ThemeDef[] = [THEMES.dark, THEMES.carbon, THEMES.light]
 export const DEFAULT_THEME_ID = 'dark'
 
-/** Apply a theme by id: set its token vars on <html>. Unknown/undefined id falls back to the default. */
-export function applyTheme(id: string | undefined): void {
-  if (typeof document === 'undefined') return
+/** The light/dark axis a theme sits on, derived from its primary background luminance (so a future
+ *  theme classifies itself with no extra bookkeeping). This is the app's IN-APP mode — WCV card
+ *  surfaces follow THIS (relayed to main → the WCV `data-rpt-mode`), not the OS `prefers-color-scheme`.
+ *  Unknown/undefined id falls back to the default theme. */
+export function colorSchemeOf(id: string | undefined): 'light' | 'dark' {
   const theme = (id && THEMES[id]) || THEMES[DEFAULT_THEME_ID]
+  const m = /^#?([0-9a-f]{6})$/i.exec((theme.tokens['--rpt-bg-primary'] || '').trim())
+  if (!m) return 'dark'
+  const h = m[1]
+  const r = parseInt(h.slice(0, 2), 16)
+  const g = parseInt(h.slice(2, 4), 16)
+  const b = parseInt(h.slice(4, 6), 16)
+  // Perceived luminance (0..255); a bright background ⇒ a light theme.
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b > 128 ? 'light' : 'dark'
+}
+
+/** The theme whose token set should paint the app for an EFFECTIVE light/dark scheme: the chosen theme
+ *  when it already sits on that axis (so Carbon vs Midnight stay distinct), else the canonical built-in
+ *  theme for the axis — the case where a card FORCES the opposite scheme (rptHost.setColorScheme) or the
+ *  app theme's own axis differs. Shared by chromeTokensFor (chrome tokens) and applyThemeForScheme (full
+ *  token set) so both follow the SAME light/dark axis. */
+function sourceThemeFor(themeId: string | undefined, scheme: 'light' | 'dark'): ThemeDef {
+  const chosen = (themeId && THEMES[themeId]) || THEMES[DEFAULT_THEME_ID]
+  return colorSchemeOf(chosen.id) === scheme ? chosen : THEMES[scheme]
+}
+
+/**
+ * The APP-scoped chrome surface (title strip, message box, chat panel body + header) for an effective
+ * light/dark scheme. Distinct from the card token map: a card's `.play-root` inline tokens can shadow
+ * every `--rpt-*` it understands, so the chrome must read from tokens the card CANNOT set — these
+ * `--rpt-app-*` vars, written on <html> (below). When the effective scheme matches the current theme's
+ * own axis we mirror that theme's surface (so Carbon vs Midnight stay distinct); when a card FORCES the
+ * opposite axis (rptHost.setColorScheme) we fall to the canonical built-in theme for that axis.
+ */
+export function chromeTokensFor(
+  themeId: string | undefined,
+  scheme: 'light' | 'dark'
+): { bg: string; bgPrimary: string; text: string; border: string } {
+  const src = sourceThemeFor(themeId, scheme).tokens
+  return {
+    // `bg` is the SECONDARY surface (title strip, message box, chat panel body); `bgPrimary` is the
+    // deeper base the chat panel HEADER mixes over so it stays distinct from the body.
+    bg: src['--rpt-bg-secondary'],
+    bgPrimary: src['--rpt-bg-primary'],
+    text: src['--rpt-text-primary'],
+    border: src['--rpt-border']
+  }
+}
+
+/** Write the app-scoped chrome tokens (`--rpt-app-*`) on <html> for a given effective scheme. Called by
+ *  applyTheme with the theme's natural axis, and re-applied by App.tsx with the EFFECTIVE axis whenever a
+ *  card override is active. Because these live on <html> (not the card's `.play-root`), the title strip,
+ *  message box, and chat panel background follow the app's light/dark by default and can't be shadowed by
+ *  a card. */
+export function applyChromeScheme(themeId: string | undefined, scheme: 'light' | 'dark'): void {
+  if (typeof document === 'undefined') return
+  const c = chromeTokensFor(themeId, scheme)
   const root = document.documentElement
-  for (const [k, v] of Object.entries(theme.tokens)) root.style.setProperty(k, v)
-  root.dataset.rptTheme = theme.id
-  // Keep the Windows window-control overlay (custom title bar) in step with the theme.
+  root.style.setProperty('--rpt-app-bg-secondary', c.bg)
+  root.style.setProperty('--rpt-app-bg-primary', c.bgPrimary)
+  root.style.setProperty('--rpt-app-text-primary', c.text)
+  root.style.setProperty('--rpt-app-border', c.border)
+}
+
+/**
+ * Apply the FULL app token set for an EFFECTIVE light/dark scheme (not just the chrome tokens). The whole
+ * UI — including generated/story text via `--rpt-text-primary` — follows the effective axis, so a card that
+ * flips light/dark (rptHost.setColorScheme) repaints the app exactly the way the app theme picker would, and
+ * the app theme picker likewise drives the card: one shared axis. `data-rpt-theme` keeps the CHOSEN theme id
+ * (the user's pick); the tokens + chrome + overlay come from the axis-appropriate source theme.
+ */
+export function applyThemeForScheme(themeId: string | undefined, scheme: 'light' | 'dark'): void {
+  if (typeof document === 'undefined') return
+  const chosen = (themeId && THEMES[themeId]) || THEMES[DEFAULT_THEME_ID]
+  const src = sourceThemeFor(themeId, scheme)
+  const root = document.documentElement
+  for (const [k, v] of Object.entries(src.tokens)) root.style.setProperty(k, v)
+  root.dataset.rptTheme = chosen.id
+  // Chrome tokens (`--rpt-app-*`, unshadowable by a card) follow the same effective axis.
+  applyChromeScheme(themeId, scheme)
+  // Keep the Windows window-control overlay (custom title bar) in step with the effective scheme.
   try {
     window.api?.setTitlebarOverlay?.({
-      color: theme.tokens['--rpt-bg-secondary'],
-      symbolColor: theme.tokens['--rpt-text-primary']
+      color: src.tokens['--rpt-bg-secondary'],
+      symbolColor: src.tokens['--rpt-text-primary']
     })
   } catch {
     /* no titlebar overlay (non-Windows) */
   }
+}
+
+/** Apply a theme by id on its NATURAL light/dark axis (the no-card-override case). Thin wrapper over
+ *  applyThemeForScheme. Unknown/undefined id falls back to the default. */
+export function applyTheme(id: string | undefined): void {
+  applyThemeForScheme(id, colorSchemeOf(id))
 }

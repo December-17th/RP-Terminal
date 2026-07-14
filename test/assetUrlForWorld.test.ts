@@ -73,6 +73,43 @@ describe('assetUrlForWorld', () => {
   })
 })
 
+describe('sceneAssetUrlForWorld', () => {
+  it('resolves a simple scene name from the final segment of a full location', () => {
+    const full = '大陆中东部区域-奥古斯提姆帝国-艾瑟嘉德-宏伟皇宫-内廷-皇家迎宾偏厅'
+    const file = '皇家迎宾偏厅_背景.png'
+    writeLoc('w1', file)
+    expect(svc.sceneAssetUrlForWorld('p1', ['w1'], full, '背景')).toBe(
+      `rptasset://p1/w1/location/${encodeURIComponent(file)}`
+    )
+  })
+
+  it('falls back to the closest available ancestor scene', () => {
+    const full = '大陆中东部区域-奥古斯提姆帝国-艾瑟嘉德-宏伟皇宫-内廷-皇家迎宾偏厅'
+    const file = '奥古斯提姆帝国-艾瑟嘉德-宏伟皇宫_背景.png'
+    writeLoc('w1', file)
+    expect(svc.sceneAssetUrlForWorld('p1', ['w1'], full, '背景')).toBe(
+      `rptasset://p1/w1/location/${encodeURIComponent(file)}`
+    )
+  })
+
+  it('resolves a hierarchical location stored as a location-alias variant', () => {
+    const full = '大陆中东部区域-奥古斯提姆帝国-艾瑟嘉德-宏伟皇宫-内廷-皇家迎宾偏厅'
+    const file = `皇家迎宾偏厅_背景_${full}.png`
+    writeLoc('w1', file)
+    expect(svc.sceneAssetUrlForWorld('p1', ['w1'], full, '背景')).toBe(
+      `rptasset://p1/w1/location/${encodeURIComponent(file)}`
+    )
+  })
+
+  it('keeps exact base-name lookup ahead of partial aliases', () => {
+    writeLoc('w1', '皇家迎宾偏厅_背景.png')
+    writeLoc('w1', '皇家迎宾偏厅_背景_内廷-皇家迎宾偏厅.png')
+    expect(svc.sceneAssetUrlForWorld('p1', ['w1'], '皇家迎宾偏厅', '背景')).toBe(
+      `rptasset://p1/w1/location/${encodeURIComponent('皇家迎宾偏厅_背景.png')}`
+    )
+  })
+})
+
 // WA-3: assetList enumerates one entry's variants for a card. base first (variant:null), then variants
 // naturally sorted; same lorebook-id precedence + category inference as assetUrl; [] on any miss.
 describe('assetListForWorld', () => {

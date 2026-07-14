@@ -26,13 +26,15 @@ import {
   isHeadlessTrace,
   deriveHeadlessFailure
 } from './stores/agentFailureStore'
+import { useRecallFailOpenStore, recallOutcome } from './stores/recallFailOpenStore'
+import { useAgentActivityStore } from './stores/agentActivityStore'
 import type { WorkflowRunTrace } from '../../shared/workflow/trace'
 import { useWorkspaceStore } from './stores/workspaceStore'
 import { useComposerStore } from './stores/composerStore'
 import { useWcvFreezeStore } from './stores/wcvFreezeStore'
 import { initSlash } from './plugin/slash'
 import { broadcastHostEvent, initCardEventBridge } from './cardBridge/hostBroadcast'
-import { applyTheme, THEMES, DEFAULT_THEME_ID } from './theme'
+import { applyThemeForScheme, colorSchemeOf } from './theme'
 import { deriveCardTheme } from './cardTheme'
 import { useUiStore } from './stores/uiStore'
 import {
@@ -64,6 +66,8 @@ export default function App(): React.ReactElement {
   const activePresetId = usePresetStore((s) => s.activeId)
   // The runtime play-theme override (session slot) — layered over the static card theme on `.play-root`.
   const runtimeTheme = useUiStore((s) => s.runtimeTheme)
+  // A card's session-scoped light/dark override (WCV rptHost.setColorScheme); null = follow the app theme.
+  const cardColorScheme = useUiStore((s) => s.cardColorScheme)
 
   useEffect(() => {
     loadProfiles()
@@ -121,6 +125,17 @@ export default function App(): React.ReactElement {
       }
       window.api.wcvSetPlayThemeReply(id, ok)
     })
+    // A WCV card called rptHost.setColorScheme (the app→card getColorScheme mirror, card→app direction):
+    // main relayed it here. Set the session-scoped override for the ACTIVE session ('auto'/null reverts to
+    // the app theme). The effective-scheme effect then repaints the chrome + re-pushes the effective axis
+    // back to every WCV surface (data-rpt-mode / getColorScheme), keeping app→card reporting the effective.
+    const unsubSetColorScheme = window.api.onWcvSetColorScheme(({ chatId, scheme }) => {
+      if (chatId === useChatStore.getState().activeChatId) {
+        useUiStore
+          .getState()
+          .setCardColorScheme(scheme === 'light' || scheme === 'dark' ? scheme : null)
+      }
+    })
     // Freeze-frame bitmaps while WCVs are ducked under a DOM overlay (PM-A4). Main pushes a per-slot
     // capture to paint behind the hidden native panels; each WcvPanel reads its own frame.
     const unsubFreeze = window.api.onWcvFreeze((p) => {
@@ -153,6 +168,19 @@ export default function App(): React.ReactElement {
         if (failure) useAgentFailureStore.getState().recordFailure(t.chatId, failure)
         else useAgentFailureStore.getState().clear(t.chatId)
       }
+      // Plot-recall (A3): tally consecutive PRE-TURN recall fail-opens for this chat. memory.recall
+      // runs inside the player-turn graph, so this is NOT gated on isHeadlessTrace — a turn trace with
+      // a fail-opened recall node bumps the streak; a clean recall resets it. ChatView warns at N.
+      const outcome = recallOutcome(t)
+      if (outcome) useRecallFailOpenStore.getState().record(t.chatId, outcome === 'failed')
+    })
+    // Live side-agent activity (agent-activity-indicator): a calls-llm node OTHER than the narrator
+    // started/finished its API request → fold into agentActivityStore so ChatView shows a pre-phase
+    // "Recalling memories…" ghost or a post-phase "Updating memory…" chip. Keyed by chat.
+    const unsubActivity = window.api.onWorkflowActivity((a) => {
+      if (a.state === 'start')
+        useAgentActivityStore.getState().start(a.chatId, a.nodeId, a.nodeType, a.phase)
+      else useAgentActivityStore.getState().end(a.chatId, a.nodeId)
     })
     // Opt-in node output panels (spec D4): append deltas; a chat's panels belong to its latest
     // turn, so clear them on the turn's rising edge (isGenerating false→true).
@@ -179,10 +207,12 @@ export default function App(): React.ReactElement {
       unsubSubmit()
       unsubReload()
       unsubSetPlayTheme()
+      unsubSetColorScheme()
       unsubFreeze()
       unsubFloors()
       unsubEvents()
       unsubTrace()
+      unsubActivity()
       unsubPanel()
       unsubPanelClear()
       unsubModeChanged()
@@ -225,10 +255,23 @@ export default function App(): React.ReactElement {
     )
   }, [settings?.ui?.font_size])
 
-  // Apply the selected theme's token set whenever it changes (and on first settings load).
+  // The single EFFECTIVE light/dark axis for the whole shell: a card's session-scoped override
+  // (rptHost.setColorScheme) if set, else the app theme's natural axis. It drives, uniformly:
+  //  (1) the FULL app token set on <html> — including `--rpt-text-primary`, so generated/story text follows
+  //      the axis (not just the chrome), plus the `--rpt-app-*` chrome tokens and the OS overlay, and
+  //  (2) the WCV surface sync (setColorSchemeCache → main → `data-rpt-mode` / getColorScheme).
+  // So the card's mode toggle and the app theme picker share ONE axis: each flips the app chrome, the app
+  // body text, the card surfaces, and the native buttons together. (Runs on first settings load too.)
+  const effectiveScheme = cardColorScheme ?? colorSchemeOf(settings?.ui?.theme)
   useEffect(() => {
-    applyTheme(settings?.ui?.theme)
-  }, [settings?.ui?.theme])
+    applyThemeForScheme(settings?.ui?.theme, effectiveScheme)
+    try {
+      // Push the EFFECTIVE axis (not the raw app theme) so WCV card surfaces follow it too.
+      window.api.setColorSchemeCache(effectiveScheme)
+    } catch {
+      /* no api (test/SSR) */
+    }
+  }, [settings?.ui?.theme, effectiveScheme])
 
   // Sync the UI language from settings (the i18n store re-renders subscribers on change).
   useEffect(() => {
@@ -299,30 +342,14 @@ export default function App(): React.ReactElement {
   }, [effectivePlayTokens, allowCardThemes, cardThemeRaw, settings?.ui?.theme])
 
   // Re-hydrate the runtime override from the persisted stores on session/profile change (and clear the
-  // ephemeral session slot so a runtime theme never leaks across chats). Best-effort; session-scoped
-  // overrides simply reset here.
+  // ephemeral session slot so a runtime theme never leaks across chats). The card's light/dark override is
+  // likewise ephemeral (never persisted), so reset it here — a card must not carry its scheme flip across
+  // sessions or permanently change the user's app setting. Best-effort; session-scoped overrides reset here.
   useEffect(() => {
     if (activeProfile?.id) hydratePlayTheme(activeProfile.id, activeChatId ?? '')
+    useUiStore.getState().setCardColorScheme(null)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeProfile?.id, activeChatId])
-
-  // Match the OS window-control overlay (Windows) to what's on screen: the card theme's chrome while a
-  // themed card is in play, else the base app theme. Keeps the controls flush in colour with the top
-  // strip (which uses --rpt-bg-secondary), and restores the base theme when leaving a themed card.
-  useEffect(() => {
-    const src =
-      playTokens ??
-      THEMES[settings?.ui?.theme ?? '']?.tokens ??
-      THEMES[DEFAULT_THEME_ID].tokens
-    try {
-      window.api?.setTitlebarOverlay?.({
-        color: src['--rpt-bg-secondary'],
-        symbolColor: src['--rpt-text-primary']
-      })
-    } catch {
-      /* non-Windows: no overlay */
-    }
-  }, [playTokens, settings?.ui?.theme])
 
   if (!activeProfile) return <ProfilePicker />
 

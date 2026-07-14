@@ -7,12 +7,12 @@
 import React from 'react'
 import { useT } from '../../i18n'
 import {
-  PROMPT_PLACEHOLDERS,
   PROMPT_ROLES,
   addRow,
   insertAtCaret,
   moveRow,
   normalizeRows,
+  placeholdersForType,
   removeRow,
   setContent,
   setRole,
@@ -29,15 +29,20 @@ export default function PromptEditor({
   fields,
   config,
   readOnly,
-  onChange
+  onChange,
+  nodeType
 }: {
   fields: PromptFieldSpec[]
   config: Record<string, unknown>
   readOnly: boolean
   /** Write the whole new value for `field` back into the node config (parent calls setNodeConfig). */
   onChange: (field: string, value: unknown) => void
+  /** The edited node's `type` — selects its per-node-type placeholder chips (D2). Omitted → generic set. */
+  nodeType?: string
 }): React.JSX.Element {
   const t = useT()
+  // The placeholder chips this node's prompt slots actually fill (per-node-type; generic fallback).
+  const placeholders = placeholdersForType(nodeType)
   // The textarea that last held focus (for placeholder-chip insertion at the caret).
   const activeEl = React.useRef<HTMLTextAreaElement | null>(null)
   const activeKey = React.useRef<string | null>(null)
@@ -58,6 +63,7 @@ export default function PromptEditor({
               write={write}
               activeEl={activeEl}
               activeKey={activeKey}
+              placeholders={placeholders}
             />
           )
         }
@@ -78,6 +84,7 @@ export default function PromptEditor({
             />
             <PlaceholderChips
               readOnly={readOnly}
+              placeholders={placeholders}
               onInsert={(chip) => {
                 const el = activeEl.current
                 const caret = el && activeKey.current === areaKey ? el.selectionStart : null
@@ -99,7 +106,8 @@ function PromptArrayField({
   readOnly,
   write,
   activeEl,
-  activeKey
+  activeKey,
+  placeholders
 }: {
   fieldKey: string
   rows: PromptRow[]
@@ -107,6 +115,7 @@ function PromptArrayField({
   write: (next: PromptRow[]) => void
   activeEl: React.MutableRefObject<HTMLTextAreaElement | null>
   activeKey: React.MutableRefObject<string | null>
+  placeholders: readonly string[]
 }): React.JSX.Element {
   const t = useT()
   const dragFrom = React.useRef<number | null>(null)
@@ -169,6 +178,7 @@ function PromptArrayField({
             />
             <PlaceholderChips
               readOnly={readOnly}
+              placeholders={placeholders}
               onInsert={(chip) => {
                 const el = activeEl.current
                 const caret = el && activeKey.current === areaKey ? el.selectionStart : null
@@ -232,16 +242,18 @@ function AutoTextarea({
 function PlaceholderChips({
   readOnly,
   onInsert,
-  label
+  label,
+  placeholders
 }: {
   readOnly: boolean
   onInsert: (chip: string) => void
   label: string
+  placeholders: readonly string[]
 }): React.JSX.Element {
   return (
     <div className="rpt-prompt-chips">
       <span className="rpt-prompt-chips-label">{label}</span>
-      {PROMPT_PLACEHOLDERS.map((chip) => (
+      {placeholders.map((chip) => (
         <button
           key={chip}
           type="button"

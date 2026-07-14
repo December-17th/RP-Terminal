@@ -1,6 +1,7 @@
 import { type ReactNode } from 'react'
 import { MessageContent } from './MessageContent'
 import { ReasoningPanel } from './ReasoningPanel'
+import { PlotPanel } from './PlotPanel'
 import { EditArea } from './EditArea'
 import { useT } from '../i18n'
 
@@ -12,6 +13,9 @@ export interface RenderedFloor {
   html: string
   /** Reasoning (`<think>`) the card's regex did NOT beautify — shown in a collapsible section. '' = none. */
   thinking: string
+  /** Plot-recall: recall's `plot_block` directive (data layer), shown in a collapsible plot panel.
+   *  Passed through verbatim from storage (NOT extracted from the response); empty/absent = no panel. */
+  plotBlock?: string
   /** Active swipe index + total alternates for this floor (TH-2). */
   swipeId: number
   swipeCount: number
@@ -93,6 +97,8 @@ export function FloorBlock({
           css={cardCss}
         />
       )}
+      {/* Plot-recall: this turn's recall planner output (the setting gate lives inside PlotPanel). */}
+      {f.plotBlock && <PlotPanel plotBlock={f.plotBlock} cardCss={cardCss} />}
       {editingResp ? (
         <EditArea
           value={editText}

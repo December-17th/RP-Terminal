@@ -106,6 +106,7 @@ const en: Record<string, string> = {
   'settings.memoryTitle': 'Memory manager',
   'settings.memoryBody': 'View and edit this session’s memory tables, run maintenance, undo changes, and edit the table structure — in a full-screen manager.',
   'settings.memoryOpen': 'Open memory manager',
+  'settings.variables': 'Variables',
   'settings.assetsTitle': 'World assets',
   'settings.assetsBody':
     "Manage this world's portraits, standees, galleries, scene art, and CG in the Assets view — drag-drop import, rename, and export.",
@@ -161,6 +162,9 @@ const en: Record<string, string> = {
   'prefs.sizeFit': "Fit (size to the card's content)",
   'prefs.sizeFill': 'Fill (cards sized to the viewport fill the frame)',
   'prefs.showFps': 'Show FPS counter (bottom-right)',
+  'prefs.showPlotBlock': 'Show plot panel (recall planning on the assistant floor)',
+  'prefs.showPlotBlockHint':
+    "Renders the pre-turn recall's plot directive as a collapsible panel, styled by your beautification regex.",
   'prefs.showUsageMeter': 'Show token / cache meter (floating overlay)',
   'prefs.templateEngine': 'ST-Prompt-Template engine (<% %> templates in cards/presets/lorebook)',
   'prefs.renderEval': 'Render-time eval (apply templates to AI output on display)',
@@ -484,6 +488,7 @@ const en: Record<string, string> = {
   'chat.generateNew': 'Generate a new response',
   'chat.editHint': 'Ctrl+Enter to save · Esc to cancel',
   'chat.reasoning': '💭 Reasoning',
+  'chat.plotBlock': '📖 Plot',
   'chat.nodePanel': 'Node output',
   'chat.selectSession': 'Select or create a session.',
   'chat.selectCharacter': 'Select a character.',
@@ -529,6 +534,11 @@ const en: Record<string, string> = {
   'chat.thinking': 'Thinking…',
   'chat.generating': 'Generating…',
   'chat.streamingCard': 'Interactive card renders when generation finishes…',
+  // Live side-agent activity indicator (agent-activity-indicator): a SIDE LLM node is calling the API.
+  'chat.activity.recall': 'Recalling memories…',
+  'chat.activity.memoryMaintain': 'Updating memory…',
+  'chat.activity.notesMaintain': 'Updating notes…',
+  'chat.activity.agent': 'Running agent…',
 
   'status.waiting': 'Waiting for session...',
   'status.heading': 'RPG Status',
@@ -640,6 +650,7 @@ const en: Record<string, string> = {
   'memoryManager.badgeOk': 'Caught up',
   'memoryManager.clean': 'Saved',
   'memoryManager.tab.data': 'Data',
+  'memoryManager.tab.notes': 'Notes',
   'memoryManager.tab.structure': 'Structure',
   'memoryManager.tab.maintenance': 'Maintenance',
   'memoryManager.tab.history': 'History',
@@ -668,6 +679,24 @@ const en: Record<string, string> = {
   'memoryManager.structure.warningsTitle': 'Warnings',
   'memoryManager.data.reset': 'Reset',
   'memoryManager.data.newRow': 'New row',
+  // Plot-recall (WP7): the per-row memory-code (MT####) chip + the code-column header marker.
+  'memoryManager.data.codeTip': 'Memory code — recall references this row by this code',
+  'tables.codeColumnTip': 'Memory-code column — rows are recalled by the code in this column',
+  // Notes tab (plot-recall WP7): freeform per-chat markdown notes.
+  'notes.intro': 'Freeform notes for this chat — stored alongside the tables and used by plot recall.',
+  'notes.placeholder': 'Write plot notes, TODOs, or reminders here. Use ## headings to organize sections.',
+  'notes.saving': 'Saving…',
+  'notes.unsaved': 'Unsaved changes',
+  'notes.saveFailed': 'Failed to save notes.',
+  // Notes conflict guard (B2): a maintenance pass (notes.maintain) can rewrite these notes while the
+  // tab is open; Save re-reads disk first and warns instead of clobbering a concurrent change.
+  'notes.refresh': 'Refresh',
+  'notes.refreshTip': 'Reload the notes from disk',
+  'notes.reloadConfirm': 'Discard your unsaved note edits and reload the version on disk?',
+  'notes.conflictWarn':
+    'These notes changed on disk since you opened them (a maintenance pass may have written to them). Reload to take the new version, or overwrite it with your edits.',
+  'notes.conflictReload': 'Reload',
+  'notes.conflictOverwrite': 'Overwrite',
   'memoryManager.footTemplate': 'Template: {{name}}',
   'memoryManager.footTable': 'Table: {{name}}',
   'memoryManager.footRows': '{{n}} rows',
@@ -738,6 +767,8 @@ const en: Record<string, string> = {
   'workflow.trace.status.ran': 'ran',
   'workflow.trace.status.skipped': 'skipped',
   'workflow.trace.status.failed': 'failed',
+  'workflow.trace.status.failedOpen': 'failed open',
+  'workflow.trace.failedOpenTip': 'Ran, but an internal step failed and was handled without stopping the turn.',
 
   'workflowEditor.viewTitle': 'Workflow Editor',
   'workflowEditor.memory': 'Memory…',
@@ -757,6 +788,8 @@ const en: Record<string, string> = {
   'workflowEditor.cat.history': 'History',
   'workflowEditor.cat.vars': 'Variables',
   'workflowEditor.cat.table': 'Tables',
+  'workflowEditor.cat.memory': 'Memory',
+  'workflowEditor.cat.notes': 'Notes',
   'workflowEditor.cat.lorebook': 'Lorebook',
   'workflowEditor.cat.mvu': 'MVU',
   'workflowEditor.cat.text': 'Text',
@@ -769,6 +802,10 @@ const en: Record<string, string> = {
   'workflowEditor.save': 'Save',
   'workflowEditor.unsaved': 'Unsaved changes',
   'workflowEditor.cloneToEdit': 'Clone to edit',
+  'workflowEditor.activeNarrator': '★ Active narrator',
+  'workflowEditor.activeNarratorTitle': 'This workflow runs at generation for chats without a per-world override.',
+  'workflowEditor.setActiveNarrator': 'Set as active narrator',
+  'workflowEditor.setActiveNarratorTitle': 'Make this workflow the active narrator that runs at generation.',
   'workflowEditor.import': 'Import',
   'workflowEditor.export': 'Export',
   'workflowEditor.valid': 'Valid',
@@ -947,6 +984,15 @@ const en: Record<string, string> = {
   'workflowEditor.memoryMaintain.previewButton': 'Preview sent prompt',
   'workflowEditor.memoryMaintain.previewLoading': 'Composing…',
   'workflowEditor.memoryMaintain.previewError': 'Could not compose the prompt.',
+  // Composed-prompt preview for the plot-recall planner nodes (memory.recall / notes.maintain).
+  'workflowEditor.recallPreview.title': 'Sent prompt',
+  'workflowEditor.recallPreview.button': 'Preview sent prompt',
+  'workflowEditor.recallPreview.loading': 'Composing…',
+  'workflowEditor.recallPreview.error': 'Could not compose the prompt.',
+  'workflowEditor.notesPreview.title': 'Sent prompt',
+  'workflowEditor.notesPreview.button': 'Preview sent prompt',
+  'workflowEditor.notesPreview.loading': 'Composing…',
+  'workflowEditor.notesPreview.error': 'Could not compose the prompt.',
   'workflowEditor.err.GROUP_MEMBER_MISSING': 'A module references a node that is not in the graph',
   'workflowEditor.err.GROUP_OVERLAP': 'A node belongs to more than one module',
   'workflowEditor.err.GROUP_EXPOSED_NOT_MEMBER': 'An exposed setting points at a non-member node',
@@ -1006,6 +1052,9 @@ const en: Record<string, string> = {
   'workflowEditor.nodeTitle.trigger.manual': 'Manual Trigger',
   'workflowEditor.nodeTitle.history.recent': 'Recent History',
   'workflowEditor.nodeTitle.agent.llm': 'Agent',
+  'workflowEditor.nodeTitle.memory.maintain': 'Maintain Memory',
+  'workflowEditor.nodeTitle.memory.recall': 'Recall Memory',
+  'workflowEditor.nodeTitle.notes.maintain': 'Maintain Notes',
   // Node descriptions (what the node does).
   'workflowEditor.nodeDesc.input.context':
     'Builds the turn bundle: session, character card, settings, preset, lorebooks, chat history and working variables. The start of every graph — almost every other node takes its output.',
@@ -1075,6 +1124,40 @@ const en: Record<string, string> = {
     'Reads one of the wrapper’s boundary values (gen or in1–in4, chosen by slot) — only meaningful inside a sub-graph doc; a plain turn graph rejects this node type.',
   'workflowEditor.nodeDesc.subgraph.output':
     'Reports a value out of the sub-graph on one of its boundary slots (out1–out4), read by the enclosing Sub-graph node’s matching output port — only meaningful inside a sub-graph doc.',
+  'workflowEditor.nodeDesc.memory.maintain':
+    'The post-turn maintainer for the SQL memory tables: one side call reads the recent transcript ({history}) and the current tables ({{tables}}) and emits the edits that update the bound template’s tables. Gate it behind a Signal so it runs on a cadence, off the hot path.',
+  'workflowEditor.nodeDesc.memory.recall':
+    'The pre-turn plot-recall planner: one side call reads the always-on table catalogue ({{catalogue}}), the notes table-of-contents ({{notes_toc}}), the pending action ({{action}}) and last turn’s plan ({{plan}}), then composes the recalled chronicle rows + note sections into one prompt-tail block for Assemble. Fails open — never blocks the turn.',
+  'workflowEditor.nodeDesc.notes.maintain':
+    'The post-turn maintainer for the human-readable narrative notes that Recall Memory greps: one side call reads the recent transcript ({history}) and the current notes ({{notes}}) and writes back <MemoryNote> section edits — narrative prose only, kept disjoint from the SQL tables. Gate it behind a Signal to run on a cadence.',
+  // Per-config-field help captions (plot-recall editor-UX D4).
+  'workflowEditor.configHelp.memory.recall.directive':
+    'The recalled-chronicle tail block. The slots StoryEngine, QuestPlan, recalled and notes are filled in when this node runs; empty slots collapse.',
+  // Trigger + consolidated-agent + table node families (plot-recall editor-UX D1 long-tail).
+  'workflowEditor.nodeDesc.trigger.state':
+    'A chain root that fires when a comparison over committed state holds (a variable path, or a table stat, vs a value). Excluded on a turn and evaluated headlessly at commit boundaries, so its downstream agent runs only when the condition lands — never on the hot path.',
+  'workflowEditor.nodeDesc.trigger.cadence':
+    'A chain root that fires every N floors, starting the downstream agent on a fixed turn cadence. Excluded on a turn (evaluated headlessly at commit boundaries), so the chain never runs inline.',
+  'workflowEditor.nodeDesc.trigger.manual':
+    'A chain root fired only by an explicit user action (Run), never at a turn boundary — the entry point for an agent you invoke by hand rather than on a schedule.',
+  'workflowEditor.nodeDesc.history.recent':
+    'The last N floors as an alternating player-action / AI-reply transcript (Messages), self-seeding its own Context so a trigger-rooted chain needs no Context wire. The chat-history input of a memory agent; config can narrow to just the user or assistant side.',
+  'workflowEditor.nodeDesc.agent.llm':
+    'The generic agent: one model call over an authored system/user/assistant prompt against a chosen API preset. Template rows interpolate macros/EJS plus {{input}} and a {history} splice; wire a Lore subset or pick per-world entries for world-info. It self-seeds its Context — the reply leaves on text, failures on error.',
+  'workflowEditor.nodeDesc.parse.extract':
+    'Pulls tagged or regex matches out of text — first (the first match), all (every match) — and fires found when at least one hits. Used to lift a tagged block out of an LLM reply (e.g. a <TableEdit> SQL block) for a downstream apply; blank input emits nothing and no signal.',
+  'workflowEditor.nodeDesc.context.trimProcessed':
+    'Drops the leading floors already folded into the SQL tables (up to the chat’s table-progress pointer) from the Context passing through, so a side call re-summarizes only the un-processed tail. Fail-soft: nothing processed / no table memory → the full history passes untouched.',
+  'workflowEditor.nodeDesc.table.apply':
+    'The SQL-table-memory WRITE: validates and executes an LLM-emitted SQL batch against the chat’s sandbox, appends it to the floor-keyed op log, and can advance the table-progress pointer. Post-response and fail-open — every failure leaves on error, blank SQL is a silent no-op; done sequences a downstream context refresh.',
+  'workflowEditor.nodeDesc.table.export':
+    'Projects the chat’s tables into lorebook-style entries and qualifies them through the real world-info matcher (constants always, keyword entries on a scan hit), for wiring into Assemble Prompt / Compose Prompt’s entries port. A READ: no table memory → silent empty, and it never injects on its own.',
+  'workflowEditor.nodeDesc.table.gate':
+    'The per-table update-frequency cadence gate for post-response maintenance: fires due once any watched table’s window has elapsed, emitting the due table ids and the aged floor span. Re-reads the floor count from disk — wire output.writeFloor.floor into floor to sequence it after the turn persists; no table memory → silent no-op.',
+  'workflowEditor.nodeDesc.table.read':
+    'Renders the “here are the tables, here is what you may do” block a maintainer prompt needs — each selected (or gate-due) table’s definition, per-op rules and current rows. A READ: no template / no tables → silent empty. Passes the rendered scope through so the apply stage knows what was in scope.',
+  'workflowEditor.nodeDesc.table.query':
+    'A validated read-only query for a planner / plot-advancement branch: a bare table name or one SELECT, executed read-only against the sandbox, returning the result rows plus a rendered block. A blank query or no table memory → silent empty; only a genuinely bad query leaves on error.',
   // Port descriptions shared by many nodes (looked up when no per-node entry exists).
   'workflowEditor.portDesc.common.gen':
     'The turn bundle from Context (settings, card, history, variables)',
@@ -1199,6 +1282,9 @@ const en: Record<string, string> = {
 
   'common.dismiss': 'Dismiss',
   'agent.headlessFailed': '⚠ Memory agent failed: {{reason}}',
+  // Plot-recall (A3): consecutive pre-turn recall fail-opens — turns keep running, but without memory.
+  'recall.failOpenBanner':
+    '⚠ Plot recall has failed {{n}} turns in a row — these turns are running without recalled memory.',
 
   'combat.empty': 'No active combat.',
   'combat.cueDetected': 'A fight is breaking out.',

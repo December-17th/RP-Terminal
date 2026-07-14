@@ -2,8 +2,39 @@ import { WorkflowDoc, Edge, NodeDescriptor } from '../../shared/workflow/types'
 import { validateWorkflow, ValidationError } from '../../shared/workflow/validate'
 import { topoOrder } from '../../shared/workflow/graph'
 import { CompositionMeta } from '../../shared/workflow/compose'
+import { capabilityOfNodeType } from '../../shared/workflow/capabilities'
 import { NodeRegistry } from './nodes/registry'
 import { RunContext, NodeError, NodeRunFailure } from './nodes/types'
+import { notifyWorkflowActivity } from './workflowEvents'
+
+/** Node types EXCLUDED from the live "agent activity" announcement even though they call the LLM: the
+ *  main narrator streams its own tokens via generation-delta, so re-announcing it would be redundant. */
+const ACTIVITY_EXCLUDE = new Set<string>(['llm.sample'])
+
+/** The announce-set predicate, in ONE place: a node whose LLM call the chat surfaces as live activity
+ *  is exactly a `calls-llm` node (capabilities.ts, the single capability authority) minus the narrator
+ *  (llm.sample). New calls-llm node types are announced automatically; no second list to keep in sync. */
+function announcesActivity(nodeType: string): boolean {
+  return capabilityOfNodeType(nodeType) === 'calls-llm' && !ACTIVITY_EXCLUDE.has(nodeType)
+}
+
+/** Broadcast one side-agent activity edge (start/end) to open renderers. Best-effort and NON-throwing:
+ *  a broadcast failure (e.g. no windows / test env) must never affect the run. No-op without a chatId
+ *  (bare-context engine tests) — the renderer keys everything by chat. */
+function emitActivity(
+  ctx: RunContext,
+  nodeId: string,
+  nodeType: string,
+  phase: 'pre' | 'post',
+  state: 'start' | 'end'
+): void {
+  if (!ctx.chatId) return
+  try {
+    notifyWorkflowActivity({ chatId: ctx.chatId, nodeId, nodeType, phase, state })
+  } catch {
+    /* a live-indicator broadcast must never affect the run */
+  }
+}
 
 /**
  * The text a node's opt-in output panel shows (spec D4): its Text-typed output ports joined
@@ -50,6 +81,10 @@ export interface NodeTrace {
   phase: 'pre' | 'post'
   error?: NodeError
   ms?: number
+  /** A2/A3 (plot-recall): the node RAN but handled an internal failure without aborting the turn
+   *  (fail-open, e.g. `memory.recall`'s caught side-call failure). Status stays 'ran' (not a hard
+   *  failure); this rides along so the UI can distinguish it from a clean green run. Absent = clean. */
+  failedOpen?: boolean
 }
 
 export interface RunResult {
@@ -155,6 +190,12 @@ async function runNodes(
       inputs[e.to.port] = state.outputs.get(e.from.node)?.[e.from.port]
     }
 
+    // Live "side LLM agent is calling the API" edge (agent-activity-indicator): emit a 'start' just
+    // BEFORE awaiting an announced node, and a matching 'end' after it settles (success OR failure — the
+    // finally below). Only the announce-set fires (calls-llm minus llm.sample). Cheap + non-throwing.
+    const announce = announcesActivity(node.type)
+    if (announce) emitActivity(ctx, id, node.type, phase, 'start')
+
     const started = Date.now()
     try {
       const config = (
@@ -167,7 +208,17 @@ async function runNodes(
       const result = (await impl.run(ctx, inputs, { id, config, wiredInputs })) ?? {}
       state.outputs.set(id, result.outputs ?? {})
       if (result.debug) state.debug.set(id, result.debug)
-      state.traces.push({ nodeId: id, status: 'ran', phase, ms: Date.now() - started })
+      // A2 fail-open affordance (plot-recall): a node that handled an internal failure without throwing
+      // still traces 'ran' (it is not a hard failure), but carries `failedOpen` so the UI can tint it a
+      // warning instead of a clean green (finding A3). Only stamped when true — a clean run's trace is
+      // byte-identical to before.
+      state.traces.push({
+        nodeId: id,
+        status: 'ran',
+        phase,
+        ms: Date.now() - started,
+        ...(result.failedOpen ? { failedOpen: true } : {})
+      })
       // Opt-in output panel (spec D4): a node with panel.show fills its collapsible chat panel
       // on completion (only the main output streams live — spec §5).
       if (node.panel?.show) {
@@ -175,9 +226,15 @@ async function runNodes(
         if (text) ctx.emitPanel(id, text)
       }
       const fired = new Set(result.signals ?? [])
+      // A2 dead-port affordance (plot-recall): a node can declare output ports NOT produced this run;
+      // the engine prunes their outgoing edges exactly like the throw path prunes non-error edges. This
+      // lets a fail-open node match throw-path error semantics without throwing (e.g. memory.recall
+      // declares its `error` port dead on success so a wired error branch never fires on a good turn).
+      const dead = result.deadPorts?.length ? new Set(result.deadPorts) : null
       for (const out of outs) {
         const port = impl.outputs.find((p) => p.name === out.from.port)
         if (port?.type === 'Signal' && !fired.has(out.from.port)) state.deadEdge.add(edgeKey(out))
+        else if (dead?.has(out.from.port)) state.deadEdge.add(edgeKey(out))
       }
     } catch (err) {
       // A NodeRunFailure carries the failure class + attempt count (spec §10); a plain throw
@@ -220,6 +277,10 @@ async function runNodes(
         // whenever no packs are composed, so this reduces to the original `phase === 'pre'` rule.
         if (phase === 'pre' && !state.failOpen.has(id)) return { fatal: nodeError }
       }
+    } finally {
+      // Matching 'end' — runs on success, on the caught-failure paths, AND on the fatal `return` above
+      // (finally runs on return), so an announced node's activity always clears. Never throws.
+      if (announce) emitActivity(ctx, id, node.type, phase, 'end')
     }
   }
   return { aborted: ctx.signal.aborted }

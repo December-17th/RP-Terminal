@@ -399,6 +399,8 @@ export const getDb = (): Database.Database => {
   addColumnIfMissing(db, 'floors', 'request', 'request TEXT')
   // Per-turn cache/token metrics (turn + cumulative snapshot) — see token-cache-meter-design.md.
   addColumnIfMissing(db, 'floors', 'metrics', 'metrics TEXT')
+  // Display-only plot-recall directive (recall's plot_block), rendered in the collapsible plot panel.
+  addColumnIfMissing(db, 'floors', 'plot_block', 'plot_block TEXT')
   // WP4.6: pin_version records which pack version an activation runs (version-coexistence). Add it to
   // a pre-WP4.6 activation table, then BACKFILL null pins from the just-migrated agent_packs: a legacy
   // DB held exactly one version per pack id, so that version is the unambiguous pin for its rows. A

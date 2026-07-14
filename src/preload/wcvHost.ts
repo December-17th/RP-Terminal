@@ -148,6 +148,8 @@ export function createWcvHost(deps: Deps): Host {
     setGlobalVars: (vars) => ipcRenderer.invoke('wcv-host-set-global-vars', vars),
     assetUrl: (name: string, type: string, mood?: string) =>
       ipcRenderer.invoke('wcv-host-asset-url', name, type, mood),
+    sceneAssetUrl: (location: string, type: '全景' | '背景') =>
+      ipcRenderer.invoke('wcv-host-scene-asset-url', location, type),
     // WA-3: enumerate one entry's variants; ctx resolves from e.sender main-side (like asset-url).
     assetList: (name: string, type: string) =>
       ipcRenderer.invoke('wcv-host-asset-list', name, type),

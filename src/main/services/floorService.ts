@@ -24,6 +24,7 @@ interface FloorRow {
   variables: string
   request: string | null
   metrics: string | null
+  plot_block: string | null
 }
 
 const rowToFloor = (r: FloorRow): FloorFile => {
@@ -44,7 +45,9 @@ const rowToFloor = (r: FloorRow): FloorFile => {
     events: safeJson(r.events, []),
     variables: safeJson(r.variables, {}),
     request: r.request ? safeJson(r.request, undefined) : undefined,
-    metrics: r.metrics ? safeJson(r.metrics, undefined) : undefined
+    metrics: r.metrics ? safeJson(r.metrics, undefined) : undefined,
+    // Display-only plot-recall directive; a plain string column (present only when recall emitted one).
+    ...(r.plot_block ? { plot_block: r.plot_block } : {})
   }
 }
 
@@ -73,8 +76,9 @@ const saveFloorRow = (chatId: string, floor: FloorFile): void => {
     .prepare(
       `INSERT INTO floors
         (chat_id, floor, timestamp, user_content, user_timestamp, response_content,
-         response_model, response_provider, swipes, swipe_id, events, variables, request, metrics)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         response_model, response_provider, swipes, swipe_id, events, variables, request, metrics,
+         plot_block)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(chat_id, floor) DO UPDATE SET
          timestamp = excluded.timestamp,
          user_content = excluded.user_content,
@@ -87,7 +91,8 @@ const saveFloorRow = (chatId: string, floor: FloorFile): void => {
          events = excluded.events,
          variables = excluded.variables,
          request = excluded.request,
-         metrics = excluded.metrics`
+         metrics = excluded.metrics,
+         plot_block = excluded.plot_block`
     )
     .run(
       chatId,
@@ -105,7 +110,8 @@ const saveFloorRow = (chatId: string, floor: FloorFile): void => {
       JSON.stringify(floor.events ?? []),
       JSON.stringify(floor.variables ?? {}),
       floor.request ? JSON.stringify(floor.request) : null,
-      floor.metrics ? JSON.stringify(floor.metrics) : null
+      floor.metrics ? JSON.stringify(floor.metrics) : null,
+      floor.plot_block ?? null
     )
 }
 

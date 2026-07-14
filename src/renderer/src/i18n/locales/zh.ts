@@ -104,6 +104,7 @@ const zh: Record<string, string> = {
   'settings.memoryTitle': '记忆管理器',
   'settings.memoryBody': '在全屏管理器中查看和编辑本会话的记忆表格、执行维护、撤销更改并编辑表格结构。',
   'settings.memoryOpen': '打开记忆管理器',
+  'settings.variables': '变量',
   'settings.assetsTitle': '世界素材',
   'settings.assetsBody':
     '在“素材”视图中管理本世界的头像、立绘、相册、场景图与 CG — 支持拖放导入、重命名与导出。',
@@ -159,6 +160,8 @@ const zh: Record<string, string> = {
   'prefs.sizeFit': '自适应（贴合卡片内容）',
   'prefs.sizeFill': '填充（按视口尺寸的卡片填满框架）',
   'prefs.showFps': '显示 FPS 计数器（右下角）',
+  'prefs.showPlotBlock': '显示剧情面板（助手楼层上的召回规划）',
+  'prefs.showPlotBlockHint': '将回合前召回的剧情指令渲染为可折叠面板，由你的美化正则进行样式化。',
   'prefs.showUsageMeter': '显示 Token / 缓存计量（悬浮层）',
   'prefs.templateEngine': 'ST-Prompt-Template 引擎（卡片/预设/世界书中的 <% %> 模板）',
   'prefs.renderEval': '渲染时求值（在显示时对 AI 输出应用模板）',
@@ -468,6 +471,7 @@ const zh: Record<string, string> = {
   'chat.generateNew': '生成新回复',
   'chat.editHint': 'Ctrl+Enter 保存 · Esc 取消',
   'chat.reasoning': '💭 推理',
+  'chat.plotBlock': '📖 剧情',
   'chat.nodePanel': '节点输出',
   'chat.selectSession': '选择或创建一个会话。',
   'chat.selectCharacter': '选择一个角色。',
@@ -513,6 +517,11 @@ const zh: Record<string, string> = {
   'chat.thinking': '思考中…',
   'chat.generating': '生成中…',
   'chat.streamingCard': '交互卡片将在生成完成后渲染…',
+  // 实时侧位智能体活动指示（agent-activity-indicator）：某个侧位 LLM 节点正在调用 API。
+  'chat.activity.recall': '正在召回记忆…',
+  'chat.activity.memoryMaintain': '正在更新记忆…',
+  'chat.activity.notesMaintain': '正在更新笔记…',
+  'chat.activity.agent': '智能体运行中…',
 
   'status.waiting': '等待会话…',
   'status.heading': 'RPG 状态',
@@ -619,6 +628,7 @@ const zh: Record<string, string> = {
   'memoryManager.badgeOk': '已跟进',
   'memoryManager.clean': '已保存',
   'memoryManager.tab.data': '数据',
+  'memoryManager.tab.notes': '笔记',
   'memoryManager.tab.structure': '结构',
   'memoryManager.tab.maintenance': '维护',
   'memoryManager.tab.history': '历史',
@@ -646,6 +656,23 @@ const zh: Record<string, string> = {
   'memoryManager.structure.warningsTitle': '警告',
   'memoryManager.data.reset': '重置',
   'memoryManager.data.newRow': '新行',
+  // 剧情召回（WP7）：每行的记忆编码（MT####）标签 + 编码列表头标记。
+  'memoryManager.data.codeTip': '记忆编码 —— 召回通过此编码引用本行',
+  'tables.codeColumnTip': '记忆编码列 —— 召回通过此列中的编码定位行',
+  // 笔记标签页（剧情召回 WP7）：本对话的自由格式 Markdown 笔记。
+  'notes.intro': '本对话的自由格式笔记 —— 与表格一同保存，供剧情召回使用。',
+  'notes.placeholder': '在此记录剧情笔记、待办或提醒。可用 ## 标题划分章节。',
+  'notes.saving': '保存中…',
+  'notes.unsaved': '有未保存的更改',
+  'notes.saveFailed': '笔记保存失败。',
+  // Notes conflict guard (B2): maintenance (notes.maintain) may rewrite notes while the tab is open.
+  'notes.refresh': '刷新',
+  'notes.refreshTip': '从磁盘重新加载笔记',
+  'notes.reloadConfirm': '放弃未保存的笔记修改，并重新加载磁盘上的版本？',
+  'notes.conflictWarn':
+    '自你打开以来，这些笔记已在磁盘上发生变化（可能是维护流程写入的）。可重新加载以采用新版本，或用你的修改覆盖。',
+  'notes.conflictReload': '重新加载',
+  'notes.conflictOverwrite': '覆盖',
   'memoryManager.footTemplate': '模板：{{name}}',
   'memoryManager.footTable': '表格：{{name}}',
   'memoryManager.footRows': '{{n}} 行',
@@ -709,6 +736,8 @@ const zh: Record<string, string> = {
   'workflow.trace.status.ran': '已执行',
   'workflow.trace.status.skipped': '已跳过',
   'workflow.trace.status.failed': '失败',
+  'workflow.trace.status.failedOpen': '容错继续',
+  'workflow.trace.failedOpenTip': '已执行，但某个内部步骤失败，已被容错处理，未中断本回合。',
 
   'workflowEditor.viewTitle': '工作流编辑器',
   'workflowEditor.memory': '记忆…',
@@ -728,6 +757,8 @@ const zh: Record<string, string> = {
   'workflowEditor.cat.history': '历史',
   'workflowEditor.cat.vars': '变量',
   'workflowEditor.cat.table': '表格',
+  'workflowEditor.cat.memory': '记忆',
+  'workflowEditor.cat.notes': '笔记',
   'workflowEditor.cat.lorebook': '世界书',
   'workflowEditor.cat.mvu': 'MVU',
   'workflowEditor.cat.text': '文本',
@@ -740,6 +771,10 @@ const zh: Record<string, string> = {
   'workflowEditor.save': '保存',
   'workflowEditor.unsaved': '未保存更改',
   'workflowEditor.cloneToEdit': '克隆以编辑',
+  'workflowEditor.activeNarrator': '★ 当前叙事者',
+  'workflowEditor.activeNarratorTitle': '对于没有单独世界覆盖的对话，此工作流会在生成时运行。',
+  'workflowEditor.setActiveNarrator': '设为当前叙事者',
+  'workflowEditor.setActiveNarratorTitle': '将此工作流设为在生成时运行的当前叙事者。',
   'workflowEditor.import': '导入',
   'workflowEditor.export': '导出',
   'workflowEditor.valid': '有效',
@@ -910,6 +945,15 @@ const zh: Record<string, string> = {
   'workflowEditor.memoryMaintain.previewButton': '预览发送的提示词',
   'workflowEditor.memoryMaintain.previewLoading': '正在组合…',
   'workflowEditor.memoryMaintain.previewError': '无法组合提示词。',
+  // 剧情回溯规划节点（memory.recall / notes.maintain）的组合提示词预览。
+  'workflowEditor.recallPreview.title': '发送的提示词',
+  'workflowEditor.recallPreview.button': '预览发送的提示词',
+  'workflowEditor.recallPreview.loading': '正在组合…',
+  'workflowEditor.recallPreview.error': '无法组合提示词。',
+  'workflowEditor.notesPreview.title': '发送的提示词',
+  'workflowEditor.notesPreview.button': '预览发送的提示词',
+  'workflowEditor.notesPreview.loading': '正在组合…',
+  'workflowEditor.notesPreview.error': '无法组合提示词。',
   'workflowEditor.err.GROUP_MEMBER_MISSING': '模块引用了图中不存在的节点',
   'workflowEditor.err.GROUP_OVERLAP': '某个节点属于多个模块',
   'workflowEditor.err.GROUP_EXPOSED_NOT_MEMBER': '暴露的设置指向了非成员节点',
@@ -969,6 +1013,9 @@ const zh: Record<string, string> = {
   'workflowEditor.nodeTitle.trigger.manual': '手动触发器',
   'workflowEditor.nodeTitle.history.recent': '近期历史',
   'workflowEditor.nodeTitle.agent.llm': '智能体',
+  'workflowEditor.nodeTitle.memory.maintain': '维护记忆表',
+  'workflowEditor.nodeTitle.memory.recall': '回忆检索',
+  'workflowEditor.nodeTitle.notes.maintain': '维护剧情笔记',
   // 节点说明
   'workflowEditor.nodeDesc.input.context':
     '构建本回合的上下文包：会话、角色卡、设置、预设、世界书、聊天历史与工作变量。每张图的起点——几乎所有节点都要读取它的输出。',
@@ -1038,6 +1085,40 @@ const zh: Record<string, string> = {
     '读取包裹节点的某个边界值（按 slot 选择 gen 或 in1–in4）——只有在子图文档内才有意义；普通回合图会拒绝这种节点类型。',
   'workflowEditor.nodeDesc.subgraph.output':
     '把一个值从子图内部报告到某个边界输出槽（out1–out4），由外层「子图」节点对应的输出端口读取——只有在子图文档内才有意义。',
+  'workflowEditor.nodeDesc.memory.maintain':
+    '回合后的 SQL 记忆表维护者：一次旁路调用读取近期对话（{history}）与当前表格（{{tables}}），产出更新绑定模板各表的编辑指令。请接在 Signal 之后，按节奏在主路径之外运行。',
+  'workflowEditor.nodeDesc.memory.recall':
+    '回合前的剧情回忆规划器：一次旁路调用读取常驻表格目录（{{catalogue}}）、笔记目录（{{notes_toc}}）、待处理输入（{{action}}）与上回合的计划（{{plan}}），再把检索到的编年史行与笔记小节合成一段提示词尾部文本块供「组装提示词」使用。失败即放行——绝不阻塞回合。',
+  'workflowEditor.nodeDesc.notes.maintain':
+    '回合后维护「回忆检索」所检索的人类可读剧情笔记：一次旁路调用读取近期对话（{history}）与当前笔记（{{notes}}），写回 <MemoryNote> 小节编辑——只写叙事散文，与 SQL 表保持互不重复。请接在 Signal 之后按节奏运行。',
+  // 逐配置字段的帮助说明（剧情回忆编辑器体验 D4）
+  'workflowEditor.configHelp.memory.recall.directive':
+    '检索到的编年史尾部文本块。运行本节点时会填入 StoryEngine、QuestPlan、recalled 与 notes 等占位符；空占位符会折叠。',
+  // 触发器 + 整合式智能体 + 表格节点族（剧情回忆编辑器体验 D1 长尾）
+  'workflowEditor.nodeDesc.trigger.state':
+    '链的根节点：当对已提交状态的比较成立时触发（某变量路径或表格统计值与给定值比较）。回合内被排除，在提交边界处以无头方式求值——因此其下游智能体仅在条件满足时运行，绝不占用主路径。',
+  'workflowEditor.nodeDesc.trigger.cadence':
+    '链的根节点：每 N 层触发一次，按固定回合节奏启动下游智能体。回合内被排除（在提交边界以无头方式求值），因此该链绝不内联运行。',
+  'workflowEditor.nodeDesc.trigger.manual':
+    '链的根节点：仅由用户显式操作（运行）触发，绝不在回合边界触发——用于手动调用而非按计划运行的智能体入口。',
+  'workflowEditor.nodeDesc.history.recent':
+    '读取最近 N 层，作为「玩家动作／AI 回复」交替的对话记录（Messages），并自行播种自身「上下文」，因此以触发器为根的链无需再连「上下文」。记忆智能体的对话历史输入；可通过配置只取其中一侧（user 或 assistant）。',
+  'workflowEditor.nodeDesc.agent.llm':
+    '通用智能体：针对所选 API 预设，用一份自定义的 system／user／assistant 提示词进行一次模型调用。模板行支持宏／EJS，以及 {{input}} 与 {history} 拼接；可接入所选世界书子集或按世界挑选的条目做世界信息匹配。自行播种「上下文」——回复由 text 输出，失败走 error。',
+  'workflowEditor.nodeDesc.parse.extract':
+    '从文本中提取标签或正则匹配——first（首个匹配）与 all（全部匹配），至少命中一个时触发 found。用于把 LLM 回复中的标签块（如 <TableEdit> SQL 块）取出交给下游应用；空输入不产出且不触发信号。',
+  'workflowEditor.nodeDesc.context.trimProcessed':
+    '从流经的「上下文」中丢弃已折叠进 SQL 表的前置楼层（至本会话的表格进度指针为止），使旁路调用只需重新总结尚未处理的尾部。柔性失败：无已处理内容／无表格记忆时，完整历史原样通过。',
+  'workflowEditor.nodeDesc.table.apply':
+    'SQL 记忆表的写入节点：校验并对本会话沙盒执行 LLM 产出的 SQL 批次，追加到按楼层记录的操作日志，并可推进表格进度指针。回合后运行且失败即放行——任何失败都走 error，空 SQL 为静默空操作；done 用于为下游的上下文刷新排序。',
+  'workflowEditor.nodeDesc.table.export':
+    '把本会话的表格投射成世界书式条目，并经真实的世界信息匹配器筛选（常驻条目始终保留，关键词条目命中扫描才保留），供接入「组装提示词」／「编排提示词」的 entries 端口。这是读取操作：无表格记忆则静默为空，绝不自行注入。',
+  'workflowEditor.nodeDesc.table.gate':
+    '回合后维护用的逐表更新频率节奏门：任一被监视表格的窗口到期即触发 due，输出到期表格 id 与累积的楼层跨度。从磁盘重新读取楼层数——把 output.writeFloor.floor 接到 floor 以便在回合持久化后排序；无表格记忆则静默空操作。',
+  'workflowEditor.nodeDesc.table.read':
+    '渲染维护者提示词所需的「这些是表格、你可以做什么」文本块——每张选中（或门判定到期）表格的定义、逐操作规则与当前行。这是读取操作：无模板／无表格则静默为空。并把渲染范围透传，使应用阶段知道范围内有哪些表格。',
+  'workflowEditor.nodeDesc.table.query':
+    '供规划器／剧情推进分支使用的受校验只读查询：一个裸表名或单条 SELECT，以只读方式对沙盒执行，返回结果行与渲染文本块。空查询或无表格记忆则静默为空；仅当查询确有问题时走 error。',
   // 通用端口说明（无逐节点条目时回退到这里）
   'workflowEditor.portDesc.common.gen': '来自“上下文”的回合包（设置、角色卡、历史、变量）',
   'workflowEditor.portDesc.common.when': '可选门控：信号触发时本节点才运行',
@@ -1147,6 +1228,8 @@ const zh: Record<string, string> = {
 
   'common.dismiss': '关闭',
   'agent.headlessFailed': '⚠ 记忆代理运行失败：{{reason}}',
+  // Plot-recall (A3): consecutive pre-turn recall fail-opens — turns keep running, but without memory.
+  'recall.failOpenBanner': '⚠ 剧情召回已连续 {{n}} 回合失败 —— 这些回合在没有召回记忆的情况下运行。',
 
   'combat.empty': '当前没有进行中的战斗。',
   'combat.cueDetected': '战斗一触即发。',

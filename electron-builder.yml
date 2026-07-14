@@ -1,4 +1,4 @@
-appId: com.electron.app
+appId: com.december17th.rpterminal
 productName: rp-terminal
 directories:
   buildResources: build

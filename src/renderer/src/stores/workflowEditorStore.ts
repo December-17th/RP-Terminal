@@ -92,6 +92,11 @@ export interface ImportedModule {
 interface WorkflowEditorState {
   nodeTypes: NodeTypeInfo[]
   workflows: WorkflowSummary[]
+  /** The id of the ACTIVE global narrator (workflowService selection.global) — the workflow that
+   *  runs when no per-world override shadows it. Loaded from getWorkflowSelection in `init` and by
+   *  `setActiveGlobal`; the header + picker read it to show the "active narrator" badge. Null when
+   *  seeding hasn't set a global yet (the builtin default is the on-disk fallback). */
+  activeGlobalId: string | null
   currentId: string | null
   doc: WorkflowDoc | null
   nodes: EditorNode[]
@@ -206,6 +211,10 @@ interface WorkflowEditorState {
   ): string | null
   save(profileId: string): Promise<void>
   cloneAndEdit(profileId: string): Promise<void>
+  /** Make `id` the ACTIVE global narrator: writes it via setGlobalWorkflow (the runtime resolves
+   *  `selection.worlds[world] ?? selection.global` at generation), then updates `activeGlobalId` so
+   *  the header badge flips without a reload. Caller gates on it being a runnable narrator doc. */
+  setActiveGlobal(profileId: string, id: string): Promise<void>
 }
 
 const descriptorMap = (nodeTypes: NodeTypeInfo[]): Map<string, NodeDescriptor> =>
@@ -289,6 +298,7 @@ export const useWorkflowEditorStore = create<WorkflowEditorState>((set, get) => 
   return {
     nodeTypes: [],
     workflows: [],
+    activeGlobalId: null,
     currentId: null,
     doc: null,
     nodes: [],
@@ -350,11 +360,12 @@ export const useWorkflowEditorStore = create<WorkflowEditorState>((set, get) => 
     endDrag: () => set({ lastHistKey: null }),
 
     init: async (profileId) => {
-      const [nodeTypes, workflows] = await Promise.all([
+      const [nodeTypes, workflows, selection] = await Promise.all([
         window.api.listNodeTypes(),
-        window.api.listWorkflows(profileId)
+        window.api.listWorkflows(profileId),
+        window.api.getWorkflowSelection(profileId)
       ])
-      set({ nodeTypes, workflows })
+      set({ nodeTypes, workflows, activeGlobalId: selection.global })
     },
 
     open: async (profileId, id) => {
@@ -872,6 +883,11 @@ export const useWorkflowEditorStore = create<WorkflowEditorState>((set, get) => 
       const workflows = await window.api.listWorkflows(profileId)
       set({ workflows })
       await get().open(profileId, clone.id)
+    },
+
+    setActiveGlobal: async (profileId, id) => {
+      await window.api.setGlobalWorkflow(profileId, id)
+      set({ activeGlobalId: id })
     }
   }
 })

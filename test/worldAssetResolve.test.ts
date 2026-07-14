@@ -31,6 +31,19 @@ describe('resolveAsset', () => {
       })
     ).toEqual({ indexPos: 0, filename: '爱莎_头像.jpg', usedMood: null })
   })
+  it('prefers a stage portrait variant and falls back to the base portrait', () => {
+    const withStage = idx({
+      爱莎: { 立绘: { base: '爱莎_立绘.png', moods: { 舞台: '爱莎_立绘_舞台.jpeg' } } }
+    })
+    const baseOnly = idx({ 爱莎: { 立绘: { base: '爱莎_立绘.png', moods: {} } } })
+
+    expect(
+      resolveAsset({ indexes: [withStage], category: 'character', name: '爱莎', type: '立绘', mood: '舞台' })
+    ).toEqual({ indexPos: 0, filename: '爱莎_立绘_舞台.jpeg', usedMood: '舞台' })
+    expect(
+      resolveAsset({ indexes: [baseOnly], category: 'character', name: '爱莎', type: '立绘', mood: '舞台' })
+    ).toEqual({ indexPos: 0, filename: '爱莎_立绘.png', usedMood: null })
+  })
   it('uses base when no mood is requested', () => {
     expect(
       resolveAsset({ indexes: [withMood], category: 'character', name: '爱莎', type: '头像' })

@@ -73,6 +73,28 @@ describe('recentTranscript', () => {
       { role: 'user', content: 'act' } // floor 0 user blank → skipped
     ])
   })
+
+  it('strips the model state/meta tag families (MVU/status/options/summary/…) from replies', () => {
+    const reply =
+      'prose before ' +
+      '<UpdateVariable>{"x":1}</UpdateVariable>' +
+      '<summary>s</summary>' +
+      '<options>o</options>' +
+      '<StatusPlaceHolderImpl/>' +
+      '<JSONPatch>[]</JSONPatch>' +
+      '<Analysis>a</Analysis>' +
+      '<tucao>t</tucao>' +
+      '<review>r</review>' +
+      '<refine>f</refine>' +
+      ' prose after'
+    const gen = genWith([floor('u', reply)])
+    const [, assistant] = recentTranscript(gen, { lastNFloors: 1 })
+    expect(assistant.content).toContain('prose before')
+    expect(assistant.content).toContain('prose after')
+    for (const gone of ['UpdateVariable', 'summary', 'options', 'StatusPlaceHolderImpl', 'JSONPatch', 'Analysis', 'tucao', 'review', 'refine', '{"x":1}']) {
+      expect(assistant.content).not.toContain(gone)
+    }
+  })
 })
 
 describe('applyTableEdit', () => {

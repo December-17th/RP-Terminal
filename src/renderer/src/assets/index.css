@@ -18,9 +18,20 @@
   --rpt-accent-soft: rgba(91, 141, 239, 0.12);
   --rpt-on-accent: #ffffff;
   --rpt-border: #333333;
+  /* App-scoped chrome surface (title strip + message-box background fallback). Written on <html> by
+     applyTheme/applyChromeScheme (src/renderer/src/theme.ts) to reflect the EFFECTIVE light/dark scheme
+     (app theme, or a card's rptHost.setColorScheme override). Kept OUTSIDE the card token map so a card's
+     `.play-root` tokens can't shadow them — the chrome follows the app's light/dark, not the card. These
+     dark defaults are the first-paint values before applyTheme runs. */
+  --rpt-app-bg-secondary: #1e1e1e;
+  --rpt-app-bg-primary: #121212;
+  --rpt-app-text-primary: #e0e0e0;
+  --rpt-app-border: #333333;
   --rpt-danger: #e74c3c;
   --rpt-success: #4caf72;
   --rpt-warning: #e0a23c;
+  /* Soft warning wash — first-paint default (mirrors the dark theme); themes override at runtime. */
+  --rpt-warning-soft: rgba(224, 162, 60, 0.14);
   /* Chrome polish (UI overhaul) — ADDITIVE tokens. New names, not referenced by any pre-existing
      rule, so themes need not define them and other screens are untouched. The mono face is the
      app's "terminal" utility voice (brand, eyebrows, tabular metadata); body stays the sans. */
@@ -472,6 +483,26 @@ body {
   border-bottom: 1px solid var(--rpt-border);
   background-color: color-mix(in srgb, var(--rpt-bg-primary) 55%, var(--rpt-bg-secondary));
 }
+/* Story-chat panel chrome: the panel body + header behind the message list prefer the card's
+   message bg (`--rpt-msg-bg`) when set, else the app's EFFECTIVE light/dark — never the card's
+   `.play-root` palette (which shadows every `--rpt-*` a card understands → a black panel in app light mode). Scoped by `:has(.floor-stage)` so ONLY the chat
+   panel repoints to the app-scoped `--rpt-app-*` tokens (written on <html>, uncard-shadowable) — the
+   other panel views (status/combat/debug) keep the card palette so their card-scoped text stays
+   legible. Mirrors the `.floor-block` / `.tstrip` fix (theme.ts chromeTokensFor / applyChromeScheme). */
+.ws-panel:has(.floor-stage) {
+  /* A card's message background (--rpt-msg-bg, set via setMessageTheme) wins so the whole story
+     surface — panel behind the bubbles included — matches the card; else the app-scoped effective
+     light/dark (parity with .floor-block / .action-input, which already carried the override). */
+  background-color: var(--rpt-msg-bg, var(--rpt-app-bg-secondary));
+  border-color: var(--rpt-msg-border, var(--rpt-app-border));
+}
+.ws-panel:has(.floor-stage) .ws-panel-head {
+  border-bottom-color: var(--rpt-msg-border, var(--rpt-app-border));
+  background-color: var(
+    --rpt-msg-bg,
+    color-mix(in srgb, var(--rpt-app-bg-primary) 55%, var(--rpt-app-bg-secondary))
+  );
+}
 .ws-view-pick {
   background-color: var(--rpt-bg-secondary);
   color: var(--rpt-text-secondary);
@@ -835,6 +866,28 @@ details[open] > .stat-group-title::before {
   color: var(--rpt-text-secondary);
   animation: rpt-pulse 1.2s ease-in-out infinite;
 }
+/* Post-phase side-agent status chip (agent-activity-indicator): a low-intrusion "Updating memory…"
+   line above the chat toolbar while a post-reply agent's LLM call runs. Non-blocking, quiet. */
+.agent-activity-chip {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  align-self: flex-start;
+  margin: 4px 0;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 12px;
+  color: var(--rpt-text-secondary);
+  background: var(--rpt-surface-2, rgba(127, 127, 127, 0.1));
+  border: 1px solid var(--rpt-border, rgba(127, 127, 127, 0.25));
+}
+.agent-activity-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--rpt-accent, #5b8def);
+  animation: rpt-pulse 1.2s ease-in-out infinite;
+}
 @keyframes rpt-pulse {
   0%,
   100% {
@@ -940,6 +993,9 @@ details[open] > .stat-group-title::before {
   gap: 20px;
   padding-right: 10px;
   padding-bottom: 6px;
+  /* Top breathing room so the first message box isn't flush against the panel edge (looked cut off in a
+     seamless card layout with no title bar). Pairs with the .floor-block bezel below. */
+  padding-top: 6px;
 }
 
 /* Message-box token namespace (runtime-theme-api-design §3A). Each `--rpt-msg-*` falls back to today's
@@ -947,9 +1003,16 @@ details[open] > .stat-group-title::before {
    box distinctly from the shell once it sets them (statically or via the runtime setMessageTheme API). */
 .floor-block {
   padding: 15px;
-  background-color: var(--rpt-msg-bg, var(--rpt-bg-secondary));
+  /* Card msg-bg override wins; otherwise the box follows the EFFECTIVE app scheme (`--rpt-app-bg-secondary`)
+     rather than the card's `.play-root` `--rpt-bg-secondary` — so a card that DOESN'T theme its message box
+     no longer inherits the card's dark chrome in app light mode. A card that sets `--rpt-msg-bg` still wins. */
+  background-color: var(--rpt-msg-bg, var(--rpt-app-bg-secondary));
   border-radius: var(--rpt-msg-radius, 8px);
   border: 1px solid var(--rpt-msg-border, var(--rpt-border));
+  /* ~5px bezel around the message box (owner) — a FIXED shape (this ring, regardless of card UI theme);
+     only its COLOUR tracks the card's `--rpt-msg-border` (which the card re-pushes per identity + light/dark).
+     Inset so it rides inside the 1px border; the 15px padding keeps prose clear of it. */
+  box-shadow: inset 0 0 0 4px color-mix(in srgb, var(--rpt-msg-border, var(--rpt-border)) 24%, transparent);
   font-size: var(--rpt-chat-font, 16px);
 }
 /* The AI message prose. A card theme MAY set `--rpt-chat-font-family` (token alias `chat-font` /
@@ -1483,6 +1546,44 @@ details[open] > .stat-group-title::before {
   line-height: 1.5;
 }
 
+/* Plot-recall plot panel — mirrors the reasoning panel's collapsible chrome. The body hosts a card
+   dashboard (its own styling), so keep wrapper chrome minimal and let the frame fill the width. */
+.plot-block {
+  margin: 0 0 12px;
+  border: 1px solid var(--rpt-border);
+  border-radius: 6px;
+  background-color: var(--rpt-bg-secondary);
+  font-size: 0.9em;
+}
+
+.plot-summary {
+  cursor: pointer;
+  padding: 6px 10px;
+  color: var(--rpt-text-secondary);
+  user-select: none;
+  list-style: none;
+}
+
+.plot-summary::-webkit-details-marker {
+  display: none;
+}
+
+.plot-summary::before {
+  content: '▸';
+  display: inline-block;
+  margin-right: 6px;
+  transition: transform 0.15s ease;
+}
+
+.plot-block[open] > .plot-summary::before {
+  transform: rotate(90deg);
+}
+
+.plot-content {
+  padding: 8px 12px;
+  border-top: 1px solid var(--rpt-border);
+}
+
 .action-input-container {
   margin-top: 16px;
   position: relative;
@@ -1491,9 +1592,13 @@ details[open] > .stat-group-title::before {
 .action-input {
   width: 100%;
   box-sizing: border-box;
-  background-color: var(--rpt-bg-secondary);
-  border: 1px solid var(--rpt-border);
-  color: var(--rpt-text-primary);
+  /* The composer is chat chrome, not card content: a card `--rpt-msg-*` override wins (opt-in, same
+     as the `.floor-block` bubble), otherwise it follows the app's EFFECTIVE light/dark via the
+     app-scoped tokens — so the input box is no longer black in app light mode when a card ships a
+     dark `.play-root` palette. bg/border/text move together so the box stays a legible pair. */
+  background-color: var(--rpt-msg-bg, var(--rpt-app-bg-secondary));
+  border: 1px solid var(--rpt-msg-border, var(--rpt-app-border));
+  color: var(--rpt-msg-text, var(--rpt-app-text-primary));
   /* right padding clears the in-box send button (no bottom reserve, so it can be one line tall) */
   padding: 12px 50px 12px 14px;
   border-radius: 8px;
@@ -2499,8 +2604,10 @@ select {
   gap: 10px;
   /* right padding reserves the OS window-control overlay strip (Windows custom title bar) */
   padding: 0 138px 0 14px;
-  background: var(--rpt-bg-secondary);
-  border-bottom: 1px solid var(--rpt-border);
+  /* App chrome: follows the EFFECTIVE light/dark scheme (app theme / card setColorScheme), NOT the card's
+     `.play-root` tokens — TopStrip renders inside `.play-root` but must track the app's mode. */
+  background: var(--rpt-app-bg-secondary);
+  border-bottom: 1px solid var(--rpt-app-border);
   -webkit-app-region: drag;
 }
 .tstrip-brand {
@@ -2509,7 +2616,7 @@ select {
   font-size: 13.5px;
   letter-spacing: 0.14em;
   text-transform: uppercase;
-  color: var(--rpt-text-primary);
+  color: var(--rpt-app-text-primary);
   background: none;
   border: none;
   cursor: pointer;
@@ -2518,7 +2625,7 @@ select {
   white-space: nowrap;
 }
 .tstrip-brand:hover {
-  background: color-mix(in srgb, var(--rpt-text-primary) 8%, transparent);
+  background: color-mix(in srgb, var(--rpt-app-text-primary) 8%, transparent);
 }
 .tstrip-brand .dot {
   color: var(--rpt-accent);
@@ -2845,6 +2952,12 @@ select {
 .rpt-tablegrid-scroll { overflow:auto; max-height:60vh; border:1px solid var(--rpt-border); border-radius:4px; }
 .rpt-tablegrid-th { position:sticky; top:0; z-index:1; border:1px solid var(--rpt-border);
   padding:3px 6px; text-align:left; background:var(--rpt-bg-secondary); white-space:nowrap; }
+/* Plot-recall (WP7): the memory-code (MT####) column marker — accent header text + a filled MT tag
+   (accent / on-accent pairing = guaranteed AA in every theme). Derived from the table def's exportConfig. */
+.rpt-tablegrid-th-code { color:var(--rpt-accent); }
+.rpt-tablegrid-code-tag { display:inline-block; margin-left:5px; padding:0 4px; vertical-align:middle;
+  font-family:var(--rpt-mono, monospace); font-size:9px; font-weight:700; letter-spacing:.03em;
+  border-radius:4px; background:var(--rpt-accent); color:var(--rpt-on-accent); }
 /* Memory Manager WP1: the shared grid's OPT-IN pager (range label + prev/next/page-number buttons).
    Renders only when a host passes paginate/pageSize (the Memory Manager's Data tab); all colors via
    --rpt-* tokens. */
@@ -2929,6 +3042,15 @@ select {
 .rpt-mm-maint-run:focus-visible { outline:2px solid var(--rpt-accent); outline-offset:2px; }
 .rpt-mm-maint-result { margin:0; font-size:12px; color:var(--rpt-text-primary); }
 .rpt-mm-maint-result.error { color:var(--rpt-danger); }
+/* Notes tab (plot-recall WP7): freeform per-chat markdown notes with explicit Save / Reset. */
+.rpt-mm-notes { display:flex; flex-direction:column; gap:10px; }
+.rpt-mm-notes-textarea { width:100%; min-height:320px; resize:vertical; font:inherit; font-size:12.5px;
+  line-height:1.5; padding:10px 12px; border-radius:8px; background:var(--rpt-bg-tertiary);
+  color:var(--rpt-text-primary); border:1px solid var(--rpt-border); }
+.rpt-mm-notes-textarea:focus { outline:none; border-color:var(--rpt-accent); }
+.rpt-mm-notes-textarea:disabled { opacity:0.6; }
+.rpt-mm-notes-bar { display:flex; align-items:center; gap:10px; }
+.rpt-mm-notes-dirty { font-size:11px; color:var(--rpt-text-secondary); }
 /* History tab (WP3): op-log list + rewind actions. */
 .rpt-mm-history { display:flex; flex-direction:column; gap:12px; }
 .rpt-mm-history-bar { display:flex; align-items:center; gap:12px; }
@@ -2992,6 +3114,11 @@ select {
 .rpt-mm-card-head { display:flex; align-items:center; gap:8px; }
 .rpt-mm-card-id { font-size:12px; font-weight:700; font-family:var(--rpt-mono, monospace);
   color:var(--rpt-text-secondary); }
+/* Plot-recall (WP7): the per-row memory-code (MT####) chip beside #id. Filled accent / on-accent
+   pairing = guaranteed WCAG-AA in every theme (same pairing as rpt-mm-maint-run / versionchip.active). */
+.rpt-mm-card-code { font-family:var(--rpt-mono, monospace); font-size:10.5px; font-weight:700;
+  letter-spacing:.02em; padding:1px 6px; border-radius:5px; background:var(--rpt-accent);
+  color:var(--rpt-on-accent); }
 .rpt-mm-card-actions { margin-left:auto; display:flex; gap:6px; }
 .rpt-mm-card-actions .rpt-duel-secondary, .rpt-mm-card-actions .btn-ghost { font-size:11px; padding:2px 8px; }
 .rpt-mm-card-fields { margin:0; display:flex; flex-direction:column; gap:5px; }

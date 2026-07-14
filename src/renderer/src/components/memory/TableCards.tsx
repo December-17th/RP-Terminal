@@ -22,6 +22,7 @@ type LabelFn = (colIndex: number) => string
 export function TableCards({
   table,
   headers,
+  codeColumn,
   onSaveRow,
   onInsertRow,
   onDeleteRow,
@@ -30,6 +31,9 @@ export function TableCards({
   table: TableRead
   /** Optional display labels (template headers); used only when they align 1:1 with the real columns. */
   headers?: string[]
+  /** Plot-recall (WP7): the memory-code column (display name, from `codeColumnOf`) whose per-row cell is
+   *  shown as an `MT####` chip beside the card `#id`. Undefined → no code column, no chip. */
+  codeColumn?: string
   onSaveRow: (rowid: number, changes: CellChange[]) => Promise<void> | void
   onInsertRow: (values: (string | null)[]) => Promise<void> | void
   onDeleteRow: (rowid: number) => Promise<void> | void
@@ -44,6 +48,12 @@ export function TableCards({
   const width = Math.max(1, table.columns.length)
   const label: LabelFn = (c) =>
     headers && headers.length === table.columns.length ? headers[c] : table.columns[c]
+  // Plot-recall (WP7): resolve the code column (a DISPLAY name) to a real column index — match either the
+  // SQL column name or its display label. -1 (no code column / not found) → RowCard renders no chip.
+  const codeIdx =
+    codeColumn == null
+      ? -1
+      : table.columns.findIndex((c, i) => c === codeColumn || label(i) === codeColumn)
 
   const visible = React.useMemo(() => filterRowIndices(table.rows, filter), [table.rows, filter])
   React.useEffect(() => {
@@ -113,6 +123,7 @@ export function TableCards({
               columns={table.columns}
               label={label}
               rowIdIdx={rowIdIdx}
+              codeIdx={codeIdx}
               values={table.rows[r]}
               rowid={table.rowids[r]}
               onSave={onSaveRow}
@@ -163,11 +174,13 @@ const RowCard: React.FC<{
   columns: string[]
   label: LabelFn
   rowIdIdx: number
+  /** Plot-recall (WP7): index of the memory-code column (-1 = none) → the `MT####` chip in the head. */
+  codeIdx: number
   values: unknown[]
   rowid: number | undefined
   onSave: (rowid: number, changes: CellChange[]) => Promise<void> | void
   onDelete: (rowid: number) => Promise<void> | void
-}> = ({ columns, label, rowIdIdx, values, rowid, onSave, onDelete }) => {
+}> = ({ columns, label, rowIdIdx, codeIdx, values, rowid, onSave, onDelete }) => {
   const t = useT()
   const [editing, setEditing] = React.useState(false)
   const [busy, setBusy] = React.useState(false)
@@ -209,11 +222,17 @@ const RowCard: React.FC<{
   }
 
   const idLabel = rowIdIdx >= 0 ? String(values[rowIdIdx] ?? '') : ''
+  const codeLabel = codeIdx >= 0 ? String(values[codeIdx] ?? '').trim() : ''
 
   return (
     <div className={`rpt-mm-card${editing ? ' editing' : ''}`}>
       <div className="rpt-mm-card-head">
         <span className="rpt-mm-card-id">#{idLabel || '—'}</span>
+        {codeLabel && (
+          <span className="rpt-mm-card-code" title={t('memoryManager.data.codeTip')}>
+            {codeLabel}
+          </span>
+        )}
         {editing ? (
           <span className="rpt-mm-card-actions">
             <button className="rpt-duel-secondary" disabled={busy} onClick={() => void save()}>

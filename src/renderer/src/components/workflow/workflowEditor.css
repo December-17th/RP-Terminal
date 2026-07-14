@@ -130,6 +130,16 @@
 .rpt-workflow-editor .rpt-node-trace-chip.is-failed .rpt-node-trace-dot {
   background: var(--rpt-danger);
 }
+/* A3 (plot-recall): a node that RAN but fail-opened — amber warning, distinct from clean 'ran'
+   (green dot) and hard 'failed' (red). Not color-only: the chip also swaps to the "failed open" text
+   label and carries the tooltip. Wins over the is-ran dot color via source order + specificity. */
+.rpt-workflow-editor .rpt-node-trace-chip.is-failed-open {
+  border-color: var(--rpt-warning);
+  color: var(--rpt-warning);
+}
+.rpt-workflow-editor .rpt-node-trace-chip.is-failed-open .rpt-node-trace-dot {
+  background: var(--rpt-warning);
+}
 .rpt-workflow-editor .rpt-node.rpt-node-trace-skipped {
   opacity: 0.6;
 }
@@ -706,6 +716,16 @@
   border-radius: 10px;
   border: 1px solid var(--rpt-warning);
   color: var(--rpt-warning);
+}
+/* Active-narrator badge (feat/active-workflow-picker): non-interactive marker shown when the open
+   doc is the active global narrator. Uses the success token so it reads as "this one runs". */
+.rpt-wfe-active-badge {
+  font-size: 11px;
+  padding: 2px 9px;
+  border-radius: 10px;
+  border: 1px solid var(--rpt-success);
+  color: var(--rpt-success);
+  white-space: nowrap;
 }
 .rpt-wfe-spacer {
   flex: 1;

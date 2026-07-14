@@ -18,6 +18,7 @@ import { registerDuelIpc } from './duelIpc'
 import { registerWorkflowIpc } from './workflowIpc'
 import { registerTableMemoryIpc } from './tableMemoryIpc'
 import { registerAgentPackIpc } from './agentPackIpc'
+import { registerNotesMemoryIpc } from './notesMemoryIpc'
 
 /** Register every IPC handler, grouped by domain. Called once after app-ready. */
 export const registerIpc = (ipcMain: IpcMain): void => {
@@ -40,4 +41,5 @@ export const registerIpc = (ipcMain: IpcMain): void => {
   registerWorkflowIpc(ipcMain)
   registerTableMemoryIpc(ipcMain)
   registerAgentPackIpc(ipcMain)
+  registerNotesMemoryIpc(ipcMain)
 }

@@ -75,6 +75,15 @@ export const writeJsonSyncAtomic = (filePath: string, data: any): void => {
   fs.renameSync(tmpPath, filePath)
 }
 
+/** Atomic UTF-8 text write (write to `<file>.tmp`, then rename), mirroring writeJsonSyncAtomic for
+ *  non-JSON payloads such as the per-chat notes markdown file. Creates the parent dir. */
+export const writeTextSyncAtomic = (filePath: string, text: string): void => {
+  ensureDir(path.dirname(filePath))
+  const tmpPath = `${filePath}.tmp`
+  fs.writeFileSync(tmpPath, text, 'utf-8')
+  fs.renameSync(tmpPath, filePath)
+}
+
 export const readJsonSync = <T = any>(filePath: string): T | null => {
   if (!fs.existsSync(filePath)) {
     return null

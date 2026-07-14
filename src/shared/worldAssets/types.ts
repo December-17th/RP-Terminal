@@ -5,7 +5,7 @@ export type AssetType = '头像' | '立绘' | '相册' | '背景' | '全景' | '
 /** Ordered so the parser matches the longest/most-specific token deterministically. */
 export const ASSET_TYPES: AssetType[] = ['头像', '立绘', '相册', '背景', '全景', 'CG']
 
-export const ASSET_EXTS = ['png', 'jpg', 'jpeg', 'webp', 'gif'] as const
+export const ASSET_EXTS = ['png', 'jpg', 'jpeg', 'jpe', 'webp', 'gif'] as const
 export type AssetExt = (typeof ASSET_EXTS)[number]
 
 export interface ParsedAssetName {

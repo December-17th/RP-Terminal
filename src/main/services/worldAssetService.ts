@@ -7,6 +7,10 @@ import { log } from './logService'
 import AdmZip from 'adm-zip'
 import { parseAssetFilename, buildAssetFilename } from '../../shared/worldAssets/filename'
 import { resolveAsset } from '../../shared/worldAssets/resolve'
+import {
+  resolveSceneAsset,
+  type SceneAssetType
+} from '../../shared/worldAssets/sceneResolve'
 import { computeCoverage, CharacterCoverage } from '../../shared/worldAssets/coverage'
 import {
   AssetCategory,
@@ -174,6 +178,66 @@ export function assetUrlForWorld(
   if (!hit) return null
   const file = hit.absPath.split(/[\\/]/).pop() as string
   return `rptasset://${profileId}/${hit.lorebookId}/${category}/${encodeURIComponent(file)}`
+}
+
+/** Resolve a model-authored hierarchical location without changing general assetUrl semantics. Exact
+ *  base-name lookup retains existing lorebook precedence; only an exact miss enters the fail-closed,
+ *  location-only hierarchy search. */
+export function resolveSceneAssetFile(
+  profileId: string,
+  lorebookIds: string[],
+  location: string,
+  type: SceneAssetType
+): { lorebookId: string; absPath: string; usedVariant: string | null } | null {
+  const exact = resolveAssetFile(profileId, lorebookIds, 'location', location, type)
+  if (exact) {
+    return { lorebookId: exact.lorebookId, absPath: exact.absPath, usedVariant: exact.usedMood }
+  }
+
+  const resolution = resolveSceneAsset({
+    indexes: lorebookIds.map((id) => getIndex(profileId, id)),
+    location,
+    type
+  })
+  if (resolution.status === 'ambiguous') {
+    log('info', '[scene-assets] ambiguous location', {
+      location,
+      type,
+      matchedSegments: resolution.matchedSegments,
+      candidates: resolution.candidates
+    })
+    return null
+  }
+  if (resolution.status === 'miss') {
+    return null
+  }
+
+  const lorebookId = lorebookIds[resolution.indexPos]
+  log('info', '[scene-assets] partial location match', {
+    location,
+    type,
+    match: resolution.match,
+    matchedSegments: resolution.matchedSegments,
+    filename: resolution.filename
+  })
+  return {
+    lorebookId,
+    absPath: path.join(assetsDir(profileId, lorebookId, 'location'), resolution.filename),
+    usedVariant: resolution.usedVariant
+  }
+}
+
+/** Card-facing URL form of {@link resolveSceneAssetFile}. */
+export function sceneAssetUrlForWorld(
+  profileId: string,
+  lorebookIds: string[],
+  location: string,
+  type: SceneAssetType
+): string | null {
+  const hit = resolveSceneAssetFile(profileId, lorebookIds, location, type)
+  if (!hit) return null
+  const file = hit.absPath.split(/[\\/]/).pop() as string
+  return `rptasset://${profileId}/${hit.lorebookId}/location/${encodeURIComponent(file)}`
 }
 
 export function listCoverage(

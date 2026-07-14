@@ -44,6 +44,9 @@ const setupApi = (): void => {
       }),
       saveWorkflow: vi.fn().mockResolvedValue({ ok: true, id: 'custom-1' }),
       cloneWorkflow: vi.fn().mockResolvedValue({ id: 'custom-1-clone', name: 'Custom (copy)' }),
+      // Active narrator (feat/active-workflow-picker): init reads the selection; setActiveGlobal writes it.
+      getWorkflowSelection: vi.fn().mockResolvedValue({ global: 'custom-1', worlds: {} }),
+      setGlobalWorkflow: vi.fn().mockResolvedValue(undefined),
       // Fragment session (WP4.4): the pack fragment read + write-back IPC.
       getAgentPackFragment: vi.fn(async (_profileId: string, packId: string) => {
         if (packId === 'my-fork') return fragmentDoc()
@@ -79,6 +82,7 @@ beforeEach(() => {
   useWorkflowEditorStore.setState({
     nodeTypes: [],
     workflows: [],
+    activeGlobalId: null,
     currentId: null,
     doc: null,
     nodes: [],
@@ -101,6 +105,33 @@ describe('workflowEditorStore: init + open', () => {
     const s = useWorkflowEditorStore.getState()
     expect(s.nodeTypes).toEqual(NODE_TYPES)
     expect(s.workflows).toEqual(workflowsList())
+  })
+
+  it('init loads the active global narrator id from the selection', async () => {
+    await useWorkflowEditorStore.getState().init(profileId)
+    expect(useWorkflowEditorStore.getState().activeGlobalId).toBe('custom-1')
+  })
+})
+
+describe('workflowEditorStore: setActiveGlobal (feat/active-workflow-picker)', () => {
+  it('writes setGlobalWorkflow and flips activeGlobalId so the open doc reads as active', async () => {
+    ;(window.api.getWorkflowSelection as ReturnType<typeof vi.fn>).mockResolvedValue({
+      global: 'other',
+      worlds: {}
+    })
+    await useWorkflowEditorStore.getState().init(profileId)
+    await useWorkflowEditorStore.getState().open(profileId, 'custom-1')
+    // Before: the open doc (custom-1) is NOT the active narrator.
+    expect(useWorkflowEditorStore.getState().currentId).toBe('custom-1')
+    expect(useWorkflowEditorStore.getState().activeGlobalId).toBe('other')
+
+    await useWorkflowEditorStore.getState().setActiveGlobal(profileId, 'custom-1')
+
+    expect(window.api.setGlobalWorkflow).toHaveBeenCalledWith(profileId, 'custom-1')
+    const s = useWorkflowEditorStore.getState()
+    // After: the "is the open doc active" selector (currentId === activeGlobalId) now holds.
+    expect(s.activeGlobalId).toBe('custom-1')
+    expect(s.currentId === s.activeGlobalId).toBe(true)
   })
 
   it('open(default) is read-only, valid (no errors), not dirty', async () => {

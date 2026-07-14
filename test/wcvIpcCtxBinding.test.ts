@@ -23,6 +23,7 @@ const SLOT = { slotId: 's1', profileId: 'pA', chatId: 'cA', characterId: 'charA'
 const h = vi.hoisted(() => ({
   contextFor: vi.fn(),
   ensure: vi.fn(),
+  destroy: vi.fn(),
   notifyEvent: vi.fn(),
   notifyVarsChanged: vi.fn(),
   requestOverlay: vi.fn(() => true),
@@ -47,6 +48,7 @@ const h = vi.hoisted(() => ({
 vi.mock('../src/main/services/wcvManager', () => ({
   contextFor: h.contextFor,
   ensure: h.ensure,
+  destroy: h.destroy,
   notifyEvent: h.notifyEvent,
   notifyVarsChanged: h.notifyVarsChanged,
   requestOverlay: h.requestOverlay,
@@ -111,6 +113,27 @@ describe('wcv-ensure — slot (re)binding is host-renderer-only', () => {
     const ctx = { profileId: 'pA', chatId: 'cA' }
     call('wcv-ensure', RENDERER_ID, 's1', { x: 0 }, 'url', ctx)
     expect(h.ensure).toHaveBeenCalledWith('s1', { x: 0 }, 'url', ctx)
+  })
+})
+
+describe('wcv-destroy — native teardown leaves the IPC callback', () => {
+  it('defers WebContentsView destruction until the next main-loop turn', async () => {
+    call('wcv-destroy', RENDERER_ID, 's1')
+    expect(h.destroy).not.toHaveBeenCalled()
+
+    await new Promise<void>((resolve) => setImmediate(resolve))
+    expect(h.destroy).toHaveBeenCalledWith('s1')
+  })
+
+  it('a re-ensure for the same id before the deferred turn CANCELS the teardown (remount race)', async () => {
+    // React's cleanup→body pair: unmount fires wcv-destroy, the immediate remount fires wcv-ensure for the
+    // same slot. The deferred destroy must NOT close the view the remount just re-bound.
+    call('wcv-destroy', RENDERER_ID, 's1')
+    call('wcv-ensure', RENDERER_ID, 's1', { x: 0 }, 'url', { profileId: 'pA', chatId: 'cA' })
+
+    await new Promise<void>((resolve) => setImmediate(resolve))
+    expect(h.destroy).not.toHaveBeenCalled()
+    expect(h.ensure).toHaveBeenCalledWith('s1', { x: 0 }, 'url', { profileId: 'pA', chatId: 'cA' })
   })
 })
 

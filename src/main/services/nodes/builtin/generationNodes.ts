@@ -305,7 +305,10 @@ export const outputWriteFloor: NodeImpl = {
     { name: 'sendMessages', type: 'Messages' },
     { name: 'variables', type: 'Vars' },
     { name: 'parsed', type: 'Any' },
-    { name: 'metrics', type: 'Any' }
+    { name: 'metrics', type: 'Any' },
+    // Optional display-only plot block (plot-recall data layer). When wired from memory.recall it is
+    // persisted losslessly onto the FloorFile for a later renderer; absent → the field is not written.
+    { name: 'plot_block', type: 'Text' }
   ],
   outputs: [{ name: 'floor', type: 'Any' }],
   isMainOutputCapable: true,
@@ -318,7 +321,8 @@ export const outputWriteFloor: NodeImpl = {
       sendMessages: inputs.sendMessages as ChatMessage[],
       events: parsed.events,
       variables: inputs.variables as Record<string, unknown>,
-      metrics: inputs.metrics as FloorMetrics
+      metrics: inputs.metrics as FloorMetrics,
+      plot_block: inputs.plot_block as string | undefined
     })
     return { outputs: { floor } }
   }

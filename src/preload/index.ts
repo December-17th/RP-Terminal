@@ -186,6 +186,21 @@ const api = {
     ipcRenderer.on('workflow-trace', listener)
     return () => ipcRenderer.removeListener('workflow-trace', listener)
   },
+  // Live side-agent activity (agent-activity-indicator): a calls-llm node OTHER than the narrator
+  // started/finished its API request. Returns an unsubscribe function.
+  onWorkflowActivity: (
+    cb: (p: {
+      chatId: string
+      nodeId: string
+      nodeType: string
+      phase: 'pre' | 'post'
+      state: 'start' | 'end'
+    }) => void
+  ) => {
+    const listener = (_e: IpcRendererEvent, p: any): void => cb(p)
+    ipcRenderer.on('workflow-activity', listener)
+    return () => ipcRenderer.removeListener('workflow-activity', listener)
+  },
   // Opt-in node output panel deltas (spec D4 collapsible chat panels). Returns an unsubscribe.
   onWorkflowPanel: (
     cb: (p: { chatId: string; nodeId: string; label?: string; delta: string }) => void
@@ -391,6 +406,17 @@ const api = {
     ipcRenderer.invoke('chat-tables-ops-list', profileId, chatId),
   rewindChatTables: (profileId: string, chatId: string, fromFloor: number) =>
     ipcRenderer.invoke('chat-tables-rewind', profileId, chatId, fromFloor),
+  // Plot-recall notes memory (WP2): read/write the per-chat human-editable markdown notes file.
+  notesGet: (profileId: string, chatId: string) =>
+    ipcRenderer.invoke('chat-notes-get', profileId, chatId),
+  notesSet: (profileId: string, chatId: string, notes: string) =>
+    ipcRenderer.invoke('chat-notes-set', profileId, chatId, notes),
+  // Plot-recall composed-prompt previews (mirrors previewMemoryMaintain): compose exactly what the
+  // memory.recall / notes.maintain node would send for this chat, without a model call.
+  previewRecallPlanner: (profileId: string, chatId: string, config: unknown) =>
+    ipcRenderer.invoke('recall-planner-preview', profileId, chatId, config),
+  previewNotesMaintain: (profileId: string, chatId: string, config: unknown) =>
+    ipcRenderer.invoke('notes-maintain-preview', profileId, chatId, config),
   exportTableTemplateDialog: (profileId: string, templateId: string, chatId?: string | null) =>
     ipcRenderer.invoke('table-template-export-dialog', profileId, templateId, chatId),
   // SQL-table memory (issue 07): manual backfill from history + live progress events
@@ -572,6 +598,9 @@ const api = {
   // Regex
   getRenderRegex: (profileId: string, ctx?: { cardId?: string | null; chatId?: string | null }) =>
     ipcRenderer.invoke('get-render-regex', profileId, ctx),
+  // Plot-recall plot-block panel display rules (placement 1 admitted).
+  getPlotBlockRegex: (profileId: string, ctx?: { cardId?: string | null; chatId?: string | null }) =>
+    ipcRenderer.invoke('get-plot-block-regex', profileId, ctx),
   listRegex: (profileId: string) => ipcRenderer.invoke('list-regex', profileId),
   listPanelRegex: (profileId: string, ctx?: { cardId?: string | null; chatId?: string | null }) =>
     ipcRenderer.invoke('list-panel-regex', profileId, ctx),
@@ -667,10 +696,26 @@ const api = {
   },
   wcvSetPlayThemeReply: (id: number, ok: boolean) =>
     ipcRenderer.send('wcv-host-set-play-theme-reply', id, ok),
+  // App light/dark override (WCV mode sync, card→app): a WCV card called rptHost.setColorScheme → main
+  // relays it here for the renderer to apply as a session-scoped override (null = revert to the app theme).
+  // Mirror of onWcvSetPlayTheme but with no derive/AA verdict (the value is just 'light'|'dark'|null).
+  onWcvSetColorScheme: (cb: (payload: { chatId: string; scheme: 'light' | 'dark' | null }) => void) => {
+    const listener = (
+      _e: IpcRendererEvent,
+      payload: { chatId: string; scheme: 'light' | 'dark' | null }
+    ): void => cb(payload)
+    ipcRenderer.on('wcv-set-colorscheme', listener)
+    return () => ipcRenderer.removeListener('wcv-set-colorscheme', listener)
+  },
   setPlayThemeCache: (snapshot: {
     tokens: Record<string, string>
     source: 'user' | 'card' | 'runtime'
   }) => ipcRenderer.send('set-play-theme-cache', snapshot),
+  // App light/dark mode sync (WCV mode sync): push RPT's IN-APP theme axis so a WCV card surface follows
+  // the app theme, not the OS `prefers-color-scheme`. Mirrors setPlayThemeCache; the renderer calls it on
+  // app-theme change. Main snapshots it (WCV sync read at boot) + pushes the change to every WCV.
+  setColorSchemeCache: (scheme: 'light' | 'dark') =>
+    ipcRenderer.send('set-colorscheme-cache', scheme),
   // World Assets (per-world image asset layer)
   assetCoverage: (profileId: string, lorebookIds: string[], category: string, roster: string[]) =>
     ipcRenderer.invoke('asset-coverage', profileId, lorebookIds, category, roster),
@@ -682,6 +727,12 @@ const api = {
     type: string,
     mood?: string
   ) => ipcRenderer.invoke('asset-url', profileId, lorebookIds, category, name, type, mood),
+  sceneAssetUrl: (
+    profileId: string,
+    lorebookIds: string[],
+    location: string,
+    type: '全景' | '背景'
+  ) => ipcRenderer.invoke('asset-scene-url', profileId, lorebookIds, location, type),
   // Card-facing (WA-3): enumerate one entry's variants; main applies id precedence + category inference.
   assetList: (profileId: string, lorebookIds: string[], name: string, type: string) =>
     ipcRenderer.invoke('asset-list-for-card', profileId, lorebookIds, name, type),

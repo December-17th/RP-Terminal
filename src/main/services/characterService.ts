@@ -14,8 +14,9 @@ import {
 import * as regexService from './regexService'
 import * as scriptService from './scriptService'
 import { installBundledPreset } from './presetService'
-import { parseStPng } from '../parsers/stPngParser'
+import { parseStPng, extractAppendedZip } from '../parsers/stPngParser'
 import { importAssetsZip } from './worldAssetService'
+import { installCartridgeCode, deleteCardCode } from './cardCodeService'
 
 const getAvatarsDir = (): string => path.join(getAppDir(), 'avatars')
 export const getAvatarPath = (characterId: string): string =>
@@ -87,6 +88,8 @@ export const deleteCharacter = (profileId: string, characterId: string): void =>
   scriptService.deleteScriptsByOwner(profileId, 'world', characterId)
   const avatar = getAvatarPath(characterId)
   if (fs.existsSync(avatar)) fs.unlinkSync(avatar)
+  // Remove any card-code cartridge subtree extracted for this world on import (A1).
+  deleteCardCode(profileId, characterId)
 }
 
 /** A card file parsed (losslessly) but not yet persisted. */
@@ -305,6 +308,18 @@ export const importCharacterFromFile = (
     if (path.extname(filePath).toLowerCase() === '.png') {
       ensureDir(getAvatarsDir())
       fs.copyFileSync(filePath, getAvatarPath(newId))
+      // S5 cartridge: if the PNG carries a ZIP appended after IEND, extract its code/ subtree to the
+      // card-code dir (WP0/A1). Serving those bytes is A2; a rejected/absent cartridge never blocks
+      // the card import. Keyed by the just-minted id so re-imports get an independent tree.
+      try {
+        const zipBytes = extractAppendedZip(filePath)
+        if (zipBytes) {
+          const res = installCartridgeCode(profileId, newId, zipBytes)
+          if (res.error) log('info', `Cartridge code not imported: ${res.error}`)
+        }
+      } catch (e) {
+        log('error', 'Cartridge code import failed (card import continues):', e)
+      }
     }
 
     let assetsImported = 0
