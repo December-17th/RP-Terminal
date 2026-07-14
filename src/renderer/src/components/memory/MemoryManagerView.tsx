@@ -570,6 +570,7 @@ export function MemoryManagerView({ profileId }: { profileId: string }): React.J
                   )}
                   {tab === 'maintenance' && (
                     <MaintenanceTab
+                      key={activeChatId}
                       profileId={profileId}
                       chatId={activeChatId}
                       hasTemplate={!!assignedId}
@@ -585,6 +586,7 @@ export function MemoryManagerView({ profileId }: { profileId: string }): React.J
                   )}
                   {tab === 'history' && (
                     <HistoryTab
+                      key={activeChatId}
                       profileId={profileId}
                       chatId={activeChatId}
                       hasTemplate={!!assignedId}
