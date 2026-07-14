@@ -13,7 +13,8 @@ import {
   refillBaselineBlocked,
   watermarkMoved,
   resumeRefillFrom,
-  planChunkCommit
+  planChunkCommit,
+  refillRunOutcome
 } from '../src/main/services/tableRefillService'
 import {
   beginTableWrite,
@@ -117,6 +118,27 @@ describe('planChunkCommit — chunk op-set assembly + first-chunk-only cut', () 
     const plan = planChunkCommit(false, ['characters'], 0, [], 2)
     expect(plan.cut).toEqual({ tables: ['characters'], fromFloor: 0 })
     expect(plan.floorOps).toEqual([])
+  })
+})
+
+describe('refillRunOutcome — stop-on-failure terminal branch (review fix F1)', () => {
+  it('a failed batch ⇒ terminal error, NO finalize (pointers untouched, progress row retained)', () => {
+    // Unlike backfill's continue-on-failure: the tail is already CUT, so skipping a failed span and
+    // finalizing would advance the pointers over a permanent, non-resumable hole. Stop-and-resume.
+    expect(refillRunOutcome(false, 'model gave up')).toEqual({
+      status: 'error',
+      finalize: false,
+      message: 'model gave up'
+    })
+  })
+  it('a failure outranks a concurrent cancel (the reason is what the user needs)', () => {
+    expect(refillRunOutcome(true, 'boom')).toEqual({ status: 'error', finalize: false, message: 'boom' })
+  })
+  it('a cancel without failure ⇒ cancelled, NO finalize (also resumable)', () => {
+    expect(refillRunOutcome(true, null)).toEqual({ status: 'cancelled', finalize: false })
+  })
+  it('a clean full run ⇒ done + finalize (advance pointers, delete the progress row)', () => {
+    expect(refillRunOutcome(false, null)).toEqual({ status: 'done', finalize: true })
   })
 })
 

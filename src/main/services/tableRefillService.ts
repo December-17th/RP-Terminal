@@ -46,6 +46,13 @@ import { GenContext } from './generation/types'
  * from the transcript, in ascending batches, committing per chunk so a late failure never throws away
  * the paid LLM work and an interrupted run RESUMES from where it stopped.
  *
+ * FAILURE SEMANTICS = STOP-AND-RESUME, not backfill's continue-on-failure: a batch that exhausts its
+ * retries TERMINATES the run (`refillRunOutcome`). Backfill could skip a failed span (append-world:
+ * "nothing added"); refill has already CUT the tail, so skipping would let later chunks advance
+ * `completedUntil` past the failed span and finalize would advance the pointers over a permanent,
+ * non-resumable hole. Instead: committed chunks + the `in_progress` progress row stay (completedUntil =
+ * the last GOOD chunk), pointers are NOT advanced, and Resume retries exactly the failed span.
+ *
  * The design is "generalized backfill" (per-floor attribution via `appendOpsAt` at each batch's `span.to`)
  * built on a temp SHADOW sandbox so the live sandbox is never mutated in place mid-run: the shadow is
  * "state as of fromFloor-1 for selected tables, latest for the rest", regenerated forward, and PUBLISHED
@@ -142,6 +149,33 @@ export const planChunkCommit = (
   cut: cutDone ? null : { tables: selected, fromFloor },
   floorOps: recorded.map((sql) => ({ floor: toFloor, sql }))
 })
+
+/** How a refill run ends, decided from what happened during the batch loop. */
+export interface RefillRunOutcome {
+  /** The terminal event status the UI listens for. */
+  status: 'done' | 'cancelled' | 'error'
+  /** True ONLY for a clean full run: advance the pointers to latest + delete the progress row.
+   *  False keeps the `in_progress` row (completedUntil = the last GOOD chunk) so Resume retries
+   *  exactly what didn't commit. */
+  finalize: boolean
+  /** The failed batch's reason (status 'error' only). */
+  message?: string
+}
+
+/**
+ * Decide the run's terminal branch (PURE): a FAILED batch ⇒ terminal `error`, NO finalize — unlike the
+ * append backfill (where a failed span just meant "nothing added"), refill has already CUT the tail, so
+ * skipping past a failed span and finalizing would advance the pointers over a permanent hole and delete
+ * the resume record. Stop-and-resume instead: committed chunks + the progress row stay, Resume (from
+ * `completedUntil + 1`) retries exactly the failed span. A failure outranks a concurrent cancel (it
+ * carries the reason); a cancel without failure ⇒ `cancelled` (also resumable); otherwise `done`.
+ */
+export const refillRunOutcome = (aborted: boolean, failedReason: string | null): RefillRunOutcome =>
+  failedReason != null
+    ? { status: 'error', finalize: false, message: failedReason }
+    : aborted
+      ? { status: 'cancelled', finalize: false }
+      : { status: 'done', finalize: true }
 
 // ---- refill-progress store (app DB) — untestable stance (alias-mocked better-sqlite3) ---------
 
@@ -304,53 +338,62 @@ export const startRefill = async (
   const token = beginTableWrite(chatId)
   if (!token) throw new Error('tables.refillBusy')
 
-  let gen: GenContext
+  // Everything between the successful claim and the async kickoff is fenced (F2): a throw here (gen
+  // build, a bad preset, an app-DB error in the progress upsert) must release the guard token AND
+  // unregister the just-set `runs` entry — a leaked `running: true` entry would otherwise make every
+  // future startRefill throw refillAlreadyRunning until app restart.
+  const controller = new AbortController()
+  const entry: { controller: AbortController; state: RefillRunState } = {
+    controller,
+    state: {
+      running: true,
+      batchIndex: -1,
+      batchCount: 0,
+      span: null,
+      completedUntil: -1,
+      droppedOutOfScope: 0,
+      failures: []
+    }
+  }
   try {
-    gen = buildGenContext(profileId, chatId, '')
+    let gen: GenContext = buildGenContext(profileId, chatId, '')
     if (opts.apiPresetId) {
       const swapped = withPreset(gen, opts.apiPresetId)
       if (!swapped) throw new Error('tables.backfillBadPreset')
       gen = swapped
     }
+
+    const batchSize = Math.max(1, Math.floor(opts.batchSize ?? 3))
+    const retries = Math.max(0, Math.min(5, opts.retries ?? 0))
+    const spans = planBatches(latest + 1, latest - from + 1, batchSize)
+    entry.state.batchCount = spans.length
+
+    runs.set(chatId, entry)
+    upsertRefillProgress(chatId, selected, from, -1, 'in_progress')
+
+    // Kick off the async run; do NOT await it (the IPC caller returns immediately). An async call
+    // never throws synchronously, so nothing after this point needs the fence.
+    void runRefill(
+      profileId,
+      chatId,
+      gen,
+      template,
+      floors,
+      selected,
+      from,
+      latest,
+      spans,
+      retries,
+      opts.extraHint,
+      token,
+      entry.state,
+      controller.signal
+    )
   } catch (error) {
     endTableWrite(chatId, token) // never leak the guard on a start-time failure
+    if (runs.get(chatId) === entry) runs.delete(chatId) // only OUR entry, never a successor's
     throw error
   }
-
-  const batchSize = Math.max(1, Math.floor(opts.batchSize ?? 3))
-  const retries = Math.max(0, Math.min(5, opts.retries ?? 0))
-  const spans = planBatches(latest + 1, latest - from + 1, batchSize)
-
-  const controller = new AbortController()
-  const state: RefillRunState = {
-    running: true,
-    batchIndex: -1,
-    batchCount: spans.length,
-    span: null,
-    completedUntil: -1,
-    droppedOutOfScope: 0,
-    failures: []
-  }
-  runs.set(chatId, { controller, state })
-  upsertRefillProgress(chatId, selected, from, -1, 'in_progress')
-
-  // Kick off the async run; do NOT await it (the IPC caller returns immediately).
-  void runRefill(
-    profileId,
-    chatId,
-    gen,
-    template,
-    floors,
-    selected,
-    from,
-    latest,
-    spans,
-    retries,
-    opts.extraHint,
-    token,
-    state,
-    controller.signal
-  )
 }
 
 /** Commit ONE chunk atomically: check the interleave watermark, cut the tail (first committed chunk
@@ -414,6 +457,9 @@ const runRefill = async (
 
   let cutDone = false
   let lastKnownMax = 0
+  // Set when a batch exhausts its retries — STOPS the run (F1): the tail is already cut, so skipping
+  // past a failed span would finalize over a permanent hole. See `refillRunOutcome`.
+  let failedReason: string | null = null
 
   try {
     // SHADOW BUILD — instantiate the temp file + replay every op EXCEPT the selected tables' tail.
@@ -461,9 +507,12 @@ const runRefill = async (
       try {
         applied = await runMaintainerBatch(gen, messages, retries, signal, apply)
       } catch (error) {
-        // Exhausted retries / API give-up: mark the batch failed and CONTINUE (fail-open, like backfill).
+        // Exhausted retries / API give-up: STOP the run (stop-and-resume, NOT backfill's continue —
+        // the tail is already cut, so a skipped span would become a permanent, non-resumable hole).
+        // Committed chunks + the 'in_progress' row stay; Resume retries exactly this span.
         const reason = error instanceof Error ? error.message : String(error)
         state.failures.push({ span, reason })
+        failedReason = reason
         log('info', `refill batch ${span.from}-${span.to} failed (chat ${chatId}): ${reason}`)
         emit({
           chatId,
@@ -474,7 +523,7 @@ const runRefill = async (
           message: reason,
           completedUntil: state.completedUntil
         })
-        continue
+        break
       }
       if (!applied) break // cancelled mid-batch: leave uncommitted
 
@@ -507,21 +556,25 @@ const runRefill = async (
     }
 
     state.running = false
-    if (signal.aborted) {
-      // Cancelled: committed chunks + the progress row STAY (Resume covers the rest); drop the shadow.
+    const outcome = refillRunOutcome(signal.aborted, failedReason)
+    if (!outcome.finalize) {
+      // Failed batch or cancel: committed chunks + the 'in_progress' progress row STAY (completedUntil
+      // = the last GOOD chunk; pointers untouched) so Resume retries exactly what didn't commit.
+      // Only the shadow is dropped. A failed batch MUST NOT fall through into FINALIZE.
       removeShadow(profileId, chatId)
       emit({
         chatId,
         batchIndex: state.batchIndex,
         batchCount: spans.length,
         span: state.span,
-        status: 'cancelled',
+        status: outcome.status,
+        ...(outcome.message !== undefined ? { message: outcome.message } : {}),
         completedUntil: state.completedUntil
       })
       return
     }
 
-    // FINALIZE (clean run): refilled ⇒ current; drop the resume record + shadow.
+    // FINALIZE (clean full run only): refilled ⇒ current; drop the resume record + shadow.
     advanceProgress(profileId, chatId, selected, latest)
     deleteRefillProgress(chatId)
     removeShadow(profileId, chatId)

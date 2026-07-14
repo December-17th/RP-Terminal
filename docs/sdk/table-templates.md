@@ -350,19 +350,25 @@ the transcript, built as a **generalized backfill** (per-floor attribution at ea
    live sandbox by file snapshot (`publishShadow` — WAL-checkpoint + copy), **never** `rebuildSandbox`
    (which self-claims the held guard and silently skips); `rebuildSandboxUnguarded` is the
    publish-failure fallback.
-5. **Finalize / resume.** Clean finish: `advanceProgress(selected, latest)`, delete the progress row +
-   shadow. On failure/cancel: committed chunks STAY, the `in_progress` row stays, the shadow is dropped;
+5. **Finalize / resume — STOP-AND-RESUME failure semantics** (`refillRunOutcome`). A batch that
+   exhausts its retries TERMINATES the run (a `batch-failed` event, then a terminal `error`) — NOT
+   backfill's continue-on-failure: the tail is already cut, so skipping a failed span would let later
+   chunks advance `completedUntil` past it and finalize would advance the pointers over a permanent,
+   non-resumable hole. On failure/cancel: committed chunks STAY, the `in_progress` row stays
+   (`completedUntil` = the last GOOD chunk), pointers are NOT advanced, the shadow is dropped;
    **Resume** (`resumeRefill`, IPC `chat-tables-refill-resume`) starts a fresh refill from
-   `resumeRefillFrom(fromFloor, completedUntil) = max(from, completedUntil+1)` (the op-log composes
-   exactly). `discardRefill` (IPC `chat-tables-refill-discard`) drops the resume record + shadow, keeping
-   committed chunks. `getRefillState` (IPC `chat-tables-refill-state`) returns `{ run, persisted }`.
+   `resumeRefillFrom(fromFloor, completedUntil) = max(from, completedUntil+1)` — retrying exactly the
+   failed span (the op-log composes exactly). Only a CLEAN full run finalizes:
+   `advanceProgress(selected, latest)` + delete the progress row + shadow. `discardRefill` (IPC
+   `chat-tables-refill-discard`) drops the resume record + shadow, keeping committed chunks.
+   `getRefillState` (IPC `chat-tables-refill-state`) returns `{ run, persisted }`.
 
 **Progress table.** `table_refill_progress(chat_id PK REFERENCES chats(id) ON DELETE CASCADE,
 selected_json, from_floor, completed_until, status, updated_at)` — one in-flight refill per chat, the
 shujuku `manualRefillProgress` analogue. **Events** ride the backfill channel `table-backfill-progress`
 with `kind:'refill'` (+ `completedUntil`). Pure decision helpers (unit-tested):
 `shouldReplayIntoShadow`, `partitionBySelected`, `defaultRefillFrom`, `refillBaselineBlocked`,
-`watermarkMoved`, `resumeRefillFrom`, `planChunkCommit`.
+`watermarkMoved`, `resumeRefillFrom`, `planChunkCommit`, `refillRunOutcome`.
 
 ### Nodes (`src/main/services/nodes/builtin/`)
 
