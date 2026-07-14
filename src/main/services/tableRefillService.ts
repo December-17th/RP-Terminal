@@ -13,6 +13,7 @@ import {
   beginTableWrite,
   renewTableWrite,
   endTableWrite,
+  WRITE_GUARD_MS,
   listOpsForReplay,
   opsWatermark,
   appendOpsAt,
@@ -259,17 +260,43 @@ export const REFILL_HEARTBEAT_MS = 45_000
  * the token-owned write lease every `REFILL_HEARTBEAT_MS` while the run is alive so a single batch's model
  * call — up to `retries` API re-tries + SQL-corrective re-asks, routinely > `WRITE_GUARD_MS` — can't let
  * the lease expire mid-await (which would read `isTableWriteBusy` false and hand the slot to a probe, or
- * let the run's own now-expired-but-identity-owned token renew fine and publish stale schema). A `renew()`
- * returning false (the lease expired + was reclaimed) LATCHES `lost()` true so the run stops before its
- * next commit. `stop()` clears the interval. Crash-safety is unaffected — the guard map is in-memory and
- * dies with the process; a hung run stays visible + cancellable in the rail (cancel's finally releases).
+ * let the run's own now-expired-but-identity-owned token renew fine and publish stale schema).
+ *
+ * The latch guards lease CONTINUITY, not merely reclaim. Two ways the lease is lost:
+ *   1. A `renew()` returns false — the 120s expiry lapsed and another writer reclaimed the token.
+ *   2. A wall-clock GAP ≥ `guardMs` opened since the last SUCCESSFUL renew — even if `renew()` still
+ *      succeeds. This is the event-loop-starvation hole: if timers starve past `WRITE_GUARD_MS`, a
+ *      destructive PROBE (the structure migration's `isTableWriteBusy` pre-check) can observe the
+ *      expired lease and proceed WITHOUT claiming; the heartbeat's next `renew()` then succeeds because
+ *      `renewTableWrite` checks token IDENTITY, not expiry — which would LAUNDER the lapse and let the
+ *      refill commit over the migration. So a proven gap latches lost regardless of renew success, and
+ *      `last` only advances on a renew that did NOT already lapse.
+ *
+ * `lost()` recomputes freshly (`guardLost || gap ≥ guardMs`) so the pre-commit backstop also catches a
+ * stall that lands BETWEEN the last tick and the commit, before any timer has fired. `stop()` clears the
+ * interval. `guardMs` defaults to `WRITE_GUARD_MS` (the real expiry window); the param exists so the
+ * fake-timer tests can drive the gap logic without depending on the imported constant. Crash-safety is
+ * unaffected — the guard map is in-memory and dies with the process; a hung run stays visible +
+ * cancellable in the rail (cancel's finally releases).
  */
-export const startGuardHeartbeat = (renew: () => boolean): { stop: () => void; lost: () => boolean } => {
+export const startGuardHeartbeat = (
+  renew: () => boolean,
+  guardMs = WRITE_GUARD_MS
+): { stop: () => void; lost: () => boolean } => {
   let guardLost = false
+  let last = Date.now()
   const handle = setInterval(() => {
+    // A gap ≥ guardMs means the lease provably lapsed at some point in this interval — a probe could
+    // have seen the slot free — so a subsequent successful renew must NOT launder it.
+    if (Date.now() - last >= guardMs) guardLost = true
     if (!renew()) guardLost = true
+    else if (!guardLost) last = Date.now()
   }, REFILL_HEARTBEAT_MS)
-  return { stop: () => clearInterval(handle), lost: () => guardLost }
+  return {
+    stop: () => clearInterval(handle),
+    // Recompute so a stall between the last tick and this call (no timer fired yet) is still caught.
+    lost: () => guardLost || Date.now() - last >= guardMs
+  }
 }
 
 // ---- refill-progress store (app DB) — untestable stance (alias-mocked better-sqlite3) ---------
@@ -741,10 +768,12 @@ const runRefill = async (
       }
       if (!applied) break // cancelled mid-batch: leave uncommitted
 
-      // Commit-ordering backstop: if the heartbeat EVER reported a lost slot during the await above
-      // (near-impossible once the heartbeat exists, but reachable under event-loop starvation or a
-      // future bug), STOP before writing — this iteration's commitChunk would otherwise run before the
-      // next loop-top renew check could catch it. Reuses the localized guard-lost key.
+      // Commit-ordering backstop: if the heartbeat EVER reported a lost slot during the await above,
+      // STOP before writing — this iteration's commitChunk would otherwise run before the next loop-top
+      // renew check could catch it. `lost()` recomputes freshly, so this genuinely catches the
+      // event-loop-starvation case: timers starved past WRITE_GUARD_MS so a probe could have seen the
+      // lease free, yet the run's identity-owned token would still renew fine — the proven renewal gap
+      // trips here even if no timer fired between the last tick and this commit. Reuses the guard-lost key.
       if (heartbeat.lost()) throw new Error('tables.refillGuardLost')
 
       // COMMIT this chunk (= this batch) + PUBLISH the shadow over the live sandbox.

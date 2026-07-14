@@ -372,7 +372,9 @@ to one floor) on a temp **shadow sandbox**:
    The lease is ALSO renewed on a ~45s heartbeat (`startGuardHeartbeat`) DURING each batch's model call,
    so it never lapses across a >120s await and the pre-flight probes above can trust `isTableWriteBusy`
    the whole time; if the heartbeat ever reports a lost slot, the run stops before that chunk's commit
-   (`tables.refillGuardLost`).
+   (`tables.refillGuardLost`). The lease is treated as lost if it ever provably lapsed — a renewal gap
+   ≥ the guard window (`WRITE_GUARD_MS`), which under event-loop starvation lets a probe see the slot
+   free while the run's identity-owned token would still renew fine — not only when it was reclaimed.
 4. **Commit + publish per chunk.** One app-DB transaction = { first COMMITTED chunk only:
    `deleteOpsFor(selected, from)`; insert the chunk's ops via `appendOpsAt(chatId, floorOps, 'refill')`;
    advance the `table_refill_progress` row }, guarded by a re-check of the watermark (`watermarkMoved` —

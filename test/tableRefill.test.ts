@@ -39,7 +39,8 @@ import {
   renewTableWrite,
   endTableWrite,
   tryBeginTableWrite,
-  earliestSpanStart
+  earliestSpanStart,
+  WRITE_GUARD_MS
 } from '../src/main/services/tableOpsService'
 import { getAllFloors } from '../src/main/services/floorService'
 
@@ -283,6 +284,47 @@ describe('startGuardHeartbeat — the guard-lease heartbeat (the >120s-batch hol
     hb.stop()
     vi.advanceTimersByTime(REFILL_HEARTBEAT_MS * 5)
     expect(renew.mock.calls.length).toBe(after)
+  })
+
+  it('latches lost on a renewal GAP ≥ guard window even when renew still succeeds, and stays lost', () => {
+    vi.useFakeTimers()
+    // Event-loop starvation: renew() never fails (token identity intact), but a wall-clock gap past the
+    // guard window opens between beats — a probe could have seen the slot free, so the run must stop.
+    const renew = vi.fn().mockReturnValue(true)
+    const hb = startGuardHeartbeat(renew)
+    vi.advanceTimersByTime(REFILL_HEARTBEAT_MS) // one normal beat — lease still owned
+    expect(hb.lost()).toBe(false)
+    // Timers starve: the wall clock jumps past WRITE_GUARD_MS with no beat firing, then the next tick runs.
+    vi.setSystemTime(Date.now() + WRITE_GUARD_MS + 10_000)
+    vi.advanceTimersByTime(REFILL_HEARTBEAT_MS) // overdue beat observes the gap → latch, despite renew=true
+    expect(hb.lost()).toBe(true)
+    // Latched: further SUCCESSFUL renews at normal cadence must NOT launder the proven lapse.
+    vi.advanceTimersByTime(REFILL_HEARTBEAT_MS * 3)
+    expect(hb.lost()).toBe(true)
+    hb.stop()
+  })
+
+  it('lost() recomputes fresh — a ≥ guard-window stall since the last beat trips it before any timer fires', () => {
+    vi.useFakeTimers()
+    const renew = vi.fn().mockReturnValue(true)
+    const hb = startGuardHeartbeat(renew)
+    expect(hb.lost()).toBe(false)
+    // Stall between the last tick and the pre-commit check: no interval has fired yet.
+    vi.setSystemTime(Date.now() + WRITE_GUARD_MS) // exactly the window — `>=` trips (probe already reads free)
+    expect(hb.lost()).toBe(true)
+    expect(renew).not.toHaveBeenCalled() // caught purely by the fresh recompute, no beat needed
+    hb.stop()
+  })
+
+  it('stays not-lost across many beats at normal cadence with successful renews', () => {
+    vi.useFakeTimers()
+    const renew = vi.fn().mockReturnValue(true)
+    const hb = startGuardHeartbeat(renew)
+    // ~10 beats (450s) at the 45s cadence: each gap (45s) stays well under the 120s window.
+    vi.advanceTimersByTime(REFILL_HEARTBEAT_MS * 10)
+    expect(renew.mock.calls.length).toBeGreaterThanOrEqual(10)
+    expect(hb.lost()).toBe(false)
+    hb.stop()
   })
 })
 

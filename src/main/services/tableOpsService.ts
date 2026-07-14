@@ -319,7 +319,10 @@ export const replayPlan = (ops: TableOp[], fromFloor: number): TableOp[] =>
 // slot silently handed to a concurrent auto-maintain by the 120s expiry, and a short-hold caller's
 // `finally` can't free a DIFFERENT owner's claim.
 const writing = new Map<string, { token: string; ts: number }>()
-const WRITE_GUARD_MS = 120_000
+// Exported so the refill heartbeat's lease-CONTINUITY check (`startGuardHeartbeat`) is driven by the
+// SAME window this slot expires on: a renewal gap ≥ this value means a probe could have seen the slot
+// free (its `isTableWriteBusy` uses `<`, so at EXACTLY this gap the slot already reads free).
+export const WRITE_GUARD_MS = 120_000
 let tokenSeq = 0
 
 /**
