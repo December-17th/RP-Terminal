@@ -110,6 +110,26 @@ export function createThRuntime(host: Host): ThGlobals {
   const writeVars = (ops: VarOp[]): Promise<void> =>
     ops.length ? host.applyVariableOps(ops) : Promise.resolve()
 
+  const mergeScopedVars = (vars: any, opt: any, insertOnly: boolean): Promise<void> | null => {
+    const type = opt?.type
+    if (type !== 'script' && type !== 'chat' && type !== 'global') return null
+
+    const current = clone(
+      type === 'script'
+        ? host.getScriptVars()
+        : type === 'chat'
+          ? host.getChatVars()
+          : host.getGlobalVarsSync()
+    ) || {}
+    const ops = deepVarOps(current, vars && typeof vars === 'object' ? vars : {}, insertOnly)
+    if (!ops.length) return Promise.resolve()
+
+    const next = applySetOps(current, ops)
+    if (type === 'script') return host.setScriptVars(next)
+    if (type === 'chat') return host.setChatVars(next)
+    return host.setGlobalVars(next)
+  }
+
   // Expand {{macros}} (substituteParams / substitudeMacros) over the card's live context: char/user/persona
   // names + the cached stat_data as chat vars. Pure (shared/macros); leaves <% %> EJS alone.
   const substMacros = (t: any): any =>
@@ -353,12 +373,11 @@ export function createThRuntime(host: Host): ThGlobals {
     injectPrompts: (_prompts: any, _options?: any) => ({ uninject: () => undefined }),
     uninjectPrompts: (_ids: any) => undefined,
     // ASYNC writes
-    // TH insertOrAssignVariables: DEEP-merge a (possibly nested) object into stat_data, preserving
-    // sibling keys (real TavernHelper is `_.merge`-like, NOT a shallow whole-top-level-key replace — a
-    // shallow replace corrupted cards that write partial nested objects, e.g. 命定之诗's `date` game-state
-    // object whose `event`/`npcs`/`log` sub-keys are written separately). deepVarOps emits a leaf `set`
-    // op per changed path; applySetOps keeps the optimistic cache in sync with what gets persisted.
-    insertOrAssignVariables: async (vars: any) => {
+    // TH insertOrAssignVariables: DEEP-merge a (possibly nested) object into the selected scope,
+    // preserving sibling keys. The default scope is stat_data; script/chat/global are their own KV bags.
+    insertOrAssignVariables: async (vars: any, opt?: any) => {
+      const scopedWrite = mergeScopedVars(vars, opt, false)
+      if (scopedWrite) return scopedWrite
       const obj = vars?.stat_data && typeof vars.stat_data === 'object' ? vars.stat_data : vars
       const ops = deepVarOps(stat, obj || {}, false)
       if (ops.length) {
@@ -370,7 +389,9 @@ export function createThRuntime(host: Host): ThGlobals {
     // sibling of insertOrAssignVariables, used by cards to seed initial MVU vars (e.g. the full default
     // `date` structure). DEEP: fills only the leaf paths missing from the current state (`_.defaultsDeep`),
     // so a partially-present object still gets its missing nested fields.
-    insertVariables: async (vars: any) => {
+    insertVariables: async (vars: any, opt?: any) => {
+      const scopedWrite = mergeScopedVars(vars, opt, true)
+      if (scopedWrite) return scopedWrite
       const obj = vars?.stat_data && typeof vars.stat_data === 'object' ? vars.stat_data : vars
       const ops = deepVarOps(stat, obj || {}, true)
       if (ops.length) {
