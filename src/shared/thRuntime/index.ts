@@ -603,6 +603,16 @@ export function createThRuntime(host: Host): ThGlobals {
     })
   }
   const eventSource = { on, emit, makeFirst: on, once: on, removeListener: off }
+  // ST chat metadata variables are the same per-chat KV bag exposed by getVariables({type:'chat'}).
+  // Keep one live object per runtime because legacy cards mutate it in place and then call
+  // getContext().saveMetadata() without awaiting (读者对话渲染's persona/appearance/settings path).
+  // Snapshot on persist so a later in-place mutation cannot change an in-flight host write.
+  const chatMetadata = { variables: clone(host.getChatVars?.()) || {} }
+  const saveMetadata = async (): Promise<boolean> => {
+    if (typeof host.setChatVars !== 'function') return false
+    await host.setChatVars(clone(chatMetadata.variables) || {})
+    return true
+  }
   // ST persists global settings on a debounce; RP Terminal has no ST settings.json, so this is a no-op.
   // Cards (esp. extension-style ones) call it after mutating extensionSettings — without the function on
   // the global they throw "SillyTavern.saveSettingsDebounced is not a function" (an unhandledrejection).
@@ -612,6 +622,8 @@ export function createThRuntime(host: Host): ThGlobals {
     eventSource,
     eventTypes: TAVERN_EVENTS,
     event_types: TAVERN_EVENTS,
+    chatMetadata,
+    saveMetadata,
     extensionSettings: { EjsTemplate: { enabled: true } },
     saveSettingsDebounced,
     getContext: () => getContext()
@@ -623,6 +635,7 @@ export function createThRuntime(host: Host): ThGlobals {
     getCurrentChatId: () => host.currentChatId(),
     saveChat: async () => host.saveChat(SillyTavern.chat),
     reloadCurrentChat: async () => host.reloadChat(),
+    saveMetadata,
     saveSettingsDebounced
   }
 

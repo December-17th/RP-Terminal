@@ -19,6 +19,7 @@ function mockHost(over: Partial<Host> = {}): { host: Host; calls: any } {
     setGlobalVars: [],
     replaceRegexes: [],
     setScriptVars: [],
+    setChatVars: [],
     setButtons: [],
     requestOverlay: [],
     closeOverlay: []
@@ -30,6 +31,7 @@ function mockHost(over: Partial<Host> = {}): { host: Host; calls: any } {
   ]
   const globals: Record<string, any> = { coins: 7 }
   let scriptVars: Record<string, any> = { existing: 1 }
+  let chatVars: Record<string, any> = { existing: 1 }
   let regexFull: any[] = [
     {
       id: 'rx1',
@@ -62,6 +64,7 @@ function mockHost(over: Partial<Host> = {}): { host: Host; calls: any } {
     personaName: () => 'Player',
     currentChatId: () => 'c',
     getScriptVars: () => scriptVars,
+    getChatVars: () => chatVars,
     applyVariableOps: async (ops) => {
       calls.applyVariableOps.push(ops)
     },
@@ -122,6 +125,10 @@ function mockHost(over: Partial<Host> = {}): { host: Host; calls: any } {
     setScriptVars: async (v: Record<string, any>) => {
       scriptVars = v
       calls.setScriptVars.push(v)
+    },
+    setChatVars: async (v: Record<string, any>) => {
+      chatVars = v
+      calls.setChatVars.push(v)
     },
     setButtons: (b: any) => {
       calls.setButtons.push(b)
@@ -502,6 +509,25 @@ describe('createThRuntime', () => {
     const id = g.getScriptId()
     expect(typeof id).toBe('string')
     expect(g.getScriptId()).toBe(id) // stable across calls
+  })
+
+  it('persists SillyTavern chatMetadata.variables through saveMetadata (读者对话渲染 settings)', async () => {
+    const m: any = mockHost()
+    const g = createThRuntime(m.host)
+    const ctx = g.SillyTavern.getContext()
+
+    // The real regex mutates this object in place, then calls ctx.saveMetadata() and shows its toast.
+    expect(ctx.chatMetadata.variables).toEqual({ existing: 1 })
+    ctx.chatMetadata.variables.dream_persona = 'kuromaku'
+    ctx.chatMetadata.variables.dream_appearance = 'mature'
+    await ctx.saveMetadata()
+
+    expect(m.calls.setChatVars.at(-1)).toEqual({
+      existing: 1,
+      dream_persona: 'kuromaku',
+      dream_appearance: 'mature'
+    })
+    expect(await g.SillyTavern.saveMetadata()).toBe(true)
   })
 
   it('script buttons: replaceScriptButtons pushes visible buttons; a click event fires eventOn', () => {
