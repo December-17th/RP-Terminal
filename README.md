@@ -9,8 +9,9 @@ author-authored UI panels, native local game systems (turn-based combat and a de
 visual node-graph workflow engine — all running locally against your own model provider and API key.
 
 The renderer is **React 19 + Zustand**; all model generation is centralized in the **Electron main
-process**; state is persisted with **SQLite + a file-based store**. The app UI is localized (**English
-+ 简体中文**, extensible).
+process**; state is persisted with **SQLite + a file-based store**. The app UI is localized (\*\*English
+
+- 简体中文\*\*, extensible).
 
 ---
 
@@ -93,6 +94,7 @@ Authored content can ship both **logic** (templates/scripts) and **UI**, execute
     stable, storage-enabled origin.
 
   Both transports drive the **same shared runtime**, so a behavior change in one surface applies to both.
+
 - **HTML sanitization** — inline authored HTML is sanitized with **DOMPurify** before rendering.
 - **A curated set of environment libraries** (jQuery/-UI, Vue 3, Pinia, Tailwind, Font Awesome) is
   vendored (`resources/cardlibs/`) or served on demand (`shared/cardEnv.ts`) so authored UIs have a
@@ -145,7 +147,7 @@ Around **forty built-in node types** ship across a dozen families (`src/main/ser
 - **Control flow** — `control.if` / `control.switch` / `control.when`.
 - **Sub-graphs** — `subgraph.call` / `input` / `output` / `loop` for composition and bounded iteration.
 - **Consolidated agent nodes** — `history.recent` + `agent.llm` fold the common
-  *read history → prompt a model → get its reply* pattern into two nodes, so a typical memory agent is a
+  _read history → prompt a model → get its reply_ pattern into two nodes, so a typical memory agent is a
   five-node chain: **trigger → `history.recent` → `agent.llm` → `parse.extract` → `table.apply`**. The
   fine-grained legacy nodes stay registered so older graphs keep running.
 
@@ -154,10 +156,10 @@ Around **forty built-in node types** ship across a dozen families (`src/main/ser
 The same document does double duty via a **Signal-gate / dead-edge** mechanism:
 
 - **Turn run (on the hot path)** — when the player takes an action, the graph runs to produce the reply.
-  Only the **main output streams live** back to the renderer. This is the *pre-phase*: a failure on an
+  Only the **main output streams live** back to the renderer. This is the _pre-phase_: a failure on an
   unwired node here is fatal to the turn.
 - **Headless run (off the hot path)** — when a trigger fires, only its **downstream closure** executes
-  asynchronously (`headlessRunService.ts`). This is the *post-phase*: side branches and agent fragments
+  asynchronously (`headlessRunService.ts`). This is the _post-phase_: side branches and agent fragments
   **fail open**, so a background summarizer or memory pass can error without breaking the player's turn.
 
 Because a trigger-rooted chain is gated on the trigger's `Signal`, that chain's edges go **dead** on a
@@ -178,14 +180,22 @@ transferred between sessions.
 State is split deliberately between a relational store and portable files (`src/main/services/db.ts`,
 `storageService.ts`):
 
-- **SQLite** (`better-sqlite3`) holds **session/state data only** — profiles, settings, sessions, and
-  per-turn records — keyed by profile with cascading deletes.
+- **SQLite** (`better-sqlite3`) is split between a central index (`rpterminal.db`: profiles, settings,
+  worlds, chat metadata, and shared-library references) and one database per session
+  (`profiles/<profileId>/chats/<chatId>/session.sqlite`: floors, operation logs, combat, workflow state,
+  and progress). Existing central session rows migrate at startup only after a checkpointed backup is
+  created; startup stops and retries later if the backup or any chat migration fails.
 - **File-based JSON** holds **portable, user-shareable artifacts** in their native format (presets,
   world/knowledge data, regex, structured-memory tables), so they can be exchanged without a database
   export.
 - **Structured-memory tables** (`tableDbService.ts`, `tableSql.ts` and siblings) provide a
   spreadsheet/SQL-table memory layer driven by workflow nodes, with sandboxed writes, an operation log
-  for rewind, backfill, and an editable table view.
+  for rewind, backfill, and an editable table view. Each session's sandbox lives beside its session DB
+  as `table.sqlite`.
+- **Portable saves** (`.rpsave`) are validated zip archives containing one session store plus a world
+  reference and central sidecar. Import requires the referenced world to be installed, stages and
+  integrity-checks the session database before publishing it, rejects unsupported or unexpected
+  archive contents, and never restores derived world-info caches.
 - **Custom protocols** — a privileged scheme serves isolated authored-UI HTML, and an asset scheme
   (`worldAssetProtocol.ts`) serves per-world binary assets to the renderer.
 - **Migrations** (`migrationService.ts`) evolve the schema across versions; multiple **profiles** are
@@ -267,7 +277,7 @@ npm run test           # vitest (characterization + unit tests)
 
 Characterization tests pin current behavior on the cores (runtime/transport parity, template engine,
 combat/duel engines, generation pipeline). They assert "same as before," not "correct" — if a change
-*should* alter behavior, update the characterization test in the same commit, deliberately.
+_should_ alter behavior, update the characterization test in the same commit, deliberately.
 
 ---
 
@@ -297,38 +307,38 @@ identifiers — **verify before redistribution.**
 
 ### Runtime dependencies (npm)
 
-| Package | Role | License |
-| --- | --- | --- |
-| `electron` (+ `@electron-toolkit/preload`, `@electron-toolkit/utils`) | Desktop app shell | MIT |
-| `react`, `react-dom` | Renderer UI | MIT |
-| `zustand` | Renderer state stores | MIT |
-| `@xyflow/react` | Workflow node-graph editor | MIT |
-| `better-sqlite3` | SQLite storage | MIT |
-| `vanilla-jsoneditor` | JSON editor in the Variables view | **ISC** |
-| `@formkit/auto-animate` | Duel UI animation | MIT |
-| `quickjs-emscripten`, `@jitl/quickjs-singlefile-browser-release-sync` | QuickJS WASM sandbox | MIT |
-| `dompurify` | Sanitize inline authored HTML | Apache-2.0 (dual: MPL-2.0) |
-| `react-markdown`, `remark-gfm`, `rehype-raw` | Message markdown rendering | MIT |
-| `zod` | Schema validation (settings/presets/state) | MIT |
-| `lodash` | Utilities (shared with the sandbox runtime) | MIT |
-| `uuid` | ID generation | MIT |
-| `adm-zip` | Archive / asset-bundle handling | MIT |
-| `postcss` | CSS processing (Tailwind pipeline) | MIT |
-| `jquery` | Environment lib (also served to authored UIs) | MIT |
-| `vue`, `pinia`, `vue-router` | Environment libs (also served to authored UIs) | MIT |
+| Package                                                               | Role                                           | License                    |
+| --------------------------------------------------------------------- | ---------------------------------------------- | -------------------------- |
+| `electron` (+ `@electron-toolkit/preload`, `@electron-toolkit/utils`) | Desktop app shell                              | MIT                        |
+| `react`, `react-dom`                                                  | Renderer UI                                    | MIT                        |
+| `zustand`                                                             | Renderer state stores                          | MIT                        |
+| `@xyflow/react`                                                       | Workflow node-graph editor                     | MIT                        |
+| `better-sqlite3`                                                      | SQLite storage                                 | MIT                        |
+| `vanilla-jsoneditor`                                                  | JSON editor in the Variables view              | **ISC**                    |
+| `@formkit/auto-animate`                                               | Duel UI animation                              | MIT                        |
+| `quickjs-emscripten`, `@jitl/quickjs-singlefile-browser-release-sync` | QuickJS WASM sandbox                           | MIT                        |
+| `dompurify`                                                           | Sanitize inline authored HTML                  | Apache-2.0 (dual: MPL-2.0) |
+| `react-markdown`, `remark-gfm`, `rehype-raw`                          | Message markdown rendering                     | MIT                        |
+| `zod`                                                                 | Schema validation (settings/presets/state)     | MIT                        |
+| `lodash`                                                              | Utilities (shared with the sandbox runtime)    | MIT                        |
+| `uuid`                                                                | ID generation                                  | MIT                        |
+| `adm-zip`                                                             | Archive / asset-bundle handling                | MIT                        |
+| `postcss`                                                             | CSS processing (Tailwind pipeline)             | MIT                        |
+| `jquery`                                                              | Environment lib (also served to authored UIs)  | MIT                        |
+| `vue`, `pinia`, `vue-router`                                          | Environment libs (also served to authored UIs) | MIT                        |
 
 ### Authored-UI environment libraries (served to sandboxed content)
 
 Provided to authored UIs for a predictable runtime — vendored (`resources/cardlibs/`) or loaded from a
 CDN (see `src/shared/cardEnv.ts`):
 
-| Library | Delivery | License (verify) |
-| --- | --- | --- |
-| jQuery + jQuery-UI (+ touch-punch) | jsDelivr | MIT |
-| Vue 3 + Pinia | npm / served | MIT |
-| Tailwind CSS (3.4.x) | vendored + CDN | MIT |
-| Font Awesome **Free** | jsDelivr (CSS) | Icons **CC BY 4.0**, fonts **SIL OFL 1.1**, code MIT |
-| Motion (`motion.dev`) — opt-in, app does not use it | jsDelivr | MIT |
+| Library                                             | Delivery       | License (verify)                                     |
+| --------------------------------------------------- | -------------- | ---------------------------------------------------- |
+| jQuery + jQuery-UI (+ touch-punch)                  | jsDelivr       | MIT                                                  |
+| Vue 3 + Pinia                                       | npm / served   | MIT                                                  |
+| Tailwind CSS (3.4.x)                                | vendored + CDN | MIT                                                  |
+| Font Awesome **Free**                               | jsDelivr (CSS) | Icons **CC BY 4.0**, fonts **SIL OFL 1.1**, code MIT |
+| Motion (`motion.dev`) — opt-in, app does not use it | jsDelivr       | MIT                                                  |
 
 ### Dev / build tooling (npm devDependencies)
 

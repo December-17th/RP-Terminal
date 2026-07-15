@@ -1,4 +1,4 @@
-import { getDb } from './db'
+import { getSessionDbByChat } from './sessionDbService'
 
 /**
  * Chat-level per-table maintenance-progress store (SQL-table-memory issue 07).
@@ -73,7 +73,9 @@ export const resolveUpdateFrequency = (freq: number, globalDefault: number): num
 
 /** Every table's last-processed floor for a chat: `Record<sqlName, lastFloor>`. Absent = never. */
 export const getProgress = (_profileId: string, chatId: string): Record<string, number> => {
-  const rows = getDb()
+  const db = getSessionDbByChat(chatId)
+  if (!db) return {}
+  const rows = db
     .prepare('SELECT sql_name, last_floor FROM table_progress WHERE chat_id = ?')
     .all(chatId) as Array<{ sql_name: string; last_floor: number }>
   const out: Record<string, number> = {}
@@ -93,7 +95,8 @@ export const advanceProgress = (
   floor: number
 ): void => {
   if (!sqlNames.length) return
-  const db = getDb()
+  const db = getSessionDbByChat(chatId)
+  if (!db) return
   const stmt = db.prepare(
     `INSERT INTO table_progress (chat_id, sql_name, last_floor) VALUES (?, ?, ?)
      ON CONFLICT(chat_id, sql_name) DO UPDATE SET last_floor = MAX(last_floor, excluded.last_floor)`
@@ -110,13 +113,13 @@ export const advanceProgress = (
  * so cadences resume immediately instead of stalling. Hooked in `chatService.truncateFloors`.
  */
 export const clampProgress = (_profileId: string, chatId: string, fromFloor: number): void => {
-  getDb()
-    .prepare('UPDATE table_progress SET last_floor = ? WHERE chat_id = ? AND last_floor >= ?')
+  getSessionDbByChat(chatId)
+    ?.prepare('UPDATE table_progress SET last_floor = ? WHERE chat_id = ? AND last_floor >= ?')
     .run(fromFloor - 1, chatId, fromFloor)
 }
 
 /** Drop every progress row for a chat (template (re)assignment/unassignment — stale pointers must
  *  never survive a schema change). Hooked in `chatService.setChatTableTemplateId`. */
 export const resetProgress = (_profileId: string, chatId: string): void => {
-  getDb().prepare('DELETE FROM table_progress WHERE chat_id = ?').run(chatId)
+  getSessionDbByChat(chatId)?.prepare('DELETE FROM table_progress WHERE chat_id = ?').run(chatId)
 }

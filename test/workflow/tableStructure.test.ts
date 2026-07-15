@@ -15,18 +15,27 @@ import os from 'os'
 // Real SQLite for the sandbox files (overrides the vitest better-sqlite3 alias for this suite).
 vi.mock('better-sqlite3', () => import('../mocks/betterSqlite3Node'))
 
-// A real in-memory app DB (the `table_ops` op log) built from the same adapter.
+const hoisted = vi.hoisted(() => ({ boundChats: [] as string[], appDb: undefined as any }))
+
+// A real in-memory app DB (the `table_ops` op log) built from the same adapter, shared as BOTH the
+// central app DB and — since the op-log now lives in the per-chat SESSION db (§B2) — the session handle.
 vi.mock('../../src/main/services/db', async () => {
   const { default: Adapter } = await import('../mocks/betterSqlite3Node')
   const appDb = new Adapter(':memory:')
   appDb.exec(
     'CREATE TABLE table_ops (chat_id TEXT NOT NULL, floor INTEGER NOT NULL, seq INTEGER NOT NULL, sql TEXT NOT NULL, created_at TEXT, target_table TEXT, source TEXT, from_floor INTEGER, PRIMARY KEY (chat_id, floor, seq))'
   )
+  hoisted.appDb = appDb
   return { getDb: () => appDb }
 })
 
+// tableOpsService/tableStructureService resolve the op-log through getSessionDbByChat now — point it at
+// the same in-memory app DB (which carries the table_ops table + supports nested transactions).
+vi.mock('../../src/main/services/sessionDbService', () => ({
+  getSessionDbByChat: () => hoisted.appDb
+}))
+
 // The bound-chat enumeration (the only chatService export tableStructureService imports).
-const hoisted = vi.hoisted(() => ({ boundChats: [] as string[] }))
 vi.mock('../../src/main/services/chatService', () => ({
   listChatIdsForTableTemplate: () => hoisted.boundChats
 }))
@@ -180,7 +189,9 @@ describe('tableStructureService — structural edit + migration', () => {
       [2, '第一章']
     ])
     // The seed row's location value was dropped → a warning.
-    expect((res as { warnings: string[] }).warnings.some((w) => w.includes('initialRows'))).toBe(true)
+    expect((res as { warnings: string[] }).warnings.some((w) => w.includes('initialRows'))).toBe(
+      true
+    )
   })
 
   it('addTable: a new empty table appears in the template + sandbox', () => {
@@ -265,9 +276,7 @@ describe('tableStructureService — structural edit + migration', () => {
     seedChatWithRows('chatA', baseTemplate(), '甲章')
     seedChatWithRows('chatB', baseTemplate(), '乙章')
 
-    const res = applyStructureOps(P, T, [
-      { kind: 'addColumn', uid: 'uid-chronicle', name: 'mood' }
-    ])
+    const res = applyStructureOps(P, T, [{ kind: 'addColumn', uid: 'uid-chronicle', name: 'mood' }])
     expect(res).toMatchObject({ ok: true, chatsMigrated: 2 })
 
     const tpl = getTableTemplateById(P, T)!
@@ -308,9 +317,7 @@ describe('tableStructureService — structural edit + migration', () => {
 
   it('no bound chats: template still migrates via a throwaway DB', () => {
     hoisted.boundChats = []
-    const res = applyStructureOps(P, T, [
-      { kind: 'addColumn', uid: 'uid-chronicle', name: 'mood' }
-    ])
+    const res = applyStructureOps(P, T, [{ kind: 'addColumn', uid: 'uid-chronicle', name: 'mood' }])
     expect(res).toMatchObject({ ok: true, columnsChanged: 1, chatsMigrated: 0 })
     expect(getTableTemplateById(P, T)!.tables[0].headers).toContain('mood')
   })
@@ -324,7 +331,9 @@ describe('tableStructureService — structural edit + migration', () => {
     const opsBefore = listOps(P, 'chatA')
 
     // Passes op validation but SQLite rejects DROP of the PRIMARY KEY column during derivation.
-    const res = applyStructureOps(P, T, [{ kind: 'dropColumn', uid: 'uid-chronicle', name: 'row_id' }])
+    const res = applyStructureOps(P, T, [
+      { kind: 'dropColumn', uid: 'uid-chronicle', name: 'row_id' }
+    ])
     expect(res).toEqual({ ok: false, error: 'tables.structureDeriveFailed' })
 
     expect(getTableTemplateById(P, T)).toEqual(templateBefore) // template untouched
@@ -344,9 +353,15 @@ describe('tableStructureService — structural edit + migration', () => {
     appendOps(P, 'chatB', 3, ["INSERT INTO chronicle (summary) VALUES ('B-sentinel')"])
     const chatBOpsBefore = listOps(P, 'chatB')
 
-    const res = applyStructureOps(P, T, [{ kind: 'dropColumn', uid: 'uid-chronicle', name: 'location' }])
+    const res = applyStructureOps(P, T, [
+      { kind: 'dropColumn', uid: 'uid-chronicle', name: 'location' }
+    ])
     expect(res.ok).toBe(true)
-    const rep = res as { ok: true; chatsMigrated: number; failedChats: { chatId: string; reason: string }[] }
+    const rep = res as {
+      ok: true
+      chatsMigrated: number
+      failedChats: { chatId: string; reason: string }[]
+    }
     expect(rep.chatsMigrated).toBe(1)
     expect(rep.failedChats.map((f) => f.chatId)).toEqual(['chatB'])
     expect(rep.failedChats[0].reason).toBeTruthy()
@@ -362,7 +377,9 @@ describe('tableStructureService — structural edit + migration', () => {
     ])
 
     // chatB is left on the OLD schema (location still present + data intact) with its OLD op-log.
-    const chatBOld = readAllTables(P, 'chatB', baseTemplate()).find((t) => t.sqlName === 'chronicle')!
+    const chatBOld = readAllTables(P, 'chatB', baseTemplate()).find(
+      (t) => t.sqlName === 'chronicle'
+    )!
     expect(chatBOld.rows).toEqual([
       [1, '序章', '起点'],
       [2, '第一章', '城']

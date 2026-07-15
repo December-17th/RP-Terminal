@@ -46,9 +46,7 @@ const api = {
   // Freeze-frame under a DOM overlay (PM-A4): while WCVs are ducked, main pushes a per-slot bitmap
   // (data URL) to paint into the slot's DOM placeholder so the panels stay visually in place; a
   // clear signal drops them on restore. `onWcvFreeze` returns an unsubscribe function.
-  onWcvFreeze: (
-    cb: (p: { show: Record<string, string> } | { clear: true }) => void
-  ) => {
+  onWcvFreeze: (cb: (p: { show: Record<string, string> } | { clear: true }) => void) => {
     const onShow = (_e: unknown, frames: Record<string, string>): void => cb({ show: frames })
     const onClear = (): void => cb({ clear: true })
     ipcRenderer.on('wcv-freeze-show', onShow)
@@ -73,10 +71,8 @@ const api = {
         | { close: { overlayId: string } }
     ) => void
   ) => {
-    const onOpen = (
-      _e: unknown,
-      d: { overlayId: string; entry: string; title?: string }
-    ): void => cb({ open: d })
+    const onOpen = (_e: unknown, d: { overlayId: string; entry: string; title?: string }): void =>
+      cb({ open: d })
     const onClose = (_e: unknown, d: { overlayId: string }): void => cb({ close: d })
     ipcRenderer.on('wcv-open-overlay', onOpen)
     ipcRenderer.on('wcv-close-overlay', onClose)
@@ -118,6 +114,12 @@ const api = {
   abortGeneration: (chatId: string) => ipcRenderer.invoke('abort-generation', chatId),
   deleteChat: (profileId: string, chatId: string) =>
     ipcRenderer.invoke('delete-chat', profileId, chatId),
+  // Feature 2: export a single save (session) to a `.rpsave` zip, or import one into a new chat
+  // (requires the referenced world installed). Return shapes: export → { name } | { error } | null;
+  // import → { chatId } | { error, worldName? } | null.
+  exportSaveDialog: (profileId: string, chatId: string) =>
+    ipcRenderer.invoke('export-save-dialog', profileId, chatId),
+  importSaveDialog: (profileId: string) => ipcRenderer.invoke('import-save-dialog', profileId),
   editFloor: (
     profileId: string,
     chatId: string,
@@ -406,7 +408,8 @@ const api = {
     chatId: string,
     tables: string[],
     fromFloor: number | null
-  ) => ipcRenderer.invoke('chat-tables-refill-effective-from', profileId, chatId, tables, fromFloor),
+  ) =>
+    ipcRenderer.invoke('chat-tables-refill-effective-from', profileId, chatId, tables, fromFloor),
   getTableRefillState: (profileId: string, chatId: string) =>
     ipcRenderer.invoke('chat-tables-refill-state', profileId, chatId),
   resumeTableRefill: (
@@ -631,8 +634,10 @@ const api = {
   getRenderRegex: (profileId: string, ctx?: { cardId?: string | null; chatId?: string | null }) =>
     ipcRenderer.invoke('get-render-regex', profileId, ctx),
   // Plot-recall plot-block panel display rules (placement 1 admitted).
-  getPlotBlockRegex: (profileId: string, ctx?: { cardId?: string | null; chatId?: string | null }) =>
-    ipcRenderer.invoke('get-plot-block-regex', profileId, ctx),
+  getPlotBlockRegex: (
+    profileId: string,
+    ctx?: { cardId?: string | null; chatId?: string | null }
+  ) => ipcRenderer.invoke('get-plot-block-regex', profileId, ctx),
   listRegex: (profileId: string) => ipcRenderer.invoke('list-regex', profileId),
   listPanelRegex: (profileId: string, ctx?: { cardId?: string | null; chatId?: string | null }) =>
     ipcRenderer.invoke('list-panel-regex', profileId, ctx),
@@ -731,7 +736,9 @@ const api = {
   // App light/dark override (WCV mode sync, card→app): a WCV card called rptHost.setColorScheme → main
   // relays it here for the renderer to apply as a session-scoped override (null = revert to the app theme).
   // Mirror of onWcvSetPlayTheme but with no derive/AA verdict (the value is just 'light'|'dark'|null).
-  onWcvSetColorScheme: (cb: (payload: { chatId: string; scheme: 'light' | 'dark' | null }) => void) => {
+  onWcvSetColorScheme: (
+    cb: (payload: { chatId: string; scheme: 'light' | 'dark' | null }) => void
+  ) => {
     const listener = (
       _e: IpcRendererEvent,
       payload: { chatId: string; scheme: 'light' | 'dark' | null }
@@ -776,8 +783,7 @@ const api = {
     name: string,
     type: string,
     variant?: string
-  ) =>
-    ipcRenderer.invoke('asset-import-for-card', profileId, lorebookIds, name, type, variant),
+  ) => ipcRenderer.invoke('asset-import-for-card', profileId, lorebookIds, name, type, variant),
   duelPreview: (profileId: string, chatId: string, characterId: string) =>
     ipcRenderer.invoke('duel-preview', profileId, chatId, characterId),
   assetRefresh: (profileId: string, lorebookIds: string[]) =>
@@ -802,7 +808,8 @@ const api = {
     category: string,
     file: string,
     newVariant: string
-  ) => ipcRenderer.invoke('asset-rename-variant', profileId, lorebookId, category, file, newVariant),
+  ) =>
+    ipcRenderer.invoke('asset-rename-variant', profileId, lorebookId, category, file, newVariant),
   assetExportZipDialog: (profileId: string, lorebookId: string) =>
     ipcRenderer.invoke('asset-export-zip', profileId, lorebookId),
   assetPickImages: (multi: boolean) => ipcRenderer.invoke('asset-pick-images', multi),

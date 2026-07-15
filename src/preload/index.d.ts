@@ -6,6 +6,15 @@ declare global {
     electron: ElectronAPI
     api: any & {
       backfillUsageMetrics: (profileId: string, chatId: string) => Promise<unknown[]>
+      // Feature 2 — save (session) export/import. export → { name } | { error } | null (cancel);
+      // import → { chatId } | { error, worldName? } | null (cancel).
+      exportSaveDialog: (
+        profileId: string,
+        chatId: string
+      ) => Promise<{ name: string } | { error: string } | null>
+      importSaveDialog: (
+        profileId: string
+      ) => Promise<{ chatId: string } | { error: string; worldName?: string } | null>
       listNodeTypes: () => Promise<
         Array<{
           type: string
@@ -470,9 +479,7 @@ declare global {
         groupId: string,
         includeTemplate?: unknown
       ) => Promise<
-        | { saved: string }
-        | { canceled: true }
-        | { ok: false; error: { code: 'group-not-found' } }
+        { saved: string } | { canceled: true } | { ok: false; error: { code: 'group-not-found' } }
       >
       importModuleDialog: (profileId: string) => Promise<null | {
         meta?: { name: string; nodeCount: number; description?: string; creator?: string }
@@ -516,7 +523,11 @@ declare global {
             installedTemplates: { name: string; id: string }[]
           }
         | { ok: false; code: 'expired' }
-        | { ok: false; code: 'blocked'; blockers: { code: 'unknown-node-types'; nodeTypes: string[] }[] }
+        | {
+            ok: false
+            code: 'blocked'
+            blockers: { code: 'unknown-node-types'; nodeTypes: string[] }[]
+          }
       >
       cancelModuleImport: (token: string) => Promise<void>
       // Agent library (agent-memory-ux WP-G; spec §2): the palette's Agent-library section — built-in
@@ -715,7 +726,12 @@ declare global {
         profileId: string,
         templateId: string,
         ops: (
-          | { kind: 'addTable'; sqlName: string; displayName?: string; columns: { name: string; type?: string }[] }
+          | {
+              kind: 'addTable'
+              sqlName: string
+              displayName?: string
+              columns: { name: string; type?: string }[]
+            }
           | { kind: 'dropTable'; uid: string }
           | { kind: 'renameTable'; uid: string; sqlName: string; displayName?: string }
           | { kind: 'addColumn'; uid: string; name: string; type?: string }
@@ -804,7 +820,12 @@ declare global {
       resumeTableRefill: (
         profileId: string,
         chatId: string,
-        extra: { apiPresetId?: string | null; retries?: number; extraHint?: string; batchSize?: number }
+        extra: {
+          apiPresetId?: string | null
+          retries?: number
+          extraHint?: string
+          batchSize?: number
+        }
       ) => Promise<{ ok: true } | { error: string }>
       discardTableRefill: (
         profileId: string,

@@ -1413,6 +1413,14 @@ const zh: Record<string, string> = {
   'sessions.empty': '还没有会话。新建一个吧。',
   'sessions.deleteTitle': '删除会话',
   'sessions.confirmDelete': '删除此会话？此操作无法撤销。',
+  'sessions.exportSave': '导出存档',
+  'sessions.importSave': '导入存档',
+  'sessions.saveExported': '存档已导出：{name}',
+  'sessions.saveImported': '存档已导入为新会话。',
+  'sessions.saveWorldMissing': '请先安装世界「{name}」，然后再导入此存档。',
+  'sessions.saveMemoryBusy': '记忆正在更新——请稍后再导出。',
+  'sessions.saveBadArchive': '该文件不是有效的 .rpsave 存档。',
+  'sessions.saveFailed': '存档导出/导入失败。',
 
   // ── 记忆面板（智能体包计划 WP3.8 —— 从「表格」视图迁出的记忆配置与维护） ──────────────
   'memory.heading': '记忆',

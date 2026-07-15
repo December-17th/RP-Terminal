@@ -1475,6 +1475,14 @@ const en: Record<string, string> = {
   'sessions.empty': 'No sessions yet. Start a new one.',
   'sessions.deleteTitle': 'Delete session',
   'sessions.confirmDelete': 'Delete this session? This cannot be undone.',
+  'sessions.exportSave': 'Export save',
+  'sessions.importSave': 'Import save',
+  'sessions.saveExported': 'Save exported: {name}',
+  'sessions.saveImported': 'Save imported into a new session.',
+  'sessions.saveWorldMissing': 'Install the world “{name}” first to import this save.',
+  'sessions.saveMemoryBusy': 'Memory is updating — try exporting again in a moment.',
+  'sessions.saveBadArchive': 'That file isn’t a valid .rpsave.',
+  'sessions.saveFailed': 'Save export/import failed.',
 
   // ── Memory pane (agent-packs plan WP3.8 — memory config + maintenance, moved out of the Tables view) ─
   'memory.heading': 'Memory',

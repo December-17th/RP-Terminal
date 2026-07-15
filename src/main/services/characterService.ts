@@ -18,6 +18,7 @@ import { installBundledPreset } from './presetService'
 import { parseStPng, extractAppendedZip } from '../parsers/stPngParser'
 import { importAssetsZip } from './worldAssetService'
 import { installCartridgeCode, deleteCardCode } from './cardCodeService'
+import * as sessionDbService from './sessionDbService'
 
 const getAvatarsDir = (): string => path.join(getAppDir(), 'avatars')
 export const getAvatarPath = (characterId: string): string =>
@@ -74,13 +75,23 @@ export const saveCharacter = (
 export const deleteCharacter = (profileId: string, characterId: string): void => {
   const db = getDb()
   db.prepare('DELETE FROM characters WHERE id = ? AND profile_id = ?').run(characterId, profileId)
-  // Cascade the character's sessions (chats); their floors are FK ON DELETE CASCADE.
-  // character_id is a plain column (not an FK), so this isn't automatic — without it the
-  // chats are orphaned and a stale activeChatId can re-render a deleted world's frontend cards.
-  db.prepare('DELETE FROM chats WHERE character_id = ? AND profile_id = ?').run(
-    characterId,
-    profileId
-  )
+  // Fully delete each of the character's sessions — NOT a bare `DELETE FROM chats`, which would strand
+  // every session-store FOLDER (floors/memory/notes/…) and the non-FK'd central chat-keyed rows (review
+  // C3). This mirrors chatService.deleteChat's cascade, inlined per chat to avoid a characterService ↔
+  // chatService import cycle. (character_id is a plain column, so the enumeration is explicit.)
+  const chatIds = (
+    db
+      .prepare('SELECT id FROM chats WHERE character_id = ? AND profile_id = ?')
+      .all(characterId, profileId) as Array<{ id: string }>
+  ).map((r) => r.id)
+  for (const chatId of chatIds) {
+    db.prepare('DELETE FROM agent_pack_activation WHERE chat_id = ?').run(chatId)
+    db.prepare('DELETE FROM agent_pack_overrides WHERE scope = ?').run(`chat:${chatId}`)
+    db.prepare('DELETE FROM agent_pack_trigger_state WHERE chat_id = ?').run(chatId)
+    db.prepare('DELETE FROM workflow_run_history WHERE chat_id = ?').run(chatId)
+    db.prepare('DELETE FROM chats WHERE id = ?').run(chatId)
+    sessionDbService.removeSession(profileId, chatId)
+  }
   deleteCharacterLorebook(profileId, characterId)
   // Remove the world-scoped regex/scripts this card brought in on import (scope='world',
   // owner=characterId) so a deleted World Card doesn't leave orphans in the managers —
@@ -264,44 +275,221 @@ export const parseCardFile = (filePath: string): ParsedCard | null => {
   return { card: result.data, lorebook }
 }
 
-/** Inspect a card file's bundle without persisting — used to show the install confirm. */
-export const inspectCardFile = (filePath: string): ImportSummary | null => {
-  const parsed = parseCardFile(filePath)
-  return parsed ? summarizeCardBundle(parsed) : null
-}
-
 /**
- * Card-import bridge to workflowService. workflowService transitively imports chatService →
- * characterService, so a *direct* import here would form an import cycle (dependency-cruiser keeps the
- * main graph acyclic — the same reason workflowService uses `setEnabledFragmentsProvider` instead of
- * importing the pack store). Instead `cardWorkflowBridge.ts` (loaded by index.ts + the import test)
- * injects these ops at startup. Unset (a unit test that never loads the bridge) ⇒ the two workflow
- * steps below are silent no-ops. (Table templates need no seam — tableTemplateService is acyclic.)
+ * Workflow operations are injected to keep characterService out of workflowService's dependency cycle.
  */
 export interface CardWorkflowHooks {
-  /** Import a bundled workflow doc/bundle tagged to this world; returns the new id or null on failure. */
   importWorkflow: (profileId: string, doc: unknown, owner: string) => string | null
-  /** Bind a workflow id as this world's default (resolveWorkflowDoc's world tier). */
   setWorldWorkflow: (profileId: string, characterId: string, workflowId: string) => void
-  /** Remove every workflow tagged to this world on card deletion. */
   deleteWorkflowsByOwner: (profileId: string, owner: string) => void
 }
 
 let cardWorkflowHooks: CardWorkflowHooks | null = null
 
-/** Register the workflowService-backed card-import ops (called once by cardWorkflowBridge at load). */
 export const setCardWorkflowHooks = (hooks: CardWorkflowHooks | null): void => {
   cardWorkflowHooks = hooks
 }
 
+interface BundleCounts {
+  regexScripts: number
+  scripts: number
+  presets: number
+  lorebooks: number
+  workflows: number
+  tableTemplates: number
+  assetsImported: number
+}
+
 /**
- * One-click World Card import: persist the (lossless) card + its embedded lorebook, and
- * **extract bundled regex, Tavern Helper scripts, presets, extra lorebooks, workflows, and memory-table
- * templates** into their profile stores (world-scoped where they bind) — the slots the old importer
- * silently dropped. Returns the new id plus an install summary.
+ * Install a card's BUNDLED artifacts (regex, Tavern Helper scripts, presets, optional extra lorebooks,
+ * avatar + cartridge code, asset zip) against an EXISTING character id — the shared tail of both a fresh
+ * import and an in-place update (Feature 1). World-scoped artifacts key on `characterId`, so re-running
+ * this against the same id re-installs the bundle for that world. `installExtraLorebooks` is false on
+ * UPDATE (plan review C8b): extra lorebooks install under fresh UUIDs each time, so re-installing them on
+ * every update would silently duplicate them. Returns the per-kind counts for the import summary.
+ */
+const installBundleArtifacts = (
+  profileId: string,
+  characterId: string,
+  card: RPTerminalCard,
+  filePath: string,
+  assetZipPath: string | undefined,
+  opts: { installExtraLorebooks: boolean; installTableTemplates: boolean }
+): BundleCounts => {
+  // Route each bundled ST regex script into the profile regex store (one file each), scoped to this world
+  // so it only fires when this card is loaded (Track S §6). A card's UI regexes (status/home/…) import as
+  // normal INLINE display regexes by default — the user can later promote one to a docked WCV panel.
+  let regexScripts = 0
+  for (const script of collectBundledRegex(card)) {
+    if (regexService.saveRegexScript(profileId, script, 'world', characterId)) regexScripts++
+  }
+
+  // Route bundled Tavern Helper scripts (extensions.tavern_helper.scripts — the standard ST slot) into the
+  // script store, scoped to this world so they run when the card is loaded and show in the Scripts manager.
+  // (Native rp_terminal.scripts ride on the card instead.)
+  let scripts = 0
+  for (const s of scriptService.normalizeImportedScripts(collectBundledScripts(card))) {
+    const file = scriptService.saveScript(
+      profileId,
+      { name: s.name, code: s.code },
+      'world',
+      characterId
+    )
+    if (!s.enabled) scriptService.setScriptDisabled(profileId, file, true)
+    scripts++
+  }
+
+  // Route bundled chat-completion presets into the preset store (never made active). Preset install
+  // name-dedupes (presetService), so re-running on update is safe — no skip flag needed here.
+  let presets = 0
+  for (const p of collectBundledPresets(card)) {
+    if (installBundledPreset(profileId, p)) presets++
+  }
+
+  // Route extra bundled lorebooks (beyond character_book) into the lorebook library — SKIPPED on update
+  // (C8b) because each install mints a fresh UUID and would duplicate them.
+  let lorebooks = 0
+  if (opts.installExtraLorebooks) {
+    for (const lb of collectBundledLorebooks(card)) {
+      const normalized = normalizeLorebookData(lb, lb?.name || 'Bundled Lorebook')
+      if (normalized) {
+        saveLorebookById(profileId, crypto.randomUUID(), normalized)
+        lorebooks++
+      }
+    }
+  }
+
+  let workflows = 0
+  let worldWorkflowId: string | null = null
+  for (const doc of collectBundledWorkflows(card)) {
+    const id = cardWorkflowHooks?.importWorkflow(profileId, doc, characterId) ?? null
+    if (id) {
+      workflows++
+      worldWorkflowId ??= id
+    } else {
+      log('info', 'Bundled workflow not imported (invalid, unsupported, or bridge unwired)')
+    }
+  }
+  if (worldWorkflowId) {
+    cardWorkflowHooks?.setWorldWorkflow(profileId, characterId, worldWorkflowId)
+  }
+
+  // Templates are library artifacts without world ownership. Install them only on a fresh import so a
+  // card update cannot silently duplicate templates under new ids.
+  let tableTemplates = 0
+  if (opts.installTableTemplates) {
+    for (const raw of collectBundledTableTemplates(card)) {
+      const result = tableTemplateService.importTableTemplateFromObject(profileId, raw)
+      if (result.summary) tableTemplates++
+      else if (result.error) log('info', `Bundled table template not imported: ${result.error}`)
+    }
+  }
+
+  if (path.extname(filePath).toLowerCase() === '.png') {
+    ensureDir(getAvatarsDir())
+    fs.copyFileSync(filePath, getAvatarPath(characterId))
+    // S5 cartridge: if the PNG carries a ZIP appended after IEND, extract its code/ subtree to the
+    // card-code dir (WP0/A1). A rejected/absent cartridge never blocks the card import.
+    try {
+      const zipBytes = extractAppendedZip(filePath)
+      if (zipBytes) {
+        const res = installCartridgeCode(profileId, characterId, zipBytes)
+        if (res.error) log('info', `Cartridge code not imported: ${res.error}`)
+      }
+    } catch (e) {
+      log('error', 'Cartridge code import failed (card import continues):', e)
+    }
+  }
+
+  let assetsImported = 0
+  if (assetZipPath) {
+    try {
+      assetsImported = importAssetsZip(profileId, characterId, assetZipPath).imported
+    } catch (e) {
+      log('error', 'Asset zip import failed (card import continues):', e)
+    }
+  }
+
+  return {
+    regexScripts,
+    scripts,
+    presets,
+    lorebooks,
+    workflows,
+    tableTemplates,
+    assetsImported
+  }
+}
+
+/** Overlay the actually-installed bundle counts onto the base summary (shared by import + update). */
+const buildImportSummary = (parsed: ParsedCard, counts: BundleCounts): ImportSummary => {
+  const summary = summarizeCardBundle(parsed)
+  summary.regexScripts = counts.regexScripts
+  // Native scripts ride on the card; add the count actually imported into the store.
+  summary.scripts =
+    (Array.isArray(getRpExt(parsed.card)?.scripts) ? getRpExt(parsed.card)!.scripts!.length : 0) +
+    counts.scripts
+  summary.presets = counts.presets
+  summary.lorebooks = counts.lorebooks
+  summary.workflows = counts.workflows
+  summary.tableTemplates = counts.tableTemplates
+  summary.assetsImported = counts.assetsImported
+  return summary
+}
+
+/**
+ * One-click World Card import: persist the (lossless) card + its embedded lorebook, and extract bundled
+ * regex, Tavern Helper scripts, presets, and extra lorebooks into their profile stores (scoped to this
+ * world) — the slots the old importer silently dropped. Always mints a NEW id (a separate copy); the
+ * update-in-place path (Feature 1) is the way to refresh an existing world. Returns the new id + summary.
  */
 export const importCharacterFromFile = (
   profileId: string,
+  filePath: string,
+  assetZipPath?: string
+): ImportResult | null => {
+  let newId: string | null = null
+  try {
+    const parsed = parseCardFile(filePath)
+    if (!parsed) return null
+    const { card, lorebook } = parsed
+
+    newId = crypto.randomUUID()
+    saveCharacter(profileId, newId, card)
+    if (lorebook) saveCharacterLorebook(profileId, newId, lorebook)
+
+    const counts = installBundleArtifacts(profileId, newId, card, filePath, assetZipPath, {
+      installExtraLorebooks: true,
+      installTableTemplates: true
+    })
+    return { id: newId, summary: buildImportSummary(parsed, counts) }
+  } catch (error) {
+    log('error', 'Failed to import character:', error)
+    if (newId) {
+      try {
+        deleteCharacter(profileId, newId)
+      } catch (cleanupError) {
+        log('error', `Failed to roll back partial character import ${newId}:`, cleanupError)
+      }
+    }
+    return null
+  }
+}
+
+/**
+ * UPDATE an existing world in place from a re-imported card, KEEPING its chats/saves (plan §B7 / Feature
+ * 1). Overwrites the card blob + avatar + (when the new card carries one) the character lorebook, CLEARS
+ * the old world-scoped regex/scripts/cartridge, then re-installs the bundle against the SAME id. Chats,
+ * floors and memory are untouched — they key on `characterId`, which is preserved. Details:
+ *  - A new card with NO character_book leaves the existing lorebook in place (non-destructive).
+ *  - Overwriting the lorebook stales cached L2 world-info on this world's chats → that cache is cleared
+ *    so the next turn re-matches (review C8a).
+ *  - Extra bundled lorebooks are NOT re-installed (review C8b — they'd duplicate under fresh UUIDs).
+ * Returns the same {id, summary} shape as import (id unchanged).
+ */
+export const updateCharacterInPlace = (
+  profileId: string,
+  characterId: string,
   filePath: string,
   assetZipPath?: string
 ): ImportResult | null => {
@@ -310,117 +498,124 @@ export const importCharacterFromFile = (
     if (!parsed) return null
     const { card, lorebook } = parsed
 
-    const newId = crypto.randomUUID()
-    saveCharacter(profileId, newId, card)
+    saveCharacter(profileId, characterId, card) // upsert overwrites the stored blob
+    if (lorebook) saveCharacterLorebook(profileId, characterId, lorebook)
 
-    if (lorebook) saveCharacterLorebook(profileId, newId, lorebook)
-
-    // Route each bundled ST regex script into the profile regex store (one file each), scoped to this world
-    // so it only fires when this card is loaded (Track S §6). A card's UI regexes (status/home/…) import as
-    // normal INLINE display regexes by default — the user can later promote one to a docked WCV panel.
-    let regexScripts = 0
-    for (const script of collectBundledRegex(card)) {
-      if (regexService.saveRegexScript(profileId, script, 'world', newId)) regexScripts++
-    }
-
-    // Route bundled Tavern Helper scripts (extensions.tavern_helper.scripts — the standard
-    // ST slot) into the script store, scoped to this world so they run when the card is loaded
-    // and show in the Scripts manager. (Native rp_terminal.scripts ride on the card instead.)
-    let scripts = 0
-    for (const s of scriptService.normalizeImportedScripts(collectBundledScripts(card))) {
-      const file = scriptService.saveScript(
-        profileId,
-        { name: s.name, code: s.code },
-        'world',
-        newId
+    // C8a: overwriting the lorebook stales cached world-info on this world's chats — drop it so the next
+    // turn re-matches. Scoped to this character (characterService already writes the chats table, cf.
+    // deleteCharacter), avoiding a chatService import cycle.
+    getDb()
+      .prepare(
+        'UPDATE chats SET cached_world_info = NULL WHERE profile_id = ? AND character_id = ?'
       )
-      if (!s.enabled) scriptService.setScriptDisabled(profileId, file, true)
-      scripts++
-    }
+      .run(profileId, characterId)
 
-    // Route bundled chat-completion presets into the preset store (never made active).
-    let presets = 0
-    for (const p of collectBundledPresets(card)) {
-      if (installBundledPreset(profileId, p)) presets++
-    }
+    // Clear the OLD world-scoped artifacts before re-installing (mirrors deleteCharacter's cleanup), so a
+    // script/regex removed or renamed in the new card version doesn't linger as an orphan.
+    regexService.deleteScriptsByOwner(profileId, 'world', characterId)
+    scriptService.deleteScriptsByOwner(profileId, 'world', characterId)
+    cardWorkflowHooks?.deleteWorkflowsByOwner(profileId, characterId)
+    deleteCardCode(profileId, characterId)
 
-    // Route extra bundled lorebooks (beyond character_book) into the lorebook library.
-    let lorebooks = 0
-    for (const lb of collectBundledLorebooks(card)) {
-      const normalized = normalizeLorebookData(lb, lb?.name || 'Bundled Lorebook')
-      if (normalized) {
-        saveLorebookById(profileId, crypto.randomUUID(), normalized)
-        lorebooks++
-      }
-    }
-
-    // Route bundled workflow docs into the profile's workflow store, tagged to this world so a
-    // card-delete cleans them up. The FIRST successfully-imported one is set as this world's default
-    // (resolveWorkflowDoc's world tier), so a card's generation/memory pipeline auto-applies to its
-    // chats. Invalid docs fail-soft (validateWorkflowDoc) and are simply not counted.
-    let workflows = 0
-    let worldWorkflowId: string | null = null
-    for (const doc of collectBundledWorkflows(card)) {
-      const id = cardWorkflowHooks?.importWorkflow(profileId, doc, newId) ?? null
-      if (id) {
-        workflows++
-        worldWorkflowId ??= id
-      } else {
-        log('info', 'Bundled workflow not imported (invalid, unsupported, or bridge unwired)')
-      }
-    }
-    if (worldWorkflowId) cardWorkflowHooks?.setWorldWorkflow(profileId, newId, worldWorkflowId)
-
-    // Route bundled memory-table templates into the profile's template LIBRARY only (never
-    // auto-assigned — assignment is destructive). The new-session reminder nudges the user to pick one.
-    let tableTemplates = 0
-    for (const raw of collectBundledTableTemplates(card)) {
-      const res = tableTemplateService.importTableTemplateFromObject(profileId, raw)
-      if (res.summary) tableTemplates++
-      else if (res.error) log('info', `Bundled table template not imported: ${res.error}`)
-    }
-
-    if (path.extname(filePath).toLowerCase() === '.png') {
-      ensureDir(getAvatarsDir())
-      fs.copyFileSync(filePath, getAvatarPath(newId))
-      // S5 cartridge: if the PNG carries a ZIP appended after IEND, extract its code/ subtree to the
-      // card-code dir (WP0/A1). Serving those bytes is A2; a rejected/absent cartridge never blocks
-      // the card import. Keyed by the just-minted id so re-imports get an independent tree.
-      try {
-        const zipBytes = extractAppendedZip(filePath)
-        if (zipBytes) {
-          const res = installCartridgeCode(profileId, newId, zipBytes)
-          if (res.error) log('info', `Cartridge code not imported: ${res.error}`)
-        }
-      } catch (e) {
-        log('error', 'Cartridge code import failed (card import continues):', e)
-      }
-    }
-
-    let assetsImported = 0
-    if (assetZipPath) {
-      try {
-        assetsImported = importAssetsZip(profileId, newId, assetZipPath).imported
-      } catch (e) {
-        log('error', 'Asset zip import failed (card import continues):', e)
-      }
-    }
-
-    const summary = summarizeCardBundle(parsed)
-    summary.regexScripts = regexScripts
-    // Native scripts ride on the card; add the count actually imported into the store.
-    summary.scripts =
-      (Array.isArray(getRpExt(card)?.scripts) ? getRpExt(card)!.scripts!.length : 0) + scripts
-    summary.presets = presets
-    summary.lorebooks = lorebooks
-    summary.workflows = workflows
-    summary.tableTemplates = tableTemplates
-    summary.assetsImported = assetsImported
-    return { id: newId, summary }
+    const counts = installBundleArtifacts(profileId, characterId, card, filePath, assetZipPath, {
+      installExtraLorebooks: false,
+      installTableTemplates: false
+    })
+    return { id: characterId, summary: buildImportSummary(parsed, counts) }
   } catch (error) {
-    log('error', 'Failed to import character:', error)
+    log('error', 'Failed to update character in place:', error)
     return null
   }
+}
+
+/**
+ * Replace an installed world without risking its saves when the incoming card cannot be installed.
+ * The new world is fully imported first; only then is the existing world deleted.
+ */
+export const replaceCharacterFromFile = (
+  profileId: string,
+  characterId: string,
+  filePath: string,
+  assetZipPath?: string
+): ImportResult | null => {
+  const imported = importCharacterFromFile(profileId, filePath, assetZipPath)
+  if (!imported) return null
+  try {
+    deleteCharacter(profileId, characterId)
+  } catch (error) {
+    log(
+      'error',
+      `Imported replacement ${imported.id}, but could not delete existing character ${characterId}:`,
+      error
+    )
+  }
+  return imported
+}
+
+/** A normalized card identity for dedupe / update matching (plan review C7): name + creator, trimmed and
+ *  lowercased. VERSION is deliberately EXCLUDED — it is the comparator, not part of identity, so a NEW
+ *  version of the same card still matches its installed copy (which is the whole point of the feature). */
+export const cardIdentity = (card: RPTerminalCard): { name: string; creator: string } => ({
+  name: (card.data.name ?? '').trim().toLowerCase(),
+  creator: (card.data.creator ?? '').trim().toLowerCase()
+})
+
+/** Whether two card identities match: name AND creator equal. An empty creator matches an empty creator
+ *  (a name-only match for cards lacking a creator — review C7). Pure/testable. */
+export const identityMatches = (
+  a: { name: string; creator: string },
+  b: { name: string; creator: string }
+): boolean => a.name === b.name && a.creator === b.creator
+
+/** An installed character that matches a card being imported — enough detail for the dedupe dialog. */
+export interface CharacterMatch {
+  id: string
+  name: string
+  creator: string
+  version: string
+  createdAt: string | null
+}
+
+/**
+ * Every installed character whose identity (name+creator) matches `card` (plan §B7 / Feature 1), newest
+ * first. Returns ALL matches, not 0/1: the library already holds UUID-duplicates from the pre-Feature-1
+ * importer (which always minted a new id on every import), so callers must handle N matches.
+ */
+/** Find installed worlds matching a bare {name, creator} identity — the save-import world resolver
+ *  (Feature 2: a save REFERENCES its world, so import requires a matching world installed). Same
+ *  identity rule as card re-import (C7): name+creator, version-agnostic. */
+export const findMatchingByIdentity = (
+  profileId: string,
+  name: string,
+  creator: string
+): CharacterMatch[] =>
+  findMatchingCharacter(profileId, { data: { name, creator } } as unknown as RPTerminalCard)
+
+export const findMatchingCharacter = (
+  profileId: string,
+  card: RPTerminalCard
+): CharacterMatch[] => {
+  const target = cardIdentity(card)
+  const rows = getDb()
+    .prepare(
+      'SELECT id, card, created_at FROM characters WHERE profile_id = ? ORDER BY created_at DESC'
+    )
+    .all(profileId) as Array<{ id: string; card: string; created_at: string | null }>
+  const out: CharacterMatch[] = []
+  for (const row of rows) {
+    const parsed = RPTerminalCardSchema.safeParse(safeJson(row.card))
+    if (!parsed.success) continue
+    if (identityMatches(cardIdentity(parsed.data), target)) {
+      out.push({
+        id: row.id,
+        name: parsed.data.data.name,
+        creator: parsed.data.data.creator ?? '',
+        version: parsed.data.data.character_version ?? '',
+        createdAt: row.created_at
+      })
+    }
+  }
+  return out
 }
 
 /**

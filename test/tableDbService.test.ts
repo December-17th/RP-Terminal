@@ -27,9 +27,9 @@ const table = (over: any): any => ({
 })
 
 describe('sandboxDbPath', () => {
-  it('lives under the profile in its own table-dbs dir, not the app DB', () => {
+  it('lives inside the chat session-store folder, not the app DB', () => {
     const p = sandboxDbPath('prof1', 'chatA')
-    expect(p).toBe(path.join(getAppDir(), 'profiles', 'prof1', 'table-dbs', 'chatA.sqlite'))
+    expect(p).toBe(path.join(getAppDir(), 'profiles', 'prof1', 'chats', 'chatA', 'table.sqlite'))
     expect(p).not.toContain('rpterminal.db')
   })
 })

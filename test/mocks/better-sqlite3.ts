@@ -16,6 +16,7 @@ class Statement {
 export default class Database {
   pragma(): void {}
   exec(): void {}
+  close(): void {}
   prepare(): Statement {
     return new Statement()
   }

@@ -17,7 +17,7 @@ collapsible prompt panel.
 
 RP Terminal's memory system is **SQL-table memory** (the 数据库-plugin model): each chat maintains a
 set of relational tables, the LLM edits them via SQL (later issues), and the tables project back into
-the prompt as worldbook-like entries (later issues). The *schema* of those tables is a **table
+the prompt as worldbook-like entries (later issues). The _schema_ of those tables is a **table
 template** — a portable, file-based artifact (like presets/lorebooks), importable from the plugin's
 **chatSheets v2** export format.
 
@@ -33,7 +33,8 @@ verified against (`CLAUDE.md` grounding rule).
   (`listTableTemplates` / `getTableTemplateById` / `deleteTableTemplate` /
   `importTableTemplateFromFile`), mirroring `presetService`.
 - **Sandbox DB** (per-chat table DATA): a **separate** SQLite file,
-  `profiles/<profileId>/table-dbs/<chatId>.sqlite` — **never** the app DB (`rpterminal.db`). Managed
+  `profiles/<profileId>/chats/<chatId>/table.sqlite` — **never** the central app DB
+  (`rpterminal.db`). It travels with the rest of that session in `.rpsave` exports. Managed
   by `src/main/services/tableDbService.ts`. A chat's assigned template id is
   `chats.table_template_id` (`src/main/services/db.ts` — `addColumnIfMissing(... 'table_template_id')`);
   `null` = table memory **off** for that chat, zero work done.
@@ -87,21 +88,24 @@ Bundled templates are **library-drop only**: import never assigns one to the new
 reminder; its primary action surfaces the Tables view so the user can inspect and assign the intended
 template ([`chatStore.ts`](../../src/renderer/src/stores/chatStore.ts),
 [`TableTemplateReminderModal.tsx`](../../src/renderer/src/components/TableTemplateReminderModal.tsx)).
+Updating an already-installed World Card does not reinstall its bundled templates: templates are
+profile-library artifacts without world ownership, so reinstalling them on every card update would
+silently create duplicates. Importing the card as a new world still installs its valid templates.
 
 ## Mapping (chatSheets sheet → `TableDef`)
 
-| chatSheets field                                   | `TableDef` field                       | Notes                                                              |
-| -------------------------------------------------- | -------------------------------------- | ------------------------------------------------------------------ |
-| `uid`                                              | `uid`                                  | Identity carried over.                                             |
-| `name`                                             | `displayName`                          | zh display name (e.g. 纪要表).                                     |
-| `sourceData.ddl` → `CREATE TABLE <name>`           | `sqlName` (parsed) + `ddl` (verbatim)  | `ddl` kept as-authored, comments and all.                          |
-| `content[0]`                                       | `headers`                              | Display column names.                                              |
-| `content[1..]`                                     | `initialRows`                          | Usually empty (templates ship header-only).                        |
-| `sourceData.note`                                  | `note`                                 | Table-definition prompt.                                           |
-| `sourceData.{init,insert,update,delete}Node`       | `{init,insert,update,delete}Node`      | Per-op AI instructions; default `''`.                              |
-| `updateConfig.updateFrequency`                     | `updateFrequency`                      | `-1`/absent → **`-1` = use the global default** `settings.tables.default_update_frequency` (default 3); `0` = **off** (excluded from auto-maintenance); positive ints kept. `<= -2` clamped to `-1` (issue 04). |
-| `exportConfig.*`                                   | `exportConfig.*`                       | Verbatim (see below); projected into the prompt by `table.export` (issue 04). |
-| `mate.globalInjectionConfig`                       | `TableTemplate.globalInjection`        | `readableEntryPlacement` / `wrapperPlacement`.                     |
+| chatSheets field                             | `TableDef` field                      | Notes                                                                                                                                                                                                           |
+| -------------------------------------------- | ------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `uid`                                        | `uid`                                 | Identity carried over.                                                                                                                                                                                          |
+| `name`                                       | `displayName`                         | zh display name (e.g. 纪要表).                                                                                                                                                                                  |
+| `sourceData.ddl` → `CREATE TABLE <name>`     | `sqlName` (parsed) + `ddl` (verbatim) | `ddl` kept as-authored, comments and all.                                                                                                                                                                       |
+| `content[0]`                                 | `headers`                             | Display column names.                                                                                                                                                                                           |
+| `content[1..]`                               | `initialRows`                         | Usually empty (templates ship header-only).                                                                                                                                                                     |
+| `sourceData.note`                            | `note`                                | Table-definition prompt.                                                                                                                                                                                        |
+| `sourceData.{init,insert,update,delete}Node` | `{init,insert,update,delete}Node`     | Per-op AI instructions; default `''`.                                                                                                                                                                           |
+| `updateConfig.updateFrequency`               | `updateFrequency`                     | `-1`/absent → **`-1` = use the global default** `settings.tables.default_update_frequency` (default 3); `0` = **off** (excluded from auto-maintenance); positive ints kept. `<= -2` clamped to `-1` (issue 04). |
+| `exportConfig.*`                             | `exportConfig.*`                      | Verbatim (see below); projected into the prompt by `table.export` (issue 04).                                                                                                                                   |
+| `mate.globalInjectionConfig`                 | `TableTemplate.globalInjection`       | `readableEntryPlacement` / `wrapperPlacement`.                                                                                                                                                                  |
 
 ### `exportConfig` mapping (projected by `table.export`, issue 04)
 
@@ -121,10 +125,10 @@ side-call. This is the **simple capped block**; the rich `exportConfig` above st
 injection** (a deliberate reconciliation — exportConfig-driven worldbook-style injection is a later item
 gated on the vector/summary engine).
 
-| field  | values | meaning |
-| ------ | ------ | ------- |
+| field  | values                                       | meaning                                                                                               |
+| ------ | -------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
 | `mode` | `'recent'` (default) \| `'full'` \| `'none'` | `recent` = keep the **last N** rows; `full` = all rows; `none` = never injected into the main prompt. |
-| `rows` | optional int ≥ 0 | Per-table row cap for `recent`, **overriding** the global cap. Unset = global cap. |
+| `rows` | optional int ≥ 0                             | Per-table row cap for `recent`, **overriding** the global cap. Unset = global cap.                    |
 
 - **Global cap:** `settings.tables.injection_max_rows` (default **20**), mirroring the
   `default_update_frequency` pattern. A per-table `rows` beats it; a zero/negative/non-finite cap clamps
@@ -157,7 +161,8 @@ ordered tables — `sqlName`s: `protagonist_info`, `important_characters`, `chro
 `roleplay_guide`, `foreshadow_table`, `covenant_table`, `region_table`, `location_table`
 (`test/chatSheetsParser.test.ts`). Spot-checked: 纪要表 `updateFrequency -1` kept verbatim (the
 use-global sentinel — issue 04, no longer normalized to `1`) + keyword index; 重要角色表 `splitByRow`
-+ keyword columns + `extraIndexColumnModes`; 主角信息 export disabled.
+
+- keyword columns + `extraIndexColumnModes`; 主角信息 export disabled.
 
 ## IPC surface (`src/main/ipc/tableMemoryIpc.ts`, preload `src/preload/index.ts`)
 
@@ -322,7 +327,7 @@ target_table, floor)`):
   but only regenerate from the cutpoint, losing the span's earlier floors' contribution. Writers stamp
   it: refill (`appendOpsAt`) records each batch's `span.from`; backfill passes `span.from`; the baseline
   re-write passes `0`; auto-maintain passes a conservative batch-wide `max(0, min(progress[t]+1 over the
-  scope tables))`; hand edits pass their own floor. **Nullable — legacy rows stay NULL**, which the
+scope tables))`; hand edits pass their own floor. **Nullable — legacy rows stay NULL**, which the
   refill widener COALESCEs to the op's own `floor` (= single-floor op, no widening below the request).
   `earliestSpanStart(chatId, tables, fromFloor)` returns `MIN(COALESCE(from_floor, floor))` over the
   selected tables' ops ending at/after `fromFloor`; the refill uses it to WIDEN its cutpoint down onto a
@@ -468,7 +473,7 @@ objects** per each table's `exportConfig`, then qualifies them through the SAME 
   (the qualified `LorebookEntry[]`), `block: Text` (plain-text rendering of the qualified NULL-depth /
   top-block entries, `'\n\n'`-joined — for composed prompts that want text), `error: Error`. Config
   `{ tables?: string (comma-separated sqlNames narrowing which tables project; unset = all),
-  max_rows?: 1..500 (per-table cap on projected DATA rows, keeps the NEWEST-last rows) }`. **No table
+max_rows?: 1..500 (per-table cap on projected DATA rows, keeps the NEWEST-last rows) }`. **No table
   template assigned → SILENT empty** (`{ entries: [], block: '' }`), NOT an error — export is a read;
   a chat without table memory simply projects nothing (contrast `table.apply`'s `no-template` class-B
   failure). It does **not** auto-inject anywhere; projection reaches the prompt only through wiring.
@@ -491,11 +496,11 @@ index). Rows are **positional in `template.headers` order** (the `readAllTables`
 DDL column order); column lookup is by DISPLAY name → index into `headers`, **never** by SQL column name.
 
 - **Row / whole-table entries** — `splitByRow: true` → one entry per data row, `content =
-  applyTemplate(injectionTemplate, renderRow(headers, row))`, `comment = <entryName|displayName>#<rowIndex>`.
+applyTemplate(injectionTemplate, renderRow(headers, row))`, `comment = <entryName|displayName>#<rowIndex>`.
   `splitByRow: false` → one whole-table entry over all rows (`renderWholeTable`). `entryType: 'constant'`
   → `constant: true` (always fires); `'keyword'` → keys derived (below). Zero data rows → no row entries.
 - **Index entry** (`extraIndexEnabled`) → **always-on** (`constant: true`): `content =
-  applyTemplate(extraIndexInjectionTemplate, <one renderIndexLine per row, '\n'-joined>)`. An **empty
+applyTemplate(extraIndexInjectionTemplate, <one renderIndexLine per row, '\n'-joined>)`. An **empty
   table emits ONLY this index entry** (empty body); a table without `extraIndexEnabled` emits nothing here.
 - Every synthesized entry has `prevent_recursion: true`.
 
@@ -507,8 +512,8 @@ dropped, de-duped (first-seen order). Constant entries carry `keys: []`.
 
 - `renderRow` — one `header: value` line per column, in `headers` order; null/short cells → empty value.
   E.g. `row_id: 1\n姓名: 艾莉亚\n所在位置: 王城`.
-- `renderWholeTable` — a ` | `-joined header line, then one ` | `-joined line per row.
-- `renderIndexLine` — `col: value` pairs (index columns, in config order) joined with ` | `.
+- `renderWholeTable` — a `|`-joined header line, then one `|`-joined line per row.
+- `renderIndexLine` — `col: value` pairs (index columns, in config order) joined with `|`.
   E.g. `姓名: 艾莉亚 | 所在位置: 王城 | 角色间关系: 盟友`.
 - `applyTemplate` — replaces every `$1` in the wrapper with the body; an empty wrapper yields the body verbatim.
 
@@ -517,11 +522,11 @@ dropped, de-duped (first-seen order). Constant entries carry `keys: []`.
 `{position, depth, order}` → our `{insertion_depth, insertion_order}` (`entryPlacement` for the row/
 whole-table entry, `extraIndexPlacement` for the index entry):
 
-| `position`                                              | `insertion_depth` | `insertion_order` | Notes                                                     |
-| ------------------------------------------------------- | ----------------- | ----------------- | --------------------------------------------------------- |
-| `at_depth_as_system`                                    | `depth`           | `order`           | Rides the existing depth-splice (system message at depth).|
-| `before_character_definition` / `after_character_definition` | `null` (top block) | `order`      | **Approximation** — our lorebook model has no char-def anchor; the top World Info block is the closest. |
-| `fixedEntryPlacement` / `fixedIndexPlacement` (any `fixed*`) | — | — | **Imported but IGNORED in v1** (not honored).             |
+| `position`                                                   | `insertion_depth`  | `insertion_order` | Notes                                                                                                   |
+| ------------------------------------------------------------ | ------------------ | ----------------- | ------------------------------------------------------------------------------------------------------- |
+| `at_depth_as_system`                                         | `depth`            | `order`           | Rides the existing depth-splice (system message at depth).                                              |
+| `before_character_definition` / `after_character_definition` | `null` (top block) | `order`           | **Approximation** — our lorebook model has no char-def anchor; the top World Info block is the closest. |
+| `fixedEntryPlacement` / `fixedIndexPlacement` (any `fixed*`) | —                  | —                 | **Imported but IGNORED in v1** (not honored).                                                           |
 
 Qualification uses the real matcher: **constant entries always survive; keyword entries fire only on a
 scan hit** against `gen.scanText` (recursion honored via `gen.maxRecursion`).
@@ -555,14 +560,14 @@ every?: 1..500 }`.
   table: the lowest `every` wins; an off table is omitted unless an override re-includes it).
 
 - **Floor source:** the gate re-reads the floor count FROM DISK via `getAllFloors(profileId,
-  chatId).length - 1` (`currentFloor`, clamped ≥0). `gen.floors` is the PRE-turn snapshot
+chatId).length - 1` (`currentFloor`, clamped ≥0). `gen.floors` is the PRE-turn snapshot
   `input.context` took, so the just-persisted reply floor is missing from it — the disk read is
   mandatory for the cadence to advance.
 - **Due rule:** the last-processed pointer lives in the **chat-level `table_progress` store**
   (`tableProgressService.getProgress` → `Record<sqlName, lastFloor>`, missing = `-1`), shared with the
   manual backfill and the Tables display — **NOT per-workflow node state** (issue 07 retired that,
   including its `at` rewind discriminator). A table is due when `currentFloor - (progress[t] ?? -1) >=
-  updateFrequency` (freq `1` = every turn). No template / no due tables → `{ outputs: {} }` (no signal;
+updateFrequency` (freq `1` = every turn). No template / no due tables → `{ outputs: {} }` (no signal;
   a chat without table memory is a silent no-op).
 - **AT-MOST-ONCE / FAIL-OPEN:** when the gate fires it **advances the store for every due table to
   `currentFloor` IMMEDIATELY** (`advanceProgress`, MAX-semantics upsert), before any downstream node
@@ -683,7 +688,7 @@ Pure, exported, unit-tested builders (`test/tableEditService.test.ts`):
 
 - `sqlQuote(v)` — `'…'` with `''` doubling (CJK values survive verbatim).
 - `buildCellUpdate(sqlName, sqlColumn, rowid, value)` → `UPDATE "t" SET "col" = '<quoted>' WHERE
-  rowid = N`. `sqlColumn` is the **real sandbox column name** (never a renderer string — see below),
+rowid = N`. `sqlColumn` is the **real sandbox column name** (never a renderer string — see below),
   re-validated with `isSafeSqlIdentifier`; `rowid` must be a safe non-negative integer.
 - `buildRowInsert(sqlName, values)` → positional `INSERT INTO "t" VALUES (…)`, `NULL` for null cells
   (the empty `row_id` slot → INTEGER PRIMARY KEY auto-assign), quoted literals otherwise.
@@ -726,7 +731,7 @@ re-parse as a defined `globalInjection` and break the round-trip) + one `sheet_<
 - **Round-trip contract (the AC): EQUIVALENCE, not bytes.** `parseChatSheets(exportChatSheets(tpl))`
   deep-equals `tpl` (`test/chatSheetsParser.test.ts`). `updateFrequency -1` now round-trips **verbatim**
   (issue 04 — no longer normalized to `1`); a byte match is still impossible because the importer drops
-  UI sentinels / `preventRecursion` (and clamps `<= -2` to `-1`); the *model* round-trips exactly.
+  UI sentinels / `preventRecursion` (and clamps `<= -2` to `-1`); the _model_ round-trips exactly.
 - **Export with data:** `dataRows` (a `Map<sqlName, string[][]>`) embeds current rows as `content[1..]`
   (cells stringified, `null → ''`); absent → the template's own `initialRows`. Orchestrated by
   `tableTemplateService.exportTableTemplateToFile` (reads live rows via `readAllTables` when a `chatId`
@@ -782,7 +787,7 @@ rolls the batch back.
   unprocessed (progress NOT advanced).
 - **Cancellation** (`table-backfill-cancel`) takes effect **between batches**; a batch in flight
   finishes or fails, applied batches stay applied. One backfill per chat at a time (`table-backfill-
-  state` exposes `{ running, batchIndex, batchCount, span, failures[] }` for view re-mounts).
+state` exposes `{ running, batchIndex, batchCount, span, failures[] }` for view re-mounts).
 - **Events:** `table-backfill-progress` broadcasts to all windows (`tableBackfillEvents.ts`, the
   `chatEvents` pattern); the renderer filters by `chatId` and refetches tables + status per event.
 

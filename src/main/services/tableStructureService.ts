@@ -2,15 +2,11 @@ import fs from 'fs'
 import { randomUUID } from 'crypto'
 import Database from 'better-sqlite3'
 import { log } from './logService'
-import {
-  TableTemplate,
-  TableDef,
-  TableExportConfigSchema
-} from '../types/tableTemplate'
+import { TableTemplate, TableDef, TableExportConfigSchema } from '../types/tableTemplate'
 import { getTableTemplateById, saveTableTemplate } from './tableTemplateService'
 import { sandboxDbPath, instantiate } from './tableDbService'
 import { deleteAllOps, appendOps, isTableWriteBusy } from './tableOpsService'
-import { getDb } from './db'
+import { getSessionDbByChat } from './sessionDbService'
 import { listChatIdsForTableTemplate } from './chatService'
 import { isSafeSqlIdentifier, parseDdlColumnNames } from '../parsers/chatSheetsParser'
 
@@ -44,7 +40,12 @@ import { isSafeSqlIdentifier, parseDdlColumnNames } from '../parsers/chatSheetsP
 // ---- op contract (shared main-side type; the IPC layer + preload mirror this shape) ----------
 
 export type StructureOp =
-  | { kind: 'addTable'; sqlName: string; displayName?: string; columns: { name: string; type?: string }[] }
+  | {
+      kind: 'addTable'
+      sqlName: string
+      displayName?: string
+      columns: { name: string; type?: string }[]
+    }
   | { kind: 'dropTable'; uid: string }
   | { kind: 'renameTable'; uid: string; sqlName: string; displayName?: string }
   | { kind: 'addColumn'; uid: string; name: string; type?: string }
@@ -155,9 +156,7 @@ export const planStructureOps = (
   let columnsChanged = 0
 
   const activeSqlNames = (exclude?: WorkTable): Set<string> =>
-    new Set(
-      [...byUid.values()].filter((w) => !w.dropped && w !== exclude).map((w) => w.sqlName)
-    )
+    new Set([...byUid.values()].filter((w) => !w.dropped && w !== exclude).map((w) => w.sqlName))
 
   for (const op of ops) {
     if (!op || typeof op !== 'object' || typeof (op as { kind?: unknown }).kind !== 'string') {
@@ -238,7 +237,8 @@ export const planStructureOps = (
         if (!w || w.dropped) return err('tables.structureUnknownTable')
         if (!w.columns.includes(op.from)) return err('tables.structureUnknownColumn')
         if (!isSafeSqlIdentifier(op.to)) return err('tables.structureBadName')
-        if (op.to !== op.from && w.columns.includes(op.to)) return err('tables.structureColumnExists')
+        if (op.to !== op.from && w.columns.includes(op.to))
+          return err('tables.structureColumnExists')
         if (op.to !== op.from) {
           statements.push(`ALTER TABLE ${q(w.sqlName)} RENAME COLUMN ${q(op.from)} TO ${q(op.to)}`)
           const origin = w.originOf.get(op.from) ?? null
@@ -327,9 +327,7 @@ const remapExistingTable = (
     .map(mapCol)
     .filter((x): x is string => !!x)
     .join(',')
-  const extraIndexColumns = ec.extraIndexColumns
-    .map(mapCol)
-    .filter((x): x is string => !!x)
+  const extraIndexColumns = ec.extraIndexColumns.map(mapCol).filter((x): x is string => !!x)
   const extraIndexColumnModes: Record<string, 'both' | 'index_only'> = {}
   for (const [col, mode] of Object.entries(ec.extraIndexColumnModes)) {
     const mapped = mapCol(col)
@@ -347,7 +345,13 @@ const remapExistingTable = (
     ...oldCols.filter((oc) => colRename.get(oc) && colRename.get(oc) !== oc), // renamed
     ...droppedCols // dropped
   ]
-  const prose = [oldDef.note, oldDef.initNode, oldDef.insertNode, oldDef.updateNode, oldDef.deleteNode]
+  const prose = [
+    oldDef.note,
+    oldDef.initNode,
+    oldDef.insertNode,
+    oldDef.updateNode,
+    oldDef.deleteNode
+  ]
     .filter(Boolean)
     .join('\n')
   for (const oc of changedOldCols) {
@@ -458,7 +462,12 @@ const buildBaselineOps = (db: Database.Database, newTemplate: TableTemplate): st
 /** Atomically rewrite a chat's op log (one app-DB transaction): drop the old ops, then append the
  *  new floor-0 baseline — so the old ops are NEVER dropped without the new baseline landing. */
 const rewriteOpLog = (profileId: string, chatId: string, baseline: string[]): void => {
-  getDb().transaction(() => {
+  // Plan review C2: transaction on the CHAT'S SESSION DB (deleteAllOps/appendOps now write the per-chat
+  // session.sqlite; a central transaction would leave them auto-committing — atomicity lost). Both inner
+  // calls resolve the same cached session handle, so this brackets them atomically.
+  const db = getSessionDbByChat(chatId)
+  if (!db) return
+  db.transaction(() => {
     deleteAllOps(profileId, chatId)
     if (baseline.length) appendOps(profileId, chatId, 0, baseline, 'baseline', 0)
   })()

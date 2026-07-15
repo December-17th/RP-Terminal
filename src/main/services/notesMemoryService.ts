@@ -6,16 +6,16 @@ import { log } from './logService'
 /**
  * Per-chat NOTES store for grep-based agentic plot-recall memory (plot-recall WP2).
  *
- * A chat's notes are a single human-readable/editable markdown file at
- * `profiles/<id>/chat-notes/<chatId>.md`, modeled on the per-chat SQL sandbox lifecycle in
- * `tableDbService.ts` (one file per chat, apart from the app DB). The CONTENT format (`##` section
- * headings + optional `<!-- keywords: … -->` lines) is owned by `src/shared/memory/notesGrep.ts`;
- * this service is purely the file I/O + lifecycle seam and never parses or shapes the prose.
+ * A chat's notes are a single human-readable/editable markdown file in the chat's per-session store
+ * folder (`profiles/<id>/chats/<chatId>/notes.md`), alongside session.sqlite/table.sqlite — one folder
+ * = one save (decentralize-save-system §B1; migrated from the legacy `chat-notes/<chatId>.md` in §B5).
+ * The CONTENT format (`##` section headings + optional `<!-- keywords: … -->` lines) is owned by
+ * `src/shared/memory/notesGrep.ts`; this service is purely the file I/O + lifecycle seam.
  */
 
-/** The notes file path for a chat. Kept in its own `chat-notes/` dir, apart from the app DB. */
+/** The notes file path for a chat, inside its per-session store folder. */
 export const notesFilePath = (profileId: string, chatId: string): string =>
-  path.join(getAppDir(), 'profiles', profileId, 'chat-notes', `${chatId}.md`)
+  path.join(getAppDir(), 'profiles', profileId, 'chats', chatId, 'notes.md')
 
 /** Read a chat's notes markdown. Missing file (or any read error) → empty string. */
 export const readNotes = (profileId: string, chatId: string): string => {

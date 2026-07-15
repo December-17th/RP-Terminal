@@ -47,9 +47,11 @@ export interface TableRead {
 export const unifyDisplayColumns = (headers: string[], sqlCols: string[]): string[] =>
   headers.length && headers.length === sqlCols.length ? headers : sqlCols.length ? sqlCols : headers
 
-/** The sandbox DB file path for a chat. Kept in its own `table-dbs/` dir, apart from the app DB. */
+/** The sandbox (table-memory) DB file path for a chat. Lives in the chat's per-session store folder
+ *  (`profiles/<id>/chats/<chatId>/table.sqlite`) alongside session.sqlite/notes.md — one folder = one
+ *  save (decentralize-save-system §B1). Migrated from the legacy `table-dbs/<chatId>.sqlite` in §B5. */
 export const sandboxDbPath = (profileId: string, chatId: string): string =>
-  path.join(getAppDir(), 'profiles', profileId, 'table-dbs', `${chatId}.sqlite`)
+  path.join(getAppDir(), 'profiles', profileId, 'chats', chatId, 'table.sqlite')
 
 /**
  * The SHADOW sandbox path for a chat's in-flight refill (table-refill WS2): a sibling temp file next to
@@ -58,7 +60,7 @@ export const sandboxDbPath = (profileId: string, chatId: string): string =>
  * in place mid-refill. A distinct suffix so it can't collide with a real `${chatId}.sqlite`.
  */
 export const refillShadowPath = (profileId: string, chatId: string): string =>
-  path.join(getAppDir(), 'profiles', profileId, 'table-dbs', `${chatId}.refill.sqlite`)
+  path.join(getAppDir(), 'profiles', profileId, 'chats', chatId, 'table.refill.sqlite')
 
 /**
  * Build the ordered, validated instantiation plan from a template: for each table, its sqlName
@@ -215,11 +217,7 @@ const readOne = (db: Database.Database | null, table: TableDef): TableRead => {
  * which re-validates it with `isSafeSqlIdentifier`. `sqlName` must be a registered template table
  * (the caller validates against the registry); a missing sandbox / read failure yields `[]`.
  */
-export const sandboxColumns = (
-  profileId: string,
-  chatId: string,
-  sqlName: string
-): string[] => {
+export const sandboxColumns = (profileId: string, chatId: string, sqlName: string): string[] => {
   if (!isSafeSqlIdentifier(sqlName)) return []
   const file = sandboxDbPath(profileId, chatId)
   if (!fs.existsSync(file)) return []

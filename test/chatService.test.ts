@@ -3,15 +3,24 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 // setChatTableTemplateId is DB/fs-bound: mock the `./db` seam to capture prepared SQL, keep the pure
 // guard + op-log helpers real (they route through the mocked db), and stub the destructive tableDbService
 // side effects (instantiate / removeSandbox / removeShadow) so we can assert them without touching disk.
-const preparedSql: string[] = []
+const centralSql: string[] = []
+const sessionSql: string[] = []
 vi.mock('../src/main/services/db', () => ({
   getDb: () => ({
     prepare: (sql: string) => {
-      preparedSql.push(sql)
+      centralSql.push(sql)
       return { run: vi.fn(), get: () => undefined, all: () => [] }
     }
   }),
   transact: (fn: () => unknown) => fn()
+}))
+vi.mock('../src/main/services/sessionDbService', () => ({
+  getSessionDbByChat: () => ({
+    prepare: (sql: string) => {
+      sessionSql.push(sql)
+      return { run: vi.fn() }
+    }
+  })
 }))
 vi.mock('../src/main/services/tableTemplateService', () => ({
   getTableTemplateById: vi.fn(() => ({ id: 't1', tables: [] }))
@@ -49,7 +58,8 @@ describe('parseLorebookIds', () => {
 
 describe('setChatTableTemplateId — reassign discards INTERRUPTED-refill state', () => {
   beforeEach(() => {
-    preparedSql.length = 0
+    centralSql.length = 0
+    sessionSql.length = 0
     vi.mocked(tableDbService.removeShadow).mockClear()
   })
 
@@ -57,7 +67,8 @@ describe('setChatTableTemplateId — reassign discards INTERRUPTED-refill state'
     // An interrupted refill leaves a progress row + shadow keyed to the OLD template; if they survive the
     // reassign, the workbench would offer Resume against the NEW template with a stale completedUntil.
     setChatTableTemplateId('p1', 'c1', 't1')
-    expect(preparedSql.some((s) => s.includes('DELETE FROM table_refill_progress'))).toBe(true)
+    expect(sessionSql.some((s) => s.includes('DELETE FROM table_refill_progress'))).toBe(true)
+    expect(centralSql.some((s) => s.includes('DELETE FROM table_refill_progress'))).toBe(false)
     expect(vi.mocked(tableDbService.removeShadow)).toHaveBeenCalledWith('p1', 'c1')
   })
 })
