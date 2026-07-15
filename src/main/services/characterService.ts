@@ -17,6 +17,7 @@ import { installBundledPreset } from './presetService'
 import { parseStPng, extractAppendedZip } from '../parsers/stPngParser'
 import { importAssetsZip } from './worldAssetService'
 import { installCartridgeCode, deleteCardCode } from './cardCodeService'
+import { deleteChatFully, chatIdsForCharacter } from './chatDeleteService'
 
 const getAvatarsDir = (): string => path.join(getAppDir(), 'avatars')
 export const getAvatarPath = (characterId: string): string =>
@@ -73,13 +74,14 @@ export const saveCharacter = (
 export const deleteCharacter = (profileId: string, characterId: string): void => {
   const db = getDb()
   db.prepare('DELETE FROM characters WHERE id = ? AND profile_id = ?').run(characterId, profileId)
-  // Cascade the character's sessions (chats); their floors are FK ON DELETE CASCADE.
-  // character_id is a plain column (not an FK), so this isn't automatic — without it the
-  // chats are orphaned and a stale activeChatId can re-render a deleted world's frontend cards.
-  db.prepare('DELETE FROM chats WHERE character_id = ? AND profile_id = ?').run(
-    characterId,
-    profileId
-  )
+  // Cascade the character's sessions (chats) through the SAME centralized per-chat teardown as
+  // chatService.deleteChat, so each chat's non-cascading rows (workflow_run_history / *_trigger_state
+  // / agent_pack_activation) AND per-chat files (table sandbox / refill shadow / notes) are removed —
+  // not just the chat row. character_id is a plain column (not an FK), so nothing cascades from the
+  // character delete above; enumerating + tearing down each chat is what prevents the orphans.
+  for (const chatId of chatIdsForCharacter(profileId, characterId)) {
+    deleteChatFully(profileId, chatId)
+  }
   deleteCharacterLorebook(profileId, characterId)
   // Remove the world-scoped regex/scripts this card brought in on import (scope='world',
   // owner=characterId) so a deleted World Card doesn't leave orphans in the managers —

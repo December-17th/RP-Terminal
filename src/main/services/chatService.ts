@@ -14,7 +14,7 @@ import * as tableDbService from './tableDbService'
 import * as tableOpsService from './tableOpsService'
 import * as tableProgressService from './tableProgressService'
 import * as varsOpsService from './varsOpsService'
-import * as notesMemoryService from './notesMemoryService'
+import { deleteChatFully } from './chatDeleteService'
 
 interface ChatRow {
   id: string
@@ -363,14 +363,11 @@ export const truncateFloors = (profileId: string, chatId: string, fromFloor: num
   touch(chatId)
 }
 
+// Centralized per-chat teardown (FK-cascade rows + non-cascading chat-keyed tables + per-chat files)
+// lives in the leaf `chatDeleteService` so characterService/profileService reuse the SAME cleanup
+// without importing chatService (which would cycle — chatService imports characterService).
 export const deleteChat = (profileId: string, chatId: string): void => {
-  getDb().prepare('DELETE FROM chats WHERE id = ?').run(chatId)
-  // `table_ops` AND `vars_ops` rows go via FK cascade (db.ts sets `foreign_keys = ON`, and both
-  // tables REFERENCE chats(id) ON DELETE CASCADE — verified). The sandbox DB file lives OUTSIDE the
-  // app DB, so it must be removed explicitly.
-  tableDbService.removeSandbox(profileId, chatId)
-  // The per-chat notes file (plot-recall memory) also lives OUTSIDE the app DB — remove it explicitly.
-  notesMemoryService.removeNotes(profileId, chatId)
+  deleteChatFully(profileId, chatId)
 }
 
 /** Edit a floor's user message and/or response text, then bump updated_at. */

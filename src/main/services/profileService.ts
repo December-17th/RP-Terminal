@@ -4,6 +4,7 @@ import { v4 as uuidv4 } from 'uuid'
 import { getDb } from './db'
 import { getAppDir } from './storageService'
 import * as settingsService from './settingsService'
+import { deleteChatFully, chatIdsForProfile } from './chatDeleteService'
 import { Profile } from '../types/models'
 
 export const getProfiles = (): Profile[] => {
@@ -78,12 +79,14 @@ export const wipeProfile = (profileId: string): void => {
     active_api_preset_id: cur.active_api_preset_id
   })
 
-  // 2. DB content. Deleting chats cascades to floors / combat_encounters / episodic_memory
-  //    (FK ON DELETE CASCADE). The profile + (reset) settings rows stay.
-  db.transaction((pid: string) => {
-    db.prepare('DELETE FROM chats WHERE profile_id = ?').run(pid)
-    db.prepare('DELETE FROM characters WHERE profile_id = ?').run(pid)
-  })(profileId)
+  // 2. DB content. Tear down every chat through the SAME centralized per-chat cleanup as
+  //    chatService.deleteChat — deleting the chat rows in bulk would FK-cascade floors/table_ops/etc
+  //    but LEAK the non-cascading chat-keyed tables (workflow_run_history / *_trigger_state /
+  //    agent_pack_activation) and the per-chat files (table sandbox / refill shadow / notes). Each
+  //    deleteChatFully does its own DB txn + post-commit file removals (files can't be transactional),
+  //    so the characters delete runs after. The profile + (reset) settings rows stay.
+  for (const chatId of chatIdsForProfile(profileId)) deleteChatFully(profileId, chatId)
+  db.prepare('DELETE FROM characters WHERE profile_id = ?').run(profileId)
 
   // 3. File-based per-profile content.
   wipeProfileFiles(profileId)
