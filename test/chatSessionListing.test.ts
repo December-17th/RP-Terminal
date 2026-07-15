@@ -5,12 +5,13 @@ import os from 'os'
 import { randomUUID } from 'crypto'
 
 /**
- * Session-list folding (performance-audit P2-6): getChats used to run one latest-floor query PER
- * chat (N+1) on top of the chat listing. It now folds the latest floor into ONE joined query. This
- * suite pins that behavior: swap the no-op better-sqlite3 alias for the real `node:sqlite`-backed
- * adapter so the JOIN + correlated subqueries actually execute, seed several chats + an empty one,
- * and assert (a) the session shape is byte-identical to the old per-chat build, (b) an empty chat
- * yields floor_index [], and (c) listing N chats prepares exactly ONE floors-touching statement.
+ * Session-list cost (performance-audit P2-6, post-merge with the decentralized save system):
+ * getChats used to run one latest-floor query PER chat (N+1). Floors now live in per-session
+ * stores, and the listing reads a denormalized summary maintained by floorService.saveFloor
+ * (refreshChatSummary) off the CENTRAL index — one statement, zero session DBs opened. This suite
+ * runs the REAL stack (node:sqlite adapter) end-to-end: write floors through saveFloor, then pin
+ * (a) ordering + summary content incl. preview stripping/clamping, (b) empty-chat shape,
+ * (c) getChat/list parity + the §B3 self-heal, and (d) the one-statement listing.
  */
 const DATA_DIR = path.join(os.tmpdir(), `rpt-session-list-${randomUUID()}`)
 
@@ -21,9 +22,17 @@ vi.mock('../src/main/services/storageService', async (importOriginal) => {
 })
 
 import { getDb } from '../src/main/services/db'
+import * as sessionDbService from '../src/main/services/sessionDbService'
 import { getChats, getChat } from '../src/main/services/chatService'
+import { saveFloor } from '../src/main/services/floorService'
+import { FloorFile } from '../src/main/types/chat'
 
 afterAll(() => {
+  try {
+    sessionDbService.closeAll()
+  } catch {
+    /* ignore */
+  }
   try {
     ;(getDb() as unknown as { close: () => void }).close()
   } catch {
@@ -51,21 +60,24 @@ const insertChat = (profileId: string, chatId: string, updatedAt: string): void 
     .run(chatId, profileId, 'char', updatedAt, updatedAt)
 }
 
-const insertFloor = (
+const writeFloor = (
   chatId: string,
   floor: number,
   timestamp: string,
   userContent: string,
   responseContent: string
-): void => {
-  getDb()
-    .prepare(
-      'INSERT INTO floors (chat_id, floor, timestamp, user_content, response_content) VALUES (?, ?, ?, ?, ?)'
-    )
-    .run(chatId, floor, timestamp, userContent, responseContent)
-}
+): void =>
+  saveFloor('p', chatId, {
+    floor,
+    chat_id: chatId,
+    timestamp,
+    user_message: { content: userContent, timestamp },
+    response: { content: responseContent, model: 'm', provider: 'p' },
+    events: [],
+    variables: {}
+  } as unknown as FloorFile)
 
-describe('getChats — single-query session listing (perf-audit P2-6)', () => {
+describe('getChats — denormalized session listing (perf-audit P2-6 / save-plan §B3)', () => {
   const profileId = `p-${randomUUID()}`
   const chatA = `chat-a-${randomUUID()}` // 2 floors; newest updated_at
   const chatB = `chat-b-${randomUUID()}` // 1 floor
@@ -77,20 +89,21 @@ describe('getChats — single-query session listing (perf-audit P2-6)', () => {
   insertChat(profileId, chatEmpty, '2026-07-15T02:00:00.000Z')
   insertChat(profileId, chatB, '2026-07-15T01:00:00.000Z')
 
-  // chatA floor 0 (older) then floor 1 (latest) — latest must win. The latest response carries a
-  // <think> block + an <UpdateVariable> block + HTML, all of which the preview must drop.
+  // chatA floor 0 (older) then floor 1 (latest) — the summary must track the LATEST write. The
+  // latest response carries a <think> block + an <UpdateVariable> block + HTML, all of which the
+  // stored preview must drop (cleanForHistory + tag-strip in refreshChatSummary).
   const longUser = 'u'.repeat(400)
-  insertFloor(chatA, 0, '2026-07-15T02:59:00.000Z', 'old user', 'old response')
-  insertFloor(
+  writeFloor(chatA, 0, '2026-07-15T02:59:00.000Z', 'old user', 'old response')
+  writeFloor(
     chatA,
     1,
     '2026-07-15T03:00:00.000Z',
     longUser,
     '<think>secret reasoning</think><p>Hello <b>world</b></p><UpdateVariable>x=1</UpdateVariable>'
   )
-  insertFloor(chatB, 0, '2026-07-15T01:00:00.000Z', 'hi', 'plain reply')
+  writeFloor(chatB, 0, '2026-07-15T01:00:00.000Z', 'hi', 'plain reply')
 
-  it('orders by updated_at DESC and folds the latest floor into each session', () => {
+  it('orders by updated_at DESC and serves the maintained latest-floor summary', () => {
     const sessions = getChats(profileId)
     expect(sessions.map((s) => s.id)).toEqual([chatA, chatEmpty, chatB])
 
@@ -118,14 +131,26 @@ describe('getChats — single-query session listing (perf-audit P2-6)', () => {
     expect(single).toEqual(fromList)
   })
 
-  it('lists N chats with a SINGLE floors query (no N+1)', () => {
+  it('getChat self-heals a null (legacy/pre-migration) summary from the session store (§B3)', () => {
+    getDb()
+      .prepare(
+        `UPDATE chats SET floor_count = NULL, last_floor = NULL, last_floor_ts = NULL,
+           last_user_preview = NULL, last_response_preview = NULL WHERE id = ?`
+      )
+      .run(chatB)
+    const healed = getChat(profileId, chatB)!
+    expect(healed.floor_count).toBe(1)
+    expect(healed.floor_index[0].response_preview).toBe('plain reply')
+  })
+
+  it('lists N chats with ONE central statement and NO session DB opened', () => {
     const spy = vi.spyOn(getDb(), 'prepare')
     try {
       getChats(profileId)
-      // Old code prepared 1 chats query + N latest-floor queries. The fold prepares exactly one
-      // statement total for the whole listing, regardless of how many chats it returns.
+      // Old code prepared 1 chats query + N latest-floor queries. The denormalized listing
+      // prepares exactly one statement total — and it never touches a floors table.
       expect(spy.mock.calls).toHaveLength(1)
-      expect(spy.mock.calls[0][0]).toMatch(/floors/)
+      expect(spy.mock.calls[0][0]).not.toMatch(/floors/i)
     } finally {
       spy.mockRestore()
     }

@@ -221,15 +221,19 @@ export function Launcher({ profileId }: { profileId: string }): React.ReactEleme
                 const d = c.card?.data ?? {}
                 const desc = String(d.creator_notes || d.description || '').trim()
                 const count = chats.filter((ch) => ch.character_id === c.id).length
-                const url = avatars[c.id]
                 const name = d.name || t('launcher.untitled')
                 return (
                   <div key={c.id} className="lc-wrow-wrap">
                     <button className="lc-wrow" onClick={() => openWorld(c)}>
-                      {url ? (
-                        <img className="lc-av" src={url} alt="" />
-                      ) : (
+                      {avatarBroken[c.id] ? (
                         <span className="lc-av lc-av-ph">{String(d.name || '?').slice(0, 1)}</span>
+                      ) : (
+                        <img
+                          className="lc-av"
+                          src={`rptavatar://${c.id}`}
+                          alt=""
+                          onError={() => setAvatarBroken((b) => ({ ...b, [c.id]: true }))}
+                        />
                       )}
                       <span className="lc-wtext">
                         <span className="lc-wname">{name}</span>
@@ -259,85 +263,6 @@ export function Launcher({ profileId }: { profileId: string }): React.ReactEleme
         </div>
       </div>
       {confirmDialog}
-      </>
-    )
-  }
-
-  return (
-    <>
-    <div className="launcher">
-      <div className="lc-bar">
-        <span className="lc-brand">RP Terminal</span>
-        <span className="lc-crumb-cur">{t('launcher.worlds')}</span>
-        <span className="lc-spacer" />
-        <button className="lc-import" onClick={() => importCharacter(profileId)}>
-          {t('launcher.importCard')}
-        </button>
-        <button
-          className="lc-crumb"
-          onClick={() => useUiStore.getState().openSettings()}
-          title={t('nav.settings')}
-        >
-          ⚙
-        </button>
-      </div>
-      <div className="lc-scroll">
-        <div className="lc-hero">
-          <div className="lc-eyebrow">{t('launcher.eyebrowWorlds')}</div>
-          <div className="lc-h">
-            {t('launcher.chooseWorld')}
-            <span className="lc-caret" aria-hidden="true" />
-          </div>
-          <div className="lc-sub">{t('launcher.chooseWorldSub')}</div>
-        </div>
-        {characters.length === 0 ? (
-          <div className="lc-empty">{t('launcher.noWorlds')}</div>
-        ) : (
-          <div className="lc-wlist">
-            {characters.map((c) => {
-              const d = c.card?.data ?? {}
-              const desc = String(d.creator_notes || d.description || '').trim()
-              const count = chats.filter((ch) => ch.character_id === c.id).length
-              const name = d.name || t('launcher.untitled')
-              return (
-                <div key={c.id} className="lc-wrow-wrap">
-                  <button className="lc-wrow" onClick={() => openWorld(c)}>
-                    {avatarBroken[c.id] ? (
-                      <span className="lc-av lc-av-ph">{String(d.name || '?').slice(0, 1)}</span>
-                    ) : (
-                      <img
-                        className="lc-av"
-                        src={`rptavatar://${c.id}`}
-                        alt=""
-                        onError={() => setAvatarBroken((b) => ({ ...b, [c.id]: true }))}
-                      />
-                    )}
-                    <span className="lc-wtext">
-                      <span className="lc-wname">{name}</span>
-                      {desc && <span className="lc-wdesc">{desc}</span>}
-                      <span className="lc-wmeta">
-                        {count === 1
-                          ? t('launcher.sessionOne', { count })
-                          : t('launcher.sessionMany', { count })}
-                      </span>
-                    </span>
-                    <span className="lc-enter" aria-hidden="true">{t('launcher.enter')} ▶</span>
-                  </button>
-                  <button
-                    className="btn-ghost danger lc-wdel"
-                    title={t('world.deleteTitle')}
-                    onClick={() => setConfirming({ kind: 'world', id: c.id, name })}
-                  >
-                    🗑
-                  </button>
-                </div>
-              )
-            })}
-          </div>
-        )}
-      </div>
-    </div>
-    {confirmDialog}
     </>
   )
 }
