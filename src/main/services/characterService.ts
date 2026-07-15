@@ -1,5 +1,6 @@
 import fs from 'fs'
 import path from 'path'
+import { nativeImage } from 'electron'
 import { getAppDir, ensureDir } from './storageService'
 import { getDb } from './db'
 import { log } from './logService'
@@ -22,6 +23,79 @@ import { deleteChatFully, chatIdsForCharacter } from './chatDeleteService'
 const getAvatarsDir = (): string => path.join(getAppDir(), 'avatars')
 export const getAvatarPath = (characterId: string): string =>
   path.join(getAvatarsDir(), `${characterId}.png`)
+
+/** The bounded launcher thumbnail path for a character (sibling of the original avatar PNG). */
+export const getAvatarThumbPath = (characterId: string): string =>
+  path.join(getAvatarsDir(), `${characterId}.thumb.png`)
+
+/** Longest-edge cap for the generated launcher thumbnail. The original stays untouched on disk. */
+const AVATAR_THUMB_MAX = 256
+
+/**
+ * Resolve the ORIGINAL + THUMB absolute paths for a character id inside the avatars dir, with the
+ * same root-escape guard the world-asset protocol uses (a traversing id → null). Pure path logic —
+ * no fs, no nativeImage — so both the thumb generator and the protocol serve-path share one guard.
+ */
+const avatarPaths = (characterId: string): { orig: string; thumb: string } | null => {
+  let decoded: string
+  try {
+    decoded = decodeURIComponent(characterId)
+  } catch {
+    return null
+  }
+  const dir = path.resolve(getAvatarsDir())
+  const orig = path.resolve(dir, `${decoded}.png`)
+  const thumb = path.resolve(dir, `${decoded}.thumb.png`)
+  const base = dir + path.sep
+  if (!orig.startsWith(base) || !thumb.startsWith(base)) return null // escaped the avatars root
+  return { orig, thumb }
+}
+
+/**
+ * Ensure a bounded launcher thumbnail exists for a character and return the best path to SERVE:
+ * the thumb if present/generated, else the original as a fallback, else null. Downscales the
+ * original PNG to {@link AVATAR_THUMB_MAX}px (longest edge) via Electron's `nativeImage` — no new
+ * deps, main-process only. Any failure (missing/undecodable image, resize/write error) falls back
+ * to the original so the launcher still shows something. Idempotent: a hit returns immediately.
+ */
+export const ensureAvatarThumb = (characterId: string): string | null => {
+  const p = avatarPaths(characterId)
+  if (!p) return null
+  try {
+    if (fs.existsSync(p.thumb)) return p.thumb
+    if (!fs.existsSync(p.orig)) return null
+    const img = nativeImage.createFromPath(p.orig)
+    if (img.isEmpty()) return p.orig
+    const { width, height } = img.getSize()
+    const longest = Math.max(width, height)
+    // Only downscale; a small avatar is served as-is (still written as the thumb so the protocol
+    // has a stable target and we don't re-run nativeImage on every launcher open).
+    const out =
+      longest > AVATAR_THUMB_MAX
+        ? img.resize(width >= height ? { width: AVATAR_THUMB_MAX } : { height: AVATAR_THUMB_MAX })
+        : img
+    ensureDir(getAvatarsDir())
+    fs.writeFileSync(p.thumb, out.toPNG())
+    return p.thumb
+  } catch (e) {
+    log('error', 'Avatar thumbnail generation failed:', e)
+    return fs.existsSync(p.orig) ? p.orig : null
+  }
+}
+
+/**
+ * The absolute path to serve for a character avatar WITHOUT generating anything: thumb if it
+ * exists, else the original, else null (with the same root-escape guard as {@link ensureAvatarThumb}).
+ * Pure fs + path — the protocol handler calls {@link ensureAvatarThumb} first (which generates lazily),
+ * then this is the testable seam for the thumb-preferred selection + traversal guard.
+ */
+export const resolveAvatarServePath = (characterId: string): string | null => {
+  const p = avatarPaths(characterId)
+  if (!p) return null
+  if (fs.existsSync(p.thumb)) return p.thumb
+  if (fs.existsSync(p.orig)) return p.orig
+  return null
+}
 
 /** The card's avatar PNG as a `data:` URL (for the renderer launcher/img), or null if none. */
 export const getAvatarDataUrl = (characterId: string): string | null => {
@@ -90,6 +164,8 @@ export const deleteCharacter = (profileId: string, characterId: string): void =>
   scriptService.deleteScriptsByOwner(profileId, 'world', characterId)
   const avatar = getAvatarPath(characterId)
   if (fs.existsSync(avatar)) fs.unlinkSync(avatar)
+  const thumb = getAvatarThumbPath(characterId)
+  if (fs.existsSync(thumb)) fs.unlinkSync(thumb)
   // Remove any card-code cartridge subtree extracted for this world on import (A1).
   deleteCardCode(profileId, characterId)
 }
@@ -310,6 +386,9 @@ export const importCharacterFromFile = (
     if (path.extname(filePath).toLowerCase() === '.png') {
       ensureDir(getAvatarsDir())
       fs.copyFileSync(filePath, getAvatarPath(newId))
+      // Pre-generate the bounded launcher thumbnail so the launcher never sync-reads the multi-MB
+      // original (perf P1-6). Best-effort: a failure falls back to the original at serve time.
+      ensureAvatarThumb(newId)
       // S5 cartridge: if the PNG carries a ZIP appended after IEND, extract its code/ subtree to the
       // card-code dir (WP0/A1). Serving those bytes is A2; a rejected/absent cartridge never blocks
       // the card import. Keyed by the just-minted id so re-imports get an independent tree.

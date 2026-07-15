@@ -10,6 +10,7 @@ import * as migrationService from './services/migrationService'
 import * as templateService from './services/templateService'
 import * as wcvManager from './services/wcvManager'
 import * as worldAssetProtocol from './services/worldAssetProtocol'
+import * as avatarProtocol from './services/avatarProtocol'
 import { registerIpc } from './ipc'
 import { setGuardMainWindow } from './ipc/ipcGuards'
 import { TITLEBAR_OVERLAY_HEIGHT } from './windowChrome'
@@ -32,6 +33,11 @@ protocol.registerSchemesAsPrivileged([
   },
   {
     scheme: worldAssetProtocol.ASSET_SCHEME,
+    privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true }
+  },
+  {
+    // Launcher avatar thumbnails, served by character id instead of a multi-MB base64 IPC (perf P1-6).
+    scheme: avatarProtocol.AVATAR_SCHEME,
     privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true }
   }
 ])
@@ -137,6 +143,7 @@ app.whenReady().then(() => {
   // Register all IPC handlers, grouped by domain (see src/main/ipc/).
   registerIpc(ipcMain)
   worldAssetProtocol.registerAssetProtocol()
+  avatarProtocol.registerAvatarProtocol()
 
   // Sync the Windows window-control overlay (custom title bar) to the active theme's colors.
   ipcMain.handle('set-titlebar-overlay', (e, overlay: { color: string; symbolColor: string }) => {

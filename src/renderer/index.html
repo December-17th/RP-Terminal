@@ -31,10 +31,13 @@
          (the Asset Manager view) AND in the inline card srcdoc frame — because that srcdoc
          INHERITS this policy, the card iframe's own `rptasset:` in csp.ts is void unless it's
          also allowed here. (WCV cards run in a separate session with img-src *, so they're
-         unaffected.) -->
+         unaffected.)
+         `rptavatar:` is allowed in `img-src` so the launcher's per-world avatar thumbnails load in
+         the top frame from the internal avatar protocol (perf P1-6) instead of a multi-MB base64
+         `data:` URL round-tripped over IPC. -->
     <meta
       http-equiv="Content-Security-Policy"
-      content="default-src 'self'; script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval' data: blob: https:; style-src 'self' 'unsafe-inline' https:; font-src 'self' data: https:; img-src 'self' data: blob: rptasset: https:; connect-src 'self' data: blob: https:; media-src 'self' data: blob: https:"
+      content="default-src 'self'; script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval' data: blob: https:; style-src 'self' 'unsafe-inline' https:; font-src 'self' data: https:; img-src 'self' data: blob: rptasset: rptavatar: https:; connect-src 'self' data: blob: https:; media-src 'self' data: blob: https:"
     />
     <!-- Noto Sans SC (Simplified Chinese) for the app UI. Latin stays Inter via the
          font-family stacks in index.css; this supplies the CJK glyphs so 中文 renders in
