@@ -1,6 +1,7 @@
 {
   "name": "rp-terminal",
-  "version": "1.0.0",
+  "productName": "RP Terminal",
+  "version": "0.1.0",
   "description": "Desktop client for sophisticated AI roleplay (SillyTavern-compatible)",
   "main": "./out/main/index.js",
   "scripts": {

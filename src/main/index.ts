@@ -1,7 +1,7 @@
 import { app, shell, BrowserWindow, ipcMain, protocol } from 'electron'
 import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
-import icon from '../../resources/icon.png?asset'
+import icon from '../../resources/icons/rp-terminal-emerald.png?asset'
 
 import * as logService from './services/logService'
 import * as storageService from './services/storageService'
@@ -41,6 +41,8 @@ function createWindow(): void {
   const mainWindow = new BrowserWindow({
     width: 900,
     height: 670,
+    title: 'RP Terminal',
+    icon,
     show: false,
     autoHideMenuBar: true,
     // Custom merged title bar (Windows): hide the native bar; the min/max/close render as an
@@ -59,7 +61,6 @@ function createWindow(): void {
           }
         }
       : {}),
-    ...(process.platform === 'linux' ? { icon } : {}),
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
       sandbox: false
