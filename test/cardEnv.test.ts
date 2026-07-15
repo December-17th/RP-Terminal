@@ -59,6 +59,14 @@ describe('buildEnvHead', () => {
     expect(buildEnvHead(opts)).toContain(BASE_RESET_CSS)
   })
 
+  it('defines the Vue production devtools flag before card libraries execute', () => {
+    const head = buildEnvHead(opts)
+    const flagPos = head.indexOf('var __VUE_PROD_DEVTOOLS__=false;')
+    const libPos = head.indexOf(opts.libTags)
+    expect(flagPos).toBeGreaterThanOrEqual(0)
+    expect(flagPos).toBeLessThan(libPos)
+  })
+
   it('orders style → libs → viewport bootstrap', () => {
     const head = buildEnvHead(opts)
     const stylePos = head.indexOf('<style>')

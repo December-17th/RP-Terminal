@@ -71,6 +71,15 @@ function avatarCss(userAvatarUrl?: string, charAvatarUrl?: string): string {
 }
 
 /**
+ * Browser-native Pinia ESM builds reference Vue's compile-time production-devtools flag as a free
+ * identifier. A bundler normally replaces it; card pages loaded directly from a CDN have no bundling
+ * step, so define the global binding before any assumed library or card module executes.
+ */
+function vueEsmCompatBootstrap(): string {
+  return '<script>var __VUE_PROD_DEVTOOLS__=false;</script>'
+}
+
+/**
  * Inline <script> that sets `--TH-viewport-height` on <html> and re-sets it when the host posts
  * `{type:'TH_UPDATE_VIEWPORT_HEIGHT', height}` (faithful to JSR `adjust_viewport.js`). Cards read the
  * variable to fill the window; `replaceVhInContent` rewrites their `min-height:NNvh` onto it.
@@ -98,7 +107,12 @@ export function buildEnvHead(opts: EnvHeadOpts): string {
   // selector + !important, emitted AFTER the reset, so the later rule wins.
   const scroll = opts.scrollable ? 'html,body{overflow:auto!important}' : ''
   const styleBody = BASE_RESET_CSS + avatarCss(opts.userAvatarUrl, opts.charAvatarUrl) + scroll
-  return `<style>${styleBody}</style>` + opts.libTags + viewportBootstrap(opts.viewportHeightPx)
+  return (
+    `<style>${styleBody}</style>` +
+    vueEsmCompatBootstrap() +
+    opts.libTags +
+    viewportBootstrap(opts.viewportHeightPx)
+  )
 }
 
 /** Convert the vh values inside one declaration value to the viewport variable. */

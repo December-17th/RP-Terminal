@@ -248,6 +248,9 @@ transports inject the same thing (clean-room mirror of JSR's `createSrcContent`/
   (≈ Tailwind preflight) — without it `width:100%`+padding cards overflow.
 - **`--TH-viewport-height`** bootstrap + `replaceVhInContent` (rewrites a card's `min-height:NNvh` onto the
   variable) for **fill** mode; **fit** mode (default) auto-sizes to content.
+- **Vue ESM compatibility bootstrap** defines the production-devtools build flag before card libraries
+  execute, so browser-native CDN imports such as `pinia/+esm` do not abort on an unresolved bundler flag
+  ([`buildEnvHead`](../../src/shared/cardEnv.ts)).
 - **Assumed libs** the card env provides (cards are authored expecting these to be global):
   - From `cardEnv` (CDN, both transports): **FontAwesome**, **jQuery-UI (+touch-punch)**, **Tailwind** (v3),
     **Motion** (motion.dev, global `window.Motion` — `Motion.animate`/`scroll`/`inView`/…; UMD build via
