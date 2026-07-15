@@ -446,6 +446,9 @@ export const destroy = (id: string): void => {
   const slot = slots.get(id)
   if (!slot) return
   slots.delete(id)
+  // Drop this id's freeze-frame still + throttle stamp — message-WCV ids are monotonically unique, so
+  // without this the captured screenshot for every destroyed surface leaks for the process lifetime.
+  freezeController.dropTarget(id)
   try {
     mainWindow?.contentView.removeChildView(slot.view)
     if (!slot.view.webContents.isDestroyed()) slot.view.webContents.close()
@@ -457,6 +460,8 @@ export const destroy = (id: string): void => {
 
 export const destroyAll = (): void => {
   for (const id of [...slots.keys()]) destroy(id)
+  // Belt-and-suspenders: empty the freeze cache + cancel any pending refresh on full teardown.
+  freezeController.clear()
 }
 
 /** Resolve a view's slot context from its webContents id (for the host-bridge IPC). */

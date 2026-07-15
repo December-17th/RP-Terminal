@@ -71,6 +71,14 @@ export interface FreezeController {
    * menu-open reflects it. Throttled per target; no-op while suppressed.
    */
   warmVisible: () => void
+  /**
+   * A target was destroyed — drop its cached still + throttle stamp so a monotonically-unique
+   * (per-message) slot id can't retain a screenshot for the life of the process. Also invalidates
+   * any in-flight warm capture for that id so a capture that lands after the drop can't re-add it.
+   */
+  dropTarget: (id: string) => void
+  /** Drop every cached still + throttle stamp and cancel the pending refresh (manager shutdown). */
+  clear: () => void
 }
 
 /** Minimum interval between captures of the same target — keeps `capturePage` frequency low. */
@@ -102,6 +110,11 @@ export function createFreezeController(effects: FreezeEffects): FreezeController
       .capture()
       .then((url) => {
         if (token !== episode || suppressed) return
+        // Per-target staleness: dropTarget/clear delete this id's throttle stamp, and a newer warm
+        // overwrites it — either way our `now` no longer matches, so discard this stale frame rather
+        // than re-populate the maps for a target the manager may have destroyed. (The episode token
+        // only bumps on suppress/restore, so it can't catch a plain destroy.)
+        if (lastCaptureAt.get(target.id) !== now) return
         if (url) cache.set(target.id, url)
       })
       .catch(() => {})
@@ -152,12 +165,32 @@ export function createFreezeController(effects: FreezeEffects): FreezeController
     if (suppressed) target.setVisible(false)
   }
 
+  const dropTarget = (id: string): void => {
+    // Delete both maps; the throttle-stamp deletion also invalidates any in-flight warm for this id
+    // (its `lastCaptureAt.get(id) !== now` guard now fails), so a late capture can't re-add the still.
+    cache.delete(id)
+    lastCaptureAt.delete(id)
+  }
+
+  const clear = (): void => {
+    // Emptying lastCaptureAt invalidates every in-flight warm (their stamps no longer match), so no
+    // resolved capture can re-populate the cache after a shutdown.
+    cache.clear()
+    lastCaptureAt.clear()
+    if (refreshTimer) {
+      clearTimeout(refreshTimer)
+      refreshTimer = null
+    }
+  }
+
   return {
     suppress,
     restore,
     isSuppressed: () => suppressed,
     onTargetCreated,
     warmTarget: warm,
-    warmVisible
+    warmVisible,
+    dropTarget,
+    clear
   }
 }
