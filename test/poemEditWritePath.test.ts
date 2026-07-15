@@ -48,6 +48,7 @@ vi.mock('../src/main/services/varsOpsService', () => ({
 
 import { createThRuntime } from '../src/shared/thRuntime'
 import type { Host } from '../src/shared/thRuntime/types'
+import { createNullHost } from '../src/shared/thRuntime/nullHost'
 import {
   applyVariableOps as mainApplyVariableOps,
   reevaluateVariables,
@@ -58,61 +59,16 @@ const clone = <T>(v: T): T => JSON.parse(JSON.stringify(v))
 const latest = (): any => floors[floors.length - 1]
 
 // A Host whose stat cache reads floor 0 and whose applyVariableOps drives the REAL main path.
+// Everything else is an inert null-host neutral — only statData + the applyVariableOps seam matter here.
 function surfaceHost(): Host {
   return {
-    ctx: { profileId: 'p', chatId: 'c', characterId: 'ch' },
+    ...createNullHost({ profileId: 'p', chatId: 'c', characterId: 'ch' }),
     statData: () => clone(latest().variables.stat_data || {}),
     floors: () => floors,
-    charData: () => ({ name: '命定' }),
-    charAvatarPath: () => null,
-    preset: () => null,
-    presetNames: () => [],
-    worldbookNames: () => ({ primary: null, additional: [] }),
-    regexes: () => [],
-    regexesFull: () => [],
-    isCharacterRegexesEnabled: () => false,
-    formatRegex: (t) => t,
-    personaName: () => '你',
-    currentChatId: () => 'c',
-    getScriptVars: () => ({}),
-    getChatVars: () => ({}),
-    setButtons: () => {},
     // THE SEAM under test: forward runtime write ops to the real main applier (journal + guard + persist).
     applyVariableOps: async (ops) => {
       mainApplyVariableOps('p', 'c', latest().floor, ops as any)
-    },
-    setVariables: async () => {},
-    generate: async () => ({ content: '' }),
-    generateRaw: async () => '',
-    getWorldbook: async () => ({ entries: [] }),
-    saveWorldbook: async () => {},
-    replaceRegexes: async () => {},
-    setScriptVars: async () => {},
-    setChatVars: async () => {},
-    listWorldbooks: () => [],
-    chatWorldbookIds: () => [],
-    createWorldbook: async () => 'id',
-    deleteWorldbook: async () => true,
-    getWorldbookById: async () => ({ entries: [] }),
-    saveWorldbookById: async () => {},
-    bindWorldbook: async () => {},
-    setChatMessages: async () => true,
-    deleteChatMessages: async () => true,
-    createChat: async () => 'id',
-    saveChat: async () => true,
-    reloadChat: async () => true,
-    setInput: () => {},
-    getGlobalVars: async () => ({}),
-    setGlobalVar: async () => {},
-    assetUrl: async () => null,
-    getDuelPreview: async () => null,
-    requestOverlay: async () => true,
-    closeOverlay: async () => {},
-    onVarsChanged: () => () => {},
-    onHostEvent: () => () => {},
-    evalTemplate: (t) => t,
-    evalTemplateError: () => null,
-    prepareContext: (d) => d
+    }
   }
 }
 

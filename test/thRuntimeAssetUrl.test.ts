@@ -1,18 +1,12 @@
 import { describe, it, expect, vi } from 'vitest'
 import { createThRuntime } from '../src/shared/thRuntime'
+import { createNullHost } from '../src/shared/thRuntime/nullHost'
 
-// Minimal Host — stub only what createThRuntime touches at construction + assetUrl.
-// (Mirror the fake-Host shape used in test/thRuntime.test.ts; add any other method the
-//  constructor calls so it doesn't throw.)
+// Spread the inert null host and override ONLY the asset members this file exercises; the
+// construction stubs (statData/floors/charData/…) come from createNullHost's neutrals.
 function fakeHost(over = {}) {
   return {
-    statData: () => ({}),
-    onVarsChanged: () => () => {},
-    onHostEvent: () => () => {},
-    floors: () => [],
-    charData: () => null,
-    personaName: () => 'User',
-    listWorldbooks: () => [],
+    ...createNullHost(),
     assetUrl: vi.fn(async () => 'rptasset://p/w/character/x.png'),
     assetList: vi.fn(async () => [
       { variant: null, url: 'rptasset://p/w/character/薇拉_相册.png' },
