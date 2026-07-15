@@ -1,5 +1,5 @@
 appId: com.december17th.rpterminal
-productName: rp-terminal
+productName: RP Terminal
 directories:
   buildResources: build
 files:
@@ -12,7 +12,8 @@ files:
 asarUnpack:
   - resources/**
 win:
-  executableName: rp-terminal
+  executableName: RP Terminal
+  icon: build/rp-terminal.ico
 nsis:
   artifactName: ${name}-${version}-setup.${ext}
   shortcutName: ${productName}

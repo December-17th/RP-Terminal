@@ -142,9 +142,7 @@ export const RPTerminalExtSchema = z
 
     /** A card UI panel (renderMode:'panel', matched by its scriptName) the app auto-docks on the
      *  workspace's left when this card is active. */
-    left_panel: z
-      .object({ name: z.string() })
-      .optional(),
+    left_panel: z.object({ name: z.string() }).optional(),
 
     /** Static, card-determined panel layout (the WCV plan): a grid of slots, each hosting a native
      *  view (by id, e.g. "chat"/"status") or an out-of-process card-UI WebContentsView ("wcv" + an
@@ -199,6 +197,13 @@ export const RPTerminalExtSchema = z
     regex: z.array(z.any()).optional(),
     presets: z.array(z.any()).optional(),
     lorebooks: z.array(z.any()).optional(),
+    /** Bundled generation/memory workflow docs (node-graphs). Loose element shape — imported +
+     *  validated against the builtin node registry on install; the first successfully-imported one
+     *  becomes this world's default workflow. */
+    workflows: z.array(z.any()).optional(),
+    /** Bundled memory-table templates (chatSheets v2, or our native TableTemplate). Dropped into the
+     *  profile's template library on install (never auto-assigned — assignment is destructive). */
+    table_templates: z.array(z.any()).optional(),
     plugins: z.array(z.any()).optional(),
     agent: z.record(z.string(), z.any()).optional(),
     combat: CombatBundleSchema.optional(),

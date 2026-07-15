@@ -243,7 +243,10 @@ export const setChatTableTemplateId = (
     // NEW template using the stale `completedUntil`, skipping floors whose ops we just cleared. Drop the
     // progress row inline (chatService must NOT import tableRefillService — refill imports chatService,
     // so calling its resetProgress would create a cycle) and remove the shadow via tableDbService.
-    getDb().prepare('DELETE FROM table_refill_progress WHERE chat_id = ?').run(chatId)
+    sessionDbService
+      .getSessionDbByChat(chatId)
+      ?.prepare('DELETE FROM table_refill_progress WHERE chat_id = ?')
+      .run(chatId)
     tableDbService.removeShadow(profileId, chatId)
     if (template) tableDbService.instantiate(profileId, chatId, template)
     else tableDbService.removeSandbox(profileId, chatId)

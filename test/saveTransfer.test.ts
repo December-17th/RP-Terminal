@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import fs from 'fs'
 import os from 'os'
 import path from 'path'
+import AdmZip from 'adm-zip'
 
 /**
  * Round-trip test for save export/import (plan §B6 / Feature 2). Real node:sqlite for the central DB
@@ -89,6 +90,30 @@ const exportToFile = (): string => {
   return file
 }
 
+const exportedArchive = (): AdmZip => {
+  const built = buildSaveZip(P, C)
+  if ('error' in built) throw new Error(`export failed: ${built.error}`)
+  return new AdmZip(built.buffer)
+}
+
+const writeArchive = (
+  name: string,
+  manifest: Record<string, unknown>,
+  session: Buffer | null,
+  sidecar?: Buffer
+): string => {
+  const zip = new AdmZip()
+  zip.addFile('manifest.json', Buffer.from(JSON.stringify(manifest), 'utf-8'))
+  if (session) zip.addFile('session.sqlite', session)
+  if (sidecar) zip.addFile('central-sidecar.json', sidecar)
+  const file = path.join(tmp, name)
+  fs.writeFileSync(file, zip.toBuffer())
+  return file
+}
+
+const chatCount = (): number =>
+  (getDb().prepare('SELECT COUNT(*) AS n FROM chats').get() as { n: number }).n
+
 describe('save export/import round-trip', () => {
   it('imports a save into a NEW chat bound to the installed world, floors intact + remapped', () => {
     const file = exportToFile()
@@ -130,5 +155,59 @@ describe('save export/import round-trip', () => {
     fs.writeFileSync(bogus, 'not a zip')
     const res = importSave(P, bogus)
     expect('error' in res && res.error).toBe('save.badArchive')
+  })
+
+  it('rejects a manifest-only archive without creating an index row', () => {
+    const source = exportedArchive()
+    const manifest = JSON.parse(source.readAsText('manifest.json')) as Record<string, unknown>
+    const before = chatCount()
+    const res = importSave(P, writeArchive('manifest-only.rpsave', manifest, null))
+    expect('error' in res && res.error).toBe('save.badArchive')
+    expect(chatCount()).toBe(before)
+  })
+
+  it('rejects unsupported save formats without creating an index row', () => {
+    const source = exportedArchive()
+    const manifest = JSON.parse(source.readAsText('manifest.json')) as Record<string, unknown>
+    manifest.saveFormat = 999
+    const before = chatCount()
+    const res = importSave(
+      P,
+      writeArchive(
+        'future.rpsave',
+        manifest,
+        source.getEntry('session.sqlite')!.getData(),
+        source.getEntry('central-sidecar.json')!.getData()
+      )
+    )
+    expect('error' in res && res.error).toBe('save.badArchive')
+    expect(chatCount()).toBe(before)
+  })
+
+  it('rolls back a corrupt session database without publishing a folder or row', () => {
+    const source = exportedArchive()
+    const manifest = JSON.parse(source.readAsText('manifest.json')) as Record<string, unknown>
+    const before = chatCount()
+    const chatsDir = path.join(tmp, 'profiles', P, 'chats')
+    const foldersBefore = fs.readdirSync(chatsDir).sort()
+    const res = importSave(
+      P,
+      writeArchive('corrupt.rpsave', manifest, Buffer.from('not sqlite'), undefined)
+    )
+    expect('error' in res && res.error).toBe('save.badArchive')
+    expect(chatCount()).toBe(before)
+    expect(fs.readdirSync(chatsDir).sort()).toEqual(foldersBefore)
+  })
+
+  it('invalidates cached world info because it is derived from the local world state', () => {
+    getDb()
+      .prepare('UPDATE chats SET cached_world_info = ? WHERE id = ?')
+      .run('{"mode":"explore","entries":["stale"]}', C)
+    const res = importSave(P, exportToFile())
+    if ('error' in res) throw new Error(`import failed: ${res.error}`)
+    const row = getDb()
+      .prepare('SELECT cached_world_info FROM chats WHERE id = ?')
+      .get(res.chatId) as { cached_world_info: string | null }
+    expect(row.cached_world_info).toBeNull()
   })
 })

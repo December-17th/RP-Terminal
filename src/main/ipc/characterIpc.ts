@@ -1,6 +1,8 @@
 import { IpcMain, BrowserWindow, dialog } from 'electron'
 import fs from 'fs'
 import * as characterService from '../services/characterService'
+import * as settingsService from '../services/settingsService'
+import { CharacterImportText, getCharacterImportText } from './characterImportText'
 import { gate } from './ipcGuards'
 
 /** Optionally prompt for a World Card's asset zip (character/ + location/ images). Only offered for World
@@ -8,22 +10,22 @@ import { gate } from './ipcGuards'
  *  Shared by the fresh-import and update-in-place paths (Feature 1). */
 const maybePickAssets = async (
   win: BrowserWindow,
-  isWorldCard: boolean
+  isWorldCard: boolean,
+  text: CharacterImportText
 ): Promise<string | undefined> => {
   if (!isWorldCard) return undefined
   const addAssets = await dialog.showMessageBox(win, {
     type: 'question',
-    buttons: ['Choose zip…', 'Skip'],
+    buttons: [text.chooseZip, text.skip],
     defaultId: 1,
     cancelId: 1,
-    message: 'Import assets?',
-    detail:
-      'Optionally pick a .zip of images (character/ and location/ folders) to import with this world.'
+    message: text.importAssets,
+    detail: text.importAssetsDetail
   })
   if (addAssets.response !== 0) return undefined
   const pick = await dialog.showOpenDialog(win, {
     properties: ['openFile'],
-    filters: [{ name: 'Asset Zip', extensions: ['zip'] }]
+    filters: [{ name: text.assetZip, extensions: ['zip'] }]
   })
   return !pick.canceled && pick.filePaths[0] ? pick.filePaths[0] : undefined
 }
@@ -49,9 +51,10 @@ export const registerCharacterIpc = (ipcMain: IpcMain): void => {
     'import-character-dialog',
     gate('import-character-dialog', async (event, profileId) => {
       const win = BrowserWindow.fromWebContents(event.sender)!
+      const text = getCharacterImportText(settingsService.getSettings(profileId).ui.locale)
       const result = await dialog.showOpenDialog(win, {
         properties: ['openFile'],
-        filters: [{ name: 'World Cards', extensions: ['png', 'json'] }]
+        filters: [{ name: text.worldCards, extensions: ['png', 'json'] }]
       })
       if (result.canceled || result.filePaths.length === 0) return null
       const filePath = result.filePaths[0]
@@ -59,40 +62,33 @@ export const registerCharacterIpc = (ipcMain: IpcMain): void => {
       const parsed = characterService.parseCardFile(filePath)
       if (!parsed) return null
       const summary = characterService.summarizeCardBundle(parsed)
+      let replaceTargetId: string | null = null
 
       // Feature 1 — a world with this card's identity (name+creator) is already installed: offer the
       // 3-way choice before touching anything. Default is the SAFE, non-destructive "Import as new".
       const matches = characterService.findMatchingCharacter(profileId, parsed.card)
       if (matches.length > 0) {
         const target = matches[0] // most recent
-        const inCreator = parsed.card.data.creator ? ` by ${parsed.card.data.creator}` : ''
-        const inVer = parsed.card.data.character_version
-          ? ` (v${parsed.card.data.character_version})`
-          : ''
-        const exCreator = target.creator ? ` by ${target.creator}` : ''
-        const exVer = target.version ? ` (v${target.version})` : ''
-        const dupNote =
-          matches.length > 1
-            ? `\n\n${matches.length} copies are already installed — Update/Replace act on the most recent.`
-            : ''
         const { response } = await dialog.showMessageBox(win, {
           type: 'question',
-          buttons: ['Update & keep saves', 'Import as new', 'Replace (delete saves)', 'Cancel'],
+          buttons: text.duplicateButtons,
           defaultId: 1,
           cancelId: 3,
-          message: `"${summary.name}" is already installed`,
-          detail:
-            `Installed: ${target.name}${exCreator}${exVer}\n` +
-            `Importing: ${summary.name}${inCreator}${inVer}\n\n` +
-            `• Update & keep saves — refresh this world's card, scripts and lore; keep all sessions.\n` +
-            `• Import as new — install a separate copy.\n` +
-            `• Replace — DELETE the installed world and its saved sessions, then import fresh.` +
-            dupNote
+          message: text.duplicateMessage(summary.name),
+          detail: text.duplicateDetail({
+            installedName: target.name,
+            installedCreator: target.creator,
+            installedVersion: target.version,
+            incomingName: summary.name,
+            incomingCreator: parsed.card.data.creator ?? '',
+            incomingVersion: parsed.card.data.character_version ?? '',
+            matchCount: matches.length
+          })
         })
         if (response === 3) return null // Cancel
         if (response === 0) {
           // Update in place (keeps saves). Still offer the optional asset zip for World Cards.
-          const assetZipPath = await maybePickAssets(win, summary.isWorldCard)
+          const assetZipPath = await maybePickAssets(win, summary.isWorldCard, text)
           return characterService.updateCharacterInPlace(
             profileId,
             target.id,
@@ -101,8 +97,8 @@ export const registerCharacterIpc = (ipcMain: IpcMain): void => {
           )
         }
         if (response === 2) {
-          // Replace: delete the existing world (+ its saves) then fall through to a fresh import.
-          characterService.deleteCharacter(profileId, target.id)
+          // Defer deletion until the replacement has been fully imported and validated.
+          replaceTargetId = target.id
         }
         // response === 1 (Import as new) or 2 (after delete) → continue to the fresh-import path below.
       }
@@ -111,29 +107,36 @@ export const registerCharacterIpc = (ipcMain: IpcMain): void => {
       // listing exactly what installs before committing anything.
       if (characterService.hasBundle(summary)) {
         const items = [
-          summary.loreEntries && `${summary.loreEntries} lore entries`,
-          summary.lorebooks && `${summary.lorebooks} extra lorebooks`,
-          summary.regexScripts && `${summary.regexScripts} regex scripts`,
-          summary.presets && `${summary.presets} presets`,
-          summary.scripts && `${summary.scripts} card scripts`,
-          summary.uiWidgets && `${summary.uiWidgets} UI widgets`,
-          summary.pluginsSkipped &&
-            `${summary.pluginsSkipped} plugins (skipped — not yet supported)`
+          summary.loreEntries && text.bundleItem(summary.loreEntries, 'loreEntries'),
+          summary.lorebooks && text.bundleItem(summary.lorebooks, 'lorebooks'),
+          summary.regexScripts && text.bundleItem(summary.regexScripts, 'regexScripts'),
+          summary.presets && text.bundleItem(summary.presets, 'presets'),
+          summary.scripts && text.bundleItem(summary.scripts, 'scripts'),
+          summary.uiWidgets && text.bundleItem(summary.uiWidgets, 'uiWidgets'),
+          summary.workflows && text.bundleItem(summary.workflows, 'workflows'),
+          summary.tableTemplates && text.bundleItem(summary.tableTemplates, 'tableTemplates'),
+          summary.pluginsSkipped && text.bundleItem(summary.pluginsSkipped, 'pluginsSkipped')
         ].filter(Boolean)
         const { response } = await dialog.showMessageBox(win, {
           type: 'question',
-          buttons: ['Install', 'Cancel'],
+          buttons: [text.install, text.cancel],
           defaultId: 0,
           cancelId: 1,
-          message: `Import "${summary.name}"`,
+          message: text.importMessage(summary.name),
           detail:
-            (summary.isWorldCard ? 'This World Card bundles:\n' : 'This card bundles:\n') +
-            items.map((i) => `  • ${i}`).join('\n')
+            text.bundleIntro(summary.isWorldCard) + items.map((item) => `  • ${item}`).join('\n')
         })
         if (response !== 0) return null
       }
-      const assetZipPath = await maybePickAssets(win, summary.isWorldCard)
-      return characterService.importCharacterFromFile(profileId, filePath, assetZipPath)
+      const assetZipPath = await maybePickAssets(win, summary.isWorldCard, text)
+      return replaceTargetId
+        ? characterService.replaceCharacterFromFile(
+            profileId,
+            replaceTargetId,
+            filePath,
+            assetZipPath
+          )
+        : characterService.importCharacterFromFile(profileId, filePath, assetZipPath)
     })
   )
 

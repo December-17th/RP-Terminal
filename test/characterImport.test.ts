@@ -7,6 +7,8 @@ import {
   collectBundledPresets,
   collectBundledLorebooks,
   collectBundledScripts,
+  collectBundledWorkflows,
+  collectBundledTableTemplates,
   summarizeCardBundle,
   hasBundle,
   parseCardFile,
@@ -106,6 +108,21 @@ describe('collectBundledScripts', () => {
   })
 })
 
+describe('collectBundledWorkflows / collectBundledTableTemplates', () => {
+  it('reads workflows[] and table_templates[] from rp_terminal, filtering non-objects', () => {
+    const c = card({
+      rp_terminal: {
+        workflows: [{ id: 'w', name: 'W', nodes: [], edges: [] }, null, 'nope'],
+        table_templates: [{ mate: { type: 'chatSheets', version: 2 } }, 3, null]
+      }
+    })
+    expect(collectBundledWorkflows(c)).toHaveLength(1)
+    expect(collectBundledTableTemplates(c)).toHaveLength(1)
+    expect(collectBundledWorkflows(card({}))).toEqual([])
+    expect(collectBundledTableTemplates(card({}))).toEqual([])
+  })
+})
+
 describe('summarizeCardBundle + hasBundle', () => {
   it('counts regex, presets, lorebooks, scripts, ui widgets and flags a World Card', () => {
     const parsed = {
@@ -145,9 +162,31 @@ describe('summarizeCardBundle + hasBundle', () => {
       scripts: 0,
       uiWidgets: 0,
       presets: 0,
-      lorebooks: 0
+      lorebooks: 0,
+      workflows: 0,
+      tableTemplates: 0
     })
     expect(hasBundle(s)).toBe(false)
+  })
+
+  it('counts bundled workflows + table templates, and each alone warrants the confirm', () => {
+    const withWf = summarizeCardBundle({
+      card: card({ rp_terminal: { workflows: [{ id: 'w', name: 'W', nodes: [], edges: [] }] } }),
+      lorebook: null
+    } as any)
+    expect(withWf.workflows).toBe(1)
+    expect(withWf.tableTemplates).toBe(0)
+    expect(hasBundle(withWf)).toBe(true)
+
+    const withTt = summarizeCardBundle({
+      card: card({
+        rp_terminal: { table_templates: [{ mate: { type: 'chatSheets', version: 2 } }] }
+      }),
+      lorebook: null
+    } as any)
+    expect(withTt.tableTemplates).toBe(1)
+    expect(withTt.workflows).toBe(0)
+    expect(hasBundle(withTt)).toBe(true)
   })
 })
 

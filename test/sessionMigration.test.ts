@@ -132,4 +132,47 @@ describe('migrateSessionsIfNeeded', () => {
     migrateSessionsIfNeeded()
     expect(fs.existsSync(path.join(tmp, 'rpterminal.db.pre-decentralize.bak'))).toBe(true)
   })
+
+  it('blocks migration before touching sessions when the central backup fails', () => {
+    const copyFileSync = fs.copyFileSync.bind(fs)
+    const copySpy = vi.spyOn(fs, 'copyFileSync').mockImplementation((source, destination, mode) => {
+      if (String(destination).endsWith('rpterminal.db.pre-decentralize.bak')) {
+        throw new Error('backup denied')
+      }
+      return copyFileSync(source, destination, mode)
+    })
+
+    expect(() => migrateSessionsIfNeeded()).toThrow('backup denied')
+    copySpy.mockRestore()
+
+    const row = getDb().prepare('SELECT session_migrated FROM chats WHERE id = ?').get(C) as {
+      session_migrated: number
+    }
+    expect(row.session_migrated).toBe(0)
+    expect(fs.existsSync(sessionDir())).toBe(false)
+  })
+
+  it('blocks startup after a per-chat failure and succeeds cleanly on retry', () => {
+    const copyFileSync = fs.copyFileSync.bind(fs)
+    const copySpy = vi.spyOn(fs, 'copyFileSync').mockImplementation((source, destination, mode) => {
+      if (String(destination).endsWith(path.join('chats', C, 'notes.md'))) {
+        throw new Error('notes copy denied')
+      }
+      return copyFileSync(source, destination, mode)
+    })
+
+    expect(() => migrateSessionsIfNeeded()).toThrow('startup is blocked until retry')
+    copySpy.mockRestore()
+    const beforeRetry = getDb()
+      .prepare('SELECT session_migrated FROM chats WHERE id = ?')
+      .get(C) as { session_migrated: number }
+    expect(beforeRetry.session_migrated).toBe(0)
+
+    migrateSessionsIfNeeded()
+    const afterRetry = getDb()
+      .prepare('SELECT session_migrated FROM chats WHERE id = ?')
+      .get(C) as { session_migrated: number }
+    expect(afterRetry.session_migrated).toBe(1)
+    expect(fs.readFileSync(path.join(sessionDir(), 'notes.md'), 'utf-8')).toBe('## note\nbody')
+  })
 })

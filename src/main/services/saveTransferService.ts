@@ -3,31 +3,28 @@ import path from 'path'
 import { randomUUID } from 'crypto'
 import Database from 'better-sqlite3'
 import AdmZip from 'adm-zip'
+import { z } from 'zod'
 import { getDb } from './db'
-import { getSessionDbByChat, sessionDir } from './sessionDbService'
+import * as sessionDbService from './sessionDbService'
 import { sandboxDbPath } from './tableDbService'
 import { isTableWriteBusy } from './tableOpsService'
 import { getCharacter, findMatchingByIdentity } from './characterService'
-import { getTableTemplateById, saveTableTemplate } from './tableTemplateService'
+import {
+  deleteTableTemplate,
+  getTableTemplateById,
+  saveTableTemplate
+} from './tableTemplateService'
 import { refreshChatSummary } from './floorService'
 import { TableTemplate, TableTemplateSchema } from '../types/tableTemplate'
 import { log } from './logService'
 
-/**
- * Export / import a single SAVE (one chat/session) as a portable `.rpsave` zip (plan §B6 / Feature 2).
- *
- * A save is the chat's per-session STORE folder — session.sqlite (floors/ops/combat/node_state/…) +
- * table.sqlite (memory data) + notes.md + session-vars.json — PLUS a synthesized `manifest.json` and a
- * `central-sidecar.json` carrying the chat-keyed rows that stay in the central DB (§B0 exceptions:
- * agent-pack per-chat activation/overrides/trigger + the chats-row carry columns + the assigned table
- * template). Run-history is intentionally omitted (review C9). Saves REFERENCE their world: import
- * requires a world with the same name+creator installed, and errors otherwise.
- */
-
+/** Portable save archive format. A save references an installed world by name + creator. */
 const SAVE_FORMAT = 1
+const MAX_ENTRY_BYTES = 128 * 1024 * 1024
+const MAX_ARCHIVE_BYTES = 256 * 1024 * 1024
+const PAYLOAD_FILES = ['session.sqlite', 'table.sqlite', 'notes.md', 'session-vars.json'] as const
+const ALLOWED_FILES = new Set([...PAYLOAD_FILES, 'manifest.json', 'central-sidecar.json'])
 
-// The session tables whose `chat_id` is rewritten on import (one chat per session.sqlite, so an
-// unconditional UPDATE per table remaps every row — plan §B6). Fixed allowlist → safe to interpolate.
 const SESSION_TABLES = [
   'floors',
   'combat_encounters',
@@ -68,25 +65,66 @@ interface CentralSidecar {
   triggerState: Array<Record<string, unknown>>
 }
 
+const ManifestSchema = z.object({
+  saveFormat: z.literal(SAVE_FORMAT),
+  worldRef: z.object({
+    characterId: z.string(),
+    name: z.string(),
+    creator: z.string(),
+    version: z.string()
+  }),
+  createdAt: z.string().min(1)
+})
+
+const nullableString = z.string().nullable().default(null)
+const recordArray = z.array(z.record(z.string(), z.unknown())).default([])
+const SidecarSchema = z.object({
+  chat: z
+    .object({
+      mode: nullableString,
+      lorebook_ids: nullableString,
+      workflow_id: nullableString,
+      cached_world_info: nullableString,
+      table_template_id: nullableString
+    })
+    .default({
+      mode: null,
+      lorebook_ids: null,
+      workflow_id: null,
+      cached_world_info: null,
+      table_template_id: null
+    }),
+  tableTemplate: z.unknown().nullable().default(null),
+  activation: recordArray,
+  overrides: recordArray,
+  triggerState: recordArray
+})
+
+const EMPTY_CARRY: ChatCarry = {
+  mode: null,
+  lorebook_ids: null,
+  workflow_id: null,
+  cached_world_info: null,
+  table_template_id: null
+}
+
 export type ExportResult = { name: string; buffer: Buffer } | { error: string }
 export type ImportResult = { chatId: string } | { error: string; worldName?: string }
 
-/** Checkpoint a sqlite file's WAL so a plain file copy is a consistent snapshot (publishShadow idiom). */
 const checkpointFile = (file: string): void => {
   if (!fs.existsSync(file)) return
   try {
-    const d = new Database(file)
+    const db = new Database(file)
     try {
-      d.pragma('wal_checkpoint(TRUNCATE)')
+      db.pragma('wal_checkpoint(TRUNCATE)')
     } finally {
-      d.close()
+      db.close()
     }
-  } catch (e) {
-    log('info', `Could not checkpoint ${file} before export:`, e)
+  } catch (error) {
+    log('info', `Could not checkpoint ${file} before export:`, error)
   }
 }
 
-/** Build a `.rpsave` zip buffer for one chat, or an error code. Reuses the export-dialog IPC pattern. */
 export const buildSaveZip = (profileId: string, chatId: string): ExportResult => {
   const central = getDb()
   const chat = central
@@ -96,7 +134,6 @@ export const buildSaveZip = (profileId: string, chatId: string): ExportResult =>
     )
     .get(chatId, profileId) as ({ character_id: string } & ChatCarry) | undefined
   if (!chat) return { error: 'save.notFound' }
-  // A torn/stale archive results if the memory op-log is mid-write — refuse (review C4).
   if (isTableWriteBusy(chatId)) return { error: 'save.memoryBusy' }
 
   const card = getCharacter(profileId, chat.character_id)
@@ -107,9 +144,8 @@ export const buildSaveZip = (profileId: string, chatId: string): ExportResult =>
     version: card?.data.character_version ?? ''
   }
 
-  // Consistent snapshots: checkpoint the live session WAL (via the cached handle) + the sandbox file.
-  getSessionDbByChat(chatId)?.pragma('wal_checkpoint(TRUNCATE)')
-  const dir = sessionDir(profileId, chatId)
+  sessionDbService.getSessionDbByChat(chatId)?.pragma('wal_checkpoint(TRUNCATE)')
+  const dir = sessionDbService.sessionDir(profileId, chatId)
   checkpointFile(sandboxDbPath(profileId, chatId))
 
   const manifest: SaveManifest = {
@@ -144,9 +180,9 @@ export const buildSaveZip = (profileId: string, chatId: string): ExportResult =>
   }
 
   const zip = new AdmZip()
-  for (const f of ['session.sqlite', 'table.sqlite', 'notes.md', 'session-vars.json']) {
-    const p = path.join(dir, f)
-    if (fs.existsSync(p)) zip.addLocalFile(p)
+  for (const file of PAYLOAD_FILES) {
+    const source = path.join(dir, file)
+    if (fs.existsSync(source)) zip.addLocalFile(source)
   }
   zip.addFile('manifest.json', Buffer.from(JSON.stringify(manifest, null, 2), 'utf-8'))
   zip.addFile('central-sidecar.json', Buffer.from(JSON.stringify(sidecar, null, 2), 'utf-8'))
@@ -155,124 +191,219 @@ export const buildSaveZip = (profileId: string, chatId: string): ExportResult =>
   return { name, buffer: zip.toBuffer() }
 }
 
-/** Import a `.rpsave` into a NEW chat bound to the (already-installed) referenced world. */
-export const importSave = (profileId: string, zipPath: string): ImportResult => {
-  let manifest: SaveManifest
-  let sidecar: CentralSidecar | null = null
-  let zip: AdmZip
+interface ParsedArchive {
+  zip: AdmZip
+  manifest: SaveManifest
+  sidecar: CentralSidecar | null
+}
+
+const parseArchive = (zipPath: string): ParsedArchive | null => {
   try {
-    zip = new AdmZip(zipPath)
-    if (!zip.getEntry('manifest.json')) return { error: 'save.badArchive' }
-    manifest = JSON.parse(zip.readAsText('manifest.json')) as SaveManifest
-    if (zip.getEntry('central-sidecar.json')) {
-      sidecar = JSON.parse(zip.readAsText('central-sidecar.json')) as CentralSidecar
+    const zip = new AdmZip(zipPath)
+    const seen = new Set<string>()
+    let declaredBytes = 0
+    for (const entry of zip.getEntries()) {
+      const name = entry.entryName
+      if (entry.isDirectory || !ALLOWED_FILES.has(name) || seen.has(name)) return null
+      seen.add(name)
+      const size = Number(entry.header.size)
+      if (!Number.isSafeInteger(size) || size < 0 || size > MAX_ENTRY_BYTES) return null
+      declaredBytes += size
+      if (declaredBytes > MAX_ARCHIVE_BYTES) return null
     }
-  } catch (e) {
-    log('error', 'Save import: unreadable archive', e)
-    return { error: 'save.badArchive' }
-  }
-  if (!manifest?.worldRef?.name && manifest?.worldRef?.name !== '')
-    return { error: 'save.badArchive' }
+    if (!seen.has('manifest.json') || !seen.has('session.sqlite')) return null
 
-  // Resolve the referenced world (must be installed — a save REFERENCES its world, §B / Feature 2).
-  const matches = findMatchingByIdentity(
-    profileId,
-    manifest.worldRef.name,
-    manifest.worldRef.creator
-  )
-  if (!matches.length)
-    return { error: 'save.worldMissing', worldName: manifest.worldRef.name || '?' }
-  const worldId = matches[0].id
+    const manifestResult = ManifestSchema.safeParse(JSON.parse(zip.readAsText('manifest.json')))
+    if (!manifestResult.success) return null
 
-  const central = getDb()
-  const newId = randomUUID()
-  const now = new Date().toISOString()
-  const carry: ChatCarry = sidecar?.chat ?? {
-    mode: null,
-    lorebook_ids: null,
-    workflow_id: null,
-    cached_world_info: null,
-    table_template_id: null
-  }
-
-  // Install the save's table template if this profile doesn't already have that id (review C4), so the
-  // imported chat's table memory resolves. A malformed embedded template is skipped (memory just off).
-  let templateId = carry.table_template_id
-  if (templateId && sidecar?.tableTemplate && !getTableTemplateById(profileId, templateId)) {
-    const parsed = TableTemplateSchema.safeParse(sidecar.tableTemplate)
-    if (parsed.success) saveTableTemplate(profileId, parsed.data, templateId)
-    else templateId = null
-  }
-
-  // Index row FIRST (so the session-DB resolver can find the new chat), carrying the source columns.
-  central
-    .prepare(
-      `INSERT INTO chats (id, profile_id, character_id, created_at, updated_at, mode, lorebook_ids,
-         workflow_id, cached_world_info, table_template_id, session_migrated)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)`
-    )
-    .run(
-      newId,
-      profileId,
-      worldId,
-      now,
-      now,
-      carry.mode ?? null,
-      carry.lorebook_ids ?? null,
-      carry.workflow_id ?? null,
-      carry.cached_world_info ?? null,
-      templateId ?? null
-    )
-
-  // Extract the store files into the new session folder, then drop the metadata files.
-  const dir = sessionDir(profileId, newId)
-  fs.mkdirSync(dir, { recursive: true })
-  zip.extractAllTo(dir, true)
-  for (const meta of ['manifest.json', 'central-sidecar.json']) {
-    const p = path.join(dir, meta)
-    if (fs.existsSync(p)) fs.rmSync(p, { force: true })
-  }
-
-  // Remap every session-table row's chat_id to the new id (one chat per session.sqlite — §B6).
-  const sdb = getSessionDbByChat(newId)
-  if (sdb) {
-    for (const t of SESSION_TABLES) {
-      try {
-        sdb.prepare(`UPDATE ${t} SET chat_id = ?`).run(newId)
-      } catch (e) {
-        log('info', `Save import: could not remap chat_id for ${t}:`, e)
+    let sidecar: CentralSidecar | null = null
+    if (seen.has('central-sidecar.json')) {
+      const raw = SidecarSchema.safeParse(JSON.parse(zip.readAsText('central-sidecar.json')))
+      if (!raw.success) return null
+      const template = TableTemplateSchema.safeParse(raw.data.tableTemplate)
+      sidecar = {
+        chat: raw.data.chat,
+        tableTemplate: template.success ? template.data : null,
+        activation: raw.data.activation,
+        overrides: raw.data.overrides,
+        triggerState: raw.data.triggerState
       }
     }
+    return { zip, manifest: manifestResult.data, sidecar }
+  } catch (error) {
+    log('error', 'Save import: unreadable archive', error)
+    return null
+  }
+}
+
+const writePayloadToStaging = (archive: ParsedArchive, stagingDir: string): void => {
+  fs.mkdirSync(stagingDir, { recursive: true })
+  let actualBytes = 0
+  for (const file of PAYLOAD_FILES) {
+    const entry = archive.zip.getEntry(file)
+    if (!entry) continue
+    const data = entry.getData()
+    if (data.length > MAX_ENTRY_BYTES) throw new Error(`Save entry is too large: ${file}`)
+    actualBytes += data.length
+    if (actualBytes > MAX_ARCHIVE_BYTES) throw new Error('Save archive is too large')
+    fs.writeFileSync(path.join(stagingDir, file), data)
+  }
+}
+
+const validateAndRemapSession = (dbPath: string, newChatId: string): void => {
+  const db = new Database(dbPath)
+  try {
+    const integrity = db.prepare('PRAGMA integrity_check').all() as Array<{
+      integrity_check: string
+    }>
+    if (integrity.length !== 1 || integrity[0].integrity_check !== 'ok') {
+      throw new Error('Imported session database failed integrity_check')
+    }
+    const rows = db.prepare("SELECT name FROM sqlite_master WHERE type = 'table'").all() as Array<{
+      name: string
+    }>
+    const tables = new Set(rows.map((row) => row.name))
+    for (const table of SESSION_TABLES) {
+      if (!tables.has(table)) throw new Error(`Imported session database is missing ${table}`)
+    }
+    db.transaction(() => {
+      for (const table of SESSION_TABLES) {
+        db.prepare(`UPDATE ${table} SET chat_id = ?`).run(newChatId)
+      }
+    })()
+    db.pragma('wal_checkpoint(TRUNCATE)')
+  } finally {
+    db.close()
+  }
+}
+
+const removeImportedIndexRows = (chatId: string): void => {
+  const central = getDb()
+  central.transaction(() => {
+    central.prepare('DELETE FROM agent_pack_activation WHERE chat_id = ?').run(chatId)
+    central.prepare('DELETE FROM agent_pack_overrides WHERE scope = ?').run(`chat:${chatId}`)
+    central.prepare('DELETE FROM agent_pack_trigger_state WHERE chat_id = ?').run(chatId)
+    central.prepare('DELETE FROM chats WHERE id = ?').run(chatId)
+  })()
+}
+
+/** Import a validated `.rpsave` into a new chat. All files are staged before anything is published. */
+export const importSave = (profileId: string, zipPath: string): ImportResult => {
+  const archive = parseArchive(zipPath)
+  if (!archive) return { error: 'save.badArchive' }
+
+  const matches = findMatchingByIdentity(
+    profileId,
+    archive.manifest.worldRef.name,
+    archive.manifest.worldRef.creator
+  )
+  if (!matches.length) {
+    return { error: 'save.worldMissing', worldName: archive.manifest.worldRef.name || '?' }
   }
 
-  // Re-insert the sidecar central rows under the new chat + resolved world (best-effort — rows for a
-  // pack not installed on this machine simply never resolve; review C9).
-  if (sidecar) {
-    for (const a of sidecar.activation ?? []) {
-      central
-        .prepare(
-          `INSERT OR REPLACE INTO agent_pack_activation (pack_id, world_id, chat_id, gate_open, denial, pin_version)
-           VALUES (?, ?, ?, ?, ?, ?)`
-        )
-        .run(a.pack_id, worldId, newId, a.gate_open ?? 0, a.denial ?? null, a.pin_version ?? null)
-    }
-    for (const o of sidecar.overrides ?? []) {
-      central
-        .prepare(
-          'INSERT OR REPLACE INTO agent_pack_overrides (pack_id, scope, setting_id, value) VALUES (?, ?, ?, ?)'
-        )
-        .run(o.pack_id, `chat:${newId}`, o.setting_id, o.value)
-    }
-    for (const tr of sidecar.triggerState ?? []) {
-      central
-        .prepare(
-          `INSERT OR REPLACE INTO agent_pack_trigger_state (chat_id, pack_id, trigger_index, last_value, last_fire_floor)
-           VALUES (?, ?, ?, ?, ?)`
-        )
-        .run(newId, tr.pack_id, tr.trigger_index, tr.last_value ?? null, tr.last_fire_floor ?? null)
-    }
-  }
+  const worldId = matches[0].id
+  const newId = randomUUID()
+  const finalDir = sessionDbService.sessionDir(profileId, newId)
+  const stagingDir = path.join(path.dirname(finalDir), `.${newId}.importing`)
+  const central = getDb()
+  const carry = archive.sidecar?.chat ?? EMPTY_CARRY
+  let published = false
+  let installedTemplateId: string | null = null
 
-  refreshChatSummary(newId)
-  return { chatId: newId }
+  try {
+    writePayloadToStaging(archive, stagingDir)
+    validateAndRemapSession(path.join(stagingDir, 'session.sqlite'), newId)
+
+    let templateId = carry.table_template_id
+    if (templateId && !getTableTemplateById(profileId, templateId)) {
+      if (archive.sidecar?.tableTemplate) {
+        saveTableTemplate(profileId, archive.sidecar.tableTemplate, templateId)
+        installedTemplateId = templateId
+      } else {
+        templateId = null
+      }
+    }
+
+    fs.renameSync(stagingDir, finalDir)
+    published = true
+    const now = new Date().toISOString()
+    central.transaction(() => {
+      central
+        .prepare(
+          `INSERT INTO chats (id, profile_id, character_id, created_at, updated_at, mode, lorebook_ids,
+             workflow_id, cached_world_info, table_template_id, session_migrated)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, 1)`
+        )
+        .run(
+          newId,
+          profileId,
+          worldId,
+          now,
+          now,
+          carry.mode,
+          carry.lorebook_ids,
+          carry.workflow_id,
+          templateId
+        )
+
+      for (const activation of archive.sidecar?.activation ?? []) {
+        central
+          .prepare(
+            `INSERT OR REPLACE INTO agent_pack_activation
+               (pack_id, world_id, chat_id, gate_open, denial, pin_version)
+             VALUES (?, ?, ?, ?, ?, ?)`
+          )
+          .run(
+            activation.pack_id,
+            worldId,
+            newId,
+            activation.gate_open ?? 0,
+            activation.denial ?? null,
+            activation.pin_version ?? null
+          )
+      }
+      for (const override of archive.sidecar?.overrides ?? []) {
+        central
+          .prepare(
+            'INSERT OR REPLACE INTO agent_pack_overrides (pack_id, scope, setting_id, value) VALUES (?, ?, ?, ?)'
+          )
+          .run(override.pack_id, `chat:${newId}`, override.setting_id, override.value)
+      }
+      for (const trigger of archive.sidecar?.triggerState ?? []) {
+        central
+          .prepare(
+            `INSERT OR REPLACE INTO agent_pack_trigger_state
+               (chat_id, pack_id, trigger_index, last_value, last_fire_floor)
+             VALUES (?, ?, ?, ?, ?)`
+          )
+          .run(
+            newId,
+            trigger.pack_id,
+            trigger.trigger_index,
+            trigger.last_value ?? null,
+            trigger.last_fire_floor ?? null
+          )
+      }
+    })()
+
+    refreshChatSummary(newId)
+    return { chatId: newId }
+  } catch (error) {
+    log('error', 'Save import failed; staged changes were rolled back', error)
+    try {
+      removeImportedIndexRows(newId)
+    } catch (cleanupError) {
+      log('error', `Save import: failed to remove index rows for ${newId}`, cleanupError)
+    }
+    if (published) sessionDbService.removeSession(profileId, newId)
+    else if (fs.existsSync(stagingDir)) fs.rmSync(stagingDir, { recursive: true, force: true })
+    if (installedTemplateId) {
+      try {
+        deleteTableTemplate(profileId, installedTemplateId)
+      } catch (cleanupError) {
+        log('error', `Save import: failed to remove template ${installedTemplateId}`, cleanupError)
+      }
+    }
+    return { error: 'save.badArchive' }
+  }
 }

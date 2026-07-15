@@ -130,7 +130,8 @@ export const migrateSessionsIfNeeded = (): void => {
       fs.copyFileSync(path.join(getAppDir(), 'rpterminal.db'), backupPath())
     }
   } catch (e) {
-    log('error', 'Session migration: DB backup failed (continuing without it)', e)
+    log('error', 'Session migration: DB backup failed; startup is blocked', e)
+    throw e
   }
 
   log('info', `Decentralizing ${pending.length} chat(s) into per-session stores…`)
@@ -150,4 +151,9 @@ export const migrateSessionsIfNeeded = (): void => {
     }
   }
   log('info', `Session migration: ${migrated} migrated, ${deferred} deferred`)
+  if (deferred > 0) {
+    throw new Error(
+      `Session migration deferred ${deferred} chat(s); startup is blocked until retry`
+    )
+  }
 }

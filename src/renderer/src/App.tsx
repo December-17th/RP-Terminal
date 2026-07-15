@@ -51,6 +51,7 @@ import { WorkflowEditorOverlay } from './components/workflow/WorkflowEditorOverl
 import { DuelPopup } from './components/DuelPopup'
 import { AssetsPopup } from './components/AssetsPopup'
 import { MemoryManagerView } from './components/memory/MemoryManagerView'
+import { TableTemplateReminderModal } from './components/TableTemplateReminderModal'
 import { CardTrustPrompt } from './components/CardTrustPrompt'
 import { refreshWcvHostState } from './cardBridge/hostReload'
 
@@ -421,6 +422,7 @@ export default function App(): React.ReactElement {
       <DuelPopup profileId={activeProfile.id} />
       <AssetsPopup profileId={activeProfile.id} />
       <MemoryManagerView profileId={activeProfile.id} />
+      <TableTemplateReminderModal profileId={activeProfile.id} />
       <CardTrustPrompt />
       <ToastStack />
     </>

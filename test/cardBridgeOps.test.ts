@@ -5,6 +5,7 @@ import {
   setVarOps,
   assignVarOps,
   deepVarOps,
+  diffSetOps,
   applySetOps,
   replaceStatDataOps
 } from '../src/renderer/src/cardBridge/ops'
@@ -84,6 +85,28 @@ describe('applySetOps', () => {
     const root = { date: { npcs: { a: 1 }, log: { deathCount: 0 } } }
     applySetOps(root, deepVarOps(root, { date: { log: { totalFPGained: 7 } } }, false))
     expect(root).toEqual({ date: { npcs: { a: 1 }, log: { deathCount: 0, totalFPGained: 7 } } })
+  })
+})
+
+describe('diffSetOps (MVU write-back)', () => {
+  it('emits set ops ONLY for changed/new leaves, leaving unchanged ones alone', () => {
+    const base = { 主角: { 等级: 1, 累计经验值: 0 }, 命运点数: 500 }
+    const next = { 主角: { 等级: 1, 累计经验值: 0, 升级所需经验: 120 }, 命运点数: 500 }
+    // Only the newly-derived leaf is written — 等级/累计经验值/命运点数 are unchanged, so no ops.
+    expect(diffSetOps(base, next)).toEqual([{ op: 'set', path: '/主角/升级所需经验', value: 120 }])
+  })
+  it('does not emit ops for keys absent from next (never wipes siblings)', () => {
+    // `date` exists in base but not in next (a card whose schema strips it) — it must be left untouched.
+    expect(diffSetOps({ 主角: { 等级: 1 }, date: { npcs: {} } }, { 主角: { 等级: 2 } })).toEqual([
+      { op: 'set', path: '/主角/等级', value: 2 }
+    ])
+  })
+  it('sets a whole value when the two sides are not both plain objects', () => {
+    expect(diffSetOps({ a: { x: 1 } }, { a: [1, 2] })).toEqual([{ op: 'set', path: '/a', value: [1, 2] }])
+    expect(diffSetOps({}, { a: { x: 1 } })).toEqual([{ op: 'set', path: '/a', value: { x: 1 } }])
+  })
+  it('returns no ops when nothing changed', () => {
+    expect(diffSetOps({ a: 1, b: { c: 2 } }, { a: 1, b: { c: 2 } })).toEqual([])
   })
 })
 

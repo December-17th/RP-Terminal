@@ -117,6 +117,14 @@ const zh: Record<string, string> = {
   // SQL 表格记忆全局默认维护频率（manual-pass issue 04）
   'settings.tablesDefaultFrequency': '默认维护频率（轮）',
   'settings.tablesInjectionMaxRows': '表格注入行数上限（「最近 N 行」默认值）',
+  'settings.tablesRemindSetTemplate': '新会话时提醒我设置记忆表格模板',
+  // 新会话记忆表格提醒弹窗（TableTemplateReminderModal）
+  'tableReminder.title': '设置记忆表格模板？',
+  'tableReminder.body':
+    '本会话尚未指定记忆表格模板。表格记忆会以结构化方式持续记录你的故事，并由 AI 每轮更新。在「表格」视图中指定一个模板即可启用。',
+  'tableReminder.openTables': '打开表格视图',
+  'tableReminder.notNow': '暂不',
+  'tableReminder.dontRemind': '不再提醒',
   'settings.regex': '正则',
   'settings.scripts': '脚本',
   'settings.language': '语言',

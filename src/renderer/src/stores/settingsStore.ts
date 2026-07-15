@@ -48,6 +48,8 @@ export interface Settings {
     /** WS4 main-prompt injection: rows kept per table under the 'recent' policy when the table sets
      *  no per-table override. Optional — defaults to 20 at the read site (mirrors main). */
     injection_max_rows?: number
+    /** New-session reminder to set a memory-table template. Optional — defaults ON (`!== false`). */
+    remind_set_template?: boolean
   }
   templates: {
     enabled: boolean
