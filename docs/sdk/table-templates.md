@@ -5,7 +5,9 @@ editing) + SQL write path + op-log/rewind + prompt projection (`table.export`) +
 pipeline (`table.gate` / `table.read` / `table.query`) + template EXPORT (chatSheets v2, round-trip) +
 per-table last-maintained indicator all built). Structural fields (DDL / columns / tables) are now
 editable via `table-structure-apply` with bound-chat migration (Memory-Manager WP4a — backend only;
-the editor UI is WP4b). The only deferred item is card-embedded templates.
+the editor UI is WP4b). World Cards can embed templates in
+`data.extensions.rp_terminal.table_templates[]`; import adds them to the profile library without
+auto-assigning them to a chat.
 
 The **Tables view** now also shows and edits each table's per-table template prompts inline (the five
 per-op prompts + the injection `exportConfig`) via `table-template-update` — structural fields
@@ -70,6 +72,21 @@ Top level is `mate` + one `sheet_<id>` object per table. `parseChatSheets(raw, n
   (`content[0]`).
 
 Sheets are ordered by `orderNo`.
+
+### World Card bundle import
+
+A World Card may carry `data.extensions.rp_terminal.table_templates[]`
+([`character.ts`](../../src/main/types/character.ts)). Each element is imported through
+`tableTemplateService.importTableTemplateFromObject`, which accepts the chatSheets v2 shape above or a
+native `TableTemplate` containing at least one table. Invalid elements fail softly and are omitted from
+the installed count ([`characterService.ts`](../../src/main/services/characterService.ts)).
+
+Bundled templates are **library-drop only**: import never assigns one to the new chat because
+`setChatTableTemplateId` recreates the per-chat sandbox and assignment is destructive. When enabled by
+`settings.tables.remind_set_template` (default on), creating a chat opens the localized template
+reminder; its primary action surfaces the Tables view so the user can inspect and assign the intended
+template ([`chatStore.ts`](../../src/renderer/src/stores/chatStore.ts),
+[`TableTemplateReminderModal.tsx`](../../src/renderer/src/components/TableTemplateReminderModal.tsx)).
 
 ## Mapping (chatSheets sheet → `TableDef`)
 

@@ -19,6 +19,7 @@ cards) reads them as the contract. They must track the code.
 - **[../world-card-design.md](../world-card-design.md)** — the bundle format + one-click import + PNG
   cartridge plan (the "container" the inventory points to).
 - **[table-templates.md](table-templates.md)** — SQL-table memory: the chatSheets v2 import surface,
+  World Card `table_templates[]` library import and new-session assignment reminder,
   the sheet→`TableTemplate` mapping, per-chat sandbox-DB enablement, the DDL-safety choke point, and
   the SQL write path (allowlist + op-log/rewind + the `parse.extract`/`table.apply` nodes), the
   prompt-projection path (`table.export` + the `entries` port on `prompt.assemble`/`prompt.preset`), the
