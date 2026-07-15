@@ -1,5 +1,6 @@
 import { safeStorage } from 'electron'
 import { getDb } from './db'
+import { setFullTrace } from './logService'
 import { Settings, ApiPreset, ModeConfig, AgentMode } from '../types/models'
 
 // API keys are encrypted at rest via the OS keyring (Electron safeStorage). A
@@ -159,7 +160,9 @@ export const getDefaultSettings = (): Settings => ({
     prewarm: false,
     breakpoint_optimizer: false
   },
-  pricing: {}
+  pricing: {},
+  // Diagnostics: full untruncated log capture is OFF by default (detail is bounded).
+  logs: { full_trace: false }
 })
 
 /**
@@ -200,6 +203,7 @@ export const normalize = (stored: Partial<Settings>): Settings => {
   const cards = { ...d.cards, ...(stored.cards || {}) }
   const combat = { ...d.combat, ...(stored.combat || {}) }
   const pricing = { ...d.pricing, ...(stored.pricing || {}) }
+  const logs = { ...d.logs, ...(stored.logs || {}) }
 
   // Agent mode: accept the three-way enum; migrate the legacy boolean `enabled` toggle
   // (true → manual), else default off.
@@ -259,7 +263,8 @@ export const normalize = (stored: Partial<Settings>): Settings => {
     cache,
     cards,
     combat,
-    pricing
+    pricing,
+    logs
   }
 }
 
@@ -280,7 +285,11 @@ export const getSettings = (profileId: string): Settings => {
     }
   }
   // Decrypt api keys so the renderer always works with plaintext.
-  return mapApiKeys(normalize(stored), decryptSecret)
+  const settings = mapApiKeys(normalize(stored), decryptSecret)
+  // Keep the log-service trace flag in sync (this runs at startup when the renderer
+  // loads settings, and again on every save→reload round-trip).
+  setFullTrace(!!settings.logs?.full_trace)
+  return settings
 }
 
 /** Read the stored settings WITHOUT decrypting — to retain still-encrypted keys on save. */
@@ -324,4 +333,6 @@ export const saveSettings = (profileId: string, settings: Settings): void => {
        ON CONFLICT(profile_id) DO UPDATE SET data = excluded.data`
     )
     .run(profileId, JSON.stringify(toStore))
+  // Apply the trace flag immediately on save (don't wait for a getSettings round-trip).
+  setFullTrace(!!settings.logs?.full_trace)
 }
