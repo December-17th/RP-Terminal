@@ -30,6 +30,9 @@ export const GATED_CHANNELS = [
   'delete-character',
   'import-character-dialog',
   'export-character-dialog',
+  // save (session) export/import native dialogs (saveTransferIpc) — host-path read/write
+  'export-save-dialog',
+  'import-save-dialog',
   // Asset-manager native dialogs + host folder reveal (worldAssetIpc)
   'asset-pick-images',
   'asset-import-zip-dialog',
@@ -112,7 +115,6 @@ export const isAppTopFrame = (
   return frame === sender.mainFrame
 }
 
-/* eslint-disable @typescript-eslint/no-explicit-any */
 type Handler = (event: IpcMainInvokeEvent, ...args: any[]) => unknown
 
 /**
@@ -133,4 +135,3 @@ export const gate = <T extends Handler>(channel: GatedChannel, handler: T): T =>
     }
     return handler(event, ...args)
   }) as T
-/* eslint-enable @typescript-eslint/no-explicit-any */

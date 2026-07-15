@@ -34,7 +34,7 @@ import { getSettings } from './settingsService'
 import { buildGenContext } from './generation/genContext'
 import { withPreset } from './generation/resilientCall'
 import { notifyBackfillProgress } from './tableBackfillEvents'
-import { getDb, transact } from './db'
+import { getSessionDbByChat } from './sessionDbService'
 import { log } from './logService'
 import { ChatMessage } from './promptBuilder'
 import { TableTemplate } from '../types/tableTemplate'
@@ -192,7 +192,10 @@ export interface RefillRunOutcome {
  * `completedUntil + 1`) retries exactly the failed span. A failure outranks a concurrent cancel (it
  * carries the reason); a cancel without failure ⇒ `cancelled` (also resumable); otherwise `done`.
  */
-export const refillRunOutcome = (aborted: boolean, failedReason: string | null): RefillRunOutcome =>
+export const refillRunOutcome = (
+  aborted: boolean,
+  failedReason: string | null
+): RefillRunOutcome =>
   failedReason != null
     ? { status: 'error', finalize: false, message: failedReason }
     : aborted
@@ -310,7 +313,9 @@ export interface RefillProgressRow {
 
 /** The persisted refill-progress row for a chat, or null when no refill is in flight/interrupted. */
 export const getRefillProgress = (chatId: string): RefillProgressRow | null => {
-  const row = getDb()
+  const db = getSessionDbByChat(chatId)
+  if (!db) return null
+  const row = db
     .prepare(
       'SELECT selected_json, from_floor, completed_until, status FROM table_refill_progress WHERE chat_id = ?'
     )
@@ -340,9 +345,10 @@ const upsertRefillProgress = (
   completedUntil: number,
   status: string
 ): void => {
-  getDb()
-    .prepare(
-      `INSERT INTO table_refill_progress (chat_id, selected_json, from_floor, completed_until, status, updated_at)
+  const db = getSessionDbByChat(chatId)
+  if (!db) return
+  db.prepare(
+    `INSERT INTO table_refill_progress (chat_id, selected_json, from_floor, completed_until, status, updated_at)
        VALUES (?, ?, ?, ?, ?, ?)
        ON CONFLICT(chat_id) DO UPDATE SET
          selected_json = excluded.selected_json,
@@ -350,12 +356,20 @@ const upsertRefillProgress = (
          completed_until = excluded.completed_until,
          status = excluded.status,
          updated_at = excluded.updated_at`
-    )
-    .run(chatId, JSON.stringify(selected), fromFloor, completedUntil, status, new Date().toISOString())
+  ).run(
+    chatId,
+    JSON.stringify(selected),
+    fromFloor,
+    completedUntil,
+    status,
+    new Date().toISOString()
+  )
 }
 
 const deleteRefillProgress = (chatId: string): void => {
-  getDb().prepare('DELETE FROM table_refill_progress WHERE chat_id = ?').run(chatId)
+  getSessionDbByChat(chatId)
+    ?.prepare('DELETE FROM table_refill_progress WHERE chat_id = ?')
+    .run(chatId)
 }
 
 // ---- in-memory run state ---------------------------------------------------------------------
@@ -550,7 +564,10 @@ export const startRefill = async (
     )
   )
   if (from < requestedFrom) {
-    log('info', `refill widened cutpoint ${requestedFrom} → ${from} (chat ${chatId}) — a stored span crossed the cut`)
+    log(
+      'info',
+      `refill widened cutpoint ${requestedFrom} → ${from} (chat ${chatId}) — a stored span crossed the cut`
+    )
   }
 
   if (refillBaselineBlocked(from, hasBaselineOps(profileId, chatId, selected))) {
@@ -634,7 +651,14 @@ const commitChunk = (
   lastKnownMax: number,
   expectEpoch: number
 ): number => {
-  transact(() => {
+  // Plan review C2: this MUST be a transaction on the CHAT'S SESSION DB. The ops it brackets
+  // (deleteOpsFor/appendOpsAt/upsertRefillProgress) now write table_ops/table_refill_progress in the
+  // per-chat session.sqlite; the old central `transact()` would bracket the wrong connection and leave
+  // these auto-committing (atomicity silently lost). All three inner calls resolve the SAME cached
+  // session handle by chatId, so wrapping them in that handle's transaction restores atomicity.
+  const db = getSessionDbByChat(chatId)
+  if (!db) return opsWatermark(chatId) // chat gone → nothing to commit
+  db.transaction(() => {
     // Staleness fence (the refill race): the batch just awaited its LLM call — the one point a
     // truncate/edit/swipe can interleave. A moved epoch means the transcript this chunk was composed
     // from no longer exists as read → drop the chunk instead of committing ops for dead floors.
@@ -644,7 +668,7 @@ const commitChunk = (
     if (cut) deleteOpsFor(profileId, chatId, cut.tables, cut.fromFloor)
     appendOpsAt(chatId, floorOps, 'refill')
     upsertRefillProgress(chatId, selected, fromFloor, toFloor, 'in_progress')
-  })
+  })()
   return opsWatermark(chatId)
 }
 
@@ -684,7 +708,14 @@ const runRefill = async (
     .map((t) => t.displayName)
   const allowed = templateSqlNames(template)
 
-  emit({ chatId, batchIndex: -1, batchCount: spans.length, span: null, status: 'running', completedUntil: -1 })
+  emit({
+    chatId,
+    batchIndex: -1,
+    batchCount: spans.length,
+    span: null,
+    status: 'running',
+    completedUntil: -1
+  })
 
   let cutDone = false
   let lastKnownMax = 0
@@ -724,7 +755,14 @@ const runRefill = async (
       const reads = readAllTablesAt(shadow, template)
       const block = composeTablesBlock(template, reads, globalDefault)
       const transcript = buildBatchTranscript(floors, span.from, span.to)
-      const system = refillMaintainerPrompt(block, transcript, span.from, span.to, selectedDisplay, extraHint)
+      const system = refillMaintainerPrompt(
+        block,
+        transcript,
+        span.from,
+        span.to,
+        selectedDisplay,
+        extraHint
+      )
       const messages: ChatMessage[] = [{ role: 'system', content: system }]
 
       // Apply to the SHADOW, filtered to selected tables; record the executed statements.

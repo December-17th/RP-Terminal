@@ -1,7 +1,9 @@
 import { getDb } from './db'
+import { getSessionDbByChat } from './sessionDbService'
 import { FloorFile } from '../types/chat'
 import { normalizeSwipes, selectSwipe, appendSwipe } from './swipeHelpers'
 import { withLock } from './asyncLock'
+import { cleanForHistory } from '../../shared/responseView'
 
 /** Per-chat floor-variable write lock key (agent-packs WP1.5; ADR 0003). Floors are keyed by
  *  `chat_id` in SQLite (PRIMARY KEY (chat_id, floor)), so a chat is the write-serialization scope —
@@ -119,25 +121,76 @@ export const getFloor = (
   chatId: string,
   floorIndex: number
 ): FloorFile | null => {
-  const row = getDb()
+  const db = getSessionDbByChat(chatId)
+  if (!db) return null
+  const row = db
     .prepare('SELECT * FROM floors WHERE chat_id = ? AND floor = ?')
     .get(chatId, floorIndex) as FloorRow | undefined
   return row ? rowToFloor(row) : null
 }
 
 export const getAllFloors = (_profileId: string, chatId: string, _count?: number): FloorFile[] => {
-  const rows = getDb()
+  const db = getSessionDbByChat(chatId)
+  if (!db) return []
+  const rows = db
     .prepare('SELECT * FROM floors WHERE chat_id = ? ORDER BY floor')
     .all(chatId) as FloorRow[]
   return rows.map(rowToFloor)
 }
 
-/** The actual floor INSERT/UPSERT (synchronous). Wrapped by `saveFloor` under the per-chat vars
- *  lock so concurrent engine runs can't lose a floor-variable write (ADR 0003). */
-const saveFloorRow = (chatId: string, floor: FloorFile): void => {
+// Denormalized session-summary maintained on the CENTRAL `chats` index (plan §B3), so `getChats`/
+// `buildSession` (the launcher) never open a session DB. Recomputed at the floor-write choke points
+// (saveFloor / updateFloorFields / deleteFloorAndSubsequent — the paths the card-write bridges hit too,
+// review C6). Preview lengths + cleanup mirror chatService.buildSession (kept local to avoid a cycle:
+// chatService imports floorService).
+const USER_PREVIEW_LEN = 160
+const RESPONSE_PREVIEW_LEN = 320
+const preview = (text: string, len: number): string =>
+  text
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, len)
+
+/** Recompute the central chats-row summary (floor_count + last-floor preview) from the session store.
+ *  No-op when the chat has no session (deleted / mock). A crash between the floor write and this update
+ *  leaves a stale summary; chatService self-heals it on chat open (plan §B3). */
+export const refreshChatSummary = (chatId: string): void => {
+  const db = getSessionDbByChat(chatId)
+  if (!db) return
+  const { n } = db.prepare('SELECT COUNT(*) AS n FROM floors WHERE chat_id = ?').get(chatId) as {
+    n: number
+  }
+  const last = db
+    .prepare(
+      'SELECT floor, timestamp, user_content, response_content FROM floors WHERE chat_id = ? ORDER BY floor DESC LIMIT 1'
+    )
+    .get(chatId) as
+    | { floor: number; timestamp: string; user_content: string; response_content: string }
+    | undefined
   getDb()
     .prepare(
-      `INSERT INTO floors
+      `UPDATE chats SET floor_count = ?, last_floor = ?, last_floor_ts = ?,
+         last_user_preview = ?, last_response_preview = ? WHERE id = ?`
+    )
+    .run(
+      n,
+      last?.floor ?? null,
+      last?.timestamp ?? null,
+      last ? preview(last.user_content, USER_PREVIEW_LEN) : null,
+      last ? preview(cleanForHistory(last.response_content), RESPONSE_PREVIEW_LEN) : null,
+      chatId
+    )
+}
+
+/** The actual floor INSERT/UPSERT (synchronous). Wrapped by `saveFloor` under the per-chat vars
+ *  lock so concurrent engine runs can't lose a floor-variable write (ADR 0003). No-op when the chat
+ *  has no session store (deleted mid-write / mock — the C5 guard). */
+const saveFloorRow = (chatId: string, floor: FloorFile): void => {
+  const db = getSessionDbByChat(chatId)
+  if (!db) return
+  db.prepare(
+    `INSERT INTO floors
         (chat_id, floor, timestamp, user_content, user_timestamp, response_content,
          response_model, response_provider, swipes, swipe_id, events, variables, request, metrics,
          plot_block)
@@ -156,26 +209,25 @@ const saveFloorRow = (chatId: string, floor: FloorFile): void => {
          request = excluded.request,
          metrics = excluded.metrics,
          plot_block = excluded.plot_block`
-    )
-    .run(
-      chatId,
-      floor.floor,
-      floor.timestamp || new Date().toISOString(),
-      floor.user_message?.content ?? '',
-      floor.user_message?.timestamp ?? null,
-      floor.response?.content ?? '',
-      floor.response?.model ?? null,
-      floor.response?.provider ?? null,
-      // Only persist swipes once there's more than one; single-swipe floors stay null
-      // (legacy-compatible) and normalize back to [response] on read.
-      floor.swipes && floor.swipes.length > 1 ? JSON.stringify(floor.swipes) : null,
-      floor.swipe_id ?? null,
-      JSON.stringify(floor.events ?? []),
-      JSON.stringify(floor.variables ?? {}),
-      floor.request ? JSON.stringify(floor.request) : null,
-      floor.metrics ? JSON.stringify(floor.metrics) : null,
-      floor.plot_block ?? null
-    )
+  ).run(
+    chatId,
+    floor.floor,
+    floor.timestamp || new Date().toISOString(),
+    floor.user_message?.content ?? '',
+    floor.user_message?.timestamp ?? null,
+    floor.response?.content ?? '',
+    floor.response?.model ?? null,
+    floor.response?.provider ?? null,
+    // Only persist swipes once there's more than one; single-swipe floors stay null
+    // (legacy-compatible) and normalize back to [response] on read.
+    floor.swipes && floor.swipes.length > 1 ? JSON.stringify(floor.swipes) : null,
+    floor.swipe_id ?? null,
+    JSON.stringify(floor.events ?? []),
+    JSON.stringify(floor.variables ?? {}),
+    floor.request ? JSON.stringify(floor.request) : null,
+    floor.metrics ? JSON.stringify(floor.metrics) : null,
+    floor.plot_block ?? null
+  )
 }
 
 /**
@@ -190,7 +242,10 @@ const saveFloorRow = (chatId: string, floor: FloorFile): void => {
  * (the headless runner) wraps its own critical section in `withLock(varsLockKey(chatId), …)`.
  */
 export const saveFloor = (_profileId: string, chatId: string, floor: FloorFile): void => {
-  void withLock(varsLockKey(chatId), () => saveFloorRow(chatId, floor))
+  void withLock(varsLockKey(chatId), () => {
+    saveFloorRow(chatId, floor)
+    refreshChatSummary(chatId) // B3: keep the launcher's central summary current
+  })
 }
 
 /** The per-chat floor-variable write-lock key, exported so the headless runner (WP2.2) and any other
@@ -248,15 +303,15 @@ export const updateFloorFields = (
   userContent: string | null,
   responseContent: string | null
 ): void => {
-  const db = getDb()
-  if (userContent !== null) {
+  const db = getSessionDbByChat(chatId)
+  if (db && userContent !== null) {
     db.prepare('UPDATE floors SET user_content = ? WHERE chat_id = ? AND floor = ?').run(
       userContent,
       chatId,
       floorIndex
     )
   }
-  if (responseContent !== null) {
+  if (db && responseContent !== null) {
     db.prepare('UPDATE floors SET response_content = ? WHERE chat_id = ? AND floor = ?').run(
       responseContent,
       chatId,
@@ -264,6 +319,7 @@ export const updateFloorFields = (
     )
   }
   if (userContent !== null || responseContent !== null) {
+    refreshChatSummary(chatId) // last-floor text may have changed (B3)
     bumpTranscriptEpoch(chatId)
     fireTranscriptEdited(profileId, chatId, floorIndex) // fire once even when both fields changed
   }
@@ -274,7 +330,10 @@ export const deleteFloorAndSubsequent = (
   chatId: string,
   fromFloorIndex: number
 ): void => {
-  getDb().prepare('DELETE FROM floors WHERE chat_id = ? AND floor >= ?').run(chatId, fromFloorIndex)
+  getSessionDbByChat(chatId)
+    ?.prepare('DELETE FROM floors WHERE chat_id = ? AND floor >= ?')
+    .run(chatId, fromFloorIndex)
+  refreshChatSummary(chatId) // floor_count + last-floor changed (B3)
   bumpTranscriptEpoch(chatId) // truncation (regenerate / floor delete)
   for (const fn of transcriptCutListeners) {
     try {

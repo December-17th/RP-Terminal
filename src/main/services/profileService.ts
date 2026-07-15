@@ -4,6 +4,7 @@ import { v4 as uuidv4 } from 'uuid'
 import { getDb } from './db'
 import { getAppDir } from './storageService'
 import * as settingsService from './settingsService'
+import * as sessionDbService from './sessionDbService'
 import { Profile } from '../types/models'
 
 export const getProfiles = (): Profile[] => {
@@ -42,13 +43,26 @@ export const updateProfileActivity = (id: string): void => {
 }
 
 // Per-profile file content to remove on a debug wipe. The API connection config lives in the
-// `settings` blob (not on disk), so nothing here needs preserving for "api presets".
-const WIPE_DIRS = ['presets', 'lorebooks', 'regex', 'scripts', 'characters', 'plugin-storage']
+// `settings` blob (not on disk), so nothing here needs preserving for "api presets". `chats` is the
+// per-session store (§B1); `table-dbs`/`chat-notes` are the legacy pre-decentralize dirs left as a
+// safety net (§B5), also cleared here on a full wipe.
+const WIPE_DIRS = [
+  'presets',
+  'lorebooks',
+  'regex',
+  'scripts',
+  'characters',
+  'plugin-storage',
+  'chats',
+  'table-dbs',
+  'chat-notes'
+]
 const WIPE_FILES = [
   'preset.json',
   'plugins-state.json',
   'plugin-grants.json',
   'character-vars.json',
+  'chat-card-vars.json',
   'template-globals.json'
 ]
 
@@ -68,6 +82,10 @@ const wipeProfileFiles = (profileId: string): void => {
 export const wipeProfile = (profileId: string): void => {
   const db = getDb()
 
+  // 0. Release any open per-chat session DB handles first, or Windows file locks defeat the recursive
+  //    delete of the `chats/` store below (review C3).
+  sessionDbService.closeAll()
+
   // 1. Reset settings, keeping the API presets / active connection. get→save round-trips through the
   //    encrypt logic, so the retained keys stay protected.
   const cur = settingsService.getSettings(profileId)
@@ -78,13 +96,24 @@ export const wipeProfile = (profileId: string): void => {
     active_api_preset_id: cur.active_api_preset_id
   })
 
-  // 2. DB content. Deleting chats cascades to floors / combat_encounters / episodic_memory
-  //    (FK ON DELETE CASCADE). The profile + (reset) settings rows stay.
+  // 2. DB content. The chat-scoped session tables now live in per-chat session.sqlite files (removed
+  //    with the `chats/` dir in step 3), so cleaning here means the CENTRAL index + the non-FK'd
+  //    chat-keyed rows (agent-pack activation/overrides/trigger, run history). Enumerate per chat
+  //    (mirrors deleteChat), then drop chats + characters. Profile + reset settings rows stay.
   db.transaction((pid: string) => {
+    const chatIds = (
+      db.prepare('SELECT id FROM chats WHERE profile_id = ?').all(pid) as Array<{ id: string }>
+    ).map((r) => r.id)
+    for (const chatId of chatIds) {
+      db.prepare('DELETE FROM agent_pack_activation WHERE chat_id = ?').run(chatId)
+      db.prepare('DELETE FROM agent_pack_overrides WHERE scope = ?').run(`chat:${chatId}`)
+      db.prepare('DELETE FROM agent_pack_trigger_state WHERE chat_id = ?').run(chatId)
+      db.prepare('DELETE FROM workflow_run_history WHERE chat_id = ?').run(chatId)
+    }
     db.prepare('DELETE FROM chats WHERE profile_id = ?').run(pid)
     db.prepare('DELETE FROM characters WHERE profile_id = ?').run(pid)
   })(profileId)
 
-  // 3. File-based per-profile content.
+  // 3. File-based per-profile content (includes the whole `chats/` per-session store).
   wipeProfileFiles(profileId)
 }

@@ -79,6 +79,17 @@ interface ChatState {
   regenerate: (profileId: string) => Promise<void>
   stopGeneration: () => Promise<void>
   deleteChat: (profileId: string, chatId: string) => Promise<void>
+  /** Export one session to a `.rpsave` file (Feature 2). Returns the native-dialog result (or null
+   *  if the user cancelled); the caller toasts success/error. */
+  exportSave: (
+    profileId: string,
+    chatId: string
+  ) => Promise<{ name: string } | { error: string } | null>
+  /** Import a `.rpsave` into a NEW session (requires its world installed). Refreshes the chat list on
+   *  success so the imported session appears. */
+  importSave: (
+    profileId: string
+  ) => Promise<{ chatId: string } | { error: string; worldName?: string } | null>
   /** Drop the active session + its loaded floors (e.g. when switching/deleting worlds, so a
    * stale chat from another world isn't rendered). */
   clearActiveChat: () => void
@@ -422,6 +433,14 @@ export const useChatStore = create<ChatState>((set, get) => {
           lastVarsOrigin: 'external'
         }
       })
+    },
+
+    exportSave: async (profileId, chatId) => window.api.exportSaveDialog(profileId, chatId),
+
+    importSave: async (profileId) => {
+      const res = await window.api.importSaveDialog(profileId)
+      if (res && 'chatId' in res) get().loadChats(profileId) // surface the imported session
+      return res
     },
 
     clearActiveChat: () => {

@@ -346,9 +346,10 @@ const addColumnIfMissing = (
  *  own row (pack_id is globally unique in a legacy DB since id was the PK), so the backfill joins on
  *  pack_id alone — correct for legacy data where a pack_id maps to exactly one version. */
 export const migrateAgentPacksToVersioned = (database: Database.Database): void => {
-  const cols = database
-    .prepare(`PRAGMA table_info(agent_packs)`)
-    .all() as Array<{ name: string; pk: number }>
+  const cols = database.prepare(`PRAGMA table_info(agent_packs)`).all() as Array<{
+    name: string
+    pk: number
+  }>
   if (cols.length === 0) return // no table yet — SCHEMA will create the new shape
 
   const versionCol = cols.find((c) => c.name === 'version')
@@ -437,6 +438,17 @@ export const getDb = (): Database.Database => {
   // SQL-table-memory: the assigned table-template id (null = table memory off for this chat).
   // The table DATA lives in a separate per-chat sandbox DB, not here (tableDbService).
   addColumnIfMissing(db, 'chats', 'table_template_id', 'table_template_id TEXT')
+  // Decentralized-save-system (§B3): denormalized session summary maintained by floorService, so the
+  // launcher (getChats/buildSession) renders from the index without opening any per-chat session DB.
+  addColumnIfMissing(db, 'chats', 'floor_count', 'floor_count INTEGER')
+  addColumnIfMissing(db, 'chats', 'last_floor', 'last_floor INTEGER')
+  addColumnIfMissing(db, 'chats', 'last_floor_ts', 'last_floor_ts TEXT')
+  addColumnIfMissing(db, 'chats', 'last_user_preview', 'last_user_preview TEXT')
+  addColumnIfMissing(db, 'chats', 'last_response_preview', 'last_response_preview TEXT')
+  // Per-chat migration marker (§B5): 0 = chat-scoped state still lives in the central tables and must
+  // be migrated into profiles/<id>/chats/<chatId>/session.sqlite; 1 = migrated (or born decentralized).
+  // Pre-existing chats default to 0 (migrated on next startup); createChat writes 1 for new chats.
+  addColumnIfMissing(db, 'chats', 'session_migrated', 'session_migrated INTEGER NOT NULL DEFAULT 0')
   // TH-2 swipes: alternate responses per floor + the active index.
   addColumnIfMissing(db, 'floors', 'swipes', 'swipes TEXT')
   addColumnIfMissing(db, 'floors', 'swipe_id', 'swipe_id INTEGER')
@@ -486,3 +498,17 @@ export const getDb = (): Database.Database => {
 
 /** Run `fn` inside a single SQLite transaction (all-or-nothing; rolls back if it throws). */
 export const transact = <T>(fn: () => T): T => getDb().transaction(fn)()
+
+/** Close and forget the memoized central DB handle. For TEST teardown only (production keeps one
+ *  handle for the app's lifetime) — lets a suite point getAppDir at a fresh temp dir per test and
+ *  release the file so it can be removed on Windows. Idempotent. */
+export const closeDb = (): void => {
+  if (db) {
+    try {
+      db.close()
+    } catch {
+      /* ignore */
+    }
+    db = null
+  }
+}

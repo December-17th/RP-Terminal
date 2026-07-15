@@ -95,6 +95,12 @@ const dbMock = vi.hoisted(() => {
 
 vi.mock('../../src/main/services/db', () => ({ getDb: dbMock.getDb }))
 
+// The op-log now lives in the per-chat SESSION db (decentralize-save-system §B2). tableOpsService
+// resolves it via getSessionDbByChat — point that at the same faked table_ops store.
+vi.mock('../../src/main/services/sessionDbService', () => ({
+  getSessionDbByChat: () => dbMock.getDb()
+}))
+
 // The sandbox side of a rebuild can't run under the better-sqlite3 alias mock; stub tableDbService so the
 // guard-claim/release behaviour of rewindTables is observable without touching a real sandbox file. The
 // template=null rewind path (removeSandbox) is enough to exercise claim → body → release.
@@ -125,7 +131,7 @@ describe('table history op-log + rewind', () => {
   beforeEach(() => dbMock.reset())
 
   it('appends ops with a continuing per-(floor) seq and lists them in replay order', () => {
-    appendOps(P, C, 0, ['INSERT INTO t VALUES (1)', "UPDATE t SET x=1 WHERE row_id=1"])
+    appendOps(P, C, 0, ['INSERT INTO t VALUES (1)', 'UPDATE t SET x=1 WHERE row_id=1'])
     appendOps(P, C, 1, ['INSERT INTO t VALUES (2)'])
     appendOps(P, C, 2, ['DELETE FROM t WHERE row_id=1'])
     expect(listOps(P, C).map((o) => [o.floor, o.seq])).toEqual([

@@ -2442,8 +2442,8 @@ select {
   );
   border: 1px solid var(--rpt-border);
   border-radius: var(--rpt-radius-lg);
-  /* extra right padding clears the overlaid delete button */
-  padding: 13px 36px 13px 15px;
+  /* extra right padding clears the overlaid export + delete buttons */
+  padding: 13px 62px 13px 15px;
   cursor: pointer;
   color: inherit;
   font: inherit;
@@ -2524,6 +2524,22 @@ select {
   opacity: 0.75;
 }
 .lc-sdel:hover {
+  opacity: 1;
+}
+/* Export-save button, overlaid just left of the delete button (mirrors .lc-sdel). */
+.lc-sexport {
+  position: absolute;
+  top: 8px;
+  right: 34px;
+  line-height: 1;
+  opacity: 0.4;
+  transition: opacity 0.12s ease;
+}
+.lc-srow-wrap:hover .lc-sexport,
+.lc-sexport:focus-visible {
+  opacity: 0.75;
+}
+.lc-sexport:hover {
   opacity: 1;
 }
 

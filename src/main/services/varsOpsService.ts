@@ -1,4 +1,4 @@
-import { getDb } from './db'
+import { getSessionDbByChat } from './sessionDbService'
 import { log } from './logService'
 
 /**
@@ -33,7 +33,8 @@ export const appendVarsOp = (
   kind: VarsOpKind,
   payload: unknown
 ): void => {
-  const db = getDb()
+  const db = getSessionDbByChat(chatId)
+  if (!db) return
   const row = db
     .prepare('SELECT MAX(seq) AS maxSeq FROM vars_ops WHERE chat_id = ? AND floor = ?')
     .get(chatId, floor) as { maxSeq: number | null } | undefined
@@ -45,7 +46,9 @@ export const appendVarsOp = (
 
 /** All card write ops for a chat, ordered by (floor, seq) — the replay order. Fail-open on parse. */
 export const listVarsOps = (chatId: string): VarsOpRow[] => {
-  const rows = getDb()
+  const db = getSessionDbByChat(chatId)
+  if (!db) return []
+  const rows = db
     .prepare('SELECT floor, seq, kind, payload FROM vars_ops WHERE chat_id = ? ORDER BY floor, seq')
     .all(chatId) as Array<{ floor: number; seq: number; kind: VarsOpKind; payload: string }>
   const out: VarsOpRow[] = []
@@ -63,7 +66,9 @@ export const listVarsOps = (chatId: string): VarsOpRow[] => {
 }
 
 /** Drop every card write op at/after `fromFloor` (truncation cut). Returns the rows deleted. */
-export const deleteVarsOpsFrom = (chatId: string, fromFloor: number): number =>
-  getDb()
-    .prepare('DELETE FROM vars_ops WHERE chat_id = ? AND floor >= ?')
-    .run(chatId, fromFloor).changes
+export const deleteVarsOpsFrom = (chatId: string, fromFloor: number): number => {
+  const db = getSessionDbByChat(chatId)
+  if (!db) return 0
+  return db.prepare('DELETE FROM vars_ops WHERE chat_id = ? AND floor >= ?').run(chatId, fromFloor)
+    .changes
+}
