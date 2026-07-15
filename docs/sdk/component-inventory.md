@@ -66,7 +66,13 @@ transports implement the same surface, so a card behaves identically in either
   (`plugin-storage-all-sync` / `chat-card-vars-get-sync`) on first read, memoized per host — so a card reads
   its saved KV synchronously at boot (an inline frame gets a fresh host per reload), matching WCV's sync getters.
 - **Isolated / WCV** — `createThRuntime(...)` at `wcvPreload.ts:285`; Host backed by `ipcRenderer.sendSync`
-  (sync getters) + `invoke` (async) over the `wcv-host-*` IPC.
+  (sync getters) + `invoke` (async) over the `wcv-host-*` IPC. The transported members are declared once in
+  a shared **Channel Spec** ([`wcvChannelSpec.ts`](../../src/shared/thRuntime/wcvChannelSpec.ts) —
+  `{ channel, kind: 'sync'|'invoke'|'send', fallback }` per Host member); `createWcvHost`
+  ([`wcvHost.ts`](../../src/preload/wcvHost.ts)) is generated from it by a generic loop (sync getters fall
+  back on a throw or null/undefined result), and `wcvIpc.ts` references the same channel names, so the two
+  sides can't drift (ADR 0013). A small hand-written residue (event subscriptions, injected EJS deps, the
+  shape-normalizing worldbook getters, `createChat`, `formatRegex`) stays outside the table.
 
 **WCV-transport-only host method** (not on the `thRuntime` surface — a WCV is a native overlay with its
 own screen rect, which an inline DOM card doesn't need): `window.rptHost.getPanelGeometry()` →
