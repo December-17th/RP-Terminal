@@ -357,7 +357,10 @@ is enforced by `appliesToDisplay` / `appliesToPrompt`
 ([regexService.ts](../../src/main/services/regexService.ts)) and in the TavernHelper shape bridge
 ([tavernRegex.ts](../../src/shared/thRuntime/tavernRegex.ts)).
 Replacement syntax is shared by display and prompt transforms: `$0`/`$&` expand to the full match and
-`$1`/`$2`... expand capture groups (`regexTransform`).
+`$1`/`$2`... expand capture groups (`regexTransform`). In a **card payload** (a replacement carrying
+`<script>`/`<style>`/`<html>`/```` ```html ````) the whole-match specials `$0`/`$&` are kept **literal**
+so a card's own escape idiom `s.replace(/…/g, '\\$&')` isn't spliced into and broken; numbered groups
+still inject (with `$N` literal when the find-regex has no group N).
 
 **What does NOT transform cleanly (Tier 2 — set expectations honestly):** cards whose JS reaches past the
 documented surface — full-page apps that read undocumented `window.top` internals, exotic/uncommon

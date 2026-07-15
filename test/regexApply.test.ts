@@ -78,6 +78,29 @@ describe('regexStore.apply', () => {
     expect(out).toContain('<pre>HELLO</pre>')
   })
 
+  it('leaves $& / $0 literal inside a card payload (preserves the regex-escape idiom) while $N still injects', () => {
+    // The real bug: a plot beautifier injects the whole match via $1, but the card's own <script>
+    // contains the universal escape idiom `s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')`. Substituting $&
+    // there splices the ENTIRE matched block into the script (unterminated string → SyntaxError →
+    // every handler undefined → a card that renders but won't expand on click). So $&/$0 must stay
+    // literal in a card payload; the numbered-group injection ($1 into the textarea) must still work.
+    const card =
+      '```html\n<body><textarea>$1</textarea>' +
+      "<script>const esc=(s)=>s.replace(/[.*+?^${}()|[\\]\\\\]/g,'\\\\$&');const full='$0';</script></body>\n```"
+    const out = apply('<用户本轮输入>PLOT</用户本轮输入>', [
+      rule({ source: '(<用户本轮输入>[\\s\\S]*)', replace: card })
+    ])
+    expect(out).toContain("s.replace(/[.*+?^${}()|[\\]\\\\]/g,'\\\\$&')") // escape idiom intact
+    expect(out).toContain("const full='$0';") // $0 left literal in the card script
+    expect(out).toContain('<textarea><用户本轮输入>PLOT</用户本轮输入></textarea>') // $1 STILL injects
+    expect(out).not.toMatch(/\\\\<用户本轮输入>/) // the whole match was NOT spliced into the escape idiom
+  })
+
+  it('still substitutes $& with the whole match in a plain-text (non-card) replacement', () => {
+    // Non-card replacements keep native String.replace semantics — only card payloads are protected.
+    expect(apply('abc', [rule({ source: 'b', replace: '[$&]' })])).toBe('a[b]c')
+  })
+
   it('applies multiple rules in order', () => {
     const rules = [rule({ source: 'cat', replace: 'dog' }), rule({ source: 'dog', replace: 'fox' })]
     expect(apply('cat', rules)).toBe('fox')

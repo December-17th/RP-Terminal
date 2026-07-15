@@ -5,10 +5,10 @@
  *
  * Used by BOTH render paths so inline and isolated size cards identically (a parity invariant — see
  * the dual-mode rendering notes):
- *   - InlineCardFrame measures its srcdoc `documentElement.scrollHeight`. For a 100vh card that value
- *     is COUPLED to the iframe's own height (taller iframe -> taller 100vh -> taller scrollHeight), so
- *     an UNCAPPED measure feeds back through the ResizeObserver and the iframe grows without bound.
- *     Clamping breaks the loop: once the height is clamped, documentElement stops resizing.
+ *   - InlineCardFrame measures its srcdoc `body.scrollHeight` (+ body margins). For a 100vh card that
+ *     value is COUPLED to the iframe's own height (taller iframe -> taller 100vh -> taller scrollHeight),
+ *     so an UNCAPPED measure feeds back through the ResizeObserver and the iframe grows without bound.
+ *     Clamping breaks the loop: once the height is clamped, the body stops resizing.
  *   - WcvMessageFrame caps the height the card reports over IPC (its native overlay clips anyway).
  *
  * The 280px floor keeps a genuinely short card from being clamped to almost nothing on a tiny window.

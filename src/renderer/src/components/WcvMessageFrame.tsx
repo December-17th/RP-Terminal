@@ -7,6 +7,7 @@ import { capCardHeight } from './cardFrameHeight'
 import { buildEnvHead, replaceVhInContent } from '../../../shared/cardEnv'
 import { buildWcvLibTags } from '../cardBridge/cardLibs'
 import type { CardSizing } from '../../../shared/cardRenderMode'
+import type { CardChatScope } from '../../../shared/thRuntime/types'
 import { CARD_CSP } from '../../../shared/cardCsp'
 
 /**
@@ -25,10 +26,17 @@ let seq = 0
 
 export function WcvMessageFrame({
   html,
-  sizing = 'fit'
+  sizing = 'fit',
+  chatScope
 }: {
   html: string
   sizing?: CardSizing
+  /**
+   * Panel chat scope (general): forwarded to the WCV via its ensure ctx (parity with the inline frame).
+   * Main stashes it on the slot; the preload reads it synchronously and hands it to createThRuntime, so
+   * the card's chat reads reflect these messages instead of the real chat (chat-READ-only).
+   */
+  chatScope?: CardChatScope
 }): React.ReactElement {
   const hostRef = useRef<HTMLDivElement>(null)
   const slotId = useRef(`msg-wcv-${seq++}`).current
@@ -100,7 +108,12 @@ export function WcvMessageFrame({
         height: Math.max(0, bottom - top)
       }
     }
-    window.api.wcvEnsure(slotId, rect(), dataUrl, { profileId, chatId: chatId || '', characterId })
+    window.api.wcvEnsure(slotId, rect(), dataUrl, {
+      profileId,
+      chatId: chatId || '',
+      characterId,
+      chatScope
+    })
     const onChange = (): void => window.api.wcvSetBounds(slotId, rect())
     const ro = new ResizeObserver(onChange)
     ro.observe(el)
@@ -116,7 +129,7 @@ export function WcvMessageFrame({
       scrollers.forEach((s) => s.removeEventListener('scroll', onChange))
       window.api.wcvDestroy(slotId)
     }
-  }, [slotId, dataUrl, profileId, chatId, characterId])
+  }, [slotId, dataUrl, profileId, chatId, characterId, chatScope])
 
   // Auto-size the slot to the card's reported content height, and scroll the message list when the card
   // forwards a wheel delta (the native overlay would otherwise swallow it). Both are filtered to our slot.

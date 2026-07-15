@@ -161,7 +161,12 @@ through the host bridge as RFC-6902 JSON Patch.
   (global → preset → world → session), file order within a tier — `regexService.getAllRules`. Cards rely
   on this to run cleanup regexes (global/preset) before card-owned beautification (world) pastes large HTML.
 - Replacement syntax supports ST-style `$0` for the full match, `$&` for the full match, and `$1`/`$2`...
-  capture groups via the shared [`regexTransform`](../src/shared/regexTransform.ts).
+  capture groups via the shared [`regexTransform`](../src/shared/regexTransform.ts). **Card payloads are a
+  deliberate exception:** when the replacement is a frontend card (carries `<script>`/`<style>`/`<html>`/
+  ```` ```html ````), the whole-match specials `$&`/`$0` are left **literal** — a card's own script routinely
+  contains the escape idiom `s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')`, and substituting `$&` there would
+  splice the entire match into the script and break it. Numbered groups (`$1`…) still inject, with `$N`
+  left literal when the find-regex has no group N (so a card's own `$1` backreference survives).
 
 ### Events — ✅
 

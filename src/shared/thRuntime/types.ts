@@ -2,7 +2,21 @@
 import type { VarOp } from './ops'
 import type { TavernRegex } from './tavernRegex'
 
-export type CardCtx = { profileId: string; chatId: string; characterId: string }
+/**
+ * An ISOLATED chat scope for a card rendered inside a UI panel: its messages ARE the panel's content,
+ * so the card's chat reads (SillyTavern.chat / getContext().chat / getChatMessages / get*MessageId)
+ * reflect these messages instead of the real host chat. General (reusable by reasoning / agent panels).
+ * Chat-READ-only — writes, vars/MVU, generation, and worldbook stay on the real host (see createThRuntime).
+ */
+export type CardChatScope = { messages: Array<{ role: 'user' | 'assistant'; content: string }> }
+
+export type CardCtx = {
+  profileId: string
+  chatId: string
+  characterId: string
+  /** When set, the card runs against this scope's messages as its chat instead of the real host floors. */
+  chatScope?: CardChatScope
+}
 
 /**
  * Origin of a stat_data change, tagged end-to-end so the runtime can fire MVU events faithfully.

@@ -10,6 +10,7 @@ import { buildInlineLibTags } from '../cardBridge/cardLibs'
 import { buildEnvHead, replaceVhInContent } from '../../../shared/cardEnv'
 import { HtmlFrame } from './HtmlFrame'
 import type { CardSizing } from '../../../shared/cardRenderMode'
+import type { CardChatScope } from '../../../shared/thRuntime/types'
 
 installCardBridge() // idempotent; ensures window.__rptCardBridge exists before any frame mounts.
 // Expose the namespaced card surface on the renderer top window so an inline full-page card's
@@ -31,6 +32,7 @@ export function InlineCardFrame({
   html,
   sizing = 'fit',
   trusted = false,
+  chatScope,
   onContextMenu
 }: {
   html: string
@@ -42,6 +44,11 @@ export function InlineCardFrame({
    * braces check renders the static, script-free frame instead if a future call site forgets to.
    */
   trusted?: boolean
+  /**
+   * Panel chat scope (general): when set, the card's chat reads reflect these messages instead of the
+   * real chat (chat-READ-only — see createThRuntime). Serialized into the bridge bootstrap ctx below.
+   */
+  chatScope?: CardChatScope
   onContextMenu?: (x: number, y: number) => void
 }): React.ReactElement {
   const ref = useRef<HTMLIFrameElement>(null)
@@ -54,7 +61,7 @@ export function InlineCardFrame({
   const characterId = useCharacterStore((s) => s.activeCharacter?.id ?? '')
 
   const srcDoc = useMemo(() => {
-    const ctx = { profileId, chatId, characterId }
+    const ctx = { profileId, chatId, characterId, chatScope }
     // Classic bridge bootstrap: runs synchronously during head parse, BEFORE the card's deferred
     // modules. It pulls the bridge globals from the parent realm and copies the bridge's own enumerable
     // keys (Object.keys, since the bridge is a plain object literal) onto the iframe window (guarding
@@ -84,13 +91,14 @@ export function InlineCardFrame({
     // card fills the frame; in fit we instead neutralize it (in the effect) so the card content-fits.
     const docHtml = sizing === 'fill' ? replaceVhInContent(html) : html
     return buildCardDoc(docHtml, { headInject: boot + env })
-  }, [html, profileId, chatId, characterId, sizing])
+  }, [html, profileId, chatId, characterId, sizing, chatScope])
 
   // Auto-height (same-origin: read contentDocument) + right-click forwarding. Mirrors HtmlFrame.
   useEffect(() => {
     const frame = ref.current
     if (!frame) return
     let observer: ResizeObserver | undefined
+    let visibility: IntersectionObserver | undefined
     // A card designed as a full-viewport panel pins an element's min-height to 100vh (html/body, its mount
     // root #app, OR a deeper wrapper like the character viewer's `.viewer-root`). Inside an auto-height
     // iframe that makes the element as tall as the frame, which feeds back through the ResizeObserver (the
@@ -119,22 +127,24 @@ export function InlineCardFrame({
     const measureFit = (): void => {
       try {
         const doc = frame.contentDocument
-        const root = doc?.documentElement
-        if (!root || !doc.body) return
+        if (!doc?.body) return
         neutralizeViewportHeight()
-        // Fit the frame to the card's TRUE content height so it embeds inline with no inner scrollbar.
-        // Two traps this avoids: (1) the ROOT's scrollHeight is FLOORED at the iframe's viewport height,
-        // so reading it while the frame is tall can never report smaller — the frame would never shrink
-        // when a sub-panel closes (a stuck gap). (2) body.scrollHeight DOES shrink but EXCLUDES body's
-        // margins, so the frame ends ~16px short and a scrollbar reappears. So we momentarily collapse the
-        // frame (viewport floor -> ~0), read the root scrollHeight (full content incl. margins, now not
-        // floored), then restore. Both writes are synchronous, so the browser never paints the collapsed
-        // state (no flicker). +8 absorbs sub-pixel rounding so a 1px scrollbar can't sneak back.
-        const prev = frame.style.height
-        frame.style.height = '0'
-        const content = root.scrollHeight
-        frame.style.height = prev
-        setHeight(fitInlineCardHeight(content + 8, window.innerHeight))
+        // Fit the frame to the card's TRUE content height (with no inner scrollbar) by reading
+        // `body.scrollHeight` plus body's own margins. body.scrollHeight is content-sized and — unlike
+        // documentElement.scrollHeight — is NOT floored at the iframe viewport, so it still SHRINKS when a
+        // sub-panel closes; it only OMITS body's margins, which we add back (else the frame ends ~16px
+        // short and a scrollbar reappears). +8 absorbs sub-pixel rounding.
+        //
+        // This deliberately does NOT use the old "collapse the frame to height:0, read the un-floored
+        // documentElement.scrollHeight, restore" trick. Forcing a 0-height viewport RACED the card's own
+        // expand reflow: read at the wrong instant it reported the PRE-expand (collapsed) height, so an
+        // expanded sub-panel latched the frame too small and stayed clipped — the plot-recall panel's
+        // "clicking won't let me expand" bug (the card sits in a collapsed <details>, so its first measure
+        // ran while off-layout, making the race reliable). A collapsible driven by a `max-height`/`height`
+        // CSS TRANSITION is handled by the transitionend re-measure in onLoad below.
+        const cs = frame.contentWindow?.getComputedStyle(doc.body)
+        const margins = cs ? (parseFloat(cs.marginTop) || 0) + (parseFloat(cs.marginBottom) || 0) : 0
+        setHeight(fitInlineCardHeight(doc.body.scrollHeight + margins + 8, window.innerHeight))
       } catch {
         /* cross-origin guard (shouldn't happen — same origin) */
       }
@@ -170,6 +180,13 @@ export function InlineCardFrame({
           observer = new ResizeObserver(measureFit)
           observer.observe(body)
         }
+        // A card collapsible driven by a `max-height`/`height` CSS TRANSITION grows the body over several
+        // frames, and the ResizeObserver does not reliably deliver a notification for the FINAL frame — a
+        // single measure can latch a mid-animation height, so an expanded panel appears half-open. Re-fit
+        // when any transition completes so the frame lands on the card's settled height. Capture-phase so
+        // it catches transitions on any descendant; fit mode only (fill is a fixed box). The listener
+        // lives on this load's document and dies with it on reload/unmount (same as `contextmenu` below).
+        if (sizing !== 'fill') doc?.addEventListener('transitionend', measureFit, true)
         doc?.addEventListener('contextmenu', onCtx)
       } catch {
         /* ignore */
@@ -177,10 +194,23 @@ export function InlineCardFrame({
     }
     frame.addEventListener('load', onLoad)
     window.addEventListener('resize', refresh)
+    // A frame mounted while OFF-LAYOUT measures wrong: the plot-recall panel embeds this frame inside a
+    // collapsed <details>, so `load` fires (and `measureFit` runs) while the frame has no box — it settles
+    // at ~0, and the ResizeObserver above, watching a zero-box body, isn't reliably delivered when the
+    // panel finally opens (Chromium skips display:none / content-visibility:hidden subtrees). So the panel
+    // opened to an empty ~0-height frame. Re-run the measure whenever the frame crosses into view; cheap +
+    // idempotent for always-visible cards, and it self-corrects the hidden-mount + reopen cases.
+    if ('IntersectionObserver' in window) {
+      visibility = new IntersectionObserver((entries) => {
+        if (entries.some((e) => e.isIntersecting)) refresh()
+      })
+      visibility.observe(frame)
+    }
     return () => {
       frame.removeEventListener('load', onLoad)
       window.removeEventListener('resize', refresh)
       observer?.disconnect()
+      visibility?.disconnect()
       try {
         ;(frame.contentWindow as any)?.__rptDispose?.()
       } catch {

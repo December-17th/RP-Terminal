@@ -65,6 +65,37 @@ export function chatIndexMap(floors: FloorLike[]): Array<{ floorIdx: number; isU
   return out
 }
 
+/**
+ * Panel chat-scope messages → synthetic floors the chat-derivation readers (`floorsToStChat`,
+ * `floorsToThMessages`) consume. Pairs a `user`→`assistant` sequence into ONE floor: a `user` message
+ * opens a floor (its `user_message.content`); the next `assistant` message sets that floor's
+ * `response.content` and closes it. A lone assistant (no preceding open user) → a greeting-shaped
+ * `{ response }` floor; consecutive users each close as their own `{ user_message }` floor; a trailing
+ * unpaired user closes as its own floor. Only the fields those readers read are emitted.
+ */
+export function messagesToFloors(
+  messages: Array<{ role: 'user' | 'assistant'; content: string }>
+): FloorLike[] {
+  const out: FloorLike[] = []
+  let open: FloorLike | null = null // a floor with a user_message still awaiting its assistant response
+  for (const m of messages || []) {
+    if (m.role === 'user') {
+      if (open) out.push(open) // an earlier unpaired user closes as its own floor
+      open = { user_message: { content: m.content } }
+    } else {
+      if (open) {
+        open.response = { content: m.content }
+        out.push(open)
+        open = null
+      } else {
+        out.push({ response: { content: m.content } })
+      }
+    }
+  }
+  if (open) out.push(open)
+  return out
+}
+
 /** Floors → the SillyTavern `chat[]` shape (each turn = a user + an assistant message). */
 export function floorsToStChat(
   floors: FloorLike[],

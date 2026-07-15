@@ -1,6 +1,6 @@
 // src/shared/thRuntime/index.ts
-import type { Host, ThGlobals } from './types'
-import { floorsToThMessages, floorsToStChat, currentMessageId } from './shapes'
+import type { Host, ThGlobals, CardChatScope, FloorLike } from './types'
+import { floorsToThMessages, floorsToStChat, currentMessageId, messagesToFloors } from './shapes'
 import {
   setVarOps,
   deepVarOps,
@@ -40,7 +40,21 @@ const getByPath = (root: any, path: string): any =>
 
 const clone = (v: any): any => (v === undefined ? v : JSON.parse(JSON.stringify(v)))
 
-export function createThRuntime(host: Host): ThGlobals {
+export function createThRuntime(host: Host, opts?: { chatScope?: CardChatScope }): ThGlobals {
+  // --- panel chat scope (chat-READ-only) ---
+  // When a card runs inside a UI panel whose messages ARE its content (the plot / reasoning / agent
+  // panels), it must see a chat assembled from THOSE messages, not the real host floors. We convert the
+  // scope's messages to synthetic floors ONCE and route every chat-DERIVATION read through `chatFloors()`.
+  // Unscoped, `chatFloors() === host.floors()`, so behavior is byte-identical to before. The fence is
+  // deliberate: ONLY the floors→chat derivation changes — writes, vars/MVU, generation, worldbook, and
+  // setChatMessages/deleteChatMessages stay on the real host, so a panel card still shows real world state.
+  // `SillyTavern.saveChat` is likewise a NO-OP under scope: it would otherwise persist the scope-derived
+  // `SillyTavern.chat` (the panel content) into the REAL chat store — a write leak past the READ-only fence.
+  const scopeFloors: FloorLike[] | undefined = opts?.chatScope?.messages?.length
+    ? messagesToFloors(opts.chatScope.messages)
+    : undefined
+  const chatFloors = (): FloorLike[] => scopeFloors ?? host.floors()
+
   // --- event bus ---
   const map: Record<string, Array<(...a: any[]) => void>> = {}
   const on = (n: string, cb: (...a: any[]) => void): void => {
@@ -114,7 +128,7 @@ export function createThRuntime(host: Host): ThGlobals {
     }
     // `tavern_events.MESSAGE_UPDATED` carries the updated message id (`event.d.ts`), never nothing —
     // a card reading the id (or a field off it) otherwise throws on `undefined`.
-    emit(TAVERN_EVENTS.MESSAGE_UPDATED, currentMessageId(host.floors()))
+    emit(TAVERN_EVENTS.MESSAGE_UPDATED, currentMessageId(chatFloors()))
   })
   const offHost = host.onHostEvent((name, payload) => emit(name, payload))
 
@@ -135,6 +149,26 @@ export function createThRuntime(host: Host): ThGlobals {
 
   const writeVars = (ops: VarOp[]): Promise<void> =>
     ops.length ? host.applyVariableOps(ops) : Promise.resolve()
+
+  const mergeScopedVars = (vars: any, opt: any, insertOnly: boolean): Promise<void> | null => {
+    const type = opt?.type
+    if (type !== 'script' && type !== 'chat' && type !== 'global') return null
+
+    const current = clone(
+      type === 'script'
+        ? host.getScriptVars()
+        : type === 'chat'
+          ? host.getChatVars()
+          : host.getGlobalVarsSync()
+    ) || {}
+    const ops = deepVarOps(current, vars && typeof vars === 'object' ? vars : {}, insertOnly)
+    if (!ops.length) return Promise.resolve()
+
+    const next = applySetOps(current, ops)
+    if (type === 'script') return host.setScriptVars(next)
+    if (type === 'chat') return host.setChatVars(next)
+    return host.setGlobalVars(next)
+  }
 
   // Expand {{macros}} (substituteParams / substitudeMacros) over the card's live context: char/user/persona
   // names + the cached stat_data as chat vars. Pure (shared/macros); leaves <% %> EJS alone.
@@ -325,18 +359,18 @@ export function createThRuntime(host: Host): ThGlobals {
       return scriptButtons
     },
     getChatMessages: (range?: any) => {
-      const messages = floorsToThMessages(host.floors())
+      const messages = floorsToThMessages(chatFloors())
       if (typeof range !== 'number' || !Number.isInteger(range)) return messages
       const index = range < 0 ? messages.length + range : range
       return index >= 0 && index < messages.length ? [messages[index]] : []
     },
-    getCurrentMessageId: () => currentMessageId(host.floors()),
+    getCurrentMessageId: () => currentMessageId(chatFloors()),
     // TH alias: getCurrentMessageId IS getLastMessageId (both = the last message's id). The inline
     // shim already aliases them (shims/tavern.ts); the WCV runtime was missing the alias, so MVU/status
     // cards that call getLastMessageId() in their update handler threw "getLastMessageId is not defined"
     // — which aborted card init and cascaded into a downstream message_updated handler reading a field
     // off the never-set state ("reading 'event' of undefined").
-    getLastMessageId: () => currentMessageId(host.floors()),
+    getLastMessageId: () => currentMessageId(chatFloors()),
     getTavernHelperVersion: () => '4.3.17',
     getCharData: () => host.charData(),
     getCharAvatarPath: () => host.charAvatarPath(),
@@ -379,12 +413,11 @@ export function createThRuntime(host: Host): ThGlobals {
     injectPrompts: (_prompts: any, _options?: any) => ({ uninject: () => undefined }),
     uninjectPrompts: (_ids: any) => undefined,
     // ASYNC writes
-    // TH insertOrAssignVariables: DEEP-merge a (possibly nested) object into stat_data, preserving
-    // sibling keys (real TavernHelper is `_.merge`-like, NOT a shallow whole-top-level-key replace — a
-    // shallow replace corrupted cards that write partial nested objects, e.g. 命定之诗's `date` game-state
-    // object whose `event`/`npcs`/`log` sub-keys are written separately). deepVarOps emits a leaf `set`
-    // op per changed path; applySetOps keeps the optimistic cache in sync with what gets persisted.
-    insertOrAssignVariables: async (vars: any) => {
+    // TH insertOrAssignVariables: DEEP-merge a (possibly nested) object into the selected scope,
+    // preserving sibling keys. The default scope is stat_data; script/chat/global are their own KV bags.
+    insertOrAssignVariables: async (vars: any, opt?: any) => {
+      const scopedWrite = mergeScopedVars(vars, opt, false)
+      if (scopedWrite) return scopedWrite
       const obj = vars?.stat_data && typeof vars.stat_data === 'object' ? vars.stat_data : vars
       const ops = deepVarOps(stat, obj || {}, false)
       if (ops.length) {
@@ -396,7 +429,9 @@ export function createThRuntime(host: Host): ThGlobals {
     // sibling of insertOrAssignVariables, used by cards to seed initial MVU vars (e.g. the full default
     // `date` structure). DEEP: fills only the leaf paths missing from the current state (`_.defaultsDeep`),
     // so a partially-present object still gets its missing nested fields.
-    insertVariables: async (vars: any) => {
+    insertVariables: async (vars: any, opt?: any) => {
+      const scopedWrite = mergeScopedVars(vars, opt, true)
+      if (scopedWrite) return scopedWrite
       const obj = vars?.stat_data && typeof vars.stat_data === 'object' ? vars.stat_data : vars
       const ops = deepVarOps(stat, obj || {}, true)
       if (ops.length) {
@@ -595,8 +630,12 @@ export function createThRuntime(host: Host): ThGlobals {
   // --- SillyTavern ---
   const stChat = (): any[] => {
     const cd = host.charData()
-    const greetings = [cd?.first_mes, ...(cd?.alternate_greetings || [])].filter((g: any) => !!g)
-    return floorsToStChat(host.floors(), {
+    // A scoped panel chat has no character greetings (its floor 0 is the panel's own first message, not a
+    // greeting) — pass greetings:[] so floorsToStChat doesn't swap in first_mes/alternate_greetings there.
+    const greetings = scopeFloors
+      ? []
+      : [cd?.first_mes, ...(cd?.alternate_greetings || [])].filter((g: any) => !!g)
+    return floorsToStChat(chatFloors(), {
       charName: cd?.name || 'Character',
       userName: host.personaName(),
       greetings
@@ -633,7 +672,12 @@ export function createThRuntime(host: Host): ThGlobals {
     getContext,
     substituteParams: substMacros,
     getCurrentChatId: () => host.currentChatId(),
-    saveChat: async () => host.saveChat(SillyTavern.chat),
+    // READ-only fence: under a chatScope, SillyTavern.chat is the panel's own content — persisting it
+    // would leak panel content into the REAL chat store, so saveChat is a no-op. Unscoped path unchanged.
+    saveChat: async () => {
+      if (scopeFloors) return
+      return host.saveChat(SillyTavern.chat)
+    },
     reloadCurrentChat: async () => host.reloadChat(),
     saveMetadata,
     saveSettingsDebounced
