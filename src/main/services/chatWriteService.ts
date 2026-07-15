@@ -67,12 +67,22 @@ export function deleteChatMessages(
   return true
 }
 
+export interface SaveChatResult {
+  ok: boolean
+  /** Earliest floor whose content/swipes actually changed; null = a no-op echo (zero writes). */
+  changedFrom: number | null
+}
+
 /**
  * Persist a chat the card mutated (TH saveChat) — map assistant messages back to floors in order, updating
  * content + swipes/swipe_id. User messages are read-only here.
+ *
+ * Diff-first (audit P1-4): cards routinely echo the WHOLE `SillyTavern.chat` back unchanged; this used to
+ * rewrite every assistant floor and then trigger a full-transcript re-fold. Only floors that actually
+ * differ are written, and `changedFrom` lets the caller skip (no-op) or bound (suffix) the reevaluation.
  */
-export function saveChat(profileId: string, chatId: string, chat: unknown): boolean {
-  if (!Array.isArray(chat)) return false
+export function saveChat(profileId: string, chatId: string, chat: unknown): SaveChatResult {
+  if (!Array.isArray(chat)) return { ok: false, changedFrom: null }
   const floors = floorService.getAllFloors(profileId, chatId)
   // The opening greeting (first_mes / home-UI placeholder) belongs to floor 0 ONLY. Capture it so a
   // STALE `SillyTavern.chat` echoed back here can't clobber a real later response with the placeholder.
@@ -80,25 +90,37 @@ export function saveChat(profileId: string, chatId: string, chat: unknown): bool
   // card chat, still holding the greeting in the assistant[1] slot, was saved over the real reply.)
   const opening = floors[0]?.response.content
   const assistant = chat.filter((m) => m && !(m as any).is_user)
+  let changedFrom: number | null = null
   assistant.forEach((m: any, i) => {
     const f = floors[i]
     if (!f) return
     // Skip a non-opening floor whose incoming text IS the opening greeting — never propagate it forward.
     if (i > 0 && opening && m.mes === opening) return
-    if (typeof m.mes === 'string') f.response.content = m.mes
-    if (Array.isArray(m.swipes)) f.swipes = m.swipes
-    if (typeof m.swipe_id === 'number') f.swipe_id = m.swipe_id
+    const contentChanged = typeof m.mes === 'string' && m.mes !== f.response.content
+    const swipesChanged =
+      Array.isArray(m.swipes) && JSON.stringify(m.swipes) !== JSON.stringify(f.swipes)
+    const swipeIdChanged = typeof m.swipe_id === 'number' && m.swipe_id !== f.swipe_id
+    if (!contentChanged && !swipesChanged && !swipeIdChanged) return
+    if (contentChanged) f.response.content = m.mes
+    if (swipesChanged) f.swipes = m.swipes
+    if (swipeIdChanged) f.swipe_id = m.swipe_id
     floorService.saveFloor(profileId, chatId, f)
+    if (changedFrom === null || f.floor < changedFrom) changedFrom = f.floor
   })
-  return true
+  return { ok: true, changedFrom }
 }
 
 /**
  * Re-fold the model's `<UpdateVariable>` into stat_data after a card mutation (same engine as the
  * Re-evaluate button). Returns the rebuilt latest floor so the caller can push its variables to whatever
- * UI it owns (WCV panels / the renderer store).
+ * UI it owns (WCV panels / the renderer store). `fromFloor` bounds the replay to the changed suffix
+ * (audit P1-4) — stored stat_data below it is already the replay of the unchanged prefix.
  */
-export function afterChatMutation(profileId: string, chatId: string): FloorFile | null {
-  const rebuilt = generationService.reevaluateVariables(profileId, chatId)
+export function afterChatMutation(
+  profileId: string,
+  chatId: string,
+  fromFloor = 0
+): FloorFile | null {
+  const rebuilt = generationService.reevaluateVariables(profileId, chatId, fromFloor)
   return rebuilt[rebuilt.length - 1] ?? null
 }
