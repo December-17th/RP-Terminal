@@ -128,3 +128,17 @@ export const WCV_CHANNEL_SPEC: Record<WcvSpecMember, ChannelSpec> = {
 export const WCV_CHANNELS = Object.fromEntries(
   Object.entries(WCV_CHANNEL_SPEC).map(([member, spec]) => [member, spec.channel])
 ) as Record<WcvSpecMember, string>
+
+/**
+ * Channel names for the residue members that STILL cross IPC (they have hand-written bodies on both sides,
+ * so they can't ride the spec's generic loop, but their channel string must not drift between the preload
+ * adapter (`wcvHost.ts`) and the main handlers (`wcvIpc.ts`). The three shape-normalizing worldbook getters
+ * and `formatRegex` (whose fallback is the input text) live here; the residue members with NO main handler
+ * (`createChat`, the two event subscriptions, the injected EJS deps, `ctx`) are not IPC channels at all.
+ */
+export const WCV_RESIDUE_CHANNELS = {
+  worldbookNames: 'wcv-host-get-worldbook-names-sync',
+  getWorldbook: 'wcv-host-get-worldbook',
+  getWorldbookById: 'wcv-host-get-worldbook-by-id',
+  formatRegex: 'wcv-host-format-regex'
+} as const satisfies Partial<Record<WcvResidueMember, string>>

@@ -316,7 +316,7 @@ const hydrate = (v: any) => {
 // Sync initial read so the mirror is populated BEFORE the card's first render (an async IPC read would
 // land after the React app has already rendered defaults). sendSync blocks briefly — fine once.
 try {
-  statData = ipcRenderer.sendSync('wcv-host-get-vars-sync') || {}
+  statData = ipcRenderer.sendSync(WCV_CHANNELS.statData) || {}
 } catch {
   statData = {}
 }

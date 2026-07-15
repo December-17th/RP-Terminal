@@ -70,9 +70,13 @@ transports implement the same surface, so a card behaves identically in either
   a shared **Channel Spec** ([`wcvChannelSpec.ts`](../../src/shared/thRuntime/wcvChannelSpec.ts) —
   `{ channel, kind: 'sync'|'invoke'|'send', fallback }` per Host member); `createWcvHost`
   ([`wcvHost.ts`](../../src/preload/wcvHost.ts)) is generated from it by a generic loop (sync getters fall
-  back on a throw or null/undefined result), and `wcvIpc.ts` references the same channel names, so the two
-  sides can't drift (ADR 0013). A small hand-written residue (event subscriptions, injected EJS deps, the
-  shape-normalizing worldbook getters, `createChat`, `formatRegex`) stays outside the table.
+  back on a throw or null/undefined result). On the main side, `wcvIpc.ts` registers the same channels through
+  a member-keyed implementation map (`WcvHostImpls`, typed `Record<WcvSpecMember, …>`) driven by
+  `registerHostChannels`, so a spec member with no main-side handler is a COMPILE error, not a runtime gap —
+  the two sides can't drift in name, kind, OR completeness (ADR 0013). A small hand-written residue (event
+  subscriptions, injected EJS deps, the shape-normalizing worldbook getters, `createChat`, `formatRegex`)
+  stays outside the table; the four residue members that still cross IPC share their channel names via
+  `WCV_RESIDUE_CHANNELS`.
 
 **WCV-transport-only host method** (not on the `thRuntime` surface — a WCV is a native overlay with its
 own screen rect, which an inline DOM card doesn't need): `window.rptHost.getPanelGeometry()` →

@@ -15,7 +15,7 @@
 import { ipcRenderer } from 'electron'
 import type { Host, CardCtx } from '../shared/thRuntime/types'
 import type { VarsOrigin } from '../shared/thRuntime/types'
-import { WCV_CHANNEL_SPEC } from '../shared/thRuntime/wcvChannelSpec'
+import { WCV_CHANNEL_SPEC, WCV_RESIDUE_CHANNELS } from '../shared/thRuntime/wcvChannelSpec'
 import type { WcvSpecMember } from '../shared/thRuntime/wcvChannelSpec'
 
 type Deps = {
@@ -54,7 +54,7 @@ export function createWcvHost(deps: Deps): Host {
     generated[member] = buildMember(WCV_CHANNEL_SPEC[member])
   }
 
-  const wbNames = (): any => ipcRenderer.sendSync('wcv-host-get-worldbook-names-sync')
+  const wbNames = (): any => ipcRenderer.sendSync(WCV_RESIDUE_CHANNELS.worldbookNames)
 
   // Hand-written residue (same bodies as before) spread over the generated members.
   return {
@@ -66,18 +66,18 @@ export function createWcvHost(deps: Deps): Host {
       return { primary: r?.primary ?? null, additional: r?.additional || [] }
     },
     getWorldbook: async (name) => {
-      const entries = await ipcRenderer.invoke('wcv-host-get-worldbook', name)
+      const entries = await ipcRenderer.invoke(WCV_RESIDUE_CHANNELS.getWorldbook, name)
       return { entries: Array.isArray(entries) ? entries : (entries?.entries ?? []) }
     },
     getWorldbookById: async (id) => {
-      const r = await ipcRenderer.invoke('wcv-host-get-worldbook-by-id', id)
+      const r = await ipcRenderer.invoke(WCV_RESIDUE_CHANNELS.getWorldbookById, id)
       return { name: r?.name, entries: Array.isArray(r?.entries) ? r.entries : [] }
     },
     // createChat has no main-side channel (the WCV never spawns a chat) — deferred empty id.
     createChat: () => Promise.resolve(''),
     // formatRegex's natural fallback is the INPUT text, which the static table can't express, so it stays
     // hand-written and keeps its original body (no try/catch — a throw here surfaces, as before).
-    formatRegex: (t) => ipcRenderer.sendSync('wcv-host-format-regex', t),
+    formatRegex: (t) => ipcRenderer.sendSync(WCV_RESIDUE_CHANNELS.formatRegex, t),
     onVarsChanged: (cb) => {
       // Forward the origin (2nd IPC arg) so the runtime fires MVU events only for non-card-write changes
       // (a card's own write echoed back must not re-fire its events and loop — the WS-3 fix). Absent ⇒
