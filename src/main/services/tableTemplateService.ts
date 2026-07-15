@@ -170,6 +170,47 @@ export const exportTableTemplateToFile = (
 }
 
 /**
+ * Import an in-memory template object as a NEW template — the object-level core shared by the file
+ * import and the World-Card bundle path. Accepts **chatSheets v2** (`parseChatSheets`) primarily; on a
+ * ChatSheetsParseError it falls back to our **native `TableTemplate`** shape so a card may embed either.
+ * Returns `{ summary }` on success or a localizable `{ error }` — never throws.
+ */
+export const importTableTemplateFromObject = (
+  profileId: string,
+  raw: unknown,
+  name = 'Bundled Template'
+): TableTemplateImportResult => {
+  try {
+    let template: TableTemplate
+    try {
+      template = parseChatSheets(raw, name)
+    } catch (error) {
+      if (error instanceof ChatSheetsParseError) {
+        // Not chatSheets v2 — try our native template shape before giving up. Require at least one
+        // table: TableTemplateSchema defaults every field, so an unrelated object would otherwise
+        // parse into a valid EMPTY template and silently "import". Anything else re-surfaces the
+        // chatSheets error.
+        const native = TableTemplateSchema.safeParse(raw)
+        if (native.success && native.data.tables.length > 0) template = native.data
+        else throw error
+      } else {
+        throw error
+      }
+    }
+    const id = saveTableTemplate(profileId, template)
+    return { summary: { id, name: template.name, tableCount: template.tables.length } }
+  } catch (error) {
+    // Parser errors carry a human message; surface it. Anything else → a generic localized key.
+    if (error instanceof ChatSheetsParseError) {
+      log('info', 'Rejected table-template import:', error.message)
+      return { error: error.message }
+    }
+    log('error', 'Failed to import table template:', error)
+    return { error: 'tables.importErrorGeneric' }
+  }
+}
+
+/**
  * Import a chatSheets v2 JSON file as a NEW template. Returns `{ summary }` on success or
  * `{ error }` (a localizable message) on failure — never throws across the IPC boundary.
  */
@@ -184,19 +225,5 @@ export const importTableTemplateFromFile = (
     log('error', 'Failed to read table-template file:', error)
     return { error: 'tables.importErrorRead' }
   }
-  try {
-    const template = parseChatSheets(raw, path.basename(filePath, '.json'))
-    const id = saveTableTemplate(profileId, template)
-    return {
-      summary: { id, name: template.name, tableCount: template.tables.length }
-    }
-  } catch (error) {
-    // Parser errors carry a human message; surface it. Anything else → a generic localized key.
-    if (error instanceof ChatSheetsParseError) {
-      log('info', 'Rejected table-template import:', error.message)
-      return { error: error.message }
-    }
-    log('error', 'Failed to import table template:', error)
-    return { error: 'tables.importErrorGeneric' }
-  }
+  return importTableTemplateFromObject(profileId, raw, path.basename(filePath, '.json'))
 }

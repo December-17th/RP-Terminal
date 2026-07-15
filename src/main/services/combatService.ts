@@ -8,7 +8,7 @@
 // without a database; the exported *Encounter functions are thin load→pure→save
 // wrappers the IPC layer calls. See docs/combat-system-design.md §5/§7.
 
-import { getDb } from './db'
+import { getSessionDbByChat } from './sessionDbService'
 import { runSandbox } from './sandboxService'
 import { generateRaw } from './generation/rawGenerate'
 import { getCharacter } from './characterService'
@@ -233,19 +233,21 @@ export const summarizeOutcome = (state: CombatState): CombatOutcome => ({
 // --- DB-backed wrappers (called by combatIpc) -----------------------------------
 
 const readRecord = (chatId: string): EncounterRecord | null => {
-  const row = getDb()
-    .prepare('SELECT data FROM combat_encounters WHERE chat_id = ?')
-    .get(chatId) as { data: string } | undefined
+  const db = getSessionDbByChat(chatId)
+  if (!db) return null
+  const row = db.prepare('SELECT data FROM combat_encounters WHERE chat_id = ?').get(chatId) as
+    | { data: string }
+    | undefined
   return row ? (JSON.parse(row.data) as EncounterRecord) : null
 }
 
 const writeRecord = (chatId: string, record: EncounterRecord): void => {
-  getDb()
-    .prepare(
-      `INSERT INTO combat_encounters (chat_id, data, updated_at) VALUES (?, ?, ?)
+  const db = getSessionDbByChat(chatId)
+  if (!db) return
+  db.prepare(
+    `INSERT INTO combat_encounters (chat_id, data, updated_at) VALUES (?, ?, ?)
        ON CONFLICT(chat_id) DO UPDATE SET data = excluded.data, updated_at = excluded.updated_at`
-    )
-    .run(chatId, JSON.stringify(record), new Date().toISOString())
+  ).run(chatId, JSON.stringify(record), new Date().toISOString())
 }
 
 const requireRecord = (chatId: string): EncounterRecord => {
@@ -593,10 +595,10 @@ export const endEncounter = (chatId: string): CombatOutcome | null => {
   const record = readRecord(chatId)
   if (!record) return null
   const outcome = summarizeOutcome(record.state)
-  getDb().prepare('DELETE FROM combat_encounters WHERE chat_id = ?').run(chatId)
+  getSessionDbByChat(chatId)?.prepare('DELETE FROM combat_encounters WHERE chat_id = ?').run(chatId)
   return outcome
 }
 
 export const clearEncounter = (chatId: string): void => {
-  getDb().prepare('DELETE FROM combat_encounters WHERE chat_id = ?').run(chatId)
+  getSessionDbByChat(chatId)?.prepare('DELETE FROM combat_encounters WHERE chat_id = ?').run(chatId)
 }

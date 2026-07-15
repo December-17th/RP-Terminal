@@ -64,6 +64,11 @@ const AssetsPopup = lazy(() =>
 const MemoryManagerView = lazy(() =>
   import('./components/memory/MemoryManagerView').then((m) => ({ default: m.MemoryManagerView }))
 )
+const TableTemplateReminderModal = lazy(() =>
+  import('./components/TableTemplateReminderModal').then((m) => ({
+    default: m.TableTemplateReminderModal
+  }))
+)
 import { CardTrustPrompt } from './components/CardTrustPrompt'
 import { refreshWcvHostState } from './cardBridge/hostReload'
 
@@ -434,6 +439,7 @@ export default function App(): React.ReactElement {
         <DuelPopup profileId={activeProfile.id} />
         <AssetsPopup profileId={activeProfile.id} />
         <MemoryManagerView profileId={activeProfile.id} />
+        <TableTemplateReminderModal profileId={activeProfile.id} />
       </Suspense>
       <CardTrustPrompt />
       <ToastStack />

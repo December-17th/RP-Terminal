@@ -1,6 +1,6 @@
 import Database from 'better-sqlite3'
 import fs from 'fs'
-import { getDb } from './db'
+import { getSessionDbByChat } from './sessionDbService'
 import { log } from './logService'
 import * as tableDbService from './tableDbService'
 import { replayOneOp, validateBatch, TableSqlError, classifyStatement } from './tableSql'
@@ -75,7 +75,8 @@ export const appendOps = (
   fromFloor?: number
 ): void => {
   if (!sqls.length) return
-  const db = getDb()
+  const db = getSessionDbByChat(chatId)
+  if (!db) return
   const row = db
     .prepare('SELECT MAX(seq) AS maxSeq FROM table_ops WHERE chat_id = ? AND floor = ?')
     .get(chatId, floor) as { maxSeq: number | null } | undefined
@@ -86,7 +87,16 @@ export const appendOps = (
   )
   const insertAll = db.transaction(() => {
     for (const sql of sqls)
-      stmt.run(chatId, floor, seq++, sql, now, opTargetTable(sql), source ?? null, fromFloor ?? null)
+      stmt.run(
+        chatId,
+        floor,
+        seq++,
+        sql,
+        now,
+        opTargetTable(sql),
+        source ?? null,
+        fromFloor ?? null
+      )
   })
   insertAll()
 }
@@ -115,9 +125,12 @@ export interface FloorOp {
  */
 export const appendOpsAt = (chatId: string, floorOps: FloorOp[], source: TableOpSource): void => {
   if (!floorOps.length) return
-  const db = getDb()
+  const db = getSessionDbByChat(chatId)
+  if (!db) return
   const now = new Date().toISOString()
-  const seqStmt = db.prepare('SELECT MAX(seq) AS maxSeq FROM table_ops WHERE chat_id = ? AND floor = ?')
+  const seqStmt = db.prepare(
+    'SELECT MAX(seq) AS maxSeq FROM table_ops WHERE chat_id = ? AND floor = ?'
+  )
   const insStmt = db.prepare(
     'INSERT INTO table_ops (chat_id, floor, seq, sql, created_at, target_table, source, from_floor) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
   )
@@ -138,9 +151,9 @@ export const appendOpsAt = (chatId: string, floorOps: FloorOp[], source: TableOp
 
 /** All ops for a chat, ordered by (floor, seq) — the replay order. */
 export const listOps = (_profileId: string, chatId: string): TableOp[] =>
-  getDb()
-    .prepare('SELECT floor, seq, sql FROM table_ops WHERE chat_id = ? ORDER BY floor, seq')
-    .all(chatId) as TableOp[]
+  (getSessionDbByChat(chatId)
+    ?.prepare('SELECT floor, seq, sql FROM table_ops WHERE chat_id = ? ORDER BY floor, seq')
+    .all(chatId) as TableOp[] | undefined) ?? []
 
 /** An op carrying its stored `target_table`, for the refill shadow-replay filter (needs the attribution
  *  to decide which ops to roll back). Ordered by (floor, seq) — the replay order. */
@@ -151,11 +164,11 @@ export interface TableOpWithTarget extends TableOp {
 /** All ops for a chat with their `target_table`, ordered by (floor, seq) — the refill shadow builder's
  *  input (it filters out the selected-tables tail, then replays the survivors into the shadow). */
 export const listOpsForReplay = (chatId: string): TableOpWithTarget[] =>
-  getDb()
-    .prepare(
+  (getSessionDbByChat(chatId)
+    ?.prepare(
       'SELECT floor, seq, sql, target_table AS targetTable FROM table_ops WHERE chat_id = ? ORDER BY floor, seq'
     )
-    .all(chatId) as TableOpWithTarget[]
+    .all(chatId) as TableOpWithTarget[] | undefined) ?? []
 
 /**
  * The chat's op-log high-water mark: `MAX(rowid)` over its `table_ops` rows (0 when the chat has none).
@@ -166,9 +179,11 @@ export const listOpsForReplay = (chatId: string): TableOpWithTarget[] =>
  * INCREASE as foreign.
  */
 export const opsWatermark = (chatId: string): number => {
-  const row = getDb()
-    .prepare('SELECT MAX(rowid) AS m FROM table_ops WHERE chat_id = ?')
-    .get(chatId) as { m: number | null } | undefined
+  const db = getSessionDbByChat(chatId)
+  if (!db) return 0
+  const row = db.prepare('SELECT MAX(rowid) AS m FROM table_ops WHERE chat_id = ?').get(chatId) as
+    | { m: number | null }
+    | undefined
   return row?.m ?? 0
 }
 
@@ -194,7 +209,9 @@ export interface TableOpView {
  * the rewind cut is keyed to each entry's `floor`.
  */
 export const listOpsForDisplay = (_profileId: string, chatId: string): TableOpView[] => {
-  const rows = getDb()
+  const db = getSessionDbByChat(chatId)
+  if (!db) return []
+  const rows = db
     .prepare(
       'SELECT floor, seq, sql, created_at, source FROM table_ops WHERE chat_id = ? ORDER BY floor DESC, seq DESC'
     )
@@ -228,13 +245,13 @@ export const listOpsForDisplay = (_profileId: string, chatId: string): TableOpVi
 
 /** Drop every op at/after `fromFloor` (rewind cut). Returns the number of rows deleted. */
 export const deleteOpsFrom = (_profileId: string, chatId: string, fromFloor: number): number =>
-  getDb()
-    .prepare('DELETE FROM table_ops WHERE chat_id = ? AND floor >= ?')
-    .run(chatId, fromFloor).changes
+  getSessionDbByChat(chatId)
+    ?.prepare('DELETE FROM table_ops WHERE chat_id = ? AND floor >= ?')
+    .run(chatId, fromFloor).changes ?? 0
 
 /** Drop the chat's entire op log (template (re)assignment — stale ops must never replay). */
 export const deleteAllOps = (_profileId: string, chatId: string): void => {
-  getDb().prepare('DELETE FROM table_ops WHERE chat_id = ?').run(chatId)
+  getSessionDbByChat(chatId)?.prepare('DELETE FROM table_ops WHERE chat_id = ?').run(chatId)
 }
 
 /**
@@ -249,8 +266,10 @@ export const deleteOpsFor = (
   fromFloor: number
 ): number => {
   if (!tables.length) return 0
+  const db = getSessionDbByChat(chatId)
+  if (!db) return 0
   const placeholders = tables.map(() => '?').join(', ')
-  return getDb()
+  return db
     .prepare(
       `DELETE FROM table_ops WHERE chat_id = ? AND floor >= ? AND target_table IN (${placeholders})`
     )
@@ -265,8 +284,10 @@ export const deleteOpsFor = (
  */
 export const hasBaselineOps = (_profileId: string, chatId: string, tables: string[]): boolean => {
   if (!tables.length) return false
+  const db = getSessionDbByChat(chatId)
+  if (!db) return false
   const placeholders = tables.map(() => '?').join(', ')
-  const row = getDb()
+  const row = db
     .prepare(
       `SELECT 1 FROM table_ops WHERE chat_id = ? AND source = 'baseline' AND target_table IN (${placeholders}) LIMIT 1`
     )
@@ -289,8 +310,10 @@ export const earliestSpanStart = (
   fromFloor: number
 ): number | null => {
   if (!tables.length) return null
+  const db = getSessionDbByChat(chatId)
+  if (!db) return null
   const placeholders = tables.map(() => '?').join(', ')
-  const row = getDb()
+  const row = db
     .prepare(
       `SELECT MIN(COALESCE(from_floor, floor)) AS m FROM table_ops WHERE chat_id = ? AND floor >= ? AND target_table IN (${placeholders})`
     )
@@ -306,9 +329,7 @@ export const earliestSpanStart = (
  * manual pass. Input need not be pre-sorted; the output is (floor, seq)-ordered.
  */
 export const replayPlan = (ops: TableOp[], fromFloor: number): TableOp[] =>
-  ops
-    .filter((o) => o.floor < fromFloor)
-    .sort((a, b) => (a.floor - b.floor) || (a.seq - b.seq))
+  ops.filter((o) => o.floor < fromFloor).sort((a, b) => a.floor - b.floor || a.seq - b.seq)
 
 // ---- per-chat write lock (compaction-slot pattern) -------------------------------------------
 

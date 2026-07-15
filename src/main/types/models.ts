@@ -99,6 +99,9 @@ export interface Settings {
     /** WS4: global default row cap for the per-table memory block injected into the MAIN narrative
      *  prompt (the 'recent' policy). A per-table `injectionPolicy.rows` overrides it. Default 20. */
     injection_max_rows: number
+    /** When true (default), a new session with no memory-table template assigned pops a one-time
+     *  reminder to set one. Disabled globally from Settings (or the popup's "don't remind me"). */
+    remind_set_template?: boolean
   }
   /** ST-Prompt-Template EJS engine (`<% %>` template processing) on/off. */
   templates: {

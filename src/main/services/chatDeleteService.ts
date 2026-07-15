@@ -1,30 +1,29 @@
 import { getDb } from './db'
-import * as tableDbService from './tableDbService'
-import * as notesMemoryService from './notesMemoryService'
+import * as sessionDbService from './sessionDbService'
 
 /**
  * Delete ALL persisted state for one chat — the single centralized teardown reused by
  * `chatService.deleteChat`, `characterService.deleteCharacter`, and `profileService.wipeProfile`,
  * so no delete path can drift and leave orphaned rows/files (performance-audit P1-8).
  *
- * This lives in a LEAF module (imports only `db` + the two per-chat file services) precisely to
- * stay OFF the `chatService ↔ characterService` import edge: `chatService` already imports
+ * This lives in a LEAF module (imports only `db` + the session-store service) precisely to stay OFF
+ * the `chatService ↔ characterService` import edge: `chatService` already imports
  * `characterService` (`getCharacter`), so making `characterService` import `chatService` would form
  * a dependency cycle. All three callers import THIS instead — cycle-free.
  *
- * DB rows go in one transaction. Deleting the `chats` row FK-cascades the tables that REFERENCE
- * `chats(id) ON DELETE CASCADE` (foreign_keys is ON — see db.ts): `floors`, `combat_encounters`,
- * `node_state`, `table_ops`, `vars_ops`, `table_progress`, `table_refill_progress`. The chat-keyed
- * tables that carry NO foreign key never cascade, so they are deleted explicitly:
+ * Under the decentralized save layout (§B), a chat's floors/ops/combat/node_state/tables/notes live
+ * in its per-session store FOLDER, removed as a unit after the DB commit. What remains CENTRAL are
+ * the chat-keyed rows that carry no foreign key (§B0 exceptions — cross-scope / pack-library-coupled),
+ * deleted explicitly in one transaction:
  *   - `workflow_run_history`     (chat_id NOT NULL; decoupled from chat lifecycle by design — ADR 0003)
- *   - `workflow_trigger_state`   (chat_id NOT NULL)
+ *   - `workflow_trigger_state`   (chat_id NOT NULL; doc-trigger baselines)
  *   - `agent_pack_trigger_state` (chat_id NOT NULL)
  *   - `agent_pack_activation`    (only the per-chat EXCEPTION rows — chat_id set; the WORLD-scope rows
  *                                 have chat_id NULL and MUST survive, so `WHERE chat_id = ?` is exact)
+ *   - `agent_pack_overrides`     (only the `chat:<id>` scope rows — world/profile scopes survive)
  *
- * File-based per-chat state lives OUTSIDE the app DB and cannot be transactional, so it is removed
- * AFTER the DB commit: the table sandbox, its refill shadow, and the plot-recall notes file. Each
- * removal is individually idempotent (a missing file is a no-op).
+ * `sessionDbService.removeSession` closes the cached handle first (Windows file locks) then removes
+ * the folder + WAL sidecars (§B4); it is idempotent for a chat that never had a session store.
  */
 export const deleteChatFully = (profileId: string, chatId: string): void => {
   const db = getDb()
@@ -33,11 +32,10 @@ export const deleteChatFully = (profileId: string, chatId: string): void => {
     db.prepare('DELETE FROM workflow_trigger_state WHERE chat_id = ?').run(chatId)
     db.prepare('DELETE FROM agent_pack_trigger_state WHERE chat_id = ?').run(chatId)
     db.prepare('DELETE FROM agent_pack_activation WHERE chat_id = ?').run(chatId)
+    db.prepare('DELETE FROM agent_pack_overrides WHERE scope = ?').run(`chat:${chatId}`)
     db.prepare('DELETE FROM chats WHERE id = ?').run(chatId)
   })()
-  tableDbService.removeSandbox(profileId, chatId)
-  tableDbService.removeShadow(profileId, chatId)
-  notesMemoryService.removeNotes(profileId, chatId)
+  sessionDbService.removeSession(profileId, chatId)
 }
 
 /** The chat ids belonging to a character (for centralized cascade on character deletion). */

@@ -40,9 +40,9 @@ afterEach(() => {
 })
 
 describe('notesFilePath', () => {
-  it('lives under the profile in its own chat-notes dir, not the app DB', () => {
+  it('lives inside the chat session-store folder, not the app DB', () => {
     const p = notesFilePath(P, 'chatA')
-    expect(p).toBe(path.join(tmp, 'profiles', P, 'chat-notes', 'chatA.md'))
+    expect(p).toBe(path.join(tmp, 'profiles', P, 'chats', 'chatA', 'notes.md'))
     expect(p).not.toContain('rpterminal.db')
   })
 })

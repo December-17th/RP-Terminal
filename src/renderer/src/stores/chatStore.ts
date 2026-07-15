@@ -3,6 +3,7 @@ import type { FloorMetrics } from '../../../shared/usageTypes'
 import type { VarsOrigin } from '../../../shared/thRuntime/types'
 import { useCombatStore } from './combatStore'
 import { useDuelStore } from './duelStore'
+import { useSettingsStore } from './settingsStore'
 
 export interface FloorIndexEntry {
   floor: number
@@ -58,6 +59,10 @@ interface ChatState {
   /** Live partial text for the in-flight response (pre-regex), shown while streaming. */
   streamingText: string
   error: string | null
+  /** One-time new-session nudge: set true right after createChat when the memory-table reminder
+   *  setting is on (a brand-new session never has a template assigned). Cleared by
+   *  dismissTemplateReminder. Rendered by TableTemplateReminderModal. */
+  templateReminderOpen: boolean
   loadChats: (profileId: string) => Promise<void>
   createChat: (profileId: string, characterId: string) => Promise<void>
   setActiveChat: (profileId: string, chatId: string) => Promise<void>
@@ -79,6 +84,17 @@ interface ChatState {
   regenerate: (profileId: string) => Promise<void>
   stopGeneration: () => Promise<void>
   deleteChat: (profileId: string, chatId: string) => Promise<void>
+  /** Export one session to a `.rpsave` file (Feature 2). Returns the native-dialog result (or null
+   *  if the user cancelled); the caller toasts success/error. */
+  exportSave: (
+    profileId: string,
+    chatId: string
+  ) => Promise<{ name: string } | { error: string } | null>
+  /** Import a `.rpsave` into a NEW session (requires its world installed). Refreshes the chat list on
+   *  success so the imported session appears. */
+  importSave: (
+    profileId: string
+  ) => Promise<{ chatId: string } | { error: string; worldName?: string } | null>
   /** Drop the active session + its loaded floors (e.g. when switching/deleting worlds, so a
    * stale chat from another world isn't rendered). */
   clearActiveChat: () => void
@@ -99,6 +115,8 @@ interface ChatState {
   /** Replace the latest floor's variables (used by card scripts that mutate state
    * outside a generation turn, so status widgets reflect the change immediately). */
   setLatestFloorVariables: (variables: Record<string, any>) => void
+  /** Close the new-session memory-table reminder popup. */
+  dismissTemplateReminder: () => void
 }
 
 export const useChatStore = create<ChatState>((set, get) => {
@@ -138,6 +156,7 @@ export const useChatStore = create<ChatState>((set, get) => {
     isGenerating: false,
     streamingText: '',
     error: null,
+    templateReminderOpen: false,
 
     appendDelta: (delta) => {
       streamBuffer += delta
@@ -177,7 +196,11 @@ export const useChatStore = create<ChatState>((set, get) => {
       }))
       // A freshly created chat may already contain a seeded greeting floor.
       const floors = await window.api.getFloors(profileId, newChat.id)
-      set({ floors, lastVarsOrigin: 'model-fold' })
+      // New-session nudge: a brand-new chat never has a memory-table template assigned, so when the
+      // reminder setting is on (default) pop the one-time reminder to set one. Scoped to createChat
+      // only (not setActiveChat) so reopening an existing session never nags.
+      const remind = useSettingsStore.getState().settings?.tables?.remind_set_template !== false
+      set({ floors, lastVarsOrigin: 'model-fold', templateReminderOpen: remind })
     },
 
     setActiveChat: async (profileId, chatId) => {
@@ -424,6 +447,14 @@ export const useChatStore = create<ChatState>((set, get) => {
       })
     },
 
+    exportSave: async (profileId, chatId) => window.api.exportSaveDialog(profileId, chatId),
+
+    importSave: async (profileId) => {
+      const res = await window.api.importSaveDialog(profileId)
+      if (res && 'chatId' in res) get().loadChats(profileId) // surface the imported session
+      return res
+    },
+
     clearActiveChat: () => {
       resetStream()
       set({
@@ -434,6 +465,8 @@ export const useChatStore = create<ChatState>((set, get) => {
         streamingText: '',
         error: null
       })
-    }
+    },
+
+    dismissTemplateReminder: () => set({ templateReminderOpen: false })
   }
 })

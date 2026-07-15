@@ -7,10 +7,15 @@ import * as logService from './services/logService'
 import * as storageService from './services/storageService'
 import { readLocationPointer } from './services/locationPointer'
 import * as migrationService from './services/migrationService'
+import * as sessionMigrationService from './services/sessionMigrationService'
+import * as sessionDbService from './services/sessionDbService'
 import * as templateService from './services/templateService'
 import * as wcvManager from './services/wcvManager'
 import * as worldAssetProtocol from './services/worldAssetProtocol'
 import * as avatarProtocol from './services/avatarProtocol'
+// Side-effect: wires workflowService's card-import ops into characterService's seam (breaks the
+// characterService → workflowService cycle). Must load before any card import runs.
+import './services/cardWorkflowBridge'
 import { registerIpc } from './ipc'
 import { setGuardMainWindow } from './ipc/ipcGuards'
 import { TITLEBAR_OVERLAY_HEIGHT } from './windowChrome'
@@ -137,6 +142,20 @@ app.whenReady().then(() => {
     logService.log('error', 'Startup DB migration failed', err?.message || String(err))
   }
 
+  // Decentralize any pre-existing chats into per-session stores (plan §B5). Runs to completion here,
+  // before any chat can be opened, so services never see a half-migrated chat. Resumable + quarantining.
+  try {
+    sessionMigrationService.migrateSessionsIfNeeded()
+  } catch (err: any) {
+    logService.log(
+      'error',
+      'Session decentralization migration failed',
+      err?.message || String(err)
+    )
+    app.quit()
+    return
+  }
+
   // Initialize the sandboxed template engine (non-blocking for the rest of startup).
   templateService.initTemplates().then(() => logService.log('info', 'Template engine ready'))
 
@@ -171,6 +190,20 @@ app.whenReady().then(() => {
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') {
     app.quit()
+  }
+})
+
+// Close every open per-chat session DB handle before quitting so Windows file locks don't linger and a
+// clean shutdown checkpoints each WAL (plan §B4 / review C3).
+app.on('will-quit', () => {
+  try {
+    sessionDbService.closeAll()
+  } catch (err: any) {
+    logService.log(
+      'error',
+      'Failed to close session DB handles on quit',
+      err?.message || String(err)
+    )
   }
 })
 

@@ -85,7 +85,7 @@ export const getDefaultSettings = (): Settings => ({
   },
   // SQL-table memory (manual-pass issue 04): the frequency a template table with updateFrequency -1
   // ("use global") maintains at. Mirrors the 数据库-plugin global default.
-  tables: { default_update_frequency: 3, injection_max_rows: 20 },
+  tables: { default_update_frequency: 3, injection_max_rows: 20, remind_set_template: true },
   templates: {
     enabled: true,
     render: {

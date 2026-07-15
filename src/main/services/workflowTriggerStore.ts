@@ -17,7 +17,7 @@
 // native binary can't load under Node; the store returns empty rows under the alias stub, and the
 // SERVICE logic that consumes it is unit-tested by mocking this module).
 
-import { getDb } from './db'
+import { getSessionDbByChat } from './sessionDbService'
 import { TriggerState } from './agentPackTriggerStore'
 
 export type { TriggerState }
@@ -28,7 +28,9 @@ export const getDocTriggerState = (
   docId: string,
   nodeId: string
 ): TriggerState | null => {
-  const row = getDb()
+  const db = getSessionDbByChat(chatId)
+  if (!db) return null
+  const row = db
     .prepare(
       'SELECT last_value, last_fire_floor FROM workflow_trigger_state WHERE chat_id = ? AND doc_id = ? AND node_id = ?'
     )
@@ -49,8 +51,8 @@ export const setDocTriggerLastValue = (
   nodeId: string,
   lastValue: number
 ): void => {
-  getDb()
-    .prepare(
+  getSessionDbByChat(chatId)
+    ?.prepare(
       `INSERT INTO workflow_trigger_state (chat_id, doc_id, node_id, last_value, last_fire_floor)
        VALUES (?, ?, ?, ?, NULL)
        ON CONFLICT(chat_id, doc_id, node_id) DO UPDATE SET last_value = excluded.last_value`
@@ -65,8 +67,8 @@ export const setDocTriggerLastFireFloor = (
   nodeId: string,
   lastFireFloor: number
 ): void => {
-  getDb()
-    .prepare(
+  getSessionDbByChat(chatId)
+    ?.prepare(
       `INSERT INTO workflow_trigger_state (chat_id, doc_id, node_id, last_value, last_fire_floor)
        VALUES (?, ?, ?, NULL, ?)
        ON CONFLICT(chat_id, doc_id, node_id) DO UPDATE SET last_fire_floor = excluded.last_fire_floor`

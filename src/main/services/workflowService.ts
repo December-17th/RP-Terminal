@@ -587,6 +587,55 @@ export const importWorkflowFromFile = (
   return createWorkflowFromDoc(profileId, raw)
 }
 
+/** Stamp `meta.world_owner` on a doc-shaped object (the ownership tag used by deleteWorkflowsByOwner);
+ *  `meta` is free-form and round-trips through validation (same as `meta.seeded`). */
+const withWorldOwner = <T>(doc: T, owner: string): T => {
+  if (!doc || typeof doc !== 'object') return doc
+  const d = doc as { meta?: Record<string, unknown> }
+  return { ...(doc as object), meta: { ...(d.meta ?? {}), world_owner: owner } } as T
+}
+
+/**
+ * Import an in-memory workflow doc (or `rpt-workflow-bundle`) — the same logic as
+ * importWorkflowFromFile without the fs read, for the World-Card import path. When `owner` is given,
+ * every created doc (a bundle's main + each sub-graph) is tagged `meta.world_owner = owner` so
+ * deleteWorkflowsByOwner can remove exactly this world's workflows when the card is deleted.
+ */
+export const importWorkflowFromObject = (
+  profileId: string,
+  raw: unknown,
+  opts?: { owner?: string }
+): WorkflowWriteResult => {
+  const owner = opts?.owner
+  if (isBundle(raw)) {
+    const stamped: WorkflowBundle = owner
+      ? {
+          ...raw,
+          main: withWorldOwner(raw.main, owner),
+          subgraphs: raw.subgraphs.map((s) => withWorldOwner(s, owner))
+        }
+      : raw
+    return importWorkflowBundle(profileId, stamped)
+  }
+  return createWorkflowFromDoc(profileId, owner ? withWorldOwner(raw, owner) : raw)
+}
+
+/** Delete every workflow doc tagged `meta.world_owner === owner` (the card-import ownership tag),
+ *  routing through deleteWorkflow so each also clears its world/global selection ref. Returns the
+ *  count removed. A missing workflows dir (nothing ever imported) is a no-op. */
+export const deleteWorkflowsByOwner = (profileId: string, owner: string): number => {
+  const dir = workflowsDir(profileId)
+  if (!fs.existsSync(dir)) return 0
+  let removed = 0
+  for (const file of listFilesSync(dir)) {
+    if (!file.endsWith('.json') || file.startsWith('_')) continue
+    const data = readJsonSync<WorkflowDoc>(path.join(dir, file))
+    const docOwner = (data?.meta as Record<string, unknown> | undefined)?.world_owner
+    if (docOwner === owner && deleteWorkflow(profileId, file.replace(/\.json$/, ''))) removed++
+  }
+  return removed
+}
+
 export const exportWorkflowToFile = (profileId: string, id: string, filePath: string): boolean => {
   const doc = getWorkflowById(profileId, id)
   if (!doc) return false

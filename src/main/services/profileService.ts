@@ -5,6 +5,7 @@ import { getDb } from './db'
 import { getAppDir } from './storageService'
 import * as settingsService from './settingsService'
 import { deleteChatFully, chatIdsForProfile } from './chatDeleteService'
+import * as sessionDbService from './sessionDbService'
 import { Profile } from '../types/models'
 
 export const getProfiles = (): Profile[] => {
@@ -43,13 +44,26 @@ export const updateProfileActivity = (id: string): void => {
 }
 
 // Per-profile file content to remove on a debug wipe. The API connection config lives in the
-// `settings` blob (not on disk), so nothing here needs preserving for "api presets".
-const WIPE_DIRS = ['presets', 'lorebooks', 'regex', 'scripts', 'characters', 'plugin-storage']
+// `settings` blob (not on disk), so nothing here needs preserving for "api presets". `chats` is the
+// per-session store (§B1); `table-dbs`/`chat-notes` are the legacy pre-decentralize dirs left as a
+// safety net (§B5), also cleared here on a full wipe.
+const WIPE_DIRS = [
+  'presets',
+  'lorebooks',
+  'regex',
+  'scripts',
+  'characters',
+  'plugin-storage',
+  'chats',
+  'table-dbs',
+  'chat-notes'
+]
 const WIPE_FILES = [
   'preset.json',
   'plugins-state.json',
   'plugin-grants.json',
   'character-vars.json',
+  'chat-card-vars.json',
   'template-globals.json'
 ]
 
@@ -69,6 +83,10 @@ const wipeProfileFiles = (profileId: string): void => {
 export const wipeProfile = (profileId: string): void => {
   const db = getDb()
 
+  // 0. Release any open per-chat session DB handles first, or Windows file locks defeat the recursive
+  //    delete of the `chats/` store below (review C3).
+  sessionDbService.closeAll()
+
   // 1. Reset settings, keeping the API presets / active connection. get→save round-trips through the
   //    encrypt logic, so the retained keys stay protected.
   const cur = settingsService.getSettings(profileId)
@@ -80,14 +98,15 @@ export const wipeProfile = (profileId: string): void => {
   })
 
   // 2. DB content. Tear down every chat through the SAME centralized per-chat cleanup as
-  //    chatService.deleteChat — deleting the chat rows in bulk would FK-cascade floors/table_ops/etc
-  //    but LEAK the non-cascading chat-keyed tables (workflow_run_history / *_trigger_state /
-  //    agent_pack_activation) and the per-chat files (table sandbox / refill shadow / notes). Each
-  //    deleteChatFully does its own DB txn + post-commit file removals (files can't be transactional),
-  //    so the characters delete runs after. The profile + (reset) settings rows stay.
+  //    chatService.deleteChat (chatDeleteService) — a bulk `DELETE FROM chats` would LEAK the
+  //    non-FK'd central chat-keyed rows (workflow_run_history / workflow_trigger_state /
+  //    agent_pack_trigger_state / per-chat pack activation + chat:<id> overrides). Each
+  //    deleteChatFully does its own DB txn, then closes + removes the chat's session-store folder
+  //    (handle-close first — Windows file locks; step 3's wipe of the whole `chats/` dir is then a
+  //    no-op for these). The characters delete runs after. Profile + reset settings rows stay.
   for (const chatId of chatIdsForProfile(profileId)) deleteChatFully(profileId, chatId)
   db.prepare('DELETE FROM characters WHERE profile_id = ?').run(profileId)
 
-  // 3. File-based per-profile content.
+  // 3. File-based per-profile content (includes the whole `chats/` per-session store).
   wipeProfileFiles(profileId)
 }

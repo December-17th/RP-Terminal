@@ -117,6 +117,14 @@ const zh: Record<string, string> = {
   // SQL 表格记忆全局默认维护频率（manual-pass issue 04）
   'settings.tablesDefaultFrequency': '默认维护频率（轮）',
   'settings.tablesInjectionMaxRows': '表格注入行数上限（「最近 N 行」默认值）',
+  'settings.tablesRemindSetTemplate': '新会话时提醒我设置记忆表格模板',
+  // 新会话记忆表格提醒弹窗（TableTemplateReminderModal）
+  'tableReminder.title': '设置记忆表格模板？',
+  'tableReminder.body':
+    '本会话尚未指定记忆表格模板。表格记忆会以结构化方式持续记录你的故事，并由 AI 每轮更新。在「表格」视图中指定一个模板即可启用。',
+  'tableReminder.openTables': '打开表格视图',
+  'tableReminder.notNow': '暂不',
+  'tableReminder.dontRemind': '不再提醒',
   'settings.regex': '正则',
   'settings.scripts': '脚本',
   'settings.language': '语言',
@@ -1405,6 +1413,14 @@ const zh: Record<string, string> = {
   'sessions.empty': '还没有会话。新建一个吧。',
   'sessions.deleteTitle': '删除会话',
   'sessions.confirmDelete': '删除此会话？此操作无法撤销。',
+  'sessions.exportSave': '导出存档',
+  'sessions.importSave': '导入存档',
+  'sessions.saveExported': '存档已导出：{name}',
+  'sessions.saveImported': '存档已导入为新会话。',
+  'sessions.saveWorldMissing': '请先安装世界「{name}」，然后再导入此存档。',
+  'sessions.saveMemoryBusy': '记忆正在更新——请稍后再导出。',
+  'sessions.saveBadArchive': '该文件不是有效的 .rpsave 存档。',
+  'sessions.saveFailed': '存档导出/导入失败。',
 
   // ── 记忆面板（智能体包计划 WP3.8 —— 从「表格」视图迁出的记忆配置与维护） ──────────────
   'memory.heading': '记忆',

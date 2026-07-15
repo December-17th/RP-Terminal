@@ -7,8 +7,13 @@ import { getCharacter } from './characterService'
 import { getLorebookById } from './lorebookService'
 import { buildInitialStatData, mergeDefaults } from './mvuSchema'
 import { extractMvuSchema, schemaDefaults } from './mvuZod'
-import { saveFloor, deleteFloorAndSubsequent, updateFloorFields } from './floorService'
-import { cleanForHistory } from '../../shared/responseView'
+import {
+  saveFloor,
+  deleteFloorAndSubsequent,
+  updateFloorFields,
+  refreshChatSummary
+} from './floorService'
+import * as sessionDbService from './sessionDbService'
 import { getTableTemplateById } from './tableTemplateService'
 import * as tableDbService from './tableDbService'
 import * as tableOpsService from './tableOpsService'
@@ -21,17 +26,15 @@ interface ChatRow {
   character_id: string
   created_at: string
   updated_at: string
-  floor_count: number
   lorebook_ids: string | null
-}
-
-/** A chat row joined to its latest floor (all `last_*` NULL when the chat has no floors). The
- *  listing folds the former per-chat latest-floor lookup into one query (perf-audit P2-6). */
-interface ChatListRow extends ChatRow {
+  // Denormalized session summary (§B3), maintained by floorService.refreshChatSummary — the launcher
+  // reads these off the central index instead of opening each chat's session DB. Null on a legacy/
+  // pre-migration or never-written row (self-healed lazily in getChat).
+  floor_count: number | null
   last_floor: number | null
-  last_timestamp: string | null
-  last_user_content: string | null
-  last_response_content: string | null
+  last_floor_ts: string | null
+  last_user_preview: string | null
+  last_response_preview: string | null
 }
 
 export const parseLorebookIds = (raw: string | null): string[] | null => {
@@ -44,75 +47,69 @@ export const parseLorebookIds = (raw: string | null): string[] | null => {
   }
 }
 
-const preview = (text: string, len = 80): string =>
-  text
-    .replace(/<[^>]+>/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim()
-    .slice(0, len)
-
-// The response preview drives the session cards in the launcher/sessions list. Strip reasoning +
-// state ops first (cleanForHistory drops <think>, <rpt-event>, the combat cue, and <UpdateVariable>
-// blocks) so the preview is readable PROSE — not the model's thinking or raw variable writes. The
-// lengths give the UI ~2 lines of the player's action and ~3 lines of the response to clamp.
-const USER_PREVIEW_LEN = 160
-const RESPONSE_PREVIEW_LEN = 320
-
 const touch = (chatId: string): void => {
   getDb()
     .prepare('UPDATE chats SET updated_at = ? WHERE id = ?')
     .run(new Date().toISOString(), chatId)
 }
 
-/** Build the renderer-facing session object: count + a single-entry index of the latest floor.
- *  The latest floor arrives on the row itself (joined in `SESSION_SELECT`), so no per-chat query. */
-const buildSession = (row: ChatListRow): ChatSession => ({
+/** Build the renderer-facing session object from the denormalized index row (§B3) — NO session DB is
+ *  opened (the launcher lists many chats; also the perf-audit P2-6 fix: one central query, zero
+ *  per-chat lookups). The latest-floor preview is precomputed by floorService. */
+const buildSession = (row: ChatRow): ChatSession => ({
   id: row.id,
   character_id: row.character_id,
   created_at: row.created_at,
   updated_at: row.updated_at,
-  floor_count: row.floor_count,
+  floor_count: row.floor_count ?? 0,
   lorebook_ids: parseLorebookIds(row.lorebook_ids),
   floor_index:
     row.last_floor != null
       ? [
           {
             floor: row.last_floor,
-            timestamp: row.last_timestamp as string,
-            user_preview: preview(row.last_user_content as string, USER_PREVIEW_LEN),
-            response_preview: preview(
-              cleanForHistory(row.last_response_content as string),
-              RESPONSE_PREVIEW_LEN
-            )
+            timestamp: row.last_floor_ts ?? row.updated_at,
+            user_preview: row.last_user_preview ?? '',
+            response_preview: row.last_response_preview ?? ''
           }
         ]
       : []
 })
 
-// Chat columns + a correlated floor_count + the latest floor for each chat, all in ONE query
-// (perf-audit P2-6: kills the former N+1 latest-floor lookup on the session list). floors is keyed
-// PRIMARY KEY (chat_id, floor), so both MAX(floor) and the join predicate are index-only; the LEFT
-// JOIN keeps floorless chats (their `last_*` columns come back NULL).
-const SESSION_SELECT = `SELECT c.id, c.character_id, c.created_at, c.updated_at, c.lorebook_ids,
-         (SELECT COUNT(*) FROM floors cf WHERE cf.chat_id = c.id) AS floor_count,
-         f.floor AS last_floor, f.timestamp AS last_timestamp,
-         f.user_content AS last_user_content, f.response_content AS last_response_content
-       FROM chats c
-       LEFT JOIN floors f
-         ON f.chat_id = c.id AND f.floor = (SELECT MAX(floor) FROM floors mf WHERE mf.chat_id = c.id)`
+const SUMMARY_COLS =
+  'floor_count, last_floor, last_floor_ts, last_user_preview, last_response_preview'
 
 export const getChats = (profileId: string): ChatSession[] => {
   const rows = getDb()
-    .prepare(`${SESSION_SELECT} WHERE c.profile_id = ? ORDER BY c.updated_at DESC`)
-    .all(profileId) as ChatListRow[]
+    .prepare(
+      `SELECT id, character_id, created_at, updated_at, lorebook_ids, ${SUMMARY_COLS}
+       FROM chats WHERE profile_id = ? ORDER BY updated_at DESC`
+    )
+    .all(profileId) as ChatRow[]
   return rows.map(buildSession)
 }
 
 export const getChat = (profileId: string, chatId: string): ChatSession | null => {
-  const row = getDb()
-    .prepare(`${SESSION_SELECT} WHERE c.id = ? AND c.profile_id = ?`)
-    .get(chatId, profileId) as ChatListRow | undefined
-  return row ? buildSession(row) : null
+  let row = getDb()
+    .prepare(
+      `SELECT id, character_id, created_at, updated_at, lorebook_ids, ${SUMMARY_COLS}
+       FROM chats WHERE id = ? AND profile_id = ?`
+    )
+    .get(chatId, profileId) as ChatRow | undefined
+  if (!row) return null
+  // Self-heal (§B3): a legacy/pre-migration row has a null summary. Recompute it once on open (a single
+  // chat, so opening its session DB is cheap) and re-read, so the list reflects it next time.
+  if (row.floor_count == null) {
+    refreshChatSummary(chatId)
+    row =
+      (getDb()
+        .prepare(
+          `SELECT id, character_id, created_at, updated_at, lorebook_ids, ${SUMMARY_COLS}
+           FROM chats WHERE id = ? AND profile_id = ?`
+        )
+        .get(chatId, profileId) as ChatRow | undefined) ?? row
+  }
+  return buildSession(row)
 }
 
 /** The active lorebook ids for a session (null = default to the character's own lorebook). */
@@ -248,7 +245,10 @@ export const setChatTableTemplateId = (
     // NEW template using the stale `completedUntil`, skipping floors whose ops we just cleared. Drop the
     // progress row inline (chatService must NOT import tableRefillService — refill imports chatService,
     // so calling its resetProgress would create a cycle) and remove the shadow via tableDbService.
-    getDb().prepare('DELETE FROM table_refill_progress WHERE chat_id = ?').run(chatId)
+    sessionDbService
+      .getSessionDbByChat(chatId)
+      ?.prepare('DELETE FROM table_refill_progress WHERE chat_id = ?')
+      .run(chatId)
     tableDbService.removeShadow(profileId, chatId)
     if (template) tableDbService.instantiate(profileId, chatId, template)
     else tableDbService.removeSandbox(profileId, chatId)
@@ -310,9 +310,10 @@ export const removeLorebookIdFromChats = (profileId: string, lorebookId: string)
 export const createChat = async (profileId: string, characterId: string): Promise<ChatSession> => {
   const now = new Date().toISOString()
   const id = uuidv4()
+  // Born decentralized: session_migrated = 1 so the one-time migration (§B5) never touches it.
   getDb()
     .prepare(
-      'INSERT INTO chats (id, profile_id, character_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?)'
+      'INSERT INTO chats (id, profile_id, character_id, created_at, updated_at, session_migrated) VALUES (?, ?, ?, ?, ?, 1)'
     )
     .run(id, profileId, characterId, now, now)
 

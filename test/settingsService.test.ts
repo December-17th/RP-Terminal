@@ -147,6 +147,22 @@ describe('settings normalize', () => {
   })
 })
 
+describe('settings tables section (memory-table reminder)', () => {
+  it('defaults tables with the new-session reminder on', () => {
+    const t = getDefaultSettings().tables
+    expect(t.default_update_frequency).toBe(3)
+    expect(t.injection_max_rows).toBe(20)
+    expect(t.remind_set_template).toBe(true)
+  })
+
+  it('preserves a stored remind_set_template=false and keeps the other tables defaults', () => {
+    const s = normalize({ tables: { remind_set_template: false } } as any)
+    expect(s.tables.remind_set_template).toBe(false)
+    expect(s.tables.default_update_frequency).toBe(3) // default preserved
+    expect(s.tables.injection_max_rows).toBe(20) // default preserved
+  })
+})
+
 describe('resolveModeConfig', () => {
   it('returns the requested mode config', () => {
     const s = normalize({})

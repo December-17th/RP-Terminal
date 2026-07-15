@@ -119,6 +119,14 @@ const en: Record<string, string> = {
   // SQL-table memory global default cadence (manual-pass issue 04)
   'settings.tablesDefaultFrequency': 'Default maintenance frequency (turns)',
   'settings.tablesInjectionMaxRows': 'Table injection row cap ("recent N rows" default)',
+  'settings.tablesRemindSetTemplate': 'Remind me to set a memory table template on new sessions',
+  // New-session memory-table reminder popup (TableTemplateReminderModal)
+  'tableReminder.title': 'Set a memory table template?',
+  'tableReminder.body':
+    'This session has no memory table template assigned. Table memory keeps a structured, running record of your story that the AI updates each turn. Assign one in the Tables view to enable it.',
+  'tableReminder.openTables': 'Open Tables view',
+  'tableReminder.notNow': 'Not now',
+  'tableReminder.dontRemind': "Don't remind me again",
   'settings.regex': 'Regex',
   'settings.scripts': 'Scripts',
   'settings.language': 'Language',
@@ -1467,6 +1475,14 @@ const en: Record<string, string> = {
   'sessions.empty': 'No sessions yet. Start a new one.',
   'sessions.deleteTitle': 'Delete session',
   'sessions.confirmDelete': 'Delete this session? This cannot be undone.',
+  'sessions.exportSave': 'Export save',
+  'sessions.importSave': 'Import save',
+  'sessions.saveExported': 'Save exported: {name}',
+  'sessions.saveImported': 'Save imported into a new session.',
+  'sessions.saveWorldMissing': 'Install the world “{name}” first to import this save.',
+  'sessions.saveMemoryBusy': 'Memory is updating — try exporting again in a moment.',
+  'sessions.saveBadArchive': 'That file isn’t a valid .rpsave.',
+  'sessions.saveFailed': 'Save export/import failed.',
 
   // ── Memory pane (agent-packs plan WP3.8 — memory config + maintenance, moved out of the Tables view) ─
   'memory.heading': 'Memory',

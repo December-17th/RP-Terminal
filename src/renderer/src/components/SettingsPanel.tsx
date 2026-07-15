@@ -434,6 +434,28 @@ export const SettingsPanel: React.FC<{ profileId: string }> = ({ profileId }) =>
               }
             />
 
+            {/* New-session reminder to assign a memory-table template (templates never auto-bind —
+                assignment is destructive, so we nudge instead of assigning silently). */}
+            <label
+              className="entry-toggles"
+              style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 18 }}
+            >
+              <input
+                type="checkbox"
+                checked={settings.tables?.remind_set_template !== false}
+                onChange={(e) =>
+                  updateSettings(profileId, {
+                    tables: {
+                      default_update_frequency: settings.tables?.default_update_frequency ?? 3,
+                      ...settings.tables,
+                      remind_set_template: e.target.checked
+                    }
+                  })
+                }
+              />
+              {t('settings.tablesRemindSetTemplate')}
+            </label>
+
             <label className="field-label" style={{ marginTop: 18 }}>
               {t('prefs.cacheOpt')}{' '}
               <span style={{ opacity: 0.5, fontWeight: 'normal' }}>
