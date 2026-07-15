@@ -87,6 +87,33 @@ export function deepVarOps(
   return ops
 }
 
+/**
+ * Leaf-level DIFF: `set` ops for every leaf in `next` whose value DIFFERS from `base` (new or changed).
+ * Unlike `deepVarOps`, it does NOT re-emit unchanged leaves, so it persists ONLY what actually changed —
+ * used for the MVU write-back (a card mutates the event's `variables.stat_data` in place; we save just the
+ * delta). Plain-object leaves recurse only when BOTH sides are plain objects; otherwise the whole value is
+ * set. Keys absent from `next` are left untouched (no deletes) — a write-back must not wipe siblings.
+ */
+export function diffSetOps(
+  base: Record<string, unknown> | undefined,
+  next: Record<string, unknown> | undefined,
+  basePath = ''
+): VarOp[] {
+  const b = base && typeof base === 'object' ? (base as Record<string, unknown>) : {}
+  const n = next || {}
+  const ops: VarOp[] = []
+  for (const [k, v] of Object.entries(n)) {
+    const path = basePath + '/' + esc(k)
+    const bv = b[k]
+    if (isPlainObj(v) && Object.keys(v).length > 0 && isPlainObj(bv)) {
+      ops.push(...diffSetOps(bv, v, path))
+    } else if (JSON.stringify(bv) !== JSON.stringify(v)) {
+      ops.push({ op: 'set', path, value: v })
+    }
+  }
+  return ops
+}
+
 /** Apply `set` ops (from deepVarOps / setVarOps) onto `root` in place, auto-vivifying intermediate
  *  objects — mirrors the main-side `applyJsonPatch` so the runtime's optimistic stat cache stays in
  *  sync with what gets persisted. Ignores non-`set` ops. Returns `root`. */

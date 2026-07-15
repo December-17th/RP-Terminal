@@ -5,6 +5,7 @@ out
 .eslintcache
 *.tsbuildinfo
 *.log*
+/.rpt-build-version
 
 # Local example SillyTavern content (not part of the app)
 example sillytarvern character card, presets, extensions and scripts/

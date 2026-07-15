@@ -16,7 +16,7 @@ import { makePanelGeometry, PanelGeometry } from './wcvGeometry'
 import { createFreezeController, type FreezeTarget } from './wcvFreezeFrame'
 import { createOverlayController, type OverlayDecl } from './wcvOverlay'
 import { shouldOpenWcvDevTools } from './wcvDevTools'
-import type { VarsOrigin } from '../../shared/thRuntime/types'
+import type { VarsOrigin, CardChatScope } from '../../shared/thRuntime/types'
 import { CARD_CSP } from '../../shared/cardCsp'
 
 // Card UI panels run in their own session partition. jsDelivr serves `/gh/` HTML as text/plain (to
@@ -118,6 +118,9 @@ interface Slot {
   characterId: string
   /** The inline card document served to this slot via rpt-card://card/<id> (when loaded from a data: URL). */
   html?: string
+  /** Panel chat scope (general): the preload reads it (wcv-get-chat-scope-sync) and hands it to the card
+   *  runtime so its chat reads reflect the panel's own messages instead of the real chat (READ-only). */
+  chatScope?: CardChatScope
 }
 
 let mainWindow: BrowserWindow | null = null
@@ -232,7 +235,12 @@ export const ensure = (
   id: string,
   bounds: Bounds,
   url: string,
-  ctx: { profileId: string; chatId: string; characterId?: string } = {
+  ctx: {
+    profileId: string
+    chatId: string
+    characterId?: string
+    chatScope?: CardChatScope
+  } = {
     profileId: '',
     chatId: ''
   }
@@ -276,7 +284,8 @@ export const ensure = (
       profileId: ctx.profileId,
       chatId: ctx.chatId,
       characterId: ctx.characterId || '',
-      html: inlineHtml ?? undefined
+      html: inlineHtml ?? undefined,
+      chatScope: ctx.chatScope
     }
     slots.set(id, slot)
     // A full-screen overlay may be up (chat re-render under an open menu) — start hidden so a fresh
@@ -299,6 +308,7 @@ export const ensure = (
     slot.profileId = ctx.profileId
     slot.chatId = ctx.chatId
     slot.characterId = ctx.characterId || ''
+    slot.chatScope = ctx.chatScope
     if (inlineHtml !== null) slot.html = inlineHtml // keep the served doc fresh (no reload here)
   }
   slot.view.setBounds(round(bounds))
@@ -457,6 +467,15 @@ export const contextFor = (
     if (s.view.webContents.id === webContentsId) {
       return { slotId, profileId: s.profileId, chatId: s.chatId, characterId: s.characterId }
     }
+  }
+  return null
+}
+
+/** The panel chat scope for the WCV whose page is `webContentsId` (the preload's sync-read resolver), or
+ *  null when the slot is unscoped. Kept separate from `contextFor` so the many ctx call sites are untouched. */
+export const chatScopeFor = (webContentsId: number): CardChatScope | null => {
+  for (const s of slots.values()) {
+    if (s.view.webContents.id === webContentsId) return s.chatScope ?? null
   }
   return null
 }

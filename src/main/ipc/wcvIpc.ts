@@ -174,6 +174,12 @@ export const registerWcvIpc = (ipcMain: IpcMain): void => {
   ipcMain.on('wcv-get-panel-geometry-sync', (e) => {
     e.returnValue = wcvManager.geometryFor(e.sender.id)
   })
+  // Panel chat scope (general): the preload reads this at load and hands it to createThRuntime so the
+  // card's chat reads reflect the panel's own messages (chat-READ-only). null ⇒ unscoped (real chat).
+  // Resolved from the sender's slot (like geometry), so a WCV can only read its OWN scope.
+  ipcMain.on('wcv-get-chat-scope-sync', (e) => {
+    e.returnValue = wcvManager.chatScopeFor(e.sender.id)
+  })
   // A card script in a WCV threw / rejected — surface it to the main log (it'd otherwise only show in the
   // WCV devtools). Includes the calling slot for context.
   ipcMain.on('wcv-card-error', (e, msg) => {

@@ -1,6 +1,6 @@
 import { useMemo, type ReactNode } from 'react'
 import { MessageContent } from './MessageContent'
-import { plotPanelSettingEnabled, plotPanelVisible } from './plotPanelVisible'
+import { plotPanelSettingEnabled, plotPanelVisible, plotPanelContent } from './plotPanelVisible'
 import { useRegexStore } from '../stores/regexStore'
 import { useSettingsStore } from '../stores/settingsStore'
 import { useCharacterStore } from '../stores/characterStore'
@@ -27,12 +27,26 @@ export function PlotPanel({ plotBlock, cardCss }: { plotBlock: string; cardCss?:
   const personaName = useSettingsStore((s) => s.settings?.persona?.name) || 'User'
   const charName = useCharacterStore((s) => s.activeCharacter?.card.data.name) || 'Character'
 
-  // Apply the plot-block display regex once. Recompute only when the block, the resolved rules, or the
-  // macro names change — NOT on every parent re-render (the regex can paste a large HTML payload).
-  const html = useMemo(
+  // Apply the plot-block display regex once, then hand MessageContent a PRISTINE card (see
+  // plotPanelContent): the beautifier emits a full ```html document, and extracting it here keeps the
+  // general splitter from mis-parsing the real output into a raw code block. Recompute only when the
+  // block, the resolved rules, or the macro names change — NOT on every parent re-render (the regex can
+  // paste a large HTML payload).
+  const content = useMemo(
     () =>
-      useRegexStore.getState().applyPlot(plotBlock, { user: personaName, char: charName }),
+      plotPanelContent(
+        useRegexStore.getState().applyPlot(plotBlock, { user: personaName, char: charName })
+      ),
     [plotBlock, plotRules, personaName, charName]
+  )
+
+  // The dashboard card reads the chat (SillyTavern.chat / getContext().chat) to find its plot data, but
+  // RPT keeps the plot text in `plotBlock`, not the real chat — so give the card an ISOLATED chat scope
+  // whose one assistant message IS the plot text. Memoized on plotBlock: an inline object would change
+  // identity each render and force the iframe srcDoc to rebuild (reloading the card). See createThRuntime.
+  const chatScope = useMemo(
+    () => ({ messages: [{ role: 'assistant' as const, content: plotBlock }] }),
+    [plotBlock]
   )
 
   if (!plotPanelVisible(plotBlock, enabled)) return null
@@ -40,7 +54,7 @@ export function PlotPanel({ plotBlock, cardCss }: { plotBlock: string; cardCss?:
     <details className="plot-block">
       <summary className="plot-summary">{t('chat.plotBlock')}</summary>
       <div className="plot-content">
-        <MessageContent content={html} css={cardCss} />
+        <MessageContent content={content} css={cardCss} chatScope={chatScope} />
       </div>
     </details>
   )

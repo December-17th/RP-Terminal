@@ -248,6 +248,37 @@ describe('createThRuntime', () => {
     expect(m.calls.applyVariableOps[0]).toEqual([{ op: 'set', path: '/a/b', value: 5 }])
   })
 
+  it('MVU write-back: persists a handler that MUTATES after.stat_data in place (MagVarUpdate idiom)', async () => {
+    // Faithful to MagVarUpdate: a variable-update handler derives state by replacing/mutating the passed
+    // variables.stat_data and never calls a write (命定之诗's XP script sets 主角.升级所需经验 this way).
+    const m: any = mockHost()
+    const g = createThRuntime(m.host)
+    g.eventOn('mag_variable_update_ended', (vars: any) => {
+      // The card replaces stat_data with a normalized clone that adds the derived field.
+      vars.stat_data = { 主角: { ...(vars.stat_data.主角 || {}), 升级所需经验: 120 } }
+    })
+    m.fireVars({ 主角: { 等级: 1, 累计经验值: 0 } }) // model fold
+    await Promise.resolve()
+    // ONLY the derived leaf is written back (unchanged 等级/累计经验值 are not), via the card-write path.
+    expect(m.calls.applyVariableOps).toContainEqual([
+      { op: 'set', path: '/主角/升级所需经验', value: 120 }
+    ])
+    // The runtime cache reflects it too (getvar / EJS injection see the derived value).
+    expect(g.getVariables()).toEqual({
+      stat_data: { 主角: { 等级: 1, 累计经验值: 0, 升级所需经验: 120 } }
+    })
+  })
+
+  it('MVU write-back: an untouched fold writes nothing (no spurious card-write, no loop)', () => {
+    const m: any = mockHost()
+    const g = createThRuntime(m.host)
+    g.eventOn('mag_variable_update_ended', () => {
+      /* reads only — does not mutate after.stat_data */
+    })
+    m.fireVars({ hp: 7 }, { origin: 'model-fold' })
+    expect(m.calls.applyVariableOps).toEqual([])
+  })
+
   it('insertOrAssignVariables DEEP-merges a partial nested object, preserving siblings (命定之诗 date bug)', async () => {
     // Initial stat has a nested `date` game-state object; a partial write to date.log must NOT wipe
     // date.npcs / date.event or the other date.log fields (real TavernHelper merge, not shallow replace).
@@ -532,6 +563,25 @@ describe('createThRuntime', () => {
     expect(g.getScriptId()).toBe(id) // stable across calls
   })
 
+  it('persists SillyTavern chatMetadata.variables through saveMetadata (读者对话渲染 settings)', async () => {
+    const m: any = mockHost()
+    const g = createThRuntime(m.host)
+    const ctx = g.SillyTavern.getContext()
+
+    // The real regex mutates this object in place, then calls ctx.saveMetadata() and shows its toast.
+    expect(ctx.chatMetadata.variables).toEqual({ existing: 1 })
+    ctx.chatMetadata.variables.dream_persona = 'kuromaku'
+    ctx.chatMetadata.variables.dream_appearance = 'mature'
+    await ctx.saveMetadata()
+
+    expect(m.calls.setChatVars.at(-1)).toEqual({
+      existing: 1,
+      dream_persona: 'kuromaku',
+      dream_appearance: 'mature'
+    })
+    expect(await g.SillyTavern.saveMetadata()).toBe(true)
+  })
+
   it('script buttons: replaceScriptButtons pushes visible buttons; a click event fires eventOn', () => {
     const m: any = mockHost()
     const g = createThRuntime(m.host)
@@ -574,5 +624,81 @@ describe('createThRuntime', () => {
     g.__rptDispose()
     m.fireVars({ hp: 7 })
     expect(g.getVariables()).toEqual({ stat_data: { hp: 1 } }) // cache unchanged after dispose
+  })
+
+  describe('panel chat scope', () => {
+    // The plot panel's use case: one assistant message whose content IS the plot text. The card must see
+    // a chat built from THAT, not the fake host's [user 'u', assistant 'a'] floors.
+    const scope = { messages: [{ role: 'assistant' as const, content: 'PLOT' }] }
+
+    it('scoped: getChatMessages / getCurrent+LastMessageId reflect the scope, not host.floors()', () => {
+      const { host } = mockHost()
+      const g = createThRuntime(host, { chatScope: scope })
+      expect(g.getChatMessages()).toEqual([{ message_id: 0, role: 'assistant', message: 'PLOT' }])
+      expect(g.getChatMessages(-1)).toEqual([{ message_id: 0, role: 'assistant', message: 'PLOT' }])
+      expect(g.getCurrentMessageId()).toBe(0)
+      expect(g.getLastMessageId()).toBe(0)
+    })
+
+    it('scoped: SillyTavern.chat and getContext().chat reflect the scope message (greetings suppressed)', () => {
+      const { host } = mockHost()
+      const g = createThRuntime(host, { chatScope: scope })
+      expect(g.SillyTavern.chat).toHaveLength(1)
+      expect(g.SillyTavern.chat[0]).toMatchObject({ is_user: false, name: 'Ellia', mes: 'PLOT' })
+      const ctxChat = g.SillyTavern.getContext().chat
+      expect(ctxChat).toHaveLength(1)
+      expect(ctxChat[0].mes).toBe('PLOT')
+    })
+
+    it('scoped: only chat DERIVATION changes — vars/stat_data still come from the real host', () => {
+      const { host } = mockHost()
+      const g = createThRuntime(host, { chatScope: scope })
+      expect(g.getVariables()).toEqual({ stat_data: { hp: 1 } }) // real host vars, not the scope
+      expect(g.Mvu.getMvuData().stat_data).toEqual({ hp: 1 })
+    })
+
+    it('unscoped: chat reads are byte-identical to today (host.floors())', () => {
+      const { host } = mockHost()
+      const g = createThRuntime(host)
+      expect(g.getChatMessages()).toEqual([
+        { message_id: 0, role: 'user', message: 'u' },
+        { message_id: 1, role: 'assistant', message: 'a' }
+      ])
+      expect(g.getCurrentMessageId()).toBe(1)
+      expect(g.SillyTavern.chat[0].name).toBe('Player') // the host floor's user message
+    })
+
+    it('an empty scope (no messages) falls back to the real host floors', () => {
+      const { host } = mockHost()
+      const g = createThRuntime(host, { chatScope: { messages: [] } })
+      expect(g.getChatMessages()).toEqual([
+        { message_id: 0, role: 'user', message: 'u' },
+        { message_id: 1, role: 'assistant', message: 'a' }
+      ])
+    })
+
+    it('scoped: SillyTavern.saveChat is a no-op (never persists the panel content to the real chat)', async () => {
+      let saved = 0
+      const scopedHost = mockHost({
+        saveChat: async () => {
+          saved++
+          return true
+        }
+      }).host
+      const gScoped = createThRuntime(scopedHost, { chatScope: scope })
+      await gScoped.SillyTavern.saveChat()
+      expect(saved).toBe(0) // READ-only fence: the scope-derived chat is never written back
+
+      // Unscoped, the same call still reaches the host (existing behavior preserved).
+      const unscopedHost = mockHost({
+        saveChat: async () => {
+          saved++
+          return true
+        }
+      }).host
+      const gUnscoped = createThRuntime(unscopedHost)
+      await gUnscoped.SillyTavern.saveChat()
+      expect(saved).toBe(1)
+    })
   })
 })
