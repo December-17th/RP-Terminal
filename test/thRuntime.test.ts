@@ -1,6 +1,7 @@
 // test/thRuntime.test.ts
 import { describe, it, expect } from 'vitest'
 import { createThRuntime } from '../src/shared/thRuntime'
+import { createNullHost } from '../src/shared/thRuntime/nullHost'
 import type { Host } from '../src/shared/thRuntime/types'
 
 function mockHost(over: Partial<Host> = {}): { host: Host; calls: any } {
@@ -8,7 +9,6 @@ function mockHost(over: Partial<Host> = {}): { host: Host; calls: any } {
     applyVariableOps: [],
     generate: [],
     generateRaw: [],
-    saveWorldbook: [],
     setInput: [],
     submitInput: [],
     createWorldbook: [],
@@ -20,9 +20,7 @@ function mockHost(over: Partial<Host> = {}): { host: Host; calls: any } {
     replaceRegexes: [],
     setScriptVars: [],
     setChatVars: [],
-    setButtons: [],
-    requestOverlay: [],
-    closeOverlay: []
+    setButtons: []
   }
   let hostCb: ((name: string, payload?: any) => void) | null = null
   const wbLib = [
@@ -48,18 +46,14 @@ function mockHost(over: Partial<Host> = {}): { host: Host; calls: any } {
     }
   ]
   let varsCb: ((sd: any, meta?: { origin: any }) => void) | null = null
+  // Spread the inert null host, then override ONLY the members these tests exercise (behavioral
+  // getters + the call-tracking writers). The dropped members keep createNullHost's neutrals.
   const host: Host = {
-    ctx: { profileId: 'p', chatId: 'c', characterId: 'ch' },
+    ...createNullHost({ profileId: 'p', chatId: 'c', characterId: 'ch' }),
     statData: () => ({ hp: 1 }),
     floors: () => [{ user_message: { content: 'u' }, response: { content: 'a' } }],
     charData: () => ({ name: 'Ellia' }),
-    charAvatarPath: () => null,
-    preset: () => ({ name: 'P' }),
-    presetNames: () => ['P'],
-    worldbookNames: () => ({ primary: 'Ellia', additional: [] }),
-    regexes: () => [{ find: 'a', replace: 'b' }],
     regexesFull: () => regexFull,
-    isCharacterRegexesEnabled: () => true,
     formatRegex: (t) => t.toUpperCase(),
     personaName: () => 'Player',
     currentChatId: () => 'c',
@@ -68,7 +62,6 @@ function mockHost(over: Partial<Host> = {}): { host: Host; calls: any } {
     applyVariableOps: async (ops) => {
       calls.applyVariableOps.push(ops)
     },
-    setVariables: async () => {},
     generate: async (i) => {
       calls.generate.push(i)
       return { content: 'gen:' + i }
@@ -78,11 +71,7 @@ function mockHost(over: Partial<Host> = {}): { host: Host; calls: any } {
       return 'raw'
     },
     getWorldbook: async () => ({ entries: [{ keys: ['k'], comment: 'Lore Title' }] }),
-    saveWorldbook: async (n, e) => {
-      calls.saveWorldbook.push([n, e])
-    },
     listWorldbooks: () => wbLib,
-    chatWorldbookIds: () => ['own'],
     createWorldbook: async (n) => {
       const id = 'id_' + n
       wbLib.push({ id, name: n })
@@ -100,11 +89,6 @@ function mockHost(over: Partial<Host> = {}): { host: Host; calls: any } {
     bindWorldbook: async (id, on) => {
       calls.bindWorldbook.push([id, on])
     },
-    setChatMessages: async () => true,
-    deleteChatMessages: async () => true,
-    createChat: async () => 'id',
-    saveChat: async () => true,
-    reloadChat: async () => true,
     setInput: (t) => calls.setInput.push(t),
     submitInput: () => calls.submitInput.push(true),
     getGlobalVars: async () => globals,
@@ -133,13 +117,6 @@ function mockHost(over: Partial<Host> = {}): { host: Host; calls: any } {
     setButtons: (b: any) => {
       calls.setButtons.push(b)
     },
-    requestOverlay: async (id: string) => {
-      calls.requestOverlay.push(id)
-      return true
-    },
-    closeOverlay: async () => {
-      calls.closeOverlay.push(true)
-    },
     onVarsChanged: (cb) => {
       varsCb = cb
       return () => {
@@ -152,8 +129,6 @@ function mockHost(over: Partial<Host> = {}): { host: Host; calls: any } {
         hostCb = null
       }
     },
-    evalTemplate: (t) => 'ejs:' + t,
-    evalTemplateError: () => null,
     prepareContext: (d) => ({ vars: d || {}, enabled: true }),
     ...over
   }
@@ -481,13 +456,6 @@ describe('createThRuntime', () => {
     expect(m.calls.submitInput).toHaveLength(2)
     // /trigger never calls the generate API directly when the host can submit the box.
     expect(m.calls.generate).toHaveLength(0)
-  })
-
-  it('triggerSlash: a Host WITHOUT submitInput falls back to the bare empty-action re-trigger', async () => {
-    const m: any = mockHost({ submitInput: undefined })
-    const g = createThRuntime(m.host)
-    expect(await g.triggerSlash('/trigger')).toBe('gen:')
-    expect(m.calls.generate).toEqual([''])
   })
 
   it('script-scope vars use the KV store, not stat_data', async () => {

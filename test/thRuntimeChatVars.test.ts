@@ -1,16 +1,11 @@
 import { describe, it, expect, vi } from 'vitest'
 import { createThRuntime } from '../src/shared/thRuntime'
+import { createNullHost } from '../src/shared/thRuntime/nullHost'
 
 function fakeHost(over = {}) {
   let chat: Record<string, any> = { 'party.members': ['爱莎'] }
   return {
-    statData: () => ({}),
-    onVarsChanged: () => () => {},
-    onHostEvent: () => () => {},
-    floors: () => [],
-    charData: () => null,
-    personaName: () => 'User',
-    listWorldbooks: () => [],
+    ...createNullHost(),
     getChatVars: vi.fn(() => chat),
     setChatVars: vi.fn(async (v: Record<string, any>) => {
       chat = v

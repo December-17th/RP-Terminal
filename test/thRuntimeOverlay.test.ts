@@ -1,16 +1,11 @@
 import { describe, it, expect, vi } from 'vitest'
 import { createThRuntime } from '../src/shared/thRuntime'
+import { createNullHost } from '../src/shared/thRuntime/nullHost'
 
-// Minimal Host — stub only what createThRuntime touches at construction + the overlay API.
+// Spread the inert null host and override ONLY the overlay members this file exercises.
 function fakeHost(over = {}) {
   return {
-    statData: () => ({}),
-    onVarsChanged: () => () => {},
-    onHostEvent: () => () => {},
-    floors: () => [],
-    charData: () => null,
-    personaName: () => 'User',
-    listWorldbooks: () => [],
+    ...createNullHost(),
     requestOverlay: vi.fn(async () => true),
     closeOverlay: vi.fn(async () => {}),
     ...over

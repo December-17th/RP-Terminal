@@ -235,13 +235,9 @@ export function createThRuntime(host: Host, opts?: { chatScope?: CardChatScope }
             // player's turn — ST's /trigger drives the same Generate flow the button does, which
             // is what makes the ubiquitous `/setinput x | /trigger` and `/send x | /trigger`
             // clickable-options combos work (both put x in the box; this sends it). Fire-and-
-            // forget (returns '', like clicking send). Hosts without submitInput fall back to the
-            // old bare re-trigger (an empty-action generate).
-            if (host.submitInput) {
-              host.submitInput()
-              return ''
-            }
-            return genText(await host.generate(''))
+            // forget (returns '', like clicking send).
+            host.submitInput()
+            return ''
           case 'send':
           case 'setinput':
             // ST /setinput replaces the input box; ST /send appends a user message (no floor-less
@@ -553,7 +549,7 @@ export function createThRuntime(host: Host, opts?: { chatScope?: CardChatScope }
     triggerSlash: (c: any) => runTriggerSlash(String(c ?? '')),
     assetUrl: (name: string, type: string, mood?: string) => host.assetUrl(name, type, mood),
     sceneAssetUrl: (location: string, type: '全景' | '背景') =>
-      host.sceneAssetUrl?.(location, type) ?? host.assetUrl(location, type),
+      host.sceneAssetUrl(location, type),
     // Enumerate one entry's variants for the card's world (WA-3) — a bare read global in the same family
     // as assetUrl. Behavior lives in the shared runtime so both transports inherit it; the transport Host
     // forwards to the app (WCV: worldAssetService.assetListForWorld; inline: cardBridge/host.ts).

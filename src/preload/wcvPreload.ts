@@ -22,6 +22,7 @@ import {
 } from '../shared/templateEngine'
 import { createThRuntime } from '../shared/thRuntime'
 import { createWcvHost } from './wcvHost'
+import { WCV_CHANNELS } from '../shared/thRuntime/wcvChannelSpec'
 
 /**
  * SHIM for a card's own frontend running in a WebContentsView — e.g. 命定之诗's React status UI, which
@@ -128,9 +129,10 @@ ipcRenderer.on('wcv-colorscheme', (_e: any, s: 'light' | 'dark') => {
 // --- host bridge (IPC) ---
 const rptHost = {
   getVariables: (): Promise<any> => ipcRenderer.invoke('wcv-host-get-vars'),
-  applyVariableOps: (ops: any[]): Promise<any> => ipcRenderer.invoke('wcv-host-apply-vars', ops),
-  setVariables: (sd: any): Promise<any> => ipcRenderer.invoke('wcv-host-set-vars', sd),
-  setInput: (text: any) => ipcRenderer.send('wcv-host-set-input', text),
+  applyVariableOps: (ops: any[]): Promise<any> =>
+    ipcRenderer.invoke(WCV_CHANNELS.applyVariableOps, ops),
+  setVariables: (sd: any): Promise<any> => ipcRenderer.invoke(WCV_CHANNELS.setVariables, sd),
+  setInput: (text: any) => ipcRenderer.send(WCV_CHANNELS.setInput, text),
   // Broadcast a card-authored coordination event to the SIBLING card panels on this chat (not back to
   // this page). Received there via `eventOn(name, cb)`. The poem stage uses it for `self:fold` /
   // `stage:cast-changed`; the name is the card's own — RPT doesn't interpret it.
@@ -314,7 +316,7 @@ const hydrate = (v: any) => {
 // Sync initial read so the mirror is populated BEFORE the card's first render (an async IPC read would
 // land after the React app has already rendered defaults). sendSync blocks briefly — fine once.
 try {
-  statData = ipcRenderer.sendSync('wcv-host-get-vars-sync') || {}
+  statData = ipcRenderer.sendSync(WCV_CHANNELS.statData) || {}
 } catch {
   statData = {}
 }

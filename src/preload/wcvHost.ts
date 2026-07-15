@@ -5,9 +5,18 @@
 // panel's session from `e.sender`, so these methods call IPC WITHOUT passing ctx (the placeholder ctx is
 // only here to satisfy the Host interface). The quickjs EJS engine stays in the preload and is injected
 // via deps.evalTemplate / deps.evalTemplateError.
+//
+// The bulk of the adapter is GENERATED from `WCV_CHANNEL_SPEC` (shared/thRuntime/wcvChannelSpec.ts) by a
+// generic loop over `{ channel, kind, fallback }`: `sync` → `sendSync` (try/catch → fallback, and fall
+// back on a null/undefined result), `invoke` → `ipcRenderer.invoke`, `send` → `ipcRenderer.send`. The
+// members not in the spec (the "residue": event subscriptions, injected EJS deps, shape-normalizing
+// worldbook getters, createChat, formatRegex) are hand-written below and spread on top. Adding a WCV
+// capability = a spec row + this stays untouched (ADR 0013).
 import { ipcRenderer } from 'electron'
-import type { Host, CardCtx, FloorLike, VarsOrigin } from '../shared/thRuntime/types'
-import type { VarOp } from '../shared/thRuntime/ops'
+import type { Host, CardCtx } from '../shared/thRuntime/types'
+import type { VarsOrigin } from '../shared/thRuntime/types'
+import { WCV_CHANNEL_SPEC, WCV_RESIDUE_CHANNELS } from '../shared/thRuntime/wcvChannelSpec'
+import type { WcvSpecMember } from '../shared/thRuntime/wcvChannelSpec'
 
 type Deps = {
   ctx: CardCtx
@@ -16,166 +25,59 @@ type Deps = {
   prepareContext: (data?: any) => any
 }
 
+// Build one member function from its spec entry. `sync` blocks (sendSync) and falls back on throw OR a
+// null/undefined result (matching every `|| fallback` the hand-written adapter used — `??` here also
+// preserves valid falsy values like '' / false that `||` would have discarded). `invoke`/`send` forward
+// their args unchanged.
+const buildMember = (spec: (typeof WCV_CHANNEL_SPEC)[WcvSpecMember]): ((...args: any[]) => any) => {
+  const { channel, kind, fallback } = spec
+  if (kind === 'sync') {
+    return (...args: any[]): any => {
+      try {
+        const r = ipcRenderer.sendSync(channel, ...args)
+        return r ?? fallback
+      } catch {
+        return fallback
+      }
+    }
+  }
+  if (kind === 'send') {
+    return (...args: any[]): any => ipcRenderer.send(channel, ...args)
+  }
+  return (...args: any[]): any => ipcRenderer.invoke(channel, ...args)
+}
+
 export function createWcvHost(deps: Deps): Host {
-  const wbNames = (): any => ipcRenderer.sendSync('wcv-host-get-worldbook-names-sync')
+  // Generic pass over the spec — one member per row.
+  const generated = {} as Record<WcvSpecMember, (...args: any[]) => any>
+  for (const member of Object.keys(WCV_CHANNEL_SPEC) as WcvSpecMember[]) {
+    generated[member] = buildMember(WCV_CHANNEL_SPEC[member])
+  }
+
+  const wbNames = (): any => ipcRenderer.sendSync(WCV_RESIDUE_CHANNELS.worldbookNames)
+
+  // Hand-written residue (same bodies as before) spread over the generated members.
   return {
+    ...(generated as unknown as Host),
     ctx: deps.ctx,
-    statData: () => {
-      try {
-        return ipcRenderer.sendSync('wcv-host-get-vars-sync') || {}
-      } catch {
-        return {}
-      }
-    },
-    floors: () => {
-      try {
-        return (ipcRenderer.sendSync('wcv-host-get-floors-sync') as FloorLike[]) || []
-      } catch {
-        return []
-      }
-    },
-    charData: () => ipcRenderer.sendSync('wcv-host-get-char-data'),
-    charAvatarPath: () => ipcRenderer.sendSync('wcv-host-get-char-avatar'),
-    preset: () => ipcRenderer.sendSync('wcv-host-get-preset'),
-    presetNames: () => ipcRenderer.sendSync('wcv-host-get-preset-names'),
+    // Worldbook getters normalize main's response shape (not a static fallback ⇒ residue).
     worldbookNames: () => {
       const r = wbNames()
       return { primary: r?.primary ?? null, additional: r?.additional || [] }
     },
-    regexes: () => ipcRenderer.sendSync('wcv-host-get-regexes'),
-    regexesFull: (option) => {
-      try {
-        return ipcRenderer.sendSync('wcv-host-get-regexes-full', option) || []
-      } catch {
-        return []
-      }
-    },
-    isCharacterRegexesEnabled: () => {
-      try {
-        return ipcRenderer.sendSync('wcv-host-is-char-regex-enabled') !== false
-      } catch {
-        return true
-      }
-    },
-    formatRegex: (t) => ipcRenderer.sendSync('wcv-host-format-regex', t),
-    personaName: () => {
-      try {
-        return ipcRenderer.sendSync('wcv-host-get-persona-name') || 'User'
-      } catch {
-        return 'User'
-      }
-    },
-    currentChatId: () => {
-      try {
-        return ipcRenderer.sendSync('wcv-host-get-chat-id-sync') || ''
-      } catch {
-        return ''
-      }
-    },
-    getScriptVars: () => {
-      try {
-        return ipcRenderer.sendSync('wcv-host-script-vars-get-sync') || {}
-      } catch {
-        return {}
-      }
-    },
-    getChatVars: () => {
-      try {
-        return ipcRenderer.sendSync('wcv-host-chat-vars-get-sync') || {}
-      } catch {
-        return {}
-      }
-    },
-
-    applyVariableOps: (ops: VarOp[]) => ipcRenderer.invoke('wcv-host-apply-vars', ops),
-    replaceRegexes: (regexes, option) =>
-      ipcRenderer.invoke('wcv-host-replace-regexes', regexes, option),
-    setScriptVars: (vars) => ipcRenderer.invoke('wcv-host-script-vars-set', vars),
-    setChatVars: (vars) => ipcRenderer.invoke('wcv-host-chat-vars-set', vars),
-    setButtons: (buttons) => ipcRenderer.send('wcv-register-button', buttons),
-    setVariables: (sd: any) => ipcRenderer.invoke('wcv-host-set-vars', sd),
-    generate: (input: string) => ipcRenderer.invoke('wcv-host-generate', input),
-    generateRaw: (cfg) => ipcRenderer.invoke('wcv-host-generate-raw', cfg),
     getWorldbook: async (name) => {
-      const entries = await ipcRenderer.invoke('wcv-host-get-worldbook', name)
+      const entries = await ipcRenderer.invoke(WCV_RESIDUE_CHANNELS.getWorldbook, name)
       return { entries: Array.isArray(entries) ? entries : (entries?.entries ?? []) }
     },
-    saveWorldbook: (name, entries) =>
-      ipcRenderer.invoke('wcv-host-replace-worldbook', name, entries),
-    // Worldbook CRUD/bind — full library via ctx-scoped IPC. list/chat-ids are sync (sendSync).
-    listWorldbooks: () => {
-      try {
-        return ipcRenderer.sendSync('wcv-host-list-worldbooks-sync') || []
-      } catch {
-        return []
-      }
-    },
-    chatWorldbookIds: () => {
-      try {
-        return ipcRenderer.sendSync('wcv-host-chat-worldbook-ids-sync') || []
-      } catch {
-        return []
-      }
-    },
-    createWorldbook: (name) => ipcRenderer.invoke('wcv-host-create-worldbook', name),
-    deleteWorldbook: (id) => ipcRenderer.invoke('wcv-host-delete-worldbook', id),
     getWorldbookById: async (id) => {
-      const r = await ipcRenderer.invoke('wcv-host-get-worldbook-by-id', id)
+      const r = await ipcRenderer.invoke(WCV_RESIDUE_CHANNELS.getWorldbookById, id)
       return { name: r?.name, entries: Array.isArray(r?.entries) ? r.entries : [] }
     },
-    saveWorldbookById: (id, entries) =>
-      ipcRenderer.invoke('wcv-host-save-worldbook-by-id', id, entries),
-    bindWorldbook: (id, on) => ipcRenderer.invoke('wcv-host-bind-worldbook', id, on),
-    setChatMessages: (m) => ipcRenderer.invoke('wcv-host-set-chat-messages', m),
-    deleteChatMessages: (ids) => ipcRenderer.invoke('wcv-host-delete-chat-messages', ids),
+    // createChat has no main-side channel (the WCV never spawns a chat) — deferred empty id.
     createChat: () => Promise.resolve(''),
-    saveChat: (chat) => ipcRenderer.invoke('wcv-host-save-chat', chat),
-    reloadChat: () => ipcRenderer.invoke('wcv-host-reload-chat'),
-    setInput: (text) => ipcRenderer.send('wcv-host-set-input', text),
-    submitInput: () => ipcRenderer.send('wcv-host-submit-input'),
-    getGlobalVars: () => ipcRenderer.invoke('wcv-host-get-global-vars'),
-    setGlobalVar: (key, value) => ipcRenderer.invoke('wcv-host-set-global-var', key, value),
-    // Whole-object global vars (getVariables/replaceVariables({type:'global'})). SYNC read (blocks
-    // briefly, once) so the card reads its saved settings before its first render — matches the
-    // stat/chat/script sync getters.
-    getGlobalVarsSync: () => {
-      try {
-        return ipcRenderer.sendSync('wcv-host-get-global-vars-sync') || {}
-      } catch {
-        return {}
-      }
-    },
-    setGlobalVars: (vars) => ipcRenderer.invoke('wcv-host-set-global-vars', vars),
-    assetUrl: (name: string, type: string, mood?: string) =>
-      ipcRenderer.invoke('wcv-host-asset-url', name, type, mood),
-    sceneAssetUrl: (location: string, type: '全景' | '背景') =>
-      ipcRenderer.invoke('wcv-host-scene-asset-url', location, type),
-    // WA-3: enumerate one entry's variants; ctx resolves from e.sender main-side (like asset-url).
-    assetList: (name: string, type: string) =>
-      ipcRenderer.invoke('wcv-host-asset-list', name, type),
-    // WA-3: picker-backed import — main opens the OS image picker, copies into the calling card's world,
-    // returns the new rptasset:// URL (null on cancel/invalid). ctx resolves from e.sender.
-    requestAssetImport: (arg: { name: string; type: string; variant?: string }) =>
-      ipcRenderer.invoke('wcv-host-request-asset-import', arg),
-    getDuelPreview: () => ipcRenderer.invoke('wcv-host-duel-preview'),
-    // Overlay surfaces (PM-A7): main validates the id against the calling card's panel_ui.overlays
-    // (resolved from e.sender), mounts/closes the overlay WCV, and returns whether it opened.
-    requestOverlay: (id: string) => ipcRenderer.invoke('wcv-host-request-overlay', id),
-    closeOverlay: () => ipcRenderer.invoke('wcv-host-close-overlay'),
-    // Runtime theming (runtime-theme-api-design §5). The WCV runs in its own process, so main relays the
-    // set to the host renderer (the theme authority) and returns its derive/AA verdict; the sync getter
-    // reads a snapshot the renderer keeps pushing to main (main can't derive the effective tokens itself).
-    setPlayTheme: (theme, opts) => ipcRenderer.invoke('wcv-host-set-play-theme', theme, opts),
-    getPlayThemeSync: () => {
-      try {
-        return (
-          ipcRenderer.sendSync('wcv-get-play-theme-sync') || { tokens: {}, source: 'user' as const }
-        )
-      } catch {
-        return { tokens: {}, source: 'user' as const }
-      }
-    },
-
+    // formatRegex's natural fallback is the INPUT text, which the static table can't express, so it stays
+    // hand-written and keeps its original body (no try/catch — a throw here surfaces, as before).
+    formatRegex: (t) => ipcRenderer.sendSync(WCV_RESIDUE_CHANNELS.formatRegex, t),
     onVarsChanged: (cb) => {
       // Forward the origin (2nd IPC arg) so the runtime fires MVU events only for non-card-write changes
       // (a card's own write echoed back must not re-fire its events and loop — the WS-3 fix). Absent ⇒

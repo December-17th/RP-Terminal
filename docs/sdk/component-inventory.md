@@ -51,7 +51,11 @@ formally _blessing_ `v3 + rp_terminal` as **the** standard, and (b) finishing th
 ## 2. Layer A — Card runtime API (`thRuntime`)
 
 The **single canonical surface** is `createThRuntime(host)` ([thRuntime/index.ts](../../src/shared/thRuntime/index.ts)),
-built over a realm-agnostic **`Host` seam** ([thRuntime/types.ts](../../src/shared/thRuntime/types.ts)). Two
+built over a realm-agnostic **`Host` seam** ([thRuntime/types.ts](../../src/shared/thRuntime/types.ts)). The runtime
+`Host` object is FLAT, but its type is the intersection of eight cohesive facets — `VarsHost`, `WorldbookHost`,
+`ChatHost`, `RegexHost`, `SurfaceHost`, `AssetHost`, `GenHost`, `EngineHost` ([thRuntime/hostFacets.ts](../../src/shared/thRuntime/hostFacets.ts)),
+re-exported from `types.ts`. Every member is required; [`createNullHost()`](../../src/shared/thRuntime/nullHost.ts)
+supplies a complete inert Host (safe neutral no-ops) to spread over for tests and thin adapters. Two
 transports implement the same surface, so a card behaves identically in either
 (parity by construction — [th-parity-status.md](../superpowers/specs/2026-06-23-th-parity-status.md)):
 
@@ -62,7 +66,17 @@ transports implement the same surface, so a card behaves identically in either
   (`plugin-storage-all-sync` / `chat-card-vars-get-sync`) on first read, memoized per host — so a card reads
   its saved KV synchronously at boot (an inline frame gets a fresh host per reload), matching WCV's sync getters.
 - **Isolated / WCV** — `createThRuntime(...)` at `wcvPreload.ts:285`; Host backed by `ipcRenderer.sendSync`
-  (sync getters) + `invoke` (async) over the `wcv-host-*` IPC.
+  (sync getters) + `invoke` (async) over the `wcv-host-*` IPC. The transported members are declared once in
+  a shared **Channel Spec** ([`wcvChannelSpec.ts`](../../src/shared/thRuntime/wcvChannelSpec.ts) —
+  `{ channel, kind: 'sync'|'invoke'|'send', fallback }` per Host member); `createWcvHost`
+  ([`wcvHost.ts`](../../src/preload/wcvHost.ts)) is generated from it by a generic loop (sync getters fall
+  back on a throw or null/undefined result). On the main side, `wcvIpc.ts` registers the same channels through
+  a member-keyed implementation map (`WcvHostImpls`, typed `Record<WcvSpecMember, …>`) driven by
+  `registerHostChannels`, so a spec member with no main-side handler is a COMPILE error, not a runtime gap —
+  the two sides can't drift in name, kind, OR completeness (ADR 0013). A small hand-written residue (event
+  subscriptions, injected EJS deps, the shape-normalizing worldbook getters, `createChat`, `formatRegex`)
+  stays outside the table; the four residue members that still cross IPC share their channel names via
+  `WCV_RESIDUE_CHANNELS`.
 
 **WCV-transport-only host method** (not on the `thRuntime` surface — a WCV is a native overlay with its
 own screen rect, which an inline DOM card doesn't need): `window.rptHost.getPanelGeometry()` →
