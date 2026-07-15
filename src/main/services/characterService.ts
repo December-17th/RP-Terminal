@@ -33,6 +33,18 @@ export const getAvatarThumbPath = (characterId: string): string =>
 const AVATAR_THUMB_MAX = 256
 
 /**
+ * Upper bound (bytes) on the ORIGINAL avatar we're willing to serve as a FALLBACK when thumbnail
+ * generation fails. The launcher contract is a bounded 256px thumb; if we can't produce one, a small
+ * original is a tolerable stand-in but a multi-MB original is not — so above this we 404 and let the
+ * renderer's letter-placeholder show instead of streaming an unbounded image on the hot path.
+ */
+export const AVATAR_FALLBACK_MAX_BYTES = 512 * 1024
+
+/** Pure decision seam: may the ORIGINAL avatar be served as a fallback given its size in bytes? */
+export const isAvatarFallbackAllowed = (origSizeBytes: number): boolean =>
+  origSizeBytes <= AVATAR_FALLBACK_MAX_BYTES
+
+/**
  * Resolve the ORIGINAL + THUMB absolute paths for a character id inside the avatars dir, with the
  * same root-escape guard the world-asset protocol uses (a traversing id → null). Pure path logic —
  * no fs, no nativeImage — so both the thumb generator and the protocol serve-path share one guard.
@@ -96,6 +108,87 @@ export const resolveAvatarServePath = (characterId: string): string | null => {
   if (fs.existsSync(p.thumb)) return p.thumb
   if (fs.existsSync(p.orig)) return p.orig
   return null
+}
+
+const pathExists = async (p: string): Promise<boolean> => {
+  try {
+    await fs.promises.access(p)
+    return true
+  } catch {
+    return false
+  }
+}
+
+/**
+ * Run the CPU-bound `nativeImage` decode/resize/encode OFF the protocol callback tick. `setImmediate`
+ * yields once so a burst of concurrent requests doesn't serialize a wall of synchronous IO inside the
+ * protocol handler. Resolves the written thumb path, or `null` if the original is undecodable (caller
+ * then applies the bounded fallback). Rejects on an unexpected resize/write error.
+ */
+const generateThumbDeferred = (p: { orig: string; thumb: string }): Promise<string | null> =>
+  new Promise((resolve, reject) => {
+    setImmediate(() => {
+      try {
+        const img = nativeImage.createFromPath(p.orig)
+        if (img.isEmpty()) return resolve(null) // undecodable original
+        const { width, height } = img.getSize()
+        const longest = Math.max(width, height)
+        const out =
+          longest > AVATAR_THUMB_MAX
+            ? img.resize(width >= height ? { width: AVATAR_THUMB_MAX } : { height: AVATAR_THUMB_MAX })
+            : img
+        ensureDir(getAvatarsDir())
+        fs.writeFileSync(p.thumb, out.toPNG())
+        resolve(p.thumb)
+      } catch (e) {
+        reject(e)
+      }
+    })
+  })
+
+const generateThumbServePath = async (p: {
+  orig: string
+  thumb: string
+}): Promise<string | null> => {
+  if (await pathExists(p.thumb)) return p.thumb
+  let origSize: number
+  try {
+    origSize = (await fs.promises.stat(p.orig)).size
+  } catch {
+    return null // no original → 404 (letter placeholder)
+  }
+  try {
+    const thumb = await generateThumbDeferred(p)
+    if (thumb) return thumb
+  } catch (e) {
+    log('error', 'Avatar thumbnail generation failed:', e)
+  }
+  // Generation failed or the original was undecodable: serve the original ONLY if it's small enough
+  // to honour the bounded contract; otherwise 404 so the renderer's onError placeholder shows.
+  return isAvatarFallbackAllowed(origSize) ? p.orig : null
+}
+
+/** In-flight thumb generations, keyed by the absolute thumb path, so N concurrent requests for the
+ * same avatar decode/encode ONCE (single-flight) and share the resolved serve path. */
+const inFlightThumbs = new Map<string, Promise<string | null>>()
+
+/**
+ * Async, request-path counterpart to {@link ensureAvatarThumb}: resolve the bounded path to SERVE for a
+ * character avatar, generating the launcher thumbnail lazily and OFF the hot path. Existence/stat reads
+ * use `fs.promises`; the synchronous `nativeImage` work is deferred via {@link generateThumbDeferred};
+ * concurrent requests for the same id are de-duplicated so generation runs once. On failure the bounded
+ * fallback rule ({@link isAvatarFallbackAllowed}) decides between the original and a `null` (→ 404).
+ */
+export const ensureAvatarThumbAsync = (characterId: string): Promise<string | null> => {
+  const p = avatarPaths(characterId)
+  if (!p) return Promise.resolve(null)
+  const existing = inFlightThumbs.get(p.thumb)
+  if (existing) return existing
+  const job = generateThumbServePath(p).finally(() => {
+    inFlightThumbs.delete(p.thumb)
+  })
+  inFlightThumbs.set(p.thumb, job)
+  return job
 }
 
 /** The card's avatar PNG as a `data:` URL (for the renderer launcher/img), or null if none. */

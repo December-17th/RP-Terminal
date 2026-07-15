@@ -72,3 +72,59 @@ describe('getAvatarThumbPath', () => {
     expect(svc.getAvatarPath('id42')).toBe(path.join(avatarsDir(), 'id42.png'))
   })
 })
+
+describe('isAvatarFallbackAllowed', () => {
+  it('allows a small original but rejects one above the 512KB bound', () => {
+    expect(svc.AVATAR_FALLBACK_MAX_BYTES).toBe(512 * 1024)
+    expect(svc.isAvatarFallbackAllowed(0)).toBe(true)
+    expect(svc.isAvatarFallbackAllowed(512 * 1024)).toBe(true) // boundary is inclusive
+    expect(svc.isAvatarFallbackAllowed(512 * 1024 + 1)).toBe(false)
+  })
+})
+
+// Async request-path resolver. The electron mock's `nativeImage.createFromPath` reports an EMPTY
+// image, so generation always treats the original as undecodable and defers to the bounded fallback
+// rule — letting us assert the ≤512KB decision + traversal guard without real image decoding.
+describe('ensureAvatarThumbAsync', () => {
+  const bigPng = (file: string, bytes: number): void => {
+    const dir = avatarsDir()
+    fs.mkdirSync(dir, { recursive: true })
+    fs.writeFileSync(path.join(dir, file), Buffer.alloc(bytes, 1))
+  }
+
+  it('returns the thumb immediately when one already exists (no generation)', async () => {
+    writeAvatar('abc-123.png')
+    writeAvatar('abc-123.thumb.png')
+    await expect(svc.ensureAvatarThumbAsync('abc-123')).resolves.toBe(
+      path.resolve(avatarsDir(), 'abc-123.thumb.png')
+    )
+  })
+
+  it('serves a small original as the bounded fallback when generation cannot produce a thumb', async () => {
+    writeAvatar('small.png') // 'png-bytes' → well under 512KB
+    await expect(svc.ensureAvatarThumbAsync('small')).resolves.toBe(
+      path.resolve(avatarsDir(), 'small.png')
+    )
+  })
+
+  it('404s (null) for an oversized original that cannot be thumbnailed', async () => {
+    bigPng('huge.png', 512 * 1024 + 1)
+    await expect(svc.ensureAvatarThumbAsync('huge')).resolves.toBeNull()
+  })
+
+  it('returns null when the original does not exist', async () => {
+    await expect(svc.ensureAvatarThumbAsync('missing')).resolves.toBeNull()
+  })
+
+  it('rejects a path-traversing id (shares the avatars-root guard)', async () => {
+    await expect(svc.ensureAvatarThumbAsync('../secret')).resolves.toBeNull()
+  })
+
+  it('single-flights concurrent requests for the same id (one shared promise)', () => {
+    writeAvatar('dup.png')
+    const a = svc.ensureAvatarThumbAsync('dup')
+    const b = svc.ensureAvatarThumbAsync('dup')
+    expect(a).toBe(b) // same in-flight promise → generation runs once
+    return Promise.all([a, b])
+  })
+})

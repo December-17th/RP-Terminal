@@ -15,6 +15,24 @@ export const safeStorage = {
   decryptString: (b: Buffer): string => b.toString('utf-8')
 }
 
+// Minimal nativeImage stub: reports an empty image so avatar thumb GENERATION treats the source as
+// undecodable and falls through to the bounded-original fallback rule (the pure seam under test).
+export const nativeImage = {
+  createFromPath: (): {
+    isEmpty: () => boolean
+    getSize: () => { width: number; height: number }
+    resize: () => unknown
+    toPNG: () => Buffer
+  } => ({
+    isEmpty: (): boolean => true,
+    getSize: (): { width: number; height: number } => ({ width: 0, height: 0 }),
+    resize(): unknown {
+      return this
+    },
+    toPNG: (): Buffer => Buffer.from('')
+  })
+}
+
 export const ipcMain = { handle: (): void => {} }
 export const dialog = {}
 export const shell = {}
@@ -33,5 +51,6 @@ export default {
   shell,
   contextBridge,
   ipcRenderer,
-  safeStorage
+  safeStorage,
+  nativeImage
 }

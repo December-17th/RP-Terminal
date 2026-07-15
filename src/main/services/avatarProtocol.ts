@@ -1,6 +1,6 @@
 import { protocol, net } from 'electron'
 import { pathToFileURL } from 'url'
-import { ensureAvatarThumb } from './characterService'
+import { ensureAvatarThumbAsync } from './characterService'
 import { log } from './logService'
 
 export const AVATAR_SCHEME = 'rptavatar'
@@ -18,16 +18,19 @@ export function parseAvatarUrl(rawUrl: string): { characterId: string } | null {
 }
 
 /**
- * Resolve + stream an rptavatar request, or a 4xx/5xx Response. Read-only. Generates the bounded
- * launcher thumbnail lazily on first request (so pre-existing characters get one without re-import),
- * then serves the thumb (or the original as a fallback). Path traversal is rejected in
- * `ensureAvatarThumb`'s shared avatars-root guard. Mirrors {@link serveAssetRequest}.
+ * Resolve + stream an rptavatar request, or a 4xx/5xx Response. Read-only and fully async: the bounded
+ * launcher thumbnail is generated lazily on first request (so pre-existing characters get one without
+ * re-import) OFF the hot path, with existence/stat via `fs.promises`, the CPU-bound `nativeImage`
+ * decode deferred, and concurrent requests for the same avatar de-duplicated (single-flight). On a
+ * generation failure only a small original (≤512KB) is served; a large original 404s rather than
+ * breaking the bounded contract. Path traversal is rejected in `ensureAvatarThumbAsync`'s shared
+ * avatars-root guard. Mirrors {@link serveAssetRequest}.
  */
-export function serveAvatarRequest(req: { url: string }): Response | Promise<Response> {
+export async function serveAvatarRequest(req: { url: string }): Promise<Response> {
   try {
     const parsed = parseAvatarUrl(req.url)
     if (!parsed) return new Response('Bad Request', { status: 400 })
-    const abs = ensureAvatarThumb(parsed.characterId)
+    const abs = await ensureAvatarThumbAsync(parsed.characterId)
     if (!abs) return new Response('Not Found', { status: 404 })
     return net.fetch(pathToFileURL(abs).toString())
   } catch (e) {
