@@ -32,7 +32,16 @@ export const isCardPayload = (s: string): boolean =>
 /** Build a rule's replacement for one match: trimStrings stripped from `{{match}}`, the
  * `{{match}}`/`{{user}}`/`{{char}}` macros, `$0`/`$&`/`$N` capture groups, and (plain text only) `\n`.
  * Capture substitution mirrors native String.replace: `$N` is left LITERAL when the find-regex has
- * no group N — that's what keeps a card's own `$1` backreference intact instead of blanking it. */
+ * no group N — that's what keeps a card's own `$1` backreference intact instead of blanking it.
+ *
+ * CARD-PAYLOAD SAFETY: a frontend-card replacement carries the card's OWN `<script>`, which routinely
+ * contains the universal regex-escape idiom `str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')` — a LITERAL
+ * `$&`, not an injection point (a beautifier injects the match via a numbered group or `{{match}}`).
+ * Substituting the whole-match specials `$&`/`$0` there splices the entire matched block into the
+ * card's script, breaking it (unterminated string → SyntaxError → every handler undefined → a card
+ * that renders but can't be clicked/expanded). So for a card payload leave `$&`/`$0` LITERAL — the
+ * same card-awareness that already skips the `\n` shorthand below. Numbered groups still resolve (the
+ * beautifier's real injection uses them) and the "no group N ⇒ literal" guard keeps a card's `$6` intact. */
 const buildReplacement = (
   rule: RegexLikeRule,
   match: string,
@@ -41,18 +50,19 @@ const buildReplacement = (
 ): string => {
   let trimmed = match
   for (const t of rule.trimStrings) if (t) trimmed = trimmed.split(t).join('')
+  const card = isCardPayload(rule.replace)
   let out = rule.replace
     .replace(/\{\{match\}\}/gi, trimmed)
     .replace(/\{\{user\}\}/gi, ctx.user ?? '')
     .replace(/\{\{char\}\}/gi, ctx.char ?? '')
-    .replace(/\$&/g, match)
-    .replace(/\$(\d{1,2})/g, (m, n) => {
-      const groupNumber = Number(n)
-      if (groupNumber === 0) return match
-      const i = groupNumber - 1
-      return i < groups.length ? (groups[i] ?? '') : m
-    })
-  if (!isCardPayload(rule.replace)) out = out.replace(/\\n/g, '\n')
+  if (!card) out = out.replace(/\$&/g, match)
+  out = out.replace(/\$(\d{1,2})/g, (m, n) => {
+    const groupNumber = Number(n)
+    if (groupNumber === 0) return card ? m : match
+    const i = groupNumber - 1
+    return i < groups.length ? (groups[i] ?? '') : m
+  })
+  if (!card) out = out.replace(/\\n/g, '\n')
   return out
 }
 

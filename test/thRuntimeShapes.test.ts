@@ -6,7 +6,8 @@ import {
   floorsToStChat,
   lastMessageIndex,
   lastUserMessageIndex,
-  lastCharMessageIndex
+  lastCharMessageIndex,
+  messagesToFloors
 } from '../src/shared/thRuntime/shapes'
 
 const floors = [
@@ -31,6 +32,55 @@ describe('floorsToThMessages', () => {
   })
   it('skips an empty user slot (compact) — a contentless floor yields only the assistant message', () => {
     expect(floorsToThMessages([{}])).toEqual([{ message_id: 0, role: 'assistant', message: '' }])
+  })
+})
+
+describe('messagesToFloors (panel chat scope)', () => {
+  it('pairs a user→assistant sequence into one floor', () => {
+    expect(
+      messagesToFloors([
+        { role: 'user', content: 'hi' },
+        { role: 'assistant', content: 'hello' }
+      ])
+    ).toEqual([{ user_message: { content: 'hi' }, response: { content: 'hello' } }])
+  })
+  it('a lone assistant → a greeting-shaped { response } floor', () => {
+    expect(messagesToFloors([{ role: 'assistant', content: 'plot text' }])).toEqual([
+      { response: { content: 'plot text' } }
+    ])
+  })
+  it('a trailing unpaired user closes as its own floor', () => {
+    expect(
+      messagesToFloors([
+        { role: 'user', content: 'a' },
+        { role: 'assistant', content: 'b' },
+        { role: 'user', content: 'c' }
+      ])
+    ).toEqual([
+      { user_message: { content: 'a' }, response: { content: 'b' } },
+      { user_message: { content: 'c' } }
+    ])
+  })
+  it('consecutive users each close as their own floor', () => {
+    expect(
+      messagesToFloors([
+        { role: 'user', content: 'a' },
+        { role: 'user', content: 'b' },
+        { role: 'assistant', content: 'c' }
+      ])
+    ).toEqual([
+      { user_message: { content: 'a' } },
+      { user_message: { content: 'b' }, response: { content: 'c' } }
+    ])
+  })
+  it('empty in → empty out', () => {
+    expect(messagesToFloors([])).toEqual([])
+  })
+  it('round-trips a lone assistant back through floorsToThMessages as one compact message', () => {
+    const floors = messagesToFloors([{ role: 'assistant', content: 'plot' }])
+    expect(floorsToThMessages(floors)).toEqual([
+      { message_id: 0, role: 'assistant', message: 'plot' }
+    ])
   })
 })
 

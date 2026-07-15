@@ -342,6 +342,15 @@ const buildEjsCtx = (data?: any): TemplateContext => {
 // adapter calls IPC without passing ctx (this placeholder only satisfies the Host type). The quickjs EJS
 // engine stays here and is injected so the runtime's EjsTemplate surface evaluates in this context.
 const ctx = { profileId: '', chatId: '', characterId: '' }
+// Panel chat scope (general): main stashed it on this slot at ensure() time; read it synchronously at
+// preload load (before the card's first render) so the runtime's chat reads reflect the panel's own
+// messages instead of the real chat (chat-READ-only). Undefined/absent ⇒ unscoped (real host floors).
+let chatScope: any
+try {
+  chatScope = ipcRenderer.sendSync('wcv-get-chat-scope-sync') || undefined
+} catch {
+  chatScope = undefined
+}
 const g = createThRuntime(
   createWcvHost({
     ctx,
@@ -351,7 +360,8 @@ const g = createThRuntime(
       return err || null
     },
     prepareContext: (data) => buildEjsCtx(data)
-  })
+  }),
+  { chatScope }
 )
 Object.assign(w, g)
 w.TavernHelper = g.TavernHelper

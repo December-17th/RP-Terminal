@@ -154,7 +154,7 @@ Verify: [`worldAssetIpc.ts`](../../src/main/ipc/worldAssetIpc.ts) (`asset-list-f
 | ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ | --------------- |
 | `TavernHelper` (+ bare helpers) | variables (+ script scope), chat r/w, worldbook CRUD, char/preset read, regex read/format/write, generate, events, `triggerSlash`, macros, audio | ✅ (gaps below) |
 | `Mvu`                           | `getMvuData`/`getMvuVariable`/`setMvuVariable`/`replaceMvuData`/`parseMessage`/`events`                                                          | ✅              |
-| `SillyTavern`                   | `getContext()`, `chat[]` (+swipes), `substituteParams`, `saveChat`, `reloadCurrentChat`, `eventSource`, `saveSettingsDebounced` (no-op)          | ✅              |
+| `SillyTavern`                   | `getContext()`, `chat[]` (+swipes), `chatMetadata.variables` + `saveMetadata`, `substituteParams`, `saveChat`, `reloadCurrentChat`, `eventSource`, `saveSettingsDebounced` (no-op) | ✅              |
 | `EjsTemplate`                   | `evalTemplate`/`prepareContext`/`getSyntaxErrorInfo`/`allVariables`/`saveVariables`/…                                                            | ✅              |
 | `toastr`, `tavern_events`       | toast bus; the events enum                                                                                                                       | ✅              |
 | injected libs                   | see Layer B                                                                                                                                      | ✅              |
@@ -357,7 +357,10 @@ is enforced by `appliesToDisplay` / `appliesToPrompt`
 ([regexService.ts](../../src/main/services/regexService.ts)) and in the TavernHelper shape bridge
 ([tavernRegex.ts](../../src/shared/thRuntime/tavernRegex.ts)).
 Replacement syntax is shared by display and prompt transforms: `$0`/`$&` expand to the full match and
-`$1`/`$2`... expand capture groups (`regexTransform`).
+`$1`/`$2`... expand capture groups (`regexTransform`). In a **card payload** (a replacement carrying
+`<script>`/`<style>`/`<html>`/```` ```html ````) the whole-match specials `$0`/`$&` are kept **literal**
+so a card's own escape idiom `s.replace(/…/g, '\\$&')` isn't spliced into and broken; numbered groups
+still inject (with `$N` literal when the find-regex has no group N).
 
 **What does NOT transform cleanly (Tier 2 — set expectations honestly):** cards whose JS reaches past the
 documented surface — full-page apps that read undocumented `window.top` internals, exotic/uncommon

@@ -14,6 +14,7 @@ import { useCardScriptsStore } from '../stores/cardScriptsStore'
 import { resolveScriptedHtmlRoute } from './messageCardRouting'
 import { DEFAULT_CARD_RENDER_MODE, DEFAULT_CARD_SIZING } from '../../../shared/cardRenderMode'
 import type { CardRenderMode } from '../../../shared/cardRenderMode'
+import type { CardChatScope } from '../../../shared/thRuntime/types'
 import { useT } from '../i18n'
 
 interface Props {
@@ -30,12 +31,26 @@ interface Props {
    * StreamingView.
    */
   streaming?: boolean
+  /**
+   * Panel chat scope (general entry point): when a scripted card here is rendered inside a UI panel whose
+   * content IS its chat (the plot panel; future reasoning/agent panels), pass the panel's messages as the
+   * scope. Forwarded to the scripted-card frames (inline + WCV) so the card's chat reads reflect these
+   * messages instead of the real chat (chat-READ-only). The static HtmlFrame path ignores it (no runtime).
+   */
+  chatScope?: CardChatScope
 }
 
 // An HTML block is a ```html fence, a plain ``` fence whose payload is a full <html>/<body>
 // frontend card, or a bare <html>/<body> block emitted without a code fence.
+//
+// The FIRST alternative closes a ```html fence at the document's `</html>` (not the first stray ```),
+// so a full-document card whose body embeds a ``` fence stays whole. This is load-bearing for the
+// plot-recall panel: the plot beautifier drops the turn input — which routinely carries a ```text
+// fence — into a <textarea> inside a full ```html document. A lazy close ended the block at that
+// inner ```, halving the card (the "full-screen black scene" bug — see messageContent.test.ts). A
+// ```html FRAGMENT (no </html>) has no such anchor and falls through to the lazy second alternative.
 const HTML_BLOCK =
-  /```html\s*([\s\S]*?)```|```\s*((?:<!doctype\s+html[^>]*>\s*)?<(?:html|body)[\s\S]*?<\/(?:html|body)>)\s*```|(<(?:html|body)[\s\S]*?<\/(?:html|body)>)/gi
+  /```html\s*([\s\S]*?<\/html>)\s*```|```html\s*([\s\S]*?)```|```\s*((?:<!doctype\s+html[^>]*>\s*)?<(?:html|body)[\s\S]*?<\/(?:html|body)>)\s*```|(<(?:html|body)[\s\S]*?<\/(?:html|body)>)/gi
 
 /**
  * Renders an AI message. SillyTavern-style beautification regex emits ```html
@@ -44,7 +59,13 @@ const HTML_BLOCK =
  * <script>, otherwise sanitized + script-free. Everything else renders as
  * GitHub-flavored markdown.
  */
-export const MessageContent: React.FC<Props> = ({ content, css, onContextMenu, streaming }) => {
+export const MessageContent: React.FC<Props> = ({
+  content,
+  css,
+  onContextMenu,
+  streaming,
+  chatScope
+}) => {
   const t = useT()
   const parts = useMemo(() => splitHtml(content), [content])
   const globalMode =
@@ -119,10 +140,11 @@ export const MessageContent: React.FC<Props> = ({ content, css, onContextMenu, s
                     html={p.text}
                     sizing={globalSizing}
                     trusted
+                    chatScope={chatScope}
                     onContextMenu={onContextMenu}
                   />
                 ) : route === 'isolated' ? (
-                  <WcvMessageFrame key={i} html={p.text} sizing={globalSizing} />
+                  <WcvMessageFrame key={i} html={p.text} sizing={globalSizing} chatScope={chatScope} />
                 ) : (
                   <HtmlFrame key={i} html={p.text} css={css} onContextMenu={onContextMenu} />
                 )
@@ -265,6 +287,64 @@ const splitBareHtml = (md: string): Segment[] => {
   return out.length ? out : [{ type: 'md', text: md }]
 }
 
+// Standard HTML/SVG/MathML element names. A tag whose name is NOT here is a custom "body-state"
+// wrapper the card emitted but no display regex handled (e.g. <gametxt>, <scene_info>, <tp>). Since
+// this markdown path carries no rehype-raw, react-markdown ESCAPES such a tag into visible text
+// (`&lt;gametxt&gt;`); we instead drop the tag token and keep its children — mirroring how a browser
+// (and SillyTavern's renderer) show an unknown element: invisibly, rendering only its contents.
+// Known tags are left untouched (unchanged escaped-or-lifted behavior), so ONLY genuinely-unknown
+// tags change. SVG/MathML names are included so bare graphics markup isn't mangled — leaving it as-is
+// is no worse than today. (Card <script>/<style>-bearing frontend cards never reach here: they were
+// lifted to a frame / inline-html region by HTML_BLOCK + splitBareHtml above.)
+// This is an app-wide behavior decision (a bare <player>/<location> in prose is dropped, not shown
+// literally) — see docs/adr/0012-unknown-html-tags-are-stripped-globally-in-message-markdown.md.
+const KNOWN_HTML_TAGS = new Set<string>(
+  `html head body base link meta style title
+  address article aside footer header h1 h2 h3 h4 h5 h6 hgroup main nav section search
+  blockquote dd div dl dt figcaption figure hr li menu ol p pre ul
+  a abbr b bdi bdo br cite code data dfn em i kbd mark q rp rt rtc rb ruby s samp small span strong sub sup time u var wbr
+  del ins area audio img map track video embed iframe object picture source param
+  canvas noscript script caption col colgroup table tbody td tfoot th thead tr
+  button datalist fieldset form input label legend meter optgroup option output progress select textarea details dialog summary slot template
+  acronym big center dir font frame frameset image marquee menuitem nobr noembed noframes plaintext strike tt xmp
+  svg path circle ellipse line rect polygon polyline g defs use symbol marker mask clippath lineargradient radialgradient stop text tspan textpath foreignobject filter pattern desc
+  math mrow mi mn mo ms mtext mspace msup msub msubsup mfrac msqrt mroot mtable mtr mtd munder mover munderover`
+    .split(/\s+/)
+    .filter(Boolean)
+)
+
+// A well-formed HTML tag token: <name>, <name attrs…>, <name/>, </name>. The name must START with a
+// letter — so `a < b`, `2 > 1`, `<3`, and autolinks like `<https://…>` / `<a@b.com>` never match — and
+// the token must fully close with `>`, so an unterminated `<div …` (no `>`) stays literal text. `_`
+// is allowed in the name: the custom RP tags this targets use it (<scene_info>, <action_options>).
+const TAG_TOKEN = /<\/?([a-zA-Z][a-zA-Z0-9_-]*)(?:\s[^<>]*)?\/?>/g
+
+// Code we must not touch: fenced blocks (``` / ~~~) and inline spans (`…`). Captured so String.split
+// keeps them as verbatim odd-index chunks between the strippable prose chunks. (```html fences were
+// already extracted by HTML_BLOCK; a plain / ```text fence can still sit in an md segment.)
+const CODE_REGION = /(```[\s\S]*?```|~~~[\s\S]*?~~~|`[^`]*`)/g
+
+/**
+ * Drop custom/unknown HTML tag tokens from a markdown segment, keeping their children, so a card's
+ * unhandled wrapper tags (<gametxt>, <scene_info>, …) render invisibly instead of as escaped text.
+ * Known HTML/SVG/MathML tags and anything inside code fences/spans are left exactly as-is — only
+ * genuinely-unknown tags change. Runs on md segments AFTER splitBareHtml, so it never affects which
+ * regions get lifted (that decision reads the raw text); the freed prose still gets full markdown.
+ */
+export const stripUnknownHtmlTags = (md: string): string =>
+  md
+    .split(CODE_REGION)
+    .map((chunk, i) =>
+      // String.split with one capture group interleaves matches at ODD indices — those are the
+      // preserved code regions; even indices are prose we strip.
+      i % 2 === 1
+        ? chunk
+        : chunk.replace(TAG_TOKEN, (whole, name: string) =>
+            KNOWN_HTML_TAGS.has(name.toLowerCase()) ? whole : ''
+          )
+    )
+    .join('')
+
 export const splitHtml = (content: string): Segment[] => {
   const segs: Segment[] = []
   const re = new RegExp(HTML_BLOCK)
@@ -287,7 +367,16 @@ export const splitHtml = (content: string): Segment[] => {
     }
     segs.push({
       type: 'html',
-      text: m[1] !== undefined ? m[1] : m[2] !== undefined ? m[2] : m[3],
+      // Groups, in HTML_BLOCK order: 1 = full-document ```html (anchored at </html>), 2 = lazy ```html
+      // fragment, 3 = bare ``` full document, 4 = bare <html>/<body>. Exactly one is defined per match.
+      text:
+        m[1] !== undefined
+          ? m[1]
+          : m[2] !== undefined
+            ? m[2]
+            : m[3] !== undefined
+              ? m[3]
+              : m[4],
       mode: pendingMode
     })
     pendingMode = undefined
@@ -298,7 +387,12 @@ export const splitHtml = (content: string): Segment[] => {
   // Second pass: lift bare top-level HTML blocks out of the markdown segments (the <body>/<html>/
   // ```html blocks were already extracted above and aren't re-scanned). Mode markers only precede
   // the model's own frontend cards, so these inline blocks default to inline mode.
-  return segs.flatMap((s) => (s.type === 'md' ? splitBareHtml(s.text) : [s]))
+  return segs
+    .flatMap((s) => (s.type === 'md' ? splitBareHtml(s.text) : [s]))
+    // Third pass: drop custom/unknown wrapper tags left in the markdown (e.g. a card's <gametxt>/
+    // <scene_info> that no display regex stripped) so they render invisibly instead of as escaped
+    // text. Only md segments — lifted inline-html/frame regions keep their markup.
+    .map((s) => (s.type === 'md' ? { ...s, text: stripUnknownHtmlTags(s.text) } : s))
 }
 
 // Tags barred from the card body. Scripts + event handlers + javascript: URLs are stripped by

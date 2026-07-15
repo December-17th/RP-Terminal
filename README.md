@@ -229,8 +229,11 @@ automatically. With no configured data-location override, the app stores its dat
 `rp-terminal-data/` directory, which is ignored by Git. Back up that directory before replacing or
 deleting the clone.
 
-On Windows, users can instead double-click `Launch-RP-Terminal.bat` in the clone. It runs `npm install`,
-builds the app, and starts the production preview. Node.js 22 or later must be installed first.
+On Windows, users can instead double-click `Launch-RP-Terminal.bat` in the clone. On the first launch,
+or after a version update, it runs `npm install`, builds the app, and starts the production preview.
+When the version in `package.json` matches its successful-build marker, it skips setup and building and
+starts the app directly. Node.js 22 or later must be installed first. Every published source update must
+increment `package.json`'s version; otherwise the launcher intentionally treats it as already built.
 
 ### Update a portable clone
 
@@ -238,10 +241,10 @@ Stop the app first, then update and rebuild it from its clone.
 
 ```bash
 git pull --ff-only
-npm ci
-npm run build
-npm run start
 ```
+
+Then double-click `Launch-RP-Terminal.bat`. Published updates must have a new `package.json` version so
+the launcher detects that a rebuild is required.
 
 ### Development launch
 
