@@ -1,18 +1,23 @@
 /* eslint-disable react-refresh/only-export-components -- a view registry intentionally
    co-locates its internal wrapper components with the registry/options it exports. */
-import React from 'react'
+import React, { lazy, Suspense } from 'react'
 import { ChatView } from '../ChatView'
 import { StatusView } from '../StatusView'
 import { LogsPanel } from '../LogsPanel'
-import { CombatView } from './CombatView'
-import { VariablesView } from './VariablesView'
-import { TablesView } from './TablesView'
-import { AssetsView } from './AssetsView'
 import { useWorkspaceContext } from './context'
-import { UsageView } from '../UsageView'
 import { useT } from '../../i18n'
 import { useUiStore } from '../../stores/uiStore'
 import type { BuiltinViewId } from './viewLabels'
+
+// Heavy, non-default views are code-split so their large deps (CombatView's engine, VariablesView's
+// vanilla-jsoneditor/CodeMirror, TablesView/AssetsView/UsageView) land in separate chunks and stay out
+// of the startup entry. They are only mounted when a panel actually selects the view. ChatView /
+// StatusView / LogsPanel are default-visible and stay eager. Named exports → unwrap in .then().
+const CombatView = lazy(() => import('./CombatView').then((m) => ({ default: m.CombatView })))
+const VariablesView = lazy(() => import('./VariablesView').then((m) => ({ default: m.VariablesView })))
+const TablesView = lazy(() => import('./TablesView').then((m) => ({ default: m.TablesView })))
+const AssetsView = lazy(() => import('./AssetsView').then((m) => ({ default: m.AssetsView })))
+const UsageView = lazy(() => import('../UsageView').then((m) => ({ default: m.UsageView })))
 
 /**
  * The set of views a workspace panel can host. Each entry is a self-contained component
@@ -33,7 +38,11 @@ const StatusPanel: React.FC = () => {
 
 const CombatPanel: React.FC = () => {
   const { profileId } = useWorkspaceContext()
-  return <CombatView profileId={profileId} />
+  return (
+    <Suspense fallback={null}>
+      <CombatView profileId={profileId} />
+    </Suspense>
+  )
 }
 
 // The duel now lives in a centered popup (DuelPopup), not a resizable panel — its pixel-positioned
@@ -60,22 +69,38 @@ const DuelPanel: React.FC = () => {
 
 const VariablesPanel: React.FC = () => {
   const { profileId } = useWorkspaceContext()
-  return <VariablesView profileId={profileId} />
+  return (
+    <Suspense fallback={null}>
+      <VariablesView profileId={profileId} />
+    </Suspense>
+  )
 }
 
 const TablesPanel: React.FC = () => {
   const { profileId } = useWorkspaceContext()
-  return <TablesView profileId={profileId} />
+  return (
+    <Suspense fallback={null}>
+      <TablesView profileId={profileId} />
+    </Suspense>
+  )
 }
 
 const AssetsPanel: React.FC = () => {
   const { profileId } = useWorkspaceContext()
-  return <AssetsView profileId={profileId} />
+  return (
+    <Suspense fallback={null}>
+      <AssetsView profileId={profileId} />
+    </Suspense>
+  )
 }
 
 const UsagePanel: React.FC = () => {
   const { profileId } = useWorkspaceContext()
-  return <UsageView profileId={profileId} />
+  return (
+    <Suspense fallback={null}>
+      <UsageView profileId={profileId} />
+    </Suspense>
+  )
 }
 
 // The workflow EDITOR is deliberately NOT a panel view: the canvas needs the whole window, so it

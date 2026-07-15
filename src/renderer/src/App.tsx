@@ -1,4 +1,4 @@
-import { useEffect, useMemo } from 'react'
+import { useEffect, useMemo, lazy, Suspense } from 'react'
 import { useProfileStore } from './stores/profileStore'
 import { useCharacterStore } from './stores/characterStore'
 import { useChatStore } from './stores/chatStore'
@@ -46,11 +46,24 @@ import {
 import { useI18nStore } from './i18n'
 import { Launcher } from './components/Launcher'
 import { StDomCompat } from './components/StDomCompat'
-import { SettingsModal } from './components/SettingsModal'
-import { WorkflowEditorOverlay } from './components/workflow/WorkflowEditorOverlay'
-import { DuelPopup } from './components/DuelPopup'
-import { AssetsPopup } from './components/AssetsPopup'
-import { MemoryManagerView } from './components/memory/MemoryManagerView'
+// Modal/overlay surfaces are code-split: each renders null until opened, so lazy-loading them keeps
+// their heavy trees (workflow canvas, duel board, memory grid, settings hub) out of the startup entry
+// chunk. Suspense fallback is null — nothing is visible until the user opens the surface anyway.
+const SettingsModal = lazy(() =>
+  import('./components/SettingsModal').then((m) => ({ default: m.SettingsModal }))
+)
+const WorkflowEditorOverlay = lazy(() =>
+  import('./components/workflow/WorkflowEditorOverlay').then((m) => ({
+    default: m.WorkflowEditorOverlay
+  }))
+)
+const DuelPopup = lazy(() => import('./components/DuelPopup').then((m) => ({ default: m.DuelPopup })))
+const AssetsPopup = lazy(() =>
+  import('./components/AssetsPopup').then((m) => ({ default: m.AssetsPopup }))
+)
+const MemoryManagerView = lazy(() =>
+  import('./components/memory/MemoryManagerView').then((m) => ({ default: m.MemoryManagerView }))
+)
 import { CardTrustPrompt } from './components/CardTrustPrompt'
 import { refreshWcvHostState } from './cardBridge/hostReload'
 
@@ -415,11 +428,13 @@ export default function App(): React.ReactElement {
       {/* App-wide overlays — render over BOTH the launcher and play. The workflow editor is now the
           single surface for workflows + agents (one-canvas rebuild WP6.4b); the control center is
           retired. */}
-      <SettingsModal profileId={activeProfile.id} />
-      <WorkflowEditorOverlay profileId={activeProfile.id} />
-      <DuelPopup profileId={activeProfile.id} />
-      <AssetsPopup profileId={activeProfile.id} />
-      <MemoryManagerView profileId={activeProfile.id} />
+      <Suspense fallback={null}>
+        <SettingsModal profileId={activeProfile.id} />
+        <WorkflowEditorOverlay profileId={activeProfile.id} />
+        <DuelPopup profileId={activeProfile.id} />
+        <AssetsPopup profileId={activeProfile.id} />
+        <MemoryManagerView profileId={activeProfile.id} />
+      </Suspense>
       <CardTrustPrompt />
       <ToastStack />
     </>
