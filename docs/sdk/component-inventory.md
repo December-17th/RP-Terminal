@@ -51,7 +51,11 @@ formally _blessing_ `v3 + rp_terminal` as **the** standard, and (b) finishing th
 ## 2. Layer A — Card runtime API (`thRuntime`)
 
 The **single canonical surface** is `createThRuntime(host)` ([thRuntime/index.ts](../../src/shared/thRuntime/index.ts)),
-built over a realm-agnostic **`Host` seam** ([thRuntime/types.ts](../../src/shared/thRuntime/types.ts)). Two
+built over a realm-agnostic **`Host` seam** ([thRuntime/types.ts](../../src/shared/thRuntime/types.ts)). The runtime
+`Host` object is FLAT, but its type is the intersection of eight cohesive facets — `VarsHost`, `WorldbookHost`,
+`ChatHost`, `RegexHost`, `SurfaceHost`, `AssetHost`, `GenHost`, `EngineHost` ([thRuntime/hostFacets.ts](../../src/shared/thRuntime/hostFacets.ts)),
+re-exported from `types.ts`. Every member is required; [`createNullHost()`](../../src/shared/thRuntime/nullHost.ts)
+supplies a complete inert Host (safe neutral no-ops) to spread over for tests and thin adapters. Two
 transports implement the same surface, so a card behaves identically in either
 (parity by construction — [th-parity-status.md](../superpowers/specs/2026-06-23-th-parity-status.md)):
 

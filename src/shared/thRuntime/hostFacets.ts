@@ -7,7 +7,7 @@
 // one concern at a time. Every member's doc comment travels with it.
 import type { VarOp } from './ops'
 import type { TavernRegex } from './tavernRegex'
-import type { FloorLike, GenCfgNormalized, StMessage, VarsOrigin } from './types'
+import type { FloorLike, GenCfgNormalized, StMessage, VarsOrigin } from './hostPrimitives'
 
 /** Variables: stat_data + MVU ops, the three KV scopes (script / chat / global), and the
  *  stat_data change subscription. */
