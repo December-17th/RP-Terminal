@@ -296,6 +296,8 @@ const splitBareHtml = (md: string): Segment[] => {
 // tags change. SVG/MathML names are included so bare graphics markup isn't mangled — leaving it as-is
 // is no worse than today. (Card <script>/<style>-bearing frontend cards never reach here: they were
 // lifted to a frame / inline-html region by HTML_BLOCK + splitBareHtml above.)
+// This is an app-wide behavior decision (a bare <player>/<location> in prose is dropped, not shown
+// literally) — see docs/adr/0012-unknown-html-tags-are-stripped-globally-in-message-markdown.md.
 const KNOWN_HTML_TAGS = new Set<string>(
   `html head body base link meta style title
   address article aside footer header h1 h2 h3 h4 h5 h6 hgroup main nav section search
