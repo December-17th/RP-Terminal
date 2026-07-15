@@ -65,4 +65,20 @@ describe('reevaluateVariables — suffix replay (perf audit P1-4)', () => {
     expect(vi.mocked(floorService.saveFloor)).not.toHaveBeenCalled()
     expect(out).toHaveLength(3)
   })
+
+  it('INTENDED divergence: suffix replay preserves a manual (un-journaled) edit below fromFloor; full replay wipes it', () => {
+    // The Variables-view debug editor (setFloorStatData) writes stored stat_data WITHOUT journaling.
+    // A card mutation at floor 2 must not revert the user's edit on untouched floor 1 — but the
+    // explicit Re-evaluate button (full replay) recomputes over it, per that editor's contract.
+    floors[1].variables.stat_data = { hp: 999 } // manual edit; replaying f1's command would give 20
+    floors[2].response.content = "<UpdateVariable>_.set('mp', 0, 5);</UpdateVariable>"
+
+    const suffix = reevaluateVariables('p', 'c', 2)
+    expect(suffix[1].variables.stat_data).toEqual({ hp: 999 }) // untouched prefix keeps the edit
+    expect(suffix[2].variables.stat_data).toEqual({ hp: 999, mp: 5 }) // suffix seeded FROM the edit
+
+    const full = reevaluateVariables('p', 'c')
+    expect(full[1].variables.stat_data).toEqual({ hp: 20 }) // full replay recomputes over the edit
+    expect(full[2].variables.stat_data).toEqual({ hp: 20, mp: 5 })
+  })
 })

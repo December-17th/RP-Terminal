@@ -17,11 +17,13 @@ const preview = (s: string, n: number): string => {
   return clean.length > n ? `${clean.slice(0, n)}…` : clean
 }
 
-// Rough vertical pitch of one row incl. the 4px flex gap. Rows are variable height (each of the
-// player/AI previews clamps to 3 lines and the player line is optional), so windowing is APPROXIMATE:
-// the estimate + generous overscan keep the visible band correct; the scrollbar length is only an
-// estimate, which is fine for a management modal. Selection lives in `cut` (a floor number), so it
-// survives a row scrolling out of the rendered window.
+// INITIAL vertical pitch estimate for one row incl. the 4px flex gap. Rows are variable height (each
+// of the player/AI previews clamps to 3 lines and the player line is optional), so windowing is
+// APPROXIMATE — and a fixed estimate drifts past OVERSCAN deep into a uniformly tall transcript
+// (worst-case rows are ~129px, so by row ~100 the error exceeds the overscan and blank bands show).
+// The component therefore refines the pitch from the MEASURED average height of the rendered window
+// after each paint; this constant only seeds the first frame. Selection lives in `cut` (a floor
+// number), so it survives a row scrolling out of the rendered window.
 const ROW_PITCH = 100
 const OVERSCAN = 10
 
@@ -120,10 +122,26 @@ export const FloorManagerModal: React.FC<{ profileId: string; onClose: () => voi
 
   const total = floors.length
   const winH = scroll.h || 600
-  const first = Math.max(0, Math.floor(scroll.top / ROW_PITCH) - OVERSCAN)
-  const last = Math.min(total, first + Math.ceil(winH / ROW_PITCH) + OVERSCAN * 2)
-  const topPad = first * ROW_PITCH
-  const bottomPad = Math.max(0, (total - last) * ROW_PITCH)
+  const pitchRef = useRef(ROW_PITCH)
+  const pitch = pitchRef.current
+  const first = Math.max(0, Math.floor(scroll.top / pitch) - OVERSCAN)
+  const last = Math.min(total, first + Math.ceil(winH / pitch) + OVERSCAN * 2)
+  const topPad = first * pitch
+  const bottomPad = Math.max(0, (total - last) * pitch)
+
+  // Refine the pitch from the ACTUAL average rendered-row height (rows are variable height; a fixed
+  // estimate drifts past OVERSCAN deep in a uniformly tall list — review minor #2). Clamped to sane
+  // bounds and deadbanded so refinement converges instead of oscillating; the nudge re-derives the
+  // window at the same scroll position.
+  useEffect(() => {
+    const el = listRef.current
+    if (!el || last <= first) return
+    const avg = (el.scrollHeight - topPad - bottomPad) / (last - first)
+    if (avg >= 40 && avg <= 400 && Math.abs(avg - pitchRef.current) > 2) {
+      pitchRef.current = avg
+      setScroll((s) => ({ ...s }))
+    }
+  })
 
   const handleSelect = useCallback((floor: number) => {
     setCut(floor)

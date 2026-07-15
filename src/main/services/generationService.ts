@@ -266,6 +266,12 @@ export const getRenderMarkers = (
  * mutation at floor K only invalidates K and later — seed from K-1's stored state and replay just
  * the suffix instead of rewriting the whole transcript. Default 0 = the full from-scratch replay
  * (the Re-evaluate button / parser-change path).
+ *
+ * INTENDED divergence on manual edits (review 2026-07-15): `setFloorStatData` (the Variables-view
+ * debug editor) is deliberately un-journaled, so a FULL replay recomputes over it — that is the
+ * editor's documented contract. A SUFFIX replay seeds from stored state and therefore PRESERVES a
+ * manual edit made below `fromFloor`: a card mutating floor K must not silently revert the user's
+ * debug edits on untouched earlier floors. Pinned in test/reevaluateSuffix.test.ts.
  */
 export const reevaluateVariables = (
   profileId: string,
