@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { createRafScheduler } from '../lib/rafScheduler'
 import { useProfileStore } from '../stores/profileStore'
 import { useChatStore } from '../stores/chatStore'
 import { useCharacterStore } from '../stores/characterStore'
@@ -108,13 +109,43 @@ export function WcvMessageFrame({
         height: Math.max(0, bottom - top)
       }
     }
-    window.api.wcvEnsure(slotId, rect(), dataUrl, {
+    // Main rounds bounds to integer device pixels (wcvManager.round). Mirror that here so we can skip a
+    // send whose rounded bounds match the last one we sent — a native overlay only moves on integer
+    // pixels, so a sub-pixel-only change is a no-op flood.
+    type IntBounds = { x: number; y: number; width: number; height: number }
+    const roundB = (b: IntBounds): IntBounds => ({
+      x: Math.round(b.x),
+      y: Math.round(b.y),
+      width: Math.max(0, Math.round(b.width)),
+      height: Math.max(0, Math.round(b.height))
+    })
+    const initial = rect()
+    window.api.wcvEnsure(slotId, initial, dataUrl, {
       profileId,
       chatId: chatId || '',
       characterId,
       chatScope
     })
-    const onChange = (): void => window.api.wcvSetBounds(slotId, rect())
+    let lastSent: IntBounds = roundB(initial)
+    // Measure + send, but suppress when the rounded bounds are unchanged from the last send.
+    const sendBounds = (): void => {
+      const b = rect()
+      const r = roundB(b)
+      if (
+        r.x === lastSent.x &&
+        r.y === lastSent.y &&
+        r.width === lastSent.width &&
+        r.height === lastSent.height
+      ) {
+        return
+      }
+      lastSent = r
+      window.api.wcvSetBounds(slotId, b)
+    }
+    // Coalesce raw scroll/resize/RO fires to one measure+send per animation frame (rAF, not
+    // throttle/debounce, so the overlay never trails its container by more than a frame while scrolling).
+    const scheduler = createRafScheduler()
+    const onChange = (): void => scheduler.schedule(sendBounds)
     const ro = new ResizeObserver(onChange)
     ro.observe(el)
     window.addEventListener('resize', onChange)
@@ -124,6 +155,7 @@ export function WcvMessageFrame({
     for (let p = el.parentElement; p; p = p.parentElement) scrollers.push(p)
     scrollers.forEach((s) => s.addEventListener('scroll', onChange, { passive: true }))
     return () => {
+      scheduler.cancel()
       ro.disconnect()
       window.removeEventListener('resize', onChange)
       scrollers.forEach((s) => s.removeEventListener('scroll', onChange))

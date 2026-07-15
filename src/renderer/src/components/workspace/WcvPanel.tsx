@@ -17,6 +17,36 @@ import { useWcvFreezeStore } from '../../stores/wcvFreezeStore'
  * static layout slot (StaticWorkspace.tsx, view:'wcv'). (The old dev round-trip test view was retired.)
  */
 
+// A WcvPanel pushes its bounds from two paths — the ResizeObserver/window-resize effect and the
+// layout effect (a splitter drag / mode switch moves the panel without resizing it). During a drag
+// both fire, frequently with IDENTICAL bounds. Main rounds bounds to integer pixels and a native
+// overlay only moves on integer pixels, so suppress a consecutive send whose rounded bounds match the
+// last one we pushed for this slot. Keyed per slot; the entry is cleared on the panel's destroy.
+type IntBounds = { x: number; y: number; width: number; height: number }
+const lastSentBounds = new Map<string, IntBounds>()
+function sendBounds(slotId: string, el: HTMLElement): void {
+  const r = el.getBoundingClientRect()
+  const bounds = { x: r.left, y: r.top, width: r.width, height: r.height }
+  const rounded: IntBounds = {
+    x: Math.round(bounds.x),
+    y: Math.round(bounds.y),
+    width: Math.max(0, Math.round(bounds.width)),
+    height: Math.max(0, Math.round(bounds.height))
+  }
+  const prev = lastSentBounds.get(slotId)
+  if (
+    prev &&
+    prev.x === rounded.x &&
+    prev.y === rounded.y &&
+    prev.width === rounded.width &&
+    prev.height === rounded.height
+  ) {
+    return
+  }
+  lastSentBounds.set(slotId, rounded)
+  window.api.wcvSetBounds(slotId, bounds)
+}
+
 export function WcvPanel({ slotId, url }: { slotId: string; url: string }): React.ReactElement {
   const hostRef = useRef<HTMLDivElement>(null)
   const layouts = useWorkspaceStore((s) => s.layouts) // re-measure when the layout changes
@@ -39,14 +69,22 @@ export function WcvPanel({ slotId, url }: { slotId: string; url: string }): Reac
       const r = el.getBoundingClientRect()
       return { x: r.left, y: r.top, width: r.width, height: r.height }
     }
-    window.api.wcvEnsure(slotId, rect(), url, { profileId, chatId: chatId || '', characterId })
-    const onChange = (): void => window.api.wcvSetBounds(slotId, rect())
+    const initial = rect()
+    window.api.wcvEnsure(slotId, initial, url, { profileId, chatId: chatId || '', characterId })
+    lastSentBounds.set(slotId, {
+      x: Math.round(initial.x),
+      y: Math.round(initial.y),
+      width: Math.max(0, Math.round(initial.width)),
+      height: Math.max(0, Math.round(initial.height))
+    })
+    const onChange = (): void => sendBounds(slotId, el)
     const ro = new ResizeObserver(onChange)
     ro.observe(el)
     window.addEventListener('resize', onChange)
     return () => {
       ro.disconnect()
       window.removeEventListener('resize', onChange)
+      lastSentBounds.delete(slotId)
       window.api.wcvDestroy(slotId)
     }
   }, [slotId, url, profileId, chatId, characterId])
@@ -54,8 +92,7 @@ export function WcvPanel({ slotId, url }: { slotId: string; url: string }): Reac
   useEffect(() => {
     const el = hostRef.current
     if (!el) return
-    const r = el.getBoundingClientRect()
-    window.api.wcvSetBounds(slotId, { x: r.left, y: r.top, width: r.width, height: r.height })
+    sendBounds(slotId, el)
   }, [layouts, slotId])
 
   return (
