@@ -13,6 +13,7 @@ import {
 } from './lorebookService'
 import * as regexService from './regexService'
 import * as scriptService from './scriptService'
+import * as tableTemplateService from './tableTemplateService'
 import { installBundledPreset } from './presetService'
 import { parseStPng, extractAppendedZip } from '../parsers/stPngParser'
 import { importAssetsZip } from './worldAssetService'
@@ -86,6 +87,10 @@ export const deleteCharacter = (profileId: string, characterId: string): void =>
   // mirrors deletePreset's cleanup of its preset-scoped artifacts.
   regexService.deleteScriptsByOwner(profileId, 'world', characterId)
   scriptService.deleteScriptsByOwner(profileId, 'world', characterId)
+  // Remove the world-bound workflows this card brought in on import (tagged meta.world_owner);
+  // deleteWorkflowsByOwner also clears the world-default selection ref. Bundled table templates are
+  // library artifacts (never world-bound, like presets/lorebooks) and are deliberately left in place.
+  cardWorkflowHooks?.deleteWorkflowsByOwner(profileId, characterId)
   const avatar = getAvatarPath(characterId)
   if (fs.existsSync(avatar)) fs.unlinkSync(avatar)
   // Remove any card-code cartridge subtree extracted for this world on import (A1).
@@ -109,6 +114,10 @@ export interface ImportSummary {
   uiWidgets: number
   presets: number
   lorebooks: number
+  /** Bundled workflow docs imported + bound as this world's default (Track S / card-import). */
+  workflows: number
+  /** Bundled memory-table templates dropped into the profile's template library. */
+  tableTemplates: number
   /** Bundled plugins detected but NOT installed yet (package format/grant flow TBD). */
   pluginsSkipped: number
   /** Images extracted from an optional asset zip supplied at import time. */
@@ -148,6 +157,18 @@ export const collectBundledLorebooks = (card: RPTerminalCard): any[] => {
   return Array.isArray(b) ? b.filter((x) => x && typeof x === 'object') : []
 }
 
+/** Bundled generation/memory workflow docs from `rp_terminal.workflows[]` (world-bound on import). */
+export const collectBundledWorkflows = (card: RPTerminalCard): any[] => {
+  const w = getRpExt(card)?.workflows
+  return Array.isArray(w) ? w.filter((x) => x && typeof x === 'object') : []
+}
+
+/** Bundled memory-table templates from `rp_terminal.table_templates[]` (library-drop on import). */
+export const collectBundledTableTemplates = (card: RPTerminalCard): any[] => {
+  const t = getRpExt(card)?.table_templates
+  return Array.isArray(t) ? t.filter((x) => x && typeof x === 'object') : []
+}
+
 /**
  * Bundled Tavern Helper scripts from the card's standard `extensions.tavern_helper.scripts[]`
  * (the same slot presets use). These are routed into the script store on import. NOTE: the
@@ -174,6 +195,8 @@ export const summarizeCardBundle = (parsed: ParsedCard): ImportSummary => {
     uiWidgets: Array.isArray(rpt?.ui_layout) ? rpt.ui_layout.length : 0,
     presets: collectBundledPresets(parsed.card).length,
     lorebooks: collectBundledLorebooks(parsed.card).length,
+    workflows: collectBundledWorkflows(parsed.card).length,
+    tableTemplates: collectBundledTableTemplates(parsed.card).length,
     pluginsSkipped: Array.isArray(rpt?.plugins) ? rpt.plugins.length : 0,
     assetsImported: 0
   }
@@ -186,7 +209,9 @@ export const hasBundle = (s: ImportSummary): boolean =>
   s.scripts > 0 ||
   s.uiWidgets > 0 ||
   s.presets > 0 ||
-  s.lorebooks > 0
+  s.lorebooks > 0 ||
+  s.workflows > 0 ||
+  s.tableTemplates > 0
 
 /**
  * Parse a card file (PNG/JSON) into a normalized, **lossless** RPTerminalCard
@@ -246,10 +271,34 @@ export const inspectCardFile = (filePath: string): ImportSummary | null => {
 }
 
 /**
+ * Card-import bridge to workflowService. workflowService transitively imports chatService →
+ * characterService, so a *direct* import here would form an import cycle (dependency-cruiser keeps the
+ * main graph acyclic — the same reason workflowService uses `setEnabledFragmentsProvider` instead of
+ * importing the pack store). Instead `cardWorkflowBridge.ts` (loaded by index.ts + the import test)
+ * injects these ops at startup. Unset (a unit test that never loads the bridge) ⇒ the two workflow
+ * steps below are silent no-ops. (Table templates need no seam — tableTemplateService is acyclic.)
+ */
+export interface CardWorkflowHooks {
+  /** Import a bundled workflow doc/bundle tagged to this world; returns the new id or null on failure. */
+  importWorkflow: (profileId: string, doc: unknown, owner: string) => string | null
+  /** Bind a workflow id as this world's default (resolveWorkflowDoc's world tier). */
+  setWorldWorkflow: (profileId: string, characterId: string, workflowId: string) => void
+  /** Remove every workflow tagged to this world on card deletion. */
+  deleteWorkflowsByOwner: (profileId: string, owner: string) => void
+}
+
+let cardWorkflowHooks: CardWorkflowHooks | null = null
+
+/** Register the workflowService-backed card-import ops (called once by cardWorkflowBridge at load). */
+export const setCardWorkflowHooks = (hooks: CardWorkflowHooks | null): void => {
+  cardWorkflowHooks = hooks
+}
+
+/**
  * One-click World Card import: persist the (lossless) card + its embedded lorebook, and
- * **extract bundled regex, Tavern Helper scripts, presets, and extra lorebooks** into their
- * profile stores (scoped to this world) — the slots the old importer silently dropped.
- * Returns the new id plus an install summary.
+ * **extract bundled regex, Tavern Helper scripts, presets, extra lorebooks, workflows, and memory-table
+ * templates** into their profile stores (world-scoped where they bind) — the slots the old importer
+ * silently dropped. Returns the new id plus an install summary.
  */
 export const importCharacterFromFile = (
   profileId: string,
@@ -305,6 +354,32 @@ export const importCharacterFromFile = (
       }
     }
 
+    // Route bundled workflow docs into the profile's workflow store, tagged to this world so a
+    // card-delete cleans them up. The FIRST successfully-imported one is set as this world's default
+    // (resolveWorkflowDoc's world tier), so a card's generation/memory pipeline auto-applies to its
+    // chats. Invalid docs fail-soft (validateWorkflowDoc) and are simply not counted.
+    let workflows = 0
+    let worldWorkflowId: string | null = null
+    for (const doc of collectBundledWorkflows(card)) {
+      const id = cardWorkflowHooks?.importWorkflow(profileId, doc, newId) ?? null
+      if (id) {
+        workflows++
+        worldWorkflowId ??= id
+      } else {
+        log('info', 'Bundled workflow not imported (invalid, unsupported, or bridge unwired)')
+      }
+    }
+    if (worldWorkflowId) cardWorkflowHooks?.setWorldWorkflow(profileId, newId, worldWorkflowId)
+
+    // Route bundled memory-table templates into the profile's template LIBRARY only (never
+    // auto-assigned — assignment is destructive). The new-session reminder nudges the user to pick one.
+    let tableTemplates = 0
+    for (const raw of collectBundledTableTemplates(card)) {
+      const res = tableTemplateService.importTableTemplateFromObject(profileId, raw)
+      if (res.summary) tableTemplates++
+      else if (res.error) log('info', `Bundled table template not imported: ${res.error}`)
+    }
+
     if (path.extname(filePath).toLowerCase() === '.png') {
       ensureDir(getAvatarsDir())
       fs.copyFileSync(filePath, getAvatarPath(newId))
@@ -338,6 +413,8 @@ export const importCharacterFromFile = (
       (Array.isArray(getRpExt(card)?.scripts) ? getRpExt(card)!.scripts!.length : 0) + scripts
     summary.presets = presets
     summary.lorebooks = lorebooks
+    summary.workflows = workflows
+    summary.tableTemplates = tableTemplates
     summary.assetsImported = assetsImported
     return { id: newId, summary }
   } catch (error) {

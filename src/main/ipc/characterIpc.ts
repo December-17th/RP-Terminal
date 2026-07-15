@@ -40,6 +40,8 @@ export const registerCharacterIpc = (ipcMain: IpcMain): void => {
         summary.presets && `${summary.presets} presets`,
         summary.scripts && `${summary.scripts} card scripts`,
         summary.uiWidgets && `${summary.uiWidgets} UI widgets`,
+        summary.workflows && `${summary.workflows} workflows`,
+        summary.tableTemplates && `${summary.tableTemplates} memory table templates`,
         summary.pluginsSkipped && `${summary.pluginsSkipped} plugins (skipped — not yet supported)`
       ].filter(Boolean)
       const { response } = await dialog.showMessageBox(win, {

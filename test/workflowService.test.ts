@@ -23,6 +23,8 @@ import {
   cloneWorkflow,
   deleteWorkflow,
   importWorkflowFromFile,
+  importWorkflowFromObject,
+  deleteWorkflowsByOwner,
   exportWorkflowToFile,
   getSelection,
   setGlobalWorkflow,
@@ -254,6 +256,41 @@ describe('workflowService', () => {
     } finally {
       fs.rmSync(tmpDir, { recursive: true, force: true })
     }
+  })
+
+  it('importWorkflowFromObject: imports an in-memory doc tagged with meta.world_owner', () => {
+    const res = importWorkflowFromObject(profileId, minimalDoc({ name: 'Card WF' }), {
+      owner: 'char-owner-1'
+    })
+    expect(res.ok).toBe(true)
+    if (!res.ok) return
+    const stored = getWorkflowById(profileId, res.id)!
+    expect(stored.name).toBe('Card WF')
+    expect((stored.meta as Record<string, unknown>)?.world_owner).toBe('char-owner-1')
+  })
+
+  it('deleteWorkflowsByOwner removes only the owner’s docs and clears the world selection', () => {
+    const owned = importWorkflowFromObject(profileId, minimalDoc({ name: 'Owned' }), {
+      owner: 'char-owner-2'
+    })
+    const other = importWorkflowFromObject(profileId, minimalDoc({ name: 'Other' }), {
+      owner: 'char-owner-3'
+    })
+    expect(owned.ok && other.ok).toBe(true)
+    if (!owned.ok || !other.ok) return
+    setWorldWorkflow(profileId, 'char-owner-2', owned.id)
+    expect(getSelection(profileId).worlds['char-owner-2']).toBe(owned.id)
+
+    const removed = deleteWorkflowsByOwner(profileId, 'char-owner-2')
+    expect(removed).toBe(1)
+    expect(getWorkflowById(profileId, owned.id)).toBeNull()
+    expect(getWorkflowById(profileId, other.id)).not.toBeNull()
+    // deleteWorkflow (routed through) also cleared the world-default selection ref.
+    expect(getSelection(profileId).worlds['char-owner-2']).toBeUndefined()
+  })
+
+  it('deleteWorkflowsByOwner is a no-op count when nothing matches the owner', () => {
+    expect(deleteWorkflowsByOwner(profileId, 'no-such-owner')).toBe(0)
   })
 
   it('exportWorkflowToFile returns false when the id does not resolve', () => {

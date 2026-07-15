@@ -119,6 +119,14 @@ const en: Record<string, string> = {
   // SQL-table memory global default cadence (manual-pass issue 04)
   'settings.tablesDefaultFrequency': 'Default maintenance frequency (turns)',
   'settings.tablesInjectionMaxRows': 'Table injection row cap ("recent N rows" default)',
+  'settings.tablesRemindSetTemplate': 'Remind me to set a memory table template on new sessions',
+  // New-session memory-table reminder popup (TableTemplateReminderModal)
+  'tableReminder.title': 'Set a memory table template?',
+  'tableReminder.body':
+    'This session has no memory table template assigned. Table memory keeps a structured, running record of your story that the AI updates each turn. Assign one in the Tables view to enable it.',
+  'tableReminder.openTables': 'Open Tables view',
+  'tableReminder.notNow': 'Not now',
+  'tableReminder.dontRemind': "Don't remind me again",
   'settings.regex': 'Regex',
   'settings.scripts': 'Scripts',
   'settings.language': 'Language',

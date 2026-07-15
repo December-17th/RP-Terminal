@@ -10,6 +10,9 @@ import * as migrationService from './services/migrationService'
 import * as templateService from './services/templateService'
 import * as wcvManager from './services/wcvManager'
 import * as worldAssetProtocol from './services/worldAssetProtocol'
+// Side-effect: wires workflowService's card-import ops into characterService's seam (breaks the
+// characterService → workflowService cycle). Must load before any card import runs.
+import './services/cardWorkflowBridge'
 import { registerIpc } from './ipc'
 import { setGuardMainWindow } from './ipc/ipcGuards'
 import { TITLEBAR_OVERLAY_HEIGHT } from './windowChrome'
