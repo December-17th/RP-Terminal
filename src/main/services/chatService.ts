@@ -25,6 +25,15 @@ interface ChatRow {
   lorebook_ids: string | null
 }
 
+/** A chat row joined to its latest floor (all `last_*` NULL when the chat has no floors). The
+ *  listing folds the former per-chat latest-floor lookup into one query (perf-audit P2-6). */
+interface ChatListRow extends ChatRow {
+  last_floor: number | null
+  last_timestamp: string | null
+  last_user_content: string | null
+  last_response_content: string | null
+}
+
 export const parseLorebookIds = (raw: string | null): string[] | null => {
   if (raw == null) return null
   try {
@@ -55,55 +64,54 @@ const touch = (chatId: string): void => {
     .run(new Date().toISOString(), chatId)
 }
 
-/** Build the renderer-facing session object: count + a single-entry index of the latest floor. */
-const buildSession = (row: ChatRow): ChatSession => {
-  const last = getDb()
-    .prepare(
-      'SELECT floor, timestamp, user_content, response_content FROM floors WHERE chat_id = ? ORDER BY floor DESC LIMIT 1'
-    )
-    .get(row.id) as
-    | { floor: number; timestamp: string; user_content: string; response_content: string }
-    | undefined
-
-  return {
-    id: row.id,
-    character_id: row.character_id,
-    created_at: row.created_at,
-    updated_at: row.updated_at,
-    floor_count: row.floor_count,
-    lorebook_ids: parseLorebookIds(row.lorebook_ids),
-    floor_index: last
+/** Build the renderer-facing session object: count + a single-entry index of the latest floor.
+ *  The latest floor arrives on the row itself (joined in `SESSION_SELECT`), so no per-chat query. */
+const buildSession = (row: ChatListRow): ChatSession => ({
+  id: row.id,
+  character_id: row.character_id,
+  created_at: row.created_at,
+  updated_at: row.updated_at,
+  floor_count: row.floor_count,
+  lorebook_ids: parseLorebookIds(row.lorebook_ids),
+  floor_index:
+    row.last_floor != null
       ? [
           {
-            floor: last.floor,
-            timestamp: last.timestamp,
-            user_preview: preview(last.user_content, USER_PREVIEW_LEN),
-            response_preview: preview(cleanForHistory(last.response_content), RESPONSE_PREVIEW_LEN)
+            floor: row.last_floor,
+            timestamp: row.last_timestamp as string,
+            user_preview: preview(row.last_user_content as string, USER_PREVIEW_LEN),
+            response_preview: preview(
+              cleanForHistory(row.last_response_content as string),
+              RESPONSE_PREVIEW_LEN
+            )
           }
         ]
       : []
-  }
-}
+})
 
-const COUNT_SQL = '(SELECT COUNT(*) FROM floors f WHERE f.chat_id = chats.id) AS floor_count'
+// Chat columns + a correlated floor_count + the latest floor for each chat, all in ONE query
+// (perf-audit P2-6: kills the former N+1 latest-floor lookup on the session list). floors is keyed
+// PRIMARY KEY (chat_id, floor), so both MAX(floor) and the join predicate are index-only; the LEFT
+// JOIN keeps floorless chats (their `last_*` columns come back NULL).
+const SESSION_SELECT = `SELECT c.id, c.character_id, c.created_at, c.updated_at, c.lorebook_ids,
+         (SELECT COUNT(*) FROM floors cf WHERE cf.chat_id = c.id) AS floor_count,
+         f.floor AS last_floor, f.timestamp AS last_timestamp,
+         f.user_content AS last_user_content, f.response_content AS last_response_content
+       FROM chats c
+       LEFT JOIN floors f
+         ON f.chat_id = c.id AND f.floor = (SELECT MAX(floor) FROM floors mf WHERE mf.chat_id = c.id)`
 
 export const getChats = (profileId: string): ChatSession[] => {
   const rows = getDb()
-    .prepare(
-      `SELECT id, character_id, created_at, updated_at, lorebook_ids, ${COUNT_SQL}
-       FROM chats WHERE profile_id = ? ORDER BY updated_at DESC`
-    )
-    .all(profileId) as ChatRow[]
+    .prepare(`${SESSION_SELECT} WHERE c.profile_id = ? ORDER BY c.updated_at DESC`)
+    .all(profileId) as ChatListRow[]
   return rows.map(buildSession)
 }
 
 export const getChat = (profileId: string, chatId: string): ChatSession | null => {
   const row = getDb()
-    .prepare(
-      `SELECT id, character_id, created_at, updated_at, lorebook_ids, ${COUNT_SQL}
-       FROM chats WHERE id = ? AND profile_id = ?`
-    )
-    .get(chatId, profileId) as ChatRow | undefined
+    .prepare(`${SESSION_SELECT} WHERE c.id = ? AND c.profile_id = ?`)
+    .get(chatId, profileId) as ChatListRow | undefined
   return row ? buildSession(row) : null
 }
 
