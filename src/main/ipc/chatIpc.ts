@@ -54,8 +54,11 @@ export const registerChatIpc = (ipcMain: IpcMain): void => {
     return ok
   })
   ipcMain.handle('chat-save', (_, profileId, chatId, chat) => {
-    if (!chatWriteService.saveChat(profileId, chatId, chat)) return false
-    chatWriteService.afterChatMutation(profileId, chatId)
+    const r = chatWriteService.saveChat(profileId, chatId, chat)
+    if (!r.ok) return false
+    // No-op echo (a card wrote SillyTavern.chat back unchanged) → zero writes, skip the re-fold;
+    // otherwise re-fold only the changed suffix (audit P1-4).
+    if (r.changedFrom !== null) chatWriteService.afterChatMutation(profileId, chatId, r.changedFrom)
     return true
   })
 

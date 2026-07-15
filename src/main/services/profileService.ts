@@ -4,6 +4,7 @@ import { v4 as uuidv4 } from 'uuid'
 import { getDb } from './db'
 import { getAppDir } from './storageService'
 import * as settingsService from './settingsService'
+import { deleteChatFully, chatIdsForProfile } from './chatDeleteService'
 import * as sessionDbService from './sessionDbService'
 import { Profile } from '../types/models'
 
@@ -96,23 +97,15 @@ export const wipeProfile = (profileId: string): void => {
     active_api_preset_id: cur.active_api_preset_id
   })
 
-  // 2. DB content. The chat-scoped session tables now live in per-chat session.sqlite files (removed
-  //    with the `chats/` dir in step 3), so cleaning here means the CENTRAL index + the non-FK'd
-  //    chat-keyed rows (agent-pack activation/overrides/trigger, run history). Enumerate per chat
-  //    (mirrors deleteChat), then drop chats + characters. Profile + reset settings rows stay.
-  db.transaction((pid: string) => {
-    const chatIds = (
-      db.prepare('SELECT id FROM chats WHERE profile_id = ?').all(pid) as Array<{ id: string }>
-    ).map((r) => r.id)
-    for (const chatId of chatIds) {
-      db.prepare('DELETE FROM agent_pack_activation WHERE chat_id = ?').run(chatId)
-      db.prepare('DELETE FROM agent_pack_overrides WHERE scope = ?').run(`chat:${chatId}`)
-      db.prepare('DELETE FROM agent_pack_trigger_state WHERE chat_id = ?').run(chatId)
-      db.prepare('DELETE FROM workflow_run_history WHERE chat_id = ?').run(chatId)
-    }
-    db.prepare('DELETE FROM chats WHERE profile_id = ?').run(pid)
-    db.prepare('DELETE FROM characters WHERE profile_id = ?').run(pid)
-  })(profileId)
+  // 2. DB content. Tear down every chat through the SAME centralized per-chat cleanup as
+  //    chatService.deleteChat (chatDeleteService) — a bulk `DELETE FROM chats` would LEAK the
+  //    non-FK'd central chat-keyed rows (workflow_run_history / workflow_trigger_state /
+  //    agent_pack_trigger_state / per-chat pack activation + chat:<id> overrides). Each
+  //    deleteChatFully does its own DB txn, then closes + removes the chat's session-store folder
+  //    (handle-close first — Windows file locks; step 3's wipe of the whole `chats/` dir is then a
+  //    no-op for these). The characters delete runs after. Profile + reset settings rows stay.
+  for (const chatId of chatIdsForProfile(profileId)) deleteChatFully(profileId, chatId)
+  db.prepare('DELETE FROM characters WHERE profile_id = ?').run(profileId)
 
   // 3. File-based per-profile content (includes the whole `chats/` per-session store).
   wipeProfileFiles(profileId)

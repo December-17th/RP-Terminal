@@ -13,7 +13,7 @@ const mockChat = vi.hoisted(() => ({ getChatTableTemplateId: vi.fn<() => string 
 vi.mock('../src/main/services/chatService', () => mockChat)
 const mockTemplate = vi.hoisted(() => ({ getTableTemplateById: vi.fn() }))
 vi.mock('../src/main/services/tableTemplateService', () => mockTemplate)
-const mockDb = vi.hoisted(() => ({ readAllTables: vi.fn(() => [] as TableRead[]) }))
+const mockDb = vi.hoisted(() => ({ readAllTablesBounded: vi.fn(() => [] as TableRead[]) }))
 vi.mock('../src/main/services/tableDbService', () => mockDb)
 const mockSettings = vi.hoisted(() => ({ getSettings: vi.fn(() => ({ tables: { injection_max_rows: 2 } })) }))
 vi.mock('../src/main/services/settingsService', () => mockSettings)
@@ -45,13 +45,13 @@ const read = (rows: unknown[][]): TableRead => ({
 beforeEach(() => {
   mockChat.getChatTableTemplateId.mockReset().mockReturnValue('tmpl')
   mockTemplate.getTableTemplateById.mockReset().mockReturnValue(TEMPLATE)
-  mockDb.readAllTables.mockReset().mockReturnValue([])
+  mockDb.readAllTablesBounded.mockReset().mockReturnValue([])
   mockSettings.getSettings.mockReset().mockReturnValue({ tables: { injection_max_rows: 2 } })
 })
 
 describe('renderChatTablesInjectionBlock', () => {
   it('renders the capped block from the bound template + sandbox rows, honoring the global cap', () => {
-    mockDb.readAllTables.mockReturnValue([read([['1', 'a'], ['2', 'b'], ['3', 'c']])])
+    mockDb.readAllTablesBounded.mockReturnValue([read([['1', 'a'], ['2', 'b'], ['3', 'c']])])
     const out = renderChatTablesInjectionBlock('p', 'c')
     expect(out).toContain('【记忆表格】')
     expect(out).toContain('## 纪要（summary）')
@@ -64,16 +64,16 @@ describe('renderChatTablesInjectionBlock', () => {
   it('returns "" when no template is bound (silent — no injection)', () => {
     mockChat.getChatTableTemplateId.mockReturnValue(null)
     expect(renderChatTablesInjectionBlock('p', 'c')).toBe('')
-    expect(mockDb.readAllTables).not.toHaveBeenCalled()
+    expect(mockDb.readAllTablesBounded).not.toHaveBeenCalled()
   })
 
   it('returns "" when the bound template has no rows (empty tables → no block)', () => {
-    mockDb.readAllTables.mockReturnValue([read([])])
+    mockDb.readAllTablesBounded.mockReturnValue([read([])])
     expect(renderChatTablesInjectionBlock('p', 'c')).toBe('')
   })
 
   it('FAIL-OPEN: a read error degrades to "" (never crashes the turn)', () => {
-    mockDb.readAllTables.mockImplementation(() => {
+    mockDb.readAllTablesBounded.mockImplementation(() => {
       throw new Error('sandbox exploded')
     })
     expect(renderChatTablesInjectionBlock('p', 'c')).toBe('')

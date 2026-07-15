@@ -1,5 +1,6 @@
 import fs from 'fs'
 import path from 'path'
+import { nativeImage } from 'electron'
 import { getAppDir, ensureDir } from './storageService'
 import { getDb } from './db'
 import { log } from './logService'
@@ -18,11 +19,177 @@ import { installBundledPreset } from './presetService'
 import { parseStPng, extractAppendedZip } from '../parsers/stPngParser'
 import { importAssetsZip } from './worldAssetService'
 import { installCartridgeCode, deleteCardCode } from './cardCodeService'
-import * as sessionDbService from './sessionDbService'
+import { deleteChatFully, chatIdsForCharacter } from './chatDeleteService'
 
 const getAvatarsDir = (): string => path.join(getAppDir(), 'avatars')
 export const getAvatarPath = (characterId: string): string =>
   path.join(getAvatarsDir(), `${characterId}.png`)
+
+/** The bounded launcher thumbnail path for a character (sibling of the original avatar PNG). */
+export const getAvatarThumbPath = (characterId: string): string =>
+  path.join(getAvatarsDir(), `${characterId}.thumb.png`)
+
+/** Longest-edge cap for the generated launcher thumbnail. The original stays untouched on disk. */
+const AVATAR_THUMB_MAX = 256
+
+/**
+ * Upper bound (bytes) on the ORIGINAL avatar we're willing to serve as a FALLBACK when thumbnail
+ * generation fails. The launcher contract is a bounded 256px thumb; if we can't produce one, a small
+ * original is a tolerable stand-in but a multi-MB original is not — so above this we 404 and let the
+ * renderer's letter-placeholder show instead of streaming an unbounded image on the hot path.
+ */
+export const AVATAR_FALLBACK_MAX_BYTES = 512 * 1024
+
+/** Pure decision seam: may the ORIGINAL avatar be served as a fallback given its size in bytes? */
+export const isAvatarFallbackAllowed = (origSizeBytes: number): boolean =>
+  origSizeBytes <= AVATAR_FALLBACK_MAX_BYTES
+
+/**
+ * Resolve the ORIGINAL + THUMB absolute paths for a character id inside the avatars dir, with the
+ * same root-escape guard the world-asset protocol uses (a traversing id → null). Pure path logic —
+ * no fs, no nativeImage — so both the thumb generator and the protocol serve-path share one guard.
+ */
+const avatarPaths = (characterId: string): { orig: string; thumb: string } | null => {
+  let decoded: string
+  try {
+    decoded = decodeURIComponent(characterId)
+  } catch {
+    return null
+  }
+  const dir = path.resolve(getAvatarsDir())
+  const orig = path.resolve(dir, `${decoded}.png`)
+  const thumb = path.resolve(dir, `${decoded}.thumb.png`)
+  const base = dir + path.sep
+  if (!orig.startsWith(base) || !thumb.startsWith(base)) return null // escaped the avatars root
+  return { orig, thumb }
+}
+
+/**
+ * Ensure a bounded launcher thumbnail exists for a character and return the best path to SERVE:
+ * the thumb if present/generated, else the original as a fallback, else null. Downscales the
+ * original PNG to {@link AVATAR_THUMB_MAX}px (longest edge) via Electron's `nativeImage` — no new
+ * deps, main-process only. Any failure (missing/undecodable image, resize/write error) falls back
+ * to the original so the launcher still shows something. Idempotent: a hit returns immediately.
+ */
+export const ensureAvatarThumb = (characterId: string): string | null => {
+  const p = avatarPaths(characterId)
+  if (!p) return null
+  try {
+    if (fs.existsSync(p.thumb)) return p.thumb
+    if (!fs.existsSync(p.orig)) return null
+    const img = nativeImage.createFromPath(p.orig)
+    if (img.isEmpty()) return p.orig
+    const { width, height } = img.getSize()
+    const longest = Math.max(width, height)
+    // Only downscale; a small avatar is served as-is (still written as the thumb so the protocol
+    // has a stable target and we don't re-run nativeImage on every launcher open).
+    const out =
+      longest > AVATAR_THUMB_MAX
+        ? img.resize(width >= height ? { width: AVATAR_THUMB_MAX } : { height: AVATAR_THUMB_MAX })
+        : img
+    ensureDir(getAvatarsDir())
+    fs.writeFileSync(p.thumb, out.toPNG())
+    return p.thumb
+  } catch (e) {
+    log('error', 'Avatar thumbnail generation failed:', e)
+    return fs.existsSync(p.orig) ? p.orig : null
+  }
+}
+
+/**
+ * The absolute path to serve for a character avatar WITHOUT generating anything: thumb if it
+ * exists, else the original, else null (with the same root-escape guard as {@link ensureAvatarThumb}).
+ * Pure fs + path — the protocol handler calls {@link ensureAvatarThumb} first (which generates lazily),
+ * then this is the testable seam for the thumb-preferred selection + traversal guard.
+ */
+export const resolveAvatarServePath = (characterId: string): string | null => {
+  const p = avatarPaths(characterId)
+  if (!p) return null
+  if (fs.existsSync(p.thumb)) return p.thumb
+  if (fs.existsSync(p.orig)) return p.orig
+  return null
+}
+
+const pathExists = async (p: string): Promise<boolean> => {
+  try {
+    await fs.promises.access(p)
+    return true
+  } catch {
+    return false
+  }
+}
+
+/**
+ * Run the CPU-bound `nativeImage` decode/resize/encode OFF the protocol callback tick. `setImmediate`
+ * yields once so a burst of concurrent requests doesn't serialize a wall of synchronous IO inside the
+ * protocol handler. Resolves the written thumb path, or `null` if the original is undecodable (caller
+ * then applies the bounded fallback). Rejects on an unexpected resize/write error.
+ */
+const generateThumbDeferred = (p: { orig: string; thumb: string }): Promise<string | null> =>
+  new Promise((resolve, reject) => {
+    setImmediate(() => {
+      try {
+        const img = nativeImage.createFromPath(p.orig)
+        if (img.isEmpty()) return resolve(null) // undecodable original
+        const { width, height } = img.getSize()
+        const longest = Math.max(width, height)
+        const out =
+          longest > AVATAR_THUMB_MAX
+            ? img.resize(width >= height ? { width: AVATAR_THUMB_MAX } : { height: AVATAR_THUMB_MAX })
+            : img
+        ensureDir(getAvatarsDir())
+        fs.writeFileSync(p.thumb, out.toPNG())
+        resolve(p.thumb)
+      } catch (e) {
+        reject(e)
+      }
+    })
+  })
+
+const generateThumbServePath = async (p: {
+  orig: string
+  thumb: string
+}): Promise<string | null> => {
+  if (await pathExists(p.thumb)) return p.thumb
+  let origSize: number
+  try {
+    origSize = (await fs.promises.stat(p.orig)).size
+  } catch {
+    return null // no original → 404 (letter placeholder)
+  }
+  try {
+    const thumb = await generateThumbDeferred(p)
+    if (thumb) return thumb
+  } catch (e) {
+    log('error', 'Avatar thumbnail generation failed:', e)
+  }
+  // Generation failed or the original was undecodable: serve the original ONLY if it's small enough
+  // to honour the bounded contract; otherwise 404 so the renderer's onError placeholder shows.
+  return isAvatarFallbackAllowed(origSize) ? p.orig : null
+}
+
+/** In-flight thumb generations, keyed by the absolute thumb path, so N concurrent requests for the
+ * same avatar decode/encode ONCE (single-flight) and share the resolved serve path. */
+const inFlightThumbs = new Map<string, Promise<string | null>>()
+
+/**
+ * Async, request-path counterpart to {@link ensureAvatarThumb}: resolve the bounded path to SERVE for a
+ * character avatar, generating the launcher thumbnail lazily and OFF the hot path. Existence/stat reads
+ * use `fs.promises`; the synchronous `nativeImage` work is deferred via {@link generateThumbDeferred};
+ * concurrent requests for the same id are de-duplicated so generation runs once. On failure the bounded
+ * fallback rule ({@link isAvatarFallbackAllowed}) decides between the original and a `null` (→ 404).
+ */
+export const ensureAvatarThumbAsync = (characterId: string): Promise<string | null> => {
+  const p = avatarPaths(characterId)
+  if (!p) return Promise.resolve(null)
+  const existing = inFlightThumbs.get(p.thumb)
+  if (existing) return existing
+  const job = generateThumbServePath(p).finally(() => {
+    inFlightThumbs.delete(p.thumb)
+  })
+  inFlightThumbs.set(p.thumb, job)
+  return job
+}
 
 /** The card's avatar PNG as a `data:` URL (for the renderer launcher/img), or null if none. */
 export const getAvatarDataUrl = (characterId: string): string | null => {
@@ -75,22 +242,15 @@ export const saveCharacter = (
 export const deleteCharacter = (profileId: string, characterId: string): void => {
   const db = getDb()
   db.prepare('DELETE FROM characters WHERE id = ? AND profile_id = ?').run(characterId, profileId)
-  // Fully delete each of the character's sessions — NOT a bare `DELETE FROM chats`, which would strand
-  // every session-store FOLDER (floors/memory/notes/…) and the non-FK'd central chat-keyed rows (review
-  // C3). This mirrors chatService.deleteChat's cascade, inlined per chat to avoid a characterService ↔
-  // chatService import cycle. (character_id is a plain column, so the enumeration is explicit.)
-  const chatIds = (
-    db
-      .prepare('SELECT id FROM chats WHERE character_id = ? AND profile_id = ?')
-      .all(characterId, profileId) as Array<{ id: string }>
-  ).map((r) => r.id)
-  for (const chatId of chatIds) {
-    db.prepare('DELETE FROM agent_pack_activation WHERE chat_id = ?').run(chatId)
-    db.prepare('DELETE FROM agent_pack_overrides WHERE scope = ?').run(`chat:${chatId}`)
-    db.prepare('DELETE FROM agent_pack_trigger_state WHERE chat_id = ?').run(chatId)
-    db.prepare('DELETE FROM workflow_run_history WHERE chat_id = ?').run(chatId)
-    db.prepare('DELETE FROM chats WHERE id = ?').run(chatId)
-    sessionDbService.removeSession(profileId, chatId)
+  // Cascade the character's sessions (chats) through the SAME centralized per-chat teardown as
+  // chatService.deleteChat (the leaf chatDeleteService — no characterService ↔ chatService cycle),
+  // so each chat's non-cascading central rows (workflow_run_history / workflow_trigger_state /
+  // agent_pack_trigger_state / per-chat pack activation + chat-scope overrides) AND its whole
+  // per-session store folder are removed — not just the chat row. character_id is a plain column
+  // (not an FK), so nothing cascades from the character delete above; enumerating + tearing down
+  // each chat is what prevents the orphans.
+  for (const chatId of chatIdsForCharacter(profileId, characterId)) {
+    deleteChatFully(profileId, chatId)
   }
   deleteCharacterLorebook(profileId, characterId)
   // Remove the world-scoped regex/scripts this card brought in on import (scope='world',
@@ -104,6 +264,8 @@ export const deleteCharacter = (profileId: string, characterId: string): void =>
   cardWorkflowHooks?.deleteWorkflowsByOwner(profileId, characterId)
   const avatar = getAvatarPath(characterId)
   if (fs.existsSync(avatar)) fs.unlinkSync(avatar)
+  const thumb = getAvatarThumbPath(characterId)
+  if (fs.existsSync(thumb)) fs.unlinkSync(thumb)
   // Remove any card-code cartridge subtree extracted for this world on import (A1).
   deleteCardCode(profileId, characterId)
 }
@@ -388,6 +550,16 @@ const installBundleArtifacts = (
   if (path.extname(filePath).toLowerCase() === '.png') {
     ensureDir(getAvatarsDir())
     fs.copyFileSync(filePath, getAvatarPath(characterId))
+    // Pre-generate the bounded launcher thumbnail so the launcher never sync-reads the multi-MB
+    // original (perf P1-6). Best-effort: a failure falls back to the original at serve time.
+    // Drop any existing thumb first — ensureAvatarThumb is idempotent-on-hit, and an update-in-place
+    // just overwrote the original, so a stale thumb would otherwise survive the new artwork.
+    try {
+      fs.unlinkSync(getAvatarThumbPath(characterId))
+    } catch {
+      /* no existing thumb */
+    }
+    ensureAvatarThumb(characterId)
     // S5 cartridge: if the PNG carries a ZIP appended after IEND, extract its code/ subtree to the
     // card-code dir (WP0/A1). A rejected/absent cartridge never blocks the card import.
     try {

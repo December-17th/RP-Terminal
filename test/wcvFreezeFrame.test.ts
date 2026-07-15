@@ -277,3 +277,79 @@ describe('createFreezeController — episode guard drops stale warm work', () =>
     expect(t.setVisible).not.toHaveBeenCalled()
   })
 })
+
+describe('createFreezeController — dropTarget / clear (leak fix: no still retained for destroyed views)', () => {
+  it('dropTarget removes the cached still + throttle stamp (a fresh suppress shows nothing for it)', async () => {
+    const a = target('msg:1', () => Promise.resolve('data:a'))
+    const { effects, showFreeze } = harness([a])
+    const c = createFreezeController(effects)
+
+    c.warmTarget(a)
+    await flush()
+    // Sanity: it IS cached before the drop.
+    c.suppress()
+    expect(showFreeze).toHaveBeenCalledWith({ 'msg:1': 'data:a' })
+    c.restore()
+    showFreeze.mockClear()
+
+    c.dropTarget('msg:1')
+    // The throttle stamp is gone too — an immediate re-warm is allowed (not swallowed by the window).
+    c.warmTarget(a)
+    a.capture.mockClear()
+
+    c.suppress() // cache emptied by dropTarget → nothing to show for this id
+    expect(showFreeze).not.toHaveBeenCalled()
+  })
+
+  it('an in-flight capture that resolves AFTER dropTarget does NOT re-add the target', async () => {
+    const d = deferredCapture()
+    const a = target('msg:1', d.capture)
+    const { effects, showFreeze } = harness([a])
+    const c = createFreezeController(effects)
+
+    c.warmTarget(a) // capture pending
+    c.dropTarget('msg:1') // destroyed before the capture landed
+    d.resolve('data:late') // the warm finally resolves — must be discarded
+    await flush()
+
+    c.suppress()
+    expect(showFreeze).not.toHaveBeenCalled()
+  })
+
+  it('clear empties every cached still + throttle state and drops in-flight captures', async () => {
+    const d = deferredCapture()
+    const cached = target('msg:1', () => Promise.resolve('data:a'))
+    const pending = target('msg:2', d.capture)
+    const { effects, showFreeze } = harness([cached, pending])
+    const c = createFreezeController(effects)
+
+    c.warmTarget(cached) // lands → cached
+    c.warmTarget(pending) // stays pending
+    await flush()
+
+    c.clear()
+    d.resolve('data:late') // in-flight capture lands after clear — must be discarded
+    await flush()
+
+    c.suppress()
+    expect(showFreeze).not.toHaveBeenCalled()
+  })
+
+  it('clear cancels the pending post-restore refresh timer', () => {
+    vi.useFakeTimers()
+    try {
+      const a = target('msg:1', () => Promise.resolve('data:a'))
+      const { effects } = harness([a])
+      const c = createFreezeController(effects)
+
+      c.suppress()
+      c.restore() // schedules a debounced refresh
+      c.clear() // must cancel it
+      a.capture.mockClear()
+      vi.advanceTimersByTime(500) // past the debounce — no refresh capture should fire
+      expect(a.capture).not.toHaveBeenCalled()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+})

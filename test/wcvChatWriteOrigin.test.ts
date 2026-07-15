@@ -68,7 +68,8 @@ beforeEach(() => {
   } as any)
   vi.mocked(chatWriteService.setChatMessages).mockReturnValue(1)
   vi.mocked(chatWriteService.deleteChatMessages).mockReturnValue(true)
-  vi.mocked(chatWriteService.saveChat).mockReturnValue(true)
+  // A changed floor (diff-first saveChat, audit P1-4) — the no-op-echo skip is pinned elsewhere.
+  vi.mocked(chatWriteService.saveChat).mockReturnValue({ ok: true, changedFrom: 0 })
   vi.mocked(chatWriteService.afterChatMutation).mockReturnValue({
     variables: { stat_data: { hp: 1 } }
   } as any)

@@ -8,7 +8,7 @@ import { synthesizeEntries, renderWholeTable } from '../../tableExportService'
 import { getProgress, advanceProgress, resolveUpdateFrequency } from '../../tableProgressService'
 import { getSettings } from '../../settingsService'
 import { matchAcross } from '../../lorebookService'
-import { getAllFloors } from '../../floorService'
+import { getFloorCount } from '../../floorService'
 import { TableDef } from '../../../types/tableTemplate'
 import { LorebookEntry } from '../../../types/character'
 import { NodeImpl, NodeRunFailure } from '../types'
@@ -241,7 +241,7 @@ export const tableGate: NodeImpl = {
 
     // Re-read the floor count FROM DISK (gen.floors is the pre-turn snapshot); currentFloor is the
     // 0-based index of the last persisted floor (clamped ≥0 for an empty chat).
-    const currentFloor = Math.max(0, getAllFloors(gen.profileId, gen.chatId).length - 1)
+    const currentFloor = Math.max(0, getFloorCount(gen.profileId, gen.chatId) - 1)
 
     // Last-processed pointers from the chat-level store (shared with backfill + the display). A
     // missing table is -1; the store is clamped explicitly on truncation, so no rewind inference here.
@@ -355,8 +355,14 @@ export const tableQuery: NodeImpl = {
     if (!template) return { outputs: { rows: [], block: '' } } // no table memory → silent empty
 
     try {
-      const { columns, rows } = executeReadQuery(gen.profileId, gen.chatId, template, query)
-      return { outputs: { rows, block: renderWholeTable(columns, rows) } }
+      const { columns, rows, truncated } = executeReadQuery(gen.profileId, gen.chatId, template, query)
+      // P1-5: a result that hit the row/byte ceiling is TRUNCATED, not failed — note it in the rendered
+      // block (which the model reads) and on a `truncated` flag, so a planner branch sees a bounded
+      // sample instead of a runaway table blowing the prompt.
+      const block = truncated
+        ? `${renderWholeTable(columns, rows)}\n\n（注意：结果过大，已截断，仅显示前 ${rows.length} 行）`
+        : renderWholeTable(columns, rows)
+      return { outputs: { rows, block, truncated } }
     } catch (error) {
       const msg = error instanceof TableSqlError ? error.message : String(error)
       throw new NodeRunFailure('B', `table.query: ${msg}`, 1, 'bad-query')

@@ -28,33 +28,16 @@ export function Launcher({ profileId }: { profileId: string }): React.ReactEleme
 
   // null = the world chooser; a card = that world's session list.
   const [selected, setSelected] = useState<CharacterCard | null>(null)
-  const [avatars, setAvatars] = useState<Record<string, string | null>>({})
+  // Worlds whose avatar thumbnail failed to load (no avatar / decode error) → render the letter
+  // placeholder instead of a broken <img>. The avatar itself is served lazily by the internal
+  // `rptavatar://` protocol (perf P1-6) — no per-world IPC round-trip on mount.
+  const [avatarBroken, setAvatarBroken] = useState<Record<string, boolean>>({})
   // Pending deletion awaiting in-app confirm; null = no dialog.
   const [confirming, setConfirming] = useState<{
     kind: 'world' | 'chat'
     id: string
     name: string
   } | null>(null)
-
-  // Resolve each world's PNG avatar to a data URL once the list is known.
-  useEffect(() => {
-    let alive = true
-    void (async () => {
-      const entries = await Promise.all(
-        characters.map(async (c) => {
-          try {
-            return [c.id, (await window.api?.getCharacterAvatar?.(c.id)) ?? null] as const
-          } catch {
-            return [c.id, null] as const
-          }
-        })
-      )
-      if (alive) setAvatars(Object.fromEntries(entries))
-    })()
-    return () => {
-      alive = false
-    }
-  }, [characters])
 
   // Breadcrumb deep-link: if the session switcher set a world id, open straight to its session list.
   useEffect(() => {
@@ -238,15 +221,19 @@ export function Launcher({ profileId }: { profileId: string }): React.ReactEleme
                 const d = c.card?.data ?? {}
                 const desc = String(d.creator_notes || d.description || '').trim()
                 const count = chats.filter((ch) => ch.character_id === c.id).length
-                const url = avatars[c.id]
                 const name = d.name || t('launcher.untitled')
                 return (
                   <div key={c.id} className="lc-wrow-wrap">
                     <button className="lc-wrow" onClick={() => openWorld(c)}>
-                      {url ? (
-                        <img className="lc-av" src={url} alt="" />
-                      ) : (
+                      {avatarBroken[c.id] ? (
                         <span className="lc-av lc-av-ph">{String(d.name || '?').slice(0, 1)}</span>
+                      ) : (
+                        <img
+                          className="lc-av"
+                          src={`rptavatar://${c.id}`}
+                          alt=""
+                          onError={() => setAvatarBroken((b) => ({ ...b, [c.id]: true }))}
+                        />
                       )}
                       <span className="lc-wtext">
                         <span className="lc-wname">{name}</span>

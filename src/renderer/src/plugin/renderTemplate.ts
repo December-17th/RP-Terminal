@@ -8,9 +8,21 @@ import { initRendererEngine } from './rendererEngine'
 import { useCharacterStore } from '../stores/characterStore'
 import { useSettingsStore } from '../stores/settingsStore'
 
-// Start the quickjs WASM load at app start so the engine is ready before the first
-// message renders. Until it's ready, evalTemplate strips tags gracefully (fail-safe).
-void initRendererEngine()
+// Kick the quickjs WASM load AFTER first paint/idle rather than at module-eval time, so the ~748 KB
+// engine chunks don't block startup. Until the engine is ready, evalTemplate strips tags gracefully
+// (shared/templateEngine evalTemplateDetailed: `if (!QJS) return stripTags(...)`), so any template
+// evaluated before init completes renders safely instead of throwing. Idempotent — initEngine dedupes.
+const deferEngineInit = (): void => {
+  void initRendererEngine()
+}
+if (typeof window !== 'undefined') {
+  const w = window as Window & { requestIdleCallback?: (cb: () => void) => number }
+  if (typeof w.requestIdleCallback === 'function') w.requestIdleCallback(deferEngineInit)
+  else setTimeout(deferEngineInit, 0)
+} else {
+  // No window (test/SSR) — kick immediately so behavior matches the previous eager path.
+  deferEngineInit()
+}
 
 /**
  * Assemble a render-time TemplateContext from the current stores + a floor's variables.

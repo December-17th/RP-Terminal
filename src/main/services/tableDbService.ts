@@ -34,6 +34,13 @@ export interface TableRead {
    * rowid the view captured survives a rewind rebuild. Empty when there is no sandbox / on read error.
    */
   rowids: number[]
+  /**
+   * The TRUE total row count of the table when this read was BOUNDED in SQL (P1-5 prompt-injection
+   * path — `readAllTablesBounded`): `rows` then holds only the newest `limit` rows, and `totalRows`
+   * is the full `COUNT(*)` so a consumer can still report how many older rows were omitted. `undefined`
+   * on an UNBOUNDED read (`readAllTables`/`readAllTablesAt`), where `rows.length` already IS the total.
+   */
+  totalRows?: number
 }
 
 // ---- pure helpers (unit-tested) --------------------------------------------------------------
@@ -178,13 +185,50 @@ export const readAllTablesAt = (file: string, template: TableTemplate): TableRea
 }
 
 /**
+ * BOUNDED read for the prompt-injection path (perf finding P1-5): instead of materializing every row of
+ * every table and slicing afterwards, push each table's row cap into SQL. `limits` maps a table's
+ * `sqlName` to its per-table cap:
+ *   · a positive N  → fetch only the newest N rows (`ORDER BY rowid DESC LIMIT N`, reversed to ascending)
+ *                     plus the true `COUNT(*)` so the caller still knows how many older rows were omitted;
+ *   · 0             → contribute nothing (no query at all — the 'none' / 0-cap policy);
+ *   · null / absent → UNBOUNDED (read every row, same as `readAllTables` — the 'full' policy).
+ * A missing sandbox → all-empty reads (same as the unbounded reader). The maintainer / refill paths keep
+ * using the unbounded `readAllTables*` — this bounded reader is ONLY for the capped narrator injection.
+ */
+export const readAllTablesBounded = (
+  profileId: string,
+  chatId: string,
+  template: TableTemplate,
+  limits: Map<string, number | null>
+): TableRead[] => readAllTablesBoundedAt(sandboxDbPath(profileId, chatId), template, limits)
+
+/** `readAllTablesBounded` against an ARBITRARY sandbox file (parameterized like `readAllTablesAt`). */
+export const readAllTablesBoundedAt = (
+  file: string,
+  template: TableTemplate,
+  limits: Map<string, number | null>
+): TableRead[] => {
+  const exists = fs.existsSync(file)
+  const db = exists ? new Database(file, { readonly: true }) : null
+  try {
+    return template.tables.map((t) => readOne(db, t, limits.get(t.sqlName) ?? null))
+  } finally {
+    db?.close()
+  }
+}
+
+/**
  * Read one table by name, guarded against the template registry. Selects `rowid AS __rid, *` so each
  * data row carries its SQLite rowid (issue 06 edit identity); the `__rid` column is sliced off the
  * front of every row (and out of `columns`), so `rows`/`columns` stay data-only and POSITIONAL — no
  * downstream consumer (tableExportService, table.read/query) changes. Columns are unified onto the
  * template's DISPLAY headers when their width matches the sandbox's (`unifyDisplayColumns`).
  */
-const readOne = (db: Database.Database | null, table: TableDef): TableRead => {
+const readOne = (
+  db: Database.Database | null,
+  table: TableDef,
+  limit?: number | null
+): TableRead => {
   const base: TableRead = {
     sqlName: table.sqlName,
     displayName: table.displayName,
@@ -194,6 +238,37 @@ const readOne = (db: Database.Database | null, table: TableDef): TableRead => {
   }
   // Guard: never interpolate a name that isn't a safe identifier from the template.
   if (!db || !isSafeSqlIdentifier(table.sqlName)) return base
+
+  // BOUNDED read (P1-5): fetch only the newest `limit` rows via SQL rather than materializing the whole
+  // table. `limit === 0` contributes nothing (no query). A positive limit selects the newest N by rowid
+  // DESC (bounded in SQLite), reverses back to ascending (oldest-first — the order every unbounded read
+  // + downstream consumer already assumes), and records the true total via COUNT(*) so a capped renderer
+  // can still emit its "N older rows omitted" marker. `null`/`undefined` falls through to the unbounded
+  // read below (byte-identical to the pre-P1-5 behavior — the maintainer/refill path relies on it).
+  if (typeof limit === 'number') {
+    if (limit <= 0) return { ...base, totalRows: 0 }
+    try {
+      const countRow = db.prepare(`SELECT COUNT(*) AS c FROM "${table.sqlName}"`).get() as
+        | { c: number }
+        | undefined
+      const total = Number(countRow?.c ?? 0)
+      const stmt = db.prepare(
+        `SELECT rowid AS __rid, * FROM "${table.sqlName}" ORDER BY rowid DESC LIMIT ?`
+      )
+      const allCols = (stmt.columns?.() ?? []).map((c: { name: string }) => c.name)
+      const sqlCols = allCols.slice(1) // drop the __rid column
+      // `.raw().all(limit)` binds the LIMIT `?`; DESC gives newest-first, so reverse → ascending.
+      const rawDesc = (stmt.raw?.().all(limit) as unknown[][]) ?? []
+      const raw = rawDesc.slice().reverse()
+      const rowids = raw.map((r) => Number(r[0]))
+      const rows = raw.map((r) => r.slice(1))
+      return { ...base, columns: unifyDisplayColumns(table.headers, sqlCols), rows, rowids, totalRows: total }
+    } catch (error) {
+      log('info', `Failed to read (bounded) table "${table.sqlName}" for chat:`, error)
+      return base
+    }
+  }
+
   try {
     // `rowid AS __rid` is the FIRST result column; for tables with `row_id INTEGER PRIMARY KEY` it
     // aliases that key (harmless — we slice it away). `*` then yields the real data columns.

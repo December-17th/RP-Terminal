@@ -420,7 +420,12 @@ export function createInlineHost(ctx: CardCtx): Host {
 
     onVarsChanged: (cb) => {
       let last = ''
+      let lastFloors: unknown = null
       return useChatStore.subscribe((state) => {
+        // Floors are replaced immutably by every setter — same array ⇒ same latest variables.
+        // Skips the per-fire stat_data serialization on streaming flushes (audit P1-2).
+        if (state.floors === lastFloors) return
+        lastFloors = state.floors
         const f = state.floors[state.floors.length - 1] as any
         const v = f?.variables ?? {}
         const sd = v && typeof v === 'object' && 'stat_data' in v ? v.stat_data : v

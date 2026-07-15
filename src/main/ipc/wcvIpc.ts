@@ -659,9 +659,17 @@ export const registerWcvIpc = (ipcMain: IpcMain): void => {
   ipcMain.handle('wcv-host-save-chat', (e, chat) => {
     const ctx = wcvManager.contextFor(e.sender.id)
     if (!ctx) return false
-    if (!chatWriteService.saveChat(ctx.profileId, ctx.chatId, chat)) return false
-    pushVars(ctx.chatId, chatWriteService.afterChatMutation(ctx.profileId, ctx.chatId), e.sender.id)
-    log('info', 'wcv saveChat', 'assistant msgs → floors + reevaluated')
+    const r = chatWriteService.saveChat(ctx.profileId, ctx.chatId, chat)
+    if (!r.ok) return false
+    // No-op echo → zero writes, nothing to re-fold or push (audit P1-4).
+    if (r.changedFrom !== null) {
+      pushVars(
+        ctx.chatId,
+        chatWriteService.afterChatMutation(ctx.profileId, ctx.chatId, r.changedFrom),
+        e.sender.id
+      )
+      log('info', 'wcv saveChat', `assistant msgs → floors + reevaluated from ${r.changedFrom}`)
+    }
     return true
   })
 

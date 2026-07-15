@@ -188,4 +188,10 @@ export interface Settings {
   }
   /** Optional per-model token prices ($ / 1M tokens). Empty ⇒ tokens-only (no cost shown). */
   pricing: Record<string, ModelRates>
+  /** Diagnostics logging. */
+  logs?: {
+    /** Capture FULL, untruncated log detail (request prompts / AI responses). Default false —
+     *  detail is otherwise bounded per-entry and by a ring byte-budget to keep memory in check. */
+    full_trace?: boolean
+  }
 }

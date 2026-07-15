@@ -121,7 +121,7 @@ describe('saveChat', () => {
       { is_user: true, mes: 'u' },
       { is_user: false, mes: 'newResp' }
     ]
-    expect(saveChat('p', 'c', chat)).toBe(true)
+    expect(saveChat('p', 'c', chat)).toEqual({ ok: true, changedFrom: 0 })
     expect(floors[0].response.content).toBe('newGreeting')
     expect(floors[0].swipes).toEqual(['newGreeting', 'alt'])
     expect(floors[0].swipe_id).toBe(1)
@@ -129,8 +129,45 @@ describe('saveChat', () => {
     expect(floors[1].user_message.content).toBe('u') // user untouched
   })
 
-  it('returns false on a non-array chat', () => {
-    expect(saveChat('p', 'c', null)).toBe(false)
+  it('returns ok:false on a non-array chat', () => {
+    expect(saveChat('p', 'c', null)).toEqual({ ok: false, changedFrom: null })
+  })
+
+  it('a no-op echo performs ZERO floor writes and reports changedFrom null (audit P1-4)', () => {
+    // Cards routinely write the whole SillyTavern.chat back unchanged — that must not rewrite
+    // the transcript (or trigger the caller's re-fold).
+    const floors = [mkFloor(0, '', 'g'), mkFloor(1, 'u', 'hello')]
+    vi.mocked(floorService.getAllFloors).mockReturnValue(floors)
+    const chat = [
+      { is_user: false, mes: 'g', swipes: ['g'], swipe_id: 0 },
+      { is_user: true, mes: 'u' },
+      { is_user: false, mes: 'hello', swipes: ['hello'], swipe_id: 0 }
+    ]
+    expect(saveChat('p', 'c', chat)).toEqual({ ok: true, changedFrom: null })
+    expect(floorService.saveFloor).not.toHaveBeenCalled()
+  })
+
+  it('writes only the changed floors and reports the EARLIEST changed floor', () => {
+    const floors = [mkFloor(0, '', 'g'), mkFloor(1, 'u', 'old'), mkFloor(2, 'u2', 'keep')]
+    vi.mocked(floorService.getAllFloors).mockReturnValue(floors)
+    const chat = [
+      { is_user: false, mes: 'g' }, // unchanged
+      { is_user: false, mes: 'EDITED' }, // floor 1 changed
+      { is_user: false, mes: 'keep' } // unchanged
+    ]
+    expect(saveChat('p', 'c', chat)).toEqual({ ok: true, changedFrom: 1 })
+    expect(floorService.saveFloor).toHaveBeenCalledTimes(1)
+    expect(floorService.saveFloor).toHaveBeenCalledWith('p', 'c', floors[1])
+  })
+
+  it('a swipe_id-only change still counts as a change', () => {
+    const floors = [mkFloor(0, '', 'g')]
+    floors[0].swipes = ['g', 'alt']
+    vi.mocked(floorService.getAllFloors).mockReturnValue(floors)
+    expect(
+      saveChat('p', 'c', [{ is_user: false, mes: 'g', swipes: ['g', 'alt'], swipe_id: 1 }])
+    ).toEqual({ ok: true, changedFrom: 0 })
+    expect(floors[0].swipe_id).toBe(1)
   })
 
   it('does NOT propagate the opening greeting onto a later floor (stale chat guard)', () => {
@@ -152,6 +189,15 @@ describe('afterChatMutation', () => {
     const rebuilt = [mkFloor(0, '', 'g'), mkFloor(1, 'a', 'b')]
     vi.mocked(generationService.reevaluateVariables).mockReturnValue(rebuilt)
     expect(afterChatMutation('p', 'c')).toBe(rebuilt[1])
+    // Default = full replay (the Re-evaluate button contract).
+    expect(generationService.reevaluateVariables).toHaveBeenCalledWith('p', 'c', 0)
+  })
+
+  it('threads the changed-suffix floor through to the replay (audit P1-4)', () => {
+    const rebuilt = [mkFloor(0, '', 'g'), mkFloor(1, 'a', 'b')]
+    vi.mocked(generationService.reevaluateVariables).mockReturnValue(rebuilt)
+    expect(afterChatMutation('p', 'c', 1)).toBe(rebuilt[1])
+    expect(generationService.reevaluateVariables).toHaveBeenCalledWith('p', 'c', 1)
   })
 
   it('returns null when there are no floors', () => {

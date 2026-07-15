@@ -37,11 +37,17 @@ const mockChat = vi.hoisted(() => ({
 }))
 vi.mock('../../src/main/services/chatService', () => mockChat)
 
-const mockFloor = vi.hoisted(() => ({
-  getFloor: vi.fn(() => floors[floors.length - 1]),
-  getAllFloors: vi.fn(() => floors),
-  saveFloor: vi.fn()
-}))
+const mockFloor = vi.hoisted(() => {
+  const getAllFloors = vi.fn(() => floors)
+  return {
+    getFloor: vi.fn(() => floors[floors.length - 1]),
+    getAllFloors,
+    // Count-only reads go through getFloorCount now — keep it slaved to the same fixture.
+    getFloorCount: vi.fn(() => (getAllFloors() as unknown[] | undefined)?.length ?? 0),
+    getFloorRequest: vi.fn(() => undefined),
+    saveFloor: vi.fn()
+  }
+})
 vi.mock('../../src/main/services/floorService', () => mockFloor)
 
 const mockTableStatus = vi.hoisted(() => ({ getTablesStatus: vi.fn(() => ({}) as Record<string, unknown>) }))

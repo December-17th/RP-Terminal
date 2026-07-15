@@ -6,11 +6,14 @@ interface LayoutRendererProps {
   layoutSchema: any[] // Array of widget definitions
 }
 
-export const LayoutRenderer: React.FC<LayoutRendererProps> = ({ layoutSchema }) => {
-  const { floors } = useChatStore()
+const NO_VARS: Record<string, unknown> = {}
 
-  // Get variables from the latest floor, or default to empty
-  const variables = floors.length > 0 ? floors[floors.length - 1].variables : {}
+export const LayoutRenderer: React.FC<LayoutRendererProps> = ({ layoutSchema }) => {
+  // Select just the latest floor's variables (stable reference between floor changes) so this
+  // layout doesn't re-render on every chat-store fire — e.g. per-frame streaming flushes.
+  const variables = useChatStore((s) =>
+    s.floors.length > 0 ? s.floors[s.floors.length - 1].variables : NO_VARS
+  )
 
   // Helper to extract nested values
   const getValue = (path: string): any => {

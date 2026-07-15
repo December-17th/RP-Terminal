@@ -261,10 +261,33 @@ export const getRenderMarkers = (
  * floor's model fold, the floor's journaled CARD writes (`vars_ops` — JSON-Patch + whole-replace)
  * are REPLAYED in seq order, so card/panel writes that are not re-derivable from response text
  * survive re-evaluation (manual-pass issue 02). Returns the updated floors.
+ *
+ * `fromFloor` (audit P1-4): every stored floor's stat_data IS the replay of floors 0..N, so a
+ * mutation at floor K only invalidates K and later — seed from K-1's stored state and replay just
+ * the suffix instead of rewriting the whole transcript. Default 0 = the full from-scratch replay
+ * (the Re-evaluate button / parser-change path).
+ *
+ * INTENDED divergence on manual edits (review 2026-07-15): `setFloorStatData` (the Variables-view
+ * debug editor) is deliberately un-journaled, so a FULL replay recomputes over it — that is the
+ * editor's documented contract. A SUFFIX replay seeds from stored state and therefore PRESERVES a
+ * manual edit made below `fromFloor`: a card mutating floor K must not silently revert the user's
+ * debug edits on untouched earlier floors. Pinned in test/reevaluateSuffix.test.ts.
  */
-export const reevaluateVariables = (profileId: string, chatId: string): FloorFile[] => {
+export const reevaluateVariables = (
+  profileId: string,
+  chatId: string,
+  fromFloor = 0
+): FloorFile[] => {
   const floors = getAllFloors(profileId, chatId)
-  const stat: Record<string, unknown> = {}
+  const start = Math.min(Math.max(0, fromFloor), floors.length)
+  const stat: Record<string, unknown> =
+    start > 0
+      ? JSON.parse(
+          JSON.stringify(
+            (floors[start - 1].variables as Record<string, unknown>)?.stat_data ?? {}
+          )
+        )
+      : {}
   const opsByFloor = new Map<number, VarsOpRow[]>()
   for (const op of listVarsOps(chatId)) {
     const list = opsByFloor.get(op.floor)
@@ -272,7 +295,7 @@ export const reevaluateVariables = (profileId: string, chatId: string): FloorFil
     else opsByFloor.set(op.floor, [op])
   }
   let cardWrites = 0
-  for (const f of floors) {
+  for (const f of floors.slice(start)) {
     const mvu = parseMvuCommands(stripThinking(f.response.content))
     let deltas = [
       ...(mvu.commands.length ? applyMvuCommands(stat, mvu.commands) : []),
@@ -301,7 +324,9 @@ export const reevaluateVariables = (profileId: string, chatId: string): FloorFil
   }
   log(
     'info',
-    `MVU re-evaluate — replayed ${floors.length} floor(s); rebuilt stat_data` +
+    `MVU re-evaluate — replayed ${floors.length - start} floor(s)` +
+      (start > 0 ? ` (from floor ${start})` : '') +
+      `; rebuilt stat_data` +
       (cardWrites > 0 ? `; replayed ${cardWrites} card write(s)` : '')
   )
   return floors

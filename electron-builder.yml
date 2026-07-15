@@ -2,13 +2,16 @@ appId: com.december17th.rpterminal
 productName: RP Terminal
 directories:
   buildResources: build
+# Positive allowlist ONLY. Do NOT switch this back to an exclusion-only
+# (all-`!`) list: electron-builder treats a files list that contains only
+# ignore patterns as empty and injects `**/*`, which packages the entire repo
+# (rp-terminal-data, .claude, .scratch, docs, src, ...). Production node_modules
+# for deps declared in package.json are added automatically by a separate
+# walker, so they don't need to be listed here. Verified by scripts/verify-package.mjs.
 files:
-  - '!**/.vscode/*'
-  - '!src/*'
-  - '!electron.vite.config.{js,ts,mjs,cjs}'
-  - '!{.eslintcache,eslint.config.mjs,.prettierignore,.prettierrc.yaml,dev-app-update.yml,CHANGELOG.md,README.md}'
-  - '!{.env,.env.*,.npmrc,pnpm-lock.yaml}'
-  - '!{tsconfig.json,tsconfig.node.json,tsconfig.web.json}'
+  - 'out/**'
+  - 'package.json'
+  - 'resources/**'
 asarUnpack:
   - resources/**
 win:

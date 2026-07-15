@@ -462,6 +462,59 @@ export interface ReadQueryResult {
   columns: string[]
   /** Result rows as positional arrays (better-sqlite3 `.raw().all()`), aligned to `columns`. */
   rows: unknown[][]
+  /** True when the result hit `MAX_QUERY_ROWS` / `MAX_QUERY_BYTES` and `rows` is a truncated prefix. */
+  truncated: boolean
+}
+
+/**
+ * Hard ceilings on a `table.query` result (perf finding P1-5): a validated read-only SELECT can still
+ * scan an arbitrarily large table, so we stop materializing once EITHER bound is hit and report the
+ * truncation rather than failing the run. Chosen conservatively — enough for a planner branch to reason
+ * over, small enough that a runaway query can't blow the prompt or the heap.
+ */
+export const MAX_QUERY_ROWS = 500
+export const MAX_QUERY_BYTES = 256 * 1024 // ~256 KB of serialized row data
+
+/** Clip one cell so its JSON stays within `budget` bytes (approximate: sliced by chars, which can
+ *  only undershoot for multibyte text). Applied only to the pathological single-oversized-row case,
+ *  so a multi-megabyte cell can never reach planner output intact. */
+const clipCell = (cell: unknown, budget: number): unknown => {
+  const json = JSON.stringify(cell ?? null)
+  if (Buffer.byteLength(json, 'utf8') <= budget) return cell
+  const s = typeof cell === 'string' ? cell : json
+  return `${s.slice(0, Math.max(16, budget))}…[clipped]`
+}
+
+/**
+ * Drain `iter` into a bounded row list, stopping as soon as `maxRows` rows OR `maxBytes` of (approximate,
+ * JSON-serialized) row data have been collected. Returns the rows gathered plus whether it truncated.
+ * PURE over any row iterable — the runtime wrapper passes a better-sqlite3 `.iterate()` cursor (so rows
+ * past the ceiling are never even fetched); breaking out of the `for…of` closes that cursor. At least one
+ * row is always kept when present — but a FIRST row that alone exceeds `maxBytes` is kept with its
+ * oversized cells CLIPPED (and reported truncated), so the byte ceiling holds even for a single
+ * multi-megabyte cell (review P1: the previous code returned such a row intact with truncated:false).
+ */
+export const collectBoundedRows = (
+  iter: Iterable<unknown[]>,
+  maxRows: number = MAX_QUERY_ROWS,
+  maxBytes: number = MAX_QUERY_BYTES
+): { rows: unknown[][]; truncated: boolean } => {
+  const rows: unknown[][] = []
+  let bytes = 0
+  for (const row of iter) {
+    const rowBytes = Buffer.byteLength(JSON.stringify(row ?? []))
+    if (rows.length === 0 && rowBytes > maxBytes) {
+      const budget = Math.floor(maxBytes / Math.max(1, row?.length ?? 1))
+      rows.push((row ?? []).map((c) => clipCell(c, budget)))
+      return { rows, truncated: true }
+    }
+    if (rows.length >= maxRows || bytes + rowBytes > maxBytes) {
+      return { rows, truncated: true }
+    }
+    rows.push(row)
+    bytes += rowBytes
+  }
+  return { rows, truncated: false }
 }
 
 /**
@@ -483,14 +536,18 @@ export const executeReadQuery = (
     throw new TableSqlError(plan.reason ?? 'invalid query')
   }
   const file = sandboxDbPath(profileId, chatId)
-  if (!fs.existsSync(file)) return { columns: [], rows: [] }
+  if (!fs.existsSync(file)) return { columns: [], rows: [], truncated: false }
 
   const db = new Database(file, { readonly: true })
   try {
     const stmt = db.prepare(plan.sql)
     const columns = (stmt.columns?.() ?? []).map((c: { name: string }) => c.name)
-    const rows = (stmt.raw?.().all() as unknown[][]) ?? []
-    return { columns, rows }
+    // Stream rows through the row/byte ceiling instead of `.all()` — a runaway SELECT stops fetching at
+    // the cap (P1-5) rather than materializing the whole result. Under the vitest alias mock `raw()` is
+    // absent, so this degrades to an empty, non-truncated result (same no-op stance as before).
+    const iter = (stmt.raw?.().iterate?.() ?? []) as Iterable<unknown[]>
+    const { rows, truncated } = collectBoundedRows(iter)
+    return { columns, rows, truncated }
   } catch (error) {
     const msg = error instanceof Error ? error.message : String(error)
     throw new TableSqlError(msg)

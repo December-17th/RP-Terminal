@@ -171,7 +171,7 @@ through the host bridge as RFC-6902 JSON Patch.
 ### Events — ✅
 
 - `eventOn`/`eventOnce`/`eventEmit`/`eventMakeFirst`/`eventRemoveListener` + `SillyTavern.eventSource.on/emit` — ✅ (a local bus). The `tavern_events` enum is provided (`window.tavern_events` + `getContext().eventTypes`/`event_types`).
-- Lifecycle + mutation events — ✅ `GENERATION_STARTED/ENDED`, `CHAT_CHANGED`, `MESSAGE_RECEIVED/UPDATED/DELETED/SWIPED` are dispatched to BOTH transports (inline via the `cardHostEvents` renderer bus; WCV via `wcv-event`), computed from the chat-store transition. MVU `mag_variable_*` events fire on a vars push. `STREAM_TOKEN_RECEIVED` ✅. `MESSAGE_SENT` ⬜ (the user message is bundled into the floor — no separate transition); the full `tavern_events` enum is a ~10-event subset.
+- Lifecycle + mutation events — ✅ `GENERATION_STARTED/ENDED`, `CHAT_CHANGED`, `MESSAGE_RECEIVED/UPDATED/DELETED/SWIPED` are dispatched to BOTH transports (inline via the `cardHostEvents` renderer bus; WCV via `wcv-event`), computed from the chat-store transition. MVU `mag_variable_*` events fire on a vars push. `STREAM_TOKEN_RECEIVED` ✅ — payload is the full accumulated text so far, delivered at most once per animation frame (coalesced with the UI's own stream flush since 2026-07-15; not per raw provider delta). `MESSAGE_SENT` ⬜ (the user message is bundled into the floor — no separate transition); the full `tavern_events` enum is a ~10-event subset.
 
 ### EJS / macros — ✅
 

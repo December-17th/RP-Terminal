@@ -1,6 +1,6 @@
 import { getChatTableTemplateId } from './chatService'
 import { getTableTemplateById } from './tableTemplateService'
-import { getAllFloors } from './floorService'
+import { getFloorCount } from './floorService'
 import { resolveWorkflowDoc } from './workflowService'
 import {
   getProgress,
@@ -116,7 +116,7 @@ export const getTablesStatus = (
     if (!template) return {}
 
     const progress = getProgress(profileId, chatId)
-    const currentFloor = getAllFloors(profileId, chatId).length - 1 // -1 for an empty chat
+    const currentFloor = getFloorCount(profileId, chatId) - 1 // -1 for an empty chat
     const globalDefault = getSettings(profileId).tables?.default_update_frequency ?? 3
     const frequencies = effectiveFrequencies(template, gateConfigs(profileId, chatId), globalDefault)
 

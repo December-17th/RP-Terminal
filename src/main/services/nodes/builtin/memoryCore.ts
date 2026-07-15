@@ -9,7 +9,7 @@ import { advanceProgress, getProgress, resolveUpdateFrequency } from '../../tabl
 import { readAllTables, TableRead } from '../../tableDbService'
 import { renderTableBlock } from '../../tableMaintenance'
 import { getSettings } from '../../settingsService'
-import { getAllFloors, transcriptEpoch } from '../../floorService'
+import { getFloorCount, transcriptEpoch } from '../../floorService'
 import { TableTemplate } from '../../../types/tableTemplate'
 import { NodeRunFailure } from '../types'
 
@@ -294,7 +294,7 @@ export const applyTableEdit = (
     if (opts.advanceProgress === true) {
       const names = opts.advanceTables ?? template.tables.map((t) => t.sqlName)
       const currentFloor =
-        opts.advanceTo ?? Math.max(0, getAllFloors(gen.profileId, gen.chatId).length - 1)
+        opts.advanceTo ?? Math.max(0, getFloorCount(gen.profileId, gen.chatId) - 1)
       advanceProgress(gen.profileId, gen.chatId, names, currentFloor)
     }
     return dropped === undefined ? { applied, changes } : { applied, changes, dropped }

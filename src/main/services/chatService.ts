@@ -19,6 +19,7 @@ import * as tableDbService from './tableDbService'
 import * as tableOpsService from './tableOpsService'
 import * as tableProgressService from './tableProgressService'
 import * as varsOpsService from './varsOpsService'
+import { deleteChatFully } from './chatDeleteService'
 
 interface ChatRow {
   id: string
@@ -53,7 +54,8 @@ const touch = (chatId: string): void => {
 }
 
 /** Build the renderer-facing session object from the denormalized index row (§B3) — NO session DB is
- *  opened (the launcher lists many chats). The latest-floor preview is precomputed by floorService. */
+ *  opened (the launcher lists many chats; also the perf-audit P2-6 fix: one central query, zero
+ *  per-chat lookups). The latest-floor preview is precomputed by floorService. */
 const buildSession = (row: ChatRow): ChatSession => ({
   id: row.id,
   character_id: row.character_id,
@@ -370,20 +372,11 @@ export const truncateFloors = (profileId: string, chatId: string, fromFloor: num
   touch(chatId)
 }
 
+// Centralized per-chat teardown (FK-cascade rows + non-cascading chat-keyed tables + per-chat files)
+// lives in the leaf `chatDeleteService` so characterService/profileService reuse the SAME cleanup
+// without importing chatService (which would cycle — chatService imports characterService).
 export const deleteChat = (profileId: string, chatId: string): void => {
-  const db = getDb()
-  // Central chat-keyed rows that DON'T live in the session store (§B0 exceptions, cross-scope / pack-
-  // library-coupled). None is FK'd to chats, so clean them explicitly (§B4): agent-pack per-chat
-  // activation + chat-scope overrides + trigger baselines, and this chat's run history.
-  db.prepare('DELETE FROM agent_pack_activation WHERE chat_id = ?').run(chatId)
-  db.prepare('DELETE FROM agent_pack_overrides WHERE scope = ?').run(`chat:${chatId}`)
-  db.prepare('DELETE FROM agent_pack_trigger_state WHERE chat_id = ?').run(chatId)
-  db.prepare('DELETE FROM workflow_run_history WHERE chat_id = ?').run(chatId)
-  db.prepare('DELETE FROM chats WHERE id = ?').run(chatId)
-  // The chat's entire per-session store folder (session.sqlite = floors/ops/combat/node_state/… +
-  // table.sqlite + notes.md + session-vars.json). Closes the cached handle first (Windows file locks)
-  // then removes the folder + WAL sidecars (§B4). Supersedes the old removeSandbox/removeNotes calls.
-  sessionDbService.removeSession(profileId, chatId)
+  deleteChatFully(profileId, chatId)
 }
 
 /** Edit a floor's user message and/or response text, then bump updated_at. */

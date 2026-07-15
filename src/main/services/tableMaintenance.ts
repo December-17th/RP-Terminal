@@ -200,17 +200,42 @@ export const resolveInjectionPolicy = (
  * keeps everything (never truncates); 'none' keeps nothing; 'recent' keeps the LAST `cap` rows (newest
  * last) and reports the count omitted off the front. A `cap <= 0` in 'recent' mode keeps nothing (guards
  * the `slice(-0)` whole-array trap). PURE.
+ *
+ * `total` is the table's FULL row count. It defaults to `rows.length` — the case where `rows` is the
+ * complete, unbounded table — so every 2-arg caller behaves exactly as before. When `rows` was already
+ * BOUNDED in SQL (P1-5 `readAllTablesBounded`, `rows` = only the newest `cap`), the caller passes the
+ * real total so the omitted count (and thus the "N older rows omitted" marker) stays correct even though
+ * the older rows were never materialized.
  */
 export const capInjectionRows = (
   rows: unknown[][],
-  resolved: ResolvedInjection
+  resolved: ResolvedInjection,
+  total: number = rows.length
 ): { rows: unknown[][]; omitted: number } => {
   if (resolved.mode === 'none') return { rows: [], omitted: 0 }
   if (resolved.mode === 'full') return { rows, omitted: 0 }
   const cap = resolved.cap
-  if (cap <= 0) return { rows: [], omitted: rows.length }
-  if (rows.length <= cap) return { rows, omitted: 0 }
-  return { rows: rows.slice(-cap), omitted: rows.length - cap }
+  if (cap <= 0) return { rows: [], omitted: total }
+  if (total <= cap) return { rows, omitted: 0 }
+  return { rows: rows.slice(-cap), omitted: total - cap }
+}
+
+/**
+ * The per-table SQL row caps for the BOUNDED prompt-injection read (P1-5): resolve each table's policy
+ * to a `readAllTablesBounded` limit — 'full' → `null` (unbounded), 'none' / a 0-cap 'recent' → `0` (no
+ * query), 'recent' → its resolved cap. Keyed by `sqlName`. PURE; lives here (next to the policy
+ * resolver it consumes) so `tableDbService` stays a leaf and never imports the maintenance layer.
+ */
+export const injectionReadLimits = (
+  template: TableTemplate,
+  globalCap: number
+): Map<string, number | null> => {
+  const limits = new Map<string, number | null>()
+  for (const t of template.tables) {
+    const resolved = resolveInjectionPolicy(t.injectionPolicy, globalCap)
+    limits.set(t.sqlName, resolved.mode === 'full' ? null : resolved.mode === 'none' ? 0 : resolved.cap)
+  }
+  return limits
 }
 
 /**
@@ -234,8 +259,11 @@ export const renderInjectionTable = (
   const resolved = resolveInjectionPolicy(table.injectionPolicy, globalCap)
   if (resolved.mode === 'none') return null
   const allRows = read?.rows ?? []
-  if (!allRows.length) return null
-  const { rows, omitted } = capInjectionRows(allRows, resolved)
+  // `totalRows` is set when the read was SQL-bounded (P1-5): the true count even though `allRows` holds
+  // only the newest cap. Falls back to `allRows.length` for an unbounded read (identical to before).
+  const total = read?.totalRows ?? allRows.length
+  if (!total) return null
+  const { rows, omitted } = capInjectionRows(allRows, resolved, total)
   if (!rows.length) return null
   const sqlCols = parseDdlColumnNames(table.ddl)
   const cols = sqlCols.length ? sqlCols : table.headers

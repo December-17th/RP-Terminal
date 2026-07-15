@@ -23,7 +23,7 @@ import {
   composedPromptDebug
 } from './memoryCore'
 import { getProgress, advanceProgress } from '../../tableProgressService'
-import { getAllFloors, transcriptEpoch } from '../../floorService'
+import { getFloorCount, transcriptEpoch } from '../../floorService'
 import { getSettings } from '../../settingsService'
 import { writeScopeDirective } from '../../tableMaintenance'
 
@@ -168,7 +168,7 @@ export const memoryMaintain: NodeImpl = {
     // WS3 — auto due-set gating (D9): compute the DUE tables BEFORE the model call. The node runs every
     // turn (the cadence gate) but only pays for a model call when at least one table is due; an empty due
     // set SKIPS the LLM entirely. currentFloor is re-read from disk to match the pointer semantics.
-    const currentFloor = Math.max(0, getAllFloors(gen.profileId, gen.chatId).length - 1)
+    const currentFloor = Math.max(0, getFloorCount(gen.profileId, gen.chatId) - 1)
     const globalDefault = getSettings(gen.profileId).tables?.default_update_frequency ?? 3
     const due = dueTables(template, getProgress(gen.profileId, gen.chatId), currentFloor, globalDefault)
     if (!due.length) return { outputs: { report: 'no tables due' } }

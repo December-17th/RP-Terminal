@@ -3,7 +3,7 @@ import { useChatStore } from '../stores/chatStore'
 import { useCharacterStore } from '../stores/characterStore'
 import { useSettingsStore } from '../stores/settingsStore'
 import { useRegexStore } from '../stores/regexStore'
-import { splitReasoning } from '../../../shared/responseView'
+import { splitReasoning, cleanForDisplay, type ReasoningSplit } from '../../../shared/responseView'
 import { renderTemplate } from '../plugin/renderTemplate'
 import { buildStreamingHead } from './streamingDisplay'
 import { ReasoningPanel } from './ReasoningPanel'
@@ -45,7 +45,36 @@ export function StreamingView({ pendingUserMsg }: { pendingUserMsg: string }): R
 
   // Split the in-flight text the SAME way the committed floor will, so the view doesn't flash raw
   // <thinking> and the streaming/settled looks match. `body` is '' until </think> closes.
-  const { reasoning, body, state } = splitReasoning(streamingText)
+  //
+  // splitReasoning scans the FULL streamed string every frame → O(n²) over a long stream (long CoT hurts
+  // most). But once </think> has closed the reasoning is FIXED — only the body grows — so when a frame
+  // merely APPENDS to the previous text and adds no new <think> tag, we reuse the cached reasoning and
+  // recompute only the (cheaper) body. This is PROVABLY identical to splitReasoning: with the closed-block
+  // set unchanged and no dangling open, splitReasoning would return the same `reasoning` + 'done' state,
+  // and we recompute `body` fresh via cleanForDisplay (the exact expression splitReasoning uses for a
+  // non-thinking state). Any other case (reset/regenerate, edit, a new <think> in the tail) falls back to
+  // the pure splitReasoning. splitReasoning itself is untouched (still pure; its unit tests stay green).
+  const parseRef = useRef<{ text: string; split: ReasoningSplit }>({
+    text: '\0', // sentinel that never equals a real stream (forces the first parse)
+    split: { reasoning: '', body: '', state: 'none' }
+  })
+  const prevParse = parseRef.current
+  let split: ReasoningSplit
+  if (prevParse.text === streamingText) {
+    split = prevParse.split // identical frame (re-render from another subscription) → identical result
+  } else if (
+    prevParse.split.state === 'done' &&
+    streamingText.length >= prevParse.text.length &&
+    streamingText.startsWith(prevParse.text) &&
+    !/<think(?:ing)?\b/i.test(streamingText.slice(prevParse.text.length))
+  ) {
+    // Pure append with no new reasoning tag ⇒ reasoning + state are unchanged; only the body grew.
+    split = { reasoning: prevParse.split.reasoning, body: cleanForDisplay(streamingText), state: 'done' }
+  } else {
+    split = splitReasoning(streamingText)
+  }
+  parseRef.current = { text: streamingText, split }
+  const { reasoning, body, state } = split
 
   const liveOn =
     templates?.enabled !== false &&

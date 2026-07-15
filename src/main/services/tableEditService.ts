@@ -2,7 +2,7 @@ import { TableTemplate } from '../types/tableTemplate'
 import { isSafeSqlIdentifier } from '../parsers/chatSheetsParser'
 import { applySqlBatch, TableSqlError } from './tableSql'
 import { appendOps, tryBeginTableWrite, endTableWrite } from './tableOpsService'
-import { getAllFloors } from './floorService'
+import { getFloorCount } from './floorService'
 
 /**
  * HAND-EDIT write path for SQL-table memory (issue 06).
@@ -140,7 +140,7 @@ export const applyEdit = (
   try {
     const result = applySqlBatch(profileId, chatId, template, sql)
     if (result.statements.length) {
-      const floor = Math.max(0, getAllFloors(profileId, chatId).length - 1)
+      const floor = Math.max(0, getFloorCount(profileId, chatId) - 1)
       // Hand edit is single-floor: its span start IS its own floor (from_floor = floor).
       appendOps(profileId, chatId, floor, result.statements, 'edit', floor)
     }

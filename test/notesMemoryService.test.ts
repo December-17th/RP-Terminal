@@ -20,8 +20,13 @@ import {
 } from '../src/main/services/notesMemoryService'
 import { deleteChat } from '../src/main/services/chatService'
 
+// deleteChat now wraps its DB deletes in a `db.transaction(fn)()` (centralized teardown); mirror
+// better-sqlite3's shape (transaction(fn) returns fn, the caller invokes it) so the fn still runs.
 vi.mock('../src/main/services/db', () => ({
-  getDb: () => ({ prepare: () => ({ run: () => ({ changes: 0 }) }) })
+  getDb: () => ({
+    prepare: () => ({ run: () => ({ changes: 0 }) }),
+    transaction: (fn: () => unknown) => fn
+  })
 }))
 
 const P = 'profNotes'

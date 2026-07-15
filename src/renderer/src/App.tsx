@@ -1,4 +1,5 @@
-import { useEffect, useMemo } from 'react'
+import { useEffect, useMemo, Suspense } from 'react'
+import { lazyNamed } from './lib/lazyNamed'
 import { useProfileStore } from './stores/profileStore'
 import { useCharacterStore } from './stores/characterStore'
 import { useChatStore } from './stores/chatStore'
@@ -33,7 +34,7 @@ import { useWorkspaceStore } from './stores/workspaceStore'
 import { useComposerStore } from './stores/composerStore'
 import { useWcvFreezeStore } from './stores/wcvFreezeStore'
 import { initSlash } from './plugin/slash'
-import { broadcastHostEvent, initCardEventBridge } from './cardBridge/hostBroadcast'
+import { initCardEventBridge } from './cardBridge/hostBroadcast'
 import { applyThemeForScheme, colorSchemeOf } from './theme'
 import { deriveCardTheme } from './cardTheme'
 import { useUiStore } from './stores/uiStore'
@@ -46,12 +47,27 @@ import {
 import { useI18nStore } from './i18n'
 import { Launcher } from './components/Launcher'
 import { StDomCompat } from './components/StDomCompat'
-import { SettingsModal } from './components/SettingsModal'
-import { WorkflowEditorOverlay } from './components/workflow/WorkflowEditorOverlay'
-import { DuelPopup } from './components/DuelPopup'
-import { AssetsPopup } from './components/AssetsPopup'
-import { MemoryManagerView } from './components/memory/MemoryManagerView'
-import { TableTemplateReminderModal } from './components/TableTemplateReminderModal'
+// Modal/overlay surfaces are code-split: each renders null until opened, so lazy-loading them keeps
+// their heavy trees (workflow canvas, duel board, memory grid, settings hub) out of the startup entry
+// chunk. CRUCIAL: the dynamic import fires when React first RENDERS the lazy element, NOT when the
+// component checks its own open-state — so each is gated with `{open && <Lazy… />}` below (its open flag
+// hoisted into App via a narrow selector). Rendering them unconditionally would request every chunk at
+// startup. Suspense fallback is null — nothing is visible until the user opens the surface anyway.
+const SettingsModal = lazyNamed(() => import('./components/SettingsModal'), 'SettingsModal')
+const WorkflowEditorOverlay = lazyNamed(
+  () => import('./components/workflow/WorkflowEditorOverlay'),
+  'WorkflowEditorOverlay'
+)
+const DuelPopup = lazyNamed(() => import('./components/DuelPopup'), 'DuelPopup')
+const AssetsPopup = lazyNamed(() => import('./components/AssetsPopup'), 'AssetsPopup')
+const MemoryManagerView = lazyNamed(
+  () => import('./components/memory/MemoryManagerView'),
+  'MemoryManagerView'
+)
+const TableTemplateReminderModal = lazyNamed(
+  () => import('./components/TableTemplateReminderModal'),
+  'TableTemplateReminderModal'
+)
 import { CardTrustPrompt } from './components/CardTrustPrompt'
 import { refreshWcvHostState } from './cardBridge/hostReload'
 
@@ -71,16 +87,28 @@ export default function App(): React.ReactElement {
   // A card's session-scoped light/dark override (WCV rptHost.setColorScheme); null = follow the app theme.
   const cardColorScheme = useUiStore((s) => s.cardColorScheme)
 
+  // Open-state for the app-wide lazy overlays, hoisted here so each dynamic import fires only when its
+  // surface first opens (see the lazyNamed block above) — NOT eagerly at startup. Each overlay keeps its
+  // own null-when-closed guard too (harmless double-guard). DuelPopup is special: its auto-open logic
+  // (mode → 'duel' opens the popup) lives INSIDE the component's effect, so it must be mounted whenever
+  // the chat is in duel mode OR the popup is already open, else it could never observe the transition.
+  const settingsOpen = useUiStore((s) => s.settingsOpen)
+  const workflowEditorOpen = useUiStore((s) => s.workflowEditorOpen)
+  const duelPopupOpen = useUiStore((s) => s.duelPopupOpen)
+  const assetsPopupOpen = useUiStore((s) => s.assetsPopupOpen)
+  const memoryManagerOpen = useUiStore((s) => s.memoryManagerOpen)
+  const activeChatMode = useChatStore((s) => s.activeChatMode)
+  const templateReminderOpen = useChatStore((s) => s.templateReminderOpen)
+
   useEffect(() => {
     loadProfiles()
     initSlash() // register built-in slash commands once
     // Live streaming text for the active chat's in-flight response.
     const unsubDelta = window.api.onGenerationDelta(({ chatId, delta }) => {
+      // Card UIs get STREAM_TOKEN_RECEIVED from initCardEventBridge on the rAF buffer flush
+      // (≤1 event/frame), not per raw delta — see hostBroadcast.
       if (chatId === useChatStore.getState().activeChatId) {
         useChatStore.getState().appendDelta(delta)
-        // Forward streamed tokens to card UIs (STREAM_TOKEN_RECEIVED) — the accumulated text so far.
-        const streamingText = useChatStore.getState().streamingText
-        broadcastHostEvent(chatId, 'stream_token_received', streamingText)
       }
     })
     // Live log stream for the Logs panel.
@@ -417,12 +445,16 @@ export default function App(): React.ReactElement {
       {/* App-wide overlays — render over BOTH the launcher and play. The workflow editor is now the
           single surface for workflows + agents (one-canvas rebuild WP6.4b); the control center is
           retired. */}
-      <SettingsModal profileId={activeProfile.id} />
-      <WorkflowEditorOverlay profileId={activeProfile.id} />
-      <DuelPopup profileId={activeProfile.id} />
-      <AssetsPopup profileId={activeProfile.id} />
-      <MemoryManagerView profileId={activeProfile.id} />
-      <TableTemplateReminderModal profileId={activeProfile.id} />
+      <Suspense fallback={null}>
+        {settingsOpen && <SettingsModal profileId={activeProfile.id} />}
+        {workflowEditorOpen && <WorkflowEditorOverlay profileId={activeProfile.id} />}
+        {(duelPopupOpen || activeChatMode === 'duel') && (
+          <DuelPopup profileId={activeProfile.id} />
+        )}
+        {assetsPopupOpen && <AssetsPopup profileId={activeProfile.id} />}
+        {memoryManagerOpen && <MemoryManagerView profileId={activeProfile.id} />}
+        {templateReminderOpen && <TableTemplateReminderModal profileId={activeProfile.id} />}
+      </Suspense>
       <CardTrustPrompt />
       <ToastStack />
     </>
