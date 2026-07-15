@@ -8,7 +8,7 @@ import { synthesizeEntries, renderWholeTable } from '../../tableExportService'
 import { getProgress, advanceProgress, resolveUpdateFrequency } from '../../tableProgressService'
 import { getSettings } from '../../settingsService'
 import { matchAcross } from '../../lorebookService'
-import { getAllFloors } from '../../floorService'
+import { getFloorCount } from '../../floorService'
 import { TableDef } from '../../../types/tableTemplate'
 import { LorebookEntry } from '../../../types/character'
 import { NodeImpl, NodeRunFailure } from '../types'
@@ -241,7 +241,7 @@ export const tableGate: NodeImpl = {
 
     // Re-read the floor count FROM DISK (gen.floors is the pre-turn snapshot); currentFloor is the
     // 0-based index of the last persisted floor (clamped ≥0 for an empty chat).
-    const currentFloor = Math.max(0, getAllFloors(gen.profileId, gen.chatId).length - 1)
+    const currentFloor = Math.max(0, getFloorCount(gen.profileId, gen.chatId) - 1)
 
     // Last-processed pointers from the chat-level store (shared with backfill + the display). A
     // missing table is -1; the store is clamped explicitly on truncation, so no rewind inference here.

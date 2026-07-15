@@ -3,7 +3,7 @@ import { getActivePreset } from '../presetService'
 import { getCharacter } from '../characterService'
 import { getLorebookById } from '../lorebookService'
 import { getChat, getChatLorebookIds, getChatMode } from '../chatService'
-import { getAllFloors } from '../floorService'
+import { getAllFloors, getFloorRequest } from '../floorService'
 import { buildScanText } from '../promptBuilder'
 import { loadGlobals } from '../templateService'
 import { frozenVarsFor } from '../cacheLayers'
@@ -48,6 +48,9 @@ export const buildGenContext = (
   // Seed the working variables from the latest floor; ST-Prompt-Template code in
   // authored content (getvar/setvar/…) reads and mutates these during the build.
   const lastFloor = floors[floors.length - 1]
+  // Bulk floor reads are lean (no `request`), but the cache meter (computeMetrics) anchors this
+  // turn's proxy against the PREVIOUS floor's stored prompt — fetch just that one on demand.
+  if (lastFloor) lastFloor.request = getFloorRequest(profileId, chatId, lastFloor.floor)
   const workingVars: Record<string, any> = JSON.parse(JSON.stringify(lastFloor?.variables ?? {}))
   const globals = loadGlobals(profileId)
   const userName = settings.persona?.name || 'User'

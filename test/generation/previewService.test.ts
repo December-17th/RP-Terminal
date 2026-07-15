@@ -79,6 +79,8 @@ vi.mock('../../src/main/services/lorebookService', async (orig) => ({
 }))
 vi.mock('../../src/main/services/floorService', () => ({
   getAllFloors: () => floors,
+  getFloorCount: () => floors.length,
+  getFloorRequest: () => undefined,
   getFloor: (_p: string, _c: string, i: number) => floors[i],
   // If the preview ever wrote a floor this would record it — asserted empty (zero writes).
   saveFloor: (_p: string, _c: string, f: unknown) => store.savedFloors.push(f)

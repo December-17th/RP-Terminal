@@ -96,6 +96,8 @@ vi.mock('../../src/main/services/lorebookService', async (orig) => ({
 }))
 vi.mock('../../src/main/services/floorService', () => ({
   getAllFloors: () => floors,
+  getFloorCount: () => floors.length,
+  getFloorRequest: () => undefined,
   getFloor: (_p: string, _c: string, i: number) => floors[i],
   saveFloor: () => {}
 }))

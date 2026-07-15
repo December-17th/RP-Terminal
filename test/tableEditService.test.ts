@@ -25,7 +25,15 @@ const opsSvc = vi.hoisted(() => ({
 }))
 vi.mock('../src/main/services/tableOpsService', () => opsSvc)
 
-const floorSvc = vi.hoisted(() => ({ getAllFloors: vi.fn() }))
+const floorSvc = vi.hoisted(() => {
+  const getAllFloors = vi.fn()
+  // Count-only reads go through getFloorCount now — keep it slaved to the same fixture.
+  return {
+    getAllFloors,
+    getFloorCount: vi.fn(() => (getAllFloors() as unknown[] | undefined)?.length ?? 0),
+    getFloorRequest: vi.fn(() => undefined)
+  }
+})
 vi.mock('../src/main/services/floorService', () => floorSvc)
 
 import {

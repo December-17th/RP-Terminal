@@ -11,7 +11,13 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 // reads (`getAllFloors`, `earliestSpanStart`) while keeping the real guard/pure exports intact.
 vi.mock('../src/main/services/floorService', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../src/main/services/floorService')>()
-  return { ...actual, getAllFloors: vi.fn() }
+  const getAllFloors = vi.fn()
+  return {
+    ...actual,
+    getAllFloors,
+    // Count-only reads go through getFloorCount now — keep it slaved to the same fixture.
+    getFloorCount: vi.fn(() => (getAllFloors() as unknown[] | undefined)?.length ?? 0)
+  }
 })
 vi.mock('../src/main/services/tableOpsService', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../src/main/services/tableOpsService')>()

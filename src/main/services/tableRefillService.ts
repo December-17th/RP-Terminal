@@ -1,6 +1,12 @@
 import { getChatTableTemplateId } from './chatService'
 import { getTableTemplateById } from './tableTemplateService'
-import { getAllFloors, transcriptEpoch, onTranscriptCut, onTranscriptEdited } from './floorService'
+import {
+  getAllFloors,
+  getFloorCount,
+  transcriptEpoch,
+  onTranscriptCut,
+  onTranscriptEdited
+} from './floorService'
 import {
   refillShadowPath,
   instantiateAt,
@@ -481,7 +487,7 @@ export const effectiveRefillFrom = (
   selected: string[],
   requestedFrom: number | undefined
 ): number => {
-  const latest = getAllFloors(profileId, chatId).length - 1
+  const latest = getFloorCount(profileId, chatId) - 1
   if (latest < 0) return 0
   const requested =
     typeof requestedFrom === 'number'

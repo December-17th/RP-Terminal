@@ -86,6 +86,8 @@ vi.mock('../../src/main/services/lorebookService', () => ({
 vi.mock('../../src/main/services/floorService', () => ({
   getAllFloors: () => floors,
   getFloor: () => floors[floors.length - 1],
+  getFloorRequest: () => undefined,
+  getFloorCount: () => floors.length,
   saveFloor: () => {}
 }))
 vi.mock('../../src/main/services/regexService', () => ({ getPromptRules: () => [] }))

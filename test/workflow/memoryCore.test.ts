@@ -45,7 +45,15 @@ const mockProgress = vi.hoisted(() => ({
 }))
 vi.mock('../../src/main/services/tableProgressService', () => mockProgress)
 
-const mockFloor = vi.hoisted(() => ({ getAllFloors: vi.fn(() => []) }))
+const mockFloor = vi.hoisted(() => {
+  const getAllFloors = vi.fn(() => [] as unknown[])
+  // Count-only reads go through getFloorCount now — keep it slaved to the same fixture.
+  return {
+    getAllFloors,
+    getFloorCount: vi.fn(() => (getAllFloors() as unknown[] | undefined)?.length ?? 0),
+    getFloorRequest: vi.fn(() => undefined)
+  }
+})
 vi.mock('../../src/main/services/floorService', () => mockFloor)
 
 // chatTemplate's resolvers aren't exercised here (callers pass a template straight in); stub so the

@@ -125,11 +125,48 @@ export const getFloor = (
   return row ? rowToFloor(row) : null
 }
 
+/** Every floor column EXCEPT `request` — the stored provider prompt is by far the largest field
+ *  (grows ~quadratically with the session) and no bulk reader consumes it. Bulk reads project it
+ *  out; fetch it per-floor via `getFloorRequest` / `getAllFloorsWithRequests` when actually needed. */
+const LEAN_COLUMNS =
+  'floor, chat_id, timestamp, user_content, user_timestamp, response_content, ' +
+  'response_model, response_provider, swipes, swipe_id, events, variables, metrics, plot_block'
+
 export const getAllFloors = (_profileId: string, chatId: string, _count?: number): FloorFile[] => {
+  const rows = getDb()
+    .prepare(`SELECT ${LEAN_COLUMNS} FROM floors WHERE chat_id = ? ORDER BY floor`)
+    .all(chatId) as FloorRow[]
+  return rows.map(rowToFloor)
+}
+
+/** Full floors INCLUDING each stored `request` — only for paths that genuinely consume every
+ *  request (usage-metrics backfill). Everything else uses the lean `getAllFloors`. */
+export const getAllFloorsWithRequests = (_profileId: string, chatId: string): FloorFile[] => {
   const rows = getDb()
     .prepare('SELECT * FROM floors WHERE chat_id = ? ORDER BY floor')
     .all(chatId) as FloorRow[]
   return rows.map(rowToFloor)
+}
+
+/** One floor's stored provider request, on demand (inspection / the cache-meter proxy anchor). */
+export const getFloorRequest = (
+  _profileId: string,
+  chatId: string,
+  floorIndex: number
+): FloorFile['request'] => {
+  const row = getDb()
+    .prepare('SELECT request FROM floors WHERE chat_id = ? AND floor = ?')
+    .get(chatId, floorIndex) as { request: string | null } | undefined
+  return row?.request ? safeJson(row.request, undefined) : undefined
+}
+
+/** Floor count without materializing rows — replaces `getAllFloors(...).length` at count-only
+ *  call sites (floors are contiguous from 0, so COUNT === the array length it replaces). */
+export const getFloorCount = (_profileId: string, chatId: string): number => {
+  const row = getDb()
+    .prepare('SELECT COUNT(*) AS n FROM floors WHERE chat_id = ?')
+    .get(chatId) as { n: number }
+  return row.n
 }
 
 /** The actual floor INSERT/UPSERT (synchronous). Wrapped by `saveFloor` under the per-chat vars
@@ -153,7 +190,10 @@ const saveFloorRow = (chatId: string, floor: FloorFile): void => {
          swipe_id = excluded.swipe_id,
          events = excluded.events,
          variables = excluded.variables,
-         request = excluded.request,
+         -- Bulk reads are LEAN (no request), and many writers round-trip such floors back through
+         -- saveFloor. A floor without a request must therefore PRESERVE the stored one — nothing
+         -- legitimately clears a request; it's only (re)set by a generation persisting a new prompt.
+         request = COALESCE(excluded.request, floors.request),
          metrics = excluded.metrics,
          plot_block = excluded.plot_block`
     )

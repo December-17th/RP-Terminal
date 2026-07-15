@@ -38,11 +38,17 @@ const floors = Array.from({ length: 6 }, (_, i) => ({
   response: { content: `a${i}` },
   variables: {}
 }))
-const mockFloor = vi.hoisted(() => ({
-  getFloor: vi.fn(() => floors[floors.length - 1]),
-  getAllFloors: vi.fn(() => floors),
-  saveFloor: vi.fn()
-}))
+const mockFloor = vi.hoisted(() => {
+  const getAllFloors = vi.fn(() => floors)
+  return {
+    getFloor: vi.fn(() => floors[floors.length - 1]),
+    getAllFloors,
+    // Count-only reads go through getFloorCount now — keep it slaved to the same fixture.
+    getFloorCount: vi.fn(() => (getAllFloors() as unknown[] | undefined)?.length ?? 0),
+    getFloorRequest: vi.fn(() => undefined),
+    saveFloor: vi.fn()
+  }
+})
 vi.mock('../../src/main/services/floorService', () => mockFloor)
 
 // The table-status the trigger reads (unprocessed backlog).

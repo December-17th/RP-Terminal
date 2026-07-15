@@ -2,7 +2,7 @@ import { FloorFile } from '../types/chat'
 import { buildFloorMetrics } from './promptCacheMetrics'
 import { ChatMessage } from './promptBuilder'
 import { CumulativeMetric } from '../../shared/usageTypes'
-import { getAllFloors, saveFloor } from './floorService'
+import { getAllFloorsWithRequests, saveFloor } from './floorService'
 import { log } from './logService'
 
 /**
@@ -38,7 +38,8 @@ export const recomputeMetricsForFloors = (floors: FloorFile[]): FloorFile[] => {
  * and persist. Real usage isn't recoverable, so backfilled turns show the estimate (proxy) only.
  */
 export const backfillUsageMetrics = (profileId: string, chatId: string): FloorFile[] => {
-  const floors = getAllFloors(profileId, chatId)
+  // The one bulk reader that genuinely consumes every stored request (the proxy anchor chain).
+  const floors = getAllFloorsWithRequests(profileId, chatId)
   const recomputed = recomputeMetricsForFloors(floors)
   for (const f of recomputed) if (f.request) saveFloor(profileId, chatId, f)
   log('info', `cache meter — backfilled proxy metrics for ${recomputed.length} floor(s)`)
