@@ -206,10 +206,6 @@ export const CardScriptHost: React.FC<Props> = ({
   const emit = (name: string, payload: any): void => {
     post({ __rptevent: 1, name, payload })
   }
-  // Accumulates the in-flight response so STREAM_TOKEN_RECEIVED carries the full text
-  // so far (ST/TH semantics), reset at the start of each generation.
-  const streamAccum = useRef('')
-
   const pushToast = (msg: string): void => useToastStore.getState().push(msg)
 
   // Card scripts auto-grant low-risk caps; `net` is never allowed (no manifest
@@ -325,11 +321,13 @@ export const CardScriptHost: React.FC<Props> = ({
   // legacy rpt.v1 names and the canonical tavern_events (TH-1).
   useEffect(() => {
     return useChatStore.subscribe((state, prev) => {
+      // Floors are replaced immutably by every setter; a streamingText-only flush has nothing
+      // to diff here (audit P1-2).
+      if (state.floors === prev.floors && state.isGenerating === prev.isGenerating) return
       for (const ev of chatTransitionEvents(
         { isGenerating: prev.isGenerating, floorCount: prev.floors.length },
         { isGenerating: state.isGenerating, floorCount: state.floors.length }
       )) {
-        if (ev.name === TAVERN_EVENTS.GENERATION_STARTED) streamAccum.current = ''
         emit(ev.name, ev.payload)
       }
       // Per-message edits/swipes/deletes → MESSAGE_UPDATED/SWIPED/DELETED.
@@ -356,13 +354,15 @@ export const CardScriptHost: React.FC<Props> = ({
     })
   }, [])
 
-  // Forward streamed tokens to scripts as STREAM_TOKEN_RECEIVED (full text so far),
-  // for this chat only. Mirrors ST/TH where the listener gets the accumulated message.
+  // Forward streamed tokens to scripts as STREAM_TOKEN_RECEIVED (full text so far), for this
+  // chat only. Rides the store's rAF-coalesced streamingText flush (≤1 event/frame with the
+  // exact flushed text) instead of re-accumulating every raw delta (audit P1-1) — the payload
+  // semantics (accumulated message) are unchanged.
   useEffect(() => {
-    return window.api.onGenerationDelta(({ chatId: cid, delta }) => {
-      if (cid !== chatId) return
-      streamAccum.current += delta
-      emit(TAVERN_EVENTS.STREAM_TOKEN_RECEIVED, streamAccum.current)
+    return useChatStore.subscribe((state, prev) => {
+      if (state.activeChatId !== chatId) return
+      if (state.streamingText !== prev.streamingText && state.streamingText)
+        emit(TAVERN_EVENTS.STREAM_TOKEN_RECEIVED, state.streamingText)
     })
   }, [chatId])
 

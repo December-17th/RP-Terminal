@@ -334,4 +334,21 @@ describe('collectBoundedRows — table.query result ceiling (P1-5)', () => {
     expect(out.rows).toHaveLength(1)
     expect(out.truncated).toBe(true)
   })
+
+  it('CLIPS an oversized first row so the byte ceiling holds even for a single huge cell', () => {
+    // Review P1: previously a lone multi-MB row was returned intact with truncated:false.
+    const huge = 'x'.repeat(5000)
+    const out = collectBoundedRows([[huge]], MAX_QUERY_ROWS, 100)
+    expect(out.rows).toHaveLength(1)
+    expect(out.truncated).toBe(true) // reported accurately even when it is the ONLY row
+    const cell = out.rows[0][0] as string
+    expect(cell.length).toBeLessThan(200) // clipped, not the 5000-char original
+    expect(cell).toContain('…[clipped]')
+    // Non-string cells clip via their JSON form.
+    const objRow = collectBoundedRows([[{ big: 'y'.repeat(5000) }]] as unknown as Iterable<
+      unknown[]
+    >, MAX_QUERY_ROWS, 100)
+    expect(objRow.truncated).toBe(true)
+    expect(String(objRow.rows[0][0])).toContain('…[clipped]')
+  })
 })

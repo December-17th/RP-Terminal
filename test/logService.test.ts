@@ -18,7 +18,7 @@ describe('logService bounded detail', () => {
     vi.restoreAllMocks()
   })
 
-  it('truncates an oversized detail to the per-entry cap with an original-length marker', () => {
+  it('truncates an oversized detail to the per-entry BYTE cap, marker included within it', () => {
     const CAP = 16 * 1024
     const big = 'x'.repeat(CAP + 5000)
     log('request', 'huge', big)
@@ -26,11 +26,30 @@ describe('logService bounded detail', () => {
     const entry = getLogs()[0]
     expect(entry.detail).toBeDefined()
     const detail = entry.detail as string
-    // Bounded: cap + marker, far below the original.
-    expect(detail.length).toBeLessThan(big.length)
-    expect(detail.startsWith('x'.repeat(CAP))).toBe(true)
-    // Marker names the true original length.
-    expect(detail).toContain(`[truncated, ${big.length} chars total]`)
+    // Bounded INCLUDING the marker (S1): prefix + marker together fit the cap.
+    expect(Buffer.byteLength(detail, 'utf8')).toBeLessThanOrEqual(CAP)
+    // Marker names the true original byte size.
+    expect(detail).toContain(`[truncated, ${Buffer.byteLength(big, 'utf8')} bytes total]`)
+  })
+
+  it('accounts in UTF-8 bytes, not JS string length (multibyte/CJK)', () => {
+    const CAP = 16 * 1024
+    // 8K CJK chars = 8K UTF-16 units but ~24KB UTF-8 — over the byte cap despite a small .length.
+    const cjk = '汉'.repeat(8 * 1024)
+    expect(cjk.length).toBeLessThan(CAP) // the old length-based check would NOT truncate this
+    log('request', 'cjk', cjk)
+
+    const detail = getLogs()[0].detail as string
+    expect(Buffer.byteLength(detail, 'utf8')).toBeLessThanOrEqual(CAP)
+    expect(detail).toContain('bytes total]')
+    // The byte-boundary cut never leaves a split multibyte char (no U+FFFD before the marker).
+    expect(detail).not.toContain('�')
+  })
+
+  it('survives details JSON.stringify cannot serialize (symbols/functions) — S3', () => {
+    expect(() => log('info', 'weird', Symbol('nope'))).not.toThrow()
+    expect(getLogs()[0].detail).toContain('Symbol(nope)')
+    expect(() => log('info', 'fn', () => 1)).not.toThrow()
   })
 
   it('leaves a small detail untouched (no marker)', () => {
@@ -61,7 +80,7 @@ describe('logService bounded detail', () => {
     expect(logs[0].label).not.toBe('req-0')
   })
 
-  it('full_trace bypass keeps the entire untruncated detail', () => {
+  it('full_trace keeps large details untruncated up to the ring budget', () => {
     setFullTrace(true)
     const big = 'z'.repeat(200_000)
     log('response', 'full', big)
@@ -71,9 +90,15 @@ describe('logService bounded detail', () => {
     expect(entry.detail).not.toContain('truncated')
   })
 
-  it('never empties the ring even if a single entry exceeds the byte budget', () => {
-    setFullTrace(true) // store one huge (> 8MB) untruncated entry
-    log('request', 'giant', 'q'.repeat(9 * 1024 * 1024))
-    expect(getLogs().length).toBe(1)
+  it('full_trace stays HARD-bounded: a single entry can never exceed the total ring budget (S2)', () => {
+    setFullTrace(true)
+    log('request', 'giant', 'q'.repeat(9 * 1024 * 1024)) // > 8MB
+    const logs = getLogs()
+    expect(logs.length).toBe(1) // ring never empties…
+    // …but the entry itself is capped at the ring budget, marker included.
+    expect(Buffer.byteLength(logs[0].detail as string, 'utf8')).toBeLessThanOrEqual(
+      8 * 1024 * 1024
+    )
+    expect(logs[0].detail).toContain('bytes total]')
   })
 })
