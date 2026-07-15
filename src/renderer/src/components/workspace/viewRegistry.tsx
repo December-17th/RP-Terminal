@@ -1,23 +1,24 @@
 /* eslint-disable react-refresh/only-export-components -- a view registry intentionally
    co-locates its internal wrapper components with the registry/options it exports. */
-import React, { lazy, Suspense } from 'react'
+import React, { Suspense } from 'react'
 import { ChatView } from '../ChatView'
 import { StatusView } from '../StatusView'
 import { LogsPanel } from '../LogsPanel'
 import { useWorkspaceContext } from './context'
 import { useT } from '../../i18n'
 import { useUiStore } from '../../stores/uiStore'
+import { lazyNamed } from '../../lib/lazyNamed'
 import type { BuiltinViewId } from './viewLabels'
 
 // Heavy, non-default views are code-split so their large deps (CombatView's engine, VariablesView's
 // vanilla-jsoneditor/CodeMirror, TablesView/AssetsView/UsageView) land in separate chunks and stay out
 // of the startup entry. They are only mounted when a panel actually selects the view. ChatView /
-// StatusView / LogsPanel are default-visible and stay eager. Named exports → unwrap in .then().
-const CombatView = lazy(() => import('./CombatView').then((m) => ({ default: m.CombatView })))
-const VariablesView = lazy(() => import('./VariablesView').then((m) => ({ default: m.VariablesView })))
-const TablesView = lazy(() => import('./TablesView').then((m) => ({ default: m.TablesView })))
-const AssetsView = lazy(() => import('./AssetsView').then((m) => ({ default: m.AssetsView })))
-const UsageView = lazy(() => import('../UsageView').then((m) => ({ default: m.UsageView })))
+// StatusView / LogsPanel are default-visible and stay eager. Named exports → unwrap via lazyNamed.
+const CombatView = lazyNamed(() => import('./CombatView'), 'CombatView')
+const VariablesView = lazyNamed(() => import('./VariablesView'), 'VariablesView')
+const TablesView = lazyNamed(() => import('./TablesView'), 'TablesView')
+const AssetsView = lazyNamed(() => import('./AssetsView'), 'AssetsView')
+const UsageView = lazyNamed(() => import('../UsageView'), 'UsageView')
 
 /**
  * The set of views a workspace panel can host. Each entry is a self-contained component

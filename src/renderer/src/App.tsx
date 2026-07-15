@@ -1,4 +1,5 @@
-import { useEffect, useMemo, lazy, Suspense } from 'react'
+import { useEffect, useMemo, Suspense } from 'react'
+import { lazyNamed } from './lib/lazyNamed'
 import { useProfileStore } from './stores/profileStore'
 import { useCharacterStore } from './stores/characterStore'
 import { useChatStore } from './stores/chatStore'
@@ -48,26 +49,24 @@ import { Launcher } from './components/Launcher'
 import { StDomCompat } from './components/StDomCompat'
 // Modal/overlay surfaces are code-split: each renders null until opened, so lazy-loading them keeps
 // their heavy trees (workflow canvas, duel board, memory grid, settings hub) out of the startup entry
-// chunk. Suspense fallback is null — nothing is visible until the user opens the surface anyway.
-const SettingsModal = lazy(() =>
-  import('./components/SettingsModal').then((m) => ({ default: m.SettingsModal }))
+// chunk. CRUCIAL: the dynamic import fires when React first RENDERS the lazy element, NOT when the
+// component checks its own open-state — so each is gated with `{open && <Lazy… />}` below (its open flag
+// hoisted into App via a narrow selector). Rendering them unconditionally would request every chunk at
+// startup. Suspense fallback is null — nothing is visible until the user opens the surface anyway.
+const SettingsModal = lazyNamed(() => import('./components/SettingsModal'), 'SettingsModal')
+const WorkflowEditorOverlay = lazyNamed(
+  () => import('./components/workflow/WorkflowEditorOverlay'),
+  'WorkflowEditorOverlay'
 )
-const WorkflowEditorOverlay = lazy(() =>
-  import('./components/workflow/WorkflowEditorOverlay').then((m) => ({
-    default: m.WorkflowEditorOverlay
-  }))
+const DuelPopup = lazyNamed(() => import('./components/DuelPopup'), 'DuelPopup')
+const AssetsPopup = lazyNamed(() => import('./components/AssetsPopup'), 'AssetsPopup')
+const MemoryManagerView = lazyNamed(
+  () => import('./components/memory/MemoryManagerView'),
+  'MemoryManagerView'
 )
-const DuelPopup = lazy(() => import('./components/DuelPopup').then((m) => ({ default: m.DuelPopup })))
-const AssetsPopup = lazy(() =>
-  import('./components/AssetsPopup').then((m) => ({ default: m.AssetsPopup }))
-)
-const MemoryManagerView = lazy(() =>
-  import('./components/memory/MemoryManagerView').then((m) => ({ default: m.MemoryManagerView }))
-)
-const TableTemplateReminderModal = lazy(() =>
-  import('./components/TableTemplateReminderModal').then((m) => ({
-    default: m.TableTemplateReminderModal
-  }))
+const TableTemplateReminderModal = lazyNamed(
+  () => import('./components/TableTemplateReminderModal'),
+  'TableTemplateReminderModal'
 )
 import { CardTrustPrompt } from './components/CardTrustPrompt'
 import { refreshWcvHostState } from './cardBridge/hostReload'
@@ -87,6 +86,19 @@ export default function App(): React.ReactElement {
   const runtimeTheme = useUiStore((s) => s.runtimeTheme)
   // A card's session-scoped light/dark override (WCV rptHost.setColorScheme); null = follow the app theme.
   const cardColorScheme = useUiStore((s) => s.cardColorScheme)
+
+  // Open-state for the app-wide lazy overlays, hoisted here so each dynamic import fires only when its
+  // surface first opens (see the lazyNamed block above) — NOT eagerly at startup. Each overlay keeps its
+  // own null-when-closed guard too (harmless double-guard). DuelPopup is special: its auto-open logic
+  // (mode → 'duel' opens the popup) lives INSIDE the component's effect, so it must be mounted whenever
+  // the chat is in duel mode OR the popup is already open, else it could never observe the transition.
+  const settingsOpen = useUiStore((s) => s.settingsOpen)
+  const workflowEditorOpen = useUiStore((s) => s.workflowEditorOpen)
+  const duelPopupOpen = useUiStore((s) => s.duelPopupOpen)
+  const assetsPopupOpen = useUiStore((s) => s.assetsPopupOpen)
+  const memoryManagerOpen = useUiStore((s) => s.memoryManagerOpen)
+  const activeChatMode = useChatStore((s) => s.activeChatMode)
+  const templateReminderOpen = useChatStore((s) => s.templateReminderOpen)
 
   useEffect(() => {
     loadProfiles()
@@ -434,12 +446,14 @@ export default function App(): React.ReactElement {
           single surface for workflows + agents (one-canvas rebuild WP6.4b); the control center is
           retired. */}
       <Suspense fallback={null}>
-        <SettingsModal profileId={activeProfile.id} />
-        <WorkflowEditorOverlay profileId={activeProfile.id} />
-        <DuelPopup profileId={activeProfile.id} />
-        <AssetsPopup profileId={activeProfile.id} />
-        <MemoryManagerView profileId={activeProfile.id} />
-        <TableTemplateReminderModal profileId={activeProfile.id} />
+        {settingsOpen && <SettingsModal profileId={activeProfile.id} />}
+        {workflowEditorOpen && <WorkflowEditorOverlay profileId={activeProfile.id} />}
+        {(duelPopupOpen || activeChatMode === 'duel') && (
+          <DuelPopup profileId={activeProfile.id} />
+        )}
+        {assetsPopupOpen && <AssetsPopup profileId={activeProfile.id} />}
+        {memoryManagerOpen && <MemoryManagerView profileId={activeProfile.id} />}
+        {templateReminderOpen && <TableTemplateReminderModal profileId={activeProfile.id} />}
       </Suspense>
       <CardTrustPrompt />
       <ToastStack />
