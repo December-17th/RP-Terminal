@@ -23,6 +23,15 @@ export function initCardEventBridge(): () => void {
   return useChatStore.subscribe((state, prev) => {
     const chatId = state.activeChatId
     if (!chatId) return
+    // Streaming: forward the rAF-coalesced buffer flush (≤1 event/frame with the exact flushed
+    // text) — NOT the raw provider deltas. Per-delta full-prefix broadcast costs the sum of all
+    // prefixes across IPC + every WCV, and could repeat stale prefixes (audit P1-1).
+    if (state.streamingText !== prev.streamingText && state.streamingText)
+      broadcastHostEvent(chatId, 'stream_token_received', state.streamingText)
+    // Lifecycle/mutation events depend only on floors + isGenerating; floors are replaced
+    // immutably by every store setter, so an identity match means nothing to diff. Without this
+    // early-out every streaming flush re-mapped BOTH full floor histories (audit P1-2).
+    if (state.floors === prev.floors && state.isGenerating === prev.isGenerating) return
     const toDesc = (
       fs: typeof state.floors
     ): { floor: number; content: string; swipeId: number }[] =>

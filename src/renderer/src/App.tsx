@@ -33,7 +33,7 @@ import { useWorkspaceStore } from './stores/workspaceStore'
 import { useComposerStore } from './stores/composerStore'
 import { useWcvFreezeStore } from './stores/wcvFreezeStore'
 import { initSlash } from './plugin/slash'
-import { broadcastHostEvent, initCardEventBridge } from './cardBridge/hostBroadcast'
+import { initCardEventBridge } from './cardBridge/hostBroadcast'
 import { applyThemeForScheme, colorSchemeOf } from './theme'
 import { deriveCardTheme } from './cardTheme'
 import { useUiStore } from './stores/uiStore'
@@ -75,11 +75,10 @@ export default function App(): React.ReactElement {
     initSlash() // register built-in slash commands once
     // Live streaming text for the active chat's in-flight response.
     const unsubDelta = window.api.onGenerationDelta(({ chatId, delta }) => {
+      // Card UIs get STREAM_TOKEN_RECEIVED from initCardEventBridge on the rAF buffer flush
+      // (≤1 event/frame), not per raw delta — see hostBroadcast.
       if (chatId === useChatStore.getState().activeChatId) {
         useChatStore.getState().appendDelta(delta)
-        // Forward streamed tokens to card UIs (STREAM_TOKEN_RECEIVED) — the accumulated text so far.
-        const streamingText = useChatStore.getState().streamingText
-        broadcastHostEvent(chatId, 'stream_token_received', streamingText)
       }
     })
     // Live log stream for the Logs panel.

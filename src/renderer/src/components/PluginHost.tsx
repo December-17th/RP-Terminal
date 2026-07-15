@@ -48,8 +48,6 @@ const PluginFrame: React.FC<{ profileId: string; plugin: InstalledPlugin }> = ({
 
   const post = (msg: any): void => frameRef.current?.contentWindow?.postMessage(msg, '*')
   const emit = (name: string, payload: any): void => post({ __rptevent: 1, name, payload })
-  // Accumulates the in-flight response for STREAM_TOKEN_RECEIVED (full text so far).
-  const streamAccum = useRef('')
 
   // Plugins are gated purely by their granted (manifest-approved) permissions.
   const ensure = async (perm: string): Promise<boolean> => grantsSet.has(perm)
@@ -116,11 +114,13 @@ const PluginFrame: React.FC<{ profileId: string; plugin: InstalledPlugin }> = ({
   // rpt.v1 names and the canonical tavern_events (TH-1).
   useEffect(() => {
     return useChatStore.subscribe((state, prev) => {
+      // Floors are replaced immutably by every setter; a streamingText-only flush has nothing
+      // to diff here (audit P1-2) — each plugin used to rescan both histories per fire.
+      if (state.floors === prev.floors && state.isGenerating === prev.isGenerating) return
       for (const ev of chatTransitionEvents(
         { isGenerating: prev.isGenerating, floorCount: prev.floors.length },
         { isGenerating: state.isGenerating, floorCount: state.floors.length }
       )) {
-        if (ev.name === TAVERN_EVENTS.GENERATION_STARTED) streamAccum.current = ''
         emit(ev.name, ev.payload)
       }
       for (const ev of messageMutationEvents(
@@ -140,13 +140,13 @@ const PluginFrame: React.FC<{ profileId: string; plugin: InstalledPlugin }> = ({
     })
   }, [])
 
-  // Forward streamed tokens to plugins as STREAM_TOKEN_RECEIVED (full text so far) for
-  // the active chat only.
+  // Forward streamed tokens to plugins as STREAM_TOKEN_RECEIVED (full text so far). The store's
+  // streamingText is already scoped to the active chat and rAF-coalesced, so this emits ≤1
+  // event/frame instead of re-accumulating every raw delta per plugin (audit P1-1).
   useEffect(() => {
-    return window.api.onGenerationDelta(({ chatId, delta }) => {
-      if (chatId !== useChatStore.getState().activeChatId) return
-      streamAccum.current += delta
-      emit(TAVERN_EVENTS.STREAM_TOKEN_RECEIVED, streamAccum.current)
+    return useChatStore.subscribe((state, prev) => {
+      if (state.streamingText !== prev.streamingText && state.streamingText)
+        emit(TAVERN_EVENTS.STREAM_TOKEN_RECEIVED, state.streamingText)
     })
   }, [])
 
