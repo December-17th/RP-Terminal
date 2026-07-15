@@ -3,7 +3,8 @@ import {
   resolveInjectionPolicy,
   capInjectionRows,
   renderInjectionTable,
-  renderInjectionBlock
+  renderInjectionBlock,
+  injectionReadLimits
 } from '../src/main/services/tableMaintenance'
 import { TableTemplateSchema, type TableTemplate } from '../src/main/types/tableTemplate'
 import type { TableRead } from '../src/main/services/tableDbService'
@@ -62,6 +63,56 @@ describe('capInjectionRows', () => {
 
   it('none keeps nothing, omitted 0 (excluded, not truncated)', () => {
     expect(capInjectionRows(rows, { mode: 'none', cap: 2 })).toEqual({ rows: [], omitted: 0 })
+  })
+
+  // P1-5: when `rows` was already SQL-bounded (only the newest cap), the caller passes the true total so
+  // the omitted count stays correct without the older rows ever being materialized.
+  it('recent with an explicit total treats pre-bounded rows as the newest cap and omits total - cap', () => {
+    // `rows` holds ONLY the last 2 (SQL LIMIT 2), but the table really has 5.
+    expect(capInjectionRows([['d'], ['e']], { mode: 'recent', cap: 2 }, 5)).toEqual({
+      rows: [['d'], ['e']],
+      omitted: 3
+    })
+  })
+
+  it('recent total <= cap → keep the pre-bounded rows, omitted 0', () => {
+    expect(capInjectionRows([['a'], ['b']], { mode: 'recent', cap: 5 }, 2)).toEqual({
+      rows: [['a'], ['b']],
+      omitted: 0
+    })
+  })
+
+  it('recent cap 0 with an explicit total omits the whole (unmaterialized) table', () => {
+    expect(capInjectionRows([], { mode: 'recent', cap: 0 }, 42)).toEqual({ rows: [], omitted: 42 })
+  })
+})
+
+describe('injectionReadLimits (P1-5 SQL row caps)', () => {
+  const def = (over: Record<string, unknown>) => ({
+    uid: String(over.sqlName),
+    displayName: String(over.sqlName),
+    ddl: `CREATE TABLE ${over.sqlName} (row_id INTEGER, text TEXT)`,
+    headers: ['row_id', 'text'],
+    ...over
+  })
+
+  it('maps recent → its resolved cap, full → null (unbounded), none / 0-cap → 0', () => {
+    const tpl = TableTemplateSchema.parse({
+      name: 't',
+      tables: [
+        def({ sqlName: 'recent_t', injectionPolicy: { mode: 'recent', rows: 3 } }),
+        def({ sqlName: 'full_t', injectionPolicy: { mode: 'full' } }),
+        def({ sqlName: 'none_t', injectionPolicy: { mode: 'none' } }),
+        def({ sqlName: 'zero_t', injectionPolicy: { mode: 'recent', rows: 0 } }),
+        def({ sqlName: 'default_t' }) // no policy → recent at the global cap
+      ]
+    })
+    const limits = injectionReadLimits(tpl, 20)
+    expect(limits.get('recent_t')).toBe(3)
+    expect(limits.get('full_t')).toBeNull()
+    expect(limits.get('none_t')).toBe(0)
+    expect(limits.get('zero_t')).toBe(0)
+    expect(limits.get('default_t')).toBe(20)
   })
 })
 

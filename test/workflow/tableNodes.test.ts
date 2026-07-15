@@ -817,11 +817,27 @@ describe('table.query', () => {
     templateSvc.getTableTemplateById.mockReturnValue(maintTemplate())
     sqlSvc.executeReadQuery.mockReturnValue({
       columns: ['row_id', 'summary'],
-      rows: [[1, '事件一'], [2, '事件二']]
+      rows: [[1, '事件一'], [2, '事件二']],
+      truncated: false
     })
     const r = tableQuery.run(ctx, { gen, query: 'chronicle' }, meta(tableQuery, 'q'))
     expect(r.outputs!.rows).toEqual([[1, '事件一'], [2, '事件二']])
     expect(r.outputs!.block).toBe('row_id | summary\n1 | 事件一\n2 | 事件二')
+  })
+
+  it('a truncated result (P1-5 ceiling) notes the cut in the block and flags truncated, not an error', () => {
+    chatSvc.getChatTableTemplateId.mockReturnValue('t1')
+    templateSvc.getTableTemplateById.mockReturnValue(maintTemplate())
+    sqlSvc.executeReadQuery.mockReturnValue({
+      columns: ['row_id', 'summary'],
+      rows: [[1, '事件一'], [2, '事件二']],
+      truncated: true
+    })
+    const r = tableQuery.run(ctx, { gen, query: 'SELECT * FROM chronicle' }, meta(tableQuery, 'q'))
+    expect(r.outputs!.truncated).toBe(true)
+    expect(r.outputs!.rows).toEqual([[1, '事件一'], [2, '事件二']])
+    expect(r.outputs!.block as string).toContain('已截断')
+    expect(r.outputs!.block as string).toContain('前 2 行')
   })
 
   it('a bad query → class-B bad-query on the error path', () => {

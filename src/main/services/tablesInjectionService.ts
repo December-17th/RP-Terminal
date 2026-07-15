@@ -1,8 +1,8 @@
 import { getChatTableTemplateId } from './chatService'
 import { getTableTemplateById } from './tableTemplateService'
-import { readAllTables } from './tableDbService'
+import { readAllTablesBounded } from './tableDbService'
 import { getSettings } from './settingsService'
-import { renderInjectionBlock } from './tableMaintenance'
+import { renderInjectionBlock, injectionReadLimits } from './tableMaintenance'
 import { log } from './logService'
 
 /**
@@ -32,7 +32,11 @@ export const renderChatTablesInjectionBlock = (profileId: string, chatId: string
     const template = getTableTemplateById(profileId, templateId)
     if (!template || !template.tables.length) return ''
     const globalCap = getSettings(profileId).tables?.injection_max_rows ?? 20
-    const reads = readAllTables(profileId, chatId, template)
+    // P1-5: push each table's row cap into SQL (ORDER BY rowid DESC LIMIT N) so a long table is never
+    // fully materialized just to keep its newest N rows. `renderInjectionBlock` still caps defensively
+    // (a no-op when the read is already bounded), and `totalRows` keeps the omitted-rows marker exact.
+    const limits = injectionReadLimits(template, globalCap)
+    const reads = readAllTablesBounded(profileId, chatId, template, limits)
     return renderInjectionBlock(template, reads, globalCap)
   } catch (err) {
     log('error', `table memory injection skipped: ${err instanceof Error ? err.message : String(err)}`)

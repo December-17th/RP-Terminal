@@ -5,6 +5,8 @@ import {
   validateBatch,
   validateReadQuery,
   sanitizeSqlBatch,
+  collectBoundedRows,
+  MAX_QUERY_ROWS,
   TableSqlError
 } from '../../src/main/services/tableSql'
 
@@ -281,5 +283,55 @@ describe('validateReadQuery — the read-only table.query gate (issue 05)', () =
     const r = validateReadQuery('SELECT * FROM chronicle; DROP TABLE chronicle', registered)
     expect(r.ok).toBe(false)
     expect(r.reason).toContain('single')
+  })
+})
+
+// P1-5 — the row/byte ceiling that bounds a `table.query` result (executeReadQuery streams its cursor
+// through this). Pure over any row iterable; a generator proves rows past the ceiling are never pulled.
+describe('collectBoundedRows — table.query result ceiling (P1-5)', () => {
+  const rowsUpTo = (n: number): unknown[][] => Array.from({ length: n }, (_, i) => [i])
+
+  it('returns every row and truncated:false when under both ceilings', () => {
+    const out = collectBoundedRows(rowsUpTo(3))
+    expect(out.rows).toEqual([[0], [1], [2]])
+    expect(out.truncated).toBe(false)
+  })
+
+  it('stops at the row ceiling and reports truncation', () => {
+    const out = collectBoundedRows(rowsUpTo(MAX_QUERY_ROWS + 50), 10)
+    expect(out.rows).toHaveLength(10)
+    expect(out.truncated).toBe(true)
+  })
+
+  it('never pulls rows past the row ceiling (lazy cursor — generator would throw past N)', () => {
+    let pulled = 0
+    function* infinite(): Generator<unknown[]> {
+      for (;;) {
+        if (pulled >= 6) throw new Error('pulled too many rows')
+        pulled++
+        yield [pulled]
+      }
+    }
+    const out = collectBoundedRows(infinite(), 5)
+    expect(out.rows).toHaveLength(5)
+    expect(out.truncated).toBe(true)
+    // 5 kept + 1 lookahead that trips the cap = 6; the generator is never driven past that.
+    expect(pulled).toBe(6)
+  })
+
+  it('stops at the byte ceiling and reports truncation', () => {
+    const big = 'x'.repeat(200) // ~202 serialized bytes/row
+    const rows = Array.from({ length: 100 }, () => [big])
+    const out = collectBoundedRows(rows, MAX_QUERY_ROWS, 1000)
+    expect(out.truncated).toBe(true)
+    expect(out.rows.length).toBeGreaterThan(0)
+    expect(out.rows.length).toBeLessThan(100)
+  })
+
+  it('always keeps at least one row even when a single row exceeds the byte ceiling', () => {
+    const huge = 'x'.repeat(5000)
+    const out = collectBoundedRows([[huge], [huge]], MAX_QUERY_ROWS, 100)
+    expect(out.rows).toHaveLength(1)
+    expect(out.truncated).toBe(true)
   })
 })
