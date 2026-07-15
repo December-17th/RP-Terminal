@@ -12,6 +12,7 @@
     "typecheck": "npm run typecheck:node && npm run typecheck:web",
     "check:deps": "depcruise src --config .dependency-cruiser.cjs",
     "check:docs": "node scripts/check-doc-links.mjs",
+    "check:package": "node scripts/verify-package.mjs",
     "test": "vitest run",
     "test:watch": "vitest",
     "start": "electron-vite preview",
