@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { Modal } from './Modal'
 import { useChatStore } from '../stores/chatStore'
 import { stripThinking, stripRptEvents } from '../../../shared/responseView'
@@ -17,15 +17,29 @@ const preview = (s: string, n: number): string => {
   return clean.length > n ? `${clean.slice(0, n)}…` : clean
 }
 
-// INITIAL vertical pitch estimate for one row incl. the 4px flex gap. Rows are variable height (each
-// of the player/AI previews clamps to 3 lines and the player line is optional), so windowing is
-// APPROXIMATE — and a fixed estimate drifts past OVERSCAN deep into a uniformly tall transcript
-// (worst-case rows are ~129px, so by row ~100 the error exceeds the overscan and blank bands show).
-// The component therefore refines the pitch from the MEASURED average height of the rendered window
-// after each paint; this constant only seeds the first frame. Selection lives in `cut` (a floor
-// number), so it survives a row scrolling out of the rendered window.
-const ROW_PITCH = 100
+// Rows are variable height (each of the player/AI previews clamps to 3 lines and the player line is
+// optional), so windowing is driven by PER-ROW measurement, not a single global pitch: each rendered
+// row reports its own height (ResizeObserver), we keep those in a floor-keyed map, and estimate the
+// still-unmeasured rows with the running average of the measured ones (seeded at EST_SEED). A single
+// global/average pitch made the spacer sizes and the `first` index jump when scrolling between regions
+// with different height distributions — cumulative offsets from real measurements don't. Selection lives
+// in `cut` (a floor number), so it survives a row scrolling out of the rendered window.
+const EST_SEED = 100
 const OVERSCAN = 10
+
+// Binary-search the cumulative-offset table for the row whose [offsets[i], offsets[i+1]) band contains
+// `y`, clamped to a valid row index. `offsets` has length total+1 (offsets[total] === total height).
+function rowAt(offsets: Float64Array, total: number, y: number): number {
+  if (total <= 0) return 0
+  let lo = 0
+  let hi = total - 1
+  while (lo < hi) {
+    const mid = (lo + hi + 1) >> 1
+    if (offsets[mid] <= y) lo = mid
+    else hi = mid - 1
+  }
+  return lo
+}
 
 interface FloorRowProps {
   floor: number
@@ -37,10 +51,13 @@ interface FloorRowProps {
   aiLabel: string
   selectTip: string
   onSelect: (floor: number) => void
+  onMeasure: (floor: number, height: number) => void
 }
 
 // Memoized so re-renders (a new selection, a scroll that only shifts the window) reconcile just the
 // rows whose primitive props actually changed — not all ~60 rendered rows, and never the preview text.
+// Each row also reports its own measured height (initial layout + on any resize) so the parent can build
+// cumulative offsets; `floor` and `onMeasure` are both stable, so the observer wires up once per mount.
 const FloorRow = React.memo(function FloorRow({
   floor,
   youText,
@@ -50,10 +67,22 @@ const FloorRow = React.memo(function FloorRow({
   youLabel,
   aiLabel,
   selectTip,
-  onSelect
+  onSelect,
+  onMeasure
 }: FloorRowProps) {
+  const ref = useRef<HTMLButtonElement>(null)
+  useLayoutEffect(() => {
+    const el = ref.current
+    if (!el) return
+    const report = (): void => onMeasure(floor, el.getBoundingClientRect().height)
+    report()
+    const ro = new ResizeObserver(report)
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [floor, onMeasure])
   return (
     <button
+      ref={ref}
       type="button"
       className={`rpt-floors-row${marked ? ' marked' : ''}${isCut ? ' cut' : ''}`}
       title={selectTip}
@@ -122,26 +151,59 @@ export const FloorManagerModal: React.FC<{ profileId: string; onClose: () => voi
 
   const total = floors.length
   const winH = scroll.h || 600
-  const pitchRef = useRef(ROW_PITCH)
-  const pitch = pitchRef.current
-  const first = Math.max(0, Math.floor(scroll.top / pitch) - OVERSCAN)
-  const last = Math.min(total, first + Math.ceil(winH / pitch) + OVERSCAN * 2)
-  const topPad = first * pitch
-  const bottomPad = Math.max(0, (total - last) * pitch)
 
-  // Refine the pitch from the ACTUAL average rendered-row height (rows are variable height; a fixed
-  // estimate drifts past OVERSCAN deep in a uniformly tall list — review minor #2). Clamped to sane
-  // bounds and deadbanded so refinement converges instead of oscillating; the nudge re-derives the
-  // window at the same scroll position.
-  useEffect(() => {
-    const el = listRef.current
-    if (!el || last <= first) return
-    const avg = (el.scrollHeight - topPad - bottomPad) / (last - first)
-    if (avg >= 40 && avg <= 400 && Math.abs(avg - pitchRef.current) > 2) {
-      pitchRef.current = avg
-      setScroll((s) => ({ ...s }))
+  // Per-row measured heights, keyed by floor number (stable across scroll). Filled by each rendered
+  // FloorRow's ResizeObserver via onMeasure; a version counter bumps only when a stored height actually
+  // changes (deadband > 1px) so measurement can't spin a measure→setState loop.
+  const heightsRef = useRef<Map<number, number>>(new Map())
+  const [measureTick, setMeasureTick] = useState(0)
+  const onMeasure = useCallback((floor: number, height: number) => {
+    const m = heightsRef.current
+    const prev = m.get(floor)
+    if (prev == null || Math.abs(prev - height) > 1) {
+      m.set(floor, height)
+      setMeasureTick((v) => v + 1)
     }
-  })
+  }, [])
+
+  // Cumulative offsets via a single O(total) prefix-sum pass: measured rows use their real height,
+  // unmeasured rows the running average of the measured ones (seeded at EST_SEED). Recomputed only when
+  // the floors list or a measurement changes. offsets[i] = top of row i; offsets[total] = total height.
+  const { offsets, totalHeight } = useMemo(() => {
+    const m = heightsRef.current
+    let sum = 0
+    let cnt = 0
+    for (const f of floors) {
+      const h = m.get(f.floor)
+      if (h != null) {
+        sum += h
+        cnt++
+      }
+    }
+    const est = cnt > 0 ? sum / cnt : EST_SEED
+    const offs = new Float64Array(total + 1)
+    let acc = 0
+    for (let i = 0; i < total; i++) {
+      offs[i] = acc
+      const h = m.get(floors[i].floor)
+      acc += h != null ? h : est
+    }
+    offs[total] = acc
+    return { offsets: offs, totalHeight: acc }
+    // measureTick invalidates the memo when a measured height changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [floors, total, measureTick])
+
+  // Derive the mounted window by binary search over the offsets, then pad by OVERSCAN and clamp. Spacer
+  // heights come straight from the offset table, so they stay consistent with the rows between them and
+  // don't jump when scrolling across regions of differing row height. Small lists: firstVisible 0 and
+  // lastVisible total-1 → first 0, last total → both spacers 0, every row rendered (as before).
+  const firstVisible = rowAt(offsets, total, scroll.top)
+  const lastVisible = rowAt(offsets, total, scroll.top + winH)
+  const first = Math.max(0, firstVisible - OVERSCAN)
+  const last = Math.min(total, lastVisible + 1 + OVERSCAN)
+  const topPad = offsets[first]
+  const bottomPad = Math.max(0, totalHeight - offsets[last])
 
   const handleSelect = useCallback((floor: number) => {
     setCut(floor)
@@ -188,6 +250,7 @@ export const FloorManagerModal: React.FC<{ profileId: string; onClose: () => voi
                     aiLabel={aiLabel}
                     selectTip={selectTip}
                     onSelect={handleSelect}
+                    onMeasure={onMeasure}
                   />
                 )
               })}

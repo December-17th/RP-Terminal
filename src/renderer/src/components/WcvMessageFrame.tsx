@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { createRafScheduler } from '../lib/rafScheduler'
+import { makeBoundsSender } from '../lib/wcvBounds'
 import { useProfileStore } from '../stores/profileStore'
 import { useChatStore } from '../stores/chatStore'
 import { useCharacterStore } from '../stores/characterStore'
@@ -109,16 +110,10 @@ export function WcvMessageFrame({
         height: Math.max(0, bottom - top)
       }
     }
-    // Main rounds bounds to integer device pixels (wcvManager.round). Mirror that here so we can skip a
-    // send whose rounded bounds match the last one we sent — a native overlay only moves on integer
-    // pixels, so a sub-pixel-only change is a no-op flood.
-    type IntBounds = { x: number; y: number; width: number; height: number }
-    const roundB = (b: IntBounds): IntBounds => ({
-      x: Math.round(b.x),
-      y: Math.round(b.y),
-      width: Math.max(0, Math.round(b.width)),
-      height: Math.max(0, Math.round(b.height))
-    })
+    // Main rounds bounds to integer device pixels (wcvManager.round). The shared wcvBounds sender mirrors
+    // that rounding and skips a send whose rounded bounds match the last one — a native overlay only moves
+    // on integer pixels, so a sub-pixel-only change is a no-op flood. Scoped to this effect (one slot).
+    const bounds = makeBoundsSender((id, b) => window.api.wcvSetBounds(id, b))
     const initial = rect()
     window.api.wcvEnsure(slotId, initial, dataUrl, {
       profileId,
@@ -126,22 +121,9 @@ export function WcvMessageFrame({
       characterId,
       chatScope
     })
-    let lastSent: IntBounds = roundB(initial)
+    bounds.prime(slotId, initial)
     // Measure + send, but suppress when the rounded bounds are unchanged from the last send.
-    const sendBounds = (): void => {
-      const b = rect()
-      const r = roundB(b)
-      if (
-        r.x === lastSent.x &&
-        r.y === lastSent.y &&
-        r.width === lastSent.width &&
-        r.height === lastSent.height
-      ) {
-        return
-      }
-      lastSent = r
-      window.api.wcvSetBounds(slotId, b)
-    }
+    const sendBounds = (): void => bounds.send(slotId, rect())
     // Coalesce raw scroll/resize/RO fires to one measure+send per animation frame (rAF, not
     // throttle/debounce, so the overlay never trails its container by more than a frame while scrolling).
     const scheduler = createRafScheduler()
