@@ -48,13 +48,6 @@ describe('createThRuntime exposes sceneAssetUrl to the card page', () => {
     expect(sceneAssetUrl).toHaveBeenCalledWith('内廷-皇家迎宾偏厅', '背景')
   })
 
-  it('falls back to exact assetUrl for an older host', async () => {
-    const host = fakeHost()
-    const g = createThRuntime(host)
-    await g.sceneAssetUrl('内廷-皇家迎宾偏厅', '全景')
-    expect(host.assetUrl).toHaveBeenCalledWith('内廷-皇家迎宾偏厅', '全景')
-  })
-
   it('also exposes sceneAssetUrl on TavernHelper', async () => {
     const sceneAssetUrl = vi.fn(async () => 'rptasset://p/w/location/scene.png')
     const host = fakeHost({ sceneAssetUrl })

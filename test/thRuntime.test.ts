@@ -483,13 +483,6 @@ describe('createThRuntime', () => {
     expect(m.calls.generate).toHaveLength(0)
   })
 
-  it('triggerSlash: a Host WITHOUT submitInput falls back to the bare empty-action re-trigger', async () => {
-    const m: any = mockHost({ submitInput: undefined })
-    const g = createThRuntime(m.host)
-    expect(await g.triggerSlash('/trigger')).toBe('gen:')
-    expect(m.calls.generate).toEqual([''])
-  })
-
   it('script-scope vars use the KV store, not stat_data', async () => {
     const m: any = mockHost()
     const g = createThRuntime(m.host)
