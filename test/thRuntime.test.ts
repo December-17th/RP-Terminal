@@ -297,6 +297,16 @@ describe('createThRuntime', () => {
     })
   })
 
+  it('keeps the default stat_data cache update synchronous before the returned promise settles', async () => {
+    const m: any = mockHost({ statData: () => ({ hp: 1 }) })
+    const g = createThRuntime(m.host)
+
+    const write = g.insertOrAssignVariables({ hp: 2 })
+
+    expect(g.getVariables()).toEqual({ stat_data: { hp: 2 } })
+    await write
+  })
+
   it('insertVariables DEEP inserts only missing leaves (seeds defaults without overwriting)', async () => {
     const m: any = mockHost({ statData: () => ({ date: { log: { deathCount: 3 } } }) })
     const g = createThRuntime(m.host)
@@ -322,13 +332,42 @@ describe('createThRuntime', () => {
   it('insertOrAssignVariables honors chat scope for 自动正则 state', async () => {
     const m: any = mockHost()
     const g = createThRuntime(m.host)
+
     await g.insertOrAssignVariables(
       { adaptive_regex_names: ['读者对话渲染'] },
       { type: 'chat' }
     )
+
     expect(m.calls.setChatVars).toEqual([
       { existing: 1, adaptive_regex_names: ['读者对话渲染'] }
     ])
+    expect(g.getVariables({ type: 'chat' })).toEqual({
+      existing: 1,
+      adaptive_regex_names: ['读者对话渲染']
+    })
+    expect(m.calls.applyVariableOps).toEqual([])
+  })
+
+  it('insertVariables honors scoped insert-only semantics', async () => {
+    const m: any = mockHost()
+    const g = createThRuntime(m.host)
+
+    await g.insertVariables({ existing: 9, added: 2 }, { type: 'chat' })
+
+    expect(m.calls.setChatVars).toEqual([{ existing: 1, added: 2 }])
+    expect(m.calls.applyVariableOps).toEqual([])
+  })
+
+  it.each([
+    ['script', 'setScriptVars', { existing: 1, nested: { value: 2 } }],
+    ['global', 'setGlobalVars', { coins: 7, nested: { value: 2 } }]
+  ])('insertOrAssignVariables honors %s scope', async (type, callKey, expected) => {
+    const m: any = mockHost()
+    const g = createThRuntime(m.host)
+
+    await g.insertOrAssignVariables({ nested: { value: 2 } }, { type })
+
+    expect(m.calls[callKey]).toEqual([expected])
     expect(m.calls.applyVariableOps).toEqual([])
   })
 
