@@ -151,25 +151,22 @@ export function createThRuntime(host: Host, opts?: { chatScope?: CardChatScope }
   const writeVars = (ops: VarOp[]): Promise<void> =>
     ops.length ? host.applyVariableOps(ops) : Promise.resolve()
 
-  // TavernHelper's `type:'character'` = variables bound to the character card, persisted per-character
-  // across chats. RPT's `type:'script'` scope is ALREADY keyed per-character (host.getScriptVars is the
-  // card's own KV, owner `card:<characterId>`), so it matches those semantics — we alias the two onto that
-  // one bag. Without this, a `{type:'character'}` read/write fell through to stat_data below, so a card
-  // storing per-character state there (命定之诗's custom-start presets, theme, map drawings) never round-
-  // tripped: the write polluted stat_data and the read never found it. See test/thRuntimeCharacterVars.
+  // TavernHelper's character scope is per-character and survives chat changes. RPT's script-variable
+  // bag already has those semantics (the host keys it by character), so both names share that bag.
   const isCardKvScope = (type: unknown): boolean => type === 'script' || type === 'character'
 
   const mergeScopedVars = (vars: any, opt: any, insertOnly: boolean): Promise<void> | null => {
     const type = opt?.type
     if (!isCardKvScope(type) && type !== 'chat' && type !== 'global') return null
 
-    const current = clone(
-      isCardKvScope(type)
-        ? host.getScriptVars()
-        : type === 'chat'
-          ? host.getChatVars()
-          : host.getGlobalVarsSync()
-    ) || {}
+    const current =
+      clone(
+        isCardKvScope(type)
+          ? host.getScriptVars()
+          : type === 'chat'
+            ? host.getChatVars()
+            : host.getGlobalVarsSync()
+      ) || {}
     const ops = deepVarOps(current, vars && typeof vars === 'object' ? vars : {}, insertOnly)
     if (!ops.length) return Promise.resolve()
 
@@ -328,7 +325,7 @@ export function createThRuntime(host: Host, opts?: { chatScope?: CardChatScope }
   // --- TavernHelper helpers (bare + namespaced) ---
   const helpers: Record<string, any> = {
     // SYNC getters
-    // type:'script' ⇒ the card's own KV; 'chat' ⇒ per-chat KV; 'global' ⇒ per-profile globals (a
+    // type:'script'/'character' ⇒ the card's own KV; 'chat' ⇒ per-chat KV; 'global' ⇒ per-profile globals (a
     // beautification's UI settings live here); any other scope ⇒ the message vars (stat_data).
     getVariables: (opt?: any) =>
       opt && isCardKvScope(opt.type)
@@ -445,8 +442,6 @@ export function createThRuntime(host: Host, opts?: { chatScope?: CardChatScope }
       }
     },
     replaceVariables: async (vars: any, opt?: any) => {
-      // script/character ⇒ whole-object replace of the card's per-character KV. Without this a
-      // {type:'character'} replace fell through to the stat_data path and dropped the KV write.
       if (opt && isCardKvScope(opt.type)) {
         await host.setScriptVars(vars && typeof vars === 'object' ? vars : {})
         return
@@ -469,9 +464,7 @@ export function createThRuntime(host: Host, opts?: { chatScope?: CardChatScope }
     },
     updateVariablesWith: async (updater: any, opt?: any) => {
       if (typeof updater !== 'function') return
-      // type:'script'/'character' ⇒ read-modify-write the card's own per-character KV (the updater returns
-      // the FULL object), keeping it out of stat_data — e.g. the workshop caches its cloud project under a
-      // script var; 命定之诗's custom-start keeps its presets under a character var.
+      // The updater returns the full scoped object, so card-KV scopes must remain outside stat_data.
       if (opt && isCardKvScope(opt.type)) {
         const cur = clone(host.getScriptVars()) || {}
         const next = (await updater(cur)) || cur
@@ -496,16 +489,12 @@ export function createThRuntime(host: Host, opts?: { chatScope?: CardChatScope }
       await writeVars(ops)
       return next
     },
-    // TH deleteVariable(key, opt): remove a single top-level key from the selected scope. The card KV
-    // scopes (script/character/chat/global) rewrite the bag without the key; the default (message) scope
-    // emits a JSON-Patch `remove` against stat_data and updates the optimistic cache. Returns whether the
-    // key existed. (Absent before — a card calling it, e.g. 命定之诗's theme reset, threw a ReferenceError.)
     deleteVariable: async (key: any, opt?: any): Promise<boolean> => {
       const k = String(key ?? '')
       if (!k) return false
       const type = opt?.type
       if (isCardKvScope(type) || type === 'chat' || type === 'global') {
-        const cur =
+        const current =
           clone(
             type === 'chat'
               ? host.getChatVars()
@@ -513,22 +502,19 @@ export function createThRuntime(host: Host, opts?: { chatScope?: CardChatScope }
                 ? host.getGlobalVarsSync()
                 : host.getScriptVars()
           ) || {}
-        if (!(k in cur)) return false
-        delete cur[k]
-        if (type === 'chat') await host.setChatVars(cur)
-        else if (type === 'global') await host.setGlobalVars(cur)
-        else await host.setScriptVars(cur)
+        if (!(k in current)) return false
+        delete current[k]
+        if (type === 'chat') await host.setChatVars(current)
+        else if (type === 'global') await host.setGlobalVars(current)
+        else await host.setScriptVars(current)
         return true
       }
-      // default scope ⇒ stat_data
-      if (stat && typeof stat === 'object' && k in stat) {
-        const nextStat = clone(stat) || {}
-        delete nextStat[k]
-        stat = nextStat
-        await writeVars([{ op: 'remove', path: keyPointer(k) }])
-        return true
-      }
-      return false
+      if (!stat || typeof stat !== 'object' || !(k in stat)) return false
+      const next = clone(stat) || {}
+      delete next[k]
+      stat = next
+      await writeVars([{ op: 'remove', path: keyPointer(k) }])
+      return true
     },
     generate: async (a: any) => {
       const input = typeof a === 'string' ? a : (a?.user_input ?? a?.userInput ?? a?.text ?? '')

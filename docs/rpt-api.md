@@ -88,6 +88,11 @@ low-level bridge name and how the DOM libs are injected differ per transport.
 
 ## 4. API surface by category
 
+TavernHelper's `type:'character'` is an alias for RPT's per-character card KV (`type:'script'`).
+`getVariables`, `insertOrAssignVariables`, `insertVariables`, `replaceVariables`,
+`updateVariablesWith`, and `deleteVariable` honor both names, persist across chats, and never write to
+message `stat_data`.
+
 ### Variables / MVU state — ✅
 
 State of truth is `floor.variables.stat_data` (the MVU tree). Reads come from a **synchronous mirror** (the
@@ -344,3 +349,32 @@ preserves the invariant (review WS-9). When you add a new template surface, pick
 
 Rule of thumb: **author infrastructure fails loud; card-supplied content degrades; non-errors strip; unknown
 passes through.**
+
+## 8. WebContentsView card layout compatibility
+
+SillyTavern frontend cards commonly run in an auto-height iframe. An isolated RPT card instead runs in a
+fixed-height `WebContentsView`, where an overflowing child of a vertical flex container can shrink below
+its content and clip or overlap text. RPT floors only those collapsed children to
+`min-height: fit-content`; elements that own vertical scrolling are left unchanged.
+
+### How to run
+
+Run `npm run dev`, select the isolated card-rendering mode, and open the affected frontend card. The
+compatibility pass installs automatically after every main-frame and child-frame navigation and watches
+later DOM or viewport changes.
+
+### Decisions
+
+- Main uses Electron's `did-frame-finish-load` and `WebFrameMain.executeJavaScript` so the layout-only
+  pass reaches both same-origin and cross-origin child frames.
+- Child frames do not receive Node integration or the TavernHelper preload. This preserves the existing
+  security boundary while fixing layout in the frame that owns the DOM.
+- Detection is behavior-based (`scrollHeight > clientHeight` under a vertical flex parent), not tied to
+  card-specific class names.
+
+### Verification
+
+- `npm test`: 294 files and 3,125 tests pass.
+- `npm run build`: node and web typechecks plus all Electron Vite bundles pass.
+- Electron flex harness: before the fix, 8 of 8 main/child-frame items measured `20px` high with `56px`
+  of content; after the fix, all measured `56px` high and zero remained collapsed.
