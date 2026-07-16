@@ -98,7 +98,21 @@ describe('electron-builder.yml files allowlist', () => {
   it('keeps only runtime-required modules in production dependencies', () => {
     const packageJson = JSON.parse(
       fs.readFileSync(path.resolve(__dirname, '..', 'package.json'), 'utf8')
-    ) as { dependencies?: Record<string, string> }
+    ) as { dependencies?: Record<string, string>; scripts?: Record<string, string> }
     expect(Object.keys(packageJson.dependencies ?? {}).sort()).toEqual(RUNTIME_DEPENDENCIES)
+    expect(packageJson.scripts?.['build:win']).toContain('--publish never')
+    expect(packageJson.scripts?.['build:mac']).toContain('--publish never')
+  })
+
+  it('disables electron-builder implicit publishing in macOS workflows', () => {
+    for (const workflow of ['release.yml', 'macos-package-check.yml']) {
+      const source = fs.readFileSync(
+        path.resolve(__dirname, '..', '.github', 'workflows', workflow),
+        'utf8'
+      )
+      expect(source).toContain(
+        'electron-builder --mac zip --${{ matrix.arch }} --publish never'
+      )
+    }
   })
 })
