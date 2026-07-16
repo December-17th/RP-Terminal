@@ -90,6 +90,20 @@ export interface ApplyOptions<R> {
    * replacement output (e.g. a per-card render-mode HTML comment). Undefined → no marker.
    */
   marker?: (rule: R) => string | undefined
+  /**
+   * DISPLAY-path only: when a rule injects a card payload (beautification HTML — see isCardPayload),
+   * replace that injected region with an opaque placeholder so LATER rules don't rescan it, then
+   * restore it verbatim at the end. A cleanup regex backtracking over a 100KB+ HTML paste stalls the
+   * render for SECONDS (the plot panel re-ran this on every turn-settle and froze the whole app; the
+   * repro: a preset beautifier pastes ~148KB, then two same-tier cleanups rescan it — ~5s). The
+   * scope-tier ordering (regexOrder test) only shields a WORLD/SESSION-scoped beautifier from PRESET
+   * cleanups; a PRESET-scoped beautifier is still rescanned by same-tier cleanups — this guards it
+   * regardless of scope. OFF by default so the PROMPT path stays byte-identical (a beautifier is
+   * display-only and never reaches the prompt anyway). Final output is unchanged EXCEPT that a later
+   * rule can no longer match structure INSIDE an injected payload — the intended fix: a cleanup must
+   * not rewrite (or backtrack over) an already-finished card.
+   */
+  freezePayloads?: boolean
 }
 
 /** Apply rules to `text` in order. A rule that fails to compile is skipped. */
@@ -99,6 +113,19 @@ export const applyRegexRules = <R extends RegexLikeRule>(
   ctx: RegexApplyContext = {},
   opts: ApplyOptions<R> = {}
 ): string => {
+  // Card-payload freeze (opt-in — see ApplyOptions.freezePayloads): stash each injected card payload
+  // behind an opaque Unicode Private-Use-Area placeholder (U+E000) so subsequent rules scan a short
+  // token instead of the full paste; restored verbatim at the end. U+E000 never appears in card/model
+  // text; if it somehow does in the input, disable freezing so a real payload can't be corrupted.
+  const SENT = String.fromCharCode(0xe000)
+  const canFreeze = opts.freezePayloads === true && !text.includes(SENT)
+  const frozen: string[] = []
+  const freeze = (payload: string): string => {
+    const token = `${SENT}${frozen.length}${SENT}`
+    frozen.push(payload)
+    return token
+  }
+
   let out = text
   for (const rule of rules) {
     if (
@@ -131,8 +158,17 @@ export const applyRegexRules = <R extends RegexLikeRule>(
       const { match, groups } = replaceArgs(args)
       const repl = buildReplacement(rule, match, groups, ctx)
       const mk = opts.marker?.(rule)
-      return mk ? mk + repl : repl
+      const full = mk ? mk + repl : repl
+      // Freeze a genuine card payload so LATER rules scan the token, not the paste. Plain-text
+      // replacements (the common case, and every prompt-path rule) pass through unchanged.
+      return canFreeze && isCardPayload(full) ? freeze(full) : full
     })
+  }
+  // Restore frozen payloads. REVERSE creation order: a later payload may embed an earlier token (a
+  // rule that echoed its match via `$&`/`{{match}}`), so the outer token must expand first. split/join
+  // (not String.replace) so a payload's literal `$&`/`$1` is never reinterpreted as a capture ref.
+  for (let i = frozen.length - 1; i >= 0; i--) {
+    out = out.split(`${SENT}${i}${SENT}`).join(frozen[i])
   }
   return out
 }

@@ -128,11 +128,24 @@ export const useRegexStore = create<RegexState>((set, get) => ({
 
   // Display rules are pre-filtered (placement 2) by getRenderRegex, so no placement
   // filter here; pass the compiled-RegExp cache. Transform shared with the main path.
+  // freezePayloads: a beautifier injects a large HTML card; freezing it stops a later cleanup rule
+  // from rescanning the paste (catastrophic backtracking → multi-second main-thread stall). Display
+  // path only — the prompt applier (regexService) never sets it, so prompts stay byte-identical.
   apply: (content, ctx) =>
-    applyRegexRules(content, get().rules, ctx ?? {}, { compile: getRe, marker: modeMarker }),
+    applyRegexRules(content, get().rules, ctx ?? {}, {
+      compile: getRe,
+      marker: modeMarker,
+      freezePayloads: true
+    }),
 
   // Plot-block rules are pre-filtered (placement 1 ⊕ 2) by getPlotBlockRegex; same transform/marker
   // as the display path so a beautification card payload emits its render-mode marker identically.
+  // Same payload-freeze as `apply` (this is the path that froze the whole app on turn-settle — the
+  // plot beautifier pastes ~148KB, then same-tier cleanups rescanned it; see PlotPanel).
   applyPlot: (content, ctx) =>
-    applyRegexRules(content, get().plotRules, ctx ?? {}, { compile: getRe, marker: modeMarker })
+    applyRegexRules(content, get().plotRules, ctx ?? {}, {
+      compile: getRe,
+      marker: modeMarker,
+      freezePayloads: true
+    })
 }))

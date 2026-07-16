@@ -383,7 +383,13 @@ Replacement syntax is shared by display and prompt transforms: `$0`/`$&` expand 
 `$1`/`$2`... expand capture groups (`regexTransform`). In a **card payload** (a replacement carrying
 `<script>`/`<style>`/`<html>`/` ```html `) the whole-match specials `$0`/`$&` are kept **literal**
 so a card's own escape idiom `s.replace(/…/g, '\\$&')` isn't spliced into and broken; numbered groups
-still inject (with `$N` literal when the find-regex has no group N).
+still inject (with `$N` literal when the find-regex has no group N). On the **display** path only
+(`regexStore.apply` / `applyPlot`, `freezePayloads`), an injected card payload is **opaque to LATER
+rules**: once a beautifier emits its `<html>`/` ```html ` card, subsequent rules can't match, rewrite,
+or backtrack over its interior — a cleanup regex rescanning a 100KB+ paste otherwise stalled the render
+for seconds (and silently mangled the card). Plain-text rules still **chain** (rule B may transform rule
+A's plain output); only card payloads are frozen. The **prompt** path never sets this, so prompts are
+byte-identical (a beautifier is display-only and never reaches the prompt anyway).
 
 **What does NOT transform cleanly (Tier 2 — set expectations honestly):** cards whose JS reaches past the
 documented surface — full-page apps that read undocumented `window.top` internals, exotic/uncommon
