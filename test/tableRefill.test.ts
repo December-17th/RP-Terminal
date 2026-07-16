@@ -1,10 +1,9 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 
-// table-refill WS2 — the refill engine's DECISIONS are pure exported helpers (the house testing stance:
-// the SQLite/fs shadow-build / publish / commit I/O is alias-mock-untestable, so every decision — what to
-// replay, what to cut, what to commit, whether to abort, where to resume — lives in a pure function that
-// is unit-tested here). Plus the token-owned write guard (pure Map logic in tableOpsService). electron +
-// better-sqlite3 are globally aliased to stubs (vitest.config), so both real modules import cleanly.
+// Focused unit coverage for reusable refill algorithms and hard edge matrices: rollback selection,
+// cutpoint widening, progress adjustment, terminal precedence, and heartbeat/write-guard boundaries.
+// The durable SQLite/fs lifecycle is covered through createTableRefillLifecycle in
+// tableRefillLifecycle.test.ts; the default aliases still keep this focused suite lightweight.
 
 // `effectiveRefillFrom` is impure (reads floors + op-log), so its ONE non-pure decision — iterating the
 // widen step to a fixed point across CHAINED spans — is exercised by partial-mocking the two seams it
@@ -204,7 +203,11 @@ describe('refillRunOutcome — stop-on-failure terminal branch (review fix F1)',
     })
   })
   it('a failure outranks a concurrent cancel (the reason is what the user needs)', () => {
-    expect(refillRunOutcome(true, 'boom')).toEqual({ status: 'error', finalize: false, message: 'boom' })
+    expect(refillRunOutcome(true, 'boom')).toEqual({
+      status: 'error',
+      finalize: false,
+      message: 'boom'
+    })
   })
   it('a cancel without failure ⇒ cancelled, NO finalize (also resumable)', () => {
     expect(refillRunOutcome(true, null)).toEqual({ status: 'cancelled', finalize: false })
@@ -242,7 +245,7 @@ describe('refillProgressAfterEdit — the resume row after an in-place floor edi
   it('edit at fromFloor (lower boundary) ⇒ clamp to fromFloor - 1 (resume re-runs the full range)', () => {
     expect(refillProgressAfterEdit(row, 3)).toEqual({ completedUntil: 2 })
   })
-  it('edit below fromFloor ⇒ keep (frozen base state — maintain\'s domain, and the floor still exists)', () => {
+  it("edit below fromFloor ⇒ keep (frozen base state — maintain's domain, and the floor still exists)", () => {
     expect(refillProgressAfterEdit(row, 2)).toBe('keep')
   })
   it('edit above completedUntil ⇒ keep (nothing committed there; the epoch fence covers a live chunk)', () => {

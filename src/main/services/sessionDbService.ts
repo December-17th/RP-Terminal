@@ -14,9 +14,10 @@ import { log } from './logService'
  * `notes.md` + `session-vars.json` + `manifest.json`), so export = zip the folder.
  *
  * This is S0: the scaffold. It owns the schema + the handle provider; NOTHING reads it yet (the seam
- * services flip over in S1, behind the one-time migration in S2). Mirrors tableDbService/agentPackStore
- * stance: PURE helpers (path building, cache-key, LRU eviction) are unit-tested; the SQL wrappers are
- * runtime-validated only (vitest stubs better-sqlite3, so `new Database()` is a no-op under test).
+ * services flip over in S1, behind the one-time migration in S2). Pure helpers (path building,
+ * cache-key, LRU eviction) have focused unit coverage; session SQL and files are also exercised through
+ * the local Node SQLite adapter in lifecycle integration tests. Suites using the default Vitest alias
+ * still receive the lightweight no-op database.
  *
  * FOREIGN KEYS ARE DELIBERATELY OFF HERE (plan review C5). The DDL below is lifted from `db.ts` with
  * every `REFERENCES chats(id) ON DELETE CASCADE` STRIPPED — a session DB has no `chats` table, so
@@ -138,7 +139,7 @@ export const sessionKey = (profileId: string, chatId: string): string =>
 export const keysToEvict = (orderedKeys: string[], cap: number): string[] =>
   orderedKeys.length <= cap ? [] : orderedKeys.slice(0, orderedKeys.length - cap)
 
-// ---- handle cache + SQL wrappers (runtime-validated only; no-op under the vitest mock) --------
+// ---- handle cache + SQL wrappers -------------------------------------------------------------
 
 /** Max simultaneously-open session handles. Session DBs are cheap but each holds a WAL fd; an LRU cap
  *  bounds fd/memory use while keeping the working set (the active chat + a few recents) hot. */
