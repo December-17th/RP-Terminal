@@ -23,9 +23,9 @@ export function capCardHeight(contentPx: number, viewportPx: number): number {
  * scrollbar — the card looks embedded as part of the message rather than windowed.
  *
  * Unlike `capCardHeight` (WCV's windowed widget), this does NOT clamp to a fraction of the viewport.
- * `InlineCardFrame` first neutralizes the card's root viewport-height (html/body 100vh -> auto), which
- * decouples its content height from the frame height, so `contentPx` is the card's true height and is
- * returned as-is. The only clamp is a generous SAFETY ceiling: a bound (never a UX cap) for the rare
+ * `InlineCardFrame` first rewrites viewport-based minimums against the app viewport and normalizes only
+ * root heights. That decouples content height from frame height, so `contentPx` is the card's true height
+ * and is returned as-is. The only clamp is a generous SAFETY ceiling: a bound (never a UX cap) for the rare
  * card that still ties height to the viewport via inner `vh` units — it stops a runaway from growing
  * forever, and realistic card content stays well under it. No lower floor: a short card gets its exact
  * height.

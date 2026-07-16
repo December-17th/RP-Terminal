@@ -22,9 +22,8 @@ export interface EnvHeadOpts {
   /** Initial `--TH-viewport-height` (px). When omitted/<=0, the bootstrap falls back to window.innerHeight. */
   viewportHeightPx?: number
   /**
-   * Let the card scroll internally (overflow:auto, overriding the base reset's overflow:hidden). The WCV
-   * overlay is a fixed, capped height, so a taller card MUST scroll itself; the inline iframe instead
-   * auto-sizes to content (no internal scroll) and leaves this false.
+   * Let the card scroll internally (overflow:auto, overriding the base reset's overflow:hidden). Fixed
+   * frames require this; auto-sized frames may also enable it as a clipping fallback when capped.
    */
   scrollable?: boolean
 }
@@ -128,7 +127,8 @@ function convVh(value: string): string {
 /**
  * Rewrite a card's `min-height:NNvh` to `var(--TH-viewport-height)` (NN===100) or
  * `calc(var(--TH-viewport-height) * NN/100)`, so a card sized to the viewport FILLS the frame instead of
- * the literal device vh (used by `fill` mode). Faithful to JSR's `replaceVhInContent`: ONLY `min-height`
+ * the literal iframe vh (used by inline Fit and Fill, and WCV Fill). Faithful to JSR's
+ * `replaceVhInContent`: ONLY `min-height`
  * (a bare `height:100vh` is left alone), across four sites — CSS declarations, inline `style="…"`, and the
  * two JS forms (`.style.minHeight=` and `.style.setProperty('min-height',…)`). No-op when there is no vh.
  */

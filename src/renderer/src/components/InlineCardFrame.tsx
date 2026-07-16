@@ -7,8 +7,9 @@ import { buildCardDoc } from './cardDoc'
 import { fitInlineCardHeight, capCardHeight } from './cardFrameHeight'
 import { installCardBridge, installCardTopSurface } from '../cardBridge'
 import { buildInlineLibTags } from '../cardBridge/cardLibs'
-import { buildEnvHead, replaceVhInContent } from '../../../shared/cardEnv'
+import { buildEnvHead } from '../../../shared/cardEnv'
 import { HtmlFrame } from './HtmlFrame'
+import { createInlineCardLayout, normalizeInlineFitDocument } from './inlineCardLayout'
 import type { CardSizing } from '../../../shared/cardRenderMode'
 import type { CardChatScope } from '../../../shared/thRuntime/types'
 
@@ -78,19 +79,22 @@ export function InlineCardFrame({
     // SP2's jQuery-UI/touch-punch/FontAwesome/Tailwind) + the --TH-viewport-height bootstrap, built ONCE
     // in cardEnv so inline and WCV inject the same thing. Avatar URLs are omitted today (no sync source —
     // charAvatarPath is a stub and RPT has no persona avatar), so those rules no-op until wired.
-    // Sizing: `fill` seeds --TH-viewport-height to a viewport-fraction box (the card fills it via the vh
-    // rewrite below, sized in the effect); `fit` content-fits (the effect measures + neutralizes vh).
+    // Sizing: `fill` seeds --TH-viewport-height to a viewport-fraction box; `fit` uses the app viewport.
+    // Both rewrite viewport minimums before mount, matching JS-Slash-Runner without changing normal minima.
     const vp =
       typeof window === 'undefined'
         ? undefined
         : sizing === 'fill'
           ? capCardHeight(Number.MAX_SAFE_INTEGER, window.innerHeight)
           : window.innerHeight
-    const env = buildEnvHead({ libTags: buildInlineLibTags(), sizing, viewportHeightPx: vp })
-    // In fill, rewrite the card's `min-height:NNvh` onto var(--TH-viewport-height) so a viewport-sized
-    // card fills the frame; in fit we instead neutralize it (in the effect) so the card content-fits.
-    const docHtml = sizing === 'fill' ? replaceVhInContent(html) : html
-    return buildCardDoc(docHtml, { headInject: boot + env })
+    const layout = createInlineCardLayout(html, sizing)
+    const env = buildEnvHead({
+      libTags: buildInlineLibTags(),
+      sizing,
+      viewportHeightPx: vp,
+      scrollable: layout.scrollable
+    })
+    return buildCardDoc(layout.html, { headInject: boot + env })
   }, [html, profileId, chatId, characterId, sizing, chatScope])
 
   // Auto-height (same-origin: read contentDocument) + right-click forwarding. Mirrors HtmlFrame.
@@ -99,27 +103,13 @@ export function InlineCardFrame({
     if (!frame) return
     let observer: ResizeObserver | undefined
     let visibility: IntersectionObserver | undefined
-    // A card designed as a full-viewport panel pins an element's min-height to 100vh (html/body, its mount
-    // root #app, OR a deeper wrapper like the character viewer's `.viewer-root`). Inside an auto-height
-    // iframe that makes the element as tall as the frame, which feeds back through the ResizeObserver (the
-    // runaway) and forces an inner scrollbar. Collapsing every `min-height:100vh` to 0 lets the card flow
-    // to its REAL content so the frame fits it. min-height:0 is lossless — it only drops a "fill the
-    // viewport" FLOOR, never clamps real content — so it's safe to apply to the whole subtree. We write
-    // inline !important (the most robust — it beats the card's stylesheet rules at ANY specificity, even
-    // !important class rules), skip already-neutralized nodes so repeated measures stay cheap, and re-apply
-    // on every measure so a loader card's asynchronously-mounted nodes are caught too. height:auto stays on
-    // html/body only (collapsing a deeper element's height could break its internal layout).
-    const neutralizeViewportHeight = (): void => {
+    // Root `height` can still couple the card to the iframe viewport. Normalize only the two roots;
+    // descendant min-heights are authored control/card constraints and must remain intact.
+    const normalizeFitDocument = (): void => {
       try {
         const doc = frame.contentDocument
         if (!doc) return
-        for (const el of [doc.documentElement, doc.body]) {
-          if (el && el.style.height !== 'auto') el.style.setProperty('height', 'auto', 'important')
-        }
-        if (!doc.body) return
-        for (const el of [doc.body, ...doc.body.querySelectorAll<HTMLElement>('*')]) {
-          if (el.style.minHeight !== '0px') el.style.setProperty('min-height', '0', 'important')
-        }
+        normalizeInlineFitDocument(doc)
       } catch {
         /* ignore */
       }
@@ -128,7 +118,7 @@ export function InlineCardFrame({
       try {
         const doc = frame.contentDocument
         if (!doc?.body) return
-        neutralizeViewportHeight()
+        normalizeFitDocument()
         // Fit the frame to the card's TRUE content height (with no inner scrollbar) by reading
         // `body.scrollHeight` plus body's own margins. body.scrollHeight is content-sized and — unlike
         // documentElement.scrollHeight — is NOT floored at the iframe viewport, so it still SHRINKS when a
@@ -143,7 +133,9 @@ export function InlineCardFrame({
         // ran while off-layout, making the race reliable). A collapsible driven by a `max-height`/`height`
         // CSS TRANSITION is handled by the transitionend re-measure in onLoad below.
         const cs = frame.contentWindow?.getComputedStyle(doc.body)
-        const margins = cs ? (parseFloat(cs.marginTop) || 0) + (parseFloat(cs.marginBottom) || 0) : 0
+        const margins = cs
+          ? (parseFloat(cs.marginTop) || 0) + (parseFloat(cs.marginBottom) || 0)
+          : 0
         setHeight(fitInlineCardHeight(doc.body.scrollHeight + margins + 8, window.innerHeight))
       } catch {
         /* cross-origin guard (shouldn't happen — same origin) */
@@ -174,7 +166,8 @@ export function InlineCardFrame({
       try {
         const doc = frame.contentDocument
         const body = doc?.body
-        // Fit observes `body` (content-sized via the neutralize above): it shrinks when the card collapses
+        // Fit observes `body` (content-sized after the viewport rewrite/root normalization): it shrinks
+        // when the card collapses
         // a sub-panel, firing a re-measure so the frame follows back DOWN. Fill is a fixed box (no observe).
         if (sizing !== 'fill' && body && 'ResizeObserver' in window) {
           observer = new ResizeObserver(measureFit)
