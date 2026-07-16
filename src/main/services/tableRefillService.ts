@@ -35,11 +35,12 @@ import { validateBatch, applySqlBatchAt, partitionBySelected } from './tableSql'
 import { getProgress, advanceProgress } from './tableProgressService'
 import { composeTablesBlock, refillMaintainerPrompt } from './tableMaintenance'
 import { planBatches, buildBatchTranscript, BatchSpan } from './tableBackfillService'
-import { runMaintainerBatch } from './tableMaintainerLoop'
+import { runMaintainerBatch as productionRunMaintainerBatch } from './tableMaintainerLoop'
 import { getSettings } from './settingsService'
 import { buildGenContext } from './generation/genContext'
 import { withPreset } from './generation/resilientCall'
-import { notifyBackfillProgress } from './tableBackfillEvents'
+import { notifyBackfillProgress as productionNotifyBackfillProgress } from './tableBackfillEvents'
+import type { BackfillProgress } from './tableBackfillEvents'
 import { getSessionDbByChat } from './sessionDbService'
 import { log } from './logService'
 import { ChatMessage } from './promptBuilder'
@@ -70,8 +71,9 @@ import { GenContext } from './generation/types'
  *     would otherwise silently drop the lock across a single >120s batch model call),
  *  3. a partial refill of a structurally re-baselined table is BLOCKED (would re-duplicate) → full refill.
  *
- * Per the house testing stance, every DECISION is a PURE exported helper (unit-tested); the SQLite/fs
- * I/O wrappers are alias-mock-untestable and kept dumb. See docs/sdk/table-templates.md.
+ * The durable lifecycle is exercised through `createTableRefillLifecycle` against real local SQLite and
+ * files; pure helpers retain focused coverage for reusable algorithms and hard edge matrices. See
+ * docs/sdk/table-templates.md.
  */
 
 // ---- pure decision helpers (unit-tested) -----------------------------------------------------
@@ -264,9 +266,10 @@ export const refillProgressAfterEdit = (
 export const REFILL_HEARTBEAT_MS = 45_000
 
 /**
- * The guard-lease heartbeat wiring, extracted PURE over an injected `renew` fn so the interval logic is
- * unit-testable with fake timers (the async `runRefill` body it lives in is alias-mock-untestable). Renews
- * the token-owned write lease every `REFILL_HEARTBEAT_MS` while the run is alive so a single batch's model
+ * The guard-lease heartbeat wiring, extracted PURE over an injected `renew` fn so its timing and renewal-
+ * gap edge matrix stays deterministic under fake timers. The surrounding async run is covered through
+ * the lifecycle interface. It renews the token-owned write lease every `REFILL_HEARTBEAT_MS` while the run
+ * is alive so a single batch's model
  * call — up to `retries` API re-tries + SQL-corrective re-asks, routinely > `WRITE_GUARD_MS` — can't let
  * the lease expire mid-await (which would read `isTableWriteBusy` false and hand the slot to a probe, or
  * let the run's own now-expired-but-identity-owned token renew fine and publish stale schema).
@@ -308,7 +311,7 @@ export const startGuardHeartbeat = (
   }
 }
 
-// ---- refill-progress store (app DB) — untestable stance (alias-mocked better-sqlite3) ---------
+// ---- durable refill-progress store ------------------------------------------------------------
 
 export interface RefillProgressRow {
   selected: string[]
@@ -397,28 +400,61 @@ export interface RefillRunState {
   failures: RefillFailure[]
 }
 
-const runs = new Map<string, { controller: AbortController; state: RefillRunState }>()
+type RefillRunEntry = { controller: AbortController; state: RefillRunState }
+type RefillRunMap = Map<string, RefillRunEntry>
 
-/** Snapshot the live run state (or null when no refill is mounted) + the persisted resume row. */
-export const getRefillState = (
+const productionRuns: RefillRunMap = new Map()
+const transcriptActiveRuns = new Map<string, Set<RefillRunEntry>>()
+
+const registerTranscriptActiveRun = (chatId: string, entry: RefillRunEntry): void => {
+  const entries = transcriptActiveRuns.get(chatId) ?? new Set<RefillRunEntry>()
+  entries.add(entry)
+  transcriptActiveRuns.set(chatId, entries)
+}
+
+const unregisterTranscriptActiveRun = (chatId: string, entry: RefillRunEntry): void => {
+  const entries = transcriptActiveRuns.get(chatId)
+  if (!entries) return
+  entries.delete(entry)
+  if (!entries.size) transcriptActiveRuns.delete(chatId)
+}
+
+const abortTranscriptActiveRuns = (chatId: string): boolean => {
+  const entries = transcriptActiveRuns.get(chatId)
+  if (!entries) return false
+  let aborted = false
+  for (const entry of entries) {
+    if (!entry.state.running) continue
+    entry.controller.abort()
+    aborted = true
+  }
+  return aborted
+}
+
+const refillStateFor = (
+  runs: RefillRunMap,
   chatId: string
 ): { run: RefillRunState | null; persisted: RefillProgressRow | null } => ({
   run: runs.get(chatId)?.state ?? null,
   persisted: getRefillProgress(chatId)
 })
 
+/** Snapshot the live run state (or null when no refill is mounted) + the persisted resume row. */
+export const getRefillState = (
+  chatId: string
+): { run: RefillRunState | null; persisted: RefillProgressRow | null } =>
+  productionLifecycle.state(chatId)
+
 /** Cancel a running refill (between-batch effect; a batch in flight finishes/fails). Committed chunks
  *  stay; the progress row survives for a later Resume. */
 export const cancelRefill = (chatId: string): void => {
-  runs.get(chatId)?.controller.abort()
+  productionLifecycle.cancel(chatId)
 }
 
 /** Discard an interrupted refill's resume record + shadow file (committed chunks are kept — valid
  *  regenerated history). Rejects while a refill is actively running for the chat. */
 export const discardRefill = (profileId: string, chatId: string): void => {
-  if (runs.get(chatId)?.state.running) throw new Error('tables.refillRunning')
-  deleteRefillProgress(chatId)
-  removeShadow(profileId, chatId)
+  productionLifecycle.discard(profileId, chatId)
 }
 
 // The refill race (owner pass 2026-07-14): floors truncated (regenerate / delete) while a refill is
@@ -429,15 +465,14 @@ export const discardRefill = (profileId: string, chatId: string): void => {
 // unwind rebuilds the live sandbox (truncateFloors' guarded rebuild self-skips while we hold the
 // guard) and removes the shadow. Registered via floorService's listener seam (no import cycle).
 onTranscriptCut((profileId, chatId, cutFloor) => {
-  const live = runs.get(chatId)
-  if (live?.state.running) live.controller.abort()
+  const hasLiveRun = abortTranscriptActiveRuns(chatId)
   const row = getRefillProgress(chatId)
   if (!row || row.status !== 'in_progress') return
   const next = refillProgressAfterCut(row, cutFloor)
   if (next === 'delete') {
     deleteRefillProgress(chatId)
     // The live run still needs its shadow to unwind; with no run, the orphan file can go now.
-    if (!live?.state.running) removeShadow(profileId, chatId)
+    if (!hasLiveRun) removeShadow(profileId, chatId)
   } else if (next !== 'keep') {
     upsertRefillProgress(chatId, row.selected, row.fromFloor, next.completedUntil, row.status)
   }
@@ -453,8 +488,7 @@ onTranscriptCut((profileId, chatId, cutFloor) => {
 // shadow to unwind). The epoch fence in `commitChunk`/finalize is the correctness backstop if this signal
 // loses the race. Registered via floorService's edit-listener seam (no import cycle).
 onTranscriptEdited((_profileId, chatId, editFloor) => {
-  const live = runs.get(chatId)
-  if (live?.state.running) live.controller.abort()
+  abortTranscriptActiveRuns(chatId)
   const row = getRefillProgress(chatId)
   if (!row || row.status !== 'in_progress') return
   const next = refillProgressAfterEdit(row, editFloor)
@@ -478,6 +512,28 @@ export interface RefillOpts {
   retries?: number
   /** Floors per maintainer batch (each batch = one commit chunk). Default 3. */
   batchSize?: number
+}
+
+export type RefillResumeOpts = Pick<
+  RefillOpts,
+  'apiPresetId' | 'retries' | 'extraHint' | 'batchSize'
+>
+
+export interface RefillRunHandle {
+  completion: Promise<RefillRunOutcome>
+}
+
+export interface TableRefillLifecycleAdapters {
+  runMaintainerBatch: typeof productionRunMaintainerBatch
+  notifyProgress: (progress: BackfillProgress) => void
+}
+
+export interface TableRefillLifecycle {
+  start(profileId: string, chatId: string, opts?: RefillOpts): Promise<RefillRunHandle>
+  resume(profileId: string, chatId: string, extra?: RefillResumeOpts): Promise<RefillRunHandle>
+  cancel(chatId: string): void
+  discard(profileId: string, chatId: string): void
+  state(chatId: string): { run: RefillRunState | null; persisted: RefillProgressRow | null }
 }
 
 // ---- effective cutpoint (shared engine ↔ UI) ------------------------------------------------
@@ -529,11 +585,13 @@ export const effectiveRefillFrom = (
  * token-owned write guard, writes the `in_progress` progress row, then runs ASYNCHRONOUSLY — progress
  * streams via `notifyBackfillProgress` (`kind:'refill'`). Returns once the run has started.
  */
-export const startRefill = async (
+const startRefillFor = async (
+  runs: RefillRunMap,
+  adapters: TableRefillLifecycleAdapters,
   profileId: string,
   chatId: string,
   opts: RefillOpts = {}
-): Promise<void> => {
+): Promise<RefillRunHandle> => {
   if (runs.get(chatId)?.state.running) throw new Error('tables.refillAlreadyRunning')
 
   const templateId = getChatTableTemplateId(profileId, chatId)
@@ -617,10 +675,12 @@ export const startRefill = async (
 
     runs.set(chatId, entry)
     upsertRefillProgress(chatId, selected, from, -1, 'in_progress')
+    registerTranscriptActiveRun(chatId, entry)
 
     // Kick off the async run; do NOT await it (the IPC caller returns immediately). An async call
     // never throws synchronously, so nothing after this point needs the fence.
-    void runRefill(
+    const completion = runRefill(
+      adapters,
       profileId,
       chatId,
       gen,
@@ -636,7 +696,8 @@ export const startRefill = async (
       entry.state,
       controller.signal,
       epoch0
-    )
+    ).finally(() => unregisterTranscriptActiveRun(chatId, entry))
+    return { completion }
   } catch (error) {
     endTableWrite(chatId, token) // never leak the guard on a start-time failure
     if (runs.get(chatId) === entry) runs.delete(chatId) // only OUR entry, never a successor's
@@ -678,18 +739,22 @@ const commitChunk = (
   return opsWatermark(chatId)
 }
 
-const emit = (p: {
-  chatId: string
-  batchIndex: number
-  batchCount: number
-  span: BatchSpan | null
-  status: 'running' | 'batch-ok' | 'batch-failed' | 'done' | 'cancelled' | 'error'
-  message?: string
-  completedUntil: number
-}): void => notifyBackfillProgress({ kind: 'refill', ...p })
+const emit = (
+  notifyProgress: TableRefillLifecycleAdapters['notifyProgress'],
+  p: {
+    chatId: string
+    batchIndex: number
+    batchCount: number
+    span: BatchSpan | null
+    status: 'running' | 'batch-ok' | 'batch-failed' | 'done' | 'cancelled' | 'error'
+    message?: string
+    completedUntil: number
+  }
+): void => notifyProgress({ kind: 'refill', ...p })
 
 /** The async refill body: shadow build → ascending batches, each its own commit chunk + publish. */
 const runRefill = async (
+  adapters: TableRefillLifecycleAdapters,
   profileId: string,
   chatId: string,
   gen: GenContext,
@@ -705,7 +770,7 @@ const runRefill = async (
   state: RefillRunState,
   signal: AbortSignal,
   epoch0: number
-): Promise<void> => {
+): Promise<RefillRunOutcome> => {
   const selectedSet = new Set(selected)
   const shadow = refillShadowPath(profileId, chatId)
   const globalDefault = getSettings(profileId).tables?.default_update_frequency ?? 3
@@ -714,7 +779,7 @@ const runRefill = async (
     .map((t) => t.displayName)
   const allowed = templateSqlNames(template)
 
-  emit({
+  emit(adapters.notifyProgress, {
     chatId,
     batchIndex: -1,
     batchCount: spans.length,
@@ -790,7 +855,7 @@ const runRefill = async (
 
       let applied: boolean
       try {
-        applied = await runMaintainerBatch(gen, messages, retries, signal, apply)
+        applied = await adapters.runMaintainerBatch(gen, messages, retries, signal, apply)
       } catch (error) {
         // Exhausted retries / API give-up: STOP the run (stop-and-resume, NOT backfill's continue —
         // the tail is already cut, so a skipped span would become a permanent, non-resumable hole).
@@ -799,7 +864,7 @@ const runRefill = async (
         state.failures.push({ span, reason })
         failedReason = reason
         log('info', `refill batch ${span.from}-${span.to} failed (chat ${chatId}): ${reason}`)
-        emit({
+        emit(adapters.notifyProgress, {
           chatId,
           batchIndex: i,
           batchCount: spans.length,
@@ -810,7 +875,7 @@ const runRefill = async (
         })
         break
       }
-      if (!applied) break // cancelled mid-batch: leave uncommitted
+      if (!applied || signal.aborted) break // cancelled mid-batch: leave uncommitted
 
       // Commit-ordering backstop: if the heartbeat EVER reported a lost slot during the await above,
       // STOP before writing — this iteration's commitChunk would otherwise run before the next loop-top
@@ -848,7 +913,7 @@ const runRefill = async (
         rebuildSandboxUnguarded(profileId, chatId, template)
       }
 
-      emit({
+      emit(adapters.notifyProgress, {
         chatId,
         batchIndex: i,
         batchCount: spans.length,
@@ -872,7 +937,7 @@ const runRefill = async (
       // = the last GOOD chunk; pointers untouched) so Resume retries exactly what didn't commit.
       // Only the shadow is dropped. A failed batch MUST NOT fall through into FINALIZE.
       removeShadow(profileId, chatId)
-      emit({
+      emit(adapters.notifyProgress, {
         chatId,
         batchIndex: state.batchIndex,
         batchCount: spans.length,
@@ -881,14 +946,14 @@ const runRefill = async (
         ...(outcome.message !== undefined ? { message: outcome.message } : {}),
         completedUntil: state.completedUntil
       })
-      return
+      return outcome
     }
 
     // FINALIZE (clean full run only): refilled ⇒ current; drop the resume record + shadow.
     advanceProgress(profileId, chatId, selected, latest)
     deleteRefillProgress(chatId)
     removeShadow(profileId, chatId)
-    emit({
+    emit(adapters.notifyProgress, {
       chatId,
       batchIndex: state.batchIndex,
       batchCount: spans.length,
@@ -896,6 +961,7 @@ const runRefill = async (
       status: 'done',
       completedUntil: state.completedUntil
     })
+    return outcome
   } catch (error) {
     // FAILURE/ABORT: committed chunks + the 'in_progress' progress row STAY (paid work is never thrown
     // away — Resume starts from completed_until + 1); drop the shadow.
@@ -903,7 +969,7 @@ const runRefill = async (
     removeShadow(profileId, chatId)
     const reason = error instanceof Error ? error.message : String(error)
     log('info', `refill run failed (chat ${chatId}): ${reason}`)
-    emit({
+    emit(adapters.notifyProgress, {
       chatId,
       batchIndex: state.batchIndex,
       batchCount: spans.length,
@@ -912,6 +978,7 @@ const runRefill = async (
       message: reason,
       completedUntil: state.completedUntil
     })
+    return { status: 'error', finalize: false, message: reason }
   } finally {
     heartbeat.stop() // stop the guard heartbeat before the token release below.
     // The refill race: floors were truncated mid-run → truncateFloors' own guarded rebuild SELF-SKIPPED
@@ -933,16 +1000,55 @@ const runRefill = async (
  * SAME tables from `completed_until + 1` (the op-log composes exactly). Rejects when there is no
  * interrupted refill to resume or one is already running. `extra` may override the api preset / retries.
  */
+const createTableRefillLifecycleWithRuns = (
+  adapters: TableRefillLifecycleAdapters,
+  runs: RefillRunMap
+): TableRefillLifecycle => ({
+  start: (profileId, chatId, opts = {}) => startRefillFor(runs, adapters, profileId, chatId, opts),
+  resume: async (profileId, chatId, extra = {}) => {
+    const row = getRefillProgress(chatId)
+    if (!row || row.status !== 'in_progress') throw new Error('tables.refillNothingToResume')
+    return startRefillFor(runs, adapters, profileId, chatId, {
+      tables: row.selected,
+      fromFloor: resumeRefillFrom(row.fromFloor, row.completedUntil),
+      ...extra
+    })
+  },
+  cancel: (chatId) => {
+    runs.get(chatId)?.controller.abort()
+  },
+  discard: (profileId, chatId) => {
+    if (runs.get(chatId)?.state.running) throw new Error('tables.refillRunning')
+    deleteRefillProgress(chatId)
+    removeShadow(profileId, chatId)
+  },
+  state: (chatId) => refillStateFor(runs, chatId)
+})
+
+export const createTableRefillLifecycle = (
+  adapters: TableRefillLifecycleAdapters
+): TableRefillLifecycle => createTableRefillLifecycleWithRuns(adapters, new Map())
+
+const productionLifecycle = createTableRefillLifecycleWithRuns(
+  {
+    runMaintainerBatch: productionRunMaintainerBatch,
+    notifyProgress: productionNotifyBackfillProgress
+  },
+  productionRuns
+)
+
+export const startRefill = async (
+  profileId: string,
+  chatId: string,
+  opts: RefillOpts = {}
+): Promise<void> => {
+  await productionLifecycle.start(profileId, chatId, opts)
+}
+
 export const resumeRefill = async (
   profileId: string,
   chatId: string,
-  extra: { apiPresetId?: string; retries?: number; extraHint?: string; batchSize?: number } = {}
+  extra: RefillResumeOpts = {}
 ): Promise<void> => {
-  const row = getRefillProgress(chatId)
-  if (!row || row.status !== 'in_progress') throw new Error('tables.refillNothingToResume')
-  await startRefill(profileId, chatId, {
-    tables: row.selected,
-    fromFloor: resumeRefillFrom(row.fromFloor, row.completedUntil),
-    ...extra
-  })
+  await productionLifecycle.resume(profileId, chatId, extra)
 }

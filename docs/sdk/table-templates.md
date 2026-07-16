@@ -373,6 +373,22 @@ the transcript, built as a **generalized backfill** (per-BATCH attribution: each
 to its `span.to` via `appendOpsAt`, and carrying its `span.from` as `from_floor` provenance, not a collapse
 to one floor) on a temp **shadow sandbox**:
 
+**Lifecycle interface and compatibility adapter.** `createTableRefillLifecycle({ runMaintainerBatch,
+notifyProgress })` creates an isolated lifecycle instance with `start`, `resume`, `cancel`, `discard`, and
+`state` methods. Each instance owns its live run map, abort controllers, and snapshots. `start` and
+`resume` return a `RefillRunHandle`; its `completion` promise resolves to the terminal
+`RefillRunOutcome` (`done` with `finalize:true`, or `cancelled`/`error` with `finalize:false`). The
+production exports remain the compatibility surface: `startRefill` and `resumeRefill` validate and launch
+through one production lifecycle instance but return once the run starts, while `cancelRefill`,
+`discardRefill`, and `getRefillState` delegate to that same instance. IPC timing and user behavior are
+unchanged.
+
+Only the external maintainer/model call and progress notification sink are adapters. Transcript storage,
+session SQLite, table sandboxes, op-log replay, progress pointers, and template lookup use their production
+implementations. Durable `table_refill_progress`, committed `table_ops`, final `table_progress`, and the
+published sandbox files are authoritative; lifecycle snapshots and progress events are projections of
+that state.
+
 1. **Guard + gates.** Claim the token-owned write guard; capture the op-log watermark (`opsWatermark` =
    `MAX(rowid)` for the chat). A partial refill (`from > 0`) of a table carrying a `source='baseline'`
    op (a structural re-baseline) is REJECTED with `tables.refillNeedsFull` (`refillBaselineBlocked`) —
@@ -444,6 +460,15 @@ with `kind:'refill'` (+ `completedUntil`). Pure decision helpers (unit-tested):
 `shouldReplayIntoShadow`, `partitionBySelected`, `defaultRefillFrom`, `refillBaselineBlocked`,
 `watermarkMoved`, `resumeRefillFrom`, `planChunkCommit`, `refillRunOutcome`, `refillProgressAfterCut`,
 `refillProgressAfterEdit`.
+
+**Lifecycle testing stance.** `test/tableRefillLifecycle.test.ts` drives the instance interface against
+real workspace-local files and real SQLite through the Node `better-sqlite3` compatibility adapter. It
+asserts published rows, committed refill ops and floor attribution, durable resume/frontier state,
+cancellation, discard, transcript-staleness recovery, and terminal outcomes. The maintainer batch runner
+is scripted because it is the external model seam; progress events are recorded only to check agreement
+with durable state. `test/tableRefill.test.ts` retains focused pure coverage for reusable algorithms and
+hard edge matrices such as chained cutpoint widening, progress adjustment, terminal precedence, and
+heartbeat-gap detection.
 
 ### Nodes (`src/main/services/nodes/builtin/`)
 
