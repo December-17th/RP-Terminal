@@ -92,13 +92,15 @@ export const listPresetNames = (profileId: string): string[] =>
   listPresets(profileId).map((p) => p.name)
 
 /** regex.format — apply the active display (markdown) regex to an arbitrary string
- *  (TH formatAsTavernRegexedString). */
+ *  (TH formatAsTavernRegexedString). Freezes card payloads (last arg) to match the inline transport's
+ *  `regexStore.apply` — both are the display-format surface, and the card runtime must not drift. */
 export const formatWithRegex = (
   profileId: string,
   ctx: ScopeContext | undefined,
   text: unknown,
   macroCtx?: { user?: string; char?: string }
-): string => applyRegex(String(text ?? ''), getRenderRules(profileId, ctx), 2, macroCtx || {})
+): string =>
+  applyRegex(String(text ?? ''), getRenderRules(profileId, ctx), 2, macroCtx || {}, undefined, true)
 
 /** regex.list — the active display regex scripts (find/replace summaries). */
 export const listRegexes = (

@@ -235,8 +235,11 @@ export const applyRegex = (
   placement: number,
   ctx: RegexApplyContext = {},
   /** Message depth (0 = latest turn) for ST depth-scoped rules; omit to disable depth-scoping. */
-  depth?: number
-): string => applyRegexRules(text, rules, ctx, { placement, depth })
+  depth?: number,
+  /** DISPLAY callers only (see regexTransform `freezePayloads`): make injected card payloads opaque to
+   *  later rules. The prompt-assembly callers (promptBuilder) omit it so prompts stay byte-identical. */
+  freezePayloads?: boolean
+): string => applyRegexRules(text, rules, ctx, { placement, depth, freezePayloads })
 
 export const listScripts = (profileId: string): RegexScriptInfo[] => {
   const dir = regexDir(profileId)
