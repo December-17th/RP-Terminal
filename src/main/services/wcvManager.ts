@@ -293,8 +293,10 @@ export const ensure = (
     // view doesn't paint over it. No freeze-frame: it wasn't on screen to capture.
     freezeController.onTargetCreated(freezeTargetFor(id, slot))
     mainWindow.contentView.addChildView(view)
-    attachWcvUnsquashCompat(view.webContents, (processId, routingId) =>
-      webFrameMain.fromId(processId, routingId)
+    attachWcvUnsquashCompat(
+      view.webContents,
+      (processId, routingId) => webFrameMain.fromId(processId, routingId),
+      (error) => log('error', 'wcv: unsquash compatibility injection failed', String(error))
     )
     view.webContents.loadURL(loadUrl) // html must be on the slot first — the scheme handler reads it
     // Pre-cache this view's freeze-frame once it has painted, so the first menu-open can hide it

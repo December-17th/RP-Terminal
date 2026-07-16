@@ -88,4 +88,68 @@ describe('createThRuntime character variables', () => {
     expect(await runtime.deleteVariable('a/b~c')).toBe(true)
     expect(host.applyVariableOps).toHaveBeenCalledWith([{ op: 'remove', path: '/a~1b~0c' }])
   })
+
+  it('does not report prototype-chain properties as deleted', async () => {
+    const inherited = Object.create({ inherited: 1 })
+    const host = fakeHost({
+      statData: () => inherited,
+      getScriptVars: () => inherited
+    })
+    const runtime = createThRuntime(host)
+
+    expect(await runtime.deleteVariable('inherited')).toBe(false)
+    expect(await runtime.deleteVariable('inherited', { type: 'character' })).toBe(false)
+    expect(host.applyVariableOps).not.toHaveBeenCalled()
+    expect(host.setScriptVars).not.toHaveBeenCalled()
+  })
+
+  it('deletes dotted paths from card, chat, global, and default scopes', async () => {
+    const host = fakeHost({
+      statData: () => ({ player: { stats: { hp: 10, mp: 5 } } }),
+      getScriptVars: () => ({ settings: { theme: 'dark', accent: 'blue' } }),
+      getChatVars: () => ({ session: { draft: 'text', turn: 3 } }),
+      getGlobalVarsSync: () => ({ preferences: { locale: 'en', density: 'compact' } }),
+      setChatVars: vi.fn(async () => {}),
+      setGlobalVars: vi.fn(async () => {})
+    })
+    const runtime = createThRuntime(host)
+
+    expect(await runtime.deleteVariable('settings.theme', { type: 'character' })).toBe(true)
+    expect(host.setScriptVars).toHaveBeenCalledWith({ settings: { accent: 'blue' } })
+
+    expect(await runtime.deleteVariable('session.draft', { type: 'chat' })).toBe(true)
+    expect(host.setChatVars).toHaveBeenCalledWith({ session: { turn: 3 } })
+
+    expect(await runtime.deleteVariable('preferences.locale', { type: 'global' })).toBe(true)
+    expect(host.setGlobalVars).toHaveBeenCalledWith({ preferences: { density: 'compact' } })
+
+    expect(await runtime.deleteVariable('player.stats.hp')).toBe(true)
+    expect(runtime.getVariables()).toEqual({ stat_data: { player: { stats: { mp: 5 } } } })
+    expect(host.applyVariableOps).toHaveBeenCalledWith([{ op: 'remove', path: '/player/stats/hp' }])
+  })
+
+  it('deletes bracketed array paths and rejects malformed paths', async () => {
+    const host = fakeHost({
+      statData: () => ({ players: [{ stats: { hp: 10, mp: 5 } }] }),
+      getScriptVars: () => ({ characters: [{ secret: 'x', visible: true }] })
+    })
+    const runtime = createThRuntime(host)
+
+    expect(await runtime.deleteVariable('characters[0].secret', { type: 'character' })).toBe(true)
+    expect(host.setScriptVars).toHaveBeenCalledWith({ characters: [{ visible: true }] })
+
+    expect(await runtime.deleteVariable('players[0].stats.hp')).toBe(true)
+    expect(runtime.getVariables()).toEqual({
+      stat_data: { players: [{ stats: { mp: 5 } }] }
+    })
+    expect(host.applyVariableOps).toHaveBeenCalledWith([
+      { op: 'remove', path: '/players/0/stats/hp' }
+    ])
+
+    host.applyVariableOps.mockClear()
+    expect(await runtime.deleteVariable('players[]')).toBe(false)
+    expect(await runtime.deleteVariable('players..0')).toBe(false)
+    expect(await runtime.deleteVariable('')).toBe(false)
+    expect(host.applyVariableOps).not.toHaveBeenCalled()
+  })
 })

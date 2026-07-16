@@ -13,22 +13,41 @@ export function installUnsquashCompat(win: Window): void {
   if (state[stateKey]) return
   state[stateKey] = true
 
-  const floored = new WeakSet<Element>()
+  const floored = new WeakMap<Element, { value: string; priority: string }>()
   const pass = (): void => {
     const body = win.document?.body
     if (!body) return
     for (const el of Array.from(body.querySelectorAll('*'))) {
-      if (floored.has(el)) continue
+      const originalMinHeight = floored.get(el)
       const parent = el.parentElement
-      if (!parent) continue
-      const parentStyle = win.getComputedStyle(parent)
-      if (!parentStyle.display.includes('flex')) continue
-      if (!parentStyle.flexDirection.startsWith('column')) continue
+      const parentStyle = parent ? win.getComputedStyle(parent) : null
       const overflowY = win.getComputedStyle(el).overflowY
-      if (overflowY === 'auto' || overflowY === 'scroll') continue
-      if (el.scrollHeight <= el.clientHeight + 2) continue
-      ;(el as HTMLElement).style.setProperty('min-height', 'fit-content', 'important')
-      floored.add(el)
+      const eligible =
+        !!parentStyle &&
+        parentStyle.display.includes('flex') &&
+        parentStyle.flexDirection.startsWith('column') &&
+        overflowY !== 'auto' &&
+        overflowY !== 'scroll' &&
+        el.scrollHeight > el.clientHeight + 2
+      const style = (el as HTMLElement).style
+      const currentMinHeight = {
+        value: style.getPropertyValue('min-height'),
+        priority: style.getPropertyPriority('min-height')
+      }
+      const hasCompatOverride =
+        currentMinHeight.value === 'fit-content' && currentMinHeight.priority === 'important'
+      if (eligible) {
+        if (!originalMinHeight || !hasCompatOverride) floored.set(el, currentMinHeight)
+        if (!hasCompatOverride) style.setProperty('min-height', 'fit-content', 'important')
+        continue
+      }
+      if (!originalMinHeight) continue
+      if (hasCompatOverride) {
+        if (originalMinHeight.value)
+          style.setProperty('min-height', originalMinHeight.value, originalMinHeight.priority)
+        else style.removeProperty('min-height')
+      }
+      floored.delete(el)
     }
   }
 

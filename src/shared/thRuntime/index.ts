@@ -7,7 +7,7 @@ import {
   diffSetOps,
   applySetOps,
   replaceStatDataOps,
-  keyPointer,
+  toPointer,
   type VarOp
 } from './ops'
 import { nativeToThEntry, thToNativeEntry } from './worldbookEntry'
@@ -33,13 +33,32 @@ const MVU_EVENTS = {
   VARIABLE_UPDATED: 'mag_variable_updated'
 }
 
-const getByPath = (root: any, path: string): any =>
-  String(path)
-    .split('.')
-    .filter(Boolean)
-    .reduce((o, k) => (o == null ? undefined : o[k]), root)
+const parsePath = (path: string): string[] | null => {
+  const value = String(path)
+  if (!/^[^.[\]]+(?:(?:\.[^.[\]]+)|(?:\[[^.[\]]+\]))*$/.test(value)) return null
+  return value.match(/[^.[\]]+/g)
+}
+
+const getByPath = (root: any, path: string): any => {
+  const parts = parsePath(path)
+  return parts?.reduce((o, k) => (o == null ? undefined : o[k]), root)
+}
 
 const clone = (v: any): any => (v === undefined ? v : JSON.parse(JSON.stringify(v)))
+const hasOwn = (value: object, key: PropertyKey): boolean =>
+  Object.prototype.hasOwnProperty.call(value, key)
+const deleteOwnPath = (root: object, path: string): boolean => {
+  const parts = parsePath(path)
+  if (!parts) return false
+  let current: any = root
+  for (const part of parts.slice(0, -1)) {
+    if (!current || typeof current !== 'object' || !hasOwn(current, part)) return false
+    current = current[part]
+  }
+  const leaf = parts[parts.length - 1]
+  if (!current || typeof current !== 'object' || !hasOwn(current, leaf)) return false
+  return delete current[leaf]
+}
 
 export function createThRuntime(host: Host, opts?: { chatScope?: CardChatScope }): ThGlobals {
   // --- panel chat scope (chat-READ-only) ---
@@ -502,18 +521,16 @@ export function createThRuntime(host: Host, opts?: { chatScope?: CardChatScope }
                 ? host.getGlobalVarsSync()
                 : host.getScriptVars()
           ) || {}
-        if (!(k in current)) return false
-        delete current[k]
+        if (!deleteOwnPath(current, k)) return false
         if (type === 'chat') await host.setChatVars(current)
         else if (type === 'global') await host.setGlobalVars(current)
         else await host.setScriptVars(current)
         return true
       }
-      if (!stat || typeof stat !== 'object' || !(k in stat)) return false
       const next = clone(stat) || {}
-      delete next[k]
+      if (!deleteOwnPath(next, k)) return false
       stat = next
-      await writeVars([{ op: 'remove', path: keyPointer(k) }])
+      await writeVars([{ op: 'remove', path: toPointer(parsePath(k)!.join('.')) }])
       return true
     },
     generate: async (a: any) => {
