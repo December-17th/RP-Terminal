@@ -85,8 +85,9 @@ the installed count ([`characterService.ts`](../../src/main/services/characterSe
 Bundled templates are **library-drop only**: import never assigns one to the new chat because
 `setChatTableTemplateId` recreates the per-chat sandbox and assignment is destructive. When enabled by
 `settings.tables.remind_set_template` (default on), creating a chat opens the localized template
-reminder; its primary action surfaces the Tables view so the user can inspect and assign the intended
-template ([`chatStore.ts`](../../src/renderer/src/stores/chatStore.ts),
+reminder; its primary action opens the full-window Memory Manager so the user can inspect and assign the
+intended template, including when a card owns the play area with a static layout
+([`chatStore.ts`](../../src/renderer/src/stores/chatStore.ts),
 [`TableTemplateReminderModal.tsx`](../../src/renderer/src/components/TableTemplateReminderModal.tsx)).
 Updating an already-installed World Card does not reinstall its bundled templates: templates are
 profile-library artifacts without world ownership, so reinstalling them on every card update would

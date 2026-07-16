@@ -4,12 +4,12 @@
 // re-instantiates the sandbox), so a card's bundled template is dropped into the library on import
 // but never auto-assigned. This popup nudges the user to pick one for the new session. It is opened by
 // chatStore.createChat when the reminder setting is on (a brand-new session never carries a template);
-// the primary action surfaces the Tables view, and "don't remind me" flips the global setting off.
+// the primary action opens the Memory Manager, and "don't remind me" flips the global setting off.
 import React from 'react'
 import { Modal } from './Modal'
 import { useChatStore } from '../stores/chatStore'
 import { useSettingsStore } from '../stores/settingsStore'
-import { useWorkspaceStore } from '../stores/workspaceStore'
+import { useUiStore } from '../stores/uiStore'
 import { useT } from '../i18n'
 
 export function TableTemplateReminderModal({
@@ -21,14 +21,14 @@ export function TableTemplateReminderModal({
   const dismiss = useChatStore((s) => s.dismissTemplateReminder)
   const settings = useSettingsStore((s) => s.settings)
   const updateSettings = useSettingsStore((s) => s.updateSettings)
-  const ensureLeftPanel = useWorkspaceStore((s) => s.ensureLeftPanel)
+  const openMemoryManager = useUiStore((s) => s.openMemoryManager)
   const t = useT()
 
   if (!open) return null
 
-  // Surface the Tables view (injects a left panel across modes — the same path Assets/Variables use).
-  const openTables = (): void => {
-    ensureLeftPanel('tables')
+  // The full-window manager layers above both configurable and card-owned static workspaces.
+  const openMemory = (): void => {
+    openMemoryManager()
     dismiss()
   }
 
@@ -65,8 +65,8 @@ export function TableTemplateReminderModal({
           <button className="btn-ghost" onClick={dismiss}>
             {t('tableReminder.notNow')}
           </button>
-          <button className="btn-accent" onClick={openTables}>
-            {t('tableReminder.openTables')}
+          <button className="btn-accent" onClick={openMemory}>
+            {t('tableReminder.openMemory')}
           </button>
         </div>
       </div>

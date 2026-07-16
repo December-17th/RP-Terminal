@@ -123,8 +123,8 @@ const en: Record<string, string> = {
   // New-session memory-table reminder popup (TableTemplateReminderModal)
   'tableReminder.title': 'Set a memory table template?',
   'tableReminder.body':
-    'This session has no memory table template assigned. Table memory keeps a structured, running record of your story that the AI updates each turn. Assign one in the Tables view to enable it.',
-  'tableReminder.openTables': 'Open Tables view',
+    'This session has no memory table template assigned. Table memory keeps a structured, running record of your story that the AI updates each turn. Assign one in the Memory Manager to enable it.',
+  'tableReminder.openMemory': 'Open Memory Manager',
   'tableReminder.notNow': 'Not now',
   'tableReminder.dontRemind': "Don't remind me again",
   'settings.regex': 'Regex',
