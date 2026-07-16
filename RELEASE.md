@@ -4,9 +4,9 @@ RP Terminal is distributed to Windows users as one no-install x64 executable att
 Release. Users do not need Git, Node.js, npm, or a source checkout. Updates are manual: close the app,
 download the newer executable, and replace the old one.
 
-The first public release remains blocked on choosing and adding the project's own `LICENSE`. Windows
-code signing is not configured; until it is, release notes and the README must continue to warn that
-SmartScreen may flag the executable.
+The project license is intentionally deferred for the initial release; third-party components retain
+their licenses and notices. Windows code signing is not configured, so release notes and the README
+must continue to warn that SmartScreen may flag the executable.
 
 ## Release procedure
 
