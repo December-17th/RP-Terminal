@@ -4,6 +4,7 @@ const en: Record<string, string> = {
   'nav.preset': 'Preset',
   'nav.lorebook': 'Lorebook',
   'nav.assets': 'Assets',
+  'characterImport.cartridgeWarning': 'Card panels not installed: {{error}}',
   'assets.heading': 'Assets',
   'assets.selectWorld': 'Select a World first.',
   'assets.openFolder': 'Open folder',

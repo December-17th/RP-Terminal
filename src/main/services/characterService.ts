@@ -295,6 +295,12 @@ export interface ImportSummary {
   pluginsSkipped: number
   /** Images extracted from an optional asset zip supplied at import time. */
   assetsImported: number
+  /**
+   * Set when the card declares `card-code:` panels but its code cartridge did NOT install (missing /
+   * truncated appended ZIP, rejected archive, or extraction failure). The import itself still succeeds —
+   * this is surfaced so the UI can warn at import time instead of the panels 404ing later with no clue.
+   */
+  cartridgeError?: string
 }
 
 export interface ImportResult {
@@ -373,6 +379,16 @@ export const summarizeCardBundle = (parsed: ParsedCard): ImportSummary => {
     pluginsSkipped: Array.isArray(rpt?.plugins) ? rpt.plugins.length : 0,
     assetsImported: 0
   }
+}
+
+/**
+ * True when the card's `panel_ui` declares any `card-code:` slot/overlay entry — i.e. its panels are
+ * served from the extracted PNG cartridge and are dead (404) unless the cartridge installs.
+ */
+export const cardDeclaresCardCode = (card: RPTerminalCard): boolean => {
+  const ui = getRpExt(card)?.panel_ui
+  const entries = [...(ui?.slots ?? []), ...(ui?.overlays ?? [])]
+  return entries.some((e) => typeof e?.entry === 'string' && e.entry.startsWith('card-code:'))
 }
 
 /** True when a card carries enough of a bundle to warrant the install confirm. */
@@ -460,6 +476,8 @@ interface BundleCounts {
   workflows: number
   tableTemplates: number
   assetsImported: number
+  /** See {@link ImportSummary.cartridgeError}. */
+  cartridgeError?: string
 }
 
 /**
@@ -547,6 +565,10 @@ const installBundleArtifacts = (
     }
   }
 
+  // A card whose panel_ui points at `card-code:` entries NEEDS the cartridge — record (don't swallow)
+  // any install failure so the import summary can warn, instead of the panels 404ing later with no clue.
+  const needsCartridge = cardDeclaresCardCode(card)
+  let cartridgeError: string | undefined
   if (path.extname(filePath).toLowerCase() === '.png') {
     ensureDir(getAvatarsDir())
     fs.copyFileSync(filePath, getAvatarPath(characterId))
@@ -566,11 +588,28 @@ const installBundleArtifacts = (
       const zipBytes = extractAppendedZip(filePath)
       if (zipBytes) {
         const res = installCartridgeCode(profileId, characterId, zipBytes)
-        if (res.error) log('info', `Cartridge code not imported: ${res.error}`)
+        if (res.error) {
+          cartridgeError = res.error
+          log(needsCartridge ? 'error' : 'info', `Cartridge code not imported: ${res.error}`)
+        }
+      } else if (needsCartridge) {
+        // The card declares card-code panels but the PNG has NO appended code archive: the file was
+        // re-encoded / truncated in transfer, or exported without its cartridge. Silent before —
+        // the single most confusing failure (panels 404 while everything else works).
+        cartridgeError =
+          'the PNG has no appended code archive (file may have been re-saved or truncated in transfer)'
+        log('error', `Cartridge code not imported: ${cartridgeError}`)
       }
     } catch (e) {
+      cartridgeError = 'cartridge extraction failed (see log)'
       log('error', 'Cartridge code import failed (card import continues):', e)
     }
+  } else if (needsCartridge) {
+    // e.g. a .json import of a card whose panels live in the PNG cartridge (also hit by an in-place
+    // UPDATE from .json, which clears the previously-extracted code).
+    cartridgeError =
+      'this card’s panels require importing the full PNG card (a JSON import carries no code archive)'
+    log('error', `Cartridge code not imported: ${cartridgeError}`)
   }
 
   let assetsImported = 0
@@ -589,7 +628,8 @@ const installBundleArtifacts = (
     lorebooks,
     workflows,
     tableTemplates,
-    assetsImported
+    assetsImported,
+    cartridgeError
   }
 }
 
@@ -606,6 +646,7 @@ const buildImportSummary = (parsed: ParsedCard, counts: BundleCounts): ImportSum
   summary.workflows = counts.workflows
   summary.tableTemplates = counts.tableTemplates
   summary.assetsImported = counts.assetsImported
+  summary.cartridgeError = counts.cartridgeError
   return summary
 }
 
@@ -651,7 +692,7 @@ export const importCharacterFromFile = (
 /**
  * UPDATE an existing world in place from a re-imported card, KEEPING its chats/saves (plan §B7 / Feature
  * 1). Overwrites the card blob + avatar + (when the new card carries one) the character lorebook, CLEARS
- * the old world-scoped regex/scripts/cartridge, then re-installs the bundle against the SAME id. Chats,
+ * the old world-scoped regex/scripts, then re-installs the bundle against the SAME id. Chats,
  * floors and memory are untouched — they key on `characterId`, which is preserved. Details:
  *  - A new card with NO character_book leaves the existing lorebook in place (non-destructive).
  *  - Overwriting the lorebook stales cached L2 world-info on this world's chats → that cache is cleared
@@ -683,11 +724,12 @@ export const updateCharacterInPlace = (
       .run(profileId, characterId)
 
     // Clear the OLD world-scoped artifacts before re-installing (mirrors deleteCharacter's cleanup), so a
-    // script/regex removed or renamed in the new card version doesn't linger as an orphan.
+    // script/regex removed or renamed in the new card version doesn't linger as an orphan. Card code is
+    // replaced by installCartridgeCode only after the incoming archive validates; retaining it here keeps
+    // a rejected or archive-less update from destroying a working installation.
     regexService.deleteScriptsByOwner(profileId, 'world', characterId)
     scriptService.deleteScriptsByOwner(profileId, 'world', characterId)
     cardWorkflowHooks?.deleteWorkflowsByOwner(profileId, characterId)
-    deleteCardCode(profileId, characterId)
 
     const counts = installBundleArtifacts(profileId, characterId, card, filePath, assetZipPath, {
       installExtraLorebooks: false,

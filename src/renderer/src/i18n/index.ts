@@ -37,6 +37,11 @@ export function translate(
   return s
 }
 
+/** Imperative translation for stores and other code that cannot use a React hook. */
+export function t(key: string, vars?: Record<string, string | number>): string {
+  return translate(useI18nStore.getState().locale, key, vars)
+}
+
 /** Hook: a `t(key, vars?)` bound to the current locale (re-renders subscribers when it changes). */
 export function useT(): (key: string, vars?: Record<string, string | number>) => string {
   const locale = useI18nStore((s) => s.locale)

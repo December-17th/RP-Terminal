@@ -1,10 +1,30 @@
 import { ElectronAPI } from '@electron-toolkit/preload'
 import type { StoredRunRecord } from '../shared/workflow/trace'
 
+interface CharacterImportDialogResult {
+  id: string
+  summary: {
+    name: string
+    isWorldCard: boolean
+    regexScripts: number
+    loreEntries: number
+    scripts: number
+    uiWidgets: number
+    presets: number
+    lorebooks: number
+    workflows: number
+    tableTemplates: number
+    pluginsSkipped: number
+    assetsImported: number
+    cartridgeError?: string
+  }
+}
+
 declare global {
   interface Window {
     electron: ElectronAPI
     api: any & {
+      importCharacterDialog: (profileId: string) => Promise<CharacterImportDialogResult | null>
       backfillUsageMetrics: (profileId: string, chatId: string) => Promise<unknown[]>
       // Feature 2 — save (session) export/import. export → { name } | { error } | null (cancel);
       // import → { chatId } | { error, worldName? } | null (cancel).
