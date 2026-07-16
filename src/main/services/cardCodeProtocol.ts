@@ -112,6 +112,23 @@ export type CardServeResult =
   | { kind: 'error'; status: number; message: string }
 
 /**
+ * 404 body when the card's code root is missing or empty — i.e. the cartridge never installed (the
+ * import-side extraction failed, or the PNG lost its appended archive in transfer). The error body IS
+ * what the WCV panel renders, so it must self-diagnose instead of a bare "Not Found".
+ */
+export const CODE_NOT_INSTALLED_MESSAGE =
+  'Card code not installed — re-import this world from its original full card PNG'
+
+/** True when the code root has no installed cartridge at all (dir absent or empty). */
+const codeRootMissing = (codeDir: string): boolean => {
+  try {
+    return !fs.existsSync(codeDir) || fs.readdirSync(codeDir).length === 0
+  } catch {
+    return true
+  }
+}
+
+/**
  * Route a raw `rpt-card://` request URL to a {@link CardServeResult}. Pure: all side-effecting
  * capabilities (slot HTML, the origin registry, the trust getter) arrive via {@link CardServeDeps}.
  */
@@ -137,7 +154,17 @@ export const serveCardCode = (rawUrl: string, deps: CardServeDeps): CardServeRes
   // Fail-closed: undecided or untrusted card code is never served (main-side boundary).
   if (!deps.isTrusted(origin)) return { kind: 'error', status: 403, message: 'Forbidden' }
   const abs = resolveCardCodePath(origin.codeDir, url.pathname)
-  if (!abs) return { kind: 'error', status: 404, message: 'Not Found' }
+  if (!abs) {
+    // Distinguish "no cartridge was ever installed" (the import-side extraction failed / the PNG lost
+    // its appended archive) from a merely-missing file in an installed tree, so the panel shows an
+    // actionable message. Same 404 status either way; no extra information is exposed (the card's own
+    // code is the only requester on this origin).
+    return {
+      kind: 'error',
+      status: 404,
+      message: codeRootMissing(origin.codeDir) ? CODE_NOT_INSTALLED_MESSAGE : 'Not Found'
+    }
+  }
   const contentType = mimeForPath(abs)
   // HTML documents keep the card CSP; sub-resources are served with their true MIME (no forced html).
   return {

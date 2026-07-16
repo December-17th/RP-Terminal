@@ -77,6 +77,11 @@ export const useCharacterStore = create<CharacterState>((set) => ({
             ? `Imported “${s.name}” — installed ${parts.join(', ')}`
             : `Imported “${s.name}”`
         )
+      // The card's panels are served from its PNG code cartridge; if that failed to install, say so
+      // NOW — otherwise the first symptom is every panel rendering a bare 404 later.
+      if (s.cartridgeError) {
+        useToastStore.getState().push(`⚠ Card panels not installed: ${s.cartridgeError}`)
+      }
       // Bundled regex landed in the profile store — refresh the regex views so the
       // new scripts appear and the active chat picks up any display rules.
       if (s.regexScripts) {

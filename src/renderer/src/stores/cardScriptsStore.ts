@@ -55,9 +55,20 @@ export const useCardScriptsStore = create<CardScriptsState>((set) => ({
   },
 
   // Grant (or revoke) full trust + remote loading for this world's scripts. Set together so a
-  // single toggle reflects "may this world run its remote-loaded scripts".
+  // single toggle reflects "may this world run its remote-loaded scripts". Toggling this switch
+  // (behind a confirm dialog) IS an explicit trust decision, so it records `decided` too — the
+  // main-side card-code serve gate is `decided ∧ trusted`, so without this a card trusted only
+  // here would run its scripts yet have its WCV panels refused (they'd 403). Mirrors the
+  // import-time CardTrustPrompt, which sets `decided` on both grant and deny.
   setTrusted: async (profileId, cardId, trusted) => {
-    await window.api.pluginSetGrants(profileId, cardId, { trusted, remoteScripts: trusted })
-    set((s) => ({ trustedByCard: { ...s.trustedByCard, [cardId]: trusted } }))
+    await window.api.pluginSetGrants(profileId, cardId, {
+      trusted,
+      remoteScripts: trusted,
+      decided: true
+    })
+    set((s) => ({
+      trustedByCard: { ...s.trustedByCard, [cardId]: trusted },
+      decidedByCard: { ...s.decidedByCard, [cardId]: true }
+    }))
   }
 }))

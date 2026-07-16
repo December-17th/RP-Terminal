@@ -11,6 +11,7 @@ import {
   LEGACY_HOST,
   LEGACY_FALLBACK_DOC,
   DEFAULT_CARD_CODE_MIME,
+  CODE_NOT_INSTALLED_MESSAGE,
   type CardServeDeps,
   type CardOrigin
 } from '../src/main/services/cardCodeProtocol'
@@ -150,6 +151,29 @@ describe('serveCardCode — per-card origin token (file serving)', () => {
   it('404s a file that does not exist under the code root', () => {
     const r = serve(`rpt-card://${TOKEN}/surfaces/nope.html`)
     expect(r).toEqual({ kind: 'error', status: 404, message: 'Not Found' })
+  })
+
+  // Regression (WCV-panel import bug): when the code root itself is missing or empty — the cartridge
+  // never installed (extraction failed / the PNG lost its appended archive) — the 404 body must
+  // self-diagnose, because that body is exactly what the panel renders. A bare "Not Found" here cost a
+  // full investigation to trace back to a failed cartridge install.
+  it('404s with the diagnostic body when the code root was never installed (missing dir)', () => {
+    fs.rmSync(codeDir, { recursive: true, force: true })
+    const r = serve(`rpt-card://${TOKEN}/surfaces/self.html`)
+    expect(r).toEqual({ kind: 'error', status: 404, message: CODE_NOT_INSTALLED_MESSAGE })
+  })
+
+  it('404s with the diagnostic body when the code root exists but is empty', () => {
+    fs.rmSync(codeDir, { recursive: true, force: true })
+    fs.mkdirSync(codeDir, { recursive: true })
+    const r = serve(`rpt-card://${TOKEN}/surfaces/self.html`)
+    expect(r).toEqual({ kind: 'error', status: 404, message: CODE_NOT_INSTALLED_MESSAGE })
+  })
+
+  it('still 403s an untrusted card when the code root is missing (trust gate first, fail-closed)', () => {
+    fs.rmSync(codeDir, { recursive: true, force: true })
+    const r = serve(`rpt-card://${TOKEN}/surfaces/self.html`, { isTrusted: () => false })
+    expect(r).toEqual({ kind: 'error', status: 403, message: 'Forbidden' })
   })
 
   it('400s a malformed URL', () => {
