@@ -7,6 +7,7 @@ import {
   diffSetOps,
   applySetOps,
   replaceStatDataOps,
+  toPointer,
   type VarOp
 } from './ops'
 import { nativeToThEntry, thToNativeEntry } from './worldbookEntry'
@@ -32,13 +33,32 @@ const MVU_EVENTS = {
   VARIABLE_UPDATED: 'mag_variable_updated'
 }
 
-const getByPath = (root: any, path: string): any =>
-  String(path)
-    .split('.')
-    .filter(Boolean)
-    .reduce((o, k) => (o == null ? undefined : o[k]), root)
+const parsePath = (path: string): string[] | null => {
+  const value = String(path)
+  if (!/^[^.[\]]+(?:(?:\.[^.[\]]+)|(?:\[[^.[\]]+\]))*$/.test(value)) return null
+  return value.match(/[^.[\]]+/g)
+}
+
+const getByPath = (root: any, path: string): any => {
+  const parts = parsePath(path)
+  return parts?.reduce((o, k) => (o == null ? undefined : o[k]), root)
+}
 
 const clone = (v: any): any => (v === undefined ? v : JSON.parse(JSON.stringify(v)))
+const hasOwn = (value: object, key: PropertyKey): boolean =>
+  Object.prototype.hasOwnProperty.call(value, key)
+const deleteOwnPath = (root: object, path: string): boolean => {
+  const parts = parsePath(path)
+  if (!parts) return false
+  let current: any = root
+  for (const part of parts.slice(0, -1)) {
+    if (!current || typeof current !== 'object' || !hasOwn(current, part)) return false
+    current = current[part]
+  }
+  const leaf = parts[parts.length - 1]
+  if (!current || typeof current !== 'object' || !hasOwn(current, leaf)) return false
+  return delete current[leaf]
+}
 
 export function createThRuntime(host: Host, opts?: { chatScope?: CardChatScope }): ThGlobals {
   // --- panel chat scope (chat-READ-only) ---
@@ -150,22 +170,27 @@ export function createThRuntime(host: Host, opts?: { chatScope?: CardChatScope }
   const writeVars = (ops: VarOp[]): Promise<void> =>
     ops.length ? host.applyVariableOps(ops) : Promise.resolve()
 
+  // TavernHelper's character scope is per-character and survives chat changes. RPT's script-variable
+  // bag already has those semantics (the host keys it by character), so both names share that bag.
+  const isCardKvScope = (type: unknown): boolean => type === 'script' || type === 'character'
+
   const mergeScopedVars = (vars: any, opt: any, insertOnly: boolean): Promise<void> | null => {
     const type = opt?.type
-    if (type !== 'script' && type !== 'chat' && type !== 'global') return null
+    if (!isCardKvScope(type) && type !== 'chat' && type !== 'global') return null
 
-    const current = clone(
-      type === 'script'
-        ? host.getScriptVars()
-        : type === 'chat'
-          ? host.getChatVars()
-          : host.getGlobalVarsSync()
-    ) || {}
+    const current =
+      clone(
+        isCardKvScope(type)
+          ? host.getScriptVars()
+          : type === 'chat'
+            ? host.getChatVars()
+            : host.getGlobalVarsSync()
+      ) || {}
     const ops = deepVarOps(current, vars && typeof vars === 'object' ? vars : {}, insertOnly)
     if (!ops.length) return Promise.resolve()
 
     const next = applySetOps(current, ops)
-    if (type === 'script') return host.setScriptVars(next)
+    if (isCardKvScope(type)) return host.setScriptVars(next)
     if (type === 'chat') return host.setChatVars(next)
     return host.setGlobalVars(next)
   }
@@ -319,10 +344,10 @@ export function createThRuntime(host: Host, opts?: { chatScope?: CardChatScope }
   // --- TavernHelper helpers (bare + namespaced) ---
   const helpers: Record<string, any> = {
     // SYNC getters
-    // type:'script' ⇒ the card's own KV; 'chat' ⇒ per-chat KV; 'global' ⇒ per-profile globals (a
+    // type:'script'/'character' ⇒ the card's own KV; 'chat' ⇒ per-chat KV; 'global' ⇒ per-profile globals (a
     // beautification's UI settings live here); any other scope ⇒ the message vars (stat_data).
     getVariables: (opt?: any) =>
-      opt && opt.type === 'script'
+      opt && isCardKvScope(opt.type)
         ? host.getScriptVars()
         : opt && opt.type === 'chat'
           ? host.getChatVars()
@@ -436,6 +461,10 @@ export function createThRuntime(host: Host, opts?: { chatScope?: CardChatScope }
       }
     },
     replaceVariables: async (vars: any, opt?: any) => {
+      if (opt && isCardKvScope(opt.type)) {
+        await host.setScriptVars(vars && typeof vars === 'object' ? vars : {})
+        return
+      }
       if (opt && opt.type === 'chat') {
         await host.setChatVars(vars && typeof vars === 'object' ? vars : {})
         return
@@ -454,9 +483,8 @@ export function createThRuntime(host: Host, opts?: { chatScope?: CardChatScope }
     },
     updateVariablesWith: async (updater: any, opt?: any) => {
       if (typeof updater !== 'function') return
-      // type:'script' ⇒ read-modify-write the card's own KV (the updater returns the FULL object), keeping
-      // it out of stat_data — e.g. the workshop caches its cloud project under a script var.
-      if (opt && opt.type === 'script') {
+      // The updater returns the full scoped object, so card-KV scopes must remain outside stat_data.
+      if (opt && isCardKvScope(opt.type)) {
         const cur = clone(host.getScriptVars()) || {}
         const next = (await updater(cur)) || cur
         await host.setScriptVars(next)
@@ -479,6 +507,31 @@ export function createThRuntime(host: Host, opts?: { chatScope?: CardChatScope }
       stat = clone(next) || {}
       await writeVars(ops)
       return next
+    },
+    deleteVariable: async (key: any, opt?: any): Promise<boolean> => {
+      const k = String(key ?? '')
+      if (!k) return false
+      const type = opt?.type
+      if (isCardKvScope(type) || type === 'chat' || type === 'global') {
+        const current =
+          clone(
+            type === 'chat'
+              ? host.getChatVars()
+              : type === 'global'
+                ? host.getGlobalVarsSync()
+                : host.getScriptVars()
+          ) || {}
+        if (!deleteOwnPath(current, k)) return false
+        if (type === 'chat') await host.setChatVars(current)
+        else if (type === 'global') await host.setGlobalVars(current)
+        else await host.setScriptVars(current)
+        return true
+      }
+      const next = clone(stat) || {}
+      if (!deleteOwnPath(next, k)) return false
+      stat = next
+      await writeVars([{ op: 'remove', path: toPointer(parsePath(k)!.join('.')) }])
+      return true
     },
     generate: async (a: any) => {
       const input = typeof a === 'string' ? a : (a?.user_input ?? a?.userInput ?? a?.text ?? '')

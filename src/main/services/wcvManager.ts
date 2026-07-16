@@ -1,4 +1,4 @@
-import { WebContentsView, BrowserWindow, session, net } from 'electron'
+import { WebContentsView, BrowserWindow, session, net, webFrameMain } from 'electron'
 import { join } from 'path'
 import { pathToFileURL } from 'url'
 import { createHash } from 'crypto'
@@ -18,6 +18,7 @@ import { createOverlayController, type OverlayDecl } from './wcvOverlay'
 import { shouldOpenWcvDevTools } from './wcvDevTools'
 import type { VarsOrigin, CardChatScope } from '../../shared/thRuntime/types'
 import { CARD_CSP } from '../../shared/cardCsp'
+import { attachWcvUnsquashCompat } from './wcvUnsquashCompat'
 
 // Card UI panels run in their own session partition. jsDelivr serves `/gh/` HTML as text/plain (to
 // stop it being used to host pages), so Chromium shows it as raw text; the card's UI is meant to be
@@ -292,6 +293,11 @@ export const ensure = (
     // view doesn't paint over it. No freeze-frame: it wasn't on screen to capture.
     freezeController.onTargetCreated(freezeTargetFor(id, slot))
     mainWindow.contentView.addChildView(view)
+    attachWcvUnsquashCompat(
+      view.webContents,
+      (processId, routingId) => webFrameMain.fromId(processId, routingId),
+      (error) => log('error', 'wcv: unsquash compatibility injection failed', String(error))
+    )
     view.webContents.loadURL(loadUrl) // html must be on the slot first — the scheme handler reads it
     // Pre-cache this view's freeze-frame once it has painted, so the first menu-open can hide it
     // instantly (freeze-precache). Slight delay lets the initial frame land before capture; the
