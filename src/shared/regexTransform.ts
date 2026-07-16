@@ -99,9 +99,12 @@ export interface ApplyOptions<R> {
    * scope-tier ordering (regexOrder test) only shields a WORLD/SESSION-scoped beautifier from PRESET
    * cleanups; a PRESET-scoped beautifier is still rescanned by same-tier cleanups — this guards it
    * regardless of scope. OFF by default so the PROMPT path stays byte-identical (a beautifier is
-   * display-only and never reaches the prompt anyway). Final output is unchanged EXCEPT that a later
-   * rule can no longer match structure INSIDE an injected payload — the intended fix: a cleanup must
-   * not rewrite (or backtrack over) an already-finished card.
+   * display-only and never reaches the prompt anyway). Final output matches the un-frozen result EXCEPT
+   * that a later rule can no longer match structure INSIDE an injected payload — the intended fix: a
+   * cleanup must not rewrite (or backtrack over) an already-finished card. Fail-safe: if the input
+   * already contains the U+E000 delimiter, freezing is skipped; if a rule strips the raw PUA range and
+   * mangles a token, the applier detects the stray delimiter and re-runs un-frozen — so enabling this
+   * can never produce output the un-frozen path wouldn't.
    */
   freezePayloads?: boolean
 }
@@ -114,14 +117,28 @@ export const applyRegexRules = <R extends RegexLikeRule>(
   opts: ApplyOptions<R> = {}
 ): string => {
   // Card-payload freeze (opt-in — see ApplyOptions.freezePayloads): stash each injected card payload
-  // behind an opaque Unicode Private-Use-Area placeholder (U+E000) so subsequent rules scan a short
-  // token instead of the full paste; restored verbatim at the end. U+E000 never appears in card/model
-  // text; if it somehow does in the input, disable freezing so a real payload can't be corrupted.
-  const SENT = String.fromCharCode(0xe000)
+  // behind an opaque placeholder so subsequent rules scan a short token instead of the full paste;
+  // restored verbatim at the end. The token is built ENTIRELY from the Unicode Private-Use Area — a
+  // U+E000 delimiter, a per-call random nonce (U+E1xx), and the index encoded as PUA "digits"
+  // (U+E010..U+E019) — so no ordinary card/cleanup regex (tag-, word-, or `\d`-anchored) can match,
+  // split, or renumber it, and a rule replacement can't forge a colliding token. If freezing is somehow
+  // corrupted anyway (only a rule that strips the raw PUA range can do it), the backstop after the
+  // restore loop re-runs UNFROZEN, so the output is never worse than the un-frozen (pre-freeze) result.
+  const SENT = String.fromCharCode(0xe000) // token delimiter
+  // Disable freezing if the delimiter already occurs in the input (e.g. a PUA iconfont glyph) — then a
+  // real payload could never be told apart from the input and must not be touched.
   const canFreeze = opts.freezePayloads === true && !text.includes(SENT)
+  const nonce = canFreeze
+    ? Array.from({ length: 4 }, () =>
+        String.fromCharCode(0xe100 + Math.floor(Math.random() * 0x100))
+      ).join('')
+    : ''
+  const encodeIdx = (n: number): string =>
+    String(n).replace(/\d/g, (d) => String.fromCharCode(0xe010 + Number(d)))
+  const tokenFor = (i: number): string => `${SENT}${nonce}${encodeIdx(i)}${SENT}`
   const frozen: string[] = []
   const freeze = (payload: string): string => {
-    const token = `${SENT}${frozen.length}${SENT}`
+    const token = tokenFor(frozen.length)
     frozen.push(payload)
     return token
   }
@@ -168,7 +185,14 @@ export const applyRegexRules = <R extends RegexLikeRule>(
   // rule that echoed its match via `$&`/`{{match}}`), so the outer token must expand first. split/join
   // (not String.replace) so a payload's literal `$&`/`$1` is never reinterpreted as a capture ref.
   for (let i = frozen.length - 1; i >= 0; i--) {
-    out = out.split(`${SENT}${i}${SENT}`).join(frozen[i])
+    out = out.split(tokenFor(i)).join(frozen[i])
+  }
+  // Backstop: a stray delimiter surviving the restore means a rule mangled a token (only a raw-PUA
+  // strip can), so the "a later rule can't corrupt a frozen payload" guarantee is broken here. Re-run
+  // WITHOUT freezing — the exact un-frozen output (slower, but never wrong). Guarded by `canFreeze` so
+  // the un-frozen re-run (which produces no tokens) can't recurse.
+  if (canFreeze && out.includes(SENT)) {
+    return applyRegexRules(text, rules, ctx, { ...opts, freezePayloads: false })
   }
   return out
 }
