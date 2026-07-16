@@ -34,7 +34,7 @@ jobs:
       - name: Verify source
         run: |
           npm run check:deps
-          npm test
+          npm test -- --maxWorkers=2
 
       - name: Build and audit portable ZIP
         run: npm run build:win
