@@ -1,7 +1,7 @@
 {
   "name": "rp-terminal",
   "productName": "RP Terminal",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Desktop client for sophisticated AI roleplay (SillyTavern-compatible)",
   "main": "./out/main/index.js",
   "scripts": {
@@ -14,6 +14,7 @@
     "check:docs": "node scripts/check-doc-links.mjs",
     "check:package": "node scripts/verify-package.mjs",
     "check:release": "node scripts/verify-package.mjs --require-artifact",
+    "check:release:mac": "node scripts/verify-package.mjs --mac --require-artifact",
     "test": "vitest run",
     "test:watch": "vitest",
     "start": "electron-vite preview",
@@ -22,7 +23,7 @@
     "postinstall": "electron-builder install-app-deps",
     "build:unpack": "npm run build && electron-builder --dir && npm run check:package",
     "build:win": "npm run build && electron-builder --win zip && npm run check:release",
-    "build:mac": "electron-vite build && electron-builder --mac",
+    "build:mac": "npm run build && electron-builder --mac dmg zip && npm run check:release:mac",
     "build:linux": "electron-vite build && electron-builder --linux"
   },
   "dependencies": {

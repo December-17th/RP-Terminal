@@ -17,8 +17,32 @@ import { listPackage } from '@electron/asar'
 import AdmZip from 'adm-zip'
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
-const unpackedDir = path.join(root, 'dist', 'win-unpacked')
-const asarPath = path.join(unpackedDir, 'resources', 'app.asar')
+const isMacPackage = process.argv.includes('--mac')
+const distDir = path.join(root, 'dist')
+
+function findMacAppBundles(dir) {
+  if (!fs.existsSync(dir)) return []
+  const bundles = []
+  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+    if (!entry.isDirectory()) continue
+    const fullPath = path.join(dir, entry.name)
+    if (entry.name.endsWith('.app')) bundles.push(fullPath)
+    else bundles.push(...findMacAppBundles(fullPath))
+  }
+  return bundles
+}
+
+const macAppBundles = isMacPackage ? findMacAppBundles(distDir) : []
+if (isMacPackage && macAppBundles.length !== 1) {
+  console.error(
+    `check:package FAILED: expected exactly one .app bundle under dist, found ${macAppBundles.length}`
+  )
+  process.exit(1)
+}
+const unpackedDir = isMacPackage ? macAppBundles[0] : path.join(distDir, 'win-unpacked')
+const asarPath = isMacPackage
+  ? path.join(unpackedDir, 'Contents', 'Resources', 'app.asar')
+  : path.join(unpackedDir, 'resources', 'app.asar')
 const requireArtifact = process.argv.includes('--require-artifact')
 const packageJson = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'))
 
@@ -71,7 +95,7 @@ function fail(message) {
 
 if (!fs.existsSync(unpackedDir)) {
   fail(
-    `dist/win-unpacked not found at ${unpackedDir}.\n` +
+    `unpacked application not found at ${unpackedDir}.\n` +
       'Build the package first, e.g. `npm run build && npx electron-builder --dir`.'
   )
 }
@@ -140,7 +164,41 @@ if (forbiddenEntries.length > 0) {
   fail(`build-only native source(s) bundled: ${forbiddenEntries.sort().join(', ')}`)
 }
 
-if (requireArtifact) {
+if (requireArtifact && isMacPackage) {
+  const arch = process.arch
+  const artifactNames = ['dmg', 'zip'].map(
+    (extension) => `${packageJson.name}-${packageJson.version}-macos-${arch}.${extension}`
+  )
+  for (const artifactName of artifactNames) {
+    const artifactPath = path.join(distDir, artifactName)
+    if (!fs.existsSync(artifactPath)) fail(`macOS artifact missing: dist/${artifactName}`)
+    if (fs.statSync(artifactPath).size === 0) fail(`macOS artifact is empty: dist/${artifactName}`)
+  }
+
+  const zipName = artifactNames.find((name) => name.endsWith('.zip'))
+  const zipEntries = new AdmZip(path.join(distDir, zipName))
+    .getEntries()
+    .map((entry) => entry.entryName.replaceAll('\\', '/'))
+  const asarEntry = 'RP Terminal.app/Contents/Resources/app.asar'
+  if (!zipEntries.includes(asarEntry)) fail(`required macOS ZIP file missing: ${asarEntry}`)
+  const unexpectedZipRoots = zipEntries.filter(
+    (entry) => entry !== 'RP Terminal.app' && !entry.startsWith('RP Terminal.app/')
+  )
+  if (unexpectedZipRoots.length > 0) {
+    fail(`unexpected root(s) in macOS ZIP: ${unexpectedZipRoots.sort().join(', ')}`)
+  }
+  if (zipEntries.some((entry) => entry.split('/').includes('rp-terminal-data'))) {
+    fail('user data directory bundled in macOS release ZIP')
+  }
+
+  console.log(
+    `check:package artifacts: ${artifactNames
+      .map((name) => `${name} (${(fs.statSync(path.join(distDir, name)).size / 1024 / 1024).toFixed(1)} MiB)`)
+      .join(', ')}`
+  )
+}
+
+if (requireArtifact && !isMacPackage) {
   const artifactName = `${packageJson.name}-${packageJson.version}-windows-x64-portable.zip`
   const artifactPath = path.join(root, 'dist', artifactName)
   if (!fs.existsSync(artifactPath)) fail(`portable ZIP missing: dist/${artifactName}`)

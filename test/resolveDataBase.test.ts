@@ -3,8 +3,10 @@ import { resolveDataBase, DATA_DIR_NAME } from '../src/main/services/storageServ
 
 const def = {
   isDev: true,
+  usePortableDataDir: false,
   cwd: '/repo',
-  exeDir: '/app'
+  exeDir: '/app',
+  userDataDir: '/users/me/Library/Application Support/RP Terminal'
 }
 
 describe('resolveDataBase', () => {
@@ -37,10 +39,16 @@ describe('resolveDataBase', () => {
       appendName: true
     })
   })
-  it('packaged default = executable directory, append name', () => {
-    expect(resolveDataBase({ ...def, isDev: false })).toEqual({
+  it('packaged Windows portable default = executable directory, append name', () => {
+    expect(resolveDataBase({ ...def, isDev: false, usePortableDataDir: true })).toEqual({
       dir: '/app',
       appendName: true
+    })
+  })
+  it('other packaged platforms use Electron userData verbatim', () => {
+    expect(resolveDataBase({ ...def, isDev: false })).toEqual({
+      dir: '/users/me/Library/Application Support/RP Terminal',
+      appendName: false
     })
   })
   it('exposes the data dir name', () => {

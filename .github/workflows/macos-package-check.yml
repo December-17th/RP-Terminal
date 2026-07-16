@@ -1,0 +1,47 @@
+name: macOS Package Check
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/macos-package-check.yml'
+      - '.github/workflows/release.yml'
+      - 'build/entitlements.mac.plist'
+      - 'electron-builder.yml'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'scripts/verify-package.mjs'
+      - 'src/main/index.ts'
+      - 'src/main/services/storageService.ts'
+      - 'test/electronBuilderFiles.test.ts'
+      - 'test/resolveDataBase.test.ts'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  package:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build and audit unsigned Apple Silicon test artifacts
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+        run: |
+          npm run build
+          npx electron-builder --mac dmg zip --arm64
+          npm run check:release:mac
+
+      - name: Verify native architecture
+        run: |
+          app_path="$(find dist -maxdepth 3 -type d -name 'RP Terminal.app' -print -quit)"
+          test "$(lipo -archs "$app_path/Contents/MacOS/RP Terminal")" = arm64

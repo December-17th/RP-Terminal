@@ -238,6 +238,18 @@ Updates are manual: stop RP Terminal, extract the newer ZIP, and copy the existi
 folder into the new extracted folder before launching. Keep that folder private; it is not included in
 GitHub release archives.
 
+### Download the macOS build
+
+The latest GitHub Release provides signed and notarized DMG and ZIP builds for Apple Silicon
+(`arm64`) and Intel (`x64`) Macs. DMG users drag `RP Terminal.app` to Applications. ZIP users extract
+the archive and move `RP Terminal.app` wherever they prefer. Neither format requires Node.js or a
+source checkout.
+
+On macOS, app data is stored at `~/Library/Application Support/RP Terminal`, following the platform
+convention. The DMG and ZIP contain the same application; the DMG provides the familiar installation
+window, while the ZIP is the smaller direct archive. Updates do not remove the Application Support
+data directory.
+
 ### Development launch
 
 **Prerequisite:** Node.js 22.
@@ -249,7 +261,7 @@ npm ci
 npm run dev
 ```
 
-The portable ZIP has no installer or auto-update channel. Developers can inspect an isolated
+The downloadable builds have no automatic update channel. Developers can inspect an isolated
 card panel with `RPT_OPEN_WCV_DEVTOOLS=1`; this is intentionally off by default. Maintainers should use
 the process in [`RELEASE.md`](RELEASE.md) to publish builds.
 

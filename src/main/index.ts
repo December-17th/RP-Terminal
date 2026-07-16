@@ -20,11 +20,14 @@ import { registerIpc } from './ipc'
 import { setGuardMainWindow } from './ipc/ipcGuards'
 import { TITLEBAR_OVERLAY_HEIGHT } from './windowChrome'
 
-// A packaged ZIP is self-contained: RP Terminal records, Electron preferences, browser storage, and
-// caches all live below rp-terminal-data beside the executable. Capture the old AppData path first so
-// v0.1.0 data and a saved custom-location pointer can be migrated without deleting their backups.
+// A packaged Windows ZIP is self-contained: RP Terminal records, Electron preferences, browser
+// storage, and caches all live below rp-terminal-data beside the executable. macOS retains Electron's
+// standard userData path (~/Library/Application Support/RP Terminal). Capture the old Windows AppData
+// path first so v0.1.0 data and a saved custom-location pointer can be migrated without deleting their
+// backups.
 const legacyUserDataDir = app.getPath('userData')
-if (app.isPackaged) {
+const isWindowsPortable = app.isPackaged && process.platform === 'win32'
+if (isWindowsPortable) {
   const executableDir = process.env.PORTABLE_EXECUTABLE_DIR || dirname(app.getPath('exe'))
   const portableUserDataDir = join(executableDir, storageService.DATA_DIR_NAME)
   const sessionDataDir = join(portableUserDataDir, 'chromium')
@@ -138,17 +141,19 @@ app.whenReady().then(() => {
     optimizer.watchWindowShortcuts(window)
   })
 
-  // ZIP migration: on first run with the beside-app default, copy the previous %APPDATA% data over
-  // and leave the original intact as a backup.
-  try {
-    const usingDefault = !process.env.RPT_DATA_DIR && !readLocationPointer()?.dataDir
-    storageService.copyLegacyDataDirIfNeeded({
-      legacyDir: join(legacyUserDataDir, 'rp-terminal-data'),
-      targetDir: storageService.getAppDir(),
-      usingDefault
-    })
-  } catch (err: any) {
-    logService.log('error', 'Legacy data-dir copy failed', err?.message || String(err))
+  // Windows ZIP migration: on first run with the beside-app default, copy the previous %APPDATA%
+  // data over and leave the original intact as a backup.
+  if (isWindowsPortable) {
+    try {
+      const usingDefault = !process.env.RPT_DATA_DIR && !readLocationPointer()?.dataDir
+      storageService.copyLegacyDataDirIfNeeded({
+        legacyDir: join(legacyUserDataDir, 'rp-terminal-data'),
+        targetDir: storageService.getAppDir(),
+        usingDefault
+      })
+    } catch (err: any) {
+      logService.log('error', 'Legacy data-dir copy failed', err?.message || String(err))
+    }
   }
 
   // Initialize SQLite and migrate any legacy JSON data on first run.
