@@ -134,11 +134,33 @@ jobs:
             shasum -a 256 "$zip" > "$zip.sha256"
           )
 
-          is_draft="$(gh release view '${{ github.ref_name }}' --json isDraft --jq '.isDraft')"
+          release_record="$(gh api 'repos/${{ github.repository }}/releases?per_page=100' \
+            --jq '.[] | select(.tag_name == "${{ github.ref_name }}") | [.id, .draft] | @tsv')"
+          release_count="$(printf '%s\n' "$release_record" | sed '/^$/d' | wc -l | tr -d ' ')"
+          if [[ "$release_count" != "1" ]]; then
+            echo "::error::Expected exactly one release for ${{ github.ref_name }}, found $release_count"
+            exit 1
+          fi
+
+          IFS=$'\t' read -r release_id is_draft <<< "$release_record"
           if [[ "$is_draft" != "true" ]]; then
             echo "::error::Refusing to replace artifacts on an already-published release"
             exit 1
           fi
 
-          gh release upload '${{ github.ref_name }}' \
-            "dist/$zip" "dist/$zip.sha256" --clobber
+          for file in "dist/$zip" "dist/$zip.sha256"; do
+            asset_name="$(basename "$file")"
+            existing_asset_id="$(gh api 'repos/${{ github.repository }}/releases?per_page=100' \
+              --jq ".[] | select(.tag_name == \"${{ github.ref_name }}\") | .assets[] | select(.name == \"$asset_name\") | .id")"
+            if [[ -n "$existing_asset_id" ]]; then
+              gh api --method DELETE "repos/${{ github.repository }}/releases/assets/$existing_asset_id"
+            fi
+
+            curl --fail --silent --show-error --retry 3 --retry-all-errors --retry-delay 2 \
+              --request POST \
+              --header "Authorization: Bearer $GH_TOKEN" \
+              --header 'Content-Type: application/octet-stream' \
+              --data-binary "@$file" \
+              "https://uploads.github.com/repos/${{ github.repository }}/releases/$release_id/assets?name=$asset_name" \
+              > /dev/null
+          done
