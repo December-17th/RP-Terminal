@@ -18,7 +18,7 @@ import { buildSceneMessagesInline, buildRepairMessagesInline } from './inlinePro
  * is what makes the A/B fair.
  *
  * `parse` returns the reconstructed Scene (or a failure list) PLUS two side channels the record needs:
- *   - `observations`: shapes noted but not fatal (THINK_WRAPPED, FENCED, a skipped unknown YSS command)
+ *   - `observations`: all shapes noticed while parsing; a strategy decides which are fatal
  *   - `applied`:      the transform trail for the AttemptRecord (e.g. ['think','fence','slice'])
  * On the failure branch `failures` already folds the observations in (so the record's `failures` field
  * is byte-for-byte what the pre-strategy loop produced); on success the record uses `observations`.
@@ -76,10 +76,9 @@ const inlineApplied = (observations: FailureShape[]): string[] =>
   observations.includes(FailureShape.THINK_WRAPPED) ? ['think'] : []
 
 /**
- * Inline (YSS) strategy — wraps `parseInlineScene` (which itself runs the shared `validateScene`). Its
- * asymmetric leniency lives in the parser: unknown verbs/ids/effects become observations, not failures,
- * so they are folded into `failures` only on the branch where validation actually failed (matching the
- * JSON strategy's own observation-folding).
+ * Inline (YSS) strategy — wraps `parseInlineScene` (which itself runs the shared `validateScene`).
+ * Malformed commands, IDs, tokens, effects, and truncation are failures; harmless think stripping is
+ * retained as a non-fatal observation.
  */
 export const inlineStrategy: PipelineStrategy = {
   format: 'inline',

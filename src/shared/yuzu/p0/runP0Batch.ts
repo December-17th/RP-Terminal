@@ -60,6 +60,12 @@ export interface RunP0Opts<S, P> {
   acquireSlot?: (spec: ProviderSpec<S, P>) => Promise<() => void>
   /** Called for every completed run so the harness can stream records to disk. */
   onRecord?: (record: RunRecord) => void
+  /** Existing checkpoint records to include and skip when resuming an interrupted batch. */
+  priorRecords?: RunRecord[]
+  /** Stable configuration fingerprint; only prior records with the same key are resumed. */
+  checkpointKey?: string
+  /** Called after each new record with cumulative progress, including resumed records. */
+  onProgress?: (progress: { completed: number; total: number; record: RunRecord }) => void
   signal?: AbortSignal
 }
 
@@ -92,7 +98,8 @@ const runAttempt = async <S, P>(
     const detail = e instanceof Error ? e.message : String(e)
     return {
       rec: {
-        raw: detail,
+        raw: '',
+        providerError: detail,
         latencyMs: Date.now() - t0,
         applied: [],
         ok: false,
@@ -124,19 +131,22 @@ const runOnce = async <S, P>(
   opts: RunP0Opts<S, P>
 ): Promise<RunRecord> => {
   const ts = new Date().toISOString()
-  const base = { ts, providerName: spec.name, model: spec.model, format: strategy.format }
+  const base = {
+    ts,
+    providerName: spec.name,
+    model: spec.model,
+    format: strategy.format,
+    checkpointKey: opts.checkpointKey
+  }
 
   const first = await runAttempt(spec, strategy.buildMessages(opts.ctx), strategy, opts)
   if (first.rec.ok) {
     return { ...base, attempt1: first.rec, outcome: 'valid' as Outcome }
   }
 
-  const repairMessages = strategy.buildRepair(
-    opts.ctx,
-    first.rec.raw,
-    first.rec.failures,
-    first.detail
-  )
+  const repairMessages = first.rec.providerError
+    ? strategy.buildMessages(opts.ctx)
+    : strategy.buildRepair(opts.ctx, first.rec.raw, first.rec.failures, first.detail)
   const second = await runAttempt(spec, repairMessages, strategy, opts)
   if (second.rec.ok) {
     return { ...base, attempt1: first.rec, repair: second.rec, outcome: 'repaired' as Outcome }
@@ -161,12 +171,34 @@ const runOnce = async <S, P>(
 export const runP0Batch = async <S, P>(opts: RunP0Opts<S, P>): Promise<BatchResult> => {
   const strategy = opts.strategy ?? jsonStrategy
   const records: RunRecord[] = []
+  const completedByProvider = new Map<string, number>()
+  const keyFor = (providerName: string, model: string): string =>
+    `${providerName}\0${model}\0${strategy.format}`
+
   for (const spec of opts.providers) {
-    for (let i = 0; i < opts.runsPerProvider; i++) {
+    const key = keyFor(spec.name, spec.model)
+    const prior = (opts.priorRecords ?? [])
+      .filter(
+        (record) =>
+          keyFor(record.providerName, record.model) === key &&
+          (record.format ?? 'json') === strategy.format &&
+          (!opts.checkpointKey || record.checkpointKey === opts.checkpointKey)
+      )
+      .slice(0, opts.runsPerProvider)
+    records.push(...prior)
+    completedByProvider.set(key, prior.length)
+  }
+
+  const total = opts.providers.length * opts.runsPerProvider
+  for (const spec of opts.providers) {
+    const key = keyFor(spec.name, spec.model)
+    const completed = completedByProvider.get(key) ?? 0
+    for (let i = completed; i < opts.runsPerProvider; i++) {
       if (opts.signal?.aborted) break
       const record = await runOnce(spec, strategy, opts)
       records.push(record)
       opts.onRecord?.(record)
+      opts.onProgress?.({ completed: records.length, total, record })
     }
   }
   return { records, readout: summarize(records) }

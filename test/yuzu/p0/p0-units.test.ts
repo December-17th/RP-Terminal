@@ -225,7 +225,8 @@ describe('metrics.summarize', () => {
     expect(p.fallback.n).toBe(1)
     expect(p.failureHistogram.NO_JSON_FOUND).toBe(2)
     expect(p.failureHistogram.FENCED).toBe(1)
-    expect(p.latency.medianMs).toBe(300) // median of [100,200,300,400,500]
+    expect(p.latency.medianMs).toBe(500) // median run latency of [100, 200+300, 400+500]
+    expect(p.latency.p90Ms).toBe(900)
     expect(formatReadout(readout)).toContain('A / m')
   })
 })
@@ -244,5 +245,80 @@ describe('runP0Batch — provider error path', () => {
     expect(records).toHaveLength(1)
     expect(records[0].outcome).toBe('fallback')
     expect(records[0].attempt1.failures).toContain(FailureShape.OTHER)
+  })
+
+  it('uses the first model reply for fallback when the repair transport fails', async () => {
+    let calls = 0
+    const callProvider: CallProvider<Record<string, never>, Record<string, never>> = async () => {
+      calls += 1
+      if (calls === 1) return 'Original prose reply.'
+      throw new Error('repair network down')
+    }
+    const { records } = await runP0Batch({
+      ctx,
+      runsPerProvider: 1,
+      callProvider,
+      providers: [{ name: 'flaky', model: 'x', settings: {}, params: {} }]
+    })
+    expect(records[0].outcome).toBe('fallback')
+    expect(records[0].fallbackScene?.beats[0].line).toBe('Original prose reply.')
+  })
+
+  it('retries the base prompt without an empty assistant turn after a first-call transport error', async () => {
+    const seenMessages: unknown[] = []
+    let calls = 0
+    const { records } = await runP0Batch({
+      ctx,
+      runsPerProvider: 1,
+      callProvider: async (_settings, messages) => {
+        seenMessages.push(messages)
+        calls += 1
+        if (calls === 1) throw new Error('temporary network error')
+        return JSON.stringify(validScene())
+      },
+      providers: [{ name: 'retry', model: 'x', settings: {}, params: {} }]
+    })
+
+    expect(records[0].outcome).toBe('repaired')
+    expect(seenMessages[1]).toEqual(seenMessages[0])
+  })
+})
+
+describe('runP0Batch resume and progress', () => {
+  it('keeps matching checkpoints, skips completed slots, and reports cumulative progress', async () => {
+    const prior: RunRecord = {
+      ts: 'prior',
+      providerName: 'resumable',
+      model: 'x',
+      format: 'json',
+      checkpointKey: 'current-config',
+      attempt1: {
+        raw: JSON.stringify(validScene()),
+        latencyMs: 10,
+        applied: [],
+        ok: true,
+        failures: []
+      },
+      outcome: 'valid'
+    }
+    const progress: Array<{ completed: number; total: number }> = []
+    let calls = 0
+    const { records } = await runP0Batch({
+      ctx,
+      runsPerProvider: 2,
+      checkpointKey: 'current-config',
+      priorRecords: [{ ...prior, checkpointKey: 'stale-config' }, prior],
+      onProgress: ({ completed, total }) => progress.push({ completed, total }),
+      callProvider: async () => {
+        calls += 1
+        return JSON.stringify(validScene())
+      },
+      providers: [{ name: 'resumable', model: 'x', settings: {}, params: {} }]
+    })
+
+    expect(calls).toBe(1)
+    expect(records).toHaveLength(2)
+    expect(records[0]).toBe(prior)
+    expect(progress).toEqual([{ completed: 2, total: 2 }])
   })
 })

@@ -1,4 +1,7 @@
-import { buildVocabulary, NARRATION_SPEAKER, type P0Context } from './fixtureContext'
+import { buildVocabulary, type P0Context } from './fixtureContext'
+import { buildSceneUserContent, buildVocabularyBlock, type ChatMessage } from './promptShared'
+
+export type { ChatMessage } from './promptShared'
 
 /**
  * Provider-neutral chat message. Structurally identical to the app's
@@ -6,11 +9,6 @@ import { buildVocabulary, NARRATION_SPEAKER, type P0Context } from './fixtureCon
  * pure `src/shared/**` library never reaches into `src/main` (the module-boundary rule). Because the
  * shape matches exactly, the harness can hand these straight to the real `streamProvider`.
  */
-export interface ChatMessage {
-  role: 'system' | 'user' | 'assistant'
-  content: string
-}
-
 const schemaBlock = (): string =>
   [
     'Reply with a SINGLE JSON object matching this exact schema (TypeScript for reference):',
@@ -36,17 +34,14 @@ const schemaBlock = (): string =>
   ].join('\n')
 
 const vocabBlock = (ctx: P0Context): string => {
-  const vocab = buildVocabulary(ctx)
-  const line = (label: string, ids: Set<string>): string => `- ${label}: ${[...ids].join(', ')}`
-  return [
-    'Use ONLY these asset ids, each in its correct category:',
-    line('actors (speaker / sprite.actor / header.present)', vocab.actors),
-    line('expressions (sprite.expression)', vocab.expressions),
-    line('locations (header.location / bg)', vocab.locations),
-    line('cgs (cg)', vocab.cgs),
-    line('audio (audio.music / ambience / sfx)', vocab.audio),
-    `- "${NARRATION_SPEAKER}" is also a legal speaker.`
-  ].join('\n')
+  return buildVocabularyBlock(ctx, {
+    actors: 'actors (speaker / sprite.actor / header.present)',
+    expressions: 'expressions (sprite.expression)',
+    locations: 'locations (header.location / bg)',
+    cgs: 'cgs (cg)',
+    audio: 'audio (audio.music / ambience / sfx)',
+    narration: 'is also a legal speaker.'
+  })
 }
 
 const rulesBlock = (ctx: P0Context): string => {
@@ -76,20 +71,11 @@ export const buildSceneMessages = (ctx: P0Context, lastError?: string): ChatMess
     rulesBlock(ctx)
   ].join('\n')
 
-  const userLines = [
-    `Premise:\n${ctx.premise}`,
-    '',
-    `Player action to dramatize as the next scene:\n${ctx.seedAction}`
-  ]
-  if (lastError) {
-    userLines.push(
-      '',
-      `Note — your previous attempt failed: ${lastError}. Fix it and reply with ONE JSON object.`
-    )
-  }
-
   return [
     { role: 'system', content: system },
-    { role: 'user', content: userLines.join('\n') }
+    {
+      role: 'user',
+      content: buildSceneUserContent(ctx, lastError, 'Fix it and reply with ONE JSON object.')
+    }
   ]
 }

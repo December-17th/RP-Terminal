@@ -11,8 +11,10 @@ import type { FailureShape } from './validate'
 
 /** One model call + its extraction/validation outcome. */
 export interface AttemptRecord {
-  /** The raw model reply (or an error string if the provider call itself threw). */
+  /** The raw model reply. Empty when the provider call itself threw. */
   raw: string
+  /** Transport/provider failure detail, kept separate so it cannot become fallback narration. */
+  providerError?: string
   latencyMs: number
   /** extractJson transforms that fired: 'think' | 'fence' | 'slice'. */
   applied: string[]
@@ -31,6 +33,8 @@ export interface RunRecord {
   ts: string
   providerName: string
   model: string
+  /** Stable non-secret fingerprint of the harness inputs used for safe checkpoint resume. */
+  checkpointKey?: string
   /** Wire format used. Optional for back-compat with hand-built records; runP0Batch always sets it. */
   format?: WireFormat
   attempt1: AttemptRecord
@@ -106,9 +110,9 @@ export const summarize = (records: RunRecord[]): Readout => {
     const failureHistogram: Record<string, number> = {}
     const latencies: number[] = []
     for (const r of runs) {
+      latencies.push(r.attempt1.latencyMs + (r.repair?.latencyMs ?? 0))
       for (const att of [r.attempt1, r.repair]) {
         if (!att) continue
-        latencies.push(att.latencyMs)
         for (const f of att.failures) failureHistogram[f] = (failureHistogram[f] ?? 0) + 1
       }
     }

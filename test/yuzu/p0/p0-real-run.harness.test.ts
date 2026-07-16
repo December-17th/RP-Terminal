@@ -5,9 +5,10 @@ import { runP0Batch } from '../../../src/shared/yuzu/p0/runP0Batch'
 import type { Settings } from '../../../src/main/types/models'
 import type { PresetParameters } from '../../../src/main/types/preset'
 import {
-  buildProviderSpecs,
-  callProvider,
+  buildCheckpointKey,
   loadLocalProviders,
+  loadRealHarnessDeps,
+  formatProgress,
   makeResultSink,
   paramsFromEnv,
   runsPerProviderFromEnv,
@@ -35,16 +36,22 @@ describe.skipIf(!process.env.RUN_YUZU_P0)('Project Yuzu P0 — real-provider rea
       const params = paramsFromEnv()
 
       const abort = new AbortController()
+      const { callProvider, buildProviderSpecs } = await loadRealHarnessDeps()
       const { providers, acquireSlot } = buildProviderSpecs(local, params, abort.signal)
-      const { jsonlPath, readoutPath, onRecord } = makeResultSink()
+      const checkpointKey = buildCheckpointKey('json', fixtureContext, local, params)
+      const { jsonlPath, readoutPath, priorRecords, onRecord } = makeResultSink('', checkpointKey)
 
       const { readout } = await runP0Batch<Settings, PresetParameters>({
         ctx: fixtureContext,
         providers,
         runsPerProvider,
+        checkpointKey,
         callProvider,
         acquireSlot,
         onRecord,
+        priorRecords,
+        onProgress: ({ completed, total, record }) =>
+          console.log(formatProgress(completed, total, record)),
         signal: abort.signal
       })
 

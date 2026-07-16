@@ -7,11 +7,8 @@ import { FailureShape, validateScene } from './validate'
  * stream. This parser folds the model's lines into the SAME draft `Scene` shape the JSON path produces,
  * then hands it to the SHARED `validateScene` so the A/B is judged by one identical validator.
  *
- * Asymmetric leniency is the whole point: a line that is neither a `<| … |>` command nor a
- * `knownActor: …` dialogue is narration (never an error); a `<| … |>` whose verb/id/effect is unknown
- * is NOTED as an observation and SKIPPED (never thrown, never discards the rest of the scene). Those
- * observations are reported like THINK_WRAPPED — they don't by themselves make a run fail; the run is
- * judged solely by whether the reconstructed Scene passes `validateScene`.
+ * A line that is neither command-looking nor `knownActor: …` dialogue is narration. Malformed
+ * commands are recorded and reject the attempt so YSS is judged as strictly as JSON.
  */
 
 const THINK_RE = /<think\b[^>]*>[\s\S]*?<\/think>/gi
@@ -44,10 +41,16 @@ const foldSpriteOp = (
 ): void => {
   const sprite: NonNullable<Beat['sprites']>[number] = { actor }
   for (const tok of tokens) {
-    if (ctx.expressions.has(tok)) sprite.expression = tok
-    else if (POSITIONS.has(tok)) sprite.position = tok as 'left' | 'center' | 'right'
-    else if (ACTIONS.has(tok)) sprite.action = tok as 'enter' | 'exit' | 'move'
-    else obs.push(FailureShape.BAD_SPRITE_TOKEN) // classifies to none — note it, keep the sprite
+    if (ctx.expressions.has(tok)) {
+      if (sprite.expression) obs.push(FailureShape.BAD_SPRITE_TOKEN)
+      else sprite.expression = tok
+    } else if (POSITIONS.has(tok)) {
+      if (sprite.position) obs.push(FailureShape.BAD_SPRITE_TOKEN)
+      else sprite.position = tok as 'left' | 'center' | 'right'
+    } else if (ACTIONS.has(tok)) {
+      if (sprite.action) obs.push(FailureShape.BAD_SPRITE_TOKEN)
+      else sprite.action = tok as 'enter' | 'exit' | 'move'
+    } else obs.push(FailureShape.BAD_SPRITE_TOKEN) // classifies to none — note it, keep the sprite
   }
   if (sprite.action === 'enter') acc.present.add(actor)
   acc.beats.push({ sprites: [sprite] })
@@ -68,9 +71,15 @@ const foldCommand = (
   const verb = tokens[0]
   const args = tokens.slice(1)
   const rest = inner.slice(verb.length).trim()
+  const hasArgCount = (count: number): boolean => {
+    if (args.length === count) return true
+    obs.push(FailureShape.UNKNOWN_COMMAND)
+    return false
+  }
 
   switch (verb) {
     case 'bg': {
+      if (!hasArgCount(1)) return 'continue'
       const id = args[0]
       if (!id || !vocab.locations.has(id)) {
         obs.push(id ? FailureShape.UNKNOWN_ASSET_ID : FailureShape.UNKNOWN_COMMAND)
@@ -89,6 +98,7 @@ const foldCommand = (
     case 'music':
     case 'ambience':
     case 'sfx': {
+      if (!hasArgCount(1)) return 'continue'
       const id = args[0]
       if (verb === 'music' && id === 'stop') {
         acc.beats.push({ audio: {} }) // "music stop" — a marker beat with no audio id
@@ -102,6 +112,7 @@ const foldCommand = (
       return 'continue'
     }
     case 'cg': {
+      if (!hasArgCount(1)) return 'continue'
       const id = args[0]
       if (id === 'clear') {
         acc.beats.push({ cg: null })
@@ -140,6 +151,7 @@ const foldCommand = (
       return 'continue'
     }
     case 'end':
+      if (!hasArgCount(0)) return 'continue'
       return 'end'
     default: {
       // Not a known command verb — is it an actor sprite-op?
@@ -184,6 +196,10 @@ export const parseInlineScene = (raw: string, ctx: P0Context): InlineParseResult
       }
       continue
     }
+    if (line.startsWith('<|') || line.endsWith('|>')) {
+      observations.push(FailureShape.UNKNOWN_COMMAND)
+      continue
+    }
 
     // 2) Dialogue — "<known speaker>: text" (a colon FOLLOWED BY a space)
     const ci = line.indexOf(': ')
@@ -202,15 +218,14 @@ export const parseInlineScene = (raw: string, ctx: P0Context): InlineParseResult
   }
 
   // The scene must terminate with a <| end |> marker; its absence flags a possibly cut-off generation.
-  // This is an OBSERVATION only — it never fails the scene by itself.
   if (!sawEnd) observations.push(FailureShape.TRUNCATED)
 
   // Interaction is inferred purely from choices: any choices ⇒ present them; none ⇒ free player input.
   const next: Interaction = { choices: acc.choices }
 
   // Build a LOOSE candidate (location may be undefined ⇒ SCHEMA_MISSING_FIELD, a fair failure) and let
-  // the shared validator judge it. We never fabricate a location — leniency covers only extra/unknown
-  // lines, never a missing required field.
+  // the shared validator judge it. We never fabricate a location or silently accept malformed
+  // commands, because either would make the YSS side of the A/B look healthier than the JSON side.
   const candidate = {
     scene_id: 'inline',
     header: { location: acc.location, present: [...acc.present], mood: acc.mood },
@@ -219,11 +234,21 @@ export const parseInlineScene = (raw: string, ctx: P0Context): InlineParseResult
   }
 
   const v = validateScene(candidate, ctx)
-  if (v.ok) return { ok: true, scene: v.scene, observations: uniq(observations) }
+  const invalidShapes = new Set<FailureShape>([
+    FailureShape.UNKNOWN_ASSET_ID,
+    FailureShape.DISALLOWED_EFFECT,
+    FailureShape.UNKNOWN_COMMAND,
+    FailureShape.BAD_SPRITE_TOKEN,
+    FailureShape.TRUNCATED
+  ])
+  const invalidObservations = observations.filter((shape) => invalidShapes.has(shape))
+  if (v.ok && invalidObservations.length === 0) {
+    return { ok: true, scene: v.scene, observations: uniq(observations) }
+  }
   return {
     ok: false,
-    failures: v.failures,
-    detail: v.detail,
+    failures: uniq([...(v.ok ? [] : v.failures), ...invalidObservations]),
+    detail: v.ok ? invalidObservations.join(', ') : v.detail,
     observations: uniq(observations)
   }
 }

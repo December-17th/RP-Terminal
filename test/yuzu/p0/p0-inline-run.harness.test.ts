@@ -6,9 +6,10 @@ import { inlineStrategy } from '../../../src/shared/yuzu/p0/pipeline'
 import type { Settings } from '../../../src/main/types/models'
 import type { PresetParameters } from '../../../src/main/types/preset'
 import {
-  buildProviderSpecs,
-  callProvider,
+  buildCheckpointKey,
   loadLocalProviders,
+  loadRealHarnessDeps,
+  formatProgress,
   makeResultSink,
   paramsFromEnv,
   runsPerProviderFromEnv,
@@ -39,17 +40,26 @@ describe.skipIf(!process.env.RUN_YUZU_P0)(
         const params = paramsFromEnv()
 
         const abort = new AbortController()
+        const { callProvider, buildProviderSpecs } = await loadRealHarnessDeps()
         const { providers, acquireSlot } = buildProviderSpecs(local, params, abort.signal)
-        const { jsonlPath, readoutPath, onRecord } = makeResultSink('-inline')
+        const checkpointKey = buildCheckpointKey('inline', fixtureContext, local, params)
+        const { jsonlPath, readoutPath, priorRecords, onRecord } = makeResultSink(
+          '-inline',
+          checkpointKey
+        )
 
         const { readout } = await runP0Batch<Settings, PresetParameters>({
           ctx: fixtureContext,
           providers,
           runsPerProvider,
+          checkpointKey,
           strategy: inlineStrategy,
           callProvider,
           acquireSlot,
           onRecord,
+          priorRecords,
+          onProgress: ({ completed, total, record }) =>
+            console.log(formatProgress(completed, total, record)),
           signal: abort.signal
         })
 

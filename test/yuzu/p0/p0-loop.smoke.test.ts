@@ -137,6 +137,6 @@ describe('P0 loop smoke (fake provider)', () => {
     expect(p.validFirstTry).toEqual({ n: 5, pct: 50 })
     expect(p.repaired).toEqual({ n: 3, pct: 30 })
     expect(p.fallback).toEqual({ n: 2, pct: 20 })
-    expect(p.latency.medianMs).toBe(100)
+    expect(p.latency.medianMs).toBe(150)
   })
 })

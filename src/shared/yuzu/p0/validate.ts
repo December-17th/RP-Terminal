@@ -30,8 +30,8 @@ export const FailureShape = {
   BAD_CHOICE_SHAPE: 'BAD_CHOICE_SHAPE',
   TRUNCATED: 'TRUNCATED',
   EMPTY_OUTPUT: 'EMPTY_OUTPUT',
-  // Inline (YSS) parser observations — a malformed line the lenient parser noted-and-skipped rather
-  // than throwing on. They are tracked like THINK_WRAPPED; they do not by themselves fail a run.
+  // Inline (YSS) parser shapes. These reject an attempt so malformed commands are repaired rather
+  // than silently omitted from the A/B result.
   UNKNOWN_COMMAND: 'UNKNOWN_COMMAND',
   BAD_SPRITE_TOKEN: 'BAD_SPRITE_TOKEN',
   OTHER: 'OTHER'

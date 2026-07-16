@@ -161,14 +161,10 @@ describe('parseInlineScene — sprite token auto-classification (order-independe
     expect([...scene.header.present]).not.toContain('yuzu')
   })
 
-  it('an unclassifiable token → BAD_SPRITE_TOKEN observation, sprite still kept', () => {
+  it('an unclassifiable sprite token rejects the attempt for repair', () => {
     const r = parse(['<| bg classroom |>', '<| kaede grumpy center |>', '<| end |>'])
-    const scene = okScene(r)
-    expect(r.ok && r.observations).toContain(FailureShape.BAD_SPRITE_TOKEN)
-    expect(scene.beats.find((b) => b.sprites)?.sprites?.[0]).toEqual({
-      actor: 'kaede',
-      position: 'center'
-    })
+    expect(r.ok).toBe(false)
+    if (!r.ok) expect(r.failures).toContain(FailureShape.BAD_SPRITE_TOKEN)
   })
 })
 
@@ -194,7 +190,7 @@ describe('parseInlineScene — choices and interaction model', () => {
   })
 })
 
-describe('parseInlineScene — leniency + observations', () => {
+describe('parseInlineScene — observations and malformed output', () => {
   it('strips <think> and records THINK_WRAPPED; scene still valid', () => {
     const r = parse([
       '<think>planning the beat</think>',
@@ -206,30 +202,41 @@ describe('parseInlineScene — leniency + observations', () => {
     expect(r.ok && r.observations).toContain(FailureShape.THINK_WRAPPED)
   })
 
-  it('unknown verb → UNKNOWN_COMMAND observation, skipped, rest of scene intact', () => {
+  it('an unknown command rejects the attempt for repair', () => {
     const r = parse(['<| bg classroom |>', '<| teleport now |>', 'yuzu: Hi', '<| end |>'])
-    const scene = okScene(r)
-    expect(r.ok && r.observations).toContain(FailureShape.UNKNOWN_COMMAND)
-    expect(scene.header.location).toBe('classroom')
+    expect(r.ok).toBe(false)
+    if (!r.ok) expect(r.failures).toContain(FailureShape.UNKNOWN_COMMAND)
   })
 
-  it('unknown asset id → UNKNOWN_ASSET_ID observation, skipped, scene still valid', () => {
+  it('unknown asset id rejects the attempt so the pipeline can repair it', () => {
     const r = parse(['<| bg classroom |>', '<| music nonexistent |>', '<| end |>'])
-    okScene(r)
-    expect(r.ok && r.observations).toContain(FailureShape.UNKNOWN_ASSET_ID)
+    expect(r.ok).toBe(false)
+    if (!r.ok) expect(r.failures).toContain(FailureShape.UNKNOWN_ASSET_ID)
   })
 
-  it('disallowed effect type → DISALLOWED_EFFECT observation, skipped, scene still valid', () => {
+  it('disallowed effect rejects the attempt so the pipeline can repair it', () => {
     const r = parse(['<| bg classroom |>', '<| effect teleport x |>', '<| end |>'])
-    okScene(r)
-    expect(r.ok && r.observations).toContain(FailureShape.DISALLOWED_EFFECT)
+    expect(r.ok).toBe(false)
+    if (!r.ok) expect(r.failures).toContain(FailureShape.DISALLOWED_EFFECT)
   })
 
-  it('missing trailing <| end |> → TRUNCATED observation (present ⇒ none)', () => {
+  it('a missing trailing <| end |> rejects the attempt as truncated', () => {
     const truncated = parse(['<| bg classroom |>', 'yuzu: Hi'])
-    expect(truncated.ok && truncated.observations).toContain(FailureShape.TRUNCATED)
+    expect(truncated.ok).toBe(false)
+    if (!truncated.ok) expect(truncated.failures).toContain(FailureShape.TRUNCATED)
     const ended = parse(['<| bg classroom |>', 'yuzu: Hi', '<| end |>'])
     expect(ended.ok && ended.observations).not.toContain(FailureShape.TRUNCATED)
+  })
+
+  it.each([
+    ['<| bg classroom extra |>', FailureShape.UNKNOWN_COMMAND],
+    ['<| end extra |>', FailureShape.UNKNOWN_COMMAND],
+    ['<| music bgm_main', FailureShape.UNKNOWN_COMMAND],
+    ['<| kaede worried smile |>', FailureShape.BAD_SPRITE_TOKEN]
+  ])('rejects malformed command %s', (line, failure) => {
+    const r = parse(['<| bg classroom |>', line, '<| end |>'])
+    expect(r.ok).toBe(false)
+    if (!r.ok) expect(r.failures).toContain(failure)
   })
 
   it('a garbled prose reply (no bg) fails validation (missing location) → not ok', () => {

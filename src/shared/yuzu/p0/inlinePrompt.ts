@@ -1,6 +1,7 @@
 import { buildVocabulary, NARRATION_SPEAKER, type P0Context } from './fixtureContext'
 import type { ChatMessage } from './schemaPrompt'
 import type { FailureShape } from './validate'
+import { appendRepairTurn, buildSceneUserContent, buildVocabularyBlock } from './promptShared'
 
 /**
  * Project Yuzu WP-P0 — prompt for the SECOND wire format, "Yuzu Scene Script" (YSS v0). Teaches the
@@ -40,15 +41,15 @@ const formatBlock = (): string =>
 
 const vocabBlock = (ctx: P0Context): string => {
   const vocab = buildVocabulary(ctx)
-  const line = (label: string, ids: Set<string>): string => `- ${label}: ${[...ids].join(', ')}`
   return [
-    'Use ONLY these asset ids, each in its correct category:',
-    line('actors (dialogue speaker / sprite / who is present)', vocab.actors),
-    line('expressions (sprite token)', vocab.expressions),
-    line('locations (bg)', vocab.locations),
-    line('cgs (cg)', vocab.cgs),
-    line('audio (music / ambience / sfx)', vocab.audio),
-    `- "${NARRATION_SPEAKER}" is also a legal dialogue speaker.`,
+    buildVocabularyBlock(ctx, {
+      actors: 'actors (dialogue speaker / sprite / who is present)',
+      expressions: 'expressions (sprite token)',
+      locations: 'locations (bg)',
+      cgs: 'cgs (cg)',
+      audio: 'audio (music / ambience / sfx)',
+      narration: 'is also a legal dialogue speaker.'
+    }),
     `Effects: <| effect … |> may only use these effect types: ${[...vocab.effects].join(', ')}. No others.`,
     'Choices carry TEXT + INTENT only — never mechanics (affinity, flags, items). Mechanics go in an effect.',
     'Output: reply with the YSS lines and NOTHING else. No JSON, no markdown fence, no <think> block. One scene, then stop.'
@@ -69,21 +70,12 @@ export const buildSceneMessagesInline = (ctx: P0Context, lastError?: string): Ch
     vocabBlock(ctx)
   ].join('\n')
 
-  const userLines = [
-    `Premise:\n${ctx.premise}`,
-    '',
-    `Player action to dramatize as the next scene:\n${ctx.seedAction}`
-  ]
-  if (lastError) {
-    userLines.push(
-      '',
-      `Note — your previous attempt failed: ${lastError}. Fix it and reply with YSS lines only.`
-    )
-  }
-
   return [
     { role: 'system', content: system },
-    { role: 'user', content: userLines.join('\n') }
+    {
+      role: 'user',
+      content: buildSceneUserContent(ctx, lastError, 'Fix it and reply with YSS lines only.')
+    }
   ]
 }
 
@@ -97,18 +89,11 @@ export const buildRepairMessagesInline = (
   failures: FailureShape[],
   detail: string
 ): ChatMessage[] => {
-  const shapes = failures.length ? failures.join(', ') : 'unspecified'
-  const corrective = [
-    `Your previous reply was rejected. Problem type(s): ${shapes}.`,
-    detail ? `Details: ${detail}.` : '',
+  return appendRepairTurn(
+    buildSceneMessagesInline(ctx),
+    priorRaw,
+    failures,
+    detail,
     'Reply again as YSS lines only — no JSON, no markdown fence, no <think> — fixing the above and using only the allowed asset ids. Remember to emit a <| bg <location> |> line and to finish with <| end |>.'
-  ]
-    .filter(Boolean)
-    .join('\n')
-
-  return [
-    ...buildSceneMessagesInline(ctx),
-    { role: 'assistant', content: priorRaw },
-    { role: 'user', content: corrective }
-  ]
+  )
 }
