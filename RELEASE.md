@@ -1,7 +1,7 @@
 # Release plan
 
-RP Terminal is distributed through GitHub Releases as a no-install Windows x64 ZIP and signed,
-notarized macOS DMG and ZIP builds for Apple Silicon and Intel. Users do not need Git, Node.js, npm,
+RP Terminal is distributed through GitHub Releases as a no-install Windows x64 ZIP and explicitly
+labelled unsigned macOS ZIP builds for Apple Silicon and Intel. Users do not need Git, Node.js, npm,
 or a source checkout. The Windows extracted folder is self-contained, including its
 `rp-terminal-data` directory. macOS stores data in `~/Library/Application Support/RP Terminal`.
 
@@ -17,15 +17,14 @@ must continue to warn that SmartScreen may flag the executable.
    the tag.
 4. The Release workflow verifies that the tag matches `package.json`, runs the source gates, builds the
    Windows ZIP, and creates a draft GitHub Release. Native Apple Silicon and Intel runners then build,
-   sign, notarize, staple, audit, and upload DMG and ZIP artifacts. SHA-256 checksums accompany every
-   archive.
+   audit, and upload clearly named unsigned ZIP artifacts. SHA-256 checksums accompany every archive.
 5. Download and extract the draft artifact on a clean Windows account. Verify launch, profile creation,
    restart, and that `rp-terminal-data` is created beside `RP Terminal.exe`. For upgrade coverage,
    verify that data from the previous AppData default is copied into the extracted folder and that the
    existing profile opens; the AppData copy must remain intact as a backup.
-6. On clean Apple Silicon and Intel Macs, verify that the DMG and ZIP launch without a Gatekeeper
-   warning, profiles survive restart, and data appears under Application Support rather than inside
-   the app bundle.
+6. On clean Apple Silicon and Intel Macs, verify the expected Gatekeeper warning and **Open Anyway**
+   flow, confirm profiles survive restart, and confirm data appears under Application Support rather
+   than inside the app bundle.
 7. Review the generated notes, document any migration or known issues, then publish the draft.
 
 If the smoke test fails, leave the draft unpublished, fix forward with a new version and tag, and delete
@@ -40,9 +39,10 @@ silently replaced.
   preferences, browser storage, and caches do not remain in AppData. This redirect is Windows-only;
   macOS uses Electron's standard Application Support location.
 - macOS artifacts are built natively for `arm64` and `x64`; this also ensures the `better-sqlite3`
-  native binding matches the shipped architecture. Both DMG and ZIP builds contain the same signed,
-  notarized app.
-- The release fails rather than producing an unsigned Mac build if any Apple credential is missing.
+  native binding matches the shipped architecture.
+- Mac ZIP names end in `-unsigned.zip`. The README and release notes must state that Gatekeeper blocks
+  the first launch and give Apple's **Open Anyway** instructions. Do not describe these builds as
+  signed, notarized, or normally Gatekeeper-trusted.
 - GitHub Actions builds from the tag so the release artifact is reproducible from repository state.
 - Releases start as drafts so a human can test the exact uploaded binary before publication.
 - Only runtime-required packages remain in `dependencies`. Renderer libraries compiled into `out/`
@@ -65,21 +65,11 @@ npm run build:win
 `npm run build:win` includes TypeScript checks, the production build, ZIP packaging, the ASAR content
 audit, and verification that the ZIP exactly contains the audited runtime files within its size budget.
 
-The macOS jobs additionally run `codesign --verify`, Gatekeeper assessment with `spctl`, and notarization
-ticket validation with `xcrun stapler validate` against the app and DMG.
+The macOS jobs additionally verify the CPU architecture, audit the app ASAR and ZIP roots, and reject
+an artifact carrying a Developer ID Application signature so its `-unsigned` label remains accurate.
 
-## Apple credentials
+## Future Apple signing
 
-Configure these encrypted GitHub Actions secrets before creating a release tag. Do not commit the
-certificate or API key to the repository.
-
-- `MAC_CSC_LINK`: base64-encoded Developer ID Application `.p12` certificate
-- `MAC_CSC_KEY_PASSWORD`: password for that certificate
-- `APPLE_API_KEY`: base64-encoded App Store Connect API `.p8` key
-- `APPLE_API_KEY_ID`: API key ID
-- `APPLE_API_ISSUER`: API issuer UUID
-- `APPLE_TEAM_ID`: Apple Developer team ID
-
-The Developer ID certificate signs the app. The App Store Connect API key submits it to Apple's notary
-service. Apple Developer Program membership is required; the repository's own software-license choice
-is independent of Apple code signing.
+When the project obtains Apple Developer Program membership, replace the unsigned target with the
+Developer ID signing and notarization workflow before removing `-unsigned` from artifact names. The
+repository's own software-license choice remains independent of Apple code signing.

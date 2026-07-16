@@ -240,15 +240,18 @@ GitHub release archives.
 
 ### Download the macOS build
 
-The latest GitHub Release provides signed and notarized DMG and ZIP builds for Apple Silicon
-(`arm64`) and Intel (`x64`) Macs. DMG users drag `RP Terminal.app` to Applications. ZIP users extract
-the archive and move `RP Terminal.app` wherever they prefer. Neither format requires Node.js or a
-source checkout.
+The latest GitHub Release provides ZIP builds for Apple Silicon (`arm64`) and Intel (`x64`) Macs.
+Download `rp-terminal-<version>-macos-<arch>-unsigned.zip`, extract it, and move `RP Terminal.app`
+wherever you prefer. It does not require Node.js or a source checkout.
+
+These builds are intentionally unsigned and not notarized because the project does not yet have an
+Apple Developer Program membership. macOS will block the first launch. After trying to open the app,
+open **System Settings → Privacy & Security**, scroll to Security, click **Open Anyway**, and confirm.
+Only bypass this warning when the ZIP came from this repository's GitHub Release. See
+[Apple's instructions](https://support.apple.com/guide/mac-help/open-a-mac-app-from-an-unknown-developer-mh40616/mac).
 
 On macOS, app data is stored at `~/Library/Application Support/RP Terminal`, following the platform
-convention. The DMG and ZIP contain the same application; the DMG provides the familiar installation
-window, while the ZIP is the smaller direct archive. Updates do not remove the Application Support
-data directory.
+convention. Updates do not remove the Application Support data directory.
 
 ### Development launch
 

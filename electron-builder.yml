@@ -36,19 +36,12 @@ win:
 mac:
   category: public.app-category.entertainment
   target:
-    - dmg
     - zip
-  artifactName: ${name}-${version}-macos-${arch}.${ext}
+  artifactName: ${name}-${version}-macos-${arch}-unsigned.${ext}
   electronLanguages:
     - en-US
     - zh-CN
-  hardenedRuntime: true
-  entitlements: build/entitlements.mac.plist
-  entitlementsInherit: build/entitlements.mac.plist
-  notarize: true
-dmg:
-  artifactName: ${name}-${version}-macos-${arch}.${ext}
-  sign: true
+  notarize: false
 linux:
   target:
     - AppImage

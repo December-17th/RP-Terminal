@@ -166,16 +166,10 @@ if (forbiddenEntries.length > 0) {
 
 if (requireArtifact && isMacPackage) {
   const arch = process.arch
-  const artifactNames = ['dmg', 'zip'].map(
-    (extension) => `${packageJson.name}-${packageJson.version}-macos-${arch}.${extension}`
-  )
-  for (const artifactName of artifactNames) {
-    const artifactPath = path.join(distDir, artifactName)
-    if (!fs.existsSync(artifactPath)) fail(`macOS artifact missing: dist/${artifactName}`)
-    if (fs.statSync(artifactPath).size === 0) fail(`macOS artifact is empty: dist/${artifactName}`)
-  }
-
-  const zipName = artifactNames.find((name) => name.endsWith('.zip'))
+  const zipName = `${packageJson.name}-${packageJson.version}-macos-${arch}-unsigned.zip`
+  const zipPath = path.join(distDir, zipName)
+  if (!fs.existsSync(zipPath)) fail(`macOS artifact missing: dist/${zipName}`)
+  if (fs.statSync(zipPath).size === 0) fail(`macOS artifact is empty: dist/${zipName}`)
   const zipEntries = new AdmZip(path.join(distDir, zipName))
     .getEntries()
     .map((entry) => entry.entryName.replaceAll('\\', '/'))
@@ -192,9 +186,7 @@ if (requireArtifact && isMacPackage) {
   }
 
   console.log(
-    `check:package artifacts: ${artifactNames
-      .map((name) => `${name} (${(fs.statSync(path.join(distDir, name)).size / 1024 / 1024).toFixed(1)} MiB)`)
-      .join(', ')}`
+    `check:package artifact: ${zipName} (${(fs.statSync(zipPath).size / 1024 / 1024).toFixed(1)} MiB)`
   )
 }
 
