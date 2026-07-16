@@ -46,7 +46,7 @@ export function TableTemplateReminderModal({
 
   return (
     <Modal title={t('tableReminder.title')} onClose={dismiss}>
-      <div style={{ maxWidth: 460 }}>
+      <div className="rpt-table-reminder" style={{ maxWidth: 460 }}>
         <p style={{ marginTop: 0, color: 'var(--rpt-text-secondary)', lineHeight: 1.5 }}>
           {t('tableReminder.body')}
         </p>

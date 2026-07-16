@@ -1,4 +1,6 @@
 import React from 'react'
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const h = vi.hoisted(() => ({
@@ -51,6 +53,20 @@ function findButton(node: React.ReactNode, label: string): ButtonElement | null 
   return null
 }
 
+function findClass(node: React.ReactNode, className: string): React.ReactElement | null {
+  if (React.isValidElement<{ children?: React.ReactNode; className?: string }>(node)) {
+    if (node.props.className?.split(/\s+/).includes(className)) return node
+    return findClass(node.props.children, className)
+  }
+  if (Array.isArray(node)) {
+    for (const child of node) {
+      const found = findClass(child, className)
+      if (found) return found
+    }
+  }
+  return null
+}
+
 describe('TableTemplateReminderModal', () => {
   beforeEach(() => {
     vi.clearAllMocks()
@@ -66,5 +82,18 @@ describe('TableTemplateReminderModal', () => {
     expect(h.openMemoryManager).toHaveBeenCalledOnce()
     expect(h.ensureLeftPanel).not.toHaveBeenCalled()
     expect(h.dismiss).toHaveBeenCalledOnce()
+  })
+
+  it('uses a compact, content-height shell for the reminder only', () => {
+    const modal = TableTemplateReminderModal({ profileId: 'profile-1' })
+    const css = readFileSync(resolve(__dirname, '../src/renderer/src/assets/index.css'), 'utf8')
+    const panelRule = css.match(/\.modal-panel:has\(\.rpt-table-reminder\)\s*\{[^}]*\}/)?.[0]
+    const bodyRule = css.match(/\.modal-body:has\(\.rpt-table-reminder\)\s*\{[^}]*\}/)?.[0]
+
+    expect(findClass(modal, 'rpt-table-reminder')).not.toBeNull()
+    expect(panelRule).toContain('width: min(500px, 92vw)')
+    expect(panelRule).toContain('height: auto')
+    expect(panelRule).toContain('max-height: 90vh')
+    expect(bodyRule).toContain('flex: 0 1 auto')
   })
 })

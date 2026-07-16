@@ -1818,6 +1818,19 @@ select {
   flex: 1;
 }
 
+/* Short new-session memory prompt: keep the shared tall shell for managers/editors, but let this
+   one-paragraph reminder size to its content. The 500px cap includes its 460px text measure plus
+   the modal body's horizontal padding. */
+.modal-panel:has(.rpt-table-reminder) {
+  width: min(500px, 92vw);
+  height: auto;
+  max-height: 90vh;
+}
+
+.modal-body:has(.rpt-table-reminder) {
+  flex: 0 1 auto;
+}
+
 .field-label {
   display: block;
   font-size: 0.8em;
