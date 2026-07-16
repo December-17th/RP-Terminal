@@ -1,14 +1,16 @@
 import { afterAll, describe, expect, it, vi } from 'vitest'
 import fs from 'fs'
+import os from 'os'
 import path from 'path'
 import { randomUUID } from 'crypto'
 
-const DATA_DIR = path.join(
-  process.cwd(),
-  '.scratch',
-  'test-runtime',
-  `refill-lifecycle-${randomUUID()}`
-)
+// A SHORT temp root (repo convention — os.tmpdir via mkdtemp, like characterReplace/cardCartridgeImport),
+// NOT <cwd>/.scratch/... The session store nests `profiles/<uuid>/chats/<uuid>/session.sqlite`; a long cwd
+// prefix (e.g. a git worktree under .claude/worktrees/<name>) pushed the rollback-journal path
+// (`session.sqlite-journal`) past Windows MAX_PATH (260) → SQLite CANTOPEN ("unable to open database
+// file"), so this suite failed ONLY in worktrees. os.tmpdir keeps the whole path well under the limit and
+// removes the .scratch dependency (a clean checkout has no .scratch dir).
+const DATA_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'rpt-refill-'))
 
 vi.mock('better-sqlite3', () => import('./mocks/betterSqlite3Node'))
 vi.mock('../src/main/services/storageService', async (importOriginal) => {
