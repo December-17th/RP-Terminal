@@ -36,7 +36,7 @@ jobs:
           npm run check:deps
           npm test
 
-      - name: Build and audit portable executable
+      - name: Build and audit portable ZIP
         run: npm run build:win
 
       - name: Create or refresh draft GitHub Release
@@ -44,9 +44,9 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          $artifacts = @(Get-ChildItem -LiteralPath dist -Filter 'rp-terminal-*-windows-x64-portable.exe' -File)
+          $artifacts = @(Get-ChildItem -LiteralPath dist -Filter 'rp-terminal-*-windows-x64-portable.zip' -File)
           if ($artifacts.Count -ne 1) {
-            throw "Expected exactly one portable executable, found $($artifacts.Count)"
+            throw "Expected exactly one portable ZIP, found $($artifacts.Count)"
           }
 
           $artifact = $artifacts[0]

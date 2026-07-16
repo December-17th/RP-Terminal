@@ -34,7 +34,11 @@ describe('electron-builder.yml files allowlist', () => {
   const ymlPath = path.resolve(__dirname, '..', 'electron-builder.yml')
   const config = parse(fs.readFileSync(ymlPath, 'utf8')) as {
     files?: unknown
-    win?: { target?: Array<{ target?: string; arch?: string[] }>; artifactName?: string }
+    win?: {
+      target?: Array<{ target?: string; arch?: string[] }>
+      artifactName?: string
+      electronLanguages?: string[]
+    }
   }
 
   it('defines a files list', () => {
@@ -56,9 +60,13 @@ describe('electron-builder.yml files allowlist', () => {
     expect(offenders).toEqual([])
   })
 
-  it('builds one x64 portable Windows executable', () => {
-    expect(config.win?.target).toEqual([{ target: 'portable', arch: ['x64'] }])
+  it('builds one x64 portable Windows ZIP', () => {
+    expect(config.win?.target).toEqual([{ target: 'zip', arch: ['x64'] }])
     expect(config.win?.artifactName).toBe('${name}-${version}-windows-${arch}-portable.${ext}')
+  })
+
+  it('ships only the Electron locales supported by the app UI', () => {
+    expect(config.win?.electronLanguages).toEqual(['en-US', 'zh-CN'])
   })
 
   it('keeps only runtime-required modules in production dependencies', () => {

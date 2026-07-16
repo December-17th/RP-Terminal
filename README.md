@@ -224,17 +224,19 @@ State is split deliberately between a relational store and portable files (`src/
 ### Download the Windows portable build
 
 Open the [latest GitHub Release](https://github.com/December-17th/RP-Terminal/releases/latest), download
-`rp-terminal-<version>-windows-x64-portable.exe`, and run it. It does not install anything and does not
-require Git, Node.js, or npm. Code signing is not configured yet, so Windows SmartScreen may show an
-unrecognized-app warning.
+`rp-terminal-<version>-windows-x64-portable.zip`, extract the whole archive to a writable folder, then
+run `RP Terminal.exe`. It does not install anything and does not require Git, Node.js, or npm. Code
+signing is not configured yet, so Windows SmartScreen may show an unrecognized-app warning.
 
-App data is stored in the app-managed user-data folder by default and is not embedded in the executable.
-The active location is shown in Settings. To migrate from the former clone-based distribution, back up
-the clone's `rp-terminal-data` folder and place the portable executable in the clone root for its first
-launch. RP Terminal adopts that folder and remembers its location.
+App data is stored in `rp-terminal-data` beside `RP Terminal.exe`, including Electron preferences,
+browser storage, and caches, so moving or backing up the extracted folder keeps the app and its data
+together. The active location is shown in Settings. On first launch, an existing default data folder
+from the earlier AppData-based portable build is copied beside the app; the AppData copy is left intact
+as a backup. Explicit custom locations remain unchanged.
 
-Updates are manual: stop RP Terminal, download the newer executable from GitHub Releases, and replace
-the old executable. Keep the data folder; do not bundle it with the executable or upload it to GitHub.
+Updates are manual: stop RP Terminal, extract the newer ZIP, and copy the existing `rp-terminal-data`
+folder into the new extracted folder before launching. Keep that folder private; it is not included in
+GitHub release archives.
 
 ### Development launch
 
@@ -247,7 +249,7 @@ npm ci
 npm run dev
 ```
 
-The portable distribution has no installer or auto-update channel. Developers can inspect an isolated
+The portable ZIP has no installer or auto-update channel. Developers can inspect an isolated
 card panel with `RPT_OPEN_WCV_DEVTOOLS=1`; this is intentionally off by default. Maintainers should use
 the process in [`RELEASE.md`](RELEASE.md) to publish builds.
 
