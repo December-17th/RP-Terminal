@@ -25,8 +25,11 @@ asarUnpack:
 win:
   executableName: RP Terminal
   icon: build/rp-terminal.ico
+  electronLanguages:
+    - en-US
+    - zh-CN
   target:
-    - target: portable
+    - target: zip
       arch:
         - x64
   artifactName: ${name}-${version}-windows-${arch}-portable.${ext}

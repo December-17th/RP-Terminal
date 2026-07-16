@@ -1,11 +1,11 @@
 import { app, shell, BrowserWindow, ipcMain, protocol } from 'electron'
-import { join } from 'path'
+import { dirname, join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icons/rp-terminal-emerald.png?asset'
 
 import * as logService from './services/logService'
 import * as storageService from './services/storageService'
-import { readLocationPointer } from './services/locationPointer'
+import { copyLegacyLocationPointerIfNeeded, readLocationPointer } from './services/locationPointer'
 import * as migrationService from './services/migrationService'
 import * as sessionMigrationService from './services/sessionMigrationService'
 import * as sessionDbService from './services/sessionDbService'
@@ -19,6 +19,21 @@ import './services/cardWorkflowBridge'
 import { registerIpc } from './ipc'
 import { setGuardMainWindow } from './ipc/ipcGuards'
 import { TITLEBAR_OVERLAY_HEIGHT } from './windowChrome'
+
+// A packaged ZIP is self-contained: RP Terminal records, Electron preferences, browser storage, and
+// caches all live below rp-terminal-data beside the executable. Capture the old AppData path first so
+// v0.1.0 data and a saved custom-location pointer can be migrated without deleting their backups.
+const legacyUserDataDir = app.getPath('userData')
+if (app.isPackaged) {
+  const executableDir = process.env.PORTABLE_EXECUTABLE_DIR || dirname(app.getPath('exe'))
+  const portableUserDataDir = join(executableDir, storageService.DATA_DIR_NAME)
+  const sessionDataDir = join(portableUserDataDir, 'chromium')
+  storageService.ensureDir(portableUserDataDir)
+  storageService.ensureDir(sessionDataDir)
+  copyLegacyLocationPointerIfNeeded({ legacyUserDataDir, portableUserDataDir })
+  app.setPath('userData', portableUserDataDir)
+  app.setPath('sessionData', sessionDataDir)
+}
 
 // Card UIs (WebContentsView) are served from this scheme instead of a data: URL: a data: URL is an
 // opaque origin where Chromium disables localStorage/sessionStorage/etc., so a storage-using card
@@ -123,11 +138,12 @@ app.whenReady().then(() => {
     optimizer.watchWindowShortcuts(window)
   })
 
-  // Relocation: on first run with the default location, copy existing %APPDATA% data over (kept as backup).
+  // ZIP migration: on first run with the beside-app default, copy the previous %APPDATA% data over
+  // and leave the original intact as a backup.
   try {
     const usingDefault = !process.env.RPT_DATA_DIR && !readLocationPointer()?.dataDir
     storageService.copyLegacyDataDirIfNeeded({
-      legacyDir: join(app.getPath('userData'), 'rp-terminal-data'),
+      legacyDir: join(legacyUserDataDir, 'rp-terminal-data'),
       targetDir: storageService.getAppDir(),
       usingDefault
     })
