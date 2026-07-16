@@ -6,22 +6,30 @@ directories:
 # (all-`!`) list: electron-builder treats a files list that contains only
 # ignore patterns as empty and injects `**/*`, which packages the entire repo
 # (rp-terminal-data, .claude, .scratch, docs, src, ...). Production node_modules
-# for deps declared in package.json are added automatically by a separate
-# walker, so they don't need to be listed here. Verified by scripts/verify-package.mjs.
+# for runtime deps declared in package.json are added automatically by a
+# separate walker, so they don't need to be listed here. Renderer-only build
+# dependencies stay in devDependencies so they are not copied a second time.
+# Verified by scripts/verify-package.mjs.
 files:
   - 'out/**'
   - 'package.json'
-  - 'resources/**'
+  - 'resources/icons/rp-terminal-emerald.png'
+  # better-sqlite3 runs from lib/ + its rebuilt native binding. Its C/C++ build
+  # inputs are not needed after packaging and smart-unpack would otherwise copy
+  # them beside the app.
+  - '!node_modules/better-sqlite3/deps/**'
+  - '!node_modules/better-sqlite3/src/**'
+  - '!node_modules/better-sqlite3/binding.gyp'
 asarUnpack:
-  - resources/**
+  - resources/icons/rp-terminal-emerald.png
 win:
   executableName: RP Terminal
   icon: build/rp-terminal.ico
-nsis:
-  artifactName: ${name}-${version}-setup.${ext}
-  shortcutName: ${productName}
-  uninstallDisplayName: ${productName}
-  createDesktopShortcut: always
+  target:
+    - target: portable
+      arch:
+        - x64
+  artifactName: ${name}-${version}-windows-${arch}-portable.${ext}
 mac:
   entitlementsInherit: build/entitlements.mac.plist
   extendInfo:
@@ -42,6 +50,3 @@ linux:
 appImage:
   artifactName: ${name}-${version}.${ext}
 npmRebuild: false
-publish:
-  provider: generic
-  url: https://example.com/auto-updates

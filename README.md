@@ -221,49 +221,35 @@ State is split deliberately between a relational store and portable files (`src/
 
 ## Getting started
 
-**Prerequisites:** a recent Node.js LTS. No `engines` field is pinned; the project is developed and
-tested on **Node 22**.
+### Download the Windows portable build
 
-### Run a portable clone
+Open the [latest GitHub Release](https://github.com/December-17th/RP-Terminal/releases/latest), download
+`rp-terminal-<version>-windows-x64-portable.exe`, and run it. It does not install anything and does not
+require Git, Node.js, or npm. Code signing is not configured yet, so Windows SmartScreen may show an
+unrecognized-app warning.
 
-```bash
-git clone <your-repository-url> rp-terminal
-cd rp-terminal
-npm ci
-npm run build
-npm run start
-```
+App data is stored in the app-managed user-data folder by default and is not embedded in the executable.
+The active location is shown in Settings. To migrate from the former clone-based distribution, back up
+the clone's `rp-terminal-data` folder and place the portable executable in the clone root for its first
+launch. RP Terminal adopts that folder and remembers its location.
 
-This is the supported distribution path for early users: it does not install the app or open DevTools
-automatically. With no configured data-location override, the app stores its data in the clone's
-`rp-terminal-data/` directory, which is ignored by Git. Back up that directory before replacing or
-deleting the clone.
-
-On Windows, users can instead double-click `Launch-RP-Terminal.bat` in the clone. On the first launch,
-or after a version update, it runs `npm install`, builds the app, and starts the production preview.
-When the version in `package.json` matches its successful-build marker, it skips setup and building and
-starts the app directly. Node.js 22 or later must be installed first. Every published source update must
-increment `package.json`'s version; otherwise the launcher intentionally treats it as already built.
-
-### Update a portable clone
-
-Stop the app first, then update and rebuild it from its clone.
-
-```bash
-git pull --ff-only
-```
-
-Then double-click `Launch-RP-Terminal.bat`. Published updates must have a new `package.json` version so
-the launcher detects that a rebuild is required.
+Updates are manual: stop RP Terminal, download the newer executable from GitHub Releases, and replace
+the old executable. Keep the data folder; do not bundle it with the executable or upload it to GitHub.
 
 ### Development launch
 
+**Prerequisite:** Node.js 22.
+
 ```bash
+git clone https://github.com/December-17th/RP-Terminal.git rp-terminal
+cd rp-terminal
+npm ci
 npm run dev
 ```
 
-The portable-clone distribution has no installer or auto-update channel. Developers can inspect an
-isolated card panel with `RPT_OPEN_WCV_DEVTOOLS=1`; this is intentionally off by default.
+The portable distribution has no installer or auto-update channel. Developers can inspect an isolated
+card panel with `RPT_OPEN_WCV_DEVTOOLS=1`; this is intentionally off by default. Maintainers should use
+the process in [`RELEASE.md`](RELEASE.md) to publish builds.
 
 ### Verification gate
 

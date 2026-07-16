@@ -51,7 +51,9 @@ export const getAppDir = (): string => {
     pointer: readLocationPointer()?.dataDir,
     isDev: !app.isPackaged, // true in `electron-vite dev`, false in a packaged build
     cwd: process.cwd(),
-    exeDir: path.dirname(app.getPath('exe')),
+    // electron-builder's portable target runs the unpacked app from a temp
+    // directory; this variable points at the user-visible portable .exe.
+    exeDir: process.env.PORTABLE_EXECUTABLE_DIR || path.dirname(app.getPath('exe')),
     userDataDir: app.getPath('userData'),
     existsNonEmpty: dirIsNonEmpty
   })
