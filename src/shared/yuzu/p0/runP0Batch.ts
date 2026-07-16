@@ -1,7 +1,6 @@
-import { buildSceneMessages, type ChatMessage } from './schemaPrompt'
-import { buildRepairMessages } from './repair'
-import { extractJson } from './extractJson'
-import { FailureShape, mapExtractReason, observationsFromApplied, validateScene } from './validate'
+import type { ChatMessage } from './schemaPrompt'
+import { jsonStrategy, type PipelineStrategy } from './pipeline'
+import { FailureShape } from './validate'
 import { toProseFallbackScene } from './proseFallback'
 import type { P0Context } from './fixtureContext'
 import {
@@ -13,6 +12,7 @@ import {
 } from './metrics'
 
 export type { AttemptRecord, RunRecord, Outcome, Readout } from './metrics'
+export type { PipelineStrategy, ParseResult } from './pipeline'
 
 /**
  * Project Yuzu WP-P0 — the orchestrator.
@@ -21,6 +21,10 @@ export type { AttemptRecord, RunRecord, Outcome, Readout } from './metrics'
  * hard import — the real `streamProvider` (which value-imports Electron) is injected ONLY by the
  * env-gated harness; the normal suite injects a fake. That injection seam is the whole point of the
  * P0 architecture.
+ *
+ * The loop is FORMAT-AGNOSTIC: a `PipelineStrategy` (default `jsonStrategy`) supplies build-messages /
+ * parse / build-repair, so the SAME loop and the SAME `validateScene` judge either the atomic-JSON or
+ * the inline-YSS wire format — that is what makes the A/B fair.
  *
  * Generic over the settings/params types <S, P>: the harness parametrizes with the app's real
  * `Settings` / `PresetParameters` (so those types flow through at the call site) while this pure
@@ -50,6 +54,8 @@ export interface RunP0Opts<S, P> {
   runsPerProvider: number
   ctx: P0Context
   callProvider: CallProvider<S, P>
+  /** Wire-format strategy. Defaults to `jsonStrategy` (the atomic-JSON path). */
+  strategy?: PipelineStrategy
   /** Optional pacing hook: acquire a rate/concurrency slot before a call; returns a release fn. */
   acquireSlot?: (spec: ProviderSpec<S, P>) => Promise<() => void>
   /** Called for every completed run so the harness can stream records to disk. */
@@ -70,10 +76,11 @@ interface AttemptOutcome {
   detail: string
 }
 
-/** One provider call + extract + validate. Never throws — a provider error becomes an OTHER failure. */
+/** One provider call + parse (extract/fold + validate). Never throws — a provider error becomes OTHER. */
 const runAttempt = async <S, P>(
   spec: ProviderSpec<S, P>,
   messages: ChatMessage[],
+  strategy: PipelineStrategy,
   opts: RunP0Opts<S, P>
 ): Promise<AttemptOutcome> => {
   const release = opts.acquireSlot ? await opts.acquireSlot(spec) : null
@@ -98,43 +105,39 @@ const runAttempt = async <S, P>(
   }
   const latencyMs = Date.now() - t0
 
-  const ex = extractJson(raw)
-  const observations = observationsFromApplied(ex.applied)
-  if (!ex.ok) {
-    const failures = [...new Set([...observations, mapExtractReason(ex.reason)])]
-    return { rec: { raw, latencyMs, applied: ex.applied, ok: false, failures }, detail: ex.error }
-  }
-
-  const v = validateScene(ex.value, opts.ctx)
-  if (v.ok) {
+  const pr = strategy.parse(raw, opts.ctx)
+  if (pr.ok) {
     return {
-      rec: { raw, latencyMs, applied: ex.applied, ok: true, failures: observations },
+      rec: { raw, latencyMs, applied: pr.applied, ok: true, failures: pr.observations },
       detail: ''
     }
   }
-  const failures = [...new Set([...observations, ...v.failures])]
-  return { rec: { raw, latencyMs, applied: ex.applied, ok: false, failures }, detail: v.detail }
+  return {
+    rec: { raw, latencyMs, applied: pr.applied, ok: false, failures: pr.failures },
+    detail: pr.detail
+  }
 }
 
 const runOnce = async <S, P>(
   spec: ProviderSpec<S, P>,
+  strategy: PipelineStrategy,
   opts: RunP0Opts<S, P>
 ): Promise<RunRecord> => {
   const ts = new Date().toISOString()
-  const base = { ts, providerName: spec.name, model: spec.model }
+  const base = { ts, providerName: spec.name, model: spec.model, format: strategy.format }
 
-  const first = await runAttempt(spec, buildSceneMessages(opts.ctx), opts)
+  const first = await runAttempt(spec, strategy.buildMessages(opts.ctx), strategy, opts)
   if (first.rec.ok) {
     return { ...base, attempt1: first.rec, outcome: 'valid' as Outcome }
   }
 
-  const repairMessages = buildRepairMessages(
+  const repairMessages = strategy.buildRepair(
     opts.ctx,
     first.rec.raw,
     first.rec.failures,
     first.detail
   )
-  const second = await runAttempt(spec, repairMessages, opts)
+  const second = await runAttempt(spec, repairMessages, strategy, opts)
   if (second.rec.ok) {
     return { ...base, attempt1: first.rec, repair: second.rec, outcome: 'repaired' as Outcome }
   }
@@ -156,11 +159,12 @@ const runOnce = async <S, P>(
  * `acquireSlot`). Honors an abort signal between runs.
  */
 export const runP0Batch = async <S, P>(opts: RunP0Opts<S, P>): Promise<BatchResult> => {
+  const strategy = opts.strategy ?? jsonStrategy
   const records: RunRecord[] = []
   for (const spec of opts.providers) {
     for (let i = 0; i < opts.runsPerProvider; i++) {
       if (opts.signal?.aborted) break
-      const record = await runOnce(spec, opts)
+      const record = await runOnce(spec, strategy, opts)
       records.push(record)
       opts.onRecord?.(record)
     }

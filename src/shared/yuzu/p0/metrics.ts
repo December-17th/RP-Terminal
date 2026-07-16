@@ -23,11 +23,16 @@ export interface AttemptRecord {
 
 export type Outcome = 'valid' | 'repaired' | 'fallback'
 
+/** Which wire format produced this run — the A/B dimension. */
+export type WireFormat = 'json' | 'inline'
+
 /** One full run of the pipeline for one provider (attempt, optional repair, outcome). */
 export interface RunRecord {
   ts: string
   providerName: string
   model: string
+  /** Wire format used. Optional for back-compat with hand-built records; runP0Batch always sets it. */
+  format?: WireFormat
   attempt1: AttemptRecord
   repair?: AttemptRecord
   outcome: Outcome
@@ -43,6 +48,8 @@ export interface StatCount {
 export interface ProviderReadout {
   providerName: string
   model: string
+  /** Wire format for this provider group (from the group's records; defaults to 'json'). */
+  format: WireFormat
   total: number
   validFirstTry: StatCount
   repaired: StatCount
@@ -79,9 +86,10 @@ const median = (sortedAsc: number[]): number => {
 /** Aggregate run records into a per-provider readout. Pure. */
 export const summarize = (records: RunRecord[]): Readout => {
   const groups = new Map<string, RunRecord[]>()
+  const NUL = String.fromCharCode(0)
   for (const r of records) {
-    // NUL separator can't collide with any provider name or model id
-    const key = `${r.providerName}${String.fromCharCode(0)}${r.model}`
+    // NUL separator can't collide with any provider name, model id, or format
+    const key = `${r.providerName}${NUL}${r.model}${NUL}${r.format ?? 'json'}`
     const arr = groups.get(key)
     if (arr) arr.push(r)
     else groups.set(key, [r])
@@ -109,6 +117,7 @@ export const summarize = (records: RunRecord[]): Readout => {
     providers.push({
       providerName: runs[0].providerName,
       model: runs[0].model,
+      format: runs[0].format ?? 'json',
       total,
       validFirstTry: { n: nValid, pct: pct(nValid, total) },
       repaired: { n: nRepaired, pct: pct(nRepaired, total) },
@@ -133,6 +142,7 @@ export const formatReadout = (readout: Readout): string => {
 
   const header = [
     padEnd('provider / model', 34),
+    padEnd('fmt', 7),
     padStart('runs', 5),
     padStart('valid', 14),
     padStart('repaired', 14),
@@ -148,6 +158,7 @@ export const formatReadout = (readout: Readout): string => {
     lines.push(
       [
         padEnd(`${p.providerName} / ${p.model}`, 34),
+        padEnd(p.format, 7),
         padStart(String(p.total), 5),
         padStart(stat(p.validFirstTry), 14),
         padStart(stat(p.repaired), 14),

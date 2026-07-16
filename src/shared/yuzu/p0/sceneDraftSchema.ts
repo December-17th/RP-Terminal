@@ -47,12 +47,15 @@ export const ChoiceSchema = z.object({
 })
 export type Choice = z.infer<typeof ChoiceSchema>
 
-/** Choices carry TEXT + INTENT only — never mechanics (no affinity deltas, flags, etc. on a choice). */
-export const InteractionSchema = z.discriminatedUnion('kind', [
-  z.object({ kind: z.literal('continue') }),
-  z.object({ kind: z.literal('choice'), choices: z.array(ChoiceSchema).min(1) }),
-  z.object({ kind: z.literal('free') })
-])
+/**
+ * Scene end. The player is EITHER presented with a list of choices OR types a free action: a non-empty
+ * `choices` list presents those choices; an EMPTY or ABSENT list means the player types their own next
+ * action (the default). Choices carry TEXT + INTENT only — never mechanics (no affinity deltas, flags,
+ * etc. on a choice); those live in a beat effect.
+ */
+export const InteractionSchema = z.object({
+  choices: z.array(ChoiceSchema).optional()
+})
 export type Interaction = z.infer<typeof InteractionSchema>
 
 export const SceneHeaderSchema = z.object({

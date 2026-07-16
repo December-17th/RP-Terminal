@@ -21,5 +21,5 @@ export const toProseFallbackScene = (rawText: string, ctx: P0Context): Scene => 
       line: rawText
     }
   ],
-  next: { kind: 'continue' }
+  next: { choices: [] }
 })

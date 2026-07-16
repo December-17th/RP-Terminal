@@ -28,7 +28,7 @@ const validScene = (): Record<string, unknown> => ({
       effects: [{ type: 'flag_set', args: { flag: 'talked' } }]
     }
   ],
-  next: { kind: 'choice', choices: [{ text: 'Smile back', intent: 'warm' }] }
+  next: { choices: [{ text: 'Smile back', intent: 'warm' }] }
 })
 
 describe('extractJson', () => {
@@ -176,7 +176,7 @@ describe('proseFallback.toProseFallbackScene', () => {
     const scene = toProseFallbackScene('She said nothing.', ctx)
     expect(scene.beats[0].speaker).toBe('narration')
     expect(scene.beats[0].line).toBe('She said nothing.')
-    expect(scene.next).toEqual({ kind: 'continue' })
+    expect(scene.next).toEqual({ choices: [] })
     // The escape hatch must itself validate cleanly.
     expect(validateScene(scene, ctx).ok).toBe(true)
   })

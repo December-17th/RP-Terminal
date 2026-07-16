@@ -30,6 +30,10 @@ export const FailureShape = {
   BAD_CHOICE_SHAPE: 'BAD_CHOICE_SHAPE',
   TRUNCATED: 'TRUNCATED',
   EMPTY_OUTPUT: 'EMPTY_OUTPUT',
+  // Inline (YSS) parser observations — a malformed line the lenient parser noted-and-skipped rather
+  // than throwing on. They are tracked like THINK_WRAPPED; they do not by themselves fail a run.
+  UNKNOWN_COMMAND: 'UNKNOWN_COMMAND',
+  BAD_SPRITE_TOKEN: 'BAD_SPRITE_TOKEN',
   OTHER: 'OTHER'
 } as const
 export type FailureShape = (typeof FailureShape)[keyof typeof FailureShape]
@@ -120,7 +124,7 @@ const vocabCheck = (
   }
 
   // Choices must be {text,intent} ONLY. zod strips extra keys, so inspect the RAW value for mechanics.
-  if (scene.next.kind === 'choice' && isRecord(rawValue)) {
+  if (isRecord(rawValue)) {
     const rawNext = (rawValue as Record<string, unknown>).next
     const rawChoices = isRecord(rawNext) ? rawNext.choices : undefined
     if (Array.isArray(rawChoices)) {

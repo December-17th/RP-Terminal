@@ -26,7 +26,6 @@ const validScene = {
     }
   ],
   next: {
-    kind: 'choice',
     choices: [
       { text: 'Apologize first', intent: 'reconcile' },
       { text: 'Ask why she left', intent: 'confront' }

@@ -30,10 +30,9 @@ const schemaBlock = (): string =>
     '  line?: string',
     '  effects?: { type: string; args?: object }[]',
     '}',
-    'Interaction =',
-    '  | { kind: "continue" }',
-    '  | { kind: "choice"; choices: { text: string; intent: string }[] }',
-    '  | { kind: "free" }'
+    'Interaction {',
+    '  choices?: { text: string; intent: string }[]  // player choices; an empty list or omitted ⇒ the player types their own next action',
+    '}'
   ].join('\n')
 
 const vocabBlock = (ctx: P0Context): string => {
@@ -54,6 +53,7 @@ const rulesBlock = (ctx: P0Context): string => {
   const vocab = buildVocabulary(ctx)
   return [
     `Effects: a beat may only use these effect types: ${[...vocab.effects].join(', ')}. No others.`,
+    'End the scene with a list of choices, or with none (empty or omitted `next.choices`) — in which case the player types their own next action.',
     'Choices: each choice is { text, intent } ONLY. Never attach mechanics (affinity, flags, items) to a choice — mechanics belong in a beat effect.',
     'Output: reply with ONE JSON object and nothing else. No prose, no explanation, no markdown code fence, no <think> block. The very first character must be "{" and the last "}".'
   ].join('\n')
