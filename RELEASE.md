@@ -44,6 +44,8 @@ silently replaced.
   the first launch and give Apple's **Open Anyway** instructions. Do not describe these builds as
   signed, notarized, or normally Gatekeeper-trusted.
 - GitHub Actions builds from the tag so the release artifact is reproducible from repository state.
+- electron-builder implicit publishing is disabled; the workflow audits each artifact and uploads it
+  explicitly to the existing draft release.
 - Releases start as drafts so a human can test the exact uploaded binary before publication.
 - Only runtime-required packages remain in `dependencies`. Renderer libraries compiled into `out/`
   live in `devDependencies` so electron-builder does not copy them into `app.asar` a second time.
