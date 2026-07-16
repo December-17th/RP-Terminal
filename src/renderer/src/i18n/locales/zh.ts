@@ -5,6 +5,7 @@ const zh: Record<string, string> = {
   'nav.preset': '预设',
   'nav.lorebook': '世界书',
   'nav.assets': '素材',
+  'characterImport.cartridgeWarning': '卡片面板未安装：{{error}}',
   'assets.heading': '素材',
   'assets.selectWorld': '请先选择一个世界。',
   'assets.openFolder': '打开文件夹',

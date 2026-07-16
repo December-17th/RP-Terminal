@@ -101,6 +101,17 @@ const cartridgeZip = (): Buffer => {
   return zip.toBuffer()
 }
 
+/** A syntactically valid cartridge whose declared code root selects no regular files. */
+const emptyCartridgeZip = (): Buffer => {
+  const zip = new AdmZip()
+  zip.addFile(
+    'rpt-cartridge.json',
+    Buffer.from(JSON.stringify({ cartridge: 1, code: { root: 'code/' } }), 'utf-8')
+  )
+  zip.addFile('assets/unselected.txt', Buffer.from('outside code root', 'utf-8'))
+  return zip.toBuffer()
+}
+
 const writeFile = (name: string, bytes: Buffer | string): string => {
   const p = path.join(tmp, name)
   fs.writeFileSync(p, bytes)
@@ -155,6 +166,13 @@ describe('full-PNG cartridge import → panel serving (end-to-end seam)', () => 
 })
 
 describe('cartridge loss is surfaced, not silent (the reported-bug class)', () => {
+  it('EMPTY selected subtree: fresh import warns and leaves no installed tree', () => {
+    const res = importCharacterFromFile(P, writeFullPng(panelCard(), emptyCartridgeZip()))
+    expect(res).not.toBeNull()
+    expect(res!.summary.cartridgeError).toMatch(/no files/i)
+    expect(fs.existsSync(cardCodeRoot(P, res!.id))).toBe(false)
+  })
+
   it('TRUNCATED appended ZIP (partial download): import succeeds, cartridgeError set, panel 404s with the diagnostic body', () => {
     const zip = cartridgeZip()
     const truncated = zip.subarray(0, Math.floor(zip.length / 2)) // still starts with PK
@@ -185,7 +203,7 @@ describe('cartridge loss is surfaced, not silent (the reported-bug class)', () =
     expect(res!.summary.cartridgeError).toMatch(/full PNG/i)
   })
 
-  it('update-in-place from .json wipes the installed cartridge AND says so', () => {
+  it('update-in-place from .json preserves the installed cartridge and reports the rejected update', () => {
     const first = importCharacterFromFile(P, writeFullPng(panelCard(), cartridgeZip()))!
     expect(servePanel(first.id).kind).toBe('file') // panel works before the update
     const upd = updateCharacterInPlace(
@@ -195,11 +213,18 @@ describe('cartridge loss is surfaced, not silent (the reported-bug class)', () =
     )
     expect(upd).not.toBeNull()
     expect(upd!.summary.cartridgeError).toMatch(/full PNG/i)
-    expect(servePanel(first.id)).toEqual({
-      kind: 'error',
-      status: 404,
-      message: CODE_NOT_INSTALLED_MESSAGE
-    })
+    expect(servePanel(first.id).kind).toBe('file')
+  })
+
+  it('EMPTY selected subtree: update reports rejection without wiping working code', () => {
+    const first = importCharacterFromFile(P, writeFullPng(panelCard(), cartridgeZip()))!
+    expect(servePanel(first.id).kind).toBe('file')
+
+    const upd = updateCharacterInPlace(P, first.id, writeFullPng(panelCard(), emptyCartridgeZip()))
+
+    expect(upd).not.toBeNull()
+    expect(upd!.summary.cartridgeError).toMatch(/no files/i)
+    expect(servePanel(first.id).kind).toBe('file')
   })
 
   it('no false warning: a card WITHOUT card-code panels imports from a plain PNG with no cartridgeError', () => {

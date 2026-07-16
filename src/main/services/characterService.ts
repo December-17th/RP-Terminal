@@ -692,7 +692,7 @@ export const importCharacterFromFile = (
 /**
  * UPDATE an existing world in place from a re-imported card, KEEPING its chats/saves (plan §B7 / Feature
  * 1). Overwrites the card blob + avatar + (when the new card carries one) the character lorebook, CLEARS
- * the old world-scoped regex/scripts/cartridge, then re-installs the bundle against the SAME id. Chats,
+ * the old world-scoped regex/scripts, then re-installs the bundle against the SAME id. Chats,
  * floors and memory are untouched — they key on `characterId`, which is preserved. Details:
  *  - A new card with NO character_book leaves the existing lorebook in place (non-destructive).
  *  - Overwriting the lorebook stales cached L2 world-info on this world's chats → that cache is cleared
@@ -724,11 +724,12 @@ export const updateCharacterInPlace = (
       .run(profileId, characterId)
 
     // Clear the OLD world-scoped artifacts before re-installing (mirrors deleteCharacter's cleanup), so a
-    // script/regex removed or renamed in the new card version doesn't linger as an orphan.
+    // script/regex removed or renamed in the new card version doesn't linger as an orphan. Card code is
+    // replaced by installCartridgeCode only after the incoming archive validates; retaining it here keeps
+    // a rejected or archive-less update from destroying a working installation.
     regexService.deleteScriptsByOwner(profileId, 'world', characterId)
     scriptService.deleteScriptsByOwner(profileId, 'world', characterId)
     cardWorkflowHooks?.deleteWorkflowsByOwner(profileId, characterId)
-    deleteCardCode(profileId, characterId)
 
     const counts = installBundleArtifacts(profileId, characterId, card, filePath, assetZipPath, {
       installExtraLorebooks: false,

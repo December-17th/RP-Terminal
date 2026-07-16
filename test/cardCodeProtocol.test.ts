@@ -1,5 +1,5 @@
 // test/cardCodeProtocol.test.ts
-import { describe, it, expect, beforeEach, afterEach } from 'vitest'
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import fs from 'fs'
 import os from 'os'
 import path from 'path'
@@ -12,6 +12,7 @@ import {
   LEGACY_FALLBACK_DOC,
   DEFAULT_CARD_CODE_MIME,
   CODE_NOT_INSTALLED_MESSAGE,
+  CODE_UNAVAILABLE_MESSAGE,
   type CardServeDeps,
   type CardOrigin
 } from '../src/main/services/cardCodeProtocol'
@@ -170,10 +171,30 @@ describe('serveCardCode — per-card origin token (file serving)', () => {
     expect(r).toEqual({ kind: 'error', status: 404, message: CODE_NOT_INSTALLED_MESSAGE })
   })
 
+  it('404s with an unavailable diagnostic when the code root cannot be inspected', () => {
+    const read = vi.spyOn(fs, 'readdirSync').mockImplementation(() => {
+      const error = new Error('permission denied') as NodeJS.ErrnoException
+      error.code = 'EACCES'
+      throw error
+    })
+    try {
+      const r = serve(`rpt-card://${TOKEN}/surfaces/nope.html`)
+      expect(r).toEqual({ kind: 'error', status: 404, message: CODE_UNAVAILABLE_MESSAGE })
+    } finally {
+      read.mockRestore()
+    }
+  })
+
   it('still 403s an untrusted card when the code root is missing (trust gate first, fail-closed)', () => {
     fs.rmSync(codeDir, { recursive: true, force: true })
-    const r = serve(`rpt-card://${TOKEN}/surfaces/self.html`, { isTrusted: () => false })
-    expect(r).toEqual({ kind: 'error', status: 403, message: 'Forbidden' })
+    const read = vi.spyOn(fs, 'readdirSync')
+    try {
+      const r = serve(`rpt-card://${TOKEN}/surfaces/self.html`, { isTrusted: () => false })
+      expect(r).toEqual({ kind: 'error', status: 403, message: 'Forbidden' })
+      expect(read).not.toHaveBeenCalled()
+    } finally {
+      read.mockRestore()
+    }
   })
 
   it('400s a malformed URL', () => {

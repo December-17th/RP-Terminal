@@ -5,6 +5,7 @@ import { usePresetStore } from './presetStore'
 import { useScriptsStore } from './scriptsStore'
 import { useChatStore } from './chatStore'
 import { useUiStore } from './uiStore'
+import { t } from '../i18n'
 
 export interface CharacterCard {
   id: string
@@ -80,7 +81,9 @@ export const useCharacterStore = create<CharacterState>((set) => ({
       // The card's panels are served from its PNG code cartridge; if that failed to install, say so
       // NOW — otherwise the first symptom is every panel rendering a bare 404 later.
       if (s.cartridgeError) {
-        useToastStore.getState().push(`⚠ Card panels not installed: ${s.cartridgeError}`)
+        useToastStore
+          .getState()
+          .push(t('characterImport.cartridgeWarning', { error: s.cartridgeError }))
       }
       // Bundled regex landed in the profile store — refresh the regex views so the
       // new scripts appear and the active chat picks up any display rules.

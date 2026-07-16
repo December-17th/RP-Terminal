@@ -139,6 +139,12 @@ export const installCartridgeCode = (
     toWrite.push({ rel, entry })
   }
 
+  // A valid manifest is not enough: the declared root must select at least one regular file. Reject
+  // before replacing the destination so a malformed update cannot erase a working installation.
+  if (toWrite.length === 0) {
+    return { installed: 0, error: `cartridge code root contains no files: ${rootPrefix}` }
+  }
+
   // Replace any existing tree so a re-import is idempotent.
   try {
     if (fs.existsSync(root)) fs.rmSync(root, { recursive: true, force: true })

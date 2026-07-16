@@ -135,6 +135,16 @@ describe('installCartridgeCode', () => {
     expect(res.error).toMatch(/invalid or unreadable/i)
   })
 
+  it('rejects a declared code root with no regular files and preserves an existing tree', () => {
+    svc.installCartridgeCode('p1', 'c1', buildZip({ 'code/working.html': 'working' }))
+
+    const res = svc.installCartridgeCode('p1', 'c1', buildZip({ 'assets/only.png': 'not code' }))
+
+    expect(res.installed).toBe(0)
+    expect(res.error).toMatch(/no files/i)
+    expect(fs.readFileSync(path.join(codeDir(), 'working.html'), 'utf-8')).toBe('working')
+  })
+
   it('re-import replaces the previous tree (idempotent)', () => {
     svc.installCartridgeCode('p1', 'c1', buildZip({ 'code/old.html': 'old', 'code/keep.html': '1' }))
     expect(fs.existsSync(path.join(codeDir(), 'old.html'))).toBe(true)
