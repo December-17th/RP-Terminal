@@ -34,15 +34,21 @@ win:
         - x64
   artifactName: ${name}-${version}-windows-${arch}-portable.${ext}
 mac:
+  category: public.app-category.entertainment
+  target:
+    - dmg
+    - zip
+  artifactName: ${name}-${version}-macos-${arch}.${ext}
+  electronLanguages:
+    - en-US
+    - zh-CN
+  hardenedRuntime: true
+  entitlements: build/entitlements.mac.plist
   entitlementsInherit: build/entitlements.mac.plist
-  extendInfo:
-    - NSCameraUsageDescription: Application requests access to the device's camera.
-    - NSMicrophoneUsageDescription: Application requests access to the device's microphone.
-    - NSDocumentsFolderUsageDescription: Application requests access to the user's Documents folder.
-    - NSDownloadsFolderUsageDescription: Application requests access to the user's Downloads folder.
-  notarize: false
+  notarize: true
 dmg:
-  artifactName: ${name}-${version}.${ext}
+  artifactName: ${name}-${version}-macos-${arch}.${ext}
+  sign: true
 linux:
   target:
     - AppImage

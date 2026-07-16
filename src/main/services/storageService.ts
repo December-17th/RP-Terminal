@@ -7,38 +7,44 @@ import { readLocationPointer } from './locationPointer'
 export const DATA_DIR_NAME = 'rp-terminal-data'
 
 /** Resolve the data-root base. Precedence: explicit override → saved pointer → platform default.
- *  override/pointer are used verbatim (the chosen folder IS the data dir); the default appends
- *  DATA_DIR_NAME. Pure — the Electron and environment reads live in getAppDir.
+ *  override/pointer are used verbatim (the chosen folder IS the data dir). Pure — the Electron and
+ *  environment reads live in getAppDir.
  *
- *  Packaged default = <exeDir>/DATA_DIR_NAME so the extracted folder is self-contained. */
+ *  Packaged Windows default = <exeDir>/DATA_DIR_NAME so the extracted folder is self-contained.
+ *  Other packaged platforms use Electron's userData directory verbatim. */
 export function resolveDataBase(opts: {
   override?: string
   pointer?: string
   isDev: boolean
+  usePortableDataDir: boolean
   cwd: string
   exeDir: string
+  userDataDir: string
 }): { dir: string; appendName: boolean } {
   if (opts.override) return { dir: opts.override, appendName: false }
   if (opts.pointer) return { dir: opts.pointer, appendName: false }
   if (opts.isDev) return { dir: opts.cwd, appendName: true }
-  return { dir: opts.exeDir, appendName: true }
+  if (opts.usePortableDataDir) return { dir: opts.exeDir, appendName: true }
+  return { dir: opts.userDataDir, appendName: false }
 }
 
 let cachedAppDir: string | null = null
 
-// The data root: RPT_DATA_DIR → saved pointer → platform default
-// (dev=<cwd>/rp-terminal-data / packaged=<exeDir>/rp-terminal-data). Memoized — the location cannot
-// change without an app restart.
+// The data root: RPT_DATA_DIR → saved pointer → platform default. Windows ZIP builds keep data beside
+// the executable; packaged macOS uses Electron's userData path. Memoized — the location cannot change
+// without an app restart.
 export const getAppDir = (): string => {
   if (cachedAppDir) return cachedAppDir
   const { dir, appendName } = resolveDataBase({
     override: process.env.RPT_DATA_DIR,
     pointer: readLocationPointer()?.dataDir,
     isDev: !app.isPackaged, // true in `electron-vite dev`, false in a packaged build
+    usePortableDataDir: app.isPackaged && process.platform === 'win32',
     cwd: process.cwd(),
     // ZIP builds run in place after extraction. Keep PORTABLE_EXECUTABLE_DIR for compatibility with
     // the earlier single-executable build when migrating an existing installation.
-    exeDir: process.env.PORTABLE_EXECUTABLE_DIR || path.dirname(app.getPath('exe'))
+    exeDir: process.env.PORTABLE_EXECUTABLE_DIR || path.dirname(app.getPath('exe')),
+    userDataDir: app.getPath('userData')
   })
   cachedAppDir = appendName ? path.join(dir, DATA_DIR_NAME) : dir
   return cachedAppDir

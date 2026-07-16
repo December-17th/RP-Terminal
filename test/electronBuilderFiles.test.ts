@@ -39,6 +39,16 @@ describe('electron-builder.yml files allowlist', () => {
       artifactName?: string
       electronLanguages?: string[]
     }
+    mac?: {
+      target?: string[]
+      artifactName?: string
+      electronLanguages?: string[]
+      hardenedRuntime?: boolean
+      entitlements?: string
+      entitlementsInherit?: string
+      notarize?: boolean
+    }
+    dmg?: { artifactName?: string; sign?: boolean }
   }
 
   it('defines a files list', () => {
@@ -67,6 +77,33 @@ describe('electron-builder.yml files allowlist', () => {
 
   it('ships only the Electron locales supported by the app UI', () => {
     expect(config.win?.electronLanguages).toEqual(['en-US', 'zh-CN'])
+    expect(config.mac?.electronLanguages).toEqual(['en-US', 'zh-CN'])
+  })
+
+  it('builds signed and notarized macOS DMG and ZIP artifacts', () => {
+    expect(config.mac?.target).toEqual(['dmg', 'zip'])
+    expect(config.mac?.artifactName).toBe('${name}-${version}-macos-${arch}.${ext}')
+    expect(config.dmg?.artifactName).toBe('${name}-${version}-macos-${arch}.${ext}')
+    expect(config.dmg?.sign).toBe(true)
+    expect(config.mac?.hardenedRuntime).toBe(true)
+    expect(config.mac?.entitlements).toBe('build/entitlements.mac.plist')
+    expect(config.mac?.entitlementsInherit).toBe('build/entitlements.mac.plist')
+    expect(config.mac?.notarize).toBe(true)
+  })
+
+  it('keeps macOS entitlements and privacy declarations least-privilege', () => {
+    const configWithInfo = config as typeof config & { mac?: { extendInfo?: unknown } }
+    expect(configWithInfo.mac?.extendInfo).toBeUndefined()
+
+    const entitlements = fs.readFileSync(
+      path.resolve(__dirname, '..', 'build', 'entitlements.mac.plist'),
+      'utf8'
+    )
+    expect(entitlements).toContain('com.apple.security.cs.allow-jit')
+    expect(entitlements).toContain('com.apple.security.cs.allow-unsigned-executable-memory')
+    expect(entitlements).not.toContain('allow-dyld-environment-variables')
+    expect(entitlements).not.toContain('device.camera')
+    expect(entitlements).not.toContain('device.microphone')
   })
 
   it('keeps only runtime-required modules in production dependencies', () => {
