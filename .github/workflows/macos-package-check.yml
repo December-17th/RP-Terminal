@@ -21,7 +21,17 @@ permissions:
 
 jobs:
   package:
-    runs-on: macos-15
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: arm64
+            binary_arch: arm64
+            runner: macos-15
+          - arch: x64
+            binary_arch: x86_64
+            runner: macos-15-intel
+    runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v4
 
@@ -33,15 +43,19 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Build and audit unsigned Apple Silicon test artifacts
+      - name: Build and audit unsigned macOS ZIP
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
         run: |
           npm run build
-          npx electron-builder --mac dmg zip --arm64
+          npx electron-builder --mac zip --${{ matrix.arch }}
           npm run check:release:mac
 
-      - name: Verify native architecture
+      - name: Verify native architecture and unsigned status
         run: |
           app_path="$(find dist -maxdepth 3 -type d -name 'RP Terminal.app' -print -quit)"
-          test "$(lipo -archs "$app_path/Contents/MacOS/RP Terminal")" = arm64
+          test "$(lipo -archs "$app_path/Contents/MacOS/RP Terminal")" = '${{ matrix.binary_arch }}'
+          if codesign --display --verbose=4 "$app_path" 2>&1 | grep -q 'Authority=Developer ID Application'; then
+            echo "::error::Unsigned package unexpectedly contains a Developer ID signature"
+            exit 1
+          fi

@@ -47,6 +47,7 @@ describe('electron-builder.yml files allowlist', () => {
       entitlements?: string
       entitlementsInherit?: string
       notarize?: boolean
+      extendInfo?: unknown
     }
     dmg?: { artifactName?: string; sign?: boolean }
   }
@@ -80,30 +81,18 @@ describe('electron-builder.yml files allowlist', () => {
     expect(config.mac?.electronLanguages).toEqual(['en-US', 'zh-CN'])
   })
 
-  it('builds signed and notarized macOS DMG and ZIP artifacts', () => {
-    expect(config.mac?.target).toEqual(['dmg', 'zip'])
-    expect(config.mac?.artifactName).toBe('${name}-${version}-macos-${arch}.${ext}')
-    expect(config.dmg?.artifactName).toBe('${name}-${version}-macos-${arch}.${ext}')
-    expect(config.dmg?.sign).toBe(true)
-    expect(config.mac?.hardenedRuntime).toBe(true)
-    expect(config.mac?.entitlements).toBe('build/entitlements.mac.plist')
-    expect(config.mac?.entitlementsInherit).toBe('build/entitlements.mac.plist')
-    expect(config.mac?.notarize).toBe(true)
+  it('builds an explicitly labelled unsigned macOS ZIP', () => {
+    expect(config.mac?.target).toEqual(['zip'])
+    expect(config.mac?.artifactName).toBe('${name}-${version}-macos-${arch}-unsigned.${ext}')
+    expect(config.mac?.notarize).toBe(false)
+    expect(config.mac?.hardenedRuntime).toBeUndefined()
+    expect(config.mac?.entitlements).toBeUndefined()
+    expect(config.mac?.entitlementsInherit).toBeUndefined()
+    expect(config.dmg).toBeUndefined()
   })
 
-  it('keeps macOS entitlements and privacy declarations least-privilege', () => {
-    const configWithInfo = config as typeof config & { mac?: { extendInfo?: unknown } }
-    expect(configWithInfo.mac?.extendInfo).toBeUndefined()
-
-    const entitlements = fs.readFileSync(
-      path.resolve(__dirname, '..', 'build', 'entitlements.mac.plist'),
-      'utf8'
-    )
-    expect(entitlements).toContain('com.apple.security.cs.allow-jit')
-    expect(entitlements).toContain('com.apple.security.cs.allow-unsigned-executable-memory')
-    expect(entitlements).not.toContain('allow-dyld-environment-variables')
-    expect(entitlements).not.toContain('device.camera')
-    expect(entitlements).not.toContain('device.microphone')
+  it('does not declare unused macOS privacy permissions', () => {
+    expect(config.mac?.extendInfo).toBeUndefined()
   })
 
   it('keeps only runtime-required modules in production dependencies', () => {
