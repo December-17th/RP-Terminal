@@ -141,6 +141,7 @@ describe('generate() — parity baseline', () => {
     capturedParams = null
     capturedFloor = null
     yuzuFlag.on = false
+    settings.yuzu = { max_tokens: 30000 } // reset any per-test override to the default
     vi.useFakeTimers()
     vi.setSystemTime(new Date('2020-06-01T12:00:00.000Z'))
   })
@@ -174,10 +175,23 @@ describe('generate() — parity baseline', () => {
     expect(overlay.content).toContain('neutral, smile') // union of moods, sorted
     expect(overlay.content).toContain('classroom, rooftop') // locations, sorted
     expect(overlay.content).toContain('cg_confession') // cgs
-    // The ceiling is raised to at least 16000 (default preset max_tokens is 4000).
-    expect((capturedParams as { max_tokens: number }).max_tokens).toBe(16000)
+    // The VN-mode setting REPLACES the preset ceiling (preset default is 4000); default = 30000.
+    expect((capturedParams as { max_tokens: number }).max_tokens).toBe(30000)
     // Pin the whole overlay block + position so any drift in content/order is caught.
     expect(overlay.content).toMatchSnapshot('vnOverlayBlock')
     expect(msgs.length).toBe((capturedSend as unknown[]).length)
+  })
+
+  // Project Yuzu WP-S1 follow-up: the player-adjusted setting reaches the provider verbatim — it
+  // replaces the preset's max_tokens (even when LOWER than the preset's 4000).
+  it('VN mode sends the custom settings.yuzu.max_tokens verbatim', async () => {
+    yuzuFlag.on = true
+    settings.yuzu = { max_tokens: 8000 }
+    await generate('profile1', 'chat1', 'open the door')
+    expect((capturedParams as { max_tokens: number }).max_tokens).toBe(8000)
+
+    settings.yuzu = { max_tokens: 2000 } // below the preset's 4000 — still verbatim
+    await generate('profile1', 'chat1', 'open the door')
+    expect((capturedParams as { max_tokens: number }).max_tokens).toBe(2000)
   })
 })

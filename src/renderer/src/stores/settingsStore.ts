@@ -83,6 +83,11 @@ export interface Settings {
   agent: {
     mode: 'off' | 'manual' | 'agentic'
   }
+  /** Project Yuzu: VN play-mode tuning. In VN mode `max_tokens` REPLACES the preset's ceiling
+   *  verbatim; absent/invalid ⇒ 30000 (main-side default). */
+  yuzu?: {
+    max_tokens?: number
+  }
   /** Combat (Track Combat): an optional author/user prompt that steers the AI's end-of-combat
    *  narration (which always lands as a new floor). A card's `combat` bundle can override it. */
   combat?: {

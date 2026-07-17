@@ -271,6 +271,9 @@ const zh: Record<string, string> = {
     '0 = 不限制。限制同时进行的请求数量（RPM 限制的是发送速率，不限制并发）；共用同一接口地址的预设共享同一上限。',
   'api.maxContext': '最大上下文（Token）',
   'api.maxContextHint': '会裁剪最旧的回合以将提示词保持在此估算值以下。对大上下文模型可调高。',
+  'api.vnMaxTokens': '视觉小说最大输出（Token）',
+  'api.vnMaxTokensHint':
+    '视觉小说（VN）模式场景的输出上限——VN 模式开启时替代预设的 max_tokens。默认 30000。',
   'api.noModels': '服务商未返回任何模型',
   'api.fetchFailed': '获取模型失败：',
 

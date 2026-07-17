@@ -3,6 +3,7 @@ import { stripThinking } from '../../../parsers/contentParser'
 import { ChatMessage } from '../../promptBuilder'
 import { GenContext } from '../../generation/types'
 import { getChatTableTemplateId } from '../../chatService'
+import { resolveYuzuMaxTokens } from '../../settingsService'
 import { getTableTemplateById } from '../../tableTemplateService'
 import { getProgress } from '../../tableProgressService'
 import { NodeImpl } from '../types'
@@ -180,9 +181,10 @@ export const contextParams: NodeImpl = {
         ? Math.min(presetMax, gen.modeConfig.max_output_tokens)
         : gen.modeConfig.max_output_tokens
       : presetMax
-    // Project Yuzu (ADR 0008 §7): mirror assemble.ts's VN-mode ceiling raise so the side-pack `params` path
-    // reaching llm.sample carries the same budget. Off = classic value verbatim (parity).
-    const maxTokens = gen.vnMode ? Math.max(baseMax ?? 0, 16000) : baseMax
+    // Project Yuzu (ADR 0008 §7): mirror assemble.ts — in VN mode the player's setting (default 30000)
+    // REPLACES the preset ceiling, so the side-pack `params` path carries the same budget. Off = classic
+    // value verbatim (parity).
+    const maxTokens = gen.vnMode ? resolveYuzuMaxTokens(gen.settings) : baseMax
     return { outputs: { params: { ...gen.preset.parameters, max_tokens: maxTokens } } }
   }
 }

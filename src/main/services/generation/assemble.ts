@@ -1,4 +1,5 @@
 import { getActivePresetId } from '../presetService'
+import { resolveYuzuMaxTokens } from '../settingsService'
 import { matchAcross } from '../lorebookService'
 import { getCachedWorldInfo, setCachedWorldInfo } from '../chatService'
 import {
@@ -265,9 +266,10 @@ export const assemblePrompt = (
       ? Math.min(presetMax, modeConfig.max_output_tokens)
       : modeConfig.max_output_tokens
     : presetMax
-  // Project Yuzu (ADR 0008 §7): a full YSS scene document is long — raise the ceiling to at least 16000 in
-  // VN mode (never lower it). Off = the classic value verbatim (parity). Mirrored in contextNodes.contextParams.
-  const maxTokens = vnMode ? Math.max(baseMax ?? 0, 16000) : baseMax
+  // Project Yuzu (ADR 0008 §7): in VN mode the player's setting (settings.yuzu.max_tokens, default 30000)
+  // REPLACES the preset's ceiling verbatim — the preset max_tokens is a classic-chat concern. Off = the
+  // classic value verbatim (parity). Mirrored in contextNodes.contextParams.
+  const maxTokens = vnMode ? resolveYuzuMaxTokens(settings) : baseMax
   const params = { ...preset.parameters, max_tokens: maxTokens }
 
   // The exact array sent to the API (provider-specific ordering: end-on-user for strict OpenAI-compatible

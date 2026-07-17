@@ -59,6 +59,19 @@ export const maskSecret = (plain: string): string => {
 /** A copy of settings with every api key masked (for sending to the renderer). */
 export const maskedSettings = (s: Settings): Settings => mapApiKeys(s, maskSecret)
 
+/** Project Yuzu (ADR 0008 §7): the default VN-mode output ceiling. Player-adjustable via
+ *  `settings.yuzu.max_tokens`; in VN mode this value REPLACES the preset's max_tokens verbatim. */
+export const YUZU_DEFAULT_MAX_TOKENS = 30000
+
+/** The effective VN-mode max_tokens: the player's setting verbatim, or the default when
+ *  absent/invalid (non-finite or < 1). Read by both generation params paths (assemble/context.params). */
+export const resolveYuzuMaxTokens = (settings: Settings): number => {
+  const v = settings.yuzu?.max_tokens
+  return typeof v === 'number' && Number.isFinite(v) && v >= 1
+    ? Math.floor(v)
+    : YUZU_DEFAULT_MAX_TOKENS
+}
+
 export const getDefaultSettings = (): Settings => ({
   api: {
     provider: 'openai',
@@ -114,6 +127,10 @@ export const getDefaultSettings = (): Settings => ({
   // Classic by default: ST-style dynamic lore, no FSM. Manual/agentic are opt-in.
   agent: {
     mode: 'off'
+  },
+  // Project Yuzu: VN-mode output ceiling (replaces the preset's max_tokens while in VN mode).
+  yuzu: {
+    max_tokens: YUZU_DEFAULT_MAX_TOKENS
   },
   // Combat: end-of-combat narration always lands as a new floor; a card or the user can supply a
   // steering prompt.
@@ -202,6 +219,10 @@ export const normalize = (stored: Partial<Settings>): Settings => {
   cache.level = cache.mode === 'frozen' ? cache.level || 1 : 0
   const cards = { ...d.cards, ...(stored.cards || {}) }
   const combat = { ...d.combat, ...(stored.combat || {}) }
+  // Yuzu VN-mode tuning: merge stored over the default, then coerce an invalid ceiling back to the
+  // default so a corrupt value can't zero the output budget.
+  const yuzu = { ...d.yuzu, ...(stored.yuzu || {}) }
+  yuzu.max_tokens = resolveYuzuMaxTokens({ yuzu } as Settings)
   const pricing = { ...d.pricing, ...(stored.pricing || {}) }
   const logs = { ...d.logs, ...(stored.logs || {}) }
 
@@ -262,6 +283,7 @@ export const normalize = (stored: Partial<Settings>): Settings => {
     workspace,
     cache,
     cards,
+    yuzu,
     combat,
     pricing,
     logs

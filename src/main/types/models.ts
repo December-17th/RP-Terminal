@@ -128,6 +128,12 @@ export interface Settings {
   agent: {
     mode: AgentMode
   }
+  /** Project Yuzu (ADR 0008 §7): VN play-mode tuning. In VN mode the output ceiling is this value,
+   *  VERBATIM — it REPLACES the preset's max_tokens (a classic-chat concern). Absent/invalid ⇒ 30000
+   *  (see settingsService.resolveYuzuMaxTokens). Classic mode never reads this. */
+  yuzu?: {
+    max_tokens?: number
+  }
   /** Combat (Track Combat): an optional steering prompt for end-of-combat narration (which always
    *  lands as a new floor). A card's `combat` bundle (`narration_prompt`) overrides these. */
   combat?: {

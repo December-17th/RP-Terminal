@@ -243,4 +243,17 @@ describe('settings usage-meter + pricing', () => {
     } as any)
     expect(s.pricing.m1.output).toBe(2)
   })
+
+  // Project Yuzu WP-S1 follow-up: the VN-mode output ceiling (settings.yuzu.max_tokens).
+  it('yuzu.max_tokens defaults to 30000 and round-trips a stored value', () => {
+    expect(getDefaultSettings().yuzu?.max_tokens).toBe(30000)
+    expect(normalize({}).yuzu?.max_tokens).toBe(30000) // legacy settings file: absent section
+    expect(normalize({ yuzu: { max_tokens: 8000 } } as any).yuzu?.max_tokens).toBe(8000)
+  })
+
+  it('yuzu.max_tokens coerces an invalid stored value back to the default', () => {
+    expect(normalize({ yuzu: { max_tokens: 0 } } as any).yuzu?.max_tokens).toBe(30000)
+    expect(normalize({ yuzu: { max_tokens: NaN } } as any).yuzu?.max_tokens).toBe(30000)
+    expect(normalize({ yuzu: { max_tokens: 'lots' } } as any).yuzu?.max_tokens).toBe(30000)
+  })
 })

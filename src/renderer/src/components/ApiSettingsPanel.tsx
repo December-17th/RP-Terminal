@@ -293,6 +293,29 @@ export const ApiSettingsPanel: React.FC<{ profileId: string }> = ({ profileId })
         <div style={{ fontSize: '0.78em', color: 'var(--rpt-text-secondary)', marginTop: 4 }}>
           {t('api.maxContextHint')}
         </div>
+
+        <label className="field-label" style={{ marginTop: 16 }}>
+          {t('api.vnMaxTokens')}
+        </label>
+        <input
+          type="number"
+          min={1000}
+          step={1000}
+          placeholder="30000"
+          value={settings.yuzu?.max_tokens ?? 30000}
+          onChange={(e) =>
+            updateSettings(profileId, {
+              yuzu: {
+                ...settings.yuzu,
+                // Empty/invalid input resets to the default (30000); floor at the input's min.
+                max_tokens: Math.max(1000, Math.floor(Number(e.target.value)) || 30000)
+              }
+            })
+          }
+        />
+        <div style={{ fontSize: '0.78em', color: 'var(--rpt-text-secondary)', marginTop: 4 }}>
+          {t('api.vnMaxTokensHint')}
+        </div>
       </div>
     </div>
   )

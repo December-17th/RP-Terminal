@@ -283,6 +283,9 @@ const en: Record<string, string> = {
   'api.maxContext': 'Max Context (tokens)',
   'api.maxContextHint':
     'Oldest turns are trimmed to keep the prompt under this estimate. Raise it for large-context models.',
+  'api.vnMaxTokens': 'Visual Novel Max Output (tokens)',
+  'api.vnMaxTokensHint':
+    'Output ceiling for visual-novel (VN) mode scenes — replaces the preset max_tokens while VN mode is on. Default 30000.',
   'api.noModels': 'No models returned by the provider',
   'api.fetchFailed': 'Fetch models failed: ',
 
