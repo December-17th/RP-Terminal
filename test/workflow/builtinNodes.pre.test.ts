@@ -56,7 +56,16 @@ describe('prompt.assemble', () => {
 
     expect(matchWorldInfo).toHaveBeenCalledWith(gen)
     expect(assemblePrompt).toHaveBeenCalledWith(gen, matched, 'memory block')
-    expect(result).toEqual({ outputs: { sendMessages, params } })
+    // Issue 18b: the legacy sendMessages/params ports are UNCHANGED; the same assembly is ALSO
+    // emitted as the rich `prompt` artifact (messages + provenance + params) — additive, so seeded
+    // docs that wire only sendMessages/params are byte-for-byte unaffected.
+    expect(result).toEqual({
+      outputs: {
+        sendMessages,
+        params,
+        prompt: expect.objectContaining({ kind: 'prompt-artifact', messages: sendMessages, params })
+      }
+    })
   })
 
   it('stamps the execution record onto the shared gen (issue 09), without exposing it as a port', () => {
@@ -71,8 +80,10 @@ describe('prompt.assemble', () => {
 
     const result = promptAssemble.run(baseCtx, { gen, block: '' })
 
-    // The record rides `gen` (so the terminal write stage persists it) — never the output ports.
+    // The record rides `gen` (so the terminal write stage persists it) and now ALSO travels inside
+    // the `prompt` artifact (issue 18a) — but never as a STANDALONE output port.
     expect(gen.executionRecord).toBe(record)
     expect(result.outputs).not.toHaveProperty('record')
+    expect((result.outputs.prompt as { record: unknown }).record).toBe(record)
   })
 })

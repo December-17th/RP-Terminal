@@ -1278,6 +1278,8 @@ const en: Record<string, string> = {
   'workflowEditor.portDesc.common.in2': 'Upstream value for the {{in2}} placeholder',
   'workflowEditor.portDesc.common.in3': 'Upstream value for the {{in3}} placeholder',
   'workflowEditor.portDesc.common.in4': 'Upstream value for the {{in4}} placeholder',
+  'workflowEditor.portDesc.common.prompt':
+    'The assembled prompt as a rich artifact (messages + provenance + execution record + sampler params). Wire it into Sample / Parse Response / Write Floor instead of Messages; a consumer reads the message array from it.',
   // Port descriptions, per node.
   'workflowEditor.portDesc.input.context.gen': 'The turn bundle every downstream node reads',
   'workflowEditor.portDesc.prompt.assemble.block':

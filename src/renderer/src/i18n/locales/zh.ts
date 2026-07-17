@@ -1230,6 +1230,8 @@ const zh: Record<string, string> = {
   'workflowEditor.portDesc.common.in2': '{{in2}} 占位符的上游值',
   'workflowEditor.portDesc.common.in3': '{{in3}} 占位符的上游值',
   'workflowEditor.portDesc.common.in4': '{{in4}} 占位符的上游值',
+  'workflowEditor.portDesc.common.prompt':
+    '组装好的提示词，作为富对象（消息 + 来源溯源 + 执行记录 + 采样参数）。可直接接入采样 / 解析回复 / 写入楼层，替代 Messages；消费端会从中读取消息数组。',
   // 逐节点端口说明
   'workflowEditor.portDesc.input.context.gen': '供所有下游节点读取的回合包',
   'workflowEditor.portDesc.prompt.assemble.block': '拼入提示词尾部的可选文本（未接时为空）',

@@ -6,6 +6,7 @@ import { providerShape } from '../../generation/providerShape'
 import { GenContext } from '../../generation/types'
 import { NodeImpl } from '../types'
 import { log } from '../../logService'
+import { wrapMessages } from '../promptArtifact'
 
 /**
  * Text-authoring built-in nodes (Phase 2b-2 task 5): renders card/workflow-authored templates
@@ -119,7 +120,13 @@ export const promptMessages: NodeImpl = {
     { name: 'in4', type: 'Any' },
     { name: 'when', type: 'Signal' }
   ],
-  outputs: [{ name: 'messages', type: 'Messages' }],
+  outputs: [
+    { name: 'messages', type: 'Messages' },
+    // Issue 18b: the SAME authored list, also wrapped as a `Prompt` artifact — each row a SYNTHETIC
+    // contribution (this node is a legacy `Messages` producer, so provenance is synthesized). ADDITIVE:
+    // the `messages` port stays so existing docs (e.g. the decomposed-default example) wire unchanged.
+    { name: 'prompt', type: 'Prompt' }
+  ],
   configSchema: messagesConfig,
   run: (_ctx, inputs, node) => {
     const cfg = node.config as z.infer<typeof messagesConfig>
@@ -128,7 +135,19 @@ export const promptMessages: NodeImpl = {
       role: m.role,
       content: interpolate(m.content, slotsOf(inputs), gen)
     }))
-    return { outputs: { messages: gen ? providerShape(gen.settings, rows) : rows } }
+    // Provider shaping stays gated on a wired `gen` (unchanged); `shaped` records whether it ran so
+    // the model-dispatch seam (18e) can avoid shaping twice.
+    const messages = gen ? providerShape(gen.settings, rows) : rows
+    return {
+      outputs: {
+        messages,
+        prompt: wrapMessages(
+          messages,
+          { kind: 'pipeline', id: node.id, label: 'prompt.messages' },
+          !!gen
+        )
+      }
+    }
   }
 }
 
