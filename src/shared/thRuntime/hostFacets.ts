@@ -7,7 +7,13 @@
 // one concern at a time. Every member's doc comment travels with it.
 import type { VarOp } from './ops'
 import type { TavernRegex } from './tavernRegex'
-import type { FloorLike, GenCfgNormalized, StMessage, VarsOrigin } from './hostPrimitives'
+import type {
+  FloorLike,
+  GenCfgNormalized,
+  HostPresetView,
+  StMessage,
+  VarsOrigin
+} from './hostPrimitives'
 
 /** Variables: stat_data + MVU ops, the three KV scopes (script / chat / global), and the
  *  stat_data change subscription. */
@@ -32,6 +38,11 @@ export interface VarsHost {
   // setGlobalVars persists the whole bag. (A beautification card keeps its UI settings here.)
   getGlobalVarsSync(): Record<string, any>
   setGlobalVars(vars: Record<string, any>): Promise<void>
+  // TavernHelper `getContext().extensionSettings` durable backing (issue 19). SYNC read so an
+  // extension-style card reads its saved settings at boot (like the other sync getters); the whole-object
+  // write is what `saveSettingsDebounced` flushes. A per-profile store, distinct from the card KV scopes.
+  getExtensionSettingsSync(): Record<string, any>
+  setExtensionSettings(settings: Record<string, any>): Promise<void>
   onVarsChanged(cb: (statData: any, meta?: { origin: VarsOrigin }) => void): () => void
 }
 
@@ -67,8 +78,25 @@ export interface ChatHost {
   reloadChat(): Promise<boolean>
   charData(): any
   charAvatarPath(): string | null
-  preset(): { name: string; parameters?: any } | null
+  /**
+   * The active ('in_use') preset as a normalized view (M2 normalized runtime view + envelope-derived
+   * `prompts_unused`). The runtime maps this into TavernHelper's `getPreset('in_use')` shape (spec §7)
+   * and keeps the legacy `{ name, parameters }` fields cards already read. null when no preset is active.
+   */
+  preset(): HostPresetView | null
   presetNames(): string[]
+  /**
+   * Persist a card's preset edits (the 狐神抚 control surface — toggling prompt `enabled`) through the
+   * existing preset service. The runtime merges the card's mutated view against the current normalized
+   * view by identifier, then hands a full normalized preset here (the transport validates + writes it).
+   * Returns whether the write succeeded.
+   *
+   * TODO(F6 — tavernhelper-docs-spec §7): TH's exact write-back DURABILITY semantics (whether an in-chat
+   * edit survives a reload / a preset switch, and the precise `in_use` vs `getLoadedPresetName` divergence)
+   * are docs-silent. This persists immediately + durably through the preset service (the most faithful
+   * behavior the docs support); the divergence-on-switch nuance awaits the F6 black-box fixture.
+   */
+  savePreset(preset: unknown): Promise<boolean>
 }
 
 /** Regex: the display/prompt regex pairs, full TavernHelper-shaped regexes, and replacement. */

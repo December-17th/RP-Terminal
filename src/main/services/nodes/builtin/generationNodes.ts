@@ -16,8 +16,12 @@ import {
   assembledArtifact,
   resolveSendMessages,
   resolveParams,
-  resolveDispatchMessages
+  resolveDispatchMessages,
+  applyDispatchTransforms,
+  appendDispatchEntries,
+  isPromptArtifact
 } from '../promptArtifact'
+import { getDispatchHooks } from '../dispatchHooks'
 
 /**
  * Pre-model built-in nodes (Phase 2b-1b task 2): thin `run()` delegations to the 2b-1a
@@ -262,9 +266,25 @@ export const llmSample: NodeImpl = {
     // shape them exactly once here (the single dispatch boundary). A legacy `sendMessages` array or an
     // already-shaped artifact passes through unchanged (byte-identical for seeded docs); only an
     // UNSHAPED Prompt artifact is shaped, via providerShape bound to this turn's settings.
-    const sendMessages = resolveDispatchMessages(inputs.sendMessages, inputs.prompt, (m) =>
+    const shapedMessages = resolveDispatchMessages(inputs.sendMessages, inputs.prompt, (m) =>
       providerShape(gen.settings, m)
     ) as ChatMessage[]
+    // 18e capability-gated PRE-DISPATCH MUTATION seam (Tier-4 TavernHelper, issue 19): apply any
+    // registered high-trust late hooks to the FINAL message array and delta-record each real mutation as
+    // an `opaque` entry on the Prompt artifact's execution record (script id + hook + before/after hashes —
+    // never a raw untracked swap). Zero hooks (the default) ⇒ the array passes through byte-identical.
+    const hooks = getDispatchHooks(gen.chatId)
+    const { messages: sendMessages, entries: dispatchEntries } = applyDispatchTransforms(
+      shapedMessages ?? [],
+      hooks
+    )
+    if (dispatchEntries.length && isPromptArtifact(inputs.prompt) && inputs.prompt.record) {
+      // Forensic: land the late-hook deltas on the LIVE artifact's record — the same object the turn
+      // threads to parse.response/writeFloor — so the pre-dispatch mutation is journaled, never a raw
+      // untracked swap. `appendDispatchEntries` re-indexes seq; we splice its result back in place.
+      const merged = appendDispatchEntries(inputs.prompt, dispatchEntries)
+      inputs.prompt.record.entries.splice(0, inputs.prompt.record.entries.length, ...merged.record!.entries)
+    }
     const r = await runLlmCall(
       ctx,
       gen,

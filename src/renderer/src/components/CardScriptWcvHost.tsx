@@ -101,7 +101,9 @@ export function CardScriptWcvHost({
   useEffect(() => {
     if (!enabled || !grantsLoaded) return
     let alive = true
-    window.api.getRuntimeScripts(profileId, cardId, chatId).then((res: any) => {
+    // isolatedRealm=true: this is the WCV transport, the only realm where high-trust remote-code
+    // scripts (ADR 0017) are allowed to resolve. The inline CardScriptHost never sets this.
+    window.api.getRuntimeScripts(profileId, cardId, chatId, true).then((res: any) => {
       if (!alive) return
       setScripts(res?.scripts || [])
       setRemoteHosts(res?.remoteHosts || [])

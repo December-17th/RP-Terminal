@@ -1,7 +1,9 @@
+import { createHash } from 'node:crypto'
 import { ChatMessage, BudgetClass } from '../promptBuilder'
 import { PresetParameters } from '../../types/preset'
 import {
   ExecutionRecord,
+  RecordContent,
   RecordEntry,
   RecordRole,
   RecordSource
@@ -245,4 +247,95 @@ export const resolveDispatchMessages = (
   if (legacy != null) return legacy as ChatMessage[]
   if (isPromptArtifact(prompt)) return prompt.shaped ? prompt.messages : shape(prompt.messages)
   return undefined
+}
+
+/**
+ * 18e SEAM 2 — the capability-gated PRE-DISPATCH MUTATION seam (Tier-4 TavernHelper, issue 19).
+ *
+ * A high-trust TavernHelper late hook (the `CHAT_COMPLETION_PROMPT_READY` analogue) gets the FINAL,
+ * provider-shaped message array just before dispatch and may rewrite it. This is the ONE place such a
+ * hook composes in — and it composes in ATTRIBUTABLY: every hook that actually changes the array is
+ * delta-recorded as an `opaque` execution-record entry (`source.id` = the script id, `source.label` =
+ * the hook name, before/after as SHA-256 hashes, never the copied text), NEVER a raw untracked array
+ * swap. A no-op hook records nothing (behavior-neutral). With zero hooks the messages pass through
+ * byte-identical (so the default generation path is unchanged — the parity contract holds).
+ *
+ * TODO(F2/F3 — tavernhelper-docs-spec §3): the docs are SILENT on the late-hook's exact EVENT NAME
+ * (they link an off-limits source `.d.ts`) and on whether the payload is a LIVE MUTABLE object the
+ * hook's return replaces. This seam records + applies the hook's RETURNED array (the most faithful
+ * mutable-payload model the docs support) and treats `hook` as an opaque label pending the F2 (payload
+ * mutability) + F3 (event enumeration/order) black-box fixtures. Populating hooks from a live WCV
+ * high-trust script across the realm boundary is the remaining wiring (see `dispatchHooks.ts`).
+ */
+export interface DispatchTransform {
+  /** The attributed identity — the upstream TH script id (or its file id) the mutation belongs to. */
+  scriptId: string
+  /** The late-hook name (the CHAT_COMPLETION_PROMPT_READY analogue). F2/F3-guarded — treated as a label. */
+  hook: string
+  /** Rewrite the final message array. MUST return an array; a non-array return is ignored (no-op). */
+  apply: (messages: ChatMessage[]) => ChatMessage[]
+}
+
+const sha256Hex = (s: string): string => createHash('sha256').update(s, 'utf8').digest('hex')
+const PREVIEW_CHARS = 80
+/** Canonical string of a message array, for the before/after opaque hashes. */
+const joinForHash = (messages: ChatMessage[]): string =>
+  messages.map((m) => `${m.role}\n${m.content}`).join(' ')
+/** An opaque `ref` payload (hash + bytes + short preview) — matches the record builder's `ref`. */
+const refContent = (s: string): RecordContent => ({
+  kind: 'ref',
+  hash: sha256Hex(s),
+  bytes: Buffer.byteLength(s, 'utf8'),
+  preview: s.slice(0, PREVIEW_CHARS)
+})
+
+/**
+ * Apply the pre-dispatch transforms in order to the final message array, returning the mutated array PLUS
+ * one `opaque` RecordEntry per transform that ACTUALLY CHANGED it. PURE: never mutates its inputs, and a
+ * transform that returns an equal array (or a non-array) yields no entry and leaves the array as-is. The
+ * returned entries carry `seq: 0`; `appendDispatchEntries` re-indexes them onto a record.
+ */
+export const applyDispatchTransforms = (
+  messages: ChatMessage[],
+  transforms: DispatchTransform[]
+): { messages: ChatMessage[]; entries: RecordEntry[] } => {
+  let current = messages
+  const entries: RecordEntry[] = []
+  for (const t of transforms || []) {
+    let next: ChatMessage[]
+    try {
+      next = t.apply(current)
+    } catch {
+      continue // a throwing hook is a no-op (its wreckage stays inside the isolated realm)
+    }
+    if (!Array.isArray(next)) continue
+    const before = joinForHash(current)
+    const after = joinForHash(next)
+    if (before === after) {
+      current = next
+      continue // no observable change → record nothing (behavior-neutral)
+    }
+    entries.push({
+      seq: 0,
+      stage: 'opaque',
+      source: { kind: 'pipeline', id: t.scriptId, label: t.hook },
+      before: refContent(before),
+      after: refContent(after),
+      note: `pre-dispatch hook ${t.hook}`
+    })
+    current = next
+  }
+  return { messages: current, entries }
+}
+
+/**
+ * Append pre-dispatch mutation entries to a Prompt artifact's execution record (re-indexing `seq`). PURE —
+ * returns a NEW artifact (or the same one when there is no record / no entries). This is how the late-hook
+ * deltas land on the forensic record the preview reader surfaces.
+ */
+export const appendDispatchEntries = (a: PromptArtifact, entries: RecordEntry[]): PromptArtifact => {
+  if (!a.record || !entries.length) return a
+  const base = a.record.entries.length
+  const reindexed = entries.map((e, i) => ({ ...e, seq: base + i }))
+  return { ...a, record: { ...a.record, entries: [...a.record.entries, ...reindexed] } }
 }

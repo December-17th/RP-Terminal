@@ -18,10 +18,17 @@ export const readScopeMeta = (dir: string): Record<string, ScopeMeta> =>
 const writeScopeMeta = (dir: string, meta: Record<string, ScopeMeta>): void =>
   writeJsonSyncAtomic(metaPath(dir), meta)
 
-// Drop an entry once it carries no information (global + no owner + enabled + no renderMode).
+// Drop an entry once it carries no information (global + no owner + enabled + no renderMode + not high-trust).
 const prune = (meta: Record<string, ScopeMeta>, file: string): void => {
   const m = meta[file]
-  if (m && (m.scope ?? 'global') === 'global' && !m.owner && !m.disabled && !m.renderMode)
+  if (
+    m &&
+    (m.scope ?? 'global') === 'global' &&
+    !m.owner &&
+    !m.disabled &&
+    !m.renderMode &&
+    !m.highTrust
+  )
     delete meta[file]
 }
 
@@ -36,7 +43,8 @@ export const setScope = (dir: string, file: string, scope: ArtifactScope, owner?
     scope,
     owner: scope === 'global' ? undefined : owner,
     disabled: prev.disabled,
-    renderMode: prev.renderMode
+    renderMode: prev.renderMode,
+    highTrust: prev.highTrust
   }
   prune(meta, file)
   writeScopeMeta(dir, meta)
@@ -50,7 +58,27 @@ export const setDisabled = (dir: string, file: string, disabled: boolean): void 
     scope: prev.scope ?? 'global',
     owner: prev.owner,
     disabled: disabled || undefined,
-    renderMode: prev.renderMode
+    renderMode: prev.renderMode,
+    highTrust: prev.highTrust
+  }
+  prune(meta, file)
+  writeScopeMeta(dir, meta)
+}
+
+/**
+ * Mark (or clear) an artifact as a high-trust remote-code artifact (ADR 0017), preserving
+ * scope/owner/disabled/renderMode. A high-trust artifact runs ONLY in the isolated WCV realm
+ * (see `isScopeActive`).
+ */
+export const setHighTrust = (dir: string, file: string, highTrust: boolean): void => {
+  const meta = readScopeMeta(dir)
+  const prev = meta[file] || ({ scope: 'global' } as ScopeMeta)
+  meta[file] = {
+    scope: prev.scope ?? 'global',
+    owner: prev.owner,
+    disabled: prev.disabled,
+    renderMode: prev.renderMode,
+    highTrust: highTrust || undefined
   }
   prune(meta, file)
   writeScopeMeta(dir, meta)
@@ -68,7 +96,8 @@ export const setRenderMode = (
     scope: prev.scope ?? 'global',
     owner: prev.owner,
     disabled: prev.disabled,
-    renderMode: renderMode ?? undefined
+    renderMode: renderMode ?? undefined,
+    highTrust: prev.highTrust
   }
   prune(meta, file)
   writeScopeMeta(dir, meta)

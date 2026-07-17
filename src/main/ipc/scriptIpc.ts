@@ -39,7 +39,9 @@ export const registerScriptIpc = (ipcMain: IpcMain): void => {
   // The merged runtime script set for a chat: card-embedded (World) + active-scope store
   // scripts (raw — remote `import`s load natively in the sandbox under the remoteScripts
   // grant, 1B). Also reports the remote hosts those scripts import from (grant + CSP).
-  ipcMain.handle('get-runtime-scripts', (_, profileId, cardId, chatId) => {
+  // `isolatedRealm` = the caller is the WCV transport (the isolated card realm). Only then do high-trust
+  // remote-code scripts (ADR 0017) resolve; the inline transport (app renderer) omits it, so they stay out.
+  ipcMain.handle('get-runtime-scripts', (_, profileId, cardId, chatId, isolatedRealm) => {
     const card = cardId ? characterService.getCharacter(profileId, cardId) : null
     const cardScripts = (card?.data.extensions?.rp_terminal?.scripts || [])
       .filter((s) => s && s.enabled !== false)
@@ -49,7 +51,8 @@ export const registerScriptIpc = (ipcMain: IpcMain): void => {
       ...scriptService.getActiveScripts(profileId, {
         cardId,
         chatId,
-        presetId: getActivePresetId(profileId)
+        presetId: getActivePresetId(profileId),
+        isolatedRealm: isolatedRealm === true
       })
     ]
     return { scripts, remoteHosts: scriptService.runtimeImportHosts(scripts) }

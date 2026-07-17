@@ -1,5 +1,6 @@
 import { IpcMain, BrowserWindow, dialog } from 'electron'
 import * as presetService from '../services/presetService'
+import * as presetTrustService from '../services/presetTrustService'
 import { gate } from './ipcGuards'
 
 export const registerPresetIpc = (ipcMain: IpcMain): void => {
@@ -22,6 +23,14 @@ export const registerPresetIpc = (ipcMain: IpcMain): void => {
   )
   ipcMain.handle('delete-preset', (_, profileId, presetId) =>
     presetService.deletePreset(profileId, presetId)
+  )
+  // High-trust opt-in (ADR 0017 / issue 19): unlock a preset's remote-code scripts to RUN — but only in
+  // the isolated WCV realm. Returns the count installed (on) / removed (off).
+  ipcMain.handle('preset-is-high-trust', (_, profileId, presetId) =>
+    presetTrustService.isPresetHighTrust(profileId, presetId)
+  )
+  ipcMain.handle('preset-set-high-trust', (_, profileId, presetId, on) =>
+    presetTrustService.setPresetHighTrust(profileId, presetId, on === true)
   )
   // GATED: native file picker (import from an arbitrary host path).
   ipcMain.handle('import-preset-dialog', gate('import-preset-dialog', async (event, profileId) => {

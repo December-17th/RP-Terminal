@@ -9,7 +9,8 @@ import {
   listFilesSync
 } from './storageService'
 import { log } from './logService'
-import { Preset, PresetSchema, PresetEnvelope, getDefaultPreset } from '../types/preset'
+import { Preset, PresetSchema, PresetEnvelope, PromptBlock, getDefaultPreset } from '../types/preset'
+import type { HostPresetView, HostPresetPrompt } from '../../shared/thRuntime/hostPrimitives'
 import { parseStPreset, selectPromptOrder } from '../parsers/stPresetParser'
 import * as regexService from './regexService'
 import * as scriptService from './scriptService'
@@ -278,6 +279,88 @@ export const getActivePreset = (profileId: string): Preset => {
   return getPresetById(profileId, id) ?? getDefaultPreset()
 }
 
+const roleOf = (r: unknown): 'system' | 'user' | 'assistant' =>
+  r === 'user' || r === 'assistant' ? r : 'system'
+
+/** One normalized prompt block → the Host preset-view prompt shape (id === identifier). */
+const toHostPrompt = (b: PromptBlock): HostPresetPrompt => ({
+  id: b.identifier,
+  identifier: b.identifier,
+  name: b.name,
+  role: b.role,
+  content: b.content,
+  enabled: b.enabled,
+  marker: b.marker,
+  injection_depth: b.injection_depth,
+  injection_order: b.injection_order
+})
+
+/**
+ * The active preset as a Host preset view (issue 19 / TavernHelper `getPreset('in_use')`, spec §7).
+ * `prompts` = the normalized runtime view's prompts (in order, with enabled states). `prompts_unused`
+ * and `extensions` are derived from the lossless envelope: unused = prompts DEFINED in the raw but NOT
+ * in the active order (so they aren't in the normalized view); extensions = the raw `extensions.*` bag
+ * (SPreset / tavern_helper / regex_scripts binding data). Both are `[]`/`{}` for a pre-envelope import.
+ */
+export const getActivePresetView = (profileId: string): HostPresetView | null => {
+  const id = getActivePresetId(profileId)
+  const preset = getActivePreset(profileId)
+  const prompts = preset.prompts.map(toHostPrompt)
+  const activeIds = new Set(preset.prompts.map((p) => p.identifier))
+
+  let promptsUnused: HostPresetPrompt[] = []
+  let extensions: Record<string, unknown> = {}
+  const env = id ? readEnvelope(profileId, id) : null
+  if (env) {
+    const root = presetRoot(env.parsed)
+    if (root && typeof root.extensions === 'object' && root.extensions) {
+      extensions = root.extensions as Record<string, unknown>
+    }
+    const rawPrompts: any[] = Array.isArray(root?.prompts) ? root.prompts : []
+    promptsUnused = rawPrompts
+      .filter((p) => p && typeof p.identifier === 'string' && !activeIds.has(p.identifier))
+      .map((p) => ({
+        id: String(p.identifier),
+        identifier: String(p.identifier),
+        name: typeof p.name === 'string' ? p.name : '',
+        role: roleOf(p.role),
+        content: typeof p.content === 'string' ? p.content : '',
+        enabled: false,
+        injection_depth: null,
+        injection_order: 100
+      }))
+  }
+
+  return {
+    name: preset.name,
+    parameters: preset.parameters as Record<string, unknown>,
+    prompts,
+    prompts_unused: promptsUnused,
+    extensions
+  }
+}
+
+/**
+ * Persist a card's preset edits to the ACTIVE preset (issue 19 — the 狐神抚 control surface). The runtime
+ * has already merged the card's mutated view onto the current normalized view by identifier, so `patch`
+ * is a full normalized-preset-shaped object; `PresetSchema.parse` fills any defaults + strips extras.
+ * Returns whether it wrote. No active preset id ⇒ false (nothing to write back to).
+ *
+ * NOTE (F6): this writes durably + immediately (the most faithful behavior the docs support). TH's exact
+ * in-chat-edit-vs-saved divergence is docs-silent (see the F6 fixture) — RPT has no un-persisted overlay.
+ */
+export const saveActivePreset = (profileId: string, patch: unknown): boolean => {
+  const id = getActivePresetId(profileId)
+  if (!id) return false
+  const parsed = PresetSchema.safeParse(patch)
+  if (!parsed.success) {
+    log('error', 'saveActivePreset: rejected invalid preset patch', parsed.error?.message)
+    return false
+  }
+  savePreset(profileId, id, parsed.data)
+  return true
+}
+
 /** Write a preset to its own JSON file; optionally make it active. Returns its id. */
 export const createPresetFromData = (
   profileId: string,
@@ -409,7 +492,7 @@ export const importPresetFromFile = (
       if (!s) continue
       const file = scriptService.saveScript(
         profileId,
-        { name: s.name, code: s.code },
+        { name: s.name, code: s.code, id: s.id }, // preserve upstream TH id (issue 03)
         'preset',
         presetId
       )

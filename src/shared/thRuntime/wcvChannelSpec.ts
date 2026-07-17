@@ -62,6 +62,12 @@ export const WCV_CHANNEL_SPEC: Record<WcvSpecMember, ChannelSpec> = {
   setGlobalVar: { channel: 'wcv-host-set-global-var', kind: 'invoke' },
   getGlobalVarsSync: { channel: 'wcv-host-get-global-vars-sync', kind: 'sync', fallback: {} },
   setGlobalVars: { channel: 'wcv-host-set-global-vars', kind: 'invoke' },
+  getExtensionSettingsSync: {
+    channel: 'wcv-host-get-extension-settings-sync',
+    kind: 'sync',
+    fallback: {}
+  },
+  setExtensionSettings: { channel: 'wcv-host-set-extension-settings', kind: 'invoke' },
 
   // --- WorldbookHost (worldbookNames / getWorldbook / getWorldbookById are residue) ---
   saveWorldbook: { channel: 'wcv-host-replace-worldbook', kind: 'invoke' },
@@ -85,6 +91,7 @@ export const WCV_CHANNEL_SPEC: Record<WcvSpecMember, ChannelSpec> = {
   charAvatarPath: { channel: 'wcv-host-get-char-avatar', kind: 'sync', fallback: null },
   preset: { channel: 'wcv-host-get-preset', kind: 'sync', fallback: null },
   presetNames: { channel: 'wcv-host-get-preset-names', kind: 'sync', fallback: [] },
+  savePreset: { channel: 'wcv-host-save-preset', kind: 'invoke' },
 
   // --- RegexHost (formatRegex is residue) ---
   regexes: { channel: 'wcv-host-get-regexes', kind: 'sync', fallback: [] },

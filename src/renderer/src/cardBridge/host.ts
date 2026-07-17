@@ -132,9 +132,43 @@ export function createInlineHost(ctx: CardCtx): Host {
     charAvatarPath: () => null,
     preset: () => {
       const p = usePresetStore.getState().preset as any
-      return p ? { name: p.name, parameters: p.parameters } : null
+      if (!p) return null
+      // The inline transport has no lossless envelope, so prompts_unused/extensions are empty here (a
+      // data-availability difference from the WCV transport — the runtime maps both identically, so
+      // there is no behavior drift). `prompts` carries the full control surface a card toggles.
+      return {
+        name: p.name,
+        parameters: p.parameters || {},
+        prompts: (p.prompts || []).map((b: any) => ({
+          id: b.identifier,
+          identifier: b.identifier,
+          name: b.name,
+          role: b.role,
+          content: b.content,
+          enabled: b.enabled,
+          marker: b.marker,
+          injection_depth: b.injection_depth,
+          injection_order: b.injection_order
+        })),
+        prompts_unused: [],
+        extensions: {}
+      }
     },
     presetNames: () => usePresetStore.getState().presets.map((p: any) => p.name),
+    // Persist a card's preset edits (the 狐神抚 control surface). The runtime hands a full
+    // normalized-preset-shaped patch (merged onto the current view). Write it through the same
+    // main preset service the WCV transport uses, then refresh the store so the UI reflects it.
+    savePreset: async (patch: unknown) => {
+      const { activeId } = usePresetStore.getState()
+      if (!activeId) return false
+      try {
+        await window.api.savePreset(ctx.profileId, activeId, patch as any)
+        await usePresetStore.getState().load(ctx.profileId)
+        return true
+      } catch {
+        return false
+      }
+    },
     worldbookNames: () => {
       // The card's OWN lorebook NAME (faithful to WCV: lb.name || characterId) — so getWorldbook(primary)
       // resolves back to its real library id. NOT activeCharacter's display name (a different value that
@@ -336,6 +370,25 @@ export function createInlineHost(ctx: CardCtx): Host {
         )
       } catch (e) {
         console.error('[inline setGlobalVars]', e)
+      }
+    },
+    // TavernHelper extensionSettings durable backing (issue 19) — a per-profile store distinct from the
+    // card KV scopes. SYNC read at boot; whole-object write is what saveSettingsDebounced flushes.
+    getExtensionSettingsSync: () => {
+      try {
+        return window.api.extensionSettingsGetSync(ctx.profileId) || {}
+      } catch {
+        return {}
+      }
+    },
+    setExtensionSettings: async (settings) => {
+      try {
+        await window.api.extensionSettingsSet(
+          ctx.profileId,
+          settings && typeof settings === 'object' ? settings : {}
+        )
+      } catch (e) {
+        console.error('[inline setExtensionSettings]', e)
       }
     },
     // Resolve an asset to an rptasset:// URL for this card's world, or null. The category is inferred

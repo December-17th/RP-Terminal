@@ -10,7 +10,7 @@ import {
 } from './storageService'
 import { ArtifactScope, ScopeContext, ScopeMeta, isScopeActive } from '../../shared/artifactScope'
 import { StoredScript, ScriptInfo } from '../../shared/scriptTypes'
-import { readScopeMeta, setScope, setDisabled, removeScopeEntry } from './scopeMeta'
+import { readScopeMeta, setScope, setDisabled, setHighTrust, removeScopeEntry } from './scopeMeta'
 
 /**
  * Profile-level scripts library (companion to the regex store), so card scripts gain
@@ -125,10 +125,15 @@ export const listScripts = (profileId: string): ScriptInfo[] => {
       file,
       name: data.name || 'Untitled script',
       code: data.code || '',
+      // Preserve the upstream TH script id (issue 03 used to discard it — the file id was the only
+      // identity, so it changed every re-import). Absent for natively-authored scripts.
+      id: data.id,
       scope: m.scope ?? 'global',
       owner: m.owner,
       disabled: m.disabled === true,
-      remoteHosts: extractImportHosts(data.code || '')
+      remoteHosts: extractImportHosts(data.code || ''),
+      remoteCode: hasRemoteCodeLoad(data.code || '') || undefined,
+      highTrust: m.highTrust || undefined
     })
   }
   return out
@@ -150,7 +155,10 @@ export const saveScript = (
   const file = `${randomUUID()}.json`
   writeJsonSyncAtomic(scriptPath(profileId, file), {
     name: script.name || 'script',
-    code: script.code || ''
+    code: script.code || '',
+    // Persist the upstream TH id verbatim when present (issue 03 fix) so re-imports keep a stable
+    // identity independent of the random file id. Omitted for natively-authored scripts.
+    ...(script.id ? { id: script.id } : {})
   })
   if (scope !== 'global' || owner) setScriptScope(profileId, file, scope, owner)
   return file
@@ -185,6 +193,16 @@ export const setScriptDisabled = (profileId: string, file: string, disabled: boo
   setDisabled(scriptsDir(profileId), file, disabled)
 }
 
+/**
+ * Mark (or clear) a script as high-trust (ADR 0017): a remote-code script installed to RUN under a
+ * preset's high-trust opt-in, but pinned to the isolated WCV realm. See `getActiveScripts` — a
+ * high-trust script only surfaces when the resolving ctx is `isolatedRealm`.
+ */
+export const setScriptHighTrust = (profileId: string, file: string, highTrust: boolean): void => {
+  if (isUnsafe(file)) return
+  setHighTrust(scriptsDir(profileId), file, highTrust)
+}
+
 export const deleteScript = (profileId: string, file: string): void => {
   if (isUnsafe(file)) return
   const p = scriptPath(profileId, file)
@@ -211,11 +229,34 @@ export const deleteScriptsByOwner = (
   return removed
 }
 
-/** Enabled scripts whose scope is active for this card/chat context, in name order. */
+/**
+ * Enabled scripts whose scope is active for this context, in RUNTIME ORDER.
+ *
+ * Ordering is ID-SORTED: enabled scripts run in ascending order of their upstream TH `id`
+ * (`localeCompare`), with id-less (natively-authored) scripts sorted after by name. This makes a
+ * re-import reproduce the same order and gives the pre-dispatch mutation seam a stable per-script
+ * identity to attribute to.
+ *
+ * TODO(F1 — tavernhelper-docs-spec §2): the docs are SILENT on TH's real enabled-script execution
+ * order (ID-sorted vs tree/array vs folder-then-order). This ID-sorted choice is the most faithful
+ * order the docs support (ids are the only stable, documented `Script` identity), GUARDED pending
+ * the F1 black-box fixture on a live ST+TavernHelper install. If F1 shows tree/array order, change
+ * ONLY the comparator here — the id is already preserved end-to-end.
+ *
+ * `ctx.isolatedRealm` is forwarded to `isScopeActive`, so high-trust remote-code scripts (ADR 0017)
+ * surface ONLY when the caller is the isolated WCV realm.
+ */
 export const getActiveScripts = (profileId: string, ctx: ScopeContext): StoredScript[] => {
   return listScripts(profileId)
-    .filter((s) => !s.disabled && isScopeActive({ scope: s.scope, owner: s.owner }, ctx))
-    .map((s) => ({ name: s.name, code: s.code }))
+    .filter((s) => !s.disabled && isScopeActive({ scope: s.scope, owner: s.owner, highTrust: s.highTrust }, ctx))
+    .sort((a, b) => {
+      // Scripts with an upstream id sort first, by id; id-less natives sort after, by name.
+      if (a.id && b.id) return a.id.localeCompare(b.id)
+      if (a.id) return -1
+      if (b.id) return 1
+      return a.name.localeCompare(b.name)
+    })
+    .map((s) => ({ name: s.name, code: s.code, ...(s.id ? { id: s.id } : {}) }))
 }
 
 /** The remote hosts the active runtime scripts import from — for the grant + CSP. */
@@ -231,6 +272,8 @@ export interface ImportedScript {
   name: string
   code: string
   enabled: boolean
+  /** Upstream TH `Script.id` (docs-confirmed, spec §1), carried verbatim (issue 03 fix). */
+  id?: string
 }
 
 /** Append auto-`registerButton` calls for a TH script's declarative `button.buttons[]`
@@ -271,7 +314,9 @@ export const normalizeImportedScripts = (raw: any): ImportedScript[] => {
     out.push({
       name: (typeof it.name === 'string' && it.name) || 'Imported Script',
       code: withButtons(code, buttons),
-      enabled: it.enabled !== false
+      enabled: it.enabled !== false,
+      // Preserve the upstream TH id (docs-confirmed `Script.id`) verbatim (issue 03 fix).
+      ...(typeof it.id === 'string' && it.id ? { id: it.id } : {})
     })
   }
   return out
@@ -292,7 +337,7 @@ export const importScriptsFromFile = (
   }
   let count = 0
   for (const s of normalizeImportedScripts(raw)) {
-    const file = saveScript(profileId, { name: s.name, code: s.code }, scope, owner)
+    const file = saveScript(profileId, { name: s.name, code: s.code, id: s.id }, scope, owner)
     if (!s.enabled) setScriptDisabled(profileId, file, true)
     count++
   }
