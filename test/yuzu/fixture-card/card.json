@@ -1,0 +1,45 @@
+{
+  "spec": "chara_card_v3",
+  "spec_version": "3.0",
+  "data": {
+    "name": "Yuzu Fixture",
+    "description": "Synthetic test card for Project Yuzu WPs. Not a real character — the substrate for fixture-card.test.ts and later yuzu work packages.",
+    "personality": "",
+    "scenario": "Yuzu corners Kaede in an empty classroom after school to clear the air.",
+    "first_mes": "The classroom is empty, chalk dust drifting in the late afternoon light. Kaede, wait — can we talk?",
+    "mes_example": "",
+    "creator_notes": "Fixture card — do not ship. See test/yuzu/fixture-card.test.ts.",
+    "creator": "rpt-fixtures",
+    "character_version": "wp-y2-fixture",
+    "tags": ["fixture", "yuzu", "synthetic"],
+    "character_book": {
+      "name": "Yuzu Fixture Lorebook",
+      "entries": [
+        {
+          "comment": "[initvar]",
+          "keys": [],
+          "constant": true,
+          "enabled": true,
+          "insertion_order": 0,
+          "content": "Initial variables for the Yuzu fixture world.\n\n```json\n{\n  \"好感度\": { \"kaede\": [0, \"羁绊值\"] },\n  \"flags\": { \"confessed\": [false, \"是否已表白\"] }\n}\n```"
+        },
+        {
+          "comment": "Classroom",
+          "keys": ["classroom", "教室"],
+          "constant": false,
+          "enabled": true,
+          "insertion_order": 100,
+          "content": "An emptied second-year classroom at the end of the school day. Low sun through the windows, rows of vacant desks."
+        }
+      ]
+    },
+    "extensions": {
+      "rp_terminal": {
+        "yuzu": {
+          "version": 1,
+          "opening": "<| bg classroom |>\n<| music bgm_school |>\nThe classroom is empty, chalk dust drifting in the late afternoon light.\n<| yuzu neutral center enter |>\nyuzu: Kaede, wait — can we talk?\n<| kaede worried left enter |>\nkaede: ...I was about to head home.\n<| effect _.set('好感度.kaede', 0, 1) //她停下了脚步 |>\nyuzu: Just for a minute. Please.\n<| yuzu smile center |>\nnarration: For a moment, neither of them moves.\n<| effect _.set('flags.confessed', false, false) //还没说出口 |>\n<| choice Reach out to her :: reach_out |>\n<| choice Give her the space she wants :: give_space |>\n<| end |>"
+        }
+      }
+    }
+  }
+}
