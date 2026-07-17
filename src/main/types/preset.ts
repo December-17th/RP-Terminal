@@ -55,6 +55,11 @@ export const PromptBlockSchema = z.object({
    * bottom instead of inline. null = inline, in preset order (the default).
    * Ignored for marker blocks (char_description, chat_history, …). */
   injection_depth: z.number().nullable().default(null),
+  /** ST `injection_order` (openai.js:824-833): same-depth in-chat injections are grouped by this
+   * value and processed HIGH→LOW during ST's build (which then reverses the whole array). Default
+   * 100 — the value ST's own extension IN_CHAT prompts use, so a plain depth block merges with them.
+   * Only meaningful on in-chat (depth-injected) blocks; ignored for relative/inline ones. */
+  injection_order: z.number().default(100),
   /** ST `injection_trigger`: a generation-type allow-list (PromptManager.js:1549-1553).
    * Empty = fires for ALL generation types; otherwise the lowercased current generation
    * type must be listed for the block to be included. Carried from ST imports; the builder
@@ -129,6 +134,7 @@ export const getDefaultPreset = (): Preset => ({
       enabled: true,
       marker: 'none',
       injection_depth: null,
+      injection_order: 100,
       injection_trigger: [],
       forbid_overrides: false
     },
@@ -140,6 +146,7 @@ export const getDefaultPreset = (): Preset => ({
       enabled: true,
       marker: 'char_description',
       injection_depth: null,
+      injection_order: 100,
       injection_trigger: [],
       forbid_overrides: false
     },
@@ -151,6 +158,7 @@ export const getDefaultPreset = (): Preset => ({
       enabled: true,
       marker: 'mes_example',
       injection_depth: null,
+      injection_order: 100,
       injection_trigger: [],
       forbid_overrides: false
     },
@@ -162,6 +170,7 @@ export const getDefaultPreset = (): Preset => ({
       enabled: true,
       marker: 'world_info',
       injection_depth: null,
+      injection_order: 100,
       injection_trigger: [],
       forbid_overrides: false
     },
@@ -173,6 +182,7 @@ export const getDefaultPreset = (): Preset => ({
       enabled: true,
       marker: 'chat_history',
       injection_depth: null,
+      injection_order: 100,
       injection_trigger: [],
       forbid_overrides: false
     },
@@ -184,6 +194,7 @@ export const getDefaultPreset = (): Preset => ({
       enabled: true,
       marker: 'post_history',
       injection_depth: null,
+      injection_order: 100,
       injection_trigger: [],
       forbid_overrides: false
     }

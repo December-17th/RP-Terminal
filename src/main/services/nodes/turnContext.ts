@@ -9,6 +9,8 @@ export interface BuildTurnContextArgs {
   chatId: string
   workflowId: string
   userAction: string
+  /** ST generation type for this turn (injection_trigger filtering). Default 'normal'. */
+  generationType?: string
   signal: AbortSignal
   onDelta: DeltaCallback
   /** Panel label per node id (from the doc's `panel.label`), for the chat panel headers. */
@@ -31,6 +33,7 @@ export function buildTurnContext(args: BuildTurnContextArgs): RunContext {
     chatId: args.chatId,
     workflowId: args.workflowId,
     userAction: args.userAction,
+    generationType: args.generationType ?? 'normal',
     signal: graphController.signal,
     modelSignal: args.signal,
     abortGraph: () => graphController.abort(),

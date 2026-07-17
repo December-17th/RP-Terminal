@@ -28,10 +28,17 @@ describe('input.context', () => {
     const gen = { profileId: 'p1', chatId: 'c1', userAction: 'hi' }
     vi.mocked(buildGenContext).mockReturnValue(gen as any)
 
-    const ctx: RunContext = { ...baseCtx, profileId: 'p1', chatId: 'c1', userAction: 'hi' }
+    // issue 12: input.context now forwards the turn's generationType into buildGenContext (4th arg).
+    const ctx: RunContext = {
+      ...baseCtx,
+      profileId: 'p1',
+      chatId: 'c1',
+      userAction: 'hi',
+      generationType: 'regenerate'
+    }
     const result = inputContext.run(ctx, {})
 
-    expect(buildGenContext).toHaveBeenCalledWith('p1', 'c1', 'hi')
+    expect(buildGenContext).toHaveBeenCalledWith('p1', 'c1', 'hi', 'regenerate')
     expect(result).toEqual({ outputs: { gen } })
   })
 })

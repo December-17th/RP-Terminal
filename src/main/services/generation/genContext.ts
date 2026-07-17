@@ -19,7 +19,10 @@ import { GenContext } from './types'
 export const buildGenContext = (
   profileId: string,
   chatId: string,
-  userAction: string
+  userAction: string,
+  // ST generation type driving injection_trigger filtering (default 'normal' — a plain player send
+  // or a background read; regenerate/swipe/… pass their own). Lowercased downstream.
+  generationType = 'normal'
 ): GenContext => {
   const chat = getChat(profileId, chatId)
   if (!chat) throw new Error('Chat session not found')
@@ -86,6 +89,7 @@ export const buildGenContext = (
     fsmEnabled,
     mode,
     vnMode,
+    generationType,
     modeConfig,
     lorebookIds,
     lorebooks,

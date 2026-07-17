@@ -125,6 +125,9 @@ export const parseStPreset = (raw: any, fallbackName: string): any | null => {
       enabled: item.enabled !== false,
       marker: 'none',
       injection_depth: atDepth ? (num(src?.injection_depth) ?? 4) : null,
+      // ST groups same-depth in-chat injections by injection_order (default 100); see promptBuilder
+      // grouping. Carried for depth blocks; harmless (unused) on relative ones.
+      injection_order: num(src?.injection_order) ?? 100,
       injection_trigger: trigger(src),
       forbid_overrides: src?.forbid_overrides === true
     })

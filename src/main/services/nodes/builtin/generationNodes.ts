@@ -25,7 +25,9 @@ export const inputContext: NodeImpl = {
   inputs: [],
   outputs: [{ name: 'gen', type: 'Context' }],
   run: (ctx) => ({
-    outputs: { gen: buildGenContext(ctx.profileId!, ctx.chatId!, ctx.userAction!) }
+    outputs: {
+      gen: buildGenContext(ctx.profileId!, ctx.chatId!, ctx.userAction!, ctx.generationType)
+    }
   })
 }
 
@@ -57,7 +59,9 @@ export const contextRefresh: NodeImpl = {
   run: (_ctx, inputs) => {
     const orig = inputs.gen as GenContext
     return {
-      outputs: { gen: buildGenContext(orig.profileId, orig.chatId, orig.userAction) }
+      outputs: {
+        gen: buildGenContext(orig.profileId, orig.chatId, orig.userAction, orig.generationType)
+      }
     }
   }
 }

@@ -5,6 +5,7 @@ import {
   collectRenderMarkers,
   estimateTokens,
   fitToBudget,
+  groupDepthInjections,
   mergeConsecutiveRoles,
   resolveEffectivePrompts,
   shouldTrigger,
@@ -1248,5 +1249,205 @@ describe('buildPrompt — historyOverride / worldInfoOverride', () => {
     })
     expect(messages.some((m) => m.content === 'World Info:\nOVERRIDE WORLD INFO')).toBe(true)
     expect(messages.some((m) => m.content.includes('SCANNED LORE'))).toBe(false)
+  })
+})
+
+// WP-2.2 (issue 12): ST `populationInjectionPrompts` grouping semantics (openai.js:801-866).
+// The pure grouping function is pinned directly; buildPrompt integration verifies positions + the
+// order-100 extension merge with RPT's existing lorebook depth injections.
+describe('groupDepthInjections (ST populationInjectionPrompts grouping)', () => {
+  it('same depth+order, three roles → net order assistant, user, system (openai.js:838 + reverse)', () => {
+    // ST builds roles [system,user,assistant] then reverses the whole array; the net is the reverse.
+    const out = groupDepthInjections([
+      { depth: 1, order: 100, role: 'system', content: 'S' },
+      { depth: 1, order: 100, role: 'user', content: 'U' },
+      { depth: 1, order: 100, role: 'assistant', content: 'A' }
+    ])
+    expect(out.map((g) => [g.role, g.content])).toEqual([
+      ['assistant', 'A'],
+      ['user', 'U'],
+      ['system', 'S']
+    ])
+  })
+
+  it('distinct orders at one depth → net ascending (ST sorts +b-+a descending, then reverses)', () => {
+    const out = groupDepthInjections([
+      { depth: 2, order: 30, role: 'system', content: 'O30' },
+      { depth: 2, order: 20, role: 'system', content: 'O20' },
+      { depth: 2, order: 10, role: 'system', content: 'O10' }
+    ])
+    expect(out.map((g) => g.content)).toEqual(['O10', 'O20', 'O30'])
+  })
+
+  it('same role+order contents join with a newline (openai.js:842-843 separator)', () => {
+    const out = groupDepthInjections([
+      { depth: 1, order: 100, role: 'system', content: 'first' },
+      { depth: 1, order: 100, role: 'system', content: 'second' }
+    ])
+    expect(out).toHaveLength(1)
+    expect(out[0].content).toBe('first\nsecond')
+  })
+
+  it('order-100 merges IN_CHAT extension content AFTER preset prompts, retaining every source id', () => {
+    const out = groupDepthInjections([
+      {
+        depth: 1,
+        order: 100,
+        role: 'system',
+        content: 'PRESET',
+        source: { kind: 'preset-block', id: 'p' }
+      },
+      {
+        depth: 1,
+        extension: true,
+        role: 'system',
+        content: 'EXT',
+        source: { kind: 'lorebook-entry', id: 'l' }
+      }
+    ])
+    expect(out).toHaveLength(1)
+    expect(out[0].content).toBe('PRESET\nEXT') // ST [rolePrompts, extensionPrompt] (openai.js:846-849)
+    expect(out[0].sources.map((s) => s.id)).toEqual(['p', 'l']) // multi-source lineage (issue 07)
+  })
+
+  it('extension content is always order 100 even when a lower-order preset shares the depth', () => {
+    const out = groupDepthInjections([
+      { depth: 1, order: 50, role: 'system', content: 'LOW' },
+      { depth: 1, extension: true, role: 'system', content: 'EXT' }
+    ])
+    // net-ascending: order-50 preset first, then the order-100 extension group.
+    expect(out.map((g) => g.content)).toEqual(['LOW', 'EXT'])
+  })
+})
+
+describe('buildPrompt — ST in-chat injection grouping (WP-2.2)', () => {
+  it('groups same-depth/same-order injections by role (assistant, user, system); action stays last', () => {
+    const messages = buildPrompt({
+      card: card(),
+      preset: preset([
+        blk('char_description'),
+        { ...blk('none', 'SYS', 'system'), identifier: 'a', injection_depth: 1 },
+        { ...blk('none', 'USR', 'user'), identifier: 'b', injection_depth: 1 },
+        { ...blk('none', 'ASST', 'assistant'), identifier: 'c', injection_depth: 1 },
+        blk('chat_history')
+      ]),
+      lorebooks: [],
+      floors: [floor(0, 'u0', 'a0')],
+      userAction: 'go'
+    })
+    expect(last(messages).content).toBe('go')
+    const seq = messages.slice(-4, -1) // the three injected messages, just before the action
+    expect(seq.map((m) => [m.role, m.content])).toEqual([
+      ['assistant', 'ASST'],
+      ['user', 'USR'],
+      ['system', 'SYS']
+    ])
+  })
+
+  it('groups same-depth injections by injection_order, ascending net order (openai.js:833)', () => {
+    const messages = buildPrompt({
+      card: card(),
+      preset: preset([
+        blk('char_description'),
+        { ...blk('none', 'O10', 'system'), identifier: 'a', injection_depth: 2, injection_order: 10 },
+        { ...blk('none', 'O30', 'system'), identifier: 'b', injection_depth: 2, injection_order: 30 },
+        { ...blk('none', 'O20', 'system'), identifier: 'c', injection_depth: 2, injection_order: 20 },
+        blk('chat_history')
+      ]),
+      lorebooks: [],
+      floors: [floor(0, 'u0', 'a0'), floor(1, 'u1', 'a1')],
+      userAction: 'go'
+    })
+    const c = messages.map((m) => m.content)
+    expect(c.indexOf('O10')).toBeGreaterThan(0)
+    expect(c.indexOf('O10') < c.indexOf('O20') && c.indexOf('O20') < c.indexOf('O30')).toBe(true)
+  })
+
+  it('merges a lorebook depth entry (order-100 extension) with a same-depth preset block into one message', () => {
+    const messages = buildPrompt({
+      card: card(),
+      preset: preset([
+        blk('char_description'),
+        { ...blk('none', 'AUTHOR NOTE', 'system'), identifier: 'note', injection_depth: 1 },
+        blk('chat_history')
+      ]),
+      lorebooks: [book([{ keys: ['dragon'], content: 'DRAGON-LORE', insertion_depth: 1 }])],
+      floors: [floor(0, 'u0', 'a0')],
+      userAction: 'attack the dragon'
+    })
+    expect(last(messages).content).toBe('attack the dragon')
+    const merged = messages[messages.length - 2]
+    expect(merged.role).toBe('system')
+    // preset prompt first, then the IN_CHAT extension (World Info) content, joined by '\n'.
+    expect(merged.content).toBe('AUTHOR NOTE\nWorld Info:\nDRAGON-LORE')
+  })
+
+  it('depth 0 with a trailing user action: RPT keeps the action last (deliberate L4-last divergence from ST)', () => {
+    // ADR 0016 tracked divergence: ST places depth 0 AFTER the newest message; RPT keeps the pending
+    // action last so nothing volatile sits past the provider cache breakpoint.
+    const messages = buildPrompt({
+      card: card(),
+      preset: preset([
+        blk('char_description'),
+        { ...blk('none', 'D0', 'system'), identifier: 'd0', injection_depth: 0 },
+        blk('chat_history')
+      ]),
+      lorebooks: [],
+      floors: [floor(0, 'u0', 'a0')],
+      userAction: 'go'
+    })
+    expect(last(messages).content).toBe('go')
+    expect(messages[messages.length - 2].content).toBe('D0')
+  })
+
+  it('depth 0 with no trailing user (continue): injects after the last message, matching ST', () => {
+    const messages = buildPrompt({
+      card: card(),
+      preset: preset([
+        blk('char_description'),
+        { ...blk('none', 'D0', 'system'), identifier: 'd0', injection_depth: 0 },
+        blk('chat_history')
+      ]),
+      lorebooks: [],
+      floors: [floor(0, 'u0', 'a0')],
+      userAction: ''
+    })
+    expect(last(messages).content).toBe('D0')
+  })
+
+  it('a very deep injection (depth 10000) clamps to the top of the chat region', () => {
+    const messages = buildPrompt({
+      card: card(),
+      preset: preset([
+        blk('char_description'),
+        { ...blk('none', 'DEEP', 'system'), identifier: 'deep', injection_depth: 10000 },
+        blk('chat_history')
+      ]),
+      lorebooks: [],
+      floors: [floor(0, 'u0', 'a0')],
+      userAction: 'go'
+    })
+    const c = messages.map((m) => m.content)
+    expect(c.indexOf('DEEP')).toBeLessThan(c.indexOf('u0')) // above the first chat message
+    expect(last(messages).content).toBe('go')
+  })
+
+  it('a near-history-length depth injects high in the chat region', () => {
+    const messages = buildPrompt({
+      card: card(),
+      preset: preset([
+        blk('char_description'),
+        { ...blk('none', 'NEAR', 'system'), identifier: 'near', injection_depth: 4 },
+        blk('chat_history')
+      ]),
+      lorebooks: [],
+      floors: [floor(0, 'u0', 'a0'), floor(1, 'u1', 'a1')],
+      userAction: 'go'
+    })
+    const c = messages.map((m) => m.content)
+    // history is [u0,a0,u1,a1,go]; depth 4 sits one message below the top of the chat region.
+    expect(c.indexOf('u0')).toBeLessThan(c.indexOf('NEAR'))
+    expect(c.indexOf('NEAR')).toBeLessThan(c.indexOf('a0'))
+    expect(last(messages).content).toBe('go')
   })
 })

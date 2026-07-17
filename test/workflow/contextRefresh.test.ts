@@ -88,9 +88,16 @@ describe('context.refresh descriptor', () => {
 
 describe('context.refresh run', () => {
   it('returns a FRESH bundle re-read from profileId/chatId/userAction on the original gen', () => {
-    const orig = { profileId: 'pX', chatId: 'cX', userAction: 'act', workingVars: {} }
+    // issue 12: context.refresh carries the ORIGINAL bundle's generationType into the fresh read.
+    const orig = {
+      profileId: 'pX',
+      chatId: 'cX',
+      userAction: 'act',
+      generationType: 'swipe',
+      workingVars: {}
+    }
     const r = contextRefresh.run(ctx, { gen: orig, after: true }, meta(contextRefresh, 'n1'))
-    expect(genContextSvc.buildGenContext).toHaveBeenCalledWith('pX', 'cX', 'act')
+    expect(genContextSvc.buildGenContext).toHaveBeenCalledWith('pX', 'cX', 'act', 'swipe')
     const fresh = (r.outputs as { gen: unknown }).gen
     expect(fresh).not.toBe(orig)
   })
@@ -201,7 +208,9 @@ describe('context.refresh — engine-level (write branch gated OFF still refresh
     title: 'src',
     inputs: [],
     outputs: [{ name: 'gen', type: 'Context' }],
-    run: () => ({ outputs: { gen: { profileId: 'p1', chatId: 'c1', userAction: 'go' } } })
+    run: () => ({
+      outputs: { gen: { profileId: 'p1', chatId: 'c1', userAction: 'go', generationType: 'quiet' } }
+    })
   }
   const gate: NodeImpl = {
     type: 't.gate',
@@ -261,6 +270,7 @@ describe('context.refresh — engine-level (write branch gated OFF still refresh
     const seen = res.outputs.get('k')?.seen as { userAction: string }
     // The sink saw a FRESH bundle (built by the mocked buildGenContext from src's gen).
     expect(seen.userAction).toBe('go')
-    expect(genContextSvc.buildGenContext).toHaveBeenCalledWith('p1', 'c1', 'go')
+    // issue 12: the original bundle's generationType rides into the fresh read.
+    expect(genContextSvc.buildGenContext).toHaveBeenCalledWith('p1', 'c1', 'go', 'quiet')
   })
 })

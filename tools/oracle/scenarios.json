@@ -25,6 +25,8 @@
     { "id": "wp-2.2-depth-injection-order", "wp": "2.2", "generationType": "normal", "title": "Same-depth grouping by injection_order descending", "inputs": "Three in-chat injections at depth 2 with injection_order 30/20/10." },
     { "id": "wp-2.2-role-ordering", "wp": "2.2", "generationType": "normal", "title": "Same depth+order role grouping (system,user,assistant; final reverse)", "inputs": "Injections at depth 1, equal order, roles system/user/assistant (openai.js:795-868)." },
     { "id": "wp-2.2-depth-cap", "wp": "2.2", "generationType": "normal", "title": "Depth cap at 10000", "inputs": "Injection requested at depth 99999; clamped to 10000 (top)." },
+    { "id": "wp-2.2-depth-zero", "wp": "2.2", "generationType": "continue", "title": "Depth 0 lands after the newest message (no trailing user)", "inputs": "One system injection at depth 0 on an assistant tail (continue); ST + RPT agree with no pending user action." },
+    { "id": "wp-2.2-depth-near-history", "wp": "2.2", "generationType": "normal", "title": "Near-history-length depth injects high in the chat region", "inputs": "One system injection at depth 3 into a four-message history; lands one message below the top." },
 
     { "id": "wp-2.3-macro-basic", "wp": "2.3", "generationType": "normal", "title": "Core macros: {{user}} {{char}} {{lastUserMessage}}", "inputs": "Prompt embeds core macros; new engine expansion." },
     { "id": "wp-2.3-macro-trim", "wp": "2.3", "generationType": "normal", "title": "{{trim}} collapses surrounding whitespace/newlines", "inputs": "Prompt with {{trim}} between two blocks." },

@@ -19,6 +19,10 @@ export interface GenContext {
   preset: Preset
   fsmEnabled: boolean
   mode: string
+  /** ST generation type (`normal` | `regenerate` | `swipe` | `continue` | `impersonate` | `quiet`),
+   *  lowercased, driving preset `injection_trigger` filtering (promptBuilder.resolveEffectivePrompts).
+   *  Seeded per turn from the entry point; 'normal' for a plain player send / a background read. */
+  generationType: string
   /** Project Yuzu (ADR 0008 §7): VN play mode on for this session. When true the classic pipeline gains
    *  the YSS scene overlay + a raised output ceiling; when false the assembly is byte-identical to classic. */
   vnMode: boolean

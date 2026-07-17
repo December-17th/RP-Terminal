@@ -324,48 +324,133 @@ const buildHistory = (
 }
 
 /**
- * Splice depth-positioned system blocks into an assembled message array. `depth`
- * counts messages up from the bottom; the trailing user action always stays last
- * (so nothing volatile lands after it). Insertions are clamped into the
- * conversation region (never into the cached system prefix), and applied bottom-up
- * so earlier inserts don't shift the targets of later ones.
+ * One depth-positioned injection candidate. `depth` counts messages up from the bottom of the
+ * chat region (0 = bottom). ST groups same-depth candidates by `injection_order` and role before
+ * splicing (see `groupDepthInjections`).
  */
 interface DepthItem {
   depth: number
   content: string
   role?: ChatMessage['role']
+  /** ST `injection_order` (default 100). Same-depth items are grouped by this; extension items are
+   *  forced to 100 (ST treats getExtensionPrompt IN_CHAT content as the order-100 group). */
+  order?: number
+  /** RPT's IN_CHAT "extension" content (lorebook depth entries / pipeline injects) — the analog of
+   *  ST's `getExtensionPrompt(IN_CHAT, …)`. Always order 100 and merged AFTER preset prompts of the
+   *  same role within the order-100 group (ST joins `[rolePrompts, extensionPrompt]`, openai.js:846-849). */
+  extension?: boolean
   /** Forensic lineage (issue 07) — the entry/block this depth item came from. */
   source?: RecordSource
 }
 
-const applyDepthInjections = (
+/** One grouped role-message ready to splice at a depth, with the lineage of every item merged into it. */
+interface GroupedInjection {
+  depth: number
+  role: ChatMessage['role']
+  content: string
+  sources: RecordSource[]
+}
+
+/** ST role sequence for a same-depth/same-order group (openai.js:838, "most important go lower"). */
+const ROLE_SEQUENCE: ChatMessage['role'][] = ['system', 'user', 'assistant']
+
+/**
+ * Reproduce SillyTavern's `populationInjectionPrompts` grouping (openai.js:801-866): for each depth,
+ * group same-depth prompts by `injection_order`, process orders HIGH→LOW, roles in the sequence
+ * [system, user, assistant], joining same-role contents with '\n'; the order-100 group additionally
+ * merges the IN_CHAT extension content (RPT's lorebook depth entries / pipeline injects) AFTER the
+ * preset prompts of that role.
+ *
+ * ST builds that sequence into a temp array and then reverses the WHOLE message array
+ * (`messages = messages.reverse()`, openai.js:864). Reversing a contiguous block flips its element
+ * order, so we emit the NET post-reverse order directly: orders ASCENDING, roles
+ * [assistant, user, system]. The reversal reorders MESSAGES, never characters within a joined
+ * message — so each message's joined content is byte-identical to ST's.
+ *
+ * Pure; exported for characterization. Returns grouped role-messages in net final order per depth.
+ */
+export const groupDepthInjections = (items: DepthItem[]): GroupedInjection[] => {
+  const byDepth = new Map<number, DepthItem[]>()
+  for (const it of items) {
+    if (!it.content) continue // ST: `&& prompt.content` (openai.js:813)
+    if (!byDepth.has(it.depth)) byDepth.set(it.depth, [])
+    byDepth.get(it.depth)!.push(it)
+  }
+  const orderOf = (it: DepthItem): number => (it.extension ? 100 : (it.order ?? 100))
+  const out: GroupedInjection[] = []
+  for (const [depth, group] of byDepth) {
+    // Orders ASCENDING = ST's build-DESCENDING reversed (openai.js:833 sorts `+b - +a`).
+    const orders = [...new Set(group.map(orderOf))].sort((a, b) => a - b)
+    for (const order of orders) {
+      // Roles [assistant, user, system] = ST's [system, user, assistant] (openai.js:838) reversed.
+      for (const role of [...ROLE_SEQUENCE].reverse()) {
+        const inRole = group.filter((it) => orderOf(it) === order && (it.role ?? 'system') === role)
+        if (!inRole.length) continue
+        // ST: `rolePrompts` (preset prompts of this order+role, joined by '\n') then `extensionPrompt`
+        // (order-100 IN_CHAT extension content), the two joined with '\n' after each is trimmed
+        // (openai.js:840-849). A stable preset-before-extension partition preserves that.
+        const presetJoined = inRole.filter((it) => !it.extension).map((it) => it.content).join('\n')
+        const extJoined = inRole.filter((it) => it.extension).map((it) => it.content).join('\n')
+        const content = [presetJoined, extJoined]
+          .filter((x) => x)
+          .map((x) => x.trim())
+          .join('\n')
+        if (!content) continue // ST: `if (jointPrompt && jointPrompt.length)` (openai.js:851)
+        const sources = [
+          ...inRole.filter((it) => !it.extension),
+          ...inRole.filter((it) => it.extension)
+        ]
+          .map((it) => it.source)
+          .filter((s): s is RecordSource => !!s)
+        out.push({ depth, role, content, sources })
+      }
+    }
+  }
+  return out
+}
+
+/**
+ * Splice grouped depth injections into the assembled message array. Depth counts messages up from
+ * the bottom of the chat region; ST places depth `d` immediately above the d-th message from the
+ * bottom (final index `base - d`). Insertions are clamped into the conversation region (never the
+ * cached system prefix) and spliced highest-index-first so earlier inserts don't shift later targets.
+ *
+ * RPT DIVERGENCE (deliberate, tracked — ADR 0016): the trailing user action always stays last
+ * (`maxIdx = base - 1` when present) so nothing volatile lands past the provider cache breakpoint
+ * (the L4-last invariant). ST places a depth-0 injection AFTER the newest message; RPT keeps it just
+ * before the pending action. For every depth ≥ 1, and for depth 0 with no trailing user (e.g. a
+ * continue), the net placement matches ST.
+ */
+const applyGroupedDepthInjections = (
   messages: ChatMessage[],
   items: DepthItem[],
   convoStart: number,
   hasTrailingUser: boolean,
   journal?: AssemblyJournal
 ): void => {
+  const grouped = groupDepthInjections(items)
+  if (!grouped.length) return
   const base = messages.length
   const maxIdx = hasTrailingUser ? base - 1 : base
   const start = convoStart === -1 ? base : convoStart
-  const planned = items
-    .map((it) => ({
-      idx: Math.max(start, Math.min(base - it.depth, maxIdx)),
-      content: it.content,
-      role: it.role ?? ('system' as ChatMessage['role']),
-      depth: it.depth,
-      source: it.source
-    }))
-    .sort((a, b) => b.idx - a.idx)
-  for (const p of planned) {
-    messages.splice(p.idx, 0, { role: p.role, content: p.content })
-    journal?.depthInject(
-      p.source ?? { kind: 'pipeline', id: 'depth-inject' },
-      p.depth,
-      p.idx,
-      p.role,
-      p.content
-    )
+  const depths = [...new Set(grouped.map((g) => g.depth))]
+  const plan = depths.map((depth) => ({
+    depth,
+    idx: Math.max(start, Math.min(base - depth, maxIdx)),
+    msgs: grouped.filter((g) => g.depth === depth)
+  }))
+  // Splice larger indices first (no shift of smaller targets); on a tie (two depths clamped to the
+  // same index) inject the LOWER depth first so the higher depth stacks above it, matching ST.
+  plan.sort((a, b) => b.idx - a.idx || a.depth - b.depth)
+  for (const p of plan) {
+    messages.splice(p.idx, 0, ...p.msgs.map((g) => ({ role: g.role, content: g.content })))
+    // Forensic lineage (issue 07): one depth-inject entry per contributing source, sharing the
+    // insertion index + role, so a MERGED message retains EVERY source id it was joined from.
+    p.msgs.forEach((g, offset) => {
+      const at = p.idx + offset
+      const srcs = g.sources.length ? g.sources : [{ kind: 'pipeline', id: 'depth-inject' } as RecordSource]
+      for (const s of srcs) journal?.depthInject(s, g.depth, at, g.role, g.content)
+    })
   }
 }
 
@@ -787,7 +872,13 @@ export const buildPrompt = (args: BuildPromptArgs): ChatMessage[] => {
         // A literal block with a numeric depth is injected into the history (like a
         // lorebook/persona entry) rather than emitted here in preset order.
         if (block.injection_depth != null) {
-          presetDepthItems.push({ depth: block.injection_depth, content, role: block.role, source: src })
+          presetDepthItems.push({
+            depth: block.injection_depth,
+            content,
+            role: block.role,
+            order: block.injection_order ?? 100,
+            source: src
+          })
         } else {
           messages.push({ role: block.role, content })
         }
@@ -849,16 +940,23 @@ export const buildPrompt = (args: BuildPromptArgs): ChatMessage[] => {
     if (!byDepth.has(d)) byDepth.set(d, [])
     byDepth.get(d)!.push(c)
   }
+  // Lorebook depth entries are RPT's IN_CHAT "extension" content (ST's getExtensionPrompt IN_CHAT):
+  // order 100, system role, merged into the order-100 group at each depth (openai.js:846-849). One
+  // combined `World Info:` block per depth preserves prior single-depth output; when a preset depth
+  // block shares that depth/role/order it now MERGES with this block instead of racing it.
   const depthItems: DepthItem[] = [...byDepth.entries()].map(([depth, contents]) => ({
     depth,
     content: `World Info:\n${contents.join('\n\n')}`,
+    role: 'system' as ChatMessage['role'],
+    order: 100,
+    extension: true,
     source: { kind: 'lorebook-entry', id: `world_info@depth${depth}` } as RecordSource
   }))
-  // Depth-tagged preset prompt blocks (keep their authored role).
+  // Depth-tagged preset prompt blocks (keep their authored role + injection_order).
   depthItems.push(...presetDepthItems)
   if (depthItems.length) {
     const convoStart = messages.findIndex((m) => m.role !== 'system')
-    applyDepthInjections(messages, depthItems, convoStart, userAction !== '', journal)
+    applyGroupedDepthInjections(messages, depthItems, convoStart, userAction !== '', journal)
   }
 
   // Phase D: drain [GENERATE:*] + @INJECT marker entries into message positions.

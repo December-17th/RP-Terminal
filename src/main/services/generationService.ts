@@ -76,8 +76,13 @@ export const generate = async (
   chatId: string,
   userAction: string,
   onDelta: DeltaCallback = () => {},
-  source: TurnSource = 'player'
+  source: TurnSource = 'player',
+  // ST generation type (openai.js prepareOpenAIMessages `type`) driving preset injection_trigger
+  // filtering. Explicit for re-rolls (regenerate/swipe); otherwise a card-script turn is ST's
+  // background 'quiet' generation and a plain player send is 'normal'.
+  generationType?: string
 ): Promise<FloorFile | null> => {
+  const genType = generationType ?? (source === 'script' ? 'quiet' : 'normal')
   // ST-faithful serialization with PLAYER PRIORITY: one main turn per chat at a time. SillyTavern
   // refuses a Generate() while one is in flight, and card scripts calling TH `generate` mid-turn
   // rely on that refusal — without it, a script-triggered second turn runs a full concurrent
@@ -144,6 +149,7 @@ export const generate = async (
       profileId,
       chatId,
       userAction,
+      generationType: genType,
       workflowId,
       signal: controller.signal,
       onDelta,
@@ -383,7 +389,9 @@ export const regenerate = async (
   if (!last.user_message.content) throw new Error('Cannot regenerate the opening greeting')
 
   truncateFloors(profileId, chatId, lastIndex)
-  return generate(profileId, chatId, last.user_message.content, onDelta)
+  // ST generation type 'regenerate' (openai.js `type`) — a preset block gated to specific types via
+  // injection_trigger fires here only when it lists 'regenerate'.
+  return generate(profileId, chatId, last.user_message.content, onDelta, 'player', 'regenerate')
 }
 
 /**
@@ -408,7 +416,8 @@ export const generateSwipe = async (
   const prior = normalizeSwipes(last.swipes, last.response.content, last.swipe_id).swipes
 
   truncateFloors(profileId, chatId, lastIndex)
-  const fresh = await generate(profileId, chatId, last.user_message.content, onDelta)
+  // ST generation type 'swipe' — same as regenerate but the prior alternates are preserved below.
+  const fresh = await generate(profileId, chatId, last.user_message.content, onDelta, 'player', 'swipe')
   if (!fresh) {
     // Aborted / empty — restore the original floor so the swipe attempt loses nothing.
     saveFloor(profileId, chatId, last)

@@ -132,6 +132,7 @@ export const assemblePrompt = (
     fsmEnabled,
     mode,
     vnMode,
+    generationType,
     lorebookIds,
     modeConfig,
     lorebooks,
@@ -170,6 +171,9 @@ export const assemblePrompt = (
     floors,
     userAction,
     userName,
+    // ST generation type (openai.js prepareOpenAIMessages `type`) drives injection_trigger filtering
+    // (resolveEffectivePrompts). Threaded from the turn seed; 'normal' for a plain player send.
+    generationType,
     journal: record,
     historyOverride: overrides?.history,
     worldInfoOverride: overrides?.worldInfo,
