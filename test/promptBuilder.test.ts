@@ -609,8 +609,9 @@ describe('buildPrompt — EJS in constant lore (命定之诗 real-card shape)', 
   })
 
   it('keeps the PROSE of a lorebook entry whose trailing EJS block errors (艾莉亚 shape)', () => {
-    // 命定之诗's 艾莉亚 entry = lots of character prose + a trailing `await TavernHelper…` seeder that
-    // our sync/TavernHelper-less prompt engine can't run. The bad EJS must not take the prose down.
+    // 命定之诗's 艾莉亚 entry = lots of character prose + a trailing `await something()` seeder. The EJS
+    // profile now supports top-level await, so this is no longer a SyntaxError — `something` is simply
+    // undefined at build time → a runtime ReferenceError. Either way the bad EJS must not take the prose down.
     const messages = buildPrompt({
       card: card(),
       preset: preset([blk('char_description'), blk('world_info'), blk('chat_history')]),
@@ -628,7 +629,7 @@ describe('buildPrompt — EJS in constant lore (命定之诗 real-card shape)', 
       template: { vars: {}, globals: {}, constants: {} }
     })
     const wi = messages.find((m) => m.content.startsWith('World Info:'))
-    expect(wi?.content).toContain('艾莉亚是') // prose survived the EJS SyntaxError
+    expect(wi?.content).toContain('艾莉亚是') // prose survived the EJS runtime error
     expect(wi?.content).not.toContain('await') // the dead EJS block was stripped
   })
 })

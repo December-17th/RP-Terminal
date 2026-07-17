@@ -67,6 +67,16 @@ export interface TemplateData {
   presetPrompts?: Array<{ name: string; identifier: string; content: string }>
 }
 
+/**
+ * Escaper profile for `<%= … %>` (ST-Prompt-Template splits this by phase):
+ *  · 'identity' (GENERATION, default) — `<%=` returns its value UNCHANGED, so `<%=` and `<%-` produce
+ *    identical PROMPT text (the profile's generation escaper is the identity function).
+ *  · 'html' (RENDER / DOM display) — `<%=` HTML-escapes so card markup can't break the rendered DOM,
+ *    while `<%-` still emits raw. This is the profile's distinct render escaper.
+ * See docs/research/sillytavern-prompt-compatibility.md §6 (generation options vs render escaper).
+ */
+export type EscapeMode = 'identity' | 'html'
+
 export interface TemplateContext {
   vars: Record<string, any> // chat/local variables (mutated by setvar)
   globals: Record<string, any> // global variables (persisted per profile)
@@ -74,6 +84,8 @@ export interface TemplateContext {
   data?: TemplateData // TH-3: card/world-info/history/preset accessors
   /** When false, the EJS engine is OFF (settings toggle) — tags are stripped, not evaluated. */
   enabled?: boolean
+  /** `<%=` escaper profile. Omitted/undefined → 'identity' (generation). Render/display passes 'html'. */
+  escape?: EscapeMode
 }
 
 export interface TemplateContextOpts {
@@ -81,6 +93,7 @@ export interface TemplateContextOpts {
   constants?: Record<string, unknown>
   data?: TemplateData
   enabled?: boolean
+  escape?: EscapeMode
 }
 
 /**
@@ -98,7 +111,8 @@ export const buildTemplateContext = (
   globals: opts.globals ?? {},
   constants: opts.constants ?? {},
   data: opts.data,
-  enabled: opts.enabled ?? true
+  enabled: opts.enabled ?? true,
+  escape: opts.escape
 })
 
 let QJS: QuickJSWASMModule | null = null
@@ -132,28 +146,92 @@ export const stripTags = (s: string): string => s.replace(/<%[\s\S]*?%>/g, '')
 
 // dot/bracket path get/set live in the shared objectPath module
 
-/** Compile an EJS-style template into a JS function body that builds `__out`. */
-const compile = (tmpl: string): string => {
-  let body = ''
-  const re = /<%([=#_-]?)([\s\S]*?)[-_]?%>/g
+// Sentinels for the `<%%`/`%%>` literal escapes (EJS: `<%%` → literal `<%`, `%%>` → literal `%>`). We swap
+// them out BEFORE the tag scan so they can never be read as delimiters, then restore them as literal text
+// when a literal chunk is emitted. Chosen to be vanishingly unlikely in real template prose and to contain
+// no `<%`/`%>` themselves (so the tag regex never trips on a sentinel).
+const SENT_OPEN = '__RPT_EJS_LITERAL_OPEN__'
+const SENT_CLOSE = '__RPT_EJS_LITERAL_CLOSE__'
+
+// ST-Prompt-Template protected regions: EJS-looking text inside these is NOT evaluated (emitted literally).
+// `<escape-ejs>` is a pure directive — its wrapper tags are dropped and the inner text passes through raw.
+// `<thinking>`/`<think>`/`<reasoning>` are semantic reasoning markers — the wrapper tags are KEPT and only
+// EJS evaluation is suppressed inside. Clean-room from docs §6 (utils/prompts.ts protected-region rewrite).
+const PROTECTED_RE = /<(thinking|think|reasoning|escape-ejs)>([\s\S]*?)<\/\1>/gi
+
+/** Emit one literal chunk as an `__append(...)` call, restoring the `<%%`/`%%>` escapes to literal text. */
+const emitLiteral = (text: string): string => {
+  if (!text) return ''
+  const restored = text.split(SENT_OPEN).join('<%').split(SENT_CLOSE).join('%>')
+  return `__append(${JSON.stringify(restored)});\n`
+}
+
+/**
+ * Compile ONE non-protected segment: walk the EJS tags, honoring the trailing newline-trim (`-%>`/`_%>`).
+ * `<%=` → escaped append (identity in generation, HTML at render); `<%-` → raw append; `<%#` → comment;
+ * `<%`/`<%_` → scriptlet. Whitespace-slurp of same-line spaces/tabs is done by the caller's pre-pass.
+ */
+const compileSegment = (seg: string): string => {
+  let out = ''
+  const re = /<%(=|-|_|#)?([\s\S]*?)([-_]?)%>/g
   let last = 0
+  let trimNextNewline = false
   let m: RegExpExecArray | null
-  while ((m = re.exec(tmpl)) !== null) {
-    const lit = tmpl.slice(last, m.index)
-    if (lit) body += `__out += ${JSON.stringify(lit)};\n`
-    const kind = m[1]
-    const code = m[2]
-    if (kind === '#') {
-      /* <%# comment %> — emit nothing */
-    } else if (kind === '=' || kind === '-') {
-      body += `__out += __str(${code});\n`
-    } else {
-      body += `${code}\n`
+  const flushLit = (raw: string): void => {
+    let lit = raw
+    // `-%>`/`_%>` trim a single following newline (EJS 3.1.9 truncate mode, `_addOutput`).
+    if (trimNextNewline) {
+      lit = lit.replace(/^(?:\r\n|\r|\n)/, '')
+      trimNextNewline = false
     }
+    out += emitLiteral(lit)
+  }
+  while ((m = re.exec(seg)) !== null) {
+    flushLit(seg.slice(last, m.index))
+    const open = m[1] || ''
+    const code = m[2]
+    const close = m[3] || ''
+    if (open === '#') {
+      /* <%# comment %> — emit nothing */
+    } else if (open === '=') {
+      out += `__append(__escape(${code}));\n`
+    } else if (open === '-') {
+      out += `__append(__str(${code}));\n`
+    } else {
+      // '' (plain `<%`) or '_' (`<%_` whitespace-slurp scriptlet) → control flow, no output.
+      out += `${code}\n`
+    }
+    if (close === '-' || close === '_') trimNextNewline = true
     last = m.index + m[0].length
   }
-  const tail = tmpl.slice(last)
-  if (tail) body += `__out += ${JSON.stringify(tail)};\n`
+  flushLit(seg.slice(last))
+  return out
+}
+
+/**
+ * Compile an EJS-style template into a JS function body that appends to `__out` (via `__append`). Faithful
+ * to the pinned ST-Prompt-Template profile (bundled EJS 3.1.9 + wrapper options): protected regions, the
+ * `<%%`/`%%>` literal escapes, and same-line whitespace-slurp for `<%_`/`_%>`. See docs §6.
+ */
+const compile = (tmpl: string): string => {
+  // 1. Pull the literal `<%%`/`%%>` escapes out of harm's way (restored on literal emit).
+  let src = tmpl.split('<%%').join(SENT_OPEN).split('%%>').join(SENT_CLOSE)
+  // 2. EJS 3.1.9 whitespace-slurp: strip spaces/tabs (NOT newlines) immediately before `<%_` and after
+  //    `_%>` — mirrors EJS `generateSource`'s `/[ \t]*<%_/` + `/_%>[ \t]*/` pre-pass. The single following
+  //    newline is trimmed separately in `compileSegment` (truncate mode).
+  src = src.replace(/[ \t]*<%_/g, '<%_').replace(/_%>[ \t]*/g, '_%>')
+  // 3. Split off protected regions; compile only the normal segments, emit the protected text literally.
+  let body = ''
+  let last = 0
+  let m: RegExpExecArray | null
+  PROTECTED_RE.lastIndex = 0
+  while ((m = PROTECTED_RE.exec(src)) !== null) {
+    body += compileSegment(src.slice(last, m.index))
+    const tag = m[1].toLowerCase()
+    body += emitLiteral(tag === 'escape-ejs' ? m[2] : m[0])
+    last = m.index + m[0].length
+  }
+  body += compileSegment(src.slice(last))
   return body
 }
 
@@ -354,6 +432,12 @@ const installBridge = (vm: QuickJSContext, ctx: TemplateContext): void => {
   const boot =
     `
     function __str(x){return (x===undefined||x===null)?'':String(x);}
+    // Render-phase escaper for <%= (the 'html' EscapeMode). Generation uses __str (identity), so <%= == <%-
+    // in prompt text; the DOM/display path selects this so card markup can't break the rendered HTML.
+    function __escapeHtml(x){return __str(x).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');}
+    // ST-Prompt-Template's default include() is deliberately a no-op returning an empty template — RPT has
+    // no server-side filesystem to include from, so <%- include('x') %> resolves to '' (never throws).
+    function include(){return '';}
     function getLocalVar(k,o){return getvar(k,Object.assign({scope:'local'},o||{}));}
     function setLocalVar(k,v,o){return setvar(k,v,Object.assign({scope:'local'},o||{}));}
     function incLocalVar(k,v,o){return incvar(k,v,Object.assign({scope:'local'},o||{}));}
@@ -429,15 +513,18 @@ export const evalTemplateDetailed = (
     const deadline = Date.now() + EVAL_DEADLINE_MS
     vm.runtime.setInterruptHandler(() => Date.now() > deadline)
     installBridge(vm, ctx)
-    const program = `(function(){let __out="";\n${compile(template)}return __out;})()`
-    const res = vm.evalCode(program)
-    if (res.error) {
-      const err = vm.dump(res.error)
-      res.error.dispose()
+    // ST-Prompt-Template profile: async compile (top-level `await`), `print` output fn, `<%=` identity
+    // escaper for generation / HTML escaper for render. The body runs inside an ASYNC IIFE so templates
+    // may `await`; a sync template simply returns an already-resolved promise. `__append`/`__escape`/`print`
+    // are per-invocation (they close over THIS `__out`); `__str`/`__escapeHtml`/`include` are boot globals.
+    const escapeFn = ctx.escape === 'html' ? '__escapeHtml' : '__str'
+    const program =
+      `(async function(){let __out="";const __append=(x)=>{__out+=__str(x);};` +
+      `const __escape=${escapeFn};const print=__append;\n${compile(template)}return __out;})()`
+    // Turn a dumped quickjs error into a message + the offending COMPILED line (program line N == eval.js:N),
+    // so a missing helper ("not a function") or bad construct ("expecting ';'") is obvious without guessing.
+    const describe = (err: any): string => {
       let msg = typeof err === 'object' ? JSON.stringify(err) : String(err)
-      // Pinpoint the offending COMPILED line (program line N == eval.js:N) so a missing helper
-      // ("not a function") or bad construct ("expecting ';'") is obvious without guessing. The error
-      // carries `lineNumber` (SyntaxError) and/or a stack frame "eval.js:N:col" (runtime).
       const lineNo =
         (err && typeof err === 'object' && Number(err.lineNumber)) ||
         Number(/eval\.js:(\d+)/.exec(err && typeof err === 'object' ? err.stack || '' : '')?.[1])
@@ -445,12 +532,43 @@ export const evalTemplateDetailed = (
         const srcLine = program.split('\n')[lineNo - 1]
         if (srcLine) msg += ` | compiled L${lineNo}: ${srcLine.trim().slice(0, 200)}`
       }
+      return msg
+    }
+    const fail = (err: any): { output: string; error: string } => {
+      const msg = describe(err)
       logFn('error', 'Template error', msg)
       return { output: '', error: msg }
     }
-    const out = vm.getString(res.value)
-    res.value.dispose()
-    return { output: out, error: null }
+
+    const res = vm.evalCode(program)
+    // A SYNTAX error or a sync interrupt (a runaway `<% while(true){} %>` before the first await) surfaces
+    // here as `res.error`. A RUNTIME throw inside the async body becomes a rejected promise instead (below).
+    if (res.error) {
+      const err = vm.dump(res.error)
+      res.error.dispose()
+      return fail(err)
+    }
+    // `res.value` is the async IIFE's promise. Drain the microtask queue synchronously so it settles — the
+    // renderer loads a SYNC quickjs variant, so evalTemplateDetailed must stay a synchronous call; template
+    // awaits resolve against already-available values (no real host async), so pending jobs finish here.
+    const promise = res.value
+    vm.runtime.executePendingJobs()
+    const state = vm.getPromiseState(promise)
+    if (state.type === 'fulfilled') {
+      const out = vm.getString(state.value)
+      state.value.dispose()
+      promise.dispose()
+      return { output: out, error: null }
+    }
+    if (state.type === 'rejected') {
+      const err = vm.dump(state.error)
+      state.error.dispose()
+      promise.dispose()
+      return fail(err)
+    }
+    // Still pending: a real async await never settled (or the deadline interrupt fired mid-job). Fail-safe.
+    promise.dispose()
+    return fail('template did not settle (unresolved async/await)')
   } catch (e: any) {
     const msg = e?.message || String(e)
     logFn('error', 'Template eval failed', msg)

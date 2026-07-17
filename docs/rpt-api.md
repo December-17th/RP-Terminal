@@ -181,6 +181,27 @@ through the host bridge as RFC-6902 JSON Patch.
 ### EJS / macros — ✅
 
 - `EjsTemplate.*` (`evalTemplate`/`prepareContext`/`getSyntaxErrorInfo`/`allVariables`/`saveVariables`) — ✅ (the clean-room ST-Prompt-Template engine; see [st-prompt-template-plan.md](st-prompt-template-plan.md)).
+- **Pinned ST-Prompt-Template profile (WP-2.7).** The engine matches the extension's bundled EJS 3.1.9 +
+  wrapper options, verified against `docs/research/sillytavern-prompt-compatibility.md` §6 (clean-room from
+  the documented behavior — EJS/ST-PT source is **not** vendored). What the profile guarantees, all in
+  [`templateEngine.ts`](../src/shared/templateEngine.ts) `compile`/`evalTemplateDetailed`:
+  - **Async templates / top-level `await`.** Each template compiles into an `async` function body, so
+    `<% const x = await … %>` and `<%= await … %>` work. RPT resolves the promise **synchronously**
+    (drain microtasks + read the settled state) because the renderer loads a sync quickjs variant — template
+    `await`s resolve against already-available values, not real host async.
+  - **`print()` output function.** `print(x)` appends to the template output (the `outputFunctionName`
+    profile), equivalent to a `<%- x %>` raw write.
+  - **Bare-identifier context** (`_with:true` / `localsName`): context constants (`userName`, `charName`,
+    `lastMessageId`, …) and the hoisted `variables` object resolve as bare identifiers.
+  - **Generation escaper is IDENTITY** — `<%=` and `<%-` produce **identical** prompt text (the generation
+    escaper returns its value unchanged). The **render/display** path selects a distinct **HTML escaper**
+    (`<%=` escapes `& < > " '`, `<%-` stays raw) via `TemplateContext.escape: 'html'` — set it on the
+    display context; generation/`EjsTemplate` default to identity.
+  - **`include(...)` is a no-op** returning an empty template (RPT has no server-side filesystem include).
+  - **Protected regions** `<thinking>` / `<think>` / `<reasoning>` / `<escape-ejs>` are emitted literally —
+    EJS-looking text inside is **not** evaluated. Reasoning tags keep their wrapper; `<escape-ejs>` drops it.
+  - **Whitespace-slurp** exactness (EJS 3.1.9): `<%_` / `_%>` strip same-line spaces/tabs around the tag,
+    `-%>` / `_%>` trim a single following newline; `<%%` / `%%>` emit literal `<%` / `%>`.
 - `substituteParams`/`substitudeMacros` (expand `{{macros}}`) — ✅ · `{{get_X_variable}}`/`{{format_X_variable}}` (X ∈ global/chat/message/preset/character) — ✅ · `registerMacroLike` — ⬜ (cross-process).
 - **Persona macros** (ST-faithful): `{{user}}` = active persona **name**; `{{persona}}` = active persona **description**. The macro is **ungated** (ST parity): it returns the description even when prompt injection is off — only the prompt *injection* respects the inject toggle. Both transports resolve `{{persona}}` via the `personaDescription` host facet — inline (`cardBridge`) and WCV (`wcvPreload`) are at parity. The description is injected into the prompt (IN_PROMPT) at the preset's `personaDescription` marker position — emitted **raw** there (the preset author owns the framing, e.g. a `<{{user}}_setting>…</{{user}}_setting>` envelope, matching ST). When the preset has no such marker it falls back to a pre-conversation system block prefixed `[<user>'s Persona]`.
   Implementation: [`promptBuilder.ts`](../src/main/services/promptBuilder.ts), the
@@ -354,6 +375,11 @@ preserves the invariant (review WS-9). When you add a new template surface, pick
 
 Rule of thumb: **author infrastructure fails loud; card-supplied content degrades; non-errors strip; unknown
 passes through.**
+
+This is RPT's mapping of the ST-Prompt-Template layered failure model (research §6): the inner evaluation
+logs the error **with a source/line diagnostic** (`evalTemplateDetailed` appends `compiled L{n}: …`); the
+handler tier returns the null-equivalent (empty output + error string); and the outer final-prompt caller
+either **rethrows** (`ejsStrict`, presets) or keeps/skips the content (`renderLoreEntry`, lore).
 
 ## 8. WebContentsView card layout compatibility
 
