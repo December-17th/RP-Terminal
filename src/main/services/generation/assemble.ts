@@ -3,7 +3,7 @@ import { resolveYuzuMaxTokens } from '../settingsService'
 import { matchAcross } from '../lorebookService'
 import { getCachedWorldInfo, setCachedWorldInfo } from '../chatService'
 import { buildPrompt, fitToBudget, ChatMessage } from '../promptBuilder'
-import { getPromptRules } from '../regexService'
+import { getPromptRules, getWorldInfoRules } from '../regexService'
 import { buildTemplateContext } from '../templateService'
 import { providerShape } from './providerShape'
 import {
@@ -185,6 +185,13 @@ export const assemblePrompt = (
     maxRecursion,
     matchedEntries,
     promptRegex: getPromptRules(profileId, {
+      cardId: chat.character_id,
+      chatId,
+      presetId: getActivePresetId(profileId)
+    }),
+    // World Info regex (ST placement 5), isPrompt-strict — applied to each activated entry's content
+    // in promptBuilder's renderLoreEntry, matching ST's WI builder (world-info.js:5086).
+    worldInfoRegex: getWorldInfoRules(profileId, {
       cardId: chat.character_id,
       chatId,
       presetId: getActivePresetId(profileId)

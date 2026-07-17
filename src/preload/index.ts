@@ -638,6 +638,11 @@ const api = {
     profileId: string,
     ctx?: { cardId?: string | null; chatId?: string | null }
   ) => ipcRenderer.invoke('get-plot-block-regex', profileId, ctx),
+  // Reasoning-panel display rules (ST placement 6).
+  getReasoningRegex: (
+    profileId: string,
+    ctx?: { cardId?: string | null; chatId?: string | null }
+  ) => ipcRenderer.invoke('get-reasoning-regex', profileId, ctx),
   listRegex: (profileId: string) => ipcRenderer.invoke('list-regex', profileId),
   listPanelRegex: (profileId: string, ctx?: { cardId?: string | null; chatId?: string | null }) =>
     ipcRenderer.invoke('list-panel-regex', profileId, ctx),

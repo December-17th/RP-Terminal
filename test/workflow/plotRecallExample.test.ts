@@ -112,7 +112,7 @@ vi.mock('../../src/main/services/lorebookService', async (orig) => ({
   ...(await orig<Record<string, unknown>>()),
   getLorebookById: () => ({ id: 'w1', name: 'lb', entries: [] })
 }))
-vi.mock('../../src/main/services/regexService', () => ({ getPromptRules: () => [] }))
+vi.mock('../../src/main/services/regexService', () => ({ getPromptRules: () => [], getWorldInfoRules: () => [] }))
 vi.mock('../../src/main/services/templateService', async (orig) => ({
   ...(await orig<Record<string, unknown>>()),
   loadGlobals: () => ({})

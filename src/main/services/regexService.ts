@@ -22,7 +22,9 @@ import {
   RegexRuleDetail,
   RegexRulePatch,
   appliesToDisplay,
-  appliesToPrompt
+  appliesToPrompt,
+  scriptRunsInPhase,
+  REGEX_PLACEMENT
 } from '../../shared/regexTypes'
 import {
   readScopeMeta,
@@ -113,6 +115,11 @@ const normalizeRule = (r: any): RenderRegexRule => {
     // "keep only the latest user input → <|placeholder|>" rule has minDepth:1). number | null.
     minDepth: typeof r.minDepth === 'number' ? r.minDepth : null,
     maxDepth: typeof r.maxDepth === 'number' ? r.maxDepth : null,
+    // ST substitute_find_regex (0 NONE / 1 RAW / 2 ESCAPED) + runOnEdit — carried so the shared
+    // transform can honor find-macro expansion and edit gating (regexTransform).
+    substituteRegex:
+      typeof r.substituteRegex === 'number' ? r.substituteRegex : Number(r.substituteRegex) || 0,
+    runOnEdit: r.runOnEdit === true,
     trimStrings: Array.isArray(r.trimStrings)
       ? r.trimStrings.filter((s: any) => typeof s === 'string')
       : []
@@ -193,6 +200,47 @@ export const getPromptRules = (profileId: string, ctx?: ScopeContext): RenderReg
     (r) => !r.disabled && appliesToPrompt(r) && r.renderMode !== 'panel'
   )
 
+/**
+ * World Info regex (ST placement 5). WI content is generated FRESH each turn and never committed, so
+ * unlike chat messages there is no commit pass to fold — apply the ST phase test STRICTLY for the
+ * isPrompt call (world-info.js:5086 passes `{isMarkdown:false, isPrompt:true}`). Net: a `promptOnly`
+ * (or both-true) WI rule fires; a BOTH-FALSE rule does NOT (the fixed divergence). Placement 5 is
+ * matched by the applier (empty placement = everywhere, per RPT convention). Panel rules excluded. */
+export const getWorldInfoRules = (profileId: string, ctx?: ScopeContext): RenderRegexRule[] =>
+  getAllRules(profileId, ctx).filter(
+    (r) => !r.disabled && r.renderMode !== 'panel' && scriptRunsInPhase(r, { isPrompt: true })
+  )
+
+/**
+ * Reasoning regex (ST placement 6), DISPLAY phase. Reasoning is committed + stored like a message in
+ * ST (reasoning.js:409 `getRegexedString(reasoning, REASONING)` — a neither/commit call), then rendered;
+ * RPT strips reasoning from the prompt (promptBuilder), so the display of the reasoning panel is the
+ * only faithful application point. Same commit-fold as chat display (`appliesToDisplay`); a
+ * 'panel'-promoted rule strips its match. Placement 6 is enforced here (empty = everywhere). */
+export const getReasoningRules = (profileId: string, ctx?: ScopeContext): RenderRegexRule[] =>
+  getAllRules(profileId, ctx)
+    .filter(
+      (r) =>
+        !r.disabled &&
+        appliesToDisplay(r) &&
+        (r.placement.length === 0 || r.placement.includes(REGEX_PLACEMENT.REASONING))
+    )
+    .map((r) => (r.renderMode === 'panel' ? { ...r, replace: '' } : r))
+
+/**
+ * Slash-command regex (ST placement 3). ST only ever runs this on a NEITHER call (slash-commands.js),
+ * so `scriptRunsInPhase(r, {})` → only BOTH-FALSE rules fire. RPT has no ST-style slash-command chat
+ * pipeline yet, so this selector is currently unwired at runtime — it exists for model completeness,
+ * the TavernHelper `source.slash_command` mapping, and the conformance fixtures. */
+export const getSlashCommandRules = (profileId: string, ctx?: ScopeContext): RenderRegexRule[] =>
+  getAllRules(profileId, ctx).filter(
+    (r) =>
+      !r.disabled &&
+      r.renderMode !== 'panel' &&
+      scriptRunsInPhase(r, {}) &&
+      (r.placement.length === 0 || r.placement.includes(REGEX_PLACEMENT.SLASH_COMMAND))
+  )
+
 // A "frontend card" loader regex injects a page via `$('body').load('https://…')`. Pull that URL out so a
 // promoted regex can be hosted as a WCV panel. Only the `.load('https://…')` form (the status/home/start
 // pattern) — NOT bare CDN `import`s in beautification regexes (those are libs, not the page). Pure.
@@ -238,8 +286,11 @@ export const applyRegex = (
   depth?: number,
   /** DISPLAY callers only (see regexTransform `freezePayloads`): make injected card payloads opaque to
    *  later rules. The prompt-assembly callers (promptBuilder) omit it so prompts stay byte-identical. */
-  freezePayloads?: boolean
-): string => applyRegexRules(text, rules, ctx, { placement, depth, freezePayloads })
+  freezePayloads?: boolean,
+  /** PER-RULE LINEAGE (issue 14): fires for each rule that actually changed the text, so the forensic
+   *  journal can attribute a change to the rule that fired rather than the whole turn. */
+  onRuleApplied?: (rule: RenderRegexRule, before: string, after: string) => void
+): string => applyRegexRules(text, rules, ctx, { placement, depth, freezePayloads, onRuleApplied })
 
 export const listScripts = (profileId: string): RegexScriptInfo[] => {
   const dir = regexDir(profileId)

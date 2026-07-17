@@ -158,6 +158,9 @@ export interface BuildPromptArgs {
   matchedEntries?: LorebookEntry[]
   /** Regex rules applied to outgoing prompt text (placement 1 = user, 2 = AI). */
   promptRegex?: RenderRegexRule[]
+  /** World Info regex rules (ST placement 5) applied to each activated entry's content, isPrompt-strict
+   *  (getWorldInfoRules). ST regexes `entry.content` before macro expansion (world-info.js:5086). */
+  worldInfoRegex?: RenderRegexRule[]
   /** Per-mode system instruction (Phase H); a stable block just before the conversation. */
   modeAddendum?: string
   /** ST-Prompt-Template context; when present, authored content is run through the engine. */
@@ -671,28 +674,28 @@ export const buildPrompt = (args: BuildPromptArgs): ChatMessage[] => {
     ? (t: string, depth: number): string => applyRegex(t, promptRegex, 2, regexCtx, depth)
     : identity
 
-  // Forensic Execution Record (issue 07). `journal` is a PURE observer; every call below reads
-  // values already in scope and appends an entry — it never changes `messages`. `jUser`/`jAssistant`
-  // wrap the regex closures to record a `regex` entry only when a rule ACTUALLY changed a turn's text
-  // (no journal / no rules → the raw closures, zero overhead).
+  // Forensic Execution Record (issue 07 + issue 14 PER-RULE LINEAGE). `journal` is a PURE observer;
+  // every call below reads values already in scope and appends an entry — it never changes `messages`.
+  // `jUser`/`jAssistant` run the same regex but pass an `onRuleApplied` hook so the journal attributes
+  // each change to the RULE that fired (`{kind:'regex-rule', id, label:scriptName}`) rather than the
+  // whole turn — M1 review finding 3. A rule that matches nothing emits no entry (no journal / no rules
+  // → the raw closures, zero overhead).
   const journal = args.journal
-  const jUser =
+  const jRegex =
     journal && promptRegex.length
-      ? (t: string, depth: number): string => {
-          const out = applyUser(t, depth)
-          if (out !== t) journal.regex({ kind: 'history', id: `user@d${depth}` }, depth, t, out)
-          return out
-        }
-      : applyUser
-  const jAssistant =
-    journal && promptRegex.length
-      ? (t: string, depth: number): string => {
-          const out = applyAssistant(t, depth)
-          if (out !== t)
-            journal.regex({ kind: 'history', id: `assistant@d${depth}` }, depth, t, out)
-          return out
-        }
-      : applyAssistant
+      ? (placement: number) =>
+          (t: string, depth: number): string =>
+            applyRegex(t, promptRegex, placement, regexCtx, depth, undefined, (rule, before, after) =>
+              journal.regex(
+                { kind: 'regex-rule', id: rule.id, label: rule.scriptName },
+                depth,
+                before,
+                after
+              )
+            )
+      : null
+  const jUser = jRegex ? jRegex(1) : applyUser
+  const jAssistant = jRegex ? jRegex(2) : applyAssistant
 
   // Lorebook scan over the last few turns plus the pending action, across all
   // active lorebooks. Entries with a numeric insertion_depth are injected into the
@@ -717,9 +720,17 @@ export const buildPrompt = (args: BuildPromptArgs): ChatMessage[] => {
   // only: presets still fail loud (the branch-leak that 1941f38 fixed is a preset concern). The entry +
   // reason are logged either way so a genuinely broken entry is visible.
   // Error policy: "card / lorebook content degrades gracefully" tier — see docs/rpt-api.md §7 (WS-9).
+  // World Info regex (ST placement 5): applied to the RAW entry content BEFORE macro/EJS expansion,
+  // matching ST which regexes `entry.content` in the WI builder (world-info.js:5086) with isPrompt.
+  // isPrompt-strict selection (getWorldInfoRules) already excluded both-false rules. freezePayloads
+  // guards a pathological WI paste (PR #90 precedent) — output-identical for plain text.
+  const worldInfoRegex = args.worldInfoRegex ?? []
+  const applyWorldInfo = worldInfoRegex.length
+    ? (t: string): string => applyRegex(t, worldInfoRegex, 5, regexCtx, undefined, true)
+    : identity
   const renderLoreEntry = (e: LorebookEntry): string => {
     const expanded = expandMacros(
-      e.content,
+      applyWorldInfo(e.content),
       macroBase(personaMacro, frontierTemplate?.vars, frontierTemplate?.globals)
     )
     if (!frontierTemplate) return stripEjs(expanded).trim()

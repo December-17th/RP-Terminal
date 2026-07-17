@@ -58,6 +58,7 @@ export interface RecordSource {
     | 'memory'
     | 'history'
     | 'pipeline'
+    | 'regex-rule' // a specific regex rule that fired (per-rule lineage — issue 14); `id` = rule id, `label` = scriptName
   id: string
   label?: string
 }

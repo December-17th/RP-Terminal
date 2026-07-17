@@ -86,7 +86,7 @@ vi.mock('../../src/main/services/floorService', () => ({
   // If the preview ever wrote a floor this would record it — asserted empty (zero writes).
   saveFloor: (_p: string, _c: string, f: unknown) => store.savedFloors.push(f)
 }))
-vi.mock('../../src/main/services/regexService', () => ({ getPromptRules: () => [] }))
+vi.mock('../../src/main/services/regexService', () => ({ getPromptRules: () => [], getWorldInfoRules: () => [] }))
 vi.mock('../../src/main/services/templateService', async (orig) => ({
   ...(await orig<Record<string, unknown>>()),
   loadGlobals: () => ({}),

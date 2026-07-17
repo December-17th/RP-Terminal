@@ -202,7 +202,13 @@ export function ChatView({ profileId }: { profileId: string }): React.ReactEleme
       user: f.user_message.content,
       rawResponse: f.response.content,
       html: applyRegex(stripThinking(withMacros)),
-      thinking: extractThinking(f.response.content),
+      // Reasoning display regex (ST placement 6) transforms the <think> text for the ReasoningPanel.
+      thinking: useRegexStore
+        .getState()
+        .applyReasoning(extractThinking(f.response.content), {
+          user: personaName,
+          char: charName
+        }),
       // Plot-recall: pass the STORED plot_block through verbatim (display-only; PlotPanel applies the
       // placement-1 beautification regex + routes the html itself). Not derived from response.content.
       plotBlock: f.plot_block,

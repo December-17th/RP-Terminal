@@ -379,14 +379,30 @@ best-effort (arbitrary author JS reaching past the supported surface).
 | Avatar / assets                                                   | PNG image / embedded                                     | `avatars/<id>.png` + `rp_terminal.assets`                                                                                                                                                                      | ✅ avatar; 🟡 binary asset bundle (PNG cartridge ZIP, §6)                                                                           |
 | Audio                                                             | TH audio API                                             | native `<audio>`/WebAudio                                                                                                                                                                                      | 🔁 (API stubbed)                                                                                                                    |
 
-Regex destination flags mirror ST exports: `markdownOnly` routes to display, `promptOnly` routes to
-prompt, neither routes to both, and cards that set **both** flags are treated as both destinations. This
-is enforced by `appliesToDisplay` / `appliesToPrompt`
-([regexTypes.ts](../../src/shared/regexTypes.ts)) in `getRenderRules` / `getPromptRules`
-([regexService.ts](../../src/main/services/regexService.ts)) and in the TavernHelper shape bridge
-([tavernRegex.ts](../../src/shared/thRuntime/tavernRegex.ts)).
-Replacement syntax is shared by display and prompt transforms: `$0`/`$&` expand to the full match and
-`$1`/`$2`... expand capture groups (`regexTransform`). In a **card payload** (a replacement carrying
+Regex phase selection follows ST 1.18.0 exactly (`getRegexedString`, engine.js:348-355), captured by
+`scriptRunsInPhase` ([regexTypes.ts](../../src/shared/regexTypes.ts)): `markdownOnly` fires on the
+DISPLAY (isMarkdown) call, `promptOnly` on the PROMPT (isPrompt) call, **both-true** on both, and a
+**both-false** rule fires ONLY on a call that is _neither_ display nor prompt (in ST that's the
+commit / slash-command / reasoning-commit / edit call). RPT has no destructive commit pass, so for
+**committed content** (chat messages placement 1/2 and reasoning placement 6) `appliesToDisplay` /
+`appliesToPrompt` FOLD the commit call into both passes — reproducing ST's observable result for a
+stored message (both-false ∪ both-true reach both; markdownOnly is display-only; promptOnly is
+prompt-only). Content ST never commits uses the strict per-call test instead: **World Info (placement
+5)** is applied isPrompt-strict to each activated entry's content at prompt assembly (a both-false WI
+rule does NOT fire — `getWorldInfoRules` + `promptBuilder.renderLoreEntry`, matching world-info.js:5086);
+**Slash Command (placement 3)** is neither-strict (only both-false fires — `getSlashCommandRules`; no
+live slash pipeline yet); **Reasoning (placement 6)** applies at reasoning display (`getReasoningRules`
+→ `regexStore.applyReasoning`; RPT strips reasoning from the prompt). Placements are the ST enum
+`REGEX_PLACEMENT` (0 MD_DISPLAY deprecated, 1 USER_INPUT, 2 AI_OUTPUT, 3 SLASH_COMMAND, 5 WORLD_INFO,
+6 REASONING). `substituteRegex` (0 none / 1 raw / 2 escaped) macro-expands the FIND pattern
+(`{{user}}/{{char}}` subset) and `runOnEdit` gates the edit call — both carried through `normalizeRule`
+and honored in `regexTransform`. The TavernHelper shape bridge
+([tavernRegex.ts](../../src/shared/thRuntime/tavernRegex.ts)) maps `source.{user_input,ai_output,
+slash_command,world_info}` ↔ placements 1/2/3/5, plus `run_on_edit` and `min_depth`/`max_depth`.
+Replacement syntax is shared by display and prompt transforms: `$0`/`$&` expand to the full match,
+`$1`/`$2`... to numbered groups, and `$<name>` to named capture groups; `trimStrings` are removed from
+every substituted value (each trimString macro-expanded first, ST filterString). In a **card payload**
+(a replacement carrying
 `<script>`/`<style>`/`<html>`/` ```html `) the whole-match specials `$0`/`$&` are kept **literal**
 so a card's own escape idiom `s.replace(/…/g, '\\$&')` isn't spliced into and broken; numbered groups
 still inject (with `$N` literal when the find-regex has no group N). On the **display** path

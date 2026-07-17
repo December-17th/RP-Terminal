@@ -102,7 +102,7 @@ vi.mock('../../src/main/services/floorService', () => ({
   getFloor: (_p: string, _c: string, i: number) => floors[i],
   saveFloor: () => {}
 }))
-vi.mock('../../src/main/services/regexService', () => ({ getPromptRules: () => [] }))
+vi.mock('../../src/main/services/regexService', () => ({ getPromptRules: () => [], getWorldInfoRules: () => [] }))
 vi.mock('../../src/main/services/templateService', async (orig) => ({
   ...(await orig<Record<string, unknown>>()),
   loadGlobals: () => ({}),
