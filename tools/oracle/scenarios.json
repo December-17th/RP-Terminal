@@ -1,0 +1,53 @@
+{
+  "schemaVersion": 1,
+  "note": "Authoritative machine-readable scenario grid for the oracle capture. Human narrative lives in scenarios.md. The conformance runner imports THIS file to enumerate scenarios and count fixture-absent skips. Every scenario is captured against ST 1.18.0 (commit 51ad27f) with the NEW macro engine ON (PLAN decision 10). All prose is RPT-authored + scrambled; ST default template strings are overridden (see overrideTemplates).",
+  "st": { "version": "1.18.0", "commit": "51ad27f", "macroEngine": "new" },
+  "overrideTemplates": {
+    "impersonation_prompt": "ORP_IMP: speak as {{user}} for one turn, brevity paramount.",
+    "wi_format": "ORP_WI:\n{0}",
+    "scenario_format": "ORP_SCN: {{scenario}}",
+    "personality_format": "ORP_PERS: {{personality}}",
+    "new_chat_prompt": "ORP_NEWCHAT_marker_alpha",
+    "new_group_chat_prompt": "ORP_NEWGROUP_marker_beta",
+    "new_example_chat_prompt": "ORP_NEWEXAMPLE_marker_gamma",
+    "continue_nudge_prompt": "ORP_CONT_nudge_delta",
+    "group_nudge_prompt": "ORP_GROUPNUDGE_epsilon {{char}}"
+  },
+  "scenarios": [
+    { "id": "wp-2.1-markers-basic", "wp": "2.1", "generationType": "normal", "title": "All structural markers present in default order", "inputs": "worldInfoBefore/After, charPersonality, scenario markers each populated; single-char preset." },
+    { "id": "wp-2.1-marker-roles-positions", "wp": "2.1", "generationType": "normal", "title": "Per-marker role + injection position overrides", "inputs": "charPersonality role=user; scenario position absolute-depth; worldInfoAfter role=assistant." },
+    { "id": "wp-2.1-injection-trigger", "wp": "2.1", "generationType": "normal", "title": "injection_trigger gates a prompt by generation type", "inputs": "Prompt with injection_trigger=[normal]; a second with injection_trigger=[continue] must be absent on a normal gen." },
+    { "id": "wp-2.1-forbid-overrides", "wp": "2.1", "generationType": "normal", "title": "forbid_overrides blocks a character-card override", "inputs": "Preset prompt forbid_overrides=true; character card supplies an override that must be ignored." },
+    { "id": "wp-2.1-char-card-overrides", "wp": "2.1", "generationType": "normal", "title": "Character card overrides main/jailbreak when allowed", "inputs": "forbid_overrides=false; card main_prompt + jailbreak replace preset text." },
+    { "id": "wp-2.1-empty-main", "wp": "2.1", "generationType": "normal", "title": "ST structural empty main message retained", "inputs": "main prompt content empty; ST keeps the empty system slot at position." },
+    { "id": "wp-2.1-duplicate-identifier", "wp": "2.1", "generationType": "normal", "title": "Duplicate identifier resolves first-match", "inputs": "Two enabled prompts share identifier 'custom_x'; first in order wins, second dropped." },
+
+    { "id": "wp-2.2-depth-injection-order", "wp": "2.2", "generationType": "normal", "title": "Same-depth grouping by injection_order descending", "inputs": "Three in-chat injections at depth 2 with injection_order 30/20/10." },
+    { "id": "wp-2.2-role-ordering", "wp": "2.2", "generationType": "normal", "title": "Same depth+order role grouping (system,user,assistant; final reverse)", "inputs": "Injections at depth 1, equal order, roles system/user/assistant (openai.js:795-868)." },
+    { "id": "wp-2.2-depth-cap", "wp": "2.2", "generationType": "normal", "title": "Depth cap at 10000", "inputs": "Injection requested at depth 99999; clamped to 10000 (top)." },
+
+    { "id": "wp-2.3-macro-basic", "wp": "2.3", "generationType": "normal", "title": "Core macros: {{user}} {{char}} {{lastUserMessage}}", "inputs": "Prompt embeds core macros; new engine expansion." },
+    { "id": "wp-2.3-macro-trim", "wp": "2.3", "generationType": "normal", "title": "{{trim}} collapses surrounding whitespace/newlines", "inputs": "Prompt with {{trim}} between two blocks." },
+    { "id": "wp-2.3-macro-dice", "wp": "2.3", "generationType": "normal", "title": "Legacy-space dice macro {{roll:1d6}}", "inputs": "Prompt with a dice macro; capture value is frozen (seeded/manual)." },
+    { "id": "wp-2.3-macro-vars", "wp": "2.3", "generationType": "normal", "title": "Scoped variables + operators {{setvar}}/{{getvar}}/{{addvar}}", "inputs": "Prompt sets then reads a scoped var with an operator." },
+    { "id": "wp-2.3-macro-unknown-literal", "wp": "2.3", "generationType": "normal", "title": "Unknown macro preserved literally (error preservation)", "inputs": "Prompt with {{not_a_macro}} stays verbatim." },
+
+    { "id": "wp-2.4-regex-placements", "wp": "2.4", "generationType": "normal", "title": "Regex placements 3/5/6 applied to correct targets", "inputs": "Three regex scripts at placements 3 (AI output), 5 (slash cmd), 6 (world info)." },
+    { "id": "wp-2.4-regex-phase-selection", "wp": "2.4", "generationType": "normal", "title": "both-flags-false regex runs only in neither-display-nor-prompt calls", "inputs": "Script with markdownOnly=false + promptOnly=false; divergence at regexTypes.ts:51-58." },
+    { "id": "wp-2.4-regex-runonedit-captures", "wp": "2.4", "generationType": "normal", "title": "runOnEdit + named captures + macro-expanded trim strings", "inputs": "Script with named capture groups and a {{macro}} in trimStrings." },
+
+    { "id": "wp-2.5-squash-on", "wp": "2.5", "generationType": "normal", "title": "Selective system-message squashing ON", "inputs": "squash_system_messages=true; adjacent system msgs merged per ST rule (not merge-all)." },
+    { "id": "wp-2.5-squash-off", "wp": "2.5", "generationType": "normal", "title": "Squashing OFF preserves discrete system messages", "inputs": "squash_system_messages=false." },
+
+    { "id": "wp-2.6-spreset-regexbinding", "wp": "2.6", "generationType": "normal", "title": "SPreset RegexBinding activation + ordering", "inputs": "Preset carries SPreset regex_bind; requires SPreset loader active in ST." },
+    { "id": "wp-2.6-spreset-chatsquash", "wp": "2.6", "generationType": "normal", "title": "SPreset ChatSquash roles follow/user (+ disabled config)", "inputs": "SPreset ChatSquash with role=follow and a disabled variant." },
+    { "id": "wp-2.6-spreset-macronest", "wp": "2.6", "generationType": "normal", "title": "SPreset MacroNest gates nested macro passes", "inputs": "SPreset MacroNest enabling a nesting pass over a macro-in-macro string." },
+
+    { "id": "wp-2.7-ejs-basic", "wp": "2.7", "generationType": "normal", "title": "ST-Prompt-Template EJS basic tags (pinned profile)", "inputs": "Prompt with <%= %> / <%- %> / control tags; identity escaper for generation." },
+    { "id": "wp-2.7-ejs-tag-audit", "wp": "2.7", "generationType": "normal", "title": "EJS 107-tag audit (8th-preset structural corpus, scrambled)", "inputs": "A dense EJS-bearing prompt exercising the QuickJS subset entry test." },
+
+    { "id": "gen-continue", "wp": "2.1/2.3", "generationType": "continue", "title": "Continue generation: continue_nudge + prefill", "inputs": "Continue on an assistant tail; overridden continue_nudge_prompt appears." },
+    { "id": "gen-impersonation", "wp": "2.1", "generationType": "impersonation", "title": "Impersonation generation uses overridden impersonation_prompt", "inputs": "Impersonate {{user}}; overridden impersonation_prompt present, no ST default." },
+    { "id": "gen-group-nudge", "wp": "2.2", "generationType": "group", "title": "Group generation: overridden group_nudge_prompt placement", "inputs": "Two-character group; group nudge injected per ST group logic." }
+  ]
+}

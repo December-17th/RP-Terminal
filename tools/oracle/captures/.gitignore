@@ -1,0 +1,5 @@
+# Raw oracle captures are scratch; only normalized fixtures under
+# test/conformance/fixtures/ are committed. Keep this dir in git (via this file)
+# so the capture server has somewhere to write by default.
+*
+!.gitignore

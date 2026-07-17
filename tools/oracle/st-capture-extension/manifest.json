@@ -1,0 +1,12 @@
+{
+  "display_name": "RPT Oracle Capture",
+  "loading_order": 100,
+  "requires": [],
+  "optional": [],
+  "js": "index.js",
+  "css": "",
+  "author": "RP Terminal",
+  "version": "1.0.0",
+  "homePage": "https://github.com/December-17th/RP-Terminal",
+  "auto_update": false
+}

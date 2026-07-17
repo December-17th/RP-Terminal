@@ -1,0 +1,32 @@
+{
+  "schemaVersion": 1,
+  "scenarioId": "wp-2.1-markers-basic",
+  "source": "synthesized",
+  "st": { "version": "1.18.0", "commit": "51ad27f", "macroEngine": "new" },
+  "generationType": "normal",
+  "settings": {
+    "chat_completion_source": "custom",
+    "squash_system_messages": false,
+    "wi_format": "ORP_WI:\n{0}",
+    "scenario_format": "ORP_SCN: {{scenario}}",
+    "personality_format": "ORP_PERS: {{personality}}"
+  },
+  "note": "SYNTHESIZED, not captured. Prose is RPT-authored + scrambled placeholder; ST default utility strings are overridden with ORP_ sentinels so no ST prose appears. Pins the default marker ORDER: main -> worldInfoBefore -> charDescription -> charPersonality -> scenario -> worldInfoAfter -> chatHistory. Replace with a source:'captured' fixture per RUNBOOK.md when a real capture is taken.",
+  "invariants": {
+    "roleOrder": ["system", "system", "system", "system", "system", "system", "user"],
+    "messageCount": 7,
+    "mustContain": ["ORP_WI:", "ORP_SCN:", "ORP_PERS:"],
+    "mustNotContain": ["[Start a new Chat]", "point of view of {{user}}, using the chat history"]
+  },
+  "expected": {
+    "chat": [
+      { "role": "system", "content": "Vornst kelbra directive: uphold the frelquam cadence." },
+      { "role": "system", "content": "ORP_WI:\nBefore-lore: the Zell markets close at dusk-tide." },
+      { "role": "system", "content": "Character brindle: Kaevo, a quiet dock-warden of Sill." },
+      { "role": "system", "content": "ORP_PERS: terse, wry, slow to trust." },
+      { "role": "system", "content": "ORP_SCN: A rain-slick pier at the edge of Grennel Bay." },
+      { "role": "system", "content": "ORP_WI:\nAfter-lore: tide-bells ring thrice for a missing skiff." },
+      { "role": "user", "content": "Kaevo, did the night skiff ever come back?" }
+    ]
+  }
+}
