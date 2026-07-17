@@ -16,7 +16,7 @@ import { YSS_GRAMMAR_PROMPT, YSS_VERSION, renderVocabularyBlock } from './sceneG
  *   1. `parseScene`   — lenient, line-oriented YSS parse into a candidate `Scene`, with ASYMMETRIC
  *                       leniency (prose never errors; a malformed `<| … |>` line is noted + skipped;
  *                       a missing `<| end |>` is a truncation note). Then it hands the candidate to →
- *   2. `validateScene`— the STRICT canon gate: zod shape parse, then an effect/choice cross check.
+ *   2. `validateScene`— the STRICT canon gate: zod shape parse, then a choice cross check.
  *                       Canon stays strict even though the parse stays lenient. Unknown asset ids are
  *                       NOT fatal (revised ADR 0004) — they surface as an UNKNOWN_ASSET_ID observation
  *                       and resolve fuzzily at play time.
@@ -35,9 +35,14 @@ import { YSS_GRAMMAR_PROMPT, YSS_VERSION, renderVocabularyBlock } from './sceneG
  * The shape of a single problem. String-valued for easy aggregation/logging. Two disjoint groups:
  *
  * - SCENE-LEVEL FAILURES (fatal — the scene is rejected and the ladder falls to repair/fallback):
- *   SCHEMA_MISSING_FIELD, SCHEMA_WRONG_TYPE, DISALLOWED_EFFECT, BAD_CHOICE_SHAPE, EMPTY_OUTPUT.
+ *   SCHEMA_MISSING_FIELD, SCHEMA_WRONG_TYPE, BAD_CHOICE_SHAPE, EMPTY_OUTPUT.
  * - OBSERVATIONS (non-fatal — noted for telemetry/traces, the scene survives): THINK_WRAPPED,
- *   UNKNOWN_COMMAND, BAD_SPRITE_TOKEN, TRUNCATED, UNKNOWN_ASSET_ID.
+ *   UNKNOWN_COMMAND, BAD_SPRITE_TOKEN, TRUNCATED, UNKNOWN_ASSET_ID, UNKNOWN_PATH.
+ *
+ * There is NO effect gate (ADR 0008 §5): effects are raw MVU command strings, opaque to shared
+ * validation, never allow-listed — the old `DISALLOWED_EFFECT` failure is removed. An MVU command that
+ * writes a stat_data path absent from canon is a non-fatal `UNKNOWN_PATH` observation, emitted only by
+ * the main-side acceptance gate (WP-S), never here.
  *
  * UNKNOWN_ASSET_ID is an OBSERVATION (revised ADR 0004): assets resolve at play time through the classic
  * fuzzy `worldAssets` resolver, so a non-exact asset reference (location / actor / speaker / sprite /
@@ -53,7 +58,6 @@ export const FailureShape = {
   // Scene-level failures (fatal)
   SCHEMA_MISSING_FIELD: 'SCHEMA_MISSING_FIELD',
   SCHEMA_WRONG_TYPE: 'SCHEMA_WRONG_TYPE',
-  DISALLOWED_EFFECT: 'DISALLOWED_EFFECT',
   BAD_CHOICE_SHAPE: 'BAD_CHOICE_SHAPE',
   EMPTY_OUTPUT: 'EMPTY_OUTPUT',
   // Observations (non-fatal)
@@ -61,7 +65,12 @@ export const FailureShape = {
   UNKNOWN_COMMAND: 'UNKNOWN_COMMAND',
   BAD_SPRITE_TOKEN: 'BAD_SPRITE_TOKEN',
   TRUNCATED: 'TRUNCATED',
-  UNKNOWN_ASSET_ID: 'UNKNOWN_ASSET_ID'
+  UNKNOWN_ASSET_ID: 'UNKNOWN_ASSET_ID',
+  /**
+   * Emitted by the main-side acceptance gate (WP-S) when an effect writes a stat_data path not currently
+   * present — never emitted by shared validation (shared keeps effect strings opaque and stays main-free).
+   */
+  UNKNOWN_PATH: 'UNKNOWN_PATH'
 } as const
 export type FailureShape = (typeof FailureShape)[keyof typeof FailureShape]
 
@@ -119,8 +128,9 @@ export type ValidateResult =
   | { ok: false; failures: FailureShape[]; detail: string }
 
 /**
- * Cross-check the resolved scene against the vocabulary + effect allow-list. Two channels:
- * - `failures` (fatal): DISALLOWED_EFFECT, BAD_CHOICE_SHAPE — the scene is genuinely unplayable.
+ * Cross-check the resolved scene against the vocabulary. Two channels:
+ * - `failures` (fatal): BAD_CHOICE_SHAPE — the scene is genuinely unplayable. (Effects are raw MVU
+ *   command strings, opaque here and never allow-listed — ADR 0008 §5 — so there is no effect failure.)
  * - `observations` (non-fatal): UNKNOWN_ASSET_ID — a non-exact asset id (revised ADR 0004). Assets
  *   resolve fuzzily at play time via the classic `worldAssets` resolver, so this is legal; it is noted
  *   with the offending id (`obsDetail`) for traces/inspection but never rejects the scene. Every asset
@@ -167,12 +177,8 @@ const vocabCheck = (
       const id = beat.audio?.[key]
       if (id !== undefined && !vocab.audio.has(id)) unknownAsset(`audio.${key}`, id)
     }
-    for (const eff of beat.effects ?? []) {
-      if (!vocab.effects.has(eff.type)) {
-        failures.push(FailureShape.DISALLOWED_EFFECT)
-        failDetail.push(`disallowed effect type "${eff.type}"`)
-      }
-    }
+    // Effects are raw MVU command strings (ADR 0008 §4): opaque here, never allow-listed. The main-side
+    // acceptance gate parses them with mvuParser and may emit UNKNOWN_PATH; shared validation does not.
   }
 
   // Choices must be {text,intent} ONLY. zod strips extra keys, so inspect the RAW value for mechanics.
@@ -281,9 +287,10 @@ type SpriteOpLike = NonNullable<Beat['sprites']>[number]
 
 /**
  * Handle one `<| … |>` command line. Returns 'end' to stop the fold early. Every unrecognized or
- * un-validatable command (unknown verb, empty/unknown arg, unknown asset id, non-allow-listed effect)
- * is recorded as an UNKNOWN_COMMAND observation and SKIPPED — canon leniency lives here; the strict
- * canon gate is `validateScene`.
+ * un-validatable command (unknown verb, empty/unknown arg, unknown asset id, empty effect payload) is
+ * recorded as an UNKNOWN_COMMAND observation and SKIPPED — canon leniency lives here; the strict canon
+ * gate is `validateScene`. An `effect` line's payload is a raw MVU command string, kept verbatim and
+ * opaque (never parsed here).
  */
 const foldCommand = (
   inner: string,
@@ -346,17 +353,18 @@ const foldCommand = (
       return 'continue'
     }
     case 'effect': {
-      const type = args[0]
-      if (!type || !vocab.effects.has(type)) {
+      // Everything after the `effect ` token is ONE raw MVU command string (ADR 0008 §4), captured
+      // verbatim (trimmed). It is OPAQUE to shared validation — never parsed or allow-listed here; the
+      // main-side gate parses it with mvuParser. A completely empty payload is a malformed line: note +
+      // skip via the standard bad-command path (canon leniency).
+      const command = rest
+      if (!command) {
         obs.push(FailureShape.UNKNOWN_COMMAND)
         return 'continue'
       }
-      const effectArgs = args.slice(1)
-      const effect =
-        effectArgs.length > 0 ? { type, args: { raw: effectArgs.join(' ') } } : { type }
       const last = acc.beats[acc.beats.length - 1]
-      if (last) last.effects = [...(last.effects ?? []), effect]
-      else acc.beats.push({ effects: [effect] })
+      if (last) last.effects = [...(last.effects ?? []), command]
+      else acc.beats.push({ effects: [command] })
       return 'continue'
     }
     case 'choice': {

@@ -29,7 +29,12 @@ export const YSS_GRAMMAR_PROMPT = [
   '   <| ambience <id> |>            play an ambience loop',
   '   <| sfx <id> |>                 play a one-shot sound',
   '   <| cg <id> |>                  show a CG (or <| cg clear |> to hide it)',
-  '   <| effect <type> <args...> |>  attach a mechanic effect to the current beat',
+  '   <| effect <mvu-command> |>     change a story variable on the current beat. The payload is ONE MVU',
+  '                                  command in the classic call dialect — _.set / _.add / _.delta / … —',
+  "                                  e.g. <| effect _.set('好感度.kaede', 4, 5) //她笑了 |>  or",
+  "                                  <| effect _.add('好感度.kaede', 1) //她笑了 |>. A trailing //reason is",
+  '                                  part of the command. Put the effect on the beat where the change',
+  '                                  narratively happens.',
   '   <| choice <text> :: <intent> |>  offer a player choice; " :: " separates the shown text from its',
   '                                  intent tag (omit " :: <intent>" to reuse the text as intent)',
   '   <| end |>                      REQUIRED: the final line of every scene, marking it complete',
@@ -44,8 +49,9 @@ export const YSS_GRAMMAR_PROMPT = [
 ].join('\n')
 
 /**
- * Render the legal asset ids (per category) + the effect allow-list from a {@link SceneVocabulary}, as a
- * prompt block. Shared by the repair builder and WP-C so the model is only ever shown valid ids.
+ * Render the legal asset ids (per category) from a {@link SceneVocabulary}, as a prompt block. Shared by
+ * the repair builder and WP-C so the model is only ever shown valid ids. There is no effect allow-list:
+ * effects are raw MVU commands (ADR 0008 §4–5), taught by the grammar block above.
  */
 export const renderVocabularyBlock = (vocab: SceneVocabulary): string => {
   const line = (label: string, ids: ReadonlySet<string>): string =>
@@ -58,7 +64,6 @@ export const renderVocabularyBlock = (vocab: SceneVocabulary): string => {
     line('cgs (cg)', vocab.cgs),
     line('audio (music / ambience / sfx)', vocab.audio),
     `- "${NARRATION_SPEAKER}" is also a legal dialogue speaker.`,
-    `Effects: <| effect … |> may only use these types: ${[...vocab.effects].join(', ')}. No others.`,
-    'Choices carry TEXT + INTENT only — never mechanics (affinity, flags, items). Mechanics go in an effect.'
+    'Choices carry TEXT + INTENT only — never mechanics (affinity, flags, items). Mechanics go in an <| effect … |> MVU command.'
   ].join('\n')
 }

@@ -5,6 +5,7 @@ import {
   toProseFallbackScene,
   buildRepairMessages,
   FailureShape,
+  YSS_GRAMMAR_PROMPT,
   type ParseResult
 } from '../../src/shared/yuzu/sceneValidate'
 import {
@@ -24,8 +25,7 @@ const vocab: SceneVocabulary = createSceneVocabulary({
   expressions: ['neutral', 'smile', 'worried'],
   locations: ['classroom', 'rooftop'],
   cgs: ['cg_confession'],
-  audio: ['bgm_main', 'amb_school', 'sfx_bell'],
-  effects: ['affinity_change', 'flag_set', 'item_grant']
+  audio: ['bgm_main', 'amb_school', 'sfx_bell']
 })
 
 const parse = (lines: string[]): ParseResult => parseScene(lines.join('\n'), vocab)
@@ -45,7 +45,7 @@ const EXAMPLE = [
   'yuzu: Kaede, wait — can we talk?',
   'kaede: ...I have to get home.',
   'The corridor is silent except for the distant sound of the sea.',
-  '<| effect affinity_change kaede +1 |>',
+  "<| effect _.add('好感度.kaede', 1) //她笑了 |>",
   '<| choice Apologize first :: reconcile |>',
   '<| choice Ask why she left :: confront |>',
   '<| end |>'
@@ -68,7 +68,8 @@ describe('parseScene — the YSS example', () => {
       { text: 'Ask why she left', intent: 'confront' }
     ])
     const withEffect = beatWith(scene, (b) => !!b.effects)
-    expect(withEffect?.effects?.[0]).toEqual({ type: 'affinity_change', args: { raw: 'kaede +1' } })
+    // Effects parse to the raw MVU command string verbatim (Chinese path + //reason preserved).
+    expect(withEffect?.effects?.[0]).toBe("_.add('好感度.kaede', 1) //她笑了")
   })
 })
 
@@ -112,18 +113,36 @@ describe('parseScene — each command type', () => {
     expect(scene.beats.filter((b) => 'cg' in b).map((b) => b.cg)).toEqual(['cg_confession', null])
   })
 
-  it('<| effect |> attaches to the last beat, capturing args as a raw string', () => {
+  it('<| effect |> attaches the raw MVU command string to the last beat', () => {
     const scene = okScene(
-      parse(['<| bg classroom |>', '<| effect flag_set talked=true |>', '<| end |>'])
+      parse(['<| bg classroom |>', "<| effect _.set('flags.talked', true) |>", '<| end |>'])
     )
     expect(beatWith(scene, (b) => b.bg === 'classroom')?.effects).toEqual([
-      { type: 'flag_set', args: { raw: 'talked=true' } }
+      "_.set('flags.talked', true)"
     ])
   })
 
-  it('<| effect |> with no beat yet gets its own beat; no-arg effect omits args', () => {
-    const scene = okScene(parse(['<| bg classroom |>', '<| effect item_grant |>', '<| end |>']))
-    expect(beatWith(scene, (b) => !!b.effects)?.effects).toEqual([{ type: 'item_grant' }])
+  it('<| effect |> before any beat gets its own beat', () => {
+    const scene = okScene(
+      parse(['<| bg classroom |>', "<| effect _.add('items.key', 1) |>", '<| end |>'])
+    )
+    expect(beatWith(scene, (b) => !!b.effects)?.effects).toEqual(["_.add('items.key', 1)"])
+  })
+
+  it('<| effect |> string is OPAQUE — even garbage after `effect ` survives parse verbatim', () => {
+    const scene = okScene(
+      parse(['<| bg classroom |>', '<| effect this is not valid mvu !!! |>', '<| end |>'])
+    )
+    // Shared validation never parses the payload; it is captured trimmed and kept as-is.
+    expect(beatWith(scene, (b) => !!b.effects)?.effects).toEqual(['this is not valid mvu !!!'])
+    expect(scene.beats.some((b) => b.bg === 'classroom')).toBe(true)
+  })
+
+  it('<| effect |> with an EMPTY payload is a bad command: noted + skipped', () => {
+    const r = parse(['<| bg classroom |>', '<| effect |>', '<| end |>'])
+    const scene = okScene(r)
+    expect(r.ok && r.observations).toContain(FailureShape.UNKNOWN_COMMAND)
+    expect(scene.beats.some((b) => !!b.effects)).toBe(false)
   })
 })
 
@@ -242,10 +261,11 @@ describe('parseScene — observations are non-fatal', () => {
     expect(r.ok && r.observations).toContain(FailureShape.UNKNOWN_COMMAND)
   })
 
-  it('UNKNOWN_COMMAND: a non-allow-listed effect → noted + skipped, scene survives', () => {
-    const r = parse(['<| bg classroom |>', '<| effect teleport x |>', '<| end |>'])
-    okScene(r)
-    expect(r.ok && r.observations).toContain(FailureShape.UNKNOWN_COMMAND)
+  it('a non-empty effect is NEVER UNKNOWN_COMMAND — effects are opaque MVU commands, not gated', () => {
+    const r = parse(['<| bg classroom |>', "<| effect _.set('x.y', 1) |>", '<| end |>'])
+    const scene = okScene(r)
+    expect(r.ok && r.observations).not.toContain(FailureShape.UNKNOWN_COMMAND)
+    expect(beatWith(scene, (b) => !!b.effects)?.effects).toEqual(["_.set('x.y', 1)"])
   })
 
   it('BAD_SPRITE_TOKEN: an unclassifiable sprite token → noted, sprite still kept', () => {
@@ -317,16 +337,15 @@ describe('validateScene — scene-level failures', () => {
     if (!v.ok) expect(v.failures).toContain(FailureShape.SCHEMA_WRONG_TYPE)
   })
 
-  it('DISALLOWED_EFFECT: an effect type outside the allow-list', () => {
+  it('an arbitrary raw MVU command effect string is accepted (no effect gate — ADR 0008 §5)', () => {
     const v = validateScene(
       {
         ...validSceneObject(),
-        beats: [{ speaker: 'narration', line: 'x', effects: [{ type: 'teleport' }] }]
+        beats: [{ speaker: 'narration', line: 'x', effects: ["_.set('anything.at.all', 1)"] }]
       },
       vocab
     )
-    expect(v.ok).toBe(false)
-    if (!v.ok) expect(v.failures).toContain(FailureShape.DISALLOWED_EFFECT)
+    expect(v.ok).toBe(true)
   })
 
   it('BAD_CHOICE_SHAPE: a choice carrying mechanics (extra keys inspected on the raw value)', () => {
@@ -451,8 +470,7 @@ describe('toProseFallbackScene', () => {
       expressions: [],
       locations: [],
       cgs: [],
-      audio: [],
-      effects: []
+      audio: []
     })
     const scene = toProseFallbackScene('anything at all', emptyVocab)
     expect(scene.header.location).toBe('unknown')
@@ -465,22 +483,22 @@ describe('toProseFallbackScene', () => {
 
 describe('buildRepairMessages', () => {
   it('builds a lean corrective: grammar + vocab system turn, prior reply, quoted failures', () => {
-    const prior = '<| bg classroom |>\n<| effect teleport now |>\nyuzu: hi'
+    const prior = '<| bg classroom |>\n<| choice Deal :: accept :: affinity 2 |>\nyuzu: hi'
     const messages = buildRepairMessages({
       priorRaw: prior,
-      failures: [FailureShape.DISALLOWED_EFFECT],
-      detail: 'disallowed effect type "teleport"',
+      failures: [FailureShape.BAD_CHOICE_SHAPE],
+      detail: 'choice carries non-{text,intent} keys: affinity',
       vocab
     })
     expect(messages.map((m) => m.role)).toEqual(['system', 'assistant', 'user'])
     const [system, assistant, user] = messages
     expect(system.content).toContain('<| bg <location> |>') // grammar
     expect(system.content).toContain('<| end |>')
+    expect(system.content).toContain('_.set') // the effect verb teaches the MVU command form
     expect(system.content).toContain('classroom') // vocabulary
-    expect(system.content).toContain('affinity_change') // effect allow-list
     expect(assistant.content).toBe(prior) // rejected reply echoed
-    expect(user.content).toContain('DISALLOWED_EFFECT')
-    expect(user.content).toContain('teleport')
+    expect(user.content).toContain('BAD_CHOICE_SHAPE')
+    expect(user.content).toContain('affinity')
     expect(user.content).toMatch(/no json/i)
   })
 
@@ -492,6 +510,19 @@ describe('buildRepairMessages', () => {
       .toLowerCase()
     expect(joined).not.toContain('premise')
     expect(joined).not.toContain('player action to dramatize')
+  })
+})
+
+// --------------------------------------------------------------------------------------------------
+// Grammar prompt — teaches the MVU effect form (ADR 0008 §4)
+// --------------------------------------------------------------------------------------------------
+
+describe('YSS_GRAMMAR_PROMPT — effect verb teaches the MVU command form', () => {
+  it('mentions the classic MVU call dialect (_.set) and drops any allow-list phrasing', () => {
+    expect(YSS_GRAMMAR_PROMPT).toContain('_.set')
+    expect(YSS_GRAMMAR_PROMPT).toContain('_.add')
+    expect(YSS_GRAMMAR_PROMPT).toMatch(/MVU/)
+    expect(YSS_GRAMMAR_PROMPT).not.toMatch(/allow-?list/i)
   })
 })
 

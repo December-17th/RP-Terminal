@@ -18,7 +18,7 @@ const baseScene = (): Record<string, unknown> => ({
 
 describe('sceneSchema — versioning', () => {
   it('exposes the version literal', () => {
-    expect(SCENE_SCHEMA_VERSION).toBe('yuzu-scene-1')
+    expect(SCENE_SCHEMA_VERSION).toBe('yuzu-scene-2')
     expect(NARRATION_SPEAKER).toBe('narration')
   })
 
@@ -49,18 +49,18 @@ describe('sceneSchema — versioning', () => {
 })
 
 describe('sceneSchema — createSceneVocabulary', () => {
-  it('builds ReadonlySet-backed vocabulary from plain lists', () => {
+  it('builds ReadonlySet-backed vocabulary from plain lists (no effect vocabulary)', () => {
     const vocab: SceneVocabulary = createSceneVocabulary({
       actors: ['yuzu', 'kaede'],
       expressions: ['smile'],
       locations: ['classroom'],
       cgs: ['cg_confession'],
-      audio: ['bgm_main'],
-      effects: ['affinity_change']
+      audio: ['bgm_main']
     })
     expect(vocab.actors.has('yuzu')).toBe(true)
     expect(vocab.actors.has('nobody')).toBe(false)
     expect([...vocab.locations]).toEqual(['classroom'])
-    expect(vocab.effects.has('affinity_change')).toBe(true)
+    // Effects are raw MVU commands (ADR 0008) — there is no effect vocabulary to build.
+    expect('effects' in vocab).toBe(false)
   })
 })

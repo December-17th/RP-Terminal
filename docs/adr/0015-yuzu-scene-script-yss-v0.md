@@ -22,13 +22,13 @@ A scene is a sequence of **lines**; each non-blank line is exactly one of:
 | `<\| <actor> [tokens…] \|>` | sprite op; tokens after the actor auto-classify by vocabulary as expression / position (`left\|center\|right`) / action (`enter\|exit\|move`), in any order |
 | `<\| music <id> \|>` · `<\| ambience <id> \|>` · `<\| sfx <id> \|>` | audio (`<\| music stop \|>` allowed) |
 | `<\| cg <id> \|>` · `<\| cg clear \|>` | CG overlay |
-| `<\| effect <type> <args…> \|>` | attach a canon effect to the current beat; `type` must be allow-listed |
+| `<\| effect <mvu-command> \|>` | change a story variable on the current beat; payload is ONE raw MVU command in the classic call dialect (`_.set` / `_.add` / `_.delta` / …), e.g. `<\| effect _.set('好感度.kaede', 4, 5) //她笑了 \|>`. A trailing `//reason` is part of the command. NOT allow-listed (ADR 0008 §4–5); opaque to the parser and validated main-side by `mvuParser` |
 | `<\| choice <text> :: <intent> \|>` | one player choice (repeatable); ` :: ` splits shown text from intent tag; omit ` :: <intent>` to reuse the text as intent |
 | `<\| end \|>` | REQUIRED final line; its ABSENCE is a truncation signal |
 
-**Asymmetric leniency (the core rule):** prose never errors (an unrecognized non-command line → narration). A `<| … |>` line that opens but does not validate (unknown verb/id, non-allow-listed effect, unclassifiable sprite token) is **recorded as an observation and skipped — the scene survives.** Canon (asset ids, effects) stays strict at the *scene-validate* stage; only the *parse* is lenient.
+**Asymmetric leniency (the core rule):** prose never errors (an unrecognized non-command line → narration). A `<| … |>` line that opens but does not validate (unknown verb/id, empty effect payload, unclassifiable sprite token) is **recorded as an observation and skipped — the scene survives.** Asset ids stay strict at the *scene-validate* stage; only the *parse* is lenient. Effects are NOT gated at all: an `effect`'s MVU-command payload is captured verbatim (opaque to the shared parser) and applied/validated main-side (ADR 0008 §5 — no effect allow-list).
 
-**Interaction:** any `<| choice |>` lines ⇒ present those choices; none ⇒ the player types a free action (the default). No `free`/`continue` verbs. Choices carry **text + intent only** — never mechanics (those go in a beat `effect`).
+**Interaction:** any `<| choice |>` lines ⇒ present those choices; none ⇒ the player types a free action (the default). No `free`/`continue` verbs. Choices carry **text + intent only** — never mechanics (those go in a beat `effect` as an MVU command).
 
 **Header** is derived from the stream: first `bg` → `location`; actors that speak or `enter` → `present`; last `mood` → `mood`.
 
