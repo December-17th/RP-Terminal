@@ -95,6 +95,7 @@ function portTypeClass(type: string | undefined): string {
     case 'Vars':
     case 'Context':
     case 'Lore':
+    case 'Prompt':
     case 'Signal':
     case 'Error':
     case 'Floors':

@@ -10,6 +10,13 @@ export const PORT_TYPES = [
   'Context',
   // A `Lorebook[]` on the wire (per-call lorebook subsets — context-epochs plan §2).
   'Lore',
+  // The rich assembly ARTIFACT on the wire (issue 18a / PLAN.md decision 11): authored prompt
+  // CONTRIBUTIONS + the resolved wire messages + the forensic execution record + sampler params,
+  // as ONE port type (not one per assembly phase — keeping the prompt module deep). Its value shape
+  // is `PromptArtifact` (src/main/services/nodes/promptArtifact.ts, main-side — the engine treats a
+  // port value as `unknown`). Legacy `Messages` producers wrap as an artifact with synthetic
+  // provenance; a final adapter re-exposes `ChatMessage[]` to any node that still requires it.
+  'Prompt',
   'Signal',
   'Error',
   'Any'
