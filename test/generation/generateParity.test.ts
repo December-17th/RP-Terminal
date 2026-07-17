@@ -52,12 +52,31 @@ const RAW =
   '<thinking>plan</thinking>You open the door.\n<UpdateVariable>_.set("hp", 9)</UpdateVariable>'
 
 let capturedSend: unknown = null
+let capturedParams: any = null
 let capturedFloor: FloorFile | null = null
+
+// Project Yuzu WP-S1: a hoisted toggle so the SAME mocked module serves both the classic baseline
+// (off → byte-identical) and the VN-mode case (on → overlay + raised ceiling). Off by default.
+const yuzuFlag = vi.hoisted(() => ({ on: false }))
+
+// A fixture asset index for the VN-mode case (kaede/yuzu sprites + moods, two backgrounds, one CG). Only
+// read when yuzu mode is on (buildVnOverlay → getIndex); the classic baseline never touches it, so mocking
+// worldAssetService here cannot perturb the baseline snapshots.
+const FIXTURE_INDEX = {
+  character: {
+    kaede: { 立绘: { moods: { neutral: 'a.png', smile: 'b.png' } } },
+    yuzu: { 立绘: { moods: { neutral: 'c.png' } } }
+  },
+  location: { classroom: { 背景: { moods: {} } }, rooftop: { 背景: { moods: {} } } },
+  cg: { cg_confession: { CG: { moods: {} } } }
+}
+vi.mock('../../src/main/services/worldAssetService', () => ({ getIndex: () => FIXTURE_INDEX }))
 
 vi.mock('../../src/main/services/chatService', () => ({
   getChat: () => ({ id: 'chat1', character_id: 'card1', floor_count: 2, lorebook_ids: null }),
   getChatLorebookIds: () => null,
   getChatMode: () => 'explore',
+  isYuzuMode: () => yuzuFlag.on,
   getChatWorkflowId: () => null,
   getCachedWorldInfo: () => null,
   setCachedWorldInfo: () => {},
@@ -107,8 +126,9 @@ vi.mock('../../src/main/services/workflowService', async () => {
 })
 vi.mock('../../src/main/services/apiService', async (orig) => ({
   ...(await orig<Record<string, unknown>>()),
-  streamProvider: async (_s: unknown, messages: unknown) => {
+  streamProvider: async (_s: unknown, messages: unknown, params: unknown) => {
     capturedSend = messages
+    capturedParams = params
     return RAW
   }
 }))
@@ -118,7 +138,9 @@ import { generate } from '../../src/main/services/generationService'
 describe('generate() — parity baseline', () => {
   beforeEach(() => {
     capturedSend = null
+    capturedParams = null
     capturedFloor = null
+    yuzuFlag.on = false
     vi.useFakeTimers()
     vi.setSystemTime(new Date('2020-06-01T12:00:00.000Z'))
   })
@@ -130,5 +152,32 @@ describe('generate() — parity baseline', () => {
     // the two things the parity contract pins:
     expect(capturedSend).toMatchSnapshot('sendMessages')
     expect(capturedFloor).toMatchSnapshot('writtenFloor')
+  })
+
+  // Project Yuzu WP-S1: VN mode on. The classic pipeline gains ONE extra system block (the YSS overlay)
+  // immediately before the user action, and the output ceiling is raised — nothing else changes.
+  it('VN mode appends the YSS overlay before the action + raises max_tokens', async () => {
+    yuzuFlag.on = true
+    const floor = await generate('profile1', 'chat1', 'open the door')
+    expect(floor).not.toBeNull()
+
+    const msgs = capturedSend as Array<{ role: string; content: string }>
+    // The final message is the user action; the overlay is the system block immediately before it.
+    const userIdx = msgs.length - 1
+    expect(msgs[userIdx].role).toBe('user')
+    const overlay = msgs[userIdx - 1]
+    expect(overlay.role).toBe('system')
+    // Framing + grammar + concrete vocab (deterministic, sorted) all present in the one block.
+    expect(overlay.content).toContain('visual novel')
+    expect(overlay.content).toContain('Yuzu Scene Script')
+    expect(overlay.content).toContain('kaede, yuzu') // actors, sorted
+    expect(overlay.content).toContain('neutral, smile') // union of moods, sorted
+    expect(overlay.content).toContain('classroom, rooftop') // locations, sorted
+    expect(overlay.content).toContain('cg_confession') // cgs
+    // The ceiling is raised to at least 16000 (default preset max_tokens is 4000).
+    expect((capturedParams as { max_tokens: number }).max_tokens).toBe(16000)
+    // Pin the whole overlay block + position so any drift in content/order is caught.
+    expect(overlay.content).toMatchSnapshot('vnOverlayBlock')
+    expect(msgs.length).toBe((capturedSend as unknown[]).length)
   })
 })

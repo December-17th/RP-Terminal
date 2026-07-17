@@ -190,6 +190,23 @@ export const setChatMode = (profileId: string, chatId: string, mode: ChatMode): 
   notifyChatModeChanged(chatId, m)
 }
 
+/** Project Yuzu (ADR 0008 §7): is this session in VN play mode? Reads the additive `vn_mode` column
+ *  (1 = on) — orthogonal to `getChatMode`'s FSM state, so it never interferes with Explore/Combat routing.
+ *  A missing/NULL value is off. `isYuzuMode` is the semantic predicate the generation seams read. */
+export const isYuzuMode = (profileId: string, chatId: string): boolean => {
+  const row = getDb()
+    .prepare('SELECT vn_mode FROM chats WHERE id = ? AND profile_id = ?')
+    .get(chatId, profileId) as { vn_mode: number | null } | undefined
+  return row?.vn_mode === 1
+}
+
+/** Turn a session's VN play mode on/off (Project Yuzu). Additive; leaves the FSM `mode` untouched. */
+export const setVnMode = (profileId: string, chatId: string, on: boolean): void => {
+  getDb()
+    .prepare('UPDATE chats SET vn_mode = ? WHERE id = ? AND profile_id = ?')
+    .run(on ? 1 : 0, chatId, profileId)
+}
+
 /** The session-tier workflow override for a chat; null = inherit world/global/builtin (spec §12). */
 export const getChatWorkflowId = (profileId: string, chatId: string): string | null => {
   const row = getDb()

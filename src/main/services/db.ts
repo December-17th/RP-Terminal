@@ -435,6 +435,10 @@ export const getDb = (): Database.Database => {
   addColumnIfMissing(db, 'chats', 'pending_lore', 'pending_lore TEXT')
   // Session-tier workflow override (node-workflow spec §12); null = inherit world/global/builtin.
   addColumnIfMissing(db, 'chats', 'workflow_id', 'workflow_id TEXT')
+  // Project Yuzu (ADR 0008 §7): opt-in VN play mode for the session — ORTHOGONAL to `mode` (the FSM
+  // Explore/Dialogue/Combat state). 1 = VN mode on (classic pipeline + the YSS scene overlay); NULL/0 =
+  // off (byte-identical classic). A separate column, not a `mode` value, so it never perturbs FSM routing.
+  addColumnIfMissing(db, 'chats', 'vn_mode', 'vn_mode INTEGER')
   // SQL-table-memory: the assigned table-template id (null = table memory off for this chat).
   // The table DATA lives in a separate per-chat sandbox DB, not here (tableDbService).
   addColumnIfMissing(db, 'chats', 'table_template_id', 'table_template_id TEXT')

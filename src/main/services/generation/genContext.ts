@@ -2,7 +2,7 @@ import { getSettings, resolveModeConfig } from '../settingsService'
 import { getActivePreset } from '../presetService'
 import { getCharacter } from '../characterService'
 import { getLorebookById } from '../lorebookService'
-import { getChat, getChatLorebookIds, getChatMode } from '../chatService'
+import { getChat, getChatLorebookIds, getChatMode, isYuzuMode } from '../chatService'
 import { getAllFloors, getFloorRequest } from '../floorService'
 import { buildScanText } from '../promptBuilder'
 import { loadGlobals } from '../templateService'
@@ -36,6 +36,9 @@ export const buildGenContext = (
   // TODO(agentic): when agent.mode === 'agentic', classify intent here and setChatMode().
   const fsmEnabled = settings.agent?.mode === 'manual' || settings.agent?.mode === 'agentic'
   const mode = getChatMode(profileId, chatId)
+  // Project Yuzu (ADR 0008 §7): the VN-mode flag, read once per turn (cheap column read) — orthogonal to
+  // the FSM `mode`. Off = classic assembly is byte-identical.
+  const vnMode = isYuzuMode(profileId, chatId)
   const modeConfig = resolveModeConfig(settings, mode)
   // A session injects all its selected lorebooks; with none chosen it defaults to
   // the character's own lorebook (id == characterId), preserving prior behavior.
@@ -82,6 +85,7 @@ export const buildGenContext = (
     preset,
     fsmEnabled,
     mode,
+    vnMode,
     modeConfig,
     lorebookIds,
     lorebooks,

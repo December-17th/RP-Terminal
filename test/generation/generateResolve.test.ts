@@ -61,6 +61,7 @@ vi.mock('../../src/main/services/chatService', () => ({
   getChat: () => ({ id: 'chat1', character_id: 'card1', floor_count: 2, lorebook_ids: null }),
   getChatLorebookIds: () => null,
   getChatMode: () => 'explore',
+  isYuzuMode: () => false,
   getChatWorkflowId: () => null,
   getCachedWorldInfo: () => null,
   setCachedWorldInfo: () => {},

@@ -21,6 +21,7 @@ import { renderChatTablesInjectionBlock } from '../tablesInjectionService'
 import { LorebookEntry, getRpExt } from '../../types/character'
 import { PresetParameters, Preset } from '../../types/preset'
 import { GenContext } from './types'
+import { buildVnOverlay } from '../yuzu/vnPrompt'
 
 /**
  * prompt.preset composer overrides (context-epochs plan §3): each field, when present, replaces one
@@ -128,6 +129,8 @@ export const assemblePrompt = (
     settings,
     fsmEnabled,
     mode,
+    vnMode,
+    lorebookIds,
     modeConfig,
     lorebooks,
     floors,
@@ -152,7 +155,11 @@ export const assemblePrompt = (
   // anchor lane (which is reserved for pack rejoin). Empty when no template is bound / nothing to inject
   // → the block is unchanged (parity). Ordered [recall/pack block][tables block] in the tail.
   const tablesBlock = renderChatTablesInjectionBlock(profileId, chatId)
-  const memoryTail = [memoryBlock, tablesBlock].filter((s) => s && s.trim()).join('\n\n')
+  // Project Yuzu (ADR 0008 §7): in VN mode, append the YSS scene overlay to the SAME memory tail — it rides
+  // the existing `memoryBlock` splice (buildPrompt: a system block immediately before the user action), so it
+  // lands closest to the action and reorders nothing else. Off = empty string → filtered out → byte-identical.
+  const vnOverlay = vnMode ? buildVnOverlay(profileId, lorebookIds) : ''
+  const memoryTail = [memoryBlock, tablesBlock, vnOverlay].filter((s) => s && s.trim()).join('\n\n')
 
   const built = buildPrompt({
     card,
@@ -253,11 +260,14 @@ export const assemblePrompt = (
   // Agentic mode caps the output ceiling at the FSM mode's limit (e.g. Combat is terse),
   // never exceeding the preset's own max_tokens. Classic mode uses the preset value as-is.
   const presetMax = preset.parameters.max_tokens
-  const maxTokens = fsmEnabled
+  const baseMax = fsmEnabled
     ? presetMax != null
       ? Math.min(presetMax, modeConfig.max_output_tokens)
       : modeConfig.max_output_tokens
     : presetMax
+  // Project Yuzu (ADR 0008 §7): a full YSS scene document is long — raise the ceiling to at least 16000 in
+  // VN mode (never lower it). Off = the classic value verbatim (parity). Mirrored in contextNodes.contextParams.
+  const maxTokens = vnMode ? Math.max(baseMax ?? 0, 16000) : baseMax
   const params = { ...preset.parameters, max_tokens: maxTokens }
 
   // The exact array sent to the API (provider-specific ordering: end-on-user for strict OpenAI-compatible

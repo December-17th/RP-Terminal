@@ -18,6 +18,9 @@ export interface GenContext {
   preset: Preset
   fsmEnabled: boolean
   mode: string
+  /** Project Yuzu (ADR 0008 §7): VN play mode on for this session. When true the classic pipeline gains
+   *  the YSS scene overlay + a raised output ceiling; when false the assembly is byte-identical to classic. */
+  vnMode: boolean
   modeConfig: ModeConfig
   lorebookIds: string[]
   lorebooks: Lorebook[]

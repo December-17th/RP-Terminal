@@ -74,6 +74,7 @@ vi.mock('../../src/main/services/chatService', () => ({
   }),
   getChatLorebookIds: () => null,
   getChatMode: () => 'explore',
+  isYuzuMode: () => false,
   getChatWorkflowId: () => null,
   getChatTableTemplateId: () => 'tmpl',
   getCachedWorldInfo: () => null,

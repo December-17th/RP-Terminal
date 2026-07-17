@@ -175,11 +175,14 @@ export const contextParams: NodeImpl = {
   run: (_ctx, inputs) => {
     const gen = inputs.gen as GenContext
     const presetMax = gen.preset.parameters.max_tokens
-    const maxTokens = gen.fsmEnabled
+    const baseMax = gen.fsmEnabled
       ? presetMax != null
         ? Math.min(presetMax, gen.modeConfig.max_output_tokens)
         : gen.modeConfig.max_output_tokens
       : presetMax
+    // Project Yuzu (ADR 0008 §7): mirror assemble.ts's VN-mode ceiling raise so the side-pack `params` path
+    // reaching llm.sample carries the same budget. Off = classic value verbatim (parity).
+    const maxTokens = gen.vnMode ? Math.max(baseMax ?? 0, 16000) : baseMax
     return { outputs: { params: { ...gen.preset.parameters, max_tokens: maxTokens } } }
   }
 }

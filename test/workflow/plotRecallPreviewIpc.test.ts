@@ -17,6 +17,7 @@ const mockChat = vi.hoisted(() => ({
   getChatTableTemplateId: vi.fn(() => null),
   getChatLorebookIds: vi.fn(() => null),
   getChatMode: vi.fn(() => 'explore'),
+  isYuzuMode: vi.fn(() => false),
   getChatWorkflowId: vi.fn(() => null),
   getCachedWorldInfo: vi.fn(() => null),
   setCachedWorldInfo: vi.fn()
