@@ -1,6 +1,7 @@
 import React from 'react'
 import { useSettingsStore, PersonaPreset, Settings } from '../stores/settingsStore'
 import { useT } from '../i18n'
+import { duplicatePersona } from './personaPanelModel'
 
 /**
  * Persona tab — a library of user personas (who {{user}} is). The active persona's name
@@ -50,6 +51,10 @@ export const PersonaPanel: React.FC<{ profileId: string }> = ({ profileId }) => 
     })
   }
 
+  const duplicateActive = (): void => {
+    updateSettings(profileId, duplicatePersona(personas, active, crypto.randomUUID()))
+  }
+
   const deletePersona = (): void => {
     if (personas.length <= 1) return
     const remaining = personas.filter((p) => p.id !== active.id)
@@ -78,6 +83,7 @@ export const PersonaPanel: React.FC<{ profileId: string }> = ({ profileId }) => 
         </div>
         <div className="preset-actions">
           <button onClick={newPersona}>{t('common.new')}</button>
+          <button onClick={duplicateActive}>{t('persona.duplicate')}</button>
           <button
             className="btn-ghost danger"
             disabled={personas.length <= 1}

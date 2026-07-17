@@ -1,6 +1,7 @@
 // Simplified Chinese (简体中文). Uses the SillyTavern-ecosystem terms (世界书 = lorebook, 预设 = preset,
 // 正则 = regex, 脚本 = scripts) so they read naturally to the card community.
 const zh: Record<string, string> = {
+  'persona.duplicate': '复制',
   'nav.persona': '用户人设',
   'nav.preset': '预设',
   'nav.lorebook': '世界书',

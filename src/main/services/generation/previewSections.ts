@@ -95,12 +95,38 @@ const EXAMPLE_PREFIX = 'Example dialogue:\n'
 // Persona is `[<name>'s Persona]\n…` — matched by the bracketed "'s Persona]" fragment (name varies).
 const PERSONA_RE = /^\[[^\]]*'s Persona\]\n/
 
-/** Classify a single system-role message's content into a section kind by its builder prefix.
- *  `personaText` = the active persona description; a persona_description MARKER emits it RAW (no
- *  header), so an exact match attributes it as `persona` too (the safety-net path keeps the header). */
-const classifySystem = (content: string, personaText?: string): SectionKind => {
+/** Does a flat assembled message carry the raw persona as a complete newline-delimited block?
+ * Prompt assembly has no per-message provenance, so preview attribution must use content. Exact equality
+ * covers an unmerged marker; newline boundaries cover same-role merging with adjacent authored
+ * envelopes while avoiding a broad substring match inside unrelated prose. */
+const messageCarriesPersona = (content: string, personaText?: string): boolean => {
+  const persona = personaText?.trim().replace(/\r\n/g, '\n')
+  if (!persona) return false
+  const message = content.trim().replace(/\r\n/g, '\n')
+  if (message === persona) return true
+  let from = 0
+  while (from <= message.length - persona.length) {
+    const at = message.indexOf(persona, from)
+    if (at === -1) return false
+    const startsAtBoundary = at === 0 || message[at - 1] === '\n'
+    const end = at + persona.length
+    const endsAtBoundary = end === message.length || message[end] === '\n'
+    if (startsAtBoundary && endsAtBoundary) return true
+    from = at + 1
+  }
+  return false
+}
+
+/** Classify one narrator message using the builder's prefixes plus the active-persona hint. Prompt
+ * Manager role overrides mean a raw persona marker may be system, user, or assistant. */
+const classifyNarrator = (
+  role: AssembledMessage['role'],
+  content: string,
+  personaText?: string
+): SectionKind => {
   if (PERSONA_RE.test(content)) return 'persona'
-  if (personaText && personaText.trim() && content.trim() === personaText.trim()) return 'persona'
+  if (messageCarriesPersona(content, personaText)) return 'persona'
+  if (role === 'user' || role === 'assistant') return 'history'
   if (content.startsWith(WORLD_INFO_PREFIX)) return 'worldInfo'
   if (content.startsWith(EXAMPLE_PREFIX)) return 'card'
   if (content.startsWith(CARD_PREFIX)) return 'card'
@@ -248,12 +274,7 @@ export function shapePreview(args: ShapeArgs): PreviewShape {
       continue
     }
 
-    if (m.role === 'user' || m.role === 'assistant') {
-      push('history', { kind: 'narrator' }, m.content, tok)
-      continue
-    }
-    // system
-    push(classifySystem(m.content, personaText), { kind: 'narrator' }, m.content, tok)
+    push(classifyNarrator(m.role, m.content, personaText), { kind: 'narrator' }, m.content, tok)
   }
 
   // A pack that DID produce text but whose text we could not locate in the prompt (e.g. trimmed, or a

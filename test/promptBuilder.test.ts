@@ -264,6 +264,26 @@ describe('buildPrompt', () => {
     expect(messages.some((m) => m.content === 'Bio: Lyra is a wanderer')).toBe(true)
   })
 
+  it('expands {{persona}} when injection is disabled without emitting a persona block', () => {
+    const messages = buildPrompt({
+      card: card(),
+      preset: preset([
+        blk('none', 'Authored bio: {{persona}}'),
+        blk('persona_description'),
+        blk('chat_history')
+      ]),
+      lorebooks: [],
+      floors: [],
+      userAction: 'go',
+      userName: 'Lyra',
+      persona: { description: 'a quiet cartographer', inject: false }
+    })
+
+    expect(messages.some((m) => m.content === 'Authored bio: a quiet cartographer')).toBe(true)
+    expect(messages.some((m) => m.content === 'a quiet cartographer')).toBe(false)
+    expect(messages.some((m) => m.content.includes("Lyra's Persona"))).toBe(false)
+  })
+
   it('places the RAW persona (no header) at the preset persona_description marker', () => {
     const messages = buildPrompt({
       card: card(),

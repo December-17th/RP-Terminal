@@ -198,6 +198,12 @@ Verify: [`worldAssetIpc.ts`](../../src/main/ipc/worldAssetIpc.ts) (`asset-list-f
 
 #### Variable scopes
 
+Persona macro grounding for the Macros row above: prompt-time macro/injection separation is implemented
+in [`promptBuilder.ts`](../../src/main/services/promptBuilder.ts); the shared contract is
+[`ChatHost.personaDescription`](../../src/shared/thRuntime/hostFacets.ts), backed by the
+[inline host](../../src/renderer/src/cardBridge/host.ts) and the
+[WCV IPC handler](../../src/main/ipc/wcvIpc.ts).
+
 A card can read/write variables in three scopes. The default (stat_data) is selected with no option; named scopes use `getVariables({ type: '…' })` / `updateVariablesWith(updater, { type: '…' })`:
 
 ##### `stat_data` / default scope (in-prompt)

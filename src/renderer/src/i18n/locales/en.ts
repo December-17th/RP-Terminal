@@ -232,6 +232,7 @@ const en: Record<string, string> = {
   'persona.heading': 'Persona',
   'persona.select': 'Active Persona',
   'persona.newName': 'New Persona',
+  'persona.duplicate': 'Duplicate',
   'persona.keepOne': 'Keep at least one persona',
   'persona.confirmDelete': 'Delete persona "{{name}}"?',
   'persona.name': 'Name',

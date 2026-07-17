@@ -58,7 +58,7 @@ export interface ChatHost {
   // is a getter rather than `ctx.chatId` (SillyTavern.getCurrentChatId).
   currentChatId(): string
   personaName(): string
-  /** The active user persona's description — expands `{{persona}}`. Empty when none/not injected. */
+  /** The active user persona's description — expands `{{persona}}`. Empty only when no bio is set. */
   personaDescription(): string
   setChatMessages(msgs: any): Promise<boolean>
   deleteChatMessages(ids: any): Promise<boolean>

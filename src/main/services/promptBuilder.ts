@@ -354,10 +354,12 @@ export const buildPrompt = (args: BuildPromptArgs): ChatMessage[] => {
   const charName = card.data.name || 'Character'
   const userName = args.userName || 'User'
 
-  const personaInject = !!args.persona?.inject && !!args.persona?.description?.trim()
+  const personaDescription = args.persona?.description ?? ''
+  const personaMacro = personaDescription.trim()
+  const personaInject = !!args.persona?.inject && !!personaMacro
   // {{persona}} expands to the description in authored content (but not inside the
   // persona block itself — that's rendered with an empty persona to avoid recursion).
-  const personaMacro = personaInject ? args.persona!.description : ''
+  // ST gates only the IN_PROMPT insertion; the macro resolver always sees the active bio.
 
   // Central transform order for authored content: macros → EJS template → (regex runs
   // separately on history/user text). The macro pass shares the template's var/global
@@ -425,7 +427,7 @@ export const buildPrompt = (args: BuildPromptArgs): ChatMessage[] => {
       macroExpanded.set(b, macroPass(b.content))
   }
   const personaContent = personaInject
-    ? makeRender('', frontierTemplate)(args.persona!.description)
+    ? makeRender('', frontierTemplate)(personaDescription)
     : ''
 
   // Prompt-time regex: transform history/user text on its way into the prompt
