@@ -317,18 +317,6 @@ describe('validateScene — scene-level failures', () => {
     if (!v.ok) expect(v.failures).toContain(FailureShape.SCHEMA_WRONG_TYPE)
   })
 
-  it('UNKNOWN_ASSET_ID: a location outside the vocabulary', () => {
-    const v = validateScene(
-      { ...validSceneObject(), header: { location: 'nowhere', present: [] } },
-      vocab
-    )
-    expect(v.ok).toBe(false)
-    if (!v.ok) {
-      expect(v.failures).toContain(FailureShape.UNKNOWN_ASSET_ID)
-      expect(v.detail).toContain('nowhere')
-    }
-  })
-
   it('DISALLOWED_EFFECT: an effect type outside the allow-list', () => {
     const v = validateScene(
       {
@@ -379,6 +367,68 @@ describe('validateScene — scene-level failures', () => {
 })
 
 // --------------------------------------------------------------------------------------------------
+// UNKNOWN_ASSET_ID is a non-fatal observation (revised ADR 0004 — fuzzy play-time resolution)
+// --------------------------------------------------------------------------------------------------
+
+describe('validateScene — unknown asset ids are non-fatal observations', () => {
+  it('an unknown location + otherwise-valid scene → VALIDATES, with an UNKNOWN_ASSET_ID observation carrying the id', () => {
+    const v = validateScene(
+      { ...validSceneObject(), header: { location: 'nowhere', present: [] } },
+      vocab
+    )
+    expect(v.ok).toBe(true)
+    if (v.ok) {
+      expect(v.observations).toContain(FailureShape.UNKNOWN_ASSET_ID)
+      expect(v.detail).toContain('nowhere')
+    }
+  })
+
+  it('unknown speaker / sprite actor / expression ids also observe, never fail (sprites resolve fuzzily too)', () => {
+    const v = validateScene(
+      {
+        ...validSceneObject(),
+        header: { location: 'classroom', present: ['stranger'] },
+        beats: [
+          { speaker: 'ghost', line: 'boo' },
+          { sprites: [{ actor: 'phantom', expression: 'smirk' }] }
+        ]
+      },
+      vocab
+    )
+    expect(v.ok).toBe(true)
+    if (v.ok) {
+      expect(v.observations).toEqual([FailureShape.UNKNOWN_ASSET_ID])
+      for (const id of ['stranger', 'ghost', 'phantom', 'smirk']) expect(v.detail).toContain(id)
+    }
+  })
+
+  it('an unknown asset id does NOT trigger the repair ladder (validateScene returns ok, so nothing feeds buildRepairMessages)', () => {
+    // A hand-authored / WP-C candidate that names an unknown speaker (the parser folds unknown speakers
+    // into narration, so this channel is validateScene, not parseScene). It must be playable: ok === true
+    // means there is no `failures` list for the repair loop to send.
+    const v = validateScene(
+      {
+        ...validSceneObject(),
+        beats: [{ speaker: 'ghost', line: 'I am not in the cast.' }]
+      },
+      vocab
+    )
+    expect(v.ok).toBe(true)
+    if (v.ok) {
+      expect(v.observations).toContain(FailureShape.UNKNOWN_ASSET_ID)
+      expect(v.detail).toContain('ghost')
+      expect('failures' in v).toBe(false)
+    }
+  })
+
+  it('a clean, fully-in-vocabulary scene records NO UNKNOWN_ASSET_ID observation', () => {
+    const v = validateScene(validSceneObject(), vocab)
+    expect(v.ok).toBe(true)
+    if (v.ok) expect(v.observations).not.toContain(FailureShape.UNKNOWN_ASSET_ID)
+  })
+})
+
+// --------------------------------------------------------------------------------------------------
 // Prose fallback (the floor)
 // --------------------------------------------------------------------------------------------------
 
@@ -415,11 +465,11 @@ describe('toProseFallbackScene', () => {
 
 describe('buildRepairMessages', () => {
   it('builds a lean corrective: grammar + vocab system turn, prior reply, quoted failures', () => {
-    const prior = '<| bg nowhere |>\nyuzu: hi'
+    const prior = '<| bg classroom |>\n<| effect teleport now |>\nyuzu: hi'
     const messages = buildRepairMessages({
       priorRaw: prior,
-      failures: [FailureShape.UNKNOWN_ASSET_ID],
-      detail: 'unknown location id "nowhere"',
+      failures: [FailureShape.DISALLOWED_EFFECT],
+      detail: 'disallowed effect type "teleport"',
       vocab
     })
     expect(messages.map((m) => m.role)).toEqual(['system', 'assistant', 'user'])
@@ -429,8 +479,8 @@ describe('buildRepairMessages', () => {
     expect(system.content).toContain('classroom') // vocabulary
     expect(system.content).toContain('affinity_change') // effect allow-list
     expect(assistant.content).toBe(prior) // rejected reply echoed
-    expect(user.content).toContain('UNKNOWN_ASSET_ID')
-    expect(user.content).toContain('nowhere')
+    expect(user.content).toContain('DISALLOWED_EFFECT')
+    expect(user.content).toContain('teleport')
     expect(user.content).toMatch(/no json/i)
   })
 

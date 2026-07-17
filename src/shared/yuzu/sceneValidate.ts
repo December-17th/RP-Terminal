@@ -16,8 +16,10 @@ import { YSS_GRAMMAR_PROMPT, YSS_VERSION, renderVocabularyBlock } from './sceneG
  *   1. `parseScene`   — lenient, line-oriented YSS parse into a candidate `Scene`, with ASYMMETRIC
  *                       leniency (prose never errors; a malformed `<| … |>` line is noted + skipped;
  *                       a missing `<| end |>` is a truncation note). Then it hands the candidate to →
- *   2. `validateScene`— the STRICT canon gate: zod shape parse, then a vocabulary/effect/choice cross
- *                       check. Canon stays strict even though the parse stays lenient.
+ *   2. `validateScene`— the STRICT canon gate: zod shape parse, then an effect/choice cross check.
+ *                       Canon stays strict even though the parse stays lenient. Unknown asset ids are
+ *                       NOT fatal (revised ADR 0004) — they surface as an UNKNOWN_ASSET_ID observation
+ *                       and resolve fuzzily at play time.
  *   3. `toProseFallbackScene` — the floor: wrap the raw text as a narration-only scene. Never throws,
  *                       never re-enters validation (it IS the escape hatch).
  *
@@ -33,28 +35,33 @@ import { YSS_GRAMMAR_PROMPT, YSS_VERSION, renderVocabularyBlock } from './sceneG
  * The shape of a single problem. String-valued for easy aggregation/logging. Two disjoint groups:
  *
  * - SCENE-LEVEL FAILURES (fatal — the scene is rejected and the ladder falls to repair/fallback):
- *   SCHEMA_MISSING_FIELD, SCHEMA_WRONG_TYPE, UNKNOWN_ASSET_ID, DISALLOWED_EFFECT, BAD_CHOICE_SHAPE,
- *   EMPTY_OUTPUT.
- * - PER-LINE OBSERVATIONS (non-fatal — noted for telemetry, the scene survives): THINK_WRAPPED,
- *   UNKNOWN_COMMAND, BAD_SPRITE_TOKEN, TRUNCATED.
+ *   SCHEMA_MISSING_FIELD, SCHEMA_WRONG_TYPE, DISALLOWED_EFFECT, BAD_CHOICE_SHAPE, EMPTY_OUTPUT.
+ * - OBSERVATIONS (non-fatal — noted for telemetry/traces, the scene survives): THINK_WRAPPED,
+ *   UNKNOWN_COMMAND, BAD_SPRITE_TOKEN, TRUNCATED, UNKNOWN_ASSET_ID.
  *
- * The lenient parser only ever emits OBSERVATIONS; the strict validator only ever emits FAILURES. The
- * two groups never mix, which is what lets telemetry tell "the model rambled a bit" apart from "the
- * scene is not playable" (ADR 0002 consequences).
+ * UNKNOWN_ASSET_ID is an OBSERVATION (revised ADR 0004): assets resolve at play time through the classic
+ * fuzzy `worldAssets` resolver, so a non-exact asset reference (location / actor / speaker / sprite /
+ * expression / cg / audio id) is legal — the strict validator records it (with the offending id in the
+ * `detail`) but keeps the scene valid, rather than rejecting it into the repair ladder. The
+ * `SceneVocabulary` remains the prompt-steering list builder; it just no longer gates canon on membership.
+ *
+ * The lenient parser only ever emits OBSERVATIONS; the strict validator emits FAILURES plus the one
+ * UNKNOWN_ASSET_ID observation. Telemetry can still tell "the model rambled a bit / referenced a fuzzy
+ * asset" apart from "the scene is not playable" (ADR 0002 consequences).
  */
 export const FailureShape = {
   // Scene-level failures (fatal)
   SCHEMA_MISSING_FIELD: 'SCHEMA_MISSING_FIELD',
   SCHEMA_WRONG_TYPE: 'SCHEMA_WRONG_TYPE',
-  UNKNOWN_ASSET_ID: 'UNKNOWN_ASSET_ID',
   DISALLOWED_EFFECT: 'DISALLOWED_EFFECT',
   BAD_CHOICE_SHAPE: 'BAD_CHOICE_SHAPE',
   EMPTY_OUTPUT: 'EMPTY_OUTPUT',
-  // Per-line observations (non-fatal)
+  // Observations (non-fatal)
   THINK_WRAPPED: 'THINK_WRAPPED',
   UNKNOWN_COMMAND: 'UNKNOWN_COMMAND',
   BAD_SPRITE_TOKEN: 'BAD_SPRITE_TOKEN',
-  TRUNCATED: 'TRUNCATED'
+  TRUNCATED: 'TRUNCATED',
+  UNKNOWN_ASSET_ID: 'UNKNOWN_ASSET_ID'
 } as const
 export type FailureShape = (typeof FailureShape)[keyof typeof FailureShape]
 
@@ -108,47 +115,62 @@ const stripMatchedQuotes = (raw: string): string => {
 // ---------------------------------------------------------------------------------------------------
 
 export type ValidateResult =
-  | { ok: true; scene: Scene }
+  | { ok: true; scene: Scene; observations: FailureShape[]; detail: string }
   | { ok: false; failures: FailureShape[]; detail: string }
 
-/** Cross-check that resolved scene ids are all in the vocabulary + effects in the allow-list. */
+/**
+ * Cross-check the resolved scene against the vocabulary + effect allow-list. Two channels:
+ * - `failures` (fatal): DISALLOWED_EFFECT, BAD_CHOICE_SHAPE — the scene is genuinely unplayable.
+ * - `observations` (non-fatal): UNKNOWN_ASSET_ID — a non-exact asset id (revised ADR 0004). Assets
+ *   resolve fuzzily at play time via the classic `worldAssets` resolver, so this is legal; it is noted
+ *   with the offending id (`obsDetail`) for traces/inspection but never rejects the scene. Every asset
+ *   category shares this one observation path — including speaker/sprite actor ids, which resolve fuzzily
+ *   like everything else (there is no distinct speaker failure code to preserve).
+ */
 const vocabCheck = (
   scene: Scene,
   rawValue: unknown,
   vocab: SceneVocabulary
-): { failures: FailureShape[]; detail: string[] } => {
+): {
+  failures: FailureShape[]
+  failDetail: string[]
+  observations: FailureShape[]
+  obsDetail: string[]
+} => {
   const failures: FailureShape[] = []
-  const detail: string[] = []
-  const badAsset = (kind: string, id: string): void => {
-    failures.push(FailureShape.UNKNOWN_ASSET_ID)
-    detail.push(`unknown ${kind} id "${id}"`)
+  const failDetail: string[] = []
+  const observations: FailureShape[] = []
+  const obsDetail: string[] = []
+  const unknownAsset = (kind: string, id: string): void => {
+    observations.push(FailureShape.UNKNOWN_ASSET_ID)
+    obsDetail.push(`unknown ${kind} id "${id}"`)
   }
 
-  if (!vocab.locations.has(scene.header.location)) badAsset('location', scene.header.location)
-  for (const p of scene.header.present) if (!vocab.actors.has(p)) badAsset('present-actor', p)
+  if (!vocab.locations.has(scene.header.location)) unknownAsset('location', scene.header.location)
+  for (const p of scene.header.present) if (!vocab.actors.has(p)) unknownAsset('present-actor', p)
 
   for (const beat of scene.beats) {
-    if (beat.bg !== undefined && !vocab.locations.has(beat.bg)) badAsset('bg', beat.bg)
-    if (beat.cg != null && !vocab.cgs.has(beat.cg)) badAsset('cg', beat.cg)
+    if (beat.bg !== undefined && !vocab.locations.has(beat.bg)) unknownAsset('bg', beat.bg)
+    if (beat.cg != null && !vocab.cgs.has(beat.cg)) unknownAsset('cg', beat.cg)
     if (
       beat.speaker !== undefined &&
       beat.speaker !== NARRATION_SPEAKER &&
       !vocab.actors.has(beat.speaker)
     )
-      badAsset('speaker', beat.speaker)
+      unknownAsset('speaker', beat.speaker)
     for (const sp of beat.sprites ?? []) {
-      if (!vocab.actors.has(sp.actor)) badAsset('sprite.actor', sp.actor)
+      if (!vocab.actors.has(sp.actor)) unknownAsset('sprite.actor', sp.actor)
       if (sp.expression !== undefined && !vocab.expressions.has(sp.expression))
-        badAsset('expression', sp.expression)
+        unknownAsset('expression', sp.expression)
     }
     for (const key of ['music', 'ambience', 'sfx'] as const) {
       const id = beat.audio?.[key]
-      if (id !== undefined && !vocab.audio.has(id)) badAsset(`audio.${key}`, id)
+      if (id !== undefined && !vocab.audio.has(id)) unknownAsset(`audio.${key}`, id)
     }
     for (const eff of beat.effects ?? []) {
       if (!vocab.effects.has(eff.type)) {
         failures.push(FailureShape.DISALLOWED_EFFECT)
-        detail.push(`disallowed effect type "${eff.type}"`)
+        failDetail.push(`disallowed effect type "${eff.type}"`)
       }
     }
   }
@@ -163,22 +185,24 @@ const vocabCheck = (
           const extra = Object.keys(c).filter((k) => k !== 'text' && k !== 'intent')
           if (extra.length) {
             failures.push(FailureShape.BAD_CHOICE_SHAPE)
-            detail.push(`choice carries non-{text,intent} keys: ${extra.join(', ')}`)
+            failDetail.push(`choice carries non-{text,intent} keys: ${extra.join(', ')}`)
           }
         }
       }
     }
   }
 
-  return { failures, detail }
+  return { failures, failDetail, observations, obsDetail }
 }
 
 /**
  * Validate a candidate value against the scene schema + vocabulary. Pure. Returns the typed scene on
- * success, or a de-duplicated list of FailureShapes + a human `detail` string (which the repair builder
- * quotes back to the model). This is the load-bearing correctness gate — it is strict regardless of how
- * the candidate was produced, so any non-parser producer (WP-C, hand-authored scenes) is held to the
- * same canon rules.
+ * success (alongside any non-fatal `observations` + their `detail`), or a de-duplicated list of
+ * FailureShapes + a human `detail` string (which the repair builder quotes back to the model). This is
+ * the load-bearing correctness gate — it is strict regardless of how the candidate was produced, so any
+ * non-parser producer (WP-C, hand-authored scenes) is held to the same canon rules. Unknown asset ids do
+ * NOT fail the scene (revised ADR 0004): they surface as an UNKNOWN_ASSET_ID observation, since assets
+ * resolve fuzzily at play time.
  */
 export const validateScene = (value: unknown, vocab: SceneVocabulary): ValidateResult => {
   const parsed = SceneSchema.safeParse(value)
@@ -204,9 +228,14 @@ export const validateScene = (value: unknown, vocab: SceneVocabulary): ValidateR
 
   const cross = vocabCheck(parsed.data, value, vocab)
   if (cross.failures.length) {
-    return { ok: false, failures: uniq(cross.failures), detail: cross.detail.join('; ') }
+    return { ok: false, failures: uniq(cross.failures), detail: cross.failDetail.join('; ') }
   }
-  return { ok: true, scene: parsed.data }
+  return {
+    ok: true,
+    scene: parsed.data,
+    observations: uniq(cross.observations),
+    detail: cross.obsDetail.join('; ')
+  }
 }
 
 // ---------------------------------------------------------------------------------------------------
@@ -433,7 +462,8 @@ export const parseScene = (raw: string, vocab: SceneVocabulary): ParseResult => 
   }
 
   const v = validateScene(candidate, vocab)
-  if (v.ok) return { ok: true, scene: v.scene, observations: uniq(observations) }
+  if (v.ok)
+    return { ok: true, scene: v.scene, observations: uniq([...observations, ...v.observations]) }
   return {
     ok: false,
     failures: v.failures,
