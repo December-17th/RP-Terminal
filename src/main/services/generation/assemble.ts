@@ -2,16 +2,10 @@ import { getActivePresetId } from '../presetService'
 import { resolveYuzuMaxTokens } from '../settingsService'
 import { matchAcross } from '../lorebookService'
 import { getCachedWorldInfo, setCachedWorldInfo } from '../chatService'
-import {
-  buildPrompt,
-  fitToBudget,
-  mergeConsecutiveRoles,
-  systemToUser,
-  ChatMessage
-} from '../promptBuilder'
+import { buildPrompt, fitToBudget, ChatMessage } from '../promptBuilder'
 import { getPromptRules } from '../regexService'
 import { buildTemplateContext } from '../templateService'
-import { orderForProvider, isOpenAiCompatibleProvider } from '../apiService'
+import { providerShape } from './providerShape'
 import {
   lastMessageIndex,
   lastUserMessageIndex,
@@ -251,39 +245,12 @@ export const assemblePrompt = (
       `budget ${budget} tok — dropped ${dropped} oldest turn(s)`
     )
   }
-  // Prompt-assembly passes (ST-faithful), applied AFTER fitToBudget (which needs the per-message history
-  // tags) so the stored `request` matches exactly what's sent:
-  //  (B) system→user — only on the OpenAI-compatible path + when opted in (Gemini-via-OpenAI handles a
-  //      `system` role poorly; Anthropic/Gemini-native shape system via their own params, so skip them).
-  //  (A) merge consecutive same-role (default on) — coalesce a block split across adjacent same-role
-  //      entries into one message. Runs AFTER (B) so converted blocks merge with adjacent user turns.
-  let assembled = trimmed
-  if (settings.generation?.system_as_user && isOpenAiCompatibleProvider(settings.api.provider)) {
-    const before = assembled.filter((m) => m.role === 'system').length
-    assembled = systemToUser(assembled)
-    if (before) {
-      log('info', `system→user: relabeled ${before} system message(s) (OpenAI-compatible path)`)
-      record.arrayStage(
-        'system-as-user',
-        assembled.length,
-        assembled.length,
-        `relabeled ${before} system message(s) (OpenAI-compatible path)`
-      )
-    }
-  }
-  const messages =
-    settings.generation?.merge_consecutive_roles !== false
-      ? mergeConsecutiveRoles(assembled)
-      : assembled
-  if (messages.length !== assembled.length) {
-    log('info', `merged consecutive same-role messages: ${assembled.length} → ${messages.length}`)
-    record.arrayStage(
-      'role-merge',
-      assembled.length,
-      messages.length,
-      `coalesced ${assembled.length} → ${messages.length} same-role message(s)`
-    )
-  }
+  // Provider shaping — the SINGLE seam (issue 10 / WP-1.4): system→user (OpenAI-compatible + opt-in),
+  // merge consecutive same-role, then provider ordering. Applied AFTER fitToBudget (which needs the
+  // per-message history tags) so the stored `request` matches exactly what's sent. The SAME function
+  // shapes the hand-authored `prompt.messages` workflow path; passing `record` journals + logs each stage
+  // that fires. `sendMessages` is the exact array sent to the API, so the `request` log is faithful.
+  const sendMessages = providerShape(settings, trimmed, record)
 
   // Agentic mode caps the output ceiling at the FSM mode's limit (e.g. Combat is terse),
   // never exceeding the preset's own max_tokens. Classic mode uses the preset value as-is.
@@ -298,19 +265,6 @@ export const assemblePrompt = (
   // classic value verbatim (parity). Mirrored in contextNodes.contextParams.
   const maxTokens = vnMode ? resolveYuzuMaxTokens(settings) : baseMax
   const params = { ...preset.parameters, max_tokens: maxTokens }
-
-  // The exact array sent to the API (provider-specific ordering: end-on-user for strict OpenAI-compatible
-  // backends, but a trailing assistant prefill is kept last so the model continues it). Logged + stored, so
-  // the `request` log is a FAITHFUL representation of what went over the wire.
-  const sendMessages = orderForProvider(messages, settings.api.provider)
-  if (sendMessages !== messages) {
-    record.arrayStage(
-      'provider-shape',
-      messages.length,
-      sendMessages.length,
-      `${settings.api.provider} ordering (end-on-user)`
-    )
-  }
 
   log(
     'request',

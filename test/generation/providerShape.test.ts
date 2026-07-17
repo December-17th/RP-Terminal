@@ -1,7 +1,12 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi } from 'vitest'
 import { providerShape } from '../../src/main/services/generation/providerShape'
+import { createRecordBuilder } from '../../src/main/services/generation/executionRecord'
 import { ChatMessage } from '../../src/main/services/promptBuilder'
 import { Settings } from '../../src/main/types/models'
+
+// providerShape logs each journaled stage via logService; silence it so the suite stays quiet and the
+// no-journal path (which must never log) is provably untouched.
+vi.mock('../../src/main/services/logService', () => ({ log: () => {} }))
 
 /** Minimal Settings fixture — providerShape only reads api.provider + generation.*. */
 const makeSettings = (overrides: {
@@ -100,5 +105,98 @@ describe('providerShape', () => {
     ]
     const shaped = providerShape(makeSettings({ provider: 'anthropic' }), msgs)
     expect(shaped).toEqual(msgs)
+  })
+})
+
+/**
+ * Issue 10 (WP-1.4): providerShape is now the SINGLE shaping seam — `assemblePrompt` routes through it and
+ * passes a record builder so each stage that fires is journaled. These tests pin that relocated journaling
+ * (the arrayStage entries that used to live inline in assemble.ts) AND prove it stays behavior-neutral: the
+ * wire output is byte-identical with or without a journal, and each stage is recorded only when it actually
+ * reshaped the array.
+ */
+describe('providerShape — journaling (the relocated arrayStage entries)', () => {
+  const stagesOf = (msgs: ChatMessage[], settings: Settings): string[] => {
+    const b = createRecordBuilder()
+    const wire = providerShape(settings, msgs, b)
+    return b
+      .finish(wire, 0)
+      .entries.filter((e) =>
+        ['system-as-user', 'role-merge', 'provider-shape'].includes(e.stage)
+      )
+      .map((e) => e.stage)
+  }
+
+  it('records system-as-user then role-merge when system→user converts + coalesces', () => {
+    const msgs: ChatMessage[] = [
+      { role: 'system', content: 'sys' },
+      { role: 'user', content: 'hi' }
+    ]
+    // system→user relabels the system turn, then the two user turns coalesce → one message that already
+    // ends on user, so provider ordering is a no-op (no provider-shape entry).
+    expect(stagesOf(msgs, makeSettings({ provider: 'openai', system_as_user: true }))).toEqual([
+      'system-as-user',
+      'role-merge'
+    ])
+  })
+
+  it('records only role-merge when consecutive same-role turns coalesce (no relabel, no reorder)', () => {
+    const msgs: ChatMessage[] = [
+      { role: 'user', content: 'a' },
+      { role: 'user', content: 'b' }
+    ]
+    expect(stagesOf(msgs, makeSettings({ provider: 'anthropic' }))).toEqual(['role-merge'])
+  })
+
+  it('records only provider-shape when ordering moves the last user message to the end', () => {
+    const msgs: ChatMessage[] = [
+      { role: 'user', content: 'u1' },
+      { role: 'assistant', content: 'a1' },
+      { role: 'system', content: 'trailing-non-user' }
+    ]
+    // system_as_user off + no consecutive same-role, so only provider ordering fires.
+    const stages = stagesOf(msgs, makeSettings({ provider: 'openai' }))
+    expect(stages).toEqual(['provider-shape'])
+  })
+
+  it('records nothing when no stage reshapes the array', () => {
+    const msgs: ChatMessage[] = [
+      { role: 'system', content: 's' },
+      { role: 'user', content: 'u' }
+    ]
+    // anthropic: system→user skipped, no consecutive same-role, ordering a no-op → zero shaping entries.
+    expect(stagesOf(msgs, makeSettings({ provider: 'anthropic' }))).toEqual([])
+  })
+
+  it('is behavior-neutral: the wire is byte-identical with vs without a journal', () => {
+    const cases: Array<[ChatMessage[], Settings]> = [
+      [
+        [
+          { role: 'system', content: 'sys' },
+          { role: 'user', content: 'hi' }
+        ],
+        makeSettings({ provider: 'openai', system_as_user: true })
+      ],
+      [
+        [
+          { role: 'user', content: 'u1' },
+          { role: 'assistant', content: 'a1' },
+          { role: 'system', content: 't' }
+        ],
+        makeSettings({ provider: 'openai' })
+      ],
+      [
+        [
+          { role: 'user', content: 'a' },
+          { role: 'user', content: 'b' }
+        ],
+        makeSettings({ provider: 'anthropic' })
+      ]
+    ]
+    for (const [msgs, settings] of cases) {
+      const withoutJournal = providerShape(settings, msgs)
+      const withJournal = providerShape(settings, msgs, createRecordBuilder())
+      expect(JSON.stringify(withJournal)).toBe(JSON.stringify(withoutJournal))
+    }
   })
 })
