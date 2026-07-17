@@ -360,8 +360,12 @@ const zh: Record<string, string> = {
   'preset.depthNote':
     '留空 = 内联，按预设顺序。数字会将此块注入到聊天记录中，从底部往上数该数量的消息处（类似深度世界书条目）。',
   'preset.markerChar': '角色描述',
+  'preset.markerPersonality': '角色性格',
+  'preset.markerScenario': '场景',
   'preset.markerExamples': '示例对话',
   'preset.markerWorldInfo': '世界信息',
+  'preset.markerWorldInfoBefore': '世界信息（角色前）',
+  'preset.markerWorldInfoAfter': '世界信息（角色后）',
   'preset.markerPersona': '用户人设',
   'preset.markerChatHistory': '聊天记录',
   'preset.markerPostHistory': '历史后指令',

@@ -1,0 +1,51 @@
+{
+  "schemaVersion": 1,
+  "scenarioId": "wp-2.1-empty-main",
+  "source": "synthesized",
+  "st": { "version": "1.18.0", "commit": "51ad27f", "macroEngine": "new" },
+  "generationType": "normal",
+  "settings": { "chat_completion_source": "custom", "squash_system_messages": false },
+  "note": "SYNTHESIZED from ST 1.18.0 source, not captured. A disabled `main` is retained as a structural EMPTY prompt (content='') so relative inserts still resolve — ST's 'GMO-free vegan replacement' (PromptManager.js:1531-1537). That empty-content message is then dropped from the FINAL wire array by getChat (openai.js:3737-3745, `if (message.content || message.tool_calls)`), independent of squashing — so the empty main never reaches the model, while later prompts keep their positions. RPT matches this by emitting no wire message for the structural empty main. Adapter-verify at Phase-2 wiring. Prose is RPT-authored + scrambled.",
+  "input": {
+    "description": "main disabled in the order (structural empty); a following custom prompt still renders at its position; empty main absent from the wire.",
+    "preset": {
+      "name": "Oracle Empty Main (scrambled)",
+      "temperature": 1,
+      "openai_max_tokens": 4096,
+      "prompts": [
+        { "identifier": "main", "name": "Main", "role": "system", "content": "PRESET-MAIN: this main is disabled." },
+        { "identifier": "custom_note", "name": "Custom Note", "role": "system", "content": "Note-after-main: the quorlish gate stays open." },
+        { "identifier": "chatHistory", "name": "Chat History", "role": "system", "marker": true }
+      ],
+      "prompt_order": [
+        {
+          "character_id": 100001,
+          "order": [
+            { "identifier": "main", "enabled": false },
+            { "identifier": "custom_note", "enabled": true },
+            { "identifier": "chatHistory", "enabled": true }
+          ]
+        }
+      ]
+    },
+    "character": { "name": "Yara", "description": "Character brindle: Yara, a gate-warden with a copper key." },
+    "chatMessages": [ { "role": "user", "content": "Yara, is the gate still open?" } ],
+    "generationType": "normal",
+    "macroEngine": "new",
+    "settings": { "chat_completion_source": "custom", "squash_system_messages": false },
+    "worldInfo": [],
+    "tokenBudget": 4096
+  },
+  "invariants": {
+    "roleOrder": ["system", "user"],
+    "messageCount": 2,
+    "mustContain": ["Note-after-main: the quorlish gate stays open."],
+    "mustNotContain": ["PRESET-MAIN: this main is disabled."]
+  },
+  "expected": {
+    "chat": [
+      { "role": "system", "content": "Note-after-main: the quorlish gate stays open." },
+      { "role": "user", "content": "Yara, is the gate still open?" }
+    ]
+  }
+}

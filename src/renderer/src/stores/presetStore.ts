@@ -1,10 +1,16 @@
 import { create } from 'zustand'
 
+// Mirror of the main-process PromptMarker enum (src/main/types/preset.ts) — kept in sync by hand
+// (the renderer can't import main types across the module boundary).
 export type PromptMarker =
   | 'none'
   | 'char_description'
+  | 'char_personality'
+  | 'scenario'
   | 'mes_example'
   | 'world_info'
+  | 'world_info_before'
+  | 'world_info_after'
   | 'persona_description'
   | 'chat_history'
   | 'post_history'
@@ -18,6 +24,10 @@ export interface PromptBlock {
   marker: PromptMarker
   /** Inject a literal block at this depth (msgs from the bottom); null = inline. */
   injection_depth: number | null
+  /** ST generation-type allow-list ([] = all types). */
+  injection_trigger?: string[]
+  /** ST: block a character-card override from replacing this block's content. */
+  forbid_overrides?: boolean
 }
 
 export interface PresetParameters {

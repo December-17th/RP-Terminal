@@ -11,8 +11,12 @@ interface Props {
 const MARKER_KEY: Record<PromptMarker, string> = {
   none: '',
   char_description: 'preset.markerChar',
+  char_personality: 'preset.markerPersonality',
+  scenario: 'preset.markerScenario',
   mes_example: 'preset.markerExamples',
   world_info: 'preset.markerWorldInfo',
+  world_info_before: 'preset.markerWorldInfoBefore',
+  world_info_after: 'preset.markerWorldInfoAfter',
   persona_description: 'preset.markerPersona',
   chat_history: 'preset.markerChatHistory',
   post_history: 'preset.markerPostHistory'

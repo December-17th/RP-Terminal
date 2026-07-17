@@ -1,5 +1,5 @@
 import { RPTerminalCard } from '../types/character'
-import { Preset } from '../types/preset'
+import { Preset, PromptBlock } from '../types/preset'
 import { FloorFile } from '../types/chat'
 import { Lorebook, LorebookEntry } from '../types/character'
 import { matchAcross } from './lorebookService'
@@ -145,6 +145,10 @@ export interface BuildPromptArgs {
   userAction: string
   userName?: string
   persona?: PersonaArgs
+  /** Current generation type (ST `type`, lowercased) driving `injection_trigger` filtering
+   *  (PromptManager.js:1549-1553). Absent = `normal` — the common case; a preset block with no
+   *  trigger array fires regardless, so parity is unaffected for trigger-free presets. */
+  generationType?: string
   /** How many recent turns to scan for lorebook keywords (default 3). */
   scanDepth?: number
   /** Max recursive lorebook match passes (default 0 = off). */
@@ -199,13 +203,93 @@ const stripEjs = (s: string): string => s.replace(/<%[\s\S]*?%>/g, '')
 const macroOnly = (text: string, ctx: MacroContext): string =>
   stripEjs(expandMacros(text, ctx)).trim()
 
-const buildCharDescription = (card: RPTerminalCard, charName: string, render: Renderer): string => {
+/**
+ * Build the character-description block. NATIVE presets fold Personality + Scenario in here
+ * (ST's charDescription is just the description, but RPT's single-marker native shape combines
+ * them). When the preset carries DISTINCT `char_personality` / `scenario` markers (ST imports),
+ * those fields are emitted by their own markers instead — so they're excluded here to avoid
+ * duplication. `includePersonality`/`includeScenario` default true (the native shape).
+ */
+const buildCharDescription = (
+  card: RPTerminalCard,
+  charName: string,
+  render: Renderer,
+  opts?: { includePersonality?: boolean; includeScenario?: boolean }
+): string => {
   const d = card.data
   const parts: string[] = [`Name: ${charName}`]
   if (d.description) parts.push(`Description: ${render(d.description)}`)
-  if (d.personality) parts.push(`Personality: ${render(d.personality)}`)
-  if (d.scenario) parts.push(`Scenario: ${render(d.scenario)}`)
+  if (opts?.includePersonality !== false && d.personality)
+    parts.push(`Personality: ${render(d.personality)}`)
+  if (opts?.includeScenario !== false && d.scenario) parts.push(`Scenario: ${render(d.scenario)}`)
   return parts.join('\n')
+}
+
+/**
+ * ST `shouldTrigger` (PromptManager.js:1549-1553): a block with no `injection_trigger` array,
+ * or an empty one, fires for ALL generation types; otherwise the lowercased current generation
+ * type must be listed.
+ */
+export const shouldTrigger = (block: { injection_trigger?: string[] }, genType: string): boolean => {
+  const trig = block.injection_trigger
+  if (!Array.isArray(trig) || trig.length === 0) return true
+  return trig.includes(genType)
+}
+
+/** Character-card override sources (ST systemPromptOverride / jailbreakPromptOverride). */
+export interface CardPromptOverrides {
+  /** Card `data.system_prompt` — replaces the `main` block's content. */
+  system?: string
+  /** Card `data.post_history_instructions` — replaces the `jailbreak` block's content. */
+  postHistory?: string
+}
+
+/**
+ * Resolve a preset's ordered prompts into the effective list the builder assembles from,
+ * reproducing ST's Prompt Manager collection + character-card overrides:
+ *
+ *  - drop a block that is disabled OR filtered out by `injection_trigger` for this generation
+ *    type (getPromptCollection, PromptManager.js:1516-1541);
+ *  - EXCEPT a disabled/filtered `main` literal is retained as a STRUCTURAL EMPTY prompt — ST's
+ *    "GMO-free vegan replacement" (PromptManager.js:1531-1537) so relative inserts still resolve.
+ *    Its empty content emits no wire message and ST squashes empty system messages out of the
+ *    final prompt anyway (openai.js:3836), so the observable output matches;
+ *  - a character-card system-prompt / post-history override replaces the `main` / `jailbreak`
+ *    literal's content, but ONLY when that block exists, is enabled + triggered, and does not set
+ *    `forbid_overrides` (openai.js:1487-1504).
+ *
+ * Pure; exported for characterization tests.
+ */
+export const resolveEffectivePrompts = (
+  prompts: PromptBlock[],
+  generationType: string,
+  overrides: CardPromptOverrides
+): PromptBlock[] => {
+  const gt = String(generationType || 'normal')
+    .toLowerCase()
+    .trim()
+  const out: PromptBlock[] = []
+  for (const p of prompts) {
+    const triggered = p.enabled !== false && shouldTrigger(p, gt)
+    if (triggered) {
+      if (p.marker === 'none' && p.forbid_overrides !== true) {
+        if (p.identifier === 'main' && overrides.system) {
+          out.push({ ...p, content: overrides.system })
+          continue
+        }
+        if (p.identifier === 'jailbreak' && overrides.postHistory) {
+          out.push({ ...p, content: overrides.postHistory })
+          continue
+        }
+      }
+      out.push(p)
+    } else if (p.identifier === 'main' && p.marker === 'none') {
+      // Structural empty main (never overridden — the block is disabled/filtered).
+      out.push({ ...p, content: '', enabled: true })
+    }
+    // else: dropped (disabled / trigger-filtered)
+  }
+  return out
 }
 
 /** Expand the running history into alternating messages, ending with the new action.
@@ -375,6 +459,25 @@ export const buildPrompt = (args: BuildPromptArgs): ChatMessage[] => {
   const charName = card.data.name || 'Character'
   const userName = args.userName || 'User'
 
+  // ST Prompt Manager collection + character-card overrides (issue 11). Drops trigger-filtered /
+  // disabled blocks, keeps a structural empty `main`, and folds the card's system_prompt /
+  // post_history_instructions into `main` / `jailbreak`. For a trigger-free preset with no card
+  // overrides this is exactly `preset.prompts` (parity). Everything below iterates THIS list.
+  const effectivePrompts = resolveEffectivePrompts(preset.prompts, args.generationType ?? 'normal', {
+    system: card.data.system_prompt || undefined,
+    postHistory: card.data.post_history_instructions || undefined
+  })
+  // Whether the preset carries its OWN character-personality / scenario markers (ST imports). When
+  // it does, char_description must NOT re-fold those fields (they're emitted by their markers).
+  const hasPersonalityMarker = effectivePrompts.some((b) => b.marker === 'char_personality')
+  const hasScenarioMarker = effectivePrompts.some((b) => b.marker === 'scenario')
+  // Whether a "before-char" World Info slot exists (native `world_info` counts as one). Used so the
+  // `world_info_after` marker only falls back to rendering the combined WI blob when no before-slot
+  // will render it (RPT has no per-entry before/after split — see the world_info_after case).
+  const hasWiBeforeSlot = effectivePrompts.some(
+    (b) => b.marker === 'world_info' || b.marker === 'world_info_before'
+  )
+
   const personaDescription = args.persona?.description ?? ''
   const personaMacro = personaDescription.trim()
   const personaInject = !!args.persona?.inject && !!personaMacro
@@ -442,8 +545,8 @@ export const buildPrompt = (args: BuildPromptArgs): ChatMessage[] => {
   // {{setvar}} authored in a LATER block (e.g. a model-selector toggle a CoT block reads) on the very first
   // prompt, matching ST (whole macro pass, then whole EJS pass). Cached so macros aren't re-applied below
   // (addvar/random run once); the EJS pass in the loop reads the fully-populated vars.
-  const macroExpanded = new Map<(typeof preset.prompts)[number], string>()
-  for (const b of preset.prompts) {
+  const macroExpanded = new Map<(typeof effectivePrompts)[number], string>()
+  for (const b of effectivePrompts) {
     if (b.enabled !== false && b.marker === 'none' && b.content)
       macroExpanded.set(b, macroPass(b.content))
   }
@@ -561,19 +664,42 @@ export const buildPrompt = (args: BuildPromptArgs): ChatMessage[] => {
   const presetDepthItems: DepthItem[] = []
   let historyEmitted = false
   let worldInfoEmitted = false
+  let worldInfoRendered = false
   // Whether the preset MANAGES persona placement itself (has a persona_description marker, enabled or
   // not). A present-but-disabled marker is an explicit opt-out → the safety net must NOT re-add the
   // persona; only a preset with no marker at all falls back to the pre-conversation block.
   const hasPersonaMarker = preset.prompts.some((b) => b.marker === 'persona_description')
 
-  for (const block of preset.prompts) {
+  for (const block of effectivePrompts) {
     if (block.enabled === false) continue
 
     switch (block.marker) {
       case 'char_description': {
-        const content = buildCharDescription(card, charName, render)
+        // Fold personality/scenario in ONLY when the preset has no distinct markers for them.
+        const content = buildCharDescription(card, charName, render, {
+          includePersonality: !hasPersonalityMarker,
+          includeScenario: !hasScenarioMarker
+        })
         messages.push({ role: block.role, content })
         journal?.marker({ kind: 'card-field', id: 'char_description' }, block.role, content)
+        break
+      }
+      case 'char_personality': {
+        // ST charPersonality marker (openai.js:1370). Own role/position; the card's personality field.
+        const content = render(card.data.personality || '')
+        if (content) {
+          messages.push({ role: block.role, content })
+          journal?.marker({ kind: 'card-field', id: 'char_personality' }, block.role, content)
+        }
+        break
+      }
+      case 'scenario': {
+        // ST scenario marker (openai.js:1371). Own role/position; the card's scenario field.
+        const content = render(card.data.scenario || '')
+        if (content) {
+          messages.push({ role: block.role, content })
+          journal?.marker({ kind: 'card-field', id: 'scenario' }, block.role, content)
+        }
         break
       }
       case 'mes_example': {
@@ -585,11 +711,31 @@ export const buildPrompt = (args: BuildPromptArgs): ChatMessage[] => {
         }
         break
       }
-      case 'world_info': {
-        if (worldInfo) {
+      // World Info markers. ST keeps worldInfoBefore (↑Char) + worldInfoAfter (↓Char) distinct
+      // (openai.js:1367-1368), but RPT's lorebook model carries no per-entry before/after position
+      // (LorebookEntry has no ST `position`), so there's ONE computed `worldInfo` blob. It renders
+      // at the first before-slot (native `world_info` or ST `world_info_before` — where ST's
+      // constant/default WI lives); `world_info_after` stays empty unless there's no before-slot at
+      // all (then it renders the blob as a fallback so imports that only carry the after-marker still
+      // get their lore). SEAM: when WI activation supplies per-entry before/after (assembly-only
+      // fixtures already do), route the after-slice into the world_info_after case here.
+      case 'world_info':
+      case 'world_info_before': {
+        if (worldInfo && !worldInfoRendered) {
           const content = `World Info:\n${worldInfo}`
           messages.push({ role: block.role, content })
-          journal?.marker({ kind: 'marker', id: 'world_info' }, block.role, content)
+          journal?.marker({ kind: 'marker', id: block.marker }, block.role, content)
+          worldInfoRendered = true
+        }
+        worldInfoEmitted = true
+        break
+      }
+      case 'world_info_after': {
+        if (worldInfo && !worldInfoRendered && !hasWiBeforeSlot) {
+          const content = `World Info:\n${worldInfo}`
+          messages.push({ role: block.role, content })
+          journal?.marker({ kind: 'marker', id: 'world_info_after' }, block.role, content)
+          worldInfoRendered = true
         }
         worldInfoEmitted = true
         break

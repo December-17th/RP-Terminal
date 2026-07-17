@@ -1,0 +1,53 @@
+{
+  "schemaVersion": 1,
+  "scenarioId": "wp-2.1-duplicate-identifier",
+  "source": "synthesized",
+  "st": { "version": "1.18.0", "commit": "51ad27f", "macroEngine": "new" },
+  "generationType": "normal",
+  "settings": { "chat_completion_source": "custom", "squash_system_messages": false },
+  "note": "SYNTHESIZED from ST 1.18.0 source, not captured. When two prompt objects share an identifier, ST resolves it FIRST-match: getPromptById uses `.find` (PromptManager.js:1257), so the first definition wins and the second is never emitted. RPT previously kept the last (Map overwrite); now first. Adapter-verify at Phase-2 wiring. Prose is RPT-authored + scrambled.",
+  "input": {
+    "description": "Two prompt objects both use identifier 'custom_x'; the first in the prompts array wins, the second is dropped.",
+    "preset": {
+      "name": "Oracle Duplicate Identifier (scrambled)",
+      "temperature": 1,
+      "openai_max_tokens": 4096,
+      "prompts": [
+        { "identifier": "main", "name": "Main", "role": "system", "content": "Vorne mandate: keep the grennel count." },
+        { "identifier": "custom_x", "name": "Custom X (first)", "role": "system", "content": "FIRST-WINS: the copper tally is authoritative." },
+        { "identifier": "custom_x", "name": "Custom X (second)", "role": "system", "content": "SECOND-LOSES: the tin tally must be ignored." },
+        { "identifier": "chatHistory", "name": "Chat History", "role": "system", "marker": true }
+      ],
+      "prompt_order": [
+        {
+          "character_id": 100001,
+          "order": [
+            { "identifier": "main", "enabled": true },
+            { "identifier": "custom_x", "enabled": true },
+            { "identifier": "chatHistory", "enabled": true }
+          ]
+        }
+      ]
+    },
+    "character": { "name": "Tolm", "description": "Character brindle: Tolm, keeper of two conflicting ledgers." },
+    "chatMessages": [ { "role": "user", "content": "Tolm, which tally do we trust?" } ],
+    "generationType": "normal",
+    "macroEngine": "new",
+    "settings": { "chat_completion_source": "custom", "squash_system_messages": false },
+    "worldInfo": [],
+    "tokenBudget": 4096
+  },
+  "invariants": {
+    "roleOrder": ["system", "system", "user"],
+    "messageCount": 3,
+    "mustContain": ["FIRST-WINS: the copper tally is authoritative."],
+    "mustNotContain": ["SECOND-LOSES: the tin tally must be ignored."]
+  },
+  "expected": {
+    "chat": [
+      { "role": "system", "content": "Vorne mandate: keep the grennel count." },
+      { "role": "system", "content": "FIRST-WINS: the copper tally is authoritative." },
+      { "role": "user", "content": "Tolm, which tally do we trust?" }
+    ]
+  }
+}

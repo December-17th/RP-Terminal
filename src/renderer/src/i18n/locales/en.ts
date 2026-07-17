@@ -373,8 +373,12 @@ const en: Record<string, string> = {
   'preset.depthNote':
     'Blank = inline, in preset order. A number injects this block into the chat history that many messages up from the bottom (like a depth lorebook entry).',
   'preset.markerChar': 'Character',
+  'preset.markerPersonality': 'Personality',
+  'preset.markerScenario': 'Scenario',
   'preset.markerExamples': 'Examples',
   'preset.markerWorldInfo': 'World Info',
+  'preset.markerWorldInfoBefore': 'World Info (↑Char)',
+  'preset.markerWorldInfoAfter': 'World Info (↓Char)',
   'preset.markerPersona': 'Persona',
   'preset.markerChatHistory': 'Chat History',
   'preset.markerPostHistory': 'Post-History',

@@ -6,6 +6,8 @@ import {
   estimateTokens,
   fitToBudget,
   mergeConsecutiveRoles,
+  resolveEffectivePrompts,
+  shouldTrigger,
   systemToUser,
   ChatMessage
 } from '../src/main/services/promptBuilder'
@@ -921,6 +923,238 @@ describe('buildPrompt — recalled memory tail (§16.1)', () => {
     })
     expect(last(messages)).toEqual({ role: 'user', content: 'go' })
     expect(messages.some((m) => m.content.includes('[Earlier events]'))).toBe(false)
+  })
+})
+
+// --- Issue 11: distinct markers, triggers, overrides (ST 1.18.0 parity, ADR 0016) ---
+describe('buildPrompt — distinct WI / personality / scenario markers', () => {
+  it('renders the WI blob at world_info_before; world_info_after stays empty', () => {
+    const messages = buildPrompt({
+      card: card(),
+      preset: preset([
+        blk('world_info_before'),
+        blk('char_description'),
+        blk('world_info_after'),
+        blk('chat_history')
+      ]),
+      lorebooks: [book([{ keys: [], content: 'BLOB-LORE', constant: true }])],
+      floors: [],
+      userAction: 'go'
+    })
+    const wi = messages.filter((m) => m.content.startsWith('World Info:'))
+    expect(wi).toHaveLength(1) // rendered once, not duplicated across the two markers
+    expect(wi[0].content).toContain('BLOB-LORE')
+    // It rendered at the BEFORE marker: it appears before char_description.
+    const wiIdx = messages.findIndex((m) => m.content.startsWith('World Info:'))
+    const charIdx = messages.findIndex((m) => m.content.startsWith('Name:'))
+    expect(wiIdx).toBeLessThan(charIdx)
+  })
+
+  it('world_info_after alone (no before-slot) falls back to rendering the blob', () => {
+    const messages = buildPrompt({
+      card: card(),
+      preset: preset([blk('char_description'), blk('world_info_after'), blk('chat_history')]),
+      lorebooks: [book([{ keys: [], content: 'AFTER-ONLY-LORE', constant: true }])],
+      floors: [],
+      userAction: 'go'
+    })
+    expect(messages.some((m) => m.content.includes('AFTER-ONLY-LORE'))).toBe(true)
+  })
+
+  it('emits char_personality + scenario as their own messages with their own roles', () => {
+    const messages = buildPrompt({
+      card: card({ personality: 'stoic and wry', scenario: 'a rainy tavern' }),
+      preset: preset([
+        blk('char_description'),
+        blk('char_personality', '', 'user'),
+        blk('scenario', '', 'assistant'),
+        blk('chat_history')
+      ]),
+      lorebooks: [],
+      floors: [],
+      userAction: 'go'
+    })
+    const pers = messages.find((m) => m.content === 'stoic and wry')
+    const scn = messages.find((m) => m.content === 'a rainy tavern')
+    expect(pers?.role).toBe('user')
+    expect(scn?.role).toBe('assistant')
+    // char_description must NOT re-fold personality/scenario when the distinct markers are present.
+    const desc = messages.find((m) => m.content.startsWith('Name:'))!
+    expect(desc.content).not.toContain('stoic and wry')
+    expect(desc.content).not.toContain('rainy tavern')
+  })
+
+  it('native char_description still folds personality/scenario when no distinct markers exist', () => {
+    const messages = buildPrompt({
+      card: card({ description: 'A knight.', personality: 'brave', scenario: 'a castle' }),
+      preset: preset([blk('char_description'), blk('chat_history')]),
+      lorebooks: [],
+      floors: [],
+      userAction: 'go'
+    })
+    const desc = messages.find((m) => m.content.startsWith('Name:'))!
+    expect(desc.content).toContain('Personality: brave')
+    expect(desc.content).toContain('Scenario: a castle')
+  })
+})
+
+describe('buildPrompt — injection_trigger (generation-type allow-list)', () => {
+  const trigBlk = (content: string, triggers: string[]): any => ({
+    ...blk('none', content),
+    identifier: content,
+    injection_trigger: triggers
+  })
+
+  it('drops a block whose trigger list excludes the current generation type', () => {
+    const messages = buildPrompt({
+      card: card(),
+      preset: preset([
+        trigBlk('NORMAL-ONLY', ['normal']),
+        trigBlk('CONTINUE-ONLY', ['continue']),
+        blk('chat_history')
+      ]),
+      lorebooks: [],
+      floors: [],
+      userAction: 'go',
+      generationType: 'normal'
+    })
+    expect(messages.some((m) => m.content === 'NORMAL-ONLY')).toBe(true)
+    expect(messages.some((m) => m.content === 'CONTINUE-ONLY')).toBe(false)
+  })
+
+  it('an empty trigger list fires for every generation type', () => {
+    const messages = buildPrompt({
+      card: card(),
+      preset: preset([trigBlk('ALWAYS', []), blk('chat_history')]),
+      lorebooks: [],
+      floors: [],
+      userAction: 'go',
+      generationType: 'impersonation'
+    })
+    expect(messages.some((m) => m.content === 'ALWAYS')).toBe(true)
+  })
+
+  it('compares case-insensitively (ST lowercases the generation type)', () => {
+    const messages = buildPrompt({
+      card: card(),
+      preset: preset([trigBlk('CONT', ['continue']), blk('chat_history')]),
+      lorebooks: [],
+      floors: [],
+      userAction: 'go',
+      generationType: 'Continue'
+    })
+    expect(messages.some((m) => m.content === 'CONT')).toBe(true)
+  })
+})
+
+describe('buildPrompt — character-card system/jailbreak overrides', () => {
+  const litMain = (content: string, extra: any = {}): any => ({
+    ...blk('none', content),
+    identifier: 'main',
+    ...extra
+  })
+  const litJb = (content: string, extra: any = {}): any => ({
+    ...blk('none', content),
+    identifier: 'jailbreak',
+    ...extra
+  })
+
+  it('card system_prompt replaces main content; post_history replaces jailbreak', () => {
+    const messages = buildPrompt({
+      card: card({ system_prompt: 'CARD-SYSTEM', post_history_instructions: 'CARD-JAILBREAK' }),
+      preset: preset([litMain('PRESET-MAIN'), blk('chat_history'), litJb('PRESET-JB')]),
+      lorebooks: [],
+      floors: [],
+      userAction: 'go'
+    })
+    expect(messages.some((m) => m.content === 'CARD-SYSTEM')).toBe(true)
+    expect(messages.some((m) => m.content === 'PRESET-MAIN')).toBe(false)
+    expect(messages.some((m) => m.content === 'CARD-JAILBREAK')).toBe(true)
+    expect(messages.some((m) => m.content === 'PRESET-JB')).toBe(false)
+  })
+
+  it('forbid_overrides keeps the preset content (override ignored)', () => {
+    const messages = buildPrompt({
+      card: card({ system_prompt: 'CARD-SYSTEM' }),
+      preset: preset([litMain('PRESET-MAIN', { forbid_overrides: true }), blk('chat_history')]),
+      lorebooks: [],
+      floors: [],
+      userAction: 'go'
+    })
+    expect(messages.some((m) => m.content === 'PRESET-MAIN')).toBe(true)
+    expect(messages.some((m) => m.content === 'CARD-SYSTEM')).toBe(false)
+  })
+
+  it('no card override leaves the preset main content untouched (parity)', () => {
+    const messages = buildPrompt({
+      card: card(), // no system_prompt
+      preset: preset([litMain('PRESET-MAIN'), blk('chat_history')]),
+      lorebooks: [],
+      floors: [],
+      userAction: 'go'
+    })
+    expect(messages.some((m) => m.content === 'PRESET-MAIN')).toBe(true)
+  })
+
+  it('a disabled main is a structural empty (no override, no wire message)', () => {
+    const messages = buildPrompt({
+      card: card({ system_prompt: 'CARD-SYSTEM' }),
+      preset: preset([
+        { ...blk('none', 'PRESET-MAIN'), identifier: 'main', enabled: false },
+        blk('chat_history')
+      ]),
+      lorebooks: [],
+      floors: [],
+      userAction: 'go'
+    })
+    // Disabled main is NOT card-overridden (ST isPromptDisabledForActiveCharacter guard) and,
+    // being empty, contributes nothing to the wire.
+    expect(messages.some((m) => m.content === 'CARD-SYSTEM')).toBe(false)
+    expect(messages.some((m) => m.content === 'PRESET-MAIN')).toBe(false)
+    expect(messages.some((m) => m.content === '')).toBe(false)
+  })
+})
+
+describe('resolveEffectivePrompts (ST getPromptCollection + overrides)', () => {
+  const p = (identifier: string, over: any = {}): any => ({
+    identifier,
+    name: identifier,
+    role: 'system',
+    content: identifier,
+    enabled: true,
+    marker: 'none',
+    injection_depth: null,
+    injection_trigger: [],
+    forbid_overrides: false,
+    ...over
+  })
+
+  it('keeps a structural empty main when disabled, drops other disabled blocks', () => {
+    const out = resolveEffectivePrompts(
+      [p('main', { enabled: false }), p('note', { enabled: false })],
+      'normal',
+      {}
+    )
+    expect(out.map((b) => b.identifier)).toEqual(['main'])
+    expect(out[0].content).toBe('')
+    expect(out[0].enabled).toBe(true)
+  })
+
+  it('applies overrides only to enabled, non-forbidden main/jailbreak', () => {
+    const out = resolveEffectivePrompts(
+      [p('main'), p('jailbreak', { forbid_overrides: true })],
+      'normal',
+      { system: 'S', postHistory: 'J' }
+    )
+    expect(out.find((b) => b.identifier === 'main')!.content).toBe('S')
+    expect(out.find((b) => b.identifier === 'jailbreak')!.content).toBe('jailbreak') // forbidden
+  })
+
+  it('shouldTrigger: empty/absent list = all; else lowercased membership', () => {
+    expect(shouldTrigger({}, 'normal')).toBe(true)
+    expect(shouldTrigger({ injection_trigger: [] }, 'normal')).toBe(true)
+    expect(shouldTrigger({ injection_trigger: ['continue'] }, 'normal')).toBe(false)
+    expect(shouldTrigger({ injection_trigger: ['normal'] }, 'normal')).toBe(true)
   })
 })
 
