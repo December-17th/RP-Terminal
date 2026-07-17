@@ -10,6 +10,7 @@ import { cleanForHistory } from '../../shared/responseView'
 import { log } from './logService'
 import { expandMacros, MacroContext } from '../../shared/macros'
 import { buildStateBlock } from './cacheLayers'
+import { AssemblyJournal, RecordSource } from '../../shared/executionRecord'
 
 export interface ChatMessage {
   role: 'system' | 'user' | 'assistant'
@@ -178,6 +179,11 @@ export interface BuildPromptArgs {
    *  `matchedEntries: []`). Depth-positioned + marker entries live only on the scan path. Absent =
    *  the computed worldInfo string (parity). */
   worldInfoOverride?: string
+  /** Forensic Execution Record sink (issue 07). When present, buildPrompt journals every
+   *  controlled transform (marker expansion, macro/template passes, prompt-regex, depth/injection
+   *  insertion, safety-net inserts, history emission) into it. PURE observer — the journal never
+   *  changes the returned messages. Absent = today's behavior, no record. */
+  journal?: AssemblyJournal
 }
 
 /** No-op text transform (used when there are no prompt-time regex rules). */
@@ -244,13 +250,16 @@ interface DepthItem {
   depth: number
   content: string
   role?: ChatMessage['role']
+  /** Forensic lineage (issue 07) — the entry/block this depth item came from. */
+  source?: RecordSource
 }
 
 const applyDepthInjections = (
   messages: ChatMessage[],
   items: DepthItem[],
   convoStart: number,
-  hasTrailingUser: boolean
+  hasTrailingUser: boolean,
+  journal?: AssemblyJournal
 ): void => {
   const base = messages.length
   const maxIdx = hasTrailingUser ? base - 1 : base
@@ -259,19 +268,31 @@ const applyDepthInjections = (
     .map((it) => ({
       idx: Math.max(start, Math.min(base - it.depth, maxIdx)),
       content: it.content,
-      role: it.role ?? 'system'
+      role: it.role ?? ('system' as ChatMessage['role']),
+      depth: it.depth,
+      source: it.source
     }))
     .sort((a, b) => b.idx - a.idx)
-  for (const p of planned) messages.splice(p.idx, 0, { role: p.role, content: p.content })
+  for (const p of planned) {
+    messages.splice(p.idx, 0, { role: p.role, content: p.content })
+    journal?.depthInject(
+      p.source ?? { kind: 'pipeline', id: 'depth-inject' },
+      p.depth,
+      p.idx,
+      p.role,
+      p.content
+    )
+  }
 }
 
 /** Insert a system block just before the first conversation (non-system) message — or append it when
  *  the array is all-system. Centralizes the convoStart find+splice repeated for the world-info safety
- *  net, the mode addendum, and the persona block (WS-5). */
-const insertBeforeConvo = (messages: ChatMessage[], msg: ChatMessage): void => {
+ *  net, the mode addendum, and the persona block (WS-5). Returns the index it inserted at (forensic). */
+const insertBeforeConvo = (messages: ChatMessage[], msg: ChatMessage): number => {
   const convoStart = messages.findIndex((m) => m.role !== 'system')
-  if (convoStart === -1) messages.push(msg)
-  else messages.splice(convoStart, 0, msg)
+  const at = convoStart === -1 ? messages.length : convoStart
+  messages.splice(at, 0, msg)
+  return at
 }
 
 /** A matched/forced lorebook entry paired with its parsed marker classification. */
@@ -441,6 +462,29 @@ export const buildPrompt = (args: BuildPromptArgs): ChatMessage[] => {
     ? (t: string, depth: number): string => applyRegex(t, promptRegex, 2, regexCtx, depth)
     : identity
 
+  // Forensic Execution Record (issue 07). `journal` is a PURE observer; every call below reads
+  // values already in scope and appends an entry — it never changes `messages`. `jUser`/`jAssistant`
+  // wrap the regex closures to record a `regex` entry only when a rule ACTUALLY changed a turn's text
+  // (no journal / no rules → the raw closures, zero overhead).
+  const journal = args.journal
+  const jUser =
+    journal && promptRegex.length
+      ? (t: string, depth: number): string => {
+          const out = applyUser(t, depth)
+          if (out !== t) journal.regex({ kind: 'history', id: `user@d${depth}` }, depth, t, out)
+          return out
+        }
+      : applyUser
+  const jAssistant =
+    journal && promptRegex.length
+      ? (t: string, depth: number): string => {
+          const out = applyAssistant(t, depth)
+          if (out !== t)
+            journal.regex({ kind: 'history', id: `assistant@d${depth}` }, depth, t, out)
+          return out
+        }
+      : applyAssistant
+
   // Lorebook scan over the last few turns plus the pending action, across all
   // active lorebooks. Entries with a numeric insertion_depth are injected into the
   // history at that depth; the rest go into the top-level World Info block.
@@ -502,12 +546,12 @@ export const buildPrompt = (args: BuildPromptArgs): ChatMessage[] => {
   // PRIOR turns arrive pre-processed.
   const historyMessages = (): ChatMessage[] => {
     if (!args.historyOverride) {
-      return buildHistory(floors, userAction, macroBase(personaMacro), applyUser, applyAssistant)
+      return buildHistory(floors, userAction, macroBase(personaMacro), jUser, jAssistant)
     }
     const out = args.historyOverride.map((m) => markHistory({ role: m.role, content: m.content }))
     if (userAction) {
       out.push(
-        markHistory({ role: 'user', content: macroOnly(applyUser(userAction, 0), macroBase(personaMacro)) })
+        markHistory({ role: 'user', content: macroOnly(jUser(userAction, 0), macroBase(personaMacro)) })
       )
     }
     return out
@@ -527,16 +571,26 @@ export const buildPrompt = (args: BuildPromptArgs): ChatMessage[] => {
 
     switch (block.marker) {
       case 'char_description': {
-        messages.push({ role: block.role, content: buildCharDescription(card, charName, render) })
+        const content = buildCharDescription(card, charName, render)
+        messages.push({ role: block.role, content })
+        journal?.marker({ kind: 'card-field', id: 'char_description' }, block.role, content)
         break
       }
       case 'mes_example': {
         const ex = render(card.data.mes_example)
-        if (ex) messages.push({ role: block.role, content: `Example dialogue:\n${ex}` })
+        if (ex) {
+          const content = `Example dialogue:\n${ex}`
+          messages.push({ role: block.role, content })
+          journal?.marker({ kind: 'card-field', id: 'mes_example' }, block.role, content)
+        }
         break
       }
       case 'world_info': {
-        if (worldInfo) messages.push({ role: block.role, content: `World Info:\n${worldInfo}` })
+        if (worldInfo) {
+          const content = `World Info:\n${worldInfo}`
+          messages.push({ role: block.role, content })
+          journal?.marker({ kind: 'marker', id: 'world_info' }, block.role, content)
+        }
         worldInfoEmitted = true
         break
       }
@@ -547,29 +601,47 @@ export const buildPrompt = (args: BuildPromptArgs): ChatMessage[] => {
         // emits the bare description. The header is added only by the headerless safety-net below.
         if (personaContent) {
           messages.push({ role: block.role, content: personaContent })
+          journal?.marker({ kind: 'persona', id: 'persona_description' }, block.role, personaContent)
         }
         break
       }
       case 'chat_history': {
-        messages.push(...historyMessages())
+        const hist = historyMessages()
+        messages.push(...hist)
         historyEmitted = true
+        journal?.history(
+          { kind: 'history', id: 'chat_history' },
+          hist.length,
+          hist.map((m) => m.content).join('\n')
+        )
         break
       }
       case 'post_history': {
         const ph = render(card.data.post_history_instructions)
-        if (ph) messages.push({ role: block.role, content: ph })
+        if (ph) {
+          messages.push({ role: block.role, content: ph })
+          journal?.marker({ kind: 'card-field', id: 'post_history' }, block.role, ph)
+        }
         break
       }
       default: {
+        const src: RecordSource = {
+          kind: 'preset-block',
+          id: block.identifier,
+          label: block.name || block.identifier
+        }
         const content = ejsStrict(
           macroExpanded.get(block) ?? macroPass(block.content),
           block.name || block.identifier
         )
+        // Journal the literal block's transform (raw authored text → macro+EJS result) even when it
+        // renders empty (forensically useful: "this block evaluated to nothing").
+        journal?.literal(src, block.content, content)
         if (!content) break
         // A literal block with a numeric depth is injected into the history (like a
         // lorebook/persona entry) rather than emitted here in preset order.
         if (block.injection_depth != null) {
-          presetDepthItems.push({ depth: block.injection_depth, content, role: block.role })
+          presetDepthItems.push({ depth: block.injection_depth, content, role: block.role, source: src })
         } else {
           messages.push({ role: block.role, content })
         }
@@ -581,7 +653,9 @@ export const buildPrompt = (args: BuildPromptArgs): ChatMessage[] => {
   // otherwise drop matched lorebook entries. Inject them just before the first
   // conversation message so keyword/constant world info still reaches the model.
   if (worldInfo && !worldInfoEmitted) {
-    insertBeforeConvo(messages, { role: 'system', content: `World Info:\n${worldInfo}` })
+    const content = `World Info:\n${worldInfo}`
+    const at = insertBeforeConvo(messages, { role: 'system', content })
+    journal?.safetyNet({ kind: 'marker', id: 'world_info-net' }, at, 'system', content)
   }
   // Diagnostic: where did the matched lore go? (empty render vs emitted-but-trimmable.)
   log(
@@ -592,7 +666,13 @@ export const buildPrompt = (args: BuildPromptArgs): ChatMessage[] => {
   // Safety net: a preset with no chat_history marker would otherwise send no
   // conversation at all. Append history + action so generation still works.
   if (!historyEmitted) {
-    messages.push(...historyMessages())
+    const hist = historyMessages()
+    messages.push(...hist)
+    journal?.history(
+      { kind: 'history', id: 'chat_history-net' },
+      hist.length,
+      hist.map((m) => m.content).join('\n')
+    )
   }
 
   // Per-mode system addendum (Phase H): a stable, cache-friendly system block for
@@ -600,7 +680,8 @@ export const buildPrompt = (args: BuildPromptArgs): ChatMessage[] => {
   // a mode, so it never invalidates the cached prefix between turns.
   const modeAddendum = args.modeAddendum?.trim()
   if (modeAddendum) {
-    insertBeforeConvo(messages, { role: 'system', content: modeAddendum })
+    const at = insertBeforeConvo(messages, { role: 'system', content: modeAddendum })
+    journal?.safetyNet({ kind: 'pipeline', id: 'mode-addendum' }, at, 'system', modeAddendum)
   }
 
   // Safety net: a preset without a persona_description marker (the common case for ST presets
@@ -608,10 +689,9 @@ export const buildPrompt = (args: BuildPromptArgs): ChatMessage[] => {
   // conversation begins — a stable, cache-friendly system block. A preset that HAS the marker owns
   // placement (including a disabled marker = opt-out), so the net is suppressed there.
   if (personaContent && !hasPersonaMarker) {
-    insertBeforeConvo(messages, {
-      role: 'system',
-      content: `[${userName}'s Persona]\n${personaContent}`
-    })
+    const content = `[${userName}'s Persona]\n${personaContent}`
+    const at = insertBeforeConvo(messages, { role: 'system', content })
+    journal?.safetyNet({ kind: 'persona', id: 'persona-net' }, at, 'system', content)
   }
 
   // Depth-positioned injections: lorebook entries with a numeric depth.
@@ -625,20 +705,21 @@ export const buildPrompt = (args: BuildPromptArgs): ChatMessage[] => {
   }
   const depthItems: DepthItem[] = [...byDepth.entries()].map(([depth, contents]) => ({
     depth,
-    content: `World Info:\n${contents.join('\n\n')}`
+    content: `World Info:\n${contents.join('\n\n')}`,
+    source: { kind: 'lorebook-entry', id: `world_info@depth${depth}` } as RecordSource
   }))
   // Depth-tagged preset prompt blocks (keep their authored role).
   depthItems.push(...presetDepthItems)
   if (depthItems.length) {
     const convoStart = messages.findIndex((m) => m.role !== 'system')
-    applyDepthInjections(messages, depthItems, convoStart, userAction !== '')
+    applyDepthInjections(messages, depthItems, convoStart, userAction !== '', journal)
   }
 
   // Phase D: drain [GENERATE:*] + @INJECT marker entries into message positions.
-  applyInjectionMarkers(messages, markerEntries, render)
+  applyInjectionMarkers(messages, markerEntries, render, journal)
 
   // L1 (experimental/dormant — see WS-2): relocate live state to one tail block before the user action.
-  applyCacheTail(messages, cacheLevel, args.template?.vars, userAction !== '')
+  applyCacheTail(messages, cacheLevel, args.template?.vars, userAction !== '', journal)
 
   // Optional prompt-tail block (unwired = none): same tail convention as the state block — a
   // system message just before the final user action, so on Anthropic it demotes + merges into
@@ -647,6 +728,7 @@ export const buildPrompt = (args: BuildPromptArgs): ChatMessage[] => {
   if (args.memoryBlock) {
     const insertAt = userAction !== '' ? messages.length - 1 : messages.length
     messages.splice(insertAt, 0, { role: 'system', content: args.memoryBlock })
+    journal?.safetyNet({ kind: 'memory', id: 'memory-tail' }, insertAt, 'system', args.memoryBlock)
   }
 
   return messages
@@ -661,7 +743,8 @@ export const buildPrompt = (args: BuildPromptArgs): ChatMessage[] => {
 const applyInjectionMarkers = (
   messages: ChatMessage[],
   markerEntries: ParsedEntry[],
-  render: Renderer
+  render: Renderer,
+  journal?: AssemblyJournal
 ): void => {
   if (!markerEntries.length) return
   const injections = markerEntries
@@ -677,14 +760,25 @@ const applyInjectionMarkers = (
         ? ((marker as InjectMarker).role ?? 'system')
         : 'system'
       const order = (isInject ? (marker as InjectMarker).order : undefined) ?? e.insertion_order
-      return { at: Math.max(0, Math.min(at, messages.length)), role, content, order }
+      const id = e.comment || (isInject ? '@INJECT' : `[GENERATE:${marker.kind}]`)
+      return { at: Math.max(0, Math.min(at, messages.length)), role, content, order, id }
     })
     .filter(
-      (x): x is { at: number; role: ChatMessage['role']; content: string; order: number } =>
-        x != null
+      (
+        x
+      ): x is {
+        at: number
+        role: ChatMessage['role']
+        content: string
+        order: number
+        id: string
+      } => x != null
     )
     .sort((a, b) => b.at - a.at || b.order - a.order)
-  for (const inj of injections) messages.splice(inj.at, 0, { role: inj.role, content: inj.content })
+  for (const inj of injections) {
+    messages.splice(inj.at, 0, { role: inj.role, content: inj.content })
+    journal?.markerInject({ kind: 'lorebook-entry', id: inj.id }, inj.at, inj.role, inj.content)
+  }
 }
 
 /**
@@ -696,13 +790,15 @@ const applyCacheTail = (
   messages: ChatMessage[],
   cacheLevel: number,
   vars: Record<string, any> | undefined,
-  hasTrailingUser: boolean
+  hasTrailingUser: boolean,
+  journal?: AssemblyJournal
 ): void => {
   if (cacheLevel < 1) return
   const stateBlock = buildStateBlock(vars)
   if (!stateBlock) return
   const insertAt = hasTrailingUser ? messages.length - 1 : messages.length
   messages.splice(insertAt, 0, { role: 'system', content: stateBlock })
+  journal?.safetyNet({ kind: 'pipeline', id: 'cache-tail' }, insertAt, 'system', stateBlock)
 }
 
 /**

@@ -23,6 +23,8 @@ import { LorebookEntry, getRpExt } from '../../types/character'
 import { PresetParameters, Preset } from '../../types/preset'
 import { GenContext } from './types'
 import { buildVnOverlay } from '../yuzu/vnPrompt'
+import { ExecutionRecord } from '../../../shared/executionRecord'
+import { createRecordBuilder } from './executionRecord'
 
 /**
  * prompt.preset composer overrides (context-epochs plan §3): each field, when present, replaces one
@@ -121,7 +123,12 @@ export const assemblePrompt = (
   matchedEntries: LorebookEntry[],
   memoryBlock: string,
   overrides?: AssembleOverrides
-): { sendMessages: ChatMessage[]; params: PresetParameters } => {
+): { sendMessages: ChatMessage[]; params: PresetParameters; record: ExecutionRecord } => {
+  // Forensic Execution Record (issue 07 / WP-1.1). ADDITIVE + behavior-neutral: the builder
+  // journals every controlled transform and is returned alongside the UNCHANGED sendMessages;
+  // callers may ignore it. `t0` bounds the added assembly time reported as `record.stats.buildMs`.
+  const t0 = Date.now()
+  const record = createRecordBuilder()
   const {
     profileId,
     chatId,
@@ -169,6 +176,7 @@ export const assemblePrompt = (
     floors,
     userAction,
     userName,
+    journal: record,
     historyOverride: overrides?.history,
     worldInfoOverride: overrides?.worldInfo,
     persona: {
@@ -236,6 +244,12 @@ export const assemblePrompt = (
   const { messages: trimmed, dropped } = fitToBudget(built, budget)
   if (dropped > 0) {
     log('info', `context budget ${budget} tok — trimmed ${dropped} oldest message(s)`)
+    record.arrayStage(
+      'trim',
+      built.length,
+      trimmed.length,
+      `budget ${budget} tok — dropped ${dropped} oldest turn(s)`
+    )
   }
   // Prompt-assembly passes (ST-faithful), applied AFTER fitToBudget (which needs the per-message history
   // tags) so the stored `request` matches exactly what's sent:
@@ -247,15 +261,29 @@ export const assemblePrompt = (
   if (settings.generation?.system_as_user && isOpenAiCompatibleProvider(settings.api.provider)) {
     const before = assembled.filter((m) => m.role === 'system').length
     assembled = systemToUser(assembled)
-    if (before)
+    if (before) {
       log('info', `system→user: relabeled ${before} system message(s) (OpenAI-compatible path)`)
+      record.arrayStage(
+        'system-as-user',
+        assembled.length,
+        assembled.length,
+        `relabeled ${before} system message(s) (OpenAI-compatible path)`
+      )
+    }
   }
   const messages =
     settings.generation?.merge_consecutive_roles !== false
       ? mergeConsecutiveRoles(assembled)
       : assembled
-  if (messages.length !== assembled.length)
+  if (messages.length !== assembled.length) {
     log('info', `merged consecutive same-role messages: ${assembled.length} → ${messages.length}`)
+    record.arrayStage(
+      'role-merge',
+      assembled.length,
+      messages.length,
+      `coalesced ${assembled.length} → ${messages.length} same-role message(s)`
+    )
+  }
 
   // Agentic mode caps the output ceiling at the FSM mode's limit (e.g. Combat is terse),
   // never exceeding the preset's own max_tokens. Classic mode uses the preset value as-is.
@@ -275,6 +303,14 @@ export const assemblePrompt = (
   // backends, but a trailing assistant prefill is kept last so the model continues it). Logged + stored, so
   // the `request` log is a FAITHFUL representation of what went over the wire.
   const sendMessages = orderForProvider(messages, settings.api.provider)
+  if (sendMessages !== messages) {
+    record.arrayStage(
+      'provider-shape',
+      messages.length,
+      sendMessages.length,
+      `${settings.api.provider} ordering (end-on-user)`
+    )
+  }
 
   log(
     'request',
@@ -282,5 +318,5 @@ export const assemblePrompt = (
     sendMessages
   )
 
-  return { sendMessages, params }
+  return { sendMessages, params, record: record.finish(sendMessages, Date.now() - t0) }
 }
