@@ -59,6 +59,7 @@ export interface RecordSource {
     | 'history'
     | 'pipeline'
     | 'regex-rule' // a specific regex rule that fired (per-rule lineage — issue 14); `id` = rule id, `label` = scriptName
+    | 'spreset-regex' // an SPreset RegexBinding rule that fired (issue 16) — kept DISTINCT from core regex-rule
   id: string
   label?: string
 }
@@ -76,6 +77,7 @@ export type RecordStage =
   | 'system-as-user' // system→user relabel (OpenAI-compatible path)
   | 'role-merge' // consecutive same-role messages coalesced (native presets — merge-all)
   | 'squash' // ST selective system-message squash (imported preset w/ squash_system_messages)
+  | 'chat-squash' // SPreset ChatSquash role-based adjacent merge (issue 16) — distinct from `squash`/`role-merge`
   | 'provider-shape' // orderForProvider reordering (end-on-user, etc.)
   | 'opaque' // arbitrary card/preset SCRIPT mutation — before/after hashes only, no copy
 

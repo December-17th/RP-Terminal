@@ -341,6 +341,7 @@ const zh: Record<string, string> = {
   'preset.inv.unknownExt': ' · 未知扩展：{{names}}',
   'preset.inv.anomalies': ' · {{dupes}} 重复 / {{orphans}} 孤立标识',
   'preset.inv.remoteCode': '{{count}} 个脚本会加载远程代码 — 已保持停用（需高信任授权后方可运行）',
+  'preset.inv.spresetUnsupported': 'RP Terminal 不执行的 SPreset ChatSquash 功能：{{features}}（已登记，绝不运行）',
   'preset.confirmDelete': '删除此预设？此操作无法撤销。',
   'preset.empty': '未选择预设。新建一个或导入 SillyTavern 预设。',
   'preset.name': '预设名称',

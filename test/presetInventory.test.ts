@@ -185,9 +185,14 @@ describe('importPresetFromFile — inventory + remote-code inertness (ADR 0017)'
     const scripts = scriptService.listScripts(profileId)
     expect(scripts).toHaveLength(1)
     expect(scripts[0].name).toBe('local')
-    // SPreset regex is counted but NOT routed into the core regex store (distinct namespaces).
-    expect(regexService.listScripts(profileId)).toHaveLength(2)
+    // Issue 16: SPreset RegexBinding regex IS now installed (so it actually fires), but tagged
+    // `origin:'spreset'` so it stays DISTINCT from core `regex_scripts`. Store = 2 core + 3 SPreset.
+    expect(regexService.listScripts(profileId)).toHaveLength(5)
+    const allRules = regexService.getAllRules(profileId)
+    expect(allRules.filter((r) => r.origin === 'spreset')).toHaveLength(3)
+    expect(allRules.filter((r) => r.origin !== 'spreset')).toHaveLength(2)
 
+    // Both core + SPreset preset-scoped regex are cleaned up when the preset is deleted (same owner).
     deletePreset(profileId, presetId)
     expect(scriptService.listScripts(profileId)).toHaveLength(0)
     expect(regexService.listScripts(profileId)).toHaveLength(0)

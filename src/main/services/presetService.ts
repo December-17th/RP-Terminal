@@ -13,6 +13,11 @@ import { Preset, PresetSchema, PresetEnvelope, getDefaultPreset } from '../types
 import { parseStPreset, selectPromptOrder } from '../parsers/stPresetParser'
 import * as regexService from './regexService'
 import * as scriptService from './scriptService'
+import {
+  parseSPresetConfig,
+  spresetBoundRegexes,
+  spresetUnsupportedCapabilities
+} from '../../shared/spreset'
 
 /** Identifies the importer that produced an envelope (ADR 0018), for future migrations. */
 const IMPORTER_VERSION = 'rpt-st-preset/1'
@@ -38,6 +43,10 @@ export interface PresetInventory {
   regexScripts: number
   /** `extensions.SPreset.RegexBinding.regexes[]` — kept DISTINCT from core; never merged. */
   spresetRegex: number
+  /** SPreset ChatSquash features RPT does NOT execute when the preset enables them (issue 16): e.g.
+   *  `post-script` (arbitrary `eval` — forbidden), `parse-clewd`, `re-split`, `separate-history`.
+   *  Surfaced like a remote-code capability (ADR 0017) — inventoried, never run. */
+  unsupportedSpreset: string[]
   /** `extensions.tavern_helper.scripts[]` bundled scripts (total, incl. remote-code). */
   tavernHelperScripts: number
   /** Of those, how many load remote code — kept INERT at import, flagged for high-trust (ADR 0017). */
@@ -121,12 +130,23 @@ export const computePresetInventory = (parsed: any): PresetInventory => {
   const remoteCodeScripts = thScripts.filter((s) =>
     scriptService.hasRemoteCodeLoad(scriptSource(s))
   ).length
+  // SPreset ChatSquash capabilities RPT won't run (issue 16 / ADR 0017). Config source of truth is the
+  // extensions namespace; the disabled SPresetSettings block is a mirror fallback.
+  const spresetBlock = prompts.find(
+    (p: any) => p && (p.identifier === 'SPresetSettings' || p.name === 'SPreset配置')
+  )
+  const spresetConfig = parseSPresetConfig(
+    ext,
+    typeof spresetBlock?.content === 'string' ? spresetBlock.content : undefined
+  )
+  const unsupportedSpreset = spresetUnsupportedCapabilities(spresetConfig?.ChatSquash)
 
   return {
     prompts: prompts.length,
     promptsEnabled,
     regexScripts,
     spresetRegex,
+    unsupportedSpreset,
     tavernHelperScripts: thScripts.length,
     remoteCodeScripts,
     ejsPrompts,
@@ -156,6 +176,27 @@ export const collectPresetScripts = (raw: any): any[] => {
   const ext = presetRoot(raw)?.extensions
   const arr = ext?.tavern_helper?.scripts
   return Array.isArray(arr) ? arr.filter((s) => s && typeof s === 'object') : []
+}
+
+/**
+ * SPreset RegexBinding regex records (issue 16), core-ST-shaped, gated on the feature's own boolean.
+ * Kept DISTINCT from `collectPresetRegex` (core `regex_scripts`) so the SPreset namespace never merges
+ * into core. Config source of truth is `extensions.SPreset`; the disabled `SPresetSettings` prompt block
+ * is a mirror fallback (spec §Activation). Each returned rule is tagged `rptOrigin:'spreset'` so it is
+ * persisted + attributed distinctly.
+ */
+export const collectSpresetRegex = (raw: any): any[] => {
+  const root = presetRoot(raw)
+  const spresetBlock = Array.isArray(root?.prompts)
+    ? root.prompts.find(
+        (p: any) => p && (p.identifier === 'SPresetSettings' || p.name === 'SPreset配置')
+      )
+    : undefined
+  const config = parseSPresetConfig(
+    root?.extensions,
+    typeof spresetBlock?.content === 'string' ? spresetBlock.content : undefined
+  )
+  return spresetBoundRegexes(config).map((rule) => ({ ...rule, rptOrigin: 'spreset' }))
 }
 
 const presetsDir = (profileId: string): string =>
@@ -348,6 +389,13 @@ export const importPresetFromFile = (
     let regexScripts = 0
     for (const rule of collectPresetRegex(raw)) {
       if (regexService.saveRegexScript(profileId, rule, 'preset', presetId)) regexScripts++
+    }
+    // SPreset RegexBinding regex (issue 16): installed as preset-scoped regex too, but each rule carries
+    // `rptOrigin:'spreset'` so it stays DISTINCT from core `regex_scripts` in storage + attribution.
+    // Unblocks presets whose ONLY regex lives here (both Dramatron presets). Counted in the inventory's
+    // `spresetRegex`, not in `regexScripts`.
+    for (const rule of collectSpresetRegex(raw)) {
+      regexService.saveRegexScript(profileId, rule, 'preset', presetId)
     }
 
     // Route bundled Tavern Helper scripts (declarative buttons baked in) scoped to the preset.

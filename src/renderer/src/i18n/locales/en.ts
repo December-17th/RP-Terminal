@@ -354,6 +354,8 @@ const en: Record<string, string> = {
   'preset.inv.anomalies': ' · {{dupes}} duplicate / {{orphans}} orphan identifiers',
   'preset.inv.remoteCode':
     '{{count}} script(s) load remote code — kept inert (requires a high-trust opt-in to run)',
+  'preset.inv.spresetUnsupported':
+    'SPreset ChatSquash feature(s) not run by RP Terminal: {{features}} (inventoried, never executed)',
   'preset.confirmDelete': 'Delete this preset? This cannot be undone.',
   'preset.empty': 'No preset selected. Create a new one or import a SillyTavern preset.',
   'preset.name': 'Preset Name',

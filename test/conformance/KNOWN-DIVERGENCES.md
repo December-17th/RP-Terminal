@@ -87,3 +87,35 @@ squash-**off** case:
   `src/main/services/promptBuilder.ts` (`squashSystemMessages`, `mergeConsecutiveRoles`),
   `src/main/services/generation/providerShape.ts` (stage-A selector); fixtures `wp-2.5-squash-off.json`,
   `wp-2.5-squash-on.json`.
+
+## 6. SPreset (RegexBinding / ChatSquash / MacroNest) — clean-room, partial (issue 16 / WP-2.6)
+
+SPreset is closed-source, remote-loaded, unlicensed; RPT reimplements it **clean-room from the pinned
+behavioral spec** (`docs/research/spreset-behavior-2026-07-17.md`) — no SPreset source is read into the
+implementation. Config source of truth is `extensions.SPreset` (the disabled `SPresetSettings` prompt
+block is a mirror fallback, parsed only when the namespace is absent). Each feature gates on its own
+boolean. Implemented in `src/shared/spreset.ts` + assembly hooks; kept a DISTINCT namespace from core
+regex everywhere (storage `origin:'spreset'`, inventory `spresetRegex`, execution-record kind
+`spreset-regex`).
+
+Implemented (spec-VERIFIED): **RegexBinding** — bound regexes installed as preset-scoped regex +
+`preset-first` tier order (spec default `[2,0,1]`, an ordering-MODE selection, not the upstream
+`Object.values` monkeypatch). **ChatSquash** — role-based adjacent merge (`role`/`follow`, per-role
+affixes, separators, `user_role_system`, conditional-tag gating) + stop-strings. **MacroNest** —
+`false` ⇒ single non-nesting macro pass, `true`/absent ⇒ RPT's default nesting cap (issue 13).
+
+| # | SPreset feature | Upstream | RPT | Grounding |
+|---|-----------------|----------|-----|-----------|
+| 6.1 | `ChatSquash.squashed_post_script` | Runs arbitrary JS via `eval(script)(prompt)` in the ST page context. | **NEVER run.** RPT has no raw-eval path; when a preset enables it, it surfaces as an import diagnostic (toast `preset.inv.spresetUnsupported`), inventory `unsupportedSpreset`. | spec §ChatSquash (`inject.js:1419-1427`); ADR 0017; RPT `spresetUnsupportedCapabilities`. |
+| 6.2 | `ChatSquash.parse_clewd` / inline `<regex>` / control tokens | "clewd" transform over merged content. | Not implemented — diagnostic + black-box-fixture TODO (corpus-unused / newer-than-corpus per spec). | spec §ChatSquash (`inject.js:1358-1413`); RPT `spresetUnsupportedCapabilities`. |
+| 6.3 | `ChatSquash.re_split` | Re-splits merged content back into role messages by scanning affixes. | Not implemented — diagnostic + TODO. | spec §ChatSquash (`inject.js:1199-1266`). |
+| 6.4 | `ChatSquash.separate_chat_history` | Squashes ONLY the chatHistory block, leaving other injected prompts intact. | RPT applies **whole-array** squash; the history-region distinction is not modeled (RPT has no `promptManager` collection at the shaping seam). Diagnostic + TODO. | spec §ChatSquash (`inject.js:1044-1085`); ADR 0016 (port ordering intent, not mechanism). |
+| 6.5 | ChatSquash stop-strings | Appended to `data.stop` on `CHAT_COMPLETION_SETTINGS_READY`. | Parsed (JSON, single-element fallback) and forwarded as `params.stop` — on the **OpenAI-compatible** path only (`cleanParams` spread); Anthropic/Gemini map params explicitly and ignore it. | spec §ChatSquash (`inject.js:1150-1166`); RPT `resolveStopStrings`, `apiService`. |
+| 6.6 | RegexBinding pre-1.13.5 injection path + regex "locking" | Older-ST branch owns injection; `loadLockedRegexes` survives preset switches. | Not modeled — spec marks these **unverified** (needs black-box fixture). RPT installs bound regex at import + selects the tier order; lock-on-switch is out of scope. | spec §RegexBinding "Unverified"; issue 16 acceptance (unverified ⇒ TODO, not guessed). |
+| 6.7 | MacroNest recursion cap | `substituteParamsRecursive` loops to `MAX_STEPS = 1_000_000`. | Mapped onto RPT's pass-count engine: `true`/absent ⇒ default nesting cap (5 passes, issue 13); `false` ⇒ 1 pass. A macro nested deeper than RPT's cap under-resolves vs SPreset's near-unbounded loop. | spec §MacroNest (`inject.js:523-566`); RPT `src/shared/macros.ts` (`maxPasses`). |
+
+- **Grounding:** RPT `src/shared/spreset.ts`, `src/main/parsers/stPresetParser.ts` (projection),
+  `src/main/services/presetService.ts` (install + inventory), `src/main/services/regexService.ts`
+  (tier-order mode), `src/main/services/generation/{assemble,providerShape}.ts`; fixtures
+  `wp-2.6-spreset-regexbinding.json`, `wp-2.6-spreset-chatsquash.json`, `wp-2.6-spreset-macronest.json`;
+  unit tests `test/spreset.test.ts`, `test/regexOrder.test.ts`, `test/presetInventory.test.ts`.

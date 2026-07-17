@@ -1,4 +1,5 @@
 import { PromptMarker } from '../types/preset'
+import { parseSPresetConfig, projectSPreset } from '../../shared/spreset'
 
 /**
  * Maps SillyTavern's built-in prompt identifiers onto our dynamic markers.
@@ -145,6 +146,19 @@ export const parseStPreset = (raw: any, fallbackName: string): any | null => {
     top_a: num(raw.top_a)
   }
 
+  // SPreset (`extensions.SPreset`) projection (issue 16 / WP-2.6). Source of truth is the extensions
+  // namespace; the disabled `SPresetSettings` prompt block is a MIRROR fallback, parsed only when the
+  // namespace is absent (spec §Activation). Present ONLY when the preset actually carries SPreset config,
+  // so a native/plain ST preset never gains the key (parity — assembly stays byte-identical).
+  const spresetBlock = raw.prompts.find(
+    (p: any) => p && (p.identifier === 'SPresetSettings' || p.name === 'SPreset配置')
+  )
+  const spresetConfig = parseSPresetConfig(
+    raw.extensions,
+    typeof spresetBlock?.content === 'string' ? spresetBlock.content : undefined
+  )
+  const spreset = projectSPreset(spresetConfig)
+
   // ST `oai_settings.squash_system_messages` (openai.js:1599-1601). An ST chat-completion preset saves
   // the full oai_settings, so this field is present on real imports; coerce to an explicit boolean so an
   // import ALWAYS carries the flag (true → ST selective squash in providerShape; false → RPT merge-all,
@@ -153,6 +167,7 @@ export const parseStPreset = (raw: any, fallbackName: string): any | null => {
     name: raw.name || fallbackName,
     parameters,
     prompts,
-    squash_system_messages: raw.squash_system_messages === true
+    squash_system_messages: raw.squash_system_messages === true,
+    ...(spreset ? { spreset } : {})
   }
 }

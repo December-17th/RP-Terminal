@@ -45,6 +45,14 @@ export interface MacroContext {
   globals?: Record<string, unknown>
   /** RNG for {{roll}} / {{random}} / {{pick}} (default Math.random) — injectable for tests. */
   rng?: () => number
+  /**
+   * Max macro passes before stopping (default 5). Governs nested-macro resolution: the engine runs
+   * innermost-first passes until nothing changes or this cap is hit. SPreset's **MacroNest** feature
+   * (issue 16) maps onto this — `MacroNest:false` sets `maxPasses:1` (a single, non-nesting pass,
+   * matching SPreset's original shallow `substituteParams`); `MacroNest:true`/absent keeps the default
+   * nesting cap. Clamped to ≥1.
+   */
+  maxPasses?: number
 }
 
 const path = (obj: Record<string, unknown> | undefined, key: string): unknown => {
@@ -183,7 +191,10 @@ export const expandMacros = (text: string, ctx: MacroContext = {}): string => {
   // yields ''.
   let originalUsed = false
   let out = preprocessMarkers(text)
-  for (let pass = 0; pass < 5; pass++) {
+  // Default 5 passes (RPT's nesting engine — issue 13). SPreset MacroNest:false drops this to 1 (a single
+  // non-nesting pass); true/absent keeps the default. Clamped ≥1 so a bad config never zeroes expansion.
+  const maxPasses = Math.max(1, ctx.maxPasses ?? 5)
+  for (let pass = 0; pass < maxPasses; pass++) {
     let changed = false
     out = out.replace(MACRO_RE, (whole, body: string) => {
       // {{// comment }} — ST comment macro (`//`, core-macros.js:282): stripped from the prompt entirely

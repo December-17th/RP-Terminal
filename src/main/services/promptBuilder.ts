@@ -243,6 +243,9 @@ export interface BuildPromptArgs {
    *  insertion, safety-net inserts, history emission) into it. PURE observer — the journal never
    *  changes the returned messages. Absent = today's behavior, no record. */
   journal?: AssemblyJournal
+  /** Max macro passes (SPreset MacroNest — issue 16). Absent = RPT's default nesting cap (5). An
+   *  imported preset with `extensions.SPreset.MacroNest:false` sets 1 (single non-nesting pass). */
+  macroMaxPasses?: number
 }
 
 /** No-op text transform (used when there are no prompt-time regex rules). */
@@ -658,7 +661,9 @@ export const buildPrompt = (args: BuildPromptArgs): ChatMessage[] => {
     lastUserMessage,
     original,
     vars: vars ?? args.template?.vars,
-    globals: globals ?? args.template?.globals
+    globals: globals ?? args.template?.globals,
+    // SPreset MacroNest (issue 16): undefined = RPT's default nesting; 1 = single non-nesting pass.
+    maxPasses: args.macroMaxPasses
   })
   const makeRender =
     (pd: string, tmpl?: TemplateContext): Renderer =>
@@ -739,7 +744,13 @@ export const buildPrompt = (args: BuildPromptArgs): ChatMessage[] => {
           (t: string, depth: number): string =>
             applyRegex(t, promptRegex, placement, regexCtx, depth, undefined, (rule, before, after) =>
               journal.regex(
-                { kind: 'regex-rule', id: rule.id, label: rule.scriptName },
+                // SPreset RegexBinding rules (issue 16) journal under a DISTINCT source kind so the
+                // SPreset namespace stays separate from core regex in execution-record attribution.
+                {
+                  kind: rule.origin === 'spreset' ? 'spreset-regex' : 'regex-rule',
+                  id: rule.id,
+                  label: rule.scriptName
+                },
                 depth,
                 before,
                 after

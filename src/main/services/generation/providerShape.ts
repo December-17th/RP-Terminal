@@ -8,6 +8,7 @@ import { orderForProvider, isOpenAiCompatibleProvider } from '../apiService'
 import { Settings } from '../../types/models'
 import { log } from '../logService'
 import type { RecordBuilder } from './executionRecord'
+import { chatSquash, type ChatSquashConfig } from '../../../shared/spreset'
 
 /**
  * The SINGLE provider-shaping seam (issue 10 / WP-1.4). Applies the ST-faithful provider-correctness
@@ -47,7 +48,17 @@ export const providerShape = (
    * existing wire output is byte-identical (parity gate). A tri-state is deliberate: a native preset
    * never carries the flag (undefined → merge-all), so native behavior can never regress.
    */
-  opts?: { squashSystemMessages?: boolean }
+  opts?: {
+    squashSystemMessages?: boolean
+    /**
+     * SPreset ChatSquash (issue 16 / WP-2.6). When present + `config.enabled`, stage (A) runs the
+     * preset's OWN role-based adjacent-merge (`chatSquash`) INSTEAD of ST squash / merge-all — a third,
+     * mutually-exclusive coalescing mode. `expand` macro-expands the affixes. Absent / disabled → the
+     * existing squash/merge branch (parity). ChatSquash's `squashed_post_script` `eval` is never run
+     * here (surfaced as an import diagnostic instead — ADR 0017).
+     */
+    chatSquash?: { config: ChatSquashConfig; expand: (s: string) => string }
+  }
 ): ChatMessage[] => {
   // (B) system→user (OpenAI-compatible + opt-in). systemToUser always runs when the guard passes; the
   //     log + journal fire only when it actually relabeled something.
@@ -66,9 +77,23 @@ export const providerShape = (
     }
   }
 
-  // (A) system-message coalescing — ST selective squash for a squashing import, else RPT's merge-all.
+  // (A) system-message coalescing — SPreset ChatSquash (its own role-merge) > ST selective squash for a
+  //     squashing import > RPT's merge-all. The three are mutually exclusive (a preset picks one path).
   let merged: ChatMessage[]
-  if (opts?.squashSystemMessages) {
+  if (opts?.chatSquash?.config?.enabled) {
+    // SPreset ChatSquash (issue 16): role-based adjacent merge with affixes/separators. Distinct from the
+    // native merge-all AND ST's selective squash. Runs regardless of `merge_consecutive_roles`.
+    merged = chatSquash(assembled, opts.chatSquash.config, opts.chatSquash.expand)
+    if (journal) {
+      log('info', `SPreset ChatSquash: ${assembled.length} → ${merged.length} message(s)`)
+      journal.arrayStage(
+        'chat-squash',
+        assembled.length,
+        merged.length,
+        `SPreset ChatSquash: ${assembled.length} → ${merged.length} message(s)`
+      )
+    }
+  } else if (opts?.squashSystemMessages) {
     // ST 1.18.0 squash (openai.js:3827): consecutive UNNAMED system messages merged with '\n', empty
     // system messages dropped, protected control identifiers preserved. Runs regardless of
     // `merge_consecutive_roles` (ST has no such setting) and REPLACES merge-all (never both).

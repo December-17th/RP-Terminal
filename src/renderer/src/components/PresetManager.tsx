@@ -119,6 +119,11 @@ export const PresetManager: React.FC<Props> = ({ profileId }) => {
     // Remote-code scripts stay inert until a high-trust opt-in exists — warn NOW (separate toast).
     if (inv.remoteCodeScripts)
       useToastStore.getState().push(t('preset.inv.remoteCode', { count: inv.remoteCodeScripts }))
+    // SPreset ChatSquash features RPT does not execute (issue 16) — surfaced like a capability flag.
+    if (inv.unsupportedSpreset?.length)
+      useToastStore
+        .getState()
+        .push(t('preset.inv.spresetUnsupported', { features: inv.unsupportedSpreset.join(', ') }))
   }
 
   return (

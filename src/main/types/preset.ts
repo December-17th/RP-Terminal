@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { SPresetProjectionSchema } from '../../shared/spreset'
 
 /**
  * Sampler / generation parameters sent to the provider. Superset of OpenAI +
@@ -13,7 +14,11 @@ export const PresetParametersSchema = z.object({
   presence_penalty: z.number().optional(),
   repetition_penalty: z.number().optional(),
   min_p: z.number().optional(),
-  top_a: z.number().optional()
+  top_a: z.number().optional(),
+  /** Stop sequences (SPreset ChatSquash — issue 16). Optional, set ONLY when a ChatSquash config
+   *  enables stop strings; forwarded on the OpenAI-compatible path (`cleanParams` spread). Native
+   *  presets never carry it, so the request body is byte-identical (parity gate). */
+  stop: z.array(z.string()).optional()
 })
 export type PresetParameters = z.infer<typeof PresetParametersSchema>
 
@@ -84,7 +89,17 @@ export const PresetSchema = z.object({
    * `false`/undefined → RPT's merge-all-adjacent (`mergeConsecutiveRoles`). Optional-without-default
    * so a native preset never gains the key and its wire output stays byte-identical (parity gate).
    */
-  squash_system_messages: z.boolean().optional()
+  squash_system_messages: z.boolean().optional(),
+  /**
+   * SPreset (`extensions.SPreset`) runtime projection (issue 16 / WP-2.6), mirroring how
+   * `squash_system_messages` is projected. Present ONLY on an imported preset that carries the SPreset
+   * namespace (or its `SPresetSettings` mirror block); NATIVE presets leave it UNDEFINED so their build
+   * is byte-identical (parity gate). The assembly path reads the flags here — never the envelope:
+   * `regexBindingEnabled` selects the preset-first regex tier order, `macroNest` gates macro nesting,
+   * `chatSquash` drives the ChatSquash pass. The bound regex records themselves are installed into the
+   * regex store at import (kept DISTINCT from core `regex_scripts`), not carried here.
+   */
+  spreset: SPresetProjectionSchema.optional()
 })
 export type Preset = z.infer<typeof PresetSchema>
 

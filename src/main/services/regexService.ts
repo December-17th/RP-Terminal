@@ -122,7 +122,10 @@ const normalizeRule = (r: any): RenderRegexRule => {
     runOnEdit: r.runOnEdit === true,
     trimStrings: Array.isArray(r.trimStrings)
       ? r.trimStrings.filter((s: any) => typeof s === 'string')
-      : []
+      : [],
+    // SPreset provenance (issue 16): a rule installed from `extensions.SPreset.RegexBinding.regexes[]`
+    // is persisted with `rptOrigin:'spreset'` so it stays DISTINCT from core regex in attribution.
+    ...(r.rptOrigin === 'spreset' ? { origin: 'spreset' as const } : {})
   }
 }
 
@@ -138,22 +141,44 @@ const rulesInFile = (filePath: string): any[] => {
  *  BEFORE beautification (character/world), and a cleanup regex re-scanning a
  *  beautification rule's huge HTML paste can stall a render for tens of seconds. */
 const SCOPE_TIER: Record<ArtifactScope, number> = { global: 0, preset: 1, world: 2, session: 3 }
-const scopeTier = (m?: ScopeMeta): number => SCOPE_TIER[m?.scope ?? 'global'] ?? 0 // ?? 0: corrupt sidecar scope
+
+/**
+ * Regex tier ORDERING MODE (issue 16 / SPreset RegexBinding). Selecting a mode is how RPT honors
+ * SPreset's tier reorder — an explicit ordering choice, NOT the upstream `Object.values` monkeypatch.
+ *  - `st-default` (RPT's standing order): global → preset → world → session.
+ *  - `preset-first` (SPreset RegexBinding default `[2,0,1]`): preset → global → world → session
+ *    (spec §RegexBinding). RPT's scoped tier (world/session ≈ character) follows the two ST tiers.
+ */
+export type RegexTierOrder = 'st-default' | 'preset-first'
+const TIER_ORDERS: Record<RegexTierOrder, Record<ArtifactScope, number>> = {
+  'st-default': SCOPE_TIER,
+  'preset-first': { preset: 0, global: 1, world: 2, session: 3 }
+}
+const scopeTier = (m: ScopeMeta | undefined, order: Record<ArtifactScope, number>): number =>
+  order[m?.scope ?? 'global'] ?? 0 // ?? 0: corrupt sidecar scope
 
 /**
  * All normalized rules across the profile's regex files, in ST APPLICATION order:
  * scope tier (global → preset → world → session), file order within a tier. When `ctx`
  * is given, only scripts whose scope is active for that context (global ⊕ world(card) ⊕
  * session(chat)) are included; with no `ctx` every script is returned (e.g. the manager listing).
+ *
+ * `order` selects the tier ordering mode (issue 16): default `st-default`; `preset-first` runs
+ * preset-bound regex ahead of global/character when a preset's SPreset RegexBinding is active.
  */
-export const getAllRules = (profileId: string, ctx?: ScopeContext): RenderRegexRule[] => {
+export const getAllRules = (
+  profileId: string,
+  ctx?: ScopeContext,
+  order: RegexTierOrder = 'st-default'
+): RenderRegexRule[] => {
   const dir = regexDir(profileId)
   if (!fs.existsSync(dir)) return []
   const meta = readMeta(profileId)
+  const tierOrder = TIER_ORDERS[order] ?? SCOPE_TIER
   const out: RenderRegexRule[] = []
   const files = listFilesSync(dir)
     .filter((file) => file.endsWith('.json') && !file.startsWith('_')) // _meta.json is the sidecar
-    .sort((a, b) => scopeTier(meta[a]) - scopeTier(meta[b])) // stable: file order within a tier
+    .sort((a, b) => scopeTier(meta[a], tierOrder) - scopeTier(meta[b], tierOrder)) // stable: file order within a tier
   for (const file of files) {
     if (meta[file]?.disabled) continue // a disabled script contributes nothing
     if (ctx && !isScopeActive(meta[file], ctx)) continue
@@ -194,9 +219,14 @@ export const getPlotBlockRules = (profileId: string, ctx?: ScopeContext): Render
     )
     .map((r) => (r.renderMode === 'panel' ? { ...r, replace: '' } : r))
 
-/** Rules that transform text on its way *into the prompt* (prompt destination enabled, not panel-promoted). */
-export const getPromptRules = (profileId: string, ctx?: ScopeContext): RenderRegexRule[] =>
-  getAllRules(profileId, ctx).filter(
+/** Rules that transform text on its way *into the prompt* (prompt destination enabled, not panel-promoted).
+ *  `order` selects the tier ordering mode (issue 16 — `preset-first` for SPreset RegexBinding). */
+export const getPromptRules = (
+  profileId: string,
+  ctx?: ScopeContext,
+  order: RegexTierOrder = 'st-default'
+): RenderRegexRule[] =>
+  getAllRules(profileId, ctx, order).filter(
     (r) => !r.disabled && appliesToPrompt(r) && r.renderMode !== 'panel'
   )
 
@@ -206,8 +236,12 @@ export const getPromptRules = (profileId: string, ctx?: ScopeContext): RenderReg
  * isPrompt call (world-info.js:5086 passes `{isMarkdown:false, isPrompt:true}`). Net: a `promptOnly`
  * (or both-true) WI rule fires; a BOTH-FALSE rule does NOT (the fixed divergence). Placement 5 is
  * matched by the applier (empty placement = everywhere, per RPT convention). Panel rules excluded. */
-export const getWorldInfoRules = (profileId: string, ctx?: ScopeContext): RenderRegexRule[] =>
-  getAllRules(profileId, ctx).filter(
+export const getWorldInfoRules = (
+  profileId: string,
+  ctx?: ScopeContext,
+  order: RegexTierOrder = 'st-default'
+): RenderRegexRule[] =>
+  getAllRules(profileId, ctx, order).filter(
     (r) => !r.disabled && r.renderMode !== 'panel' && scriptRunsInPhase(r, { isPrompt: true })
   )
 

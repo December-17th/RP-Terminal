@@ -62,6 +62,8 @@ export interface PresetInventory {
   promptsEnabled: number
   regexScripts: number
   spresetRegex: number
+  /** SPreset ChatSquash features RPT won't run when enabled (issue 16): post-script/parse-clewd/… */
+  unsupportedSpreset: string[]
   tavernHelperScripts: number
   remoteCodeScripts: number
   ejsPrompts: number

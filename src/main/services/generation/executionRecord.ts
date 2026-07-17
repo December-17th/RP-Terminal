@@ -54,7 +54,7 @@ export interface RecordBuilder extends AssemblyJournal {
   /** Record an array→array stage (trim / system→user / role-merge / provider-shape). Only call
    *  when the stage actually ran / changed something — `note` summarizes the effect. */
   arrayStage(
-    stage: 'trim' | 'system-as-user' | 'role-merge' | 'squash' | 'provider-shape',
+    stage: 'trim' | 'system-as-user' | 'role-merge' | 'squash' | 'chat-squash' | 'provider-shape',
     beforeCount: number,
     afterCount: number,
     note: string

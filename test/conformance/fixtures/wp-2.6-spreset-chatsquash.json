@@ -1,0 +1,61 @@
+{
+  "schemaVersion": 1,
+  "scenarioId": "wp-2.6-spreset-chatsquash",
+  "source": "synthesized",
+  "st": { "version": "1.18.0", "commit": "51ad27f", "macroEngine": "new" },
+  "generationType": "normal",
+  "settings": { "chat_completion_source": "custom" },
+  "note": "SYNTHESIZED from docs/research/spreset-behavior-2026-07-17.md §ChatSquash (clean-room; no SPreset source read). Prose is RPT-authored + scrambled; no ST default utility strings. Pins ChatSquash `enabled:true, role:'follow'`: the outgoing array is merged into a single message that ADOPTS the first message's role (system) with consecutive contents joined by '\\n' (spec:1174-1177,1185-1194,1314-1330). This is the preset's OWN role-merge, DISTINCT from RPT's native merge-all and ST's selective system squash (issue 15) — it runs in stage (A) of the provider-shape seam. The corpus's ChatSquash configs are all DISABLED; a DISABLED variant is a no-op (returns the array unchanged) and preserves the discrete messages (pinned by test/spreset.test.ts + test/generation/providerShape.test.ts). ChatSquash's `squashed_post_script` (arbitrary `eval`) is NEVER run — it surfaces as an import diagnostic (ADR 0017), not behavior. Affixes / separators / conditional-tag / stop-strings are pinned by the unit tests. Structural-only until the conformance adapter is wired.",
+  "input": {
+    "description": "Preset with SPreset ChatSquash role=follow; a system prompt then three history turns; whole-array merge into one system message.",
+    "preset": {
+      "name": "Oracle SPreset ChatSquash (scrambled)",
+      "temperature": 1,
+      "openai_max_tokens": 4096,
+      "prompts": [
+        { "identifier": "main", "name": "Main", "role": "system", "content": "You are Vael, keeper of the tide-glass." },
+        { "identifier": "chatHistory", "name": "Chat History", "role": "system", "marker": true }
+      ],
+      "prompt_order": [
+        {
+          "character_id": 100001,
+          "order": [
+            { "identifier": "main", "enabled": true },
+            { "identifier": "chatHistory", "enabled": true }
+          ]
+        }
+      ],
+      "extensions": {
+        "SPreset": {
+          "ChatSquash": { "enabled": true, "role": "follow" }
+        }
+      }
+    },
+    "character": { "name": "Vael", "description": "Vael, keeper of the tide-glass at Sill." },
+    "chatMessages": [
+      { "role": "user", "content": "Is the night skiff back?" },
+      { "role": "assistant", "content": "Not yet — the fog holds it off the shoals." },
+      { "role": "user", "content": "And did Mirren come with it?" }
+    ],
+    "generationType": "normal",
+    "macroEngine": "new",
+    "settings": { "chat_completion_source": "custom" },
+    "tokenBudget": 4096
+  },
+  "invariants": {
+    "roleOrder": ["system"],
+    "messageCount": 1,
+    "mustContain": [
+      "You are Vael, keeper of the tide-glass.\nIs the night skiff back?\nNot yet — the fog holds it off the shoals.\nAnd did Mirren come with it?"
+    ],
+    "mustNotContain": ["[Start a new Chat]"]
+  },
+  "expected": {
+    "chat": [
+      {
+        "role": "system",
+        "content": "You are Vael, keeper of the tide-glass.\nIs the night skiff back?\nNot yet — the fog holds it off the shoals.\nAnd did Mirren come with it?"
+      }
+    ]
+  }
+}

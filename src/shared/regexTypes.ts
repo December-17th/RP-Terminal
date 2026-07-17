@@ -14,6 +14,10 @@ export interface RenderRegexRule extends RegexLikeRule {
   markdownOnly: boolean
   promptOnly: boolean
   renderMode?: CardRenderMode
+  /** Provenance tag kept DISTINCT from core ST regex (issue 16): `'spreset'` = installed from
+   *  `extensions.SPreset.RegexBinding.regexes[]`. Drives execution-record attribution (a distinct
+   *  `spreset-regex` source kind) and keeps the SPreset namespace separate everywhere. Absent = core. */
+  origin?: 'spreset'
 }
 
 /**

@@ -3,9 +3,11 @@ import { resolveYuzuMaxTokens } from '../settingsService'
 import { matchAcross } from '../lorebookService'
 import { getCachedWorldInfo, setCachedWorldInfo } from '../chatService'
 import { buildPrompt, fitToBudget, ChatMessage } from '../promptBuilder'
-import { getPromptRules, getWorldInfoRules } from '../regexService'
+import { getPromptRules, getWorldInfoRules, type RegexTierOrder } from '../regexService'
 import { buildTemplateContext } from '../templateService'
 import { providerShape } from './providerShape'
+import { expandMacros } from '../../../shared/macros'
+import { resolveStopStrings } from '../../../shared/spreset'
 import {
   lastMessageIndex,
   lastUserMessageIndex,
@@ -152,6 +154,13 @@ export const assemblePrompt = (
   const preset = overrides?.preset ?? ctx.preset
   const userAction = overrides?.action ?? ctx.userAction
 
+  // SPreset (issue 16 / WP-2.6) runtime knobs, projected onto the preset at import (`preset.spreset`).
+  // Absent on native / plain-ST presets → every branch below is the pre-SPreset default (parity gate).
+  //  • RegexBinding → preset-first regex tier order (preset ahead of global/character); else st-default.
+  //  • MacroNest:false → a single non-nesting macro pass; true/absent → RPT's default nesting cap.
+  const regexOrder: RegexTierOrder = preset.spreset?.regexBindingEnabled ? 'preset-first' : 'st-default'
+  const macroMaxPasses = preset.spreset?.macroNest === false ? 1 : undefined
+
   // WS4 (D10): fold the capped per-table memory block into the SAME memory tail as the recall / pack
   // block (`memoryBlock` → buildPrompt's tail splice). Computed here (not via a node) so it rides the
   // existing splice for EVERY workflow without consuming the `prompt-assembly` checkpoint's `block`
@@ -184,18 +193,20 @@ export const assemblePrompt = (
     scanDepth,
     maxRecursion,
     matchedEntries,
-    promptRegex: getPromptRules(profileId, {
-      cardId: chat.character_id,
-      chatId,
-      presetId: getActivePresetId(profileId)
-    }),
+    promptRegex: getPromptRules(
+      profileId,
+      { cardId: chat.character_id, chatId, presetId: getActivePresetId(profileId) },
+      regexOrder
+    ),
     // World Info regex (ST placement 5), isPrompt-strict — applied to each activated entry's content
     // in promptBuilder's renderLoreEntry, matching ST's WI builder (world-info.js:5086).
-    worldInfoRegex: getWorldInfoRules(profileId, {
-      cardId: chat.character_id,
-      chatId,
-      presetId: getActivePresetId(profileId)
-    }),
+    worldInfoRegex: getWorldInfoRules(
+      profileId,
+      { cardId: chat.character_id, chatId, presetId: getActivePresetId(profileId) },
+      regexOrder
+    ),
+    // SPreset MacroNest (issue 16): undefined = RPT default nesting; 1 = single non-nesting pass.
+    macroMaxPasses,
     cacheLevel,
     l1Mode,
     frozenVars,
@@ -264,8 +275,20 @@ export const assemblePrompt = (
   // ST selective system-message squash (issue 15 / WP-2.5): opt in ONLY for an imported ST preset that
   // carries `squash_system_messages: true`. A native preset never sets the flag (undefined → merge-all),
   // so its wire output is byte-identical (parity gate). Squash then REPLACES merge-all for that preset.
+  // SPreset ChatSquash (issue 16): the preset's own role-based adjacent-merge, run in stage (A) of the
+  // shaping seam. Affixes are macro-expanded with the same {{user}}/{{char}} the build uses. Absent /
+  // disabled → the pre-SPreset squash/merge branch (parity). `squashed_post_script` eval is NEVER run.
+  const chatSquashConfig = preset.spreset?.chatSquash
+  const chatSquashOpt = chatSquashConfig?.enabled
+    ? {
+        config: chatSquashConfig,
+        expand: (s: string): string =>
+          expandMacros(s, { user: userName, char: card.data.name || 'Character' })
+      }
+    : undefined
   const sendMessages = providerShape(settings, trimmed, record, {
-    squashSystemMessages: preset.squash_system_messages === true
+    squashSystemMessages: preset.squash_system_messages === true,
+    chatSquash: chatSquashOpt
   })
 
   // Agentic mode caps the output ceiling at the FSM mode's limit (e.g. Combat is terse),
@@ -280,7 +303,14 @@ export const assemblePrompt = (
   // REPLACES the preset's ceiling verbatim — the preset max_tokens is a classic-chat concern. Off = the
   // classic value verbatim (parity). Mirrored in contextNodes.contextParams.
   const maxTokens = vnMode ? resolveYuzuMaxTokens(settings) : baseMax
-  const params = { ...preset.parameters, max_tokens: maxTokens }
+  // SPreset ChatSquash stop strings (issue 16, spec:1150-1166): parsed from `stop_string` and forwarded
+  // on the OpenAI-compatible path (params.stop). Empty on native presets → the key is absent (parity).
+  const stopStrings = resolveStopStrings(chatSquashConfig)
+  const params = {
+    ...preset.parameters,
+    max_tokens: maxTokens,
+    ...(stopStrings.length ? { stop: stopStrings } : {})
+  }
 
   log(
     'request',
