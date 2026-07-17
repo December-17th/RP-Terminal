@@ -151,6 +151,10 @@ export function createInlineHost(ctx: CardCtx): Host {
     isCharacterRegexesEnabled: () => true,
     formatRegex: (t) => useRegexStore.getState().apply(t),
     personaName: () => useSettingsStore.getState().settings?.persona?.name || 'User',
+    personaDescription: () => {
+      const p = useSettingsStore.getState().settings?.persona
+      return p?.inject !== false ? p?.description || '' : ''
+    },
     currentChatId: () => ctx.chatId,
     getScriptVars: () => loadScriptVars(),
     getChatVars: () => loadChatVars(),

@@ -243,7 +243,7 @@ describe('buildPrompt', () => {
     expect(penultimate.content).toContain('DRAGON-LORE')
   })
 
-  it('injects the persona at the top and expands {{persona}}/{{user}} macros', () => {
+  it('safety-net injects the persona at the top (no persona_description marker) and expands {{persona}}/{{user}}', () => {
     const messages = buildPrompt({
       card: card(),
       preset: preset([
@@ -255,7 +255,7 @@ describe('buildPrompt', () => {
       floors: [floor(0, '', 'hi')],
       userAction: 'hello',
       userName: 'Lyra',
-      persona: { description: 'a wanderer', inject: true, depth: null }
+      persona: { description: 'a wanderer', inject: true }
     })
     const personaBlock = messages.find((m) => m.content.includes("[Lyra's Persona]"))
     expect(personaBlock).toBeTruthy()
@@ -264,30 +264,36 @@ describe('buildPrompt', () => {
     expect(messages.some((m) => m.content === 'Bio: Lyra is a wanderer')).toBe(true)
   })
 
-  it('can place the persona at a depth instead of the top', () => {
+  it('places the persona at the preset persona_description marker (not the safety-net top)', () => {
     const messages = buildPrompt({
       card: card(),
-      preset: preset([blk('char_description'), blk('chat_history')]),
+      preset: preset([
+        blk('char_description'),
+        blk('persona_description'),
+        blk('chat_history')
+      ]),
       lorebooks: [],
       floors: [floor(0, 'u0', 'a0')],
       userAction: 'go',
       userName: 'Lyra',
-      persona: { description: 'a wanderer', inject: true, depth: 1 }
+      persona: { description: 'a wanderer', inject: true }
     })
+    // Exactly one persona block, positioned at the marker (after char description, before history).
+    const personaIdx = messages.findIndex((m) => m.content.includes("[Lyra's Persona]"))
+    const charIdx = messages.findIndex((m) => m.content.startsWith('Name:')) // char_description block
+    expect(personaIdx).toBeGreaterThan(charIdx)
+    expect(messages.filter((m) => m.content.includes("[Lyra's Persona]"))).toHaveLength(1)
     expect(last(messages).content).toBe('go')
-    expect(
-      messages.some((m) => m.role === 'system' && m.content.includes("[Lyra's Persona]"))
-    ).toBe(true)
   })
 
   it('does not inject the persona when inject is false or description is blank', () => {
     const messages = buildPrompt({
       card: card(),
-      preset: preset([blk('char_description'), blk('chat_history')]),
+      preset: preset([blk('char_description'), blk('persona_description'), blk('chat_history')]),
       lorebooks: [],
       floors: [],
       userAction: 'go',
-      persona: { description: 'hidden', inject: false, depth: null }
+      persona: { description: 'hidden', inject: false }
     })
     expect(messages.some((m) => m.content.includes('Persona'))).toBe(false)
   })

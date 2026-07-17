@@ -41,6 +41,7 @@ export function createNullHost(ctx?: CardCtx): Host {
     floors: () => [],
     currentChatId: () => '',
     personaName: () => 'User',
+    personaDescription: () => '',
     setChatMessages: async () => true,
     deleteChatMessages: async () => true,
     createChat: async () => '',

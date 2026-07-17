@@ -131,9 +131,8 @@ export const mergeConsecutiveRoles = (messages: ChatMessage[]): ChatMessage[] =>
 
 export interface PersonaArgs {
   description: string
+  /** Whether to inject the description (IN_PROMPT). false = ST's "None" position. */
   inject: boolean
-  /** null = inject at the top (before history); a number = depth from the bottom. */
-  depth: number | null
 }
 
 export interface BuildPromptArgs {
@@ -516,6 +515,7 @@ export const buildPrompt = (args: BuildPromptArgs): ChatMessage[] => {
   const presetDepthItems: DepthItem[] = []
   let historyEmitted = false
   let worldInfoEmitted = false
+  let personaEmitted = false
 
   for (const block of preset.prompts) {
     if (block.enabled === false) continue
@@ -533,6 +533,15 @@ export const buildPrompt = (args: BuildPromptArgs): ChatMessage[] => {
       case 'world_info': {
         if (worldInfo) messages.push({ role: block.role, content: `World Info:\n${worldInfo}` })
         worldInfoEmitted = true
+        break
+      }
+      case 'persona_description': {
+        // ST personaDescription / IN_PROMPT: the user persona description placed at the preset's
+        // ordered position. Emitted only when inject is on and there's content to show.
+        if (personaContent) {
+          messages.push({ role: block.role, content: `[${userName}'s Persona]\n${personaContent}` })
+        }
+        personaEmitted = true
         break
       }
       case 'chat_history': {
@@ -588,17 +597,17 @@ export const buildPrompt = (args: BuildPromptArgs): ChatMessage[] => {
     insertBeforeConvo(messages, { role: 'system', content: modeAddendum })
   }
 
-  // Persona description at the top: a stable, cache-friendly system block placed
-  // just before the conversation begins.
-  if (personaContent && args.persona?.depth == null) {
+  // Safety net: a preset without a persona_description marker (the common case for ST presets
+  // that don't manage the persona entry) still gets the persona block, placed just before the
+  // conversation begins — a stable, cache-friendly system block.
+  if (personaContent && !personaEmitted) {
     insertBeforeConvo(messages, {
       role: 'system',
       content: `[${userName}'s Persona]\n${personaContent}`
     })
   }
 
-  // Depth-positioned injections: lorebook entries with a numeric depth, plus the
-  // persona block if it was given a depth instead of top placement.
+  // Depth-positioned injections: lorebook entries with a numeric depth.
   const byDepth = new Map<number, string[]>()
   for (const e of depthEntries) {
     const c = renderLoreEntry(e) // named+sourced diagnostic on error/empty (same as top-level World Info)
@@ -611,12 +620,6 @@ export const buildPrompt = (args: BuildPromptArgs): ChatMessage[] => {
     depth,
     content: `World Info:\n${contents.join('\n\n')}`
   }))
-  if (personaContent && args.persona?.depth != null) {
-    depthItems.push({
-      depth: args.persona.depth,
-      content: `[${userName}'s Persona]\n${personaContent}`
-    })
-  }
   // Depth-tagged preset prompt blocks (keep their authored role).
   depthItems.push(...presetDepthItems)
   if (depthItems.length) {

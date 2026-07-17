@@ -76,6 +76,7 @@ export const WCV_CHANNEL_SPEC: Record<WcvSpecMember, ChannelSpec> = {
   floors: { channel: 'wcv-host-get-floors-sync', kind: 'sync', fallback: [] },
   currentChatId: { channel: 'wcv-host-get-chat-id-sync', kind: 'sync', fallback: '' },
   personaName: { channel: 'wcv-host-get-persona-name', kind: 'sync', fallback: 'User' },
+  personaDescription: { channel: 'wcv-host-get-persona-description', kind: 'sync', fallback: '' },
   setChatMessages: { channel: 'wcv-host-set-chat-messages', kind: 'invoke' },
   deleteChatMessages: { channel: 'wcv-host-delete-chat-messages', kind: 'invoke' },
   saveChat: { channel: 'wcv-host-save-chat', kind: 'invoke' },

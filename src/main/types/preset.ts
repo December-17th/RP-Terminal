@@ -26,6 +26,7 @@ export const PromptMarker = z.enum([
   'char_description', // name/description/personality/scenario
   'mes_example', // example dialogue
   'world_info', // lorebook injections
+  'persona_description', // user persona description (ST personaDescription / IN_PROMPT)
   'chat_history', // the running conversation
   'post_history' // post_history_instructions (jailbreak / final reminder)
 ])
