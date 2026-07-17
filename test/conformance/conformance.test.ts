@@ -87,7 +87,7 @@ describe('oracle conformance scenarios', () => {
       })
 
       it('matches RPT assembly when the adapter is wired', () => {
-        const produced = assembleForFixture(fixture)
+        const produced = assembleForFixture(fixture.input)
         if (produced == null) {
           // Adapter unwired (Phase-2 issues 11-15). Structural-only for now.
           expect(fixture.expected.chat.length).toBeGreaterThan(0)

@@ -30,12 +30,26 @@ by the repo's `test/**/*.test.ts` include).
   "st": { "version": "1.18.0", "commit": "51ad27f", "macroEngine": "new" },
   "generationType": "normal",
   "settings": { /* prose-free ST knobs that drove assembly */ },
+  "input": {
+    /* REQUIRED machine-readable feed that PRODUCED expected.chat, so rptAdapter can
+       re-drive RPT assembly (Phase-2 issues 11-15). */
+    "preset": { /* inline preset, or */ }, "presetName": "…",
+    "character": { /* card fields ST reads */ },
+    "chatMessages": [ { "role": "user", "content": "…" } ],
+    "generationType": "normal", "macroEngine": "new",
+    "settings": { /* override knobs */ },
+    "worldInfo": [ { "position": "before_char", "content": "…" } ], // oracle SUPPLIES these
+    "tokenBudget": 4096
+  },
   "invariants": { /* optional: roleOrder, messageCount, mustContain, mustNotContain */ },
   "expected": { "chat": [ { "role": "system", "content": "…" }, … ] }
 }
 ```
 
 `expected.chat` is ST's **post-extension** mutable chat array (the golden prompt).
+`input` is the machine-readable feed that produced it — under assembly-only parity
+(ADR 0016) the pre-activated `worldInfo[]` and fixed `tokenBudget` are INPUTS the
+oracle supplies, not values RPT recomputes.
 
 ## Adding a captured fixture
 

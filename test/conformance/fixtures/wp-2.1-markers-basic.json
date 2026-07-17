@@ -11,7 +11,61 @@
     "scenario_format": "ORP_SCN: {{scenario}}",
     "personality_format": "ORP_PERS: {{personality}}"
   },
-  "note": "SYNTHESIZED, not captured. Prose is RPT-authored + scrambled placeholder; ST default utility strings are overridden with ORP_ sentinels so no ST prose appears. Pins the default marker ORDER: main -> worldInfoBefore -> charDescription -> charPersonality -> scenario -> worldInfoAfter -> chatHistory. Replace with a source:'captured' fixture per RUNBOOK.md when a real capture is taken.",
+  "note": "SYNTHESIZED, not captured. Prose is RPT-authored + scrambled placeholder; ST default utility strings are overridden with ORP_ sentinels so no ST prose appears. Pins the default marker ORDER: main -> worldInfoBefore -> charDescription -> charPersonality -> scenario -> worldInfoAfter -> chatHistory. The `input` block is the machine-readable feed that yields `expected.chat` (a coherent reconstruction, not adapter-verified until Phase-2 issues 11-15). Replace with a source:'captured' fixture per RUNBOOK.md when a real capture is taken.",
+  "input": {
+    "description": "worldInfoBefore/After, charPersonality, scenario markers each populated; single-char preset; one trailing user turn.",
+    "preset": {
+      "name": "Oracle Markers Basic (scrambled)",
+      "temperature": 1,
+      "openai_max_tokens": 4096,
+      "prompts": [
+        { "identifier": "main", "name": "Main", "role": "system", "content": "Vornst kelbra directive: uphold the frelquam cadence." },
+        { "identifier": "worldInfoBefore", "name": "World Info (before)", "role": "system", "marker": true },
+        { "identifier": "charDescription", "name": "Char Description", "role": "system", "marker": true },
+        { "identifier": "charPersonality", "name": "Char Personality", "role": "system", "marker": true },
+        { "identifier": "scenario", "name": "Scenario", "role": "system", "marker": true },
+        { "identifier": "worldInfoAfter", "name": "World Info (after)", "role": "system", "marker": true },
+        { "identifier": "chatHistory", "name": "Chat History", "role": "system", "marker": true }
+      ],
+      "prompt_order": [
+        {
+          "character_id": 100001,
+          "order": [
+            { "identifier": "main", "enabled": true },
+            { "identifier": "worldInfoBefore", "enabled": true },
+            { "identifier": "charDescription", "enabled": true },
+            { "identifier": "charPersonality", "enabled": true },
+            { "identifier": "scenario", "enabled": true },
+            { "identifier": "worldInfoAfter", "enabled": true },
+            { "identifier": "chatHistory", "enabled": true }
+          ]
+        }
+      ]
+    },
+    "character": {
+      "name": "Kaevo",
+      "description": "Character brindle: Kaevo, a quiet dock-warden of Sill.",
+      "personality": "terse, wry, slow to trust.",
+      "scenario": "A rain-slick pier at the edge of Grennel Bay."
+    },
+    "chatMessages": [
+      { "role": "user", "content": "Kaevo, did the night skiff ever come back?" }
+    ],
+    "generationType": "normal",
+    "macroEngine": "new",
+    "settings": {
+      "chat_completion_source": "custom",
+      "squash_system_messages": false,
+      "wi_format": "ORP_WI:\n{0}",
+      "scenario_format": "ORP_SCN: {{scenario}}",
+      "personality_format": "ORP_PERS: {{personality}}"
+    },
+    "worldInfo": [
+      { "position": "before_char", "order": 100, "content": "Before-lore: the Zell markets close at dusk-tide." },
+      { "position": "after_char", "order": 100, "content": "After-lore: tide-bells ring thrice for a missing skiff." }
+    ],
+    "tokenBudget": 4096
+  },
   "invariants": {
     "roleOrder": ["system", "system", "system", "system", "system", "system", "user"],
     "messageCount": 7,

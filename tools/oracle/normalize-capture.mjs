@@ -29,6 +29,23 @@ if (!inPath || !scenarioId || !outPath) {
 const raw = JSON.parse(fs.readFileSync(inPath, 'utf8'))
 const body = raw.body || raw // tolerate both wrapped and bare snapshots
 
+// Machine-readable INPUT (what was fed). The extension captures what it can observe from the
+// public context (chat messages, preset name, token budget); fields it cannot see — the
+// pre-activated World Info entries and any inline preset/character override — the operator
+// fills in by hand after normalization (RUNBOOK step 5). Never invented here.
+const capturedInput = body.input || {}
+const input = {
+  presetName: capturedInput.presetName ?? null,
+  chatMessages: Array.isArray(capturedInput.chatMessages)
+    ? capturedInput.chatMessages.map((m) => ({ role: m.role, content: m.content }))
+    : [],
+  generationType: capturedInput.generationType || (body.dryRun ? 'dry-run' : 'normal'),
+  macroEngine: capturedInput.macroEngine || 'new',
+  settings: body.settings || {},
+  worldInfo: Array.isArray(capturedInput.worldInfo) ? capturedInput.worldInfo : [],
+  tokenBudget: typeof capturedInput.tokenBudget === 'number' ? capturedInput.tokenBudget : null
+}
+
 const fixture = {
   schemaVersion: 1,
   scenarioId,
@@ -39,8 +56,9 @@ const fixture = {
     macroEngine: 'new'
   },
   capturedAt: body.capturedAt || raw.receivedAt || new Date().toISOString(),
-  generationType: body.dryRun ? 'dry-run' : 'normal',
+  generationType: input.generationType,
   settings: body.settings || {},
+  input,
   expected: {
     chat:
       body.promptReady && Array.isArray(body.promptReady.chat)

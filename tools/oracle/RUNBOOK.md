@@ -70,9 +70,11 @@ DevTools console and check for `[rpt-oracle] armed`.
 
 For each row in `scenarios.md` / `scenarios.json`:
 
-1. In DevTools console tag the scenario:
+1. In DevTools console tag the scenario **and** its generation type (the type is not
+   observable from the prompt-ready event, so tag it explicitly; default is `normal`):
    ```js
    rptOracleScenario('wp-2.1-markers-basic')
+   rptOracleGenType('normal')   // or 'continue' / 'impersonation' / 'group'
    ```
 2. Set up the scenario's inputs (preset prompts, character card fields, injections,
    regex scripts, generation type) per the `inputs` note. Use only scrambled,
@@ -80,7 +82,11 @@ For each row in `scenarios.md` / `scenarios.json`:
 3. Trigger the matching generation (send / continue / impersonate / group reply).
    The stub reply returns instantly.
 4. A file `…__capture.json` (extension snapshot) and a `…__wire-request.json`
-   (exact wire body) land in `tools/oracle/captures/`.
+   (exact wire body) land in `tools/oracle/captures/`. The `…__capture.json`
+   carries both the assembled output (`promptReady.chat`) **and** the machine-readable
+   `input` block the extension could observe (chat messages, active preset name, token
+   budget). Fields the extension cannot see — the **pre-activated World Info entries**
+   and any inline preset/character override — you record by hand in step 6.
 
 ## 6. Freeze fixtures
 
@@ -90,7 +96,9 @@ For each capture, normalize it into the fixture schema
 `promptReady.chat` array is the golden prompt. Re-run `npm run test`: the scenario
 moves from *skipped (fixture absent)* to *asserted*.
 
-The `tools/oracle/normalize-capture.mjs` helper does the mechanical part:
+The `tools/oracle/normalize-capture.mjs` helper does the mechanical part — it copies
+the observed `input` (chat messages, preset name, token budget, generation type)
+straight through and leaves `worldInfo: []` for you to fill:
 
 ```sh
 node tools/oracle/normalize-capture.mjs \
@@ -98,6 +106,19 @@ node tools/oracle/normalize-capture.mjs \
   --scenario wp-2.1-markers-basic \
   --out test/conformance/fixtures/wp-2.1-markers-basic.json
 ```
+
+Then hand-complete the fixture's `input` block (the schema **requires** it; the
+runner's `validateFixture` fails without `input.chatMessages` / `generationType` /
+`macroEngine`):
+
+- **`input.worldInfo[]`** — the pre-activated World Info entries you fed, in ST
+  activation order, each `{ position, depth?, order?, role?, content }`. Under
+  assembly-only parity (ADR 0016) WI *selection* is an INPUT the oracle supplies, so
+  record exactly what was active — do not expect RPT to recompute it.
+- **`input.preset`** / **`input.character`** — add the inline preset and character
+  card you set up, when the scenario is self-contained rather than referencing a
+  named preset. Use only scrambled, RPT-authored prose.
+- **`input.tokenBudget`** — confirm the fixed budget the assembly ran under.
 
 ## 7. Clean up
 

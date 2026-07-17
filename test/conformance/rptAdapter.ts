@@ -6,21 +6,23 @@
 // null-adapter scenarios as "structural-only" (it validates the fixture and its
 // declared invariants, but does not yet diff against RPT output).
 //
-// When wiring lands, replace the body with a call into the RPT assembly path,
-// returning the produced chat array for the given fixture's inputs. Keep the
-// signature stable so the runner needs no change.
+// It already takes the fixture's machine-readable `input` (FixtureInput) — the
+// preset, character card, chat messages, generation type, pre-activated World Info,
+// and token budget the oracle fed ST. When wiring lands, replace the body with a
+// call into the RPT assembly path over exactly that input, returning the produced
+// chat array. The signature stays stable so the runner needs no change.
 
-import type { Fixture, FixtureMessage } from './fixtureSchema'
+import type { FixtureInput, FixtureMessage } from './fixtureSchema'
 
 export interface RptAssemblyResult {
   chat: FixtureMessage[]
 }
 
 /**
- * Produce RPT's assembled prompt for the scenario a fixture describes.
+ * Produce RPT's assembled prompt from a fixture's machine-readable input.
  * Returns null while unwired (Phase-2 issues 11-15 wire this in).
  */
-export function assembleForFixture(_fixture: Fixture): RptAssemblyResult | null {
+export function assembleForFixture(_input: FixtureInput): RptAssemblyResult | null {
   // Not yet wired — see module header. Deliberately null so the harness reports
   // these scenarios as structural-only rather than green-by-accident.
   return null
