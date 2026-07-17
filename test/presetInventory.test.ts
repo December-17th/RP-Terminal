@@ -9,6 +9,7 @@ import {
   getActivePresetId,
   deletePreset
 } from '../src/main/services/presetService'
+import { parseStPreset } from '../src/main/parsers/stPresetParser'
 import { hasRemoteCodeLoad } from '../src/main/services/scriptService'
 import * as regexService from '../src/main/services/regexService'
 import * as scriptService from '../src/main/services/scriptService'
@@ -115,6 +116,53 @@ describe('computePresetInventory (pure)', () => {
     expect(empty.regexScripts).toBe(0)
     expect(empty.spresetRegex).toBe(0)
     expect(empty.unknownExtensions).toEqual([])
+  })
+
+  it('resolves enablement from the 100001 order list, NOT a union across all lists', () => {
+    // Two prompt_order lists disagree. The per-character list (character_id 1) comes FIRST and
+    // enables everything; the dummy-character list (100001, the one ST's Prompt Manager and our
+    // parser actually resolve against) comes second and disables b + c. A first-seen union would
+    // take the leading list and report 3 enabled — the bug this pins. The correct answer follows
+    // the 100001 list: only `a` enabled. Orphans, too, come from the selected list alone.
+    const dualList = {
+      name: 'Dual Order',
+      prompts: [
+        { identifier: 'a', name: 'A', role: 'system', content: 'alpha' },
+        { identifier: 'b', name: 'B', role: 'system', content: 'beta' },
+        { identifier: 'c', name: 'C', role: 'system', content: 'gamma' }
+      ],
+      prompt_order: [
+        {
+          character_id: 1,
+          order: [
+            { identifier: 'a', enabled: true },
+            { identifier: 'b', enabled: true },
+            { identifier: 'c', enabled: true },
+            { identifier: 'ghost_percharacter', enabled: true } // orphan only in the NON-selected list
+          ]
+        },
+        {
+          character_id: 100001,
+          order: [
+            { identifier: 'a', enabled: true },
+            { identifier: 'b', enabled: false },
+            { identifier: 'c', enabled: false },
+            { identifier: 'ghost_global', enabled: true } // orphan in the SELECTED list
+          ]
+        }
+      ]
+    }
+
+    const inv = computePresetInventory(dualList)
+    expect(inv.prompts).toBe(3)
+    expect(inv.promptsEnabled).toBe(1) // 100001 list: only `a`; the union would wrongly say 3
+    expect(inv.orphanIdentifiers).toEqual(['ghost_global']) // selected list only
+
+    // Cross-check against the parser: the inventory's enabled count must equal the number of
+    // enabled prompts the parser actually assembles from the same selected list.
+    const assembled = parseStPreset(dualList, 'Dual Order')
+    const assembledEnabled = assembled.prompts.filter((p: any) => p.enabled).length
+    expect(inv.promptsEnabled).toBe(assembledEnabled)
   })
 })
 

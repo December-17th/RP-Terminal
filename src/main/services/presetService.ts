@@ -10,7 +10,7 @@ import {
 } from './storageService'
 import { log } from './logService'
 import { Preset, PresetSchema, PresetEnvelope, getDefaultPreset } from '../types/preset'
-import { parseStPreset } from '../parsers/stPresetParser'
+import { parseStPreset, selectPromptOrder } from '../parsers/stPresetParser'
 import * as regexService from './regexService'
 import * as scriptService from './scriptService'
 
@@ -84,17 +84,14 @@ export const computePresetInventory = (parsed: any): PresetInventory => {
   const prompts: any[] = Array.isArray(root?.prompts) ? root.prompts : []
   const ext = root?.extensions && typeof root.extensions === 'object' ? root.extensions : {}
 
-  // Enabled state lives in prompt_order entries, not on the prompt object — collect the union
-  // of order ids (first-seen enabled wins) so we can resolve enablement and spot dangling refs.
+  // Enabled state lives in prompt_order entries, not on the prompt object. Resolve it from the
+  // SAME single order list the parser assembles from (`selectPromptOrder` — the 100001 record,
+  // NOT a union across every list), so the inventory's enabled/orphan counts match what actually
+  // gets built. A union over all lists over-reports enablement on dual-order-list presets.
   const orderEnabled = new Map<string, boolean>()
-  if (Array.isArray(root?.prompt_order)) {
-    for (const block of root.prompt_order) {
-      if (!block || !Array.isArray(block.order)) continue
-      for (const e of block.order) {
-        if (!e || typeof e.identifier !== 'string') continue
-        if (!orderEnabled.has(e.identifier)) orderEnabled.set(e.identifier, e.enabled !== false)
-      }
-    }
+  for (const e of selectPromptOrder(root) ?? []) {
+    if (!e || typeof e.identifier !== 'string') continue
+    if (!orderEnabled.has(e.identifier)) orderEnabled.set(e.identifier, e.enabled !== false)
   }
 
   const seen = new Set<string>()
