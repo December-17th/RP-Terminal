@@ -68,7 +68,8 @@ describe('ExecutionRecord — behavior neutrality (the journal never changes the
     const baseline = buildPrompt(richArgs())
     const withJournal = buildPrompt(richArgs(createRecordBuilder()))
     // The whole point of issue 07: journaling is additive. Serialize both to prove the wire is
-    // identical down to the byte (non-enumerable HISTORY_TAG is skipped by JSON, as intended).
+    // identical down to the byte (the history classification is external DATA — issue 18d — so it
+    // never appears on the message, and buildPrompt's array is unchanged either way).
     expect(JSON.stringify(withJournal)).toBe(JSON.stringify(baseline))
   })
 

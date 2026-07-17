@@ -2,7 +2,7 @@ import { getActivePresetId } from '../presetService'
 import { resolveYuzuMaxTokens } from '../settingsService'
 import { matchAcross } from '../lorebookService'
 import { getCachedWorldInfo, setCachedWorldInfo } from '../chatService'
-import { buildPrompt, fitToBudget, ChatMessage } from '../promptBuilder'
+import { buildPromptDetailed, fitToBudget, ChatMessage, BudgetClass } from '../promptBuilder'
 import { getPromptRules, getWorldInfoRules, type RegexTierOrder } from '../regexService'
 import { buildTemplateContext } from '../templateService'
 import { providerShape } from './providerShape'
@@ -119,7 +119,15 @@ export const assemblePrompt = (
   matchedEntries: LorebookEntry[],
   memoryBlock: string,
   overrides?: AssembleOverrides
-): { sendMessages: ChatMessage[]; params: PresetParameters; record: ExecutionRecord } => {
+): {
+  sendMessages: ChatMessage[]
+  params: PresetParameters
+  record: ExecutionRecord
+  /** Issue 18c: the PRE-shape, post-trim message list + its explicit budget policy — the assembler's
+   *  authored inputs, handed to `assembledArtifact` so the `Prompt` artifact's contributions carry
+   *  `budgetClass` (history/pinned). Not consumed by the legacy `sendMessages`/`params` callers. */
+  authored: { messages: ChatMessage[]; budgetClasses: BudgetClass[] }
+} => {
   // Forensic Execution Record (issue 07 / WP-1.1). ADDITIVE + behavior-neutral: the builder
   // journals every controlled transform and is returned alongside the UNCHANGED sendMessages;
   // callers may ignore it. `t0` bounds the added assembly time reported as `record.stats.buildMs`.
@@ -173,7 +181,7 @@ export const assemblePrompt = (
   const vnOverlay = vnMode ? buildVnOverlay(profileId, lorebookIds) : ''
   const memoryTail = [memoryBlock, tablesBlock, vnOverlay].filter((s) => s && s.trim()).join('\n\n')
 
-  const built = buildPrompt({
+  const { messages: built, budgetClasses } = buildPromptDetailed({
     card,
     preset,
     lorebooks,
@@ -255,9 +263,16 @@ export const assemblePrompt = (
     })
   })
 
-  // Trim oldest history to stay under the configured context budget.
+  // Trim oldest history to stay under the configured context budget. The explicit `budgetClasses`
+  // policy (issue 18c/18d — history vs pinned, per message) drives the history-aware drop, replacing
+  // the retired non-enumerable HISTORY_TAG; `trimmedClasses` stays aligned with `trimmed` and rides
+  // onto the artifact's contributions as `budgetClass`.
   const budget = settings.generation?.max_context_tokens || 200000
-  const { messages: trimmed, dropped } = fitToBudget(built, budget)
+  const { messages: trimmed, dropped, budgetClasses: trimmedClasses } = fitToBudget(
+    built,
+    budget,
+    budgetClasses
+  )
   if (dropped > 0) {
     log('info', `context budget ${budget} tok — trimmed ${dropped} oldest message(s)`)
     record.arrayStage(
@@ -318,5 +333,11 @@ export const assemblePrompt = (
     sendMessages
   )
 
-  return { sendMessages, params, record: record.finish(sendMessages, Date.now() - t0) }
+  return {
+    sendMessages,
+    params,
+    record: record.finish(sendMessages, Date.now() - t0),
+    // Pre-shape authored inputs + budget policy for the `Prompt` artifact's contributions (issue 18c).
+    authored: { messages: trimmed, budgetClasses: trimmedClasses ?? budgetClasses }
+  }
 }

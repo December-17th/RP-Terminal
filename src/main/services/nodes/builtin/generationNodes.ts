@@ -10,8 +10,14 @@ import { ChatMessage } from '../../promptBuilder'
 import { LorebookEntry } from '../../../types/character'
 import { PresetParameters } from '../../../types/preset'
 import { FloorMetrics } from '../../../../shared/usageTypes'
+import { providerShape } from '../../generation/providerShape'
 import { NodeImpl, NodeRunFailure, RunContext } from '../types'
-import { assembledArtifact, resolveSendMessages, resolveParams } from '../promptArtifact'
+import {
+  assembledArtifact,
+  resolveSendMessages,
+  resolveParams,
+  resolveDispatchMessages
+} from '../promptArtifact'
 
 /**
  * Pre-model built-in nodes (Phase 2b-1b task 2): thin `run()` delegations to the 2b-1a
@@ -94,7 +100,7 @@ export const promptAssemble: NodeImpl = {
     const gen = inputs.gen as GenContext
     const matched = matchWorldInfo(gen)
     const extra = Array.isArray(inputs.entries) ? (inputs.entries as LorebookEntry[]) : []
-    const { sendMessages, params, record } = assemblePrompt(
+    const { sendMessages, params, record, authored } = assemblePrompt(
       gen,
       extra.length ? [...matched, ...extra] : matched,
       inputs.block as string
@@ -104,8 +110,14 @@ export const promptAssemble: NodeImpl = {
     // standalone port, so unwired graphs and the parity gate are unaffected. Guard because
     // assemblePrompt is mocked without a record in unit tests.
     if (record) gen.executionRecord = record
+    // `authored` (issue 18c) carries the pre-shape messages + budget policy so the artifact's
+    // contributions get `budgetClass`; absent (mocked assemble) → contributions derive from the wire.
     return {
-      outputs: { sendMessages, params, prompt: assembledArtifact(sendMessages, params, record) }
+      outputs: {
+        sendMessages,
+        params,
+        prompt: assembledArtifact(sendMessages, params, record, authored)
+      }
     }
   }
 }
@@ -245,10 +257,18 @@ export const llmSample: NodeImpl = {
   configSchema: llmCallConfigSchema,
   run: async (ctx, inputs, node) => {
     const cfg = (node?.config ?? {}) as LlmCallConfig
+    const gen = inputs.gen as GenContext
+    // 18e SEAM 2 — the pre-dispatch transformation seam: resolve the messages to send AND provider-
+    // shape them exactly once here (the single dispatch boundary). A legacy `sendMessages` array or an
+    // already-shaped artifact passes through unchanged (byte-identical for seeded docs); only an
+    // UNSHAPED Prompt artifact is shaped, via providerShape bound to this turn's settings.
+    const sendMessages = resolveDispatchMessages(inputs.sendMessages, inputs.prompt, (m) =>
+      providerShape(gen.settings, m)
+    ) as ChatMessage[]
     const r = await runLlmCall(
       ctx,
-      inputs.gen as GenContext,
-      resolveSendMessages(inputs.sendMessages, inputs.prompt) as ChatMessage[],
+      gen,
+      sendMessages,
       resolveParams(inputs.params, inputs.prompt) as PresetParameters,
       cfg
     )

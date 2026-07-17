@@ -1,6 +1,11 @@
-import { ChatMessage } from '../promptBuilder'
+import { ChatMessage, BudgetClass } from '../promptBuilder'
 import { PresetParameters } from '../../types/preset'
-import { ExecutionRecord, RecordRole, RecordSource } from '../../../shared/executionRecord'
+import {
+  ExecutionRecord,
+  RecordEntry,
+  RecordRole,
+  RecordSource
+} from '../../../shared/executionRecord'
 
 /**
  * The `Prompt` port's value model (issue 18a / PLAN.md Phase 3 / decision 11): the assembly
@@ -19,14 +24,24 @@ import { ExecutionRecord, RecordRole, RecordSource } from '../../../shared/execu
  * provenance vocabulary (`RecordSource` / `RecordRole`) so a contribution and the record it later
  * appears in speak the same identity language.
  *
- * SEAMS for the follow-up (18c/18d/18e), left clean here:
- *  · 18c (trim/budget policy) fills `PromptContribution.budgetClass` and trims against it, recording
- *    omissions on the artifact/record instead of the current `messages.trim` Messages-lane drop.
- *  · 18d (HISTORY_TAG retirement) lets the assembled artifact carry its history span as tagged
- *    contributions rather than the non-enumerable `HISTORY_TAG` marker on the message array.
- *  · 18e (public seams) reads `shaped` at the model-dispatch seam to shape exactly once — new
- *    workflows should NOT provider-shape before dispatch, so a pre-dispatch artifact stays
- *    `shaped: false` and the seam shapes it there.
+ * THE TWO PUBLIC CUSTOMIZATION SEAMS (issue 18e / PLAN.md Phase 3 — "exactly two", no per-phase
+ * checkpoint; internal assembly phases stay private, PLAN decision 5):
+ *  1. CONTRIBUTION-before-assembly — the existing `prompt-assembly` checkpoint
+ *     (`shared/workflow/attachments.ts`): a fragment/pack/agent rejoins authored inputs (the `entries`
+ *     and `block` lanes into `prompt.assemble`) BEFORE structural assembly runs. That is the sole
+ *     pre-assembly authoring seam; this module does not add a second one.
+ *  2. TRANSFORMATION-before-dispatch — `resolveDispatchMessages` below, invoked at `llm.sample`, the
+ *     single provider-dispatch boundary. It reads the artifact's `shaped` flag so a Prompt-native
+ *     workflow that authored contributions but did NOT provider-shape gets shaped EXACTLY ONCE here,
+ *     while an already-shaped artifact (or a legacy `sendMessages` array) passes through untouched. A
+ *     capability-gated transform (Tier-4 TavernHelper, issue 19) attaches at this same seam.
+ *
+ * Realized here across 18c/18d/18e:
+ *  · 18c fills `PromptContribution.budgetClass` (from the assembler's explicit budget policy) and lets
+ *    `messages.trim` honor it + record budget omissions on the record.
+ *  · 18d carries the history span as `budgetClass:'history'` contributions instead of the retired
+ *    non-enumerable `HISTORY_TAG` marker.
+ *  · 18e reads `shaped` at the dispatch seam to shape exactly once (never double-shape).
  */
 
 /** Discriminator stamped on every artifact so a runtime port value (typed `unknown` by the engine)
@@ -49,9 +64,12 @@ export interface PromptContribution {
   /** True when a legacy adapter synthesized this contribution by wrapping a bare `ChatMessage[]`
    *  (a `Messages` producer) rather than authoring it as a first-class contribution. */
   synthetic?: boolean
-  /** 18c hook (trim/budget policy): whether this contribution may be dropped under token pressure.
-   *  Unset today — 18c assigns and honors it. */
-  budgetClass?: 'pinned' | 'trimmable'
+  /** 18c/18d trim policy: `history` = a chat-history turn (droppable oldest-first under token
+   *  pressure — the explicit-data successor to the retired HISTORY_TAG); `pinned` = static content
+   *  never dropped. Unset on a synthetic wrapped-`Messages` contribution (no assembly policy) — such
+   *  a list trims on `fitToBudget`'s legacy fallback. `messages.trim` honors it (see
+   *  `artifactBudgetClasses`). */
+  budgetClass?: BudgetClass
 }
 
 /**
@@ -88,23 +106,33 @@ export const isPromptArtifact = (v: unknown): v is PromptArtifact =>
 
 /**
  * Producer adapter — a FULLY ASSEMBLED prompt (`prompt.assemble` / `prompt.preset`) → `PromptArtifact`.
- * The messages are already provider-shaped, so each becomes a (non-synthetic) contribution and the
- * forensic record + sampler params ride along. `record` is omitted when absent (the unit-test path
- * that mocks `assemblePrompt` without one) so two assembled artifacts with the same inputs stay
- * deeply equal.
+ * The messages are already provider-shaped, so `shaped: true` and the forensic record + sampler params
+ * ride along. `record` is omitted when absent (the unit-test path that mocks `assemblePrompt` without
+ * one) so two assembled artifacts with the same inputs stay deeply equal.
+ *
+ * `authored` (issue 18c) carries the PRE-shape, post-trim message list + its explicit budget policy —
+ * the assembler's authored inputs. When present, the contributions are built from THAT (each tagged
+ * with its `budgetClass`, so `history`/`pinned` provenance survives onto the artifact); when absent
+ * (the mocked-assemble test path), contributions fall back to a 1:1 map of the wire messages, exactly
+ * as before. Either way `messages` stays the provider-shaped wire — the behavior-neutral output.
  */
 export const assembledArtifact = (
   messages: ChatMessage[],
   params: PresetParameters,
-  record?: ExecutionRecord
+  record?: ExecutionRecord,
+  authored?: { messages: ChatMessage[]; budgetClasses?: BudgetClass[] }
 ): PromptArtifact => ({
   kind: PROMPT_ARTIFACT_KIND,
-  contributions: messages.map((m, i) => ({
-    source: ASSEMBLED_SOURCE,
-    role: m.role,
-    content: m.content,
-    order: i
-  })),
+  contributions: (authored?.messages ?? messages).map((m, i) => {
+    const budgetClass = authored?.budgetClasses?.[i]
+    return {
+      source: ASSEMBLED_SOURCE,
+      role: m.role,
+      content: m.content,
+      order: i,
+      ...(budgetClass ? { budgetClass } : {})
+    }
+  }),
   messages,
   params,
   ...(record ? { record } : {}),
@@ -159,3 +187,62 @@ export const resolveSendMessages = (legacy: unknown, prompt: unknown): ChatMessa
  *  else the `Prompt` artifact's params. Undefined when neither is wired (pre-migration value). */
 export const resolveParams = (legacy: unknown, prompt: unknown): PresetParameters | undefined =>
   (legacy as PresetParameters | undefined) ?? artifactParams(prompt)
+
+/**
+ * 18c — the explicit per-message budget policy an artifact carries for `messages.trim`, but ONLY when
+ * its contributions align 1:1 with `messages` AND every one declares a `budgetClass`. That holds for a
+ * Prompt-native artifact whose authored contributions ARE the message list; it does NOT hold for a
+ * fully-assembled artifact (its contributions are the PRE-shape authored inputs, so they differ in
+ * length/order from the post-shape wire) nor for a synthetic wrapped-`Messages` artifact (no
+ * `budgetClass`). In those cases → `undefined`, and the caller falls back to `fitToBudget`'s legacy
+ * position-based trim on the wire — the pre-18c behavior. */
+export const artifactBudgetClasses = (a: PromptArtifact): BudgetClass[] | undefined => {
+  if (a.contributions.length !== a.messages.length) return undefined
+  const classes = a.contributions.map((c) => c.budgetClass)
+  return classes.every((c): c is BudgetClass => c != null) ? (classes as BudgetClass[]) : undefined
+}
+
+/**
+ * 18c — apply a trim to a Prompt artifact: swap in the trimmed `messages` and, reusing the record's
+ * budget-omission concept (issue 07/08 — a `trim` stage entry the preview reader surfaces as
+ * omitted-by-budget), append one `trim` entry to the execution record. PURE: returns a NEW artifact
+ * (fresh record with the entry appended), never mutating the input. No record present → just the
+ * message swap. `note` is the human summary (e.g. "budget 8000 tok — dropped 3 message(s)").
+ */
+export const withTrimmedMessages = (
+  a: PromptArtifact,
+  messages: ChatMessage[],
+  note: string
+): PromptArtifact => {
+  if (!a.record) return { ...a, messages }
+  const entry: RecordEntry = {
+    seq: a.record.entries.length,
+    stage: 'trim',
+    source: { kind: 'pipeline', id: 'trim' },
+    note
+  }
+  return { ...a, messages, record: { ...a.record, entries: [...a.record.entries, entry] } }
+}
+
+/**
+ * 18e SEAM 2 — the pre-dispatch transformation seam. Resolve the messages `llm.sample` sends AND
+ * provider-shape them EXACTLY ONCE, at the single dispatch boundary:
+ *  · a legacy `sendMessages` array wins when wired (already shaped by its producer) — passed through
+ *    verbatim, so every seeded/existing doc is byte-for-byte unaffected;
+ *  · an already-`shaped` Prompt artifact passes its wire through untouched (no double-shape);
+ *  · an UNSHAPED Prompt artifact — a Prompt-native workflow that authored contributions but did not
+ *    provider-shape — is shaped here, once, via `shape`.
+ * `shape` (providerShape bound to the turn's settings) is invoked ONLY for the unshaped-artifact case,
+ * so a legacy caller never triggers it. Returns undefined when neither input is wired (the pre-
+ * migration value of an unwired `sendMessages`). This is also where a capability-gated pre-dispatch
+ * transform (Tier-4, issue 19) would compose in.
+ */
+export const resolveDispatchMessages = (
+  legacy: unknown,
+  prompt: unknown,
+  shape: (messages: ChatMessage[]) => ChatMessage[]
+): ChatMessage[] | undefined => {
+  if (legacy != null) return legacy as ChatMessage[]
+  if (isPromptArtifact(prompt)) return prompt.shaped ? prompt.messages : shape(prompt.messages)
+  return undefined
+}

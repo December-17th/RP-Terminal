@@ -35,72 +35,88 @@ export const estimateTokens = (text: string): number => {
 
 const msgTokens = (m: ChatMessage): number => estimateTokens(m.content) + 4
 
-/** Non-enumerable marker tagging a message as a chat-history TURN (vs static system/lore/preset
- * content). Lets fitToBudget trim the oldest turns without ever evicting the static prefix. A
- * Symbol + `enumerable:false` means it never serializes into the provider request or the stored
- * floor (JSON.stringify and object-spread both skip it) and is invisible to deep-equality. */
-const HISTORY_TAG = Symbol('rptHistoryTurn')
-const markHistory = (m: ChatMessage): ChatMessage => {
-  Object.defineProperty(m, HISTORY_TAG, { value: true, enumerable: false, configurable: true })
-  return m
+/**
+ * The explicit per-message budget policy carried alongside an assembled prompt (issue 18c/18d).
+ * REPLACES the retired non-enumerable `HISTORY_TAG` symbol: instead of a hidden marker on each
+ * message object, `buildPromptDetailed` returns one class per emitted message (a parallel array,
+ * 1:1 with `messages`), and `fitToBudget` reads THAT to decide what to drop.
+ *  · `history` — a chat-history TURN (the analog of the old tag); the trim drops the OLDEST of these
+ *    first, never the last one, so a large constant worldbook is never evicted just because a preset
+ *    places a user/assistant block ahead of it.
+ *  · `pinned`  — static content (system prompts, world info, card fields, preset blocks); never
+ *    dropped by the budget policy.
+ * These flow on into the assembled artifact's `PromptContribution.budgetClass` (promptArtifact.ts),
+ * so a Prompt-native consumer (messages.trim) can honor the same policy without the hidden tag.
+ */
+export type BudgetClass = 'pinned' | 'history'
+
+/** The rich result of assembly (issue 18c/18d): the wire `messages` plus the parallel budget policy
+ *  (`budgetClasses[i]` classifies `messages[i]`). `buildPrompt` returns just `.messages` for the many
+ *  callers that don't trim; `buildPromptDetailed` exposes both so `assemblePrompt` can trim history-
+ *  aware AND carry the policy onto the artifact's contributions. */
+export interface BuildPromptResult {
+  messages: ChatMessage[]
+  budgetClasses: BudgetClass[]
 }
-const isHistoryTurn = (m: ChatMessage): boolean =>
-  (m as unknown as Record<symbol, unknown>)[HISTORY_TAG] === true
 
 /**
- * Trim the prompt to fit a token budget. Keeps the leading system/lore prefix
- * (L1/L2) and the most recent conversation turns, dropping the OLDEST history
- * first; the final user turn is always retained. Returns how many messages were
- * dropped so the caller can log it.
+ * Trim the prompt to fit a token budget. Keeps the leading system/lore prefix (L1/L2) and the most
+ * recent conversation turns, dropping the OLDEST history first; the final user turn is always
+ * retained. Returns how many messages were dropped so the caller can log it.
+ *
+ * `budgetClasses` (issue 18c/18d, when the caller has an explicit policy — the `buildPromptDetailed`
+ * path) drives the preferred history-only drop keyed off DATA, not the old hidden `HISTORY_TAG`
+ * symbol; the returned `budgetClasses` is filtered in lockstep so it stays aligned with the trimmed
+ * messages. Absent (a hand-built array — messages.trim's legacy path) → the same fallback as before:
+ * keep the leading system prefix, drop oldest from the first non-system message. The dropped SET is
+ * byte-identical to the pre-18d behavior on both paths.
  */
 export const fitToBudget = (
   messages: ChatMessage[],
-  maxTokens: number
-): { messages: ChatMessage[]; dropped: number } => {
+  maxTokens: number,
+  budgetClasses?: BudgetClass[]
+): { messages: ChatMessage[]; dropped: number; budgetClasses?: BudgetClass[] } => {
   const total = messages.reduce((s, m) => s + msgTokens(m), 0)
-  if (total <= maxTokens) return { messages, dropped: 0 }
+  if (total <= maxTokens)
+    return { messages, dropped: 0, ...(budgetClasses ? { budgetClasses } : {}) }
 
-  // Prefer trimming actual chat-history TURNS (tagged by buildHistory): drop the OLDEST turns
-  // first while keeping ALL static content (system prompts, world info, character card, preset
-  // blocks) and the most recent turns. This is what stops a large constant worldbook from being
-  // evicted just because a preset places a user/assistant block ahead of it in the array.
-  const history = messages.filter(isHistoryTurn)
-  if (history.length > 0) {
-    const removable = history.slice(0, -1) // never drop the latest turn
-    const remove = new Set<ChatMessage>()
+  const remove = new Set<number>()
+  // Preferred path: drop the OLDEST explicit `history` turns (issue 18d — was `filter(isHistoryTurn)`),
+  // never the last one, keeping every `pinned` message intact even if it alone exceeds the budget
+  // (truncating system/lore mid-way is worse than a slightly over-budget prompt — the model's real
+  // context window is the hard limit).
+  const historyIdx = budgetClasses
+    ? messages.map((_, i) => i).filter((i) => budgetClasses[i] === 'history')
+    : []
+  if (historyIdx.length > 0) {
+    const removable = historyIdx.slice(0, -1) // never drop the latest turn
     let running = total
-    for (const m of removable) {
+    for (const i of removable) {
       if (running <= maxTokens) break
-      remove.add(m)
-      running -= msgTokens(m)
+      remove.add(i)
+      running -= msgTokens(messages[i])
     }
-    // Even if the static prefix alone still exceeds the budget, keep it intact — truncating the
-    // system/lore mid-way is worse than a slightly over-budget prompt (the model's real context
-    // window is the hard limit). Only history turns are ever dropped on this path.
-    return {
-      messages: remove.size ? messages.filter((m) => !remove.has(m)) : messages,
-      dropped: remove.size
+  } else {
+    // Legacy fallback (no explicit history — a hand-built array, or a history-free prompt): keep the
+    // leading system prefix and the most recent messages, dropping oldest from the first non-system
+    // message; always keep the last turn.
+    const convoStart = messages.findIndex((m) => m.role !== 'system')
+    if (convoStart !== -1) {
+      let running = total
+      for (let i = convoStart; running > maxTokens && i < messages.length - 1; i++) {
+        remove.add(i)
+        running -= msgTokens(messages[i])
+      }
     }
   }
 
-  // Legacy fallback (no tagged history — e.g. a hand-built array): keep the leading system
-  // prefix and the most recent messages, dropping oldest from the first non-system message.
-  const convoStart = messages.findIndex((m) => m.role !== 'system')
-  if (convoStart === -1) return { messages, dropped: 0 }
-
-  const head = messages.slice(0, convoStart)
-  let convo = messages.slice(convoStart)
-  const headCost = head.reduce((s, m) => s + msgTokens(m), 0)
-  let convoCost = convo.reduce((s, m) => s + msgTokens(m), 0)
-  let dropped = 0
-
-  // Drop oldest conversation messages until we fit (always keep the last turn).
-  while (headCost + convoCost > maxTokens && convo.length > 1) {
-    convoCost -= msgTokens(convo[0])
-    convo = convo.slice(1)
-    dropped++
+  if (remove.size === 0)
+    return { messages, dropped: 0, ...(budgetClasses ? { budgetClasses } : {}) }
+  return {
+    messages: messages.filter((_, i) => !remove.has(i)),
+    dropped: remove.size,
+    ...(budgetClasses ? { budgetClasses: budgetClasses.filter((_, i) => !remove.has(i)) } : {})
   }
-  return { messages: [...head, ...convo], dropped }
 }
 
 /**
@@ -229,7 +245,7 @@ export interface BuildPromptArgs {
   memoryBlock?: string
   /** prompt.preset composer (context-epochs plan §3): verbatim history messages to use in the
    *  chat_history marker + no-marker safety net INSTEAD of the built-from-floors history. They
-   *  arrive pre-processed (no regex/macro passes), each tagged with the history marker so
+   *  arrive pre-processed (no regex/macro passes), each classed `budgetClass:'history'` so
    *  fitToBudget still trims them; the pending action is appended after them as the final user
    *  message. Absent = today's built-from-floors path (parity). */
   historyOverride?: ChatMessage[]
@@ -368,13 +384,16 @@ export const resolveEffectivePrompts = (
 }
 
 /** Expand the running history into alternating messages, ending with the new action.
- * `applyUser`/`applyAssistant` run prompt-time regex on the raw text before macros. */
+ * `applyUser`/`applyAssistant` run prompt-time regex on the raw text before macros. `mark` records
+ * each emitted message as a chat-history TURN (issue 18d: the caller collects these so it can classify
+ * `budgetClass:'history'` at the end — the explicit-data replacement for the retired HISTORY_TAG). */
 const buildHistory = (
   floors: FloorFile[],
   userAction: string,
   macroCtx: MacroContext,
   applyUser: (t: string, depth: number) => string,
-  applyAssistant: (t: string, depth: number) => string
+  applyAssistant: (t: string, depth: number) => string,
+  mark: (m: ChatMessage) => ChatMessage
 ): ChatMessage[] => {
   // Collect the raw turns first so each can be assigned its DEPTH — distance from the end of the
   // chat, latest turn = 0 (ST semantics) — BEFORE depth-scoped prompt regex runs. Without this, a
@@ -394,7 +413,7 @@ const buildHistory = (
   return raw.map((r, i) => {
     const depth = n - 1 - i
     const transformed = r.role === 'user' ? applyUser(r.text, depth) : applyAssistant(r.text, depth)
-    return markHistory({ role: r.role, content: macroOnly(transformed, macroCtx) })
+    return mark({ role: r.role, content: macroOnly(transformed, macroCtx) })
   })
 }
 
@@ -614,10 +633,25 @@ export const buildScanText = (floors: FloorFile[], userAction: string, scanDepth
  * The only invariant we hard-enforce here is L4-last: the pending user action is
  * appended after everything else so nothing volatile sits inside the cached prefix.
  */
-export const buildPrompt = (args: BuildPromptArgs): ChatMessage[] => {
+/**
+ * Assembly core (issue 18c/18d). Returns the wire `messages` PLUS the parallel `budgetClasses` policy
+ * (history vs pinned per message). `buildPrompt` below is the `.messages`-only wrapper the many callers
+ * that never trim keep using unchanged. History messages are collected by object identity during the
+ * build (an internal `Set`, never exposed) and turned into explicit `budgetClass` DATA at the end —
+ * the replacement for the retired non-enumerable HISTORY_TAG.
+ */
+export const buildPromptDetailed = (args: BuildPromptArgs): BuildPromptResult => {
   const { card, preset, lorebooks, floors, userAction } = args
   const charName = card.data.name || 'Character'
   const userName = args.userName || 'User'
+  // History-turn identity (issue 18d): collected here by object reference during the build, then
+  // projected to explicit `budgetClass:'history'` data on return. Internal only — never a Symbol on
+  // the message and never exposed, so the wire + stored floor are byte-identical to before.
+  const historyRefs = new Set<ChatMessage>()
+  const markHist = (m: ChatMessage): ChatMessage => {
+    historyRefs.add(m)
+    return m
+  }
 
   // ST Prompt Manager collection + character-card overrides (issue 11). Drops trigger-filtered /
   // disabled blocks, keeps a structural empty `main`, and folds the card's system_prompt /
@@ -852,19 +886,19 @@ export const buildPrompt = (args: BuildPromptArgs): ChatMessage[] => {
   const worldInfo = args.worldInfoOverride ?? topEntries.map(renderLoreEntry).filter(Boolean).join('\n\n')
 
   // The conversation history messages. Default: built from floors (regex + macro passes, action
-  // appended, each markHistory-tagged). Override (prompt.preset composer): the caller's verbatim,
-  // pre-processed messages — still markHistory-tagged so fitToBudget trims them — with the pending
+  // appended, each classed 'history'). Override (prompt.preset composer): the caller's verbatim,
+  // pre-processed messages — still classed 'history' so fitToBudget trims them — with the pending
   // action appended as the final user message, preserving L4-last. The action gets the SAME
   // treatment as the default path's live turn (prompt regex at depth 0, then macros) — only the
   // PRIOR turns arrive pre-processed.
   const historyMessages = (): ChatMessage[] => {
     if (!args.historyOverride) {
-      return buildHistory(floors, userAction, macroBase(personaMacro), jUser, jAssistant)
+      return buildHistory(floors, userAction, macroBase(personaMacro), jUser, jAssistant, markHist)
     }
-    const out = args.historyOverride.map((m) => markHistory({ role: m.role, content: m.content }))
+    const out = args.historyOverride.map((m) => markHist({ role: m.role, content: m.content }))
     if (userAction) {
       out.push(
-        markHistory({ role: 'user', content: macroOnly(jUser(userAction, 0), macroBase(personaMacro)) })
+        markHist({ role: 'user', content: macroOnly(jUser(userAction, 0), macroBase(personaMacro)) })
       )
     }
     return out
@@ -1116,8 +1150,18 @@ export const buildPrompt = (args: BuildPromptArgs): ChatMessage[] => {
     journal?.safetyNet({ kind: 'memory', id: 'memory-tail' }, insertAt, 'system', args.memoryBlock)
   }
 
-  return messages
+  // Project the collected history-turn identity into the explicit budget policy (issue 18d): every
+  // message that was emitted as a chat-history turn is `history` (droppable oldest-first); everything
+  // else is `pinned` (never dropped). This 1:1-with-`messages` array is what fitToBudget reads instead
+  // of the retired HISTORY_TAG, and what the assembled artifact carries as `budgetClass`.
+  const budgetClasses: BudgetClass[] = messages.map((m) => (historyRefs.has(m) ? 'history' : 'pinned'))
+  return { messages, budgetClasses }
 }
+
+/** The `.messages`-only view of `buildPromptDetailed` (issue 18d). The overwhelming majority of
+ *  callers only need the assembled array; the budget policy is consulted solely by the trim inside
+ *  `assemblePrompt`. Kept as a thin wrapper so every existing caller/test is unchanged. */
+export const buildPrompt = (args: BuildPromptArgs): ChatMessage[] => buildPromptDetailed(args).messages
 
 /**
  * Phase D — drain `[GENERATE:*]` + `@INJECT` marker entries into message positions. The array is final

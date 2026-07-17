@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeAll } from 'vitest'
 import {
   buildPrompt,
+  buildPromptDetailed,
   buildScanText,
   collectRenderMarkers,
   estimateTokens,
@@ -91,12 +92,12 @@ describe('fitToBudget', () => {
     expect(last(messages).content).toBe('u2')
   })
 
-  it('trims oldest HISTORY turns but never the static world-info prefix', () => {
-    // Large constant lore + a couple of small turns; a tiny budget must evict the old turns,
-    // not the lore (regression: a preset with a user-role block ahead of world_info used to make
-    // fitToBudget classify the lore as droppable "history").
+  it('trims oldest HISTORY turns but never the static pinned prefix (explicit 18c/18d policy)', () => {
+    // Large constant lore + a couple of small turns; a tiny budget must evict the old turns, not the
+    // lore. Post-18d the history-vs-static distinction is EXPLICIT DATA (budgetClasses), not the old
+    // hidden HISTORY_TAG: world info is classed `pinned` (never dropped), the turns `history`.
     const bigLore = 'L'.repeat(400)
-    const messages = buildPrompt({
+    const { messages, budgetClasses } = buildPromptDetailed({
       card: card(),
       preset: preset([blk('world_info'), blk('chat_history')]),
       lorebooks: [book([{ keys: [], content: bigLore, constant: true, enabled: true }])],
@@ -104,10 +105,14 @@ describe('fitToBudget', () => {
       userAction: 'latest turn'
     })
     expect(messages.some((m) => m.content.includes(bigLore))).toBe(true)
+    // The world-info block is pinned; the pending action (last message) is a history turn.
+    const wiIdx = messages.findIndex((m) => m.content.includes(bigLore))
+    expect(budgetClasses[wiIdx]).toBe('pinned')
+    expect(budgetClasses[messages.length - 1]).toBe('history')
 
-    const { messages: fit, dropped } = fitToBudget(messages, 1)
+    const { messages: fit, dropped } = fitToBudget(messages, 1, budgetClasses)
     expect(dropped).toBeGreaterThan(0)
-    expect(fit.some((m) => m.content.includes(bigLore))).toBe(true) // lore survived
+    expect(fit.some((m) => m.content.includes(bigLore))).toBe(true) // pinned lore survived
     expect(last(fit).content).toBe('latest turn') // latest turn survived
     expect(fit.some((m) => m.content === 'old user turn')).toBe(false) // oldest turn evicted
   })
@@ -1323,8 +1328,8 @@ describe('buildPrompt — historyOverride / worldInfoOverride', () => {
     expect(last(messages)).toEqual({ role: 'user', content: 'the action' })
   })
 
-  it('historyOverride turns are markHistory-tagged so fitToBudget trims the oldest ones', () => {
-    const messages = buildPrompt({
+  it('historyOverride turns are classed history so fitToBudget trims the oldest ones', () => {
+    const { messages, budgetClasses } = buildPromptDetailed({
       card: card(),
       preset: preset([blk('chat_history')]),
       lorebooks: [],
@@ -1335,8 +1340,11 @@ describe('buildPrompt — historyOverride / worldInfoOverride', () => {
         { role: 'assistant', content: 'A'.repeat(200) }
       ]
     })
-    const { messages: fit, dropped } = fitToBudget(messages, 5)
-    expect(dropped).toBeGreaterThan(0) // tagged history was trimmable
+    // Every override turn + the appended action is classed 'history' (the explicit-data successor to
+    // the retired HISTORY_TAG), so fitToBudget can drop the oldest.
+    expect(budgetClasses.every((c) => c === 'history')).toBe(true)
+    const { messages: fit, dropped } = fitToBudget(messages, 5, budgetClasses)
+    expect(dropped).toBeGreaterThan(0)
     expect(last(fit).content).toBe('latest') // final action always kept
   })
 
