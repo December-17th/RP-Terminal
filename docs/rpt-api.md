@@ -168,8 +168,9 @@ through the host bridge as RFC-6902 JSON Patch.
 - Replacement syntax supports ST-style `$0` for the full match, `$&` for the full match, and `$1`/`$2`...
   capture groups via the shared [`regexTransform`](../src/shared/regexTransform.ts). `$0` **always** expands
   to the full match, including inside a card payload: it is ST's whole-match token (ST's engine compiles
-  `{{match}}` to a literal `$0`, then resolves `$N` → `args[N]` unconditionally), so a card that writes
-  ``const data = `$0`;`` in its script is using a documented injection point.
+  `{{match}}` to a literal `$0`, then resolves `$N` → `args[N]` unconditionally; see
+  [SillyTavern `engine.js` lines 421–425](https://github.com/SillyTavern/SillyTavern/blob/8172dcd0ee672d3cd9a5e5f7af134f91a45cd2b8/public/scripts/extensions/regex/engine.js#L421-L425)),
+  so a card that writes ``const data = `$0`;`` in its script is using a documented injection point.
   **`$&` in a card payload is a deliberate exception:** when the replacement is a frontend card (carries
   `<script>`/`<style>`/`<html>`/```` ```html ````), `$&` is left **literal** — a card's own script routinely
   contains the escape idiom `s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')`, and substituting `$&` there would
