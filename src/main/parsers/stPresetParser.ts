@@ -145,5 +145,14 @@ export const parseStPreset = (raw: any, fallbackName: string): any | null => {
     top_a: num(raw.top_a)
   }
 
-  return { name: raw.name || fallbackName, parameters, prompts }
+  // ST `oai_settings.squash_system_messages` (openai.js:1599-1601). An ST chat-completion preset saves
+  // the full oai_settings, so this field is present on real imports; coerce to an explicit boolean so an
+  // import ALWAYS carries the flag (true → ST selective squash in providerShape; false → RPT merge-all,
+  // the current behavior). A native preset never gains the key, so it keeps merge-all (parity).
+  return {
+    name: raw.name || fallbackName,
+    parameters,
+    prompts,
+    squash_system_messages: raw.squash_system_messages === true
+  }
 }

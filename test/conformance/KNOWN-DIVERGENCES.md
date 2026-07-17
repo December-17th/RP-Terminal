@@ -65,10 +65,25 @@ tracked backlog, not chased here.
 | 4.1 | World Info activation (recursion, probability, sticky/cooldown, inclusion groups, scan depth) | ST's WI engine selects entries. | RPT's own lorebook activation selects entries; the oracle **feeds pre-activated** entries so assembly can be compared in isolation. | out-of-effort — separate future effort (PLAN decision 2). |
 | 4.2 | Tokenizer-aware budgeting | ST trims by exact model tokenizer under a token budget. | RPT uses a char-estimate budget (`estimateTokens`); the oracle supplies a **fixed** `tokenBudget`. | out-of-effort — separate future effort (PLAN decision 2). |
 
-## 5. System-message squashing (issue 15 — placeholder)
+## 5. System-message squashing — squash OFF keeps RPT merge-all (issue 15 / WP-2.5)
 
-ST does selective system-message squashing (`squash_system_messages`); RPT currently merges all adjacent
-same-role messages. This is closed by issue 15 (WP-2.5); recorded here so it's visible until then.
+ST's `squashSystemMessages` (openai.js:3827-3866) runs ONLY when `oai_settings.squash_system_messages`
+is true (openai.js:1599-1601). RPT implements that squash faithfully (`squashSystemMessages` in
+`src/main/services/promptBuilder.ts`) and applies it for an imported ST preset whose flag is `true`
+(`providerShape`, opt-in via `preset.squash_system_messages`). One deliberate divergence remains for the
+squash-**off** case:
 
-- **Grounding:** ST `public/scripts/openai.js` (`squash_system_messages` path); RPT
-  `src/main/services/promptBuilder.ts` `mergeConsecutiveRoles`.
+- **ST (squash off):** no squashing at all — adjacent unnamed system messages stay discrete.
+- **RPT (squash off, AND native presets):** keeps its merge-all `mergeConsecutiveRoles`, so adjacent
+  same-role messages coalesce. Retained on purpose — it fixes the split-block (`<X_setting>` open / body /
+  close as separate system entries) coalescing symptom the merge-all was added for, and reverting it for
+  imported-squash-off presets would resurrect that. ST's default is squash **off** (openai.js:488), so
+  most imports hit this path; making them ST-off-faithful (no merge) would broadly regress existing imports.
+- **When they agree:** with `squash_system_messages: true`, RPT applies ST's SELECTIVE squash exactly —
+  consecutive unnamed system messages merged with `\n`, empties dropped, protected control identifiers and
+  named system messages preserved, user/assistant untouched (fixture `fixtures/wp-2.5-squash-on.json`, and
+  the `providerShape` / `squashSystemMessages` unit tests).
+- **Grounding:** ST `public/scripts/openai.js:3827-3866` + `:1599-1601`; RPT
+  `src/main/services/promptBuilder.ts` (`squashSystemMessages`, `mergeConsecutiveRoles`),
+  `src/main/services/generation/providerShape.ts` (stage-A selector); fixtures `wp-2.5-squash-off.json`,
+  `wp-2.5-squash-on.json`.

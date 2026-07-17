@@ -130,6 +130,58 @@ export const mergeConsecutiveRoles = (messages: ChatMessage[]): ChatMessage[] =>
   return out
 }
 
+/**
+ * A `ChatMessage` that MAY carry SillyTavern's per-message `name` / `identifier` (ST's `Message`
+ * object — openai.js). RPT's own assembly never sets these — every message it emits is an unnamed,
+ * identifier-less `{role, content}` — so on the real wire `squashSystemMessages` merges EVERY
+ * consecutive system message. The fields exist only so synthesized fixtures / unit tests can exercise
+ * ST's named-message and protected-control-identifier carve-outs. `ChatMessage[]` is assignable here
+ * (the extra fields are optional), so the provider seam passes its plain array unchanged.
+ */
+export interface SquashMessage extends ChatMessage {
+  /** ST `message.name` — a named system message (e.g. an example-dialogue turn) is NEVER squashed. */
+  name?: string
+  /** ST `message.identifier` — the control identifiers in ST's exclude list are never squashed. */
+  identifier?: string
+}
+
+/**
+ * SillyTavern's `squashSystemMessages` (openai.js:3827-3866), applied for an IMPORTED ST preset that
+ * sets `squash_system_messages: true` (ST gates the call on `oai_settings.squash_system_messages`,
+ * openai.js:1599-1601). It is DELIBERATELY NARROWER than RPT's `mergeConsecutiveRoles`:
+ *
+ *  - it merges ONLY consecutive `system` messages that are UNNAMED and whose `identifier` is not one of
+ *    ST's protected controls (`newMainChat` / `newChat` / `groupNudge`, openai.js:3828) — user and
+ *    assistant turns pass through untouched, unlike merge-all;
+ *  - it DROPS empty `system` messages entirely (openai.js:3835-3837), and a dropped empty never breaks
+ *    a squash run (the surrounding squashable systems still merge across it);
+ *  - merged content is joined with a single `'\n'` (openai.js:3846).
+ *
+ * Native RPT presets keep `mergeConsecutiveRoles` (see providerShape); the two are mutually exclusive —
+ * ST has no merge-all, so a squashing import must not also merge-all. Pure; returns fresh `{role, content}`
+ * objects (RPT's wire carries no name/identifier), never mutating the input.
+ */
+export const squashSystemMessages = (messages: SquashMessage[]): ChatMessage[] => {
+  const EXCLUDE = new Set(['newMainChat', 'newChat', 'groupNudge']) // openai.js:3828
+  // openai.js:3839-3841: squashable = not a protected control, role system, and no name.
+  const shouldSquash = (m: SquashMessage): boolean =>
+    !EXCLUDE.has(m.identifier ?? '') && m.role === 'system' && !m.name
+  const out: ChatMessage[] = []
+  let last: { msg: ChatMessage; src: SquashMessage } | null = null
+  for (const m of messages) {
+    // openai.js:3835-3837: force-exclude empty system messages before any squash decision.
+    if (m.role === 'system' && !m.content) continue
+    if (shouldSquash(m) && last && shouldSquash(last.src)) {
+      last.msg.content += '\n' + m.content // openai.js:3846
+    } else {
+      const msg: ChatMessage = { role: m.role, content: m.content }
+      out.push(msg)
+      last = { msg, src: m }
+    }
+  }
+  return out
+}
+
 export interface PersonaArgs {
   description: string
   /** Whether to inject the description (IN_PROMPT). false = ST's "None" position. */

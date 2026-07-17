@@ -76,7 +76,15 @@ export const PresetSchema = z.object({
   name: z.string().default('Default Preset'),
   parameters: PresetParametersSchema.default({ temperature: 0.9, max_tokens: 4000 }),
   /** Ordered list of prompt blocks assembled into the final message array. */
-  prompts: z.array(PromptBlockSchema).default([])
+  prompts: z.array(PromptBlockSchema).default([]),
+  /**
+   * ST `oai_settings.squash_system_messages` (openai.js:1599-1601). Carried ONLY by imported ST
+   * presets (the parser sets an explicit boolean); NATIVE presets leave it UNDEFINED. The provider
+   * seam (`providerShape`) reads it: `true` → ST selective system-message squash (openai.js:3827);
+   * `false`/undefined → RPT's merge-all-adjacent (`mergeConsecutiveRoles`). Optional-without-default
+   * so a native preset never gains the key and its wire output stays byte-identical (parity gate).
+   */
+  squash_system_messages: z.boolean().optional()
 })
 export type Preset = z.infer<typeof PresetSchema>
 

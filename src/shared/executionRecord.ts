@@ -74,7 +74,8 @@ export type RecordStage =
   | 'safety-net' // a headerless net insert (world-info net, mode addendum, persona net, tails)
   | 'trim' // fitToBudget dropped the oldest history turns
   | 'system-as-user' // system→user relabel (OpenAI-compatible path)
-  | 'role-merge' // consecutive same-role messages coalesced
+  | 'role-merge' // consecutive same-role messages coalesced (native presets — merge-all)
+  | 'squash' // ST selective system-message squash (imported preset w/ squash_system_messages)
   | 'provider-shape' // orderForProvider reordering (end-on-user, etc.)
   | 'opaque' // arbitrary card/preset SCRIPT mutation — before/after hashes only, no copy
 

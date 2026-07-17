@@ -244,4 +244,18 @@ describe('parseStPreset', () => {
     expect(preset.parameters.temperature).toBe(0.9)
     expect(preset.parameters.max_tokens).toBe(4000)
   })
+
+  // Issue 15 (WP-2.5): an import ALWAYS carries an explicit `squash_system_messages` boolean so the
+  // provider seam can pick ST selective squash (true) vs RPT merge-all (false); native presets, which
+  // never go through this parser, leave the field undefined and keep merge-all.
+  it('extracts squash_system_messages as an explicit boolean (ST oai_settings)', () => {
+    expect(parseStPreset({ prompts: [], squash_system_messages: true }, 'f').squash_system_messages).toBe(
+      true
+    )
+    expect(
+      parseStPreset({ prompts: [], squash_system_messages: false }, 'f').squash_system_messages
+    ).toBe(false)
+    // Absent in the source → coerced to false (ST default), never left undefined for an import.
+    expect(parseStPreset({ prompts: [] }, 'f').squash_system_messages).toBe(false)
+  })
 })

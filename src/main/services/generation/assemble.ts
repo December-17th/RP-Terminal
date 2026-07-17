@@ -261,7 +261,12 @@ export const assemblePrompt = (
   // per-message history tags) so the stored `request` matches exactly what's sent. The SAME function
   // shapes the hand-authored `prompt.messages` workflow path; passing `record` journals + logs each stage
   // that fires. `sendMessages` is the exact array sent to the API, so the `request` log is faithful.
-  const sendMessages = providerShape(settings, trimmed, record)
+  // ST selective system-message squash (issue 15 / WP-2.5): opt in ONLY for an imported ST preset that
+  // carries `squash_system_messages: true`. A native preset never sets the flag (undefined → merge-all),
+  // so its wire output is byte-identical (parity gate). Squash then REPLACES merge-all for that preset.
+  const sendMessages = providerShape(settings, trimmed, record, {
+    squashSystemMessages: preset.squash_system_messages === true
+  })
 
   // Agentic mode caps the output ceiling at the FSM mode's limit (e.g. Combat is terse),
   // never exceeding the preset's own max_tokens. Classic mode uses the preset value as-is.
