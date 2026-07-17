@@ -386,10 +386,12 @@ is enforced by `appliesToDisplay` / `appliesToPrompt`
 ([regexService.ts](../../src/main/services/regexService.ts)) and in the TavernHelper shape bridge
 ([tavernRegex.ts](../../src/shared/thRuntime/tavernRegex.ts)).
 Replacement syntax is shared by display and prompt transforms: `$0`/`$&` expand to the full match and
-`$1`/`$2`... expand capture groups (`regexTransform`). In a **card payload** (a replacement carrying
-`<script>`/`<style>`/`<html>`/` ```html `) the whole-match specials `$0`/`$&` are kept **literal**
-so a card's own escape idiom `s.replace(/…/g, '\\$&')` isn't spliced into and broken; numbered groups
-still inject (with `$N` literal when the find-regex has no group N). On the **display** path
+`$1`/`$2`... expand capture groups (`regexTransform`). `$0` expands **everywhere, card payload or not** —
+it is ST's whole-match token (ST compiles `{{match}}` to a literal `$0`, then resolves `$N` → `args[N]`,
+and `args[0]` is the whole match), so a card writing ``const data = `$0`;`` is using a documented
+injection point. In a **card payload** (a replacement carrying `<script>`/`<style>`/`<html>`/` ```html `)
+only `$&` is kept **literal**, so a card's own escape idiom `s.replace(/…/g, '\\$&')` isn't spliced into
+and broken; numbered groups still inject (with `$N` literal when the find-regex has no group N). On the **display** path
 (`freezePayloads`), an injected card payload is **opaque to LATER rules**: once a beautifier emits its
 `<html>`/` ```html ` card, subsequent rules can't match, rewrite, or backtrack over its interior — a
 cleanup regex rescanning a 100KB+ paste otherwise stalled the render for seconds (and silently mangled

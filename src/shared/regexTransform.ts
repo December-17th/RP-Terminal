@@ -36,12 +36,20 @@ export const isCardPayload = (s: string): boolean =>
  *
  * CARD-PAYLOAD SAFETY: a frontend-card replacement carries the card's OWN `<script>`, which routinely
  * contains the universal regex-escape idiom `str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')` — a LITERAL
- * `$&`, not an injection point (a beautifier injects the match via a numbered group or `{{match}}`).
- * Substituting the whole-match specials `$&`/`$0` there splices the entire matched block into the
+ * `$&`, not an injection point. Substituting `$&` there splices the entire matched block into the
  * card's script, breaking it (unterminated string → SyntaxError → every handler undefined → a card
- * that renders but can't be clicked/expanded). So for a card payload leave `$&`/`$0` LITERAL — the
- * same card-awareness that already skips the `\n` shorthand below. Numbered groups still resolve (the
- * beautifier's real injection uses them) and the "no group N ⇒ literal" guard keeps a card's `$6` intact. */
+ * that renders but can't be clicked/expanded). So for a card payload leave `$&` LITERAL — the same
+ * card-awareness that already skips the `\n` shorthand below.
+ *
+ * `$0` is NOT protected the same way, even though it also means "whole match". `$&` is a JS special
+ * that ST's engine never substitutes; `$0` is an ST special that JS never substitutes. ST
+ * (regex/engine.js:421-425) compiles `{{match}}` to a literal `$0`, then resolves `$(\d+)` → `args[N]`
+ * unconditionally — and `args[0]` IS the whole match. So a card's `$0` is a deliberate injection point
+ * (命定之诗's 战斗&生产制作美化 opens its script with ``const mockBattleText = `$0`;``) and must always
+ * resolve; leaving it literal fed the card the string "$0" and it rendered an empty panel. The escape
+ * idiom contains `$&`, never `$0`, so keeping `$0` live costs the protection above nothing.
+ *
+ * Numbered groups still resolve and the "no group N ⇒ literal" guard keeps a card's `$6` intact. */
 const buildReplacement = (
   rule: RegexLikeRule,
   match: string,
@@ -58,7 +66,7 @@ const buildReplacement = (
   if (!card) out = out.replace(/\$&/g, match)
   out = out.replace(/\$(\d{1,2})/g, (m, n) => {
     const groupNumber = Number(n)
-    if (groupNumber === 0) return card ? m : match
+    if (groupNumber === 0) return match
     const i = groupNumber - 1
     return i < groups.length ? (groups[i] ?? '') : m
   })
