@@ -54,6 +54,57 @@ describe('parseStPreset', () => {
     expect(preset.prompts.find((p: any) => p.identifier === 'main').enabled).toBe(false)
   })
 
+  it('selects the character_id 100001 order list when multiple lists exist', () => {
+    const preset = parseStPreset(
+      {
+        prompts: [
+          { identifier: 'alpha', name: 'Alpha', content: 'glorp wibble', role: 'system' },
+          { identifier: 'beta', name: 'Beta', content: 'zonk frit', role: 'system' }
+        ],
+        prompt_order: [
+          {
+            character_id: 42,
+            order: [
+              { identifier: 'alpha', enabled: true },
+              { identifier: 'beta', enabled: true }
+            ]
+          },
+          {
+            character_id: 100001,
+            order: [
+              { identifier: 'beta', enabled: true },
+              { identifier: 'alpha', enabled: false }
+            ]
+          }
+        ]
+      },
+      'fallback'
+    )
+    // Order + enablement come from the 100001 record, not the first list.
+    expect(preset.prompts.map((p: any) => p.identifier)).toEqual(['beta', 'alpha'])
+    expect(preset.prompts.find((p: any) => p.identifier === 'alpha').enabled).toBe(false)
+  })
+
+  it('takes enablement from the order entry alone, ignoring prompt-object enabled', () => {
+    const preset = parseStPreset(
+      {
+        prompts: [
+          // Literal block disabled at the prompt-object level...
+          { identifier: 'kappa', name: 'Kappa', content: 'murble snix', enabled: false }
+        ],
+        prompt_order: [
+          {
+            character_id: 100001,
+            // ...but ENABLED in the order entry — the order entry wins.
+            order: [{ identifier: 'kappa', enabled: true }]
+          }
+        ]
+      },
+      'fallback'
+    )
+    expect(preset.prompts.find((p: any) => p.identifier === 'kappa').enabled).toBe(true)
+  })
+
   it('skips folded identifiers and contentless literal blocks', () => {
     const preset = parseStPreset(
       {

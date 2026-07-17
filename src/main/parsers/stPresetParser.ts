@@ -35,10 +35,13 @@ export const parseStPreset = (raw: any, fallbackName: string): any | null => {
   }
 
   // prompt_order is an array of { character_id, order: [{ identifier, enabled }] }.
-  // Use the first defined order list; otherwise use the prompts array order.
+  // ST's Prompt Manager resolves order via the dummy character id 100001; prefer
+  // that record. Otherwise use the first defined order list, else the prompts order.
   let order: Array<{ identifier: string; enabled?: boolean }>
   const orderBlock = Array.isArray(raw.prompt_order)
-    ? raw.prompt_order.find((o: any) => Array.isArray(o?.order)) || raw.prompt_order[0]
+    ? raw.prompt_order.find((o: any) => o?.character_id === 100001 && Array.isArray(o?.order)) ||
+      raw.prompt_order.find((o: any) => Array.isArray(o?.order)) ||
+      raw.prompt_order[0]
     : null
   if (orderBlock && Array.isArray(orderBlock.order)) {
     order = orderBlock.order
@@ -79,7 +82,7 @@ export const parseStPreset = (raw: any, fallbackName: string): any | null => {
       name: src.name || id,
       role: src.role || 'system',
       content: src.content,
-      enabled: item.enabled !== false && src.enabled !== false,
+      enabled: item.enabled !== false,
       marker: 'none',
       injection_depth: atDepth ? (num(src.injection_depth) ?? 4) : null
     })
