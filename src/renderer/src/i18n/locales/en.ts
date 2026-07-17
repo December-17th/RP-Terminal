@@ -348,7 +348,12 @@ const en: Record<string, string> = {
   'preset.noPresets': '(no presets)',
   'preset.importST': 'Import ST',
   'preset.imported': 'Imported preset “{{name}}”',
-  'preset.importedBundle': ' (+{{regex}} regex, +{{scripts}} scripts)',
+  'preset.inv.summary':
+    '{{prompts}} prompts ({{enabled}} enabled) · {{regex}} regex · {{spreset}} SPreset regex · {{scripts}} scripts · {{ejs}} templated',
+  'preset.inv.unknownExt': ' · unknown extensions: {{names}}',
+  'preset.inv.anomalies': ' · {{dupes}} duplicate / {{orphans}} orphan identifiers',
+  'preset.inv.remoteCode':
+    '{{count}} script(s) load remote code — kept inert (requires a high-trust opt-in to run)',
   'preset.confirmDelete': 'Delete this preset? This cannot be undone.',
   'preset.empty': 'No preset selected. Create a new one or import a SillyTavern preset.',
   'preset.name': 'Preset Name',

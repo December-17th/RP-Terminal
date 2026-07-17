@@ -91,10 +91,30 @@ export const PresetManager: React.FC<Props> = ({ profileId }) => {
     if (!guardDirty()) return
     const res = await importPreset(profileId)
     if (!res) return
+    // Surface the capability inventory (ADR 0017) — counts of what the preset carries, not a gate.
+    const inv = res.inventory
     let msg = t('preset.imported', { name: res.name })
-    if (res.regexScripts || res.scripts)
-      msg += t('preset.importedBundle', { regex: res.regexScripts, scripts: res.scripts })
+    msg +=
+      ' — ' +
+      t('preset.inv.summary', {
+        prompts: inv.prompts,
+        enabled: inv.promptsEnabled,
+        regex: inv.regexScripts,
+        spreset: inv.spresetRegex,
+        scripts: inv.tavernHelperScripts,
+        ejs: inv.ejsPrompts
+      })
+    if (inv.unknownExtensions.length)
+      msg += t('preset.inv.unknownExt', { names: inv.unknownExtensions.join(', ') })
+    if (inv.duplicateIdentifiers.length || inv.orphanIdentifiers.length)
+      msg += t('preset.inv.anomalies', {
+        dupes: inv.duplicateIdentifiers.length,
+        orphans: inv.orphanIdentifiers.length
+      })
     useToastStore.getState().push(msg)
+    // Remote-code scripts stay inert until a high-trust opt-in exists — warn NOW (separate toast).
+    if (inv.remoteCodeScripts)
+      useToastStore.getState().push(t('preset.inv.remoteCode', { count: inv.remoteCodeScripts }))
   }
 
   return (

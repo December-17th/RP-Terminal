@@ -43,11 +43,29 @@ export interface PresetSummary {
   name: string
 }
 
-/** What importing a preset brought in: the preset name + counts of bundled artifacts. */
+/**
+ * A capability inventory of an imported preset (ADR 0017) — counts + flags, not a trust gate.
+ * Mirrors `PresetInventory` in `src/main/services/presetService.ts` (IPC has no shared type).
+ */
+export interface PresetInventory {
+  prompts: number
+  promptsEnabled: number
+  regexScripts: number
+  spresetRegex: number
+  tavernHelperScripts: number
+  remoteCodeScripts: number
+  ejsPrompts: number
+  unknownExtensions: string[]
+  duplicateIdentifiers: string[]
+  orphanIdentifiers: string[]
+}
+
+/** What importing a preset brought in: the preset name, installed counts, and the inventory. */
 export interface PresetImportResult {
   name: string
   regexScripts: number
   scripts: number
+  inventory: PresetInventory
 }
 
 interface PresetState {

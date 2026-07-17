@@ -336,7 +336,11 @@ const zh: Record<string, string> = {
   'preset.noPresets': '（无预设）',
   'preset.importST': '导入 ST',
   'preset.imported': '已导入预设“{{name}}”',
-  'preset.importedBundle': '（附带 {{regex}} 条正则、{{scripts}} 个脚本）',
+  'preset.inv.summary':
+    '{{prompts}} 条提示词（{{enabled}} 启用）· {{regex}} 正则 · {{spreset}} SPreset 正则 · {{scripts}} 脚本 · {{ejs}} 含模板',
+  'preset.inv.unknownExt': ' · 未知扩展：{{names}}',
+  'preset.inv.anomalies': ' · {{dupes}} 重复 / {{orphans}} 孤立标识',
+  'preset.inv.remoteCode': '{{count}} 个脚本会加载远程代码 — 已保持停用（需高信任授权后方可运行）',
   'preset.confirmDelete': '删除此预设？此操作无法撤销。',
   'preset.empty': '未选择预设。新建一个或导入 SillyTavern 预设。',
   'preset.name': '预设名称',

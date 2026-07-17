@@ -22,11 +22,121 @@ export interface PresetSummary {
   name: string
 }
 
-/** What `importPresetFromFile` installed: the preset plus any artifacts it bundled. */
+/**
+ * A capability INVENTORY of an imported preset (WP-0.3 / ADR 0017), computed from the
+ * lossless envelope's parsed JSON — not a trust gate. Import is the trust act: content runs
+ * by default. The one exception is remote-code scripts (`remoteCodeScripts`), which stay inert
+ * until a per-preset high-trust opt-in exists (issue 19). Counts are what the preset CONTAINS,
+ * so they can differ from what actually got installed (e.g. remote-code scripts aren't run).
+ */
+export interface PresetInventory {
+  /** Prompt blocks defined in the preset. */
+  prompts: number
+  /** Of those, how many resolve to enabled (via `prompt_order`, else the block's own flag). */
+  promptsEnabled: number
+  /** Core `extensions.regex_scripts[]` rules. */
+  regexScripts: number
+  /** `extensions.SPreset.RegexBinding.regexes[]` — kept DISTINCT from core; never merged. */
+  spresetRegex: number
+  /** `extensions.tavern_helper.scripts[]` bundled scripts (total, incl. remote-code). */
+  tavernHelperScripts: number
+  /** Of those, how many load remote code — kept INERT at import, flagged for high-trust (ADR 0017). */
+  remoteCodeScripts: number
+  /** Prompt blocks whose content carries an EJS / ST-Prompt-Template opener (`<%`). */
+  ejsPrompts: number
+  /** `extensions.*` namespaces the importer doesn't understand (surfaced, never dropped). */
+  unknownExtensions: string[]
+  /** Prompt identifiers defined more than once in `prompts[]`. */
+  duplicateIdentifiers: string[]
+  /** `prompt_order` entries referencing an identifier with no matching prompt definition. */
+  orphanIdentifiers: string[]
+}
+
+/** What `importPresetFromFile` installed: the preset, the artifacts it ran, and the inventory. */
 export interface PresetImportResult {
   name: string
+  /** Core regex rules actually installed (preset-scoped). */
   regexScripts: number
+  /** TH scripts actually installed to run (remote-code ones are excluded — they stay inert). */
   scripts: number
+  /** Full capability inventory of the imported preset (counts + flags). */
+  inventory: PresetInventory
+}
+
+/** Extension namespaces the importer understands; every other `extensions.*` key is "unknown". */
+const KNOWN_EXTENSION_NAMESPACES = new Set(['regex_scripts', 'tavern_helper', 'SPreset'])
+
+/** An ST-Prompt-Template / EJS opener (`<%`, `<%=`, `<%_`, `<%-`) anywhere in prompt content. */
+const EJS_OPENER = /<%[=_-]?/
+
+/** Raw script source from a TH/native script object (`content` is TH's key; `code` is ours). */
+const scriptSource = (s: any): string =>
+  typeof s?.content === 'string' ? s.content : typeof s?.code === 'string' ? s.code : ''
+
+/**
+ * Compute the capability inventory (ADR 0017 / WP-0.3) from an envelope's parsed JSON — the
+ * nothing-dropped raw, which retains every `prompt_order` list and full `extensions.*`. Pure;
+ * tolerant of the top-level-array-wrapping-a-preset shape seen in the wild. The SPreset regex
+ * count is kept strictly DISTINCT from the core `regex_scripts` count (never merged).
+ */
+export const computePresetInventory = (parsed: any): PresetInventory => {
+  const root = presetRoot(parsed)
+  const prompts: any[] = Array.isArray(root?.prompts) ? root.prompts : []
+  const ext = root?.extensions && typeof root.extensions === 'object' ? root.extensions : {}
+
+  // Enabled state lives in prompt_order entries, not on the prompt object — collect the union
+  // of order ids (first-seen enabled wins) so we can resolve enablement and spot dangling refs.
+  const orderEnabled = new Map<string, boolean>()
+  if (Array.isArray(root?.prompt_order)) {
+    for (const block of root.prompt_order) {
+      if (!block || !Array.isArray(block.order)) continue
+      for (const e of block.order) {
+        if (!e || typeof e.identifier !== 'string') continue
+        if (!orderEnabled.has(e.identifier)) orderEnabled.set(e.identifier, e.enabled !== false)
+      }
+    }
+  }
+
+  const seen = new Set<string>()
+  const duplicates = new Set<string>()
+  const definedIds = new Set<string>()
+  let promptsEnabled = 0
+  let ejsPrompts = 0
+  for (const p of prompts) {
+    const id = typeof p?.identifier === 'string' ? p.identifier : ''
+    if (id) {
+      if (seen.has(id)) duplicates.add(id)
+      seen.add(id)
+      definedIds.add(id)
+    }
+    const enabled = orderEnabled.has(id) ? orderEnabled.get(id)! : p?.enabled !== false
+    if (enabled) promptsEnabled++
+    if (typeof p?.content === 'string' && EJS_OPENER.test(p.content)) ejsPrompts++
+  }
+
+  // Orphans: order entries pointing at an identifier that has no prompt definition (dangling).
+  const orphanIdentifiers = [...orderEnabled.keys()].filter((id) => !definedIds.has(id))
+
+  const regexScripts = Array.isArray(ext.regex_scripts) ? ext.regex_scripts.length : 0
+  const spresetArr = ext?.SPreset?.RegexBinding?.regexes
+  const spresetRegex = Array.isArray(spresetArr) ? spresetArr.length : 0
+  const thScripts: any[] = Array.isArray(ext?.tavern_helper?.scripts) ? ext.tavern_helper.scripts : []
+  const remoteCodeScripts = thScripts.filter((s) =>
+    scriptService.hasRemoteCodeLoad(scriptSource(s))
+  ).length
+
+  return {
+    prompts: prompts.length,
+    promptsEnabled,
+    regexScripts,
+    spresetRegex,
+    tavernHelperScripts: thScripts.length,
+    remoteCodeScripts,
+    ejsPrompts,
+    unknownExtensions: Object.keys(ext).filter((k) => !KNOWN_EXTENSION_NAMESPACES.has(k)),
+    duplicateIdentifiers: [...duplicates],
+    orphanIdentifiers
+  }
 }
 
 /**
@@ -244,8 +354,14 @@ export const importPresetFromFile = (
     }
 
     // Route bundled Tavern Helper scripts (declarative buttons baked in) scoped to the preset.
+    // ADR 0017: import runs content by default, EXCEPT scripts that load remote code — those
+    // stay INERT (not installed to run) until a per-preset high-trust opt-in exists (issue 19).
+    // They remain in the envelope and are counted in the inventory as `remoteCodeScripts`.
     let scripts = 0
-    for (const s of scriptService.normalizeImportedScripts(collectPresetScripts(raw))) {
+    for (const rawScript of collectPresetScripts(raw)) {
+      if (scriptService.hasRemoteCodeLoad(scriptSource(rawScript))) continue // inert + flagged
+      const [s] = scriptService.normalizeImportedScripts(rawScript)
+      if (!s) continue
       const file = scriptService.saveScript(
         profileId,
         { name: s.name, code: s.code },
@@ -256,7 +372,7 @@ export const importPresetFromFile = (
       scripts++
     }
 
-    return { name: preset.name, regexScripts, scripts }
+    return { name: preset.name, regexScripts, scripts, inventory: computePresetInventory(raw) }
   } catch (error) {
     log('error', 'Failed to import preset:', error)
     return null

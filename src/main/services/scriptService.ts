@@ -84,6 +84,28 @@ export const extractImportHosts = (code: string): string[] =>
     )
   )
 
+// Remote-CODE load patterns NOT expressed as an ES import (extractImportHosts already covers
+// those): a remote <script src>, worker importScripts(), or a bare remote .js/.mjs URL literal
+// (the fetch-then-eval shape, e.g. the SoliUmbra `…/regex_bind/inject.js` loader). ADR 0017.
+const REMOTE_CODE_PATTERNS: RegExp[] = [
+  /\.src\s*=\s*['"`]?\s*https?:\/\//i, // (script).src = 'http…'
+  /\bimportScripts\s*\(\s*['"`]\s*https?:\/\//i, // worker importScripts('http…')
+  /https?:\/\/[^\s'"`)]+\.m?js\b/i // remote .js / .mjs URL literal (fetch/inject)
+]
+
+/**
+ * True when a script pulls **executable code** from the network at runtime — a remote ES
+ * module (static/dynamic import), a remote `<script src>`, `importScripts()`, or a fetch of a
+ * remote `.js`/`.mjs`. Per ADR 0017 the import of a preset is the trust act and its content
+ * runs by default, but remote-code scripts are the one exception: they stay INERT until a
+ * per-preset high-trust opt-in exists (issue 19). Pure; used to flag + gate at import time.
+ */
+export const hasRemoteCodeLoad = (code: string): boolean => {
+  const c = code || ''
+  if (extractImportHosts(c).length > 0) return true // import/import()/from an absolute http(s) URL
+  return REMOTE_CODE_PATTERNS.some((re) => re.test(c))
+}
+
 // --- Store CRUD -------------------------------------------------------------
 
 const fileMeta = (meta: Record<string, ScopeMeta>, file: string): ScopeMeta =>
