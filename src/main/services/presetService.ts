@@ -1,6 +1,6 @@
 import fs from 'fs'
 import path from 'path'
-import { randomUUID } from 'crypto'
+import { randomUUID, createHash } from 'crypto'
 import {
   getAppDir,
   ensureDir,
@@ -9,10 +9,13 @@ import {
   listFilesSync
 } from './storageService'
 import { log } from './logService'
-import { Preset, PresetSchema, getDefaultPreset } from '../types/preset'
+import { Preset, PresetSchema, PresetEnvelope, getDefaultPreset } from '../types/preset'
 import { parseStPreset } from '../parsers/stPresetParser'
 import * as regexService from './regexService'
 import * as scriptService from './scriptService'
+
+/** Identifies the importer that produced an envelope (ADR 0018), for future migrations. */
+const IMPORTER_VERSION = 'rpt-st-preset/1'
 
 export interface PresetSummary {
   id: string
@@ -53,6 +56,19 @@ const presetsDir = (profileId: string): string =>
 const presetPath = (profileId: string, id: string): string =>
   path.join(presetsDir(profileId), `${id}.json`)
 const activePath = (profileId: string): string => path.join(presetsDir(profileId), '_active.json')
+
+// Envelopes live in a subdirectory so `listPresets`/`listFilesSync` (files-only) never
+// mistake a `<id>.json` envelope for a preset record. One sidecar per preset id.
+const envelopesDir = (profileId: string): string => path.join(presetsDir(profileId), 'envelopes')
+const envelopePath = (profileId: string, id: string): string =>
+  path.join(envelopesDir(profileId), `${id}.json`)
+
+const sha256Hex = (bytes: Buffer): string => createHash('sha256').update(bytes).digest('hex')
+
+/** Persist the lossless envelope sidecar for a preset id (ADR 0018). */
+const writeEnvelope = (profileId: string, id: string, env: PresetEnvelope): void => {
+  writeJsonSyncAtomic(envelopePath(profileId, id), env)
+}
 
 /**
  * Ensure the presets directory exists, lazily migrating the pre-multi-preset
@@ -144,6 +160,8 @@ export const savePreset = (profileId: string, presetId: string, preset: Preset):
 export const deletePreset = (profileId: string, presetId: string): void => {
   const p = presetPath(profileId, presetId)
   if (fs.existsSync(p)) fs.unlinkSync(p)
+  const env = envelopePath(profileId, presetId)
+  if (fs.existsSync(env)) fs.unlinkSync(env)
   // Remove any regex/scripts the preset bundled (scope=preset, owner=presetId) so a
   // deleted preset doesn't leave orphaned artifacts firing for a preset that's gone.
   regexService.deleteScriptsByOwner(profileId, 'preset', presetId)
@@ -173,7 +191,16 @@ export const installBundledPreset = (profileId: string, raw: any): string | null
     }
     if (!preset) return null
     if (listPresets(profileId).some((p) => p.name === preset!.name)) return null // dedup by name
-    createPresetFromData(profileId, preset.name, preset, false)
+    const presetId = createPresetFromData(profileId, preset.name, preset, false)
+    // A bundle arrives pre-parsed (no original file bytes), so the envelope stores the
+    // full parsed object for losslessness but cannot offer a byte-exact re-export.
+    writeEnvelope(profileId, presetId, {
+      sha256: null,
+      parsed: presetRoot(raw),
+      originalBase64: null,
+      importedAt: new Date().toISOString(),
+      importerVersion: IMPORTER_VERSION
+    })
     return preset.name
   } catch (error) {
     log('error', 'Failed to install bundled preset:', error)
@@ -192,11 +219,23 @@ export const importPresetFromFile = (
   filePath: string
 ): PresetImportResult | null => {
   try {
-    const raw = JSON.parse(fs.readFileSync(filePath, 'utf-8'))
+    // Read the verbatim bytes (not a utf-8 string) so the envelope hashes and can later
+    // re-export the exact original — BOM, key order, whitespace, duplicate keys and all.
+    const bytes = fs.readFileSync(filePath)
+    const raw = JSON.parse(bytes.toString('utf-8'))
     const normalized = parseStPreset(raw, path.basename(filePath, '.json'))
     if (!normalized) return null
     const preset = PresetSchema.parse(normalized)
     const presetId = createPresetFromData(profileId, preset.name, preset, true)
+
+    // Lossless provenance envelope (ADR 0018): original bytes + hash + nothing-dropped JSON.
+    writeEnvelope(profileId, presetId, {
+      sha256: sha256Hex(bytes),
+      parsed: raw,
+      originalBase64: bytes.toString('base64'),
+      importedAt: new Date().toISOString(),
+      importerVersion: IMPORTER_VERSION
+    })
 
     // Route bundled regex (each ST rule → its own script file) scoped to the preset.
     let regexScripts = 0
@@ -222,4 +261,111 @@ export const importPresetFromFile = (
     log('error', 'Failed to import preset:', error)
     return null
   }
+}
+
+/** Read a preset's lossless envelope sidecar (ADR 0018), or null if none exists. */
+export const readEnvelope = (profileId: string, presetId: string): PresetEnvelope | null =>
+  readJsonSync<PresetEnvelope>(envelopePath(profileId, presetId)) ?? null
+
+/** True when a stored preset predates the envelope — its raw source is already gone. */
+export const isLossyImport = (profileId: string, presetId: string): boolean =>
+  fs.existsSync(presetPath(profileId, presetId)) &&
+  !fs.existsSync(envelopePath(profileId, presetId))
+
+export interface PresetProvenance {
+  /** An envelope sidecar exists (imported after ADR 0018 landed). */
+  hasEnvelope: boolean
+  /** Imported before the envelope existed — flag for diagnostics; re-import refreshes it. */
+  lossyImport: boolean
+  /** Byte-exact re-export is available (envelope carries the original bytes). */
+  canExportOriginal: boolean
+  sha256: string | null
+  importedAt: string | null
+  importerVersion: string | null
+}
+
+/**
+ * Provenance for a stored preset, or null if no such preset. A preset with a normalized
+ * record but no envelope was imported before ADR 0018 — surfaced as `lossyImport` (no
+ * migration is attempted; its raw source is gone, and re-import refreshes it).
+ */
+export const getPresetProvenance = (
+  profileId: string,
+  presetId: string
+): PresetProvenance | null => {
+  if (!fs.existsSync(presetPath(profileId, presetId))) return null
+  const env = readEnvelope(profileId, presetId)
+  return {
+    hasEnvelope: !!env,
+    lossyImport: !env,
+    canExportOriginal: !!env?.originalBase64,
+    sha256: env?.sha256 ?? null,
+    importedAt: env?.importedAt ?? null,
+    importerVersion: env?.importerVersion ?? null
+  }
+}
+
+const SAMPLER_KEYS = [
+  'top_p',
+  'top_k',
+  'frequency_penalty',
+  'presence_penalty',
+  'repetition_penalty',
+  'min_p',
+  'top_a'
+] as const
+
+/**
+ * Overlay the current normalized view's editable scalars back onto the lossless raw,
+ * touching ONLY keys the raw already carries. Every other ST field (all `prompt_order`
+ * lists, `extensions.*`, unknown top-level keys) passes through untouched, and an
+ * *unedited* preset re-serializes to a JSON.parse-equal copy of its import.
+ */
+const overlaySemanticView = (parsed: any, view: Preset): any => {
+  const clone = JSON.parse(JSON.stringify(parsed))
+  const root = Array.isArray(clone) ? clone.find((x: any) => x && typeof x === 'object') : clone
+  if (!root || typeof root !== 'object') return clone
+  if ('name' in root) root.name = view.name
+  const p = view.parameters
+  if ('temperature' in root && typeof p.temperature === 'number') root.temperature = p.temperature
+  if ('openai_max_tokens' in root && typeof p.max_tokens === 'number') {
+    root.openai_max_tokens = p.max_tokens
+  } else if ('max_tokens' in root && typeof p.max_tokens === 'number') {
+    root.max_tokens = p.max_tokens
+  }
+  for (const k of SAMPLER_KEYS) {
+    const v = (p as Record<string, unknown>)[k]
+    if (k in root && typeof v === 'number') (root as Record<string, unknown>)[k] = v
+  }
+  return clone
+}
+
+/**
+ * Default export (ADR 0018): semantic JSON re-serialized from the envelope's
+ * nothing-dropped raw with the current view's edits overlaid — losslessly preserving
+ * everything the ST preset carried. Returns a pretty-printed JSON string, or null when
+ * the preset has no envelope (a pre-envelope import).
+ */
+export const exportPresetSemantic = (profileId: string, presetId: string): string | null => {
+  const env = readEnvelope(profileId, presetId)
+  if (!env) return null
+  const view = getPresetById(profileId, presetId)
+  const merged = view ? overlaySemanticView(env.parsed, view) : env.parsed
+  return JSON.stringify(merged, null, 2)
+}
+
+/**
+ * Byte-exact export for a never-edited preset: the verbatim original bytes, returned only
+ * when the stored SHA-256 still verifies. null when no original bytes exist (a bundled
+ * preset) or the envelope is absent.
+ */
+export const exportPresetOriginal = (profileId: string, presetId: string): Buffer | null => {
+  const env = readEnvelope(profileId, presetId)
+  if (!env?.originalBase64) return null
+  const bytes = Buffer.from(env.originalBase64, 'base64')
+  if (env.sha256 && sha256Hex(bytes) !== env.sha256) {
+    log('error', `Preset envelope SHA-256 mismatch for ${presetId}; refusing byte-exact export`)
+    return null
+  }
+  return bytes
 }

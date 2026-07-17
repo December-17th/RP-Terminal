@@ -55,6 +55,35 @@ export const PresetSchema = z.object({
 export type Preset = z.infer<typeof PresetSchema>
 
 /**
+ * A **Preset Envelope** (ADR 0018) is the lossless provenance record kept alongside
+ * the lossy normalized `Preset` view above. The runtime consumes the normalized view;
+ * the envelope preserves *everything* the imported ST preset carried — every
+ * `prompt_order` list, every prompt field (`injection_order`/`injection_trigger`/
+ * `forbid_overrides`/`marker`), full `extensions.*` (SPreset, tavern_helper),
+ * and unknown top-level fields — so nothing is ever destroyed at import.
+ *
+ * The stored bytes + SHA-256 describe the *import*, not the current edited state:
+ * edits mutate the normalized view in place and never touch the envelope (deliberate —
+ * provenance, not integrity enforcement). A preset never edited in RPT round-trips
+ * byte-exact from `originalBase64`; otherwise export re-serializes semantic JSON.
+ */
+export const PresetEnvelopeSchema = z.object({
+  /** SHA-256 (hex) of the verbatim original bytes. null when the preset came from a
+   *  pre-parsed World Card bundle (no original file bytes to hash). */
+  sha256: z.string().nullable().default(null),
+  /** The parsed, nothing-dropped JSON, exactly as `JSON.parse` produced it at import. */
+  parsed: z.any(),
+  /** Verbatim original file bytes, base64-encoded. null for pre-parsed bundles.
+   *  Byte-exact re-export is possible only when this is present. */
+  originalBase64: z.string().nullable().default(null),
+  /** ISO timestamp of the import. */
+  importedAt: z.string(),
+  /** Identifies the importer that produced this envelope, for future format migrations. */
+  importerVersion: z.string()
+})
+export type PresetEnvelope = z.infer<typeof PresetEnvelopeSchema>
+
+/**
  * A sensible default preset: main instruction, character definition, world
  * info, the running history, then a post-history reminder. This gives real
  * ordering control out of the box and is what imported ST presets fall back to
