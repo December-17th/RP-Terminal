@@ -602,12 +602,12 @@ export const registerWcvIpc = (ipcMain: IpcMain): void => {
         return 'User'
       }
     },
-    // Active persona description for {{persona}} — empty when persona injection is off. SYNC.
+    // Active persona description for {{persona}}. UNGATED (ST parity): the macro returns the bio
+    // regardless of the inject toggle — only prompt injection respects it (promptBuilder). SYNC.
     personaDescription: (e) => {
       const ctx = wcvManager.contextFor(e.sender.id)
       try {
-        const p = ctx ? settingsService.getSettings(ctx.profileId).persona : null
-        return p && p.inject !== false ? p.description || '' : ''
+        return ctx ? settingsService.getSettings(ctx.profileId).persona?.description || '' : ''
       } catch {
         return ''
       }

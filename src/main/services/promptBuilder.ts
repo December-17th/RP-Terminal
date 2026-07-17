@@ -515,7 +515,10 @@ export const buildPrompt = (args: BuildPromptArgs): ChatMessage[] => {
   const presetDepthItems: DepthItem[] = []
   let historyEmitted = false
   let worldInfoEmitted = false
-  let personaEmitted = false
+  // Whether the preset MANAGES persona placement itself (has a persona_description marker, enabled or
+  // not). A present-but-disabled marker is an explicit opt-out → the safety net must NOT re-add the
+  // persona; only a preset with no marker at all falls back to the pre-conversation block.
+  const hasPersonaMarker = preset.prompts.some((b) => b.marker === 'persona_description')
 
   for (const block of preset.prompts) {
     if (block.enabled === false) continue
@@ -543,7 +546,6 @@ export const buildPrompt = (args: BuildPromptArgs): ChatMessage[] => {
         if (personaContent) {
           messages.push({ role: block.role, content: personaContent })
         }
-        personaEmitted = true
         break
       }
       case 'chat_history': {
@@ -601,8 +603,9 @@ export const buildPrompt = (args: BuildPromptArgs): ChatMessage[] => {
 
   // Safety net: a preset without a persona_description marker (the common case for ST presets
   // that don't manage the persona entry) still gets the persona block, placed just before the
-  // conversation begins — a stable, cache-friendly system block.
-  if (personaContent && !personaEmitted) {
+  // conversation begins — a stable, cache-friendly system block. A preset that HAS the marker owns
+  // placement (including a disabled marker = opt-out), so the net is suppressed there.
+  if (personaContent && !hasPersonaMarker) {
     insertBeforeConvo(messages, {
       role: 'system',
       content: `[${userName}'s Persona]\n${personaContent}`

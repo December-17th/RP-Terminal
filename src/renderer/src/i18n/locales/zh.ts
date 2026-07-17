@@ -354,6 +354,7 @@ const zh: Record<string, string> = {
   'preset.markerChar': '角色描述',
   'preset.markerExamples': '示例对话',
   'preset.markerWorldInfo': '世界信息',
+  'preset.markerPersona': '用户人设',
   'preset.markerChatHistory': '聊天记录',
   'preset.markerPostHistory': '历史后指令',
 

@@ -366,6 +366,7 @@ const en: Record<string, string> = {
   'preset.markerChar': 'Character',
   'preset.markerExamples': 'Examples',
   'preset.markerWorldInfo': 'World Info',
+  'preset.markerPersona': 'Persona',
   'preset.markerChatHistory': 'Chat History',
   'preset.markerPostHistory': 'Post-History',
 

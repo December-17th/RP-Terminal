@@ -5,6 +5,7 @@ export type PromptMarker =
   | 'char_description'
   | 'mes_example'
   | 'world_info'
+  | 'persona_description'
   | 'chat_history'
   | 'post_history'
 

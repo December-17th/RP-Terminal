@@ -113,6 +113,30 @@ describe('shapePreview — section classification', () => {
     expect(sections[5].text).toBe('the pending action')
   })
 
+  it('classifies a RAW (header-less) persona block as persona via personaText match', () => {
+    const raw: AssembledMessage[] = [
+      msg('system', 'Name: Char\nDescription: a guide'),
+      msg('system', 'A curious traveller'), // persona at a marker — emitted raw, no header
+      msg('user', 'the pending action')
+    ]
+    const { sections } = shapePreview({
+      messages: raw,
+      tokensPerMessage: raw.map((m) => m.content.length),
+      injections: [],
+      gatedInjectors: [],
+      personaText: 'A curious traveller'
+    })
+    expect(sections.map((s) => s.id)).toEqual(['card', 'persona', 'action'])
+    // Without personaText it would fall back to generic `system`.
+    const { sections: noHint } = shapePreview({
+      messages: raw,
+      tokensPerMessage: raw.map((m) => m.content.length),
+      injections: [],
+      gatedInjectors: []
+    })
+    expect(noHint[1].id).toBe('system')
+  })
+
   it('token counts ride tokensPerMessage', () => {
     const { sections } = shapePreview({ messages, tokensPerMessage, injections: [], gatedInjectors: [] })
     expect(sections[0].tokens).toBe(messages[0].content.length)

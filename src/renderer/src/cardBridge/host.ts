@@ -151,10 +151,9 @@ export function createInlineHost(ctx: CardCtx): Host {
     isCharacterRegexesEnabled: () => true,
     formatRegex: (t) => useRegexStore.getState().apply(t),
     personaName: () => useSettingsStore.getState().settings?.persona?.name || 'User',
-    personaDescription: () => {
-      const p = useSettingsStore.getState().settings?.persona
-      return p?.inject !== false ? p?.description || '' : ''
-    },
+    // {{persona}} is UNGATED in ST: the macro returns the bio even when prompt injection is off —
+    // only the prompt INJECTION respects the inject toggle (handled in promptBuilder). See docs/rpt-api.md.
+    personaDescription: () => useSettingsStore.getState().settings?.persona?.description || '',
     currentChatId: () => ctx.chatId,
     getScriptVars: () => loadScriptVars(),
     getChatVars: () => loadChatVars(),

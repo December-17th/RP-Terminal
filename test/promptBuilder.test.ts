@@ -311,6 +311,22 @@ describe('buildPrompt', () => {
     expect(close).toBe(persona + 1)
   })
 
+  it('a DISABLED persona_description marker suppresses the persona (opt-out, no safety-net)', () => {
+    const disabledMarker = { ...blk('persona_description'), enabled: false }
+    const messages = buildPrompt({
+      card: card(),
+      preset: preset([blk('char_description'), disabledMarker, blk('chat_history')]),
+      lorebooks: [],
+      floors: [floor(0, 'u0', 'a0')],
+      userAction: 'go',
+      userName: 'Lyra',
+      persona: { description: 'a wanderer', inject: true }
+    })
+    // Author opted out by disabling the marker → the safety net must NOT re-add the persona.
+    expect(messages.some((m) => m.content.includes('wanderer'))).toBe(false)
+    expect(messages.some((m) => m.content.includes('Persona'))).toBe(false)
+  })
+
   it('does not inject the persona when inject is false or description is blank', () => {
     const messages = buildPrompt({
       card: card(),
