@@ -10,11 +10,12 @@ const MARKER_MAP: Record<string, PromptMarker> = {
   dialogueExamples: 'mes_example',
   charDescription: 'char_description',
   worldInfoBefore: 'world_info',
-  worldInfoAfter: 'world_info'
+  worldInfoAfter: 'world_info',
+  personaDescription: 'persona_description'
 }
 
 // ST marker prompts whose content we already fold into char_description.
-const SKIP_IDENTIFIERS = new Set(['charPersonality', 'scenario', 'personaDescription'])
+const SKIP_IDENTIFIERS = new Set(['charPersonality', 'scenario'])
 
 const num = (v: unknown): number | undefined =>
   typeof v === 'number' && !Number.isNaN(v) ? v : undefined

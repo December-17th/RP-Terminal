@@ -10,10 +10,11 @@
 //   `prompt.assemble` → `buildPrompt` returns a FLAT `ChatMessage[]` (role + content). There is NO
 //   per-section provenance object; the only structural signals are the message ROLE and content-PREFIX
 //   conventions the builder writes:
-//     · `World Info:\n…`        — a world_info preset marker OR the safety-net (promptBuilder.ts:534,569)
-//     · `Example dialogue:\n…`  — the mes_example marker (promptBuilder.ts:530)
-//     · `[<name>'s Persona]\n…` — the persona block (promptBuilder.ts:596)
-//     · char description        — `Name: …\nDescription: …` (buildCharDescription, promptBuilder.ts:197)
+//     · `World Info:\n…`        — a world_info preset marker OR the safety-net (promptBuilder.ts)
+//     · `Example dialogue:\n…`  — the mes_example marker (promptBuilder.ts)
+//     · persona                 — RAW description at a persona_description marker (no header), OR
+//                                 `[<name>'s Persona]\n…` from the header-ed safety-net (promptBuilder.ts)
+//     · char description        — `Name: …\nDescription: …` (buildCharDescription, promptBuilder.ts)
 //     · history turns           — role user/assistant, appended by buildHistory (promptBuilder.ts:208)
 //     · preset literal blocks    — arbitrary content, authored role (promptBuilder.ts:559)
 //     · the memory `block` tail  — a system message injected just before the final user action
@@ -94,9 +95,38 @@ const EXAMPLE_PREFIX = 'Example dialogue:\n'
 // Persona is `[<name>'s Persona]\n…` — matched by the bracketed "'s Persona]" fragment (name varies).
 const PERSONA_RE = /^\[[^\]]*'s Persona\]\n/
 
-/** Classify a single system-role message's content into a section kind by its builder prefix. */
-const classifySystem = (content: string): SectionKind => {
+/** Does a flat assembled message carry the raw persona as a complete newline-delimited block?
+ * Prompt assembly has no per-message provenance, so preview attribution must use content. Exact equality
+ * covers an unmerged marker; newline boundaries cover same-role merging with adjacent authored
+ * envelopes while avoiding a broad substring match inside unrelated prose. */
+const messageCarriesPersona = (content: string, personaText?: string): boolean => {
+  const persona = personaText?.trim().replace(/\r\n/g, '\n')
+  if (!persona) return false
+  const message = content.trim().replace(/\r\n/g, '\n')
+  if (message === persona) return true
+  let from = 0
+  while (from <= message.length - persona.length) {
+    const at = message.indexOf(persona, from)
+    if (at === -1) return false
+    const startsAtBoundary = at === 0 || message[at - 1] === '\n'
+    const end = at + persona.length
+    const endsAtBoundary = end === message.length || message[end] === '\n'
+    if (startsAtBoundary && endsAtBoundary) return true
+    from = at + 1
+  }
+  return false
+}
+
+/** Classify one narrator message using the builder's prefixes plus the active-persona hint. Prompt
+ * Manager role overrides mean a raw persona marker may be system, user, or assistant. */
+const classifyNarrator = (
+  role: AssembledMessage['role'],
+  content: string,
+  personaText?: string
+): SectionKind => {
   if (PERSONA_RE.test(content)) return 'persona'
+  if (messageCarriesPersona(content, personaText)) return 'persona'
+  if (role === 'user' || role === 'assistant') return 'history'
   if (content.startsWith(WORLD_INFO_PREFIX)) return 'worldInfo'
   if (content.startsWith(EXAMPLE_PREFIX)) return 'card'
   if (content.startsWith(CARD_PREFIX)) return 'card'
@@ -179,6 +209,8 @@ export interface ShapeArgs {
   injections: PackInjection[]
   /** Gate-closed packs that WOULD inject at prompt-assembly (enumerated omitted-by-gate). */
   gatedInjectors: GatedInjector[]
+  /** Active persona description — lets a header-less (marker-placed) persona block classify as `persona`. */
+  personaText?: string
 }
 
 export interface PreviewShape {
@@ -205,7 +237,7 @@ const messageCarriesInjection = (content: string, texts: string[]): boolean =>
  * Token counts ride `tokensPerMessage` (estimated).
  */
 export function shapePreview(args: ShapeArgs): PreviewShape {
-  const { messages, tokensPerMessage, injections, gatedInjectors } = args
+  const { messages, tokensPerMessage, injections, gatedInjectors, personaText } = args
   const sections: PreviewSection[] = []
   const omitted: OmittedItem[] = []
 
@@ -242,12 +274,7 @@ export function shapePreview(args: ShapeArgs): PreviewShape {
       continue
     }
 
-    if (m.role === 'user' || m.role === 'assistant') {
-      push('history', { kind: 'narrator' }, m.content, tok)
-      continue
-    }
-    // system
-    push(classifySystem(m.content), { kind: 'narrator' }, m.content, tok)
+    push(classifyNarrator(m.role, m.content, personaText), { kind: 'narrator' }, m.content, tok)
   }
 
   // A pack that DID produce text but whose text we could not locate in the prompt (e.g. trimmed, or a

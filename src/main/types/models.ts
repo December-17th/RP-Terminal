@@ -27,6 +27,17 @@ export interface ApiPreset {
   max_concurrent?: number
 }
 
+/** A saved, named user persona. The active one is mirrored into `Settings.persona`. */
+export interface PersonaPreset {
+  id: string
+  /** Display name — expands `{{user}}`. */
+  name: string
+  /** Free-text bio — expands `{{persona}}`, injected (IN_PROMPT) when `inject` is on. */
+  description: string
+  /** Whether to inject the description into the prompt (false = ST's "None" position). */
+  inject: boolean
+}
+
 /** How the agentic FSM operates:
  *  - 'off'     — classic: no FSM, ST-style dynamic lore re-matched every turn.
  *  - 'manual'  — FSM on; the user switches Explore/Dialogue/Combat by hand.
@@ -59,14 +70,18 @@ export interface Settings {
   // Saved connection presets the user can switch between.
   api_presets: ApiPreset[]
   active_api_preset_id: string
+  // Saved user personas the user can switch between.
+  personas: PersonaPreset[]
+  active_persona_id: string
+  // The live/active persona used by generation. Mirrors the selected persona preset.
   persona: {
     name: string
     /** Free-text bio for {{user}}, injected into the prompt when `inject` is on. */
     description: string
     /** Whether to inject the persona description into the prompt. */
     inject: boolean
-    /** Injection depth (messages from the bottom); null = at the top, before history. */
-    depth: number | null
+    /** @deprecated Legacy @depth injection; only IN_PROMPT is supported now. Kept for back-compat reads. */
+    depth?: number | null
   }
   generation: {
     /** Max estimated input tokens for the assembled prompt; oldest history is trimmed to fit. */

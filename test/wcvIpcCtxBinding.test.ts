@@ -41,6 +41,7 @@ const h = vi.hoisted(() => ({
       : undefined
   ),
   getChat: vi.fn(() => null),
+  getSettings: vi.fn(),
   deleteChatMessages: vi.fn(() => true),
   afterChatMutation: vi.fn(() => null)
 }))
@@ -78,7 +79,7 @@ vi.mock('../src/main/services/scriptApiService', () => ({}))
 vi.mock('../src/main/services/regexService', () => ({}))
 vi.mock('../src/main/services/pluginStorageService', () => ({}))
 vi.mock('../src/main/services/pluginService', () => ({}))
-vi.mock('../src/main/services/settingsService', () => ({}))
+vi.mock('../src/main/services/settingsService', () => ({ getSettings: h.getSettings }))
 vi.mock('../src/main/services/worldAssetService', () => ({}))
 vi.mock('../src/main/services/presetService', () => ({ getActivePresetId: vi.fn(() => '') }))
 
@@ -99,6 +100,9 @@ beforeEach(() => {
   handlers.clear()
   vi.clearAllMocks()
   h.contextFor.mockImplementation((id: number) => (id === WCV_ID ? SLOT : null))
+  h.getSettings.mockReturnValue({
+    persona: { name: 'Lyra', description: 'A quiet cartographer', inject: false }
+  })
   h.deleteChatMessages.mockReturnValue(true)
   registerWcvIpc(fakeIpcMain)
 })
@@ -189,5 +193,15 @@ describe('in-profile ops still run for a WCV card (deletes included)', () => {
     const out = call('wcv-host-delete-chat-messages', WCV_ID, [0, 1])
     expect(h.deleteChatMessages).toHaveBeenCalledWith('pA', 'cA', [0, 1])
     expect(out).toBe(true)
+  })
+})
+
+describe('persona macro transport', () => {
+  it('returns the bound profile persona description even when prompt injection is disabled', () => {
+    const event = { sender: { id: WCV_ID }, returnValue: undefined as unknown }
+    handlers.get('wcv-host-get-persona-description')!(event)
+
+    expect(h.getSettings).toHaveBeenCalledWith('pA')
+    expect(event.returnValue).toBe('A quiet cartographer')
   })
 })

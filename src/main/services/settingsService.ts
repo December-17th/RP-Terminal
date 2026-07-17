@@ -1,7 +1,7 @@
 import { safeStorage } from 'electron'
 import { getDb } from './db'
 import { setFullTrace } from './logService'
-import { Settings, ApiPreset, ModeConfig, AgentMode } from '../types/models'
+import { Settings, ApiPreset, PersonaPreset, ModeConfig, AgentMode } from '../types/models'
 
 // API keys are encrypted at rest via the OS keyring (Electron safeStorage). A
 // stored value is prefixed so encrypted keys are distinguishable from legacy
@@ -81,11 +81,13 @@ export const getDefaultSettings = (): Settings => ({
   },
   api_presets: [],
   active_api_preset_id: '',
+  personas: [{ id: 'default', name: 'User', description: '', inject: true }],
+  active_persona_id: 'default',
+  // Active mirror of the selected persona preset (projected in `normalize`).
   persona: {
     name: 'User',
     description: '',
-    inject: true,
-    depth: null
+    inject: true
   },
   generation: {
     max_context_tokens: 200000,
@@ -268,11 +270,38 @@ export const normalize = (stored: Partial<Settings>): Settings => {
     active_api_preset_id = api_presets[0].id
   }
 
+  // Persona library — same seed/project pattern as api_presets. `personas[]` + `active_persona_id`
+  // are the source of truth; the legacy `persona` block is re-projected from the active preset so
+  // genContext/assemble (which read settings.persona.*) need no change.
+  let personas: PersonaPreset[] = Array.isArray(stored.personas) ? stored.personas : []
+  let active_persona_id = stored.active_persona_id || ''
+  if (personas.length === 0) {
+    // Migrate: seed one persona from the legacy `persona` block. Deterministic id (stable across
+    // repeated reads before the first save).
+    const id = 'default'
+    personas = [
+      { id, name: persona.name, description: persona.description, inject: persona.inject !== false }
+    ]
+    active_persona_id = id
+  }
+  if (!personas.some((p) => p.id === active_persona_id)) {
+    active_persona_id = personas[0].id
+  }
+  const active = personas.find((p) => p.id === active_persona_id)!
+  // Project the active persona into the mirror consumed by generation.
+  const personaMirror = {
+    name: active.name,
+    description: active.description,
+    inject: active.inject !== false
+  }
+
   return {
     api,
     api_presets,
     active_api_preset_id,
-    persona,
+    personas,
+    active_persona_id,
+    persona: personaMirror,
     generation,
     lorebook,
     tables,

@@ -182,6 +182,11 @@ through the host bridge as RFC-6902 JSON Patch.
 
 - `EjsTemplate.*` (`evalTemplate`/`prepareContext`/`getSyntaxErrorInfo`/`allVariables`/`saveVariables`) — ✅ (the clean-room ST-Prompt-Template engine; see [st-prompt-template-plan.md](st-prompt-template-plan.md)).
 - `substituteParams`/`substitudeMacros` (expand `{{macros}}`) — ✅ · `{{get_X_variable}}`/`{{format_X_variable}}` (X ∈ global/chat/message/preset/character) — ✅ · `registerMacroLike` — ⬜ (cross-process).
+- **Persona macros** (ST-faithful): `{{user}}` = active persona **name**; `{{persona}}` = active persona **description**. The macro is **ungated** (ST parity): it returns the description even when prompt injection is off — only the prompt *injection* respects the inject toggle. Both transports resolve `{{persona}}` via the `personaDescription` host facet — inline (`cardBridge`) and WCV (`wcvPreload`) are at parity. The description is injected into the prompt (IN_PROMPT) at the preset's `personaDescription` marker position — emitted **raw** there (the preset author owns the framing, e.g. a `<{{user}}_setting>…</{{user}}_setting>` envelope, matching ST). When the preset has no such marker it falls back to a pre-conversation system block prefixed `[<user>'s Persona]`.
+  Implementation: [`promptBuilder.ts`](../src/main/services/promptBuilder.ts), the
+  [`ChatHost` facet](../src/shared/thRuntime/hostFacets.ts), the
+  [inline host](../src/renderer/src/cardBridge/host.ts), and the
+  [WCV handler](../src/main/ipc/wcvIpc.ts).
 - **Unified variable surface (WS-1).** The EJS engine runs in three contexts — prompt-build (main),
   render-time (renderer), and the WCV preload — built from one shared `buildTemplateContext` and one
   engine. An MVU state key resolves the **same way in all three**, whether read with the explicit
@@ -278,7 +283,7 @@ Card → host channels (resolved against the calling view's ctx), in
 `wcv-host-set-vars`, `wcv-host-get-floors-sync`, `wcv-host-set-input`, the worldbook channels
 (`-get-worldbook-names-sync` / `-get-worldbook` / `-replace-worldbook` / create / delete / bind),
 `-save-chat` / `-reload-chat`, `wcv-host-get-char-data` / `-get-char-avatar` / `-get-preset` /
-`-get-preset-names` / `-get-regexes` / `-format-regex` / `-get-persona-name`, the regex-full + write channels
+`-get-preset-names` / `-get-regexes` / `-format-regex` / `-get-persona-name` / `-get-persona-description`, the regex-full + write channels
 (`-get-regexes-full` / `-replace-regexes` / `-is-char-regex-enabled`), `-get-chat-id-sync`, the script-scope
 KV channels (`-script-vars-get-sync` / `-script-vars-set`), and the chat-write channels
 (`chat-set-messages` / `-delete-messages` / `-save`), and the runtime-theme channels

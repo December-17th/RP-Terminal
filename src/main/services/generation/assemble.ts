@@ -173,8 +173,7 @@ export const assemblePrompt = (
     worldInfoOverride: overrides?.worldInfo,
     persona: {
       description: settings.persona?.description || '',
-      inject: settings.persona?.inject !== false,
-      depth: settings.persona?.depth ?? null
+      inject: settings.persona?.inject !== false
     },
     scanDepth,
     maxRecursion,

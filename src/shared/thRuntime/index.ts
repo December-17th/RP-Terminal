@@ -202,7 +202,7 @@ export function createThRuntime(host: Host, opts?: { chatScope?: CardChatScope }
       ? expandMacros(t, {
           char: host.charData()?.name,
           user: host.personaName(),
-          persona: host.personaName(),
+          persona: host.personaDescription(),
           vars: stat
         })
       : t
@@ -243,7 +243,7 @@ export function createThRuntime(host: Host, opts?: { chatScope?: CardChatScope }
       globals: (await host.getGlobalVars()) || {},
       char: host.charData()?.name,
       user: host.personaName(),
-      persona: host.personaName(),
+      persona: host.personaDescription(),
       setVar: async (key, value, scope) => {
         if (scope === 'global') await host.setGlobalVar(key, value)
         else await writeVars(setVarOps(key, value))

@@ -75,7 +75,7 @@ describe('settings normalize', () => {
 
   it('fills defaults for an empty input', () => {
     const s = normalize({})
-    expect(s.persona).toEqual({ name: 'User', description: '', inject: true, depth: null })
+    expect(s.persona).toEqual({ name: 'User', description: '', inject: true })
     expect(s.generation.max_context_tokens).toBe(200000)
     expect(s.ui.font_size).toBe(16)
   })
@@ -87,6 +87,34 @@ describe('settings normalize', () => {
     expect(s.ui.show_fps).toBe(false)
     expect(s.persona.name).toBe('Lyra')
     expect(s.persona.inject).toBe(true) // default preserved
+  })
+
+  it('migrates a legacy single persona into a one-entry library and projects it back', () => {
+    const s = normalize({ persona: { name: 'Lyra', description: 'a mage', inject: true } as any })
+    expect(s.personas).toEqual([{ id: 'default', name: 'Lyra', description: 'a mage', inject: true }])
+    expect(s.active_persona_id).toBe('default')
+    // The `persona` mirror is projected from the active preset.
+    expect(s.persona).toEqual({ name: 'Lyra', description: 'a mage', inject: true })
+  })
+
+  it('projects the active persona from the library (list is the source of truth)', () => {
+    const s = normalize({
+      personas: [
+        { id: 'a', name: 'Alice', description: 'A', inject: true },
+        { id: 'b', name: 'Bob', description: 'B', inject: false }
+      ],
+      active_persona_id: 'b'
+    } as any)
+    expect(s.persona).toEqual({ name: 'Bob', description: 'B', inject: false })
+  })
+
+  it('repairs an active_persona_id that points at no existing persona', () => {
+    const s = normalize({
+      personas: [{ id: 'a', name: 'Alice', description: '', inject: true }],
+      active_persona_id: 'gone'
+    } as any)
+    expect(s.active_persona_id).toBe('a')
+    expect(s.persona.name).toBe('Alice')
   })
 
   it('repairs an active_api_preset_id that points at no existing preset', () => {

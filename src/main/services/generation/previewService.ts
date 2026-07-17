@@ -30,6 +30,7 @@ import { builtinRegistry } from '../nodes/builtin'
 import { createRegistry } from '../nodes/registry'
 import { NodeImpl, RunContext } from '../nodes/types'
 import { resolveEffectiveDoc } from '../workflowService'
+import { getSettings } from '../settingsService'
 import { estimateTokens } from '../promptBuilder'
 import type { ChatMessage } from '../promptBuilder'
 import { log } from '../logService'
@@ -225,7 +226,8 @@ export const previewNextPrompt = async (inputs: PreviewInputs): Promise<NextProm
     messages,
     tokensPerMessage,
     injections,
-    gatedInjectors
+    gatedInjectors,
+    personaText: getSettings(profileId).persona?.description || ''
   })
   return { sections, omitted, generatedAt }
 }
